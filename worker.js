@@ -2833,7 +2833,7 @@ function createSignboardMarker(name, pos, icon, id) {
         disp.classList.add('field-select-box');
         if(selectedPolyIds.length === 0) {
           disp.classList.add('is-empty');
-          disp.innerHTML = `<div style="width:100%; text-align:center; color:#E65100; font-size:14px; font-weight:bold; line-height:1.45;">🗺️ まだ圃場が選ばれていません<div style="font-size:12px; font-weight:normal; color:#F57C00; margin-top:2px;">「マップから選択」または「前回の圃場」で選んでください</div></div>`;
+          disp.innerHTML = `<div style="width:100%; text-align:center; color:#E65100; font-size:14px; font-weight:bold; line-height:1.45;">🗺️ まだ圃場が選ばれていません<div style="font-size:12px; font-weight:normal; color:#F57C00; margin-top:2px;">「周囲の畑から選ぶ」「マップから選択」「前回の圃場」で選べます</div></div>`;
         } else {
           disp.classList.remove('is-empty');
           const chips = selectedPolyIds.map(id => {
@@ -2852,6 +2852,9 @@ function createSignboardMarker(name, pos, icon, id) {
           disp.innerHTML = `<div style="width:100%; font-size:12px; color:#1B5E20; font-weight:bold;">✅ 選択中 ${selectedPolyIds.length}件</div>${chips}`;
         }
         if (typeof window.refreshSurroundingFieldWarning_ === 'function') window.refreshSurroundingFieldWarning_();
+        if (typeof window.refreshNearbyFieldsPicker_ === 'function' && window._nearbyFieldCandidates) {
+          window.refreshNearbyFieldsPicker_(window._nearbyFieldCandidates);
+        }
 
         // 圃場が選択されている場合、その圃場の最新の進捗状況を反省
         if (typeof currentEditRecordId === 'undefined' || !currentEditRecordId) {
@@ -2920,6 +2923,182 @@ function createSignboardMarker(name, pos, icon, id) {
         box.style.display = 'block';
         box.innerHTML = `⚠️ 選んでいる圃場が<strong>周辺地</strong>です（${names}）。`
           + `<div style="font-size:11px; font-weight:normal; color:#BF360C; margin-top:4px;">栽培している本番の圃場と間違えて記録していないか、確認してください。</div>`;
+      };
+
+      /** 圃場ポリゴンの代表座標（マーカー or バウンディングボックス中心） */
+      window.getPolyCenterLatLng_ = (p) => {
+        if (!p) return null;
+        try {
+          if (p.marker && typeof p.marker.getPosition === 'function') {
+            const pos = p.marker.getPosition();
+            if (pos) return pos;
+          }
+          if (p.polygon && typeof p.polygon.getPath === 'function') {
+            const path = p.polygon.getPath();
+            if (path && path.getLength && path.getLength() > 0) {
+              const bounds = new google.maps.LatLngBounds();
+              for (let i = 0; i < path.getLength(); i++) bounds.extend(path.getAt(i));
+              return bounds.getCenter();
+            }
+          }
+        } catch (e) {}
+        return null;
+      };
+
+      window.formatFieldDistanceLabel_ = (meters, inside) => {
+        if (inside) return 'ここ';
+        const m = Math.max(0, Math.round(meters || 0));
+        if (m < 1000) return m + 'm';
+        return (m / 1000).toFixed(m >= 10000 ? 0 : 1) + 'km';
+      };
+
+      /** 現在地から近い圃場候補（既定5件） */
+      window.collectNearbyFieldCandidates_ = (lat, lng, limit) => {
+        limit = limit || 5;
+        if (!lat || !lng || typeof loadedPolygons === 'undefined') return [];
+        const here = new google.maps.LatLng(lat, lng);
+        const rows = [];
+        for (const id in loadedPolygons) {
+          const p = loadedPolygons[id];
+          if (!p || p.isMarker || !p.polygon) continue;
+          let inside = false;
+          let distM = Infinity;
+          try {
+            if (google.maps.geometry && google.maps.geometry.poly &&
+                google.maps.geometry.poly.containsLocation(here, p.polygon)) {
+              inside = true;
+              distM = 0;
+            } else {
+              const center = window.getPolyCenterLatLng_(p);
+              if (center && google.maps.geometry && google.maps.geometry.spherical) {
+                distM = google.maps.geometry.spherical.computeDistanceBetween(here, center);
+              }
+            }
+          } catch (e) { continue; }
+          if (!isFinite(distM)) continue;
+          rows.push({
+            id: String(id),
+            name: p.name || '圃場',
+            distanceM: distM,
+            inside: inside,
+            areaA: (typeof window.getPolyAreaA_ === 'function') ? window.getPolyAreaA_(id) : 0
+          });
+        }
+        rows.sort((a, b) => {
+          if (a.inside !== b.inside) return a.inside ? -1 : 1;
+          return a.distanceM - b.distanceM;
+        });
+        return rows.slice(0, limit);
+      };
+
+      window.refreshNearbyFieldsPicker_ = (candidates) => {
+        const box = document.getElementById('nearby_fields_picker');
+        const section = document.getElementById('field_target_section');
+        if (!box) return;
+        if (section && section.style.display === 'none') {
+          box.style.display = 'none';
+          return;
+        }
+        const list = Array.isArray(candidates) ? candidates : (window._nearbyFieldCandidates || []);
+        if (!list.length) {
+          box.style.display = 'none';
+          box.innerHTML = '';
+          return;
+        }
+        const selectedSet = new Set((selectedPolyIds || []).map(String));
+        const chips = list.map(row => {
+          const safeId = String(row.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const safeName = String(row.name || '').replace(/</g, '&lt;');
+          const distLabel = window.formatFieldDistanceLabel_(row.distanceM, row.inside);
+          const on = selectedSet.has(String(row.id));
+          const areaTxt = row.areaA > 0 ? ` · ${row.areaA}a` : '';
+          return `<button type="button" onclick="toggleNearbyFieldChip_('${safeId}')" `
+            + `style="background:${on ? '#2E7D32' : '#fff'}; color:${on ? '#fff' : '#1B5E20'}; `
+            + `border:2px solid ${on ? '#1B5E20' : '#81C784'}; border-radius:16px; padding:6px 12px; `
+            + `font-size:12px; font-weight:bold; cursor:pointer; text-align:left; line-height:1.35;">`
+            + `${on ? '✓ ' : ''}${safeName}<span style="font-size:10px; font-weight:normal; opacity:0.9; margin-left:4px;">${distLabel}${areaTxt}</span>`
+            + `</button>`;
+        }).join('');
+        box.style.display = 'block';
+        box.innerHTML = `<div style="font-size:11px; font-weight:bold; color:#2E7D32; margin-bottom:6px;">📍 周囲の畑（近い順・タップで選択）</div>`
+          + `<div style="display:flex; flex-wrap:wrap; gap:6px;">${chips}</div>`;
+      };
+
+      window.toggleNearbyFieldChip_ = (id) => {
+        const sid = String(id || '');
+        if (!sid || !loadedPolygons[sid] || loadedPolygons[sid].isMarker) return;
+        if (!Array.isArray(selectedPolyIds)) selectedPolyIds = [];
+        if (selectedPolyIds.map(String).includes(sid)) {
+          selectedPolyIds = selectedPolyIds.filter(i => String(i) !== sid);
+        } else {
+          selectedPolyIds.push(sid);
+        }
+        if (typeof window.updateSelectedPolysDisplay === 'function') window.updateSelectedPolysDisplay();
+        if (typeof window.updateMapSelectVisuals === 'function') window.updateMapSelectVisuals();
+        if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
+        if (typeof window.refreshNearbyFieldsPicker_ === 'function') {
+          window.refreshNearbyFieldsPicker_(window._nearbyFieldCandidates);
+        }
+        if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
+      };
+
+      window.ensureNearbyFieldsPicker_ = (opts) => {
+        opts = opts || {};
+        if (typeof latestUserPos !== 'undefined' && latestUserPos && latestUserPos.lat && latestUserPos.lng) {
+          window._nearbyFieldCandidates = window.collectNearbyFieldCandidates_(latestUserPos.lat, latestUserPos.lng, 5);
+          window.refreshNearbyFieldsPicker_(window._nearbyFieldCandidates);
+          return;
+        }
+        if (opts.skipIfNoGps) return;
+        if (typeof window.loadNearbyFieldsFromGps_ === 'function') {
+          window.loadNearbyFieldsFromGps_(opts);
+        }
+      };
+
+      window.loadNearbyFieldsFromGps_ = (opts) => {
+        opts = opts || {};
+        const btn = document.getElementById('btn_load_nearby_fields');
+        const btnDefault = '📍 周囲の畑から選ぶ';
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = '📍 取得中...';
+        }
+        const done = () => {
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = window._nearbyFieldCandidates && window._nearbyFieldCandidates.length
+              ? '📍 周囲の畑を更新'
+              : btnDefault;
+          }
+        };
+        const apply = (lat, lng) => {
+          window._nearbyFieldCandidates = window.collectNearbyFieldCandidates_(lat, lng, 5);
+          window.refreshNearbyFieldsPicker_(window._nearbyFieldCandidates);
+          done();
+          if (!window._nearbyFieldCandidates.length && !opts.silent) {
+            if (typeof customAlert === 'function') customAlert('近くに圃場が見つかりませんでした。');
+          }
+        };
+        if (opts.useCached !== false && typeof latestUserPos !== 'undefined' && latestUserPos && latestUserPos.lat && latestUserPos.lng) {
+          apply(latestUserPos.lat, latestUserPos.lng);
+          return;
+        }
+        if (!navigator.geolocation) {
+          done();
+          if (!opts.silent && typeof customAlert === 'function') {
+            customAlert('GPSが利用できません。');
+          }
+          return;
+        }
+        navigator.geolocation.getCurrentPosition((p) => {
+          latestUserPos = { lat: p.coords.latitude, lng: p.coords.longitude };
+          apply(latestUserPos.lat, latestUserPos.lng);
+        }, () => {
+          done();
+          if (!opts.silent && typeof customAlert === 'function') {
+            customAlert('現在地を取得できませんでした。位置情報を許可してください。');
+          }
+        }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
       };
 
       window.getCadUneCount = (poly) => {
@@ -4382,6 +4561,65 @@ function createSignboardMarker(name, pos, icon, id) {
         return c.includes('圃場');
       };
 
+      /** 作業記録フォームで圃場選択欄が出るカテゴリか */
+      window.categoryHasFieldRecordSection_ = (cat) => {
+        const c = String(cat || '').trim();
+        if (!c || c === 'すべて') return true;
+        if (typeof window.isFieldCategory === 'function' && window.isFieldCategory(c)) return true;
+        if (c.includes('整備') || c.includes('保全')) return true;
+        return false;
+      };
+
+      window.getWorkMasterCategory_ = (w) => {
+        return String(w && (w.category || w.workCategory) || '').trim();
+      };
+
+      /** 次の作業登録の候補に載せる作業か（圃場記録欄のないカテゴリは除外） */
+      window.isAfterSaveEligibleWork_ = (workName, category) => {
+        const wName = String(workName || '').trim();
+        if (!wName || wName.indexOf('休憩') >= 0) return false;
+        const cat = String(category || '').trim();
+        if (cat && cat !== 'すべて') {
+          return window.categoryHasFieldRecordSection_(cat);
+        }
+        const wObj = (typeof pdlWorkMaster !== 'undefined' ? pdlWorkMaster : [])
+          .find(w => w && String(w.name || '').trim() === wName);
+        const wCat = window.getWorkMasterCategory_(wObj);
+        return wCat ? window.categoryHasFieldRecordSection_(wCat) : false;
+      };
+
+      /** 次の作業登録で場所（圃場）選択ステップが必要か */
+      window.afterSaveWorkNeedsFieldPlace_ = (workName, category) => {
+        const cat = String(category || '').trim();
+        const wName = String(workName || '').trim();
+        if (cat && cat !== 'すべて' && !window.categoryHasFieldRecordSection_(cat)) return false;
+        if (typeof window.isFieldCategory === 'function' && window.isFieldCategory(cat)) return true;
+        if (cat.includes('整備') || cat.includes('保全')) return true;
+        if (typeof window.isMaintenanceRelatedWork === 'function' && window.isMaintenanceRelatedWork(wName)) return true;
+        if (wName.includes('修理') || wName.includes('点検') || wName.includes('整備')) return true;
+        if (cat === 'すべて' || !cat) {
+          const wObj = (typeof pdlWorkMaster !== 'undefined' ? pdlWorkMaster : [])
+            .find(w => w && String(w.name || '').trim() === wName);
+          const wCat = window.getWorkMasterCategory_(wObj);
+          if (wCat) return window.categoryHasFieldRecordSection_(wCat);
+        }
+        return false;
+      };
+
+      window.getAfterSaveCategoryOptions_ = () => {
+        const catSet = new Set();
+        const all = ['すべて'];
+        (pdlWorkCategories || []).forEach(c => {
+          const name = String((typeof c === 'string' ? c : (c && c.name)) || '').trim();
+          if (name && !catSet.has(name)) { catSet.add(name); all.push(name); }
+        });
+        (pdlWorkMaster || []).forEach(w => {
+          const cat = window.getWorkMasterCategory_(w);
+          if (cat && !catSet.has(cat)) { catSet.add(cat); all.push(cat); }
+        });
+        return all.filter(cat => cat === 'すべて' || window.categoryHasFieldRecordSection_(cat));
+      };
+
       window.refreshFieldTargetUI = () => {
         const box = document.getElementById('field_target_section');
         if (!box) return;
@@ -4409,6 +4647,9 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.refreshRidgeProgressUI === 'function') window.refreshRidgeProgressUI();
         if (typeof window.refreshProgressStatusVisibility === 'function') window.refreshProgressStatusVisibility();
         if (typeof window.refreshFieldRegisteredWorksUI_ === 'function') window.refreshFieldRegisteredWorksUI_();
+        if (show && typeof window.ensureNearbyFieldsPicker_ === 'function') {
+          window.ensureNearbyFieldsPicker_({ silent: true, skipIfNoGps: true });
+        }
       };
 
       /** 作業対象に登録済み圃場（ポリゴン）が含まれているか */
@@ -14373,9 +14614,9 @@ function createSignboardMarker(name, pos, icon, id) {
           model: model
         };
         if (photoBase64) {
+          // photoBase64 のみ送る（photos と二重送信すると Drive に同じ写真が2枚できる）
           payload.photoBase64 = photoBase64;
           payload.photoFilename = name.replace(/\s+/g, '_') + '.jpg';
-          payload.photos = [{ filename: payload.photoFilename, base64: photoBase64 }];
         }
         let newMachine;
         if (entry.mode === 'edit' && entry.itemId) {
@@ -15571,7 +15812,7 @@ function createSignboardMarker(name, pos, icon, id) {
           const howTo = String(opts.hint || '').trim();
           const placeHelp = window.buildRecHelpBtn_(
             'popover-place-detail',
-            placeInfoText + (howTo ? `<br><br>・${howTo}` : '') + '<br>・「マップから選択」で追加・変更できます（複数可）',
+            placeInfoText + (howTo ? `<br><br>・${howTo}` : '') + '<br>・「周囲の畑から選ぶ」で現在地付近の候補（約5件）を表示<br>・「マップから選択」で追加・変更できます（複数可）',
             { heading: '圃場の選び方', bg: '#1B5E20', title: '圃場のヘルプ' }
           );
           return `<div id="field_target_section" class="rec-zone rec-zone-field" style="${hiddenStyle}margin-bottom:15px; padding:14px;">
@@ -15581,9 +15822,11 @@ function createSignboardMarker(name, pos, icon, id) {
               </div>
               <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
                 ${lastFieldBtn}
+                <button type="button" id="btn_load_nearby_fields" onclick="if(typeof window.loadNearbyFieldsFromGps_==='function') window.loadNearbyFieldsFromGps_()" style="background:#E8F5E9; color:#1B5E20; border:2px solid #66BB6A; border-radius:20px; padding:8px 12px; font-weight:bold; font-size:13px; cursor:pointer; ${addBtnStyle}">📍 周囲の畑から選ぶ</button>
                 <button type="button" onclick="openMapSelect()" style="background:#2E7D32; color:#fff; border:none; border-radius:20px; padding:8px 14px; font-weight:bold; font-size:13px; cursor:pointer; box-shadow:0 2px 4px rgba(46,125,50,0.28); ${addBtnStyle}">${opts.mapLabel}</button>
               </div>
             </div>
+            <div id="nearby_fields_picker" style="display:none; margin-bottom:8px; padding:10px 12px; background:#fff; border:1px dashed #81C784; border-radius:8px;"></div>
             <div id="selected_polys_display" class="field-select-box is-empty"></div>
           </div>`;
         };
@@ -17432,9 +17675,22 @@ function createSignboardMarker(name, pos, icon, id) {
       window.selectAfterSaveNextWork_ = (workName, crop) => {
         window._afterSaveDraftWorkName = String(workName || '').trim();
         if (crop) window._afterSaveDraftCrop = String(crop || '').trim();
-        // 作業を選んだら場所・登録ステップへ
-        window._afterSavePickerStep = 'place';
-        window.showAfterSaveNextWorkPicker_();
+        const cat = String(window._afterSaveDraftCategory || 'すべて').trim();
+        const needsPlace = typeof window.afterSaveWorkNeedsFieldPlace_ === 'function'
+          ? window.afterSaveWorkNeedsFieldPlace_(window._afterSaveDraftWorkName, cat)
+          : window.categoryHasFieldRecordSection_(cat);
+        if (needsPlace) {
+          window._afterSavePickerStep = 'place';
+          window.showAfterSaveNextWorkPicker_();
+          return;
+        }
+        window._afterSaveDraftPolyIds = [];
+        const payload = window.saveAfterSaveNextWorkNameOnly_(
+          window._afterSaveDraftWorkName,
+          window._afterSaveDraftCrop
+        );
+        if (payload) window.renderAfterSaveNextWorkConfirm_(payload);
+        else if (typeof customAlert === 'function') customAlert('作業名を選んでください。');
       };
 
       window.selectAfterSaveCategory_ = (cat) => {
@@ -17757,10 +18013,29 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.consumePendingNextWorkIfMatched_ = (data) => {
         const p = window.getPendingNextWorkNameOnly_();
-        if (!p || !data) return;
+        if (!p || !data) return false;
         const savedName = String(data.workName || '').trim();
-        if (!savedName || savedName !== String(p.workName || '').trim()) return;
+        if (!savedName || savedName !== String(p.workName || '').trim()) return false;
         window.clearPendingNextWorkNameOnly_();
+        return true;
+      };
+
+      window.showAfterWorkSaveCloseOnlyModal_ = (opts) => {
+        opts = opts || {};
+        const data = opts.data || {};
+        const workName = String(data.workName || '作業');
+        const modalEl = document.getElementById('modal');
+        if (!modalEl) return;
+        window.fillAppModalHtml_(`
+          <div style="background:#fff; width:100%; max-width:380px; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
+            <div style="font-size:16px; font-weight:bold; color:#2E7D32; margin-bottom:8px;">✅ 記録を保存しました</div>
+            <div style="font-size:13px; color:#555; margin-bottom:16px; line-height:1.45;">「${String(workName).replace(/</g, '&lt;')}」を保存しました。</div>
+            <button type="button" onclick="closeAfterWorkSaveContinueModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer;">閉じる</button>
+          </div>`);
+        modalEl.style.display = 'flex';
+        modalEl.onclick = (evt) => {
+          if (evt.target === modalEl) closeAfterWorkSaveContinueModal_();
+        };
       };
 
       window.renderAfterSaveNextWorkConfirm_ = (payload) => {
@@ -17811,7 +18086,10 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.registerAfterSaveNextWorkName_ = (workName, crop) => {
-        if (workName) window.selectAfterSaveNextWork_(workName, crop);
+        if (workName) {
+          window._afterSaveDraftWorkName = String(workName || '').trim();
+          if (crop) window._afterSaveDraftCrop = String(crop || '').trim();
+        }
         const payload = window.saveAfterSaveNextWorkNameOnly_(
           workName || window._afterSaveDraftWorkName,
           crop || window._afterSaveDraftCrop
@@ -17862,6 +18140,10 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window._afterSaveDraftCategory === 'undefined') {
           window._afterSaveDraftCategory = saved.category || 'すべて';
         }
+        if (typeof window.categoryHasFieldRecordSection_ === 'function'
+          && !window.categoryHasFieldRecordSection_(window._afterSaveDraftCategory)) {
+          window._afterSaveDraftCategory = 'すべて';
+        }
         if (typeof window._afterSaveDraftCrop === 'undefined') {
           window._afterSaveDraftCrop = saved.crop || '';
         }
@@ -17879,17 +18161,10 @@ function createSignboardMarker(name, pos, icon, id) {
         const selectedName = String(window._afterSaveDraftWorkName || '');
         const selectedCrop = String(window._afterSaveDraftCrop || '');
 
-        // --- 1. カテゴリ一覧・チップの生成 ---
-        const catSet = new Set();
-        const allCategories = ['すべて'];
-        (pdlWorkCategories || []).forEach(c => {
-          const name = String((typeof c === 'string' ? c : (c && c.name)) || '').trim();
-          if (name && !catSet.has(name)) { catSet.add(name); allCategories.push(name); }
-        });
-        (pdlWorkMaster || []).forEach(w => {
-          const cat = String(w && (w.category || w.workCategory) || '').trim();
-          if (cat && !catSet.has(cat)) { catSet.add(cat); allCategories.push(cat); }
-        });
+        // --- 1. カテゴリ一覧・チップの生成（圃場記録欄のないカテゴリは除外） ---
+        const allCategories = (typeof window.getAfterSaveCategoryOptions_ === 'function')
+          ? window.getAfterSaveCategoryOptions_()
+          : ['すべて'];
         const categoryChips = allCategories.map(cat => {
           const on = (curCat === cat) || (!curCat && cat === 'すべて');
           const safeCat = String(cat).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -17922,6 +18197,8 @@ function createSignboardMarker(name, pos, icon, id) {
         const pushChip = (workName, crop, extraLabel) => {
           const name = String(workName || '').trim();
           if (!name) return;
+          if (typeof window.isAfterSaveEligibleWork_ === 'function'
+            && !window.isAfterSaveEligibleWork_(name, curCat)) return;
           const key = String(crop || '') + '\t' + name;
           if (seen.has(key)) return;
           seen.add(key);
@@ -17950,7 +18227,9 @@ function createSignboardMarker(name, pos, icon, id) {
         (pdlWorkMaster || []).forEach(w => {
           const wName = String(w && w.name || '').trim();
           if (!wName || wName.indexOf('休憩') >= 0) return;
-          const wCat = String(w && (w.category || w.workCategory) || '').trim();
+          const wCat = window.getWorkMasterCategory_(w);
+          if (typeof window.isAfterSaveEligibleWork_ === 'function'
+            && !window.isAfterSaveEligibleWork_(wName, curCat !== 'すべて' ? curCat : wCat)) return;
           if (curCat && curCat !== 'すべて' && wCat && wCat !== curCat) return;
 
           let cropMatch = true;
@@ -17981,7 +18260,12 @@ function createSignboardMarker(name, pos, icon, id) {
 
         const estHtml = window.renderAfterSaveEstimateHtml_(window._afterSaveDraftWorkName || '', window.getAfterSaveDraftPolyIds_(), startHm);
         const step = window.getAfterSavePickerStep_();
-        const stepHeader = window.buildAfterSaveStepHeaderHtml_(step);
+        if (step === 'place' && typeof window.afterSaveWorkNeedsFieldPlace_ === 'function'
+          && !window.afterSaveWorkNeedsFieldPlace_(selectedName, curCat)) {
+          window._afterSavePickerStep = 'work';
+        }
+        const effectiveStep = window.getAfterSavePickerStep_();
+        const stepHeader = window.buildAfterSaveStepHeaderHtml_(effectiveStep);
         const catLabel = curCat && curCat !== 'すべて' ? curCat : 'すべて';
         const cropLabel = curCrop || 'すべて／共通';
         const workLabel = selectedName || '未選択';
@@ -17990,19 +18274,19 @@ function createSignboardMarker(name, pos, icon, id) {
         let primaryBtn = '';
         let secondaryBtn = '';
 
-        if (step === 'category') {
+        if (effectiveStep === 'category') {
           stepBody = `
             <div style="font-size:15px; font-weight:bold; color:#1565C0; margin-bottom:8px;">📁 カテゴリを選んでください</div>
-            <div style="font-size:12px; color:#666; margin-bottom:10px; line-height:1.4;">選ぶと次に作物選択へ進みます。</div>
-            <div style="display:flex; flex-wrap:wrap; gap:8px;">${categoryChips}</div>`;
+            <div style="font-size:12px; color:#666; margin-bottom:10px; line-height:1.4;">圃場を記録する作業のみ表示しています。</div>
+            <div style="display:flex; flex-wrap:wrap; gap:8px;">${categoryChips || '<span style="font-size:12px;color:#888;">圃場記録のあるカテゴリがありません</span>'}</div>`;
           secondaryBtn = `<button type="button" onclick="showAfterWorkSaveContinueModal_({ data: window._afterSaveWorkMeta || {}, polyIds: window._afterSaveNextPolyIds || [] })" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">戻る</button>`;
-        } else if (step === 'crop') {
+        } else if (effectiveStep === 'crop') {
           stepBody = `
             <div style="font-size:15px; font-weight:bold; color:#2E7D32; margin-bottom:8px;">🌱 作物を選んでください</div>
             <div style="font-size:12px; color:#666; margin-bottom:8px;">カテゴリ: <b>${String(catLabel).replace(/</g, '&lt;')}</b></div>
             <div style="display:flex; flex-wrap:wrap; gap:8px;">${cropChips}</div>`;
           secondaryBtn = `<button type="button" onclick="setAfterSavePickerStep_('category')" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-top:10px;">← カテゴリに戻る</button>`;
-        } else if (step === 'work') {
+        } else if (effectiveStep === 'work') {
           stepBody = `
             <div style="font-size:15px; font-weight:bold; color:#E65100; margin-bottom:8px;">🚜 作業名を選んでください</div>
             <div style="font-size:12px; color:#666; margin-bottom:8px; line-height:1.4;">カテゴリ: <b>${String(catLabel).replace(/</g, '&lt;')}</b>　作物: <b>${String(cropLabel).replace(/</g, '&lt;')}</b></div>
@@ -18714,9 +18998,12 @@ function createSignboardMarker(name, pos, icon, id) {
 
           window._workAssocStatsCache = null;
 
+          let consumedPendingNext = false;
           if (!isEditBtn && recordTypeSnap === 'work' && data
               && typeof window.consumePendingNextWorkIfMatched_ === 'function') {
-            try { window.consumePendingNextWorkIfMatched_(data); } catch (e) {}
+            try {
+              consumedPendingNext = !!window.consumePendingNextWorkIfMatched_(data);
+            } catch (e) {}
           }
 
           if (typeof window.showRecordSyncToast === 'function') {
@@ -18737,17 +19024,25 @@ function createSignboardMarker(name, pos, icon, id) {
               window.openWorkRecordWithSpecialSet();
             } else {
               window._linkedSpecialWorkSet = null;
-              if (typeof window.showAfterWorkSaveContinueModal_ === 'function') {
+              if (consumedPendingNext && typeof window.showAfterWorkSaveCloseOnlyModal_ === 'function') {
+                window.showAfterWorkSaveCloseOnlyModal_({ data: data });
+              } else if (typeof window.showAfterWorkSaveContinueModal_ === 'function') {
                 window.showAfterWorkSaveContinueModal_({ data: data, polyIds: targetIdsSnap });
               }
             }
           } else if (clearingLinkedAfterFollowUp) {
             window._linkedSpecialWorkSet = null;
-            if (typeof window.showAfterWorkSaveContinueModal_ === 'function') {
+            if (consumedPendingNext && typeof window.showAfterWorkSaveCloseOnlyModal_ === 'function') {
+              window.showAfterWorkSaveCloseOnlyModal_({ data: data });
+            } else if (typeof window.showAfterWorkSaveContinueModal_ === 'function') {
               window.showAfterWorkSaveContinueModal_({ data: data, polyIds: targetIdsSnap });
             }
-          } else if (!isEditBtn && recordTypeSnap === 'work' && typeof window.showAfterWorkSaveContinueModal_ === 'function') {
-            window.showAfterWorkSaveContinueModal_({ data: data, polyIds: targetIdsSnap });
+          } else if (!isEditBtn && recordTypeSnap === 'work') {
+            if (consumedPendingNext && typeof window.showAfterWorkSaveCloseOnlyModal_ === 'function') {
+              window.showAfterWorkSaveCloseOnlyModal_({ data: data });
+            } else if (typeof window.showAfterWorkSaveContinueModal_ === 'function') {
+              window.showAfterWorkSaveContinueModal_({ data: data, polyIds: targetIdsSnap });
+            }
           }
           if (typeof window.refreshClockOutNudgeUI_ === 'function') {
             setTimeout(() => { try { window.refreshClockOutNudgeUI_(); } catch (e) {} }, 80);

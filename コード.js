@@ -73,6 +73,7 @@ function doPost(e) {
     else if (action === "getSowingProgress") result = getSowingProgress(params);
     else if (action === "getCurrentSowingPlanOptions") result = getCurrentSowingPlanOptions(params);
     else if (action === "getSowingNurseryFormOptions") result = getSowingNurseryFormOptions(params);
+    else if (action === "manageCultivationListOption") result = manageCultivationListOption(params);
     else if (action === "saveSowingRecord") result = saveSowingRecord(params);
     else if (action === "getCropWorkProgressSummary") result = getCropWorkProgressSummary(params);
     else if (action === "getHarvestingFieldsSummary") result = getHarvestingFieldsSummary(params);
@@ -8095,11 +8096,11 @@ function addMachineToSign(params) {
 
   let photo1Url = params.photo || "";
   let photo2Url = params.photo2 || "";
+  // photoBase64 と photos[0] は同じ写真の二重指定になりやすいので、片方だけ保存する
   if (params.photoBase64) {
     const u = saveNoukiMachinePhoto_({ base64: params.photoBase64, filename: params.photoFilename || "photo.jpg" });
     if (u) photo1Url = u;
-  }
-  if (params.photos && params.photos.length > 0) {
+  } else if (params.photos && params.photos.length > 0) {
     const u = saveNoukiMachinePhoto_(params.photos[0]);
     if (u) photo1Url = u;
   }
@@ -8688,11 +8689,11 @@ function editMachineInMaster(params) {
   let photo2 = existing.photo2 || '';
   if (params.clearPhoto) photo = '';
   if (params.clearPhoto2) photo2 = '';
+  // photoBase64 と photos[0] の二重アップロードを防止
   if (params.photoBase64) {
     const u = saveNoukiMachinePhoto_({ base64: params.photoBase64, filename: params.photoFilename || 'machine.jpg' });
     if (u) photo = u;
-  }
-  if (params.photos && params.photos[0]) {
+  } else if (params.photos && params.photos[0]) {
     const u = saveNoukiMachinePhoto_(params.photos[0]);
     if (u) photo = u;
   }
@@ -12887,25 +12888,32 @@ function getSowingNurseryFormOptions(params) {
   const locationCategories = Object.keys(catMap).sort(function(a, b) {
     return String(a).localeCompare(String(b), 'ja');
   }).map(function(cat) {
-    const plots = catMap[cat].map(function(n) {
-      return {
-        id: n.id || '',
-        name: n.name || '',
-        direction: n.direction || '',
-        polyName: n.polyName || '',
-        note: n.note || ''
-      };
-    }).sort(function(a, b) {
-      return String(a.name).localeCompare(String(b.name), 'ja');
-    });
+    const rows = catMap[cat] || [];
+    const plotMap = {};
     const directions = [];
     const dirSeen = {};
-    plots.forEach(function(p) {
-      const d = String(p.direction || '').trim();
-      if (!d || dirSeen[d]) return;
-      dirSeen[d] = true;
-      directions.push(d);
+    rows.forEach(function(n) {
+      const d = String(n.direction || '').trim();
+      if (d && !dirSeen[d]) { dirSeen[d] = true; directions.push(d); }
+      const pname = String(n.name || '').trim();
+      if (!pname) return;
+      if (!plotMap[pname]) {
+        plotMap[pname] = {
+          id: n.id || '',
+          name: pname,
+          direction: d,
+          polyName: n.polyName || '',
+          note: n.note || '',
+          dirs: []
+        };
+      }
+      if (d && plotMap[pname].dirs.indexOf(d) < 0) plotMap[pname].dirs.push(d);
+      if (!plotMap[pname].id && n.id) plotMap[pname].id = n.id;
     });
+    const plots = Object.keys(plotMap).sort(function(a, b) {
+      return String(a).localeCompare(String(b), 'ja');
+    }).map(function(k) { return plotMap[k]; });
+    directions.sort(function(a, b) { return String(a).localeCompare(String(b), 'ja'); });
     return { name: cat, plots: plots, directions: directions };
   });
 
@@ -12937,11 +12945,104 @@ function getSowingNurseryFormOptions(params) {
     crops: crops,
     locationCategories: locationCategories,
     nurseryLocations: nurseryLocations,
+    holesOptions: (function() {
+      var holesOptions = [72, 128, 200, 288];
+      try {
+        var master = getCultivationMaster();
+        if (master && Array.isArray(master.holes)) {
+          master.holes.forEach(function(h) {
+            var n = Number(h);
+            if (!isFinite(n) || n < 0) return;
+            if (holesOptions.indexOf(n) < 0) holesOptions.push(n);
+          });
+          holesOptions.sort(function(a, b) { return a - b; });
+        }
+      } catch (eHoles) {}
+      return holesOptions;
+    })(),
     cropCultSettings: cropCultSettings
   };
 }
 
 /** スケジュール画面などから播種・育苗記録を直接追加 */
+/**
+ * 栽培計画マスタの穴数などの選択肢を追加・編集・削除
+ * params: { field:'holes', manageAction:'add'|'edit'|'delete', value, oldValue?, userName? }
+ */
+function manageCultivationListOption(params) {
+  params = params || {};
+  const field = String(params.field || '').trim();
+  const manageAction = String(params.manageAction || '').trim();
+  const value = params.value;
+  const oldValue = params.oldValue;
+  const userName = String(params.userName || '').trim() || 'ユーザー';
+  if (field !== 'holes') throw new Error('未対応のフィールドです: ' + field);
+
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('栽培計画マスタ');
+  if (!sheet) {
+    sheet = ss.insertSheet('栽培計画マスタ');
+    sheet.appendRow(['作物', '品種', '穴数', '条数', '株間', '畝間', '収穫係数', '定植面積', '1苗当たり収量', '1P当たり入り数']);
+  }
+  const data = sheet.getDataRange().getValues();
+  const col = 2; // 穴数
+
+  if (manageAction === 'add') {
+    const n = Number(value);
+    if (!isFinite(n) || n < 0) throw new Error('穴数が不正です');
+    let exists = false;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][col]) === String(n)) { exists = true; break; }
+    }
+    if (!exists) {
+      sheet.appendRow(['', '', n, '', '', '', '', '', '', '']);
+      writeLog(userName, 'マスタ追加', String(n), '対象: 栽培計画マスタ / 穴数');
+    }
+  } else if (manageAction === 'edit') {
+    const n = Number(value);
+    const old = Number(oldValue);
+    if (!isFinite(n) || n < 0) throw new Error('穴数が不正です');
+    let changed = 0;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][col]) === String(old)) {
+        sheet.getRange(i + 1, col + 1).setValue(n);
+        changed++;
+      }
+    }
+    if (!changed) sheet.appendRow(['', '', n, '', '', '', '', '', '', '']);
+    writeLog(userName, 'マスタ編集', String(old) + '→' + String(n), '対象: 栽培計画マスタ / 穴数');
+  } else if (manageAction === 'delete') {
+    const n = Number(value);
+    for (let i = data.length - 1; i >= 1; i--) {
+      if (String(data[i][col]) === String(n)) {
+        const row = data[i];
+        const other = [0, 1, 3, 4, 5, 6, 7, 8, 9].some(function(ci) {
+          return row[ci] !== '' && row[ci] != null;
+        });
+        if (!other) sheet.deleteRow(i + 1);
+        else sheet.getRange(i + 1, col + 1).setValue('');
+      }
+    }
+    writeLog(userName, 'マスタ削除', String(n), '対象: 栽培計画マスタ / 穴数');
+  } else {
+    throw new Error('未対応の操作です: ' + manageAction);
+  }
+
+  let holesOptions = [72, 128, 200, 288];
+  try {
+    const master = getCultivationMaster();
+    if (master && Array.isArray(master.holes)) {
+      master.holes.forEach(function(h) {
+        const n = Number(h);
+        if (!isFinite(n) || n < 0) return;
+        if (holesOptions.indexOf(n) < 0) holesOptions.push(n);
+      });
+      holesOptions.sort(function(a, b) { return a - b; });
+    }
+  } catch (e2) {}
+  return { success: true, holesOptions: holesOptions };
+}
+
 function saveSowingRecord(params) {
   params = params || {};
   const userName = String(params.userName || '').trim() || 'ユーザー';

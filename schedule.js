@@ -2462,10 +2462,11 @@ async function fetchWeatherAndUpdateUI() {
 
       window.switchScheduleView = function(mode) {
         mode = mode || 'tasks';
+        // 依頼作業タブは廃止。誤って指定された場合は作業一覧へ
+        if (mode === 'outsource') mode = 'tasks';
         window._scheduleViewMode = mode;
-        ['tasks', 'outsource', 'harvest', 'field', 'tag'].forEach(function(m) {
+        ['tasks', 'harvest', 'field', 'tag'].forEach(function(m) {
           const tabId = (m === 'tasks') ? 'schedTabTasks'
-            : (m === 'outsource') ? 'schedTabOutsource'
             : (m === 'harvest') ? 'schedTabHarvest'
             : (m === 'field') ? 'schedTabField'
             : 'schedTabTag';
@@ -2473,12 +2474,10 @@ async function fetchWeatherAndUpdateUI() {
           if (tab) tab.classList.toggle('active', m === mode);
         });
         const tasksEl = document.getElementById('scheduleViewTasks');
-        const outsourceEl = document.getElementById('scheduleViewOutsource');
         const harvestEl = document.getElementById('scheduleViewHarvest');
         const fieldEl = document.getElementById('scheduleViewFieldProgress');
         const tagEl = document.getElementById('scheduleViewTagProgress');
         if (tasksEl) tasksEl.style.display = (mode === 'tasks') ? 'block' : 'none';
-        if (outsourceEl) outsourceEl.style.display = (mode === 'outsource') ? 'block' : 'none';
         if (harvestEl) harvestEl.style.display = (mode === 'harvest') ? 'block' : 'none';
         if (fieldEl) fieldEl.style.display = (mode === 'field') ? 'block' : 'none';
         if (tagEl) tagEl.style.display = (mode === 'tag') ? 'block' : 'none';
@@ -2486,26 +2485,18 @@ async function fetchWeatherAndUpdateUI() {
         if (bulkBar) bulkBar.style.display = (mode === 'tasks') ? 'flex' : 'none';
         const addBtn = document.getElementById('scheduleHeaderAddBtn');
         if (addBtn) {
-          if (mode === 'outsource') {
-            addBtn.textContent = '＋依頼';
-            addBtn.style.background = '#1565c0';
-          } else {
-            addBtn.textContent = '＋作業';
-            addBtn.style.background = '#2e7d32';
-          }
+          addBtn.textContent = '＋作業';
+          addBtn.style.background = '#2e7d32';
         }
         const titleEl = document.getElementById('tableDeptName');
         if (titleEl) {
-          if (mode === 'outsource') titleEl.textContent = '依頼作業';
-          else if (mode === 'harvest') titleEl.textContent = '収穫中の畑';
+          if (mode === 'harvest') titleEl.textContent = '収穫中の畑';
           else if (mode === 'field') titleEl.textContent = '圃場別進捗';
           else if (mode === 'tag') titleEl.textContent = 'TAG別進捗';
           else titleEl.textContent = currentDept;
         }
         if (mode === 'tasks') {
           renderScheduleTasksTable_();
-        } else if (mode === 'outsource') {
-          renderOutsourceWorkTable_();
         } else if (mode === 'harvest') {
           loadHarvestingFieldsView_();
         } else {
@@ -3287,9 +3278,13 @@ async function fetchWeatherAndUpdateUI() {
       };
 
       window.openOutsourceWorkTable = function() {
-        const modal = document.getElementById('scheduleModal');
-        if (modal) modal.style.display = 'flex';
-        switchScheduleView('outsource');
+        // 依頼作業タブ廃止のため作業一覧を開く
+        if (typeof window.openScheduleTable === 'function') window.openScheduleTable();
+        else {
+          const modal = document.getElementById('scheduleModal');
+          if (modal) modal.style.display = 'flex';
+          switchScheduleView('tasks');
+        }
       };
 
       window.completeOutsourceFromList = async function(sheetRow, scheduleKey, workName, fieldName, cropName) {
@@ -3332,28 +3327,28 @@ async function fetchWeatherAndUpdateUI() {
       };
 
       window.onAddWorkKindChange = function() {
-        const kind = (document.querySelector('input[name="addWorkKind"]:checked') || {}).value || 'internal';
+        const kindEl = document.getElementById('addWorkKind');
+        const kind = (kindEl && kindEl.value) || 'internal';
         const vendorWrap = document.getElementById('addWorkVendorWrap');
         const personLabel = document.getElementById('addWorkPersonLabel');
         const btn = document.getElementById('addWorkSubmitBtn');
         const title = document.getElementById('addWorkModalTitle');
-        if (vendorWrap) vendorWrap.style.display = kind === 'outsource' ? 'block' : 'none';
-        if (personLabel) personLabel.textContent = kind === 'outsource' ? '👤 依頼者' : '👤 担当者';
+        if (vendorWrap) vendorWrap.style.display = 'none';
+        if (personLabel) personLabel.textContent = '👤 担当者';
         if (btn) {
-          btn.textContent = kind === 'outsource' ? '依頼作業一覧へ登録' : '作業一覧へ登録';
-          btn.style.background = kind === 'outsource' ? '#1565c0' : '#2e7d32';
+          btn.textContent = '作業一覧へ登録';
+          btn.style.background = '#2e7d32';
         }
-        if (title) title.textContent = kind === 'outsource' ? '＋ 依頼作業を追加（外注）' : '＋ 作業を追加（自社）';
+        if (title) title.textContent = '＋ 作業を追加';
+        if (kindEl) kindEl.value = 'internal';
       };
 
       window.openAddWorkModal = function(defaultKind) {
         const modal = document.getElementById('addWorkModal');
         if (!modal) return;
         populateAddWorkFieldSelect_();
-        const kind = defaultKind === 'outsource' ? 'outsource' : 'internal';
-        document.querySelectorAll('input[name="addWorkKind"]').forEach(r => {
-          r.checked = r.value === kind;
-        });
+        const kindEl = document.getElementById('addWorkKind');
+        if (kindEl) kindEl.value = 'internal';
         onAddWorkKindChange();
         ['addWorkName', 'addWorkVendor', 'addWorkCrop', 'addWorkHours'].forEach(id => {
           const el = document.getElementById(id);
@@ -3381,7 +3376,6 @@ async function fetchWeatherAndUpdateUI() {
       window.submitAddWorkFromModal = async function() {
         const btn = document.getElementById('addWorkSubmitBtn');
         const resDiv = document.getElementById('addWorkResult');
-        const kind = (document.querySelector('input[name="addWorkKind"]:checked') || {}).value || 'internal';
         const workName = (document.getElementById('addWorkName')?.value || '').trim();
         if (!workName) {
           if (resDiv) { resDiv.textContent = '作業名を入力してください'; resDiv.style.color = '#c62828'; }
@@ -3393,36 +3387,24 @@ async function fetchWeatherAndUpdateUI() {
         const polyId = selectedOpt ? (selectedOpt.dataset.polyId || '') : '';
         const cropName = (document.getElementById('addWorkCrop')?.value || '').trim();
         const person = (document.getElementById('addWorkPerson')?.value || '').trim();
-        const vendor = (document.getElementById('addWorkVendor')?.value || '').trim();
         const schedDate = document.getElementById('addWorkSchedDate')?.value || '';
         const deadline = document.getElementById('addWorkDeadline')?.value || '';
         const hours = (document.getElementById('addWorkHours')?.value || '').trim();
         const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
         if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
         try {
-          if (kind === 'outsource') {
-            await callGAS('addOutsourceWorkRequest', {
-              workName, fieldName, cropName, vendor, schedDate, deadline, hours,
-              requester: person, person, polyId, userName
-            });
-            if (resDiv) { resDiv.textContent = '依頼作業一覧に登録しました'; resDiv.style.color = '#1565c0'; }
-            closeAddWorkModal();
-            await refreshOutsourceWorks_();
-            openOutsourceWorkTable();
-          } else {
-            await callGAS('addWorkSchedule', {
-              workName, fieldName, cropName, person, schedDate, deadline, hours, polyId, userName
-            });
-            if (resDiv) { resDiv.textContent = '作業一覧に登録しました'; resDiv.style.color = '#2e7d32'; }
-            closeAddWorkModal();
-            const data = await callGAS('getScheduleData');
-            if (data) {
-              localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
-              globalSchedules = data.activeSchedules || [];
-              if (typeof updateMapVisuals === 'function') updateMapVisuals();
-            }
-            openScheduleTable();
+          await callGAS('addWorkSchedule', {
+            workName, fieldName, cropName, person, schedDate, deadline, hours, polyId, userName
+          });
+          if (resDiv) { resDiv.textContent = '作業一覧に登録しました'; resDiv.style.color = '#2e7d32'; }
+          closeAddWorkModal();
+          const data = await callGAS('getScheduleData');
+          if (data) {
+            localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
+            globalSchedules = data.activeSchedules || [];
+            if (typeof updateMapVisuals === 'function') updateMapVisuals();
           }
+          openScheduleTable();
         } catch (e) {
           if (resDiv) { resDiv.textContent = '登録失敗: ' + (e.message || e); resDiv.style.color = '#c62828'; }
         } finally {
@@ -3432,9 +3414,8 @@ async function fetchWeatherAndUpdateUI() {
           }
         }
       };
-
       window._sowingNurseryState = window._sowingNurseryState || {
-        tab: 'progress',
+        tab: 'records',
         year: '',
         data: null,
         showAddForm: false,
@@ -3445,7 +3426,7 @@ async function fetchWeatherAndUpdateUI() {
       window.escSowingNurseryHtml_ = (v) => String(v == null ? '' : v).replace(/</g, '&lt;').replace(/"/g, '&quot;');
 
       window.syncSowingNurseryTabButtons_ = () => {
-        const tab = (window._sowingNurseryState && window._sowingNurseryState.tab) || 'progress';
+        const tab = (window._sowingNurseryState && window._sowingNurseryState.tab) || 'records';
         const progressBtn = document.getElementById('sowingNurseryTabProgress');
         const recordsBtn = document.getElementById('sowingNurseryTabRecords');
         const active = { color: '#6a1b9a', borderBottom: '3px solid #6a1b9a' };
@@ -3467,7 +3448,283 @@ async function fetchWeatherAndUpdateUI() {
         window.renderSowingNurseryBody_();
       };
 
-      window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._sowingNurseryState.formOptions) || null;
+            window.SNR_DEFAULT_HOLES_ = [72, 128, 200, 288];
+      window.SNR_HOLES_LS_KEY_ = 'snrHolesOptions';
+      window.SNR_HOLES_HIDDEN_KEY_ = 'snrHolesHidden';
+
+      window.snrChipStyle_ = (active, tone) => {
+        const tones = {
+          crop:  { on: '#6a1b9a', bd: '#4a148c', offBg: '#fff', offBd: '#ce93d8', offFg: '#6a1b9a' },
+          in:    { on: '#2e7d32', bd: '#1b5e20', offBg: '#e8f5e9', offBd: '#81c784', offFg: '#1b5e20' },
+          soon:  { on: '#ef6c00', bd: '#e65100', offBg: '#fff3e0', offBd: '#ffb74d', offFg: '#e65100' },
+          after: { on: '#546e7a', bd: '#37474f', offBg: '#eceff1', offBd: '#90a4ae', offFg: '#37474f' },
+          none:  { on: '#7b1fa2', bd: '#4a148c', offBg: '#f3e5f5', offBd: '#ce93d8', offFg: '#6a1b9a' }
+        };
+        const t = tones[tone] || tones.crop;
+        if (active) {
+          return 'display:inline-flex;align-items:center;gap:4px;padding:7px 12px;border-radius:999px;border:1.5px solid ' + t.bd + ';background:' + t.on + ';color:#fff;font-size:12px;font-weight:bold;cursor:pointer;line-height:1.2;';
+        }
+        return 'display:inline-flex;align-items:center;gap:4px;padding:7px 12px;border-radius:999px;border:1.5px solid ' + t.offBd + ';background:' + t.offBg + ';color:' + t.offFg + ';font-size:12px;font-weight:normal;cursor:pointer;line-height:1.2;';
+      };
+
+      window.loadSnrHolesOptions_ = () => {
+        const opts = window.getSowingNurseryFormOpts_() || {};
+        const fromServer = Array.isArray(opts.holesOptions) ? opts.holesOptions : [];
+        let fromLs = [], hidden = [];
+        try { fromLs = JSON.parse(localStorage.getItem(window.SNR_HOLES_LS_KEY_) || '[]'); } catch (e) { fromLs = []; }
+        try { hidden = JSON.parse(localStorage.getItem(window.SNR_HOLES_HIDDEN_KEY_) || '[]'); } catch (e2) { hidden = []; }
+        const hiddenSet = {};
+        (hidden || []).forEach(function(v) { hiddenSet[String(Number(v))] = true; });
+        const seen = {}, out = [];
+        const push = (v) => {
+          const n = Number(v);
+          if (!isFinite(n) || n < 0) return;
+          const key = String(n);
+          if (seen[key] || hiddenSet[key]) return;
+          seen[key] = true;
+          out.push(n);
+        };
+        (window.SNR_DEFAULT_HOLES_ || []).forEach(push);
+        fromServer.forEach(push);
+        (fromLs || []).forEach(push);
+        out.sort(function(a, b) { return a - b; });
+        return out;
+      };
+
+      window.rememberSnrHoleOption_ = (val) => {
+        const n = Number(val);
+        if (!isFinite(n) || n < 0) return;
+        let local = [];
+        try { local = JSON.parse(localStorage.getItem(window.SNR_HOLES_LS_KEY_) || '[]'); } catch (e) { local = []; }
+        if (!local.some(function(v) { return Number(v) === n; })) {
+          local.push(n);
+          local.sort(function(a, b) { return Number(a) - Number(b); });
+          localStorage.setItem(window.SNR_HOLES_LS_KEY_, JSON.stringify(local));
+        }
+        let hidden = [];
+        try { hidden = JSON.parse(localStorage.getItem(window.SNR_HOLES_HIDDEN_KEY_) || '[]'); } catch (e2) { hidden = []; }
+        hidden = (hidden || []).filter(function(v) { return Number(v) !== n; });
+        localStorage.setItem(window.SNR_HOLES_HIDDEN_KEY_, JSON.stringify(hidden));
+      };
+
+      window.hideSnrHoleOption_ = (val) => {
+        const n = Number(val);
+        let hidden = [];
+        try { hidden = JSON.parse(localStorage.getItem(window.SNR_HOLES_HIDDEN_KEY_) || '[]'); } catch (e) { hidden = []; }
+        if (!hidden.some(function(v) { return Number(v) === n; })) hidden.push(n);
+        localStorage.setItem(window.SNR_HOLES_HIDDEN_KEY_, JSON.stringify(hidden));
+        let local = [];
+        try { local = JSON.parse(localStorage.getItem(window.SNR_HOLES_LS_KEY_) || '[]'); } catch (e2) { local = []; }
+        local = (local || []).filter(function(v) { return Number(v) !== n; });
+        localStorage.setItem(window.SNR_HOLES_LS_KEY_, JSON.stringify(local));
+      };
+
+      window.refreshSnrTraysSelect_ = (prefer) => {
+        const sel = document.getElementById('snr_trays');
+        const custom = document.getElementById('snr_trays_custom');
+        if (!sel) return;
+        const keep = (prefer != null && prefer !== '') ? String(prefer) : String(sel.value || '');
+        if (custom) { custom.style.display = 'none'; custom.value = ''; }
+        let html = '<option value="">選択してください</option>';
+        for (let i = 1; i <= 100; i++) html += '<option value="' + i + '">' + i + '枚</option>';
+        html += '<option value="__custom__">手入力…</option>';
+        sel.innerHTML = html;
+        if (keep && keep !== '__custom__') {
+          if (!Array.from(sel.options).some(function(o) { return o.value === keep; })) {
+            const opt = document.createElement('option');
+            opt.value = keep;
+            opt.textContent = keep + '枚';
+            const customOpt = Array.from(sel.options).find(function(o) { return o.value === '__custom__'; });
+            if (customOpt) sel.insertBefore(opt, customOpt);
+            else sel.appendChild(opt);
+          }
+          sel.value = keep;
+        }
+      };
+
+      window.refreshSnrHolesSelect_ = (prefer) => {
+        const sel = document.getElementById('snr_holes');
+        const custom = document.getElementById('snr_holes_custom');
+        if (!sel) return;
+        const keep = (prefer != null && prefer !== '') ? String(prefer) : String(sel.value || '');
+        if (custom) { custom.style.display = 'none'; custom.value = ''; }
+        const list = window.loadSnrHolesOptions_();
+        let html = '<option value="">選択してください</option>';
+        list.forEach(function(n) { html += '<option value="' + n + '">' + n + '</option>'; });
+        html += '<option value="__custom__">手入力…</option>';
+        sel.innerHTML = html;
+        if (keep && keep !== '__custom__') {
+          if (!Array.from(sel.options).some(function(o) { return o.value === keep; })) {
+            const opt = document.createElement('option');
+            opt.value = keep;
+            opt.textContent = keep;
+            const customOpt = Array.from(sel.options).find(function(o) { return o.value === '__custom__'; });
+            if (customOpt) sel.insertBefore(opt, customOpt);
+            else sel.appendChild(opt);
+          }
+          sel.value = keep;
+        }
+      };
+
+      window.onSnrTraysSelectChange_ = () => {
+        const sel = document.getElementById('snr_trays');
+        const custom = document.getElementById('snr_trays_custom');
+        if (!sel || !custom) return;
+        if (sel.value === '__custom__') { custom.style.display = 'block'; custom.focus(); }
+        else { custom.style.display = 'none'; custom.value = ''; }
+      };
+
+      window.onSnrHolesSelectChange_ = () => {
+        const sel = document.getElementById('snr_holes');
+        const custom = document.getElementById('snr_holes_custom');
+        if (!sel || !custom) return;
+        if (sel.value === '__custom__') { custom.style.display = 'block'; custom.focus(); }
+        else { custom.style.display = 'none'; custom.value = ''; }
+      };
+
+      window.getSnrTraysValue_ = () => {
+        const sel = document.getElementById('snr_trays');
+        const custom = document.getElementById('snr_trays_custom');
+        if (!sel) return NaN;
+        if (sel.value === '__custom__') return Number(custom && custom.value);
+        return Number(sel.value);
+      };
+
+      window.getSnrHolesValue_ = () => {
+        const sel = document.getElementById('snr_holes');
+        const custom = document.getElementById('snr_holes_custom');
+        if (!sel) return '';
+        if (sel.value === '__custom__') return custom ? String(custom.value || '').trim() : '';
+        return sel.value;
+      };
+
+      window.setSnrHolesValue_ = (val) => {
+        if (val === '' || val == null) { window.refreshSnrHolesSelect_(''); return; }
+        window.rememberSnrHoleOption_(val);
+        window.refreshSnrHolesSelect_(val);
+      };
+
+      window.snrAddHoleOption_ = async () => {
+        const input = prompt('登録する穴数を入力してください', '');
+        if (input == null || String(input).trim() === '') return;
+        const n = Number(input);
+        if (!isFinite(n) || n < 0 || !Number.isInteger(n)) { alert('0以上の整数を入力してください'); return; }
+        window.rememberSnrHoleOption_(n);
+        try {
+          await callGAS('manageCultivationListOption', {
+            field: 'holes', manageAction: 'add', value: n,
+            userName: localStorage.getItem('passionMapUserName') || 'ユーザー'
+          });
+        } catch (e) { console.warn(e); }
+        window.setSnrHolesValue_(n);
+      };
+
+      window.snrEditHoleOption_ = async () => {
+        const sel = document.getElementById('snr_holes');
+        if (!sel || !sel.value || sel.value === '__custom__') { alert('編集する穴数を選択してください'); return; }
+        const oldVal = Number(sel.value);
+        const input = prompt('穴数を編集', String(oldVal));
+        if (input == null || String(input).trim() === '') return;
+        const n = Number(input);
+        if (!isFinite(n) || n < 0 || !Number.isInteger(n)) { alert('0以上の整数を入力してください'); return; }
+        window.hideSnrHoleOption_(oldVal);
+        window.rememberSnrHoleOption_(n);
+        try {
+          await callGAS('manageCultivationListOption', {
+            field: 'holes', manageAction: 'edit', oldValue: oldVal, value: n,
+            userName: localStorage.getItem('passionMapUserName') || 'ユーザー'
+          });
+        } catch (e) { console.warn(e); }
+        window.setSnrHolesValue_(n);
+      };
+
+      window.snrDeleteHoleOption_ = async () => {
+        const sel = document.getElementById('snr_holes');
+        if (!sel || !sel.value || sel.value === '__custom__') { alert('削除する穴数を選択してください'); return; }
+        const val = Number(sel.value);
+        if (!confirm('穴数「' + val + '」を選択肢から削除しますか？')) return;
+        window.hideSnrHoleOption_(val);
+        try {
+          await callGAS('manageCultivationListOption', {
+            field: 'holes', manageAction: 'delete', value: val,
+            userName: localStorage.getItem('passionMapUserName') || 'ユーザー'
+          });
+        } catch (e) { console.warn(e); }
+        window.refreshSnrHolesSelect_('');
+      };
+
+      window.renderSnrCropChips_ = (preferName) => {
+        const box = document.getElementById('snr_crop_chips');
+        const hidden = document.getElementById('snr_crop');
+        if (!box || !hidden) return;
+        const crops = ((window.getSowingNurseryFormOpts_() || {}).crops) || [];
+        const esc = window.escSowingNurseryHtml_;
+        const current = (preferName != null) ? preferName : (hidden.value || '');
+        if (preferName != null) hidden.value = preferName;
+        box.innerHTML = crops.map(function(c) {
+          const active = String(c) === String(current);
+          const safe = String(c).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          return '<button type="button" onclick="selectSnrCropChip_(\\'' + safe + '\\')" style="' + window.snrChipStyle_(active, 'crop') + '">' + esc(c) + '</button>';
+        }).join('') || '<span style="font-size:12px;color:#888;">作物がありません。＋追加で登録できます</span>';
+      };
+
+      window.selectSnrCropChip_ = (crop) => {
+        const hidden = document.getElementById('snr_crop');
+        if (!hidden) return;
+        hidden.value = crop || '';
+        window.renderSnrCropChips_(crop);
+        if (typeof window.onSowingNurseryCropChange_ === 'function') window.onSowingNurseryCropChange_();
+      };
+
+      window.renderSnrTagChips_ = () => {
+        const box = document.getElementById('snr_tag_chips');
+        const hidden = document.getElementById('snr_tag');
+        if (!box) return;
+        const crop = (document.getElementById('snr_crop') || {}).value || '';
+        const esc = window.escSowingNurseryHtml_;
+        if (!crop) {
+          box.innerHTML = '<span style="font-size:12px;color:#888;">先に作物名を選択してください</span>';
+          if (hidden) hidden.value = '';
+          return;
+        }
+        const plans = window.getSowingNurseryPlansFiltered_(crop);
+        const current = hidden ? hidden.value : '';
+        const groups = [
+          { key: 'soon', label: '期間前', tone: 'soon' },
+          { key: 'in', label: '期間内', tone: 'in' },
+          { key: 'after', label: '期間外', tone: 'after' }
+        ];
+        let html = '<div style="margin-bottom:8px;"><button type="button" onclick="selectSnrTagChip_(\\'\\')" style="' + window.snrChipStyle_(!current, 'none') + '">TAGなし</button></div>';
+        groups.forEach(function(g) {
+          const items = plans.filter(function(p) { return String(p.phase || '') === g.key; });
+          if (!items.length) return;
+          html += '<div style="margin-bottom:8px;">';
+          html += '<div style="font-size:10px;font-weight:bold;color:#666;margin-bottom:4px;">' + g.label + '（' + items.length + '）</div>';
+          html += '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
+          items.forEach(function(p) {
+            const pid = String(p.planId || '');
+            const active = String(current) === pid;
+            const tag = p.tag || '(TAGなし)';
+            const variety = p.variety ? ' / ' + p.variety : '';
+            const remain = (p.remainTrays != null) ? ' 残' + p.remainTrays : '';
+            const safePid = pid.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            html += '<button type="button" title="' + esc(tag + variety + remain) + '" onclick="selectSnrTagChip_(\\'' + safePid + '\\')" style="' + window.snrChipStyle_(active, g.tone) + '">' + esc(tag) + (variety ? '<span style="opacity:.85;font-weight:normal;">' + esc(variety) + '</span>' : '') + '</button>';
+          });
+          html += '</div></div>';
+        });
+        if (!plans.length) html += '<div style="font-size:12px;color:#888;">この作物の予定TAGはありません（TAGなしで登録可）</div>';
+        box.innerHTML = html;
+      };
+
+      window.selectSnrTagChip_ = (planId) => {
+        const hidden = document.getElementById('snr_tag');
+        if (hidden) hidden.value = planId || '';
+        window.renderSnrTagChips_();
+        if (typeof window.onSowingNurseryTagChange_ === 'function') window.onSowingNurseryTagChange_();
+      };
+
+
+window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._sowingNurseryState.formOptions) || null;
 
       window.getSowingNurseryPlansFiltered_ = (crop) => {
         const opts = window.getSowingNurseryFormOpts_();
@@ -3478,16 +3735,15 @@ async function fetchWeatherAndUpdateUI() {
       };
 
       window.formatSowingNurseryPlanOption_ = (it) => {
-        const phaseMap = { in: '期間内', soon: 'まもなく', after: '期間後' };
+        const phaseMap = { in: '期間内', soon: '期間前', after: '期間外' };
         const phase = phaseMap[it.phase] || '';
         const tag = it.tag || '(TAGなし)';
         const variety = it.variety ? '／' + it.variety : '';
         const remain = (it.remainTrays != null && it.trays)
-          ? `／残${it.remainTrays}枚`
-          : (it.trays ? `／予定${it.trays}枚` : '');
-        return `${phase ? '[' + phase + '] ' : ''}${tag}${variety}${remain}`;
+          ? '／残' + it.remainTrays + '枚'
+          : (it.trays ? '／予定' + it.trays + '枚' : '');
+        return (phase ? '[' + phase + '] ' : '') + tag + variety + remain;
       };
-
       window.buildSowingNurseryAddFormHtml_ = () => {
         const esc = window.escSowingNurseryHtml_;
         const st = window._sowingNurseryState;
@@ -3503,19 +3759,17 @@ async function fetchWeatherAndUpdateUI() {
         })();
         const crops = opts.crops || [];
         const categories = opts.locationCategories || [];
-        const cropOpts = crops.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
         const catOpts = categories.map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('');
         return `<div id="sowingNurseryAddForm" style="border:none; padding:0; background:transparent;">
           <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px;">
-            <div>
-              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">作物名</label>
-              <div style="display:flex; gap:6px; align-items:center;">
-                <select id="snr_crop" class="form-input" style="margin:0; flex:1; min-width:0;" onchange="onSowingNurseryCropChange_()">
-                  <option value="">選択してください</option>${cropOpts}
-                </select>
+            <div style="grid-column:1 / -1;">
+              <div style="display:flex; gap:6px; align-items:center; margin-bottom:4px;">
+                <label style="font-size:11px; font-weight:bold; color:#555; margin:0;">作物名</label>
                 <button type="button" onclick="toggleSowingNurseryAddCropPanel_()" title="作物名を追加"
-                  style="flex-shrink:0; background:#6a1b9a; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋追加</button>
+                  style="margin-left:auto; background:#6a1b9a; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋追加</button>
               </div>
+              <input type="hidden" id="snr_crop" value="">
+              <div id="snr_crop_chips" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
               <div id="snr_add_crop_panel" style="display:none; margin-top:8px; padding:10px; background:#fff; border:1px dashed #ce93d8; border-radius:6px;">
                 <div style="font-size:11px; font-weight:bold; color:#6a1b9a; margin-bottom:8px;">作物名を新規追加（予定にない播種用）</div>
                 <div style="display:grid; gap:8px;">
@@ -3533,11 +3787,10 @@ async function fetchWeatherAndUpdateUI() {
                 </div>
               </div>
             </div>
-            <div>
-              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">TAG（現在の期間・任意）</label>
-              <select id="snr_tag" class="form-input" style="margin:0; width:100%;" onchange="onSowingNurseryTagChange_()">
-                <option value="">先に作物名を選択</option>
-              </select>
+            <div style="grid-column:1 / -1;">
+              <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">TAG（期間前・期間内・期間外）</label>
+              <input type="hidden" id="snr_tag" value="">
+              <div id="snr_tag_chips"></div>
             </div>
             <div>
               <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">品種名</label>
@@ -3560,22 +3813,14 @@ async function fetchWeatherAndUpdateUI() {
                     <input type="text" id="snr_new_loc_cat" class="form-input" style="margin:0; width:100%;" placeholder="例: ハウスA・育苗ハウス">
                   </div>
                   <div>
-                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">区画名（複数可）*</label>
-                    <textarea id="snr_new_plot" class="form-input" rows="4" style="margin:0; width:100%; resize:vertical;" placeholder="1行に1区画、またはカンマ区切り&#10;例:&#10;1列&#10;2列&#10;3列"></textarea>
-                    <div style="font-size:10px; color:#888; margin-top:4px;">改行・カンマ（,、）区切りで一括登録できます</div>
-                    <div style="display:flex; flex-wrap:wrap; gap:4px; align-items:center; margin-top:6px; font-size:10px; color:#555;">
-                      <span>連番生成:</span>
-                      <input type="number" id="snr_new_plot_from" class="form-input" style="margin:0; width:52px; padding:4px;" value="1" min="0">
-                      <span>〜</span>
-                      <input type="number" id="snr_new_plot_to" class="form-input" style="margin:0; width:52px; padding:4px;" value="10" min="0">
-                      <input type="text" id="snr_new_plot_suffix" class="form-input" style="margin:0; width:64px; padding:4px;" value="列" placeholder="接尾辞">
-                      <button type="button" onclick="fillSowingNurseryPlotRange_('snr_new_plot','snr_new_plot_from','snr_new_plot_to','snr_new_plot_suffix')"
-                        style="background:#ede7f6; color:#6a1b9a; border:1px solid #ce93d8; border-radius:4px; padding:4px 8px; font-size:10px; font-weight:bold; cursor:pointer;">反映</button>
-                    </div>
+                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">区画（複数可）*</label>
+                    <textarea id="snr_new_plot" class="form-input" rows="4" style="margin:0; width:100%; resize:vertical;" placeholder="1行に1つ、またはカンマ区切り&#10;例:&#10;1列&#10;2列&#10;3列"></textarea>
+                    <div style="font-size:10px; color:#888; margin-top:4px;">改行・カンマ（,、）区切りで一括登録</div>
                   </div>
                   <div>
-                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">方向（任意・全区画共通）</label>
-                    <input type="text" id="snr_new_dir" class="form-input" style="margin:0; width:100%;" placeholder="例: 東・南向き">
+                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">方向（複数可・任意）</label>
+                    <textarea id="snr_new_dir" class="form-input" rows="3" style="margin:0; width:100%; resize:vertical;" placeholder="1行に1つ、またはカンマ区切り&#10;例:&#10;東&#10;西&#10;南"></textarea>
+                    <div style="font-size:10px; color:#888; margin-top:4px;">区画×方向の組み合わせで登録されます</div>
                   </div>
                   <div style="display:flex; gap:6px;">
                     <button type="button" id="snr_add_loc_btn" onclick="submitAddSowingNurseryLocCategory_()"
@@ -3594,32 +3839,24 @@ async function fetchWeatherAndUpdateUI() {
                   <option value="">場所カテゴリを選択</option>
                 </select>
                 <button type="button" onclick="toggleSowingNurseryAddPlotPanel_()" title="このカテゴリに区画を追加"
-                  style="flex-shrink:0; background:#8e24aa; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋区画</button>
+                  style="flex-shrink:0; background:#8e24aa; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋区画/方向</button>
               </div>
               <div id="snr_add_plot_panel" style="display:none; margin-top:8px; padding:10px; background:#fff; border:1px dashed #ce93d8; border-radius:6px;">
-                <div style="font-size:11px; font-weight:bold; color:#6a1b9a; margin-bottom:8px;">区画を追加（選択中の場所カテゴリ）</div>
+                <div style="font-size:11px; font-weight:bold; color:#6a1b9a; margin-bottom:8px;">区画・方向を追加（選択中の場所カテゴリ）</div>
                 <div style="display:grid; gap:8px;">
                   <div>
-                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">区画名（複数可）*</label>
-                    <textarea id="snr_add_plot_name" class="form-input" rows="4" style="margin:0; width:100%; resize:vertical;" placeholder="1行に1区画、またはカンマ区切り&#10;例:&#10;4列&#10;5列&#10;6列"></textarea>
-                    <div style="font-size:10px; color:#888; margin-top:4px;">改行・カンマ（,、）区切りで一括登録できます</div>
-                    <div style="display:flex; flex-wrap:wrap; gap:4px; align-items:center; margin-top:6px; font-size:10px; color:#555;">
-                      <span>連番生成:</span>
-                      <input type="number" id="snr_add_plot_from" class="form-input" style="margin:0; width:52px; padding:4px;" value="1" min="0">
-                      <span>〜</span>
-                      <input type="number" id="snr_add_plot_to" class="form-input" style="margin:0; width:52px; padding:4px;" value="10" min="0">
-                      <input type="text" id="snr_add_plot_suffix" class="form-input" style="margin:0; width:64px; padding:4px;" value="列" placeholder="接尾辞">
-                      <button type="button" onclick="fillSowingNurseryPlotRange_('snr_add_plot_name','snr_add_plot_from','snr_add_plot_to','snr_add_plot_suffix')"
-                        style="background:#f3e5f5; color:#8e24aa; border:1px solid #ce93d8; border-radius:4px; padding:4px 8px; font-size:10px; font-weight:bold; cursor:pointer;">反映</button>
-                    </div>
+                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">区画（複数可）</label>
+                    <textarea id="snr_add_plot_name" class="form-input" rows="4" style="margin:0; width:100%; resize:vertical;" placeholder="1行に1つ、またはカンマ区切り&#10;例:&#10;4列&#10;5列&#10;6列"></textarea>
+                    <div style="font-size:10px; color:#888; margin-top:4px;">改行・カンマ（,、）区切りで一括登録</div>
                   </div>
                   <div>
-                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">方向（任意・全区画共通）</label>
-                    <input type="text" id="snr_add_plot_dir" class="form-input" style="margin:0; width:100%;" placeholder="例: 東">
+                    <label style="font-size:10px; color:#666; display:block; margin-bottom:2px;">方向（複数可・任意）</label>
+                    <textarea id="snr_add_plot_dir" class="form-input" rows="3" style="margin:0; width:100%; resize:vertical;" placeholder="1行に1つ、またはカンマ区切り&#10;例:&#10;東&#10;西"></textarea>
+                    <div style="font-size:10px; color:#888; margin-top:4px;">区画と方向の組み合わせで登録。方向だけなら既存区画に追加</div>
                   </div>
                   <div style="display:flex; gap:6px;">
                     <button type="button" id="snr_add_plot_btn" onclick="submitAddSowingNurseryPlot_()"
-                      style="flex:1; background:#8e24aa; color:#fff; border:none; border-radius:6px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer;">区画を登録</button>
+                      style="flex:1; background:#8e24aa; color:#fff; border:none; border-radius:6px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer;">区画・方向を登録</button>
                     <button type="button" onclick="toggleSowingNurseryAddPlotPanel_(false)"
                       style="background:#eee; color:#555; border:none; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer;">閉じる</button>
                   </div>
@@ -3639,11 +3876,19 @@ async function fetchWeatherAndUpdateUI() {
             </div>
             <div>
               <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">枚数</label>
-              <input type="number" id="snr_trays" class="form-input" style="margin:0; width:100%;" min="1" step="1" placeholder="枚">
+              <select id="snr_trays" class="form-input" style="margin:0; width:100%;" onchange="onSnrTraysSelectChange_()"></select>
+              <input type="number" id="snr_trays_custom" class="form-input" style="display:none; margin:6px 0 0; width:100%;" min="1" step="1" placeholder="枚数を手入力">
             </div>
             <div>
               <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">穴数</label>
-              <input type="number" id="snr_holes" class="form-input" style="margin:0; width:100%;" min="0" step="1" placeholder="TAG選択で自動">
+              <div style="display:flex; gap:6px; align-items:center;">
+                <select id="snr_holes" class="form-input" style="margin:0; flex:1; min-width:0;" onchange="onSnrHolesSelectChange_()"></select>
+                <button type="button" onclick="snrAddHoleOption_()" title="穴数を登録" style="flex-shrink:0; background:#6a1b9a; color:#fff; border:none; border-radius:6px; padding:7px 8px; font-size:11px; font-weight:bold; cursor:pointer;">＋</button>
+                <button type="button" onclick="snrEditHoleOption_()" title="編集" style="flex-shrink:0; background:#fff; color:#6a1b9a; border:1px solid #ce93d8; border-radius:6px; padding:7px 8px; font-size:11px; font-weight:bold; cursor:pointer;">編集</button>
+                <button type="button" onclick="snrDeleteHoleOption_()" title="削除" style="flex-shrink:0; background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:7px 8px; font-size:11px; font-weight:bold; cursor:pointer;">削除</button>
+              </div>
+              <input type="number" id="snr_holes_custom" class="form-input" style="display:none; margin:6px 0 0; width:100%;" min="0" step="1" placeholder="穴数を手入力">
+              <div style="font-size:10px; color:#888; margin-top:4px;">計画と同じ穴数候補（登録・編集・削除可）</div>
             </div>
           </div>
           <input type="hidden" id="snr_plan_id" value="">
@@ -3666,11 +3911,13 @@ async function fetchWeatherAndUpdateUI() {
         const body = document.getElementById('sowingNurseryAddModalBody');
         if (!body) return;
         body.innerHTML = window.buildSowingNurseryAddFormHtml_();
+        window.renderSnrCropChips_('');
+        window.refreshSnrTraysSelect_('');
+        window.refreshSnrHolesSelect_('');
         if (typeof window.refreshSowingNurseryTagOptions_ === 'function') {
           window.refreshSowingNurseryTagOptions_();
         }
       };
-
       window.openSowingNurseryAddForm_ = async () => {
         const st = window._sowingNurseryState;
         const modal = document.getElementById('sowingNurseryAddModal');
@@ -3692,6 +3939,9 @@ async function fetchWeatherAndUpdateUI() {
             includeDone: true
           });
           st.formOptions = res || { plans: [], crops: [], locationCategories: [] };
+          if (Array.isArray(st.formOptions.nurseryLocations)) {
+            st.formOptions.locationCategories = window.rebuildSowingNurseryLocCategories_(st.formOptions.nurseryLocations);
+          }
           if (st.showAddForm) window.renderSowingNurseryAddFormIntoModal_();
         } catch (e) {
           window.cancelSowingNurseryAddForm_();
@@ -3714,26 +3964,8 @@ async function fetchWeatherAndUpdateUI() {
       };
 
       window.refreshSowingNurseryTagOptions_ = () => {
-        const sel = document.getElementById('snr_tag');
-        const cropEl = document.getElementById('snr_crop');
-        if (!sel) return;
-        const crop = cropEl ? cropEl.value : '';
-        const plans = window.getSowingNurseryPlansFiltered_(crop);
-        const esc = window.escSowingNurseryHtml_;
-        if (!crop) {
-          sel.innerHTML = '<option value="">先に作物名を選択</option>';
-          return;
-        }
-        if (!plans.length) {
-          sel.innerHTML = '<option value="">予定なし（TAGなしで登録可）</option>';
-          return;
-        }
-        sel.innerHTML = '<option value="">TAGなし／手入力のみ</option>' + plans.map(p => {
-          const label = window.formatSowingNurseryPlanOption_(p);
-          return `<option value="${esc(p.planId || '')}" data-tag="${esc(p.tag || '')}">${esc(label)}</option>`;
-        }).join('');
+        window.renderSnrTagChips_();
       };
-
       window.applySowingNurseryCropList_ = (names, preferName) => {
         const st = window._sowingNurseryState;
         if (!st || !st.formOptions) return;
@@ -3749,20 +3981,12 @@ async function fetchWeatherAndUpdateUI() {
         });
         uniq.sort(function(a, b) { return String(a).localeCompare(String(b), 'ja'); });
         st.formOptions.crops = uniq;
-        const esc = window.escSowingNurseryHtml_;
-        const sel = document.getElementById('snr_crop');
-        if (sel) {
-          const keep = preferName || sel.value || '';
-          sel.innerHTML = '<option value="">選択してください</option>' + uniq.map(function(c) {
-            return `<option value="${esc(c)}">${esc(c)}</option>`;
-          }).join('');
-          if (keep && seen[keep]) sel.value = keep;
-        }
+        const keep = preferName || (document.getElementById('snr_crop') || {}).value || '';
+        window.renderSnrCropChips_(keep && seen[keep] ? keep : (preferName || ''));
         if (typeof window.onSowingNurseryCropChange_ === 'function') {
           window.onSowingNurseryCropChange_();
         }
       };
-
       window.toggleSowingNurseryAddCropPanel_ = (forceShow) => {
         const panel = document.getElementById('snr_add_crop_panel');
         if (!panel) return;
@@ -3815,45 +4039,39 @@ async function fetchWeatherAndUpdateUI() {
       };
 
       window.onSowingNurseryCropChange_ = () => {
+        const tagHidden = document.getElementById('snr_tag');
+        if (tagHidden) tagHidden.value = '';
         window.refreshSowingNurseryTagOptions_();
         const varietyEl = document.getElementById('snr_variety');
         const planIdEl = document.getElementById('snr_plan_id');
-        const holesEl = document.getElementById('snr_holes');
         const periodBox = document.getElementById('snr_period_box');
         if (varietyEl) varietyEl.value = '';
         if (planIdEl) planIdEl.value = '';
-        if (holesEl) {
-          const crop = (document.getElementById('snr_crop') || {}).value || '';
-          const settings = (window.getSowingNurseryFormOpts_() || {}).cropCultSettings || [];
-          const hit = settings.find(s => String(s.cropName || '') === crop);
-          holesEl.value = hit && hit.sowingHoles != null && hit.sowingHoles !== '' ? hit.sowingHoles : '';
-        }
+        const crop = (document.getElementById('snr_crop') || {}).value || '';
+        const settings = (window.getSowingNurseryFormOpts_() || {}).cropCultSettings || [];
+        const hit = settings.find(x => String(x.cropName || '') === crop);
+        const holesVal = hit && hit.sowingHoles != null && hit.sowingHoles !== '' ? hit.sowingHoles : '';
+        window.setSnrHolesValue_(holesVal);
         if (periodBox) periodBox.style.display = 'none';
       };
-
       window.onSowingNurseryTagChange_ = () => {
-        const sel = document.getElementById('snr_tag');
-        const planId = sel ? sel.value : '';
+        const planId = (document.getElementById('snr_tag') || {}).value || '';
         const plans = window.getSowingNurseryPlansFiltered_((document.getElementById('snr_crop') || {}).value || '');
         const plan = plans.find(p => String(p.planId || '') === String(planId)) || null;
         const varietyEl = document.getElementById('snr_variety');
         const planIdEl = document.getElementById('snr_plan_id');
-        const holesEl = document.getElementById('snr_holes');
-        const traysEl = document.getElementById('snr_trays');
         const periodBox = document.getElementById('snr_period_box');
         if (planIdEl) planIdEl.value = plan ? (plan.planId || '') : '';
         if (varietyEl && plan) varietyEl.value = plan.variety || '';
-        if (holesEl && plan && plan.holes != null && plan.holes !== '') {
-          holesEl.value = plan.holes;
-        } else if (holesEl && !holesEl.value) {
+        if (plan && plan.holes != null && plan.holes !== '') {
+          window.setSnrHolesValue_(plan.holes);
+        } else {
           const crop = (document.getElementById('snr_crop') || {}).value || '';
           const settings = (window.getSowingNurseryFormOpts_() || {}).cropCultSettings || [];
-          const hit = settings.find(s => String(s.cropName || '') === crop);
-          if (hit && hit.sowingHoles != null && hit.sowingHoles !== '') holesEl.value = hit.sowingHoles;
+          const hit = settings.find(x => String(x.cropName || '') === crop);
+          if (hit && hit.sowingHoles != null && hit.sowingHoles !== '') window.setSnrHolesValue_(hit.sowingHoles);
         }
-        if (traysEl && !traysEl.value && plan && plan.remainTrays > 0) {
-          traysEl.value = plan.remainTrays;
-        }
+        if (plan && plan.remainTrays > 0) window.refreshSnrTraysSelect_(plan.remainTrays);
         if (periodBox) {
           if (plan) {
             periodBox.style.display = 'block';
@@ -3866,7 +4084,7 @@ async function fetchWeatherAndUpdateUI() {
             if (harvEl) harvEl.textContent = plan.harvestLabel || '-';
             if (remainEl) {
               remainEl.textContent = (plan.trays != null)
-                ? `計画 ${plan.trays || 0}枚 ／ 実績 ${plan.doneTrays || 0}枚 ／ 残 ${plan.remainTrays || 0}枚`
+                ? '計画 ' + (plan.trays || 0) + '枚 ／ 実績 ' + (plan.doneTrays || 0) + '枚 ／ 残 ' + (plan.remainTrays || 0) + '枚'
                 : '';
             }
           } else {
@@ -3874,13 +4092,12 @@ async function fetchWeatherAndUpdateUI() {
           }
         }
       };
-
       window.getSowingNurseryLocCategory_ = (name) => {
         const cats = (window.getSowingNurseryFormOpts_() || {}).locationCategories || [];
         return cats.find(c => String(c.name) === String(name)) || null;
       };
 
-      /** 育苗場所マスタ一覧から場所カテゴリ構造を再構築 */
+      /** 育苗場所マスタ一覧から場所カテゴリ構造を再構築（区画・方向のみ） */
       window.rebuildSowingNurseryLocCategories_ = (list) => {
         const catMap = {};
         (list || []).forEach(function(n) {
@@ -3889,31 +4106,33 @@ async function fetchWeatherAndUpdateUI() {
           catMap[cat].push(n);
         });
         return Object.keys(catMap).sort(function(a, b) {
-          return String(a).localeCompare(String(b), 'ja');
+          return String(a).localeCompare(String(b), "ja");
         }).map(function(cat) {
-          const plots = catMap[cat].map(function(n) {
-            return {
-              id: n.id || '',
-              name: n.name || '',
-              direction: n.direction || '',
-              polyName: n.polyName || '',
-              note: n.note || ''
-            };
-          }).sort(function(a, b) {
-            return String(a.name).localeCompare(String(b.name), 'ja');
-          });
+          const rows = catMap[cat] || [];
+          const plotMap = {};
           const directions = [];
           const dirSeen = {};
-          plots.forEach(function(p) {
-            const d = String(p.direction || '').trim();
-            if (!d || dirSeen[d]) return;
-            dirSeen[d] = true;
-            directions.push(d);
+          rows.forEach(function(n) {
+            const d = String(n.direction || '').trim();
+            if (d && !dirSeen[d]) { dirSeen[d] = true; directions.push(d); }
+            const isDirOnly = String(n.note || '') === 'direction-only'
+              || (d && String(n.name || '').trim() === d);
+            if (isDirOnly) return;
+            const pname = String(n.name || '').trim();
+            if (!pname) return;
+            if (!plotMap[pname]) {
+              plotMap[pname] = { id: n.id || "", name: pname, direction: d, polyName: n.polyName || "", note: n.note || "", dirs: [] };
+            }
+            if (d && plotMap[pname].dirs.indexOf(d) < 0) plotMap[pname].dirs.push(d);
+            if (!plotMap[pname].id && n.id) plotMap[pname].id = n.id;
           });
+          const plots = Object.keys(plotMap).sort(function(a, b) {
+            return String(a).localeCompare(String(b), "ja");
+          }).map(function(k) { return plotMap[k]; });
+          directions.sort(function(a, b) { return String(a).localeCompare(String(b), "ja"); });
           return { name: cat, plots: plots, directions: directions };
         });
       };
-
       window.applySowingNurseryLocMasterList_ = (list, preferCat, preferPlotId) => {
         const st = window._sowingNurseryState;
         if (!st || !st.formOptions) return;
@@ -4006,44 +4225,70 @@ async function fetchWeatherAndUpdateUI() {
         return out;
       };
 
-      window.fillSowingNurseryPlotRange_ = (textareaId, fromId, toId, suffixId) => {
-        const ta = document.getElementById(textareaId);
-        if (!ta) return;
-        let from = Number((document.getElementById(fromId) || {}).value);
-        let to = Number((document.getElementById(toId) || {}).value);
-        const suffix = String((document.getElementById(suffixId) || {}).value || '');
-        if (!Number.isFinite(from)) from = 1;
-        if (!Number.isFinite(to)) to = from;
-        from = Math.floor(from);
-        to = Math.floor(to);
-        if (from > to) { const tmp = from; from = to; to = tmp; }
-        if (to - from > 200) {
-          if (typeof customAlert === 'function') customAlert('連番は最大200件までです');
-          else alert('連番は最大200件までです');
-          return;
-        }
-        const names = [];
-        for (let i = from; i <= to; i++) names.push(String(i) + suffix);
-        ta.value = names.join('\n');
-        ta.focus();
-      };
+      window.parseSowingNurseryDirNames_ = (raw) => window.parseSowingNurseryPlotNames_(raw);
 
+      /** 区画×方向の組み合わせを作る（どちらか一方だけでも可） */
+      /** 区画×方向の組み合わせを作る */
+      window.buildSowingNurseryPlotDirItems_ = (plotNames, dirNames) => {
+        const plots = Array.isArray(plotNames) ? plotNames.filter(Boolean) : [];
+        const dirs = Array.isArray(dirNames) ? dirNames.filter(Boolean) : [];
+        const items = [];
+        const seen = {};
+        const push = (name, direction) => {
+          const n = String(name || '').trim();
+          if (!n) return;
+          const d = String(direction || '').trim();
+          const key = n + '\t' + d;
+          if (seen[key]) return;
+          seen[key] = true;
+          items.push({ name: n, direction: d, note: "" });
+        };
+        if (plots.length && dirs.length) {
+          plots.forEach(function(p) { dirs.forEach(function(d) { push(p, d); }); });
+        } else if (plots.length) {
+          plots.forEach(function(p) { push(p, ""); });
+        }
+        return items;
+      };
+      window.getSowingNurseryExistingPlotNames_ = (catName) => {
+        const cat = window.getSowingNurseryLocCategory_(catName);
+        if (!cat) return [];
+        const names = [];
+        const seen = {};
+        (cat.plots || []).forEach(function(p) {
+          const n = String(p.name || '').trim();
+          if (!n || p.note === 'direction-only' || n === p.direction) return;
+          if (seen[n]) return;
+          seen[n] = true;
+          names.push(n);
+        });
+        return names;
+      };
       window.submitAddSowingNurseryLocCategory_ = async () => {
         const catName = String((document.getElementById('snr_new_loc_cat') || {}).value || '').trim();
         const plotNames = window.parseSowingNurseryPlotNames_((document.getElementById('snr_new_plot') || {}).value || '');
-        const direction = String((document.getElementById('snr_new_dir') || {}).value || '').trim();
+        const dirNames = window.parseSowingNurseryDirNames_((document.getElementById('snr_new_dir') || {}).value || '');
         const msg = document.getElementById('snr_add_loc_msg');
         const btn = document.getElementById('snr_add_loc_btn');
         if (!catName) {
           if (msg) { msg.style.color = '#c62828'; msg.textContent = '場所カテゴリ名を入力してください'; }
           return;
         }
-        if (!plotNames.length) {
-          if (msg) { msg.style.color = '#c62828'; msg.textContent = '区画名を1つ以上入力してください'; }
+        if (!plotNames.length && !dirNames.length) {
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '区画または方向を1つ以上入力してください'; }
+          return;
+        }
+        if (!plotNames.length && dirNames.length) {
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '新規カテゴリでは区画を1つ以上入力してください（方向は任意・複数可）'; }
+          return;
+        }
+        const plotItems = window.buildSowingNurseryPlotDirItems_(plotNames, dirNames);
+        if (!plotItems.length) {
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '登録できる区画・方向がありません'; }
           return;
         }
         if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
-        if (msg) { msg.style.color = '#6a1b9a'; msg.textContent = '育苗場所マスタへ' + plotNames.length + '件登録しています...'; }
+        if (msg) { msg.style.color = '#6a1b9a'; msg.textContent = '育苗場所マスタへ' + plotItems.length + '件登録しています...'; }
         try {
           const userName = localStorage.getItem('passionMapUserName')
             || localStorage.getItem('passionMapUserId')
@@ -4054,16 +4299,15 @@ async function fetchWeatherAndUpdateUI() {
             value: {
               polyId: '',
               polyName: catName,
-              direction: direction,
               note: '',
-              names: plotNames
+              plots: plotItems
             },
             userName: userName
           });
-          window.applySowingNurseryLocMasterList_(Array.isArray(list) ? list : [], catName, plotNames[0]);
+          window.applySowingNurseryLocMasterList_(Array.isArray(list) ? list : [], catName, plotNames[0] || plotItems[0].name);
           if (msg) {
             msg.style.color = '#2e7d32';
-            msg.textContent = '「' + catName + '」に区画 ' + plotNames.length + '件を追加しました';
+            msg.textContent = '「' + catName + '」に区画 ' + plotNames.length + ' / 方向 ' + dirNames.length + '（計 ' + plotItems.length + '件）を追加しました';
           }
           const catInput = document.getElementById('snr_new_loc_cat');
           const plotInput = document.getElementById('snr_new_plot');
@@ -4078,23 +4322,35 @@ async function fetchWeatherAndUpdateUI() {
           if (btn) { btn.disabled = false; btn.textContent = 'マスタに登録'; }
         }
       };
-
       window.submitAddSowingNurseryPlot_ = async () => {
         const catName = String((document.getElementById('snr_loc_cat') || {}).value || '').trim();
-        const plotNames = window.parseSowingNurseryPlotNames_((document.getElementById('snr_add_plot_name') || {}).value || '');
-        const direction = String((document.getElementById('snr_add_plot_dir') || {}).value || '').trim();
+        let plotNames = window.parseSowingNurseryPlotNames_((document.getElementById('snr_add_plot_name') || {}).value || '');
+        const dirNames = window.parseSowingNurseryDirNames_((document.getElementById('snr_add_plot_dir') || {}).value || '');
         const msg = document.getElementById('snr_add_plot_msg');
         const btn = document.getElementById('snr_add_plot_btn');
         if (!catName) {
           if (msg) { msg.style.color = '#c62828'; msg.textContent = '場所カテゴリを選択してください'; }
           return;
         }
-        if (!plotNames.length) {
-          if (msg) { msg.style.color = '#c62828'; msg.textContent = '区画名を1つ以上入力してください'; }
+        // 方向だけ入力 → 既存区画に方向を追加
+        if (!plotNames.length && dirNames.length) {
+          plotNames = window.getSowingNurseryExistingPlotNames_(catName);
+          if (!plotNames.length) {
+            if (msg) { msg.style.color = '#c62828'; msg.textContent = '既存区画がないため、区画名も入力してください'; }
+            return;
+          }
+        }
+        if (!plotNames.length && !dirNames.length) {
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '区画または方向を1つ以上入力してください'; }
+          return;
+        }
+        const plotItems = window.buildSowingNurseryPlotDirItems_(plotNames, dirNames);
+        if (!plotItems.length) {
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '登録できる区画・方向がありません'; }
           return;
         }
         if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
-        if (msg) { msg.style.color = '#6a1b9a'; msg.textContent = '区画 ' + plotNames.length + '件を登録しています...'; }
+        if (msg) { msg.style.color = '#6a1b9a'; msg.textContent = plotItems.length + '件を登録しています...'; }
         try {
           const userName = localStorage.getItem('passionMapUserName')
             || localStorage.getItem('passionMapUserId')
@@ -4105,16 +4361,15 @@ async function fetchWeatherAndUpdateUI() {
             value: {
               polyId: '',
               polyName: catName,
-              direction: direction,
               note: '',
-              names: plotNames
+              plots: plotItems
             },
             userName: userName
           });
-          window.applySowingNurseryLocMasterList_(Array.isArray(list) ? list : [], catName, plotNames[0]);
+          window.applySowingNurseryLocMasterList_(Array.isArray(list) ? list : [], catName, plotNames[0] || "");
           if (msg) {
             msg.style.color = '#2e7d32';
-            msg.textContent = '区画 ' + plotNames.length + '件を追加しました（' + plotNames.slice(0, 3).join('、') + (plotNames.length > 3 ? '…' : '') + '）';
+            msg.textContent = '区画・方向を計 ' + plotItems.length + '件追加しました';
           }
           const plotInput = document.getElementById('snr_add_plot_name');
           const dirInput = document.getElementById('snr_add_plot_dir');
@@ -4124,10 +4379,9 @@ async function fetchWeatherAndUpdateUI() {
         } catch (e) {
           if (msg) { msg.style.color = '#c62828'; msg.textContent = '追加に失敗: ' + (e.message || e); }
         } finally {
-          if (btn) { btn.disabled = false; btn.textContent = '区画を登録'; }
+          if (btn) { btn.disabled = false; btn.textContent = '区画・方向を登録'; }
         }
       };
-
       window.onSowingNurseryLocCatChange_ = () => {
         const catName = (document.getElementById('snr_loc_cat') || {}).value || '';
         const cat = window.getSowingNurseryLocCategory_(catName);
@@ -4142,58 +4396,57 @@ async function fetchWeatherAndUpdateUI() {
         }
         const plots = cat.plots || [];
         plotSel.innerHTML = '<option value="">選択してください</option>' + plots.map(p => {
-          return `<option value="${esc(p.id || p.name)}" data-name="${esc(p.name || '')}" data-direction="${esc(p.direction || '')}">${esc(p.name || p.id)}</option>`;
-        }).join('');
+          return `<option value="${esc(p.name || p.id)}" data-name="${esc(p.name || "")}" data-dirs="${esc((p.dirs || []).join("|"))}">${esc(p.name || p.id)}</option>`;
+        }).join("");
         const dirs = cat.directions || [];
         dirSel.innerHTML = '<option value="">選択してください</option>' + dirs.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
       };
-
       window.onSowingNurseryPlotChange_ = () => {
         const plotSel = document.getElementById('snr_plot');
         const dirSel = document.getElementById('snr_direction');
         if (!plotSel || !dirSel) return;
         const opt = plotSel.options[plotSel.selectedIndex];
-        const dir = opt ? (opt.getAttribute('data-direction') || '') : '';
-        if (dir) {
+        const dirsCsv = opt ? (opt.getAttribute('data-dirs') || '') : '';
+        const plotDirs = dirsCsv ? dirsCsv.split('|').filter(Boolean) : [];
+        // 区画に紐づく方向が1つだけのときだけ自動選択（複数なら手で選ぶ）
+        if (plotDirs.length === 1) {
+          const dir = plotDirs[0];
           let found = false;
           for (let i = 0; i < dirSel.options.length; i++) {
             if (dirSel.options[i].value === dir) { found = true; break; }
           }
           if (!found) {
-            const o = document.createElement('option');
-            o.value = dir;
-            o.textContent = dir;
-            dirSel.appendChild(o);
+            const o = document.createElement("option");
+            o.value = dir; o.textContent = dir; dirSel.appendChild(o);
           }
           dirSel.value = dir;
         }
       };
-
       window.submitSowingNurseryRecord_ = async () => {
         const st = window._sowingNurseryState;
         if (st.formBusy) return;
         const msg = document.getElementById('snr_form_msg');
         const btn = document.getElementById('snr_save_btn');
         const crop = (document.getElementById('snr_crop') || {}).value || '';
-        const tagSel = document.getElementById('snr_tag');
-        const tagOpt = tagSel && tagSel.selectedIndex >= 0 ? tagSel.options[tagSel.selectedIndex] : null;
-        const tag = tagOpt ? (tagOpt.getAttribute('data-tag') || '') : '';
-        const planId = (document.getElementById('snr_plan_id') || {}).value || '';
+        const planId = (document.getElementById('snr_tag') || {}).value || (document.getElementById('snr_plan_id') || {}).value || '';
+        const plansForTag = window.getSowingNurseryPlansFiltered_(crop);
+        const planForTag = plansForTag.find(p => String(p.planId || '') === String(planId)) || null;
+        const tag = planForTag ? (planForTag.tag || '') : '';
         const variety = (document.getElementById('snr_variety') || {}).value || '';
         const plotSel = document.getElementById('snr_plot');
         const plotOpt = plotSel && plotSel.selectedIndex >= 0 ? plotSel.options[plotSel.selectedIndex] : null;
         const nurseryName = plotOpt ? (plotOpt.getAttribute('data-name') || plotOpt.textContent || '') : '';
         const direction = (document.getElementById('snr_direction') || {}).value || '';
         const sowingDate = (document.getElementById('snr_date') || {}).value || '';
-        const trays = Number((document.getElementById('snr_trays') || {}).value);
-        const holesRaw = (document.getElementById('snr_holes') || {}).value;
+        const trays = window.getSnrTraysValue_();
+        const holesRaw = window.getSnrHolesValue_();
         if (!crop) {
           if (msg) { msg.style.color = '#c62828'; msg.textContent = '作物名を選択してください'; }
           return;
         }
         // TAGは任意（予定にない播種も作物名だけで登録可）
         if (!(trays > 0)) {
-          if (msg) { msg.style.color = '#c62828'; msg.textContent = '枚数を入力してください'; }
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '枚数を選択してください'; }
           return;
         }
         st.formBusy = true;
@@ -4368,7 +4621,7 @@ async function fetchWeatherAndUpdateUI() {
         if (!modal || !body) return;
         window.cancelSowingNurseryAddForm_();
         modal.style.display = 'flex';
-        window._sowingNurseryState.tab = window._sowingNurseryState.tab || 'progress';
+        window._sowingNurseryState.tab = window._sowingNurseryState.tab || 'records';
         window.syncSowingNurseryTabButtons_();
         const loading = window.AppLoading
           ? AppLoading.inline(body, {
