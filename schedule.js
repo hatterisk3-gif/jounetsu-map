@@ -4014,8 +4014,9 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
                 </div>
                 <label class="snr-label-sm" style="margin-top:8px;">区画（複数可）*</label>
                 <textarea id="snr_new_plot" class="form-input snr-input" rows="3" placeholder="1行1つ、またはカンマ区切り"></textarea>
-                <label class="snr-label-sm">方向（任意）</label>
-                <textarea id="snr_new_dir" class="form-input snr-input" rows="2" placeholder="1行1つ、またはカンマ区切り"></textarea>
+                <label class="snr-label-sm" style="margin-top:8px;">方向（任意）</label>
+                <div id="snr_new_dir_list" class="snr-dir-input-list"></div>
+                <button type="button" class="snr-btn-add" style="margin-top:6px;" onclick="addSnrDirInputRow_('snr_new_dir_list')">＋方向を追加</button>
                 <div class="snr-sub-actions">
                   <button type="button" id="snr_add_loc_btn" class="snr-btn-primary" onclick="submitAddSowingNurseryLocCategory_()">マスタに登録</button>
                   <button type="button" class="snr-btn-ghost" onclick="toggleSowingNurseryAddLocCatPanel_(false)">閉じる</button>
@@ -4032,16 +4033,32 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
                 <option value="">場所カテゴリを選択</option>
               </select>
               <div class="snr-action-row snr-action-row-wrap">
-                <button type="button" class="snr-btn-map" onclick="openSnrPlotMapPick_()">🗺️ 地図から選択</button>
-                <button type="button" id="snr_delete_plot_btn" class="snr-btn-danger-outline" onclick="deleteSnrPlot_()">区画を削除</button>
+                <button type="button" class="snr-btn-map" onclick="openSnrPlotMapPick_('select')">🗺️ 地図から選択</button>
+                <button type="button" id="snr_delete_plot_btn" class="snr-btn-danger-outline" onclick="toggleSnrBulkDeletePlotPanel_()">区画を削除</button>
               </div>
               <div id="snr_delete_plot_msg" class="snr-inline-msg"></div>
+              <div id="snr_bulk_delete_plot_panel" class="snr-sub-panel" style="display:none;">
+                <div class="snr-sub-panel-title">区画をまとめて削除</div>
+                <div class="snr-field-head" style="margin-bottom:8px;">
+                  <label class="snr-label-sm" style="margin:0;">削除する区画にチェック</label>
+                  <button type="button" class="snr-btn-ghost" style="min-height:36px;padding:6px 10px;font-size:12px;" onclick="toggleSnrBulkDeletePlotAll_()">全選択/解除</button>
+                </div>
+                <div id="snr_bulk_delete_plot_list" class="snr-bulk-check-list"></div>
+                <div class="snr-sub-actions">
+                  <button type="button" id="snr_bulk_delete_plot_btn" class="snr-btn-danger-outline" onclick="submitSnrBulkDeletePlots_()">選択した区画を削除</button>
+                  <button type="button" class="snr-btn-ghost" onclick="toggleSnrBulkDeletePlotPanel_(false)">閉じる</button>
+                </div>
+                <div id="snr_bulk_delete_plot_msg" class="snr-inline-msg"></div>
+              </div>
               <div id="snr_add_plot_panel" class="snr-sub-panel" style="display:none;">
                 <div class="snr-sub-panel-title">区画・方向を追加</div>
-                <textarea id="snr_add_plot_name" class="form-input snr-input" rows="3" placeholder="区画名（複数可）"></textarea>
-                <textarea id="snr_add_plot_dir" class="form-input snr-input" rows="2" placeholder="方向（任意）"></textarea>
+                <div class="snr-step-hint" style="margin-bottom:10px;">区画は地図から追加、方向は下の枠に入力します</div>
+                <button type="button" class="snr-btn-map" style="width:100%; margin-bottom:12px;" onclick="openSnrPlotMapPick_('register')">🗺️ 地図から区画を追加（複数可）</button>
+                <label class="snr-label-sm">方向（任意）</label>
+                <div id="snr_add_plot_dir_list" class="snr-dir-input-list"></div>
+                <button type="button" class="snr-btn-add" style="margin-top:6px;" onclick="addSnrDirInputRow_('snr_add_plot_dir_list')">＋方向を追加</button>
                 <div class="snr-sub-actions">
-                  <button type="button" id="snr_add_plot_btn" class="snr-btn-primary" onclick="submitAddSowingNurseryPlot_()">登録</button>
+                  <button type="button" id="snr_add_plot_btn" class="snr-btn-primary" onclick="submitAddSowingNurseryPlot_()">方向だけ登録</button>
                   <button type="button" class="snr-btn-ghost" onclick="toggleSowingNurseryAddPlotPanel_(false)">閉じる</button>
                 </div>
                 <div id="snr_add_plot_msg" class="snr-inline-msg"></div>
@@ -4468,7 +4485,70 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
 
       window.isSnrMapPickingPlot = false;
       window.snrMapPickCategory = '';
+      window.snrMapPickMode = 'select'; // select | register
       window.snrMapSelectedFieldIds = [];
+
+      window.getSnrRegisteredPlotPolyIds_ = function(catName) {
+        const cat = window.getSowingNurseryLocCategory_(catName);
+        const ids = [];
+        const nameById = {};
+        (cat && cat.plots || []).forEach(function(pl) {
+          const pid = String(pl.polyId || '').trim();
+          if (!pid) return;
+          if (ids.indexOf(pid) < 0) ids.push(pid);
+          nameById[pid] = String(pl.name || '').trim() || pid;
+        });
+        return { ids: ids, nameById: nameById };
+      };
+
+      window.initSnrDirInputList_ = function(containerId, count) {
+        const box = document.getElementById(containerId);
+        if (!box) return;
+        box.innerHTML = '';
+        const n = Math.max(1, Number(count) || 1);
+        for (let i = 0; i < n; i++) window.addSnrDirInputRow_(containerId, true);
+      };
+
+      window.addSnrDirInputRow_ = function(containerId, skipFocus) {
+        const box = document.getElementById(containerId);
+        if (!box) return;
+        const row = document.createElement('div');
+        row.className = 'snr-dir-input-row';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'form-input snr-input snr-dir-input';
+        input.placeholder = '例: 東・西・南';
+        const rm = document.createElement('button');
+        rm.type = 'button';
+        rm.className = 'snr-btn-danger-outline snr-dir-remove';
+        rm.textContent = '削除';
+        rm.onclick = function() {
+          const rows = box.querySelectorAll('.snr-dir-input-row');
+          if (rows.length <= 1) {
+            input.value = '';
+            return;
+          }
+          row.remove();
+        };
+        row.appendChild(input);
+        row.appendChild(rm);
+        box.appendChild(row);
+        if (!skipFocus) setTimeout(function() { input.focus(); }, 30);
+      };
+
+      window.collectSnrDirInputValues_ = function(containerId) {
+        const box = document.getElementById(containerId);
+        if (!box) return [];
+        const out = [];
+        const seen = {};
+        box.querySelectorAll('.snr-dir-input').forEach(function(el) {
+          const v = String(el.value || '').trim();
+          if (!v || seen[v]) return;
+          seen[v] = true;
+          out.push(v);
+        });
+        return out;
+      };
 
       window.applySnrLocCatMapCenter_ = (catName) => {
         if (!map || !window.google || !google.maps) return;
@@ -4504,16 +4584,33 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
 
       window.highlightSnrMapPickFields_ = function() {
         if (!window.isSnrMapPickingPlot) return;
+        const mode = window.snrMapPickMode || 'select';
+        const reg = window.getSnrRegisteredPlotPolyIds_(window.snrMapPickCategory);
+        const registeredSet = {};
+        reg.ids.forEach(function(id) { registeredSet[id] = true; });
         for (let id in loadedPolygons) {
           const p = loadedPolygons[id];
           if (p.isMarker || !p.polygon) continue;
           const val = String(p.id);
           const isSelected = window.snrMapSelectedFieldIds.indexOf(val) >= 0;
-          if (isSelected) {
-            p.polygon.setOptions({ strokeColor: '#FFEB3B', strokeWeight: 4, fillOpacity: 0.75 });
+          const isRegistered = !!registeredSet[val];
+          if (mode === 'select') {
+            if (isSelected) {
+              p.polygon.setOptions({ strokeColor: '#FFEB3B', strokeWeight: 5, fillOpacity: 0.8, clickable: true });
+            } else if (isRegistered) {
+              p.polygon.setOptions({ strokeColor: '#CE93D8', strokeWeight: 3, fillOpacity: 0.55, clickable: true });
+            } else {
+              p.polygon.setOptions({ strokeColor: '#9e9e9e', strokeWeight: 1, fillOpacity: 0.12, clickable: false });
+            }
           } else {
-            const originalColor = p.color || '#4CAF50';
-            p.polygon.setOptions({ strokeColor: originalColor, strokeWeight: 2, fillOpacity: 0.35 });
+            if (isSelected) {
+              p.polygon.setOptions({ strokeColor: '#FFEB3B', strokeWeight: 4, fillOpacity: 0.75, clickable: true });
+            } else if (isRegistered) {
+              p.polygon.setOptions({ strokeColor: '#90CAF9', strokeWeight: 2, fillOpacity: 0.35, clickable: true });
+            } else {
+              const originalColor = p.color || '#4CAF50';
+              p.polygon.setOptions({ strokeColor: originalColor, strokeWeight: 2, fillOpacity: 0.35, clickable: true });
+            }
           }
         }
       };
@@ -4521,14 +4618,38 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
       window.updateSnrMapPickBanner_ = function() {
         const listEl = document.getElementById('snrMapPickSelectedList');
         if (!listEl) return;
+        const mode = window.snrMapPickMode || 'select';
         const names = window.snrMapSelectedFieldIds.map(function(id) {
           const p = loadedPolygons[id];
           return p ? (p.name || id) : id;
         });
-        listEl.textContent = names.length ? ('選択中: ' + names.join(', ')) : '選択中: なし';
+        if (mode === 'select') {
+          listEl.textContent = names.length ? ('選択中: ' + names[0]) : '選択中: なし（設定済み圃場を1つタップ）';
+        } else {
+          listEl.textContent = names.length ? ('選択中: ' + names.join(', ')) : '選択中: なし';
+        }
       };
 
-      window.openSnrPlotMapPick_ = function() {
+      window.syncSnrMapPickBannerUi_ = function() {
+        const mode = window.snrMapPickMode || 'select';
+        const title = document.getElementById('snrMapPickTitle');
+        const hint = document.getElementById('snrMapPickHint');
+        const saveBtn = document.getElementById('snrMapPickSaveCenterBtn');
+        const confirmBtn = document.getElementById('snrMapPickConfirmBtn');
+        if (mode === 'register') {
+          if (title) title.textContent = '🗺️ 地図から区画を追加';
+          if (hint) hint.textContent = '圃場をタップして選択/解除（複数可）。すでに登録済みの圃場は青っぽく表示されます';
+          if (saveBtn) saveBtn.style.display = 'block';
+          if (confirmBtn) confirmBtn.textContent = '区画を登録';
+        } else {
+          if (title) title.textContent = '🗺️ 区画を地図から選択';
+          if (hint) hint.textContent = 'このカテゴリに設定済みの圃場だけ選べます（1つ）';
+          if (saveBtn) saveBtn.style.display = 'none';
+          if (confirmBtn) confirmBtn.textContent = 'この区画を使う';
+        }
+      };
+
+      window.openSnrPlotMapPick_ = function(mode) {
         const catName = String((document.getElementById('snr_loc_cat') || {}).value || '').trim();
         if (!catName) {
           if (typeof customAlert === 'function') customAlert('先に場所カテゴリを選択してください');
@@ -4540,16 +4661,38 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
           else alert('地図または圃場データが読み込まれていません');
           return;
         }
+        const pickMode = (mode === 'register') ? 'register' : 'select';
         window.isSnrMapPickingPlot = true;
+        window.snrMapPickMode = pickMode;
         window.snrMapPickCategory = catName;
         window.snrMapSelectedFieldIds = [];
-        const cat = window.getSowingNurseryLocCategory_(catName);
-        (cat && cat.plots || []).forEach(function(pl) {
-          const pid = String(pl.polyId || '').trim();
-          if (pid && window.snrMapSelectedFieldIds.indexOf(pid) < 0) {
-            window.snrMapSelectedFieldIds.push(pid);
+
+        if (pickMode === 'select') {
+          const reg = window.getSnrRegisteredPlotPolyIds_(catName);
+          if (!reg.ids.length) {
+            window.isSnrMapPickingPlot = false;
+            if (typeof customAlert === 'function') {
+              customAlert('このカテゴリに地図紐づけ済みの区画がありません。＋区画から地図で追加してください');
+            } else {
+              alert('このカテゴリに地図紐づけ済みの区画がありません');
+            }
+            return;
           }
-        });
+          const plotSel = document.getElementById('snr_plot');
+          let currentName = '';
+          if (plotSel && plotSel.selectedIndex >= 0) {
+            const opt = plotSel.options[plotSel.selectedIndex];
+            currentName = opt ? (opt.getAttribute('data-name') || opt.textContent || '') : '';
+          }
+          const cat = window.getSowingNurseryLocCategory_(catName);
+          const currentPlot = (cat && cat.plots || []).find(function(pl) {
+            return String(pl.name || '') === String(currentName);
+          });
+          if (currentPlot && currentPlot.polyId) {
+            window.snrMapSelectedFieldIds = [String(currentPlot.polyId)];
+          }
+        }
+
         const addModal = document.getElementById('sowingNurseryAddModal');
         const progressModal = document.getElementById('sowingProgressModal');
         if (addModal) addModal.style.display = 'none';
@@ -4560,6 +4703,7 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
         if (catLabel) catLabel.textContent = '場所カテゴリ: ' + catName;
         if (msg) msg.textContent = '';
         if (banner) banner.style.display = 'flex';
+        window.syncSnrMapPickBannerUi_();
         window.applySnrLocCatMapCenter_(catName);
         window.highlightSnrMapPickFields_();
         window.updateSnrMapPickBanner_();
@@ -4568,9 +4712,19 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
       window.handleSnrPlotMapToggle_ = function(p) {
         if (!window.isSnrMapPickingPlot || !p || p.isMarker) return;
         const val = String(p.id);
-        const idx = window.snrMapSelectedFieldIds.indexOf(val);
-        if (idx >= 0) window.snrMapSelectedFieldIds.splice(idx, 1);
-        else window.snrMapSelectedFieldIds.push(val);
+        const mode = window.snrMapPickMode || 'select';
+        if (mode === 'select') {
+          const reg = window.getSnrRegisteredPlotPolyIds_(window.snrMapPickCategory);
+          if (reg.ids.indexOf(val) < 0) {
+            if (typeof customAlert === 'function') customAlert('設定済みの圃場だけ選択できます');
+            return;
+          }
+          window.snrMapSelectedFieldIds = (window.snrMapSelectedFieldIds[0] === val) ? [] : [val];
+        } else {
+          const idx = window.snrMapSelectedFieldIds.indexOf(val);
+          if (idx >= 0) window.snrMapSelectedFieldIds.splice(idx, 1);
+          else window.snrMapSelectedFieldIds.push(val);
+        }
         window.highlightSnrMapPickFields_();
         window.updateSnrMapPickBanner_();
       };
@@ -4578,9 +4732,14 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
       window.exitSnrPlotMapPick_ = function(reopenModal) {
         window.isSnrMapPickingPlot = false;
         window.snrMapPickCategory = '';
+        window.snrMapPickMode = 'select';
         window.snrMapSelectedFieldIds = [];
         const banner = document.getElementById('snrMapPickBanner');
         if (banner) banner.style.display = 'none';
+        for (let id in loadedPolygons) {
+          const p = loadedPolygons[id];
+          if (p && p.polygon) p.polygon.setOptions({ clickable: true });
+        }
         if (typeof updateMapVisuals === 'function') updateMapVisuals();
         if (reopenModal) {
           const progressModal = document.getElementById('sowingProgressModal');
@@ -4619,7 +4778,53 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
         }
       };
 
+      window.confirmSnrPlotMapSelect_ = function() {
+        const catName = String(window.snrMapPickCategory || '').trim();
+        const id = window.snrMapSelectedFieldIds[0] || '';
+        if (!id) {
+          if (typeof customAlert === 'function') customAlert('圃場を1つ選択してください');
+          else alert('圃場を1つ選択してください');
+          return;
+        }
+        const cat = window.getSowingNurseryLocCategory_(catName);
+        const plot = (cat && cat.plots || []).find(function(pl) {
+          return String(pl.polyId || '') === String(id);
+        });
+        const plotName = plot ? String(plot.name || '') : ((loadedPolygons[id] && loadedPolygons[id].name) || id);
+        window.exitSnrPlotMapPick_(true);
+        const plotSel = document.getElementById('snr_plot');
+        if (plotSel && plotName) {
+          let found = false;
+          for (let i = 0; i < plotSel.options.length; i++) {
+            const opt = plotSel.options[i];
+            if (String(opt.getAttribute('data-name') || '') === plotName
+                || String(opt.value) === plotName
+                || String(opt.textContent || '') === plotName) {
+              plotSel.selectedIndex = i;
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            for (let i = 0; i < plotSel.options.length; i++) {
+              if (String(plotSel.options[i].value) === String(id)) {
+                plotSel.selectedIndex = i;
+                found = true;
+                break;
+              }
+            }
+          }
+          if (typeof window.onSowingNurseryPlotChange_ === 'function') {
+            window.onSowingNurseryPlotChange_();
+          }
+        }
+      };
+
       window.confirmSnrPlotMapPick_ = async function() {
+        if ((window.snrMapPickMode || 'select') === 'select') {
+          window.confirmSnrPlotMapSelect_();
+          return;
+        }
         const catName = String(window.snrMapPickCategory || '').trim();
         const msg = document.getElementById('snrMapPickMsg');
         if (!catName) return;
@@ -4630,18 +4835,29 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
           if (pl.polyId) existingPolyIds[String(pl.polyId)] = true;
           if (pl.name) existingNames[String(pl.name)] = true;
         });
-        const plotItems = [];
+        const dirNames = window.collectSnrDirInputValues_('snr_add_plot_dir_list');
+        const selectedPlots = [];
         window.snrMapSelectedFieldIds.forEach(function(id) {
           const p = loadedPolygons[id];
           if (!p || p.isMarker) return;
           if (existingPolyIds[id] || existingNames[p.name]) return;
-          plotItems.push({ name: p.name || id, polyId: id, direction: '', note: '' });
+          selectedPlots.push({ name: p.name || id, polyId: id });
         });
-        if (!plotItems.length) {
+        if (!selectedPlots.length) {
           if (typeof customAlert === 'function') customAlert('新しく登録する圃場がありません（未選択、または既に登録済み）');
           else alert('新しく登録する圃場がありません');
           return;
         }
+        const plotItems = [];
+        selectedPlots.forEach(function(sp) {
+          if (dirNames.length) {
+            dirNames.forEach(function(d) {
+              plotItems.push({ name: sp.name, polyId: sp.polyId, direction: d, note: '' });
+            });
+          } else {
+            plotItems.push({ name: sp.name, polyId: sp.polyId, direction: '', note: '' });
+          }
+        });
         if (msg) { msg.style.color = '#fff'; msg.textContent = plotItems.length + '件を登録中...'; }
         try {
           const userName = localStorage.getItem('passionMapUserName')
@@ -4662,8 +4878,11 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
             userName: userName
           });
           window.exitSnrPlotMapPick_(true);
-          window.applySowingNurseryLocMasterList_(Array.isArray(list) ? list : [], catName, plotItems[0].name);
-          if (typeof customAlert === 'function') customAlert('区画を ' + plotItems.length + ' 件登録しました');
+          window.applySowingNurseryLocMasterList_(Array.isArray(list) ? list : [], catName, selectedPlots[0].name);
+          if (typeof window.initSnrDirInputList_ === 'function') {
+            window.initSnrDirInputList_('snr_add_plot_dir_list', 1);
+          }
+          if (typeof customAlert === 'function') customAlert('区画を ' + selectedPlots.length + ' 件登録しました');
         } catch (e) {
           if (msg) { msg.style.color = '#ffcdd2'; msg.textContent = '登録失敗: ' + (e.message || e); }
         }
@@ -4708,6 +4927,7 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
           if (plotPanel) plotPanel.style.display = 'none';
           const msg = document.getElementById('snr_add_loc_msg');
           if (msg) msg.textContent = '';
+          window.initSnrDirInputList_('snr_new_dir_list', 1);
           setTimeout(function() {
             const el = document.getElementById('snr_new_loc_cat');
             if (el) el.focus();
@@ -4729,12 +4949,11 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
         if (show) {
           const locPanel = document.getElementById('snr_add_loc_panel');
           if (locPanel) locPanel.style.display = 'none';
+          const bulkPanel = document.getElementById('snr_bulk_delete_plot_panel');
+          if (bulkPanel) bulkPanel.style.display = 'none';
           const msg = document.getElementById('snr_add_plot_msg');
           if (msg) msg.textContent = '';
-          setTimeout(function() {
-            const el = document.getElementById('snr_add_plot_name');
-            if (el) el.focus();
-          }, 30);
+          window.initSnrDirInputList_('snr_add_plot_dir_list', 1);
         }
       };
 
@@ -4796,7 +5015,7 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
         const catName = String((document.getElementById('snr_new_loc_cat') || {}).value || '').trim();
         const locationName = String((document.getElementById('snr_new_loc_from_master') || {}).value || '').trim();
         const plotNames = window.parseSowingNurseryPlotNames_((document.getElementById('snr_new_plot') || {}).value || '');
-        const dirNames = window.parseSowingNurseryDirNames_((document.getElementById('snr_new_dir') || {}).value || '');
+        const dirNames = window.collectSnrDirInputValues_('snr_new_dir_list');
         const msg = document.getElementById('snr_add_loc_msg');
         const btn = document.getElementById('snr_add_loc_btn');
         if (!catName) {
@@ -4842,11 +5061,10 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
           const catInput = document.getElementById('snr_new_loc_cat');
           const masterSel = document.getElementById('snr_new_loc_from_master');
           const plotInput = document.getElementById('snr_new_plot');
-          const dirInput = document.getElementById('snr_new_dir');
           if (catInput) catInput.value = '';
           if (masterSel) masterSel.value = '';
           if (plotInput) plotInput.value = '';
-          if (dirInput) dirInput.value = '';
+          window.initSnrDirInputList_('snr_new_dir_list', 1);
           setTimeout(function() { window.toggleSowingNurseryAddLocCatPanel_(false); }, 600);
         } catch (e) {
           if (msg) { msg.style.color = '#c62828'; msg.textContent = '追加に失敗: ' + (e.message || e); }
@@ -4856,29 +5074,31 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
       };
       window.submitAddSowingNurseryPlot_ = async () => {
         const catName = String((document.getElementById('snr_loc_cat') || {}).value || '').trim();
-        let plotNames = window.parseSowingNurseryPlotNames_((document.getElementById('snr_add_plot_name') || {}).value || '');
-        const dirNames = window.parseSowingNurseryDirNames_((document.getElementById('snr_add_plot_dir') || {}).value || '');
+        const dirNames = window.collectSnrDirInputValues_('snr_add_plot_dir_list');
         const msg = document.getElementById('snr_add_plot_msg');
         const btn = document.getElementById('snr_add_plot_btn');
         if (!catName) {
           if (msg) { msg.style.color = '#c62828'; msg.textContent = '場所カテゴリを選択してください'; }
           return;
         }
-        // 方向だけ入力 → 既存区画に方向を追加
-        if (!plotNames.length && dirNames.length) {
-          plotNames = window.getSowingNurseryExistingPlotNames_(catName);
-          if (!plotNames.length) {
-            if (msg) { msg.style.color = '#c62828'; msg.textContent = '既存区画がないため、区画名も入力してください'; }
-            return;
+        if (!dirNames.length) {
+          if (msg) {
+            msg.style.color = '#c62828';
+            msg.textContent = '方向を入力するか、「地図から区画を追加」で区画を登録してください';
           }
+          return;
         }
-        if (!plotNames.length && !dirNames.length) {
-          if (msg) { msg.style.color = '#c62828'; msg.textContent = '区画または方向を1つ以上入力してください'; }
+        const plotNames = window.getSowingNurseryExistingPlotNames_(catName);
+        if (!plotNames.length) {
+          if (msg) {
+            msg.style.color = '#c62828';
+            msg.textContent = '既存区画がありません。先に「地図から区画を追加」で区画を登録してください';
+          }
           return;
         }
         const plotItems = window.buildSowingNurseryPlotDirItems_(plotNames, dirNames);
         if (!plotItems.length) {
-          if (msg) { msg.style.color = '#c62828'; msg.textContent = '登録できる区画・方向がありません'; }
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '登録できる方向がありません'; }
           return;
         }
         if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
@@ -4904,17 +5124,14 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
           window.applySowingNurseryLocMasterList_(Array.isArray(list) ? list : [], catName, plotNames[0] || "");
           if (msg) {
             msg.style.color = '#2e7d32';
-            msg.textContent = '区画・方向を計 ' + plotItems.length + '件追加しました';
+            msg.textContent = '方向を既存区画へ追加しました（' + plotItems.length + '件）';
           }
-          const plotInput = document.getElementById('snr_add_plot_name');
-          const dirInput = document.getElementById('snr_add_plot_dir');
-          if (plotInput) plotInput.value = '';
-          if (dirInput) dirInput.value = '';
+          window.initSnrDirInputList_('snr_add_plot_dir_list', 1);
           setTimeout(function() { window.toggleSowingNurseryAddPlotPanel_(false); }, 600);
         } catch (e) {
           if (msg) { msg.style.color = '#c62828'; msg.textContent = '追加に失敗: ' + (e.message || e); }
         } finally {
-          if (btn) { btn.disabled = false; btn.textContent = '区画・方向を登録'; }
+          if (btn) { btn.disabled = false; btn.textContent = '方向だけ登録'; }
         }
       };
       window.onSowingNurseryLocCatChange_ = () => {
@@ -4942,6 +5159,10 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
         }).join("");
         const dirs = cat.directions || [];
         dirSel.innerHTML = '<option value="">選択してください</option>' + dirs.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
+        const bulkPanel = document.getElementById('snr_bulk_delete_plot_panel');
+        if (bulkPanel && bulkPanel.style.display !== 'none') {
+          window.renderSnrBulkDeletePlotList_();
+        }
       };
 
       window.submitLinkSnrLocCategoryLocation_ = async () => {
@@ -5001,26 +5222,86 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
         }
       };
 
-      window.deleteSnrPlot_ = async () => {
+      window.renderSnrBulkDeletePlotList_ = () => {
+        const list = document.getElementById('snr_bulk_delete_plot_list');
+        if (!list) return;
         const catName = (document.getElementById('snr_loc_cat') || {}).value || '';
-        const plotSel = document.getElementById('snr_plot');
-        const btn = document.getElementById('snr_delete_plot_btn');
-        const msg = document.getElementById('snr_delete_plot_msg');
+        const cat = window.getSowingNurseryLocCategory_(catName);
+        const plots = (cat && cat.plots) || [];
+        const esc = window.escSowingNurseryHtml_;
+        if (!catName) {
+          list.innerHTML = '<div style="font-size:12px;color:#888;">先に場所カテゴリを選択してください</div>';
+          return;
+        }
+        if (!plots.length) {
+          list.innerHTML = '<div style="font-size:12px;color:#888;">このカテゴリに区画がありません</div>';
+          return;
+        }
+        list.innerHTML = plots.map(function(p, i) {
+          const name = String(p.name || p.id || '').trim();
+          if (!name) return '';
+          const id = 'snr_bulk_plot_' + i;
+          const dirs = (p.dirs || []).filter(Boolean);
+          const dirHint = dirs.length ? ' <span style="color:#888;font-weight:normal;">（方向: ' + esc(dirs.join('・')) + '）</span>' : '';
+          return '<label class="snr-bulk-check-item" for="' + id + '">'
+            + '<input type="checkbox" id="' + id + '" class="snr-bulk-plot-check" value="' + esc(name) + '">'
+            + '<span>' + esc(name) + dirHint + '</span></label>';
+        }).join('');
+      };
+
+      window.toggleSnrBulkDeletePlotPanel_ = (forceShow) => {
+        const panel = document.getElementById('snr_bulk_delete_plot_panel');
+        if (!panel) return;
+        const catName = (document.getElementById('snr_loc_cat') || {}).value || '';
+        if (!catName && forceShow !== false) {
+          if (typeof customAlert === 'function') customAlert('場所カテゴリを選択してください');
+          else alert('場所カテゴリを選択してください');
+          return;
+        }
+        const show = (forceShow === true) ? true : (forceShow === false ? false : panel.style.display === 'none');
+        panel.style.display = show ? 'block' : 'none';
+        if (show) {
+          const addPanel = document.getElementById('snr_add_plot_panel');
+          if (addPanel) addPanel.style.display = 'none';
+          const msg = document.getElementById('snr_bulk_delete_plot_msg');
+          if (msg) msg.textContent = '';
+          window.renderSnrBulkDeletePlotList_();
+        }
+      };
+
+      window.toggleSnrBulkDeletePlotAll_ = () => {
+        const checks = document.querySelectorAll('#snr_bulk_delete_plot_list .snr-bulk-plot-check');
+        if (!checks.length) return;
+        let allOn = true;
+        checks.forEach(function(c) { if (!c.checked) allOn = false; });
+        checks.forEach(function(c) { c.checked = !allOn; });
+      };
+
+      window.submitSnrBulkDeletePlots_ = async () => {
+        const catName = (document.getElementById('snr_loc_cat') || {}).value || '';
+        const btn = document.getElementById('snr_bulk_delete_plot_btn');
+        const msg = document.getElementById('snr_bulk_delete_plot_msg')
+          || document.getElementById('snr_delete_plot_msg');
         if (!catName) {
           if (typeof customAlert === 'function') customAlert('場所カテゴリを選択してください');
           else alert('場所カテゴリを選択してください');
           return;
         }
-        if (!plotSel || !plotSel.value) {
-          if (typeof customAlert === 'function') customAlert('削除する区画を選択してください');
-          else alert('削除する区画を選択してください');
+        const plotNames = [];
+        document.querySelectorAll('#snr_bulk_delete_plot_list .snr-bulk-plot-check:checked').forEach(function(c) {
+          const n = String(c.value || '').trim();
+          if (n) plotNames.push(n);
+        });
+        if (!plotNames.length) {
+          if (msg) { msg.style.color = '#c62828'; msg.textContent = '削除する区画を選択してください'; }
           return;
         }
-        const opt = plotSel.options[plotSel.selectedIndex];
-        const plotName = opt ? (opt.getAttribute('data-name') || opt.textContent || '') : plotSel.value;
-        if (!confirm('区画「' + plotName + '」をマスタから削除しますか？\n（この区画に紐づく方向もすべて削除されます）')) return;
+        const preview = plotNames.length <= 5
+          ? plotNames.join('、')
+          : plotNames.slice(0, 5).join('、') + ' ほか' + (plotNames.length - 5) + '件';
+        if (!confirm('区画を ' + plotNames.length + ' 件削除しますか？\n（' + preview + '）\n紐づく方向もすべて削除されます。')) return;
         if (btn) { btn.disabled = true; btn.textContent = '削除中...'; }
-        if (msg) { msg.style.color = '#6a1b9a'; msg.textContent = '削除中...'; }
+        if (msg) { msg.style.color = '#6a1b9a'; msg.textContent = '削除中...（' + plotNames.length + '件）'; }
         try {
           const userName = localStorage.getItem('passionMapUserName')
             || localStorage.getItem('passionMapUserId')
@@ -5028,18 +5309,28 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
           const list = await callGAS('manageMaster', {
             masterType: 'nurseryLocation',
             manageAction: 'delete',
-            value: { polyName: catName, plotName: plotName },
+            value: { polyName: catName, plotNames: plotNames },
             userName: userName
           });
           window.applySowingNurseryLocMasterList_(list, catName, '');
-          if (msg) { msg.style.color = '#2e7d32'; msg.textContent = '区画「' + plotName + '」を削除しました'; }
+          window.renderSnrBulkDeletePlotList_();
+          if (msg) {
+            msg.style.color = '#2e7d32';
+            msg.textContent = '区画を ' + plotNames.length + ' 件削除しました';
+          }
+          const remain = ((window.getSowingNurseryLocCategory_(catName) || {}).plots || []).length;
+          if (!remain) setTimeout(function() { window.toggleSnrBulkDeletePlotPanel_(false); }, 600);
         } catch (e) {
           if (msg) { msg.style.color = '#c62828'; msg.textContent = '削除に失敗: ' + (e.message || e); }
           if (typeof customAlert === 'function') customAlert('削除に失敗: ' + (e.message || e));
           else alert('削除に失敗: ' + (e.message || e));
         } finally {
-          if (btn) { btn.disabled = false; btn.textContent = '削除'; }
+          if (btn) { btn.disabled = false; btn.textContent = '選択した区画を削除'; }
         }
+      };
+
+      window.deleteSnrPlot_ = async () => {
+        window.toggleSnrBulkDeletePlotPanel_(true);
       };
 
       window.deleteSnrDirection_ = async () => {

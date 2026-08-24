@@ -15,7 +15,7 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1786243000000"></script>
-  <link rel="stylesheet" href="schedule.css?v=1787790000000">
+  <link rel="stylesheet" href="schedule.css?v=1787792000000">
 </head>
 
 <body>
@@ -380,13 +380,13 @@
   </div>
 
   <div id="snrMapPickBanner" style="display:none; position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(106,27,154,0.96); color:white; padding:15px; border-radius:12px; z-index:10050; align-items:center; gap:10px; width:90%; max-width:400px; box-shadow:0 4px 15px rgba(0,0,0,0.35); flex-direction:column; justify-content:center; font-weight:bold; font-size:14px; text-align:center;">
-    <div style="font-size:16px; margin-bottom:4px;">🗺️ 区画を地図から選択</div>
+    <div id="snrMapPickTitle" style="font-size:16px; margin-bottom:4px;">🗺️ 区画を地図から選択</div>
     <div id="snrMapPickCatLabel" style="font-size:12px; color:#e1bee7; font-weight:normal; margin-bottom:4px;">場所カテゴリ: -</div>
-    <div style="font-size:11px; color:#f3e5f5; font-weight:normal; margin-bottom:6px;">圃場をタップして選択/解除（複数可）</div>
+    <div id="snrMapPickHint" style="font-size:11px; color:#f3e5f5; font-weight:normal; margin-bottom:6px;">設定済みの圃場を1つタップして選択</div>
     <div id="snrMapPickSelectedList" style="font-size:11px; max-height:60px; overflow-y:auto; width:100%; text-align:left; background:rgba(255,255,255,0.12); padding:6px; border-radius:4px; margin-bottom:8px; box-sizing:border-box; word-break:break-all; font-weight:normal;">選択中: なし</div>
-    <button type="button" onclick="saveSnrLocCatMapCenter_()" style="width:100%; background:#fff; color:#6a1b9a; border:none; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:8px;">📍 今の地図位置を初期位置に保存</button>
+    <button type="button" id="snrMapPickSaveCenterBtn" onclick="saveSnrLocCatMapCenter_()" style="width:100%; background:#fff; color:#6a1b9a; border:none; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:8px;">📍 今の地図位置を初期位置に保存</button>
     <div style="display:flex; gap:10px; width:100%;">
-      <button type="button" onclick="confirmSnrPlotMapPick_()" style="flex:1; background:#4CAF50; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer;">区画を登録</button>
+      <button type="button" id="snrMapPickConfirmBtn" onclick="confirmSnrPlotMapPick_()" style="flex:1; background:#4CAF50; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer;">この区画を使う</button>
       <button type="button" onclick="cancelSnrPlotMapPick_()" style="flex:1; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer;">キャンセル</button>
     </div>
     <div id="snrMapPickMsg" style="font-size:11px; font-weight:bold; margin-top:6px; min-height:14px;"></div>
@@ -693,7 +693,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1787790000000';
+    const cacheBust = '1787792000000';
     const bootstrapFiles = [
       'cultivation_modal.html', 'weather-agri.js', 'schedule.js', 'day-planner.js',
       'attendance-calendar.js', 'market.js', 'tracking.js',

@@ -1949,6 +1949,15 @@ function manageMasterData(masterType, manageAction, value, userName) {
       const polyName = String(val.polyName || '').trim();
       const plotName = String(val.plotName || val.name || '').trim();
       const direction = String(val.direction || '').trim();
+      const plotNames = Array.isArray(val.plotNames)
+        ? val.plotNames.map(function(n) { return String(n || '').trim(); }).filter(Boolean)
+        : [];
+      const plotNameSet = {};
+      if (plotNames.length) {
+        plotNames.forEach(function(n) { plotNameSet[n] = true; });
+      } else if (plotName) {
+        plotNameSet[plotName] = true;
+      }
       const rowsToDelete = [];
       for (let i = 1; i < data.length; i++) {
         let match = false;
@@ -1959,10 +1968,10 @@ function manageMasterData(masterType, manageAction, value, userName) {
           if (rowPoly !== polyName) continue;
           const rowName = String(data[i][1] || '').trim();
           const rowDir = String(data[i][4] || '').trim();
-          if (plotName && direction) {
-            match = rowName === plotName && rowDir === direction;
-          } else if (plotName) {
-            match = rowName === plotName;
+          if (Object.keys(plotNameSet).length && direction) {
+            match = !!plotNameSet[rowName] && rowDir === direction;
+          } else if (Object.keys(plotNameSet).length) {
+            match = !!plotNameSet[rowName];
           } else if (direction) {
             match = rowDir === direction;
           }
@@ -1979,7 +1988,12 @@ function manageMasterData(masterType, manageAction, value, userName) {
       });
       deleted = true;
       const labelParts = [];
-      if (plotName) labelParts.push(plotName);
+      const deletedPlotLabels = Object.keys(plotNameSet);
+      if (deletedPlotLabels.length > 1) {
+        labelParts.push(deletedPlotLabels.join('、'));
+      } else if (deletedPlotLabels.length === 1) {
+        labelParts.push(deletedPlotLabels[0]);
+      }
       if (direction) labelParts.push(direction);
       const label = labelParts.length ? labelParts.join('/') : (targetId || String(targetVal || ''));
       writeLog(userName, "マスタ削除", label + (rowsToDelete.length > 1 ? ' (' + rowsToDelete.length + '件)' : ''), `対象: ${sheetName} / ${polyName || '-'}`);
