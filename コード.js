@@ -12787,7 +12787,7 @@ function getSowingProgress(params) {
 
 /**
  * 作業記録の播種UI用: いまの播種期間（またはまもなく／未完了）の実行済み計画一覧。
- * params: { today?, crop?, year?, includeDone? }
+ * params: { today?, crop?, year?, includeDone?, includePastPlans? }
  */
 function getCurrentSowingPlanOptions(params) {
   params = params || {};
@@ -12802,6 +12802,7 @@ function getCurrentSowingPlanOptions(params) {
   const cropFilter = String(params.crop || '').trim();
   const yearFilter = String(params.year || '').trim() || String(today.getFullYear());
   const includeDone = params.includeDone === true || params.includeDone === 'true';
+  const includePastPlans = params.includePastPlans === true || params.includePastPlans === 'true';
   const BEFORE_DAYS = 7;   // 期間開始の何日前から候補に出すか
   const AFTER_DAYS = 14;   // 期間終了後も未播種なら何日まで出すか
 
@@ -12857,7 +12858,7 @@ function getCurrentSowingPlanOptions(params) {
 
     const prog = computePlanCropWorkProgress_(plan, state, []);
     // 定植済み以降は候補から外す（播種のタイミングではない）
-    if (prog.plantDone) return;
+    if (prog.plantDone && !includePastPlans) return;
     const sowDone = !!prog.sowDone;
     const plannedTrays = Number(plan.trays) || 0;
     const fromPlanId = traysByPlanId[String(plan.id)] || 0;
@@ -12865,12 +12866,12 @@ function getCurrentSowingPlanOptions(params) {
     const fromRecords = fromPlanId > 0 ? fromPlanId : fromTag;
     const doneTrays = Math.max(fromRecords, scheduleDoneByPlan[String(plan.id)] || 0);
     const traysDone = plannedTrays > 0 ? (doneTrays >= plannedTrays) : sowDone;
-    if (!includeDone && traysDone && sowDone) return;
+    if (!includePastPlans && !includeDone && traysDone && sowDone) return;
 
     // 今の期間: 開始前少し〜終了後少し、またはまだ播種未完で開始済み
     const inCurrentWindow = todayMs >= earlyMs && todayMs <= lateMs;
     const overdueOpen = todayMs > endMs && !sowDone && !traysDone;
-    if (!inCurrentWindow && !overdueOpen) return;
+    if (!includePastPlans && !inCurrentWindow && !overdueOpen) return;
 
     let phase = 'in';
     if (todayMs < startMs) phase = 'soon';
@@ -12934,7 +12935,8 @@ function getCurrentSowingPlanOptions(params) {
 function getSowingNurseryFormOptions(params) {
   params = params || {};
   const planRes = getCurrentSowingPlanOptions(Object.assign({}, params, {
-    includeDone: params.includeDone != null ? params.includeDone : true
+    includeDone: params.includeDone != null ? params.includeDone : true,
+    includePastPlans: params.includePastPlans != null ? params.includePastPlans : true
   }));
   const items = (planRes && planRes.items) || [];
   const nurseryLocations = readNurseryLocationList_();
