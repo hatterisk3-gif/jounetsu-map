@@ -1607,6 +1607,8 @@ async function fetchWeatherAndUpdateUI() {
                   handleFieldCultivationClick(p);
                 } else if (window.isMapSelectingField) {
                   handleMapSelectFieldToggle(p);
+                } else if (window.isSnrMapPickingPlot) {
+                  handleSnrPlotMapToggle_(p);
                 } else {
                   showPopup(p, e.latLng);
                 }
@@ -3883,6 +3885,8 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
                 </select>
                 <button type="button" onclick="toggleSowingNurseryAddPlotPanel_()" title="このカテゴリに区画を追加"
                   style="flex-shrink:0; background:#8e24aa; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋区画/方向</button>
+                <button type="button" onclick="openSnrPlotMapPick_()" title="地図から圃場を選んで区画登録"
+                  style="flex-shrink:0; background:#4527a0; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">🗺️ 地図</button>
                 <button type="button" id="snr_delete_plot_btn" onclick="deleteSnrPlot_()" title="選択中の区画を削除"
                   style="flex-shrink:0; background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">削除</button>
               </div>
@@ -4292,10 +4296,16 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
           const directions = [];
           const dirSeen = {};
           let locationName = '';
+          let mapLat = '';
+          let mapLng = '';
+          let mapZoom = '';
           rows.forEach(function(n) {
             if (!locationName && String(n.locationName || '').trim()) {
               locationName = String(n.locationName || '').trim();
             }
+            if (mapLat === '' && n.mapLat !== '' && n.mapLat != null) mapLat = n.mapLat;
+            if (mapLng === '' && n.mapLng !== '' && n.mapLng != null) mapLng = n.mapLng;
+            if (mapZoom === '' && n.mapZoom !== '' && n.mapZoom != null) mapZoom = n.mapZoom;
             const d = String(n.direction || '').trim();
             if (d && !dirSeen[d]) { dirSeen[d] = true; directions.push(d); }
             const isDirOnly = String(n.note || '') === 'direction-only'
@@ -4304,17 +4314,225 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
             const pname = String(n.name || '').trim();
             if (!pname) return;
             if (!plotMap[pname]) {
-              plotMap[pname] = { id: n.id || "", name: pname, direction: d, polyName: n.polyName || "", note: n.note || "", dirs: [] };
+              plotMap[pname] = { id: n.id || "", polyId: String(n.polyId || '').trim(), name: pname, direction: d, polyName: n.polyName || "", note: n.note || "", dirs: [] };
             }
             if (d && plotMap[pname].dirs.indexOf(d) < 0) plotMap[pname].dirs.push(d);
             if (!plotMap[pname].id && n.id) plotMap[pname].id = n.id;
+            if (!plotMap[pname].polyId && n.polyId) plotMap[pname].polyId = String(n.polyId || '').trim();
           });
           const plots = Object.keys(plotMap).sort(function(a, b) {
             return String(a).localeCompare(String(b), "ja");
           }).map(function(k) { return plotMap[k]; });
           directions.sort(function(a, b) { return String(a).localeCompare(String(b), "ja"); });
-          return { name: cat, plots: plots, directions: directions, locationName: locationName };
+          return { name: cat, plots: plots, directions: directions, locationName: locationName, mapLat: mapLat, mapLng: mapLng, mapZoom: mapZoom };
         });
+      };
+
+      window.isSnrMapPickingPlot = false;
+      window.snrMapPickCategory = '';
+      window.snrMapSelectedFieldIds = [];
+
+      window.applySnrLocCatMapCenter_ = (catName) => {
+        if (!map || !window.google || !google.maps) return;
+        const cat = window.getSowingNurseryLocCategory_(catName);
+        if (cat && cat.mapLat !== '' && cat.mapLat != null && cat.mapLng !== '' && cat.mapLng != null) {
+          map.setCenter({ lat: Number(cat.mapLat), lng: Number(cat.mapLng) });
+          if (cat.mapZoom !== '' && cat.mapZoom != null) map.setZoom(Number(cat.mapZoom));
+          return;
+        }
+        const bounds = new google.maps.LatLngBounds();
+        let has = false;
+        (cat && cat.plots || []).forEach(function(pl) {
+          const pid = String(pl.polyId || '').trim();
+          if (!pid) return;
+          const p = loadedPolygons[pid];
+          if (p && p.coords) {
+            p.coords.forEach(function(pt) { bounds.extend(pt); });
+            has = true;
+          }
+        });
+        if (!has && cat && cat.locationName) {
+          Object.keys(loadedPolygons || {}).forEach(function(id) {
+            const p = loadedPolygons[id];
+            if (!p || p.isMarker || !p.coords) return;
+            if (String(p.location || '') === String(cat.locationName)) {
+              p.coords.forEach(function(pt) { bounds.extend(pt); });
+              has = true;
+            }
+          });
+        }
+        if (has && !bounds.isEmpty()) map.fitBounds(bounds);
+      };
+
+      window.highlightSnrMapPickFields_ = function() {
+        if (!window.isSnrMapPickingPlot) return;
+        for (let id in loadedPolygons) {
+          const p = loadedPolygons[id];
+          if (p.isMarker || !p.polygon) continue;
+          const val = String(p.id);
+          const isSelected = window.snrMapSelectedFieldIds.indexOf(val) >= 0;
+          if (isSelected) {
+            p.polygon.setOptions({ strokeColor: '#FFEB3B', strokeWeight: 4, fillOpacity: 0.75 });
+          } else {
+            const originalColor = p.color || '#4CAF50';
+            p.polygon.setOptions({ strokeColor: originalColor, strokeWeight: 2, fillOpacity: 0.35 });
+          }
+        }
+      };
+
+      window.updateSnrMapPickBanner_ = function() {
+        const listEl = document.getElementById('snrMapPickSelectedList');
+        if (!listEl) return;
+        const names = window.snrMapSelectedFieldIds.map(function(id) {
+          const p = loadedPolygons[id];
+          return p ? (p.name || id) : id;
+        });
+        listEl.textContent = names.length ? ('選択中: ' + names.join(', ')) : '選択中: なし';
+      };
+
+      window.openSnrPlotMapPick_ = function() {
+        const catName = String((document.getElementById('snr_loc_cat') || {}).value || '').trim();
+        if (!catName) {
+          if (typeof customAlert === 'function') customAlert('先に場所カテゴリを選択してください');
+          else alert('先に場所カテゴリを選択してください');
+          return;
+        }
+        if (!map || !loadedPolygons || !Object.keys(loadedPolygons).length) {
+          if (typeof customAlert === 'function') customAlert('地図または圃場データが読み込まれていません');
+          else alert('地図または圃場データが読み込まれていません');
+          return;
+        }
+        window.isSnrMapPickingPlot = true;
+        window.snrMapPickCategory = catName;
+        window.snrMapSelectedFieldIds = [];
+        const cat = window.getSowingNurseryLocCategory_(catName);
+        (cat && cat.plots || []).forEach(function(pl) {
+          const pid = String(pl.polyId || '').trim();
+          if (pid && window.snrMapSelectedFieldIds.indexOf(pid) < 0) {
+            window.snrMapSelectedFieldIds.push(pid);
+          }
+        });
+        const addModal = document.getElementById('sowingNurseryAddModal');
+        const progressModal = document.getElementById('sowingProgressModal');
+        if (addModal) addModal.style.display = 'none';
+        if (progressModal) progressModal.style.display = 'none';
+        const banner = document.getElementById('snrMapPickBanner');
+        const catLabel = document.getElementById('snrMapPickCatLabel');
+        const msg = document.getElementById('snrMapPickMsg');
+        if (catLabel) catLabel.textContent = '場所カテゴリ: ' + catName;
+        if (msg) msg.textContent = '';
+        if (banner) banner.style.display = 'flex';
+        window.applySnrLocCatMapCenter_(catName);
+        window.highlightSnrMapPickFields_();
+        window.updateSnrMapPickBanner_();
+      };
+
+      window.handleSnrPlotMapToggle_ = function(p) {
+        if (!window.isSnrMapPickingPlot || !p || p.isMarker) return;
+        const val = String(p.id);
+        const idx = window.snrMapSelectedFieldIds.indexOf(val);
+        if (idx >= 0) window.snrMapSelectedFieldIds.splice(idx, 1);
+        else window.snrMapSelectedFieldIds.push(val);
+        window.highlightSnrMapPickFields_();
+        window.updateSnrMapPickBanner_();
+      };
+
+      window.exitSnrPlotMapPick_ = function(reopenModal) {
+        window.isSnrMapPickingPlot = false;
+        window.snrMapPickCategory = '';
+        window.snrMapSelectedFieldIds = [];
+        const banner = document.getElementById('snrMapPickBanner');
+        if (banner) banner.style.display = 'none';
+        if (typeof updateMapVisuals === 'function') updateMapVisuals();
+        if (reopenModal) {
+          const progressModal = document.getElementById('sowingProgressModal');
+          const addModal = document.getElementById('sowingNurseryAddModal');
+          const st = window._sowingNurseryState;
+          if (progressModal) progressModal.style.display = 'flex';
+          if (st && st.showAddForm && addModal) addModal.style.display = 'flex';
+        }
+      };
+
+      window.saveSnrLocCatMapCenter_ = async function() {
+        const catName = String(window.snrMapPickCategory || (document.getElementById('snr_loc_cat') || {}).value || '').trim();
+        const msg = document.getElementById('snrMapPickMsg');
+        if (!catName || !map) return;
+        const center = map.getCenter();
+        const payload = {
+          mapLat: center.lat(),
+          mapLng: center.lng(),
+          mapZoom: map.getZoom()
+        };
+        if (msg) { msg.style.color = '#fff'; msg.textContent = '初期位置を保存中...'; }
+        try {
+          const userName = localStorage.getItem('passionMapUserName')
+            || localStorage.getItem('passionMapUserId')
+            || 'ユーザー';
+          const list = await callGAS('manageMaster', {
+            masterType: 'nurseryLocation',
+            manageAction: 'edit',
+            value: { originalName: catName, newData: payload },
+            userName: userName
+          });
+          window.applySowingNurseryLocMasterList_(Array.isArray(list) ? list : [], catName, '');
+          if (msg) { msg.style.color = '#c8e6c9'; msg.textContent = 'このカテゴリの地図初期位置を保存しました'; }
+        } catch (e) {
+          if (msg) { msg.style.color = '#ffcdd2'; msg.textContent = '保存失敗: ' + (e.message || e); }
+        }
+      };
+
+      window.confirmSnrPlotMapPick_ = async function() {
+        const catName = String(window.snrMapPickCategory || '').trim();
+        const msg = document.getElementById('snrMapPickMsg');
+        if (!catName) return;
+        const cat = window.getSowingNurseryLocCategory_(catName);
+        const existingPolyIds = {};
+        const existingNames = {};
+        (cat && cat.plots || []).forEach(function(pl) {
+          if (pl.polyId) existingPolyIds[String(pl.polyId)] = true;
+          if (pl.name) existingNames[String(pl.name)] = true;
+        });
+        const plotItems = [];
+        window.snrMapSelectedFieldIds.forEach(function(id) {
+          const p = loadedPolygons[id];
+          if (!p || p.isMarker) return;
+          if (existingPolyIds[id] || existingNames[p.name]) return;
+          plotItems.push({ name: p.name || id, polyId: id, direction: '', note: '' });
+        });
+        if (!plotItems.length) {
+          if (typeof customAlert === 'function') customAlert('新しく登録する圃場がありません（未選択、または既に登録済み）');
+          else alert('新しく登録する圃場がありません');
+          return;
+        }
+        if (msg) { msg.style.color = '#fff'; msg.textContent = plotItems.length + '件を登録中...'; }
+        try {
+          const userName = localStorage.getItem('passionMapUserName')
+            || localStorage.getItem('passionMapUserId')
+            || 'ユーザー';
+          const center = map.getCenter();
+          const list = await callGAS('manageMaster', {
+            masterType: 'nurseryLocation',
+            manageAction: 'add',
+            value: {
+              polyName: catName,
+              locationName: cat ? (cat.locationName || '') : '',
+              mapLat: (cat && cat.mapLat !== '' && cat.mapLat != null) ? cat.mapLat : center.lat(),
+              mapLng: (cat && cat.mapLng !== '' && cat.mapLng != null) ? cat.mapLng : center.lng(),
+              mapZoom: (cat && cat.mapZoom !== '' && cat.mapZoom != null) ? cat.mapZoom : map.getZoom(),
+              plots: plotItems
+            },
+            userName: userName
+          });
+          window.exitSnrPlotMapPick_(true);
+          window.applySowingNurseryLocMasterList_(Array.isArray(list) ? list : [], catName, plotItems[0].name);
+          if (typeof customAlert === 'function') customAlert('区画を ' + plotItems.length + ' 件登録しました');
+        } catch (e) {
+          if (msg) { msg.style.color = '#ffcdd2'; msg.textContent = '登録失敗: ' + (e.message || e); }
+        }
+      };
+
+      window.cancelSnrPlotMapPick_ = function() {
+        window.exitSnrPlotMapPick_(true);
       };
       window.applySowingNurseryLocMasterList_ = (list, preferCat, preferPlotId) => {
         const st = window._sowingNurseryState;
@@ -4864,10 +5082,7 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
             || String(b.recordedAt || '').localeCompare(String(a.recordedAt || ''));
         });
         let html = '';
-        html += `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
-          <div style="font-size:12px; color:#555; flex:1;">年度 ${esc(yearStr || 'すべて')} の育苗・播種記録です。作業記録や作業一覧の播種完了、またはここからの新規追加で登録できます。</div>
-          <button type="button" onclick="openSowingNurseryAddForm_()" style="background:#6a1b9a; color:#fff; border:none; border-radius:6px; padding:8px 12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋ 新規追加</button>
-        </div>`;
+        html += `<div style="margin-bottom:12px; font-size:12px; color:#555;">年度 ${esc(yearStr || 'すべて')} の育苗・播種記録です。作業記録や作業一覧の播種完了、または画面上部の「＋ 新規追加」から登録できます。</div>`;
         html += `<div style="font-weight:bold; color:#6a1b9a; margin-bottom:6px;">記録一覧（${records.length}件）</div>`;
         if (!records.length) {
           html += `<div style="color:#888; padding:16px; text-align:center;">まだ育苗・播種の記録がありません。</div>`;

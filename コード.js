@@ -1588,11 +1588,12 @@ function manageMasterData(masterType, manageAction, value, userName) {
       let plotItems = [];
       if (Array.isArray(loc.plots) && loc.plots.length) {
         plotItems = loc.plots.map(function(p) {
-          if (typeof p === 'string') return { name: String(p || '').trim(), direction: commonDir, note: commonNote };
+          if (typeof p === 'string') return { name: String(p || '').trim(), direction: commonDir, note: commonNote, polyId: polyId };
           return {
             name: String((p && (p.name || p.plotName)) || '').trim(),
             direction: String((p && p.direction) || commonDir).trim(),
-            note: String((p && p.note) || commonNote).trim()
+            note: String((p && p.note) || commonNote).trim(),
+            polyId: String((p && p.polyId) || polyId || '').trim()
           };
         }).filter(function(p) { return !!p.name; });
       } else if (Array.isArray(loc.names) && loc.names.length) {
@@ -1604,10 +1605,14 @@ function manageMasterData(masterType, manageAction, value, userName) {
         if (name) plotItems = [{ name: name, direction: commonDir, note: commonNote }];
       }
       if (!plotItems.length) throw new Error('育苗場所名（区画）を入力してください');
+      const mapLat = (loc.mapLat === '' || loc.mapLat == null) ? '' : loc.mapLat;
+      const mapLng = (loc.mapLng === '' || loc.mapLng == null) ? '' : loc.mapLng;
+      const mapZoom = (loc.mapZoom === '' || loc.mapZoom == null) ? '' : loc.mapZoom;
       const addedNames = [];
       plotItems.forEach(function(p) {
         const newId = 'NUR-' + Utilities.getUuid().substring(0, 8);
-        sheet.appendRow([newId, p.name, polyId, polyName, p.direction || '', p.note || '', locationName]);
+        const rowPolyId = String(p.polyId || polyId || '').trim();
+        sheet.appendRow([newId, p.name, rowPolyId, polyName, p.direction || '', p.note || '', locationName, mapLat, mapLng, mapZoom]);
         addedNames.push(p.name);
       });
       writeLog(userName, "マスタ追加", addedNames.join(', '), `対象: ${sheetName} / カテゴリ: ${polyName || '-'} / ${addedNames.length}件`);
@@ -1905,6 +1910,25 @@ function manageMasterData(masterType, manageAction, value, userName) {
         }
         if (!updated) throw new Error('場所カテゴリ「' + polyName + '」が見つかりません');
         writeLog(userName, "マスタ編集", polyName + '→' + (locationName || '未設定'), `対象: ${sheetName} / 拠点紐づけ`);
+      } else if (newData.mapLat != null || newData.mapLng != null || newData.mapZoom != null) {
+        const latIdx = headers.indexOf('地図緯度');
+        const lngIdx = headers.indexOf('地図経度');
+        const zoomIdx = headers.indexOf('地図ズーム');
+        const latCol = latIdx >= 0 ? latIdx + 1 : 8;
+        const lngCol = lngIdx >= 0 ? lngIdx + 1 : 9;
+        const zoomCol = zoomIdx >= 0 ? zoomIdx + 1 : 10;
+        const mapLat = newData.mapLat != null ? newData.mapLat : '';
+        const mapLng = newData.mapLng != null ? newData.mapLng : '';
+        const mapZoom = newData.mapZoom != null ? newData.mapZoom : '';
+        for (let i = 1; i < latest.length; i++) {
+          if (String(latest[i][3] || '').trim() !== polyName) continue;
+          sheet.getRange(i + 1, latCol).setValue(mapLat);
+          sheet.getRange(i + 1, lngCol).setValue(mapLng);
+          sheet.getRange(i + 1, zoomCol).setValue(mapZoom);
+          updated++;
+        }
+        if (!updated) throw new Error('場所カテゴリ「' + polyName + '」が見つかりません');
+        writeLog(userName, "マスタ編集", polyName + ' 地図初期位置', `対象: ${sheetName} / lat:${mapLat} lng:${mapLng} zoom:${mapZoom}`);
       } else {
         throw new Error('更新内容がありません');
       }
@@ -11839,7 +11863,7 @@ function assignCultivationPlanTags_(plans, options) {
 }
 
 // ===== 育苗場所マスタ / 作物栽培設定 / 播種記録 =====
-const NURSERY_LOCATION_HEADERS_ = ['ID', '場所名', '圃場ID', '圃場名', '方向', '備考', '拠点'];
+const NURSERY_LOCATION_HEADERS_ = ['ID', '場所名', '圃場ID', '圃場名', '方向', '備考', '拠点', '地図緯度', '地図経度', '地図ズーム'];
 const CROP_CULT_SETTING_HEADERS_ = ['作物名', '播種穴数', '備考'];
 const SOWING_RECORD_HEADERS_ = ['記録時間', '記録者', 'TAG', '作物名', '品種名', '区画', '方向', '播種日', '枚数', '穴数', '計画ID', 'システムID', '備考'];
 
@@ -11907,7 +11931,10 @@ function readNurseryLocationList_() {
     polyName: String(r[3] || '').trim(),
     direction: String(r[4] || '').trim(),
     note: String(r[5] || '').trim(),
-    locationName: String(r[6] || '').trim()
+    locationName: String(r[6] || '').trim(),
+    mapLat: (r[7] === '' || r[7] == null) ? '' : r[7],
+    mapLng: (r[8] === '' || r[8] == null) ? '' : r[8],
+    mapZoom: (r[9] === '' || r[9] == null) ? '' : r[9]
   })).filter(x => x.id || x.name);
 }
 
@@ -12956,10 +12983,16 @@ function getSowingNurseryFormOptions(params) {
     const directions = [];
     const dirSeen = {};
     let locationName = '';
+    let mapLat = '';
+    let mapLng = '';
+    let mapZoom = '';
     rows.forEach(function(n) {
       if (!locationName && String(n.locationName || '').trim()) {
         locationName = String(n.locationName || '').trim();
       }
+      if (mapLat === '' && n.mapLat !== '' && n.mapLat != null) mapLat = n.mapLat;
+      if (mapLng === '' && n.mapLng !== '' && n.mapLng != null) mapLng = n.mapLng;
+      if (mapZoom === '' && n.mapZoom !== '' && n.mapZoom != null) mapZoom = n.mapZoom;
       const d = String(n.direction || '').trim();
       if (d && !dirSeen[d]) { dirSeen[d] = true; directions.push(d); }
       const pname = String(n.name || '').trim();
@@ -12967,6 +13000,7 @@ function getSowingNurseryFormOptions(params) {
       if (!plotMap[pname]) {
         plotMap[pname] = {
           id: n.id || '',
+          polyId: String(n.polyId || '').trim(),
           name: pname,
           direction: d,
           polyName: n.polyName || '',
@@ -12976,12 +13010,13 @@ function getSowingNurseryFormOptions(params) {
       }
       if (d && plotMap[pname].dirs.indexOf(d) < 0) plotMap[pname].dirs.push(d);
       if (!plotMap[pname].id && n.id) plotMap[pname].id = n.id;
+      if (!plotMap[pname].polyId && n.polyId) plotMap[pname].polyId = String(n.polyId || '').trim();
     });
     const plots = Object.keys(plotMap).sort(function(a, b) {
       return String(a).localeCompare(String(b), 'ja');
     }).map(function(k) { return plotMap[k]; });
     directions.sort(function(a, b) { return String(a).localeCompare(String(b), 'ja'); });
-    return { name: cat, plots: plots, directions: directions, locationName: locationName };
+    return { name: cat, plots: plots, directions: directions, locationName: locationName, mapLat: mapLat, mapLng: mapLng, mapZoom: mapZoom };
   });
 
   const cropSet = {};
