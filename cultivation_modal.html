@@ -705,7 +705,10 @@
               }
               #cpLeftBody .cp-var-group-label {
                 flex-shrink: 0;
-                height: 16px;
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                min-height: 16px;
                 line-height: 16px;
                 padding: 0 6px 0 8px;
                 font-size: 10px;
@@ -714,8 +717,25 @@
                 background: #1565C0;
                 letter-spacing: 0.02em;
                 overflow: hidden;
+              }
+              #cpLeftBody .cp-var-group-name {
+                flex: 1;
+                min-width: 0;
+                overflow: hidden;
                 text-overflow: ellipsis;
                 white-space: nowrap;
+              }
+              #cpLeftBody .cp-var-group-resist {
+                flex-shrink: 0;
+                display: inline-flex;
+                align-items: center;
+                gap: 2px;
+                margin-left: auto;
+              }
+              #cpLeftBody .cp-dr-icon {
+                font-size: 10px;
+                line-height: 1;
+                cursor: help;
               }
               #cpTableBody tr.cp-var-group-first td {
                 border-top: 2px solid #1565C0 !important;
@@ -754,7 +774,7 @@
                 <div id="cpHarvestChartPanel" style="padding:0; background:transparent; border:none;">
                   <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
                     <div style="font-size:12px; font-weight:bold; color:#e65100;">
-                      📊 <span id="cpGraphMetricTitle">収穫量（半旬）</span>
+                      📊 <span id="cpGraphMetricTitle">収穫量・面積（半旬）</span>
                       <span id="cpHarvestChartCrop" style="font-weight:normal; color:#666;"></span>
                       <span id="cpHarvestChartTotal" style="margin-left:6px; color:#bf360c;"></span>
                     </div>
@@ -762,11 +782,12 @@
                   </div>
                   <div id="cpGraphMetricTabs" role="tablist" aria-label="グラフの表示内容" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">
                     <button type="button" class="cp-graph-metric-btn is-active" data-metric="harvest" onclick="setCpGraphMetric('harvest')">🍊 収穫量</button>
+                    <button type="button" class="cp-graph-metric-btn" data-metric="harvestArea" onclick="setCpGraphMetric('harvestArea')">📐 収穫面積</button>
                     <button type="button" class="cp-graph-metric-btn" data-metric="planting" onclick="setCpGraphMetric('planting')">🌱 定植量</button>
                     <button type="button" class="cp-graph-metric-btn" data-metric="sowing" onclick="setCpGraphMetric('sowing')">🪴 播種量</button>
                     <button type="button" class="cp-graph-metric-btn" data-metric="maker" onclick="setCpGraphMetric('maker')">🏭 メーカー比率</button>
                   </div>
-                  <div id="cpGraphMetricHint" style="font-size:10px; color:#888; margin-bottom:6px; line-height:1.4;">品種カードの収穫を塗ると、半旬ごとの収穫量が積み上げ表示されます。</div>
+                  <div id="cpGraphMetricHint" style="font-size:10px; color:#888; margin-bottom:6px; line-height:1.4;">収穫を塗ると半旬ごとの収穫量が表示され、各柱の下段に対応する面積(a)も表示されます。</div>
                   <div class="cp-harvest-chart-frame" id="cpHarvestChartFrame">
                     <div id="cpHarvestChartYAxis" class="cp-harvest-chart-yaxis" aria-hidden="true"></div>
                     <div class="cp-harvest-chart-scroll" id="cpHarvestChartScroll">
@@ -1203,12 +1224,12 @@
 
     <!-- 全体計画の確認（全作物の播種枚数・定植面積） -->
     <div id="cpOverallPlanModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:11030; align-items:center; justify-content:center;">
-      <div style="background:#fff; width:96%; max-width:720px; border-radius:12px; padding:16px; box-sizing:border-box; box-shadow:0 10px 30px rgba(0,0,0,0.3); max-height:90vh; display:flex; flex-direction:column;">
+      <div style="background:#fff; width:96%; max-width:820px; border-radius:12px; padding:16px; box-sizing:border-box; box-shadow:0 10px 30px rgba(0,0,0,0.3); max-height:90vh; display:flex; flex-direction:column;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:8px;">
           <h3 style="margin:0; font-size:16px; color:#1B5E20;">📊 全体計画の確認</h3>
           <span style="cursor:pointer; font-size:22px; color:#999; line-height:1;" onclick="closeOverallPlanReviewModal()">×</span>
         </div>
-        <p style="font-size:12px; color:#666; margin:0 0 10px 0;">保存済み計画を年度で合算し、全作物の播種枚数と定植面積を確認できます。</p>
+        <p style="font-size:12px; color:#666; margin:0 0 10px 0;">保存済み計画を年度で合算し、全作物の播種枚数・定植面積・半旬グラフを確認できます。</p>
         <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px;">
           <label style="font-size:12px; font-weight:bold; color:#555;">年度
             <select id="cpOverallYear" onchange="refreshOverallPlanReviewModal()" style="margin-left:4px; padding:4px 6px; font-size:12px;"></select>
@@ -1239,10 +1260,36 @@
         </label>
         <div role="tablist" aria-label="全体計画の表示" style="display:flex; gap:6px; flex-wrap:wrap; margin:0 0 10px 0;">
           <button type="button" id="cpOverallTabSummary" class="cp-overall-tab is-active" onclick="switchOverallPlanTab_('summary')" style="padding:7px 12px; border-radius:8px; border:1px solid #81C784; background:#2E7D32; color:#fff; font-size:12px; font-weight:bold; cursor:pointer;">📋 計画合算</button>
+          <button type="button" id="cpOverallTabChart" class="cp-overall-tab" onclick="switchOverallPlanTab_('chart')" style="padding:7px 12px; border-radius:8px; border:1px solid #A5D6A7; background:#fff; color:#1B5E20; font-size:12px; font-weight:bold; cursor:pointer;">📊 半旬グラフ</button>
           <button type="button" id="cpOverallTabNursery" class="cp-overall-tab" onclick="switchOverallPlanTab_('nursery')" style="padding:7px 12px; border-radius:8px; border:1px solid #A5D6A7; background:#fff; color:#1B5E20; font-size:12px; font-weight:bold; cursor:pointer;">🪴 苗床数の必要数</button>
         </div>
         <div id="cpOverallPlanBody" style="overflow-y:auto; flex:1; min-height:180px;">
           <div id="cpOverallPanelSummary"></div>
+          <div id="cpOverallPanelChart" hidden>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+              <div style="font-size:12px; font-weight:bold; color:#e65100;">
+                📊 <span id="cpOverallChartTitle">収穫量（半旬）</span>
+                <span id="cpOverallChartYear" style="font-weight:normal; color:#666;"></span>
+              </div>
+              <span id="cpOverallChartTotal" style="font-size:12px; color:#bf360c; font-weight:bold;"></span>
+            </div>
+            <div id="cpOverallChartMetricTabs" role="tablist" aria-label="全体計画グラフの表示内容" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;">
+              <button type="button" class="cp-graph-metric-btn is-active" data-metric="harvest" onclick="setCpOverallChartMetric_('harvest')">🍊 収穫量</button>
+              <button type="button" class="cp-graph-metric-btn" data-metric="planting" onclick="setCpOverallChartMetric_('planting')">🌱 定植量</button>
+              <button type="button" class="cp-graph-metric-btn" data-metric="sowing" onclick="setCpOverallChartMetric_('sowing')">🪴 播種量</button>
+            </div>
+            <div id="cpOverallChartHint" style="font-size:10px; color:#888; margin-bottom:6px; line-height:1.4;">保存済み計画を上の条件で絞り込み、作物別に半旬グラフを表示します。</div>
+            <div id="cpOverallChartLegend" style="display:flex; flex-wrap:wrap; gap:6px; font-size:10px; color:#555; margin-bottom:6px;"></div>
+            <div class="cp-harvest-chart-frame" id="cpOverallChartFrame" style="display:flex;">
+              <div id="cpOverallChartYAxis" class="cp-harvest-chart-yaxis" aria-hidden="true"></div>
+              <div class="cp-harvest-chart-scroll" id="cpOverallChartScroll">
+                <div id="cpOverallChartBars" style="min-height:100px;">
+                  <div style="color:#999; font-size:11px; text-align:center; padding-top:24px;">半旬グラフタブを開くとここに表示されます</div>
+                </div>
+                <div id="cpOverallChartAxis"></div>
+              </div>
+            </div>
+          </div>
           <div id="cpOverallPanelNursery" hidden></div>
         </div>
         <div style="text-align:center; margin-top:12px;">
@@ -1280,6 +1327,20 @@
             <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">粒数 <span style="font-weight:normal; color:#888;">(コート／生種ごとに複数登録→選択)</span></label>
             <input type="hidden" id="vmdGrainCount" value="">
             <div id="vmdGrainCountBtns"></div>
+          </div>
+          <div>
+            <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">耐病性 <span style="font-weight:normal; color:#888;">(複数選択可)</span></label>
+            <input type="hidden" id="vmdDiseaseResistance" value="">
+            <div id="vmdDiseaseResistanceBtns" style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px;"></div>
+            <select id="vmdDrManage" style="width:100%; padding:6px 8px; border:1px solid #ccc; border-radius:6px; font-size:12px; box-sizing:border-box; background:#fff; margin-bottom:6px;">
+              <option value="">耐病性マスタを選択...</option>
+            </select>
+            <div style="display:flex; gap:5px;">
+              <button type="button" onclick="addVmdDiseaseResistanceOption()" style="flex:1; padding:5px 6px; background:#E8F5E9; color:#2E7D32; border:1px solid #81C784; border-radius:5px; cursor:pointer; font-size:11px; font-weight:bold;">＋ 追加</button>
+              <button type="button" onclick="editVmdDiseaseResistanceOption()" style="flex:1; padding:5px 6px; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:5px; cursor:pointer; font-size:11px; font-weight:bold;">✎ 編集</button>
+              <button type="button" onclick="deleteVmdDiseaseResistanceOption()" style="flex:1; padding:5px 6px; background:#FFEBEE; color:#C62828; border:1px solid #EF9A9A; border-radius:5px; cursor:pointer; font-size:11px; font-weight:bold;">🗑 削除</button>
+            </div>
+            <div style="font-size:10px; color:#999; margin-top:4px;">編集・削除は耐病性の選択肢にのみ反映され、登録済み品種の情報は変更しません。</div>
           </div>
         </div>
         <div style="display:flex; gap:8px; margin-top:16px;">

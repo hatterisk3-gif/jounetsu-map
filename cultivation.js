@@ -87,13 +87,21 @@ function refreshChoiceButtons(selectId) {
             const tips = [];
             if (hasMaker) tips.push('メーカー: ' + String(varietyMeta.maker));
             else tips.push('メーカー未登録（✎で登録）');
-            if (hasGrain) {
-                const gl = formatGrainTypeLabel(varietyMeta && varietyMeta.grainCount);
-                if (gl) tips.push('粒数: ' + gl);
-            } else {
-                tips.push('粒数未登録（✎で登録）');
-            }
-            btn.title = tips.join(' ／ ');
+        if (hasGrain) {
+            const gl = formatGrainTypeLabel(varietyMeta && varietyMeta.grainCount);
+            if (gl) tips.push('粒数: ' + gl);
+        } else {
+            tips.push('粒数未登録（✎で登録）');
+        }
+        const drIds = parseDiseaseResistanceList(varietyMeta && varietyMeta.diseaseResistance);
+        if (drIds.length) {
+            const drNames = drIds.map(id => {
+                const item = findDiseaseResistanceById_(id);
+                return item ? (item.icon + ' ' + item.name) : id;
+            }).join(' ');
+            tips.push('耐病性: ' + drNames);
+        }
+        btn.title = tips.join(' ／ ');
         }
 
         const label = document.createElement('span');
@@ -111,8 +119,8 @@ function refreshChoiceButtons(selectId) {
         if (canManageVariety) {
             const edit = document.createElement('span');
             edit.textContent = '✎';
-            edit.title = '品種・メーカー・粒数を編集';
-            edit.setAttribute('aria-label', '品種・メーカー・粒数を編集');
+            edit.title = '品種・メーカー・粒数・耐病性を編集';
+            edit.setAttribute('aria-label', '品種・メーカー・粒数・耐病性を編集');
             edit.style.cssText = isActive
                 ? 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:rgba(0,0,0,0.18);font-size:11px;font-weight:bold;line-height:1;'
                 : 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#eee;color:#666;font-size:11px;font-weight:bold;line-height:1;';
@@ -1053,7 +1061,7 @@ function getGrainTypeValue(hiddenId) {
 function lookupVarietyMeta(crop, variety) {
     const c = String(crop || '').trim();
     const v = String(variety || '').trim();
-    const result = { maker: '', grainCount: '', grainMeta: emptyGrainMeta() };
+    const result = { maker: '', grainCount: '', grainMeta: emptyGrainMeta(), diseaseResistance: '' };
     if (!c || !v || !cpMasterData || !Array.isArray(cpMasterData.croptypesDB)) return result;
     const climate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';
     const matches = cpMasterData.croptypesDB.filter(db =>
@@ -1064,12 +1072,13 @@ function lookupVarietyMeta(crop, variety) {
     if (climate) {
         found = matches.find(db => String(db.climate || '').trim() === climate) || matches[0];
     } else {
-        found = matches.find(db => db.maker || db.grainCount) || matches[0];
+        found = matches.find(db => db.maker || db.grainCount || db.diseaseResistance) || matches[0];
     }
     if (found) {
         result.maker = String(found.maker || '').trim();
         result.grainMeta = parseGrainMeta(found.grainCount || '');
         result.grainCount = serializeGrainMeta(result.grainMeta);
+        result.diseaseResistance = String(found.diseaseResistance || '').trim();
     }
     return result;
 }
@@ -1121,6 +1130,14 @@ function syncCpVarietyMetaFields() {
         else bits.push('メーカー未登録');
         if (hasRegisteredGrainCount_(meta.grainCount)) bits.push('粒数: ' + formatGrainTypeLabel(meta.grainCount));
         else bits.push('粒数未登録');
+        const drIds = parseDiseaseResistanceList(meta.diseaseResistance);
+        if (drIds.length) {
+            const drNames = drIds.map(id => {
+                const item = findDiseaseResistanceById_(id);
+                return item ? (item.icon + item.name) : id;
+            }).join(' ');
+            bits.push('耐病性: ' + drNames);
+        }
         hint.textContent = `選択中「${variety}」— ${bits.join(' ／ ')}（✎で編集）`;
     }
 }
@@ -1429,6 +1446,8 @@ function openVarietyMetaDialog(opts) {
         }
         grainVal = mergeCropGrainCandidates(crop, grainVal);
         setGrainTypeValue('vmdGrainCount', 'vmdGrainCountBtns', grainVal, { accent: '#FF9800', accentDark: '#EF6C00' });
+        setVmdDiseaseResistanceValue(meta.diseaseResistance || '');
+        renderVmdDiseaseResistanceBtns();
         // 編集時も候補は出すが、メーカーは自動では変えない
         if (typeof onVmdVarietyNameInput === 'function') onVmdVarietyNameInput();
     } else {
@@ -1439,6 +1458,8 @@ function openVarietyMetaDialog(opts) {
         setGrainTypeValue('vmdGrainCount', 'vmdGrainCountBtns',
             mergeCropGrainCandidates(crop, ''),
             { accent: '#FF9800', accentDark: '#EF6C00' });
+        setVmdDiseaseResistanceValue('');
+        renderVmdDiseaseResistanceBtns();
     }
 
     dlg.style.display = 'flex';
@@ -1488,6 +1509,7 @@ async function flushVarietyMetaServerSync_() {
                         variety: job.variety,
                         maker: job.maker,
                         grainCount: job.grainCount,
+                        diseaseResistance: job.diseaseResistance || '',
                         climate: job.climate || ''
                     });
                 }
@@ -1520,6 +1542,7 @@ async function confirmVarietyMetaDialog() {
         ? String(document.getElementById('vmdMaker').value || '').trim()
         : '';
     const grainCount = getGrainTypeValue('vmdGrainCount');
+    const diseaseResistance = getVmdDiseaseResistanceValue();
 
     if (!crop || crop === 'custom') {
         alert('先に作物を選択してください。');
@@ -1612,7 +1635,8 @@ async function confirmVarietyMetaDialog() {
                 cropOverride: crop,
                 varietyOverride: variety,
                 makerOverride: maker,
-                grainOverride: grainCount
+                grainOverride: grainCount,
+                diseaseResistanceOverride: diseaseResistance
             });
             if (getCpVal('cpCrop') === crop) {
                 updateVarietyList();
@@ -1623,6 +1647,7 @@ async function confirmVarietyMetaDialog() {
             const appliedCardId = applyAddedVarietyToCpCard_(crop, variety, planId);
             addCpVarietyOptionToOtherCards_(crop, variety, appliedCardId);
             if (typeof refreshCpVarietyOrdinals === 'function') refreshCpVarietyOrdinals();
+            if (typeof refreshCpVarietyGroupDividers === 'function') refreshCpVarietyGroupDividers();
             closeVarietyMetaDialog();
             if (mode === 'add' && addCardAfter && !appliedCardId) {
                 if (typeof checkCroptypeDB === 'function') checkCroptypeDB();
@@ -1648,6 +1673,7 @@ async function confirmVarietyMetaDialog() {
                 if (db && db.crop === crop && db.variety === variety) {
                     db.maker = maker;
                     db.grainCount = grainCount;
+                    db.diseaseResistance = diseaseResistance;
                     touched++;
                 }
             });
@@ -1655,7 +1681,7 @@ async function confirmVarietyMetaDialog() {
                 cpMasterData.croptypesDB.push({
                     crop, variety, season: '', climate: document.getElementById('crClimate') ? document.getElementById('crClimate').value : '',
                     sowing: [], planting: [], harvesting: [], fileUrl: '', characteristics: '',
-                    maker, grainCount, harvestSeason: ''
+                    maker, grainCount, diseaseResistance, harvestSeason: ''
                 });
             }
             try { localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData)); } catch (e) {}
@@ -1665,6 +1691,7 @@ async function confirmVarietyMetaDialog() {
                 variety: variety,
                 maker: maker,
                 grainCount: grainCount,
+                diseaseResistance: diseaseResistance,
                 climate: document.getElementById('crClimate') ? document.getElementById('crClimate').value : ''
             });
             renderCrVarietyBadges();
@@ -1708,6 +1735,16 @@ async function saveCpVarietyMeta(opts) {
     const grainCount = opts.grainOverride !== undefined
         ? String(opts.grainOverride || '').trim()
         : (grainEl ? String(grainEl.value || '').trim() : '');
+    let diseaseResistance = '';
+    if (opts.diseaseResistanceOverride !== undefined) {
+        diseaseResistance = String(opts.diseaseResistanceOverride || '').trim();
+    } else {
+        const dlg = document.getElementById('varietyMetaDialog');
+        const dlgOpen = dlg && dlg.style.display === 'flex';
+        diseaseResistance = dlgOpen
+            ? getVmdDiseaseResistanceValue()
+            : String((lookupVarietyMeta(crop, variety).diseaseResistance) || '').trim();
+    }
     const climate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';
 
     rememberCustomVariety(crop, variety);
@@ -1730,6 +1767,7 @@ async function saveCpVarietyMeta(opts) {
             if (!climate || String(db.climate || '').trim() === climate) {
                 db.maker = maker;
                 db.grainCount = grainCount;
+                db.diseaseResistance = diseaseResistance;
                 touched++;
             }
         }
@@ -1747,6 +1785,7 @@ async function saveCpVarietyMeta(opts) {
             characteristics: '',
             maker: maker,
             grainCount: grainCount,
+            diseaseResistance: diseaseResistance,
             harvestSeason: ''
         });
     }
@@ -1778,6 +1817,7 @@ async function saveCpVarietyMeta(opts) {
         variety: variety,
         maker: maker,
         grainCount: grainCount,
+        diseaseResistance: diseaseResistance,
         climate: climate || ''
     };
 
@@ -1793,6 +1833,7 @@ async function saveCpVarietyMeta(opts) {
                 variety: variety,
                 maker: maker,
                 grainCount: grainCount,
+                diseaseResistance: diseaseResistance,
                 climate: climate || ''
             });
         }
@@ -3030,7 +3071,7 @@ function refreshCpVarietyGroupDividers() {
         if (!wrap && !tr) return;
         const name = String(plan.variety || '').trim();
         const key = name ? (String(plan.crop || '') + '\t' + name) : '';
-        rows.push({ wrap: wrap, tr: tr, name: name, key: key });
+        rows.push({ wrap: wrap, tr: tr, name: name, key: key, crop: String(plan.crop || '').trim() });
     });
 
     const markGroup = (el, isFirst, isLast) => {
@@ -3059,8 +3100,19 @@ function refreshCpVarietyGroupDividers() {
         if (rows[i].wrap) {
             const label = document.createElement('div');
             label.className = 'cp-var-group-label';
-            label.textContent = cur.name;
-            label.title = cur.name + '（' + (j - i + 1) + '枚）';
+            const count = j - i + 1;
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'cp-var-group-name';
+            nameSpan.textContent = cur.name;
+            label.appendChild(nameSpan);
+            const iconsHtml = buildDiseaseResistanceIconsHtml(cur.crop, cur.name);
+            if (iconsHtml) {
+                const resistSpan = document.createElement('span');
+                resistSpan.className = 'cp-var-group-resist';
+                resistSpan.innerHTML = iconsHtml;
+                label.appendChild(resistSpan);
+            }
+            label.title = cur.name + '（' + count + '枚）' + (iconsHtml ? ' — 耐病性あり' : '');
             rows[i].wrap.insertBefore(label, rows[i].wrap.firstChild);
         }
         i = j + 1;
@@ -6835,6 +6887,29 @@ function computePlanHarvestByPeriod(plan) {
     return amounts;
 }
 
+/** 1計画の半旬別収穫面積(a) — 収穫セルへ面積を配分（収穫量と同じ比率） */
+function computePlanHarvestAreaByPeriod(plan) {
+    const amounts = new Array(CP_HARVEST_PERIODS).fill(0);
+    if (!plan) return amounts;
+
+    const cells = getCpPlanTaskCells_(plan, 'harvesting');
+    if (!cells.length) return amounts;
+
+    const areaTotal = Number(plan.areaA) || 0;
+    if (!(areaTotal > 0)) return amounts;
+
+    const ratios = Array.isArray(plan.harvestRatios) ? plan.harvestRatios : [];
+    const totalRatio = ratios.reduce((a, b) => a + (Number(b) || 0), 0);
+
+    cells.forEach((cell, index) => {
+        let cellArea = 0;
+        if (totalRatio > 0) cellArea = areaTotal * (Number(ratios[index]) || 0) / totalRatio;
+        else cellArea = areaTotal / cells.length;
+        amounts[cell.flatIndex] += cellArea;
+    });
+    return amounts;
+}
+
 /** 播種量: 枚数/株数を播種半旬へ均等配分 */
 function computePlanSowingByPeriod(plan) {
     const amounts = new Array(CP_HARVEST_PERIODS).fill(0);
@@ -6886,7 +6961,9 @@ function aggregateCpMetricChart(plans, metric, keyFn) {
     const keyOf = keyFn || (p => String(p.variety || p.crop || '未設定'));
     const compute = metric === 'sowing'
         ? computePlanSowingByPeriod
-        : (metric === 'planting' ? computePlanPlantingByPeriod : computePlanHarvestByPeriod);
+        : (metric === 'planting'
+            ? computePlanPlantingByPeriod
+            : (metric === 'harvestArea' ? computePlanHarvestAreaByPeriod : computePlanHarvestByPeriod));
     const seriesMap = {};
     (plans || []).forEach(plan => {
         const key = keyOf(plan) || '未設定';
@@ -6899,6 +6976,18 @@ function aggregateCpMetricChart(plans, metric, keyFn) {
         color: CP_HARVEST_COLORS[idx % CP_HARVEST_COLORS.length],
         values: seriesMap[name]
     }));
+}
+
+/** 収穫量系列に半旬別面積(a)を付与 */
+function aggregateCpHarvestWithArea_(plans, keyFn) {
+    const harvestSeries = aggregateCpMetricChart(plans, 'harvest', keyFn);
+    const areaSeries = aggregateCpMetricChart(plans, 'harvestArea', keyFn);
+    const areaByName = {};
+    areaSeries.forEach(s => { areaByName[s.name] = s.values; });
+    harvestSeries.forEach(s => {
+        s.areaValues = areaByName[s.name] || new Array(CP_HARVEST_PERIODS).fill(0);
+    });
+    return harvestSeries;
 }
 
 /** メーカー比率（面積・枚数・収穫量ベース） */
@@ -6934,7 +7023,7 @@ function aggregateCpMakerRatio(plans) {
 
 function setCpGraphMetric(metric) {
     const m = String(metric || 'harvest').trim();
-    window._cpGraphMetric = (m === 'planting' || m === 'sowing' || m === 'maker') ? m : 'harvest';
+    window._cpGraphMetric = (m === 'planting' || m === 'sowing' || m === 'maker' || m === 'harvestArea') ? m : 'harvest';
     document.querySelectorAll('#cpGraphMetricTabs .cp-graph-metric-btn').forEach(btn => {
         btn.classList.toggle('is-active', btn.getAttribute('data-metric') === window._cpGraphMetric);
     });
@@ -6949,13 +7038,15 @@ function updateCpGraphMetricChrome_(metric, crop) {
     const axis = document.getElementById('cpHarvestChartAxis');
     const makerPanel = document.getElementById('cpMakerRatioPanel');
     const titles = {
-        harvest: '収穫量（半旬）',
+        harvest: '収穫量・面積（半旬）',
+        harvestArea: '収穫面積（半旬）',
         planting: '定植量・面積（半旬）',
         sowing: '播種量・枚数（半旬）',
         maker: 'メーカー比率'
     };
     const hints = {
-        harvest: '品種カードの収穫を塗ると、半旬ごとの収穫量が積み上げ表示されます。',
+        harvest: '収穫を塗った半旬ごとに収穫量を積み上げ表示します。各柱の下段に対応する面積(a)も表示されます。',
+        harvestArea: '収穫を塗った半旬に、カードの面積(a)を収穫比率どおり配分して表示します（どの時期にどれだけの面積分を収穫するか）。',
         planting: '定植を塗った半旬に、カードの面積(a)を均等配分して表示します。',
         sowing: '播種を塗った半旬に、カードの枚数／株数を均等配分して表示します。',
         maker: '計画内の品種カードからメーカー構成比を集計します（面積優先。無ければ枚数→収穫量）。'
@@ -7664,18 +7755,26 @@ function renderCpHarvestChart(barsEl, axisEl, legendEl, series, options) {
     const months = getCpCalendarMonths();
     const seriesList = series || [];
     const showValues = opts.showValues === true || (opts.showValues !== false && barW >= 18);
-    const valueH = showValues ? 16 : 0;
+    const valueH = showValues ? (opts.dualValueLabels ? 28 : 16) : 0;
     const unit = String(opts.unit || '');
+    const subUnit = String(opts.subUnit || '');
     const decimals = opts.valueDecimals != null ? opts.valueDecimals : 0;
+    const subDecimals = opts.subValueDecimals != null ? opts.subValueDecimals : 1;
     const yearNum = Number(opts.year) || (typeof getCpVal === 'function' ? Number(getCpVal('cpYear', true)) : 0) || new Date().getFullYear();
     const yAxisEl = opts.yAxisEl || null;
 
     let maxVal = 0;
+    const colAreaSums = new Array(CP_HARVEST_PERIODS).fill(0);
     for (let i = 0; i < CP_HARVEST_PERIODS; i++) {
         let sum = 0;
-        seriesList.forEach(s => { sum += (s.values[i] || 0); });
+        seriesList.forEach(s => {
+            sum += (s.values[i] || 0);
+            if (Array.isArray(s.areaValues)) colAreaSums[i] += (s.areaValues[i] || 0);
+        });
         if (sum > maxVal) maxVal = sum;
     }
+    let totalArea = 0;
+    colAreaSums.forEach(v => { totalArea += v; });
 
     if (legendEl) {
         legendEl.innerHTML = seriesList.map(s =>
@@ -7720,8 +7819,10 @@ function renderCpHarvestChart(barsEl, axisEl, legendEl, series, options) {
             total += v;
             if (v > 0) {
                 const h = Math.max(2, Math.round((v / maxVal) * (barH - 4)));
-                const tip = (typeof getCpPeriodFullLabel_ === 'function' ? getCpPeriodFullLabel_(i) + ' / ' : '') +
+                const areaV = Array.isArray(s.areaValues) ? (s.areaValues[i] || 0) : 0;
+                let tip = (typeof getCpPeriodFullLabel_ === 'function' ? getCpPeriodFullLabel_(i) + ' / ' : '') +
                     s.name + ': ' + formatCpChartNumber_(v, decimals) + unit;
+                if (areaV > 0) tip += ' ／ ' + formatCpChartNumber_(areaV, subDecimals) + (subUnit || 'a');
                 stack = `<div style="width:100%; height:${h}px; background:${s.color};" title="${tip.replace(/"/g, '&quot;')}"></div>` + stack;
             }
         });
@@ -7729,13 +7830,30 @@ function renderCpHarvestChart(barsEl, axisEl, legendEl, series, options) {
         const monthEnd = (i % 6 === 5);
         const bg = monthIdx % 2 === 0 ? '#fff' : '#fff8e1';
         const border = monthEnd ? '1px solid #bdbdbd' : '1px solid #f0f0f0';
-        const periodTip = (typeof getCpPeriodFullLabel_ === 'function' ? getCpPeriodFullLabel_(i) : '') +
-            (colSum ? '  ' + formatCpChartNumber_(colSum, decimals) + unit : '');
-        const valueLabel = (showValues && colSum > 0)
-            ? formatCpChartNumber_(colSum, decimals)
-            : '';
+        const colArea = colAreaSums[i] || 0;
+        let periodTip = (typeof getCpPeriodFullLabel_ === 'function' ? getCpPeriodFullLabel_(i) : '');
+        if (colSum > 0) {
+            if (opts.dualValueLabels) {
+                periodTip += '  収穫 ' + formatCpChartNumber_(colSum, decimals) + unit;
+                if (colArea > 0) periodTip += ' ／ 面積 ' + formatCpChartNumber_(colArea, subDecimals) + (subUnit || 'a');
+            } else {
+                periodTip += '  ' + formatCpChartNumber_(colSum, decimals) + unit;
+            }
+        }
+        let valueLabelHtml = '';
+        if (showValues && colSum > 0) {
+            const mainLabel = formatCpChartNumber_(colSum, decimals);
+            if (opts.dualValueLabels && colArea > 0) {
+                valueLabelHtml = `<div class="cp-chart-col-value" style="height:auto; min-height:16px; line-height:1.15; padding-top:1px;">` +
+                    `<div>${mainLabel}</div>` +
+                    `<div style="font-size:8px; color:#2e7d32; font-weight:bold;">${formatCpChartNumber_(colArea, subDecimals)}a</div>` +
+                    `</div>`;
+            } else {
+                valueLabelHtml = `<div class="cp-chart-col-value">${mainLabel}</div>`;
+            }
+        }
         barsHtml += `<div style="width:${barW}px; height:100%; display:flex; flex-direction:column; justify-content:flex-end; box-sizing:border-box; background:${bg}; border-right:${border};" title="${periodTip.replace(/"/g, '&quot;')}">` +
-            (showValues ? `<div class="cp-chart-col-value">${valueLabel}</div>` : '') +
+            (showValues ? valueLabelHtml : '') +
             `<div style="height:${barH}px; width:100%; display:flex; flex-direction:column; justify-content:flex-end;">${stack}</div>` +
             `</div>`;
     }
@@ -7759,7 +7877,7 @@ function renderCpHarvestChart(barsEl, axisEl, legendEl, series, options) {
         axisEl.innerHTML = axisHtml;
     }
 
-    return { total: total, maxVal: maxVal, barWidth: barW };
+    return { total: total, maxVal: maxVal, barWidth: barW, totalArea: totalArea };
 }
 
 function refreshCpHarvestChart() {
@@ -7782,24 +7900,30 @@ function refreshCpHarvestChart() {
         return;
     }
 
-    const series = aggregateCpMetricChart(plans, metric, p => String(p.variety || '未設定'));
+    const series = metric === 'harvest'
+        ? aggregateCpHarvestWithArea_(plans, p => String(p.variety || '未設定'))
+        : aggregateCpMetricChart(plans, metric, p => String(p.variety || '未設定'));
     const emptyMessages = {
         harvest: '収穫を塗るとここに表示されます',
+        harvestArea: '収穫を塗るとここに表示されます（面積が未入力のカードは含まれません）',
         planting: '定植を塗るとここに表示されます',
         sowing: '播種を塗るとここに表示されます'
     };
-    const unitSuffix = metric === 'planting' ? 'a' : (metric === 'sowing' ? '枚' : '');
+    const unitSuffix = metric === 'planting' || metric === 'harvestArea' ? 'a' : (metric === 'sowing' ? '枚' : '');
     const result = renderCpHarvestChart(
         bars,
         document.getElementById('cpHarvestChartAxis'),
         document.getElementById('cpHarvestChartLegend'),
         series,
         {
-            barHeight: 88,
+            barHeight: metric === 'harvest' ? 80 : 88,
             barWidth: 26,
             showValues: true,
             unit: unitSuffix,
-            valueDecimals: metric === 'planting' ? 1 : 0,
+            valueDecimals: (metric === 'planting' || metric === 'harvestArea') ? 1 : 0,
+            dualValueLabels: metric === 'harvest',
+            subUnit: 'a',
+            subValueDecimals: 1,
             emptyMessage: emptyMessages[metric] || emptyMessages.harvest,
             yAxisEl: document.getElementById('cpHarvestChartYAxis'),
             year: typeof getCpVal === 'function' ? getCpVal('cpYear', true) : ''
@@ -7807,11 +7931,21 @@ function refreshCpHarvestChart() {
     );
     const totalEl = document.getElementById('cpHarvestChartTotal');
     if (totalEl) {
-        if (result.total > 0) {
-            const rounded = metric === 'planting'
-                ? (Math.round(result.total * 10) / 10)
-                : Math.round(result.total);
-            totalEl.textContent = `合計 ${rounded.toLocaleString()}${unitSuffix}`;
+        if (result.total > 0 || (result.totalArea > 0 && metric === 'harvestArea')) {
+            const displayTotal = metric === 'harvestArea'
+                ? (result.totalArea > 0 ? result.totalArea : result.total)
+                : result.total;
+            const rounded = (metric === 'planting' || metric === 'harvestArea')
+                ? (Math.round(displayTotal * 10) / 10)
+                : Math.round(displayTotal);
+            if (metric === 'harvest') {
+                const areaRounded = Math.round((result.totalArea || 0) * 10) / 10;
+                const parts = [`合計 ${rounded.toLocaleString()}`];
+                if (areaRounded > 0) parts.push(`${areaRounded.toLocaleString()}a`);
+                totalEl.textContent = parts.join(' ／ ');
+            } else {
+                totalEl.textContent = `合計 ${rounded.toLocaleString()}${unitSuffix}`;
+            }
         } else {
             totalEl.textContent = '';
         }
@@ -9336,6 +9470,9 @@ const CP_NURSERY_TRAYS_PER_BED_DEFAULT = 500;
 let _cpOverallLastSummary = null;
 let _cpOverallLastTimeline = null;
 let _cpOverallActiveTab = 'summary';
+let _cpOverallChartMetric = 'harvest';
+let _cpOverallChartSummaryCache = null;
+let _cpOverallChartCacheKey = '';
 
 function cpNurseryTaskFlat_(h) {
     const limit = (typeof CP_HARVEST_PERIODS === 'number') ? CP_HARVEST_PERIODS : 108;
@@ -9538,27 +9675,252 @@ function setNurseryTraysPerBed_(value) {
 }
 
 function switchOverallPlanTab_(key) {
-    _cpOverallActiveTab = (key === 'nursery') ? 'nursery' : 'summary';
+    _cpOverallActiveTab = (key === 'nursery') ? 'nursery' : (key === 'chart' ? 'chart' : 'summary');
     const summaryBtn = document.getElementById('cpOverallTabSummary');
+    const chartBtn = document.getElementById('cpOverallTabChart');
     const nurseryBtn = document.getElementById('cpOverallTabNursery');
     const summaryPanel = document.getElementById('cpOverallPanelSummary');
+    const chartPanel = document.getElementById('cpOverallPanelChart');
     const nurseryPanel = document.getElementById('cpOverallPanelNursery');
-    const onSummary = _cpOverallActiveTab === 'summary';
-    if (summaryBtn) {
-        summaryBtn.style.background = onSummary ? '#2E7D32' : '#fff';
-        summaryBtn.style.color = onSummary ? '#fff' : '#1B5E20';
-        summaryBtn.style.borderColor = onSummary ? '#81C784' : '#A5D6A7';
-        summaryBtn.classList.toggle('is-active', onSummary);
+    const tabs = [
+        { btn: summaryBtn, panel: summaryPanel, key: 'summary' },
+        { btn: chartBtn, panel: chartPanel, key: 'chart' },
+        { btn: nurseryBtn, panel: nurseryPanel, key: 'nursery' }
+    ];
+    tabs.forEach(t => {
+        const on = _cpOverallActiveTab === t.key;
+        if (t.btn) {
+            t.btn.style.background = on ? '#2E7D32' : '#fff';
+            t.btn.style.color = on ? '#fff' : '#1B5E20';
+            t.btn.style.borderColor = on ? '#81C784' : '#A5D6A7';
+            t.btn.classList.toggle('is-active', on);
+        }
+        if (t.panel) t.panel.hidden = !on;
+    });
+    if (_cpOverallActiveTab === 'chart') {
+        if (typeof refreshOverallPlanChart_ === 'function') refreshOverallPlanChart_();
     }
-    if (nurseryBtn) {
-        nurseryBtn.style.background = onSummary ? '#fff' : '#2E7D32';
-        nurseryBtn.style.color = onSummary ? '#1B5E20' : '#fff';
-        nurseryBtn.style.borderColor = onSummary ? '#A5D6A7' : '#81C784';
-        nurseryBtn.classList.toggle('is-active', !onSummary);
-    }
-    if (summaryPanel) summaryPanel.hidden = !onSummary;
-    if (nurseryPanel) nurseryPanel.hidden = onSummary;
 }
+
+function getOverallPlanChartFilters_() {
+    return {
+        year: document.getElementById('cpOverallYear')?.value || '',
+        planType: document.getElementById('cpOverallPlanType')?.value || 'all',
+        status: document.getElementById('cpOverallStatus')?.value || 'both',
+        location: document.getElementById('cpOverallLocation')?.value || ''
+    };
+}
+
+function buildOverallChartCacheKey_(filters, excludeKeys) {
+    return [filters.year, filters.planType, filters.status, filters.location, (excludeKeys || []).join('|')].join('\t');
+}
+
+function collectLiveChartPlans_(opts) {
+    opts = opts || {};
+    const includeEl = document.getElementById('cpOverallIncludeLive');
+    if (includeEl && !includeEl.checked) return [];
+    if (typeof isCpPlanModalOpen_ !== 'function' || !isCpPlanModalOpen_()) return [];
+    const form = (typeof collectCpFormState === 'function') ? collectCpFormState() : {};
+    const crop = String(form.crop || '').trim();
+    if (!crop) return [];
+    if (opts.year && String(form.year || '') !== String(opts.year)) return [];
+    const planType = form.planType || '本作';
+    if (opts.planType && opts.planType !== 'all' && planType !== opts.planType) return [];
+    const formLoc = String(form.location || '').trim();
+    if (opts.location) {
+        const hit = formLoc === opts.location || formLoc.indexOf(opts.location) >= 0;
+        if (!hit) return [];
+    }
+    const src = (typeof collectCurrentCpPlansFromDom === 'function')
+        ? collectCurrentCpPlansFromDom()
+        : (typeof cpPlans !== 'undefined' ? cpPlans : []);
+    return (src || []).filter(p => {
+        if (!p || !String(p.variety || '').trim()) return false;
+        const st = p.status === 'executed' ? 'executed' : 'planned';
+        if (opts.status === 'planned' && st === 'executed') return false;
+        if (opts.status === 'executed' && st !== 'executed') return false;
+        if (opts.location) {
+            const ploc = String(p.location || formLoc || '').trim();
+            if (ploc && ploc !== opts.location) return false;
+        }
+        return true;
+    }).map(p => Object.assign({}, p, {
+        crop: crop,
+        status: p.status || 'planned',
+        location: p.location || formLoc
+    }));
+}
+
+function mergeLivePlansIntoChartSummary_(summary, livePlans) {
+    if (!summary || !Array.isArray(livePlans) || !livePlans.length) return summary;
+    const PERIODS = (typeof CP_HARVEST_PERIODS === 'number') ? CP_HARVEST_PERIODS : 108;
+    const cropMap = {};
+    (summary.crops || []).forEach(c => {
+        cropMap[c.crop] = {
+            crop: c.crop,
+            harvest: (c.harvest || []).slice(),
+            planting: (c.planting || []).slice(),
+            sowing: (c.sowing || []).slice()
+        };
+    });
+    livePlans.forEach(plan => {
+        const crop = String(plan.crop || '').trim() || '(作物未設定)';
+        if (!cropMap[crop]) {
+            cropMap[crop] = {
+                crop: crop,
+                harvest: new Array(PERIODS).fill(0),
+                planting: new Array(PERIODS).fill(0),
+                sowing: new Array(PERIODS).fill(0)
+            };
+        }
+        const h = computePlanHarvestByPeriod(plan);
+        const pl = computePlanPlantingByPeriod(plan);
+        const sw = computePlanSowingByPeriod(plan);
+        for (let i = 0; i < PERIODS; i++) {
+            cropMap[crop].harvest[i] += h[i] || 0;
+            cropMap[crop].planting[i] += pl[i] || 0;
+            cropMap[crop].sowing[i] += sw[i] || 0;
+        }
+    });
+    summary.crops = Object.keys(cropMap).sort((a, b) => String(a).localeCompare(String(b), 'ja')).map(k => {
+        const row = cropMap[k];
+        let harvestTotal = 0;
+        let plantingTotal = 0;
+        let sowingTotal = 0;
+        for (let i = 0; i < PERIODS; i++) {
+            harvestTotal += row.harvest[i] || 0;
+            plantingTotal += row.planting[i] || 0;
+            sowingTotal += row.sowing[i] || 0;
+        }
+        return {
+            crop: row.crop,
+            harvest: row.harvest,
+            planting: row.planting,
+            sowing: row.sowing,
+            harvestTotal: harvestTotal,
+            plantingTotal: plantingTotal,
+            sowingTotal: sowingTotal
+        };
+    });
+    return summary;
+}
+
+function updateCpOverallChartChrome_(metric, year) {
+    const titleEl = document.getElementById('cpOverallChartTitle');
+    const hintEl = document.getElementById('cpOverallChartHint');
+    const yearEl = document.getElementById('cpOverallChartYear');
+    const titles = {
+        harvest: '収穫量（半旬）',
+        planting: '定植量・面積（半旬）',
+        sowing: '播種量・枚数（半旬）'
+    };
+    const hints = {
+        harvest: '全作物の保存済み計画から、半旬ごとの収穫量を作物別に積み上げ表示します。',
+        planting: '定植を塗った半旬に、各カードの面積(a)を均等配分して全作物合算します。',
+        sowing: '播種を塗った半旬に、各カードの枚数を均等配分して全作物合算します。'
+    };
+    if (titleEl) titleEl.textContent = titles[metric] || titles.harvest;
+    if (hintEl) hintEl.textContent = hints[metric] || hints.harvest;
+    if (yearEl) yearEl.textContent = year ? `・${year}年` : '';
+}
+
+function setCpOverallChartMetric_(metric) {
+    const m = String(metric || 'harvest').trim();
+    _cpOverallChartMetric = (m === 'planting' || m === 'sowing') ? m : 'harvest';
+    document.querySelectorAll('#cpOverallChartMetricTabs .cp-graph-metric-btn').forEach(btn => {
+        btn.classList.toggle('is-active', btn.getAttribute('data-metric') === _cpOverallChartMetric);
+    });
+    if (typeof refreshOverallPlanChart_ === 'function') refreshOverallPlanChart_();
+}
+
+async function refreshOverallPlanChart_() {
+    const bars = document.getElementById('cpOverallChartBars');
+    if (!bars) return;
+    const panel = document.getElementById('cpOverallPanelChart');
+    if (panel && panel.hidden) return;
+
+    const filters = getOverallPlanChartFilters_();
+    const metric = _cpOverallChartMetric || 'harvest';
+    updateCpOverallChartChrome_(metric, filters.year);
+
+    const liveItem = (typeof buildLiveEditorPlanListItem_ === 'function') ? buildLiveEditorPlanListItem_() : null;
+    const includeEl = document.getElementById('cpOverallIncludeLive');
+    const includeLive = !!(includeEl && includeEl.checked && liveItem);
+    const excludeKeys = [];
+    if (includeLive && liveItem && typeof buildCpPlanSaveKey === 'function') {
+        excludeKeys.push(buildCpPlanSaveKey(liveItem.year, liveItem.crop, liveItem.planName));
+    }
+    const cacheKey = buildOverallChartCacheKey_(filters, excludeKeys);
+    bars.innerHTML = '<div style="color:#666; font-size:11px; text-align:center; padding-top:28px;">グラフを集計しています...</div>';
+
+    try {
+        let summary = null;
+        if (_cpOverallChartSummaryCache && _cpOverallChartCacheKey === cacheKey) {
+            summary = _cpOverallChartSummaryCache;
+        } else if (typeof callGAS === 'function') {
+            summary = await callGAS('getCultivationPlanChartSummary', Object.assign({}, filters, {
+                excludePlanKeys: excludeKeys
+            }));
+            if (summary && summary.success !== false) {
+                _cpOverallChartSummaryCache = summary;
+                _cpOverallChartCacheKey = cacheKey;
+            }
+        }
+        if (!summary || summary.success === false) {
+            bars.innerHTML = `<div style="color:#d32f2f; font-size:12px; text-align:center; padding-top:28px;">${(summary && summary.message) || 'グラフデータの取得に失敗しました'}</div>`;
+            return;
+        }
+        const livePlans = includeLive ? collectLiveChartPlans_(filters) : [];
+        summary = mergeLivePlansIntoChartSummary_(summary, livePlans);
+
+        const valueKey = metric === 'planting' ? 'planting' : (metric === 'sowing' ? 'sowing' : 'harvest');
+        const series = (summary.crops || []).map((c, idx) => ({
+            name: c.crop,
+            color: CP_HARVEST_COLORS[idx % CP_HARVEST_COLORS.length],
+            values: (c[valueKey] || []).slice()
+        })).filter(s => s.values.some(v => v > 0));
+
+        const emptyMessages = {
+            harvest: '収穫時期が設定された計画がありません',
+            planting: '定植時期が設定された計画がありません',
+            sowing: '播種時期が設定された計画がありません'
+        };
+        const unitSuffix = metric === 'planting' ? 'a' : (metric === 'sowing' ? '枚' : '');
+        const result = renderCpHarvestChart(
+            bars,
+            document.getElementById('cpOverallChartAxis'),
+            document.getElementById('cpOverallChartLegend'),
+            series,
+            {
+                barHeight: 100,
+                barWidth: 22,
+                showValues: false,
+                unit: unitSuffix,
+                valueDecimals: metric === 'planting' ? 1 : 0,
+                emptyMessage: emptyMessages[metric] || emptyMessages.harvest,
+                yAxisEl: document.getElementById('cpOverallChartYAxis'),
+                year: filters.year
+            }
+        );
+        const totalEl = document.getElementById('cpOverallChartTotal');
+        if (totalEl) {
+            if (result.total > 0) {
+                const rounded = metric === 'planting'
+                    ? (Math.round(result.total * 10) / 10)
+                    : Math.round(result.total);
+                totalEl.textContent = `合計 ${rounded.toLocaleString()}${unitSuffix}`;
+            } else {
+                totalEl.textContent = '';
+            }
+        }
+        syncCpHarvestScroll('cpOverallChartBars', 'cpOverallChartAxis', null);
+    } catch (e) {
+        bars.innerHTML = `<div style="color:#d32f2f; font-size:12px; text-align:center; padding-top:28px;">エラー: ${e.message || e}</div>`;
+    }
+}
+
+window.setCpOverallChartMetric_ = setCpOverallChartMetric_;
+window.refreshOverallPlanChart_ = refreshOverallPlanChart_;
 
 function onNurseryTraysPerBedChange_() {
     const el = document.getElementById('cpNurseryTraysPerBed');
@@ -9840,6 +10202,8 @@ async function refreshOverallPlanReviewModal() {
         status: status,
         location: location
     });
+    _cpOverallChartSummaryCache = null;
+    _cpOverallChartCacheKey = '';
     if (summaryPanel) summaryPanel.innerHTML = renderOverallPlanReviewHtml_(summary);
     else if (body) body.innerHTML = renderOverallPlanReviewHtml_(summary);
     paintOverallNurseryPanel_(summary, _cpOverallLastTimeline);
@@ -12274,6 +12638,216 @@ function renderCharacteristicButtons() {
 // --- メーカー（作物横断・単一選択・共通記憶） ---
 const MAKER_STORAGE_KEY = 'makerMasterList';
 const DEFAULT_MAKERS = ['サカタのタネ', 'タキイ種苗', 'カネコ種苗', '雪印種苗', '武蔵野種苗園', '住化アグリテック'];
+
+// --- 耐病性マスタ（品種ごとに複数選択・共通記憶） ---
+const DISEASE_RESISTANCE_STORAGE_KEY = 'diseaseResistanceMasterList';
+const DEFAULT_DISEASE_RESISTANCES = [
+    { id: 'nematode', name: 'ネコブ', icon: '🪱' },
+    { id: 'verticillium', name: '黄萎病', icon: '🍂' },
+    { id: 'damping_off', name: '立枯病', icon: '🥀' },
+    { id: 'soft_rot', name: '軟腐病', icon: '💧' },
+    { id: 'black_spot', name: '黑斑病', icon: '⚫' },
+    { id: 'downy_mildew', name: '霜霉病', icon: '🌫️' },
+    { id: 'blight', name: '疫病', icon: '🦠' }
+];
+
+function loadDiseaseResistanceMaster() {
+    try {
+        const raw = JSON.parse(localStorage.getItem(DISEASE_RESISTANCE_STORAGE_KEY) || 'null');
+        if (Array.isArray(raw) && raw.length) {
+            return raw.filter(item => item && item.id && item.name).map(item => ({
+                id: String(item.id),
+                name: String(item.name),
+                icon: String(item.icon || '🛡️')
+            }));
+        }
+    } catch (e) {}
+    saveDiseaseResistanceMaster(DEFAULT_DISEASE_RESISTANCES.slice());
+    return DEFAULT_DISEASE_RESISTANCES.slice();
+}
+
+function saveDiseaseResistanceMaster(list) {
+    localStorage.setItem(DISEASE_RESISTANCE_STORAGE_KEY, JSON.stringify(list || []));
+}
+
+function findDiseaseResistanceById_(id) {
+    const key = String(id || '').trim();
+    if (!key) return null;
+    return loadDiseaseResistanceMaster().find(item => item.id === key) || null;
+}
+
+function makeDiseaseResistanceId_(name) {
+    const n = String(name || '').trim();
+    if (!n) return 'dr_' + Date.now();
+    let id = n.replace(/[\s　]+/g, '_').replace(/[^\w\u3040-\u30ff\u4e00-\u9fff_-]/g, '');
+    if (!id) id = 'dr_' + Date.now();
+    const list = loadDiseaseResistanceMaster();
+    if (list.some(item => item.id === id)) id = id + '_' + Date.now().toString(36);
+    return id;
+}
+
+function registerDiseaseResistance(item) {
+    if (!item || !item.name) return;
+    const name = String(item.name).trim();
+    if (!name) return;
+    const list = loadDiseaseResistanceMaster();
+    const id = item.id ? String(item.id) : makeDiseaseResistanceId_(name);
+    const icon = String(item.icon || '🛡️').trim() || '🛡️';
+    const idx = list.findIndex(x => x.id === id);
+    const entry = { id: id, name: name, icon: icon };
+    if (idx >= 0) list[idx] = entry;
+    else list.push(entry);
+    saveDiseaseResistanceMaster(list);
+    return entry;
+}
+
+function removeDiseaseResistanceFromMaster(id) {
+    const key = String(id || '').trim();
+    if (!key) return;
+    saveDiseaseResistanceMaster(loadDiseaseResistanceMaster().filter(item => item.id !== key));
+}
+
+function parseDiseaseResistanceList(val) {
+    const raw = String(val || '').trim();
+    if (!raw) return [];
+    return raw.split(/[,、，／|]/).map(s => String(s || '').trim()).filter(Boolean);
+}
+
+function serializeDiseaseResistanceList(ids) {
+    return parseDiseaseResistanceList(Array.isArray(ids) ? ids.join(',') : ids).join(',');
+}
+
+function getVmdDiseaseResistanceValue() {
+    const hidden = document.getElementById('vmdDiseaseResistance');
+    return hidden ? String(hidden.value || '').trim() : '';
+}
+
+function setVmdDiseaseResistanceValue(val) {
+    const hidden = document.getElementById('vmdDiseaseResistance');
+    if (hidden) hidden.value = serializeDiseaseResistanceList(val);
+}
+
+function fillVmdDiseaseResistanceManageSelect(selectedId) {
+    const sel = document.getElementById('vmdDrManage');
+    if (!sel) return;
+    const list = loadDiseaseResistanceMaster();
+    const cur = String(selectedId || sel.value || '').trim();
+    sel.innerHTML = '<option value="">耐病性マスタを選択...</option>' +
+        list.map(item => `<option value="${escapeCpHtmlAttr(item.id)}">${item.icon} ${escapeCpHtmlAttr(item.name)}</option>`).join('');
+    if (cur && list.some(item => item.id === cur)) sel.value = cur;
+}
+
+function toggleVmdDiseaseResistance(id) {
+    const key = String(id || '').trim();
+    if (!key) return;
+    const ids = parseDiseaseResistanceList(getVmdDiseaseResistanceValue());
+    const idx = ids.indexOf(key);
+    if (idx >= 0) ids.splice(idx, 1);
+    else ids.push(key);
+    setVmdDiseaseResistanceValue(ids);
+    renderVmdDiseaseResistanceBtns();
+}
+
+function renderVmdDiseaseResistanceBtns() {
+    const wrap = document.getElementById('vmdDiseaseResistanceBtns');
+    if (!wrap) return;
+    const list = loadDiseaseResistanceMaster();
+    const selected = new Set(parseDiseaseResistanceList(getVmdDiseaseResistanceValue()));
+    fillVmdDiseaseResistanceManageSelect();
+    wrap.innerHTML = '';
+    if (!list.length) {
+        wrap.innerHTML = '<span style="font-size:11px;color:#999;">未登録です。「＋ 追加」で耐病性を登録できます</span>';
+        return;
+    }
+    list.forEach(item => {
+        const isOn = selected.has(item.id);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.title = item.name + (isOn ? '（選択中）' : '');
+        btn.style.cssText = isOn
+            ? 'display:inline-flex;align-items:center;gap:3px;padding:3px 7px;border:1px solid #2E7D32;border-radius:4px;background:#E8F5E9;color:#1B5E20;cursor:pointer;font-size:11px;font-weight:bold;line-height:1.2;'
+            : 'display:inline-flex;align-items:center;gap:3px;padding:3px 7px;border:1px solid #ccc;border-radius:4px;background:#fff;color:#333;cursor:pointer;font-size:11px;line-height:1.2;';
+        const icon = document.createElement('span');
+        icon.textContent = item.icon;
+        icon.style.fontSize = '12px';
+        btn.appendChild(icon);
+        const label = document.createElement('span');
+        label.textContent = item.name;
+        btn.appendChild(label);
+        btn.onclick = function() { toggleVmdDiseaseResistance(item.id); };
+        wrap.appendChild(btn);
+    });
+}
+
+function addVmdDiseaseResistanceOption() {
+    const name = prompt('耐病性の名称を入力してください（例: ネコブ）');
+    const trimmed = String(name || '').trim();
+    if (!trimmed) return;
+    const iconInput = prompt('表示アイコン（絵文字）を入力してください', '🛡️');
+    const icon = String(iconInput || '🛡️').trim() || '🛡️';
+    const entry = registerDiseaseResistance({ name: trimmed, icon: icon });
+    if (entry) fillVmdDiseaseResistanceManageSelect(entry.id);
+    renderVmdDiseaseResistanceBtns();
+}
+
+function editVmdDiseaseResistanceOption() {
+    const sel = document.getElementById('vmdDrManage');
+    const id = sel ? String(sel.value || '').trim() : '';
+    if (!id) {
+        alert('編集する耐病性をプルダウンから選択してください。');
+        return;
+    }
+    const item = findDiseaseResistanceById_(id);
+    if (!item) return;
+    const newName = prompt('耐病性の名称を編集してください。', item.name);
+    const trimmed = String(newName || '').trim();
+    if (!trimmed) return;
+    const iconInput = prompt('表示アイコン（絵文字）を入力してください。', item.icon || '🛡️');
+    const icon = String(iconInput || item.icon || '🛡️').trim() || '🛡️';
+    registerDiseaseResistance({ id: item.id, name: trimmed, icon: icon });
+    fillVmdDiseaseResistanceManageSelect(item.id);
+    renderVmdDiseaseResistanceBtns();
+    if (typeof refreshCpVarietyGroupDividers === 'function') refreshCpVarietyGroupDividers();
+}
+
+function deleteVmdDiseaseResistanceOption() {
+    const sel = document.getElementById('vmdDrManage');
+    const id = sel ? String(sel.value || '').trim() : '';
+    if (!id) {
+        alert('削除する耐病性をプルダウンから選択してください。');
+        return;
+    }
+    const item = findDiseaseResistanceById_(id);
+    if (!item) return;
+    if (!confirm(`耐病性「${item.icon} ${item.name}」を選択肢から削除しますか？\n登録済み品種の耐病性情報は変更されません。`)) return;
+    removeDiseaseResistanceFromMaster(id);
+    const ids = parseDiseaseResistanceList(getVmdDiseaseResistanceValue()).filter(x => x !== id);
+    setVmdDiseaseResistanceValue(ids);
+    fillVmdDiseaseResistanceManageSelect('');
+    renderVmdDiseaseResistanceBtns();
+}
+
+function buildDiseaseResistanceIconsHtml(crop, variety) {
+    const meta = lookupVarietyMeta(crop, variety);
+    const ids = parseDiseaseResistanceList(meta && meta.diseaseResistance);
+    if (!ids.length) return '';
+    const master = loadDiseaseResistanceMaster();
+    const byId = new Map(master.map(item => [item.id, item]));
+    return ids.map(id => {
+        const item = byId.get(id);
+        if (item) {
+            return `<span class="cp-dr-icon" title="${escapeCpHtmlAttr(item.name)}">${item.icon}</span>`;
+        }
+        return `<span class="cp-dr-icon" title="${escapeCpHtmlAttr(id)}">🛡️</span>`;
+    }).join('');
+}
+
+window.loadDiseaseResistanceMaster = loadDiseaseResistanceMaster;
+window.renderVmdDiseaseResistanceBtns = renderVmdDiseaseResistanceBtns;
+window.addVmdDiseaseResistanceOption = addVmdDiseaseResistanceOption;
+window.editVmdDiseaseResistanceOption = editVmdDiseaseResistanceOption;
+window.deleteVmdDiseaseResistanceOption = deleteVmdDiseaseResistanceOption;
+window.buildDiseaseResistanceIconsHtml = buildDiseaseResistanceIconsHtml;
 
 function loadMakerMaster() {
     try {

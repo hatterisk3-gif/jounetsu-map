@@ -136,6 +136,7 @@ function doPost(e) {
     else if (action === "completeFarmBoardTasks") result = completeFarmBoardTasks(params);
     else if (action === "deleteSavedCultivationPlans") result = deleteSavedCultivationPlans(params.year, params.crop, params.planType, params.planName);
     else if (action === "getCultivationHarvestSummary") result = getCultivationHarvestSummary(params.year);
+    else if (action === "getCultivationPlanChartSummary") result = getCultivationPlanChartSummary(params);
     else if (action === "getCultivationRidgeParamsForField") result = getCultivationRidgeParamsForField(params.fieldId || params.id);
     else if (action === "getCultivationMaster") result = getCultivationMaster();
     else if (action === "appendCultivationMaster") result = appendCultivationMaster(params);
@@ -11550,6 +11551,184 @@ function computePlanHarvestByPeriod_(plan) {
   return amounts;
 }
 
+/** 1計画の半旬別播種枚数配列(108) */
+function computePlanSowingByPeriod_(plan) {
+  const PERIODS = 108;
+  const amounts = [];
+  for (let i = 0; i < PERIODS; i++) amounts.push(0);
+  if (!plan) return amounts;
+
+  let sowing = [];
+  if (plan.tasks && Array.isArray(plan.tasks.sowing)) sowing = plan.tasks.sowing;
+  else if (Array.isArray(plan.sowing)) sowing = plan.sowing;
+  if (!sowing.length) return amounts;
+
+  const cells = [];
+  for (let i = 0; i < sowing.length; i++) {
+    const flat = cpHarvestFlatIndex_(sowing[i]);
+    if (flat < 0 || flat >= PERIODS) continue;
+    cells.push(flat);
+  }
+  if (!cells.length) return amounts;
+
+  const trays = Number(plan.trays) || 0;
+  if (!(trays > 0)) return amounts;
+  const each = trays / cells.length;
+  for (let j = 0; j < cells.length; j++) {
+    amounts[cells[j]] += each;
+  }
+  return amounts;
+}
+
+/** 1計画の半旬別定植面積(a)配列(108) */
+function computePlanPlantingByPeriod_(plan) {
+  const PERIODS = 108;
+  const amounts = [];
+  for (let i = 0; i < PERIODS; i++) amounts.push(0);
+  if (!plan) return amounts;
+
+  let planting = [];
+  if (plan.tasks && Array.isArray(plan.tasks.planting)) planting = plan.tasks.planting;
+  else if (Array.isArray(plan.planting)) planting = plan.planting;
+  if (!planting.length) return amounts;
+
+  const cells = [];
+  for (let i = 0; i < planting.length; i++) {
+    const flat = cpHarvestFlatIndex_(planting[i]);
+    if (flat < 0 || flat >= PERIODS) continue;
+    cells.push(flat);
+  }
+  if (!cells.length) return amounts;
+
+  const area = Number(plan.areaA) || 0;
+  if (!(area > 0)) return amounts;
+  const each = area / cells.length;
+  for (let j = 0; j < cells.length; j++) {
+    amounts[cells[j]] += each;
+  }
+  return amounts;
+}
+
+function cultivationPlanGroupKey_(year, crop, planName) {
+  return String(year || '') + '\t' + String(crop || '') + '\t' + String(planName || '').trim();
+}
+
+/**
+ * 栽培計画を条件で絞り込み、作物別・半旬別の収穫量・定植面積・播種枚数を返す
+ */
+function getCultivationPlanChartSummary(params) {
+  try {
+    params = params || {};
+    const targetYear = String(params.year || '').trim() || String(new Date().getFullYear());
+    const planTypeFilter = params.planType || 'all';
+    const statusFilter = params.status || 'both';
+    const locationFilter = String(params.location || '').trim();
+    const excludeKeys = Array.isArray(params.excludePlanKeys)
+      ? params.excludePlanKeys.map(function(k) { return String(k || '').trim(); }).filter(Boolean)
+      : [];
+    const excludeSet = {};
+    excludeKeys.forEach(function(k) { excludeSet[k] = true; });
+    const PERIODS = 108;
+    const ss = TENANT_SS;
+    if (!ss) return { success: false, message: 'スプレッドシート未設定' };
+
+    const sheet = ss.getSheetByName('栽培計画');
+    const parsedRows = [];
+    const groupLocs = {};
+
+    if (sheet && sheet.getLastRow() > 1) {
+      const data = sheet.getRange(2, 1, sheet.getLastRow(), 6).getValues();
+      for (let i = 0; i < data.length; i++) {
+        if (String(data[i][1]) !== targetYear) continue;
+        const planData = parseCultivationPlanJson_(data[i][5]);
+        if (!planData) continue;
+        const crop = String(planData.crop || data[i][3] || '').trim();
+        if (!crop) continue;
+        const planName = resolveCultivationPlanName_(targetYear, crop, planData, null, '');
+        const gKey = cultivationPlanGroupKey_(targetYear, crop, planName);
+        const loc = String(planData.location || '').trim();
+        if (!groupLocs[gKey]) groupLocs[gKey] = {};
+        if (loc) groupLocs[gKey][loc] = true;
+        parsedRows.push({ planData: planData, crop: crop, gKey: gKey });
+      }
+    }
+
+    function groupPassesLocation_(gKey) {
+      if (!locationFilter) return true;
+      const locs = groupLocs[gKey] || {};
+      if (locs[locationFilter]) return true;
+      return Object.keys(locs).some(function(l) { return l.indexOf(locationFilter) >= 0; });
+    }
+
+    const cropMap = {};
+    parsedRows.forEach(function(row) {
+      if (excludeSet[row.gKey]) return;
+      const plan = row.planData;
+      const type = resolveCultivationPlanType_(plan);
+      if (planTypeFilter !== 'all' && type !== planTypeFilter) return;
+      if (!groupPassesLocation_(row.gKey)) return;
+
+      const st = (plan.status === 'executed') ? 'executed' : 'planned';
+      if (statusFilter === 'planned' && st === 'executed') return;
+      if (statusFilter === 'executed' && st !== 'executed') return;
+
+      const ploc = String(plan.location || '').trim();
+      if (locationFilter && ploc && ploc !== locationFilter) return;
+
+      const crop = row.crop;
+      if (!cropMap[crop]) {
+        cropMap[crop] = {
+          crop: crop,
+          harvest: [],
+          planting: [],
+          sowing: []
+        };
+        for (let p = 0; p < PERIODS; p++) {
+          cropMap[crop].harvest.push(0);
+          cropMap[crop].planting.push(0);
+          cropMap[crop].sowing.push(0);
+        }
+      }
+
+      const h = computePlanHarvestByPeriod_(plan);
+      const pl = computePlanPlantingByPeriod_(plan);
+      const sw = computePlanSowingByPeriod_(plan);
+      for (let p = 0; p < PERIODS; p++) {
+        cropMap[crop].harvest[p] += h[p] || 0;
+        cropMap[crop].planting[p] += pl[p] || 0;
+        cropMap[crop].sowing[p] += sw[p] || 0;
+      }
+    });
+
+    const crops = Object.keys(cropMap).sort(function(a, b) {
+      return String(a).localeCompare(String(b), 'ja');
+    }).map(function(k) {
+      const row = cropMap[k];
+      let harvestTotal = 0;
+      let plantingTotal = 0;
+      let sowingTotal = 0;
+      for (let p = 0; p < PERIODS; p++) {
+        harvestTotal += row.harvest[p];
+        plantingTotal += row.planting[p];
+        sowingTotal += row.sowing[p];
+      }
+      return {
+        crop: row.crop,
+        harvest: row.harvest,
+        planting: row.planting,
+        sowing: row.sowing,
+        harvestTotal: harvestTotal,
+        plantingTotal: plantingTotal,
+        sowingTotal: sowingTotal
+      };
+    });
+
+    return { success: true, year: targetYear, periods: PERIODS, crops: crops };
+  } catch (e) {
+    return { success: false, message: '計画グラフ集計エラー: ' + (e.message || String(e)) };
+  }
+}
+
 /**
  * 年度の栽培計画から作物別・半旬別の収穫量サマリーを返す
  * planned / executed を分離
@@ -13490,6 +13669,7 @@ function getCultivationMaster() {
       if (charCol === -1) charCol = headers.indexOf('特性(タグ)');
       const makerCol = headers.indexOf('メーカー');
       const grainCol = headers.indexOf('粒数');
+      const drCol = headers.indexOf('耐病性');
       const harvestSeasonCol = headers.indexOf('とる時期');
       const yearCol = headers.indexOf('年度');
       const locationCol = headers.indexOf('拠点');
@@ -13513,6 +13693,7 @@ function getCultivationMaster() {
               characteristics: charCol !== -1 ? String(r[charCol] || '') : '',
               maker: makerCol !== -1 ? String(r[makerCol] || '') : '',
               grainCount: grainCol !== -1 ? String(r[grainCol] || '') : '',
+              diseaseResistance: drCol !== -1 ? String(r[drCol] || '') : '',
               harvestSeason: harvestSeasonCol !== -1 ? String(r[harvestSeasonCol] || '') : '',
               years: years,
               year: years.length ? years.join(',') : '',
@@ -13736,7 +13917,7 @@ function mergeCroptypeHistoryCsv_(existing, add) {
 function ensureCroptypeSheetHeaders_(sheet) {
   const rawHeaders = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0];
   const headers = rawHeaders.map(function(h) { return h ? String(h).trim() : ''; });
-  const needed = ['特性(タグ)', 'メーカー', '粒数', '年度', '拠点', '圃場条件'];
+  const needed = ['特性(タグ)', 'メーカー', '粒数', '耐病性', '年度', '拠点', '圃場条件'];
   let changed = false;
   needed.forEach(function(name) {
     if (headers.indexOf(name) === -1) {
@@ -14107,6 +14288,7 @@ function updateVarietyMeta(params) {
     }
     const maker = (params.maker !== undefined && params.maker !== null) ? String(params.maker).trim() : '';
     const grainCount = (params.grainCount !== undefined && params.grainCount !== null) ? String(params.grainCount).trim() : '';
+    const diseaseResistance = (params.diseaseResistance !== undefined && params.diseaseResistance !== null) ? String(params.diseaseResistance).trim() : '';
     const climate = String((params && params.climate) || '').trim();
     const season = String((params && params.season) || '').trim();
 
@@ -14127,8 +14309,13 @@ function updateVarietyMeta(params) {
       sheet.getRange(1, headers.length + 1).setValue('粒数');
       headers.push('粒数');
     }
+    if (headers.indexOf('耐病性') === -1) {
+      sheet.getRange(1, headers.length + 1).setValue('耐病性');
+      headers.push('耐病性');
+    }
     const makerCol = headers.indexOf('メーカー') + 1;
     const grainCol = headers.indexOf('粒数') + 1;
+    const drCol = headers.indexOf('耐病性') + 1;
     const cropCol = headers.indexOf('作物');
     const varietyCol = headers.indexOf('品種');
 
@@ -14140,6 +14327,7 @@ function updateVarietyMeta(params) {
       if (climate && String(data[i][3] || '').trim() !== climate) continue;
       if (makerCol > 0) sheet.getRange(i + 1, makerCol).setValue(maker);
       if (grainCol > 0) sheet.getRange(i + 1, grainCol).setValue(grainCount);
+      if (drCol > 0 && params.diseaseResistance !== undefined) sheet.getRange(i + 1, drCol).setValue(diseaseResistance);
       updated++;
     }
 
@@ -14155,6 +14343,7 @@ function updateVarietyMeta(params) {
       newRow[6] = '[]';
       if (makerCol > 0) newRow[makerCol - 1] = maker;
       if (grainCol > 0) newRow[grainCol - 1] = grainCount;
+      if (drCol > 0) newRow[drCol - 1] = diseaseResistance;
       sheet.appendRow(newRow);
       updated = 1;
     }
