@@ -2501,8 +2501,12 @@ function createSignboardMarker(name, pos, icon, id) {
          try {
             const newPartsStr = await callGAS('addMachinePart', { machineId: machineId, newPart: n.trim() });
             machine.parts = newPartsStr; // ローカルのマスタも更新
-            updatePartsList(); // プルダウンを作り直す
-            setTimeout(() => { document.getElementById('m_parts').value = n.trim(); }, 50); // 追加した部品を選択状態にする
+            updatePartsList();
+            setTimeout(() => {
+              const partsEl = document.getElementById('m_parts');
+              if (partsEl) partsEl.value = n.trim();
+              if (typeof updatePartsList === 'function') updatePartsList();
+            }, 50);
             customAlert("新しい部品を追加しました！");
          } catch(e) { customAlert("失敗しました: " + e.message); }
       };
@@ -5503,6 +5507,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
         if (typeof window.refreshMaintenanceSection === 'function') window.refreshMaintenanceSection();
         if (typeof window.refreshWorkNameSectionVisibility === 'function') window.refreshWorkNameSectionVisibility();
+        if (typeof window.refreshFieldMachinerySectionVisibility === 'function') window.refreshFieldMachinerySectionVisibility();
         // 選択変更に合わせて管理バー（選択中を編集/削除）を更新
         if (typeof window.renderCategoryAdminBar === 'function') {
           window.renderCategoryAdminBar(catName);
@@ -6109,9 +6114,8 @@ function createSignboardMarker(name, pos, icon, id) {
             <span>🚜 使用農機・車両の記録</span>
           </div>
           <div style="font-size:11px; color:#666; margin-bottom:8px;">
-            作業に使用した農機・車両を選択してください（複数選択可）。1台ずつ記録したいときは、保存後に「続けて登録」できます。
+            作業に使用した農機・車両を選択してください（複数選択可）。
           </div>
-          ${window.continueSameWorkCheckboxHtml_ ? window.continueSameWorkCheckboxHtml_() : ''}
         `;
 
         html += `
@@ -6308,8 +6312,7 @@ function createSignboardMarker(name, pos, icon, id) {
             <div style="font-weight:bold; color:#E65100; font-size:13px;">🚜 引き上げる機械と片づけ場所</div>
             <button type="button" onclick="addNewMachineFromWorkRecord()" style="flex-shrink:0; background:#2196F3; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 写真付きで登録</button>
           </div>
-          <div style="font-size:11px; color:#666; margin-bottom:8px;">引き上げる機械を選び、片づけ場所を指定してください。一覧に無い機械は名前を入力して登録できます。1台ずつなら「続けて登録」が使えます。</div>
-          ${window.continueSameWorkCheckboxHtml_ ? window.continueSameWorkCheckboxHtml_() : ''}
+          <div style="font-size:11px; color:#666; margin-bottom:8px;">引き上げる機械を選び、片づけ場所を指定してください。一覧に無い機械は名前を入力して登録できます。</div>
           <div style="display:flex; gap:6px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
             <input type="text" id="pull_new_machine_name" class="form-input" placeholder="機械名を入力（例: トラクターA）" style="flex:1; min-width:160px; margin-bottom:0;" onkeydown="if(event.key==='Enter'){event.preventDefault(); quickRegisterPullMachineName();}">
             <button type="button" id="pull_new_machine_btn" onclick="quickRegisterPullMachineName()" style="background:#E65100; color:#fff; border:none; border-radius:6px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">この名前で登録</button>
@@ -6407,14 +6410,18 @@ function createSignboardMarker(name, pos, icon, id) {
         const w = (typeof window.findWorkMasterByName_ === 'function')
           ? (window.findWorkMasterByName_(mainName) || window.findWorkMasterByName_(combined))
           : null;
-        const cat = String((w && w.category) || (document.getElementById('rec_work_category')?.value || '')).trim();
+        const formCat = String(document.getElementById('rec_work_category')?.value || '').trim();
+        const cat = String((w && w.category) || formCat).trim();
         const inferred = window.inferWorkRecordUiFlags_(combined || mainName, cat);
+        const isMachineryCat = formCat === '圃場農機作業' || formCat.includes('農機')
+          || cat === '圃場農機作業' || cat.includes('農機');
         const pick = (saved, fallback) => {
           const parsed = window.parseWorkUiFlagValue_(saved);
           return parsed == null ? fallback : parsed;
         };
         return {
-          showMachine: pick(w && w.showMachine, inferred.showMachine),
+          // 圃場農機作業カテゴリでは作業マスタの個別フラグに関わらず農機を出す
+          showMachine: isMachineryCat ? true : pick(w && w.showMachine, inferred.showMachine),
           showMaterial: pick(w && w.showMaterial, inferred.showMaterial),
           showPesticide: pick(w && w.showPesticide, inferred.showPesticide)
         };
@@ -7051,6 +7058,7 @@ function createSignboardMarker(name, pos, icon, id) {
           if (typeof window.updatePartsList === 'function') window.updatePartsList();
           const sel = document.getElementById('m_symptom');
           if (sel) sel.value = name;
+          if (typeof window.updatePartsList === 'function') window.updatePartsList();
           if (typeof customAlert === 'function') customAlert(`✅ 症状「${name}」を追加しました！`);
         } catch (e) {
           if (typeof customAlert === 'function') customAlert('追加に失敗しました: ' + e.message);
@@ -7204,6 +7212,7 @@ function createSignboardMarker(name, pos, icon, id) {
           if (typeof window.updatePartsList === 'function') window.updatePartsList();
           const sel = document.getElementById('m_content');
           if (sel) sel.value = name;
+          if (typeof window.updatePartsList === 'function') window.updatePartsList();
           if (typeof customAlert === 'function') customAlert(`✅ 整備内容「${name}」を登録しました！`);
         } catch (e) {
           if (typeof customAlert === 'function') customAlert('整備内容の登録に失敗しました: ' + e.message);
@@ -7371,6 +7380,7 @@ function createSignboardMarker(name, pos, icon, id) {
           if (typeof window.updatePartsList === 'function') window.updatePartsList();
           const sel = document.getElementById('m_parts');
           if (sel) sel.value = name;
+          if (typeof window.updatePartsList === 'function') window.updatePartsList();
           if (typeof customAlert === 'function') customAlert(`✅ 交換部品「${name}」を追加しました！`);
         } catch (e) {
           if (typeof customAlert === 'function') customAlert('追加に失敗しました: ' + e.message);
@@ -8375,79 +8385,62 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.updatePartsList = () => {
          const toolId = document.getElementById('m_tool')?.value || '';
-         const partsSelect = document.getElementById('m_parts');
-         const symptomSelect = document.getElementById('m_symptom');
-         const contentSelect = document.getElementById('m_content');
 
          const machine = toolId
            ? ((typeof window.findMaintenanceTargetById_ === 'function') ? window.findMaintenanceTargetById_(toolId) : null)
            : null;
          const cat = machine ? (machine.category || machine.type || '') : '';
 
-         // --- 1. 症状 (m_symptom) の選択肢構築（カテゴリ連動） ---
-         if (symptomSelect) {
-           const prevVal = symptomSelect.value;
+         // --- 1. 症状 ---
+         {
+           const prevVal = document.getElementById('m_symptom')?.value || '';
            const sympSet = new Set();
-           // ① 選択中農機の個別症状
            if (machine && machine.symptoms) {
              String(machine.symptoms).split(/[,、]/).map(s => s.trim()).filter(Boolean).forEach(s => sympSet.add(s));
            }
-           // ② 同じカテゴリの全農機の症状
            if (cat && Array.isArray(pdlMachines)) {
              pdlMachines.filter(m => (m.category === cat || m.type === cat) && m.symptoms).forEach(m => {
                String(m.symptoms).split(/[,、]/).map(s => s.trim()).filter(Boolean).forEach(s => sympSet.add(s));
              });
            }
-           // ③ 共通・デフォルト症状
            (window.pdlSymptoms || ["動作不良", "異音発生", "苗箱の詰まり", "エンジン始動不能", "オイル漏れ", "ベルト緩み・破損", "刃・パーツ破損", "ランプ点灯", "点検・清掃"]).forEach(s => sympSet.add(s));
-
-           let sHtml = '<option value="">選択してください</option>';
-           Array.from(sympSet).forEach(s => {
-             const safe = String(s).replace(/"/g, '&quot;').replace(/</g, '&lt;');
-             sHtml += `<option value="${safe}">${safe}</option>`;
-           });
-           symptomSelect.innerHTML = sHtml;
-           if (prevVal && sympSet.has(prevVal)) symptomSelect.value = prevVal;
+           const list = Array.from(sympSet);
+           if (prevVal && !sympSet.has(prevVal)) list.unshift(prevVal);
+           const symEl = document.getElementById('m_symptom');
+           if (symEl) symEl.value = prevVal;
+           window.renderMaintValueChips_('m_symptom_chips', 'm_symptom', list, { tone: 'orange', emptyLabel: '未選択' });
          }
 
-         // --- 2. 整備内容 (m_content) の選択肢構築 ---
-         if (contentSelect) {
-           const prevVal = contentSelect.value;
+         // --- 2. 整備内容 ---
+         {
+           const prevVal = document.getElementById('m_content')?.value || '';
            const contentSet = new Set(window.pdlMaintenanceContents || []);
            ["オイル交換", "エレメント交換", "ベルト調整", "グリスアップ", "刃交換", "清掃・点検", "部品交換", "本体修理", "動作確認"].forEach(c => contentSet.add(c));
-           let cHtml = '<option value="">選択してください</option>';
-           Array.from(contentSet).forEach(c => {
-             const safe = String(c).replace(/"/g, '&quot;').replace(/</g, '&lt;');
-             cHtml += `<option value="${safe}">${safe}</option>`;
-           });
-           contentSelect.innerHTML = cHtml;
-           if (prevVal && contentSet.has(prevVal)) contentSelect.value = prevVal;
+           const list = Array.from(contentSet);
+           if (prevVal && !contentSet.has(prevVal)) list.unshift(prevVal);
+           const contentEl = document.getElementById('m_content');
+           if (contentEl) contentEl.value = prevVal;
+           window.renderMaintValueChips_('m_content_chips', 'm_content', list, { tone: 'green', emptyLabel: '未選択' });
          }
 
-         // --- 3. 交換部品名 (m_parts) の選択肢構築（カテゴリ連動） ---
-         if (partsSelect) {
-           const prevVal = partsSelect.value;
+         // --- 3. 交換部品名 ---
+         {
+           const prevVal = document.getElementById('m_parts')?.value || '';
            const partsSet = new Set();
-           // ① 選択中農機の個別部品
            if (machine && machine.parts) {
              String(machine.parts).split(/[,、]/).map(p => p.trim()).filter(Boolean).forEach(p => partsSet.add(p));
            }
-           // ② 同じカテゴリの全農機の部品
            if (cat && Array.isArray(pdlMachines)) {
              pdlMachines.filter(m => (m.category === cat || m.type === cat) && m.parts).forEach(m => {
                String(m.parts).split(/[,、]/).map(p => p.trim()).filter(Boolean).forEach(p => partsSet.add(p));
              });
            }
-           // ③ 共通部品
            (window.pdlMaintenanceParts || ["プラグ", "オイルフィルター", "エアフィルター", "Vベルト", "替刃", "ヒューズ", "バッテリー", "Oリング"]).forEach(p => partsSet.add(p));
-
-           let pHtml = '<option value="">選択してください</option>';
-           Array.from(partsSet).forEach(p => {
-             const safe = String(p).replace(/"/g, '&quot;').replace(/</g, '&lt;');
-             pHtml += `<option value="${safe}">${safe}</option>`;
-           });
-           partsSelect.innerHTML = pHtml;
-           if (prevVal && partsSet.has(prevVal)) partsSelect.value = prevVal;
+           const list = Array.from(partsSet);
+           if (prevVal && !partsSet.has(prevVal)) list.unshift(prevVal);
+           const partsEl = document.getElementById('m_parts');
+           if (partsEl) partsEl.value = prevVal;
+           window.renderMaintValueChips_('m_parts_chips', 'm_parts', list, { tone: 'blue', emptyLabel: '未選択' });
          }
 
          window.updateMaintenanceTargetInfoBadge();
@@ -13905,21 +13898,150 @@ function createSignboardMarker(name, pos, icon, id) {
         return label;
       };
 
-      /** 機械マスタ＋道具マスタ＋移動車両から整備・修理・点検対象セレクトを構築 */
+      window.maintChipBtnStyle_ = (on, tone) => {
+        const tones = {
+          green: { onBg: '#2E7D32', onBd: '#1B5E20', offBg: '#fff', offFg: '#2E7D32', offBd: '#81C784' },
+          orange: { onBg: '#E65100', onBd: '#BF360C', offBg: '#fff', offFg: '#E65100', offBd: '#FFB74D' },
+          blue: { onBg: '#1565C0', onBd: '#0D47A1', offBg: '#fff', offFg: '#1565C0', offBd: '#90CAF9' }
+        };
+        const t = tones[tone] || tones.green;
+        if (on) {
+          return `background:${t.onBg}; color:#fff; border:1.5px solid ${t.onBd}; font-weight:bold;`;
+        }
+        return `background:${t.offBg}; color:${t.offFg}; border:1.5px solid ${t.offBd}; font-weight:bold;`;
+      };
+
+      window.renderMaintValueChips_ = (containerId, hiddenId, items, opts) => {
+        opts = opts || {};
+        const wrap = document.getElementById(containerId);
+        const hidden = document.getElementById(hiddenId);
+        if (!wrap) return;
+        const selected = String((hidden && hidden.value) || opts.selected || '');
+        const tone = opts.tone || 'green';
+        const emptyLabel = opts.emptyLabel != null ? opts.emptyLabel : '未選択';
+        const onClickFn = opts.onClickFn || 'selectMaintValueChip_';
+        const list = Array.isArray(items) ? items : [];
+        const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        const escJs = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        let html = '';
+        if (opts.allowEmpty !== false) {
+          const on = !selected;
+          html += `<button type="button" class="m-value-chip" data-value="" onclick="${onClickFn}('${escJs(hiddenId)}','')" style="${window.maintChipBtnStyle_(on, tone)} border-radius:16px; padding:6px 10px; font-size:12px; cursor:pointer;">${esc(emptyLabel)}</button>`;
+        }
+        if (!list.length && opts.emptyMessage) {
+          html += `<div style="font-size:12px; color:#888; padding:4px 0;">${esc(opts.emptyMessage)}</div>`;
+        }
+        list.forEach(item => {
+          const value = (item && typeof item === 'object') ? String(item.value ?? '') : String(item ?? '');
+          const label = (item && typeof item === 'object') ? String(item.label ?? item.value ?? '') : String(item ?? '');
+          if (!value && !(item && item.allowBlank)) return;
+          const on = selected === value;
+          html += `<button type="button" class="m-value-chip" data-value="${esc(value)}" onclick="${onClickFn}('${escJs(hiddenId)}','${escJs(value)}')" style="${window.maintChipBtnStyle_(on, tone)} border-radius:16px; padding:6px 10px; font-size:12px; cursor:pointer; text-align:left; line-height:1.3;">${esc(label)}</button>`;
+        });
+        wrap.innerHTML = html;
+      };
+
+      window.selectMaintValueChip_ = (hiddenId, value) => {
+        const hidden = document.getElementById(hiddenId);
+        if (hidden) hidden.value = value == null ? '' : String(value);
+        if (hiddenId === 'm_tool') {
+          if (typeof window.populateMaintenanceMachineSelect === 'function') {
+            window.populateMaintenanceMachineSelect(hidden ? hidden.value : '');
+          }
+          if (typeof window.updatePartsList === 'function') window.updatePartsList();
+          if (typeof window.updateMaintenanceTargetInfoBadge === 'function') window.updateMaintenanceTargetInfoBadge();
+          if (typeof window.updateMaintenanceTargetPhotoPreview === 'function') window.updateMaintenanceTargetPhotoPreview();
+          return;
+        }
+        if (typeof window.updatePartsList === 'function') window.updatePartsList();
+      };
+
+      window.getMaintenanceMachineTypeOptions_ = () => {
+        const set = new Set();
+        (pdlMachineTypes || []).forEach(t => {
+          const s = String(t || '').trim();
+          if (s) set.add(s);
+        });
+        (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines) ? pdlMachines : []).forEach(m => {
+          [m.type, m.category].forEach(x => {
+            const s = String(x || '').trim();
+            if (s) set.add(s);
+          });
+        });
+        (window.pdlMobileVehicles || []).forEach(v => {
+          const s = String(v.driveType || '移動車両').trim();
+          if (s) set.add(s);
+        });
+        return Array.from(set).sort((a, b) => a.localeCompare(b, 'ja'));
+      };
+
+      window.machineMatchesMaintType_ = (m, typeFilter) => {
+        const t = String(typeFilter || '').trim();
+        if (!t || t === 'all') return true;
+        const hay = [m.type, m.category, m.group, m.driveType, m.workTypes]
+          .map(x => String(x || '').trim())
+          .filter(Boolean);
+        return hay.some(h => h === t || h.includes(t) || t.includes(h));
+      };
+
+      window.renderMaintenanceMachineTypeChips_ = () => {
+        const wrap = document.getElementById('m_machine_type_chips');
+        const section = document.getElementById('m_machine_type_wrap');
+        if (!wrap) return;
+        const kind = window._selectedMaintCategory || 'all';
+        if (section) section.style.display = (kind === 'tool') ? 'none' : 'block';
+        if (kind === 'tool') return;
+
+        if (!window._selectedMaintMachineType) window._selectedMaintMachineType = 'all';
+        const selected = window._selectedMaintMachineType;
+        const types = window.getMaintenanceMachineTypeOptions_();
+        const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        const escJs = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        let html = `<button type="button" class="m-type-chip" data-type="all" onclick="setMaintenanceMachineTypeFilter_('all')" style="${window.maintChipBtnStyle_(selected === 'all', 'blue')} border-radius:16px; padding:5px 11px; font-size:12px; cursor:pointer;">すべて</button>`;
+        types.forEach(t => {
+          const on = selected === t;
+          html += `<button type="button" class="m-type-chip" data-type="${esc(t)}" onclick="setMaintenanceMachineTypeFilter_('${escJs(t)}')" style="${window.maintChipBtnStyle_(on, 'blue')} border-radius:16px; padding:5px 11px; font-size:12px; cursor:pointer;">${esc(t)}</button>`;
+        });
+        if (!types.length) {
+          html += `<div style="font-size:11px; color:#666; padding:2px 0;">未登録です。「＋ カテゴリ追加」から作れます。</div>`;
+        }
+        wrap.innerHTML = html;
+      };
+
+      window.setMaintenanceMachineTypeFilter_ = (type) => {
+        window._selectedMaintMachineType = type || 'all';
+        window.renderMaintenanceMachineTypeChips_();
+        if (typeof window.populateMaintenanceMachineSelect === 'function') {
+          window.populateMaintenanceMachineSelect();
+        }
+      };
+
+      window.addMaintenanceMachineTypeChip_ = async () => {
+        await window.addMachineTypeFromForm(null);
+        window.renderMaintenanceMachineTypeChips_();
+        if (typeof window.populateMaintenanceMachineSelect === 'function') {
+          window.populateMaintenanceMachineSelect();
+        }
+      };
+
+      /** 機械マスタ＋道具マスタ＋移動車両から整備・修理・点検対象チップを構築 */
       window.populateMaintenanceMachineSelect = (preserveId) => {
-        const sel = document.getElementById('m_tool');
-        if (!sel) return;
-        const keep = preserveId != null ? String(preserveId) : String(sel.value || '');
+        const hidden = document.getElementById('m_tool');
+        const chips = document.getElementById('m_tool_chips');
+        if (!hidden && !chips) return;
+        const keep = preserveId != null ? String(preserveId) : String((hidden && hidden.value) || '');
         const qEl = document.getElementById('m_tool_search');
         const q = qEl ? String(qEl.value || '').trim().toLowerCase() : '';
         const catFilter = window._selectedMaintCategory || 'all';
+        const typeFilter = window._selectedMaintMachineType || 'all';
 
-        // 機械マスタ (pdlMachines)
+        if (typeof window.renderMaintenanceMachineTypeChips_ === 'function') {
+          window.renderMaintenanceMachineTypeChips_();
+        }
+
         const machines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
           ? pdlMachines.map(m => Object.assign({}, m, { isTool: false, isVehicle: false }))
           : [];
-
-        // 道具マスタ (pdlTools)
         const tools = (typeof pdlTools !== 'undefined' && Array.isArray(pdlTools))
           ? pdlTools.map(t => Object.assign({}, t, {
               isTool: true,
@@ -13928,8 +14050,6 @@ function createSignboardMarker(name, pos, icon, id) {
               group: t.group || t.category || t.workTypes || '道具'
             }))
           : [];
-
-        // 移動車両マスタ（軽トラ等）
         const vehicles = (window.pdlMobileVehicles || []).map(v => ({
           id: window.getMobileVehicleOptionId_(v),
           name: v.plateNumber || v.id || '移動車両',
@@ -13951,6 +14071,7 @@ function createSignboardMarker(name, pos, icon, id) {
           if (catFilter === 'vehicle' && !m.isVehicle) return false;
           if (catFilter === 'machine' && (m.isVehicle || m.isTool)) return false;
           if (catFilter === 'tool' && !m.isTool) return false;
+          if (catFilter !== 'tool' && !window.machineMatchesMaintType_(m, typeFilter)) return false;
           if (!q) return true;
           const hay = [
             m.name, m.machineNumber, m.serialNo, m.group, m.type, m.category, m.model, m.modelType, m.location, m.workTypes, m.driveType, m.status
@@ -13958,54 +14079,32 @@ function createSignboardMarker(name, pos, icon, id) {
           return hay.includes(q);
         });
 
-        let html = '<option value="">選択してください</option>';
-        if (filtered.length === 0) {
-          html += (q || catFilter !== 'all')
-            ? '<option value="" disabled>該当する対象（車両・農機具・道具）がありません</option>'
-            : '<option value="" disabled>機械・道具・車両マスタに登録がありません</option>';
-        } else {
-          const machineList = filtered.filter(x => !x.isTool && !x.isVehicle);
-          const toolList = filtered.filter(x => x.isTool);
-          const vehicleList = filtered.filter(x => x.isVehicle);
+        let chipItems = filtered.map(m => ({
+          value: String(m.id),
+          label: window.formatMachineOptionLabel(m)
+        }));
 
-          if (machineList.length > 0) {
-            html += '<optgroup label="🚜 農業機械マスタ">';
-            machineList.forEach(m => {
-              const label = window.formatMachineOptionLabel(m).replace(/</g, '&lt;').replace(/"/g, '&quot;');
-              html += `<option value="${String(m.id).replace(/"/g, '&quot;')}">${label}</option>`;
-            });
-            html += '</optgroup>';
-          }
-
-          if (vehicleList.length > 0) {
-            html += '<optgroup label="🛻 移動車両（軽トラ等）">';
-            vehicleList.forEach(v => {
-              const label = window.formatMachineOptionLabel(v).replace(/</g, '&lt;').replace(/"/g, '&quot;');
-              html += `<option value="${String(v.id).replace(/"/g, '&quot;')}">${label}</option>`;
-            });
-            html += '</optgroup>';
-          }
-
-          if (toolList.length > 0) {
-            html += '<optgroup label="🔧 道具マスタ">';
-            toolList.forEach(t => {
-              const label = window.formatMachineOptionLabel(t).replace(/</g, '&lt;').replace(/"/g, '&quot;');
-              html += `<option value="${String(t.id).replace(/"/g, '&quot;')}">${label}</option>`;
-            });
-            html += '</optgroup>';
-          }
-        }
-
-        // 選択中がフィルタ外でも選択肢に残す
-        if (keep && !filtered.some(m => String(m.id) === keep)) {
+        if (keep && !chipItems.some(x => x.value === keep)) {
           const kept = allItems.find(m => String(m.id) === keep) || window.findMaintenanceTargetById_(keep);
           if (kept) {
-            const label = window.formatMachineOptionLabel(kept).replace(/</g, '&lt;').replace(/"/g, '&quot;');
-            html += `<option value="${String(kept.id).replace(/"/g, '&quot;')}">${label}</option>`;
+            chipItems = [{ value: String(kept.id), label: window.formatMachineOptionLabel(kept) }].concat(chipItems);
           }
         }
-        sel.innerHTML = html;
-        if (keep && Array.from(sel.options).some(o => o.value === keep)) sel.value = keep;
+
+        if (hidden) hidden.value = keep;
+        window.renderMaintValueChips_('m_tool_chips', 'm_tool', chipItems, {
+          tone: 'orange',
+          emptyLabel: '未選択',
+          emptyMessage: (q || catFilter !== 'all' || (typeFilter && typeFilter !== 'all'))
+            ? '該当する対象がありません'
+            : '機械・道具・車両マスタに登録がありません',
+          allowEmpty: true
+        });
+
+        const emptyHint = document.getElementById('m_tool_empty_hint');
+        if (emptyHint) {
+          emptyHint.style.display = (!allItems.length) ? 'block' : 'none';
+        }
         if (typeof window.updateMaintenanceTargetPhotoPreview === 'function') {
           window.updateMaintenanceTargetPhotoPreview();
         }
@@ -14141,12 +14240,13 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.selectMachineFromPhotoPicker = (id) => {
         const sel = document.getElementById('m_tool');
-        if (sel) {
-          sel.value = id;
-          if (typeof window.updatePartsList === 'function') window.updatePartsList();
-          if (typeof window.updateMaintenanceTargetInfoBadge === 'function') window.updateMaintenanceTargetInfoBadge();
-          if (typeof window.updateMaintenanceTargetPhotoPreview === 'function') window.updateMaintenanceTargetPhotoPreview();
+        if (sel) sel.value = id;
+        if (typeof window.populateMaintenanceMachineSelect === 'function') {
+          window.populateMaintenanceMachineSelect(id);
         }
+        if (typeof window.updatePartsList === 'function') window.updatePartsList();
+        if (typeof window.updateMaintenanceTargetInfoBadge === 'function') window.updateMaintenanceTargetInfoBadge();
+        if (typeof window.updateMaintenanceTargetPhotoPreview === 'function') window.updateMaintenanceTargetPhotoPreview();
         const item = (typeof window.findMaintenanceTargetById_ === 'function') ? window.findMaintenanceTargetById_(id) : null;
         const name = item ? (item.name || '対象') : '対象';
         if (typeof window.showRecordSyncToast === 'function') {
@@ -14287,7 +14387,7 @@ function createSignboardMarker(name, pos, icon, id) {
         modal.innerHTML = `
           <div style="width:100%; max-width:440px; max-height:92vh; background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 12px 32px rgba(0,0,0,0.35); display:flex; flex-direction:column;">
             <div style="background:#1976D2; color:#fff; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
-              <div id="mie_title" style="font-weight:bold; font-size:15px;">🚜 農機・車両の登録</div>
+              <div id="mie_title" style="font-weight:bold; font-size:15px;">＋ 農機具・車両を登録</div>
               <button type="button" onclick="closeMachineItemEditorModal()" style="background:transparent; border:none; color:#fff; font-size:22px; cursor:pointer; line-height:1;">×</button>
             </div>
             <div style="padding:14px 16px; overflow-y:auto; flex:1;">
@@ -14306,6 +14406,15 @@ function createSignboardMarker(name, pos, icon, id) {
               <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">名称 *</label>
               <input type="text" id="mie_name" class="form-input" placeholder="例: トラクター MZ655 / 軽トラ 熊谷500あ1234" style="width:100%; box-sizing:border-box; margin-bottom:12px;" onkeydown="if(event.key==='Enter'){event.preventDefault(); if((window._machineItemEditorState||{}).mode==='add'){queueMachineItemFromEditor();}else{saveMachineItemEditorModal();}}">
               <div id="mie_machine_extra" style="display:none; flex-direction:column; gap:8px; margin-bottom:12px;">
+                <div>
+                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">農機カテゴリ</label>
+                  <div style="display:flex; gap:4px;">
+                    <select id="mie_type" class="form-input" style="flex:1; box-sizing:border-box; margin-bottom:0;">
+                      <option value="">選択...</option>
+                    </select>
+                    <button type="button" onclick="addMachineTypeFromForm('mie_type')" style="padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; cursor:pointer; flex-shrink:0;" title="カテゴリを追加">➕</button>
+                  </div>
+                </div>
                 <div style="display:flex; gap:8px;">
                   <div style="flex:1;">
                     <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">グループ</label>
@@ -14417,6 +14526,29 @@ function createSignboardMarker(name, pos, icon, id) {
         window.renderMachineItemEditorPreview();
       };
 
+      window.refreshMachineItemEditorSelectOptions_ = () => {
+        const typeSel = document.getElementById('mie_type');
+        if (typeSel) {
+          const keep = String(typeSel.value || '');
+          const types = (pdlMachineTypes || []).slice().sort((a, b) => String(a).localeCompare(String(b), 'ja'));
+          typeSel.innerHTML = '<option value="">選択...</option>' + types.map(t =>
+            `<option value="${String(t).replace(/"/g, '&quot;')}">${String(t).replace(/</g, '&lt;')}</option>`
+          ).join('');
+          if (keep && Array.from(typeSel.options).some(o => o.value === keep)) typeSel.value = keep;
+        }
+        const groupSel = document.getElementById('mie_group');
+        if (groupSel) {
+          const keep = String(groupSel.value || '');
+          const defaults = ['農業機械', '農機インプルメント', '出荷機械'];
+          const groups = Array.from(new Set(defaults.concat(pdlMachineGroups || []).map(g => String(g || '').trim()).filter(Boolean)));
+          groupSel.innerHTML = groups.map(g =>
+            `<option value="${String(g).replace(/"/g, '&quot;')}">${String(g).replace(/</g, '&lt;')}</option>`
+          ).join('');
+          if (keep && Array.from(groupSel.options).some(o => o.value === keep)) groupSel.value = keep;
+          else if (!groupSel.value && groups.length) groupSel.value = groups[0];
+        }
+      };
+
       window.setMachineItemEditorKind = (kind) => {
         const st = window._machineItemEditorState || {};
         st.kind = kind === 'vehicle' ? 'vehicle' : 'machine';
@@ -14434,7 +14566,11 @@ function createSignboardMarker(name, pos, icon, id) {
           btn.style.border = s.border;
         });
         const titleEl = document.getElementById('mie_title');
-        if (titleEl && st.mode === 'add') titleEl.textContent = '＋ 農機具・車両を複数登録';
+        if (titleEl && st.mode === 'add') titleEl.textContent = '＋ 農機具・車両を登録';
+        const macExtra = document.getElementById('mie_machine_extra');
+        const vehExtra = document.getElementById('mie_vehicle_extra');
+        if (macExtra) macExtra.style.display = (st.kind === 'machine') ? 'flex' : 'none';
+        if (vehExtra) vehExtra.style.display = (st.kind === 'vehicle') ? 'flex' : 'none';
       };
 
       window.renderMachineItemEditorQueue = () => {
@@ -14478,7 +14614,13 @@ function createSignboardMarker(name, pos, icon, id) {
         st.pending.push({
           kind: st.kind === 'vehicle' ? 'vehicle' : 'machine',
           name: name,
-          photoBase64: st.photoBase64 || ''
+          photoBase64: st.photoBase64 || '',
+          type: (document.getElementById('mie_type') || {}).value || '',
+          group: (document.getElementById('mie_group') || {}).value || '',
+          fuel: (document.getElementById('mie_fuel') || {}).value || '',
+          model: (document.getElementById('mie_model') || {}).value || '',
+          driveType: (document.getElementById('mie_drive_type') || {}).value || '',
+          status: (document.getElementById('mie_status') || {}).value || ''
         });
         window._machineItemEditorState = st;
         const nameEl = document.getElementById('mie_name');
@@ -14565,15 +14707,20 @@ function createSignboardMarker(name, pos, icon, id) {
         const titleEl = document.getElementById('mie_title');
         const nameEl = document.getElementById('mie_name');
         const kindLabel = kind === 'vehicle' ? '車両' : '農機具';
-        if (titleEl) titleEl.textContent = (mode === 'edit' ? '✏️ ' : '＋ ') + (mode === 'edit' ? (kindLabel + 'の登録内容変更') : '農機具・車両を複数登録');
+        if (titleEl) titleEl.textContent = (mode === 'edit' ? '✏️ ' : '＋ ') + (mode === 'edit' ? (kindLabel + 'の登録内容変更') : '農機具・車両を登録');
         if (nameEl) nameEl.value = window._machineItemEditorState.name || '';
+
+        if (typeof window.refreshMachineItemEditorSelectOptions_ === 'function') {
+          window.refreshMachineItemEditorSelectOptions_();
+        }
 
         const macExtra = document.getElementById('mie_machine_extra');
         const vehExtra = document.getElementById('mie_vehicle_extra');
-        if (macExtra) macExtra.style.display = (kind === 'machine' && mode === 'edit') ? 'flex' : 'none';
-        if (vehExtra) vehExtra.style.display = (kind === 'vehicle' && mode === 'edit') ? 'flex' : 'none';
+        if (macExtra) macExtra.style.display = (kind === 'machine') ? 'flex' : 'none';
+        if (vehExtra) vehExtra.style.display = (kind === 'vehicle') ? 'flex' : 'none';
 
         if (item) {
+          if (document.getElementById('mie_type')) document.getElementById('mie_type').value = item.type || item.category || '';
           if (document.getElementById('mie_group')) document.getElementById('mie_group').value = item.group || '農業機械';
           if (document.getElementById('mie_fuel')) document.getElementById('mie_fuel').value = item.fuel || '';
           if (document.getElementById('mie_model')) document.getElementById('mie_model').value = item.model || item.machineNumber || '';
@@ -14658,8 +14805,8 @@ function createSignboardMarker(name, pos, icon, id) {
           const rawId = (entry.mode === 'edit' && entry.itemId)
             ? String(entry.itemId).replace(/^veh:/, '')
             : ('veh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6));
-          const driveType = (document.getElementById('mie_drive_type') || {}).value || entry.driveType || '移動車両';
-          const status = (document.getElementById('mie_status') || {}).value || entry.status || '使用可能';
+          const driveType = entry.driveType || (document.getElementById('mie_drive_type') || {}).value || '移動車両';
+          const status = entry.status || (document.getElementById('mie_status') || {}).value || '使用可能';
           const payload = {
             id: rawId,
             plateNumber: name,
@@ -14681,16 +14828,18 @@ function createSignboardMarker(name, pos, icon, id) {
           return { kind: 'vehicle', rec: rec, id: rawId, optionId: window.getMobileVehicleOptionId_(rec), name: name };
         }
 
-        const group = (document.getElementById('mie_group') || {}).value || entry.group || '農業機械';
-        const fuel = (document.getElementById('mie_fuel') || {}).value || entry.fuel || '';
-        const model = (document.getElementById('mie_model') || {}).value || entry.model || '';
+        const group = entry.group || (document.getElementById('mie_group') || {}).value || '農業機械';
+        const fuel = entry.fuel != null ? entry.fuel : ((document.getElementById('mie_fuel') || {}).value || '');
+        const model = entry.model || (document.getElementById('mie_model') || {}).value || '';
+        const type = entry.type || (document.getElementById('mie_type') || {}).value || '';
         const payload = {
           name: name,
           userName: userName,
           workCategory: st.workCategory || '',
           group: group,
           fuel: fuel,
-          model: model
+          model: model,
+          type: type
         };
         if (photoBase64) {
           // photoBase64 のみ送る（photos と二重送信すると Drive に同じ写真が2枚できる）
@@ -14705,11 +14854,11 @@ function createSignboardMarker(name, pos, icon, id) {
           newMachine = (res && res.machine) ? res.machine : Object.assign({}, payload, { id: entry.itemId, photo: photoBase64 || (payload.clearPhoto ? '' : (entry.existingPhoto || '')) });
         } else {
           const res = await safeCallGAS('addMachineToSign', payload);
-          newMachine = (res && res.id) ? res : { id: 'MAC_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), name: name, workCategory: payload.workCategory, group: group, fuel: fuel, model: model, status: '使用可能', photo: photoBase64 || '' };
+          newMachine = (res && res.id) ? res : { id: 'MAC_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), name: name, workCategory: payload.workCategory, group: group, fuel: fuel, model: model, type: type, status: '使用可能', photo: photoBase64 || '' };
         }
         if (typeof pdlMachines === 'undefined' || !Array.isArray(pdlMachines)) window.pdlMachines = [];
         const existingIdx = pdlMachines.findIndex(m => String(m.id) === String(newMachine.id) || m.name === name);
-        const saved = Object.assign({ name: name, group: group, fuel: fuel, model: model }, newMachine);
+        const saved = Object.assign({ name: name, group: group, fuel: fuel, model: model, type: type }, newMachine);
         if (existingIdx !== -1) pdlMachines[existingIdx] = Object.assign({}, pdlMachines[existingIdx], saved);
         else pdlMachines.push(saved);
         return { kind: 'machine', rec: saved, id: saved.id, optionId: saved.id, name: name };
@@ -14772,7 +14921,13 @@ function createSignboardMarker(name, pos, icon, id) {
               clearPhoto: st.clearPhoto,
               existingPhoto: st.existingPhoto || '',
               mode: 'edit',
-              itemId: st.itemId
+              itemId: st.itemId,
+              type: (document.getElementById('mie_type') || {}).value || '',
+              group: (document.getElementById('mie_group') || {}).value || '',
+              fuel: (document.getElementById('mie_fuel') || {}).value || '',
+              model: (document.getElementById('mie_model') || {}).value || '',
+              driveType: (document.getElementById('mie_drive_type') || {}).value || '',
+              status: (document.getElementById('mie_status') || {}).value || ''
             });
             try {
               localStorage.removeItem('passionMapInitData');
@@ -14790,7 +14945,13 @@ function createSignboardMarker(name, pos, icon, id) {
             pending.push({
               kind: st.kind === 'vehicle' ? 'vehicle' : 'machine',
               name: name,
-              photoBase64: st.photoBase64 || ''
+              photoBase64: st.photoBase64 || '',
+              type: (document.getElementById('mie_type') || {}).value || '',
+              group: (document.getElementById('mie_group') || {}).value || '',
+              fuel: (document.getElementById('mie_fuel') || {}).value || '',
+              model: (document.getElementById('mie_model') || {}).value || '',
+              driveType: (document.getElementById('mie_drive_type') || {}).value || '',
+              status: (document.getElementById('mie_status') || {}).value || ''
             });
           }
           if (!pending.length) {
@@ -14855,6 +15016,9 @@ function createSignboardMarker(name, pos, icon, id) {
           else addBtn.textContent = '＋ 新規登録';
         }
 
+        if (typeof window.renderMaintenanceMachineTypeChips_ === 'function') {
+          window.renderMaintenanceMachineTypeChips_();
+        }
         window.populateMaintenanceMachineSelect();
       };
 
@@ -14881,8 +15045,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
           safeCallGAS('addToolToMaster', { name: name, userName: (typeof currentUser !== 'undefined' ? currentUser : '') || '管理者' });
           window.populateMaintenanceMachineSelect(newId);
-          const sel = document.getElementById('m_tool');
-          if (sel) sel.value = newId;
+          if (typeof window.updatePartsList === 'function') window.updatePartsList();
           if (typeof window.updateMaintenanceTargetPhotoPreview === 'function') window.updateMaintenanceTargetPhotoPreview();
           if (typeof window.showRecordSyncToast === 'function') window.showRecordSyncToast(`✅ 道具「${name}」を登録しました！`, 'ok');
 
@@ -14995,13 +15158,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
         const prevId = document.getElementById('m_tool')?.value || '';
         window.populateMaintenanceMachineSelect(prevId);
-
-        const contentSel = document.getElementById('m_content');
-        if (contentSel && contentSel.options.length <= 1) {
-          const contents = window.pdlMaintenanceContents || [];
-          contentSel.innerHTML = '<option value="">選択してください</option>' +
-            contents.map(c => `<option value="${String(c).replace(/"/g, '&quot;')}">${String(c).replace(/</g, '&lt;')}</option>`).join('');
-        }
+        if (typeof window.updatePartsList === 'function') window.updatePartsList();
 
         const emptyHint = document.getElementById('m_tool_empty_hint');
         if (emptyHint) {
@@ -15377,10 +15534,12 @@ function createSignboardMarker(name, pos, icon, id) {
          const flags = (typeof window.getWorkExtraUiFlags_ === 'function')
            ? window.getWorkExtraUiFlags_(workName)
            : { showMachine: false, showMaterial: false };
+         const isMachineryCat = (typeof window.isFieldMachineryWorkCategory_ === 'function' && window.isFieldMachineryWorkCategory_())
+           || !!flags.showMachine;
          const machineSection = document.getElementById('field_machinery_section');
          const machineShownAbove = !!(machineSection && machineSection.style.display !== 'none');
-         // 引き上げ／作業マスタ「農機を出す」の機械選択は field_machinery_section 側
-         const pullShownAbove = (isPullWork || flags.showMachine) && machineShownAbove;
+         // 引き上げ／圃場農機作業／「農機を出す」の機械選択は field_machinery_section 側
+         const pullShownAbove = (isPullWork || isMachineryCat) && machineShownAbove;
          
          const isMatch = (catStr) => {
             if (!catStr) return false;
@@ -15396,7 +15555,7 @@ function createSignboardMarker(name, pos, icon, id) {
             : pdlMaterials.filter(m => isMatch(m.workCategory));
          let matchMachines = (pullShownAbove)
             ? []
-            : (isPullWork || flags.showMachine
+            : (isPullWork || isMachineryCat
             ? (Array.isArray(pdlMachines) ? pdlMachines.slice() : [])
             : pdlMachines.filter(m => isMatch(m.workCategory)));
          // 潅水作業のポンプは専用UI（設置中ボタン）で扱うため、ここでは除外
@@ -15408,16 +15567,15 @@ function createSignboardMarker(name, pos, icon, id) {
             matchMachines = [];
          }
 
-         if (matchMats.length === 0 && matchMachines.length === 0 && !isPullWork && !flags.showMaterial && !flags.showMachine) { container.innerHTML = ""; return; }
+         if (matchMats.length === 0 && matchMachines.length === 0 && !isPullWork && !flags.showMaterial && !isMachineryCat) { container.innerHTML = ""; return; }
 
          let html = `<div style="font-size:13px; font-weight:bold; color:#4CAF50; margin-bottom:5px;">🛠️ 使ったもの記録</div><div style="max-height:350px; overflow-y:auto; border:1px solid #81c784; padding:8px; background:#f1f8e9; border-radius:6px; margin-bottom:15px;">`;
          
-         if (isPullWork || flags.showMachine || matchMachines.length > 0) { 
+         if (isPullWork || isMachineryCat || matchMachines.length > 0) { 
             html += `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
               <div style="font-size:11px; font-weight:bold; color:#1976d2;">🚜 ${isPullWork ? '引き上げる機械と片づけ場所' : '使用した農機と片づけ場所'}</div>
               <button type="button" onclick="addNewMachineFromWorkRecord()" style="flex-shrink:0; background:#2196F3; color:#fff; border:none; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 機械を新規登録</button>
             </div>`;
-            if (!pullShownAbove && window.continueSameWorkCheckboxHtml_) html += window.continueSameWorkCheckboxHtml_();
             if (isPullWork && matchMachines.length === 0) {
               html += `<div style="font-size:12px; color:#666; margin-bottom:8px;">登録されている機械がありません。上のボタンから追加できます。</div>`;
             }
@@ -16088,30 +16246,37 @@ function createSignboardMarker(name, pos, icon, id) {
                   <div id="extra_record_buttons" style="display:none; background:#FAFAFA; border:1px dashed #BDBDBD; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
                   <div id="maintenance_section" style="display:none; background:#fff3e0; padding:12px; border-radius:10px; margin-bottom:15px; border:1px solid #ffcc80;">
                     <div style="font-weight:bold; color:#e65100; margin-bottom:6px; font-size:13px; display:flex; align-items:center; gap:4px;">🔧 整備・修理・点検 ${window.buildRecHelpBtn_('popover-maint-help',
-                      '・対象を「車両」「農機具」「道具」から選びます<br>'
+                      '・種別（車両／農機具／道具）→ 農機カテゴリ → 対象の順で選びます<br>'
                       + '・写真選択・新規登録・編集・削除ができます<br>'
                       + '・症状・整備内容・交換部品はマスタ連動です',
                       { heading: '整備パネル', bg: '#E65100', title: '整備のヘルプ' })}</div>
                     
-                    <!-- 🌟 1. カテゴリ選択タブ (車両 / 農機具 / 道具 / すべて) -->
+                    <!-- 1. 種別（車両 / 農機具 / 道具 / すべて） -->
                     <div style="background:#FFF8E1; border:1px solid #FFE0B2; border-radius:8px; padding:8px 10px; margin-bottom:10px;">
-                      <div style="font-size:11px; font-weight:bold; color:#E65100; margin-bottom:6px; display:flex; align-items:center; gap:4px;">
-                        <span>🏷️ カテゴリを選択:</span>
-                      </div>
+                      <div style="font-size:11px; font-weight:bold; color:#E65100; margin-bottom:6px;">① 種別を選択</div>
                       <div id="m_category_tabs" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:0;">
-                        <button type="button" onclick="setMaintenanceCategoryFilter('all')" class="m-cat-tab" data-cat="all" style="background:#2E7D32; color:#fff; border:none; border-radius:16px; padding:4px 12px; font-size:12px; font-weight:bold; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.1);">🌐 すべて</button>
-                        <button type="button" onclick="setMaintenanceCategoryFilter('vehicle')" class="m-cat-tab" data-cat="vehicle" style="background:#e0e0e0; color:#333; border:none; border-radius:16px; padding:4px 12px; font-size:12px; font-weight:bold; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.1);">🛻 車両</button>
-                        <button type="button" onclick="setMaintenanceCategoryFilter('machine')" class="m-cat-tab" data-cat="machine" style="background:#e0e0e0; color:#333; border:none; border-radius:16px; padding:4px 12px; font-size:12px; font-weight:bold; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.1);">🚜 農機具</button>
-                        <button type="button" onclick="setMaintenanceCategoryFilter('tool')" class="m-cat-tab" data-cat="tool" style="background:#e0e0e0; color:#333; border:none; border-radius:16px; padding:4px 12px; font-size:12px; font-weight:bold; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.1);">🔧 道具</button>
+                        <button type="button" onclick="setMaintenanceCategoryFilter('all')" class="m-cat-tab" data-cat="all" style="background:#2E7D32; color:#fff; border:none; border-radius:16px; padding:4px 12px; font-size:12px; font-weight:bold; cursor:pointer;">🌐 すべて</button>
+                        <button type="button" onclick="setMaintenanceCategoryFilter('vehicle')" class="m-cat-tab" data-cat="vehicle" style="background:#e0e0e0; color:#333; border:none; border-radius:16px; padding:4px 12px; font-size:12px; font-weight:bold; cursor:pointer;">🛻 車両</button>
+                        <button type="button" onclick="setMaintenanceCategoryFilter('machine')" class="m-cat-tab" data-cat="machine" style="background:#e0e0e0; color:#333; border:none; border-radius:16px; padding:4px 12px; font-size:12px; font-weight:bold; cursor:pointer;">🚜 農機具</button>
+                        <button type="button" onclick="setMaintenanceCategoryFilter('tool')" class="m-cat-tab" data-cat="tool" style="background:#e0e0e0; color:#333; border:none; border-radius:16px; padding:4px 12px; font-size:12px; font-weight:bold; cursor:pointer;">🔧 道具</button>
                       </div>
+                    </div>
+
+                    <!-- 2. 農機カテゴリ（機械カテゴリマスタ） -->
+                    <div id="m_machine_type_wrap" style="background:#E3F2FD; border:1px solid #90CAF9; border-radius:8px; padding:8px 10px; margin-bottom:10px;">
+                      <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; margin-bottom:6px; flex-wrap:wrap;">
+                        <div style="font-size:11px; font-weight:bold; color:#1565C0;">② 農機カテゴリ</div>
+                        <button type="button" onclick="addMaintenanceMachineTypeChip_()" style="background:#2196F3; color:#fff; border:none; border-radius:4px; padding:3px 8px; font-size:11px; font-weight:bold; cursor:pointer;">＋ カテゴリ追加</button>
+                      </div>
+                      <div id="m_machine_type_chips" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
                     </div>
 
                     <label class="form-label" style="font-size:12px;">🔍 対象をキーワードで絞り込み</label>
                     <input type="search" id="m_tool_search" class="form-input" placeholder="名前・機械番号・ナンバー・型式等で絞り込み" oninput="filterMaintenanceMachineSelect()" style="margin-bottom:8px;">
                     
-                    <!-- 🌟 2. 対象選択＆追加・編集・削除アクションボタン群 -->
+                    <!-- 3. 対象選択（チップ） -->
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; flex-wrap:wrap; gap:6px;">
-                      <label class="form-label" style="margin-bottom:0; font-size:12px;">対象を選択・管理</label>
+                      <label class="form-label" style="margin-bottom:0; font-size:12px;">③ 対象を選択・管理</label>
                       <div style="display:flex; gap:4px; align-items:center; flex-wrap:wrap;">
                         <button type="button" onclick="openMachinePhotoPickerModal()" style="background:#2E7D32; color:#fff; border:none; border-radius:4px; padding:3px 8px; font-size:11px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:2px; box-shadow:0 1px 3px rgba(0,0,0,0.15);">🖼️ 写真選択</button>
                         <button type="button" id="m_add_cat_btn" onclick="addNewCategoryItemFromWorker()" style="background:#2196F3; color:#fff; border:none; border-radius:4px; padding:3px 8px; font-size:11px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:2px; box-shadow:0 1px 3px rgba(0,0,0,0.15);">＋ 新規登録</button>
@@ -16119,10 +16284,11 @@ function createSignboardMarker(name, pos, icon, id) {
                         <button type="button" id="m_del_cat_btn" onclick="deleteSelectedCategoryItemFromWorker()" style="background:#E53935; color:#fff; border:none; border-radius:4px; padding:3px 8px; font-size:11px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:2px; box-shadow:0 1px 3px rgba(0,0,0,0.15);">🗑️ 削除</button>
                       </div>
                     </div>
-                    <select id="m_tool" class="form-input" onchange="updatePartsList(); updateMaintenanceTargetInfoBadge(); updateMaintenanceTargetPhotoPreview();"><option value="">選択してください</option></select>
-                    <div id="m_tool_empty_hint" style="display:none; font-size:11px; color:#c62828; margin:-6px 0 10px;">選択されたカテゴリに該当する登録がありません。上の「＋ 新規登録」ボタンからすぐ追加できます。</div>
+                    <input type="hidden" id="m_tool" value="">
+                    <div id="m_tool_chips" style="display:flex; flex-wrap:wrap; gap:6px; max-height:220px; overflow-y:auto; margin-bottom:8px; padding:2px;"></div>
+                    <div id="m_tool_empty_hint" style="display:none; font-size:11px; color:#c62828; margin:-2px 0 10px;">選択されたカテゴリに該当する登録がありません。上の「＋ 新規登録」ボタンからすぐ追加できます。</div>
 
-                    <!-- 🌟 写真プレビュー枠 -->
+                    <!-- 写真プレビュー枠 -->
                     <div id="m_target_photo_preview" style="display:none; margin:4px 0 10px; background:#fff; border:1px solid #FFCC80; border-radius:8px; padding:8px 12px; align-items:center; gap:12px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
                       <img id="m_target_photo_img" src="" alt="機体写真" style="width:58px; height:58px; object-fit:cover; border-radius:6px; border:1px solid #e0e0e0; flex-shrink:0;">
                       <div style="font-size:12px; flex:1; min-width:0;">
@@ -16132,7 +16298,7 @@ function createSignboardMarker(name, pos, icon, id) {
                       <button type="button" id="m_target_photo_edit_btn" onclick="editSelectedCategoryItemFromWorker()" style="display:none; flex-shrink:0; background:#FFA000; color:#fff; border:none; border-radius:6px; padding:6px 8px; font-size:11px; font-weight:bold; cursor:pointer;">📷 写真</button>
                     </div>
 
-                    <!-- 🌟 機械のグループ・カテゴリ・現在地拠点表示バッジ -->
+                    <!-- 機械のグループ・カテゴリ・現在地拠点表示バッジ -->
                     <div id="m_target_info_badge" style="display:none; background:#FFF; border:1px solid #FFE0B2; border-radius:8px; padding:8px 10px; margin-bottom:12px; font-size:12px; line-height:1.5;">
                       <div style="display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center;">
                         <span>🏷️ <b>グループ:</b> <span id="m_info_group" style="color:#E65100; font-weight:bold;">--</span></span>
@@ -16141,7 +16307,7 @@ function createSignboardMarker(name, pos, icon, id) {
                       </div>
                     </div>
                     
-                    <!-- 症状 (フリーテキスト枠削除・カテゴリ連動選択・管理者編集機能付き) -->
+                    <!-- 症状 -->
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                       <label class="form-label" style="margin-bottom:0;">症状</label>
                       ${(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin()) ? `
@@ -16151,13 +16317,10 @@ function createSignboardMarker(name, pos, icon, id) {
                         </div>
                       ` : ''}
                     </div>
-                    <div style="margin-bottom:15px;">
-                       <select id="m_symptom" class="form-input" style="margin-bottom:0; width:100%;">
-                         <option value="">選択してください</option>
-                       </select>
-                    </div>
+                    <input type="hidden" id="m_symptom" value="">
+                    <div id="m_symptom_chips" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:15px;"></div>
 
-                    <!-- 整備内容 (カテゴリ連動選択・管理者編集機能付き) -->
+                    <!-- 整備内容 -->
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                       <label class="form-label" style="margin-bottom:0;">整備内容</label>
                       <div style="display:flex; gap:4px;">
@@ -16167,11 +16330,10 @@ function createSignboardMarker(name, pos, icon, id) {
                           ` : ''}
                       </div>
                     </div>
-                    <div style="margin-bottom:15px;">
-                      <select id="m_content" class="form-input" style="margin-bottom:0; width:100%;"><option value="">選択してください</option></select>
-                    </div>
+                    <input type="hidden" id="m_content" value="">
+                    <div id="m_content_chips" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:15px;"></div>
                     
-                    <!-- 交換部品名 (カテゴリ連動選択・管理者編集機能付き) -->
+                    <!-- 交換部品名 -->
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                       <label class="form-label" style="margin-bottom:0;">交換部品名</label>
                       ${(typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin()) ? `
@@ -16181,9 +16343,8 @@ function createSignboardMarker(name, pos, icon, id) {
                         </div>
                       ` : ''}
                     </div>
-                    <div style="margin-bottom:15px;">
-                       <select id="m_parts" class="form-input" style="margin-bottom:0; width:100%;"><option value="">選択してください</option></select>
-                    </div>
+                    <input type="hidden" id="m_parts" value="">
+                    <div id="m_parts_chips" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:15px;"></div>
                   </div>
                   ${ridgeUI}
                   ${irrigationUI}
@@ -16551,10 +16712,16 @@ function createSignboardMarker(name, pos, icon, id) {
                   }
                   if (typeof window.refreshExtraRecordButtons === 'function') window.refreshExtraRecordButtons();
                   if(document.getElementById('m_tool')) document.getElementById('m_tool').value = d.maintenanceToolId || "";
+                  if (typeof window.populateMaintenanceMachineSelect === 'function') {
+                    window.populateMaintenanceMachineSelect(d.maintenanceToolId || '');
+                  }
                   if (typeof updatePartsList === 'function') updatePartsList();
                   if(document.getElementById('m_symptom')) document.getElementById('m_symptom').value = d.maintenanceSymptom || "";
                   if(document.getElementById('m_content')) document.getElementById('m_content').value = d.maintenanceContent || "";
-                  setTimeout(() => { if(document.getElementById('m_parts')) document.getElementById('m_parts').value = d.maintenanceParts || ""; }, 50);
+                  if(document.getElementById('m_parts')) document.getElementById('m_parts').value = d.maintenanceParts || "";
+                  if (typeof updatePartsList === 'function') updatePartsList();
+                  if (typeof window.updateMaintenanceTargetPhotoPreview === 'function') window.updateMaintenanceTargetPhotoPreview();
+                  if (typeof window.updateMaintenanceTargetInfoBadge === 'function') window.updateMaintenanceTargetInfoBadge();
                }, 100);
             }
             if (d.refuelRecord || (d.workName && typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(d.workName))) {
@@ -18428,114 +18595,6 @@ function createSignboardMarker(name, pos, icon, id) {
         else if (typeof window.toggleTracking === 'function') window.toggleTracking();
       };
 
-      window.continueSameWorkCheckboxHtml_ = () => {
-        const on = !!window._continueSameWorkPref;
-        const banner = window._continueSameWorkBanner
-          ? `<div style="background:#FFF3E0; border:1px solid #FFB74D; color:#E65100; border-radius:8px; padding:8px 10px; font-size:12px; font-weight:bold; margin-bottom:8px; line-height:1.4;">🔁 同じ作業の続けて登録です。農機を選び直して保存してください（開始は前の終了時刻）。</div>`
-          : '';
-        return `${banner}<label style="display:flex; align-items:flex-start; gap:8px; margin:0 0 10px; padding:8px 10px; background:#fff; border:1px dashed #FFB74D; border-radius:8px; font-size:12px; color:#E65100; font-weight:bold; cursor:pointer; line-height:1.35;">
-          <input type="checkbox" id="rec_continue_same_work" ${on ? 'checked' : ''} onchange="window._continueSameWorkPref=!!this.checked" style="margin-top:2px; flex-shrink:0;">
-          <span>保存後、同じ作業を続けて登録する<br><span style="font-weight:normal; color:#666; font-size:11px;">作業名・圃場・作物を引き継ぎ、開始は今の終了時刻。農機は選び直せます。</span></span>
-        </label>`;
-      };
-
-      window.captureContinueSameWorkSnap_ = (data, polyIds) => {
-        const machines = Array.isArray(data && data.usedMachines) ? data.usedMachines : [];
-        const machineSection = document.getElementById('field_machinery_section');
-        const machineUiOn = !!(machineSection && machineSection.style.display !== 'none');
-        const autoEl = document.getElementById('rec_continue_same_work');
-        if (autoEl) window._continueSameWorkPref = !!autoEl.checked;
-        const cropKeys = (typeof window.getSelectedWorkCropFilterKeys === 'function')
-          ? window.getSelectedWorkCropFilterKeys()
-          : [];
-        window._continueSameWorkSnap = {
-          workName: String((data && data.workName) || '').trim(),
-          category: String((data && data.category) || '').trim(),
-          crop: String((data && data.crop) || '').trim(),
-          cropKeys: Array.isArray(cropKeys) ? cropKeys.slice() : [],
-          workDate: String((data && data.workDate) || '').trim(),
-          startTime: String((data && data.endTime) || '').trim(),
-          polyIds: Array.isArray(polyIds) ? polyIds.map(String) : [],
-          hadMachines: machineUiOn || machines.length > 0,
-          autoContinue: !!window._continueSameWorkPref
-        };
-        return window._continueSameWorkSnap;
-      };
-
-      window.continueSameWorkRecordAfterSave_ = (opts) => {
-        opts = opts || {};
-        const snap = window._continueSameWorkSnap;
-        if (!snap || !snap.workName) {
-          if (typeof customAlert === 'function') customAlert('引き継ぐ作業がありません。');
-          return;
-        }
-        if (typeof window.closeAfterWorkSaveContinueModal_ === 'function') window.closeAfterWorkSaveContinueModal_();
-        window._continueSameWorkBanner = true;
-        window._continueSameWorkPref = true;
-        currentEditRecordId = null;
-        currentRecordType = 'work';
-        if (Array.isArray(snap.polyIds) && snap.polyIds.length) {
-          selectedPolyIds = snap.polyIds.slice();
-          activePolyId = snap.polyIds[0];
-        }
-        if (typeof window.directOpenForm === 'function') {
-          window.directOpenForm(activePolyId, 'work');
-        } else if (typeof window.findCurrentFieldAndOpenForm === 'function') {
-          window.findCurrentFieldAndOpenForm('work');
-        } else if (typeof renderRecordForm === 'function') {
-          renderRecordForm();
-          const panel = document.getElementById('rightPanel');
-          if (panel) panel.classList.add('open');
-        }
-        const apply = () => {
-          if (snap.category && typeof window.selectWorkCategory === 'function') {
-            try { window.selectWorkCategory(snap.category); } catch (e) {}
-          }
-          const keys = (snap.cropKeys && snap.cropKeys.length)
-            ? snap.cropKeys
-            : String(snap.crop || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
-          keys.forEach(k => {
-            if (typeof window.ensureWorkCropFilterSelected === 'function') {
-              try { window.ensureWorkCropFilterSelected(window.normalizeWorkCropKey ? window.normalizeWorkCropKey(k) : k); } catch (e) {}
-            } else if (typeof window.selectWorkCropFilter === 'function') {
-              try { window.selectWorkCropFilter(k); } catch (e) {}
-            }
-          });
-          if (typeof window.selectWorkChip === 'function') {
-            try { window.selectWorkChip(snap.workName); } catch (e) {}
-          }
-          const dateEl = document.getElementById('rec_work_date');
-          if (dateEl && snap.workDate) dateEl.value = snap.workDate;
-          const startEl = document.getElementById('rec_start_time');
-          if (startEl && snap.startTime) startEl.value = snap.startTime;
-          const endEl = document.getElementById('rec_end_time');
-          if (endEl) {
-            if (typeof window.matchStartEndToPreviousEndAndNow === 'function') {
-              try { window.matchStartEndToPreviousEndAndNow({ silent: true }); } catch (e) {}
-            }
-            if (startEl && snap.startTime) startEl.value = snap.startTime;
-          }
-          if (typeof calcTotalTime === 'function') calcTotalTime();
-          if (typeof window.refreshFieldTargetUI === 'function') {
-            try { window.refreshFieldTargetUI(); } catch (e) {}
-          }
-          if (typeof window.populateFieldMachineOptions === 'function' && document.getElementById('field_machinery_section')) {
-            try { window.populateFieldMachineOptions([]); } catch (e) {}
-          }
-          const cont = document.getElementById('rec_continue_same_work');
-          if (cont) {
-            cont.checked = true;
-            window._continueSameWorkPref = true;
-          }
-        };
-        setTimeout(apply, 80);
-        setTimeout(apply, 280);
-        setTimeout(apply, 520);
-        if (opts.auto && typeof window.showRecordSyncToast === 'function') {
-          window.showRecordSyncToast('🔁 同じ作業の続けて登録です。農機を選んで保存してください', 'ok');
-        }
-      };
-
       window.showAfterWorkSaveContinueModal_ = (opts) => {
         opts = opts || {};
         const data = opts.data || {};
@@ -18563,18 +18622,13 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.ensureDayPlanCacheForPlannedEnd_ === 'function') window.ensureDayPlanCacheForPlannedEnd_();
         const modalEl = document.getElementById('modal');
         if (!modalEl) return;
-        const snap = window._continueSameWorkSnap;
-        const continueBtn = (snap && snap.hadMachines)
-          ? `<button type="button" onclick="continueSameWorkRecordAfterSave_()" style="width:100%; background:#1565C0; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">🚜 同じ作業を続けて登録</button>`
-          : '';
         window.fillAppModalHtml_(`
           <div style="background:#fff; width:100%; max-width:380px; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
             <div style="font-size:16px; font-weight:bold; color:#2E7D32; margin-bottom:8px;">✅ 記録を保存しました</div>
             <div style="font-size:13px; color:#555; margin-bottom:16px; line-height:1.45;">「${String(workName).replace(/</g, '&lt;')}」を保存しました。次の操作を選んでください。</div>
-            ${continueBtn}
             <button type="button" onclick="showAfterSaveNextWorkPicker_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">次の作業を登録</button>
             <button type="button" onclick="startClockOutFromAfterSave_()" style="width:100%; background:#E53935; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">🏃 退勤を登録</button>
-            <button type="button" onclick="window._continueSameWorkBanner=false; closeAfterWorkSaveContinueModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer;">閉じる</button>
+            <button type="button" onclick="closeAfterWorkSaveContinueModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer;">閉じる</button>
           </div>`);
         modalEl.style.display = 'flex';
         modalEl.onclick = (evt) => {
@@ -19168,12 +19222,6 @@ function createSignboardMarker(name, pos, icon, id) {
             && !specialSessionSnap
           );
 
-          let continueSnap = null;
-          if (!isEditBtn && recordTypeSnap === 'work' && data && !String(data.workName || '').includes('休憩')
-              && typeof window.captureContinueSameWorkSnap_ === 'function') {
-            try { continueSnap = window.captureContinueSameWorkSnap_(data, targetIdsSnap); } catch (e) {}
-          }
-
           // フォーム状態をクリアして即閉じる
           pendingFiles = [];
           existingUrlsInEdit = [];
@@ -19222,11 +19270,6 @@ function createSignboardMarker(name, pos, icon, id) {
               document.getElementById('customAlertModal').style.display = 'none';
               window.resumeClockOutAfterWorkSave();
             };
-          } else if (!isEditBtn && recordTypeSnap === 'work' && continueSnap && continueSnap.autoContinue
-              && typeof window.continueSameWorkRecordAfterSave_ === 'function') {
-            setTimeout(() => {
-              try { window.continueSameWorkRecordAfterSave_({ auto: true }); } catch (e) {}
-            }, 60);
           } else if (!isEditBtn && recordTypeSnap === 'work' && specialSessionSnap && specialSessionSnap.askContinueAfterSave && typeof customConfirm === 'function') {
             const label = specialSessionSnap.label || '専用記録';
             const cont = await customConfirm(label + "を保存しました。\n続けて作業記録を登録しますか？\n（" + label + "の内容はセット済みのまま引き継ぎます）");
@@ -20951,18 +20994,20 @@ function createSignboardMarker(name, pos, icon, id) {
           const t = name.trim();
           if ((pdlMachineTypes || []).includes(t)) {
               customAlert('既に登録されています');
-              const sel = document.getElementById(selectId);
+              const sel = selectId ? document.getElementById(selectId) : null;
               if (sel) sel.value = t;
+              window._selectedMaintMachineType = t;
               return;
           }
           try {
               const updated = await callGAS('manageMaster', { masterType: 'machineType', manageAction: 'add', value: t, userName: currentUser });
               pdlMachineTypes = updated || [...(pdlMachineTypes || []), t];
-              const sel = document.getElementById(selectId);
+              const sel = selectId ? document.getElementById(selectId) : null;
               if (sel) {
                   sel.innerHTML = '<option value="">選択...</option>' + pdlMachineTypes.map(x => `<option value="${String(x).replace(/"/g, '&quot;')}">${x}</option>`).join('');
                   sel.value = t;
               }
+              window._selectedMaintMachineType = t;
           } catch (e) {
               customAlert(e.message || '機械カテゴリの追加に失敗しました');
           }
@@ -21960,9 +22005,13 @@ function createSignboardMarker(name, pos, icon, id) {
               }
               
               setTimeout(() => {
-                  const toolSelect = document.getElementById('m_tool');
-                  if (toolSelect && window.pendingMaintenanceMachineId) {
-                      toolSelect.value = window.pendingMaintenanceMachineId;
+                  const pendingId = window.pendingMaintenanceMachineId;
+                  if (pendingId && typeof window.populateMaintenanceMachineSelect === 'function') {
+                      window.populateMaintenanceMachineSelect(pendingId);
+                      if (typeof window.updatePartsList === 'function') window.updatePartsList();
+                  } else {
+                      const toolSelect = document.getElementById('m_tool');
+                      if (toolSelect && pendingId) toolSelect.value = pendingId;
                   }
                   window.pendingMaintenanceMachineId = null;
               }, 200);
