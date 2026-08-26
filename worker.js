@@ -25024,12 +25024,6 @@ window.buildBulkWorkMemoCardWorkAdminBarHtml_ = (d, uid) => {
       <button type="button" onclick="window._bulkWorkMemoMasterEditUid='${esc(uid)}'; adminDeleteWorkName('${safe}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">🗑️ 選択中を削除</button>
     </div>`;
   }
-  if (!wName) {
-    return `<div style="margin:8px 0 0;">
-      <button type="button" onclick="window._bulkWorkMemoMasterEditUid='${esc(uid)}'; adminAddWorkName()" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 作業を登録</button>
-      ${isAdmin ? '' : '<span style="font-size:10px; color:#888; margin-left:6px;">マスタにない作業はここから追加</span>'}
-    </div>`;
-  }
   return '';
 };
 
@@ -25244,7 +25238,7 @@ window.buildBulkWorkMemoWorkChipsHtml_ = (d, uid) => {
   if (cur && names.indexOf(cur) < 0 && !window.isBulkWorkMemoRestWorkName_(cur)) names.unshift(cur);
   names = names.filter(Boolean).slice(0, 8);
   if (!names.length) {
-    return '<div style="font-size:11px; color:#888; margin-bottom:8px;">メモから近い作業名が見つかりません。作業名チップから選ぶか、下の「＋ 作業を登録」から追加してください。</div>';
+    return '<div style="font-size:11px; color:#888; margin-bottom:8px;">メモから近い作業名が見つかりません。下の「手動で探して登録」から選んでください。</div>';
   }
   return `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${names.map(name => {
     const on = name === cur;
@@ -25253,6 +25247,26 @@ window.buildBulkWorkMemoWorkChipsHtml_ = (d, uid) => {
     const catHint = (!on && wCat) ? `<span style="font-size:10px; font-weight:normal; opacity:0.75; margin-left:4px;">${esc(wCat)}</span>` : '';
     return `<button type="button" onclick="pickBulkWorkMemoWorkName_('${esc(uid)}','${safeArg}')" style="padding:8px 12px; border-radius:16px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid ${on ? '#E65100' : '#FFCC80'}; background:${on ? '#FFF3E0' : '#fff'}; color:#E65100;">${esc(name)}${catHint}</button>`;
   }).join('')}</div>`;
+};
+
+/** 合いそうな作業名の下：マスタから手動で探す */
+window.buildBulkWorkMemoWorkManualPickHtml_ = (d, uid) => {
+  if (window.bulkWorkMemoIsRestDraft_(d)) return '';
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const workListOpen = !!d._workListOpen;
+  const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
+  return `
+    <button type="button" onclick="toggleBulkWorkMemoWorkList_('${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:10px 14px; margin-bottom:${workListOpen ? '8px' : '8px'}; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid #FF9800; background:${workListOpen ? '#FFF3E0' : '#fff'}; color:#E65100; text-align:left; display:flex; justify-content:space-between; align-items:center;">
+      <span>🔍 手動で探して登録</span>
+      <span style="font-size:11px; font-weight:normal; opacity:0.85;">${workListOpen ? '▲ 閉じる' : '▼ 開く'}</span>
+    </button>
+    <div id="bulk_work_list_${esc(uid)}" style="display:${workListOpen ? 'block' : 'none'}; margin-bottom:8px;">
+      ${window.buildBulkWorkMemoAllWorkChipsHtml_(d, uid)}
+    </div>
+    <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:8px;">
+      <button type="button" onclick="window._bulkWorkMemoMasterEditUid='${esc(uid)}'; adminAddWorkName()" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer;">＋ マスタにない作業を登録</button>
+      ${isAdmin ? `<button type="button" onclick="openWorkMasterManager()" style="background:#fff3e0; color:#e65100; border:1px solid #ffb74d; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer;">📋 作業マスタ管理</button>` : ''}
+    </div>`;
 };
 
 /** 作業名マスタ一覧チップ（カテゴリは絞り込みフィルター） */
@@ -25512,6 +25526,7 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
         ${restHintBanner}
         <label style="font-size:10px; color:#E65100; font-weight:bold;">🚜 合いそうな作業名</label>
         ${window.buildBulkWorkMemoWorkChipsHtml_(d, uid)}
+        ${window.buildBulkWorkMemoWorkManualPickHtml_(d, uid)}
         ${selectedCat ? `<div style="font-size:11px; color:#3949AB; margin:0 0 8px;">カテゴリ: <b>${esc(selectedCat)}</b>（作業名から自動）</div>` : ''}
         <div id="bulk_work_hint_${esc(uid)}" style="display:${hint ? 'block' : 'none'}; font-size:11px; color:#E65100; margin:0 0 8px; line-height:1.35;">${hint}</div>
         <label style="font-size:10px; color:#2E7D32; font-weight:bold;">🌱 作物名（複数可）</label>
@@ -25558,7 +25573,7 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
     <div id="bulk_work_memo_review_scroll" style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
       ${window.buildBulkWorkMemoModalHeaderHtml_('📋 一括入力の確認', `作業日 <b>${esc(ymd)}</b> ／ ${drafts.length}件。<b>作業</b>は作業名→作物名、<b>休憩</b>は別枠のボタンで選びます。`)}
       <div style="margin-bottom:12px;">${cards}</div>
-      <button type="button" id="bulk_work_memo_save_btn" onclick="saveBulkWorkMemoDrafts_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">💾 チェックした作業を一括保存</button>
+      <button type="button" id="bulk_work_memo_save_btn" onclick="openBulkWorkMemoConfirmSave_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">💾 チェックした作業を一括保存</button>
       <button type="button" onclick="openBulkWorkMemoModal_()" style="width:100%; background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-bottom:8px;">← メモをやり直す</button>
       <button type="button" onclick="closeBulkWorkMemoModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
     </div>`);
@@ -25639,6 +25654,7 @@ window.pickBulkWorkMemoWorkName_ = (uid, name) => {
   }
   row.workName = workName;
   row.workMatched = window.isBulkWorkMemoWorkInMaster_(workName);
+  row._workListOpen = false;
   row.isRest = workName.includes('休憩');
   if (row.isRest) {
     row.recordKind = 'rest';
@@ -25863,11 +25879,11 @@ window.calcBulkWorkMemoTotalTime_ = (start, end, breakMins) => {
   return Math.floor(workMins / 60) + '時間' + (workMins % 60) + '分';
 };
 
-window.saveBulkWorkMemoDrafts_ = async () => {
+window.validateBulkWorkMemoDraftsForSave_ = () => {
   const drafts = (window._bulkWorkMemoDrafts || []).filter(d => d && d.included !== false);
   if (!drafts.length) {
     if (typeof customAlert === 'function') customAlert('保存する作業にチェックを入れてください。');
-    return;
+    return null;
   }
   for (let i = 0; i < drafts.length; i++) {
     const d = drafts[i];
@@ -25876,42 +25892,109 @@ window.saveBulkWorkMemoDrafts_ = async () => {
     if (isRest) {
       if (!window.isBulkWorkMemoRestWorkName_(workName)) {
         if (typeof customAlert === 'function') customAlert(`${i + 1}件目：休憩の種類（休憩／昼休憩）を選んでください。`);
-        return;
+        return null;
       }
       if (!d.startTime && !d.endTime) {
         if (typeof customAlert === 'function') customAlert(`${i + 1}件目の開始または終了時間を入力してください。`);
-        return;
+        return null;
       }
       continue;
     }
     const crops = window.getBulkWorkMemoCropNames_(d);
     if (!crops.length) {
       if (typeof customAlert === 'function') customAlert(`${i + 1}件目の作物名を1つ以上選んでください（作物なしの場合は「共通」）。`);
-      return;
+      return null;
     }
     if (!workName) {
       if (typeof customAlert === 'function') customAlert(`${i + 1}件目の作業名をマスタのリストから選んでください。`);
-      return;
+      return null;
     }
     if (!window.isBulkWorkMemoWorkInMaster_(workName)) {
       if (typeof customAlert === 'function') customAlert(`${i + 1}件目「${workName}」は作業マスタにありません。リストから選んでください。`);
-      return;
+      return null;
     }
     if (!d.startTime && !d.endTime) {
       if (typeof customAlert === 'function') customAlert(`${i + 1}件目の開始または終了時間を入力してください。`);
-      return;
+      return null;
     }
     if (typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(workName)) {
       if (!String(d.prepTargetWork || '').trim()) {
         if (typeof customAlert === 'function') customAlert(`${i + 1}件目「${workName}」は何の作業の準備かを選んでください。`);
-        return;
+        return null;
       }
     }
   }
-  const btn = document.getElementById('bulk_work_memo_save_btn');
+  return drafts;
+};
+
+window.buildBulkWorkMemoConfirmRowHtml_ = (d, index) => {
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const isRest = window.bulkWorkMemoIsRestDraft_(d);
+  const workName = String(d.workName || '').trim() || '（未設定）';
+  const start = String(d.startTime || '').trim() || '--:--';
+  const end = String(d.endTime || '').trim() || '--:--';
+  const crops = isRest ? '共通' : (window.getBulkWorkMemoCropNames_(d).join('、') || '共通');
+  const polyIds = window.getBulkWorkMemoPolyIds_(d);
+  const fieldNames = polyIds.map(id => {
+    const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
+    return (p && p.name) ? p.name : '';
+  }).filter(Boolean).join('、') || (isRest ? '—' : '（圃場なし）');
+  const badge = isRest
+    ? '<span style="font-size:10px; font-weight:bold; color:#fff; background:#E65100; padding:2px 7px; border-radius:8px; margin-left:6px;">休憩</span>'
+    : '<span style="font-size:10px; font-weight:bold; color:#fff; background:#FF9800; padding:2px 7px; border-radius:8px; margin-left:6px;">作業</span>';
+  const maint = (!isRest && window.bulkWorkMemoIsMaintenance_(d) && d.maintenanceTool)
+    ? `<div style="font-size:11px; color:#E65100; margin-top:4px;">🔧 ${esc(d.maintenanceTool)}</div>`
+    : '';
+  return `
+    <div style="padding:10px 12px; border:1px solid #e0e0e0; border-radius:8px; margin-bottom:8px; background:#fafafa;">
+      <div style="font-size:13px; font-weight:bold; color:#333; line-height:1.35;">${index + 1}. ${esc(workName)}${badge}</div>
+      <div style="font-size:12px; color:#555; margin-top:4px;">🕒 ${esc(start)}〜${esc(end)}</div>
+      <div style="font-size:11px; color:#666; margin-top:3px;">🌱 ${esc(crops)}　📍 ${esc(fieldNames)}</div>
+      ${maint}
+    </div>`;
+};
+
+window.openBulkWorkMemoConfirmSave_ = () => {
+  if (!window.validateBulkWorkMemoDraftsForSave_()) return;
+  window.renderBulkWorkMemoConfirmModal_();
+};
+
+window.renderBulkWorkMemoConfirmModal_ = () => {
+  const drafts = (window._bulkWorkMemoDrafts || []).filter(d => d && d.included !== false);
+  const modalEl = document.getElementById('modal');
+  if (!modalEl || typeof window.fillAppModalHtml_ !== 'function') return;
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const ymd = window._bulkWorkMemoDate || window.getBulkWorkMemoTodayYmd_();
+  const rows = drafts.map((d, i) => window.buildBulkWorkMemoConfirmRowHtml_(d, i)).join('');
+  window.fillAppModalHtml_(`
+    <div id="bulk_work_memo_confirm_scroll" style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
+      ${window.buildBulkWorkMemoModalHeaderHtml_('✅ 登録内容の確認', `${drafts.length}件をこの内容で登録します。作業日を確認してから登録してください。`)}
+      <div style="background:#FFF8E1; border:2px solid #FFB74D; border-radius:10px; padding:12px; margin-bottom:12px;">
+        <label class="form-label" style="margin:0 0 6px; color:#E65100;">📅 作業日</label>
+        <input type="date" id="bulk_work_memo_confirm_date" class="form-input" value="${esc(ymd)}" onchange="window._bulkWorkMemoDate=this.value" style="margin:0; font-size:15px; font-weight:bold;">
+        <div style="font-size:11px; color:#666; margin-top:6px; line-height:1.4;">上記の日付で、チェックした ${drafts.length}件すべてが登録されます。</div>
+      </div>
+      <div style="font-size:11px; font-weight:bold; color:#555; margin-bottom:6px;">登録予定の作業</div>
+      <div style="margin-bottom:12px;">${rows}</div>
+      <button type="button" id="bulk_work_memo_register_btn" onclick="executeBulkWorkMemoRegistration_()" style="width:100%; background:#2E7D32; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">✅ この内容で登録する</button>
+      <button type="button" onclick="renderBulkWorkMemoReviewModal_()" style="width:100%; background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-bottom:8px;">← 戻って修正</button>
+      <button type="button" onclick="closeBulkWorkMemoModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">キャンセル</button>
+    </div>`);
+  modalEl.style.display = 'flex';
+  window._bulkWorkMemoActive = true;
+  if (typeof window.setBulkWorkMemoModalClass_ === 'function') window.setBulkWorkMemoModalClass_('open');
+  try { modalEl.onclick = null; } catch (e) {}
+};
+
+window.executeBulkWorkMemoRegistration_ = async () => {
+  const drafts = window.validateBulkWorkMemoDraftsForSave_();
+  if (!drafts) return;
+  const dateEl = document.getElementById('bulk_work_memo_confirm_date');
+  if (dateEl && dateEl.value) window._bulkWorkMemoDate = dateEl.value;
+  const btn = document.getElementById('bulk_work_memo_register_btn');
   if (btn) {
     btn.disabled = true;
-    btn.textContent = '保存中...';
+    btn.textContent = '登録中...';
   }
   const ymd = window._bulkWorkMemoDate || window.getBulkWorkMemoTodayYmd_();
   const userSnap = (typeof currentUser !== 'undefined' && currentUser)
@@ -26024,7 +26107,8 @@ window.saveBulkWorkMemoDrafts_ = async () => {
         polyId: targetIds[0] || '__global__',
         workName: data.workName,
         startTime: data.startTime,
-        endTime: data.endTime
+        endTime: data.endTime,
+        workDate: ymd
       });
     }
     if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
@@ -26036,14 +26120,20 @@ window.saveBulkWorkMemoDrafts_ = async () => {
     if (savedAnyRest && typeof window.updateRestNoticeCardUI === 'function') {
       try { window.updateRestNoticeCardUI(); } catch (e) {}
     }
+    window._bulkWorkMemoDrafts = [];
     window.showBulkWorkMemoSavedModal_(savedItems);
   } catch (e) {
-    if (typeof customAlert === 'function') customAlert(e.message || '一括保存に失敗しました。');
+    if (typeof customAlert === 'function') customAlert(e.message || '一括登録に失敗しました。');
     if (btn) {
       btn.disabled = false;
-      btn.textContent = '💾 チェックした作業を一括保存';
+      btn.textContent = '✅ この内容で登録する';
     }
   }
+};
+
+/** @deprecated 互換用。確認画面経由に統一 */
+window.saveBulkWorkMemoDrafts_ = () => {
+  window.openBulkWorkMemoConfirmSave_();
 };
 
 window.showBulkWorkMemoSavedModal_ = (savedItems) => {
@@ -26051,6 +26141,7 @@ window.showBulkWorkMemoSavedModal_ = (savedItems) => {
   const modalEl = document.getElementById('modal');
   if (!modalEl || typeof window.fillAppModalHtml_ !== 'function') return;
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const workDate = (items[0] && items[0].workDate) ? String(items[0].workDate) : (window._bulkWorkMemoDate || '');
   const rows = items.map((it, i) => {
     const safePoly = String(it.polyId || '__global__').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const safeId = String(it.localId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -26065,16 +26156,16 @@ window.showBulkWorkMemoSavedModal_ = (savedItems) => {
   }).join('');
   window.fillAppModalHtml_(`
     <div style="background:#fff; width:100%; max-width:420px; max-height:88vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
-      <div style="font-size:16px; font-weight:bold; color:#2E7D32; margin-bottom:6px;">✅ ${items.length}件を一括保存しました</div>
+      ${window.buildBulkWorkMemoModalHeaderHtml_('✅ 登録完了', workDate ? `作業日 <b>${esc(workDate)}</b> ／ ${items.length}件を登録しました。` : `${items.length}件を登録しました。`)}
       <div style="font-size:12px; color:#666; margin-bottom:12px; line-height:1.4;">必要なら下の「編集」から1件ずつ詳細を直せます（圃場・詳細作業・写真など）。</div>
       <div style="margin-bottom:12px;">${rows}</div>
       <button type="button" onclick="closeBulkWorkMemoModal_(); if(typeof openMyPage==='function') openMyPage();" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:13px; font-weight:bold; cursor:pointer; margin-bottom:8px;">📋 マイページで確認</button>
       <button type="button" onclick="closeBulkWorkMemoModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer;">閉じる</button>
     </div>`);
   modalEl.style.display = 'flex';
-  modalEl.onclick = (evt) => {
-    if (evt.target === modalEl) closeBulkWorkMemoModal_();
-  };
+  window._bulkWorkMemoActive = true;
+  if (typeof window.setBulkWorkMemoModalClass_ === 'function') window.setBulkWorkMemoModalClass_('open');
+  try { modalEl.onclick = null; } catch (e) {}
   if (typeof window.showRecordSyncToast === 'function') {
     window.showRecordSyncToast(`✅ メモから ${items.length}件を保存しました（同期中…）`, 'ok');
   }
