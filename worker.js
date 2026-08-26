@@ -23718,9 +23718,14 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
     ? work.candidates.map(c => c.name)
     : (workName ? [workName] : []);
 
-  const mentionedMachines = (typeof window.getBulkWorkMemoMachineOptions_ === 'function')
-    ? window.getBulkWorkMemoMachineOptions_(raw, category).filter(m => m && raw.indexOf(m.name) >= 0)
+  const mentionedMachines = (typeof window.getBulkWorkMemoMachineList_ === 'function')
+    ? window.getBulkWorkMemoMachineList_({ rawLine: raw, category: category, workName: workName }).filter(m => m && raw.indexOf(m.name) >= 0)
     : [];
+
+  const draftBase = { workName, category, rawLine: raw };
+  const uiFlags = (typeof window.getBulkWorkMemoUiFlags_ === 'function')
+    ? window.getBulkWorkMemoUiFlags_(draftBase)
+    : { showPesticide: false, isPrep: false };
 
   return {
     rawLine: raw,
@@ -23735,8 +23740,12 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
     cropName: cropName,
     polyId: field.polyId || '',
     polyName: field.polyName || '',
+    prepTargetWork: uiFlags.isPrep ? (window.guessBulkWorkMemoPrepTarget_(raw) || '') : '',
+    prepListFilterCategory: '',
     detailedWorks: [],
-    usedMachines: mentionedMachines,
+    usedMachines: uiFlags.showMachine ? mentionedMachines : [],
+    usedPesticides: uiFlags.showPesticide ? (window.guessBulkWorkMemoPesticides_(raw) || []) : [],
+    _pestSearchQ: '',
     included: true,
     comment: raw
   };
@@ -23829,6 +23838,18 @@ window.buildBulkWorkMemoFieldOptionsHtml_ = (selectedId) => {
   return opts.join('');
 };
 
+/** 一括入力で圃場選択を出すか（作業名登録後、圃場カテゴリの作業のみ） */
+window.bulkWorkMemoNeedsField_ = (draft) => {
+  if (!draft) return false;
+  const wName = String(draft.workName || '').trim();
+  if (!wName) return false;
+  const cat = String(draft.category || window.getBulkWorkMemoWorkCategory_(wName) || '').trim();
+  if (typeof window.afterSaveWorkNeedsFieldPlace_ === 'function') {
+    return window.afterSaveWorkNeedsFieldPlace_(wName, cat);
+  }
+  return typeof window.isFieldCategory === 'function' && window.isFieldCategory(cat);
+};
+
 window.getBulkWorkMemoCategories_ = () => {
   const set = new Set();
   (pdlWorkCategories || []).forEach(c => {
@@ -23845,16 +23866,19 @@ window.getBulkWorkMemoCategories_ = () => {
   return preferred.filter(c => set.has(c)).concat(rest);
 };
 
-window.buildBulkWorkMemoCategoryChipsHtml_ = (d, uid) => {
+window.buildBulkWorkMemoCategoryChipsHtml_ = (d, uid, mode) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  // 一覧絞り込み用（未選択＝すべて）
-  const cur = String(d.listFilterCategory != null ? d.listFilterCategory : '').trim();
+  const isPrep = mode === 'prep';
+  const cur = isPrep
+    ? String(d.prepListFilterCategory != null ? d.prepListFilterCategory : '').trim()
+    : String(d.listFilterCategory != null ? d.listFilterCategory : '').trim();
   const cats = ['すべて'].concat(window.getBulkWorkMemoCategories_());
+  const pickFn = isPrep ? 'pickBulkWorkMemoPrepListFilter_' : 'pickBulkWorkMemoListFilter_';
   return `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${cats.map(name => {
     const value = name === 'すべて' ? '' : name;
     const on = value === cur;
     const safeArg = String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    return `<button type="button" onclick="pickBulkWorkMemoListFilter_('${esc(uid)}','${safeArg}')" style="padding:7px 11px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? '#3949AB' : '#C5CAE9'}; background:${on ? '#E8EAF6' : '#fff'}; color:#283593;">${esc(name)}</button>`;
+    return `<button type="button" onclick="${pickFn}('${esc(uid)}','${safeArg}')" style="padding:7px 11px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? '#3949AB' : '#C5CAE9'}; background:${on ? '#E8EAF6' : '#fff'}; color:#283593;">${esc(name)}</button>`;
   }).join('')}</div>`;
 };
 
@@ -24034,9 +24058,17 @@ window.isBulkWorkMemoWorkInMaster_ = (workName) => {
   return pdlWorkMaster.some(w => w && String(w.name || '').trim() === name);
 };
 
-window.getBulkWorkMemoDetailOptions_ = (workName, cropName) => {
+window.getBulkWorkMemoDetailOptions_ = (workName, cropName, prepTargetWork) => {
   const wName = String(workName || '').trim();
   if (!wName || wName.includes('休憩')) return [];
+  if (typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(wName)) {
+    const target = String(prepTargetWork || '').trim();
+    if (!target) return [];
+    if (typeof window.getPrepComboDetailNames_ === 'function') {
+      return window.getPrepComboDetailNames_(wName, target) || [];
+    }
+    return [];
+  }
   const crop = String(cropName || '').trim() || '共通';
   if (typeof window.getDetailNamesForWorkCrop_ === 'function') {
     return window.getDetailNamesForWorkCrop_(wName, crop) || [];
@@ -24048,6 +24080,215 @@ window.getBulkWorkMemoDetailOptions_ = (workName, cropName) => {
     return window.getDetailWorksForWorkAndCrop(wObj, crop) || [];
   }
   return [];
+};
+
+/** 一括入力：作業名・カテゴリから記録欄の出し分け（通常フォームと同じ判定） */
+window.getBulkWorkMemoUiFlags_ = (draft) => {
+  const wName = String(draft && draft.workName || '').trim();
+  const cat = String(draft && draft.category || window.getBulkWorkMemoWorkCategory_(wName) || '').trim();
+  const w = (typeof window.findWorkMasterByName_ === 'function')
+    ? window.findWorkMasterByName_(wName)
+    : (pdlWorkMaster || []).find(x => x && String(x.name || '').trim() === wName);
+  const inferred = (typeof window.inferWorkRecordUiFlags_ === 'function')
+    ? window.inferWorkRecordUiFlags_(wName, cat)
+    : { showMachine: false, showMaterial: false, showPesticide: false };
+  const isMachineryCat = cat === '圃場農機作業' || cat.includes('農機');
+  const pick = (saved, fallback) => {
+    const parsed = (typeof window.parseWorkUiFlagValue_ === 'function')
+      ? window.parseWorkUiFlagValue_(saved)
+      : null;
+    return parsed == null ? fallback : parsed;
+  };
+  return {
+    showMachine: isMachineryCat ? true : pick(w && w.showMachine, inferred.showMachine),
+    showMaterial: pick(w && w.showMaterial, inferred.showMaterial),
+    showPesticide: pick(w && w.showPesticide, inferred.showPesticide),
+    isPrep: typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(wName)
+  };
+};
+
+window.getBulkWorkMemoMachineList_ = (draft) => {
+  const flags = window.getBulkWorkMemoUiFlags_(draft || {});
+  if (!flags.showMachine) return [];
+  const machines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+  if (!machines.length) return [];
+  const t = String((draft && draft.rawLine) || '');
+  const mentioned = [];
+  const rest = [];
+  machines.forEach(m => {
+    const name = String((m && (m.name || m.id)) || '').trim();
+    if (!name) return;
+    const item = { id: String(m.id || name), name: name };
+    if (t.indexOf(name) >= 0) mentioned.push(item);
+    else rest.push(item);
+  });
+  return mentioned.concat(rest).slice(0, 32);
+};
+
+window.getBulkWorkMemoPrepTargetGuessesFromMemo_ = (rawLine) => {
+  const t = String(rawLine || '');
+  const names = [];
+  const seen = new Set();
+  const push = (name) => {
+    const n = String(name || '').trim();
+    if (!n || seen.has(n)) return;
+    if (typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(n)) return;
+    if (!(pdlWorkMaster || []).some(w => w && String(w.name || '').trim() === n)) return;
+    seen.add(n);
+    names.push(n);
+  };
+  (pdlWorkMaster || []).forEach(w => {
+    if (!w) return;
+    const name = String(w.name || '').trim();
+    if (!name || (typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(name))) return;
+    if (t.indexOf(name) >= 0) push(name);
+  });
+  const m1 = t.match(/(.+?)の準備/);
+  if (m1) push(m1[1]);
+  const m2 = t.match(/準備[−\-ー\s]+(.+?)(?:\s|$|、|。)/);
+  if (m2) push(m2[1]);
+  return names;
+};
+
+window.guessBulkWorkMemoPrepTarget_ = (rawLine) => {
+  const guesses = window.getBulkWorkMemoPrepTargetGuessesFromMemo_(rawLine);
+  return guesses.length ? guesses[0] : '';
+};
+
+window.guessBulkWorkMemoPesticides_ = (rawLine) => {
+  const t = String(rawLine || '');
+  const found = [];
+  const seen = new Set();
+  (Array.isArray(pdlPesticides) ? pdlPesticides : []).forEach(item => {
+    const name = String((item && item.name) || '').trim();
+    if (!name || seen.has(name)) return;
+    if (t.indexOf(name) >= 0) {
+      seen.add(name);
+      found.push({ name: name, amount: '', unit: '', dilution: '' });
+    }
+  });
+  return found;
+};
+
+window.getBulkWorkMemoPrepTargetNames_ = (draft) => {
+  const filterCat = String(draft && draft.prepListFilterCategory || '').trim();
+  const crop = String(draft && draft.cropName || '').trim();
+  const names = [];
+  const seen = new Set();
+  (pdlWorkMaster || []).forEach(w => {
+    if (!w) return;
+    const name = String(w.name || '').trim();
+    if (!name || seen.has(name)) return;
+    if (typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(name)) return;
+    const wCat = String(w.category || '圃場作業').trim();
+    if (filterCat && wCat !== filterCat) return;
+    if (crop && crop !== '共通') {
+      const keys = (typeof window.getWorkMasterCropKeys === 'function')
+        ? window.getWorkMasterCropKeys(w)
+        : [];
+      if (keys.length && keys.indexOf(crop) < 0 && keys.indexOf('__common__') < 0) return;
+    }
+    seen.add(name);
+    names.push(name);
+  });
+  names.sort((a, b) => a.localeCompare(b, 'ja'));
+  return names;
+};
+
+window.refreshBulkWorkMemoExtras_ = (uid) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  const extras = document.getElementById('bulk_extras_' + uid);
+  if (extras) extras.innerHTML = window.buildBulkWorkMemoExtrasHtml_(row, uid);
+};
+
+window.buildBulkWorkMemoPrepTargetHtml_ = (d, uid) => {
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const cur = String(d.prepTargetWork || '').trim();
+  const suggested = window.getBulkWorkMemoPrepTargetGuessesFromMemo_(d.rawLine);
+  const all = window.getBulkWorkMemoPrepTargetNames_(d);
+  const chip = (name, style) => {
+    const on = name === cur;
+    const safeArg = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const bg = on ? '#4CAF50' : (style === 'sug' ? '#E8F5E9' : '#fff');
+    const color = on ? '#fff' : '#2E7D32';
+    const border = on ? '#388E3C' : (style === 'sug' ? '#A5D6A7' : '#C8E6C9');
+    return `<button type="button" class="bulk-prep-target-chip" data-name="${esc(name)}" onclick="pickBulkWorkMemoPrepTarget_('${esc(uid)}','${safeArg}')" style="padding:7px 12px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${border}; background:${bg}; color:${color};">${esc(name)}</button>`;
+  };
+  const sugHtml = suggested.length
+    ? `<div style="font-size:10px; color:#2E7D32; font-weight:bold; margin:6px 0 4px;">メモから合いそうな対象</div>
+       <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${suggested.map(n => chip(n, 'sug')).join('')}</div>`
+    : '';
+  const listHtml = all.length
+    ? `<div style="display:flex; flex-wrap:wrap; gap:6px; max-height:160px; overflow-y:auto; padding:4px 2px;">${all.slice(0, 48).map(n => chip(n, 'all')).join('')}</div>`
+    : `<div style="font-size:11px; color:#888; padding:8px;">該当する作業がありません。カテゴリ絞り込みを変えてください。</div>`;
+  const badge = cur
+    ? `<div style="margin-bottom:8px; font-size:12px; color:#1B5E20; font-weight:bold; background:#C8E6C9; padding:6px 10px; border-radius:6px;">選択中: <b>${esc(cur)}</b></div>`
+    : `<div style="margin-bottom:8px; font-size:12px; color:#B71C1C; font-weight:bold; background:#FFEBEE; border:1px solid #EF9A9A; padding:8px 10px; border-radius:6px;">⚠ 何の作業の準備かを選んでください（保存時必須）</div>`;
+  return `<div class="bulk-prep-target-box" style="margin:8px 0; background:#F1F8E9; border:2px solid #66BB6A; border-radius:10px; padding:10px;">
+    <div style="font-size:11px; font-weight:bold; color:#2E7D32; margin-bottom:6px;">📋 何の作業の準備ですか？ <span style="font-size:10px; color:#fff; background:#C62828; padding:1px 6px; border-radius:8px;">必須</span></div>
+    ${badge}
+    ${sugHtml}
+    <div style="font-size:10px; color:#3949AB; font-weight:bold; margin-bottom:4px;">カテゴリで絞り込み</div>
+    ${window.buildBulkWorkMemoCategoryChipsHtml_(d, uid, 'prep')}
+    <input type="search" placeholder="対象作業名を絞り込み…" oninput="filterBulkWorkMemoPrepTargetChips_(this)" style="width:100%; box-sizing:border-box; padding:7px 10px; border:1px solid #A5D6A7; border-radius:8px; font-size:12px; margin:6px 0 8px;">
+    ${listHtml}
+  </div>`;
+};
+
+window.buildBulkWorkMemoPesticidesHtml_ = (d, uid) => {
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const selected = Array.isArray(d.usedPesticides) ? d.usedPesticides : [];
+  const q = String(d._pestSearchQ || '').trim().toLowerCase();
+  const selectedHtml = selected.length
+    ? selected.map((p, idx) => {
+        const safeIdx = idx;
+        return `<div style="background:#fff; border:1px solid #c8e6c9; border-radius:8px; padding:8px; margin-bottom:6px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+            <b style="font-size:13px; color:#2e7d32;">${esc(p.name)}</b>
+            <button type="button" onclick="removeBulkWorkMemoPesticide_('${esc(uid)}',${safeIdx})" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:2px 8px; font-size:11px; font-weight:bold; cursor:pointer;">削除</button>
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+            <input type="number" value="${esc(p.amount)}" placeholder="量" inputmode="decimal" onchange="updateBulkWorkMemoPesticideField_('${esc(uid)}',${safeIdx},'amount', this.value)" style="width:64px; padding:5px; border:1px solid #ccc; border-radius:4px; text-align:right;">
+            <select onchange="updateBulkWorkMemoPesticideField_('${esc(uid)}',${safeIdx},'unit', this.value)" style="padding:5px; border:1px solid #ccc; border-radius:4px;">
+              ${['', 'ml', 'L', 'g', 'kg', '本', '袋', '個'].map(u => `<option value="${u}" ${String(p.unit || '') === u ? 'selected' : ''}>${u || '単位'}</option>`).join('')}
+            </select>
+            <input type="text" value="${esc(p.dilution)}" placeholder="希釈 例:1000倍" onchange="updateBulkWorkMemoPesticideField_('${esc(uid)}',${safeIdx},'dilution', this.value)" style="flex:1; min-width:100px; padding:5px; border:1px solid #ccc; border-radius:4px;">
+          </div>
+        </div>`;
+      }).join('')
+    : `<div style="font-size:11px; color:#666; background:#fff; padding:8px; border-radius:6px; margin-bottom:6px;">まだ薬剤が選ばれていません。下から選ぶか直接入力してください。</div>`;
+  const master = Array.isArray(pdlPesticides) ? pdlPesticides : [];
+  const matches = master.filter(item => {
+    const name = String(item.name || '').trim();
+    if (!name) return false;
+    if (selected.some(p => p.name === name)) return false;
+    if (!q) return true;
+    const hay = [item.name, item.activeIngredient, item.manufacturer, item.cropName].map(x => String(x || '').toLowerCase()).join(' ');
+    return hay.indexOf(q) >= 0;
+  }).slice(0, 10);
+  const matchHtml = matches.length
+    ? matches.map(item => {
+        const safeName = String(item.name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const sub = [item.activeIngredient, item.manufacturer].filter(Boolean).join(' / ');
+        return `<button type="button" onclick="addBulkWorkMemoPesticide_('${esc(uid)}','${safeName}')" style="display:block; width:100%; text-align:left; background:#fff; border:1px solid #a5d6a7; border-radius:6px; padding:7px 9px; margin-bottom:4px; cursor:pointer;">
+          <b style="color:#1b5e20; font-size:12px;">${esc(item.name)}</b>${sub ? `<div style="font-size:10px; color:#666;">${esc(sub)}</div>` : ''}
+        </button>`;
+      }).join('')
+    : `<div style="font-size:11px; color:#888;">${q ? '該当する農薬がありません。' : '農薬マスタから選んでください。'}</div>`;
+  return `<div style="margin:8px 0;">
+    <div style="font-size:10px; color:#33691E; font-weight:bold; margin-bottom:6px;">🧪 使用した薬剤</div>
+    <div style="border:1px solid #81c784; padding:10px; background:#e8f5e9; border-radius:8px;">
+      ${selectedHtml}
+      <div style="font-size:10px; font-weight:bold; color:#33691E; margin:6px 0 4px;">農薬マスタから選ぶ</div>
+      <input type="search" value="${esc(d._pestSearchQ || '')}" placeholder="農薬名・成分で検索" oninput="onBulkWorkMemoPesticideSearch_('${esc(uid)}', this.value)" style="width:100%; box-sizing:border-box; padding:7px; border:1px solid #a5d6a7; border-radius:6px; margin-bottom:6px; font-size:12px;">
+      <div style="max-height:140px; overflow-y:auto;">${matchHtml}</div>
+      <div style="display:flex; gap:6px; margin-top:8px;">
+        <input type="text" id="bulk_pest_custom_${esc(uid)}" placeholder="マスタにない薬剤名" style="flex:1; padding:7px; border:1px solid #a5d6a7; border-radius:6px; font-size:12px;">
+        <button type="button" onclick="addBulkWorkMemoPesticideFromInput_('${esc(uid)}')" style="background:#43A047; color:#fff; border:none; border-radius:6px; padding:7px 10px; font-weight:bold; cursor:pointer; white-space:nowrap; font-size:12px;">追加</button>
+      </div>
+    </div>
+  </div>`;
 };
 
 window.getBulkWorkMemoMachineOptions_ = (rawLine, category) => {
@@ -24133,14 +24374,22 @@ window.filterBulkWorkMemoAllWorkChips_ = (inputEl) => {
 window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   if (!d.workName || d.isRest || String(d.workName || '').includes('休憩')) return '';
-  const details = window.getBulkWorkMemoDetailOptions_(d.workName, d.cropName);
-  const machines = window.getBulkWorkMemoMachineOptions_(d.rawLine, d.category);
+  const flags = window.getBulkWorkMemoUiFlags_(d);
+  const prepTarget = String(d.prepTargetWork || '').trim();
+  const details = window.getBulkWorkMemoDetailOptions_(d.workName, d.cropName, prepTarget);
+  const machines = flags.showMachine ? window.getBulkWorkMemoMachineList_(d) : [];
   const selectedDetails = Array.isArray(d.detailedWorks) ? d.detailedWorks : [];
   const selectedMachines = Array.isArray(d.usedMachines) ? d.usedMachines.map(m => String(m.id || m.name || '')) : [];
   let html = '';
+  if (flags.isPrep) {
+    html += window.buildBulkWorkMemoPrepTargetHtml_(d, uid);
+  }
   if (details.length) {
+    const detailLabel = flags.isPrep && prepTarget
+      ? `📋 詳細作業（準備 − ${esc(prepTarget)}）`
+      : '📋 詳細作業（任意）';
     html += `<div style="margin:8px 0;">
-      <div style="font-size:10px; color:#5E35B1; font-weight:bold; margin-bottom:6px;">📋 詳細作業（任意）</div>
+      <div style="font-size:10px; color:#5E35B1; font-weight:bold; margin-bottom:6px;">${detailLabel}</div>
       <div style="display:flex; flex-wrap:wrap; gap:6px;">
         ${details.map(name => {
           const on = selectedDetails.indexOf(name) >= 0;
@@ -24151,11 +24400,13 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
         }).join('')}
       </div>
     </div>`;
+  } else if (flags.isPrep && !prepTarget) {
+    html += `<div style="font-size:11px; color:#6A1B9A; margin:8px 0; line-height:1.4;">準備対象を選ぶと、その組み合わせ用の詳細作業が表示されます。</div>`;
   }
   if (machines.length) {
     html += `<div style="margin:8px 0;">
-      <div style="font-size:10px; color:#E65100; font-weight:bold; margin-bottom:6px;">🚜 使用機械（任意）</div>
-      <div style="display:flex; flex-wrap:wrap; gap:6px; max-height:120px; overflow-y:auto;">
+      <div style="font-size:10px; color:#E65100; font-weight:bold; margin-bottom:6px;">🚜 使用機械</div>
+      <div style="display:flex; flex-wrap:wrap; gap:6px; max-height:140px; overflow-y:auto;">
         ${machines.map(m => {
           const on = selectedMachines.indexOf(String(m.id)) >= 0 || selectedMachines.indexOf(String(m.name)) >= 0;
           const safeId = String(m.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -24167,6 +24418,9 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
       </div>
     </div>`;
   }
+  if (flags.showPesticide) {
+    html += window.buildBulkWorkMemoPesticidesHtml_(d, uid);
+  }
   return html;
 };
 
@@ -24174,7 +24428,12 @@ window.refreshBulkWorkMemoWorkSelect_ = (uid) => {
   // 作業名はチップ選択に統一（互換のため残す）
 };
 
-window.renderBulkWorkMemoReviewModal_ = () => {
+window.renderBulkWorkMemoReviewModal_ = (opts) => {
+  opts = opts || {};
+  const scrollEl = document.getElementById('bulk_work_memo_review_scroll');
+  const prevScroll = scrollEl ? scrollEl.scrollTop : 0;
+  const scrollUid = String(opts.scrollUid || '').trim();
+
   const drafts = window._bulkWorkMemoDrafts || [];
   const ymd = window._bulkWorkMemoDate || window.getBulkWorkMemoTodayYmd_();
   const modalEl = document.getElementById('modal');
@@ -24188,6 +24447,12 @@ window.renderBulkWorkMemoReviewModal_ = () => {
       ? (d.guessedName ? `メモ推定「${esc(d.guessedName)}」→ 作業名チップを選んでください` : '合いそうな作業名を選んでください（なければ一覧から）')
       : (!String(d.cropName || '').trim() ? '作業名OK。作物名を選んでください（該当なしは「共通」）' : '');
     const selectedCat = d.workName ? String(d.category || window.getBulkWorkMemoWorkCategory_(d.workName) || '').trim() : '';
+    const showField = window.bulkWorkMemoNeedsField_(d);
+    const fieldHtml = showField ? `
+        <label style="font-size:10px; color:#888;">圃場（任意）</label>
+        <select class="form-input" onchange="updateBulkWorkMemoDraftField_('${esc(uid)}','polyId', this.value)" style="margin-bottom:0;">
+          ${window.buildBulkWorkMemoFieldOptionsHtml_(d.polyId)}
+        </select>` : '';
     return `
       <div id="bulk_card_${esc(uid)}" style="background:#fafafa; border:1px solid ${needPick ? '#FFB74D' : '#e0e0e0'}; border-radius:10px; padding:12px; margin-bottom:10px;">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
@@ -24225,15 +24490,12 @@ window.renderBulkWorkMemoReviewModal_ = () => {
           </select>
         </details>
         <div id="bulk_extras_${esc(uid)}">${window.buildBulkWorkMemoExtrasHtml_(d, uid)}</div>
-        <label style="font-size:10px; color:#888;">圃場（任意）</label>
-        <select class="form-input" onchange="updateBulkWorkMemoDraftField_('${esc(uid)}','polyId', this.value)" style="margin-bottom:0;">
-          ${window.buildBulkWorkMemoFieldOptionsHtml_(d.polyId)}
-        </select>
+        ${fieldHtml}
       </div>`;
   }).join('');
 
   window.fillAppModalHtml_(`
-    <div style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
+    <div id="bulk_work_memo_review_scroll" style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
       <div style="font-size:17px; font-weight:bold; color:#E65100; margin-bottom:4px;">📋 一括入力の確認</div>
       <div style="font-size:12px; color:#666; margin-bottom:10px; line-height:1.4;">作業日 <b>${esc(ymd)}</b> ／ ${drafts.length}件。<b>合いそうな作業名 → 作物名</b>。カテゴリは一覧を探すときの絞り込みです。</div>
       <div style="margin-bottom:12px;">${cards}</div>
@@ -24245,6 +24507,22 @@ window.renderBulkWorkMemoReviewModal_ = () => {
   modalEl.onclick = (evt) => {
     if (evt.target === modalEl) closeBulkWorkMemoModal_();
   };
+
+  window.restoreBulkWorkMemoReviewScroll_ = (savedScroll, uid) => {
+    const el = document.getElementById('bulk_work_memo_review_scroll');
+    if (!el) return;
+    if (uid) {
+      const card = document.getElementById('bulk_card_' + uid);
+      if (card) {
+        card.scrollIntoView({ block: 'nearest' });
+        return;
+      }
+    }
+    el.scrollTop = savedScroll || 0;
+  };
+  requestAnimationFrame(() => {
+    window.restoreBulkWorkMemoReviewScroll_(prevScroll, scrollUid);
+  });
 };
 
 window.updateBulkWorkMemoDraftField_ = (uid, key, value) => {
@@ -24286,7 +24564,7 @@ window.pickBulkWorkMemoListFilter_ = (uid, category) => {
   // 一覧絞り込みだけ。作業名・保存用カテゴリは変えない
   row.listFilterCategory = String(category || '').trim();
   row._workListOpen = true;
-  window.renderBulkWorkMemoReviewModal_();
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
 };
 
 window.pickBulkWorkMemoCategory_ = (uid, category) => {
@@ -24301,6 +24579,9 @@ window.pickBulkWorkMemoWorkName_ = (uid, name) => {
   row.workMatched = window.isBulkWorkMemoWorkInMaster_(workName);
   row.isRest = workName.includes('休憩');
   row.detailedWorks = [];
+  row.prepTargetWork = '';
+  row.usedPesticides = [];
+  row._pestSearchQ = '';
   if (row.isRest) {
     window.ensureBulkWorkMemoRestInMaster_();
     row.category = '管理/その他';
@@ -24328,10 +24609,22 @@ window.pickBulkWorkMemoWorkName_ = (uid, name) => {
       }
     }
   }
-  row.usedMachines = (typeof window.getBulkWorkMemoMachineOptions_ === 'function')
-    ? window.getBulkWorkMemoMachineOptions_(row.rawLine, row.category || '').filter(m => m && String(row.rawLine || '').indexOf(m.name) >= 0)
+  row.usedMachines = (typeof window.getBulkWorkMemoMachineList_ === 'function')
+    ? window.getBulkWorkMemoMachineList_(row).filter(m => m && String(row.rawLine || '').indexOf(m.name) >= 0)
     : [];
-  window.renderBulkWorkMemoReviewModal_();
+  const flags = window.getBulkWorkMemoUiFlags_(row);
+  if (flags.isPrep) {
+    row.prepTargetWork = window.guessBulkWorkMemoPrepTarget_(row.rawLine) || '';
+  }
+  if (flags.showPesticide) {
+    row.usedPesticides = window.guessBulkWorkMemoPesticides_(row.rawLine) || [];
+  }
+  if (!flags.showMachine) row.usedMachines = [];
+  if (!window.bulkWorkMemoNeedsField_(row)) {
+    row.polyId = '';
+    row.polyName = '';
+  }
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
 };
 
 window.pickBulkWorkMemoCropName_ = (uid, name) => {
@@ -24339,7 +24632,78 @@ window.pickBulkWorkMemoCropName_ = (uid, name) => {
   if (!row) return;
   row.cropName = String(name || '').trim();
   row.detailedWorks = [];
-  window.renderBulkWorkMemoReviewModal_();
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+};
+
+window.pickBulkWorkMemoPrepTarget_ = (uid, targetName) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  row.prepTargetWork = String(targetName || '').trim();
+  row.detailedWorks = [];
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+};
+
+window.pickBulkWorkMemoPrepListFilter_ = (uid, category) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  row.prepListFilterCategory = String(category || '').trim();
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+};
+
+window.filterBulkWorkMemoPrepTargetChips_ = (inputEl) => {
+  const q = String((inputEl && inputEl.value) || '').trim().toLowerCase();
+  const box = inputEl && inputEl.closest('.bulk-prep-target-box');
+  const chips = box ? box.querySelectorAll('.bulk-prep-target-chip') : [];
+  Array.from(chips).forEach(btn => {
+    const name = String(btn.getAttribute('data-name') || btn.textContent || '').toLowerCase();
+    btn.style.display = (!q || name.indexOf(q) >= 0) ? '' : 'none';
+  });
+};
+
+window.onBulkWorkMemoPesticideSearch_ = (uid, value) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  row._pestSearchQ = String(value || '');
+  window.refreshBulkWorkMemoExtras_(uid);
+};
+
+window.addBulkWorkMemoPesticide_ = (uid, name) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  const n = String(name || '').trim();
+  if (!n) return;
+  if (!Array.isArray(row.usedPesticides)) row.usedPesticides = [];
+  if (row.usedPesticides.some(p => p && p.name === n)) {
+    if (typeof customAlert === 'function') customAlert(`「${n}」はすでに追加されています。`);
+    return;
+  }
+  row.usedPesticides.push({ name: n, amount: '', unit: '', dilution: '' });
+  row._pestSearchQ = '';
+  window.refreshBulkWorkMemoExtras_(uid);
+};
+
+window.addBulkWorkMemoPesticideFromInput_ = (uid) => {
+  const input = document.getElementById('bulk_pest_custom_' + uid);
+  const name = String(input && input.value || '').trim();
+  if (!name) {
+    if (typeof customAlert === 'function') customAlert('薬剤名を入力してください。');
+    return;
+  }
+  window.addBulkWorkMemoPesticide_(uid, name);
+  if (input) input.value = '';
+};
+
+window.removeBulkWorkMemoPesticide_ = (uid, idx) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row || !Array.isArray(row.usedPesticides)) return;
+  row.usedPesticides.splice(idx, 1);
+  window.refreshBulkWorkMemoExtras_(uid);
+};
+
+window.updateBulkWorkMemoPesticideField_ = (uid, idx, key, value) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row || !Array.isArray(row.usedPesticides) || !row.usedPesticides[idx]) return;
+  row.usedPesticides[idx][key] = String(value || '');
 };
 
 window.removeBulkWorkMemoDraft_ = (uid) => {
@@ -24428,6 +24792,12 @@ window.saveBulkWorkMemoDrafts_ = async () => {
       if (typeof customAlert === 'function') customAlert(`${i + 1}件目の開始または終了時間を入力してください。`);
       return;
     }
+    if (typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(workName)) {
+      if (!String(d.prepTargetWork || '').trim()) {
+        if (typeof customAlert === 'function') customAlert(`${i + 1}件目「${workName}」は何の作業の準備かを選んでください。`);
+        return;
+      }
+    }
   }
   const btn = document.getElementById('bulk_work_memo_save_btn');
   if (btn) {
@@ -24446,10 +24816,18 @@ window.saveBulkWorkMemoDrafts_ = async () => {
       const start = window.normalizeTimeHm ? (window.normalizeTimeHm(d.startTime) || d.startTime) : d.startTime;
       const end = window.normalizeTimeHm ? (window.normalizeTimeHm(d.endTime) || d.endTime) : d.endTime;
       const totalTime = window.calcBulkWorkMemoTotalTime_(start, end, 0);
+      let detailedWorksStr = Array.isArray(d.detailedWorks) ? d.detailedWorks.filter(Boolean).join(', ') : '';
+      const prepTargetVal = String(d.prepTargetWork || '').trim();
+      if (prepTargetVal) {
+        const prefix = `対象: ${prepTargetVal}`;
+        if (!detailedWorksStr) detailedWorksStr = prefix;
+        else if (!detailedWorksStr.includes(prepTargetVal)) detailedWorksStr = `${prefix}, ${detailedWorksStr}`;
+      }
       const data = {
         workDate: ymd,
         workName: String(d.workName || '').trim(),
         category: String(d.category || '').trim() || (d.polyId ? '圃場作業' : '事務作業'),
+        prepTargetWork: prepTargetVal,
         crop: String(d.cropName || '').trim() || '共通',
         startTime: start || '',
         endTime: end || '',
@@ -24457,11 +24835,11 @@ window.saveBulkWorkMemoDrafts_ = async () => {
         breakMins: 0,
         progressStatus: '',
         comment: d.comment || d.rawLine || '',
-        detailedWorks: Array.isArray(d.detailedWorks) ? d.detailedWorks.filter(Boolean).join(', ') : '',
+        detailedWorks: detailedWorksStr,
         usedTools: '',
         usedMachines: Array.isArray(d.usedMachines) ? d.usedMachines.filter(m => m && (m.id || m.name)) : [],
         usedMaterials: '',
-        usedPesticides: [],
+        usedPesticides: Array.isArray(d.usedPesticides) ? d.usedPesticides.filter(p => p && p.name) : [],
         fromBulkMemo: true
       };
       let targetIds = [];
