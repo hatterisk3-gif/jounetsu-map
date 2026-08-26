@@ -25026,7 +25026,7 @@ window.buildBulkWorkMemoWorkChipsHtml_ = (d, uid) => {
   if (cur && names.indexOf(cur) < 0 && !window.isBulkWorkMemoRestWorkName_(cur)) names.unshift(cur);
   names = names.filter(Boolean).slice(0, 8);
   if (!names.length) {
-    return '<div style="font-size:11px; color:#888; margin-bottom:8px;">メモから近い作業名が見つかりません。下の「一覧から選ぶ」を開いてください。</div>';
+    return '<div style="font-size:11px; color:#888; margin-bottom:8px;">メモから近い作業名が見つかりません。作業名チップから選ぶか、下の「＋ 作業を登録」から追加してください。</div>';
   }
   return `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${names.map(name => {
     const on = name === cur;
@@ -25275,13 +25275,12 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
     const hint = isRestCard
       ? ''
       : (!d.workName
-        ? (d.guessedName ? `メモ推定「${esc(d.guessedName)}」→ 作業名チップを選んでください` : '合いそうな作業名を選んでください（なければ一覧から）')
+        ? (d.guessedName ? `メモ推定「${esc(d.guessedName)}」→ 作業名チップを選んでください` : '合いそうな作業名を選んでください')
         : (!window.getBulkWorkMemoCropNames_(d).length ? '作業名OK。作物名を1つ以上選んでください（該当なしは「共通」）' : ''));
     const selectedCat = (!isRestCard && d.workName) ? String(d.category || window.getBulkWorkMemoWorkCategory_(d.workName) || '').trim() : '';
     const showField = !isRestCard && window.bulkWorkMemoNeedsField_(d);
     const fieldHtml = showField ? window.buildBulkWorkMemoFieldHtml_(d, uid) : '';
     const restBody = isRestCard ? window.buildBulkWorkMemoRestTypeHtml_(d, uid) : '';
-    const workListOpen = (!d.workName && !(d.workCandidates && d.workCandidates.length)) || d._workListOpen;
     const showRestSwitch = !isRestCard && window.bulkWorkMemoRawLineHasRestHint_(d);
     const restHintBanner = showRestSwitch
       ? `<div style="font-size:11px; color:#E65100; background:#FFF8E1; border:1px solid #FFCC80; border-radius:8px; padding:8px 10px; margin-bottom:8px; line-height:1.35;">メモに「休憩」が含まれています。休憩として登録できます。</div>`
@@ -25296,13 +25295,6 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
         <label style="font-size:10px; color:#E65100; font-weight:bold;">🚜 合いそうな作業名</label>
         ${window.buildBulkWorkMemoWorkChipsHtml_(d, uid)}
         ${selectedCat ? `<div style="font-size:11px; color:#3949AB; margin:0 0 8px;">カテゴリ: <b>${esc(selectedCat)}</b>（作業名から自動）</div>` : ''}
-        <button type="button" onclick="toggleBulkWorkMemoWorkList_('${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:10px 14px; margin-bottom:${workListOpen ? '8px' : '0'}; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid #FF9800; background:${workListOpen ? '#FFF3E0' : '#fff'}; color:#E65100; text-align:left; display:flex; justify-content:space-between; align-items:center;">
-          <span>📋 一覧から選ぶ（カテゴリで絞り込み可）</span>
-          <span style="font-size:11px; font-weight:normal; opacity:0.85;">${workListOpen ? '▲ 閉じる' : '▼ 開く'}</span>
-        </button>
-        <div id="bulk_work_list_${esc(uid)}" style="display:${workListOpen ? 'block' : 'none'}; margin-bottom:8px;">
-          ${window.buildBulkWorkMemoAllWorkChipsHtml_(d, uid)}
-        </div>
         <div id="bulk_work_hint_${esc(uid)}" style="display:${hint ? 'block' : 'none'}; font-size:11px; color:#E65100; margin:0 0 8px; line-height:1.35;">${hint}</div>
         <label style="font-size:10px; color:#2E7D32; font-weight:bold;">🌱 作物名（複数可）</label>
         ${window.buildBulkWorkMemoCropChipsHtml_(d, uid)}
