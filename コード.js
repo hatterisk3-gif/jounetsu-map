@@ -5837,11 +5837,14 @@ function getOrCreateRecordSheet(sheetName) {
 // 記録の保存処理 ★開始・終了条件をマスタから取得し、K列の勝手な上書きを廃止
 // ==========================================
 function saveRecord(idStr, nameStr, author, recordType, recordData, photosBase64) {
-  const ids = idStr.split(',');
-  const firstFound = findSheetAndRowById(ids[0]); 
-  if (!firstFound) throw new Error("対象なし");
-  
-  const parentType = firstFound.sheet.getName();
+  const ids = String(idStr || '').split(',').map(s => String(s || '').trim()).filter(Boolean);
+  const isWorkOnlyNoPoly = recordType === 'work' && ids.length === 0;
+  let parentType = '圃場';
+  if (!isWorkOnlyNoPoly) {
+    const firstFound = findSheetAndRowById(ids[0]);
+    if (!firstFound) throw new Error("対象なし");
+    parentType = firstFound.sheet.getName();
+  }
   const recordId = Utilities.getUuid(); 
   let urls = [];
   
@@ -5938,6 +5941,11 @@ if (recordType === 'work') rs.appendRow([today+" "+time, nameStr, author, record
     }
 
     if (i === 0) firstEx = ex;
+  }
+
+  // 圃場未選択の作業記録（事務作業・休憩など）は作業記録シートのみに保存
+  if (isWorkOnlyNoPoly) {
+    return [{ id: recordId, type: recordType || 'work', date: today, time: time, author: author, urls: urls, data: recordData }];
   }
   
   return firstEx;
