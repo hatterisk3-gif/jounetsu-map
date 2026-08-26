@@ -23907,7 +23907,9 @@ window.closeBulkWorkMemoModal_ = () => {
 window.parseAndReviewBulkWorkMemo_ = () => {
   if (window._bulkWorkMemoParsing) return;
   const btn = document.getElementById('bulk_work_memo_parse_btn');
+  let safetyTimer = null;
   const restoreParseBtn_ = () => {
+    if (safetyTimer) clearTimeout(safetyTimer);
     window._bulkWorkMemoParsing = false;
     if (btn) {
       btn.disabled = false;
@@ -23924,6 +23926,14 @@ window.parseAndReviewBulkWorkMemo_ = () => {
       btn.style.opacity = '0.72';
       btn.style.cursor = 'not-allowed';
     }
+    if (safetyTimer) clearTimeout(safetyTimer);
+    safetyTimer = setTimeout(() => {
+      if (!window._bulkWorkMemoParsing) return;
+      restoreParseBtn_();
+      if (typeof customAlert === 'function') {
+        customAlert('処理に時間がかかりすぎました。通信状況を確認して、もう一度お試しください。');
+      }
+    }, 15000);
   };
   const text = document.getElementById('bulk_work_memo_text')?.value || '';
   const dateEl = document.getElementById('bulk_work_memo_date');
@@ -23933,29 +23943,35 @@ window.parseAndReviewBulkWorkMemo_ = () => {
     return;
   }
   setParseBtnLoading_();
-  const drafts = window.parseBulkWorkMemo_(text);
-  if (!drafts.length) {
-    restoreParseBtn_();
-    if (typeof customAlert === 'function') customAlert('作業に分割できませんでした。1行に1作業で書いてみてください。');
-    return;
-  }
-  window._bulkWorkMemoDate = ymd;
-  window._bulkWorkMemoDrafts = drafts;
   const openReview_ = () => {
-    window._bulkWorkMemoParsing = false;
-    window._bulkWorkMemoActive = true;
-    window.renderBulkWorkMemoReviewModal_();
-  };
-  if (typeof window.ensureMobileVehiclesLoaded_ === 'function') {
-    window.ensureMobileVehiclesLoaded_()
-      .then(openReview_)
-      .catch(() => {
+    try {
+      const drafts = window.parseBulkWorkMemo_(text);
+      if (!drafts.length) {
         restoreParseBtn_();
-        if (typeof customAlert === 'function') customAlert('データの読み込みに失敗しました。もう一度お試しください。');
-      });
-    return;
-  }
-  openReview_();
+        if (typeof customAlert === 'function') customAlert('作業に分割できませんでした。1行に1作業で書いてみてください。');
+        return;
+      }
+      window._bulkWorkMemoDate = ymd;
+      window._bulkWorkMemoDrafts = drafts;
+      window._bulkWorkMemoParsing = false;
+      window._bulkWorkMemoActive = true;
+      window.renderBulkWorkMemoReviewModal_();
+      if (safetyTimer) clearTimeout(safetyTimer);
+      // 整備の機械一覧用。確認画面は先に開き、車両データは裏で読み込む
+      if (typeof window.ensureMobileVehiclesLoaded_ === 'function' && !window._mobileVehiclesLoaded) {
+        window.ensureMobileVehiclesLoaded_().then(() => {
+          if (document.getElementById('bulk_work_memo_review_scroll')) {
+            window.renderBulkWorkMemoReviewModal_();
+          }
+        }).catch(() => {});
+      }
+    } catch (e) {
+      console.error('parseAndReviewBulkWorkMemo_ failed', e);
+      restoreParseBtn_();
+      if (typeof customAlert === 'function') customAlert('確認画面を開けませんでした。もう一度お試しください。');
+    }
+  };
+  requestAnimationFrame(openReview_);
 };
 
 window.buildBulkWorkMemoFieldOptionsHtml_ = (selectedId) => {
