@@ -907,6 +907,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                }
                return;
             }
+            if (typeof window.isBulkWorkMemoModalOpen_ === 'function' && window.isBulkWorkMemoModalOpen_()) return;
             openMainMenu(id); infoWindow.setPosition(e.latLng); infoWindow.open(map); 
           });
           loadedPolygons[id] = { id, polygon, marker, name, location: loc, condition: cond, area, color, photos: photos || [], author, status, isMarker: false, coords };
@@ -1758,6 +1759,7 @@ function createSignboardMarker(name, pos, icon, id) {
              if (window.selectingSignForRefuel) { applyRefuelSignSelect(id); return; } // ★追加
              return;
           }
+          if (typeof window.isBulkWorkMemoModalOpen_ === 'function' && window.isBulkWorkMemoModalOpen_()) return;
           openMainMenu(id); infoWindow.setPosition(e.latLng); infoWindow.open(map); 
         });
         return marker;
@@ -2657,10 +2659,7 @@ function createSignboardMarker(name, pos, icon, id) {
             window.setBulkWorkMemoPolyIds_(row, (selectedPolyIds || []).slice());
           }
           window._bulkWorkMemoMapSelectUid = '';
-          const rp = document.getElementById('rightPanel');
-          if (rp) rp.style.display = 'flex';
-          const modalEl = document.getElementById('modal');
-          if (modalEl) modalEl.style.display = 'flex';
+          if (typeof window.finishBulkWorkMemoMapSelect_ === 'function') window.finishBulkWorkMemoMapSelect_();
           if (typeof window.renderBulkWorkMemoReviewModal_ === 'function') {
             window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
           }
@@ -2702,14 +2701,11 @@ function createSignboardMarker(name, pos, icon, id) {
             if (typeof window.exitWorkRidgeSelectionView === 'function') window.exitWorkRidgeSelectionView(true);
           } catch (e) {}
           window.setMapSelectingMode_(false);
-          const rp = document.getElementById('rightPanel');
-          if (rp) rp.style.display = 'flex';
           const mapUi = document.getElementById('mapSelectUI');
           if (mapUi) mapUi.style.display = 'none';
           if (typeof updateMapSelectVisuals === 'function') updateMapSelectVisuals();
           window._bulkWorkMemoMapSelectUid = '';
-          const modalEl = document.getElementById('modal');
-          if (modalEl) modalEl.style.display = 'flex';
+          if (typeof window.finishBulkWorkMemoMapSelect_ === 'function') window.finishBulkWorkMemoMapSelect_();
           if (typeof window.renderBulkWorkMemoReviewModal_ === 'function') {
             window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
           }
@@ -23830,6 +23826,8 @@ window.parseBulkWorkMemo_ = (text) => {
 };
 
 window.openBulkWorkMemoModal_ = () => {
+  window._bulkWorkMemoParsing = false;
+  window._bulkWorkMemoActive = true;
   const today = window.getBulkWorkMemoTodayYmd_();
   window._bulkWorkMemoDate = today;
   window._bulkWorkMemoDrafts = [];
@@ -23843,27 +23841,62 @@ window.openBulkWorkMemoModal_ = () => {
   const sample = '例:\n8時から9時半 システム作業\n9時半から11時11分 トラクター配線修理\n11時半まで 探し物＆定食器整備\n13時9分 灌注 終了\n13時30分から40分 休憩\n14時まで 鶏糞打ち合わせ\n15時20分で 山地15 チッパー 完了\n19:30に チッパー途中（上中）';
   window.fillAppModalHtml_(`
     <div style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
-      <div style="font-size:17px; font-weight:bold; color:#E65100; margin-bottom:6px;">📋 メモから一括入力</div>
-      <div style="font-size:12px; color:#666; line-height:1.45; margin-bottom:12px;">1行＝1件。メモに「休憩」とあれば<b>休憩登録</b>として分けます。作業と休憩は確認画面で別枠です。</div>
-      ${window.buildBulkWorkMemoWorkMasterAdminBarHtml_()}
+      ${window.buildBulkWorkMemoModalHeaderHtml_('📋 メモから一括入力', '1行＝1件。メモに「休憩」とあれば<b>休憩登録</b>として分けます。作業と休憩は確認画面で別枠です。')}
       <label class="form-label" style="margin:0 0 4px;">📅 作業日</label>
       <input type="date" id="bulk_work_memo_date" class="form-input" value="${today}" style="margin-bottom:10px;">
       <label class="form-label" style="margin:0 0 4px;">📝 作業メモ</label>
       <textarea id="bulk_work_memo_text" class="form-input" rows="12" placeholder="${sample.replace(/"/g, '&quot;')}" style="margin-bottom:12px; font-size:13px; line-height:1.45; resize:vertical;"></textarea>
-      <button type="button" onclick="parseAndReviewBulkWorkMemo_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">✂️ 時間ごとに分けて確認</button>
+      <button type="button" id="bulk_work_memo_parse_btn" onclick="parseAndReviewBulkWorkMemo_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">✂️ 時間ごとに分けて確認</button>
       <button type="button" onclick="closeBulkWorkMemoModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer;">キャンセル</button>
     </div>`);
   modalEl.style.display = 'flex';
-  modalEl.onclick = (evt) => {
-    if (evt.target === modalEl) closeBulkWorkMemoModal_();
-  };
+  if (typeof window.setBulkWorkMemoModalClass_ === 'function') window.setBulkWorkMemoModalClass_('open');
+  try { modalEl.onclick = null; } catch (e) {}
   setTimeout(() => {
     const ta = document.getElementById('bulk_work_memo_text');
     if (ta) ta.focus();
   }, 40);
 };
 
+window.isBulkWorkMemoModalOpen_ = () => {
+  if (window._bulkWorkMemoActive) return true;
+  return !!(document.getElementById('bulk_work_memo_review_scroll') || document.getElementById('bulk_work_memo_text'));
+};
+
+window.setBulkWorkMemoModalClass_ = (mode) => {
+  const modalEl = document.getElementById('modal');
+  if (!modalEl) return;
+  modalEl.classList.remove('bulk-work-memo-open', 'bulk-work-memo-map-picking');
+  if (mode === 'open') modalEl.classList.add('bulk-work-memo-open');
+  if (mode === 'map-picking') {
+    modalEl.classList.add('bulk-work-memo-open', 'bulk-work-memo-map-picking');
+  }
+};
+
+window.finishBulkWorkMemoMapSelect_ = () => {
+  window.setBulkWorkMemoModalClass_('open');
+  const mapUi = document.getElementById('mapSelectUI');
+  if (mapUi) mapUi.classList.remove('bulk-work-memo-map-select');
+};
+
+window.buildBulkWorkMemoModalHeaderHtml_ = (title, subtitleHtml) => {
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  return `<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:${subtitleHtml ? '10px' : '12px'};">
+    <div style="min-width:0; flex:1;">
+      <div style="font-size:17px; font-weight:bold; color:#E65100;">${esc(title)}</div>
+      ${subtitleHtml ? `<div style="font-size:12px; color:#666; line-height:1.45; margin-top:4px;">${subtitleHtml}</div>` : ''}
+    </div>
+    <button type="button" onclick="closeBulkWorkMemoModal_()" aria-label="閉じる" title="閉じる" style="flex-shrink:0; width:36px; height:36px; border:none; border-radius:50%; background:#f0f0f0; color:#555; font-size:24px; line-height:1; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.12);">×</button>
+  </div>`;
+};
+
 window.closeBulkWorkMemoModal_ = () => {
+  window._bulkWorkMemoActive = false;
+  window._bulkWorkMemoMapSelectUid = '';
+  window._bulkWorkMemoParsing = false;
+  if (typeof window.setBulkWorkMemoModalClass_ === 'function') window.setBulkWorkMemoModalClass_('');
+  const mapUi = document.getElementById('mapSelectUI');
+  if (mapUi) mapUi.classList.remove('bulk-work-memo-map-select');
   const modalEl = document.getElementById('modal');
   if (modalEl) {
     modalEl.style.display = 'none';
@@ -23872,6 +23905,26 @@ window.closeBulkWorkMemoModal_ = () => {
 };
 
 window.parseAndReviewBulkWorkMemo_ = () => {
+  if (window._bulkWorkMemoParsing) return;
+  const btn = document.getElementById('bulk_work_memo_parse_btn');
+  const restoreParseBtn_ = () => {
+    window._bulkWorkMemoParsing = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '✂️ 時間ごとに分けて確認';
+      btn.style.opacity = '1';
+      btn.style.cursor = 'pointer';
+    }
+  };
+  const setParseBtnLoading_ = () => {
+    window._bulkWorkMemoParsing = true;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '準備中...';
+      btn.style.opacity = '0.72';
+      btn.style.cursor = 'not-allowed';
+    }
+  };
   const text = document.getElementById('bulk_work_memo_text')?.value || '';
   const dateEl = document.getElementById('bulk_work_memo_date');
   const ymd = (dateEl && dateEl.value) ? dateEl.value : window.getBulkWorkMemoTodayYmd_();
@@ -23879,20 +23932,30 @@ window.parseAndReviewBulkWorkMemo_ = () => {
     if (typeof customAlert === 'function') customAlert('作業メモを入力してください。');
     return;
   }
+  setParseBtnLoading_();
   const drafts = window.parseBulkWorkMemo_(text);
   if (!drafts.length) {
+    restoreParseBtn_();
     if (typeof customAlert === 'function') customAlert('作業に分割できませんでした。1行に1作業で書いてみてください。');
     return;
   }
   window._bulkWorkMemoDate = ymd;
   window._bulkWorkMemoDrafts = drafts;
+  const openReview_ = () => {
+    window._bulkWorkMemoParsing = false;
+    window._bulkWorkMemoActive = true;
+    window.renderBulkWorkMemoReviewModal_();
+  };
   if (typeof window.ensureMobileVehiclesLoaded_ === 'function') {
-    window.ensureMobileVehiclesLoaded_().finally(() => {
-      window.renderBulkWorkMemoReviewModal_();
-    });
+    window.ensureMobileVehiclesLoaded_()
+      .then(openReview_)
+      .catch(() => {
+        restoreParseBtn_();
+        if (typeof customAlert === 'function') customAlert('データの読み込みに失敗しました。もう一度お試しください。');
+      });
     return;
   }
-  window.renderBulkWorkMemoReviewModal_();
+  openReview_();
 };
 
 window.buildBulkWorkMemoFieldOptionsHtml_ = (selectedId) => {
@@ -24076,14 +24139,24 @@ window.buildBulkWorkMemoFieldHtml_ = (d, uid) => {
 };
 
 window.openBulkWorkMemoMapSelect_ = (uid) => {
+  window._bulkWorkMemoActive = true;
   window._bulkWorkMemoMapSelectUid = String(uid || '').trim();
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === window._bulkWorkMemoMapSelectUid);
   selectedPolyIds = typeof window.getBulkWorkMemoPolyIds_ === 'function'
     ? window.getBulkWorkMemoPolyIds_(row).slice()
     : [];
   const modalEl = document.getElementById('modal');
-  if (modalEl) modalEl.style.display = 'none';
+  if (modalEl) modalEl.style.display = 'flex';
+  if (typeof window.setBulkWorkMemoModalClass_ === 'function') window.setBulkWorkMemoModalClass_('map-picking');
   if (typeof window.openMapSelect === 'function') window.openMapSelect();
+  const mapUi = document.getElementById('mapSelectUI');
+  if (mapUi) mapUi.classList.add('bulk-work-memo-map-select');
+  setTimeout(() => {
+    const countEl = document.getElementById('mapSelectCount');
+    if (countEl && window._bulkWorkMemoMapSelectUid) {
+      countEl.textContent = '🗺️ 圃場をタップ（入力画面は下に残ります）';
+    }
+  }, 0);
 };
 
 window.removeBulkWorkMemoPoly_ = (uid, polyId) => {
@@ -24299,25 +24372,153 @@ window.getBulkWorkMemoMaintenanceTargets_ = (draft) => {
     items.push(Object.assign({ id: iid, name: iname, kind: kind || 'machine' }, extra || {}));
   };
   (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines) ? pdlMachines : []).forEach(m => {
-    push(m.id, m.name, 'machine', { isTool: false, isVehicle: false });
+    push(m.id, m.name, 'machine', {
+      isTool: false,
+      isVehicle: false,
+      machineNumber: m.machineNumber,
+      serialNo: m.serialNo,
+      group: m.group,
+      type: m.type,
+      category: m.category,
+      model: m.model,
+      modelType: m.modelType,
+      location: m.location,
+      status: m.status,
+      photo: m.photo,
+      photo2: m.photo2,
+      photoUrl: m.photoUrl,
+      currentLocName: m.currentLocName,
+      signName: m.signName
+    });
   });
   (typeof pdlTools !== 'undefined' && Array.isArray(pdlTools) ? pdlTools : []).forEach(tool => {
-    push(tool.id || ('tool_' + tool.name), tool.name, 'tool', { isTool: true, isVehicle: false });
+    push(tool.id || ('tool_' + tool.name), tool.name, 'tool', {
+      isTool: true,
+      isVehicle: false,
+      group: tool.group || tool.category || tool.workTypes || '道具',
+      category: tool.category,
+      type: tool.type,
+      workTypes: tool.workTypes,
+      photo: tool.photo,
+      photo2: tool.photo2,
+      photoUrl: tool.photoUrl
+    });
   });
   (window.pdlMobileVehicles || []).forEach(v => {
     const oid = (typeof window.getMobileVehicleOptionId_ === 'function')
       ? window.getMobileVehicleOptionId_(v)
       : ('veh:' + String(v.id || ''));
-    push(oid, v.plateNumber || v.id || '移動車両', 'vehicle', { isTool: false, isVehicle: true });
+    push(oid, v.plateNumber || v.id || '移動車両', 'vehicle', {
+      isTool: false,
+      isVehicle: true,
+      plateNumber: v.plateNumber,
+      driveType: v.driveType,
+      group: v.driveType || '移動車両',
+      status: v.status,
+      photo: v.photo,
+      photo2: v.photo2,
+      photoUrl: v.photoUrl
+    });
   });
   items.sort((a, b) => String(a.name).localeCompare(String(b.name), 'ja'));
   const mentioned = [];
   const rest = [];
   items.forEach(item => {
-    if (t && t.indexOf(item.name) >= 0) mentioned.push(item);
+    if (t && (t.indexOf(item.name) >= 0 || (item.machineNumber && t.indexOf(String(item.machineNumber)) >= 0))) mentioned.push(item);
     else rest.push(item);
   });
   return mentioned.concat(rest);
+};
+
+/** 整備対象チップ：番号・型式なども検索に含める */
+window.formatBulkMaintTargetSearchHay_ = (item) => {
+  if (!item) return '';
+  return [
+    item.name, item.machineNumber, item.serialNo, item.plateNumber,
+    item.group, item.type, item.category, item.model, item.modelType,
+    item.location, item.driveType, item.status, item.workTypes
+  ].map(x => String(x || '').toLowerCase()).join(' ');
+};
+
+/** 整備対象チップ表示（plain=true はバッジ用テキスト） */
+window.formatBulkMaintTargetChipHtml_ = (item, plain) => {
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  if (!item) return '';
+  const enriched = Object.assign({}, item, {
+    isTool: item.kind === 'tool' || item.isTool,
+    isVehicle: item.kind === 'vehicle' || item.isVehicle
+  });
+  const name = String(enriched.name || '').trim() || '(無名)';
+  const num = String(enriched.machineNumber || enriched.serialNo || enriched.plateNumber || '').trim();
+  const group = String(enriched.group || enriched.type || enriched.category || enriched.driveType || '').trim();
+  if (plain) {
+    let t = num ? `No.${num} ${name}` : name;
+    if (group) t += ` / ${group}`;
+    return esc(t);
+  }
+  if (typeof window.buildBulkMaintTargetChipInnerHtml_ === 'function') {
+    return window.buildBulkMaintTargetChipInnerHtml_(item, false);
+  }
+  const icon = enriched.isVehicle ? '🛻' : (enriched.isTool ? '🔧' : '🚜');
+  return num
+    ? `${icon} <b>No.${esc(num)}</b> ${esc(name)}`
+    : `${icon} ${esc(name)}`;
+};
+
+/** 整備対象カード内側（写真サムネイル＋番号優先表示） */
+window.buildBulkMaintTargetChipInnerHtml_ = (item, on) => {
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  if (!item) return '';
+  const enriched = Object.assign({}, item, {
+    isTool: item.kind === 'tool' || item.isTool,
+    isVehicle: item.kind === 'vehicle' || item.isVehicle
+  });
+  const icon = enriched.isVehicle ? '🛻' : (enriched.isTool ? '🔧' : '🚜');
+  const name = esc(String(enriched.name || '').trim() || '(無名)');
+  const num = String(enriched.machineNumber || enriched.serialNo || enriched.plateNumber || '').trim();
+  const group = String(enriched.group || enriched.type || enriched.category || enriched.driveType || '').trim();
+  const photoUrl = (typeof window.getMachinePhotoUrl === 'function') ? window.getMachinePhotoUrl(enriched) : '';
+  const safePhoto = esc(photoUrl);
+  const fg = on ? '#fff' : '#BF360C';
+  const fgName = on ? 'rgba(255,255,255,0.95)' : '#333';
+  const fgSub = on ? 'rgba(255,255,255,0.82)' : '#666';
+  const photoBg = on ? 'rgba(0,0,0,0.12)' : '#eceff1';
+  const photoBlock = photoUrl
+    ? `<img src="${safePhoto}" alt="" loading="lazy" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.style.display='flex';" style="width:100%; height:100%; object-fit:cover;">`
+    : '';
+  const iconFallback = `<div style="display:${photoUrl ? 'none' : 'flex'}; font-size:26px; align-items:center; justify-content:center; width:100%; height:100%; background:${photoBg}; color:${on ? '#fff' : '#2e7d32'};">${icon}</div>`;
+  const numLine = num
+    ? `<div style="font-size:14px; font-weight:bold; color:${fg}; line-height:1.15; letter-spacing:0.02em;">No.${esc(num)}</div>`
+    : '';
+  const nameLine = `<div style="font-size:${num ? '11px' : '13px'}; font-weight:bold; color:${num ? fgName : fg}; line-height:1.25; margin-top:${num ? '2px' : '0'}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${name}</div>`;
+  const groupLine = group
+    ? `<div style="font-size:9px; color:${fgSub}; margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(group)}</div>`
+    : '';
+  return `<div style="height:56px; overflow:hidden; background:${photoBg}; position:relative; flex-shrink:0;">${photoBlock}${iconFallback}</div>
+    <div style="padding:7px 8px 8px; text-align:left; min-width:0;">${numLine}${nameLine}${groupLine}</div>`;
+};
+
+/** 選択中の整備対象バッジ（写真付き） */
+window.buildBulkMaintTargetSelectedBadgeHtml_ = (item, fallbackName, fallbackKind) => {
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const target = item || { name: fallbackName, kind: fallbackKind || 'machine' };
+  const label = (typeof window.formatBulkMaintTargetChipHtml_ === 'function')
+    ? window.formatBulkMaintTargetChipHtml_(target, true)
+    : esc(String(target.name || fallbackName || ''));
+  const enriched = Object.assign({}, target, {
+    isTool: target.kind === 'tool' || target.isTool,
+    isVehicle: target.kind === 'vehicle' || target.isVehicle
+  });
+  const icon = enriched.isVehicle ? '🛻' : (enriched.isTool ? '🔧' : '🚜');
+  const photoUrl = (typeof window.getMachinePhotoUrl === 'function') ? window.getMachinePhotoUrl(enriched) : '';
+  const thumb = photoUrl
+    ? `<img src="${esc(photoUrl)}" alt="" loading="lazy" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.style.display='flex';" style="width:100%; height:100%; object-fit:cover;">`
+    : '';
+  const thumbFallback = `<div style="display:${photoUrl ? 'none' : 'flex'}; width:100%; height:100%; align-items:center; justify-content:center; font-size:22px; background:#fff3e0; color:#e65100;">${icon}</div>`;
+  return `<div style="display:flex; align-items:center; gap:10px; margin-bottom:8px; font-size:12px; color:#E65100; font-weight:bold; background:#FFE0B2; padding:8px 10px; border-radius:8px; line-height:1.35;">
+    <div style="width:46px; height:46px; border-radius:8px; overflow:hidden; flex-shrink:0; border:2px solid #FFB74D; background:#fff;">${thumb}${thumbFallback}</div>
+    <div style="min-width:0; flex:1;">整備対象<br><span style="font-size:13px;">${label}</span></div>
+  </div>`;
 };
 
 window.guessBulkWorkMemoMaintenanceTarget_ = (rawLine) => {
@@ -24454,7 +24655,10 @@ window.buildBulkWorkMemoMaintenanceTargetHtml_ = (d, uid) => {
     ${kindBtn('vehicle', '🛻 ', '車両')}
     ${kindBtn('tool', '🔧 ', '道具')}
   </div>`;
-  const fmtLabel = (item) => {
+  const fmtLabel = (item, plain) => {
+    if (typeof window.formatBulkMaintTargetChipHtml_ === 'function') {
+      return window.formatBulkMaintTargetChipHtml_(item, !!plain);
+    }
     if (typeof window.formatMachineOptionLabel === 'function') {
       return window.formatMachineOptionLabel(Object.assign({}, item, {
         isTool: item.kind === 'tool',
@@ -24469,21 +24673,35 @@ window.buildBulkWorkMemoMaintenanceTargetHtml_ = (d, uid) => {
     const safeId = String(item.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const safeName = String(item.name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const safeKind = String(item.kind || 'machine').replace(/'/g, "\\'");
-    const bg = on ? '#E65100' : (style === 'sug' ? '#FFF3E0' : '#fff');
-    const color = on ? '#fff' : '#E65100';
+    const searchHay = (typeof window.formatBulkMaintTargetSearchHay_ === 'function')
+      ? window.formatBulkMaintTargetSearchHay_(item)
+      : String(item.name || '').toLowerCase();
+    const bg = on ? '#E65100' : (style === 'sug' ? '#FFF8E1' : '#fff');
     const border = on ? '#BF360C' : (style === 'sug' ? '#FFB74D' : '#FFE0B2');
-    return `<button type="button" class="bulk-maint-target-chip" data-name="${esc(item.name)}" data-kind="${esc(item.kind || 'machine')}" onclick="pickBulkWorkMemoMaintenanceTarget_('${esc(uid)}','${safeId}','${safeName}','${safeKind}')" style="padding:7px 11px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${border}; background:${bg}; color:${color}; text-align:left;">${esc(fmtLabel(item))}</button>`;
+    const inner = (typeof window.buildBulkMaintTargetChipInnerHtml_ === 'function')
+      ? window.buildBulkMaintTargetChipInnerHtml_(item, on)
+      : esc(String(item.name || ''));
+    return `<button type="button" class="bulk-maint-target-chip" data-name="${esc(item.name)}" data-search="${esc(searchHay)}" data-kind="${esc(item.kind || 'machine')}" onclick="pickBulkWorkMemoMaintenanceTarget_('${esc(uid)}','${safeId}','${safeName}','${safeKind}')" style="display:flex; flex-direction:column; align-items:stretch; width:100%; padding:0; border-radius:10px; overflow:hidden; border:2px solid ${border}; background:${bg}; cursor:pointer; text-align:left; line-height:1.3; min-height:0; box-shadow:${on ? '0 2px 8px rgba(191,54,12,0.25)' : 'none'};">${inner}</button>`;
   };
-  const suggested = targets.filter(item => String(d.rawLine || '').indexOf(item.name) >= 0).slice(0, 8);
+  const suggested = targets.filter(item => {
+    const t = String(d.rawLine || '');
+    if (!t) return false;
+    if (t.indexOf(item.name) >= 0) return true;
+    const num = String(item.machineNumber || item.serialNo || item.plateNumber || '').trim();
+    return num && t.indexOf(num) >= 0;
+  }).slice(0, 8);
   const sugHtml = suggested.length
     ? `<div style="font-size:10px; color:#E65100; font-weight:bold; margin:6px 0 4px;">メモから合いそうな機械・道具</div>
-       <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${suggested.map(item => chip(item, 'sug')).join('')}</div>`
+       <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(128px, 1fr)); gap:8px; margin-bottom:10px;">${suggested.map(item => chip(item, 'sug')).join('')}</div>`
     : '';
   const listHtml = targets.length
-    ? `<div style="display:flex; flex-wrap:wrap; gap:6px; max-height:180px; overflow-y:auto; padding:2px;">${targets.slice(0, 48).map(item => chip(item, 'all')).join('')}</div>`
+    ? `<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(128px, 1fr)); gap:8px; max-height:280px; overflow-y:auto; padding:2px;">${targets.slice(0, 48).map(item => chip(item, 'all')).join('')}</div>`
     : `<div style="font-size:11px; color:#888; padding:8px;">${kindFilter !== 'all' ? 'この種類の' : ''}機械・道具・車両がありません。</div>`;
+  const selectedTarget = curId ? allTargets.find(t => String(t.id) === curId) : null;
   const badge = curId
-    ? `<div style="margin-bottom:8px; font-size:12px; color:#E65100; font-weight:bold; background:#FFE0B2; padding:6px 10px; border-radius:6px;">整備対象: <b>${esc(d.maintenanceTool || '')}</b></div>`
+    ? (typeof window.buildBulkMaintTargetSelectedBadgeHtml_ === 'function'
+      ? window.buildBulkMaintTargetSelectedBadgeHtml_(selectedTarget, d.maintenanceTool, d.maintenanceTargetKind || 'machine')
+      : `<div style="margin-bottom:8px; font-size:12px; color:#E65100; font-weight:bold; background:#FFE0B2; padding:6px 10px; border-radius:6px; line-height:1.35;">整備対象: <b>${fmtLabel(selectedTarget || { name: d.maintenanceTool, kind: d.maintenanceTargetKind || 'machine' }, true)}</b></div>`)
     : `<div style="margin-bottom:8px; font-size:11px; color:#666; background:#fff; padding:8px; border-radius:6px;">修理・点検した機械・道具・車両を選んでください（任意）</div>`;
   const detailsHtml = `
     ${window.buildBulkWorkMemoMaintenanceFieldChipsHtml_(uid, 'maintenanceSymptom', '症状', window.getBulkWorkMemoMaintenanceSymptomOptions_(d), d.maintenanceSymptom, 'orange')}
@@ -24494,7 +24712,7 @@ window.buildBulkWorkMemoMaintenanceTargetHtml_ = (d, uid) => {
     ${badge}
     ${kindFilterHtml}
     ${sugHtml}
-    <input type="search" placeholder="機械名・道具名で絞り込み…" oninput="filterBulkWorkMemoMaintTargetChips_(this)" style="width:100%; box-sizing:border-box; padding:7px 10px; border:1px solid #FFB74D; border-radius:8px; font-size:12px; margin-bottom:8px;">
+    <input type="search" placeholder="名前・機械番号・ナンバー・型式で絞り込み…" oninput="filterBulkWorkMemoMaintTargetChips_(this)" style="width:100%; box-sizing:border-box; padding:7px 10px; border:1px solid #FFB74D; border-radius:8px; font-size:12px; margin-bottom:8px;">
     ${listHtml}
     <div style="margin-top:10px; padding-top:10px; border-top:1px dashed #FFCC80;">${detailsHtml}</div>
   </div>`;
@@ -24538,8 +24756,8 @@ window.filterBulkWorkMemoMaintTargetChips_ = (inputEl) => {
   const box = inputEl && inputEl.closest('.bulk-maint-target-box');
   const chips = box ? box.querySelectorAll('.bulk-maint-target-chip') : [];
   Array.from(chips).forEach(btn => {
-    const name = String(btn.getAttribute('data-name') || btn.textContent || '').toLowerCase();
-    btn.style.display = (!q || name.indexOf(q) >= 0) ? '' : 'none';
+    const hay = String(btn.getAttribute('data-search') || btn.getAttribute('data-name') || btn.textContent || '').toLowerCase();
+    btn.style.display = (!q || hay.indexOf(q) >= 0) ? '' : 'none';
   });
 };
 
@@ -25338,18 +25556,16 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
 
   window.fillAppModalHtml_(`
     <div id="bulk_work_memo_review_scroll" style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
-      <div style="font-size:17px; font-weight:bold; color:#E65100; margin-bottom:4px;">📋 一括入力の確認</div>
-      <div style="font-size:12px; color:#666; margin-bottom:10px; line-height:1.4;">作業日 <b>${esc(ymd)}</b> ／ ${drafts.length}件。<b>作業</b>は作業名→作物名、<b>休憩</b>は別枠のボタンで選びます。</div>
-      ${window.buildBulkWorkMemoWorkMasterAdminBarHtml_()}
+      ${window.buildBulkWorkMemoModalHeaderHtml_('📋 一括入力の確認', `作業日 <b>${esc(ymd)}</b> ／ ${drafts.length}件。<b>作業</b>は作業名→作物名、<b>休憩</b>は別枠のボタンで選びます。`)}
       <div style="margin-bottom:12px;">${cards}</div>
       <button type="button" id="bulk_work_memo_save_btn" onclick="saveBulkWorkMemoDrafts_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">💾 チェックした作業を一括保存</button>
       <button type="button" onclick="openBulkWorkMemoModal_()" style="width:100%; background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-bottom:8px;">← メモをやり直す</button>
       <button type="button" onclick="closeBulkWorkMemoModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
     </div>`);
   modalEl.style.display = 'flex';
-  modalEl.onclick = (evt) => {
-    if (evt.target === modalEl) closeBulkWorkMemoModal_();
-  };
+  window._bulkWorkMemoActive = true;
+  if (typeof window.setBulkWorkMemoModalClass_ === 'function') window.setBulkWorkMemoModalClass_('open');
+  try { modalEl.onclick = null; } catch (e) {}
 
   window.restoreBulkWorkMemoReviewScroll_ = (savedScroll, uid) => {
     const el = document.getElementById('bulk_work_memo_review_scroll');

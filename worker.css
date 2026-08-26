@@ -120,6 +120,39 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
 #modal { cursor: pointer; }
 #modal .modal-content { cursor: default; }
 
+/* 一括入力：下から出るシート型モーダル（地図操作中も入力画面を残す） */
+#modal.bulk-work-memo-open {
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.34);
+  cursor: default;
+  padding: 0 0 max(8px, env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+}
+#modal.bulk-work-memo-open #modalBody {
+  width: 100%;
+  max-width: 440px;
+  max-height: 88vh;
+  margin: 0;
+  border-radius: 14px 14px 0 0;
+  box-shadow: 0 -6px 28px rgba(0, 0, 0, 0.22);
+}
+#modal.bulk-work-memo-map-picking {
+  background: transparent;
+  pointer-events: none;
+}
+#modal.bulk-work-memo-map-picking #modalBody {
+  max-height: min(42vh, 360px);
+  pointer-events: auto;
+}
+#mapSelectUI.bulk-work-memo-map-select {
+  z-index: 10050;
+  top: auto;
+  bottom: calc(min(42vh, 360px) + max(12px, env(safe-area-inset-bottom, 0px)));
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
 /* 作業記録の時刻入力（カスタムピッカー起動） */
 .app-time-input { background: #fff; cursor: pointer; caret-color: transparent; text-align: center; font-weight: bold; letter-spacing: 0.05em; }
 .app-time-input:focus { outline: 2px solid #2196F3; outline-offset: -1px; }
