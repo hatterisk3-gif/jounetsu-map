@@ -9543,6 +9543,9 @@ function createSignboardMarker(name, pos, icon, id) {
           if (document.getElementById('workMasterManagerModal')) {
               window.renderWorkMasterManagerList();
           }
+          if (typeof window.refreshBulkWorkMemoAfterMasterChange_ === 'function') {
+              window.refreshBulkWorkMemoAfterMasterChange_(selectedName);
+          }
       };
 
       window.closeWorkMasterManager = () => {
@@ -23746,6 +23749,7 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
     maintenanceSymptom: '',
     maintenanceContent: '',
     maintenanceParts: '',
+    _maintKindFilter: 'all',
     detailedWorks: [],
     usedMachines: uiFlags.showMachine ? mentionedMachines : [],
     usedPesticides: uiFlags.showPesticide ? (window.guessBulkWorkMemoPesticides_(raw) || []) : [],
@@ -23786,6 +23790,7 @@ window.openBulkWorkMemoModal_ = () => {
     <div style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
       <div style="font-size:17px; font-weight:bold; color:#E65100; margin-bottom:6px;">📋 メモから一括入力</div>
       <div style="font-size:12px; color:#666; line-height:1.45; margin-bottom:12px;">1行＝1件。メモに「休憩」とあれば<b>休憩登録</b>として分けます。作業と休憩は確認画面で別枠です。</div>
+      ${window.buildBulkWorkMemoWorkMasterAdminBarHtml_()}
       <label class="form-label" style="margin:0 0 4px;">📅 作業日</label>
       <input type="date" id="bulk_work_memo_date" class="form-input" value="${today}" style="margin-bottom:10px;">
       <label class="form-label" style="margin:0 0 4px;">📝 作業メモ</label>
@@ -24298,7 +24303,26 @@ window.buildBulkWorkMemoMaintenanceFieldChipsHtml_ = (uid, field, label, options
 window.buildBulkWorkMemoMaintenanceTargetHtml_ = (d, uid) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const curId = String(d.maintenanceToolId || '').trim();
-  const targets = window.getBulkWorkMemoMaintenanceTargets_(d);
+  const kindFilter = String(d._maintKindFilter || 'all');
+  const allTargets = window.getBulkWorkMemoMaintenanceTargets_(d);
+  const targets = allTargets.filter(item => {
+    if (kindFilter === 'all') return true;
+    if (kindFilter === 'machine') return item.kind === 'machine';
+    if (kindFilter === 'vehicle') return item.kind === 'vehicle';
+    if (kindFilter === 'tool') return item.kind === 'tool';
+    return true;
+  });
+  const kindBtn = (kind, icon, label) => {
+    const on = kindFilter === kind;
+    const safeKind = String(kind).replace(/'/g, "\\'");
+    return `<button type="button" onclick="pickBulkWorkMemoMaintKindFilter_('${esc(uid)}','${safeKind}')" style="flex:1; min-width:72px; padding:8px 6px; border-radius:10px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? '#E65100' : '#FFE0B2'}; background:${on ? '#FFF3E0' : '#fff'}; color:${on ? '#E65100' : '#666'};">${icon}${label}</button>`;
+  };
+  const kindFilterHtml = `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
+    ${kindBtn('all', '', 'すべて')}
+    ${kindBtn('machine', '🚜 ', '機械')}
+    ${kindBtn('vehicle', '🛻 ', '車両')}
+    ${kindBtn('tool', '🔧 ', '道具')}
+  </div>`;
   const fmtLabel = (item) => {
     if (typeof window.formatMachineOptionLabel === 'function') {
       return window.formatMachineOptionLabel(Object.assign({}, item, {
@@ -24317,7 +24341,7 @@ window.buildBulkWorkMemoMaintenanceTargetHtml_ = (d, uid) => {
     const bg = on ? '#E65100' : (style === 'sug' ? '#FFF3E0' : '#fff');
     const color = on ? '#fff' : '#E65100';
     const border = on ? '#BF360C' : (style === 'sug' ? '#FFB74D' : '#FFE0B2');
-    return `<button type="button" class="bulk-maint-target-chip" data-name="${esc(item.name)}" onclick="pickBulkWorkMemoMaintenanceTarget_('${esc(uid)}','${safeId}','${safeName}','${safeKind}')" style="padding:7px 11px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${border}; background:${bg}; color:${color}; text-align:left;">${esc(fmtLabel(item))}</button>`;
+    return `<button type="button" class="bulk-maint-target-chip" data-name="${esc(item.name)}" data-kind="${esc(item.kind || 'machine')}" onclick="pickBulkWorkMemoMaintenanceTarget_('${esc(uid)}','${safeId}','${safeName}','${safeKind}')" style="padding:7px 11px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${border}; background:${bg}; color:${color}; text-align:left;">${esc(fmtLabel(item))}</button>`;
   };
   const suggested = targets.filter(item => String(d.rawLine || '').indexOf(item.name) >= 0).slice(0, 8);
   const sugHtml = suggested.length
@@ -24326,7 +24350,7 @@ window.buildBulkWorkMemoMaintenanceTargetHtml_ = (d, uid) => {
     : '';
   const listHtml = targets.length
     ? `<div style="display:flex; flex-wrap:wrap; gap:6px; max-height:180px; overflow-y:auto; padding:2px;">${targets.slice(0, 48).map(item => chip(item, 'all')).join('')}</div>`
-    : `<div style="font-size:11px; color:#888; padding:8px;">機械・道具マスタがありません。</div>`;
+    : `<div style="font-size:11px; color:#888; padding:8px;">${kindFilter !== 'all' ? 'この種類の' : ''}機械・道具・車両がありません。</div>`;
   const badge = curId
     ? `<div style="margin-bottom:8px; font-size:12px; color:#E65100; font-weight:bold; background:#FFE0B2; padding:6px 10px; border-radius:6px;">整備対象: <b>${esc(d.maintenanceTool || '')}</b></div>`
     : `<div style="margin-bottom:8px; font-size:11px; color:#666; background:#fff; padding:8px; border-radius:6px;">修理・点検した機械・道具・車両を選んでください（任意）</div>`;
@@ -24337,6 +24361,7 @@ window.buildBulkWorkMemoMaintenanceTargetHtml_ = (d, uid) => {
   return `<div class="bulk-maint-target-box" style="margin:8px 0; background:#FFF3E0; border:2px solid #FFB74D; border-radius:10px; padding:10px;">
     <div style="font-size:11px; font-weight:bold; color:#E65100; margin-bottom:6px;">🔧 整備・修理・点検</div>
     ${badge}
+    ${kindFilterHtml}
     ${sugHtml}
     <input type="search" placeholder="機械名・道具名で絞り込み…" oninput="filterBulkWorkMemoMaintTargetChips_(this)" style="width:100%; box-sizing:border-box; padding:7px 10px; border:1px solid #FFB74D; border-radius:8px; font-size:12px; margin-bottom:8px;">
     ${listHtml}
@@ -24385,6 +24410,85 @@ window.filterBulkWorkMemoMaintTargetChips_ = (inputEl) => {
     const name = String(btn.getAttribute('data-name') || btn.textContent || '').toLowerCase();
     btn.style.display = (!q || name.indexOf(q) >= 0) ? '' : 'none';
   });
+};
+
+window.pickBulkWorkMemoMaintKindFilter_ = (uid, kind) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  row._maintKindFilter = kind || 'all';
+  window.refreshBulkWorkMemoExtras_(uid);
+};
+
+window.buildBulkWorkMemoMaintenanceMasterSideEffects_ = (d, queued) => {
+  const fx = [];
+  if (!window.bulkWorkMemoIsMaintenance_(d)) return fx;
+  const q = queued || { symptoms: new Set(), contents: new Set(), parts: new Set() };
+  const toolId = String(d.maintenanceToolId || '').trim();
+  const toolKind = String(d.maintenanceTargetKind || '').trim();
+  const isMachine = toolId && toolKind === 'machine';
+  const machine = isMachine ? window.getBulkWorkMemoMaintenanceMachine_(d) : null;
+
+  const symptom = String(d.maintenanceSymptom || '').trim();
+  if (symptom && !q.symptoms.has(symptom)) {
+    const known = window.getBulkWorkMemoMaintenanceSymptomOptions_(Object.assign({}, d, { maintenanceSymptom: '' }));
+    if (!known.includes(symptom)) {
+      q.symptoms.add(symptom);
+      if (isMachine && machine) {
+        fx.push({ action: 'addMachineSymptom', params: { machineId: toolId, newSymptom: symptom } });
+        const currentSymp = machine.symptoms ? machine.symptoms.split(/[,、]/).map(s => s.trim()) : [];
+        if (!currentSymp.includes(symptom)) {
+          machine.symptoms = machine.symptoms ? machine.symptoms + ',' + symptom : symptom;
+        }
+      }
+      if (Array.isArray(window.pdlSymptoms) && !window.pdlSymptoms.includes(symptom)) {
+        window.pdlSymptoms.push(symptom);
+      } else if (!Array.isArray(window.pdlSymptoms)) {
+        window.pdlSymptoms = [symptom];
+      }
+    }
+  }
+
+  const content = String(d.maintenanceContent || '').trim();
+  if (content && !q.contents.has(content)) {
+    const known = window.getBulkWorkMemoMaintenanceContentOptions_(Object.assign({}, d, { maintenanceContent: '' }));
+    if (!known.includes(content)) {
+      q.contents.add(content);
+      fx.push({
+        action: 'addMaintenanceContent',
+        params: { name: content, userName: (typeof currentUser !== 'undefined' ? currentUser : '') }
+      });
+      if (!Array.isArray(window.pdlMaintenanceContents)) window.pdlMaintenanceContents = [];
+      if (!window.pdlMaintenanceContents.includes(content)) window.pdlMaintenanceContents.push(content);
+    }
+  }
+
+  const parts = String(d.maintenanceParts || '').trim();
+  if (parts && isMachine && machine && !q.parts.has(parts)) {
+    const known = window.getBulkWorkMemoMaintenancePartsOptions_(Object.assign({}, d, { maintenanceParts: '' }));
+    if (!known.includes(parts)) {
+      q.parts.add(parts);
+      fx.push({ action: 'addMachinePart', params: { machineId: toolId, newPart: parts } });
+      const currentParts = machine.parts ? machine.parts.split(/[,、]/).map(p => p.trim()) : [];
+      if (!currentParts.includes(parts)) {
+        machine.parts = machine.parts ? machine.parts + ',' + parts : parts;
+      }
+    }
+  }
+  return fx;
+};
+
+window.toggleBulkWorkMemoWorkList_ = (uid) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  row._workListOpen = !row._workListOpen;
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+};
+
+window.toggleBulkWorkMemoCropList_ = (uid) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  row._cropListOpen = !row._cropListOpen;
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
 };
 
 window.getBulkWorkMemoPrepTargetGuessesFromMemo_ = (rawLine) => {
@@ -24462,6 +24566,73 @@ window.refreshBulkWorkMemoExtras_ = (uid) => {
   if (!row) return;
   const extras = document.getElementById('bulk_extras_' + uid);
   if (extras) extras.innerHTML = window.buildBulkWorkMemoExtrasHtml_(row, uid);
+};
+
+/** 一括入力：作業マスタ変更後に候補・選択状態を更新 */
+window.refreshBulkWorkMemoAfterMasterChange_ = (selectedName, preferUid) => {
+  const drafts = window._bulkWorkMemoDrafts;
+  if (!Array.isArray(drafts) || !drafts.length) return;
+  if (!document.getElementById('bulk_work_memo_review_scroll')) return;
+
+  drafts.forEach(d => {
+    if (!d || window.bulkWorkMemoIsRestDraft_(d)) return;
+    const work = window.matchBulkWorkMemoWorkName_(d.rawLine, d.startTime);
+    d.workCandidates = Array.isArray(work.candidates) ? work.candidates.map(c => c.name).filter(Boolean) : [];
+    if (d.workName) {
+      if (!window.isBulkWorkMemoWorkInMaster_(d.workName)) {
+        d.workName = '';
+        d.workMatched = false;
+        d.category = '';
+      } else {
+        d.workMatched = true;
+        const cat = window.getBulkWorkMemoWorkCategory_(d.workName);
+        if (cat) d.category = cat;
+      }
+    }
+  });
+
+  const uid = String(preferUid || window._bulkWorkMemoMasterEditUid || '').trim();
+  window._bulkWorkMemoMasterEditUid = '';
+  const pickName = String(selectedName || '').trim();
+  if (pickName && uid) {
+    const row = drafts.find(d => d && d._uid === uid);
+    if (row && !window.bulkWorkMemoIsRestDraft_(row)) {
+      window.pickBulkWorkMemoWorkName_(uid, pickName);
+      return;
+    }
+  }
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid || '' });
+};
+
+window.buildBulkWorkMemoWorkMasterAdminBarHtml_ = () => {
+  const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
+  if (!isAdmin) return '';
+  return `<div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:10px; padding:8px 10px; background:#fff8e1; border:1px solid #ffe0b2; border-radius:8px;">
+    <button type="button" onclick="openWorkMasterManager()" style="background:#fff3e0; color:#e65100; border:1px solid #ffb74d; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer;">📋 作業マスタ</button>
+    <button type="button" onclick="adminAddWorkName()" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 作業を追加</button>
+    <span style="font-size:11px; color:#888; line-height:1.35;">管理者：一覧から追加・編集・削除できます</span>
+  </div>`;
+};
+
+window.buildBulkWorkMemoCardWorkAdminBarHtml_ = (d, uid) => {
+  if (window.bulkWorkMemoIsRestDraft_(d)) return '';
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
+  const wName = String(d.workName || '').trim();
+  const safe = wName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  if (isAdmin && wName) {
+    return `<div style="display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 0;">
+      <button type="button" onclick="window._bulkWorkMemoMasterEditUid='${esc(uid)}'; adminEditWorkName('${safe}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">✏️ 選択中を編集</button>
+      <button type="button" onclick="window._bulkWorkMemoMasterEditUid='${esc(uid)}'; adminDeleteWorkName('${safe}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">🗑️ 選択中を削除</button>
+    </div>`;
+  }
+  if (!wName) {
+    return `<div style="margin:8px 0 0;">
+      <button type="button" onclick="window._bulkWorkMemoMasterEditUid='${esc(uid)}'; adminAddWorkName()" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 作業を登録</button>
+      ${isAdmin ? '' : '<span style="font-size:10px; color:#888; margin-left:6px;">マスタにない作業はここから追加</span>'}
+    </div>`;
+  }
+  return '';
 };
 
 window.buildBulkWorkMemoPrepTargetHtml_ = (d, uid) => {
@@ -24576,6 +24747,10 @@ window.getBulkWorkMemoMachineOptions_ = (rawLine, category) => {
 window.isBulkWorkMemoRestWorkName_ = (name) => {
   const n = String(name || '').trim();
   return n === '休憩' || n === '昼休憩';
+};
+
+window.bulkWorkMemoRawLineHasRestHint_ = (d) => {
+  return String(d && d.rawLine || '').includes('休憩');
 };
 
 window.bulkWorkMemoIsRestDraft_ = (d) => {
@@ -24872,26 +25047,40 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
           ${window.buildBulkWorkMemoFieldOptionsHtml_(d.polyId)}
         </select>` : '';
     const restBody = isRestCard ? window.buildBulkWorkMemoRestTypeHtml_(d, uid) : '';
+    const workListOpen = (!d.workName && !(d.workCandidates && d.workCandidates.length)) || d._workListOpen;
+    const cropListOpen = !!d._cropListOpen;
+    const showRestSwitch = !isRestCard && window.bulkWorkMemoRawLineHasRestHint_(d);
+    const restHintBanner = showRestSwitch
+      ? `<div style="font-size:11px; color:#E65100; background:#FFF8E1; border:1px solid #FFCC80; border-radius:8px; padding:8px 10px; margin-bottom:8px; line-height:1.35;">メモに「休憩」が含まれています。休憩として登録できます。</div>`
+      : '';
     const workBody = isRestCard ? '' : `
+        ${restHintBanner}
         <label style="font-size:10px; color:#E65100; font-weight:bold;">🚜 合いそうな作業名</label>
         ${window.buildBulkWorkMemoWorkChipsHtml_(d, uid)}
         ${selectedCat ? `<div style="font-size:11px; color:#3949AB; margin:0 0 8px;">カテゴリ: <b>${esc(selectedCat)}</b>（作業名から自動）</div>` : ''}
-        <details style="margin-bottom:8px;" ${((!d.workName && !(d.workCandidates && d.workCandidates.length)) || d._workListOpen) ? 'open' : ''}>
-          <summary style="font-size:11px; color:#888; cursor:pointer;" onclick="var r=(window._bulkWorkMemoDrafts||[]).find(function(x){return x&&x._uid==='${esc(uid)}';}); if(r) r._workListOpen=true;">一覧から選ぶ（カテゴリで絞り込み可）</summary>
+        <button type="button" onclick="toggleBulkWorkMemoWorkList_('${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:10px 14px; margin-bottom:${workListOpen ? '8px' : '0'}; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid #FF9800; background:${workListOpen ? '#FFF3E0' : '#fff'}; color:#E65100; text-align:left; display:flex; justify-content:space-between; align-items:center;">
+          <span>📋 一覧から選ぶ（カテゴリで絞り込み可）</span>
+          <span style="font-size:11px; font-weight:normal; opacity:0.85;">${workListOpen ? '▲ 閉じる' : '▼ 開く'}</span>
+        </button>
+        <div id="bulk_work_list_${esc(uid)}" style="display:${workListOpen ? 'block' : 'none'}; margin-bottom:8px;">
           ${window.buildBulkWorkMemoAllWorkChipsHtml_(d, uid)}
-        </details>
+        </div>
         <div id="bulk_work_hint_${esc(uid)}" style="display:${hint ? 'block' : 'none'}; font-size:11px; color:#E65100; margin:0 0 8px; line-height:1.35;">${hint}</div>
         <label style="font-size:10px; color:#2E7D32; font-weight:bold;">🌱 作物名</label>
         ${window.buildBulkWorkMemoCropChipsHtml_(d, uid)}
-        <details style="margin-bottom:8px;">
-          <summary style="font-size:11px; color:#888; cursor:pointer;">作物を一覧から選ぶ</summary>
-          <select class="form-input" id="bulk_crop_${esc(uid)}" onchange="pickBulkWorkMemoCropName_('${esc(uid)}', this.value)" style="margin-top:6px;">
+        <button type="button" onclick="toggleBulkWorkMemoCropList_('${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:10px 14px; margin:${cropListOpen ? '6px 0 8px' : '6px 0 0'}; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid #66BB6A; background:${cropListOpen ? '#E8F5E9' : '#fff'}; color:#2E7D32; text-align:left; display:flex; justify-content:space-between; align-items:center;">
+          <span>🌱 作物を一覧から選ぶ</span>
+          <span style="font-size:11px; font-weight:normal; opacity:0.85;">${cropListOpen ? '▲ 閉じる' : '▼ 開く'}</span>
+        </button>
+        <div id="bulk_crop_list_${esc(uid)}" style="display:${cropListOpen ? 'block' : 'none'}; margin-bottom:8px;">
+          <select class="form-input" id="bulk_crop_${esc(uid)}" onchange="pickBulkWorkMemoCropName_('${esc(uid)}', this.value)" style="margin-top:0;">
             ${window.buildBulkWorkMemoCropOptionsHtml_(d.cropName, d.workName)}
           </select>
-        </details>
+        </div>
         <div id="bulk_extras_${esc(uid)}">${window.buildBulkWorkMemoExtrasHtml_(d, uid)}</div>
         ${fieldHtml}
-        <button type="button" onclick="setBulkWorkMemoDraftAsRest_('${esc(uid)}')" style="margin:8px 0 0; background:transparent; border:none; color:#E65100; font-size:11px; text-decoration:underline; cursor:pointer; padding:0;">→ これは休憩として登録する</button>`;
+        ${window.buildBulkWorkMemoCardWorkAdminBarHtml_(d, uid)}
+        ${showRestSwitch ? `<button type="button" onclick="setBulkWorkMemoDraftAsRest_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin:10px 0 0; padding:10px 14px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid #E65100; background:#FFF3E0; color:#E65100;">☕ これは休憩として登録する</button>` : ''}`;
     const cardBg = isRestCard ? '#FFFBF0' : '#fafafa';
     const cardBorder = needPick ? '#FFB74D' : (isRestCard ? '#FFCC80' : '#e0e0e0');
     const typeBadge = isRestCard
@@ -24927,6 +25116,7 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
     <div id="bulk_work_memo_review_scroll" style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
       <div style="font-size:17px; font-weight:bold; color:#E65100; margin-bottom:4px;">📋 一括入力の確認</div>
       <div style="font-size:12px; color:#666; margin-bottom:10px; line-height:1.4;">作業日 <b>${esc(ymd)}</b> ／ ${drafts.length}件。<b>作業</b>は作業名→作物名、<b>休憩</b>は別枠のボタンで選びます。</div>
+      ${window.buildBulkWorkMemoWorkMasterAdminBarHtml_()}
       <div style="margin-bottom:12px;">${cards}</div>
       <button type="button" id="bulk_work_memo_save_btn" onclick="saveBulkWorkMemoDrafts_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">💾 チェックした作業を一括保存</button>
       <button type="button" onclick="openBulkWorkMemoModal_()" style="width:100%; background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-bottom:8px;">← メモをやり直す</button>
@@ -25284,6 +25474,7 @@ window.saveBulkWorkMemoDrafts_ = async () => {
     : (localStorage.getItem('passionMapUserName') || '');
   const savedItems = [];
   let savedAnyRest = false;
+  const maintMasterQueued = { symptoms: new Set(), contents: new Set(), parts: new Set() };
 
   try {
     for (let i = 0; i < drafts.length; i++) {
@@ -25355,6 +25546,9 @@ window.saveBulkWorkMemoDrafts_ = async () => {
           })
         : '';
       if (typeof window.enqueueRecordSync_ === 'function') {
+        const maintSideEffects = (typeof window.buildBulkWorkMemoMaintenanceMasterSideEffects_ === 'function')
+          ? window.buildBulkWorkMemoMaintenanceMasterSideEffects_(d, maintMasterQueued)
+          : [];
         window.enqueueRecordSync_({
           localId: localId,
           isEdit: false,
@@ -25368,7 +25562,7 @@ window.saveBulkWorkMemoDrafts_ = async () => {
           keptUrls: [],
           nameStr: nameStr,
           userName: userSnap,
-          sideEffects: [],
+          sideEffects: maintSideEffects,
           previewUrls: [],
           clearTemp: false
         });
