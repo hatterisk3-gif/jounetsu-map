@@ -2207,7 +2207,7 @@ function createSignboardMarker(name, pos, icon, id) {
           return;
         }
         currentRecordType = currentFilterType;
-        let formTitle = p.isMarker ? (currentRecordType === 'work' ? "🚜 看板 作業記録" : "📷 看板 現地写真") : (currentRecordType === 'work' ? "🚜 圃場 作業記録" : "🌱 圃場 生育記録");
+        let formTitle = p.isMarker ? (currentRecordType === 'work' ? "🚜 看板 作業記録" : "📷 看板 現地写真") : (currentRecordType === 'work' ? "🚜 作業記録" : "🌱 圃場 生育記録");
         document.getElementById('rightPanelTitle').innerText = `${p.name} - ${formTitle}`;
         let h = '';
         
@@ -4649,22 +4649,18 @@ function createSignboardMarker(name, pos, icon, id) {
         return wCat ? window.categoryHasFieldRecordSection_(wCat) : false;
       };
 
-      /** 次の作業登録で場所（圃場）選択ステップが必要か */
+      /** 次の作業登録で場所（圃場）選択ステップが必要か（カテゴリに「圃場」があるときだけ） */
       window.afterSaveWorkNeedsFieldPlace_ = (workName, category) => {
         const cat = String(category || '').trim();
         const wName = String(workName || '').trim();
-        if (cat && cat !== 'すべて' && !window.categoryHasFieldRecordSection_(cat)) return false;
-        if (typeof window.isFieldCategory === 'function' && window.isFieldCategory(cat)) return true;
-        if (cat.includes('整備') || cat.includes('保全')) return true;
-        if (typeof window.isMaintenanceRelatedWork === 'function' && window.isMaintenanceRelatedWork(wName)) return true;
-        if (wName.includes('修理') || wName.includes('点検') || wName.includes('整備')) return true;
-        if (cat === 'すべて' || !cat) {
-          const wObj = (typeof pdlWorkMaster !== 'undefined' ? pdlWorkMaster : [])
-            .find(w => w && String(w.name || '').trim() === wName);
-          const wCat = window.getWorkMasterCategory_(wObj);
-          if (wCat) return window.categoryHasFieldRecordSection_(wCat);
+        if (wName.includes('休憩')) return false;
+        if (cat && cat !== 'すべて') {
+          return typeof window.isFieldCategory === 'function' && window.isFieldCategory(cat);
         }
-        return false;
+        const wObj = (typeof pdlWorkMaster !== 'undefined' ? pdlWorkMaster : [])
+          .find(w => w && String(w.name || '').trim() === wName);
+        const wCat = window.getWorkMasterCategory_(wObj);
+        return typeof window.isFieldCategory === 'function' && window.isFieldCategory(wCat);
       };
 
       window.getAfterSaveCategoryOptions_ = () => {
@@ -4765,12 +4761,19 @@ function createSignboardMarker(name, pos, icon, id) {
         return wObj ? (wObj.category || '圃場作業') : '';
       };
 
+      /** カテゴリに「圃場」が含まれる作業だけ圃場必須（事務・保全などは任意） */
       window.workRecordRequiresField = () => {
+        const wName = (document.getElementById('rec_work_name')?.value || '').trim();
+        if (wName.includes('休憩')) return false;
         const catEl = document.getElementById('rec_work_category');
-        const cat = catEl ? catEl.value : '';
-        if (cat === '圃場作業') return true;
-        if (cat === 'すべて') return window.getSelectedWorkCategory() === '圃場作業';
-        return false;
+        const cat = catEl ? String(catEl.value || '').trim() : '';
+        if (cat && cat !== 'すべて') {
+          return typeof window.isFieldCategory === 'function' && window.isFieldCategory(cat);
+        }
+        const selectedCat = typeof window.getSelectedWorkCategory === 'function'
+          ? window.getSelectedWorkCategory()
+          : '';
+        return typeof window.isFieldCategory === 'function' && window.isFieldCategory(selectedCat);
       };
 
       window.refreshRidgeProgressUI = () => {
@@ -7633,8 +7636,8 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.refreshDetailWorkAutoMinutes === 'function') {
           window.refreshDetailWorkAutoMinutes();
         }
-        if (typeof window.renderTimeBasedWorkSuggestions === 'function') {
-          window.renderTimeBasedWorkSuggestions();
+        if (typeof window.renderNextWorkPredictions === 'function') {
+          window.renderNextWorkPredictions();
         }
         if (typeof window.refreshPlannedEndTimeUI_ === 'function') {
           window.refreshPlannedEndTimeUI_();
@@ -7685,6 +7688,117 @@ function createSignboardMarker(name, pos, icon, id) {
         const h = Math.floor(n / 60);
         const m = n % 60;
         return m ? (h + '時間' + m + '分') : (h + '時間');
+      };
+
+      /** いま保存した作業のペース（面積あたり時間）を算出 */
+      window.calcJustSavedWorkPace_ = (data, polyIds) => {
+        const d = data || {};
+        const workName = String(d.workName || '').trim();
+        if (!workName || workName.includes('休憩')) return null;
+        const workMins = (typeof window.parseRecordDurationMins_ === 'function')
+          ? window.parseRecordDurationMins_(d)
+          : 0;
+        if (!(workMins > 0)) return null;
+        const ids = (polyIds || []).map(String).filter(id => {
+          const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
+          return !!(p && !p.isMarker);
+        });
+        const areaA = (typeof window.getPolyIdsAreaA_ === 'function')
+          ? window.getPolyIdsAreaA_(ids)
+          : 0;
+        const fieldNames = ids.map(id => {
+          const p = loadedPolygons[id];
+          return (p && p.name) ? p.name : '';
+        }).filter(Boolean);
+        let minsPer10a = 0;
+        let aPerHour = 0;
+        if (areaA > 0) {
+          minsPer10a = Math.round(((workMins * 10) / areaA) * 10) / 10;
+          aPerHour = Math.round((areaA / (workMins / 60)) * 100) / 100;
+        }
+        let histMinsPer10a = 0;
+        let histCount = 0;
+        if (areaA > 0 && typeof window.collectWorkDurationSamples_ === 'function') {
+          const samples = window.collectWorkDurationSamples_(workName).filter(s => s && s.areaA > 0);
+          // 今回と同じ時間・面積のサンプルは比較から除外（自己比較を避ける）
+          const others = samples.filter(s =>
+            !(Math.abs((s.mins || 0) - workMins) < 0.5 && Math.abs((s.areaA || 0) - areaA) < 0.05)
+          );
+          const rates = (others.length ? others : samples).map(s => (s.mins * 10) / s.areaA);
+          histMinsPer10a = typeof window.medianNumber_ === 'function' ? window.medianNumber_(rates) : 0;
+          histCount = (others.length ? others : samples).length;
+        }
+        return {
+          workName,
+          workMins,
+          areaA: Math.round(areaA * 1000) / 1000,
+          minsPer10a,
+          aPerHour,
+          fieldNames,
+          histMinsPer10a: histMinsPer10a ? (Math.round(histMinsPer10a * 10) / 10) : 0,
+          histCount,
+          startTime: d.startTime || '',
+          endTime: d.endTime || ''
+        };
+      };
+
+      /** 保存直後モーダル用：今回の作業ペース表示HTML */
+      window.renderJustSavedWorkPaceHtml_ = (pace) => {
+        if (!pace || !(pace.workMins > 0)) return '';
+        const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        const dur = (typeof window.formatDurationMinsLabel_ === 'function')
+          ? window.formatDurationMinsLabel_(pace.workMins)
+          : (pace.workMins + '分');
+        const fieldLine = (pace.fieldNames && pace.fieldNames.length)
+          ? pace.fieldNames.join('、') + (pace.areaA > 0 ? `（${pace.areaA}a）` : '')
+          : (pace.areaA > 0 ? `${pace.areaA}a` : '圃場面積なし');
+        const timeRange = (pace.startTime || pace.endTime)
+          ? `${esc(pace.startTime || '--:--')}〜${esc(pace.endTime || '--:--')}`
+          : '';
+
+        let paceMain = '';
+        let paceSub = '';
+        if (pace.areaA > 0 && pace.minsPer10a > 0) {
+          const per10 = (typeof window.formatDurationMinsLabel_ === 'function')
+            ? window.formatDurationMinsLabel_(Math.round(pace.minsPer10a))
+            : (pace.minsPer10a + '分');
+          paceMain = `<div style="font-size:22px; font-weight:bold; color:#1B5E20; line-height:1.2;">10aあたり ${esc(per10)}</div>`;
+          paceSub = `<div style="font-size:13px; color:#2E7D32; font-weight:bold; margin-top:4px;">約 ${esc(String(pace.aPerHour))}a／時間</div>`;
+        } else {
+          paceMain = `<div style="font-size:18px; font-weight:bold; color:#1B5E20;">実作業 ${esc(dur)}</div>`;
+          paceSub = `<div style="font-size:12px; color:#888; margin-top:4px;">圃場面積がないため面積ペースは算出できません</div>`;
+        }
+
+        let compareHtml = '';
+        if (pace.areaA > 0 && pace.minsPer10a > 0 && pace.histMinsPer10a > 0 && pace.histCount >= 2) {
+          const diffPct = Math.round(((pace.minsPer10a - pace.histMinsPer10a) / pace.histMinsPer10a) * 100);
+          const histLabel = (typeof window.formatDurationMinsLabel_ === 'function')
+            ? window.formatDurationMinsLabel_(Math.round(pace.histMinsPer10a))
+            : (pace.histMinsPer10a + '分');
+          let tone = '#616161';
+          let msg = `過去中央値（${histLabel}／${pace.histCount}件）と同じくらい`;
+          if (diffPct <= -8) {
+            tone = '#1565C0';
+            msg = `過去中央値より約 ${Math.abs(diffPct)}% 速い（中央値 ${histLabel}・${pace.histCount}件）`;
+          } else if (diffPct >= 8) {
+            tone = '#E65100';
+            msg = `過去中央値より約 ${diffPct}% 遅い（中央値 ${histLabel}・${pace.histCount}件）`;
+          }
+          compareHtml = `<div style="font-size:11px; color:${tone}; margin-top:8px; line-height:1.4;">📈 ${esc(msg)}</div>`;
+        }
+
+        return `
+          <div style="background:linear-gradient(135deg,#E8F5E9 0%,#E3F2FD 100%); border:1px solid #A5D6A7; border-radius:10px; padding:12px 14px; margin-bottom:14px;">
+            <div style="font-size:12px; font-weight:bold; color:#2E7D32; margin-bottom:6px;">📊 今回の作業ペース</div>
+            <div style="font-size:13px; font-weight:bold; color:#333; margin-bottom:2px;">${esc(pace.workName)}</div>
+            <div style="font-size:11px; color:#666; margin-bottom:8px; line-height:1.4;">
+              ⏱ ${esc(dur)}${timeRange ? `（${timeRange}）` : ''}<br>
+              📍 ${esc(fieldLine)}
+            </div>
+            ${paceMain}
+            ${paceSub}
+            ${compareHtml}
+          </div>`;
       };
 
       window.loadDayPlanItemsCache_ = () => {
@@ -10878,12 +10992,14 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.renderNextWorkPredictions = () => {
         const container = document.getElementById('next_work_prediction_section');
+        const emptyHint = document.getElementById('suggest_step_empty_hint');
         if (!container) return;
 
         // 編集中は「次の作業」予想を出さない
         if (typeof currentEditRecordId !== 'undefined' && currentEditRecordId) {
           container.style.display = 'none';
           container.innerHTML = '';
+          if (emptyHint) emptyHint.style.display = 'none';
           return;
         }
 
@@ -10893,8 +11009,10 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!prevCands.length && !timeCands.length) {
           container.style.display = 'none';
           container.innerHTML = '';
+          if (emptyHint) emptyHint.style.display = 'block';
           return;
         }
+        if (emptyHint) emptyHint.style.display = 'none';
 
         const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
         const renderChips = (list, badgeBg, badgeFg) => list.map((cand, i) => {
@@ -10911,7 +11029,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
         let html = `
           <div style="font-weight:bold; color:#1b5e20; font-size:13px; margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap;">
-            <span>🔮 次の作業予想</span>
+            <span>🔮 次の作業予想・この時間の作業</span>
             <span style="font-size:10px; color:#81c784;">タップでセット</span>
           </div>`;
         if (prevCands.length) {
@@ -11017,6 +11135,26 @@ function createSignboardMarker(name, pos, icon, id) {
         return true;
       };
 
+      /** 予想タップ後、セット済み内容に応じて次のステップへ進む */
+      window.advanceAfterSuggestionApplied_ = (cropName) => {
+        if (typeof window.getWorkRecordStep_ !== 'function' || window.getWorkRecordStep_() !== 'suggest') return;
+        const crop = String(cropName || '').trim();
+        const cropKeys = (typeof window.getSelectedWorkCropFilterKeys === 'function')
+          ? window.getSelectedWorkCropFilterKeys()
+          : [];
+        let next = 'category';
+        if (crop || (cropKeys && cropKeys.length)) {
+          next = (typeof window.workRecordNeedsPlaceStep_ === 'function' && window.workRecordNeedsPlaceStep_())
+            ? 'place'
+            : 'details';
+        } else {
+          next = 'crop';
+        }
+        if (typeof window.setWorkRecordStep_ === 'function') {
+          window.setWorkRecordStep_(next, { forward: true });
+        }
+      };
+
       window.applyNextWorkPrediction = (cropName, workName) => {
         workName = String(workName || '').trim();
         if (!workName) return;
@@ -11029,6 +11167,9 @@ function createSignboardMarker(name, pos, icon, id) {
           window.showRecordSyncToast(crop
             ? `🔮 「${label}」をセットしました`
             : `🔮 「${workName}」をセットしました。作物を選んでください`, 'ok');
+        }
+        if (typeof window.advanceAfterSuggestionApplied_ === 'function') {
+          window.advanceAfterSuggestionApplied_(crop);
         }
       };
 
@@ -11143,66 +11284,12 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       /**
-       * ⏰ 時間帯に応じた作業候補チップを描画
+       * ⏰ 時間帯に応じた作業候補（予想ステップへ統合）
        */
       window.renderTimeBasedWorkSuggestions = (baseTimeStr) => {
-        const containers = [
-          document.getElementById('time_work_suggestion_section'),
-          document.getElementById('time_suggest_chips_container')
-        ].filter(Boolean);
-
-        if (!containers.length) return;
-
-        // 休憩専用フォーム表示中、または生育記録中は非表示
-        if (window._openingRestBreak || (typeof currentRecordType !== 'undefined' && currentRecordType !== 'work')) {
-          containers.forEach(c => { c.style.display = 'none'; c.innerHTML = ''; });
-          return;
+        if (typeof window.renderNextWorkPredictions === 'function') {
+          window.renderNextWorkPredictions();
         }
-
-        // 編集時でも時間変更に応じた候補が見られるよう対応
-        const res = window.getTimeBasedWorkSuggestions_(baseTimeStr);
-        const suggestions = res.suggestions || [];
-
-        if (!suggestions.length) {
-          containers.forEach(c => { c.style.display = 'none'; c.innerHTML = ''; });
-          return;
-        }
-
-        const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-        const hourStr = `${res.baseHour}時頃`;
-
-        containers.forEach(container => {
-          const isTopSection = container.id === 'time_work_suggestion_section';
-          let chipsHtml = '';
-          suggestions.forEach((item, idx) => {
-            const jsCrop = String(item.crop || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const jsWork = String(item.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const displayLabel = item.crop ? `${item.crop} ${item.workName}` : item.workName;
-            const safeAttr = String(item.workName || '').replace(/"/g, '&quot;');
-
-            chipsHtml += `
-              <button type="button" class="work-chip time-suggest-chip" data-wname="${safeAttr}" onclick="applyTimeBasedWorkSuggestion('${jsCrop}', '${jsWork}')"
-                style="background:#ffffff; color:#0d47a1; border:1.5px solid #42a5f5; border-radius:20px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:4px; box-shadow:0 1px 3px rgba(33,150,243,0.15); transition:all 0.15s ease;">
-                <span style="font-size:13px;">✨</span><span>${esc(displayLabel)}</span>
-              </button>
-            `;
-          });
-
-          const headerHtml = `
-            <div style="font-weight:bold; color:#0d47a1; font-size:12px; margin-bottom:6px; display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap;">
-              <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
-                <span>⏰</span> <span>この時間帯（${esc(hourStr)}）によく行う作業</span>
-              </div>
-              <span style="font-size:10px; color:#1976d2; background:#e3f2fd; padding:2px 8px; border-radius:10px; font-weight:bold; border:1px solid #bbdefb;">タップで自動セット</span>
-            </div>
-            <div style="display:flex; flex-wrap:wrap; gap:8px;">
-              ${chipsHtml}
-            </div>
-          `;
-
-          container.innerHTML = headerHtml;
-          container.style.display = 'block';
-        });
       };
 
       /**
@@ -11220,6 +11307,9 @@ function createSignboardMarker(name, pos, icon, id) {
           window.showRecordSyncToast(crop
             ? `⏰ 「${label}」をセットしました`
             : `⏰ 「${workName}」をセットしました。作物を選んでください`, 'ok');
+        }
+        if (typeof window.advanceAfterSuggestionApplied_ === 'function') {
+          window.advanceAfterSuggestionApplied_(crop);
         }
       };
 
@@ -11868,7 +11958,7 @@ function createSignboardMarker(name, pos, icon, id) {
             window.updateRestNoticeCardUI();
           }
 
-          // 🌟 休憩時は不要な「圃場作業記録」要素を隠して超シンプル画面にする！
+          // 🌟 休憩時は不要な作業記録フォーム要素を隠して超シンプル画面にする！
           const hideSelectors = [
             '.rec-zone-category',
             '#field_target_section',
@@ -15921,12 +16011,12 @@ function createSignboardMarker(name, pos, icon, id) {
          return text;
       };
 
-      window.WORK_RECORD_STEP_IDS_ = ['category', 'crop', 'work', 'place', 'details'];
+      window.WORK_RECORD_STEP_IDS_ = ['time', 'suggest', 'category', 'crop', 'work', 'place', 'details'];
 
       window.getWorkRecordStep_ = () => {
         const s = String(window._workRecordStep || '').trim();
         if (window.WORK_RECORD_STEP_IDS_.indexOf(s) >= 0) return s;
-        return 'category';
+        return 'time';
       };
 
       window.workRecordNeedsPlaceStep_ = () => {
@@ -15956,12 +16046,12 @@ function createSignboardMarker(name, pos, icon, id) {
       window.getWorkRecordPrevStep_ = (fromStep) => {
         const order = window.WORK_RECORD_STEP_IDS_.slice();
         const idx = order.indexOf(fromStep);
-        if (idx <= 0) return 'category';
+        if (idx <= 0) return 'time';
         for (let i = idx - 1; i >= 0; i--) {
           if (order[i] === 'place' && !window.workRecordNeedsPlaceStep_()) continue;
           return order[i];
         }
-        return 'category';
+        return 'time';
       };
 
       window.buildWorkRecordStepHeaderHtml_ = (activeStep) => {
@@ -15970,12 +16060,14 @@ function createSignboardMarker(name, pos, icon, id) {
         if (isRest) return '';
         const needsPlace = window.workRecordNeedsPlaceStep_();
         const steps = [
-          { id: 'category', label: '①カテゴリ' },
-          { id: 'crop', label: '②作物' },
-          { id: 'work', label: '③作業' }
+          { id: 'time', label: '①時間' },
+          { id: 'suggest', label: '②予想' },
+          { id: 'category', label: '③カテゴリ' },
+          { id: 'crop', label: '④作物' },
+          { id: 'work', label: '⑤作業' }
         ];
-        if (needsPlace) steps.push({ id: 'place', label: '④圃場' });
-        steps.push({ id: 'details', label: needsPlace ? '⑤詳細' : '④詳細' });
+        if (needsPlace) steps.push({ id: 'place', label: '⑥圃場' });
+        steps.push({ id: 'details', label: needsPlace ? '⑦詳細' : '⑥詳細' });
         const order = steps.map(s => s.id);
         const activeIdx = order.indexOf(activeStep);
         return '<div style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap;">' + steps.map((st, idx) => {
@@ -15986,7 +16078,7 @@ function createSignboardMarker(name, pos, icon, id) {
           const clickable = done || on;
           const onclick = clickable ? `onclick="setWorkRecordStep_('${st.id}')"` : '';
           const cursor = clickable ? 'cursor:pointer;' : 'cursor:default;';
-          return `<button type="button" ${onclick} style="flex:1;min-width:62px;background:${bg};color:${color};border:none;border-radius:8px;padding:7px 4px;font-size:11px;font-weight:bold;${cursor}">${st.label}</button>`;
+          return `<button type="button" ${onclick} style="flex:1;min-width:52px;background:${bg};color:${color};border:none;border-radius:8px;padding:7px 3px;font-size:10px;font-weight:bold;${cursor}">${st.label}</button>`;
         }).join('') + '</div>';
       };
 
@@ -15996,7 +16088,10 @@ function createSignboardMarker(name, pos, icon, id) {
           ? window.getSelectedWorkCropFilterKeys()
           : [];
         const wName = String(document.getElementById('rec_work_name')?.value || '').trim();
+        const startHm = String(document.getElementById('rec_start_time')?.value || '').trim();
+        const endHm = String(document.getElementById('rec_end_time')?.value || '').trim();
         const parts = [];
+        if (startHm || endHm) parts.push(`⏰ ${(startHm || '--:--')}〜${(endHm || '--:--')}`.replace(/</g, '&lt;'));
         if (cat && cat !== 'すべて') parts.push(`📁 ${cat.replace(/</g, '&lt;')}`);
         if (cropKeys.length) {
           const labels = cropKeys.map(k => {
@@ -16021,6 +16116,22 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         window._workRecordStep = s;
         if (typeof window.refreshWorkRecordStepUI_ === 'function') window.refreshWorkRecordStepUI_();
+        if (s === 'time') {
+          if (typeof window.updateStartTimeHintUI === 'function') {
+            try { window.updateStartTimeHintUI(); } catch (e) {}
+          }
+          if (typeof window.calcTotalTime === 'function') {
+            try { window.calcTotalTime(); } catch (e) {}
+          }
+        }
+        if (s === 'suggest') {
+          if (typeof window.renderNextWorkPredictions === 'function') {
+            try { window.renderNextWorkPredictions(); } catch (e) {}
+          }
+          if (typeof window.refreshWorkFormLunchSection_ === 'function') {
+            try { window.refreshWorkFormLunchSection_(); } catch (e) {}
+          }
+        }
         if (s === 'work' && typeof window.refreshWorkNameSectionVisibility === 'function') {
           window.refreshWorkNameSectionVisibility();
         }
@@ -16029,7 +16140,6 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         if (s === 'details') {
           if (typeof window.handleCombinedWorkChange === 'function') {
-            const wName = document.getElementById('rec_work_name')?.value || '';
             try { window.handleCombinedWorkChange(); } catch (e) {}
           }
           if (typeof window.calcTotalTime === 'function') {
@@ -16040,6 +16150,19 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.validateWorkRecordStep_ = (step) => {
         step = step || window.getWorkRecordStep_();
+        if (step === 'time') {
+          const s = String(document.getElementById('rec_start_time')?.value || '').trim();
+          const e = String(document.getElementById('rec_end_time')?.value || '').trim();
+          if (!s || !e) {
+            if (typeof customAlert === 'function') customAlert('開始時間と終了時間を入力してください。');
+            return false;
+          }
+          return true;
+        }
+        if (step === 'suggest') {
+          // 予想・昼休憩は任意（スキップ可）
+          return true;
+        }
         if (step === 'category') {
           const cat = String(document.getElementById('rec_work_category')?.value || '').trim();
           if (!cat) {
@@ -16070,6 +16193,8 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         if (step === 'place') {
           if (!window.workRecordNeedsPlaceStep_()) return true;
+          // 圃場カテゴリ以外は圃場未選択でも次へ進める
+          if (typeof window.workRecordRequiresField === 'function' && !window.workRecordRequiresField()) return true;
           const ids = (typeof selectedPolyIds !== 'undefined' && Array.isArray(selectedPolyIds))
             ? selectedPolyIds.filter(Boolean)
             : [];
@@ -16107,7 +16232,7 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         const summary = document.getElementById('work_record_step_summary');
         if (summary) {
-          const showSummary = !isRest && step !== 'category';
+          const showSummary = !isRest && step !== 'time';
           summary.innerHTML = showSummary ? window.buildWorkRecordStepSummaryHtml_() : '';
           summary.style.display = showSummary ? 'block' : 'none';
         }
@@ -16130,7 +16255,7 @@ function createSignboardMarker(name, pos, icon, id) {
           if (isEdit || isRest || step === 'details') {
             footer.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;">${!isEdit && !isRest ? `<button type="button" onclick="goBackWorkRecordStep_()" style="background:#eee;color:#333;padding:15px 16px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:14px;">← 戻る</button>` : ''}<button id="submitBtn" onclick="submitRecord()" style="background:${btnColor};color:white;flex:1;min-width:140px;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">${isEdit ? '更新する' : '保存する'}</button><button onclick="saveTempRecord()" style="background:#00BCD4;color:white;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:13px;white-space:nowrap;">一時保存</button><button onclick="actionManagePhotos('${polyArg}', '${recType}')" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">戻る</button></div>`;
           } else {
-            footer.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;"><button type="button" onclick="goBackWorkRecordStep_()" style="background:#eee;color:#333;padding:15px 16px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:14px;${step === 'category' ? 'visibility:hidden;' : ''}">← 戻る</button><button type="button" onclick="advanceWorkRecordStep_()" style="background:${btnColor};color:white;flex:1;min-width:140px;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">次へ →</button><button onclick="actionManagePhotos('${polyArg}', '${recType}')" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">キャンセル</button></div>`;
+            footer.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;"><button type="button" onclick="goBackWorkRecordStep_()" style="background:#eee;color:#333;padding:15px 16px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:14px;${step === 'time' ? 'visibility:hidden;' : ''}">← 戻る</button><button type="button" onclick="advanceWorkRecordStep_()" style="background:${btnColor};color:white;flex:1;min-width:140px;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">次へ →</button><button onclick="actionManagePhotos('${polyArg}', '${recType}')" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">キャンセル</button></div>`;
           }
         }
       };
@@ -16142,7 +16267,7 @@ function createSignboardMarker(name, pos, icon, id) {
         window.recordExtraDetailWorks = [];
         window._selectedPesticides = [];
         window._pestSearchQ = '';
-        window._workRecordStep = (typeof currentEditRecordId !== 'undefined' && currentEditRecordId) ? 'details' : 'category';
+        window._workRecordStep = (typeof currentEditRecordId !== 'undefined' && currentEditRecordId) ? 'details' : 'time';
         if (typeof window.refreshClockOutNudgeUI_ === 'function') {
           setTimeout(() => { try { window.refreshClockOutNudgeUI_(); } catch (e) {} }, 0);
         }
@@ -16278,8 +16403,10 @@ function createSignboardMarker(name, pos, icon, id) {
           if (tgt) existingUrlsInEdit = tgt.urls ? [...tgt.urls] : (tgt.url ? [tgt.url] : []);
         }
         
-        let formTitle = p.isMarker ? (currentRecordType === 'work' ? "🚜 看板 作業登録" : "📷 看板 現地写真") : (currentRecordType === 'work' ? "🚜 圃場 作業記録" : "🌱 圃場 生育記録");
-        document.getElementById('rightPanelTitle').innerText = `${p.name} - ${formTitle}`;
+        let formTitle = p.isMarker ? (currentRecordType === 'work' ? "🚜 看板 作業登録" : "📷 看板 現地写真") : (currentRecordType === 'work' ? "🚜 作業記録" : "🌱 圃場 生育記録");
+        document.getElementById('rightPanelTitle').innerText = (p && p.name && p.name !== "未選択")
+          ? `${p.name} - ${formTitle}`
+          : formTitle;
 
         let exPhotos = existingUrlsInEdit.length ? `<label class="form-label">📸 登録済みの写真 (×で削除)</label><div style="display:flex;gap:10px;overflow-x:auto;margin-bottom:15px;padding-bottom:5px;">${existingUrlsInEdit.map((u,i)=>u?`<div id="edit-photo-${i}" style="position:relative;flex-shrink:0;"><img src="${u.replace('sz=w1600','sz=w800')}" style="width:80px;height:80px;object-fit:cover;border-radius:4px;border:1px solid #ccc;"><div onclick="removeExistingPhoto(${i})" style="position:absolute;top:-8px;right:-8px;background:#F44336;color:white;width:24px;height:24px;text-align:center;line-height:24px;border-radius:50%;cursor:pointer;font-weight:bold;box-shadow:0 2px 4px rgba(0,0,0,0.3);">×</div></div>`:'').join('')}</div>` : '';
         
@@ -16460,7 +16587,19 @@ function createSignboardMarker(name, pos, icon, id) {
                   <div id="linked_special_work_banner" style="display:none; border:1px solid #CE93D8; border-radius:8px; padding:10px 12px; margin:0 0 12px; font-size:13px; font-weight:bold; line-height:1.4;"></div>
                   <div id="pending_next_work_banner" style="display:none; border:1px solid #FFE082; border-radius:8px; padding:10px 12px; margin:0 0 12px; font-size:13px; font-weight:bold; line-height:1.4;"></div>
 
-                  <div id="work_record_step_category" class="work-rec-step-panel">
+                  <div id="work_record_step_time" class="work-rec-step-panel">
+                  <label class="form-label">📅 作業日</label>
+                  <input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : todayStr}" onchange="if(typeof handleWorkDateChange==='function') handleWorkDateChange();" style="margin-bottom:12px;">
+                  ${timeUI}
+                  </div>
+
+                  <div id="work_record_step_suggest" class="work-rec-step-panel" style="display:none;">
+                  <div id="next_work_prediction_section" style="display:none; background:linear-gradient(135deg, #e8f5e9 0%, #e3f2fd 100%); border:1px solid #a5d6a7; border-radius:10px; padding:12px; margin-bottom:12px; box-shadow:0 2px 6px rgba(46,125,50,0.08);"></div>
+                  <div id="suggest_step_empty_hint" style="display:none; background:#FAFAFA; border:1px dashed #BDBDBD; border-radius:10px; padding:14px 12px; margin-bottom:12px; color:#757575; font-size:13px; text-align:center; line-height:1.5;">予想候補がまだありません。<br>下の「次へ」でカテゴリから選べます。</div>
+                  ${window.buildWorkFormLunchBreakHtml_ ? window.buildWorkFormLunchBreakHtml_() : ''}
+                  </div>
+
+                  <div id="work_record_step_category" class="work-rec-step-panel" style="display:none;">
                   <div class="rec-zone rec-zone-category" style="background:#E8EAF6; border:1px solid #9FA8DA; border-radius:10px; padding:12px; margin-bottom:0;">
                   <label class="form-label" style="margin-top:0; color:#3949AB;">📁 カテゴリを選んでください</label>
                   <div id="work_category_admin_bar" style="display:none; flex-wrap:wrap; gap:6px; margin:0 0 8px;"></div>
@@ -16483,8 +16622,6 @@ function createSignboardMarker(name, pos, icon, id) {
                   </div>
 
                   <div id="work_record_step_work" class="work-rec-step-panel" style="display:none;">
-                  <div id="next_work_prediction_section" style="display:none; background:linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%); border:1px solid #a5d6a7; border-radius:10px; padding:12px; margin-bottom:12px; box-shadow:0 2px 6px rgba(46,125,50,0.08);"></div>
-                  <div id="time_work_suggestion_section" style="display:none; background:linear-gradient(135deg, #e3f2fd 0%, #e8f5e9 100%); border:1px solid #90caf9; border-radius:10px; padding:12px; margin-bottom:12px; box-shadow:0 2px 6px rgba(21,101,192,0.08);"></div>
                   <div id="work_name_gate_hint" style="display:none; background:#FAFAFA; border:1px dashed #BDBDBD; border-radius:10px; padding:14px 12px; margin-bottom:15px; color:#757575; font-size:13px; text-align:center; font-weight:bold;">作物を選ぶと、作業名が表示されます</div>
                   <div id="work_name_section" style="display:block;">
                   <div class="rec-zone rec-zone-workname" style="background:#FFF3E0; border:1px solid #FFCC80; border-radius:10px; padding:12px; margin-bottom:0;">
@@ -16492,7 +16629,6 @@ function createSignboardMarker(name, pos, icon, id) {
                   <div id="work_name_admin_bar" style="display:none; flex-wrap:wrap; gap:6px; margin:0 0 8px;"></div>
                   <input type="hidden" id="rec_work_name" value="">
                   <div id="work_chips_wrapper">
-                    <div id="time_suggest_chips_container" style="display:none; margin-bottom:10px; background:linear-gradient(135deg, #e3f2fd 0%, #e8f5e9 100%); border:1px solid #90caf9; border-radius:10px; padding:10px 12px;"></div>
                     ${recentChipsHTML}
                     ${allChipsHTML}
                   </div>
@@ -16507,8 +16643,6 @@ function createSignboardMarker(name, pos, icon, id) {
 
                   <div id="work_record_step_details" class="work-rec-step-panel" style="display:none;">
                   <label class="form-label">👤 ユーザー名</label><input type="text" class="form-input" value="${currentUser}" readonly style="background:#f4f6f8; color:#666;">
-                  <label class="form-label">📅 作業日</label><input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : todayStr}" onchange="if(typeof handleWorkDateChange==='function') handleWorkDateChange();">
-                  ${timeUI}
                   <div id="work_assoc_suggest" style="display:none; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
                   <div id="field_machinery_section" style="display:none; background:#FFF3E0; border:1px solid #FFE0B2; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
                   <div id="prep_target_work_section" style="display:none; background:#f3e5f5; border:1px solid #ce93d8; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
@@ -16636,7 +16770,6 @@ function createSignboardMarker(name, pos, icon, id) {
                    ${workTimeUI}
                    ${exPhotos}
                    ${photoUI}
-                   ${window.buildWorkFormLunchBreakHtml_ ? window.buildWorkFormLunchBreakHtml_() : ''}
                   </div>`;
         } else if (p.isMarker) {
           html = `${targetSection}${timeUI}${exPhotos}${photoUI}`;
@@ -16741,10 +16874,8 @@ function createSignboardMarker(name, pos, icon, id) {
             if (typeof window.renderWorkNameAdminBar === 'function') window.renderWorkNameAdminBar('');
             if (typeof window.refreshWorkNameSectionVisibility === 'function') window.refreshWorkNameSectionVisibility();
             if (typeof window.refreshLinkedSpecialWorkBanner === 'function') window.refreshLinkedSpecialWorkBanner();
-            // カテゴリ／作物を選ぶ前に、当日の前作業から次作業名を予想表示
+            // 時間設定後の予想ステップ用に候補を温める
             if (typeof window.renderNextWorkPredictions === 'function') window.renderNextWorkPredictions();
-            // ⏰ この時間帯によく行う作業候補を描画
-            if (typeof window.renderTimeBasedWorkSuggestions === 'function') window.renderTimeBasedWorkSuggestions();
             if (pendingNext && typeof window.applyPendingNextWorkNameOnly_ === 'function') {
               setTimeout(() => { try { window.applyPendingNextWorkNameOnly_({ silent: true }); } catch (e) {} }, 80);
               setTimeout(() => { try { window.applyPendingNextWorkNameOnly_({ silent: true }); } catch (e) {} }, 280);
@@ -18599,13 +18730,22 @@ function createSignboardMarker(name, pos, icon, id) {
       window.showAfterWorkSaveCloseOnlyModal_ = (opts) => {
         opts = opts || {};
         const data = opts.data || {};
+        const polyIds = opts.polyIds || [];
         const workName = String(data.workName || '作業');
+        let pace = opts.pace || data.pace || null;
+        if (!pace && typeof window.calcJustSavedWorkPace_ === 'function') {
+          pace = window.calcJustSavedWorkPace_(data, polyIds);
+        }
+        const paceHtml = (typeof window.renderJustSavedWorkPaceHtml_ === 'function')
+          ? window.renderJustSavedWorkPaceHtml_(pace)
+          : '';
         const modalEl = document.getElementById('modal');
         if (!modalEl) return;
         window.fillAppModalHtml_(`
           <div style="background:#fff; width:100%; max-width:380px; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
             <div style="font-size:16px; font-weight:bold; color:#2E7D32; margin-bottom:8px;">✅ 記録を保存しました</div>
-            <div style="font-size:13px; color:#555; margin-bottom:16px; line-height:1.45;">「${String(workName).replace(/</g, '&lt;')}」を保存しました。</div>
+            <div style="font-size:13px; color:#555; margin-bottom:12px; line-height:1.45;">「${String(workName).replace(/</g, '&lt;')}」を保存しました。</div>
+            ${paceHtml}
             <button type="button" onclick="closeAfterWorkSaveContinueModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer;">閉じる</button>
           </div>`);
         modalEl.style.display = 'flex';
@@ -18900,6 +19040,7 @@ function createSignboardMarker(name, pos, icon, id) {
           <div style="background:#fff; width:100%; max-width:420px; max-height:88vh; overflow-y:auto; -webkit-overflow-scrolling:touch; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
             <div style="font-size:16px; font-weight:bold; color:#FF9800; margin-bottom:4px;">🚜 次の作業を登録</div>
             <div style="font-size:12px; color:#666; margin-bottom:10px; line-height:1.4;">${window._afterSaveFromClockIn ? '段階的に選びます（本登録しません）。開始は出勤時刻' : '段階的に選びます（本登録しません）。開始は前作業の終了'} <b>${startHm}</b> です。</div>
+            ${(!window._afterSaveFromClockIn && typeof window.renderJustSavedWorkPaceHtml_ === 'function' && saved.pace) ? window.renderJustSavedWorkPaceHtml_(saved.pace) : ''}
             ${stepHeader}
             ${stepBody}
             ${primaryBtn}
@@ -18942,24 +19083,36 @@ function createSignboardMarker(name, pos, icon, id) {
         const workName = String(data.workName || '作業');
         window._afterSaveNextPolyIds = Array.isArray(polyIds) ? polyIds.slice() : [];
         window._afterSaveFromClockIn = false;
+        let pace = opts.pace || data.pace || null;
+        if (!pace && typeof window.calcJustSavedWorkPace_ === 'function') {
+          pace = window.calcJustSavedWorkPace_(data, polyIds);
+        }
         window._afterSaveWorkMeta = {
           workDate: data.workDate || '',
           workName: workName,
           crop: data.crop || '',
           category: data.category || '',
-          endTime: startDefault
+          startTime: data.startTime || '',
+          endTime: startDefault,
+          totalTime: data.totalTime || '',
+          breakMins: data.breakMins || 0,
+          pace: pace || null
         };
         window._afterSaveDraftCategory = data.category || 'すべて';
         window._afterSaveDraftCrop = data.crop || '';
         window._afterSaveDraftWorkName = '';
         window._afterSavePickerStep = 'category';
         if (typeof window.ensureDayPlanCacheForPlannedEnd_ === 'function') window.ensureDayPlanCacheForPlannedEnd_();
+        const paceHtml = (typeof window.renderJustSavedWorkPaceHtml_ === 'function')
+          ? window.renderJustSavedWorkPaceHtml_(pace)
+          : '';
         const modalEl = document.getElementById('modal');
         if (!modalEl) return;
         window.fillAppModalHtml_(`
           <div style="background:#fff; width:100%; max-width:380px; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
             <div style="font-size:16px; font-weight:bold; color:#2E7D32; margin-bottom:8px;">✅ 記録を保存しました</div>
-            <div style="font-size:13px; color:#555; margin-bottom:16px; line-height:1.45;">「${String(workName).replace(/</g, '&lt;')}」を保存しました。次の操作を選んでください。</div>
+            <div style="font-size:13px; color:#555; margin-bottom:12px; line-height:1.45;">「${String(workName).replace(/</g, '&lt;')}」を保存しました。次の操作を選んでください。</div>
+            ${paceHtml}
             <button type="button" onclick="showAfterSaveNextWorkPicker_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">次の作業を登録</button>
             <button type="button" onclick="startClockOutFromAfterSave_()" style="width:100%; background:#E53935; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">🏃 退勤を登録</button>
             <button type="button" onclick="closeAfterWorkSaveContinueModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer;">閉じる</button>
@@ -19018,27 +19171,27 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       async function submitRecord() {
-        // 紐づけ先の解決（圃場作業のときだけ圃場必須）
+        // 紐づけ先の解決（カテゴリに「圃場」があるときだけ圃場必須）
         const catVal = document.getElementById('rec_work_category')?.value || '';
-        // 🌟 ユーザー様ご指定: カテゴリに「圃場」が含まれない場合は圃場を紐付け・記録しない（勝手な畑入力を防止）
+        // カテゴリに「圃場」が含まれない場合は圃場ポリゴンを紐付けない（看板は維持）
         if (currentRecordType === 'work' && typeof window.isFieldCategory === 'function' && !window.isFieldCategory(catVal)) {
-          selectedPolyIds = [];
+          selectedPolyIds = (selectedPolyIds || []).filter(id => {
+            const poly = loadedPolygons && loadedPolygons[id];
+            return !!(poly && poly.isMarker);
+          });
         }
         let targetIds = [...selectedPolyIds].filter(id => id && loadedPolygons[id]);
         if (targetIds.length === 0) {
-          const requiresField = currentRecordType === 'work' && typeof window.workRecordRequiresField === 'function'
-            ? window.workRecordRequiresField()
-            : (currentRecordType === 'work');
+          const requiresField = (currentRecordType === 'work')
+            ? (typeof window.workRecordRequiresField === 'function' ? window.workRecordRequiresField() : true)
+            : true; // 生育記録などは場所必須
           if (requiresField) {
             customAlert("記録を保存するには、紐づける圃場が必要です。マップから圃場を選択してください。");
             return;
           }
-          // 非圃場作業も、地図上で看板／圃場を開いて記録した場合のみ保存（カテゴリから看板を自動割当しない）
-          if (activePolyId && loadedPolygons[activePolyId]) {
+          // 非圃場カテゴリ: 場所なしでも保存可（__global__）。看板起点なら看板のみ紐付け
+          if (activePolyId && loadedPolygons[activePolyId] && loadedPolygons[activePolyId].isMarker) {
             targetIds = [activePolyId];
-          } else {
-            customAlert("記録を保存するには、地図上の看板または圃場から記録を開いてください。");
-            return;
           }
         }
         selectedPolyIds = targetIds;
@@ -19568,7 +19721,7 @@ function createSignboardMarker(name, pos, icon, id) {
             } else {
               window._linkedSpecialWorkSet = null;
               if (consumedPendingNext && typeof window.showAfterWorkSaveCloseOnlyModal_ === 'function') {
-                window.showAfterWorkSaveCloseOnlyModal_({ data: data });
+                window.showAfterWorkSaveCloseOnlyModal_({ data: data, polyIds: targetIdsSnap });
               } else if (typeof window.showAfterWorkSaveContinueModal_ === 'function') {
                 window.showAfterWorkSaveContinueModal_({ data: data, polyIds: targetIdsSnap });
               }
@@ -19576,13 +19729,13 @@ function createSignboardMarker(name, pos, icon, id) {
           } else if (clearingLinkedAfterFollowUp) {
             window._linkedSpecialWorkSet = null;
             if (consumedPendingNext && typeof window.showAfterWorkSaveCloseOnlyModal_ === 'function') {
-              window.showAfterWorkSaveCloseOnlyModal_({ data: data });
+              window.showAfterWorkSaveCloseOnlyModal_({ data: data, polyIds: targetIdsSnap });
             } else if (typeof window.showAfterWorkSaveContinueModal_ === 'function') {
               window.showAfterWorkSaveContinueModal_({ data: data, polyIds: targetIdsSnap });
             }
           } else if (!isEditBtn && recordTypeSnap === 'work') {
             if (consumedPendingNext && typeof window.showAfterWorkSaveCloseOnlyModal_ === 'function') {
-              window.showAfterWorkSaveCloseOnlyModal_({ data: data });
+              window.showAfterWorkSaveCloseOnlyModal_({ data: data, polyIds: targetIdsSnap });
             } else if (typeof window.showAfterWorkSaveContinueModal_ === 'function') {
               window.showAfterWorkSaveContinueModal_({ data: data, polyIds: targetIdsSnap });
             }
@@ -22553,13 +22706,13 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       /**
-       * 作業記録フォーム最下部の昼休憩登録
+       * 作業記録の予想ステップ用・昼休憩登録
        */
       window.buildWorkFormLunchBreakHtml_ = () => {
         return `
-          <div id="work_form_lunch_section" style="margin-top:18px; background:#FFF8E1; border:1px solid #FFE082; border-radius:12px; padding:14px;">
-            <div style="font-weight:bold; color:#E65100; font-size:15px; margin-bottom:6px;">🍱 昼休憩として登録</div>
-            <div style="font-size:12px; color:#666; line-height:1.45; margin-bottom:10px;">作業の終了時刻を昼休憩の開始に使えます。時間を確認して下のボタンを押してください。</div>
+          <div id="work_form_lunch_section" style="margin-top:4px; background:#FFF8E1; border:1px solid #FFE082; border-radius:12px; padding:14px;">
+            <div style="font-weight:bold; color:#E65100; font-size:15px; margin-bottom:6px;">🍱 昼休憩登録</div>
+            <div style="font-size:12px; color:#666; line-height:1.45; margin-bottom:10px;">作業の終了時刻を昼休憩の開始に使えます。登録すると次の作業開始は昼休憩終了になります。</div>
             <div id="work_form_lunch_status" style="display:none; font-size:12px; font-weight:bold; color:#2E7D32; margin-bottom:8px;"></div>
             <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
               <div style="flex:1;">
@@ -22675,6 +22828,22 @@ function createSignboardMarker(name, pos, icon, id) {
           }
           window.registerLunchBreakDirect_(start, end, ymd);
           window.refreshWorkFormLunchSection_();
+          // 昼休憩終了を次作業の開始候補に反映
+          const startEl = document.getElementById('rec_start_time');
+          if (startEl && end) {
+            startEl.value = end;
+            startEl.removeAttribute('data-autofill');
+            startEl.setAttribute('data-start-source', 'lunchEnd');
+            if (typeof window.updateStartTimeHintUI === 'function') {
+              try { window.updateStartTimeHintUI(); } catch (e) {}
+            }
+            if (typeof window.calcTotalTime === 'function') {
+              try { window.calcTotalTime(); } catch (e) {}
+            }
+          }
+          if (typeof window.renderNextWorkPredictions === 'function') {
+            try { window.renderNextWorkPredictions(); } catch (e) {}
+          }
           if (typeof window.showRecordSyncToast === 'function') {
             window.showRecordSyncToast(`🍱 昼休憩を登録しました（${start}〜${end}）`, 'ok');
           } else if (typeof customAlert === 'function') {
@@ -23242,6 +23411,535 @@ window.executeAutoRecord = async () => {
             }
         }
     }, 300); // フォーム描画の完了を少し待つ
+};
+
+// 🌟 メモから作業記録を一括入力（時間帯ごとに分割 → 確認編集 → 保存）🌟
+window._bulkWorkMemoDrafts = [];
+window._bulkWorkMemoDate = '';
+
+window.getBulkWorkMemoTodayYmd_ = () => {
+  if (typeof window.getTodayDateString === 'function') return window.getTodayDateString();
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+};
+
+window.parseBulkWorkMemoHmToken_ = (raw) => {
+  const s = String(raw || '').trim().replace(/：/g, ':');
+  if (!s) return '';
+  let m = s.match(/^(\d{1,2}):(\d{1,2})$/);
+  if (m) {
+    const h = Math.min(23, parseInt(m[1], 10));
+    const min = Math.min(59, parseInt(m[2], 10));
+    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+  }
+  m = s.match(/^(\d{1,2})時半$/);
+  if (m) {
+    const h = Math.min(23, parseInt(m[1], 10));
+    return `${String(h).padStart(2, '0')}:30`;
+  }
+  m = s.match(/^(\d{1,2})時(\d{1,2})分?$/);
+  if (m) {
+    const h = Math.min(23, parseInt(m[1], 10));
+    const min = Math.min(59, parseInt(m[2], 10));
+    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+  }
+  m = s.match(/^(\d{1,2})時$/);
+  if (m) {
+    const h = Math.min(23, parseInt(m[1], 10));
+    return `${String(h).padStart(2, '0')}:00`;
+  }
+  return '';
+};
+
+window.extractBulkWorkMemoTimes_ = (line) => {
+  const text = String(line || '');
+  const re = /(\d{1,2})\s*[:：]\s*(\d{1,2})|(\d{1,2})\s*時\s*(半|(\d{1,2})\s*分?)?/g;
+  const times = [];
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    let hm = '';
+    if (m[1] != null && m[2] != null) {
+      hm = window.parseBulkWorkMemoHmToken_(`${m[1]}:${m[2]}`);
+    } else if (m[3] != null) {
+      if (m[4] === '半') hm = window.parseBulkWorkMemoHmToken_(`${m[3]}時半`);
+      else if (m[5] != null) hm = window.parseBulkWorkMemoHmToken_(`${m[3]}時${m[5]}分`);
+      else hm = window.parseBulkWorkMemoHmToken_(`${m[3]}時`);
+    }
+    if (hm) times.push({ hm: hm, index: m.index, length: m[0].length, raw: m[0] });
+  }
+  return times;
+};
+
+window.matchBulkWorkMemoField_ = (text) => {
+  const t = String(text || '');
+  if (!t || typeof loadedPolygons === 'undefined') return { polyId: '', polyName: '' };
+  let best = null;
+  Object.keys(loadedPolygons || {}).forEach(id => {
+    const p = loadedPolygons[id];
+    if (!p || p.isMarker || !p.name) return;
+    const name = String(p.name).trim();
+    if (!name || t.indexOf(name) < 0) return;
+    if (!best || name.length > best.name.length) best = { polyId: id, polyName: name };
+  });
+  return best || { polyId: '', polyName: '' };
+};
+
+window.matchBulkWorkMemoWorkName_ = (text) => {
+  let t = String(text || '').trim();
+  if (!t) return { workName: '', category: '', isRest: false };
+  const isRest = t.includes('休憩');
+  let best = '';
+  let category = '';
+  if (typeof pdlWorkMaster !== 'undefined' && Array.isArray(pdlWorkMaster)) {
+    (pdlWorkMaster || []).forEach(w => {
+      const name = String((w && w.name) || '').trim();
+      if (!name || t.indexOf(name) < 0) return;
+      if (name.length > best.length) {
+        best = name;
+        category = String((w && w.category) || '').trim();
+      }
+    });
+  }
+  if (best) return { workName: best, category: category || (isRest ? '管理/その他' : ''), isRest: isRest };
+  // マスタに無い場合は時刻・接続語を除いた残りを作業名にする
+  let remaining = t;
+  remaining = remaining.replace(/(\d{1,2})\s*[:：]\s*(\d{1,2})/g, ' ');
+  remaining = remaining.replace(/(\d{1,2})\s*時\s*(半|(\d{1,2})\s*分?)?/g, ' ');
+  remaining = remaining.replace(/(から|まで|にて|で|に|へ|を|の|が|は|と|＆|&)/g, ' ');
+  remaining = remaining.replace(/(終了|完了|途中)/g, ' ');
+  remaining = remaining.replace(/\s+/g, ' ').trim();
+  if (!remaining) remaining = t;
+  return {
+    workName: remaining,
+    category: isRest ? '管理/その他' : '',
+    isRest: isRest
+  };
+};
+
+window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
+  const raw = String(line || '').trim();
+  if (!raw) return null;
+  const times = window.extractBulkWorkMemoTimes_(raw);
+  let startTime = '';
+  let endTime = '';
+  let progressStatus = '';
+  if (/完了|終了/.test(raw)) progressStatus = '完了';
+  else if (/途中/.test(raw)) progressStatus = '途中';
+
+  // 「13時30分から40分」→ 同年の :40 を終了とする（時間長ではなく時刻）
+  const fromMinOnly = raw.match(/(\d{1,2})\s*時\s*(\d{1,2})\s*分?\s*から\s*(\d{1,2})\s*分(?!間)/);
+  if (fromMinOnly && times.length === 1) {
+    startTime = window.parseBulkWorkMemoHmToken_(`${fromMinOnly[1]}時${fromMinOnly[2]}分`);
+    const endMin = Math.min(59, parseInt(fromMinOnly[3], 10));
+    const h = parseInt(fromMinOnly[1], 10);
+    endTime = `${String(h).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
+  } else if (times.length >= 2) {
+    startTime = times[0].hm;
+    endTime = times[times.length - 1].hm;
+  } else if (times.length === 1) {
+    const only = times[0].hm;
+    if (/まで/.test(raw) || /で\s/.test(raw) || /で$/.test(raw) || /終了|完了/.test(raw)) {
+      endTime = only;
+      startTime = prevEndHm || '';
+    } else if (/途中/.test(raw) || /に/.test(raw)) {
+      startTime = only;
+      endTime = '';
+    } else if (/から/.test(raw)) {
+      startTime = only;
+      // 「から○時間／○分」
+      const durH = raw.match(/から\s*(\d+(?:\.\d+)?)\s*時間/);
+      const durM = raw.match(/から\s*(\d+)\s*分(?!間)/);
+      let add = 0;
+      if (durH) add += parseFloat(durH[1]) * 60;
+      if (durM && !fromMinOnly) add += parseInt(durM[1], 10);
+      if (add > 0 && typeof window.addMinutesToHm_ === 'function') {
+        endTime = window.addMinutesToHm_(startTime, add) || '';
+      }
+    } else {
+      // 単独時刻のみ → 前記録終了〜この時刻
+      endTime = only;
+      startTime = prevEndHm || '';
+    }
+  } else if (prevEndHm) {
+    startTime = prevEndHm;
+  }
+
+  const field = window.matchBulkWorkMemoField_(raw);
+  const work = window.matchBulkWorkMemoWorkName_(raw);
+  let workName = work.workName;
+  // 圃場名が作業名に食い込んでいたら除去
+  if (field.polyName && workName.indexOf(field.polyName) >= 0) {
+    workName = workName.split(field.polyName).join(' ').replace(/\s+/g, ' ').trim();
+  }
+  if (!workName) workName = raw;
+
+  let category = work.category;
+  if (!category) {
+    if (work.isRest) category = '管理/その他';
+    else if (field.polyId) category = '圃場作業';
+    else category = '事務作業';
+  }
+
+  return {
+    rawLine: raw,
+    startTime: startTime || '',
+    endTime: endTime || '',
+    workName: workName,
+    category: category,
+    polyId: field.polyId || '',
+    polyName: field.polyName || '',
+    progressStatus: progressStatus,
+    included: true,
+    comment: raw
+  };
+};
+
+window.parseBulkWorkMemo_ = (text) => {
+  const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const drafts = [];
+  let prevEnd = '';
+  lines.forEach((line, idx) => {
+    const row = window.parseBulkWorkMemoLine_(line, prevEnd);
+    if (!row) return;
+    row._uid = 'bm_' + Date.now() + '_' + idx;
+    drafts.push(row);
+    if (row.endTime) prevEnd = row.endTime;
+    else if (row.startTime) prevEnd = row.startTime;
+  });
+  return drafts;
+};
+
+window.openBulkWorkMemoModal_ = () => {
+  const today = window.getBulkWorkMemoTodayYmd_();
+  window._bulkWorkMemoDate = today;
+  window._bulkWorkMemoDrafts = [];
+  const typeModal = document.getElementById('recordTypeSelectModal');
+  if (typeModal) typeModal.style.display = 'none';
+  const modalEl = document.getElementById('modal');
+  if (!modalEl || typeof window.fillAppModalHtml_ !== 'function') {
+    if (typeof customAlert === 'function') customAlert('画面を開けませんでした。ページを再読み込みしてください。');
+    return;
+  }
+  const sample = '例:\n8時から9時半 システム作業\n9時半から11時11分 トラクター配線修理\n11時半まで 探し物＆定食器整備\n13時9分 灌注 終了\n13時30分から40分 休憩\n14時まで 鶏糞打ち合わせ\n15時20分で 山地15 チッパー 完了\n19:30に チッパー途中（上中）';
+  window.fillAppModalHtml_(`
+    <div style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
+      <div style="font-size:17px; font-weight:bold; color:#E65100; margin-bottom:6px;">📋 メモから一括入力</div>
+      <div style="font-size:12px; color:#666; line-height:1.45; margin-bottom:12px;">1行＝1作業で書いてください。時間のあいだは自動でつなぎます。解析後に1件ずつ直せます。</div>
+      <label class="form-label" style="margin:0 0 4px;">📅 作業日</label>
+      <input type="date" id="bulk_work_memo_date" class="form-input" value="${today}" style="margin-bottom:10px;">
+      <label class="form-label" style="margin:0 0 4px;">📝 作業メモ</label>
+      <textarea id="bulk_work_memo_text" class="form-input" rows="12" placeholder="${sample.replace(/"/g, '&quot;')}" style="margin-bottom:12px; font-size:13px; line-height:1.45; resize:vertical;"></textarea>
+      <button type="button" onclick="parseAndReviewBulkWorkMemo_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">✂️ 時間ごとに分けて確認</button>
+      <button type="button" onclick="closeBulkWorkMemoModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer;">キャンセル</button>
+    </div>`);
+  modalEl.style.display = 'flex';
+  modalEl.onclick = (evt) => {
+    if (evt.target === modalEl) closeBulkWorkMemoModal_();
+  };
+  setTimeout(() => {
+    const ta = document.getElementById('bulk_work_memo_text');
+    if (ta) ta.focus();
+  }, 40);
+};
+
+window.closeBulkWorkMemoModal_ = () => {
+  const modalEl = document.getElementById('modal');
+  if (modalEl) {
+    modalEl.style.display = 'none';
+    try { modalEl.onclick = null; } catch (e) {}
+  }
+};
+
+window.parseAndReviewBulkWorkMemo_ = () => {
+  const text = document.getElementById('bulk_work_memo_text')?.value || '';
+  const dateEl = document.getElementById('bulk_work_memo_date');
+  const ymd = (dateEl && dateEl.value) ? dateEl.value : window.getBulkWorkMemoTodayYmd_();
+  if (!String(text).trim()) {
+    if (typeof customAlert === 'function') customAlert('作業メモを入力してください。');
+    return;
+  }
+  const drafts = window.parseBulkWorkMemo_(text);
+  if (!drafts.length) {
+    if (typeof customAlert === 'function') customAlert('作業に分割できませんでした。1行に1作業で書いてみてください。');
+    return;
+  }
+  window._bulkWorkMemoDate = ymd;
+  window._bulkWorkMemoDrafts = drafts;
+  window.renderBulkWorkMemoReviewModal_();
+};
+
+window.buildBulkWorkMemoFieldOptionsHtml_ = (selectedId) => {
+  const opts = ['<option value="">（圃場なし）</option>'];
+  try {
+    Object.keys(loadedPolygons || {}).forEach(id => {
+      const p = loadedPolygons[id];
+      if (!p || p.isMarker || !p.name) return;
+      const sel = String(id) === String(selectedId) ? ' selected' : '';
+      opts.push(`<option value="${String(id).replace(/"/g, '&quot;')}"${sel}>${String(p.name).replace(/</g, '&lt;')}</option>`);
+    });
+  } catch (e) {}
+  return opts.join('');
+};
+
+window.renderBulkWorkMemoReviewModal_ = () => {
+  const drafts = window._bulkWorkMemoDrafts || [];
+  const ymd = window._bulkWorkMemoDate || window.getBulkWorkMemoTodayYmd_();
+  const modalEl = document.getElementById('modal');
+  if (!modalEl || typeof window.fillAppModalHtml_ !== 'function') return;
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const cards = drafts.map((d, i) => {
+    const uid = d._uid || ('bm_' + i);
+    d._uid = uid;
+    return `
+      <div id="bulk_card_${esc(uid)}" style="background:#fafafa; border:1px solid #e0e0e0; border-radius:10px; padding:12px; margin-bottom:10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
+          <label style="font-size:12px; font-weight:bold; color:#555; display:flex; align-items:center; gap:6px;">
+            <input type="checkbox" ${d.included !== false ? 'checked' : ''} onchange="updateBulkWorkMemoDraftField_('${esc(uid)}','included', this.checked)">
+            ${i + 1}件目
+          </label>
+          <button type="button" onclick="removeBulkWorkMemoDraft_('${esc(uid)}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">削除</button>
+        </div>
+        <div style="font-size:11px; color:#888; margin-bottom:8px; line-height:1.35;">元メモ: ${esc(d.rawLine)}</div>
+        <div style="display:flex; gap:8px; margin-bottom:8px;">
+          <div style="flex:1;">
+            <label style="font-size:10px; color:#888;">開始</label>
+            <input type="text" class="form-input app-time-input" readonly inputmode="none" value="${esc(d.startTime)}" onclick="if(window.openAppTimePicker) window.openAppTimePicker(this.id, '開始')" id="bulk_start_${esc(uid)}" onchange="updateBulkWorkMemoDraftField_('${esc(uid)}','startTime', this.value)" style="margin:0; text-align:center; font-weight:bold;">
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:10px; color:#888;">終了</label>
+            <input type="text" class="form-input app-time-input" readonly inputmode="none" value="${esc(d.endTime)}" onclick="if(window.openAppTimePicker) window.openAppTimePicker(this.id, '終了')" id="bulk_end_${esc(uid)}" onchange="updateBulkWorkMemoDraftField_('${esc(uid)}','endTime', this.value)" style="margin:0; text-align:center; font-weight:bold;">
+          </div>
+        </div>
+        <label style="font-size:10px; color:#888;">作業名</label>
+        <input type="text" class="form-input" value="${esc(d.workName)}" oninput="updateBulkWorkMemoDraftField_('${esc(uid)}','workName', this.value)" style="margin-bottom:8px;">
+        <label style="font-size:10px; color:#888;">圃場（任意）</label>
+        <select class="form-input" onchange="updateBulkWorkMemoDraftField_('${esc(uid)}','polyId', this.value)" style="margin-bottom:8px;">
+          ${window.buildBulkWorkMemoFieldOptionsHtml_(d.polyId)}
+        </select>
+        <label style="font-size:10px; color:#888;">進捗</label>
+        <select class="form-input" onchange="updateBulkWorkMemoDraftField_('${esc(uid)}','progressStatus', this.value)" style="margin-bottom:0;">
+          <option value="" ${!d.progressStatus ? 'selected' : ''}>（なし）</option>
+          <option value="途中" ${d.progressStatus === '途中' ? 'selected' : ''}>途中</option>
+          <option value="完了" ${d.progressStatus === '完了' ? 'selected' : ''}>完了</option>
+        </select>
+      </div>`;
+  }).join('');
+
+  window.fillAppModalHtml_(`
+    <div style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
+      <div style="font-size:17px; font-weight:bold; color:#E65100; margin-bottom:4px;">📋 一括入力の確認</div>
+      <div style="font-size:12px; color:#666; margin-bottom:10px;">作業日 <b>${esc(ymd)}</b> ／ ${drafts.length}件に分割しました。必要なものだけチェックして保存してください。</div>
+      <div style="margin-bottom:12px;">${cards}</div>
+      <button type="button" id="bulk_work_memo_save_btn" onclick="saveBulkWorkMemoDrafts_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">💾 チェックした作業を一括保存</button>
+      <button type="button" onclick="openBulkWorkMemoModal_()" style="width:100%; background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-bottom:8px;">← メモをやり直す</button>
+      <button type="button" onclick="closeBulkWorkMemoModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
+    </div>`);
+  modalEl.style.display = 'flex';
+  modalEl.onclick = (evt) => {
+    if (evt.target === modalEl) closeBulkWorkMemoModal_();
+  };
+};
+
+window.updateBulkWorkMemoDraftField_ = (uid, key, value) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  if (key === 'included') {
+    row.included = !!value;
+    return;
+  }
+  if (key === 'polyId') {
+    row.polyId = String(value || '');
+    const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[row.polyId] : null;
+    row.polyName = (p && p.name) ? p.name : '';
+    if (row.polyId && (!row.category || row.category === '事務作業')) row.category = '圃場作業';
+    if (!row.polyId && row.category === '圃場作業' && !(row.workName || '').includes('休憩')) row.category = '事務作業';
+    return;
+  }
+  row[key] = value;
+};
+
+window.removeBulkWorkMemoDraft_ = (uid) => {
+  window._bulkWorkMemoDrafts = (window._bulkWorkMemoDrafts || []).filter(d => d && d._uid !== uid);
+  if (!window._bulkWorkMemoDrafts.length) {
+    openBulkWorkMemoModal_();
+    return;
+  }
+  window.renderBulkWorkMemoReviewModal_();
+};
+
+window.calcBulkWorkMemoTotalTime_ = (start, end, breakMins) => {
+  if (!start || !end) return '';
+  const toM = (typeof window.timeHmToMinutes === 'function')
+    ? window.timeHmToMinutes
+    : (hm) => {
+      const m = String(hm || '').match(/^(\d{1,2}):(\d{2})$/);
+      return m ? (parseInt(m[1], 10) * 60 + parseInt(m[2], 10)) : null;
+    };
+  let s = toM(start);
+  let e = toM(end);
+  if (s == null || e == null) return '';
+  let diff = e - s;
+  if (diff < 0) diff += 24 * 60;
+  const br = Math.max(0, parseInt(breakMins, 10) || 0);
+  const workMins = Math.max(0, diff - br);
+  return Math.floor(workMins / 60) + '時間' + (workMins % 60) + '分';
+};
+
+window.saveBulkWorkMemoDrafts_ = async () => {
+  const drafts = (window._bulkWorkMemoDrafts || []).filter(d => d && d.included !== false);
+  if (!drafts.length) {
+    if (typeof customAlert === 'function') customAlert('保存する作業にチェックを入れてください。');
+    return;
+  }
+  for (let i = 0; i < drafts.length; i++) {
+    const d = drafts[i];
+    if (!String(d.workName || '').trim()) {
+      if (typeof customAlert === 'function') customAlert(`${i + 1}件目の作業名を入力してください。`);
+      return;
+    }
+    if (!d.startTime && !d.endTime) {
+      if (typeof customAlert === 'function') customAlert(`${i + 1}件目の開始または終了時間を入力してください。`);
+      return;
+    }
+  }
+  const btn = document.getElementById('bulk_work_memo_save_btn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '保存中...';
+  }
+  const ymd = window._bulkWorkMemoDate || window.getBulkWorkMemoTodayYmd_();
+  const userSnap = (typeof currentUser !== 'undefined' && currentUser)
+    ? currentUser
+    : (localStorage.getItem('passionMapUserName') || '');
+  const savedItems = [];
+
+  try {
+    for (let i = 0; i < drafts.length; i++) {
+      const d = drafts[i];
+      const start = window.normalizeTimeHm ? (window.normalizeTimeHm(d.startTime) || d.startTime) : d.startTime;
+      const end = window.normalizeTimeHm ? (window.normalizeTimeHm(d.endTime) || d.endTime) : d.endTime;
+      const totalTime = window.calcBulkWorkMemoTotalTime_(start, end, 0);
+      const data = {
+        workDate: ymd,
+        workName: String(d.workName || '').trim(),
+        category: String(d.category || '').trim() || (d.polyId ? '圃場作業' : '事務作業'),
+        crop: '',
+        startTime: start || '',
+        endTime: end || '',
+        totalTime: totalTime,
+        breakMins: 0,
+        progressStatus: d.progressStatus || '',
+        comment: d.comment || d.rawLine || '',
+        detailedWorks: '',
+        usedTools: '',
+        usedMachines: [],
+        usedMaterials: '',
+        usedPesticides: [],
+        fromBulkMemo: true
+      };
+      let targetIds = [];
+      let nameStr = '未選択';
+      if (d.polyId && loadedPolygons && loadedPolygons[d.polyId] && !loadedPolygons[d.polyId].isMarker) {
+        targetIds = [String(d.polyId)];
+        nameStr = loadedPolygons[d.polyId].name || d.polyId;
+      }
+      const localId = (typeof window.applyOptimisticRecordItem_ === 'function')
+        ? window.applyOptimisticRecordItem_({
+            targetIds: targetIds,
+            recordType: 'work',
+            data: data,
+            isEdit: false,
+            editId: '',
+            activePolyId: targetIds[0] || '',
+            previewUrls: [],
+            keptUrls: [],
+            skipOverlapAdjust: true
+          })
+        : '';
+      if (typeof window.enqueueRecordSync_ === 'function') {
+        window.enqueueRecordSync_({
+          localId: localId,
+          isEdit: false,
+          editId: '',
+          activePolyId: targetIds[0] || '',
+          newlyAddedIds: [],
+          targetIds: targetIds,
+          recordType: 'work',
+          data: data,
+          files: [],
+          keptUrls: [],
+          nameStr: nameStr,
+          userName: userSnap,
+          sideEffects: [],
+          previewUrls: [],
+          clearTemp: false
+        });
+      }
+      savedItems.push({
+        localId: localId,
+        polyId: targetIds[0] || '__global__',
+        workName: data.workName,
+        startTime: data.startTime,
+        endTime: data.endTime
+      });
+    }
+    if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
+      try { window.updateInitDataCacheWithLocalRecords_(); } catch (e) {}
+    }
+    window.showBulkWorkMemoSavedModal_(savedItems);
+  } catch (e) {
+    if (typeof customAlert === 'function') customAlert(e.message || '一括保存に失敗しました。');
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '💾 チェックした作業を一括保存';
+    }
+  }
+};
+
+window.showBulkWorkMemoSavedModal_ = (savedItems) => {
+  const items = savedItems || [];
+  const modalEl = document.getElementById('modal');
+  if (!modalEl || typeof window.fillAppModalHtml_ !== 'function') return;
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const rows = items.map((it, i) => {
+    const safePoly = String(it.polyId || '__global__').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const safeId = String(it.localId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return `
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px; border:1px solid #e0e0e0; border-radius:8px; margin-bottom:8px; background:#fafafa;">
+        <div style="min-width:0; flex:1;">
+          <div style="font-size:13px; font-weight:bold; color:#333;">${i + 1}. ${esc(it.workName)}</div>
+          <div style="font-size:11px; color:#666;">${esc(it.startTime || '--:--')}〜${esc(it.endTime || '--:--')}</div>
+        </div>
+        <button type="button" onclick="editBulkWorkMemoSavedItem_('${safePoly}', '${safeId}')" style="flex-shrink:0; background:#2196F3; color:#fff; border:none; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer;">✏️ 編集</button>
+      </div>`;
+  }).join('');
+  window.fillAppModalHtml_(`
+    <div style="background:#fff; width:100%; max-width:420px; max-height:88vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
+      <div style="font-size:16px; font-weight:bold; color:#2E7D32; margin-bottom:6px;">✅ ${items.length}件を一括保存しました</div>
+      <div style="font-size:12px; color:#666; margin-bottom:12px; line-height:1.4;">必要なら下の「編集」から1件ずつ詳細を直せます（圃場・詳細作業・写真など）。</div>
+      <div style="margin-bottom:12px;">${rows}</div>
+      <button type="button" onclick="closeBulkWorkMemoModal_(); if(typeof openMyPage==='function') openMyPage();" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:13px; font-weight:bold; cursor:pointer; margin-bottom:8px;">📋 マイページで確認</button>
+      <button type="button" onclick="closeBulkWorkMemoModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer;">閉じる</button>
+    </div>`);
+  modalEl.style.display = 'flex';
+  modalEl.onclick = (evt) => {
+    if (evt.target === modalEl) closeBulkWorkMemoModal_();
+  };
+  if (typeof window.showRecordSyncToast === 'function') {
+    window.showRecordSyncToast(`✅ メモから ${items.length}件を保存しました（同期中…）`, 'ok');
+  }
+};
+
+window.editBulkWorkMemoSavedItem_ = (polyId, recordId) => {
+  window.closeBulkWorkMemoModal_();
+  if (typeof window.editRecordFromMyPage === 'function') {
+    window.editRecordFromMyPage(polyId || '__global__', recordId);
+    return;
+  }
+  if (typeof window.editRecord === 'function') {
+    try { activePolyId = polyId || null; } catch (e) {}
+    window.editRecord(recordId, 'work');
+  }
 };
 
 // 🌟 4. アプリ起動時の爆速処理（window.onloadをやめる！） 🌟
