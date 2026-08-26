@@ -23739,6 +23739,9 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
     polyName: field.polyName || '',
     prepTargetWork: uiFlags.isPrep ? (window.guessBulkWorkMemoPrepTarget_(raw) || '') : '',
     prepListFilterCategory: '',
+    maintenanceToolId: '',
+    maintenanceTool: '',
+    maintenanceTargetKind: '',
     detailedWorks: [],
     usedMachines: uiFlags.showMachine ? mentionedMachines : [],
     usedPesticides: uiFlags.showPesticide ? (window.guessBulkWorkMemoPesticides_(raw) || []) : [],
@@ -23819,6 +23822,12 @@ window.parseAndReviewBulkWorkMemo_ = () => {
   }
   window._bulkWorkMemoDate = ymd;
   window._bulkWorkMemoDrafts = drafts;
+  if (typeof window.ensureMobileVehiclesLoaded_ === 'function') {
+    window.ensureMobileVehiclesLoaded_().finally(() => {
+      window.renderBulkWorkMemoReviewModal_();
+    });
+    return;
+  }
   window.renderBulkWorkMemoReviewModal_();
 };
 
@@ -24107,6 +24116,7 @@ window.getBulkWorkMemoUiFlags_ = (draft) => {
 window.getBulkWorkMemoMachineList_ = (draft) => {
   const flags = window.getBulkWorkMemoUiFlags_(draft || {});
   if (!flags.showMachine) return [];
+  if (window.bulkWorkMemoIsMaintenance_(draft)) return [];
   const machines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
   if (!machines.length) return [];
   const t = String((draft && draft.rawLine) || '');
@@ -24120,6 +24130,130 @@ window.getBulkWorkMemoMachineList_ = (draft) => {
     else rest.push(item);
   });
   return mentioned.concat(rest).slice(0, 32);
+};
+
+/** 一括入力：整備・修理・点検文脈か（通常フォームの isMaintenanceRelatedWork 相当） */
+window.bulkWorkMemoIsMaintenance_ = (draft) => {
+  const wName = String(draft && draft.workName || '').trim();
+  if (!wName) return false;
+  if (typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wName)) return false;
+  if (typeof window.isMachinePullWorkName === 'function' && window.isMachinePullWorkName(wName)) return false;
+  const cat = String(draft && draft.category || window.getBulkWorkMemoWorkCategory_(wName) || '').trim();
+  const looksLikeMaint = (s) => {
+    const t = String(s || '');
+    return t.includes('整備') || t.includes('修理') || t.includes('点検') || t.includes('清掃') || t.includes('保全');
+  };
+  if (looksLikeMaint(wName)) return true;
+  if (cat === '保全・整備' || cat.includes('整備') || cat.includes('保全')) return true;
+  const details = Array.isArray(draft && draft.detailedWorks) ? draft.detailedWorks : [];
+  return details.some(looksLikeMaint);
+};
+
+window.getBulkWorkMemoMaintenanceTargets_ = (draft) => {
+  const t = String((draft && draft.rawLine) || '');
+  const items = [];
+  const push = (id, name, kind, extra) => {
+    const iid = String(id || '').trim();
+    const iname = String(name || '').trim();
+    if (!iid || !iname) return;
+    items.push(Object.assign({ id: iid, name: iname, kind: kind || 'machine' }, extra || {}));
+  };
+  (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines) ? pdlMachines : []).forEach(m => {
+    push(m.id, m.name, 'machine', { isTool: false, isVehicle: false });
+  });
+  (typeof pdlTools !== 'undefined' && Array.isArray(pdlTools) ? pdlTools : []).forEach(tool => {
+    push(tool.id || ('tool_' + tool.name), tool.name, 'tool', { isTool: true, isVehicle: false });
+  });
+  (window.pdlMobileVehicles || []).forEach(v => {
+    const oid = (typeof window.getMobileVehicleOptionId_ === 'function')
+      ? window.getMobileVehicleOptionId_(v)
+      : ('veh:' + String(v.id || ''));
+    push(oid, v.plateNumber || v.id || '移動車両', 'vehicle', { isTool: false, isVehicle: true });
+  });
+  items.sort((a, b) => String(a.name).localeCompare(String(b.name), 'ja'));
+  const mentioned = [];
+  const rest = [];
+  items.forEach(item => {
+    if (t && t.indexOf(item.name) >= 0) mentioned.push(item);
+    else rest.push(item);
+  });
+  return mentioned.concat(rest);
+};
+
+window.guessBulkWorkMemoMaintenanceTarget_ = (rawLine) => {
+  const targets = window.getBulkWorkMemoMaintenanceTargets_({ rawLine: rawLine });
+  return targets.length ? targets[0] : null;
+};
+
+window.buildBulkWorkMemoMaintenanceTargetHtml_ = (d, uid) => {
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const curId = String(d.maintenanceToolId || '').trim();
+  const targets = window.getBulkWorkMemoMaintenanceTargets_(d);
+  const fmtLabel = (item) => {
+    if (typeof window.formatMachineOptionLabel === 'function') {
+      return window.formatMachineOptionLabel(Object.assign({}, item, {
+        isTool: item.kind === 'tool',
+        isVehicle: item.kind === 'vehicle'
+      }));
+    }
+    const icon = item.kind === 'vehicle' ? '🛻' : (item.kind === 'tool' ? '🔧' : '🚜');
+    return icon + ' ' + item.name;
+  };
+  const chip = (item, style) => {
+    const on = String(item.id) === curId;
+    const safeId = String(item.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const safeName = String(item.name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const safeKind = String(item.kind || 'machine').replace(/'/g, "\\'");
+    const bg = on ? '#E65100' : (style === 'sug' ? '#FFF3E0' : '#fff');
+    const color = on ? '#fff' : '#E65100';
+    const border = on ? '#BF360C' : (style === 'sug' ? '#FFB74D' : '#FFE0B2');
+    return `<button type="button" class="bulk-maint-target-chip" data-name="${esc(item.name)}" onclick="pickBulkWorkMemoMaintenanceTarget_('${esc(uid)}','${safeId}','${safeName}','${safeKind}')" style="padding:7px 11px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${border}; background:${bg}; color:${color}; text-align:left;">${esc(fmtLabel(item))}</button>`;
+  };
+  const suggested = targets.filter(item => String(d.rawLine || '').indexOf(item.name) >= 0).slice(0, 8);
+  const sugHtml = suggested.length
+    ? `<div style="font-size:10px; color:#E65100; font-weight:bold; margin:6px 0 4px;">メモから合いそうな機械・道具</div>
+       <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${suggested.map(item => chip(item, 'sug')).join('')}</div>`
+    : '';
+  const listHtml = targets.length
+    ? `<div style="display:flex; flex-wrap:wrap; gap:6px; max-height:180px; overflow-y:auto; padding:2px;">${targets.slice(0, 48).map(item => chip(item, 'all')).join('')}</div>`
+    : `<div style="font-size:11px; color:#888; padding:8px;">機械・道具マスタがありません。</div>`;
+  const badge = curId
+    ? `<div style="margin-bottom:8px; font-size:12px; color:#E65100; font-weight:bold; background:#FFE0B2; padding:6px 10px; border-radius:6px;">整備対象: <b>${esc(d.maintenanceTool || '')}</b></div>`
+    : `<div style="margin-bottom:8px; font-size:11px; color:#666; background:#fff; padding:8px; border-radius:6px;">修理・点検した機械・道具・車両を選んでください（任意）</div>`;
+  return `<div class="bulk-maint-target-box" style="margin:8px 0; background:#FFF3E0; border:2px solid #FFB74D; border-radius:10px; padding:10px;">
+    <div style="font-size:11px; font-weight:bold; color:#E65100; margin-bottom:6px;">🔧 整備・修理・点検の対象</div>
+    ${badge}
+    ${sugHtml}
+    <input type="search" placeholder="機械名・道具名で絞り込み…" oninput="filterBulkWorkMemoMaintTargetChips_(this)" style="width:100%; box-sizing:border-box; padding:7px 10px; border:1px solid #FFB74D; border-radius:8px; font-size:12px; margin-bottom:8px;">
+    ${listHtml}
+  </div>`;
+};
+
+window.pickBulkWorkMemoMaintenanceTarget_ = (uid, id, name, kind) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  const curId = String(row.maintenanceToolId || '').trim();
+  const nextId = String(id || '').trim();
+  if (curId && curId === nextId) {
+    row.maintenanceToolId = '';
+    row.maintenanceTool = '';
+    row.maintenanceTargetKind = '';
+  } else {
+    row.maintenanceToolId = nextId;
+    row.maintenanceTool = String(name || '').trim();
+    row.maintenanceTargetKind = String(kind || 'machine').trim();
+  }
+  window.refreshBulkWorkMemoExtras_(uid);
+};
+
+window.filterBulkWorkMemoMaintTargetChips_ = (inputEl) => {
+  const q = String((inputEl && inputEl.value) || '').trim().toLowerCase();
+  const box = inputEl && inputEl.closest('.bulk-maint-target-box');
+  const chips = box ? box.querySelectorAll('.bulk-maint-target-chip') : [];
+  Array.from(chips).forEach(btn => {
+    const name = String(btn.getAttribute('data-name') || btn.textContent || '').toLowerCase();
+    btn.style.display = (!q || name.indexOf(q) >= 0) ? '' : 'none';
+  });
 };
 
 window.getBulkWorkMemoPrepTargetGuessesFromMemo_ = (rawLine) => {
@@ -24400,7 +24534,9 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
   } else if (flags.isPrep && !prepTarget) {
     html += `<div style="font-size:11px; color:#6A1B9A; margin:8px 0; line-height:1.4;">準備対象を選ぶと、その組み合わせ用の詳細作業が表示されます。</div>`;
   }
-  if (machines.length) {
+  if (window.bulkWorkMemoIsMaintenance_(d)) {
+    html += window.buildBulkWorkMemoMaintenanceTargetHtml_(d, uid);
+  } else if (machines.length) {
     html += `<div style="margin:8px 0;">
       <div style="font-size:10px; color:#E65100; font-weight:bold; margin-bottom:6px;">🚜 使用機械</div>
       <div style="display:flex; flex-wrap:wrap; gap:6px; max-height:140px; overflow-y:auto;">
@@ -24578,6 +24714,9 @@ window.pickBulkWorkMemoWorkName_ = (uid, name) => {
   row.detailedWorks = [];
   row.prepTargetWork = '';
   row.usedPesticides = [];
+  row.maintenanceToolId = '';
+  row.maintenanceTool = '';
+  row.maintenanceTargetKind = '';
   row._pestSearchQ = '';
   if (row.isRest) {
     window.ensureBulkWorkMemoRestInMaster_();
@@ -24610,13 +24749,26 @@ window.pickBulkWorkMemoWorkName_ = (uid, name) => {
     ? window.getBulkWorkMemoMachineList_(row).filter(m => m && String(row.rawLine || '').indexOf(m.name) >= 0)
     : [];
   const flags = window.getBulkWorkMemoUiFlags_(row);
+  if (window.bulkWorkMemoIsMaintenance_(row)) {
+    row.usedMachines = [];
+    const guessedMaint = window.guessBulkWorkMemoMaintenanceTarget_(row.rawLine);
+    if (guessedMaint) {
+      row.maintenanceToolId = guessedMaint.id;
+      row.maintenanceTool = guessedMaint.name;
+      row.maintenanceTargetKind = guessedMaint.kind;
+    }
+  } else {
+    row.maintenanceToolId = '';
+    row.maintenanceTool = '';
+    row.maintenanceTargetKind = '';
+    if (!flags.showMachine) row.usedMachines = [];
+  }
   if (flags.isPrep) {
     row.prepTargetWork = window.guessBulkWorkMemoPrepTarget_(row.rawLine) || '';
   }
   if (flags.showPesticide) {
     row.usedPesticides = window.guessBulkWorkMemoPesticides_(row.rawLine) || [];
   }
-  if (!flags.showMachine) row.usedMachines = [];
   if (!window.bulkWorkMemoNeedsField_(row)) {
     row.polyId = '';
     row.polyName = '';
@@ -24839,6 +24991,12 @@ window.saveBulkWorkMemoDrafts_ = async () => {
         usedPesticides: Array.isArray(d.usedPesticides) ? d.usedPesticides.filter(p => p && p.name) : [],
         fromBulkMemo: true
       };
+      const maintId = String(d.maintenanceToolId || '').trim();
+      if (maintId) {
+        data.maintenanceToolId = maintId;
+        data.maintenanceTool = String(d.maintenanceTool || '').trim();
+        data.maintenanceTargetKind = String(d.maintenanceTargetKind || '').trim();
+      }
       let targetIds = [];
       let nameStr = '未選択';
       if (d.polyId && loadedPolygons && loadedPolygons[d.polyId] && !loadedPolygons[d.polyId].isMarker) {
