@@ -23532,11 +23532,11 @@ window.matchBulkWorkMemoWorkName_ = (text, startTime) => {
   if (isRest) {
     const restName = (candidates[0] && candidates[0].name) || window.resolveBulkWorkMemoRestName_(t, startTime) || '休憩';
     return {
-      workName: restName,
-      category: '管理/その他',
+      workName: '',
+      category: '',
       isRest: true,
-      matched: true,
-      guessedName: '',
+      matched: false,
+      guessedName: restName,
       candidates: candidates
     };
   }
@@ -23557,15 +23557,12 @@ window.matchBulkWorkMemoWorkName_ = (text, startTime) => {
     };
   }
   const top = candidates[0];
-  const second = candidates[1];
-  // 明確な一致（本文に作業名あり）または候補が1つだけなら自動選択
-  const autoPick = candidates.length === 1 || (top.score >= 100 && (!second || second.score < 90));
   return {
-    workName: autoPick ? top.name : '',
-    category: autoPick ? (top.category || '') : '',
+    workName: '',
+    category: '',
     isRest: false,
-    matched: !!autoPick,
-    guessedName: autoPick ? '' : (top.name || ''),
+    matched: false,
+    guessedName: top ? top.name : '',
     candidates: candidates
   };
 };
@@ -23703,7 +23700,7 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
   }
 
   let cropName = cropGuess || '';
-  if (work.isRest) {
+  if (work.isRest && workName) {
     cropName = '共通';
   } else if (workName && typeof pdlWorkMaster !== 'undefined') {
     const wObj = (pdlWorkMaster || []).find(w => w && String(w.name || '').trim() === workName);
@@ -23716,7 +23713,7 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
 
   const workCandidates = Array.isArray(work.candidates) && work.candidates.length
     ? work.candidates.map(c => c.name)
-    : (workName ? [workName] : []);
+    : [];
 
   const mentionedMachines = (typeof window.getBulkWorkMemoMachineList_ === 'function')
     ? window.getBulkWorkMemoMachineList_({ rawLine: raw, category: category, workName: workName }).filter(m => m && raw.indexOf(m.name) >= 0)
