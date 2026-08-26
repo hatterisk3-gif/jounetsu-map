@@ -23138,7 +23138,8 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
     // 🌟ここから上書き：共有されたURLを開いた瞬間に「全自動」で解析＆判定する！🌟
-      const urlParams = new URLSearchParams(window.location.search);
+    try {
+      const urlParams = new URLSearchParams((window.location && window.location.search) || '');
       const sharedText = [urlParams.get('title'), urlParams.get('text'), urlParams.get('url')].filter(Boolean).join(' ');
       
       if (sharedText) {
@@ -23205,6 +23206,9 @@ function createSignboardMarker(name, pos, icon, id) {
               })();
           }, 2000); // 読み込み待機2秒
       }
+    } catch (e) {
+      console.warn('share URL bootstrap skipped', e);
+    }
 // 🌟 オート作業記録（自由記述からの自動抽出機能）🌟
 window.autoRecordData = null;
 
@@ -24443,7 +24447,11 @@ window.editBulkWorkMemoSavedItem_ = (polyId, recordId) => {
 
 // 🌟 4. アプリ起動時の爆速処理（window.onloadをやめる！） 🌟
       document.addEventListener('DOMContentLoaded', () => {
-          initMap();
+          try {
+            if (typeof initMap === 'function') initMap();
+          } catch (e) {
+            console.error('initMap failed', e);
+          }
           
           // 出勤状態の復元とトラッキング自動再開
           const clockInStr = localStorage.getItem('passionMapClockIn');

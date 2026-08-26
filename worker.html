@@ -436,12 +436,26 @@
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry"></script>
   <script src="map-loading.js?v=1786243000000"></script>
   <script src="weather-agri.js?v=1785489000300"></script>
-  <script src="worker.js?v=1787620000000"></script>
-  <script src="tracking.js?v=1787620000000"></script>
+  <script src="worker.js?v=1787774400000"></script>
+  <script src="tracking.js?v=1787774400000"></script>
   <script>
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js?v=worker', { scope: '/worker.html' });
+      navigator.serviceWorker.register('/sw.js?v=worker2', { scope: '/worker.html' }).catch(function () {});
     }
+    // 起動オーバーレイが残ってログインできないときの保険
+    setTimeout(function () {
+      try {
+        var el = document.getElementById('mapDataLoadingOverlay');
+        if (!el || !el.classList.contains('is-visible')) return;
+        if (!el.classList.contains('worker-boot-loading')) return;
+        el.classList.remove('is-visible', 'worker-boot-loading', 'is-nonblocking');
+        el.setAttribute('aria-busy', 'false');
+        var login = document.getElementById('loginScreen');
+        if (login && (!localStorage.getItem('passionMapUserName'))) {
+          login.style.display = 'flex';
+        }
+      } catch (e) {}
+    }, 12000);
   </script>
 
   <!-- Radar Modal -->
