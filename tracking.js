@@ -2188,18 +2188,7 @@
       if (typeof window.findCurrentFieldAndOpenForm === 'function') {
         window.findCurrentFieldAndOpenForm('work');
       } else if (typeof window.directOpenForm === 'function') {
-        let pid = null;
-        try {
-          if (typeof loadedPolygons !== 'undefined') {
-            for (const id in loadedPolygons) {
-              if (loadedPolygons[id] && !loadedPolygons[id].isMarker) {
-                pid = id;
-                break;
-              }
-            }
-          }
-        } catch (e) {}
-        window.directOpenForm(pid, 'work');
+        window.directOpenForm(null, 'work');
       } else {
         alertMsg('作業記録画面で不足時間を記録したあと、再度退勤ボタンから確認してください。');
         return;

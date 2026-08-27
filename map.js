@@ -203,7 +203,74 @@ async function callGAS(action, payload = {}) {
     }
 }
 
-// ====== ログイン ======
+// ====== 同期トースト（楽観UI用） ======
+function showMapSyncToast(msg, kind) {
+    kind = kind || 'info';
+    let el = document.getElementById('mapSyncToast');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'mapSyncToast';
+        el.style.cssText = 'position:fixed;left:50%;bottom:88px;transform:translateX(-50%);z-index:3000000;max-width:90%;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:bold;box-shadow:0 4px 16px rgba(0,0,0,0.25);display:none;text-align:center;line-height:1.4;';
+        document.body.appendChild(el);
+    }
+    el.style.background = kind === 'error' ? '#c62828' : (kind === 'ok' ? '#2e7d32' : '#1565c0');
+    el.style.color = '#fff';
+    el.textContent = msg;
+    el.style.display = 'block';
+    clearTimeout(window._mapSyncToastTimer);
+    window._mapSyncToastTimer = setTimeout(() => {
+        if (el) el.style.display = 'none';
+    }, kind === 'error' ? 8000 : 2800);
+}
+
+function continueCachedMapSession_(message, toastType) {
+    currentUserName = currentUserName || localStorage.getItem('passionMapUserName') || '';
+    currentUserRole = currentUserRole || localStorage.getItem('passionMapUserRole') || '';
+    currentStaffId = currentStaffId || localStorage.getItem('passionMapUserId') || '';
+    const loginScreen = document.getElementById('loginScreen');
+    if (loginScreen) loginScreen.style.display = 'none';
+    updateAdminOnlyButtons();
+    if (message) showMapSyncToast(message, toastType || 'error');
+    loadInitData({ background: true });
+}
+
+/** 更新ボタン用: 全再読込せず、裏で最新データを取得 */
+async function refreshMapData() {
+    const id = localStorage.getItem('passionMapUserId');
+    const pw = localStorage.getItem('passionMapUserPw');
+    if (!id || !pw) {
+        location.reload();
+        return;
+    }
+    if (!map) {
+        location.reload();
+        return;
+    }
+    showMapSyncToast('🔄 最新データを確認中…', 'info');
+    const loginScreen = document.getElementById('loginScreen');
+    if (loginScreen) loginScreen.style.display = 'none';
+    try {
+        const result = await callGAS('login', { orgId: 'default', userId: id, password: pw });
+        if (result && result.success) {
+            currentUserName = result.name;
+            currentUserRole = result.role || '作業員';
+            currentStaffId = id;
+            localStorage.setItem('passionMapUserName', result.name);
+            localStorage.setItem('passionMapUserRole', result.role || '作業員');
+            if (result.spreadsheetId) localStorage.setItem('spreadsheetId', result.spreadsheetId);
+            updateAdminOnlyButtons();
+            await loadInitData({ background: true });
+        } else {
+            continueCachedMapSession_('⚠️ ログイン確認に失敗（キャッシュで続行）', 'error');
+        }
+    } catch (e) {
+        console.warn('refreshMapData failed:', e);
+        continueCachedMapSession_('⚠️ 通信エラー（キャッシュで続行）', 'error');
+    }
+}
+window.refreshMapData = refreshMapData;
+
+// ====== ログイン（楽観UI: キャッシュ即表示 → 裏で同期） ======
 document.addEventListener('DOMContentLoaded', () => {
     const id = localStorage.getItem('passionMapUserId');
     const pw = localStorage.getItem('passionMapUserPw');
@@ -211,9 +278,53 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('loginPw') && pw) document.getElementById('loginPw').value = pw;
     updateAdminOnlyButtons();
     renderProdCategorySelect();
-    if (id && pw) {
-        document.getElementById('loginScreen').style.display = 'none';
-        window._mapStartupLoading = window.AppLoading
+
+    if (!(id && pw)) return;
+
+    const loginScreen = document.getElementById('loginScreen');
+    if (loginScreen) loginScreen.style.display = 'none';
+
+    currentUserName = localStorage.getItem('passionMapUserName') || '';
+    currentUserRole = localStorage.getItem('passionMapUserRole') || '';
+    currentStaffId = id;
+
+    initMap();
+
+    const cached = localStorage.getItem('manureMapData');
+    if (cached) {
+        // キャッシュがあればすぐ地図を出して操作可能にする
+        const cacheLoad = (window.AppLoading && AppLoading.start)
+            ? AppLoading.start({
+                label: '圃場データを読み込み中...',
+                detail: 'キャッシュを反映しています',
+                current: 1,
+                total: 2,
+                blocking: true,
+                lockMap: true,
+                delay: 0
+            })
+            : null;
+        requestAnimationFrame(() => {
+            try {
+                drawPolygons(JSON.parse(cached));
+                if (cacheLoad) cacheLoad.done();
+                else restoreMapInteractions_();
+                showMapSyncToast('📦 キャッシュで起動（最新を裏で確認中…）', 'info');
+                setTimeout(refreshProductionMapDisplay_, 120);
+                // ログイン＋最新取得は裏で（ブロックしない）
+                executeLogin(true, { fromCache: true });
+            } catch (ex) {
+                console.warn('キャッシュ描画失敗、通常ログインへ', ex);
+                if (cacheLoad) {
+                    cacheLoad.update({ detail: '最新データを取得します', current: null, total: null });
+                    window._mapStartupLoading = cacheLoad;
+                }
+                executeLogin(true);
+            }
+        });
+    } else {
+        // 初回などキャッシュなし → 完了までブロック
+        window._mapStartupLoading = (window.AppLoading && AppLoading.start)
             ? AppLoading.start({
                 label: '圃場管理アプリを読み込み中...',
                 detail: 'ログイン状態を確認しています',
@@ -224,12 +335,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 delay: 0
             })
             : null;
-        initMap();
         executeLogin(true);
     }
 });
 
-async function executeLogin(isAuto = false) {
+async function executeLogin(isAuto = false, options = {}) {
+    const fromCache = !!(options && options.fromCache);
     const id = document.getElementById('loginId').value;
     const pw = document.getElementById('loginPw').value;
     const btn = document.querySelector('.login-btn');
@@ -240,12 +351,27 @@ async function executeLogin(isAuto = false) {
         if (errObj) errObj.innerText = 'スタッフIDとパスワードを入力してください';
         return;
     }
+
+    // キャッシュ起動時はログイン確認を待たず操作可能な状態を維持
+    if (fromCache) {
+        currentUserName = currentUserName || localStorage.getItem('passionMapUserName') || '';
+        currentUserRole = currentUserRole || localStorage.getItem('passionMapUserRole') || '';
+        currentStaffId = id;
+        const loginScreen = document.getElementById('loginScreen');
+        if (loginScreen) loginScreen.style.display = 'none';
+        updateAdminOnlyButtons();
+        if (startupLoad) {
+            startupLoad.done();
+            window._mapStartupLoading = null;
+        }
+    }
+
     if (!isAuto && btn) { btn.innerText = "通信中..."; btn.disabled = true; }
 
     try {
         const result = await callGAS('login', { orgId: 'default', userId: id, password: pw });
         if (result.success) {
-            if (startupLoad) startupLoad.update({ detail: 'ログイン確認完了', current: 1, total: 4 });
+            if (startupLoad && !fromCache) startupLoad.update({ detail: 'ログイン確認完了', current: 1, total: 4 });
             currentUserName = result.name;
             currentUserRole = result.role || '作業員';
             currentStaffId = id;
@@ -263,16 +389,21 @@ async function executeLogin(isAuto = false) {
 
             updateAdminOnlyButtons();
 
-            if (!isAuto) initMap();
-            
-            // キャッシュで即座に地図描画
+            if (!isAuto && !fromCache) initMap();
+
+            if (fromCache) {
+                // 既にキャッシュ描画済み → 操作可能なまま裏で最新取得
+                loadInitData({ background: true });
+                return;
+            }
+
+            // キャッシュで即座に地図描画（手動ログイン／キャッシュなし起動）
             const cached = localStorage.getItem('manureMapData');
             if (cached) {
-                const cacheLoad = startupLoad;
-                if (cacheLoad) cacheLoad.update({ detail: 'キャッシュを反映しています', current: 2, total: 4 });
+                if (startupLoad) startupLoad.update({ detail: 'キャッシュを反映しています', current: 2, total: 4 });
                 try {
                     drawPolygons(JSON.parse(cached));
-                } catch(ex) {
+                } catch (ex) {
                     console.warn('圃場キャッシュの描画に失敗しました。最新データを再描画します。', ex);
                 }
             } else if (startupLoad) {
@@ -287,6 +418,10 @@ async function executeLogin(isAuto = false) {
             }
             setTimeout(refreshProductionMapDisplay_, 120);
         } else {
+            if (fromCache) {
+                continueCachedMapSession_('⚠️ ログイン確認に失敗しました（キャッシュで続行中）', 'error');
+                return;
+            }
             document.getElementById('loginScreen').style.display = 'flex';
             if (errObj) errObj.innerText = result.message || 'ログイン失敗';
             if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
@@ -297,11 +432,17 @@ async function executeLogin(isAuto = false) {
             if (typeof ensureMapGesturesEnabled === 'function') ensureMapGesturesEnabled();
         }
     } catch (e) {
+        if (fromCache) {
+            console.warn('Cache-mode login sync failed, continuing offline:', e);
+            continueCachedMapSession_('⚠️ 通信タイムアウト（キャッシュで続行中）', 'error');
+            return;
+        }
         if (isAuto) {
             // オフラインでもキャッシュあれば起動
             const cached = localStorage.getItem('manureMapData');
             if (cached) {
-                try { drawPolygons(JSON.parse(cached)); } catch(ex) {}
+                try { drawPolygons(JSON.parse(cached)); } catch (ex) {}
+                showMapSyncToast('📦 オフライン（キャッシュで続行）', 'info');
             }
             if (startupLoad) {
                 if (cached) startupLoad.done();
@@ -347,9 +488,33 @@ async function resetAllManureStatus() {
         const res = await callGAS('resetAllManureStatus', {
             userName: currentUserName || localStorage.getItem('passionMapUserName') || ''
         });
-        localStorage.removeItem('manureMapData');
-        await loadInitData();
-        alert(`全リセット完了（${res && res.count != null ? res.count : 0}件）`);
+        // 全再取得せず、ローカルを未着手に即反映
+        polygons.forEach(p => {
+            if (!p.pData) return;
+            migratePDataManure(p.pData);
+            const cats = p.pData.catStatuses || {};
+            Object.keys(cats).forEach(cid => {
+                applyCategoryStatusUpdate(p.pData, cid, {
+                    status: 'none',
+                    deadline: '',
+                    scheduled_date: '',
+                    cancel_reason: '',
+                    has_pin: false,
+                    route_selected: false
+                });
+            });
+            applyCompostStatusUpdate(p.pData, {
+                status: 'none',
+                deadline: '',
+                scheduled_date: '',
+                cancel_reason: '',
+                has_pin: false,
+                route_selected: false
+            });
+            refreshFieldVisual_(p.pData);
+        });
+        persistManureMapCache_();
+        showMapSyncToast(`✅ 全リセット完了（${res && res.count != null ? res.count : 0}件）`, 'ok');
     } catch (e) {
         alert('リセットに失敗しました: ' + (e.message || e));
     } finally {
@@ -403,10 +568,11 @@ window.closeAdminFieldModal = async function () {
         }
     }
 
-    // 圃場登録後の内容を自動再読込
+    // 圃場登録後の内容を自動再読込（操作はブロックしない）
     localStorage.removeItem('manureMapData');
     try {
-        await loadInitData();
+        showMapSyncToast('🔄 圃場データを同期中…', 'info');
+        await loadInitData({ background: true });
     } catch (e) {
         console.warn('Admin close refresh failed:', e);
     }
@@ -479,23 +645,28 @@ function restoreMapInteractions_() {
     if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
 }
 
-// ====== データ読み込み (worker.jsと同じgetInitData使用) ======
+// ====== データ読み込み (worker.jsと同じgetInitData使用 / SWR) ======
 async function loadInitData(options = {}) {
+    const background = !!options.background;
+    const hasCache = !!localStorage.getItem('manureMapData');
     const externalLoad = options.loadingHandle || null;
-    const appLoad = externalLoad || (window.AppLoading
-        ? AppLoading.start({
-            label: '圃場データを読み込み中...',
-            detail: 'サーバーから取得しています',
-            current: 1,
-            total: 3,
-            blocking: true,
-            lockMap: true,
-            delay: 0
-        })
-        : null);
+    // バックグラウンド更新時は操作をブロックしない
+    const appLoad = background
+        ? null
+        : (externalLoad || (window.AppLoading
+            ? AppLoading.start({
+                label: '圃場データを読み込み中...',
+                detail: 'サーバーから取得しています',
+                current: 1,
+                total: 3,
+                blocking: true,
+                lockMap: true,
+                delay: 0
+            })
+            : null));
     const ownsLoad = !!appLoad && !externalLoad;
     if (externalLoad) externalLoad.update({ detail: '最新データを取得しています', current: 2, total: 4 });
-    if (!appLoad && typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場データを読み込み中...');
+    if (!background && !appLoad && typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場データを読み込み中...');
     try {
         const data = await callGAS('getInitData');
         if (appLoad) {
@@ -509,18 +680,32 @@ async function loadInitData(options = {}) {
             renderProdCategorySelect();
         }
         if (data && data.polygons) {
+            const incomingCount = Array.isArray(data.polygons) ? data.polygons.length : 0;
+            // 空レスポンスで既存キャッシュを消さない
+            if (hasCache && incomingCount === 0) {
+                console.warn('getInitData が空のためキャッシュを維持します');
+                if (background) showMapSyncToast('☁️ 読み込み完了しました', 'ok');
+                if (ownsLoad) appLoad.done();
+                else if (!background && !appLoad) restoreMapInteractions_();
+                return true;
+            }
             const newDataStr = JSON.stringify(data.polygons);
             const oldDataStr = localStorage.getItem('manureMapData');
             if (newDataStr === oldDataStr) {
-                console.log("変更なし：表示漏れ防止のため再描画します");
-                drawPolygons(data.polygons);
-                if (externalLoad) externalLoad.update({ detail: '地図表示の準備が完了しました', current: 4, total: 4 });
-                else if (ownsLoad) appLoad.done();
-                else if (!appLoad) restoreMapInteractions_();
+                if (background) {
+                    console.log('変更なし：バックグラウンド再描画をスキップ');
+                    showMapSyncToast('☁️ 読み込み完了しました', 'ok');
+                } else {
+                    console.log('変更なし：表示漏れ防止のため再描画します');
+                    drawPolygons(data.polygons);
+                    if (externalLoad) externalLoad.update({ detail: '地図表示の準備が完了しました', current: 4, total: 4 });
+                }
+                if (ownsLoad) appLoad.done();
+                else if (!background && !appLoad) restoreMapInteractions_();
                 setTimeout(refreshProductionMapDisplay_, 120);
                 return true;
             }
-            // キャッシュに保存
+            // キャッシュに保存して再描画
             localStorage.setItem('manureMapData', newDataStr);
             if (appLoad) {
                 appLoad.update(externalLoad
@@ -528,18 +713,27 @@ async function loadInitData(options = {}) {
                     : { detail: '地図を描画しています', current: 3, total: 3 });
             }
             drawPolygons(data.polygons);
+            if (background) showMapSyncToast('☁️ 読み込み完了しました（最新に更新）', 'ok');
+        } else if (background) {
+            showMapSyncToast('☁️ 読み込み完了しました', 'ok');
         }
         setTimeout(refreshProductionMapDisplay_, 120);
         if (ownsLoad) appLoad.done();
-        else if (!appLoad) restoreMapInteractions_();
+        else if (!background && !appLoad) restoreMapInteractions_();
         return true;
     } catch (e) {
-        console.error("InitData Error:", e);
-        // キャッシュから読む
+        console.error('InitData Error:', e);
+        if (background) {
+            showMapSyncToast(hasCache
+                ? '⚠️ 最新の読み込みに失敗しました（キャッシュで続行中）'
+                : '⚠️ データの読み込みに失敗しました', 'error');
+            return hasCache;
+        }
+        // フォアグラウンド: キャッシュから読む
         const cached = localStorage.getItem('manureMapData');
         if (cached) {
             if (appLoad) appLoad.update({ detail: 'キャッシュから復元しています', current: externalLoad ? 4 : 3, total: externalLoad ? 4 : 3 });
-            try { drawPolygons(JSON.parse(cached)); } catch(ex) {}
+            try { drawPolygons(JSON.parse(cached)); } catch (ex) {}
         }
         renderProdCategorySelect();
         if (ownsLoad) {
@@ -600,6 +794,7 @@ function drawPolygons(dataList) {
                      className: 'polygon-label' }
         });
         labelMarker._manureStatus = manureStatus;
+        labelMarker._fieldId = pData.id || pData.name;
         markers.push(labelMarker);
 
         const handleFieldClick = () => {
@@ -610,11 +805,12 @@ function drawPolygons(dataList) {
                 catSt.has_pin = false;
                 if (activeProdCategoryId === COMPOST_CATEGORY_ID) pData.manure_has_pin = false;
                 // ピンを消す
-                const pinIdx = markers.findIndex(m => m._isPinMarker && m._fieldId === (pData.id || pData.name));
+                const pinIdx = markers.findIndex(m => m._isPinMarker && String(m._fieldId) === String(pData.id || pData.name));
                 if (pinIdx !== -1) {
                     markers[pinIdx].setMap(null);
                     markers.splice(pinIdx, 1);
                 }
+                persistManureMapCache_();
                 callGAS('updatePolygon', {
                     id: pData.id,
                     manureData: JSON.stringify(buildManureDataPayload(pData))
@@ -662,6 +858,108 @@ window.applyFilter = function() {
         m.setMap(checkedValues.includes(m._manureStatus) ? map : null);
     });
 };
+
+/** 現在の地図上ポリゴンからキャッシュを書き戻す（楽観UI用） */
+function persistManureMapCache_() {
+    try {
+        const list = polygons.map(p => p.pData).filter(Boolean);
+        if (!list.length) return;
+        localStorage.setItem('manureMapData', JSON.stringify(list));
+    } catch (e) {
+        console.warn('manureMapData cache persist failed', e);
+    }
+}
+
+/** 1圃場の色・ピン・フィルタ用ステータスを即反映（全再描画しない） */
+function refreshFieldVisual_(pData) {
+    if (!pData || !map) return;
+    migratePDataManure(pData);
+    const fieldId = String(pData.id || pData.name);
+    const manureStatus = getActiveCategoryStatus(pData);
+    const color = STATUS_COLORS[manureStatus] || STATUS_COLORS.none;
+    const showPin = !!getCatStatus(pData, activeProdCategoryId).has_pin
+        || (activeProdCategoryId === COMPOST_CATEGORY_ID && pData.manure_has_pin);
+
+    let poly = null;
+    polygons.forEach(p => {
+        if (!p.pData) return;
+        if (String(p.pData.id || p.pData.name) !== fieldId) return;
+        p.pData = pData;
+        p._manureStatus = manureStatus;
+        p.setOptions({ strokeColor: color, fillColor: color, fillOpacity: 0.4 });
+        poly = p;
+    });
+
+    markers.forEach(m => {
+        if (String(m._fieldId) !== fieldId) return;
+        m._manureStatus = manureStatus;
+    });
+
+    const pinIdx = markers.findIndex(m => m._isPinMarker && String(m._fieldId) === fieldId);
+    if (showPin) {
+        if (pinIdx === -1 && pData.coords && pData.coords.length) {
+            const center = getPolygonCenter(pData.coords);
+            const pinMarker = new google.maps.Marker({
+                position: center,
+                map: map,
+                icon: 'http://maps.google.com/mapfiles/ms/icons/red-dot.png',
+                title: '状態更新あり',
+                zIndex: 100
+            });
+            pinMarker._isPinMarker = true;
+            pinMarker._fieldId = pData.id || pData.name;
+            pinMarker._manureStatus = manureStatus;
+            pinMarker.addListener('click', () => openManureStatusModal(pData));
+            markers.push(pinMarker);
+        }
+    } else if (pinIdx !== -1) {
+        markers[pinIdx].setMap(null);
+        markers.splice(pinIdx, 1);
+    }
+
+    applyFilter();
+    return poly;
+}
+
+/** サーバーへステータス同期（UIはブロックしない） */
+function syncFieldToServer_(pData, options = {}) {
+    const silent = !!options.silent;
+    const rollback = options.rollback || null;
+    return callGAS('updatePolygon', {
+        id: pData.id,
+        manureData: JSON.stringify(buildManureDataPayload(pData))
+    }).then(() => {
+        persistManureMapCache_();
+        if (!silent) showMapSyncToast('✅ 保存しました', 'ok');
+        return true;
+    }).catch(e => {
+        console.error('syncFieldToServer_ failed', e);
+        if (typeof rollback === 'function') {
+            try { rollback(); } catch (ex) {}
+        }
+        showMapSyncToast('⚠️ 保存に失敗しました: ' + (e.message || e), 'error');
+        return false;
+    });
+}
+
+/** 複数圃場を並列で裏同期 */
+function syncFieldsToServerBatch_(pDataList, successMsg) {
+    const list = (pDataList || []).filter(p => p && p.id);
+    if (!list.length) return Promise.resolve(true);
+    showMapSyncToast('☁️ サーバーへ同期中…', 'info');
+    return Promise.all(list.map(pData => callGAS('updatePolygon', {
+        id: pData.id,
+        manureData: JSON.stringify(buildManureDataPayload(pData))
+    }))).then(() => {
+        persistManureMapCache_();
+        showMapSyncToast(successMsg || '✅ 保存しました', 'ok');
+        return true;
+    }).catch(e => {
+        console.error('syncFieldsToServerBatch_ failed', e);
+        showMapSyncToast('⚠️ 一部の保存に失敗しました。更新で再同期してください', 'error');
+        return false;
+    });
+}
 
 window.toggleFilterMenu = function() {
     const menu = document.getElementById('filterMenu');
@@ -803,12 +1101,6 @@ function openManureStatusModal(pData) {
     const cancelReason = catSt.cancel_reason || '';
     const isCompost = currentEditCategoryId === COMPOST_CATEGORY_ID;
 
-    let navUrl = '';
-    if (pData.coords && pData.coords.length > 0) {
-        const center = getPolygonCenter(pData.coords);
-        navUrl = `https://www.google.com/maps/dir/?api=1&destination=${center.lat()},${center.lng()}&travelmode=driving`;
-    }
-
     // 圃場面積の取得・算出
     let areaA = parseFloat(pData.area) || 0;
     if ((!areaA || areaA <= 0) && pData.coords && pData.coords.length > 2 && typeof google === 'object' && google.maps && google.maps.geometry && google.maps.geometry.spherical) {
@@ -844,7 +1136,6 @@ function openManureStatusModal(pData) {
                 <div><strong>圃場名:</strong> ${pData.name}</div>
                 <div style="font-size:13px; font-weight:bold; color:#2E7D32;">${areaStr}</div>
             </div>
-            ${navUrl ? `<button onclick="window.open('${navUrl}', '_blank')" style="width:100%; padding:8px; margin-bottom:10px; border:none; border-radius:4px; background:#4285F4; color:white; font-weight:bold; font-size:13px; box-sizing:border-box; cursor:pointer;">🚗 ナビ開始</button>` : ''}
             <button type="button" onclick="sharePigManureRequest(currentEditPoly)" style="width:100%; padding:10px; margin-bottom:10px; border:none; border-radius:4px; background:#8D6E63; color:white; font-weight:bold; font-size:13px; box-sizing:border-box; cursor:pointer;">🐷 豚糞散布依頼</button>
             
             <div style="background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; padding:12px; ${isCompost ? '' : 'display:none;'}" id="compostHintBox">
@@ -864,7 +1155,6 @@ function openManureStatusModal(pData) {
                     <span style="font-weight:bold; color:#E65100; font-size:15px;">${trucksStr}</span>
                 </div>
             </div>
-            <button type="button" onclick="openFieldMemo(currentEditPoly)" style="width:100%; margin-top:12px; padding:12px; border:none; border-radius:6px; background:#5D4037; color:white; font-weight:bold; font-size:14px; cursor:pointer; box-sizing:border-box;">📝 圃場メモ（分割・散布記録）</button>
         </div>
 
         <label class="form-label">カテゴリ</label>
@@ -954,7 +1244,7 @@ async function saveManureStatus(btnElement) {
     const cancelReason = document.getElementById('manureCancelReason') ? document.getElementById('manureCancelReason').value : '';
 
     const btn = btnElement || (typeof event !== 'undefined' ? event.target : null);
-    if(btn) {
+    if (btn) {
         btn.disabled = true;
         btn.innerText = '保存中...';
     }
@@ -962,6 +1252,9 @@ async function saveManureStatus(btnElement) {
     migratePDataManure(currentEditPoly);
     const catSt = getCatStatus(currentEditPoly, catId);
     const oldStatus = catSt.status || 'none';
+    // 失敗時ロールバック用スナップショット
+    const rollbackPayload = JSON.parse(JSON.stringify(buildManureDataPayload(currentEditPoly)));
+
     if (oldStatus !== status) {
         catSt.has_pin = true;
         addHistory(currentEditPoly.name + '（' + getProdCategoryName(catId) + '）', oldStatus, status);
@@ -985,19 +1278,27 @@ async function saveManureStatus(btnElement) {
         migratePDataManure(currentEditPoly);
     }
 
-    try {
-        await callGAS('updatePolygon', {
-            id: currentEditPoly.id,
-            manureData: JSON.stringify(buildManureDataPayload(currentEditPoly))
-        });
-        closeModal();
-        loadInitData();
-    } catch (e) {
-        if(btn) {
-            btn.disabled = false;
-            btn.innerText = '保存';
+    const pData = currentEditPoly;
+    // 楽観UI: すぐ地図反映してモーダルを閉じ、サーバーは裏で同期
+    refreshFieldVisual_(pData);
+    persistManureMapCache_();
+    closeModal();
+    showMapSyncToast('✅ 反映しました（同期中…）', 'ok');
+
+    syncFieldToServer_(pData, {
+        silent: true,
+        rollback: () => {
+            Object.assign(pData, rollbackPayload);
+            if (rollbackPayload.catStatuses) {
+                pData.catStatuses = JSON.parse(JSON.stringify(rollbackPayload.catStatuses));
+            }
+            migratePDataManure(pData);
+            refreshFieldVisual_(pData);
+            persistManureMapCache_();
         }
-    }
+    }).then(ok => {
+        if (ok) showMapSyncToast('☁️ サーバーへ保存完了', 'ok');
+    });
 }
 
 function closeModal() {
@@ -2170,6 +2471,7 @@ window.applySprayRouteCandidate = async function() {
     const todayStr = new Date().toISOString().split('T')[0];
 
     try {
+        const synced = [];
         for (let i = 0; i < currentCandidateRoute.polygons.length; i++) {
             const p = currentCandidateRoute.polygons[i];
             const pData = p.pData || {};
@@ -2180,16 +2482,15 @@ window.applySprayRouteCandidate = async function() {
                 route_selected: true,
                 cancel_reason: ''
             });
-            await callGAS('updatePolygon', {
-                id: p.id || pData.id,
-                manureData: JSON.stringify(buildManureDataPayload(pData))
-            });
+            refreshFieldVisual_(pData);
+            synced.push(pData);
         }
 
+        persistManureMapCache_();
         closeSprayRouteModal();
-        alert('✅ ' + count + ' 筆（' + catName + '）を設定ルート表に登録しました！');
-        localStorage.removeItem('manureMapData');
-        loadInitData();
+        showMapSyncToast('✅ ' + count + ' 筆（' + catName + '）を設定しました', 'ok');
+        // サーバー同期は裏で並列実行（全画面読み込みなし）
+        syncFieldsToServerBatch_(synced, '☁️ ルート設定をサーバーへ保存完了');
     } catch (e) {
         alert('エラーが発生しました: ' + e.message);
         if (resArea) calculateSprayRoute();
@@ -2320,18 +2621,14 @@ window.markFieldSprayCompleted = async function(polyId, polyName) {
         route_selected: true
     });
 
-    try {
-        await callGAS('updatePolygon', {
-            id: polyId,
-            manureData: JSON.stringify(buildManureDataPayload(pData))
-        });
-        addHistory((pData.name || '圃場') + '（' + catName + '）', prev, 'completed');
-        renderTodayRouteTable();
-        localStorage.removeItem('manureMapData');
-        loadInitData();
-    } catch (e) {
-        alert('完了への更新に失敗しました: ' + e.message);
-    }
+    addHistory((pData.name || '圃場') + '（' + catName + '）', prev, 'completed');
+    refreshFieldVisual_(pData);
+    persistManureMapCache_();
+    renderTodayRouteTable();
+    showMapSyncToast('✅ 完了に更新しました', 'ok');
+    syncFieldToServer_(pData, { silent: true }).then(ok => {
+        if (ok) showMapSyncToast('☁️ サーバーへ保存完了', 'ok');
+    });
 };
 
 // ルート表の行を非表示にする機能
@@ -2502,6 +2799,7 @@ window.saveTransplantSettings = async function() {
     if (area) area.style.pointerEvents = 'none';
 
     try {
+        const synced = [];
         let updatedCount = 0;
         for (const row of transplantSettingRows) {
             const polyObj = polygons.find(p => String(p.id || (p.pData && p.pData.id)) === String(row.id));
@@ -2536,17 +2834,15 @@ window.saveTransplantSettings = async function() {
                 route_selected: manureRouteSelected
             });
 
-            await callGAS('updatePolygon', {
-                id: row.id,
-                manureData: JSON.stringify(buildManureDataPayload(pData))
-            });
+            refreshFieldVisual_(pData);
+            synced.push(pData);
             updatedCount++;
         }
 
+        persistManureMapCache_();
         closeTransplantSettingModal();
-        localStorage.removeItem('manureMapData');
-        await loadInitData();
-        alert(`定植設定を保存しました（${updatedCount}件）`);
+        showMapSyncToast(`✅ 定植設定を反映しました（${updatedCount}件）`, 'ok');
+        syncFieldsToServerBatch_(synced, '☁️ 定植設定をサーバーへ保存完了');
     } catch (e) {
         alert('定植設定の保存に失敗しました: ' + (e.message || e));
     } finally {
@@ -2716,6 +3012,7 @@ window.openProdCategoryEditModal = function() {
         name: c.name,
         order: c.order != null ? c.order : (i + 1)
     }));
+    sortProdCategoryDraftByOrder_();
     renderProdCategoryEditList();
     const modal = document.getElementById('prodCategoryEditModal');
     if (modal) modal.style.display = 'flex';
@@ -2727,13 +3024,16 @@ window.closeProdCategoryEditModal = function() {
 };
 
 function renumberProdCategoryDraftOrders() {
-    const sorted = prodCategoryEditDraft.slice().sort((a, b) => (a.order || 0) - (b.order || 0));
-    sorted.forEach((c, i) => { c.order = i + 1; });
-    prodCategoryEditDraft = sorted;
+    // 配列の並びを正とし、order を振り直す（古い order で再ソートしない）
+    prodCategoryEditDraft.forEach((c, i) => { c.order = i + 1; });
+}
+
+function sortProdCategoryDraftByOrder_() {
+    prodCategoryEditDraft.sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+    renumberProdCategoryDraftOrders();
 }
 
 window.moveProdCategoryDraft = function(displayPos, delta) {
-    renumberProdCategoryDraftOrders();
     const to = displayPos + delta;
     if (to < 0 || to >= prodCategoryEditDraft.length) return;
     const item = prodCategoryEditDraft.splice(displayPos, 1)[0];
