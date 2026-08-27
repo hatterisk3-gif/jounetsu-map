@@ -687,10 +687,13 @@
   }
 
   function getRecentIrrigationBoost(poly) {
-    if (!poly || !Array.isArray(poly.photos)) return 0;
+    const photos = (poly && poly.photos)
+      || (poly && poly.pData && poly.pData.photos)
+      || [];
+    if (!Array.isArray(photos) || !photos.length) return 0;
     const now = Date.now();
     let boost = 0;
-    poly.photos.forEach(ph => {
+    photos.forEach(ph => {
       if (!ph || (ph.type && ph.type !== 'work')) return;
       const wName = String((ph.data && ph.data.workName) || '').toLowerCase();
       if (!(wName.includes('潅水') || wName.includes('灌水') || wName.includes('水やり') || wName.includes('水まき'))) return;
@@ -713,35 +716,97 @@
     return '#64b5f6';
   }
 
-  function applySoilMoistureColors() {
-    const st = global.weatherSunshineState;
-    const insights = st && st.agriInsights;
-    if (!insights) {
-      if (typeof customAlert === 'function') customAlert('先に天気を読み込んでください（天気ボタン）');
-      else alert('先に天気を読み込んでください');
-      return false;
+  function showMoistureToast_(msg, kind) {
+    if (typeof global.showMapSyncToast === 'function') {
+      global.showMapSyncToast(msg, kind || 'info');
+      return;
     }
-    const base = insights.moisture;
-    const polys = global.loadedPolygons || {};
-    Object.keys(polys).forEach(id => {
-      const p = polys[id];
-      if (!p || p.isMarker || !p.polygon) return;
-      if (!p._soilMoistureBackup) {
-        p._soilMoistureBackup = {
-          fillColor: p.polygon.fillColor,
-          fillOpacity: p.polygon.fillOpacity,
-          strokeColor: p.polygon.strokeColor
-        };
-      }
-      const pct = clamp(base + getRecentIrrigationBoost(p), 12, 98);
-      p._soilMoisturePct = pct;
-      p.polygon.setOptions({
-        fillColor: moistureFillColor(pct),
-        fillOpacity: 0.55,
-        strokeColor: '#37474f',
-        strokeWeight: 1.5
+    if (typeof toast === 'function') { toast(msg); return; }
+    if (typeof global.showRecordSyncToast === 'function') {
+      global.showRecordSyncToast(msg, kind || 'info');
+      return;
+    }
+    if (typeof customAlert === 'function') customAlert(msg);
+    else alert(msg);
+  }
+
+  /** worker(loadedPolygons) と圃場マップ(polygons配列)の両方に対応 */
+  function forEachSoilMoistureTarget_(fn) {
+    let count = 0;
+    const loaded = global.loadedPolygons;
+    if (loaded && typeof loaded === 'object' && Object.keys(loaded).length) {
+      Object.keys(loaded).forEach(id => {
+        const p = loaded[id];
+        if (!p || p.isMarker || !p.polygon) return;
+        fn(p.polygon, p);
+        count++;
       });
+      return count;
+    }
+    const list = global.polygons;
+    if (Array.isArray(list) && list.length) {
+      list.forEach(poly => {
+        if (!poly || typeof poly.setOptions !== 'function') return;
+        const meta = poly.pData ? { pData: poly.pData, photos: poly.pData.photos } : poly;
+        fn(poly, meta);
+        count++;
+      });
+    }
+    return count;
+  }
+
+  function paintSoilMoisturePolygon_(gPoly, meta, baseMoisture) {
+    if (!gPoly || typeof gPoly.setOptions !== 'function') return;
+    if (!gPoly._soilMoistureBackup) {
+      gPoly._soilMoistureBackup = {
+        fillColor: gPoly.fillColor,
+        fillOpacity: gPoly.fillOpacity,
+        strokeColor: gPoly.strokeColor,
+        strokeWeight: gPoly.strokeWeight
+      };
+    }
+    const pct = clamp(baseMoisture + getRecentIrrigationBoost(meta), 12, 98);
+    gPoly._soilMoisturePct = pct;
+    gPoly.setOptions({
+      fillColor: moistureFillColor(pct),
+      fillOpacity: 0.55,
+      strokeColor: '#37474f',
+      strokeWeight: 1.5
     });
+  }
+
+  function ensureAgriInsightsReady_() {
+    const st = global.weatherSunshineState || {};
+    if (st.agriInsights) return st.agriInsights;
+    if (st.data && st.data.daily && st.todayStr) {
+      st.agriInsights = computeAgriWeatherInsights(st.data.daily, st.todayStr);
+      return st.agriInsights;
+    }
+    return null;
+  }
+
+  async function ensureAgriInsightsWithFetch_() {
+    let insights = ensureAgriInsightsReady_();
+    if (insights) return insights;
+    if (typeof global.fetchWeatherAndUpdateUI === 'function') {
+      try {
+        await global.fetchWeatherAndUpdateUI({ force: true });
+      } catch (e) {
+        console.warn('moisture weather fetch failed', e);
+      }
+      insights = ensureAgriInsightsReady_();
+    }
+    return insights;
+  }
+
+  function applySoilMoistureColors() {
+    const insights = ensureAgriInsightsReady_();
+    if (!insights) return false;
+    const base = insights.moisture;
+    const painted = forEachSoilMoistureTarget_(function (gPoly, meta) {
+      paintSoilMoisturePolygon_(gPoly, meta, base);
+    });
+    if (!painted) return false;
     global._soilMoistureOverlayOn = true;
     const btn = document.getElementById('btnSoilMoisture');
     if (btn) {
@@ -752,17 +817,16 @@
   }
 
   function clearSoilMoistureColors() {
-    const polys = global.loadedPolygons || {};
-    Object.keys(polys).forEach(id => {
-      const p = polys[id];
-      if (!p || !p.polygon || !p._soilMoistureBackup) return;
-      p.polygon.setOptions({
-        fillColor: p._soilMoistureBackup.fillColor,
-        fillOpacity: p._soilMoistureBackup.fillOpacity,
-        strokeColor: p._soilMoistureBackup.strokeColor
+    forEachSoilMoistureTarget_(function (gPoly) {
+      if (!gPoly._soilMoistureBackup) return;
+      gPoly.setOptions({
+        fillColor: gPoly._soilMoistureBackup.fillColor,
+        fillOpacity: gPoly._soilMoistureBackup.fillOpacity,
+        strokeColor: gPoly._soilMoistureBackup.strokeColor,
+        strokeWeight: gPoly._soilMoistureBackup.strokeWeight
       });
-      delete p._soilMoistureBackup;
-      delete p._soilMoisturePct;
+      delete gPoly._soilMoistureBackup;
+      delete gPoly._soilMoisturePct;
     });
     global._soilMoistureOverlayOn = false;
     const btn = document.getElementById('btnSoilMoisture');
@@ -772,23 +836,22 @@
     }
   }
 
-  function toggleSoilMoistureMapOverlay() {
+  async function toggleSoilMoistureMapOverlay() {
     if (global._soilMoistureOverlayOn) {
       clearSoilMoistureColors();
-      if (typeof toast === 'function') toast('水分表示を解除しました');
-      else if (global.showRecordSyncToast) global.showRecordSyncToast('水分表示を解除しました', 'info');
+      showMoistureToast_('水分表示を解除しました', 'info');
       return;
     }
-    // insights が無ければ state から再計算
-    const st = global.weatherSunshineState;
-    if (st && st.data && st.data.daily && !st.agriInsights) {
-      st.agriInsights = computeAgriWeatherInsights(st.data.daily, st.todayStr);
+    const insights = await ensureAgriInsightsWithFetch_();
+    if (!insights) {
+      showMoistureToast_('天気データを取得できませんでした。電波を確認して再度お試しください', 'error');
+      return;
     }
     if (applySoilMoistureColors()) {
-      const m = st && st.agriInsights ? st.agriInsights.moisture : '';
-      const msg = `地図に土壌水分を表示（地域推定 ${m}%・潅水記録で補正）`;
-      if (typeof toast === 'function') toast(msg);
-      else if (global.showRecordSyncToast) global.showRecordSyncToast(msg, 'ok');
+      const m = insights.moisture != null ? Math.round(insights.moisture) : '';
+      showMoistureToast_('地図に土壌水分を表示（地域推定 ' + m + '%）', 'ok');
+    } else {
+      showMoistureToast_('表示できる圃場がありません', 'error');
     }
   }
 

@@ -3011,11 +3011,12 @@
         info.clockInDateYmd +
         '）の退勤を続けてください。\n※「勤務時間の確認」で「退勤を確定する」まで完了する必要があります。';
       const ok = await confirmMsg(msg);
-      window._forgotClockOutPromptedOnce = true;
-      if (ok || options.openEvenIfCancel !== false) {
+      if (ok) {
+        window._forgotClockOutPromptedOnce = true;
         openClockOutModal({ forgotInfo: info });
+        return true;
       }
-      return true;
+      return false;
     } finally {
       window._forgotClockOutPromptOpen = false;
     }

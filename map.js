@@ -133,6 +133,9 @@ function setActiveProdCategory(catId) {
         });
         applyFilter();
     }
+    if (window._soilMoistureOverlayOn && typeof window.applySoilMoistureColors === 'function') {
+        window.applySoilMoistureColors();
+    }
 }
 
 function renderProdCategorySelect() {
@@ -184,23 +187,159 @@ function getStatusLabel(status) {
     return STATUS_LABELS[status] || status;
 }
 
-// ====== GAS通信 (worker.jsと同じパターン) ======
-async function callGAS(action, payload = {}) {
-    const spreadsheetId = localStorage.getItem('spreadsheetId');
-    const body = { action, spreadsheetId, ...payload };
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-    try {
-        const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(body), signal: controller.signal });
-        clearTimeout(timeoutId);
-        const json = await res.json();
-        if (json.status !== "success") throw new Error(json.message || 'APIエラー');
-        return json.data;
-    } catch (err) {
-        clearTimeout(timeoutId);
-        if (err.name === 'AbortError') throw new Error("通信がタイムアウトしました。");
-        throw err;
+// ====== GAS通信（リトライ・エラー整形付き） ======
+function formatGasErrorMessage_(err, action) {
+    const raw = String((err && err.message) || err || '');
+    if (err && err.name === 'AbortError') {
+        return '通信がタイムアウトしました。電波の良い場所で再度お試しください。';
     }
+    if (/failed to fetch|networkerror|load failed|network request failed/i.test(raw)) {
+        return 'サーバーに接続できませんでした。電波状況を確認して、しばらくしてから再度お試しください。';
+    }
+    if (raw.includes('<!DOCTYPE') || raw.includes('<html')) {
+        return 'Googleサーバーの一時的な通信エラーです。少し待ってから再度お試しください。';
+    }
+    if (raw) return raw.replace('（リトライ中...）', '');
+    return action ? `${action} の通信に失敗しました` : '通信に失敗しました';
+}
+
+async function callGAS(action, payload = {}, retries = 2, callOptions = {}) {
+    const params = { action, ...payload };
+    if (action !== 'login') {
+        const spreadsheetId = localStorage.getItem('spreadsheetId');
+        if (spreadsheetId && spreadsheetId !== 'undefined' && spreadsheetId !== 'null' && String(spreadsheetId).trim() !== '') {
+            params.spreadsheetId = spreadsheetId;
+        }
+    }
+
+    const heavyActions = {
+        getInitData: 60000,
+        saveProdMgmtCategories: 60000,
+        resetAllManureStatus: 60000,
+        login: 20000
+    };
+    const timeoutMs = callOptions.timeoutMs || heavyActions[action] || 30000;
+    const maxRetries = callOptions.retries != null ? callOptions.retries : retries;
+    const noRetryActions = ['resetAllManureStatus', 'saveProdMgmtCategories'];
+    const effectiveRetries = noRetryActions.includes(action) ? 0 : maxRetries;
+
+    let lastError = null;
+    for (let i = 0; i <= effectiveRetries; i++) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const res = await fetch(GAS_URL, {
+                method: 'POST',
+                body: JSON.stringify(params),
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            const text = await res.text();
+            let json;
+            try {
+                json = JSON.parse(text);
+            } catch (e) {
+                if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+                    throw new Error('Googleサーバーの一時的な通信エラーが発生しました。（リトライ中...）');
+                }
+                throw new Error('サーバーから不正な応答がありました: ' + text.substring(0, 50));
+            }
+            if (json.status !== 'success') throw new Error(json.message || 'APIエラー');
+            return json.data;
+        } catch (err) {
+            clearTimeout(timeoutId);
+            lastError = err;
+            if (i < effectiveRetries) {
+                console.warn(`callGAS [${action}] failed, retrying... (${i + 1}/${effectiveRetries})`, err);
+                await new Promise(r => setTimeout(r, 1200 + i * 800));
+            }
+        }
+    }
+    throw new Error(formatGasErrorMessage_(lastError, action));
+}
+
+// ====== 圃場ステータス同期キュー（並列送信でGASが落ちるのを防ぐ） ======
+const fieldSyncQueue_ = [];
+let fieldSyncRunning_ = false;
+const FIELD_SYNC_GAP_MS = 350;
+
+function enqueueFieldSync_(task) {
+    return new Promise((resolve, reject) => {
+        fieldSyncQueue_.push({ task, resolve, reject });
+        drainFieldSyncQueue_();
+    });
+}
+
+async function drainFieldSyncQueue_() {
+    if (fieldSyncRunning_) return;
+    fieldSyncRunning_ = true;
+    while (fieldSyncQueue_.length) {
+        const item = fieldSyncQueue_.shift();
+        try {
+            const result = await item.task();
+            item.resolve(result);
+        } catch (e) {
+            item.reject(e);
+        }
+        if (fieldSyncQueue_.length) {
+            await new Promise(r => setTimeout(r, FIELD_SYNC_GAP_MS));
+        }
+    }
+    fieldSyncRunning_ = false;
+}
+
+function rememberPendingFieldSync_(pData) {
+    try {
+        const key = 'manurePendingSync';
+        const list = JSON.parse(localStorage.getItem(key) || '[]');
+        const entry = {
+            id: pData.id,
+            manureData: buildManureDataPayload(pData),
+            updatedAt: Date.now()
+        };
+        const idx = list.findIndex(x => String(x.id) === String(pData.id));
+        if (idx >= 0) list[idx] = entry;
+        else list.push(entry);
+        localStorage.setItem(key, JSON.stringify(list.slice(-80)));
+    } catch (e) {
+        console.warn('rememberPendingFieldSync_ failed', e);
+    }
+}
+
+function clearPendingFieldSync_(fieldId) {
+    try {
+        const key = 'manurePendingSync';
+        const list = JSON.parse(localStorage.getItem(key) || '[]');
+        const next = list.filter(x => String(x.id) !== String(fieldId));
+        if (next.length) localStorage.setItem(key, JSON.stringify(next));
+        else localStorage.removeItem(key);
+    } catch (e) {}
+}
+
+async function flushPendingFieldSyncs_() {
+    let list = [];
+    try {
+        list = JSON.parse(localStorage.getItem('manurePendingSync') || '[]');
+    } catch (e) {
+        return;
+    }
+    if (!list.length) return;
+    showMapSyncToast('☁️ 未同期の更新を再送中…', 'info');
+    let ok = 0;
+    for (const item of list) {
+        if (!item || !item.id) continue;
+        try {
+            await enqueueFieldSync_(() => callGAS('updatePolygon', {
+                id: item.id,
+                manureData: JSON.stringify(item.manureData || {})
+            }, 2, { timeoutMs: 25000 }));
+            clearPendingFieldSync_(item.id);
+            ok++;
+        } catch (e) {
+            console.warn('flushPendingFieldSyncs_ item failed', item.id, e);
+        }
+    }
+    if (ok > 0) showMapSyncToast(`☁️ 未同期 ${ok}件をサーバーへ反映しました`, 'ok');
 }
 
 // ====== 同期トースト（楽観UI用） ======
@@ -221,6 +360,11 @@ function showMapSyncToast(msg, kind) {
     window._mapSyncToastTimer = setTimeout(() => {
         if (el) el.style.display = 'none';
     }, kind === 'error' ? 8000 : 2800);
+}
+window.showMapSyncToast = showMapSyncToast;
+
+function syncPolygonsGlobal_() {
+    window.polygons = polygons;
 }
 
 function continueCachedMapSession_(message, toastType) {
@@ -270,6 +414,15 @@ async function refreshMapData() {
 }
 window.refreshMapData = refreshMapData;
 
+function schedulePendingFieldSyncFlush_() {
+    setTimeout(() => { flushPendingFieldSyncs_().catch(() => {}); }, 2500);
+}
+
+window.addEventListener('online', () => { schedulePendingFieldSyncFlush_(); });
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') schedulePendingFieldSyncFlush_();
+});
+
 // ====== ログイン（楽観UI: キャッシュ即表示 → 裏で同期） ======
 document.addEventListener('DOMContentLoaded', () => {
     const id = localStorage.getItem('passionMapUserId');
@@ -311,6 +464,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 else restoreMapInteractions_();
                 showMapSyncToast('📦 キャッシュで起動（最新を裏で確認中…）', 'info');
                 setTimeout(refreshProductionMapDisplay_, 120);
+                schedulePendingFieldSyncFlush_();
                 // ログイン＋最新取得は裏で（ブロックしない）
                 executeLogin(true, { fromCache: true });
             } catch (ex) {
@@ -751,6 +905,7 @@ function drawPolygons(dataList) {
     }
     polygons.forEach(p => p.setMap(null));
     polygons = [];
+    syncPolygonsGlobal_();
     markers.forEach(m => m.setMap(null));
     markers = [];
 
@@ -779,6 +934,7 @@ function drawPolygons(dataList) {
         poly.pData = pData;
         poly._manureStatus = manureStatus;
         polygons.push(poly);
+        syncPolygonsGlobal_();
 
         coords.forEach(pos => bounds.extend(new google.maps.LatLng(pos.lat, pos.lng)));
         hasPolygons = true;
@@ -811,10 +967,7 @@ function drawPolygons(dataList) {
                     markers.splice(pinIdx, 1);
                 }
                 persistManureMapCache_();
-                callGAS('updatePolygon', {
-                    id: pData.id,
-                    manureData: JSON.stringify(buildManureDataPayload(pData))
-                }).catch(() => {});
+                syncFieldToServer_(pData, { silent: true }).catch(() => {});
             }
             openManureStatusModal(pData);
         };
@@ -846,6 +999,9 @@ function drawPolygons(dataList) {
         google.maps.event.addListenerOnce(map, 'idle', () => {
             if (map.getZoom() > 18) map.setZoom(18);
         });
+    }
+    if (window._soilMoistureOverlayOn && typeof window.applySoilMoistureColors === 'function') {
+        window.applySoilMoistureColors();
     }
 }
 
@@ -921,14 +1077,19 @@ function refreshFieldVisual_(pData) {
     return poly;
 }
 
-/** サーバーへステータス同期（UIはブロックしない） */
+/** サーバーへステータス同期（UIはブロックしない・キュー経由） */
 function syncFieldToServer_(pData, options = {}) {
     const silent = !!options.silent;
     const rollback = options.rollback || null;
-    return callGAS('updatePolygon', {
+    if (!pData || !pData.id) return Promise.resolve(false);
+
+    rememberPendingFieldSync_(pData);
+
+    return enqueueFieldSync_(() => callGAS('updatePolygon', {
         id: pData.id,
         manureData: JSON.stringify(buildManureDataPayload(pData))
-    }).then(() => {
+    }, 2, { timeoutMs: 25000 })).then(() => {
+        clearPendingFieldSync_(pData.id);
         persistManureMapCache_();
         if (!silent) showMapSyncToast('✅ 保存しました', 'ok');
         return true;
@@ -937,28 +1098,27 @@ function syncFieldToServer_(pData, options = {}) {
         if (typeof rollback === 'function') {
             try { rollback(); } catch (ex) {}
         }
-        showMapSyncToast('⚠️ 保存に失敗しました: ' + (e.message || e), 'error');
+        showMapSyncToast('⚠️ 保存に失敗しました（未同期として保持・自動再送します）: ' + (e.message || e), 'error');
         return false;
     });
 }
 
-/** 複数圃場を並列で裏同期 */
-function syncFieldsToServerBatch_(pDataList, successMsg) {
+/** 複数圃場を順番に裏同期（並列送信しない） */
+async function syncFieldsToServerBatch_(pDataList, successMsg) {
     const list = (pDataList || []).filter(p => p && p.id);
-    if (!list.length) return Promise.resolve(true);
+    if (!list.length) return true;
     showMapSyncToast('☁️ サーバーへ同期中…', 'info');
-    return Promise.all(list.map(pData => callGAS('updatePolygon', {
-        id: pData.id,
-        manureData: JSON.stringify(buildManureDataPayload(pData))
-    }))).then(() => {
-        persistManureMapCache_();
+    let failed = 0;
+    for (const pData of list) {
+        const ok = await syncFieldToServer_(pData, { silent: true });
+        if (!ok) failed++;
+    }
+    if (failed === 0) {
         showMapSyncToast(successMsg || '✅ 保存しました', 'ok');
         return true;
-    }).catch(e => {
-        console.error('syncFieldsToServerBatch_ failed', e);
-        showMapSyncToast('⚠️ 一部の保存に失敗しました。更新で再同期してください', 'error');
-        return false;
-    });
+    }
+    showMapSyncToast(`⚠️ ${failed}件の保存に失敗（未同期として保持・自動再送します）`, 'error');
+    return false;
 }
 
 window.toggleFilterMenu = function() {
@@ -1252,8 +1412,6 @@ async function saveManureStatus(btnElement) {
     migratePDataManure(currentEditPoly);
     const catSt = getCatStatus(currentEditPoly, catId);
     const oldStatus = catSt.status || 'none';
-    // 失敗時ロールバック用スナップショット
-    const rollbackPayload = JSON.parse(JSON.stringify(buildManureDataPayload(currentEditPoly)));
 
     if (oldStatus !== status) {
         catSt.has_pin = true;
@@ -1285,18 +1443,7 @@ async function saveManureStatus(btnElement) {
     closeModal();
     showMapSyncToast('✅ 反映しました（同期中…）', 'ok');
 
-    syncFieldToServer_(pData, {
-        silent: true,
-        rollback: () => {
-            Object.assign(pData, rollbackPayload);
-            if (rollbackPayload.catStatuses) {
-                pData.catStatuses = JSON.parse(JSON.stringify(rollbackPayload.catStatuses));
-            }
-            migratePDataManure(pData);
-            refreshFieldVisual_(pData);
-            persistManureMapCache_();
-        }
-    }).then(ok => {
+    syncFieldToServer_(pData, { silent: true }).then(ok => {
         if (ok) showMapSyncToast('☁️ サーバーへ保存完了', 'ok');
     });
 }
@@ -1710,16 +1857,28 @@ window.renderSunshinePanelHtml = () => {
   `;
 };
 
-async function fetchWeatherAndUpdateUI() {
+async function fetchWeatherAndUpdateUI(options = {}) {
   if (!map) return;
+  const force = !!(options && options.force);
   let center = map.getCenter();
   let lat = center.lat();
   let lng = center.lng();
 
-  if (lastWeatherFetchPos) {
+  if (!force && lastWeatherFetchPos) {
     let diffLat = Math.abs(lat - lastWeatherFetchPos.lat);
     let diffLng = Math.abs(lng - lastWeatherFetchPos.lng);
-    if (diffLat < 0.05 && diffLng < 0.05) return;
+    if (diffLat < 0.05 && diffLng < 0.05) {
+      if (typeof window.computeAgriWeatherInsights === 'function'
+          && window.weatherSunshineState.data
+          && window.weatherSunshineState.data.daily
+          && !window.weatherSunshineState.agriInsights) {
+        window.weatherSunshineState.agriInsights = window.computeAgriWeatherInsights(
+          window.weatherSunshineState.data.daily,
+          window.weatherSunshineState.todayStr
+        );
+      }
+      return;
+    }
   }
   lastWeatherFetchPos = {lat, lng};
 
@@ -1764,6 +1923,9 @@ async function fetchWeatherAndUpdateUI() {
     window.weatherSunshineState.lastYearTodayStr = lastYearTodayStr;
     window.weatherSunshineState.lat = lat;
     window.weatherSunshineState.lng = lng;
+    if (typeof window.computeAgriWeatherInsights === 'function' && data.daily) {
+      window.weatherSunshineState.agriInsights = window.computeAgriWeatherInsights(data.daily, todayStr);
+    }
 
     let html = `<div style="padding: 10px;">`;
     html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">現在の天気: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}℃)</div>`;
@@ -1954,6 +2116,7 @@ async function fetchWeatherAndUpdateUI() {
     console.error("天気取得エラー:", e);
   }
 }
+window.fetchWeatherAndUpdateUI = fetchWeatherAndUpdateUI;
 
 window.openWeatherModal = function() {
   let contentDiv = document.getElementById('weatherContent');
