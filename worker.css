@@ -140,6 +140,14 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
 #modal.bulk-work-memo-map-picking {
   background: transparent;
   pointer-events: none;
+  /* 全画面オーバーレイをやめ、下部シートだけにして地図タップを通す */
+  top: auto;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: auto;
+  min-height: 0;
 }
 #modal.bulk-work-memo-map-picking #modalBody {
   max-height: min(42vh, 360px);
