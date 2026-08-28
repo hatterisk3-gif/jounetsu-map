@@ -138,7 +138,7 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   box-shadow: 0 -6px 28px rgba(0, 0, 0, 0.22);
 }
 #modal.bulk-work-memo-map-picking {
-  background: transparent;
+  background: transparent !important;
   pointer-events: none;
   /* 全画面オーバーレイをやめ、下部シートだけにして地図タップを通す */
   top: auto;
@@ -148,15 +148,19 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   width: 100%;
   height: auto;
   min-height: 0;
+  z-index: 10040;
 }
 #modal.bulk-work-memo-map-picking #modalBody {
   max-height: min(42vh, 360px);
   pointer-events: auto;
+  position: relative;
+  z-index: 10041;
 }
 #mapSelectUI.bulk-work-memo-map-select {
-  z-index: 10050;
-  top: auto;
+  z-index: 10050 !important;
+  top: auto !important;
   bottom: calc(min(42vh, 360px) + max(12px, env(safe-area-inset-bottom, 0px)));
+  left: 50% !important;
   transform: translateX(-50%);
   pointer-events: auto;
 }

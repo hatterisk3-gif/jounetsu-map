@@ -891,7 +891,8 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
             strokeColor: dispColor,
             fillOpacity: isUnused ? 0.5 : 0.5,
             strokeOpacity: 1,
-            strokeWeight: 3
+            strokeWeight: 3,
+            zIndex: 1
           });
           updateWorkerLegend();
       }
@@ -918,6 +919,9 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
             window.workMapRidgeSelections = {};
             window.workPendingWorkedByField = {};
           }
+          if (typeof window.clearWorkMapSelectHighlightOverlays_ === 'function') {
+            window.clearWorkMapSelectHighlightOverlays_();
+          }
           // 作物色ベースで通常表示に戻す（選択黄・太い枠線・高opacityを除去）
           for (let id in loadedPolygons) {
             if (typeof updatePolygonColor === 'function') updatePolygonColor(id);
@@ -935,7 +939,16 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           const isUnused = (status === '未使用（返却）' || status === '未使用');
           let currentCrop = getCurrentCrop(photos);
           let dispColor = isUnused ? '#999999' : getCropColor(currentCrop);
-          const polygon = new google.maps.Polygon({ paths: coords, map, fillColor: dispColor, fillOpacity: isUnused?0.5:0.5, strokeColor: dispColor, strokeOpacity: 1, strokeWeight: 3 });
+          const polygon = new google.maps.Polygon({
+            paths: coords,
+            map,
+            fillColor: dispColor,
+            fillOpacity: isUnused ? 0.5 : 0.5,
+            strokeColor: dispColor,
+            strokeOpacity: 1,
+            strokeWeight: 3,
+            zIndex: 1
+          });
           const marker = createLabelMarker(name, coords, color, area);
           
           google.maps.event.addListener(polygon, 'click', (e) => { 
@@ -2785,8 +2798,98 @@ function createSignboardMarker(name, pos, icon, id) {
         }
       };
       
+      window._workMapSelectHighlightOverlays = window._workMapSelectHighlightOverlays || {};
+
+      window.clearWorkMapSelectHighlightOverlays_ = () => {
+        Object.keys(window._workMapSelectHighlightOverlays || {}).forEach(fid => {
+          const ov = window._workMapSelectHighlightOverlays[fid];
+          try { if (ov) ov.setMap(null); } catch (e) {}
+        });
+        window._workMapSelectHighlightOverlays = {};
+      };
+
+      /** 選択圃場の黄色ハイライト（本体の上に重ねてタイル境界でも欠けにくく描画） */
+      window.syncWorkMapSelectHighlightOverlay_ = (fieldId, polygon, selected) => {
+        if (!polygon || !map) return;
+        const fid = String(fieldId);
+        window._workMapSelectHighlightOverlays = window._workMapSelectHighlightOverlays || {};
+        const existing = window._workMapSelectHighlightOverlays[fid];
+        if (!selected) {
+          if (existing) {
+            try { existing.setMap(null); } catch (e) {}
+            delete window._workMapSelectHighlightOverlays[fid];
+          }
+          return;
+        }
+        const style = {
+          fillColor: '#FFEB3B',
+          strokeColor: '#E65100',
+          fillOpacity: 0.5,
+          strokeOpacity: 1,
+          strokeWeight: 5,
+          zIndex: 500,
+          clickable: false
+        };
+        if (existing) {
+          existing.setOptions(style);
+          if (!existing.getMap()) existing.setMap(map);
+          return;
+        }
+        const overlay = new google.maps.Polygon(Object.assign({
+          paths: polygon.getPaths(),
+          map: map
+        }, style));
+        window._workMapSelectHighlightOverlays[fid] = overlay;
+      };
+
+      window.getWorkMapSelectFieldStyle_ = (mode, baseColor) => {
+        const color = baseColor || '#8BC34A';
+        if (mode === 'selected') {
+          return {
+            fillColor: color,
+            strokeColor: '#E65100',
+            fillOpacity: 0.28,
+            strokeOpacity: 1,
+            strokeWeight: 4,
+            zIndex: 150
+          };
+        }
+        if (mode === 'focus') {
+          return {
+            fillColor: color,
+            strokeColor: '#FFEB3B',
+            fillOpacity: 0.18,
+            strokeOpacity: 1,
+            strokeWeight: 4,
+            zIndex: 140
+          };
+        }
+        if (mode === 'idle') {
+          return {
+            fillColor: color,
+            strokeColor: color,
+            fillOpacity: 0.38,
+            strokeOpacity: 1,
+            strokeWeight: 3,
+            zIndex: 100
+          };
+        }
+        return {
+          fillColor: color,
+          strokeColor: color,
+          fillOpacity: 0.5,
+          strokeOpacity: 1,
+          strokeWeight: 3,
+          zIndex: 1
+        };
+      };
+
       window.updateMapSelectVisuals = () => {
         if (typeof window.updateWorkMapSelectBanner === 'function') window.updateWorkMapSelectBanner();
+
+        if (!isMapSelecting && typeof window.clearWorkMapSelectHighlightOverlays_ === 'function') {
+          window.clearWorkMapSelectHighlightOverlays_();
+        }
         
         // ★追加: 給油する農機を探すモードの見た目
         if (window.selectingSignForRefuel) {
@@ -2810,14 +2913,29 @@ function createSignboardMarker(name, pos, icon, id) {
           if(!p.isMarker && p.polygon) {
             const isU = (p.status === '未使用（返却）' || p.status === '未使用'), baseColor = isU ? '#999999' : p.color;
             if (isMapSelecting) {
-              if (focusId && String(id) === focusId) {
-                p.polygon.setOptions({fillColor: baseColor, strokeColor: '#FFEB3B', fillOpacity: 0.12, strokeWeight: 4});
-              } else if (selectedSet.has(String(id))) {
-                p.polygon.setOptions({fillColor: '#FFEB3B', strokeColor: '#F57F17', fillOpacity: 0.8, strokeWeight: 4});
+              const sid = String(id);
+              if (focusId && sid === focusId) {
+                if (typeof window.syncWorkMapSelectHighlightOverlay_ === 'function') {
+                  window.syncWorkMapSelectHighlightOverlay_(sid, p.polygon, false);
+                }
+                p.polygon.setOptions(window.getWorkMapSelectFieldStyle_('focus', baseColor));
+              } else if (selectedSet.has(sid)) {
+                p.polygon.setOptions(window.getWorkMapSelectFieldStyle_('selected', baseColor));
+                if (typeof window.syncWorkMapSelectHighlightOverlay_ === 'function') {
+                  window.syncWorkMapSelectHighlightOverlay_(sid, p.polygon, true);
+                }
               } else {
-                p.polygon.setOptions({fillColor: baseColor, strokeColor: baseColor, fillOpacity: 0.2, strokeWeight: 1});
+                if (typeof window.syncWorkMapSelectHighlightOverlay_ === 'function') {
+                  window.syncWorkMapSelectHighlightOverlay_(sid, p.polygon, false);
+                }
+                p.polygon.setOptions(window.getWorkMapSelectFieldStyle_('idle', baseColor));
               }
-            } else { p.polygon.setOptions({fillColor: baseColor, strokeColor: baseColor, fillOpacity: isU ? 0.5 : 0.3, strokeWeight: 3}); }
+            } else {
+              if (typeof window.syncWorkMapSelectHighlightOverlay_ === 'function') {
+                window.syncWorkMapSelectHighlightOverlay_(String(id), p.polygon, false);
+              }
+              p.polygon.setOptions(window.getWorkMapSelectFieldStyle_('normal', baseColor));
+            }
           }
         }
       };
@@ -3483,9 +3601,11 @@ function createSignboardMarker(name, pos, icon, id) {
           const nowSelected = !sel.wholeField && sel.indices.indexOf(item.uneIndex) >= 0;
           item.polygon.setOptions({
             fillColor: nowSelected ? '#FFEB3B' : (item.baseColor || '#8BC34A'),
-            fillOpacity: nowSelected ? 0.9 : 0.65,
-            strokeColor: nowSelected ? '#F57F17' : '#33691E',
-            strokeWeight: nowSelected ? 3 : 2
+            fillOpacity: nowSelected ? 0.55 : 0.65,
+            strokeColor: nowSelected ? '#E65100' : '#33691E',
+            strokeOpacity: 1,
+            strokeWeight: nowSelected ? 5 : 2,
+            zIndex: nowSelected ? 520 : 120
           });
         });
       };
@@ -3641,10 +3761,11 @@ function createSignboardMarker(name, pos, icon, id) {
             paths: coords,
             map: map,
             fillColor: isSelected ? '#FFEB3B' : baseColor,
-            fillOpacity: isSelected ? 0.9 : 0.65,
-            strokeColor: isSelected ? '#F57F17' : '#33691E',
-            strokeWeight: isSelected ? 3 : 2,
-            zIndex: 120,
+            fillOpacity: isSelected ? 0.55 : 0.65,
+            strokeColor: isSelected ? '#E65100' : '#33691E',
+            strokeOpacity: 1,
+            strokeWeight: isSelected ? 5 : 2,
+            zIndex: isSelected ? 520 : 120,
             clickable: true
           });
 
@@ -3704,9 +3825,11 @@ function createSignboardMarker(name, pos, icon, id) {
         if (ridgePoly) {
           ridgePoly.setOptions({
             fillColor: nowSelected ? '#FFEB3B' : (baseColor || '#8BC34A'),
-            fillOpacity: nowSelected ? 0.9 : 0.65,
-            strokeColor: nowSelected ? '#F57F17' : '#33691E',
-            strokeWeight: nowSelected ? 3 : 2
+            fillOpacity: nowSelected ? 0.55 : 0.65,
+            strokeColor: nowSelected ? '#E65100' : '#33691E',
+            strokeOpacity: 1,
+            strokeWeight: nowSelected ? 5 : 2,
+            zIndex: nowSelected ? 520 : 120
           });
         } else {
           window.refreshWorkDrawnRidgeHighlights(fid);
@@ -24397,13 +24520,99 @@ window.setBulkWorkMemoModalClass_ = (mode) => {
   const modalEl = document.getElementById('modal');
   if (!modalEl) return;
   modalEl.classList.remove('bulk-work-memo-open', 'bulk-work-memo-map-picking');
+  document.body.classList.remove('bulk-work-memo-map-picking');
   if (mode === 'open') modalEl.classList.add('bulk-work-memo-open');
   if (mode === 'map-picking') {
     modalEl.classList.add('bulk-work-memo-open', 'bulk-work-memo-map-picking');
+    document.body.classList.add('bulk-work-memo-map-picking');
   }
 };
 
+window.applyBulkWorkMemoMapSelectLayout_ = () => {
+  const modalEl = document.getElementById('modal');
+  const modalBody = document.getElementById('modalBody');
+  const mapUi = document.getElementById('mapSelectUI');
+  const backupStyle = (el, key) => {
+    if (!el) return null;
+    const prev = window[key];
+    if (prev) return prev;
+    window[key] = {
+      background: el.style.background,
+      pointerEvents: el.style.pointerEvents,
+      top: el.style.top,
+      bottom: el.style.bottom,
+      left: el.style.left,
+      right: el.style.right,
+      width: el.style.width,
+      height: el.style.height,
+      minHeight: el.style.minHeight,
+      zIndex: el.style.zIndex,
+      alignItems: el.style.alignItems,
+      justifyContent: el.style.justifyContent,
+      padding: el.style.padding,
+      maxHeight: el.style.maxHeight,
+      maxWidth: el.style.maxWidth,
+      margin: el.style.margin,
+      borderRadius: el.style.borderRadius,
+      position: el.style.position,
+      transform: el.style.transform
+    };
+    return window[key];
+  };
+  if (modalEl) {
+    backupStyle(modalEl, '_bulkWorkMemoMapModalStyleBackup');
+    modalEl.style.background = 'transparent';
+    modalEl.style.pointerEvents = 'none';
+    modalEl.style.top = 'auto';
+    modalEl.style.bottom = '0';
+    modalEl.style.left = '0';
+    modalEl.style.right = '0';
+    modalEl.style.width = '100%';
+    modalEl.style.height = 'auto';
+    modalEl.style.minHeight = '0';
+    modalEl.style.zIndex = '10040';
+    modalEl.style.alignItems = 'flex-end';
+    modalEl.style.justifyContent = 'center';
+    modalEl.style.padding = '0 0 max(8px, env(safe-area-inset-bottom, 0px))';
+  }
+  if (modalBody) {
+    backupStyle(modalBody, '_bulkWorkMemoMapBodyStyleBackup');
+    modalBody.style.pointerEvents = 'auto';
+    modalBody.style.maxHeight = 'min(42vh, 360px)';
+    modalBody.style.width = '100%';
+    modalBody.style.maxWidth = '440px';
+    modalBody.style.margin = '0';
+    modalBody.style.borderRadius = '14px 14px 0 0';
+    modalBody.style.zIndex = '10041';
+    modalBody.style.position = 'relative';
+  }
+  if (mapUi) {
+    backupStyle(mapUi, '_bulkWorkMemoMapUiStyleBackup');
+    mapUi.style.position = 'fixed';
+    mapUi.style.top = 'auto';
+    mapUi.style.bottom = 'calc(min(42vh, 360px) + max(12px, env(safe-area-inset-bottom, 0px)))';
+    mapUi.style.left = '50%';
+    mapUi.style.transform = 'translateX(-50%)';
+    mapUi.style.zIndex = '10050';
+  }
+};
+
+window.restoreBulkWorkMemoMapSelectLayout_ = () => {
+  const restore = (el, backup) => {
+    if (!el || !backup) return;
+    Object.keys(backup).forEach(k => { el.style[k] = backup[k] || ''; });
+  };
+  restore(document.getElementById('modal'), window._bulkWorkMemoMapModalStyleBackup);
+  restore(document.getElementById('modalBody'), window._bulkWorkMemoMapBodyStyleBackup);
+  restore(document.getElementById('mapSelectUI'), window._bulkWorkMemoMapUiStyleBackup);
+  window._bulkWorkMemoMapModalStyleBackup = null;
+  window._bulkWorkMemoMapBodyStyleBackup = null;
+  window._bulkWorkMemoMapUiStyleBackup = null;
+  document.body.classList.remove('bulk-work-memo-map-picking');
+};
+
 window.finishBulkWorkMemoMapSelect_ = () => {
+  window.restoreBulkWorkMemoMapSelectLayout_();
   window.setBulkWorkMemoModalClass_('open');
   const mapUi = document.getElementById('mapSelectUI');
   if (mapUi) mapUi.classList.remove('bulk-work-memo-map-select');
@@ -24436,6 +24645,7 @@ window.closeBulkWorkMemoModal_ = () => {
       mapUi.style.display = 'none';
       mapUi.classList.remove('bulk-work-memo-map-select');
     }
+    if (typeof window.restoreBulkWorkMemoMapSelectLayout_ === 'function') window.restoreBulkWorkMemoMapSelectLayout_();
     if (typeof updateMapSelectVisuals === 'function') updateMapSelectVisuals();
   }
   if (typeof window.setBulkWorkMemoModalClass_ === 'function') window.setBulkWorkMemoModalClass_('');
@@ -24710,10 +24920,9 @@ window.openBulkWorkMemoMapSelect_ = (uid) => {
   if (typeof window.setBulkWorkMemoModalClass_ === 'function') window.setBulkWorkMemoModalClass_('map-picking');
   if (typeof window.openMapSelect === 'function') window.openMapSelect();
   const mapUi = document.getElementById('mapSelectUI');
-  if (mapUi) {
-    mapUi.classList.add('bulk-work-memo-map-select');
-    mapUi.style.zIndex = '10050';
-  }
+  if (mapUi) mapUi.classList.add('bulk-work-memo-map-select');
+  if (typeof window.applyBulkWorkMemoMapSelectLayout_ === 'function') window.applyBulkWorkMemoMapSelectLayout_();
+  if (typeof window.updateMapSelectVisuals === 'function') window.updateMapSelectVisuals();
   if (typeof window.updateWorkMapSelectBanner === 'function') window.updateWorkMapSelectBanner();
 };
 
@@ -25631,7 +25840,7 @@ window.refreshBulkWorkMemoAfterCropChange_ = (cropName) => {
       const cur = window.getBulkWorkMemoCropNames_(row);
       if (cur.indexOf(pick) < 0) window.setBulkWorkMemoCropNames_(row, cur.concat([pick]));
       row.detailedWorks = [];
-      window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+      window.refreshBulkWorkMemoCropPickOrReview_(uid);
     }
     return;
   }
@@ -25751,6 +25960,37 @@ window.refreshBulkWorkMemoExtras_ = (uid) => {
   if (!row) return;
   const extras = document.getElementById('bulk_extras_' + uid);
   if (extras) extras.innerHTML = window.buildBulkWorkMemoExtrasHtml_(row, uid);
+};
+
+/** 作物名チップの選択状態だけ更新（モーダル全体を再描画しない） */
+window.refreshBulkWorkMemoCropPick_ = (uid) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  const cropEl = document.getElementById('bulk_crop_pick_' + uid);
+  if (cropEl) {
+    cropEl.innerHTML = window.buildBulkWorkMemoCropPickSectionHtml_(row, uid);
+  }
+  window.refreshBulkWorkMemoExtras_(uid);
+  const hintEl = document.getElementById('bulk_work_hint_' + uid);
+  if (hintEl && row.workName && !window.bulkWorkMemoIsRestDraft_(row)) {
+    const needCrop = !window.getBulkWorkMemoCropNames_(row).length;
+    const msg = needCrop ? '作業名OK。作物名を1つ以上選んでください（該当なしは「共通」）' : '';
+    hintEl.textContent = msg;
+    hintEl.style.display = (needCrop && !row._workListOpen) ? 'block' : 'none';
+  }
+  const card = document.getElementById('bulk_card_' + uid);
+  if (card && !window.bulkWorkMemoIsRestDraft_(row)) {
+    const needPick = !row.workName || !row.workMatched || !window.getBulkWorkMemoCropNames_(row).length;
+    card.style.borderColor = needPick ? '#FFB74D' : '#e0e0e0';
+  }
+};
+
+window.refreshBulkWorkMemoCropPickOrReview_ = (uid) => {
+  if (document.getElementById('bulk_crop_pick_' + uid)) {
+    window.refreshBulkWorkMemoCropPick_(uid);
+    return;
+  }
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
 };
 
 /** 一括入力：作業マスタ変更後に候補・選択状態を更新 */
@@ -26083,14 +26323,14 @@ window.toggleBulkWorkMemoCropPick_ = (uid) => {
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
   if (!row) return;
   row._cropPickOpen = true;
-  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+  window.refreshBulkWorkMemoCropPickOrReview_(uid);
 };
 
 window.collapseBulkWorkMemoCropPick_ = (uid) => {
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
   if (!row) return;
   row._cropPickOpen = false;
-  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+  window.refreshBulkWorkMemoCropPickOrReview_(uid);
 };
 
 window.toggleBulkWorkMemoMachinePick_ = (uid) => {
@@ -26558,7 +26798,7 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
         ${restHintBanner}
         ${window.buildBulkWorkMemoWorkPickSectionHtml_(d, uid)}
         <div id="bulk_work_hint_${esc(uid)}" style="display:${hint && !d._workListOpen ? 'block' : 'none'}; font-size:11px; color:#E65100; margin:0 0 8px; line-height:1.35;">${hint}</div>
-        ${window.buildBulkWorkMemoCropPickSectionHtml_(d, uid)}
+        <div id="bulk_crop_pick_${esc(uid)}">${window.buildBulkWorkMemoCropPickSectionHtml_(d, uid)}</div>
         <div id="bulk_extras_${esc(uid)}">${window.buildBulkWorkMemoExtrasHtml_(d, uid)}</div>
         ${fieldHtml}
         ${window.buildBulkWorkMemoCardWorkAdminBarHtml_(d, uid)}
@@ -26609,20 +26849,13 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
   if (typeof window.setBulkWorkMemoModalClass_ === 'function') window.setBulkWorkMemoModalClass_('open');
   try { modalEl.onclick = null; } catch (e) {}
 
-  window.restoreBulkWorkMemoReviewScroll_ = (savedScroll, uid) => {
+  window.restoreBulkWorkMemoReviewScroll_ = (savedScroll) => {
     const el = document.getElementById('bulk_work_memo_review_scroll');
     if (!el) return;
-    if (uid) {
-      const card = document.getElementById('bulk_card_' + uid);
-      if (card) {
-        card.scrollIntoView({ block: 'nearest' });
-        return;
-      }
-    }
     el.scrollTop = savedScroll || 0;
   };
   requestAnimationFrame(() => {
-    window.restoreBulkWorkMemoReviewScroll_(prevScroll, scrollUid);
+    window.restoreBulkWorkMemoReviewScroll_(prevScroll);
   });
 };
 
@@ -26783,7 +27016,7 @@ window.pickBulkWorkMemoCropName_ = (uid, name) => {
   window.setBulkWorkMemoCropNames_(row, next);
   row.detailedWorks = [];
   row._cropPickOpen = true;
-  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+  window.refreshBulkWorkMemoCropPickOrReview_(uid);
 };
 
 window.pickBulkWorkMemoPrepTarget_ = (uid, targetName) => {
