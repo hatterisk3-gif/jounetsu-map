@@ -1,5 +1,7 @@
 const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
 const PIN_ORDER_KEY = "passionMapManurePinOrder";
+const CACHE_KEY = "manureMapData";
+const PENDING_KEY = "manurePendingSync";
 const COMPOST_CATEGORY_ID = "compost";
 const LIST_STATUSES = ["inprogress", "request", "accepted"];
 const BAGS_PER_A = 3.4;
@@ -23,36 +25,44 @@ const STATUS_LABELS = {
 };
 
 let map;
+let mapsApiReady = false;
 let latestUserPos = null;
 let userLocationMarker = null;
+let cachedAll = [];
 let allFields = [];
 let polygons = [];
 let fieldPolys = {};
 let fieldLabels = {};
 let selectedId = "";
-let sheetCollapsed = false;
 let loginReady = false;
 let dataLoaded = false;
 let currentUserName = localStorage.getItem("passionMapUserName") || "";
 let pinOrder = loadPinOrder();
-let savingIds = {};
+let pendingPanId = "";
+const fieldSyncQueue_ = [];
+let fieldSyncRunning_ = false;
+const FIELD_SYNC_GAP_MS = 350;
 
-async function callGAS(action, payload = {}) {
+async function callGAS(action, payload = {}, retries = 2) {
   const spreadsheetId = localStorage.getItem("spreadsheetId");
   const body = Object.assign({ action: action, spreadsheetId: spreadsheetId }, payload);
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
-  try {
-    const res = await fetch(GAS_URL, { method: "POST", body: JSON.stringify(body), signal: controller.signal });
-    clearTimeout(timeoutId);
-    const json = await res.json();
-    if (json.status !== "success") throw new Error(json.message || "APIエラー");
-    return json.data;
-  } catch (err) {
-    clearTimeout(timeoutId);
-    if (err.name === "AbortError") throw new Error("通信がタイムアウトしました。");
-    throw err;
+  let lastError = null;
+  for (let i = 0; i <= retries; i++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    try {
+      const res = await fetch(GAS_URL, { method: "POST", body: JSON.stringify(body), signal: controller.signal });
+      clearTimeout(timeoutId);
+      const json = await res.json();
+      if (json.status !== "success") throw new Error(json.message || "APIエラー");
+      return json.data;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      lastError = err.name === "AbortError" ? new Error("通信がタイムアウトしました。") : err;
+      if (i < retries) await new Promise((r) => setTimeout(r, 1200 + i * 800));
+    }
   }
+  throw lastError || new Error("APIエラー");
 }
 
 function loadPinOrder() {
@@ -152,11 +162,6 @@ function parseCoords(raw) {
 function fieldAreaA(field) {
   const n = Number(field && field.area);
   if (!isNaN(n) && n > 0) return n;
-  const poly = fieldPolys[field && field.id];
-  if (poly && google.maps.geometry && google.maps.geometry.spherical) {
-    const sqm = google.maps.geometry.spherical.computeArea(poly.getPath());
-    if (sqm > 0) return Math.round((sqm / 100) * 10) / 10;
-  }
   return 0;
 }
 
@@ -185,19 +190,205 @@ function syncPolygonsArray() {
   polygons = allFields.map((f) => ({ pData: f }));
 }
 
+function showMapSyncToast(msg, kind) {
+  kind = kind || "info";
+  const el = document.getElementById("mapSyncToast");
+  if (!el) return;
+  el.style.background = kind === "error" ? "#c62828" : (kind === "ok" ? "#2e7d32" : "#1565c0");
+  el.textContent = msg;
+  el.style.display = "block";
+  clearTimeout(window._mapSyncToastTimer);
+  window._mapSyncToastTimer = setTimeout(() => {
+    el.style.display = "none";
+  }, kind === "error" ? 8000 : 2800);
+}
+window.showMapSyncToast = showMapSyncToast;
+
+function persistManureMapCache_() {
+  try {
+    const list = cachedAll.length ? cachedAll : allFields;
+    if (!list.length) return;
+    localStorage.setItem(CACHE_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.warn("manureMapData cache persist failed", e);
+  }
+}
+
+function rememberPendingFieldSync_(pData) {
+  try {
+    const list = JSON.parse(localStorage.getItem(PENDING_KEY) || "[]");
+    const entry = { id: pData.id, manureData: buildManureDataPayload(pData), updatedAt: Date.now() };
+    const idx = list.findIndex((x) => String(x.id) === String(pData.id));
+    if (idx >= 0) list[idx] = entry;
+    else list.push(entry);
+    localStorage.setItem(PENDING_KEY, JSON.stringify(list.slice(-80)));
+  } catch (e) {
+    console.warn("rememberPendingFieldSync_ failed", e);
+  }
+}
+
+function clearPendingFieldSync_(fieldId) {
+  try {
+    const list = JSON.parse(localStorage.getItem(PENDING_KEY) || "[]");
+    const next = list.filter((x) => String(x.id) !== String(fieldId));
+    if (next.length) localStorage.setItem(PENDING_KEY, JSON.stringify(next));
+    else localStorage.removeItem(PENDING_KEY);
+  } catch (e) {}
+}
+
+function readPendingSyncs() {
+  try {
+    const list = JSON.parse(localStorage.getItem(PENDING_KEY) || "[]");
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function applyPendingToField(field, manureData) {
+  if (!field || !manureData) return;
+  const md = typeof manureData === "string" ? JSON.parse(manureData) : manureData;
+  if (md.catStatuses) field.catStatuses = md.catStatuses;
+  field.manure_status = md.manure_status || field.manure_status;
+  field.manure_deadline = md.manure_deadline != null ? md.manure_deadline : field.manure_deadline;
+  field.manure_scheduled_date = md.manure_scheduled_date != null ? md.manure_scheduled_date : field.manure_scheduled_date;
+  field.manure_cancel_reason = md.manure_cancel_reason != null ? md.manure_cancel_reason : field.manure_cancel_reason;
+  field.manure_has_pin = md.manure_has_pin != null ? !!md.manure_has_pin : field.manure_has_pin;
+  field.manure_route_selected = md.manure_route_selected != null ? !!md.manure_route_selected : field.manure_route_selected;
+  if (md.transplant_jun != null) field.transplant_jun = md.transplant_jun;
+  migratePDataManure(field);
+}
+
+function applyPendingSyncsToFields() {
+  const pending = readPendingSyncs();
+  if (!pending.length) return;
+  pending.forEach((item) => {
+    const field = allFields.find((f) => String(f.id) === String(item.id));
+    if (field) applyPendingToField(field, item.manureData);
+  });
+}
+
+function enqueueFieldSync_(task) {
+  return new Promise((resolve, reject) => {
+    fieldSyncQueue_.push({ task: task, resolve: resolve, reject: reject });
+    drainFieldSyncQueue_();
+  });
+}
+
+async function drainFieldSyncQueue_() {
+  if (fieldSyncRunning_) return;
+  fieldSyncRunning_ = true;
+  while (fieldSyncQueue_.length) {
+    const item = fieldSyncQueue_.shift();
+    try { item.resolve(await item.task()); }
+    catch (e) { item.reject(e); }
+    if (fieldSyncQueue_.length) await new Promise((r) => setTimeout(r, FIELD_SYNC_GAP_MS));
+  }
+  fieldSyncRunning_ = false;
+}
+
+function syncFieldToServer_(pData) {
+  if (!pData || !pData.id) return Promise.resolve(false);
+  rememberPendingFieldSync_(pData);
+  return enqueueFieldSync_(() => callGAS("updatePolygon", {
+    id: pData.id,
+    userName: currentUserName || localStorage.getItem("passionMapUserName") || "",
+    manureData: JSON.stringify(buildManureDataPayload(pData))
+  })).then(() => {
+    clearPendingFieldSync_(pData.id);
+    persistManureMapCache_();
+    showMapSyncToast("☁️ サーバーへ保存完了", "ok");
+    return true;
+  }).catch((e) => {
+    console.error("syncFieldToServer_ failed", e);
+    showMapSyncToast("⚠️ 保存に失敗（未同期として保持・自動再送します）: " + (e.message || e), "error");
+    return false;
+  });
+}
+
+async function flushPendingFieldSyncs_() {
+  const list = readPendingSyncs();
+  if (!list.length) return;
+  showMapSyncToast("☁️ 未同期の更新を再送中…", "info");
+  let ok = 0;
+  for (const item of list) {
+    if (!item || !item.id) continue;
+    const field = findField(item.id);
+    try {
+      await enqueueFieldSync_(() => callGAS("updatePolygon", {
+        id: item.id,
+        manureData: JSON.stringify(item.manureData || {})
+      }));
+      clearPendingFieldSync_(item.id);
+      ok++;
+    } catch (e) {
+      console.warn("flushPendingFieldSyncs_ item failed", item.id, e);
+      if (field) rememberPendingFieldSync_(field);
+    }
+  }
+  if (ok > 0) showMapSyncToast("☁️ 未同期 " + ok + "件をサーバーへ反映しました", "ok");
+}
+
+function schedulePendingFieldSyncFlush_() {
+  setTimeout(() => { flushPendingFieldSyncs_().catch(() => {}); }, 2500);
+}
+
+window.addEventListener("online", () => { schedulePendingFieldSyncFlush_(); });
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") schedulePendingFieldSyncFlush_();
+});
+
+function applyFieldList(list, opts) {
+  const options = opts || {};
+  cachedAll = Array.isArray(list) ? list : [];
+  allFields = cachedAll.filter((p) => parseCoords(p.coords).length >= 3);
+  allFields.forEach((f) => {
+    f.coords = parseCoords(f.coords);
+    migratePDataManure(f);
+  });
+  applyPendingSyncsToFields();
+  syncPolygonsArray();
+  fillLocationFilter();
+  renderRequestList();
+  if (map) drawFields();
+  if (!options.skipPersist) persistManureMapCache_();
+}
+
+function loadFromCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return false;
+    const list = JSON.parse(raw);
+    if (!Array.isArray(list) || !list.length) return false;
+    applyFieldList(list, { skipPersist: true });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const id = localStorage.getItem("passionMapUserId");
   const pw = localStorage.getItem("passionMapUserPw");
   if (document.getElementById("loginId") && id) document.getElementById("loginId").value = id;
   if (document.getElementById("loginPw") && pw) document.getElementById("loginPw").value = pw;
-  document.body.classList.add("sheet-open");
-  if (id && pw) {
-    document.getElementById("loginScreen").style.display = "none";
+  if (!(id && pw)) return;
+
+  document.getElementById("loginScreen").style.display = "none";
+  currentUserName = localStorage.getItem("passionMapUserName") || "";
+  const hasCache = loadFromCache();
+  loginReady = true;
+  if (hasCache) {
+    showMapSyncToast("📦 キャッシュで起動（最新を裏で確認中…）", "info");
+    schedulePendingFieldSyncFlush_();
+    executeLogin(true, { fromCache: true });
+  } else {
     executeLogin(true);
   }
 });
 
-async function executeLogin(isAuto) {
+async function executeLogin(isAuto, options) {
+  const fromCache = !!(options && options.fromCache);
   const id = document.getElementById("loginId").value;
   const pw = document.getElementById("loginPw").value;
   const err = document.getElementById("loginError");
@@ -206,7 +397,30 @@ async function executeLogin(isAuto) {
     if (err) err.textContent = "スタッフIDとパスワードを入力してください";
     return;
   }
+  if (fromCache) {
+    document.getElementById("loginScreen").style.display = "none";
+    loginReady = true;
+    try {
+      const result = await callGAS("login", { orgId: "default", userId: id, password: pw });
+      if (result && result.success) {
+        currentUserName = result.name || currentUserName;
+        localStorage.setItem("passionMapUserName", result.name || "");
+        localStorage.setItem("passionMapUserRole", result.role || "作業員");
+        if (result.spreadsheetId) localStorage.setItem("spreadsheetId", result.spreadsheetId);
+      } else {
+        showMapSyncToast("⚠️ ログイン確認に失敗（キャッシュで続行）", "error");
+      }
+    } catch (e) {
+      showMapSyncToast("⚠️ 通信エラー（キャッシュで続行）", "error");
+    }
+    await loadManureData({ background: true });
+    return;
+  }
   if (!isAuto && btn) { btn.textContent = "通信中..."; btn.disabled = true; }
+  const needBlock = !cachedAll.length;
+  const load = needBlock && window.AppLoading
+    ? AppLoading.start({ label: "鶏糞散布を準備中...", detail: "ログインを確認しています", current: 0, total: 2, delay: 0 })
+    : null;
   try {
     const result = await callGAS("login", { orgId: "default", userId: id, password: pw });
     if (!result || !result.success) throw new Error((result && result.message) || "ログイン失敗");
@@ -218,25 +432,75 @@ async function executeLogin(isAuto) {
     currentUserName = result.name || "";
     document.getElementById("loginScreen").style.display = "none";
     loginReady = true;
-    maybeLoadData();
+    if (load) load.update({ detail: "散布依頼の畑を読み込んでいます", current: 1, total: 2 });
+    await loadManureData({ background: !needBlock, loadingHandle: load });
   } catch (e) {
+    if (cachedAll.length || loadFromCache()) {
+      document.getElementById("loginScreen").style.display = "none";
+      loginReady = true;
+      if (load) load.done();
+      showMapSyncToast("⚠️ 通信エラー（キャッシュで続行）", "error");
+      return;
+    }
     document.getElementById("loginScreen").style.display = "flex";
     if (err) err.textContent = e.message || "ログイン失敗";
     if (btn) { btn.textContent = "ログイン"; btn.disabled = false; }
+    if (load) load.fail("ログインに失敗しました");
   }
 }
 
-function maybeLoadData() {
-  if (!loginReady || !map || dataLoaded) return;
-  dataLoaded = true;
-  loadManureData();
+async function loadManureData(options) {
+  const opts = options || {};
+  const background = !!opts.background;
+  const load = opts.loadingHandle || null;
+  try {
+    const data = await callGAS("getInitData");
+    const polys = (data && data.polygons) || [];
+    if (cachedAll.length && !polys.length) {
+      if (background) showMapSyncToast("☁️ 読み込み完了しました", "ok");
+      if (load) load.done();
+      return;
+    }
+    applyFieldList(polys);
+    dataLoaded = true;
+    if (load) load.done();
+    else if (background) showMapSyncToast("☁️ 読み込み完了しました（最新に更新）", "ok");
+    schedulePendingFieldSyncFlush_();
+  } catch (e) {
+    if (cachedAll.length) {
+      if (load) load.done();
+      showMapSyncToast("⚠️ 最新の取得に失敗（キャッシュで続行）", "error");
+      return;
+    }
+    if (load) load.fail("読み込みに失敗しました");
+    else alert("データの読み込みに失敗しました: " + (e.message || e));
+  }
+}
+
+async function reloadManureData() {
+  showMapSyncToast("🔄 最新データを確認中…", "info");
+  await loadManureData({ background: true });
 }
 
 window.initMap = function initMap() {
-  if (map) {
-    maybeLoadData();
-    return;
+  mapsApiReady = true;
+  const overlay = document.getElementById("mapOverlay");
+  if (overlay && overlay.classList.contains("open")) {
+    createMap();
+    if (pendingPanId) {
+      setTimeout(() => {
+        if (map) google.maps.event.trigger(map, "resize");
+        panMapToField(pendingPanId);
+      }, 80);
+    }
   }
+};
+if (window._manureNeedInit && typeof google !== "undefined" && google.maps) {
+  window.initMap();
+}
+
+function createMap() {
+  if (map || typeof google === "undefined" || !google.maps) return;
   map = new google.maps.Map(document.getElementById("map"), {
     center: { lat: 35.6895, lng: 139.6917 },
     zoom: 15,
@@ -259,10 +523,7 @@ window.initMap = function initMap() {
       }, () => alert("現在地を取得できませんでした。"), { enableHighAccuracy: true });
     };
   }
-  maybeLoadData();
-};
-if (window._manureNeedInit && typeof google !== "undefined" && google.maps) {
-  window.initMap();
+  drawFields();
 }
 
 function showUserMarker(pos) {
@@ -283,35 +544,6 @@ function showUserMarker(pos) {
   } else {
     userLocationMarker.setPosition(pos);
     userLocationMarker.setMap(map);
-  }
-}
-
-async function loadManureData() {
-  const load = window.AppLoading
-    ? AppLoading.start({ label: "鶏糞散布を準備中...", detail: "散布依頼の畑を読み込んでいます", current: 0, total: 2, delay: 0 })
-    : null;
-  try {
-    const data = await callGAS("getInitData");
-    const polys = (data && data.polygons) || [];
-    allFields = polys.filter((p) => parseCoords(p.coords).length >= 3);
-    allFields.forEach(migratePDataManure);
-    syncPolygonsArray();
-    if (load) load.update({ detail: "地図に畑を描画しています", current: 1, total: 2 });
-    drawFields();
-    fillLocationFilter();
-    renderRequestList();
-    if (load) load.done();
-  } catch (e) {
-    if (load) load.fail("読み込みに失敗しました");
-    alert("データの読み込みに失敗しました: " + (e.message || e));
-  }
-}
-
-async function reloadManureData() {
-  dataLoaded = false;
-  if (loginReady && map) {
-    dataLoaded = true;
-    await loadManureData();
   }
 }
 
@@ -364,6 +596,7 @@ function sortRequestFields(list) {
 }
 
 function drawFields() {
+  if (!map) return;
   Object.keys(fieldPolys).forEach((id) => {
     if (fieldPolys[id]) fieldPolys[id].setMap(null);
   });
@@ -372,8 +605,6 @@ function drawFields() {
   });
   fieldPolys = {};
   fieldLabels = {};
-  const bounds = new google.maps.LatLngBounds();
-  let has = false;
   allFields.forEach((f) => {
     const coords = parseCoords(f.coords);
     if (coords.length < 3) return;
@@ -393,7 +624,7 @@ function drawFields() {
       zIndex: active ? 3 : 1
     });
     poly.pData = f;
-    poly.addListener("click", () => focusField(f.id, true));
+    poly.addListener("click", () => panMapToField(f.id));
     fieldPolys[f.id] = poly;
     const center = fieldCenter(f);
     if (center && active) {
@@ -405,13 +636,12 @@ function drawFields() {
         label: { text: f.name || "", color: "#fff", fontSize: "11px", fontWeight: "bold" }
       });
     }
-    coords.forEach((c) => { bounds.extend(c); has = true; });
   });
-  if (has && map) map.fitBounds(bounds);
   refreshFieldStyles();
 }
 
 function refreshFieldStyles() {
+  if (!map) return;
   allFields.forEach((f) => {
     const poly = fieldPolys[f.id];
     if (!poly) return;
@@ -430,44 +660,53 @@ function refreshFieldStyles() {
   });
 }
 
-function toggleSheet() {
-  const card = document.getElementById("listSheet");
-  const btn = document.getElementById("btnToggleSheet");
-  if (!card) return;
-  sheetCollapsed = !sheetCollapsed;
-  card.classList.toggle("collapsed", sheetCollapsed);
-  document.body.classList.toggle("sheet-open", !sheetCollapsed);
-  if (btn) btn.textContent = sheetCollapsed ? "開く" : "縮小";
-}
-
-function expandSheet() {
-  if (!sheetCollapsed) return;
-  sheetCollapsed = false;
-  const card = document.getElementById("listSheet");
-  const btn = document.getElementById("btnToggleSheet");
-  if (card) card.classList.remove("collapsed");
-  document.body.classList.add("sheet-open");
-  if (btn) btn.textContent = "縮小";
-}
-
-function focusField(id, fromMap) {
+function panMapToField(id) {
   selectedId = String(id);
-  const field = allFields.find((f) => String(f.id) === selectedId);
+  const field = findField(id);
+  const nameEl = document.getElementById("mapTargetName");
+  if (nameEl) nameEl.textContent = (field && field.name) || "";
   const poly = fieldPolys[id];
   if (poly && map) {
     const bounds = new google.maps.LatLngBounds();
     poly.getPath().forEach((p) => bounds.extend(p));
-    map.fitBounds(bounds, { top: 72, right: 24, bottom: sheetCollapsed ? 90 : 320, left: 24 });
+    map.fitBounds(bounds, { top: 72, right: 24, bottom: 24, left: 24 });
     google.maps.event.addListenerOnce(map, "idle", () => {
       if (map.getZoom() > 19) map.setZoom(19);
     });
+  } else if (field) {
+    const center = fieldCenter(field);
+    if (center && map) {
+      map.setCenter(center);
+      map.setZoom(18);
+    }
   }
   refreshFieldStyles();
   renderRequestList();
-  if (fromMap) expandSheet();
-  const card = Array.from(document.querySelectorAll(".field-card")).find((el) => el.getAttribute("data-id") === String(id));
-  if (card) card.scrollIntoView({ behavior: "smooth", block: "nearest" });
   return field;
+}
+
+function openMapOverlay(id) {
+  pendingPanId = String(id);
+  selectedId = String(id);
+  const field = findField(id);
+  const overlay = document.getElementById("mapOverlay");
+  if (overlay) overlay.classList.add("open");
+  const nameEl = document.getElementById("mapTargetName");
+  if (nameEl) nameEl.textContent = (field && field.name) || "";
+  if (!mapsApiReady) {
+    showMapSyncToast("🗺 地図を準備中…", "info");
+    return;
+  }
+  createMap();
+  setTimeout(() => {
+    if (map) google.maps.event.trigger(map, "resize");
+    panMapToField(id);
+  }, 80);
+}
+
+function closeMapOverlay() {
+  const overlay = document.getElementById("mapOverlay");
+  if (overlay) overlay.classList.remove("open");
 }
 
 function renderRequestList() {
@@ -480,33 +719,32 @@ function renderRequestList() {
     box.innerHTML = '<div class="hint">散布依頼中の畑はありません</div>';
     return;
   }
-  box.innerHTML = list.map((f) => {
-    const st = getCompostStatus(f);
-    const amt = formatAmount(fieldAreaA(f));
-    const on = String(f.id) === String(selectedId);
-    const deadline = f.manure_deadline || (f.catStatuses && f.catStatuses.compost && f.catStatuses.compost.deadline) || "";
-    const scheduled = f.manure_scheduled_date || (f.catStatuses && f.catStatuses.compost && f.catStatuses.compost.scheduled_date) || "";
-    const extra = st === "accepted" && scheduled ? "予定 " + scheduled : (deadline ? "期限 " + deadline : "");
-    const busy = !!savingIds[f.id];
-    return '<div class="field-card' + (on ? " on" : "") + (st === "inprogress" ? " inprogress" : "") + '" data-id="' + escapeHtml(f.id) + '">' +
-      '<div class="field-top" data-focus="' + escapeHtml(f.id) + '">' +
-        '<div class="field-name">' + escapeHtml(f.name || "無名") +
-          '<div class="field-meta">' + escapeHtml(amt.area) +
-            (f.location ? " ／ " + escapeHtml(f.location) : "") +
-            (extra ? " ／ " + escapeHtml(extra) : "") +
-          "</div></div>" +
-        '<span class="status-pill st-' + st + '">' + escapeHtml(STATUS_LABELS[st] || st) + "</span>" +
-      "</div>" +
-      '<div class="field-amt"><span>目安 <b>' + escapeHtml(amt.bags) + "</b></span><span>" + escapeHtml(amt.trucks) + "</span></div>" +
-      '<div class="act-row">' +
-        '<button type="button" class="act act-mid" data-mid="' + escapeHtml(f.id) + '"' + (busy ? " disabled" : "") + ">途中</button>" +
-        '<button type="button" class="act act-part" data-part="' + escapeHtml(f.id) + '"' + (busy ? " disabled" : "") + ">一部</button>" +
-        '<button type="button" class="act act-done" data-done="' + escapeHtml(f.id) + '"' + (busy ? " disabled" : "") + ">完全</button>" +
-      "</div></div>";
-  }).join("");
+  box.innerHTML = '<table class="manure-table"><thead><tr>' +
+    "<th>畑名</th><th>拠点</th><th>状態</th><th>面積</th><th>袋</th><th>車</th><th>期限 / 予定</th><th>操作</th>" +
+    "</tr></thead><tbody>" + list.map((f) => {
+      const st = getCompostStatus(f);
+      const amt = formatAmount(fieldAreaA(f));
+      const on = String(f.id) === String(selectedId);
+      const deadline = f.manure_deadline || (f.catStatuses && f.catStatuses.compost && f.catStatuses.compost.deadline) || "";
+      const scheduled = f.manure_scheduled_date || (f.catStatuses && f.catStatuses.compost && f.catStatuses.compost.scheduled_date) || "";
+      const extra = st === "accepted" && scheduled ? scheduled : (deadline || "—");
+      return '<tr class="' + (on ? "on " : "") + (st === "inprogress" ? "inprogress" : "") + '" data-id="' + escapeHtml(f.id) + '">' +
+        '<td><button type="button" class="name-link" data-focus="' + escapeHtml(f.id) + '">' + escapeHtml(f.name || "無名") + "</button></td>" +
+        "<td>" + escapeHtml(f.location || "—") + "</td>" +
+        '<td><span class="status-pill st-' + st + '">' + escapeHtml(STATUS_LABELS[st] || st) + "</span></td>" +
+        "<td>" + escapeHtml(amt.area) + "</td>" +
+        "<td>" + escapeHtml(amt.bags) + "</td>" +
+        "<td>" + escapeHtml(amt.trucks) + "</td>" +
+        "<td>" + escapeHtml(extra) + "</td>" +
+        '<td><div class="act-row">' +
+          '<button type="button" class="act act-mid" data-mid="' + escapeHtml(f.id) + '">途中</button>' +
+          '<button type="button" class="act act-part" data-part="' + escapeHtml(f.id) + '">一部</button>' +
+          '<button type="button" class="act act-done" data-done="' + escapeHtml(f.id) + '">完全</button>' +
+        "</div></td></tr>";
+    }).join("") + "</tbody></table>";
 
   box.querySelectorAll("[data-focus]").forEach((el) => {
-    el.addEventListener("click", () => focusField(el.getAttribute("data-focus")));
+    el.addEventListener("click", () => openMapOverlay(el.getAttribute("data-focus")));
   });
   box.querySelectorAll("[data-mid]").forEach((el) => {
     el.addEventListener("click", (e) => { e.stopPropagation(); markInProgress(el.getAttribute("data-mid")); });
@@ -523,39 +761,25 @@ function findField(id) {
   return allFields.find((f) => String(f.id) === String(id));
 }
 
-async function saveFieldStatus(field) {
-  await callGAS("updatePolygon", {
-    id: field.id,
-    userName: currentUserName || localStorage.getItem("passionMapUserName") || "",
-    manureData: JSON.stringify(buildManureDataPayload(field))
-  });
-}
-
-async function markInProgress(id) {
+function markInProgress(id) {
   const field = findField(id);
   if (!field) return;
   pinOrder = [String(id)].concat(pinOrder.filter((x) => x !== String(id)));
   savePinOrder();
   applyCompostStatusUpdate(field, { status: "inprogress", has_pin: true });
   selectedId = String(id);
+  persistManureMapCache_();
   renderRequestList();
   refreshFieldStyles();
-  savingIds[id] = true;
-  renderRequestList();
-  try {
-    await saveFieldStatus(field);
-  } catch (e) {
-    alert("途中への更新に失敗しました: " + (e.message || e));
-  } finally {
-    delete savingIds[id];
-    renderRequestList();
-  }
+  showMapSyncToast("✅ 途中にしました（同期中…）", "ok");
+  syncFieldToServer_(field);
 }
 
 function markPartial(id) {
-  const field = focusField(id);
+  const field = findField(id);
   if (!field) return;
-  if (!sheetCollapsed) toggleSheet();
+  selectedId = String(id);
+  renderRequestList();
   if (typeof openFieldMemo !== "function") {
     alert("メモ機能を読み込めませんでした");
     return;
@@ -563,44 +787,28 @@ function markPartial(id) {
   openFieldMemo(field);
 }
 
-async function markComplete(id) {
+function markComplete(id) {
   const field = findField(id);
   if (!field) return;
   if (!confirm((field.name || "この畑") + " を散布完了（完全）にしますか？\nリストから消えます。")) return;
-  const prev = {
-    status: getCompostStatus(field),
-    deadline: field.manure_deadline || "",
-    scheduled_date: field.manure_scheduled_date || "",
-    has_pin: !!field.manure_has_pin
-  };
   applyCompostStatusUpdate(field, { status: "completed", has_pin: true, deadline: "", scheduled_date: "" });
   pinOrder = pinOrder.filter((x) => x !== String(id));
   savePinOrder();
   if (String(selectedId) === String(id)) selectedId = "";
+  persistManureMapCache_();
   renderRequestList();
   refreshFieldStyles();
-  savingIds[id] = true;
-  try {
-    await saveFieldStatus(field);
-  } catch (e) {
-    applyCompostStatusUpdate(field, prev);
-    alert("完了の保存に失敗しました。リストに戻します。\n" + (e.message || e));
-    renderRequestList();
-    refreshFieldStyles();
-  } finally {
-    delete savingIds[id];
-    renderRequestList();
-    refreshFieldStyles();
-  }
+  showMapSyncToast("✅ 完了にしました（同期中…）", "ok");
+  syncFieldToServer_(field);
 }
 
 function closeModal() {}
 
 window.executeLogin = executeLogin;
-window.toggleSheet = toggleSheet;
 window.renderRequestList = renderRequestList;
 window.reloadManureData = reloadManureData;
-window.focusField = focusField;
+window.openMapOverlay = openMapOverlay;
+window.closeMapOverlay = closeMapOverlay;
 window.markInProgress = markInProgress;
 window.markPartial = markPartial;
 window.markComplete = markComplete;

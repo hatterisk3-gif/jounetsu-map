@@ -540,6 +540,408 @@ async function callGAS(action, params = {}, retries = 2) {
     throw lastError;
 }
 
+const ADMIN_PENDING_SYNC_KEY = 'pMapAdminPendingSync';
+const adminSyncQueue_ = [];
+let adminSyncRunning_ = false;
+const ADMIN_SYNC_GAP_MS = 350;
+
+function showAdminSyncToast(msg, kind) {
+    kind = kind || 'info';
+    let el = document.getElementById('adminSyncToast');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'adminSyncToast';
+        el.style.cssText = 'position:fixed;left:50%;bottom:88px;transform:translateX(-50%);z-index:3000000;max-width:90%;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:bold;box-shadow:0 4px 16px rgba(0,0,0,0.25);display:none;text-align:center;line-height:1.4;';
+        document.body.appendChild(el);
+    }
+    el.style.background = kind === 'error' ? '#c62828' : (kind === 'ok' ? '#2e7d32' : '#1565c0');
+    el.style.color = '#fff';
+    el.textContent = msg;
+    el.style.display = 'block';
+    clearTimeout(window._adminSyncToastTimer);
+    window._adminSyncToastTimer = setTimeout(() => {
+        if (el) el.style.display = 'none';
+    }, kind === 'error' ? 8000 : 2800);
+}
+window.showAdminSyncToast = showAdminSyncToast;
+
+function enqueueAdminSync_(task) {
+    return new Promise((resolve, reject) => {
+        adminSyncQueue_.push({ task, resolve, reject });
+        drainAdminSyncQueue_();
+    });
+}
+
+async function drainAdminSyncQueue_() {
+    if (adminSyncRunning_) return;
+    adminSyncRunning_ = true;
+    while (adminSyncQueue_.length) {
+        const item = adminSyncQueue_.shift();
+        try {
+            item.resolve(await item.task());
+        } catch (e) {
+            item.reject(e);
+        }
+        if (adminSyncQueue_.length) {
+            await new Promise(r => setTimeout(r, ADMIN_SYNC_GAP_MS));
+        }
+    }
+    adminSyncRunning_ = false;
+}
+
+function newAdminTempId_(prefix) {
+    return (prefix || 'tmp') + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+}
+
+function isAdminTempId_(id) {
+    return String(id || '').indexOf('tmp_') === 0;
+}
+
+function serializeAdminPolygon_(obj) {
+    if (!obj) return null;
+    let coords = obj.coords;
+    try {
+        if (obj.polygon && typeof obj.polygon.getPath === 'function') {
+            coords = obj.polygon.getPath().getArray().map(pt => ({ lat: pt.lat(), lng: pt.lng() }));
+        } else if (obj.isMarker && obj.marker && typeof obj.marker.getPosition === 'function' && obj.marker.getPosition()) {
+            const pos = obj.marker.getPosition();
+            coords = [{ lat: pos.lat(), lng: pos.lng() }];
+        }
+    } catch (e) {}
+    if (typeof coords === 'string') {
+        try { coords = JSON.parse(coords); } catch (e) { return null; }
+    }
+    if (!Array.isArray(coords) || !coords.length) return null;
+    return {
+        id: obj.id,
+        name: obj.name,
+        coords: coords,
+        color: obj.color,
+        location: obj.location || '',
+        condition: obj.condition || '',
+        area: obj.area || 0,
+        status: obj.status || '',
+        toukiId: obj.toukiId || '',
+        isMarker: !!obj.isMarker,
+        signFunction: obj.signFunction || '',
+        linkedSigns: obj.linkedSigns || '',
+        ridgeDir: obj.ridgeDir || '',
+        ridgeWidth: obj.ridgeWidth || '',
+        uneSimData: obj.uneSimData || '',
+        author: obj.author || ''
+    };
+}
+
+function hasPendingAdminSyncOf_(ops) {
+    try {
+        const list = JSON.parse(localStorage.getItem(ADMIN_PENDING_SYNC_KEY) || '[]');
+        const set = new Set(ops || []);
+        return list.some(x => x && set.has(x.op));
+    } catch (e) {
+        return false;
+    }
+}
+
+function persistAdminInitCache_() {
+    try {
+        let cached = {};
+        try { cached = JSON.parse(localStorage.getItem('pMapAdminInitData') || '{}') || {}; } catch (e) { cached = {}; }
+        const polygons = Object.keys(loadedPolygons || {}).map(id => serializeAdminPolygon_(loadedPolygons[id])).filter(Boolean);
+        const data = {
+            ...cached,
+            polygons: polygons.length ? polygons : (cached.polygons || []),
+            toukiList: Array.isArray(toukiList) ? toukiList : (cached.toukiList || []),
+            pdl: {
+                ...(cached.pdl || {}),
+                locations: pdlLocations,
+                locationDetails: pdlLocationDetails,
+                conditions: pdlConditions,
+                statuses: pdlStatuses,
+                crops: pdlCrops,
+                containers: pdlContainers,
+                containerNames: pdlContainerNames,
+                workMaster: pdlWorkMaster,
+                tools: pdlTools,
+                materials: pdlMaterials,
+                pesticides: pdlPesticides,
+                fertilizers: pdlFertilizers,
+                cropChemPlans: pdlCropChemPlans,
+                costItems: pdlCostItems,
+                cropCostPlans: pdlCropCostPlans,
+                cropWorkPlans: pdlCropWorkPlans,
+                nurseryLocations: pdlNurseryLocations,
+                cropCultSettings: pdlCropCultSettings,
+                signFunctionsMaster: pdlSignFunctions,
+                signFunctions: pdlSignFunctions,
+                workCategories: pdlWorkCategories,
+                contentUnits: pdlContentUnits,
+                machineTypes: pdlMachineTypes,
+                machineGroups: pdlMachineGroups,
+                machines: window.pdlMachines || (cached.pdl && cached.pdl.machines) || []
+            }
+        };
+        localStorage.setItem('pMapAdminInitData', JSON.stringify(data));
+    } catch (e) {
+        console.warn('pMapAdminInitData cache persist failed', e);
+    }
+}
+
+function preservePendingLocalPolygons_() {
+    const pending = [];
+    for (const id in (loadedPolygons || {})) {
+        if (isAdminTempId_(id)) {
+            const ser = serializeAdminPolygon_(loadedPolygons[id]);
+            if (ser) pending.push(ser);
+        }
+    }
+    return pending;
+}
+
+function remapLoadedPolygonId_(oldId, newId) {
+    if (!oldId || !newId || String(oldId) === String(newId)) return loadedPolygons[oldId];
+    const obj = loadedPolygons[oldId];
+    if (!obj) return null;
+    obj.id = newId;
+    if (obj._adminIdRef) obj._adminIdRef.id = newId;
+    loadedPolygons[newId] = obj;
+    delete loadedPolygons[oldId];
+    if (editingId === oldId) editingId = newId;
+    if (Array.isArray(selectedForDelete)) {
+        const idx = selectedForDelete.indexOf(oldId);
+        if (idx >= 0) selectedForDelete[idx] = newId;
+    }
+    if (obj._pendingUpdate) {
+        const extra = obj._pendingUpdate;
+        obj._pendingUpdate = null;
+        setTimeout(() => { syncUpdatePolygon_(obj, extra).catch(() => {}); }, 0);
+    }
+    return obj;
+}
+
+function rememberPendingAdminSync_(item) {
+    if (!item || !item.op) return;
+    try {
+        const list = JSON.parse(localStorage.getItem(ADMIN_PENDING_SYNC_KEY) || '[]');
+        const key = item.key || (item.op + ':' + (item.tempId || item.id || item.updatedAt || Date.now()));
+        item.key = key;
+        item.updatedAt = Date.now();
+        const idx = list.findIndex(x => x && x.key === key);
+        if (idx >= 0) list[idx] = item;
+        else list.push(item);
+        localStorage.setItem(ADMIN_PENDING_SYNC_KEY, JSON.stringify(list.slice(-80)));
+    } catch (e) {
+        console.warn('rememberPendingAdminSync_ failed', e);
+    }
+}
+
+function clearPendingAdminSync_(key) {
+    if (!key) return;
+    try {
+        const list = JSON.parse(localStorage.getItem(ADMIN_PENDING_SYNC_KEY) || '[]');
+        const next = list.filter(x => x && x.key !== key);
+        if (next.length) localStorage.setItem(ADMIN_PENDING_SYNC_KEY, JSON.stringify(next));
+        else localStorage.removeItem(ADMIN_PENDING_SYNC_KEY);
+    } catch (e) {}
+}
+
+function syncAdminCall_(action, payload, pendingItem) {
+    if (pendingItem) rememberPendingAdminSync_(pendingItem);
+    return enqueueAdminSync_(() => callGAS(action, payload)).then(res => {
+        if (pendingItem && pendingItem.key) clearPendingAdminSync_(pendingItem.key);
+        persistAdminInitCache_();
+        return res;
+    }).catch(e => {
+        console.warn('syncAdminCall_ failed', action, e);
+        showAdminSyncToast('⚠️ 保存に失敗しました（未同期として保持・自動再送します）: ' + (e.message || e), 'error');
+        throw e;
+    });
+}
+
+function syncUpdatePolygon_(p, extra) {
+    if (!p || !p.id) return Promise.resolve(false);
+    if (isAdminTempId_(p.id)) {
+        p._pendingUpdate = Object.assign({}, extra || {});
+        persistAdminInitCache_();
+        return Promise.resolve(false);
+    }
+    const payload = Object.assign({
+        id: p.id,
+        name: p.name,
+        userName: currentUser
+    }, extra || {});
+    if (p.isMarker) {
+        if (payload.coords == null && p.coords) payload.coords = JSON.stringify(p.coords);
+        if (payload.color == null && p.color != null) payload.color = p.color;
+        if (payload.signFunction == null) payload.signFunction = p.signFunction;
+        if (payload.condition == null) payload.condition = p.linkedSigns || '';
+    } else {
+        if (payload.location == null) payload.location = p.location;
+        if (payload.condition == null) payload.condition = p.condition;
+        if (payload.status == null) payload.status = p.status;
+        if (payload.toukiId == null) payload.toukiId = p.toukiId || '';
+        if (payload.ridgeDir == null) payload.ridgeDir = p.ridgeDir || '';
+        if (payload.ridgeWidth == null) payload.ridgeWidth = p.ridgeWidth || '';
+        if (payload.area == null && p.area != null) payload.area = p.area;
+        if (payload.coords == null && p.coords) payload.coords = JSON.stringify(p.coords);
+        if (payload.color == null && p.color != null) payload.color = p.color;
+    }
+    persistAdminInitCache_();
+    return syncAdminCall_('updatePolygon', payload, {
+        key: 'updatePolygon:' + p.id,
+        op: 'updatePolygon',
+        payload: payload
+    }).then(() => true).catch(() => false);
+}
+
+async function flushPendingAdminSyncs_() {
+    let list = [];
+    try {
+        list = JSON.parse(localStorage.getItem(ADMIN_PENDING_SYNC_KEY) || '[]');
+    } catch (e) {
+        return;
+    }
+    if (!list.length) return;
+    showAdminSyncToast('☁️ 未同期の更新を再送中…', 'info');
+    let ok = 0;
+    for (const item of list) {
+        if (!item || !item.op) continue;
+        try {
+            if (item.op === 'savePolygon' && item.tempId && loadedPolygons[item.tempId]) {
+                const newId = await enqueueAdminSync_(() => callGAS('savePolygon', item.payload));
+                remapLoadedPolygonId_(item.tempId, newId);
+                clearPendingAdminSync_(item.key);
+                ok++;
+            } else if (item.op === 'savePolygonBatch' && Array.isArray(item.tempIds) && Array.isArray(item.payload && item.payload.polygons)) {
+                const newIds = await enqueueAdminSync_(() => callGAS('savePolygonBatch', item.payload));
+                if (Array.isArray(newIds)) {
+                    item.tempIds.forEach((tid, i) => { if (newIds[i]) remapLoadedPolygonId_(tid, newIds[i]); });
+                }
+                clearPendingAdminSync_(item.key);
+                ok++;
+            } else if (item.op === 'updatePolygon' && item.payload) {
+                await enqueueAdminSync_(() => callGAS('updatePolygon', item.payload));
+                clearPendingAdminSync_(item.key);
+                ok++;
+            } else if (item.op === 'deletePolygon' && item.payload) {
+                await enqueueAdminSync_(() => callGAS('deletePolygon', item.payload));
+                clearPendingAdminSync_(item.key);
+                ok++;
+            } else if (item.op === 'deletePolygonBatch' && item.payload) {
+                await enqueueAdminSync_(() => callGAS('deletePolygonBatch', item.payload));
+                clearPendingAdminSync_(item.key);
+                ok++;
+            } else if (item.op === 'splitField' && item.payload && item.tempId) {
+                const newId = await enqueueAdminSync_(() => callGAS('splitField', item.payload));
+                remapLoadedPolygonId_(item.tempId, newId);
+                clearPendingAdminSync_(item.key);
+                ok++;
+            } else if (item.op === 'mergeFields' && item.payload) {
+                await enqueueAdminSync_(() => callGAS('mergeFields', item.payload));
+                clearPendingAdminSync_(item.key);
+                ok++;
+            } else if (item.op === 'manageMaster' && item.payload) {
+                await enqueueAdminSync_(() => callGAS('manageMaster', item.payload));
+                clearPendingAdminSync_(item.key);
+                ok++;
+            } else if (item.op === 'saveTouki' && item.payload) {
+                await enqueueAdminSync_(() => callGAS('saveTouki', item.payload));
+                clearPendingAdminSync_(item.key);
+                ok++;
+            }
+        } catch (e) {
+            console.warn('flushPendingAdminSyncs_ item failed', item.op, e);
+        }
+    }
+    persistAdminInitCache_();
+    if (ok > 0) showAdminSyncToast('☁️ 未同期 ' + ok + '件をサーバーへ反映しました', 'ok');
+}
+
+function schedulePendingAdminSyncFlush_() {
+    setTimeout(() => { flushPendingAdminSyncs_().catch(() => {}); }, 2500);
+}
+
+window.addEventListener('online', () => { schedulePendingAdminSyncFlush_(); });
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') schedulePendingAdminSyncFlush_();
+});
+
+function applyMasterServerList_(type, updatedList) {
+    if (type === 'crop') pdlCrops = updatedList;
+    else if (type === 'cropCultSetting') pdlCropCultSettings = updatedList || [];
+    else if (type === 'nurseryLocation') pdlNurseryLocations = updatedList || [];
+    else if (type === 'container') {
+        pdlContainers = updatedList || [];
+        pdlContainerNames = [...new Set((pdlContainers || []).map(c => c.name || c))];
+    } else if (type === 'contentUnit') pdlContentUnits = updatedList || [];
+    else if (type === 'sign') pdlSignFunctions = updatedList;
+    else if (type === 'location') {
+        pdlLocationDetails = updatedList;
+        pdlLocations = (updatedList || []).map(l => l.name || l);
+        const locEl = document.getElementById('fieldLocation');
+        if (locEl) locEl.innerHTML = '<option value="">拠点</option>' + pdlLocations.map(l => `<option value="${l}">${l}</option>`).join('');
+    } else if (type === 'tool') pdlTools = updatedList;
+    else if (type === 'material') pdlMaterials = updatedList;
+    else if (type === 'pesticide') pdlPesticides = updatedList || [];
+    else if (type === 'fertilizer') pdlFertilizers = updatedList || [];
+    else if (type === 'costItem') pdlCostItems = updatedList || [];
+    else if (type === 'work') pdlWorkMaster = updatedList;
+    else if (type === 'workCategory') pdlWorkCategories = updatedList;
+    else if (type === 'machineType') pdlMachineTypes = updatedList;
+    else if (type === 'machineGroup' || type === 'machineCategory') pdlMachineGroups = updatedList;
+}
+
+function applyOptimisticMasterChange_(type, act, value) {
+    const wrap = (getArr, setArr, itemKey) => {
+        let arr = (getArr() || []).slice();
+        if (act === 'add' || act === 'merge') {
+            arr.push(value);
+        } else if (act === 'edit') {
+            const orig = value && (value.originalName != null ? value.originalName : value.id);
+            const nextData = (value && value.newData) ? value.newData : value;
+            arr = arr.map(item => {
+                const key = itemKey(item);
+                if (String(key) !== String(orig)) return item;
+                if (item && typeof item === 'object') return Object.assign({}, item, nextData);
+                return (nextData && nextData.name != null) ? nextData.name : nextData;
+            });
+        } else if (act === 'delete') {
+            arr = arr.filter(item => {
+                if (type === 'container' && value && typeof value === 'object') {
+                    return !((item.name || item) === value.name && (item.crop || '') === (value.crop || ''));
+                }
+                const delId = value && (value.id != null ? value.id : value.name);
+                return String(itemKey(item)) !== String(delId);
+            });
+        }
+        setArr(arr);
+    };
+    const nameOf = item => (item && typeof item === 'object') ? (item.name || item.id || '') : item;
+    if (type === 'crop') wrap(() => pdlCrops, v => { pdlCrops = v; }, nameOf);
+    else if (type === 'cropCultSetting') wrap(() => pdlCropCultSettings, v => { pdlCropCultSettings = v; }, item => item.cropName || item.name || item.id);
+    else if (type === 'nurseryLocation') wrap(() => pdlNurseryLocations, v => { pdlNurseryLocations = v; }, nameOf);
+    else if (type === 'container') wrap(() => pdlContainers, v => {
+        pdlContainers = v;
+        pdlContainerNames = [...new Set((v || []).map(c => c.name || c))];
+    }, item => (item.name || '') + '|' + (item.crop || ''));
+    else if (type === 'contentUnit') wrap(() => pdlContentUnits, v => { pdlContentUnits = v; }, nameOf);
+    else if (type === 'sign') wrap(() => pdlSignFunctions, v => { pdlSignFunctions = v; }, nameOf);
+    else if (type === 'location') wrap(() => pdlLocationDetails, v => {
+        pdlLocationDetails = v;
+        pdlLocations = (v || []).map(l => l.name || l);
+        const locEl = document.getElementById('fieldLocation');
+        if (locEl) locEl.innerHTML = '<option value="">拠点</option>' + pdlLocations.map(l => `<option value="${l}">${l}</option>`).join('');
+    }, nameOf);
+    else if (type === 'tool') wrap(() => pdlTools, v => { pdlTools = v; }, nameOf);
+    else if (type === 'material') wrap(() => pdlMaterials, v => { pdlMaterials = v; }, nameOf);
+    else if (type === 'pesticide') wrap(() => pdlPesticides, v => { pdlPesticides = v; }, item => item.id || item.name);
+    else if (type === 'fertilizer') wrap(() => pdlFertilizers, v => { pdlFertilizers = v; }, item => item.id || item.name);
+    else if (type === 'costItem') wrap(() => pdlCostItems, v => { pdlCostItems = v; }, item => item.id || item.name);
+    else if (type === 'work') wrap(() => pdlWorkMaster, v => { pdlWorkMaster = v; }, nameOf);
+    else if (type === 'workCategory') wrap(() => pdlWorkCategories, v => { pdlWorkCategories = v; }, nameOf);
+    else if (type === 'machineType') wrap(() => pdlMachineTypes, v => { pdlMachineTypes = v; }, nameOf);
+    else if (type === 'machineGroup' || type === 'machineCategory') wrap(() => pdlMachineGroups, v => { pdlMachineGroups = v; }, nameOf);
+}
+
 function saveAdminCredentials(id, pw, name) {
     try {
         localStorage.setItem('pMapAdminId', String(id).trim());
@@ -558,11 +960,22 @@ function restoreAdminLoginForm() {
     return !!(id && pw);
 }
 
-async function executeLogin(isAuto = false) {
+async function executeLogin(isAuto = false, options = {}) {
+    const fromCache = !!(options && options.fromCache);
     const id = document.getElementById('loginId').value;
     const pw = document.getElementById('loginPw').value;
     const btn = document.getElementById('loginBtn');
     const err = document.getElementById('loginError');
+    const hasCache = !!localStorage.getItem('pMapAdminInitData');
+
+    if (fromCache) {
+        currentUser = currentUser || localStorage.getItem('pMapAdminName') || localStorage.getItem('passionMapUserName') || '';
+        const loginScreen = document.getElementById('loginScreen');
+        if (loginScreen) loginScreen.style.display = 'none';
+        setTimeout(refreshAdminMapSize, 50);
+        startLocationWatch();
+        schedulePendingAdminSyncFlush_();
+    }
 
     if (!isAuto && btn) { btn.innerText = "認証中..."; btn.disabled = true; }
 
@@ -594,23 +1007,40 @@ async function executeLogin(isAuto = false) {
                 await PassionMapTerms.ensureAccepted({ userId: id });
             }
 
-            loadInitData();
+            if (fromCache) {
+                loadInitData({ background: true });
+            } else if (hasCache) {
+                try { renderInitData(JSON.parse(localStorage.getItem('pMapAdminInitData')), { interim: true }); } catch (e) {}
+                showAdminSyncToast('📦 キャッシュで表示（最新を裏で確認中…）', 'info');
+                loadInitData({ background: true });
+            } else {
+                loadInitData();
+            }
             startLocationWatch();
             mapInitPromise.then(() => applyPendingMapDeepLink());
+            if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
         } else {
+            if (fromCache && hasCache) {
+                showAdminSyncToast('⚠️ ログイン確認に失敗（キャッシュで続行）', 'error');
+                return;
+            }
             document.getElementById('loginScreen').style.display = 'flex';
             if (err) err.innerText = "❌ ID/PWが違います";
             if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
         }
     } catch (e) {
-        if (isAuto) {
+        if (isAuto || fromCache) {
             const savedName = localStorage.getItem('pMapAdminName');
             if (savedName) currentUser = savedName;
             startLocationWatch();
-            // 自動ログイン失敗時も、セッション/キャッシュから圃場を出す
+            if (fromCache && hasCache) {
+                showAdminSyncToast('⚠️ 通信エラー（キャッシュで続行）', 'error');
+                schedulePendingAdminSyncFlush_();
+                return;
+            }
             try {
                 if (localStorage.getItem('spreadsheetId')) {
-                    loadInitData();
+                    loadInitData({ background: hasCache });
                 } else {
                     const cached = localStorage.getItem('pMapAdminInitData');
                     if (cached) renderInitData(JSON.parse(cached));
@@ -670,21 +1100,27 @@ function openMasterFromQuery_() {
     }, 0);
 }
 
-function loadInitData() {
+function loadInitData(options) {
+    options = options || {};
+    const background = !!options.background;
     initDataLoadStarted = true;
-    if (window._adminInitLoading) window._adminInitLoading.done();
-    window._adminInitLoading = (window.AppLoading && AppLoading.start)
-        ? AppLoading.start({ label: '管理画面を準備中...', detail: '初期データを確認しています', current: 0, total: 3, delay: 0 })
-        : null;
-    const cached = localStorage.getItem('pMapAdminInitData');
-    if (cached) {
-        if (window._adminInitLoading) window._adminInitLoading.update({ label: '保存データを読み込み中...', detail: '地図を先に表示します', current: 1, total: 3 });
-        try { renderInitData(JSON.parse(cached), { interim: true }); } catch(e){}
+    if (window._adminInitLoading) {
+        window._adminInitLoading.done();
+        window._adminInitLoading = null;
     }
-    if (window._adminInitLoading) window._adminInitLoading.update({ label: '最新データを取得中...', detail: 'サーバーに接続しています', current: 1, total: 3 });
+    const cached = localStorage.getItem('pMapAdminInitData');
+    if (!background) {
+        window._adminInitLoading = (window.AppLoading && AppLoading.start)
+            ? AppLoading.start({ label: '管理画面を準備中...', detail: '初期データを確認しています', current: 0, total: 3, delay: 0 })
+            : null;
+        if (cached) {
+            if (window._adminInitLoading) window._adminInitLoading.update({ label: '保存データを読み込み中...', detail: '地図を先に表示します', current: 1, total: 3 });
+            try { renderInitData(JSON.parse(cached), { interim: true }); } catch (e) {}
+        }
+        if (window._adminInitLoading) window._adminInitLoading.update({ label: '最新データを取得中...', detail: 'サーバーに接続しています', current: 1, total: 3 });
+    }
     callGAS('getInitData').then(data => {
         if (window._adminInitLoading) window._adminInitLoading.update({ label: '表示データを準備中...', detail: 'マスタと圃場を反映しています', current: 2, total: 3 });
-        // サーバーが空（0件）を返した場合、圃場入りのキャッシュを空で上書きしない
         const incomingCount = (data && Array.isArray(data.polygons)) ? data.polygons.length : 0;
         let skipCacheSave = false;
         if (incomingCount === 0 && cached) {
@@ -693,24 +1129,46 @@ function loadInitData() {
                 if (c && Array.isArray(c.polygons) && c.polygons.length > 0) skipCacheSave = true;
             } catch (e) {}
         }
-        if (!skipCacheSave) {
+        const skipRedraw = background && (editingId || customDrawingMode || (window.isEditingFude && window.selectedFudePaths && window.selectedFudePaths.length));
+        if (!skipCacheSave && !skipRedraw) {
             try {
                 localStorage.setItem('pMapAdminInitData', JSON.stringify(data));
             } catch (e) {
                 console.warn('InitData cache save failed:', e);
             }
-        } else {
+        } else if (skipCacheSave) {
             console.warn('取得データの圃場が0件のため、キャッシュを保持します');
         }
-        // キャッシュと同一でも、地図準備後の再描画漏れを防ぐため必ず描画する
+        if (skipRedraw) {
+            persistAdminInitCache_();
+            if (background) showAdminSyncToast('☁️ 読み込み完了（編集中のため地図は維持）', 'ok');
+            if (window._adminInitLoading) { window._adminInitLoading.done(); window._adminInitLoading = null; }
+            return;
+        }
+        if (background && cached && data && data.polygons) {
+            try {
+                const oldPolys = JSON.parse(cached).polygons || [];
+                if (JSON.stringify(oldPolys) === JSON.stringify(data.polygons) && Object.keys(loadedPolygons || {}).length > 0) {
+                    renderInitData(data, { interim: false, mastersOnly: true });
+                    showAdminSyncToast('☁️ 読み込み完了しました', 'ok');
+                    if (window._adminInitLoading) { window._adminInitLoading.done(); window._adminInitLoading = null; }
+                    const mmSame = document.getElementById('masterModal');
+                    if (mmSame && mmSame.style.display === 'flex' && typeof renderMasterSection === 'function') {
+                        renderMasterSection();
+                    }
+                    return;
+                }
+            } catch (e) {}
+        }
         renderInitData(data, { interim: false });
+        if (background) showAdminSyncToast('☁️ 読み込み完了しました（最新に更新）', 'ok');
         const mm = document.getElementById('masterModal');
         if (mm && mm.style.display === 'flex' && typeof renderMasterSection === 'function') {
             renderMasterSection();
         }
+        schedulePendingAdminSyncFlush_();
     }).catch(e => {
         console.log("InitData Error:", e);
-        // ネット取得失敗時でもキャッシュが未描画なら再試行
         if (cached && Object.keys(loadedPolygons || {}).length === 0) {
             try { renderInitData(JSON.parse(cached), { interim: false }); } catch (err) {
                 if (window._adminInitLoading) { window._adminInitLoading.fail('圃場データの読み込みに失敗しました'); window._adminInitLoading = null; }
@@ -718,6 +1176,8 @@ function loadInitData() {
         } else if (window._adminInitLoading) {
             window._adminInitLoading.fail('圃場データの読み込みに失敗しました');
             window._adminInitLoading = null;
+        } else if (background) {
+            showAdminSyncToast('⚠️ 最新データの取得に失敗（表示中のデータを維持）', 'error');
         }
     });
 }
@@ -769,39 +1229,40 @@ function renderInitData(data, opts) {
     }
     pendingInitData = null;
 
-    window.pdlMachines = data.pdl.machines || [];
-    pdlLocations = data.pdl.locations || [];
-    pdlLocationDetails = data.pdl.locationDetails || pdlLocations.map(n => ({ name: n, prefecture: '', city: '', climate: '' }));
-    // locationDetails がある場合は名前配列を同期
-    if (data.pdl.locationDetails && data.pdl.locationDetails.length) {
-        pdlLocations = data.pdl.locationDetails.map(l => l.name);
-    }
-    pdlConditions = data.pdl.conditions || [];
-    pdlStatuses = data.pdl.statuses || [];
-    toukiList = data.toukiList || [];
-    pdlCrops = data.pdl.crops || [];
-    pdlContainers = data.pdl.containers || [];
-    pdlContainerNames = data.pdl.containerNames || (pdlContainers || []).map(c => c.name || c);
-    pdlWorkMaster = data.pdl.workMaster || [];
-    pdlTools = data.pdl.tools || [];
-    pdlMaterials = data.pdl.materials || [];
-    pdlPesticides = data.pdl.pesticides || [];
-    pdlFertilizers = data.pdl.fertilizers || [];
-    pdlCropChemPlans = data.pdl.cropChemPlans || [];
-    pdlCostItems = data.pdl.costItems || [];
-    pdlCropCostPlans = data.pdl.cropCostPlans || [];
-    pdlCropWorkPlans = data.pdl.cropWorkPlans || [];
-    pdlNurseryLocations = data.pdl.nurseryLocations || [];
-    pdlCropCultSettings = data.pdl.cropCultSettings || [];
-    pdlSignFunctions = data.pdl.signFunctionsMaster || data.pdl.signFunctions || [];
-    pdlWorkCategories = data.pdl.workCategories || ["圃場作業", "事務作業", "保全・整備"];
-    pdlContentUnits = data.pdl.contentUnits || ['kg', 'g', '本', 'パック', '個', '束'];
-    pdlMachineTypes = data.pdl.machineTypes || ["トラクター", "ドローン"];
-    pdlMachineGroups = data.pdl.machineGroups || ["農業機械", "農機インプルメント", "出荷機械"];
-    // 旧実装で machineCategories にグループが入っていた場合
-    if ((!data.pdl.machineGroups || !data.pdl.machineGroups.length) && Array.isArray(data.pdl.machineCategories)
-        && data.pdl.machineCategories.length && !data.pdl.machineCategories.some(c => c === 'トラクター' || c === 'ドローン')) {
-        pdlMachineGroups = data.pdl.machineCategories;
+    const keepLocalMasters = hasPendingAdminSyncOf_(['manageMaster']);
+    if (!keepLocalMasters) {
+        window.pdlMachines = data.pdl.machines || [];
+        pdlLocations = data.pdl.locations || [];
+        pdlLocationDetails = data.pdl.locationDetails || pdlLocations.map(n => ({ name: n, prefecture: '', city: '', climate: '' }));
+        if (data.pdl.locationDetails && data.pdl.locationDetails.length) {
+            pdlLocations = data.pdl.locationDetails.map(l => l.name);
+        }
+        pdlConditions = data.pdl.conditions || [];
+        pdlStatuses = data.pdl.statuses || [];
+        toukiList = data.toukiList || [];
+        pdlCrops = data.pdl.crops || [];
+        pdlContainers = data.pdl.containers || [];
+        pdlContainerNames = data.pdl.containerNames || (pdlContainers || []).map(c => c.name || c);
+        pdlWorkMaster = data.pdl.workMaster || [];
+        pdlTools = data.pdl.tools || [];
+        pdlMaterials = data.pdl.materials || [];
+        pdlPesticides = data.pdl.pesticides || [];
+        pdlFertilizers = data.pdl.fertilizers || [];
+        pdlCropChemPlans = data.pdl.cropChemPlans || [];
+        pdlCostItems = data.pdl.costItems || [];
+        pdlCropCostPlans = data.pdl.cropCostPlans || [];
+        pdlCropWorkPlans = data.pdl.cropWorkPlans || [];
+        pdlNurseryLocations = data.pdl.nurseryLocations || [];
+        pdlCropCultSettings = data.pdl.cropCultSettings || [];
+        pdlSignFunctions = data.pdl.signFunctionsMaster || data.pdl.signFunctions || [];
+        pdlWorkCategories = data.pdl.workCategories || ["圃場作業", "事務作業", "保全・整備"];
+        pdlContentUnits = data.pdl.contentUnits || ['kg', 'g', '本', 'パック', '個', '束'];
+        pdlMachineTypes = data.pdl.machineTypes || ["トラクター", "ドローン"];
+        pdlMachineGroups = data.pdl.machineGroups || ["農業機械", "農機インプルメント", "出荷機械"];
+        if ((!data.pdl.machineGroups || !data.pdl.machineGroups.length) && Array.isArray(data.pdl.machineCategories)
+            && data.pdl.machineCategories.length && !data.pdl.machineCategories.some(c => c === 'トラクター' || c === 'ドローン')) {
+            pdlMachineGroups = data.pdl.machineCategories;
+        }
     }
     openMasterFromQuery_();
 
@@ -818,13 +1279,15 @@ function renderInitData(data, opts) {
 
     // 🌟防御：空（0件）のデータで、表示済みの圃場・看板を消さない
     const incomingPolys = Array.isArray(data.polygons) ? data.polygons : [];
-    if (incomingPolys.length === 0 && Object.keys(loadedPolygons).length > 0) {
-        console.warn('取得データの圃場が0件のため、表示中の圃場・看板を保持します（マスタのみ更新）');
+    const mastersOnly = !!(opts && opts.mastersOnly);
+    if (mastersOnly || (incomingPolys.length === 0 && Object.keys(loadedPolygons).length > 0)) {
+        if (!mastersOnly) console.warn('取得データの圃場が0件のため、表示中の圃場・看板を保持します（マスタのみ更新）');
         if (!interim && window._adminInitLoading) { window._adminInitLoading.update({ label: '表示を更新しました', detail: '既存の圃場表示を保持しました', current: 1, total: 1 }); window._adminInitLoading.done(); window._adminInitLoading = null; }
         return;
     }
     console.log('圃場・看板の描画開始:', incomingPolys.length + '件');
 
+    const pendingLocals = preservePendingLocalPolygons_();
     for (let id in loadedPolygons) {
         if (loadedPolygons[id].polygon) loadedPolygons[id].polygon.setMap(null);
         if (loadedPolygons[id].marker) loadedPolygons[id].marker.setMap(null);
@@ -858,6 +1321,11 @@ function renderInitData(data, opts) {
                 setTimeout(renderChunk, 50);
             } else {
                 // 全部の描画が終わったら検索機能をセット
+                (pendingLocals || []).forEach(p => {
+                    if (p && p.id && !loadedPolygons[p.id]) {
+                        try { createPolygonObject(p); } catch (e) {}
+                    }
+                });
                 updateAdminLegend();
                 if (typeof setupSearch === 'function') setupSearch();
                 if (!interim && window._adminInitLoading) { window._adminInitLoading.done(); window._adminInitLoading = null; }
@@ -3792,32 +4260,38 @@ window.execMaster = async (type, act, val) => {
                 const workCategory = collectDetailWorksFromInputs('add_mac_category_rows');
                 const photoB64 = (window._adminMacPhoto && window._adminMacPhoto.add) || '';
                 const photos = photoB64 ? [{ filename: (name || 'machine').replace(/\s+/g, '_') + '.jpg', base64: photoB64 }] : [];
-                document.getElementById('masterSections').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>通信中...</div>";
-                const newMac = await callGAS('addMachineToSign', {
+                const tempId = newAdminTempId_('tmp');
+                if (!window.pdlMachines) window.pdlMachines = [];
+                window.pdlMachines.push({
+                    id: tempId,
+                    name, machineNumber, workCategory, model, type, group, location, fuel, purchaseDate,
+                    photo: photoB64 || '',
+                    photo2: '',
+                    signName, signId,
+                    currentLocName: signName,
+                    currentLocId: signId
+                });
+                if (window._adminMacPhoto) window._adminMacPhoto.add = '';
+                persistAdminInitCache_();
+                renderMasterSection();
+                showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
+                enqueueAdminSync_(() => callGAS('addMachineToSign', {
                     name, machineNumber, model, type, group, location, fuel, workCategory, purchaseDate,
                     parts: "", photos, photoBase64: photoB64, photoFilename: (name || 'machine').replace(/\s+/g, '_') + '.jpg',
                     signId, signName, userName: currentUser
-                });
-                if (!window.pdlMachines) window.pdlMachines = [];
-                window.pdlMachines.push({
-                    id: newMac.id,
-                    name: newMac.name,
-                    machineNumber: newMac.machineNumber || machineNumber,
-                    workCategory: newMac.workCategory || workCategory,
-                    model: model,
-                    type: type,
-                    group: group,
-                    location: location,
-                    fuel: fuel,
-                    purchaseDate: purchaseDate,
-                    photo: newMac.photo || '',
-                    photo2: newMac.photo2 || '',
-                    signName: newMac.signName || signName,
-                    signId: newMac.signId || signId,
-                    currentLocName: newMac.signName || signName,
-                    currentLocId: newMac.signId || signId
-                });
-                if (window._adminMacPhoto) window._adminMacPhoto.add = '';
+                })).then(newMac => {
+                    const m = (window.pdlMachines || []).find(x => String(x.id) === String(tempId));
+                    if (m && newMac) {
+                        m.id = newMac.id;
+                        m.photo = newMac.photo || m.photo;
+                        m.photo2 = newMac.photo2 || '';
+                        m.signName = newMac.signName || signName;
+                        m.signId = newMac.signId || signId;
+                    }
+                    persistAdminInitCache_();
+                    showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+                }).catch(e => showAdminSyncToast('⚠️ 保存に失敗しました: ' + (e.message || e), 'error'));
+                return;
             } else if (act === 'edit') {
                 if (!await customConfirm('更新しますか？')) return;
                 const machineId = document.getElementById('edit_mac_id').value;
@@ -3835,44 +4309,54 @@ window.execMaster = async (type, act, val) => {
                 if (!signId) { customAlert("定位置・片付け場所の看板を選択してください"); return; }
                 const sign = loadedPolygons[signId];
                 const signName = sign ? (sign.name || '') : '';
-                document.getElementById('masterSections').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>通信中...</div>";
                 const photoB64 = (window._adminMacPhoto && window._adminMacPhoto.edit) || '';
                 const clearPhoto = !!(window._adminMacPhoto && window._adminMacPhoto.clearEdit && !photoB64);
                 const photos = photoB64 ? [{ filename: (name || 'machine').replace(/\s+/g, '_') + '.jpg', base64: photoB64 }] : [];
-                const saved = await callGAS('editMachineInMaster', {
-                    machineId, name, machineNumber: number, model, type, group, location, fuel,
-                    purchaseDate: date, workCategory: category, signId, signName,
-                    photos, photoBase64: photoB64, photoFilename: (name || 'machine').replace(/\s+/g, '_') + '.jpg',
-                    clearPhoto: clearPhoto
-                });
                 const m = (window.pdlMachines || []).find(x => String(x.id) === String(machineId));
                 if (m) {
                     m.name = name; m.machineNumber = number; m.model = model;
                     m.type = type; m.group = group; m.location = location; m.fuel = fuel;
                     m.purchaseDate = date; m.workCategory = category;
                     m.signId = signId; m.signName = signName;
-                    if (saved && saved.machine) {
-                        m.photo = saved.machine.photo || '';
-                        m.photo2 = saved.machine.photo2 || '';
-                    } else if (photoB64) {
-                        m.photo = photoB64;
-                    } else if (clearPhoto) {
-                        m.photo = '';
-                    }
+                    if (photoB64) m.photo = photoB64;
+                    else if (clearPhoto) m.photo = '';
                 }
                 if (window._adminMacPhoto) {
                     window._adminMacPhoto.edit = '';
                     window._adminMacPhoto.clearEdit = false;
                 }
+                persistAdminInitCache_();
+                renderMasterSection();
+                showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
+                enqueueAdminSync_(() => callGAS('editMachineInMaster', {
+                    machineId, name, machineNumber: number, model, type, group, location, fuel,
+                    purchaseDate: date, workCategory: category, signId, signName,
+                    photos, photoBase64: photoB64, photoFilename: (name || 'machine').replace(/\s+/g, '_') + '.jpg',
+                    clearPhoto: clearPhoto
+                })).then(saved => {
+                    if (m && saved && saved.machine) {
+                        m.photo = saved.machine.photo || m.photo;
+                        m.photo2 = saved.machine.photo2 || '';
+                    }
+                    persistAdminInitCache_();
+                    showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+                }).catch(e => showAdminSyncToast('⚠️ 保存に失敗しました: ' + (e.message || e), 'error'));
+                return;
             } else {
                 if (!await customConfirm('削除しますか？')) return;
-                document.getElementById('masterSections').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>通信中...</div>";
-                await callGAS('deleteMachineFromMaster', { machineId: val });
                 window.pdlMachines = (window.pdlMachines || []).filter(x => String(x.id) !== String(val));
+                persistAdminInitCache_();
+                renderMasterSection();
+                showAdminSyncToast('✅ 削除しました（同期中…）', 'ok');
+                enqueueAdminSync_(() => callGAS('deleteMachineFromMaster', { machineId: val })).then(() => {
+                    persistAdminInitCache_();
+                    showAdminSyncToast('☁️ サーバーへ削除完了', 'ok');
+                }).catch(e => showAdminSyncToast('⚠️ 削除に失敗しました: ' + (e.message || e), 'error'));
+                return;
             }
-            localStorage.removeItem('pMapAdminInitData');
+            persistAdminInitCache_();
             renderMasterSection();
-            customAlert(act === 'edit' ? "✅ 更新しました！" : (act === 'add' ? "✅ 追加しました！" : "✅ 削除しました！"));
+            showAdminSyncToast(act === 'edit' ? '✅ 更新しました（同期中…）' : (act === 'add' ? '✅ 追加しました（同期中…）' : '✅ 削除しました（同期中…）'), 'ok');
         } catch (e) {
             customAlert(e.message || "エラーが発生しました。再度お試しください。");
             renderMasterSection();
@@ -4204,42 +4688,44 @@ window.execMaster = async (type, act, val) => {
             value = { id: val };
         }
     }
-    document.getElementById('masterSections').innerHTML = "<div style='text-align:center; padding:20px; font-weight:bold;'>通信中...</div>";
-    try {
-        const updatedList = await callGAS('manageMaster', { masterType: type, manageAction: act, value: value, userName: currentUser });
-        if (type === 'crop') pdlCrops = updatedList; else if (type === 'cropCultSetting') pdlCropCultSettings = updatedList || []; else if (type === 'nurseryLocation') pdlNurseryLocations = updatedList || []; else if (type === 'container') { pdlContainers = updatedList || []; pdlContainerNames = [...new Set((pdlContainers || []).map(c => c.name || c))]; } else if (type === 'contentUnit') pdlContentUnits = updatedList || []; else if (type === 'sign') pdlSignFunctions = updatedList; else if (type === 'location') { pdlLocationDetails = updatedList; pdlLocations = (updatedList || []).map(l => l.name || l); const locEl = document.getElementById('fieldLocation'); if (locEl) locEl.innerHTML = '<option value="">拠点</option>' + pdlLocations.map(l => `<option value="${l}">${l}</option>`).join(''); } else if (type === 'tool') pdlTools = updatedList; else if (type === 'material') pdlMaterials = updatedList; else if (type === 'pesticide') pdlPesticides = updatedList || []; else if (type === 'fertilizer') pdlFertilizers = updatedList || []; else if (type === 'costItem') pdlCostItems = updatedList || []; else if (type === 'work') pdlWorkMaster = updatedList; else if (type === 'workCategory') pdlWorkCategories = updatedList; else if (type === 'machineType') pdlMachineTypes = updatedList; else if (type === 'machineGroup' || type === 'machineCategory') pdlMachineGroups = updatedList;
-        if (type === 'work') { try { closeWorkMasterEditModal(); } catch(e){} }
-        // カテゴリ/作物の改名時は作業マスタのローカル表示も追随
-        if (act === 'edit' && type === 'workCategory' && value && value.originalName && value.newData) {
-            const o = String(value.originalName).trim();
-            const n = String(value.newData.name || '').trim();
-            if (o && n && o !== n && Array.isArray(pdlWorkMaster)) {
-                pdlWorkMaster.forEach(w => { if ((w.category || '') === o) w.category = n; });
-            }
+    applyOptimisticMasterChange_(type, act, value);
+    if (type === 'work') { try { closeWorkMasterEditModal(); } catch(e){} }
+    if (act === 'edit' && type === 'workCategory' && value && value.originalName && value.newData) {
+        const o = String(value.originalName).trim();
+        const n = String(value.newData.name || '').trim();
+        if (o && n && o !== n && Array.isArray(pdlWorkMaster)) {
+            pdlWorkMaster.forEach(w => { if ((w.category || '') === o) w.category = n; });
         }
-        if (act === 'edit' && type === 'crop' && value && value.originalName && value.newData) {
-            const o = String(value.originalName).trim();
-            const n = String(value.newData.name || '').trim();
-            if (o && n && o !== n && Array.isArray(pdlWorkMaster)) {
-                pdlWorkMaster.forEach(w => {
-                    if (!w) return;
-                    if (w.cropName === o) w.cropName = n;
-                    else if (w.cropName && String(w.cropName).includes(o)) {
-                        w.cropName = String(w.cropName).split(/[,、]/).map(s => s.trim() === o ? n : s.trim()).filter(Boolean).join(',');
-                    }
-                    if (Array.isArray(w.crops)) w.crops = w.crops.map(c => c === o ? n : c);
-                });
-            }
+    }
+    if (act === 'edit' && type === 'crop' && value && value.originalName && value.newData) {
+        const o = String(value.originalName).trim();
+        const n = String(value.newData.name || '').trim();
+        if (o && n && o !== n && Array.isArray(pdlWorkMaster)) {
+            pdlWorkMaster.forEach(w => {
+                if (!w) return;
+                if (w.cropName === o) w.cropName = n;
+                else if (w.cropName && String(w.cropName).includes(o)) {
+                    w.cropName = String(w.cropName).split(/[,、]/).map(s => s.trim() === o ? n : s.trim()).filter(Boolean).join(',');
+                }
+                if (Array.isArray(w.crops)) w.crops = w.crops.map(c => c === o ? n : c);
+            });
         }
-        // 再読み込み時に古い値が表示されないよう、初期データキャッシュを破棄して次回は最新を取得させる
-        localStorage.removeItem('pMapAdminInitData');
-        localStorage.removeItem('passionMapInitData');
-        if ((type === 'fertilizer' || type === 'pesticide') && act === 'add') {
-            window['_' + type + 'MasterActiveTab'] = 'registered';
+    }
+    if ((type === 'fertilizer' || type === 'pesticide') && act === 'add') {
+        window['_' + type + 'MasterActiveTab'] = 'registered';
+    }
+    persistAdminInitCache_();
+    renderMasterSection();
+    showAdminSyncToast(act === 'merge' ? '✅ 統合しました（同期中…）' : (act === 'edit' ? '✅ 更新しました（同期中…）' : (act === 'add' ? '✅ 追加しました（同期中…）' : '✅ 削除しました（同期中…）')), 'ok');
+    const payload = { masterType: type, manageAction: act, value: value, userName: currentUser };
+    syncAdminCall_('manageMaster', payload, { key: 'manageMaster:' + type + ':' + act + ':' + Date.now(), op: 'manageMaster', payload }).then(updatedList => {
+        applyMasterServerList_(type, updatedList);
+        persistAdminInitCache_();
+        if (document.getElementById('masterModal') && document.getElementById('masterModal').style.display === 'flex') {
+            renderMasterSection();
         }
-        renderMasterSection();
-        customAlert(act === 'merge' ? "✅ 同じ作業名に統合して登録しました！" : (act === 'edit' ? "✅ 更新しました！" : (act === 'add' ? "✅ 追加しました！" : "✅ 削除しました！")));
-    } catch (e) { customAlert(e.message || "エラーが発生しました。再度お試しください。"); renderMasterSection(); }
+        showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+    }).catch(() => {});
 };
 
 function showToukiInfo(id) {
@@ -4267,7 +4753,21 @@ function openAddTouki(hojoId) {
 function saveTouki(hojoId) {
     const ad = document.getElementById('t_addr').value, ar = document.getElementById('t_area').value, ow = document.getElementById('t_owner').value, ty = document.getElementById('t_type').value;
     if (!ad) { customAlert("住所は必須です"); return; }
-    callGAS('saveTouki', { toukiData: { address: ad, area: ar, owner: ow, type: ty }, targetHojoId: hojoId }).then(() => { customAlert("登記を登録しました！圃場と紐付きました。"); document.getElementById('modal').style.display = 'none'; loadInitData(); }).catch(e => customAlert("追加失敗"));
+    const p = loadedPolygons[hojoId];
+    const tempToukiId = 'T-tmp_' + Date.now().toString(36);
+    toukiList = (toukiList || []).concat([{ id: tempToukiId, address: ad, area: ar, owner: ow, type: ty }]);
+    if (p) {
+        p.toukiId = p.toukiId ? (p.toukiId + ',' + tempToukiId) : tempToukiId;
+        persistAdminInitCache_();
+    }
+    document.getElementById('modal').style.display = 'none';
+    showAdminSyncToast('✅ 登記を反映しました（同期中…）', 'ok');
+    const payload = { toukiData: { address: ad, area: ar, owner: ow, type: ty }, targetHojoId: hojoId };
+    syncAdminCall_('saveTouki', payload, { key: 'saveTouki:' + hojoId + ':' + tempToukiId, op: 'saveTouki', payload }).then(realId => {
+        if (p && realId && p.toukiId) p.toukiId = String(p.toukiId).split(',').map(x => x.trim() === tempToukiId ? realId : x).join(',');
+        persistAdminInitCache_();
+        showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+    }).catch(() => {});
 }
 
 function openAttr(id) {
@@ -4293,21 +4793,25 @@ function openAttr(id) {
 
 function execAttr(id) {
     const p = loadedPolygons[id];
+    if (!p) return;
     if (p.isMarker) {
         const n = document.getElementById('rnIn').value, f = document.getElementById('rnFunc').value; if (!n) return;
         p.name = n; p.signFunction = f; p.labelConfig.text = n;
         p.linkedSigns = window.tempLinkedSigns ? window.tempLinkedSigns.join(',') : "";
-        p.marker.setMap(null); p.marker = createSignboardMarker(n, p.marker.getPosition(), p.color, id);
-        callGAS('updatePolygon', { id, name: n, signFunction: f, condition: p.linkedSigns, userName: currentUser });
+        p.marker.setMap(null); p.marker = createSignboardMarker(n, p.marker.getPosition(), p.color, p._adminIdRef || id);
+        infoWindow.close();
+        showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
+        syncUpdatePolygon_(p).then(ok => { if (ok) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok'); });
     } else {
         const n = document.getElementById('edN').value, l = document.getElementById('edL').value, c = document.getElementById('edC').value, s = document.getElementById('edS').value, t = p.toukiId;
         if (!n) return; p.name = n; p.location = l; p.condition = c; p.status = s; p.toukiId = t;
         const isU = (s === '未使用（返却）' || s === '未使用'), col = getAdminColor(s);
         p.polygon.setOptions({ fillColor: col, strokeColor: col, fillOpacity: isU ? 0.5 : 0.3 }); p.marker.setMap(null); p.marker = createLabelMarker(n, p.polygon.getPath().getArray(), col, p.area);
-        callGAS('updatePolygon', { id, name: n, location: l, condition: c, status: s, toukiId: t, ridgeDir: p.ridgeDir || '', ridgeWidth: p.ridgeWidth || '', userName: currentUser });
         updateAdminLegend();
+        infoWindow.close();
+        showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
+        syncUpdatePolygon_(p).then(ok => { if (ok) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok'); });
     }
-    infoWindow.close();
 }
 
 window.onFuncChangeEdit = () => { const val = document.getElementById('rnFunc').value; document.getElementById('btnLinkSignEdit').style.display = val.includes('給油') ? 'block' : 'none'; };
@@ -4326,9 +4830,11 @@ function openCol(id) {
 
 function applyCol(id, v) {
     const p = loadedPolygons[id]; p.color = v;
-    if (p.isMarker) { if (p.marker) p.marker.setMap(null); p.marker = createSignboardMarker(p.name, p.marker.getPosition(), v, id); }
+    if (p.isMarker) { if (p.marker) p.marker.setMap(null); p.marker = createSignboardMarker(p.name, p.marker.getPosition(), v, p._adminIdRef || id); }
     else { if (p.status !== '未使用（返却）' && p.status !== '未使用') p.polygon.setOptions({ fillColor: v, strokeColor: v }); }
-    callGAS('updatePolygon', { id, color: v, signFunction: p.signFunction, userName: currentUser }); infoWindow.close();
+    infoWindow.close();
+    showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
+    syncUpdatePolygon_(p, { color: v, signFunction: p.signFunction }).then(ok => { if (ok) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok'); });
 }
 
 function actionEditShape(id) {
@@ -4412,42 +4918,40 @@ async function actionDelete(id) {
 }
 
 async function doDeletePolygons(ids) {
-    document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-size:18px; font-weight:bold; color:red;'>🗑️ 削除中...<br><span style='font-size:12px; color:#666;'>しばらくお待ちください</span></div>";
-    document.getElementById('modal').style.display = 'flex';
-    
-    try {
-        if (ids.length === 1) {
-            let id = ids[0];
-            if (loadedPolygons[id].polygon) loadedPolygons[id].polygon.setMap(null); 
-            if (loadedPolygons[id].marker) loadedPolygons[id].marker.setMap(null); 
-            delete loadedPolygons[id]; 
-            await callGAS('deletePolygon', { id, userName: currentUser }); 
-        } else {
-            ids.forEach(id => {
-                if (loadedPolygons[id].polygon) loadedPolygons[id].polygon.setMap(null); 
-                if (loadedPolygons[id].marker) loadedPolygons[id].marker.setMap(null); 
-                delete loadedPolygons[id];
-            });
-            await callGAS('deletePolygonBatch', { ids, userName: currentUser });
-        }
-    } catch(e) {
-        customAlert("削除中にエラーが発生しました: " + e.message);
-    }
-    document.getElementById('modal').style.display = 'none';
     infoWindow.close();
+    document.getElementById('modal').style.display = 'none';
+    ids.forEach(id => {
+        if (!loadedPolygons[id]) return;
+        if (loadedPolygons[id].polygon) loadedPolygons[id].polygon.setMap(null);
+        if (loadedPolygons[id].marker) loadedPolygons[id].marker.setMap(null);
+        delete loadedPolygons[id];
+    });
+    persistAdminInitCache_();
+    showAdminSyncToast('✅ 削除しました（同期中…）', 'ok');
+    const realIds = ids.filter(id => !isAdminTempId_(id));
+    if (!realIds.length) return;
+    const payload = realIds.length === 1
+        ? { id: realIds[0], userName: currentUser }
+        : { ids: realIds, userName: currentUser };
+    const op = realIds.length === 1 ? 'deletePolygon' : 'deletePolygonBatch';
+    syncAdminCall_(op, payload, { key: op + ':' + realIds.join(','), op, payload }).then(() => {
+        showAdminSyncToast('☁️ サーバーへ削除完了', 'ok');
+    }).catch(() => {});
 }
 function cancelMerge() { isMergeMode = false; mergeBaseId = null; document.getElementById('mergeModePanel').style.display = 'none'; }
 function startMerge(id) { isMergeMode = true; mergeBaseId = id; infoWindow.close(); document.getElementById('mergeModePanel').style.display = 'block'; customAlert("統合する別の圃場をクリックしてください。"); }
-async function execMerge(bId, tId) { if (bId === tId) return; if (!await customConfirm("マスタと履歴を統合しますか？")) { cancelMerge(); return; } const bP = loadedPolygons[bId], tP = loadedPolygons[tId]; if (tP.toukiId) bP.toukiId = bP.toukiId ? [...new Set((bP.toukiId + "," + tP.toukiId).split(","))].join(",") : tP.toukiId; tP.polygon.setMap(null); tP.marker.setMap(null); delete loadedPolygons[tId]; cancelMerge(); callGAS('mergeFields', { baseId: bId, targetId: tId, userName: currentUser }); customAlert("完了！残った圃場の範囲を広げてください"); }
+async function execMerge(bId, tId) { if (bId === tId) return; if (!await customConfirm("マスタと履歴を統合しますか？")) { cancelMerge(); return; } const bP = loadedPolygons[bId], tP = loadedPolygons[tId]; if (tP.toukiId) bP.toukiId = bP.toukiId ? [...new Set((bP.toukiId + "," + tP.toukiId).split(","))].join(",") : tP.toukiId; tP.polygon.setMap(null); tP.marker.setMap(null); delete loadedPolygons[tId]; cancelMerge(); persistAdminInitCache_(); showAdminSyncToast('✅ 統合しました（同期中…）', 'ok'); const payload = { baseId: bId, targetId: tId, userName: currentUser }; syncAdminCall_('mergeFields', payload, { key: 'mergeFields:' + bId + ':' + tId, op: 'mergeFields', payload }).then(() => showAdminSyncToast('☁️ サーバーへ保存完了', 'ok')).catch(() => {}); }
 function openFeedback() { document.getElementById('feedbackModal').style.display = 'flex'; }
 function closeFeedback() { document.getElementById('feedbackModal').style.display = 'none'; }
 async function sendFeedback() { const text = document.getElementById('feedbackText').value; if (!text.trim()) { customAlert("内容を入力してください"); return; } const btn = document.getElementById('sendFeedbackBtn'); btn.disabled = true; btn.innerText = "送信中..."; try { await callGAS('manageMaster', { masterType: 'crop', manageAction: 'feedback', value: text, userName: currentUser }); customAlert("開発者に連絡を送信しました！\nご協力ありがとうございます。"); document.getElementById('feedbackText').value = ""; closeFeedback(); } catch (e) { customAlert("エラーが発生しました。"); } finally { btn.disabled = false; btn.innerText = "送信する"; } }
 
-function createSignboardMarker(name, pos, icon, id) {
+function createSignboardMarker(name, pos, icon, idOrRef) {
+    const getId = () => (idOrRef && typeof idOrRef === 'object' && 'id' in idOrRef) ? idOrRef.id : idOrRef;
     const zoom = map.getZoom(), config = { text: name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' };
     const marker = new google.maps.Marker({ position: pos, map: map, visible: zoom >= 15, label: zoom >= 17 ? config : null, icon: { url: `data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="20">${icon}</text></svg>`, scaledSize: new google.maps.Size(26, 26), labelOrigin: new google.maps.Point(13, 30) } });
 
     google.maps.event.addListener(marker, 'click', (e) => {
+        const id = getId();
         if (customDrawingMode) { google.maps.event.trigger(map, 'click', e); return; }
         if (isBatchDeleteMode) {
             let idx = selectedForDelete.indexOf(id);
@@ -4483,23 +4987,27 @@ function createPolygonObject(p) {
     }
     if (!Array.isArray(p.coords) || p.coords.length === 0) return;
     p.isMarker = p.coords.length === 1;
+    const idRef = p._adminIdRef || { id: p.id };
+    idRef.id = p.id;
+    p._adminIdRef = idRef;
 
     if (p.isMarker) {
         let lat = typeof p.coords[0].lat === 'function' ? p.coords[0].lat() : parseFloat(p.coords[0].lat);
         let lng = typeof p.coords[0].lng === 'function' ? p.coords[0].lng() : parseFloat(p.coords[0].lng);
-        const m = createSignboardMarker(p.name, new google.maps.LatLng(lat, lng), p.color, p.id);
-        loadedPolygons[p.id] = { ...p, marker: m, labelConfig: { text: p.name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' }, signFunction: p.signFunction, linkedSigns: p.linkedSigns || "" };
+        const m = createSignboardMarker(p.name, new google.maps.LatLng(lat, lng), p.color, idRef);
+        loadedPolygons[p.id] = { ...p, marker: m, labelConfig: { text: p.name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' }, signFunction: p.signFunction, linkedSigns: p.linkedSigns || "", _adminIdRef: idRef };
     } else {
         const isU = (p.status === '未使用（返却）' || p.status === '未使用'), dC = getAdminColor(p.status);
         const poly = new google.maps.Polygon({ paths: p.coords, map, fillColor: dC, fillOpacity: isU ? 0.5 : 0.3, strokeColor: dC, strokeOpacity: 1, strokeWeight: 3 });
         const m = createLabelMarker(p.name, p.coords, dC, p.area);
 
         google.maps.event.addListener(poly, 'click', (e) => {
+            const id = idRef.id;
             if (customDrawingMode) { google.maps.event.trigger(map, 'click', e); return; }
             if (isBatchDeleteMode) {
-                let idx = selectedForDelete.indexOf(p.id);
+                let idx = selectedForDelete.indexOf(id);
                 if (idx === -1) {
-                    selectedForDelete.push(p.id);
+                    selectedForDelete.push(id);
                     poly.setOptions({ strokeColor: '#000000', strokeWeight: 6 });
                 } else {
                     selectedForDelete.splice(idx, 1);
@@ -4509,10 +5017,10 @@ function createPolygonObject(p) {
                 return;
             }
             if (editingId) return;
-            if (isMergeMode) { execMerge(mergeBaseId, p.id); return; }
-            openM(p.id);
+            if (isMergeMode) { execMerge(mergeBaseId, id); return; }
+            openM(id);
         });
-        loadedPolygons[p.id] = { ...p, polygon: poly, marker: m };
+        loadedPolygons[p.id] = { ...p, polygon: poly, marker: m, _adminIdRef: idRef };
     }
 }
 function createLabelMarker(n, c, col, a) {
@@ -5916,19 +6424,17 @@ document.getElementById('finalSaveBtn').onclick = async () => {
     const startNum = parseFloat(document.getElementById('fieldStartNumber').value) || 1;
     if (!n) { customAlert("圃場名を入力してください"); return; }
 
-    document.getElementById('modalBody').innerHTML = `<div style='text-align:center; padding:30px; font-size:18px; font-weight:bold; color:#4CAF50;'>🌿 圃場を追加中...<br><span style='font-size:12px; color:#666;'>しばらくお待ちください</span></div>`;
-    document.getElementById('modal').style.display = 'flex';
-
     try {
         if (window.gridGeneratedPaths && window.gridGeneratedPaths.length > 0) {
             let paramsList = [];
+            let tempIds = [];
             for (let i = 0; i < window.gridGeneratedPaths.length; i++) {
                 let pathData = window.gridGeneratedPaths[i];
                 let latLngs = pathData.map(pt => new google.maps.LatLng(pt.lat, pt.lng));
                 let area = Math.round(google.maps.geometry.spherical.computeArea(latLngs) / 100);
-                
                 let currentNum = i === 0 ? startNum : Math.floor(startNum) + i;
-                
+                const tempId = newAdminTempId_('tmp');
+                tempIds.push(tempId);
                 paramsList.push({
                     name: `${n}_${currentNum}`,
                     coords: JSON.stringify(pathData),
@@ -5936,38 +6442,43 @@ document.getElementById('finalSaveBtn').onclick = async () => {
                     userName: currentUser,
                     location: l, condition: c, area, status: s, toukiId: t
                 });
-            }
-            
-            let newIds = await callGAS('savePolygonBatch', { polygons: paramsList });
-            if (!newIds || !Array.isArray(newIds)) {
-                throw new Error("サーバーから正しい応答がありませんでした（コード.js が最新バージョンにデプロイされているか確認してください）");
-            }
-            for (let i = 0; i < newIds.length; i++) {
-                createPolygonObject({ ...paramsList[i], id: newIds[i], coords: window.gridGeneratedPaths[i], isMarker: false });
+                createPolygonObject({ ...paramsList[i], id: tempId, coords: pathData, isMarker: false });
             }
             window.gridGeneratedPaths = [];
             document.getElementById('modal').style.display = 'none';
             document.getElementById('btnViewMode').click();
-            customAlert(`「${n}」として ${paramsList.length} 件の区画を登録しました！`);
+            persistAdminInitCache_();
+            showAdminSyncToast(`✅ ${paramsList.length} 件を反映しました（同期中…）`, 'ok');
+            const payload = { polygons: paramsList };
+            syncAdminCall_('savePolygonBatch', payload, { key: 'savePolygonBatch:' + tempIds.join(','), op: 'savePolygonBatch', tempIds, payload }).then(newIds => {
+                if (!newIds || !Array.isArray(newIds)) throw new Error('サーバーから正しい応答がありませんでした');
+                tempIds.forEach((tid, i) => { if (newIds[i]) remapLoadedPolygonId_(tid, newIds[i]); });
+                persistAdminInitCache_();
+                showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+            }).catch(() => {});
         } else {
             let pathsToSave = [];
             if (window.isMergedFude || customDrawingPath.length >= 3) {
-                pathsToSave = [customDrawingPath]; // 結合済みの1つの大きなパスを使う
+                pathsToSave = [customDrawingPath];
             } else {
-                document.getElementById('modal').style.display = 'none';
                 customAlert("形が描画されていません"); return;
             }
 
             let currentPath = pathsToSave[0];
             let pathData = currentPath.map(pt => ({ lat: pt.lat(), lng: pt.lng() }));
             let area = Math.round(google.maps.geometry.spherical.computeArea(currentPath) / 100);
-
-            let newId = await callGAS('savePolygon', { name: n, coords: JSON.stringify(pathData), color: '#d32f2f', userName: currentUser, location: l, condition: c, area, status: s, toukiId: t });
-            createPolygonObject({ id: newId, name: n, coords: pathData, color: '#d32f2f', location: l, condition: c, area, status: s, toukiId: t, isMarker: false });
-
+            const tempId = newAdminTempId_('tmp');
+            createPolygonObject({ id: tempId, name: n, coords: pathData, color: '#d32f2f', location: l, condition: c, area, status: s, toukiId: t, isMarker: false });
             document.getElementById('modal').style.display = 'none';
             document.getElementById('btnViewMode').click();
-            customAlert(`「${n}」として、圃場を登録しました！`);
+            persistAdminInitCache_();
+            showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
+            const payload = { name: n, coords: JSON.stringify(pathData), color: '#d32f2f', userName: currentUser, location: l, condition: c, area, status: s, toukiId: t };
+            syncAdminCall_('savePolygon', payload, { key: 'savePolygon:' + tempId, op: 'savePolygon', tempId, payload }).then(newId => {
+                remapLoadedPolygonId_(tempId, newId);
+                persistAdminInitCache_();
+                showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+            }).catch(() => {});
         }
     } catch (e) {
         document.getElementById('modal').style.display = 'none';
@@ -5978,7 +6489,18 @@ document.getElementById('finalSaveBtn').onclick = async () => {
 window.saveM = () => {
     const n = document.getElementById('mName').value; if (!n) { customAlert("看板名を入力してください"); return; }
     const ic = document.getElementById('selIco').value, funcType = document.getElementById('mFunc').value, pos = currentMarker.getPosition(), coords = [{ lat: pos.lat(), lng: pos.lng() }];
-    callGAS('savePolygon', { name: n, coords: JSON.stringify(coords), color: ic, signFunction: funcType, userName: currentUser }).then(id => { infoWindow.close(); createPolygonObject({ id, name: n, coords, color: ic, signFunction: funcType, isMarker: true }); document.getElementById('btnViewMode').click(); });
+    const tempId = newAdminTempId_('tmp');
+    infoWindow.close();
+    createPolygonObject({ id: tempId, name: n, coords, color: ic, signFunction: funcType, isMarker: true });
+    document.getElementById('btnViewMode').click();
+    persistAdminInitCache_();
+    showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
+    const payload = { name: n, coords: JSON.stringify(coords), color: ic, signFunction: funcType, userName: currentUser };
+    syncAdminCall_('savePolygon', payload, { key: 'savePolygon:' + tempId, op: 'savePolygon', tempId, payload }).then(id => {
+        remapLoadedPolygonId_(tempId, id);
+        persistAdminInitCache_();
+        showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+    }).catch(() => {});
 };
 
 // 選択中の筆ポリゴンパスを合体して LatLng 配列を返す
@@ -6137,7 +6659,6 @@ document.getElementById('saveShapeBtn').onclick = () => {
     if (p.isMarker) {
         const pos = p.marker.getPosition(); p.marker.setDraggable(false);
         p.coords = [{ lat: pos.lat(), lng: pos.lng() }];
-        callGAS('updatePolygon', { id: editingId, coords: JSON.stringify(p.coords) });
     }
     else {
         p.polygon.setEditable(false);
@@ -6147,9 +6668,10 @@ document.getElementById('saveShapeBtn').onclick = () => {
         p.coords = path;
         p.marker.setMap(null);
         p.marker = createLabelMarker(p.name, path, p.color, area);
-        callGAS('updatePolygon', { id: editingId, coords: JSON.stringify(path), area });
     }
     document.getElementById('editShapePanel').style.display = 'none'; editingId = null;
+    showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
+    syncUpdatePolygon_(p).then(ok => { if (ok) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok'); });
 };
 document.getElementById('cancelShapeBtn').onclick = () => {
     window.isEditingFude = false;
@@ -6270,16 +6792,18 @@ window.execDuplicate = async (id) => {
     if (newCoords.length === 0 && p.coords) { newCoords = typeof p.coords === 'string' ? JSON.parse(p.coords) : JSON.parse(JSON.stringify(p.coords)); }
     if (newCoords.length === 0) { customAlert("座標データが取得できませんでした。一度リロードしてください。"); return; }
 
-    document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-size:18px; font-weight:bold; color:#9C27B0;'>✂️ 複製中...<br><span style='font-size:12px; color:#666;'>しばらくお待ちください</span></div>";
-    document.getElementById('modal').style.display = 'flex';
-
-    callGAS('splitField', { id, newName: inputName, userName: currentUser }).then(newId => {
-        document.getElementById('modal').style.display = 'none';
-        createPolygonObject({ id: newId, name: inputName, coords: newCoords, color: p.color, photos: [], author: p.author, location: p.location, condition: p.condition, area: p.area, status: p.status, isMarker: false, linkedSigns: "" });
-        if (loadedPolygons[newId]) { loadedPolygons[newId].coords = newCoords; if (loadedPolygons[newId].polygon) { loadedPolygons[newId].polygon.setOptions({ zIndex: 9999 }); } }
-        actionEditShape(newId);
-        customAlert(`「${inputName}」として複製しました！\nオレンジ色の点を動かして範囲を変更し、「確定」を押してください。`);
-    }).catch(e => { document.getElementById('modal').style.display = 'none'; customAlert("エラーが発生しました: " + e.message); });
+    const tempId = newAdminTempId_('tmp');
+    createPolygonObject({ id: tempId, name: inputName, coords: newCoords, color: p.color, photos: [], author: p.author, location: p.location, condition: p.condition, area: p.area, status: p.status, isMarker: false, linkedSigns: "", toukiId: p.toukiId });
+    if (loadedPolygons[tempId]) { loadedPolygons[tempId].coords = newCoords; if (loadedPolygons[tempId].polygon) { loadedPolygons[tempId].polygon.setOptions({ zIndex: 9999 }); } }
+    persistAdminInitCache_();
+    actionEditShape(tempId);
+    showAdminSyncToast('✅ 複製しました（同期中…）', 'ok');
+    const payload = { id, newName: inputName, userName: currentUser };
+    syncAdminCall_('splitField', payload, { key: 'splitField:' + tempId, op: 'splitField', tempId, payload }).then(newId => {
+        remapLoadedPolygonId_(tempId, newId);
+        persistAdminInitCache_();
+        showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+    }).catch(() => {});
 };
 
 window.startAdminLinkSelect = (targetId) => {
@@ -6369,8 +6893,9 @@ window.updateRidgeSimCalc = (id) => {
 window.execSaveRidgeSim = (id) => {
     const p = loadedPolygons[id], dir = document.getElementById('simRDir').value, width = document.getElementById('simRW').value;
     p.ridgeDir = dir; p.ridgeWidth = width;
-    callGAS('updatePolygon', { id: p.id, name: p.name, location: p.location, condition: p.condition, status: p.status, toukiId: p.toukiId || '', ridgeDir: dir, ridgeWidth: width, userName: currentUser });
-    document.getElementById('modal').style.display = 'none'; customAlert("畝立てシミュレーションの設定を保存しました！");
+    document.getElementById('modal').style.display = 'none';
+    showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
+    syncUpdatePolygon_(p, { ridgeDir: dir, ridgeWidth: width }).then(ok => { if (ok) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok'); });
 };
 
 window.advSplitTotalLength = 0;
@@ -6591,7 +7116,6 @@ window.execAdvancedSplit = async (id) => {
     });
 
     let currentPoly = rotatedCoords, newPolygons = [], currentThreshold = minVal;
-    document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#E91E63;'>✂️ 分割処理中...<br><span style='font-size:12px; color:#666;'>しばらくお待ちください</span></div>";
 
     for (let i = 0; i < splitCount - 1; i++) {
         let ratio = widths[i] / totalW;
@@ -6613,23 +7137,29 @@ window.execAdvancedSplit = async (id) => {
     });
 
     try {
+        document.getElementById('modal').style.display = 'none';
+        infoWindow.close();
         for (let i = 0; i < finalLatLngPolygons.length; i++) {
             let coords = finalLatLngPolygons[i];
             let name = `${p.name}_${i + 1}`;
             let area = Math.round(google.maps.geometry.spherical.computeArea(coords.map(pt => new google.maps.LatLng(pt.lat, pt.lng))) / 100);
 
             if (i === 0) {
-                await callGAS('updatePolygon', { id: p.id, name: name, coords: JSON.stringify(coords), area: area, userName: currentUser });
                 p.name = name; p.coords = coords; p.area = area;
                 if (p.polygon) { p.polygon.setPath(coords); p.marker.setMap(null); p.marker = createLabelMarker(p.name, coords, p.color, area); }
+                syncUpdatePolygon_(p, { name: name, coords: JSON.stringify(coords), area: area });
             } else {
-                let newId = await callGAS('savePolygon', { name: name, coords: JSON.stringify(coords), color: p.color, userName: currentUser, location: p.location, condition: p.condition, area: area, status: p.status, toukiId: p.toukiId });
-                createPolygonObject({ id: newId, name: name, coords: coords, color: p.color, location: p.location, condition: p.condition, area: area, status: p.status, toukiId: p.toukiId, isMarker: false, linkedSigns: p.linkedSigns });
+                const tempId = newAdminTempId_('tmp');
+                createPolygonObject({ id: tempId, name: name, coords: coords, color: p.color, location: p.location, condition: p.condition, area: area, status: p.status, toukiId: p.toukiId, isMarker: false, linkedSigns: p.linkedSigns });
+                const payload = { name: name, coords: JSON.stringify(coords), color: p.color, userName: currentUser, location: p.location, condition: p.condition, area: area, status: p.status, toukiId: p.toukiId };
+                syncAdminCall_('savePolygon', payload, { key: 'savePolygon:' + tempId, op: 'savePolygon', tempId, payload }).then(newId => {
+                    remapLoadedPolygonId_(tempId, newId);
+                    persistAdminInitCache_();
+                }).catch(() => {});
             }
         }
-        document.getElementById('modal').style.display = 'none';
-        customAlert("圃場を分割しました！");
-        infoWindow.close();
+        persistAdminInitCache_();
+        showAdminSyncToast('✅ 分割しました（同期中…）', 'ok');
     } catch (e) {
         document.getElementById('modal').style.display = 'none'; customAlert("エラーが発生しました: " + e.message);
     }
@@ -6703,10 +7233,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // 地図の完了を待たずに開始する（描画側が map 待ちを吸収する）
         const cachedData = localStorage.getItem('pMapAdminInitData');
         if (cachedData) {
-            try { renderInitData(JSON.parse(cachedData)); } catch (e) {}
+            try { renderInitData(JSON.parse(cachedData), { interim: true }); } catch (e) {}
+            showAdminSyncToast('📦 キャッシュで起動（最新を裏で確認中…）', 'info');
+            executeLogin(true, { fromCache: true });
+        } else {
+            executeLogin(true);
         }
-        // セッション更新と最新データの取得（地図待ち・1.5秒待ちは不要）
-        executeLogin(true);
         // 地図が後からできても再描画する保険
         mapInitPromise.then(() => {
             try { flushPendingInitData(); } catch (e) {}
@@ -7367,6 +7899,8 @@ window.adminAddNewFieldStatusItem = async () => {
 
     try {
         await callGAS('addFieldStatus', { statusName: newVal });
+        persistAdminInitCache_();
+        showAdminSyncToast('☁️ 稼働状況を保存しました', 'ok');
     } catch(e) {
         customAlert("稼働状況の保存に失敗しました");
     }
