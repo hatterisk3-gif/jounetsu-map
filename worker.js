@@ -16318,7 +16318,8 @@ function createSignboardMarker(name, pos, icon, id) {
         const p = (typeof activePolyId !== 'undefined' && activePolyId && typeof loadedPolygons !== 'undefined')
           ? loadedPolygons[activePolyId]
           : null;
-        if (p && p.isMarker) return false;
+        const isEdit = typeof currentEditRecordId !== 'undefined' && !!currentEditRecordId;
+        if (p && p.isMarker && !isEdit) return false;
         const cat = String(document.getElementById('rec_work_category')?.value || '').trim();
         const wName = String(document.getElementById('rec_work_name')?.value || '').trim();
         if (typeof window.afterSaveWorkNeedsFieldPlace_ === 'function') {
@@ -16379,12 +16380,13 @@ function createSignboardMarker(name, pos, icon, id) {
         rebuilt.push({ id: 'comment', label: `${numLabel[num]}コメント・写真` });
         const order = rebuilt.map(s => s.id);
         const activeIdx = order.indexOf(activeStep);
+        const isEdit = typeof currentEditRecordId !== 'undefined' && !!currentEditRecordId;
         return '<div style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap;">' + rebuilt.map((st, idx) => {
           const done = activeIdx >= 0 && idx < activeIdx;
           const on = st.id === activeStep;
           const bg = on ? '#FF9800' : (done ? '#FFE0B2' : '#f5f5f5');
           const color = on ? '#fff' : (done ? '#E65100' : '#999');
-          const clickable = done || on;
+          const clickable = isEdit || done || on;
           const onclick = clickable ? `onclick="setWorkRecordStep_('${st.id}')"` : '';
           const cursor = clickable ? 'cursor:pointer;' : 'cursor:default;';
           return `<button type="button" ${onclick} style="flex:1;min-width:52px;background:${bg};color:${color};border:none;border-radius:8px;padding:7px 3px;font-size:10px;font-weight:bold;${cursor}">${st.label}</button>`;
@@ -16545,9 +16547,12 @@ function createSignboardMarker(name, pos, icon, id) {
         window.WORK_RECORD_STEP_IDS_.forEach(id => {
           const panel = document.getElementById('work_record_step_' + id);
           if (!panel) return;
-          if (isRest || isEdit) {
-            // 編集・休憩は詳細＋コメント・写真をまとめて表示
+          if (isRest) {
             panel.style.display = (id === 'details' || id === 'comment') ? 'block' : 'none';
+            return;
+          }
+          if (id === 'place' && !window.workRecordNeedsPlaceStep_()) {
+            panel.style.display = 'none';
             return;
           }
           panel.style.display = (id === step) ? 'block' : 'none';
@@ -16573,7 +16578,7 @@ function createSignboardMarker(name, pos, icon, id) {
         window.recordExtraDetailWorks = [];
         window._selectedPesticides = [];
         window._pestSearchQ = '';
-        window._workRecordStep = (typeof currentEditRecordId !== 'undefined' && currentEditRecordId) ? 'comment' : 'time';
+        window._workRecordStep = (typeof currentEditRecordId !== 'undefined' && currentEditRecordId) ? 'details' : 'time';
         if (typeof window.refreshClockOutNudgeUI_ === 'function') {
           setTimeout(() => { try { window.refreshClockOutNudgeUI_(); } catch (e) {} }, 0);
         }
@@ -17512,6 +17517,13 @@ function createSignboardMarker(name, pos, icon, id) {
           if (syncClockEl) syncClockEl.checked = false;
         }
         if (currentRecordType === 'work') calcTotalTime();
+        if (isEdit && currentRecordType === 'work') {
+          setTimeout(() => {
+            if (typeof window.updateSelectedPolysDisplay === 'function') window.updateSelectedPolysDisplay();
+            if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
+            if (typeof window.refreshWorkRecordStepUI_ === 'function') window.refreshWorkRecordStepUI_();
+          }, 150);
+        }
       };
 
       function getTempWorkRecordUserId_() {
