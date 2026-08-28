@@ -26140,11 +26140,13 @@ window.buildBulkWorkMemoWorkPickSectionHtml_ = (d, uid) => {
     });
   }
   const selectedCat = cur ? String(d.category || window.getBulkWorkMemoWorkCategory_(cur) || '').trim() : '';
-  return `
+  const workListOpen = !!d._workListOpen;
+  const suggestionBlock = workListOpen ? '' : `
     <label style="font-size:10px; color:#E65100; font-weight:bold;">🚜 合いそうな作業名</label>
-    ${window.buildBulkWorkMemoWorkChipsHtml_(d, uid)}
+    ${window.buildBulkWorkMemoWorkChipsHtml_(d, uid)}`;
+  return `${suggestionBlock}
     ${window.buildBulkWorkMemoWorkManualPickHtml_(d, uid)}
-    ${selectedCat ? `<div style="font-size:11px; color:#3949AB; margin:0 0 8px;">カテゴリ: <b>${esc(selectedCat)}</b>（作業名から自動）</div>` : ''}`;
+    ${selectedCat && !workListOpen ? `<div style="font-size:11px; color:#3949AB; margin:0 0 8px;">カテゴリ: <b>${esc(selectedCat)}</b>（作業名から自動）</div>` : ''}`;
 };
 
 window.buildBulkWorkMemoCropPickSectionHtml_ = (d, uid) => {
@@ -26241,17 +26243,9 @@ window.buildBulkWorkMemoAllWorkChipsHtml_ = (d, uid) => {
     const safeArg = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     return `<button type="button" class="bulk-work-all-chip" data-name="${esc(name)}" onclick="pickBulkWorkMemoWorkName_('${esc(uid)}','${safeArg}')" style="padding:7px 11px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? '#E65100' : (isSug ? '#FFCC80' : '#FFE0B2')}; background:${on ? '#FFF3E0' : '#fff'}; color:#E65100;">${esc(name)}</button>`;
   }).join('');
-  const maybeNames = (Array.isArray(d.workMaybeCandidates) ? d.workMaybeCandidates : [])
-    .filter(n => n && !window.isBulkWorkMemoRestWorkName_(n) && all.indexOf(n) < 0)
-    .slice(0, 4);
-  const maybeHtml = maybeNames.length
-    ? `<div style="font-size:10px; color:#7B1FA2; font-weight:bold; margin:0 0 6px;">もしかして：</div>
-       <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${maybeNames.map(name => window.buildBulkWorkMemoWorkChipBtnHtml_(uid, name, cur, esc, 'maybe')).join('')}</div>`
-    : '';
   return `
     <div style="margin-top:4px;">
       ${fallbackNote ? `<div style="font-size:11px; color:#E65100; background:#FFF8E1; border:1px solid #FFCC80; border-radius:8px; padding:8px 10px; margin-bottom:8px; line-height:1.4;">${esc(fallbackNote)}</div>` : ''}
-      ${maybeHtml}
       <div style="font-size:10px; color:#3949AB; font-weight:bold; margin-bottom:4px;">📁 カテゴリで絞り込み</div>
       ${window.buildBulkWorkMemoCategoryChipsHtml_(d, uid)}
       <input type="search" placeholder="作業名を絞り込み（誤字も候補表示）…" oninput="filterBulkWorkMemoAllWorkChips_(this, '${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #FFCC80; border-radius:8px; font-size:13px; margin-bottom:8px;">
@@ -26563,7 +26557,7 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
     const workBody = isRestCard ? '' : `
         ${restHintBanner}
         ${window.buildBulkWorkMemoWorkPickSectionHtml_(d, uid)}
-        <div id="bulk_work_hint_${esc(uid)}" style="display:${hint ? 'block' : 'none'}; font-size:11px; color:#E65100; margin:0 0 8px; line-height:1.35;">${hint}</div>
+        <div id="bulk_work_hint_${esc(uid)}" style="display:${hint && !d._workListOpen ? 'block' : 'none'}; font-size:11px; color:#E65100; margin:0 0 8px; line-height:1.35;">${hint}</div>
         ${window.buildBulkWorkMemoCropPickSectionHtml_(d, uid)}
         <div id="bulk_extras_${esc(uid)}">${window.buildBulkWorkMemoExtrasHtml_(d, uid)}</div>
         ${fieldHtml}
