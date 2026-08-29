@@ -403,6 +403,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
         const heavyActions = {
           manageMaster: 90000,
           getInitData: 60000,
+          getWorkRecordAnalysis: 45000,
           saveCultivationPlans: 90000,
           login: 20000
         };
@@ -734,6 +735,14 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
               p.status = loadedPolygons[p.id].status || p.status;
             }
           });
+          if (loadedPolygons && loadedPolygons['__global__']) {
+            let g = cache.polygons.find(p => p && p.id === '__global__');
+            if (!g) {
+              g = { id: '__global__', name: '共通・全体', isMarker: true, coords: [], photos: [] };
+              cache.polygons.push(g);
+            }
+            g.photos = loadedPolygons['__global__'].photos || [];
+          }
           localStorage.setItem('passionMapInitData', JSON.stringify(cache));
         } catch (e) {}
       };
@@ -741,6 +750,10 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
       // 🌟 3. キャッシュからも呼ばれる描画専用処理 🌟
       function renderInitData(data) {
           if (!data || !data.pdl) return; // データがない時は安全に止める
+
+          const prevGlobalPhotos = (loadedPolygons && loadedPolygons['__global__'] && Array.isArray(loadedPolygons['__global__'].photos))
+            ? loadedPolygons['__global__'].photos.slice()
+            : [];
 
           pdlLocations=data.pdl.locations||[]; pdlCrops=data.pdl.crops||[]; pdlStages=data.pdl.stages||[];
           pdlWorkMaster=data.pdl.workMaster||[]; pdlWorkStatuses=data.pdl.workStatuses||[];
@@ -794,6 +807,9 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   }
               });
               updateWorkerLegend();
+          }
+          if (typeof window.restoreGlobalWorkRecordsAfterInit_ === 'function') {
+            window.restoreGlobalWorkRecordsAfterInit_(prevGlobalPhotos);
           }
           // 地図データ反映後、今日の最遅終了・休憩を端末キャッシュへ温める
           try {
@@ -28002,6 +28018,9 @@ window.deleteRecordFromMyPage = async function(polyId, recordId) {
 
 window.normalizeDateStr = function(dateStr) {
     if (!dateStr) return '';
+    if (Object.prototype.toString.call(dateStr) === '[object Date]' && !isNaN(dateStr.getTime())) {
+        return `${dateStr.getFullYear()}-${String(dateStr.getMonth() + 1).padStart(2, '0')}-${String(dateStr.getDate()).padStart(2, '0')}`;
+    }
     const str = String(dateStr).trim().replace(/\//g, '-');
     const parts = str.split('-');
     if (parts.length === 3) {
@@ -28009,6 +28028,10 @@ window.normalizeDateStr = function(dateStr) {
         const m = parts[1].padStart(2, '0');
         const d = parts[2].split('T')[0].split(' ')[0].padStart(2, '0');
         return `${y}-${m}-${d}`;
+    }
+    const m = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) {
+        return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
     }
     return str;
 };
@@ -28034,17 +28057,233 @@ window.formatWorkRecordDateLabel = function(ymd) {
     return `${parts[1]}/${parts[2]}（${week}）`;
 };
 
+/** 圃場未選択の作業記録（__global__）を再描画後も保持する */
+window.restoreGlobalWorkRecordsAfterInit_ = function(prevPhotos) {
+    const merged = [];
+    const seen = new Set();
+    const pushUnique = (ph) => {
+        if (!ph) return;
+        const recId = ph.id || (ph.data && ph.data.recordId);
+        const key = recId || JSON.stringify([ph.date, ph.time, ph.data && ph.data.workName]);
+        if (seen.has(key)) return;
+        seen.add(key);
+        merged.push(ph);
+    };
+    (Array.isArray(prevPhotos) ? prevPhotos : []).forEach(pushUnique);
+    try {
+        const raw = localStorage.getItem('passionMapInitData');
+        if (raw) {
+            const cache = JSON.parse(raw);
+            const g = cache && Array.isArray(cache.polygons)
+                ? cache.polygons.find(p => p && p.id === '__global__')
+                : null;
+            if (g && Array.isArray(g.photos)) g.photos.forEach(pushUnique);
+        }
+    } catch (e) {}
+    if (!merged.length) return;
+    if (!loadedPolygons['__global__']) {
+        loadedPolygons['__global__'] = { id: '__global__', name: '共通・全体', isMarker: true, photos: [] };
+    }
+    loadedPolygons['__global__'].photos = merged;
+};
+
+window.isMyWorkRecordAuthorMatch_ = function(recordAuthor, normUser) {
+    const phAuthor = String(recordAuthor || '').replace(/\s+/g, '');
+    if (!normUser) return true;
+    if (!phAuthor) return true;
+    if (phAuthor === normUser || normUser.includes(phAuthor) || phAuthor.includes(normUser)) return true;
+    if (normUser === 'システム') return true;
+    return false;
+};
+
+/** 作業記録収集用：メモリ＋端末キャッシュの圃場リスト */
+window.buildWorkRecordPolygonSources_ = function() {
+    const sources = new Map();
+    if (typeof loadedPolygons !== 'undefined' && loadedPolygons) {
+        Object.keys(loadedPolygons).forEach(pid => {
+            if (loadedPolygons[pid]) sources.set(String(pid), loadedPolygons[pid]);
+        });
+    }
+    try {
+        const raw = localStorage.getItem('passionMapInitData');
+        if (raw) {
+            const cache = JSON.parse(raw);
+            if (cache && Array.isArray(cache.polygons)) {
+                cache.polygons.forEach(p => {
+                    if (!p || !p.id || sources.has(String(p.id))) return;
+                    sources.set(String(p.id), p);
+                });
+            }
+        }
+    } catch (e) {}
+    return sources;
+};
+
+window.resolvePolyIdFromFieldName_ = function(fieldName) {
+    const name = String(fieldName || '').trim();
+    if (!name || name === '（場所なし）' || name === '共通・全体' || name === '全体・共通') return '__global__';
+    if (typeof loadedPolygons !== 'undefined' && loadedPolygons) {
+        for (const pid in loadedPolygons) {
+            const p = loadedPolygons[pid];
+            if (p && String(p.name || '').trim() === name) return pid;
+        }
+    }
+    return '__global__';
+};
+
+/** ローカル記録に無い分を作業記録シートから補完 */
+window.mergeMyWorkRecordsWithAnalysis_ = function(localRecords, serverRecords, allowedYmds) {
+    const list = Array.isArray(localRecords) ? localRecords.slice() : [];
+    const seenIds = new Set();
+    list.forEach(r => {
+        const id = r && (r.id || (r.data && r.data.recordId));
+        if (id) seenIds.add(String(id));
+    });
+    (Array.isArray(serverRecords) ? serverRecords : []).forEach(row => {
+        if (!row) return;
+        const recId = String(row.recordId || '').trim();
+        if (recId && seenIds.has(recId)) return;
+        const recordYmd = window.normalizeDateStr(row.workDate);
+        if (allowedYmds && recordYmd && !allowedYmds.has(recordYmd)) return;
+        const polyId = window.resolvePolyIdFromFieldName_(row.fieldName);
+        const poly = (typeof loadedPolygons !== 'undefined' && loadedPolygons[polyId]) ? loadedPolygons[polyId] : null;
+        list.push({
+            id: recId || ('sheet_' + recordYmd + '_' + (row.startTime || '') + '_' + (row.workName || '')),
+            type: 'work',
+            date: recordYmd,
+            time: row.startTime || '00:00',
+            author: row.author || '',
+            urls: [],
+            data: {
+                workDate: recordYmd,
+                workName: row.workName || '',
+                crop: row.crop || '',
+                startTime: row.startTime || '',
+                endTime: row.endTime || '',
+                totalTime: row.totalTime || '',
+                progressStatus: row.progress || ''
+            },
+            polyId: polyId,
+            polyName: row.fieldName || (poly && poly.name) || '全体・共通',
+            isMarker: !!(poly && poly.isMarker),
+            recordYmd: recordYmd,
+            _fromServerSheet: true
+        });
+        if (recId) seenIds.add(recId);
+    });
+    list.sort((a, b) => {
+        const yA = a.recordYmd || '';
+        const yB = b.recordYmd || '';
+        if (yA !== yB) return yB.localeCompare(yA);
+        const tA = (a.data && a.data.startTime) ? a.data.startTime : (a.time || '00:00');
+        const tB = (b.data && b.data.startTime) ? b.data.startTime : (b.time || '00:00');
+        return tB.localeCompare(tA);
+    });
+    return list;
+};
+
+/** マイページ：直近3日の作業記録を最新化 */
+window.refreshMyPageRecentWorkRecords_ = async function(opts) {
+    opts = opts || {};
+    const bodyEl = document.getElementById('myRecentWorkRecordsBody');
+    const countEl = document.getElementById('myRecentWorkRecordsCount');
+    const statusEl = document.getElementById('myRecentWorkRecordsStatus');
+    if (!bodyEl) return;
+
+    const recentYmds = window.getPastYmdSet(3);
+    const ymdList = Array.from(recentYmds).sort();
+    const fromYmd = ymdList[0] || '';
+    const toYmd = ymdList[ymdList.length - 1] || '';
+    const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
+
+    if (statusEl) statusEl.textContent = '最新データを取得中...';
+
+    try {
+        if (opts.reloadInit !== false && typeof loadInitData === 'function') {
+            await loadInitData({ background: true });
+        }
+    } catch (e) {
+        console.warn('refreshMyPageRecentWorkRecords_ loadInitData:', e);
+    }
+
+    let records = window.collectMyWorkRecords(recentYmds);
+    let serverOk = false;
+    try {
+        const analysis = await callGAS('getWorkRecordAnalysis', {
+            fromYmd: fromYmd,
+            toYmd: toYmd,
+            author: userName,
+            includeRecords: true
+        });
+        records = window.mergeMyWorkRecordsWithAnalysis_(records, (analysis && analysis.records) || [], recentYmds);
+        serverOk = true;
+    } catch (e) {
+        console.warn('refreshMyPageRecentWorkRecords_ getWorkRecordAnalysis:', e);
+    }
+
+    if (countEl) countEl.textContent = String(records.length);
+    bodyEl.innerHTML = window.renderMyWorkRecordsGroupedHtml(records, '直近3日の作業記録はまだありません。');
+    if (statusEl) {
+        statusEl.textContent = serverOk ? '' : '（サーバー取得に失敗したため、端末データのみ表示）';
+    }
+};
+
+/** 作業記録詳細（全期間）を最新化 */
+window.refreshMyWorkHistoryDetail_ = async function() {
+    const body = document.getElementById('myWorkHistoryBody');
+    const sub = document.getElementById('myWorkHistorySub');
+    if (!body) return;
+
+    const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
+    const historyLoad = window.AppLoading
+      ? AppLoading.inline(body, { label: '作業記録を読み込み中...', detail: 'サーバーと端末データを照合しています', delay: 0 })
+      : null;
+    if (!historyLoad) body.innerHTML = `<div style="text-align:center; color:#888; padding:30px 10px; font-size:14px;">読み込み中...</div>`;
+    if (sub) sub.innerText = '最新データを取得中...';
+
+    try {
+        if (typeof loadInitData === 'function') {
+            await loadInitData({ background: true });
+        }
+    } catch (e) {
+        console.warn('refreshMyWorkHistoryDetail_ loadInitData:', e);
+    }
+
+    let all = window.collectMyWorkRecords(null);
+    try {
+        const now = new Date();
+        const toYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const fromDt = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 365);
+        const fromYmd = `${fromDt.getFullYear()}-${String(fromDt.getMonth() + 1).padStart(2, '0')}-${String(fromDt.getDate()).padStart(2, '0')}`;
+        const analysis = await callGAS('getWorkRecordAnalysis', {
+            fromYmd: fromYmd,
+            toYmd: toYmd,
+            author: userName,
+            includeRecords: true
+        });
+        all = window.mergeMyWorkRecordsWithAnalysis_(all, (analysis && analysis.records) || [], null);
+    } catch (e) {
+        console.warn('refreshMyWorkHistoryDetail_ getWorkRecordAnalysis:', e);
+    }
+
+    if (historyLoad) historyLoad.done();
+    if (sub) sub.innerText = `全 ${all.length} 件（新しい日付から）`;
+    body.innerHTML = window.renderMyWorkRecordsGroupedHtml(all, '作業記録はまだありません。');
+};
+
 /** ログインユーザーの作業記録を loadedPolygons から収集。allowedYmds があればその日付のみ */
 window.collectMyWorkRecords = function(allowedYmds) {
     const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
     const normUser = (userName || '').replace(/\s+/g, '');
     const list = [];
     const seenIds = new Set();
+    const polySources = (typeof window.buildWorkRecordPolygonSources_ === 'function')
+      ? window.buildWorkRecordPolygonSources_()
+      : new Map(Object.keys(loadedPolygons || {}).map(k => [k, loadedPolygons[k]]));
 
-    // 1) loadedPolygons 内の記録を収集
-    for (let pid in loadedPolygons) {
-        const p = loadedPolygons[pid];
-        if (!p || !p.photos || !Array.isArray(p.photos)) continue;
+    // 1) 圃場・看板・共通コンテナ内の記録を収集
+    polySources.forEach((p, pid) => {
+        if (!p || !p.photos || !Array.isArray(p.photos)) return;
         p.photos.forEach(ph => {
             if (!ph) return;
             const recId = ph.id || (ph.data && ph.data.recordId);
@@ -28054,14 +28293,16 @@ window.collectMyWorkRecords = function(allowedYmds) {
             const isWorkRecord = (ph.type === 'work') || (ph.data && ph.data.workName);
             if (!isWorkRecord || !ph.data) return;
 
-            const phAuthor = (ph.author || '').replace(/\s+/g, '');
-            const isAuthorMatch = !normUser || !phAuthor || phAuthor === normUser || normUser.includes(phAuthor) || phAuthor.includes(normUser) || normUser === 'システム';
-            if (!isAuthorMatch) return;
+            const phAuthor = ph.author
+              || (ph.data && (ph.data.workerName || ph.data.worker || ph.data.userName))
+              || '';
+            if (!window.isMyWorkRecordAuthorMatch_(phAuthor, normUser)) return;
 
             const phWorkDate = window.normalizeDateStr(ph.data.workDate);
             const phDate = window.normalizeDateStr(ph.date);
             const recordYmd = phWorkDate || phDate;
-            if (allowedYmds && !allowedYmds.has(recordYmd)) return;
+            if (allowedYmds && recordYmd && !allowedYmds.has(recordYmd)) return;
+            if (allowedYmds && !recordYmd) return;
 
             list.push({
                 ...ph,
@@ -28071,7 +28312,7 @@ window.collectMyWorkRecords = function(allowedYmds) {
                 recordYmd: recordYmd
             });
         });
-    }
+    });
 
     // 2) 同期待ちキュー (_recordSyncQueue) 内の作業記録もマイページに即時合成
     if (Array.isArray(window._recordSyncQueue)) {
@@ -28081,9 +28322,8 @@ window.collectMyWorkRecords = function(allowedYmds) {
             if (recId && seenIds.has(recId)) return;
             if (recId) seenIds.add(recId);
 
-            const jobAuthor = String(job.userName || normUser || '').replace(/\s+/g, '');
-            const isAuthorMatch = !normUser || !jobAuthor || jobAuthor === normUser || normUser.includes(jobAuthor) || jobAuthor.includes(normUser) || normUser === 'システム';
-            if (!isAuthorMatch) return;
+            const jobAuthor = String(job.userName || (job.data && (job.data.workerName || job.data.worker)) || normUser || '').replace(/\s+/g, '');
+            if (!window.isMyWorkRecordAuthorMatch_(jobAuthor, normUser)) return;
 
             const workDateYmd = window.normalizeDateStr(job.data.workDate) || window.normalizeDateStr(new Date());
             if (allowedYmds && !allowedYmds.has(workDateYmd)) return;
@@ -28331,18 +28571,9 @@ window.openMyWorkHistoryDetail = function() {
     if (!body) return;
 
     modal.style.display = 'flex';
-    const historyLoad = window.AppLoading
-      ? AppLoading.inline(body, { label: '作業記録を読み込み中...', detail: '表示を準備しています', delay: 0 })
-      : null;
-    if (!historyLoad) body.innerHTML = `<div style="text-align:center; color:#888; padding:30px 10px; font-size:14px;">読み込み中...</div>`;
-    if (sub) sub.innerText = '読み込み中...';
-
-    setTimeout(() => {
-        const all = window.collectMyWorkRecords(null);
-        if (historyLoad) historyLoad.done();
-        if (sub) sub.innerText = `全 ${all.length} 件（新しい日付から）`;
-        body.innerHTML = window.renderMyWorkRecordsGroupedHtml(all, '作業記録はまだありません。');
-    }, 30);
+    if (typeof window.refreshMyWorkHistoryDetail_ === 'function') {
+        window.refreshMyWorkHistoryDetail_();
+    }
 };
 
 window.closeMyWorkHistoryDetail = function() {
@@ -28809,7 +29040,8 @@ window.openMyPage = function() {
         : (window.formatWorkRecordDateLabel(ymdList[0]) || '');
 
     const myRecentRecords = window.collectMyWorkRecords(recentYmds);
-    const recordsHtml = `<div style="max-height:280px; overflow-y:auto; padding-right:2px; margin-bottom:10px;">${
+    const recordsHtml = `<div id="myRecentWorkRecordsStatus" style="font-size:11px; color:#888; margin-bottom:6px; min-height:14px;"></div>
+    <div id="myRecentWorkRecordsBody" style="max-height:280px; overflow-y:auto; padding-right:2px; margin-bottom:10px;">${
         window.renderMyWorkRecordsGroupedHtml(myRecentRecords, '直近3日の作業記録はまだありません。')
     }</div>
     <button type="button" onclick="openMyWorkHistoryDetail()"
@@ -28840,7 +29072,7 @@ window.openMyPage = function() {
         </div>
         
         <h4 style="color:#2e7d32; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
-            <span>📋 直近3日の作業記録 (${myRecentRecords.length}件)</span>
+            <span>📋 直近3日の作業記録 (<span id="myRecentWorkRecordsCount">${myRecentRecords.length}</span>件)</span>
         </h4>
         <div style="font-size:11px; color:#666; margin-bottom:8px;">${rangeLabel}</div>
         ${recordsHtml}
@@ -28907,6 +29139,9 @@ window.openMyPage = function() {
     loadMyGmailIntoMyPage();
     loadMyCalendarSelectIntoMyPage();
     loadMyAuthorizationStatus();
+    if (typeof window.refreshMyPageRecentWorkRecords_ === 'function') {
+        window.refreshMyPageRecentWorkRecords_();
+    }
 };
 
 window._myAuthUrl = '';
