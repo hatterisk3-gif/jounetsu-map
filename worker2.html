@@ -14,7 +14,7 @@
 
   <script src="exit-guard.js?v=1786240000001"></script>
 
-  <link rel="stylesheet" href="worker.css?v=1788074000000">
+  <link rel="stylesheet" href="worker.css?v=1788076000000">
   <style>
     @keyframes workerBootSpin { to { transform: rotate(360deg); } }
     @keyframes workerBootSlide { from { transform: translateX(-120%); } to { transform: translateX(320%); } }
@@ -350,6 +350,41 @@
   </div>
   <div id="personalScheduleBackdrop" onclick="closePersonalSchedule()" aria-hidden="true"></div>
 
+  <div id="psGanttAddModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:3500; align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:12px; width:min(420px,94vw); max-height:90vh; overflow:auto; padding:16px; box-sizing:border-box;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <span style="font-weight:bold; font-size:16px;">＋ 予定を追加</span>
+        <span style="cursor:pointer; font-size:22px; line-height:1;" onclick="closePsGanttAddModal_()">×</span>
+      </div>
+      <div style="display:flex; gap:6px; margin-bottom:12px;">
+        <button type="button" id="psGanttAddTypeDay" class="ps-gantt-add-type active" onclick="setPsGanttAddType_('dayplan')">⏰ 時間予定</button>
+        <button type="button" id="psGanttAddTypeTask" class="ps-gantt-add-type" onclick="setPsGanttAddType_('task')">✅ タスク</button>
+      </div>
+      <div id="psGanttAddDayFields">
+        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">日付</label>
+        <input type="date" id="psGanttAddDate" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px;">
+        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">開始時刻</label>
+        <input type="time" id="psGanttAddStartTime" value="09:00" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px;">
+        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">所要時間（分）</label>
+        <input type="number" id="psGanttAddDuration" value="30" min="15" step="15" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px;">
+        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">作業名</label>
+        <input type="text" id="psGanttAddWorkName" placeholder="例：圃場点検" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px;">
+        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">カテゴリ</label>
+        <select id="psGanttAddCategory" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px;"></select>
+      </div>
+      <div id="psGanttAddTaskFields" style="display:none;">
+        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">開始日</label>
+        <input type="date" id="psGanttAddTaskDate" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px;">
+        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">期限（任意）</label>
+        <input type="date" id="psGanttAddTaskDeadline" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px;">
+        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">タスク内容</label>
+        <textarea id="psGanttAddTaskText" rows="3" placeholder="やることを入力..." style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px; resize:vertical; font-family:inherit;"></textarea>
+      </div>
+      <button type="button" id="psGanttAddSubmitBtn" onclick="submitPsGanttAdd_()" style="width:100%; background:#1565c0; color:#fff; border:none; padding:12px; border-radius:8px; font-weight:bold; font-size:14px; cursor:pointer;">登録する</button>
+      <div id="psGanttAddResult" style="margin-top:8px; font-size:12px; font-weight:bold;"></div>
+    </div>
+  </div>
+
   <div id="lightbox" onclick="this.style.display='none'"><img id="lightbox-img" src=""></div>
 
   <!-- 管理者：農業CAD（admin.html iframe） -->
@@ -369,7 +404,7 @@
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry"></script>
   <script src="map-loading.js?v=1786243000000"></script>
   <script src="weather-agri.js?v=1785489000300"></script>
-  <script src="worker.js?v=1788074000000"></script>
+  <script src="worker.js?v=1788076000000"></script>
   <script src="tracking.js?v=1787790000000"></script>
   <script>
     if ('serviceWorker' in navigator) {

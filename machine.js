@@ -42,9 +42,10 @@ let machines = {};
 let vehicles = {};
 let pendingVehiclePhotoBase64 = "";
 let pendingMachinePhotoBase64 = "";
-let machineGroups = ["農業機械", "農機インプルメント", "出荷機械"];
+let machineGroups = ["圃場", "出荷"];
 let machineTypes = ["トラクター", "ドローン"];
-let machineCategories = machineTypes; // 互換エイリアス（機械カテゴリ＝旧機種）
+let vehicleTypes = ["軽トラ", "軽バン", "軽四", "普通車"];
+let machineCategories = machineTypes; // 互換エイリアス（機械名＝旧機種）
 let maintenanceRecords = [];
 let fuelRecords = [];
 let machineMarkers = {};
@@ -175,11 +176,17 @@ async function loadAllData() {
                 machineCategories = machineTypes;
             }
             if (Array.isArray(initData.pdl.machineGroups) && initData.pdl.machineGroups.length) {
-                machineGroups = initData.pdl.machineGroups.slice();
+                machineGroups = (window.MachineTaxonomy && MachineTaxonomy.migrateGroupList)
+                    ? MachineTaxonomy.migrateGroupList(initData.pdl.machineGroups)
+                    : initData.pdl.machineGroups.slice();
             } else if (Array.isArray(initData.pdl.machineCategories) && initData.pdl.machineCategories.length
                        && !initData.pdl.machineCategories.some(c => ['トラクター', 'ドローン'].includes(c))) {
-                // 旧実装で machineCategories にグループが入っていた場合のフォールバック
-                machineGroups = initData.pdl.machineCategories.slice();
+                machineGroups = (window.MachineTaxonomy && MachineTaxonomy.migrateGroupList)
+                    ? MachineTaxonomy.migrateGroupList(initData.pdl.machineCategories)
+                    : initData.pdl.machineCategories.slice();
+            }
+            if (Array.isArray(initData.pdl.vehicleTypes) && initData.pdl.vehicleTypes.length) {
+                vehicleTypes = initData.pdl.vehicleTypes.slice();
             }
         }
         if (initData && initData.polygons) {
@@ -208,10 +215,18 @@ async function loadAllData() {
         // グループ・機械カテゴリの候補を既存データから拡張（正本は各マスタ）
         for (let id in machines) {
             const m = machines[id];
-            if (m.group && !machineGroups.includes(m.group)) machineGroups.push(m.group);
+            const g = (window.MachineTaxonomy && MachineTaxonomy.normalizeMainCategory)
+                ? MachineTaxonomy.normalizeMainCategory('machine', m.group)
+                : (m.group || '');
+            if (g && !machineGroups.includes(g)) machineGroups.push(g);
             if (m.type && !machineTypes.includes(m.type)) machineTypes.push(m.type);
         }
         machineCategories = machineTypes;
+        for (let id in vehicles) {
+            const v = vehicles[id];
+            const t = String(v.vehicleType || v.type || '').trim();
+            if (t && !vehicleTypes.includes(t)) vehicleTypes.push(t);
+        }
         if (load) load.update({ label: '機械データを読み込みました', detail: `2/4 機械 ${Object.keys(machines).length} 件`, current: 2, total: 4 });
 
         // 3/4 移動車両データ取得
@@ -518,6 +533,9 @@ function autoSetNextMachineNumber(force = false) {
 }
 
 function openMachineRegisterModal(editId) {
+    machineGroups = (window.MachineTaxonomy && MachineTaxonomy.migrateGroupList)
+        ? MachineTaxonomy.migrateGroupList(machineGroups)
+        : machineGroups;
     updateSelectOptions('regMachineGroup', machineGroups);
     updateSelectOptions('regMachineType', machineTypes);
     
@@ -771,15 +789,25 @@ async function saveMachineRegistration() {
     const signName = sign ? (sign.name || '') : '';
     const editId = (document.getElementById('regMachineEditId') || {}).value || '';
     const existing = editId && machines[editId] ? machines[editId] : null;
+    const typeName = document.getElementById('regMachineType').value;
+    const machineNumber = document.getElementById('regMachineNumber').value.trim();
+    const model = document.getElementById('regModel').value.trim();
+    let displayName = document.getElementById('regMachineName').value.trim();
+    if (!displayName && window.MachineTaxonomy) {
+        displayName = MachineTaxonomy.buildDisplayName('machine', typeName, machineNumber, model, '');
+    }
+    let group = document.getElementById('regMachineGroup').value;
+    if (window.MachineTaxonomy) group = MachineTaxonomy.normalizeMainCategory('machine', group);
     let m = {
         id: existing ? existing.id : undefined,
-        name: document.getElementById('regMachineName').value.trim(),
-        machineNumber: document.getElementById('regMachineNumber').value.trim(),
-        group: document.getElementById('regMachineGroup').value,
+        name: displayName,
+        machineNumber: machineNumber,
+        group: group,
+        mainCategory: group,
         location: document.getElementById('regLocation').value,
         purchaseDate: document.getElementById('regPurchaseDate').value,
-        model: document.getElementById('regModel').value.trim(),
-        type: document.getElementById('regMachineType').value,
+        model: model,
+        type: typeName,
         fuel: document.getElementById('regFuel').value,
         workCategory: collectRegWorkCategoryValue(),
         signId: signId,
@@ -792,10 +820,11 @@ async function saveMachineRegistration() {
         maintenanceSettings: existing ? (existing.maintenanceSettings || []) : [],
         photo: existing ? (existing.photo || '') : '',
         photoBase64: pendingMachinePhotoBase64 || "",
-        photoFilename: (document.getElementById('regMachineName').value.trim() || 'machine').replace(/\s+/g, '_') + '.jpg'
+        photoFilename: (displayName || typeName || 'machine').replace(/\s+/g, '_') + '.jpg'
     };
 
-    if (!m.name) { alert("機械名を入力してください"); return; }
+    if (!m.name && !m.type) { alert("③機械名（機種）を選択するか、表示名を入力してください"); return; }
+    if (!m.name) m.name = m.type;
     
     showToast("保存中...");
     try {
@@ -853,8 +882,24 @@ async function previewVehiclePhoto(input) {
     }
 }
 
+function updateVehicleTypeOptions() {
+    updateSelectOptions('vehType', vehicleTypes);
+}
+
+function addVehicleTypeFromForm() {
+    const val = prompt('新しい車両名を入力してください（例：軽トラ）');
+    if (!val) return;
+    const name = val.trim();
+    if (!name) return;
+    if (!vehicleTypes.includes(name)) vehicleTypes.push(name);
+    updateVehicleTypeOptions();
+    const sel = document.getElementById('vehType');
+    if (sel) sel.value = name;
+}
+
 function openVehicleRegisterModal(editId) {
     pendingVehiclePhotoBase64 = "";
+    updateVehicleTypeOptions();
     const editingId = editId || '';
     document.getElementById('vehEditId').value = editingId;
     document.getElementById('vehPhoto').value = '';
@@ -862,8 +907,14 @@ function openVehicleRegisterModal(editId) {
     const title = document.getElementById('vehModalTitle');
     if (editingId && vehicles[editingId]) {
         const v = vehicles[editingId];
-        if (title) title.textContent = '✏️ 移動車両を編集';
+        if (title) title.textContent = '✏️ 車両を編集';
         document.getElementById('vehPlateNumber').value = v.plateNumber || '';
+        document.getElementById('vehMainCategory').value = (window.MachineTaxonomy && MachineTaxonomy.normalizeMainCategory)
+            ? MachineTaxonomy.normalizeMainCategory('vehicle', v.mainCategory || v.group || v.driveType)
+            : (v.mainCategory || v.driveType || '自動車');
+        document.getElementById('vehType').value = v.vehicleType || v.type || '';
+        document.getElementById('vehNumber').value = v.vehicleNumber || v.machineNumber || '';
+        document.getElementById('vehModel').value = v.model || '';
         document.getElementById('vehMileage').value = (v.mileage === 0 || v.mileage) ? v.mileage : '';
         document.getElementById('vehDriveType').value = v.driveType || '';
         document.getElementById('vehRegistrationDate').value = formatDateInputValue(v.registrationDate);
@@ -872,8 +923,12 @@ function openVehicleRegisterModal(editId) {
             ? `<img src="${v.photo}" style="max-width:100%; max-height:140px; border-radius:4px;">`
             : '';
     } else {
-        if (title) title.textContent = '🛻 移動車両登録（軽トラ）';
+        if (title) title.textContent = '🛻 車両登録（B：車両）';
         document.getElementById('vehPlateNumber').value = '';
+        document.getElementById('vehMainCategory').value = '自動車';
+        document.getElementById('vehType').value = vehicleTypes[0] || '';
+        document.getElementById('vehNumber').value = '';
+        document.getElementById('vehModel').value = '';
         document.getElementById('vehMileage').value = '';
         document.getElementById('vehDriveType').value = '';
         document.getElementById('vehRegistrationDate').value = new Date().toISOString().slice(0, 10);
@@ -904,11 +959,23 @@ async function saveVehicleRegistration() {
     const editId = document.getElementById('vehEditId').value;
     const existing = editId && vehicles[editId] ? vehicles[editId] : null;
     const mileageRaw = document.getElementById('vehMileage').value;
+    const mainCategory = document.getElementById('vehMainCategory').value;
+    const vehicleType = document.getElementById('vehType').value;
+    const vehicleNumber = (document.getElementById('vehNumber').value || '').trim();
+    const model = (document.getElementById('vehModel').value || '').trim();
+    const driveType = mainCategory === '作業機' ? '作業車両' : '移動車両';
     const v = {
         id: existing ? existing.id : ("v_" + new Date().getTime()),
         plateNumber: plateNumber,
+        mainCategory: mainCategory,
+        group: mainCategory,
+        vehicleType: vehicleType,
+        type: vehicleType,
+        vehicleNumber: vehicleNumber,
+        machineNumber: vehicleNumber,
+        model: model,
         mileage: mileageRaw === '' ? '' : Number(mileageRaw),
-        driveType: document.getElementById('vehDriveType').value,
+        driveType: driveType,
         registrationDate: document.getElementById('vehRegistrationDate').value,
         photoBase64: pendingVehiclePhotoBase64 || '',
         photoFilename: plateNumber.replace(/\s+/g, '_') + '.jpg',
@@ -927,6 +994,13 @@ async function saveVehicleRegistration() {
             photo: (result && result.photo) || v.photo || '',
             mileage: v.mileage,
             driveType: v.driveType,
+            mainCategory: v.mainCategory,
+            group: v.mainCategory,
+            vehicleType: v.vehicleType,
+            type: v.vehicleType,
+            vehicleNumber: v.vehicleNumber,
+            machineNumber: v.vehicleNumber,
+            model: v.model,
             registrationDate: v.registrationDate,
             status: v.status,
             lat: v.lat || null,

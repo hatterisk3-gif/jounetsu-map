@@ -247,34 +247,35 @@
       <h3 id="macModalTitle" style="margin-top:0; color:#43A047;">⚙️ 機械登録</h3>
       <input type="hidden" id="regMachineEditId" value="">
       <div class="form-group">
-        <label>機械名</label>
-        <input type="text" id="regMachineName" placeholder="例：ヤンマー トラクター">
+        <label>表示名（任意）</label>
+        <input type="text" id="regMachineName" placeholder="空欄なら ③④⑤ から自動生成（例：トラクター 1 PH2R）">
       </div>
       <div class="form-group">
-        <label>機械番号</label>
-        <input type="text" id="regMachineNumber" placeholder="機械番号を入力">
-      </div>
-      <div class="form-group">
-        <label>機械グループ</label>
+        <label>② メインカテゴリ</label>
         <div style="display:flex; gap:5px;">
           <select id="regMachineGroup" style="flex:1;"></select>
-          <button onclick="addNewItem('MachineGroup')" style="padding:8px; border-radius:4px; border:1px solid #ccc;" title="グループを追加">➕</button>
-          <button onclick="renameSelectedMachineGroup()" style="padding:8px; border-radius:4px; border:1px solid #ccc;" title="選択中のグループ名を編集">✏️</button>
-          <button onclick="removeSelectedMachineGroup()" style="padding:8px; border-radius:4px; border:1px solid #ccc; color:#c62828;" title="選択中のグループを削除">➖</button>
+          <button onclick="addNewItem('MachineGroup')" style="padding:8px; border-radius:4px; border:1px solid #ccc;" title="メインカテゴリを追加">➕</button>
+          <button onclick="renameSelectedMachineGroup()" style="padding:8px; border-radius:4px; border:1px solid #ccc;" title="選択中の名称を編集">✏️</button>
+          <button onclick="removeSelectedMachineGroup()" style="padding:8px; border-radius:4px; border:1px solid #ccc; color:#c62828;" title="選択中を削除">➖</button>
         </div>
+        <div style="font-size:11px; color:#888; margin-top:4px;">農機の例：圃場 / 出荷</div>
       </div>
       <div class="form-group">
-        <label>機械カテゴリ</label>
+        <label>③ 機械名（機種マスタ）</label>
         <div style="display:flex; gap:5px;">
           <select id="regMachineType" style="flex:1;" onchange="autoSetNextMachineNumber(true)"></select>
-          <button onclick="addNewItem('MachineType')" style="padding:8px; border-radius:4px; border:1px solid #ccc;" title="機械カテゴリを追加">➕</button>
-          <button onclick="removeSelectedMachineType()" style="padding:8px; border-radius:4px; border:1px solid #ccc; color:#c62828;" title="選択中の機械カテゴリを削除">➖</button>
+          <button onclick="addNewItem('MachineType')" style="padding:8px; border-radius:4px; border:1px solid #ccc;" title="機械名を追加">➕</button>
+          <button onclick="removeSelectedMachineType()" style="padding:8px; border-radius:4px; border:1px solid #ccc; color:#c62828;" title="選択中を削除">➖</button>
         </div>
-        <div style="font-size:11px; color:#888; margin-top:4px;">カテゴリ選択時、機械番号に「同一カテゴリ台数 ＋ 1」が自動補完されます</div>
+        <div style="font-size:11px; color:#888; margin-top:4px;">例：トラクター / 定植機 — 選択時に④番号へ「同一機種の台数+1」を自動補完</div>
       </div>
       <div class="form-group">
-        <label>型式</label>
-        <input type="text" id="regModel" placeholder="型式を入力">
+        <label>④ 番号</label>
+        <input type="text" id="regMachineNumber" placeholder="機械番号・管理番号">
+      </div>
+      <div class="form-group">
+        <label>⑤ 型式名</label>
+        <input type="text" id="regModel" placeholder="例：PH2R / MZ655">
       </div>
       <div class="form-group">
         <label>拠点</label>
@@ -335,11 +336,34 @@
   <!-- 移動車両（軽トラ）登録・編集モーダル -->
   <div id="modalVehicleRegister" class="modal-overlay" onclick="if(event.target===this) closeModal('modalVehicleRegister')">
     <div class="modal-content" onclick="event.stopPropagation()">
-      <h3 id="vehModalTitle" style="margin-top:0; color:#FB8C00;">🛻 移動車両登録（軽トラ）</h3>
+      <h3 id="vehModalTitle" style="margin-top:0; color:#FB8C00;">🛻 車両登録（B：車両）</h3>
       <input type="hidden" id="vehEditId" value="">
       <div class="form-group">
-        <label>ナンバー</label>
+        <label>ナンバー（登録番号）*</label>
         <input type="text" id="vehPlateNumber" placeholder="例：徳島 480 あ 1234">
+      </div>
+      <div class="form-group">
+        <label>② メインカテゴリ</label>
+        <select id="vehMainCategory">
+          <option value="自動車">自動車</option>
+          <option value="作業機">作業機</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>③ 車両名</label>
+        <div style="display:flex; gap:5px;">
+          <select id="vehType" style="flex:1;"></select>
+          <button type="button" onclick="addVehicleTypeFromForm()" style="padding:8px; border-radius:4px; border:1px solid #ccc;" title="車両名を追加">➕</button>
+        </div>
+        <div style="font-size:11px; color:#888; margin-top:4px;">例：軽トラ / 軽バン</div>
+      </div>
+      <div class="form-group">
+        <label>④ 番号</label>
+        <input type="text" id="vehNumber" placeholder="管理番号・社内番号">
+      </div>
+      <div class="form-group">
+        <label>⑤ 型式名</label>
+        <input type="text" id="vehModel" placeholder="型式・グレード">
       </div>
       <div class="form-group">
         <label>写真</label>
@@ -359,8 +383,8 @@
         <label>走行距離（km）</label>
         <input type="number" id="vehMileage" placeholder="例：12345" min="0" step="1">
       </div>
-      <div class="form-group">
-        <label>駆動方式</label>
+      <div class="form-group" style="display:none;">
+        <label>走行方式（互換）</label>
         <select id="vehDriveType">
           <option value="">-- 選択 --</option>
           <option value="2WD">2WD</option>
@@ -450,8 +474,9 @@
 
   <script
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=ja&v=weekly&callback=initMap" async defer></script>
+  <script src="machine-taxonomy.js?v=1787900000000" defer></script>
   <script src="map-loading.js?v=1786243000000" defer></script>
-  <script src="machine.js?v=1786245000000" defer></script>
+  <script src="machine.js?v=1787900000000" defer></script>
   <script src="tracking.js?v=1787790000000" defer></script>
   <script>
     function openMachineActionSheet(id) {

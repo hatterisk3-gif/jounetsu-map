@@ -15,6 +15,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
       // We need to stop loadData if not logged in.
       let map, infoWindow, loadedPolygons = {};
       let globalSchedules = [];
+      let globalCompletedSchedules = [];
       let globalOutsourceWorks = [];
       let workDeptCategories = ['運営', '未設定'];
       window._workDeptSettingsDraft = null;
@@ -1413,6 +1414,7 @@ async function fetchWeatherAndUpdateUI() {
         const applyScheduleData = (data) => {
           if (!data) return;
           globalSchedules = data.activeSchedules || [];
+          globalCompletedSchedules = data.completedSchedules || [];
           if (Array.isArray(data.departments) && data.departments.length) {
             workDeptCategories = data.departments.slice();
             window._workDeptCategories = workDeptCategories;
@@ -7795,6 +7797,7 @@ window._ganttCenterDate = null;
 window._ganttMasters = null;
 window._ganttAddDraft = { category: '', crop: '', workName: '' };
 window._ganttDrag = null;
+window._ganttShowCompleted = true;
 
 function ganttToday_() {
   const d = new Date();
@@ -7928,8 +7931,27 @@ function ganttBarLabel_(t) {
 function ganttBarTitle_(t) {
   const wn = String(t && t.workName || '').trim();
   const extra = [ganttCropDescriptor_(t), ganttWorkSubLabel_(t)].filter(Boolean).join(' · ');
-  return extra ? (wn + ' — ' + extra) : wn;
+  let title = extra ? (wn + ' — ' + extra) : wn;
+  if (t && t.isCompleted) {
+    title += ' [完了' + (t.compDate ? ' ' + t.compDate : '') + ']';
+  } else if (t && t.workStatusLabel) {
+    title += ' [' + t.workStatusLabel + ']';
+  }
+  return title;
 }
+
+function ganttStatusBadge_(t) {
+  if (!t || t.isCompleted) return '<span class="gantt-status-badge is-done">完了</span>';
+  const code = t.workStatus || (t.isMidWork ? 'running' : ((t.dayPlans && t.dayPlans.length) ? 'planned' : 'pending'));
+  if (code === 'running') return '<span class="gantt-status-badge is-running">実行中</span>';
+  if (code === 'planned') return '<span class="gantt-status-badge is-planned">予定中</span>';
+  return '<span class="gantt-status-badge is-pending">未実行</span>';
+}
+
+window.toggleGanttShowCompleted_ = function(checked) {
+  window._ganttShowCompleted = !!checked;
+  renderScheduleGantt_();
+};
 
 function getGanttCenterDate_() {
   if (!(window._ganttCenterDate instanceof Date) || isNaN(window._ganttCenterDate.getTime())) {
@@ -7967,6 +7989,12 @@ window.renderScheduleGantt_ = function() {
   let list = currentDept === 'すべて' ? (globalSchedules || []).slice() : (globalSchedules || []).filter(function(t) {
     return t.dept === currentDept;
   });
+  if (window._ganttShowCompleted) {
+    const doneList = currentDept === 'すべて' ? (globalCompletedSchedules || []).slice() : (globalCompletedSchedules || []).filter(function(t) {
+      return t.dept === currentDept;
+    });
+    list = list.concat(doneList);
+  }
   const rows = [];
   list.forEach(function(t) {
     const range = ganttTaskRange_(t, center);
@@ -7982,24 +8010,24 @@ window.renderScheduleGantt_ = function() {
     return String(a.t.workName || '').localeCompare(String(b.t.workName || ''), 'ja');
   });
 
-  if (!rows.length) {
-    root.innerHTML = '<div class="gantt-empty">この期間に表示できる作業がありません。<br>「＋ 新規追加」から登録するか、前後5日で期間をずらしてください。</div>';
-    return;
-  }
-
   const today = ganttToday_();
+  root.innerHTML = buildGanttTableHtml_(days, today, rows, winStart);
+};
+
+function buildGanttTableHtml_(days, today, rows, winStart) {
   const weekday = ['日', '月', '火', '水', '木', '金', '土'];
   let html = '<table class="gantt-table"><thead><tr><th class="gantt-label-col">作物 / 作業</th>';
   days.forEach(function(d) {
     const isToday = d.getTime() === today.getTime();
     const isWe = d.getDay() === 0 || d.getDay() === 6;
-    html += '<th class="' + (isToday ? 'gantt-day-today' : (isWe ? 'gantt-day-weekend' : '')) + '">'
+    const ymd = ganttYmd_(d);
+    html += '<th class="' + (isToday ? 'gantt-day-today' : (isWe ? 'gantt-day-weekend' : '')) + ' gantt-day-click" onclick="onGanttDayHeaderClick_(\'' + ymd + '\')" title="この日に追加">'
       + (d.getMonth() + 1) + '/' + d.getDate() + '<div style="font-size:10px;font-weight:normal;">' + weekday[d.getDay()] + '</div></th>';
   });
   html += '</tr></thead><tbody>';
 
   let lastGroup = null;
-  rows.forEach(function(row, idx) {
+  (rows || []).forEach(function(row, idx) {
     const t = row.t;
     const group = ganttGroupKey_(t);
     if (group !== lastGroup) {
@@ -8007,24 +8035,28 @@ window.renderScheduleGantt_ = function() {
       lastGroup = group;
     }
     const clipStart = row.range.start < winStart ? winStart : row.range.start;
-    const clipEnd = row.range.end > winEnd ? winEnd : row.range.end;
+    const clipEnd = row.range.end > days[days.length - 1] ? days[days.length - 1] : row.range.end;
     const startIdx = Math.round((clipStart.getTime() - winStart.getTime()) / 86400000);
     const endIdx = Math.round((clipEnd.getTime() - winStart.getTime()) / 86400000);
     const span = Math.max(1, endIdx - startIdx + 1);
     const leftPct = (startIdx / 11) * 100;
     const widthPct = (span / 11) * 100;
-    const canDrag = !t.isMidWork && Number(t.sheetRow) >= 2;
-    const barColor = t.isOverdue ? '#c62828' : ganttColor_(group + t.workName);
+    const canDrag = !t.isCompleted && !t.isMidWork && Number(t.sheetRow) >= 2;
+    let barColor = t.isCompleted ? '#9e9e9e' : (t.isOverdue ? '#c62828' : ganttColor_(group + t.workName));
     const key = (typeof buildScheduleRowKey_ === 'function') ? buildScheduleRowKey_(t) : ('g' + idx);
     const wn = String(t.workName || '').trim();
     const desc = ganttCropDescriptor_(t);
     const sub = ganttWorkSubLabel_(t);
     const leftMain = desc ? (wn + ' — ' + desc) : wn;
-    const barText = ganttBarLabel_(t);
+    let barText = ganttBarLabel_(t);
+    if (t.isCompleted) barText = '✓ ' + barText;
     const barTitle = ganttBarTitle_(t);
+    const barClass = t.isCompleted ? ' is-done' : (canDrag ? '' : ' is-mid');
+    const leftStyle = t.isCompleted ? ' style="opacity:0.65;text-decoration:line-through;"' : '';
     html += '<tr data-gantt-row="' + idx + '">';
-    html += '<td class="gantt-work-label" title="' + ganttEsc_(barTitle) + '">' + ganttEsc_(leftMain)
+    html += '<td class="gantt-work-label"' + leftStyle + ' title="' + ganttEsc_(barTitle) + '">' + ganttStatusBadge_(t) + ' ' + ganttEsc_(leftMain)
       + (sub ? '<div style="font-size:10px;font-weight:normal;color:#888;">' + ganttEsc_(sub) + '</div>' : '')
+      + (t.isCompleted && t.compDate ? '<div style="font-size:10px;color:#757575;">完了 ' + ganttEsc_(t.compDate) + '</div>' : '')
       + '</td>';
     html += '<td colspan="11" class="gantt-cell" onclick="onGanttTrackClick_(event)">';
     html += '<div class="gantt-track">';
@@ -8033,7 +8065,7 @@ window.renderScheduleGantt_ = function() {
       html += '<div style="position:absolute;left:' + (di / 11 * 100) + '%;top:0;bottom:0;width:calc(100%/11);border-right:1px solid #eee;pointer-events:none;'
         + (isToday ? 'background:rgba(255,236,179,.35);' : '') + '"></div>';
     });
-    html += '<div class="gantt-bar' + (canDrag ? '' : ' is-mid') + '" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + barColor + ';"'
+    html += '<div class="gantt-bar' + barClass + '" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + barColor + ';"'
       + ' title="' + ganttEsc_(barTitle) + '"'
       + ' data-gantt-key="' + ganttEsc_(key) + '"'
       + ' data-sheet-row="' + (Number(t.sheetRow) || 0) + '"'
@@ -8044,9 +8076,18 @@ window.renderScheduleGantt_ = function() {
       + '>' + ganttEsc_(barText) + '</div>';
     html += '</div></td></tr>';
   });
+
+  html += '<tr class="gantt-add-row"><td class="gantt-work-label" style="color:#1565c0;font-weight:bold;">＋ 追加</td>';
+  html += '<td colspan="11" class="gantt-cell" onclick="onGanttTrackClick_(event)"><div class="gantt-track gantt-track-add">';
+  days.forEach(function(d, di) {
+    const isToday = d.getTime() === today.getTime();
+    html += '<div style="position:absolute;left:' + (di / 11 * 100) + '%;top:0;bottom:0;width:calc(100%/11);border-right:1px solid #eee;pointer-events:none;'
+      + (isToday ? 'background:rgba(255,236,179,.35);' : '') + '"></div>';
+  });
+  html += '<div class="gantt-add-hint">日付をクリックして追加</div></div></td></tr>';
   html += '</tbody></table>';
-  root.innerHTML = html;
-};
+  return html;
+}
 
 window.onGanttTrackClick_ = function(ev) {
   if (window._ganttDrag && window._ganttDrag.moved) return;
@@ -8059,6 +8100,12 @@ window.onGanttTrackClick_ = function(ev) {
   const center = getGanttCenterDate_();
   const ymd = ganttYmd_(ganttAddDays_(center, idx - 5));
   window._ganttClickDate = ymd;
+  if (typeof window.openGanttAddModal === 'function') window.openGanttAddModal();
+};
+
+window.onGanttDayHeaderClick_ = function(ymd) {
+  window._ganttClickDate = ymd;
+  if (typeof window.openGanttAddModal === 'function') window.openGanttAddModal();
 };
 
 window.startGanttBarDrag_ = function(ev, bar) {

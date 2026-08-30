@@ -781,11 +781,17 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           pdlSignFunctions = data.pdl.signFunctionsMaster || [];
           pdlWorkCategories = data.pdl.workCategories || [];
           pdlMachineTypes = data.pdl.machineTypes || ["トラクター", "ドローン"];
-          pdlMachineGroups = data.pdl.machineGroups || ["農業機械", "農機インプルメント", "出荷機械"];
+          pdlMachineGroups = data.pdl.machineGroups || ["圃場", "出荷"];
           if ((!data.pdl.machineGroups || !data.pdl.machineGroups.length) && Array.isArray(data.pdl.machineCategories)
               && data.pdl.machineCategories.length && !data.pdl.machineCategories.some(c => c === 'トラクター' || c === 'ドローン')) {
               pdlMachineGroups = data.pdl.machineCategories;
           }
+          if (window.MachineTaxonomy && typeof MachineTaxonomy.migrateGroupList === 'function') {
+            pdlMachineGroups = MachineTaxonomy.migrateGroupList(pdlMachineGroups);
+          }
+          window.pdlVehicleTypes = (data.pdl && Array.isArray(data.pdl.vehicleTypes) && data.pdl.vehicleTypes.length)
+            ? data.pdl.vehicleTypes.slice()
+            : (window.MachineTaxonomy ? MachineTaxonomy.DEFAULT_VEHICLE_TYPES.slice() : ['軽トラ', '軽バン']);
 
           for(let id in loadedPolygons) { 
               if(loadedPolygons[id].polygon) loadedPolygons[id].polygon.setMap(null); 
@@ -6492,46 +6498,109 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.refreshFieldMachinerySectionVisibility === 'function') window.refreshFieldMachinerySectionVisibility();
       };
 
-      /** 🚜 圃場農機作業用 使用農機選択セクションの構築・描画 */
-      window.populateFieldMachineOptions = (selectedMachineIds) => {
+      window._fieldMachineFilter = window._fieldMachineFilter || { kind: 'all', mainCategory: '', typeName: '', number: '' };
+
+      window.onFieldMachineFilterChange_ = (level, value) => {
+        const f = window._fieldMachineFilter || {};
+        value = String(value || '');
+        if (level === 'kind') {
+          f.kind = value || 'all';
+          f.mainCategory = '';
+          f.typeName = '';
+          f.number = '';
+        } else if (level === 'mainCategory') {
+          f.mainCategory = value;
+          f.typeName = '';
+          f.number = '';
+        } else if (level === 'typeName') {
+          f.typeName = value;
+          f.number = '';
+        } else if (level === 'number') {
+          f.number = value;
+        }
+        window._fieldMachineFilter = f;
+        const selected = Array.from(document.querySelectorAll('#field_machinery_section .used-machine-check:checked')).map(c => c.value);
+        if (typeof window.populateFieldMachineOptions === 'function') {
+          window.populateFieldMachineOptions(selected);
+        }
+      };
+
+      /** 🚜 圃場農機作業用 使用農機選択（L1〜L4絞り込み付き） */
+      window.populateFieldMachineOptions = async (selectedMachineIds) => {
         const section = document.getElementById('field_machinery_section');
         if (!section) return;
 
-        const machines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
-          ? pdlMachines
-          : [];
+        if (typeof window.ensureMobileVehiclesLoaded_ === 'function') {
+          try { await window.ensureMobileVehiclesLoaded_(); } catch (e) {}
+        }
+
+        const machines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+        const vehicles = window.pdlMobileVehicles || [];
+        const allItems = (window.MachineTaxonomy && MachineTaxonomy.collectAllEquipment)
+          ? MachineTaxonomy.collectAllEquipment(machines, vehicles)
+          : machines.map(m => Object.assign({}, m, { _kind: 'machine', _displayName: m.name || m.id }));
+
+        const f = window._fieldMachineFilter || { kind: 'all', mainCategory: '', typeName: '', number: '' };
+        const cascade = (window.MachineTaxonomy && MachineTaxonomy.getCascadeOptions)
+          ? MachineTaxonomy.getCascadeOptions(allItems, f)
+          : { mainCategories: [], typeNames: [], numbers: [] };
+        const filtered = (window.MachineTaxonomy && MachineTaxonomy.filterEquipment)
+          ? MachineTaxonomy.filterEquipment(allItems, f)
+          : allItems;
 
         let html = `
           <div style="font-weight:bold; color:#E65100; margin-bottom:6px; font-size:13px; display:flex; align-items:center; gap:6px;">
             <span>🚜 使用農機・車両の記録</span>
           </div>
           <div style="font-size:11px; color:#666; margin-bottom:8px;">
-            作業に使用した農機・車両を選択してください（複数選択可）。
+            ①種別 → ②メインカテゴリ → ③機械名 → ④番号 で絞り込み（作業記録用）
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px;">
+            <select class="form-input" onchange="window.onFieldMachineFilterChange_('kind', this.value)" style="margin:0; font-size:12px;">
+              <option value="all" ${f.kind === 'all' ? 'selected' : ''}>① すべて</option>
+              <option value="machine" ${f.kind === 'machine' ? 'selected' : ''}>① 農機(A)</option>
+              <option value="vehicle" ${f.kind === 'vehicle' ? 'selected' : ''}>① 車両(B)</option>
+            </select>
+            <select class="form-input" onchange="window.onFieldMachineFilterChange_('mainCategory', this.value)" style="margin:0; font-size:12px;">
+              <option value="">② メインカテゴリ</option>
+              ${cascade.mainCategories.map(c => `<option value="${String(c).replace(/"/g, '&quot;')}" ${f.mainCategory === c ? 'selected' : ''}>${c}</option>`).join('')}
+            </select>
+            <select class="form-input" onchange="window.onFieldMachineFilterChange_('typeName', this.value)" style="margin:0; font-size:12px;">
+              <option value="">③ 機械名/車両名</option>
+              ${cascade.typeNames.map(c => `<option value="${String(c).replace(/"/g, '&quot;')}" ${f.typeName === c ? 'selected' : ''}>${c}</option>`).join('')}
+            </select>
+            <select class="form-input" onchange="window.onFieldMachineFilterChange_('number', this.value)" style="margin:0; font-size:12px;">
+              <option value="">④ 番号</option>
+              ${cascade.numbers.map(c => `<option value="${String(c).replace(/"/g, '&quot;')}" ${f.number === c ? 'selected' : ''}>${c}</option>`).join('')}
+            </select>
           </div>
         `;
 
         html += `
-          <div style="display:flex; justify-content:flex-end; margin:-4px 0 8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin:-4px 0 8px; gap:8px; flex-wrap:wrap;">
+            <span style="font-size:11px; color:#888;">${filtered.length} 件表示</span>
+            <button type="button" onclick="window._fieldMachineFilter={kind:'all',mainCategory:'',typeName:'',number:''}; populateFieldMachineOptions([])" style="background:#eee; color:#333; border:1px solid #ccc; border-radius:6px; padding:4px 8px; font-size:11px; cursor:pointer;">絞り込み解除</button>
             <button type="button" onclick="addNewMachineFromWorkRecord()" style="background:#2196F3; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 機械を新規登録</button>
           </div>
         `;
 
-        if (!machines.length) {
-          html += `<div style="font-size:12px; color:#888;">農機マスタに登録されている農機がありません。上のボタンから追加できます。</div>`;
+        if (!filtered.length) {
+          html += `<div style="font-size:12px; color:#888;">該当する農機・車両がありません。絞り込みを解除するか、新規登録してください。</div>`;
         } else {
           const activeSelected = Array.isArray(selectedMachineIds) ? selectedMachineIds.map(String) : [];
 
-          const selOptions = machines.map(m => {
+          const selOptions = filtered.map(m => {
             const id = String(m.id || m.name || '').replace(/"/g, '&quot;');
-            const name = String(m.name || m.id || '').replace(/"/g, '&quot;');
-            const model = m.model ? ` (${m.model})` : '';
-            return `<option value="${id}">${name}${model}</option>`;
+            const label = (window.MachineTaxonomy && MachineTaxonomy.formatOptionLabel)
+              ? MachineTaxonomy.formatOptionLabel(m)
+              : String(m.name || m.id || '');
+            return `<option value="${id}">${label.replace(/</g, '&lt;')}</option>`;
           }).join('');
 
           html += `
             <div style="margin-bottom:8px;">
               <select id="rec_field_machine_select" class="form-input" onchange="if(window.onFieldMachineSelectChange) window.onFieldMachineSelectChange(this)" style="margin-bottom:6px;">
-                <option value="">農機を一覧から選択...</option>
+                <option value="">一覧から選択...</option>
                 ${selOptions}
               </select>
             </div>
@@ -6539,22 +6608,23 @@ function createSignboardMarker(name, pos, icon, id) {
           `;
 
           const canEditFieldPhoto = typeof window.isWorkerAdmin !== 'function' || window.isWorkerAdmin();
-          html += machines.map(m => {
+          html += filtered.map(m => {
             const id = String(m.id || m.name || '');
-            const name = String(m.name || m.id || '');
+            const name = String(m._displayName || m.name || m.plateNumber || m.id || '');
             const isDiesel = typeof window.isDieselFuelMachine_ === 'function' && window.isDieselFuelMachine_(m);
             const isChecked = activeSelected.includes(id) || activeSelected.includes(name);
             const photoUrl = (typeof window.getMachinePhotoUrl === 'function') ? window.getMachinePhotoUrl(m) : (m.photo || '');
             const thumb = photoUrl
               ? `<img src="${String(photoUrl).replace(/"/g, '&quot;')}" alt="" style="width:22px; height:22px; object-fit:cover; border-radius:50%; border:1px solid #ffcc80;">`
-              : '🚜';
-            const editBtn = canEditFieldPhoto
+              : (m._kind === 'vehicle' ? '🛻' : '🚜');
+            const editBtn = canEditFieldPhoto && m._kind !== 'vehicle'
               ? `<button type="button" onclick="event.preventDefault(); event.stopPropagation(); openMachinePhotoEditorById('${String(id).replace(/'/g, "\\'")}')" style="background:transparent; border:none; color:#1565c0; font-size:11px; cursor:pointer; padding:0 2px;" title="登録内容を変更">✏️</button>`
               : '';
+            const meta = [m._mainCategory, m._typeName, m._number].filter(Boolean).join('·');
             return `
               <label style="display:inline-flex; align-items:center; gap:4px; padding:5px 10px; background:${isChecked ? '#FFE0B2' : '#FAFAFA'}; border:1px solid ${isChecked ? '#FF9800' : '#DDD'}; border-radius:16px; font-size:12px; cursor:pointer; font-weight:${isChecked ? 'bold' : 'normal'};">
                 <input type="checkbox" class="used-machine-check" value="${id.replace(/"/g, '&quot;')}" data-name="${name.replace(/"/g, '&quot;')}" ${isChecked ? 'checked' : ''} onchange="if(window.syncFieldMachineChipStyle) window.syncFieldMachineChipStyle(this)">
-                ${thumb} ${name}${isDiesel ? ' <span style="font-size:10px; color:#C2185B; font-weight:bold;">⛽軽油</span>' : ''} ${editBtn}
+                ${thumb} <span>${name.replace(/</g, '&lt;')}</span>${meta ? `<span style="font-size:10px;color:#888;">(${meta})</span>` : ''}${isDiesel ? ' <span style="font-size:10px; color:#C2185B; font-weight:bold;">⛽</span>' : ''} ${editBtn}
               </label>
             `;
           }).join('');
@@ -6607,7 +6677,13 @@ function createSignboardMarker(name, pos, icon, id) {
         const t = String(raw || '').trim();
         if (!t) return null;
         const list = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
-        return list.find(m => String(m.id || '') === t || String(m.name || '') === t) || null;
+        const found = list.find(m => String(m.id || '') === t || String(m.name || '') === t);
+        if (found) return found;
+        const vehs = window.pdlMobileVehicles || [];
+        const vid = t.indexOf('veh:') === 0 ? t.slice(4) : t;
+        const v = vehs.find(x => String(x.id) === vid || String(x.plateNumber) === t);
+        if (v) return Object.assign({}, v, { isVehicle: true, name: v.plateNumber || v.name, id: v.id });
+        return null;
       };
 
       window.getSelectedFieldMachines_ = () => {
@@ -14495,6 +14571,12 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.formatMachineOptionLabel = (m) => {
         if (!m) return '';
+        if (window.MachineTaxonomy && MachineTaxonomy.formatOptionLabel) {
+          const norm = MachineTaxonomy.normalizeItem(Object.assign({}, m, {
+            isVehicle: !!m.isVehicle || !!m.plateNumber
+          }));
+          if (norm) return MachineTaxonomy.formatOptionLabel(norm);
+        }
         const icon = m.isVehicle ? '🛻 [車両] ' : (m.isTool ? '🔧 [道具] ' : '🚜 [機械] ');
         const num = m.machineNumber || m.serialNo || '';
         const group = m.group || m.type || m.category || m.workTypes || m.driveType || '';
@@ -15013,47 +15095,64 @@ function createSignboardMarker(name, pos, icon, id) {
               <input type="text" id="mie_name" class="form-input" placeholder="例: トラクター MZ655 / 軽トラ 熊谷500あ1234" style="width:100%; box-sizing:border-box; margin-bottom:12px;" onkeydown="if(event.key==='Enter'){event.preventDefault(); if((window._machineItemEditorState||{}).mode==='add'){queueMachineItemFromEditor();}else{saveMachineItemEditorModal();}}">
               <div id="mie_machine_extra" style="display:none; flex-direction:column; gap:8px; margin-bottom:12px;">
                 <div>
-                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">農機カテゴリ</label>
+                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">② メインカテゴリ</label>
+                  <div style="display:flex; gap:4px;">
+                    <select id="mie_group" class="form-input" style="flex:1; box-sizing:border-box; margin-bottom:0;"></select>
+                    <button type="button" onclick="addMachineGroupFromForm('mie_group')" style="padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; cursor:pointer; flex-shrink:0;" title="追加">➕</button>
+                  </div>
+                </div>
+                <div>
+                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">③ 機械名（機種）</label>
                   <div style="display:flex; gap:4px;">
                     <select id="mie_type" class="form-input" style="flex:1; box-sizing:border-box; margin-bottom:0;">
                       <option value="">選択...</option>
                     </select>
-                    <button type="button" onclick="addMachineTypeFromForm('mie_type')" style="padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; cursor:pointer; flex-shrink:0;" title="カテゴリを追加">➕</button>
+                    <button type="button" onclick="addMachineTypeFromForm('mie_type')" style="padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; cursor:pointer; flex-shrink:0;" title="追加">➕</button>
                   </div>
                 </div>
                 <div style="display:flex; gap:8px;">
                   <div style="flex:1;">
-                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">グループ</label>
-                    <select id="mie_group" class="form-input" style="width:100%; box-sizing:border-box;">
-                      <option value="農業機械">農業機械</option>
-                      <option value="農機インプルメント">農機インプルメント</option>
-                      <option value="出荷機械">出荷機械</option>
-                    </select>
+                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">④ 番号</label>
+                    <input type="text" id="mie_number" class="form-input" placeholder="管理番号" style="width:100%; box-sizing:border-box;">
                   </div>
                   <div style="flex:1;">
-                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">燃料</label>
-                    <select id="mie_fuel" class="form-input" style="width:100%; box-sizing:border-box;">
-                      <option value="">指定なし</option>
-                      <option value="軽油">⛽ 軽油</option>
-                      <option value="ガソリン">⛽ ガソリン</option>
-                      <option value="電動">⚡ 電動</option>
-                    </select>
+                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">⑤ 型式名</label>
+                    <input type="text" id="mie_model" class="form-input" placeholder="例: PH2R" style="width:100%; box-sizing:border-box;">
                   </div>
                 </div>
                 <div>
-                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">型式・機番</label>
-                  <input type="text" id="mie_model" class="form-input" placeholder="例: MZ655 / 機番: 12345" style="width:100%; box-sizing:border-box;">
-                </div>
-              </div>
-              <div id="mie_vehicle_extra" style="display:none; gap:8px; margin-bottom:12px;">
-                <div style="flex:1;">
-                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">車両区分</label>
-                  <select id="mie_drive_type" class="form-input" style="width:100%; box-sizing:border-box;">
-                    <option value="移動車両">移動車両</option>
-                    <option value="作業車両">作業車両</option>
+                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">燃料</label>
+                  <select id="mie_fuel" class="form-input" style="width:100%; box-sizing:border-box;">
+                    <option value="">指定なし</option>
+                    <option value="軽油">⛽ 軽油</option>
+                    <option value="ガソリン">⛽ ガソリン</option>
+                    <option value="電動">⚡ 電動</option>
                   </select>
                 </div>
-                <div style="flex:1;">
+              </div>
+              <div id="mie_vehicle_extra" style="display:none; flex-direction:column; gap:8px; margin-bottom:12px;">
+                <div>
+                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">② メインカテゴリ</label>
+                  <select id="mie_vehicle_main" class="form-input" style="width:100%; box-sizing:border-box;">
+                    <option value="自動車">自動車</option>
+                    <option value="作業機">作業機</option>
+                  </select>
+                </div>
+                <div>
+                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">③ 車両名</label>
+                  <select id="mie_vehicle_type" class="form-input" style="width:100%; box-sizing:border-box;"></select>
+                </div>
+                <div style="display:flex; gap:8px;">
+                  <div style="flex:1;">
+                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">④ 番号</label>
+                    <input type="text" id="mie_vehicle_number" class="form-input" placeholder="管理番号" style="width:100%; box-sizing:border-box;">
+                  </div>
+                  <div style="flex:1;">
+                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">⑤ 型式名</label>
+                    <input type="text" id="mie_vehicle_model" class="form-input" placeholder="型式" style="width:100%; box-sizing:border-box;">
+                  </div>
+                </div>
+                <div>
                   <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">状態</label>
                   <select id="mie_status" class="form-input" style="width:100%; box-sizing:border-box;">
                     <option value="使用可能">使用可能</option>
@@ -15145,13 +15244,23 @@ function createSignboardMarker(name, pos, icon, id) {
         const groupSel = document.getElementById('mie_group');
         if (groupSel) {
           const keep = String(groupSel.value || '');
-          const defaults = ['農業機械', '農機インプルメント', '出荷機械'];
-          const groups = Array.from(new Set(defaults.concat(pdlMachineGroups || []).map(g => String(g || '').trim()).filter(Boolean)));
+          const defaults = (window.MachineTaxonomy && MachineTaxonomy.MACHINE_MAIN_CATS) ? MachineTaxonomy.MACHINE_MAIN_CATS.slice() : ['圃場', '出荷'];
+          let groups = Array.from(new Set(defaults.concat(pdlMachineGroups || []).map(g => String(g || '').trim()).filter(Boolean)));
+          if (window.MachineTaxonomy && MachineTaxonomy.migrateGroupList) groups = MachineTaxonomy.migrateGroupList(groups);
           groupSel.innerHTML = groups.map(g =>
             `<option value="${String(g).replace(/"/g, '&quot;')}">${String(g).replace(/</g, '&lt;')}</option>`
           ).join('');
           if (keep && Array.from(groupSel.options).some(o => o.value === keep)) groupSel.value = keep;
           else if (!groupSel.value && groups.length) groupSel.value = groups[0];
+        }
+        const vehTypeSel = document.getElementById('mie_vehicle_type');
+        if (vehTypeSel) {
+          const keep = String(vehTypeSel.value || '');
+          const vtypes = (window.pdlVehicleTypes || (window.MachineTaxonomy ? MachineTaxonomy.DEFAULT_VEHICLE_TYPES : ['軽トラ', '軽バン'])).slice();
+          vehTypeSel.innerHTML = vtypes.map(t =>
+            `<option value="${String(t).replace(/"/g, '&quot;')}">${String(t).replace(/</g, '&lt;')}</option>`
+          ).join('');
+          if (keep && Array.from(vehTypeSel.options).some(o => o.value === keep)) vehTypeSel.value = keep;
         }
       };
 
@@ -15221,11 +15330,13 @@ function createSignboardMarker(name, pos, icon, id) {
           kind: st.kind === 'vehicle' ? 'vehicle' : 'machine',
           name: name,
           photoBase64: st.photoBase64 || '',
-          type: (document.getElementById('mie_type') || {}).value || '',
-          group: (document.getElementById('mie_group') || {}).value || '',
+          type: (document.getElementById('mie_type') || {}).value || (document.getElementById('mie_vehicle_type') || {}).value || '',
+          group: (document.getElementById('mie_group') || {}).value || (document.getElementById('mie_vehicle_main') || {}).value || '',
+          mainCategory: (document.getElementById('mie_group') || {}).value || (document.getElementById('mie_vehicle_main') || {}).value || '',
+          machineNumber: (document.getElementById('mie_number') || {}).value || (document.getElementById('mie_vehicle_number') || {}).value || '',
           fuel: (document.getElementById('mie_fuel') || {}).value || '',
-          model: (document.getElementById('mie_model') || {}).value || '',
-          driveType: (document.getElementById('mie_drive_type') || {}).value || '',
+          model: (document.getElementById('mie_model') || {}).value || (document.getElementById('mie_vehicle_model') || {}).value || '',
+          driveType: (document.getElementById('mie_vehicle_main') || {}).value === '作業機' ? '作業車両' : '移動車両',
           status: (document.getElementById('mie_status') || {}).value || ''
         });
         window._machineItemEditorState = st;
@@ -15326,11 +15437,18 @@ function createSignboardMarker(name, pos, icon, id) {
         if (vehExtra) vehExtra.style.display = (kind === 'vehicle') ? 'flex' : 'none';
 
         if (item) {
+          const normGroup = (window.MachineTaxonomy && MachineTaxonomy.normalizeMainCategory)
+            ? MachineTaxonomy.normalizeMainCategory(kind === 'vehicle' ? 'vehicle' : 'machine', item.group || item.mainCategory || item.driveType)
+            : (item.group || '');
           if (document.getElementById('mie_type')) document.getElementById('mie_type').value = item.type || item.category || '';
-          if (document.getElementById('mie_group')) document.getElementById('mie_group').value = item.group || '農業機械';
+          if (document.getElementById('mie_group')) document.getElementById('mie_group').value = normGroup || '圃場';
+          if (document.getElementById('mie_number')) document.getElementById('mie_number').value = item.machineNumber || item.serialNo || '';
           if (document.getElementById('mie_fuel')) document.getElementById('mie_fuel').value = item.fuel || '';
-          if (document.getElementById('mie_model')) document.getElementById('mie_model').value = item.model || item.machineNumber || '';
-          if (document.getElementById('mie_drive_type')) document.getElementById('mie_drive_type').value = item.driveType || '移動車両';
+          if (document.getElementById('mie_model')) document.getElementById('mie_model').value = item.model || '';
+          if (document.getElementById('mie_vehicle_main')) document.getElementById('mie_vehicle_main').value = normGroup || '自動車';
+          if (document.getElementById('mie_vehicle_type')) document.getElementById('mie_vehicle_type').value = item.vehicleType || item.type || '';
+          if (document.getElementById('mie_vehicle_number')) document.getElementById('mie_vehicle_number').value = item.vehicleNumber || item.machineNumber || '';
+          if (document.getElementById('mie_vehicle_model')) document.getElementById('mie_vehicle_model').value = item.model || '';
           if (document.getElementById('mie_status')) document.getElementById('mie_status').value = item.status || '使用可能';
         }
 
@@ -15411,11 +15529,22 @@ function createSignboardMarker(name, pos, icon, id) {
           const rawId = (entry.mode === 'edit' && entry.itemId)
             ? String(entry.itemId).replace(/^veh:/, '')
             : ('veh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6));
-          const driveType = entry.driveType || (document.getElementById('mie_drive_type') || {}).value || '移動車両';
+          const mainCategory = entry.mainCategory || entry.group || (document.getElementById('mie_vehicle_main') || {}).value || '自動車';
+          const vehicleType = entry.type || (document.getElementById('mie_vehicle_type') || {}).value || '';
+          const vehicleNumber = entry.machineNumber || (document.getElementById('mie_vehicle_number') || {}).value || '';
+          const model = entry.model || (document.getElementById('mie_vehicle_model') || {}).value || '';
+          const driveType = mainCategory === '作業機' ? '作業車両' : '移動車両';
           const status = entry.status || (document.getElementById('mie_status') || {}).value || '使用可能';
           const payload = {
             id: rawId,
             plateNumber: name,
+            mainCategory: mainCategory,
+            group: mainCategory,
+            vehicleType: vehicleType,
+            type: vehicleType,
+            vehicleNumber: vehicleNumber,
+            machineNumber: vehicleNumber,
+            model: model,
             driveType: driveType,
             status: status
           };
@@ -15427,24 +15556,36 @@ function createSignboardMarker(name, pos, icon, id) {
           const res = await safeCallGAS('vehicle_saveVehicle', payload);
           const photoUrl = (res && res.photo) || photoBase64 || (entry.clearPhoto ? '' : (entry.existingPhoto || ''));
           if (!Array.isArray(window.pdlMobileVehicles)) window.pdlMobileVehicles = [];
-          const rec = { id: rawId, plateNumber: name, driveType: driveType, status: status, photo: photoUrl };
+          const rec = {
+            id: rawId, plateNumber: name, driveType: driveType, status: status, photo: photoUrl,
+            mainCategory: mainCategory, group: mainCategory, vehicleType: vehicleType, type: vehicleType,
+            vehicleNumber: vehicleNumber, machineNumber: vehicleNumber, model: model
+          };
           const idx = window.pdlMobileVehicles.findIndex(v => String(v.id) === String(rawId));
           if (idx >= 0) window.pdlMobileVehicles[idx] = Object.assign({}, window.pdlMobileVehicles[idx], rec);
           else window.pdlMobileVehicles.push(rec);
           return { kind: 'vehicle', rec: rec, id: rawId, optionId: window.getMobileVehicleOptionId_(rec), name: name };
         }
 
-        const group = entry.group || (document.getElementById('mie_group') || {}).value || '農業機械';
+        let group = entry.group || (document.getElementById('mie_group') || {}).value || '圃場';
+        if (window.MachineTaxonomy) group = MachineTaxonomy.normalizeMainCategory('machine', group);
         const fuel = entry.fuel != null ? entry.fuel : ((document.getElementById('mie_fuel') || {}).value || '');
         const model = entry.model || (document.getElementById('mie_model') || {}).value || '';
+        const machineNumber = entry.machineNumber || (document.getElementById('mie_number') || {}).value || '';
         const type = entry.type || (document.getElementById('mie_type') || {}).value || '';
+        let displayName = name;
+        if (!displayName && window.MachineTaxonomy) {
+          displayName = MachineTaxonomy.buildDisplayName('machine', type, machineNumber, model, '');
+        }
         const payload = {
-          name: name,
+          name: displayName || type,
           userName: userName,
           workCategory: st.workCategory || '',
           group: group,
+          mainCategory: group,
           fuel: fuel,
           model: model,
+          machineNumber: machineNumber,
           type: type
         };
         if (photoBase64) {
@@ -15464,7 +15605,7 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         if (typeof pdlMachines === 'undefined' || !Array.isArray(pdlMachines)) window.pdlMachines = [];
         const existingIdx = pdlMachines.findIndex(m => String(m.id) === String(newMachine.id) || m.name === name);
-        const saved = Object.assign({ name: name, group: group, fuel: fuel, model: model, type: type }, newMachine);
+        const saved = Object.assign({ name: displayName || name, group: group, fuel: fuel, model: model, type: type, machineNumber: machineNumber }, newMachine);
         if (existingIdx !== -1) pdlMachines[existingIdx] = Object.assign({}, pdlMachines[existingIdx], saved);
         else pdlMachines.push(saved);
         return { kind: 'machine', rec: saved, id: saved.id, optionId: saved.id, name: name };
@@ -30933,6 +31074,10 @@ window.renderPersonalScheduleItemRow = function(it, category, index, total) {
   '</div>';
 };
 
+window._psGanttClickDate = null;
+window._psGanttAddType = 'dayplan';
+window._psGanttAddOptions = null;
+
 window.buildPersonalScheduleGanttHtml = function(tasks, dayPlans) {
   const parseYmd = function(s) { return window.psParseYmd_(s); };
   const today = new Date();
@@ -30955,13 +31100,10 @@ window.buildPersonalScheduleGanttHtml = function(tasks, dayPlans) {
     if (end < start) end = start;
     rows.push({
       kind: 'task', id: t.id, label: String(t.text || 'タスク'), sub: '',
-      start: start, end: end,
+      start: start, end: end, done: !!t.done,
       color: t.done ? '#9e9e9e' : (end < today && !t.done ? '#e53935' : '#7B1FA2')
     });
   });
-  if (!rows.length) {
-    return '<div style="color:#999;font-size:13px;padding:12px 0;">時間予定または日付付きタスクがありません。</div>';
-  }
   let minT = today.getTime();
   let maxT = today.getTime() + 13 * 86400000;
   rows.forEach(function(r) {
@@ -30973,14 +31115,21 @@ window.buildPersonalScheduleGanttHtml = function(tasks, dayPlans) {
   const dayCount = Math.max(7, Math.ceil((maxT - minT) / 86400000));
   const winStart = new Date(minT);
   winStart.setHours(0, 0, 0, 0);
+  const winStartYmd = window.psYmd_(winStart);
 
-  let html = '<div class="ps-gantt-root"><div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">';
+  let html = '<div class="ps-gantt-toolbar">';
+  html += '<button type="button" class="ps-gantt-add-btn" onclick="openPsGanttAddModal_()">＋ 予定追加</button>';
+  html += '<span class="ps-gantt-toolbar-hint">灰＋✓＝完了タスク。チェックで切替、バーをドラッグで日付移動</span>';
+  html += '</div>';
+  html += '<div class="ps-gantt-root"><div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">';
   html += '<table class="ps-gantt-table"><thead><tr><th class="ps-gantt-label">予定</th>';
   for (let i = 0; i < dayCount; i++) {
     const d = new Date(winStart);
     d.setDate(winStart.getDate() + i);
+    const ymd = window.psYmd_(d);
     const isToday = d.getTime() === today.getTime();
-    html += '<th style="' + (isToday ? 'background:#fff8e1;color:#c62828;' : '') + '">' + (d.getMonth() + 1) + '/' + d.getDate() + '</th>';
+    html += '<th class="ps-gantt-day-hdr' + (isToday ? ' is-today' : '') + '" onclick="openPsGanttAddModal_(\'' + ymd + '\')" title="この日に予定を追加">'
+      + (d.getMonth() + 1) + '/' + d.getDate() + '</th>';
   }
   html += '</tr></thead><tbody>';
   rows.forEach(function(r) {
@@ -30989,22 +31138,179 @@ window.buildPersonalScheduleGanttHtml = function(tasks, dayPlans) {
     const spanDays = Math.max(1, endIdx - startIdx + 1);
     const leftPct = (startIdx / dayCount) * 100;
     const widthPct = (spanDays / dayCount) * 100;
-    const barText = (r.sub ? r.sub + ' ' : '') + r.label;
+    const barTextRaw = (r.sub ? r.sub + ' ' : '') + r.label;
+    const barText = (r.kind === 'task' && r.done ? '✓ ' : '') + barTextRaw;
     const startYmd = window.psYmd_(r.start);
     const endYmd = window.psYmd_(r.end);
-    html += '<tr><td class="ps-gantt-label" title="' + window._escapeHtmlPs(barText) + '">' + window._escapeHtmlPs(r.label)
+    const labelStyle = r.done ? ' style="opacity:0.65;text-decoration:line-through;"' : '';
+    const doneBadge = (r.kind === 'task' && r.done) ? '<span class="ps-gantt-badge is-done">完了</span> ' : '';
+    html += '<tr><td class="ps-gantt-label"' + labelStyle + ' title="' + window._escapeHtmlPs(barTextRaw) + '">';
+    if (r.kind === 'task') {
+      html += '<label class="ps-gantt-done-check" onclick="event.stopPropagation()" title="完了切替">'
+        + '<input type="checkbox"' + (r.done ? ' checked' : '') + ' onchange="togglePersonalScheduleDone(\'' + window._escapeHtmlPs(r.id) + '\', this.checked)">'
+        + '</label> ';
+    }
+    html += doneBadge + window._escapeHtmlPs(r.label)
       + (r.sub ? '<div style="font-size:10px;color:#888;">' + window._escapeHtmlPs(r.sub) + '</div>' : '') + '</td>';
-    html += '<td colspan="' + dayCount + '" style="padding:0;"><div class="ps-gantt-track" data-ps-gantt-days="' + dayCount + '">';
-    html += '<div class="ps-gantt-bar' + (r.kind === 'dayplan' ? ' is-dayplan' : '') + '" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + r.color + ';"'
+    html += '<td colspan="' + dayCount + '" style="padding:0;"><div class="ps-gantt-track" data-ps-gantt-days="' + dayCount + '"'
+      + ' data-ps-win-start="' + winStartYmd + '" onclick="onPsGanttTrackClick_(event, this)">';
+    html += '<div class="ps-gantt-bar' + (r.kind === 'dayplan' ? ' is-dayplan' : '') + (r.done ? ' is-done' : '') + '" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + r.color + ';"'
       + ' data-ps-kind="' + r.kind + '" data-ps-id="' + window._escapeHtmlPs(r.id) + '"'
       + ' data-ps-start="' + startYmd + '" data-ps-end="' + endYmd + '"'
-      + ' title="' + window._escapeHtmlPs(barText) + '"'
+      + ' title="' + window._escapeHtmlPs(barTextRaw + (r.done ? ' [完了]' : '')) + '"'
       + ' onpointerdown="startPsGanttBarDrag_(event, this)">' + window._escapeHtmlPs(barText) + '</div>';
     html += '</div></td></tr>';
   });
+  html += '<tr class="ps-gantt-add-row"><td class="ps-gantt-label" style="color:#1565c0;font-weight:bold;">＋ 追加</td>';
+  html += '<td colspan="' + dayCount + '" style="padding:0;"><div class="ps-gantt-track ps-gantt-track-add" data-ps-gantt-days="' + dayCount + '"'
+    + ' data-ps-win-start="' + winStartYmd + '" onclick="onPsGanttTrackClick_(event, this)">';
+  html += '<div class="ps-gantt-add-hint">日付をクリックして予定を追加</div>';
+  html += '</div></td></tr>';
   html += '</tbody></table></div>';
   html += '<div style="font-size:10px;color:#888;margin-top:8px;padding:0 4px 4px;">バーをドラッグすると日付を移動できます</div></div>';
   return html;
+};
+
+window.onPsGanttTrackClick_ = function(ev, track) {
+  if (window._psGanttDrag && window._psGanttDrag.moved) return;
+  if (ev.target && ev.target.closest && ev.target.closest('.ps-gantt-bar')) return;
+  if (!track) return;
+  const rect = track.getBoundingClientRect();
+  if (!rect.width) return;
+  const dayCount = Number(track.getAttribute('data-ps-gantt-days')) || 14;
+  const winStartYmd = track.getAttribute('data-ps-win-start') || window.psYmd_(new Date());
+  const ratio = (ev.clientX - rect.left) / rect.width;
+  const idx = Math.max(0, Math.min(dayCount - 1, Math.floor(ratio * dayCount)));
+  const d = window.psParseYmd_(winStartYmd);
+  if (!d) return;
+  d.setDate(d.getDate() + idx);
+  window.openPsGanttAddModal_(window.psYmd_(d));
+};
+
+window.setPsGanttAddType_ = function(type) {
+  window._psGanttAddType = type === 'task' ? 'task' : 'dayplan';
+  const dayBtn = document.getElementById('psGanttAddTypeDay');
+  const taskBtn = document.getElementById('psGanttAddTypeTask');
+  const dayFields = document.getElementById('psGanttAddDayFields');
+  const taskFields = document.getElementById('psGanttAddTaskFields');
+  if (dayBtn) dayBtn.classList.toggle('active', window._psGanttAddType === 'dayplan');
+  if (taskBtn) taskBtn.classList.toggle('active', window._psGanttAddType === 'task');
+  if (dayFields) dayFields.style.display = window._psGanttAddType === 'dayplan' ? 'block' : 'none';
+  if (taskFields) taskFields.style.display = window._psGanttAddType === 'task' ? 'block' : 'none';
+};
+
+window.openPsGanttAddModal_ = async function(ymd) {
+  const modal = document.getElementById('psGanttAddModal');
+  if (!modal) return;
+  const todayYmd = window.psYmd_(new Date());
+  window._psGanttClickDate = ymd || window._psGanttClickDate || todayYmd;
+  window._psGanttAddType = 'dayplan';
+  const dateEl = document.getElementById('psGanttAddDate');
+  const startEl = document.getElementById('psGanttAddStartTime');
+  const nameEl = document.getElementById('psGanttAddWorkName');
+  const taskDateEl = document.getElementById('psGanttAddTaskDate');
+  const taskDeadlineEl = document.getElementById('psGanttAddTaskDeadline');
+  const taskTextEl = document.getElementById('psGanttAddTaskText');
+  const resEl = document.getElementById('psGanttAddResult');
+  if (dateEl) dateEl.value = window._psGanttClickDate;
+  if (taskDateEl) taskDateEl.value = window._psGanttClickDate;
+  if (taskDeadlineEl) taskDeadlineEl.value = '';
+  if (startEl && !startEl.value) startEl.value = '09:00';
+  if (nameEl) nameEl.value = '';
+  if (taskTextEl) taskTextEl.value = '';
+  if (resEl) resEl.textContent = '';
+  window.setPsGanttAddType_('dayplan');
+  modal.style.display = 'flex';
+  if (!window._psGanttAddOptions) {
+    try {
+      window._psGanttAddOptions = await callGAS('dayPlan_options', {});
+    } catch (e) {
+      window._psGanttAddOptions = { categories: [], works: [] };
+    }
+  }
+  const catSel = document.getElementById('psGanttAddCategory');
+  if (catSel) {
+    const cats = (window._psGanttAddOptions && window._psGanttAddOptions.categories) || [];
+    catSel.innerHTML = '<option value="">カテゴリ（任意）</option>'
+      + cats.map(function(c) {
+        return '<option value="' + window._escapeHtmlPs(c) + '">' + window._escapeHtmlPs(c) + '</option>';
+      }).join('');
+  }
+};
+
+window.closePsGanttAddModal_ = function() {
+  const modal = document.getElementById('psGanttAddModal');
+  if (modal) modal.style.display = 'none';
+};
+
+window.submitPsGanttAdd_ = async function() {
+  const resEl = document.getElementById('psGanttAddResult');
+  const btn = document.getElementById('psGanttAddSubmitBtn');
+  const staffId = localStorage.getItem('passionMapUserId') || '';
+  const userName = localStorage.getItem('passionMapUserName') || staffId;
+  if (!staffId) {
+    if (resEl) { resEl.textContent = 'ログイン情報がありません'; resEl.style.color = '#c62828'; }
+    return;
+  }
+  if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
+  try {
+    if (window._psGanttAddType === 'task') {
+      const text = (document.getElementById('psGanttAddTaskText')?.value || '').trim();
+      const startDate = document.getElementById('psGanttAddTaskDate')?.value || window._psGanttClickDate;
+      const deadline = document.getElementById('psGanttAddTaskDeadline')?.value || '';
+      if (!text) {
+        if (resEl) { resEl.textContent = 'タスク内容を入力してください'; resEl.style.color = '#c62828'; }
+        return;
+      }
+      await callGAS('addPersonalScheduleItem', {
+        userId: staffId,
+        category: 'タスク',
+        text: text,
+        startDate: startDate,
+        deadline: deadline
+      });
+    } else {
+      const workName = (document.getElementById('psGanttAddWorkName')?.value || '').trim();
+      const date = document.getElementById('psGanttAddDate')?.value || window._psGanttClickDate;
+      const startTime = (document.getElementById('psGanttAddStartTime')?.value || '09:00').trim();
+      const durationMins = parseInt(document.getElementById('psGanttAddDuration')?.value, 10) || 30;
+      const category = (document.getElementById('psGanttAddCategory')?.value || '').trim();
+      if (!workName) {
+        if (resEl) { resEl.textContent = '作業名を入力してください'; resEl.style.color = '#c62828'; }
+        return;
+      }
+      const endMins = (function(hm) {
+        const m = String(hm || '09:00').match(/^(\d{1,2}):(\d{2})$/);
+        if (!m) return 9 * 60 + 30;
+        return Number(m[1]) * 60 + Number(m[2]) + durationMins;
+      })(startTime);
+      const endTime = String(Math.floor(endMins / 60) % 24).padStart(2, '0') + ':' + String(endMins % 60).padStart(2, '0');
+      const res = await callGAS('dayPlan_save', {
+        userId: staffId,
+        userName: userName,
+        date: date,
+        startTime: startTime,
+        endTime: endTime,
+        durationMins: durationMins,
+        workName: workName,
+        category: category,
+        approved: true,
+        estimateSource: 'manual'
+      });
+      if (res && res.item) {
+        window._psLastDayPlans = (window._psLastDayPlans || []).concat([res.item]);
+      }
+    }
+    window.closePsGanttAddModal_();
+    await window.renderPersonalSchedulePanel();
+  } catch (e) {
+    if (resEl) {
+      resEl.textContent = '登録失敗: ' + (e.message || e);
+      resEl.style.color = '#c62828';
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '登録する'; }
+  }
 };
 
 window.startPsGanttBarDrag_ = function(ev, bar) {
@@ -31404,10 +31710,19 @@ window.movePersonalScheduleItem = async function(category, index, delta) {
 window.togglePersonalScheduleDone = async function(id, done) {
   try {
     await callGAS('updatePersonalScheduleItem', { id: id, done: !!done });
-    await window.renderPersonalSchedulePanel();
+    (window._psLastTasks || []).forEach(function(it) {
+      if (it && String(it.id) === String(id)) it.done = !!done;
+    });
+    if (window._psCachedPanelData) {
+      window._psCachedPanelData.tasks = window._psLastTasks.slice();
+      window.renderPersonalSchedulePanelFromCache_();
+    } else {
+      await window.renderPersonalSchedulePanel();
+    }
   } catch (e) {
     if (typeof customAlert === 'function') customAlert('更新に失敗しました');
     else alert('更新に失敗しました');
+    await window.renderPersonalSchedulePanel();
   }
 };
 

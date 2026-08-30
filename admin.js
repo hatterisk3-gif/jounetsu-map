@@ -1258,7 +1258,7 @@ function renderInitData(data, opts) {
         pdlWorkCategories = data.pdl.workCategories || ["圃場作業", "事務作業", "保全・整備"];
         pdlContentUnits = data.pdl.contentUnits || ['kg', 'g', '本', 'パック', '個', '束'];
         pdlMachineTypes = data.pdl.machineTypes || ["トラクター", "ドローン"];
-        pdlMachineGroups = data.pdl.machineGroups || ["農業機械", "農機インプルメント", "出荷機械"];
+        pdlMachineGroups = data.pdl.machineGroups || ["圃場", "出荷"];
         if ((!data.pdl.machineGroups || !data.pdl.machineGroups.length) && Array.isArray(data.pdl.machineCategories)
             && data.pdl.machineCategories.length && !data.pdl.machineCategories.some(c => c === 'トラクター' || c === 'ドローン')) {
             pdlMachineGroups = data.pdl.machineCategories;
@@ -1487,7 +1487,7 @@ window.getMachineTypeOptionsHtml = (selected) => {
 window.getMachineGroupOptionsHtml = (selected) => {
     const list = [...(pdlMachineGroups || [])];
     if (selected && !list.includes(selected)) list.unshift(selected);
-    let html = '<option value="">機械グループを選択...</option>';
+    let html = '<option value="">② メインカテゴリ...</option>';
     list.forEach(t => {
         const sel = String(t) === String(selected || '') ? 'selected' : '';
         html += `<option value="${String(t).replace(/"/g, '&quot;')}" ${sel}>${t}</option>`;
@@ -1508,8 +1508,8 @@ window.getMasterTypeInfo = (type) => {
         location: { title: '🏢 拠点マスタ', desc: '拠点名・都道府県・産地データの設定', list: (pdlLocationDetails && pdlLocationDetails.length) ? pdlLocationDetails : (pdlLocations || []) },
         workCategory: { title: '📂 作業カテゴリマスタ', desc: '作業のカテゴリ区分設定', list: pdlWorkCategories || [] },
         contentUnit: { title: '📏 コンテナ内容単位マスタ', desc: '収穫記録の内容単位（kg・本など）', list: pdlContentUnits || [] },
-        machineType: { title: '🏷️ 機械カテゴリマスタ', desc: '車両・農機のカテゴリ区分設定', list: pdlMachineTypes || [] },
-        machineGroup: { title: '📁 機械グループマスタ', desc: '車両・農機のグループ設定', list: pdlMachineGroups || [] },
+        machineType: { title: '🏷️ 機械名マスタ', desc: '機械名・車両名（トラクター、軽トラ等）', list: pdlMachineTypes || [] },
+        machineGroup: { title: '📁 メインカテゴリマスタ', desc: '農機=圃場/出荷、車両=自動車/作業機', list: pdlMachineGroups || [] },
         work: { title: '📋 作業記録マスタ', desc: '作業項目および詳細作業名リストの設定', list: pdlWorkMaster || [] },
         machine: { title: '🚜 農機マスタ', desc: '管理車両・農業機械・機番・拠点・定位置の設定', list: window.pdlMachines || [] },
         tool: { title: '🔧 道具マスタ', desc: '使用道具・備品と対応作業の設定', list: pdlTools || [] },
@@ -1930,17 +1930,17 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             window._adminMacPhoto = { add: '', edit: '', clearEdit: false, existingEdit: '' };
             const locOpts = '<option value="">拠点を選択...</option>' + (pdlLocations || []).map(l => `<option value="${String(l).replace(/"/g, '&quot;')}">${l}</option>`).join('');
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
-                <label style="font-size:12px; font-weight:bold; color:#555;">車両名・農機名 * / 機械番号</label>
+                <label style="font-size:12px; font-weight:bold; color:#555;">表示名（任意） / ④番号</label>
                 <div style="display:flex; gap:5px;">
-                  <input type="text" id="add_mac_name" class="form-input" style="flex:2; margin-bottom:0; padding:8px;" placeholder="車両・農機名 *">
-                  <input type="text" id="add_mac_number" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="No.">
+                  <input type="text" id="add_mac_name" class="form-input" style="flex:2; margin-bottom:0; padding:8px;" placeholder="表示名（空なら③④⑤から自動）">
+                  <input type="text" id="add_mac_number" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="④番号">
                 </div>
-                <label style="font-size:12px; font-weight:bold; color:#555;">型式 / 機械カテゴリ</label>
+                <label style="font-size:12px; font-weight:bold; color:#555;">⑤型式 / ③機械名</label>
                 <div style="display:flex; gap:5px;">
-                  <input type="text" id="add_mac_model" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="型式">
+                  <input type="text" id="add_mac_model" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="⑤型式名">
                   <select id="add_mac_type" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">${getMachineTypeOptionsHtml('')}</select>
                 </div>
-                <label style="font-size:12px; font-weight:bold; color:#555;">機械グループ / 拠点</label>
+                <label style="font-size:12px; font-weight:bold; color:#555;">②メインカテゴリ / 拠点</label>
                 <div style="display:flex; gap:5px;">
                   <select id="add_mac_group" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">${getMachineGroupOptionsHtml('')}</select>
                   <select id="add_mac_location" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">${locOpts}</select>

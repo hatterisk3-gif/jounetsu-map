@@ -201,7 +201,78 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
 }
 .ps-gantt-bar.is-dragging { cursor: grabbing; opacity: 0.85; z-index: 5; }
 .ps-gantt-bar.is-dayplan { border: 1px dashed rgba(255,255,255,0.6); }
+.ps-gantt-bar.is-done {
+  opacity: 0.75;
+  text-decoration: line-through;
+  cursor: grab;
+}
+.ps-gantt-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: bold;
+  padding: 1px 5px;
+  border-radius: 4px;
+  vertical-align: middle;
+}
+.ps-gantt-badge.is-done { background: #eeeeee; color: #616161; }
+.ps-gantt-done-check {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 2px;
+  vertical-align: middle;
+}
+.ps-gantt-done-check input { width: 14px; height: 14px; margin: 0; cursor: pointer; }
 .ps-gantt-root { overflow: auto; -webkit-overflow-scrolling: touch; border: 1px solid #cfd8dc; border-radius: 8px; background: #fff; }
+.ps-gantt-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.ps-gantt-add-btn {
+  background: #1565c0;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+}
+.ps-gantt-toolbar-hint { font-size: 11px; color: #666; }
+.ps-gantt-day-hdr { cursor: pointer; }
+.ps-gantt-day-hdr.is-today { background: #fff8e1 !important; color: #c62828 !important; }
+.ps-gantt-day-hdr:hover { background: #e3f2fd !important; }
+.ps-gantt-track-add { cursor: pointer; background: #fafafa; min-height: 32px; }
+.ps-gantt-track-add:hover { background: #e3f2fd; }
+.ps-gantt-add-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #90caf9;
+  pointer-events: none;
+}
+.ps-gantt-add-row td { border-top: 2px dashed #bbdefb; }
+.ps-gantt-add-type {
+  flex: 1;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  background: #f5f5f5;
+  color: #555;
+}
+.ps-gantt-add-type.active {
+  background: #1565c0;
+  color: #fff;
+  border-color: #1565c0;
+}
 
 .form-label { display: block; font-size: 14px; color: #555; margin-bottom: 5px; font-weight: bold; }
 

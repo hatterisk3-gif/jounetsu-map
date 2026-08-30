@@ -864,14 +864,15 @@ function getInitData() {
     stages: getCol(['生育記録マスタ', '栽培ステージ選択'], 2),
     signFunctionsMaster: getCol(['看板マスタ', '看板機能マスタ', '看板機能'], 0), // ★ここを追加！看板マスタのA列を取得します
     machineGroups: (function () {
-      try { return getMachineGroupMasterList_(); } catch (e) { return ['農業機械', '農機インプルメント', '出荷機械']; }
+      try { return getMachineGroupMasterList_(); } catch (e) { return ['圃場', '出荷']; }
     })(),
     machineTypes: (function () {
       try { return getMachineTypeMasterList_(); } catch (e) { return ['トラクター', 'ドローン']; }
     })(),
     machineCategories: (function () {
       try { return getMachineTypeMasterList_(); } catch (e) { return ['トラクター', 'ドローン']; }
-    })()
+    })(),
+    vehicleTypes: ['軽トラ', '軽バン', '軽四', '普通車', 'トラック']
   };
   
   let workMaster = [];
@@ -1351,7 +1352,7 @@ function ensureMachineGroupMasterSheet_() {
   if (!sheet) {
     sheet = ss.insertSheet('機械グループマスタ');
     sheet.appendRow(['グループ名']);
-    const defaults = ['農業機械', '農機インプルメント', '出荷機械'];
+    const defaults = ['圃場', '出荷'];
     const macSh = ss.getSheetByName('農機マスタ');
     const fromMachines = [];
     if (macSh && macSh.getLastRow() > 1) {
@@ -1371,11 +1372,11 @@ function ensureMachineGroupMasterSheet_() {
 function getMachineGroupMasterList_() {
   try {
     const sheet = ensureMachineGroupMasterSheet_();
-    if (!sheet || sheet.getLastRow() <= 1) return ['農業機械', '農機インプルメント', '出荷機械'];
+    if (!sheet || sheet.getLastRow() <= 1) return ['圃場', '出荷'];
     const data = sheet.getDataRange().getValues();
     return data.slice(1).map(r => String(r[0] || '').trim()).filter(String);
   } catch (e) {
-    return ['農業機械', '農機インプルメント', '出荷機械'];
+    return ['圃場', '出荷'];
   }
 }
 
@@ -6725,6 +6726,7 @@ function getScheduleData() {
   // 3. 作業予定の照合と自動部署判定
   const schedSheet = ss.getSheetByName('作業予定');
   let activeSchedules = [];
+  let completedSchedules = [];
   const taskUsersMap = collectScheduleTaskUsersMap_();
   const dayPlanMaps = collectDayPlanBookings_();
   if (schedSheet) {
@@ -6766,13 +6768,13 @@ function getScheduleData() {
         scheduleUpdates.push({row: i + 1, col: 9, val: compDate}); // I列=9
       }
 
-      if (!compDate && (fieldName || workName)) {
+      if (fieldName || workName) {
         let schedDateStr = '-';
         let deadlineStr = '-';
         try { if (schedDateRaw) schedDateStr = Utilities.formatDate(new Date(schedDateRaw), "JST", "MM/dd"); } catch (eSd) {}
         try { if (deadlineRaw) deadlineStr = Utilities.formatDate(new Date(deadlineRaw), "JST", "MM/dd"); } catch (eDl) {}
         let isOverdue = false;
-        if (deadlineRaw) {
+        if (!compDate && deadlineRaw) {
           const dlDate = new Date(deadlineRaw);
           dlDate.setHours(0,0,0,0);
           if (dlDate < today) isOverdue = true;
@@ -6782,7 +6784,7 @@ function getScheduleData() {
         const parsedPlace = parseCpPlaceKind_(placeIdRaw);
         const isCultivation = !!parsedPlace.kind;
         const isProcure = parsedPlace.kind === 'procure';
-        if (isProcure && (compDate || (!compDate && completedWorks[key]))) {
+        if (isProcure && compDate) {
           completedProcurePlaceIds[placeIdRaw] = true;
         }
         let varietyName = '';
@@ -6820,7 +6822,7 @@ function getScheduleData() {
             return String(x || '').trim();
           }).filter(Boolean);
         }
-        activeSchedules.push({
+        const item = {
           workName,
           dept,
           cropName: displayCrop,
@@ -6845,8 +6847,17 @@ function getScheduleData() {
           taskUsers: taskUsersMap[scheduleKey] || [],
           isMidWork: false,
           dayPlans: []
-        });
-        attachDayPlansToSchedule_(activeSchedules[activeSchedules.length - 1], dayPlanMaps);
+        };
+        attachDayPlansToSchedule_(item, dayPlanMaps);
+        if (compDate) {
+          item.isCompleted = true;
+          try { item.compDate = Utilities.formatDate(new Date(compDate), "JST", "MM/dd"); } catch (eCd) { item.compDate = String(compDate || ''); }
+          item.compDateYmd = formatWorkDateYmd_(compDate);
+          item.isOverdue = false;
+          completedSchedules.push(item);
+        } else {
+          activeSchedules.push(item);
+        }
       }
     }
     // 空欄を自動補完
@@ -6893,6 +6904,7 @@ function getScheduleData() {
   });
 
   applyWorkScheduleStatus_(activeSchedules);
+  applyWorkScheduleStatus_(completedSchedules);
 
   // 4. ポリゴン情報の収集（ステータスはフロントエンドで計算させるために付加情報を乗せる）
   const polygons = getSavedPolygons();
@@ -6900,7 +6912,7 @@ function getScheduleData() {
     p.harvestingDepts = harvestingFields[p.name] || []; 
   });
 
-  return { polygons, activeSchedules, midWorks: midWorks, workCategories: getWorkCategoryList_(), departments: getDeptList_() };
+  return { polygons, activeSchedules, completedSchedules, midWorks: midWorks, workCategories: getWorkCategoryList_(), departments: getDeptList_() };
 }
 
 /**
@@ -15181,14 +15193,44 @@ function machine_saveFuel(p) {
 // 移動車両（軽トラ）管理
 // ==========================================
 function ensureVehicleMasterSheet() {
-  const headers = ['id', 'plateNumber', 'photo', 'mileage', 'driveType', 'registrationDate', 'status', 'lat', 'lng'];
+  const headers = ['id', 'plateNumber', 'photo', 'mileage', 'driveType', 'registrationDate', 'status', 'lat', 'lng', 'mainCategory', 'vehicleType', 'vehicleNumber', 'model'];
   const sheet = getOrCreateSheet('VehicleMaster', headers);
   const lastCol = Math.max(sheet.getLastColumn(), headers.length);
   const existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   if (String(existing[0] || '') !== 'id' || String(existing[7] || '') !== 'lat' || String(existing[8] || '') !== 'lng') {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  } else if (lastCol < headers.length) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   }
   return sheet;
+}
+
+function parseVehicleRow_(row) {
+  const driveType = String(row[4] || '').trim();
+  const mainCategoryRaw = String(row[9] || '').trim();
+  let mainCategory = mainCategoryRaw;
+  if (!mainCategory) {
+    if (driveType === '作業車両' || driveType === '作業機') mainCategory = '作業機';
+    else if (driveType === '移動車両' || driveType === '自動車' || driveType === '2WD' || driveType === '4WD') mainCategory = '自動車';
+  }
+  return {
+    id: row[0],
+    plateNumber: row[1],
+    photo: row[2] || '',
+    mileage: row[3],
+    driveType: driveType,
+    registrationDate: row[5] || '',
+    status: row[6] || '使用可能',
+    lat: row[7] || null,
+    lng: row[8] || null,
+    mainCategory: mainCategory,
+    group: mainCategory,
+    vehicleType: String(row[10] || '').trim(),
+    type: String(row[10] || '').trim(),
+    vehicleNumber: String(row[11] || '').trim(),
+    machineNumber: String(row[11] || '').trim(),
+    model: String(row[12] || '').trim()
+  };
 }
 
 function vehicle_loadAll() {
@@ -15197,17 +15239,7 @@ function vehicle_loadAll() {
   let data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (!data[i][0]) continue;
-    vehicles[data[i][0]] = {
-      id: data[i][0],
-      plateNumber: data[i][1],
-      photo: data[i][2] || '',
-      mileage: data[i][3],
-      driveType: data[i][4] || '',
-      registrationDate: data[i][5] || '',
-      status: data[i][6] || '使用可能',
-      lat: data[i][7] || null,
-      lng: data[i][8] || null
-    };
+    vehicles[data[i][0]] = parseVehicleRow_(data[i]);
   }
   return { vehicles: vehicles };
 }
@@ -15248,16 +15280,30 @@ function vehicle_saveVehicle(p) {
     photoUrl = "https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w800";
   }
 
+  const mainCategory = String(p.mainCategory || p.group || '').trim();
+  const vehicleType = String(p.vehicleType || p.type || '').trim();
+  const vehicleNumber = String(p.vehicleNumber || p.machineNumber || '').trim();
+  const model = String(p.model || '').trim();
+  let driveType = String(p.driveType || '').trim();
+  if (!driveType) {
+    if (mainCategory === '作業機') driveType = '作業車両';
+    else if (mainCategory === '自動車') driveType = '移動車両';
+  }
+
   const rowData = [
     p.id,
     p.plateNumber || '',
     photoUrl,
     (p.mileage === 0 || p.mileage) ? p.mileage : '',
-    p.driveType || '',
+    driveType,
     p.registrationDate || '',
     p.status || existingStatus || '使用可能',
     (p.lat === 0 || p.lat) ? p.lat : existingLat,
-    (p.lng === 0 || p.lng) ? p.lng : existingLng
+    (p.lng === 0 || p.lng) ? p.lng : existingLng,
+    mainCategory,
+    vehicleType,
+    vehicleNumber,
+    model
   ];
 
   if (rowIdx !== -1) {
