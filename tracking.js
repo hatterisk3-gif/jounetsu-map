@@ -2735,6 +2735,14 @@
     else refreshTrackingModeUI();
 
     const user = getCurrentUserName();
+    if (lunchData.enabled && user && typeof callGAS === 'function') {
+      callGAS('saveLunchBreakRecord', {
+        userName: user,
+        workDate: lunchData.dateYmd || getActiveClockInDateYmd(),
+        startTime: lunchData.start || '',
+        endTime: lunchData.end || ''
+      }).catch((e) => console.warn('昼休憩記録送信エラー', e));
+    }
     if (user && typeof callGAS === 'function') {
       const label = lunchData.enabled
         ? `昼休憩(${lunchData.start}-${lunchData.end})`

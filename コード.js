@@ -168,6 +168,7 @@ function doPost(e) {
     else if (action === "saveFieldMemo") result = saveFieldMemo(params);
     else if (action === "getFieldMemoHistory") result = getFieldMemoHistory(params);
     else if (action === "saveTrackingData") result = saveTrackingData(params);
+    else if (action === "saveLunchBreakRecord") result = saveLunchBreakRecord_(params);
     else if (action === "getTrackingData") result = getTrackingData(params);
     else if (action === "getOpenClockInStatus") result = getOpenClockInStatus(params);
     else if (action === "updateOpenClockInTime") result = updateOpenClockInTime(params);
@@ -854,7 +855,7 @@ function getInitData() {
   const pdl = {
     locations: locationDetails.map(l => l.name),
     locationDetails: locationDetails,
-    workCategories: Array.from(new Set(getCol(['作業カテゴリマスタ'], 0))).length > 0 ? Array.from(new Set(getCol(['作業カテゴリマスタ'], 0))) : ["圃場作業", "事務作業", "保全・整備"],
+    workCategories: Array.from(new Set(getCol(['作業カテゴリマスタ'], 0))).length > 0 ? Array.from(new Set(getCol(['作業カテゴリマスタ'], 0))) : [],
     conditions: getCol(['圃場設定マスタ', '圃場条件'], 1),
     statuses: getCol(['圃場設定マスタ', '稼働状況'], 2),
     stages: getCol(['生育記録マスタ', '栽培ステージ選択'], 2),
@@ -896,7 +897,7 @@ function getInitData() {
         let wName = idxName >= 0 ? String(data[i][idxName] || "").trim() : "";
         if (wName) {
           let cat = idxCategory >= 0 && data[i][idxCategory] ? String(data[i][idxCategory]).trim() : "";
-          if (!cat) cat = "圃場作業"; // デフォルト
+          if (!cat) cat = "";
 
           const cropStr = idxCrop >= 0 ? String(data[i][idxCrop] || "").trim() : "";
           let cropDetails = null;
@@ -1431,9 +1432,6 @@ function manageMasterData(masterType, manageAction, value, userName) {
       if (masterType === 'workCategory') {
           sheet = ss.insertSheet(sheetName);
           sheet.appendRow(["カテゴリ名"]);
-          sheet.appendRow(["圃場作業"]);
-          sheet.appendRow(["事務作業"]);
-          sheet.appendRow(["保全・整備"]);
       } else if (masterType === 'department' || masterType === 'dept') {
           sheet = ensureDeptMasterSheet_();
       } else if (masterType === 'contentUnit') {
@@ -2164,7 +2162,7 @@ function mergeWorkMasterObjects_(keepObj, origObj, incoming, originalName) {
     .concat(incoming.aliases || []);
   if (originalName && originalName !== keepName) aliasParts.push(originalName);
   const aliases = uniqWorkMasterTokens_(aliasParts).filter(function (a) { return a !== keepName; });
-  const category = String(incoming.category || (origObj && origObj.category) || keepObj.category || '圃場作業').trim() || '圃場作業';
+  const category = String(incoming.category || (origObj && origObj.category) || keepObj.category || '').trim();
   return {
     name: keepName,
     category: category,
@@ -2319,7 +2317,7 @@ function applyWorkMasterValuesToRow_(rowVals, headers, value) {
   const idxAlias = findWorkAliasColumnIndex_(headers);
 
   if (idxName >= 0) rowVals[idxName] = String((value && value.name) || '').trim();
-  if (idxCat >= 0) rowVals[idxCat] = String((value && value.category) || '圃場作業').trim() || '圃場作業';
+  if (idxCat >= 0) rowVals[idxCat] = String((value && value.category) || '').trim();
   if (idxCrop >= 0) rowVals[idxCrop] = String((value && value.cropName) || '').trim();
   if (idxDetail >= 0) rowVals[idxDetail] = String((value && value.detailWorks) || '').trim();
   if (idxAlias >= 0) {
@@ -2371,7 +2369,7 @@ function readWorkMasterList_(sheet) {
     const uiFlags = readWorkMasterUiFlagsFromRow_(headers, r);
     return {
       name: String(r[idxName] || '').trim(),
-      category: idxCategory >= 0 ? (String(r[idxCategory] || '').trim() || '圃場作業') : '圃場作業',
+      category: idxCategory >= 0 ? String(r[idxCategory] || '').trim() : '',
       cropName: cropStr,
       crops: crops,
       cropDetails: cropDetails,
@@ -2427,7 +2425,7 @@ function findWorkAliasColumnIndex_(headers) {
 
 /** 作業マスタ追加/編集用の列名→値マップ（担当部署列は部署用のため変更しない） */
 function buildWorkMasterColumnMap_(value) {
-  const category = value.category || "圃場作業";
+  const category = value.category || "";
   const details = value.detailWorks || "";
   const cropName = value.cropName != null ? String(value.cropName).trim() : "";
   const cd = value && value.cropDetails ? JSON.stringify(value.cropDetails) : "";
@@ -5826,7 +5824,7 @@ function getOrCreateRecordSheet(sheetName) {
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
     if (sheetName === '看板記録') { sheet.appendRow(["日時", "圃場名", "登録者", "写真URL", "システムID"]); } 
-    else if (sheetName === '作業記録') { sheet.appendRow(["記録時間", "圃場名", "記録者", "作業日", "作業名", "作物名", "開始時間", "終了時間", "人数", "合計時間", "進捗状況", "写真URL", "システムID", "今回作業畝", "次回開始畝"]); }
+    else if (sheetName === '作業記録') { sheet.appendRow(["記録時間", "圃場名", "記録者", "作業日", "作業名", "作物名", "開始時間", "終了時間", "人数", "合計時間", "進捗状況", "写真URL", "システムID", "今回作業畝", "次回開始畝", "作業内休憩(分)"]); }
     else if (sheetName === 'ロット記録') { sheet.appendRow(["ロットID", "生成日時", "生成者", "作物名", "圃場名", "コンテナ種類", "初期コンテナ数", "残コンテナ数", "ステータス", "拠点", "内容単位", "内容個数", "内容内訳"]); }
     else { sheet.appendRow(["日時", "圃場名", "登録者", "作物名", "開始時間", "終了時間", "草刈り", "草抜き", "排水", "虫食い", "病気", "収穫見込み日", "残存率(%)", "葉長(cm)", "収穫サイズ(cm)", "収穫可能量(個/本)", "栽培ステージ", "土壌PH", "花芽", "気づいたこと", "写真URL", "システムID"]); }
     sheet.getRange("A1:V1").setFontWeight("bold").setBackground("#e0e0e0");
@@ -5891,7 +5889,14 @@ function saveRecord(idStr, nameStr, author, recordType, recordData, photosBase64
 
   const rsName = recordType === 'work' ? '作業記録' : (parentType === '看板' ? '看板記録' : '生育記録');
   const rs = getOrCreateRecordSheet(rsName);
-if (recordType === 'work') rs.appendRow([today+" "+time, nameStr, author, recordData.workDate||"", recordData.workName||"", recordData.crop||"", recordData.startTime||"", recordData.endTime||"", recordData.workerCount||"1", recordData.totalTime||"", recordData.progressStatus||"", urls.join(", "), recordId, recordData.workedRidges||"", recordData.nextRidge||""]);
+  if (recordType === 'work') {
+    const breakCol = ensureWorkRecordBreakMinsColumn_(rs);
+    const breakMins = Math.max(0, parseInt(recordData && recordData.breakMins, 10) || 0);
+    const row = [today+" "+time, nameStr, author, recordData.workDate||"", recordData.workName||"", recordData.crop||"", recordData.startTime||"", recordData.endTime||"", recordData.workerCount||"1", recordData.totalTime||"", recordData.progressStatus||"", urls.join(", "), recordId, recordData.workedRidges||"", recordData.nextRidge||""];
+    while (row.length < breakCol - 1) row.push('');
+    row[breakCol - 1] = breakMins > 0 ? breakMins : '';
+    rs.appendRow(row);
+  }
     else if (parentType === '看板') rs.appendRow([today+" "+time, nameStr, author, urls.join(", "), recordId]);
     else rs.appendRow([today+" "+time, nameStr, author, recordData.crop||"", recordData.startTime||"", recordData.endTime||"", recordData.mowing?"済":"", recordData.weeding?"済":"", recordData.drainage?"済":"", recordData.bug?"有":"", recordData.disease?"有":"", recordData.harvestDate||"", recordData.survivalRate||"", recordData.leafLength||"", recordData.harvestSize||"", recordData.harvestAmount||"", recordData.fieldStatus||"", recordData.ph||"", recordData.flower?"有":"", recordData.notes||"", urls.join(", "), recordId]);
     
@@ -5970,10 +5975,12 @@ function updateRecordItem(polyId, recordId, recordType, newData, newPhotosBase64
   if (rs) {
     const d = rs.getDataRange().getValues();
     for (let i = 1; i < d.length; i++) {
-      if (recordType === 'work') {
+          if (recordType === 'work') {
           if (d[i][12] === recordId) { 
             const r = i + 1;
-            rs.getRange(r, 4).setValue(newData.workDate||""); rs.getRange(r, 5).setValue(newData.workName||""); rs.getRange(r, 6).setValue(newData.crop||""); rs.getRange(r, 7).setValue(newData.startTime||""); rs.getRange(r, 8).setValue(newData.endTime||""); rs.getRange(r, 9).setValue(newData.workerCount||"1"); rs.getRange(r, 10).setValue(newData.totalTime||""); rs.getRange(r, 11).setValue(newData.progressStatus||""); rs.getRange(r, 12).setValue(tgt.urls.join(" , ")); rs.getRange(r, 14).setValue(newData.workedRidges||""); rs.getRange(r, 15).setValue(newData.nextRidge||"");
+            const breakCol = ensureWorkRecordBreakMinsColumn_(rs);
+            const breakMins = Math.max(0, parseInt(newData && newData.breakMins, 10) || 0);
+            rs.getRange(r, 4).setValue(newData.workDate||""); rs.getRange(r, 5).setValue(newData.workName||""); rs.getRange(r, 6).setValue(newData.crop||""); rs.getRange(r, 7).setValue(newData.startTime||""); rs.getRange(r, 8).setValue(newData.endTime||""); rs.getRange(r, 9).setValue(newData.workerCount||"1"); rs.getRange(r, 10).setValue(newData.totalTime||""); rs.getRange(r, 11).setValue(newData.progressStatus||""); rs.getRange(r, 12).setValue(tgt.urls.join(" , ")); rs.getRange(r, 14).setValue(newData.workedRidges||""); rs.getRange(r, 15).setValue(newData.nextRidge||""); rs.getRange(r, breakCol).setValue(breakMins > 0 ? breakMins : "");
             break;
           }
       } else if (pType === '看板') {
@@ -6235,7 +6242,6 @@ function getWorkCategoryList_() {
       if (n) list.push(n);
     });
   }
-  if (!list.length) list = ['圃場作業', '事務作業', '保全・整備'];
   return list;
 }
 
@@ -9051,6 +9057,46 @@ function getFieldMemoHistory(params) {
   } catch (e) {
     throw new Error('圃場メモ履歴取得エラー: ' + e.message);
   }
+}
+
+function ensureLunchBreakRecordSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('昼休憩記録');
+  if (!sheet) {
+    sheet = ss.insertSheet('昼休憩記録');
+    sheet.appendRow(['ユーザー名', '作業日', '開始時間', '終了時間', '登録日時', 'システムID']);
+    sheet.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#e0e0e0');
+  }
+  return sheet;
+}
+
+/** 昼休憩を専用シートへ保存（作業記録とは別） */
+function saveLunchBreakRecord_(params) {
+  params = params || {};
+  const userName = String(params.userName || '').trim();
+  const workDate = String(params.workDate || params.dateYmd || '').trim().replace(/\//g, '-').slice(0, 10);
+  const startTime = String(params.startTime || params.start || '').trim();
+  const endTime = String(params.endTime || params.end || '').trim();
+  if (!userName || !workDate || !startTime || !endTime) {
+    throw new Error('昼休憩記録に必要な項目が不足しています');
+  }
+  const sheet = ensureLunchBreakRecordSheet_();
+  const now = Utilities.formatDate(new Date(), 'JST', 'yyyy/MM/dd HH:mm');
+  const recordId = Utilities.getUuid();
+  sheet.appendRow([userName, workDate, startTime, endTime, now, recordId]);
+  writeLog(userName, '昼休憩登録', workDate, startTime + '〜' + endTime);
+  return { ok: true, id: recordId };
+}
+
+function ensureWorkRecordBreakMinsColumn_(sheet) {
+  if (!sheet) return 16;
+  const lastCol = Math.max(1, sheet.getLastColumn());
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) { return String(h || '').trim(); });
+  const idx = headers.indexOf('作業内休憩(分)');
+  if (idx >= 0) return idx + 1;
+  const col = lastCol + 1;
+  sheet.getRange(1, col).setValue('作業内休憩(分)').setFontWeight('bold');
+  return col;
 }
 
 // ==========================================
@@ -17862,7 +17908,7 @@ function dayPlan_workCategoryMap_() {
   if (!sheet) return map;
   const list = readWorkMasterList_(sheet) || [];
   list.forEach(function (w) {
-    if (w && w.name) map[String(w.name).trim()] = String(w.category || '圃場作業').trim() || '圃場作業';
+    if (w && w.name) map[String(w.name).trim()] = String(w.category || '').trim();
   });
   return map;
 }
@@ -17919,7 +17965,7 @@ function estimateWorkDuration(params) {
 function dayPlan_options(params) {
   const cats = Array.from(new Set((TENANT_SS.getSheetByName('作業カテゴリマスタ')
     ? TENANT_SS.getSheetByName('作業カテゴリマスタ').getDataRange().getValues().slice(1).map(function (r) { return String(r[0] || '').trim(); }).filter(Boolean)
-    : []).concat(['圃場作業', '圃場農機作業', '事務作業', '保全・整備'])));
+    : [])));
   let works = [];
   const ws = TENANT_SS.getSheetByName('作業マスタ');
   if (ws) works = readWorkMasterList_(ws) || [];
