@@ -31,30 +31,27 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
 .panel-content { flex-grow: 1; padding: 15px; overflow-y: auto; }
 .panel-footer { padding: 15px; background: white; border-top: 1px solid #ddd; }
 
-/* 個人スケジュール：右側ドロワー */
+/* 個人スケジュール：全画面 */
 #personalScheduleBackdrop {
   display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  z-index: 3090;
 }
-#personalScheduleBackdrop.open { display: block; }
 #personalSchedulePanel {
   position: fixed;
-  top: 0;
-  right: -100%;
-  width: min(360px, 90vw);
+  inset: 0;
+  width: 100%;
   height: 100%;
+  max-width: none;
+  right: auto;
   background: #f4f6f8;
-  box-shadow: -6px 0 18px rgba(0, 0, 0, 0.28);
-  transition: right 0.3s ease;
-  z-index: 3100;
+  box-shadow: none;
+  transform: translateX(100%);
+  transition: transform 0.28s ease;
+  z-index: 3200;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
 }
-#personalSchedulePanel.open { right: 0; }
+#personalSchedulePanel.open { transform: translateX(0); }
 .ps-panel-header {
   background: #2E7D32;
   color: #fff;
@@ -65,19 +62,146 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   align-items: center;
   font-weight: bold;
   flex-shrink: 0;
+  gap: 8px;
+}
+.ps-header-title { flex-shrink: 0; white-space: nowrap; }
+.ps-main-tabs {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  justify-content: center;
+  max-width: 280px;
+}
+.ps-main-tab {
+  flex: 1;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  background: rgba(255,255,255,0.18);
+  color: #fff;
+}
+.ps-main-tab.active {
+  background: #fff;
+  color: #2E7D32;
+}
+.ps-sub-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.ps-sub-tab {
+  flex: 1;
+  border: none;
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  background: #eee;
+  color: #555;
+}
+.ps-sub-tab.active {
+  background: #7B1FA2;
+  color: #fff;
 }
 .ps-panel-content {
   flex: 1;
-  padding: 10px;
+  padding: 10px 12px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  min-height: 0;
 }
-.ps-panel-footer {
-  padding: 12px 15px;
+.ps-panel-footer { display: none; }
+.ps-cal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.ps-cal-nav-btn {
   background: #fff;
-  border-top: 1px solid #ddd;
-  flex-shrink: 0;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  color: #333;
 }
+.ps-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.ps-cal-weekday {
+  text-align: center;
+  font-size: 11px;
+  font-weight: bold;
+  color: #666;
+  padding: 4px 0;
+}
+.ps-cal-weekday.is-sun { color: #c62828; }
+.ps-cal-weekday.is-sat { color: #1565c0; }
+.ps-cal-day {
+  min-height: 88px;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 4px;
+  box-sizing: border-box;
+}
+.ps-cal-day.is-today { border-color: #2E7D32; background: #f1f8e9; }
+.ps-cal-day.is-other { opacity: 0.55; }
+.ps-cal-day-num {
+  font-size: 12px;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 4px;
+  text-align: right;
+}
+.ps-cal-day.is-today .ps-cal-day-num { color: #2E7D32; }
+.ps-cal-ev {
+  font-size: 10px;
+  line-height: 1.25;
+  padding: 2px 4px;
+  border-radius: 4px;
+  margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #fff;
+  font-weight: bold;
+}
+.ps-gantt-table { width: 100%; border-collapse: collapse; min-width: 480px; table-layout: fixed; }
+.ps-gantt-table th, .ps-gantt-table td { border: 1px solid #e0e0e0; font-size: 11px; }
+.ps-gantt-table thead th { background: #fafafa; padding: 4px 2px; text-align: center; font-weight: bold; }
+.ps-gantt-label { width: 120px; padding: 4px 6px; vertical-align: middle; }
+.ps-gantt-track { position: relative; height: 28px; background: #fafafa; }
+.ps-gantt-bar {
+  position: absolute;
+  top: 4px;
+  height: 20px;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: bold;
+  line-height: 20px;
+  padding: 0 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  z-index: 1;
+}
+.ps-gantt-bar.is-dragging { cursor: grabbing; opacity: 0.85; z-index: 5; }
+.ps-gantt-bar.is-dayplan { border: 1px dashed rgba(255,255,255,0.6); }
+.ps-gantt-root { overflow: auto; -webkit-overflow-scrolling: touch; border: 1px solid #cfd8dc; border-radius: 8px; background: #fff; }
 
 .form-label { display: block; font-size: 14px; color: #555; margin-bottom: 5px; font-weight: bold; }
 

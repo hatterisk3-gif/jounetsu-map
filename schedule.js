@@ -7874,6 +7874,63 @@ function ganttColor_(key) {
   return 'hsl(' + hues[h % hues.length] + ', 62%, 42%)';
 }
 
+function ganttEsc_(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function ganttIsCpTask_(t) {
+  if (!t) return false;
+  const wn = String(t.workName || '').trim();
+  return !!(t.isCultivation || t.cpKind || wn.indexOf('播種') === 0 || wn === '調達' || wn === '定植');
+}
+
+function ganttCropDescriptor_(t) {
+  if (!t) return '';
+  const parts = [];
+  const crop = String(t.cropName || '').trim();
+  const variety = String(t.variety || '').trim();
+  const tag = String(t.tag || t.person || '').trim();
+  if (crop) parts.push(crop);
+  if (variety) parts.push(variety);
+  if (tag) parts.push(tag);
+  return parts.join(' / ');
+}
+
+function ganttGroupKey_(t) {
+  const desc = ganttCropDescriptor_(t);
+  if (desc) return desc;
+  const crop = String(t.cropName || '').trim();
+  if (crop) return crop;
+  if (ganttIsCpTask_(t)) {
+    const fn = String(t.fieldName || '').trim();
+    if (fn && fn !== '(圃場未選択)') return fn;
+  }
+  return '（名称未設定）';
+}
+
+function ganttWorkSubLabel_(t) {
+  if (!t) return '';
+  const fn = String(t.fieldName || '').trim();
+  const parts = [];
+  if (fn && fn !== '(圃場未選択)') parts.push(fn);
+  if (t.trays) parts.push(String(t.trays));
+  if (t.periodLabel) parts.push(String(t.periodLabel));
+  return parts.filter(Boolean).join(' · ');
+}
+
+function ganttBarLabel_(t) {
+  const wn = String(t && t.workName || '').trim();
+  const desc = ganttCropDescriptor_(t);
+  if (desc) return desc + ' ' + wn;
+  return wn;
+}
+
+function ganttBarTitle_(t) {
+  const wn = String(t && t.workName || '').trim();
+  const extra = [ganttCropDescriptor_(t), ganttWorkSubLabel_(t)].filter(Boolean).join(' · ');
+  return extra ? (wn + ' — ' + extra) : wn;
+}
+
 function getGanttCenterDate_() {
   if (!(window._ganttCenterDate instanceof Date) || isNaN(window._ganttCenterDate.getTime())) {
     window._ganttCenterDate = ganttToday_();
@@ -7918,8 +7975,10 @@ window.renderScheduleGantt_ = function() {
     rows.push({ t: t, range: range });
   });
   rows.sort(function(a, b) {
-    const ca = String(a.t.cropName || '').localeCompare(String(b.t.cropName || ''), 'ja');
-    if (ca) return ca;
+    const ga = ganttGroupKey_(a.t);
+    const gb = ganttGroupKey_(b.t);
+    const cg = ga.localeCompare(gb, 'ja');
+    if (cg) return cg;
     return String(a.t.workName || '').localeCompare(String(b.t.workName || ''), 'ja');
   });
 
@@ -7939,13 +7998,13 @@ window.renderScheduleGantt_ = function() {
   });
   html += '</tr></thead><tbody>';
 
-  let lastCrop = null;
+  let lastGroup = null;
   rows.forEach(function(row, idx) {
     const t = row.t;
-    const crop = String(t.cropName || '（作物なし）');
-    if (crop !== lastCrop) {
-      html += '<tr class="gantt-crop-row"><td colspan="12">🌱 ' + escHtml_(crop) + '</td></tr>';
-      lastCrop = crop;
+    const group = ganttGroupKey_(t);
+    if (group !== lastGroup) {
+      html += '<tr class="gantt-crop-row"><td colspan="12">🌱 ' + ganttEsc_(group) + '</td></tr>';
+      lastGroup = group;
     }
     const clipStart = row.range.start < winStart ? winStart : row.range.start;
     const clipEnd = row.range.end > winEnd ? winEnd : row.range.end;
@@ -7955,11 +8014,17 @@ window.renderScheduleGantt_ = function() {
     const leftPct = (startIdx / 11) * 100;
     const widthPct = (span / 11) * 100;
     const canDrag = !t.isMidWork && Number(t.sheetRow) >= 2;
-    const barColor = t.isOverdue ? '#c62828' : ganttColor_(crop + t.workName);
+    const barColor = t.isOverdue ? '#c62828' : ganttColor_(group + t.workName);
     const key = (typeof buildScheduleRowKey_ === 'function') ? buildScheduleRowKey_(t) : ('g' + idx);
+    const wn = String(t.workName || '').trim();
+    const desc = ganttCropDescriptor_(t);
+    const sub = ganttWorkSubLabel_(t);
+    const leftMain = desc ? (wn + ' — ' + desc) : wn;
+    const barText = ganttBarLabel_(t);
+    const barTitle = ganttBarTitle_(t);
     html += '<tr data-gantt-row="' + idx + '">';
-    html += '<td class="gantt-work-label" title="' + escHtml_(t.workName || '') + '">' + escHtml_(t.workName || '')
-      + (t.fieldName ? '<div style="font-size:10px;font-weight:normal;color:#888;">' + escHtml_(t.fieldName) + '</div>' : '')
+    html += '<td class="gantt-work-label" title="' + ganttEsc_(barTitle) + '">' + ganttEsc_(leftMain)
+      + (sub ? '<div style="font-size:10px;font-weight:normal;color:#888;">' + ganttEsc_(sub) + '</div>' : '')
       + '</td>';
     html += '<td colspan="11" class="gantt-cell" onclick="onGanttTrackClick_(event)">';
     html += '<div class="gantt-track">';
@@ -7969,13 +8034,14 @@ window.renderScheduleGantt_ = function() {
         + (isToday ? 'background:rgba(255,236,179,.35);' : '') + '"></div>';
     });
     html += '<div class="gantt-bar' + (canDrag ? '' : ' is-mid') + '" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + barColor + ';"'
-      + ' data-gantt-key="' + escHtml_(key) + '"'
+      + ' title="' + ganttEsc_(barTitle) + '"'
+      + ' data-gantt-key="' + ganttEsc_(key) + '"'
       + ' data-sheet-row="' + (Number(t.sheetRow) || 0) + '"'
       + ' data-start="' + row.range.startYmd + '"'
       + ' data-end="' + row.range.endYmd + '"'
       + ' data-candrag="' + (canDrag ? '1' : '0') + '"'
       + (canDrag ? ' onpointerdown="startGanttBarDrag_(event, this)"' : '')
-      + '>' + escHtml_(t.workName || '') + '</div>';
+      + '>' + ganttEsc_(barText) + '</div>';
     html += '</div></td></tr>';
   });
   html += '</tbody></table>';
@@ -8100,7 +8166,7 @@ window.openGanttAddModal = async function() {
     Object.keys(loadedPolygons || {}).forEach(function(id) {
       const p = loadedPolygons[id];
       if (!p || p.isMarker || !p.name) return;
-      fieldSel.innerHTML += '<option value="' + String(p.name).replace(/"/g, '&quot;') + '" data-poly-id="' + String(id).replace(/"/g, '&quot;') + '">' + escHtml_(p.name) + '</option>';
+      fieldSel.innerHTML += '<option value="' + String(p.name).replace(/"/g, '&quot;') + '" data-poly-id="' + String(id).replace(/"/g, '&quot;') + '">' + ganttEsc_(p.name) + '</option>';
     });
   }
   const resDiv = document.getElementById('ganttAddResult');
@@ -8187,7 +8253,7 @@ function renderGanttAddChips_() {
   if (catsEl) {
     catsEl.innerHTML = getGanttCategories_().map(function(c) {
       const on = draft.category === c;
-      return '<button type="button" class="gantt-chip' + (on ? ' on-cat' : '') + '" data-gantt-pick="cat">' + escHtml_(c) + '</button>';
+      return '<button type="button" class="gantt-chip' + (on ? ' on-cat' : '') + '" data-gantt-pick="cat">' + ganttEsc_(c) + '</button>';
     }).join('');
     Array.prototype.forEach.call(catsEl.querySelectorAll('[data-gantt-pick="cat"]'), function(btn) {
       btn.addEventListener('click', function() { pickGanttAddCategory_(btn.textContent); });
@@ -8196,7 +8262,7 @@ function renderGanttAddChips_() {
   if (cropsEl) {
     cropsEl.innerHTML = getGanttCrops_().map(function(c) {
       const on = draft.crop === c;
-      return '<button type="button" class="gantt-chip' + (on ? ' on-crop' : '') + '" data-gantt-pick="crop">' + escHtml_(c) + '</button>';
+      return '<button type="button" class="gantt-chip' + (on ? ' on-crop' : '') + '" data-gantt-pick="crop">' + ganttEsc_(c) + '</button>';
     }).join('');
     Array.prototype.forEach.call(cropsEl.querySelectorAll('[data-gantt-pick="crop"]'), function(btn) {
       btn.addEventListener('click', function() { pickGanttAddCrop_(btn.textContent); });
@@ -8207,7 +8273,7 @@ function renderGanttAddChips_() {
     worksEl.innerHTML = works.length
       ? works.map(function(c) {
           const on = draft.workName === c;
-          return '<button type="button" class="gantt-chip' + (on ? ' on-work' : '') + '" data-gantt-pick="work">' + escHtml_(c) + '</button>';
+          return '<button type="button" class="gantt-chip' + (on ? ' on-work' : '') + '" data-gantt-pick="work">' + ganttEsc_(c) + '</button>';
         }).join('')
       : '<div style="font-size:12px;color:#888;">該当する作業がありません。カテゴリ・作物を変えるか、作業一覧の「＋作業」から登録してください。</div>';
     Array.prototype.forEach.call(worksEl.querySelectorAll('[data-gantt-pick="work"]'), function(btn) {

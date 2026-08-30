@@ -16045,7 +16045,7 @@ function saveUserGmail(params) {
 
 function getTodayGoogleCalendarEvents(params) {
   const userId = String((params && params.userId) || '').trim();
-  const days = Math.max(1, Math.min(7, parseInt((params && params.days) || 2, 10) || 2));
+  const days = Math.max(1, Math.min(14, parseInt((params && params.days) || 2, 10) || 2));
   const gmailInfo = getUserGmail({ userId: userId });
   const gmail = String(gmailInfo.gmail || '').trim();
   if (!gmail) {
@@ -16133,8 +16133,10 @@ function getTodayGoogleCalendarEvents(params) {
           const st = ev.getStartTime();
           const allDay = ev.isAllDayEvent();
           let timeLabel = '終日';
+          let startTimeOnly = '';
           if (!allDay) {
-            timeLabel = Utilities.formatDate(st, tz, 'HH:mm') + '〜' + Utilities.formatDate(ev.getEndTime(), tz, 'HH:mm');
+            startTimeOnly = Utilities.formatDate(st, tz, 'HH:mm');
+            timeLabel = startTimeOnly + '〜' + Utilities.formatDate(ev.getEndTime(), tz, 'HH:mm');
           }
           const dateYmd = Utilities.formatDate(st, tz, 'yyyy-MM-dd');
           const dateLabel = Utilities.formatDate(st, tz, 'M/d') + '(' + week[st.getDay()] + ')';
@@ -16142,6 +16144,7 @@ function getTodayGoogleCalendarEvents(params) {
             title: ev.getTitle() || '(タイトルなし)',
             calendarName: calName,
             time: timeLabel,
+            startTime: startTimeOnly,
             dateYmd: dateYmd,
             dateLabel: dateLabel,
             startMs: st.getTime(),

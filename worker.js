@@ -30656,10 +30656,220 @@ window._escapeHtmlPs = function(s) {
     .replace(/"/g, '&quot;');
 };
 
+window._psMainTab = 'calendar'; // calendar | tasks
 window._psViewMode = 'list'; // list | gantt
+window._psCalWeekOffset = 0;
+window._psCachedPanelData = null;
 window._psCachedSchedules = null;
 window._psLastTasks = [];
 window._psLastNotes = [];
+window._psLastDayPlans = [];
+window._psGanttDrag = null;
+
+window.psYmd_ = function(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+};
+
+window.psParseYmd_ = function(s) {
+  const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  d.setHours(0, 0, 0, 0);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+window.psAddDaysYmd_ = function(ymd, n) {
+  const d = window.psParseYmd_(ymd);
+  if (!d) return ymd;
+  d.setDate(d.getDate() + (Number(n) || 0));
+  return window.psYmd_(d);
+};
+
+window.psColorFromKey_ = function(key, palette) {
+  const list = palette || ['#1565C0', '#2E7D32', '#E65100', '#6A1B9A', '#00838F', '#C62828', '#4527A0', '#558B2F'];
+  const s = String(key || '');
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return list[h % list.length];
+};
+
+window.psDayPlanColor_ = function(it) {
+  const cat = String(it && it.category || '').trim();
+  if (cat.indexOf('圃場') >= 0 && cat.indexOf('農機') >= 0) return '#F57C00';
+  if (cat.indexOf('圃場') >= 0) return '#2E7D32';
+  if (cat.indexOf('事務') >= 0) return '#1565C0';
+  if (cat.indexOf('保全') >= 0 || cat.indexOf('整備') >= 0) return '#6A1B9A';
+  if (it && it.approved) return '#00897B';
+  return '#546E7A';
+};
+
+window.psEventStartTimeOnly_ = function(ev) {
+  if (ev && ev.startTime) return String(ev.startTime);
+  const t = String(ev && ev.time || '').trim();
+  if (!t || t === '終日') return t;
+  const m = t.match(/^(\d{1,2}:\d{2})/);
+  return m ? m[1] : t;
+};
+
+window.setPersonalScheduleMainTab_ = function(tab) {
+  window._psMainTab = tab === 'tasks' ? 'tasks' : 'calendar';
+  window.renderPersonalSchedulePanelFromCache_();
+};
+
+window.setPersonalScheduleViewMode = function(mode) {
+  window._psViewMode = mode === 'gantt' ? 'gantt' : 'list';
+  window.renderPersonalSchedulePanelFromCache_();
+};
+
+window.shiftPersonalScheduleCalWeek_ = function(delta) {
+  window._psCalWeekOffset = (Number(window._psCalWeekOffset) || 0) + (Number(delta) || 0);
+  window.renderPersonalSchedulePanelFromCache_();
+};
+
+window.renderPersonalSchedulePanelFromCache_ = function() {
+  const content = document.getElementById('personalScheduleContent');
+  if (!content || !window._psCachedPanelData) {
+    window.renderPersonalSchedulePanel();
+    return;
+  }
+  content.innerHTML = window.buildPersonalSchedulePanelHtml_(window._psCachedPanelData);
+  window.syncPersonalScheduleTabUi_();
+  if (window._psMainTab === 'calendar') {
+    window.loadPersonalCalendarPickerIfNeeded_();
+  }
+};
+
+window.syncPersonalScheduleTabUi_ = function() {
+  const main = window._psMainTab === 'tasks' ? 'tasks' : 'calendar';
+  const calTab = document.getElementById('psTabCalendar');
+  const taskTab = document.getElementById('psTabTasks');
+  if (calTab) calTab.classList.toggle('active', main === 'calendar');
+  if (taskTab) taskTab.classList.toggle('active', main === 'tasks');
+};
+
+window.buildPersonalScheduleCalendarHtml_ = function(data) {
+  const dayPlans = data.dayPlans || [];
+  const calRes = data.calRes || {};
+  const events = Array.isArray(calRes.events) ? calRes.events : [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const weekOffset = Number(window._psCalWeekOffset) || 0;
+  const start = new Date(today);
+  start.setDate(start.getDate() + weekOffset * 7);
+  const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+  let html = '<div class="ps-cal-nav">';
+  html += '<button type="button" class="ps-cal-nav-btn" onclick="shiftPersonalScheduleCalWeek_(-1)">◀ 前の週</button>';
+  html += '<button type="button" class="ps-cal-nav-btn" onclick="window._psCalWeekOffset=0;renderPersonalSchedulePanelFromCache_()">今日</button>';
+  html += '<button type="button" class="ps-cal-nav-btn" onclick="shiftPersonalScheduleCalWeek_(1)">次の週 ▶</button>';
+  html += '<button type="button" class="ps-cal-nav-btn" onclick="togglePersonalCalendarPicker()" style="margin-left:auto;">表示選択</button>';
+  html += '</div>';
+  html += window.buildGoogleCalendarEventsHtml(calRes, { pickerOnly: true, embedInCalendar: true });
+  html += '<div class="ps-cal-grid">';
+  weekdays.forEach(function(wd, wi) {
+    html += '<div class="ps-cal-weekday' + (wi === 0 ? ' is-sun' : (wi === 6 ? ' is-sat' : '')) + '">' + wd + '</div>';
+  });
+  for (let i = 0; i < 14; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    const ymd = window.psYmd_(d);
+    const isToday = d.getTime() === today.getTime();
+    const dayEvs = [];
+    dayPlans.forEach(function(it) {
+      if (String(it.date || '') !== ymd) return;
+      const st = String(it.startTime || '').trim();
+      dayEvs.push({
+        sort: st || '99:99',
+        color: window.psDayPlanColor_(it),
+        label: (st ? st + ' ' : '') + String(it.workName || '予定'),
+        title: (st ? st + ' ' : '') + String(it.workName || '予定') + (it.category ? ' (' + it.category + ')' : '')
+      });
+    });
+    events.forEach(function(ev) {
+      if (String(ev.dateYmd || '') !== ymd) return;
+      const st = window.psEventStartTimeOnly_(ev);
+      dayEvs.push({
+        sort: st === '終日' ? '00:00' : (st || '99:99'),
+        color: window.psColorFromKey_(ev.calendarName || 'google'),
+        label: (st && st !== '終日' ? st + ' ' : '') + String(ev.title || ''),
+        title: String(ev.title || '') + (ev.calendarName ? ' [' + ev.calendarName + ']' : '')
+      });
+    });
+    dayEvs.sort(function(a, b) { return String(a.sort).localeCompare(String(b.sort)); });
+    html += '<div class="ps-cal-day' + (isToday ? ' is-today' : '') + '">';
+    html += '<div class="ps-cal-day-num">' + (d.getMonth() + 1) + '/' + d.getDate() + '</div>';
+    dayEvs.forEach(function(ev) {
+      html += '<div class="ps-cal-ev" style="background:' + ev.color + ';" title="' + window._escapeHtmlPs(ev.title) + '">' + window._escapeHtmlPs(ev.label) + '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+  html += '<div style="font-size:11px;color:#888;margin-top:10px;line-height:1.5;">色：Googleカレンダーはカレンダーごと、時間予定はカテゴリごとに色分け。表示は開始時刻のみです。</div>';
+  if (calRes.calendarUrl) {
+    html += '<a href="' + window._escapeHtmlPs(calRes.calendarUrl) + '" target="_blank" rel="noopener" style="display:block;margin-top:8px;text-align:center;background:#4285F4;color:#fff;text-decoration:none;padding:8px;border-radius:6px;font-weight:bold;font-size:12px;">Googleカレンダーを開く</a>';
+  }
+  return html;
+};
+
+window.buildPersonalScheduleTasksHtml_ = function(data) {
+  const tasks = data.tasks || [];
+  const notes = data.notes || [];
+  const viewMode = window._psViewMode === 'gantt' ? 'gantt' : 'list';
+  const renderList = function(items, category) {
+    if (!items.length) return '<div style="color:#999;font-size:13px;padding:8px 0;">まだありません</div>';
+    return items.map(function(it, idx) {
+      return window.renderPersonalScheduleItemRow(it, category, idx, items.length);
+    }).join('');
+  };
+  let html = '<div class="ps-sub-tabs">';
+  html += '<button type="button" class="ps-sub-tab' + (viewMode === 'list' ? ' active' : '') + '" onclick="setPersonalScheduleViewMode(\'list\')">リスト</button>';
+  html += '<button type="button" class="ps-sub-tab' + (viewMode === 'gantt' ? ' active' : '') + '" onclick="setPersonalScheduleViewMode(\'gantt\')">📊 ガント</button>';
+  html += '</div>';
+  if (viewMode === 'gantt') {
+    html += window.buildPersonalScheduleGanttHtml(tasks, data.dayPlans || []);
+  } else {
+    html += '<div style="background:#ffebee;border:1px solid #ef9a9a;border-radius:10px;padding:12px;margin-bottom:14px;">';
+    html += '<div style="font-weight:bold;color:#c62828;font-size:15px;margin-bottom:8px;">✅ タスク</div>';
+    html += '<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">';
+    html += '<button type="button" onclick="togglePsSchedulePicker()" style="flex:1;min-width:140px;background:#1565c0;color:#fff;border:none;padding:10px;border-radius:6px;font-weight:bold;font-size:12px;cursor:pointer;">📋 予定一覧から追加</button>';
+    html += '</div>';
+    html += '<div id="psSchedulePicker" style="display:none;background:#e3f2fd;border:1px solid #90caf9;border-radius:8px;padding:10px;margin-bottom:10px;">';
+    html += '<div style="font-size:12px;color:#1565c0;font-weight:bold;margin-bottom:6px;">作業予定から選んでタスク登録</div>';
+    html += '<div id="psSchedulePickerList" style="max-height:200px;overflow-y:auto;font-size:13px;color:#666;">読み込み中...</div>';
+    html += '</div>';
+    html += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;">';
+    html += '<textarea id="psPriorityInput" rows="4" placeholder="タスクを入力...&#10;&#10;空行を1行開けると、それぞれ別タスクとして登録されます" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:6px;font-size:14px;box-sizing:border-box;resize:vertical;line-height:1.45;font-family:inherit;"></textarea>';
+    html += '<div style="display:flex;gap:6px;align-items:stretch;flex-wrap:wrap;">';
+    html += '<input type="date" id="psPriorityDeadline" title="期限（複数登録時は共通）" style="padding:8px;border:1px solid #ccc;border-radius:6px;font-size:12px;">';
+    html += '<button type="button" onclick="addPersonalScheduleItem(\u0027タスク\u0027)" style="flex:1;min-width:100px;background:#c62828;color:#fff;border:none;padding:10px 14px;border-radius:6px;font-weight:bold;cursor:pointer;white-space:nowrap;">追加</button>';
+    html += '</div>';
+    html += '<div style="font-size:11px;color:#888;line-height:1.4;">💡 空行で区切ると複数タスクになります（期限は共通）</div>';
+    html += '</div>';
+    html += '<div id="psPriorityList">' + renderList(tasks, 'タスク') + '</div>';
+    html += '</div>';
+    html += '<div style="background:#fff8e1;border:1px solid #ffe082;border-radius:10px;padding:12px;margin-bottom:14px;">';
+    html += '<div style="font-weight:bold;color:#f57f17;font-size:15px;margin-bottom:8px;">📝 留意事項</div>';
+    html += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">';
+    html += '<textarea id="psNotesInput" rows="3" placeholder="留意事項を入力..." style="width:100%;padding:10px;border:1px solid #ccc;border-radius:6px;font-size:14px;box-sizing:border-box;resize:vertical;line-height:1.45;font-family:inherit;"></textarea>';
+    html += '<button type="button" onclick="addPersonalScheduleItem(\u0027留意事項\u0027)" style="background:#f57f17;color:#fff;border:none;padding:10px 14px;border-radius:6px;font-weight:bold;cursor:pointer;white-space:nowrap;">追加</button>';
+    html += '</div>';
+    html += '<div id="psNotesList">' + renderList(notes, '留意事項') + '</div>';
+    html += '</div>';
+  }
+  html += '<div style="font-size:11px;color:#888;line-height:1.5;">※このスケジュールはあなたのアカウント専用です。</div>';
+  return html;
+};
+
+window.buildPersonalSchedulePanelHtml_ = function(data) {
+  const main = window._psMainTab === 'tasks' ? 'tasks' : 'calendar';
+  if (main === 'calendar') return window.buildPersonalScheduleCalendarHtml_(data);
+  return window.buildPersonalScheduleTasksHtml_(data);
+};
+
+window.loadPersonalCalendarPickerIfNeeded_ = function() {
+  if (typeof window.loadMyCalendarSelectList === 'function') {
+    setTimeout(function() { try { window.loadMyCalendarSelectList(); } catch (e) {} }, 40);
+  }
+};
 
 window.openPersonalSchedule = function() {
   const staffId = localStorage.getItem('passionMapUserId') || '';
@@ -30668,38 +30878,23 @@ window.openPersonalSchedule = function() {
     else alert('ログイン情報がありません');
     return;
   }
-  // 作業記録などの右パネルは閉じて、専用の右側ドロワーを開く
   const rightPanel = document.getElementById('rightPanel');
   if (rightPanel) rightPanel.classList.remove('open');
   const panel = document.getElementById('personalSchedulePanel');
-  const backdrop = document.getElementById('personalScheduleBackdrop');
   const content = document.getElementById('personalScheduleContent');
   if (!panel || !content) return;
   panel.classList.add('open');
   panel.setAttribute('aria-hidden', 'false');
-  if (backdrop) {
-    backdrop.classList.add('open');
-    backdrop.setAttribute('aria-hidden', 'false');
-  }
+  window.syncPersonalScheduleTabUi_();
   window.renderPersonalSchedulePanel();
 };
 
 window.closePersonalSchedule = function() {
   const panel = document.getElementById('personalSchedulePanel');
-  const backdrop = document.getElementById('personalScheduleBackdrop');
   if (panel) {
     panel.classList.remove('open');
     panel.setAttribute('aria-hidden', 'true');
   }
-  if (backdrop) {
-    backdrop.classList.remove('open');
-    backdrop.setAttribute('aria-hidden', 'true');
-  }
-};
-
-window.setPersonalScheduleViewMode = function(mode) {
-  window._psViewMode = mode === 'gantt' ? 'gantt' : 'list';
-  window.renderPersonalSchedulePanel();
 };
 
 window.renderPersonalScheduleItemRow = function(it, category, index, total) {
@@ -30738,64 +30933,156 @@ window.renderPersonalScheduleItemRow = function(it, category, index, total) {
   '</div>';
 };
 
-window.buildPersonalScheduleGanttHtml = function(tasks) {
-  const items = (tasks || []).filter(t => t && (t.deadline || t.startDate || t.createdAt));
-  if (!items.length) {
-    return '<div style="color:#999;font-size:13px;padding:12px 0;">期限または開始日のあるタスクがありません。各タスクに日付を設定するとガントが表示されます。</div>';
-  }
-  const parseYmd = (s) => {
-    if (!s) return null;
-    const m = String(s).match(/(\d{4})-(\d{2})-(\d{2})/);
-    if (!m) return null;
-    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  };
+window.buildPersonalScheduleGanttHtml = function(tasks, dayPlans) {
+  const parseYmd = function(s) { return window.psParseYmd_(s); };
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  let minT = today.getTime();
-  let maxT = today.getTime() + 7 * 86400000;
-  const rows = items.map(t => {
+  const rows = [];
+  (dayPlans || []).forEach(function(it) {
+    if (!it || !it.date) return;
+    const start = parseYmd(it.date);
+    if (!start) return;
+    rows.push({
+      kind: 'dayplan', id: it.id, label: String(it.workName || '予定'),
+      sub: String(it.startTime || ''), start: start, end: new Date(start.getTime()),
+      color: window.psDayPlanColor_(it)
+    });
+  });
+  (tasks || []).forEach(function(t) {
+    if (!t || (!t.deadline && !t.startDate && !t.createdAt)) return;
     let start = parseYmd(t.startDate) || parseYmd(String(t.createdAt || '').slice(0, 10)) || today;
     let end = parseYmd(t.deadline) || start;
     if (end < start) end = start;
-    minT = Math.min(minT, start.getTime());
-    maxT = Math.max(maxT, end.getTime());
-    return { t, start, end };
+    rows.push({
+      kind: 'task', id: t.id, label: String(t.text || 'タスク'), sub: '',
+      start: start, end: end,
+      color: t.done ? '#9e9e9e' : (end < today && !t.done ? '#e53935' : '#7B1FA2')
+    });
   });
-  // 余白1日
+  if (!rows.length) {
+    return '<div style="color:#999;font-size:13px;padding:12px 0;">時間予定または日付付きタスクがありません。</div>';
+  }
+  let minT = today.getTime();
+  let maxT = today.getTime() + 13 * 86400000;
+  rows.forEach(function(r) {
+    minT = Math.min(minT, r.start.getTime());
+    maxT = Math.max(maxT, r.end.getTime());
+  });
   minT -= 86400000;
   maxT += 86400000;
-  const span = Math.max(maxT - minT, 86400000);
-  const dayCount = Math.ceil(span / 86400000) + 1;
+  const dayCount = Math.max(7, Math.ceil((maxT - minT) / 86400000));
+  const winStart = new Date(minT);
+  winStart.setHours(0, 0, 0, 0);
 
-  let html = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:6px;">';
-  html += '<div style="min-width:' + Math.max(320, dayCount * 28) + 'px;">';
-  // 目盛り
-  html += '<div style="display:flex;align-items:flex-end;margin-bottom:8px;padding-left:110px;gap:0;">';
+  let html = '<div class="ps-gantt-root"><div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">';
+  html += '<table class="ps-gantt-table"><thead><tr><th class="ps-gantt-label">予定</th>';
   for (let i = 0; i < dayCount; i++) {
-    const d = new Date(minT + i * 86400000);
-    const label = (d.getMonth() + 1) + '/' + d.getDate();
+    const d = new Date(winStart);
+    d.setDate(winStart.getDate() + i);
     const isToday = d.getTime() === today.getTime();
-    html += '<div style="flex:1;min-width:28px;text-align:center;font-size:9px;color:' + (isToday ? '#c62828' : '#888') + ';font-weight:' + (isToday ? 'bold' : 'normal') + ';">' + label + '</div>';
+    html += '<th style="' + (isToday ? 'background:#fff8e1;color:#c62828;' : '') + '">' + (d.getMonth() + 1) + '/' + d.getDate() + '</th>';
   }
-  html += '</div>';
-
-  rows.forEach(({ t, start, end }) => {
-    const leftPct = ((start.getTime() - minT) / span) * 100;
-    const widthPct = Math.max(2, ((end.getTime() - start.getTime() + 86400000) / span) * 100);
-    const overdue = !t.done && end.getTime() < today.getTime();
-    const barColor = t.done ? '#9e9e9e' : (overdue ? '#e53935' : '#7B1FA2');
-    const title = window._escapeHtmlPs(t.text || '');
-    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
-      '<div style="width:110px;flex-shrink:0;font-size:11px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' + (t.done ? 'color:#999;text-decoration:line-through;' : '') + '" title="' + title + '">' + title + '</div>' +
-      '<div style="flex:1;position:relative;height:22px;background:#f5f5f5;border-radius:4px;overflow:hidden;">' +
-        '<div style="position:absolute;left:' + leftPct + '%;width:' + widthPct + '%;top:3px;bottom:3px;background:' + barColor + ';border-radius:3px;opacity:0.9;"></div>' +
-      '</div>' +
-    '</div>';
+  html += '</tr></thead><tbody>';
+  rows.forEach(function(r) {
+    const startIdx = Math.round((r.start.getTime() - winStart.getTime()) / 86400000);
+    const endIdx = Math.round((r.end.getTime() - winStart.getTime()) / 86400000);
+    const spanDays = Math.max(1, endIdx - startIdx + 1);
+    const leftPct = (startIdx / dayCount) * 100;
+    const widthPct = (spanDays / dayCount) * 100;
+    const barText = (r.sub ? r.sub + ' ' : '') + r.label;
+    const startYmd = window.psYmd_(r.start);
+    const endYmd = window.psYmd_(r.end);
+    html += '<tr><td class="ps-gantt-label" title="' + window._escapeHtmlPs(barText) + '">' + window._escapeHtmlPs(r.label)
+      + (r.sub ? '<div style="font-size:10px;color:#888;">' + window._escapeHtmlPs(r.sub) + '</div>' : '') + '</td>';
+    html += '<td colspan="' + dayCount + '" style="padding:0;"><div class="ps-gantt-track" data-ps-gantt-days="' + dayCount + '">';
+    html += '<div class="ps-gantt-bar' + (r.kind === 'dayplan' ? ' is-dayplan' : '') + '" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + r.color + ';"'
+      + ' data-ps-kind="' + r.kind + '" data-ps-id="' + window._escapeHtmlPs(r.id) + '"'
+      + ' data-ps-start="' + startYmd + '" data-ps-end="' + endYmd + '"'
+      + ' title="' + window._escapeHtmlPs(barText) + '"'
+      + ' onpointerdown="startPsGanttBarDrag_(event, this)">' + window._escapeHtmlPs(barText) + '</div>';
+    html += '</div></td></tr>';
   });
-  html += '</div></div>';
-  html += '<div style="font-size:10px;color:#888;margin-top:6px;">紫=進行中 ／ 赤=期限超過 ／ 灰=完了</div>';
+  html += '</tbody></table></div>';
+  html += '<div style="font-size:10px;color:#888;margin-top:8px;padding:0 4px 4px;">バーをドラッグすると日付を移動できます</div></div>';
   return html;
 };
+
+window.startPsGanttBarDrag_ = function(ev, bar) {
+  if (!bar) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  try { bar.setPointerCapture(ev.pointerId); } catch (e) {}
+  const track = bar.parentElement;
+  window._psGanttDrag = {
+    bar: bar, startX: ev.clientX,
+    trackWidth: track ? track.getBoundingClientRect().width : 0,
+    dayCount: Number(track && track.getAttribute('data-ps-gantt-days')) || 14,
+    originStart: bar.getAttribute('data-ps-start'),
+    originEnd: bar.getAttribute('data-ps-end'),
+    dayShift: 0, moved: false
+  };
+  bar.classList.add('is-dragging');
+  bar.onpointermove = onPsGanttBarDragMove_;
+  bar.onpointerup = endPsGanttBarDrag_;
+  bar.onpointercancel = endPsGanttBarDrag_;
+};
+
+function onPsGanttBarDragMove_(ev) {
+  const st = window._psGanttDrag;
+  if (!st || !st.bar) return;
+  const w = st.trackWidth || 1;
+  const dx = ev.clientX - st.startX;
+  if (Math.abs(dx) > 4) st.moved = true;
+  st.dayShift = Math.round((dx / w) * st.dayCount);
+  st.bar.style.transform = 'translateX(' + (st.dayShift * (w / st.dayCount)) + 'px)';
+}
+
+async function endPsGanttBarDrag_(ev) {
+  const st = window._psGanttDrag;
+  const bar = st && st.bar;
+  if (bar) {
+    bar.onpointermove = null;
+    bar.onpointerup = null;
+    bar.onpointercancel = null;
+    bar.classList.remove('is-dragging');
+    bar.style.transform = '';
+    try { bar.releasePointerCapture(ev.pointerId); } catch (e) {}
+  }
+  window._psGanttDrag = null;
+  if (!st || !st.moved || !st.dayShift) return;
+  await applyPsGanttBarShift_(st, st.dayShift);
+}
+
+async function applyPsGanttBarShift_(st, dayShift) {
+  const kind = st.bar.getAttribute('data-ps-kind');
+  const id = st.bar.getAttribute('data-ps-id');
+  const newStart = window.psAddDaysYmd_(st.originStart, dayShift);
+  const dur = Math.round((window.psParseYmd_(st.originEnd).getTime() - window.psParseYmd_(st.originStart).getTime()) / 86400000);
+  const newEnd = window.psAddDaysYmd_(newStart, Math.max(0, dur));
+  const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+  try {
+    if (kind === 'dayplan') {
+      (window._psLastDayPlans || []).forEach(function(it) {
+        if (it && String(it.id) === String(id)) it.date = newStart;
+      });
+      await callGAS('dayPlan_update', { id: id, date: newStart, userName: userName });
+    } else if (kind === 'task') {
+      (window._psLastTasks || []).forEach(function(it) {
+        if (it && String(it.id) === String(id)) { it.startDate = newStart; it.deadline = newEnd; }
+      });
+      await callGAS('updatePersonalScheduleItem', { id: id, startDate: newStart, deadline: newEnd });
+    }
+    if (window._psCachedPanelData) {
+      window._psCachedPanelData.tasks = window._psLastTasks.slice();
+      window._psCachedPanelData.dayPlans = window._psLastDayPlans.slice();
+    }
+    window.renderPersonalSchedulePanelFromCache_();
+  } catch (e) {
+    if (typeof customAlert === 'function') customAlert('日付の更新に失敗しました');
+    else alert('日付の更新に失敗しました');
+    await window.renderPersonalSchedulePanel();
+  }
+}
 
 window.renderPersonalSchedulePanel = async function() {
   const staffId = localStorage.getItem('passionMapUserId') || '';
@@ -30806,85 +31093,35 @@ window.renderPersonalSchedulePanel = async function() {
     : null;
   if (!panelLoad) content.innerHTML = '<div style="text-align:center;margin-top:40px;color:#666;">読み込み中...</div>';
   try {
-    const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
     const today = new Date();
-    const tom = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-    const until = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 14);
+    const weekOff = Number(window._psCalWeekOffset) || 0;
+    const calStart = new Date(today);
+    calStart.setDate(calStart.getDate() + weekOff * 7);
+    const calEnd = new Date(calStart);
+    calEnd.setDate(calEnd.getDate() + 13);
+    const fromYmd = window.psYmd_(today);
+    const toYmd = window.psYmd_(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 28));
     const [data, calRes, dayPlanRes] = await Promise.all([
       callGAS('getPersonalSchedule', { userId: staffId }),
-      callGAS('getTodayGoogleCalendarEvents', { userId: staffId, days: 2 }).catch(err => ({
-        success: false,
-        events: [],
-        message: 'カレンダー取得に失敗しました: ' + (err && err.message ? err.message : String(err))
-      })),
-      callGAS('dayPlan_list', { userId: staffId, fromYmd: ymd(today), toYmd: ymd(until) }).catch(() => ({ items: [] }))
+      callGAS('getTodayGoogleCalendarEvents', { userId: staffId, days: 14 }).catch(function(err) {
+        return { success: false, events: [], message: 'カレンダー取得に失敗しました: ' + (err && err.message ? err.message : String(err)) };
+      }),
+      callGAS('dayPlan_list', { userId: staffId, fromYmd: fromYmd, toYmd: toYmd }).catch(function() { return { items: [] }; })
     ]);
     const tasks = (data && (data.tasks || data.priority)) || [];
     const notes = (data && data.notes) || [];
+    const dayPlans = (dayPlanRes && dayPlanRes.items) || [];
     window._psLastTasks = tasks;
     window._psLastNotes = notes;
-    if (dayPlanRes && Array.isArray(dayPlanRes.items) && typeof window.saveDayPlanItemsCache_ === 'function') {
-      window.saveDayPlanItemsCache_(dayPlanRes.items);
+    window._psLastDayPlans = dayPlans;
+    window._psCachedPanelData = { tasks: tasks, notes: notes, dayPlans: dayPlans, calRes: calRes };
+    if (dayPlans.length && typeof window.saveDayPlanItemsCache_ === 'function') {
+      window.saveDayPlanItemsCache_(dayPlans);
     }
-
-    const renderList = (items, category) => {
-      if (!items.length) {
-        return '<div style="color:#999;font-size:13px;padding:8px 0;">まだありません</div>';
-      }
-      return items.map((it, idx) => window.renderPersonalScheduleItemRow(it, category, idx, items.length)).join('');
-    };
-
-    const viewMode = window._psViewMode === 'gantt' ? 'gantt' : 'list';
-    const listBtnBg = viewMode === 'list' ? '#7B1FA2' : '#eee';
-    const listBtnColor = viewMode === 'list' ? '#fff' : '#555';
-    const ganttBtnBg = viewMode === 'gantt' ? '#7B1FA2' : '#eee';
-    const ganttBtnColor = viewMode === 'gantt' ? '#fff' : '#555';
-
-    let tasksBody = '';
-    if (viewMode === 'gantt') {
-      tasksBody = window.buildPersonalScheduleGanttHtml(tasks);
-    } else {
-      tasksBody =
-        '<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">' +
-          '<button type="button" onclick="togglePsSchedulePicker()" style="flex:1;min-width:140px;background:#1565c0;color:#fff;border:none;padding:10px;border-radius:6px;font-weight:bold;font-size:12px;cursor:pointer;">📋 予定一覧から追加</button>' +
-        '</div>' +
-        '<div id="psSchedulePicker" style="display:none;background:#e3f2fd;border:1px solid #90caf9;border-radius:8px;padding:10px;margin-bottom:10px;">' +
-          '<div style="font-size:12px;color:#1565c0;font-weight:bold;margin-bottom:6px;">作業予定から選んでタスク登録</div>' +
-          '<div id="psSchedulePickerList" style="max-height:200px;overflow-y:auto;font-size:13px;color:#666;">読み込み中...</div>' +
-        '</div>' +
-        '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;">' +
-          '<textarea id="psPriorityInput" rows="4" placeholder="タスクを入力...&#10;&#10;空行を1行開けると、それぞれ別タスクとして登録されます" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:6px;font-size:14px;box-sizing:border-box;resize:vertical;line-height:1.45;font-family:inherit;"></textarea>' +
-          '<div style="display:flex;gap:6px;align-items:stretch;flex-wrap:wrap;">' +
-            '<input type="date" id="psPriorityDeadline" title="期限（複数登録時は共通）" style="padding:8px;border:1px solid #ccc;border-radius:6px;font-size:12px;">' +
-            '<button type="button" onclick="addPersonalScheduleItem(\u0027タスク\u0027)" style="flex:1;min-width:100px;background:#c62828;color:#fff;border:none;padding:10px 14px;border-radius:6px;font-weight:bold;cursor:pointer;white-space:nowrap;">追加</button>' +
-          '</div>' +
-          '<div style="font-size:11px;color:#888;line-height:1.4;">💡 空行で区切ると複数タスクになります（期限は共通）</div>' +
-        '</div>' +
-        '<div id="psPriorityList">' + renderList(tasks, 'タスク') + '</div>';
-    }
-
     if (panelLoad) panelLoad.done();
-    content.innerHTML =
-      window.buildDayPlanBlocksHtml(dayPlanRes, ymd(today), ymd(tom)) +
-      window.buildGoogleCalendarEventsHtml(calRes) +
-      '<div style="display:flex;gap:6px;margin-bottom:10px;">' +
-        '<button type="button" onclick="setPersonalScheduleViewMode(\'list\')" style="flex:1;background:' + listBtnBg + ';color:' + listBtnColor + ';border:none;padding:8px;border-radius:6px;font-weight:bold;font-size:12px;cursor:pointer;">リスト</button>' +
-        '<button type="button" onclick="setPersonalScheduleViewMode(\'gantt\')" style="flex:1;background:' + ganttBtnBg + ';color:' + ganttBtnColor + ';border:none;padding:8px;border-radius:6px;font-weight:bold;font-size:12px;cursor:pointer;">📊 ガント</button>' +
-      '</div>' +
-      '<div style="background:#ffebee;border:1px solid #ef9a9a;border-radius:10px;padding:12px;margin-bottom:14px;">' +
-        '<div style="font-weight:bold;color:#c62828;font-size:15px;margin-bottom:8px;">✅ タスク</div>' +
-        tasksBody +
-      '</div>' +
-      '<div style="background:#fff8e1;border:1px solid #ffe082;border-radius:10px;padding:12px;margin-bottom:14px;' + (viewMode === 'gantt' ? 'opacity:0.55;pointer-events:none;' : '') + '">' +
-        '<div style="font-weight:bold;color:#f57f17;font-size:15px;margin-bottom:8px;">📝 留意事項</div>' +
-        '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">' +
-          '<textarea id="psNotesInput" rows="3" placeholder="留意事項を入力...&#10;&#10;空行を1行開けると、それぞれ別項目として登録されます" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:6px;font-size:14px;box-sizing:border-box;resize:vertical;line-height:1.45;font-family:inherit;"></textarea>' +
-          '<button type="button" onclick="addPersonalScheduleItem(\u0027留意事項\u0027)" style="background:#f57f17;color:#fff;border:none;padding:10px 14px;border-radius:6px;font-weight:bold;cursor:pointer;white-space:nowrap;">追加</button>' +
-          '<div style="font-size:11px;color:#888;line-height:1.4;">💡 空行で区切ると複数登録できます</div>' +
-        '</div>' +
-        '<div id="psNotesList">' + renderList(notes, '留意事項') + '</div>' +
-      '</div>' +
-      '<div style="font-size:11px;color:#888;line-height:1.5;">※このスケジュールはあなたのアカウント専用です。<br>予定一覧から登録したタスクは、予定一覧にあなたの名前が表示されます。<br>Googleカレンダー連動にはマイページでGmail登録が必要です。</div>';
+    content.innerHTML = window.buildPersonalSchedulePanelHtml_(window._psCachedPanelData);
+    window.syncPersonalScheduleTabUi_();
+    if (window._psMainTab === 'calendar') window.loadPersonalCalendarPickerIfNeeded_();
   } catch (e) {
     if (panelLoad) panelLoad.done();
     content.innerHTML = '<div style="color:red;text-align:center;margin-top:30px;">読み込みエラー<br><span style="font-size:12px;">' + window._escapeHtmlPs(e.message || e) + '</span></div>';
@@ -30924,23 +31161,20 @@ window.buildDayPlanBlocksHtml = function(res, todayYmd, tomYmd) {
   return html;
 };
 
-/** Googleカレンダー予定（今日・明日）のHTML */
-window.buildGoogleCalendarEventsHtml = function(calRes) {
+/** Googleカレンダー予定。opts.pickerOnly=true のときは表示選択パネルのみ */
+window.buildGoogleCalendarEventsHtml = function(calRes, opts) {
   const res = calRes || {};
+  const options = opts || {};
+  const pickerOnly = !!options.pickerOnly;
+  const embedInCalendar = !!options.embedInCalendar;
   const events = Array.isArray(res.events) ? res.events : [];
-  let html = '<div style="background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:8px 10px;margin-bottom:10px;">';
-  html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:2px;">' +
-    '<div style="font-weight:bold;color:#DB4437;font-size:13px;">📅 Googleカレンダー予定</div>' +
-    '<button type="button" onclick="togglePersonalCalendarPicker()" style="background:#e8eaf6;color:#3949ab;border:1px solid #9fa8da;border-radius:4px;padding:3px 6px;font-size:10px;font-weight:bold;cursor:pointer;white-space:nowrap;">表示選択</button>' +
-    '</div>';
-  html += '<div style="font-size:10px;color:#888;margin-bottom:6px;">今日・明日の予定' +
-    (res.gmail ? '（' + window._escapeHtmlPs(res.gmail) + '）' : '') +
-    (res.hasCalendarPreference ? ' ／ 選択指定' : ' ／ 全表示') +
-    '</div>';
 
-  html += '<div id="psCalendarPickerPanel" style="display:none;background:#e8eaf6;border:1px solid #c5cae9;border-radius:6px;padding:8px;margin-bottom:8px;">' +
-    '<div style="font-size:11px;color:#3949ab;font-weight:bold;margin-bottom:4px;">表示するカレンダー</div>' +
-    '<div id="psCalendarSelectList" style="max-height:130px;overflow-y:auto;margin-bottom:6px;"></div>' +
+  const pickerHtml = '<div id="psCalendarPickerPanel" style="display:none;background:#e8eaf6;border:1px solid #c5cae9;border-radius:6px;padding:8px;margin-bottom:8px;">' +
+    '<div style="font-size:11px;color:#3949ab;font-weight:bold;margin-bottom:4px;">表示するカレンダー' +
+      (res.gmail ? '（' + window._escapeHtmlPs(res.gmail) + '）' : '') +
+      (res.hasCalendarPreference ? ' ／ 選択指定' : ' ／ 全表示') +
+    '</div>' +
+    '<div id="psCalendarSelectList" style="max-height:180px;overflow-y:auto;margin-bottom:6px;"></div>' +
     '<div style="display:flex;gap:4px;margin-bottom:6px;">' +
       '<button type="button" onclick="setAllMyCalendarChecks(true)" style="flex:1;background:#fff;color:#3949ab;border:1px solid #9fa8da;padding:5px;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;">全選択</button>' +
       '<button type="button" onclick="setAllMyCalendarChecks(false)" style="flex:1;background:#fff;color:#666;border:1px solid #ccc;padding:5px;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;">全解除</button>' +
@@ -30949,11 +31183,28 @@ window.buildGoogleCalendarEventsHtml = function(calRes) {
     '<div id="psSaveCalendarIdsResult" style="margin-top:4px;font-size:11px;font-weight:bold;"></div>' +
   '</div>';
 
+  if (pickerOnly) {
+    return embedInCalendar
+      ? '<div class="ps-cal-picker-wrap">' + pickerHtml + '</div>'
+      : pickerHtml;
+  }
+
+  let html = '<div style="background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:8px 10px;margin-bottom:10px;">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:2px;">' +
+    '<div style="font-weight:bold;color:#DB4437;font-size:13px;">📅 Googleカレンダー予定</div>' +
+    '<button type="button" onclick="togglePersonalCalendarPicker()" style="background:#e8eaf6;color:#3949ab;border:1px solid #9fa8da;border-radius:4px;padding:3px 6px;font-size:10px;font-weight:bold;cursor:pointer;white-space:nowrap;">表示選択</button>' +
+    '</div>';
+  html += '<div style="font-size:10px;color:#888;margin-bottom:6px;">2週間の予定' +
+    (res.gmail ? '（' + window._escapeHtmlPs(res.gmail) + '）' : '') +
+    (res.hasCalendarPreference ? ' ／ 選択指定' : ' ／ 全表示') +
+    '</div>';
+  html += pickerHtml;
+
   if (events.length) {
     let lastDate = '';
     events.forEach(ev => {
       const dateLabel = window._escapeHtmlPs(ev.dateLabel || ev.dateYmd || '');
-      const time = window._escapeHtmlPs(ev.time || '');
+      const time = window._escapeHtmlPs(window.psEventStartTimeOnly_(ev) || ev.time || '');
       const title = window._escapeHtmlPs(ev.title || '');
       const calName = window._escapeHtmlPs(ev.calendarName || '');
       const calBadge = calName ? '<span style="font-size:9px;background:#e8f0fe;color:#1a73e8;padding:1px 4px;border-radius:3px;margin-left:4px;font-weight:normal;">' + calName + '</span>' : '';
@@ -30968,7 +31219,7 @@ window.buildGoogleCalendarEventsHtml = function(calRes) {
     });
   } else {
     html += '<div style="color:#666;font-size:11px;padding:5px 0;">' +
-      window._escapeHtmlPs(res.message || '今日・明日の予定はありません。') + '</div>';
+      window._escapeHtmlPs(res.message || '予定はありません。') + '</div>';
   }
 
   if (res.calendarUrl) {
@@ -31106,11 +31357,13 @@ window.updatePersonalScheduleDates = async function(id, field, value) {
     const payload = { id: id };
     payload[field] = value || '';
     await callGAS('updatePersonalScheduleItem', payload);
-    // ローカルキャッシュも更新（ガント即時反映用）
-    (window._psLastTasks || []).forEach(it => {
-      if (it && it.id === id) it[field] = value || '';
+    (window._psLastTasks || []).forEach(function(it) {
+      if (it && String(it.id) === String(id)) it[field] = value || '';
     });
-    if (window._psViewMode === 'gantt') {
+    if (window._psCachedPanelData) {
+      window._psCachedPanelData.tasks = window._psLastTasks.slice();
+      window.renderPersonalSchedulePanelFromCache_();
+    } else if (window._psViewMode === 'gantt') {
       await window.renderPersonalSchedulePanel();
     }
   } catch (e) {

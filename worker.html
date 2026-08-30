@@ -15,7 +15,7 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
 
-  <link rel="stylesheet" href="worker.css?v=1787900200000">
+  <link rel="stylesheet" href="worker.css?v=1788074000000">
   <style>
     @keyframes workerBootSpin { to { transform: rotate(360deg); } }
     @keyframes workerBootSlide { from { transform: translateX(-120%); } to { transform: translateX(320%); } }
@@ -403,17 +403,17 @@
     <div class="panel-footer" id="rightPanelFooter"></div>
   </div>
 
-  <!-- 個人スケジュール専用：常に画面右側から表示 -->
+  <!-- 個人スケジュール：全画面 -->
   <div id="personalSchedulePanel" aria-hidden="true">
     <div class="ps-panel-header">
-      <span>🗓️ マイ・スケジュール</span>
-      <span style="cursor:pointer; font-size:24px; padding-left:10px;" onclick="closePersonalSchedule()" title="閉じる">×</span>
+      <span class="ps-header-title">🗓️ マイ・スケジュール</span>
+      <div class="ps-main-tabs">
+        <button type="button" id="psTabCalendar" class="ps-main-tab active" onclick="setPersonalScheduleMainTab_('calendar')">📅 カレンダー</button>
+        <button type="button" id="psTabTasks" class="ps-main-tab" onclick="setPersonalScheduleMainTab_('tasks')">✅ タスク</button>
+      </div>
+      <span style="cursor:pointer; font-size:24px; padding-left:8px; flex-shrink:0;" onclick="closePersonalSchedule()" title="閉じる">×</span>
     </div>
     <div class="ps-panel-content" id="personalScheduleContent"></div>
-    <div class="ps-panel-footer">
-      <button type="button" onclick="closePersonalSchedule()"
-        style="background:#ccc;width:100%;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">閉じる</button>
-    </div>
   </div>
   <div id="personalScheduleBackdrop" onclick="closePersonalSchedule()" aria-hidden="true"></div>
 
@@ -436,7 +436,7 @@
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry"></script>
   <script src="map-loading.js?v=1786243000000"></script>
   <script src="weather-agri.js?v=1785489000300"></script>
-  <script src="worker.js?v=1788072000000"></script>
+  <script src="worker.js?v=1788074000000"></script>
   <script src="tracking.js?v=1787790000000"></script>
   <script>
     if ('serviceWorker' in navigator) {
