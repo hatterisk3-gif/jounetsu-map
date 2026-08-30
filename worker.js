@@ -4086,16 +4086,28 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         // ※12:00→13:00 の丸めは「次作業の開始候補」用。実終了時刻の参照では行わない
         //   （休憩セット時に「終了が今より未来」扱いになりエラーになるのを防ぐ）
+        // 地図キャッシュが古い端末では、サーバー／他端末の終了時刻の方が遅いことがある。
+        // 遅い方を採用し、古い地図データでキャッシュを巻き戻さない。
+        const cachedEnd = (typeof window.getCachedLatestWorkEnd === 'function')
+          ? window.getCachedLatestWorkEnd(normTarget)
+          : '';
+        if (cachedEnd && window.isTimeHmLater(cachedEnd, latestEnd)) {
+          latestEnd = cachedEnd;
+          const cachedRest = (typeof window.getCachedLatestWorkEndIsRest === 'function')
+            ? window.getCachedLatestWorkEndIsRest(normTarget)
+            : null;
+          if (cachedRest != null) latestIsRest = !!cachedRest;
+        }
+        const hint = window._lastWorkTimeHints;
+        const hintYmd = hint && window.normalizeDateStr(hint.dateYmd || hint.todayYmd || '');
+        if (hint && hintYmd === normTarget && hint.latestEndTime
+            && window.isTimeHmLater(hint.latestEndTime, latestEnd)) {
+          latestEnd = window.normalizeTimeHm(hint.latestEndTime) || hint.latestEndTime;
+          latestIsRest = !!hint.latestIsRest;
+          if (hint.latestWorkName) latestName = String(hint.latestWorkName || latestName);
+        }
         if (latestEnd) {
-          window.saveCachedLatestWorkEnd(normTarget, latestEnd, { force: true });
-        } else {
-          // 地図データがまだ古いときは、サーバー同期済みの終了キャッシュを消さない
-          const cachedEnd = (typeof window.getCachedLatestWorkEnd === 'function')
-            ? window.getCachedLatestWorkEnd(normTarget)
-            : '';
-          if (cachedEnd) {
-            latestEnd = cachedEnd;
-          }
+          window.saveCachedLatestWorkEnd(normTarget, latestEnd, { isRest: latestIsRest });
         }
         return { end: latestEnd, isRest: latestIsRest, workName: latestName };
       };
@@ -4137,13 +4149,38 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!ymd || !t) return;
         const cache = window.loadCachedWorkTimeHints();
         if (!cache.ends) cache.ends = {};
+        if (!cache.endIsRest) cache.endIsRest = {};
         const prev = cache.ends[ymd] || '';
         // 強制、または数値比較でより遅いときだけ更新（"9:30">"14:00" のような文字列比較バグを防ぐ）
-        if (opts.force || !prev || window.isTimeHmLater(t, prev)) {
-          cache.ends[ymd] = t;
+        if (opts.force || !prev || window.isTimeHmLater(t, prev) || t === prev) {
+          if (opts.force || !prev || window.isTimeHmLater(t, prev)) cache.ends[ymd] = t;
+          if (opts.isRest != null) cache.endIsRest[ymd] = !!opts.isRest;
           cache.updatedAt = Date.now();
           try { localStorage.setItem(window.getWorkTimeHintsCacheKey(), JSON.stringify(cache)); } catch (e) {}
         }
+      };
+
+      window.getCachedLatestWorkEndIsRest = (dateYmd) => {
+        const ymd = window.normalizeDateStr(dateYmd);
+        const cache = window.loadCachedWorkTimeHints();
+        if (!ymd || !cache.endIsRest || cache.endIsRest[ymd] == null) return null;
+        return !!cache.endIsRest[ymd];
+      };
+
+      window.pushWorkRecordTimeHintToServer_ = (dateYmd, endTime, opts) => {
+        opts = opts || {};
+        const user = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
+        if (!user || typeof callGAS !== 'function') return;
+        const ymd = window.normalizeDateStr(dateYmd);
+        const t = window.normalizeTimeHm(endTime);
+        if (!ymd || !t) return;
+        callGAS('saveWorkRecordTimeHint', {
+          userName: user,
+          dateYmd: ymd,
+          endTime: t,
+          isRest: !!opts.isRest,
+          workName: String(opts.workName || '')
+        }).catch(() => {});
       };
 
       /** その日の最遅終了をレコード全体から再計算してキャッシュし直す */
@@ -4735,7 +4772,12 @@ function createSignboardMarker(name, pos, icon, id) {
         return callGAS('getWorkRecordTimeHints', { userName: user, dateYmd: ymd }).then(hints => {
           if (reqId !== window._workTimeHintsReqId) return hints;
           if (!hints) return null;
-          if (hints.latestEndTime) window.saveCachedLatestWorkEnd(ymd, hints.latestEndTime, { force: !!hints.latestIsRest });
+          if (hints.latestEndTime) {
+            window.saveCachedLatestWorkEnd(ymd, hints.latestEndTime, {
+              isRest: !!hints.latestIsRest,
+              force: false
+            });
+          }
           if (hints.lunchRegistered && typeof window.saveCachedLunchHint === 'function') {
             window.saveCachedLunchHint({
               dateYmd: hints.clockInDateYmd || ymd,
@@ -4844,11 +4886,20 @@ function createSignboardMarker(name, pos, icon, id) {
               if (restPair || isRest) {
                 return hints;
               }
-              // 昼休憩終了などを含むローカル解決を優先（サーバーの latestEnd だけだと午前作業に巻き戻る）
+              // ローカル解決とサーバーヒントの遅い方を採用（古い地図キャッシュで午前に巻き戻さない）
               const resolved = (typeof window.resolveDefaultStartTime === 'function')
                 ? window.resolveDefaultStartTime(ymd)
                 : { start: hints.latestEndTime || '', syncClockIn: false, isFallback: false, source: 'hint' };
-              const next = resolved.start || '';
+              let next = resolved.start || '';
+              const serverEnd = window.normalizeTimeHm
+                ? (window.normalizeTimeHm(hints.latestEndTime) || '')
+                : String(hints.latestEndTime || '');
+              if (serverEnd && window.isTimeHmLater(serverEnd, next)) {
+                next = serverEnd;
+                resolved.source = hints.latestIsRest ? 'restEnd' : 'latestEnd';
+                resolved.syncClockIn = false;
+                resolved.isFallback = false;
+              }
               if (next && window.shouldUpdateStartTime(cur, next, { autofill: autofill })) {
                 // onlyIfAutofill=true のときは未入力フォールバック中だけ更新
                 if (opts.onlyIfAutofill === true && !autofill && cur) {
@@ -4890,7 +4941,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.updateStartTimeHintUI === 'function') window.updateStartTimeHintUI();
         // 裏でサーバー確認（フォールバック時やキャッシュ不足時）
         // onlyIfAutofill: フォールバック中のみ積極更新。それ以外は「より遅い時刻」だけ反映
-        window.prefetchWorkTimeHints(selectedDate, { applyToForm: true, onlyIfAutofill: !!resolved.isFallback });
+        window.prefetchWorkTimeHints(selectedDate, { applyToForm: true, onlyIfAutofill: false });
         if (typeof window.isRestWorkNameSelected === 'function' && window.isRestWorkNameSelected()
             && typeof window.refreshTodayRestBreaksUI === 'function') {
           window.refreshTodayRestBreaksUI();
@@ -16955,7 +17006,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.prefetchWorkTimeHints === 'function') {
           window.prefetchWorkTimeHints(todayStr, {
             applyToForm: !isEdit,
-            onlyIfAutofill: !isEdit && !!resolvedStart.isFallback
+            onlyIfAutofill: false
           });
         }
 
@@ -20339,6 +20390,12 @@ function createSignboardMarker(name, pos, icon, id) {
           const workDateAfterSave = (data && data.workDate) ? data.workDate : '';
           if (workDateAfterSave && typeof window.recomputeCachedLatestWorkEnd === 'function') {
             window.recomputeCachedLatestWorkEnd(workDateAfterSave);
+          }
+          if (workDateAfterSave && data && data.endTime && typeof window.pushWorkRecordTimeHintToServer_ === 'function') {
+            window.pushWorkRecordTimeHintToServer_(workDateAfterSave, data.endTime, {
+              isRest: String(data.workName || '').includes('休憩'),
+              workName: data.workName || ''
+            });
           }
           if (recordTypeSnap === 'work' && data && String(data.workName || '').includes('休憩')
               && typeof window.upsertCachedRestBreak === 'function') {
@@ -28386,6 +28443,12 @@ window.executeBulkWorkMemoRegistration_ = async () => {
       }
       if (typeof window.syncBulkWorkMemoRestSideEffects_ === 'function') {
         if (window.syncBulkWorkMemoRestSideEffects_(data, localId, ymd)) savedAnyRest = true;
+      }
+      if (data.endTime && typeof window.pushWorkRecordTimeHintToServer_ === 'function') {
+        window.pushWorkRecordTimeHintToServer_(ymd, data.endTime, {
+          isRest: String(data.workName || '').includes('休憩'),
+          workName: data.workName || ''
+        });
       }
       savedItems.push({
         localId: localId,

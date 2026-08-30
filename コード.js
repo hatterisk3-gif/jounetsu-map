@@ -173,6 +173,7 @@ function doPost(e) {
     else if (action === "getOpenClockInStatus") result = getOpenClockInStatus(params);
     else if (action === "updateOpenClockInTime") result = updateOpenClockInTime(params);
     else if (action === "getWorkRecordTimeHints") result = getWorkRecordTimeHints(params);
+    else if (action === "saveWorkRecordTimeHint") result = saveWorkRecordTimeHint_(params);
     else if (action === "resetAllManureStatus") result = resetAllManureStatus(params.userName);
     else if (action === "getProdMgmtCategories") result = getProdMgmtCategories();
     else if (action === "saveProdMgmtCategories") result = saveProdMgmtCategories(params.categories, params.userName);
@@ -9297,6 +9298,65 @@ function getFrequentClockInTimes(params) {
   }
 }
 
+function workRecordTimeHintCacheKey_(userName, dateYmd) {
+  return 'wth_' + String(userName || '').replace(/\s+/g, '') + '_' + String(dateYmd || '');
+}
+
+function workRecordTimeToMins_(hm) {
+  const s = String(hm || '');
+  const m = s.match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+function isWorkRecordTimeLater_(a, b) {
+  const am = workRecordTimeToMins_(a);
+  const bm = workRecordTimeToMins_(b);
+  if (am == null) return false;
+  if (bm == null) return true;
+  return am > bm;
+}
+
+/** 他端末向け：最終作業終了を即キャッシュ（本記録の同期前でも読める） */
+function saveWorkRecordTimeHint_(params) {
+  try {
+    const userName = String((params && params.userName) || '').replace(/\s+/g, '');
+    const dateYmd = String((params && params.dateYmd) || '').trim();
+    const endTime = String((params && params.endTime) || '').trim();
+    const m = endTime.match(/^(\d{1,2}):(\d{2})/);
+    if (!userName || !dateYmd || !m) return { ok: false };
+    const hm = ('0' + m[1]).slice(-2) + ':' + m[2];
+    const key = workRecordTimeHintCacheKey_(userName, dateYmd);
+    const cache = CacheService.getScriptCache();
+    let prev = {};
+    try { prev = JSON.parse(cache.get(key) || '{}') || {}; } catch (e) { prev = {}; }
+    if (!prev.endTime || isWorkRecordTimeLater_(hm, prev.endTime) || hm === prev.endTime) {
+      cache.put(key, JSON.stringify({
+        endTime: (!prev.endTime || isWorkRecordTimeLater_(hm, prev.endTime)) ? hm : prev.endTime,
+        isRest: params && params.isRest != null ? !!params.isRest : !!prev.isRest,
+        workName: String((params && params.workName) || prev.workName || ''),
+        updatedAt: Date.now()
+      }), 21600);
+    }
+    return { ok: true, endTime: hm };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+function readWorkRecordTimeHint_(userName, dateYmd) {
+  try {
+    const key = workRecordTimeHintCacheKey_(userName, dateYmd);
+    const raw = CacheService.getScriptCache().get(key);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj || !obj.endTime) return null;
+    return obj;
+  } catch (e) {
+    return null;
+  }
+}
+
 // ==========================================
 // 📍 作業記録の開始時間ヒント（軽量・高速）
 // 出勤時刻＋指定日の最遅終了時刻だけを返す
@@ -9392,8 +9452,9 @@ function getWorkRecordTimeHints(params) {
           end: endTime
         });
       }
-      if (endTime && (!latestEnd || endTime > latestEnd)) {
-        latestEnd = endTime;
+      const recTime = endTime || startTime;
+      if (recTime && (!latestEnd || isWorkRecordTimeLater_(recTime, latestEnd))) {
+        latestEnd = recTime;
         latestIsRest = workName.indexOf('休憩') >= 0;
       }
     }
@@ -9401,6 +9462,11 @@ function getWorkRecordTimeHints(params) {
     restBreaks.sort(function(a, b) {
       return String(a.start || '').localeCompare(String(b.start || ''));
     });
+    const hint = readWorkRecordTimeHint_(userName, dateYmd);
+    if (hint && hint.endTime && isWorkRecordTimeLater_(hint.endTime, latestEnd)) {
+      latestEnd = hint.endTime;
+      latestIsRest = !!hint.isRest;
+    }
     // 通常作業の 12:00 終了だけ昼休み再開へ。休憩記録の実終了は動かさない。
     if (latestEnd === '12:00' && !latestIsRest) latestEnd = '13:00';
     result.latestEndTime = latestEnd;
