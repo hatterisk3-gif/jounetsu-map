@@ -101,6 +101,8 @@ function doPost(e) {
     else if (action === "getInventoryHistory") result = getInventoryHistory(params); // ★これを追加
     else if (action === "getScheduleData") result = getScheduleData();
     else if (action === "addWorkSchedule") result = addWorkSchedule(params);
+    else if (action === "updateWorkScheduleDates") result = updateWorkScheduleDates(params);
+    else if (action === "getScheduleGanttMasters") result = getScheduleGanttMasters();
     else if (action === "getOutsourceWorkData") result = getOutsourceWorkData();
     else if (action === "addOutsourceWorkRequest") result = addOutsourceWorkRequest(params);
     else if (action === "completeOutsourceWork") result = completeOutsourceWork(params);
@@ -6764,9 +6766,11 @@ function getScheduleData() {
         scheduleUpdates.push({row: i + 1, col: 9, val: compDate}); // I列=9
       }
 
-      if (!compDate && fieldName) {
-        let schedDateStr = schedDateRaw ? Utilities.formatDate(new Date(schedDateRaw), "JST", "MM/dd") : "-";
-        let deadlineStr = deadlineRaw ? Utilities.formatDate(new Date(deadlineRaw), "JST", "MM/dd") : "-";
+      if (!compDate && (fieldName || workName)) {
+        let schedDateStr = '-';
+        let deadlineStr = '-';
+        try { if (schedDateRaw) schedDateStr = Utilities.formatDate(new Date(schedDateRaw), "JST", "MM/dd"); } catch (eSd) {}
+        try { if (deadlineRaw) deadlineStr = Utilities.formatDate(new Date(deadlineRaw), "JST", "MM/dd"); } catch (eDl) {}
         let isOverdue = false;
         if (deadlineRaw) {
           const dlDate = new Date(deadlineRaw);
@@ -6823,7 +6827,9 @@ function getScheduleData() {
           variety: varietyName,
           fieldName,
           schedDate: schedDateStr,
+          schedDateYmd: formatWorkDateYmd_(schedDateRaw),
           deadline: deadlineStr,
+          deadlineYmd: formatWorkDateYmd_(deadlineRaw),
           hours,
           person,
           isOverdue,
@@ -7276,7 +7282,7 @@ function addWorkSchedule(params) {
   if (!workName) throw new Error('作業名を入力してください');
   const fieldName = String(params.fieldName || '').trim();
   const cropName = String(params.cropName || '').trim();
-  const dept = String(params.dept || '').trim();
+  const dept = String(params.dept || params.category || '').trim();
   let schedDateStr = '';
   if (params.schedDate) {
     try { schedDateStr = Utilities.formatDate(new Date(params.schedDate), "Asia/Tokyo", "yyyy/MM/dd"); } catch(e) { schedDateStr = String(params.schedDate); }
@@ -7303,6 +7309,96 @@ function addWorkSchedule(params) {
   const author = String(params.userName || person || 'ユーザー').trim();
   writeLog(author, '作業予定追加', fieldName || workName, `作業名: ${workName}, 予定日: ${schedDateStr || '未指定'}`);
   return { success: true, workName: workName, fieldName: fieldName };
+}
+
+function parseScheduleInputDate_(val) {
+  if (val == null || val === '') return null;
+  if (Object.prototype.toString.call(val) === '[object Date]' && !isNaN(val.getTime())) return val;
+  const s = String(val).trim();
+  const m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (m) {
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * ガント上のドラッグ移動：作業予定の予定日・期限日を更新する
+ * params: { sheetRow, schedDate, deadline, userName }
+ */
+function updateWorkScheduleDates(params) {
+  params = params || {};
+  const userName = String(params.userName || '').trim() || 'ユーザー';
+  const sheetRow = parseInt(params.sheetRow, 10);
+  const ss = TENANT_SS || SpreadsheetApp.getActiveSpreadsheet();
+  const schedSheet = ss.getSheetByName('作業予定');
+  if (!schedSheet) throw new Error('作業予定シートがありません');
+  const last = schedSheet.getLastRow();
+  if (!(sheetRow >= 2 && sheetRow <= last)) {
+    throw new Error('更新対象の作業予定が見つかりませんでした');
+  }
+  const done = String(schedSheet.getRange(sheetRow, 9).getValue() || '').trim();
+  if (done) throw new Error('この作業は既に完了済みです');
+  const start = parseScheduleInputDate_(params.schedDate);
+  const end = parseScheduleInputDate_(params.deadline);
+  if (!start) throw new Error('予定日が不正です');
+  schedSheet.getRange(sheetRow, 5).setValue(start);
+  schedSheet.getRange(sheetRow, 6).setValue(end || start);
+  const workName = String(schedSheet.getRange(sheetRow, 1).getValue() || '').trim();
+  const fieldName = String(schedSheet.getRange(sheetRow, 4).getValue() || '').trim();
+  writeLog(userName, '作業予定日更新', fieldName || workName,
+    `予定日: ${Utilities.formatDate(start, 'Asia/Tokyo', 'yyyy/MM/dd')}`
+    + `, 期限: ${Utilities.formatDate(end || start, 'Asia/Tokyo', 'yyyy/MM/dd')}`);
+  return {
+    success: true,
+    sheetRow: sheetRow,
+    schedDate: Utilities.formatDate(start, 'Asia/Tokyo', 'yyyy-MM-dd'),
+    deadline: Utilities.formatDate(end || start, 'Asia/Tokyo', 'yyyy-MM-dd')
+  };
+}
+
+/**
+ * ガント新規追加用：カテゴリ・作物・作業マスタ
+ */
+function getScheduleGanttMasters() {
+  const catSet = {};
+  const cropSet = {};
+  const works = [];
+  try {
+    const workSheet = TENANT_SS.getSheetByName('作業マスタ');
+    if (workSheet) {
+      const list = readWorkMasterList_(workSheet);
+      (list || []).forEach(function(w) {
+        if (!w || !w.name) return;
+        if (w.category) catSet[w.category] = true;
+        (w.crops || []).forEach(function(c) {
+          if (c) cropSet[c] = true;
+        });
+        works.push({
+          name: w.name,
+          category: w.category || '',
+          crops: w.crops || [],
+          cropName: w.cropName || ''
+        });
+      });
+    }
+  } catch (e) {}
+  try {
+    const crops = readMergedCropMasterList_();
+    (crops || []).forEach(function(c) {
+      if (c && c.name) cropSet[c.name] = true;
+    });
+  } catch (e2) {}
+  let categories = Object.keys(catSet);
+  if (!categories.length) {
+    categories = ['栽培', '生産', '出荷/配送', '育苗', '研修/調整', '管理/事務', '研究/開発', '保全/整備'];
+  } else {
+    categories.sort(function(a, b) { return a.localeCompare(b, 'ja'); });
+  }
+  const cropNames = Object.keys(cropSet).sort(function(a, b) { return a.localeCompare(b, 'ja'); });
+  return { categories: categories, crops: cropNames, works: works };
 }
 
 // ===== 依頼作業（外注） =====

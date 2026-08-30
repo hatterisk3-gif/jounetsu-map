@@ -6419,16 +6419,8 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.renderNextWorkPredictions === 'function') window.renderNextWorkPredictions();
         if (typeof window.refreshWorkCostHintUI_ === 'function') window.refreshWorkCostHintUI_();
         if (typeof window.refreshWorkRecordStepUI_ === 'function') window.refreshWorkRecordStepUI_();
-        // 予想で作業名セット済みのとき、作物を選んだら⑤作業を飛ばして次へ
-        if (!opts.skipSideEffects
-            && document.getElementById('work_record_step_header')
-            && typeof window.getWorkRecordStep_ === 'function'
-            && window.getWorkRecordStep_() === 'crop'
-            && next.length
-            && String(document.getElementById('rec_work_name')?.value || '').trim()
-            && !(typeof currentEditRecordId !== 'undefined' && currentEditRecordId)
-            && typeof window.advanceWorkRecordStep_ === 'function') {
-          setTimeout(() => { try { window.advanceWorkRecordStep_(); } catch (e) {} }, 0);
+        if (typeof window.refreshWorkNameSectionVisibility === 'function') {
+          window.refreshWorkNameSectionVisibility();
         }
       };
 
@@ -11455,25 +11447,10 @@ function createSignboardMarker(name, pos, icon, id) {
         return true;
       };
 
-      /** 予想タップ後、セット済み内容に応じて次のステップへ進む（作業選択は飛ばす） */
+      /** 予想タップ後は同じ画面でカテゴリ・作物・作業を確認できるよう、作業ステップに留める */
       window.advanceAfterSuggestionApplied_ = (cropName) => {
-        if (typeof window.getWorkRecordStep_ !== 'function') return;
-        const cur = window.getWorkRecordStep_();
-        // カテゴリ画面（または旧予想）から適用したときだけ進む
-        if (cur !== 'category' && cur !== 'suggest') return;
-        const crop = String(cropName || '').trim();
-        const cropKeys = (typeof window.getSelectedWorkCropFilterKeys === 'function')
-          ? window.getSelectedWorkCropFilterKeys()
-          : [];
-        let next = 'crop';
-        if (crop || (cropKeys && cropKeys.length)) {
-          // 作業名はセット済みなので作業ステップはスキップし、圃場 or 詳細へ
-          next = (typeof window.workRecordNeedsPlaceStep_ === 'function' && window.workRecordNeedsPlaceStep_())
-            ? 'place'
-            : 'details';
-        }
         if (typeof window.setWorkRecordStep_ === 'function') {
-          window.setWorkRecordStep_(next, { forward: true });
+          window.setWorkRecordStep_('work', { forward: true });
         }
       };
 
@@ -11951,7 +11928,10 @@ function createSignboardMarker(name, pos, icon, id) {
         window.fillAppModalHtml_(`
           <div id="concurrent_work_modal_scroll" style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
             <div style="font-size:16px; font-weight:bold; color:#5E35B1; margin-bottom:4px;">${title}</div>
-            <div style="font-size:11px; color:#666; line-height:1.4; margin-bottom:14px;">カテゴリ・作物・作業・詳細作業を選んで登録してください。圃場と時間はメイン作業と同じです。</div>
+            <div style="font-size:11px; color:#666; line-height:1.4; margin-bottom:14px;">カテゴリ・作物・作業・詳細作業をこの枠で選んでください。圃場と時間はメイン作業と同じです。</div>
+            <div style="border:2px solid #CE93D8; border-radius:12px; overflow:hidden; margin-bottom:8px;">
+            <div style="background:#EDE7F6; padding:8px 10px; font-size:12px; font-weight:bold; color:#5E35B1;">📁🌱🚜 カテゴリ・作物・作業名</div>
+            <div style="padding:10px 12px; background:#fff;">
             <div style="font-size:11px; font-weight:bold; color:#4527A0; margin-bottom:6px;">① カテゴリ <span style="color:#c62828;">*</span></div>
             <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;">${catHtml}</div>
             <div style="font-size:11px; font-weight:bold; color:#2E7D32; margin-bottom:6px;">② 作物名 <span style="color:#c62828;">*</span>（複数可）</div>
@@ -11963,6 +11943,8 @@ function createSignboardMarker(name, pos, icon, id) {
             <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${filterHtml}</div>
             ${fallbackNote ? `<div style="font-size:11px; color:#E65100; background:#FFF8E1; border:1px solid #FFCC80; border-radius:8px; padding:8px; margin-bottom:8px;">${esc(fallbackNote)}</div>` : ''}
             <div style="display:flex; flex-wrap:wrap; gap:6px; max-height:180px; overflow-y:auto; margin-bottom:8px;">${workHtml || '<span style="font-size:11px; color:#888;">該当する作業がありません</span>'}</div>
+            </div>
+            </div>
             ${detailHtml}
             <button type="button" onclick="confirmConcurrentWorkModal_()" style="width:100%; background:#5E35B1; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-top:16px;">✅ 登録する</button>
             <button type="button" onclick="cancelConcurrentWorkModal_()" style="width:100%; background:#fff; color:#666; border:1px solid #ccc; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-top:8px;">キャンセル</button>
@@ -16526,10 +16508,11 @@ function createSignboardMarker(name, pos, icon, id) {
          return text;
       };
 
-      window.WORK_RECORD_STEP_IDS_ = ['time', 'category', 'crop', 'work', 'place', 'details', 'comment'];
+      window.WORK_RECORD_STEP_IDS_ = ['time', 'work', 'place', 'details', 'comment'];
 
       window.getWorkRecordStep_ = () => {
-        const s = String(window._workRecordStep || '').trim();
+        let s = String(window._workRecordStep || '').trim();
+        if (s === 'category' || s === 'crop') s = 'work';
         if (window.WORK_RECORD_STEP_IDS_.indexOf(s) >= 0) return s;
         return 'time';
       };
@@ -16559,7 +16542,6 @@ function createSignboardMarker(name, pos, icon, id) {
         const idx = order.indexOf(fromStep);
         if (idx < 0) return 'comment';
         for (let i = idx + 1; i < order.length; i++) {
-          if (order[i] === 'work' && !window.workRecordNeedsWorkStep_()) continue;
           if (order[i] === 'place' && !window.workRecordNeedsPlaceStep_()) continue;
           return order[i];
         }
@@ -16571,7 +16553,6 @@ function createSignboardMarker(name, pos, icon, id) {
         const idx = order.indexOf(fromStep);
         if (idx <= 0) return 'time';
         for (let i = idx - 1; i >= 0; i--) {
-          if (order[i] === 'work' && !window.workRecordNeedsWorkStep_()) continue;
           if (order[i] === 'place' && !window.workRecordNeedsPlaceStep_()) continue;
           return order[i];
         }
@@ -16586,11 +16567,9 @@ function createSignboardMarker(name, pos, icon, id) {
         const numLabel = ['', '①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨'];
         const rebuilt = [
           { id: 'time', label: '①時間' },
-          { id: 'category', label: '②カテゴリ' },
-          { id: 'crop', label: '③作物' },
-          { id: 'work', label: '④作業' }
+          { id: 'work', label: '②作業' }
         ];
-        let num = 5;
+        let num = 3;
         if (needsPlace) {
           rebuilt.push({ id: 'place', label: `${numLabel[num]}圃場` });
           num += 1;
@@ -16639,7 +16618,8 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.setWorkRecordStep_ = (step, opts) => {
         opts = opts || {};
-        const s = String(step || '').trim();
+        let s = String(step || '').trim();
+        if (s === 'category' || s === 'crop') s = 'work';
         if (window.WORK_RECORD_STEP_IDS_.indexOf(s) < 0) return;
         if (s === 'place' && !window.workRecordNeedsPlaceStep_()) {
           window.setWorkRecordStep_(opts.forward ? window.getWorkRecordNextStep_('place') : window.getWorkRecordPrevStep_('place'), opts);
@@ -16658,13 +16638,13 @@ function createSignboardMarker(name, pos, icon, id) {
             try { window.refreshWorkFormLunchSection_(); } catch (e) {}
           }
         }
-        if (s === 'category') {
+        if (s === 'work') {
           if (typeof window.renderNextWorkPredictions === 'function') {
             try { window.renderNextWorkPredictions(); } catch (e) {}
           }
-        }
-        if (s === 'work' && typeof window.refreshWorkNameSectionVisibility === 'function') {
-          window.refreshWorkNameSectionVisibility();
+          if (typeof window.refreshWorkNameSectionVisibility === 'function') {
+            window.refreshWorkNameSectionVisibility();
+          }
         }
         if (s === 'place' && typeof window.refreshFieldTargetUI === 'function') {
           window.refreshFieldTargetUI();
@@ -16690,15 +16670,12 @@ function createSignboardMarker(name, pos, icon, id) {
           }
           return true;
         }
-        if (step === 'category') {
+        if (step === 'work' || step === 'category' || step === 'crop') {
           const cat = String(document.getElementById('rec_work_category')?.value || '').trim();
           if (!cat) {
             if (typeof customAlert === 'function') customAlert('カテゴリを選んでください。');
             return false;
           }
-          return true;
-        }
-        if (step === 'crop') {
           const keys = (typeof window.getSelectedWorkCropFilterKeys === 'function')
             ? window.getSelectedWorkCropFilterKeys()
             : [];
@@ -16708,11 +16685,7 @@ function createSignboardMarker(name, pos, icon, id) {
             if (typeof customAlert === 'function') customAlert('作物を1つ以上選んでください。');
             return false;
           }
-          return true;
-        }
-        if (step === 'work') {
-          const wName = String(document.getElementById('rec_work_name')?.value || '').trim();
-          if (!wName) {
+          if (!named) {
             if (typeof customAlert === 'function') customAlert('作業名を選んでください。');
             return false;
           }
@@ -17126,19 +17099,18 @@ function createSignboardMarker(name, pos, icon, id) {
                   ${!isEdit && (window.buildWorkFormLunchBreakHtml_ ? window.buildWorkFormLunchBreakHtml_() : '')}
                   </div>
 
-                  <div id="work_record_step_category" class="work-rec-step-panel" style="display:none;">
+                  <div id="work_record_step_work" class="work-rec-step-panel" style="display:none;">
                   <div id="next_work_prediction_section" style="display:none; background:linear-gradient(135deg, #e8f5e9 0%, #e3f2fd 100%); border:1px solid #a5d6a7; border-radius:10px; padding:12px; margin-bottom:12px; box-shadow:0 2px 6px rgba(46,125,50,0.08);"></div>
-                  <div class="rec-zone rec-zone-category" style="background:#E8EAF6; border:1px solid #9FA8DA; border-radius:10px; padding:12px; margin-bottom:0;">
-                  <label class="form-label" style="margin-top:0; color:#3949AB;">📁 カテゴリを選んでください</label>
+                  <div class="rec-zone rec-zone-task-bundle" style="background:#fff; border:2px solid #FFCC80; border-radius:12px; padding:0; margin-bottom:0; overflow:hidden;">
+                  <div style="background:#FFF8E1; padding:10px 12px; font-size:13px; font-weight:bold; color:#E65100; border-bottom:1px solid #FFE082;">📁🌱🚜 カテゴリ・作物・作業名</div>
+                  <div class="rec-zone rec-zone-category" style="background:#E8EAF6; border:none; border-bottom:1px solid #C5CAE9; border-radius:0; padding:12px; margin-bottom:0;">
+                  <label class="form-label" style="margin-top:0; color:#3949AB;">📁 カテゴリ</label>
                   <div id="work_category_admin_bar" style="display:none; flex-wrap:wrap; gap:6px; margin:0 0 8px;"></div>
                   <input type="hidden" id="rec_work_category" value="${defaultWorkCat}">
                   <div id="work_category_buttons_wrapper" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:0;"></div>
                   </div>
-                  </div>
-
-                  <div id="work_record_step_crop" class="work-rec-step-panel" style="display:none;">
-                  <div class="rec-zone rec-zone-crop" style="background:#E8F5E9; border:1px solid #A5D6A7; border-radius:10px; padding:12px; margin-bottom:0;">
-                  <label class="form-label" style="margin-top:0; color:#2E7D32; display:flex; align-items:center; gap:4px;">🌱 作物を選んでください ${window.buildRecHelpBtn_('popover-crop-help',
+                  <div class="rec-zone rec-zone-crop" style="background:#E8F5E9; border:none; border-bottom:1px solid #C8E6C9; border-radius:0; padding:12px; margin-bottom:0;">
+                  <label class="form-label" style="margin-top:0; color:#2E7D32; display:flex; align-items:center; gap:4px;">🌱 作物 ${window.buildRecHelpBtn_('popover-crop-help',
                     '・複数選択できます（1つの作業に複数作物を登録可）<br>'
                     + '・詳細作業は作物ごとに分かれます<br>'
                     + '・「共通」は作物に依存しない作業向けです',
@@ -17147,13 +17119,10 @@ function createSignboardMarker(name, pos, icon, id) {
                   <input type="hidden" id="rec_work_crop_filter" value="">
                   <div id="work_crop_buttons_wrapper" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:0;"></div>
                   </div>
-                  </div>
-
-                  <div id="work_record_step_work" class="work-rec-step-panel" style="display:none;">
-                  <div id="work_name_gate_hint" style="display:none; background:#FAFAFA; border:1px dashed #BDBDBD; border-radius:10px; padding:14px 12px; margin-bottom:15px; color:#757575; font-size:13px; text-align:center; font-weight:bold;">作物を選ぶと、作業名が表示されます</div>
+                  <div id="work_name_gate_hint" style="display:none; background:#FAFAFA; border:none; border-bottom:1px dashed #BDBDBD; border-radius:0; padding:14px 12px; margin-bottom:0; color:#757575; font-size:13px; text-align:center; font-weight:bold;">作物を選ぶと、作業名が表示されます</div>
                   <div id="work_name_section" style="display:block;">
-                  <div class="rec-zone rec-zone-workname" style="background:#FFF3E0; border:1px solid #FFCC80; border-radius:10px; padding:12px; margin-bottom:0;">
-                  <label class="form-label" style="margin-top:0; color:#E65100;">🚜 作業名を選んでください</label>
+                  <div class="rec-zone rec-zone-workname" style="background:#FFF3E0; border:none; border-radius:0; padding:12px; margin-bottom:0;">
+                  <label class="form-label" style="margin-top:0; color:#E65100;">🚜 作業名</label>
                   <div id="work_name_admin_bar" style="display:none; flex-wrap:wrap; gap:6px; margin:0 0 8px;"></div>
                   <input type="hidden" id="rec_work_name" value="">
                   <input type="search" id="rec_work_search_q" placeholder="作業名で検索（誤字も候補表示）…" oninput="if(typeof filterWorkRecordSearch_==='function')filterWorkRecordSearch_()" style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #FFCC80; border-radius:8px; font-size:13px; margin-bottom:8px;">
@@ -17162,6 +17131,7 @@ function createSignboardMarker(name, pos, icon, id) {
                     ${allChipsHTML}
                   </div>
                   <div id="work_maybe_chips_container" style="display:none;"></div>
+                  </div>
                   </div>
                   </div>
                   </div>
@@ -19186,7 +19156,7 @@ function createSignboardMarker(name, pos, icon, id) {
       window.selectAfterSaveCategory_ = (cat) => {
         window._afterSaveDraftCategory = String(cat || '').trim() || 'すべて';
         window._afterSaveDraftWorkName = '';
-        window._afterSavePickerStep = 'crop';
+        window._afterSavePickerStep = 'work';
         window.showAfterSaveNextWorkPicker_();
       };
 
@@ -19198,32 +19168,24 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.setAfterSavePickerStep_ = (step) => {
-        const s = String(step || 'category').trim();
-        if (['category', 'crop', 'work', 'place'].indexOf(s) < 0) return;
-        // 前の段階に戻るときは、先の選択をクリア
-        if (s === 'category') {
-          window._afterSaveDraftWorkName = '';
-        } else if (s === 'crop') {
-          window._afterSaveDraftWorkName = '';
-        } else if (s === 'work') {
-          // 作業再選択：場所はそのまま残してよい
-        }
+        let s = String(step || 'work').trim();
+        if (s === 'category' || s === 'crop') s = 'work';
+        if (['work', 'place'].indexOf(s) < 0) return;
         window._afterSavePickerStep = s;
         window.showAfterSaveNextWorkPicker_();
       };
 
       window.getAfterSavePickerStep_ = () => {
-        const s = String(window._afterSavePickerStep || '').trim();
-        if (['category', 'crop', 'work', 'place'].indexOf(s) >= 0) return s;
-        return 'category';
+        let s = String(window._afterSavePickerStep || '').trim();
+        if (s === 'category' || s === 'crop') s = 'work';
+        if (['work', 'place'].indexOf(s) >= 0) return s;
+        return 'work';
       };
 
       window.buildAfterSaveStepHeaderHtml_ = (activeStep) => {
         const steps = [
-          { id: 'category', label: '①カテゴリ' },
-          { id: 'crop', label: '②作物' },
-          { id: 'work', label: '③作業' },
-          { id: 'place', label: '④場所' }
+          { id: 'work', label: '①作業' },
+          { id: 'place', label: '②場所' }
         ];
         const order = steps.map(s => s.id);
         const activeIdx = order.indexOf(activeStep);
@@ -19647,7 +19609,7 @@ function createSignboardMarker(name, pos, icon, id) {
           window._afterSaveDraftCrop = saved.crop || '';
         }
         if (!window._afterSavePickerStep) {
-          window._afterSavePickerStep = 'category';
+          window._afterSavePickerStep = 'work';
         }
         // マップから戻ったときは場所ステップへ
         if (window._afterSaveReturnToPlaceStep) {
@@ -19773,33 +19735,36 @@ function createSignboardMarker(name, pos, icon, id) {
         let primaryBtn = '';
         let secondaryBtn = '';
 
-        if (effectiveStep === 'category') {
-          stepBody = `
-            <div style="font-size:15px; font-weight:bold; color:#1565C0; margin-bottom:8px;">📁 カテゴリを選んでください</div>
-            <div style="font-size:12px; color:#666; margin-bottom:10px; line-height:1.4;">圃場を記録する作業のみ表示しています。</div>
-            <div style="display:flex; flex-wrap:wrap; gap:8px;">${categoryChips || '<span style="font-size:12px;color:#888;">圃場記録のあるカテゴリがありません</span>'}</div>`;
-          secondaryBtn = `<button type="button" onclick="showAfterWorkSaveContinueModal_({ data: window._afterSaveWorkMeta || {}, polyIds: window._afterSaveNextPolyIds || [] })" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">戻る</button>`;
-        } else if (effectiveStep === 'crop') {
-          stepBody = `
-            <div style="font-size:15px; font-weight:bold; color:#2E7D32; margin-bottom:8px;">🌱 作物を選んでください</div>
-            <div style="font-size:12px; color:#666; margin-bottom:8px;">カテゴリ: <b>${String(catLabel).replace(/</g, '&lt;')}</b></div>
-            <div style="display:flex; flex-wrap:wrap; gap:8px;">${cropChips}</div>`;
-          secondaryBtn = `<button type="button" onclick="setAfterSavePickerStep_('category')" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-top:10px;">← カテゴリに戻る</button>`;
-        } else if (effectiveStep === 'work') {
+        if (effectiveStep !== 'place') {
           const estPreview = selectedName
             ? `<div id="after_save_est_box" style="margin-bottom:10px;">${window.renderAfterSaveEstimateHtml_(selectedName, window.getAfterSaveDraftPolyIds_(), startHm)}</div>`
             : '';
           stepBody = `
-            <div style="font-size:15px; font-weight:bold; color:#E65100; margin-bottom:8px;">🚜 作業名を選んでください</div>
-            <div style="font-size:12px; color:#666; margin-bottom:8px; line-height:1.4;">カテゴリ: <b>${String(catLabel).replace(/</g, '&lt;')}</b>　作物: <b>${String(cropLabel).replace(/</g, '&lt;')}</b></div>
-            ${estPreview}
-            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-              <input type="search" id="after_save_work_q" placeholder="作業名で検索..." oninput="filterAfterSaveNextWorkChips_()" style="flex:1; min-width:0; box-sizing:border-box; padding:8px 10px; border:1px solid #ccc; border-radius:6px; font-size:13px;">
-              <button type="button" onclick="openAfterSaveAddWorkName_()" style="flex-shrink:0; background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋ 作業を登録</button>
-            </div>
-            <div style="font-size:11px; color:#888; margin-bottom:6px;">一覧にない作業は「＋ 作業を登録」から追加できます。</div>
-            <div style="display:flex; flex-wrap:wrap; gap:6px; max-height:40vh; overflow-y:auto; padding:2px;">${chipHtml}</div>`;
-          secondaryBtn = `<button type="button" onclick="setAfterSavePickerStep_('crop')" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-top:10px;">← 作物に戻る</button>`;
+            <div style="border:2px solid #FFCC80; border-radius:12px; overflow:hidden;">
+              <div style="background:#FFF8E1; padding:8px 10px; font-size:13px; font-weight:bold; color:#E65100;">📁🌱🚜 カテゴリ・作物・作業名</div>
+              <div style="padding:10px; background:#E8EAF6; border-bottom:1px solid #C5CAE9;">
+                <div style="font-size:12px; font-weight:bold; color:#1565C0; margin-bottom:6px;">📁 カテゴリ</div>
+                <div style="font-size:11px; color:#666; margin-bottom:8px; line-height:1.4;">圃場を記録する作業のみ表示しています。</div>
+                <div style="display:flex; flex-wrap:wrap; gap:8px;">${categoryChips || '<span style="font-size:12px;color:#888;">圃場記録のあるカテゴリがありません</span>'}</div>
+              </div>
+              <div style="padding:10px; background:#E8F5E9; border-bottom:1px solid #C8E6C9;">
+                <div style="font-size:12px; font-weight:bold; color:#2E7D32; margin-bottom:6px;">🌱 作物</div>
+                <div style="font-size:11px; color:#666; margin-bottom:8px;">カテゴリ: <b>${String(catLabel).replace(/</g, '&lt;')}</b></div>
+                <div style="display:flex; flex-wrap:wrap; gap:8px;">${cropChips}</div>
+              </div>
+              <div style="padding:10px; background:#FFF3E0;">
+                <div style="font-size:12px; font-weight:bold; color:#E65100; margin-bottom:6px;">🚜 作業名</div>
+                <div style="font-size:11px; color:#666; margin-bottom:8px; line-height:1.4;">作物: <b>${String(cropLabel).replace(/</g, '&lt;')}</b></div>
+                ${estPreview}
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                  <input type="search" id="after_save_work_q" placeholder="作業名で検索..." oninput="filterAfterSaveNextWorkChips_()" style="flex:1; min-width:0; box-sizing:border-box; padding:8px 10px; border:1px solid #ccc; border-radius:6px; font-size:13px;">
+                  <button type="button" onclick="openAfterSaveAddWorkName_()" style="flex-shrink:0; background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋ 作業を登録</button>
+                </div>
+                <div style="font-size:11px; color:#888; margin-bottom:6px;">一覧にない作業は「＋ 作業を登録」から追加できます。</div>
+                <div style="display:flex; flex-wrap:wrap; gap:6px; max-height:32vh; overflow-y:auto; padding:2px;">${chipHtml}</div>
+              </div>
+            </div>`;
+          secondaryBtn = `<button type="button" onclick="showAfterWorkSaveContinueModal_({ data: window._afterSaveWorkMeta || {}, polyIds: window._afterSaveNextPolyIds || [] })" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-top:10px;">戻る</button>`;
         } else {
           // place
           stepBody = `
@@ -19822,7 +19787,7 @@ function createSignboardMarker(name, pos, icon, id) {
         window.fillAppModalHtml_(`
           <div style="background:#fff; width:100%; max-width:420px; max-height:88vh; overflow-y:auto; -webkit-overflow-scrolling:touch; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
             <div style="font-size:16px; font-weight:bold; color:#FF9800; margin-bottom:4px;">🚜 次の作業を登録</div>
-            <div style="font-size:12px; color:#666; margin-bottom:10px; line-height:1.4;">${window._afterSaveFromClockIn ? '段階的に選びます（本登録しません）。開始は出勤時刻' : '段階的に選びます（本登録しません）。開始は前作業の終了'} <b>${startHm}</b> です。</div>
+            <div style="font-size:12px; color:#666; margin-bottom:10px; line-height:1.4;">${window._afterSaveFromClockIn ? 'カテゴリ・作物・作業名をまとめて選びます（本登録しません）。開始は出勤時刻' : 'カテゴリ・作物・作業名をまとめて選びます（本登録しません）。開始は前作業の終了'} <b>${startHm}</b> です。</div>
             ${stepHeader}
             ${stepBody}
             ${primaryBtn}
@@ -19883,7 +19848,7 @@ function createSignboardMarker(name, pos, icon, id) {
         window._afterSaveDraftCategory = data.category || 'すべて';
         window._afterSaveDraftCrop = data.crop || '';
         window._afterSaveDraftWorkName = '';
-        window._afterSavePickerStep = 'category';
+        window._afterSavePickerStep = 'work';
         if (typeof window.ensureDayPlanCacheForPlannedEnd_ === 'function') window.ensureDayPlanCacheForPlannedEnd_();
         const paceHtml = (typeof window.renderJustSavedWorkPaceHtml_ === 'function')
           ? window.renderJustSavedWorkPaceHtml_(pace)
@@ -19929,7 +19894,7 @@ function createSignboardMarker(name, pos, icon, id) {
         window._afterSaveDraftCategory = 'すべて';
         window._afterSaveDraftCrop = '';
         window._afterSaveDraftWorkName = '';
-        window._afterSavePickerStep = 'category';
+        window._afterSavePickerStep = 'work';
         if (typeof window.ensureDayPlanCacheForPlannedEnd_ === 'function') {
           window.ensureDayPlanCacheForPlannedEnd_();
         }

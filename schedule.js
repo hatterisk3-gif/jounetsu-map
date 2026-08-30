@@ -2158,6 +2158,7 @@ async function fetchWeatherAndUpdateUI() {
         if (t.sheetRow) return 'row:' + String(t.sheetRow);
         return 'wf:' + String(t.workName || '') + '|' + String(t.fieldName || '') + '|' + String(t.cropName || '');
       }
+      window.buildScheduleRowKey_ = buildScheduleRowKey_;
 
       function scheduleItemToCompletePayload_(t) {
         return {
@@ -2287,6 +2288,7 @@ async function fetchWeatherAndUpdateUI() {
         if (typeof updateMapVisuals === 'function') updateMapVisuals();
         if (document.getElementById('scheduleModal') && document.getElementById('scheduleModal').style.display === 'flex') {
           if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
+          else if (window._scheduleViewMode === 'gantt') renderScheduleGantt_();
           else switchScheduleView(window._scheduleViewMode || 'tasks');
         }
         updateSchedBulkSelectionUi_();
@@ -2467,8 +2469,9 @@ async function fetchWeatherAndUpdateUI() {
         // 依頼作業タブは廃止。誤って指定された場合は作業一覧へ
         if (mode === 'outsource') mode = 'tasks';
         window._scheduleViewMode = mode;
-        ['tasks', 'harvest', 'field', 'tag'].forEach(function(m) {
+        ['tasks', 'gantt', 'harvest', 'field', 'tag'].forEach(function(m) {
           const tabId = (m === 'tasks') ? 'schedTabTasks'
+            : (m === 'gantt') ? 'schedTabGantt'
             : (m === 'harvest') ? 'schedTabHarvest'
             : (m === 'field') ? 'schedTabField'
             : 'schedTabTag';
@@ -2476,10 +2479,12 @@ async function fetchWeatherAndUpdateUI() {
           if (tab) tab.classList.toggle('active', m === mode);
         });
         const tasksEl = document.getElementById('scheduleViewTasks');
+        const ganttEl = document.getElementById('scheduleViewGantt');
         const harvestEl = document.getElementById('scheduleViewHarvest');
         const fieldEl = document.getElementById('scheduleViewFieldProgress');
         const tagEl = document.getElementById('scheduleViewTagProgress');
         if (tasksEl) tasksEl.style.display = (mode === 'tasks') ? 'block' : 'none';
+        if (ganttEl) ganttEl.style.display = (mode === 'gantt') ? 'block' : 'none';
         if (harvestEl) harvestEl.style.display = (mode === 'harvest') ? 'block' : 'none';
         if (fieldEl) fieldEl.style.display = (mode === 'field') ? 'block' : 'none';
         if (tagEl) tagEl.style.display = (mode === 'tag') ? 'block' : 'none';
@@ -2487,18 +2492,21 @@ async function fetchWeatherAndUpdateUI() {
         if (bulkBar) bulkBar.style.display = (mode === 'tasks') ? 'flex' : 'none';
         const addBtn = document.getElementById('scheduleHeaderAddBtn');
         if (addBtn) {
-          addBtn.textContent = '＋作業';
-          addBtn.style.background = '#2e7d32';
+          addBtn.textContent = mode === 'gantt' ? '＋新規追加' : '＋作業';
+          addBtn.style.background = mode === 'gantt' ? '#1565c0' : '#2e7d32';
         }
         const titleEl = document.getElementById('tableDeptName');
         if (titleEl) {
           if (mode === 'harvest') titleEl.textContent = '収穫中の畑';
           else if (mode === 'field') titleEl.textContent = '圃場別進捗';
           else if (mode === 'tag') titleEl.textContent = 'TAG別進捗';
+          else if (mode === 'gantt') titleEl.textContent = 'ガント（前後5日）';
           else titleEl.textContent = currentDept;
         }
         if (mode === 'tasks') {
           renderScheduleTasksTable_();
+        } else if (mode === 'gantt') {
+          renderScheduleGantt_();
         } else if (mode === 'harvest') {
           loadHarvestingFieldsView_();
         } else {
@@ -7774,6 +7782,507 @@ window.syncTrackingUI = function() {
 
 // toggleTracking は tracking.js の共通モーダル処理を使用します
 
+
+window.onScheduleHeaderAddClick_ = function() {
+  if (window._scheduleViewMode === 'gantt') {
+    if (typeof window.openGanttAddModal === 'function') window.openGanttAddModal();
+    return;
+  }
+  if (typeof window.openAddWorkModal === 'function') window.openAddWorkModal('internal');
+};
+
+window._ganttCenterDate = null;
+window._ganttMasters = null;
+window._ganttAddDraft = { category: '', crop: '', workName: '' };
+window._ganttDrag = null;
+
+function ganttToday_() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function ganttYmd_(d) {
+  if (!d) return '';
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function ganttParseYmd_(s) {
+  const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  d.setHours(0, 0, 0, 0);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function ganttAddDays_(d, n) {
+  const x = new Date(d.getTime());
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+function ganttMmDdToYmd_(mmdd, center) {
+  const raw = String(mmdd || '').trim();
+  if (!raw || raw === '-') return '';
+  const iso = raw.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (iso) {
+    return iso[1] + '-' + String(iso[2]).padStart(2, '0') + '-' + String(iso[3]).padStart(2, '0');
+  }
+  const m = raw.match(/(\d{1,2})[\/\-](\d{1,2})/);
+  if (!m || !center) return '';
+  const month = Number(m[1]);
+  const day = Number(m[2]);
+  let y = center.getFullYear();
+  let d = new Date(y, month - 1, day);
+  d.setHours(0, 0, 0, 0);
+  const diff = Math.abs(d.getTime() - center.getTime());
+  const alt = new Date(y + (d < center ? 1 : -1), month - 1, day);
+  alt.setHours(0, 0, 0, 0);
+  if (Math.abs(alt.getTime() - center.getTime()) < diff) d = alt;
+  return ganttYmd_(d);
+}
+
+function ganttTaskRange_(t, center) {
+  const startYmd = t.schedDateYmd
+    || ganttMmDdToYmd_(t.schedDate, center)
+    || t.workDateYmd
+    || t.deadlineYmd
+    || ganttMmDdToYmd_(t.deadline, center);
+  const endYmd = t.deadlineYmd
+    || ganttMmDdToYmd_(t.deadline, center)
+    || startYmd;
+  let start = ganttParseYmd_(startYmd);
+  let end = ganttParseYmd_(endYmd);
+  if (!start && !end) return null;
+  if (!start) start = end;
+  if (!end) end = start;
+  if (end < start) end = start;
+  return { start: start, end: end, startYmd: ganttYmd_(start), endYmd: ganttYmd_(end) };
+}
+
+function ganttFormatMmDd_(ymd) {
+  const d = ganttParseYmd_(ymd);
+  if (!d) return '-';
+  return (d.getMonth() + 1) + '/' + d.getDate();
+}
+
+function ganttColor_(key) {
+  const s = String(key || '');
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  const hues = [200, 122, 32, 262, 0, 168, 280, 45];
+  return 'hsl(' + hues[h % hues.length] + ', 62%, 42%)';
+}
+
+function getGanttCenterDate_() {
+  if (!(window._ganttCenterDate instanceof Date) || isNaN(window._ganttCenterDate.getTime())) {
+    window._ganttCenterDate = ganttToday_();
+  }
+  return window._ganttCenterDate;
+}
+
+window.shiftGanttWindow_ = function(days) {
+  const c = getGanttCenterDate_();
+  window._ganttCenterDate = ganttAddDays_(c, Number(days) || 0);
+  renderScheduleGantt_();
+};
+
+window.resetGanttWindowToToday_ = function() {
+  window._ganttCenterDate = ganttToday_();
+  renderScheduleGantt_();
+};
+
+window.renderScheduleGantt_ = function() {
+  const root = document.getElementById('ganttChartRoot');
+  if (!root) return;
+  const center = getGanttCenterDate_();
+  const days = [];
+  for (let i = -5; i <= 5; i++) days.push(ganttAddDays_(center, i));
+  const winStart = days[0];
+  const winEnd = days[days.length - 1];
+  const labelEl = document.getElementById('ganttWindowLabel');
+  if (labelEl) {
+    labelEl.textContent = (winStart.getMonth() + 1) + '/' + winStart.getDate()
+      + ' 〜 ' + (winEnd.getMonth() + 1) + '/' + winEnd.getDate()
+      + '（基準 ' + (center.getMonth() + 1) + '/' + center.getDate() + '）';
+  }
+
+  let list = currentDept === 'すべて' ? (globalSchedules || []).slice() : (globalSchedules || []).filter(function(t) {
+    return t.dept === currentDept;
+  });
+  const rows = [];
+  list.forEach(function(t) {
+    const range = ganttTaskRange_(t, center);
+    if (!range) return;
+    if (range.end < winStart || range.start > winEnd) return;
+    rows.push({ t: t, range: range });
+  });
+  rows.sort(function(a, b) {
+    const ca = String(a.t.cropName || '').localeCompare(String(b.t.cropName || ''), 'ja');
+    if (ca) return ca;
+    return String(a.t.workName || '').localeCompare(String(b.t.workName || ''), 'ja');
+  });
+
+  if (!rows.length) {
+    root.innerHTML = '<div class="gantt-empty">この期間に表示できる作業がありません。<br>「＋ 新規追加」から登録するか、前後5日で期間をずらしてください。</div>';
+    return;
+  }
+
+  const today = ganttToday_();
+  const weekday = ['日', '月', '火', '水', '木', '金', '土'];
+  let html = '<table class="gantt-table"><thead><tr><th class="gantt-label-col">作物 / 作業</th>';
+  days.forEach(function(d) {
+    const isToday = d.getTime() === today.getTime();
+    const isWe = d.getDay() === 0 || d.getDay() === 6;
+    html += '<th class="' + (isToday ? 'gantt-day-today' : (isWe ? 'gantt-day-weekend' : '')) + '">'
+      + (d.getMonth() + 1) + '/' + d.getDate() + '<div style="font-size:10px;font-weight:normal;">' + weekday[d.getDay()] + '</div></th>';
+  });
+  html += '</tr></thead><tbody>';
+
+  let lastCrop = null;
+  rows.forEach(function(row, idx) {
+    const t = row.t;
+    const crop = String(t.cropName || '（作物なし）');
+    if (crop !== lastCrop) {
+      html += '<tr class="gantt-crop-row"><td colspan="12">🌱 ' + escHtml_(crop) + '</td></tr>';
+      lastCrop = crop;
+    }
+    const clipStart = row.range.start < winStart ? winStart : row.range.start;
+    const clipEnd = row.range.end > winEnd ? winEnd : row.range.end;
+    const startIdx = Math.round((clipStart.getTime() - winStart.getTime()) / 86400000);
+    const endIdx = Math.round((clipEnd.getTime() - winStart.getTime()) / 86400000);
+    const span = Math.max(1, endIdx - startIdx + 1);
+    const leftPct = (startIdx / 11) * 100;
+    const widthPct = (span / 11) * 100;
+    const canDrag = !t.isMidWork && Number(t.sheetRow) >= 2;
+    const barColor = t.isOverdue ? '#c62828' : ganttColor_(crop + t.workName);
+    const key = (typeof buildScheduleRowKey_ === 'function') ? buildScheduleRowKey_(t) : ('g' + idx);
+    html += '<tr data-gantt-row="' + idx + '">';
+    html += '<td class="gantt-work-label" title="' + escHtml_(t.workName || '') + '">' + escHtml_(t.workName || '')
+      + (t.fieldName ? '<div style="font-size:10px;font-weight:normal;color:#888;">' + escHtml_(t.fieldName) + '</div>' : '')
+      + '</td>';
+    html += '<td colspan="11" class="gantt-cell" onclick="onGanttTrackClick_(event)">';
+    html += '<div class="gantt-track">';
+    days.forEach(function(d, di) {
+      const isToday = d.getTime() === today.getTime();
+      html += '<div style="position:absolute;left:' + (di / 11 * 100) + '%;top:0;bottom:0;width:calc(100%/11);border-right:1px solid #eee;pointer-events:none;'
+        + (isToday ? 'background:rgba(255,236,179,.35);' : '') + '"></div>';
+    });
+    html += '<div class="gantt-bar' + (canDrag ? '' : ' is-mid') + '" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + barColor + ';"'
+      + ' data-gantt-key="' + escHtml_(key) + '"'
+      + ' data-sheet-row="' + (Number(t.sheetRow) || 0) + '"'
+      + ' data-start="' + row.range.startYmd + '"'
+      + ' data-end="' + row.range.endYmd + '"'
+      + ' data-candrag="' + (canDrag ? '1' : '0') + '"'
+      + (canDrag ? ' onpointerdown="startGanttBarDrag_(event, this)"' : '')
+      + '>' + escHtml_(t.workName || '') + '</div>';
+    html += '</div></td></tr>';
+  });
+  html += '</tbody></table>';
+  root.innerHTML = html;
+};
+
+window.onGanttTrackClick_ = function(ev) {
+  if (window._ganttDrag && window._ganttDrag.moved) return;
+  if (ev.target && ev.target.closest && ev.target.closest('.gantt-bar')) return;
+  const track = ev.currentTarget;
+  const rect = track.getBoundingClientRect();
+  if (!rect.width) return;
+  const ratio = (ev.clientX - rect.left) / rect.width;
+  const idx = Math.max(0, Math.min(10, Math.floor(ratio * 11)));
+  const center = getGanttCenterDate_();
+  const ymd = ganttYmd_(ganttAddDays_(center, idx - 5));
+  window._ganttClickDate = ymd;
+};
+
+window.startGanttBarDrag_ = function(ev, bar) {
+  if (!bar || bar.getAttribute('data-candrag') !== '1') return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  try { bar.setPointerCapture(ev.pointerId); } catch (e) {}
+  const track = bar.parentElement;
+  window._ganttDrag = {
+    bar: bar,
+    startX: ev.clientX,
+    trackWidth: track ? track.getBoundingClientRect().width : 0,
+    originStart: bar.getAttribute('data-start'),
+    originEnd: bar.getAttribute('data-end'),
+    dayShift: 0,
+    moved: false
+  };
+  bar.classList.add('is-dragging');
+  bar.onpointermove = onGanttBarDragMove_;
+  bar.onpointerup = endGanttBarDrag_;
+  bar.onpointercancel = endGanttBarDrag_;
+};
+
+function onGanttBarDragMove_(ev) {
+  const st = window._ganttDrag;
+  if (!st || !st.bar) return;
+  const w = st.trackWidth || 1;
+  const dx = ev.clientX - st.startX;
+  if (Math.abs(dx) > 4) st.moved = true;
+  const shift = Math.round((dx / w) * 11);
+  st.dayShift = shift;
+  st.bar.style.transform = 'translateX(' + (shift * (w / 11)) + 'px)';
+}
+
+function endGanttBarDrag_(ev) {
+  const st = window._ganttDrag;
+  const bar = st && st.bar;
+  if (bar) {
+    bar.onpointermove = null;
+    bar.onpointerup = null;
+    bar.onpointercancel = null;
+    bar.classList.remove('is-dragging');
+    bar.style.transform = '';
+    try { bar.releasePointerCapture(ev.pointerId); } catch (e) {}
+  }
+  window._ganttDrag = null;
+  if (!st || !st.moved || !st.dayShift) return;
+  applyGanttBarShift_(st, st.dayShift);
+}
+
+async function applyGanttBarShift_(st, dayShift) {
+  const start = ganttParseYmd_(st.originStart);
+  const end = ganttParseYmd_(st.originEnd) || start;
+  if (!start) return;
+  const newStart = ganttAddDays_(start, dayShift);
+  const dur = Math.round((end.getTime() - start.getTime()) / 86400000);
+  const newEnd = ganttAddDays_(newStart, dur);
+  const sheetRow = Number(st.bar && st.bar.getAttribute('data-sheet-row'));
+  const key = st.bar && st.bar.getAttribute('data-gantt-key');
+  const newStartYmd = ganttYmd_(newStart);
+  const newEndYmd = ganttYmd_(newEnd);
+  (globalSchedules || []).forEach(function(t) {
+    const k = (typeof buildScheduleRowKey_ === 'function') ? buildScheduleRowKey_(t) : '';
+    if (key && k === key) {
+      t.schedDateYmd = newStartYmd;
+      t.deadlineYmd = newEndYmd;
+      t.schedDate = ganttFormatMmDd_(newStartYmd);
+      t.deadline = ganttFormatMmDd_(newEndYmd);
+    }
+  });
+  if (typeof persistScheduleDataCache_ === 'function') persistScheduleDataCache_();
+  renderScheduleGantt_();
+  if (!sheetRow) return;
+  try {
+    const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+    await callGAS('updateWorkScheduleDates', {
+      sheetRow: sheetRow,
+      schedDate: newStartYmd,
+      deadline: newEndYmd,
+      userName: userName
+    });
+    if (typeof showSchedSyncStatus_ === 'function') showSchedSyncStatus_('☁ 予定日を更新しました');
+    if (typeof hideSchedSyncStatusSoon_ === 'function') hideSchedSyncStatusSoon_(1800);
+  } catch (e) {
+    alert('日付の保存に失敗しました: ' + (e.message || e));
+  }
+}
+
+window.openGanttAddModal = async function() {
+  const modal = document.getElementById('ganttAddModal');
+  if (!modal) return;
+  window._ganttAddDraft = { category: '', crop: '', workName: '' };
+  const startEl = document.getElementById('ganttAddStart');
+  const endEl = document.getElementById('ganttAddEnd');
+  const ymd = window._ganttClickDate || ganttYmd_(ganttToday_());
+  if (startEl) startEl.value = ymd;
+  if (endEl) endEl.value = '';
+  const fieldSel = document.getElementById('ganttAddField');
+  if (fieldSel && typeof populateAddWorkFieldSelect_ === 'function') {
+    populateAddWorkFieldSelect_();
+    const src = document.getElementById('addWorkField');
+    if (src) fieldSel.innerHTML = src.innerHTML;
+  } else if (fieldSel) {
+    fieldSel.innerHTML = '<option value="">圃場を選択 (任意)</option>';
+    Object.keys(loadedPolygons || {}).forEach(function(id) {
+      const p = loadedPolygons[id];
+      if (!p || p.isMarker || !p.name) return;
+      fieldSel.innerHTML += '<option value="' + String(p.name).replace(/"/g, '&quot;') + '" data-poly-id="' + String(id).replace(/"/g, '&quot;') + '">' + escHtml_(p.name) + '</option>';
+    });
+  }
+  const resDiv = document.getElementById('ganttAddResult');
+  if (resDiv) resDiv.textContent = '';
+  modal.style.display = 'flex';
+  if (!window._ganttMasters) {
+    try {
+      window._ganttMasters = await callGAS('getScheduleGanttMasters');
+    } catch (e) {
+      window._ganttMasters = { categories: [], crops: [], works: [] };
+    }
+  }
+  renderGanttAddChips_();
+};
+
+window.closeGanttAddModal = function() {
+  const modal = document.getElementById('ganttAddModal');
+  if (modal) modal.style.display = 'none';
+};
+
+function ganttFallbackCategories_() {
+  return ['栽培', '生産', '出荷/配送', '育苗', '研修/調整', '管理/事務', '研究/開発', '保全/整備'];
+}
+
+function getGanttCategories_() {
+  const fromMaster = (window._ganttMasters && window._ganttMasters.categories) || [];
+  const list = fromMaster.filter(Boolean);
+  return list.length ? list : ganttFallbackCategories_();
+}
+
+function getGanttCrops_() {
+  const seen = {};
+  const names = [];
+  const push = function(n) {
+    const s = String(n || '').trim();
+    if (!s || seen[s]) return;
+    seen[s] = true;
+    names.push(s);
+  };
+  ((window._ganttMasters && window._ganttMasters.crops) || []).forEach(push);
+  (globalSchedules || []).forEach(function(t) { push(t.cropName); });
+  Object.keys(loadedPolygons || {}).forEach(function(id) {
+    const p = loadedPolygons[id];
+    if (p && p.crop) push(p.crop);
+  });
+  names.sort(function(a, b) { return a.localeCompare(b, 'ja'); });
+  if (names.indexOf('共通') < 0) names.unshift('共通');
+  return names;
+}
+
+function getGanttWorks_() {
+  const draft = window._ganttAddDraft || {};
+  const cat = String(draft.category || '').trim();
+  const crop = String(draft.crop || '').trim();
+  const masterWorks = (window._ganttMasters && window._ganttMasters.works) || [];
+  const seen = {};
+  const names = [];
+  const push = function(n) {
+    const s = String(n || '').trim();
+    if (!s || s.indexOf('休憩') >= 0 || seen[s]) return;
+    seen[s] = true;
+    names.push(s);
+  };
+  masterWorks.forEach(function(w) {
+    if (!w || !w.name) return;
+    if (cat && String(w.category || '').trim() && String(w.category || '').trim() !== cat) return;
+    if (crop && crop !== '共通' && Array.isArray(w.crops) && w.crops.length) {
+      if (w.crops.indexOf(crop) < 0 && String(w.cropName || '').indexOf(crop) < 0) return;
+    }
+    push(w.name);
+  });
+  if (!names.length) {
+    (globalSchedules || []).forEach(function(t) { push(t.workName); });
+  }
+  names.sort(function(a, b) { return a.localeCompare(b, 'ja'); });
+  return names;
+}
+
+function renderGanttAddChips_() {
+  const draft = window._ganttAddDraft || { category: '', crop: '', workName: '' };
+  const catsEl = document.getElementById('ganttAddCats');
+  const cropsEl = document.getElementById('ganttAddCrops');
+  const worksEl = document.getElementById('ganttAddWorks');
+  if (catsEl) {
+    catsEl.innerHTML = getGanttCategories_().map(function(c) {
+      const on = draft.category === c;
+      return '<button type="button" class="gantt-chip' + (on ? ' on-cat' : '') + '" data-gantt-pick="cat">' + escHtml_(c) + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(catsEl.querySelectorAll('[data-gantt-pick="cat"]'), function(btn) {
+      btn.addEventListener('click', function() { pickGanttAddCategory_(btn.textContent); });
+    });
+  }
+  if (cropsEl) {
+    cropsEl.innerHTML = getGanttCrops_().map(function(c) {
+      const on = draft.crop === c;
+      return '<button type="button" class="gantt-chip' + (on ? ' on-crop' : '') + '" data-gantt-pick="crop">' + escHtml_(c) + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(cropsEl.querySelectorAll('[data-gantt-pick="crop"]'), function(btn) {
+      btn.addEventListener('click', function() { pickGanttAddCrop_(btn.textContent); });
+    });
+  }
+  if (worksEl) {
+    const works = getGanttWorks_();
+    worksEl.innerHTML = works.length
+      ? works.map(function(c) {
+          const on = draft.workName === c;
+          return '<button type="button" class="gantt-chip' + (on ? ' on-work' : '') + '" data-gantt-pick="work">' + escHtml_(c) + '</button>';
+        }).join('')
+      : '<div style="font-size:12px;color:#888;">該当する作業がありません。カテゴリ・作物を変えるか、作業一覧の「＋作業」から登録してください。</div>';
+    Array.prototype.forEach.call(worksEl.querySelectorAll('[data-gantt-pick="work"]'), function(btn) {
+      btn.addEventListener('click', function() { pickGanttAddWork_(btn.textContent); });
+    });
+  }
+}
+
+window.pickGanttAddCategory_ = function(name) {
+  window._ganttAddDraft.category = String(name || '');
+  window._ganttAddDraft.workName = '';
+  renderGanttAddChips_();
+};
+
+window.pickGanttAddCrop_ = function(name) {
+  window._ganttAddDraft.crop = String(name || '');
+  window._ganttAddDraft.workName = '';
+  renderGanttAddChips_();
+};
+
+window.pickGanttAddWork_ = function(name) {
+  window._ganttAddDraft.workName = String(name || '');
+  renderGanttAddChips_();
+};
+
+window.submitGanttAddWork_ = async function() {
+  const draft = window._ganttAddDraft || {};
+  const resDiv = document.getElementById('ganttAddResult');
+  const btn = document.getElementById('ganttAddSubmitBtn');
+  if (!draft.category) {
+    if (resDiv) { resDiv.textContent = 'カテゴリを選んでください'; resDiv.style.color = '#c62828'; }
+    return;
+  }
+  if (!draft.crop) {
+    if (resDiv) { resDiv.textContent = '作物名を選んでください'; resDiv.style.color = '#c62828'; }
+    return;
+  }
+  if (!draft.workName) {
+    if (resDiv) { resDiv.textContent = '作業を選んでください'; resDiv.style.color = '#c62828'; }
+    return;
+  }
+  const start = document.getElementById('ganttAddStart')?.value || ganttYmd_(ganttToday_());
+  const end = document.getElementById('ganttAddEnd')?.value || '';
+  const fieldSel = document.getElementById('ganttAddField');
+  const fieldName = (fieldSel?.value || '').trim();
+  const selectedOpt = fieldSel ? fieldSel.options[fieldSel.selectedIndex] : null;
+  const polyId = selectedOpt ? (selectedOpt.dataset.polyId || '') : '';
+  const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+  if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
+  try {
+    await callGAS('addWorkSchedule', {
+      workName: draft.workName,
+      fieldName: fieldName,
+      cropName: draft.crop === '共通' ? '' : draft.crop,
+      category: draft.category,
+      person: userName,
+      schedDate: start,
+      deadline: end,
+      polyId: polyId,
+      userName: userName
+    });
+    closeGanttAddModal();
+    const data = await callGAS('getScheduleData');
+    if (data) {
+      localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
+      globalSchedules = data.activeSchedules || [];
+      if (typeof updateMapVisuals === 'function') updateMapVisuals();
+    }
+    renderScheduleGantt_();
+  } catch (e) {
+    if (resDiv) { resDiv.textContent = '登録失敗: ' + (e.message || e); resDiv.style.color = '#c62828'; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '登録する'; }
+  }
+};
 
 window.addEventListener('storage', (e) => {
     if (e.key === 'passionMapClockIn' || e.key === 'passionMapClockInToday') {

@@ -15,7 +15,7 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1786243000000"></script>
-  <link rel="stylesheet" href="schedule.css?v=1787803000000">
+  <link rel="stylesheet" href="schedule.css?v=1788052000000">
 </head>
 
 <body>
@@ -102,12 +102,13 @@
         <span class="schedule-modal-title">📋 <span id="tableDeptName">すべて</span>の作業一覧</span>
         <div class="schedule-modal-actions">
           <button type="button" onclick="openWorkDeptSettingsModal()" title="作業ごとの担当部署を設定" class="schedule-header-btn schedule-header-btn-ghost">🏢 部署</button>
-          <button type="button" id="scheduleHeaderAddBtn" onclick="openAddWorkModal('internal')" class="schedule-header-btn schedule-header-btn-add">＋作業</button>
+          <button type="button" id="scheduleHeaderAddBtn" onclick="onScheduleHeaderAddClick_()" class="schedule-header-btn schedule-header-btn-add">＋作業</button>
           <span class="schedule-modal-close" onclick="closeScheduleModal()" role="button" aria-label="閉じる">×</span>
         </div>
       </div>
       <div id="scheduleModalTabs" class="schedule-modal-tabs">
         <button type="button" id="schedTabTasks" class="sched-view-tab active" onclick="switchScheduleView('tasks')">📋 作業一覧</button>
+        <button type="button" id="schedTabGantt" class="sched-view-tab" onclick="switchScheduleView('gantt')">📊 ガント</button>
         <button type="button" id="schedTabHarvest" class="sched-view-tab" onclick="switchScheduleView('harvest')">🍅 収穫中</button>
         <button type="button" id="schedTabField" class="sched-view-tab" onclick="switchScheduleView('field')">🌾 圃場進捗</button>
         <button type="button" id="schedTabTag" class="sched-view-tab" onclick="switchScheduleView('tag')">🏷️ TAG進捗</button>
@@ -168,6 +169,19 @@
             </tbody>
           </table>
           </div>
+        </div>
+        <div id="scheduleViewGantt" style="display:none;">
+          <div class="gantt-toolbar">
+            <div class="gantt-nav">
+              <button type="button" class="gantt-nav-btn" onclick="shiftGanttWindow_(-5)">◀ 5日</button>
+              <button type="button" class="gantt-nav-btn gantt-nav-today" onclick="resetGanttWindowToToday_()">今日</button>
+              <button type="button" class="gantt-nav-btn" onclick="shiftGanttWindow_(5)">5日 ▶</button>
+            </div>
+            <div class="gantt-toolbar-title" id="ganttWindowLabel"></div>
+            <button type="button" class="gantt-add-btn" onclick="openGanttAddModal()">＋ 新規追加</button>
+          </div>
+          <div class="gantt-hint">表示は基準日の前後5日です。バーをドラッグすると予定日を移動できます。</div>
+          <div id="ganttChartRoot" class="gantt-root"></div>
         </div>
         <div id="scheduleViewHarvest" style="display:none;">
           <div id="harvestListHint" style="font-size:12px;color:#555;margin-bottom:10px;line-height:1.5;">
@@ -357,6 +371,39 @@
         </div>
         <button type="button" id="addWorkSubmitBtn" onclick="submitAddWorkFromModal()" style="width:100%;background:#2e7d32;color:#fff;border:none;padding:12px;border-radius:6px;font-weight:bold;font-size:14px;cursor:pointer;">登録する</button>
         <div id="addWorkResult" style="margin-top:8px;font-size:12px;font-weight:bold;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="ganttAddModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10035; align-items:center; justify-content:center;">
+    <div style="background:#fff; width:min(440px,94vw); max-height:90vh; border-radius:10px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,.25); display:flex; flex-direction:column;">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#1565c0; color:#fff;">
+        <span style="font-weight:bold;">＋ ガントに作業を追加</span>
+        <span style="cursor:pointer; font-size:22px;" onclick="closeGanttAddModal()">×</span>
+      </div>
+      <div style="padding:14px 16px; overflow:auto; flex:1;">
+        <div style="font-size:12px; font-weight:bold; color:#1565c0; margin-bottom:6px;">① カテゴリ</div>
+        <div id="ganttAddCats" class="gantt-chip-wrap"></div>
+        <div style="font-size:12px; font-weight:bold; color:#2e7d32; margin:12px 0 6px;">② 作物名</div>
+        <div id="ganttAddCrops" class="gantt-chip-wrap"></div>
+        <div style="font-size:12px; font-weight:bold; color:#e65100; margin:12px 0 6px;">③ 作業</div>
+        <div id="ganttAddWorks" class="gantt-chip-wrap"></div>
+        <div style="display:flex; gap:8px; margin-top:12px;">
+          <div style="flex:1;">
+            <label style="font-size:11px;color:#555;">予定日</label>
+            <input type="date" id="ganttAddStart" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:11px;color:#555;">期限日（任意）</label>
+            <input type="date" id="ganttAddEnd" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+          </div>
+        </div>
+        <div style="margin-top:8px;">
+          <label style="font-size:11px;color:#555;">圃場（任意）</label>
+          <select id="ganttAddField" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;"></select>
+        </div>
+        <button type="button" id="ganttAddSubmitBtn" onclick="submitGanttAddWork_()" style="width:100%;margin-top:14px;background:#1565c0;color:#fff;border:none;padding:12px;border-radius:6px;font-weight:bold;font-size:14px;cursor:pointer;">登録する</button>
+        <div id="ganttAddResult" style="margin-top:8px;font-size:12px;font-weight:bold;"></div>
       </div>
     </div>
   </div>
@@ -693,7 +740,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1787803000000';
+    const cacheBust = '1788052000000';
     const bootstrapFiles = [
       'cultivation_modal.html', 'weather-agri.js', 'schedule.js', 'day-planner.js',
       'attendance-calendar.js', 'market.js', 'tracking.js',
