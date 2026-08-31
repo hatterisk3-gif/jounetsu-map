@@ -10978,6 +10978,7 @@ function openCultivationPlanModal(options) {
     }
     modal.style.display = 'flex';
     if (typeof initCpStepsAccordion === 'function') initCpStepsAccordion();
+    if (typeof initCpExternalSheetUrl_ === 'function') initCpExternalSheetUrl_();
     renderCultivationPlanTable();
     populateDefaultCpSelects();
     
@@ -14197,4 +14198,183 @@ function applyAICropExtractionResult(data) {
         alert("AIによる自動入力が完了しました。はみ出た箇所や不足箇所を微調整してください。");
     }
 }
+
+const CP_EXT_SHEET_URL_KEY = 'cpExternalSheetUrl';
+const CP_EXT_SHEET_DEFAULT_URL = 'https://docs.google.com/spreadsheets/d/1bna_GwP7Zn-n525ox9Jxu7Z6Z3Hp90bbnJa6VP7qPlU/edit?gid=592303438#gid=592303438';
+
+function initCpExternalSheetUrl_() {
+    const urlEl = document.getElementById('cpExternalSheetUrl');
+    if (!urlEl) return;
+    if (urlEl.value && urlEl.value.trim()) return;
+    try {
+        const saved = localStorage.getItem(CP_EXT_SHEET_URL_KEY);
+        urlEl.value = saved || CP_EXT_SHEET_DEFAULT_URL;
+    } catch (e) {
+        urlEl.value = CP_EXT_SHEET_DEFAULT_URL;
+    }
+}
+
+function getCpExternalSheetUrl_() {
+    const urlEl = document.getElementById('cpExternalSheetUrl');
+    const url = (urlEl && urlEl.value.trim()) || CP_EXT_SHEET_DEFAULT_URL;
+    if (urlEl) urlEl.value = url;
+    try { localStorage.setItem(CP_EXT_SHEET_URL_KEY, url); } catch (e) {}
+    return url;
+}
+
+function setCpExternalSheetStatus_(text, color) {
+    const el = document.getElementById('cpExternalSheetStatus');
+    if (!el) return;
+    el.style.color = color || '#666';
+    el.textContent = text || '';
+}
+
+function applyImportedCpPlans_(importedPlans, crop) {
+    if (!importedPlans || !importedPlans.length) {
+        setCpExternalSheetStatus_('読み込める品種がありません（R列に播種枚数がある行のみ）', '#c62828');
+        return;
+    }
+    if (typeof rememberCustomCrop === 'function') rememberCustomCrop(crop);
+    setChoiceValue('cpCrop', crop, true);
+
+    const tbody = document.getElementById('cpTableBody');
+    if (tbody) tbody.innerHTML = '';
+    const leftBody = document.getElementById('cpLeftBody');
+    if (leftBody) leftBody.innerHTML = '';
+    cpPlans = [];
+    cpSemiAutoSteps = {};
+    cpSemiAutoLastPaint = {};
+    cpSemiAutoActivePlanId = null;
+
+    const location = getCpVal('cpLocation');
+    const fieldCondition = getCpVal('cpFieldCondition') || '露地';
+    const holes = getCpVal('cpTrayHoles', true) || 128;
+    const rows = getCpVal('cpRows', true) || 1;
+    const pSpace = getCpVal('cpPlantSpacing', true) || 30;
+    const rSpace = getCpVal('cpRidgeSpacing', true) || 150;
+    const yieldPerPlant = getCpVal('cpYieldPerPlant', true) || 1;
+    const itemsPerPack = getCpVal('cpItemsPerPack', true) || 1;
+    const yieldRate = getCpVal('cpYieldRate', true) || 0.9;
+    const seedlingSuccess = getCpVal('cpSeedlingSuccess', true) || 0.9;
+
+    importedPlans.forEach((imp, idx) => {
+        const plan = {
+            id: 'plan_imp_' + Date.now() + '_' + idx + '_' + Math.floor(Math.random() * 1000),
+            location: location,
+            crop: crop,
+            variety: String(imp.variety || '').trim(),
+            fieldCondition: fieldCondition,
+            holes: holes,
+            rows: rows,
+            pSpace: pSpace,
+            rSpace: rSpace,
+            yieldPerPlant: yieldPerPlant,
+            itemsPerPack: itemsPerPack,
+            areaA: Number(imp.areaA) || 0,
+            trays: Number(imp.trays) || 0,
+            yieldRate: yieldRate,
+            seedlingSuccess: seedlingSuccess,
+            harvestRatios: [],
+            yield: 0,
+            inputMode: 'area',
+            tasks: imp.tasks || { sowing: [], planting: [], harvesting: [] }
+        };
+        if (typeof registerVarietyCandidateLocal === 'function') {
+            registerVarietyCandidateLocal(crop, plan.variety, [], plan.tasks);
+        }
+        cpPlans.push(plan);
+        const defer = idx < importedPlans.length - 1;
+        renderCpPlanRow(plan, defer ? { deferPostRender: true } : undefined);
+    });
+
+    if (typeof applyCpColumnHighlights === 'function') applyCpColumnHighlights();
+    cpPlans.forEach(plan => {
+        if (typeof updateRowCalculations === 'function') updateRowCalculations(plan.id);
+        if (typeof updateVarietyCardFieldsDisplay === 'function') updateVarietyCardFieldsDisplay(plan.id);
+        if (typeof syncCpSemiAutoStepForPlan === 'function') syncCpSemiAutoStepForPlan(plan.id);
+    });
+    if (typeof updateCpSemiAutoHint === 'function') updateCpSemiAutoHint();
+    if (typeof ensureCpAddVarietyBtn === 'function') ensureCpAddVarietyBtn();
+    if (typeof refreshCpVarietyOrdinals === 'function') refreshCpVarietyOrdinals();
+    if (typeof scheduleSyncAllRowHeights === 'function') scheduleSyncAllRowHeights(50);
+    if (typeof pushCpEditHistory === 'function') pushCpEditHistory();
+    if (typeof refreshCpHeaderContextBar === 'function') refreshCpHeaderContextBar();
+    if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
+    if (typeof setCpInitialSettingsOpen === 'function') setCpInitialSettingsOpen(false);
+}
+
+async function importCpFromExternalSheet() {
+    const crop = String(getCpVal('cpCrop') || '').trim();
+    if (!crop) {
+        alert('作物を選択または入力してください。シートタブ名と一致させてください。');
+        return;
+    }
+    const url = getCpExternalSheetUrl_();
+    setCpExternalSheetStatus_('インポート中…', '#1565c0');
+    try {
+        const res = await callGAS('importCultivationPlanFromExternalSheet', {
+            crop: crop,
+            spreadsheetUrl: url
+        });
+        if (!res || !res.success) {
+            const msg = (res && res.message) || 'インポートに失敗しました';
+            alert(msg);
+            setCpExternalSheetStatus_(msg, '#c62828');
+            return;
+        }
+        applyImportedCpPlans_(res.plans, crop);
+        setCpExternalSheetStatus_(
+            (res.count || 0) + '品種をインポートしました（シート: ' + (res.sheetName || crop) + '）',
+            '#2e7d32'
+        );
+    } catch (e) {
+        const msg = e && e.message ? e.message : String(e);
+        alert('インポートエラー: ' + msg);
+        setCpExternalSheetStatus_(msg, '#c62828');
+    }
+}
+
+async function exportCpToExternalSheet() {
+    const crop = String(getCpVal('cpCrop') || '').trim();
+    if (!crop) {
+        alert('作物を選択または入力してください。');
+        return;
+    }
+    const plans = (typeof collectCurrentCpPlansFromDom === 'function'
+        ? collectCurrentCpPlansFromDom()
+        : (cpPlans || []))
+        .filter(p => p && String(p.variety || '').trim());
+    if (!plans.length) {
+        alert('エクスポートする品種がありません。品種名を入力してください。');
+        return;
+    }
+    const url = getCpExternalSheetUrl_();
+    setCpExternalSheetStatus_('エクスポート中…', '#1565c0');
+    try {
+        const res = await callGAS('exportCultivationPlanToExternalSheet', {
+            crop: crop,
+            spreadsheetUrl: url,
+            plans: plans
+        });
+        if (!res || !res.success) {
+            const msg = (res && res.message) || 'エクスポートに失敗しました';
+            alert(msg);
+            setCpExternalSheetStatus_(msg, '#c62828');
+            return;
+        }
+        const sheetName = res.sheetName || crop;
+        const msg = res.message || ('シート「' + sheetName + '」へ' + (res.count || plans.length) + '品種を書き出しました');
+        setCpExternalSheetStatus_(msg, '#2e7d32');
+        if (res.spreadsheetUrl && confirm(msg + '\n\nスプレッドシートを開きますか？')) {
+            window.open(res.spreadsheetUrl, '_blank');
+        }
+    } catch (e) {
+        const msg = e && e.message ? e.message : String(e);
+        alert('エクスポートエラー: ' + msg);
+        setCpExternalSheetStatus_(msg, '#c62828');
+    }
+}
+
+window.importCpFromExternalSheet = importCpFromExternalSheet;
+window.exportCpToExternalSheet = exportCpToExternalSheet;
 

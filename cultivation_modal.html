@@ -112,6 +112,18 @@
                 <button type="button" onclick="saveCpCropTagAbbreviation()" style="flex-shrink:0; padding:3px 8px; font-size:10px; font-weight:bold; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">保存</button>
               </div>
               <div id="cpTagAbbrSaveStatus" style="font-size:11px; font-weight:bold; margin-top:4px; min-height:14px;"></div>
+              <div style="margin-top:8px; padding:8px; background:#f5f5f5; border:1px solid #e0e0e0; border-radius:6px;">
+                <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">外部スプレッドシート連携</label>
+                <input type="text" id="cpExternalSheetUrl" placeholder="スプレッドシートURL" title="作型シート（作物名＝タブ名）のURL"
+                  style="width:100%; box-sizing:border-box; padding:4px 6px; border:1px solid #ccc; border-radius:4px; font-size:11px; margin-bottom:6px;">
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                  <button type="button" onclick="importCpFromExternalSheet()" title="シートから品種・播種枚数・作型カレンダーを読み込み"
+                    style="flex:1; min-width:100px; padding:5px 8px; font-size:11px; font-weight:bold; border:1px solid #81C784; background:#E8F5E9; color:#2E7D32; border-radius:4px; cursor:pointer;">↓ インポート</button>
+                  <button type="button" onclick="exportCpToExternalSheet()" title="画面上の計画をシートへ書き出し"
+                    style="flex:1; min-width:100px; padding:5px 8px; font-size:11px; font-weight:bold; border:1px solid #64B5F6; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">↑ エクスポート</button>
+                </div>
+                <div id="cpExternalSheetStatus" style="font-size:10px; color:#666; margin-top:4px; min-height:14px; line-height:1.4;"></div>
+              </div>
             </div>
             <div style="width: 100%;">
               <div style="display:flex; align-items:center; justify-content:space-between; gap:4px; margin-bottom:2px;">

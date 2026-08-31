@@ -131,6 +131,8 @@ function doPost(e) {
     else if (action === "getToolUsageHistory") result = getToolUsageHistory(params);
     else if (action === "saveCultivationPlans") result = saveCultivationPlans(params.year, params.crop, params.planDataArray, params.planType, params.planName, params);
     else if (action === "getCultivationPlans") result = getCultivationPlans(params.year, params.crop, params.planType, params.planName);
+    else if (action === "importCultivationPlanFromExternalSheet") result = importCultivationPlanFromExternalSheet(params);
+    else if (action === "exportCultivationPlanToExternalSheet") result = exportCultivationPlanToExternalSheet(params);
     else if (action === "previewCultivationPlanTags") result = previewCultivationPlanTags(params);
     else if (action === "executeCultivationPlans") result = executeCultivationPlans(params);
     else if (action === "getSavedCultivationPlanList") result = getSavedCultivationPlanList();
@@ -18322,4 +18324,319 @@ function dayPlan_delete(params) {
     }
   }
   return { success: false, message: '予定が見つかりません' };
+}
+
+/** 栽培計画 外部スプレッドシート連携（作型シート: A=品種, R=播種枚数, V:DY=作型カレンダー108列） */
+var CP_EXT_SHEET_DEFAULT_ID = '1bna_GwP7Zn-n525ox9Jxu7Z6Z3Hp90bbnJa6VP7qPlU';
+var CP_EXT_DATA_START_ROW = 11;
+var CP_EXT_COL_VARIETY = 1;
+var CP_EXT_COL_TRAYS = 18;
+var CP_EXT_COL_CAL_START = 22;
+var CP_EXT_COL_CAL_COUNT = 108;
+var CP_EXT_COLOR_SOWING = '#6aa84f';
+var CP_EXT_COLOR_PLANTING = '#fce5cd';
+var CP_EXT_COLOR_HARVEST = '#e06666';
+
+function cpExtParseSpreadsheetId_(urlOrId) {
+  if (!urlOrId) return '';
+  var s = String(urlOrId).trim();
+  var m = s.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (m) return m[1];
+  if (/^[a-zA-Z0-9-_]{20,}$/.test(s)) return s;
+  return '';
+}
+
+function cpExtOpenSpreadsheet_(urlOrId) {
+  var id = cpExtParseSpreadsheetId_(urlOrId) || CP_EXT_SHEET_DEFAULT_ID;
+  try {
+    return SpreadsheetApp.openById(id);
+  } catch (e) {
+    throw new Error('スプレッドシートを開けません（共有・権限を確認してください）: ' + e.message);
+  }
+}
+
+function cpExtParseNumericWithUnit_(val, unitPattern) {
+  if (val == null || val === '') return 0;
+  var s = String(val).replace(/,/g, '').trim();
+  var m = s.match(new RegExp('([\\d.]+)\\s*' + unitPattern, 'i'));
+  if (m) return parseFloat(m[1]) || 0;
+  var n = parseFloat(s);
+  return isFinite(n) ? n : 0;
+}
+
+function cpExtNormalizeHex_(color) {
+  if (!color) return '';
+  var c = String(color).trim().toLowerCase();
+  if (c === '#ffffff' || c === '#fff' || c === 'white') return '';
+  var rgb = c.match(/^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+  if (rgb) {
+    return '#' + [rgb[1], rgb[2], rgb[3]].map(function(x) {
+      var h = parseInt(x, 10).toString(16);
+      return h.length === 1 ? '0' + h : h;
+    }).join('');
+  }
+  if (c.charAt(0) !== '#') c = '#' + c;
+  if (c.length === 4) {
+    c = '#' + c[1] + c[1] + c[2] + c[2] + c[3] + c[3];
+  }
+  return c;
+}
+
+function cpExtRgbFromHex_(hex) {
+  hex = cpExtNormalizeHex_(hex);
+  if (!hex || hex.length < 7) return null;
+  return {
+    r: parseInt(hex.substr(1, 2), 16),
+    g: parseInt(hex.substr(3, 2), 16),
+    b: parseInt(hex.substr(5, 2), 16)
+  };
+}
+
+/** 外部シートのセル色・表示値から工程を判定（緑=播種, 黄=定植, 赤=収穫） */
+function cpExtClassifyCell_(bg, displayValue) {
+  var text = String(displayValue != null ? displayValue : '').trim();
+  if (/枚/.test(text)) return 'sowing';
+  if (/a\s*$/i.test(text)) return 'planting';
+  if (/kg|ＫＧ|収穫/i.test(text)) return 'harvesting';
+
+  var rgb = cpExtRgbFromHex_(bg);
+  if (!rgb) return null;
+  var r = rgb.r;
+  var g = rgb.g;
+  var b = rgb.b;
+  if (r > 240 && g > 240 && b > 240) return null;
+  if (Math.abs(r - g) < 15 && Math.abs(g - b) < 15 && r > 180) return null;
+  if (g > r + 25 && g > b + 25) return 'sowing';
+  if (r > g + 25 && r > b + 25) return 'harvesting';
+  if (r > 200 && g > 180 && b < 200) return 'planting';
+  if (r > 180 && g > 140 && b < 120) return 'planting';
+  return null;
+}
+
+function cpExtFlatToTask_(flatIndex) {
+  var mi = Math.floor(flatIndex / 6);
+  var pi = flatIndex % 6;
+  var months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
+  return {
+    monthIndex: mi,
+    periodIndex: pi,
+    month: months[mi] || ((mi % 12) + 1)
+  };
+}
+
+function cpExtIsRowEmpty_(aVal, rVal) {
+  return !String(aVal || '').trim() && (rVal == null || String(rVal).trim() === '');
+}
+
+function cpExtReadSheetPlans_(sheet) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < CP_EXT_DATA_START_ROW) return [];
+
+  var numRows = lastRow - CP_EXT_DATA_START_ROW + 1;
+  var aCol = sheet.getRange(CP_EXT_DATA_START_ROW, CP_EXT_COL_VARIETY, numRows, 1).getValues();
+  var rCol = sheet.getRange(CP_EXT_DATA_START_ROW, CP_EXT_COL_TRAYS, numRows, 1).getValues();
+  var calRange = sheet.getRange(CP_EXT_DATA_START_ROW, CP_EXT_COL_CAL_START, numRows, CP_EXT_COL_CAL_COUNT);
+  var calValues = calRange.getValues();
+  var calBgs = calRange.getBackgrounds();
+
+  var plans = [];
+  var emptyStreak = 0;
+  for (var i = 0; i < numRows; i++) {
+    var variety = String(aCol[i][0] || '').trim();
+    var rVal = rCol[i][0];
+    if (cpExtIsRowEmpty_(variety, rVal)) {
+      emptyStreak++;
+      if (emptyStreak >= 3) break;
+      continue;
+    }
+    emptyStreak = 0;
+    if (rVal == null || String(rVal).trim() === '') continue;
+
+    var trays = cpExtParseNumericWithUnit_(rVal, '枚?');
+    if (!(trays > 0)) {
+      var n = parseFloat(String(rVal).replace(/,/g, ''));
+      if (isFinite(n) && n > 0) trays = n;
+      else continue;
+    }
+
+    var tasks = { sowing: [], planting: [], harvesting: [] };
+    var areaA = 0;
+    var rowVals = calValues[i] || [];
+    var rowBgs = calBgs[i] || [];
+    for (var c = 0; c < CP_EXT_COL_CAL_COUNT; c++) {
+      var kind = cpExtClassifyCell_(rowBgs[c], rowVals[c]);
+      if (!kind) continue;
+      tasks[kind].push(cpExtFlatToTask_(c));
+      if (kind === 'planting') {
+        var a = cpExtParseNumericWithUnit_(rowVals[c], 'a');
+        if (a > 0) areaA = a;
+      }
+    }
+
+    plans.push({
+      variety: variety,
+      trays: trays,
+      areaA: areaA,
+      tasks: tasks
+    });
+  }
+  return plans;
+}
+
+function cpExtFindTemplateSheet_(ss, crop) {
+  var named = ss.getSheetByName(crop);
+  if (named) return named;
+  var sheets = ss.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    var sh = sheets[i];
+    if (sh.getName().indexOf('コピー') >= 0) continue;
+    if (sh.getLastRow() >= CP_EXT_DATA_START_ROW) return sh;
+  }
+  return sheets[0] || null;
+}
+
+function cpExtResolveExportSheetName_(ss, crop) {
+  if (!ss.getSheetByName(crop)) return crop;
+  var candidate = crop + 'コピー';
+  var n = 2;
+  while (ss.getSheetByName(candidate)) {
+    candidate = crop + 'コピー' + n;
+    n++;
+  }
+  return candidate;
+}
+
+function cpExtFormatCellValue_(kind, trays, areaA, harvestAmount) {
+  if (kind === 'sowing') return String(Math.round(trays)) + '枚';
+  if (kind === 'planting') {
+    var a = areaA > 0 ? areaA : 0;
+    return (a % 1 === 0 ? String(a) : String(Math.round(a * 10) / 10)) + 'a';
+  }
+  if (kind === 'harvesting' && harvestAmount > 0) return String(Math.round(harvestAmount));
+  return '';
+}
+
+function cpExtClearDataRows_(sheet, rowCount) {
+  if (!(rowCount > 0)) return;
+  sheet.getRange(CP_EXT_DATA_START_ROW, CP_EXT_COL_VARIETY, rowCount, 1).clearContent();
+  sheet.getRange(CP_EXT_DATA_START_ROW, CP_EXT_COL_TRAYS, rowCount, 1).clearContent();
+  var calRange = sheet.getRange(CP_EXT_DATA_START_ROW, CP_EXT_COL_CAL_START, rowCount, CP_EXT_COL_CAL_COUNT);
+  calRange.clearContent();
+  var blankBgs = [];
+  for (var i = 0; i < rowCount; i++) {
+    blankBgs.push(Array(CP_EXT_COL_CAL_COUNT).fill('#ffffff'));
+  }
+  calRange.setBackgrounds(blankBgs);
+}
+
+function cpExtWritePlansToSheet_(sheet, plans) {
+  var colors = {
+    sowing: CP_EXT_COLOR_SOWING,
+    planting: CP_EXT_COLOR_PLANTING,
+    harvesting: CP_EXT_COLOR_HARVEST
+  };
+  var clearRows = Math.max(plans.length, sheet.getLastRow() - CP_EXT_DATA_START_ROW + 1, 4);
+  cpExtClearDataRows_(sheet, clearRows);
+
+  for (var p = 0; p < plans.length; p++) {
+    var plan = plans[p];
+    var row = CP_EXT_DATA_START_ROW + p;
+    var variety = String(plan.variety || '').trim();
+    var trays = Number(plan.trays) || 0;
+    var areaA = Number(plan.areaA) || 0;
+    sheet.getRange(row, CP_EXT_COL_VARIETY).setValue(variety);
+    sheet.getRange(row, CP_EXT_COL_TRAYS).setValue(trays > 0 ? trays : '');
+
+    var tasks = plan.tasks || {};
+    ['sowing', 'planting', 'harvesting'].forEach(function(kind) {
+      var list = tasks[kind] || plan[kind] || [];
+      for (var ti = 0; ti < list.length; ti++) {
+        var flat = cpHarvestFlatIndex_(list[ti]);
+        if (flat < 0 || flat >= CP_EXT_COL_CAL_COUNT) continue;
+        var col = CP_EXT_COL_CAL_START + flat;
+        var cell = sheet.getRange(row, col);
+        var amt = (kind === 'harvesting' && list[ti] && list[ti].amount != null)
+          ? Number(list[ti].amount) || 0
+          : 0;
+        cell.setBackground(colors[kind]);
+        cell.setValue(cpExtFormatCellValue_(kind, trays, areaA, amt));
+      }
+    });
+  }
+}
+
+function importCultivationPlanFromExternalSheet(params) {
+  try {
+    params = params || {};
+    var crop = String(params.crop || '').trim();
+    if (!crop) return { success: false, message: '作物を指定してください' };
+
+    var ss = cpExtOpenSpreadsheet_(params.spreadsheetUrl || params.spreadsheetId);
+    var sheet = ss.getSheetByName(crop);
+    if (!sheet) {
+      var names = ss.getSheets().map(function(s) { return s.getName(); });
+      return {
+        success: false,
+        message: 'シート「' + crop + '」が見つかりません。利用可能なタブ: ' + names.slice(0, 10).join('、')
+      };
+    }
+
+    var plans = cpExtReadSheetPlans_(sheet);
+    return {
+      success: true,
+      crop: crop,
+      spreadsheetId: ss.getId(),
+      spreadsheetUrl: ss.getUrl(),
+      sheetName: sheet.getName(),
+      plans: plans,
+      count: plans.length
+    };
+  } catch (e) {
+    return { success: false, message: e.message || String(e) };
+  }
+}
+
+function exportCultivationPlanToExternalSheet(params) {
+  try {
+    params = params || {};
+    var crop = String(params.crop || '').trim();
+    if (!crop) return { success: false, message: '作物を指定してください' };
+    var plans = params.plans || [];
+    if (!plans.length) return { success: false, message: 'エクスポートする品種がありません' };
+
+    var ss = cpExtOpenSpreadsheet_(params.spreadsheetUrl || params.spreadsheetId);
+    var existingCropSheet = ss.getSheetByName(crop);
+    var targetName = cpExtResolveExportSheetName_(ss, crop);
+    var template = existingCropSheet || cpExtFindTemplateSheet_(ss, crop);
+    if (!template) return { success: false, message: 'テンプレートとなるシートがありません' };
+
+    var sheet;
+    if (targetName === crop) {
+      sheet = template.copyTo(ss);
+      sheet.setName(crop);
+    } else {
+      var src = existingCropSheet || template;
+      sheet = src.copyTo(ss);
+      sheet.setName(targetName);
+    }
+
+    try {
+      sheet.getRange(1, 1).setValue(crop);
+    } catch (e1) {}
+
+    cpExtWritePlansToSheet_(sheet, plans);
+    SpreadsheetApp.flush();
+
+    return {
+      success: true,
+      crop: crop,
+      spreadsheetId: ss.getId(),
+      spreadsheetUrl: ss.getUrl(),
+      sheetName: targetName,
+      count: plans.length,
+      message: 'シート「' + targetName + '」へエクスポートしました'
+    };
+  } catch (e) {
+    return { success: false, message: e.message || String(e) };
+  }
 }
