@@ -6987,13 +6987,16 @@ function createSignboardMarker(name, pos, icon, id) {
         }
       };
 
-      /** 作物フィルタをトグル（複数選択） */
+      /** 作物フィルタをトグル（複数選択）。共通と個別作物は排他的 */
       window.toggleWorkCropFilter = (cropKey) => {
         const key = window.normalizeWorkCropKey(cropKey);
         let keys = window.getSelectedWorkCropFilterKeys();
         if (keys.includes(key)) {
           keys = keys.filter(k => k !== key);
+        } else if (key === '__common__') {
+          keys = ['__common__'];
         } else {
+          keys = keys.filter(k => k !== '__common__');
           keys.push(key);
         }
         window.applyWorkCropFilterSelection_(keys);
@@ -7005,12 +7008,13 @@ function createSignboardMarker(name, pos, icon, id) {
         window.applyWorkCropFilterSelection_(key ? [key] : []);
       };
 
-      /** 選択に1件追加（作業チップ選択時など） */
+      /** 選択に1件追加（作業チップ選択時など）。個別作物追加時は共通を外す */
       window.ensureWorkCropFilterSelected = (cropKey) => {
         const key = window.normalizeWorkCropKey(cropKey);
         if (!key || key === '__common__') return;
-        const keys = window.getSelectedWorkCropFilterKeys();
+        let keys = window.getSelectedWorkCropFilterKeys();
         if (keys.includes(key)) return;
+        keys = keys.filter(k => k !== '__common__');
         keys.push(key);
         window.applyWorkCropFilterSelection_(keys, { skipSideEffects: true });
       };
@@ -23634,26 +23638,52 @@ function createSignboardMarker(name, pos, icon, id) {
       window.buildWorkFormLunchBreakHtml_ = () => {
         return `
           <div id="work_form_lunch_section" style="margin-top:4px; background:#FFF8E1; border:1px solid #FFE082; border-radius:12px; padding:14px;">
-            <div style="font-weight:bold; color:#E65100; font-size:15px; margin-bottom:6px;">🍱 昼休憩登録</div>
-            <div style="font-size:12px; color:#666; line-height:1.45; margin-bottom:10px;">昼休憩ならここで登録できます。作業を続ける場合は下の「次へ」へ進んでください。<br>登録すると次の作業開始は昼休憩終了になります。</div>
-            <div id="work_form_lunch_status" style="display:none; font-size:12px; font-weight:bold; color:#2E7D32; margin-bottom:8px;"></div>
-            <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
-              <div style="flex:1;">
-                <label style="font-size:11px; color:#888;">昼休憩 開始</label>
-                <input type="text" id="work_form_lunch_start" class="form-input app-time-input" readonly inputmode="none" data-autofill="1" value="" onclick="this.removeAttribute('data-autofill'); if(window.openAppTimePicker) openAppTimePicker('work_form_lunch_start', '昼休憩 開始')" style="margin:0; text-align:center; font-weight:bold; font-size:16px; border:1px solid #FFB74D;">
-              </div>
-              <span style="margin-top:14px; font-weight:bold; color:#E65100;">〜</span>
-              <div style="flex:1;">
-                <label style="font-size:11px; color:#888;">昼休憩 終了</label>
-                <input type="text" id="work_form_lunch_end" class="form-input app-time-input" readonly inputmode="none" value="" onclick="if(window.openAppTimePicker) openAppTimePicker('work_form_lunch_end', '昼休憩 終了')" style="margin:0; text-align:center; font-weight:bold; font-size:16px; border:1px solid #FFB74D;">
+            <div id="work_form_lunch_collapsed" style="display:none; cursor:pointer;" onclick="toggleWorkFormLunchSection_(true)" role="button" tabindex="0">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                <div style="font-weight:bold; color:#2E7D32; font-size:14px;">🍱 昼休憩 登録済</div>
+                <span id="work_form_lunch_collapsed_times" style="flex:1; text-align:center; font-size:13px; color:#555; font-weight:bold;"></span>
+                <span style="font-size:12px; color:#E65100; font-weight:bold; white-space:nowrap;">▶ 開く</span>
               </div>
             </div>
-            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;">
-              <button type="button" onclick="setWorkFormLunchStartFromWorkEnd_()" style="flex:1; min-width:120px; background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:8px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer;">開始＝前作業終了</button>
-              <button type="button" onclick="setWorkFormLunchEndToNow_()" style="flex:1; min-width:120px; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer;">終了＝いま</button>
+            <div id="work_form_lunch_body">
+              <div id="work_form_lunch_collapse_bar" style="display:none; margin-bottom:8px; text-align:right;">
+                <button type="button" onclick="toggleWorkFormLunchSection_(false)" style="background:#fff; color:#757575; border:1px solid #BDBDBD; border-radius:8px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer;">▼ 閉じる</button>
+              </div>
+              <div style="font-weight:bold; color:#E65100; font-size:15px; margin-bottom:6px;">🍱 昼休憩登録</div>
+              <div style="font-size:12px; color:#666; line-height:1.45; margin-bottom:10px;">昼休憩ならここで登録できます。作業を続ける場合は下の「次へ」へ進んでください。<br>登録すると次の作業開始は昼休憩終了になります。</div>
+              <div id="work_form_lunch_status" style="display:none; font-size:12px; font-weight:bold; color:#2E7D32; margin-bottom:8px;"></div>
+              <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+                <div style="flex:1;">
+                  <label style="font-size:11px; color:#888;">昼休憩 開始</label>
+                  <input type="text" id="work_form_lunch_start" class="form-input app-time-input" readonly inputmode="none" data-autofill="1" value="" onclick="this.removeAttribute('data-autofill'); if(window.openAppTimePicker) openAppTimePicker('work_form_lunch_start', '昼休憩 開始')" style="margin:0; text-align:center; font-weight:bold; font-size:16px; border:1px solid #FFB74D;">
+                </div>
+                <span style="margin-top:14px; font-weight:bold; color:#E65100;">〜</span>
+                <div style="flex:1;">
+                  <label style="font-size:11px; color:#888;">昼休憩 終了</label>
+                  <input type="text" id="work_form_lunch_end" class="form-input app-time-input" readonly inputmode="none" value="" onclick="if(window.openAppTimePicker) openAppTimePicker('work_form_lunch_end', '昼休憩 終了')" style="margin:0; text-align:center; font-weight:bold; font-size:16px; border:1px solid #FFB74D;">
+                </div>
+              </div>
+              <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;">
+                <button type="button" onclick="setWorkFormLunchStartFromWorkEnd_()" style="flex:1; min-width:120px; background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:8px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer;">開始＝前作業終了</button>
+                <button type="button" onclick="setWorkFormLunchEndToNow_()" style="flex:1; min-width:120px; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer;">終了＝いま</button>
+              </div>
+              <button type="button" id="work_form_lunch_btn" onclick="registerLunchBreakFromWorkForm_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:10px; padding:14px; font-size:16px; font-weight:bold; cursor:pointer; box-shadow:0 3px 8px rgba(255,152,0,0.35);">🍱 昼休憩を登録</button>
             </div>
-            <button type="button" id="work_form_lunch_btn" onclick="registerLunchBreakFromWorkForm_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:10px; padding:14px; font-size:16px; font-weight:bold; cursor:pointer; box-shadow:0 3px 8px rgba(255,152,0,0.35);">🍱 昼休憩を登録</button>
           </div>`;
+      };
+
+      window.toggleWorkFormLunchSection_ = (expand) => {
+        const ymd = window.normalizeDateStr
+          ? window.normalizeDateStr(document.getElementById('rec_work_date')?.value)
+          : String(document.getElementById('rec_work_date')?.value || '').trim();
+        if (expand) {
+          window._workFormLunchExpandedYmd = ymd || '';
+        } else {
+          window._workFormLunchExpandedYmd = '';
+        }
+        if (typeof window.refreshWorkFormLunchSection_ === 'function') {
+          window.refreshWorkFormLunchSection_();
+        }
       };
 
       window.getPreviousWorkEndForLunch_ = () => {
@@ -23719,6 +23749,28 @@ function createSignboardMarker(name, pos, icon, id) {
       window.refreshWorkFormLunchSection_ = () => {
         const box = document.getElementById('work_form_lunch_section');
         if (!box) return;
+        const ymd = window.normalizeDateStr
+          ? window.normalizeDateStr(document.getElementById('rec_work_date')?.value)
+          : String(document.getElementById('rec_work_date')?.value || '').trim();
+        const lunch = (typeof window.loadLunchBreak === 'function' && ymd) ? window.loadLunchBreak(ymd) : null;
+        const isRegistered = !!(lunch && lunch.registered && lunch.enabled && lunch.start && lunch.end);
+        const expanded = isRegistered && window._workFormLunchExpandedYmd === ymd;
+        const collapsed = document.getElementById('work_form_lunch_collapsed');
+        const body = document.getElementById('work_form_lunch_body');
+        const collapsedTimes = document.getElementById('work_form_lunch_collapsed_times');
+        const collapseBar = document.getElementById('work_form_lunch_collapse_bar');
+        if (isRegistered && !expanded) {
+          if (collapsed) collapsed.style.display = 'block';
+          if (collapsedTimes) collapsedTimes.textContent = `${lunch.start}〜${lunch.end}`;
+          if (body) body.style.display = 'none';
+          if (collapseBar) collapseBar.style.display = 'none';
+          box.style.padding = '12px 14px';
+          return;
+        }
+        if (collapsed) collapsed.style.display = 'none';
+        if (body) body.style.display = 'block';
+        box.style.padding = '14px';
+        if (collapseBar) collapseBar.style.display = isRegistered ? 'block' : 'none';
         const sug = window.suggestWorkFormLunchTimes_();
         const startEl = document.getElementById('work_form_lunch_start');
         const endEl = document.getElementById('work_form_lunch_end');
@@ -23727,13 +23779,9 @@ function createSignboardMarker(name, pos, icon, id) {
           startEl.setAttribute('data-autofill', '1');
         }
         if (endEl && !endEl.value) endEl.value = sug.end;
-        const ymd = window.normalizeDateStr
-          ? window.normalizeDateStr(document.getElementById('rec_work_date')?.value)
-          : String(document.getElementById('rec_work_date')?.value || '').trim();
-        const lunch = (typeof window.loadLunchBreak === 'function' && ymd) ? window.loadLunchBreak(ymd) : null;
         const st = document.getElementById('work_form_lunch_status');
         const btn = document.getElementById('work_form_lunch_btn');
-        if (lunch && lunch.registered && lunch.enabled && lunch.start && lunch.end) {
+        if (isRegistered) {
           if (st) {
             st.style.display = 'block';
             st.textContent = `登録済: ${lunch.start}〜${lunch.end}（上書きできます）`;
@@ -23741,8 +23789,9 @@ function createSignboardMarker(name, pos, icon, id) {
           if (btn) btn.textContent = '🍱 昼休憩を更新して登録';
           if (startEl && startEl.getAttribute('data-autofill') === '1') startEl.value = lunch.start;
           if (endEl && !endEl.value) endEl.value = lunch.end;
-        } else if (st) {
-          st.style.display = 'none';
+        } else {
+          if (st) st.style.display = 'none';
+          if (btn) btn.textContent = '🍱 昼休憩を登録';
         }
       };
 
@@ -23769,6 +23818,7 @@ function createSignboardMarker(name, pos, icon, id) {
             throw new Error('昼休憩の登録機能が読み込まれていません。ページを再読み込みしてください。');
           }
           window.registerLunchBreakDirect_(start, end, ymd);
+          window._workFormLunchExpandedYmd = '';
           window.refreshWorkFormLunchSection_();
           // 昼休憩終了を次作業の開始候補に反映
           const startEl = document.getElementById('rec_start_time');
@@ -30911,6 +30961,18 @@ window._psLastTasks = [];
 window._psLastNotes = [];
 window._psLastDayPlans = [];
 window._psGanttDrag = null;
+window._psGanttMode = 'time'; // time | days
+
+window.psHmToMins_ = function(hm) {
+  const m = String(hm || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+};
+
+window.psMinsToHm_ = function(mins) {
+  const m = ((Math.round(Number(mins)) % (24 * 60)) + (24 * 60)) % (24 * 60);
+  return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+};
 
 window.psYmd_ = function(d) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -30967,9 +31029,36 @@ window.setPersonalScheduleViewMode = function(mode) {
   window.renderPersonalSchedulePanelFromCache_();
 };
 
+window.setPsGanttMode_ = function(mode) {
+  window._psGanttMode = mode === 'days' ? 'days' : 'time';
+  window.renderPersonalSchedulePanelFromCache_();
+};
+
 window.shiftPersonalScheduleCalWeek_ = function(delta) {
   window._psCalWeekOffset = (Number(window._psCalWeekOffset) || 0) + (Number(delta) || 0);
   window.renderPersonalSchedulePanelFromCache_();
+};
+
+/** マイスケジュール：メモリ上の tasks / notes / dayPlans をキャッシュに同期 */
+window.syncPsCachedPanelData_ = function() {
+  if (!window._psCachedPanelData) window._psCachedPanelData = {};
+  window._psCachedPanelData.tasks = (window._psLastTasks || []).slice();
+  window._psCachedPanelData.notes = (window._psLastNotes || []).slice();
+  window._psCachedPanelData.dayPlans = (window._psLastDayPlans || []).slice();
+};
+
+/** マイスケジュール：キャッシュから即時再描画（reload:true でサーバー再取得） */
+window.refreshPersonalScheduleUi_ = function(opts) {
+  opts = opts || {};
+  if (opts.reload) {
+    return window.renderPersonalSchedulePanel();
+  }
+  window.syncPsCachedPanelData_();
+  if (window._psCachedPanelData && document.getElementById('personalScheduleContent')) {
+    window.renderPersonalSchedulePanelFromCache_();
+    return Promise.resolve();
+  }
+  return window.renderPersonalSchedulePanel();
 };
 
 window.renderPersonalSchedulePanelFromCache_ = function() {
@@ -31184,20 +31273,129 @@ window._psGanttAddType = 'dayplan';
 window._psGanttAddOptions = null;
 
 window.buildPersonalScheduleGanttHtml = function(tasks, dayPlans) {
+  const mode = window._psGanttMode === 'days' ? 'days' : 'time';
+  let html = '<div class="ps-gantt-toolbar">';
+  html += '<button type="button" class="ps-gantt-add-btn" onclick="openPsGanttAddModal_()">＋ 予定追加</button>';
+  html += '<div class="ps-gantt-mode-tabs">';
+  html += '<button type="button" class="ps-gantt-mode-tab' + (mode === 'time' ? ' active' : '') + '" onclick="setPsGanttMode_(\'time\')">⏰ 時間別</button>';
+  html += '<button type="button" class="ps-gantt-mode-tab' + (mode === 'days' ? ' active' : '') + '" onclick="setPsGanttMode_(\'days\')">📅 日数別</button>';
+  html += '</div>';
+  html += '</div>';
+  if (mode === 'days') {
+    html += window.buildPsGanttDaysHtml_(tasks);
+  } else {
+    html += window.buildPsGanttTimeHtml_(dayPlans);
+  }
+  return html;
+};
+
+window.buildPsGanttToolbarHint_ = function(text) {
+  return '<div style="font-size:10px;color:#888;margin-top:8px;padding:0 4px 4px;line-height:1.45;">' + text + '</div>';
+};
+
+window.buildPsGanttBarInnerHtml_ = function(opts) {
+  const esc = window._escapeHtmlPs;
+  const text = esc(opts.text || '');
+  const handles = opts.resizable === false ? '' :
+    '<span class="ps-gantt-resize ps-gantt-resize-l" onpointerdown="startPsGanttBarResize_(event,this,\'start\')"></span>'
+    + '<span class="ps-gantt-resize ps-gantt-resize-r" onpointerdown="startPsGanttBarResize_(event,this,\'end\')"></span>';
+  let attrs = ' class="ps-gantt-bar' + (opts.extraClass || '') + '"'
+    + ' style="left:' + opts.leftPct + '%;width:' + opts.widthPct + '%;background:' + esc(opts.color) + ';"'
+    + ' data-ps-scale="' + esc(opts.scale) + '"'
+    + ' data-ps-kind="' + esc(opts.kind) + '" data-ps-id="' + esc(opts.id) + '"'
+    + ' data-ps-start="' + esc(opts.startYmd) + '" data-ps-end="' + esc(opts.endYmd) + '"'
+    + ' title="' + esc(opts.title || opts.text || '') + '"'
+    + ' onpointerdown="startPsGanttBarDrag_(event, this)"';
+  if (opts.startTime) attrs += ' data-ps-start-time="' + esc(opts.startTime) + '"';
+  if (opts.endTime) attrs += ' data-ps-end-time="' + esc(opts.endTime) + '"';
+  return '<div' + attrs + '>' + handles + '<span class="ps-gantt-bar-text">' + text + '</span></div>';
+};
+
+window.buildPsGanttTimeHtml_ = function(dayPlans) {
+  const DAY_START = 6 * 60;
+  const DAY_END = 20 * 60;
+  const DAY_SPAN = DAY_END - DAY_START;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const items = (dayPlans || []).filter(function(it) { return it && it.date; });
+  let minT = today.getTime();
+  let maxT = today.getTime() + 6 * 86400000;
+  items.forEach(function(it) {
+    const t = window.psParseYmd_(it.date);
+    if (t) {
+      minT = Math.min(minT, t.getTime());
+      maxT = Math.max(maxT, t.getTime());
+    }
+  });
+  const winStart = new Date(minT);
+  winStart.setHours(0, 0, 0, 0);
+  const dayCount = Math.max(7, Math.ceil((maxT - minT) / 86400000) + 1);
+  const winStartYmd = window.psYmd_(winStart);
+  let html = '<div class="ps-gantt-root"><div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">';
+  html += '<table class="ps-gantt-table ps-gantt-table-time"><thead>';
+  html += '<tr><th class="ps-gantt-label">時間予定</th>';
+  for (let i = 0; i < dayCount; i++) {
+    const d = new Date(winStart);
+    d.setDate(winStart.getDate() + i);
+    const ymd = window.psYmd_(d);
+    const isToday = d.getTime() === today.getTime();
+    html += '<th class="ps-gantt-day-hdr' + (isToday ? ' is-today' : '') + '" onclick="openPsGanttAddModal_(\'' + ymd + '\')" title="この日に予定を追加">'
+      + (d.getMonth() + 1) + '/' + d.getDate() + '</th>';
+  }
+  html += '</tr><tr><th class="ps-gantt-label ps-gantt-time-sub">6〜20時</th>';
+  for (let i = 0; i < dayCount; i++) {
+    html += '<th class="ps-gantt-time-sub">時間軸</th>';
+  }
+  html += '</tr></thead><tbody>';
+  if (!items.length) {
+    html += '<tr><td colspan="' + (dayCount + 1) + '" style="padding:16px;text-align:center;color:#888;font-size:12px;">時間予定はまだありません。「＋ 予定追加」から登録できます。</td></tr>';
+  }
+  items.forEach(function(it) {
+    const planDate = window.psParseYmd_(it.date);
+    if (!planDate) return;
+    const startIdx = Math.round((planDate.getTime() - winStart.getTime()) / 86400000);
+    const stMinsRaw = window.psHmToMins_(it.startTime);
+    const stMins = stMinsRaw != null ? Math.max(DAY_START, Math.min(DAY_END - 15, stMinsRaw)) : (9 * 60);
+    let enMins = window.psHmToMins_(it.endTime);
+    if (enMins == null) enMins = stMins + (parseInt(it.durationMins, 10) || 30);
+    enMins = Math.max(stMins + 15, Math.min(DAY_END, enMins));
+    const startFrac = (stMins - DAY_START) / DAY_SPAN;
+    const durFrac = (enMins - stMins) / DAY_SPAN;
+    const dayWidth = 100 / dayCount;
+    const leftPct = (startIdx + startFrac) * dayWidth;
+    const widthPct = Math.max(durFrac * dayWidth, dayWidth * 0.06);
+    const barText = (it.startTime ? String(it.startTime) + ' ' : '') + String(it.workName || '予定');
+    const startYmd = window.psYmd_(planDate);
+    html += '<tr><td class="ps-gantt-label" title="' + window._escapeHtmlPs(barText) + '">'
+      + window._escapeHtmlPs(String(it.workName || '予定'))
+      + '<div style="font-size:10px;color:#888;">' + window._escapeHtmlPs(String(it.startTime || '') + (it.endTime ? '〜' + it.endTime : '')) + '</div></td>';
+    html += '<td colspan="' + dayCount + '" style="padding:0;"><div class="ps-gantt-track ps-gantt-track-time" data-ps-gantt-days="' + dayCount + '"'
+      + ' data-ps-win-start="' + winStartYmd + '" data-ps-scale="time" onclick="onPsGanttTrackClick_(event, this)">';
+    html += window.buildPsGanttBarInnerHtml_({
+      scale: 'time', kind: 'dayplan', id: it.id,
+      leftPct: leftPct, widthPct: widthPct,
+      color: window.psDayPlanColor_(it), text: barText,
+      startYmd: startYmd, endYmd: startYmd,
+      startTime: window.psMinsToHm_(stMins), endTime: window.psMinsToHm_(enMins),
+      title: barText, extraClass: ' is-dayplan'
+    });
+    html += '</div></td></tr>';
+  });
+  html += '<tr class="ps-gantt-add-row"><td class="ps-gantt-label" style="color:#1565c0;font-weight:bold;">＋ 追加</td>';
+  html += '<td colspan="' + dayCount + '" style="padding:0;"><div class="ps-gantt-track ps-gantt-track-add" data-ps-gantt-days="' + dayCount + '"'
+    + ' data-ps-win-start="' + winStartYmd + '" onclick="onPsGanttTrackClick_(event, this)">';
+  html += '<div class="ps-gantt-add-hint">日付をクリックして予定を追加</div></div></td></tr>';
+  html += '</tbody></table></div>';
+  html += window.buildPsGanttToolbarHint_('⏰ 時間別：ドラッグで日付移動、左右のつまみで時間を延長・短縮（6〜20時）');
+  html += '</div>';
+  return html;
+};
+
+window.buildPsGanttDaysHtml_ = function(tasks) {
   const parseYmd = function(s) { return window.psParseYmd_(s); };
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const rows = [];
-  (dayPlans || []).forEach(function(it) {
-    if (!it || !it.date) return;
-    const start = parseYmd(it.date);
-    if (!start) return;
-    rows.push({
-      kind: 'dayplan', id: it.id, label: String(it.workName || '予定'),
-      sub: String(it.startTime || ''), start: start, end: new Date(start.getTime()),
-      color: window.psDayPlanColor_(it)
-    });
-  });
   (tasks || []).forEach(function(t) {
     if (!t || (!t.deadline && !t.startDate && !t.createdAt)) return;
     let start = parseYmd(t.startDate) || parseYmd(String(t.createdAt || '').slice(0, 10)) || today;
@@ -31221,58 +31419,55 @@ window.buildPersonalScheduleGanttHtml = function(tasks, dayPlans) {
   const winStart = new Date(minT);
   winStart.setHours(0, 0, 0, 0);
   const winStartYmd = window.psYmd_(winStart);
-
-  let html = '<div class="ps-gantt-toolbar">';
-  html += '<button type="button" class="ps-gantt-add-btn" onclick="openPsGanttAddModal_()">＋ 予定追加</button>';
-  html += '<span class="ps-gantt-toolbar-hint">灰＋✓＝完了タスク。チェックで切替、バーをドラッグで日付移動</span>';
-  html += '</div>';
-  html += '<div class="ps-gantt-root"><div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">';
-  html += '<table class="ps-gantt-table"><thead><tr><th class="ps-gantt-label">予定</th>';
+  let html = '<div class="ps-gantt-root"><div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">';
+  html += '<table class="ps-gantt-table"><thead><tr><th class="ps-gantt-label">タスク</th>';
   for (let i = 0; i < dayCount; i++) {
     const d = new Date(winStart);
     d.setDate(winStart.getDate() + i);
     const ymd = window.psYmd_(d);
     const isToday = d.getTime() === today.getTime();
-    html += '<th class="ps-gantt-day-hdr' + (isToday ? ' is-today' : '') + '" onclick="openPsGanttAddModal_(\'' + ymd + '\')" title="この日に予定を追加">'
+    html += '<th class="ps-gantt-day-hdr' + (isToday ? ' is-today' : '') + '" onclick="openPsGanttAddModal_(\'' + ymd + '\')" title="この日にタスクを追加">'
       + (d.getMonth() + 1) + '/' + d.getDate() + '</th>';
   }
   html += '</tr></thead><tbody>';
+  if (!rows.length) {
+    html += '<tr><td colspan="' + (dayCount + 1) + '" style="padding:16px;text-align:center;color:#888;font-size:12px;">タスクはまだありません。リスト表示から追加するか、「＋ 予定追加」で登録できます。</td></tr>';
+  }
   rows.forEach(function(r) {
     const startIdx = Math.round((r.start.getTime() - winStart.getTime()) / 86400000);
     const endIdx = Math.round((r.end.getTime() - winStart.getTime()) / 86400000);
     const spanDays = Math.max(1, endIdx - startIdx + 1);
     const leftPct = (startIdx / dayCount) * 100;
     const widthPct = (spanDays / dayCount) * 100;
-    const barTextRaw = (r.sub ? r.sub + ' ' : '') + r.label;
-    const barText = (r.kind === 'task' && r.done ? '✓ ' : '') + barTextRaw;
+    const barTextRaw = r.label;
+    const barText = (r.done ? '✓ ' : '') + barTextRaw;
     const startYmd = window.psYmd_(r.start);
     const endYmd = window.psYmd_(r.end);
     const labelStyle = r.done ? ' style="opacity:0.65;text-decoration:line-through;"' : '';
-    const doneBadge = (r.kind === 'task' && r.done) ? '<span class="ps-gantt-badge is-done">完了</span> ' : '';
+    const doneBadge = r.done ? '<span class="ps-gantt-badge is-done">完了</span> ' : '';
     html += '<tr><td class="ps-gantt-label"' + labelStyle + ' title="' + window._escapeHtmlPs(barTextRaw) + '">';
-    if (r.kind === 'task') {
-      html += '<label class="ps-gantt-done-check" onclick="event.stopPropagation()" title="完了切替">'
-        + '<input type="checkbox"' + (r.done ? ' checked' : '') + ' onchange="togglePersonalScheduleDone(\'' + window._escapeHtmlPs(r.id) + '\', this.checked)">'
-        + '</label> ';
-    }
-    html += doneBadge + window._escapeHtmlPs(r.label)
-      + (r.sub ? '<div style="font-size:10px;color:#888;">' + window._escapeHtmlPs(r.sub) + '</div>' : '') + '</td>';
+    html += '<label class="ps-gantt-done-check" onclick="event.stopPropagation()" title="完了切替">'
+      + '<input type="checkbox"' + (r.done ? ' checked' : '') + ' onchange="togglePersonalScheduleDone(\'' + window._escapeHtmlPs(r.id) + '\', this.checked)">'
+      + '</label> ' + doneBadge + window._escapeHtmlPs(r.label) + '</td>';
     html += '<td colspan="' + dayCount + '" style="padding:0;"><div class="ps-gantt-track" data-ps-gantt-days="' + dayCount + '"'
-      + ' data-ps-win-start="' + winStartYmd + '" onclick="onPsGanttTrackClick_(event, this)">';
-    html += '<div class="ps-gantt-bar' + (r.kind === 'dayplan' ? ' is-dayplan' : '') + (r.done ? ' is-done' : '') + '" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + r.color + ';"'
-      + ' data-ps-kind="' + r.kind + '" data-ps-id="' + window._escapeHtmlPs(r.id) + '"'
-      + ' data-ps-start="' + startYmd + '" data-ps-end="' + endYmd + '"'
-      + ' title="' + window._escapeHtmlPs(barTextRaw + (r.done ? ' [完了]' : '')) + '"'
-      + ' onpointerdown="startPsGanttBarDrag_(event, this)">' + window._escapeHtmlPs(barText) + '</div>';
+      + ' data-ps-win-start="' + winStartYmd + '" data-ps-scale="days" onclick="onPsGanttTrackClick_(event, this)">';
+    html += window.buildPsGanttBarInnerHtml_({
+      scale: 'days', kind: 'task', id: r.id,
+      leftPct: leftPct, widthPct: widthPct,
+      color: r.color, text: barText,
+      startYmd: startYmd, endYmd: endYmd,
+      title: barTextRaw + (r.done ? ' [完了]' : ''),
+      extraClass: (r.done ? ' is-done' : '')
+    });
     html += '</div></td></tr>';
   });
   html += '<tr class="ps-gantt-add-row"><td class="ps-gantt-label" style="color:#1565c0;font-weight:bold;">＋ 追加</td>';
   html += '<td colspan="' + dayCount + '" style="padding:0;"><div class="ps-gantt-track ps-gantt-track-add" data-ps-gantt-days="' + dayCount + '"'
     + ' data-ps-win-start="' + winStartYmd + '" onclick="onPsGanttTrackClick_(event, this)">';
-  html += '<div class="ps-gantt-add-hint">日付をクリックして予定を追加</div>';
-  html += '</div></td></tr>';
+  html += '<div class="ps-gantt-add-hint">日付をクリックしてタスクを追加</div></div></td></tr>';
   html += '</tbody></table></div>';
-  html += '<div style="font-size:10px;color:#888;margin-top:8px;padding:0 4px 4px;">バーをドラッグすると日付を移動できます</div></div>';
+  html += window.buildPsGanttToolbarHint_('📅 日数別：ドラッグで期間移動、左右のつまみで開始日・期限を変更。灰＋✓＝完了タスク');
+  html += '</div>';
   return html;
 };
 
@@ -31309,7 +31504,7 @@ window.openPsGanttAddModal_ = async function(ymd) {
   if (!modal) return;
   const todayYmd = window.psYmd_(new Date());
   window._psGanttClickDate = ymd || window._psGanttClickDate || todayYmd;
-  window._psGanttAddType = 'dayplan';
+  const defaultType = window._psGanttMode === 'days' ? 'task' : 'dayplan';
   const dateEl = document.getElementById('psGanttAddDate');
   const startEl = document.getElementById('psGanttAddStartTime');
   const nameEl = document.getElementById('psGanttAddWorkName');
@@ -31324,7 +31519,7 @@ window.openPsGanttAddModal_ = async function(ymd) {
   if (nameEl) nameEl.value = '';
   if (taskTextEl) taskTextEl.value = '';
   if (resEl) resEl.textContent = '';
-  window.setPsGanttAddType_('dayplan');
+  window.setPsGanttAddType_(defaultType);
   modal.style.display = 'flex';
   if (!window._psGanttAddOptions) {
     try {
@@ -31419,18 +31614,28 @@ window.submitPsGanttAdd_ = async function() {
 };
 
 window.startPsGanttBarDrag_ = function(ev, bar) {
-  if (!bar) return;
+  if (!bar || (ev.target && ev.target.closest && ev.target.closest('.ps-gantt-resize'))) return;
   ev.preventDefault();
   ev.stopPropagation();
   try { bar.setPointerCapture(ev.pointerId); } catch (e) {}
   const track = bar.parentElement;
+  const origin = psGanttBarOriginDims_(bar);
   window._psGanttDrag = {
-    bar: bar, startX: ev.clientX,
+    mode: 'move',
+    bar: bar,
+    startX: ev.clientX,
     trackWidth: track ? track.getBoundingClientRect().width : 0,
     dayCount: Number(track && track.getAttribute('data-ps-gantt-days')) || 14,
+    scale: bar.getAttribute('data-ps-scale') || 'days',
     originStart: bar.getAttribute('data-ps-start'),
     originEnd: bar.getAttribute('data-ps-end'),
-    dayShift: 0, moved: false
+    originStartTime: bar.getAttribute('data-ps-start-time') || '',
+    originEndTime: bar.getAttribute('data-ps-end-time') || '',
+    originLeftPct: origin.leftPct,
+    originWidthPct: origin.widthPct,
+    dayShift: 0,
+    minuteShift: 0,
+    moved: false
   };
   bar.classList.add('is-dragging');
   bar.onpointermove = onPsGanttBarDragMove_;
@@ -31438,14 +31643,88 @@ window.startPsGanttBarDrag_ = function(ev, bar) {
   bar.onpointercancel = endPsGanttBarDrag_;
 };
 
+window.startPsGanttBarResize_ = function(ev, handle, edge) {
+  ev.preventDefault();
+  ev.stopPropagation();
+  const bar = handle && handle.parentElement;
+  if (!bar) return;
+  try { bar.setPointerCapture(ev.pointerId); } catch (e) {}
+  const track = bar.parentElement;
+  const origin = psGanttBarOriginDims_(bar);
+  window._psGanttDrag = {
+    mode: edge === 'start' ? 'resize-start' : 'resize-end',
+    bar: bar,
+    startX: ev.clientX,
+    trackWidth: track ? track.getBoundingClientRect().width : 0,
+    dayCount: Number(track && track.getAttribute('data-ps-gantt-days')) || 14,
+    scale: bar.getAttribute('data-ps-scale') || 'days',
+    originStart: bar.getAttribute('data-ps-start'),
+    originEnd: bar.getAttribute('data-ps-end'),
+    originStartTime: bar.getAttribute('data-ps-start-time') || '',
+    originEndTime: bar.getAttribute('data-ps-end-time') || '',
+    originLeftPct: origin.leftPct,
+    originWidthPct: origin.widthPct,
+    dayShift: 0,
+    minuteShift: 0,
+    moved: false
+  };
+  bar.classList.add('is-dragging');
+  bar.onpointermove = onPsGanttBarDragMove_;
+  bar.onpointerup = endPsGanttBarDrag_;
+  bar.onpointercancel = endPsGanttBarDrag_;
+};
+
+function psGanttBarOriginDims_(bar) {
+  const leftMatch = String(bar.style.left || '').match(/^([\d.]+)%/);
+  const widthMatch = String(bar.style.width || '').match(/^([\d.]+)%/);
+  return {
+    leftPct: leftMatch ? parseFloat(leftMatch[1]) : 0,
+    widthPct: widthMatch ? parseFloat(widthMatch[1]) : 0
+  };
+}
+
 function onPsGanttBarDragMove_(ev) {
   const st = window._psGanttDrag;
   if (!st || !st.bar) return;
   const w = st.trackWidth || 1;
   const dx = ev.clientX - st.startX;
   if (Math.abs(dx) > 4) st.moved = true;
-  st.dayShift = Math.round((dx / w) * st.dayCount);
-  st.bar.style.transform = 'translateX(' + (st.dayShift * (w / st.dayCount)) + 'px)';
+  const pctPerDay = 100 / st.dayCount;
+  const minWidthPct = pctPerDay * (st.scale === 'time' ? 0.06 : 1);
+  if (st.scale === 'time') {
+    const dayW = w / st.dayCount;
+    const slotsPerDay = (20 - 6) * 4;
+    const slotW = dayW / slotsPerDay;
+    const slotShift = Math.round(dx / slotW);
+    st.minuteShift = slotShift * 15;
+    const deltaPct = (slotShift * slotW / w) * 100;
+    if (st.mode === 'move') {
+      st.dayShift = Math.round(dx / dayW);
+      st.bar.style.transform = 'translateX(' + (st.dayShift * dayW + slotShift * slotW) + 'px)';
+    } else if (st.mode === 'resize-start') {
+      st.bar.style.transform = '';
+      st.bar.style.left = (st.originLeftPct + deltaPct) + '%';
+      st.bar.style.width = Math.max(minWidthPct, st.originWidthPct - deltaPct) + '%';
+    } else if (st.mode === 'resize-end') {
+      st.bar.style.transform = '';
+      st.bar.style.left = st.originLeftPct + '%';
+      st.bar.style.width = Math.max(minWidthPct, st.originWidthPct + deltaPct) + '%';
+    }
+  } else {
+    st.dayShift = Math.round((dx / w) * st.dayCount);
+    const deltaPct = st.dayShift * pctPerDay;
+    if (st.mode === 'move') {
+      st.bar.style.transform = 'translateX(' + (st.dayShift * (w / st.dayCount)) + 'px)';
+    } else if (st.mode === 'resize-start') {
+      st.bar.style.transform = '';
+      st.bar.style.left = (st.originLeftPct + deltaPct) + '%';
+      st.bar.style.width = Math.max(minWidthPct, st.originWidthPct - deltaPct) + '%';
+    } else if (st.mode === 'resize-end') {
+      st.bar.style.transform = '';
+      st.bar.style.left = st.originLeftPct + '%';
+      st.bar.style.width = Math.max(minWidthPct, st.originWidthPct + deltaPct) + '%';
+    }
+  }
 }
 
 async function endPsGanttBarDrag_(ev) {
@@ -31457,11 +31736,132 @@ async function endPsGanttBarDrag_(ev) {
     bar.onpointercancel = null;
     bar.classList.remove('is-dragging');
     bar.style.transform = '';
+    bar.style.width = '';
+    bar.style.left = '';
     try { bar.releasePointerCapture(ev.pointerId); } catch (e) {}
   }
   window._psGanttDrag = null;
-  if (!st || !st.moved || !st.dayShift) return;
-  await applyPsGanttBarShift_(st, st.dayShift);
+  if (!st || !st.moved) return;
+  if (st.mode === 'move') {
+    if (st.scale === 'time') {
+      if (st.dayShift || st.minuteShift) await applyPsGanttBarMoveTime_(st);
+    } else if (st.dayShift) {
+      await applyPsGanttBarShift_(st, st.dayShift);
+    }
+  } else {
+    if ((st.scale === 'time' && st.minuteShift) || (st.scale === 'days' && st.dayShift)) {
+      await applyPsGanttBarResize_(st);
+    }
+  }
+}
+
+async function applyPsGanttBarResize_(st) {
+  const kind = st.bar.getAttribute('data-ps-kind');
+  const id = st.bar.getAttribute('data-ps-id');
+  const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+  if (st.scale === 'time' && kind === 'dayplan') {
+    const DAY_START = 6 * 60;
+    const DAY_END = 20 * 60;
+    let stMins = window.psHmToMins_(st.originStartTime) || (9 * 60);
+    let enMins = window.psHmToMins_(st.originEndTime) || (stMins + 30);
+    const shift = st.minuteShift || 0;
+    if (st.mode === 'resize-start') {
+      stMins = Math.max(DAY_START, Math.min(enMins - 15, stMins + shift));
+    } else {
+      enMins = Math.min(DAY_END, Math.max(stMins + 15, enMins + shift));
+    }
+    const newStartTime = window.psMinsToHm_(stMins);
+    const newEndTime = window.psMinsToHm_(enMins);
+    const durationMins = enMins - stMins;
+    (window._psLastDayPlans || []).forEach(function(it) {
+      if (it && String(it.id) === String(id)) {
+        it.startTime = newStartTime;
+        it.endTime = newEndTime;
+        it.durationMins = durationMins;
+      }
+    });
+    if (typeof window.saveDayPlanItemsCache_ === 'function') {
+      window.saveDayPlanItemsCache_(window._psLastDayPlans);
+    }
+    window.refreshPersonalScheduleUi_();
+    try {
+      await callGAS('dayPlan_update', {
+        id: id,
+        startTime: newStartTime,
+        endTime: newEndTime,
+        durationMins: durationMins,
+        userName: userName
+      });
+    } catch (e) {
+      if (typeof customAlert === 'function') customAlert('時間の更新に失敗しました');
+      await window.refreshPersonalScheduleUi_({ reload: true });
+    }
+    return;
+  }
+  if (st.scale === 'days' && kind === 'task') {
+    let newStart = st.originStart;
+    let newEnd = st.originEnd;
+    if (st.mode === 'resize-start') {
+      newStart = window.psAddDaysYmd_(st.originStart, st.dayShift);
+      if (window.psParseYmd_(newStart) > window.psParseYmd_(newEnd)) newStart = newEnd;
+    } else {
+      newEnd = window.psAddDaysYmd_(st.originEnd, st.dayShift);
+      if (window.psParseYmd_(newEnd) < window.psParseYmd_(newStart)) newEnd = newStart;
+    }
+    (window._psLastTasks || []).forEach(function(it) {
+      if (it && String(it.id) === String(id)) {
+        it.startDate = newStart;
+        it.deadline = newEnd;
+      }
+    });
+    window.refreshPersonalScheduleUi_();
+    try {
+      await callGAS('updatePersonalScheduleItem', { id: id, startDate: newStart, deadline: newEnd });
+    } catch (e) {
+      if (typeof customAlert === 'function') customAlert('期間の更新に失敗しました');
+      await window.refreshPersonalScheduleUi_({ reload: true });
+    }
+  }
+}
+
+async function applyPsGanttBarMoveTime_(st) {
+  const id = st.bar.getAttribute('data-ps-id');
+  const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+  const DAY_START = 6 * 60;
+  const DAY_END = 20 * 60;
+  let newDate = window.psAddDaysYmd_(st.originStart, st.dayShift || 0);
+  let stMins = (window.psHmToMins_(st.originStartTime) || (9 * 60)) + (st.minuteShift || 0);
+  let enMins = (window.psHmToMins_(st.originEndTime) || (stMins + 30)) + (st.minuteShift || 0);
+  const dur = Math.max(15, enMins - stMins);
+  stMins = Math.max(DAY_START, Math.min(DAY_END - dur, stMins));
+  enMins = stMins + dur;
+  const newStartTime = window.psMinsToHm_(stMins);
+  const newEndTime = window.psMinsToHm_(enMins);
+  (window._psLastDayPlans || []).forEach(function(it) {
+    if (it && String(it.id) === String(id)) {
+      it.date = newDate;
+      it.startTime = newStartTime;
+      it.endTime = newEndTime;
+      it.durationMins = dur;
+    }
+  });
+  if (typeof window.saveDayPlanItemsCache_ === 'function') {
+    window.saveDayPlanItemsCache_(window._psLastDayPlans);
+  }
+  window.refreshPersonalScheduleUi_();
+  try {
+    await callGAS('dayPlan_update', {
+      id: id,
+      date: newDate,
+      startTime: newStartTime,
+      endTime: newEndTime,
+      durationMins: dur,
+      userName: userName
+    });
+  } catch (e) {
+    if (typeof customAlert === 'function') customAlert('予定の移動に失敗しました');
+    await window.refreshPersonalScheduleUi_({ reload: true });
+  }
 }
 
 async function applyPsGanttBarShift_(st, dayShift) {
@@ -31471,27 +31871,31 @@ async function applyPsGanttBarShift_(st, dayShift) {
   const dur = Math.round((window.psParseYmd_(st.originEnd).getTime() - window.psParseYmd_(st.originStart).getTime()) / 86400000);
   const newEnd = window.psAddDaysYmd_(newStart, Math.max(0, dur));
   const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+
+  if (kind === 'dayplan') {
+    (window._psLastDayPlans || []).forEach(function(it) {
+      if (it && String(it.id) === String(id)) it.date = newStart;
+    });
+  } else if (kind === 'task') {
+    (window._psLastTasks || []).forEach(function(it) {
+      if (it && String(it.id) === String(id)) { it.startDate = newStart; it.deadline = newEnd; }
+    });
+  }
+  if (kind === 'dayplan' && typeof window.saveDayPlanItemsCache_ === 'function') {
+    window.saveDayPlanItemsCache_(window._psLastDayPlans);
+  }
+  window.refreshPersonalScheduleUi_();
+
   try {
     if (kind === 'dayplan') {
-      (window._psLastDayPlans || []).forEach(function(it) {
-        if (it && String(it.id) === String(id)) it.date = newStart;
-      });
       await callGAS('dayPlan_update', { id: id, date: newStart, userName: userName });
     } else if (kind === 'task') {
-      (window._psLastTasks || []).forEach(function(it) {
-        if (it && String(it.id) === String(id)) { it.startDate = newStart; it.deadline = newEnd; }
-      });
       await callGAS('updatePersonalScheduleItem', { id: id, startDate: newStart, deadline: newEnd });
     }
-    if (window._psCachedPanelData) {
-      window._psCachedPanelData.tasks = window._psLastTasks.slice();
-      window._psCachedPanelData.dayPlans = window._psLastDayPlans.slice();
-    }
-    window.renderPersonalSchedulePanelFromCache_();
   } catch (e) {
     if (typeof customAlert === 'function') customAlert('日付の更新に失敗しました');
     else alert('日付の更新に失敗しました');
-    await window.renderPersonalSchedulePanel();
+    await window.refreshPersonalScheduleUi_({ reload: true });
   }
 }
 
@@ -31764,23 +32168,22 @@ window.addPersonalScheduleItem = async function(category) {
 };
 
 window.updatePersonalScheduleDates = async function(id, field, value) {
+  const sid = String(id);
+  const prev = (window._psLastTasks || []).find(function(it) { return it && String(it.id) === sid; });
+  const prevVal = prev ? prev[field] : '';
+  (window._psLastTasks || []).forEach(function(it) {
+    if (it && String(it.id) === sid) it[field] = value || '';
+  });
+  window.refreshPersonalScheduleUi_();
   try {
     const payload = { id: id };
     payload[field] = value || '';
     await callGAS('updatePersonalScheduleItem', payload);
-    (window._psLastTasks || []).forEach(function(it) {
-      if (it && String(it.id) === String(id)) it[field] = value || '';
-    });
-    if (window._psCachedPanelData) {
-      window._psCachedPanelData.tasks = window._psLastTasks.slice();
-      window.renderPersonalSchedulePanelFromCache_();
-    } else if (window._psViewMode === 'gantt') {
-      await window.renderPersonalSchedulePanel();
-    }
   } catch (e) {
+    if (prev) prev[field] = prevVal;
+    window.refreshPersonalScheduleUi_();
     if (typeof customAlert === 'function') customAlert('日付の更新に失敗しました');
     else alert('日付の更新に失敗しました');
-    await window.renderPersonalSchedulePanel();
   }
 };
 
@@ -31804,30 +32207,29 @@ window.movePersonalScheduleItem = async function(category, index, delta) {
       category: cat,
       orderedIds: ordered
     });
-    await window.renderPersonalSchedulePanel();
+    window.refreshPersonalScheduleUi_();
   } catch (e) {
     if (typeof customAlert === 'function') customAlert('並び替えに失敗しました');
     else alert('並び替えに失敗しました');
-    await window.renderPersonalSchedulePanel();
+    await window.refreshPersonalScheduleUi_({ reload: true });
   }
 };
 
 window.togglePersonalScheduleDone = async function(id, done) {
+  const sid = String(id);
+  const prev = (window._psLastTasks || []).find(function(it) { return it && String(it.id) === sid; });
+  const prevDone = prev ? !!prev.done : false;
+  (window._psLastTasks || []).forEach(function(it) {
+    if (it && String(it.id) === sid) it.done = !!done;
+  });
+  window.refreshPersonalScheduleUi_();
   try {
     await callGAS('updatePersonalScheduleItem', { id: id, done: !!done });
-    (window._psLastTasks || []).forEach(function(it) {
-      if (it && String(it.id) === String(id)) it.done = !!done;
-    });
-    if (window._psCachedPanelData) {
-      window._psCachedPanelData.tasks = window._psLastTasks.slice();
-      window.renderPersonalSchedulePanelFromCache_();
-    } else {
-      await window.renderPersonalSchedulePanel();
-    }
   } catch (e) {
+    if (prev) prev.done = prevDone;
+    window.refreshPersonalScheduleUi_();
     if (typeof customAlert === 'function') customAlert('更新に失敗しました');
     else alert('更新に失敗しました');
-    await window.renderPersonalSchedulePanel();
   }
 };
 
@@ -31836,10 +32238,18 @@ window.deletePersonalScheduleItem = async function(id) {
     ? await customConfirm('この項目を削除しますか？')
     : confirm('この項目を削除しますか？');
   if (!ok) return;
+  const sid = String(id);
+  const removedTasks = (window._psLastTasks || []).filter(function(it) { return it && String(it.id) === sid; });
+  const removedNotes = (window._psLastNotes || []).filter(function(it) { return it && String(it.id) === sid; });
   try {
     await callGAS('deletePersonalScheduleItem', { id: id });
-    await window.renderPersonalSchedulePanel();
+    window._psLastTasks = (window._psLastTasks || []).filter(function(it) { return !it || String(it.id) !== sid; });
+    window._psLastNotes = (window._psLastNotes || []).filter(function(it) { return !it || String(it.id) !== sid; });
+    await window.refreshPersonalScheduleUi_();
   } catch (e) {
+    if (removedTasks.length) window._psLastTasks = (window._psLastTasks || []).concat(removedTasks);
+    if (removedNotes.length) window._psLastNotes = (window._psLastNotes || []).concat(removedNotes);
+    window.refreshPersonalScheduleUi_();
     if (typeof customAlert === 'function') customAlert('削除に失敗しました');
     else alert('削除に失敗しました');
   }
