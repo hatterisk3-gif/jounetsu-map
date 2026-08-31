@@ -4956,6 +4956,9 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.renderNextWorkPredictions === 'function') {
           window.renderNextWorkPredictions();
         }
+        if (typeof window.refreshWorkFormLunchSection_ === 'function') {
+          window.refreshWorkFormLunchSection_();
+        }
       };
 
       const FIELD_WORK_CATEGORIES_ = ['栽培', '生産'];
@@ -4993,6 +4996,13 @@ function createSignboardMarker(name, pos, icon, id) {
         return FIELD_WORK_CATEGORIES_.indexOf(c) >= 0;
       };
 
+      /** 整備・修理カテゴリか（保全/整備・保全・整備 等） */
+      window.isMaintenanceCategory_ = (cat) => {
+        const c = String(cat || '').trim();
+        if (!c || c === 'すべて') return false;
+        return c === '保全/整備' || c.includes('整備') || c.includes('保全') || c.includes('修理');
+      };
+
       /** 作業記録フォームで圃場選択欄が出るカテゴリか */
       window.categoryHasFieldRecordSection_ = (cat) => {
         const c = String(cat || '').trim();
@@ -5006,41 +5016,52 @@ function createSignboardMarker(name, pos, icon, id) {
         return window.getWorkMasterCategoryOrEmpty_(w);
       };
 
-      /** 次の作業登録の候補に載せる作業か（圃場記録欄のないカテゴリは除外） */
+      /** 次の作業登録の候補に載せる作業か */
       window.isAfterSaveEligibleWork_ = (workName, category) => {
         const wName = String(workName || '').trim();
         if (!wName || wName.indexOf('休憩') >= 0) return false;
-        const cat = String(category || '').trim();
-        if (cat && cat !== 'すべて') {
-          return window.categoryHasFieldRecordSection_(cat);
-        }
         const wObj = (typeof pdlWorkMaster !== 'undefined' ? pdlWorkMaster : [])
           .find(w => w && String(w.name || '').trim() === wName);
         const wCat = window.getWorkMasterCategory_(wObj);
-        return wCat ? window.categoryHasFieldRecordSection_(wCat) : false;
+        if (wCat && typeof window.isValidWorkCategory_ === 'function' && !window.isValidWorkCategory_(wCat)) {
+          return false;
+        }
+        return true;
       };
 
-      /** 次の作業登録で場所（圃場）選択ステップが必要か（カテゴリに「圃場」があるときだけ） */
+      /** 次の作業登録で場所（圃場）選択ステップが必要か（圃場カテゴリ・整備カテゴリ） */
       window.afterSaveWorkNeedsFieldPlace_ = (workName, category) => {
         const cat = String(category || '').trim();
         const wName = String(workName || '').trim();
         if (wName.includes('休憩')) return false;
         if (cat && cat !== 'すべて') {
-          return typeof window.isFieldCategory === 'function' && window.isFieldCategory(cat);
+          if (typeof window.isFieldCategory === 'function' && window.isFieldCategory(cat)) return true;
+          if (typeof window.isMaintenanceCategory_ === 'function' && window.isMaintenanceCategory_(cat)) return true;
+          return false;
         }
         const wObj = (typeof pdlWorkMaster !== 'undefined' ? pdlWorkMaster : [])
           .find(w => w && String(w.name || '').trim() === wName);
         const wCat = window.getWorkMasterCategory_(wObj);
-        return typeof window.isFieldCategory === 'function' && window.isFieldCategory(wCat);
+        if (typeof window.isFieldCategory === 'function' && window.isFieldCategory(wCat)) return true;
+        if (typeof window.isMaintenanceCategory_ === 'function' && window.isMaintenanceCategory_(wCat)) return true;
+        if (typeof window.isMaintenanceRelatedWork === 'function' && window.isMaintenanceRelatedWork(wName)) return true;
+        return false;
       };
 
       window.getAfterSaveCategoryOptions_ = () => {
         const all = ['すべて'];
-        (typeof window.getValidWorkCategories_ === 'function' ? window.getValidWorkCategories_() : []).forEach(c => {
-          const name = String(c || '').trim();
-          if (name) all.push(name);
+        const seen = new Set(['すべて']);
+        const push = (name) => {
+          const n = String(name || '').trim();
+          if (!n || seen.has(n)) return;
+          seen.add(n);
+          all.push(n);
+        };
+        (typeof window.getValidWorkCategories_ === 'function' ? window.getValidWorkCategories_() : []).forEach(push);
+        (typeof pdlWorkCategories !== 'undefined' ? pdlWorkCategories : []).forEach(c => {
+          push(typeof c === 'string' ? c : (c && c.name));
         });
-        return all.filter(cat => cat === 'すべて' || window.categoryHasFieldRecordSection_(cat));
+        return all;
       };
 
       window.refreshFieldTargetUI = () => {
@@ -5063,6 +5084,15 @@ function createSignboardMarker(name, pos, icon, id) {
 
         const show = !isRest && (isFieldCat || isMaint || hasFieldSelected);
         box.style.display = show ? 'block' : 'none';
+
+        const optionalHint = document.getElementById('field_target_optional_hint');
+        if (optionalHint) {
+          const maintOnly = isMaint && !isFieldCat;
+          optionalHint.style.display = maintOnly ? 'block' : 'none';
+          if (maintOnly) {
+            optionalHint.textContent = '圃場の選択は任意です。機械だけの整備・修理ならスキップして、詳細画面で機械を選んでください（圃場か機械のどちらかは必須）。';
+          }
+        }
 
         if (typeof window.updateSelectedPolysDisplay === 'function') window.updateSelectedPolysDisplay();
         if (typeof window.refreshSurroundingFieldWarning_ === 'function') window.refreshSurroundingFieldWarning_();
@@ -5123,6 +5153,16 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!wName || typeof pdlWorkMaster === 'undefined') return '';
         const wObj = pdlWorkMaster.find(w => String(w.name || '').trim() === wName);
         return wObj ? window.getWorkMasterCategoryOrEmpty_(wObj) : '';
+      };
+
+      /** 整備・修理文脈で圃場か機械のどちらかが必須か */
+      window.workRecordNeedsMachineOrField_ = () => {
+        const wName = (document.getElementById('rec_work_name')?.value || '').trim();
+        if (!wName || wName.includes('休憩')) return false;
+        const catEl = document.getElementById('rec_work_category');
+        const cat = catEl ? String(catEl.value || '').trim() : '';
+        if (typeof window.isMaintenanceCategory_ === 'function' && window.isMaintenanceCategory_(cat)) return true;
+        return typeof window.isMaintenanceRelatedWork === 'function' && window.isMaintenanceRelatedWork(wName);
       };
 
       /** カテゴリに「圃場」が含まれる作業だけ圃場必須（事務・保全などは任意） */
@@ -17086,6 +17126,7 @@ function createSignboardMarker(name, pos, icon, id) {
             <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; gap:8px; flex-wrap:wrap;">
               <div style="min-width:140px; flex:1;">
                 <label class="form-label" style="margin:0; color:#1B5E20; font-size:15px; display:flex; align-items:center; gap:4px;">📍 ${opts.title} ${placeHelp}</label>
+                <div id="field_target_optional_hint" style="display:none; font-size:11px; color:#E65100; margin-top:4px; line-height:1.4; font-weight:normal;"></div>
               </div>
               <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
                 ${lastFieldBtn}
@@ -19742,8 +19783,12 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window._afterSaveDraftCategory === 'undefined') {
           window._afterSaveDraftCategory = saved.category || 'すべて';
         }
-        if (typeof window.categoryHasFieldRecordSection_ === 'function'
-          && !window.categoryHasFieldRecordSection_(window._afterSaveDraftCategory)) {
+        const afterSaveCats = (typeof window.getAfterSaveCategoryOptions_ === 'function')
+          ? window.getAfterSaveCategoryOptions_()
+          : ['すべて'];
+        if (window._afterSaveDraftCategory
+          && window._afterSaveDraftCategory !== 'すべて'
+          && afterSaveCats.indexOf(window._afterSaveDraftCategory) < 0) {
           window._afterSaveDraftCategory = 'すべて';
         }
         if (typeof window._afterSaveDraftCrop === 'undefined') {
@@ -19763,7 +19808,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const selectedName = String(window._afterSaveDraftWorkName || '');
         const selectedCrop = String(window._afterSaveDraftCrop || '');
 
-        // --- 1. カテゴリ一覧・チップの生成（圃場記録欄のないカテゴリは除外） ---
+        // --- 1. カテゴリ一覧・チップの生成 ---
         const allCategories = (typeof window.getAfterSaveCategoryOptions_ === 'function')
           ? window.getAfterSaveCategoryOptions_()
           : ['すべて'];
@@ -19885,8 +19930,8 @@ function createSignboardMarker(name, pos, icon, id) {
               <div style="background:#FFF8E1; padding:8px 10px; font-size:13px; font-weight:bold; color:#E65100;">📁🌱🚜 カテゴリ・作物・作業名</div>
               <div style="padding:10px; background:#E8EAF6; border-bottom:1px solid #C5CAE9;">
                 <div style="font-size:12px; font-weight:bold; color:#1565C0; margin-bottom:6px;">📁 カテゴリ</div>
-                <div style="font-size:11px; color:#666; margin-bottom:8px; line-height:1.4;">圃場を記録する作業のみ表示しています。</div>
-                <div style="display:flex; flex-wrap:wrap; gap:8px;">${categoryChips || '<span style="font-size:12px;color:#888;">圃場記録のあるカテゴリがありません</span>'}</div>
+                <div style="font-size:11px; color:#666; margin-bottom:8px; line-height:1.4;">カテゴリを選ぶと作業名を絞り込めます。</div>
+                <div style="display:flex; flex-wrap:wrap; gap:8px;">${categoryChips || '<span style="font-size:12px;color:#888;">カテゴリがありません</span>'}</div>
               </div>
               <div style="padding:10px; background:#E8F5E9; border-bottom:1px solid #C8E6C9;">
                 <div style="font-size:12px; font-weight:bold; color:#2E7D32; margin-bottom:6px;">🌱 作物</div>
@@ -20061,8 +20106,12 @@ function createSignboardMarker(name, pos, icon, id) {
       async function submitRecord() {
         // 紐づけ先の解決（カテゴリに「圃場」があるときだけ圃場必須）
         const catVal = document.getElementById('rec_work_category')?.value || '';
-        // カテゴリに「圃場」が含まれない場合は圃場ポリゴンを紐付けない（看板は維持）
-        if (currentRecordType === 'work' && typeof window.isFieldCategory === 'function' && !window.isFieldCategory(catVal)) {
+        const wNameEarly = (document.getElementById('rec_work_name')?.value || '').trim();
+        const keepFieldPolys = (typeof window.isFieldCategory === 'function' && window.isFieldCategory(catVal))
+          || (typeof window.isMaintenanceCategory_ === 'function' && window.isMaintenanceCategory_(catVal))
+          || (typeof window.isMaintenanceRelatedWork === 'function' && window.isMaintenanceRelatedWork(wNameEarly));
+        // 圃場・整備カテゴリ以外は圃場ポリゴンを紐付けない（看板は維持）
+        if (currentRecordType === 'work' && !keepFieldPolys) {
           selectedPolyIds = (selectedPolyIds || []).filter(id => {
             const poly = loadedPolygons && loadedPolygons[id];
             return !!(poly && poly.isMarker);
@@ -20313,11 +20362,24 @@ function createSignboardMarker(name, pos, icon, id) {
               data.installedPumps = installedPumps;
             }
 
-           if ((typeof window.isMaintenanceRelatedWork === 'function'
+           const isMaintContext = (typeof window.isMaintenanceRelatedWork === 'function'
                ? window.isMaintenanceRelatedWork(wName)
-               : ((wName.includes("整備") || wName.includes("修理")) && !wName.includes("圃場")))
-               && document.getElementById('maintenance_section')
-               && document.getElementById('maintenance_section').style.display !== 'none') {
+               : ((wName.includes("整備") || wName.includes("修理")) && !wName.includes("圃場")));
+           const maintSectionVisible = document.getElementById('maintenance_section')
+             && document.getElementById('maintenance_section').style.display !== 'none';
+           if (typeof window.workRecordNeedsMachineOrField_ === 'function' && window.workRecordNeedsMachineOrField_()) {
+               const hasFieldPoly = targetIds.some(id => {
+                 const poly = loadedPolygons && loadedPolygons[id];
+                 return !!(poly && !poly.isMarker);
+               });
+               const hasMachine = !!(document.getElementById('m_tool')?.value || '').trim();
+               if (!hasFieldPoly && !hasMachine) {
+                 customAlert('整備・修理の記録では、圃場または機械のどちらか一方を選んでください。');
+                 if (btn) { btn.disabled = false; btn.innerText = isEditBtn ? "更新する" : "保存する"; }
+                 return;
+               }
+           }
+           if (isMaintContext && maintSectionVisible) {
                const tId = document.getElementById('m_tool')?.value || "";
                const toolObj = (typeof window.findMaintenanceTargetById_ === 'function')
                  ? window.findMaintenanceTargetById_(tId)
@@ -23587,20 +23649,39 @@ function createSignboardMarker(name, pos, icon, id) {
               </div>
             </div>
             <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;">
-              <button type="button" onclick="setWorkFormLunchStartFromWorkEnd_()" style="flex:1; min-width:120px; background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:8px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer;">開始＝作業終了</button>
+              <button type="button" onclick="setWorkFormLunchStartFromWorkEnd_()" style="flex:1; min-width:120px; background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:8px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer;">開始＝前作業終了</button>
               <button type="button" onclick="setWorkFormLunchEndToNow_()" style="flex:1; min-width:120px; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer;">終了＝いま</button>
             </div>
             <button type="button" id="work_form_lunch_btn" onclick="registerLunchBreakFromWorkForm_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:10px; padding:14px; font-size:16px; font-weight:bold; cursor:pointer; box-shadow:0 3px 8px rgba(255,152,0,0.35);">🍱 昼休憩を登録</button>
           </div>`;
       };
 
+      window.getPreviousWorkEndForLunch_ = () => {
+        const ymd = window.normalizeDateStr
+          ? window.normalizeDateStr(document.getElementById('rec_work_date')?.value)
+          : String(document.getElementById('rec_work_date')?.value || '').trim();
+        if (!ymd) return '';
+        if (typeof window.getLatestEndInfoForDate === 'function') {
+          const info = window.getLatestEndInfoForDate(ymd);
+          if (info && info.end) return info.end;
+        }
+        if (typeof window.getLatestEndTimeForDate === 'function') {
+          const end = window.getLatestEndTimeForDate(ymd);
+          if (end) return end;
+        }
+        if (typeof window.getCachedLatestWorkEnd === 'function') {
+          return window.getCachedLatestWorkEnd(ymd) || '';
+        }
+        return '';
+      };
+
       window.suggestWorkFormLunchTimes_ = () => {
-        const workEnd = window.normalizeTimeHm
-          ? (window.normalizeTimeHm(document.getElementById('rec_end_time')?.value) || '')
-          : String(document.getElementById('rec_end_time')?.value || '').trim();
+        const prevEnd = (typeof window.getPreviousWorkEndForLunch_ === 'function')
+          ? window.getPreviousWorkEndForLunch_()
+          : '';
         const now = new Date();
         const nowHm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-        const start = workEnd || '12:00';
+        const start = prevEnd || '12:00';
         const toM = (typeof window.timeHmToMinutes === 'function') ? window.timeHmToMinutes : () => null;
         const sm = toM(start);
         const nm = toM(nowHm);
@@ -25213,6 +25294,7 @@ window.setBulkWorkMemoPolyIds_ = (d, ids) => {
 window.buildBulkWorkMemoFieldHtml_ = (d, uid) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const ids = window.getBulkWorkMemoPolyIds_(d);
+  const isMaint = typeof window.bulkWorkMemoIsMaintenance_ === 'function' && window.bulkWorkMemoIsMaintenance_(d);
   const chips = ids.map(id => {
     const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
     const name = (p && p.name) ? p.name : id;
@@ -25221,9 +25303,10 @@ window.buildBulkWorkMemoFieldHtml_ = (d, uid) => {
   }).join('');
   const display = ids.length
     ? `<div style="display:flex; flex-wrap:wrap; margin-bottom:8px;">${chips}</div>`
-    : `<div style="font-size:11px; color:#E65100; background:#FFF8E1; border:1px dashed #FFCC80; border-radius:8px; padding:8px 10px; margin-bottom:8px; line-height:1.35;">🗺️ まだ圃場が選ばれていません。下のボタンからマップで選べます（複数可）</div>`;
+    : `<div style="font-size:11px; color:#E65100; background:#FFF8E1; border:1px dashed #FFCC80; border-radius:8px; padding:8px 10px; margin-bottom:8px; line-height:1.35;">🗺️ まだ圃場が選ばれていません。下のボタンからマップで選べます（複数可）${isMaint ? '。機械だけの整備なら圃場は省略可（機械か圃場のどちらかは必須）' : ''}</div>`;
+  const fieldLabel = isMaint ? '📍 圃場（任意・機械か圃場のどちらか必須）' : '📍 圃場（複数可）';
   return `<div class="bulk-field-box" style="margin:8px 0 0; background:#F1F8E9; border:2px solid #A5D6A7; border-radius:10px; padding:10px;">
-    <label style="font-size:11px; font-weight:bold; color:#1B5E20; margin-bottom:6px; display:block;">📍 圃場（複数可）</label>
+    <label style="font-size:11px; font-weight:bold; color:#1B5E20; margin-bottom:6px; display:block;">${fieldLabel}</label>
     <div id="bulk_field_display_${esc(uid)}">${display}</div>
     <button type="button" onclick="openBulkWorkMemoMapSelect_('${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:10px 14px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:none; background:#2E7D32; color:#fff; box-shadow:0 2px 4px rgba(46,125,50,0.28);">🗺️ マップから選択</button>
   </div>`;
@@ -25937,7 +26020,7 @@ window.buildBulkWorkMemoMaintenanceTargetHtml_ = (d, uid) => {
     ? (typeof window.buildBulkMaintTargetSelectedBadgeHtml_ === 'function'
       ? window.buildBulkMaintTargetSelectedBadgeHtml_(selectedTarget, d.maintenanceTool, d.maintenanceTargetKind || 'machine')
       : `<div style="margin-bottom:8px; font-size:12px; color:#E65100; font-weight:bold; background:#FFE0B2; padding:6px 10px; border-radius:6px; line-height:1.35;">整備対象: <b>${fmtLabel(selectedTarget || { name: d.maintenanceTool, kind: d.maintenanceTargetKind || 'machine' }, true)}</b></div>`)
-    : `<div style="margin-bottom:8px; font-size:11px; color:#666; background:#fff; padding:8px; border-radius:6px;">修理・点検した機械・道具・車両を選んでください（任意）</div>`;
+    : `<div style="margin-bottom:8px; font-size:11px; color:#666; background:#fff; padding:8px; border-radius:6px;">修理・点検した機械・道具・車両を選んでください（圃場か機械のどちらかは必須）</div>`;
   return `<div class="bulk-maint-target-box" data-bulk-uid="${esc(uid)}" style="margin:8px 0; background:#FFF3E0; border:2px solid #FFB74D; border-radius:10px; padding:10px;">
     <div style="font-size:11px; font-weight:bold; color:#E65100; margin-bottom:6px;">🔧 整備・修理・点検</div>
     ${badge}
@@ -27676,6 +27759,17 @@ window.validateBulkWorkMemoDraftsForSave_ = () => {
       if (typeof customAlert === 'function') customAlert(`${i + 1}件目の開始または終了時間を入力してください。`);
       return null;
     }
+    if (window.bulkWorkMemoIsMaintenance_(d)) {
+      const hasField = window.getBulkWorkMemoPolyIds_(d).some(id => {
+        const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
+        return !!(p && !p.isMarker);
+      });
+      const hasMachine = !!String(d.maintenanceToolId || '').trim();
+      if (!hasField && !hasMachine) {
+        if (typeof customAlert === 'function') customAlert(`${i + 1}件目：整備・修理では圃場または機械のどちらか一方を選んでください。`);
+        return null;
+      }
+    }
   }
   return drafts;
 };
@@ -28244,6 +28338,17 @@ window.validateSingleBulkWorkMemoDraft_ = (d, label) => {
   if (!d.startTime && !d.endTime) {
     if (typeof customAlert === 'function') customAlert(`${tag}：開始または終了時間を入力してください。`);
     return false;
+  }
+  if (window.bulkWorkMemoIsMaintenance_(d)) {
+    const hasField = window.getBulkWorkMemoPolyIds_(d).some(id => {
+      const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
+      return !!(p && !p.isMarker);
+    });
+    const hasMachine = !!String(d.maintenanceToolId || '').trim();
+    if (!hasField && !hasMachine) {
+      if (typeof customAlert === 'function') customAlert(`${tag}：整備・修理では圃場または機械のどちらか一方を選んでください。`);
+      return false;
+    }
   }
   return true;
 };
