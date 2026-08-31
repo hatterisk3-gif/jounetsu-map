@@ -2203,23 +2203,36 @@
     openForm();
   };
 
-  window.applyPrefillWorkTime = function () {
+  window.getGapPrefillData = function () {
     try {
       const raw = sessionStorage.getItem(PREFILL_KEY);
-      if (!raw) return false;
-      const d = JSON.parse(raw);
-      sessionStorage.removeItem(PREFILL_KEY);
-      if (d.workDate && document.getElementById('rec_work_date')) {
-        document.getElementById('rec_work_date').value = d.workDate;
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (e) {
+      return null;
+    }
+  };
+
+  window.applyPrefillWorkTime = function () {
+    try {
+      const d = window.getGapPrefillData();
+      if (!d) return false;
+      const startEl = document.getElementById('rec_start_time');
+      const endEl = document.getElementById('rec_end_time');
+      if (!startEl || !endEl) return false;
+      if (d.workDate) {
+        const dateEl = document.getElementById('rec_work_date');
+        if (dateEl) dateEl.value = d.workDate;
       }
-      if (d.start && document.getElementById('rec_start_time')) {
-        document.getElementById('rec_start_time').value = d.start;
+      if (d.start) {
+        startEl.value = d.start;
+        startEl.removeAttribute('data-autofill');
+        startEl.setAttribute('data-start-source', 'gapPrefill');
       }
-      if (d.end && document.getElementById('rec_end_time')) {
-        document.getElementById('rec_end_time').value = d.end;
-      }
+      if (d.end) endEl.value = d.end;
       const sync = document.getElementById('sync_clockin');
       if (sync) sync.checked = false;
+      sessionStorage.removeItem(PREFILL_KEY);
       if (typeof window.calcTotalTime === 'function') window.calcTotalTime();
       if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
       return true;

@@ -4892,6 +4892,13 @@ function createSignboardMarker(name, pos, icon, id) {
               if (restPair || isRest) {
                 return hints;
               }
+              // 不足時間プリフィル中は開始・終了を上書きしない
+              if (el.getAttribute('data-start-source') === 'gapPrefill') {
+                return hints;
+              }
+              if (typeof window.getGapPrefillData === 'function' && window.getGapPrefillData()) {
+                return hints;
+              }
               // ローカル解決とサーバーヒントの遅い方を採用（古い地図キャッシュで午前に巻き戻さない）
               const resolved = (typeof window.resolveDefaultStartTime === 'function')
                 ? window.resolveDefaultStartTime(ymd)
@@ -15188,8 +15195,8 @@ function createSignboardMarker(name, pos, icon, id) {
                 </div>
                 <div style="display:flex; gap:8px;">
                   <div style="flex:1;">
-                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">④ 番号</label>
-                    <input type="text" id="mie_vehicle_number" class="form-input" placeholder="管理番号" style="width:100%; box-sizing:border-box;">
+                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">④ ナンバープレート番号</label>
+                    <input type="text" id="mie_vehicle_number" class="form-input" placeholder="例: 熊谷500あ1234" style="width:100%; box-sizing:border-box;">
                   </div>
                   <div style="flex:1;">
                     <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">⑤ 型式名</label>
@@ -15330,6 +15337,12 @@ function createSignboardMarker(name, pos, icon, id) {
         const vehExtra = document.getElementById('mie_vehicle_extra');
         if (macExtra) macExtra.style.display = (st.kind === 'machine') ? 'flex' : 'none';
         if (vehExtra) vehExtra.style.display = (st.kind === 'vehicle') ? 'flex' : 'none';
+        const nameEl = document.getElementById('mie_name');
+        if (nameEl) {
+          nameEl.placeholder = (st.kind === 'vehicle')
+            ? '例: 社内呼称（任意・④未入力時に表示名として使用）'
+            : '例: トラクター MZ655 / 軽トラ 熊谷500あ1234';
+        }
       };
 
       window.renderMachineItemEditorQueue = () => {
@@ -15357,32 +15370,64 @@ function createSignboardMarker(name, pos, icon, id) {
         }).join('');
       };
 
+      window.readMachineItemEditorFormFields_ = (kind) => {
+        kind = kind === 'vehicle' ? 'vehicle' : 'machine';
+        const labelName = (document.getElementById('mie_name')?.value || '').trim();
+        if (kind === 'vehicle') {
+          const mainCategory = (document.getElementById('mie_vehicle_main') || {}).value || '自動車';
+          const vehicleType = (document.getElementById('mie_vehicle_type') || {}).value || '';
+          const plateNumber = ((document.getElementById('mie_vehicle_number') || {}).value || '').trim();
+          const model = ((document.getElementById('mie_vehicle_model') || {}).value || '').trim();
+          const status = (document.getElementById('mie_status') || {}).value || '使用可能';
+          return {
+            kind: 'vehicle',
+            name: plateNumber || labelName,
+            labelName: labelName,
+            plateNumber: plateNumber || labelName,
+            type: vehicleType,
+            group: mainCategory,
+            mainCategory: mainCategory,
+            machineNumber: plateNumber,
+            vehicleNumber: plateNumber,
+            model: model,
+            driveType: mainCategory === '作業機' ? '作業車両' : '移動車両',
+            status: status
+          };
+        }
+        const group = (document.getElementById('mie_group') || {}).value || '圃場';
+        return {
+          kind: 'machine',
+          name: labelName,
+          type: (document.getElementById('mie_type') || {}).value || '',
+          group: group,
+          mainCategory: group,
+          machineNumber: (document.getElementById('mie_number') || {}).value || '',
+          fuel: (document.getElementById('mie_fuel') || {}).value || '',
+          model: (document.getElementById('mie_model') || {}).value || '',
+          status: (document.getElementById('mie_status') || {}).value || ''
+        };
+      };
+
       window.queueMachineItemFromEditor = () => {
         const st = window._machineItemEditorState || {};
-        const name = (document.getElementById('mie_name')?.value || '').trim();
+        const kind = st.kind === 'vehicle' ? 'vehicle' : 'machine';
+        const fields = window.readMachineItemEditorFormFields_(kind);
+        const name = fields.name;
         if (!name) {
-          if (typeof customAlert === 'function') customAlert('名称を入力してからリストに追加してください');
+          if (typeof customAlert === 'function') {
+            customAlert(kind === 'vehicle'
+              ? 'ナンバープレート番号（④）または名称を入力してからリストに追加してください'
+              : '名称を入力してからリストに追加してください');
+          }
           return;
         }
         if (!Array.isArray(st.pending)) st.pending = [];
-        const dup = st.pending.some(p => p.name === name && p.kind === (st.kind || 'machine'));
+        const dup = st.pending.some(p => p.name === name && p.kind === kind);
         if (dup) {
           if (typeof customAlert === 'function') customAlert('同じ名称がすでにリストにあります');
           return;
         }
-        st.pending.push({
-          kind: st.kind === 'vehicle' ? 'vehicle' : 'machine',
-          name: name,
-          photoBase64: st.photoBase64 || '',
-          type: (document.getElementById('mie_type') || {}).value || (document.getElementById('mie_vehicle_type') || {}).value || '',
-          group: (document.getElementById('mie_group') || {}).value || (document.getElementById('mie_vehicle_main') || {}).value || '',
-          mainCategory: (document.getElementById('mie_group') || {}).value || (document.getElementById('mie_vehicle_main') || {}).value || '',
-          machineNumber: (document.getElementById('mie_number') || {}).value || (document.getElementById('mie_vehicle_number') || {}).value || '',
-          fuel: (document.getElementById('mie_fuel') || {}).value || '',
-          model: (document.getElementById('mie_model') || {}).value || (document.getElementById('mie_vehicle_model') || {}).value || '',
-          driveType: (document.getElementById('mie_vehicle_main') || {}).value === '作業機' ? '作業車両' : '移動車両',
-          status: (document.getElementById('mie_status') || {}).value || ''
-        });
+        st.pending.push(Object.assign({ photoBase64: st.photoBase64 || '' }, fields));
         window._machineItemEditorState = st;
         const nameEl = document.getElementById('mie_name');
         if (nameEl) nameEl.value = '';
@@ -15491,7 +15536,9 @@ function createSignboardMarker(name, pos, icon, id) {
           if (document.getElementById('mie_model')) document.getElementById('mie_model').value = item.model || '';
           if (document.getElementById('mie_vehicle_main')) document.getElementById('mie_vehicle_main').value = normGroup || '自動車';
           if (document.getElementById('mie_vehicle_type')) document.getElementById('mie_vehicle_type').value = item.vehicleType || item.type || '';
-          if (document.getElementById('mie_vehicle_number')) document.getElementById('mie_vehicle_number').value = item.vehicleNumber || item.machineNumber || '';
+          if (document.getElementById('mie_vehicle_number')) {
+            document.getElementById('mie_vehicle_number').value = item.vehicleNumber || item.machineNumber || item.plateNumber || '';
+          }
           if (document.getElementById('mie_vehicle_model')) document.getElementById('mie_vehicle_model').value = item.model || '';
           if (document.getElementById('mie_status')) document.getElementById('mie_status').value = item.status || '使用可能';
         }
@@ -15566,51 +15613,51 @@ function createSignboardMarker(name, pos, icon, id) {
       window.persistOneMachineOrVehicle_ = async (entry) => {
         const st = window._machineItemEditorState || {};
         const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '管理者';
-        const name = String(entry.name || '').trim();
         const kind = entry.kind === 'vehicle' ? 'vehicle' : 'machine';
         const photoBase64 = entry.photoBase64 || '';
         if (kind === 'vehicle') {
           const rawId = (entry.mode === 'edit' && entry.itemId)
             ? String(entry.itemId).replace(/^veh:/, '')
             : ('veh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6));
-          const mainCategory = entry.mainCategory || entry.group || (document.getElementById('mie_vehicle_main') || {}).value || '自動車';
-          const vehicleType = entry.type || (document.getElementById('mie_vehicle_type') || {}).value || '';
-          const vehicleNumber = entry.machineNumber || (document.getElementById('mie_vehicle_number') || {}).value || '';
-          const model = entry.model || (document.getElementById('mie_vehicle_model') || {}).value || '';
-          const driveType = mainCategory === '作業機' ? '作業車両' : '移動車両';
-          const status = entry.status || (document.getElementById('mie_status') || {}).value || '使用可能';
+          const mainCategory = entry.mainCategory || entry.group || '自動車';
+          const vehicleType = entry.type || '';
+          const plateNumber = String(entry.plateNumber || entry.vehicleNumber || entry.machineNumber || entry.name || '').trim();
+          const model = entry.model || '';
+          const driveType = entry.driveType || (mainCategory === '作業機' ? '作業車両' : '移動車両');
+          const status = entry.status || '使用可能';
           const payload = {
             id: rawId,
-            plateNumber: name,
+            plateNumber: plateNumber,
             mainCategory: mainCategory,
             group: mainCategory,
             vehicleType: vehicleType,
             type: vehicleType,
-            vehicleNumber: vehicleNumber,
-            machineNumber: vehicleNumber,
+            vehicleNumber: plateNumber,
+            machineNumber: plateNumber,
             model: model,
             driveType: driveType,
             status: status
           };
           if (photoBase64) {
             payload.photoBase64 = photoBase64;
-            payload.photoFilename = name.replace(/\s+/g, '_') + '.jpg';
+            payload.photoFilename = plateNumber.replace(/\s+/g, '_') + '.jpg';
           }
           if (entry.clearPhoto && !photoBase64) payload.clearPhoto = true;
           const res = await safeCallGAS('vehicle_saveVehicle', payload);
           const photoUrl = (res && res.photo) || photoBase64 || (entry.clearPhoto ? '' : (entry.existingPhoto || ''));
           if (!Array.isArray(window.pdlMobileVehicles)) window.pdlMobileVehicles = [];
           const rec = {
-            id: rawId, plateNumber: name, driveType: driveType, status: status, photo: photoUrl,
+            id: rawId, plateNumber: plateNumber, driveType: driveType, status: status, photo: photoUrl,
             mainCategory: mainCategory, group: mainCategory, vehicleType: vehicleType, type: vehicleType,
-            vehicleNumber: vehicleNumber, machineNumber: vehicleNumber, model: model
+            vehicleNumber: plateNumber, machineNumber: plateNumber, model: model
           };
           const idx = window.pdlMobileVehicles.findIndex(v => String(v.id) === String(rawId));
           if (idx >= 0) window.pdlMobileVehicles[idx] = Object.assign({}, window.pdlMobileVehicles[idx], rec);
           else window.pdlMobileVehicles.push(rec);
-          return { kind: 'vehicle', rec: rec, id: rawId, optionId: window.getMobileVehicleOptionId_(rec), name: name };
+          return { kind: 'vehicle', rec: rec, id: rawId, optionId: window.getMobileVehicleOptionId_(rec), name: plateNumber };
         }
 
+        const name = String(entry.name || '').trim();
         let group = entry.group || (document.getElementById('mie_group') || {}).value || '圃場';
         if (window.MachineTaxonomy) group = MachineTaxonomy.normalizeMainCategory('machine', group);
         const fuel = entry.fuel != null ? entry.fuel : ((document.getElementById('mie_fuel') || {}).value || '');
@@ -15698,28 +15745,27 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.saveMachineItemEditorModal = async () => {
         const st = window._machineItemEditorState || {};
-        const name = (document.getElementById('mie_name')?.value || '').trim();
+        const kind = st.kind === 'vehicle' ? 'vehicle' : 'machine';
+        const currentFields = (typeof window.readMachineItemEditorFormFields_ === 'function')
+          ? window.readMachineItemEditorFormFields_(kind)
+          : { name: (document.getElementById('mie_name')?.value || '').trim(), kind: kind };
         try {
           if (st.mode === 'edit') {
-            if (!name) {
-              if (typeof customAlert === 'function') customAlert('名称を入力してください');
+            if (!currentFields.name) {
+              if (typeof customAlert === 'function') {
+                customAlert(kind === 'vehicle'
+                  ? 'ナンバープレート番号（④）または名称を入力してください'
+                  : '名称を入力してください');
+              }
               return;
             }
-            const result = await window.persistOneMachineOrVehicle_({
-              kind: st.kind,
-              name: name,
+            const result = await window.persistOneMachineOrVehicle_(Object.assign({
               photoBase64: st.photoBase64 || '',
               clearPhoto: st.clearPhoto,
               existingPhoto: st.existingPhoto || '',
               mode: 'edit',
-              itemId: st.itemId,
-              type: (document.getElementById('mie_type') || {}).value || '',
-              group: (document.getElementById('mie_group') || {}).value || '',
-              fuel: (document.getElementById('mie_fuel') || {}).value || '',
-              model: (document.getElementById('mie_model') || {}).value || '',
-              driveType: (document.getElementById('mie_drive_type') || {}).value || '',
-              status: (document.getElementById('mie_status') || {}).value || ''
-            });
+              itemId: st.itemId
+            }, currentFields));
             try {
               localStorage.removeItem('passionMapInitData');
               localStorage.removeItem('pMapAdminInitData');
@@ -15732,21 +15778,15 @@ function createSignboardMarker(name, pos, icon, id) {
           }
 
           const pending = Array.isArray(st.pending) ? st.pending.slice() : [];
-          if (name) {
-            pending.push({
-              kind: st.kind === 'vehicle' ? 'vehicle' : 'machine',
-              name: name,
-              photoBase64: st.photoBase64 || '',
-              type: (document.getElementById('mie_type') || {}).value || '',
-              group: (document.getElementById('mie_group') || {}).value || '',
-              fuel: (document.getElementById('mie_fuel') || {}).value || '',
-              model: (document.getElementById('mie_model') || {}).value || '',
-              driveType: (document.getElementById('mie_drive_type') || {}).value || '',
-              status: (document.getElementById('mie_status') || {}).value || ''
-            });
+          if (currentFields.name) {
+            pending.push(Object.assign({ photoBase64: st.photoBase64 || '' }, currentFields));
           }
           if (!pending.length) {
-            if (typeof customAlert === 'function') customAlert('名称を入力するか、リストに追加してから登録してください');
+            if (typeof customAlert === 'function') {
+              customAlert(kind === 'vehicle'
+                ? 'ナンバープレート番号（④）または名称を入力するか、リストに追加してから登録してください'
+                : '名称を入力するか、リストに追加してから登録してください');
+            }
             return;
           }
 
@@ -17157,14 +17197,22 @@ function createSignboardMarker(name, pos, icon, id) {
         
         const now = new Date(); const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const gapPrefill = (!isEdit && typeof window.getGapPrefillData === 'function')
+          ? window.getGapPrefillData()
+          : null;
         const resolvedStart = (typeof window.resolveDefaultStartTime === 'function')
           ? window.resolveDefaultStartTime(todayStr)
           : { start: '08:00', syncClockIn: true, isFallback: true };
-        const defaultStartTime = resolvedStart.start;
+        const defaultStartTime = (gapPrefill && gapPrefill.start) ? gapPrefill.start : resolvedStart.start;
+        const defaultEndTime = (gapPrefill && gapPrefill.end) ? gapPrefill.end : currentTimeStr;
+        const defaultWorkDate = (gapPrefill && gapPrefill.workDate) ? gapPrefill.workDate : todayStr;
+        const startAutofill = !gapPrefill && !isEdit && resolvedStart.isFallback;
+        const startSource = gapPrefill ? 'gapPrefill' : ((!isEdit && resolvedStart.source) ? String(resolvedStart.source).replace(/"/g, '') : '');
+        const syncClockInChecked = !gapPrefill && !isEdit && resolvedStart.syncClockIn;
         // 裏読み込みが遅い場合に備え、フォーム表示と同時に軽量APIを叩く
         if (typeof window.prefetchWorkTimeHints === 'function') {
           window.prefetchWorkTimeHints(todayStr, {
-            applyToForm: !isEdit,
+            applyToForm: !isEdit && !gapPrefill,
             onlyIfAutofill: false
           });
         }
@@ -17188,10 +17236,10 @@ function createSignboardMarker(name, pos, icon, id) {
           <div class="form-grid" style="margin-bottom:6px;">
             <div>
               <label class="form-label" style="font-size:11px; margin-bottom:2px;">▶️ 開始</label>
-              <input type="text" id="rec_start_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:2px;" value="${isEdit ? '' : defaultStartTime}" ${(!isEdit && resolvedStart.isFallback) ? 'data-autofill="1"' : ''} data-start-source="${(!isEdit && resolvedStart.source) ? String(resolvedStart.source).replace(/"/g, '') : ''}" onclick="this.removeAttribute('data-autofill'); openAppTimePicker('rec_start_time', '開始時間')" onchange="this.removeAttribute('data-autofill'); if(typeof updateStartTimeHintUI==='function') updateStartTimeHintUI(); calcTotalTime()">
+              <input type="text" id="rec_start_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:2px;" value="${isEdit ? '' : defaultStartTime}" ${startAutofill ? 'data-autofill="1"' : ''} data-start-source="${startSource}" onclick="this.removeAttribute('data-autofill'); openAppTimePicker('rec_start_time', '開始時間')" onchange="this.removeAttribute('data-autofill'); if(typeof updateStartTimeHintUI==='function') updateStartTimeHintUI(); calcTotalTime()">
               <div style="display:flex; align-items:center; gap:3px;">
                 <label style="font-size:10px; color:#555; display:flex; align-items:center; gap:3px;">
-                  <input type="checkbox" id="sync_clockin" ${(!isEdit && resolvedStart.syncClockIn) ? 'checked' : ''} onchange="if(typeof window.handleSyncClockInCheckboxChange==='function') window.handleSyncClockInCheckboxChange(this)">出勤時間と同期
+                  <input type="checkbox" id="sync_clockin" ${syncClockInChecked ? 'checked' : ''} onchange="if(typeof window.handleSyncClockInCheckboxChange==='function') window.handleSyncClockInCheckboxChange(this)">出勤時間と同期
                 </label>
                 <button type="button" class="info-icon-btn" style="width:16px; height:16px; font-size:9px;" onclick="toggleInfoPopover(event, 'popover-sync-info')">ℹ️</button>
               </div>
@@ -17206,7 +17254,7 @@ function createSignboardMarker(name, pos, icon, id) {
                 <label class="form-label" style="font-size:11px; margin:0;">⏹️ 終了</label>
                 <button type="button" onclick="setEndTimeToNow()" style="background:#E3F2FD; color:#1565C0; border:none; padding:1px 5px; border-radius:3px; font-size:10px; font-weight:bold; cursor:pointer;">⏱️ 今にセット</button>
               </div>
-              <input type="text" id="rec_end_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:0;" value="${isEdit ? '' : currentTimeStr}" onclick="openAppTimePicker('rec_end_time', '終了時間')" onchange="calcTotalTime()">
+              <input type="text" id="rec_end_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:0;" value="${isEdit ? '' : defaultEndTime}" onclick="openAppTimePicker('rec_end_time', '終了時間')" onchange="calcTotalTime()">
             </div>
           </div>
           <div id="rec_start_time_hint" style="display:none; font-size:11px; margin-bottom:0; font-weight:bold;"></div>
@@ -17280,7 +17328,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
                   <div id="work_record_step_time" class="work-rec-step-panel">
                   <label class="form-label">📅 作業日</label>
-                  <input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : todayStr}" onchange="if(typeof handleWorkDateChange==='function') handleWorkDateChange();" style="margin-bottom:12px;">
+                  <input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : defaultWorkDate}" onchange="if(typeof handleWorkDateChange==='function') handleWorkDateChange();" style="margin-bottom:12px;">
                   ${timeUI}
                   ${!isEdit && (window.buildWorkFormLunchBreakHtml_ ? window.buildWorkFormLunchBreakHtml_() : '')}
                   </div>
@@ -17488,7 +17536,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const btnColor = currentRecordType === 'work' ? '#FF9800' : '#4CAF50';
         document.getElementById('rightPanelFooter').innerHTML = `<div style="display:flex;gap:10px;"><button id="submitBtn" onclick="submitRecord()" style="background:${btnColor};color:white;width:100%;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">${isEdit?'更新する':'保存する'}</button><button onclick="saveTempRecord()" style="background:#00BCD4;color:white;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:13px;white-space:nowrap;width:auto;flex-shrink:0;">一時保存</button><button onclick="actionManagePhotos('${activePolyId}', '${currentRecordType}')" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">戻る</button></div>`;
         // 開始時間ヒント・「前の終了に合わせる」ボタンを反映 ＆ 新規登録時は終了時間を開いたリアルタイム時間にセット
-        if (!isEdit) {
+        if (!isEdit && !gapPrefill) {
           const freshNow = new Date();
           const freshEndTime = `${String(freshNow.getHours()).padStart(2, '0')}:${String(freshNow.getMinutes()).padStart(2, '0')}`;
           const endEl = document.getElementById('rec_end_time');

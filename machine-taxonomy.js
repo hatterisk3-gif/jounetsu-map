@@ -3,7 +3,7 @@
  * L1: 農機(A) / 車両(B) — 登録画面・マスタで分離
  * L2: メインカテゴリ — 農機=圃場/出荷、車両=自動車/作業機
  * L3: 機械名 / 車両名 — type
- * L4: 番号 — machineNumber / vehicleNumber
+ * L4: 番号 — 農機=管理番号 / 車両=ナンバープレート番号
  * L5: 型式名 — model
  */
 (function (global) {
