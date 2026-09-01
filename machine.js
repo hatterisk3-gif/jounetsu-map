@@ -45,6 +45,7 @@ let pendingMachinePhotoBase64 = "";
 let machineGroups = ["圃場", "出荷"];
 let machineTypes = ["トラクター", "ドローン"];
 let vehicleTypes = ["軽トラ", "軽バン", "軽四", "普通車"];
+let hitchTypes = ["3点リンク 0形", "3点リンク 1形", "3点リンク 2形", "オートヒッチ Aタイプ", "オートヒッチ Bタイプ", "スライドヒッチ"];
 let machineCategories = machineTypes; // 互換エイリアス（機械名＝旧機種）
 let maintenanceRecords = [];
 let fuelRecords = [];
@@ -187,6 +188,9 @@ async function loadAllData() {
             }
             if (Array.isArray(initData.pdl.vehicleTypes) && initData.pdl.vehicleTypes.length) {
                 vehicleTypes = initData.pdl.vehicleTypes.slice();
+            }
+            if (Array.isArray(initData.pdl.hitchTypes) && initData.pdl.hitchTypes.length) {
+                hitchTypes = initData.pdl.hitchTypes.slice();
             }
         }
         if (initData && initData.polygons) {
@@ -551,6 +555,7 @@ function openMachineRegisterModal(editId) {
         : machineGroups;
     updateSelectOptions('regMachineGroup', machineGroups);
     updateSelectOptions('regMachineType', machineTypes);
+    updateHitchSelectOptions('regHitch');
     
     // 機械カテゴリ変更時の自動ナンバリングイベント
     const typeSel = document.getElementById('regMachineType');
@@ -601,6 +606,7 @@ function openMachineRegisterModal(editId) {
         document.getElementById('regPurchaseDate').value = formatDateInputValue(existing.purchaseDate);
         document.getElementById('regModel').value = existing.model || existing.modelType || '';
         document.getElementById('regFuel').value = existing.fuel || existing.fuelType || '';
+        setHitchSelectValue('regHitch', existing.hitch || '');
         const photoUrl = getDriveDirectImageUrl(existing.photo);
         document.getElementById('photoPreview').innerHTML = photoUrl
             ? `<img src="${photoUrl}" style="max-width:100%; max-height:140px; border-radius:4px;">`
@@ -613,12 +619,55 @@ function openMachineRegisterModal(editId) {
         document.getElementById('regPurchaseDate').value = '';
         document.getElementById('regModel').value = '';
         document.getElementById('regFuel').value = '';
+        setHitchSelectValue('regHitch', '');
         document.getElementById('photoPreview').innerHTML = '';
         // 新規登録時は選択された機械カテゴリの（既存台数 + 1）を自動補完
         autoSetNextMachineNumber(true);
     }
     
     document.getElementById('modalMachineRegister').style.display = "flex";
+}
+
+/** ヒッチ規格プルダウン。マスタ未登録でも既存機械に入っている値は選べるようにする */
+function getHitchTypeList() {
+    const fromMachines = Object.values(machines || {}).map(m => String((m && m.hitch) || '').trim());
+    return Array.from(new Set((hitchTypes || []).concat(fromMachines).map(h => String(h || '').trim()).filter(Boolean)));
+}
+
+function updateHitchSelectOptions(selectId) {
+    const sel = document.getElementById(selectId);
+    if (!sel) return;
+    const keep = String(sel.value || '');
+    sel.innerHTML = '<option value="">ヒッチなし / 指定なし</option>' + getHitchTypeList().map(h =>
+        `<option value="${String(h).replace(/"/g, '&quot;')}">${String(h).replace(/</g, '&lt;')}</option>`
+    ).join('');
+    if (keep && Array.from(sel.options).some(o => o.value === keep)) sel.value = keep;
+}
+
+function setHitchSelectValue(selectId, value) {
+    const sel = document.getElementById(selectId);
+    if (!sel) return;
+    const v = String(value || '').trim();
+    if (v && !Array.from(sel.options).some(o => o.value === v)) {
+        sel.insertAdjacentHTML('beforeend', `<option value="${v.replace(/"/g, '&quot;')}">${v.replace(/</g, '&lt;')}</option>`);
+    }
+    sel.value = v;
+}
+
+async function removeSelectedHitchType() {
+    const sel = document.getElementById('regHitch');
+    const val = sel ? String(sel.value || '').trim() : '';
+    if (!val) { alert('削除するヒッチ規格を選択してください'); return; }
+    if (!confirm(`ヒッチ規格「${val}」を削除しますか？`)) return;
+    try {
+        const updated = await callGAS('manageMaster', { masterType: 'hitchType', manageAction: 'delete', value: val, userName: (typeof currentUser !== 'undefined' ? currentUser : '') });
+        if (Array.isArray(updated)) hitchTypes = updated;
+        else hitchTypes = hitchTypes.filter(h => h !== val);
+        updateHitchSelectOptions('regHitch');
+        sel.value = '';
+    } catch (e) {
+        alert(e.message || 'ヒッチ規格の削除に失敗しました');
+    }
 }
 
 function getWorkMasterOptionsHtml(selected) {
@@ -681,8 +730,14 @@ function updateSelectOptions(elementId, items) {
     sel.innerHTML = items.map(item => `<option value="${item}">${item}</option>`).join('');
 }
 
+const ADD_ITEM_PROMPTS = {
+    MachineGroup: "新しい機械グループ名を入力してください:",
+    MachineType: "新しい機械カテゴリ名を入力してください:",
+    HitchType: "新しいヒッチ規格名を入力してください（例：オートヒッチ Aタイプ、3点リンク 1形）:"
+};
+
 function addNewItem(type) {
-    let val = prompt(type === 'MachineGroup' ? "新しい機械グループ名を入力してください:" : (type === 'MachineType' ? "新しい機械カテゴリ名を入力してください:" : "新しい項目名を入力してください:"));
+    let val = prompt(ADD_ITEM_PROMPTS[type] || "新しい項目名を入力してください:");
     if (!val) return;
     val = val.trim();
     if (!val) return;
@@ -690,6 +745,27 @@ function addNewItem(type) {
         addMachineGroupToMaster(val);
     } else if (type === 'MachineType') {
         addMachineTypeToMaster(val);
+    } else if (type === 'HitchType') {
+        addHitchTypeToMaster(val);
+    }
+}
+
+async function addHitchTypeToMaster(val) {
+    if (getHitchTypeList().includes(val)) {
+        setHitchSelectValue('regHitch', val);
+        return;
+    }
+    try {
+        const updated = await callGAS('manageMaster', { masterType: 'hitchType', manageAction: 'add', value: val });
+        hitchTypes = Array.isArray(updated) && updated.length ? updated : [...hitchTypes, val];
+        updateHitchSelectOptions('regHitch');
+        setHitchSelectValue('regHitch', val);
+        showToast('ヒッチ規格を追加しました');
+    } catch (e) {
+        if (!hitchTypes.includes(val)) hitchTypes.push(val);
+        updateHitchSelectOptions('regHitch');
+        setHitchSelectValue('regHitch', val);
+        alert('ヒッチ規格マスタへの保存に失敗したため、この画面のみに追加しました: ' + e.message);
     }
 }
 
@@ -822,6 +898,7 @@ async function saveMachineRegistration() {
         model: model,
         type: typeName,
         fuel: document.getElementById('regFuel').value,
+        hitch: (document.getElementById('regHitch') || {}).value || '',
         workCategory: collectRegWorkCategoryValue(),
         signId: signId,
         signName: signName,

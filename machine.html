@@ -308,6 +308,15 @@
         </select>
       </div>
       <div class="form-group">
+        <label>🔗 ヒッチ規格</label>
+        <div style="display:flex; gap:5px;">
+          <select id="regHitch" style="flex:1;"></select>
+          <button onclick="addNewItem('HitchType')" style="padding:8px; border-radius:4px; border:1px solid #ccc;" title="ヒッチ規格を追加">➕</button>
+          <button onclick="removeSelectedHitchType()" style="padding:8px; border-radius:4px; border:1px solid #ccc; color:#c62828;" title="選択中を削除">➖</button>
+        </div>
+        <div style="font-size:11px; color:#888; margin-top:4px;">トラクターと作業機（アタッチメント）に同じ規格を設定すると、作業記録で連結候補として提案されます</div>
+      </div>
+      <div class="form-group">
         <label>写真登録</label>
         <div style="display:flex; gap:8px; margin-bottom:6px;">
           <label style="flex:1; background:#4CAF50; color:white; text-align:center; padding:10px 6px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow:0 2px 4px rgba(0,0,0,0.15); display:flex; align-items:center; justify-content:center; gap:4px;">

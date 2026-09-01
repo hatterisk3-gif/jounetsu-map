@@ -844,6 +844,9 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           window.pdlVehicleTypes = (data.pdl && Array.isArray(data.pdl.vehicleTypes) && data.pdl.vehicleTypes.length)
             ? data.pdl.vehicleTypes.slice()
             : (window.MachineTaxonomy ? MachineTaxonomy.DEFAULT_VEHICLE_TYPES.slice() : ['軽トラ', '軽バン']);
+          window.pdlHitchTypes = (data.pdl && Array.isArray(data.pdl.hitchTypes) && data.pdl.hitchTypes.length)
+            ? data.pdl.hitchTypes.slice()
+            : ['3点リンク 0形', '3点リンク 1形', '3点リンク 2形', 'オートヒッチ Aタイプ', 'オートヒッチ Bタイプ', 'スライドヒッチ'];
 
           for(let id in loadedPolygons) { 
               if(loadedPolygons[id].polygon) loadedPolygons[id].polygon.setMap(null); 
@@ -6794,20 +6797,25 @@ function createSignboardMarker(name, pos, icon, id) {
               ? `<button type="button" onclick="event.preventDefault(); event.stopPropagation(); openMachinePhotoEditorById('${String(id).replace(/'/g, "\\'")}')" style="background:transparent; border:none; color:#1565c0; font-size:11px; cursor:pointer; padding:0 2px;" title="登録内容を変更">✏️</button>`
               : '';
             const meta = [m._mainCategory, m._typeName, m._number].filter(Boolean).join('·');
+            const hitch = window.getMachineHitch_(m);
             return `
               <label style="display:inline-flex; align-items:center; gap:4px; padding:5px 10px; background:${isChecked ? '#FFE0B2' : '#FAFAFA'}; border:1px solid ${isChecked ? '#FF9800' : '#DDD'}; border-radius:16px; font-size:12px; cursor:pointer; font-weight:${isChecked ? 'bold' : 'normal'};">
                 <input type="checkbox" class="used-machine-check" value="${id.replace(/"/g, '&quot;')}" data-name="${name.replace(/"/g, '&quot;')}" ${isChecked ? 'checked' : ''} onchange="if(window.syncFieldMachineChipStyle) window.syncFieldMachineChipStyle(this)">
-                ${thumb} <span>${name.replace(/</g, '&lt;')}</span>${meta ? `<span style="font-size:10px;color:#888;">(${meta})</span>` : ''}${isDiesel ? ' <span style="font-size:10px; color:#C2185B; font-weight:bold;">⛽</span>' : ''} ${editBtn}
+                ${thumb} <span>${name.replace(/</g, '&lt;')}</span>${meta ? `<span style="font-size:10px;color:#888;">(${meta})</span>` : ''}${hitch ? ` <span style="font-size:10px; color:#4527A0;" title="ヒッチ規格">🔗${hitch.replace(/</g, '&lt;')}</span>` : ''}${isDiesel ? ' <span style="font-size:10px; color:#C2185B; font-weight:bold;">⛽</span>' : ''} ${editBtn}
               </label>
             `;
           }).join('');
 
           html += `</div>`;
+          html += `<div id="hitch_link_suggest" style="display:none; margin-top:8px; padding:8px; background:#F3E5F5; border:1px solid #D1C4E9; border-radius:8px;"></div>`;
         }
 
         section.innerHTML = html;
         if (typeof window.syncFieldMachineryFuelPairing_ === 'function') {
           setTimeout(() => { try { window.syncFieldMachineryFuelPairing_(); } catch (e) {} }, 0);
+        }
+        if (typeof window.refreshHitchLinkSuggestions_ === 'function') {
+          setTimeout(() => { try { window.refreshHitchLinkSuggestions_(); } catch (e) {} }, 0);
         }
       };
 
@@ -6834,11 +6842,131 @@ function createSignboardMarker(name, pos, icon, id) {
           label.style.fontWeight = isChecked ? 'bold' : 'normal';
         }
         if (typeof window.syncFieldMachineryFuelPairing_ === 'function') window.syncFieldMachineryFuelPairing_();
+        if (typeof window.refreshHitchLinkSuggestions_ === 'function') window.refreshHitchLinkSuggestions_();
       };
 
       window.isDieselFuelMachine_ = (m) => {
         if (!m) return false;
         return String(m.fuel || m.fuelType || '').includes('軽油');
+      };
+
+      // ==========================================
+      // 🔗 ヒッチ連結（トラクター ⇔ アタッチメント）
+      // 同じヒッチ規格を設定した機械同士を「連結できる組み合わせ」として扱う
+      // ==========================================
+      window.DEFAULT_HITCH_TYPES = ['3点リンク 0形', '3点リンク 1形', '3点リンク 2形', 'オートヒッチ Aタイプ', 'オートヒッチ Bタイプ', 'スライドヒッチ'];
+
+      window.getHitchTypeOptions_ = () => {
+        const base = Array.isArray(window.pdlHitchTypes) && window.pdlHitchTypes.length
+          ? window.pdlHitchTypes
+          : window.DEFAULT_HITCH_TYPES;
+        const used = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
+          ? pdlMachines.map(m => window.getMachineHitch_(m))
+          : [];
+        return Array.from(new Set(base.concat(used).map(h => String(h || '').trim()).filter(Boolean)));
+      };
+
+      window.getMachineHitch_ = (m) => {
+        if (!m) return '';
+        return String(m.hitch || m.hitchType || '').trim();
+      };
+
+      /** 指定ヒッチ規格を持つ農機を返す（excludeKeys に含まれるものは除外） */
+      window.getMachinesByHitch_ = (hitches, excludeKeys) => {
+        const want = new Set((Array.isArray(hitches) ? hitches : [hitches]).map(h => String(h || '').trim()).filter(Boolean));
+        if (!want.size) return [];
+        const skip = new Set((excludeKeys || []).map(String));
+        const list = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+        return list.filter(m => {
+          const h = window.getMachineHitch_(m);
+          if (!h || !want.has(h)) return false;
+          return !skip.has(String(m.id || '')) && !skip.has(String(m.name || ''));
+        });
+      };
+
+      /** いま選択中の農機と同一ヒッチで、まだ選択されていない農機（＝付け忘れ候補） */
+      window.getHitchLinkSuggestions_ = () => {
+        const checked = Array.from(document.querySelectorAll('#field_machinery_section .used-machine-check:checked'));
+        if (!checked.length) return { hitches: [], items: [] };
+        const selectedKeys = [];
+        const hitches = new Set();
+        checked.forEach(chk => {
+          const id = String(chk.value || '').trim();
+          const name = String(chk.getAttribute('data-name') || '').trim();
+          if (id) selectedKeys.push(id);
+          if (name) selectedKeys.push(name);
+          const m = window.findMachineByIdOrName_(id) || window.findMachineByIdOrName_(name);
+          const h = window.getMachineHitch_(m);
+          if (h) hitches.add(h);
+        });
+        return {
+          hitches: Array.from(hitches),
+          items: window.getMachinesByHitch_(Array.from(hitches), selectedKeys)
+        };
+      };
+
+      window.checkFieldMachineByKey_ = (key) => {
+        const k = String(key || '');
+        let hit = false;
+        document.querySelectorAll('#field_machinery_section .used-machine-check').forEach(chk => {
+          if (chk.checked) return;
+          if (String(chk.value) === k || String(chk.getAttribute('data-name')) === k) {
+            chk.checked = true;
+            if (window.syncFieldMachineChipStyle) window.syncFieldMachineChipStyle(chk);
+            hit = true;
+          }
+        });
+        return hit;
+      };
+
+      /** 連結候補をまとめて選択。絞り込みで非表示の機械は絞り込みを解除してから選択する */
+      window.selectAllHitchLinked_ = async () => {
+        const keys = window.getHitchLinkSuggestions_().items.map(m => String(m.id || m.name || '')).filter(Boolean);
+        if (!keys.length) return;
+        const missing = keys.filter(k => !window.checkFieldMachineByKey_(k));
+        if (missing.length) {
+          // 候補がフィルタで隠れている場合は絞り込みを解除して再描画してから選択
+          const stillSelected = Array.from(document.querySelectorAll('#field_machinery_section .used-machine-check:checked')).map(c => c.value);
+          window._fieldMachineFilter = { kind: 'all', mainCategory: '', typeName: '', number: '' };
+          await window.populateFieldMachineOptions(stillSelected.concat(missing));
+        }
+        window.refreshHitchLinkSuggestions_();
+      };
+
+      // 「閉じる」はその時のヒッチ構成だけを対象にする（別のトラクターを選び直したら再表示）
+      window.dismissHitchLinkSuggestions_ = () => {
+        window._hitchSuggestDismissedKey = window.getHitchLinkSuggestions_().hitches.slice().sort().join('|');
+        window.refreshHitchLinkSuggestions_();
+      };
+
+      window.refreshHitchLinkSuggestions_ = () => {
+        const box = document.getElementById('hitch_link_suggest');
+        if (!box) return;
+        const { hitches, items } = window.getHitchLinkSuggestions_();
+        const key = hitches.slice().sort().join('|');
+        if (!items.length || (key && key === window._hitchSuggestDismissedKey)) {
+          box.style.display = 'none';
+          box.innerHTML = '';
+          return;
+        }
+        const esc = (s) => String(s || '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        const chips = items.map(m => {
+          const key = String(m.id || m.name || '');
+          const label = (window.MachineTaxonomy && MachineTaxonomy.getDisplayName) ? MachineTaxonomy.getDisplayName(m) : (m.name || key);
+          return `<button type="button" onclick="window.checkFieldMachineByKey_('${key.replace(/'/g, "\\'")}'); window.refreshHitchLinkSuggestions_();" style="background:#fff; border:1px solid #7E57C2; color:#4527A0; border-radius:16px; padding:5px 10px; font-size:12px; cursor:pointer;">＋ ${esc(label)}</button>`;
+        }).join('');
+        box.style.display = 'block';
+        box.innerHTML = `
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;">
+            <span style="font-size:12px; font-weight:bold; color:#4527A0;">🔗 同じヒッチ（${esc(hitches.join('・'))}）で使える機械</span>
+            <button type="button" onclick="window.dismissHitchLinkSuggestions_()" style="background:transparent; border:none; color:#999; font-size:11px; cursor:pointer;">閉じる</button>
+          </div>
+          <div style="font-size:11px; color:#666; margin-bottom:6px;">付け忘れがないか確認してください</div>
+          <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+            ${chips}
+            ${items.length > 1 ? `<button type="button" onclick="window.selectAllHitchLinked_()" style="background:#673AB7; color:#fff; border:none; border-radius:16px; padding:5px 12px; font-size:12px; font-weight:bold; cursor:pointer;">すべて追加（${items.length}）</button>` : ''}
+          </div>
+        `;
       };
 
       window.isFieldMachineryWorkCategory_ = () => {
@@ -6890,9 +7018,9 @@ function createSignboardMarker(name, pos, icon, id) {
       window.syncFieldMachineryFuelPairing_ = () => {
         const pair = window.shouldPairFuelWithFieldMachinery_();
         const wName = (document.getElementById('rec_work_name')?.value || '').trim();
-        const isFuelName = typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wName);
+        const keepFuelOpen = typeof window.isFuelRecordApplicable_ === 'function' && window.isFuelRecordApplicable_(wName);
         if (pair) window.setExtraRecordOpen_('fuel', true);
-        else if (!isFuelName) window.setExtraRecordOpen_('fuel', false);
+        else if (!keepFuelOpen) window.setExtraRecordOpen_('fuel', false);
         if (typeof window.refreshFuelRecordSection === 'function') window.refreshFuelRecordSection();
         if (typeof window.refreshExtraRecordButtons === 'function') window.refreshExtraRecordButtons();
       };
@@ -7106,8 +7234,9 @@ function createSignboardMarker(name, pos, icon, id) {
         section.style.display = show ? 'block' : 'none';
         if (!show && typeof window.syncFieldMachineryFuelPairing_ === 'function') {
           const wNameNow = (document.getElementById('rec_work_name')?.value || '').trim();
-          const isFuelName = typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wNameNow);
-          if (!isFuelName) window.setExtraRecordOpen_('fuel', false);
+          const keepFuelOpen = (typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wNameNow))
+            || (typeof window.isFuelDetailWorkSelected_ === 'function' && window.isFuelDetailWorkSelected_());
+          if (!keepFuelOpen) window.setExtraRecordOpen_('fuel', false);
         }
         if (show) {
           const preselected = (typeof window.collectFieldMachinePreselected_ === 'function')
@@ -7628,6 +7757,7 @@ function createSignboardMarker(name, pos, icon, id) {
           row.style.borderColor = '#90caf9';
         }
         if (typeof window.recalcDetailWorkMinutes === 'function') window.recalcDetailWorkMinutes();
+        if (typeof window.syncFuelPanelForDetailWorks_ === 'function') window.syncFuelPanelForDetailWorks_();
       };
 
       // ==========================================
@@ -8224,6 +8354,36 @@ function createSignboardMarker(name, pos, icon, id) {
         return formattedList.join(', ');
       };
 
+      /** 休憩（作業内）をボタンで入れる */
+      window.setWorkBreakMinutes_ = (mins) => {
+        const el = document.getElementById('rec_break_mins');
+        if (!el) return;
+        const n = Math.max(0, parseInt(mins, 10) || 0);
+        el.value = n > 0 ? String(n) : '';
+        if (typeof window.calcTotalTime === 'function') window.calcTotalTime();
+      };
+
+      window.refreshWorkBreakQuickButtons_ = () => {
+        const btns = document.querySelectorAll('.rec-break-quick');
+        if (!btns.length) return;
+        const el = document.getElementById('rec_break_mins');
+        const cur = el ? Math.max(0, parseInt(el.value, 10) || 0) : 0;
+        btns.forEach(btn => {
+          const on = Number(btn.getAttribute('data-mins')) === cur;
+          btn.style.background = on ? '#F57F17' : '#fff';
+          btn.style.color = on ? '#fff' : '#F57F17';
+          btn.style.fontWeight = on ? 'bold' : 'normal';
+        });
+      };
+
+      /** ②詳細ステップに実作業時間の控えを出す（休憩の入力欄は①時間側） */
+      window.syncTotalTimeMirror_ = () => {
+        const mirror = document.getElementById('rec_total_time_mirror');
+        if (!mirror) return;
+        const total = document.getElementById('rec_total_time_display')?.innerText || '--';
+        mirror.innerText = '⏱️ 実作業時間 ' + total;
+      };
+
       window.calcTotalTime = () => {
         const s = document.getElementById('rec_start_time')?.value, e = document.getElementById('rec_end_time')?.value, disp = document.getElementById('rec_total_time_display');
         if(s && e && disp) {
@@ -8237,6 +8397,8 @@ function createSignboardMarker(name, pos, icon, id) {
            if (breakMins > 0) label += `（休憩${breakMins}分除く）`;
            disp.innerText = label;
         } else if (disp) { disp.innerText = "--"; }
+        if (typeof window.syncTotalTimeMirror_ === 'function') window.syncTotalTimeMirror_();
+        if (typeof window.refreshWorkBreakQuickButtons_ === 'function') window.refreshWorkBreakQuickButtons_();
         if (typeof window.refreshDetailWorkAutoMinutes === 'function') {
           window.refreshDetailWorkAutoMinutes();
         }
@@ -9113,6 +9275,26 @@ function createSignboardMarker(name, pos, icon, id) {
           }
           locEl.textContent = locText;
         }
+
+        // 🔗 同じヒッチ規格の機械（トラクターを点検するならアタッチメントも合わせて確認）
+        const hitchRow = document.getElementById('m_info_hitch_row');
+        if (hitchRow) {
+          const hitch = (typeof window.getMachineHitch_ === 'function') ? window.getMachineHitch_(m) : '';
+          const linked = hitch ? window.getMachinesByHitch_([hitch], [m.id, m.name]) : [];
+          if (!hitch) {
+            hitchRow.style.display = 'none';
+            hitchRow.innerHTML = '';
+          } else {
+            const names = linked.map(x => (window.MachineTaxonomy && MachineTaxonomy.getDisplayName) ? MachineTaxonomy.getDisplayName(x) : (x.name || x.id));
+            const esc = (s) => String(s || '').replace(/</g, '&lt;');
+            hitchRow.style.display = 'block';
+            hitchRow.innerHTML = names.length
+              ? `<span style="color:#4527A0;">🔗 <b>同じヒッチ(${esc(hitch)}):</b> ${esc(names.join('・'))}</span>
+                 <div style="font-size:11px; color:#888; margin-top:2px;">連結して使う機械です。合わせて点検すると漏れがありません</div>`
+              : `<span style="color:#4527A0;">🔗 <b>ヒッチ:</b> ${esc(hitch)}</span>`;
+          }
+        }
+
         badge.style.display = 'block';
         if (typeof window.updateMaintenanceTargetPhotoPreview === 'function') {
           window.updateMaintenanceTargetPhotoPreview();
@@ -13149,9 +13331,14 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         const pairFuel = typeof window.shouldPairFuelWithFieldMachinery_ === 'function'
           && window.shouldPairFuelWithFieldMachinery_();
-        if ((typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(name)) || pairFuel) {
+        const fuelByName = typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(name);
+        const fuelByDetail = typeof window.isFuelDetailWorkSelected_ === 'function' && window.isFuelDetailWorkSelected_();
+        if (fuelByName || pairFuel || fuelByDetail) {
           defs.push({ key: 'fuel', label: '給油記録', emoji: '⛽', color: '#C2185B' });
-        } else if (typeof window.isMaintenanceRelatedWork === 'function' && window.isMaintenanceRelatedWork(name)) {
+        }
+        // 整備・点検の詳細作業として給油を選んだ場合は、整備パネルも合わせて残す
+        if (!fuelByName && !pairFuel
+            && typeof window.isMaintenanceRelatedWork === 'function' && window.isMaintenanceRelatedWork(name)) {
           defs.push({ key: 'maintenance', label: '整備・修理詳細', emoji: '🔧', color: '#E65100' });
         }
         if (typeof window.isWaterValveWork === 'function' && window.isWaterValveWork(name)) {
@@ -13259,12 +13446,26 @@ function createSignboardMarker(name, pos, icon, id) {
         window.applyExtraRecordPanels_();
       };
 
+      /**
+       * 詳細作業の「給油」チェックに合わせて給油記録パネルを開閉する。
+       * 整備パネルは再描画しない（対象機械の選択が消えるため）。
+       */
+      window.syncFuelPanelForDetailWorks_ = () => {
+        const on = typeof window.isFuelDetailWorkSelected_ === 'function' && window.isFuelDetailWorkSelected_();
+        if (on === !!window._fuelDetailWorkActive) return;
+        window._fuelDetailWorkActive = on;
+        if (on) window.setExtraRecordOpen_('fuel', true);
+        if (typeof window.refreshFuelRecordSection === 'function') window.refreshFuelRecordSection();
+        if (typeof window.refreshExtraRecordButtons === 'function') window.refreshExtraRecordButtons();
+      };
+
       window.syncExtraRecordFlagsForWork_ = (wName) => {
         const name = String(wName || '').trim();
         const prev = window._extraRecordWorkName || '';
         if (prev !== name) {
           window._extraRecordOpen = {};
           window._extraRecordWorkName = name;
+          window._fuelDetailWorkActive = false;
           // 作業切替時は準備対象をリセット（記録復元時は別途セット）
           window.selectedPrepTargetWork = '';
           if (typeof window.clearMaintenanceFormFields_ === 'function') {
@@ -13273,6 +13474,11 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         // 給油は給油記録パネルを自動で開く
         if (typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(name)) {
+          window.setExtraRecordOpen_('fuel', true);
+        }
+        // 整備・点検などで詳細作業に給油を選んでいる場合も開く
+        if (typeof window.isFuelDetailWorkSelected_ === 'function' && window.isFuelDetailWorkSelected_()) {
+          window._fuelDetailWorkActive = true;
           window.setExtraRecordOpen_('fuel', true);
         }
         // 圃場農機作業 × 軽油車両は給油をセットで開く
@@ -14744,6 +14950,32 @@ function createSignboardMarker(name, pos, icon, id) {
         return n === '給油' || n.indexOf('給油') >= 0;
       };
 
+      /** 詳細作業に「給油」が選ばれているか（例：整備・点検 → 詳細作業「給油」） */
+      window.isFuelDetailWorkSelected_ = () => {
+        const names = Array.from(document.querySelectorAll('input[name="detail_work_ids"]:checked'))
+          .map(cb => String(cb.value || '').trim())
+          .filter(Boolean);
+        if (Array.isArray(window.recordConcurrentWorks)) {
+          window.recordConcurrentWorks.forEach(cw => {
+            (Array.isArray(cw && cw.detailedWorks) ? cw.detailedWorks : []).forEach(d => {
+              if (d) names.push(String(d).trim());
+            });
+          });
+        }
+        return names.some(n => window.isFuelWorkName(n));
+      };
+
+      /** 給油記録パネルを出す条件（作業名が給油 / 詳細作業が給油 / 圃場農機×軽油） */
+      window.isFuelRecordApplicable_ = (workName) => {
+        const wName = workName != null
+          ? String(workName)
+          : (document.getElementById('rec_work_name')?.value || '');
+        if (window.isFuelWorkName(wName)) return true;
+        if (window.isFuelDetailWorkSelected_()) return true;
+        return typeof window.shouldPairFuelWithFieldMachinery_ === 'function'
+          && window.shouldPairFuelWithFieldMachinery_();
+      };
+
       window.isMaintenanceRelatedWork = (workName) => {
         const name = String(workName || '').trim();
         // 給油は整備パネルではなく給油パネルへ
@@ -15398,6 +15630,14 @@ function createSignboardMarker(name, pos, icon, id) {
                     <option value="電動">⚡ 電動</option>
                   </select>
                 </div>
+                <div>
+                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">🔗 ヒッチ規格</label>
+                  <div style="display:flex; gap:4px;">
+                    <select id="mie_hitch" class="form-input" style="flex:1; box-sizing:border-box; margin-bottom:0;"></select>
+                    <button type="button" onclick="addHitchTypeFromForm('mie_hitch')" style="padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; cursor:pointer; flex-shrink:0;" title="ヒッチ規格を追加">➕</button>
+                  </div>
+                  <div style="font-size:11px; color:#888; margin-top:4px;">トラクターと作業機に同じ規格を設定すると、作業記録で自動的に紐づきます</div>
+                </div>
               </div>
               <div id="mie_vehicle_extra" style="display:none; flex-direction:column; gap:8px; margin-bottom:12px;">
                 <div>
@@ -15535,6 +15775,14 @@ function createSignboardMarker(name, pos, icon, id) {
           ).join('');
           if (keep && Array.from(vehTypeSel.options).some(o => o.value === keep)) vehTypeSel.value = keep;
         }
+        const hitchSel = document.getElementById('mie_hitch');
+        if (hitchSel) {
+          const keep = String(hitchSel.value || '');
+          hitchSel.innerHTML = '<option value="">ヒッチなし / 指定なし</option>' + window.getHitchTypeOptions_().map(h =>
+            `<option value="${String(h).replace(/"/g, '&quot;')}">${String(h).replace(/</g, '&lt;')}</option>`
+          ).join('');
+          if (keep && Array.from(hitchSel.options).some(o => o.value === keep)) hitchSel.value = keep;
+        }
       };
 
       window.getMachineItemEditorDisplayLabel_ = (fields) => {
@@ -15578,6 +15826,8 @@ function createSignboardMarker(name, pos, icon, id) {
         if (vehTypeSel) vehTypeSel.selectedIndex = 0;
         const fuelSel = document.getElementById('mie_fuel');
         if (fuelSel) fuelSel.selectedIndex = 0;
+        const hitchSel = document.getElementById('mie_hitch');
+        if (hitchSel) hitchSel.selectedIndex = 0;
       };
 
       window.setMachineItemEditorKind = (kind) => {
@@ -15673,6 +15923,7 @@ function createSignboardMarker(name, pos, icon, id) {
           machineNumber: machineNumber,
           fuel: fuel,
           model: model,
+          hitch: (document.getElementById('mie_hitch') || {}).value || '',
           status: (document.getElementById('mie_status') || {}).value || ''
         };
       };
@@ -15809,6 +16060,14 @@ function createSignboardMarker(name, pos, icon, id) {
           if (document.getElementById('mie_number')) document.getElementById('mie_number').value = item.machineNumber || item.serialNo || '';
           if (document.getElementById('mie_fuel')) document.getElementById('mie_fuel').value = item.fuel || '';
           if (document.getElementById('mie_model')) document.getElementById('mie_model').value = item.model || '';
+          if (document.getElementById('mie_hitch')) {
+            const hitchSel = document.getElementById('mie_hitch');
+            const hv = String(item.hitch || '').trim();
+            if (hv && !Array.from(hitchSel.options).some(o => o.value === hv)) {
+              hitchSel.insertAdjacentHTML('beforeend', `<option value="${hv.replace(/"/g, '&quot;')}">${hv.replace(/</g, '&lt;')}</option>`);
+            }
+            hitchSel.value = hv;
+          }
           if (document.getElementById('mie_vehicle_main')) document.getElementById('mie_vehicle_main').value = normGroup || '自動車';
           if (document.getElementById('mie_vehicle_type')) document.getElementById('mie_vehicle_type').value = item.vehicleType || item.type || '';
           if (document.getElementById('mie_vehicle_number')) {
@@ -15944,6 +16203,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const model = entry.model || (document.getElementById('mie_model') || {}).value || '';
         const machineNumber = entry.machineNumber || (document.getElementById('mie_number') || {}).value || '';
         const type = entry.type || (document.getElementById('mie_type') || {}).value || '';
+        const hitch = entry.hitch != null ? entry.hitch : ((document.getElementById('mie_hitch') || {}).value || '');
         let displayName = name;
         if (!displayName && window.MachineTaxonomy) {
           displayName = MachineTaxonomy.buildDisplayName('machine', type, machineNumber, model, '');
@@ -15957,7 +16217,8 @@ function createSignboardMarker(name, pos, icon, id) {
           fuel: fuel,
           model: model,
           machineNumber: machineNumber,
-          type: type
+          type: type,
+          hitch: hitch
         };
         if (photoBase64) {
           // photoBase64 のみ送る（photos と二重送信すると Drive に同じ写真が2枚できる）
@@ -15972,11 +16233,11 @@ function createSignboardMarker(name, pos, icon, id) {
           newMachine = (res && res.machine) ? res.machine : Object.assign({}, payload, { id: entry.itemId, photo: photoBase64 || (payload.clearPhoto ? '' : (entry.existingPhoto || '')) });
         } else {
           const res = await safeCallGAS('addMachineToSign', payload);
-          newMachine = (res && res.id) ? res : { id: 'MAC_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), name: name, workCategory: payload.workCategory, group: group, fuel: fuel, model: model, type: type, status: '使用可能', photo: photoBase64 || '' };
+          newMachine = (res && res.id) ? res : { id: 'MAC_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), name: name, workCategory: payload.workCategory, group: group, fuel: fuel, model: model, type: type, hitch: hitch, status: '使用可能', photo: photoBase64 || '' };
         }
         if (typeof pdlMachines === 'undefined' || !Array.isArray(pdlMachines)) window.pdlMachines = [];
         const existingIdx = pdlMachines.findIndex(m => String(m.id) === String(newMachine.id) || m.name === name);
-        const saved = Object.assign({ name: displayName || name, group: group, fuel: fuel, model: model, type: type, machineNumber: machineNumber }, newMachine);
+        const saved = Object.assign({ name: displayName || name, group: group, fuel: fuel, model: model, type: type, machineNumber: machineNumber, hitch: hitch }, newMachine);
         if (existingIdx !== -1) pdlMachines[existingIdx] = Object.assign({}, pdlMachines[existingIdx], saved);
         else pdlMachines.push(saved);
         return { kind: 'machine', rec: saved, id: saved.id, optionId: saved.id, name: name };
@@ -16018,6 +16279,13 @@ function createSignboardMarker(name, pos, icon, id) {
             }
           });
         }, 40);
+        // 給油欄を開いている場合は選択肢を作り直し、対象未選択なら登録した機械を選ぶ
+        const fuelBox = document.getElementById('work_fuel_record_section');
+        if (fuelBox && fuelBox.style.display !== 'none' && typeof window.refreshFuelRecordSection === 'function') {
+          const wfSel = document.getElementById('wf_target');
+          const newTarget = last ? String(last.optionId || last.id || '') : '';
+          window.refreshFuelRecordSection((!wfSel || !wfSel.value) && newTarget ? { targetId: newTarget } : undefined);
+        }
         if (typeof window.renderMachinePhotoPickerGrid === 'function' && document.getElementById('machinePhotoPickerModal')?.style.display === 'flex') {
           window.renderMachinePhotoPickerGrid();
         }
@@ -16302,41 +16570,65 @@ function createSignboardMarker(name, pos, icon, id) {
         }
       };
 
+      /**
+       * 整備・点検で選んだ対象を給油対象の初期値に引き継ぐ。
+       * 道具（tool_）は給油対象にならないので除外する。
+       */
+      window.getMaintenanceTargetForFuel_ = () => {
+        const id = String(document.getElementById('m_tool')?.value || '').trim();
+        if (!id || id.indexOf('tool_') === 0) return '';
+        return id;
+      };
+
       window.buildFuelTargetOptionsHtml_ = (selectedId) => {
         const keep = String(selectedId || '');
-        const dieselMachines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
-          ? pdlMachines.filter(m => m && m.fuel && String(m.fuel).includes('軽油'))
-          : [];
+        const esc = (s) => String(s || '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        const all = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+        const isDiesel = (m) => String((m && (m.fuel || m.fuelType)) || '').includes('軽油');
+        // 軽油以外・燃料未設定の機械も給油対象に出す（混合油のチェンソー等も記録できるように）
+        const dieselMachines = all.filter(m => m && isDiesel(m));
+        const otherMachines = all.filter(m => m && !isDiesel(m));
         const vehicles = window.pdlMobileVehicles || [];
+        const displayName = (item) => (window.MachineTaxonomy && MachineTaxonomy.getDisplayName)
+          ? (MachineTaxonomy.getDisplayName(item) || item.name || item.id)
+          : (item.name || item.id);
+        const machineOpt = (m) => {
+          const fuel = String(m.fuel || m.fuelType || '').trim();
+          return `<option value="${esc(m.id)}" data-kind="machine">${esc(displayName(m))}${fuel ? `（${esc(fuel)}）` : ''}</option>`;
+        };
         let html = '<option value="">選択してください</option>';
         if (dieselMachines.length) {
-          html += '<optgroup label="🚜 農業機械（軽油）">';
-          dieselMachines.forEach(m => {
-            const label = String(m.name || '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-            html += `<option value="${String(m.id).replace(/"/g, '&quot;')}" data-kind="machine">${label}</option>`;
-          });
-          html += '</optgroup>';
+          html += '<optgroup label="🚜 農業機械（軽油）">' + dieselMachines.map(machineOpt).join('') + '</optgroup>';
+        }
+        if (otherMachines.length) {
+          html += '<optgroup label="🚜 その他の農業機械">' + otherMachines.map(machineOpt).join('') + '</optgroup>';
         }
         if (vehicles.length) {
-          html += '<optgroup label="🛻 移動車両（軽トラ等）">';
-          vehicles.forEach(v => {
+          html += '<optgroup label="🛻 移動車両（軽トラ等）">' + vehicles.map(v => {
             const oid = window.getMobileVehicleOptionId_(v);
-            const label = String(v.plateNumber || v.id || '移動車両').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-            html += `<option value="${String(oid).replace(/"/g, '&quot;')}" data-kind="vehicle">${label}</option>`;
-          });
-          html += '</optgroup>';
+            const label = displayName(Object.assign({}, v, { isVehicle: true })) || v.plateNumber || v.id || '移動車両';
+            return `<option value="${esc(oid)}" data-kind="vehicle">${esc(label)}</option>`;
+          }).join('') + '</optgroup>';
         }
-        if (!dieselMachines.length && !vehicles.length) {
+        if (!all.length && !vehicles.length) {
           html += '<option value="" disabled>給油対象の機械・車両がありません</option>';
         }
-        if (keep && !html.includes(`value="${keep.replace(/"/g, '&quot;')}"`)) {
+        if (keep && html.indexOf(`value="${keep.replace(/"/g, '&quot;')}"`) < 0) {
           const kept = window.findMaintenanceTargetById_(keep);
-          if (kept) {
-            const label = String(kept.name || keep).replace(/</g, '&lt;').replace(/"/g, '&quot;');
-            html += `<option value="${String(kept.id).replace(/"/g, '&quot;')}">${label}</option>`;
-          }
+          if (kept) html += `<option value="${esc(keep)}">${esc(kept.name || keep)}</option>`;
         }
         return html;
+      };
+
+      /** 給油欄から機械を新規登録して、そのまま給油対象に選ぶ */
+      window.addFuelTargetMachineFromWorkRecord = () => {
+        const wName = (document.getElementById('rec_work_name')?.value || '').trim();
+        if (typeof window.openMachineItemEditorModal !== 'function') return;
+        window.openMachineItemEditorModal({
+          mode: 'add',
+          kind: 'machine',
+          workCategory: wName || '給油'
+        });
       };
 
       window.handleWorkFuelTargetChange = () => {
@@ -16386,10 +16678,9 @@ function createSignboardMarker(name, pos, icon, id) {
         const box = document.getElementById('work_fuel_record_section');
         if (!box) return;
         const wName = document.getElementById('rec_work_name')?.value || '';
-        const isFuelName = typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wName);
         const pair = typeof window.shouldPairFuelWithFieldMachinery_ === 'function'
           && window.shouldPairFuelWithFieldMachinery_();
-        if (!isFuelName && !pair) {
+        if (!window.isFuelRecordApplicable_(wName)) {
           box.style.display = 'none';
           box.innerHTML = '';
           return;
@@ -16400,7 +16691,8 @@ function createSignboardMarker(name, pos, icon, id) {
         }
 
         const prev = preset || window._workFuelDraft || {};
-        const keepTarget = prev.targetId || document.getElementById('wf_target')?.value || '';
+        const keepTarget = prev.targetId || document.getElementById('wf_target')?.value
+          || window.getMaintenanceTargetForFuel_() || '';
         const keepAmount = prev.amount != null ? prev.amount : (document.getElementById('wf_amount')?.value || '');
         const keepMeter = prev.meter != null ? prev.meter : (document.getElementById('wf_meter')?.value || '');
         const keepDate = prev.date || document.getElementById('wf_date')?.value
@@ -16489,6 +16781,9 @@ function createSignboardMarker(name, pos, icon, id) {
           <div style="font-size:11px; color:#880E4F; margin-bottom:10px;">作業記録と一緒に給油内容を残せます。燃料が「軽油」の農業機械と移動車両から選べます。</div>
           <label class="form-label">給油する機械・車両</label>
           <select id="wf_target" class="form-input" onchange="handleWorkFuelTargetChange()">${window.buildFuelTargetOptionsHtml_(keepTarget)}</select>
+          <div style="display:flex; justify-content:flex-end; margin:-6px 0 8px;">
+            <button type="button" onclick="addFuelTargetMachineFromWorkRecord()" style="background:#2196F3; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 機械を新規登録</button>
+          </div>
           <div style="display:flex; gap:10px;">
             <div style="flex:1;">
               <label class="form-label">📅 給油日</label>
@@ -16523,10 +16818,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const box = document.getElementById('work_fuel_record_section');
         if (!box || box.style.display === 'none') return null;
         const wName = document.getElementById('rec_work_name')?.value || '';
-        const isFuelName = typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wName);
-        const pair = typeof window.shouldPairFuelWithFieldMachinery_ === 'function'
-          && window.shouldPairFuelWithFieldMachinery_();
-        if (!isFuelName && !pair) return null;
+        if (!window.isFuelRecordApplicable_(wName)) return null;
         const date = document.getElementById('wf_date')?.value || '';
         const pairRows = box.querySelectorAll('.wf-pair-row');
         if (pairRows.length) {
@@ -17607,11 +17899,15 @@ function createSignboardMarker(name, pos, icon, id) {
           let lotsHtml = activeLots.map(l => `<div><label class="checkbox-label"><input type="checkbox" name="use_lots" value="${l.lotId}"> ${l.lotId} <span style="color:#2196F3; margin-left:5px;">(${l.containerType||'種類不明'} 残:${l.remain})</span></label></div>`).join('');
           if(!lotsHtml) lotsHtml = '<div style="color:#888; font-size:12px;">使用可能なロットがありません</div>';
           
+         const breakQuickBtns = [0, 15, 30, 45, 60].map(m =>
+            `<button type="button" class="rec-break-quick" data-mins="${m}" onclick="setWorkBreakMinutes_(${m})" style="background:#fff; color:#F57F17; border:1px solid #FFB74D; border-radius:14px; padding:5px 12px; font-size:12px; cursor:pointer;">${m === 0 ? 'なし' : m + '分'}</button>`
+          ).join('');
+
          let workTimeUI = `
             <div class="rec-zone rec-zone-duration" style="background:#FFF8E1; padding:12px; border-radius:10px; margin-bottom:15px; text-align:center; border:1px solid #FFE082;">
               <label class="form-label" style="color:#F57F17; display:inline-flex; align-items:center; gap:4px; justify-content:center;">⏱️ 実作業時間・休憩 ${window.buildRecHelpBtn_('popover-break-help',
                 '・開始〜終了から休憩分を引いた時間が実作業時間です<br>'
-                + '・他の項目を入力したあと、最後に休憩分を入れてください<br>'
+                + '・よく使う分数はボタンで入れられます（手入力も可）<br>'
                 + '・別枠の「☕ 休憩」作業（昼休憩など）とは別です（作業の合間の短い休憩用）',
                 { heading: '休憩（作業内）', bg: '#E65100', title: '休憩のヘルプ' })}</label>
               <div id="rec_total_time_display" style="padding:10px; background:#fff; border-radius:4px; font-weight:bold; color:#FF9800; border:1px solid #FFCC80;">--</div>
@@ -17620,6 +17916,7 @@ function createSignboardMarker(name, pos, icon, id) {
                 <input type="number" id="rec_break_mins" class="form-input" min="0" step="5" inputmode="numeric" placeholder="0" value="" style="width:90px; margin:0; padding:8px; text-align:right; font-size:15px;" oninput="calcTotalTime()" onchange="calcTotalTime()">
                 <span style="font-size:12px; color:#666;">分</span>
               </div>
+              <div style="display:flex; gap:6px; justify-content:center; flex-wrap:wrap; margin-top:8px;">${breakQuickBtns}</div>
             </div>
           `;
 
@@ -17635,6 +17932,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   <label class="form-label">📅 作業日</label>
                   <input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : defaultWorkDate}" onchange="if(typeof handleWorkDateChange==='function') handleWorkDateChange();" style="margin-bottom:12px;">
                   ${timeUI}
+                  ${workTimeUI}
                   ${!isEdit && (window.buildWorkFormLunchBreakHtml_ ? window.buildWorkFormLunchBreakHtml_() : '')}
                   </div>
 
@@ -17752,6 +18050,7 @@ function createSignboardMarker(name, pos, icon, id) {
                         <span>📁 <b>カテゴリ:</b> <span id="m_info_category" style="color:#1565C0; font-weight:bold;">--</span></span>
                         <span>📍 <b>拠点:</b> <span id="m_info_location" style="color:#2E7D32; font-weight:bold;">--</span></span>
                       </div>
+                      <div id="m_info_hitch_row" style="display:none; margin-top:6px; padding-top:6px; border-top:1px dashed #FFE0B2;"></div>
                     </div>
                     
                     <!-- 症状 -->
@@ -17806,7 +18105,7 @@ function createSignboardMarker(name, pos, icon, id) {
                      <input type="hidden" id="rec_progress_status" value="">
                      <div id="progress_status_buttons_wrapper" style="display:none;"></div>
                    </div>
-                   ${workTimeUI}
+                   <div id="rec_total_time_mirror" style="background:#FFF8E1; border:1px solid #FFE082; border-radius:10px; padding:10px; margin-bottom:15px; text-align:center; font-size:13px; font-weight:bold; color:#F57F17;">⏱️ 実作業時間 --</div>
                   </div>
 
                   <div id="work_record_step_comment" class="work-rec-step-panel" style="display:none;">
@@ -22910,6 +23209,30 @@ function createSignboardMarker(name, pos, icon, id) {
           }
           window.pdlVehicleTypes.push(t);
           window.pdlVehicleTypes.sort((a, b) => String(a).localeCompare(String(b), 'ja'));
+          if (typeof window.refreshMachineItemEditorSelectOptions_ === 'function') {
+              window.refreshMachineItemEditorSelectOptions_();
+          }
+          const sel = selectId ? document.getElementById(selectId) : null;
+          if (sel) sel.value = t;
+      };
+
+      window.addHitchTypeFromForm = async (selectId) => {
+          const name = prompt('新しいヒッチ規格名を入力してください（例：オートヒッチ Aタイプ、3点リンク 1形）:');
+          if (!name || !name.trim()) return;
+          const t = name.trim();
+          if (window.getHitchTypeOptions_().includes(t)) {
+              customAlert('既に登録されています');
+              const sel = selectId ? document.getElementById(selectId) : null;
+              if (sel) sel.value = t;
+              return;
+          }
+          try {
+              const updated = await callGAS('manageMaster', { masterType: 'hitchType', manageAction: 'add', value: t, userName: currentUser });
+              window.pdlHitchTypes = (Array.isArray(updated) && updated.length) ? updated : [...window.getHitchTypeOptions_(), t];
+          } catch (e) {
+              // オフライン等でも入力内容は失わない（次回同期時にマスタへ反映される）
+              window.pdlHitchTypes = [...window.getHitchTypeOptions_(), t];
+          }
           if (typeof window.refreshMachineItemEditorSelectOptions_ === 'function') {
               window.refreshMachineItemEditorSelectOptions_();
           }

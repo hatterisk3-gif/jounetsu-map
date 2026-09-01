@@ -160,7 +160,7 @@ window.onLocationCityChange = function(sel) {
     const prefix = (sel && sel.id && sel.id.indexOf('edit_') === 0) ? 'edit' : 'add';
     syncLocationCityCustomVisibility(prefix);
 };
-let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlPesticides = [], pdlFertilizers = [], pdlCropChemPlans = [], pdlCostItems = [], pdlCropCostPlans = [], pdlCropWorkPlans = [], pdlNurseryLocations = [], pdlCropCultSettings = [], pdlSignFunctions = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [], pdlContainers = [], pdlContainerNames = [], pdlContentUnits = [];
+let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlPesticides = [], pdlFertilizers = [], pdlCropChemPlans = [], pdlCostItems = [], pdlCropCostPlans = [], pdlCropWorkPlans = [], pdlNurseryLocations = [], pdlCropCultSettings = [], pdlSignFunctions = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [], pdlHitchTypes = [], pdlContainers = [], pdlContainerNames = [], pdlContentUnits = [];
 let mapInitPromise, resolveMapInit;
 mapInitPromise = new Promise((resolve) => { resolveMapInit = resolve; });
 
@@ -677,6 +677,7 @@ function persistAdminInitCache_() {
                 contentUnits: pdlContentUnits,
                 machineTypes: pdlMachineTypes,
                 machineGroups: pdlMachineGroups,
+                hitchTypes: pdlHitchTypes,
                 machines: window.pdlMachines || (cached.pdl && cached.pdl.machines) || []
             }
         };
@@ -888,6 +889,7 @@ function applyMasterServerList_(type, updatedList) {
     else if (type === 'workCategory') pdlWorkCategories = updatedList;
     else if (type === 'machineType') pdlMachineTypes = updatedList;
     else if (type === 'machineGroup' || type === 'machineCategory') pdlMachineGroups = updatedList;
+    else if (type === 'hitchType') pdlHitchTypes = updatedList;
 }
 
 function applyOptimisticMasterChange_(type, act, value) {
@@ -940,6 +942,7 @@ function applyOptimisticMasterChange_(type, act, value) {
     else if (type === 'workCategory') wrap(() => pdlWorkCategories, v => { pdlWorkCategories = v; }, nameOf);
     else if (type === 'machineType') wrap(() => pdlMachineTypes, v => { pdlMachineTypes = v; }, nameOf);
     else if (type === 'machineGroup' || type === 'machineCategory') wrap(() => pdlMachineGroups, v => { pdlMachineGroups = v; }, nameOf);
+    else if (type === 'hitchType') wrap(() => pdlHitchTypes, v => { pdlHitchTypes = v; }, nameOf);
 }
 
 function saveAdminCredentials(id, pw, name) {
@@ -1083,7 +1086,7 @@ function openMasterFromQuery_() {
     const allowed = [
         'menu', 'crop', 'cropCultSetting', 'nurseryLocation', 'cropChemPlan',
         'cropWorkPlan', 'costItem', 'cropCostPlan', 'container', 'contentUnit',
-        'sign', 'location', 'workCategory', 'machineType', 'machineGroup',
+        'sign', 'location', 'workCategory', 'machineType', 'machineGroup', 'hitchType',
         'work', 'machine', 'tool', 'material', 'pesticide', 'fertilizer'
     ];
     if (!allowed.includes(masterType)) return;
@@ -1259,6 +1262,7 @@ function renderInitData(data, opts) {
         pdlContentUnits = data.pdl.contentUnits || ['kg', 'g', '本', 'パック', '個', '束'];
         pdlMachineTypes = data.pdl.machineTypes || ["トラクター", "ドローン"];
         pdlMachineGroups = data.pdl.machineGroups || ["圃場", "出荷"];
+        pdlHitchTypes = data.pdl.hitchTypes || [];
         if ((!data.pdl.machineGroups || !data.pdl.machineGroups.length) && Array.isArray(data.pdl.machineCategories)
             && data.pdl.machineCategories.length && !data.pdl.machineCategories.some(c => c === 'トラクター' || c === 'ドローン')) {
             pdlMachineGroups = data.pdl.machineCategories;
@@ -1510,6 +1514,7 @@ window.getMasterTypeInfo = (type) => {
         contentUnit: { title: '📏 コンテナ内容単位マスタ', desc: '収穫記録の内容単位（kg・本など）', list: pdlContentUnits || [] },
         machineType: { title: '🏷️ 機械名マスタ', desc: '機械名・車両名（トラクター、軽トラ等）', list: pdlMachineTypes || [] },
         machineGroup: { title: '📁 メインカテゴリマスタ', desc: '農機=圃場/出荷、車両=自動車/作業機', list: pdlMachineGroups || [] },
+        hitchType: { title: '🔗 ヒッチ規格マスタ', desc: 'トラクターと作業機の連結規格。同じ規格の機械が作業記録で紐づきます', list: pdlHitchTypes || [] },
         work: { title: '📋 作業記録マスタ', desc: '作業項目および詳細作業名リストの設定', list: pdlWorkMaster || [] },
         machine: { title: '🚜 農機マスタ', desc: '管理車両・農業機械・機番・拠点・定位置の設定', list: window.pdlMachines || [] },
         tool: { title: '🔧 道具マスタ', desc: '使用道具・備品と対応作業の設定', list: pdlTools || [] },
@@ -1536,7 +1541,7 @@ window.renderMasterMenu = () => {
 
     const masterTypes = [
         'crop', 'cropCultSetting', 'nurseryLocation', 'cropChemPlan', 'cropWorkPlan', 'costItem', 'cropCostPlan', 'container', 'contentUnit', 'sign', 'location', 'workCategory',
-        'machineType', 'machineGroup', 'work', 'machine', 'tool', 'material', 'pesticide', 'fertilizer'
+        'machineType', 'machineGroup', 'hitchType', 'work', 'machine', 'tool', 'material', 'pesticide', 'fertilizer'
     ];
 
     let html = `
@@ -1740,6 +1745,13 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <label style="font-size:12px; font-weight:bold; color:#555;">機械グループ名</label>
                 <input type="text" id="add_machineGroup_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 農業機械">
                 <button onclick="execMaster('machineGroup', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
+            </div>`;
+        } else if (type === 'hitchType') {
+            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size:12px; font-weight:bold; color:#555;">ヒッチ規格名</label>
+                <input type="text" id="add_hitchType_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: オートヒッチ Aタイプ">
+                <div style="font-size:11px; color:#666;">トラクターと作業機に同じ規格を設定すると、作業記録で連結候補として提案されます。</div>
+                <button onclick="execMaster('hitchType', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
         } else if (type === 'tool') {
             const wOpts = '<option value="">+ 関連作業を選ぶ...</option>' + pdlWorkMaster.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
@@ -4421,6 +4433,7 @@ window.execMaster = async (type, act, val) => {
         else if (type === 'contentUnit') { const name = document.getElementById('add_contentUnit_name').value.trim(); if (!name) { customAlert("単位名を入力してください"); return; } if ((pdlContentUnits || []).includes(name)) { customAlert("既に登録されています"); return; } value = name; }
         else if (type === 'machineType') { const name = document.getElementById('add_machineType_name').value.trim(); if (!name) { customAlert("カテゴリ名を入力してください"); return; } if ((pdlMachineTypes || []).includes(name)) { customAlert("既に登録されています"); return; } value = name; }
         else if (type === 'machineGroup') { const name = document.getElementById('add_machineGroup_name').value.trim(); if (!name) { customAlert("グループ名を入力してください"); return; } if ((pdlMachineGroups || []).includes(name)) { customAlert("既に登録されています"); return; } value = name; }
+        else if (type === 'hitchType') { const name = document.getElementById('add_hitchType_name').value.trim(); if (!name) { customAlert("ヒッチ規格名を入力してください"); return; } if ((pdlHitchTypes || []).includes(name)) { customAlert("既に登録されています"); return; } value = name; }
         else if (type === 'tool') { const name = document.getElementById('add_tool_name').value.trim(); if (!name) { customAlert("道具名を入力してください"); return; } value = { name: name, workCategory: document.getElementById('add_tool_cat').value.trim() }; }
         else if (type === 'costItem') {
             const name = (document.getElementById('add_cost_name')?.value || '').trim();

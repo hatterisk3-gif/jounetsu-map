@@ -874,7 +874,10 @@ function getInitData() {
     machineCategories: (function () {
       try { return getMachineTypeMasterList_(); } catch (e) { return ['トラクター', 'ドローン']; }
     })(),
-    vehicleTypes: ['軽トラ', '軽バン', '軽四', '普通車', 'トラック']
+    vehicleTypes: ['軽トラ', '軽バン', '軽四', '普通車', 'トラック'],
+    hitchTypes: (function () {
+      try { return getHitchTypeMasterList_(); } catch (e) { return DEFAULT_HITCH_TYPES.slice(); }
+    })()
   };
   
   let workMaster = [];
@@ -1331,6 +1334,40 @@ function getMachineTypeMasterList_() {
   }
 }
 
+const DEFAULT_HITCH_TYPES = ['3点リンク 0形', '3点リンク 1形', '3点リンク 2形', 'オートヒッチ Aタイプ', 'オートヒッチ Bタイプ', 'スライドヒッチ'];
+
+function ensureHitchTypeMasterSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('ヒッチ規格マスタ');
+  if (!sheet) {
+    sheet = ss.insertSheet('ヒッチ規格マスタ');
+    sheet.appendRow(['ヒッチ規格名']);
+    const macSh = ss.getSheetByName('農機マスタ');
+    const fromMachines = [];
+    if (macSh && macSh.getLastRow() > 1) {
+      const md = macSh.getDataRange().getValues();
+      // ヒッチ規格列 AG = index 32
+      for (let i = 1; i < md.length; i++) {
+        const h = String(md[i][32] || '').trim();
+        if (h && fromMachines.indexOf(h) < 0) fromMachines.push(h);
+      }
+    }
+    Array.from(new Set(DEFAULT_HITCH_TYPES.concat(fromMachines))).forEach(h => sheet.appendRow([h]));
+  }
+  return sheet;
+}
+
+function getHitchTypeMasterList_() {
+  try {
+    const sheet = ensureHitchTypeMasterSheet_();
+    if (!sheet || sheet.getLastRow() <= 1) return DEFAULT_HITCH_TYPES.slice();
+    const data = sheet.getDataRange().getValues();
+    return data.slice(1).map(r => String(r[0] || '').trim()).filter(String);
+  } catch (e) {
+    return DEFAULT_HITCH_TYPES.slice();
+  }
+}
+
 function ensureMachineGroupMasterSheet_() {
   const ss = TENANT_SS;
   let sheet = ss.getSheetByName('機械グループマスタ');
@@ -1396,6 +1433,20 @@ function renameMachineGroupInMachines_(oldName, newName) {
   return count;
 }
 
+function renameHitchTypeInMachines_(oldName, newName) {
+  const sheet = TENANT_SS.getSheetByName('農機マスタ');
+  if (!sheet || sheet.getLastRow() <= 1) return 0;
+  const data = sheet.getDataRange().getValues();
+  let count = 0;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][32] || '').trim() === oldName) {
+      sheet.getRange(i + 1, 33).setValue(newName);
+      count++;
+    }
+  }
+  return count;
+}
+
 /// =========================================
 // マスタ管理（★看板マスタの処理を追加）
 // =========================================
@@ -1427,6 +1478,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
   else if (masterType === 'contentUnit') sheetName = 'コンテナ内容単位マスタ';
   else if (masterType === 'machineType') sheetName = '機種マスタ';
   else if (masterType === 'machineGroup') sheetName = '機械グループマスタ';
+  else if (masterType === 'hitchType') sheetName = 'ヒッチ規格マスタ';
   else if (masterType === 'container') sheetName = 'コンテナマスタ';
   else if (masterType === 'pesticide') sheetName = '農薬マスタ';
   else if (masterType === 'fertilizer') sheetName = '肥料マスタ';
@@ -1450,6 +1502,8 @@ function manageMasterData(masterType, manageAction, value, userName) {
           sheet = ensureMachineTypeMasterSheet_();
       } else if (masterType === 'machineGroup') {
           sheet = ensureMachineGroupMasterSheet_();
+      } else if (masterType === 'hitchType') {
+          sheet = ensureHitchTypeMasterSheet_();
       } else if (masterType === 'location') {
           sheet = ensureLocationMasterSheet_();
       } else if (masterType === 'pesticide') {
@@ -1476,6 +1530,9 @@ function manageMasterData(masterType, manageAction, value, userName) {
   }
   if (masterType === 'machineGroup') {
     sheet = ensureMachineGroupMasterSheet_();
+  }
+  if (masterType === 'hitchType') {
+    sheet = ensureHitchTypeMasterSheet_();
   }
   if (masterType === 'container') {
     sheet = ensureContainerMasterSheet_();
@@ -1711,6 +1768,22 @@ function manageMasterData(masterType, manageAction, value, userName) {
           if (newName !== originalName) {
             renameMachineGroupInMachines_(originalName, newName);
           }
+          writeLog(userName, "マスタ編集", newName, `対象: ${sheetName} (元: ${originalName})`);
+          break;
+        }
+      }
+    } else if (masterType === 'hitchType') {
+      const originalName = String(value.originalName || '').trim();
+      const newName = String((value.newData && value.newData.name) || value.name || '').trim();
+      if (!originalName) throw new Error('変更前のヒッチ規格名がありません');
+      if (!newName) throw new Error('ヒッチ規格名を入力してください');
+      if (newName !== originalName && getHitchTypeMasterList_().indexOf(newName) >= 0) {
+        throw new Error(`ヒッチ規格「${newName}」は既に登録されています`);
+      }
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][0] || '').trim() === originalName) {
+          sheet.getRange(i + 1, 1).setValue(newName);
+          if (newName !== originalName) renameHitchTypeInMachines_(originalName, newName);
           writeLog(userName, "マスタ編集", newName, `対象: ${sheetName} (元: ${originalName})`);
           break;
         }
@@ -2016,7 +2089,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'cropCultSetting') {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
-      } else if (masterType === 'location' || masterType === 'sign' || masterType === 'workCategory' || masterType === 'contentUnit' || masterType === 'machineType' || masterType === 'machineGroup') {
+      } else if (masterType === 'location' || masterType === 'sign' || masterType === 'workCategory' || masterType === 'contentUnit' || masterType === 'machineType' || masterType === 'machineGroup' || masterType === 'hitchType') {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'crop') {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
@@ -2046,6 +2119,9 @@ function manageMasterData(masterType, manageAction, value, userName) {
   }
   if (masterType === 'machineGroup') {
     return getMachineGroupMasterList_();
+  }
+  if (masterType === 'hitchType') {
+    return getHitchTypeMasterList_();
   }
   if (masterType === 'crop') {
     return readMergedCropMasterList_();
@@ -8362,7 +8438,8 @@ function addMachineToSign(params) {
     status: params.status || "使用可能",
     lat: params.lat || "",
     lng: params.lng || "",
-    maintenanceSettings: params.maintenanceSettings || []
+    maintenanceSettings: params.maintenanceSettings || [],
+    hitch: params.hitch || ""
   });
   // appendRow はシート列幅と不一致で失敗することがあるため明示範囲に書く
   const nextRow = sheet.getLastRow() + 1;
@@ -8942,6 +9019,7 @@ function editMachineInMaster(params) {
     status: params.status != null ? params.status : existing.status,
     signId: params.signId != null ? params.signId : existing.signId,
     signName: params.signName != null ? params.signName : existing.signName,
+    hitch: params.hitch != null ? params.hitch : existing.hitch,
     photo: photo,
     photo2: photo2
   });
@@ -14880,13 +14958,13 @@ function getOrCreateSheet(sheetName, headers) {
 
 // ==========================================
 // 農機マスタ（機械管理と統一）ヘルパー
-// 列: A–R 既存 / S–Y(19–25) 未使用整備系 / Z–AF(26–32) 統一拡張
+// 列: A–R 既存 / S–Y(19–25) 未使用整備系 / Z–AF(26–32) 統一拡張 / AG(33) ヒッチ規格
 // ==========================================
 const NOUKI_EXT_HEADERS = [
   'ID', '農機名', '型式', '作業分類', '写真', '写真2', '場所看板名', '場所看板id', '分類', '購入年月日',
   '登録者', '部品名', '現在地', '現在地看板id', '症状名', '対応農機ID', '燃料', '機械番号',
   '整備月', '説明書URL', '定期整備名', '整備時間1', '整備1', '整備時間2', '整備2',
-  '機械グループ', '機種', '拠点', '稼働状況', 'lat', 'lng', 'maintenanceSettings'
+  '機械グループ', '機種', '拠点', '稼働状況', 'lat', 'lng', 'maintenanceSettings', 'ヒッチ規格'
 ];
 
 function ensureNoukiMasterSheet() {
@@ -14949,6 +15027,7 @@ function parseNoukiMachineRow(row) {
     lat: (latRaw !== "" && latRaw != null) ? latRaw : null,
     lng: (lngRaw !== "" && lngRaw != null) ? lngRaw : null,
     maintenanceSettings: settings,
+    hitch: String(row[32] || "").trim(),
     // 互換エイリアス（旧 MachineMaster / machine.js）
     modelType: model,
     fuelType: fuel,
@@ -14988,7 +15067,8 @@ function buildNoukiMachineRow(m) {
     m.status || "使用可能",
     (m.lat != null && m.lat !== "") ? m.lat : "",
     (m.lng != null && m.lng !== "") ? m.lng : "",
-    typeof m.maintenanceSettings === "string" ? m.maintenanceSettings : JSON.stringify(m.maintenanceSettings || [])
+    typeof m.maintenanceSettings === "string" ? m.maintenanceSettings : JSON.stringify(m.maintenanceSettings || []),
+    m.hitch || ""
   ];
 }
 
@@ -15119,7 +15199,8 @@ function machine_saveMachine(p) {
     symptoms: p.symptoms != null ? p.symptoms : (existing && existing.symptoms) || "",
     category: p.category != null ? p.category : (existing && existing.category) || "",
     targetMachineIds: p.targetMachineIds != null ? p.targetMachineIds : (existing && existing.targetMachineIds) || "",
-    maintenanceSettings: p.maintenanceSettings != null ? p.maintenanceSettings : (existing && existing.maintenanceSettings) || []
+    maintenanceSettings: p.maintenanceSettings != null ? p.maintenanceSettings : (existing && existing.maintenanceSettings) || [],
+    hitch: p.hitch != null ? p.hitch : (existing && existing.hitch) || ""
   });
 
   // 写真 base64 があれば保存
