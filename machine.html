@@ -247,10 +247,6 @@
       <h3 id="macModalTitle" style="margin-top:0; color:#43A047;">⚙️ 機械登録</h3>
       <input type="hidden" id="regMachineEditId" value="">
       <div class="form-group">
-        <label>表示名（任意）</label>
-        <input type="text" id="regMachineName" placeholder="空欄なら ③④⑤ から自動生成（例：トラクター 1 PH2R）">
-      </div>
-      <div class="form-group">
         <label>② メインカテゴリ</label>
         <div style="display:flex; gap:5px;">
           <select id="regMachineGroup" style="flex:1;"></select>
@@ -350,12 +346,12 @@
         </select>
       </div>
       <div class="form-group">
-        <label>③ 車両名</label>
+        <label>③ 車種</label>
         <div style="display:flex; gap:5px;">
           <select id="vehType" style="flex:1;"></select>
-          <button type="button" onclick="addVehicleTypeFromForm()" style="padding:8px; border-radius:4px; border:1px solid #ccc;" title="車両名を追加">➕</button>
+          <button type="button" onclick="addVehicleTypeFromForm()" style="padding:8px; border-radius:4px; border:1px solid #ccc;" title="車種を追加">➕</button>
         </div>
-        <div style="font-size:11px; color:#888; margin-top:4px;">例：軽トラ / 軽バン</div>
+        <div style="font-size:11px; color:#888; margin-top:4px;">例：ステップワゴン / キャリー / 軽トラ</div>
       </div>
       <div class="form-group">
         <label>④ 番号</label>

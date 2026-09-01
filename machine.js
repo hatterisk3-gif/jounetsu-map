@@ -317,7 +317,9 @@ function renderMachineMarkers() {
             let marker = new google.maps.Marker({
                 position: { lat: parseFloat(m.lat), lng: parseFloat(m.lng) },
                 map: map,
-                title: m.name,
+                title: (window.MachineTaxonomy && MachineTaxonomy.getDisplayName)
+                    ? MachineTaxonomy.getDisplayName(m)
+                    : m.name,
                 icon: {
                     path: google.maps.SymbolPath.CIRCLE,
                     fillColor: color,
@@ -353,7 +355,9 @@ function renderVehicleMarkers() {
             let marker = new google.maps.Marker({
                 position: { lat: parseFloat(v.lat), lng: parseFloat(v.lng) },
                 map: map,
-                title: '🛻 ' + (v.plateNumber || '移動車両'),
+                title: '🛻 ' + ((window.MachineTaxonomy && MachineTaxonomy.getDisplayName)
+                    ? MachineTaxonomy.getDisplayName(Object.assign({}, v, { isVehicle: true }))
+                    : (v.plateNumber || '移動車両')),
                 icon: {
                     path: google.maps.SymbolPath.CIRCLE,
                     fillColor: color,
@@ -432,7 +436,13 @@ function openBadgeSelect(actionType) {
         let typ = m.type || '未分類';
         if (!grouped[grp]) grouped[grp] = {};
         if (!grouped[grp][typ]) grouped[grp][typ] = [];
-        grouped[grp][typ].push({ id, name: m.name, status: m.status });
+        grouped[grp][typ].push({
+            id,
+            name: (window.MachineTaxonomy && MachineTaxonomy.getDisplayName)
+                ? MachineTaxonomy.getDisplayName(m)
+                : m.name,
+            status: m.status
+        });
     }
     
     let html = '';
@@ -469,7 +479,10 @@ function openBadgeSelect(actionType) {
             vehicleIds.forEach(id => {
                 const v = vehicles[id];
                 const statusIcon = v.status === '修理中' ? '🔴' : '🟢';
-                html += `<div class="badge-item" onclick="onBadgeSelected('${id}', 'vehicle')">${statusIcon} 🛻 ${v.plateNumber || id}</div>`;
+                const vLabel = (window.MachineTaxonomy && MachineTaxonomy.getDisplayName)
+                    ? MachineTaxonomy.getDisplayName(Object.assign({}, v, { isVehicle: true }))
+                    : (v.plateNumber || id);
+                html += `<div class="badge-item" onclick="onBadgeSelected('${id}', 'vehicle')">${statusIcon} 🛻 ${vLabel}</div>`;
             });
             html += '</div>';
         }
@@ -578,7 +591,6 @@ function openMachineRegisterModal(editId) {
 
     if (existing) {
         if (title) title.textContent = '✏️ 機械を編集';
-        document.getElementById('regMachineName').value = existing.name || '';
         document.getElementById('regMachineNumber').value = existing.machineNumber || existing.serialNo || '';
         document.getElementById('regMachineGroup').value = existing.group || '';
         document.getElementById('regMachineType').value = existing.type || '';
@@ -595,7 +607,6 @@ function openMachineRegisterModal(editId) {
             : '';
     } else {
         if (title) title.textContent = '⚙️ 機械登録';
-        document.getElementById('regMachineName').value = '';
         document.getElementById('regLocation').value = '';
         document.getElementById('regSign').value = '';
         renderRegWorkCategoryRows(['']);
@@ -792,9 +803,11 @@ async function saveMachineRegistration() {
     const typeName = document.getElementById('regMachineType').value;
     const machineNumber = document.getElementById('regMachineNumber').value.trim();
     const model = document.getElementById('regModel').value.trim();
-    let displayName = document.getElementById('regMachineName').value.trim();
-    if (!displayName && window.MachineTaxonomy) {
+    let displayName = '';
+    if (window.MachineTaxonomy) {
         displayName = MachineTaxonomy.buildDisplayName('machine', typeName, machineNumber, model, '');
+    } else {
+        displayName = [typeName, machineNumber, model].map(x => String(x || '').trim()).filter(Boolean).join(' ');
     }
     let group = document.getElementById('regMachineGroup').value;
     if (window.MachineTaxonomy) group = MachineTaxonomy.normalizeMainCategory('machine', group);
@@ -823,7 +836,7 @@ async function saveMachineRegistration() {
         photoFilename: (displayName || typeName || 'machine').replace(/\s+/g, '_') + '.jpg'
     };
 
-    if (!m.name && !m.type) { alert("③機械名（機種）を選択するか、表示名を入力してください"); return; }
+    if (!m.name && !m.type) { alert("③機械名（機種）、④番号、⑤型式のいずれかを入力してください"); return; }
     if (!m.name) m.name = m.type;
     
     showToast("保存中...");
@@ -887,7 +900,7 @@ function updateVehicleTypeOptions() {
 }
 
 function addVehicleTypeFromForm() {
-    const val = prompt('新しい車両名を入力してください（例：軽トラ）');
+    const val = prompt('新しい車種を入力してください（例：ステップワゴン、キャリー）');
     if (!val) return;
     const name = val.trim();
     if (!name) return;
@@ -1031,13 +1044,25 @@ function openVehicleSettingsModal() {
     document.getElementById('modalVehicleSettings').style.display = "flex";
 }
 
+function getVehicleDisplayName(v) {
+    if (!v) return '';
+    if (window.MachineTaxonomy && MachineTaxonomy.getDisplayName) {
+        return MachineTaxonomy.getDisplayName(Object.assign({}, v, { isVehicle: true }));
+    }
+    const type = String(v.vehicleType || v.type || '').trim();
+    const plate = String(v.plateNumber || '').trim();
+    if (type && plate) return type + ' ' + plate;
+    return plate || type || '';
+}
+
 function updateVehicleSettingsDropdown() {
     let sel = document.getElementById('settingVehicleSelect');
     if (!sel) return;
     let html = '<option value="">-- 車両を選択 --</option>';
     Object.keys(vehicles).sort((a, b) => String(vehicles[a].plateNumber || '').localeCompare(String(vehicles[b].plateNumber || ''), 'ja'))
         .forEach(id => {
-            html += `<option value="${id}">${vehicles[id].plateNumber || id}</option>`;
+            const label = getVehicleDisplayName(vehicles[id]) || id;
+            html += `<option value="${id}">${label}</option>`;
         });
     let currentVal = sel.value;
     sel.innerHTML = html;
@@ -1064,7 +1089,7 @@ function renderVehicleList() {
                     ${photoUrl ? `<img src="${photoUrl}" style="width:100%; height:100%; object-fit:cover;">` : '🛻'}
                 </div>
                 <div style="flex:1; min-width:0;">
-                    <div style="font-weight:bold; color:#333;">${statusIcon} ${v.plateNumber || '(ナンバー未設定)'}</div>
+                    <div style="font-weight:bold; color:#333;">${statusIcon} ${getVehicleDisplayName(v) || '(未設定)'}</div>
                     <div style="font-size:12px; color:#666;">${v.driveType || '-'} / ${v.mileage === '' || v.mileage == null ? '-' : v.mileage + ' km'} ${pin}</div>
                 </div>
             </div>`;
@@ -1084,7 +1109,7 @@ function loadVehicleSettings() {
     let panel = document.getElementById('vehicleActionPanel');
     if (currentVehicleId && vehicles[currentVehicleId]) {
         const v = vehicles[currentVehicleId];
-        document.getElementById('selectedVehicleTitle').innerText = v.plateNumber || currentVehicleId;
+        document.getElementById('selectedVehicleTitle').innerText = getVehicleDisplayName(v) || currentVehicleId;
         const dateStr = formatDateInputValue(v.registrationDate) || '-';
         const photoUrl = getDriveDirectImageUrl(v.photo);
         const photoHtml = photoUrl
@@ -1196,7 +1221,7 @@ function renderMachineList() {
                     ${photoUrl ? `<img src="${photoUrl}" style="width:100%; height:100%; object-fit:cover;">` : '🚜'}
                 </div>
                 <div style="flex:1; min-width:0;">
-                    <div style="font-weight:bold; color:#333;">${statusIcon} ${m.name || '(名称未設定)'}</div>
+                    <div style="font-weight:bold; color:#333;">${statusIcon} ${(window.MachineTaxonomy && MachineTaxonomy.getDisplayName) ? MachineTaxonomy.getDisplayName(m) : (m.name || '(未設定)')}</div>
                     <div style="font-size:12px; color:#666;">${sub}</div>
                     <div style="font-size:11px; color:#888;">${pin} 定位置: ${home} / 現在地: ${cur}</div>
                 </div>

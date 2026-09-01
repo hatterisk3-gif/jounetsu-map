@@ -68,9 +68,20 @@
     return String(item.model || item.modelType || '').trim();
   }
 
+  function getVehiclePlate(item) {
+    if (!item) return '';
+    return String(item.plateNumber || '').trim();
+  }
+
   function buildDisplayName(kind, typeName, number, model, fallbackName) {
-    var parts = [typeName, number, model].map(function (x) { return String(x || '').trim(); }).filter(Boolean);
-    if (parts.length) return parts.join(' ');
+    kind = kind === 'vehicle' ? 'vehicle' : 'machine';
+    if (kind === 'vehicle') {
+      var vParts = [typeName, number].map(function (x) { return String(x || '').trim(); }).filter(Boolean);
+      if (vParts.length) return vParts.join(' ');
+      return String(fallbackName || '').trim();
+    }
+    var mParts = [typeName, model].map(function (x) { return String(x || '').trim(); }).filter(Boolean);
+    if (mParts.length) return mParts.join(' ');
     return String(fallbackName || '').trim();
   }
 
@@ -78,15 +89,14 @@
     if (!item) return '';
     var kind = getKindFromItem(item);
     var type = getItemTypeName(item);
-    var num = getItemNumber(item);
-    var model = getItemModel(item);
     if (kind === 'vehicle') {
-      var plate = String(item.plateNumber || item.name || '').trim();
-      var built = buildDisplayName(kind, type, num, model, '');
-      if (plate && built) return plate + ' / ' + built;
-      return plate || built;
+      var plate = getVehiclePlate(item);
+      if (type && plate) return type + ' ' + plate;
+      return plate || type;
     }
-    return String(item.name || '').trim() || buildDisplayName(kind, type, num, model, '');
+    var model = getItemModel(item);
+    if (type && model) return type + ' ' + model;
+    return type || model || String(item.name || '').trim();
   }
 
   function normalizeItem(item) {
@@ -172,14 +182,12 @@
 
   function formatOptionLabel(item) {
     if (!item) return '';
-    var icon = item._kind === 'vehicle' ? '🛻' : '🚜';
-    var parts = [item._typeName, item._number, item._model].filter(Boolean);
-    var detail = parts.join(' · ');
-    var main = item._displayName || item.name || item.plateNumber || '(無名)';
+    var icon = item._kind === 'vehicle' ? '🛻' : (item.isTool ? '🔧' : '🚜');
+    var main = item._displayName || getDisplayName(item) || item.name || item.plateNumber || '(無名)';
     if (item._mainCategory) {
-      return icon + ' [' + item._mainCategory + '] ' + main + (detail && detail !== main ? ' (' + detail + ')' : '');
+      return icon + ' [' + item._mainCategory + '] ' + main;
     }
-    return icon + ' ' + main + (detail && detail !== main ? ' (' + detail + ')' : '');
+    return icon + ' ' + main;
   }
 
   function migrateGroupList(groups) {
@@ -205,6 +213,7 @@
     getItemTypeName: getItemTypeName,
     getItemNumber: getItemNumber,
     getItemModel: getItemModel,
+    getVehiclePlate: getVehiclePlate,
     buildDisplayName: buildDisplayName,
     getDisplayName: getDisplayName,
     normalizeItem: normalizeItem,
