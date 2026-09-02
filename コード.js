@@ -31,6 +31,7 @@ function doPost(e) {
     else if (action === "saveRecord") result = saveRecord(params.id, params.name, params.author, params.recordType, params.data, params.photos);
     else if (action === "updateRecordItem") result = updateRecordItem(params.id, params.recordId, params.recordType, params.data, params.photos, params.keptUrls, params.userName);
     else if (action === "deleteRecordItem") result = deleteRecordItem(params.id, params.recordId, params.userName);
+    else if (action === "deleteWorkRecordById") result = deleteWorkRecordById(params.recordId, params.userName);
     else if (action === "cancelClockInAndDeleteTodayWorkRecords") result = cancelClockInAndDeleteTodayWorkRecords(params);
     else if (action === "addFieldStatus") result = addFieldStatusToMaster(params.statusName);
     else if (action === "editFieldStatus") result = editFieldStatusInMaster(params.oldStatusName, params.newStatusName);
@@ -6152,6 +6153,81 @@ function deleteRecordItem(polyId, recordId, user) {
 
   writeLog(user, "記録削除", found.rowData[1], `対象ID: ${recordId}` + (listDeleted ? ' / 一覧シート削除済' : ' / 一覧シート該当なし'));
   return updated;
+}
+
+/** 作業記録シート＋圃場／看板の埋め込み履歴から recordId で削除（マイページ向け） */
+function deleteWorkRecordById(recordId, userName) {
+  const rid = String(recordId || '').trim();
+  if (!rid) throw new Error('記録IDがありません');
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    let sheetDeleted = false;
+    let embeddedDeleted = 0;
+    const deletedUrls = {};
+
+    const workSheet = TENANT_SS.getSheetByName('作業記録');
+    if (workSheet && workSheet.getLastRow() >= 2) {
+      const values = workSheet.getDataRange().getValues();
+      for (let i = values.length - 1; i >= 1; i--) {
+        if (String(values[i][12] || '').trim() !== rid) continue;
+        const urlRaw = String(values[i][11] || '');
+        urlRaw.split(/[,\s]+/).forEach(function(u) {
+          const s = String(u || '').trim();
+          if (s) deletedUrls[s] = true;
+        });
+        workSheet.deleteRow(i + 1);
+        sheetDeleted = true;
+        break;
+      }
+    }
+
+    ['圃場', '看板'].forEach(function(sheetName) {
+      const sheet = TENANT_SS.getSheetByName(sheetName);
+      if (!sheet || sheet.getLastRow() < 2) return;
+      const values = sheet.getDataRange().getValues();
+      const pc = 10;
+      for (let i = 1; i < values.length; i++) {
+        let records = [];
+        try {
+          if (values[i][pc - 1]) records = JSON.parse(values[i][pc - 1]);
+          else if (values[i][6]) records = JSON.parse(values[i][6]);
+        } catch (e) { records = []; }
+        if (!Array.isArray(records) || !records.length) continue;
+        const kept = records.filter(function(item) {
+          if (!item) return true;
+          const itemId = String(item.id || item.url || '').trim();
+          if (itemId !== rid) return true;
+          if (Array.isArray(item.urls)) {
+            item.urls.forEach(function(u) { if (u) deletedUrls[String(u)] = true; });
+          }
+          embeddedDeleted += 1;
+          return false;
+        });
+        if (kept.length !== records.length) {
+          sheet.getRange(i + 1, pc).setValue(JSON.stringify(kept));
+        }
+      }
+    });
+
+    if (!sheetDeleted && embeddedDeleted === 0) {
+      throw new Error('削除対象の記録が見つかりません');
+    }
+
+    Object.keys(deletedUrls).forEach(function(url) {
+      const m1 = url.match(/[?&]id=([^&]+)/);
+      const m2 = url.match(/\/d\/([^/]+)/);
+      const fileId = m1 ? m1[1] : (m2 ? m2[1] : '');
+      if (!fileId) return;
+      try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e2) {}
+    });
+
+    writeLog(userName, '作業記録削除', rid, '一覧:' + (sheetDeleted ? 'Y' : 'N') + ' 埋込:' + embeddedDeleted);
+    return { success: true, recordId: rid, sheetDeleted: sheetDeleted, embeddedDeleted: embeddedDeleted };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**

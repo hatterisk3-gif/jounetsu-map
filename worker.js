@@ -785,9 +785,23 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           if (!Array.isArray(loadedPolygons[pid].photos)) loadedPolygons[pid].photos = [];
           locals.forEach((localPh) => {
             const recId = localPh.id;
-            const idx = loadedPolygons[pid].photos.findIndex(ph => ph && ph.id === recId);
-            if (idx >= 0) {
-              loadedPolygons[pid].photos[idx] = Object.assign({}, loadedPolygons[pid].photos[idx], localPh);
+            const fp = (typeof window.workRecordFingerprintKey_ === 'function')
+              ? window.workRecordFingerprintKey_(localPh)
+              : '';
+            const dupIdx = loadedPolygons[pid].photos.findIndex(ph => {
+              if (!ph) return false;
+              if (recId && ph.id === recId) return true;
+              if (fp && typeof window.workRecordFingerprintKey_ === 'function') {
+                return window.workRecordFingerprintKey_(ph) === fp;
+              }
+              return false;
+            });
+            if (dupIdx >= 0) {
+              const prev = loadedPolygons[pid].photos[dupIdx];
+              const preferLocal = localPh._pendingSync && !prev._pendingSync;
+              if (preferLocal || String(prev.id || '').indexOf('local_') === 0) {
+                loadedPolygons[pid].photos[dupIdx] = Object.assign({}, prev, localPh);
+              }
             } else {
               loadedPolygons[pid].photos.push(Object.assign({}, localPh));
             }
@@ -6317,7 +6331,20 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!ymd) return [];
         const normUser = String(currentUser || '').replace(/\s+/g, '');
         const seen = new Set();
+        const seenFp = new Set();
         const list = [];
+        const tryAdd = (row) => {
+          if (!row) return;
+          const recId = String(row.id || '');
+          const fp = (typeof window.workRecordFingerprintKey_ === 'function')
+            ? window.workRecordFingerprintKey_(row)
+            : '';
+          if (recId && seen.has(recId)) return;
+          if (fp && seenFp.has(fp)) return;
+          if (recId) seen.add(recId);
+          if (fp) seenFp.add(fp);
+          list.push(row);
+        };
         for (const id in (loadedPolygons || {})) {
           const p = loadedPolygons[id];
           if (!p || !Array.isArray(p.photos)) continue;
@@ -6328,8 +6355,6 @@ function createSignboardMarker(name, pos, icon, id) {
             const wName = String((ph.data && ph.data.workName) || '').trim();
             if (!wName.includes('休憩')) return;
             const recId = ph.id || (ph.data && ph.data.recordId) || '';
-            if (recId && seen.has(recId)) return;
-            if (recId) seen.add(recId);
             const phAuthor = String(ph.author || '').replace(/\s+/g, '');
             const authorOk = !normUser || !phAuthor || phAuthor === normUser || normUser === 'システム';
             if (!authorOk) return;
@@ -6347,13 +6372,20 @@ function createSignboardMarker(name, pos, icon, id) {
             const end = (typeof window.normalizeTimeHm === 'function')
               ? (window.normalizeTimeHm(ph.data && ph.data.endTime) || '')
               : String((ph.data && ph.data.endTime) || '');
-            list.push({
+            tryAdd({
               id: recId,
               polyId: id,
               workName: wName,
               start: start,
               end: end,
-              totalTime: (ph.data && ph.data.totalTime) || ''
+              totalTime: (ph.data && ph.data.totalTime) || '',
+              author: ph.author || '',
+              data: Object.assign({}, ph.data || {}, {
+                workDate: recordYmd,
+                workName: wName,
+                startTime: start,
+                endTime: end
+              })
             });
           });
         }
@@ -6363,7 +6395,6 @@ function createSignboardMarker(name, pos, icon, id) {
             const wName = String(job.data.workName || '').trim();
             if (!wName.includes('休憩')) return;
             const recId = job.localId || job.editId || '';
-            if (recId && seen.has(recId)) return;
             const jobAuthor = String(job.userName || normUser || '').replace(/\s+/g, '');
             const authorOk = !normUser || !jobAuthor || jobAuthor === normUser || normUser === 'システム';
             if (!authorOk) return;
@@ -6371,20 +6402,26 @@ function createSignboardMarker(name, pos, icon, id) {
               ? window.normalizeDateStr(job.data.workDate)
               : String(job.data.workDate || '').slice(0, 10);
             if (recordYmd !== ymd) return;
-            if (recId) seen.add(recId);
             const start = (typeof window.normalizeTimeHm === 'function')
               ? (window.normalizeTimeHm(job.data.startTime) || '')
               : String(job.data.startTime || '');
             const end = (typeof window.normalizeTimeHm === 'function')
               ? (window.normalizeTimeHm(job.data.endTime) || '')
               : String(job.data.endTime || '');
-            list.push({
+            tryAdd({
               id: recId,
               polyId: job.activePolyId || '',
               workName: wName,
               start: start,
               end: end,
-              totalTime: job.data.totalTime || ''
+              totalTime: job.data.totalTime || '',
+              author: job.userName || normUser,
+              data: Object.assign({}, job.data, {
+                workDate: recordYmd,
+                workName: wName,
+                startTime: start,
+                endTime: end
+              })
             });
           });
         }
@@ -6395,17 +6432,15 @@ function createSignboardMarker(name, pos, icon, id) {
             const start = String(r.start || '');
             const end = String(r.end || '');
             const wName = String(r.workName || '休憩');
-            if (recId && seen.has(recId)) return;
-            const dup = list.some(x => String(x.start || '') === start && String(x.end || '') === end && String(x.workName || '') === wName);
-            if (dup) return;
-            if (recId) seen.add(recId);
-            list.push({
+            tryAdd({
               id: recId,
               polyId: '',
               workName: wName,
               start: start,
               end: end,
-              totalTime: r.totalTime || ''
+              totalTime: r.totalTime || '',
+              author: normUser,
+              data: { workName: wName, startTime: start, endTime: end, workDate: ymd }
             });
           });
         }
@@ -8415,30 +8450,9 @@ function createSignboardMarker(name, pos, icon, id) {
         return (m === 'rest' || m === 'lunch') ? m : 'work';
       };
 
-      /** 休憩・昼休憩の開始／終了を上の時間に自動合わせ（手入力後は上書きしない） */
-      window.syncModeTimeFromWorkTime_ = () => {
-        if (window.getWorkRecordTimeMode_() === 'work') return;
-        const workStart = String(document.getElementById('rec_start_time')?.value || '').trim();
-        const workEnd = String(document.getElementById('rec_end_time')?.value || '').trim();
-        const modeStartEl = document.getElementById('rec_mode_start');
-        const modeEndEl = document.getElementById('rec_mode_end');
-        if (modeStartEl && workStart && (!modeStartEl.value || modeStartEl.getAttribute('data-autofill') === '1')) {
-          modeStartEl.value = workStart;
-          modeStartEl.setAttribute('data-autofill', '1');
-        }
-        if (modeEndEl && workEnd && (!modeEndEl.value || modeEndEl.getAttribute('data-autofill') === '1')) {
-          modeEndEl.value = workEnd;
-          modeEndEl.setAttribute('data-autofill', '1');
-        }
-      };
-
       window.setWorkRecordTimeMode_ = (mode) => {
         const next = (mode === 'rest' || mode === 'lunch') ? mode : 'work';
         window._workRecordTimeMode = next;
-        const modeStartEl = document.getElementById('rec_mode_start');
-        const modeEndEl = document.getElementById('rec_mode_end');
-        if (modeStartEl) modeStartEl.setAttribute('data-autofill', '1');
-        if (modeEndEl) modeEndEl.setAttribute('data-autofill', '1');
         if (next === 'rest') {
           if (typeof window.matchStartEndToPreviousEndAndNow === 'function') {
             try { window.matchStartEndToPreviousEndAndNow({ silent: true }); } catch (e) {}
@@ -8452,7 +8466,6 @@ function createSignboardMarker(name, pos, icon, id) {
           if (startEl) startEl.value = sug.start || '';
           if (endEl) endEl.value = sug.end || '';
         }
-        if (typeof window.syncModeTimeFromWorkTime_ === 'function') window.syncModeTimeFromWorkTime_();
         if (typeof window.refreshWorkRecordTimeModeUI_ === 'function') window.refreshWorkRecordTimeModeUI_();
         if (typeof window.refreshWorkRecordStepUI_ === 'function') window.refreshWorkRecordStepUI_();
         if (next === 'rest' && typeof window.refreshTodayRestBreaksUI === 'function') {
@@ -8475,36 +8488,33 @@ function createSignboardMarker(name, pos, icon, id) {
           btn.style.borderColor = on ? '#FF9800' : '#ddd';
           btn.style.fontWeight = on ? 'bold' : 'normal';
         });
-        const modeSection = document.getElementById('work_record_mode_time_section');
         const workPanel = document.getElementById('work_record_mode_work_panel');
         const restPanel = document.getElementById('work_record_mode_rest_panel');
         const lunchPanel = document.getElementById('work_record_mode_lunch_panel');
-        const startLabel = document.getElementById('work_record_mode_start_label');
-        const endLabel = document.getElementById('work_record_mode_end_label');
+        const startLabel = document.getElementById('work_record_time_start_label');
+        const endLabel = document.getElementById('work_record_time_end_label');
+        const clockinRow = document.getElementById('work_record_time_clockin_row');
         const timeZoneLabel = document.getElementById('work_record_time_zone_label');
-        if (modeSection) modeSection.style.display = (mode === 'work') ? 'none' : 'block';
         if (workPanel) workPanel.style.display = (mode === 'work') ? 'block' : 'none';
         if (restPanel) restPanel.style.display = (mode === 'rest') ? 'block' : 'none';
         if (lunchPanel) lunchPanel.style.display = (mode === 'lunch') ? 'block' : 'none';
+        if (clockinRow) clockinRow.style.display = (mode === 'work') ? 'flex' : 'none';
         if (timeZoneLabel) {
-          timeZoneLabel.textContent = '⏰ 時間';
+          timeZoneLabel.textContent = mode === 'work' ? '⏰ 時間' : (mode === 'lunch' ? '🍱 昼休憩の時間' : '☕ 休憩の時間');
         }
-        if (startLabel) startLabel.textContent = mode === 'lunch' ? '🍱 昼休憩 開始' : '☕ 休憩 開始';
-        if (endLabel) endLabel.textContent = mode === 'lunch' ? '🍱 昼休憩 終了' : '☕ 休憩 終了';
+        if (startLabel) {
+          startLabel.textContent = mode === 'work' ? '▶️ 開始' : (mode === 'lunch' ? '🍱 昼休憩 開始' : '☕ 休憩 開始');
+        }
+        if (endLabel) {
+          endLabel.textContent = mode === 'work' ? '⏹️ 終了' : (mode === 'lunch' ? '🍱 昼休憩 終了' : '☕ 休憩 終了');
+        }
       };
 
       window.getWorkRecordModeTimes_ = () => {
         const norm = (v) => (window.normalizeTimeHm ? (window.normalizeTimeHm(v) || '') : String(v || '').trim());
-        const mode = window.getWorkRecordTimeMode_();
-        if (mode === 'work') {
-          return {
-            start: norm(document.getElementById('rec_start_time')?.value),
-            end: norm(document.getElementById('rec_end_time')?.value)
-          };
-        }
         return {
-          start: norm(document.getElementById('rec_mode_start')?.value),
-          end: norm(document.getElementById('rec_mode_end')?.value)
+          start: norm(document.getElementById('rec_start_time')?.value),
+          end: norm(document.getElementById('rec_end_time')?.value)
         };
       };
 
@@ -8556,7 +8566,6 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.calcTotalTime = () => {
-        if (typeof window.syncModeTimeFromWorkTime_ === 'function') window.syncModeTimeFromWorkTime_();
         const s = document.getElementById('rec_start_time')?.value, e = document.getElementById('rec_end_time')?.value, disp = document.getElementById('rec_total_time_display');
         if(s && e && disp) {
            let sMins = parseInt(s.split(':')[0]) * 60 + parseInt(s.split(':')[1]), eMins = parseInt(e.split(':')[0]) * 60 + parseInt(e.split(':')[1]);
@@ -18320,14 +18329,14 @@ function createSignboardMarker(name, pos, icon, id) {
               <button type="button" onclick="setEndTimeToNow()" style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;" title="編集中でも終了時刻を今の時間に合わせます">⏱️ 終了を今にセット</button>
               <button type="button" id="btn_match_prev_end" onclick="matchStartTimeToPreviousEnd()" style="display:none; background:#E8F5E9; color:#2e7d32; border:1px solid #A5D6A7; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">◀️ 前の終了に合わせる</button>
               <button type="button" onclick="matchStartEndToPreviousEndAndNow()" style="background:#FFF3E0; color:#E65100; border:1px solid #FFB74D; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">⏱️ 前終了〜今</button>
-              <button type="button" onclick="document.getElementById('rec_start_time').value=''; document.getElementById('rec_end_time').value=''; document.getElementById('rec_start_time').removeAttribute('data-autofill'); document.getElementById('rec_start_time').removeAttribute('data-start-source'); document.getElementById('rec_start_time').removeAttribute('data-rest-pair'); if(document.getElementById('rec_mode_start')){ document.getElementById('rec_mode_start').value=''; document.getElementById('rec_mode_start').setAttribute('data-autofill','1'); } if(document.getElementById('rec_mode_end')){ document.getElementById('rec_mode_end').value=''; document.getElementById('rec_mode_end').setAttribute('data-autofill','1'); } if(typeof updateStartTimeHintUI==='function') updateStartTimeHintUI(); calcTotalTime();" style="background:#eee; border:1px solid #ccc; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">時間クリア</button>
+              <button type="button" onclick="document.getElementById('rec_start_time').value=''; document.getElementById('rec_end_time').value=''; document.getElementById('rec_start_time').removeAttribute('data-autofill'); document.getElementById('rec_start_time').removeAttribute('data-start-source'); document.getElementById('rec_start_time').removeAttribute('data-rest-pair'); if(typeof updateStartTimeHintUI==='function') updateStartTimeHintUI(); calcTotalTime();" style="background:#eee; border:1px solid #ccc; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">時間クリア</button>
             </div>
           </div>
           <div class="form-grid" style="margin-bottom:6px;">
             <div>
-              <label class="form-label" style="font-size:11px; margin-bottom:2px;">▶️ 開始</label>
+              <label id="work_record_time_start_label" class="form-label" style="font-size:11px; margin-bottom:2px;">▶️ 開始</label>
               <input type="text" id="rec_start_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:2px;" value="${isEdit ? '' : defaultStartTime}" ${startAutofill ? 'data-autofill="1"' : ''} data-start-source="${startSource}" onclick="this.removeAttribute('data-autofill'); openAppTimePicker('rec_start_time', '開始時間')" onchange="this.removeAttribute('data-autofill'); if(typeof updateStartTimeHintUI==='function') updateStartTimeHintUI(); calcTotalTime()">
-              <div style="display:flex; align-items:center; gap:3px;">
+              <div id="work_record_time_clockin_row" style="display:flex; align-items:center; gap:3px;">
                 <label style="font-size:10px; color:#555; display:flex; align-items:center; gap:3px;">
                   <input type="checkbox" id="sync_clockin" ${syncClockInChecked ? 'checked' : ''} onchange="if(typeof window.handleSyncClockInCheckboxChange==='function') window.handleSyncClockInCheckboxChange(this)">出勤時間と同期
                 </label>
@@ -18341,14 +18350,13 @@ function createSignboardMarker(name, pos, icon, id) {
 
             <div>
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
-                <label class="form-label" style="font-size:11px; margin:0;">⏹️ 終了</label>
+                <label id="work_record_time_end_label" class="form-label" style="font-size:11px; margin:0;">⏹️ 終了</label>
                 <button type="button" onclick="setEndTimeToNow()" style="background:#E3F2FD; color:#1565C0; border:none; padding:1px 5px; border-radius:3px; font-size:10px; font-weight:bold; cursor:pointer;">⏱️ 今にセット</button>
               </div>
               <input type="text" id="rec_end_time" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" style="margin-bottom:0;" value="${isEdit ? '' : defaultEndTime}" onclick="openAppTimePicker('rec_end_time', '終了時間')" onchange="calcTotalTime()">
             </div>
           </div>
           <div id="rec_start_time_hint" style="display:none; font-size:11px; margin-bottom:0; font-weight:bold;"></div>
-          <!--WORK_MODE_TIME_ROW-->
           <div id="rec_planned_end_box" style="display:none; margin-top:10px; background:#fff; border:1px dashed #90CAF9; border-radius:8px; padding:10px; text-align:center;"></div>
           </div>
         `;
@@ -18401,22 +18409,6 @@ function createSignboardMarker(name, pos, icon, id) {
             </div>
           ` : '';
 
-         const workModeTimeUI = `
-            <div id="work_record_mode_time_section" style="display:none; margin-top:8px; padding-top:8px; border-top:1px dashed #90CAF9;">
-              <div style="font-size:11px; color:#888; margin-bottom:6px;">登録する時間（上の時間に自動で合わせます・手入力後は固定）</div>
-              <div class="form-grid" style="margin-bottom:0;">
-                <div>
-                  <label id="work_record_mode_start_label" class="form-label" style="font-size:11px; margin-bottom:2px; color:#E65100;">☕ 休憩 開始</label>
-                  <input type="text" id="rec_mode_start" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" data-autofill="1" value="" onclick="this.removeAttribute('data-autofill'); openAppTimePicker('rec_mode_start', '開始')" onchange="this.removeAttribute('data-autofill'); calcTotalTime()" style="margin-bottom:0;">
-                </div>
-                <div>
-                  <label id="work_record_mode_end_label" class="form-label" style="font-size:11px; margin-bottom:2px; color:#E65100;">☕ 休憩 終了</label>
-                  <input type="text" id="rec_mode_end" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" data-autofill="1" value="" onclick="this.removeAttribute('data-autofill'); openAppTimePicker('rec_mode_end', '終了')" onchange="this.removeAttribute('data-autofill'); calcTotalTime()" style="margin-bottom:0;">
-                </div>
-              </div>
-            </div>
-          `;
-
          let workTimeUI = `
             <div id="work_record_mode_work_panel">
             <div class="rec-zone rec-zone-duration" style="background:#FFF8E1; padding:12px; border-radius:10px; margin-bottom:15px; text-align:center; border:1px solid #FFE082;">
@@ -18441,7 +18433,6 @@ function createSignboardMarker(name, pos, icon, id) {
           `;
 
           const defaultWorkCat = 'すべて';
-          const workFormTimeUI = timeUI.replace('<!--WORK_MODE_TIME_ROW-->', workModeTimeUI);
 
           html = `
                   <div id="work_record_step_header" style="margin-bottom:4px;"></div>
@@ -18453,7 +18444,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   <label class="form-label">📅 作業日</label>
                   <input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : defaultWorkDate}" onchange="if(typeof handleWorkDateChange==='function') handleWorkDateChange();" style="margin-bottom:12px;">
                   ${workTimeModeTabsUI}
-                  ${workFormTimeUI}
+                  ${timeUI}
                   ${workTimeUI}
                   ${workRestModeUI}
                   ${workLunchModeUI}
@@ -19835,6 +19826,9 @@ function createSignboardMarker(name, pos, icon, id) {
           const merged = Object.assign({}, serverItem, { _pendingSync: false, _syncFailed: false, _localOptimistic: false });
           if (idx >= 0) p.photos[idx] = merged;
           else p.photos.push(merged);
+          if (typeof window.dedupeWorkRecordPhotos_ === 'function') {
+            p.photos = window.dedupeWorkRecordPhotos_(p.photos);
+          }
           if (typeof updatePolygonColor === 'function') updatePolygonColor(pid);
         });
         if (typeof window.removePersistedRecordSyncJob_ === 'function') {
@@ -25145,20 +25139,14 @@ function createSignboardMarker(name, pos, icon, id) {
           endEl.value = sug.end;
           endEl.setAttribute('data-autofill', '1');
         }
-        if (typeof window.syncModeTimeFromWorkTime_ === 'function') window.syncModeTimeFromWorkTime_();
       };
 
       window.setWorkFormLunchStartFromWorkEnd_ = () => {
         const sug = window.suggestWorkFormLunchTimes_();
         const startEl = document.getElementById('rec_start_time');
-        const modeStartEl = document.getElementById('rec_mode_start');
         if (startEl) {
           startEl.value = sug.start;
           startEl.setAttribute('data-autofill', '1');
-        }
-        if (modeStartEl) {
-          modeStartEl.value = sug.start;
-          modeStartEl.setAttribute('data-autofill', '1');
         }
         if (typeof window.setWorkRecordTimeMode_ === 'function') window.setWorkRecordTimeMode_('lunch');
       };
@@ -25167,14 +25155,9 @@ function createSignboardMarker(name, pos, icon, id) {
         const now = new Date();
         const nowHm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
         const endEl = document.getElementById('rec_end_time');
-        const modeEndEl = document.getElementById('rec_mode_end');
         if (endEl) {
           endEl.value = nowHm;
           endEl.removeAttribute('data-autofill');
-        }
-        if (modeEndEl) {
-          modeEndEl.value = nowHm;
-          modeEndEl.removeAttribute('data-autofill');
         }
       };
 
@@ -25206,17 +25189,12 @@ function createSignboardMarker(name, pos, icon, id) {
         const sug = window.suggestWorkFormLunchTimes_();
         const startEl = document.getElementById('rec_start_time');
         const endEl = document.getElementById('rec_end_time');
-        const modeStartEl = document.getElementById('rec_mode_start');
-        const modeEndEl = document.getElementById('rec_mode_end');
         if (window.getWorkRecordTimeMode_ && window.getWorkRecordTimeMode_() === 'lunch') {
           if (startEl && startEl.getAttribute('data-autofill') === '1') startEl.value = isRegistered ? lunch.start : sug.start;
           if (endEl && (!endEl.value || endEl.getAttribute('data-autofill') === '1')) {
             endEl.value = isRegistered ? lunch.end : sug.end;
             endEl.setAttribute('data-autofill', '1');
           }
-          if (modeStartEl) modeStartEl.setAttribute('data-autofill', '1');
-          if (modeEndEl) modeEndEl.setAttribute('data-autofill', '1');
-          if (typeof window.syncModeTimeFromWorkTime_ === 'function') window.syncModeTimeFromWorkTime_();
         }
         const st = document.getElementById('work_form_lunch_status');
         if (isRegistered) {
@@ -30490,37 +30468,115 @@ window.editRecordFromMyPage = function(polyId, recordId) {
     }
 };
 
+window.removeWorkRecordLocally_ = function(recordId, polyId) {
+    recordId = String(recordId || '').trim();
+    if (!recordId) return;
+    const matchId = (ph) => ph && (ph.id === recordId || ph.url === recordId || (ph.data && ph.data.recordId === recordId));
+
+    if (typeof loadedPolygons !== 'undefined' && loadedPolygons) {
+        const targets = new Set();
+        if (polyId) targets.add(String(polyId));
+        Object.keys(loadedPolygons).forEach(pid => targets.add(String(pid)));
+        targets.forEach(pid => {
+            const p = loadedPolygons[pid];
+            if (!p || !Array.isArray(p.photos)) return;
+            p.photos = p.photos.filter(ph => !matchId(ph));
+        });
+    }
+    if (Array.isArray(window._recordSyncQueue)) {
+        window._recordSyncQueue = window._recordSyncQueue.filter(job => job && job.localId !== recordId);
+    }
+    if (window.myWorkRecords && Array.isArray(window.myWorkRecords)) {
+        window.myWorkRecords = window.myWorkRecords.filter(r =>
+            r && r.id !== recordId && r.recordId !== recordId
+        );
+    }
+};
+
+window.refreshMyPageAfterWorkRecordDelete_ = async function() {
+    if (typeof window.refreshMyPageRecentWorkRecords_ === 'function') {
+        try { await window.refreshMyPageRecentWorkRecords_({ reloadInit: true }); } catch (e) {}
+    } else if (typeof openMyPage === 'function') {
+        openMyPage();
+    }
+    const histModal = document.getElementById('myWorkHistoryModal');
+    if (histModal && histModal.style.display === 'flex' && typeof window.refreshMyWorkHistoryDetail_ === 'function') {
+        try { await window.refreshMyWorkHistoryDetail_(); } catch (e) {}
+    }
+};
+
 window.deleteRecordFromMyPage = async function(polyId, recordId) {
+    recordId = String(recordId || '').trim();
+    polyId = String(polyId || '').trim();
+    if (!recordId) {
+        if (typeof customAlert === 'function') customAlert('削除対象の記録IDが見つかりません。');
+        return;
+    }
     if (!await customConfirm("本当にこの記録を削除しますか？\n※復元できません")) return;
 
     if (typeof showLoader === 'function') showLoader("削除中...");
 
     try {
-        const updatedPhotos = await callGAS('deleteRecordItem', {
-            id: polyId,
-            recordId: recordId,
-            userName: currentUser
-        });
+        let deleted = false;
 
-        if (Array.isArray(updatedPhotos)) {
-            if (loadedPolygons[polyId]) {
-                loadedPolygons[polyId].photos = updatedPhotos;
+        const pendingOnly = Array.isArray(window._recordSyncQueue)
+          && window._recordSyncQueue.some(job => job && job.localId === recordId);
+
+        if (recordId.indexOf('sheet_') === 0 && !pendingOnly) {
+            throw new Error('この記録はシステムIDが無いため削除できません。作業記録シートを直接ご確認ください。');
+        }
+
+        if (pendingOnly) {
+            window.removeWorkRecordLocally_(recordId, polyId);
+            deleted = true;
+        } else {
+            const poly = (polyId && typeof loadedPolygons !== 'undefined') ? loadedPolygons[polyId] : null;
+            const inPoly = !!(poly && Array.isArray(poly.photos) && poly.photos.some(ph =>
+                ph && (ph.id === recordId || ph.url === recordId || (ph.data && ph.data.recordId === recordId))
+            ));
+            const canDeleteViaPoly = polyId && polyId !== '__global__' && inPoly
+              && typeof loadedPolygons !== 'undefined' && loadedPolygons[polyId];
+
+            if (canDeleteViaPoly) {
+                try {
+                    const updatedPhotos = await callGAS('deleteRecordItem', {
+                        id: polyId,
+                        recordId: recordId,
+                        userName: currentUser
+                    });
+                    if (Array.isArray(updatedPhotos)) {
+                        loadedPolygons[polyId].photos = updatedPhotos;
+                        deleted = true;
+                    }
+                } catch (e1) {
+                    console.warn('deleteRecordFromMyPage deleteRecordItem:', e1);
+                }
             }
+
+            if (!deleted) {
+                const res = await callGAS('deleteWorkRecordById', {
+                    recordId: recordId,
+                    userName: currentUser
+                });
+                deleted = !!(res && res.success);
+            }
+
+            window.removeWorkRecordLocally_(recordId, polyId);
+        }
+
+        if (deleted) {
             if (typeof customAlert === 'function') customAlert("記録を削除しました");
             else if (typeof alertMsg === 'function') alertMsg("記録を削除しました");
-            if (typeof openMyPage === 'function') openMyPage();
-            const histModal = document.getElementById('myWorkHistoryModal');
-            if (histModal && histModal.style.display === 'flex' && typeof openMyWorkHistoryDetail === 'function') {
-                openMyWorkHistoryDetail();
-            }
+            await window.refreshMyPageAfterWorkRecordDelete_();
         } else {
             if (typeof customAlert === 'function') customAlert("削除に失敗しました");
             else if (typeof alertMsg === 'function') alertMsg("削除に失敗しました", true);
         }
     } catch (e) {
         console.error("deleteRecordFromMyPage Error:", e);
-        if (typeof customAlert === 'function') customAlert("通信エラーが発生しました");
-        else if (typeof alertMsg === 'function') alertMsg("通信エラーが発生しました", true);
+        const msg = (e && e.message) ? String(e.message) : '通信エラーが発生しました';
+        if (typeof customAlert === 'function') customAlert(msg);
+        else if (typeof alertMsg === 'function') alertMsg(msg, true);
     } finally {
         if (typeof hideLoader === 'function') hideLoader();
     }
@@ -30570,13 +30626,18 @@ window.formatWorkRecordDateLabel = function(ymd) {
 /** 圃場未選択の作業記録（__global__）を再描画後も保持する */
 window.restoreGlobalWorkRecordsAfterInit_ = function(prevPhotos) {
     const merged = [];
-    const seen = new Set();
+    const seenIds = new Set();
+    const seenFp = new Set();
     const pushUnique = (ph) => {
         if (!ph) return;
-        const recId = ph.id || (ph.data && ph.data.recordId);
-        const key = recId || JSON.stringify([ph.date, ph.time, ph.data && ph.data.workName]);
-        if (seen.has(key)) return;
-        seen.add(key);
+        const recId = String(ph.id || (ph.data && ph.data.recordId) || '').trim();
+        const fp = (typeof window.workRecordFingerprintKey_ === 'function')
+            ? window.workRecordFingerprintKey_(ph)
+            : '';
+        if (recId && seenIds.has(recId)) return;
+        if (fp && seenFp.has(fp)) return;
+        if (recId) seenIds.add(recId);
+        if (fp) seenFp.add(fp);
         merged.push(ph);
     };
     (Array.isArray(prevPhotos) ? prevPhotos : []).forEach(pushUnique);
@@ -30590,11 +30651,16 @@ window.restoreGlobalWorkRecordsAfterInit_ = function(prevPhotos) {
             if (g && Array.isArray(g.photos)) g.photos.forEach(pushUnique);
         }
     } catch (e) {}
+    if (loadedPolygons && loadedPolygons['__global__'] && Array.isArray(loadedPolygons['__global__'].photos)) {
+        loadedPolygons['__global__'].photos.forEach(pushUnique);
+    }
     if (!merged.length) return;
     if (!loadedPolygons['__global__']) {
         loadedPolygons['__global__'] = { id: '__global__', name: '共通・全体', isMarker: true, photos: [] };
     }
-    loadedPolygons['__global__'].photos = merged;
+    loadedPolygons['__global__'].photos = (typeof window.dedupeWorkRecordPhotos_ === 'function')
+        ? window.dedupeWorkRecordPhotos_(merged)
+        : merged;
 };
 
 window.isMyWorkRecordAuthorMatch_ = function(recordAuthor, normUser) {
@@ -30604,6 +30670,58 @@ window.isMyWorkRecordAuthorMatch_ = function(recordAuthor, normUser) {
     if (phAuthor === normUser || normUser.includes(phAuthor) || phAuthor.includes(normUser)) return true;
     if (normUser === 'システム') return true;
     return false;
+};
+
+/** 同一作業記録の重複判定（IDが違っても日付・作業名・時間帯が同じなら同一） */
+window.workRecordFingerprintKey_ = function(rec) {
+    if (!rec) return '';
+    const d = rec.data || rec;
+    const normDate = (typeof window.normalizeDateStr === 'function')
+        ? window.normalizeDateStr
+        : (s => String(s || '').replace(/\//g, '-').slice(0, 10));
+    const normHm = (typeof window.normalizeTimeHm === 'function')
+        ? window.normalizeTimeHm
+        : (s => String(s || '').trim());
+    const ymd = normDate(d.workDate || rec.date || rec.recordYmd) || '';
+    if (!ymd) return '';
+    const author = String(rec.author || d.workerName || d.worker || d.userName || '').replace(/\s+/g, '');
+    const wName = String(d.workName || '').trim();
+    const start = normHm(d.startTime) || normHm(rec.time) || '';
+    const end = normHm(d.endTime) || '';
+    if (!wName && !start) return '';
+    return [ymd, author, wName, start, end].join('|');
+};
+
+/** 作業記録配列から指紋重複を除去（サーバーID・同期済みを優先） */
+window.dedupeWorkRecordPhotos_ = function(photos) {
+    if (!Array.isArray(photos) || !photos.length) return photos || [];
+    const getFp = (typeof window.workRecordFingerprintKey_ === 'function')
+        ? window.workRecordFingerprintKey_
+        : () => '';
+    const byKey = new Map();
+    const order = [];
+    const score = (ph) => {
+        const id = String(ph && ph.id || '');
+        let s = 0;
+        if (id && !id.startsWith('local_') && !id.startsWith('sheet_')) s += 4;
+        if (ph && !ph._pendingSync && !ph._syncFailed) s += 2;
+        if (ph && ph._localOptimistic) s -= 1;
+        return s;
+    };
+    photos.forEach(ph => {
+        if (!ph) return;
+        const fp = getFp(ph);
+        const key = fp || ('id:' + String(ph.id || ''));
+        if (!key || key === 'id:') return;
+        const prev = byKey.get(key);
+        if (!prev) {
+            byKey.set(key, ph);
+            order.push(key);
+        } else if (score(ph) > score(prev)) {
+            byKey.set(key, ph);
+        }
+    });
+    return order.map(k => byKey.get(k));
 };
 
 /** 作業記録収集用：メモリ＋端末キャッシュの圃場リスト */
@@ -30645,10 +30763,17 @@ window.resolvePolyIdFromFieldName_ = function(fieldName) {
 window.mergeMyWorkRecordsWithAnalysis_ = function(localRecords, serverRecords, allowedYmds) {
     const list = Array.isArray(localRecords) ? localRecords.slice() : [];
     const seenIds = new Set();
-    list.forEach(r => {
-        const id = r && (r.id || (r.data && r.data.recordId));
+    const seenFp = new Set();
+    const trackRecord = (r) => {
+        if (!r) return;
+        const id = r.id || (r.data && r.data.recordId);
         if (id) seenIds.add(String(id));
-    });
+        const fp = (typeof window.workRecordFingerprintKey_ === 'function')
+            ? window.workRecordFingerprintKey_(r)
+            : '';
+        if (fp) seenFp.add(fp);
+    };
+    list.forEach(trackRecord);
     (Array.isArray(serverRecords) ? serverRecords : []).forEach(row => {
         if (!row) return;
         const recId = String(row.recordId || '').trim();
@@ -30657,7 +30782,7 @@ window.mergeMyWorkRecordsWithAnalysis_ = function(localRecords, serverRecords, a
         if (allowedYmds && recordYmd && !allowedYmds.has(recordYmd)) return;
         const polyId = window.resolvePolyIdFromFieldName_(row.fieldName);
         const poly = (typeof loadedPolygons !== 'undefined' && loadedPolygons[polyId]) ? loadedPolygons[polyId] : null;
-        list.push({
+        const serverRec = {
             id: recId || ('sheet_' + recordYmd + '_' + (row.startTime || '') + '_' + (row.workName || '')),
             type: 'work',
             date: recordYmd,
@@ -30678,8 +30803,14 @@ window.mergeMyWorkRecordsWithAnalysis_ = function(localRecords, serverRecords, a
             isMarker: !!(poly && poly.isMarker),
             recordYmd: recordYmd,
             _fromServerSheet: true
-        });
+        };
+        const fp = (typeof window.workRecordFingerprintKey_ === 'function')
+            ? window.workRecordFingerprintKey_(serverRec)
+            : '';
+        if (fp && seenFp.has(fp)) return;
+        list.push(serverRec);
         if (recId) seenIds.add(recId);
+        if (fp) seenFp.add(fp);
     });
     list.sort((a, b) => {
         const yA = a.recordYmd || '';
@@ -30787,18 +30918,30 @@ window.collectMyWorkRecords = function(allowedYmds) {
     const normUser = (userName || '').replace(/\s+/g, '');
     const list = [];
     const seenIds = new Set();
+    const seenFp = new Set();
     const polySources = (typeof window.buildWorkRecordPolygonSources_ === 'function')
       ? window.buildWorkRecordPolygonSources_()
       : new Map(Object.keys(loadedPolygons || {}).map(k => [k, loadedPolygons[k]]));
+
+    const tryAddRecord = (rec) => {
+        if (!rec) return false;
+        const recId = rec.id || (rec.data && rec.data.recordId);
+        const fp = (typeof window.workRecordFingerprintKey_ === 'function')
+            ? window.workRecordFingerprintKey_(rec)
+            : '';
+        if (recId && seenIds.has(String(recId))) return false;
+        if (fp && seenFp.has(fp)) return false;
+        if (recId) seenIds.add(String(recId));
+        if (fp) seenFp.add(fp);
+        list.push(rec);
+        return true;
+    };
 
     // 1) 圃場・看板・共通コンテナ内の記録を収集
     polySources.forEach((p, pid) => {
         if (!p || !p.photos || !Array.isArray(p.photos)) return;
         p.photos.forEach(ph => {
             if (!ph) return;
-            const recId = ph.id || (ph.data && ph.data.recordId);
-            if (recId && seenIds.has(recId)) return;
-            if (recId) seenIds.add(recId);
 
             const isWorkRecord = (ph.type === 'work') || (ph.data && ph.data.workName);
             if (!isWorkRecord || !ph.data) return;
@@ -30814,7 +30957,7 @@ window.collectMyWorkRecords = function(allowedYmds) {
             if (allowedYmds && recordYmd && !allowedYmds.has(recordYmd)) return;
             if (allowedYmds && !recordYmd) return;
 
-            list.push({
+            tryAddRecord({
                 ...ph,
                 polyId: pid,
                 polyName: p.name || '全体・共通',
@@ -30828,9 +30971,6 @@ window.collectMyWorkRecords = function(allowedYmds) {
     if (Array.isArray(window._recordSyncQueue)) {
         window._recordSyncQueue.forEach(job => {
             if (!job || !job.data || job.recordType !== 'work') return;
-            const recId = job.localId;
-            if (recId && seenIds.has(recId)) return;
-            if (recId) seenIds.add(recId);
 
             const jobAuthor = String(job.userName || (job.data && (job.data.workerName || job.data.worker)) || normUser || '').replace(/\s+/g, '');
             if (!window.isMyWorkRecordAuthorMatch_(jobAuthor, normUser)) return;
@@ -30838,8 +30978,8 @@ window.collectMyWorkRecords = function(allowedYmds) {
             const workDateYmd = window.normalizeDateStr(job.data.workDate) || window.normalizeDateStr(new Date());
             if (allowedYmds && !allowedYmds.has(workDateYmd)) return;
 
-            list.push({
-                id: recId,
+            tryAddRecord({
+                id: job.localId,
                 type: 'work',
                 date: workDateYmd,
                 time: job.data.startTime || '00:00',
