@@ -12583,9 +12583,9 @@ function createSignboardMarker(name, pos, icon, id) {
         const cur = typeof window.getBulkWorkMemoCropNames_ === 'function'
           ? window.getBulkWorkMemoCropNames_(d)
           : [];
-        let next;
-        if (cur.indexOf(n) >= 0) next = cur.filter(c => c !== n);
-        else next = cur.concat([n]);
+        const next = (typeof window.toggleBulkWorkMemoCropNames_ === 'function')
+          ? window.toggleBulkWorkMemoCropNames_(cur, n)
+          : (cur.indexOf(n) >= 0 ? cur.filter(c => c !== n) : cur.concat([n]));
         if (typeof window.setBulkWorkMemoCropNames_ === 'function') {
           window.setBulkWorkMemoCropNames_(d, next);
         } else {
@@ -13675,9 +13675,11 @@ function createSignboardMarker(name, pos, icon, id) {
         }
       };
 
-      window.isDeliveryWork = (wName) => {
+      window.isDeliveryWork = (wName, optCat) => {
         const name = String(wName || '').trim();
-        const cat = document.getElementById('rec_work_category')?.value || '';
+        const cat = optCat != null
+          ? String(optCat || '').trim()
+          : (document.getElementById('rec_work_category')?.value || '');
         if (cat === '出荷・運搬') return true;
         if (!name) return false;
         return name.includes('配送') || name.includes('運搬') || name.includes('集荷') ||
@@ -13937,6 +13939,19 @@ function createSignboardMarker(name, pos, icon, id) {
           if (typeof customAlert === 'function') customAlert('圃場・看板をタップするか、地図をタップしてピンを立ててください。');
           return;
         }
+        const bulkUid = String(window._bulkWorkMemoDeliverySelectUid || '').trim();
+        if (bulkUid && window._bulkWorkMemoDeliverySelectKind === 'dest') {
+          const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === bulkUid);
+          if (row && typeof window.setBulkWorkMemoDeliveryDest_ === 'function') {
+            window.setBulkWorkMemoDeliveryDest_(row, pending);
+          }
+          window.rememberDeliveryPlace_(pending);
+          window.cancelDeliveryDestMapSelect({ keepDest: true, bulkDone: true });
+          if (typeof window.renderBulkWorkMemoReviewModal_ === 'function') {
+            window.renderBulkWorkMemoReviewModal_({ scrollUid: bulkUid });
+          }
+          return;
+        }
         window.applyDeliveryDestToForm_(pending);
         window.rememberDeliveryPlace_(pending);
         window.cancelDeliveryDestMapSelect({ keepDest: true });
@@ -13948,6 +13963,8 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.cancelDeliveryDestMapSelect = (opts) => {
         opts = opts || {};
+        const bulkUid = String(window._bulkWorkMemoDeliverySelectUid || '').trim();
+        const wasBulk = !!bulkUid;
         window._deliveryDestMapSelectMode = false;
         window._deliveryDestMapSelectAfterConfirm = false;
         window._pendingDeliveryDest = null;
@@ -13956,9 +13973,18 @@ function createSignboardMarker(name, pos, icon, id) {
         const selectUI = document.getElementById('mapSelectUI');
         if (selectUI) {
           selectUI.style.display = 'none';
+          selectUI.classList.remove('bulk-work-memo-map-select');
           if (typeof window.getDefaultMapSelectUIHtml === 'function') {
             selectUI.innerHTML = window.getDefaultMapSelectUIHtml();
           }
+        }
+        window._bulkWorkMemoDeliverySelectUid = '';
+        window._bulkWorkMemoDeliverySelectKind = '';
+        if (wasBulk) {
+          if (typeof window.finishBulkWorkMemoMapSelect_ === 'function') window.finishBulkWorkMemoMapSelect_();
+          const modalEl = document.getElementById('modal');
+          if (modalEl) modalEl.style.display = 'flex';
+          return;
         }
         document.getElementById('rightPanel').style.display = 'flex';
         if (typeof window.refreshDeliveryPlaceSection_ === 'function') {
@@ -14125,8 +14151,11 @@ function createSignboardMarker(name, pos, icon, id) {
           const bg = isSelected ? '#0288D1' : '#fff';
           const color = isSelected ? '#fff' : '#01579B';
           const border = isSelected ? '#01579B' : '#81D4FA';
+          const chipClick = opts.chipSelectArgPrefix != null
+            ? `${opts.chipSelectFn}('${String(opts.chipSelectArgPrefix).replace(/'/g, "\\'")}','${safeId}')`
+            : `${opts.chipSelectFn}('${safeId}')`;
           return `<div style="display:inline-flex; align-items:center; background:${bg}; color:${color}; border:1px solid ${border}; border-radius:18px; padding:4px 10px; font-size:12px; gap:4px;">
-            <span onclick="${opts.chipSelectFn}('${safeId}')" style="cursor:pointer;">📍 ${esc(item.name)}</span>
+            <span onclick="${chipClick}" style="cursor:pointer;">📍 ${esc(item.name)}</span>
             <span onclick="window.deleteDeliveryDestinationFromCloud('${safeId}')" title="削除" style="cursor:pointer; color:${isSelected ? '#FFCDD2' : '#E53935'}; font-size:12px; font-weight:bold;">✕</span>
           </div>`;
         }).join('');
@@ -14141,11 +14170,11 @@ function createSignboardMarker(name, pos, icon, id) {
             <div style="font-weight:bold; color:#01579B; margin-bottom:8px; font-size:14px;">${opts.title}</div>
             <div style="font-size:12px; color:#555; margin-bottom:8px; line-height:1.45;">地図で${opts.what}の<b>圃場</b>または<b>看板</b>をタップしてください。登録がない場所は地図をタップしてピンを立てられます。</div>
             ${list.length ? `<div style="font-size:11px; font-weight:bold; color:#555; margin-bottom:4px;">記憶済み（タップで選択）:</div><div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">${chipsHtml}</div>` : ''}
-            <button type="button" onclick="${opts.mapOpenFn}()" style="width:100%; background:#0288D1; color:#fff; border:none; padding:12px; border-radius:8px; font-size:14px; font-weight:bold; cursor:pointer; box-shadow:0 2px 5px rgba(2,136,209,0.3); margin-bottom:8px;">${opts.mapLabel}</button>
+            <button type="button" onclick="${opts.mapOnclick || (opts.mapOpenFn + '()')}" style="width:100%; background:#0288D1; color:#fff; border:none; padding:12px; border-radius:8px; font-size:14px; font-weight:bold; cursor:pointer; box-shadow:0 2px 5px rgba(2,136,209,0.3); margin-bottom:8px;">${opts.mapLabel}</button>
             <div style="display:${hasPlace ? 'block' : 'none'}; background:#B3E5FC; color:#01579B; padding:8px 10px; border-radius:6px; font-size:12px; line-height:1.45;">
               <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px;">
                 <div style="font-weight:bold;">📍 ${esc(place.name)}${typeLabel}</div>
-                ${opts.clearFn ? `<span onclick="${opts.clearFn}()" title="選び直す" style="cursor:pointer; color:#01579B; font-weight:bold;">✕</span>` : ''}
+                ${opts.clearFn ? `<span onclick="${opts.clearOnclick || (opts.clearFn + '()')}" title="選び直す" style="cursor:pointer; color:#01579B; font-weight:bold;">✕</span>` : ''}
               </div>
               ${coordsText ? `<div style="margin-top:2px;">${coordsText}</div>` : ''}
             </div>
@@ -14331,6 +14360,19 @@ function createSignboardMarker(name, pos, icon, id) {
           if (typeof customAlert === 'function') customAlert('圃場・看板をタップするか、地図をタップしてピンを立ててください。');
           return;
         }
+        const bulkUid = String(window._bulkWorkMemoDeliverySelectUid || '').trim();
+        if (bulkUid && window._bulkWorkMemoDeliverySelectKind === 'origin') {
+          const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === bulkUid);
+          if (row && typeof window.setBulkWorkMemoDeliveryOrigin_ === 'function') {
+            window.setBulkWorkMemoDeliveryOrigin_(row, pending);
+          }
+          window.rememberDeliveryPlace_(pending);
+          window.cancelDeliveryOriginMapSelect();
+          if (typeof window.renderBulkWorkMemoReviewModal_ === 'function') {
+            window.renderBulkWorkMemoReviewModal_({ scrollUid: bulkUid });
+          }
+          return;
+        }
         window.setDeliveryOrigin_(pending);
         window.rememberDeliveryPlace_(pending);
         const advance = window._deliveryOriginMapSelectAfterConfirm;
@@ -14346,6 +14388,8 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.cancelDeliveryOriginMapSelect = () => {
+        const bulkUid = String(window._bulkWorkMemoDeliverySelectUid || '').trim();
+        const wasBulk = !!bulkUid;
         window._deliveryOriginMapSelectMode = false;
         window._deliveryOriginMapSelectAfterConfirm = false;
         window._pendingDeliveryOrigin = null;
@@ -14354,9 +14398,18 @@ function createSignboardMarker(name, pos, icon, id) {
         const selectUI = document.getElementById('mapSelectUI');
         if (selectUI) {
           selectUI.style.display = 'none';
+          selectUI.classList.remove('bulk-work-memo-map-select');
           if (typeof window.getDefaultMapSelectUIHtml === 'function') {
             selectUI.innerHTML = window.getDefaultMapSelectUIHtml();
           }
+        }
+        window._bulkWorkMemoDeliverySelectUid = '';
+        window._bulkWorkMemoDeliverySelectKind = '';
+        if (wasBulk) {
+          if (typeof window.finishBulkWorkMemoMapSelect_ === 'function') window.finishBulkWorkMemoMapSelect_();
+          const modalEl = document.getElementById('modal');
+          if (modalEl) modalEl.style.display = 'flex';
+          return;
         }
         document.getElementById('rightPanel').style.display = 'flex';
         if (typeof window.refreshDeliveryOriginSection_ === 'function') window.refreshDeliveryOriginSection_();
@@ -25997,6 +26050,143 @@ window.matchBulkWorkMemoField_ = (text) => {
   return best || { polyId: '', polyName: '' };
 };
 
+/** 一括入力：メモの（）内などから圃場名トークンを抽出 */
+window.cleanBulkWorkMemoFieldHintToken_ = (token) => {
+  let t = String(token || '').trim();
+  t = t.replace(/^(の|は|が|を|に|で|へ|と)\s*/g, '');
+  t = t.replace(/(が途中|まで|途中|のみ|など|付近|あたり|方面|一帯|周辺)$/g, '').trim();
+  return t;
+};
+
+window.extractBulkWorkMemoFieldHintTexts_ = (raw) => {
+  const texts = [];
+  const s = String(raw || '');
+  const re = /[（(]([^）)]+)[）)]/g;
+  let m;
+  while ((m = re.exec(s))) {
+    const body = String(m[1] || '').trim();
+    if (body) texts.push(body);
+  }
+  return texts;
+};
+
+window.splitBulkWorkMemoFieldHintTokens_ = (hintText) => {
+  return String(hintText || '')
+    .split(/[,、/／・]+/)
+    .map(t => window.cleanBulkWorkMemoFieldHintToken_(t))
+    .filter(t => t.length >= 2);
+};
+
+window.collectBulkWorkMemoFieldHintTokens_ = (raw) => {
+  const tokens = [];
+  const push = (t) => {
+    const n = window.cleanBulkWorkMemoFieldHintToken_(t);
+    if (n && n.length >= 2 && tokens.indexOf(n) < 0) tokens.push(n);
+  };
+  window.extractBulkWorkMemoFieldHintTexts_(raw).forEach(hint => {
+    window.splitBulkWorkMemoFieldHintTokens_(hint).forEach(push);
+  });
+  const direct = window.matchBulkWorkMemoField_(raw);
+  if (direct && direct.polyName) push(direct.polyName);
+  return tokens;
+};
+
+window.getBulkWorkMemoFieldPolygonList_ = () => {
+  const list = [];
+  if (typeof loadedPolygons === 'undefined') return list;
+  Object.keys(loadedPolygons || {}).forEach(id => {
+    const p = loadedPolygons[id];
+    if (!p || p.isMarker || !p.name) return;
+    list.push({ polyId: String(id), polyName: String(p.name).trim() });
+  });
+  return list;
+};
+
+window.scoreBulkWorkMemoFieldNameMatch_ = (token, polyName) => {
+  const tok = String(token || '').trim();
+  const name = String(polyName || '').trim();
+  if (!tok || !name) return 0;
+  if (tok === name) return 100;
+  if (name.indexOf(tok) >= 0) return 88 + Math.min(12, tok.length);
+  if (tok.indexOf(name) >= 0 && name.length >= 2) return 82 + Math.min(12, name.length);
+  if (window.bulkWorkMemoKanaKeyContains_(name, tok)) return 85 + Math.min(10, tok.length);
+  if (window.bulkWorkMemoKanaKeyContains_(tok, name)) return 80 + Math.min(10, name.length);
+  return window.bulkWorkMemoFuzzyMatchScore_(tok, name);
+};
+
+/** 一括入力：メモから圃場を推定（一致は自動、それ以外は候補） */
+window.suggestBulkWorkMemoFieldsFromMemo_ = (raw) => {
+  const tokens = window.collectBulkWorkMemoFieldHintTokens_(raw);
+  const fields = window.getBulkWorkMemoFieldPolygonList_();
+  const AUTO_MIN = 72;
+  const CAND_MIN = 42;
+  const autoIds = [];
+  const candidateRows = [];
+  const tokenResults = [];
+  const usedPolyIds = new Set();
+
+  tokens.forEach(token => {
+    const scored = fields.map(f => ({
+      polyId: f.polyId,
+      polyName: f.polyName,
+      score: window.scoreBulkWorkMemoFieldNameMatch_(token, f.polyName)
+    })).filter(x => x.score > 0).sort((a, b) => b.score - a.score || b.polyName.length - a.polyName.length);
+
+    if (!scored.length) {
+      tokenResults.push({ token: token, status: 'unknown', options: [] });
+      return;
+    }
+
+    const best = scored[0];
+    if (best.score >= AUTO_MIN && !usedPolyIds.has(best.polyId)) {
+      autoIds.push(best.polyId);
+      usedPolyIds.add(best.polyId);
+      tokenResults.push({
+        token: token,
+        status: 'matched',
+        polyId: best.polyId,
+        polyName: best.polyName,
+        score: best.score
+      });
+      return;
+    }
+
+    const opts = scored.filter(x => x.score >= CAND_MIN).slice(0, 5);
+    opts.forEach(o => {
+      if (!usedPolyIds.has(o.polyId)) {
+        candidateRows.push({ token: token, polyId: o.polyId, polyName: o.polyName, score: o.score });
+      }
+    });
+    tokenResults.push({ token: token, status: 'candidate', options: opts });
+  });
+
+  return { tokens: tokens, autoIds: autoIds, candidateRows: candidateRows, tokenResults: tokenResults };
+};
+
+window.applyBulkWorkMemoFieldHints_ = (draft, opts) => {
+  opts = opts || {};
+  if (!draft) return;
+  const raw = String(draft.rawLine || '').trim();
+  if (!raw) return;
+  const sug = window.suggestBulkWorkMemoFieldsFromMemo_(raw);
+  draft.fieldHintTokens = sug.tokens;
+  draft.fieldTokenResults = sug.tokenResults;
+
+  const existing = opts.mergePolyIds === false ? [] : window.getBulkWorkMemoPolyIds_(draft);
+  const merged = existing.slice();
+  const seen = new Set(merged);
+  sug.autoIds.forEach(id => {
+    if (!seen.has(id)) {
+      merged.push(id);
+      seen.add(id);
+    }
+  });
+  if (merged.length) window.setBulkWorkMemoPolyIds_(draft, merged);
+
+  const selected = new Set(window.getBulkWorkMemoPolyIds_(draft));
+  draft.fieldCandidates = sug.candidateRows.filter(c => !selected.has(String(c.polyId)));
+};
+
 window.matchBulkWorkMemoCrop_ = (text) => {
   const t = String(text || '');
   if (!t || typeof pdlCrops === 'undefined') return '';
@@ -26390,16 +26580,15 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
     ? work.maybeCandidates.map(c => c.name).filter(Boolean)
     : [];
 
-  const mentionedMachines = (typeof window.getBulkWorkMemoMachineList_ === 'function')
-    ? window.getBulkWorkMemoMachineList_({ rawLine: raw, category: category, workName: workName }).filter(m => m && window.bulkWorkMemoKanaKeyContains_(raw, m.name))
-    : [];
-
   const draftBase = { workName, category, rawLine: raw };
+  const mentionedMachines = (typeof window.guessBulkWorkMemoMachinesFromMemo_ === 'function')
+    ? window.guessBulkWorkMemoMachinesFromMemo_(draftBase)
+    : [];
   const uiFlags = (typeof window.getBulkWorkMemoUiFlags_ === 'function')
     ? window.getBulkWorkMemoUiFlags_(draftBase)
     : { showPesticide: false, isPrep: false };
 
-  return {
+  const row = {
     recordKind: work.isRest ? 'rest' : 'work',
     rawLine: raw,
     startTime: startTime || '',
@@ -26416,6 +26605,9 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
     polyId: '',
     polyIds: [],
     polyName: '',
+    fieldHintTokens: [],
+    fieldTokenResults: [],
+    fieldCandidates: [],
     prepTargetWork: '',
     prepListFilterCategory: '',
     maintenanceToolId: '',
@@ -26433,6 +26625,10 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
     included: true,
     comment: ''
   };
+  if (typeof window.applyBulkWorkMemoFieldHints_ === 'function') {
+    window.applyBulkWorkMemoFieldHints_(row, { mergePolyIds: false });
+  }
+  return row;
 };
 
 window.parseBulkWorkMemo_ = (text) => {
@@ -26607,8 +26803,18 @@ window.buildBulkWorkMemoModalHeaderHtml_ = (title, subtitleHtml) => {
 window.closeBulkWorkMemoModal_ = () => {
   window._bulkWorkMemoActive = false;
   const wasMapPicking = !!String(window._bulkWorkMemoMapSelectUid || '').trim();
+  const wasDeliveryMapPicking = !!String(window._bulkWorkMemoDeliverySelectUid || '').trim();
   window._bulkWorkMemoMapSelectUid = '';
+  window._bulkWorkMemoDeliverySelectUid = '';
+  window._bulkWorkMemoDeliverySelectKind = '';
   window._bulkWorkMemoParsing = false;
+  if (wasDeliveryMapPicking) {
+    if (window._deliveryDestMapSelectMode && typeof window.cancelDeliveryDestMapSelect === 'function') {
+      window.cancelDeliveryDestMapSelect();
+    } else if (window._deliveryOriginMapSelectMode && typeof window.cancelDeliveryOriginMapSelect === 'function') {
+      window.cancelDeliveryOriginMapSelect();
+    }
+  }
   if (wasMapPicking) {
     if (typeof backupSelectedPolyIds !== 'undefined') selectedPolyIds = [...backupSelectedPolyIds];
     try {
@@ -26719,6 +26925,7 @@ window.buildBulkWorkMemoFieldOptionsHtml_ = (selectedId) => {
 /** 一括入力で圃場選択を出すか（作業名登録後、圃場カテゴリの作業のみ） */
 window.bulkWorkMemoNeedsField_ = (draft) => {
   if (!draft || window.bulkWorkMemoIsRestDraft_(draft)) return false;
+  if (typeof window.bulkWorkMemoIsDelivery_ === 'function' && window.bulkWorkMemoIsDelivery_(draft)) return false;
   const wName = String(draft.workName || '').trim();
   if (!wName || wName.includes('休憩')) return false;
   // 解析時の仮カテゴリ（事務作業など）より作業マスタのカテゴリを優先
@@ -26727,6 +26934,18 @@ window.bulkWorkMemoNeedsField_ = (draft) => {
     return window.afterSaveWorkNeedsFieldPlace_(wName, cat);
   }
   return typeof window.isFieldCategory === 'function' && window.isFieldCategory(cat);
+};
+
+/** 一括入力：圃場欄を表示するか（カテゴリ必須 or メモから圃場ヒントあり） */
+window.bulkWorkMemoShowFieldSection_ = (draft) => {
+  if (!draft || window.bulkWorkMemoIsRestDraft_(draft)) return false;
+  if (typeof window.bulkWorkMemoIsDelivery_ === 'function' && window.bulkWorkMemoIsDelivery_(draft)) return false;
+  if (window.bulkWorkMemoNeedsField_(draft)) return true;
+  if (window.getBulkWorkMemoPolyIds_(draft).length) return true;
+  if (Array.isArray(draft.fieldHintTokens) && draft.fieldHintTokens.length) return true;
+  if (Array.isArray(draft.fieldCandidates) && draft.fieldCandidates.length) return true;
+  if (Array.isArray(draft.fieldTokenResults) && draft.fieldTokenResults.some(r => r && r.status !== 'matched')) return true;
+  return false;
 };
 
 window.getBulkWorkMemoCategories_ = () => {
@@ -26818,6 +27037,27 @@ window.getBulkWorkMemoCropChipNames_ = (workName, rawLine) => {
   return names;
 };
 
+window.isBulkWorkMemoCommonCrop_ = (name) => {
+  const s = String(name || '').trim();
+  if (!s) return false;
+  if (s === '共通' || s === '__common__' || s.toLowerCase() === 'common') return true;
+  return s === 'すべて' || s === '全て' || s === '全作物' || s === '全対象';
+};
+
+/** 一括入力：作物トグル（共通と個別作物は排他的） */
+window.toggleBulkWorkMemoCropNames_ = (cur, name) => {
+  const n = String(name || '').trim();
+  if (!n) return Array.isArray(cur) ? cur.slice() : [];
+  const curList = (Array.isArray(cur) ? cur : []).map(s => String(s || '').trim()).filter(Boolean);
+  const pickCommon = window.isBulkWorkMemoCommonCrop_(n);
+  const pickLabel = pickCommon ? '共通' : n;
+  if (curList.indexOf(pickLabel) >= 0 || (!pickCommon && curList.indexOf(n) >= 0)) {
+    return curList.filter(c => c !== pickLabel && c !== n);
+  }
+  if (pickCommon) return ['共通'];
+  return curList.filter(c => !window.isBulkWorkMemoCommonCrop_(c)).concat([pickLabel]);
+};
+
 window.getBulkWorkMemoCropNames_ = (d) => {
   if (!d) return [];
   if (Array.isArray(d.cropNames) && d.cropNames.length) {
@@ -26830,7 +27070,15 @@ window.getBulkWorkMemoCropNames_ = (d) => {
 
 window.setBulkWorkMemoCropNames_ = (d, names) => {
   if (!d) return;
-  const list = (Array.isArray(names) ? names : [names]).map(s => String(s || '').trim()).filter(Boolean);
+  let list = (Array.isArray(names) ? names : [names]).map(s => String(s || '').trim()).filter(Boolean);
+  const commons = list.filter(n => window.isBulkWorkMemoCommonCrop_(n));
+  const others = list.filter(n => !window.isBulkWorkMemoCommonCrop_(n));
+  if (commons.length && others.length) {
+    list = others;
+  } else if (commons.length) {
+    list = ['共通'];
+  }
+  list = list.filter((n, i, arr) => arr.indexOf(n) === i);
   d.cropNames = list;
   d.cropName = list.join(', ');
 };
@@ -26859,6 +27107,57 @@ window.setBulkWorkMemoPolyIds_ = (d, ids) => {
   }).filter(Boolean).join('、');
 };
 
+window.buildBulkWorkMemoFieldCandidatesHtml_ = (d, uid) => {
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const selected = new Set(window.getBulkWorkMemoPolyIds_(d));
+  const matchedNotes = (Array.isArray(d.fieldTokenResults) ? d.fieldTokenResults : [])
+    .filter(r => r && r.status === 'matched' && r.polyName)
+    .map(r => `「${r.token}」→ ${r.polyName}`);
+  const pending = (Array.isArray(d.fieldTokenResults) ? d.fieldTokenResults : [])
+    .filter(r => r && (r.status === 'candidate' || r.status === 'unknown'));
+  let html = '';
+  if (matchedNotes.length) {
+    html += `<div style="font-size:11px; color:#2E7D32; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px; padding:8px 10px; margin-bottom:8px; line-height:1.45;">📝 メモから自動選択: ${matchedNotes.map(s => esc(s)).join(' ／ ')}</div>`;
+  }
+  if (pending.length) {
+    html += `<div style="font-size:10px; color:#1565C0; font-weight:bold; margin-bottom:4px;">📝 メモからの圃場候補（タップで選択）</div>`;
+    pending.forEach(r => {
+      const opts = (Array.isArray(r.options) ? r.options : []).filter(o => o && o.polyId && !selected.has(String(o.polyId)));
+      if (!opts.length) {
+        html += `<div style="font-size:11px; color:#888; margin-bottom:6px; line-height:1.35;">「${esc(r.token)}」→ 一致する圃場が見つかりませんでした</div>`;
+        return;
+      }
+      html += `<div style="margin-bottom:8px; padding:8px; background:#E3F2FD; border:1px solid #90CAF9; border-radius:8px;">
+        <div style="font-size:11px; color:#1565C0; font-weight:bold; margin-bottom:4px;">「${esc(r.token)}」</div>
+        <div style="display:flex; flex-wrap:wrap; gap:6px;">${opts.map(o => {
+          const safeId = String(o.polyId).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          return `<button type="button" onclick="pickBulkWorkMemoFieldCandidate_('${esc(uid)}','${safeId}')" style="padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid #64B5F6; background:#fff; color:#1565C0;">📍 ${esc(o.polyName)}</button>`;
+        }).join('')}</div>
+      </div>`;
+    });
+  }
+  return html;
+};
+
+window.pickBulkWorkMemoFieldCandidate_ = (uid, polyId) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row || !polyId) return;
+  const ids = window.getBulkWorkMemoPolyIds_(row);
+  const pid = String(polyId);
+  if (ids.indexOf(pid) < 0) window.setBulkWorkMemoPolyIds_(row, ids.concat([pid]));
+  if (Array.isArray(row.fieldCandidates)) {
+    row.fieldCandidates = row.fieldCandidates.filter(c => String(c.polyId) !== pid);
+  }
+  if (Array.isArray(row.fieldTokenResults)) {
+    row.fieldTokenResults.forEach(r => {
+      if (!r || !Array.isArray(r.options)) return;
+      r.options = r.options.filter(o => String(o.polyId) !== pid);
+      if (!r.options.length && r.status === 'candidate') r.status = 'unknown';
+    });
+  }
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+};
+
 window.buildBulkWorkMemoFieldHtml_ = (d, uid) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const ids = window.getBulkWorkMemoPolyIds_(d);
@@ -26873,8 +27172,12 @@ window.buildBulkWorkMemoFieldHtml_ = (d, uid) => {
     ? `<div style="display:flex; flex-wrap:wrap; margin-bottom:8px;">${chips}</div>`
     : `<div style="font-size:11px; color:#E65100; background:#FFF8E1; border:1px dashed #FFCC80; border-radius:8px; padding:8px 10px; margin-bottom:8px; line-height:1.35;">🗺️ まだ圃場が選ばれていません。下のボタンからマップで選べます（複数可）${isMaint ? '。機械だけの整備なら圃場は省略可（機械か圃場のどちらかは必須）' : ''}</div>`;
   const fieldLabel = isMaint ? '📍 圃場（任意・機械か圃場のどちらか必須）' : '📍 圃場（複数可）';
+  const hintHtml = typeof window.buildBulkWorkMemoFieldCandidatesHtml_ === 'function'
+    ? window.buildBulkWorkMemoFieldCandidatesHtml_(d, uid)
+    : '';
   return `<div class="bulk-field-box" style="margin:8px 0 0; background:#F1F8E9; border:2px solid #A5D6A7; border-radius:10px; padding:10px;">
     <label style="font-size:11px; font-weight:bold; color:#1B5E20; margin-bottom:6px; display:block;">${fieldLabel}</label>
+    ${hintHtml}
     <div id="bulk_field_display_${esc(uid)}">${display}</div>
     <button type="button" onclick="openBulkWorkMemoMapSelect_('${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:10px 14px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:none; background:#2E7D32; color:#fff; box-shadow:0 2px 4px rgba(46,125,50,0.28);">🗺️ マップから選択</button>
   </div>`;
@@ -26928,7 +27231,7 @@ window.buildBulkWorkMemoCropChipsHtml_ = (d, uid) => {
   }).join('');
   const selHint = selected.length
     ? `<div style="font-size:11px; color:#2E7D32; margin-bottom:6px; font-weight:bold;">選択中: ${esc(selected.join('、'))}</div>`
-    : `<div style="font-size:11px; color:#E65100; margin-bottom:6px;">作物を1つ以上選んでください（タップで追加／解除）</div>`;
+    : `<div style="font-size:11px; color:#E65100; margin-bottom:6px;">「共通」か個別の作物名を選んでください（同時には選べません）</div>`;
   return `${selHint}<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; max-height:200px; overflow-y:auto; padding:2px;">${chipHtml}</div>`;
 };
 
@@ -27105,6 +27408,41 @@ window.getBulkWorkMemoUiFlags_ = (draft) => {
     showPesticide: pick(w && w.showPesticide, inferred.showPesticide),
     isPrep: typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(wName)
   };
+};
+
+/** 一括入力：使用機械リストを重複なくマージ */
+window.mergeBulkWorkMemoMachines_ = (base, extra) => {
+  const out = [];
+  const seen = new Set();
+  const push = (m) => {
+    if (!m) return;
+    const id = String(m.id || '').trim();
+    const name = String(m.name || '').trim();
+    if (!id && !name) return;
+    const key = id + '\0' + name;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ id: id || name, name: name || id });
+  };
+  (Array.isArray(base) ? base : []).forEach(push);
+  (Array.isArray(extra) ? extra : []).forEach(push);
+  return out;
+};
+
+/** 一括入力：メモから使用機械を推定（複数可） */
+window.guessBulkWorkMemoMachinesFromMemo_ = (draft) => {
+  const raw = String(draft && draft.rawLine || '').trim();
+  if (!raw) return [];
+  const list = window.getBulkWorkMemoMachineList_(draft || {});
+  if (!list.length) return [];
+  const fromLine = list.filter(m => m && window.bulkWorkMemoKanaKeyContains_(raw, m.name));
+  const machineIdSet = new Set(list.map(m => String(m.id)));
+  const machineNameSet = new Set(list.map(m => String(m.name)));
+  const sug = window.suggestBulkWorkMemoMaintenanceTargets_(raw);
+  const fromTokens = (sug.primary || []).concat(sug.maybe || []).filter(x =>
+    machineIdSet.has(String(x.id)) || machineNameSet.has(String(x.name))
+  ).map(x => ({ id: String(x.id), name: String(x.name) }));
+  return window.mergeBulkWorkMemoMachines_(fromLine, fromTokens);
 };
 
 window.getBulkWorkMemoMachineList_ = (draft) => {
@@ -27852,7 +28190,9 @@ window.refreshBulkWorkMemoAfterCropChange_ = (cropName) => {
     const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
     if (row) {
       const cur = window.getBulkWorkMemoCropNames_(row);
-      if (cur.indexOf(pick) < 0) window.setBulkWorkMemoCropNames_(row, cur.concat([pick]));
+      if (cur.indexOf(pick) < 0 && cur.indexOf(window.isBulkWorkMemoCommonCrop_(pick) ? '共通' : pick) < 0) {
+        window.setBulkWorkMemoCropNames_(row, window.toggleBulkWorkMemoCropNames_(cur, pick));
+      }
       row.detailedWorks = [];
       window.refreshBulkWorkMemoCropPickOrReview_(uid);
     }
@@ -28420,7 +28760,7 @@ window.buildBulkWorkMemoCollapsedPickHtml_ = (opts) => {
         <div style="font-size:14px; font-weight:bold; color:${o.textColor || '#333'}; line-height:1.35; margin-top:2px;">✅ ${esc(o.value || '')}</div>
         ${o.sub ? `<div style="font-size:11px; color:#666; margin-top:2px; line-height:1.35;">${o.sub}</div>` : ''}
       </div>
-      <button type="button" onclick="${toggleFn}('${uid}')" style="flex-shrink:0; background:#fff; color:${o.textColor || '#555'}; border:1px solid ${o.borderColor || '#ccc'}; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">変更</button>
+      <button type="button" onclick="${toggleFn}('${uid}')" style="flex-shrink:0; background:#fff; color:${o.textColor || '#555'}; border:1px solid ${o.borderColor || '#ccc'}; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">${esc(o.toggleLabel || '変更')}</button>
     </div>
   </div>`;
 };
@@ -28450,6 +28790,13 @@ window.toggleBulkWorkMemoMachinePick_ = (uid) => {
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
   if (!row) return;
   row._machinePickOpen = true;
+  window.refreshBulkWorkMemoExtras_(uid);
+};
+
+window.collapseBulkWorkMemoMachinePick_ = (uid) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  row._machinePickOpen = false;
   window.refreshBulkWorkMemoExtras_(uid);
 };
 
@@ -28518,7 +28865,7 @@ window.buildBulkWorkMemoCropPickSectionHtml_ = (d, uid) => {
     });
   }
   return `
-    <label style="font-size:10px; color:#2E7D32; font-weight:bold;">🌱 作物名（複数可）</label>
+    <label style="font-size:10px; color:#2E7D32; font-weight:bold;">🌱 作物名（共通 または 個別作物）</label>
     ${window.buildBulkWorkMemoCropChipsHtml_(d, uid)}
     <div style="display:flex; gap:8px; margin-bottom:8px;">
       <button type="button" onclick="addBulkWorkMemoCrop_('${esc(uid)}')" style="flex:1; box-sizing:border-box; padding:10px 14px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid #66BB6A; background:#fff; color:#2E7D32; text-align:left;">＋ 作物を追加</button>
@@ -28651,6 +28998,179 @@ window.filterBulkWorkMemoAllWorkChips_ = (inputEl, uid) => {
   }
 };
 
+/** 一括入力：運搬作業か（作業名・カテゴリから判定） */
+window.bulkWorkMemoIsDelivery_ = (draft) => {
+  if (!draft || window.bulkWorkMemoIsRestDraft_(draft)) return false;
+  const wName = String(draft.workName || '').trim();
+  if (!wName) return false;
+  const cat = String(draft.category || window.getBulkWorkMemoWorkCategory_(wName) || '').trim();
+  return typeof window.isDeliveryWork === 'function' && window.isDeliveryWork(wName, cat);
+};
+
+window.normalizeBulkWorkMemoDeliveryPlace_ = (place) => {
+  if (!place || !String(place.name || '').trim()) return null;
+  return {
+    name: String(place.name).trim(),
+    lat: place.lat != null && place.lat !== '' ? Number(place.lat) : null,
+    lng: place.lng != null && place.lng !== '' ? Number(place.lng) : null,
+    polyId: String(place.polyId || '').trim(),
+    isTemporary: !!place.isTemporary
+  };
+};
+
+window.bulkWorkMemoDeliveryPlaceToPending_ = (place) => {
+  if (!place || !place.name) return null;
+  const polyId = String(place.polyId || '');
+  let type = place.type || 'pin';
+  if (!place.isTemporary && polyId && typeof loadedPolygons !== 'undefined' && loadedPolygons[polyId]) {
+    type = loadedPolygons[polyId].isMarker ? 'sign' : 'field';
+  }
+  return {
+    name: place.name,
+    lat: place.lat,
+    lng: place.lng,
+    polyId: polyId,
+    type: type,
+    isTemporary: !!place.isTemporary
+  };
+};
+
+window.setBulkWorkMemoDeliveryDest_ = (draft, place) => {
+  if (!draft) return;
+  draft.deliveryDestination = window.normalizeBulkWorkMemoDeliveryPlace_(place);
+};
+
+window.setBulkWorkMemoDeliveryOrigin_ = (draft, place) => {
+  if (!draft) return;
+  draft.deliveryOrigin = window.normalizeBulkWorkMemoDeliveryPlace_(place);
+};
+
+window.buildBulkWorkMemoDeliveryHtml_ = (d, uid) => {
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const safeUid = String(uid || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const dest = d.deliveryDestination || {};
+  const origin = d.deliveryOrigin || {};
+  let html = window.buildDeliveryPlaceCardHtml_({
+    title: '🚚 運搬先（届け先）',
+    what: '運搬先',
+    place: dest,
+    chipSelectFn: 'window.selectBulkWorkMemoDeliveryDestChip_',
+    chipSelectArgPrefix: safeUid,
+    mapOnclick: `window.openBulkWorkMemoDeliveryMapSelect_('${safeUid}','dest')`,
+    mapLabel: '🗺️ 地図で運搬先を選ぶ',
+    clearOnclick: `window.clearBulkWorkMemoDeliveryDest_('${safeUid}')`,
+    clearFn: 'window.clearBulkWorkMemoDeliveryDest_'
+  });
+  html += window.buildDeliveryPlaceCardHtml_({
+    title: '📤 運搬元（出発地）',
+    what: '出発元',
+    place: origin,
+    chipSelectFn: 'window.selectBulkWorkMemoDeliveryOriginChip_',
+    chipSelectArgPrefix: safeUid,
+    mapOnclick: `window.openBulkWorkMemoDeliveryMapSelect_('${safeUid}','origin')`,
+    mapLabel: '🗺️ 地図で運搬元を選ぶ',
+    clearOnclick: `window.clearBulkWorkMemoDeliveryOrigin_('${safeUid}')`,
+    clearFn: 'window.clearBulkWorkMemoDeliveryOrigin_'
+  });
+  return html;
+};
+
+window.selectBulkWorkMemoDeliveryDestChip_ = (uid, id) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  const item = (window.pdlDeliveryDestinations || []).find(d => String(d.id) === String(id));
+  if (!row || !item) return;
+  window.setBulkWorkMemoDeliveryDest_(row, {
+    name: item.name || '',
+    lat: item.lat,
+    lng: item.lng,
+    polyId: '',
+    isTemporary: false
+  });
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+};
+
+window.selectBulkWorkMemoDeliveryOriginChip_ = (uid, id) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  const item = (window.pdlDeliveryDestinations || []).find(d => String(d.id) === String(id));
+  if (!row || !item) return;
+  window.setBulkWorkMemoDeliveryOrigin_(row, {
+    name: item.name || '',
+    lat: item.lat,
+    lng: item.lng,
+    polyId: '',
+    isTemporary: true
+  });
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+};
+
+window.clearBulkWorkMemoDeliveryDest_ = (uid) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  row.deliveryDestination = null;
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+};
+
+window.clearBulkWorkMemoDeliveryOrigin_ = (uid) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  row.deliveryOrigin = null;
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+};
+
+window.openBulkWorkMemoDeliveryMapSelect_ = (uid, kind) => {
+  uid = String(uid || '').trim();
+  kind = kind === 'origin' ? 'origin' : 'dest';
+  if (!uid) return;
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  window._bulkWorkMemoActive = true;
+  window._bulkWorkMemoDeliverySelectUid = uid;
+  window._bulkWorkMemoDeliverySelectKind = kind;
+  const place = kind === 'origin' ? row.deliveryOrigin : row.deliveryDestination;
+  const pending = window.bulkWorkMemoDeliveryPlaceToPending_(place);
+  const modalEl = document.getElementById('modal');
+  if (modalEl) modalEl.style.display = 'flex';
+  if (typeof window.setBulkWorkMemoModalClass_ === 'function') window.setBulkWorkMemoModalClass_('map-picking');
+  infoWindow.close();
+  document.getElementById('rightPanel').style.display = 'none';
+  window.setMapSelectingMode_(true);
+  const selectUI = document.getElementById('mapSelectUI');
+  if (kind === 'dest') {
+    window._deliveryDestMapSelectMode = true;
+    window._deliveryDestMapSelectAfterConfirm = false;
+    window._pendingDeliveryDest = pending;
+    if (selectUI) {
+      selectUI.innerHTML = window.getDeliveryDestMapSelectUIHtml_();
+      selectUI.style.display = 'flex';
+    }
+    window.clearDeliveryDestMapMarker_();
+    if (pending && pending.lat != null) window.refreshDeliveryDestMapMarker_();
+    window.updateDeliveryDestMapSelectBanner_();
+  } else {
+    window._deliveryOriginMapSelectMode = true;
+    window._deliveryOriginMapSelectAfterConfirm = false;
+    window._pendingDeliveryOrigin = pending;
+    if (selectUI) {
+      selectUI.innerHTML = window.getDeliveryOriginMapSelectUIHtml_();
+      selectUI.style.display = 'flex';
+    }
+    window.clearDeliveryOriginMapMarker_();
+    if (pending && pending.lat != null) window.refreshDeliveryOriginMapMarker_();
+    window.updateDeliveryOriginMapSelectBanner_();
+  }
+  if (selectUI) selectUI.classList.add('bulk-work-memo-map-select');
+  if (typeof window.applyBulkWorkMemoMapSelectLayout_ === 'function') window.applyBulkWorkMemoMapSelectLayout_();
+  if (map) {
+    if (pending && pending.lat != null && pending.lng != null) {
+      map.setCenter({ lat: Number(pending.lat), lng: Number(pending.lng) });
+      map.setZoom(17);
+    } else if (latestUserPos) {
+      map.setCenter({ lat: latestUserPos.lat, lng: latestUserPos.lng });
+      map.setZoom(17);
+    }
+  }
+};
+
 window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   if (!d.workName || d.isRest || String(d.workName || '').includes('休憩')) return '';
@@ -28682,17 +29202,29 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
     if (collapsed) {
       html += window.buildBulkWorkMemoCollapsedPickHtml_({
         icon: '🚜',
-        label: '使用機械',
+        label: '使用機械（複数可）',
         value: used.map(m => m.name || m.id).filter(Boolean).join('、'),
         uid: uid,
         toggleFn: 'toggleBulkWorkMemoMachinePick_',
+        toggleLabel: '追加・変更',
         borderColor: '#FFE0B2',
         bgColor: '#FFF3E0',
         textColor: '#E65100'
       });
     } else {
+      const selectedChips = used.length
+        ? `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${used.map(m => {
+            const safeId = String(m.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const safeName = String(m.name || m.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            return `<span style="display:inline-flex; align-items:center; gap:4px; background:#FFF3E0; color:#E65100; padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; border:1px solid #FF9800;">✅ ${esc(m.name || m.id)}<span onclick="removeBulkWorkMemoMachine_('${esc(uid)}','${safeId}','${safeName}')" style="cursor:pointer; color:#c62828; font-size:14px; line-height:1;" title="外す">×</span></span>`;
+          }).join('')}</div>`
+        : `<div style="font-size:11px; color:#888; margin-bottom:8px; line-height:1.35;">使った機械を複数選べます。メモに機械名があれば自動で入ります。</div>`;
       html += `<div style="margin:8px 0;">
-        <div style="font-size:10px; color:#E65100; font-weight:bold; margin-bottom:6px;">🚜 使用機械</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+          <div style="font-size:10px; color:#E65100; font-weight:bold;">🚜 使用機械（複数可）</div>
+          ${used.length ? `<button type="button" onclick="collapseBulkWorkMemoMachinePick_('${esc(uid)}')" style="background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:8px; padding:4px 10px; font-size:11px; font-weight:bold; cursor:pointer;">完了</button>` : ''}
+        </div>
+        ${selectedChips}
         ${window.buildBulkWorkMemoMachineAddBtnHtml_(uid)}`;
       if (!machines.length) {
         html += `<div style="font-size:11px; color:#888; margin-bottom:6px; line-height:1.4;">農機マスタに登録がありません。上のボタンから追加できます。</div>`;
@@ -28727,6 +29259,9 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
   }
   if (flags.showPesticide) {
     html += window.buildBulkWorkMemoPesticidesHtml_(d, uid);
+  }
+  if (typeof window.bulkWorkMemoIsDelivery_ === 'function' && window.bulkWorkMemoIsDelivery_(d)) {
+    html += window.buildBulkWorkMemoDeliveryHtml_(d, uid);
   }
   html += typeof window.buildBulkConcurrentWorksHtml_ === 'function'
     ? window.buildBulkConcurrentWorksHtml_(d, uid)
@@ -28918,7 +29453,7 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
             : `メモ推定「${esc(d.guessedName)}」→ 作業名チップを選んでください`)
           : '合いそうな作業名を選んでください')
         : (!window.getBulkWorkMemoCropNames_(d).length ? '作業名OK。作物名を1つ以上選んでください（該当なしは「共通」）' : ''));
-    const showField = !isRestCard && window.bulkWorkMemoNeedsField_(d);
+    const showField = !isRestCard && window.bulkWorkMemoShowFieldSection_(d);
     const fieldHtml = showField ? window.buildBulkWorkMemoFieldHtml_(d, uid) : '';
     const restBody = isRestCard ? window.buildBulkWorkMemoRestTypeHtml_(d, uid) : '';
     const kindSwitch = window.buildBulkWorkMemoKindSwitchHtml_(d, uid);
@@ -29098,8 +29633,8 @@ window.pickBulkWorkMemoWorkName_ = (uid, name) => {
       }
     }
   }
-  row.usedMachines = (typeof window.getBulkWorkMemoMachineList_ === 'function')
-    ? window.getBulkWorkMemoMachineList_(row).filter(m => m && window.bulkWorkMemoKanaKeyContains_(row.rawLine, m.name))
+  row.usedMachines = (typeof window.guessBulkWorkMemoMachinesFromMemo_ === 'function')
+    ? window.mergeBulkWorkMemoMachines_(row.usedMachines, window.guessBulkWorkMemoMachinesFromMemo_(row))
     : [];
   if (row.usedMachines.length) row._machinePickOpen = false;
   const flags = window.getBulkWorkMemoUiFlags_(row);
@@ -29131,8 +29666,21 @@ window.pickBulkWorkMemoWorkName_ = (uid, name) => {
   if (flags.showPesticide) {
     row.usedPesticides = window.guessBulkWorkMemoPesticides_(row.rawLine) || [];
   }
-  if (!window.bulkWorkMemoNeedsField_(row)) {
+  if (typeof window.bulkWorkMemoIsDelivery_ === 'function' && window.bulkWorkMemoIsDelivery_(row)) {
     window.setBulkWorkMemoPolyIds_(row, []);
+    if (!row.deliveryOrigin) row.deliveryOrigin = null;
+    if (!row.deliveryDestination) row.deliveryDestination = null;
+  } else {
+    row.deliveryOrigin = null;
+    row.deliveryDestination = null;
+  }
+  if (!window.bulkWorkMemoShowFieldSection_(row)) {
+    window.setBulkWorkMemoPolyIds_(row, []);
+    row.fieldHintTokens = [];
+    row.fieldTokenResults = [];
+    row.fieldCandidates = [];
+  } else if (typeof window.applyBulkWorkMemoFieldHints_ === 'function') {
+    window.applyBulkWorkMemoFieldHints_(row, { mergePolyIds: true });
   }
   window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
 };
@@ -29143,12 +29691,7 @@ window.pickBulkWorkMemoCropName_ = (uid, name) => {
   const n = String(name || '').trim();
   if (!n) return;
   const cur = window.getBulkWorkMemoCropNames_(row);
-  let next;
-  if (cur.indexOf(n) >= 0) {
-    next = cur.filter(c => c !== n);
-  } else {
-    next = cur.concat([n]);
-  }
+  const next = window.toggleBulkWorkMemoCropNames_(cur, n);
   window.setBulkWorkMemoCropNames_(row, next);
   row.detailedWorks = [];
   row._cropPickOpen = true;
@@ -29266,8 +29809,12 @@ window.toggleBulkWorkMemoMachine_ = (uid, id, name, checked) => {
   } else {
     row.usedMachines = row.usedMachines.filter(m => String(m.id || '') !== mid && String(m.name || '') !== mname);
   }
-  row._machinePickOpen = row.usedMachines.length ? false : true;
+  row._machinePickOpen = true;
   window.refreshBulkWorkMemoExtras_(uid);
+};
+
+window.removeBulkWorkMemoMachine_ = (uid, id, name) => {
+  window.toggleBulkWorkMemoMachine_(uid, id, name, false);
 };
 
 
@@ -29353,7 +29900,9 @@ window.buildBulkWorkMemoConfirmRowHtml_ = (d, index) => {
   const fieldNames = polyIds.map(id => {
     const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
     return (p && p.name) ? p.name : '';
-  }).filter(Boolean).join('、') || (isRest ? '—' : '（圃場なし）');
+  }).filter(Boolean).join('、') || (isRest ? '—' : (
+    (typeof window.bulkWorkMemoIsDelivery_ === 'function' && window.bulkWorkMemoIsDelivery_(d)) ? '—' : '（圃場なし）'
+  ));
   const badge = isRest
     ? '<span style="font-size:10px; font-weight:bold; color:#fff; background:#E65100; padding:2px 7px; border-radius:8px; margin-left:6px;">休憩</span>'
     : '<span style="font-size:10px; font-weight:bold; color:#fff; background:#FF9800; padding:2px 7px; border-radius:8px; margin-left:6px;">作業</span>';
@@ -29367,12 +29916,21 @@ window.buildBulkWorkMemoConfirmRowHtml_ = (d, index) => {
           : (cw.workName || '')
       ).filter(Boolean).map(s => esc(s)).join(' ／ ')}</div>`
     : '';
+  const deliveryOrigin = (!isRest && d.deliveryOrigin && d.deliveryOrigin.name)
+    ? `<div style="font-size:11px; color:#01579B; margin-top:4px;">📤 運搬元: ${esc(d.deliveryOrigin.name)}</div>`
+    : '';
+  const deliveryDest = (!isRest && d.deliveryDestination && d.deliveryDestination.name)
+    ? `<div style="font-size:11px; color:#01579B; margin-top:4px;">🚚 運搬先: ${esc(d.deliveryDestination.name)}</div>`
+    : '';
+  const machines = (!isRest && Array.isArray(d.usedMachines) && d.usedMachines.length)
+    ? `<div style="font-size:11px; color:#E65100; margin-top:4px;">🚜 ${d.usedMachines.map(m => m.name || m.id).filter(Boolean).map(s => esc(s)).join('、')}</div>`
+    : '';
   return `
     <div style="padding:10px 12px; border:1px solid #e0e0e0; border-radius:8px; margin-bottom:8px; background:#fafafa;">
       <div style="font-size:13px; font-weight:bold; color:#333; line-height:1.35;">${index + 1}. ${esc(workName)}${badge}</div>
       <div style="font-size:12px; color:#555; margin-top:4px;">🕒 ${esc(start)}〜${esc(end)}</div>
       <div style="font-size:11px; color:#666; margin-top:3px;">🌱 ${esc(crops)}　📍 ${esc(fieldNames)}</div>
-      ${maint}${concurrent}
+      ${maint}${machines}${concurrent}${deliveryOrigin}${deliveryDest}
     </div>`;
 };
 
@@ -29947,7 +30505,7 @@ window.renderBulkWorkMemoManualAddModal_ = () => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const ymd = window._bulkWorkMemoDate || window.getBulkWorkMemoTodayYmd_();
   const isRest = window.bulkWorkMemoIsRestDraft_(d);
-  const showField = !isRest && window.bulkWorkMemoNeedsField_(d);
+  const showField = !isRest && window.bulkWorkMemoShowFieldSection_(d);
   const fieldHtml = showField ? window.buildBulkWorkMemoFieldHtml_(d, uid) : '';
   const restBody = isRest ? window.buildBulkWorkMemoRestTypeHtml_(d, uid) : '';
   const kindSwitch = window.buildBulkWorkMemoKindSwitchHtml_(d, uid);
@@ -30174,6 +30732,28 @@ window.executeBulkWorkMemoRegistration_ = async () => {
         data.maintenanceSymptom = String(d.maintenanceSymptom || '').trim();
         data.maintenanceContent = String(d.maintenanceContent || '').trim();
         data.maintenanceParts = String(d.maintenanceParts || '').trim();
+      }
+      if (typeof window.bulkWorkMemoIsDelivery_ === 'function' && window.bulkWorkMemoIsDelivery_(d)) {
+        const dest = d.deliveryDestination;
+        if (dest && dest.name) {
+          data.deliveryDestination = {
+            name: String(dest.name).trim(),
+            lat: dest.lat != null && dest.lat !== '' ? Number(dest.lat) : null,
+            lng: dest.lng != null && dest.lng !== '' ? Number(dest.lng) : null,
+            polyId: String(dest.polyId || '').trim(),
+            isTemporary: !!dest.isTemporary
+          };
+        }
+        const origin = d.deliveryOrigin;
+        if (origin && origin.name) {
+          data.deliveryOrigin = {
+            name: String(origin.name).trim(),
+            lat: origin.lat != null && origin.lat !== '' ? Number(origin.lat) : null,
+            lng: origin.lng != null && origin.lng !== '' ? Number(origin.lng) : null,
+            polyId: String(origin.polyId || '').trim(),
+            isTemporary: !!origin.isTemporary
+          };
+        }
       }
       let targetIds = window.getBulkWorkMemoPolyIds_(d).filter(id => {
         const p = loadedPolygons && loadedPolygons[id];
