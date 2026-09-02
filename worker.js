@@ -8409,6 +8409,18 @@ function createSignboardMarker(name, pos, icon, id) {
         return formattedList.join(', ');
       };
 
+      /** 休憩開始を上の作業開始時刻に自動合わせ（手入力後は上書きしない） */
+      window.syncWorkBreakStartFromWorkTime_ = () => {
+        const breakStartEl = document.getElementById('rec_break_start');
+        if (!breakStartEl) return;
+        const workStart = String(document.getElementById('rec_start_time')?.value || '').trim();
+        if (!workStart) return;
+        const shouldSync = !breakStartEl.value || breakStartEl.getAttribute('data-autofill') === '1';
+        if (!shouldSync) return;
+        breakStartEl.value = workStart;
+        breakStartEl.setAttribute('data-autofill', '1');
+      };
+
       /** 休憩（作業内）の開始〜終了から休憩分数を求め、保存用の隠しフィールドへ反映 */
       window.syncWorkBreakRange_ = () => {
         const minsEl = document.getElementById('rec_break_mins');
@@ -8434,7 +8446,10 @@ function createSignboardMarker(name, pos, icon, id) {
         const startEl = document.getElementById('rec_break_start');
         const endEl = document.getElementById('rec_break_end');
         const minsEl = document.getElementById('rec_break_mins');
-        if (startEl) startEl.value = '';
+        if (startEl) {
+          startEl.value = '';
+          startEl.setAttribute('data-autofill', '1');
+        }
         if (endEl) endEl.value = '';
         if (minsEl) minsEl.value = '';
         if (typeof window.calcTotalTime === 'function') window.calcTotalTime();
@@ -8479,6 +8494,7 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.calcTotalTime = () => {
+        if (typeof window.syncWorkBreakStartFromWorkTime_ === 'function') window.syncWorkBreakStartFromWorkTime_();
         const s = document.getElementById('rec_start_time')?.value, e = document.getElementById('rec_end_time')?.value, disp = document.getElementById('rec_total_time_display');
         if(s && e && disp) {
            let sMins = parseInt(s.split(':')[0]) * 60 + parseInt(s.split(':')[1]), eMins = parseInt(e.split(':')[0]) * 60 + parseInt(e.split(':')[1]);
@@ -18231,7 +18247,7 @@ function createSignboardMarker(name, pos, icon, id) {
               <button type="button" onclick="setEndTimeToNow()" style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;" title="編集中でも終了時刻を今の時間に合わせます">⏱️ 終了を今にセット</button>
               <button type="button" id="btn_match_prev_end" onclick="matchStartTimeToPreviousEnd()" style="display:none; background:#E8F5E9; color:#2e7d32; border:1px solid #A5D6A7; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">◀️ 前の終了に合わせる</button>
               <button type="button" onclick="matchStartEndToPreviousEndAndNow()" style="background:#FFF3E0; color:#E65100; border:1px solid #FFB74D; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">⏱️ 前終了〜今</button>
-              <button type="button" onclick="document.getElementById('rec_start_time').value=''; document.getElementById('rec_end_time').value=''; document.getElementById('rec_start_time').removeAttribute('data-autofill'); document.getElementById('rec_start_time').removeAttribute('data-start-source'); document.getElementById('rec_start_time').removeAttribute('data-rest-pair'); if(typeof updateStartTimeHintUI==='function') updateStartTimeHintUI(); calcTotalTime();" style="background:#eee; border:1px solid #ccc; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">時間クリア</button>
+              <button type="button" onclick="document.getElementById('rec_start_time').value=''; document.getElementById('rec_end_time').value=''; document.getElementById('rec_start_time').removeAttribute('data-autofill'); document.getElementById('rec_start_time').removeAttribute('data-start-source'); document.getElementById('rec_start_time').removeAttribute('data-rest-pair'); if(document.getElementById('rec_break_start')){ document.getElementById('rec_break_start').value=''; document.getElementById('rec_break_start').setAttribute('data-autofill','1'); } if(document.getElementById('rec_break_end')) document.getElementById('rec_break_end').value=''; if(document.getElementById('rec_break_mins')) document.getElementById('rec_break_mins').value=''; if(typeof updateStartTimeHintUI==='function') updateStartTimeHintUI(); calcTotalTime();" style="background:#eee; border:1px solid #ccc; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">時間クリア</button>
             </div>
           </div>
           <div class="form-grid" style="margin-bottom:6px;">
@@ -18259,6 +18275,7 @@ function createSignboardMarker(name, pos, icon, id) {
             </div>
           </div>
           <div id="rec_start_time_hint" style="display:none; font-size:11px; margin-bottom:0; font-weight:bold;"></div>
+          <!--WORK_BREAK_ROW-->
           <div id="rec_planned_end_box" style="display:none; margin-top:10px; background:#fff; border:1px dashed #90CAF9; border-radius:8px; padding:10px; text-align:center;"></div>
           </div>
         `;
@@ -18303,37 +18320,38 @@ function createSignboardMarker(name, pos, icon, id) {
           let lotsHtml = activeLots.map(l => `<div><label class="checkbox-label"><input type="checkbox" name="use_lots" value="${l.lotId}"> ${l.lotId} <span style="color:#2196F3; margin-left:5px;">(${l.containerType||'種類不明'} 残:${l.remain})</span></label></div>`).join('');
           if(!lotsHtml) lotsHtml = '<div style="color:#888; font-size:12px;">使用可能なロットがありません</div>';
           
+         const workBreakTimeUI = `
+            <div class="form-grid" style="margin-bottom:6px; margin-top:8px; padding-top:8px; border-top:1px dashed #90CAF9;">
+              <div>
+                <label class="form-label" style="font-size:11px; margin-bottom:2px; color:#E65100;">☕ 休憩 開始</label>
+                <input type="text" id="rec_break_start" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" data-autofill="1" value="" onclick="this.removeAttribute('data-autofill'); openAppTimePicker('rec_break_start', '休憩 開始')" onchange="this.removeAttribute('data-autofill'); syncWorkBreakRange_()" style="margin-bottom:0;">
+              </div>
+              <div>
+                <label class="form-label" style="font-size:11px; margin-bottom:2px; color:#E65100;">☕ 休憩 終了</label>
+                <input type="text" id="rec_break_end" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" value="" onclick="openAppTimePicker('rec_break_end', '休憩 終了')" onchange="syncWorkBreakRange_()" style="margin-bottom:0;">
+              </div>
+            </div>
+            <input type="hidden" id="rec_break_mins" value="">
+          `;
+
          let workTimeUI = `
             <div class="rec-zone rec-zone-duration" style="background:#FFF8E1; padding:12px; border-radius:10px; margin-bottom:15px; text-align:center; border:1px solid #FFE082;">
               <label class="form-label" style="color:#F57F17; display:inline-flex; align-items:center; gap:4px; justify-content:center;">⏱️ 実作業時間・休憩 ${window.buildRecHelpBtn_('popover-break-help',
                 '・開始〜終了から休憩分を引いた時間が実作業時間です<br>'
                 + '・休憩は☕休憩ボタンと同じく「開始〜終了」の時刻で入れます<br>'
+                + '・休憩開始は上の作業開始に自動で合わせます（手入力後は固定）<br>'
                 + '・別枠の「☕ 休憩」作業（昼休憩など）とは別です（作業の合間の短い休憩用）',
                 { heading: '休憩（作業内）', bg: '#E65100', title: '休憩のヘルプ' })}</label>
               <div id="rec_total_time_display" style="padding:10px; background:#fff; border-radius:4px; font-weight:bold; color:#FF9800; border:1px solid #FFCC80;">--</div>
-              <div style="margin-top:10px; background:#fff; border:1px solid #FFE082; border-radius:8px; padding:10px; text-align:left;">
-                <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;">
-                  <span style="font-size:12px; color:#F57F17; font-weight:bold;">☕ 休憩（作業内）</span>
-                  <button type="button" onclick="clearWorkBreakRange_()" style="background:#fff; color:#9E9E9E; border:1px solid #E0E0E0; border-radius:8px; padding:4px 10px; font-size:11px; font-weight:bold; cursor:pointer;">クリア</button>
-                </div>
-                <div style="display:flex; gap:8px; align-items:center;">
-                  <div style="flex:1;">
-                    <label style="font-size:11px; color:#888;">休憩 開始</label>
-                    <input type="text" id="rec_break_start" class="form-input app-time-input" readonly inputmode="none" value="" onclick="if(window.openAppTimePicker) openAppTimePicker('rec_break_start', '休憩 開始')" onchange="syncWorkBreakRange_()" style="margin:0; text-align:center; font-weight:bold; font-size:16px; border:1px solid #FFB74D;">
-                  </div>
-                  <span style="margin-top:14px; font-weight:bold; color:#F57F17;">〜</span>
-                  <div style="flex:1;">
-                    <label style="font-size:11px; color:#888;">休憩 終了</label>
-                    <input type="text" id="rec_break_end" class="form-input app-time-input" readonly inputmode="none" value="" onclick="if(window.openAppTimePicker) openAppTimePicker('rec_break_end', '休憩 終了')" onchange="syncWorkBreakRange_()" style="margin:0; text-align:center; font-weight:bold; font-size:16px; border:1px solid #FFB74D;">
-                  </div>
-                </div>
-                <input type="hidden" id="rec_break_mins" value="">
-                <div id="rec_break_hint" style="font-size:12px; font-weight:bold; color:#888; margin-top:8px;">休憩なし</div>
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:8px;">
+                <div id="rec_break_hint" style="font-size:12px; font-weight:bold; color:#888; text-align:left; flex:1;">休憩なし</div>
+                <button type="button" onclick="clearWorkBreakRange_()" style="background:#fff; color:#9E9E9E; border:1px solid #E0E0E0; border-radius:8px; padding:4px 10px; font-size:11px; font-weight:bold; cursor:pointer; flex-shrink:0;">休憩クリア</button>
               </div>
             </div>
           `;
 
           const defaultWorkCat = 'すべて';
+          const workFormTimeUI = timeUI.replace('<!--WORK_BREAK_ROW-->', workBreakTimeUI);
 
           html = `
                   <div id="work_record_step_header" style="margin-bottom:4px;"></div>
@@ -18344,7 +18362,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   <div id="work_record_step_time" class="work-rec-step-panel">
                   <label class="form-label">📅 作業日</label>
                   <input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : defaultWorkDate}" onchange="if(typeof handleWorkDateChange==='function') handleWorkDateChange();" style="margin-bottom:12px;">
-                  ${timeUI}
+                  ${workFormTimeUI}
                   ${workTimeUI}
                   ${!isEdit && (window.buildWorkFormLunchBreakHtml_ ? window.buildWorkFormLunchBreakHtml_() : '')}
                   </div>
@@ -18705,7 +18723,10 @@ function createSignboardMarker(name, pos, icon, id) {
               const bm = (d.breakMins != null && d.breakMins !== '') ? parseInt(d.breakMins, 10) : 0;
               document.getElementById('rec_break_mins').value = (!isNaN(bm) && bm > 0) ? String(bm) : '';
               // 休憩は分数だけ保存しているため、時刻欄は空にして入れ直せる状態にする
-              if (document.getElementById('rec_break_start')) document.getElementById('rec_break_start').value = '';
+              if (document.getElementById('rec_break_start')) {
+                document.getElementById('rec_break_start').value = '';
+                document.getElementById('rec_break_start').setAttribute('data-autofill', '1');
+              }
               if (document.getElementById('rec_break_end')) document.getElementById('rec_break_end').value = '';
             }
             if (d.progressStatus && typeof window.selectProgressStatus === 'function') window.selectProgressStatus(d.progressStatus); else if (document.getElementById('rec_progress_status')) document.getElementById('rec_progress_status').value = d.progressStatus || ''; 
