@@ -495,8 +495,8 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
               const result = await callGAS(
                   'login',
                   { orgId: 'default', userId: id, password: pw },
-                  fromCache ? 0 : 2,
-                  fromCache ? { timeoutMs: 12000 } : {}
+                  fromCache ? 1 : 2,
+                  fromCache ? { timeoutMs: 25000 } : {}
               );
               if (result.success) {
                   currentUser = result.name;
@@ -517,7 +517,11 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   if (typeof window.prefetchWorkTimeHints === 'function') {
                       const now = new Date();
                       const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-                      window.prefetchWorkTimeHints(todayStr, { applyToForm: true });
+                      window.prefetchWorkTimeHints(todayStr, { applyToForm: true }).then(() => {
+                        if (typeof window.hydrateLunchAndRestFromCache_ === 'function') {
+                          window.hydrateLunchAndRestFromCache_();
+                        }
+                      });
                   }
 
                   if (fromCache) {
@@ -640,7 +644,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           if (!background && !appLoad && typeof beginMapDataLoad === 'function') {
               beginMapDataLoad('圃場データを読み込み中...');
           }
-          return callGAS('getInitData').then(data => {
+          const flight = callGAS('getInitData').then(data => {
               let renderFailed = false;
               let changed = false;
               try {
@@ -684,14 +688,8 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                       localStorage.setItem('passionMapInitData', newDataStr);
                       if (appLoad) appLoad.update({ detail: '地図を描画しています', current: 3 });
                       renderInitData(data);
-                      if (background) {
-                        setTimeout(() => {
-                          try {
-                            if (typeof window.resumePendingRecordSyncs_ === 'function') {
-                              window.resumePendingRecordSyncs_({ force: true, silent: true });
-                            }
-                          } catch (e) {}
-                        }, 400);
+                      if (background && typeof window.scheduleStartupRecordSync_ === 'function') {
+                        window.scheduleStartupRecordSync_({ delayMs: 400, force: true, silent: true });
                       }
                   }
                   if (background && typeof window.showRecordSyncToast === 'function') {
@@ -727,6 +725,12 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
               }
               return false;
+          });
+          window._workerInitDataInFlight = flight;
+          return flight.finally(() => {
+            if (window._workerInitDataInFlight === flight) {
+              window._workerInitDataInFlight = null;
+            }
           });
       }
 
@@ -912,11 +916,8 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           } catch (e) {}
           setTimeout(async () => {
             try {
-              if (window._workerLoginInFlight) {
-                try { await window._workerLoginInFlight; } catch (e) {}
-              }
-              if (typeof window.resumePendingRecordSyncs_ === 'function') {
-                window.resumePendingRecordSyncs_();
+              if (typeof window.scheduleStartupRecordSync_ === 'function') {
+                window.scheduleStartupRecordSync_({ delayMs: 0, silent: false });
               }
             } catch (e) {}
           }, 800);
@@ -19855,6 +19856,47 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window._RECORD_SYNC_STORE_KEY_ = 'passionMapRecordSyncJobs';
 
+      /** サーバー保存用: __global__ は端末専用コンテナなので送らない（空=作業記録シートのみ） */
+      window.normalizeRecordSyncTargetIdsForServer_ = (targetIds) => {
+        return (Array.isArray(targetIds) ? targetIds : [])
+          .map(id => String(id || '').trim())
+          .filter(id => id && id !== '__global__');
+      };
+
+      /** 再送ジョブをサーバー向けに正規化（__global__ 誤送信・local_ の誤編集を防ぐ） */
+      window.sanitizeRecordSyncJob_ = (job) => {
+        if (!job || !job.localId) return job;
+        const localId = String(job.localId);
+        const isLocalOnly = localId.indexOf('local_') === 0;
+        const targetIds = window.normalizeRecordSyncTargetIdsForServer_(job.targetIds);
+        const newlyAddedIds = window.normalizeRecordSyncTargetIdsForServer_(job.newlyAddedIds);
+        let activePolyId = String(job.activePolyId || '').trim();
+        if (!activePolyId || activePolyId === '__global__') {
+          activePolyId = targetIds[0] || '';
+        }
+        let isEdit = !!job.isEdit && !isLocalOnly;
+        let editId = isEdit ? String(job.editId || '').trim() : '';
+        if (isEdit && editId && activePolyId && typeof loadedPolygons !== 'undefined') {
+          const p = loadedPolygons[activePolyId];
+          const exists = p && Array.isArray(p.photos)
+            && p.photos.some(ph => ph && (ph.id === editId || ph.id === localId));
+          if (!exists) {
+            isEdit = false;
+            editId = '';
+          }
+        } else if (isEdit && !activePolyId) {
+          isEdit = false;
+          editId = '';
+        }
+        return Object.assign({}, job, {
+          targetIds: targetIds,
+          newlyAddedIds: newlyAddedIds,
+          activePolyId: activePolyId,
+          isEdit: isEdit,
+          editId: editId
+        });
+      };
+
       window.isRecordNeedsSync_ = (item) => {
         if (!item || !item.id) return false;
         if (item._pendingSync || item._syncFailed) return true;
@@ -19926,7 +19968,24 @@ function createSignboardMarker(name, pos, icon, id) {
         try {
           const raw = localStorage.getItem(window._RECORD_SYNC_STORE_KEY_);
           const parsed = raw ? JSON.parse(raw) : {};
-          return (parsed && typeof parsed === 'object') ? parsed : {};
+          if (!parsed || typeof parsed !== 'object') return {};
+          let dirty = false;
+          const out = {};
+          Object.keys(parsed).forEach((id) => {
+            const job = parsed[id];
+            if (!job) return;
+            const fixed = (typeof window.sanitizeRecordSyncJob_ === 'function')
+              ? window.sanitizeRecordSyncJob_(job)
+              : job;
+            out[id] = fixed;
+            try {
+              if (JSON.stringify(fixed) !== JSON.stringify(job)) dirty = true;
+            } catch (cmpErr) {}
+          });
+          if (dirty) {
+            localStorage.setItem(window._RECORD_SYNC_STORE_KEY_, JSON.stringify(out));
+          }
+          return out;
         } catch (e) {
           return {};
         }
@@ -19988,14 +20047,15 @@ function createSignboardMarker(name, pos, icon, id) {
           nameStr = targetIds.map(id => (loadedPolygons[id] && loadedPolygons[id].name) || '').filter(Boolean).join(', ') || '未選択';
         }
         const isEdit = !isLocalOnly;
+        const serverTargetIds = window.normalizeRecordSyncTargetIdsForServer_(targetIds);
 
-        return {
+        const built = {
           localId: recId,
           isEdit: isEdit,
           editId: isEdit ? recId : '',
-          activePolyId: targetIds[0] || '__global__',
+          activePolyId: serverTargetIds[0] || '',
           newlyAddedIds: [],
-          targetIds: targetIds.length ? targetIds : ['__global__'],
+          targetIds: serverTargetIds,
           recordType: item.type || 'work',
           data: data,
           files: [],
@@ -20007,6 +20067,9 @@ function createSignboardMarker(name, pos, icon, id) {
           clearTemp: false,
           _resumed: true
         };
+        return (typeof window.sanitizeRecordSyncJob_ === 'function')
+          ? window.sanitizeRecordSyncJob_(built)
+          : built;
       };
 
       window.retryRecordSync_ = (localId) => {
@@ -20046,6 +20109,30 @@ function createSignboardMarker(name, pos, icon, id) {
         } catch (e) {}
       };
 
+      window.scheduleStartupRecordSync_ = (opts) => {
+        opts = opts || {};
+        clearTimeout(window._startupRecordSyncTimer);
+        window._startupRecordSyncTimer = setTimeout(async () => {
+          try {
+            if (window._workerLoginInFlight) {
+              try { await window._workerLoginInFlight; } catch (e) {}
+            }
+            if (window._workerInitDataInFlight) {
+              try { await window._workerInitDataInFlight; } catch (e) {}
+            }
+            await new Promise(r => setTimeout(r, 400));
+            if (typeof window.resumePendingRecordSyncs_ === 'function') {
+              window.resumePendingRecordSyncs_({
+                force: !!opts.force,
+                silent: !!opts.silent
+              });
+            }
+          } catch (e) {
+            console.warn('scheduleStartupRecordSync_', e);
+          }
+        }, opts.delayMs != null ? opts.delayMs : 600);
+      };
+
       window.resumePendingRecordSyncs_ = (opts) => {
         opts = opts || {};
         if (window._recordSyncResumeDone && !opts.force) return 0;
@@ -20054,7 +20141,11 @@ function createSignboardMarker(name, pos, icon, id) {
         const jobsById = {};
         const persisted = window.loadPersistedRecordSyncJobsMap_();
         Object.keys(persisted).forEach((id) => {
-          if (persisted[id]) jobsById[id] = persisted[id];
+          if (persisted[id]) {
+            jobsById[id] = (typeof window.sanitizeRecordSyncJob_ === 'function')
+              ? window.sanitizeRecordSyncJob_(persisted[id])
+              : persisted[id];
+          }
         });
 
         if (loadedPolygons) {
@@ -20077,7 +20168,10 @@ function createSignboardMarker(name, pos, icon, id) {
 
         ids.forEach((id) => {
           if (typeof window.enqueueRecordSync_ === 'function') {
-            window.enqueueRecordSync_(jobsById[id]);
+            const job = (typeof window.sanitizeRecordSyncJob_ === 'function')
+              ? window.sanitizeRecordSyncJob_(jobsById[id])
+              : jobsById[id];
+            window.enqueueRecordSync_(job);
           }
         });
 
@@ -20092,6 +20186,9 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.enqueueRecordSync_ = (job) => {
         if (!job || !job.localId) return;
+        if (typeof window.sanitizeRecordSyncJob_ === 'function') {
+          job = window.sanitizeRecordSyncJob_(job);
+        }
         const queued = (window._recordSyncQueue || []).some(j => j && j.localId === job.localId);
         const running = window._recordSyncCurrentJob && window._recordSyncCurrentJob.localId === job.localId;
         if (queued || running) return;
@@ -20107,9 +20204,12 @@ function createSignboardMarker(name, pos, icon, id) {
         if (window._recordSyncRunning) return;
         window._recordSyncRunning = true;
         if (typeof window.refreshRecordSyncBanner_ === 'function') window.refreshRecordSyncBanner_();
-        // キャッシュ起動時はログイン完了を待ってから同期（初回失敗防止）
+        // キャッシュ起動時はログイン・圃場データ取得完了を待ってから同期（初回失敗防止）
         if (window._workerLoginInFlight) {
           try { await window._workerLoginInFlight; } catch (e) {}
+        }
+        if (window._workerInitDataInFlight) {
+          try { await window._workerInitDataInFlight; } catch (e) {}
         }
         let hadError = false;
         let errorMsg = '';
@@ -20158,6 +20258,9 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.runRecordSyncJob_ = async (job) => {
         if (!job) return;
+        if (typeof window.sanitizeRecordSyncJob_ === 'function') {
+          job = window.sanitizeRecordSyncJob_(job);
+        }
         const files = job.files || [];
         let photos = [];
         for (let i = 0; i < files.length; i++) {
@@ -20173,8 +20276,13 @@ function createSignboardMarker(name, pos, icon, id) {
           }
         }
 
+        const serverTargetIds = window.normalizeRecordSyncTargetIdsForServer_
+          ? window.normalizeRecordSyncTargetIdsForServer_(job.targetIds)
+          : (job.targetIds || []);
+        const canUpdate = !!(job.isEdit && job.editId && job.activePolyId && job.activePolyId !== '__global__');
+
         // 同期失敗した local_ は enqueue 時に isEdit=false にしている
-        if (job.isEdit) {
+        if (canUpdate) {
           const updated = await callGAS('updateRecordItem', {
             id: job.activePolyId,
             recordId: job.editId,
@@ -20211,7 +20319,7 @@ function createSignboardMarker(name, pos, icon, id) {
           }
         } else {
           const updatedItems = await callGAS('saveRecord', {
-            id: (job.targetIds || []).join(','),
+            id: serverTargetIds.join(','),
             name: job.nameStr,
             author: job.userName,
             recordType: job.recordType,
@@ -20219,7 +20327,7 @@ function createSignboardMarker(name, pos, icon, id) {
             photos: photos
           });
           const newItem = updatedItems[updatedItems.length - 1];
-          window.replaceOptimisticRecordItem_(job.localId, newItem, job.targetIds || []);
+          window.replaceOptimisticRecordItem_(job.localId, newItem, serverTargetIds);
           // activePoly がサーバー全配列返却の場合、他端末差分は後の getInitData で吸収
           if (job.activePolyId && loadedPolygons[job.activePolyId] && Array.isArray(updatedItems)) {
             const pendingLocals = (loadedPolygons[job.activePolyId].photos || [])
@@ -30365,16 +30473,7 @@ window.editBulkWorkMemoSavedItem_ = (polyId, recordId) => {
                               window.showRecordSyncToast('📦 キャッシュで起動しました（最新データを裏で確認中…）', 'info');
                           }
 
-                          if (typeof window.prefetchWorkTimeHints === 'function') {
-                              const now = new Date();
-                              const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-                              window.prefetchWorkTimeHints(todayStr, { applyToForm: true }).then(() => {
-                                if (typeof window.hydrateLunchAndRestFromCache_ === 'function') {
-                                  window.hydrateLunchAndRestFromCache_();
-                                }
-                              });
-                          }
-                          // ログイン＋最新データは裏で取得（操作はブロックしない）
+                          // ログイン＋最新データは裏で取得（作業時間ヒントもログイン後に取得）
                           window._workerLoginInFlight = executeLogin(true, { fromCache: true });
                       } catch(e) {
                           if (cacheLoad) cacheLoad.update({ detail: 'キャッシュを利用できないため、最新データを取得します', current: null, total: null });
