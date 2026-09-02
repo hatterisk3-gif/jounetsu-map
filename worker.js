@@ -8409,80 +8409,142 @@ function createSignboardMarker(name, pos, icon, id) {
         return formattedList.join(', ');
       };
 
-      /** 休憩開始を上の作業開始時刻に自動合わせ（手入力後は上書きしない） */
-      window.syncWorkBreakStartFromWorkTime_ = () => {
-        const breakStartEl = document.getElementById('rec_break_start');
-        if (!breakStartEl) return;
+      /** ①時間の登録モード: work / rest / lunch */
+      window.getWorkRecordTimeMode_ = () => {
+        const m = String(window._workRecordTimeMode || 'work').trim();
+        return (m === 'rest' || m === 'lunch') ? m : 'work';
+      };
+
+      /** 休憩・昼休憩の開始／終了を上の時間に自動合わせ（手入力後は上書きしない） */
+      window.syncModeTimeFromWorkTime_ = () => {
+        if (window.getWorkRecordTimeMode_() === 'work') return;
         const workStart = String(document.getElementById('rec_start_time')?.value || '').trim();
-        if (!workStart) return;
-        const shouldSync = !breakStartEl.value || breakStartEl.getAttribute('data-autofill') === '1';
-        if (!shouldSync) return;
-        breakStartEl.value = workStart;
-        breakStartEl.setAttribute('data-autofill', '1');
+        const workEnd = String(document.getElementById('rec_end_time')?.value || '').trim();
+        const modeStartEl = document.getElementById('rec_mode_start');
+        const modeEndEl = document.getElementById('rec_mode_end');
+        if (modeStartEl && workStart && (!modeStartEl.value || modeStartEl.getAttribute('data-autofill') === '1')) {
+          modeStartEl.value = workStart;
+          modeStartEl.setAttribute('data-autofill', '1');
+        }
+        if (modeEndEl && workEnd && (!modeEndEl.value || modeEndEl.getAttribute('data-autofill') === '1')) {
+          modeEndEl.value = workEnd;
+          modeEndEl.setAttribute('data-autofill', '1');
+        }
       };
 
-      /** 休憩（作業内）の開始〜終了から休憩分数を求め、保存用の隠しフィールドへ反映 */
-      window.syncWorkBreakRange_ = () => {
-        const minsEl = document.getElementById('rec_break_mins');
-        if (!minsEl) return;
-        const s = String(document.getElementById('rec_break_start')?.value || '').trim();
-        const e = String(document.getElementById('rec_break_end')?.value || '').trim();
-        if (s && e) {
-          const sM = window._timeToMinsSafe(s);
-          const eM = window._timeToMinsSafe(e);
-          if (sM != null && eM != null) {
-            let diff = eM - sM;
-            if (diff < 0) diff += 24 * 60;
-            minsEl.value = diff > 0 ? String(diff) : '';
+      window.setWorkRecordTimeMode_ = (mode) => {
+        const next = (mode === 'rest' || mode === 'lunch') ? mode : 'work';
+        window._workRecordTimeMode = next;
+        const modeStartEl = document.getElementById('rec_mode_start');
+        const modeEndEl = document.getElementById('rec_mode_end');
+        if (modeStartEl) modeStartEl.setAttribute('data-autofill', '1');
+        if (modeEndEl) modeEndEl.setAttribute('data-autofill', '1');
+        if (next === 'rest') {
+          if (typeof window.matchStartEndToPreviousEndAndNow === 'function') {
+            try { window.matchStartEndToPreviousEndAndNow({ silent: true }); } catch (e) {}
           }
-        } else if (!s && !e) {
-          minsEl.value = '';
+        } else if (next === 'lunch') {
+          const sug = (typeof window.suggestWorkFormLunchTimes_ === 'function')
+            ? window.suggestWorkFormLunchTimes_()
+            : { start: '12:00', end: '13:00' };
+          const startEl = document.getElementById('rec_start_time');
+          const endEl = document.getElementById('rec_end_time');
+          if (startEl) startEl.value = sug.start || '';
+          if (endEl) endEl.value = sug.end || '';
         }
-        // 片方だけ入力中は、確定するまで分数を変えない
+        if (typeof window.syncModeTimeFromWorkTime_ === 'function') window.syncModeTimeFromWorkTime_();
+        if (typeof window.refreshWorkRecordTimeModeUI_ === 'function') window.refreshWorkRecordTimeModeUI_();
+        if (typeof window.refreshWorkRecordStepUI_ === 'function') window.refreshWorkRecordStepUI_();
+        if (next === 'rest' && typeof window.refreshTodayRestBreaksUI === 'function') {
+          try { window.refreshTodayRestBreaksUI(); } catch (e) {}
+        }
+        if (next === 'lunch' && typeof window.refreshWorkFormLunchSection_ === 'function') {
+          try { window.refreshWorkFormLunchSection_(); } catch (e) {}
+        }
         if (typeof window.calcTotalTime === 'function') window.calcTotalTime();
       };
 
-      window.clearWorkBreakRange_ = () => {
-        const startEl = document.getElementById('rec_break_start');
-        const endEl = document.getElementById('rec_break_end');
-        const minsEl = document.getElementById('rec_break_mins');
-        if (startEl) {
-          startEl.value = '';
-          startEl.setAttribute('data-autofill', '1');
+      window.refreshWorkRecordTimeModeUI_ = () => {
+        const tabs = document.getElementById('work_record_time_mode_tabs');
+        if (!tabs) return;
+        const mode = window.getWorkRecordTimeMode_();
+        tabs.querySelectorAll('[data-time-mode]').forEach(btn => {
+          const on = btn.getAttribute('data-time-mode') === mode;
+          btn.style.background = on ? '#FF9800' : '#fff';
+          btn.style.color = on ? '#fff' : '#666';
+          btn.style.borderColor = on ? '#FF9800' : '#ddd';
+          btn.style.fontWeight = on ? 'bold' : 'normal';
+        });
+        const modeSection = document.getElementById('work_record_mode_time_section');
+        const workPanel = document.getElementById('work_record_mode_work_panel');
+        const restPanel = document.getElementById('work_record_mode_rest_panel');
+        const lunchPanel = document.getElementById('work_record_mode_lunch_panel');
+        const startLabel = document.getElementById('work_record_mode_start_label');
+        const endLabel = document.getElementById('work_record_mode_end_label');
+        const timeZoneLabel = document.getElementById('work_record_time_zone_label');
+        if (modeSection) modeSection.style.display = (mode === 'work') ? 'none' : 'block';
+        if (workPanel) workPanel.style.display = (mode === 'work') ? 'block' : 'none';
+        if (restPanel) restPanel.style.display = (mode === 'rest') ? 'block' : 'none';
+        if (lunchPanel) lunchPanel.style.display = (mode === 'lunch') ? 'block' : 'none';
+        if (timeZoneLabel) {
+          timeZoneLabel.textContent = '⏰ 時間';
         }
-        if (endEl) endEl.value = '';
-        if (minsEl) minsEl.value = '';
-        if (typeof window.calcTotalTime === 'function') window.calcTotalTime();
+        if (startLabel) startLabel.textContent = mode === 'lunch' ? '🍱 昼休憩 開始' : '☕ 休憩 開始';
+        if (endLabel) endLabel.textContent = mode === 'lunch' ? '🍱 昼休憩 終了' : '☕ 休憩 終了';
       };
 
-      /** 休憩欄の下に、差し引かれる分数や入力もれを表示する */
-      window.refreshWorkBreakHint_ = () => {
-        const hint = document.getElementById('rec_break_hint');
-        if (!hint) return;
-        const s = String(document.getElementById('rec_break_start')?.value || '').trim();
-        const e = String(document.getElementById('rec_break_end')?.value || '').trim();
-        const mins = Math.max(0, parseInt(document.getElementById('rec_break_mins')?.value, 10) || 0);
+      window.getWorkRecordModeTimes_ = () => {
+        const norm = (v) => (window.normalizeTimeHm ? (window.normalizeTimeHm(v) || '') : String(v || '').trim());
+        const mode = window.getWorkRecordTimeMode_();
+        if (mode === 'work') {
+          return {
+            start: norm(document.getElementById('rec_start_time')?.value),
+            end: norm(document.getElementById('rec_end_time')?.value)
+          };
+        }
+        return {
+          start: norm(document.getElementById('rec_mode_start')?.value),
+          end: norm(document.getElementById('rec_mode_end')?.value)
+        };
+      };
 
-        if ((s && !e) || (!s && e)) {
-          hint.textContent = '開始と終了の両方を入れると休憩時間が決まります';
-          hint.style.color = '#E65100';
+      window.registerRestBreakFromWorkFormStep_ = async () => {
+        const times = window.getWorkRecordModeTimes_();
+        const start = times.start;
+        const end = times.end;
+        if (!start || !end || start === end) {
+          if (typeof customAlert === 'function') customAlert('休憩の開始・終了時刻を入力してください。');
           return;
         }
-        if (!s && !e) {
-          hint.textContent = mins > 0 ? `休憩 ${mins}分（時刻未設定）` : '休憩なし';
-          hint.style.color = mins > 0 ? '#F57F17' : '#888';
-          return;
+        const ymd = window.normalizeDateStr
+          ? window.normalizeDateStr(document.getElementById('rec_work_date')?.value)
+          : String(document.getElementById('rec_work_date')?.value || '').trim();
+        const ok = (typeof customConfirm === 'function')
+          ? await customConfirm(`休憩を ${start}〜${end} で登録しますか？`)
+          : true;
+        if (!ok) return;
+        const nameEl = document.getElementById('rec_work_name');
+        const catEl = document.getElementById('rec_work_category');
+        const startEl = document.getElementById('rec_start_time');
+        const endEl = document.getElementById('rec_end_time');
+        const savedName = nameEl ? nameEl.value : '';
+        const savedCat = catEl ? catEl.value : '';
+        const savedStart = startEl ? startEl.value : '';
+        const savedEnd = endEl ? endEl.value : '';
+        if (nameEl) nameEl.value = '休憩';
+        if (catEl) catEl.value = '';
+        if (startEl) startEl.value = start;
+        if (endEl) endEl.value = end;
+        try {
+          if (typeof window.submitRecord === 'function') {
+            await window.submitRecord();
+          }
+        } finally {
+          if (nameEl) nameEl.value = savedName;
+          if (catEl) catEl.value = savedCat;
+          if (startEl) startEl.value = savedStart;
+          if (endEl) endEl.value = savedEnd;
         }
-
-        const label = `休憩 ${Math.floor(mins / 60) > 0 ? Math.floor(mins / 60) + '時間' : ''}${mins % 60}分 を差し引きます`;
-        const workS = window._timeToMinsSafe(document.getElementById('rec_start_time')?.value || '');
-        const workE = window._timeToMinsSafe(document.getElementById('rec_end_time')?.value || '');
-        const bs = window._timeToMinsSafe(s);
-        const be = window._timeToMinsSafe(e);
-        const outOfRange = workS != null && workE != null && bs != null && be != null
-          && workE > workS && (bs < workS || be > workE);
-        hint.textContent = outOfRange ? `${label}（作業時間の外にはみ出しています）` : label;
-        hint.style.color = outOfRange ? '#C62828' : '#F57F17';
       };
 
       /** ②詳細ステップに実作業時間の控えを出す（休憩の入力欄は①時間側） */
@@ -8494,21 +8556,16 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.calcTotalTime = () => {
-        if (typeof window.syncWorkBreakStartFromWorkTime_ === 'function') window.syncWorkBreakStartFromWorkTime_();
+        if (typeof window.syncModeTimeFromWorkTime_ === 'function') window.syncModeTimeFromWorkTime_();
         const s = document.getElementById('rec_start_time')?.value, e = document.getElementById('rec_end_time')?.value, disp = document.getElementById('rec_total_time_display');
         if(s && e && disp) {
            let sMins = parseInt(s.split(':')[0]) * 60 + parseInt(s.split(':')[1]), eMins = parseInt(e.split(':')[0]) * 60 + parseInt(e.split(':')[1]);
            let diff = eMins - sMins; if (diff < 0) diff += 24 * 60;
-           const breakEl = document.getElementById('rec_break_mins');
-           let breakMins = breakEl ? Math.max(0, parseInt(breakEl.value, 10) || 0) : 0;
-           if (breakMins > diff) breakMins = diff;
-           const workMins = Math.max(0, diff - breakMins);
+           const workMins = Math.max(0, diff);
            let label = Math.floor(workMins / 60) + "時間" + (workMins % 60) + "分";
-           if (breakMins > 0) label += `（休憩${breakMins}分除く）`;
            disp.innerText = label;
         } else if (disp) { disp.innerText = "--"; }
         if (typeof window.syncTotalTimeMirror_ === 'function') window.syncTotalTimeMirror_();
-        if (typeof window.refreshWorkBreakHint_ === 'function') window.refreshWorkBreakHint_();
         if (typeof window.refreshDetailWorkAutoMinutes === 'function') {
           window.refreshDetailWorkAutoMinutes();
         }
@@ -17997,8 +18054,15 @@ function createSignboardMarker(name, pos, icon, id) {
         if (footer && typeof currentRecordType !== 'undefined' && currentRecordType === 'work') {
           const polyArg = (typeof activePolyId !== 'undefined' && activePolyId) ? activePolyId : '';
           const recType = currentRecordType || 'work';
+          const timeMode = (step === 'time' && typeof window.getWorkRecordTimeMode_ === 'function')
+            ? window.getWorkRecordTimeMode_()
+            : 'work';
           if (isEdit || isRest || step === 'comment') {
             footer.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;">${!isEdit && !isRest ? `<button type="button" onclick="goBackWorkRecordStep_()" style="background:#eee;color:#333;padding:15px 16px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:14px;">← 戻る</button>` : ''}<button id="submitBtn" onclick="submitRecord()" style="background:${btnColor};color:white;flex:1;min-width:140px;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">${isEdit ? '更新する' : '保存する'}</button><button onclick="saveTempRecord()" style="background:#00BCD4;color:white;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:13px;white-space:nowrap;">一時保存</button><button onclick="actionManagePhotos('${polyArg}', '${recType}')" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">戻る</button></div>`;
+          } else if (step === 'time' && timeMode === 'rest') {
+            footer.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;"><button type="button" onclick="registerRestBreakFromWorkFormStep_()" style="background:${btnColor};color:white;flex:1;min-width:140px;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">☕ 休憩を登録する</button><button onclick="actionManagePhotos('${polyArg}', '${recType}')" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">キャンセル</button></div>`;
+          } else if (step === 'time' && timeMode === 'lunch') {
+            footer.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;"><button type="button" onclick="registerLunchBreakFromWorkForm_()" style="background:${btnColor};color:white;flex:1;min-width:140px;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">🍱 昼休憩を登録する</button><button onclick="actionManagePhotos('${polyArg}', '${recType}')" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">キャンセル</button></div>`;
           } else {
             footer.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;"><button type="button" onclick="goBackWorkRecordStep_()" style="background:#eee;color:#333;padding:15px 16px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:14px;${step === 'time' ? 'visibility:hidden;' : ''}">← 戻る</button><button type="button" onclick="advanceWorkRecordStep_()" style="background:${btnColor};color:white;flex:1;min-width:140px;padding:15px;border-radius:8px;border:none;font-weight:bold;cursor:pointer;font-size:16px;">次へ →</button><button onclick="actionManagePhotos('${polyArg}', '${recType}')" style="background:#ccc;padding:15px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:15px;">キャンセル</button></div>`;
           }
@@ -18014,6 +18078,15 @@ function createSignboardMarker(name, pos, icon, id) {
         window._selectedPesticides = [];
         window._pestSearchQ = '';
         window._workRecordStep = (typeof currentEditRecordId !== 'undefined' && currentEditRecordId) ? 'details' : 'time';
+        if (!(typeof currentEditRecordId !== 'undefined' && currentEditRecordId)) {
+          if (!window._pendingWorkRecordTimeMode) window._workRecordTimeMode = window._workRecordTimeMode || 'work';
+          else {
+            window._workRecordTimeMode = window._pendingWorkRecordTimeMode;
+            window._pendingWorkRecordTimeMode = '';
+          }
+        } else {
+          window._workRecordTimeMode = 'work';
+        }
         if (typeof window.refreshClockOutNudgeUI_ === 'function') {
           setTimeout(() => { try { window.refreshClockOutNudgeUI_(); } catch (e) {} }, 0);
         }
@@ -18237,7 +18310,7 @@ function createSignboardMarker(name, pos, icon, id) {
         let timeUI = `
           <div class="rec-zone rec-zone-time" style="background:#E3F2FD; border:1px solid #90CAF9; border-radius:10px; padding:12px; margin-bottom:15px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; gap:6px; flex-wrap:wrap;">
-            <label class="form-label" style="margin:0; color:#1565C0; display:flex; align-items:center; gap:4px;">⏰ 時間 ${window.buildRecHelpBtn_('popover-time-help',
+            <label id="work_record_time_zone_label" class="form-label" style="margin:0; color:#1565C0; display:flex; align-items:center; gap:4px;">⏰ 時間 ${window.buildRecHelpBtn_('popover-time-help',
               '・<b>終了を今にセット</b> … 終了時刻を現在時刻にします<br>'
               + '・<b>前の終了に合わせる</b> … 開始を直前の作業／休憩の終了に合わせます<br>'
               + '・<b>前終了〜今</b> … 開始＝前の終了、終了＝いま（通しで記録向き）<br>'
@@ -18247,7 +18320,7 @@ function createSignboardMarker(name, pos, icon, id) {
               <button type="button" onclick="setEndTimeToNow()" style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;" title="編集中でも終了時刻を今の時間に合わせます">⏱️ 終了を今にセット</button>
               <button type="button" id="btn_match_prev_end" onclick="matchStartTimeToPreviousEnd()" style="display:none; background:#E8F5E9; color:#2e7d32; border:1px solid #A5D6A7; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">◀️ 前の終了に合わせる</button>
               <button type="button" onclick="matchStartEndToPreviousEndAndNow()" style="background:#FFF3E0; color:#E65100; border:1px solid #FFB74D; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">⏱️ 前終了〜今</button>
-              <button type="button" onclick="document.getElementById('rec_start_time').value=''; document.getElementById('rec_end_time').value=''; document.getElementById('rec_start_time').removeAttribute('data-autofill'); document.getElementById('rec_start_time').removeAttribute('data-start-source'); document.getElementById('rec_start_time').removeAttribute('data-rest-pair'); if(document.getElementById('rec_break_start')){ document.getElementById('rec_break_start').value=''; document.getElementById('rec_break_start').setAttribute('data-autofill','1'); } if(document.getElementById('rec_break_end')) document.getElementById('rec_break_end').value=''; if(document.getElementById('rec_break_mins')) document.getElementById('rec_break_mins').value=''; if(typeof updateStartTimeHintUI==='function') updateStartTimeHintUI(); calcTotalTime();" style="background:#eee; border:1px solid #ccc; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">時間クリア</button>
+              <button type="button" onclick="document.getElementById('rec_start_time').value=''; document.getElementById('rec_end_time').value=''; document.getElementById('rec_start_time').removeAttribute('data-autofill'); document.getElementById('rec_start_time').removeAttribute('data-start-source'); document.getElementById('rec_start_time').removeAttribute('data-rest-pair'); if(document.getElementById('rec_mode_start')){ document.getElementById('rec_mode_start').value=''; document.getElementById('rec_mode_start').setAttribute('data-autofill','1'); } if(document.getElementById('rec_mode_end')){ document.getElementById('rec_mode_end').value=''; document.getElementById('rec_mode_end').setAttribute('data-autofill','1'); } if(typeof updateStartTimeHintUI==='function') updateStartTimeHintUI(); calcTotalTime();" style="background:#eee; border:1px solid #ccc; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">時間クリア</button>
             </div>
           </div>
           <div class="form-grid" style="margin-bottom:6px;">
@@ -18275,7 +18348,7 @@ function createSignboardMarker(name, pos, icon, id) {
             </div>
           </div>
           <div id="rec_start_time_hint" style="display:none; font-size:11px; margin-bottom:0; font-weight:bold;"></div>
-          <!--WORK_BREAK_ROW-->
+          <!--WORK_MODE_TIME_ROW-->
           <div id="rec_planned_end_box" style="display:none; margin-top:10px; background:#fff; border:1px dashed #90CAF9; border-radius:8px; padding:10px; text-align:center;"></div>
           </div>
         `;
@@ -18320,38 +18393,55 @@ function createSignboardMarker(name, pos, icon, id) {
           let lotsHtml = activeLots.map(l => `<div><label class="checkbox-label"><input type="checkbox" name="use_lots" value="${l.lotId}"> ${l.lotId} <span style="color:#2196F3; margin-left:5px;">(${l.containerType||'種類不明'} 残:${l.remain})</span></label></div>`).join('');
           if(!lotsHtml) lotsHtml = '<div style="color:#888; font-size:12px;">使用可能なロットがありません</div>';
           
-         const workBreakTimeUI = `
-            <div class="form-grid" style="margin-bottom:6px; margin-top:8px; padding-top:8px; border-top:1px dashed #90CAF9;">
-              <div>
-                <label class="form-label" style="font-size:11px; margin-bottom:2px; color:#E65100;">☕ 休憩 開始</label>
-                <input type="text" id="rec_break_start" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" data-autofill="1" value="" onclick="this.removeAttribute('data-autofill'); openAppTimePicker('rec_break_start', '休憩 開始')" onchange="this.removeAttribute('data-autofill'); syncWorkBreakRange_()" style="margin-bottom:0;">
-              </div>
-              <div>
-                <label class="form-label" style="font-size:11px; margin-bottom:2px; color:#E65100;">☕ 休憩 終了</label>
-                <input type="text" id="rec_break_end" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" value="" onclick="openAppTimePicker('rec_break_end', '休憩 終了')" onchange="syncWorkBreakRange_()" style="margin-bottom:0;">
+         const workTimeModeTabsUI = !isEdit ? `
+            <div id="work_record_time_mode_tabs" style="display:flex; gap:6px; margin-bottom:12px;">
+              <button type="button" data-time-mode="work" onclick="setWorkRecordTimeMode_('work')" style="flex:1; background:#FF9800; color:#fff; border:2px solid #FF9800; border-radius:10px; padding:10px 6px; font-size:13px; font-weight:bold; cursor:pointer;">🚜 作業</button>
+              <button type="button" data-time-mode="rest" onclick="setWorkRecordTimeMode_('rest')" style="flex:1; background:#fff; color:#666; border:2px solid #ddd; border-radius:10px; padding:10px 6px; font-size:13px; cursor:pointer;">☕ 休憩</button>
+              <button type="button" data-time-mode="lunch" onclick="setWorkRecordTimeMode_('lunch')" style="flex:1; background:#fff; color:#666; border:2px solid #ddd; border-radius:10px; padding:10px 6px; font-size:13px; cursor:pointer;">🍱 昼休憩</button>
+            </div>
+          ` : '';
+
+         const workModeTimeUI = `
+            <div id="work_record_mode_time_section" style="display:none; margin-top:8px; padding-top:8px; border-top:1px dashed #90CAF9;">
+              <div style="font-size:11px; color:#888; margin-bottom:6px;">登録する時間（上の時間に自動で合わせます・手入力後は固定）</div>
+              <div class="form-grid" style="margin-bottom:0;">
+                <div>
+                  <label id="work_record_mode_start_label" class="form-label" style="font-size:11px; margin-bottom:2px; color:#E65100;">☕ 休憩 開始</label>
+                  <input type="text" id="rec_mode_start" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" data-autofill="1" value="" onclick="this.removeAttribute('data-autofill'); openAppTimePicker('rec_mode_start', '開始')" onchange="this.removeAttribute('data-autofill'); calcTotalTime()" style="margin-bottom:0;">
+                </div>
+                <div>
+                  <label id="work_record_mode_end_label" class="form-label" style="font-size:11px; margin-bottom:2px; color:#E65100;">☕ 休憩 終了</label>
+                  <input type="text" id="rec_mode_end" class="form-input app-time-input" readonly inputmode="none" placeholder="--:--" data-autofill="1" value="" onclick="this.removeAttribute('data-autofill'); openAppTimePicker('rec_mode_end', '終了')" onchange="this.removeAttribute('data-autofill'); calcTotalTime()" style="margin-bottom:0;">
+                </div>
               </div>
             </div>
-            <input type="hidden" id="rec_break_mins" value="">
           `;
 
          let workTimeUI = `
+            <div id="work_record_mode_work_panel">
             <div class="rec-zone rec-zone-duration" style="background:#FFF8E1; padding:12px; border-radius:10px; margin-bottom:15px; text-align:center; border:1px solid #FFE082;">
-              <label class="form-label" style="color:#F57F17; display:inline-flex; align-items:center; gap:4px; justify-content:center;">⏱️ 実作業時間・休憩 ${window.buildRecHelpBtn_('popover-break-help',
-                '・開始〜終了から休憩分を引いた時間が実作業時間です<br>'
-                + '・休憩は☕休憩ボタンと同じく「開始〜終了」の時刻で入れます<br>'
-                + '・休憩開始は上の作業開始に自動で合わせます（手入力後は固定）<br>'
-                + '・別枠の「☕ 休憩」作業（昼休憩など）とは別です（作業の合間の短い休憩用）',
-                { heading: '休憩（作業内）', bg: '#E65100', title: '休憩のヘルプ' })}</label>
+              <label class="form-label" style="color:#F57F17; display:inline-flex; align-items:center; gap:4px; justify-content:center;">⏱️ 実作業時間</label>
               <div id="rec_total_time_display" style="padding:10px; background:#fff; border-radius:4px; font-weight:bold; color:#FF9800; border:1px solid #FFCC80;">--</div>
-              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:8px;">
-                <div id="rec_break_hint" style="font-size:12px; font-weight:bold; color:#888; text-align:left; flex:1;">休憩なし</div>
-                <button type="button" onclick="clearWorkBreakRange_()" style="background:#fff; color:#9E9E9E; border:1px solid #E0E0E0; border-radius:8px; padding:4px 10px; font-size:11px; font-weight:bold; cursor:pointer; flex-shrink:0;">休憩クリア</button>
+            </div>
+            </div>
+          `;
+
+         const workRestModeUI = `
+            <div id="work_record_mode_rest_panel" style="display:none; margin-top:12px; background:#EFEBE9; border:1px solid #D7CCC8; border-radius:12px; padding:14px;">
+              <div id="work_rest_notice" style="font-size:12px; color:#5d4037; line-height:1.5;">
+                💡 休憩は作業記録とは別枠で登録されます。上の時間を調整してから登録してください。
               </div>
+            </div>
+          `;
+
+         const workLunchModeUI = `
+            <div id="work_record_mode_lunch_panel" style="display:none; margin-top:12px;">
+              ${window.buildWorkFormLunchBreakHtml_ ? window.buildWorkFormLunchBreakHtml_() : ''}
             </div>
           `;
 
           const defaultWorkCat = 'すべて';
-          const workFormTimeUI = timeUI.replace('<!--WORK_BREAK_ROW-->', workBreakTimeUI);
+          const workFormTimeUI = timeUI.replace('<!--WORK_MODE_TIME_ROW-->', workModeTimeUI);
 
           html = `
                   <div id="work_record_step_header" style="margin-bottom:4px;"></div>
@@ -18362,9 +18452,11 @@ function createSignboardMarker(name, pos, icon, id) {
                   <div id="work_record_step_time" class="work-rec-step-panel">
                   <label class="form-label">📅 作業日</label>
                   <input type="date" id="rec_work_date" class="form-input" value="${isEdit ? '' : defaultWorkDate}" onchange="if(typeof handleWorkDateChange==='function') handleWorkDateChange();" style="margin-bottom:12px;">
+                  ${workTimeModeTabsUI}
                   ${workFormTimeUI}
                   ${workTimeUI}
-                  ${!isEdit && (window.buildWorkFormLunchBreakHtml_ ? window.buildWorkFormLunchBreakHtml_() : '')}
+                  ${workRestModeUI}
+                  ${workLunchModeUI}
                   </div>
 
                   <div id="work_record_step_work" class="work-rec-step-panel" style="display:none;">
@@ -18585,6 +18677,20 @@ function createSignboardMarker(name, pos, icon, id) {
         if (currentRecordType === 'work' && typeof window.refreshWorkFormLunchSection_ === 'function') {
           setTimeout(() => { try { window.refreshWorkFormLunchSection_(); } catch (e) {} }, 40);
         }
+        if (currentRecordType === 'work' && !isEdit) {
+          setTimeout(() => {
+            if (typeof window.refreshWorkRecordTimeModeUI_ === 'function') {
+              try { window.refreshWorkRecordTimeModeUI_(); } catch (e) {}
+            }
+            if (typeof window.refreshWorkRecordStepUI_ === 'function') {
+              try { window.refreshWorkRecordStepUI_(); } catch (e) {}
+            }
+            if (typeof window.getWorkRecordTimeMode_ === 'function' && window.getWorkRecordTimeMode_() === 'rest'
+              && typeof window.refreshTodayRestBreaksUI === 'function') {
+              try { window.refreshTodayRestBreaksUI(); } catch (e) {}
+            }
+          }, 45);
+        }
         // 他端末で保存した一時保存があればクラウドから取得して復元ボタンを更新
         setTimeout(() => { refreshTempRecordButtonFromCloud_(); }, 50);
         // 画面復帰時にも再取得（端末間同期）
@@ -18722,12 +18828,6 @@ function createSignboardMarker(name, pos, icon, id) {
             if (document.getElementById('rec_break_mins')) {
               const bm = (d.breakMins != null && d.breakMins !== '') ? parseInt(d.breakMins, 10) : 0;
               document.getElementById('rec_break_mins').value = (!isNaN(bm) && bm > 0) ? String(bm) : '';
-              // 休憩は分数だけ保存しているため、時刻欄は空にして入れ直せる状態にする
-              if (document.getElementById('rec_break_start')) {
-                document.getElementById('rec_break_start').value = '';
-                document.getElementById('rec_break_start').setAttribute('data-autofill', '1');
-              }
-              if (document.getElementById('rec_break_end')) document.getElementById('rec_break_end').value = '';
             }
             if (d.progressStatus && typeof window.selectProgressStatus === 'function') window.selectProgressStatus(d.progressStatus); else if (document.getElementById('rec_progress_status')) document.getElementById('rec_progress_status').value = d.progressStatus || ''; 
             if (document.getElementById('rec_work_comment')) document.getElementById('rec_work_comment').value = d.comment || d.notes || '';
@@ -18989,6 +19089,9 @@ function createSignboardMarker(name, pos, icon, id) {
           if (syncClockEl) syncClockEl.checked = false;
         }
         if (currentRecordType === 'work') calcTotalTime();
+        if (currentRecordType === 'work' && !isEdit && typeof window.refreshWorkRecordTimeModeUI_ === 'function') {
+          try { window.refreshWorkRecordTimeModeUI_(); } catch (e) {}
+        }
         if (isEdit && currentRecordType === 'work') {
           setTimeout(() => {
             if (typeof window.updateSelectedPolysDisplay === 'function') window.updateSelectedPolysDisplay();
@@ -24964,7 +25067,7 @@ function createSignboardMarker(name, pos, icon, id) {
        */
       window.buildWorkFormLunchBreakHtml_ = () => {
         return `
-          <div id="work_form_lunch_section" style="margin-top:4px; background:#FFF8E1; border:1px solid #FFE082; border-radius:12px; padding:14px;">
+          <div id="work_form_lunch_section" style="background:#FFF8E1; border:1px solid #FFE082; border-radius:12px; padding:14px;">
             <div id="work_form_lunch_collapsed" style="display:none; cursor:pointer;" onclick="toggleWorkFormLunchSection_(true)" role="button" tabindex="0">
               <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
                 <div style="font-weight:bold; color:#2E7D32; font-size:14px;">🍱 昼休憩 登録済</div>
@@ -24977,24 +25080,8 @@ function createSignboardMarker(name, pos, icon, id) {
                 <button type="button" onclick="toggleWorkFormLunchSection_(false)" style="background:#fff; color:#757575; border:1px solid #BDBDBD; border-radius:8px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer;">▼ 閉じる</button>
               </div>
               <div style="font-weight:bold; color:#E65100; font-size:15px; margin-bottom:6px;">🍱 昼休憩登録</div>
-              <div style="font-size:12px; color:#666; line-height:1.45; margin-bottom:10px;">昼休憩ならここで登録できます。作業を続ける場合は下の「次へ」へ進んでください。<br>登録すると次の作業開始は昼休憩終了になります。</div>
+              <div style="font-size:12px; color:#666; line-height:1.45; margin-bottom:8px;">昼休憩は作業記録とは別枠で登録されます。上の時間を調整してから登録してください。<br>登録すると次の作業開始は昼休憩終了になります。</div>
               <div id="work_form_lunch_status" style="display:none; font-size:12px; font-weight:bold; color:#2E7D32; margin-bottom:8px;"></div>
-              <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
-                <div style="flex:1;">
-                  <label style="font-size:11px; color:#888;">昼休憩 開始</label>
-                  <input type="text" id="work_form_lunch_start" class="form-input app-time-input" readonly inputmode="none" data-autofill="1" value="" onclick="this.removeAttribute('data-autofill'); if(window.openAppTimePicker) openAppTimePicker('work_form_lunch_start', '昼休憩 開始')" style="margin:0; text-align:center; font-weight:bold; font-size:16px; border:1px solid #FFB74D;">
-                </div>
-                <span style="margin-top:14px; font-weight:bold; color:#E65100;">〜</span>
-                <div style="flex:1;">
-                  <label style="font-size:11px; color:#888;">昼休憩 終了</label>
-                  <input type="text" id="work_form_lunch_end" class="form-input app-time-input" readonly inputmode="none" value="" onclick="if(window.openAppTimePicker) openAppTimePicker('work_form_lunch_end', '昼休憩 終了')" style="margin:0; text-align:center; font-weight:bold; font-size:16px; border:1px solid #FFB74D;">
-                </div>
-              </div>
-              <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;">
-                <button type="button" onclick="setWorkFormLunchStartFromWorkEnd_()" style="flex:1; min-width:120px; background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:8px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer;">開始＝前作業終了</button>
-                <button type="button" onclick="setWorkFormLunchEndToNow_()" style="flex:1; min-width:120px; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer;">終了＝いま</button>
-              </div>
-              <button type="button" id="work_form_lunch_btn" onclick="registerLunchBreakFromWorkForm_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:10px; padding:14px; font-size:16px; font-weight:bold; cursor:pointer; box-shadow:0 3px 8px rgba(255,152,0,0.35);">🍱 昼休憩を登録</button>
             </div>
           </div>`;
       };
@@ -25049,28 +25136,46 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.syncWorkFormLunchStartFromEnd_ = () => {
-        const startEl = document.getElementById('work_form_lunch_start');
-        if (!startEl || startEl.getAttribute('data-autofill') !== '1') return;
+        if (typeof window.getWorkRecordTimeMode_ === 'function' && window.getWorkRecordTimeMode_() !== 'lunch') return;
         const sug = window.suggestWorkFormLunchTimes_();
-        startEl.value = sug.start;
-        const endEl = document.getElementById('work_form_lunch_end');
-        if (endEl && !endEl.value) endEl.value = sug.end;
+        const startEl = document.getElementById('rec_start_time');
+        const endEl = document.getElementById('rec_end_time');
+        if (startEl && startEl.getAttribute('data-autofill') === '1') startEl.value = sug.start;
+        if (endEl && (!endEl.value || endEl.getAttribute('data-autofill') === '1')) {
+          endEl.value = sug.end;
+          endEl.setAttribute('data-autofill', '1');
+        }
+        if (typeof window.syncModeTimeFromWorkTime_ === 'function') window.syncModeTimeFromWorkTime_();
       };
 
       window.setWorkFormLunchStartFromWorkEnd_ = () => {
-        const startEl = document.getElementById('work_form_lunch_start');
         const sug = window.suggestWorkFormLunchTimes_();
+        const startEl = document.getElementById('rec_start_time');
+        const modeStartEl = document.getElementById('rec_mode_start');
         if (startEl) {
           startEl.value = sug.start;
           startEl.setAttribute('data-autofill', '1');
         }
+        if (modeStartEl) {
+          modeStartEl.value = sug.start;
+          modeStartEl.setAttribute('data-autofill', '1');
+        }
+        if (typeof window.setWorkRecordTimeMode_ === 'function') window.setWorkRecordTimeMode_('lunch');
       };
 
       window.setWorkFormLunchEndToNow_ = () => {
         const now = new Date();
         const nowHm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-        const endEl = document.getElementById('work_form_lunch_end');
-        if (endEl) endEl.value = nowHm;
+        const endEl = document.getElementById('rec_end_time');
+        const modeEndEl = document.getElementById('rec_mode_end');
+        if (endEl) {
+          endEl.value = nowHm;
+          endEl.removeAttribute('data-autofill');
+        }
+        if (modeEndEl) {
+          modeEndEl.value = nowHm;
+          modeEndEl.removeAttribute('data-autofill');
+        }
       };
 
       window.refreshWorkFormLunchSection_ = () => {
@@ -25099,36 +25204,37 @@ function createSignboardMarker(name, pos, icon, id) {
         box.style.padding = '14px';
         if (collapseBar) collapseBar.style.display = isRegistered ? 'block' : 'none';
         const sug = window.suggestWorkFormLunchTimes_();
-        const startEl = document.getElementById('work_form_lunch_start');
-        const endEl = document.getElementById('work_form_lunch_end');
-        if (startEl && (!startEl.value || startEl.getAttribute('data-autofill') === '1')) {
-          startEl.value = sug.start;
-          startEl.setAttribute('data-autofill', '1');
+        const startEl = document.getElementById('rec_start_time');
+        const endEl = document.getElementById('rec_end_time');
+        const modeStartEl = document.getElementById('rec_mode_start');
+        const modeEndEl = document.getElementById('rec_mode_end');
+        if (window.getWorkRecordTimeMode_ && window.getWorkRecordTimeMode_() === 'lunch') {
+          if (startEl && startEl.getAttribute('data-autofill') === '1') startEl.value = isRegistered ? lunch.start : sug.start;
+          if (endEl && (!endEl.value || endEl.getAttribute('data-autofill') === '1')) {
+            endEl.value = isRegistered ? lunch.end : sug.end;
+            endEl.setAttribute('data-autofill', '1');
+          }
+          if (modeStartEl) modeStartEl.setAttribute('data-autofill', '1');
+          if (modeEndEl) modeEndEl.setAttribute('data-autofill', '1');
+          if (typeof window.syncModeTimeFromWorkTime_ === 'function') window.syncModeTimeFromWorkTime_();
         }
-        if (endEl && !endEl.value) endEl.value = sug.end;
         const st = document.getElementById('work_form_lunch_status');
-        const btn = document.getElementById('work_form_lunch_btn');
         if (isRegistered) {
           if (st) {
             st.style.display = 'block';
             st.textContent = `登録済: ${lunch.start}〜${lunch.end}（上書きできます）`;
           }
-          if (btn) btn.textContent = '🍱 昼休憩を更新して登録';
-          if (startEl && startEl.getAttribute('data-autofill') === '1') startEl.value = lunch.start;
-          if (endEl && !endEl.value) endEl.value = lunch.end;
         } else {
           if (st) st.style.display = 'none';
-          if (btn) btn.textContent = '🍱 昼休憩を登録';
         }
       };
 
       window.registerLunchBreakFromWorkForm_ = async () => {
-        const start = window.normalizeTimeHm
-          ? (window.normalizeTimeHm(document.getElementById('work_form_lunch_start')?.value) || '')
-          : String(document.getElementById('work_form_lunch_start')?.value || '').trim();
-        const end = window.normalizeTimeHm
-          ? (window.normalizeTimeHm(document.getElementById('work_form_lunch_end')?.value) || '')
-          : String(document.getElementById('work_form_lunch_end')?.value || '').trim();
+        const times = (typeof window.getWorkRecordModeTimes_ === 'function')
+          ? window.getWorkRecordModeTimes_()
+          : { start: '', end: '' };
+        const start = times.start;
+        const end = times.end;
         if (!start || !end || start === end) {
           if (typeof customAlert === 'function') customAlert('昼休憩の開始・終了時刻を入力してください。');
           return;
@@ -25178,12 +25284,11 @@ function createSignboardMarker(name, pos, icon, id) {
        * 開始＝前記録（作業 or 休憩）の終了、終了＝いま。
        */
       window.openRestBreakRecord = () => {
-          // 必ず新規（既存休憩の編集に入らない）
           currentEditRecordId = null;
           currentRecordType = 'work';
           activePolyId = null;
           selectedPolyIds = [];
-          window._openingRestBreak = true;
+          window._pendingWorkRecordTimeMode = 'rest';
 
           if (typeof renderRecordForm === 'function') {
               renderRecordForm();
@@ -25193,18 +25298,17 @@ function createSignboardMarker(name, pos, icon, id) {
           const typeModal = document.getElementById('recordTypeSelectModal');
           if (typeModal) typeModal.style.display = 'none';
 
-          // 専用フォーム描画後に開始〜終了だけ同期（チップ選択は専用フォームでは不要）
-          const syncRestTimes = () => {
-              if (typeof window.matchStartEndToPreviousEndAndNow === 'function') {
-                  try { window.matchStartEndToPreviousEndAndNow({ silent: true }); } catch (e) {}
+          setTimeout(() => {
+              if (typeof window.setWorkRecordTimeMode_ === 'function') {
+                  try { window.setWorkRecordTimeMode_('rest'); } catch (e) {}
               }
               if (typeof window.updateRestNoticeCardUI === 'function') {
                   try { window.updateRestNoticeCardUI(); } catch (e) {}
               }
-          };
-          setTimeout(syncRestTimes, 50);
-          setTimeout(syncRestTimes, 200);
-          setTimeout(() => { window._openingRestBreak = false; }, 400);
+              if (typeof window.refreshTodayRestBreaksUI === 'function') {
+                  try { window.refreshTodayRestBreaksUI(); } catch (e) {}
+              }
+          }, 50);
       };
 
       /** 播種・定植・畝立ての専用記録メタ */
