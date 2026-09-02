@@ -31,7 +31,7 @@ function doPost(e) {
     else if (action === "saveRecord") result = saveRecord(params.id, params.name, params.author, params.recordType, params.data, params.photos);
     else if (action === "updateRecordItem") result = updateRecordItem(params.id, params.recordId, params.recordType, params.data, params.photos, params.keptUrls, params.userName);
     else if (action === "deleteRecordItem") result = deleteRecordItem(params.id, params.recordId, params.userName);
-    else if (action === "deleteWorkRecordById") result = deleteWorkRecordById(params.recordId, params.userName);
+    else if (action === "deleteWorkRecordById") result = deleteWorkRecordById(params);
     else if (action === "cancelClockInAndDeleteTodayWorkRecords") result = cancelClockInAndDeleteTodayWorkRecords(params);
     else if (action === "addFieldStatus") result = addFieldStatusToMaster(params.statusName);
     else if (action === "editFieldStatus") result = editFieldStatusInMaster(params.oldStatusName, params.newStatusName);
@@ -6155,10 +6155,85 @@ function deleteRecordItem(polyId, recordId, user) {
   return updated;
 }
 
+function normWorkRecordTimeHm_(v) {
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    return Utilities.formatDate(v, 'JST', 'HH:mm');
+  }
+  const s = String(v || '').trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return '';
+  return ('0' + m[1]).slice(-2) + ':' + m[2];
+}
+
+function normWorkRecordAuthor_(v) {
+  return String(v || '').replace(/\s+/g, '');
+}
+
+function workRecordAuthorMatches_(rowAuthor, filterAuthor) {
+  const a = normWorkRecordAuthor_(rowAuthor);
+  const b = normWorkRecordAuthor_(filterAuthor);
+  if (!b) return true;
+  if (!a) return false;
+  return a === b || a.indexOf(b) >= 0 || b.indexOf(a) >= 0;
+}
+
+function workRecordRowMatches_(row, workDateYmd, authorFilter, startHm, endHm, workName) {
+  const rowDate = formatWorkDateYmd_(row[3]);
+  if (!rowDate || rowDate !== workDateYmd) return false;
+  if (!workRecordAuthorMatches_(row[2], authorFilter)) return false;
+  if (workName && String(row[4] || '').trim() !== workName) return false;
+  const rowStart = normWorkRecordTimeHm_(row[6]);
+  const rowEnd = normWorkRecordTimeHm_(row[7]);
+  if (startHm && rowStart !== startHm) return false;
+  if (endHm && rowEnd !== endHm) return false;
+  return true;
+}
+
+function workRecordDataMatches_(data, authorFilter, workDateYmd, startHm, endHm, workName, itemAuthor) {
+  if (!data) return false;
+  const rowDate = formatWorkDateYmd_(data.workDate);
+  if (!rowDate || rowDate !== workDateYmd) return false;
+  if (!workRecordAuthorMatches_(itemAuthor || data.workerName || data.worker || data.userName, authorFilter)) return false;
+  if (workName && String(data.workName || '').trim() !== workName) return false;
+  const rowStart = normWorkRecordTimeHm_(data.startTime);
+  const rowEnd = normWorkRecordTimeHm_(data.endTime);
+  if (startHm && rowStart !== startHm) return false;
+  if (endHm && rowEnd !== endHm) return false;
+  return true;
+}
+
+/** 作業日・開始・終了・作業名・記録者からシステムIDを逆引き */
+function findWorkRecordIdByMatch_(params) {
+  const workDateYmd = formatWorkDateYmd_(params && params.workDate);
+  if (!workDateYmd) return '';
+  const authorFilter = String((params && (params.author || params.userName)) || '').trim();
+  const startHm = normWorkRecordTimeHm_(params && params.startTime);
+  const endHm = normWorkRecordTimeHm_(params && params.endTime);
+  const workName = String((params && params.workName) || '').trim();
+  const workSheet = TENANT_SS.getSheetByName('作業記録');
+  if (!workSheet || workSheet.getLastRow() < 2) return '';
+  const values = workSheet.getDataRange().getValues();
+  for (let i = values.length - 1; i >= 1; i--) {
+    if (!workRecordRowMatches_(values[i], workDateYmd, authorFilter, startHm, endHm, workName)) continue;
+    const rid = String(values[i][12] || '').trim();
+    if (rid) return rid;
+  }
+  return '';
+}
+
 /** 作業記録シート＋圃場／看板の埋め込み履歴から recordId で削除（マイページ向け） */
-function deleteWorkRecordById(recordId, userName) {
-  const rid = String(recordId || '').trim();
-  if (!rid) throw new Error('記録IDがありません');
+function deleteWorkRecordById(params) {
+  params = params || {};
+  const userName = String(params.userName || '').trim();
+  let rid = String(params.recordId || '').trim();
+  const needsMatch = !rid || rid.indexOf('sheet_') === 0 || rid.indexOf('local_') === 0;
+  if (needsMatch && params.workDate) {
+    const found = findWorkRecordIdByMatch_(params);
+    if (found) rid = found;
+  }
+  if (!rid || rid.indexOf('local_') === 0) {
+    throw new Error('削除対象の記録IDが見つかりません');
+  }
 
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -6171,7 +6246,15 @@ function deleteWorkRecordById(recordId, userName) {
     if (workSheet && workSheet.getLastRow() >= 2) {
       const values = workSheet.getDataRange().getValues();
       for (let i = values.length - 1; i >= 1; i--) {
-        if (String(values[i][12] || '').trim() !== rid) continue;
+        const rowMatch = params.workDate && workRecordRowMatches_(
+          values[i],
+          formatWorkDateYmd_(params.workDate),
+          String(params.author || params.userName || '').trim(),
+          normWorkRecordTimeHm_(params.startTime),
+          normWorkRecordTimeHm_(params.endTime),
+          String(params.workName || '').trim()
+        );
+        if (String(values[i][12] || '').trim() !== rid && !rowMatch) continue;
         const urlRaw = String(values[i][11] || '');
         urlRaw.split(/[,\s]+/).forEach(function(u) {
           const s = String(u || '').trim();
@@ -6198,7 +6281,16 @@ function deleteWorkRecordById(recordId, userName) {
         const kept = records.filter(function(item) {
           if (!item) return true;
           const itemId = String(item.id || item.url || '').trim();
-          if (itemId !== rid) return true;
+          const dataMatch = params.workDate && workRecordDataMatches_(
+            item.data || {},
+            String(params.author || params.userName || '').trim(),
+            formatWorkDateYmd_(params.workDate),
+            normWorkRecordTimeHm_(params.startTime),
+            normWorkRecordTimeHm_(params.endTime),
+            String(params.workName || '').trim(),
+            item.author || ''
+          );
+          if (itemId !== rid && !dataMatch) return true;
           if (Array.isArray(item.urls)) {
             item.urls.forEach(function(u) { if (u) deletedUrls[String(u)] = true; });
           }
