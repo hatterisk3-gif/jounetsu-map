@@ -784,7 +784,7 @@ function openAttr(id) {
              </div>
            `);
     } else {
-        infoWindow.setContent(`<div style="width:240px;max-width:100%;box-sizing:border-box;text-align:left;color:#333;padding:4px;"><b>圃場情報変更</b><br><label class="form-label">名前</label><input type="text" id="edN" value="${p.name}" class="form-input"><label class="form-label">拠点</label><select id="edL" class="form-input"><option value="">未設定</option>${pdlLocations.map(l => `<option value="${l}" ${l === p.location ? 'selected' : ''}>${l}</option>`).join('')}</select><label class="form-label">条件</label><select id="edC" class="form-input"><option value="">未設定</option>${pdlConditions.map(c => `<option value="${c}" ${c === p.condition ? 'selected' : ''}>${c}</option>`).join('')}</select><div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;"><label class="form-label" style="margin:0;">稼働状況</label><button type="button" onclick="openFieldStatusManager()" style="background:none;border:none;color:#1976d2;font-size:11px;cursor:pointer;padding:0;font-weight:bold;">⚙️ 管理</button></div><select id="edS" class="form-input" onchange="handleStatusSelect(this)"><option value="">未設定</option>${pdlStatuses.map(s => `<option value="${s}" ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}<option value="ADD_NEW" style="color:#1976d2;font-weight:bold;">➕ 新規項目追加...</option><option value="MANAGE_STATUS" style="color:#d32f2f;font-weight:bold;">⚙️ 項目の編集・削除...</option></select><button onclick="execAttr('${id}')" style="background:#d32f2f;color:white;width:100%;padding:10px;border-radius:4px;font-weight:bold;border:none;margin-top:10px;">情報を更新</button></div>`);
+        infoWindow.setContent(`<div style="width:240px;max-width:100%;box-sizing:border-box;text-align:left;color:#333;padding:4px;"><b>圃場情報変更</b><br><label class="form-label">名前</label><input type="text" id="edN" value="${p.name}" class="form-input"><label class="form-label">拠点</label><select id="edL" class="form-input"><option value="">未設定</option>${pdlLocations.map(l => `<option value="${l}" ${l === p.location ? 'selected' : ''}>${l}</option>`).join('')}</select><label class="form-label">条件</label><select id="edC" class="form-input"><option value="">未設定</option>${pdlConditions.map(c => `<option value="${c}" ${c === p.condition ? 'selected' : ''}>${c}</option>`).join('')}</select><label class="form-label">土質</label><select id="edSoil" class="form-input"><option value="">未設定</option>${(['粘土質','砂質','壌質']).map(s => `<option value="${s}" ${s === (p.soilType || '') ? 'selected' : ''}>${s}</option>`).join('')}</select><div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;"><label class="form-label" style="margin:0;">稼働状況</label><button type="button" onclick="openFieldStatusManager()" style="background:none;border:none;color:#1976d2;font-size:11px;cursor:pointer;padding:0;font-weight:bold;">⚙️ 管理</button></div><select id="edS" class="form-input" onchange="handleStatusSelect(this)"><option value="">未設定</option>${pdlStatuses.map(s => `<option value="${s}" ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}<option value="ADD_NEW" style="color:#1976d2;font-weight:bold;">➕ 新規項目追加...</option><option value="MANAGE_STATUS" style="color:#d32f2f;font-weight:bold;">⚙️ 項目の編集・削除...</option></select><button onclick="execAttr('${id}')" style="background:#d32f2f;color:white;width:100%;padding:10px;border-radius:4px;font-weight:bold;border:none;margin-top:10px;">情報を更新</button></div>`);
     }
 }
 
@@ -797,11 +797,11 @@ function execAttr(id) {
         p.marker.setMap(null); p.marker = createSignboardMarker(n, p.marker.getPosition(), p.color, id);
         callGAS('updatePolygon', { id, name: n, signFunction: f, condition: p.linkedSigns, userName: currentUser });
     } else {
-        const n = document.getElementById('edN').value, l = document.getElementById('edL').value, c = document.getElementById('edC').value, s = document.getElementById('edS').value, t = p.toukiId;
-        if (!n) return; p.name = n; p.location = l; p.condition = c; p.status = s; p.toukiId = t;
+        const n = document.getElementById('edN').value, l = document.getElementById('edL').value, c = document.getElementById('edC').value, soil = (document.getElementById('edSoil') || {}).value || '', s = document.getElementById('edS').value, t = p.toukiId;
+        if (!n) return; p.name = n; p.location = l; p.condition = c; p.soilType = soil; p.status = s; p.toukiId = t;
         const isU = (s === '未使用（返却）' || s === '未使用'), col = getAdminColor(s);
         p.polygon.setOptions({ fillColor: col, strokeColor: col, fillOpacity: isU ? 0.5 : 0.3 }); p.marker.setMap(null); p.marker = createLabelMarker(n, p.polygon.getPath().getArray(), col, p.area);
-        callGAS('updatePolygon', { id, name: n, location: l, condition: c, status: s, toukiId: t, ridgeDir: p.ridgeDir || '', ridgeWidth: p.ridgeWidth || '', userName: currentUser });
+        callGAS('updatePolygon', { id, name: n, location: l, condition: c, soilType: soil, status: s, toukiId: t, ridgeDir: p.ridgeDir || '', ridgeWidth: p.ridgeWidth || '', userName: currentUser });
         updateAdminLegend();
     }
     infoWindow.close();
@@ -1507,6 +1507,7 @@ function clearCustomDrawing() {
     }
     if (document.getElementById('fieldLocation')) document.getElementById('fieldLocation').value = '';
     if (document.getElementById('fieldCondition')) document.getElementById('fieldCondition').value = '';
+    if (document.getElementById('fieldSoilType')) document.getElementById('fieldSoilType').value = '';
     if (document.getElementById('fieldStatus')) document.getElementById('fieldStatus').value = '';
 }
 
@@ -2278,7 +2279,7 @@ document.getElementById('btnLoadFude').onclick = async () => {
 
 // 🌟変更：合体した外郭を「1つの圃場」として保存する
 document.getElementById('finalSaveBtn').onclick = async () => {
-    const n = document.getElementById('fieldName').value, l = document.getElementById('fieldLocation').value, c = document.getElementById('fieldCondition').value, s = document.getElementById('fieldStatus').value, t = "";
+    const n = document.getElementById('fieldName').value, l = document.getElementById('fieldLocation').value, c = document.getElementById('fieldCondition').value, soil = (document.getElementById('fieldSoilType') || {}).value || '', s = document.getElementById('fieldStatus').value, t = "";
     const startNum = parseFloat(document.getElementById('fieldStartNumber').value) || 1;
     if (!n) { customAlert("圃場名を入力してください"); return; }
 
@@ -2300,7 +2301,7 @@ document.getElementById('finalSaveBtn').onclick = async () => {
                     coords: JSON.stringify(pathData),
                     color: '#d32f2f',
                     userName: currentUser,
-                    location: l, condition: c, area, status: s, toukiId: t
+                    location: l, condition: c, soilType: soil, area, status: s, toukiId: t
                 });
             }
             
@@ -2328,8 +2329,8 @@ document.getElementById('finalSaveBtn').onclick = async () => {
             let pathData = currentPath.map(pt => ({ lat: pt.lat(), lng: pt.lng() }));
             let area = Math.round(google.maps.geometry.spherical.computeArea(currentPath) / 100);
 
-            let newId = await callGAS('savePolygon', { name: n, coords: JSON.stringify(pathData), color: '#d32f2f', userName: currentUser, location: l, condition: c, area, status: s, toukiId: t });
-            createPolygonObject({ id: newId, name: n, coords: pathData, color: '#d32f2f', location: l, condition: c, area, status: s, toukiId: t, isMarker: false });
+            let newId = await callGAS('savePolygon', { name: n, coords: JSON.stringify(pathData), color: '#d32f2f', userName: currentUser, location: l, condition: c, soilType: soil, area, status: s, toukiId: t });
+            createPolygonObject({ id: newId, name: n, coords: pathData, color: '#d32f2f', location: l, condition: c, soilType: soil, area, status: s, toukiId: t, isMarker: false });
 
             document.getElementById('modal').style.display = 'none';
             document.getElementById('btnViewMode').click();
@@ -2534,7 +2535,7 @@ window.openM = (id) => {
     const titleHtml = p.isMarker ? `<div style="font-size:28px; line-height:1; margin-bottom:5px;">${p.color}</div><b>${p.name}</b>` : `<b>${p.name}</b>`;
 
     let ridgeStr = ''; if (!p.isMarker && p.ridgeDir && p.ridgeWidth) { const ridges = calcRidges(p.coords, p.ridgeDir, p.ridgeWidth); ridgeStr = `<br><span style="color:#2196F3; font-weight:bold;">📏 約${ridges}畝 (${p.ridgeDir} / ${p.ridgeWidth}cm)</span>`; }
-    let h = `<div style="text-align:center;width:240px;max-width:100%;box-sizing:border-box;padding:4px;color:#333;font-family:sans-serif;">${titleHtml}<br><div style="font-size:11px; color:#555; margin-bottom:10px;">${!p.isMarker ? (isU ? '<span style="background:#999;color:white;padding:2px 4px;font-size:11px;border-radius:4px;">未使用</span> ' : '') + (p.location || '-') + ' / ' + (p.condition || '-') + ' / ' + p.area + 'a' + ridgeStr + '<hr>' : ''}</div>`;
+    let h = `<div style="text-align:center;width:240px;max-width:100%;box-sizing:border-box;padding:4px;color:#333;font-family:sans-serif;">${titleHtml}<br><div style="font-size:11px; color:#555; margin-bottom:10px;">${!p.isMarker ? (isU ? '<span style="background:#999;color:white;padding:2px 4px;font-size:11px;border-radius:4px;">未使用</span> ' : '') + (p.location || '-') + ' / ' + (p.condition || '-') + (p.soilType ? ' / ' + p.soilType : '') + ' / ' + p.area + 'a' + ridgeStr + '<hr>' : ''}</div>`;
 
     if (!p.isMarker) h += `<div style="display:flex;gap:4px;margin-bottom:8px;width:100%;"><button onclick="startMerge('${id}')" style="background:#FF9800;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">🚜統合</button><button onclick="openAdvancedSplit('${id}')" style="background:#E91E63;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">✂️分割</button></div>`;
     h += `<div style="display:flex;gap:4px;margin-bottom:4px;width:100%;"><button onclick="openAttr('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">情報変更</button></div>`;
@@ -2558,7 +2559,7 @@ window.execDuplicate = async (id) => {
 
     callGAS('splitField', { id, newName: inputName, userName: currentUser }).then(newId => {
         document.getElementById('modal').style.display = 'none';
-        createPolygonObject({ id: newId, name: inputName, coords: newCoords, color: p.color, photos: [], author: p.author, location: p.location, condition: p.condition, area: p.area, status: p.status, isMarker: false, linkedSigns: "" });
+        createPolygonObject({ id: newId, name: inputName, coords: newCoords, color: p.color, photos: [], author: p.author, location: p.location, condition: p.condition, soilType: p.soilType || '', area: p.area, status: p.status, isMarker: false, linkedSigns: "" });
         if (loadedPolygons[newId]) { loadedPolygons[newId].coords = newCoords; if (loadedPolygons[newId].polygon) { loadedPolygons[newId].polygon.setOptions({ zIndex: 9999 }); } }
         actionEditShape(newId);
         customAlert(`「${inputName}」として複製しました！\nオレンジ色の点を動かして範囲を変更し、「確定」を押してください。`);
@@ -2652,7 +2653,7 @@ window.updateRidgeSimCalc = (id) => {
 window.execSaveRidgeSim = (id) => {
     const p = loadedPolygons[id], dir = document.getElementById('simRDir').value, width = document.getElementById('simRW').value;
     p.ridgeDir = dir; p.ridgeWidth = width;
-    callGAS('updatePolygon', { id: p.id, name: p.name, location: p.location, condition: p.condition, status: p.status, toukiId: p.toukiId || '', ridgeDir: dir, ridgeWidth: width, userName: currentUser });
+    callGAS('updatePolygon', { id: p.id, name: p.name, location: p.location, condition: p.condition, soilType: p.soilType || '', status: p.status, toukiId: p.toukiId || '', ridgeDir: dir, ridgeWidth: width, userName: currentUser });
     document.getElementById('modal').style.display = 'none'; customAlert("畝立てシミュレーションの設定を保存しました！");
 };
 
@@ -2906,8 +2907,8 @@ window.execAdvancedSplit = async (id) => {
                 p.name = name; p.coords = coords; p.area = area;
                 if (p.polygon) { p.polygon.setPath(coords); p.marker.setMap(null); p.marker = createLabelMarker(p.name, coords, p.color, area); }
             } else {
-                let newId = await callGAS('savePolygon', { name: name, coords: JSON.stringify(coords), color: p.color, userName: currentUser, location: p.location, condition: p.condition, area: area, status: p.status, toukiId: p.toukiId });
-                createPolygonObject({ id: newId, name: name, coords: coords, color: p.color, location: p.location, condition: p.condition, area: area, status: p.status, toukiId: p.toukiId, isMarker: false, linkedSigns: p.linkedSigns });
+                let newId = await callGAS('savePolygon', { name: name, coords: JSON.stringify(coords), color: p.color, userName: currentUser, location: p.location, condition: p.condition, soilType: p.soilType || '', area: area, status: p.status, toukiId: p.toukiId });
+                createPolygonObject({ id: newId, name: name, coords: coords, color: p.color, location: p.location, condition: p.condition, soilType: p.soilType || '', area: area, status: p.status, toukiId: p.toukiId, isMarker: false, linkedSigns: p.linkedSigns });
             }
         }
         document.getElementById('modal').style.display = 'none';

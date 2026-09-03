@@ -5339,6 +5339,15 @@ function syncToukiMapping() {
 // ==========================================
 // 保存済みの圃場・看板データを取得
 // ==========================================
+/** 圃場シート U列ヘッダ「土質」を用意する */
+function ensureFieldSoilTypeHeader_(sheet) {
+  if (!sheet) return;
+  try {
+    const header = String(sheet.getRange(1, 21).getValue() || '').trim();
+    if (!header) sheet.getRange(1, 21).setValue('土質');
+  } catch (e) {}
+}
+
 function getSavedPolygons() {
   const ss = TENANT_SS;
   let result = [];
@@ -5375,7 +5384,8 @@ function getSavedPolygons() {
           ridgeWidth: data[i][14],
           uneSimData: data[i][15],
           water_status: data[i][16] || 'stopped',
-          drainage_status: data[i][19] || ''
+          drainage_status: data[i][19] || '',
+          soilType: data[i][20] || '' // U列: 土質（粘土質・砂質・壌質）
         });
         let manureData = {};
         try { if (data[i][17]) manureData = JSON.parse(data[i][17]); } catch(e){}
@@ -5470,9 +5480,12 @@ function savePolygonsBatch(paramsList) {
       "[]",                      // J列: システム用データ（履歴）
       params.status || "",       // K列: 稼働状況
       params.toukiId || "",      // L列: 登記ID
-      params.parentId || ""      // M列: 親ID
+      params.parentId || "",     // M列: 親ID
+      "", "", "", "", "", "", "", // N〜T 予備
+      params.soilType || ""      // U列: 土質
     ]);
   }
+  ensureFieldSoilTypeHeader_(sheet);
   
   if (rowsToAppend.length > 0) {
     sheet.getRange(sheet.getLastRow() + 1, 1, rowsToAppend.length, rowsToAppend[0].length).setValues(rowsToAppend);
@@ -5510,6 +5523,7 @@ function savePolygon(params) {
   } else {
     // 【圃場シートの列構成（画像に合わせて完全に修正）】
     // A:ID, B:圃場の名前, C:所属拠点名, D:圃場条件, E:圃場面積, F:座標, G:色/アイコン, H:登録日時, I:登録者, J:システム用データ(履歴), K:稼働状況, L:登記ID, M:親ID
+    ensureFieldSoilTypeHeader_(sheet);
     sheet.appendRow([
       newId,
       params.name || "",         // B列: 圃場の名前
@@ -5526,7 +5540,12 @@ function savePolygon(params) {
       "",                        // M列: 親ID (新規作成時は空欄)
       params.ridgeDir || "",     // N列以降（畝方向などの予備）
       params.ridgeWidth || "",
-      params.uneSimData || ""    // P列: 畝シミュレーションデータ
+      params.uneSimData || "",   // P列: 畝シミュレーションデータ
+      "",                        // Q列: 水管理
+      "",                        // R列: 生産管理
+      "",                        // S列: 圃場メモ
+      "",                        // T列: 排水溝
+      params.soilType || ""      // U列: 土質（粘土質・砂質・壌質）
     ]);
   }
   
@@ -5542,6 +5561,7 @@ function savePolygonBatch(params) {
   
   if (!params.polygons || params.polygons.length === 0) return [];
   
+  ensureFieldSoilTypeHeader_(sheet);
   const rows = params.polygons.map(p => {
     const newId = Utilities.getUuid();
     newIds.push(newId);
@@ -5561,7 +5581,9 @@ function savePolygonBatch(params) {
       "",
       p.ridgeDir || "",
       p.ridgeWidth || "",
-      p.uneSimData || ""
+      p.uneSimData || "",
+      "", "", "", "",
+      p.soilType || ""
     ];
   });
   
@@ -5661,6 +5683,10 @@ function updatePolygon(params) {
     if (params.toukiId !== undefined) sheet.getRange(targetRow, 12).setValue(params.toukiId); // L列: 登記ID
     if (params.water_status !== undefined) sheet.getRange(targetRow, 17).setValue(params.water_status); // Q列: 水管理ステータス
     if (params.drainage_status !== undefined) sheet.getRange(targetRow, 20).setValue(params.drainage_status); // T列: 排水溝ステータス
+    if (params.soilType !== undefined) {
+      ensureFieldSoilTypeHeader_(sheet);
+      sheet.getRange(targetRow, 21).setValue(params.soilType); // U列: 土質
+    }
     if (params.manureData !== undefined) {
       let md = params.manureData;
       try {
@@ -5763,6 +5789,7 @@ function splitField(params) {
   const finalName = params.newName ? params.newName : (targetRowData[1] + "_分割");
   
   // 新しく追加するデータの配列を作成
+  ensureFieldSoilTypeHeader_(sheet);
   const newRowData = [
     newId,                        // A: ID
     finalName,                    // B: 圃場の名前 ★修正
@@ -5779,7 +5806,12 @@ function splitField(params) {
     targetRowData[0],             // M: 親ID (分割元のIDを記録)
     targetRowData[13] || "",      // N: 畝方向
     targetRowData[14] || "",      // O: 畝幅
-    targetRowData[15] || ""       // P: 畝データ
+    targetRowData[15] || "",      // P: 畝データ
+    targetRowData[16] || "",      // Q: 水管理
+    targetRowData[17] || "",      // R: 生産管理
+    targetRowData[18] || "",      // S: 圃場メモ
+    targetRowData[19] || "",      // T: 排水溝
+    targetRowData[20] || ""       // U: 土質
   ];
   
   // 元の圃場の「上」に新しい行を挿入してデータをセット
@@ -14090,7 +14122,9 @@ function getCultivationMaster() {
              master.fields.push({
                id: String(r[0]),
                name: String(r[1]),
-               area: Number(r[4]) || 0
+               area: Number(r[4]) || 0,
+               condition: String(r[3] || ''),
+               soilType: String(r[20] || '')
              });
           }
         }

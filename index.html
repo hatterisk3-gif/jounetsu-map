@@ -23,6 +23,17 @@
         .btn-admin { background-color: #d32f2f; }
         .btn-signup { background-color: #2e7d32; }
         .btn-muted { background-color: #555; }
+        .btn-other-toggle { background-color: #555; margin-bottom: 0; }
+        .other-links {
+            display: none;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #444;
+        }
+        .other-links.is-open { display: block; }
+        .other-links .btn:last-child { margin-bottom: 0; }
+        .btn-other-toggle .toggle-arrow { display: inline-block; margin-left: 6px; transition: transform 0.2s; }
+        .btn-other-toggle.is-open .toggle-arrow { transform: rotate(180deg); }
         
         .top-right-actions {
             position: absolute;
@@ -177,16 +188,22 @@
         </div>
 
         <h1>情熱MAP 総合案内所 (v1.60)</h1>
-        
-        <a href="ops-index.html" class="btn" style="background-color:#0d7a4f;">🔍 索引から操作を選ぶ</a>
+
         <a href="worker.html" class="btn btn-worker">🌿 作業員用 MAP を開く</a>
-        <a href="schedule.html" class="btn btn-schedule">📅 予定 MAP を開く</a>
-        <a href="registration-portal.html" class="btn btn-register">📝 データ登録ポータルを開く</a>
-        <a href="アイデア.html" class="btn" style="background-color:#5e35b1;">💡 アイデアボードを開く</a>
-        <a href="think.html" class="btn" style="background-color:#2563eb;">🧠 思考ボードを開く</a>
         <a href="admin.html" class="btn btn-admin">⚙️ 管理者用 MAP を開く</a>
-        <a href="battle-portal.html" class="btn" style="background-color:#E65100;">⚔️ バトルポータル</a>
-        <a href="javascript:location.replace('index2.html')" class="btn btn-portal2" style="margin-bottom:0; margin-top:8px;">🚪 プロポータルを開く</a>
+        <a href="schedule.html" class="btn btn-schedule">📅 予定 MAP を開く</a>
+
+        <button type="button" class="btn btn-other-toggle" id="btnOtherLinksToggle" onclick="toggleOtherLinks()" aria-expanded="false" aria-controls="otherLinksPanel">
+            📂 それ以外のリンク<span class="toggle-arrow">▼</span>
+        </button>
+        <div id="otherLinksPanel" class="other-links" hidden>
+            <a href="ops-index.html" class="btn" style="background-color:#0d7a4f;">🔍 索引から操作を選ぶ</a>
+            <a href="registration-portal.html" class="btn btn-register">📝 データ登録ポータルを開く</a>
+            <a href="アイデア.html" class="btn" style="background-color:#5e35b1;">💡 アイデアボードを開く</a>
+            <a href="think.html" class="btn" style="background-color:#2563eb;">🧠 思考ボードを開く</a>
+            <a href="battle-portal.html" class="btn" style="background-color:#E65100;">⚔️ バトルポータル</a>
+            <a href="javascript:location.replace('index2.html')" class="btn btn-portal2">🚪 プロポータルを開く</a>
+        </div>
     </div>
 
     <div id="accountModal" class="account-modal" role="dialog" aria-modal="true" aria-labelledby="accountModalTitle" onclick="onAccountModalBackdrop(event)">
@@ -246,6 +263,17 @@
 
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js?v=portal', { scope: './' });
+      }
+
+      function toggleOtherLinks() {
+        const panel = document.getElementById('otherLinksPanel');
+        const btn = document.getElementById('btnOtherLinksToggle');
+        if (!panel || !btn) return;
+        const open = !panel.classList.contains('is-open');
+        panel.classList.toggle('is-open', open);
+        btn.classList.toggle('is-open', open);
+        panel.hidden = !open;
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
       }
 
       const urlParams = new URLSearchParams(window.location.search);

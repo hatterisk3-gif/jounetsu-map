@@ -745,6 +745,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
             if (loadedPolygons && loadedPolygons[p.id]) {
               p.photos = loadedPolygons[p.id].photos || [];
               p.condition = loadedPolygons[p.id].condition || p.condition;
+              p.soilType = loadedPolygons[p.id].soilType || p.soilType;
               p.status = loadedPolygons[p.id].status || p.status;
             }
           });
@@ -883,6 +884,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                       loadedPolygons[f.id].uneSimData = f.uneSimData || '';
                       loadedPolygons[f.id].water_status = f.water_status || 'stopped';
                       loadedPolygons[f.id].drainage_status = f.drainage_status || '';
+                      loadedPolygons[f.id].soilType = f.soilType || '';
                   }
               });
               updateWorkerLegend();
@@ -1074,7 +1076,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
             if (typeof window.isBulkWorkMemoModalOpen_ === 'function' && window.isBulkWorkMemoModalOpen_()) return;
             openMainMenu(id); infoWindow.setPosition(e.latLng); infoWindow.open(map); 
           });
-          loadedPolygons[id] = { id, polygon, marker, name, location: loc, condition: cond, area, color, photos: photos || [], author, status, isMarker: false, coords };
+          loadedPolygons[id] = { id, polygon, marker, name, location: loc, condition: cond, area, color, photos: photos || [], author, status, isMarker: false, coords, soilType: '' };
         }
       }
 
@@ -2039,7 +2041,7 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         actions += `<button onclick="directOpenReportForm('${id}')" style="width:100%; padding:8px 0; border-radius:4px; border:none; background:#d32f2f; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box;">⚠️ 問題を報告する</button>`;
 
-        const content = `<div style="text-align:center; width:220px; max-width:100%; box-sizing:border-box; padding:2px; font-family:sans-serif;"><b>${p.name}</b><br><div style="font-size:11px; color:#555; margin-bottom:6px;">${!p.isMarker?(isU?'<span style="background:#999;color:white;padding:2px 4px;border-radius:2px;font-size:10px;">未使用</span> ':'')+(p.location||'-')+' / '+(p.condition||'-')+' / '+p.area+'a':(p.signFunction ? `[${p.signFunction}]` : '')}</div>${navBtn}${actions}</div>`;
+        const content = `<div style="text-align:center; width:220px; max-width:100%; box-sizing:border-box; padding:2px; font-family:sans-serif;"><b>${p.name}</b><br><div style="font-size:11px; color:#555; margin-bottom:6px;">${!p.isMarker?(isU?'<span style="background:#999;color:white;padding:2px 4px;border-radius:2px;font-size:10px;">未使用</span> ':'')+(p.location||'-')+' / '+(p.condition||'-')+(p.soilType?' / '+p.soilType:'')+' / '+p.area+'a':(p.signFunction ? `[${p.signFunction}]` : '')}</div>${navBtn}${actions}</div>`;
         infoWindow.setContent(content);
       };
 

@@ -619,6 +619,7 @@ function serializeAdminPolygon_(obj) {
         color: obj.color,
         location: obj.location || '',
         condition: obj.condition || '',
+        soilType: obj.soilType || '',
         area: obj.area || 0,
         status: obj.status || '',
         toukiId: obj.toukiId || '',
@@ -778,6 +779,7 @@ function syncUpdatePolygon_(p, extra) {
     } else {
         if (payload.location == null) payload.location = p.location;
         if (payload.condition == null) payload.condition = p.condition;
+        if (payload.soilType == null) payload.soilType = p.soilType || '';
         if (payload.status == null) payload.status = p.status;
         if (payload.toukiId == null) payload.toukiId = p.toukiId || '';
         if (payload.ridgeDir == null) payload.ridgeDir = p.ridgeDir || '';
@@ -4800,7 +4802,7 @@ function openAttr(id) {
              </div>
            `);
     } else {
-        infoWindow.setContent(`<div style="width:240px;max-width:100%;box-sizing:border-box;text-align:left;color:#333;padding:4px;"><b>圃場情報変更</b><br><label class="form-label">名前</label><input type="text" id="edN" value="${p.name}" class="form-input"><label class="form-label">拠点</label><select id="edL" class="form-input"><option value="">未設定</option>${pdlLocations.map(l => `<option value="${l}" ${l === p.location ? 'selected' : ''}>${l}</option>`).join('')}</select><label class="form-label">条件</label><select id="edC" class="form-input"><option value="">未設定</option>${pdlConditions.map(c => `<option value="${c}" ${c === p.condition ? 'selected' : ''}>${c}</option>`).join('')}</select><div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;"><label class="form-label" style="margin:0;">稼働状況</label><button type="button" onclick="openFieldStatusManager()" style="background:none;border:none;color:#1976d2;font-size:11px;cursor:pointer;padding:0;font-weight:bold;">⚙️ 管理</button></div><select id="edS" class="form-input" onchange="handleStatusSelect(this)"><option value="">未設定</option>${pdlStatuses.map(s => `<option value="${s}" ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}<option value="ADD_NEW" style="color:#1976d2;font-weight:bold;">➕ 新規項目追加...</option><option value="MANAGE_STATUS" style="color:#d32f2f;font-weight:bold;">⚙️ 項目の編集・削除...</option></select><button onclick="execAttr('${id}')" style="background:#d32f2f;color:white;width:100%;padding:10px;border-radius:4px;font-weight:bold;border:none;margin-top:10px;">情報を更新</button></div>`);
+        infoWindow.setContent(`<div style="width:240px;max-width:100%;box-sizing:border-box;text-align:left;color:#333;padding:4px;"><b>圃場情報変更</b><br><label class="form-label">名前</label><input type="text" id="edN" value="${p.name}" class="form-input"><label class="form-label">拠点</label><select id="edL" class="form-input"><option value="">未設定</option>${pdlLocations.map(l => `<option value="${l}" ${l === p.location ? 'selected' : ''}>${l}</option>`).join('')}</select><label class="form-label">条件</label><select id="edC" class="form-input"><option value="">未設定</option>${pdlConditions.map(c => `<option value="${c}" ${c === p.condition ? 'selected' : ''}>${c}</option>`).join('')}</select><label class="form-label">土質</label><select id="edSoil" class="form-input"><option value="">未設定</option>${(['粘土質','砂質','壌質']).map(s => `<option value="${s}" ${s === (p.soilType || '') ? 'selected' : ''}>${s}</option>`).join('')}</select><div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;"><label class="form-label" style="margin:0;">稼働状況</label><button type="button" onclick="openFieldStatusManager()" style="background:none;border:none;color:#1976d2;font-size:11px;cursor:pointer;padding:0;font-weight:bold;">⚙️ 管理</button></div><select id="edS" class="form-input" onchange="handleStatusSelect(this)"><option value="">未設定</option>${pdlStatuses.map(s => `<option value="${s}" ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}<option value="ADD_NEW" style="color:#1976d2;font-weight:bold;">➕ 新規項目追加...</option><option value="MANAGE_STATUS" style="color:#d32f2f;font-weight:bold;">⚙️ 項目の編集・削除...</option></select><button onclick="execAttr('${id}')" style="background:#d32f2f;color:white;width:100%;padding:10px;border-radius:4px;font-weight:bold;border:none;margin-top:10px;">情報を更新</button></div>`);
     }
 }
 
@@ -4816,8 +4818,8 @@ function execAttr(id) {
         showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
         syncUpdatePolygon_(p).then(ok => { if (ok) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok'); });
     } else {
-        const n = document.getElementById('edN').value, l = document.getElementById('edL').value, c = document.getElementById('edC').value, s = document.getElementById('edS').value, t = p.toukiId;
-        if (!n) return; p.name = n; p.location = l; p.condition = c; p.status = s; p.toukiId = t;
+        const n = document.getElementById('edN').value, l = document.getElementById('edL').value, c = document.getElementById('edC').value, soil = (document.getElementById('edSoil') || {}).value || '', s = document.getElementById('edS').value, t = p.toukiId;
+        if (!n) return; p.name = n; p.location = l; p.condition = c; p.soilType = soil; p.status = s; p.toukiId = t;
         const isU = (s === '未使用（返却）' || s === '未使用'), col = getAdminColor(s);
         p.polygon.setOptions({ fillColor: col, strokeColor: col, fillOpacity: isU ? 0.5 : 0.3 }); p.marker.setMap(null); p.marker = createLabelMarker(n, p.polygon.getPath().getArray(), col, p.area);
         updateAdminLegend();
@@ -5642,6 +5644,7 @@ function clearCustomDrawing() {
     }
     if (document.getElementById('fieldLocation')) document.getElementById('fieldLocation').value = '';
     if (document.getElementById('fieldCondition')) document.getElementById('fieldCondition').value = '';
+    if (document.getElementById('fieldSoilType')) document.getElementById('fieldSoilType').value = '';
     if (document.getElementById('fieldStatus')) document.getElementById('fieldStatus').value = '';
 }
 
@@ -6433,7 +6436,7 @@ document.getElementById('btnLoadFude').onclick = async () => {
 
 // 🌟変更：合体した外郭を「1つの圃場」として保存する
 document.getElementById('finalSaveBtn').onclick = async () => {
-    const n = document.getElementById('fieldName').value, l = document.getElementById('fieldLocation').value, c = document.getElementById('fieldCondition').value, s = document.getElementById('fieldStatus').value, t = "";
+    const n = document.getElementById('fieldName').value, l = document.getElementById('fieldLocation').value, c = document.getElementById('fieldCondition').value, soil = (document.getElementById('fieldSoilType') || {}).value || '', s = document.getElementById('fieldStatus').value, t = "";
     const startNum = parseFloat(document.getElementById('fieldStartNumber').value) || 1;
     if (!n) { customAlert("圃場名を入力してください"); return; }
 
@@ -6453,7 +6456,7 @@ document.getElementById('finalSaveBtn').onclick = async () => {
                     coords: JSON.stringify(pathData),
                     color: '#d32f2f',
                     userName: currentUser,
-                    location: l, condition: c, area, status: s, toukiId: t
+                    location: l, condition: c, soilType: soil, area, status: s, toukiId: t
                 });
                 createPolygonObject({ ...paramsList[i], id: tempId, coords: pathData, isMarker: false });
             }
@@ -6481,12 +6484,12 @@ document.getElementById('finalSaveBtn').onclick = async () => {
             let pathData = currentPath.map(pt => ({ lat: pt.lat(), lng: pt.lng() }));
             let area = Math.round(google.maps.geometry.spherical.computeArea(currentPath) / 100);
             const tempId = newAdminTempId_('tmp');
-            createPolygonObject({ id: tempId, name: n, coords: pathData, color: '#d32f2f', location: l, condition: c, area, status: s, toukiId: t, isMarker: false });
+            createPolygonObject({ id: tempId, name: n, coords: pathData, color: '#d32f2f', location: l, condition: c, soilType: soil, area, status: s, toukiId: t, isMarker: false });
             document.getElementById('modal').style.display = 'none';
             document.getElementById('btnViewMode').click();
             persistAdminInitCache_();
             showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
-            const payload = { name: n, coords: JSON.stringify(pathData), color: '#d32f2f', userName: currentUser, location: l, condition: c, area, status: s, toukiId: t };
+            const payload = { name: n, coords: JSON.stringify(pathData), color: '#d32f2f', userName: currentUser, location: l, condition: c, soilType: soil, area, status: s, toukiId: t };
             syncAdminCall_('savePolygon', payload, { key: 'savePolygon:' + tempId, op: 'savePolygon', tempId, payload }).then(newId => {
                 remapLoadedPolygonId_(tempId, newId);
                 persistAdminInitCache_();
@@ -6772,7 +6775,7 @@ window.openM = (id) => {
     const fieldUrl = buildFieldShareUrl(id, centerLat, centerLng);
     const safeName = String(p.name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
 
-    let h = `<div style="text-align:center;width:240px;max-width:100%;box-sizing:border-box;padding:4px;color:#333;font-family:sans-serif;">${titleHtml}<br><div style="font-size:11px; color:#555; margin-bottom:8px;">${!p.isMarker ? (isU ? '<span style="background:#999;color:white;padding:2px 4px;font-size:11px;border-radius:4px;">未使用</span> ' : '') + (p.location || '-') + ' / ' + (p.condition || '-') + ' / ' + p.area + 'a' + ridgeStr + '<hr style="margin:6px 0;">' : ''}</div>`;
+    let h = `<div style="text-align:center;width:240px;max-width:100%;box-sizing:border-box;padding:4px;color:#333;font-family:sans-serif;">${titleHtml}<br><div style="font-size:11px; color:#555; margin-bottom:8px;">${!p.isMarker ? (isU ? '<span style="background:#999;color:white;padding:2px 4px;font-size:11px;border-radius:4px;">未使用</span> ' : '') + (p.location || '-') + ' / ' + (p.condition || '-') + (p.soilType ? ' / ' + p.soilType : '') + ' / ' + p.area + 'a' + ridgeStr + '<hr style="margin:6px 0;">' : ''}</div>`;
 
     h += `<div style="background:#f8f9fa; border:1px solid #e0e0e0; border-radius:6px; padding:6px; margin-bottom:8px; text-align:left;">`;
     h += `<div style="font-size:11px; font-weight:bold; color:#1565C0; margin-bottom:4px;">🔗 圃場URL</div>`;
@@ -6806,7 +6809,7 @@ window.execDuplicate = async (id) => {
     if (newCoords.length === 0) { customAlert("座標データが取得できませんでした。一度リロードしてください。"); return; }
 
     const tempId = newAdminTempId_('tmp');
-    createPolygonObject({ id: tempId, name: inputName, coords: newCoords, color: p.color, photos: [], author: p.author, location: p.location, condition: p.condition, area: p.area, status: p.status, isMarker: false, linkedSigns: "", toukiId: p.toukiId });
+    createPolygonObject({ id: tempId, name: inputName, coords: newCoords, color: p.color, photos: [], author: p.author, location: p.location, condition: p.condition, soilType: p.soilType || '', area: p.area, status: p.status, isMarker: false, linkedSigns: "", toukiId: p.toukiId });
     if (loadedPolygons[tempId]) { loadedPolygons[tempId].coords = newCoords; if (loadedPolygons[tempId].polygon) { loadedPolygons[tempId].polygon.setOptions({ zIndex: 9999 }); } }
     persistAdminInitCache_();
     actionEditShape(tempId);
@@ -7163,8 +7166,8 @@ window.execAdvancedSplit = async (id) => {
                 syncUpdatePolygon_(p, { name: name, coords: JSON.stringify(coords), area: area });
             } else {
                 const tempId = newAdminTempId_('tmp');
-                createPolygonObject({ id: tempId, name: name, coords: coords, color: p.color, location: p.location, condition: p.condition, area: area, status: p.status, toukiId: p.toukiId, isMarker: false, linkedSigns: p.linkedSigns });
-                const payload = { name: name, coords: JSON.stringify(coords), color: p.color, userName: currentUser, location: p.location, condition: p.condition, area: area, status: p.status, toukiId: p.toukiId };
+                createPolygonObject({ id: tempId, name: name, coords: coords, color: p.color, location: p.location, condition: p.condition, soilType: p.soilType || '', area: area, status: p.status, toukiId: p.toukiId, isMarker: false, linkedSigns: p.linkedSigns });
+                const payload = { name: name, coords: JSON.stringify(coords), color: p.color, userName: currentUser, location: p.location, condition: p.condition, soilType: p.soilType || '', area: area, status: p.status, toukiId: p.toukiId };
                 syncAdminCall_('savePolygon', payload, { key: 'savePolygon:' + tempId, op: 'savePolygon', tempId, payload }).then(newId => {
                     remapLoadedPolygonId_(tempId, newId);
                     persistAdminInitCache_();
