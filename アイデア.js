@@ -1,4 +1,4 @@
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
+
 const IDEA_LS_KEY = 'passionMapIdeaBoard';
 const IDEA_CAT_LS_KEY = 'passionMapIdeaCategories';
 
@@ -35,17 +35,8 @@ function ideaJs(s) {
   return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
-async function ideaCallGAS(action, params) {
-  params = params || {};
-  params.action = action;
-  const spreadsheetId = localStorage.getItem('spreadsheetId');
-  if (spreadsheetId && spreadsheetId !== 'undefined' && spreadsheetId !== 'null') {
-    params.spreadsheetId = spreadsheetId;
-  }
-  const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params) });
-  const j = JSON.parse(await res.text());
-  if (j.status !== 'success') throw new Error(j.message || '通信エラー');
-  return j.data;
+function ideaCallGAS(action, params) {
+  return callGAS(action, params);
 }
 
 function ideaLoadLocal() {

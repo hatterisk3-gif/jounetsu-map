@@ -1,4 +1,4 @@
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
+
       let currentUser = localStorage.getItem('passionMapUserName') || "", activePolyId = null, currentEditRecordId = null, currentRecordType = "growth", currentFilterType = "growth", existingUrlsInEdit = [];
       let pdlSignLinks = {},pdlLocations = [], pdlCrops = [], pdlStages = [], pdlWorkStatuses = [], pdlContainerNames = [], pdlContainers = [], pdlContentUnits = [], activeLots = [];
       let pdlTools = [], pdlMaterials = [], pdlMachines = [], pdlPesticides = [], pdlWorkMaster = [], pdlSignFunctions = [], pdlPastReports = {}, pdlSymptoms = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [];
@@ -389,65 +389,6 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
               customAlert("📍 有効なURLが見つかりませんでした。");
           }
       };
-
-      async function callGAS(action, params = {}, retries = 2, callOptions = {}) {
-        params.action = action;
-        if (action !== 'login') {
-          const spreadsheetId = localStorage.getItem('spreadsheetId');
-          if (spreadsheetId && spreadsheetId !== 'undefined' && spreadsheetId !== 'null' && spreadsheetId.trim() !== '') {
-            params.spreadsheetId = spreadsheetId;
-          }
-        }
-
-        // マスタ編集（カテゴリ名変更など）は作業マスタ一括更新があり重いので長めに待つ
-        const heavyActions = {
-          manageMaster: 90000,
-          getInitData: 60000,
-          getWorkRecordAnalysis: 45000,
-          saveCultivationPlans: 90000,
-          login: 20000
-        };
-        const timeoutMs = callOptions.timeoutMs || heavyActions[action] || 30000;
-        // 重い処理はタイムアウト後の再送で二重更新しやすいのでリトライを抑える
-        const maxRetries = (action === 'manageMaster') ? 0 : retries;
-        
-        let lastError = null;
-        for (let i = 0; i <= maxRetries; i++) {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-            try {
-                const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params), signal: controller.signal });
-                clearTimeout(timeoutId);
-                const text = await res.text();
-                let json;
-                try {
-                    json = JSON.parse(text);
-                } catch (e) {
-                    if (text.includes("<!DOCTYPE") || text.includes("<html")) {
-                        throw new Error("Googleサーバーの一時的な通信エラーが発生しました。（リトライ中...）");
-                    }
-                    throw new Error("サーバーから不正な応答がありました: " + text.substring(0, 50));
-                }
-                if (json.status !== "success") throw new Error(json.message);
-                return json.data;
-            } catch (err) {
-                clearTimeout(timeoutId);
-                lastError = err;
-                if (i < maxRetries) {
-                    console.warn(`callGAS [${action}] failed, retrying in 1.5s... (${i+1}/${maxRetries})`, err);
-                    await new Promise(r => setTimeout(r, 1500));
-                }
-            }
-        }
-        lastError.message = String(lastError.message || '').replace("（リトライ中...）", "");
-        if (lastError.name === 'AbortError') {
-            if (action === 'manageMaster') {
-                throw new Error("通信がタイムアウトしました。サーバー側では更新が完了している場合があります。画面を再読み込みして確認してください。");
-            }
-            throw new Error("通信がタイムアウトしました。電波の良い場所で再度お試しください。");
-        }
-        throw lastError;
-      }
 
    // 🌟 1. ログイン処理（完全版） 🌟
       function continueCachedWorkerSession_(message, toastType) {

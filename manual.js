@@ -7,7 +7,6 @@
  */
 (function() {
   const MANUAL_STORAGE_KEY = 'passionMapManuals';
-  const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
 
   // グローバル変数
   window.manualList = [];
@@ -58,37 +57,7 @@
     status.textContent = message || '';
     status.style.color = isError ? '#c62828' : '#666';
   }
-
-  async function callGAS(action, params) {
-    const spreadsheetId = localStorage.getItem('spreadsheetId');
-    const body = Object.assign({}, params || {}, { action: action });
-    if (spreadsheetId && spreadsheetId !== 'undefined' && spreadsheetId !== 'null' && String(spreadsheetId).trim()) {
-      body.spreadsheetId = spreadsheetId;
-    }
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-    try {
-      const res = await fetch(GAS_URL, {
-        method: 'POST',
-        body: JSON.stringify(body),
-        signal: controller.signal
-      });
-      const text = await res.text();
-      let json;
-      try {
-        json = JSON.parse(text);
-      } catch (e) {
-        throw new Error('サーバーから不正な応答がありました');
-      }
-      if (json && json.status === 'error') throw new Error(json.message || 'エラーが発生しました');
-      return json && json.data !== undefined ? json.data : json;
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  }
-  window.callGAS = callGAS;
-
-  function escapeHtml(str) {
+function escapeHtml(str) {
     return String(str == null ? '' : str)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')

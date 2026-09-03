@@ -1,5 +1,4 @@
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
-      
+
       // Check login on script load
       function checkLoginStatus() {
           const sid = localStorage.getItem('spreadsheetId');
@@ -54,16 +53,15 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
           }
 
           try {
-              const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({action: 'login', orgId: 'default', userId: id, password: pw}) });
-              const result = await res.json();
-              if (result.status === 'success' && result.data.success) {
+              const result = await callGAS('login', { orgId: 'default', userId: id, password: pw });
+              if (result && result.success) {
                   document.getElementById('loginScreen').style.display = 'none';
                   localStorage.setItem('passionMapUserId', id); 
                   localStorage.setItem('passionMapUserPw', pw);
-                  localStorage.setItem('passionMapUserName', result.data.name);
-                  localStorage.setItem('passionMapUserRole', result.data.role || '管理者');
-                  if (result.data.dept != null) localStorage.setItem('passionMapUserDept', result.data.dept || '');
-                  localStorage.setItem('spreadsheetId', result.data.spreadsheetId);
+                  localStorage.setItem('passionMapUserName', result.name);
+                  localStorage.setItem('passionMapUserRole', result.role || '管理者');
+                  if (result.dept != null) localStorage.setItem('passionMapUserDept', result.dept || '');
+                  localStorage.setItem('spreadsheetId', result.spreadsheetId);
 
                   if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
                       await PassionMapTerms.ensureAccepted({ userId: id });
@@ -73,7 +71,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbud
                   location.reload();
               } else {
                   document.getElementById('loginScreen').style.display = 'flex';
-                  document.getElementById('loginError').innerText = result.data.message || result.message;
+                  document.getElementById('loginError').innerText = result.message || 'ログインに失敗しました';
                   if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
               }
           } catch(e) { 
@@ -838,58 +836,6 @@ async function fetchWeatherAndUpdateUI() {
         }
       };
 
-      async function callGAS(action, params = {}, retries = 2) {
-        const spreadsheetId = localStorage.getItem('spreadsheetId');
-        if (!spreadsheetId || spreadsheetId === 'undefined' || spreadsheetId === 'null' || spreadsheetId.trim() === '') {
-          throw new Error("ログインセッションが無効であるか、スプレッドシートIDが設定されていません。一度ログアウトし、ログインし直してください。");
-        }
-        params.action = action;
-        params.spreadsheetId = spreadsheetId;
-        const timeoutMs = {
-          saveCultivationPlans: 90000,
-          saveCroptypeDBBatch: 90000,
-          getCultivationMaster: 60000,
-          getCultivationPlans: 75000
-        }[action] || 30000;
-        const maxRetries = (action === 'saveCultivationPlans' || action === 'saveCroptypeDBBatch' || action === 'getCultivationPlans') ? 0 : retries;
-        
-        let lastError = null;
-        for (let i = 0; i <= maxRetries; i++) {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-            try {
-                const res = await fetch(GAS_URL, {
-                    method: 'POST',
-                    body: JSON.stringify(params),
-                    signal: controller.signal
-                });
-                clearTimeout(timeoutId);
-                const text = await res.text();
-                let json;
-                try {
-                    json = JSON.parse(text);
-                } catch (e) {
-                    if (text.includes("<!DOCTYPE") || text.includes("<html")) {
-                        throw new Error("Googleサーバーの一時的な通信エラーが発生しました。（リトライ中...）");
-                    }
-                    throw new Error("サーバーから不正な応答がありました: " + text.substring(0, 50));
-                }
-                if (json && json.status === "error") throw new Error(json.message || "エラーが発生しました");
-                return json && json.data !== undefined ? json.data : json;
-            } catch (e) {
-                clearTimeout(timeoutId);
-                lastError = e;
-                if (i < maxRetries) {
-                    await new Promise(r => setTimeout(r, 2000 * (i + 1)));
-                }
-            }
-        }
-        if (lastError && lastError.name === 'AbortError') {
-            throw new Error("通信がタイムアウトしました。保存済みの場合があるため、計画一覧を再読み込みして確認してください。");
-        }
-        throw lastError;
-      }
-
       window.openWeatherModal = function() {
         let contentDiv = document.getElementById('weatherContent');
         if (window.cachedWeatherHtml) {
@@ -966,81 +912,6 @@ async function fetchWeatherAndUpdateUI() {
         modalEl.style.display = 'flex';
         if (okBtn) {
           okBtn.onclick = () => { modalEl.style.display = 'none'; };
-        }
-      };
-
-      async function callGAS(action, params = {}, retries = 2) {
-        const spreadsheetId = localStorage.getItem('spreadsheetId');
-        if (!spreadsheetId || spreadsheetId === 'undefined' || spreadsheetId === 'null' || spreadsheetId.trim() === '') {
-          throw new Error("ログインセッションが無効であるか、スプレッドシートIDが設定されていません。一度ログアウトし、ログインし直してください。");
-        }
-        params.action = action;
-        params.spreadsheetId = spreadsheetId;
-        const timeoutMs = {
-          saveCultivationPlans: 90000,
-          saveCroptypeDBBatch: 90000,
-          getCultivationMaster: 60000,
-          getCultivationPlans: 75000
-        }[action] || 30000;
-        const maxRetries = (action === 'saveCultivationPlans' || action === 'saveCroptypeDBBatch' || action === 'getCultivationPlans') ? 0 : retries;
-        
-        let lastError = null;
-        window._callGasControllers = window._callGasControllers || {};
-        window._callGasCancelled = window._callGasCancelled || {};
-        const cancelGenAtStart = window._callGasCancelled[action] || 0;
-        for (let i = 0; i <= maxRetries; i++) {
-            if ((window._callGasCancelled[action] || 0) > cancelGenAtStart) {
-                const cancelled = new Error('cancelled');
-                cancelled.name = 'AbortError';
-                lastError = cancelled;
-                break;
-            }
-            const controller = new AbortController();
-            window._callGasControllers[action] = controller;
-            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-            try {
-                const res = await fetch(GAS_URL, {
-                    method: 'POST',
-                    body: JSON.stringify(params),
-                    signal: controller.signal
-                });
-                clearTimeout(timeoutId);
-                const text = await res.text();
-                let json;
-                try {
-                    json = JSON.parse(text);
-                } catch (e) {
-                    if (text.includes("<!DOCTYPE") || text.includes("<html")) {
-                        throw new Error("Googleサーバーの一時的な通信エラーが発生しました。（リトライ中...）");
-                    }
-                    throw new Error("サーバーから不正な応答がありました: " + text.substring(0, 50));
-                }
-                if (json.status !== "success") throw new Error(json.message);
-                return json.data;
-            } catch (err) {
-                clearTimeout(timeoutId);
-                lastError = err;
-                if (i < maxRetries) {
-                    console.warn(`callGAS [${action}] failed, retrying in 1.5s... (${i+1}/${maxRetries})`, err);
-                    await new Promise(r => setTimeout(r, 1500));
-                }
-            }
-        }
-        if (lastError && lastError.name === 'AbortError') {
-            throw new Error("通信がタイムアウトしました。保存済みの場合があるため、計画一覧を再読み込みして確認してください。");
-        }
-        lastError.message = lastError.message.replace("（リトライ中...）", "");
-        throw lastError;
-      }
-
-      window.abortCallGAS = function(action) {
-        window._callGasCancelled = window._callGasCancelled || {};
-        window._callGasCancelled[action] = (window._callGasCancelled[action] || 0) + 1;
-        const map = window._callGasControllers || {};
-        const c = map[action];
-        if (c) {
-          try { c.abort(); } catch (e) {}
-          delete map[action];
         }
       };
 
@@ -7683,10 +7554,8 @@ window.doChangePassword = async function() {
 
     btn.disabled = true; btn.innerText = '変更中...';
     try {
-        const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'changePassword', userId: staffId, currentPassword: current, newPassword: newPw, spreadsheetId: localStorage.getItem('spreadsheetId') }) });
-        const json = await res.json();
-        const result = json.data || json;
-        if (result.success || json.status === 'success') {
+        const result = await callGAS('changePassword', { userId: staffId, currentPassword: current, newPassword: newPw });
+        if (result && result.success) {
             resultDiv.innerText = '✅ ' + (result.message || '変更しました');
             resultDiv.style.color = 'green';
             localStorage.setItem('passionMapUserPw', newPw);

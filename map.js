@@ -1,4 +1,3 @@
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
 
 let map;
 let polygons = [];
@@ -185,77 +184,6 @@ function applyCompostStatusUpdate(pData, patch) {
 
 function getStatusLabel(status) {
     return STATUS_LABELS[status] || status;
-}
-
-// ====== GAS通信（リトライ・エラー整形付き） ======
-function formatGasErrorMessage_(err, action) {
-    const raw = String((err && err.message) || err || '');
-    if (err && err.name === 'AbortError') {
-        return '通信がタイムアウトしました。電波の良い場所で再度お試しください。';
-    }
-    if (/failed to fetch|networkerror|load failed|network request failed/i.test(raw)) {
-        return 'サーバーに接続できませんでした。電波状況を確認して、しばらくしてから再度お試しください。';
-    }
-    if (raw.includes('<!DOCTYPE') || raw.includes('<html')) {
-        return 'Googleサーバーの一時的な通信エラーです。少し待ってから再度お試しください。';
-    }
-    if (raw) return raw.replace('（リトライ中...）', '');
-    return action ? `${action} の通信に失敗しました` : '通信に失敗しました';
-}
-
-async function callGAS(action, payload = {}, retries = 2, callOptions = {}) {
-    const params = { action, ...payload };
-    if (action !== 'login') {
-        const spreadsheetId = localStorage.getItem('spreadsheetId');
-        if (spreadsheetId && spreadsheetId !== 'undefined' && spreadsheetId !== 'null' && String(spreadsheetId).trim() !== '') {
-            params.spreadsheetId = spreadsheetId;
-        }
-    }
-
-    const heavyActions = {
-        getInitData: 60000,
-        saveProdMgmtCategories: 60000,
-        resetAllManureStatus: 60000,
-        login: 20000
-    };
-    const timeoutMs = callOptions.timeoutMs || heavyActions[action] || 30000;
-    const maxRetries = callOptions.retries != null ? callOptions.retries : retries;
-    const noRetryActions = ['resetAllManureStatus', 'saveProdMgmtCategories'];
-    const effectiveRetries = noRetryActions.includes(action) ? 0 : maxRetries;
-
-    let lastError = null;
-    for (let i = 0; i <= effectiveRetries; i++) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-        try {
-            const res = await fetch(GAS_URL, {
-                method: 'POST',
-                body: JSON.stringify(params),
-                signal: controller.signal
-            });
-            clearTimeout(timeoutId);
-            const text = await res.text();
-            let json;
-            try {
-                json = JSON.parse(text);
-            } catch (e) {
-                if (text.includes('<!DOCTYPE') || text.includes('<html')) {
-                    throw new Error('Googleサーバーの一時的な通信エラーが発生しました。（リトライ中...）');
-                }
-                throw new Error('サーバーから不正な応答がありました: ' + text.substring(0, 50));
-            }
-            if (json.status !== 'success') throw new Error(json.message || 'APIエラー');
-            return json.data;
-        } catch (err) {
-            clearTimeout(timeoutId);
-            lastError = err;
-            if (i < effectiveRetries) {
-                console.warn(`callGAS [${action}] failed, retrying... (${i + 1}/${effectiveRetries})`, err);
-                await new Promise(r => setTimeout(r, 1200 + i * 800));
-            }
-        }
-    }
-    throw new Error(formatGasErrorMessage_(lastError, action));
 }
 
 // ====== 圃場ステータス同期キュー（並列送信でGASが落ちるのを防ぐ） ======

@@ -1,4 +1,3 @@
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
 
 let map;
 let polygons = [];
@@ -195,25 +194,6 @@ function applyCompostStatusUpdate(pData, patch) {
 
 function getStatusLabel(status) {
     return STATUS_LABELS[status] || status;
-}
-
-// ====== GAS通信 (worker.jsと同じパターン) ======
-async function callGAS(action, payload = {}) {
-    const spreadsheetId = localStorage.getItem('spreadsheetId');
-    const body = { action, spreadsheetId, ...payload };
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-    try {
-        const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(body), signal: controller.signal });
-        clearTimeout(timeoutId);
-        const json = await res.json();
-        if (json.status !== "success") throw new Error(json.message || 'APIエラー');
-        return json.data;
-    } catch (err) {
-        clearTimeout(timeoutId);
-        if (err.name === 'AbortError') throw new Error("通信がタイムアウトしました。");
-        throw err;
-    }
 }
 
 // ====== ログイン ======

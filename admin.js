@@ -1,4 +1,4 @@
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
+
 let currentUser = "", loadedPolygons = {}, editingId = null, originalCoordsForEdit = [], pdlLocations = [], pdlLocationDetails = [], pdlConditions = [], pdlStatuses = [], toukiList = [], map, drawingManager, infoWindow, currentPolygon = null, currentMarker = null, isMergeMode = false, mergeBaseId = null, userLocationMarker = null, isBatchDeleteMode = false, selectedForDelete = [];
 
 const JP_PREFECTURES = ['北海道','青森県','岩手県','宮城県','秋田県','山形県','福島県','茨城県','栃木県','群馬県','埼玉県','千葉県','東京都','神奈川県','新潟県','富山県','石川県','福井県','山梨県','長野県','岐阜県','静岡県','愛知県','三重県','滋賀県','京都府','大阪府','兵庫県','奈良県','和歌山県','鳥取県','島根県','岡山県','広島県','山口県','徳島県','香川県','愛媛県','高知県','福岡県','佐賀県','長崎県','熊本県','大分県','宮崎県','鹿児島県','沖縄県'];
@@ -497,48 +497,6 @@ window.promptLineUrl = async () => {
     }
 };
 const iconFunctionMap = { '🚻': 'トイレ', '🚰': '洗車場', '⛲': '洗車場', '🚿': '洗車場', '📦': '倉庫', '🏭': 'パックセンター', '🏪': '事務所', '🏢': '研究所', '🚚': '残渣運搬', '🛻': '残渣運搬', '🚜': '農機具整備', '🛠️': '車両整備', '⛽': '整備', '⚠️': '事故注意', '📢': 'バードソニック', '🚫': '鳥被害', '🅿️': '駐車場', '🚙': '駐車場（軽トラ）' };
-
-async function callGAS(action, params = {}, retries = 2) {
-    params.action = action;
-    if (action !== 'login') {
-        const spreadsheetId = localStorage.getItem('spreadsheetId');
-        if (!spreadsheetId || spreadsheetId === 'undefined' || spreadsheetId === 'null' || spreadsheetId.trim() === '') {
-            throw new Error("ログインセッションが無効であるか、スプレッドシートIDが設定されていません。一度ログアウトし、ログインし直してください。");
-        }
-        params.spreadsheetId = spreadsheetId;
-    }
-    
-    let lastError = null;
-    for (let i = 0; i <= retries; i++) {
-        try {
-            const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params) });
-            const text = await res.text();
-            let j;
-            try {
-                j = JSON.parse(text);
-            } catch (e) {
-                if (text.includes("<!DOCTYPE") || text.includes("<html")) {
-                    throw new Error("Googleサーバーの一時的な通信エラーが発生しました。（リトライ中...）");
-                }
-                throw new Error("サーバーから不正な応答がありました: " + text.substring(0, 50));
-            }
-            if (j.status !== "success") throw new Error(j.message);
-            return j.data;
-        } catch (err) {
-            lastError = err;
-            const msg = String(err && err.message || "");
-            // 業務エラー（重複登録など）はリトライしない
-            if (i < retries && !msg.includes("既に登録") && !msg.includes("ログインセッション")) {
-                console.warn(`callGAS [${action}] failed, retrying in 1.5s... (${i+1}/${retries})`, err);
-                await new Promise(r => setTimeout(r, 1500));
-            } else if (msg.includes("既に登録") || msg.includes("ログインセッション")) {
-                break;
-            }
-        }
-    }
-    lastError.message = lastError.message.replace("（リトライ中...）", "");
-    throw lastError;
-}
 
 const ADMIN_PENDING_SYNC_KEY = 'pMapAdminPendingSync';
 const adminSyncQueue_ = [];

@@ -1,4 +1,4 @@
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
+
 const SPRAY_SETTINGS_KEY = "passionMapSpraySettings";
 const SPRAY_SESSION_KEY = "passionMapSpraySession";
 
@@ -13,15 +13,6 @@ let chemicals = [];
 let runIndex = 0;
 let runDoneIds = [];
 let sheetCollapsed = false;
-
-async function callGAS(action, payload = {}) {
-  const spreadsheetId = localStorage.getItem("spreadsheetId");
-  const body = Object.assign({ action: action, spreadsheetId: spreadsheetId }, payload);
-  const res = await fetch(GAS_URL, { method: "POST", body: JSON.stringify(body) });
-  const json = await res.json();
-  if (json.status !== "success") throw new Error(json.message || "APIエラー");
-  return json.data;
-}
 
 let loginReady = false;
 let dataLoaded = false;

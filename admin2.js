@@ -1,4 +1,4 @@
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
+
 let currentUser = "", loadedPolygons = {}, editingId = null, originalCoordsForEdit = [], pdlLocations = [], pdlLocationDetails = [], pdlConditions = [], pdlStatuses = [], toukiList = [], map, drawingManager, infoWindow, currentPolygon = null, currentMarker = null, isMergeMode = false, mergeBaseId = null, userLocationMarker = null;
 let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlPesticides = [], pdlFertilizers = [], pdlSignFunctions = [];
 let mapInitPromise, resolveMapInit;
@@ -231,44 +231,6 @@ window.promptLineUrl = async () => {
     }
 };
 const iconFunctionMap = { '🚻': 'トイレ', '🚰': '洗車場', '⛲': '洗車場', '🚿': '洗車場', '📦': '倉庫', '🏭': 'パックセンター', '🏪': '事務所', '🏢': '研究所', '🚚': '残渣運搬', '🛻': '残渣運搬', '🚜': '農機具整備', '🛠️': '車両整備', '⛽': '整備', '⚠️': '事故注意', '📢': 'バードソニック', '🚫': '鳥被害', '🅿️': '駐車場', '🚙': '駐車場（軽トラ）' };
-
-async function callGAS(action, params = {}, retries = 2) {
-    params.action = action;
-    if (action !== 'login') {
-        const spreadsheetId = localStorage.getItem('spreadsheetId');
-        if (!spreadsheetId || spreadsheetId === 'undefined' || spreadsheetId === 'null' || spreadsheetId.trim() === '') {
-            throw new Error("ログインセッションが無効であるか、スプレッドシートIDが設定されていません。一度ログアウトし、ログインし直してください。");
-        }
-        params.spreadsheetId = spreadsheetId;
-    }
-    
-    let lastError = null;
-    for (let i = 0; i <= retries; i++) {
-        try {
-            const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params) });
-            const text = await res.text();
-            let j;
-            try {
-                j = JSON.parse(text);
-            } catch (e) {
-                if (text.includes("<!DOCTYPE") || text.includes("<html")) {
-                    throw new Error("Googleサーバーの一時的な通信エラーが発生しました。（リトライ中...）");
-                }
-                throw new Error("サーバーから不正な応答がありました: " + text.substring(0, 50));
-            }
-            if (j.status !== "success") throw new Error(j.message);
-            return j.data;
-        } catch (err) {
-            lastError = err;
-            if (i < retries) {
-                console.warn(`callGAS [${action}] failed, retrying in 1.5s... (${i+1}/${retries})`, err);
-                await new Promise(r => setTimeout(r, 1500));
-            }
-        }
-    }
-    lastError.message = lastError.message.replace("（リトライ中...）", "");
-    throw lastError;
-}
 
 function saveAdminCredentials(id, pw, name) {
     try {

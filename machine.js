@@ -1,38 +1,4 @@
 // machine.js
-
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
-
-// --- GAS通信関数 ---
-async function callGAS(action, params = {}, retries = 2) {
-    params.action = action;
-    if (action !== 'login') {
-        const spreadsheetId = localStorage.getItem('spreadsheetId');
-        if (!spreadsheetId || spreadsheetId === 'undefined' || spreadsheetId === 'null' || spreadsheetId.trim() === '') {
-            throw new Error("ログインセッションが無効です。一度ログアウトし、ログインし直してください。");
-        }
-        params.spreadsheetId = spreadsheetId;
-    }
-    
-    for (let i = 0; i <= retries; i++) {
-        try {
-            const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params) });
-            const text = await res.text();
-            let j;
-            try { j = JSON.parse(text); } catch (e) {
-                if (text.includes("<!DOCTYPE") || text.includes("<html")) {
-                    throw new Error("Googleサーバーの一時的な通信エラーが発生しました。");
-                }
-                throw new Error("サーバーから不正な応答がありました。");
-            }
-            if (j.status === "error") throw new Error(j.message);
-            return j.data;
-        } catch (e) {
-            if (i === retries) throw e;
-            await new Promise(r => setTimeout(r, 2000 * (i + 1)));
-        }
-    }
-}
-
 let map;
 let fieldPolygons = []; // 圃場表示用
 let pdlLocations = []; // 拠点マスタ

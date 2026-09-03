@@ -1,4 +1,4 @@
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
+
 const PIN_ORDER_KEY = "passionMapManurePinOrder";
 const CACHE_KEY = "manureMapData";
 const PENDING_KEY = "manurePendingSync";
@@ -42,28 +42,6 @@ let pendingPanId = "";
 const fieldSyncQueue_ = [];
 let fieldSyncRunning_ = false;
 const FIELD_SYNC_GAP_MS = 350;
-
-async function callGAS(action, payload = {}, retries = 2) {
-  const spreadsheetId = localStorage.getItem("spreadsheetId");
-  const body = Object.assign({ action: action, spreadsheetId: spreadsheetId }, payload);
-  let lastError = null;
-  for (let i = 0; i <= retries; i++) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-    try {
-      const res = await fetch(GAS_URL, { method: "POST", body: JSON.stringify(body), signal: controller.signal });
-      clearTimeout(timeoutId);
-      const json = await res.json();
-      if (json.status !== "success") throw new Error(json.message || "APIエラー");
-      return json.data;
-    } catch (err) {
-      clearTimeout(timeoutId);
-      lastError = err.name === "AbortError" ? new Error("通信がタイムアウトしました。") : err;
-      if (i < retries) await new Promise((r) => setTimeout(r, 1200 + i * 800));
-    }
-  }
-  throw lastError || new Error("APIエラー");
-}
 
 function loadPinOrder() {
   try {

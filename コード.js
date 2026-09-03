@@ -4,249 +4,272 @@
 const MASTER_SPREADSHEET_ID = "1Kfg5JzNE8pZVQuyuHExz1Q00vzd75MmWrtKLLHUG89c"; // マスター・スプレッドシートのID
 let TENANT_SS = null;
 
+function jsonOut_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function bindTenantSpreadsheet_(params) {
+  TENANT_SS = null;
+  const raw = params && params.spreadsheetId;
+  if (raw && raw !== 'undefined' && raw !== 'null' && String(raw).trim() !== '') {
+    TENANT_SS = SpreadsheetApp.openById(String(raw).trim());
+  }
+}
+
+function requireTenantSs_() {
+  if (!TENANT_SS) {
+    throw new Error('データベースに接続できません。再ログインしてください。');
+  }
+  return TENANT_SS;
+}
+
+const API_ACTIONS = {
+  "login": function (p) { return checkLogin(p.orgId, p.userId, p.password); },
+  "signup": function (p) { return signupUser(p); },
+  "adminAddUser": function (p) { return adminAddUser(p); },
+  "listUsersForAdmin": function (p) { return listUsersForAdmin(p); },
+  "updateUserRole": function (p) { return updateUserRole(p); },
+  "getInitData": function (p) { return getInitData(); },
+  "getDeliveryDestinations": function (p) { return getDeliveryDestinations(); },
+  "saveDeliveryDestination": function (p) { return saveDeliveryDestination(p); },
+  "deleteDeliveryDestination": function (p) { return deleteDeliveryDestination(p); },
+  "savePolygon": function (p) { return savePolygon(p); },
+  "savePolygonBatch": function (p) { return savePolygonBatch(p); },
+  "updatePolygon": function (p) { return updatePolygon(p); },
+  "deletePolygon": function (p) { return deletePolygonData(p.id, p.userName); },
+  "deletePolygonBatch": function (p) { return deletePolygonBatchData(p.ids, p.userName); },
+  "saveRecord": function (p) { return saveRecord(p.id, p.name, p.author, p.recordType, p.data, p.photos); },
+  "updateRecordItem": function (p) { return updateRecordItem(p.id, p.recordId, p.recordType, p.data, p.photos, p.keptUrls, p.userName); },
+  "deleteRecordItem": function (p) { return deleteRecordItem(p.id, p.recordId, p.userName); },
+  "deleteWorkRecordById": function (p) { return deleteWorkRecordById(p); },
+  "cancelClockInAndDeleteTodayWorkRecords": function (p) { return cancelClockInAndDeleteTodayWorkRecords(p); },
+  "addFieldStatus": function (p) { return addFieldStatusToMaster(p.statusName); },
+  "editFieldStatus": function (p) { return editFieldStatusInMaster(p.oldStatusName, p.newStatusName); },
+  "deleteFieldStatus": function (p) { return deleteFieldStatusFromMaster(p.statusName); },
+  "addFieldCondition": function (p) { return addFieldConditionToMaster(p.conditionName); },
+  "editFieldCondition": function (p) { return editFieldConditionInMaster(p.oldConditionName, p.newConditionName); },
+  "deleteFieldCondition": function (p) { return deleteFieldConditionFromMaster(p.conditionName); },
+  "addClimateMaster": function (p) { return addClimateToMaster(p.climateName); },
+  "editClimateMaster": function (p) { return editClimateInMaster(p.oldClimateName, p.newClimateName); },
+  "deleteClimateMaster": function (p) { return deleteClimateFromMaster(p.climateName); },
+  "addCrop": function (p) { return addCropToMaster(p.cropData); },
+  "deleteCrop": function (p) { return deleteCropFromMaster(p.cropName); },
+  "mergeFields": function (p) { return mergeFields(p.baseId, p.targetId, p.userName); },
+  "splitField": function (p) { return splitField(p); },
+  "saveTouki": function (p) { return saveToukiData(p.toukiData, p.targetHojoId); },
+  "getToukiDetails": function (p) { return getToukiDetails(p.toukiIds); },
+  "manageMaster": function (p) { return manageMasterData(p.masterType, p.manageAction, p.value, p.userName); },
+  "importPesticideMasterRows": function (p) { return importPesticideMasterRows(p); },
+  "importFertilizerMasterRows": function (p) { return importFertilizerMasterRows(p); },
+  "importFertilizerCatalogChunk": function (p) { return importFertilizerCatalogChunk(p); },
+  "searchFertilizerCatalog": function (p) { return searchFertilizerCatalog(p); },
+  "getFertilizerCatalogStats": function (p) { return getFertilizerCatalogStats(p); },
+  "importPesticideCatalogChunk": function (p) { return importPesticideCatalogChunk(p); },
+  "searchPesticideCatalog": function (p) { return searchPesticideCatalog(p); },
+  "getPesticideCatalogStats": function (p) { return getPesticideCatalogStats(p); },
+  "getCropChemPlan": function (p) { return getCropChemPlan(p); },
+  "saveCropChemPlan": function (p) { return saveCropChemPlan(p); },
+  "listCropChemPlans": function (p) { return listCropChemPlans(p); },
+  "deleteCropChemPlan": function (p) { return deleteCropChemPlan(p); },
+  "getCropCostPlan": function (p) { return getCropCostPlan(p); },
+  "saveCropCostPlan": function (p) { return saveCropCostPlan(p); },
+  "listCropCostPlans": function (p) { return listCropCostPlans(p); },
+  "deleteCropCostPlan": function (p) { return deleteCropCostPlan(p); },
+  "calcCropCost": function (p) { return calcCropCost(p); },
+  "getCropWorkPlan": function (p) { return getCropWorkPlan(p); },
+  "saveCropWorkPlan": function (p) { return saveCropWorkPlan(p); },
+  "listCropWorkPlans": function (p) { return listCropWorkPlans(p); },
+  "deleteCropWorkPlan": function (p) { return deleteCropWorkPlan(p); },
+  "previewCropWorkSchedule": function (p) { return previewCropWorkSchedule(p); },
+  "getSowingProgress": function (p) { return getSowingProgress(p); },
+  "getSowingNurseryBundle": function (p) { return getSowingNurseryBundle(p); },
+  "getCurrentSowingPlanOptions": function (p) { return getCurrentSowingPlanOptions(p); },
+  "getSowingNurseryFormOptions": function (p) { return getSowingNurseryFormOptions(p); },
+  "manageCultivationListOption": function (p) { return manageCultivationListOption(p); },
+  "saveSowingRecord": function (p) { return saveSowingRecord(p); },
+  "getCropWorkProgressSummary": function (p) { return getCropWorkProgressSummary(p); },
+  "getHarvestingFieldsSummary": function (p) { return getHarvestingFieldsSummary(p); },
+  "getWeatherPlantingPriorities": function (p) { return getWeatherPlantingPriorities(p); },
+  "getWorkDeptSettings": function (p) { return getWorkDeptSettings(p); },
+  "updateWorkDeptSettings": function (p) { return updateWorkDeptSettings(p); },
+  "updateScheduleRowDept": function (p) { return updateScheduleRowDept(p); },
+  "saveDepartmentMaster": function (p) { return saveDepartmentMaster(p); },
+  "updateUserDepts": function (p) { return updateUserDepts(p); },
+  "getWorkRecordAnalysis": function (p) { return getWorkRecordAnalysis(p); },
+  "saveManualData": function (p) { return saveManualData(p.manual); },
+  "getManualList": function (p) { return getManualList(); },
+  "deleteManualData": function (p) { return deleteManualData(p.manualId); },
+  "quotation_getInit": function (p) { return quotationGetInit_(); },
+  "quotation_list": function (p) { return quotationList_(p); },
+  "quotation_save": function (p) { return quotationSave_(p); },
+  "quotation_archive": function (p) { return quotationArchive_(p); },
+  "lookupCultivationByTag": function (p) { return lookupCultivationByTag(p); },
+  "saveGlobalHarvest": function (p) { return saveGlobalHarvest(p); },
+  "markHarvestQtyLotResolved": function (p) { return markHarvestQtyLotResolved(p); },
+  "saveGlobalShipping": function (p) { return saveGlobalShipping(p); },
+  "updateInventory": function (p) { return updateInventory(p); },
+  "addMaterialToSign": function (p) { return addMaterialToSign(p); },
+  "getInventoryHistory": function (p) { return getInventoryHistory(p); },
+  "getScheduleData": function (p) { return getScheduleData(); },
+  "addWorkSchedule": function (p) { return addWorkSchedule(p); },
+  "updateWorkScheduleDates": function (p) { return updateWorkScheduleDates(p); },
+  "getScheduleGanttMasters": function (p) { return getScheduleGanttMasters(); },
+  "getOutsourceWorkData": function (p) { return getOutsourceWorkData(); },
+  "addOutsourceWorkRequest": function (p) { return addOutsourceWorkRequest(p); },
+  "completeOutsourceWork": function (p) { return completeOutsourceWork(p); },
+  "deleteOutsourceWork": function (p) { return deleteOutsourceWork(p); },
+  "deleteWorkSchedule": function (p) { return deleteWorkSchedule(p); },
+  "completeWorkSchedule": function (p) { return completeWorkSchedule(p); },
+  "bulkCompleteWorkSchedule": function (p) { return bulkCompleteWorkSchedule(p); },
+  "undoCompleteWorkSchedule": function (p) { return undoCompleteWorkSchedule(p); },
+  "bulkUndoCompleteWorkSchedule": function (p) { return bulkUndoCompleteWorkSchedule(p); },
+  "delegateCompleteWork": function (p) { return delegateCompleteWork(p); },
+  "saveReport": function (p) { return saveReportData(p.id, p.name, p.author, p.text, p.photos); },
+  "deleteInventoryHistory": function (p) { return deleteInventoryHistory(p); },
+  "editInventoryHistory": function (p) { return editInventoryHistory(p); },
+  "updateMachineLocations": function (p) { return updateMachineLocations(p); },
+  "editMaterial": function (p) { return editMaterial(p); },
+  "addMachineToSign": function (p) { return addMachineToSign(p); },
+  "addMachinePart": function (p) { return addMachinePart(p); },
+  "addMachineSymptom": function (p) { return addMachineSymptom(p); },
+  "addMaintenanceContent": function (p) { return addMaintenanceContent(p); },
+  "getRefuelHistory": function (p) { return getRefuelHistory(); },
+  "saveRefuelRecord": function (p) { return saveRefuelRecord(p); },
+  "getMachineLastHourMeters": function (p) { return getMachineLastHourMeters(); },
+  "updateSignLink": function (p) { return updateSignLink(p); },
+  "addToolToMaster": function (p) { return addToolToMaster(p); },
+  "updateToolStatus": function (p) { return updateToolStatus(p); },
+  "getToolUsageHistory": function (p) { return getToolUsageHistory(p); },
+  "saveCultivationPlans": function (p) { return saveCultivationPlans(p.year, p.crop, p.planDataArray, p.planType, p.planName, p); },
+  "getCultivationPlans": function (p) { return getCultivationPlans(p.year, p.crop, p.planType, p.planName); },
+  "importCultivationPlanFromExternalSheet": function (p) { return importCultivationPlanFromExternalSheet(p); },
+  "exportCultivationPlanToExternalSheet": function (p) { return exportCultivationPlanToExternalSheet(p); },
+  "previewCultivationPlanTags": function (p) { return previewCultivationPlanTags(p); },
+  "executeCultivationPlans": function (p) { return executeCultivationPlans(p); },
+  "getSavedCultivationPlanList": function (p) { return getSavedCultivationPlanList(); },
+  "getFarmBoardData": function (p) { return getFarmBoardData(); },
+  "completeFarmBoardTasks": function (p) { return completeFarmBoardTasks(p); },
+  "deleteSavedCultivationPlans": function (p) { return deleteSavedCultivationPlans(p.year, p.crop, p.planType, p.planName); },
+  "getCultivationHarvestSummary": function (p) { return getCultivationHarvestSummary(p.year); },
+  "getCultivationPlanChartSummary": function (p) { return getCultivationPlanChartSummary(p); },
+  "getCultivationRidgeParamsForField": function (p) { return getCultivationRidgeParamsForField(p.fieldId || p.id); },
+  "getCultivationMaster": function (p) { return getCultivationMaster(); },
+  "appendCultivationMaster": function (p) { return appendCultivationMaster(p); },
+  "saveCultivationPreset": function (p) { return saveCultivationPreset(p); },
+  "deleteCultivationPreset": function (p) { return deleteCultivationPreset(p); },
+  "renameCultivationPreset": function (p) { return renameCultivationPreset(p); },
+  "renameCultivationVariety": function (p) { return renameCultivationVariety(p); },
+  "deleteCultivationVariety": function (p) { return deleteCultivationVariety(p); },
+  "updateVarietyMeta": function (p) { return updateVarietyMeta(p); },
+  "saveCroptypeDB": function (p) { return saveCroptypeDB(p); },
+  "saveCroptypeDBBatch": function (p) { return saveCroptypeDBBatch(p); },
+  "saveVarietyWithFile": function (p) { return saveVarietyWithFile(p); },
+  "saveCroptypeWithFile": function (p) { return saveCroptypeWithFile(p); },
+  "deleteCroptypeDB": function (p) { return deleteCroptypeDB(p); },
+  "editToolInMaster": function (p) { return editToolInMaster(p); },
+  "deleteToolFromMaster": function (p) { return deleteToolFromMaster(p); },
+  "editMachineInMaster": function (p) { return editMachineInMaster(p); },
+  "deleteMachineFromMaster": function (p) { return deleteMachineFromMaster(p); },
+  "getMapCoordinates": function (p) { return getMapCoordinates(p); },
+  "parseWithGemini": function (p) { return parseWithGemini(p); },
+  "parseCropImageWithGemini": function (p) { return parseCropImageWithGemini(p); },
+  "getPolygonDrawingHistory": function (p) { return getPolygonDrawingHistory(p); },
+  "saveUserQualifications": function (p) { return saveUserQualifications(p.userName, p.qualifications); },
+  "getUserQualifications": function (p) { return getUserQualifications(p.userName); },
+  "saveClothingRules": function (p) { return saveClothingRules(p.rules); },
+  "getClothingRules": function (p) { return getClothingRules(); },
+  "assignScheduleMember": function (p) { return assignScheduleMember(p.rowIndex, p.assignedUsers, p.scheduleKey); },
+  "getUserTodayAssignedSchedules": function (p) { return getUserTodayAssignedSchedules(p.userName); },
+  "saveFieldMemo": function (p) { return saveFieldMemo(p); },
+  "getFieldMemoHistory": function (p) { return getFieldMemoHistory(p); },
+  "saveTrackingData": function (p) { return saveTrackingData(p); },
+  "saveLunchBreakRecord": function (p) { return saveLunchBreakRecord_(p); },
+  "getTrackingData": function (p) { return getTrackingData(p); },
+  "getOpenClockInStatus": function (p) { return getOpenClockInStatus(p); },
+  "updateOpenClockInTime": function (p) { return updateOpenClockInTime(p); },
+  "getWorkRecordTimeHints": function (p) { return getWorkRecordTimeHints(p); },
+  "saveWorkRecordTimeHint": function (p) { return saveWorkRecordTimeHint_(p); },
+  "resetAllManureStatus": function (p) { return resetAllManureStatus(p.userName); },
+  "getProdMgmtCategories": function (p) { return getProdMgmtCategories(); },
+  "saveProdMgmtCategories": function (p) { return saveProdMgmtCategories(p.categories, p.userName); },
+  "changeId": function (p) { return changeId(p.userId, p.password, p.newId); },
+  "changePassword": function (p) { return changePassword(p.userId, p.currentPassword, p.newPassword); },
+  "machine_loadAll": function (p) { return machine_loadAll(); },
+  "machine_saveMachine": function (p) { return machine_saveMachine(p); },
+  "machine_saveStatus": function (p) { return machine_saveStatus(p); },
+  "machine_saveLocation": function (p) { return machine_saveLocation(p); },
+  "machine_saveMaintenance": function (p) { return machine_saveMaintenance(p); },
+  "machine_saveMaintenanceSetting": function (p) { return machine_saveMaintenanceSetting(p); },
+  "machine_saveFuel": function (p) { return machine_saveFuel(p); },
+  "vehicle_loadAll": function (p) { return vehicle_loadAll(); },
+  "vehicle_saveVehicle": function (p) { return vehicle_saveVehicle(p); },
+  "vehicle_deleteVehicle": function (p) { return vehicle_deleteVehicle(p); },
+  "vehicle_saveLocation": function (p) { return vehicle_saveLocation(p); },
+  "vehicle_saveStatus": function (p) { return vehicle_saveStatus(p); },
+  "saveTempWorkRecord": function (p) { return saveTempWorkRecord(p); },
+  "getTempWorkRecord": function (p) { return getTempWorkRecord(p); },
+  "clearTempWorkRecord": function (p) { return clearTempWorkRecord(p); },
+  "getPersonalSchedule": function (p) { return getPersonalSchedule(p); },
+  "addPersonalScheduleItem": function (p) { return addPersonalScheduleItem(p); },
+  "updatePersonalScheduleItem": function (p) { return updatePersonalScheduleItem(p); },
+  "deletePersonalScheduleItem": function (p) { return deletePersonalScheduleItem(p); },
+  "reorderPersonalScheduleItems": function (p) { return reorderPersonalScheduleItems(p); },
+  "saveUserGmail": function (p) { return saveUserGmail(p); },
+  "getUserGmail": function (p) { return getUserGmail(p); },
+  "getTodayGoogleCalendarEvents": function (p) { return getTodayGoogleCalendarEvents(p); },
+  "listGoogleCalendars": function (p) { return listGoogleCalendars(p); },
+  "getUserCalendarIds": function (p) { return getUserCalendarIds(p); },
+  "saveUserCalendarIds": function (p) { return saveUserCalendarIds(p); },
+  "getScriptAuthorizationInfo": function (p) { return getScriptAuthorizationInfo(p); },
+  "getLotList": function (p) { return getLotList(p); },
+  "updateLotRecord": function (p) { return updateLotRecord(p); },
+  "droneLobby_list": function (p) { return droneLobby_list(p); },
+  "droneLobby_create": function (p) { return droneLobby_create(p); },
+  "droneLobby_heartbeat": function (p) { return droneLobby_heartbeat(p); },
+  "droneLobby_close": function (p) { return droneLobby_close(p); },
+  "getAttendanceCalendar": function (p) { return getAttendanceCalendar(p); },
+  "setLeaveDay": function (p) { return setLeaveDay(p); },
+  "clearLeaveDay": function (p) { return clearLeaveDay(p); },
+  "saveWeeklyOffDays": function (p) { return saveWeeklyOffDays(p); },
+  "setWorkDayException": function (p) { return setWorkDayException(p); },
+  "getAttendanceSettings": function (p) { return getAttendanceSettings(p); },
+  "saveAttendanceSettings": function (p) { return saveAttendanceSettings(p); },
+  "updateStaffHireDate": function (p) { return updateStaffHireDate(p); },
+  "getAttendanceStaffList": function (p) { return getAttendanceStaffList(p); },
+  "getStaffClockBoard": function (p) { return getStaffClockBoard(p); },
+  "confirmStaffClockOut": function (p) { return confirmStaffClockOut(p); },
+  "getFrequentClockInTimes": function (p) { return getFrequentClockInTimes(p); },
+  "ideaBoard_list": function (p) { return ideaBoard_list(p); },
+  "ideaBoard_save": function (p) { return ideaBoard_save(p); },
+  "ideaBoard_setStatus": function (p) { return ideaBoard_setStatus(p); },
+  "ideaBoard_addMemo": function (p) { return ideaBoard_addMemo(p); },
+  "ideaBoard_addCategory": function (p) { return ideaBoard_addCategory(p); },
+  "estimateWorkDuration": function (p) { return estimateWorkDuration(p); },
+  "dayPlan_list": function (p) { return dayPlan_list(p); },
+  "dayPlan_save": function (p) { return dayPlan_save(p); },
+  "dayPlan_update": function (p) { return dayPlan_update(p); },
+  "dayPlan_delete": function (p) { return dayPlan_delete(p); },
+  "dayPlan_options": function (p) { return dayPlan_options(p); },
+  "getOpsIndex": function (p) { return getOpsIndex(p); },
+  "saveOpsRoute": function (p) { return saveOpsRoute(p); },
+  "deleteOpsRoute": function (p) { return deleteOpsRoute(p); }
+};
+
 function doPost(e) {
   try {
+    if (!e || !e.postData || !e.postData.contents) {
+      throw new Error('リクエストが空です');
+    }
     const params = JSON.parse(e.postData.contents);
     const action = params.action;
-    let result = null;
-
-    if (params.spreadsheetId && params.spreadsheetId !== 'undefined' && params.spreadsheetId !== 'null' && params.spreadsheetId !== '') {
-      TENANT_SS = SpreadsheetApp.openById(params.spreadsheetId);
-    }
-
-    if (action === "login") result = checkLogin(params.orgId, params.userId, params.password);
-    else if (action === "signup") result = signupUser(params);
-    else if (action === "adminAddUser") result = adminAddUser(params);
-    else if (action === "listUsersForAdmin") result = listUsersForAdmin(params);
-    else if (action === "updateUserRole") result = updateUserRole(params);
-    else if (action === "getInitData") result = getInitData(); 
-    else if (action === "getDeliveryDestinations") result = getDeliveryDestinations();
-    else if (action === "saveDeliveryDestination") result = saveDeliveryDestination(params);
-    else if (action === "deleteDeliveryDestination") result = deleteDeliveryDestination(params);
-    else if (action === "savePolygon") result = savePolygon(params); 
-    else if (action === "savePolygonBatch") result = savePolygonBatch(params); // ★一括保存用
-    else if (action === "updatePolygon") result = updatePolygon(params); 
-    else if (action === "deletePolygon") result = deletePolygonData(params.id, params.userName);
-    else if (action === "deletePolygonBatch") result = deletePolygonBatchData(params.ids, params.userName);
-    else if (action === "saveRecord") result = saveRecord(params.id, params.name, params.author, params.recordType, params.data, params.photos);
-    else if (action === "updateRecordItem") result = updateRecordItem(params.id, params.recordId, params.recordType, params.data, params.photos, params.keptUrls, params.userName);
-    else if (action === "deleteRecordItem") result = deleteRecordItem(params.id, params.recordId, params.userName);
-    else if (action === "deleteWorkRecordById") result = deleteWorkRecordById(params);
-    else if (action === "cancelClockInAndDeleteTodayWorkRecords") result = cancelClockInAndDeleteTodayWorkRecords(params);
-    else if (action === "addFieldStatus") result = addFieldStatusToMaster(params.statusName);
-    else if (action === "editFieldStatus") result = editFieldStatusInMaster(params.oldStatusName, params.newStatusName);
-    else if (action === "deleteFieldStatus") result = deleteFieldStatusFromMaster(params.statusName);
-    else if (action === "addFieldCondition") result = addFieldConditionToMaster(params.conditionName);
-    else if (action === "editFieldCondition") result = editFieldConditionInMaster(params.oldConditionName, params.newConditionName);
-    else if (action === "deleteFieldCondition") result = deleteFieldConditionFromMaster(params.conditionName);
-    else if (action === "addClimateMaster") result = addClimateToMaster(params.climateName);
-    else if (action === "editClimateMaster") result = editClimateInMaster(params.oldClimateName, params.newClimateName);
-    else if (action === "deleteClimateMaster") result = deleteClimateFromMaster(params.climateName);
-    else if (action === "addCrop") result = addCropToMaster(params.cropData);
-    else if (action === "deleteCrop") result = deleteCropFromMaster(params.cropName);
-    else if (action === "mergeFields") result = mergeFields(params.baseId, params.targetId, params.userName);
-    else if (action === "splitField") result = splitField(params);
-    else if (action === "saveTouki") result = saveToukiData(params.toukiData, params.targetHojoId);
-    else if (action === "getToukiDetails") result = getToukiDetails(params.toukiIds);
-    else if (action === "manageMaster") result = manageMasterData(params.masterType, params.manageAction, params.value, params.userName);
-    else if (action === "importPesticideMasterRows") result = importPesticideMasterRows(params);
-    else if (action === "importFertilizerMasterRows") result = importFertilizerMasterRows(params);
-    else if (action === "importFertilizerCatalogChunk") result = importFertilizerCatalogChunk(params);
-    else if (action === "searchFertilizerCatalog") result = searchFertilizerCatalog(params);
-    else if (action === "getFertilizerCatalogStats") result = getFertilizerCatalogStats(params);
-    else if (action === "importPesticideCatalogChunk") result = importPesticideCatalogChunk(params);
-    else if (action === "searchPesticideCatalog") result = searchPesticideCatalog(params);
-    else if (action === "getPesticideCatalogStats") result = getPesticideCatalogStats(params);
-    else if (action === "getCropChemPlan") result = getCropChemPlan(params);
-    else if (action === "saveCropChemPlan") result = saveCropChemPlan(params);
-    else if (action === "listCropChemPlans") result = listCropChemPlans(params);
-    else if (action === "deleteCropChemPlan") result = deleteCropChemPlan(params);
-    else if (action === "getCropCostPlan") result = getCropCostPlan(params);
-    else if (action === "saveCropCostPlan") result = saveCropCostPlan(params);
-    else if (action === "listCropCostPlans") result = listCropCostPlans(params);
-    else if (action === "deleteCropCostPlan") result = deleteCropCostPlan(params);
-    else if (action === "calcCropCost") result = calcCropCost(params);
-    else if (action === "getCropWorkPlan") result = getCropWorkPlan(params);
-    else if (action === "saveCropWorkPlan") result = saveCropWorkPlan(params);
-    else if (action === "listCropWorkPlans") result = listCropWorkPlans(params);
-    else if (action === "deleteCropWorkPlan") result = deleteCropWorkPlan(params);
-    else if (action === "previewCropWorkSchedule") result = previewCropWorkSchedule(params);
-    else if (action === "getSowingProgress") result = getSowingProgress(params);
-    else if (action === "getSowingNurseryBundle") result = getSowingNurseryBundle(params);
-    else if (action === "getCurrentSowingPlanOptions") result = getCurrentSowingPlanOptions(params);
-    else if (action === "getSowingNurseryFormOptions") result = getSowingNurseryFormOptions(params);
-    else if (action === "manageCultivationListOption") result = manageCultivationListOption(params);
-    else if (action === "saveSowingRecord") result = saveSowingRecord(params);
-    else if (action === "getCropWorkProgressSummary") result = getCropWorkProgressSummary(params);
-    else if (action === "getHarvestingFieldsSummary") result = getHarvestingFieldsSummary(params);
-    else if (action === "getWeatherPlantingPriorities") result = getWeatherPlantingPriorities(params);
-    else if (action === "getWorkDeptSettings") result = getWorkDeptSettings(params);
-    else if (action === "updateWorkDeptSettings") result = updateWorkDeptSettings(params);
-    else if (action === "updateScheduleRowDept") result = updateScheduleRowDept(params);
-    else if (action === "saveDepartmentMaster") result = saveDepartmentMaster(params);
-    else if (action === "updateUserDepts") result = updateUserDepts(params);
-    else if (action === "getWorkRecordAnalysis") result = getWorkRecordAnalysis(params);
-    else if (action === "saveManualData") result = saveManualData(params.manual);
-    else if (action === "getManualList") result = getManualList();
-    else if (action === "deleteManualData") result = deleteManualData(params.manualId);
-    else if (action === "quotation_getInit") result = quotationGetInit_();
-    else if (action === "quotation_list") result = quotationList_(params);
-    else if (action === "quotation_save") result = quotationSave_(params);
-    else if (action === "quotation_archive") result = quotationArchive_(params);
-    else if (action === "lookupCultivationByTag") result = lookupCultivationByTag(params);
-    else if (action === "saveGlobalHarvest") result = saveGlobalHarvest(params);
-    else if (action === "markHarvestQtyLotResolved") result = markHarvestQtyLotResolved(params);
-    else if (action === "saveGlobalShipping") result = saveGlobalShipping(params);
-    else if (action === "updateInventory") result = updateInventory(params); // ★これを追加
-    else if (action === "addMaterialToSign") result = addMaterialToSign(params); // ★これを追加
-    else if (action === "getInventoryHistory") result = getInventoryHistory(params); // ★これを追加
-    else if (action === "getScheduleData") result = getScheduleData();
-    else if (action === "addWorkSchedule") result = addWorkSchedule(params);
-    else if (action === "updateWorkScheduleDates") result = updateWorkScheduleDates(params);
-    else if (action === "getScheduleGanttMasters") result = getScheduleGanttMasters();
-    else if (action === "getOutsourceWorkData") result = getOutsourceWorkData();
-    else if (action === "addOutsourceWorkRequest") result = addOutsourceWorkRequest(params);
-    else if (action === "completeOutsourceWork") result = completeOutsourceWork(params);
-    else if (action === "deleteOutsourceWork") result = deleteOutsourceWork(params);
-    else if (action === "deleteWorkSchedule") result = deleteWorkSchedule(params);
-    else if (action === "completeWorkSchedule") result = completeWorkSchedule(params);
-    else if (action === "bulkCompleteWorkSchedule") result = bulkCompleteWorkSchedule(params);
-    else if (action === "undoCompleteWorkSchedule") result = undoCompleteWorkSchedule(params);
-    else if (action === "bulkUndoCompleteWorkSchedule") result = bulkUndoCompleteWorkSchedule(params);
-    else if (action === "delegateCompleteWork") result = delegateCompleteWork(params);
-    else if (action === "saveReport") result = saveReportData(params.id, params.name, params.author, params.text, params.photos);
-    else if (action === "deleteInventoryHistory") result = deleteInventoryHistory(params);
-    else if (action === "editInventoryHistory") result = editInventoryHistory(params);
-    else if (action === "updateMachineLocations") result = updateMachineLocations(params);
-    else if (action === "editMaterial") result = editMaterial(params);
-    else if (action === "addMachineToSign") result = addMachineToSign(params);
-    else if (action === "addMachinePart") result = addMachinePart(params);
-    else if (action === "addMachineSymptom") result = addMachineSymptom(params);
-    else if (action === "addMaintenanceContent") result = addMaintenanceContent(params);
-    else if (action === "getRefuelHistory") result = getRefuelHistory();
-    else if (action === "saveRefuelRecord") result = saveRefuelRecord(params);
-    else if (action === "getMachineLastHourMeters") result = getMachineLastHourMeters();
-    else if (action === "updateSignLink") result = updateSignLink(params);
-    else if (action === 'addToolToMaster') result = addToolToMaster(params);
-    else if (action === "updateToolStatus") result = updateToolStatus(params);
-    else if (action === "getToolUsageHistory") result = getToolUsageHistory(params);
-    else if (action === "saveCultivationPlans") result = saveCultivationPlans(params.year, params.crop, params.planDataArray, params.planType, params.planName, params);
-    else if (action === "getCultivationPlans") result = getCultivationPlans(params.year, params.crop, params.planType, params.planName);
-    else if (action === "importCultivationPlanFromExternalSheet") result = importCultivationPlanFromExternalSheet(params);
-    else if (action === "exportCultivationPlanToExternalSheet") result = exportCultivationPlanToExternalSheet(params);
-    else if (action === "previewCultivationPlanTags") result = previewCultivationPlanTags(params);
-    else if (action === "executeCultivationPlans") result = executeCultivationPlans(params);
-    else if (action === "getSavedCultivationPlanList") result = getSavedCultivationPlanList();
-    else if (action === "getFarmBoardData") result = getFarmBoardData();
-    else if (action === "completeFarmBoardTasks") result = completeFarmBoardTasks(params);
-    else if (action === "deleteSavedCultivationPlans") result = deleteSavedCultivationPlans(params.year, params.crop, params.planType, params.planName);
-    else if (action === "getCultivationHarvestSummary") result = getCultivationHarvestSummary(params.year);
-    else if (action === "getCultivationPlanChartSummary") result = getCultivationPlanChartSummary(params);
-    else if (action === "getCultivationRidgeParamsForField") result = getCultivationRidgeParamsForField(params.fieldId || params.id);
-    else if (action === "getCultivationMaster") result = getCultivationMaster();
-    else if (action === "appendCultivationMaster") result = appendCultivationMaster(params);
-    else if (action === "saveCultivationPreset") result = saveCultivationPreset(params);
-    else if (action === "deleteCultivationPreset") result = deleteCultivationPreset(params);
-    else if (action === "renameCultivationPreset") result = renameCultivationPreset(params);
-    else if (action === "renameCultivationVariety") result = renameCultivationVariety(params);
-    else if (action === "deleteCultivationVariety") result = deleteCultivationVariety(params);
-    else if (action === "updateVarietyMeta") result = updateVarietyMeta(params);
-    else if (action === "saveCroptypeDB") result = saveCroptypeDB(params);
-    else if (action === "saveCroptypeDBBatch") result = saveCroptypeDBBatch(params);
-    else if (action === "saveVarietyWithFile") result = saveVarietyWithFile(params);
-    else if (action === "saveCroptypeWithFile") result = saveCroptypeWithFile(params);
-    else if (action === "deleteCroptypeDB") result = deleteCroptypeDB(params);
-    else if (action === "editToolInMaster") result = editToolInMaster(params);
-    else if (action === "deleteToolFromMaster") result = deleteToolFromMaster(params);
-    else if (action === "editMachineInMaster") result = editMachineInMaster(params);
-    else if (action === "deleteMachineFromMaster") result = deleteMachineFromMaster(params);
-    else if (action === 'getMapCoordinates') result = getMapCoordinates(params);
-    else if (action === 'parseWithGemini') result = parseWithGemini(params);
-    else if (action === 'parseCropImageWithGemini') result = parseCropImageWithGemini(params);
-    else if (action === "getPolygonDrawingHistory") result = getPolygonDrawingHistory(params);
-    else if (action === "saveUserQualifications") result = saveUserQualifications(params.userName, params.qualifications);
-    else if (action === "getUserQualifications") result = getUserQualifications(params.userName);
-    else if (action === "saveClothingRules") result = saveClothingRules(params.rules);
-    else if (action === "getClothingRules") result = getClothingRules();
-    else if (action === "assignScheduleMember") result = assignScheduleMember(params.rowIndex, params.assignedUsers, params.scheduleKey);
-    else if (action === "getUserTodayAssignedSchedules") result = getUserTodayAssignedSchedules(params.userName);
-    else if (action === "saveFieldMemo") result = saveFieldMemo(params);
-    else if (action === "getFieldMemoHistory") result = getFieldMemoHistory(params);
-    else if (action === "saveTrackingData") result = saveTrackingData(params);
-    else if (action === "saveLunchBreakRecord") result = saveLunchBreakRecord_(params);
-    else if (action === "getTrackingData") result = getTrackingData(params);
-    else if (action === "getOpenClockInStatus") result = getOpenClockInStatus(params);
-    else if (action === "updateOpenClockInTime") result = updateOpenClockInTime(params);
-    else if (action === "getWorkRecordTimeHints") result = getWorkRecordTimeHints(params);
-    else if (action === "saveWorkRecordTimeHint") result = saveWorkRecordTimeHint_(params);
-    else if (action === "resetAllManureStatus") result = resetAllManureStatus(params.userName);
-    else if (action === "getProdMgmtCategories") result = getProdMgmtCategories();
-    else if (action === "saveProdMgmtCategories") result = saveProdMgmtCategories(params.categories, params.userName);
-    else if (action === "changeId") result = changeId(params.userId, params.password, params.newId);
-    else if (action === "changePassword") result = changePassword(params.userId, params.currentPassword, params.newPassword);
-    else if (action === "machine_loadAll") result = machine_loadAll();
-    else if (action === "machine_saveMachine") result = machine_saveMachine(params);
-    else if (action === "machine_saveStatus") result = machine_saveStatus(params);
-    else if (action === "machine_saveLocation") result = machine_saveLocation(params);
-    else if (action === "machine_saveMaintenance") result = machine_saveMaintenance(params);
-    else if (action === "machine_saveMaintenanceSetting") result = machine_saveMaintenanceSetting(params);
-    else if (action === "machine_saveFuel") result = machine_saveFuel(params);
-    else if (action === "vehicle_loadAll") result = vehicle_loadAll();
-    else if (action === "vehicle_saveVehicle") result = vehicle_saveVehicle(params);
-    else if (action === "vehicle_deleteVehicle") result = vehicle_deleteVehicle(params);
-    else if (action === "vehicle_saveLocation") result = vehicle_saveLocation(params);
-    else if (action === "vehicle_saveStatus") result = vehicle_saveStatus(params);
-    else if (action === "saveTempWorkRecord") result = saveTempWorkRecord(params);
-    else if (action === "getTempWorkRecord") result = getTempWorkRecord(params);
-    else if (action === "clearTempWorkRecord") result = clearTempWorkRecord(params);
-    else if (action === "getPersonalSchedule") result = getPersonalSchedule(params);
-    else if (action === "addPersonalScheduleItem") result = addPersonalScheduleItem(params);
-    else if (action === "updatePersonalScheduleItem") result = updatePersonalScheduleItem(params);
-    else if (action === "deletePersonalScheduleItem") result = deletePersonalScheduleItem(params);
-    else if (action === "reorderPersonalScheduleItems") result = reorderPersonalScheduleItems(params);
-    else if (action === "saveUserGmail") result = saveUserGmail(params);
-    else if (action === "getUserGmail") result = getUserGmail(params);
-    else if (action === "getTodayGoogleCalendarEvents") result = getTodayGoogleCalendarEvents(params);
-    else if (action === "listGoogleCalendars") result = listGoogleCalendars(params);
-    else if (action === "getUserCalendarIds") result = getUserCalendarIds(params);
-    else if (action === "saveUserCalendarIds") result = saveUserCalendarIds(params);
-    else if (action === "getScriptAuthorizationInfo") result = getScriptAuthorizationInfo(params);
-    else if (action === "getLotList") result = getLotList(params);
-    else if (action === "updateLotRecord") result = updateLotRecord(params);
-    else if (action === "droneLobby_list") result = droneLobby_list(params);
-    else if (action === "droneLobby_create") result = droneLobby_create(params);
-    else if (action === "droneLobby_heartbeat") result = droneLobby_heartbeat(params);
-    else if (action === "droneLobby_close") result = droneLobby_close(params);
-    else if (action === "getAttendanceCalendar") result = getAttendanceCalendar(params);
-    else if (action === "setLeaveDay") result = setLeaveDay(params);
-    else if (action === "clearLeaveDay") result = clearLeaveDay(params);
-    else if (action === "saveWeeklyOffDays") result = saveWeeklyOffDays(params);
-    else if (action === "setWorkDayException") result = setWorkDayException(params);
-    else if (action === "getAttendanceSettings") result = getAttendanceSettings(params);
-    else if (action === "saveAttendanceSettings") result = saveAttendanceSettings(params);
-    else if (action === "updateStaffHireDate") result = updateStaffHireDate(params);
-    else if (action === "getAttendanceStaffList") result = getAttendanceStaffList(params);
-    else if (action === "getStaffClockBoard") result = getStaffClockBoard(params);
-    else if (action === "confirmStaffClockOut") result = confirmStaffClockOut(params);
-    else if (action === "getFrequentClockInTimes") result = getFrequentClockInTimes(params);
-    else if (action === "ideaBoard_list") result = ideaBoard_list(params);
-    else if (action === "ideaBoard_save") result = ideaBoard_save(params);
-    else if (action === "ideaBoard_setStatus") result = ideaBoard_setStatus(params);
-    else if (action === "ideaBoard_addMemo") result = ideaBoard_addMemo(params);
-    else if (action === "ideaBoard_addCategory") result = ideaBoard_addCategory(params);
-    else if (action === "estimateWorkDuration") result = estimateWorkDuration(params);
-    else if (action === "dayPlan_list") result = dayPlan_list(params);
-    else if (action === "dayPlan_save") result = dayPlan_save(params);
-    else if (action === "dayPlan_update") result = dayPlan_update(params);
-    else if (action === "dayPlan_delete") result = dayPlan_delete(params);
-    else if (action === "dayPlan_options") result = dayPlan_options(params);
-    else if (action === "getOpsIndex") result = getOpsIndex(params);
-    else if (action === "saveOpsRoute") result = saveOpsRoute(params);
-    else if (action === "deleteOpsRoute") result = deleteOpsRoute(params);
-
-    return ContentService.createTextOutput(JSON.stringify({status: "success", data: result})).setMimeType(ContentService.MimeType.JSON);
-  } catch(err) {
-    return ContentService.createTextOutput(JSON.stringify({status: "error", message: err.toString()})).setMimeType(ContentService.MimeType.JSON);
+    if (!action) throw new Error('操作名が指定されていません');
+    bindTenantSpreadsheet_(params);
+    const handler = API_ACTIONS[action];
+    if (!handler) throw new Error('未知の操作です: ' + action);
+    const result = handler(params);
+    return jsonOut_({ status: 'success', data: result });
+  } catch (err) {
+    return jsonOut_({ status: 'error', message: err.toString() });
   }
 }
 
@@ -2992,7 +3015,7 @@ function readMergedCropMasterList_() {
 
 /** コンテナ内容単位マスタ */
 function ensureContentUnitMasterSheet_() {
-  const ss = TENANT_SS || SpreadsheetApp.getActiveSpreadsheet();
+  const ss = requireTenantSs_();
   if (!ss) throw new Error('データベースに接続できません');
   let sheet = ss.getSheetByName('コンテナ内容単位マスタ');
   if (!sheet) {
@@ -7249,7 +7272,7 @@ function delegateCompleteWork(params) {
 function deleteWorkSchedule(params) {
   params = params || {};
   const userName = String(params.userName || '').trim() || 'ユーザー';
-  const ss = TENANT_SS || SpreadsheetApp.getActiveSpreadsheet();
+  const ss = requireTenantSs_();
   const schedSheet = ss.getSheetByName('作業予定');
   if (!schedSheet) throw new Error('作業予定シートがありません');
 
@@ -7309,7 +7332,7 @@ function completeWorkSchedule(params) {
     return delegateCompleteWork(params);
   }
 
-  const ss = TENANT_SS || SpreadsheetApp.getActiveSpreadsheet();
+  const ss = requireTenantSs_();
   const schedSheet = ss.getSheetByName('作業予定');
   if (!schedSheet) throw new Error('作業予定シートがありません');
 
@@ -7472,7 +7495,7 @@ function undoCompleteWorkSchedule(params) {
     return undoDelegateCompleteWork_(params);
   }
 
-  const ss = TENANT_SS || SpreadsheetApp.getActiveSpreadsheet();
+  const ss = requireTenantSs_();
   const schedSheet = ss.getSheetByName('作業予定');
   if (!schedSheet) throw new Error('作業予定シートがありません');
 
@@ -7586,7 +7609,7 @@ function addWorkSchedule(params) {
   const notes = String(params.notes || '').trim();
   const polyId = String(params.polyId || '').trim();
 
-  const ss = TENANT_SS || SpreadsheetApp.getActiveSpreadsheet();
+  const ss = requireTenantSs_();
   let schedSheet = ss.getSheetByName('作業予定');
   if (!schedSheet) {
     schedSheet = ss.insertSheet('作業予定');
@@ -7622,7 +7645,7 @@ function updateWorkScheduleDates(params) {
   params = params || {};
   const userName = String(params.userName || '').trim() || 'ユーザー';
   const sheetRow = parseInt(params.sheetRow, 10);
-  const ss = TENANT_SS || SpreadsheetApp.getActiveSpreadsheet();
+  const ss = requireTenantSs_();
   const schedSheet = ss.getSheetByName('作業予定');
   if (!schedSheet) throw new Error('作業予定シートがありません');
   const last = schedSheet.getLastRow();
@@ -15738,7 +15761,7 @@ function getDefaultProdMgmtCategories_() {
 }
 
 function ensureProdMgmtCategorySheet_() {
-  const ss = TENANT_SS || SpreadsheetApp.getActiveSpreadsheet();
+  const ss = requireTenantSs_();
   if (!ss) throw new Error('データベースに接続できません');
   let sheet = ss.getSheetByName('生産管理カテゴリ');
   if (!sheet) {
@@ -15821,7 +15844,7 @@ function checkAdminRole(userName) {
 // 作業記録の一時保存（全端末同期）
 // ==========================================
 function ensureTempWorkRecordSheet_() {
-  const ss = TENANT_SS || SpreadsheetApp.getActiveSpreadsheet();
+  const ss = requireTenantSs_();
   if (!ss) throw new Error('データベースに接続できません');
   let sheet = ss.getSheetByName('作業一時保存');
   if (!sheet) {
@@ -15967,7 +15990,7 @@ function buildWorkScheduleKey_(workName, fieldName, cropName, schedDateRaw, dead
 }
 
 function ensurePersonalScheduleSheet_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = requireTenantSs_();
   let sheet = ss.getSheetByName('個人スケジュール');
   const headers = ['ID', 'ユーザーID', 'カテゴリ', '内容', '完了', '作成日時', '更新日時', '並び順', '期限', '開始日', '予定キー', 'ユーザー名'];
   if (!sheet) {
@@ -16156,7 +16179,7 @@ function collectScheduleTaskUsersMap_() {
 }
 
 function ensureMeiboGmailColumn_() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('名簿');
+  const sheet = requireTenantSs_().getSheetByName('名簿');
   if (!sheet) throw new Error('名簿シートが見つかりません');
   const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 5)).getValues()[0];
   let gmailCol = -1;
@@ -16175,7 +16198,7 @@ function ensureMeiboGmailColumn_() {
 
 /** 名簿に「表示カレンダー」列を確保（カンマ区切りのカレンダーID） */
 function ensureMeiboCalendarIdsColumn_() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('名簿');
+  const sheet = requireTenantSs_().getSheetByName('名簿');
   if (!sheet) throw new Error('名簿シートが見つかりません');
   const lastCol = Math.max(sheet.getLastColumn(), 1);
   const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
@@ -16690,7 +16713,7 @@ function getUserTodayAssignedSchedules(userName) {
 
 /** 📖 作業マニュアルデータのスプレッドシート保存・取得・削除 */
 function getManualSheet() {
-  const ss = TENANT_SS || SpreadsheetApp.getActiveSpreadsheet();
+  const ss = requireTenantSs_();
   let sheet = ss.getSheetByName("作業マニュアルマスタ");
   if (!sheet) {
     sheet = ss.insertSheet("作業マニュアルマスタ");

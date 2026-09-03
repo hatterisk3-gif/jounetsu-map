@@ -257,8 +257,8 @@
         </div>
     </div>
 
-    <script>
-      const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
+    <script src="api-client.js?v=1788510000000"></script>
+  <script>
       const PORTAL_ORG_ID = 'default';
 
       if ('serviceWorker' in navigator) {
@@ -398,22 +398,7 @@
       }
 
       async function callPortalGAS(action, params) {
-        const body = Object.assign({ action: action, orgId: PORTAL_ORG_ID }, params || {});
-        const res = await fetch(GAS_URL, {
-          method: 'POST',
-          body: JSON.stringify(body)
-        });
-        const text = await res.text();
-        let json;
-        try {
-          json = JSON.parse(text);
-        } catch (e) {
-          throw new Error('サーバーから不正な応答がありました');
-        }
-        if (json.status !== 'success') {
-          throw new Error(json.message || '通信エラー');
-        }
-        return json.data;
+        return callGAS(action, Object.assign({ orgId: PORTAL_ORG_ID }, params || {}));
       }
 
       function saveLoginLocal(userId, password, name, role, spreadsheetId) {

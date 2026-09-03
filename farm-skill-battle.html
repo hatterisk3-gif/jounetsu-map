@@ -681,11 +681,10 @@
 </div>
 <div class="toast" id="toast"></div>
 
-<script>
+<script src="api-client.js?v=1788510000000"></script>
+  <script>
 (function () {
   'use strict';
-
-  const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
   const STORAGE_KEY = 'passionMapFarmKing_v3';
   const MAP_SIZE = 10;
   const SEASON_TURNS = 24;
@@ -2266,43 +2265,6 @@
   }
 
   // ——— GAS / Login ———
-  async function callGAS(action, params, retries) {
-    params = params || {};
-    retries = retries == null ? 2 : retries;
-    params.action = action;
-    if (action !== 'login') {
-      const spreadsheetId = localStorage.getItem('spreadsheetId');
-      if (!spreadsheetId || spreadsheetId === 'undefined' || spreadsheetId === 'null' || !String(spreadsheetId).trim()) {
-        throw new Error('ログインセッションが無効です。再ログインしてください。');
-      }
-      params.spreadsheetId = spreadsheetId;
-    }
-    let lastError = null;
-    for (let i = 0; i <= retries; i++) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 45000);
-      try {
-        const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params), signal: controller.signal });
-        clearTimeout(timeoutId);
-        const text = await res.text();
-        let json;
-        try { json = JSON.parse(text); }
-        catch (e) {
-          if (text.includes('<!DOCTYPE') || text.includes('<html')) throw new Error('Googleサーバーの一時エラーです。再試行中…');
-          throw new Error('サーバー応答が不正です');
-        }
-        if (json.status !== 'success') throw new Error(json.message || '通信エラー');
-        return json.data;
-      } catch (err) {
-        clearTimeout(timeoutId);
-        lastError = err;
-        if (i < retries) await new Promise(r => setTimeout(r, 1200));
-      }
-    }
-    if (lastError && lastError.name === 'AbortError') throw new Error('通信がタイムアウトしました');
-    throw lastError;
-  }
-
   async function syncWorkRecordsFromServer() {
     showSyncOverlay(true);
     try {

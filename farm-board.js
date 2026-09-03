@@ -1,4 +1,4 @@
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
+
 const LAYOUT_KEY = "passionMapFarmBoardLayout";
 const PROGRESS_KEY = "passionMapFarmBoardProgress";
 const LAYOUT_VERSION = 1;
@@ -139,15 +139,6 @@ function escapeHtml(s) {
 function safeColor(v) {
   const s = String(v || "").trim();
   return /^#[0-9A-Fa-f]{3,8}$/.test(s) ? s : "#58a6ff";
-}
-
-async function callGAS(action, payload) {
-  const spreadsheetId = localStorage.getItem("spreadsheetId");
-  const body = Object.assign({ action: action, spreadsheetId: spreadsheetId }, payload || {});
-  const res = await fetch(GAS_URL, { method: "POST", body: JSON.stringify(body) });
-  const json = await res.json();
-  if (json.status !== "success") throw new Error(json.message || "APIエラー");
-  return json.data;
 }
 
 function setStatus(text) {

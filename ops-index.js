@@ -1,4 +1,3 @@
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV/exec";
 
 const OPS_BUILTIN = [
   {
@@ -92,17 +91,8 @@ function opsSetStatus(msg, isErr) {
   el.className = 'status' + (isErr ? ' err' : '');
 }
 
-async function opsCallGAS(action, params) {
-  params = params || {};
-  params.action = action;
-  const spreadsheetId = localStorage.getItem('spreadsheetId');
-  if (spreadsheetId && spreadsheetId !== 'undefined' && spreadsheetId !== 'null') {
-    params.spreadsheetId = spreadsheetId;
-  }
-  const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(params) });
-  const j = JSON.parse(await res.text());
-  if (j.status !== 'success') throw new Error(j.message || '通信エラー');
-  return j.data;
+function opsCallGAS(action, params) {
+  return callGAS(action, params);
 }
 
 function opsToHira(s) {
