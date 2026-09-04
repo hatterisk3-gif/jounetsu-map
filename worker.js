@@ -6767,7 +6767,7 @@ function createSignboardMarker(name, pos, icon, id) {
         });
         if (category && category !== 'すべて') {
           const catNorm = String(category).trim();
-          // 準備・あと片づけは「対象となる全作業」から選ぶ
+          // 準備は「対象となる全作業」から選ぶ
           if (!(typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(catNorm))) {
             works = works.filter(w => window.getWorkMasterCategoryOrEmpty_(w) === catNorm);
           }
@@ -9852,7 +9852,7 @@ function createSignboardMarker(name, pos, icon, id) {
               const wCropKey = window.normalizeWorkCropKey(wObj.cropName);
               const curCat = String(document.getElementById('rec_work_category')?.value || '').trim();
               const keepMetaCat = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(curCat);
-              // 準備／あと片づけカテゴリ選択中は、選んだ作業を「対象」として扱いカテゴリは維持する
+              // 準備カテゴリ選択中は、選んだ作業を「対象」として扱いカテゴリは維持する
               if (keepMetaCat) {
                 window.selectedPrepTargetWork = name;
                 const hiddenPrep = document.getElementById('prep_target_work_select');
@@ -10144,9 +10144,7 @@ function createSignboardMarker(name, pos, icon, id) {
               </div>`;
             }
           } else {
-            const metaHint = (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat))
-              ? `<div style="width:100%; font-size:11px; color:#6A1B9A; background:#F3E5F5; border:1px solid #CE93D8; border-radius:8px; padding:8px 10px; margin-bottom:4px; line-height:1.4; font-weight:bold;">📋 ${String(cat).indexOf('準備') >= 0 ? '何の作業の準備か' : '何の作業のあと片づけか'}を、下の全作業から選んでください（カテゴリは「${String(cat).replace(/</g, '&lt;')}」のまま保存されます）</div>`
-              : '';
+            const metaHint = '';
             allChipsHTML = '<div id="all_chips_container" style="display:flex; flex-wrap:wrap; gap:8px; max-height:200px; overflow-y:auto; padding:10px; border:1px solid #eee; border-radius:8px; background:#fafafa; margin-bottom:10px;">' +
                 metaHint +
                 filteredWorks.map(w => window.buildWorkChipHtml(w, false)).join('') + '</div>';
@@ -13761,34 +13759,30 @@ function createSignboardMarker(name, pos, icon, id) {
         return n === '準備作業' || n === '準備' || n.indexOf('準備') >= 0;
       };
 
-      /** 準備カテゴリか（何の作業の準備かを選ぶモード） */
+      /** 準備カテゴリか */
       window.isPrepCategory_ = (cat) => {
         const c = String(cat || '').trim();
         return !!c && c.indexOf('準備') >= 0;
       };
 
-      /** あと片づけ系カテゴリか */
+      /** あと片づけ系カテゴリか（通常カテゴリ） */
       window.isCleanupCategory_ = (cat) => {
         const c = String(cat || '').trim();
         if (!c) return false;
-        return /あと片|後片|片づけ|片付け/.test(c);
+        return /あと片|後片|片づけ|片付け|掃除/.test(c);
       };
 
-      /** 対象作業を別途紐づけるカテゴリ（準備・あと片づけ） */
-      window.isMetaTargetCategory_ = (cat) => {
-        return !!(window.isPrepCategory_(cat) || window.isCleanupCategory_(cat));
-      };
+      /** 対象作業を別途紐づけるカテゴリ（準備・片づけとも通常カテゴリのため常に false） */
+      window.isMetaTargetCategory_ = (cat) => false;
 
       window.isCleanupWorkName = (name) => {
         const n = String(name || '').trim();
         if (!n) return false;
-        return /あと片|後片|片づけ|片付け/.test(n);
+        return /あと片|後片|片づけ|片付け|掃除/.test(n);
       };
 
-      /** 作業名が「準備／あと片づけ」本体か（対象作業ではない） */
-      window.isMetaShellWorkName_ = (name) => {
-        return !!(window.isPrepWorkName(name) || window.isCleanupWorkName(name));
-      };
+      /** 準備本体として対象作業UIを出す作業名（通常カテゴリ化のため常に false） */
+      window.isMetaShellWorkName_ = (name) => false;
 
       window.selectedPrepTargetWork = '';
 
@@ -13801,53 +13795,11 @@ function createSignboardMarker(name, pos, icon, id) {
       window.refreshPrepTargetWorkSection = (preset) => {
         const box = document.getElementById('prep_target_work_section');
         if (!box) return;
-        const wName = String(document.getElementById('rec_work_name')?.value || '').trim();
-        const cat = String(document.getElementById('rec_work_category')?.value || '').trim();
-        const isShell = typeof window.isMetaShellWorkName_ === 'function' && window.isMetaShellWorkName_(wName);
-        const isMetaCat = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat);
-        // 本体作業（準備作業など）を選んだときだけ、別途「対象作業」UIを出す。
-        // カテゴリ経由で全作業から選ぶ場合は、作業名そのものが対象なので不要。
-        if (!isShell) {
-          box.style.display = 'none';
-          box.innerHTML = '';
-          if (!isMetaCat) {
-            window.selectedPrepTargetWork = '';
-            const hiddenClr = document.getElementById('prep_target_work_select');
-            if (hiddenClr) hiddenClr.value = '';
-          }
-          return;
-        }
-        const isCleanup = typeof window.isCleanupWorkName === 'function' && window.isCleanupWorkName(wName);
-        const roleLabel = isCleanup ? 'あと片づけ' : '準備';
-        const cur = String(preset != null ? preset : (window.selectedPrepTargetWork || '')).trim();
-        window.selectedPrepTargetWork = cur;
-        const names = [];
-        const seen = new Set();
-        (pdlWorkMaster || []).forEach(w => {
-          if (!w) return;
-          const name = String(w.name || '').trim();
-          if (!name || seen.has(name)) return;
-          if (typeof window.isMetaShellWorkName_ === 'function' && window.isMetaShellWorkName_(name)) return;
-          if (name.includes('休憩')) return;
-          seen.add(name);
-          names.push(name);
-        });
-        names.sort((a, b) => a.localeCompare(b, 'ja'));
-        const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-        const chips = names.map(name => {
-          const on = name === cur;
-          const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-          return `<button type="button" onclick="onPrepTargetWorkChange('${safe}')" style="padding:7px 11px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? '#6A1B9A' : '#CE93D8'}; background:${on ? '#F3E5F5' : '#fff'}; color:#6A1B9A;">${esc(name)}</button>`;
-        }).join('');
-        box.style.display = 'block';
-        box.innerHTML = `
-          <input type="hidden" id="prep_target_work_select" value="${esc(cur)}">
-          <div style="font-weight:bold; color:#6A1B9A; font-size:13px; margin-bottom:6px;">📋 何の作業の${roleLabel}ですか？ <span style="font-size:10px; color:#fff; background:#C62828; padding:1px 6px; border-radius:8px;">必須</span></div>
-          <div style="font-size:11px; color:#7B1FA2; margin-bottom:8px; line-height:1.35;">全作業から選べます。カテゴリは「${esc(cat || roleLabel)}」のまま保存されます。</div>
-          ${cur ? `<div style="margin-bottom:8px; font-size:12px; color:#4A148C; font-weight:bold; background:#E1BEE7; padding:6px 10px; border-radius:6px;">選択中: <b>${esc(cur)}</b></div>` : ''}
-          <input type="search" placeholder="対象作業名を絞り込み…" oninput="(function(el){var q=String(el.value||'').toLowerCase();el.parentElement.querySelectorAll('.prep-target-chip-wrap button').forEach(function(b){var n=String(b.textContent||'').toLowerCase();b.style.display=(!q||n.indexOf(q)>=0)?'':'none';});})(this)" style="width:100%; box-sizing:border-box; padding:7px 10px; border:1px solid #CE93D8; border-radius:8px; font-size:12px; margin-bottom:8px;">
-          <div class="prep-target-chip-wrap" style="display:flex; flex-wrap:wrap; gap:6px; max-height:180px; overflow-y:auto;">${chips || '<span style="font-size:11px; color:#888;">作業マスタがありません</span>'}</div>
-        `;
+        box.style.display = 'none';
+        box.innerHTML = '';
+        window.selectedPrepTargetWork = '';
+        const hidden = document.getElementById('prep_target_work_select');
+        if (hidden) hidden.value = '';
       };
 
       /** 準備作業マスタから「準備×対象作業」組み合わせの詳細作業を取得 */
@@ -28767,10 +28719,8 @@ window.getBulkWorkMemoUiFlags_ = (draft) => {
     showMachine: isMachineryCat ? true : pick(w && w.showMachine, inferred.showMachine),
     showMaterial: pick(w && w.showMaterial, inferred.showMaterial),
     showPesticide: pick(w && w.showPesticide, inferred.showPesticide),
-    isPrep: (typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(wName))
-      || (typeof window.isPrepCategory_ === 'function' && window.isPrepCategory_(cat)),
-    isCleanup: (typeof window.isCleanupWorkName === 'function' && window.isCleanupWorkName(wName))
-      || (typeof window.isCleanupCategory_ === 'function' && window.isCleanupCategory_(cat))
+    isPrep: false,
+    isCleanup: false
   };
 };
 
@@ -29494,11 +29444,7 @@ window.getBulkWorkMemoManualWorkList_ = (d) => {
   const metaAll = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(filterCat);
   let names = (window.getBulkWorkMemoAllWorkNames_(filterCat) || []).filter(n => !window.isBulkWorkMemoRestWorkName_(n));
   let fallbackNote = '';
-  if (metaAll) {
-    fallbackNote = filterCat.indexOf('準備') >= 0
-      ? `「${filterCat}」：何の作業の準備かを、全作業から選んでください（カテゴリは「${filterCat}」のまま保存されます）。`
-      : `「${filterCat}」：何の作業のあと片づけかを、全作業から選んでください（カテゴリは「${filterCat}」のまま保存されます）。`;
-  } else if (!names.length && filterCat) {
+  if (!names.length && filterCat) {
     names = (window.getBulkWorkMemoAllWorkNames_('') || []).filter(n => !window.isBulkWorkMemoRestWorkName_(n));
     fallbackNote = `「${filterCat}」に該当する作業がないため、すべての作業を表示しています。`;
   }
@@ -29858,55 +29804,8 @@ window.buildBulkWorkMemoCardWorkAdminBarHtml_ = (d, uid) => {
 };
 
 window.buildBulkWorkMemoPrepTargetHtml_ = (d, uid) => {
-  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  const cur = String(d.prepTargetWork || '').trim();
-  const isCleanup = (typeof window.isCleanupWorkName === 'function' && window.isCleanupWorkName(d.workName))
-    || (typeof window.isCleanupCategory_ === 'function' && window.isCleanupCategory_(d.category));
-  const roleLabel = isCleanup ? 'あと片づけ' : '準備';
-  const suggested = window.getBulkWorkMemoPrepTargetGuessesFromMemo_(d.rawLine);
-  const all = window.getBulkWorkMemoPrepTargetNames_(d);
-  const chip = (name, style) => {
-    const on = name === cur;
-    const safeArg = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const bg = on ? '#4CAF50' : (style === 'sug' ? '#E8F5E9' : '#fff');
-    const color = on ? '#fff' : '#2E7D32';
-    const border = on ? '#388E3C' : (style === 'sug' ? '#A5D6A7' : '#C8E6C9');
-    return `<button type="button" class="bulk-prep-target-chip" data-name="${esc(name)}" onclick="pickBulkWorkMemoPrepTarget_('${esc(uid)}','${safeArg}')" style="padding:7px 12px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${border}; background:${bg}; color:${color};">${esc(name)}</button>`;
-  };
-  const sugHtml = suggested.length
-    ? `<div style="font-size:10px; color:#2E7D32; font-weight:bold; margin:6px 0 4px;">メモから合いそうな対象</div>
-       <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${suggested.map(n => chip(n, 'sug')).join('')}</div>`
-    : '';
-  const listHtml = all.length
-    ? `<div style="display:flex; flex-wrap:wrap; gap:6px; max-height:160px; overflow-y:auto; padding:4px 2px;">${all.slice(0, 80).map(n => chip(n, 'all')).join('')}</div>`
-    : `<div style="font-size:11px; color:#888; padding:8px;">該当する作業がありません。カテゴリ絞り込みを変えてください。</div>`;
-  const badge = cur
-    ? `<div style="margin-bottom:8px; font-size:12px; color:#1B5E20; font-weight:bold; background:#C8E6C9; padding:6px 10px; border-radius:6px;">選択中: <b>${esc(cur)}</b></div>`
-    : `<div style="margin-bottom:8px; font-size:12px; color:#B71C1C; font-weight:bold; background:#FFEBEE; border:1px solid #EF9A9A; padding:8px 10px; border-radius:6px;">⚠ 何の作業の${roleLabel}かを選んでください（保存時必須）</div>`;
-  const collapsed = cur && d._prepPickOpen !== true;
-  if (collapsed) {
-    return `<div class="bulk-prep-target-box" style="margin:8px 0; background:#F1F8E9; border:2px solid #66BB6A; border-radius:10px; padding:10px;">
-      ${window.buildBulkWorkMemoCollapsedPickHtml_({
-        icon: '📋',
-        label: `${roleLabel}対象`,
-        value: cur,
-        uid: uid,
-        toggleFn: 'toggleBulkWorkMemoPrepPick_',
-        borderColor: '#A5D6A7',
-        bgColor: '#E8F5E9',
-        textColor: '#2E7D32'
-      })}
-    </div>`;
-  }
-  return `<div class="bulk-prep-target-box" style="margin:8px 0; background:#F1F8E9; border:2px solid #66BB6A; border-radius:10px; padding:10px;">
-    <div style="font-size:11px; font-weight:bold; color:#2E7D32; margin-bottom:6px;">📋 何の作業の${roleLabel}ですか？ <span style="font-size:10px; color:#fff; background:#C62828; padding:1px 6px; border-radius:8px;">必須</span></div>
-    ${badge}
-    ${sugHtml}
-    <div style="font-size:10px; color:#3949AB; font-weight:bold; margin-bottom:4px;">カテゴリで絞り込み（空＝全作業）</div>
-    ${window.buildBulkWorkMemoCategoryChipsHtml_(d, uid, 'prep')}
-    <input type="search" placeholder="対象作業名を絞り込み…" oninput="filterBulkWorkMemoPrepTargetChips_(this)" style="width:100%; box-sizing:border-box; padding:7px 10px; border:1px solid #A5D6A7; border-radius:8px; font-size:12px; margin:6px 0 8px;">
-    ${listHtml}
-  </div>`;
+  // 準備・片づけとも通常カテゴリ。対象作業の必須UIは出さない
+  return '';
 };
 
 window.buildBulkWorkMemoPesticidesHtml_ = (d, uid) => {
@@ -30731,18 +30630,6 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
     if (typeof window.bulkWorkMemoIsDelivery_ === 'function' && window.bulkWorkMemoIsDelivery_(d)) {
       html += window.buildBulkWorkMemoDeliveryHtml_(d, uid);
     }
-    // 準備／あと片づけ「本体」作業を選んだとき：対象となる全作業を選ぶ
-    if (typeof window.isMetaShellWorkName_ === 'function' && window.isMetaShellWorkName_(d.workName)) {
-      html += window.buildBulkWorkMemoPrepTargetHtml_(d, uid);
-    } else if (flags.isPrep || flags.isCleanup) {
-      const target = String(d.prepTargetWork || d.workName || '').trim();
-      const label = flags.isPrep ? '準備の対象' : 'あと片づけの対象';
-      if (target) {
-        html += `<div style="margin:8px 0; padding:8px 10px; background:#F3E5F5; border:1px solid #CE93D8; border-radius:8px; font-size:12px; color:#6A1B9A; font-weight:bold; line-height:1.4;">📋 ${label}: <b>${esc(target)}</b>
-          <div style="font-size:10px; font-weight:normal; color:#7B1FA2; margin-top:2px;">カテゴリ「${esc(d.category || '')}」で保存されます</div>
-        </div>`;
-      }
-    }
   }
   // メイン作業名未選択でも、メモから同時作業が付いていれば表示
   if ((d.workName || hasConcurrent) && typeof window.buildBulkConcurrentWorksHtml_ === 'function') {
@@ -31389,15 +31276,6 @@ window.validateBulkWorkMemoDraftsForSave_ = () => {
     }
     if (!window.isBulkWorkMemoWorkInMaster_(workName)) {
       if (typeof customAlert === 'function') customAlert(`${i + 1}件目「${workName}」は作業マスタにありません。リストから選んでください。`);
-      return null;
-    }
-    if (typeof window.isMetaShellWorkName_ === 'function' && window.isMetaShellWorkName_(workName)
-        && !String(d.prepTargetWork || '').trim()) {
-      const role = (typeof window.isCleanupWorkName === 'function' && window.isCleanupWorkName(workName))
-        ? 'あと片づけ' : '準備';
-      if (typeof customAlert === 'function') {
-        customAlert(`${i + 1}件目：何の作業の${role}かを選んでください。`);
-      }
       return null;
     }
     if (!d.startTime && !d.endTime) {
