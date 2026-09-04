@@ -3717,17 +3717,44 @@ window.openEditContainerMaster = (encoded) => {
     openMasterDetail('container', editHtml);
 };
 
+window.isWorkCropCommonKey_ = (val) => {
+    const s = String(val || '').trim();
+    if (!s) return false;
+    return s === '__common__' || s === '共通' || s === 'すべて' || s === '全て' || s === '全作物' || s === '全対象';
+};
+
+window.applyWorkCropsCommonExclusive_ = (prefix, changedEl) => {
+    const cbs = Array.from(document.querySelectorAll('.' + prefix + '_crop_cb'));
+    if (!cbs.length) return;
+    if (changedEl && changedEl.checked) {
+        const pickCommon = window.isWorkCropCommonKey_(changedEl.value);
+        cbs.forEach(cb => {
+            if (cb === changedEl) return;
+            if (pickCommon) cb.checked = false;
+            else if (window.isWorkCropCommonKey_(cb.value)) cb.checked = false;
+        });
+    }
+    if (!cbs.some(cb => cb.checked)) {
+        const commonCb = cbs.find(cb => window.isWorkCropCommonKey_(cb.value));
+        if (commonCb) commonCb.checked = true;
+    }
+};
+
 /** 作物名マルチ選択（チェックボックス群）のHTML生成 */
 window.buildWorkCropsCheckboxesHtml = (prefix, selectedCropsArray = []) => {
-    const crops = (typeof pdlCrops !== 'undefined' && Array.isArray(pdlCrops)) ? pdlCrops.map(c => c.name) : [];
+    const crops = (typeof pdlCrops !== 'undefined' && Array.isArray(pdlCrops))
+        ? pdlCrops.map(c => String((c && c.name) || '').trim()).filter(Boolean).filter(c => !window.isWorkCropCommonKey_(c))
+        : [];
     let normSelected = Array.isArray(selectedCropsArray) ? selectedCropsArray : String(selectedCropsArray || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
-    const isCommonChecked = normSelected.length === 0 || normSelected.includes('共通') || normSelected.includes('__common__');
+    const hasReal = normSelected.some(c => c && !window.isWorkCropCommonKey_(c));
+    if (hasReal) normSelected = normSelected.filter(c => !window.isWorkCropCommonKey_(c));
+    const isCommonChecked = !hasReal && (normSelected.length === 0 || normSelected.some(c => window.isWorkCropCommonKey_(c)));
 
     let html = `<div id="${prefix}_crops_container" style="display:flex; flex-wrap:wrap; gap:8px; padding:10px; background:#fafafa; border:1px solid #ddd; border-radius:6px; margin-bottom:10px;">`;
 
     html += `
         <label style="display:inline-flex; align-items:center; gap:4px; font-size:13px; font-weight:bold; background:${isCommonChecked ? '#e3f2fd' : '#fff'}; border:1px solid ${isCommonChecked ? '#2196F3' : '#ccc'}; padding:4px 10px; border-radius:15px; cursor:pointer;">
-            <input type="checkbox" class="${prefix}_crop_cb" value="__common__" ${isCommonChecked ? 'checked' : ''} onchange="onWorkCropsChange('${prefix}')"> 🌐 共通
+            <input type="checkbox" class="${prefix}_crop_cb" value="__common__" ${isCommonChecked ? 'checked' : ''} onchange="onWorkCropsChange('${prefix}', this)"> 🌐 共通
         </label>
     `;
 
@@ -3735,19 +3762,23 @@ window.buildWorkCropsCheckboxesHtml = (prefix, selectedCropsArray = []) => {
         const checked = normSelected.includes(cName);
         html += `
             <label style="display:inline-flex; align-items:center; gap:4px; font-size:13px; background:${checked ? '#e8f5e9' : '#fff'}; border:1px solid ${checked ? '#4CAF50' : '#ccc'}; padding:4px 10px; border-radius:15px; cursor:pointer;">
-                <input type="checkbox" class="${prefix}_crop_cb" value="${String(cName).replace(/"/g, '&quot;')}" ${checked ? 'checked' : ''} onchange="onWorkCropsChange('${prefix}')"> 🌱 ${cName}
+                <input type="checkbox" class="${prefix}_crop_cb" value="${String(cName).replace(/"/g, '&quot;')}" ${checked ? 'checked' : ''} onchange="onWorkCropsChange('${prefix}', this)"> 🌱 ${cName}
             </label>
         `;
     });
 
-    html += `</div>`;
+    html += `</div>
+      <div style="font-size:11px; color:#666; margin-top:6px; line-height:1.4;">個別作物は複数選択可。「共通」と個別作物は同時に選べません。</div>`;
     return html;
 };
 
 /** 選択されている作物一覧の取得 */
 window.getSelectedWorkCrops = (prefix) => {
     const cbs = document.querySelectorAll(`.${prefix}_crop_cb:checked`);
-    const list = Array.from(cbs).map(cb => cb.value).filter(Boolean);
+    let list = Array.from(cbs).map(cb => cb.value).filter(Boolean);
+    const hasReal = list.some(c => !window.isWorkCropCommonKey_(c));
+    if (hasReal) list = list.filter(c => !window.isWorkCropCommonKey_(c));
+    else if (list.some(c => window.isWorkCropCommonKey_(c))) list = ['__common__'];
     return list.length ? list : ['__common__'];
 };
 
@@ -3758,7 +3789,8 @@ window.collectContainerLinkedCrops = (prefix) => {
 };
 
 /** 作物選択が変更された時にタブおよび詳細作業エリアを自動更新する */
-window.onWorkCropsChange = (prefix) => {
+window.onWorkCropsChange = (prefix, changedEl) => {
+    window.applyWorkCropsCommonExclusive_(prefix, changedEl || null);
     const selected = getSelectedWorkCrops(prefix);
     const tabsBox = document.getElementById(`${prefix}_crop_tabs`);
     if (!tabsBox) return;
