@@ -4279,6 +4279,156 @@ function createSignboardMarker(name, pos, icon, id) {
         try { localStorage.setItem(window.getWorkTimeHintsCacheKey(), JSON.stringify(cache)); } catch (e) {}
       };
 
+      /** 指定日の作業開始のうち最早（休憩除く）。editOverride で編集中レコードを差し替え */
+      window.getEarliestWorkStartForDate_ = (dateYmd, opts) => {
+        opts = opts || {};
+        const ymd = (typeof window.normalizeDateStr === 'function')
+          ? window.normalizeDateStr(dateYmd)
+          : String(dateYmd || '').slice(0, 10);
+        if (!ymd) return { start: '', recordId: '', workName: '' };
+        const targetUser = String(opts.userName
+          || (typeof currentUser !== 'undefined' ? currentUser : '')
+          || localStorage.getItem('passionMapUserName')
+          || '').replace(/\s+/g, '');
+        const overrideId = String(opts.editId || '').trim();
+        const overrideStart = opts.startTime != null
+          ? (window.normalizeTimeHm ? (window.normalizeTimeHm(opts.startTime) || String(opts.startTime).trim()) : String(opts.startTime || '').trim())
+          : '';
+        const overrideName = String(opts.workName || '').trim();
+        const overrideIsRest = overrideName.includes('休憩');
+        const excludeOnly = !!opts.excludeOnly; // 編集IDを除外するだけで差し替えない
+
+        let best = { start: '', recordId: '', workName: '' };
+        const consider = (startRaw, recId, workName) => {
+          const st = window.normalizeTimeHm
+            ? (window.normalizeTimeHm(startRaw) || String(startRaw || '').trim())
+            : String(startRaw || '').trim();
+          if (!st || !/^\d{1,2}:\d{2}$/.test(st)) return;
+          const wName = String(workName || '').trim();
+          if (wName.includes('休憩')) return;
+          const pad = (window.normalizeTimeHm ? window.normalizeTimeHm(st) : st) || st;
+          if (!best.start || pad < best.start) {
+            best = { start: pad, recordId: String(recId || ''), workName: wName };
+          }
+        };
+
+        if (!excludeOnly && overrideId && overrideStart && !overrideIsRest) {
+          consider(overrideStart, overrideId, overrideName);
+        }
+
+        const polys = (typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons : {};
+        Object.keys(polys).forEach(pid => {
+          const p = polys[pid];
+          if (!p || !Array.isArray(p.photos)) return;
+          p.photos.forEach(ph => {
+            if (!ph || (ph.type && ph.type !== 'work' && !(ph.data && ph.data.workName))) return;
+            const phData = ph.data || {};
+            const phId = String(ph.id || phData.recordId || '').trim();
+            if (overrideId && phId && phId === overrideId) return; // 上書き側を使う
+            const phUser = String(ph.author || phData.userName || '').replace(/\s+/g, '');
+            if (targetUser && phUser && targetUser !== phUser
+              && targetUser.indexOf(phUser) < 0 && phUser.indexOf(targetUser) < 0) return;
+            const phYmd = (typeof window.normalizeDateStr === 'function')
+              ? (window.normalizeDateStr(phData.workDate) || window.normalizeDateStr(ph.date))
+              : String(phData.workDate || ph.date || '').slice(0, 10);
+            if (phYmd !== ymd) return;
+            consider(phData.startTime || ph.time || '', phId, phData.workName || '');
+          });
+        });
+
+        return best;
+      };
+
+      /**
+       * 作業記録の編集後：その日の最早開始が編集レコードなら出勤も合わせる。
+       * 最早だったレコードを後ろにずらした場合は、新しい最早開始に出勤を合わせる。
+       */
+      window.syncClockInAfterEarliestWorkEdit_ = (opts) => {
+        opts = opts || {};
+        const ymd = (typeof window.normalizeDateStr === 'function')
+          ? window.normalizeDateStr(opts.workDate)
+          : String(opts.workDate || '').slice(0, 10);
+        const newStart = window.normalizeTimeHm
+          ? (window.normalizeTimeHm(opts.newStartTime) || String(opts.newStartTime || '').trim())
+          : String(opts.newStartTime || '').trim();
+        const oldStart = window.normalizeTimeHm
+          ? (window.normalizeTimeHm(opts.oldStartTime) || String(opts.oldStartTime || '').trim())
+          : String(opts.oldStartTime || '').trim();
+        const editId = String(opts.editId || '').trim();
+        const workName = String(opts.workName || '').trim();
+        if (!ymd || !newStart || !editId) return { synced: false, reason: 'incomplete' };
+        if (workName.includes('休憩')) return { synced: false, reason: 'rest' };
+
+        const earliest = window.getEarliestWorkStartForDate_(ymd, {
+          editId: editId,
+          startTime: newStart,
+          workName: workName,
+          userName: opts.userName
+        });
+        if (!earliest.start) return { synced: false, reason: 'no-earliest' };
+
+        // 編集後にこのレコードが最早、または編集前も最早だった（開始を後ろにずらした）場合に同期
+        const isNowEarliest = earliest.recordId === editId || earliest.start === newStart;
+        let wasEarliest = false;
+        if (oldStart) {
+          const others = window.getEarliestWorkStartForDate_(ymd, {
+            editId: editId,
+            excludeOnly: true,
+            userName: opts.userName
+          });
+          wasEarliest = !others.start || oldStart <= others.start;
+        }
+        if (!isNowEarliest && !wasEarliest) {
+          return { synced: false, reason: 'not-earliest', earliest: earliest.start };
+        }
+
+        const clockHm = earliest.start;
+        if (typeof window.saveCachedClockInHint === 'function') {
+          window.saveCachedClockInHint(ymd, clockHm);
+        }
+
+        // 出勤中の日だけ端末キャッシュを更新（退勤済み日を再オープンしない）
+        let activeOpen = false;
+        let activeYmd = '';
+        try {
+          const st = JSON.parse(localStorage.getItem('passionMapClockIn') || 'null');
+          activeOpen = !!(st && st.active && st.time);
+          activeYmd = (st && st.dateYmd) ? String(st.dateYmd) : '';
+        } catch (e) {}
+        if (activeOpen && activeYmd && ymd === activeYmd) {
+          if (typeof window.setLocalClockInTime === 'function') {
+            window.setLocalClockInTime(clockHm, ymd);
+          } else if (typeof window.registerBulkWorkMemoClockIn_ === 'function') {
+            window.registerBulkWorkMemoClockIn_(ymd, clockHm);
+          }
+          if (typeof window.syncTrackingUI === 'function') {
+            try { window.syncTrackingUI(); } catch (e) {}
+          }
+        }
+
+        const user = String(opts.userName
+          || (typeof currentUser !== 'undefined' ? currentUser : '')
+          || localStorage.getItem('passionMapUserName')
+          || '').trim();
+        if (user && typeof callGAS === 'function') {
+          const timeMs = (typeof window.buildBulkWorkMemoYmdTimeMs_ === 'function')
+            ? window.buildBulkWorkMemoYmdTimeMs_(ymd, clockHm)
+            : (() => {
+                const [yy, mo, dd] = ymd.split('-').map(Number);
+                const [hh, mm] = clockHm.split(':').map(Number);
+                return new Date(yy, mo - 1, dd, hh, mm, 0, 0).getTime();
+              })();
+          callGAS('updateClockInTimeForDate', {
+            userName: user,
+            clockInTime: clockHm,
+            clockInDateYmd: ymd,
+            time: timeMs
+          }).catch(e => console.warn('最早作業に合わせた出勤更新エラー', e));
+        }
+
+        return { synced: true, clockInTime: clockHm, workDate: ymd };
+      };
+
       window.getCachedLatestWorkEnd = (dateYmd) => {
         const ymd = window.normalizeDateStr(dateYmd);
         const cache = window.loadCachedWorkTimeHints();
@@ -19891,6 +20041,28 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.removePersistedRecordSyncJob_ === 'function') {
           window.removePersistedRecordSyncJob_(localId);
         }
+        // 一括入力履歴の local_ ID を正式IDへ差し替え
+        try {
+          if (localId && serverItem && serverItem.id && typeof window.loadBulkWorkMemoHistory_ === 'function') {
+            const batchId = String((serverItem.data && serverItem.data.bulkBatchId) || '').trim();
+            if (batchId) {
+              const list = window.loadBulkWorkMemoHistory_();
+              let changed = false;
+              list.forEach(entry => {
+                if (!entry || entry.batchId !== batchId || !Array.isArray(entry.items)) return;
+                entry.items.forEach(it => {
+                  if (it && String(it.recordId || '') === String(localId)) {
+                    it.recordId = String(serverItem.id);
+                    changed = true;
+                  }
+                });
+              });
+              if (changed && typeof window.persistBulkWorkMemoHistory_ === 'function') {
+                window.persistBulkWorkMemoHistory_(list);
+              }
+            }
+          }
+        } catch (e) {}
       };
 
       window.markOptimisticRecordFailed_ = (localId, targetIds) => {
@@ -22077,6 +22249,29 @@ function createSignboardMarker(name, pos, icon, id) {
           const editIdSnap = currentEditRecordId || '';
           const activePolySnap = activePolyId;
           const recordTypeSnap = currentRecordType;
+          let oldStartSnap = '';
+          if (editIdSnap && recordTypeSnap === 'work') {
+            try {
+              const matchId = (ph) => ph && (ph.id === editIdSnap || ph.url === editIdSnap
+                || (ph.data && ph.data.recordId === editIdSnap));
+              if (activePolySnap && loadedPolygons[activePolySnap] && Array.isArray(loadedPolygons[activePolySnap].photos)) {
+                const prev = loadedPolygons[activePolySnap].photos.find(matchId);
+                if (prev && prev.data) oldStartSnap = String(prev.data.startTime || prev.time || '').trim();
+              }
+              if (!oldStartSnap && typeof loadedPolygons !== 'undefined') {
+                Object.keys(loadedPolygons).some(pid => {
+                  const p = loadedPolygons[pid];
+                  if (!p || !Array.isArray(p.photos)) return false;
+                  const prev = p.photos.find(matchId);
+                  if (prev && prev.data) {
+                    oldStartSnap = String(prev.data.startTime || prev.time || '').trim();
+                    return true;
+                  }
+                  return false;
+                });
+              }
+            } catch (e) {}
+          }
           const userSnap = currentUser;
           const specialSessionSnap = window._specialWorkSession
             ? Object.assign({}, window._specialWorkSession)
@@ -22097,6 +22292,30 @@ function createSignboardMarker(name, pos, icon, id) {
             previewUrls: previewUrls,
             keptUrls: keptUrls
           });
+
+          // マイページ等で最早作業の開始を直したら、その日の出勤も合わせる
+          if (editIdSnap && recordTypeSnap === 'work' && data && data.workDate && data.startTime
+              && typeof window.syncClockInAfterEarliestWorkEdit_ === 'function') {
+            try {
+              const syncRes = window.syncClockInAfterEarliestWorkEdit_({
+                workDate: data.workDate,
+                newStartTime: data.startTime,
+                oldStartTime: oldStartSnap,
+                editId: editIdSnap,
+                workName: data.workName || '',
+                userName: userSnap
+              });
+              if (syncRes && syncRes.synced && typeof window.showRecordSyncToast === 'function') {
+                window.showRecordSyncToast(`出勤時間も ${syncRes.clockInTime} に合わせました`, 'ok');
+              }
+              if (syncRes && syncRes.synced && typeof window.loadMyAttendance === 'function'
+                  && document.getElementById('myAttendanceBody')) {
+                try { window.loadMyAttendance(); } catch (e) {}
+              }
+            } catch (e) {
+              console.warn('最早作業→出勤連動エラー', e);
+            }
+          }
 
           if (recordTypeSnap === 'work' && typeof window.saveLastWorkFieldSelection === 'function') {
             try { window.saveLastWorkFieldSelection(selectedPolyIds); } catch (e) {}
@@ -26058,10 +26277,38 @@ window.normalizeBulkWorkMemoTypoText_ = (s) => {
   return t;
 };
 
+/** 現在時刻 HH:MM（一括入力「今の時間まで」用） */
+window.getBulkWorkMemoNowHm_ = () => {
+  const n = new Date();
+  return `${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`;
+};
+
+/**
+ * 「今の時間まで」「いまの時刻まで」など → 終了＝いま、開始＝その日の最遅作業終了
+ * @returns {{ found: boolean, cleaned: string }}
+ */
+window.detectBulkWorkMemoUntilNowPhrase_ = (text) => {
+  const raw = String(text || '');
+  if (!raw) return { found: false, cleaned: '' };
+  const norm = typeof window.normalizeBulkWorkMemoInputText_ === 'function'
+    ? window.normalizeBulkWorkMemoInputText_(raw)
+    : raw;
+  // 「今の時間まで」「現在の時刻まで」「いままで作業」など
+  const re = /(?:今|いま|現在)(?:\s*の?\s*(?:時間|時刻))?\s*まで/i;
+  if (!re.test(norm) && !re.test(raw)) return { found: false, cleaned: raw };
+  let cleaned = norm.replace(re, ' ').replace(/\s+/g, ' ').trim();
+  if (!cleaned) cleaned = raw.replace(re, ' ').replace(/\s+/g, ' ').trim();
+  return { found: true, cleaned: cleaned || raw };
+};
+
 /** 行内の単独時刻が「終了 / 開始 / から」のどれか */
 window.bulkWorkMemoLineTimeRole_ = (raw, normRaw) => {
   const src = String(normRaw || raw || '');
   const orig = String(raw || src);
+  if (typeof window.detectBulkWorkMemoUntilNowPhrase_ === 'function'
+      && window.detectBulkWorkMemoUntilNowPhrase_(src).found) {
+    return 'end';
+  }
   // 「8時半まで」「12時で定植」「11時11分で新交差点」
   if (/(?:\d{1,2}\s*[:：]\s*\d{1,2}|\d{1,2}\s*時\s*(?:半|\d{1,2}\s*分?)?)\s*(?:まで|で)/.test(src)) {
     return 'end';
@@ -26761,14 +27008,32 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
   const normRaw = typeof window.normalizeBulkWorkMemoInputText_ === 'function'
     ? window.normalizeBulkWorkMemoInputText_(raw)
     : raw;
+  const untilNow = (typeof window.detectBulkWorkMemoUntilNowPhrase_ === 'function')
+    ? window.detectBulkWorkMemoUntilNowPhrase_(normRaw)
+    : { found: false, cleaned: normRaw };
+  // 作業名マッチ用：時刻フレーズを除いた本文
+  const textForWork = untilNow.found && untilNow.cleaned ? untilNow.cleaned : raw;
   const times = window.extractBulkWorkMemoTimes_(normRaw);
   let startTime = '';
   let endTime = '';
 
+  // 「今の時間まで 吉住さん前排水」→ 開始＝前の最遅終了、終了＝いま
+  if (untilNow.found) {
+    endTime = (typeof window.getBulkWorkMemoNowHm_ === 'function')
+      ? window.getBulkWorkMemoNowHm_()
+      : (() => {
+          const n = new Date();
+          return `${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`;
+        })();
+    startTime = prevEndHm || '';
+  }
+
   // 「13時30分から40分（休憩）」→ 13:30〜13:40（:40 が終了分）
   // 「13時30分から40分間」→ 40分間の長さ（13:30〜14:10）
   // 「13時50分から20分」→ 終了分20は開始30分より前なので20分間の長さ
-  const fromMinMatch = normRaw.match(/(\d{1,2})\s*時\s*(\d{1,2})\s*分?\s*から\s*(\d+)\s*分(間)?/);
+  const fromMinMatch = !untilNow.found
+    ? normRaw.match(/(\d{1,2})\s*時\s*(\d{1,2})\s*分?\s*から\s*(\d+)\s*分(間)?/)
+    : null;
   if (fromMinMatch && times.length === 1) {
     startTime = window.parseBulkWorkMemoHmToken_(`${fromMinMatch[1]}時${fromMinMatch[2]}分`);
     const startMin = parseInt(fromMinMatch[2], 10);
@@ -26782,10 +27047,10 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
       const h = parseInt(fromMinMatch[1], 10);
       endTime = `${String(h).padStart(2, '0')}:${String(Math.min(59, z)).padStart(2, '0')}`;
     }
-  } else if (times.length >= 2) {
+  } else if (!untilNow.found && times.length >= 2) {
     startTime = times[0].hm;
     endTime = times[times.length - 1].hm;
-  } else if (times.length === 1) {
+  } else if (!untilNow.found && times.length === 1) {
     const only = times[0].hm;
     const timeRole = typeof window.bulkWorkMemoLineTimeRole_ === 'function'
       ? window.bulkWorkMemoLineTimeRole_(raw, normRaw)
@@ -26824,18 +27089,18 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
       endTime = only;
       startTime = prevEndHm || '';
     }
-  } else if (prevEndHm) {
+  } else if (!untilNow.found && prevEndHm) {
     startTime = prevEndHm;
   }
 
   // 「同時に〇〇」を切り出し → メイン作業マッチは残り文だけで行う
-  let concurrentGuess = { mainText: raw, concurrentWorks: [] };
+  let concurrentGuess = { mainText: textForWork, concurrentWorks: [] };
   try {
     if (typeof window.guessBulkWorkMemoConcurrentWorks_ === 'function') {
-      concurrentGuess = window.guessBulkWorkMemoConcurrentWorks_(raw, startTime) || concurrentGuess;
+      concurrentGuess = window.guessBulkWorkMemoConcurrentWorks_(textForWork, startTime) || concurrentGuess;
     }
   } catch (e) {}
-  const workMatchText = String(concurrentGuess.mainText || raw).trim() || raw;
+  const workMatchText = String(concurrentGuess.mainText || textForWork).trim() || textForWork;
 
   let work = { workName: '', guessedName: '', isRest: false, matched: false, candidates: [], primaryCandidates: [], maybeCandidates: [] };
   let cropGuess = '';
@@ -26931,6 +27196,10 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
 window.isBulkWorkMemoContinuationLine_ = (line) => {
   const raw = String(line || '').trim();
   if (!raw) return false;
+  if (typeof window.detectBulkWorkMemoUntilNowPhrase_ === 'function'
+      && window.detectBulkWorkMemoUntilNowPhrase_(raw).found) {
+    return false;
+  }
   const times = (typeof window.extractBulkWorkMemoTimes_ === 'function')
     ? window.extractBulkWorkMemoTimes_(raw)
     : [];
@@ -26948,20 +27217,30 @@ window.makeBulkWorkMemoFallbackDraft_ = (line, prevEndHm, idx) => {
   let endTime = '';
   let startTime = prevEndHm || '';
   try {
-    const times = window.extractBulkWorkMemoTimes_(line) || [];
-    if (times.length >= 2) {
-      startTime = times[0].hm;
-      endTime = times[times.length - 1].hm;
-    } else if (times.length === 1) {
-      const role = typeof window.bulkWorkMemoLineTimeRole_ === 'function'
-        ? window.bulkWorkMemoLineTimeRole_(line, line)
-        : 'end';
-      if (role === 'start') {
+    const untilNow = (typeof window.detectBulkWorkMemoUntilNowPhrase_ === 'function')
+      ? window.detectBulkWorkMemoUntilNowPhrase_(line)
+      : { found: false };
+    if (untilNow.found) {
+      endTime = (typeof window.getBulkWorkMemoNowHm_ === 'function')
+        ? window.getBulkWorkMemoNowHm_()
+        : '';
+      startTime = prevEndHm || '';
+    } else {
+      const times = window.extractBulkWorkMemoTimes_(line) || [];
+      if (times.length >= 2) {
         startTime = times[0].hm;
-        endTime = '';
-      } else {
-        endTime = times[0].hm;
-        startTime = prevEndHm || '';
+        endTime = times[times.length - 1].hm;
+      } else if (times.length === 1) {
+        const role = typeof window.bulkWorkMemoLineTimeRole_ === 'function'
+          ? window.bulkWorkMemoLineTimeRole_(line, line)
+          : 'end';
+        if (role === 'start') {
+          startTime = times[0].hm;
+          endTime = '';
+        } else {
+          endTime = times[0].hm;
+          startTime = prevEndHm || '';
+        }
       }
     }
   } catch (e) {}
@@ -27026,17 +27305,27 @@ window.parseBulkWorkMemo_ = (text) => {
     if (row.endTime) prevEnd = row.endTime;
     else if (row.startTime) prevEnd = row.startTime;
   });
-  if (drafts.length && !String(drafts[0].startTime || '').trim() && String(drafts[0].endTime || '').trim()) {
-    try {
-      const ymd = window._bulkWorkMemoDate || (typeof window.getBulkWorkMemoTodayYmd_ === 'function'
-        ? window.getBulkWorkMemoTodayYmd_() : '');
+  // 終了だけある行（「今の時間まで」「10時まで」など）の開始＝その日の最遅作業終了
+  try {
+    const ymd = window._bulkWorkMemoDate || (typeof window.getBulkWorkMemoTodayYmd_ === 'function'
+      ? window.getBulkWorkMemoTodayYmd_() : '');
+    let dayLatest = '';
+    if (ymd && typeof window.getLatestEndTimeForResume === 'function') {
+      dayLatest = window.getLatestEndTimeForResume(ymd) || '';
+    }
+    if (!dayLatest && ymd && typeof window.getCachedLatestWorkEnd === 'function') {
+      dayLatest = window.getCachedLatestWorkEnd(ymd) || '';
+    }
+    drafts.forEach((d, i) => {
+      if (!d || String(d.startTime || '').trim() || !String(d.endTime || '').trim()) return;
       let prev = '';
-      if (typeof window.getLatestEndTimeForResume === 'function') {
-        prev = window.getLatestEndTimeForResume(ymd) || '';
+      if (i > 0) {
+        const p = drafts[i - 1];
+        prev = String((p && (p.endTime || p.startTime)) || '').trim();
       }
-      if (prev) drafts[0].startTime = prev;
-    } catch (e) {}
-  }
+      d.startTime = prev || dayLatest || '';
+    });
+  } catch (e) {}
   return drafts;
 };
 
@@ -27053,7 +27342,7 @@ window.openBulkWorkMemoModal_ = () => {
     if (typeof customAlert === 'function') customAlert('画面を開けませんでした。ページを再読み込みしてください。');
     return;
   }
-  const sample = '例:\n8時半まで システム開発\n10時まで定植準備　（機械移動、試験品種）（対外打ち合わせも含む）\n10時18分までシステム開発、同時にシステムMTG\n11時11分で新交差点 植え付け完了 5枚　右から19畝から21畝まで\n12時で定食 完了。ハウス 向かいに2枚、右から1畝。片付けまで完了\n18:30まで除草剤（ハウス向かい下、ハウス向かい、南林角、堆肥場横、アグリ横③）\n21:00ケイトウ防除終了';
+  const sample = '例:\n8時半まで システム開発\n今の時間まで 吉住さん前排水\n10時まで定植準備　（機械移動、試験品種）（対外打ち合わせも含む）\n10時18分までシステム開発、同時にシステムMTG\n11時11分で新交差点 植え付け完了 5枚　右から19畝から21畝まで\n12時で定食 完了。ハウス 向かいに2枚、右から1畝。片付けまで完了\n18:30まで除草剤（ハウス向かい下、ハウス向かい、南林角、堆肥場横、アグリ横③）\n21:00ケイトウ防除終了';
   window.fillAppModalHtml_(`
     <div style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
       ${window.buildBulkWorkMemoModalHeaderHtml_('📋 メモから一括入力', '1行＝1件。メモに「休憩」とあれば<b>休憩登録</b>として分けます。作業と休憩は確認画面で別枠です。')}
@@ -27062,6 +27351,7 @@ window.openBulkWorkMemoModal_ = () => {
       <label class="form-label" style="margin:0 0 4px;">📝 作業メモ</label>
       <textarea id="bulk_work_memo_text" class="form-input" rows="12" placeholder="${sample.replace(/"/g, '&quot;')}" style="margin-bottom:12px; font-size:13px; line-height:1.45; resize:vertical;"></textarea>
       <button type="button" id="bulk_work_memo_parse_btn" onclick="parseAndReviewBulkWorkMemo_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">✂️ 時間ごとに分けて確認</button>
+      <button type="button" onclick="openBulkWorkMemoHistoryModal_()" style="width:100%; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-bottom:8px;">📜 一括入力履歴（日付のまとめ直し）</button>
       <button type="button" onclick="closeBulkWorkMemoModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer;">キャンセル</button>
     </div>`);
   modalEl.style.display = 'flex';
@@ -31322,6 +31612,7 @@ window.executeBulkWorkMemoRegistration_ = async () => {
   const userSnap = (typeof currentUser !== 'undefined' && currentUser)
     ? currentUser
     : (localStorage.getItem('passionMapUserName') || '');
+  const batchId = 'bb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
   const savedItems = [];
   let savedAnyRest = false;
   const maintMasterQueued = { symptoms: new Set(), contents: new Set(), parts: new Set() };
@@ -31354,7 +31645,9 @@ window.executeBulkWorkMemoRegistration_ = async () => {
           workName: '昼休憩',
           startTime: start || '',
           endTime: end || '',
-          workDate: ymd
+          workDate: ymd,
+          bulkBatchId: batchId,
+          isLunchOnly: true
         });
         continue;
       }
@@ -31385,6 +31678,7 @@ window.executeBulkWorkMemoRegistration_ = async () => {
             }))
           : [],
         fromBulkMemo: true,
+        bulkBatchId: batchId,
         recordKind: isRestSave ? 'rest' : 'work'
       };
       const maintId = String(d.maintenanceToolId || '').trim();
@@ -31482,7 +31776,9 @@ window.executeBulkWorkMemoRegistration_ = async () => {
         workName: data.workName,
         startTime: data.startTime,
         endTime: data.endTime,
-        workDate: ymd
+        workDate: ymd,
+        bulkBatchId: batchId,
+        polyIds: targetIds.slice()
       });
     }
     if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
@@ -31515,11 +31811,42 @@ window.executeBulkWorkMemoRegistration_ = async () => {
           workName: '昼休憩',
           startTime: optionalLunchStart,
           endTime: optionalLunchEnd,
-          workDate: ymd
+          workDate: ymd,
+          bulkBatchId: batchId,
+          isLunchOnly: true
         });
         savedAnyRest = true;
       } else if (typeof customAlert === 'function') {
         customAlert('昼休憩の連動登録に失敗しました。作業の登録は完了しています。');
+      }
+    }
+    if (typeof window.saveBulkWorkMemoHistoryEntry_ === 'function') {
+      try {
+        const preview = drafts.slice(0, 4).map(d => String(d.workName || d.rawLine || '').trim()).filter(Boolean).join(' / ');
+        const lunchItem = savedItems.find(it => it && it.isLunchOnly && it.startTime && it.endTime);
+        window.saveBulkWorkMemoHistoryEntry_({
+          batchId: batchId,
+          workDate: ymd,
+          savedAt: Date.now(),
+          userName: userSnap,
+          itemCount: savedItems.filter(it => it && !it.isLunchOnly).length || savedItems.length,
+          preview: preview,
+          lunch: lunchItem ? {
+            start: lunchItem.startTime || '',
+            end: lunchItem.endTime || ''
+          } : null,
+          items: savedItems.map(it => ({
+            recordId: it.localId || '',
+            polyId: it.polyId || '',
+            polyIds: Array.isArray(it.polyIds) ? it.polyIds.slice() : (it.polyId ? [it.polyId] : []),
+            workName: it.workName || '',
+            startTime: it.startTime || '',
+            endTime: it.endTime || '',
+            isLunchOnly: !!it.isLunchOnly
+          }))
+        });
+      } catch (e) {
+        console.warn('一括入力履歴の保存に失敗', e);
       }
     }
     window._bulkWorkMemoDrafts = [];
@@ -31530,7 +31857,8 @@ window.executeBulkWorkMemoRegistration_ = async () => {
       lunchEnd: att.hasLunch ? att.lunchEnd : (optionalLunchDone ? optionalLunchEnd : ''),
       clockOutTime: att.clockOutTime || '',
       clockOutLabel: att.clockOutLabel || '',
-      workDate: ymd
+      workDate: ymd,
+      bulkBatchId: batchId
     });
   } catch (e) {
     if (typeof customAlert === 'function') customAlert(e.message || '一括登録に失敗しました。');
@@ -31553,6 +31881,7 @@ window.showBulkWorkMemoSavedModal_ = (savedItems, attendanceOpts) => {
   if (!modalEl || typeof window.fillAppModalHtml_ !== 'function') return;
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const workDate = String(att.workDate || (items[0] && items[0].workDate) || window._bulkWorkMemoDate || '');
+  const batchId = String(att.bulkBatchId || (items[0] && items[0].bulkBatchId) || '').trim();
   const rows = items.map((it, i) => {
     const safePoly = String(it.polyId || '__global__').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const safeId = String(it.localId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -31592,14 +31921,23 @@ window.showBulkWorkMemoSavedModal_ = (savedItems, attendanceOpts) => {
         <button type="button" onclick="skipBulkWorkMemoClockOut_()" style="width:100%; background:#fff; color:#666; border:1px solid #ccc; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">退勤はしない</button>
       </div>`;
   }
+  const safeBatch = String(batchId).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const dateFixHtml = batchId
+    ? `<div style="background:#E3F2FD; border:1px solid #90CAF9; border-radius:8px; padding:10px; margin-bottom:12px;">
+        <div style="font-size:12px; color:#1565C0; line-height:1.4; margin-bottom:8px;">📅 作業日を間違えた場合は、この一括入力の日付をまとめて直せます。</div>
+        <button type="button" onclick="openBulkWorkMemoHistoryDetail_('${safeBatch}')" style="width:100%; background:#1565C0; color:#fff; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">📅 この一括入力の日付を変更</button>
+      </div>`
+    : '';
   window.fillAppModalHtml_(`
     <div style="background:#fff; width:100%; max-width:420px; max-height:88vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
       ${window.buildBulkWorkMemoModalHeaderHtml_('✅ 登録完了', workDate ? `作業日 <b>${esc(workDate)}</b> ／ ${items.length}件を登録しました。` : `${items.length}件を登録しました。`)}
       ${linkHtml}
+      ${dateFixHtml}
       ${clockOutHtml}
       <div style="font-size:12px; color:#666; margin-bottom:12px; line-height:1.4;">必要なら下の「編集」から1件ずつ詳細を直せます（圃場・詳細作業・写真など）。</div>
       <div style="margin-bottom:12px;">${rows}</div>
       <button type="button" onclick="closeBulkWorkMemoModal_(); if(typeof openMyPage==='function') openMyPage();" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:13px; font-weight:bold; cursor:pointer; margin-bottom:8px;">📋 マイページで確認</button>
+      <button type="button" onclick="openBulkWorkMemoHistoryModal_()" style="width:100%; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-bottom:8px;">📜 一括入力履歴</button>
       ${att.clockOutTime ? '' : '<button type="button" onclick="closeBulkWorkMemoModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer;">閉じる</button>'}
     </div>`);
   modalEl.style.display = 'flex';
@@ -31620,6 +31958,509 @@ window.editBulkWorkMemoSavedItem_ = (polyId, recordId) => {
   if (typeof window.editRecord === 'function') {
     try { activePolyId = polyId || null; } catch (e) {}
     window.editRecord(recordId, 'work');
+  }
+};
+
+/** 一括入力履歴（端末保存・ユーザー別） */
+window.getBulkWorkMemoHistoryCacheKey_ = () => {
+  const user = String(
+    (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || 'anon'
+  ).replace(/\s+/g, '');
+  return 'passionMapBulkWorkMemoHistory:' + (user || 'anon');
+};
+
+window.loadBulkWorkMemoHistory_ = () => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(window.getBulkWorkMemoHistoryCacheKey_()) || '[]');
+    return Array.isArray(raw) ? raw : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+window.persistBulkWorkMemoHistory_ = (list) => {
+  const arr = Array.isArray(list) ? list.slice(0, 40) : [];
+  try {
+    localStorage.setItem(window.getBulkWorkMemoHistoryCacheKey_(), JSON.stringify(arr));
+  } catch (e) {
+    console.warn('一括入力履歴の保存失敗', e);
+  }
+};
+
+window.saveBulkWorkMemoHistoryEntry_ = (entry) => {
+  if (!entry || !entry.batchId) return;
+  const list = window.loadBulkWorkMemoHistory_();
+  let lunch = null;
+  if (entry.lunch && (entry.lunch.start || entry.lunch.end)) {
+    lunch = {
+      start: String(entry.lunch.start || '').trim(),
+      end: String(entry.lunch.end || '').trim()
+    };
+  } else if (Array.isArray(entry.items)) {
+    const li = entry.items.find(it => it && it.isLunchOnly && (it.startTime || it.endTime));
+    if (li) lunch = { start: String(li.startTime || '').trim(), end: String(li.endTime || '').trim() };
+  }
+  const next = {
+    batchId: String(entry.batchId),
+    workDate: String(entry.workDate || '').slice(0, 10),
+    savedAt: Number(entry.savedAt) || Date.now(),
+    userName: String(entry.userName || ''),
+    itemCount: Number(entry.itemCount) || (Array.isArray(entry.items) ? entry.items.length : 0),
+    preview: String(entry.preview || '').slice(0, 120),
+    lunch: lunch,
+    items: Array.isArray(entry.items) ? entry.items.map(it => ({
+      recordId: String(it.recordId || ''),
+      polyId: String(it.polyId || ''),
+      polyIds: Array.isArray(it.polyIds) ? it.polyIds.map(String) : [],
+      workName: String(it.workName || ''),
+      startTime: String(it.startTime || ''),
+      endTime: String(it.endTime || ''),
+      isLunchOnly: !!it.isLunchOnly
+    })) : []
+  };
+  const filtered = list.filter(x => x && x.batchId !== next.batchId);
+  filtered.unshift(next);
+  window.persistBulkWorkMemoHistory_(filtered);
+};
+
+window.getBulkWorkMemoHistoryEntry_ = (batchId) => {
+  const id = String(batchId || '').trim();
+  if (!id) return null;
+  return window.loadBulkWorkMemoHistory_().find(x => x && x.batchId === id) || null;
+};
+
+/** 地図上の記録からバッチIDでレコードを収集（同期後の正式ID含む） */
+window.collectBulkWorkMemoBatchRecords_ = (batchId) => {
+  const id = String(batchId || '').trim();
+  const found = [];
+  const seen = new Set();
+  const polys = (typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons : {};
+  Object.keys(polys).forEach(pid => {
+    const p = polys[pid];
+    if (!p || !Array.isArray(p.photos)) return;
+    p.photos.forEach(ph => {
+      if (!ph || !ph.data) return;
+      if (String(ph.data.bulkBatchId || '').trim() !== id) return;
+      const rid = String(ph.id || (ph.data && ph.data.recordId) || '').trim();
+      const key = rid || (pid + ':' + String(ph.data.startTime || '') + ':' + String(ph.data.workName || ''));
+      if (seen.has(key)) return;
+      seen.add(key);
+      found.push({
+        recordId: rid,
+        polyId: pid,
+        polyIds: [pid],
+        workName: String(ph.data.workName || ''),
+        startTime: String(ph.data.startTime || ''),
+        endTime: String(ph.data.endTime || ''),
+        workDate: String(ph.data.workDate || ''),
+        data: ph.data,
+        photo: ph
+      });
+    });
+  });
+  return found;
+};
+
+window.resolveBulkWorkMemoHistoryRecordIds_ = (batchId) => {
+  const entry = window.getBulkWorkMemoHistoryEntry_(batchId);
+  const fromMap = window.collectBulkWorkMemoBatchRecords_(batchId);
+  const idSet = {};
+  fromMap.forEach(r => {
+    if (r.recordId) idSet[r.recordId] = true;
+  });
+  if (entry && Array.isArray(entry.items)) {
+    entry.items.forEach(it => {
+      if (!it || it.isLunchOnly) return;
+      const rid = String(it.recordId || '').trim();
+      if (!rid) return;
+      // local_ は地図上で正式IDに置換済みなら地図側を優先
+      if (rid.indexOf('local_') === 0) {
+        const match = fromMap.find(r =>
+          String(r.workName || '') === String(it.workName || '')
+          && String(r.startTime || '') === String(it.startTime || '')
+        );
+        if (match && match.recordId) idSet[match.recordId] = true;
+        else idSet[rid] = true;
+      } else {
+        idSet[rid] = true;
+      }
+    });
+  }
+  return Object.keys(idSet);
+};
+
+/** 未同期キューの作業日も合わせて直す */
+window.patchPendingBulkWorkMemoSyncJobsDate_ = (batchId, newYmd) => {
+  const id = String(batchId || '').trim();
+  const ymd = String(newYmd || '').slice(0, 10);
+  if (!id || !ymd) return;
+  const patchJob = (job) => {
+    if (!job || !job.data) return;
+    if (String(job.data.bulkBatchId || '').trim() !== id) return;
+    job.data.workDate = ymd;
+  };
+  (window._recordSyncQueue || []).forEach(patchJob);
+  if (window._recordSyncCurrentJob) patchJob(window._recordSyncCurrentJob);
+  try {
+    if (typeof window.loadPersistedRecordSyncJobs_ === 'function') {
+      const jobs = window.loadPersistedRecordSyncJobs_() || [];
+      let changed = false;
+      jobs.forEach(j => {
+        if (j && j.data && String(j.data.bulkBatchId || '').trim() === id) {
+          j.data.workDate = ymd;
+          changed = true;
+          if (typeof window.savePersistedRecordSyncJob_ === 'function') {
+            window.savePersistedRecordSyncJob_(j);
+          }
+        }
+      });
+      if (changed) { /* persisted individually */ }
+    }
+  } catch (e) {}
+};
+
+window.applyBulkWorkMemoBatchDateLocally_ = (batchId, newYmd) => {
+  const id = String(batchId || '').trim();
+  const ymd = (typeof window.normalizeDateStr === 'function')
+    ? (window.normalizeDateStr(newYmd) || String(newYmd || '').slice(0, 10))
+    : String(newYmd || '').slice(0, 10);
+  if (!id || !ymd) return { updated: 0, oldDates: [] };
+  const displayDate = ymd.replace(/-/g, '/');
+  const oldDates = new Set();
+  let updated = 0;
+  const polys = (typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons : {};
+  Object.keys(polys).forEach(pid => {
+    const p = polys[pid];
+    if (!p || !Array.isArray(p.photos)) return;
+    p.photos.forEach(ph => {
+      if (!ph || !ph.data) return;
+      if (String(ph.data.bulkBatchId || '').trim() !== id) return;
+      const prev = String(ph.data.workDate || '').slice(0, 10);
+      if (prev) oldDates.add(prev);
+      ph.data.workDate = ymd;
+      ph.date = displayDate;
+      updated++;
+    });
+    if (updated && typeof updatePolygonColor === 'function') {
+      try { updatePolygonColor(pid); } catch (e) {}
+    }
+  });
+  window.patchPendingBulkWorkMemoSyncJobsDate_(id, ymd);
+  return { updated: updated, oldDates: Array.from(oldDates) };
+};
+
+/** 一括履歴の昼休憩を新しい作業日へ移す（端末キャッシュ） */
+window.applyBulkWorkMemoBatchLunchDateLocally_ = (oldYmd, newYmd, lunch) => {
+  const from = (typeof window.normalizeDateStr === 'function')
+    ? (window.normalizeDateStr(oldYmd) || String(oldYmd || '').slice(0, 10))
+    : String(oldYmd || '').slice(0, 10);
+  const to = (typeof window.normalizeDateStr === 'function')
+    ? (window.normalizeDateStr(newYmd) || String(newYmd || '').slice(0, 10))
+    : String(newYmd || '').slice(0, 10);
+  if (!from || !to || from === to) return { moved: false };
+  const start = String((lunch && lunch.start) || '').trim();
+  const end = String((lunch && lunch.end) || '').trim();
+  let startVal = start;
+  let endVal = end;
+
+  // キャッシュの昼休憩ヒント
+  try {
+    const hint = (typeof window.getCachedLunchHint === 'function')
+      ? window.getCachedLunchHint(from)
+      : null;
+    if (hint && hint.registered !== false) {
+      if (!startVal) startVal = String(hint.start || '').trim();
+      if (!endVal) endVal = String(hint.end || '').trim();
+    }
+    if (startVal && endVal && typeof window.saveCachedLunchHint === 'function') {
+      window.saveCachedLunchHint({
+        registered: true,
+        enabled: true,
+        dateYmd: to,
+        start: startVal,
+        end: endVal
+      });
+    }
+  } catch (e) {}
+
+  // tracking.js の昼休憩ローカル
+  try {
+    if (startVal && endVal && typeof window.saveLunchBreak === 'function') {
+      window.saveLunchBreak({
+        registered: true,
+        enabled: true,
+        dateYmd: to,
+        start: startVal,
+        end: endVal
+      });
+    }
+  } catch (e) {}
+
+  // 休憩キャッシュ（昼休憩行）を日付移動
+  try {
+    if (typeof window.getCachedRestBreaks === 'function' && typeof window.saveCachedRestBreaks === 'function') {
+      const fromRests = window.getCachedRestBreaks(from) || [];
+      const stay = [];
+      const move = [];
+      fromRests.forEach(r => {
+        if (!r) return;
+        const w = String(r.workName || '');
+        const isLunch = w === '昼休憩' || w.indexOf('昼休憩') >= 0;
+        const timeMatch = (!startVal && !endVal)
+          || (String(r.start || '') === startVal && String(r.end || '') === endVal)
+          || isLunch;
+        if (isLunch && timeMatch) move.push(Object.assign({}, r, { dateYmd: to }));
+        else stay.push(r);
+      });
+      if (move.length) {
+        window.saveCachedRestBreaks(from, stay);
+        const toRests = (window.getCachedRestBreaks(to) || []).slice();
+        move.forEach(m => {
+          const exists = toRests.some(r =>
+            r && String(r.workName || '') === String(m.workName || '')
+            && String(r.start || '') === String(m.start || '')
+            && String(r.end || '') === String(m.end || '')
+          );
+          if (!exists) toRests.push(m);
+        });
+        window.saveCachedRestBreaks(to, toRests);
+      }
+    }
+  } catch (e) {}
+
+  if (typeof window.syncTrackingUI === 'function') {
+    try { window.syncTrackingUI(); } catch (e) {}
+  } else if (typeof window.updateRestNoticeCardUI === 'function') {
+    try { window.updateRestNoticeCardUI(); } catch (e) {}
+  }
+  return { moved: !!(startVal && endVal), start: startVal, end: endVal };
+};
+
+window.getBulkWorkMemoHistoryLunch_ = (entry) => {
+  if (!entry) return null;
+  if (entry.lunch && (entry.lunch.start || entry.lunch.end)) {
+    return {
+      start: String(entry.lunch.start || '').trim(),
+      end: String(entry.lunch.end || '').trim()
+    };
+  }
+  if (Array.isArray(entry.items)) {
+    const li = entry.items.find(it => {
+      if (!it) return false;
+      if (it.isLunchOnly) return true;
+      const w = String(it.workName || '');
+      return w === '昼休憩' || w.indexOf('昼休憩') >= 0;
+    });
+    if (li) {
+      return {
+        start: String(li.startTime || '').trim(),
+        end: String(li.endTime || '').trim()
+      };
+    }
+  }
+  return null;
+};
+
+window.openBulkWorkMemoHistoryModal_ = () => {
+  const modalEl = document.getElementById('modal');
+  if (!modalEl || typeof window.fillAppModalHtml_ !== 'function') return;
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const list = window.loadBulkWorkMemoHistory_();
+  const rows = list.length
+    ? list.map(entry => {
+        const safeId = String(entry.batchId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const when = entry.savedAt
+          ? (() => {
+              const d = new Date(entry.savedAt);
+              if (isNaN(d.getTime())) return '';
+              return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            })()
+          : '';
+        return `
+          <div style="border:1px solid #e0e0e0; border-radius:10px; padding:12px; margin-bottom:10px; background:#fafafa;">
+            <div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start;">
+              <div style="min-width:0; flex:1;">
+                <div style="font-size:14px; font-weight:bold; color:#E65100;">📅 ${esc(entry.workDate || '—')}</div>
+                <div style="font-size:12px; color:#555; margin-top:4px;">${esc(entry.itemCount || 0)}件${when ? ` ／ 登録 ${esc(when)}` : ''}${(entry.lunch && entry.lunch.start) ? ` ／ 🍱${esc(entry.lunch.start)}〜${esc(entry.lunch.end || '')}` : ''}</div>
+                <div style="font-size:11px; color:#777; margin-top:4px; line-height:1.35;">${esc(entry.preview || '（内容プレビューなし）')}</div>
+              </div>
+              <button type="button" onclick="openBulkWorkMemoHistoryDetail_('${safeId}')" style="flex-shrink:0; background:#1565C0; color:#fff; border:none; border-radius:8px; padding:10px 12px; font-size:12px; font-weight:bold; cursor:pointer;">日付変更</button>
+            </div>
+          </div>`;
+      }).join('')
+    : `<div style="padding:16px; text-align:center; color:#888; font-size:13px; line-height:1.5;">まだ一括入力の履歴がありません。<br>これから登録した一括入力がここに残ります。</div>`;
+  window.fillAppModalHtml_(`
+    <div style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
+      ${window.buildBulkWorkMemoModalHeaderHtml_('📜 一括入力履歴', '日付を1日ずらして登録してしまったときなど、まとめて直せます。')}
+      <div style="margin-bottom:12px;">${rows}</div>
+      <button type="button" onclick="openBulkWorkMemoModal_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer; margin-bottom:8px;">← 一括入力に戻る</button>
+      <button type="button" onclick="closeBulkWorkMemoModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
+    </div>`);
+  modalEl.style.display = 'flex';
+  window._bulkWorkMemoActive = true;
+  if (typeof window.setBulkWorkMemoModalClass_ === 'function') window.setBulkWorkMemoModalClass_('open');
+  try { modalEl.onclick = null; } catch (e) {}
+};
+
+window.openBulkWorkMemoHistoryDetail_ = (batchId) => {
+  const entry = window.getBulkWorkMemoHistoryEntry_(batchId);
+  const fromMap = window.collectBulkWorkMemoBatchRecords_(batchId);
+  const modalEl = document.getElementById('modal');
+  if (!modalEl || typeof window.fillAppModalHtml_ !== 'function') return;
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const curDate = (entry && entry.workDate)
+    || (fromMap[0] && fromMap[0].workDate)
+    || window.getBulkWorkMemoTodayYmd_();
+  const items = (entry && Array.isArray(entry.items) && entry.items.length)
+    ? entry.items
+    : fromMap.map(r => ({
+        workName: r.workName,
+        startTime: r.startTime,
+        endTime: r.endTime,
+        isLunchOnly: false
+      }));
+  const lunchInfo = (typeof window.getBulkWorkMemoHistoryLunch_ === 'function')
+    ? window.getBulkWorkMemoHistoryLunch_(entry)
+    : null;
+  const lunchNote = lunchInfo
+    ? ` ／ 🍱昼休憩 ${lunchInfo.start || '--:--'}〜${lunchInfo.end || '--:--'} も連動`
+    : '';
+  const itemRows = items.map((it, i) => `
+    <div style="padding:8px 0; border-bottom:1px solid #eee; font-size:12px; color:#333;">
+      <b>${i + 1}. ${esc(it.workName || '（無名）')}</b>
+      <span style="color:#666; margin-left:6px;">${esc(it.startTime || '--:--')}〜${esc(it.endTime || '--:--')}</span>
+      ${it.isLunchOnly ? '<span style="color:#E65100; margin-left:4px;">（昼休憩）</span>' : ''}
+    </div>`).join('');
+  const safeId = String(batchId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  window._bulkWorkMemoHistoryEditBatchId = String(batchId || '');
+  window.fillAppModalHtml_(`
+    <div style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
+      ${window.buildBulkWorkMemoModalHeaderHtml_('📅 一括入力の日付変更', 'この一括で登録した作業・昼休憩の日付をまとめて変更します。')}
+      <div style="background:#FFF8E1; border:2px solid #FFB74D; border-radius:10px; padding:12px; margin-bottom:12px;">
+        <label class="form-label" style="margin:0 0 6px; color:#E65100;">新しい作業日</label>
+        <input type="date" id="bulk_work_memo_history_date" class="form-input" value="${esc(curDate)}" style="margin:0; font-size:15px; font-weight:bold;">
+        <div style="font-size:11px; color:#666; margin-top:6px; line-height:1.4;">現在: <b>${esc(curDate)}</b> ／ ${items.length}件${lunchNote}</div>
+      </div>
+      <div style="margin-bottom:12px;">${itemRows || '<div style="color:#888; font-size:12px;">対象の作業が見つかりませんでした。</div>'}</div>
+      <button type="button" id="bulk_work_memo_history_apply_btn" onclick="applyBulkWorkMemoHistoryDateChange_('${safeId}')" style="width:100%; background:#2E7D32; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">✅ この日付にまとめて変更</button>
+      <button type="button" onclick="openBulkWorkMemoHistoryModal_()" style="width:100%; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-bottom:8px;">← 履歴一覧へ</button>
+      <button type="button" onclick="closeBulkWorkMemoModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
+    </div>`);
+  modalEl.style.display = 'flex';
+  window._bulkWorkMemoActive = true;
+  if (typeof window.setBulkWorkMemoModalClass_ === 'function') window.setBulkWorkMemoModalClass_('open');
+  try { modalEl.onclick = null; } catch (e) {}
+};
+
+window.applyBulkWorkMemoHistoryDateChange_ = async (batchId) => {
+  const id = String(batchId || window._bulkWorkMemoHistoryEditBatchId || '').trim();
+  const dateEl = document.getElementById('bulk_work_memo_history_date');
+  const newYmd = dateEl && dateEl.value
+    ? ((typeof window.normalizeDateStr === 'function') ? (window.normalizeDateStr(dateEl.value) || dateEl.value) : dateEl.value)
+    : '';
+  if (!id || !newYmd) {
+    if (typeof customAlert === 'function') customAlert('日付を選択してください。');
+    return;
+  }
+  const entry = window.getBulkWorkMemoHistoryEntry_(id);
+  const oldYmd = entry ? String(entry.workDate || '') : '';
+  if (oldYmd && oldYmd === newYmd) {
+    if (typeof customAlert === 'function') customAlert('日付は変更されていません。');
+    return;
+  }
+  const btn = document.getElementById('bulk_work_memo_history_apply_btn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '変更中...';
+  }
+  try {
+    const localRes = window.applyBulkWorkMemoBatchDateLocally_(id, newYmd);
+    const lunchInfo = (typeof window.getBulkWorkMemoHistoryLunch_ === 'function')
+      ? window.getBulkWorkMemoHistoryLunch_(entry)
+      : null;
+    let lunchMoved = null;
+    if (lunchInfo && (lunchInfo.start || lunchInfo.end)) {
+      const lunchFrom = oldYmd || String((entry && entry.workDate) || '').slice(0, 10) || newYmd;
+      lunchMoved = window.applyBulkWorkMemoBatchLunchDateLocally_(lunchFrom, newYmd, lunchInfo);
+    }
+    const recordIds = window.resolveBulkWorkMemoHistoryRecordIds_(id)
+      .filter(rid => rid && String(rid).indexOf('local_') !== 0);
+    const user = String(
+      (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || ''
+    ).trim();
+    if (typeof callGAS === 'function' && (recordIds.length || id)) {
+      try {
+        await callGAS('batchUpdateWorkRecordDates', {
+          userName: user,
+          newWorkDate: newYmd,
+          recordIds: recordIds,
+          bulkBatchId: id
+        });
+      } catch (e) {
+        console.warn('サーバー日付一括更新エラー', e);
+        if (typeof customAlert === 'function') {
+          customAlert('端末上は変更しましたが、サーバー更新に失敗しました。通信後にもう一度お試しください。\n' + (e.message || e));
+        }
+      }
+    }
+    if (typeof callGAS === 'function' && user && lunchInfo && oldYmd && lunchInfo.start && lunchInfo.end) {
+      try {
+        await callGAS('moveLunchBreakRecordDate', {
+          userName: user,
+          oldWorkDate: oldYmd,
+          newWorkDate: newYmd,
+          startTime: lunchInfo.start,
+          endTime: lunchInfo.end
+        });
+      } catch (e) {
+        console.warn('昼休憩日付のサーバー更新エラー', e);
+      }
+    }
+    // 履歴エントリ更新
+    if (entry) {
+      entry.workDate = newYmd;
+      if (entry.lunch) entry.lunch = Object.assign({}, entry.lunch);
+      if (Array.isArray(entry.items)) {
+        entry.items.forEach(it => {
+          if (it) it.workDate = newYmd;
+        });
+      }
+      const list = window.loadBulkWorkMemoHistory_();
+      const idx = list.findIndex(x => x && x.batchId === id);
+      if (idx >= 0) list[idx] = entry;
+      window.persistBulkWorkMemoHistory_(list);
+    }
+    const datesToRefresh = new Set([newYmd].concat(localRes.oldDates || []).concat(oldYmd ? [oldYmd] : []));
+    datesToRefresh.forEach(ymd => {
+      if (ymd && typeof window.recomputeCachedLatestWorkEnd === 'function') {
+        try { window.recomputeCachedLatestWorkEnd(ymd); } catch (e) {}
+      }
+    });
+    if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
+      try { window.updateInitDataCacheWithLocalRecords_(); } catch (e) {}
+    }
+    if (typeof window.loadMyAttendance === 'function' && document.getElementById('myAttendanceBody')) {
+      try { window.loadMyAttendance(); } catch (e) {}
+    }
+    if (typeof window.refreshMyPageRecentWorkRecords_ === 'function'
+        && document.getElementById('myRecentWorkRecordsBody')) {
+      try { window.refreshMyPageRecentWorkRecords_({ reloadInit: false }); } catch (e) {}
+    }
+    const lunchMsg = (lunchMoved && lunchMoved.moved)
+      ? `（昼休憩 ${lunchMoved.start}〜${lunchMoved.end} も連動）`
+      : '';
+    if (typeof window.showRecordSyncToast === 'function') {
+      window.showRecordSyncToast(`📅 ${localRes.updated || recordIds.length || 0}件の作業日を ${newYmd} に変更しました${lunchMsg}`, 'ok');
+    } else if (typeof customAlert === 'function') {
+      customAlert(`作業日を ${newYmd} に変更しました。${lunchMsg}`);
+    }
+    window.openBulkWorkMemoHistoryDetail_(id);
+  } catch (e) {
+    if (typeof customAlert === 'function') customAlert(e.message || '日付の変更に失敗しました。');
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '✅ この日付にまとめて変更';
+    }
   }
 };
 
@@ -32797,6 +33638,8 @@ function getWorkRecordAttendanceSummaryMap(userName) {
                         const dateYmd = normalizeDate(ph.data.workDate) || normalizeDate(ph.date);
                         if (!dateYmd) return;
 
+                        const workName = String(ph.data.workName || '').trim();
+                        const isRest = workName.includes('休憩');
                         const startTime = (ph.data.startTime || '').trim();
                         const endTime = (ph.data.endTime || '').trim();
 
@@ -32805,7 +33648,8 @@ function getWorkRecordAttendanceSummaryMap(userName) {
                         }
                         map[dateYmd].count++;
 
-                        if (startTime) {
+                        // 出勤連動と同じく休憩は最早開始に使わない
+                        if (startTime && !isRest) {
                             if (!map[dateYmd].minStart || startTime < map[dateYmd].minStart) {
                                 map[dateYmd].minStart = startTime;
                             }
@@ -32907,13 +33751,15 @@ function summarizeMyAttendanceList(rows, userName) {
     const workMap = getWorkRecordAttendanceSummaryMap(userName);
     const existingDates = new Set(sessions.map(s => s.dateYmd));
 
-    // A. 既存の打刻セッションへの補正
+    // A. 既存の打刻セッションへの補正（作業の最早開始が出勤より早ければ合わせる）
     sessions.forEach(s => {
         const wInfo = workMap[s.dateYmd];
         if (wInfo) {
-            if (s.inTime === '—' && wInfo.minStart) {
+            if (wInfo.minStart && (s.inTime === '—' || wInfo.minStart < s.inTime)) {
                 s.inTime = wInfo.minStart;
-                s.note = s.note ? `${s.note} (作業記録より)` : '作業記録より';
+                if (s.note !== '出勤中' && s.note !== '出勤中（端末）' && String(s.note || '').indexOf('出勤中') !== 0) {
+                    s.note = s.note ? `${s.note} (作業記録より)` : '作業記録より';
+                }
             }
             if (s.outTime === '未登録' && wInfo.maxEnd && !s.open) {
                 s.outTime = wInfo.maxEnd;
@@ -33180,6 +34026,9 @@ window.openMyPage = function() {
                 <div style="color:#888; font-size:13px;">読み込み中...</div>
             </div>
         </div>
+
+        <button type="button" onclick="openBulkWorkMemoHistoryModal_()"
+          style="width:100%; background:#fff; color:#1565C0; border:1px solid #90CAF9; padding:11px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:15px;">📜 一括入力履歴（日付のまとめ直し）</button>
         
         <h4 style="color:#2e7d32; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
             <span>📋 直近3日の作業記録 (<span id="myRecentWorkRecordsCount">${myRecentRecords.length}</span>件)</span>

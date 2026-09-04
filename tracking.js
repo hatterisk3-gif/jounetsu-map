@@ -1074,6 +1074,8 @@
       }
     } catch (e) {}
   }
+  window.setLocalClockInTime = setLocalClockInTime;
+  window.getClockInTimeStr = getClockInTimeStr;
 
   function buildClockInEditHtml(clockInTime, workDateYmd) {
     const t = String(clockInTime || '08:00').replace(/"/g, '&quot;');

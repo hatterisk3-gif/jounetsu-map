@@ -40,6 +40,7 @@ const API_ACTIONS = {
   "deletePolygonBatch": function (p) { return deletePolygonBatchData(p.ids, p.userName); },
   "saveRecord": function (p) { return saveRecord(p.id, p.name, p.author, p.recordType, p.data, p.photos); },
   "updateRecordItem": function (p) { return updateRecordItem(p.id, p.recordId, p.recordType, p.data, p.photos, p.keptUrls, p.userName); },
+  "batchUpdateWorkRecordDates": function (p) { return batchUpdateWorkRecordDates(p); },
   "deleteRecordItem": function (p) { return deleteRecordItem(p.id, p.recordId, p.userName); },
   "deleteWorkRecordById": function (p) { return deleteWorkRecordById(p); },
   "cancelClockInAndDeleteTodayWorkRecords": function (p) { return cancelClockInAndDeleteTodayWorkRecords(p); },
@@ -184,9 +185,11 @@ const API_ACTIONS = {
   "getFieldMemoHistory": function (p) { return getFieldMemoHistory(p); },
   "saveTrackingData": function (p) { return saveTrackingData(p); },
   "saveLunchBreakRecord": function (p) { return saveLunchBreakRecord_(p); },
+  "moveLunchBreakRecordDate": function (p) { return moveLunchBreakRecordDate_(p); },
   "getTrackingData": function (p) { return getTrackingData(p); },
   "getOpenClockInStatus": function (p) { return getOpenClockInStatus(p); },
   "updateOpenClockInTime": function (p) { return updateOpenClockInTime(p); },
+  "updateClockInTimeForDate": function (p) { return updateClockInTimeForDate(p); },
   "getWorkRecordTimeHints": function (p) { return getWorkRecordTimeHints(p); },
   "saveWorkRecordTimeHint": function (p) { return saveWorkRecordTimeHint_(p); },
   "resetAllManureStatus": function (p) { return resetAllManureStatus(p.userName); },
@@ -6136,6 +6139,115 @@ function updateRecordItem(polyId, recordId, recordType, newData, newPhotosBase64
   return ex;
 }
 
+/**
+ * 一括入力など：複数の作業記録の作業日をまとめて変更
+ * @param {{ userName?: string, newWorkDate: string, recordIds?: string[], bulkBatchId?: string }} params
+ */
+function batchUpdateWorkRecordDates(params) {
+  try {
+    const newYmd = formatWorkDateYmd_(params && params.newWorkDate);
+    if (!newYmd) return { success: false, error: '新しい作業日が不正です' };
+    const batchId = String((params && params.bulkBatchId) || '').trim();
+    const idSet = {};
+    (Array.isArray(params && params.recordIds) ? params.recordIds : []).forEach(function (id) {
+      const s = String(id || '').trim();
+      if (s) idSet[s] = true;
+    });
+    const hasIds = Object.keys(idSet).length > 0;
+    if (!hasIds && !batchId) return { success: false, error: '対象がありません' };
+
+    const displayDate = String(newYmd).replace(/-/g, '/');
+    let sheetUpdated = 0;
+    let embeddedUpdated = 0;
+
+    // 1) 作業記録シート（D列=作業日, M列=recordId）
+    const rs = TENANT_SS.getSheetByName('作業記録');
+    if (rs && rs.getLastRow() > 1) {
+      const values = rs.getDataRange().getValues();
+      for (let i = 1; i < values.length; i++) {
+        const rid = String(values[i][12] || '').trim();
+        if (!rid) continue;
+        let hit = hasIds && !!idSet[rid];
+        if (!hit && batchId) {
+          // バッチIDは埋め込み側にしか無いことがある → シートは recordIds 優先
+        }
+        if (hit) {
+          rs.getRange(i + 1, 4).setValue(newYmd);
+          sheetUpdated++;
+        }
+      }
+    }
+
+    // 2) 圃場／看板の埋め込み photos JSON
+    const parentSheets = ['圃場', '看板'];
+    for (let s = 0; s < parentSheets.length; s++) {
+      const sheet = TENANT_SS.getSheetByName(parentSheets[s]);
+      if (!sheet || sheet.getLastRow() < 2) continue;
+      const lastRow = sheet.getLastRow();
+      const lastCol = Math.max(10, sheet.getLastColumn());
+      const values = sheet.getRange(2, 1, lastRow, lastCol).getValues();
+      for (let i = 0; i < values.length; i++) {
+        const pc = 10;
+        let ex = [];
+        if (values[i][pc - 1]) {
+          try { ex = JSON.parse(values[i][pc - 1]); } catch (e) { ex = []; }
+        }
+        if ((!ex || !ex.length) && values[i][6]) {
+          try { ex = JSON.parse(values[i][6]); } catch (e) { ex = []; }
+        }
+        if (!Array.isArray(ex) || !ex.length) continue;
+        let changed = false;
+        for (let j = 0; j < ex.length; j++) {
+          const item = ex[j];
+          if (!item) continue;
+          const rid = String(item.id || item.url || '').trim();
+          const data = item.data || {};
+          const itemBatch = String(data.bulkBatchId || '').trim();
+          const hit = (hasIds && rid && idSet[rid]) || (batchId && itemBatch && itemBatch === batchId);
+          if (!hit) continue;
+          if (!item.data) item.data = {};
+          item.data.workDate = newYmd;
+          item.date = displayDate;
+          if (rid) idSet[rid] = true;
+          changed = true;
+          embeddedUpdated++;
+        }
+        if (changed) {
+          sheet.getRange(i + 2, pc).setValue(JSON.stringify(ex));
+        }
+      }
+    }
+
+    // 3) 埋め込みから拾った ID でシート未更新分を補完
+    if (rs && rs.getLastRow() > 1) {
+      const values = rs.getDataRange().getValues();
+      for (let i = 1; i < values.length; i++) {
+        const rid = String(values[i][12] || '').trim();
+        if (!rid || !idSet[rid]) continue;
+        const cur = formatWorkDateYmd_(values[i][3]);
+        if (cur !== newYmd) {
+          rs.getRange(i + 1, 4).setValue(newYmd);
+          sheetUpdated++;
+        }
+      }
+    }
+
+    const userName = String((params && params.userName) || '').trim();
+    if (userName) {
+      writeLog(userName, '一括入力日付変更', newYmd, 'batch=' + (batchId || '') + ' / sheet=' + sheetUpdated + ' / emb=' + embeddedUpdated);
+    }
+    return {
+      success: true,
+      newWorkDate: newYmd,
+      sheetUpdated: sheetUpdated,
+      embeddedUpdated: embeddedUpdated,
+      recordIds: Object.keys(idSet)
+    };
+  } catch (e) {
+    throw new Error('一括日付変更エラー: ' + e.message);
+  }
+}
+
 function deleteRecordItem(polyId, recordId, user) {
   const found = findSheetAndRowById(polyId); if (!found) throw new Error("対象なし");
   const pType = found.sheet.getName();
@@ -9500,6 +9612,104 @@ function saveLunchBreakRecord_(params) {
   return { ok: true, id: recordId };
 }
 
+/**
+ * 昼休憩記録シート＋トラッキングの「昼休憩(開始-終了)」行の作業日を移す
+ * （一括入力履歴の日付まとめ直し用）
+ */
+function moveLunchBreakRecordDate_(params) {
+  try {
+    params = params || {};
+    const userName = String(params.userName || '').replace(/\s+/g, '');
+    const oldYmd = formatWorkDateYmd_(params.oldWorkDate || params.fromDate);
+    const newYmd = formatWorkDateYmd_(params.newWorkDate || params.toDate);
+    const startTime = String(params.startTime || params.start || '').trim();
+    const endTime = String(params.endTime || params.end || '').trim();
+    if (!userName) return { success: false, error: 'ユーザー名がありません' };
+    if (!oldYmd || !newYmd) return { success: false, error: '日付が不正です' };
+    if (oldYmd === newYmd) return { success: true, lunchSheetUpdated: 0, trackingUpdated: 0, skipped: true };
+
+    const padHm = (hm) => {
+      const m = String(hm || '').match(/^(\d{1,2}):(\d{2})$/);
+      if (!m) return String(hm || '');
+      return ('0' + m[1]).slice(-2) + ':' + m[2];
+    };
+    const startPad = startTime ? padHm(startTime) : '';
+    const endPad = endTime ? padHm(endTime) : '';
+
+    let lunchSheetUpdated = 0;
+    const sheet = TENANT_SS.getSheetByName('昼休憩記録');
+    if (sheet && sheet.getLastRow() > 1) {
+      const values = sheet.getDataRange().getValues();
+      for (let i = 1; i < values.length; i++) {
+        const rowUser = String(values[i][0] || '').replace(/\s+/g, '');
+        if (!rowUser) continue;
+        if (rowUser !== userName && userName.indexOf(rowUser) < 0 && rowUser.indexOf(userName) < 0) continue;
+        const rowYmd = formatWorkDateYmd_(values[i][1]);
+        if (rowYmd !== oldYmd) continue;
+        const rowStart = padHm(values[i][2]);
+        const rowEnd = padHm(values[i][3]);
+        if (startPad && rowStart && rowStart !== startPad) continue;
+        if (endPad && rowEnd && rowEnd !== endPad) continue;
+        sheet.getRange(i + 1, 2).setValue(newYmd);
+        lunchSheetUpdated++;
+      }
+    }
+
+    // トラッキング: 種類「昼休憩(HH:MM-HH:MM)」の日時を新日付へ
+    let trackingUpdated = 0;
+    const tr = TENANT_SS.getSheetByName('トラッキング');
+    if (tr && tr.getLastRow() > 1) {
+      const lastRow = tr.getLastRow();
+      const startRow = Math.max(2, lastRow - 7999);
+      const numRows = lastRow - startRow + 1;
+      const values = tr.getRange(startRow, 1, numRows, 5).getValues();
+      for (let i = 0; i < values.length; i++) {
+        const rowUser = String(values[i][1] || '').replace(/\s+/g, '');
+        if (!rowUser) continue;
+        if (rowUser !== userName && userName.indexOf(rowUser) < 0 && rowUser.indexOf(userName) < 0) continue;
+        const type = String(values[i][4] || '');
+        if (type.indexOf('昼休憩') !== 0) continue;
+        const tObj = new Date(values[i][0]);
+        if (isNaN(tObj.getTime())) continue;
+        const rowYmd = Utilities.formatDate(tObj, 'JST', 'yyyy-MM-dd');
+        if (rowYmd !== oldYmd) continue;
+        // 時刻レンジが指定されていれば種類文字列でも照合
+        if (startPad && endPad) {
+          const expect = '昼休憩(' + startPad + '-' + endPad + ')';
+          const expect2 = '昼休憩(' + startPad.replace(/^0/, '') + '-' + endPad.replace(/^0/, '') + ')';
+          if (type !== expect && type.indexOf(startPad) < 0 && type !== expect2) {
+            // 緩い一致: 開始時刻が種類に含まれるか
+            const loose = type.indexOf(startPad) >= 0 || type.indexOf(startPad.replace(/^0/, '')) >= 0;
+            if (!loose) continue;
+          }
+        }
+        const hh = Utilities.formatDate(tObj, 'JST', 'HH');
+        const mm = Utilities.formatDate(tObj, 'JST', 'mm');
+        const ss = Utilities.formatDate(tObj, 'JST', 'ss');
+        const y = Number(newYmd.slice(0, 4));
+        const mo = Number(newYmd.slice(5, 7));
+        const d = Number(newYmd.slice(8, 10));
+        const next = new Date(y, mo - 1, d, Number(hh), Number(mm), Number(ss) || 0, 0);
+        tr.getRange(startRow + i, 1).setValue(next.toISOString());
+        trackingUpdated++;
+      }
+    }
+
+    writeLog(String(params.userName || userName), '昼休憩日付変更', newYmd,
+      oldYmd + '→' + newYmd + (startPad ? (' / ' + startPad + '〜' + endPad) : '') +
+      ' / sheet=' + lunchSheetUpdated + ' / track=' + trackingUpdated);
+    return {
+      success: true,
+      oldWorkDate: oldYmd,
+      newWorkDate: newYmd,
+      lunchSheetUpdated: lunchSheetUpdated,
+      trackingUpdated: trackingUpdated
+    };
+  } catch (e) {
+    throw new Error('昼休憩日付変更エラー: ' + e.message);
+  }
+}
+
 function ensureWorkRecordBreakMinsColumn_(sheet) {
   if (!sheet) return 16;
   const lastCol = Math.max(1, sheet.getLastColumn());
@@ -10235,6 +10445,86 @@ function updateOpenClockInTime(params) {
     };
   } catch (e) {
     throw new Error('出勤時間更新エラー: ' + e.message);
+  }
+}
+
+/**
+ * 指定日の出勤打刻時刻を更新する（開いている出勤でも、退勤済みのその日出勤でも可）。
+ * 作業記録の最早開始に合わせて出勤を直す用途。
+ */
+function updateClockInTimeForDate(params) {
+  try {
+    const userName = String((params && params.userName) || '').replace(/\s+/g, '');
+    const clockInTime = String((params && params.clockInTime) || '').trim();
+    let dateYmd = String((params && params.clockInDateYmd) || '').trim();
+    if (!userName) return { success: false, error: 'ユーザー名がありません' };
+    const hm = clockInTime.match(/^(\d{1,2}):(\d{2})$/);
+    if (!hm) return { success: false, error: '出勤時間が不正です' };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateYmd)) {
+      return { success: false, error: '日付が不正です' };
+    }
+    const padHm = ('0' + hm[1]).slice(-2) + ':' + hm[2];
+
+    let timeMs = params && params.time ? Number(params.time) : NaN;
+    if (isNaN(timeMs) || timeMs <= 0) {
+      const y = Number(dateYmd.slice(0, 4));
+      const mo = Number(dateYmd.slice(5, 7));
+      const d = Number(dateYmd.slice(8, 10));
+      const hh = Number(hm[1]);
+      const mm = Number(hm[2]);
+      timeMs = new Date(y, mo - 1, d, hh, mm, 0, 0).getTime();
+    }
+
+    const ss = TENANT_SS;
+    const sheet = ss.getSheetByName('トラッキング');
+    if (!sheet || sheet.getLastRow() <= 1) {
+      // 打刻が無い日は新規出勤行を追加
+      if (!sheet) {
+        const created = ss.insertSheet('トラッキング');
+        created.appendRow(['日時', 'ユーザー名', '緯度', '経度', '種類']);
+        created.appendRow([new Date(timeMs).toISOString(), params.userName, '', '', '出勤']);
+      } else {
+        sheet.appendRow([new Date(timeMs).toISOString(), params.userName, '', '', '出勤']);
+      }
+      return { success: true, clockInTime: padHm, clockInDateYmd: dateYmd, created: true };
+    }
+
+    const lastRow = sheet.getLastRow();
+    const startRow = Math.max(2, lastRow - 7999);
+    const numRows = lastRow - startRow + 1;
+    const values = sheet.getRange(startRow, 1, numRows, 5).getValues();
+
+    // その日の「出勤 / アプリ起動」行を新しい順に探す（退勤済みでも可）
+    let targetRow = -1;
+    for (let i = values.length - 1; i >= 0; i--) {
+      const rowUser = String(values[i][1] || '').replace(/\s+/g, '');
+      if (!rowUser) continue;
+      if (rowUser !== userName && userName.indexOf(rowUser) < 0 && rowUser.indexOf(userName) < 0) continue;
+      const type = String(values[i][4] || '');
+      const isIn = (type === '出勤' || type === 'アプリ起動');
+      if (!isIn) continue;
+      const tObj = new Date(values[i][0]);
+      if (isNaN(tObj.getTime())) continue;
+      const rowYmd = Utilities.formatDate(tObj, 'JST', 'yyyy-MM-dd');
+      if (rowYmd !== dateYmd) continue;
+      targetRow = startRow + i;
+      break;
+    }
+
+    if (targetRow < 0) {
+      sheet.appendRow([new Date(timeMs).toISOString(), params.userName, '', '', '出勤']);
+      return { success: true, clockInTime: padHm, clockInDateYmd: dateYmd, created: true };
+    }
+
+    sheet.getRange(targetRow, 1).setValue(new Date(timeMs).toISOString());
+    return {
+      success: true,
+      clockInTime: padHm,
+      clockInDateYmd: dateYmd,
+      updatedRow: targetRow
+    };
+  } catch (e) {
+    throw new Error('日付指定の出勤時間更新エラー: ' + e.message);
   }
 }
 
