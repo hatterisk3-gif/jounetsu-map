@@ -20104,17 +20104,24 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         let isEdit = !!job.isEdit && !isLocalOnly;
         let editId = isEdit ? String(job.editId || '').trim() : '';
-        if (isEdit && editId && activePolyId && typeof loadedPolygons !== 'undefined') {
-          const p = loadedPolygons[activePolyId];
-          const exists = p && Array.isArray(p.photos)
-            && p.photos.some(ph => ph && (ph.id === editId || ph.id === localId));
-          if (!exists) {
-            isEdit = false;
-            editId = '';
-          }
-        } else if (isEdit && !activePolyId) {
+        if (isEdit && editId.indexOf('local_') === 0) {
           isEdit = false;
           editId = '';
+        }
+        // 編集IDがある場合、圃場なし／__global__ でも上書き更新を維持（saveRecord新規追加に落とさない）
+        if (isEdit && editId && activePolyId && typeof loadedPolygons !== 'undefined') {
+          const p = loadedPolygons[activePolyId];
+          const existsOnActive = p && Array.isArray(p.photos)
+            && p.photos.some(ph => ph && (ph.id === editId || ph.id === localId));
+          if (!existsOnActive) {
+            const otherIds = (typeof window.findRecordTargetPolyIds_ === 'function')
+              ? window.findRecordTargetPolyIds_(editId).filter(id => id && id !== '__global__')
+              : [];
+            if (otherIds.length) {
+              activePolyId = otherIds[0];
+            }
+            // 見つからなくても editId が正式IDなら updateWorkRecordById で上書きする
+          }
         }
         return Object.assign({}, job, {
           targetIds: targetIds,
@@ -20507,34 +20514,78 @@ function createSignboardMarker(name, pos, icon, id) {
         const serverTargetIds = window.normalizeRecordSyncTargetIdsForServer_
           ? window.normalizeRecordSyncTargetIdsForServer_(job.targetIds)
           : (job.targetIds || []);
-        const canUpdate = !!(job.isEdit && job.editId && job.activePolyId && job.activePolyId !== '__global__');
+        const editId = String(job.editId || '').trim();
+        const canUpdate = !!(job.isEdit && editId && editId.indexOf('local_') !== 0);
 
         // 同期失敗した local_ は enqueue 時に isEdit=false にしている
         if (canUpdate) {
-          const updated = await callGAS('updateRecordItem', {
-            id: job.activePolyId,
-            recordId: job.editId,
-            recordType: job.recordType,
-            data: job.data,
-            photos: photos,
-            keptUrls: job.keptUrls || [],
-            userName: job.userName
-          });
-          if (job.activePolyId && loadedPolygons[job.activePolyId] && Array.isArray(updated)) {
-            // 他の未同期ローカル件を保ちつつサーバー配列へ寄せる
-            const pendingLocals = (loadedPolygons[job.activePolyId].photos || [])
-              .filter(ph => ph && ph._pendingSync && ph.id !== job.localId && String(ph.id).indexOf('local_') === 0);
-            loadedPolygons[job.activePolyId].photos = updated.concat(pendingLocals);
-            if (typeof updatePolygonColor === 'function') updatePolygonColor(job.activePolyId);
+          let polyId = String(job.activePolyId || '').trim();
+          if (!polyId || polyId === '__global__') {
+            const found = (typeof window.findRecordTargetPolyIds_ === 'function')
+              ? window.findRecordTargetPolyIds_(editId).filter(id => id && id !== '__global__')
+              : [];
+            polyId = found[0] || '';
           }
+
+          if (polyId) {
+            const updated = await callGAS('updateRecordItem', {
+              id: polyId,
+              recordId: editId,
+              recordType: job.recordType,
+              data: job.data,
+              photos: photos,
+              keptUrls: job.keptUrls || [],
+              userName: job.userName
+            });
+            if (polyId && loadedPolygons[polyId] && Array.isArray(updated)) {
+              const pendingLocals = (loadedPolygons[polyId].photos || [])
+                .filter(ph => ph && ph._pendingSync && ph.id !== job.localId && String(ph.id).indexOf('local_') === 0);
+              loadedPolygons[polyId].photos = updated.concat(pendingLocals);
+              if (typeof updatePolygonColor === 'function') updatePolygonColor(polyId);
+            }
+          } else {
+            // 圃場なし／埋め込みのみ見つからない場合もシート上書き（新規行を増やさない）
+            await callGAS('updateWorkRecordById', {
+              recordId: editId,
+              recordType: job.recordType || 'work',
+              data: job.data,
+              photos: photos,
+              keptUrls: job.keptUrls || [],
+              userName: job.userName
+            });
+            // 端末の __global__ 等も内容を確定
+            try {
+              const syncTargets = (job.targetIds && job.targetIds.length)
+                ? job.targetIds
+                : ((typeof window.findRecordTargetPolyIds_ === 'function')
+                  ? window.findRecordTargetPolyIds_(editId)
+                  : ['__global__']);
+              (syncTargets.length ? syncTargets : ['__global__']).forEach(pid => {
+                const p = loadedPolygons[pid];
+                if (!p || !Array.isArray(p.photos)) return;
+                const ph = p.photos.find(x => x && (x.id === editId || x.id === job.localId));
+                if (ph) {
+                  ph.id = editId;
+                  ph.data = job.data;
+                  ph._pendingSync = false;
+                  ph._syncFailed = false;
+                  ph._localOptimistic = false;
+                }
+              });
+            } catch (e) {}
+          }
+
           const newlyAddedIds = (job.newlyAddedIds || []).filter(Boolean);
           if (newlyAddedIds.length) {
+            // 編集時の追加圃場は同一 recordId を埋め込みに載せる必要があるが、
+            // saveRecord は新規UUIDになるため、ここでは updateWorkRecordById 後に埋め込み同期は別途。
+            // 追加圃場がある場合は既存の updateRecordItem 経路（polyIdあり）を優先している。
             const addedItems = await callGAS('saveRecord', {
               id: newlyAddedIds.join(','),
               name: job.nameStr,
               author: job.userName,
               recordType: job.recordType,
-              data: job.data,
+              data: Object.assign({}, job.data, { _linkRecordId: editId }),
               photos: photos
             });
             const newItem = addedItems[addedItems.length - 1];
@@ -32107,6 +32158,7 @@ window.applyBulkWorkMemoBatchDateLocally_ = (batchId, newYmd) => {
   Object.keys(polys).forEach(pid => {
     const p = polys[pid];
     if (!p || !Array.isArray(p.photos)) return;
+    let polyChanged = false;
     p.photos.forEach(ph => {
       if (!ph || !ph.data) return;
       if (String(ph.data.bulkBatchId || '').trim() !== id) return;
@@ -32115,12 +32167,86 @@ window.applyBulkWorkMemoBatchDateLocally_ = (batchId, newYmd) => {
       ph.data.workDate = ymd;
       ph.date = displayDate;
       updated++;
+      polyChanged = true;
     });
-    if (updated && typeof updatePolygonColor === 'function') {
+    if (polyChanged && typeof updatePolygonColor === 'function') {
       try { updatePolygonColor(pid); } catch (e) {}
     }
   });
   window.patchPendingBulkWorkMemoSyncJobsDate_(id, ymd);
+  return { updated: updated, oldDates: Array.from(oldDates) };
+};
+
+/** 未同期キューの作業日を recordId 指定で直す */
+window.patchPendingSyncJobsDateByRecordIds_ = (recordIds, newYmd) => {
+  const ymd = (typeof window.normalizeDateStr === 'function')
+    ? (window.normalizeDateStr(newYmd) || String(newYmd || '').slice(0, 10))
+    : String(newYmd || '').slice(0, 10);
+  const idSet = {};
+  (Array.isArray(recordIds) ? recordIds : []).forEach(id => {
+    const s = String(id || '').trim();
+    if (s) idSet[s] = true;
+  });
+  if (!ymd || !Object.keys(idSet).length) return;
+  const patchJob = (job) => {
+    if (!job) return;
+    const lid = String(job.localId || job.editId || '').trim();
+    const eid = String(job.editId || '').trim();
+    if (!idSet[lid] && !idSet[eid]) return;
+    if (!job.data) job.data = {};
+    job.data.workDate = ymd;
+  };
+  (window._recordSyncQueue || []).forEach(patchJob);
+  try {
+    const raw = localStorage.getItem('passionMapPendingRecordSync');
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        arr.forEach(patchJob);
+        localStorage.setItem('passionMapPendingRecordSync', JSON.stringify(arr));
+      }
+    }
+  } catch (e) {}
+};
+
+/** 選択した作業記録の作業日を端末側でまとめて変更 */
+window.applyWorkRecordDatesLocallyByIds_ = (recordIds, newYmd) => {
+  const ymd = (typeof window.normalizeDateStr === 'function')
+    ? (window.normalizeDateStr(newYmd) || String(newYmd || '').slice(0, 10))
+    : String(newYmd || '').slice(0, 10);
+  const idSet = {};
+  (Array.isArray(recordIds) ? recordIds : []).forEach(id => {
+    const s = String(id || '').trim();
+    if (s) idSet[s] = true;
+  });
+  if (!ymd || !Object.keys(idSet).length) return { updated: 0, oldDates: [] };
+  const displayDate = ymd.replace(/-/g, '/');
+  const oldDates = new Set();
+  let updated = 0;
+  const polys = (typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons : {};
+  Object.keys(polys).forEach(pid => {
+    const p = polys[pid];
+    if (!p || !Array.isArray(p.photos)) return;
+    let polyChanged = false;
+    p.photos.forEach(ph => {
+      if (!ph) return;
+      const rid = String(ph.id || (ph.data && ph.data.recordId) || '').trim();
+      if (!rid || !idSet[rid]) return;
+      if (!ph.data) ph.data = {};
+      const prev = (typeof window.normalizeDateStr === 'function')
+        ? (window.normalizeDateStr(ph.data.workDate || ph.date) || '')
+        : String(ph.data.workDate || '').slice(0, 10);
+      if (prev) oldDates.add(prev);
+      ph.data.workDate = ymd;
+      ph.date = displayDate;
+      updated++;
+      polyChanged = true;
+    });
+    if (polyChanged && typeof updatePolygonColor === 'function') {
+      try { updatePolygonColor(pid); } catch (e) {}
+    }
+  });
+  window.patchPendingSyncJobsDateByRecordIds_(Object.keys(idSet), ymd);
   return { updated: updated, oldDates: Array.from(oldDates) };
 };
 
@@ -33137,7 +33263,11 @@ window.refreshMyPageRecentWorkRecords_ = async function(opts) {
 
     if (countEl) countEl.textContent = String(records.length);
     window._myPageRecentWorkRecordsCache = records.slice();
-    bodyEl.innerHTML = window.renderMyWorkRecordsGroupedHtml(records, '直近3日の作業記録はまだありません。');
+    const st = (typeof window.getMyPageWorkDateSelectState_ === 'function')
+      ? window.getMyPageWorkDateSelectState_() : null;
+    const bar = (st && st.active && st.source === 'mypage' && typeof window.buildMyPageWorkDateSelectBarHtml_ === 'function')
+      ? window.buildMyPageWorkDateSelectBarHtml_() : '';
+    bodyEl.innerHTML = bar + window.renderMyWorkRecordsGroupedHtml(records, '直近3日の作業記録はまだありません。');
     if (statusEl) {
         statusEl.textContent = serverOk ? '' : '（サーバー取得に失敗したため、端末データのみ表示）';
     }
@@ -33183,7 +33313,12 @@ window.refreshMyWorkHistoryDetail_ = async function() {
 
     if (historyLoad) historyLoad.done();
     if (sub) sub.innerText = `全 ${all.length} 件（新しい日付から）`;
-    body.innerHTML = window.renderMyWorkRecordsGroupedHtml(all, '作業記録はまだありません。');
+    window._myPageAllWorkRecordsCache = all.slice();
+    const st = (typeof window.getMyPageWorkDateSelectState_ === 'function')
+      ? window.getMyPageWorkDateSelectState_() : null;
+    const bar = (st && st.active && st.source === 'history' && typeof window.buildMyPageWorkDateSelectBarHtml_ === 'function')
+      ? window.buildMyPageWorkDateSelectBarHtml_() : '';
+    body.innerHTML = bar + window.renderMyWorkRecordsGroupedHtml(all, '作業記録はまだありません。');
 };
 
 /** ログインユーザーの作業記録を loadedPolygons から収集。allowedYmds があればその日付のみ */
@@ -33398,6 +33533,7 @@ window.renderMyWorkRecordCardHtml = function(rec) {
     const timeSpan = d.startTime ? `⏰ ${d.startTime} 〜 ${d.endTime || '--:--'} (${d.totalTime || '--'}${breakHint})` : (rec.time ? `🕒 ${rec.time}` : '');
     const safePolyId = String(rec.polyId || '').replace(/'/g, "\\'");
     const safeRecId = String(rec.id || '').replace(/'/g, "\\'");
+    const recId = String(rec.id || '').trim();
     const workName = String(d.workName || '').trim();
     const workMaster = workName && Array.isArray(pdlWorkMaster)
         ? pdlWorkMaster.find(w => String((w && w.name) || '').trim() === workName)
@@ -33426,9 +33562,32 @@ window.renderMyWorkRecordCardHtml = function(rec) {
     const syncBorder = rec._syncFailed
       ? ' border:2px dashed #ef5350;'
       : (rec._pendingSync ? ' border:2px dashed #64b5f6;' : '');
+    const selectMode = !!(window._myPageWorkDateSelect && window._myPageWorkDateSelect.active);
+    const selected = selectMode && recId && window._myPageWorkDateSelect.selected.has(recId);
+    const selectBorder = selectMode
+      ? (selected ? ' outline:2px solid #2E7D32; background:#E8F5E9;' : ' outline:1px dashed #a5d6a7;')
+      : '';
+    const checkHtml = selectMode
+      ? `<label onclick="event.stopPropagation();" style="display:flex; align-items:center; flex-shrink:0; margin:0 8px 0 0; cursor:pointer;">
+            <input type="checkbox" ${selected ? 'checked' : ''}
+              onchange="toggleMyPageWorkRecordSelect_('${safeRecId}', this.checked)"
+              style="width:22px; height:22px; margin:0; accent-color:#2E7D32;">
+         </label>`
+      : '';
+    const cardClick = selectMode && recId
+      ? `onclick="toggleMyPageWorkRecordSelect_('${safeRecId}')" style="cursor:pointer;"`
+      : '';
+    const actionsHtml = selectMode
+      ? ''
+      : `<div style="display:flex; justify-content:flex-end; gap:10px; margin-top:6px; border-top:1px dashed #eee; padding-top:4px;">
+                <span onclick="window.deleteRecordFromMyPage('${safePolyId}', '${safeRecId}')" style="cursor:pointer; color:#F44336; font-size:12px; font-weight:bold;">🗑️ 削除</span>
+                <span onclick="openMyPageWorkRecordEdit('${safePolyId}', '${safeRecId}', event)" style="cursor:pointer; color:#2196F3; font-size:12px; font-weight:bold;">✏️ 編集</span>
+            </div>`;
 
     return `
-        <div style="background:#fff; border:1px solid #e0e0e0; border-left:5px solid ${workHex}; border-radius:6px; padding:10px; font-size:13px; box-shadow:0 1px 3px rgba(0,0,0,0.05);${syncBorder}">
+        <div ${cardClick} style="display:flex; align-items:stretch; background:#fff; border:1px solid #e0e0e0; border-left:5px solid ${workHex}; border-radius:6px; padding:10px; font-size:13px; box-shadow:0 1px 3px rgba(0,0,0,0.05);${syncBorder}${selectBorder}">
+            ${checkHtml}
+            <div style="min-width:0; flex:1;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; gap:8px; flex-wrap:wrap;">
                 <span style="font-size:11px; color:#666;">${timeSpan}</span>
                 ${syncBadge}
@@ -33446,12 +33605,242 @@ window.renderMyWorkRecordCardHtml = function(rec) {
             ${d.deliveryOrigin && d.deliveryOrigin.name ? `<div style="font-size:12px; color:#01579B; font-weight:bold; margin-top:3px; background:#E1F5FE; border:1px solid #81D4FA; padding:4px 8px; border-radius:6px; display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap;">📤 運搬元: ${String(d.deliveryOrigin.name).replace(/</g, '&lt;')} ${d.deliveryOrigin.lat != null && d.deliveryOrigin.lng != null ? `<a href="https://maps.google.com/?q=${d.deliveryOrigin.lat},${d.deliveryOrigin.lng}" target="_blank" rel="noopener" style="color:#0288D1; font-size:11px; text-decoration:underline; font-weight:bold;">📍 地図で開く</a>` : ''}</div>` : ''}
             ${d.deliveryDestination && d.deliveryDestination.name ? `<div style="font-size:12px; color:#01579B; font-weight:bold; margin-top:3px; background:#E1F5FE; border:1px solid #81D4FA; padding:4px 8px; border-radius:6px; display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap;">🚚 配送先: ${String(d.deliveryDestination.name).replace(/</g, '&lt;')} ${d.deliveryDestination.lat != null && d.deliveryDestination.lng != null ? `<a href="https://maps.google.com/?q=${d.deliveryDestination.lat},${d.deliveryDestination.lng}" target="_blank" rel="noopener" style="color:#0288D1; font-size:11px; text-decoration:underline; font-weight:bold;">📍 地図で開く</a>` : ''}</div>` : ''}
             ${d.comment || d.notes ? `<div style="font-size:11px; color:#555; background:#f5f5f5; padding:4px 6px; border-radius:4px; margin-top:4px; white-space:pre-wrap;">${d.comment || d.notes}</div>` : ''}
-            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:6px; border-top:1px dashed #eee; padding-top:4px;">
-                <span onclick="window.deleteRecordFromMyPage('${safePolyId}', '${safeRecId}')" style="cursor:pointer; color:#F44336; font-size:12px; font-weight:bold;">🗑️ 削除</span>
-                <span onclick="openMyPageWorkRecordEdit('${safePolyId}', '${safeRecId}', event)" style="cursor:pointer; color:#2196F3; font-size:12px; font-weight:bold;">✏️ 編集</span>
+            ${actionsHtml}
             </div>
         </div>
     `;
+};
+
+/** マイページ：作業日の複数選択モード */
+window.getMyPageWorkDateSelectState_ = function() {
+  if (!window._myPageWorkDateSelect) {
+    window._myPageWorkDateSelect = { active: false, selected: new Set(), source: 'mypage' };
+  }
+  return window._myPageWorkDateSelect;
+};
+
+window.getMyPageVisibleWorkRecords_ = function() {
+  const st = window.getMyPageWorkDateSelectState_();
+  if (st.source === 'history') {
+    if (Array.isArray(window._myPageAllWorkRecordsCache)) return window._myPageAllWorkRecordsCache;
+    return window.collectMyWorkRecords(null);
+  }
+  if (Array.isArray(window._myPageRecentWorkRecordsCache)) return window._myPageRecentWorkRecordsCache;
+  return window.collectMyWorkRecords(window.getPastYmdSet(3));
+};
+
+window.buildMyPageWorkDateSelectBarHtml_ = function() {
+  const st = window.getMyPageWorkDateSelectState_();
+  if (!st.active) return '';
+  const n = st.selected.size;
+  return `
+    <div id="myPageWorkDateSelectBar" style="position:sticky; top:0; z-index:3; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px; padding:10px; margin-bottom:10px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+      <div style="font-size:13px; font-weight:bold; color:#1B5E20; margin-bottom:8px;">📅 選択中 <span id="myPageWorkDateSelectCount">${n}</span>件 — チェックして日付をまとめて変更</div>
+      <div style="display:flex; flex-wrap:wrap; gap:8px;">
+        <button type="button" onclick="selectAllVisibleMyPageWorkRecords_(true)" style="flex:1; min-width:110px; background:#fff; color:#2E7D32; border:1px solid #81C784; border-radius:8px; padding:11px 8px; font-weight:bold; font-size:13px; cursor:pointer;">全選択</button>
+        <button type="button" onclick="selectAllVisibleMyPageWorkRecords_(false)" style="flex:1; min-width:110px; background:#fff; color:#666; border:1px solid #ccc; border-radius:8px; padding:11px 8px; font-weight:bold; font-size:13px; cursor:pointer;">全解除</button>
+        <button type="button" onclick="openMyPageBulkWorkDateChangeModal_()" style="flex:1.4; min-width:140px; background:#2E7D32; color:#fff; border:none; border-radius:8px; padding:11px 8px; font-weight:bold; font-size:13px; cursor:pointer;">📅 日付を変更</button>
+        <button type="button" onclick="setMyPageWorkDateSelectMode_(false)" style="flex:1; min-width:100px; background:#eee; color:#333; border:none; border-radius:8px; padding:11px 8px; font-weight:bold; font-size:13px; cursor:pointer;">キャンセル</button>
+      </div>
+    </div>`;
+};
+
+window.updateMyPageWorkDateSelectCountUi_ = function() {
+  const el = document.getElementById('myPageWorkDateSelectCount');
+  const st = window.getMyPageWorkDateSelectState_();
+  if (el) el.textContent = String(st.selected.size);
+};
+
+window.rerenderMyPageWorkRecordLists_ = function() {
+  const st = window.getMyPageWorkDateSelectState_();
+  const bar = window.buildMyPageWorkDateSelectBarHtml_();
+  const recentBody = document.getElementById('myRecentWorkRecordsBody');
+  if (recentBody) {
+    const records = Array.isArray(window._myPageRecentWorkRecordsCache)
+      ? window._myPageRecentWorkRecordsCache
+      : window.collectMyWorkRecords(window.getPastYmdSet(3));
+    recentBody.innerHTML = (st.active && st.source === 'mypage' ? bar : '')
+      + window.renderMyWorkRecordsGroupedHtml(records, '直近3日の作業記録はまだありません。');
+  }
+  const histBody = document.getElementById('myWorkHistoryBody');
+  if (histBody) {
+    const all = Array.isArray(window._myPageAllWorkRecordsCache)
+      ? window._myPageAllWorkRecordsCache
+      : window.collectMyWorkRecords(null);
+    histBody.innerHTML = (st.active && st.source === 'history' ? bar : '')
+      + window.renderMyWorkRecordsGroupedHtml(all, '作業記録はまだありません。');
+  }
+  const enterBtn = document.getElementById('myPageEnterDateSelectBtn');
+  if (enterBtn) {
+    enterBtn.style.display = (st.active && st.source === 'mypage') ? 'none' : '';
+  }
+  const histEnterBtn = document.getElementById('myWorkHistoryEnterDateSelectBtn');
+  if (histEnterBtn) {
+    histEnterBtn.style.display = (st.active && st.source === 'history') ? 'none' : '';
+  }
+};
+
+window.setMyPageWorkDateSelectMode_ = function(active, source) {
+  const st = window.getMyPageWorkDateSelectState_();
+  st.active = !!active;
+  if (source) st.source = source;
+  if (!st.active) st.selected = new Set();
+  else if (!(st.selected instanceof Set)) st.selected = new Set();
+  window.rerenderMyPageWorkRecordLists_();
+};
+
+window.toggleMyPageWorkRecordSelect_ = function(recordId, checked) {
+  const st = window.getMyPageWorkDateSelectState_();
+  if (!st.active) return;
+  const id = String(recordId || '').trim();
+  if (!id) return;
+  const next = (typeof checked === 'boolean') ? checked : !st.selected.has(id);
+  if (next) st.selected.add(id);
+  else st.selected.delete(id);
+  window.rerenderMyPageWorkRecordLists_();
+};
+
+window.selectAllVisibleMyPageWorkRecords_ = function(on) {
+  const st = window.getMyPageWorkDateSelectState_();
+  if (!st.active) return;
+  const records = window.getMyPageVisibleWorkRecords_();
+  if (on) {
+    records.forEach(r => {
+      const id = String((r && r.id) || '').trim();
+      if (id) st.selected.add(id);
+    });
+  } else {
+    st.selected = new Set();
+  }
+  window.rerenderMyPageWorkRecordLists_();
+};
+
+window.openMyPageBulkWorkDateChangeModal_ = function() {
+  const st = window.getMyPageWorkDateSelectState_();
+  const ids = Array.from(st.selected || []);
+  if (!ids.length) {
+    if (typeof customAlert === 'function') customAlert('作業を1件以上選択してください。');
+    return;
+  }
+  const records = window.getMyPageVisibleWorkRecords_().filter(r => r && ids.indexOf(String(r.id || '')) >= 0);
+  const dateSet = new Set();
+  records.forEach(r => {
+    const y = r.recordYmd || (r.data && r.data.workDate) || '';
+    const n = (typeof window.normalizeDateStr === 'function') ? window.normalizeDateStr(y) : String(y || '').slice(0, 10);
+    if (n) dateSet.add(n);
+  });
+  const dates = Array.from(dateSet).sort();
+  const defaultYmd = dates[0] || (typeof window.getBulkWorkMemoTodayYmd_ === 'function' ? window.getBulkWorkMemoTodayYmd_() : '');
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const preview = records.slice(0, 8).map((r, i) => {
+    const d = r.data || {};
+    return `<div style="padding:6px 0; border-bottom:1px solid #eee; font-size:12px;">${i + 1}. <b>${esc(d.workName || '作業')}</b> <span style="color:#666;">${esc(d.startTime || '--:--')}〜${esc(d.endTime || '--:--')}</span> <span style="color:#2e7d32;">${esc(r.recordYmd || '')}</span></div>`;
+  }).join('') + (records.length > 8 ? `<div style="font-size:11px; color:#888; padding-top:6px;">ほか ${records.length - 8} 件</div>` : '');
+
+  let overlay = document.getElementById('myPageBulkDateChangeOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'myPageBulkDateChangeOverlay';
+    overlay.style.cssText = 'display:none; position:fixed; z-index:10080; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.55); justify-content:center; align-items:center; padding:12px; box-sizing:border-box;';
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = `
+    <div style="background:#fff; width:100%; max-width:420px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box;" onclick="event.stopPropagation()">
+      <div style="font-size:17px; font-weight:bold; color:#1B5E20; margin-bottom:6px;">📅 選択した作業の日付変更</div>
+      <div style="font-size:12px; color:#555; margin-bottom:12px; line-height:1.45;">選択 <b>${ids.length}</b>件${dates.length ? ` ／ 現在の日付: <b>${esc(dates.join(', '))}</b>` : ''}</div>
+      <div style="background:#FFF8E1; border:2px solid #FFB74D; border-radius:10px; padding:12px; margin-bottom:12px;">
+        <label class="form-label" style="margin:0 0 6px; color:#E65100; display:block; font-weight:bold;">新しい作業日</label>
+        <input type="date" id="myPageBulkWorkDateInput" class="form-input" value="${esc(defaultYmd)}" style="margin:0; font-size:16px; font-weight:bold; width:100%; box-sizing:border-box; padding:10px;">
+      </div>
+      <div style="margin-bottom:14px;">${preview || '<div style="color:#888; font-size:12px;">対象なし</div>'}</div>
+      <button type="button" id="myPageBulkWorkDateApplyBtn" onclick="applyMyPageBulkWorkDateChange_()" style="width:100%; background:#2E7D32; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">✅ この日付にまとめて変更</button>
+      <button type="button" onclick="closeMyPageBulkWorkDateChangeModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer;">戻る</button>
+    </div>`;
+  overlay.onclick = function(e) {
+    if (e.target === overlay) window.closeMyPageBulkWorkDateChangeModal_();
+  };
+  overlay.style.display = 'flex';
+};
+
+window.closeMyPageBulkWorkDateChangeModal_ = function() {
+  const overlay = document.getElementById('myPageBulkDateChangeOverlay');
+  if (overlay) overlay.style.display = 'none';
+};
+
+window.applyMyPageBulkWorkDateChange_ = async function() {
+  const st = window.getMyPageWorkDateSelectState_();
+  const ids = Array.from(st.selected || []);
+  const dateEl = document.getElementById('myPageBulkWorkDateInput');
+  const newYmd = dateEl && dateEl.value
+    ? ((typeof window.normalizeDateStr === 'function') ? (window.normalizeDateStr(dateEl.value) || dateEl.value) : dateEl.value)
+    : '';
+  if (!ids.length) {
+    if (typeof customAlert === 'function') customAlert('作業を選択してください。');
+    return;
+  }
+  if (!newYmd) {
+    if (typeof customAlert === 'function') customAlert('日付を選択してください。');
+    return;
+  }
+  const btn = document.getElementById('myPageBulkWorkDateApplyBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '変更中...';
+  }
+  try {
+    const localRes = window.applyWorkRecordDatesLocallyByIds_(ids, newYmd);
+    const serverIds = ids.filter(id => id && String(id).indexOf('local_') !== 0);
+    const user = String(
+      (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || ''
+    ).trim();
+    if (typeof callGAS === 'function' && serverIds.length) {
+      try {
+        await callGAS('batchUpdateWorkRecordDates', {
+          userName: user,
+          newWorkDate: newYmd,
+          recordIds: serverIds
+        });
+      } catch (e) {
+        console.warn('マイページ日付一括更新エラー', e);
+        if (typeof customAlert === 'function') {
+          customAlert('端末上は変更しましたが、サーバー更新に失敗しました。通信後にもう一度お試しください。\n' + (e.message || e));
+        }
+      }
+    }
+    const datesToRefresh = new Set([newYmd].concat(localRes.oldDates || []));
+    datesToRefresh.forEach(ymd => {
+      if (ymd && typeof window.recomputeCachedLatestWorkEnd === 'function') {
+        try { window.recomputeCachedLatestWorkEnd(ymd); } catch (e) {}
+      }
+    });
+    if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
+      try { window.updateInitDataCacheWithLocalRecords_(); } catch (e) {}
+    }
+    window.closeMyPageBulkWorkDateChangeModal_();
+    window.setMyPageWorkDateSelectMode_(false);
+    if (typeof window.loadMyAttendance === 'function' && document.getElementById('myAttendanceBody')) {
+      try { window.loadMyAttendance(); } catch (e) {}
+    }
+    if (document.getElementById('myWorkHistoryBody')
+        && document.getElementById('myWorkHistoryModal')
+        && document.getElementById('myWorkHistoryModal').style.display === 'flex'
+        && typeof window.refreshMyWorkHistoryDetail_ === 'function') {
+      try { await window.refreshMyWorkHistoryDetail_(); } catch (e) {}
+    }
+    if (document.getElementById('myRecentWorkRecordsBody')
+        && typeof window.refreshMyPageRecentWorkRecords_ === 'function') {
+      try { await window.refreshMyPageRecentWorkRecords_({ reloadInit: false }); } catch (e) {}
+    }
+    const msg = `📅 ${localRes.updated || ids.length}件の作業日を ${newYmd} に変更しました`;
+    if (typeof window.showRecordSyncToast === 'function') window.showRecordSyncToast(msg, 'ok');
+    else if (typeof customAlert === 'function') customAlert(msg);
+  } catch (e) {
+    if (typeof customAlert === 'function') customAlert(e.message || '日付の変更に失敗しました。');
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '✅ この日付にまとめて変更';
+    }
+  }
 };
 
 window.renderMyWorkRecordsGroupedHtml = function(records, emptyMsg) {
@@ -33481,16 +33870,32 @@ window.openMyWorkHistoryDetail = function() {
         modal.innerHTML = `
           <div style="background:#fff; color:#333; width:94%; max-width:480px; height:88vh; max-height:88vh; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.35); display:flex; flex-direction:column; overflow:hidden;">
             <div style="padding:14px 16px; border-bottom:1px solid #e0e0e0; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-shrink:0;">
-              <div>
+              <div style="min-width:0; flex:1;">
                 <div style="font-weight:bold; font-size:16px; color:#2e7d32;">📋 作業記録（全期間）</div>
                 <div id="myWorkHistorySub" style="font-size:12px; color:#666; margin-top:2px;">読み込み中...</div>
               </div>
+              <button type="button" id="myWorkHistoryEnterDateSelectBtn" onclick="setMyPageWorkDateSelectMode_(true, 'history')"
+                style="background:#2E7D32; color:#fff; border:none; padding:8px 10px; border-radius:6px; font-weight:bold; cursor:pointer; flex-shrink:0; font-size:12px;">📅 まとめて日付変更</button>
               <button type="button" onclick="closeMyWorkHistoryDetail()"
                 style="background:#666; color:#fff; border:none; padding:8px 14px; border-radius:6px; font-weight:bold; cursor:pointer; flex-shrink:0;">閉じる</button>
             </div>
             <div id="myWorkHistoryBody" style="flex:1; overflow-y:auto; padding:12px 14px; -webkit-overflow-scrolling:touch;"></div>
           </div>`;
         document.body.appendChild(modal);
+    } else if (!document.getElementById('myWorkHistoryEnterDateSelectBtn')) {
+        const sub = document.getElementById('myWorkHistorySub');
+        const headerRow = sub && sub.parentElement && sub.parentElement.parentElement;
+        if (headerRow) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.id = 'myWorkHistoryEnterDateSelectBtn';
+            btn.textContent = '📅 まとめて日付変更';
+            btn.setAttribute('onclick', "setMyPageWorkDateSelectMode_(true, 'history')");
+            btn.style.cssText = 'background:#2E7D32; color:#fff; border:none; padding:8px 10px; border-radius:6px; font-weight:bold; cursor:pointer; flex-shrink:0; font-size:12px;';
+            const closeBtn = headerRow.querySelector('button');
+            if (closeBtn) headerRow.insertBefore(btn, closeBtn);
+            else headerRow.appendChild(btn);
+        }
     }
     const body = document.getElementById('myWorkHistoryBody');
     const sub = document.getElementById('myWorkHistorySub');
@@ -33503,6 +33908,12 @@ window.openMyWorkHistoryDetail = function() {
 };
 
 window.closeMyWorkHistoryDetail = function() {
+    const st = (typeof window.getMyPageWorkDateSelectState_ === 'function')
+      ? window.getMyPageWorkDateSelectState_() : null;
+    if (st && st.active && st.source === 'history') {
+      window.setMyPageWorkDateSelectMode_(false);
+    }
+    window.closeMyPageBulkWorkDateChangeModal_();
     const modal = document.getElementById('myWorkHistoryModal');
     if (modal) modal.style.display = 'none';
 };
@@ -33960,6 +34371,9 @@ window.closeAppModal = function() {
 };
 
 window.openMyPage = function() {
+    if (typeof window.setMyPageWorkDateSelectMode_ === 'function') {
+      try { window.setMyPageWorkDateSelectMode_(false); } catch (e) {}
+    }
     const staffId = localStorage.getItem('passionMapUserId') || '';
     const userName = localStorage.getItem('passionMapUserName') || currentUser || '';
     const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
@@ -33971,6 +34385,7 @@ window.openMyPage = function() {
         : (window.formatWorkRecordDateLabel(ymdList[0]) || '');
 
     const myRecentRecords = window.collectMyWorkRecords(recentYmds);
+    window._myPageRecentWorkRecordsCache = myRecentRecords.slice();
     const recordsHtml = `<div id="myRecentWorkRecordsStatus" style="font-size:11px; color:#888; margin-bottom:6px; min-height:14px;"></div>
     <div id="myRecentWorkRecordsBody" style="max-height:280px; overflow-y:auto; padding-right:2px; margin-bottom:10px;">${
         window.renderMyWorkRecordsGroupedHtml(myRecentRecords, '直近3日の作業記録はまだありません。')
@@ -34005,10 +34420,12 @@ window.openMyPage = function() {
         <button type="button" onclick="openBulkWorkMemoHistoryModal_()"
           style="width:100%; background:#fff; color:#1565C0; border:1px solid #90CAF9; padding:11px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:15px;">📜 一括入力履歴（日付のまとめ直し）</button>
         
-        <h4 style="color:#2e7d32; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <h4 style="color:#2e7d32; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
             <span>📋 直近3日の作業記録 (<span id="myRecentWorkRecordsCount">${myRecentRecords.length}</span>件)</span>
         </h4>
         <div style="font-size:11px; color:#666; margin-bottom:8px;">${rangeLabel}</div>
+        <button type="button" id="myPageEnterDateSelectBtn" onclick="setMyPageWorkDateSelectMode_(true, 'mypage')"
+          style="width:100%; background:#E8F5E9; color:#1B5E20; border:1px solid #81C784; padding:11px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:10px;">📅 作業を選んで日付をまとめて変更</button>
         ${recordsHtml}
 
         <h4 style="color:#c62828; margin-bottom:10px; margin-top:5px;">📧 Gmailアカウント</h4>

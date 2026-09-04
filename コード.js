@@ -40,6 +40,7 @@ const API_ACTIONS = {
   "deletePolygonBatch": function (p) { return deletePolygonBatchData(p.ids, p.userName); },
   "saveRecord": function (p) { return saveRecord(p.id, p.name, p.author, p.recordType, p.data, p.photos); },
   "updateRecordItem": function (p) { return updateRecordItem(p.id, p.recordId, p.recordType, p.data, p.photos, p.keptUrls, p.userName); },
+  "updateWorkRecordById": function (p) { return updateWorkRecordById(p); },
   "batchUpdateWorkRecordDates": function (p) { return batchUpdateWorkRecordDates(p); },
   "deleteRecordItem": function (p) { return deleteRecordItem(p.id, p.recordId, p.userName); },
   "deleteWorkRecordById": function (p) { return deleteWorkRecordById(p); },
@@ -6118,7 +6119,7 @@ function updateRecordItem(polyId, recordId, recordType, newData, newPhotosBase64
     const d = rs.getDataRange().getValues();
     for (let i = 1; i < d.length; i++) {
           if (recordType === 'work') {
-          if (d[i][12] === recordId) { 
+          if (String(d[i][12] || '') === String(recordId)) { 
             const r = i + 1;
             const breakCol = ensureWorkRecordBreakMinsColumn_(rs);
             const breakMins = Math.max(0, parseInt(newData && newData.breakMins, 10) || 0);
@@ -6138,6 +6139,105 @@ function updateRecordItem(polyId, recordId, recordType, newData, newPhotosBase64
   } 
   writeLog(user, "記録編集", found.rowData[1], `対象ID: ${recordId}`);
   return ex;
+}
+
+/**
+ * 圃場IDが無くても recordId で作業記録を上書き（マイページ編集・全体作業など）
+ * 作業記録シート＋全圃場／看板の埋め込みを同一IDで更新。新規行は追加しない。
+ */
+function updateWorkRecordById(params) {
+  params = params || {};
+  const recordId = String(params.recordId || '').trim();
+  const newData = params.data || {};
+  const user = String(params.userName || params.user || '').trim();
+  const recordType = String(params.recordType || 'work').trim() || 'work';
+  if (!recordId || recordId.indexOf('local_') === 0) {
+    throw new Error('更新対象の記録IDがありません');
+  }
+
+  let newUrls = [];
+  const newPhotosBase64 = params.photos || params.newPhotosBase64 || [];
+  if (newPhotosBase64 && newPhotosBase64.length > 0) {
+    const folders = DriveApp.getFoldersByName('圃場写真');
+    const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder('圃場写真');
+    for (let i = 0; i < newPhotosBase64.length; i++) {
+      const s = newPhotosBase64[i].base64.split(',');
+      const type = s[0].split(';')[0].replace('data:', '');
+      const file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(s[1]), type, newPhotosBase64[i].filename));
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      newUrls.push('https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w800');
+    }
+  }
+  const keptUrls = Array.isArray(params.keptUrls) ? params.keptUrls.filter(Boolean) : [];
+  const finalUrls = keptUrls.concat(newUrls);
+
+  let sheetUpdated = false;
+  let embeddedUpdated = 0;
+
+  if (recordType === 'work' || recordType === '作業') {
+    const rs = TENANT_SS.getSheetByName('作業記録');
+    if (rs && rs.getLastRow() > 1) {
+      const d = rs.getDataRange().getValues();
+      for (let i = 1; i < d.length; i++) {
+        if (String(d[i][12] || '').trim() !== recordId) continue;
+        const r = i + 1;
+        const breakCol = ensureWorkRecordBreakMinsColumn_(rs);
+        const breakMins = Math.max(0, parseInt(newData && newData.breakMins, 10) || 0);
+        const urlsCell = finalUrls.length ? finalUrls.join(' , ') : String(d[i][11] || '');
+        rs.getRange(r, 4).setValue(newData.workDate || '');
+        rs.getRange(r, 5).setValue(newData.workName || '');
+        rs.getRange(r, 6).setValue(newData.crop || '');
+        rs.getRange(r, 7).setValue(newData.startTime || '');
+        rs.getRange(r, 8).setValue(newData.endTime || '');
+        rs.getRange(r, 9).setValue(newData.workerCount || '1');
+        rs.getRange(r, 10).setValue(newData.totalTime || '');
+        rs.getRange(r, 11).setValue(newData.progressStatus || '');
+        rs.getRange(r, 12).setValue(urlsCell);
+        rs.getRange(r, 14).setValue(newData.workedRidges || '');
+        rs.getRange(r, 15).setValue(newData.nextRidge || '');
+        rs.getRange(r, breakCol).setValue(breakMins > 0 ? breakMins : '');
+        sheetUpdated = true;
+        break;
+      }
+    }
+  }
+
+  ['圃場', '看板'].forEach(function (sheetName) {
+    const sheet = TENANT_SS.getSheetByName(sheetName);
+    if (!sheet || sheet.getLastRow() < 2) return;
+    const values = sheet.getDataRange().getValues();
+    const pc = 10;
+    for (let i = 1; i < values.length; i++) {
+      let ex = [];
+      try {
+        if (values[i][pc - 1]) ex = JSON.parse(values[i][pc - 1]);
+        else if (values[i][6]) ex = JSON.parse(values[i][6]);
+      } catch (e) { ex = []; }
+      if (!Array.isArray(ex) || !ex.length) continue;
+      let changed = false;
+      for (let j = 0; j < ex.length; j++) {
+        const item = ex[j];
+        if (!item) continue;
+        const itemId = String(item.id || item.url || '').trim();
+        if (itemId !== recordId) continue;
+        item.data = newData;
+        item.type = recordType || item.type || 'work';
+        if (finalUrls.length) item.urls = finalUrls;
+        delete item.url;
+        changed = true;
+        embeddedUpdated++;
+      }
+      if (changed) {
+        sheet.getRange(i + 1, pc).setValue(JSON.stringify(ex));
+      }
+    }
+  });
+
+  if (!sheetUpdated && embeddedUpdated === 0) {
+    throw new Error('更新対象の記録が見つかりません');
+  }
+  writeLog(user, '作業記録編集(ID)', recordId, '一覧:' + (sheetUpdated ? 'Y' : 'N') + ' 埋込:' + embeddedUpdated);
+  return { success: true, recordId: recordId, sheetUpdated: sheetUpdated, embeddedUpdated: embeddedUpdated };
 }
 
 /**
