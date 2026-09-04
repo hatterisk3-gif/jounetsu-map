@@ -836,11 +836,19 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           if (typeof window.restorePendingLocalRecordsAfterInit_ === 'function') {
             window.restorePendingLocalRecordsAfterInit_(prevPendingLocals);
           }
-          // 地図データ反映後、今日の最遅終了・休憩を端末キャッシュへ温める
+          // 地図データ反映後、今日・昨日の最遅終了を実記録から再計算（古いキャッシュを捨てる）
           try {
               const now = new Date();
               const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-              if (typeof window.getLatestEndTimeForDate === 'function') window.getLatestEndTimeForDate(todayStr);
+              const yest = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+              const yestStr = `${yest.getFullYear()}-${String(yest.getMonth() + 1).padStart(2, '0')}-${String(yest.getDate()).padStart(2, '0')}`;
+              if (typeof window.recomputeCachedLatestWorkEnd === 'function') {
+                window.recomputeCachedLatestWorkEnd(todayStr);
+                window.recomputeCachedLatestWorkEnd(yestStr);
+              } else if (typeof window.getLatestEndTimeForDate === 'function') {
+                window.getLatestEndTimeForDate(todayStr);
+                window.getLatestEndTimeForDate(yestStr);
+              }
               if (typeof window.collectRestBreakRecordsForDate === 'function'
                   && typeof window.saveCachedRestBreaks === 'function') {
                 window.saveCachedRestBreaks(todayStr, window.collectRestBreakRecordsForDate(todayStr));
@@ -4177,8 +4185,7 @@ function createSignboardMarker(name, pos, icon, id) {
               if (isAuthorMatch) {
                 const phWorkDate = window.normalizeDateStr(ph.data && ph.data.workDate);
                 const phDate = window.normalizeDateStr(ph.date);
-                // 作業日を正とする（保存した日＝ph.date で別日の記録を混ぜない）
-                // 例: 昨日分を今朝まとめて登録しても、今日の開始候補に昨日の終了が入らない
+                // 作業日を正とする。作業日が無い古いデータだけ記録日にフォールバック。
                 const recordYmd = phWorkDate || phDate;
 
                 if (recordYmd === normTarget) {
@@ -4207,10 +4214,8 @@ function createSignboardMarker(name, pos, icon, id) {
             }
           });
         }
-        // 地図キャッシュが古い端末では、サーバー／他端末の終了時刻の方が遅いことがある。
-        // ただし「その日の埋め込み記録が1件でもある」ときは、別日の終了がキャッシュに残って
-        // 上書きする事故（例: 昨日21:00が今日の直前終了になる）を防ぐため、
-        // ローカルにその日の終了が無いときだけキャッシュを使う。
+        // 地図上のその日の記録が1件でもあるときは、それを正とする。
+        // 端末キャッシュ／サーバーヒントの古い「21:00」などが今日の直前終了を上書きしない。
         if (!latestEnd && !hasExclude) {
           const cachedEnd = (typeof window.getCachedLatestWorkEnd === 'function')
             ? window.getCachedLatestWorkEnd(normTarget)
@@ -4223,16 +4228,19 @@ function createSignboardMarker(name, pos, icon, id) {
             if (cachedRest != null) latestIsRest = !!cachedRest;
           }
         }
-        const hint = window._lastWorkTimeHints;
-        const hintYmd = hint && window.normalizeDateStr(hint.dateYmd || hint.todayYmd || '');
-        if (!hasExclude && hint && hintYmd === normTarget && hint.latestEndTime
-            && window.isTimeHmLater(hint.latestEndTime, latestEnd)) {
-          latestEnd = window.normalizeTimeHm(hint.latestEndTime) || hint.latestEndTime;
-          latestIsRest = !!hint.latestIsRest;
-          if (hint.latestWorkName) latestName = String(hint.latestWorkName || latestName);
+        // サーバーヒントは「ローカルにその日の記録が無いとき」だけ補完に使う
+        if (!latestEnd && !hasExclude) {
+          const hint = window._lastWorkTimeHints;
+          const hintYmd = hint && window.normalizeDateStr(hint.dateYmd || hint.todayYmd || '');
+          if (hint && hintYmd === normTarget && hint.latestEndTime) {
+            latestEnd = window.normalizeTimeHm(hint.latestEndTime) || hint.latestEndTime;
+            latestIsRest = !!hint.latestIsRest;
+            if (hint.latestWorkName) latestName = String(hint.latestWorkName || latestName);
+          }
         }
         if (latestEnd && !hasExclude) {
-          window.saveCachedLatestWorkEnd(normTarget, latestEnd, { isRest: latestIsRest });
+          // 地図上の実記録で算出した値をキャッシュに強制反映（古い21:00等が残らないように）
+          window.saveCachedLatestWorkEnd(normTarget, latestEnd, { isRest: latestIsRest, force: true });
         }
         return { end: latestEnd, isRest: latestIsRest, workName: latestName };
       };
@@ -5218,26 +5226,30 @@ function createSignboardMarker(name, pos, icon, id) {
               if (restPair || isRest) {
                 return hints;
               }
-              // 不足時間プリフィル中は開始・終了を上書きしない
-              if (el.getAttribute('data-start-source') === 'gapPrefill') {
+              // 編集中の復元時刻はサーバー補完で上書きしない
+              if (el.getAttribute('data-start-source') === 'editRecord') {
+                if (typeof window.updateStartTimeHintUI === 'function') window.updateStartTimeHintUI();
                 return hints;
               }
               if (typeof window.getGapPrefillData === 'function' && window.getGapPrefillData()) {
                 return hints;
               }
-              // ローカル解決とサーバーヒントの遅い方を採用（古い地図キャッシュで午前に巻き戻さない）
+              // ローカル（地図上のその日の記録）を正とする。
+              // サーバーヒントの方が遅いだけでは上書きしない（別日の終了が今日に混ざる事故防止）。
               const resolved = (typeof window.resolveDefaultStartTime === 'function')
                 ? window.resolveDefaultStartTime(ymd)
-                : { start: hints.latestEndTime || '', syncClockIn: false, isFallback: false, source: 'hint' };
+                : { start: '', syncClockIn: false, isFallback: false, source: 'hint' };
               let next = resolved.start || '';
-              const serverEnd = window.normalizeTimeHm
-                ? (window.normalizeTimeHm(hints.latestEndTime) || '')
-                : String(hints.latestEndTime || '');
-              if (serverEnd && window.isTimeHmLater(serverEnd, next)) {
-                next = serverEnd;
-                resolved.source = hints.latestIsRest ? 'restEnd' : 'latestEnd';
-                resolved.syncClockIn = false;
-                resolved.isFallback = false;
+              // ローカルにその日の終了が無く、サーバーだけあるときだけ補完
+              if (!next && hints.latestEndTime) {
+                next = window.normalizeTimeHm
+                  ? (window.normalizeTimeHm(hints.latestEndTime) || '')
+                  : String(hints.latestEndTime || '');
+                if (next) {
+                  resolved.source = hints.latestIsRest ? 'restEnd' : 'latestEnd';
+                  resolved.syncClockIn = false;
+                  resolved.isFallback = false;
+                }
               }
               if (next && window.shouldUpdateStartTime(cur, next, { autofill: autofill })) {
                 // onlyIfAutofill=true のときは未入力フォールバック中だけ更新
