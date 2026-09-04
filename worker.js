@@ -4207,22 +4207,21 @@ function createSignboardMarker(name, pos, icon, id) {
             }
           });
         }
-        // ※12:00→13:00 の丸めは「次作業の開始候補」用。実終了時刻の参照では行わない
-        //   （休憩セット時に「終了が今より未来」扱いになりエラーになるのを防ぐ）
         // 地図キャッシュが古い端末では、サーバー／他端末の終了時刻の方が遅いことがある。
-        // 遅い方を採用し、古い地図データでキャッシュを巻き戻さない。
-        // 編集中レコードを除外しているときは、その終了が入ったキャッシュ／ヒントは使わない
-        if (!hasExclude) {
-        const cachedEnd = (typeof window.getCachedLatestWorkEnd === 'function')
-          ? window.getCachedLatestWorkEnd(normTarget)
-          : '';
-        if (cachedEnd && window.isTimeHmLater(cachedEnd, latestEnd)) {
-          latestEnd = cachedEnd;
-          const cachedRest = (typeof window.getCachedLatestWorkEndIsRest === 'function')
-            ? window.getCachedLatestWorkEndIsRest(normTarget)
-            : null;
-          if (cachedRest != null) latestIsRest = !!cachedRest;
-        }
+        // ただし「その日の埋め込み記録が1件でもある」ときは、別日の終了がキャッシュに残って
+        // 上書きする事故（例: 昨日21:00が今日の直前終了になる）を防ぐため、
+        // ローカルにその日の終了が無いときだけキャッシュを使う。
+        if (!latestEnd && !hasExclude) {
+          const cachedEnd = (typeof window.getCachedLatestWorkEnd === 'function')
+            ? window.getCachedLatestWorkEnd(normTarget)
+            : '';
+          if (cachedEnd) {
+            latestEnd = cachedEnd;
+            const cachedRest = (typeof window.getCachedLatestWorkEndIsRest === 'function')
+              ? window.getCachedLatestWorkEndIsRest(normTarget)
+              : null;
+            if (cachedRest != null) latestIsRest = !!cachedRest;
+          }
         }
         const hint = window._lastWorkTimeHints;
         const hintYmd = hint && window.normalizeDateStr(hint.dateYmd || hint.todayYmd || '');
@@ -5322,10 +5321,12 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!dateEl || !startEl) return;
         const selectedDate = dateEl.value;
         if (!selectedDate) return;
+        // 編集中の日付変更は「日付の付け直し」が主目的。
+        // 開始・終了は、もともと付いていたその日の直前終了ベースの時刻を維持する
+        // （昨日へ移した瞬間に、昨日の最終終了へ寄せ直さない）。
+        // 新しい日の直前終了に合わせたいときだけ「前の終了に合わせる」を押す。
         if (currentEditRecordId) {
-          window.realignWorkFormTimesToDate_(selectedDate, {
-            excludeIds: window.getEditRecordExcludeIds_()
-          });
+          if (typeof window.updateStartTimeHintUI === 'function') window.updateStartTimeHintUI();
           if (typeof window.isRestWorkNameSelected === 'function' && window.isRestWorkNameSelected()
               && typeof window.refreshTodayRestBreaksUI === 'function') {
             window.refreshTodayRestBreaksUI();
