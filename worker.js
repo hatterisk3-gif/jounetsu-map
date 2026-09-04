@@ -32735,6 +32735,9 @@ window.editRecordFromMyPage = function(polyId, recordId) {
     currentEditRecordId = recordId;
     currentRecordType = 'work';
 
+    if (typeof window.closeMyPageWorkDateSelectPopup_ === 'function') {
+        try { window.closeMyPageWorkDateSelectPopup_(); } catch (e) {}
+    }
     if (typeof closeAppModal === 'function') closeAppModal();
     if (typeof closeMyWorkHistoryDetail === 'function') closeMyWorkHistoryDetail();
     const modal = document.getElementById('modal');
@@ -32888,6 +32891,9 @@ window.refreshMyPageAfterWorkRecordDelete_ = async function() {
     if (histModal && histModal.style.display === 'flex' && typeof window.refreshMyWorkHistoryDetail_ === 'function') {
         try { await window.refreshMyWorkHistoryDetail_(); } catch (e) {}
     }
+    if (typeof window.refreshMyPageWorkManagerList_ === 'function') {
+        try { await window.refreshMyPageWorkManagerList_(); } catch (e) {}
+    }
     if (typeof loadInitData === 'function') {
         loadInitData({ background: true }).then(() => {
             if (typeof window.refreshMyPageRecentWorkRecords_ === 'function') {
@@ -32895,6 +32901,9 @@ window.refreshMyPageAfterWorkRecordDelete_ = async function() {
             }
             if (histModal && histModal.style.display === 'flex' && typeof window.refreshMyWorkHistoryDetail_ === 'function') {
                 window.refreshMyWorkHistoryDetail_();
+            }
+            if (typeof window.refreshMyPageWorkManagerList_ === 'function') {
+                window.refreshMyPageWorkManagerList_();
             }
         }).catch(() => {});
     }
@@ -32912,56 +32921,7 @@ window.deleteRecordFromMyPage = async function(polyId, recordId) {
     if (typeof showLoader === 'function') showLoader("削除中...");
 
     try {
-        const rec = window.findMyWorkRecordForDelete_(recordId);
-        const d = (rec && rec.data) ? rec.data : {};
-        const isLocalOnly = recordId.indexOf('local_') === 0;
-        const pendingOnly = isLocalOnly || (Array.isArray(window._recordSyncQueue)
-          && window._recordSyncQueue.some(job => job && job.localId === recordId));
-        let deleted = false;
-
-        if (pendingOnly) {
-            deleted = true;
-        } else {
-            const inPoly = polyId && polyId !== '__global__'
-              && typeof loadedPolygons !== 'undefined' && loadedPolygons[polyId]
-              && Array.isArray(loadedPolygons[polyId].photos)
-              && loadedPolygons[polyId].photos.some(ph =>
-                ph && (ph.id === recordId || ph.url === recordId || (ph.data && ph.data.recordId === recordId))
-              );
-
-            if (inPoly) {
-                try {
-                    const updatedPhotos = await callGAS('deleteRecordItem', {
-                        id: polyId,
-                        recordId: recordId,
-                        userName: currentUser
-                    });
-                    if (Array.isArray(updatedPhotos)) {
-                        loadedPolygons[polyId].photos = updatedPhotos;
-                        deleted = true;
-                    }
-                } catch (e1) {
-                    console.warn('deleteRecordFromMyPage deleteRecordItem:', e1);
-                }
-            }
-
-            if (!deleted) {
-                const deleteParams = {
-                    recordId: recordId,
-                    userName: currentUser,
-                    workDate: d.workDate || rec.recordYmd || rec.date || '',
-                    startTime: d.startTime || rec.time || '',
-                    endTime: d.endTime || '',
-                    workName: d.workName || '',
-                    author: rec.author || currentUser || localStorage.getItem('passionMapUserName') || ''
-                };
-                const res = await callGAS('deleteWorkRecordById', deleteParams);
-                deleted = !!(res && res.success);
-            }
-        }
-
-        window.removeWorkRecordLocally_(recordId, polyId, rec);
-
+        const deleted = await window.deleteRecordFromMyPageSilent_(polyId, recordId);
         if (deleted) {
             if (typeof customAlert === 'function') customAlert("記録を削除しました");
             else if (typeof alertMsg === 'function') alertMsg("記録を削除しました");
@@ -32978,6 +32938,64 @@ window.deleteRecordFromMyPage = async function(polyId, recordId) {
     } finally {
         if (typeof hideLoader === 'function') hideLoader();
     }
+};
+
+/** 確認ダイアログなしの削除（一括削除用）。成功時 true */
+window.deleteRecordFromMyPageSilent_ = async function(polyId, recordId) {
+    recordId = String(recordId || '').trim();
+    polyId = String(polyId || '').trim();
+    if (!recordId) return false;
+
+    const rec = window.findMyWorkRecordForDelete_(recordId);
+    const d = (rec && rec.data) ? rec.data : {};
+    const isLocalOnly = recordId.indexOf('local_') === 0;
+    const pendingOnly = isLocalOnly || (Array.isArray(window._recordSyncQueue)
+      && window._recordSyncQueue.some(job => job && job.localId === recordId));
+    let deleted = false;
+
+    if (pendingOnly) {
+        deleted = true;
+    } else {
+        const inPoly = polyId && polyId !== '__global__'
+          && typeof loadedPolygons !== 'undefined' && loadedPolygons[polyId]
+          && Array.isArray(loadedPolygons[polyId].photos)
+          && loadedPolygons[polyId].photos.some(ph =>
+            ph && (ph.id === recordId || ph.url === recordId || (ph.data && ph.data.recordId === recordId))
+          );
+
+        if (inPoly) {
+            try {
+                const updatedPhotos = await callGAS('deleteRecordItem', {
+                    id: polyId,
+                    recordId: recordId,
+                    userName: currentUser
+                });
+                if (Array.isArray(updatedPhotos)) {
+                    loadedPolygons[polyId].photos = updatedPhotos;
+                    deleted = true;
+                }
+            } catch (e1) {
+                console.warn('deleteRecordFromMyPageSilent_ deleteRecordItem:', e1);
+            }
+        }
+
+        if (!deleted) {
+            const deleteParams = {
+                recordId: recordId,
+                userName: currentUser,
+                workDate: d.workDate || (rec && (rec.recordYmd || rec.date)) || '',
+                startTime: d.startTime || (rec && rec.time) || '',
+                endTime: d.endTime || '',
+                workName: d.workName || '',
+                author: (rec && rec.author) || currentUser || localStorage.getItem('passionMapUserName') || ''
+            };
+            const res = await callGAS('deleteWorkRecordById', deleteParams);
+            deleted = !!(res && res.success);
+        }
+    }
+
+    window.removeWorkRecordLocally_(recordId, polyId, rec);
+    return deleted;
 };
 
 window.normalizeDateStr = function(dateStr) {
@@ -33222,7 +33240,7 @@ window.mergeMyWorkRecordsWithAnalysis_ = function(localRecords, serverRecords, a
     return list;
 };
 
-/** マイページ：直近1週間の作業記録を最新化 */
+/** マイページ：直近2週間の作業記録を最新化 */
 window.refreshMyPageRecentWorkRecords_ = async function(opts) {
     opts = opts || {};
     const bodyEl = document.getElementById('myRecentWorkRecordsBody');
@@ -33231,7 +33249,7 @@ window.refreshMyPageRecentWorkRecords_ = async function(opts) {
     if (!bodyEl) return;
 
     const recentDays = (typeof window.getMyPageRecentWorkDays_ === 'function')
-      ? window.getMyPageRecentWorkDays_() : 7;
+      ? window.getMyPageRecentWorkDays_() : 14;
     const recentYmds = window.getPastYmdSet(recentDays);
     const ymdList = Array.from(recentYmds).sort();
     const fromYmd = ymdList[0] || '';
@@ -33265,7 +33283,7 @@ window.refreshMyPageRecentWorkRecords_ = async function(opts) {
 
     if (countEl) countEl.textContent = String(records.length);
     window._myPageRecentWorkRecordsCache = records.slice();
-    bodyEl.innerHTML = window.renderMyWorkRecordsGroupedHtml(records, '直近1週間の作業記録はまだありません。');
+    bodyEl.innerHTML = window.renderMyWorkRecordsGroupedHtml(records, '直近2週間の作業記録はまだありません。');
     if (statusEl) {
         statusEl.textContent = serverOk ? '' : '（サーバー取得に失敗したため、端末データのみ表示）';
     }
@@ -33583,9 +33601,9 @@ window.renderMyWorkRecordCardHtml = function(rec) {
     `;
 };
 
-window.getMyPageRecentWorkDays_ = function() { return 7; };
+window.getMyPageRecentWorkDays_ = function() { return 14; };
 
-/** マイページ：作業日の複数選択（専用ポップアップ） */
+/** マイページ：作業記録マネージャー（選択・日付変更・編集・削除） */
 window.getMyPageWorkDateSelectState_ = function() {
   if (!window._myPageWorkDateSelect) {
     window._myPageWorkDateSelect = { active: false, selected: new Set(), source: 'week', records: [] };
@@ -33616,8 +33634,10 @@ window.renderMyPageWorkDateSelectListHtml_ = function(records) {
     const ymd = rec.recordYmd || '';
     const d = rec.data || {};
     const recId = String(rec.id || '').trim();
+    const polyId = String(rec.polyId || '__global__').trim();
     const selected = !!(recId && st.selected.has(recId));
     const safeRecId = recId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const safePolyId = polyId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     if (ymd !== lastYmd) {
       lastYmd = ymd;
       const safeYmd = String(ymd || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -33630,21 +33650,34 @@ window.renderMyPageWorkDateSelectListHtml_ = function(records) {
     const field = String(d.multiFieldNames || '').trim() || String(rec.polyName || '').trim();
     const crop = String(d.crop || '').trim();
     html += `
-      <button type="button" onclick="toggleMyPageWorkRecordSelect_('${safeRecId}')"
-        style="display:flex; align-items:flex-start; gap:12px; width:100%; text-align:left; border:2px solid ${selected ? '#2E7D32' : '#e0e0e0'}; background:${selected ? '#E8F5E9' : '#fff'}; border-radius:10px; padding:12px; margin-bottom:8px; cursor:pointer; box-sizing:border-box;">
-        <span style="flex-shrink:0; width:26px; height:26px; border-radius:6px; border:2px solid ${selected ? '#2E7D32' : '#bbb'}; background:${selected ? '#2E7D32' : '#fff'}; color:#fff; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:bold; margin-top:2px;">${selected ? '✓' : ''}</span>
-        <span style="min-width:0; flex:1;">
-          <span style="display:block; font-size:12px; color:#666; margin-bottom:4px;">⏰ ${esc(d.startTime || '--:--')} 〜 ${esc(d.endTime || '--:--')}${d.totalTime ? `（${esc(d.totalTime)}）` : ''}</span>
-          <span style="display:block; font-size:15px; font-weight:bold; color:#222; margin-bottom:4px;">🚜 ${esc(d.workName || '作業')}</span>
-          <span style="display:block; font-size:12px; color:#555; line-height:1.4;">${field ? `📍 ${esc(field)}` : '📍 全体・共通'}${crop ? ` ／ 🌱 ${esc(crop)}` : ''}</span>
-        </span>
-      </button>`;
+      <div style="border:2px solid ${selected ? '#2E7D32' : '#e0e0e0'}; background:${selected ? '#E8F5E9' : '#fff'}; border-radius:10px; padding:12px; margin-bottom:8px; box-sizing:border-box;">
+        <div style="display:flex; align-items:flex-start; gap:12px;">
+          <button type="button" onclick="toggleMyPageWorkRecordSelect_('${safeRecId}')" aria-label="選択"
+            style="flex-shrink:0; width:28px; height:28px; border-radius:6px; border:2px solid ${selected ? '#2E7D32' : '#bbb'}; background:${selected ? '#2E7D32' : '#fff'}; color:#fff; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:bold; margin-top:2px; cursor:pointer; padding:0;">${selected ? '✓' : ''}</button>
+          <button type="button" onclick="toggleMyPageWorkRecordSelect_('${safeRecId}')"
+            style="min-width:0; flex:1; text-align:left; background:transparent; border:none; padding:0; cursor:pointer;">
+            <span style="display:block; font-size:12px; color:#666; margin-bottom:4px;">⏰ ${esc(d.startTime || '--:--')} 〜 ${esc(d.endTime || '--:--')}${d.totalTime ? `（${esc(d.totalTime)}）` : ''}</span>
+            <span style="display:block; font-size:15px; font-weight:bold; color:#222; margin-bottom:4px;">🚜 ${esc(d.workName || '作業')}</span>
+            <span style="display:block; font-size:12px; color:#555; line-height:1.4;">${field ? `📍 ${esc(field)}` : '📍 全体・共通'}${crop ? ` ／ 🌱 ${esc(crop)}` : ''}</span>
+          </button>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:10px; padding-top:8px; border-top:1px dashed #ddd;">
+          <button type="button" onclick="editRecordFromWorkManager_('${safePolyId}', '${safeRecId}', event)"
+            style="flex:1; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:10px 8px; font-size:13px; font-weight:bold; cursor:pointer;">✏️ 編集</button>
+          <button type="button" onclick="deleteRecordFromWorkManager_('${safePolyId}', '${safeRecId}', event)"
+            style="flex:1; background:#FFEBEE; color:#C62828; border:1px solid #EF9A9A; border-radius:8px; padding:10px 8px; font-size:13px; font-weight:bold; cursor:pointer;">🗑️ 削除</button>
+        </div>
+      </div>`;
   });
   return html;
 };
 
 window.ensureMyPageWorkDateSelectPopup_ = function() {
   let modal = document.getElementById('myPageWorkDateSelectModal');
+  if (modal && !modal.querySelector('[data-work-manager-title]')) {
+    try { modal.remove(); } catch (e) {}
+    modal = null;
+  }
   if (modal) return modal;
   modal = document.createElement('div');
   modal.id = 'myPageWorkDateSelectModal';
@@ -33654,8 +33687,8 @@ window.ensureMyPageWorkDateSelectPopup_ = function() {
       <div style="padding:14px 16px; border-bottom:1px solid #e0e0e0; flex-shrink:0;">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
           <div style="min-width:0; flex:1;">
-            <div style="font-weight:bold; font-size:17px; color:#1B5E20;">📅 作業を選んで日付変更</div>
-            <div id="myPageWorkDateSelectSub" style="font-size:12px; color:#666; margin-top:4px; line-height:1.4;">変更したい作業をタップして選択</div>
+            <div data-work-manager-title style="font-weight:bold; font-size:17px; color:#1B5E20;">📋 作業記録マネージャー</div>
+            <div id="myPageWorkDateSelectSub" style="font-size:12px; color:#666; margin-top:4px; line-height:1.4;">編集・削除、または選んで日付をまとめて変更</div>
           </div>
           <button type="button" onclick="closeMyPageWorkDateSelectPopup_()" aria-label="閉じる"
             style="background:#f5f5f5; color:#555; border:1px solid #ddd; width:40px; height:40px; border-radius:50%; font-size:22px; line-height:1; font-weight:bold; cursor:pointer; flex-shrink:0; padding:0;">×</button>
@@ -33669,6 +33702,7 @@ window.ensureMyPageWorkDateSelectPopup_ = function() {
       <div style="padding:12px 14px calc(12px + env(safe-area-inset-bottom, 0px)); border-top:1px solid #e0e0e0; background:#E8F5E9; flex-shrink:0;">
         <div style="font-size:13px; font-weight:bold; color:#1B5E20; margin-bottom:8px;">選択中 <span id="myPageWorkDateSelectCount">0</span>件</div>
         <button type="button" id="myPageWorkDateSelectNextBtn" onclick="openMyPageBulkWorkDateChangeModal_()" style="width:100%; background:#2E7D32; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">📅 選んだ作業の日付を変更</button>
+        <button type="button" id="myPageWorkDateSelectDeleteBtn" onclick="deleteSelectedWorkManagerRecords_()" style="width:100%; background:#C62828; color:#fff; border:none; border-radius:8px; padding:12px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:8px;">🗑️ 選んだ作業を削除</button>
         <button type="button" onclick="closeMyPageWorkDateSelectPopup_()" style="width:100%; background:#fff; color:#555; border:1px solid #ccc; border-radius:8px; padding:12px; font-weight:bold; font-size:14px; cursor:pointer;">閉じる</button>
       </div>
     </div>`;
@@ -33685,28 +33719,134 @@ window.rerenderMyPageWorkDateSelectPopup_ = function() {
   const countEl = document.getElementById('myPageWorkDateSelectCount');
   const sub = document.getElementById('myPageWorkDateSelectSub');
   const nextBtn = document.getElementById('myPageWorkDateSelectNextBtn');
+  const delBtn = document.getElementById('myPageWorkDateSelectDeleteBtn');
   if (!body) return;
   const records = Array.isArray(st.records) ? st.records : [];
   body.innerHTML = window.renderMyPageWorkDateSelectListHtml_(records);
   if (countEl) countEl.textContent = String(st.selected.size);
   if (sub) {
-    const scopeLabel = (st.source === 'all' || st.source === 'history') ? '全期間' : '直近1週間';
-    sub.textContent = scopeLabel + ' ' + records.length + '件 — 変更したい作業をタップして選択';
+    const scopeLabel = (st.source === 'all' || st.source === 'history') ? '全期間' : '直近2週間';
+    sub.textContent = scopeLabel + ' ' + records.length + '件 — 編集・削除、または選んで日付変更';
   }
+  const hasSel = st.selected.size > 0;
   if (nextBtn) {
-    nextBtn.disabled = st.selected.size === 0;
-    nextBtn.style.opacity = st.selected.size === 0 ? '0.55' : '1';
+    nextBtn.disabled = !hasSel;
+    nextBtn.style.opacity = hasSel ? '1' : '0.55';
+  }
+  if (delBtn) {
+    delBtn.disabled = !hasSel;
+    delBtn.style.opacity = hasSel ? '1' : '0.55';
   }
 };
 
-window.openMyPageWorkDateSelectPopup_ = async function(source) {
+window.editRecordFromWorkManager_ = function(polyId, recordId, evt) {
+  if (evt) {
+    try { evt.stopPropagation(); evt.preventDefault(); } catch (e) {}
+  }
+  if (typeof window.openMyPageWorkRecordEdit === 'function') {
+    window.openMyPageWorkRecordEdit(polyId, recordId, evt);
+  } else if (typeof window.editRecordFromMyPage === 'function') {
+    window.editRecordFromMyPage(polyId, recordId);
+  }
+};
+
+window.deleteRecordFromWorkManager_ = async function(polyId, recordId, evt) {
+  if (evt) {
+    try { evt.stopPropagation(); evt.preventDefault(); } catch (e) {}
+  }
+  if (typeof window.deleteRecordFromMyPage === 'function') {
+    await window.deleteRecordFromMyPage(polyId, recordId);
+  }
+};
+
+window.refreshMyPageWorkManagerList_ = async function() {
+  const st = window.getMyPageWorkDateSelectState_();
+  const modal = document.getElementById('myPageWorkDateSelectModal');
+  if (!st.active || !modal || modal.style.display === 'none') return;
+  const keepSelected = new Set(st.selected || []);
+  const source = st.source || 'week';
+  await window.openMyPageWorkDateSelectPopup_(source, { keepSelected: keepSelected, silent: true });
+};
+
+window.deleteSelectedWorkManagerRecords_ = async function() {
+  const st = window.getMyPageWorkDateSelectState_();
+  const ids = Array.from(st.selected || []);
+  if (!ids.length) {
+    if (typeof customAlert === 'function') customAlert('削除する作業を選択してください。');
+    return;
+  }
+  const ok = (typeof customConfirm === 'function')
+    ? await customConfirm(`選択した ${ids.length} 件を削除しますか？\n※復元できません`)
+    : confirm(`選択した ${ids.length} 件を削除しますか？`);
+  if (!ok) return;
+
+  const records = window.getMyPageVisibleWorkRecords_();
+  const byId = {};
+  records.forEach(r => {
+    const id = String((r && r.id) || '').trim();
+    if (id) byId[id] = r;
+  });
+
+  if (typeof showLoader === 'function') showLoader('削除中...');
+  let deleted = 0;
+  let failed = 0;
+  try {
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      const rec = byId[id] || (typeof window.findMyWorkRecordForDelete_ === 'function' ? window.findMyWorkRecordForDelete_(id) : null);
+      const polyId = String((rec && rec.polyId) || '__global__');
+      try {
+        const res = await window.deleteRecordFromMyPageSilent_(polyId, id);
+        if (res) deleted++;
+        else failed++;
+        st.selected.delete(id);
+      } catch (e) {
+        failed++;
+      }
+    }
+  } finally {
+    if (typeof hideLoader === 'function') hideLoader();
+  }
+
+  if (typeof window.refreshMyPageAfterWorkRecordDelete_ === 'function') {
+    await window.refreshMyPageAfterWorkRecordDelete_();
+  } else if (typeof window.refreshMyPageWorkManagerList_ === 'function') {
+    await window.refreshMyPageWorkManagerList_();
+  }
+
+  const msg = failed
+    ? `${deleted}件削除しました（失敗 ${failed}件）`
+    : `${deleted}件の作業記録を削除しました`;
+  if (typeof window.showRecordSyncToast === 'function') window.showRecordSyncToast(msg, failed ? 'warn' : 'ok');
+  else if (typeof customAlert === 'function') customAlert(msg);
+};
+
+window.openMyPageWorkDateSelectPopup_ = async function(source, opts) {
+  opts = opts || {};
   const st = window.getMyPageWorkDateSelectState_();
   st.active = true;
   st.source = source || 'week';
-  st.selected = new Set();
+  if (opts.keepSelected instanceof Set) st.selected = new Set(opts.keepSelected);
+  else if (!opts.silent) st.selected = new Set();
+  else if (!(st.selected instanceof Set)) st.selected = new Set();
   const modal = window.ensureMyPageWorkDateSelectPopup_();
+  // 旧UIのモーダルが残っている場合は削除ボタンを補完
+  if (!document.getElementById('myPageWorkDateSelectDeleteBtn')) {
+    const nextBtn = document.getElementById('myPageWorkDateSelectNextBtn');
+    if (nextBtn && nextBtn.parentElement) {
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.id = 'myPageWorkDateSelectDeleteBtn';
+      del.textContent = '🗑️ 選んだ作業を削除';
+      del.setAttribute('onclick', 'deleteSelectedWorkManagerRecords_()');
+      del.style.cssText = 'width:100%; background:#C62828; color:#fff; border:none; border-radius:8px; padding:12px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:8px;';
+      nextBtn.parentElement.insertBefore(del, nextBtn.nextSibling);
+    }
+  }
+  const titleEl = modal.querySelector('[data-work-manager-title]');
+  if (titleEl) titleEl.textContent = '📋 作業記録マネージャー';
   const body = document.getElementById('myPageWorkDateSelectBody');
-  if (body) {
+  if (body && !opts.silent) {
     body.innerHTML = '<div style="padding:30px 12px; text-align:center; color:#888; font-size:14px;">読み込み中...</div>';
   }
   modal.style.display = 'flex';
@@ -33737,9 +33877,8 @@ window.openMyPageWorkDateSelectPopup_ = async function(source) {
     } else {
       const days = window.getMyPageRecentWorkDays_();
       const ymds = window.getPastYmdSet(days);
-      records = Array.isArray(window._myPageRecentWorkRecordsCache) && window._myPageRecentWorkRecordsCache.length
-        ? window._myPageRecentWorkRecordsCache.slice()
-        : window.collectMyWorkRecords(ymds);
+      // 再読込時はキャッシュ優先せず最新の端末データを集め直す
+      records = window.collectMyWorkRecords(ymds);
       try {
         const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
         const ymdList = Array.from(ymds).sort();
@@ -33758,6 +33897,9 @@ window.openMyPageWorkDateSelectPopup_ = async function(source) {
   } catch (e) {
     console.warn('openMyPageWorkDateSelectPopup_', e);
   }
+  // 消えたIDは選択から外す
+  const idSet = new Set(records.map(r => String((r && r.id) || '').trim()).filter(Boolean));
+  st.selected = new Set(Array.from(st.selected).filter(id => idSet.has(id)));
   st.records = records;
   window.rerenderMyPageWorkDateSelectPopup_();
 };
@@ -33991,7 +34133,7 @@ window.openMyWorkHistoryDetail = function() {
                 <div id="myWorkHistorySub" style="font-size:12px; color:#666; margin-top:2px;">読み込み中...</div>
               </div>
               <button type="button" id="myWorkHistoryEnterDateSelectBtn" onclick="openMyPageWorkDateSelectPopup_('all')"
-                style="background:#2E7D32; color:#fff; border:none; padding:8px 10px; border-radius:6px; font-weight:bold; cursor:pointer; flex-shrink:0; font-size:12px;">📅 まとめて日付変更</button>
+                style="background:#2E7D32; color:#fff; border:none; padding:8px 10px; border-radius:6px; font-weight:bold; cursor:pointer; flex-shrink:0; font-size:12px;">📋 マネージャー</button>
               <button type="button" onclick="closeMyWorkHistoryDetail()"
                 style="background:#666; color:#fff; border:none; padding:8px 14px; border-radius:6px; font-weight:bold; cursor:pointer; flex-shrink:0;">閉じる</button>
             </div>
@@ -34005,7 +34147,7 @@ window.openMyWorkHistoryDetail = function() {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.id = 'myWorkHistoryEnterDateSelectBtn';
-            btn.textContent = '📅 まとめて日付変更';
+            btn.textContent = '📋 マネージャー';
             btn.setAttribute('onclick', "openMyPageWorkDateSelectPopup_('all')");
             btn.style.cssText = 'background:#2E7D32; color:#fff; border:none; padding:8px 10px; border-radius:6px; font-weight:bold; cursor:pointer; flex-shrink:0; font-size:12px;';
             const closeBtn = headerRow.querySelector('button');
@@ -34495,7 +34637,7 @@ window.openMyPage = function() {
     const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
 
     const recentDays = (typeof window.getMyPageRecentWorkDays_ === 'function')
-      ? window.getMyPageRecentWorkDays_() : 7;
+      ? window.getMyPageRecentWorkDays_() : 14;
     const recentYmds = window.getPastYmdSet(recentDays);
     const ymdList = Array.from(recentYmds).sort(); // ascending
     const rangeLabel = ymdList.length >= 2
@@ -34506,7 +34648,7 @@ window.openMyPage = function() {
     window._myPageRecentWorkRecordsCache = myRecentRecords.slice();
     const recordsHtml = `<div id="myRecentWorkRecordsStatus" style="font-size:11px; color:#888; margin-bottom:6px; min-height:14px;"></div>
     <div id="myRecentWorkRecordsBody" style="max-height:360px; overflow-y:auto; padding-right:2px; margin-bottom:10px;">${
-        window.renderMyWorkRecordsGroupedHtml(myRecentRecords, '直近1週間の作業記録はまだありません。')
+        window.renderMyWorkRecordsGroupedHtml(myRecentRecords, '直近2週間の作業記録はまだありません。')
     }</div>
     <button type="button" onclick="openMyWorkHistoryDetail()"
       style="width:100%; background:#1565C0; color:white; border:none; padding:11px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:15px;">📖 詳細（全期間を表示）</button>`;
@@ -34539,11 +34681,11 @@ window.openMyPage = function() {
           style="width:100%; background:#fff; color:#1565C0; border:1px solid #90CAF9; padding:11px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:15px;">📜 一括入力履歴（日付のまとめ直し）</button>
         
         <h4 style="color:#2e7d32; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
-            <span>📋 直近1週間の作業記録 (<span id="myRecentWorkRecordsCount">${myRecentRecords.length}</span>件)</span>
+            <span>📋 直近2週間の作業記録 (<span id="myRecentWorkRecordsCount">${myRecentRecords.length}</span>件)</span>
         </h4>
         <div style="font-size:11px; color:#666; margin-bottom:8px;">${rangeLabel}</div>
         <button type="button" id="myPageEnterDateSelectBtn" onclick="openMyPageWorkDateSelectPopup_('week')"
-          style="width:100%; background:#E8F5E9; color:#1B5E20; border:1px solid #81C784; padding:11px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:10px;">📅 作業を選んで日付をまとめて変更</button>
+          style="width:100%; background:#E8F5E9; color:#1B5E20; border:1px solid #81C784; padding:11px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:10px;">📋 作業記録マネージャー</button>
         ${recordsHtml}
 
         <h4 style="color:#c62828; margin-bottom:10px; margin-top:5px;">📧 Gmailアカウント</h4>
