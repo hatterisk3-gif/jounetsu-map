@@ -990,32 +990,10 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
             strokeWeight: 3,
             zIndex: 1
           });
-          const marker = createLabelMarker(name, coords, color, area);
+          const marker = createLabelMarker(name, coords, color, area, id);
           
-          google.maps.event.addListener(polygon, 'click', (e) => { 
-            if (isMapSelecting) {
-               if (window._deliveryDestMapSelectMode && typeof window.handleDeliveryDestMapTap === 'function') {
-                 window.handleDeliveryDestMapTap(id);
-                 return;
-               }
-               if (window._deliveryOriginMapSelectMode && typeof window.handleDeliveryOriginMapTap === 'function') {
-                 window.handleDeliveryOriginMapTap(id);
-                 return;
-               }
-               if (typeof window.handleWorkMapFieldTap === 'function') {
-                 window.handleWorkMapFieldTap(id);
-               } else {
-                 if (window.selectingMachineIdForLoc) { applyMachineLocSelect(id); return; }
-                 if (window.selectingSignForRefuel) { applyRefuelSignSelect(id); return; }
-                 if (selectedPolyIds.includes(id)) {
-                    selectedPolyIds = selectedPolyIds.filter(i=>i!==id);
-                 } else { selectedPolyIds.push(id); }
-                 updateMapSelectVisuals();
-               }
-               return;
-            }
-            if (typeof window.isBulkWorkMemoModalOpen_ === 'function' && window.isBulkWorkMemoModalOpen_()) return;
-            openMainMenu(id); infoWindow.setPosition(e.latLng); infoWindow.open(map); 
+          google.maps.event.addListener(polygon, 'click', (e) => {
+            handleFieldPolygonClick_(id, e);
           });
           loadedPolygons[id] = { id, polygon, marker, name, location: loc, condition: cond, area, color, photos: photos || [], author, status, isMarker: false, coords, soilType: '' };
         }
@@ -1577,6 +1555,7 @@ window.openTyphoonModal = function() {
 
         infoWindow = new google.maps.InfoWindow();
         google.maps.event.addListener(map, 'click', (e) => {
+          if (window._keepFieldInfoWindow_) return;
           if (window._isRidgeMeasuring && typeof window.handleRidgeMeasureMapClick === 'function') {
             window.handleRidgeMeasureMapClick(e);
             return;
@@ -1882,16 +1861,80 @@ function createSignboardMarker(name, pos, icon, id) {
              if (window.selectingSignForRefuel) { applyRefuelSignSelect(id); return; } // ★追加
              return;
           }
-          if (typeof window.isBulkWorkMemoModalOpen_ === 'function' && window.isBulkWorkMemoModalOpen_()) return;
-          openMainMenu(id); infoWindow.setPosition(e.latLng); infoWindow.open(map); 
+          showPolygonActionMenu_(id, e && e.latLng, e);
         });
         return marker;
       }
-      function createLabelMarker(n,c,col,a) { 
+      function createLabelMarker(n,c,col,a,id) { 
         const b=new google.maps.LatLngBounds(); 
         c.forEach(pt=>b.extend(pt)); 
-        return new google.maps.Marker({position:b.getCenter(), map, visible:map.getZoom()>=16, clickable:false, /* ← ★ここの「14」を変更 */ label:{text:`${n} / ${a}a`, color:'white', fontSize:'14px', fontWeight:'bold', className:'polygon-label'}, icon:{path:google.maps.SymbolPath.CIRCLE,scale:0}}); 
+        const marker = new google.maps.Marker({position:b.getCenter(), map, visible:map.getZoom()>=16, clickable:true, /* ← ★ここの「14」を変更 */ label:{text:`${n} / ${a}a`, color:'white', fontSize:'14px', fontWeight:'bold', className:'polygon-label'}, icon:{path:google.maps.SymbolPath.CIRCLE,scale:0}, zIndex: 2});
+        if (id) {
+          google.maps.event.addListener(marker, 'click', (e) => {
+            handleFieldPolygonClick_(id, e);
+          });
+        }
+        return marker;
       }
+
+      window.stopMapEvent_ = (e) => {
+        try {
+          if (e && typeof e.stop === 'function') e.stop();
+          if (typeof google !== 'undefined' && google.maps && google.maps.event && typeof google.maps.event.stop === 'function' && e) {
+            google.maps.event.stop(e);
+          }
+        } catch (err) {}
+      };
+
+      /** 圃場ポリゴン／ラベルタップ（マップ選択中は選択、通常時は作業・生育メニュー） */
+      function handleFieldPolygonClick_(id, e) {
+        if (typeof window.stopMapEvent_ === 'function') window.stopMapEvent_(e);
+        if (isMapSelecting) {
+          if (window._deliveryDestMapSelectMode && typeof window.handleDeliveryDestMapTap === 'function') {
+            window.handleDeliveryDestMapTap(id);
+            return;
+          }
+          if (window._deliveryOriginMapSelectMode && typeof window.handleDeliveryOriginMapTap === 'function') {
+            window.handleDeliveryOriginMapTap(id);
+            return;
+          }
+          if (typeof window.handleWorkMapFieldTap === 'function') {
+            window.handleWorkMapFieldTap(id);
+          } else {
+            if (window.selectingMachineIdForLoc) { applyMachineLocSelect(id); return; }
+            if (window.selectingSignForRefuel) { applyRefuelSignSelect(id); return; }
+            if (selectedPolyIds.includes(id)) {
+              selectedPolyIds = selectedPolyIds.filter(i => i !== id);
+            } else { selectedPolyIds.push(id); }
+            updateMapSelectVisuals();
+          }
+          return;
+        }
+        showPolygonActionMenu_(id, e && e.latLng, e);
+      }
+
+      window.showPolygonActionMenu_ = (id, latLng, e) => {
+        if (typeof window.stopMapEvent_ === 'function') window.stopMapEvent_(e);
+        if (typeof window.isBulkWorkMemoModalOpen_ === 'function' && window.isBulkWorkMemoModalOpen_()) return;
+        const p = loadedPolygons[id];
+        if (!p) return;
+        let pos = latLng;
+        if (!pos) {
+          try {
+            if (p.isMarker && p.marker) pos = p.marker.getPosition();
+            else if (p.polygon && p.polygon.getPath) {
+              const b = new google.maps.LatLngBounds();
+              p.polygon.getPath().forEach(pt => b.extend(pt));
+              pos = b.getCenter();
+            }
+          } catch (err) {}
+        }
+        window._keepFieldInfoWindow_ = true;
+        openMainMenu(id);
+        if (pos) infoWindow.setPosition(pos);
+        infoWindow.open(map);
+        setTimeout(() => { window._keepFieldInfoWindow_ = false; }, 120);
+      };
       window.openFieldWorkRecordSelect = (id) => {
           const p = loadedPolygons[id];
           let html = `
@@ -1933,7 +1976,10 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.openMainMenu = (id) => {
-        const p = loadedPolygons[id], isU = (p.status === '未使用（返却）' || p.status === '未使用');
+        const p = loadedPolygons[id];
+        if (!p) return;
+        const isU = (p.status === '未使用（返却）' || p.status === '未使用');
+        if (!Array.isArray(p.photos)) p.photos = [];
         const navBtn = `<button onclick="executeNavigation('${id}')" style="width:100%; padding:8px; margin-bottom:6px; border:none; border-radius:4px; background:#4285F4; color:white; font-weight:bold; font-size:13px; box-sizing:border-box;">🚗 ナビ開始</button>`;
         
         const workCount = p.photos.filter(ph => ph.type === 'work').length;
@@ -1947,22 +1993,19 @@ function createSignboardMarker(name, pos, icon, id) {
         let availableWorks = pdlWorkMaster || [];
         const hasWork = !p.isMarker || availableWorks.length > 0;
 
-        let actions = `<div style="display:flex; gap:4px; width:100%; margin-bottom:6px;">`;
+        let actions = `<div style="display:flex; flex-direction:column; gap:6px; width:100%; margin-bottom:6px;">`;
         // worker2.html のみ圃場の生育記録ボタンを非表示（worker.html では表示）
         const isWorker2 = /worker2\.html/i.test(location.pathname) || /worker2\.html/i.test(location.href);
         const hideGrowth = isWorker2 && !p.isMarker;
+        // worker.html の圃場タップ一覧からは作業記録を外す（右下📝から開く）
+        const hideWork = !isWorker2 && !p.isMarker;
+        const btnBase = 'width:100%; padding:10px 0; border-radius:4px; border:none; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box; white-space:nowrap;';
 
-        if (hasWork) {
-            if (hideGrowth) {
-                actions += `<button onclick="openFieldWorkRecordSelect('${id}')" style="flex:1; padding:8px 0; border-radius:4px; border:none; background:#FF9800; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box; white-space:nowrap;">${workIcon} ${workText} (${workCount})</button>`;
-            } else {
-                actions += `<button onclick="actionManagePhotos('${id}', 'growth')" style="flex:1; padding:8px 0; border-radius:4px; border:none; background:#4CAF50; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box; white-space:nowrap;">${growthIcon} ${growthText} (${growthCount})</button>
-                            <button onclick="openFieldWorkRecordSelect('${id}')" style="flex:1; padding:8px 0; border-radius:4px; border:none; background:#FF9800; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box; white-space:nowrap;">${workIcon} ${workText} (${workCount})</button>`;
-            }
-        } else {
-            if (!hideGrowth) {
-                actions += `<button onclick="actionManagePhotos('${id}', 'growth')" style="flex:1; padding:8px 0; border-radius:4px; border:none; background:#4CAF50; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box; white-space:nowrap;">${growthIcon} ${growthText} (${growthCount})</button>`;
-            }
+        if (!hideGrowth) {
+            actions += `<button onclick="actionManagePhotos('${id}', 'growth')" style="${btnBase} background:#4CAF50;">${growthIcon} ${growthText} (${growthCount})</button>`;
+        }
+        if (hasWork && !hideWork) {
+            actions += `<button onclick="openFieldWorkRecordSelect('${id}')" style="${btnBase} background:#FF9800;">${workIcon} ${workText} (${workCount})</button>`;
         }
         actions += `</div>`;
 
@@ -2304,7 +2347,7 @@ function createSignboardMarker(name, pos, icon, id) {
         closeRightPanel();
         const p = loadedPolygons[id]; let center;
         if (p.isMarker) center = p.marker.getPosition(); else { const b = new google.maps.LatLngBounds(); p.polygon.getPath().forEach(pt => b.extend(pt)); center = b.getCenter(); }
-        map.setZoom(18); map.panTo(center); setTimeout(() => { openMainMenu(id); infoWindow.setPosition(center); infoWindow.open(map); }, 500);
+        map.setZoom(18); map.panTo(center); setTimeout(() => { showPolygonActionMenu_(id, center); }, 500);
       }
       
       window.focusAndOpenByName = (name) => {
@@ -4096,9 +4139,17 @@ function createSignboardMarker(name, pos, icon, id) {
 
       /**
        * 当日の最遅終了（作業記録・休憩記録の両方）。
+       * opts.excludeIds: 編集中レコードなど、自分自身の終了時刻を候補から外す
        * @returns {{ end: string, isRest: boolean, workName: string }}
        */
-      window.getLatestEndInfoForDate = (targetDateStr) => {
+      window.getLatestEndInfoForDate = (targetDateStr, opts) => {
+        opts = opts || {};
+        const excludeSet = {};
+        (Array.isArray(opts.excludeIds) ? opts.excludeIds : []).forEach((id) => {
+          const s = String(id || '').trim();
+          if (s) excludeSet[s] = true;
+        });
+        const hasExclude = Object.keys(excludeSet).length > 0;
         const normTarget = window.normalizeDateStr(targetDateStr);
         if (!normTarget) return { end: '', isRest: false, workName: '' };
         let latestEnd = '';
@@ -4117,6 +4168,7 @@ function createSignboardMarker(name, pos, icon, id) {
               if (!isWork) return;
 
               const recId = ph.id || (ph.data && ph.data.recordId);
+              if (recId && excludeSet[String(recId)]) return;
               if (recId && seenIds.has(recId)) return;
               if (recId) seenIds.add(recId);
 
@@ -4159,6 +4211,8 @@ function createSignboardMarker(name, pos, icon, id) {
         //   （休憩セット時に「終了が今より未来」扱いになりエラーになるのを防ぐ）
         // 地図キャッシュが古い端末では、サーバー／他端末の終了時刻の方が遅いことがある。
         // 遅い方を採用し、古い地図データでキャッシュを巻き戻さない。
+        // 編集中レコードを除外しているときは、その終了が入ったキャッシュ／ヒントは使わない
+        if (!hasExclude) {
         const cachedEnd = (typeof window.getCachedLatestWorkEnd === 'function')
           ? window.getCachedLatestWorkEnd(normTarget)
           : '';
@@ -4169,32 +4223,35 @@ function createSignboardMarker(name, pos, icon, id) {
             : null;
           if (cachedRest != null) latestIsRest = !!cachedRest;
         }
+        }
         const hint = window._lastWorkTimeHints;
         const hintYmd = hint && window.normalizeDateStr(hint.dateYmd || hint.todayYmd || '');
-        if (hint && hintYmd === normTarget && hint.latestEndTime
+        if (!hasExclude && hint && hintYmd === normTarget && hint.latestEndTime
             && window.isTimeHmLater(hint.latestEndTime, latestEnd)) {
           latestEnd = window.normalizeTimeHm(hint.latestEndTime) || hint.latestEndTime;
           latestIsRest = !!hint.latestIsRest;
           if (hint.latestWorkName) latestName = String(hint.latestWorkName || latestName);
         }
-        if (latestEnd) {
+        if (latestEnd && !hasExclude) {
           window.saveCachedLatestWorkEnd(normTarget, latestEnd, { isRest: latestIsRest });
         }
         return { end: latestEnd, isRest: latestIsRest, workName: latestName };
       };
 
-      window.getLatestEndTimeForDate = (targetDateStr) => {
-        const info = window.getLatestEndInfoForDate(targetDateStr);
+      window.getLatestEndTimeForDate = (targetDateStr, opts) => {
+        const info = window.getLatestEndInfoForDate(targetDateStr, opts);
         return (info && info.end) || '';
       };
 
       /** 次の作業開始候補として使う終了時刻（直前が通常作業で昼休み開始ちょうどなら再開を13:00扱い） */
-      window.getLatestEndTimeForResume = (targetDateStr) => {
+      window.getLatestEndTimeForResume = (targetDateStr, opts) => {
+        opts = opts || {};
+        const hasExclude = Array.isArray(opts.excludeIds) && opts.excludeIds.some((id) => String(id || '').trim());
         const info = (typeof window.getLatestEndInfoForDate === 'function')
-          ? window.getLatestEndInfoForDate(targetDateStr)
+          ? window.getLatestEndInfoForDate(targetDateStr, opts)
           : null;
         let latestEnd = (info && info.end) || '';
-        if (!latestEnd) latestEnd = window.getCachedLatestWorkEnd(targetDateStr) || '';
+        if (!latestEnd && !hasExclude) latestEnd = window.getCachedLatestWorkEnd(targetDateStr) || '';
         // 直前が休憩記録なら、その終了時刻をそのまま次の開始にする
         if (info && info.isRest) return latestEnd;
         const n = window.normalizeTimeHm(latestEnd);
@@ -4625,6 +4682,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const fallback = '08:00';
         const nowMins = now.getHours() * 60 + now.getMinutes();
         const nowHm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const excludeIds = Array.isArray(opts.excludeIds) ? opts.excludeIds : [];
         const forBreak = !!opts.forBreak || (typeof window.isRestWorkNameSelected === 'function' && window.isRestWorkNameSelected());
         if (window._pendingNextWorkStart) {
           const pending = window.normalizeTimeHm
@@ -4671,7 +4729,7 @@ function createSignboardMarker(name, pos, icon, id) {
         let latestEnd = '';
         let latestIsRest = false;
         const endInfo = (typeof window.getLatestEndInfoForDate === 'function')
-          ? window.getLatestEndInfoForDate(ymd)
+          ? window.getLatestEndInfoForDate(ymd, { excludeIds: excludeIds })
           : null;
         if (endInfo && endInfo.end) {
           latestEnd = endInfo.end;
@@ -4680,16 +4738,16 @@ function createSignboardMarker(name, pos, icon, id) {
 
         if (forBreak) {
           // 休憩は「前記録の実終了〜いま」なので再開丸めしない
-          if (!latestEnd) latestEnd = window.getCachedLatestWorkEnd(ymd) || '';
+          if (!latestEnd && !excludeIds.length) latestEnd = window.getCachedLatestWorkEnd(ymd) || '';
         } else if (latestEnd) {
           // 次の作業開始: 直前が休憩ならその終了をそのまま使う（12:00→13:00 しない）
           if (!latestIsRest && window.normalizeTimeHm(latestEnd) === '12:00') {
             latestEnd = '13:00';
           }
         } else if (typeof window.getLatestEndTimeForResume === 'function') {
-          latestEnd = window.getLatestEndTimeForResume(ymd) || '';
+          latestEnd = window.getLatestEndTimeForResume(ymd, { excludeIds: excludeIds }) || '';
         }
-        if (!latestEnd && !forBreak) {
+        if (!latestEnd && !forBreak && !excludeIds.length) {
           latestEnd = window.getCachedLatestWorkEnd(ymd) || '';
           if (window.normalizeTimeHm(latestEnd) === '12:00') latestEnd = '13:00';
         }
@@ -4823,11 +4881,14 @@ function createSignboardMarker(name, pos, icon, id) {
           const dateEl = document.getElementById('rec_work_date');
           const ymd = dateEl ? window.normalizeDateStr(dateEl.value) : '';
           let latest = '';
+          const excludeIds = (typeof window.getEditRecordExcludeIds_ === 'function')
+            ? window.getEditRecordExcludeIds_()
+            : [];
           if (ymd) {
             latest = (typeof window.getLatestEndTimeForDate === 'function')
-              ? (window.getLatestEndTimeForDate(ymd) || '')
+              ? (window.getLatestEndTimeForDate(ymd, { excludeIds: excludeIds }) || '')
               : '';
-            if (!latest) latest = window.getCachedLatestWorkEnd(ymd) || '';
+            if (!latest && !excludeIds.length) latest = window.getCachedLatestWorkEnd(ymd) || '';
           }
           btnEl.style.display = latest ? 'inline-block' : 'none';
           btnEl.setAttribute('data-prev-end', latest || '');
@@ -4835,28 +4896,29 @@ function createSignboardMarker(name, pos, icon, id) {
         }
       };
 
-      /** 開始時間を当日の前作業終了に合わせる（手動） */
+      /** 開始時間を当日の前作業終了に合わせる（新規・編集どちらでも、自分自身の終了は除外） */
       window.matchStartTimeToPreviousEnd = () => {
-        if (typeof currentEditRecordId !== 'undefined' && currentEditRecordId) {
-          if (typeof customAlert === 'function') customAlert('編集中は開始時間の自動合わせを行いません。');
-          return;
-        }
         const dateEl = document.getElementById('rec_work_date');
         const ymd = dateEl ? window.normalizeDateStr(dateEl.value) : '';
         if (!ymd) {
           if (typeof customAlert === 'function') customAlert('作業日を先に選択してください。');
           return;
         }
+        const excludeIds = window.getEditRecordExcludeIds_ ? window.getEditRecordExcludeIds_() : [];
+        const startEl = document.getElementById('rec_start_time');
+        const endEl = document.getElementById('rec_end_time');
+        const oldStart = startEl ? String(startEl.value || '').trim() : '';
+        const oldEnd = endEl ? String(endEl.value || '').trim() : '';
         let latest = '';
         let isRest = false;
         if (typeof window.getLatestEndInfoForDate === 'function') {
-          const info = window.getLatestEndInfoForDate(ymd) || {};
+          const info = window.getLatestEndInfoForDate(ymd, { excludeIds: excludeIds }) || {};
           latest = info.end || '';
           isRest = !!info.isRest;
         } else if (typeof window.getLatestEndTimeForDate === 'function') {
-          latest = window.getLatestEndTimeForDate(ymd) || '';
+          latest = window.getLatestEndTimeForDate(ymd, { excludeIds: excludeIds }) || '';
         }
-        if (!latest) latest = window.getCachedLatestWorkEnd(ymd) || '';
+        if (!latest && !excludeIds.length) latest = window.getCachedLatestWorkEnd(ymd) || '';
         if (!latest) {
           // サーバーから再取得して合わせる
           if (typeof window.prefetchWorkTimeHints === 'function') {
@@ -4872,6 +4934,11 @@ function createSignboardMarker(name, pos, icon, id) {
                 syncClockIn: false,
                 source: 'latestEnd'
               });
+              if (endEl && oldStart && oldEnd && typeof window.shiftEndKeepingDuration_ === 'function') {
+                const shifted = window.shiftEndKeepingDuration_(oldStart, oldEnd, t);
+                if (shifted) endEl.value = shifted;
+                if (typeof calcTotalTime === 'function') calcTotalTime();
+              }
               window.updateStartTimeHintUI();
             });
           } else if (typeof customAlert === 'function') {
@@ -4884,6 +4951,11 @@ function createSignboardMarker(name, pos, icon, id) {
           syncClockIn: false,
           source: isRest ? 'restEnd' : 'latestEnd'
         });
+        if (endEl && oldStart && oldEnd && typeof window.shiftEndKeepingDuration_ === 'function') {
+          const shifted = window.shiftEndKeepingDuration_(oldStart, oldEnd, latest);
+          if (shifted) endEl.value = shifted;
+          if (typeof calcTotalTime === 'function') calcTotalTime();
+        }
         window.updateStartTimeHintUI();
       };
 
@@ -5129,6 +5201,10 @@ function createSignboardMarker(name, pos, icon, id) {
           window._lastWorkTimeHints = hints;
 
           if (opts.applyToForm !== false) {
+            if (typeof currentEditRecordId !== 'undefined' && currentEditRecordId) {
+              if (typeof window.updateStartTimeHintUI === 'function') window.updateStartTimeHintUI();
+              return hints;
+            }
             const dateEl = document.getElementById('rec_work_date');
             const formYmd = dateEl ? window.normalizeDateStr(dateEl.value) : '';
             if (formYmd && formYmd !== ymd) return hints;
@@ -5187,13 +5263,84 @@ function createSignboardMarker(name, pos, icon, id) {
         });
       };
 
+      window.getEditRecordExcludeIds_ = () => {
+        const id = (typeof currentEditRecordId !== 'undefined') ? String(currentEditRecordId || '').trim() : '';
+        return id ? [id] : [];
+      };
+
+      window.hmFromMinutes_ = (mins) => {
+        if (mins == null || isNaN(mins)) return '';
+        let m = Math.round(Number(mins));
+        if (m < 0) m = 0;
+        if (m > 23 * 60 + 59) m = 23 * 60 + 59;
+        return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+      };
+
+      /** 開始を付け替えても作業の長さ（終了−開始）は維持する */
+      window.shiftEndKeepingDuration_ = (oldStart, oldEnd, newStart) => {
+        const os = window.timeHmToMinutes ? window.timeHmToMinutes(oldStart) : null;
+        const oe = window.timeHmToMinutes ? window.timeHmToMinutes(oldEnd) : null;
+        const ns = window.timeHmToMinutes ? window.timeHmToMinutes(newStart) : null;
+        if (os == null || oe == null || ns == null) return oldEnd || '';
+        let dur = oe - os;
+        if (dur < 0) dur += 24 * 60;
+        return window.hmFromMinutes_(ns + dur);
+      };
+
+      /** 作業日変更時：その日の直前終了に開始を合わせ、作業時間の長さは保つ */
+      window.realignWorkFormTimesToDate_ = (ymd, opts) => {
+        opts = opts || {};
+        const startEl = document.getElementById('rec_start_time');
+        const endEl = document.getElementById('rec_end_time');
+        if (!startEl) return false;
+        const excludeIds = Array.isArray(opts.excludeIds) ? opts.excludeIds : window.getEditRecordExcludeIds_();
+        const oldStart = String(startEl.value || '').trim();
+        const oldEnd = endEl ? String(endEl.value || '').trim() : '';
+        const resolved = (typeof window.resolveDefaultStartTime === 'function')
+          ? window.resolveDefaultStartTime(ymd, { excludeIds: excludeIds })
+          : { start: '', source: '', syncClockIn: false, isFallback: true };
+        const newStart = resolved && resolved.start;
+        if (!newStart) return false;
+        window.applyStartTimeToForm(newStart, {
+          clearAutofill: !resolved.isFallback,
+          markAutofill: !!resolved.isFallback,
+          syncClockIn: !!resolved.syncClockIn,
+          source: resolved.source || 'latestEnd'
+        });
+        if (endEl && oldStart && oldEnd) {
+          const shifted = window.shiftEndKeepingDuration_(oldStart, oldEnd, newStart);
+          if (shifted) endEl.value = shifted;
+        }
+        if (typeof calcTotalTime === 'function') calcTotalTime();
+        if (typeof window.updateStartTimeHintUI === 'function') window.updateStartTimeHintUI();
+        return true;
+      };
+
       window.handleWorkDateChange = () => {
         const dateEl = document.getElementById('rec_work_date');
         const startEl = document.getElementById('rec_start_time');
         if (!dateEl || !startEl) return;
         const selectedDate = dateEl.value;
         if (!selectedDate) return;
-        if (currentEditRecordId) return;
+        if (currentEditRecordId) {
+          window.realignWorkFormTimesToDate_(selectedDate, {
+            excludeIds: window.getEditRecordExcludeIds_()
+          });
+          if (typeof window.isRestWorkNameSelected === 'function' && window.isRestWorkNameSelected()
+              && typeof window.refreshTodayRestBreaksUI === 'function') {
+            window.refreshTodayRestBreaksUI();
+          }
+          if (typeof window.renderNextWorkPredictions === 'function') {
+            window.renderNextWorkPredictions();
+          }
+          if (typeof window.refreshWorkFormLunchSection_ === 'function') {
+            window.refreshWorkFormLunchSection_();
+          }
+          if (typeof window.prefetchWorkTimeHints === 'function') {
+            window.prefetchWorkTimeHints(selectedDate, { applyToForm: false });
+          }
+          return;
+        }
 
         const resolved = window.resolveDefaultStartTime(selectedDate);
         window.applyStartTimeToForm(resolved.start, {
@@ -27415,8 +27562,12 @@ window.openBulkWorkMemoModal_ = () => {
 };
 
 window.isBulkWorkMemoModalOpen_ = () => {
-  if (window._bulkWorkMemoActive) return true;
-  return !!(document.getElementById('bulk_work_memo_review_scroll') || document.getElementById('bulk_work_memo_text'));
+  if (!window._bulkWorkMemoActive) return false;
+  const modalEl = document.getElementById('modal');
+  if (!modalEl) return false;
+  const disp = (modalEl.style && modalEl.style.display) || '';
+  if (disp === 'none') return false;
+  return true;
 };
 
 window.setBulkWorkMemoModalClass_ = (mode) => {
@@ -32850,6 +33001,11 @@ window.removeWorkRecordLocally_ = function(recordId, polyId, rec) {
     recordId = String(recordId || '').trim();
     if (!recordId) return;
     const matchId = (ph) => ph && (ph.id === recordId || ph.url === recordId || (ph.data && ph.data.recordId === recordId));
+    const matchRec = (r) => r && (
+      String(r.id || '') === recordId
+      || String(r.recordId || '') === recordId
+      || String((r.data && r.data.recordId) || '') === recordId
+    );
 
     if (typeof loadedPolygons !== 'undefined' && loadedPolygons) {
         const targets = new Set();
@@ -32868,45 +33024,94 @@ window.removeWorkRecordLocally_ = function(recordId, polyId, rec) {
         window.removePersistedRecordSyncJob_(recordId);
     }
     if (window.myWorkRecords && Array.isArray(window.myWorkRecords)) {
-        window.myWorkRecords = window.myWorkRecords.filter(r =>
-            r && r.id !== recordId && r.recordId !== recordId
-        );
+        window.myWorkRecords = window.myWorkRecords.filter(r => !matchRec(r));
+    }
+    if (Array.isArray(window._myPageRecentWorkRecordsCache)) {
+        window._myPageRecentWorkRecordsCache = window._myPageRecentWorkRecordsCache.filter(r => !matchRec(r));
+    }
+    if (Array.isArray(window._myPageAllWorkRecordsCache)) {
+        window._myPageAllWorkRecordsCache = window._myPageAllWorkRecordsCache.filter(r => !matchRec(r));
+    }
+    if (window._myPageWorkDateSelect && Array.isArray(window._myPageWorkDateSelect.records)) {
+        window._myPageWorkDateSelect.records = window._myPageWorkDateSelect.records.filter(r => !matchRec(r));
+        if (window._myPageWorkDateSelect.selected && window._myPageWorkDateSelect.selected.delete) {
+            window._myPageWorkDateSelect.selected.delete(recordId);
+        }
     }
     const tombRec = rec || window.findMyWorkRecordForDelete_(recordId);
     if (typeof window.markWorkRecordDeleted_ === 'function') {
-        window.markWorkRecordDeleted_(recordId, tombRec);
+        window.markWorkRecordDeleted_(recordId, tombRec || rec);
     }
     if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
         try { window.updateInitDataCacheWithLocalRecords_(); } catch (e) {}
     }
 };
 
-window.refreshMyPageAfterWorkRecordDelete_ = async function() {
-    if (typeof window.refreshMyPageRecentWorkRecords_ === 'function') {
-        try { await window.refreshMyPageRecentWorkRecords_({ reloadInit: false }); } catch (e) {}
-    } else if (typeof openMyPage === 'function') {
-        openMyPage();
+/** マイページ／マネージャー表示を端末データだけで即時更新 */
+window.refreshMyPageListsLocally_ = function() {
+    const filterDeleted = (list) => (Array.isArray(list) ? list : []).filter(r =>
+      !(typeof window.isWorkRecordDeleted_ === 'function' && window.isWorkRecordDeleted_(r))
+    );
+
+    if (window._myPageWorkDateSelect && window._myPageWorkDateSelect.active) {
+        const st = window._myPageWorkDateSelect;
+        if (Array.isArray(st.records)) {
+            st.records = filterDeleted(st.records);
+        }
+        if (typeof window.rerenderMyPageWorkDateSelectPopup_ === 'function') {
+            window.rerenderMyPageWorkDateSelectPopup_();
+        }
     }
+
+    const recentBody = document.getElementById('myRecentWorkRecordsBody');
+    if (recentBody && typeof window.collectMyWorkRecords === 'function') {
+        const days = (typeof window.getMyPageRecentWorkDays_ === 'function')
+          ? window.getMyPageRecentWorkDays_() : 14;
+        let records = filterDeleted(window.collectMyWorkRecords(window.getPastYmdSet(days)));
+        window._myPageRecentWorkRecordsCache = records.slice();
+        recentBody.innerHTML = window.renderMyWorkRecordsGroupedHtml(records, '直近2週間の作業記録はまだありません。');
+        const countEl = document.getElementById('myRecentWorkRecordsCount');
+        if (countEl) countEl.textContent = String(records.length);
+    }
+
+    const histBody = document.getElementById('myWorkHistoryBody');
     const histModal = document.getElementById('myWorkHistoryModal');
-    if (histModal && histModal.style.display === 'flex' && typeof window.refreshMyWorkHistoryDetail_ === 'function') {
-        try { await window.refreshMyWorkHistoryDetail_(); } catch (e) {}
+    if (histBody && histModal && histModal.style.display === 'flex' && typeof window.collectMyWorkRecords === 'function') {
+        let all = filterDeleted(window.collectMyWorkRecords(null));
+        window._myPageAllWorkRecordsCache = all.slice();
+        histBody.innerHTML = window.renderMyWorkRecordsGroupedHtml(all, '作業記録はまだありません。');
+        const sub = document.getElementById('myWorkHistorySub');
+        if (sub) sub.innerText = `全 ${all.length} 件（新しい日付から）`;
     }
-    if (typeof window.refreshMyPageWorkManagerList_ === 'function') {
-        try { await window.refreshMyPageWorkManagerList_(); } catch (e) {}
+};
+
+window.refreshMyPageAfterWorkRecordDelete_ = async function() {
+    // まず端末側で即時に消す（サーバー再取得を待たない）
+    if (typeof window.refreshMyPageListsLocally_ === 'function') {
+        try { window.refreshMyPageListsLocally_(); } catch (e) {}
     }
-    if (typeof loadInitData === 'function') {
-        loadInitData({ background: true }).then(() => {
-            if (typeof window.refreshMyPageRecentWorkRecords_ === 'function') {
-                window.refreshMyPageRecentWorkRecords_({ reloadInit: false });
+    // サーバー同期は裏で（失敗しても表示は消えたまま）
+    const bg = async () => {
+        try {
+            if (typeof window.refreshMyPageRecentWorkRecords_ === 'function'
+                && document.getElementById('myRecentWorkRecordsBody')) {
+                await window.refreshMyPageRecentWorkRecords_({ reloadInit: false });
             }
-            if (histModal && histModal.style.display === 'flex' && typeof window.refreshMyWorkHistoryDetail_ === 'function') {
-                window.refreshMyWorkHistoryDetail_();
+        } catch (e) {}
+        try {
+            const histModal = document.getElementById('myWorkHistoryModal');
+            if (histModal && histModal.style.display === 'flex'
+                && typeof window.refreshMyWorkHistoryDetail_ === 'function') {
+                await window.refreshMyWorkHistoryDetail_();
             }
+        } catch (e) {}
+        try {
             if (typeof window.refreshMyPageWorkManagerList_ === 'function') {
-                window.refreshMyPageWorkManagerList_();
+                await window.refreshMyPageWorkManagerList_({ localOnly: false });
             }
-        }).catch(() => {});
-    }
+        } catch (e) {}
+    };
+    bg().catch(() => {});
 };
 
 window.deleteRecordFromMyPage = async function(polyId, recordId) {
@@ -33613,7 +33818,7 @@ window.getMyPageWorkDateSelectState_ = function() {
 
 window.getMyPageVisibleWorkRecords_ = function() {
   const st = window.getMyPageWorkDateSelectState_();
-  if (st.active && Array.isArray(st.records) && st.records.length) return st.records;
+  if (st.active && Array.isArray(st.records)) return st.records;
   if (st.source === 'all' || st.source === 'history') {
     if (Array.isArray(window._myPageAllWorkRecordsCache)) return window._myPageAllWorkRecordsCache;
     return window.collectMyWorkRecords(null);
@@ -33759,13 +33964,18 @@ window.deleteRecordFromWorkManager_ = async function(polyId, recordId, evt) {
   }
 };
 
-window.refreshMyPageWorkManagerList_ = async function() {
+window.refreshMyPageWorkManagerList_ = async function(opts) {
+  opts = opts || {};
   const st = window.getMyPageWorkDateSelectState_();
   const modal = document.getElementById('myPageWorkDateSelectModal');
   if (!st.active || !modal || modal.style.display === 'none') return;
   const keepSelected = new Set(st.selected || []);
   const source = st.source || 'week';
-  await window.openMyPageWorkDateSelectPopup_(source, { keepSelected: keepSelected, silent: true });
+  await window.openMyPageWorkDateSelectPopup_(source, {
+    keepSelected: keepSelected,
+    silent: true,
+    localOnly: opts.localOnly === true
+  });
 };
 
 window.deleteSelectedWorkManagerRecords_ = async function() {
@@ -33787,35 +33997,55 @@ window.deleteSelectedWorkManagerRecords_ = async function() {
     if (id) byId[id] = r;
   });
 
-  if (typeof showLoader === 'function') showLoader('削除中...');
+  // 先に画面から消す
+  ids.forEach(id => {
+    const rec = byId[id];
+    const polyId = String((rec && rec.polyId) || '__global__');
+    if (typeof window.removeWorkRecordLocally_ === 'function') {
+      window.removeWorkRecordLocally_(id, polyId, rec);
+    }
+  });
+  if (typeof window.refreshMyPageListsLocally_ === 'function') {
+    window.refreshMyPageListsLocally_();
+  }
+
+  if (typeof showLoader === 'function') showLoader('サーバーへ削除反映中...');
   let deleted = 0;
   let failed = 0;
   try {
-    for (let i = 0; i < ids.length; i++) {
-      const id = ids[i];
-      const rec = byId[id] || (typeof window.findMyWorkRecordForDelete_ === 'function' ? window.findMyWorkRecordForDelete_(id) : null);
-      const polyId = String((rec && rec.polyId) || '__global__');
-      try {
-        const res = await window.deleteRecordFromMyPageSilent_(polyId, id);
-        if (res) deleted++;
-        else failed++;
-        st.selected.delete(id);
-      } catch (e) {
-        failed++;
+    const queue = ids.slice();
+    const workers = [];
+    const runOne = async () => {
+      while (queue.length) {
+        const id = queue.shift();
+        const rec = byId[id];
+        const polyId = String((rec && rec.polyId) || '__global__');
+        try {
+          const res = await window.deleteRecordFromMyPageSilent_(polyId, id);
+          if (res) deleted++;
+          else failed++;
+        } catch (e) {
+          failed++;
+        }
       }
-    }
+    };
+    const n = Math.min(4, Math.max(1, ids.length));
+    for (let i = 0; i < n; i++) workers.push(runOne());
+    await Promise.all(workers);
   } finally {
     if (typeof hideLoader === 'function') hideLoader();
   }
 
+  if (typeof window.refreshMyPageListsLocally_ === 'function') {
+    window.refreshMyPageListsLocally_();
+  }
+  // サーバー再取得は裏で（表示をブロックしない）
   if (typeof window.refreshMyPageAfterWorkRecordDelete_ === 'function') {
-    await window.refreshMyPageAfterWorkRecordDelete_();
-  } else if (typeof window.refreshMyPageWorkManagerList_ === 'function') {
-    await window.refreshMyPageWorkManagerList_();
+    window.refreshMyPageAfterWorkRecordDelete_();
   }
 
   const msg = failed
-    ? `${deleted}件削除しました（失敗 ${failed}件）`
+    ? `${Math.max(deleted, ids.length - failed)}件を画面から削除（サーバー失敗 ${failed}件）`
     : `${deleted}件の作業記録を削除しました`;
   if (typeof window.showRecordSyncToast === 'function') window.showRecordSyncToast(msg, failed ? 'warn' : 'ok');
   else if (typeof customAlert === 'function') customAlert(msg);
@@ -33830,7 +34060,6 @@ window.openMyPageWorkDateSelectPopup_ = async function(source, opts) {
   else if (!opts.silent) st.selected = new Set();
   else if (!(st.selected instanceof Set)) st.selected = new Set();
   const modal = window.ensureMyPageWorkDateSelectPopup_();
-  // 旧UIのモーダルが残っている場合は削除ボタンを補完
   if (!document.getElementById('myPageWorkDateSelectDeleteBtn')) {
     const nextBtn = document.getElementById('myPageWorkDateSelectNextBtn');
     if (nextBtn && nextBtn.parentElement) {
@@ -33846,62 +34075,117 @@ window.openMyPageWorkDateSelectPopup_ = async function(source, opts) {
   const titleEl = modal.querySelector('[data-work-manager-title]');
   if (titleEl) titleEl.textContent = '📋 作業記録マネージャー';
   const body = document.getElementById('myPageWorkDateSelectBody');
-  if (body && !opts.silent) {
-    body.innerHTML = '<div style="padding:30px 12px; text-align:center; color:#888; font-size:14px;">読み込み中...</div>';
-  }
+  const sub = document.getElementById('myPageWorkDateSelectSub');
   modal.style.display = 'flex';
 
+  const filterDeleted = (list) => (Array.isArray(list) ? list : []).filter(r =>
+    !(typeof window.isWorkRecordDeleted_ === 'function' && window.isWorkRecordDeleted_(r))
+  );
+
+  // 1) 端末データで即表示（待ち時間なし）
   let records = [];
   try {
     if (st.source === 'all' || st.source === 'history') {
       records = Array.isArray(window._myPageAllWorkRecordsCache) && window._myPageAllWorkRecordsCache.length
         ? window._myPageAllWorkRecordsCache.slice()
         : window.collectMyWorkRecords(null);
-      try {
-        const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
-        const now = new Date();
-        const toYmd = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-        const fromDt = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 365);
-        const fromYmd = fromDt.getFullYear() + '-' + String(fromDt.getMonth() + 1).padStart(2, '0') + '-' + String(fromDt.getDate()).padStart(2, '0');
-        const analysis = await callGAS('getWorkRecordAnalysis', {
-          fromYmd: fromYmd,
-          toYmd: toYmd,
-          author: userName,
-          includeRecords: true
-        });
-        records = window.mergeMyWorkRecordsWithAnalysis_(records, (analysis && analysis.records) || [], null);
-        window._myPageAllWorkRecordsCache = records.slice();
-      } catch (e) {
-        console.warn('openMyPageWorkDateSelectPopup_ all:', e);
-      }
     } else {
       const days = window.getMyPageRecentWorkDays_();
       const ymds = window.getPastYmdSet(days);
-      // 再読込時はキャッシュ優先せず最新の端末データを集め直す
-      records = window.collectMyWorkRecords(ymds);
-      try {
-        const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
-        const ymdList = Array.from(ymds).sort();
-        const analysis = await callGAS('getWorkRecordAnalysis', {
-          fromYmd: ymdList[0] || '',
-          toYmd: ymdList[ymdList.length - 1] || '',
-          author: userName,
-          includeRecords: true
+      records = Array.isArray(window._myPageRecentWorkRecordsCache) && window._myPageRecentWorkRecordsCache.length
+        ? window._myPageRecentWorkRecordsCache.slice()
+        : window.collectMyWorkRecords(ymds);
+      // キャッシュが古い場合に備え端末からも再収集してマージ
+      const fresh = window.collectMyWorkRecords(ymds);
+      if (fresh && fresh.length) {
+        const byId = new Map();
+        records.concat(fresh).forEach(r => {
+          const id = String((r && r.id) || '').trim();
+          if (id) byId.set(id, r);
+          else if (r) byId.set('fp_' + ((typeof window.workRecordFingerprintKey_ === 'function') ? window.workRecordFingerprintKey_(r) : Math.random()), r);
         });
-        records = window.mergeMyWorkRecordsWithAnalysis_(records, (analysis && analysis.records) || [], ymds);
-        window._myPageRecentWorkRecordsCache = records.slice();
-      } catch (e) {
-        console.warn('openMyPageWorkDateSelectPopup_ week:', e);
+        records = Array.from(byId.values());
       }
     }
   } catch (e) {
-    console.warn('openMyPageWorkDateSelectPopup_', e);
+    console.warn('openMyPageWorkDateSelectPopup_ local:', e);
   }
-  // 消えたIDは選択から外す
-  const idSet = new Set(records.map(r => String((r && r.id) || '').trim()).filter(Boolean));
-  st.selected = new Set(Array.from(st.selected).filter(id => idSet.has(id)));
+  records = filterDeleted(records);
+  records.sort((a, b) => {
+    const yA = a.recordYmd || '';
+    const yB = b.recordYmd || '';
+    if (yA !== yB) return yB.localeCompare(yA);
+    const tA = (a.data && a.data.startTime) ? a.data.startTime : (a.time || '00:00');
+    const tB = (b.data && b.data.startTime) ? b.data.startTime : (b.time || '00:00');
+    return tB.localeCompare(tA);
+  });
+  const idSetLocal = new Set(records.map(r => String((r && r.id) || '').trim()).filter(Boolean));
+  st.selected = new Set(Array.from(st.selected).filter(id => idSetLocal.has(id)));
   st.records = records;
   window.rerenderMyPageWorkDateSelectPopup_();
+  if (sub && !opts.localOnly) {
+    sub.textContent = (sub.textContent || '') + '（サーバー確認中…）';
+  }
+
+  if (opts.localOnly) return;
+
+  // 2) サーバー補完は裏で（表示をブロックしない）
+  const fetchToken = String(Date.now()) + '_' + Math.random();
+  st._fetchToken = fetchToken;
+  try {
+    const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
+    let analysisRecords = [];
+    let allowedYmds = null;
+    if (st.source === 'all' || st.source === 'history') {
+      const now = new Date();
+      const toYmd = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+      const fromDt = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 365);
+      const fromYmd = fromDt.getFullYear() + '-' + String(fromDt.getMonth() + 1).padStart(2, '0') + '-' + String(fromDt.getDate()).padStart(2, '0');
+      const analysis = await callGAS('getWorkRecordAnalysis', {
+        fromYmd: fromYmd,
+        toYmd: toYmd,
+        author: userName,
+        includeRecords: true
+      });
+      analysisRecords = (analysis && analysis.records) || [];
+    } else {
+      const days = window.getMyPageRecentWorkDays_();
+      const ymds = window.getPastYmdSet(days);
+      allowedYmds = ymds;
+      const ymdList = Array.from(ymds).sort();
+      const analysis = await callGAS('getWorkRecordAnalysis', {
+        fromYmd: ymdList[0] || '',
+        toYmd: ymdList[ymdList.length - 1] || '',
+        author: userName,
+        includeRecords: true
+      });
+      analysisRecords = (analysis && analysis.records) || [];
+    }
+    if (st._fetchToken !== fetchToken || !st.active) return;
+
+    let localNow = [];
+    if (st.source === 'all' || st.source === 'history') {
+      localNow = window.collectMyWorkRecords(null);
+    } else {
+      localNow = window.collectMyWorkRecords(window.getPastYmdSet(window.getMyPageRecentWorkDays_()));
+    }
+    let merged = window.mergeMyWorkRecordsWithAnalysis_(localNow, analysisRecords, allowedYmds);
+    merged = filterDeleted(merged);
+    if (st.source === 'all' || st.source === 'history') {
+      window._myPageAllWorkRecordsCache = merged.slice();
+    } else {
+      window._myPageRecentWorkRecordsCache = merged.slice();
+    }
+    const idSet = new Set(merged.map(r => String((r && r.id) || '').trim()).filter(Boolean));
+    st.selected = new Set(Array.from(st.selected).filter(id => idSet.has(id)));
+    st.records = merged;
+    window.rerenderMyPageWorkDateSelectPopup_();
+  } catch (e) {
+    console.warn('openMyPageWorkDateSelectPopup_ server:', e);
+    if (st._fetchToken === fetchToken && typeof window.rerenderMyPageWorkDateSelectPopup_ === 'function') {
+      window.rerenderMyPageWorkDateSelectPopup_();
+    }
+  }
 };
 
 window.closeMyPageWorkDateSelectPopup_ = function() {
