@@ -184,6 +184,7 @@ const API_ACTIONS = {
   "saveFieldMemo": function (p) { return saveFieldMemo(p); },
   "getFieldMemoHistory": function (p) { return getFieldMemoHistory(p); },
   "saveTrackingData": function (p) { return saveTrackingData(p); },
+  "saveAttendanceData": function (p) { return saveAttendanceData_(p); },
   "saveLunchBreakRecord": function (p) { return saveLunchBreakRecord_(p); },
   "moveLunchBreakRecordDate": function (p) { return moveLunchBreakRecordDate_(p); },
   "getTrackingData": function (p) { return getTrackingData(p); },
@@ -9722,38 +9723,308 @@ function ensureWorkRecordBreakMinsColumn_(sheet) {
 }
 
 // ==========================================
-// 📍 トラッキングデータの保存
+// 📍 出退勤シート（日付・時刻・ユーザー・種類）／トラッキングは移動のみ
+// ==========================================
+
+function ensureAttendanceSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('出退勤');
+  if (!sheet) {
+    sheet = ss.insertSheet('出退勤');
+    sheet.appendRow(['日付', '時刻', 'ユーザー名', '種類']);
+    try {
+      sheet.getRange(1, 1, 1, 4).setFontWeight('bold').setBackground('#e0e0e0');
+    } catch (e) {}
+  }
+  return sheet;
+}
+
+function isAttendancePunchType_(type) {
+  const t = String(type || '');
+  return t === '出勤' || t === 'アプリ起動' || t === '出勤取消' || t === '退勤取消'
+    || t === '退勤' || t.indexOf('退勤(') === 0 || t.indexOf('退勤（') === 0;
+}
+
+function isLunchTrackingType_(type) {
+  const t = String(type || '');
+  return t === '昼休憩なし' || t.indexOf('昼休憩') === 0;
+}
+
+function attendanceDateTimeMs_(dateYmd, timeHm) {
+  const ymd = formatWorkDateYmd_(dateYmd) || String(dateYmd || '').trim();
+  const m = String(timeHm || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!ymd || !m) return NaN;
+  const y = Number(ymd.slice(0, 4));
+  const mo = Number(ymd.slice(5, 7));
+  const d = Number(ymd.slice(8, 10));
+  return new Date(y, mo - 1, d, Number(m[1]), Number(m[2]), 0, 0).getTime();
+}
+
+function attendancePadHm_(hm) {
+  const m = String(hm || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return String(hm || '');
+  return ('0' + m[1]).slice(-2) + ':' + m[2];
+}
+
+/** トラッキングの旧出退勤行を「出退勤」シートへ1回だけ移行 */
+function migrateAttendanceFromTracking_() {
+  const props = PropertiesService.getScriptProperties();
+  let ssId = 'default';
+  try { ssId = String(TENANT_SS.getId() || 'default'); } catch (e) {}
+  const flagKey = 'attendanceMigrated_v1_' + ssId;
+  try {
+    if (props.getProperty(flagKey) === '1') return { migrated: false, skipped: true };
+  } catch (e) {}
+
+  const ss = TENANT_SS;
+  const track = ss.getSheetByName('トラッキング');
+  if (!track || track.getLastRow() <= 1) {
+    try { props.setProperty(flagKey, '1'); } catch (e) {}
+    return { migrated: false, empty: true };
+  }
+
+  const att = ensureAttendanceSheet_();
+  const lastRow = track.getLastRow();
+  const values = track.getRange(2, 1, lastRow, 5).getValues();
+
+  // 既存出退勤行の重複キー
+  const seen = {};
+  if (att.getLastRow() > 1) {
+    const existing = att.getRange(2, 1, att.getLastRow(), 4).getValues();
+    for (let i = 0; i < existing.length; i++) {
+      const d = formatWorkDateYmd_(existing[i][0]) || String(existing[i][0] || '').trim();
+      const t = attendancePadHm_(existing[i][1]);
+      const u = String(existing[i][2] || '').replace(/\s+/g, '');
+      const ty = String(existing[i][3] || '');
+      seen[u + '|' + d + '|' + t + '|' + ty] = true;
+    }
+  }
+
+  const rows = [];
+  for (let i = 0; i < values.length; i++) {
+    const type = String(values[i][4] || '');
+    if (!isAttendancePunchType_(type)) continue;
+    const tObj = new Date(values[i][0]);
+    if (isNaN(tObj.getTime())) continue;
+    const dateYmd = Utilities.formatDate(tObj, 'JST', 'yyyy-MM-dd');
+    const timeHm = Utilities.formatDate(tObj, 'JST', 'HH:mm');
+    const userName = String(values[i][1] || '').trim();
+    if (!userName) continue;
+    const key = userName.replace(/\s+/g, '') + '|' + dateYmd + '|' + timeHm + '|' + type;
+    if (seen[key]) continue;
+    seen[key] = true;
+    rows.push([dateYmd, timeHm, userName, type]);
+  }
+  if (rows.length) {
+    const startWrite = att.getLastRow() + 1;
+    att.getRange(startWrite, 1, startWrite + rows.length - 1, 4).setValues(rows);
+  }
+  try { props.setProperty(flagKey, '1'); } catch (e) {}
+  return { migrated: true, count: rows.length };
+}
+
+/**
+ * 出退勤イベント一覧（新しい順ではなく時系列昇順）
+ * @returns {Array<{type:string, ms:number, time:string, userName:string, dateYmd:string, timeHm:string, rowIndex?:number}>}
+ */
+function loadAttendanceEvents_(opts) {
+  opts = opts || {};
+  try { migrateAttendanceFromTracking_(); } catch (e) {}
+
+  const filterUser = String(opts.userName || '').replace(/\s+/g, '');
+  const events = [];
+  const ss = TENANT_SS;
+  const att = ss.getSheetByName('出退勤');
+
+  if (att && att.getLastRow() > 1) {
+    const lastRow = att.getLastRow();
+    const startRow = Math.max(2, lastRow - (opts.maxRows || 7999) + 1);
+    const values = att.getRange(startRow, 1, lastRow, 4).getValues();
+    for (let i = 0; i < values.length; i++) {
+      const dateYmd = formatWorkDateYmd_(values[i][0]) || String(values[i][0] || '').trim().replace(/\//g, '-').slice(0, 10);
+      let timeHm = attendancePadHm_(values[i][1]);
+      if (!timeHm && values[i][1] instanceof Date && !isNaN(values[i][1].getTime())) {
+        timeHm = Utilities.formatDate(values[i][1], 'JST', 'HH:mm');
+      }
+      const userName = String(values[i][2] || '').trim();
+      const type = String(values[i][3] || '');
+      if (!isAttendancePunchType_(type)) continue;
+      if (!userName || !dateYmd || !timeHm) continue;
+      if (filterUser) {
+        const rowUser = userName.replace(/\s+/g, '');
+        if (rowUser !== filterUser && filterUser.indexOf(rowUser) < 0 && rowUser.indexOf(filterUser) < 0) continue;
+      }
+      const ms = attendanceDateTimeMs_(dateYmd, timeHm);
+      if (isNaN(ms)) continue;
+      events.push({
+        type: type,
+        ms: ms,
+        time: new Date(ms).toISOString(),
+        userName: userName,
+        dateYmd: dateYmd,
+        timeHm: timeHm,
+        rowIndex: startRow + i,
+        lat: '',
+        lng: ''
+      });
+    }
+  }
+
+  // 移行前・フォールバック: トラッキングの出退勤系
+  if (!events.length || opts.alsoFromTracking) {
+    const track = ss.getSheetByName('トラッキング');
+    if (track && track.getLastRow() > 1) {
+      const lastRow = track.getLastRow();
+      const startRow = Math.max(2, lastRow - (opts.maxRows || 4999) + 1);
+      const values = track.getRange(startRow, 1, lastRow, 5).getValues();
+      const seen = {};
+      events.forEach(function (ev) {
+        seen[ev.userName.replace(/\s+/g, '') + '|' + ev.dateYmd + '|' + ev.timeHm + '|' + ev.type] = true;
+      });
+      for (let i = 0; i < values.length; i++) {
+        const type = String(values[i][4] || '');
+        if (!isAttendancePunchType_(type)) continue;
+        const userName = String(values[i][1] || '').trim();
+        if (!userName) continue;
+        if (filterUser) {
+          const rowUser = userName.replace(/\s+/g, '');
+          if (rowUser !== filterUser && filterUser.indexOf(rowUser) < 0 && rowUser.indexOf(filterUser) < 0) continue;
+        }
+        const tObj = new Date(values[i][0]);
+        if (isNaN(tObj.getTime())) continue;
+        const dateYmd = Utilities.formatDate(tObj, 'JST', 'yyyy-MM-dd');
+        const timeHm = Utilities.formatDate(tObj, 'JST', 'HH:mm');
+        const key = userName.replace(/\s+/g, '') + '|' + dateYmd + '|' + timeHm + '|' + type;
+        if (seen[key]) continue;
+        seen[key] = true;
+        events.push({
+          type: type,
+          ms: tObj.getTime(),
+          time: tObj.toISOString(),
+          userName: userName,
+          dateYmd: dateYmd,
+          timeHm: timeHm,
+          lat: values[i][2],
+          lng: values[i][3]
+        });
+      }
+    }
+  }
+
+  events.sort(function (a, b) { return a.ms - b.ms; });
+  return events;
+}
+
+function loadLunchHintForUserDate_(userName, dateYmd) {
+  const uname = String(userName || '').replace(/\s+/g, '');
+  const ymd = formatWorkDateYmd_(dateYmd) || String(dateYmd || '').trim();
+  if (!uname || !ymd) return null;
+  const sheet = TENANT_SS.getSheetByName('昼休憩記録');
+  if (!sheet || sheet.getLastRow() <= 1) return null;
+  const values = sheet.getDataRange().getValues();
+  for (let i = values.length - 1; i >= 1; i--) {
+    const rowUser = String(values[i][0] || '').replace(/\s+/g, '');
+    if (!rowUser) continue;
+    if (rowUser !== uname && uname.indexOf(rowUser) < 0 && rowUser.indexOf(uname) < 0) continue;
+    const rowYmd = formatWorkDateYmd_(values[i][1]);
+    if (rowYmd !== ymd) continue;
+    return {
+      registered: true,
+      enabled: true,
+      start: attendancePadHm_(values[i][2]),
+      end: attendancePadHm_(values[i][3])
+    };
+  }
+  return null;
+}
+
+/** 出退勤の保存（日付・時刻のみ） */
+function saveAttendanceData_(params) {
+  try {
+    try { migrateAttendanceFromTracking_(); } catch (e) {}
+    const userName = String((params && (params.userName || params.user)) || '').trim();
+    const type = String((params && params.type) || '').trim();
+    if (!userName) throw new Error('ユーザー名がありません');
+    if (!isAttendancePunchType_(type)) throw new Error('出退勤の種類が不正です: ' + type);
+
+    let dateYmd = String((params && (params.dateYmd || params.clockInDateYmd || params.workDate)) || '').trim();
+    let timeHm = attendancePadHm_(params && (params.timeHm || params.clockInTime || params.clockTime));
+    let timeMs = params && params.time != null ? Number(params.time) : NaN;
+
+    if (!isNaN(timeMs) && timeMs > 0) {
+      const tObj = new Date(timeMs);
+      if (!dateYmd) dateYmd = Utilities.formatDate(tObj, 'JST', 'yyyy-MM-dd');
+      if (!timeHm) timeHm = Utilities.formatDate(tObj, 'JST', 'HH:mm');
+    } else if (dateYmd && timeHm) {
+      timeMs = attendanceDateTimeMs_(dateYmd, timeHm);
+    } else {
+      const now = new Date();
+      dateYmd = Utilities.formatDate(now, 'JST', 'yyyy-MM-dd');
+      timeHm = Utilities.formatDate(now, 'JST', 'HH:mm');
+      timeMs = now.getTime();
+    }
+    dateYmd = formatWorkDateYmd_(dateYmd) || dateYmd;
+    timeHm = attendancePadHm_(timeHm);
+    if (!dateYmd || !timeHm) throw new Error('日付または時刻が不正です');
+
+    const sheet = ensureAttendanceSheet_();
+    sheet.appendRow([dateYmd, timeHm, userName, type]);
+    return { success: true, dateYmd: dateYmd, timeHm: timeHm, type: type };
+  } catch (e) {
+    throw new Error('出退勤保存エラー: ' + e.message);
+  }
+}
+
+// ==========================================
+// 📍 トラッキングデータの保存（移動のみ／出退勤は振り分け）
 // ==========================================
 function saveTrackingData(params) {
   try {
+    const type = String((params && params.type) || '移動');
+
+    // 出退勤系 → 専用シートへ
+    if (isAttendancePunchType_(type)) {
+      saveAttendanceData_({
+        userName: params.userName,
+        type: type,
+        time: params.time,
+        dateYmd: params.dateYmd || params.clockInDateYmd,
+        timeHm: params.timeHm || params.clockInTime
+      });
+      return 'success';
+    }
+
+    // 昼休憩は専用シートへ既に保存される想定。トラッキングへの追記はしない
+    if (isLunchTrackingType_(type)) {
+      return 'skipped_lunch_use_lunch_sheet';
+    }
+
     const ss = TENANT_SS;
     let sheet = ss.getSheetByName('トラッキング');
     if (!sheet) {
       sheet = ss.insertSheet('トラッキング');
       sheet.appendRow(['日時', 'ユーザー名', '緯度', '経度', '種類']);
     }
-    
-    const timeStr = params.time ? new Date(params.time).toISOString() : new Date().toISOString();
-    const type = params.type || '移動';
 
-    // 🌟 日本国内の座標領域（北緯20〜46度, 東経122〜154度）以外、または (0,0) 等の衛星ノイズ・誤測位位置情報を判定
+    const timeStr = params.time ? new Date(params.time).toISOString() : new Date().toISOString();
+
     const lat = parseFloat(params.lat);
     const lng = parseFloat(params.lng);
     const isValidJapanPos = !isNaN(lat) && !isNaN(lng) && lat >= 20.0 && lat <= 46.0 && lng >= 122.0 && lng <= 154.0;
 
-    // 移動トラッキングで不正座標（海の上や国外・(0,0)など）の場合は直線・ラインが伸びる原因となるため記録しない
-    if (type === '移動' && !isValidJapanPos) {
-      return "skipped_invalid_coords";
+    // 移動以外でここに来た場合もトラッキングには書かない（出退勤・昼休憩は上で処理済）
+    if (type !== '移動') {
+      return 'skipped_non_movement';
     }
 
-    const saveLat = isValidJapanPos ? lat : '';
-    const saveLng = isValidJapanPos ? lng : '';
+    if (!isValidJapanPos) {
+      return 'skipped_invalid_coords';
+    }
 
-    sheet.appendRow([timeStr, params.userName, saveLat, saveLng, type]);
-    
-    return "success";
-  } catch(e) {
-    throw new Error("トラッキング保存エラー: " + e.message);
+    sheet.appendRow([timeStr, params.userName, lat, lng, '移動']);
+    return 'success';
+  } catch (e) {
+    throw new Error('トラッキング保存エラー: ' + e.message);
   }
 }
 
@@ -9763,61 +10034,76 @@ function saveTrackingData(params) {
 function getTrackingData(params) {
   try {
     const ss = TENANT_SS;
-    const sheet = ss.getSheetByName('トラッキング');
-    
+
     const allUsers = [];
     const meiboSheet = ss.getSheetByName('名簿');
     if (meiboSheet) {
       const meiboData = meiboSheet.getDataRange().getValues();
       for (let i = 1; i < meiboData.length; i++) {
         const userName = String(meiboData[i][2] || '').trim();
-        if (userName) {
-          allUsers.push(userName);
-        }
+        if (userName) allUsers.push(userName);
       }
     }
 
-    // 名簿ユーザー一覧のみ（軌跡メニューの対象ユーザー選択用）
     if (params && params.usersOnly) {
       return { trackingData: [], allUsers: allUsers };
     }
 
-    if (!sheet) return { trackingData: [], allUsers: allUsers };
-    
-    const lastRow = sheet.getLastRow();
-    if (lastRow <= 1) return { trackingData: [], allUsers: allUsers };
-    
-    let startRow = 2;
-    let numRows = lastRow - 1;
-    let targetDateStr = null;
-    let daysBack = null;
     const filterUser = (params && params.userName) ? String(params.userName).replace(/\s+/g, '') : '';
     const attendanceOnly = !!(params && params.attendanceOnly);
-    
-    if (params && params.targetDate) {
-      targetDateStr = params.targetDate;
+    let targetDateStr = (params && params.targetDate) ? String(params.targetDate) : null;
+    let daysBack = null;
+    if (params && params.days) {
+      daysBack = Math.max(1, Math.min(90, parseInt(params.days, 10) || 30));
+    }
+    const now = new Date().getTime();
+    const oneDay = 24 * 60 * 60 * 1000;
+    const cutoff = daysBack ? (now - daysBack * oneDay) : null;
+
+    // マイページ等: 出退勤シート優先
+    if (attendanceOnly) {
+      const events = loadAttendanceEvents_({
+        userName: filterUser,
+        maxRows: 14999,
+        alsoFromTracking: true
+      });
+      const data = [];
+      for (let i = 0; i < events.length; i++) {
+        const ev = events[i];
+        if (targetDateStr && ev.dateYmd !== targetDateStr) continue;
+        if (cutoff != null && ev.ms < cutoff) continue;
+        if (!targetDateStr && cutoff == null && (now - ev.ms > 90 * oneDay)) continue;
+        data.push({
+          type: ev.type,
+          time: ev.time,
+          userName: ev.userName,
+          lat: '',
+          lng: ''
+        });
+      }
+      return { trackingData: data, allUsers: allUsers };
+    }
+
+    // 移動軌跡: トラッキングの「移動」のみ
+    const sheet = ss.getSheetByName('トラッキング');
+    if (!sheet) return { trackingData: [], allUsers: allUsers };
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { trackingData: [], allUsers: allUsers };
+
+    let startRow = 2;
+    let numRows = lastRow - 1;
+    if (targetDateStr) {
       startRow = Math.max(2, lastRow - 9999);
       numRows = lastRow - startRow + 1;
-    } else if (params && params.days) {
-      daysBack = Math.max(1, Math.min(90, parseInt(params.days, 10) || 30));
+    } else if (daysBack) {
       startRow = Math.max(2, lastRow - 14999);
       numRows = lastRow - startRow + 1;
     } else {
       startRow = Math.max(2, lastRow - 1999);
       numRows = lastRow - startRow + 1;
     }
-    
-    const values = sheet.getRange(startRow, 1, numRows, 5).getValues();
-    
-    const now = new Date().getTime();
-    const oneDay = 24 * 60 * 60 * 1000;
-    const cutoff = daysBack ? (now - daysBack * oneDay) : null;
-    
-    function isAttendanceType(type) {
-      const t = String(type || '');
-      return t === '出勤' || t === 'アプリ起動' || t === '出勤取消' || t === '退勤取消' || t === '退勤' || t.indexOf('退勤(') === 0;
-    }
-    
+
+    const values = sheet.getRange(startRow, 1, lastRow, 5).getValues();
     const data = [];
     for (let i = 0; i < values.length; i++) {
       const timeStr = values[i][0];
@@ -9825,7 +10111,8 @@ function getTrackingData(params) {
       const lat = values[i][2];
       const lng = values[i][3];
       const type = values[i][4];
-      
+      if (String(type) !== '移動') continue;
+
       const tObj = new Date(timeStr);
       if (isNaN(tObj.getTime())) continue;
 
@@ -9835,8 +10122,6 @@ function getTrackingData(params) {
         if (rowUser !== filterUser && filterUser.indexOf(rowUser) < 0 && rowUser.indexOf(filterUser) < 0) continue;
       }
 
-      if (attendanceOnly && !isAttendanceType(type)) continue;
-      
       if (targetDateStr) {
         const y = tObj.getFullYear();
         const m = String(tObj.getMonth() + 1).padStart(2, '0');
@@ -9854,10 +10139,10 @@ function getTrackingData(params) {
         }
       }
     }
-    
+
     return { trackingData: data, allUsers: allUsers };
-  } catch(e) {
-    throw new Error("トラッキング取得エラー: " + e.message);
+  } catch (e) {
+    throw new Error('トラッキング取得エラー: ' + e.message);
   }
 }
 
@@ -9881,30 +10166,14 @@ function getFrequentClockInTimes(params) {
   try {
     const userName = String((params && params.userName) || '').replace(/\s+/g, '');
     if (!userName) return { times: [], mostFrequent: '' };
-    const ss = TENANT_SS;
-    const sheet = ss.getSheetByName('トラッキング');
-    if (!sheet) return { times: [], mostFrequent: '' };
-    const lastRow = sheet.getLastRow();
-    if (lastRow <= 1) return { times: [], mostFrequent: '' };
-
-    const startRow = Math.max(2, lastRow - 7999);
-    const numRows = lastRow - startRow + 1;
-    const values = sheet.getRange(startRow, 1, numRows, 5).getValues();
+    const events = loadAttendanceEvents_({ userName: userName, maxRows: 7999, alsoFromTracking: true });
     const counts = {};
-
-    for (let i = 0; i < values.length; i++) {
-      const type = String(values[i][4] || '');
-      if (type !== '出勤') continue;
-      const rowUser = String(values[i][1] || '').replace(/\s+/g, '');
-      if (!rowUser) continue;
-      if (rowUser !== userName && userName.indexOf(rowUser) < 0 && rowUser.indexOf(userName) < 0) continue;
-      const tObj = new Date(values[i][0]);
-      if (isNaN(tObj.getTime())) continue;
-      const hm = roundClockHm5_(Utilities.formatDate(tObj, 'Asia/Tokyo', 'HH:mm'));
+    for (let i = 0; i < events.length; i++) {
+      if (events[i].type !== '出勤' && events[i].type !== 'アプリ起動') continue;
+      const hm = roundClockHm5_(events[i].timeHm);
       if (!hm) continue;
       counts[hm] = (counts[hm] || 0) + 1;
     }
-
     const times = Object.keys(counts).map(function (t) {
       return { time: t, count: counts[t] };
     }).sort(function (a, b) {
@@ -10363,81 +10632,61 @@ function updateOpenClockInTime(params) {
     if (!hm) return { success: false, error: '出勤時間が不正です' };
     const padHm = ('0' + hm[1]).slice(-2) + ':' + hm[2];
 
-    const ss = TENANT_SS;
-    const sheet = ss.getSheetByName('トラッキング');
-    if (!sheet || sheet.getLastRow() <= 1) {
-      return { success: false, error: '出勤中の記録がありません' };
-    }
-
-    const lastRow = sheet.getLastRow();
-    const startRow = Math.max(2, lastRow - 4999);
-    const numRows = lastRow - startRow + 1;
-    const values = sheet.getRange(startRow, 1, numRows, 5).getValues();
-
-    let openRow = -1;
-    let openMs = null;
-    let lastClosedRow = -1;
-    let lastClosedMs = null;
-    for (let i = 0; i < values.length; i++) {
-      const rowUser = String(values[i][1] || '').replace(/\s+/g, '');
-      if (!rowUser) continue;
-      if (rowUser !== userName && userName.indexOf(rowUser) < 0 && rowUser.indexOf(userName) < 0) continue;
-
-      const type = String(values[i][4] || '');
-      const tObj = new Date(values[i][0]);
-      if (isNaN(tObj.getTime())) continue;
-
+    const events = loadAttendanceEvents_({ userName: userName, maxRows: 4999, alsoFromTracking: true });
+    let openEv = null;
+    let lastClosedIn = null;
+    for (let i = 0; i < events.length; i++) {
+      const type = events[i].type;
       const isIn = (type === '出勤' || type === 'アプリ起動');
-      const isOut = (type === '退勤' || type.indexOf('退勤(') === 0);
+      const isOut = (type === '退勤' || type.indexOf('退勤(') === 0 || type.indexOf('退勤（') === 0);
       const isClockInCancel = (type === '出勤取消');
       const isClockOutCancel = (type === '退勤取消');
-
       if (isIn) {
-        openRow = startRow + i;
-        openMs = tObj.getTime();
-        lastClosedRow = -1;
-        lastClosedMs = null;
+        openEv = events[i];
+        lastClosedIn = null;
       } else if (isOut) {
-        lastClosedRow = openRow;
-        lastClosedMs = openMs;
-        openRow = -1;
-        openMs = null;
+        lastClosedIn = openEv;
+        openEv = null;
       } else if (isClockOutCancel) {
-        if (lastClosedRow >= 0 && lastClosedMs != null) {
-          openRow = lastClosedRow;
-          openMs = lastClosedMs;
-          lastClosedRow = -1;
-          lastClosedMs = null;
+        if (lastClosedIn) {
+          openEv = lastClosedIn;
+          lastClosedIn = null;
         }
       } else if (isClockInCancel) {
-        openRow = -1;
-        openMs = null;
-        lastClosedRow = -1;
-        lastClosedMs = null;
+        openEv = null;
+        lastClosedIn = null;
       }
     }
 
-    if (openRow < 0 || openMs == null) {
+    if (!openEv) {
       return { success: false, error: '出勤中の記録がありません' };
     }
 
     let dateYmd = String((params && params.clockInDateYmd) || '').trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateYmd)) {
-      dateYmd = Utilities.formatDate(new Date(openMs), 'JST', 'yyyy-MM-dd');
+      dateYmd = openEv.dateYmd;
     }
 
     let timeMs = params && params.time ? Number(params.time) : NaN;
     if (isNaN(timeMs) || timeMs <= 0) {
-      const y = Number(dateYmd.slice(0, 4));
-      const mo = Number(dateYmd.slice(5, 7));
-      const d = Number(dateYmd.slice(8, 10));
-      const hh = Number(hm[1]);
-      const mm = Number(hm[2]);
-      // スクリプトのタイムゾーン（通常 JST）で壁時計時刻を作る
-      timeMs = new Date(y, mo - 1, d, hh, mm, 0, 0).getTime();
+      timeMs = attendanceDateTimeMs_(dateYmd, padHm);
     }
 
-    sheet.getRange(openRow, 1).setValue(new Date(timeMs).toISOString());
+    // 出退勤シート上の行を更新（なければ新規）
+    if (openEv.rowIndex) {
+      const sheet = ensureAttendanceSheet_();
+      sheet.getRange(openEv.rowIndex, 1).setValue(dateYmd);
+      sheet.getRange(openEv.rowIndex, 2).setValue(padHm);
+    } else {
+      saveAttendanceData_({
+        userName: params.userName || userName,
+        type: '出勤',
+        dateYmd: dateYmd,
+        timeHm: padHm,
+        time: timeMs
+      });
+    }
+
     return {
       success: true,
       clockInTime: padHm,
@@ -10467,61 +10716,43 @@ function updateClockInTimeForDate(params) {
 
     let timeMs = params && params.time ? Number(params.time) : NaN;
     if (isNaN(timeMs) || timeMs <= 0) {
-      const y = Number(dateYmd.slice(0, 4));
-      const mo = Number(dateYmd.slice(5, 7));
-      const d = Number(dateYmd.slice(8, 10));
-      const hh = Number(hm[1]);
-      const mm = Number(hm[2]);
-      timeMs = new Date(y, mo - 1, d, hh, mm, 0, 0).getTime();
+      timeMs = attendanceDateTimeMs_(dateYmd, padHm);
     }
 
-    const ss = TENANT_SS;
-    const sheet = ss.getSheetByName('トラッキング');
-    if (!sheet || sheet.getLastRow() <= 1) {
-      // 打刻が無い日は新規出勤行を追加
-      if (!sheet) {
-        const created = ss.insertSheet('トラッキング');
-        created.appendRow(['日時', 'ユーザー名', '緯度', '経度', '種類']);
-        created.appendRow([new Date(timeMs).toISOString(), params.userName, '', '', '出勤']);
-      } else {
-        sheet.appendRow([new Date(timeMs).toISOString(), params.userName, '', '', '出勤']);
-      }
-      return { success: true, clockInTime: padHm, clockInDateYmd: dateYmd, created: true };
-    }
-
-    const lastRow = sheet.getLastRow();
-    const startRow = Math.max(2, lastRow - 7999);
-    const numRows = lastRow - startRow + 1;
-    const values = sheet.getRange(startRow, 1, numRows, 5).getValues();
-
-    // その日の「出勤 / アプリ起動」行を新しい順に探す（退勤済みでも可）
-    let targetRow = -1;
-    for (let i = values.length - 1; i >= 0; i--) {
-      const rowUser = String(values[i][1] || '').replace(/\s+/g, '');
-      if (!rowUser) continue;
-      if (rowUser !== userName && userName.indexOf(rowUser) < 0 && rowUser.indexOf(userName) < 0) continue;
-      const type = String(values[i][4] || '');
-      const isIn = (type === '出勤' || type === 'アプリ起動');
-      if (!isIn) continue;
-      const tObj = new Date(values[i][0]);
-      if (isNaN(tObj.getTime())) continue;
-      const rowYmd = Utilities.formatDate(tObj, 'JST', 'yyyy-MM-dd');
-      if (rowYmd !== dateYmd) continue;
-      targetRow = startRow + i;
+    const events = loadAttendanceEvents_({ userName: userName, maxRows: 7999, alsoFromTracking: true });
+    let target = null;
+    for (let i = events.length - 1; i >= 0; i--) {
+      const type = events[i].type;
+      if (type !== '出勤' && type !== 'アプリ起動') continue;
+      if (events[i].dateYmd !== dateYmd) continue;
+      target = events[i];
       break;
     }
 
-    if (targetRow < 0) {
-      sheet.appendRow([new Date(timeMs).toISOString(), params.userName, '', '', '出勤']);
-      return { success: true, clockInTime: padHm, clockInDateYmd: dateYmd, created: true };
+    if (target && target.rowIndex) {
+      const sheet = ensureAttendanceSheet_();
+      sheet.getRange(target.rowIndex, 1).setValue(dateYmd);
+      sheet.getRange(target.rowIndex, 2).setValue(padHm);
+      return {
+        success: true,
+        clockInTime: padHm,
+        clockInDateYmd: dateYmd,
+        updatedRow: target.rowIndex
+      };
     }
 
-    sheet.getRange(targetRow, 1).setValue(new Date(timeMs).toISOString());
+    saveAttendanceData_({
+      userName: params.userName || userName,
+      type: '出勤',
+      dateYmd: dateYmd,
+      timeHm: padHm,
+      time: timeMs
+    });
     return {
       success: true,
       clockInTime: padHm,
       clockInDateYmd: dateYmd,
-      updatedRow: targetRow
+      created: true
     };
   } catch (e) {
     throw new Error('日付指定の出勤時間更新エラー: ' + e.message);
@@ -10535,77 +10766,40 @@ function getOpenClockInStatus(params) {
     const userName = String((params && params.userName) || '').replace(/\s+/g, '');
     if (!userName) return { open: false, forgot: false, lunchRegistered: false, cancelableClockOut: false };
 
-    const ss = TENANT_SS;
-    const sheet = ss.getSheetByName('トラッキング');
     const todayYmd = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
-    if (!sheet || sheet.getLastRow() <= 1) {
-      return { open: false, forgot: false, lunchRegistered: false, cancelableClockOut: false, todayYmd: todayYmd };
-    }
-
-    const lastRow = sheet.getLastRow();
-    const startRow = Math.max(2, lastRow - 4999);
-    const numRows = lastRow - startRow + 1;
-    const values = sheet.getRange(startRow, 1, numRows, 5).getValues();
-
-    const padHm = (hm) => {
-      const m = String(hm || '').match(/^(\d{1,2}):(\d{2})$/);
-      if (!m) return String(hm || '');
-      return ('0' + m[1]).slice(-2) + ':' + m[2];
-    };
+    const events = loadAttendanceEvents_({ userName: userName, maxRows: 4999, alsoFromTracking: true });
 
     let openIn = null;
-    let lunch = null;
-    let lastClosed = null; // { openIn, lunch, outMs }
+    let lastClosed = null;
 
-    for (let i = 0; i < values.length; i++) {
-      const rowUser = String(values[i][1] || '').replace(/\s+/g, '');
-      if (!rowUser) continue;
-      if (rowUser !== userName && userName.indexOf(rowUser) < 0 && rowUser.indexOf(userName) < 0) continue;
-
-      const type = String(values[i][4] || '');
-      const tObj = new Date(values[i][0]);
-      if (isNaN(tObj.getTime())) continue;
-
+    for (let i = 0; i < events.length; i++) {
+      const type = events[i].type;
       const isIn = (type === '出勤' || type === 'アプリ起動');
-      const isOut = (type === '退勤' || type.indexOf('退勤(') === 0);
+      const isOut = (type === '退勤' || type.indexOf('退勤(') === 0 || type.indexOf('退勤（') === 0);
       const isClockInCancel = (type === '出勤取消');
       const isClockOutCancel = (type === '退勤取消');
 
       if (isIn) {
-        openIn = { ms: tObj.getTime() };
-        lunch = null;
+        openIn = { ms: events[i].ms, dateYmd: events[i].dateYmd, timeHm: events[i].timeHm };
         lastClosed = null;
       } else if (isOut) {
-        lastClosed = { openIn: openIn, lunch: lunch, outMs: tObj.getTime() };
+        lastClosed = { openIn: openIn, outMs: events[i].ms, outYmd: events[i].dateYmd, outHm: events[i].timeHm };
         openIn = null;
-        lunch = null;
       } else if (isClockOutCancel) {
         if (lastClosed && lastClosed.openIn) {
           openIn = lastClosed.openIn;
-          lunch = lastClosed.lunch;
           lastClosed = null;
         }
       } else if (isClockInCancel) {
         openIn = null;
-        lunch = null;
         lastClosed = null;
-      } else if (openIn) {
-        if (type === '昼休憩なし') {
-          lunch = { registered: true, enabled: false, start: '', end: '' };
-        } else if (type.indexOf('昼休憩') === 0) {
-          const m = type.match(/昼休憩[（(]\s*(\d{1,2}:\d{2})\s*[-〜~－–]\s*(\d{1,2}:\d{2})\s*[）)]/);
-          if (m) {
-            lunch = { registered: true, enabled: true, start: padHm(m[1]), end: padHm(m[2]) };
-          } else {
-            lunch = { registered: true, enabled: true, start: '', end: '' };
-          }
-        }
       }
     }
 
     if (openIn) {
-      const clockInDateYmd = Utilities.formatDate(new Date(openIn.ms), 'JST', 'yyyy-MM-dd');
-      const clockInTime = Utilities.formatDate(new Date(openIn.ms), 'JST', 'HH:mm');
+      const clockInDateYmd = openIn.dateYmd;
+      const clockInTime = openIn.timeHm;
+      const lunch = loadLunchHintForUserDate_(userName, clockInDateYmd);
       return {
         open: true,
         forgot: clockInDateYmd < todayYmd,
@@ -10620,18 +10814,17 @@ function getOpenClockInStatus(params) {
       };
     }
 
-    // 本日退勤済みなら、同日中は取り消し可能として返す
     if (lastClosed && lastClosed.openIn && lastClosed.outMs) {
-      const outDateYmd = Utilities.formatDate(new Date(lastClosed.outMs), 'JST', 'yyyy-MM-dd');
+      const outDateYmd = lastClosed.outYmd;
       if (outDateYmd === todayYmd) {
-        const inLunch = lastClosed.lunch;
+        const inLunch = loadLunchHintForUserDate_(userName, lastClosed.openIn.dateYmd || outDateYmd);
         return {
           open: false,
           forgot: false,
           cancelableClockOut: true,
-          clockInDateYmd: Utilities.formatDate(new Date(lastClosed.openIn.ms), 'JST', 'yyyy-MM-dd'),
-          clockInTime: Utilities.formatDate(new Date(lastClosed.openIn.ms), 'JST', 'HH:mm'),
-          clockOutTime: Utilities.formatDate(new Date(lastClosed.outMs), 'JST', 'HH:mm'),
+          clockInDateYmd: lastClosed.openIn.dateYmd,
+          clockInTime: lastClosed.openIn.timeHm,
+          clockOutTime: lastClosed.outHm,
           clockOutDateYmd: outDateYmd,
           todayYmd: todayYmd,
           lunchRegistered: !!(inLunch && inLunch.registered),
@@ -10724,118 +10917,112 @@ function getStaffClockBoard(params) {
     stateMap[m.key] = emptyClockState_(m);
   });
 
-  const sheet = ss.getSheetByName('トラッキング');
-  if (sheet && sheet.getLastRow() > 1) {
-    const lastRow = sheet.getLastRow();
-    const startRow = Math.max(2, lastRow - 7999);
-    const values = sheet.getRange(startRow, 1, lastRow - startRow + 1, 5).getValues();
-    const openByUser = {};
-    const lunchByUser = {};
-    const lastClosedByUser = {};
+  const events = loadAttendanceEvents_({ maxRows: 7999, alsoFromTracking: true });
+  const openByUser = {};
+  const lunchByUser = {};
+  const lastClosedByUser = {};
 
-    function applyShiftToDate_(key, closed, open, lunch) {
-      const st = stateMap[key];
-      if (!st) return;
-      if (closed && closed.outMs) {
-        const outYmd = attYmdJst_(new Date(closed.outMs));
-        const inYmd = closed.openIn ? attYmdJst_(new Date(closed.openIn.ms)) : '';
-        if (outYmd === dateYmd || inYmd === dateYmd) {
-          st.status = 'clocked_out';
-          st.forgot = false;
-          st.clockOutDateYmd = outYmd;
-          st.clockOutTime = attHmJst_(new Date(closed.outMs));
-          st.clockOutNote = closed.note || '';
-          if (closed.openIn) {
-            st.clockInDateYmd = inYmd;
-            st.clockInTime = attHmJst_(new Date(closed.openIn.ms));
-          }
-          st.lunchNote = closed.lunch ? String(closed.lunch) : '';
-        }
-      } else if (open && open.ms) {
-        const inYmd = attYmdJst_(new Date(open.ms));
-        if (inYmd === dateYmd) {
-          st.status = 'working';
-          st.forgot = false;
+  function applyShiftToDate_(key, closed, open, lunch) {
+    const st = stateMap[key];
+    if (!st) return;
+    if (closed && closed.outMs) {
+      const outYmd = attYmdJst_(new Date(closed.outMs));
+      const inYmd = closed.openIn ? attYmdJst_(new Date(closed.openIn.ms)) : '';
+      if (outYmd === dateYmd || inYmd === dateYmd) {
+        st.status = 'clocked_out';
+        st.forgot = false;
+        st.clockOutDateYmd = outYmd;
+        st.clockOutTime = attHmJst_(new Date(closed.outMs));
+        st.clockOutNote = closed.note || '';
+        if (closed.openIn) {
           st.clockInDateYmd = inYmd;
-          st.clockInTime = attHmJst_(new Date(open.ms));
-          st.clockOutTime = '';
-          st.clockOutDateYmd = '';
-          st.clockOutNote = '';
-          st.lunchNote = lunch || '';
-        } else if (inYmd < dateYmd && dateYmd === todayYmd) {
-          st.status = 'forgot';
-          st.forgot = true;
-          st.clockInDateYmd = inYmd;
-          st.clockInTime = attHmJst_(new Date(open.ms));
-          st.clockOutTime = '';
-          st.clockOutDateYmd = '';
-          st.clockOutNote = '';
-          st.lunchNote = lunch || '';
+          st.clockInTime = attHmJst_(new Date(closed.openIn.ms));
         }
+        st.lunchNote = closed.lunch ? String(closed.lunch) : '';
+      }
+    } else if (open && open.ms) {
+      const inYmd = attYmdJst_(new Date(open.ms));
+      if (inYmd === dateYmd) {
+        st.status = 'working';
+        st.forgot = false;
+        st.clockInDateYmd = inYmd;
+        st.clockInTime = attHmJst_(new Date(open.ms));
+        st.clockOutTime = '';
+        st.clockOutDateYmd = '';
+        st.clockOutNote = '';
+        st.lunchNote = lunch || '';
+      } else if (inYmd < dateYmd && dateYmd === todayYmd) {
+        st.status = 'forgot';
+        st.forgot = true;
+        st.clockInDateYmd = inYmd;
+        st.clockInTime = attHmJst_(new Date(open.ms));
+        st.clockOutTime = '';
+        st.clockOutDateYmd = '';
+        st.clockOutNote = '';
+        st.lunchNote = lunch || '';
       }
     }
+  }
 
-    for (let i = 0; i < values.length; i++) {
-      const key = normClockUser_(values[i][1]);
-      if (!key) continue;
-      if (!stateMap[key]) {
-        stateMap[key] = emptyClockState_({ userName: String(values[i][1] || '').trim() });
-      }
-      const type = String(values[i][4] || '');
-      const tObj = new Date(values[i][0]);
-      if (isNaN(tObj.getTime())) continue;
-      const isIn = (type === '出勤' || type === 'アプリ起動');
-      const isOut = (type === '退勤' || type.indexOf('退勤(') === 0);
-      const isClockInCancel = (type === '出勤取消');
-      const isClockOutCancel = (type === '退勤取消');
+  for (let i = 0; i < events.length; i++) {
+    const key = normClockUser_(events[i].userName);
+    if (!key) continue;
+    if (!stateMap[key]) {
+      stateMap[key] = emptyClockState_({ userName: String(events[i].userName || '').trim() });
+    }
+    const type = String(events[i].type || '');
+    const tMs = events[i].ms;
+    if (!tMs) continue;
+    const isIn = (type === '出勤' || type === 'アプリ起動');
+    const isOut = (type === '退勤' || type.indexOf('退勤(') === 0 || type.indexOf('退勤（') === 0);
+    const isClockInCancel = (type === '出勤取消');
+    const isClockOutCancel = (type === '退勤取消');
 
-      if (isIn) {
-        openByUser[key] = { ms: tObj.getTime() };
-        lunchByUser[key] = null;
+    if (isIn) {
+      openByUser[key] = { ms: tMs };
+      const lunchHint = loadLunchHintForUserDate_(events[i].userName, events[i].dateYmd);
+      lunchByUser[key] = lunchHint
+        ? ('昼休憩(' + (lunchHint.start || '') + '-' + (lunchHint.end || '') + ')')
+        : null;
+      lastClosedByUser[key] = null;
+      applyShiftToDate_(key, null, openByUser[key], lunchByUser[key] || '');
+    } else if (isOut) {
+      lastClosedByUser[key] = {
+        openIn: openByUser[key] || null,
+        lunch: lunchByUser[key] || null,
+        outMs: tMs,
+        note: parseClockOutNote_(type)
+      };
+      openByUser[key] = null;
+      lunchByUser[key] = null;
+      applyShiftToDate_(key, lastClosedByUser[key], null, '');
+    } else if (isClockOutCancel) {
+      const closed = lastClosedByUser[key];
+      if (closed && closed.openIn) {
+        openByUser[key] = closed.openIn;
+        lunchByUser[key] = closed.lunch;
         lastClosedByUser[key] = null;
-        applyShiftToDate_(key, null, openByUser[key], '');
-      } else if (isOut) {
-        lastClosedByUser[key] = {
-          openIn: openByUser[key] || null,
-          lunch: lunchByUser[key] || null,
-          outMs: tObj.getTime(),
-          note: parseClockOutNote_(type)
-        };
-        openByUser[key] = null;
-        lunchByUser[key] = null;
-        applyShiftToDate_(key, lastClosedByUser[key], null, '');
-      } else if (isClockOutCancel) {
-        const closed = lastClosedByUser[key];
-        if (closed && closed.openIn) {
-          openByUser[key] = closed.openIn;
-          lunchByUser[key] = closed.lunch;
-          lastClosedByUser[key] = null;
-          if (stateMap[key] && (stateMap[key].clockOutDateYmd === dateYmd || stateMap[key].clockInDateYmd === dateYmd)) {
-            stateMap[key].status = 'none';
-            stateMap[key].clockOutTime = '';
-            stateMap[key].clockOutDateYmd = '';
-            stateMap[key].clockOutNote = '';
-          }
-          applyShiftToDate_(key, null, openByUser[key], lunchByUser[key] || '');
-        }
-      } else if (isClockInCancel) {
-        if (stateMap[key] && stateMap[key].clockInDateYmd === dateYmd) {
+        if (stateMap[key] && (stateMap[key].clockOutDateYmd === dateYmd || stateMap[key].clockInDateYmd === dateYmd)) {
           stateMap[key].status = 'none';
-          stateMap[key].clockInTime = '';
-          stateMap[key].clockInDateYmd = '';
           stateMap[key].clockOutTime = '';
           stateMap[key].clockOutDateYmd = '';
           stateMap[key].clockOutNote = '';
-          stateMap[key].forgot = false;
         }
-        openByUser[key] = null;
-        lunchByUser[key] = null;
-        lastClosedByUser[key] = null;
-      } else if (openByUser[key]) {
-        if (type === '昼休憩なし') lunchByUser[key] = '昼なし';
-        else if (type.indexOf('昼休憩') === 0) lunchByUser[key] = type;
         applyShiftToDate_(key, null, openByUser[key], lunchByUser[key] || '');
       }
+    } else if (isClockInCancel) {
+      if (stateMap[key] && stateMap[key].clockInDateYmd === dateYmd) {
+        stateMap[key].status = 'none';
+        stateMap[key].clockInTime = '';
+        stateMap[key].clockInDateYmd = '';
+        stateMap[key].clockOutTime = '';
+        stateMap[key].clockOutDateYmd = '';
+        stateMap[key].clockOutNote = '';
+        stateMap[key].forgot = false;
+      }
+      openByUser[key] = null;
+      lunchByUser[key] = null;
+      lastClosedByUser[key] = null;
     }
   }
 
@@ -17616,31 +17803,22 @@ function loadLeaveRows_(userId, userName) {
 }
 
 function loadAttendanceDaysFromTracking_(userName, year, month) {
-  const ss = TENANT_SS;
-  const sheet = ss.getSheetByName('トラッキング');
   const days = {};
-  if (!sheet || !userName) return days;
-  const lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return days;
-  const startRow = Math.max(2, lastRow - 14999);
-  const values = sheet.getRange(startRow, 1, lastRow - startRow + 1, 5).getValues();
-  const uname = String(userName).replace(/\s+/g, '');
+  if (!userName) return days;
+  const events = loadAttendanceEvents_({ userName: userName, maxRows: 14999, alsoFromTracking: true });
   const y = Number(year);
   const m = Number(month);
-  for (let i = 0; i < values.length; i++) {
-    const type = String(values[i][4] || '');
+  for (let i = 0; i < events.length; i++) {
+    const type = events[i].type;
     if (type !== '出勤' && type !== 'アプリ起動') continue;
-    const rowUser = String(values[i][1] || '').replace(/\s+/g, '');
-    if (!rowUser) continue;
-    if (rowUser !== uname && uname.indexOf(rowUser) < 0 && rowUser.indexOf(uname) < 0) continue;
-    const tObj = new Date(values[i][0]);
+    const tObj = new Date(events[i].ms);
     if (isNaN(tObj.getTime())) continue;
     if (tObj.getFullYear() !== y || (tObj.getMonth() + 1) !== m) continue;
-    const ymd = attFormatYmd_(tObj);
+    const ymd = events[i].dateYmd || attFormatYmd_(tObj);
     if (!days[ymd]) {
       days[ymd] = {
         date: ymd,
-        clockInTime: attPad2_(tObj.getHours()) + ':' + attPad2_(tObj.getMinutes()),
+        clockInTime: events[i].timeHm || (attPad2_(tObj.getHours()) + ':' + attPad2_(tObj.getMinutes())),
         types: [type]
       };
     }

@@ -30248,17 +30248,6 @@ window.syncBulkWorkMemoRestSideEffects_ = (data, localId, ymd) => {
     if (user && typeof window.saveLunchBreakRecordToServer_ === 'function') {
       window.saveLunchBreakRecordToServer_(workDate, start, end).catch(() => {});
     }
-    if (user && typeof callGAS === 'function') {
-      callGAS('saveTrackingData', {
-        userName: user,
-        lat: 0,
-        lng: 0,
-        type: `昼休憩(${start}-${end})`,
-        time: (typeof window.buildBulkWorkMemoYmdTimeMs_ === 'function')
-          ? window.buildBulkWorkMemoYmdTimeMs_(workDate, start || end)
-          : Date.now()
-      }).catch(() => {});
-    }
   }
   return true;
 };
@@ -31054,22 +31043,8 @@ window.registerBulkWorkMemoLunchBreak_ = (ymd, startHm, endHm, opts) => {
   if (typeof window.syncTrackingUI === 'function') {
     try { window.syncTrackingUI(); } catch (e) {}
   }
-  const user = (typeof currentUser !== 'undefined' && currentUser)
-    ? currentUser
-    : (localStorage.getItem('passionMapUserName') || '');
   if (typeof window.saveLunchBreakRecordToServer_ === 'function') {
     window.saveLunchBreakRecordToServer_(dateYmd, start, end).catch(() => {});
-  }
-  if (user && typeof callGAS === 'function') {
-    callGAS('saveTrackingData', {
-      userName: user,
-      lat: 0,
-      lng: 0,
-      type: `昼休憩(${start}-${end})`,
-      time: (typeof window.buildBulkWorkMemoYmdTimeMs_ === 'function')
-        ? window.buildBulkWorkMemoYmdTimeMs_(dateYmd, start)
-        : Date.now()
-    }).catch(() => {});
   }
   return { ok: true, localId: '', start: start, end: end };
 };

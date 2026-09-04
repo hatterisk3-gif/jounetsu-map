@@ -2758,18 +2758,7 @@
         endTime: lunchData.end || ''
       }).catch((e) => console.warn('昼休憩記録送信エラー', e));
     }
-    if (user && typeof callGAS === 'function') {
-      const label = lunchData.enabled
-        ? `昼休憩(${lunchData.start}-${lunchData.end})`
-        : '昼休憩なし';
-      callGAS('saveTrackingData', {
-        userName: user,
-        lat: 0,
-        lng: 0,
-        type: label,
-        time: Date.now()
-      }).catch((e) => console.warn('昼休憩送信エラー', e));
-    }
+    // 昼休憩は「昼休憩記録」シートのみ（トラッキング／出退勤には書かない）
 
     if (window._isModifyingLunchFromClockOut) {
       window._isModifyingLunchFromClockOut = false;
