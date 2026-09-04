@@ -30242,83 +30242,106 @@ window.getBulkWorkMemoPrepTargetWorks_ = (d) => {
 
 window.setBulkWorkMemoPrepTargetWorks_ = (d, names) => {
   if (!d) return;
-  const list = [];
-  const seen = new Set();
-  (Array.isArray(names) ? names : [names]).forEach(n => {
-    const s = String(n || '').trim();
-    if (!s || seen.has(s)) return;
-    seen.add(s);
-    list.push(s);
-  });
+  // 1件のみ保持（確定後に閉じ、追加は別行で行う）
+  const first = (Array.isArray(names) ? names : [names])
+    .map(n => String(n || '').trim()).filter(Boolean)[0] || '';
+  const list = first ? [first] : [];
   d.prepTargetWorks = list;
-  d.prepTargetWork = list.join('、');
-  // 代表作業名は先頭に合わせる。空クリア時は workName を触らない（休憩切替など）
+  d.prepTargetWork = first;
   if (list.length) {
     d.workName = list[0];
     d.workMatched = window.isBulkWorkMemoWorkInMaster_(list[0]);
   }
 };
 
-/** 一括登録時の実レコード数（準備／片づけの複数対象は対象ごとに1件） */
-window.countBulkWorkMemoSaveRecords_ = (drafts) => {
-  let n = 0;
-  (drafts || []).forEach(d => {
-    if (!d || d.included === false) return;
-    if (typeof window.bulkWorkMemoIsRestDraft_ === 'function' && window.bulkWorkMemoIsRestDraft_(d)) {
-      n += 1;
-      return;
-    }
-    const cat = String(d.category || '').trim();
-    if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat)
-        && typeof window.getBulkWorkMemoPrepTargetWorks_ === 'function') {
-      const targets = window.getBulkWorkMemoPrepTargetWorks_(d);
-      if (targets.length) {
-        n += targets.length;
-        return;
-      }
-    }
-    n += 1;
-  });
-  return n;
+/** 準備／片づけ確定後：同じ時間帯で次の項目行を追加 */
+window.addBulkWorkMemoPrepSiblingDraft_ = (uid) => {
+  const drafts = window._bulkWorkMemoDrafts || [];
+  const idx = drafts.findIndex(d => d && d._uid === uid);
+  if (idx < 0) return;
+  const src = drafts[idx];
+  const metaCat = String(src.category || src.listFilterCategory || '').trim();
+  if (!(typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(metaCat))) {
+    return;
+  }
+  const role = (typeof window.isCleanupCategory_ === 'function' && window.isCleanupCategory_(metaCat))
+    ? '片づけ／掃除'
+    : '準備';
+  const cropNames = (typeof window.getBulkWorkMemoCropNames_ === 'function')
+    ? window.getBulkWorkMemoCropNames_(src).slice()
+    : (Array.isArray(src.cropNames) ? src.cropNames.slice() : []);
+  const polyIds = (typeof window.getBulkWorkMemoPolyIds_ === 'function')
+    ? window.getBulkWorkMemoPolyIds_(src).slice()
+    : (Array.isArray(src.polyIds) ? src.polyIds.slice() : []);
+  const row = {
+    recordKind: 'work',
+    rawLine: `（${role}項目を追加）`,
+    startTime: String(src.startTime || '').trim(),
+    endTime: String(src.endTime || '').trim(),
+    workName: '',
+    guessedName: '',
+    workMatched: false,
+    workCandidates: [],
+    workMaybeCandidates: [],
+    isRest: false,
+    category: metaCat,
+    listFilterCategory: metaCat,
+    cropName: cropNames[0] || '',
+    cropNames: cropNames.slice(),
+    polyId: polyIds[0] || '',
+    polyIds: polyIds.slice(),
+    polyName: String(src.polyName || '').trim(),
+    prepTargetWork: '',
+    prepTargetWorks: [],
+    prepTargetCategory: '',
+    prepListFilterCategory: '',
+    maintenanceToolId: '',
+    maintenanceTool: '',
+    maintenanceTargetKind: '',
+    maintenanceSymptom: '',
+    maintenanceContent: '',
+    maintenanceParts: '',
+    _maintKindFilter: 'all',
+    detailedWorks: [],
+    concurrentWorks: [],
+    usedMachines: [],
+    usedPesticides: [],
+    _pestSearchQ: '',
+    included: true,
+    comment: '',
+    _uid: 'bm_prep_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+    _workPickOpen: true,
+    _workListOpen: true,
+    _cropPickOpen: true,
+    _prepSiblingOf: String(src._uid || '')
+  };
+  if (typeof window.setBulkWorkMemoCropNames_ === 'function') {
+    window.setBulkWorkMemoCropNames_(row, cropNames);
+  }
+  if (typeof window.setBulkWorkMemoPolyIds_ === 'function') {
+    window.setBulkWorkMemoPolyIds_(row, polyIds);
+  }
+  drafts.splice(idx + 1, 0, row);
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: row._uid });
 };
 
-/** 準備／片づけの複数対象を、保存用に対象ごと1下書きへ展開 */
-window.expandBulkWorkMemoDraftsForSave_ = (drafts) => {
-  const out = [];
-  (drafts || []).forEach(d0 => {
-    if (!d0) return;
-    const isRest0 = typeof window.bulkWorkMemoIsRestDraft_ === 'function' && window.bulkWorkMemoIsRestDraft_(d0);
-    const cat0 = String(d0.category || '').trim();
-    const targets0 = (!isRest0
-      && typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat0)
-      && typeof window.getBulkWorkMemoPrepTargetWorks_ === 'function')
-      ? window.getBulkWorkMemoPrepTargetWorks_(d0)
-      : [];
-    if (targets0.length > 1) {
-      targets0.forEach((t, ti) => {
-        out.push(Object.assign({}, d0, {
-          workName: t,
-          prepTargetWork: t,
-          prepTargetWorks: [t],
-          _prepExpandIndex: ti,
-          _prepExpandTotal: targets0.length,
-          _prepExpandSkipSideEffects: ti > 0,
-          _prepExpandZeroTime: ti > 0
-        }));
-      });
-      return;
-    }
-    if (targets0.length === 1) {
-      out.push(Object.assign({}, d0, {
-        workName: targets0[0],
-        prepTargetWork: targets0[0],
-        prepTargetWorks: [targets0[0]]
-      }));
-      return;
-    }
-    out.push(d0);
-  });
-  return out;
+window.buildBulkWorkMemoPrepAddItemBtnHtml_ = (d, uid) => {
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const metaCat = String(d.category || d.listFilterCategory || '').trim();
+  if (!(typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(metaCat))) {
+    return '';
+  }
+  const target = String(d.prepTargetWork || (Array.isArray(d.prepTargetWorks) && d.prepTargetWorks[0]) || d.workName || '').trim();
+  if (!target) return '';
+  const isCleanup = typeof window.isCleanupCategory_ === 'function' && window.isCleanupCategory_(metaCat);
+  const label = isCleanup ? '＋ 片づけ／掃除項目を追加' : '＋ 準備項目を追加';
+  const hint = isCleanup
+    ? '確定した項目の下に、別の片づけ／掃除（カテゴリ・対象作業）を追加します。'
+    : '確定した項目の下に、別の準備（カテゴリ・対象作業）を追加します。';
+  return `<div style="margin:0 0 10px;">
+    <button type="button" onclick="addBulkWorkMemoPrepSiblingDraft_('${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:11px 12px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:2px dashed #CE93D8; background:#F3E5F5; color:#6A1B9A; text-align:left;">${esc(label)}</button>
+    <div style="font-size:10px; color:#7B1FA2; margin-top:4px; line-height:1.35;">${esc(hint)}</div>
+  </div>`;
 };
 
 window.buildBulkWorkMemoPrepTargetHtml_ = (d, uid) => {
@@ -30331,8 +30354,11 @@ window.buildBulkWorkMemoPrepTargetHtml_ = (d, uid) => {
     ? '片づけ／掃除の対象'
     : '準備の対象';
   const curTargetCat = String(d.prepTargetCategory || '').trim();
-  const selectedWorks = window.getBulkWorkMemoPrepTargetWorks_(d);
-  const selectedSet = new Set(selectedWorks);
+  const selectedWork = String(
+    (Array.isArray(d.prepTargetWorks) && d.prepTargetWorks[0])
+    || d.prepTargetWork
+    || ''
+  ).trim();
   const targetCats = (typeof window.getMetaTargetCategoryOptions_ === 'function')
     ? window.getMetaTargetCategoryOptions_()
     : (typeof window.getBulkWorkMemoCategories_ === 'function' ? window.getBulkWorkMemoCategories_() : [])
@@ -30355,8 +30381,9 @@ window.buildBulkWorkMemoPrepTargetHtml_ = (d, uid) => {
     names.sort((a, b) => a.localeCompare(b, 'ja'));
     return names;
   })();
-  // 絞り込み外でも選択中の対象は一覧の先頭に残す
-  const chipNames = selectedWorks.filter(n => workNames.indexOf(n) < 0).concat(workNames);
+  const chipNames = (selectedWork && workNames.indexOf(selectedWork) < 0)
+    ? [selectedWork].concat(workNames)
+    : workNames;
   const catChips = [`<button type="button" onclick="pickBulkWorkMemoPrepTargetCategory_('${esc(uid)}','')" style="padding:7px 11px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${!curTargetCat ? '#6A1B9A' : '#E1BEE7'}; background:${!curTargetCat ? '#F3E5F5' : '#fff'}; color:#6A1B9A;">すべて</button>`]
     .concat(targetCats.map(c => {
       const on = c === curTargetCat;
@@ -30364,21 +30391,20 @@ window.buildBulkWorkMemoPrepTargetHtml_ = (d, uid) => {
       return `<button type="button" onclick="pickBulkWorkMemoPrepTargetCategory_('${esc(uid)}','${safe}')" style="padding:7px 11px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? '#6A1B9A' : '#E1BEE7'}; background:${on ? '#F3E5F5' : '#fff'}; color:#6A1B9A;">${esc(c)}</button>`;
     })).join('');
   const workChips = chipNames.map(n => {
-    const on = selectedSet.has(n);
+    const on = n === selectedWork;
     const safe = String(n).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     return `<button type="button" class="bulk-prep-target-chip" data-name="${esc(n)}" onclick="pickBulkWorkMemoPrepTarget_('${esc(uid)}','${safe}')" style="padding:7px 11px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? '#E65100' : '#FFCC80'}; background:${on ? '#FFF3E0' : '#fff'}; color:#E65100;">${on ? '✅ ' : ''}${esc(n)}</button>`;
   }).join('');
-  const selectedLabel = selectedWorks.length ? selectedWorks.join('、') : '（未選択）';
   return `<div class="bulk-prep-target-box" style="margin:8px 0; padding:12px; background:#F3E5F5; border:1px solid #CE93D8; border-radius:10px;">
-    <div style="font-size:12px; font-weight:bold; color:#6A1B9A; margin-bottom:8px;">📋 ${esc(roleLabel)}（対象カテゴリ → 対象作業・複数可）</div>
+    <div style="font-size:12px; font-weight:bold; color:#6A1B9A; margin-bottom:8px;">📋 ${esc(roleLabel)}（対象カテゴリ → 対象作業）</div>
     <div style="background:#fff; border:1px solid #CE93D8; border-radius:8px; padding:10px; margin-bottom:8px; font-size:11px; color:#6A1B9A; line-height:1.5;">
       <div>カテゴリ: <b>${esc(metaCat)}</b></div>
       <div style="margin-top:2px;">対象カテゴリ: <b>${esc(curTargetCat || '（未選択＝すべて）')}</b></div>
-      <div style="margin-top:2px;">対象作業名（${selectedWorks.length}件）: <b>${esc(selectedLabel)}</b></div>
+      <div style="margin-top:2px;">対象作業名: <b>${esc(selectedWork || '（未選択）')}</b></div>
     </div>
     <div style="font-size:10px; color:#6A1B9A; font-weight:bold; margin-bottom:4px;">① 対象カテゴリ（絞り込み）</div>
     <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">${catChips}</div>
-    <div style="font-size:10px; color:#E65100; font-weight:bold; margin-bottom:4px;">② 対象作業名（タップで追加／解除・複数可）</div>
+    <div style="font-size:10px; color:#E65100; font-weight:bold; margin-bottom:4px;">② 対象作業名（1つ選ぶと確定して閉じます）</div>
     <input type="search" placeholder="対象作業名で検索…" oninput="filterBulkWorkMemoPrepTargetChips_(this)" style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #CE93D8; border-radius:8px; font-size:13px; margin-bottom:8px;">
     <div style="display:flex; flex-wrap:wrap; gap:6px; max-height:200px; overflow-y:auto; padding:2px;">${workChips || '<span style="font-size:11px; color:#888;">該当する作業がありません</span>'}</div>
   </div>`;
@@ -30716,6 +30742,18 @@ window.toggleBulkWorkMemoWorkPick_ = (uid) => {
   window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
 };
 
+window.collapseBulkWorkMemoWorkPick_ = (uid) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  if (!String(row.workName || '').trim()) {
+    if (typeof customAlert === 'function') customAlert('作業名（対象作業）を選んでから閉じてください。');
+    return;
+  }
+  row._workPickOpen = false;
+  row._workListOpen = false;
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+};
+
 window.toggleBulkWorkMemoCropPick_ = (uid) => {
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
   if (!row) return;
@@ -30787,36 +30825,45 @@ window.buildBulkWorkMemoWorkPickSectionHtml_ = (d, uid) => {
   }
   if (cur && d._workPickOpen !== true && isMeta) {
     const targets = window.getBulkWorkMemoPrepTargetWorks_(d);
-    const targetWork = targets.length ? targets.join('、') : String(d.prepTargetWork || cur).trim();
+    const targetWork = targets.length ? String(targets[0] || '').trim() : String(d.prepTargetWork || cur).trim();
     const targetCat = String(d.prepTargetCategory || '').trim()
-      || (targets[0] ? String(window.getBulkWorkMemoWorkCategory_(targets[0]) || '').trim() : '');
-    return window.buildBulkWorkMemoCollapsedPickHtml_({
+      || (targetWork ? String(window.getBulkWorkMemoWorkCategory_(targetWork) || '').trim() : '');
+    const collapsed = window.buildBulkWorkMemoCollapsedPickHtml_({
       icon: '📋',
       label: 'カテゴリ・対象',
       value: metaCat,
-      sub: `対象カテゴリ: ${targetCat || '—'} ／ 対象作業（${targets.length || (targetWork ? 1 : 0)}）: ${targetWork || '—'}`,
+      sub: `対象カテゴリ: ${targetCat || '—'} ／ 対象作業: ${targetWork || '—'}`,
       uid: uid,
       toggleFn: 'toggleBulkWorkMemoWorkPick_',
       borderColor: '#CE93D8',
       bgColor: '#F3E5F5',
       textColor: '#6A1B9A'
     });
+    return collapsed + (typeof window.buildBulkWorkMemoPrepAddItemBtnHtml_ === 'function'
+      ? window.buildBulkWorkMemoPrepAddItemBtnHtml_(d, uid) : '');
   }
   const selectedCat = cur ? String(d.category || window.getBulkWorkMemoWorkCategory_(cur) || '').trim() : String(d.listFilterCategory || d.category || '').trim();
   const workListOpen = !!d._workListOpen;
-  const suggestionBlock = workListOpen ? '' : `
+  // 準備／片づけは対象作業UIがあるので「合いそうな作業名」は出さない。選択済みも非表示。
+  const showSuggestions = !workListOpen && !isMeta && !cur;
+  const suggestionBlock = showSuggestions ? `
     <label style="font-size:10px; color:#E65100; font-weight:bold;">🚜 合いそうな作業名</label>
-    ${window.buildBulkWorkMemoWorkChipsHtml_(d, uid)}`;
+    ${window.buildBulkWorkMemoWorkChipsHtml_(d, uid)}` : '';
   const metaHtml = window.buildBulkWorkMemoPrepTargetHtml_(d, uid);
-  const metaTargets = isMeta ? window.getBulkWorkMemoPrepTargetWorks_(d) : [];
+  const metaTarget = isMeta
+    ? String((Array.isArray(d.prepTargetWorks) && d.prepTargetWorks[0]) || d.prepTargetWork || cur || '').trim()
+    : '';
   const catLine = selectedCat
     ? (isMeta
-      ? `<div style="font-size:11px; color:#6A1B9A; margin:0 0 8px; line-height:1.45;">カテゴリ: <b>${esc(selectedCat)}</b><br>対象カテゴリ: <b>${esc(d.prepTargetCategory || '（未選択＝すべて）')}</b><br>対象作業名（${metaTargets.length}件）: <b>${esc(metaTargets.length ? metaTargets.join('、') : (d.prepTargetWork || cur || '（未選択）'))}</b></div>`
+      ? `<div style="font-size:11px; color:#6A1B9A; margin:0 0 8px; line-height:1.45;">カテゴリ: <b>${esc(selectedCat)}</b><br>対象カテゴリ: <b>${esc(d.prepTargetCategory || '（未選択＝すべて）')}</b><br>対象作業名: <b>${esc(metaTarget || '（未選択）')}</b></div>`
       : (!workListOpen ? `<div style="font-size:11px; color:#3949AB; margin:0 0 8px;">カテゴリ: <b>${esc(selectedCat)}</b>（作業名から自動）</div>` : ''))
+    : '';
+  const closeBtn = cur
+    ? `<button type="button" onclick="collapseBulkWorkMemoWorkPick_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin:0 0 8px; padding:10px 12px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:1px solid ${isMeta ? '#CE93D8' : '#FFCC80'}; background:${isMeta ? '#F3E5F5' : '#FFF3E0'}; color:${isMeta ? '#6A1B9A' : '#E65100'};">閉じる（選択を確定）</button>`
     : '';
   return `${metaHtml}${suggestionBlock}
     ${window.buildBulkWorkMemoWorkManualPickHtml_(d, uid)}
-    ${catLine}`;
+    ${catLine}${closeBtn}`;
 };
 
 window.buildBulkWorkMemoCropPickSectionHtml_ = (d, uid) => {
@@ -31663,23 +31710,13 @@ window.pickBulkWorkMemoWorkName_ = (uid, name) => {
         // 準備／あと片づけカテゴリ絞り込み中は、選んだ作業を対象としてカテゴリを維持
         row.category = filterCat;
         if (!(typeof window.isMetaShellWorkName_ === 'function' && window.isMetaShellWorkName_(workName))) {
-          const curTargets = window.getBulkWorkMemoPrepTargetWorks_(row);
-          if (curTargets.indexOf(workName) < 0) {
-            window.setBulkWorkMemoPrepTargetWorks_(row, curTargets.concat([workName]));
-          } else {
-            window.setBulkWorkMemoPrepTargetWorks_(row, curTargets);
-          }
+          window.setBulkWorkMemoPrepTargetWorks_(row, [workName]);
           row.prepTargetCategory = wCat || row.prepTargetCategory || '';
         }
       } else if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(String(row.category || '').trim())) {
         // 既に準備／片づけカテゴリが付いている場合も対象として扱う
         if (!(typeof window.isMetaShellWorkName_ === 'function' && window.isMetaShellWorkName_(workName))) {
-          const curTargets = window.getBulkWorkMemoPrepTargetWorks_(row);
-          if (curTargets.indexOf(workName) < 0) {
-            window.setBulkWorkMemoPrepTargetWorks_(row, curTargets.concat([workName]));
-          } else {
-            window.setBulkWorkMemoPrepTargetWorks_(row, curTargets);
-          }
+          window.setBulkWorkMemoPrepTargetWorks_(row, [workName]);
           row.prepTargetCategory = wCat || row.prepTargetCategory || '';
         }
       } else if (wCat) {
@@ -31834,27 +31871,16 @@ window.pickBulkWorkMemoPrepTarget_ = (uid, targetName) => {
     row.category = metaCat;
     row.listFilterCategory = metaCat;
   }
-  const cur = window.getBulkWorkMemoPrepTargetWorks_(row);
-  const idx = cur.indexOf(name);
-  let next;
-  if (idx >= 0) {
-    next = cur.filter((_, i) => i !== idx);
-  } else {
-    next = cur.concat([name]);
-  }
   const prevPrimary = String(row.workName || '').trim();
-  window.setBulkWorkMemoPrepTargetWorks_(row, next);
+  window.setBulkWorkMemoPrepTargetWorks_(row, [name]);
+  const wCat = String(window.getBulkWorkMemoWorkCategory_(name) || '').trim();
+  if (wCat) row.prepTargetCategory = wCat;
   // 代表作業が変わったときだけ作物・詳細を付け直す（他フィールドは維持）
-  const primary = next[0] || '';
-  if (!primary) {
-    row.workName = '';
-    row.workMatched = false;
-    row.detailedWorks = [];
-  } else if (primary && primary !== prevPrimary) {
+  if (name && name !== prevPrimary) {
     row.detailedWorks = [];
     const wObj = (typeof window.findWorkMasterByName_ === 'function')
-      ? window.findWorkMasterByName_(primary)
-      : (pdlWorkMaster || []).find(w => w && String(w.name || '').trim() === primary);
+      ? window.findWorkMasterByName_(name)
+      : (pdlWorkMaster || []).find(w => w && String(w.name || '').trim() === name);
     if (wObj && typeof window.getWorkMasterCropKeys === 'function') {
       const keys = window.getWorkMasterCropKeys(wObj).filter(k => k && k !== '__common__');
       const curCrops = window.getBulkWorkMemoCropNames_(row);
@@ -31864,8 +31890,10 @@ window.pickBulkWorkMemoPrepTarget_ = (uid, targetName) => {
       }
     }
   }
+  // 1つ確定したらピッカーを閉じる（下に追加ボタンが出る）
   row._prepPickOpen = false;
-  row._workPickOpen = true;
+  row._workPickOpen = false;
+  row._workListOpen = false;
   row.recordKind = 'work';
   row.isRest = false;
   window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
@@ -32052,7 +32080,7 @@ window.validateBulkWorkMemoDraftsForSave_ = () => {
       if (!targets.length) {
         const role = (typeof window.isCleanupCategory_ === 'function' && window.isCleanupCategory_(d.category))
           ? '片づけ／掃除' : '準備';
-        if (typeof customAlert === 'function') customAlert(`${i + 1}件目：何の作業の${role}か（対象作業）を1つ以上選んでください。`);
+        if (typeof customAlert === 'function') customAlert(`${i + 1}件目：何の作業の${role}か（対象作業）を選んでください。`);
         return null;
       }
     }
@@ -32112,10 +32140,11 @@ window.buildBulkWorkMemoConfirmRowHtml_ = (d, index) => {
   const prepTargets = (!isRest && typeof window.getBulkWorkMemoPrepTargetWorks_ === 'function')
     ? window.getBulkWorkMemoPrepTargetWorks_(d)
     : [String(d.prepTargetWork || '').trim()].filter(Boolean);
+  const prepTargetOne = prepTargets[0] || String(d.prepTargetWork || '').trim();
   const prepTargetCat = String(d.prepTargetCategory || '').trim()
-    || (prepTargets[0] ? String(window.getBulkWorkMemoWorkCategory_(prepTargets[0]) || '').trim() : '');
+    || (prepTargetOne ? String(window.getBulkWorkMemoWorkCategory_(prepTargetOne) || '').trim() : '');
   const metaNote = (!isRest && cat && typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat))
-    ? `<div style="font-size:11px; color:#6A1B9A; margin-top:4px; line-height:1.45;">📋 カテゴリ: ${esc(cat)}<br>対象カテゴリ: ${esc(prepTargetCat || '—')}<br>対象作業名（${prepTargets.length}件）: ${esc(prepTargets.length ? prepTargets.join('、') : '—')}</div>`
+    ? `<div style="font-size:11px; color:#6A1B9A; margin-top:4px; line-height:1.45;">📋 カテゴリ: ${esc(cat)}<br>対象カテゴリ: ${esc(prepTargetCat || '—')}<br>対象作業名: ${esc(prepTargetOne || '—')}</div>`
     : (cat ? `<div style="font-size:11px; color:#546E7A; margin-top:4px;">📁 ${esc(cat)}</div>` : '');
   const maint = (!isRest && window.bulkWorkMemoIsMaintenance_(d) && d.maintenanceTool)
     ? `<div style="font-size:11px; color:#E65100; margin-top:4px;">🔧 ${esc(d.maintenanceTool)}</div>`
@@ -32676,7 +32705,7 @@ window.validateSingleBulkWorkMemoDraft_ = (d, label) => {
         const role = (typeof window.isCleanupCategory_ === 'function' && window.isCleanupCategory_(cat))
           ? '片づけ／掃除' : '準備';
         if (typeof customAlert === 'function') {
-          customAlert(`${tag}：何の作業の${role}か（対象作業）を1つ以上選んでください。`);
+          customAlert(`${tag}：何の作業の${role}か（対象作業）を選んでください。`);
         }
         return false;
       }
@@ -32821,12 +32850,6 @@ window.renderBulkWorkMemoConfirmModal_ = () => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const ymd = window._bulkWorkMemoDate || window.getBulkWorkMemoTodayYmd_();
   const rows = drafts.map((d, i) => window.buildBulkWorkMemoConfirmRowHtml_(d, i)).join('');
-  const saveCount = (typeof window.countBulkWorkMemoSaveRecords_ === 'function')
-    ? window.countBulkWorkMemoSaveRecords_(drafts)
-    : drafts.length;
-  const countNote = saveCount !== drafts.length
-    ? `画面上 ${drafts.length}行 → 対象作業の展開で <b>${saveCount}件</b>登録します。`
-    : `チェックした ${drafts.length}件すべてが登録されます。`;
   const att = window.getBulkWorkMemoAttendanceSummary_(drafts);
   const lunchGap = !att.hasLunch ? window.getBulkWorkMemoSuggestedLunchGap_(drafts) : null;
   const lunchDefaultStart = lunchGap ? lunchGap.startHm : '11:30';
@@ -32865,13 +32888,11 @@ window.renderBulkWorkMemoConfirmModal_ = () => {
     : '';
   window.fillAppModalHtml_(`
     <div id="bulk_work_memo_confirm_scroll" style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
-      ${window.buildBulkWorkMemoModalHeaderHtml_('✅ 登録内容の確認', saveCount !== drafts.length
-        ? `${drafts.length}行（対象作業を展開して${saveCount}件）をこの内容で登録します。作業日を確認してから登録してください。`
-        : `${drafts.length}件をこの内容で登録します。作業日を確認してから登録してください。`)}
+      ${window.buildBulkWorkMemoModalHeaderHtml_('✅ 登録内容の確認', `${drafts.length}件をこの内容で登録します。作業日を確認してから登録してください。`)}
       <div style="background:#FFF8E1; border:2px solid #FFB74D; border-radius:10px; padding:12px; margin-bottom:12px;">
         <label class="form-label" style="margin:0 0 6px; color:#E65100;">📅 作業日</label>
         <input type="date" id="bulk_work_memo_confirm_date" class="form-input" value="${esc(ymd)}" onchange="window._bulkWorkMemoDate=this.value" style="margin:0; font-size:15px; font-weight:bold;">
-        <div style="font-size:11px; color:#666; margin-top:6px; line-height:1.4;">上記の日付で、${countNote}</div>
+        <div style="font-size:11px; color:#666; margin-top:6px; line-height:1.4;">上記の日付で、チェックした ${drafts.length}件すべてが登録されます。</div>
         ${clockInBlock}
         ${lunchLine}
         ${gapHint}
@@ -32917,16 +32938,11 @@ window.executeBulkWorkMemoRegistration_ = async () => {
   let optionalLunchEnd = '';
 
   try {
-    const saveDrafts = (typeof window.expandBulkWorkMemoDraftsForSave_ === 'function')
-      ? window.expandBulkWorkMemoDraftsForSave_(drafts)
-      : drafts;
-    for (let i = 0; i < saveDrafts.length; i++) {
-      const d = saveDrafts[i];
+    for (let i = 0; i < drafts.length; i++) {
+      const d = drafts[i];
       const start = window.normalizeTimeHm ? (window.normalizeTimeHm(d.startTime) || d.startTime) : d.startTime;
       const end = window.normalizeTimeHm ? (window.normalizeTimeHm(d.endTime) || d.endTime) : d.endTime;
-      const totalTime = d._prepExpandZeroTime
-        ? 0
-        : window.calcBulkWorkMemoTotalTime_(start, end, 0);
+      const totalTime = window.calcBulkWorkMemoTotalTime_(start, end, 0);
       let detailedWorksStr = Array.isArray(d.detailedWorks) ? d.detailedWorks.filter(Boolean).join(', ') : '';
       const workNameRaw = String(d.workName || '').trim();
       const isRestSave = window.bulkWorkMemoIsRestDraft_(d);
@@ -32958,10 +32974,10 @@ window.executeBulkWorkMemoRegistration_ = async () => {
           if (typeof window.getBulkWorkMemoPrepTargetWorks_ === 'function'
               && typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat)) {
             const targets = window.getBulkWorkMemoPrepTargetWorks_(d);
-            if (targets.length) return targets.join('、');
+            if (targets.length) return String(targets[0] || '').trim();
           }
           const explicit = String(d.prepTargetWork || '').trim();
-          if (explicit) return explicit;
+          if (explicit) return explicit.split(/[,、]/)[0].trim();
           if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat)
               && !(typeof window.isMetaShellWorkName_ === 'function' && window.isMetaShellWorkName_(workNameRaw))) {
             return workNameRaw;
@@ -32975,14 +32991,7 @@ window.executeBulkWorkMemoRegistration_ = async () => {
         totalTime: totalTime,
         breakMins: 0,
         progressStatus: '',
-        comment: (() => {
-          let c = window.buildBulkWorkMemoCommentForSave_(d);
-          if (d._prepExpandTotal > 1) {
-            const note = `（対象作業 ${Number(d._prepExpandIndex || 0) + 1}/${d._prepExpandTotal}）`;
-            c = c ? (c + '\n' + note) : note;
-          }
-          return c;
-        })(),
+        comment: window.buildBulkWorkMemoCommentForSave_(d),
         detailedWorks: detailedWorksStr,
         usedTools: '',
         usedMachines: Array.isArray(d.usedMachines) ? d.usedMachines.filter(m => m && (m.id || m.name)) : [],
@@ -33060,14 +33069,13 @@ window.executeBulkWorkMemoRegistration_ = async () => {
           })
         : '';
       if (typeof window.enqueueRecordSync_ === 'function') {
-        const skipFx = !!d._prepExpandSkipSideEffects;
-        const maintSideEffects = (!skipFx && typeof window.buildBulkWorkMemoMaintenanceMasterSideEffects_ === 'function')
+        const maintSideEffects = (typeof window.buildBulkWorkMemoMaintenanceMasterSideEffects_ === 'function')
           ? window.buildBulkWorkMemoMaintenanceMasterSideEffects_(d, maintMasterQueued)
           : [];
-        const fuelSideEffects = (!skipFx && typeof window.buildBulkWorkMemoFuelSideEffects_ === 'function')
+        const fuelSideEffects = (typeof window.buildBulkWorkMemoFuelSideEffects_ === 'function')
           ? window.buildBulkWorkMemoFuelSideEffects_(d, userSnap)
           : [];
-        const fuelRec = (!skipFx && typeof window.collectBulkWorkMemoFuelRecord_ === 'function')
+        const fuelRec = (typeof window.collectBulkWorkMemoFuelRecord_ === 'function')
           ? window.collectBulkWorkMemoFuelRecord_(d)
           : null;
         if (fuelRec) data.refuelRecord = fuelRec;
@@ -33092,7 +33100,7 @@ window.executeBulkWorkMemoRegistration_ = async () => {
       if (typeof window.syncBulkWorkMemoRestSideEffects_ === 'function') {
         if (window.syncBulkWorkMemoRestSideEffects_(data, localId, ymd)) savedAnyRest = true;
       }
-      if (data.endTime && !d._prepExpandSkipSideEffects && typeof window.pushWorkRecordTimeHintToServer_ === 'function') {
+      if (data.endTime && typeof window.pushWorkRecordTimeHintToServer_ === 'function') {
         window.pushWorkRecordTimeHintToServer_(ymd, data.endTime, {
           isRest: String(data.workName || '').includes('休憩'),
           workName: data.workName || ''
