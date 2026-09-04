@@ -26012,6 +26012,62 @@ window.normalizeBulkWorkMemoInputText_ = (s) => {
   return str;
 };
 
+/** ①〜⑳ → 1〜20（アグリ横③ ⇔ アグリ横3） */
+window.normalizeBulkWorkMemoCircledDigits_ = (s) => {
+  return String(s || '').replace(/[\u2460-\u2473]/g, ch => String(ch.charCodeAt(0) - 0x245F));
+};
+
+/** 圃場名照合用：空白・助詞・丸数字を潰す（ハウス 向かい ⇔ ハウス向かい） */
+window.normalizeBulkWorkMemoFieldKey_ = (s) => {
+  let t = typeof window.normalizeBulkWorkMemoInputText_ === 'function'
+    ? window.normalizeBulkWorkMemoInputText_(s)
+    : String(s || '');
+  if (typeof window.normalizeBulkWorkMemoCircledDigits_ === 'function') {
+    t = window.normalizeBulkWorkMemoCircledDigits_(t);
+  }
+  return t.replace(/\s+/g, '').replace(/[のにはでをへと、。・]/g, '');
+};
+
+window.bulkWorkMemoTextLooksLikeLunch_ = (text) => {
+  // 「定食」は昼食ではなく「定植」の誤変換が多いので昼食判定に入れない
+  return /ランチ|昼食|ひるやすみ|昼ごはん|昼御飯|昼\s*休憩|昼休憩/.test(String(text || ''));
+};
+
+window.bulkWorkMemoTextLooksLikeRest_ = (text) => {
+  const t = String(text || '');
+  if (t.includes('休憩')) return true;
+  return typeof window.bulkWorkMemoTextLooksLikeLunch_ === 'function'
+    ? window.bulkWorkMemoTextLooksLikeLunch_(t)
+    : false;
+};
+
+/** よくある誤変換を作業マッチ用に直す（定食→定植 など） */
+window.normalizeBulkWorkMemoTypoText_ = (s) => {
+  let t = String(s || '');
+  if (!t) return '';
+  // IME誤変換: 定食 → 定植（「定植準備」「定植」「定食器」などに効かせる）
+  t = t.replace(/定食/g, '定植');
+  return t;
+};
+
+/** 行内の単独時刻が「終了 / 開始 / から」のどれか */
+window.bulkWorkMemoLineTimeRole_ = (raw, normRaw) => {
+  const src = String(normRaw || raw || '');
+  const orig = String(raw || src);
+  // 「8時半まで」「12時で定植」「11時11分で新交差点」
+  if (/(?:\d{1,2}\s*[:：]\s*\d{1,2}|\d{1,2}\s*時\s*(?:半|\d{1,2}\s*分?)?)\s*(?:まで|で)/.test(src)) {
+    return 'end';
+  }
+  if (/終了|完了/.test(orig)) return 'end';
+  if (/途中/.test(orig)) return 'start';
+  // 「19:30に」だけ開始。行中の「向かいに」は無視
+  if (/(?:\d{1,2}\s*[:：]\s*\d{1,2}|\d{1,2}\s*時\s*(?:半|\d{1,2}\s*分?)?)\s*に/.test(src)) {
+    return 'start';
+  }
+  if (/から/.test(src)) return 'from';
+  return 'end';
+};
+
 window.extractBulkWorkMemoTimes_ = (line) => {
   const text = typeof window.normalizeBulkWorkMemoInputText_ === 'function'
     ? window.normalizeBulkWorkMemoInputText_(line)
@@ -26087,17 +26143,47 @@ window.isLikelyBulkWorkMemoFieldToken_ = (token) => {
 
 window.collectBulkWorkMemoFieldHintTokens_ = (raw) => {
   const tokens = [];
-  const push = (t) => {
+  const push = (t, trusted) => {
     const n = window.cleanBulkWorkMemoFieldHintToken_(t);
     if (!n || n.length < 2 || tokens.indexOf(n) >= 0) return;
-    if (typeof window.isLikelyBulkWorkMemoFieldToken_ === 'function' && !window.isLikelyBulkWorkMemoFieldToken_(n)) return;
+    if (!trusted && typeof window.isLikelyBulkWorkMemoFieldToken_ === 'function'
+      && !window.isLikelyBulkWorkMemoFieldToken_(n)) return;
     tokens.push(n);
   };
   window.extractBulkWorkMemoFieldHintTexts_(raw).forEach(hint => {
-    window.splitBulkWorkMemoFieldHintTokens_(hint).forEach(push);
+    window.splitBulkWorkMemoFieldHintTokens_(hint).forEach(t => push(t, false));
   });
-  const direct = window.matchBulkWorkMemoField_(raw);
-  if (direct && direct.polyName) push(direct.polyName);
+  // 本文中の圃場名（括弧なしの「新交差点」「ハウス 向かい」「アグリ横③」）
+  try {
+    const compact = typeof window.normalizeBulkWorkMemoFieldKey_ === 'function'
+      ? window.normalizeBulkWorkMemoFieldKey_(raw)
+      : String(raw || '').replace(/\s+/g, '');
+    if (compact.length >= 2) {
+      const fields = window.getBulkWorkMemoFieldPolygonList_();
+      const cands = fields.map(f => ({
+        name: f.polyName,
+        key: typeof window.normalizeBulkWorkMemoFieldKey_ === 'function'
+          ? window.normalizeBulkWorkMemoFieldKey_(f.polyName)
+          : String(f.polyName || '').replace(/\s+/g, '')
+      })).filter(x => x.key.length >= 2).sort((a, b) => b.key.length - a.key.length);
+      const used = new Array(compact.length).fill(false);
+      cands.forEach(({ name, key }) => {
+        let idx = compact.indexOf(key);
+        while (idx >= 0) {
+          let overlap = false;
+          for (let i = idx; i < idx + key.length; i++) {
+            if (used[i]) { overlap = true; break; }
+          }
+          if (!overlap) {
+            for (let i = idx; i < idx + key.length; i++) used[i] = true;
+            push(name, true);
+            break;
+          }
+          idx = compact.indexOf(key, idx + 1);
+        }
+      });
+    }
+  } catch (e) {}
   return tokens;
 };
 
@@ -26117,10 +26203,22 @@ window.scoreBulkWorkMemoFieldNameMatch_ = (token, polyName) => {
   const name = String(polyName || '').trim();
   if (!tok || !name) return 0;
   if (tok === name) return 100;
+  const tokKey = typeof window.normalizeBulkWorkMemoFieldKey_ === 'function'
+    ? window.normalizeBulkWorkMemoFieldKey_(tok)
+    : tok.replace(/\s+/g, '');
+  const nameKey = typeof window.normalizeBulkWorkMemoFieldKey_ === 'function'
+    ? window.normalizeBulkWorkMemoFieldKey_(name)
+    : name.replace(/\s+/g, '');
+  if (tokKey && nameKey && tokKey === nameKey) return 100;
   if (name.indexOf(tok) >= 0) return 88 + Math.min(12, tok.length);
+  if (tokKey && nameKey && nameKey.indexOf(tokKey) >= 0) return 88 + Math.min(12, tokKey.length);
   if (tok.indexOf(name) >= 0 && name.length >= 2) return 82 + Math.min(12, name.length);
+  if (tokKey && nameKey && tokKey.indexOf(nameKey) >= 0 && nameKey.length >= 2) {
+    return 82 + Math.min(12, nameKey.length);
+  }
   if (window.bulkWorkMemoKanaKeyContains_(name, tok)) return 85 + Math.min(10, tok.length);
   if (window.bulkWorkMemoKanaKeyContains_(tok, name)) return 80 + Math.min(10, name.length);
+  if (tok.length > 16 || name.length > 24) return 0;
   return window.bulkWorkMemoFuzzyMatchScore_(tok, name);
 };
 
@@ -26209,11 +26307,17 @@ window.matchBulkWorkMemoCrop_ = (text) => {
   return best;
 };
 
-/** メモの「休憩」→ 休憩 or 昼休憩 */
+/** メモの「休憩／ランチ」→ 休憩 or 昼休憩（定食は定植の誤変換なので対象外） */
 window.resolveBulkWorkMemoRestName_ = (text, startTime) => {
   const t = String(text || '');
-  if (!t.includes('休憩')) return '';
-  if (/昼\s*休憩|昼休憩|ランチ|昼食|ひるやすみ/.test(t) || t.includes('昼')) return '昼休憩';
+  const looksLunch = typeof window.bulkWorkMemoTextLooksLikeLunch_ === 'function'
+    ? window.bulkWorkMemoTextLooksLikeLunch_(t)
+    : /昼\s*休憩|昼休憩|ランチ|昼食|ひるやすみ/.test(t);
+  const looksRest = typeof window.bulkWorkMemoTextLooksLikeRest_ === 'function'
+    ? window.bulkWorkMemoTextLooksLikeRest_(t)
+    : t.includes('休憩');
+  if (!looksRest && !looksLunch) return '';
+  if (looksLunch || t.includes('昼')) return '昼休憩';
   const m = String(startTime || '').match(/^(\d{1,2}):/);
   if (m) {
     const h = parseInt(m[1], 10);
@@ -26234,11 +26338,16 @@ window.ensureBulkWorkMemoRestInMaster_ = () => {
 };
 
 window.matchBulkWorkMemoWorkName_ = (text, startTime) => {
-  const t = String(text || '').trim();
-  if (!t) return { workName: '', category: '', isRest: false, matched: false, candidates: [] };
+  const rawT = String(text || '').trim();
+  if (!rawT) return { workName: '', category: '', isRest: false, matched: false, candidates: [] };
+  const t = typeof window.normalizeBulkWorkMemoTypoText_ === 'function'
+    ? window.normalizeBulkWorkMemoTypoText_(rawT)
+    : rawT;
   const candidates = window.suggestBulkWorkMemoWorkNames_(t, startTime);
   const split = window.splitBulkWorkMemoWorkSuggestions_(candidates);
-  const isRest = t.includes('休憩');
+  const isRest = typeof window.bulkWorkMemoTextLooksLikeRest_ === 'function'
+    ? window.bulkWorkMemoTextLooksLikeRest_(t)
+    : t.includes('休憩');
   if (isRest) {
     const restName = (split.primary[0] && split.primary[0].name)
       || (split.maybe[0] && split.maybe[0].name)
@@ -26292,6 +26401,8 @@ window.bulkWorkMemoEditDistance_ = (a, b) => {
   const t = String(b || '');
   if (!s.length) return t.length;
   if (!t.length) return s.length;
+  if (Math.abs(s.length - t.length) > 8) return 99;
+  if (s.length > 24 || t.length > 24) return 99;
   const rows = s.length + 1;
   const cols = t.length + 1;
   const dp = new Array(rows);
@@ -26387,6 +26498,7 @@ window.bulkWorkMemoFuzzyMatchScore_ = (token, target) => {
   if (tok === tgt) return 95;
   if (tgt.indexOf(tok) >= 0) return 55 + tok.length;
   if (tok.indexOf(tgt) >= 0 && tgt.length >= 2) return 70 + tgt.length;
+  if (tok.length > 16 || tgt.length > 24) return window.bulkWorkMemoLooseMatchScore_(tok, tgt);
   const loose = window.bulkWorkMemoLooseMatchScore_(tok, tgt);
   if (loose) return loose;
   const dist = window.bulkWorkMemoEditDistance_(tok, tgt);
@@ -26483,9 +26595,14 @@ window.guessBulkWorkMemoConcurrentWorks_ = (raw, startTime) => {
   return { mainText: split.mainText, concurrentWorks: entries };
 };
 
-window.suggestBulkWorkMemoWorkNames_ = (text, startTime) => {
-  const t = String(text || '').trim();
-  if (!t) return [];
+window.suggestBulkWorkMemoWorkNames_ = (text, startTime, _depth) => {
+  const rawT = String(text || '').trim();
+  if (!rawT) return [];
+  const t = (parseInt(_depth, 10) || 0) === 0 && typeof window.normalizeBulkWorkMemoTypoText_ === 'function'
+    ? window.normalizeBulkWorkMemoTypoText_(rawT)
+    : rawT;
+  const depth = parseInt(_depth, 10) || 0;
+  if (depth > 2) return [];
   window.ensureBulkWorkMemoRestInMaster_();
   const scores = new Map();
   const bump = (name, score, category) => {
@@ -26501,7 +26618,10 @@ window.suggestBulkWorkMemoWorkNames_ = (text, startTime) => {
     }
   };
 
-  if (t.includes('休憩')) {
+  const looksRest = typeof window.bulkWorkMemoTextLooksLikeRest_ === 'function'
+    ? window.bulkWorkMemoTextLooksLikeRest_(t)
+    : t.includes('休憩');
+  if (looksRest) {
     const preferred = window.resolveBulkWorkMemoRestName_(t, startTime) || '休憩';
     bump('休憩', preferred === '休憩' ? 120 : 95, '');
     bump('昼休憩', preferred === '昼休憩' ? 120 : 95, '');
@@ -26556,10 +26676,10 @@ window.suggestBulkWorkMemoWorkNames_ = (text, startTime) => {
   const cropInMemo = (typeof window.matchBulkWorkMemoCrop_ === 'function')
     ? String(window.matchBulkWorkMemoCrop_(t) || '').trim()
     : '';
-  if (cropInMemo) {
+  if (cropInMemo && depth < 2) {
     const workOnly = stripped.split(cropInMemo).join(' ').replace(/\s+/g, ' ').trim();
     if (workOnly && workOnly.length >= 2 && workOnly !== stripped) {
-      (window.suggestBulkWorkMemoWorkNames_(workOnly, startTime) || []).forEach(x => {
+      (window.suggestBulkWorkMemoWorkNames_(workOnly, startTime, depth + 1) || []).forEach(x => {
         if (x && x.name) bump(x.name, x.score, x.category);
       });
     }
@@ -26602,13 +26722,18 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
     endTime = times[times.length - 1].hm;
   } else if (times.length === 1) {
     const only = times[0].hm;
-    if (/まで/.test(raw) || /で\s/.test(raw) || /で$/.test(raw) || /終了|完了/.test(raw)) {
+    const timeRole = typeof window.bulkWorkMemoLineTimeRole_ === 'function'
+      ? window.bulkWorkMemoLineTimeRole_(raw, normRaw)
+      : ((/まで/.test(raw) || /で\s/.test(raw) || /で$/.test(raw) || /終了|完了/.test(raw))
+        ? 'end'
+        : ((/途中/.test(raw) || /に/.test(raw)) ? 'start' : (/から/.test(normRaw) ? 'from' : 'end')));
+    if (timeRole === 'end') {
       endTime = only;
       startTime = prevEndHm || '';
-    } else if (/途中/.test(raw) || /に/.test(raw)) {
+    } else if (timeRole === 'start') {
       startTime = only;
       endTime = '';
-    } else if (/から/.test(normRaw)) {
+    } else if (timeRole === 'from' || /から/.test(normRaw)) {
       startTime = only;
       const durH = normRaw.match(/から\s*(\d+(?:\.\d+)?)\s*時間/);
       const durM = normRaw.match(/から\s*(\d+)\s*分(間)?/);
@@ -26639,13 +26764,24 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
   }
 
   // 「同時に〇〇」を切り出し → メイン作業マッチは残り文だけで行う
-  const concurrentGuess = (typeof window.guessBulkWorkMemoConcurrentWorks_ === 'function')
-    ? window.guessBulkWorkMemoConcurrentWorks_(raw, startTime)
-    : { mainText: raw, concurrentWorks: [] };
+  let concurrentGuess = { mainText: raw, concurrentWorks: [] };
+  try {
+    if (typeof window.guessBulkWorkMemoConcurrentWorks_ === 'function') {
+      concurrentGuess = window.guessBulkWorkMemoConcurrentWorks_(raw, startTime) || concurrentGuess;
+    }
+  } catch (e) {}
   const workMatchText = String(concurrentGuess.mainText || raw).trim() || raw;
 
-  const work = window.matchBulkWorkMemoWorkName_(workMatchText, startTime);
-  const cropGuess = window.matchBulkWorkMemoCrop_(workMatchText);
+  let work = { workName: '', guessedName: '', isRest: false, matched: false, candidates: [], primaryCandidates: [], maybeCandidates: [] };
+  let cropGuess = '';
+  try {
+    work = window.matchBulkWorkMemoWorkName_(workMatchText, startTime) || work;
+  } catch (e) {
+    work.guessedName = workMatchText;
+  }
+  try {
+    cropGuess = window.matchBulkWorkMemoCrop_(workMatchText);
+  } catch (e) {}
   let workName = work.workName || '';
 
   let category = work.category || '';
@@ -26670,7 +26806,8 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
     : [];
 
   const draftBase = { workName, category, rawLine: workMatchText };
-  const mentionedMachines = (typeof window.guessBulkWorkMemoMachinesFromMemo_ === 'function')
+  // 作業名未確定のときは機械推定を走らせない（マスタ全件の曖昧照合で確認画面が落ちるのを防ぐ）
+  const mentionedMachines = (workName && typeof window.guessBulkWorkMemoMachinesFromMemo_ === 'function')
     ? window.guessBulkWorkMemoMachinesFromMemo_(draftBase)
     : [];
   const uiFlags = (typeof window.getBulkWorkMemoUiFlags_ === 'function')
@@ -26717,8 +26854,8 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
     included: true,
     comment: ''
   };
-  if (typeof window.applyBulkWorkMemoFieldHints_ === 'function') {
-    window.applyBulkWorkMemoFieldHints_(row, { mergePolyIds: false });
+  if (!work.isRest && typeof window.applyBulkWorkMemoFieldHints_ === 'function') {
+    try { window.applyBulkWorkMemoFieldHints_(row, { mergePolyIds: false }); } catch (e) {}
   }
   return row;
 };
@@ -26740,6 +26877,58 @@ window.isBulkWorkMemoContinuationLine_ = (line) => {
   return false;
 };
 
+window.makeBulkWorkMemoFallbackDraft_ = (line, prevEndHm, idx) => {
+  let endTime = '';
+  let startTime = prevEndHm || '';
+  try {
+    const times = window.extractBulkWorkMemoTimes_(line) || [];
+    if (times.length >= 2) {
+      startTime = times[0].hm;
+      endTime = times[times.length - 1].hm;
+    } else if (times.length === 1) {
+      const role = typeof window.bulkWorkMemoLineTimeRole_ === 'function'
+        ? window.bulkWorkMemoLineTimeRole_(line, line)
+        : 'end';
+      if (role === 'start') {
+        startTime = times[0].hm;
+        endTime = '';
+      } else {
+        endTime = times[0].hm;
+        startTime = prevEndHm || '';
+      }
+    }
+  } catch (e) {}
+  return {
+    recordKind: 'work',
+    rawLine: String(line || ''),
+    startTime: startTime || '',
+    endTime: endTime || '',
+    workName: '',
+    guessedName: String(line || '').trim(),
+    workMatched: false,
+    workCandidates: [],
+    workMaybeCandidates: [],
+    isRest: false,
+    category: '',
+    cropName: '',
+    cropNames: [],
+    polyId: '',
+    polyIds: [],
+    polyName: '',
+    fieldHintTokens: [],
+    fieldTokenResults: [],
+    fieldCandidates: [],
+    prepTargetWork: '',
+    detailedWorks: [],
+    concurrentWorks: [],
+    usedMachines: [],
+    usedPesticides: [],
+    included: true,
+    comment: '',
+    _uid: 'bm_' + Date.now() + '_' + idx
+  };
+};
+
 window.parseBulkWorkMemo_ = (text) => {
   const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const drafts = [];
@@ -26753,24 +26942,34 @@ window.parseBulkWorkMemo_ = (text) => {
       const note = String(prev.comment || '').trim();
       prev.comment = note ? (note + '\n' + line) : line;
       if (typeof window.applyBulkWorkMemoFieldHints_ === 'function') {
-        window.applyBulkWorkMemoFieldHints_(prev, { mergePolyIds: true });
-      }
-      if (typeof window.refreshBulkWorkMemoWorkSuggestions_ === 'function') {
-        // workName 未確定のときだけ候補を更新
-        if (!String(prev.workName || '').trim()) window.refreshBulkWorkMemoWorkSuggestions_(prev);
+        try { window.applyBulkWorkMemoFieldHints_(prev, { mergePolyIds: true }); } catch (e) {}
       }
       return;
     }
-    const row = window.parseBulkWorkMemoLine_(line, prevEnd);
-    if (!row) return;
-    row._uid = 'bm_' + Date.now() + '_' + idx;
-    if (typeof window.refreshBulkWorkMemoWorkSuggestions_ === 'function') {
-      window.refreshBulkWorkMemoWorkSuggestions_(row);
+    let row = null;
+    try {
+      row = window.parseBulkWorkMemoLine_(line, prevEnd);
+    } catch (e) {
+      console.error('parseBulkWorkMemoLine_ failed', e, line);
+      row = window.makeBulkWorkMemoFallbackDraft_(line, prevEnd, idx);
     }
+    if (!row) return;
+    row._uid = row._uid || ('bm_' + Date.now() + '_' + idx);
     drafts.push(row);
     if (row.endTime) prevEnd = row.endTime;
     else if (row.startTime) prevEnd = row.startTime;
   });
+  if (drafts.length && !String(drafts[0].startTime || '').trim() && String(drafts[0].endTime || '').trim()) {
+    try {
+      const ymd = window._bulkWorkMemoDate || (typeof window.getBulkWorkMemoTodayYmd_ === 'function'
+        ? window.getBulkWorkMemoTodayYmd_() : '');
+      let prev = '';
+      if (typeof window.getLatestEndTimeForResume === 'function') {
+        prev = window.getLatestEndTimeForResume(ymd) || '';
+      }
+      if (prev) drafts[0].startTime = prev;
+    } catch (e) {}
+  }
   return drafts;
 };
 
@@ -26787,7 +26986,7 @@ window.openBulkWorkMemoModal_ = () => {
     if (typeof customAlert === 'function') customAlert('画面を開けませんでした。ページを再読み込みしてください。');
     return;
   }
-  const sample = '例:\n8時から9時半 システム作業\n9時半から11時11分 トラクター配線修理\n10時18分までシステム開発、同時にシステムMTG\n11時半まで 探し物＆定食器整備\n13時9分 灌注 終了\n13時30分から40分 休憩\n14時まで 鶏糞打ち合わせ\n15時20分で 山地15 チッパー 完了\n19:30に チッパー途中（上中）';
+  const sample = '例:\n8時半まで システム開発\n10時まで定植準備　（機械移動、試験品種）（対外打ち合わせも含む）\n10時18分までシステム開発、同時にシステムMTG\n11時11分で新交差点 植え付け完了 5枚　右から19畝から21畝まで\n12時で定食 完了。ハウス 向かいに2枚、右から1畝。片付けまで完了\n18:30まで除草剤（ハウス向かい下、ハウス向かい、南林角、堆肥場横、アグリ横③）\n21:00ケイトウ防除終了';
   window.fillAppModalHtml_(`
     <div style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
       ${window.buildBulkWorkMemoModalHeaderHtml_('📋 メモから一括入力', '1行＝1件。メモに「休憩」とあれば<b>休憩登録</b>として分けます。作業と休憩は確認画面で別枠です。')}
@@ -26993,7 +27192,7 @@ window.parseAndReviewBulkWorkMemo_ = () => {
       if (typeof customAlert === 'function') {
         customAlert('処理に時間がかかりすぎました。通信状況を確認して、もう一度お試しください。');
       }
-    }, 15000);
+    }, 30000);
   };
   const text = document.getElementById('bulk_work_memo_text')?.value || '';
   const dateEl = document.getElementById('bulk_work_memo_date');
@@ -27003,6 +27202,7 @@ window.parseAndReviewBulkWorkMemo_ = () => {
     return;
   }
   setParseBtnLoading_();
+  window._bulkWorkMemoDate = ymd;
   const openReview_ = () => {
     try {
       const drafts = window.parseBulkWorkMemo_(text);
@@ -28673,7 +28873,11 @@ window.isBulkWorkMemoRestWorkName_ = (name) => {
 };
 
 window.bulkWorkMemoRawLineHasRestHint_ = (d) => {
-  return String(d && d.rawLine || '').includes('休憩');
+  const t = String(d && d.rawLine || '');
+  if (typeof window.bulkWorkMemoTextLooksLikeRest_ === 'function') {
+    return window.bulkWorkMemoTextLooksLikeRest_(t);
+  }
+  return t.includes('休憩') || /ランチ|昼食/.test(t);
 };
 
 window.bulkWorkMemoIsRestDraft_ = (d) => {
@@ -28982,6 +29186,9 @@ window.buildBulkWorkMemoWorkPickSectionHtml_ = (d, uid) => {
 window.buildBulkWorkMemoCropPickSectionHtml_ = (d, uid) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const selected = window.getBulkWorkMemoCropNames_(d);
+  if (!String(d.workName || '').trim()) {
+    return `<div style="font-size:11px; color:#888; margin:0 0 8px; line-height:1.35;">作業名を選ぶと作物名を選べます。</div>`;
+  }
   if (selected.length && d._cropPickOpen === false) {
     return window.buildBulkWorkMemoCollapsedPickHtml_({
       icon: '🌱',
@@ -29504,25 +29711,29 @@ window.refreshBulkWorkMemoWorkSelect_ = (uid) => {
 
 /** 一括入力：この行より前の終了時刻（一覧内の前行 → その日の記録） */
 window.getBulkWorkMemoPrevEndHint_ = (uid) => {
-  const drafts = window._bulkWorkMemoDrafts || [];
-  const idx = drafts.findIndex(d => d && d._uid === uid);
-  if (idx > 0) {
-    for (let i = idx - 1; i >= 0; i--) {
-      const end = window.normalizeTimeHm
-        ? (window.normalizeTimeHm(drafts[i].endTime) || String(drafts[i].endTime || '').trim())
-        : String(drafts[i].endTime || '').trim();
-      if (end) return end;
+  try {
+    const drafts = window._bulkWorkMemoDrafts || [];
+    const idx = drafts.findIndex(d => d && d._uid === uid);
+    if (idx > 0) {
+      for (let i = idx - 1; i >= 0; i--) {
+        const end = window.normalizeTimeHm
+          ? (window.normalizeTimeHm(drafts[i].endTime) || String(drafts[i].endTime || '').trim())
+          : String(drafts[i].endTime || '').trim();
+        if (end) return end;
+      }
     }
+    const ymd = window._bulkWorkMemoDate || window.getBulkWorkMemoTodayYmd_();
+    if (typeof window.getLatestEndTimeForResume === 'function') {
+      return window.getLatestEndTimeForResume(ymd) || '';
+    }
+    if (typeof window.getLatestEndInfoForDate === 'function') {
+      const info = window.getLatestEndInfoForDate(ymd) || {};
+      return info.end || '';
+    }
+    return (typeof window.getCachedLatestWorkEnd === 'function') ? (window.getCachedLatestWorkEnd(ymd) || '') : '';
+  } catch (e) {
+    return '';
   }
-  const ymd = window._bulkWorkMemoDate || window.getBulkWorkMemoTodayYmd_();
-  if (typeof window.getLatestEndTimeForResume === 'function') {
-    return window.getLatestEndTimeForResume(ymd) || '';
-  }
-  if (typeof window.getLatestEndInfoForDate === 'function') {
-    const info = window.getLatestEndInfoForDate(ymd) || {};
-    return info.end || '';
-  }
-  return (typeof window.getCachedLatestWorkEnd === 'function') ? (window.getCachedLatestWorkEnd(ymd) || '') : '';
 };
 
 window.matchBulkWorkMemoStartToPrevEnd_ = async (uid) => {
@@ -29578,6 +29789,7 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
   const cards = drafts.map((d, i) => {
     const uid = d._uid || ('bm_' + i);
     d._uid = uid;
+    try {
     const isRestCard = window.bulkWorkMemoIsRestDraft_(d);
     const needPick = isRestCard
       ? !window.isBulkWorkMemoRestWorkName_(d.workName)
@@ -29639,13 +29851,28 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
         <label style="font-size:10px; color:#555; font-weight:bold; margin-top:8px; display:block;">💬 コメント（補足）</label>
         <textarea id="bulk_comment_${esc(uid)}" class="form-input" rows="2" placeholder="伝達事項・補足メモなど（任意）" onchange="updateBulkWorkMemoDraftField_('${esc(uid)}','comment', this.value)" oninput="updateBulkWorkMemoDraftField_('${esc(uid)}','comment', this.value)" style="margin:4px 0 0; font-size:12px; line-height:1.4; resize:vertical; min-height:52px;">${esc(d.comment || '')}</textarea>
       </div>`;
+    } catch (cardErr) {
+      console.error('bulk work memo card render failed', cardErr, d);
+      return `<div id="bulk_card_${esc(uid)}" style="background:#fff8e1; border:1px solid #FFB74D; border-radius:10px; padding:12px; margin-bottom:10px;">
+        <div style="font-size:12px; font-weight:bold; color:#E65100; margin-bottom:6px;">${i + 1}件目（簡易表示）</div>
+        <div style="font-size:11px; color:#888; margin-bottom:8px; line-height:1.35;">元メモ: ${esc(d && d.rawLine)}</div>
+        <div style="display:flex; gap:8px;">
+          <div style="flex:1;"><label style="font-size:10px; color:#888;">開始</label>
+            <input type="text" class="form-input app-time-input" readonly inputmode="none" value="${esc(d && d.startTime)}" onclick="if(window.openAppTimePicker) window.openAppTimePicker(this.id, '開始')" id="bulk_start_${esc(uid)}" onchange="updateBulkWorkMemoDraftField_('${esc(uid)}','startTime', this.value)" style="margin:0; text-align:center; font-weight:bold;">
+          </div>
+          <div style="flex:1;"><label style="font-size:10px; color:#888;">終了</label>
+            <input type="text" class="form-input app-time-input" readonly inputmode="none" value="${esc(d && d.endTime)}" onclick="if(window.openAppTimePicker) window.openAppTimePicker(this.id, '終了')" id="bulk_end_${esc(uid)}" onchange="updateBulkWorkMemoDraftField_('${esc(uid)}','endTime', this.value)" style="margin:0; text-align:center; font-weight:bold;">
+          </div>
+        </div>
+      </div>`;
+    }
   }).join('');
 
   window.fillAppModalHtml_(`
     <div id="bulk_work_memo_review_scroll" style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
       ${window.buildBulkWorkMemoModalHeaderHtml_('📋 一括入力の確認', `作業日 <b>${esc(ymd)}</b> ／ ${drafts.length}件。各行で<b>🚜作業／☕休憩</b>を切り替えられます。`)}
       <div style="margin-bottom:12px;">${cards}</div>
-      ${window.buildBulkWorkMemoTimeGapsHtml_(drafts)}
+      ${(() => { try { return window.buildBulkWorkMemoTimeGapsHtml_(drafts); } catch (e) { return ''; } })()}
       <button type="button" id="bulk_work_memo_save_btn" onclick="openBulkWorkMemoConfirmSave_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">💾 チェックした作業を一括保存</button>
       <button type="button" onclick="openBulkWorkMemoModal_()" style="width:100%; background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-bottom:8px;">← メモをやり直す</button>
       <button type="button" onclick="closeBulkWorkMemoModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
