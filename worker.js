@@ -392,6 +392,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
 
    // 🌟 1. ログイン処理（完全版） 🌟
       function continueCachedWorkerSession_(message, toastType) {
+          window._workerLoginSucceeded = true;
           currentUser = currentUser || localStorage.getItem('passionMapUserName') || '';
           document.getElementById('loginScreen').style.display = 'none';
           if (message && typeof window.showRecordSyncToast === 'function') {
@@ -440,6 +441,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   fromCache ? { timeoutMs: 25000 } : {}
               );
               if (result.success) {
+                  window._workerLoginSucceeded = true;
                   currentUser = result.name;
                   document.getElementById('loginScreen').style.display = 'none';
                   localStorage.setItem('passionMapUserId', id); 
@@ -530,6 +532,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
       }
 
       function executeLogout() { localStorage.clear(); location.reload(); }
+      window.executeLogin = executeLogin;
       window.executeLogout = executeLogout;
       if (typeof window.refreshAccountNameButtons === 'function') window.refreshAccountNameButtons();
       else setTimeout(function () {
