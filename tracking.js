@@ -327,7 +327,10 @@
       if (!data) return null;
       const y = dateYmd || getActiveClockInDateYmd();
       if (data.dateYmd && data.dateYmd !== y) return null;
-      return data;
+      return Object.assign({}, data, {
+        start: normalizeTimeHm(data.start),
+        end: normalizeTimeHm(data.end)
+      });
     } catch (e) {
       return null;
     }
@@ -336,6 +339,10 @@
   function saveLunchBreak(data) {
     try {
       const payload = data ? Object.assign({}, data) : data;
+      if (payload) {
+        if (payload.start != null) payload.start = normalizeTimeHm(payload.start);
+        if (payload.end != null) payload.end = normalizeTimeHm(payload.end);
+      }
       localStorage.setItem(lunchStorageKey(), JSON.stringify(payload));
       if (lunchStorageKey() !== LUNCH_KEY) {
         try { localStorage.removeItem(LUNCH_KEY); } catch (e2) {}
@@ -380,8 +387,8 @@
         clockOutDate: pending.clockOutDate || todayYmd(),
         clockOutTime: pending.clockOutTime || '',
         lunchEnabled: !!pending.lunchEnabled,
-        lunchStart: pending.lunchStart || '',
-        lunchEnd: pending.lunchEnd || '',
+        lunchStart: normalizeTimeHm(pending.lunchStart) || '',
+        lunchEnd: normalizeTimeHm(pending.lunchEnd) || '',
         lunchRegistered: true,
         midBreakMins: pending.midBreakMins || 0,
         savedAt: Date.now()
@@ -947,9 +954,45 @@
     };
   }
 
+  // Sheetsの時刻セル由来Date（1899-12-30）や Date#toString() を HH:mm に揃える
+  function normalizeTimeHm(t) {
+    if (t == null || t === '') return '';
+    if (t instanceof Date && !isNaN(t.getTime())) {
+      return String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+    }
+    if (typeof t === 'number' && isFinite(t)) {
+      // Excel/Sheets の時刻シリアル（日の小数）または分
+      if (t >= 0 && t < 1.5) {
+        return minsToHm(Math.round((t % 1) * 24 * 60));
+      }
+      if (t >= 0 && t < 24 * 60) {
+        return minsToHm(Math.round(t));
+      }
+    }
+    const s = String(t).trim();
+    if (!s) return '';
+    let m = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (m) {
+      return String(parseInt(m[1], 10)).padStart(2, '0') + ':' + m[2];
+    }
+    // "Sat Dec 30 1899 12:00:00 GMT+0900 (Japan Standard Time)" など
+    m = s.match(/\b(\d{1,2}):(\d{2})(?::\d{2})?\b/);
+    if (m) {
+      return String(parseInt(m[1], 10)).padStart(2, '0') + ':' + m[2];
+    }
+    try {
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) {
+        return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+      }
+    } catch (e) {}
+    return '';
+  }
+
   function timeToMins(hhmm) {
-    if (!hhmm || !String(hhmm).includes(':')) return null;
-    const [h, m] = String(hhmm).split(':').map(Number);
+    const norm = normalizeTimeHm(hhmm);
+    if (!norm || !norm.includes(':')) return null;
+    const [h, m] = norm.split(':').map(Number);
     if (isNaN(h) || isNaN(m)) return null;
     return h * 60 + m;
   }
@@ -994,14 +1037,27 @@
   function loadBreakDefaults() {
     try {
       const raw = localStorage.getItem(BREAK_PREF_KEY);
-      if (raw) return JSON.parse(raw);
+      if (raw) {
+        const d = JSON.parse(raw);
+        return {
+          lunchEnabled: d.lunchEnabled !== false,
+          lunchStart: normalizeTimeHm(d.lunchStart) || '12:00',
+          lunchEnd: normalizeTimeHm(d.lunchEnd) || '13:00',
+          midBreakMins: Number(d.midBreakMins) || 0
+        };
+      }
     } catch (e) {}
     return { lunchEnabled: true, lunchStart: '12:00', lunchEnd: '13:00', midBreakMins: 0 };
   }
 
   function saveBreakDefaults(d) {
     try {
-      localStorage.setItem(BREAK_PREF_KEY, JSON.stringify(d));
+      const payload = d ? Object.assign({}, d) : d;
+      if (payload) {
+        if (payload.lunchStart != null) payload.lunchStart = normalizeTimeHm(payload.lunchStart) || payload.lunchStart;
+        if (payload.lunchEnd != null) payload.lunchEnd = normalizeTimeHm(payload.lunchEnd) || payload.lunchEnd;
+      }
+      localStorage.setItem(BREAK_PREF_KEY, JSON.stringify(payload));
     } catch (e) {}
   }
 
@@ -1999,6 +2055,10 @@
   }
 
   function persistPending(pending) {
+    if (pending) {
+      if (pending.lunchStart) pending.lunchStart = normalizeTimeHm(pending.lunchStart);
+      if (pending.lunchEnd) pending.lunchEnd = normalizeTimeHm(pending.lunchEnd);
+    }
     window._pendingClockOut = pending;
     try {
       // localStorage: タブを閉じても「退勤確定」の続きができるようにする
@@ -2017,6 +2077,8 @@
     }
     if (!pending) return null;
     if (!pending.user) pending.user = getCurrentUserName();
+    if (pending.lunchStart) pending.lunchStart = normalizeTimeHm(pending.lunchStart);
+    if (pending.lunchEnd) pending.lunchEnd = normalizeTimeHm(pending.lunchEnd);
     window._pendingClockOut = pending;
     return pending;
   }
@@ -2347,8 +2409,12 @@
     const lunchEnabled = lunchEl
       ? (lunchEl.type === 'checkbox' ? !!lunchEl.checked : !!String(lunchEl.value || '').trim())
       : false;
-    const lunchStart = document.getElementById('clockLunchStart') ? document.getElementById('clockLunchStart').value : '12:00';
-    const lunchEnd = document.getElementById('clockLunchEnd') ? document.getElementById('clockLunchEnd').value : '13:00';
+    const lunchStart = normalizeTimeHm(
+      document.getElementById('clockLunchStart') ? document.getElementById('clockLunchStart').value : '12:00'
+    ) || '12:00';
+    const lunchEnd = normalizeTimeHm(
+      document.getElementById('clockLunchEnd') ? document.getElementById('clockLunchEnd').value : '13:00'
+    ) || '13:00';
 
     if (lunchEnabled) {
       const ls = timeToMins(lunchStart);
@@ -2696,6 +2762,8 @@
         endVal = endVal || pref.lunchEnd || '13:00';
       }
     }
+    startVal = normalizeTimeHm(startVal) || '12:00';
+    endVal = normalizeTimeHm(endVal) || '13:00';
 
     let html = `<h3 style="margin-top:0; color:#E65100;">🍱 昼休憩登録</h3>`;
     html += `<div style="background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px; padding:10px 12px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">`;
@@ -2876,8 +2944,12 @@
     html += `<div style="background:#f9fbe7; border:1px solid #e6ee9c; border-radius:8px; padding:12px; margin-bottom:12px;">`;
     if (lunchLocked) {
       const lOn = (lunchReg && lunchReg.registered) ? !!lunchReg.enabled : ((pending && pending.lunchEnabled != null) ? !!pending.lunchEnabled : true);
-      const lS = (lunchReg && lunchReg.registered) ? (lunchReg.start || '12:00') : ((pending && pending.lunchStart) || pref.lunchStart || '12:00');
-      const lE = (lunchReg && lunchReg.registered) ? (lunchReg.end || '13:00') : ((pending && pending.lunchEnd) || pref.lunchEnd || '13:00');
+      const lS = normalizeTimeHm(
+        (lunchReg && lunchReg.registered) ? (lunchReg.start || '12:00') : ((pending && pending.lunchStart) || pref.lunchStart || '12:00')
+      ) || '12:00';
+      const lE = normalizeTimeHm(
+        (lunchReg && lunchReg.registered) ? (lunchReg.end || '13:00') : ((pending && pending.lunchEnd) || pref.lunchEnd || '13:00')
+      ) || '13:00';
       if (lOn) {
         html += `<div style="font-weight:bold; color:#558b2f; margin-bottom:6px;">🍱 昼休憩（登録済）</div>`;
         html += `<div style="font-size:14px; margin-bottom:8px;"><b>${lS} 〜 ${lE}</b></div>`;
@@ -2915,6 +2987,8 @@
           le = le || pref.lunchEnd || '13:00';
         }
       }
+      ls = normalizeTimeHm(ls) || '12:00';
+      le = normalizeTimeHm(le) || '13:00';
       html += `<label style="display:flex; align-items:center; gap:8px; font-weight:bold; color:#558b2f; margin-bottom:8px; cursor:pointer;">`;
       html += `<input type="checkbox" id="clockLunchEnabled" ${lunchOn ? 'checked' : ''} onchange="_toggleClockLunchFields()"> 昼休憩を入れる`;
       html += `</label>`;
@@ -2996,6 +3070,7 @@
     }
   }
   window.openClockOutModal = openClockOutModal;
+  window.normalizeTimeHm = normalizeTimeHm;
 
   async function promptForgotClockOut(options) {
     options = options || {};
