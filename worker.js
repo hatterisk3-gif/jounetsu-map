@@ -32502,6 +32502,7 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
             </label>`;
           }).join('')}
         </div>
+        <button type="button" onclick="openBulkWorkMemoDetailEditor_('${esc(uid)}','${String(d.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')" style="width:100%; box-sizing:border-box; margin-top:8px; padding:10px 12px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid #7E57C2; background:#fff; color:#5E35B1; text-align:center;">📋 詳細作業を編集・登録</button>
       </div>`;
     } else if (d.workMatched || String(d.workName || '').trim()) {
       const safeWork = String(d.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
