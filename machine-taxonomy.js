@@ -70,7 +70,7 @@
 
   function getVehiclePlate(item) {
     if (!item) return '';
-    return String(item.plateNumber || '').trim();
+    return String(item.plateNumber || item.vehicleNumber || item.machineNumber || item.name || '').trim();
   }
 
   function buildDisplayName(kind, typeName, number, model, fallbackName) {
@@ -91,8 +91,8 @@
     var type = getItemTypeName(item);
     if (kind === 'vehicle') {
       var plate = getVehiclePlate(item);
-      if (type && plate) return type + ' ' + plate;
-      return plate || type;
+      if (type && plate && plate !== type) return type + ' ' + plate;
+      return plate || type || String(item.name || '').trim();
     }
     var model = getItemModel(item);
     if (type && model) return type + ' ' + model;

@@ -1136,6 +1136,14 @@
   function buildClockInEditHtml(clockInTime, workDateYmd) {
     const t = String(clockInTime || '08:00').replace(/"/g, '&quot;');
     const d = String(workDateYmd || '').replace(/"/g, '&quot;');
+    const user =
+      (typeof currentUser !== 'undefined' && currentUser) ||
+      localStorage.getItem('passionMapUserName') ||
+      '';
+    const firstStart = getFirstWorkStartTime(user, workDateYmd) || '';
+    const firstLabel = firstStart
+      ? `⏱️ 最初の作業開始（${firstStart}）に合わせる`
+      : '⏱️ 最初の作業記録の開始時間に合わせる';
     let html = `<div style="background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px; padding:10px; margin-bottom:12px;">`;
     html += `<div style="font-size:12px; font-weight:bold; color:#2e7d32; margin-bottom:6px;">出勤時間（変更可）</div>`;
     html += `<input type="hidden" id="editClockInDateYmd" value="${d}">`;
@@ -1144,10 +1152,54 @@
     html += `<button type="button" onclick="applyClockInTimeChange()" style="flex-shrink:0; background:#2E7D32; color:#fff; border:none; border-radius:6px; padding:10px 12px; font-weight:bold; font-size:13px; cursor:pointer;">変更</button>`;
     html += `</div>`;
     html += buildClockInAdjustmentButtonsHtml('editClockInTime');
-    html += `<div style="font-size:11px; color:#555; margin-top:6px;">勤務日: <b>${d || '—'}</b>　※間違えた出勤時間をここで直せます</div>`;
+    html += `<button type="button" id="setClockInToFirstWorkBtn" onclick="setClockInToFirstWorkStart()" style="width:100%; background:#E8F5E9; color:#1B5E20; border:1px solid #2E7D32; padding:10px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer; margin:0 0 8px; line-height:1.35;">${firstLabel.replace(/</g, '&lt;')}</button>`;
+    html += `<div style="font-size:11px; color:#555; margin-top:2px;">勤務日: <b>${d || '—'}</b>　※出勤時間の中で、最初の作業開始に揃えられます</div>`;
     html += `</div>`;
     return html;
   }
+
+  /**
+   * 退勤／昼休憩モーダル：勤務日の最初の作業開始時間を出勤時間欄へ反映して保存
+   */
+  window.setClockInToFirstWorkStart = function () {
+    const timeEl = document.getElementById('editClockInTime');
+    if (!timeEl) return;
+
+    const workDateYmd =
+      (document.getElementById('editClockInDateYmd') && document.getElementById('editClockInDateYmd').value) ||
+      getClockOutWorkDateYmd() ||
+      getActiveClockInDateYmd() ||
+      todayYmd();
+
+    const user =
+      (typeof currentUser !== 'undefined' && currentUser) ||
+      localStorage.getItem('passionMapUserName') ||
+      '';
+
+    let startTime = getFirstWorkStartTime(user, workDateYmd);
+
+    if (!startTime) {
+      alertMsg(`${workDateYmd} の作業記録に開始時間がありません。`);
+      return;
+    }
+
+    timeEl.value = startTime;
+    timeEl.style.background = '#c8e6c9';
+    setTimeout(function () {
+      if (timeEl) timeEl.style.background = '#fff';
+    }, 450);
+
+    const ok = window.applyClockInTimeChange({ silent: true, force: true });
+    if (ok) {
+      const btn = document.getElementById('setClockInToFirstWorkBtn');
+      if (btn) btn.textContent = `⏱️ 最初の作業開始（${startTime}）に合わせる`;
+      if (typeof window.showRecordSyncToast === 'function') {
+        window.showRecordSyncToast(`出勤時間を ${startTime}（最初の作業開始）に合わせました`, 'ok');
+      } else {
+        alertMsg(`出勤時間を ${startTime} に合わせました`);
+      }
+    }
+  };
 
   /**
    * 昼休憩／退勤モーダルから出勤時間を更新する
@@ -1553,6 +1605,21 @@
 
     return Array.from(byFp.values()).sort((a, b) => a.start - b.start || a.end - b.end);
   }
+
+  /** 指定日の作業記録のうち、最も早い開始時刻（HH:MM）。休憩記録は除外。なければ空文字 */
+  function getFirstWorkStartTime(user, workDateYmd) {
+    const intervals = collectUserWorkIntervals(user, workDateYmd);
+    if (!intervals.length) return '';
+    let minStart = Infinity;
+    intervals.forEach((iv) => {
+      const name = String((iv && iv.name) || '');
+      if (name.includes('休憩')) return;
+      if (iv.start < minStart) minStart = iv.start;
+    });
+    if (!isFinite(minStart) || minStart < 0) return '';
+    return minsToHm(minStart);
+  }
+  window.getFirstWorkStartTime = getFirstWorkStartTime;
 
   /** 指定日の作業記録のうち、最も遅い終了時刻（HH:MM）。なければ空文字 */
   function getLastWorkEndTime(user, workDateYmd) {
@@ -2324,35 +2391,39 @@
       return;
     }
 
-    // 同日の退勤取り消し用にスナップショットを残す
-    saveLastClockOutSnapshot(pending);
-    if (typeof window.rememberUsualClockOutTime_ === 'function') {
-      try { window.rememberUsualClockOutTime_(pending.clockOutTime); } catch (e) {}
-    }
-    try { localStorage.removeItem('passionMapClockOutNudgeSnoozeUntil'); } catch (e) {}
-
-    hideClockModal();
-    clearWatchers();
-    localStorage.removeItem('passionMapClockIn');
-    localStorage.removeItem('passionMapClockInToday');
-    clearLunchBreak();
-    try { window._trackingListOpenClockIn = null; } catch (e) {}
-    if (window.clockInMarker) {
-      window.clockInMarker.setMap(null);
-      window.clockInMarker = null;
-    }
-    if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
-    else refreshTrackingModeUI();
-
     const clockAt = parseClockDateTime(pending.clockOutDate, pending.clockOutTime);
     const user = pending.user || '';
+    const dateYmd = String(pending.clockOutDate || '').trim();
+    const timeHm = normalizeTimeHm(pending.clockOutTime) || String(pending.clockOutTime || '').trim();
     const breakNote =
       (pending.lunchEnabled ? `昼${pending.lunchStart}-${pending.lunchEnd}` : '昼なし') +
       `,休${pending.midBreakMins || 0}分`;
     const typeLabel = '退勤(' + breakNote + ')';
 
-    clearPending();
-    window._forgotClockOutPromptedOnce = false;
+    const applyLocalClockOutDone_ = () => {
+      // 同日の退勤取り消し用にスナップショットを残す
+      saveLastClockOutSnapshot(pending);
+      if (typeof window.rememberUsualClockOutTime_ === 'function') {
+        try { window.rememberUsualClockOutTime_(pending.clockOutTime); } catch (e) {}
+      }
+      try { localStorage.removeItem('passionMapClockOutNudgeSnoozeUntil'); } catch (e) {}
+
+      hideClockModal();
+      clearWatchers();
+      localStorage.removeItem('passionMapClockIn');
+      localStorage.removeItem('passionMapClockInToday');
+      clearLunchBreak();
+      try { window._trackingListOpenClockIn = null; } catch (e) {}
+      if (window.clockInMarker) {
+        window.clockInMarker.setMap(null);
+        window.clockInMarker = null;
+      }
+      if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
+      else refreshTrackingModeUI();
+
+      clearPending();
+      window._forgotClockOutPromptedOnce = false;
+    };
 
     const afterClockOutSaved = () => {
       // 過去日の退勤忘れを直したあと、別日の未退勤が残っていれば続けて案内する
@@ -2365,34 +2436,40 @@
       }, 800);
     };
 
+    const payloadBase = {
+      userName: user,
+      type: typeLabel,
+      time: clockAt && !isNaN(clockAt.getTime()) ? clockAt.getTime() : Date.now(),
+      dateYmd: dateYmd,
+      timeHm: timeHm,
+      clockOutDateYmd: dateYmd,
+      clockOutTime: timeHm
+    };
+
     if (!user || typeof callGAS !== 'function') {
+      applyLocalClockOutDone_();
       alertMsg('退勤を記録しました。\n※同じ日のうちなら、もう一度ボタンを押して退勤を取り消せます。');
       afterClockOutSaved();
       return;
     }
 
-    getPositionRobust()
-      .then((p) => {
-        return callGAS('saveTrackingData', {
-          userName: user,
-          lat: p.coords.latitude,
-          lng: p.coords.longitude,
-          type: typeLabel,
-          time: clockAt.getTime()
-        }).catch((e) => console.warn('退勤送信エラー', e));
-      })
-      .catch(() => {
-        return callGAS('saveTrackingData', {
-          userName: user,
-          lat: 0,
-          lng: 0,
-          type: typeLabel,
-          time: clockAt.getTime()
-        }).catch((e) => console.warn('退勤送信エラー', e));
-      })
-      .finally(() => afterClockOutSaved());
+    const sendClockOut_ = (lat, lng) => callGAS('saveTrackingData', Object.assign({}, payloadBase, {
+      lat: lat,
+      lng: lng
+    }));
 
-    alertMsg('退勤を記録しました。\n※同じ日のうちなら、もう一度ボタンを押して退勤を取り消せます。');
+    getPositionRobust()
+      .then((p) => sendClockOut_(p.coords.latitude, p.coords.longitude))
+      .catch(() => sendClockOut_(0, 0))
+      .then(() => {
+        applyLocalClockOutDone_();
+        alertMsg('退勤を記録しました。\n※同じ日のうちなら、もう一度ボタンを押して退勤を取り消せます。');
+        afterClockOutSaved();
+      })
+      .catch((e) => {
+        console.warn('退勤送信エラー', e);
+        alertMsg('退勤の保存に失敗しました。通信状況を確認して、もう一度「退勤する」を押してください。');
+      });
   };
 
   /** 退勤する → まず整合確認（すぐ退勤確定しない） */
@@ -2673,7 +2750,11 @@
         lat: lat,
         lng: lng,
         type: '出勤',
-        time: clockAt.getTime()
+        time: clockAt.getTime(),
+        dateYmd: dateYmd,
+        timeHm: timeStr,
+        clockInDateYmd: dateYmd,
+        clockInTime: timeStr
       }).catch((e) => console.warn(e));
     };
     const applyCoords_ = (lat, lng) => {

@@ -3929,10 +3929,14 @@ function parseWorkUiFlagValue_(v) {
 function inferWorkRecordUiFlags_(workName, category) {
     const n = String(workName || '').trim();
     const c = String(category || '').trim();
+    const isMeta = /準備|片づけ|片付け|掃除/.test(c);
+    const isFuel = n === '給油' || n.indexOf('給油') >= 0;
     return {
         showMachine: c === '圃場農機作業' || c.includes('農機'),
         showMaterial: /資材|肥料|マルチ|堆肥|石灰|被覆/.test(n),
-        showPesticide: /防除|除草|農薬|散布|除草剤|殺虫|殺菌/.test(n)
+        showPesticide: /防除|除草|農薬|散布|除草剤|殺虫|殺菌/.test(n),
+        showField: !(isMeta || isFuel || n.includes('休憩'))
+          && (c.includes('圃場') || c.includes('整備') || c.includes('保全') || !c)
     };
 }
 
@@ -3946,7 +3950,8 @@ function resolveWorkRecordUiFlags_(work) {
     return {
         showMachine: pick(w.showMachine, inferred.showMachine),
         showMaterial: pick(w.showMaterial, inferred.showMaterial),
-        showPesticide: pick(w.showPesticide, inferred.showPesticide)
+        showPesticide: pick(w.showPesticide, inferred.showPesticide),
+        showField: pick(w.showField, inferred.showField)
     };
 }
 
@@ -3958,9 +3963,10 @@ function buildWorkRecordUiFlagsHtml_(prefix, flags) {
             <span><b>${label}</b><br><span style="font-size:11px; color:#777; font-weight:normal;">${hint}</span></span>
         </label>`;
     return `<div style="margin:4px 0 8px; background:#F1F8E9; border:1px solid #C5E1A5; border-radius:8px; padding:10px;">
-        <div style="font-size:12px; font-weight:bold; color:#33691E; margin-bottom:4px;">記録画面に出すマスタ</div>
+        <div style="font-size:12px; font-weight:bold; color:#33691E; margin-bottom:4px;">記録画面に出す項目</div>
         <div style="font-size:11px; color:#558B2F; margin-bottom:8px; line-height:1.4;">作業記録で、チェックした項目の選択欄を出します。防除・除草は薬剤が自動でオンになります。</div>
         <div style="display:flex; flex-direction:column; gap:6px;">
+            ${row('show_field', f.showField !== false, '🗺️ 圃場選択を出す', 'マップから圃場を選べます（給油・準備などは初期オフ）')}
             ${row('show_machine', !!f.showMachine, '🚜 農機マスタを出す', '使用した機械を選べます')}
             ${row('show_material', !!f.showMaterial, '📦 資材マスタを出す', '肥料・マルチなどの資材を選べます')}
             ${row('show_pesticide', !!f.showPesticide, '🧪 薬剤（農薬マスタ）を出す', '使った薬剤名を記入・選択できます')}
@@ -3970,6 +3976,7 @@ function buildWorkRecordUiFlagsHtml_(prefix, flags) {
 
 function collectWorkRecordUiFlagsFromForm_(prefix) {
     return {
+        showField: !!document.getElementById(prefix + '_show_field')?.checked,
         showMachine: !!document.getElementById(prefix + '_show_machine')?.checked,
         showMaterial: !!document.getElementById(prefix + '_show_material')?.checked,
         showPesticide: !!document.getElementById(prefix + '_show_pesticide')?.checked
@@ -3982,9 +3989,11 @@ window.syncAdminWorkUiFlagDefaults_ = (prefix) => {
         document.getElementById(prefix + '_name')?.value || '',
         document.getElementById(prefix + '_category')?.value || ''
     );
+    const f = document.getElementById(prefix + '_show_field');
     const m = document.getElementById(prefix + '_show_machine');
     const mat = document.getElementById(prefix + '_show_material');
     const p = document.getElementById(prefix + '_show_pesticide');
+    if (f) f.checked = inferred.showField !== false;
     if (m) m.checked = !!inferred.showMachine;
     if (mat) mat.checked = !!inferred.showMaterial;
     if (p) p.checked = !!inferred.showPesticide;

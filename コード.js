@@ -134,6 +134,7 @@ const API_ACTIONS = {
   "addMachineToSign": function (p) { return addMachineToSign(p); },
   "addMachinePart": function (p) { return addMachinePart(p); },
   "addMachineSymptom": function (p) { return addMachineSymptom(p); },
+  "addMachineMaintenanceContent": function (p) { return addMachineMaintenanceContent(p); },
   "addMaintenanceContent": function (p) { return addMaintenanceContent(p); },
   "getRefuelHistory": function (p) { return getRefuelHistory(); },
   "saveRefuelRecord": function (p) { return saveRefuelRecord(p); },
@@ -954,7 +955,8 @@ function getInitData() {
             detailWorks: idxDetail >= 0 && data[i][idxDetail] ? String(data[i][idxDetail]).trim() : "",
             showMachine: uiFlags.showMachine,
             showMaterial: uiFlags.showMaterial,
-            showPesticide: uiFlags.showPesticide
+            showPesticide: uiFlags.showPesticide,
+            showField: uiFlags.showField
           });
         }
         if (idxStatus >= 0 && data[i][idxStatus]) workStatuses.push(data[i][idxStatus]);
@@ -2285,7 +2287,8 @@ function mergeWorkMasterObjects_(keepObj, origObj, incoming, originalName) {
     aliases: aliases,
     showMachine: orWorkMasterFlag_(keepObj.showMachine, origObj && origObj.showMachine, incoming.showMachine),
     showMaterial: orWorkMasterFlag_(keepObj.showMaterial, origObj && origObj.showMaterial, incoming.showMaterial),
-    showPesticide: orWorkMasterFlag_(keepObj.showPesticide, origObj && origObj.showPesticide, incoming.showPesticide)
+    showPesticide: orWorkMasterFlag_(keepObj.showPesticide, origObj && origObj.showPesticide, incoming.showPesticide),
+    showField: orWorkMasterFlag_(keepObj.showField, origObj && origObj.showField, incoming.showField)
   };
 }
 
@@ -2331,7 +2334,8 @@ function mergeWorkMasterConflict_(sheet, value, userName) {
 const WORK_UI_FLAG_HEADERS_ = {
   showMachine: ['使用農機を出す', '農機を出す'],
   showMaterial: ['使用資材を出す', '資材を出す'],
-  showPesticide: ['使用薬剤を出す', '薬剤を出す', '農薬を出す']
+  showPesticide: ['使用薬剤を出す', '薬剤を出す', '農薬を出す'],
+  showField: ['圃場選択を出す', '圃場を出す']
 };
 
 function findHeaderIndexByNames_(headers, names) {
@@ -2362,7 +2366,7 @@ function formatWorkUiFlagValue_(v) {
 }
 
 function readWorkMasterUiFlagsFromRow_(headers, row) {
-  const out = { showMachine: null, showMaterial: null, showPesticide: null };
+  const out = { showMachine: null, showMaterial: null, showPesticide: null, showField: null };
   Object.keys(WORK_UI_FLAG_HEADERS_).forEach(function (k) {
     const idx = findHeaderIndexByNames_(headers, WORK_UI_FLAG_HEADERS_[k]);
     out[k] = idx >= 0 ? parseWorkUiFlagValue_(row[idx]) : null;
@@ -2372,7 +2376,7 @@ function readWorkMasterUiFlagsFromRow_(headers, row) {
 
 /** 作業マスタ必須ヘッダーを保証（欠けていれば末尾に追加） */
 function ensureWorkMasterHeaders_(sheet) {
-  const required = ['作業名', 'カテゴリ', '作物名', '詳細作業名', '作物別詳細作業', '類似作業名', '使用農機を出す', '使用資材を出す', '使用薬剤を出す'];
+  const required = ['作業名', 'カテゴリ', '作物名', '詳細作業名', '作物別詳細作業', '類似作業名', '使用農機を出す', '使用資材を出す', '使用薬剤を出す', '圃場選択を出す'];
   let lastCol = Math.max(sheet.getLastColumn(), 1);
   let headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
   let changed = false;
@@ -2489,7 +2493,8 @@ function readWorkMasterList_(sheet) {
       aliases: aliases,
       showMachine: uiFlags.showMachine,
       showMaterial: uiFlags.showMaterial,
-      showPesticide: uiFlags.showPesticide
+      showPesticide: uiFlags.showPesticide,
+      showField: uiFlags.showField
     };
   });
 }
@@ -2566,7 +2571,9 @@ function buildWorkMasterColumnMap_(value) {
     '資材を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showMaterial') ? formatWorkUiFlagValue_(value.showMaterial) : undefined,
     '使用薬剤を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showPesticide') ? formatWorkUiFlagValue_(value.showPesticide) : undefined,
     '薬剤を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showPesticide') ? formatWorkUiFlagValue_(value.showPesticide) : undefined,
-    '農薬を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showPesticide') ? formatWorkUiFlagValue_(value.showPesticide) : undefined
+    '農薬を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showPesticide') ? formatWorkUiFlagValue_(value.showPesticide) : undefined,
+    '圃場選択を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showField') ? formatWorkUiFlagValue_(value.showField) : undefined,
+    '圃場を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showField') ? formatWorkUiFlagValue_(value.showField) : undefined
   };
 }
 // ==========================================
@@ -8865,6 +8872,8 @@ function addMachineToSign(params) {
     currentLocName: params.currentLocName || signName,
     currentLocId: params.currentLocId || signId,
     symptoms: params.symptoms || "",
+    maintenanceContents: params.maintenanceContents || "",
+    fuelChecks: params.fuelChecks || "",
     targetMachineIds: params.targetMachineIds || "",
     fuel: fuel,
     machineNumber: params.machineNumber || params.serialNo || "",
@@ -8989,6 +8998,46 @@ function addMachineSymptom(params) {
           sheet.getRange(i+1, 15).setValue(symps.join(','));
           updatedCount++;
         }
+      }
+    }
+  }
+  return updatedCount;
+}
+// ==========================================
+// 農機の整備内容候補を追加/編集/削除する（機械別）
+// ==========================================
+function addMachineMaintenanceContent(params) {
+  const sheet = ensureNoukiMasterSheet();
+  const data = sheet.getDataRange().getValues();
+  const col = 34; // AH列: 整備内容候補
+  const idx = col - 1;
+  let updatedCount = 0;
+  for (let i = 1; i < data.length; i++) {
+    const rowId = String(data[i][0] || "");
+    const matchId = params.machineId && rowId === String(params.machineId);
+    if (!matchId) continue;
+
+    if (params.fullContents != null) {
+      sheet.getRange(i + 1, col).setValue(String(params.fullContents || ""));
+      updatedCount++;
+    } else if (params.oldContent && params.newContent) {
+      let items = String(data[i][idx] || "").split(/[,、]/).map(s => s.trim()).filter(Boolean);
+      const at = items.indexOf(params.oldContent);
+      if (at !== -1) {
+        items[at] = params.newContent;
+        sheet.getRange(i + 1, col).setValue(items.join(','));
+        updatedCount++;
+      }
+    } else if (params.deleteContent) {
+      let items = String(data[i][idx] || "").split(/[,、]/).map(s => s.trim()).filter(s => s && s !== params.deleteContent);
+      sheet.getRange(i + 1, col).setValue(items.join(','));
+      updatedCount++;
+    } else if (params.newContent) {
+      let items = String(data[i][idx] || "").split(/[,、]/).map(s => s.trim()).filter(Boolean);
+      if (!items.includes(params.newContent)) {
+        items.push(params.newContent);
+        sheet.getRange(i + 1, col).setValue(items.join(','));
+        updatedCount++;
       }
     }
   }
@@ -9456,6 +9505,10 @@ function editMachineInMaster(params) {
     signId: params.signId != null ? params.signId : existing.signId,
     signName: params.signName != null ? params.signName : existing.signName,
     hitch: params.hitch != null ? params.hitch : existing.hitch,
+    parts: params.parts != null ? params.parts : existing.parts,
+    symptoms: params.symptoms != null ? params.symptoms : existing.symptoms,
+    maintenanceContents: params.maintenanceContents != null ? params.maintenanceContents : existing.maintenanceContents,
+    fuelChecks: params.fuelChecks != null ? params.fuelChecks : existing.fuelChecks,
     photo: photo,
     photo2: photo2
   });
@@ -9866,6 +9919,31 @@ function attendancePadHm_(hm) {
   return ('0' + m[1]).slice(-2) + ':' + m[2];
 }
 
+/** 出退勤シートの「時刻」セル（文字列 / Date / シリアル）を HH:mm に正規化 */
+function attendanceCellToHm_(val) {
+  if (val == null || val === '') return '';
+  try {
+    if (Object.prototype.toString.call(val) === '[object Date]' && !isNaN(val.getTime())) {
+      return Utilities.formatDate(val, 'JST', 'HH:mm');
+    }
+  } catch (e) {}
+  if (typeof val === 'number' && isFinite(val)) {
+    // Sheets の時刻シリアル（日の小数）
+    if (val >= 0 && val < 1.5) {
+      const mins = Math.round((val % 1) * 24 * 60) % (24 * 60);
+      const hh = Math.floor(mins / 60);
+      const mm = mins % 60;
+      return ('0' + hh).slice(-2) + ':' + ('0' + mm).slice(-2);
+    }
+  }
+  const padded = attendancePadHm_(val);
+  if (padded && /^\d{2}:\d{2}$/.test(padded)) return padded;
+  const s = String(val || '');
+  const m = s.match(/(\d{1,2}):(\d{2})/);
+  if (m) return ('0' + m[1]).slice(-2) + ':' + m[2];
+  return '';
+}
+
 /** トラッキングの旧出退勤行を「出退勤」シートへ1回だけ移行 */
 function migrateAttendanceFromTracking_() {
   const props = PropertiesService.getScriptProperties();
@@ -9925,6 +10003,8 @@ function migrateAttendanceFromTracking_() {
 
 /**
  * 出退勤イベント一覧（新しい順ではなく時系列昇順）
+ * 出退勤シートを正とする。トラッキングは「出退勤が空」のときだけフォールバック。
+ * （分離後にトラッキングの古い出勤が混ざると、退勤済みなのに未退勤扱いになるため）
  * @returns {Array<{type:string, ms:number, time:string, userName:string, dateYmd:string, timeHm:string, rowIndex?:number}>}
  */
 function loadAttendanceEvents_(opts) {
@@ -9942,10 +10022,7 @@ function loadAttendanceEvents_(opts) {
     const values = att.getRange(startRow, 1, lastRow, 4).getValues();
     for (let i = 0; i < values.length; i++) {
       const dateYmd = formatWorkDateYmd_(values[i][0]) || String(values[i][0] || '').trim().replace(/\//g, '-').slice(0, 10);
-      let timeHm = attendancePadHm_(values[i][1]);
-      if (!timeHm && values[i][1] instanceof Date && !isNaN(values[i][1].getTime())) {
-        timeHm = Utilities.formatDate(values[i][1], 'JST', 'HH:mm');
-      }
+      let timeHm = attendanceCellToHm_(values[i][1]);
       const userName = String(values[i][2] || '').trim();
       const type = String(values[i][3] || '');
       if (!isAttendancePunchType_(type)) continue;
@@ -9970,8 +10047,10 @@ function loadAttendanceEvents_(opts) {
     }
   }
 
-  // 移行前・フォールバック: トラッキングの出退勤系
-  if (!events.length || opts.alsoFromTracking) {
+  // 出退勤シートに該当行が読めたらそれを正とする。
+  // 空のとき（または forceAlsoFromTracking）だけトラッキングをフォールバック。
+  // ※分離後にトラッキングの古い「出勤」が混ざると、退勤済みなのに未退勤扱いになる。
+  if (!events.length || opts.forceAlsoFromTracking) {
     const track = ss.getSheetByName('トラッキング');
     if (track && track.getLastRow() > 1) {
       const lastRow = track.getLastRow();
@@ -10082,14 +10161,23 @@ function saveTrackingData(params) {
   try {
     const type = String((params && params.type) || '移動');
 
-    // 出退勤系 → 専用シートへ
+    // 出退勤系 → 専用シートへ（日付・時刻を明示して書き込む）
     if (isAttendancePunchType_(type)) {
+      let dateYmd = params.dateYmd || params.clockInDateYmd || params.clockOutDateYmd || '';
+      let timeHm = params.timeHm || params.clockInTime || params.clockOutTime || '';
+      if ((!dateYmd || !timeHm) && params.time) {
+        const tObj = new Date(Number(params.time));
+        if (!isNaN(tObj.getTime())) {
+          if (!dateYmd) dateYmd = Utilities.formatDate(tObj, 'JST', 'yyyy-MM-dd');
+          if (!timeHm) timeHm = Utilities.formatDate(tObj, 'JST', 'HH:mm');
+        }
+      }
       saveAttendanceData_({
         userName: params.userName,
         type: type,
         time: params.time,
-        dateYmd: params.dateYmd || params.clockInDateYmd,
-        timeHm: params.timeHm || params.clockInTime
+        dateYmd: dateYmd,
+        timeHm: timeHm
       });
       return 'success';
     }
@@ -10164,8 +10252,7 @@ function getTrackingData(params) {
     if (attendanceOnly) {
       const events = loadAttendanceEvents_({
         userName: filterUser,
-        maxRows: 14999,
-        alsoFromTracking: true
+        maxRows: 14999
       });
       const data = [];
       for (let i = 0; i < events.length; i++) {
@@ -10266,7 +10353,7 @@ function getFrequentClockInTimes(params) {
   try {
     const userName = String((params && params.userName) || '').replace(/\s+/g, '');
     if (!userName) return { times: [], mostFrequent: '' };
-    const events = loadAttendanceEvents_({ userName: userName, maxRows: 7999, alsoFromTracking: true });
+    const events = loadAttendanceEvents_({ userName: userName, maxRows: 7999 });
     const counts = {};
     for (let i = 0; i < events.length; i++) {
       if (events[i].type !== '出勤' && events[i].type !== 'アプリ起動') continue;
@@ -10732,7 +10819,8 @@ function updateOpenClockInTime(params) {
     if (!hm) return { success: false, error: '出勤時間が不正です' };
     const padHm = ('0' + hm[1]).slice(-2) + ':' + hm[2];
 
-    const events = loadAttendanceEvents_({ userName: userName, maxRows: 4999, alsoFromTracking: true });
+    // 出退勤シートを正とする（トラッキング混在はしない）
+    const events = loadAttendanceEvents_({ userName: userName, maxRows: 4999 });
     let openEv = null;
     let lastClosedIn = null;
     for (let i = 0; i < events.length; i++) {
@@ -10819,7 +10907,7 @@ function updateClockInTimeForDate(params) {
       timeMs = attendanceDateTimeMs_(dateYmd, padHm);
     }
 
-    const events = loadAttendanceEvents_({ userName: userName, maxRows: 7999, alsoFromTracking: true });
+    const events = loadAttendanceEvents_({ userName: userName, maxRows: 7999 });
     let target = null;
     for (let i = events.length - 1; i >= 0; i--) {
       const type = events[i].type;
@@ -10867,7 +10955,8 @@ function getOpenClockInStatus(params) {
     if (!userName) return { open: false, forgot: false, lunchRegistered: false, cancelableClockOut: false };
 
     const todayYmd = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
-    const events = loadAttendanceEvents_({ userName: userName, maxRows: 4999, alsoFromTracking: true });
+    // 出退勤シートを正とする（トラッキングの古い出勤が混ざると未退勤扱いになる）
+    const events = loadAttendanceEvents_({ userName: userName, maxRows: 4999 });
 
     let openIn = null;
     let lastClosed = null;
@@ -11017,7 +11106,7 @@ function getStaffClockBoard(params) {
     stateMap[m.key] = emptyClockState_(m);
   });
 
-  const events = loadAttendanceEvents_({ maxRows: 7999, alsoFromTracking: true });
+  const events = loadAttendanceEvents_({ maxRows: 7999 });
   const openByUser = {};
   const lunchByUser = {};
   const lastClosedByUser = {};
@@ -15766,7 +15855,8 @@ const NOUKI_EXT_HEADERS = [
   'ID', '農機名', '型式', '作業分類', '写真', '写真2', '場所看板名', '場所看板id', '分類', '購入年月日',
   '登録者', '部品名', '現在地', '現在地看板id', '症状名', '対応農機ID', '燃料', '機械番号',
   '整備月', '説明書URL', '定期整備名', '整備時間1', '整備1', '整備時間2', '整備2',
-  '機械グループ', '機種', '拠点', '稼働状況', 'lat', 'lng', 'maintenanceSettings', 'ヒッチ規格'
+  '機械グループ', '機種', '拠点', '稼働状況', 'lat', 'lng', 'maintenanceSettings', 'ヒッチ規格',
+  '整備内容候補', '給油確認項目'
 ];
 
 function ensureNoukiMasterSheet() {
@@ -15830,6 +15920,8 @@ function parseNoukiMachineRow(row) {
     lng: (lngRaw !== "" && lngRaw != null) ? lngRaw : null,
     maintenanceSettings: settings,
     hitch: String(row[32] || "").trim(),
+    maintenanceContents: String(row[33] || ""),
+    fuelChecks: String(row[34] || ""),
     // 互換エイリアス（旧 MachineMaster / machine.js）
     modelType: model,
     fuelType: fuel,
@@ -15870,7 +15962,8 @@ function buildNoukiMachineRow(m) {
     (m.lat != null && m.lat !== "") ? m.lat : "",
     (m.lng != null && m.lng !== "") ? m.lng : "",
     typeof m.maintenanceSettings === "string" ? m.maintenanceSettings : JSON.stringify(m.maintenanceSettings || []),
-    m.hitch || ""
+    m.hitch || "",
+    m.maintenanceContents || ""
   ];
 }
 
@@ -15999,6 +16092,7 @@ function machine_saveMachine(p) {
     photo2: p.photo2 != null ? p.photo2 : (existing && existing.photo2) || "",
     parts: p.parts != null ? p.parts : (existing && existing.parts) || "",
     symptoms: p.symptoms != null ? p.symptoms : (existing && existing.symptoms) || "",
+    maintenanceContents: p.maintenanceContents != null ? p.maintenanceContents : (existing && existing.maintenanceContents) || "",
     category: p.category != null ? p.category : (existing && existing.category) || "",
     targetMachineIds: p.targetMachineIds != null ? p.targetMachineIds : (existing && existing.targetMachineIds) || "",
     maintenanceSettings: p.maintenanceSettings != null ? p.maintenanceSettings : (existing && existing.maintenanceSettings) || [],
@@ -16078,7 +16172,7 @@ function machine_saveFuel(p) {
 // 移動車両（軽トラ）管理
 // ==========================================
 function ensureVehicleMasterSheet() {
-  const headers = ['id', 'plateNumber', 'photo', 'mileage', 'driveType', 'registrationDate', 'status', 'lat', 'lng', 'mainCategory', 'vehicleType', 'vehicleNumber', 'model'];
+  const headers = ['id', 'plateNumber', 'photo', 'mileage', 'driveType', 'registrationDate', 'status', 'lat', 'lng', 'mainCategory', 'vehicleType', 'vehicleNumber', 'model', 'fuelChecks'];
   const sheet = getOrCreateSheet('VehicleMaster', headers);
   const lastCol = Math.max(sheet.getLastColumn(), headers.length);
   const existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
@@ -16086,6 +16180,8 @@ function ensureVehicleMasterSheet() {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   } else if (lastCol < headers.length) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  } else if (String(existing[13] || '') !== 'fuelChecks') {
+    try { sheet.getRange(1, 14).setValue('fuelChecks'); } catch (e) {}
   }
   return sheet;
 }
@@ -16114,7 +16210,8 @@ function parseVehicleRow_(row) {
     type: String(row[10] || '').trim(),
     vehicleNumber: String(row[11] || '').trim(),
     machineNumber: String(row[11] || '').trim(),
-    model: String(row[12] || '').trim()
+    model: String(row[12] || '').trim(),
+    fuelChecks: String(row[13] || '').trim()
   };
 }
 
@@ -16137,6 +16234,7 @@ function vehicle_saveVehicle(p) {
   let existingLat = '';
   let existingLng = '';
   let existingStatus = '使用可能';
+  let existingFuelChecks = '';
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === p.id) {
       rowIdx = i + 1;
@@ -16144,6 +16242,7 @@ function vehicle_saveVehicle(p) {
       existingStatus = data[i][6] || '使用可能';
       existingLat = data[i][7] || '';
       existingLng = data[i][8] || '';
+      existingFuelChecks = (data[i][13] != null) ? String(data[i][13]) : '';
       break;
     }
   }
@@ -16188,7 +16287,8 @@ function vehicle_saveVehicle(p) {
     mainCategory,
     vehicleType,
     vehicleNumber,
-    model
+    model,
+    (p.fuelChecks != null) ? p.fuelChecks : existingFuelChecks
   ];
 
   if (rowIdx !== -1) {
@@ -17905,7 +18005,7 @@ function loadLeaveRows_(userId, userName) {
 function loadAttendanceDaysFromTracking_(userName, year, month) {
   const days = {};
   if (!userName) return days;
-  const events = loadAttendanceEvents_({ userName: userName, maxRows: 14999, alsoFromTracking: true });
+  const events = loadAttendanceEvents_({ userName: userName, maxRows: 14999 });
   const y = Number(year);
   const m = Number(month);
   for (let i = 0; i < events.length; i++) {
