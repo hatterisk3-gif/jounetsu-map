@@ -189,6 +189,8 @@ const API_ACTIONS = {
   "saveAttendanceData": function (p) { return saveAttendanceData_(p); },
   "saveLunchBreakRecord": function (p) { return saveLunchBreakRecord_(p); },
   "moveLunchBreakRecordDate": function (p) { return moveLunchBreakRecordDate_(p); },
+  "getFertilizerRateSettings": function (p) { return getFertilizerRateSettings_(p); },
+  "saveFertilizerRateSettings": function (p) { return saveFertilizerRateSettings_(p); },
   "getTrackingData": function (p) { return getTrackingData(p); },
   "getOpenClockInStatus": function (p) { return getOpenClockInStatus(p); },
   "updateOpenClockInTime": function (p) { return updateOpenClockInTime(p); },
@@ -3503,6 +3505,122 @@ function fertilizerDedupKey_(e) {
   const maker = String(e.manufacturer || '').trim();
   if (name) return 'N:' + name + '\t' + maker;
   return '';
+}
+
+// ========== 作物×栽培法別 肥料施用量設定 ==========
+const FERT_RATE_SETTINGS_SHEET_ = '肥料施用量設定';
+const FERT_RATE_SETTINGS_KEY_ = 'FERT_RATE_SETTINGS_V1';
+
+function ensureFertilizerRateSettingsSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName(FERT_RATE_SETTINGS_SHEET_);
+  if (!sheet) {
+    sheet = ss.insertSheet(FERT_RATE_SETTINGS_SHEET_);
+    sheet.appendRow(['key', 'json', 'updatedAt', 'updatedBy']);
+    sheet.getRange(1, 1, 1, 4).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+function normalizeFertilizerRateSettingsPayload_(raw) {
+  const src = (raw && typeof raw === 'object') ? raw : {};
+  const methods = Array.isArray(src.methods)
+    ? src.methods.map(function (m) { return String(m || '').trim(); }).filter(Boolean)
+    : [];
+  const uniqMethods = [];
+  const seenM = {};
+  methods.forEach(function (m) {
+    if (seenM[m]) return;
+    seenM[m] = true;
+    uniqMethods.push(m);
+  });
+  if (!uniqMethods.length) uniqMethods.push('慣行');
+
+  const rates = {};
+  const srcRates = (src.rates && typeof src.rates === 'object') ? src.rates : {};
+  Object.keys(srcRates).forEach(function (k) {
+    const key = String(k || '').trim();
+    if (!key) return;
+    const list = Array.isArray(srcRates[k]) ? srcRates[k] : [];
+    rates[key] = list.map(function (r, idx) {
+      const row = r && typeof r === 'object' ? r : {};
+      return {
+        id: String(row.id || ('fr_' + Date.now() + '_' + idx)),
+        fertilizerId: String(row.fertilizerId || ''),
+        fertilizerName: String(row.fertilizerName || '').trim(),
+        ratePer10a: Number(row.ratePer10a) || 0,
+        unit: String(row.unit || 'kg').trim() || 'kg',
+        timing: String(row.timing || '').trim(),
+        note: String(row.note || '').trim()
+      };
+    }).filter(function (r) { return !!r.fertilizerName; });
+  });
+
+  return {
+    methods: uniqMethods,
+    rates: rates,
+    updatedAt: String(src.updatedAt || ''),
+    updatedBy: String(src.updatedBy || '')
+  };
+}
+
+function getFertilizerRateSettings_(params) {
+  try {
+    const sheet = ensureFertilizerRateSettingsSheet_();
+    const last = sheet.getLastRow();
+    if (last < 2) {
+      return { success: true, settings: normalizeFertilizerRateSettingsPayload_({}) };
+    }
+    const values = sheet.getRange(2, 1, last, 4).getValues();
+    let jsonText = '';
+    for (let i = 0; i < values.length; i++) {
+      if (String(values[i][0] || '').trim() === FERT_RATE_SETTINGS_KEY_) {
+        jsonText = String(values[i][1] || '');
+        break;
+      }
+    }
+    if (!jsonText) {
+      return { success: true, settings: normalizeFertilizerRateSettingsPayload_({}) };
+    }
+    let parsed = {};
+    try { parsed = JSON.parse(jsonText); } catch (e) { parsed = {}; }
+    return { success: true, settings: normalizeFertilizerRateSettingsPayload_(parsed) };
+  } catch (e) {
+    return { success: false, error: String(e && e.message ? e.message : e), settings: normalizeFertilizerRateSettingsPayload_({}) };
+  }
+}
+
+function saveFertilizerRateSettings_(params) {
+  try {
+    const p = params || {};
+    const userName = String(p.userName || '').trim() || 'system';
+    const settings = normalizeFertilizerRateSettingsPayload_(p.settings || {});
+    settings.updatedAt = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
+    settings.updatedBy = userName;
+    const sheet = ensureFertilizerRateSettingsSheet_();
+    const last = sheet.getLastRow();
+    let targetRow = -1;
+    if (last >= 2) {
+      const keys = sheet.getRange(2, 1, last, 1).getValues();
+      for (let i = 0; i < keys.length; i++) {
+        if (String(keys[i][0] || '').trim() === FERT_RATE_SETTINGS_KEY_) {
+          targetRow = i + 2;
+          break;
+        }
+      }
+    }
+    const row = [FERT_RATE_SETTINGS_KEY_, JSON.stringify(settings), settings.updatedAt, settings.updatedBy];
+    if (targetRow > 0) {
+      sheet.getRange(targetRow, 1, targetRow, 4).setValues([row]);
+    } else {
+      sheet.appendRow(row);
+    }
+    SpreadsheetApp.flush();
+    writeLog(userName, '肥料施用量設定保存', 'methods:' + settings.methods.length, '');
+    return { success: true, settings: settings };
+  } catch (e) {
+    return { success: false, error: String(e && e.message ? e.message : e) };
+  }
 }
 
 // ========== 肥料カタログ（公式CSVの保管庫 → 検索してマスタへ） ==========

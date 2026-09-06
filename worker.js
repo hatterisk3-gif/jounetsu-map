@@ -4,6 +4,7 @@
       let pdlTools = [], pdlMaterials = [], pdlMachines = [], pdlPesticides = [], pdlWorkMaster = [], pdlSignFunctions = [], pdlPastReports = {}, pdlSymptoms = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [];
       let pdlDeliveryDestinations = [];
       let pdlNurseryLocations = [], pdlCropCultSettings = [];
+      let pdlFertilizers = [];
       let pdlCostItems = [], pdlCropCostPlans = [];
       let selectedPolyIds = [], isMapSelecting = false, backupSelectedPolyIds = [];
       let pendingFiles = [];
@@ -391,10 +392,24 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
       };
 
    // 🌟 1. ログイン処理（完全版） 🌟
+      function setWorkerLoginScreenVisible_(visible) {
+          const loginScreen = document.getElementById('loginScreen');
+          if (!loginScreen) return;
+          if (visible) {
+              try { document.documentElement.classList.remove('worker-has-session'); } catch (e) {}
+              loginScreen.style.display = 'flex';
+              loginScreen.setAttribute('aria-hidden', 'false');
+          } else {
+              loginScreen.style.display = 'none';
+              loginScreen.setAttribute('aria-hidden', 'true');
+          }
+      }
+
       function continueCachedWorkerSession_(message, toastType) {
           window._workerLoginSucceeded = true;
           currentUser = currentUser || localStorage.getItem('passionMapUserName') || '';
-          document.getElementById('loginScreen').style.display = 'none';
+          try { document.documentElement.classList.add('worker-has-session'); } catch (e) {}
+          setWorkerLoginScreenVisible_(false);
           if (message && typeof window.showRecordSyncToast === 'function') {
               window.showRecordSyncToast(message, toastType || 'error');
           }
@@ -419,7 +434,8 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           // キャッシュ起動時はログイン確認を待たず操作可能な状態を維持する
           if (fromCache) {
               currentUser = currentUser || localStorage.getItem('passionMapUserName') || '';
-              document.getElementById('loginScreen').style.display = 'none';
+              try { document.documentElement.classList.add('worker-has-session'); } catch (e) {}
+              setWorkerLoginScreenVisible_(false);
               startLocationWatch();
               if (startupLoad) {
                   startupLoad.done();
@@ -443,7 +459,8 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
               if (result.success) {
                   window._workerLoginSucceeded = true;
                   currentUser = result.name;
-                  document.getElementById('loginScreen').style.display = 'none';
+                  try { document.documentElement.classList.add('worker-has-session'); } catch (e) {}
+                  setWorkerLoginScreenVisible_(false);
                   localStorage.setItem('passionMapUserId', id); 
                   localStorage.setItem('passionMapUserPw', pw);
                   localStorage.setItem('passionMapUserName', result.name);
@@ -494,7 +511,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                       overlayEl.style.display = 'none';
                       overlayEl.style.pointerEvents = 'none';
                   }
-                  document.getElementById('loginScreen').style.display = 'flex';
+                  setWorkerLoginScreenVisible_(true);
                   document.getElementById('loginError').innerText = result.message;
                   if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
                   if (startupLoad) {
@@ -519,7 +536,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   overlayEl.style.display = 'none';
                   overlayEl.style.pointerEvents = 'none';
               }
-              document.getElementById('loginScreen').style.display = 'flex';
+              setWorkerLoginScreenVisible_(true);
               document.getElementById('loginError').innerText = "通信エラー: " + e.message; 
               if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
               if (startupLoad) {
@@ -786,6 +803,8 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           pdlSymptoms=data.pdl.symptoms||[];
           pdlNurseryLocations = data.pdl.nurseryLocations || [];
           pdlCropCultSettings = data.pdl.cropCultSettings || [];
+          pdlFertilizers = data.pdl.fertilizers || [];
+          window.pdlFertilizers = pdlFertilizers;
           pdlCostItems = data.pdl.costItems || [];
           pdlCropCostPlans = data.pdl.cropCostPlans || [];
           window.pdlCostItems = pdlCostItems;
@@ -2033,6 +2052,10 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         if (p.isMarker && p.signFunction && String(p.signFunction).includes('道具管理')) {
             actions += `<button onclick="openToolManagementUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#00BCD4; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">🪚 道具状況</button>`;
+        }
+        // worker.html の圃場：肥料量計算
+        if (!isWorker2 && !p.isMarker) {
+            actions += `<button onclick="openFertilizerCalcModal('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#6D4C41; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">🧪 ここにまく肥料の量を計算</button>`;
         }
         actions += `<button onclick="directOpenReportForm('${id}')" style="width:100%; padding:8px 0; border-radius:4px; border:none; background:#d32f2f; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box;">⚠️ 問題を報告する</button>`;
 
@@ -7259,14 +7282,20 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.renderWorkOptions === 'function') window.renderWorkOptions(category, next);
         if (typeof window.refreshWorkNameSectionVisibility === 'function') window.refreshWorkNameSectionVisibility();
         // 作物変更時は詳細作業を作物別に再描画（選択状態は維持）
+        // 準備／掃除・片付けカテゴリでは対象作業の詳細を出さない
         const wName = (document.getElementById('rec_work_name')?.value || '').trim();
         if (wName && typeof window.renderDetailWorksSection === 'function') {
-          const kept = (typeof window.captureDetailWorkSelections === 'function')
-            ? window.captureDetailWorkSelections()
-            : null;
-          window.renderDetailWorksSection(wName);
-          if (kept && typeof window.restoreDetailWorkSelections === 'function') {
-            window.restoreDetailWorkSelections(kept);
+          if (typeof window.shouldHideMetaTargetDetailWorks_ === 'function'
+              && window.shouldHideMetaTargetDetailWorks_()) {
+            window.renderDetailWorksSection('');
+          } else {
+            const kept = (typeof window.captureDetailWorkSelections === 'function')
+              ? window.captureDetailWorkSelections()
+              : null;
+            window.renderDetailWorksSection(wName);
+            if (kept && typeof window.restoreDetailWorkSelections === 'function') {
+              window.restoreDetailWorkSelections(kept);
+            }
           }
         }
         if (!opts.skipSideEffects) {
@@ -11885,6 +11914,13 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.refreshFieldLinkedDetailWorks_ = () => {
         if (window._refreshingFieldLinkedDetails) return;
+        if (typeof window.shouldHideMetaTargetDetailWorks_ === 'function'
+            && window.shouldHideMetaTargetDetailWorks_()) {
+          if (typeof window.renderDetailWorksSection === 'function') {
+            window.renderDetailWorksSection('');
+          }
+          return;
+        }
         const wName = (document.getElementById('rec_work_name')?.value || '').trim();
         if (!wName) return;
         if (typeof window.renderDetailWorksSection !== 'function') return;
@@ -12928,7 +12964,13 @@ function createSignboardMarker(name, pos, icon, id) {
             detailSec.style.display = 'none';
             return;
          }
-         // 準備／片づけカテゴリでは対象作業に紐づく詳細作業を出さない
+         // 準備／片づけ・掃除カテゴリでは、対象として選んだ作業名の詳細作業を出さない
+         if (typeof window.shouldHideMetaTargetDetailWorks_ === 'function'
+             && window.shouldHideMetaTargetDetailWorks_()) {
+            detailSec.innerHTML = '';
+            detailSec.style.display = 'none';
+            return;
+         }
          const formCatForDetail = String(document.getElementById('rec_work_category')?.value || '').trim();
          if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(formCatForDetail)) {
             detailSec.innerHTML = '';
@@ -13330,8 +13372,7 @@ function createSignboardMarker(name, pos, icon, id) {
                 ? `<div style="font-size:11px; color:#2E7D32; margin-bottom:6px; font-weight:bold;">選択中: ${esc(selectedCrops.join('、'))}</div>`
                 : '<div style="font-size:11px; color:#E65100; margin-bottom:6px;">1つ以上選んでください</div>')
               : '<div style="font-size:11px; color:#888; margin-bottom:6px;">対象作業を選ぶと作物を選べます</div>'}
-            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; max-height:160px; overflow-y:auto;">${prepTarget ? (cropHtml || '<span style="font-size:11px; color:#888;">作物マスタがありません</span>') : ''}</div>
-            ${detailHtml}`;
+            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; max-height:160px; overflow-y:auto;">${prepTarget ? (cropHtml || '<span style="font-size:11px; color:#888;">作物マスタがありません</span>') : ''}</div>`;
         } else {
           const filterCats = ['すべて'].concat(typeof window.getBulkWorkMemoCategories_ === 'function' ? window.getBulkWorkMemoCategories_() : cats);
           const filterHtml = filterCats.map(name => {
@@ -14291,7 +14332,13 @@ function createSignboardMarker(name, pos, icon, id) {
           }
         }
         
-        window.renderDetailWorksSection(wName);
+        // 準備／掃除・片付けカテゴリでは対象作業の詳細を出さない
+        if (typeof window.shouldHideMetaTargetDetailWorks_ === 'function'
+            && window.shouldHideMetaTargetDetailWorks_()) {
+          window.renderDetailWorksSection('');
+        } else {
+          window.renderDetailWorksSection(wName);
+        }
         if (typeof window.renderConcurrentWorksSection_ === 'function') {
           window.renderConcurrentWorksSection_();
         }
@@ -14346,7 +14393,7 @@ function createSignboardMarker(name, pos, icon, id) {
       window.isCleanupCategory_ = (cat) => {
         const c = String(cat || '').trim();
         if (!c) return false;
-        return /あと片|後片|片づけ|片付け|掃除/.test(c);
+        return /あと片|後片|片づけ|片付け|掃除|清掃/.test(c);
       };
 
       /** 対象カテゴリ→対象作業を紐づけるカテゴリ（準備／片づけ・掃除） */
@@ -14358,7 +14405,7 @@ function createSignboardMarker(name, pos, icon, id) {
       window.isCleanupWorkName = (name) => {
         const n = String(name || '').trim();
         if (!n) return false;
-        return /あと片|後片|片づけ|片付け|掃除/.test(n);
+        return /あと片|後片|片づけ|片付け|掃除|清掃/.test(n);
       };
 
       /** 準備／片づけ本体のシェル作業名（カテゴリ選択で代替するため通常は使わない） */
@@ -14367,7 +14414,27 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!n) return false;
         if (n === '準備' || n === '準備作業') return true;
         if (typeof window.isCleanupWorkName === 'function' && window.isCleanupWorkName(n)
-            && (n === '片づけ' || n === '片付け' || n === 'あと片づけ' || n === '後片づけ' || n === '掃除')) {
+            && (n === '片づけ' || n === '片付け' || n === 'あと片づけ' || n === '後片づけ' || n === '掃除' || n === '清掃')) {
+          return true;
+        }
+        return false;
+      };
+
+      /**
+       * 準備／掃除・片付けカテゴリでは、対象として選んだ作業名の詳細作業を出さない。
+       * （作業名欄に対象作業が入っても、カテゴリがメタなら詳細は非表示）
+       */
+      window.shouldHideMetaTargetDetailWorks_ = () => {
+        const formCat = String(document.getElementById('rec_work_category')?.value || '').trim();
+        if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(formCat)) {
+          return true;
+        }
+        const prepTarget = String(
+          (document.getElementById('prep_target_work_select') && document.getElementById('prep_target_work_select').value)
+          || window.selectedPrepTargetWork
+          || ''
+        ).trim();
+        if (prepTarget && typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(formCat)) {
           return true;
         }
         return false;
@@ -30118,11 +30185,16 @@ window.getBulkWorkMemoDetailOptions_ = (workName, cropNameOrDraft, prepTargetWor
   if (!wName || wName.includes('休憩')) return [];
   const draft = (cropNameOrDraft && typeof cropNameOrDraft === 'object') ? cropNameOrDraft : null;
   const metaCat = String(draft && (draft.category || draft.listFilterCategory) || '').trim();
-  // 準備／片づけでは対象作業の詳細作業を出さない（第3引数の対象作業も参照しない）
+  const hasPrepTarget = !!(draft && (
+    String(draft.prepTargetWork || '').trim()
+    || (Array.isArray(draft.prepTargetWorks) && draft.prepTargetWorks.some(n => String(n || '').trim()))
+  ));
+  // 準備／片づけ・掃除では、対象として選んだ作業名の詳細作業を出さない
   if (typeof window.isMetaTargetCategory_ === 'function'
       && (window.isMetaTargetCategory_(metaCat) || window.isMetaTargetCategory_(wName))) {
     return [];
   }
+  if (hasPrepTarget) return [];
   void prepTargetWork;
 
   let cropKeys = draft
@@ -30184,10 +30256,18 @@ window.getBulkWorkMemoDetailOptions_ = (workName, cropNameOrDraft, prepTargetWor
 /** 一括入力：作業名・カテゴリから記録欄の出し分け（通常フォームと同じ判定） */
 window.getBulkWorkMemoUiFlags_ = (draft) => {
   const wName = String(draft && draft.workName || '').trim();
-  const cat = String(draft && draft.category || window.getBulkWorkMemoWorkCategory_(wName) || '').trim();
+  const cat = String(
+    (draft && (draft.category || draft.listFilterCategory))
+    || window.getBulkWorkMemoWorkCategory_(wName)
+    || ''
+  ).trim();
   const isMeta = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat);
+  const hasPrepTarget = !!(draft && (
+    String(draft.prepTargetWork || '').trim()
+    || (Array.isArray(draft.prepTargetWorks) && draft.prepTargetWorks.some(n => String(n || '').trim()))
+  ));
   // 準備／片づけは対象作業の機械・資材・薬剤フラグを出さない
-  if (isMeta) {
+  if (isMeta || hasPrepTarget) {
     return {
       showMachine: false,
       showMaterial: false,
@@ -32624,7 +32704,12 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
   let html = '';
   const metaCat = String(d.category || d.listFilterCategory || '').trim();
   const isMeta = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(metaCat);
-  if (d.workName && !isMeta) {
+  const hasPrepTarget = !!(
+    String(d.prepTargetWork || '').trim()
+    || (Array.isArray(d.prepTargetWorks) && d.prepTargetWorks.some(n => String(n || '').trim()))
+  );
+  // 準備／掃除・片付けでは対象作業の詳細作業を出さない
+  if (d.workName && !isMeta && !hasPrepTarget) {
     const flags = window.getBulkWorkMemoUiFlags_(d);
     const details = window.getBulkWorkMemoDetailOptions_(d.workName, d, '');
     const machines = flags.showMachine ? window.getBulkWorkMemoMachineList_(d) : [];
@@ -34270,6 +34355,33 @@ window.buildBulkWorkMemoYmdTimeMs_ = (ymd, hm) => {
   ).getTime();
 };
 
+/** 指定日に出勤時刻が既にあるか（端末キャッシュ／出勤中状態） */
+window.hasBulkWorkMemoClockInForDate_ = (ymd) => {
+  const dateYmd = String(ymd || '').trim();
+  if (!dateYmd) return false;
+  try {
+    if (typeof window.getLocalClockInTimeForDate === 'function') {
+      const t = String(window.getLocalClockInTimeForDate(dateYmd) || '').trim();
+      if (t) return true;
+    }
+  } catch (e) {}
+  try {
+    const open = window._trackingListOpenClockIn;
+    if (open && String(open.clockInDateYmd || '') === dateYmd && String(open.clockInTime || '').trim()) {
+      return true;
+    }
+  } catch (e) {}
+  try {
+    const cache = typeof window.loadCachedWorkTimeHints === 'function'
+      ? window.loadCachedWorkTimeHints()
+      : null;
+    if (cache && cache.clockIn && cache.clockIn.dateYmd === dateYmd && String(cache.clockIn.time || '').trim()) {
+      return true;
+    }
+  } catch (e) {}
+  return false;
+};
+
 /** 一括登録：最初の開始時刻を出勤として連動登録 */
 window.registerBulkWorkMemoClockIn_ = (ymd, timeHm) => {
   const dateYmd = String(ymd || '').trim();
@@ -34730,15 +34842,18 @@ window.renderBulkWorkMemoConfirmModal_ = () => {
   const clockOutHint = att.clockOutTime
     ? `<div style="font-size:11px; color:#555; margin-top:6px; line-height:1.4;">🏃 登録後、最終終了 <b>${esc(att.clockOutTime)}</b>（${esc(att.clockOutLabel || '最後の作業')}）を退勤にするか確認します</div>`
     : '';
-  const clockInBlock = att.clockInTime
-    ? `<label style="display:flex; align-items:flex-start; gap:8px; margin-top:10px; padding:10px; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px; cursor:pointer;">
+  const alreadyClockIn = window.hasBulkWorkMemoClockInForDate_(ymd);
+  const clockInBlock = alreadyClockIn
+    ? ''
+    : (att.clockInTime
+      ? `<label style="display:flex; align-items:flex-start; gap:8px; margin-top:10px; padding:10px; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px; cursor:pointer;">
         <input type="checkbox" id="bulk_work_memo_sync_clockin" checked style="margin-top:2px;">
         <span style="font-size:12px; color:#1B5E20; line-height:1.4;">
           <b>出勤も連動登録</b><br>
           最初の開始 <b>${esc(att.clockInTime)}</b>（${esc(att.clockInLabel || '最初の作業')}）を出勤時間にします
         </span>
       </label>`
-    : `<div style="font-size:11px; color:#888; margin-top:8px;">出勤連動できる開始時間がありません。</div>`;
+      : `<div style="font-size:11px; color:#888; margin-top:8px;">出勤連動できる開始時間がありません。</div>`);
   const gapsOnConfirm = window.detectBulkWorkMemoTimeGaps_(drafts);
   const gapHint = gapsOnConfirm.length
     ? `<div style="font-size:11px; color:#E65100; margin-top:8px; line-height:1.35;">📭 未登録の時間帯が ${gapsOnConfirm.length} か所あります。戻って休憩を追加するか、このまま登録できます。</div>`
@@ -34748,7 +34863,7 @@ window.renderBulkWorkMemoConfirmModal_ = () => {
       ${window.buildBulkWorkMemoModalHeaderHtml_('✅ 登録内容の確認', `${drafts.length}件をこの内容で登録します。作業日を確認してから登録してください。`)}
       <div style="background:#FFF8E1; border:2px solid #FFB74D; border-radius:10px; padding:12px; margin-bottom:12px;">
         <label class="form-label" style="margin:0 0 6px; color:#E65100;">📅 作業日</label>
-        <input type="date" id="bulk_work_memo_confirm_date" class="form-input" value="${esc(ymd)}" onchange="window._bulkWorkMemoDate=this.value" style="margin:0; font-size:15px; font-weight:bold;">
+        <input type="date" id="bulk_work_memo_confirm_date" class="form-input" value="${esc(ymd)}" onchange="window._bulkWorkMemoDate=this.value; if(typeof window.renderBulkWorkMemoConfirmModal_==='function') window.renderBulkWorkMemoConfirmModal_()" style="margin:0; font-size:15px; font-weight:bold;">
         <div style="font-size:11px; color:#666; margin-top:6px; line-height:1.4;">上記の日付で、チェックした ${drafts.length}件すべてが登録されます。</div>
         ${clockInBlock}
         ${lunchLine}
@@ -34766,6 +34881,51 @@ window.renderBulkWorkMemoConfirmModal_ = () => {
   window._bulkWorkMemoActive = true;
   if (typeof window.setBulkWorkMemoModalClass_ === 'function') window.setBulkWorkMemoModalClass_('open');
   try { modalEl.onclick = null; } catch (e) {}
+
+  // サーバー側にその日出勤がある場合もチェック欄を消す（端末に無いとき用）
+  if (!alreadyClockIn && att.clockInTime && typeof callGAS === 'function') {
+    const user = (typeof currentUser !== 'undefined' && currentUser)
+      ? currentUser
+      : (localStorage.getItem('passionMapUserName') || '');
+    const checkYmd = ymd;
+    if (user) {
+      Promise.resolve()
+        .then(() => callGAS('getOpenClockInStatus', { userName: user }).catch(() => null))
+        .then((res) => {
+          if (!res) return null;
+          const inYmd = String(res.clockInDateYmd || '').trim();
+          if (inYmd === checkYmd && (res.clockInTime || res.open || res.cancelableClockOut)) {
+            if (typeof window.saveCachedClockInHint === 'function' && res.clockInTime) {
+              try { window.saveCachedClockInHint(checkYmd, res.clockInTime); } catch (e) {}
+            }
+            return true;
+          }
+          return null;
+        })
+        .then((found) => {
+          if (found) return true;
+          return callGAS('getWorkRecordTimeHints', { userName: user, dateYmd: checkYmd })
+            .then((hints) => {
+              if (!(hints && hints.clockInTime)) return false;
+              const hintYmd = String(hints.clockInDateYmd || checkYmd).trim();
+              if (hintYmd !== checkYmd) return false;
+              if (typeof window.saveCachedClockInHint === 'function') {
+                try { window.saveCachedClockInHint(checkYmd, hints.clockInTime); } catch (e) {}
+              }
+              return true;
+            })
+            .catch(() => false);
+        })
+        .then((found) => {
+          if (!found) return;
+          const el = document.getElementById('bulk_work_memo_sync_clockin');
+          if (!el) return;
+          const label = el.closest('label');
+          if (label) label.remove();
+        })
+        .catch(() => {});
+    }
+  }
 };
 
 window.executeBulkWorkMemoRegistration_ = async () => {
@@ -34788,7 +34948,9 @@ window.executeBulkWorkMemoRegistration_ = async () => {
   const maintMasterQueued = { symptoms: new Set(), contents: new Set(), parts: new Set() };
   const att = window.getBulkWorkMemoAttendanceSummary_(drafts);
   const syncClockInEl = document.getElementById('bulk_work_memo_sync_clockin');
-  const doSyncClockIn = !!(syncClockInEl ? syncClockInEl.checked : true);
+  // チェック欄が無い（＝その日出勤済みで非表示）ときは連動しない
+  const doSyncClockIn = !!(syncClockInEl && syncClockInEl.checked)
+    && !window.hasBulkWorkMemoClockInForDate_(ymd);
   const syncLunchEl = document.getElementById('bulk_work_memo_sync_lunch');
   const doSyncLunch = !!(syncLunchEl && syncLunchEl.checked && !att.hasLunch);
   let optionalLunchStart = '';
@@ -35795,8 +35957,8 @@ window.applyBulkWorkMemoHistoryDateChange_ = async (batchId) => {
           if(document.getElementById('loginPw') && pw) document.getElementById('loginPw').value = pw; 
           
           if(id && pw) { 
-              const loginScreen = document.getElementById('loginScreen');
-              if(loginScreen) loginScreen.style.display = 'none';
+              try { document.documentElement.classList.add('worker-has-session'); } catch (e) {}
+              setWorkerLoginScreenVisible_(false);
               window._workerStartupLoading = (window.AppLoading && AppLoading.start)
                 ? AppLoading.start({
                     label: 'アプリを準備中...',
@@ -35857,8 +36019,7 @@ window.applyBulkWorkMemoHistoryDateChange_ = async (batchId) => {
                   overlayEl.style.pointerEvents = 'none';
               }
               if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
-              const loginScreen = document.getElementById('loginScreen');
-              if (loginScreen) loginScreen.style.display = 'flex';
+              setWorkerLoginScreenVisible_(true);
           }
       });
 window.openRadarModal = function(lat, lng) {
@@ -40422,4 +40583,565 @@ window.deleteQualification = async function(userName, index) {
   window.openSkillTreeModal(userName);
   if (typeof window.switchSkillTab === 'function') window.switchSkillTab('quals');
 };
+
+// ========== 圃場タップ：ここにまく肥料の量を計算 ==========
+(function () {
+  const FERT_RATE_LS_KEY = 'passionMapFertilizerRateSettings_v1';
+  const DEFAULT_METHODS = ['慣行', '有機', '減農薬'];
+
+  function esc_(s) {
+    if (typeof window._escapeHtmlPs === 'function') return window._escapeHtmlPs(s);
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function escAttr_(s) {
+    return esc_(s).replace(/'/g, '&#39;');
+  }
+  function jsStr_(s) {
+    return String(s == null ? '' : s)
+      .replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, '');
+  }
+
+  function normalizeSettings_(raw) {
+    const src = (raw && typeof raw === 'object') ? raw : {};
+    let methods = Array.isArray(src.methods)
+      ? src.methods.map(function (m) { return String(m || '').trim(); }).filter(Boolean)
+      : [];
+    const seen = {};
+    methods = methods.filter(function (m) {
+      if (seen[m]) return false;
+      seen[m] = true;
+      return true;
+    });
+    if (!methods.length) methods = DEFAULT_METHODS.slice();
+    const rates = {};
+    const srcRates = (src.rates && typeof src.rates === 'object') ? src.rates : {};
+    Object.keys(srcRates).forEach(function (k) {
+      const key = String(k || '').trim();
+      if (!key) return;
+      const list = Array.isArray(srcRates[k]) ? srcRates[k] : [];
+      rates[key] = list.map(function (r, idx) {
+        const row = r && typeof r === 'object' ? r : {};
+        return {
+          id: String(row.id || ('fr_' + Date.now() + '_' + idx)),
+          fertilizerId: String(row.fertilizerId || ''),
+          fertilizerName: String(row.fertilizerName || '').trim(),
+          ratePer10a: Number(row.ratePer10a) || 0,
+          unit: String(row.unit || 'kg').trim() || 'kg',
+          timing: String(row.timing || '').trim(),
+          note: String(row.note || '').trim()
+        };
+      }).filter(function (r) { return !!r.fertilizerName; });
+    });
+    return {
+      methods: methods,
+      rates: rates,
+      updatedAt: String(src.updatedAt || ''),
+      updatedBy: String(src.updatedBy || '')
+    };
+  }
+
+  function rateKey_(crop, method) {
+    return String(crop || '').trim() + '\t' + String(method || '').trim();
+  }
+
+  function loadLocalSettings_() {
+    try {
+      const raw = localStorage.getItem(FERT_RATE_LS_KEY);
+      if (!raw) return normalizeSettings_({});
+      return normalizeSettings_(JSON.parse(raw));
+    } catch (e) {
+      return normalizeSettings_({});
+    }
+  }
+
+  function saveLocalSettings_(settings) {
+    const normalized = normalizeSettings_(settings);
+    try {
+      localStorage.setItem(FERT_RATE_LS_KEY, JSON.stringify(normalized));
+    } catch (e) {}
+    window._fertRateSettings = normalized;
+    return normalized;
+  }
+
+  function getSettings_() {
+    if (window._fertRateSettings && typeof window._fertRateSettings === 'object') {
+      const s = window._fertRateSettings;
+      if (!Array.isArray(s.methods) || !s.methods.length) s.methods = DEFAULT_METHODS.slice();
+      if (!s.rates || typeof s.rates !== 'object') s.rates = {};
+      return s;
+    }
+    const loaded = loadLocalSettings_();
+    window._fertRateSettings = loaded;
+    return loaded;
+  }
+
+  async function syncSettingsFromServer_() {
+    if (typeof callGAS !== 'function') return getSettings_();
+    try {
+      const res = await callGAS('getFertilizerRateSettings', {});
+      if (res && res.success && res.settings) {
+        const local = loadLocalSettings_();
+        const remote = normalizeSettings_(res.settings);
+        const localTs = String(local.updatedAt || '');
+        const remoteTs = String(remote.updatedAt || '');
+        const localEmpty = !Object.keys(local.rates || {}).length;
+        if (localEmpty || (remoteTs && (!localTs || remoteTs >= localTs))) {
+          return saveLocalSettings_(remote);
+        }
+      }
+    } catch (e) {}
+    return getSettings_();
+  }
+
+  async function persistSettings_(settings) {
+    const userName = (typeof currentUser !== 'undefined' && currentUser)
+      ? currentUser
+      : (localStorage.getItem('passionMapUserName') || '');
+    const normalized = saveLocalSettings_(Object.assign({}, settings, {
+      updatedAt: new Date().toISOString().slice(0, 19).replace('T', ' '),
+      updatedBy: userName
+    }));
+    if (typeof callGAS === 'function') {
+      try {
+        const res = await callGAS('saveFertilizerRateSettings', {
+          settings: normalized,
+          userName: userName
+        });
+        if (res && res.success && res.settings) {
+          return saveLocalSettings_(res.settings);
+        }
+      } catch (e) {}
+    }
+    return normalized;
+  }
+
+  function fieldAreaA_(polyId) {
+    const p = (typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons[polyId] : null;
+    if (!p) return 0;
+    const n = Number(p.area);
+    return isFinite(n) && n > 0 ? n : 0;
+  }
+
+  function calcAmount_(ratePer10a, areaA) {
+    const rate = Number(ratePer10a) || 0;
+    const area = Number(areaA) || 0;
+    if (!rate || !area) return 0;
+    return rate * (area / 10);
+  }
+
+  function formatAmount_(n) {
+    const v = Number(n) || 0;
+    if (!v) return '0';
+    if (Math.abs(v) >= 100) return String(Math.round(v * 10) / 10);
+    if (Math.abs(v) >= 10) return String(Math.round(v * 100) / 100);
+    return String(Math.round(v * 1000) / 1000);
+  }
+
+  function cropOptions_() {
+    const names = [];
+    const seen = {};
+    (typeof pdlCrops !== 'undefined' && Array.isArray(pdlCrops) ? pdlCrops : []).forEach(function (c) {
+      const n = String((c && c.name) || c || '').trim();
+      if (!n || seen[n]) return;
+      seen[n] = true;
+      names.push(n);
+    });
+    names.sort(function (a, b) { return a.localeCompare(b, 'ja'); });
+    return names;
+  }
+
+  function fertilizerOptions_() {
+    const list = (typeof pdlFertilizers !== 'undefined' && Array.isArray(pdlFertilizers))
+      ? pdlFertilizers
+      : (Array.isArray(window.pdlFertilizers) ? window.pdlFertilizers : []);
+    return list.map(function (f) {
+      return {
+        id: String((f && f.id) || ''),
+        name: String((f && f.name) || '').trim()
+      };
+    }).filter(function (f) { return !!f.name; });
+  }
+
+  function ensureState_(polyId) {
+    const areaA = fieldAreaA_(polyId);
+    const p = (typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons[polyId] : null;
+    const settings = getSettings_();
+    const method = (window._fertCalcState && window._fertCalcState.method && settings.methods.indexOf(window._fertCalcState.method) >= 0)
+      ? window._fertCalcState.method
+      : (settings.methods[0] || '慣行');
+    window._fertCalcState = {
+      polyId: String(polyId || ''),
+      fieldName: p ? String(p.name || '') : '',
+      areaA: areaA,
+      crop: (window._fertCalcState && window._fertCalcState.crop) || '',
+      method: method,
+      step: (window._fertCalcState && window._fertCalcState.step) || 'crop',
+      editing: !!(window._fertCalcState && window._fertCalcState.editing),
+      cropFilter: (window._fertCalcState && window._fertCalcState.cropFilter) || ''
+    };
+    return window._fertCalcState;
+  }
+
+  function closeModal_() {
+    const el = document.getElementById('fertilizerCalcModal');
+    if (el) el.remove();
+  }
+
+  function render_() {
+    const st = window._fertCalcState;
+    if (!st) return;
+    const settings = getSettings_();
+    let modal = document.getElementById('fertilizerCalcModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'fertilizerCalcModal';
+      modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:12500; display:flex; justify-content:center; align-items:flex-end; padding:0; box-sizing:border-box;';
+      modal.onclick = function (e) { if (e.target === modal) closeModal_(); };
+      document.body.appendChild(modal);
+    }
+
+    const areaLabel = st.areaA > 0 ? (formatAmount_(st.areaA) + 'a') : '面積未設定';
+    let body = '';
+    if (st.step === 'crop') {
+      body = renderCropStep_(st);
+    } else if (st.editing) {
+      body = renderEditStep_(st, settings);
+    } else {
+      body = renderListStep_(st, settings);
+    }
+
+    modal.innerHTML = `
+      <div style="background:#fff; color:#333; width:100%; max-width:560px; max-height:92vh; border-radius:14px 14px 0 0; box-shadow:0 -8px 28px rgba(0,0,0,0.25); display:flex; flex-direction:column;" onclick="event.stopPropagation()">
+        <div style="padding:14px 16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+          <div style="min-width:0;">
+            <div style="font-size:16px; font-weight:bold; color:#5D4037;">🧪 肥料の量を計算</div>
+            <div style="font-size:12px; color:#666; margin-top:4px; word-break:break-all;">${esc_(st.fieldName)}　／　${esc_(areaLabel)}</div>
+          </div>
+          <button type="button" onclick="closeFertilizerCalcModal()" style="background:#eee; border:none; border-radius:6px; padding:8px 12px; font-weight:bold; cursor:pointer; flex-shrink:0;">閉じる</button>
+        </div>
+        <div style="flex:1; overflow-y:auto; padding:12px 16px 24px;">${body}</div>
+      </div>`;
+  }
+
+  function renderCropStep_(st) {
+    const q = String(st.cropFilter || '').trim().toLowerCase();
+    const crops = cropOptions_().filter(function (n) {
+      if (!q) return true;
+      return String(n).toLowerCase().indexOf(q) >= 0;
+    });
+    let html = `
+      <div style="font-size:13px; font-weight:bold; color:#555; margin-bottom:8px;">1. 作物を選択</div>
+      <input type="search" id="fertCalcCropFilter" value="${escAttr_(st.cropFilter || '')}" placeholder="作物名で検索..."
+        oninput="onFertCalcCropFilter(this.value)"
+        style="width:100%; padding:10px 12px; border:1px solid #ccc; border-radius:8px; font-size:15px; box-sizing:border-box; margin-bottom:12px;">
+      <div style="display:flex; flex-wrap:wrap; gap:8px;">`;
+    if (!crops.length) {
+      html += `<div style="color:#888; font-size:13px; padding:20px 4px; width:100%; text-align:center;">作物マスタがありません</div>`;
+    } else {
+      crops.forEach(function (name) {
+        html += `<button type="button" onclick="selectFertCalcCrop('${jsStr_(name)}')"
+          style="background:#EFEBE9; color:#4E342E; border:1px solid #D7CCC8; border-radius:20px; padding:8px 14px; font-size:13px; font-weight:bold; cursor:pointer;">${esc_(name)}</button>`;
+      });
+    }
+    html += `</div>`;
+    return html;
+  }
+
+  function renderListStep_(st, settings) {
+    const methods = settings.methods || DEFAULT_METHODS.slice();
+    const key = rateKey_(st.crop, st.method);
+    const rows = Array.isArray(settings.rates[key]) ? settings.rates[key] : [];
+    let html = `
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+        <button type="button" onclick="fertCalcBackToCrop()" style="background:#f5f5f5; border:1px solid #ddd; border-radius:6px; padding:7px 10px; font-size:12px; cursor:pointer;">← 作物変更</button>
+        <div style="font-size:14px; font-weight:bold; color:#5D4037;">${esc_(st.crop)}</div>
+        <button type="button" onclick="fertCalcToggleEdit(true)" style="background:#FFF3E0; color:#E65100; border:1px solid #FFCC80; border-radius:6px; padding:7px 10px; font-size:12px; font-weight:bold; cursor:pointer;">⚙ 設定</button>
+      </div>
+      <div style="display:flex; gap:6px; overflow-x:auto; margin-bottom:12px; padding-bottom:2px;">`;
+    methods.forEach(function (m) {
+      const on = m === st.method;
+      html += `<button type="button" onclick="selectFertCalcMethod('${jsStr_(m)}')"
+        style="flex-shrink:0; border-radius:18px; padding:7px 14px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid ${on ? '#6D4C41' : '#ddd'}; background:${on ? '#6D4C41' : '#fff'}; color:${on ? '#fff' : '#555'};">${esc_(m)}</button>`;
+    });
+    html += `</div>
+      <div style="font-size:11px; color:#888; margin-bottom:10px;">10aあたりの施肥量 × 圃場面積（${esc_(formatAmount_(st.areaA))}a）で計算</div>`;
+
+    if (!rows.length) {
+      html += `
+        <div style="text-align:center; color:#888; padding:28px 10px; background:#fafafa; border:1px dashed #ddd; border-radius:10px;">
+          <div style="margin-bottom:10px;">この作物・栽培法の肥料設定がありません</div>
+          <button type="button" onclick="fertCalcToggleEdit(true)" style="background:#6D4C41; color:#fff; border:none; border-radius:8px; padding:10px 16px; font-weight:bold; cursor:pointer;">設定を登録する</button>
+        </div>`;
+      return html;
+    }
+
+    html += `<div style="display:flex; flex-direction:column; gap:10px;">`;
+    rows.forEach(function (r) {
+      const amt = calcAmount_(r.ratePer10a, st.areaA);
+      const timing = r.timing ? `<div style="font-size:11px; color:#666; margin-top:4px;">時期: ${esc_(r.timing)}</div>` : '';
+      const note = r.note ? `<div style="font-size:11px; color:#888; margin-top:2px;">${esc_(r.note)}</div>` : '';
+      html += `
+        <div style="border:1px solid #e0e0e0; border-radius:10px; padding:12px 14px; background:#fff;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+            <div style="min-width:0;">
+              <div style="font-weight:bold; font-size:15px; color:#333;">${esc_(r.fertilizerName)}</div>
+              <div style="font-size:11px; color:#888; margin-top:3px;">基準 ${esc_(formatAmount_(r.ratePer10a))} ${esc_(r.unit)} / 10a</div>
+              ${timing}${note}
+            </div>
+            <div style="text-align:right; flex-shrink:0;">
+              <div style="font-size:11px; color:#888;">この圃場</div>
+              <div style="font-size:22px; font-weight:bold; color:#5D4037; line-height:1.1;">${esc_(formatAmount_(amt))}<span style="font-size:13px; font-weight:normal; color:#666; margin-left:2px;">${esc_(r.unit)}</span></div>
+            </div>
+          </div>
+        </div>`;
+    });
+    html += `</div>`;
+    return html;
+  }
+
+  function renderEditStep_(st, settings) {
+    const methods = settings.methods || DEFAULT_METHODS.slice();
+    const key = rateKey_(st.crop, st.method);
+    const rows = Array.isArray(settings.rates[key]) ? settings.rates[key].slice() : [];
+    const fertOpts = fertilizerOptions_();
+
+    let html = `
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+        <button type="button" onclick="fertCalcToggleEdit(false)" style="background:#f5f5f5; border:1px solid #ddd; border-radius:6px; padding:7px 10px; font-size:12px; cursor:pointer;">← 一覧へ</button>
+        <div style="font-size:13px; font-weight:bold; color:#E65100;">設定：${esc_(st.crop)}</div>
+        <button type="button" onclick="fertCalcSaveCurrentEdit()" style="background:#2E7D32; color:#fff; border:none; border-radius:6px; padding:7px 12px; font-size:12px; font-weight:bold; cursor:pointer;">保存</button>
+      </div>
+      <div style="margin-bottom:12px;">
+        <div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:6px;">栽培法</div>
+        <div style="display:flex; gap:6px; overflow-x:auto; padding-bottom:2px;">`;
+    methods.forEach(function (m) {
+      const on = m === st.method;
+      html += `<button type="button" onclick="selectFertCalcMethod('${jsStr_(m)}')"
+        style="flex-shrink:0; border-radius:18px; padding:7px 14px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid ${on ? '#E65100' : '#ddd'}; background:${on ? '#FFF3E0' : '#fff'}; color:${on ? '#E65100' : '#555'};">${esc_(m)}</button>`;
+    });
+    html += `
+          <button type="button" onclick="fertCalcAddMethod()" style="flex-shrink:0; border-radius:18px; padding:7px 12px; font-size:12px; cursor:pointer; border:1px dashed #bbb; background:#fff; color:#666;">＋ 栽培法</button>
+        </div>
+      </div>
+      <div style="font-size:12px; color:#888; margin-bottom:10px;">10aあたりの施肥量を登録すると、圃場面積から必要量が自動計算されます。</div>`;
+
+    if (!rows.length) {
+      html += `<div style="text-align:center; color:#aaa; font-size:13px; padding:16px; border:1px dashed #ddd; border-radius:8px; margin-bottom:12px;">まだ肥料がありません</div>`;
+    } else {
+      rows.forEach(function (r, idx) {
+        html += `
+          <div style="border:1px solid #eee; border-radius:10px; padding:12px; margin-bottom:10px; background:#fafafa;">
+            <div style="display:flex; justify-content:space-between; gap:8px; margin-bottom:8px;">
+              <div style="font-size:12px; font-weight:bold; color:#666;">肥料 ${idx + 1}</div>
+              <button type="button" onclick="fertCalcRemoveRow(${idx})" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer;">削除</button>
+            </div>
+            <label style="display:block; font-size:11px; color:#666; margin-bottom:3px;">肥料名</label>
+            <input type="text" list="fertCalcFertDatalist" data-fert-edit="name" data-idx="${idx}" value="${escAttr_(r.fertilizerName)}"
+              style="width:100%; padding:8px 10px; border:1px solid #ccc; border-radius:6px; font-size:14px; box-sizing:border-box; margin-bottom:8px;">
+            <div style="display:flex; gap:8px; margin-bottom:8px;">
+              <div style="flex:1;">
+                <label style="display:block; font-size:11px; color:#666; margin-bottom:3px;">量 / 10a</label>
+                <input type="number" inputmode="decimal" data-fert-edit="rate" data-idx="${idx}" value="${escAttr_(r.ratePer10a)}"
+                  style="width:100%; padding:8px 10px; border:1px solid #ccc; border-radius:6px; font-size:14px; box-sizing:border-box;">
+              </div>
+              <div style="width:88px;">
+                <label style="display:block; font-size:11px; color:#666; margin-bottom:3px;">単位</label>
+                <input type="text" data-fert-edit="unit" data-idx="${idx}" value="${escAttr_(r.unit || 'kg')}"
+                  style="width:100%; padding:8px 10px; border:1px solid #ccc; border-radius:6px; font-size:14px; box-sizing:border-box;">
+              </div>
+            </div>
+            <label style="display:block; font-size:11px; color:#666; margin-bottom:3px;">時期（任意）</label>
+            <input type="text" data-fert-edit="timing" data-idx="${idx}" value="${escAttr_(r.timing || '')}" placeholder="例: 基肥 / 追肥"
+              style="width:100%; padding:8px 10px; border:1px solid #ccc; border-radius:6px; font-size:14px; box-sizing:border-box; margin-bottom:8px;">
+            <label style="display:block; font-size:11px; color:#666; margin-bottom:3px;">メモ（任意）</label>
+            <input type="text" data-fert-edit="note" data-idx="${idx}" value="${escAttr_(r.note || '')}"
+              style="width:100%; padding:8px 10px; border:1px solid #ccc; border-radius:6px; font-size:14px; box-sizing:border-box;">
+          </div>`;
+      });
+    }
+
+    html += `
+      <datalist id="fertCalcFertDatalist">${fertOpts.map(function (f) {
+        return `<option value="${escAttr_(f.name)}"></option>`;
+      }).join('')}</datalist>
+      <button type="button" onclick="fertCalcAddRow()" style="width:100%; background:#6D4C41; color:#fff; border:none; border-radius:8px; padding:12px; font-weight:bold; font-size:14px; cursor:pointer; margin-top:4px;">＋ 肥料を追加</button>`;
+    return html;
+  }
+
+  function readEditRowsFromDom_() {
+    const modal = document.getElementById('fertilizerCalcModal');
+    if (!modal) return [];
+    const names = modal.querySelectorAll('[data-fert-edit="name"]');
+    const rows = [];
+    names.forEach(function (nameEl) {
+      const idx = nameEl.getAttribute('data-idx');
+      const rateEl = modal.querySelector('[data-fert-edit="rate"][data-idx="' + idx + '"]');
+      const unitEl = modal.querySelector('[data-fert-edit="unit"][data-idx="' + idx + '"]');
+      const timingEl = modal.querySelector('[data-fert-edit="timing"][data-idx="' + idx + '"]');
+      const noteEl = modal.querySelector('[data-fert-edit="note"][data-idx="' + idx + '"]');
+      const fertilizerName = String(nameEl.value || '').trim();
+      if (!fertilizerName) return;
+      const fertList = fertilizerOptions_();
+      const matched = fertList.find(function (f) { return f.name === fertilizerName; });
+      rows.push({
+        id: 'fr_' + Date.now() + '_' + idx,
+        fertilizerId: matched ? matched.id : '',
+        fertilizerName: fertilizerName,
+        ratePer10a: Number(rateEl && rateEl.value) || 0,
+        unit: String((unitEl && unitEl.value) || 'kg').trim() || 'kg',
+        timing: String((timingEl && timingEl.value) || '').trim(),
+        note: String((noteEl && noteEl.value) || '').trim()
+      });
+    });
+    return rows;
+  }
+
+  function applyEditRowsToState_() {
+    const st = window._fertCalcState;
+    if (!st || !st.editing) return getSettings_();
+    const settings = getSettings_();
+    const key = rateKey_(st.crop, st.method);
+    settings.rates[key] = readEditRowsFromDom_();
+    window._fertRateSettings = settings;
+    return settings;
+  }
+
+  window.closeFertilizerCalcModal = function () {
+    closeModal_();
+  };
+
+  window.openFertilizerCalcModal = async function (polyId) {
+    const p = (typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons[polyId] : null;
+    if (!p || p.isMarker) {
+      if (typeof customAlert === 'function') customAlert('圃場を選択してください。');
+      return;
+    }
+    try { if (infoWindow) infoWindow.close(); } catch (e) {}
+    window._fertCalcState = {
+      polyId: String(polyId),
+      fieldName: String(p.name || ''),
+      areaA: fieldAreaA_(polyId),
+      crop: '',
+      method: '',
+      step: 'crop',
+      editing: false,
+      cropFilter: ''
+    };
+    ensureState_(polyId);
+    render_();
+    syncSettingsFromServer_().then(function () {
+      if (document.getElementById('fertilizerCalcModal')) render_();
+    });
+  };
+
+  window.onFertCalcCropFilter = function (val) {
+    if (!window._fertCalcState) return;
+    window._fertCalcState.cropFilter = String(val || '');
+    render_();
+    const input = document.getElementById('fertCalcCropFilter');
+    if (input) {
+      input.focus();
+      try {
+        const len = input.value.length;
+        input.setSelectionRange(len, len);
+      } catch (e) {}
+    }
+  };
+
+  window.selectFertCalcCrop = function (cropName) {
+    if (!window._fertCalcState) return;
+    window._fertCalcState.crop = String(cropName || '').trim();
+    window._fertCalcState.step = 'list';
+    window._fertCalcState.editing = false;
+    const settings = getSettings_();
+    if (!window._fertCalcState.method || settings.methods.indexOf(window._fertCalcState.method) < 0) {
+      window._fertCalcState.method = settings.methods[0] || '慣行';
+    }
+    render_();
+  };
+
+  window.fertCalcBackToCrop = function () {
+    if (!window._fertCalcState) return;
+    applyEditRowsToState_();
+    window._fertCalcState.step = 'crop';
+    window._fertCalcState.editing = false;
+    render_();
+  };
+
+  window.selectFertCalcMethod = function (method) {
+    if (!window._fertCalcState) return;
+    if (window._fertCalcState.editing) applyEditRowsToState_();
+    window._fertCalcState.method = String(method || '').trim();
+    render_();
+  };
+
+  window.fertCalcToggleEdit = function (on) {
+    if (!window._fertCalcState) return;
+    if (window._fertCalcState.editing && !on) applyEditRowsToState_();
+    window._fertCalcState.editing = !!on;
+    window._fertCalcState.step = 'list';
+    render_();
+  };
+
+  window.fertCalcAddMethod = async function () {
+    const name = (typeof customPrompt === 'function')
+      ? await customPrompt('新しい栽培法名:')
+      : prompt('新しい栽培法名:');
+    if (!name || !String(name).trim()) return;
+    const method = String(name).trim();
+    if (window._fertCalcState && window._fertCalcState.editing) applyEditRowsToState_();
+    const settings = getSettings_();
+    if (settings.methods.indexOf(method) < 0) settings.methods.push(method);
+    window._fertRateSettings = settings;
+    if (window._fertCalcState) window._fertCalcState.method = method;
+    render_();
+  };
+
+  window.fertCalcAddRow = function () {
+    if (!window._fertCalcState) return;
+    applyEditRowsToState_();
+    const settings = getSettings_();
+    const key = rateKey_(window._fertCalcState.crop, window._fertCalcState.method);
+    if (!Array.isArray(settings.rates[key])) settings.rates[key] = [];
+    settings.rates[key].push({
+      id: 'fr_' + Date.now(),
+      fertilizerId: '',
+      fertilizerName: '',
+      ratePer10a: 0,
+      unit: 'kg',
+      timing: '',
+      note: ''
+    });
+    window._fertRateSettings = settings;
+    render_();
+  };
+
+  window.fertCalcRemoveRow = function (idx) {
+    if (!window._fertCalcState) return;
+    applyEditRowsToState_();
+    const settings = getSettings_();
+    const key = rateKey_(window._fertCalcState.crop, window._fertCalcState.method);
+    const rows = Array.isArray(settings.rates[key]) ? settings.rates[key] : [];
+    rows.splice(Number(idx), 1);
+    settings.rates[key] = rows;
+    window._fertRateSettings = settings;
+    render_();
+  };
+
+  window.fertCalcSaveCurrentEdit = async function () {
+    if (!window._fertCalcState) return;
+    applyEditRowsToState_();
+    const settings = getSettings_();
+    try {
+      await persistSettings_(settings);
+      window._fertCalcState.editing = false;
+      render_();
+      if (typeof customAlert === 'function') customAlert('肥料の施用量設定を保存しました。');
+    } catch (e) {
+      if (typeof customAlert === 'function') customAlert('保存に失敗しました。');
+    }
+  };
+})();
+
 
