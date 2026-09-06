@@ -2443,7 +2443,11 @@
       dateYmd: dateYmd,
       timeHm: timeHm,
       clockOutDateYmd: dateYmd,
-      clockOutTime: timeHm
+      clockOutTime: timeHm,
+      midBreakMins: Number(pending.midBreakMins) || 0,
+      lunchEnabled: !!pending.lunchEnabled,
+      lunchStart: pending.lunchEnabled ? (normalizeTimeHm(pending.lunchStart) || pending.lunchStart || '') : '',
+      lunchEnd: pending.lunchEnabled ? (normalizeTimeHm(pending.lunchEnd) || pending.lunchEnd || '') : ''
     };
 
     if (!user || typeof callGAS !== 'function') {
@@ -2899,6 +2903,7 @@
     else refreshTrackingModeUI();
 
     const user = getCurrentUserName();
+    // 昼休憩は「昼休憩記録」＋出退勤シートの開始/終了列へ
     if (lunchData.enabled && user && typeof callGAS === 'function') {
       callGAS('saveLunchBreakRecord', {
         userName: user,
@@ -2907,8 +2912,6 @@
         endTime: lunchData.end || ''
       }).catch((e) => console.warn('昼休憩記録送信エラー', e));
     }
-    // 昼休憩は「昼休憩記録」シートのみ（トラッキング／出退勤には書かない）
-
     if (window._isModifyingLunchFromClockOut) {
       window._isModifyingLunchFromClockOut = false;
       setTimeout(() => {

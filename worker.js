@@ -34192,16 +34192,31 @@ window.getBulkWorkMemoAttendanceSummary_ = (drafts) => {
   let lunchStart = '';
   let lunchEnd = '';
   let lunchLabel = '';
+  let midBreakMins = 0;
   for (let i = 0; i < list.length; i++) {
     const d = list[i];
     const wName = String(d.workName || '').trim();
     const isLunch = wName === '昼休憩' || wName.indexOf('昼休憩') >= 0
       || (window.bulkWorkMemoIsRestDraft_(d) && String(d.guessedName || '').indexOf('昼') >= 0);
-    if (!isLunch) continue;
-    lunchStart = norm(d.startTime);
-    lunchEnd = norm(d.endTime);
-    lunchLabel = wName || '昼休憩';
-    break;
+    if (isLunch) {
+      if (!lunchStart && !lunchEnd) {
+        lunchStart = norm(d.startTime);
+        lunchEnd = norm(d.endTime);
+        lunchLabel = wName || '昼休憩';
+      }
+      continue;
+    }
+    if (window.bulkWorkMemoIsRestDraft_(d) || wName === '休憩' || wName.indexOf('休憩') >= 0) {
+      const st = norm(d.startTime);
+      const et = norm(d.endTime);
+      const toM = (hm) => {
+        const m = String(hm || '').match(/^(\d{1,2}):(\d{2})$/);
+        return m ? (parseInt(m[1], 10) * 60 + parseInt(m[2], 10)) : null;
+      };
+      const a = toM(st);
+      const b = toM(et);
+      if (a != null && b != null && b > a) midBreakMins += (b - a);
+    }
   }
   let clockOutTime = '';
   let clockOutLabel = '';
@@ -34232,6 +34247,7 @@ window.getBulkWorkMemoAttendanceSummary_ = (drafts) => {
     lunchEnd,
     lunchLabel,
     hasLunch: !!(lunchStart || lunchEnd),
+    midBreakMins: midBreakMins,
     clockOutTime,
     clockOutLabel
   };
@@ -34358,6 +34374,9 @@ window.confirmBulkWorkMemoClockOut_ = (ymd, timeHm) => {
     }
     window._bulkWorkMemoClockOutYmd = '';
     window._bulkWorkMemoClockOutTime = '';
+    window._bulkWorkMemoClockOutMidBreakMins = 0;
+    window._bulkWorkMemoClockOutLunchStart = '';
+    window._bulkWorkMemoClockOutLunchEnd = '';
   };
 
   const finishOk_ = () => {
@@ -34391,7 +34410,11 @@ window.confirmBulkWorkMemoClockOut_ = (ymd, timeHm) => {
     dateYmd: dateYmd,
     timeHm: timeStr,
     clockOutDateYmd: dateYmd,
-    clockOutTime: timeStr
+    clockOutTime: timeStr,
+    midBreakMins: Number(window._bulkWorkMemoClockOutMidBreakMins) || 0,
+    lunchEnabled: !!(window._bulkWorkMemoClockOutLunchStart && window._bulkWorkMemoClockOutLunchEnd),
+    lunchStart: window._bulkWorkMemoClockOutLunchStart || '',
+    lunchEnd: window._bulkWorkMemoClockOutLunchEnd || ''
   };
   const send = (lat, lng) => callGAS('saveTrackingData', Object.assign({}, payloadBase, {
     lat: lat,
@@ -34412,6 +34435,9 @@ window.confirmBulkWorkMemoClockOut_ = (ymd, timeHm) => {
 window.skipBulkWorkMemoClockOut_ = () => {
   window._bulkWorkMemoClockOutYmd = '';
   window._bulkWorkMemoClockOutTime = '';
+  window._bulkWorkMemoClockOutMidBreakMins = 0;
+  window._bulkWorkMemoClockOutLunchStart = '';
+  window._bulkWorkMemoClockOutLunchEnd = '';
   window.closeBulkWorkMemoModal_();
 };
 
@@ -35081,6 +35107,9 @@ window.showBulkWorkMemoSavedModal_ = (savedItems, attendanceOpts) => {
   if (att.clockOutTime) {
     window._bulkWorkMemoClockOutYmd = workDate;
     window._bulkWorkMemoClockOutTime = att.clockOutTime;
+    window._bulkWorkMemoClockOutMidBreakMins = Number(att.midBreakMins) || 0;
+    window._bulkWorkMemoClockOutLunchStart = att.lunchStart || '';
+    window._bulkWorkMemoClockOutLunchEnd = att.lunchEnd || '';
     const safeYmd = String(workDate).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const safeT = String(att.clockOutTime).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     clockOutHtml = `
