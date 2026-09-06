@@ -2449,6 +2449,10 @@ function createSignboardMarker(name, pos, icon, id) {
                    ? window.buildWorkMetaBadgeHtml('work', item.data.workName || '作業', { solid: true, fontSize: '13px', prefix: '🚜 ' })
                    : `<b>🚜 ${workLabel}: ${item.data.workName||'-'}</b>`;
                  h += `<div style="font-size:14px; margin-bottom:5px; display:flex; flex-wrap:wrap; align-items:center; gap:6px;">${workBadge} ${progressBadge}</div>`;
+                 if (item.data.prepTargetWork && typeof window.isMetaTargetCategory_ === 'function'
+                     && window.isMetaTargetCategory_(item.data.category || '')) {
+                   h += `<div style="font-size:12px;color:#6A1B9A;margin-bottom:5px;background:#F3E5F5;padding:4px 8px;border-radius:4px;border:1px solid #CE93D8;">📋 ${item.data.category || '準備'}の対象: <b>${item.data.prepTargetWork}</b>${item.data.prepTargetCategory ? '（' + item.data.prepTargetCategory + '）' : ''}</div>`;
+                 }
                  if (item.data.ridgeCount || item.data.workedRidges || item.data.nextRidge) {
                    const rc = parseInt(item.data.ridgeCount, 10);
                    const ridgeInfo = (rc > 0) ? `${rc}本` : (item.data.workedRidges || '未設定');
@@ -2591,6 +2595,10 @@ function createSignboardMarker(name, pos, icon, id) {
                      : `<span style="font-size:11px;color:#555;">🌱 ${c}</span>`).join(' ');
                  h += `<div style="font-size:14px; margin-bottom:5px; display:flex; flex-wrap:wrap; align-items:center; gap:6px;">${workBadge}${categoryBadge} ${progressBadge}</div>`;
                  if (cropBadges) h += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:5px;">${cropBadges}</div>`;
+                 if (item.data.prepTargetWork && typeof window.isMetaTargetCategory_ === 'function'
+                     && window.isMetaTargetCategory_(item.data.category || catName || '')) {
+                   h += `<div style="font-size:12px;color:#6A1B9A;margin-bottom:5px;background:#F3E5F5;padding:4px 8px;border-radius:4px;border:1px solid #CE93D8;">📋 ${item.data.category || catName || '準備'}の対象: <b>${item.data.prepTargetWork}</b>${item.data.prepTargetCategory ? '（' + item.data.prepTargetCategory + '）' : ''}</div>`;
+                 }
                  if (item.data.ridgeCount || item.data.workedRidges || item.data.nextRidge) {
                    const rc = parseInt(item.data.ridgeCount, 10);
                    const ridgeInfo = (rc > 0) ? `${rc}本` : (item.data.workedRidges || '未設定');
@@ -6469,6 +6477,9 @@ function createSignboardMarker(name, pos, icon, id) {
         } else {
           window.selectedPrepTargetCategory = '';
           window.selectedPrepTargetWork = '';
+          if (typeof window.clearRecordMetaWorkEntries_ === 'function') {
+            window.clearRecordMetaWorkEntries_();
+          }
           if (typeof window.refreshPrepTargetWorkSection === 'function') {
             window.refreshPrepTargetWorkSection('');
           }
@@ -14183,6 +14194,123 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.selectedPrepTargetWork = '';
       window.selectedPrepTargetCategory = '';
+      window.recordMetaWorkEntries = [];
+
+      window.getRecordMetaWorkEntries_ = () => {
+        if (!Array.isArray(window.recordMetaWorkEntries)) window.recordMetaWorkEntries = [];
+        return window.recordMetaWorkEntries;
+      };
+
+      window.snapshotRecordMetaWorkEntryFromForm_ = () => {
+        const cat = String(document.getElementById('rec_work_category')?.value || '').trim();
+        if (!(typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat))) {
+          return null;
+        }
+        let prepTarget = '';
+        if (typeof window.getPrepTargetWorkName_ === 'function') {
+          prepTarget = String(window.getPrepTargetWorkName_() || '').trim();
+        }
+        if (!prepTarget) prepTarget = String(window.selectedPrepTargetWork || '').trim();
+        const wName = String(document.getElementById('rec_work_name')?.value || '').trim();
+        if (!prepTarget && wName
+            && !(typeof window.isMetaShellWorkName_ === 'function' && window.isMetaShellWorkName_(wName))) {
+          prepTarget = wName;
+        }
+        if (!prepTarget) return null;
+        const prepTargetCategory = String(window.selectedPrepTargetCategory || '').trim()
+          || (typeof window.getBulkWorkMemoWorkCategory_ === 'function'
+            ? String(window.getBulkWorkMemoWorkCategory_(prepTarget) || '').trim()
+            : '');
+        const crop = (typeof window.getSelectedWorkCropsText === 'function')
+          ? window.getSelectedWorkCropsText()
+          : (document.getElementById('rec_work_crop') ? document.getElementById('rec_work_crop').value : '');
+        return {
+          id: 'rmeta_' + Date.now() + '_' + Math.floor(Math.random() * 100000),
+          category: cat,
+          workName: prepTarget,
+          prepTargetWork: prepTarget,
+          prepTargetCategory: prepTargetCategory,
+          crop: String(crop || '').trim() || '共通'
+        };
+      };
+
+      /** 作業記録：準備／片づけを別記録として積み上げ（上書きしない） */
+      window.addRecordMetaWorkEntry_ = () => {
+        if (typeof currentEditRecordId !== 'undefined' && currentEditRecordId) {
+          if (typeof customAlert === 'function') customAlert('編集中は項目の追加はできません。新規登録で複数件を追加してください。');
+          return;
+        }
+        const snap = window.snapshotRecordMetaWorkEntryFromForm_();
+        if (!snap) {
+          const cat = String(document.getElementById('rec_work_category')?.value || '').trim();
+          const role = (typeof window.isCleanupCategory_ === 'function' && window.isCleanupCategory_(cat))
+            ? '片づけ／掃除' : '準備';
+          if (typeof customAlert === 'function') customAlert(`先に${role}の対象作業を選んでから追加してください。`);
+          return;
+        }
+        const list = window.getRecordMetaWorkEntries_();
+        if (list.some(e => e && String(e.prepTargetWork || '') === snap.prepTargetWork
+            && String(e.crop || '') === snap.crop)) {
+          if (typeof customAlert === 'function') {
+            customAlert(`「${snap.prepTargetWork}」はすでに追加済みです。別の対象を選ぶか、このまま登録してください。`);
+          }
+          return;
+        }
+        list.push(snap);
+        // 次の項目用に対象だけクリア（時間・圃場・カテゴリは維持）
+        window.selectedPrepTargetWork = '';
+        window.selectedPrepTargetCategory = '';
+        const nameEl = document.getElementById('rec_work_name');
+        if (nameEl) nameEl.value = '';
+        const hidden = document.getElementById('prep_target_work_select');
+        if (hidden) hidden.value = '';
+        if (typeof window.refreshPrepTargetWorkSection === 'function') {
+          window.refreshPrepTargetWorkSection('');
+        }
+        if (typeof window.renderDetailWorksSection === 'function') {
+          window.renderDetailWorksSection('');
+        }
+        if (typeof window.handleCombinedWorkChange === 'function') {
+          try { window.handleCombinedWorkChange(); } catch (e) {}
+        }
+        if (typeof window.showRecordSyncToast === 'function') {
+          const role = (typeof window.isCleanupCategory_ === 'function' && window.isCleanupCategory_(snap.category))
+            ? '片づけ／掃除' : '準備';
+          window.showRecordSyncToast(`${role}「${snap.prepTargetWork}」を別記録リストに追加（${list.length}件）`, 'ok');
+        }
+      };
+
+      window.removeRecordMetaWorkEntry_ = (entryId) => {
+        const sid = String(entryId || '');
+        window.recordMetaWorkEntries = window.getRecordMetaWorkEntries_().filter(e => e && String(e.id) !== sid);
+        if (typeof window.refreshPrepTargetWorkSection === 'function') {
+          window.refreshPrepTargetWorkSection(window.selectedPrepTargetWork || '');
+        }
+      };
+
+      window.clearRecordMetaWorkEntries_ = () => {
+        window.recordMetaWorkEntries = [];
+      };
+
+      window.buildRecordMetaWorkEntriesHtml_ = () => {
+        const list = window.getRecordMetaWorkEntries_();
+        if (!list.length) return '';
+        const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        const rows = list.map((e, i) => {
+          const safeId = String(e.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          return `<div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px; padding:8px 10px; background:#fff; border:1px solid #CE93D8; border-radius:8px; margin-bottom:6px;">
+            <div style="font-size:12px; color:#6A1B9A; line-height:1.4; min-width:0; flex:1;">
+              <b>${i + 1}.</b> [${esc(e.category)}] 対象:<b>${esc(e.prepTargetWork)}</b>
+              <div style="font-size:10px; color:#7B1FA2; margin-top:2px;">作物: ${esc(e.crop || '共通')}　※登録時に別記録になります</div>
+            </div>
+            <button type="button" onclick="removeRecordMetaWorkEntry_('${safeId}')" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; width:28px; height:28px; flex-shrink:0; cursor:pointer;">×</button>
+          </div>`;
+        }).join('');
+        return `<div style="margin:0 0 10px; padding:10px; background:#F3E5F5; border:1px solid #CE93D8; border-radius:10px;">
+          <div style="font-size:11px; font-weight:bold; color:#6A1B9A; margin-bottom:6px;">📚 追加済みの準備／片づけ（${list.length}件・別記録）</div>
+          ${rows}
+        </div>`;
+      };
 
       window.adminAddPrepTargetWork = () => {
         const cat = (window.selectedPrepTargetCategory && window.selectedPrepTargetCategory !== 'すべて')
@@ -14298,6 +14426,7 @@ function createSignboardMarker(name, pos, icon, id) {
         }).join('');
         underCat.style.display = 'block';
         underCat.innerHTML = `
+          ${typeof window.buildRecordMetaWorkEntriesHtml_ === 'function' ? window.buildRecordMetaWorkEntriesHtml_() : ''}
           <div style="font-size:12px; font-weight:bold; color:#6A1B9A; margin-bottom:8px;">📋 ${esc(roleLabel)}（対象カテゴリ → 対象作業）</div>
           <div style="background:#fff; border:1px solid #CE93D8; border-radius:8px; padding:10px; margin-bottom:8px;">
             <div style="font-size:11px; color:#6A1B9A; line-height:1.5;">
@@ -14312,6 +14441,8 @@ function createSignboardMarker(name, pos, icon, id) {
           <input type="search" id="meta_target_work_search" placeholder="対象作業名で検索…" oninput="filterMetaTargetWorkChips_(this)" style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #CE93D8; border-radius:8px; font-size:13px; margin-bottom:8px;">
           <div id="meta_target_work_chips" style="display:flex; flex-wrap:wrap; gap:6px; max-height:200px; overflow-y:auto; padding:2px;">${workChips || '<span style="font-size:11px; color:#888;">該当する作業がありません</span>'}</div>
           <input type="hidden" id="prep_target_work_select" value="${esc(curTargetWork)}">
+          ${curTargetWork ? `<button type="button" onclick="addRecordMetaWorkEntry_()" style="width:100%; box-sizing:border-box; margin-top:10px; padding:11px 12px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:2px dashed #CE93D8; background:#F3E5F5; color:#6A1B9A; text-align:left;">${(typeof window.isCleanupCategory_ === 'function' && window.isCleanupCategory_(metaCat)) ? '＋ 片づけ／掃除項目を追加' : '＋ 準備項目を追加'}</button>
+          <div style="font-size:10px; color:#7B1FA2; margin-top:4px; line-height:1.35;">確定した対象をリストに積み、別の対象を続けて選べます。登録時はそれぞれ別記録になります。</div>` : ''}
         `;
       };
 
@@ -19141,6 +19272,11 @@ function createSignboardMarker(name, pos, icon, id) {
         window.selectedWorkCropFilterKeys = [];
         window.recordExtraDetailWorks = [];
         window.recordConcurrentWorks = [];
+        if (typeof window.clearRecordMetaWorkEntries_ === 'function') {
+          window.clearRecordMetaWorkEntries_();
+        }
+        window.selectedPrepTargetWork = '';
+        window.selectedPrepTargetCategory = '';
         window._selectedPesticides = [];
         window._pestSearchQ = '';
         window._workRecordStep = (typeof currentEditRecordId !== 'undefined' && currentEditRecordId) ? 'details' : 'time';
@@ -22861,7 +22997,37 @@ function createSignboardMarker(name, pos, icon, id) {
                 prepTargetVal = String(wName || '').trim();
               }
             }
-            if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(catVal) && !String(prepTargetVal || wName || '').trim()) {
+            // 追加リスト＋現在入力をまとめて、複数の別記録として扱う
+            let metaSaveQueue = [];
+            if (!isEditBtn && typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(catVal)) {
+              metaSaveQueue = (typeof window.getRecordMetaWorkEntries_ === 'function')
+                ? window.getRecordMetaWorkEntries_().map(e => Object.assign({}, e))
+                : [];
+              if (prepTargetVal || String(wName || '').trim()) {
+                const curSnap = (typeof window.snapshotRecordMetaWorkEntryFromForm_ === 'function')
+                  ? window.snapshotRecordMetaWorkEntryFromForm_()
+                  : null;
+                if (curSnap) metaSaveQueue.push(curSnap);
+              }
+              if (!metaSaveQueue.length) {
+                const role = (typeof window.isCleanupCategory_ === 'function' && window.isCleanupCategory_(catVal))
+                  ? '片づけ／掃除' : '準備';
+                if (typeof customAlert === 'function') customAlert(`何の作業の${role}か（対象作業）を選んでください。`);
+                if (btn) {
+                  btn.disabled = false;
+                  btn.innerText = isEditBtn ? "変更を保存" : "この内容で登録する";
+                }
+                return;
+              }
+              // 先頭をこのフォームの本記録に反映
+              const head = metaSaveQueue[0];
+              prepTargetVal = String(head.prepTargetWork || '').trim();
+              if (document.getElementById('rec_work_name')) {
+                document.getElementById('rec_work_name').value = head.workName || prepTargetVal;
+              }
+              window.selectedPrepTargetWork = prepTargetVal;
+              window.selectedPrepTargetCategory = String(head.prepTargetCategory || '').trim();
+            } else if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(catVal) && !String(prepTargetVal || wName || '').trim()) {
               const role = (typeof window.isCleanupCategory_ === 'function' && window.isCleanupCategory_(catVal))
                 ? '片づけ／掃除' : '準備';
               if (typeof customAlert === 'function') customAlert(`何の作業の${role}か（対象作業）を選んでください。`);
@@ -22871,9 +23037,10 @@ function createSignboardMarker(name, pos, icon, id) {
               }
               return;
             }
+            const wNameForSave = document.getElementById('rec_work_name')?.value || wName || prepTargetVal || "";
             data = { 
               workDate: document.getElementById('rec_work_date')?.value || "", 
-              workName: wName,
+              workName: wNameForSave,
               category: catVal,
               prepTargetWork: prepTargetVal,
               prepTargetCategory: String(window.selectedPrepTargetCategory || '').trim()
@@ -22882,7 +23049,8 @@ function createSignboardMarker(name, pos, icon, id) {
                 || (prepTargetVal && typeof window.findWorkMasterByName_ === 'function'
                   ? window.getWorkMasterCategoryOrEmpty_(window.findWorkMasterByName_(prepTargetVal)) : ''),
               detailedWorks: detailedWorksStr, 
-              crop: (typeof window.getSelectedWorkCropsText === 'function') ? window.getSelectedWorkCropsText() : (document.getElementById('rec_work_crop') ? document.getElementById('rec_work_crop').value : ""), 
+              crop: (metaSaveQueue[0] && metaSaveQueue[0].crop)
+                || ((typeof window.getSelectedWorkCropsText === 'function') ? window.getSelectedWorkCropsText() : (document.getElementById('rec_work_crop') ? document.getElementById('rec_work_crop').value : "")), 
               startTime: sTime, endTime: eTime, totalTime: totalTimeStr,
               breakMins: breakMinsVal > 0 ? breakMinsVal : 0, 
               progressStatus: (typeof window.resolveProgressStatusForSubmit === 'function')
@@ -22911,6 +23079,10 @@ function createSignboardMarker(name, pos, icon, id) {
                   }))
                 : []
             };
+            window._pendingMetaSaveExtras = (metaSaveQueue.length > 1) ? metaSaveQueue.slice(1) : [];
+            if (typeof window.clearRecordMetaWorkEntries_ === 'function') {
+              window.clearRecordMetaWorkEntries_();
+            }
 
             const delNameVal = (document.getElementById('rec_delivery_name')?.value || '').trim();
             const delLatVal = document.getElementById('rec_delivery_lat')?.value || '';
@@ -23320,6 +23492,59 @@ function createSignboardMarker(name, pos, icon, id) {
             previewUrls: previewUrls,
             clearTemp: true
           });
+
+          // 準備／片づけの追加項目を別記録として続けて登録
+          const metaExtras = Array.isArray(window._pendingMetaSaveExtras)
+            ? window._pendingMetaSaveExtras.slice()
+            : [];
+          window._pendingMetaSaveExtras = [];
+          if (!editIdSnap && recordTypeSnap === 'work' && metaExtras.length) {
+            metaExtras.forEach((entry) => {
+              if (!entry || !String(entry.prepTargetWork || '').trim()) return;
+              const extraData = Object.assign({}, data, {
+                workName: String(entry.workName || entry.prepTargetWork || '').trim(),
+                category: String(entry.category || data.category || '').trim(),
+                prepTargetWork: String(entry.prepTargetWork || '').trim(),
+                prepTargetCategory: String(entry.prepTargetCategory || '').trim(),
+                crop: String(entry.crop || data.crop || '共通').trim() || '共通',
+                concurrentWorks: [],
+                detailedWorks: '',
+                usedMachines: [],
+                usedMaterials: '',
+                usedPesticides: []
+              });
+              const extraLocalId = window.applyOptimisticRecordItem_({
+                targetIds: targetIdsSnap.slice(),
+                recordType: recordTypeSnap,
+                data: extraData,
+                isEdit: false,
+                editId: '',
+                activePolyId: activePolySnap,
+                previewUrls: [],
+                keptUrls: []
+              });
+              window.enqueueRecordSync_({
+                localId: extraLocalId,
+                isEdit: false,
+                editId: '',
+                activePolyId: activePolySnap,
+                newlyAddedIds: [],
+                targetIds: targetIdsSnap.slice(),
+                recordType: recordTypeSnap,
+                data: extraData,
+                files: [],
+                keptUrls: [],
+                nameStr: nameStr,
+                userName: userSnap,
+                sideEffects: [],
+                previewUrls: [],
+                clearTemp: false
+              });
+            });
+            if (typeof window.showRecordSyncToast === 'function' && metaExtras.length) {
+              window.showRecordSyncToast(`準備／片づけを合わせて ${1 + metaExtras.length} 件の別記録で登録しました`, 'ok');
+            }
+          }
 
           window._workAssocStatsCache = null;
 
@@ -30681,15 +30906,16 @@ window.setBulkWorkMemoPrepTargetWorks_ = (d, names) => {
   }
 };
 
-/** 準備／片づけ確定後：同じ時間帯で次の項目行を追加 */
-window.addBulkWorkMemoPrepSiblingDraft_ = (uid) => {
-  const drafts = window._bulkWorkMemoDrafts || [];
+/** 準備／片づけ確定後：同じ時間帯で次の項目行を追加（必ず別レコード） */
+window.addBulkWorkMemoPrepSiblingDraft_ = (uid, presetTarget) => {
+  if (!Array.isArray(window._bulkWorkMemoDrafts)) window._bulkWorkMemoDrafts = [];
+  const drafts = window._bulkWorkMemoDrafts;
   const idx = drafts.findIndex(d => d && d._uid === uid);
-  if (idx < 0) return;
+  if (idx < 0) return null;
   const src = drafts[idx];
   const metaCat = String(src.category || src.listFilterCategory || '').trim();
   if (!(typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(metaCat))) {
-    return;
+    return null;
   }
   const role = (typeof window.isCleanupCategory_ === 'function' && window.isCleanupCategory_(metaCat))
     ? '片づけ／掃除'
@@ -30700,9 +30926,17 @@ window.addBulkWorkMemoPrepSiblingDraft_ = (uid) => {
   const polyIds = (typeof window.getBulkWorkMemoPolyIds_ === 'function')
     ? window.getBulkWorkMemoPolyIds_(src).slice()
     : (Array.isArray(src.polyIds) ? src.polyIds.slice() : []);
+  const preset = String(presetTarget || '').trim();
+  const presetCat = preset && typeof window.getBulkWorkMemoWorkCategory_ === 'function'
+    ? String(window.getBulkWorkMemoWorkCategory_(preset) || '').trim()
+    : '';
+  // 元行は確定表示のまま
+  src._workPickOpen = false;
+  src._workListOpen = false;
+  src._prepPickOpen = false;
   const row = {
     recordKind: 'work',
-    rawLine: `（${role}項目を追加）`,
+    rawLine: `（${role}項目を追加・別記録）`,
     startTime: String(src.startTime || '').trim(),
     endTime: String(src.endTime || '').trim(),
     workName: '',
@@ -30736,11 +30970,14 @@ window.addBulkWorkMemoPrepSiblingDraft_ = (uid) => {
     _pestSearchQ: '',
     included: true,
     comment: '',
-    _uid: 'bm_prep_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+    _uid: 'bm_prep_' + Date.now() + '_' + Math.floor(Math.random() * 100000),
     _workPickOpen: true,
-    _workListOpen: true,
+    _workListOpen: false,
     _cropPickOpen: true,
-    _prepSiblingOf: String(src._uid || '')
+    _prepPickOpen: true,
+    _prepSiblingOf: String(src._uid || ''),
+    _metaItemIndex: (drafts.filter(d => d && String(d.category || '') === metaCat
+      && typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(d.category)).length + 1)
   };
   if (typeof window.setBulkWorkMemoCropNames_ === 'function') {
     window.setBulkWorkMemoCropNames_(row, cropNames);
@@ -30748,8 +30985,26 @@ window.addBulkWorkMemoPrepSiblingDraft_ = (uid) => {
   if (typeof window.setBulkWorkMemoPolyIds_ === 'function') {
     window.setBulkWorkMemoPolyIds_(row, polyIds);
   }
+  if (preset) {
+    if (typeof window.setBulkWorkMemoPrepTargetWorks_ === 'function') {
+      window.setBulkWorkMemoPrepTargetWorks_(row, [preset]);
+    } else {
+      row.prepTargetWork = preset;
+      row.prepTargetWorks = [preset];
+      row.workName = preset;
+      row.workMatched = true;
+    }
+    if (presetCat) row.prepTargetCategory = presetCat;
+    row._workPickOpen = false;
+    row._prepPickOpen = false;
+  }
   drafts.splice(idx + 1, 0, row);
+  window._bulkWorkMemoDrafts = drafts;
+  if (typeof window.showRecordSyncToast === 'function') {
+    window.showRecordSyncToast(`${role}の項目を別記録として追加しました（${drafts.length}件）`, 'ok');
+  }
   window.renderBulkWorkMemoReviewModal_({ scrollUid: row._uid });
+  return row;
 };
 
 window.buildBulkWorkMemoPrepAddItemBtnHtml_ = (d, uid) => {
@@ -31315,9 +31570,12 @@ window.buildBulkWorkMemoWorkPickSectionHtml_ = (d, uid) => {
   const closeBtn = cur
     ? `<button type="button" onclick="collapseBulkWorkMemoWorkPick_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin:0 0 8px; padding:10px 12px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:1px solid ${isMeta ? '#CE93D8' : '#FFCC80'}; background:${isMeta ? '#F3E5F5' : '#FFF3E0'}; color:${isMeta ? '#6A1B9A' : '#E65100'};">閉じる（選択を確定）</button>`
     : '';
+  const metaAddBtn = (isMeta && cur && typeof window.buildBulkWorkMemoPrepAddItemBtnHtml_ === 'function')
+    ? window.buildBulkWorkMemoPrepAddItemBtnHtml_(d, uid)
+    : '';
   return `${metaHtml}${suggestionBlock}
     ${window.buildBulkWorkMemoWorkManualPickHtml_(d, uid)}
-    ${catLine}${closeBtn}`;
+    ${catLine}${closeBtn}${metaAddBtn}`;
 };
 
 window.buildBulkWorkMemoCropPickSectionHtml_ = (d, uid) => {
@@ -32006,7 +32264,9 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
     const cardBorder = needPick ? '#FFB74D' : (isRestCard ? '#FFCC80' : '#e0e0e0');
     const typeBadge = isRestCard
       ? `<span style="font-size:10px; font-weight:bold; color:#fff; background:#E65100; padding:2px 8px; border-radius:8px; margin-left:6px;">休憩</span>`
-      : `<span style="font-size:10px; font-weight:bold; color:#fff; background:#FF9800; padding:2px 8px; border-radius:8px; margin-left:6px;">作業</span>`;
+      : ((typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(String(d.category || '').trim()))
+        ? `<span style="font-size:10px; font-weight:bold; color:#fff; background:#8E24AA; padding:2px 8px; border-radius:8px; margin-left:6px;">${esc(String(d.category || '準備'))}</span>`
+        : `<span style="font-size:10px; font-weight:bold; color:#fff; background:#FF9800; padding:2px 8px; border-radius:8px; margin-left:6px;">作業</span>`);
     return `
       <div id="bulk_card_${esc(uid)}" style="background:${cardBg}; border:1px solid ${cardBorder}; border-radius:10px; padding:12px; margin-bottom:10px;">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
@@ -32673,8 +32933,12 @@ window.buildBulkWorkMemoConfirmRowHtml_ = (d, index) => {
   const prepTargetOne = prepTargets[0] || String(d.prepTargetWork || '').trim();
   const prepTargetCat = String(d.prepTargetCategory || '').trim()
     || (prepTargetOne ? String(window.getBulkWorkMemoWorkCategory_(prepTargetOne) || '').trim() : '');
-  const metaNote = (!isRest && cat && typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat))
-    ? `<div style="font-size:11px; color:#6A1B9A; margin-top:4px; line-height:1.45;">📋 カテゴリ: ${esc(cat)}<br>対象カテゴリ: ${esc(prepTargetCat || '—')}<br>対象作業名: ${esc(prepTargetOne || '—')}</div>`
+  const isMetaRow = (!isRest && cat && typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat));
+  const titleName = isMetaRow
+    ? `[${cat}] 対象:${prepTargetOne || workName}`
+    : workName;
+  const metaNote = isMetaRow
+    ? `<div style="font-size:11px; color:#6A1B9A; margin-top:4px; line-height:1.45;">📋 カテゴリ: ${esc(cat)}<br>対象カテゴリ: ${esc(prepTargetCat || '—')}<br>対象作業名: ${esc(prepTargetOne || '—')}<br><span style="color:#7B1FA2;">※ 他の準備／片づけとは別記録です</span></div>`
     : (cat ? `<div style="font-size:11px; color:#546E7A; margin-top:4px;">📁 ${esc(cat)}</div>` : '');
   const maint = (!isRest && window.bulkWorkMemoIsMaintenance_(d) && d.maintenanceTool)
     ? `<div style="font-size:11px; color:#E65100; margin-top:4px;">🔧 ${esc(d.maintenanceTool)}</div>`
@@ -32699,8 +32963,8 @@ window.buildBulkWorkMemoConfirmRowHtml_ = (d, index) => {
     ? `<div style="font-size:11px; color:#C2185B; margin-top:4px;">⛽ ${esc(d.fuelTargetName || d.fuelTargetId || '車両未選択')}${d.fuelAmount ? ` ／ ${esc(d.fuelAmount)}L` : ''}</div>`
     : '';
   return `
-    <div style="padding:10px 12px; border:1px solid #e0e0e0; border-radius:8px; margin-bottom:8px; background:#fafafa;">
-      <div style="font-size:13px; font-weight:bold; color:#333; line-height:1.35;">${index + 1}. ${esc(workName)}${badge}</div>
+    <div style="padding:10px 12px; border:1px solid ${isMetaRow ? '#CE93D8' : '#e0e0e0'}; border-radius:8px; margin-bottom:8px; background:${isMetaRow ? '#Faf5fc' : '#fafafa'};">
+      <div style="font-size:13px; font-weight:bold; color:#333; line-height:1.35;">${index + 1}. ${esc(titleName)}${badge}</div>
       ${metaNote}
       <div style="font-size:12px; color:#555; margin-top:4px;">🕒 ${esc(start)}〜${esc(end)}</div>
       <div style="font-size:11px; color:#666; margin-top:3px;">🌱 ${esc(crops)}　📍 ${esc(fieldNames)}</div>
