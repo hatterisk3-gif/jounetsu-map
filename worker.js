@@ -14383,24 +14383,21 @@ function createSignboardMarker(name, pos, icon, id) {
         return n === '準備作業' || n === '準備' || n.indexOf('準備') >= 0;
       };
 
-      /** 準備カテゴリか */
+      /** 準備カテゴリか（表示用。特別UIは出さない） */
       window.isPrepCategory_ = (cat) => {
         const c = String(cat || '').trim();
         return !!c && c.indexOf('準備') >= 0;
       };
 
-      /** あと片づけ系カテゴリか */
+      /** あと片づけ系カテゴリか（表示用。特別UIは出さない） */
       window.isCleanupCategory_ = (cat) => {
         const c = String(cat || '').trim();
         if (!c) return false;
         return /あと片|後片|片づけ|片付け|掃除|清掃/.test(c);
       };
 
-      /** 対象カテゴリ→対象作業を紐づけるカテゴリ（準備／片づけ・掃除） */
-      window.isMetaTargetCategory_ = (cat) => {
-        return (typeof window.isPrepCategory_ === 'function' && window.isPrepCategory_(cat))
-          || (typeof window.isCleanupCategory_ === 'function' && window.isCleanupCategory_(cat));
-      };
+      /** 対象作業を別途紐づけるモードは廃止（常に通常カテゴリ） */
+      window.isMetaTargetCategory_ = (cat) => false;
 
       window.isCleanupWorkName = (name) => {
         const n = String(name || '').trim();
@@ -14408,37 +14405,11 @@ function createSignboardMarker(name, pos, icon, id) {
         return /あと片|後片|片づけ|片付け|掃除|清掃/.test(n);
       };
 
-      /** 準備／片づけ本体のシェル作業名（カテゴリ選択で代替するため通常は使わない） */
-      window.isMetaShellWorkName_ = (name) => {
-        const n = String(name || '').trim();
-        if (!n) return false;
-        if (n === '準備' || n === '準備作業') return true;
-        if (typeof window.isCleanupWorkName === 'function' && window.isCleanupWorkName(n)
-            && (n === '片づけ' || n === '片付け' || n === 'あと片づけ' || n === '後片づけ' || n === '掃除' || n === '清掃')) {
-          return true;
-        }
-        return false;
-      };
+      /** 準備／片づけ本体シェル作業UIは廃止 */
+      window.isMetaShellWorkName_ = (name) => false;
 
-      /**
-       * 準備／掃除・片付けカテゴリでは、対象として選んだ作業名の詳細作業を出さない。
-       * （作業名欄に対象作業が入っても、カテゴリがメタなら詳細は非表示）
-       */
-      window.shouldHideMetaTargetDetailWorks_ = () => {
-        const formCat = String(document.getElementById('rec_work_category')?.value || '').trim();
-        if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(formCat)) {
-          return true;
-        }
-        const prepTarget = String(
-          (document.getElementById('prep_target_work_select') && document.getElementById('prep_target_work_select').value)
-          || window.selectedPrepTargetWork
-          || ''
-        ).trim();
-        if (prepTarget && typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(formCat)) {
-          return true;
-        }
-        return false;
-      };
+      /** 詳細作業のメタ非表示は廃止 */
+      window.shouldHideMetaTargetDetailWorks_ = () => false;
 
       window.selectedPrepTargetWork = '';
       window.selectedPrepTargetCategory = '';
@@ -30184,17 +30155,6 @@ window.getBulkWorkMemoDetailOptions_ = (workName, cropNameOrDraft, prepTargetWor
   const wName = String(workName || '').trim();
   if (!wName || wName.includes('休憩')) return [];
   const draft = (cropNameOrDraft && typeof cropNameOrDraft === 'object') ? cropNameOrDraft : null;
-  const metaCat = String(draft && (draft.category || draft.listFilterCategory) || '').trim();
-  const hasPrepTarget = !!(draft && (
-    String(draft.prepTargetWork || '').trim()
-    || (Array.isArray(draft.prepTargetWorks) && draft.prepTargetWorks.some(n => String(n || '').trim()))
-  ));
-  // 準備／片づけ・掃除では、対象として選んだ作業名の詳細作業を出さない
-  if (typeof window.isMetaTargetCategory_ === 'function'
-      && (window.isMetaTargetCategory_(metaCat) || window.isMetaTargetCategory_(wName))) {
-    return [];
-  }
-  if (hasPrepTarget) return [];
   void prepTargetWork;
 
   let cropKeys = draft
@@ -30250,6 +30210,35 @@ window.getBulkWorkMemoDetailOptions_ = (workName, cropNameOrDraft, prepTargetWor
     }
   }
 
+  // 一括入力向けフォールバック：作物別キーが合わず空のとき、マスタの詳細を広く拾う
+  if (!names.length) {
+    const sameName = (pdlWorkMaster || []).filter(w => w && String(w.name || '').trim() === wName);
+    sameName.forEach((w) => {
+      if (w.cropDetails && typeof w.cropDetails === 'object') {
+        Object.keys(w.cropDetails).forEach((k) => {
+          if (typeof window.isFieldDetailKey_ === 'function' && window.isFieldDetailKey_(k)) return;
+          if (typeof window.FIELD_DETAIL_COMMON_KEY_ !== 'undefined' && k === window.FIELD_DETAIL_COMMON_KEY_) return;
+          pushList(typeof window.parseDetailWorksList === 'function'
+            ? window.parseDetailWorksList(w.cropDetails[k])
+            : String(w.cropDetails[k] || '').split(/[,、]/).map(s => s.trim()).filter(Boolean));
+        });
+      }
+      if (w.detailWorks) {
+        pushList(typeof window.parseDetailWorksList === 'function'
+          ? window.parseDetailWorksList(w.detailWorks)
+          : String(w.detailWorks || '').split(/[,、]/).map(s => s.trim()).filter(Boolean));
+      }
+    });
+  }
+
+  // 作業記録と同じく、過去実績からの詳細候補も足す
+  if (typeof window.getWorkAssociationSuggestions_ === 'function') {
+    const sug = window.getWorkAssociationSuggestions_(wName) || {};
+    (sug.details || []).forEach((d) => {
+      if (d && d.name) pushList([d.name]);
+    });
+  }
+
   return names;
 };
 
@@ -30261,24 +30250,6 @@ window.getBulkWorkMemoUiFlags_ = (draft) => {
     || window.getBulkWorkMemoWorkCategory_(wName)
     || ''
   ).trim();
-  const isMeta = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat);
-  const hasPrepTarget = !!(draft && (
-    String(draft.prepTargetWork || '').trim()
-    || (Array.isArray(draft.prepTargetWorks) && draft.prepTargetWorks.some(n => String(n || '').trim()))
-  ));
-  // 準備／片づけは対象作業の機械・資材・薬剤フラグを出さない
-  if (isMeta || hasPrepTarget) {
-    return {
-      showMachine: false,
-      showMaterial: false,
-      showPesticide: false,
-      showField: false,
-      isPrep: (typeof window.isPrepCategory_ === 'function' && window.isPrepCategory_(cat))
-        || (typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(wName)),
-      isCleanup: (typeof window.isCleanupCategory_ === 'function' && window.isCleanupCategory_(cat))
-        || (typeof window.isCleanupWorkName === 'function' && window.isCleanupWorkName(wName))
-    };
-  }
   const w = (typeof window.findWorkMasterByName_ === 'function')
     ? window.findWorkMasterByName_(wName)
     : (pdlWorkMaster || []).find(x => x && String(x.name || '').trim() === wName);
@@ -30297,10 +30268,8 @@ window.getBulkWorkMemoUiFlags_ = (draft) => {
     showMaterial: pick(w && w.showMaterial, inferred.showMaterial),
     showPesticide: pick(w && w.showPesticide, inferred.showPesticide),
     showField: pick(w && w.showField, inferred.showField),
-    isPrep: (typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(wName))
-      || (typeof window.isPrepCategory_ === 'function' && window.isPrepCategory_(cat)),
-    isCleanup: (typeof window.isCleanupWorkName === 'function' && window.isCleanupWorkName(wName))
-      || (typeof window.isCleanupCategory_ === 'function' && window.isCleanupCategory_(cat))
+    isPrep: false,
+    isCleanup: false
   };
 };
 
@@ -32702,14 +32671,8 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
   }
   const hasConcurrent = Array.isArray(d.concurrentWorks) && d.concurrentWorks.length;
   let html = '';
-  const metaCat = String(d.category || d.listFilterCategory || '').trim();
-  const isMeta = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(metaCat);
-  const hasPrepTarget = !!(
-    String(d.prepTargetWork || '').trim()
-    || (Array.isArray(d.prepTargetWorks) && d.prepTargetWorks.some(n => String(n || '').trim()))
-  );
-  // 準備／掃除・片付けでは対象作業の詳細作業を出さない
-  if (d.workName && !isMeta && !hasPrepTarget) {
+  // 準備／片づけの対象作業モードは廃止。通常どおり詳細・機械などを出す
+  if (d.workName) {
     const flags = window.getBulkWorkMemoUiFlags_(d);
     const details = window.getBulkWorkMemoDetailOptions_(d.workName, d, '');
     const machines = flags.showMachine ? window.getBulkWorkMemoMachineList_(d) : [];
@@ -32728,6 +32691,8 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
           }).join('')}
         </div>
       </div>`;
+    } else if (d.workMatched || String(d.workName || '').trim()) {
+      html += `<div style="margin:8px 0; padding:10px 12px; background:#F5F5F5; border:1px dashed #BDBDBD; border-radius:8px; font-size:12px; color:#666; line-height:1.4;">📋 この作業に登録されている詳細作業はありません</div>`;
     }
     if (window.bulkWorkMemoIsMaintenance_(d)) {
       html += window.buildBulkWorkMemoMaintenanceTargetHtml_(d, uid);
@@ -33584,6 +33549,10 @@ window.pickBulkWorkMemoWorkName_ = (uid, name) => {
       } else if (wCat) {
         row.category = wCat;
       }
+      // 旧・対象作業モードの残りをクリア（詳細作業が出なくなるのを防ぐ）
+      row.prepTargetWork = '';
+      row.prepTargetWorks = [];
+      row.prepTargetCategory = '';
       const keys = (typeof window.getWorkMasterCropKeys === 'function')
         ? window.getWorkMasterCropKeys(wObj).filter(k => k && k !== '__common__')
         : [];
