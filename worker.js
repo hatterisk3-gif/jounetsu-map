@@ -1966,42 +1966,9 @@ function createSignboardMarker(name, pos, icon, id) {
         setTimeout(() => { window._keepFieldInfoWindow_ = false; }, 120);
       };
       window.openFieldWorkRecordSelect = (id) => {
-          const p = loadedPolygons[id];
-          let html = `
-            <div style="text-align:center; padding: 10px;">
-               <div style="margin-bottom: 15px; font-size: 16px; font-weight: bold; line-height: 1.5; color: #333;">記録方法を選んでください</div>
-               
-               <div style="background: #E0F7FA; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #00BCD4; text-align: left;">
-                  <div style="font-size: 13px; font-weight: bold; color: #00838F; margin-bottom: 8px;">🤖 AIオート作業記録</div>
-                  <input type="text" id="autoRecordInput_${id}" placeholder="自由記述 (例: 草刈り 2時間)" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box; margin-bottom: 10px; font-size: 14px;" onkeydown="if(event.key==='Enter') { executeFieldAutoRecord('${id}'); }">
-                  <button onclick="executeFieldAutoRecord('${id}')" style="width: 100%; background: #00BCD4; color: white; padding: 12px; border-radius: 6px; border: none; font-weight: bold; font-size: 15px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">✨ 解析して開く</button>
-               </div>
-               
-               <div style="display: flex; flex-direction: column; gap: 10px;">
-                  <button onclick="document.getElementById('modal').style.display='none'; actionManagePhotos('${id}', 'work')" style="width: 100%; background: #FF9800; color: white; padding: 15px; border-radius: 8px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🚜 通常の作業記録</button>
-                  <button onclick="document.getElementById('modal').style.display='none'" style="width: 100%; background: #eee; color: #333; padding: 10px; border-radius: 8px; border: none; font-weight: bold; font-size: 14px; cursor: pointer;">キャンセル</button>
-               </div>
-            </div>
-          `;
-          document.getElementById('modalBody').innerHTML = html;
-          document.getElementById('modal').style.display = 'flex';
-      };
-
-      window.executeFieldAutoRecord = (id) => {
-          const text = document.getElementById('autoRecordInput_' + id).value;
-          if(!text) { if(typeof customAlert !== 'undefined') customAlert('作業内容を入力してください。'); return; }
-          document.getElementById('modal').style.display = 'none';
-          
-          const p = loadedPolygons[id];
-          const globalInput = document.getElementById('autoRecordInput');
-          if (globalInput) {
-              globalInput.value = (p.name || '') + " " + text;
-              executeAutoRecord();
-          } else {
-              activePolyId = id;
-              currentRecordType = 'work';
-              renderRecordForm();
-              document.getElementById('rightPanel').classList.add('open');
+          // AIオート作業記録は撤去。通常の作業記録を直接開く
+          if (typeof window.actionManagePhotos === 'function') {
+            window.actionManagePhotos(id, 'work');
           }
       };
 
@@ -16828,6 +16795,20 @@ function createSignboardMarker(name, pos, icon, id) {
               window._detailWorkEditorReturnToPicker = '';
               const recWName = document.getElementById('rec_work_name')?.value || '';
               window.renderDetailWorksSection(recWName || wName);
+              // 一括入力が開いていれば詳細一覧を再描画
+              if (document.getElementById('bulk_work_memo_review_scroll')
+                  || document.getElementById('bulk_work_memo_manual_add_scroll')) {
+                const bulkUid = String(window._bulkWorkMemoMasterEditUid || '').trim();
+                if (bulkUid && typeof window.refreshBulkWorkMemoExtras_ === 'function') {
+                  window.refreshBulkWorkMemoExtras_(bulkUid);
+                } else if (typeof window.renderBulkWorkMemoReviewModal_ === 'function'
+                    && document.getElementById('bulk_work_memo_review_scroll')) {
+                  window.renderBulkWorkMemoReviewModal_({ scrollUid: bulkUid });
+                } else if (typeof window.renderBulkWorkMemoManualAddModal_ === 'function'
+                    && document.getElementById('bulk_work_memo_manual_add_scroll')) {
+                  window.renderBulkWorkMemoManualAddModal_();
+                }
+              }
               if (returnPicker) {
                   window.openDetailWorkMasterAddOptions(returnPicker);
                   if (typeof window.showRecordSyncToast === 'function') {
@@ -27824,203 +27805,6 @@ function createSignboardMarker(name, pos, icon, id) {
     } catch (e) {
       console.warn('share URL bootstrap skipped', e);
     }
-// 🌟 オート作業記録（自由記述からの自動抽出機能）🌟
-window.autoRecordData = null;
-
-window.parseAutoRecord = (text) => {
-    let result = {
-        workName: null,
-        cropName: null,
-        polyId: null,
-        startTime: null,
-        endTime: null
-    };
-
-    if (!text) return result;
-
-    // 1. 場所（圃場・看板名）の抽出
-    for (let id in loadedPolygons) {
-        if (loadedPolygons[id].name && text.includes(loadedPolygons[id].name)) {
-            result.polyId = id;
-            break;
-        }
-    }
-
-    // 2. 作業名の抽出
-    if (typeof pdlWorkMaster !== 'undefined') {
-        for (let w of pdlWorkMaster) {
-            if (w.name && text.includes(w.name)) {
-                result.workName = w.name;
-                break;
-            }
-        }
-    }
-
-    // 3. 作物名の抽出
-    if (typeof pdlCrops !== 'undefined') {
-        for (let c of pdlCrops) {
-            if (c.name && text.includes(c.name)) {
-                result.cropName = c.name;
-                break;
-            }
-        }
-    }
-
-    // 4. 時間の抽出
-    // 時間帯 (例: "10:30", "14時", "9時半")
-    const timeRegex = /(\d{1,2})[:時](\d{1,2})?(?:分|半)?/g;
-    let times = [];
-    let match;
-    while ((match = timeRegex.exec(text)) !== null) {
-        let hour = match[1].padStart(2, '0');
-        let minStr = match[2];
-        if (!minStr && match[0].includes('半')) minStr = '30';
-        let minute = (minStr || '00').padStart(2, '0');
-        times.push(`${hour}:${minute}`);
-    }
-    
-    // 時間長 (例: "2時間", "1.5時間", "30分")
-    let durationMins = 0;
-    const durationHourMatch = text.match(/(\d+(?:\.\d+)?)時間/);
-    if (durationHourMatch) durationMins += parseFloat(durationHourMatch[1]) * 60;
-    const durationMinMatch = text.match(/(\d+)分/);
-    if (durationMinMatch && !text.includes('時' + durationMinMatch[1] + '分')) {
-        // "10時30分" のような時刻表現でない場合のみ加算
-        durationMins += parseInt(durationMinMatch[1]);
-    }
-
-    if (times.length >= 2) {
-        // "10時から12時"
-        result.startTime = times[0];
-        result.endTime = times[times.length - 1];
-    } else if (times.length === 1 && durationMins > 0) {
-        // "10時から2時間"
-        result.startTime = times[0];
-        let d = new Date(`2000-01-01T${times[0]}:00`);
-        d.setMinutes(d.getMinutes() + durationMins);
-        result.endTime = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    } else if (durationMins > 0) {
-        // "2時間" (終了を現在時刻とする)
-        let now = new Date();
-        result.endTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-        now.setMinutes(now.getMinutes() - durationMins);
-        result.startTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    }
-
-    return result;
-};
-
-window.executeAutoRecord = async () => {
-    const inputEl = document.getElementById('autoRecordInput');
-    if (!inputEl || !inputEl.value.trim()) {
-        if(typeof customAlert !== 'undefined') customAlert('作業内容を入力してください。');
-        return;
-    }
-    const text = inputEl.value.trim();
-    
-    // UIをローディング中にする
-    const btnEl = inputEl.nextElementSibling;
-    const originalBtnText = btnEl ? btnEl.innerText : '✨ 解析して開く';
-    if (btnEl) {
-        btnEl.innerText = '✨ 瞬速解析中...';
-        btnEl.style.opacity = '0.7';
-        btnEl.disabled = true;
-    }
-
-    // 🌟 AI通信を待たずにローカルで瞬速解析 🌟
-    let data = parseAutoRecord(text);
-    
-    // 該当する作業がない場合、入力文から残りの単語を抽出して新しい作業名とする
-    if (!data.workName) {
-        let remaining = text;
-        if (data.polyId && loadedPolygons[data.polyId]) remaining = remaining.replace(loadedPolygons[data.polyId].name, '');
-        if (data.cropName) remaining = remaining.replace(data.cropName, '');
-        remaining = remaining.replace(/(\d{1,2})[:時](\d{1,2})?(?:分|半)?/g, '');
-        remaining = remaining.replace(/(\d+(?:\.\d+)?)時間/g, '');
-        remaining = remaining.replace(/(\d+)分/g, '');
-        // 助詞や空白を削除して一番最初の単語を抽出
-        remaining = remaining.replace(/[でからまでをにの]/g, ' ').replace(/\s+/g, ' ').trim();
-        if (remaining) {
-            data.workName = remaining.split(' ')[0]; // 新しい作業名候補
-            data.isNewWork = true; // 新規追加フラグ
-        }
-    }
-
-    if (btnEl) {
-        btnEl.innerText = originalBtnText;
-        btnEl.style.opacity = '1';
-        btnEl.disabled = false;
-    }
-
-    // モーダルを開く処理
-    window.autoRecordData = data;
-    
-    // 圃場は自動選択せず、作業内容のみ反映して空欄で開く
-    if (typeof directOpenForm === 'function') {
-        directOpenForm(null, 'work');
-    } else {
-        activePolyId = null;
-        currentRecordType = 'work';
-        renderRecordForm();
-        document.getElementById('rightPanel').classList.add('open');
-    }
-    
-    // フォームが開かれた直後に値を注入する
-    setTimeout(() => {
-        if (window.autoRecordData) {
-            const d = window.autoRecordData;
-            let changed = false;
-            
-            if (d.workName && document.getElementById('rec_work_name')) {
-                const selectEl = document.getElementById('rec_work_name');
-                // 新しい作業名の場合、選択肢に動的に追加する
-                let optionExists = Array.from(selectEl.options).some(opt => opt.value === d.workName);
-                if (!optionExists) {
-                    const newOption = document.createElement('option');
-                    newOption.value = d.workName;
-                    newOption.text = d.workName + " (新規追加)";
-                    selectEl.appendChild(newOption);
-                }
-                selectEl.value = d.workName;
-                if (typeof handleWorkNameChange === 'function') handleWorkNameChange();
-                changed = true;
-            }
-            if (d.cropName) {
-                const cropKey = window.normalizeWorkCropKey(d.cropName);
-                if (typeof window.selectWorkCropFilter === 'function') {
-                    window.selectWorkCropFilter(cropKey);
-                } else if (typeof window.syncRecordCropFromFilter === 'function') {
-                    window.syncRecordCropFromFilter(cropKey);
-                }
-                changed = true;
-            }
-            if (d.startTime && document.getElementById('rec_start_time')) {
-                document.getElementById('rec_start_time').value = d.startTime;
-                changed = true;
-            }
-            if (d.endTime && document.getElementById('rec_end_time')) {
-                document.getElementById('rec_end_time').value = d.endTime;
-                changed = true;
-            }
-            
-            if (changed && typeof calcTotalTime === 'function') {
-                calcTotalTime();
-            }
-            
-            inputEl.value = ''; // 入力欄をクリア
-            window.autoRecordData = null; // リセット
-            
-            if(typeof customAlert !== 'undefined') {
-                if (d.isNewWork) {
-                    customAlert('✨ 解析が完了しました！\n新しい作業「' + d.workName + '」をリストに追加しました。\n内容を確認して保存してください。');
-                } else {
-                    customAlert('✨ 解析が完了しました！\n内容を確認して保存してください。');
-                }
-            }
-        }
-    }, 300); // フォーム描画の完了を少し待つ
-};
-
 // 🌟 メモから作業記録を一括入力（時間帯ごとに分割 → 確認編集 → 保存）🌟
 window._bulkWorkMemoDrafts = [];
 window._bulkWorkMemoDate = '';
@@ -31521,6 +31305,34 @@ window.refreshBulkWorkMemoExtras_ = (uid) => {
   if (extras) extras.innerHTML = window.buildBulkWorkMemoExtrasHtml_(row, uid);
 };
 
+/** 一括入力：詳細作業の編集・登録（作業マスタ編集へ） */
+window.openBulkWorkMemoDetailEditor_ = (uid, workName) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  const wName = String(workName || (row && row.workName) || '').trim();
+  if (!wName) {
+    if (typeof customAlert === 'function') customAlert('先に作業名を選んでください。');
+    return;
+  }
+  window._bulkWorkMemoMasterEditUid = String(uid || '').trim();
+  const crops = row && typeof window.getBulkWorkMemoCropNames_ === 'function'
+    ? window.getBulkWorkMemoCropNames_(row)
+    : [];
+  const cropKey = crops.length
+    ? (typeof window.normalizeWorkCropKey === 'function' ? window.normalizeWorkCropKey(crops[0]) : crops[0])
+    : '__common__';
+
+  // 詳細の追加モーダルがあれば優先（登録が速い）。なければ作業マスタ編集
+  if (typeof window.adminAddDetailWork === 'function') {
+    window.adminAddDetailWork(wName, cropKey);
+    return;
+  }
+  if (typeof window.adminEditWorkName === 'function') {
+    window.adminEditWorkName(wName);
+    return;
+  }
+  if (typeof customAlert === 'function') customAlert('詳細作業の編集画面を開けませんでした。');
+};
+
 /** 作物名チップの選択状態だけ更新（モーダル全体を再描画しない） */
 window.refreshBulkWorkMemoCropPick_ = (uid) => {
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
@@ -32692,7 +32504,11 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
         </div>
       </div>`;
     } else if (d.workMatched || String(d.workName || '').trim()) {
-      html += `<div style="margin:8px 0; padding:10px 12px; background:#F5F5F5; border:1px dashed #BDBDBD; border-radius:8px; font-size:12px; color:#666; line-height:1.4;">📋 この作業に登録されている詳細作業はありません</div>`;
+      const safeWork = String(d.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      html += `<div style="margin:8px 0;">
+        <div style="padding:10px 12px; background:#F5F5F5; border:1px dashed #BDBDBD; border-radius:8px; font-size:12px; color:#666; line-height:1.4;">📋 この作業に登録されている詳細作業はありません</div>
+        <button type="button" onclick="openBulkWorkMemoDetailEditor_('${esc(uid)}','${safeWork}')" style="width:100%; box-sizing:border-box; margin-top:8px; padding:10px 12px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid #7E57C2; background:#fff; color:#5E35B1; text-align:center;">📋 詳細作業を編集・登録</button>
+      </div>`;
     }
     if (window.bulkWorkMemoIsMaintenance_(d)) {
       html += window.buildBulkWorkMemoMaintenanceTargetHtml_(d, uid);
