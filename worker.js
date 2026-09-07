@@ -27980,6 +27980,8 @@ window.matchBulkWorkMemoField_ = (text) => {
 window.cleanBulkWorkMemoFieldHintToken_ = (token) => {
   let t = String(token || '').trim();
   t = t.replace(/^(の|は|が|を|に|で|へ|と)\s*/g, '');
+  // 「ローソン横の除草」「アグリ横で防除」→ 圃場名だけ残す
+  t = t.replace(/(の|で|を|に)?(除草剤?|防除|散布|定植|植え付け|植付け|植付|収穫|草刈り|草刈|刈り|刈|作業|管理|点検|整備|移動|開発|打ち合わせ|打合せ).*$/g, '').trim();
   t = t.replace(/(が途中|まで|途中|のみ|など|付近|あたり|方面|一帯|周辺)$/g, '').trim();
   return t;
 };
@@ -28007,11 +28009,34 @@ window.splitBulkWorkMemoFieldHintTokens_ = (hintText) => {
 window.isLikelyBulkWorkMemoFieldToken_ = (token) => {
   const t = String(token || '').trim();
   if (t.length < 2) return false;
-  // 「（機械移動、試験品種）（対外打ち合わせも含む）」などは圃場ではない
-  if (/(打ち合わせ|打合せ|会議|MTG|mtg|移動|準備|品種|含む|作業|開発|防除|除草|植え付|定植|システム|休憩)/i.test(t)) {
+  // 作業語だけの注釈は除外（圃場名＋作業語は clean 側で圃場名だけ残す）
+  if (/^(打ち合わせ|打合せ|会議|MTG|mtg|移動|準備|品種|含む|作業|開発|防除|除草剤?|植え付|定植|システム|休憩)$/i.test(t)) {
+    return false;
+  }
+  if (/(打ち合わせ|打合せ|会議|MTG|mtg|システム開発)/i.test(t) && !/(横|前|後|角|下|上|沿い|脇|向かい|向い|ハウス|林|場)/.test(t)) {
     return false;
   }
   return true;
+};
+
+/** 本文から「〜横」「〜前」など圃場っぽい固有名を拾う */
+window.extractBulkWorkMemoLocLikeTokens_ = (raw) => {
+  const s = String(raw || '');
+  if (!s) return [];
+  const out = [];
+  const seen = {};
+  const push = (t) => {
+    const n = window.cleanBulkWorkMemoFieldHintToken_(t);
+    if (!n || n.length < 2 || seen[n]) return;
+    if (!window.isLikelyBulkWorkMemoFieldToken_(n)) return;
+    seen[n] = true;
+    out.push(n);
+  };
+  // カタカナ・漢字・英数＋位置語（ローソン横 / アグリ横③ / 南林角）
+  const re = /([A-Za-z0-9０-９ァ-ヶーｦ-ﾟ一-龥]{2,24}(?:横|前|後|角|下|上|沿い|脇|向かい|向い)[0-9０-９①-⑳]{0,3})/g;
+  let m;
+  while ((m = re.exec(s))) push(m[1]);
+  return out;
 };
 
 window.collectBulkWorkMemoFieldHintTokens_ = (raw) => {
@@ -28026,6 +28051,10 @@ window.collectBulkWorkMemoFieldHintTokens_ = (raw) => {
   window.extractBulkWorkMemoFieldHintTexts_(raw).forEach(hint => {
     window.splitBulkWorkMemoFieldHintTokens_(hint).forEach(t => push(t, false));
   });
+  // 「ローソン横」など本文中の位置語
+  if (typeof window.extractBulkWorkMemoLocLikeTokens_ === 'function') {
+    window.extractBulkWorkMemoLocLikeTokens_(raw).forEach(t => push(t, true));
+  }
   // 本文中の圃場名（括弧なしの「新交差点」「ハウス 向かい」「アグリ横③」）
   try {
     const compact = typeof window.normalizeBulkWorkMemoFieldKey_ === 'function'
@@ -28088,6 +28117,13 @@ window.scoreBulkWorkMemoFieldNameMatch_ = (token, polyName) => {
   if (tok.indexOf(name) >= 0 && name.length >= 2) return 82 + Math.min(12, name.length);
   if (tokKey && nameKey && tokKey.indexOf(nameKey) >= 0 && nameKey.length >= 2) {
     return 82 + Math.min(12, nameKey.length);
+  }
+  // 「ローソン横」⇔「ローソン横①」「ローソン横3」など末尾番号違い
+  const stripTail = (s) => String(s || '').replace(/[0-9０-９①-⑳①-⑳]+$/g, '').replace(/[①-⑳]/g, '');
+  const tokBase = stripTail(tokKey || tok);
+  const nameBase = stripTail(nameKey || name);
+  if (tokBase.length >= 2 && nameBase.length >= 2 && tokBase === nameBase) {
+    return 90;
   }
   if (window.bulkWorkMemoKanaKeyContains_(name, tok)) return 85 + Math.min(10, tok.length);
   if (window.bulkWorkMemoKanaKeyContains_(tok, name)) return 80 + Math.min(10, name.length);
@@ -29350,6 +29386,11 @@ window.bulkWorkMemoNeedsField_ = (draft) => {
 window.bulkWorkMemoShowFieldSection_ = (draft) => {
   if (!draft || window.bulkWorkMemoIsRestDraft_(draft)) return false;
   if (typeof window.bulkWorkMemoIsDelivery_ === 'function' && window.bulkWorkMemoIsDelivery_(draft)) return false;
+  // メモから圃場名が拾えているときは、カテゴリ設定に関わらず圃場欄を出す
+  if (window.getBulkWorkMemoPolyIds_(draft).length) return true;
+  if (Array.isArray(draft.fieldHintTokens) && draft.fieldHintTokens.length) return true;
+  if (Array.isArray(draft.fieldCandidates) && draft.fieldCandidates.length) return true;
+  if (Array.isArray(draft.fieldTokenResults) && draft.fieldTokenResults.some(r => r && r.status !== 'matched')) return true;
   const draftCat = String(draft.category || draft.listFilterCategory || '').trim();
   const wName = String(draft.workName || '').trim();
   if (typeof window.resolveShowFieldSelect_ === 'function'
@@ -29357,10 +29398,6 @@ window.bulkWorkMemoShowFieldSection_ = (draft) => {
     return false;
   }
   if (window.bulkWorkMemoNeedsField_(draft)) return true;
-  if (window.getBulkWorkMemoPolyIds_(draft).length) return true;
-  if (Array.isArray(draft.fieldHintTokens) && draft.fieldHintTokens.length) return true;
-  if (Array.isArray(draft.fieldCandidates) && draft.fieldCandidates.length) return true;
-  if (Array.isArray(draft.fieldTokenResults) && draft.fieldTokenResults.some(r => r && r.status !== 'matched')) return true;
   return false;
 };
 
@@ -32143,7 +32180,10 @@ window.buildBulkWorkMemoCropPickSectionHtml_ = (d, uid) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const selected = window.getBulkWorkMemoCropNames_(d);
   if (!String(d.workName || '').trim()) {
-    return `<div style="font-size:11px; color:#888; margin:0 0 8px; line-height:1.35;">作業名を選ぶと作物名を選べます。</div>`;
+    return `<div style="margin:0 0 10px; padding:12px; border:2px dashed #A5D6A7; border-radius:10px; background:#F1F8E9; box-sizing:border-box;">
+      <div style="font-size:12px; font-weight:bold; color:#2E7D32; margin-bottom:4px;">🌱 作物名</div>
+      <div style="font-size:11px; color:#666; line-height:1.35;">作業名を選ぶと作物名を選べます。</div>
+    </div>`;
   }
   if (selected.length && d._cropPickOpen === false) {
     return window.buildBulkWorkMemoCollapsedPickHtml_({
@@ -32157,12 +32197,21 @@ window.buildBulkWorkMemoCropPickSectionHtml_ = (d, uid) => {
       textColor: '#2E7D32'
     });
   }
+  const needPick = !selected.length;
+  const border = needPick ? '2px solid #66BB6A' : '2px solid #A5D6A7';
+  const bg = needPick ? '#F1F8E9' : '#E8F5E9';
+  const hint = needPick
+    ? `<div style="font-size:11px; color:#E65100; margin:0 0 8px; line-height:1.35; font-weight:bold;">※ 共通 または 作物を1つ以上選んでください</div>`
+    : '';
   return `
-    <label style="font-size:10px; color:#2E7D32; font-weight:bold;">🌱 作物名（共通 または 個別作物）</label>
-    ${window.buildBulkWorkMemoCropChipsHtml_(d, uid)}
-    <div style="display:flex; gap:8px; margin-bottom:8px;">
-      <button type="button" onclick="addBulkWorkMemoCrop_('${esc(uid)}')" style="flex:1; box-sizing:border-box; padding:10px 14px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid #66BB6A; background:#fff; color:#2E7D32; text-align:left;">＋ 作物を追加</button>
-      ${selected.length ? `<button type="button" onclick="collapseBulkWorkMemoCropPick_('${esc(uid)}')" style="flex-shrink:0; box-sizing:border-box; padding:10px 12px; border-radius:10px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid #A5D6A7; background:#E8F5E9; color:#2E7D32;">閉じる</button>` : ''}
+    <div style="margin:0 0 10px; padding:12px; border:${border}; border-radius:10px; background:${bg}; box-sizing:border-box;">
+      <label style="display:block; font-size:12px; color:#2E7D32; font-weight:bold; margin-bottom:6px;">🌱 作物名（共通 または 個別作物）${needPick ? ' <span style="color:#c62828;">*</span>' : ''}</label>
+      ${hint}
+      ${window.buildBulkWorkMemoCropChipsHtml_(d, uid)}
+      <div style="display:flex; gap:8px; margin-top:4px;">
+        <button type="button" onclick="addBulkWorkMemoCrop_('${esc(uid)}')" style="flex:1; box-sizing:border-box; padding:10px 14px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid #66BB6A; background:#fff; color:#2E7D32; text-align:left;">＋ 作物を追加</button>
+        ${selected.length ? `<button type="button" onclick="collapseBulkWorkMemoCropPick_('${esc(uid)}')" style="flex-shrink:0; box-sizing:border-box; padding:10px 12px; border-radius:10px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid #A5D6A7; background:#fff; color:#2E7D32;">閉じる</button>` : ''}
+      </div>
     </div>`;
 };
 
