@@ -40586,16 +40586,125 @@ window.deleteQualification = async function(userName, index) {
     return names;
   }
 
+  function fertilizerListRaw_() {
+    if (typeof pdlFertilizers !== 'undefined' && Array.isArray(pdlFertilizers)) return pdlFertilizers;
+    if (Array.isArray(window.pdlFertilizers)) return window.pdlFertilizers;
+    return [];
+  }
+
   function fertilizerOptions_() {
-    const list = (typeof pdlFertilizers !== 'undefined' && Array.isArray(pdlFertilizers))
-      ? pdlFertilizers
-      : (Array.isArray(window.pdlFertilizers) ? window.pdlFertilizers : []);
-    return list.map(function (f) {
+    return fertilizerListRaw_().map(function (f) {
       return {
         id: String((f && f.id) || ''),
         name: String((f && f.name) || '').trim()
       };
     }).filter(function (f) { return !!f.name; });
+  }
+
+  function setFertilizerList_(list) {
+    const next = Array.isArray(list) ? list : [];
+    try { pdlFertilizers = next; } catch (e) {}
+    window.pdlFertilizers = next;
+    try {
+      localStorage.removeItem('passionMapInitData');
+      localStorage.removeItem('pMapAdminInitData');
+    } catch (e2) {}
+  }
+
+  function fertUserName_() {
+    return (typeof currentUser !== 'undefined' && currentUser)
+      ? currentUser
+      : (localStorage.getItem('passionMapUserName') || '');
+  }
+
+  function renameFertilizerInRates_(oldName, newName) {
+    const settings = getSettings_();
+    const rates = settings.rates || {};
+    Object.keys(rates).forEach(function (k) {
+      const rows = Array.isArray(rates[k]) ? rates[k] : [];
+      rows.forEach(function (r) {
+        if (r && String(r.fertilizerName || '') === oldName) {
+          r.fertilizerName = newName;
+        }
+      });
+    });
+    window._fertRateSettings = settings;
+  }
+
+  function clearFertilizerFromRates_(name) {
+    const settings = getSettings_();
+    const rates = settings.rates || {};
+    Object.keys(rates).forEach(function (k) {
+      const rows = Array.isArray(rates[k]) ? rates[k] : [];
+      rows.forEach(function (r) {
+        if (r && String(r.fertilizerName || '') === name) {
+          r.fertilizerName = '';
+          r.fertilizerId = '';
+        }
+      });
+    });
+    window._fertRateSettings = settings;
+  }
+
+  function buildFertNameSelectHtml_(selectedName, idx) {
+    const fertOpts = fertilizerOptions_();
+    const selected = String(selectedName || '').trim();
+    let opts = `<option value="">選択してください</option>`;
+    let found = false;
+    fertOpts.forEach(function (f) {
+      const on = f.name === selected;
+      if (on) found = true;
+      opts += `<option value="${escAttr_(f.name)}"${on ? ' selected' : ''}>${esc_(f.name)}</option>`;
+    });
+    if (selected && !found) {
+      opts += `<option value="${escAttr_(selected)}" selected>${esc_(selected)}（未登録）</option>`;
+    }
+    return `<select data-fert-edit="name" data-idx="${idx}"
+      style="flex:1; min-width:0; padding:8px 10px; border:1px solid #ccc; border-radius:6px; font-size:14px; box-sizing:border-box; background:#fff;">
+      ${opts}
+    </select>`;
+  }
+
+  function closeFertNameManageModal_() {
+    const el = document.getElementById('fertCalcFertNameManageModal');
+    if (el) el.remove();
+  }
+
+  function showFertNameManageModal_() {
+    closeFertNameManageModal_();
+    const items = fertilizerOptions_();
+    let listHtml = '';
+    if (!items.length) {
+      listHtml = '<div style="color:#888; font-size:13px; text-align:center; padding:20px;">登録されている肥料名がありません</div>';
+    } else {
+      listHtml = items.map(function (item, idx) {
+        return `
+          <div style="display:flex; justify-content:space-between; align-items:center; background:#f5f5f5; border:1px solid #e0e0e0; border-radius:6px; padding:8px 10px; margin-bottom:6px; gap:8px;">
+            <span style="font-size:13px; font-weight:bold; color:#333; word-break:break-all;">${esc_(item.name)}</span>
+            <div style="display:flex; gap:6px; flex-shrink:0;">
+              <button type="button" onclick="fertCalcEditFertilizerName(${idx})" style="background:#FFA000; color:#fff; border:none; border-radius:4px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">✏️ 編集</button>
+              <button type="button" onclick="fertCalcDeleteFertilizerName(${idx})" style="background:#E53935; color:#fff; border:none; border-radius:4px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">🗑️ 削除</button>
+            </div>
+          </div>`;
+      }).join('');
+    }
+    const modal = document.createElement('div');
+    modal.id = 'fertCalcFertNameManageModal';
+    modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:13000; display:flex; justify-content:center; align-items:center; padding:15px; box-sizing:border-box;';
+    modal.onclick = function (e) { if (e.target === modal) closeFertNameManageModal_(); };
+    modal.innerHTML = `
+      <div style="background:#fff; width:100%; max-width:420px; max-height:85vh; border-radius:12px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 10px 25px rgba(0,0,0,0.3);" onclick="event.stopPropagation()">
+        <div style="background:#5D4037; color:#fff; padding:12px 16px; font-weight:bold; font-size:15px; display:flex; justify-content:space-between; align-items:center;">
+          <span>⚙️ 肥料名の編集・削除</span>
+          <button type="button" onclick="closeFertCalcFertNameManageModal()" style="background:none; border:none; color:#fff; font-size:18px; cursor:pointer; padding:0;">✕</button>
+        </div>
+        <div style="padding:12px; overflow-y:auto; flex:1;">${listHtml}</div>
+        <div style="padding:12px; background:#f9f9f9; border-top:1px solid #eee; display:flex; gap:8px;">
+          <button type="button" onclick="fertCalcAddFertilizerName()" style="background:#2196F3; color:#fff; border:none; border-radius:6px; padding:10px; font-weight:bold; font-size:13px; flex:1; cursor:pointer;">＋ 新規追加</button>
+          <button type="button" onclick="closeFertCalcFertNameManageModal()" style="background:#eee; color:#333; border:none; border-radius:6px; padding:10px 16px; font-weight:bold; font-size:13px; cursor:pointer;">閉じる</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
   }
 
   function ensureState_(polyId) {
@@ -40619,6 +40728,7 @@ window.deleteQualification = async function(userName, index) {
   }
 
   function closeModal_() {
+    closeFertNameManageModal_();
     const el = document.getElementById('fertilizerCalcModal');
     if (el) el.remove();
   }
@@ -40739,7 +40849,6 @@ window.deleteQualification = async function(userName, index) {
     const methods = settings.methods || DEFAULT_METHODS.slice();
     const key = rateKey_(st.crop, st.method);
     const rows = Array.isArray(settings.rates[key]) ? settings.rates[key].slice() : [];
-    const fertOpts = fertilizerOptions_();
 
     let html = `
       <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
@@ -40759,7 +40868,14 @@ window.deleteQualification = async function(userName, index) {
           <button type="button" onclick="fertCalcAddMethod()" style="flex-shrink:0; border-radius:18px; padding:7px 12px; font-size:12px; cursor:pointer; border:1px dashed #bbb; background:#fff; color:#666;">＋ 栽培法</button>
         </div>
       </div>
-      <div style="font-size:12px; color:#888; margin-bottom:10px;">10aあたりの施肥量を登録すると、圃場面積から必要量が自動計算されます。</div>`;
+      <div style="font-size:12px; color:#888; margin-bottom:10px;">10aあたりの施肥量を登録すると、圃場面積から必要量が自動計算されます。</div>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+        <div style="font-size:12px; font-weight:bold; color:#555;">肥料名プルダウン</div>
+        <div style="display:flex; gap:6px;">
+          <button type="button" onclick="fertCalcAddFertilizerName()" style="background:#2196F3; color:#fff; border:none; border-radius:4px; padding:5px 8px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 追加</button>
+          <button type="button" onclick="fertCalcOpenFertilizerNameManage()" style="background:#78909C; color:#fff; border:none; border-radius:4px; padding:5px 8px; font-size:11px; font-weight:bold; cursor:pointer;">⚙️ 編集・削除</button>
+        </div>
+      </div>`;
 
     if (!rows.length) {
       html += `<div style="text-align:center; color:#aaa; font-size:13px; padding:16px; border:1px dashed #ddd; border-radius:8px; margin-bottom:12px;">まだ肥料がありません</div>`;
@@ -40772,8 +40888,11 @@ window.deleteQualification = async function(userName, index) {
               <button type="button" onclick="fertCalcRemoveRow(${idx})" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer;">削除</button>
             </div>
             <label style="display:block; font-size:11px; color:#666; margin-bottom:3px;">肥料名</label>
-            <input type="text" list="fertCalcFertDatalist" data-fert-edit="name" data-idx="${idx}" value="${escAttr_(r.fertilizerName)}"
-              style="width:100%; padding:8px 10px; border:1px solid #ccc; border-radius:6px; font-size:14px; box-sizing:border-box; margin-bottom:8px;">
+            <div style="display:flex; gap:6px; margin-bottom:8px; align-items:stretch;">
+              ${buildFertNameSelectHtml_(r.fertilizerName, idx)}
+              <button type="button" onclick="fertCalcAddFertilizerName(${idx})" title="肥料名を追加"
+                style="flex-shrink:0; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:6px; padding:0 10px; font-size:16px; font-weight:bold; cursor:pointer;">＋</button>
+            </div>
             <div style="display:flex; gap:8px; margin-bottom:8px;">
               <div style="flex:1;">
                 <label style="display:block; font-size:11px; color:#666; margin-bottom:3px;">量 / 10a</label>
@@ -40797,9 +40916,6 @@ window.deleteQualification = async function(userName, index) {
     }
 
     html += `
-      <datalist id="fertCalcFertDatalist">${fertOpts.map(function (f) {
-        return `<option value="${escAttr_(f.name)}"></option>`;
-      }).join('')}</datalist>
       <button type="button" onclick="fertCalcAddRow()" style="width:100%; background:#6D4C41; color:#fff; border:none; border-radius:8px; padding:12px; font-weight:bold; font-size:14px; cursor:pointer; margin-top:4px;">＋ 肥料を追加</button>`;
     return html;
   }
@@ -40975,6 +41091,153 @@ window.deleteQualification = async function(userName, index) {
       if (typeof customAlert === 'function') customAlert('肥料の施用量設定を保存しました。');
     } catch (e) {
       if (typeof customAlert === 'function') customAlert('保存に失敗しました。');
+    }
+  };
+
+  window.closeFertCalcFertNameManageModal = function () {
+    closeFertNameManageModal_();
+  };
+
+  window.fertCalcOpenFertilizerNameManage = function () {
+    if (window._fertCalcState && window._fertCalcState.editing) applyEditRowsToState_();
+    showFertNameManageModal_();
+  };
+
+  window.fertCalcAddFertilizerName = async function (rowIdx) {
+    if (window._fertCalcState && window._fertCalcState.editing) applyEditRowsToState_();
+    const inputName = (typeof customPrompt === 'function')
+      ? await customPrompt('追加する肥料名:', '')
+      : prompt('追加する肥料名:');
+    if (inputName == null) return;
+    const name = String(inputName).trim();
+    if (!name) return;
+    const exists = fertilizerOptions_().some(function (f) { return f.name === name; });
+    if (exists) {
+      if (typeof customAlert === 'function') customAlert('同じ肥料名が既に登録されています。');
+      return;
+    }
+    try {
+      let updated = null;
+      if (typeof callGAS === 'function') {
+        updated = await callGAS('manageMaster', {
+          masterType: 'fertilizer',
+          manageAction: 'add',
+          value: { name: name },
+          userName: fertUserName_()
+        });
+      }
+      if (Array.isArray(updated)) {
+        setFertilizerList_(updated);
+      } else {
+        const list = fertilizerListRaw_().slice();
+        list.push({ id: 'local_' + Date.now(), name: name });
+        setFertilizerList_(list);
+      }
+      if (window._fertCalcState && window._fertCalcState.editing && rowIdx != null && rowIdx !== '') {
+        const settings = getSettings_();
+        const key = rateKey_(window._fertCalcState.crop, window._fertCalcState.method);
+        const rows = Array.isArray(settings.rates[key]) ? settings.rates[key] : [];
+        const idx = Number(rowIdx);
+        if (rows[idx]) {
+          const matched = fertilizerOptions_().find(function (f) { return f.name === name; });
+          rows[idx].fertilizerName = name;
+          rows[idx].fertilizerId = matched ? matched.id : '';
+          settings.rates[key] = rows;
+          window._fertRateSettings = settings;
+        }
+      }
+      if (document.getElementById('fertilizerCalcModal')) render_();
+      if (document.getElementById('fertCalcFertNameManageModal')) showFertNameManageModal_();
+      if (typeof customAlert === 'function') customAlert('✅ 肥料名「' + name + '」を追加しました。');
+    } catch (e) {
+      if (typeof customAlert === 'function') customAlert((e && e.message) || '追加に失敗しました。');
+    }
+  };
+
+  window.fertCalcEditFertilizerName = async function (idx) {
+    const items = fertilizerOptions_();
+    const target = items[Number(idx)];
+    if (!target) return;
+    const inputName = (typeof customPrompt === 'function')
+      ? await customPrompt('肥料名を編集:', target.name)
+      : prompt('肥料名を編集:', target.name);
+    if (inputName == null) return;
+    const newName = String(inputName).trim();
+    if (!newName || newName === target.name) return;
+    const dup = items.some(function (f, i) {
+      return i !== Number(idx) && f.name === newName;
+    });
+    if (dup) {
+      if (typeof customAlert === 'function') customAlert('同じ肥料名が既に登録されています。');
+      return;
+    }
+    try {
+      const rawList = fertilizerListRaw_();
+      const full = rawList.find(function (f) {
+        return String((f && f.id) || '') === target.id || String((f && f.name) || '') === target.name;
+      }) || { name: target.name };
+      let updated = null;
+      if (typeof callGAS === 'function' && target.id) {
+        updated = await callGAS('manageMaster', {
+          masterType: 'fertilizer',
+          manageAction: 'edit',
+          value: {
+            id: target.id,
+            newData: Object.assign({}, full, { name: newName })
+          },
+          userName: fertUserName_()
+        });
+      }
+      if (Array.isArray(updated)) {
+        setFertilizerList_(updated);
+      } else {
+        setFertilizerList_(rawList.map(function (f) {
+          if (String((f && f.id) || '') === target.id || String((f && f.name) || '') === target.name) {
+            return Object.assign({}, f, { name: newName });
+          }
+          return f;
+        }));
+      }
+      renameFertilizerInRates_(target.name, newName);
+      if (document.getElementById('fertilizerCalcModal')) render_();
+      showFertNameManageModal_();
+      if (typeof customAlert === 'function') customAlert('✅ 肥料名を「' + newName + '」に更新しました。');
+    } catch (e) {
+      if (typeof customAlert === 'function') customAlert((e && e.message) || '編集に失敗しました。');
+    }
+  };
+
+  window.fertCalcDeleteFertilizerName = async function (idx) {
+    const items = fertilizerOptions_();
+    const target = items[Number(idx)];
+    if (!target) return;
+    const ok = (typeof customConfirm === 'function')
+      ? await customConfirm('肥料名「' + target.name + '」を削除しますか？\n※肥料マスタから削除されます。')
+      : confirm('肥料名「' + target.name + '」を削除しますか？');
+    if (!ok) return;
+    try {
+      let updated = null;
+      if (typeof callGAS === 'function' && target.id) {
+        updated = await callGAS('manageMaster', {
+          masterType: 'fertilizer',
+          manageAction: 'delete',
+          value: { id: target.id },
+          userName: fertUserName_()
+        });
+      }
+      if (Array.isArray(updated)) {
+        setFertilizerList_(updated);
+      } else {
+        setFertilizerList_(fertilizerListRaw_().filter(function (f) {
+          return String((f && f.id) || '') !== target.id && String((f && f.name) || '') !== target.name;
+        }));
+      }
+      clearFertilizerFromRates_(target.name);
+      if (document.getElementById('fertilizerCalcModal')) render_();
+      showFertNameManageModal_();
+      if (typeof customAlert === 'function') customAlert('✅ 肥料名「' + target.name + '」を削除しました。');
+    } catch (e) {
+      if (typeof customAlert === 'function') customAlert((e && e.message) || '削除に失敗しました。');
     }
   };
 })();
