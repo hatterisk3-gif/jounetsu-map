@@ -1000,7 +1000,7 @@ pdl.signLinks = {};
     if (macSh) {
       const md = macSh.getDataRange().getValues();
       for (let i = 1; i < md.length; i++) {
-        if (md[i][1]) {
+        if (md[i][0] || md[i][1]) {
           try { pdl.machines.push(parseNoukiMachineRow(md[i])); } catch (rowErr) {
             console.warn('農機行スキップ:', md[i][0], rowErr);
           }
@@ -1344,9 +1344,9 @@ function ensureMachineTypeMasterSheet_() {
     const fromMachines = [];
     if (macSh && macSh.getLastRow() > 1) {
       const md = macSh.getDataRange().getValues();
-      // 機種（機械カテゴリ）列 AA = index 26
+      // 機種列 B = index 1
       for (let i = 1; i < md.length; i++) {
-        const t = String(md[i][26] || '').trim();
+        const t = String(md[i][1] || '').trim();
         if (t && fromMachines.indexOf(t) < 0) fromMachines.push(t);
       }
     }
@@ -1379,9 +1379,9 @@ function ensureHitchTypeMasterSheet_() {
     const fromMachines = [];
     if (macSh && macSh.getLastRow() > 1) {
       const md = macSh.getDataRange().getValues();
-      // ヒッチ規格列 AG = index 32
+      // ヒッチ規格列 H = index 7
       for (let i = 1; i < md.length; i++) {
-        const h = String(md[i][32] || '').trim();
+        const h = String(md[i][7] || '').trim();
         if (h && fromMachines.indexOf(h) < 0) fromMachines.push(h);
       }
     }
@@ -1429,9 +1429,9 @@ function ensureMachineGroupMasterSheet_() {
     const fromMachines = [];
     if (macSh && macSh.getLastRow() > 1) {
       const md = macSh.getDataRange().getValues();
-      // 機械グループ列 = index 25
+      // 機械グループ列 E = index 4
       for (let i = 1; i < md.length; i++) {
-        const g = String(md[i][25] || '').trim();
+        const g = String(md[i][4] || '').trim();
         if (g && fromMachines.indexOf(g) < 0) fromMachines.push(g);
       }
     }
@@ -8973,7 +8973,7 @@ function addMachineToSign(params) {
   const signId = params.signId || "";
   const fuel = params.fuel || params.fuelType || "";
   
-  // A–R + S–Y(空) + Z以降(統一拡張列)
+  // A–U スリム21列
   const row = buildNoukiMachineRow({
     id: newId,
     name: params.name,
@@ -8999,16 +8999,15 @@ function addMachineToSign(params) {
     type: params.type || "",
     location: params.location || "",
     status: params.status || "使用可能",
-    lat: params.lat || "",
-    lng: params.lng || "",
-    maintenanceSettings: params.maintenanceSettings || [],
     hitch: params.hitch || ""
   });
   // appendRow はシート列幅と不一致で失敗することがあるため明示範囲に書く
   const nextRow = sheet.getLastRow() + 1;
   sheet.getRange(nextRow, 1, 1, row.length).setValues([row]);
 
-  writeLog(params.userName, "農機新規登録", params.name, `定位置: ${signName}`);
+  const displayName = buildNoukiDisplayName_(params.type || '', params.model || params.modelType || '', params.machineNumber || params.serialNo || '')
+    || params.name || newId;
+  writeLog(params.userName, "農機新規登録", displayName, `定位置: ${signName}`);
   
   return parseNoukiMachineRow(row);
 }
@@ -9042,34 +9041,37 @@ function addMachinePart(params) {
   if(!sheet) throw new Error("農機マスタシートがありません");
   
   const data = sheet.getDataRange().getValues();
+  const partsCol = NOUKI_COL.parts; // P列
+  const partsIdx = partsCol - 1;
   let updatedCount = 0;
   for(let i=1; i<data.length; i++) {
     const rowId = String(data[i][0] || "");
-    const rowCat = String(data[i][2] || "");
+    const rowType = String(data[i][NOUKI_COL.type - 1] || "");
+    const rowGroup = String(data[i][NOUKI_COL.group - 1] || "");
     const matchId = params.machineId && rowId === String(params.machineId);
-    const matchCat = params.category && rowCat === String(params.category);
+    const matchCat = params.category && (rowType === String(params.category) || rowGroup === String(params.category));
     
     if (matchId || matchCat || (!params.machineId && !params.category)) {
       if (params.fullParts != null) {
-        sheet.getRange(i+1, 12).setValue(String(params.fullParts || ""));
+        sheet.getRange(i+1, partsCol).setValue(String(params.fullParts || ""));
         updatedCount++;
       } else if (params.oldPart && params.newPart) {
-        let parts = String(data[i][11] || "").split(/[,、]/).map(p => p.trim()).filter(Boolean);
+        let parts = String(data[i][partsIdx] || "").split(/[,、]/).map(p => p.trim()).filter(Boolean);
         const idx = parts.indexOf(params.oldPart);
         if (idx !== -1) {
           parts[idx] = params.newPart;
-          sheet.getRange(i+1, 12).setValue(parts.join(','));
+          sheet.getRange(i+1, partsCol).setValue(parts.join(','));
           updatedCount++;
         }
       } else if (params.deletePart) {
-        let parts = String(data[i][11] || "").split(/[,、]/).map(p => p.trim()).filter(p => p && p !== params.deletePart);
-        sheet.getRange(i+1, 12).setValue(parts.join(','));
+        let parts = String(data[i][partsIdx] || "").split(/[,、]/).map(p => p.trim()).filter(p => p && p !== params.deletePart);
+        sheet.getRange(i+1, partsCol).setValue(parts.join(','));
         updatedCount++;
       } else if (params.newPart) {
-        let parts = String(data[i][11] || "").split(/[,、]/).map(p => p.trim()).filter(Boolean);
+        let parts = String(data[i][partsIdx] || "").split(/[,、]/).map(p => p.trim()).filter(Boolean);
         if (!parts.includes(params.newPart)) {
           parts.push(params.newPart);
-          sheet.getRange(i+1, 12).setValue(parts.join(','));
+          sheet.getRange(i+1, partsCol).setValue(parts.join(','));
           updatedCount++;
         }
       }
@@ -9086,34 +9088,37 @@ function addMachineSymptom(params) {
   if(!sheet) throw new Error("農機マスタシートがありません");
   
   const data = sheet.getDataRange().getValues();
+  const symCol = NOUKI_COL.symptoms; // O列
+  const symIdx = symCol - 1;
   let updatedCount = 0;
   for(let i=1; i<data.length; i++) {
     const rowId = String(data[i][0] || "");
-    const rowCat = String(data[i][2] || "");
+    const rowType = String(data[i][NOUKI_COL.type - 1] || "");
+    const rowGroup = String(data[i][NOUKI_COL.group - 1] || "");
     const matchId = params.machineId && rowId === String(params.machineId);
-    const matchCat = params.category && rowCat === String(params.category);
+    const matchCat = params.category && (rowType === String(params.category) || rowGroup === String(params.category));
     
     if (matchId || matchCat || (!params.machineId && !params.category)) {
       if (params.fullSymptoms != null) {
-        sheet.getRange(i+1, 15).setValue(String(params.fullSymptoms || ""));
+        sheet.getRange(i+1, symCol).setValue(String(params.fullSymptoms || ""));
         updatedCount++;
       } else if (params.oldSymptom && params.newSymptom) {
-        let symps = String(data[i][14] || "").split(/[,、]/).map(s => s.trim()).filter(Boolean);
+        let symps = String(data[i][symIdx] || "").split(/[,、]/).map(s => s.trim()).filter(Boolean);
         const idx = symps.indexOf(params.oldSymptom);
         if (idx !== -1) {
           symps[idx] = params.newSymptom;
-          sheet.getRange(i+1, 15).setValue(symps.join(','));
+          sheet.getRange(i+1, symCol).setValue(symps.join(','));
           updatedCount++;
         }
       } else if (params.deleteSymptom) {
-        let symps = String(data[i][14] || "").split(/[,、]/).map(s => s.trim()).filter(s => s && s !== params.deleteSymptom);
-        sheet.getRange(i+1, 15).setValue(symps.join(','));
+        let symps = String(data[i][symIdx] || "").split(/[,、]/).map(s => s.trim()).filter(s => s && s !== params.deleteSymptom);
+        sheet.getRange(i+1, symCol).setValue(symps.join(','));
         updatedCount++;
       } else if (params.newSymptom) {
-        let symps = String(data[i][14] || "").split(/[,、]/).map(s => s.trim()).filter(Boolean);
+        let symps = String(data[i][symIdx] || "").split(/[,、]/).map(s => s.trim()).filter(Boolean);
         if (!symps.includes(params.newSymptom)) {
           symps.push(params.newSymptom);
-          sheet.getRange(i+1, 15).setValue(symps.join(','));
+          sheet.getRange(i+1, symCol).setValue(symps.join(','));
           updatedCount++;
         }
       }
@@ -9127,7 +9132,7 @@ function addMachineSymptom(params) {
 function addMachineMaintenanceContent(params) {
   const sheet = ensureNoukiMasterSheet();
   const data = sheet.getDataRange().getValues();
-  const col = 34; // AH列: 整備内容候補
+  const col = NOUKI_COL.maintenanceContents; // Q列: 整備内容候補
   const idx = col - 1;
   let updatedCount = 0;
   for (let i = 1; i < data.length; i++) {
@@ -16215,30 +16220,70 @@ function getOrCreateSheet(sheetName, headers) {
 }
 
 // ==========================================
-// 農機マスタ（機械管理と統一）ヘルパー
-// 列: A–R 既存 / S–Y(19–25) 未使用整備系 / Z–AF(26–32) 統一拡張 / AG(33) ヒッチ規格
+// 農機マスタ（スリム21列）
+// A ID / B 機種 / C 型式 / D 機械番号 / E 機械グループ / F 作業分類 / G 燃料 / H ヒッチ規格
+// I 写真 / J 写真2 / K 場所看板名 / L 場所看板id / M 現在地 / N 現在地ID
+// O 症状名 / P 部品名 / Q 整備内容候補 / R 稼働状況 / S 登録者 / T 購入年月日 / U 対応農機ID
 // ==========================================
 const NOUKI_EXT_HEADERS = [
-  'ID', '農機名', '型式', '作業分類', '写真', '写真2', '場所看板名', '場所看板id', '分類', '購入年月日',
-  '登録者', '部品名', '現在地', '現在地看板id', '症状名', '対応農機ID', '燃料', '機械番号',
-  '整備月', '説明書URL', '定期整備名', '整備時間1', '整備1', '整備時間2', '整備2',
-  '機械グループ', '機種', '拠点', '稼働状況', 'lat', 'lng', 'maintenanceSettings', 'ヒッチ規格',
-  '整備内容候補', '給油確認項目'
+  'ID', '機種', '型式', '機械番号', '機械グループ', '作業分類', '燃料', 'ヒッチ規格',
+  '写真', '写真2', '場所看板名', '場所看板id', '現在地', '現在地ID',
+  '症状名', '部品名', '整備内容候補', '稼働状況', '登録者', '購入年月日', '対応農機ID'
 ];
+
+/** 1-based 列番号（新レイアウト） */
+const NOUKI_COL = {
+  id: 1,
+  type: 2,
+  model: 3,
+  machineNumber: 4,
+  group: 5,
+  workCategory: 6,
+  fuel: 7,
+  hitch: 8,
+  photo: 9,
+  photo2: 10,
+  signName: 11,
+  signId: 12,
+  currentLocName: 13,
+  currentLocId: 14,
+  symptoms: 15,
+  parts: 16,
+  maintenanceContents: 17,
+  status: 18,
+  userName: 19,
+  purchaseDate: 20,
+  targetMachineIds: 21
+};
+
+function buildNoukiDisplayName_(type, model, number) {
+  const typePart = String(type || '').trim();
+  const modelPart = String(model || '').trim();
+  let numPart = String(number || '').trim();
+  if (numPart && !/^no\.?/i.test(numPart)) numPart = 'No.' + numPart;
+  return [typePart, modelPart, numPart].filter(Boolean).join(' ');
+}
 
 function ensureNoukiMasterSheet() {
   let sheet = TENANT_SS.getSheetByName('農機マスタ');
   if (!sheet) {
     sheet = TENANT_SS.insertSheet('農機マスタ');
-    // appendRow はシート列幅と不一致で落ちることがあるため setValues を使う
     sheet.getRange(1, 1, 1, NOUKI_EXT_HEADERS.length).setValues([NOUKI_EXT_HEADERS]);
     try { sheet.getRange(1, 1, 1, NOUKI_EXT_HEADERS.length).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) {}
     return sheet;
   }
-  // 不足ヘッダーは1セルずつ埋める（「data has 7 / range has 32」列数不一致を避ける）
   const needed = NOUKI_EXT_HEADERS.length;
   let lastCol = 1;
   try { lastCol = Math.max(sheet.getLastColumn(), 1); } catch (e) { lastCol = 1; }
+  let headerB = '';
+  try { headerB = String(sheet.getRange(1, 2).getValue() || '').trim(); } catch (e) {}
+  if (headerB === '農機名' || headerB === '') {
+    try {
+      sheet.getRange(1, 1, 1, needed).setValues([NOUKI_EXT_HEADERS]);
+      sheet.getRange(1, 1, 1, needed).setFontWeight('bold').setBackground('#e0e0e0');
+    } catch (e) {}
+    return sheet;
+  }
   for (let c = 1; c <= needed; c++) {
     let current = '';
     try {
@@ -16252,44 +16297,57 @@ function ensureNoukiMasterSheet() {
 }
 
 function parseNoukiMachineRow(row) {
-  let settings = [];
-  try { settings = JSON.parse(row[31] || '[]'); } catch (e) { settings = []; }
-  if (!Array.isArray(settings)) settings = [];
-  const model = String(row[2] || "").trim();
-  const fuel = String(row[16] || "").trim();
-  const machineNumber = String(row[17] || "").trim();
-  const latRaw = row[29];
-  const lngRaw = row[30];
+  const type = String(row[1] || '').trim();
+  const model = String(row[2] || '').trim();
+  const machineNumber = String(row[3] || '').trim();
+  const group = String(row[4] || '').trim();
+  const workCategory = String(row[5] || '').trim();
+  const fuel = String(row[6] || '').trim();
+  const hitch = String(row[7] || '').trim();
+  const photo = String(row[8] || '').trim();
+  const photo2 = String(row[9] || '').trim();
+  const signName = String(row[10] || '').trim();
+  const signId = String(row[11] || '').trim();
+  const currentLocName = String(row[12] || signName || '').trim();
+  const currentLocId = String(row[13] || signId || '').trim();
+  const symptoms = String(row[14] || '').trim();
+  const parts = String(row[15] || '').trim();
+  const maintenanceContents = String(row[16] || '').trim();
+  const status = String(row[17] || '使用可能').trim() || '使用可能';
+  const userName = String(row[18] || '').trim();
+  const purchaseDate = String(row[19] || '').trim();
+  const targetMachineIds = String(row[20] || '').trim();
+  const displayName = buildNoukiDisplayName_(type, model, machineNumber);
   return {
-    id: String(row[0] || "").trim(),
-    name: String(row[1] || "").trim(),
+    id: String(row[0] || '').trim(),
+    name: displayName || type || model || machineNumber,
+    type: type,
     model: model,
-    workCategory: String(row[3] || ""),
-    photo: String(row[4] || ""),
-    photo2: String(row[5] || ""),
-    signName: String(row[6] || ""),
-    signId: String(row[7] || ""),
-    category: String(row[8] || ""),
-    purchaseDate: String(row[9] || "").trim(),
-    userName: String(row[10] || ""),
-    parts: String(row[11] || ""),
-    currentLocName: String(row[12] || row[6] || ""),
-    currentLocId: String(row[13] || row[7] || ""),
-    symptoms: String(row[14] || ""),
-    targetMachineIds: String(row[15] || ""),
-    fuel: fuel,
     machineNumber: machineNumber,
-    group: String(row[25] || ""),
-    type: String(row[26] || ""),
-    location: String(row[27] || ""),
-    status: String(row[28] || "使用可能") || "使用可能",
-    lat: (latRaw !== "" && latRaw != null) ? latRaw : null,
-    lng: (lngRaw !== "" && lngRaw != null) ? lngRaw : null,
-    maintenanceSettings: settings,
-    hitch: String(row[32] || "").trim(),
-    maintenanceContents: String(row[33] || ""),
-    fuelChecks: String(row[34] || ""),
-    // 互換エイリアス（旧 MachineMaster / machine.js）
+    group: group,
+    mainCategory: group,
+    workCategory: workCategory,
+    fuel: fuel,
+    hitch: hitch,
+    photo: photo,
+    photo2: photo2,
+    signName: signName,
+    signId: signId,
+    currentLocName: currentLocName,
+    currentLocId: currentLocId,
+    symptoms: symptoms,
+    parts: parts,
+    maintenanceContents: maintenanceContents,
+    status: status,
+    userName: userName,
+    purchaseDate: purchaseDate,
+    targetMachineIds: targetMachineIds,
+    category: group || workCategory,
+    location: signName,
+    lat: null,
+    lng: null,
+    maintenanceSettings: [],
+    fuelChecks: '',
     modelType: model,
     fuelType: fuel,
     serialNo: machineNumber
@@ -16297,40 +16355,40 @@ function parseNoukiMachineRow(row) {
 }
 
 function buildNoukiMachineRow(m) {
-  const model = m.model != null ? m.model : (m.modelType || "");
-  const fuel = m.fuel != null ? m.fuel : (m.fuelType || "");
-  const machineNumber = m.machineNumber != null ? m.machineNumber : (m.serialNo || "");
-  const signName = m.signName || "";
-  const signId = m.signId || "";
+  const type = String(m.type || '').trim();
+  const model = m.model != null ? String(m.model) : String(m.modelType || '');
+  const machineNumber = m.machineNumber != null ? String(m.machineNumber) : String(m.serialNo || '');
+  const group = String(m.group || m.mainCategory || '').trim();
+  const signName = String(m.signName || m.location || '').trim();
+  const signId = String(m.signId || '').trim();
+  const currentLocName = m.currentLocName != null && String(m.currentLocName).trim()
+    ? String(m.currentLocName).trim()
+    : signName;
+  const currentLocId = m.currentLocId != null && String(m.currentLocId).trim()
+    ? String(m.currentLocId).trim()
+    : signId;
   return [
-    m.id || "",
-    m.name || "",
+    m.id || '',
+    type,
     model,
-    m.workCategory || "",
-    m.photo || "",
-    m.photo2 || "",
+    machineNumber,
+    group,
+    m.workCategory || '',
+    (m.fuel != null ? m.fuel : (m.fuelType || '')),
+    m.hitch || '',
+    m.photo || '',
+    m.photo2 || '',
     signName,
     signId,
-    m.category || "",
-    m.purchaseDate || "",
-    m.userName || "",
-    m.parts || "",
-    m.currentLocName != null ? m.currentLocName : signName,
-    m.currentLocId != null ? m.currentLocId : signId,
-    m.symptoms || "",
-    m.targetMachineIds || "",
-    fuel,
-    machineNumber,
-    "", "", "", "", "", "", "", // S–Y (19–25) 未使用
-    m.group || "",
-    m.type || "",
-    m.location || "",
-    m.status || "使用可能",
-    (m.lat != null && m.lat !== "") ? m.lat : "",
-    (m.lng != null && m.lng !== "") ? m.lng : "",
-    typeof m.maintenanceSettings === "string" ? m.maintenanceSettings : JSON.stringify(m.maintenanceSettings || []),
-    m.hitch || "",
-    m.maintenanceContents || ""
+    currentLocName,
+    currentLocId,
+    m.symptoms || '',
+    m.parts || '',
+    m.maintenanceContents || '',
+    m.status || '使用可能',
+    m.userName || '',
+    m.purchaseDate || '',
+    m.targetMachineIds || ''
   ];
 }
 
@@ -16350,9 +16408,9 @@ function migrateMachineMasterToNouki() {
   const existingKeys = {};
   const existingIds = {};
   for (let i = 1; i < noukiData.length; i++) {
-    if (!noukiData[i][1]) continue;
+    if (!noukiData[i][0] && !noukiData[i][1]) continue;
     existingIds[String(noukiData[i][0])] = true;
-    const key = [String(noukiData[i][1] || "").trim(), String(noukiData[i][2] || "").trim(), String(noukiData[i][17] || "").trim()].join('|');
+    const key = [String(noukiData[i][1] || "").trim(), String(noukiData[i][2] || "").trim(), String(noukiData[i][3] || "").trim()].join('|');
     existingKeys[key] = true;
   }
   const oldData = oldSheet.getDataRange().getValues();
@@ -16366,7 +16424,8 @@ function migrateMachineMasterToNouki() {
     try { settings = JSON.parse(oldData[i][12] || '[]'); } catch (e) {}
     const model = String(oldData[i][6] || "").trim();
     const machineNumber = String(oldData[i][8] || "").trim();
-    const key = [name, model, machineNumber].join('|');
+    const type = String(oldData[i][7] || "").trim() || name;
+    const key = [type, model, machineNumber].join('|');
     if (existingIds[oldId] || existingKeys[key]) continue;
     const newId = oldId.indexOf('MAC-') === 0 ? oldId : ('MAC-' + Utilities.getUuid().substring(0, 8));
     const row = buildNoukiMachineRow({
@@ -16377,17 +16436,14 @@ function migrateMachineMasterToNouki() {
       photo: oldData[i][4] || "",
       purchaseDate: oldData[i][5] || "",
       model: model,
-      type: oldData[i][7] || "",
+      type: type,
       machineNumber: machineNumber,
       status: oldData[i][9] || "使用可能",
-      lat: oldData[i][10] || "",
-      lng: oldData[i][11] || "",
-      maintenanceSettings: settings,
       fuel: oldData[i][13] || "",
       workCategory: "",
-      signName: "",
+      signName: oldData[i][3] || "",
       signId: "",
-      currentLocName: "",
+      currentLocName: oldData[i][3] || "",
       currentLocId: ""
     });
     const nextRow = nouki.getLastRow() + 1;
@@ -16409,7 +16465,6 @@ function machine_loadAll() {
   let mData = masterSheet.getDataRange().getValues();
   for (let i = 1; i < mData.length; i++) {
     if (!mData[i][0] && !mData[i][1]) continue;
-    if (!mData[i][1]) continue;
     const m = parseNoukiMachineRow(mData[i]);
     if (m.id) machines[m.id] = m;
   }
@@ -16500,26 +16555,30 @@ function updateNoukiMachineField(machineId, colIndex, value) {
 }
 
 function machine_saveStatus(p) {
-  updateNoukiMachineField(p.id, 29, p.status); // AC列: 稼働状況
+  updateNoukiMachineField(p.id, NOUKI_COL.status, p.status); // R列: 稼働状況
   return { success: true };
 }
 
 function machine_saveLocation(p) {
-  const sheet = ensureNoukiMasterSheet();
-  const rowIdx = findNoukiMachineRowIndex(sheet, p.id);
-  if (rowIdx === -1) return { success: false };
-  sheet.getRange(rowIdx, 30).setValue(p.lat); // AD: lat
-  sheet.getRange(rowIdx, 31).setValue(p.lng); // AE: lng
+  // lat/lng列は廃止。現在地があれば M/N に保存
+  if (p.currentLocName != null || p.currentLocId != null || p.signName != null || p.signId != null) {
+    if (p.currentLocName != null || p.signName != null) {
+      updateNoukiMachineField(p.id, NOUKI_COL.currentLocName, p.currentLocName != null ? p.currentLocName : (p.signName || ''));
+    }
+    if (p.currentLocId != null || p.signId != null) {
+      updateNoukiMachineField(p.id, NOUKI_COL.currentLocId, p.currentLocId != null ? p.currentLocId : (p.signId || ''));
+    }
+  }
   return { success: true };
 }
 
 function machine_saveMaintenanceSetting(p) {
-  updateNoukiMachineField(p.id, 32, JSON.stringify(p.maintenanceSettings || [])); // AF
-  return { success: true };
+  // maintenanceSettings列は廃止（互換のため成功のみ返す）
+  return { success: true, skipped: true };
 }
 
 function machine_saveFuelType(p) {
-  updateNoukiMachineField(p.id, 17, p.fuel || p.fuelType || ""); // Q: 燃料
+  updateNoukiMachineField(p.id, NOUKI_COL.fuel, p.fuel || p.fuelType || ""); // G列: 燃料
   return { success: true };
 }
 

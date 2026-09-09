@@ -574,6 +574,130 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           }
       }
 
+    // ── InitData キャッシュの安全な読み書き（容量超過・破損・欠損に耐える）──
+      window.isUsablePassionMapInitCache_ = (data) => {
+          return !!(data && data.pdl && typeof data.pdl === 'object');
+      };
+
+      window.parsePassionMapInitCache_ = (raw) => {
+          if (!raw || typeof raw !== 'string') return null;
+          try {
+              const data = JSON.parse(raw);
+              if (!window.isUsablePassionMapInitCache_(data)) return null;
+              if (!Array.isArray(data.polygons)) data.polygons = [];
+              return data;
+          } catch (e) {
+              console.warn('passionMapInitData parse failed', e);
+              return null;
+          }
+      };
+
+      window.stripInitCacheForQuota_ = (data) => {
+          try {
+              const slim = JSON.parse(JSON.stringify(data));
+              if (Array.isArray(slim.polygons)) {
+                  slim.polygons.forEach((p) => {
+                      if (!p || !Array.isArray(p.photos)) return;
+                      p.photos = p.photos.map((ph) => {
+                          if (!ph || typeof ph !== 'object') return ph;
+                          const copy = Object.assign({}, ph);
+                          if (copy.url && String(copy.url).indexOf('data:') === 0) copy.url = '';
+                          if (copy.photoBase64) delete copy.photoBase64;
+                          if (copy.data && typeof copy.data === 'object') {
+                              copy.data = Object.assign({}, copy.data);
+                              if (copy.data.photoBase64) delete copy.data.photoBase64;
+                          }
+                          return copy;
+                      });
+                  });
+              }
+              return slim;
+          } catch (e) {
+              return data;
+          }
+      };
+
+      window.savePassionMapInitCache_ = (data) => {
+          if (!window.isUsablePassionMapInitCache_(data)) return false;
+          try {
+              localStorage.setItem('passionMapInitData', JSON.stringify(data));
+              return true;
+          } catch (e1) {
+              console.warn('passionMapInitData save failed, retrying slim', e1);
+              try {
+                  const slim = window.stripInitCacheForQuota_(data);
+                  localStorage.setItem('passionMapInitData', JSON.stringify(slim));
+                  return true;
+              } catch (e2) {
+                  console.warn('passionMapInitData save failed (quota)', e2);
+                  return false;
+              }
+          }
+      };
+
+      /** マスタ更新後にキャッシュを消さず、メモリ上の PDL をキャッシュへ反映する */
+      window.syncLivePdlIntoInitCache_ = () => {
+          try {
+              const raw = localStorage.getItem('passionMapInitData');
+              if (!raw) return false;
+              const cache = window.parsePassionMapInitCache_(raw);
+              if (!cache) return false;
+              if (!cache.pdl) cache.pdl = {};
+              const p = cache.pdl;
+              try { if (typeof pdlLocations !== 'undefined') p.locations = pdlLocations; } catch (e) {}
+              try { if (typeof pdlCrops !== 'undefined') p.crops = pdlCrops; } catch (e) {}
+              try { if (typeof pdlStages !== 'undefined') p.stages = pdlStages; } catch (e) {}
+              try { if (typeof pdlWorkMaster !== 'undefined') p.workMaster = pdlWorkMaster; } catch (e) {}
+              try { if (typeof pdlWorkStatuses !== 'undefined') p.workStatuses = pdlWorkStatuses; } catch (e) {}
+              try { if (typeof pdlContainerNames !== 'undefined') p.containerNames = pdlContainerNames; } catch (e) {}
+              try { if (typeof pdlContainers !== 'undefined') p.containers = pdlContainers; } catch (e) {}
+              try { if (typeof pdlTools !== 'undefined') p.tools = pdlTools; } catch (e) {}
+              try { if (typeof pdlMaterials !== 'undefined') p.materials = pdlMaterials; } catch (e) {}
+              try { if (typeof pdlMachines !== 'undefined') p.machines = pdlMachines; } catch (e) {}
+              try { if (typeof pdlPesticides !== 'undefined') p.pesticides = pdlPesticides; } catch (e) {}
+              try { if (typeof pdlSymptoms !== 'undefined') p.symptoms = pdlSymptoms; } catch (e) {}
+              try { if (typeof pdlFertilizers !== 'undefined') p.fertilizers = pdlFertilizers; } catch (e) {}
+              try { if (typeof pdlWorkCategories !== 'undefined') p.workCategories = pdlWorkCategories; } catch (e) {}
+              try { if (typeof pdlMachineTypes !== 'undefined') p.machineTypes = pdlMachineTypes; } catch (e) {}
+              try { if (typeof pdlMachineGroups !== 'undefined') p.machineGroups = pdlMachineGroups; } catch (e) {}
+              try {
+                  if (Array.isArray(window.pdlMobileVehicles)) p.mobileVehicles = window.pdlMobileVehicles;
+              } catch (e) {}
+              try {
+                  if (Array.isArray(window.pdlVehicleTypes)) p.vehicleTypes = window.pdlVehicleTypes;
+              } catch (e) {}
+              try {
+                  if (Array.isArray(window.pdlHitchTypes)) p.hitchTypes = window.pdlHitchTypes;
+              } catch (e) {}
+              try {
+                  if (Array.isArray(window.pdlMaintenanceContents)) p.maintenanceContents = window.pdlMaintenanceContents;
+              } catch (e) {}
+              try {
+                  if (Array.isArray(window.pdlDeliveryDestinations)) p.deliveryDestinations = window.pdlDeliveryDestinations;
+              } catch (e) {}
+              return window.savePassionMapInitCache_(cache);
+          } catch (e) {
+              console.warn('syncLivePdlIntoInitCache_ failed', e);
+              return false;
+          }
+      };
+
+      window.whenWorkerMapReady_ = (fn, timeoutMs) => {
+          const done = typeof fn === 'function' ? fn : () => {};
+          const limit = typeof timeoutMs === 'number' ? timeoutMs : 2500;
+          const start = Date.now();
+          const tick = () => {
+              const ready = !!(typeof map !== 'undefined' && map
+                  && typeof google !== 'undefined' && google.maps);
+              if (ready || (Date.now() - start) >= limit) {
+                  done(ready);
+                  return;
+              }
+              requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+      };
+
     // 🌟 2. データの取得とキャッシュ保存（超軽量化＆SWRバックグラウンド更新版！） 🌟
       function loadInitData(options = {}) {
           const background = !!options.background;
@@ -646,7 +770,11 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   // 変更があった場合のみ保存して再描画
                   if (data) {
                       changed = true;
-                      localStorage.setItem('passionMapInitData', newDataStr);
+                      if (typeof window.savePassionMapInitCache_ === 'function') {
+                          window.savePassionMapInitCache_(data);
+                      } else {
+                          try { localStorage.setItem('passionMapInitData', newDataStr); } catch (eSave) {}
+                      }
                       if (appLoad) appLoad.update({ detail: '地図を描画しています', current: 3 });
                       renderInitData(data);
                       if (background && typeof window.scheduleStartupRecordSync_ === 'function') {
@@ -718,7 +846,11 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
             }
             g.photos = loadedPolygons['__global__'].photos || [];
           }
-          localStorage.setItem('passionMapInitData', JSON.stringify(cache));
+          if (typeof window.savePassionMapInitCache_ === 'function') {
+            window.savePassionMapInitCache_(cache);
+          } else {
+            localStorage.setItem('passionMapInitData', JSON.stringify(cache));
+          }
         } catch (e) {}
       };
 
@@ -821,7 +953,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
               pdlMachineGroups = data.pdl.machineCategories;
           }
           if (window.MachineTaxonomy && typeof MachineTaxonomy.migrateGroupList === 'function') {
-            pdlMachineGroups = MachineTaxonomy.migrateGroupList(pdlMachineGroups);
+            try { pdlMachineGroups = MachineTaxonomy.migrateGroupList(pdlMachineGroups); } catch (eMig) {}
           }
           window.pdlVehicleTypes = (data.pdl && Array.isArray(data.pdl.vehicleTypes) && data.pdl.vehicleTypes.length)
             ? data.pdl.vehicleTypes.slice()
@@ -840,17 +972,22 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           
           if (data.polygons) {
               data.polygons.forEach(f => {
-                  const linkedSigns = window.pdlSignLinks[f.id] || ""; // ★看板マスタにセット
-                  // ★修正：f.location や f.signFunction など、元の変数名に完全一致させました！
-                  createPolygonObject(f.id, f.name, f.coords, f.color, f.photos, f.author, f.location, f.condition, f.area, f.status, f.signFunction, linkedSigns);
-                  if (loadedPolygons[f.id] && !loadedPolygons[f.id].isMarker) {
-                      loadedPolygons[f.id].uneSimData = f.uneSimData || '';
-                      loadedPolygons[f.id].water_status = f.water_status || 'stopped';
-                      loadedPolygons[f.id].drainage_status = f.drainage_status || '';
-                      loadedPolygons[f.id].soilType = f.soilType || '';
+                  if (!f || f.id == null) return;
+                  try {
+                      const linkedSigns = window.pdlSignLinks[f.id] || ""; // ★看板マスタにセット
+                      // ★修正：f.location や f.signFunction など、元の変数名に完全一致させました！
+                      createPolygonObject(f.id, f.name, f.coords, f.color, f.photos, f.author, f.location, f.condition, f.area, f.status, f.signFunction, linkedSigns);
+                      if (loadedPolygons[f.id] && !loadedPolygons[f.id].isMarker) {
+                          loadedPolygons[f.id].uneSimData = f.uneSimData || '';
+                          loadedPolygons[f.id].water_status = f.water_status || 'stopped';
+                          loadedPolygons[f.id].drainage_status = f.drainage_status || '';
+                          loadedPolygons[f.id].soilType = f.soilType || '';
+                      }
+                  } catch (polyErr) {
+                      console.warn('renderInitData polygon skip', f && f.id, polyErr);
                   }
               });
-              updateWorkerLegend();
+              try { updateWorkerLegend(); } catch (eLeg) {}
           }
           if (typeof window.restoreGlobalWorkRecordsAfterInit_ === 'function') {
             window.restoreGlobalWorkRecordsAfterInit_(prevGlobalPhotos);
@@ -1002,16 +1139,27 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
         }
       };
 
-    function createPolygonObject(id, name, coords, color, photos, author, loc, cond, area, status, signFunc, linkedSigns) { 
-        if (coords.length === 1) {
-          const marker = createSignboardMarker(name, new google.maps.LatLng(coords[0].lat, coords[0].lng), color, id);
+    function createPolygonObject(id, name, coords, color, photos, author, loc, cond, area, status, signFunc, linkedSigns) {
+        const safeCoords = Array.isArray(coords) ? coords.filter(c => c && c.lat != null && c.lng != null) : [];
+        // 座標欠損・地図未準備でも起動を落とさない
+        if (!safeCoords.length || typeof google === 'undefined' || !google.maps || !map) {
+          loadedPolygons[id] = {
+            id, name, color, photos: photos || [], author,
+            isMarker: true, location: loc, condition: cond, area, status,
+            signFunction: signFunc || '一般看板', linkedSigns: linkedSigns || "",
+            coords: safeCoords, soilType: ''
+          };
+          return;
+        }
+        if (safeCoords.length === 1) {
+          const marker = createSignboardMarker(name, new google.maps.LatLng(safeCoords[0].lat, safeCoords[0].lng), color, id);
           loadedPolygons[id] = { id, marker, name, color, photos: photos || [], author, isMarker: true, labelConfig: { text: name, color: '#333', fontSize: '13px', fontWeight: 'bold', className: 'signboard-label' }, signFunction: signFunc || '一般看板', linkedSigns: linkedSigns || "" };
         } else {
           const isUnused = (status === '未使用（返却）' || status === '未使用');
           let currentCrop = getCurrentCrop(photos);
           let dispColor = isUnused ? '#999999' : getCropColor(currentCrop);
           const polygon = new google.maps.Polygon({
-            paths: coords,
+            paths: safeCoords,
             map,
             fillColor: dispColor,
             fillOpacity: isUnused ? 0.5 : 0.5,
@@ -1020,12 +1168,12 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
             strokeWeight: 3,
             zIndex: 1
           });
-          const marker = createLabelMarker(name, coords, color, area, id);
+          const marker = createLabelMarker(name, safeCoords, color, area, id);
           
           google.maps.event.addListener(polygon, 'click', (e) => {
             handleFieldPolygonClick_(id, e);
           });
-          loadedPolygons[id] = { id, polygon, marker, name, location: loc, condition: cond, area, color, photos: photos || [], author, status, isMarker: false, coords, soilType: '' };
+          loadedPolygons[id] = { id, polygon, marker, name, location: loc, condition: cond, area, color, photos: photos || [], author, status, isMarker: false, coords: safeCoords, soilType: '' };
         }
       }
 
@@ -2763,8 +2911,9 @@ function createSignboardMarker(name, pos, icon, id) {
           });
           if (Array.isArray(updated)) pdlCrops = updated;
           else pdlCrops.push({name, density:0});
-          localStorage.removeItem('passionMapInitData');
-          localStorage.removeItem('pMapAdminInitData');
+          if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+          else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+          try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
           if (!window.selectedWorkCrops.includes(name)) {
             window.selectedWorkCrops.push(name);
           }
@@ -10309,8 +10458,9 @@ function createSignboardMarker(name, pos, icon, id) {
               work.detailWorks = detailWorks;
               work.cropDetails = cropDetails;
             }
-            localStorage.removeItem('passionMapInitData');
-            localStorage.removeItem('pMapAdminInitData');
+            if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+            else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+            try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
             window.renderWorkOptions(category, targetKeys);
             if (typeof window.selectWorkChip === 'function') window.selectWorkChip(name);
             if (typeof customAlert === 'function') {
@@ -10617,8 +10767,9 @@ function createSignboardMarker(name, pos, icon, id) {
               });
               if (Array.isArray(updated)) pdlWorkCategories = updated;
               else if (!(pdlWorkCategories || []).includes(name)) pdlWorkCategories.push(name);
-              localStorage.removeItem('passionMapInitData');
-              localStorage.removeItem('pMapAdminInitData');
+              if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+              else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+              try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
               window.refreshCategoryAndCropUiAfterMasterChange(name, null);
               if (typeof customAlert === 'function') customAlert('✅ カテゴリを追加しました！');
           } catch (e) {
@@ -10670,8 +10821,9 @@ function createSignboardMarker(name, pos, icon, id) {
                       if (String(d.prepTargetCategory || '') === original) d.prepTargetCategory = name;
                   });
               }
-              localStorage.removeItem('passionMapInitData');
-              localStorage.removeItem('pMapAdminInitData');
+              if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+              else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+              try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
               const cur = document.getElementById('rec_work_category')?.value || '';
               window.refreshCategoryAndCropUiAfterMasterChange(cur === original ? name : cur, null);
               if (typeof customAlert === 'function') customAlert('✅ カテゴリを更新しました！');
@@ -10712,8 +10864,9 @@ function createSignboardMarker(name, pos, icon, id) {
                       if (String(d.prepTargetCategory || '') === name) d.prepTargetCategory = '';
                   });
               }
-              localStorage.removeItem('passionMapInitData');
-              localStorage.removeItem('pMapAdminInitData');
+              if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+              else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+              try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
               const cur = document.getElementById('rec_work_category')?.value || '';
               window.refreshCategoryAndCropUiAfterMasterChange(cur === name ? 'すべて' : cur, null);
               if (typeof customAlert === 'function') customAlert('✅ カテゴリを削除しました！');
@@ -10804,8 +10957,9 @@ function createSignboardMarker(name, pos, icon, id) {
               });
               if (Array.isArray(updated)) pdlCrops = updated;
               else pdlCrops.push({ name, density });
-              localStorage.removeItem('passionMapInitData');
-              localStorage.removeItem('pMapAdminInitData');
+              if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+              else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+              try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
               window.refreshCategoryAndCropUiAfterMasterChange(null, name);
               if (typeof customAlert === 'function') customAlert('✅ 作物を追加しました！');
           } catch (e) {
@@ -10856,8 +11010,9 @@ function createSignboardMarker(name, pos, icon, id) {
                       }
                   });
               }
-              localStorage.removeItem('passionMapInitData');
-              localStorage.removeItem('pMapAdminInitData');
+              if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+              else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+              try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
               const cur = document.getElementById('rec_work_crop_filter')?.value || '';
               window.refreshCategoryAndCropUiAfterMasterChange(null, cur === original ? name : cur);
               if (typeof customAlert === 'function') customAlert('✅ 作物を更新しました！');
@@ -10893,8 +11048,9 @@ function createSignboardMarker(name, pos, icon, id) {
               });
               if (Array.isArray(updated)) pdlCrops = updated;
               else pdlCrops = (pdlCrops || []).filter(c => c.name !== name);
-              localStorage.removeItem('passionMapInitData');
-              localStorage.removeItem('pMapAdminInitData');
+              if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+              else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+              try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
               const cur = document.getElementById('rec_work_crop_filter')?.value || '';
               window.refreshCategoryAndCropUiAfterMasterChange(null, cur === name ? '' : cur);
               if (typeof customAlert === 'function') customAlert('✅ 作物を削除しました！');
@@ -11436,8 +11592,9 @@ function createSignboardMarker(name, pos, icon, id) {
                   if (!Array.isArray(pdlWorkCategories)) pdlWorkCategories = [];
                   pdlWorkCategories.push(name);
               }
-              localStorage.removeItem('passionMapInitData');
-              localStorage.removeItem('pMapAdminInitData');
+              if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+              else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+              try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
               if (typeof window.refreshCategoryAndCropUiAfterMasterChange === 'function') {
                   window.refreshCategoryAndCropUiAfterMasterChange(name, null);
               } else {
@@ -11485,8 +11642,9 @@ function createSignboardMarker(name, pos, icon, id) {
               });
               if (Array.isArray(updated)) pdlCrops = updated;
               else pdlCrops.push({ name: name, density: 0 });
-              localStorage.removeItem('passionMapInitData');
-              localStorage.removeItem('pMapAdminInitData');
+              if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+              else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+              try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
               const wrap = document.getElementById('wn_edit_crops_wrap');
               const host = document.getElementById('wn_edit_details_host');
               const selected = window.getSelectedWorkCrops('wn_edit');
@@ -11590,8 +11748,9 @@ function createSignboardMarker(name, pos, icon, id) {
                   });
               }
               if (Array.isArray(updatedList)) pdlWorkMaster = updatedList;
-              localStorage.removeItem('passionMapInitData');
-              localStorage.removeItem('pMapAdminInitData');
+              if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+              else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+              try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
 
               const isPrepTarget = !!(window._workNameEditorOpts && window._workNameEditorOpts.isPrepTarget);
               const isAfterSaveNextWork = !!(window._workNameEditorOpts && window._workNameEditorOpts.afterSaveNextWork);
@@ -11670,8 +11829,9 @@ function createSignboardMarker(name, pos, icon, id) {
                   userName: localStorage.getItem('passionMapUserName') || currentUser
               });
               if (Array.isArray(updatedList)) pdlWorkMaster = updatedList;
-              localStorage.removeItem('passionMapInitData');
-              localStorage.removeItem('pMapAdminInitData');
+              if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+              else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+              try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
               const sel = document.getElementById('rec_work_name');
               const keep = (sel && sel.value && sel.value !== name) ? sel.value : '';
               if (sel && sel.value === name) sel.value = '';
@@ -16788,8 +16948,9 @@ function createSignboardMarker(name, pos, icon, id) {
                   pdlWorkMaster = updatedList;
               }
 
-              localStorage.removeItem('passionMapInitData');
-              localStorage.removeItem('pMapAdminInitData');
+              if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+              else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+              try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
 
               const returnPicker = window._detailWorkEditorReturnToPicker || '';
               window._detailWorkEditorReturnToPicker = '';
@@ -18442,8 +18603,9 @@ function createSignboardMarker(name, pos, icon, id) {
               itemId: st.itemId
             }, currentFields));
             try {
-              localStorage.removeItem('passionMapInitData');
-              localStorage.removeItem('pMapAdminInitData');
+              if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+              else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+              try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
             } catch (e) {}
             window.closeMachineItemEditorModal();
             window.applySavedMachineItemsToWorkForm_([result]);
@@ -18477,8 +18639,9 @@ function createSignboardMarker(name, pos, icon, id) {
             results.push(await window.persistOneMachineOrVehicle_(pending[i]));
           }
           try {
-            localStorage.removeItem('passionMapInitData');
-            localStorage.removeItem('pMapAdminInitData');
+            if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+            else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+            try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
           } catch (e) {}
           window.closeMachineItemEditorModal();
           window.applySavedMachineItemsToWorkForm_(results);
@@ -25043,8 +25206,9 @@ function createSignboardMarker(name, pos, icon, id) {
              pdlContainers = updated;
              pdlContainerNames = [...new Set(updated.map(c => c.name || c))];
            }
-           localStorage.removeItem('passionMapInitData');
-           localStorage.removeItem('pMapAdminInitData');
+           if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+           else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+           try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
            const ghCrop = document.getElementById('gh_crop');
            if (ghCrop && crop) ghCrop.value = crop;
            window.closeHarvestContainerEditModal();
@@ -25081,8 +25245,9 @@ function createSignboardMarker(name, pos, icon, id) {
              pdlContainers = window.getContainerMasterList().filter(c => !(c.name === name && c.crop === crop));
              pdlContainerNames = [...new Set(pdlContainers.map(c => c.name))];
            }
-           localStorage.removeItem('passionMapInitData');
-           localStorage.removeItem('pMapAdminInitData');
+           if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+           else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+           try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
            window.filterHarvestContainers('');
            if (typeof customAlert === 'function') customAlert('🗑️ コンテナを削除しました');
          } catch (e) {
@@ -31743,8 +31908,9 @@ window.addBulkWorkMemoCategory_ = async (uid, mode) => {
       if (!Array.isArray(pdlWorkCategories)) pdlWorkCategories = [];
       pdlWorkCategories.push(name);
     }
-    localStorage.removeItem('passionMapInitData');
-    localStorage.removeItem('pMapAdminInitData');
+    if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+    else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+    try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
     if (typeof window.refreshCategoryAndCropUiAfterMasterChange === 'function') {
       window.refreshCategoryAndCropUiAfterMasterChange(name, null);
     } else {
@@ -31782,8 +31948,9 @@ window.addBulkWorkMemoCrop_ = async (uid) => {
     if (Array.isArray(updated)) pdlCrops = updated;
     else if (Array.isArray(pdlCrops)) pdlCrops.push({ name, density: 0 });
     else pdlCrops = [{ name, density: 0 }];
-    localStorage.removeItem('passionMapInitData');
-    localStorage.removeItem('pMapAdminInitData');
+    if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+    else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+    try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
     if (typeof window.refreshCategoryAndCropUiAfterMasterChange === 'function') {
       window.refreshCategoryAndCropUiAfterMasterChange(null, name);
     } else {
@@ -36397,8 +36564,14 @@ window.applyBulkWorkMemoHistoryDateChange_ = async (batchId) => {
                 : null;
            
               // キャッシュを先に描画し、すぐ操作可能にする。最新は裏で取得。
-              const cachedData = localStorage.getItem('passionMapInitData');
-              if (cachedData) {
+              const cachedRaw = localStorage.getItem('passionMapInitData');
+              const cachedParsed = (typeof window.parsePassionMapInitCache_ === 'function')
+                ? window.parsePassionMapInitCache_(cachedRaw)
+                : null;
+              if (cachedRaw && !cachedParsed) {
+                  try { localStorage.removeItem('passionMapInitData'); } catch (eBad) {}
+              }
+              if (cachedParsed) {
                   const cacheLoad = window._workerStartupLoading;
                   if (cacheLoad) {
                       cacheLoad.update({
@@ -36409,13 +36582,14 @@ window.applyBulkWorkMemoHistoryDateChange_ = async (batchId) => {
                       });
                   }
                   if (!cacheLoad && typeof beginMapDataLoad === 'function') beginMapDataLoad('キャッシュを反映中...');
-                  requestAnimationFrame(() => {
+                  const finishCacheBoot_ = (ok) => {
                       try {
                           if (!currentUser) {
                               currentUser = localStorage.getItem('passionMapUserName') || '';
                           }
-                          renderInitData(JSON.parse(cachedData));
-                          // キャッシュ反映完了 → すぐ操作可能にする
+                          if (ok) {
+                              renderInitData(cachedParsed);
+                          }
                           if (cacheLoad) {
                               cacheLoad.done();
                               window._workerStartupLoading = null;
@@ -36423,17 +36597,28 @@ window.applyBulkWorkMemoHistoryDateChange_ = async (batchId) => {
                               if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
                               if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
                           }
-                          if (typeof window.showRecordSyncToast === 'function') {
+                          if (ok && typeof window.showRecordSyncToast === 'function') {
                               window.showRecordSyncToast('📦 キャッシュで起動しました（最新データを裏で確認中…）', 'info');
                           }
-
-                          // ログイン＋最新データは裏で取得（作業時間ヒントもログイン後に取得）
-                          window._workerLoginInFlight = executeLogin(true, { fromCache: true });
-                      } catch(e) {
-                          if (cacheLoad) cacheLoad.update({ detail: 'キャッシュを利用できないため、最新データを取得します', current: null, total: null });
+                          window._workerLoginInFlight = executeLogin(true, { fromCache: !!ok });
+                      } catch (e) {
+                          console.warn('cache boot failed, falling back to network', e);
+                          if (cacheLoad) {
+                              cacheLoad.update({
+                                  detail: 'キャッシュを利用できないため、最新データを取得します',
+                                  current: null,
+                                  total: null
+                              });
+                          }
+                          try { localStorage.removeItem('passionMapInitData'); } catch (e2) {}
                           window._workerLoginInFlight = executeLogin(true);
                       }
-                  });
+                  };
+                  if (typeof window.whenWorkerMapReady_ === 'function') {
+                      window.whenWorkerMapReady_((ready) => finishCacheBoot_(true), 2500);
+                  } else {
+                      requestAnimationFrame(() => finishCacheBoot_(true));
+                  }
               } else {
                   window._workerLoginInFlight = executeLogin(true);
               }
@@ -41198,8 +41383,9 @@ window.deleteQualification = async function(userName, index) {
     try { pdlFertilizers = next; } catch (e) {}
     window.pdlFertilizers = next;
     try {
-      localStorage.removeItem('passionMapInitData');
-      localStorage.removeItem('pMapAdminInitData');
+      if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+      else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+      try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
     } catch (e2) {}
   }
 
