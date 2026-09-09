@@ -849,7 +849,8 @@ async function saveMachineRegistration() {
     if (window.MachineTaxonomy) {
         displayName = MachineTaxonomy.buildDisplayName('machine', typeName, machineNumber, model, '');
     } else {
-        displayName = [typeName, machineNumber, model].map(x => String(x || '').trim()).filter(Boolean).join(' ');
+        displayName = [typeName, model, machineNumber ? (/^no\.?/i.test(String(machineNumber).trim()) ? String(machineNumber).trim() : ('No.' + String(machineNumber).trim())) : '']
+          .map(x => String(x || '').trim()).filter(Boolean).join(' ');
     }
     let group = document.getElementById('regMachineGroup').value;
     if (window.MachineTaxonomy) group = MachineTaxonomy.normalizeMainCategory('machine', group);

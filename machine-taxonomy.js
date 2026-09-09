@@ -2,9 +2,10 @@
  * 機械・車両の統一分類（L1〜L5）
  * L1: 農機(A) / 車両(B) — 登録画面・マスタで分離
  * L2: メインカテゴリ — 農機=圃場/出荷、車両=自動車/作業機
- * L3: 機械名 / 車両名 — type
- * L4: 番号 — 農機=管理番号 / 車両=ナンバープレート番号
- * L5: 型式名 — model
+ * L3: 機械名（機種） / 車両名 — type
+ * L4: 型式名 — model
+ * L5: 番号 — 農機=管理番号 / 車両=ナンバープレート番号
+ * 農機の表示名は「機種 + 型式 + No.番号」（マスタB列 name は使わない）
  */
 (function (global) {
   'use strict';
@@ -73,6 +74,7 @@
     return String(item.plateNumber || item.vehicleNumber || item.machineNumber || item.name || '').trim();
   }
 
+  /** 農機名 = 機械名（機種）+ 型式名 + No.番号（B列 name は使わない） */
   function buildDisplayName(kind, typeName, number, model, fallbackName) {
     kind = kind === 'vehicle' ? 'vehicle' : 'machine';
     if (kind === 'vehicle') {
@@ -80,23 +82,28 @@
       if (vParts.length) return vParts.join(' ');
       return String(fallbackName || '').trim();
     }
-    var mParts = [typeName, model].map(function (x) { return String(x || '').trim(); }).filter(Boolean);
+    var typePart = String(typeName || '').trim();
+    var modelPart = String(model || '').trim();
+    var numPart = String(number || '').trim();
+    if (numPart) {
+      numPart = /^no\.?/i.test(numPart) ? numPart : ('No.' + numPart);
+    }
+    var mParts = [typePart, modelPart, numPart].filter(Boolean);
     if (mParts.length) return mParts.join(' ');
-    return String(fallbackName || '').trim();
+    return '';
   }
 
   function getDisplayName(item) {
     if (!item) return '';
+    if (item.isTool) return String(item.name || '').trim();
     var kind = getKindFromItem(item);
     var type = getItemTypeName(item);
     if (kind === 'vehicle') {
       var plate = getVehiclePlate(item);
       if (type && plate && plate !== type) return type + ' ' + plate;
-      return plate || type || String(item.name || '').trim();
+      return plate || type || '';
     }
-    var model = getItemModel(item);
-    if (type && model) return type + ' ' + model;
-    return type || model || String(item.name || '').trim();
+    return buildDisplayName('machine', type, getItemNumber(item), getItemModel(item), '');
   }
 
   function normalizeItem(item) {
@@ -183,7 +190,12 @@
   function formatOptionLabel(item) {
     if (!item) return '';
     var icon = item._kind === 'vehicle' ? '🛻' : (item.isTool ? '🔧' : '🚜');
-    var main = item._displayName || getDisplayName(item) || item.name || item.plateNumber || '(無名)';
+    var main = item._displayName || getDisplayName(item);
+    if (!main) {
+      if (item.isTool) main = String(item.name || '').trim();
+      else if (item._kind === 'vehicle' || item.isVehicle) main = String(item.plateNumber || item.name || '').trim();
+      else main = '(無名)';
+    }
     if (item._mainCategory) {
       return icon + ' [' + item._mainCategory + '] ' + main;
     }

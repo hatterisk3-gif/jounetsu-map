@@ -16962,10 +16962,13 @@ function createSignboardMarker(name, pos, icon, id) {
           if (norm) return MachineTaxonomy.formatOptionLabel(norm);
         }
         const icon = m.isVehicle ? '🛻 [車両] ' : (m.isTool ? '🔧 [道具] ' : '🚜 [機械] ');
+        const display = (window.MachineTaxonomy && MachineTaxonomy.getDisplayName)
+          ? MachineTaxonomy.getDisplayName(m)
+          : '';
         const num = m.machineNumber || m.serialNo || '';
-        const group = m.group || m.type || m.category || m.workTypes || m.driveType || '';
-        let label = icon + (String(m.name || '').trim() || '(無名)');
-        if (num) label += ` [${num}]`;
+        const group = m.group || m.category || m.workTypes || m.driveType || '';
+        let label = icon + (String(display || (m.isTool || m.isVehicle ? m.name : '') || '').trim() || '(無名)');
+        if ((m.isVehicle || m.isTool) && num && label.indexOf(num) < 0) label += ` [${num}]`;
         if (group) label += ` / ${group}`;
         return label;
       };
@@ -17260,10 +17263,16 @@ function createSignboardMarker(name, pos, icon, id) {
           titleEl.textContent = icon + (label || '未設定');
         }
         if (subEl) {
+          const isMachine = !item.isVehicle && !item.isTool;
           const num = item.machineNumber || item.serialNo || '';
-          const cat = item.category || item.type || item.group || item.driveType || '';
+          const cat = item.group || item.category || item.driveType || '';
           const loc = item.currentLocName || item.signName || item.location || '';
-          subEl.textContent = [num ? `[${num}]` : '', cat, loc ? `📍${loc}` : ''].filter(Boolean).join(' ・ ');
+          // 農機は表示名に番号を含むため、サブはカテゴリ・場所のみ
+          subEl.textContent = [
+            (!isMachine && num) ? `[${num}]` : '',
+            cat,
+            loc ? `📍${loc}` : ''
+          ].filter(Boolean).join(' ・ ');
         }
         previewEl.style.display = 'flex';
         const editBtn = document.getElementById('m_target_photo_edit_btn');
@@ -17731,7 +17740,9 @@ function createSignboardMarker(name, pos, icon, id) {
           const parts = [fields.type, fields.plateNumber].map(x => String(x || '').trim()).filter(Boolean);
           return parts.join(' ') || String(fields.plateNumber || '').trim();
         }
-        const parts = [fields.type, fields.model].map(x => String(x || '').trim()).filter(Boolean);
+        const numRaw = String(fields.machineNumber || '').trim();
+        const numLabel = numRaw ? (/^no\.?/i.test(numRaw) ? numRaw : ('No.' + numRaw)) : '';
+        const parts = [fields.type, fields.model, numLabel].map(x => String(x || '').trim()).filter(Boolean);
         return parts.join(' ') || String(fields.type || '').trim();
       };
 
@@ -17874,7 +17885,8 @@ function createSignboardMarker(name, pos, icon, id) {
         if (window.MachineTaxonomy && MachineTaxonomy.buildDisplayName) {
           displayName = MachineTaxonomy.buildDisplayName('machine', type, machineNumber, model, '');
         } else {
-          displayName = [type, machineNumber, model].map(x => String(x || '').trim()).filter(Boolean).join(' ');
+          displayName = [type, model, machineNumber ? (/^no\.?/i.test(String(machineNumber).trim()) ? String(machineNumber).trim() : ('No.' + String(machineNumber).trim())) : '']
+            .map(x => String(x || '').trim()).filter(Boolean).join(' ');
         }
         return {
           kind: 'machine',
@@ -26196,7 +26208,8 @@ function createSignboardMarker(name, pos, icon, id) {
          if (window.MachineTaxonomy && MachineTaxonomy.buildDisplayName) {
            name = MachineTaxonomy.buildDisplayName('machine', type, number, model, '');
          } else {
-           name = [type, number, model].map(x => String(x || '').trim()).filter(Boolean).join(' ');
+           name = [type, model, number ? (/^no\.?/i.test(String(number).trim()) ? String(number).trim() : ('No.' + String(number).trim())) : '']
+             .map(x => String(x || '').trim()).filter(Boolean).join(' ');
          }
 
          if (!name && !type) { customAlert("③機械名、④番号、⑤型式のいずれかを入力してください。"); return; }
@@ -30163,8 +30176,24 @@ window.getBulkWorkMemoMachineList_ = (draft) => {
   if (!machines.length) return [];
   const t = String((draft && draft.rawLine) || '');
   const toItem = (m) => {
-    const name = String((m && (m.name || m.id)) || '').trim();
-    return name ? { id: String(m.id || name), name: name, machineNumber: m.machineNumber, serialNo: m.serialNo } : null;
+    if (!m) return null;
+    const name = (window.MachineTaxonomy && MachineTaxonomy.getDisplayName)
+      ? MachineTaxonomy.getDisplayName(m)
+      : (() => {
+          const n = String(m.machineNumber || m.serialNo || '').trim();
+          const num = n ? (/^no\.?/i.test(n) ? n : ('No.' + n)) : '';
+          return [m.type, m.model, num].map(x => String(x || '').trim()).filter(Boolean).join(' ');
+        })();
+    const label = String(name || '').trim();
+    if (!label && !m.id) return null;
+    return {
+      id: String(m.id || label),
+      name: label || '(無名)',
+      machineNumber: m.machineNumber,
+      serialNo: m.serialNo,
+      type: m.type,
+      model: m.model
+    };
   };
   const allItems = machines.map(toItem).filter(Boolean);
   const sug = window.suggestBulkWorkMemoMaintenanceTargets_(t);
@@ -30464,7 +30493,14 @@ window.getBulkWorkMemoMaintenanceTargets_ = (draft) => {
     items.push(Object.assign({ id: iid, name: iname, kind: kind || 'machine' }, extra || {}));
   };
   (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines) ? pdlMachines : []).forEach(m => {
-    push(m.id, m.name, 'machine', {
+    const displayName = (window.MachineTaxonomy && MachineTaxonomy.getDisplayName)
+      ? MachineTaxonomy.getDisplayName(m)
+      : (() => {
+          const n = String(m.machineNumber || m.serialNo || '').trim();
+          const num = n ? (/^no\.?/i.test(n) ? n : ('No.' + n)) : '';
+          return [m.type, m.model, num].map(x => String(x || '').trim()).filter(Boolean).join(' ');
+        })();
+    push(m.id, displayName || '(無名)', 'machine', {
       isTool: false,
       isVehicle: false,
       machineNumber: m.machineNumber,
@@ -30519,9 +30555,17 @@ window.getBulkWorkMemoMaintenanceTargets_ = (draft) => {
 /** メモ文と機械・道具・車両名の一致スコア（0=不一致） */
 window.scoreBulkWorkMemoMaintenanceTarget_ = (text, item) => {
   const t = String(text || '').trim();
-  const name = String(item && item.name || '').trim();
-  if (!t || !name) return 0;
-  if (window.bulkWorkMemoKanaKeyContains_(t, name)) return 100 + Math.min(30, name.length);
+  if (!t || !item) return 0;
+  const name = String(item.name || '').trim();
+  const type = String(item.type || '').trim();
+  const model = String(item.model || item.modelType || '').trim();
+  const labels = [name, type, model].filter(Boolean);
+  if (!labels.length && !String(item.machineNumber || item.serialNo || item.plateNumber || '').trim()) return 0;
+  for (let i = 0; i < labels.length; i++) {
+    if (window.bulkWorkMemoKanaKeyContains_(t, labels[i])) {
+      return 100 + Math.min(30, labels[i].length) - i;
+    }
+  }
   const num = String(item.machineNumber || item.serialNo || item.plateNumber || '').trim();
   if (num && num.length >= 2 && t.indexOf(num) >= 0) return 95 + Math.min(20, num.length);
   let stripped = t;
@@ -30537,16 +30581,20 @@ window.scoreBulkWorkMemoMaintenanceTarget_ = (text, item) => {
     .forEach(run => { if (tokens.indexOf(run) < 0) tokens.push(run); });
   let best = 0;
   const bumpScore = (score) => { if (score > best) best = score; };
-  tokens.forEach(tok => {
+  const scoreAgainst = (label) => {
+    if (!label) return;
+    tokens.forEach(tok => {
+      if (typeof window.bulkWorkMemoFuzzyMatchScore_ === 'function') {
+        bumpScore(window.bulkWorkMemoFuzzyMatchScore_(tok, label));
+      }
+      if (window.bulkWorkMemoKanaKeyContains_(tok, label) && tok.length >= 2) bumpScore(55 + Math.min(25, tok.length));
+      if (window.bulkWorkMemoKanaKeyContains_(label, tok) && label.length >= 2) bumpScore(70 + Math.min(15, label.length));
+    });
     if (typeof window.bulkWorkMemoFuzzyMatchScore_ === 'function') {
-      bumpScore(window.bulkWorkMemoFuzzyMatchScore_(tok, name));
+      bumpScore(window.bulkWorkMemoFuzzyMatchScore_(stripped, label));
     }
-    if (window.bulkWorkMemoKanaKeyContains_(tok, name) && tok.length >= 2) bumpScore(55 + Math.min(25, tok.length));
-    if (window.bulkWorkMemoKanaKeyContains_(name, tok) && name.length >= 2) bumpScore(70 + Math.min(15, name.length));
-  });
-  if (typeof window.bulkWorkMemoFuzzyMatchScore_ === 'function') {
-    bumpScore(window.bulkWorkMemoFuzzyMatchScore_(stripped, name));
-  }
+  };
+  labels.forEach(scoreAgainst);
   return best;
 };
 
@@ -30596,11 +30644,17 @@ window.formatBulkMaintTargetChipHtml_ = (item, plain) => {
     isTool: item.kind === 'tool' || item.isTool,
     isVehicle: item.kind === 'vehicle' || item.isVehicle
   });
-  const name = String(enriched.name || '').trim() || '(無名)';
+  const displayName = (window.MachineTaxonomy && MachineTaxonomy.getDisplayName)
+    ? MachineTaxonomy.getDisplayName(enriched)
+    : '';
+  const name = String(displayName || (enriched.isTool || enriched.isVehicle ? enriched.name : '') || '').trim() || '(無名)';
   const num = String(enriched.machineNumber || enriched.serialNo || enriched.plateNumber || '').trim();
-  const group = String(enriched.group || enriched.type || enriched.category || enriched.driveType || '').trim();
+  const group = String(enriched.group || enriched.category || enriched.driveType || '').trim();
   if (plain) {
-    let t = num ? `No.${num} ${name}` : name;
+    // 農機は表示名に番号を含むため No. を重ねない
+    let t = (enriched.isVehicle || enriched.isTool) && num && name.indexOf(num) < 0
+      ? `No.${num} ${name}`
+      : name;
     if (group) t += ` / ${group}`;
     return esc(t);
   }
@@ -30608,12 +30662,10 @@ window.formatBulkMaintTargetChipHtml_ = (item, plain) => {
     return window.buildBulkMaintTargetChipInnerHtml_(item, false);
   }
   const icon = enriched.isVehicle ? '🛻' : (enriched.isTool ? '🔧' : '🚜');
-  return num
-    ? `${icon} <b>No.${esc(num)}</b> ${esc(name)}`
-    : `${icon} ${esc(name)}`;
+  return `${icon} ${esc(name)}`;
 };
 
-/** 整備対象カード内側（写真サムネイル＋番号優先表示） */
+/** 整備対象カード内側（機種＋型式＋番号を農機名として表示） */
 window.buildBulkMaintTargetChipInnerHtml_ = (item, on) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   if (!item) return '';
@@ -30622,23 +30674,27 @@ window.buildBulkMaintTargetChipInnerHtml_ = (item, on) => {
     isVehicle: item.kind === 'vehicle' || item.isVehicle
   });
   const icon = enriched.isVehicle ? '🛻' : (enriched.isTool ? '🔧' : '🚜');
-  const name = esc(String(enriched.name || '').trim() || '(無名)');
+  const displayName = (window.MachineTaxonomy && MachineTaxonomy.getDisplayName)
+    ? MachineTaxonomy.getDisplayName(enriched)
+    : '';
+  const name = esc(String(displayName || (enriched.isTool || enriched.isVehicle ? enriched.name : '') || '').trim() || '(無名)');
   const num = String(enriched.machineNumber || enriched.serialNo || enriched.plateNumber || '').trim();
-  const group = String(enriched.group || enriched.type || enriched.category || enriched.driveType || '').trim();
+  const group = String(enriched.group || enriched.category || enriched.driveType || '').trim();
   const photoUrl = (typeof window.getMachinePhotoUrl === 'function') ? window.getMachinePhotoUrl(enriched) : '';
   const safePhoto = esc(photoUrl);
   const fg = on ? '#fff' : '#BF360C';
-  const fgName = on ? 'rgba(255,255,255,0.95)' : '#333';
   const fgSub = on ? 'rgba(255,255,255,0.82)' : '#666';
   const photoBg = on ? 'rgba(0,0,0,0.12)' : '#eceff1';
   const photoBlock = photoUrl
     ? `<img src="${safePhoto}" alt="" loading="lazy" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.style.display='flex';" style="width:100%; height:100%; object-fit:cover;">`
     : '';
   const iconFallback = `<div style="display:${photoUrl ? 'none' : 'flex'}; font-size:26px; align-items:center; justify-content:center; width:100%; height:100%; background:${photoBg}; color:${on ? '#fff' : '#2e7d32'};">${icon}</div>`;
-  const numLine = num
+  // 車両・道具のみ番号を先頭強調。農機は表示名（機種＋型式＋番号）をそのまま主表示
+  const showNumLine = (enriched.isVehicle || enriched.isTool) && num && String(displayName || '').indexOf(num) < 0;
+  const numLine = showNumLine
     ? `<div style="font-size:14px; font-weight:bold; color:${fg}; line-height:1.15; letter-spacing:0.02em;">No.${esc(num)}</div>`
     : '';
-  const nameLine = `<div style="font-size:${num ? '11px' : '13px'}; font-weight:bold; color:${num ? fgName : fg}; line-height:1.25; margin-top:${num ? '2px' : '0'}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${name}</div>`;
+  const nameLine = `<div style="font-size:${showNumLine ? '11px' : '13px'}; font-weight:bold; color:${showNumLine ? (on ? 'rgba(255,255,255,0.95)' : '#333') : fg}; line-height:1.25; margin-top:${showNumLine ? '2px' : '0'}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${name}</div>`;
   const groupLine = group
     ? `<div style="font-size:9px; color:${fgSub}; margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(group)}</div>`
     : '';
