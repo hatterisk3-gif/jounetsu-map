@@ -153,6 +153,25 @@
         el.textContent = '👤 ' + (window.getPassionMapUserName() || 'アカウント');
       }
     });
+    const adminBtn = document.getElementById('accountMenuAdminBtn');
+    if (adminBtn) {
+      const isAdmin = (typeof window.isWorkerAdmin === 'function')
+        ? window.isWorkerAdmin()
+        : ((localStorage.getItem('passionMapUserRole') || '作業員') === '管理者');
+      adminBtn.style.display = isAdmin ? 'block' : 'none';
+    }
+  };
+
+  window.openAdminFromWorker = function () {
+    const isAdmin = (typeof window.isWorkerAdmin === 'function')
+      ? window.isWorkerAdmin()
+      : ((localStorage.getItem('passionMapUserRole') || '作業員') === '管理者');
+    if (!isAdmin) {
+      if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+      else alert('管理者権限が必要です。');
+      return;
+    }
+    window.location.href = 'admin.html';
   };
 
   window.toggleAccountMenu = function (ev) {
@@ -162,6 +181,9 @@
     }
     const menu = document.getElementById('accountMenuDropdown');
     if (!menu) return;
+    if (typeof window.refreshAccountNameButtons === 'function') {
+      window.refreshAccountNameButtons();
+    }
     const open = menu.style.display === 'none' || menu.style.display === '';
     menu.style.display = open ? 'block' : 'none';
   };

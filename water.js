@@ -21,14 +21,69 @@ const STATUS_LABELS = {
     'stopped': '止水中'
 };
 
-// ====== ログイン ======
+// ====== ログイン（キャッシュ優先） ======
+function showMapSyncToast(msg, kind) {
+    kind = kind || 'info';
+    let el = document.getElementById('mapSyncToast');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'mapSyncToast';
+        el.style.cssText = 'position:fixed;left:50%;bottom:88px;transform:translateX(-50%);z-index:3000000;max-width:90%;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:bold;box-shadow:0 4px 16px rgba(0,0,0,0.25);display:none;text-align:center;line-height:1.4;';
+        document.body.appendChild(el);
+    }
+    el.style.background = kind === 'error' ? '#c62828' : (kind === 'ok' ? '#2e7d32' : '#1565c0');
+    el.style.color = '#fff';
+    el.textContent = msg;
+    el.style.display = 'block';
+    clearTimeout(window._mapSyncToastTimer);
+    window._mapSyncToastTimer = setTimeout(() => {
+        if (el) el.style.display = 'none';
+    }, kind === 'error' ? 8000 : 2800);
+}
+window.showMapSyncToast = showMapSyncToast;
+
 document.addEventListener('DOMContentLoaded', () => {
     const id = localStorage.getItem('passionMapUserId');
     const pw = localStorage.getItem('passionMapUserPw');
     if (document.getElementById('loginId') && id) document.getElementById('loginId').value = id;
     if (document.getElementById('loginPw') && pw) document.getElementById('loginPw').value = pw;
-    if (id && pw) {
-        document.getElementById('loginScreen').style.display = 'none';
+    if (!(id && pw)) return;
+
+    document.getElementById('loginScreen').style.display = 'none';
+    currentUserName = localStorage.getItem('passionMapUserName') || '';
+    currentUserRole = localStorage.getItem('passionMapUserRole') || '';
+    currentStaffId = id;
+    initMap();
+
+    const cached = localStorage.getItem('waterMapData');
+    if (cached) {
+        const cacheLoad = (window.AppLoading && AppLoading.start)
+            ? AppLoading.start({
+                label: '圃場データを読み込み中...',
+                detail: 'キャッシュを反映しています',
+                current: 1,
+                total: 2,
+                blocking: true,
+                lockMap: true,
+                delay: 0
+            })
+            : null;
+        requestAnimationFrame(() => {
+            try {
+                drawPolygons(JSON.parse(cached));
+                if (cacheLoad) cacheLoad.done();
+                showMapSyncToast('📦 キャッシュで起動（最新を裏で確認中…）', 'info');
+                executeLogin(true, { fromCache: true });
+            } catch (ex) {
+                console.warn('キャッシュ描画失敗、通常ログインへ', ex);
+                if (cacheLoad) {
+                    cacheLoad.update({ detail: '最新データを取得します', current: null, total: null });
+                    window._waterStartupLoading = cacheLoad;
+                }
+                executeLogin(true);
+            }
+        });
+    } else {
         window._waterStartupLoading = window.AppLoading
             ? AppLoading.start({
                 label: '給水管理アプリを読み込み中...',
@@ -40,12 +95,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 delay: 0
             })
             : null;
-        initMap();
         executeLogin(true);
     }
 });
 
-async function executeLogin(isAuto = false) {
+async function executeLogin(isAuto = false, options = {}) {
+    const fromCache = !!(options && options.fromCache);
     const id = document.getElementById('loginId').value;
     const pw = document.getElementById('loginPw').value;
     const btn = document.querySelector('.login-btn');
@@ -56,12 +111,24 @@ async function executeLogin(isAuto = false) {
         if (errObj) errObj.innerText = 'スタッフIDとパスワードを入力してください';
         return;
     }
+
+    if (fromCache) {
+        currentUserName = currentUserName || localStorage.getItem('passionMapUserName') || '';
+        currentUserRole = currentUserRole || localStorage.getItem('passionMapUserRole') || '';
+        currentStaffId = id;
+        document.getElementById('loginScreen').style.display = 'none';
+        if (startupLoad) {
+            startupLoad.done();
+            window._waterStartupLoading = null;
+        }
+    }
+
     if (!isAuto && btn) { btn.innerText = "通信中..."; btn.disabled = true; }
 
     try {
         const result = await callGAS('login', { orgId: 'default', userId: id, password: pw });
         if (result.success) {
-            if (startupLoad) startupLoad.update({ detail: 'ログイン確認完了', current: 1, total: 4 });
+            if (startupLoad && !fromCache) startupLoad.update({ detail: 'ログイン確認完了', current: 1, total: 4 });
             currentUserName = result.name;
             currentUserRole = result.role || '作業員';
             currentStaffId = id;
@@ -73,16 +140,17 @@ async function executeLogin(isAuto = false) {
             localStorage.setItem('passionMapUserRole', result.role || '作業員');
             localStorage.setItem('spreadsheetId', result.spreadsheetId);
 
-            if (!isAuto) initMap();
-            
-            // キャッシュで即座に地図描画
+            if (!isAuto && !fromCache) initMap();
+
+            if (fromCache) {
+                loadInitData({ background: true });
+                return;
+            }
+
             const cached = localStorage.getItem('waterMapData');
             if (cached) {
-                const cacheLoad = startupLoad;
-                if (cacheLoad) cacheLoad.update({ detail: 'キャッシュを反映しています', current: 2, total: 4 });
-                try {
-                    drawPolygons(JSON.parse(cached));
-                } catch(ex) {}
+                if (startupLoad) startupLoad.update({ detail: 'キャッシュを反映しています', current: 2, total: 4 });
+                try { drawPolygons(JSON.parse(cached)); } catch (ex) {}
             } else if (startupLoad) {
                 startupLoad.update({ detail: '保存データを確認しました', current: 2, total: 4 });
             }
@@ -94,6 +162,11 @@ async function executeLogin(isAuto = false) {
                 window._waterStartupLoading = null;
             }
         } else {
+            if (fromCache) {
+                showMapSyncToast('⚠️ ログイン確認に失敗（キャッシュで続行）', 'error');
+                loadInitData({ background: true });
+                return;
+            }
             document.getElementById('loginScreen').style.display = 'flex';
             if (errObj) errObj.innerText = result.message || 'ログイン失敗';
             if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
@@ -103,17 +176,18 @@ async function executeLogin(isAuto = false) {
             }
         }
     } catch (e) {
-        if (isAuto) {
-            // オフラインでもキャッシュあれば起動
+        if (fromCache || isAuto) {
             const cached = localStorage.getItem('waterMapData');
             if (cached) {
-                try { drawPolygons(JSON.parse(cached)); } catch(ex) {}
+                try { drawPolygons(JSON.parse(cached)); } catch (ex) {}
+                showMapSyncToast('⚠️ 通信エラー（キャッシュで続行）', 'error');
             }
             if (startupLoad) {
-                if (cached) startupLoad.done();
+                if (cached || fromCache) startupLoad.done();
                 else startupLoad.fail('圃場データの読み込みに失敗しました');
                 window._waterStartupLoading = null;
             }
+            if (fromCache || cached) loadInitData({ background: true });
         } else {
             document.getElementById('loginScreen').style.display = 'flex';
             if (errObj) errObj.innerText = '通信エラー: ' + e.message;
@@ -151,21 +225,25 @@ function initMap() {
 
 // ====== データ読み込み ======
 async function loadInitData(options = {}) {
+    const background = !!options.background;
+    const hasCache = !!localStorage.getItem('waterMapData');
     const externalLoad = options.loadingHandle || null;
-    const appLoad = externalLoad || (window.AppLoading
-        ? AppLoading.start({
-            label: '圃場データを読み込み中...',
-            detail: 'サーバーから取得しています',
-            current: 1,
-            total: 3,
-            blocking: true,
-            lockMap: true,
-            delay: 0
-        })
-        : null);
+    const appLoad = background
+        ? null
+        : (externalLoad || (window.AppLoading
+            ? AppLoading.start({
+                label: '圃場データを読み込み中...',
+                detail: 'サーバーから取得しています',
+                current: 1,
+                total: 3,
+                blocking: true,
+                lockMap: true,
+                delay: 0
+            })
+            : null));
     const ownsLoad = !!appLoad && !externalLoad;
     if (externalLoad) externalLoad.update({ detail: '最新データを取得しています', current: 2, total: 4 });
-    if (!appLoad && typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場データを読み込み中...');
+    if (!background && !appLoad && typeof beginMapDataLoad === 'function') beginMapDataLoad('圃場データを読み込み中...');
     try {
         const data = await callGAS('getInitData');
         if (appLoad) {
@@ -174,16 +252,24 @@ async function loadInitData(options = {}) {
                 : { detail: 'データを確認しています', current: 2, total: 3 });
         }
         if (data && data.polygons) {
+            const incomingCount = Array.isArray(data.polygons) ? data.polygons.length : 0;
+            if (hasCache && incomingCount === 0) {
+                console.warn('getInitData が空のためキャッシュを維持します');
+                if (background) showMapSyncToast('☁️ 読み込み完了しました', 'ok');
+                if (ownsLoad) appLoad.done();
+                else if (!background && !appLoad && typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                return true;
+            }
             const newDataStr = JSON.stringify(data.polygons);
             const oldDataStr = localStorage.getItem('waterMapData');
             if (newDataStr === oldDataStr) {
                 console.log("変更なし：再描画をスキップしました");
+                if (background) showMapSyncToast('☁️ 読み込み完了しました', 'ok');
                 if (externalLoad) externalLoad.update({ detail: '地図表示の準備が完了しました', current: 4, total: 4 });
                 else if (ownsLoad) appLoad.done();
-                else if (!appLoad && typeof hideMapDataLoading === 'function') hideMapDataLoading();
+                else if (!background && !appLoad && typeof hideMapDataLoading === 'function') hideMapDataLoading();
                 return true;
             }
-            // キャッシュに保存
             localStorage.setItem('waterMapData', newDataStr);
             if (appLoad) {
                 appLoad.update(externalLoad
@@ -191,22 +277,23 @@ async function loadInitData(options = {}) {
                     : { detail: '地図を描画しています', current: 3, total: 3 });
             }
             drawPolygons(data.polygons);
+            if (background) showMapSyncToast('☁️ 読み込み完了しました（最新に更新）', 'ok');
         }
         if (ownsLoad) appLoad.done();
-        else if (!appLoad && typeof hideMapDataLoading === 'function') hideMapDataLoading();
+        else if (!background && !appLoad && typeof hideMapDataLoading === 'function') hideMapDataLoading();
         return true;
     } catch (e) {
         console.error("InitData Error:", e);
-        // キャッシュから読む
         const cached = localStorage.getItem('waterMapData');
         if (cached) {
             if (appLoad) appLoad.update({ detail: 'キャッシュから復元しています', current: externalLoad ? 4 : 3, total: externalLoad ? 4 : 3 });
             try { drawPolygons(JSON.parse(cached)); } catch(ex) {}
+            if (background) showMapSyncToast('⚠️ 最新の読み込みに失敗（キャッシュで続行）', 'error');
         }
         if (ownsLoad) {
             if (cached) appLoad.done();
             else appLoad.fail('圃場データの読み込みに失敗しました');
-        } else if (!appLoad && typeof hideMapDataLoading === 'function') hideMapDataLoading();
+        } else if (!background && !appLoad && typeof hideMapDataLoading === 'function') hideMapDataLoading();
         return !!cached;
     }
 }

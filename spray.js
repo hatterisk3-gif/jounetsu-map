@@ -1,6 +1,7 @@
 
 const SPRAY_SETTINGS_KEY = "passionMapSpraySettings";
 const SPRAY_SESSION_KEY = "passionMapSpraySession";
+const SPRAY_INIT_CACHE_KEY = "passionMapSprayInitData";
 
 let map;
 let latestUserPos = null;
@@ -17,19 +18,77 @@ let sheetCollapsed = false;
 let loginReady = false;
 let dataLoaded = false;
 
+function showMapSyncToast(msg, kind) {
+  kind = kind || "info";
+  let el = document.getElementById("mapSyncToast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "mapSyncToast";
+    el.style.cssText = "position:fixed;left:50%;bottom:88px;transform:translateX(-50%);z-index:3000000;max-width:90%;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:bold;box-shadow:0 4px 16px rgba(0,0,0,0.25);display:none;text-align:center;line-height:1.4;";
+    document.body.appendChild(el);
+  }
+  el.style.background = kind === "error" ? "#c62828" : (kind === "ok" ? "#2e7d32" : "#1565c0");
+  el.style.color = "#fff";
+  el.textContent = msg;
+  el.style.display = "block";
+  clearTimeout(window._mapSyncToastTimer);
+  window._mapSyncToastTimer = setTimeout(() => {
+    if (el) el.style.display = "none";
+  }, kind === "error" ? 8000 : 2800);
+}
+
+function applySprayInitPayload_(data) {
+  const polys = (data && data.polygons) || [];
+  pesticides = (data && data.pdl && data.pdl.pesticides) || pesticides || [];
+  allFields = polys.filter((p) => {
+    const coords = parseCoords(p.coords);
+    return coords.length >= 3;
+  });
+  if (map) {
+    drawFields();
+    fillLocationFilter();
+    renderFieldPicker();
+    renderChemList();
+    updateSetupPreview();
+    restoreSession();
+  }
+  return allFields.length > 0;
+}
+
+function loadSprayFromCache_() {
+  try {
+    let raw = localStorage.getItem(SPRAY_INIT_CACHE_KEY);
+    if (!raw) raw = localStorage.getItem("passionMapInitData");
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (!data || !Array.isArray(data.polygons)) return false;
+    return applySprayInitPayload_(data);
+  } catch (e) {
+    return false;
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const id = localStorage.getItem("passionMapUserId");
   const pw = localStorage.getItem("passionMapUserPw");
   if (document.getElementById("loginId") && id) document.getElementById("loginId").value = id;
   if (document.getElementById("loginPw") && pw) document.getElementById("loginPw").value = pw;
   restoreSettings();
-  if (id && pw) {
-    document.getElementById("loginScreen").style.display = "none";
+  if (!(id && pw)) return;
+  document.getElementById("loginScreen").style.display = "none";
+  loginReady = true;
+  const hasCache = loadSprayFromCache_();
+  if (hasCache) {
+    dataLoaded = true;
+    showMapSyncToast("📦 キャッシュで起動（最新を裏で確認中…）", "info");
+    executeLogin(true, { fromCache: true });
+  } else {
     executeLogin(true);
   }
 });
 
-async function executeLogin(isAuto) {
+async function executeLogin(isAuto, options) {
+  const fromCache = !!(options && options.fromCache);
   const id = document.getElementById("loginId").value;
   const pw = document.getElementById("loginPw").value;
   const err = document.getElementById("loginError");
@@ -37,6 +96,10 @@ async function executeLogin(isAuto) {
   if (!id || !pw) {
     if (err) err.textContent = "スタッフIDとパスワードを入力してください";
     return;
+  }
+  if (fromCache) {
+    document.getElementById("loginScreen").style.display = "none";
+    loginReady = true;
   }
   if (!isAuto && btn) { btn.textContent = "通信中..."; btn.disabled = true; }
   try {
@@ -49,18 +112,33 @@ async function executeLogin(isAuto) {
     localStorage.setItem("spreadsheetId", result.spreadsheetId);
     document.getElementById("loginScreen").style.display = "none";
     loginReady = true;
-    maybeLoadSprayData();
+    if (fromCache) {
+      maybeLoadSprayData({ background: true, force: true });
+    } else {
+      maybeLoadSprayData();
+    }
   } catch (e) {
+    if (fromCache || loadSprayFromCache_()) {
+      document.getElementById("loginScreen").style.display = "none";
+      loginReady = true;
+      dataLoaded = true;
+      showMapSyncToast("⚠️ 通信エラー（キャッシュで続行）", "error");
+      maybeLoadSprayData({ background: true, force: true });
+      return;
+    }
     document.getElementById("loginScreen").style.display = "flex";
     if (err) err.textContent = e.message || "ログイン失敗";
     if (btn) { btn.textContent = "ログイン"; btn.disabled = false; }
   }
 }
 
-function maybeLoadSprayData() {
-  if (!loginReady || !map || dataLoaded) return;
-  dataLoaded = true;
-  loadSprayData();
+function maybeLoadSprayData(options) {
+  options = options || {};
+  if (!loginReady) return;
+  if (!map && !options.background) return;
+  if (dataLoaded && !options.force && !options.background) return;
+  if (!options.background) dataLoaded = true;
+  loadSprayData(options);
 }
 
 window.initMap = function initMap() {
@@ -94,7 +172,16 @@ window.initMap = function initMap() {
       }, () => alert("現在地を取得できませんでした。"), { enableHighAccuracy: true });
     };
   }
-  maybeLoadSprayData();
+  // キャッシュで先に持っていた圃場を地図準備後に描画
+  if (allFields.length) {
+    drawFields();
+    fillLocationFilter();
+    renderFieldPicker();
+    renderChemList();
+    updateSetupPreview();
+    restoreSession();
+  }
+  maybeLoadSprayData(dataLoaded ? { background: true, force: true } : undefined);
 };
 if (window._sprayNeedInit && typeof google !== "undefined" && google.maps) {
   window.initMap();
@@ -131,27 +218,34 @@ function fieldCenter(field) {
   return n ? { lat: lat / n, lng: lng / n } : null;
 }
 
-async function loadSprayData() {
-  const load = window.AppLoading
-    ? AppLoading.start({ label: "防除アプリを準備中...", detail: "圃場と農薬マスタを読み込んでいます", current: 0, total: 2, delay: 0 })
-    : null;
+async function loadSprayData(options) {
+  options = options || {};
+  const background = !!options.background;
+  const load = background
+    ? null
+    : (window.AppLoading
+      ? AppLoading.start({ label: "防除アプリを準備中...", detail: "圃場と農薬マスタを読み込んでいます", current: 0, total: 2, delay: 0 })
+      : null);
   try {
     const data = await callGAS("getInitData");
-    const polys = (data && data.polygons) || [];
-    pesticides = (data && data.pdl && data.pdl.pesticides) || [];
-    allFields = polys.filter((p) => {
-      const coords = parseCoords(p.coords);
-      return coords.length >= 3;
-    });
+    try {
+      localStorage.setItem(SPRAY_INIT_CACHE_KEY, JSON.stringify({
+        polygons: (data && data.polygons) || [],
+        pdl: { pesticides: (data && data.pdl && data.pdl.pesticides) || [] }
+      }));
+    } catch (eSave) {}
     if (load) load.update({ detail: "地図に圃場を描画しています", current: 1, total: 2 });
-    drawFields();
-    fillLocationFilter();
-    renderFieldPicker();
-    renderChemList();
-    updateSetupPreview();
-    restoreSession();
+    applySprayInitPayload_(data);
+    dataLoaded = true;
     if (load) load.done();
+    if (background) showMapSyncToast("☁️ 読み込み完了しました（最新に更新）", "ok");
   } catch (e) {
+    if (loadSprayFromCache_()) {
+      dataLoaded = true;
+      if (load) load.done();
+      if (background) showMapSyncToast("⚠️ 最新の読み込みに失敗（キャッシュで続行）", "error");
+      return;
+    }
     if (load) load.fail("読み込みに失敗しました");
     alert("データの読み込みに失敗しました: " + (e.message || e));
   }

@@ -2299,8 +2299,9 @@
     if (idEl && savedId) idEl.value = savedId;
   }
 
-  async function executeBattleLogin(isAuto) {
+  async function executeBattleLogin(isAuto, options) {
     isAuto = isAuto === true;
+    const fromCache = !!(options && options.fromCache);
     const idEl = document.getElementById('loginId');
     const pwEl = document.getElementById('loginPw');
     const errEl = document.getElementById('loginError');
@@ -2318,6 +2319,11 @@
       showLogin();
       return false;
     }
+    if (fromCache) {
+      activeUser = localStorage.getItem('passionMapUserName') || activeUser || '作業員';
+      showApp();
+      toast('📦 キャッシュで起動（最新を確認中…）');
+    }
     if (!isAuto && btn) { btn.disabled = true; btn.textContent = '通信中...'; }
     try {
       const result = await callGAS('login', { orgId: 'default', userId: targetId, password: targetPw });
@@ -2329,11 +2335,16 @@
       localStorage.setItem('spreadsheetId', result.spreadsheetId);
       activeUser = result.name;
       try { await syncWorkRecordsFromServer(); } catch (e) { console.warn(e); }
-      showApp();
-      toast('👤 ' + activeUser + ' さんでログイン');
+      if (!fromCache) showApp();
+      else renderAll();
+      toast(fromCache ? '☁️ 最新データに更新しました' : ('👤 ' + activeUser + ' さんでログイン'));
       return true;
     } catch (e) {
       console.warn('login failed', e);
+      if (fromCache) {
+        toast('⚠️ 通信エラー（キャッシュで続行）');
+        return true;
+      }
       localStorage.removeItem('passionMapUserPw');
       localStorage.removeItem('spreadsheetId');
       if (pwEl) pwEl.value = '';
@@ -2359,7 +2370,8 @@
     const id = localStorage.getItem('passionMapUserId');
     const pw = localStorage.getItem('passionMapUserPw');
     if (id && pw) {
-      const ok = await executeBattleLogin(true);
+      const hasCache = !!(localStorage.getItem('passionMapInitData') || localStorage.getItem('pMapAdminInitData') || localStorage.getItem('passionMapUserName'));
+      const ok = await executeBattleLogin(true, { fromCache: hasCache });
       if (ok) return;
     }
     showSyncOverlay(false);

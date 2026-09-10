@@ -383,6 +383,8 @@
           style="display:none; position:absolute; right:0; top:calc(100% + 6px); min-width:150px; background:#fff; border:1px solid #cfd8dc; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,.18); z-index:6000; padding:6px;">
           <button type="button" onclick="closeAccountMenu(); openMyPage();"
             style="width:100%; background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">👤 マイページ</button>
+          <button type="button" id="accountMenuAdminBtn" onclick="closeAccountMenu(); openAdminFromWorker();"
+            style="display:none; width:100%; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">🗺️ 管理者画面</button>
           <button type="button" onclick="closeAccountMenu(); executeLogout();"
             style="width:100%; background:#F44336; color:#fff; border:none; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; text-align:left;">🚪 ログアウト</button>
         </div>
@@ -473,7 +475,7 @@
   <script src="weather-agri.js?v=1785489000300"></script>
   <script src="api-client.js?v=1788510000000"></script>
   <script src="worker.js?v=1788600000031"></script>
-  <script src="tracking.js?v=1788600000010"></script>
+  <script src="tracking.js?v=1788600000041"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js?v=worker2', { scope: '/worker.html' }).catch(function () {});

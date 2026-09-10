@@ -1308,6 +1308,11 @@ async function fetchWeatherAndUpdateUI() {
         if (cachedStr) {
           try {
             applyScheduleData(JSON.parse(cachedStr));
+            if (typeof window.showRecordSyncToast === 'function') {
+              window.showRecordSyncToast('📦 キャッシュで起動（最新を裏で確認中…）', 'info');
+            } else if (typeof showMapSyncToast === 'function') {
+              showMapSyncToast('📦 キャッシュで起動（最新を裏で確認中…）', 'info');
+            }
           } catch(e) { console.error("Cache parse error", e); }
         }
         if (bootstrapStillOpen && typeof window.markScheduleInitialLoadStep === 'function') {

@@ -141,9 +141,38 @@ function safeColor(v) {
   return /^#[0-9A-Fa-f]{3,8}$/.test(s) ? s : "#58a6ff";
 }
 
+const FARM_BOARD_CACHE_KEY = "passionMapFarmBoardData";
+
 function setStatus(text) {
   const el = document.getElementById("loadStatus");
   if (el) el.textContent = text;
+}
+
+function applyBoardData_(data, statusText) {
+  boardData = {
+    plans: (data && data.plans) || [],
+    fields: (data && data.fields) || [],
+    tasks: (data && data.tasks) || [],
+    prodCategories: (data && data.prodCategories) || []
+  };
+  fillYearFilter();
+  pruneProgressMap();
+  renderBoard();
+  const n = (boardData.plans || []).length;
+  setStatus(statusText || ("計画 " + n + "件"));
+}
+
+function loadBoardFromCache_() {
+  try {
+    const raw = localStorage.getItem(FARM_BOARD_CACHE_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== "object") return false;
+    applyBoardData_(data, "キャッシュ表示中…最新を確認");
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -155,9 +184,11 @@ document.addEventListener("DOMContentLoaded", () => {
   if (document.getElementById("loginPw") && pw) document.getElementById("loginPw").value = pw;
   if (id && sid) {
     hideLogin();
-    loadBoard();
+    const hasCache = loadBoardFromCache_();
+    loadBoard({ background: hasCache });
   } else if (id && pw) {
-    executeLogin(true);
+    const hasCache = loadBoardFromCache_();
+    executeLogin(true, { fromCache: hasCache });
   } else {
     showLogin();
     setStatus("ログインしてください");
@@ -173,7 +204,8 @@ function hideLogin() {
   if (el) el.style.display = "none";
 }
 
-async function executeLogin(isAuto) {
+async function executeLogin(isAuto, options) {
+  const fromCache = !!(options && options.fromCache);
   const id = (document.getElementById("loginId") || {}).value || "";
   const pw = (document.getElementById("loginPw") || {}).value || "";
   const err = document.getElementById("loginError");
@@ -182,6 +214,7 @@ async function executeLogin(isAuto) {
     showLogin();
     return;
   }
+  if (fromCache) hideLogin();
   try {
     const result = await callGAS("login", { orgId: "default", userId: id, password: pw });
     if (!result || !result.success) throw new Error((result && result.message) || "ログイン失敗");
@@ -191,16 +224,24 @@ async function executeLogin(isAuto) {
     localStorage.setItem("passionMapUserRole", result.role || "作業員");
     localStorage.setItem("spreadsheetId", result.spreadsheetId);
     hideLogin();
-    loadBoard();
+    loadBoard({ background: fromCache || !!localStorage.getItem(FARM_BOARD_CACHE_KEY) });
   } catch (e) {
+    if (fromCache || loadBoardFromCache_()) {
+      hideLogin();
+      setStatus("通信エラー（キャッシュで表示中）");
+      loadBoard({ background: true });
+      return;
+    }
     showLogin();
     if (err) err.textContent = e.message || "ログイン失敗";
     if (!isAuto) setStatus("ログイン失敗");
   }
 }
 
-async function loadBoard() {
-  setStatus("読み込み中…");
+async function loadBoard(options) {
+  options = options || {};
+  const background = !!options.background;
+  if (!background) setStatus("読み込み中…");
   try {
     let data = null;
     try {
@@ -208,18 +249,20 @@ async function loadBoard() {
     } catch (e) {
       data = await loadBoardFallback();
     }
-    boardData = {
-      plans: (data && data.plans) || [],
-      fields: (data && data.fields) || [],
-      tasks: (data && data.tasks) || [],
-      prodCategories: (data && data.prodCategories) || []
-    };
-    fillYearFilter();
-    pruneProgressMap();
-    renderBoard();
-    const n = (boardData.plans || []).length;
-    setStatus("計画 " + n + "件");
+    try {
+      localStorage.setItem(FARM_BOARD_CACHE_KEY, JSON.stringify({
+        plans: (data && data.plans) || [],
+        fields: (data && data.fields) || [],
+        tasks: (data && data.tasks) || [],
+        prodCategories: (data && data.prodCategories) || []
+      }));
+    } catch (eSave) {}
+    applyBoardData_(data, "計画 " + (((data && data.plans) || []).length) + "件");
   } catch (e) {
+    if (loadBoardFromCache_()) {
+      setStatus((e.message || "読み込み失敗") + "（キャッシュ表示）");
+      return;
+    }
     setStatus(e.message || "読み込み失敗");
     boardData = { plans: [], fields: [], tasks: [], prodCategories: [] };
     renderBoard();
