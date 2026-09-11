@@ -27993,6 +27993,122 @@ window.getBulkWorkMemoTodayYmd_ = () => {
   return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
 };
 
+/** 月日（＋任意の年）から YYYY-MM-DD を作る。年省略時は近い過去を優先 */
+window.buildBulkWorkMemoYmdFromParts_ = (year, month, day) => {
+  const m = parseInt(month, 10);
+  const d = parseInt(day, 10);
+  if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31)) return '';
+  const today = new Date();
+  const todayY = today.getFullYear();
+  let y = year != null && year !== '' ? parseInt(year, 10) : todayY;
+  if (!(y >= 2000 && y <= 2100)) y = todayY;
+  const make = (yy) => {
+    const dt = new Date(yy, m - 1, d);
+    if (dt.getFullYear() !== yy || dt.getMonth() !== m - 1 || dt.getDate() !== d) return '';
+    return `${yy}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  };
+  let ymd = make(y);
+  if (!ymd) return '';
+  // 年省略で未来すぎる日付なら前年（例: 1月に「12/20」）
+  if (year == null || year === '') {
+    const today0 = new Date(todayY, today.getMonth(), today.getDate());
+    const cand = new Date(y, m - 1, d);
+    const diffDays = (cand - today0) / 86400000;
+    if (diffDays > 14) {
+      const prev = make(y - 1);
+      if (prev) ymd = prev;
+    }
+  }
+  return ymd;
+};
+
+/** 文字列から日付トークンを1件パース（9/7・9月7日・2026-09-07 など） */
+window.parseBulkWorkMemoDateToken_ = (raw) => {
+  const s0 = typeof window.normalizeBulkWorkMemoInputText_ === 'function'
+    ? window.normalizeBulkWorkMemoInputText_(raw)
+    : String(raw || '');
+  const s = String(s0 || '').trim();
+  if (!s) return '';
+  let m = s.match(/^(\d{4})\s*[\/\-年]\s*(\d{1,2})\s*[\/\-月]\s*(\d{1,2})\s*日?$/);
+  if (m) return window.buildBulkWorkMemoYmdFromParts_(m[1], m[2], m[3]);
+  m = s.match(/^(\d{1,2})\s*月\s*(\d{1,2})\s*日$/);
+  if (m) return window.buildBulkWorkMemoYmdFromParts_('', m[1], m[2]);
+  m = s.match(/^(\d{1,2})\s*[\/\-]\s*(\d{1,2})$/);
+  if (m) return window.buildBulkWorkMemoYmdFromParts_('', m[1], m[2]);
+  return '';
+};
+
+/** 行全体が日付だけか（「9/7」「2026年9月7日」など） */
+window.isBulkWorkMemoDateOnlyLine_ = (line) => {
+  const s = String(line || '').trim();
+  if (!s || s.length > 24) return false;
+  // 時刻っぽい行は日付行にしない
+  if (/\d\s*時|\d\s*[:：]\s*\d/.test(s)) return false;
+  return !!window.parseBulkWorkMemoDateToken_(s);
+};
+
+/**
+ * メモ文から作業日を推定
+ * @returns {{ ymd: string, matched: string, dateOnlyLine: boolean }}
+ */
+window.extractBulkWorkMemoDateFromText_ = (text) => {
+  const empty = { ymd: '', matched: '', dateOnlyLine: false };
+  const raw = String(text || '');
+  if (!raw.trim()) return empty;
+  const norm = typeof window.normalizeBulkWorkMemoInputText_ === 'function'
+    ? window.normalizeBulkWorkMemoInputText_(raw)
+    : raw;
+  const lines = String(norm).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+  // 1) 日付だけの行（先頭付近を優先）
+  for (let i = 0; i < Math.min(lines.length, 5); i++) {
+    const line = lines[i];
+    if (!window.isBulkWorkMemoDateOnlyLine_(line)) continue;
+    const ymd = window.parseBulkWorkMemoDateToken_(line);
+    if (ymd) return { ymd: ymd, matched: line, dateOnlyLine: true };
+  }
+
+  // 2) 先頭行の先頭にある日付（「9/7 オイル交換」など）
+  if (lines[0]) {
+    const head = lines[0].match(/^((\d{4}\s*[\/\-年]\s*)?\d{1,2}\s*(?:[\/\-月]\s*\d{1,2}\s*日?|月\s*\d{1,2}\s*日))(?=\s+|$)/);
+    if (head) {
+      const ymd = window.parseBulkWorkMemoDateToken_(head[1]);
+      if (ymd) return { ymd: ymd, matched: head[1], dateOnlyLine: false };
+    }
+  }
+
+  // 3) 文中の最初の日付（行頭〜数文字）
+  const anywhere = String(norm).match(/(?:^|[\s　])((\d{4}\s*[\/\-年]\s*)?\d{1,2}\s*月\s*\d{1,2}\s*日|(?:\d{4}\s*[\/\-]\s*)?\d{1,2}\s*[\/\-]\s*\d{1,2})(?=[\s　]|$)/);
+  if (anywhere) {
+    const tok = String(anywhere[1] || '').trim();
+    const ymd = window.parseBulkWorkMemoDateToken_(tok);
+    if (ymd) return { ymd: ymd, matched: tok, dateOnlyLine: false };
+  }
+  return empty;
+};
+
+/** メモ日付を作業日欄へ反映（見つかったときだけ） */
+window.applyBulkWorkMemoDateFromText_ = (text, opts) => {
+  opts = opts || {};
+  const found = window.extractBulkWorkMemoDateFromText_(text);
+  if (!found || !found.ymd) return '';
+  window._bulkWorkMemoDate = found.ymd;
+  const dateEl = document.getElementById('bulk_work_memo_date');
+  if (dateEl && dateEl.value !== found.ymd) {
+    dateEl.value = found.ymd;
+  }
+  const hintEl = document.getElementById('bulk_work_memo_date_hint');
+  if (hintEl) {
+    hintEl.innerHTML = found.ymd
+      ? `※メモの「${String(found.matched || '').replace(/</g, '&lt;')}」→ 作業日 <b>${found.ymd}</b> に合わせました`
+      : hintEl.innerHTML;
+  }
+  if (opts.prefetch !== false && typeof window.prefetchWorkTimeHints === 'function') {
+    try { window.prefetchWorkTimeHints(found.ymd, { applyToForm: false }).catch(() => {}); } catch (e) {}
+  }
+  return found.ymd;
+};
+
 window.parseBulkWorkMemoHmToken_ = (raw) => {
   const s = (typeof window.normalizeBulkWorkMemoInputText_ === 'function'
     ? window.normalizeBulkWorkMemoInputText_(raw)
@@ -29191,6 +29307,10 @@ window.parseBulkWorkMemo_ = (text) => {
   } catch (e) {}
   let prevEnd = dayLatest || '';
   lines.forEach((line, idx) => {
+    // 「9/7」「2026年9月7日」など日付だけの行は作業にしない（作業日推定用）
+    if (typeof window.isBulkWorkMemoDateOnlyLine_ === 'function' && window.isBulkWorkMemoDateOnlyLine_(line)) {
+      return;
+    }
     // 「右から19畝から21畝まで」のように時刻のない補足行は直前の作業に結合
     if (drafts.length && typeof window.isBulkWorkMemoContinuationLine_ === 'function'
       && window.isBulkWorkMemoContinuationLine_(line)) {
@@ -29270,10 +29390,10 @@ window.openBulkWorkMemoModal_ = () => {
       ${window.buildBulkWorkMemoModalHeaderHtml_('📋 メモから一括入力', '1行＝1件。メモに「休憩」とあれば<b>休憩登録</b>として分けます。作業と休憩は確認画面で別枠です。')}
       ${tempRestoreHtml}
       <label class="form-label" style="margin:0 0 4px;">📅 作業日</label>
-      <input type="date" id="bulk_work_memo_date" class="form-input" value="${esc(keepDate)}" onchange="window._bulkWorkMemoDate=this.value; if(window.prefetchWorkTimeHints) window.prefetchWorkTimeHints(this.value,{applyToForm:false}).catch(function(){});" style="margin-bottom:6px;">
-      <div style="font-size:11px; color:#666; margin:-2px 0 10px; line-height:1.35;">※先頭が「〇時まで」など開始未指定のとき、この日の最後の作業終了が開始になります</div>
+      <input type="date" id="bulk_work_memo_date" class="form-input" value="${esc(keepDate)}" onchange="window._bulkWorkMemoDate=this.value; var h=document.getElementById('bulk_work_memo_date_hint'); if(h) h.textContent='※先頭が「〇時まで」など開始未指定のとき、この日の最後の作業終了が開始になります'; if(window.prefetchWorkTimeHints) window.prefetchWorkTimeHints(this.value,{applyToForm:false}).catch(function(){});" style="margin-bottom:6px;">
+      <div id="bulk_work_memo_date_hint" style="font-size:11px; color:#666; margin:-2px 0 10px; line-height:1.35;">※メモに「9/7」「9月7日」などがあれば作業日を自動で合わせます。先頭が「〇時まで」のときはこの日の最終作業終了が開始になります</div>
       <label class="form-label" style="margin:0 0 4px;">📝 作業メモ</label>
-      <textarea id="bulk_work_memo_text" class="form-input" rows="12" placeholder="${sample.replace(/"/g, '&quot;')}" style="margin-bottom:12px; font-size:13px; line-height:1.45; resize:vertical;">${esc(keepMemo)}</textarea>
+      <textarea id="bulk_work_memo_text" class="form-input" rows="12" placeholder="${sample.replace(/"/g, '&quot;')}" oninput="if(window.applyBulkWorkMemoDateFromText_) window.applyBulkWorkMemoDateFromText_(this.value, {prefetch:false})" style="margin-bottom:12px; font-size:13px; line-height:1.45; resize:vertical;">${esc(keepMemo)}</textarea>
       <button type="button" id="bulk_work_memo_parse_btn" onclick="parseAndReviewBulkWorkMemo_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">✂️ 時間ごとに分けて確認</button>
       <button type="button" onclick="openBulkWorkMemoHistoryModal_()" style="width:100%; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-bottom:8px;">📜 一括入力履歴（日付のまとめ直し）</button>
       <button type="button" onclick="closeBulkWorkMemoModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer;">キャンセル</button>
@@ -29289,7 +29409,12 @@ window.openBulkWorkMemoModal_ = () => {
   } catch (e) {}
   setTimeout(() => {
     const ta = document.getElementById('bulk_work_memo_text');
-    if (ta) ta.focus();
+    if (ta) {
+      ta.focus();
+      if (ta.value && typeof window.applyBulkWorkMemoDateFromText_ === 'function') {
+        window.applyBulkWorkMemoDateFromText_(ta.value, { prefetch: true });
+      }
+    }
   }, 40);
 };
 
@@ -29493,13 +29618,19 @@ window.parseAndReviewBulkWorkMemo_ = () => {
   };
   const text = document.getElementById('bulk_work_memo_text')?.value || '';
   const dateEl = document.getElementById('bulk_work_memo_date');
-  const ymd = (dateEl && dateEl.value) ? dateEl.value : window.getBulkWorkMemoTodayYmd_();
+  // メモ内の日付（9/7 など）があれば作業日を優先して合わせる
+  const memoYmd = (typeof window.applyBulkWorkMemoDateFromText_ === 'function')
+    ? window.applyBulkWorkMemoDateFromText_(text, { prefetch: false })
+    : '';
+  const ymd = memoYmd
+    || ((dateEl && dateEl.value) ? dateEl.value : window.getBulkWorkMemoTodayYmd_());
   if (!String(text).trim()) {
     if (typeof customAlert === 'function') customAlert('作業メモを入力してください。');
     return;
   }
   setParseBtnLoading_();
   window._bulkWorkMemoDate = ymd;
+  if (dateEl && ymd) dateEl.value = ymd;
   const openReview_ = () => {
     try {
       const drafts = window.parseBulkWorkMemo_(text);
