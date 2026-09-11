@@ -65,11 +65,20 @@
       <button class="btn-reload" onclick="location.reload()" style="margin-right:10px;">🔄 更新</button>
       <div style="position:relative; display:inline-block; margin-right:0;">
         <button type="button" id="accountMenuBtn" data-account-name-btn onclick="toggleAccountMenu(event)"
-          style="background:#fff; color:#1565c0; border:1px solid #90caf9; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; cursor:pointer; white-space:nowrap; max-width:160px; overflow:hidden; text-overflow:ellipsis;">👤 アカウント</button>
+          style="background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; cursor:pointer; white-space:nowrap; max-width:180px; overflow:hidden; text-overflow:ellipsis;">👤
+          <span data-account-name>マイページ</span> ▾</button>
         <div id="accountMenuDropdown" onclick="event.stopPropagation()"
           style="display:none; position:absolute; right:0; top:calc(100% + 6px); min-width:160px; background:#fff; border:1px solid #cfd8dc; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,.18); z-index:6000; padding:6px;">
+          <button type="button" onclick="closeAccountMenu(); openMyPage();"
+            style="width:100%; background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">👤 マイページ</button>
+          <button type="button" id="accountMenuScheduleBtn" onclick="closeAccountMenu(); openScheduleFromWorker();"
+            style="display:none; width:100%; background:#E3F2FD; color:#1565C0; border:1px solid #1565C0; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">📅 マネジメント</button>
+          <button type="button" id="accountMenuAdminBtn" onclick="closeAccountMenu(); openAdminFromWorker();"
+            style="display:none; width:100%; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">🗺️ 管理者画面</button>
+          <button type="button" id="accountMenuWorkerBtn" onclick="closeAccountMenu(); openWorkerFromAccount();"
+            style="display:none; width:100%; background:#FFF3E0; color:#E65100; border:1px solid #FB8C00; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">🚜 作業画面</button>
           <button type="button" onclick="closeAccountMenu(); executeLogout();"
-            style="width:100%; background:#c62828; color:#fff; border:none; border-radius:6px; padding:10px 12px; font-weight:bold; font-size:13px; cursor:pointer;">🚪 ログアウト</button>
+            style="width:100%; background:#c62828; color:#fff; border:none; border-radius:6px; padding:10px 12px; font-weight:bold; font-size:13px; cursor:pointer; text-align:left;">🚪 ログアウト</button>
         </div>
       </div>
       <!-- 軌跡表示用（下部タブのアクションシートから参照・非表示） -->

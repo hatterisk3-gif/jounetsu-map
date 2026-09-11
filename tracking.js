@@ -140,7 +140,9 @@
   installCommonTimePicker();
 
   window.getPassionMapUserName = function () {
-    return localStorage.getItem('passionMapUserName') || '';
+    return localStorage.getItem('passionMapUserName')
+      || localStorage.getItem('pMapAdminName')
+      || '';
   };
 
   window.refreshAccountNameButtons = function () {
@@ -153,13 +155,19 @@
         el.textContent = '👤 ' + (window.getPassionMapUserName() || 'アカウント');
       }
     });
+    const path = String(location.pathname || '') + ' ' + String(location.href || '');
+    const onWorker = /worker(?:2)?\.html/i.test(path);
+    const onAdmin = /admin(?:2)?\.html/i.test(path);
+    const onSchedule = /schedule\.html/i.test(path);
     const isAdmin = (typeof window.isWorkerAdmin === 'function')
       ? window.isWorkerAdmin()
       : ((localStorage.getItem('passionMapUserRole') || '作業員') === '管理者');
     const adminBtn = document.getElementById('accountMenuAdminBtn');
-    if (adminBtn) adminBtn.style.display = isAdmin ? 'block' : 'none';
+    if (adminBtn) adminBtn.style.display = (isAdmin && !onAdmin) ? 'block' : 'none';
     const scheduleBtn = document.getElementById('accountMenuScheduleBtn');
-    if (scheduleBtn) scheduleBtn.style.display = isAdmin ? 'block' : 'none';
+    if (scheduleBtn) scheduleBtn.style.display = (isAdmin && !onSchedule) ? 'block' : 'none';
+    const workerBtn = document.getElementById('accountMenuWorkerBtn');
+    if (workerBtn) workerBtn.style.display = onWorker ? 'none' : 'block';
   };
 
   window.openAdminFromWorker = function () {
