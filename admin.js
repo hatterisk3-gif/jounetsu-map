@@ -2262,21 +2262,17 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             window._adminMacPhoto = { add: '', edit: '', clearEdit: false, existingEdit: '' };
             const locOpts = '<option value="">拠点を選択...</option>' + (pdlLocations || []).map(l => `<option value="${String(l).replace(/"/g, '&quot;')}">${l}</option>`).join('');
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
-                <label style="font-size:12px; font-weight:bold; color:#555;">表示名（任意） / ④番号</label>
-                <div style="display:flex; gap:5px;">
-                  <input type="text" id="add_mac_name" class="form-input" style="flex:2; margin-bottom:0; padding:8px;" placeholder="表示名（空なら③④⑤から自動）">
-                  <input type="text" id="add_mac_number" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="④番号">
-                </div>
-                <label style="font-size:12px; font-weight:bold; color:#555;">⑤型式 / ③機械名</label>
-                <div style="display:flex; gap:5px;">
-                  <input type="text" id="add_mac_model" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="⑤型式名">
-                  <select id="add_mac_type" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">${getMachineTypeOptionsHtml('')}</select>
-                </div>
-                <label style="font-size:12px; font-weight:bold; color:#555;">②メインカテゴリ / 拠点</label>
-                <div style="display:flex; gap:5px;">
-                  <select id="add_mac_group" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">${getMachineGroupOptionsHtml('')}</select>
-                  <select id="add_mac_location" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">${locOpts}</select>
-                </div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">拠点名</label>
+                <select id="add_mac_location" class="form-input" style="margin-bottom:0; padding:8px;">${locOpts}</select>
+                <label style="font-size:12px; font-weight:bold; color:#555;">メインカテゴリ</label>
+                <select id="add_mac_group" class="form-input" style="margin-bottom:0; padding:8px;">${getMachineGroupOptionsHtml('')}</select>
+                <label style="font-size:12px; font-weight:bold; color:#555;">機械カテゴリ</label>
+                <select id="add_mac_type" class="form-input" style="margin-bottom:0; padding:8px;">${getMachineTypeOptionsHtml('')}</select>
+                <label style="font-size:12px; font-weight:bold; color:#555;">型式名</label>
+                <input type="text" id="add_mac_model" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例：PH2R / MZ655">
+                <label style="font-size:12px; font-weight:bold; color:#555;">番号</label>
+                <input type="text" id="add_mac_number" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="機械番号・管理番号">
+                <div style="font-size:11px; color:#888; margin-top:-4px;">表示名は「機械カテゴリ 型式名 No.番号」から自動生成されます</div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">購入日 / 燃料</label>
                 <div style="display:flex; gap:5px;">
                   <input type="date" id="add_mac_date" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">
@@ -4601,7 +4597,6 @@ window.openEditToolMaster = (encodedStr) => {
 
 window.openEditMachineMaster = (encodedStr) => {
     const v = JSON.parse(decodeURIComponent(encodedStr));
-    const safeName = (v.name || "").replace(/"/g, '&quot;');
     const safeModel = (v.model || "").replace(/"/g, '&quot;');
     const safeNumber = (v.machineNumber || "").replace(/"/g, '&quot;');
     const purchaseDate = String(v.purchaseDate || '').replace(/\//g, '-');
@@ -4618,18 +4613,17 @@ window.openEditMachineMaster = (encodedStr) => {
         <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
             <h4 style="margin-top:0; color:#1976D2; font-size:15px; border-bottom:2px solid #1976D2; padding-bottom:5px;">✏️ 農機マスタの編集</h4>
             <input type="hidden" id="edit_mac_id" value="${String(v.id || '').replace(/"/g, '&quot;')}">
-            <label class="form-label">車両名・農機名</label>
-            <input type="text" id="edit_mac_name" class="form-input" value="${safeName}">
-            <label class="form-label">機械番号</label>
-            <input type="text" id="edit_mac_number" class="form-input" value="${safeNumber}">
-            <label class="form-label">型式</label>
-            <input type="text" id="edit_mac_model" class="form-input" value="${safeModel}">
+            <label class="form-label">拠点名</label>
+            <select id="edit_mac_location" class="form-input">${locOpts}</select>
+            <label class="form-label">メインカテゴリ</label>
+            <select id="edit_mac_group" class="form-input">${getMachineGroupOptionsHtml(v.group || '')}</select>
             <label class="form-label">機械カテゴリ</label>
             <select id="edit_mac_type" class="form-input">${getMachineTypeOptionsHtml(v.type || '')}</select>
-            <label class="form-label">機械グループ</label>
-            <select id="edit_mac_group" class="form-input">${getMachineGroupOptionsHtml(v.group || '')}</select>
-            <label class="form-label">拠点</label>
-            <select id="edit_mac_location" class="form-input">${locOpts}</select>
+            <label class="form-label">型式名</label>
+            <input type="text" id="edit_mac_model" class="form-input" value="${safeModel}">
+            <label class="form-label">番号</label>
+            <input type="text" id="edit_mac_number" class="form-input" value="${safeNumber}">
+            <div style="font-size:11px; color:#888; margin:-6px 0 10px;">表示名は「機械カテゴリ 型式名 No.番号」から自動生成されます</div>
             <label class="form-label">燃料</label>
             <select id="edit_mac_fuel" class="form-input">${fuelOpts}</select>
             <label class="form-label">購入年月日</label>
@@ -4658,13 +4652,23 @@ window.openEditMachineMaster = (encodedStr) => {
     if (typeof window.renderAdminMachinePhotoPreview === 'function') window.renderAdminMachinePhotoPreview('edit');
 };
 
+window.buildAdminMachineDisplayName_ = (typeName, number, model, fallback) => {
+    if (window.MachineTaxonomy && typeof MachineTaxonomy.buildDisplayName === 'function') {
+        return MachineTaxonomy.buildDisplayName('machine', typeName, number, model, fallback || '') || '';
+    }
+    const typePart = String(typeName || '').trim();
+    const modelPart = String(model || '').trim();
+    let numPart = String(number || '').trim();
+    if (numPart && !/^no\.?/i.test(numPart)) numPart = 'No.' + numPart;
+    const parts = [typePart, modelPart, numPart].filter(Boolean);
+    return parts.length ? parts.join(' ') : String(fallback || '').trim();
+};
+
 window.execMaster = async (type, act, val) => {
     // 農機マスタは専用GASを使う
     if (type === 'machine') {
         try {
             if (act === 'add') {
-                const name = document.getElementById('add_mac_name').value.trim();
-                if (!name) { customAlert("車両名・農機名を入力してください"); return; }
                 const signId = document.getElementById('add_mac_sign').value;
                 if (!signId) { customAlert("定位置の看板を選択してください"); return; }
                 const sign = loadedPolygons[signId];
@@ -4674,6 +4678,11 @@ window.execMaster = async (type, act, val) => {
                 const type = (document.getElementById('add_mac_type') || {}).value || '';
                 const group = (document.getElementById('add_mac_group') || {}).value || '';
                 const location = (document.getElementById('add_mac_location') || {}).value || '';
+                if (!type && !model && !machineNumber) {
+                    customAlert("機械カテゴリ・型式名・番号のいずれかを入力してください");
+                    return;
+                }
+                const name = window.buildAdminMachineDisplayName_(type, machineNumber, model, type || model || machineNumber);
                 const fuel = (document.getElementById('add_mac_fuel') || {}).value || '';
                 const purchaseDate = document.getElementById('add_mac_date').value;
                 const workCategory = collectDetailWorksFromInputs('add_mac_category_rows');
@@ -4714,13 +4723,16 @@ window.execMaster = async (type, act, val) => {
             } else if (act === 'edit') {
                 if (!await customConfirm('更新しますか？')) return;
                 const machineId = document.getElementById('edit_mac_id').value;
-                const name = document.getElementById('edit_mac_name').value.trim();
-                if (!name) { customAlert("名前を入力してください"); return; }
                 const number = document.getElementById('edit_mac_number').value.trim();
                 const model = document.getElementById('edit_mac_model').value.trim();
                 const type = (document.getElementById('edit_mac_type') || {}).value || '';
                 const group = (document.getElementById('edit_mac_group') || {}).value || '';
                 const location = (document.getElementById('edit_mac_location') || {}).value || '';
+                if (!type && !model && !number) {
+                    customAlert("機械カテゴリ・型式名・番号のいずれかを入力してください");
+                    return;
+                }
+                const name = window.buildAdminMachineDisplayName_(type, number, model, type || model || number);
                 const fuel = (document.getElementById('edit_mac_fuel') || {}).value || '';
                 const date = (document.getElementById('edit_mac_date').value || '').replace(/-/g, '/');
                 const category = collectDetailWorksFromInputs('edit_mac_category_rows');
@@ -4756,6 +4768,7 @@ window.execMaster = async (type, act, val) => {
                     if (m && saved && saved.machine) {
                         m.photo = saved.machine.photo || m.photo;
                         m.photo2 = saved.machine.photo2 || '';
+                        if (saved.machine.name) m.name = saved.machine.name;
                     }
                     persistAdminInitCache_();
                     showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
