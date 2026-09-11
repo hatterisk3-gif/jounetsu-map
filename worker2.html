@@ -319,6 +319,8 @@
           style="display:none; position:absolute; right:0; top:calc(100% + 6px); min-width:150px; background:#fff; border:1px solid #cfd8dc; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,.18); z-index:6000; padding:6px;">
           <button type="button" onclick="closeAccountMenu(); openMyPage();"
             style="width:100%; background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">👤 マイページ</button>
+          <button type="button" id="accountMenuScheduleBtn" onclick="closeAccountMenu(); openScheduleFromWorker();"
+            style="display:none; width:100%; background:#E3F2FD; color:#1565C0; border:1px solid #1565C0; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">📅 マネジメント</button>
           <button type="button" id="accountMenuAdminBtn" onclick="closeAccountMenu(); openAdminFromWorker();"
             style="display:none; width:100%; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">🗺️ 管理者画面</button>
           <button type="button" onclick="closeAccountMenu(); executeLogout();"

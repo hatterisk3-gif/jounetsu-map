@@ -1323,9 +1323,355 @@ function updateAdminLegend() {
 }
 
 window.openMasterModal = () => {
+    if (typeof window.closeEquipmentManageModal === 'function') {
+        try { window.closeEquipmentManageModal({ keepMaster: true }); } catch (e) {}
+    }
+    window._equipmentManageActive = false;
     ensureJpCitiesLoaded();
     renderMasterSection();
     document.getElementById('masterModal').style.display = 'flex';
+};
+
+/** マスタ詳細の描画先（通常は masterSections、機械管理モーダル時は equipmentManageBody） */
+window.getMasterSectionsTargetEl_ = () => {
+    const equip = !!window._equipmentManageActive;
+    const tab = window._equipmentManageTab;
+    if (equip && (tab === 'machine' || tab === 'tool' || currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool')) {
+        const el = document.getElementById('equipmentManageBody');
+        if (el) return el;
+    }
+    return document.getElementById('masterSections');
+};
+
+window._equipmentManageActive = false;
+window._equipmentManageTab = 'machine';
+window._adminVehicleTypes = ['軽トラ', '軽バン', '軽四', '普通車'];
+window._adminVehPhotoB64 = '';
+
+window.openEquipmentManageModal = (tab) => {
+    window._equipmentManageActive = true;
+    window._equipmentManageTab = tab || window._equipmentManageTab || 'machine';
+    const mm = document.getElementById('masterModal');
+    if (mm) mm.style.display = 'none';
+    const modal = document.getElementById('equipmentManageModal');
+    if (modal) modal.style.display = 'flex';
+    switchEquipmentManageTab(window._equipmentManageTab);
+};
+
+window.closeEquipmentManageModal = (opts) => {
+    window._equipmentManageActive = false;
+    const modal = document.getElementById('equipmentManageModal');
+    if (modal) modal.style.display = 'none';
+    const body = document.getElementById('equipmentManageBody');
+    if (body) body.innerHTML = '';
+    if (!(opts && opts.keepMaster)) {
+        if (currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool') {
+            currentActiveMasterType = null;
+        }
+    }
+};
+
+window.switchEquipmentManageTab = (tab) => {
+    const next = (tab === 'vehicle' || tab === 'tool') ? tab : 'machine';
+    window._equipmentManageTab = next;
+    window._equipmentManageActive = true;
+    const styles = {
+        machine: { on: '#43A047', bg: '#e8f5e9', fg: '#2e7d32' },
+        vehicle: { on: '#FB8C00', bg: '#fff3e0', fg: '#e65100' },
+        tool: { on: '#5C6BC0', bg: '#e8eaf6', fg: '#3949ab' }
+    };
+    ['machine', 'vehicle', 'tool'].forEach(t => {
+        const btn = document.getElementById('equipmentTab_' + t);
+        if (!btn) return;
+        const active = t === next;
+        const s = styles[t];
+        btn.style.borderBottom = active ? ('3px solid ' + s.on) : '3px solid transparent';
+        btn.style.background = active ? s.bg : '#fff';
+        btn.style.color = active ? s.fg : '#666';
+    });
+    if (next === 'vehicle') {
+        currentActiveMasterType = null;
+        renderEquipmentVehiclePanel_();
+        return;
+    }
+    openMasterDetail(next === 'tool' ? 'tool' : 'machine');
+};
+
+window.getAdminVehicleList_ = () => {
+    const list = window.pdlMobileVehicles;
+    if (Array.isArray(list)) return list;
+    if (list && typeof list === 'object') {
+        return Object.keys(list).map(k => Object.assign({ id: k }, list[k]));
+    }
+    return [];
+};
+
+window.setAdminVehicleList_ = (arr) => {
+    window.pdlMobileVehicles = Array.isArray(arr) ? arr : [];
+};
+
+window.adminVehicleDisplayName_ = (v) => {
+    if (!v) return '';
+    if (window.MachineTaxonomy && MachineTaxonomy.getDisplayName) {
+        try { return MachineTaxonomy.getDisplayName(Object.assign({}, v, { isVehicle: true })) || ''; } catch (e) {}
+    }
+    const type = String(v.vehicleType || v.type || '').trim();
+    const plate = String(v.plateNumber || '').trim();
+    if (type && plate) return type + ' ' + plate;
+    return plate || type || v.id || '';
+};
+
+window.ensureAdminVehiclesLoaded_ = async () => {
+    if (Array.isArray(window.pdlMobileVehicles) && window.pdlMobileVehicles.length) return window.pdlMobileVehicles;
+    try {
+        const res = await callGAS('vehicle_loadAll', {});
+        const map = (res && res.vehicles) ? res.vehicles : {};
+        const arr = Object.keys(map).map(id => Object.assign({ id }, map[id]));
+        window.setAdminVehicleList_(arr);
+        return arr;
+    } catch (e) {
+        console.warn('vehicle_loadAll failed', e);
+        window.setAdminVehicleList_(window.pdlMobileVehicles || []);
+        return window.getAdminVehicleList_();
+    }
+};
+
+window.renderEquipmentVehiclePanel_ = async (editVehicle) => {
+    const body = document.getElementById('equipmentManageBody');
+    if (!body) return;
+    body.innerHTML = '<div style="padding:24px; text-align:center; color:#888;">車両データを読み込み中...</div>';
+    await ensureAdminVehiclesLoaded_();
+    const list = window.getAdminVehicleList_().slice().sort((a, b) =>
+        String(a.plateNumber || '').localeCompare(String(b.plateNumber || ''), 'ja'));
+    const editing = editVehicle || null;
+    const types = (window._adminVehicleTypes || []).slice();
+    list.forEach(v => {
+        const t = String(v.vehicleType || v.type || '').trim();
+        if (t && types.indexOf(t) < 0) types.push(t);
+    });
+    window._adminVehicleTypes = types;
+    if (editing && editing.vehicleType && types.indexOf(editing.vehicleType) < 0) types.push(editing.vehicleType);
+    const typeOpts = types.map(t => {
+        const sel = editing && String(editing.vehicleType || editing.type || '') === t ? ' selected' : '';
+        return `<option value="${String(t).replace(/"/g, '&quot;')}"${sel}>${t}</option>`;
+    }).join('');
+    const mainCat = editing
+        ? ((window.MachineTaxonomy && MachineTaxonomy.normalizeMainCategory)
+            ? MachineTaxonomy.normalizeMainCategory('vehicle', editing.mainCategory || editing.group || editing.driveType)
+            : (editing.mainCategory || editing.driveType || '自動車'))
+        : '自動車';
+    const regDate = editing && editing.registrationDate
+        ? String(editing.registrationDate).replace(/\//g, '-').slice(0, 10)
+        : new Date().toISOString().slice(0, 10);
+    window._adminVehPhotoB64 = '';
+
+    let listRows = '';
+    if (!list.length) {
+        listRows = '<tr><td colspan="2" style="padding:20px; text-align:center; color:#888;">登録された車両はありません</td></tr>';
+    } else {
+        list.forEach(v => {
+            const safe = encodeURIComponent(JSON.stringify(v));
+            const sub = [v.driveType || v.mainCategory, (v.mileage === 0 || v.mileage) ? (v.mileage + ' km') : '', v.model].filter(Boolean).join(' / ');
+            listRows += `<tr style="border-bottom:1px solid #eee;">
+              <td style="padding:10px; vertical-align:middle;">
+                <div style="font-weight:bold; color:#333; font-size:14px;">${adminVehicleDisplayName_(v) || '(未設定)'}</div>
+                <div style="font-size:11px; color:#e65100; margin-top:2px;">${sub || '-'}</div>
+              </td>
+              <td style="padding:10px; vertical-align:middle; text-align:right; white-space:nowrap;">
+                <button type="button" onclick="openAdminVehicleEdit('${safe}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button>
+                <button type="button" onclick="deleteAdminVehicle('${String(v.id || '').replace(/'/g, "\\'")}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>
+              </td>
+            </tr>`;
+        });
+    }
+
+    const formTitle = editing ? '✏️ 車両を編集' : '➕ 新規登録';
+    const formColor = editing ? '#FF9800' : '#4CAF50';
+    body.innerHTML = `
+      <div style="display:flex; gap:20px; height:100%; flex-wrap:wrap; box-sizing:border-box;">
+        <div style="flex:1; min-width:320px; max-width:420px;">
+          <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
+            <h4 style="margin-top:0; margin-bottom:10px; color:${formColor}; font-size:15px; border-bottom:2px solid ${formColor}; padding-bottom:5px;">${formTitle}</h4>
+            <input type="hidden" id="admin_veh_edit_id" value="${editing ? String(editing.id || '').replace(/"/g, '&quot;') : ''}">
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <label style="font-size:12px; font-weight:bold; color:#555;">ナンバー（登録番号）*</label>
+              <input type="text" id="admin_veh_plate" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例：徳島 480 あ 1234" value="${editing ? String(editing.plateNumber || '').replace(/"/g, '&quot;') : ''}">
+              <label style="font-size:12px; font-weight:bold; color:#555;">メインカテゴリ</label>
+              <select id="admin_veh_main" class="form-input" style="margin-bottom:0; padding:8px;">
+                <option value="自動車"${mainCat === '自動車' ? ' selected' : ''}>自動車</option>
+                <option value="作業機"${mainCat === '作業機' ? ' selected' : ''}>作業機</option>
+              </select>
+              <label style="font-size:12px; font-weight:bold; color:#555;">車種</label>
+              <div style="display:flex; gap:5px;">
+                <select id="admin_veh_type" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">${typeOpts}</select>
+                <button type="button" onclick="addAdminVehicleType_()" style="padding:8px; border-radius:4px; border:1px solid #ccc;" title="車種を追加">➕</button>
+              </div>
+              <label style="font-size:12px; font-weight:bold; color:#555;">番号 / 型式</label>
+              <div style="display:flex; gap:5px;">
+                <input type="text" id="admin_veh_number" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="管理番号" value="${editing ? String(editing.vehicleNumber || editing.machineNumber || '').replace(/"/g, '&quot;') : ''}">
+                <input type="text" id="admin_veh_model" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="型式" value="${editing ? String(editing.model || '').replace(/"/g, '&quot;') : ''}">
+              </div>
+              <label style="font-size:12px; font-weight:bold; color:#555;">走行距離(km) / 登録日</label>
+              <div style="display:flex; gap:5px;">
+                <input type="number" id="admin_veh_mileage" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="例: 12000" value="${editing && (editing.mileage === 0 || editing.mileage) ? editing.mileage : ''}">
+                <input type="date" id="admin_veh_date" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" value="${regDate}">
+              </div>
+              <label style="font-size:12px; font-weight:bold; color:#555;">写真</label>
+              <div id="admin_veh_photo_preview" style="min-height:70px; background:#f5f5f5; border:1px dashed #bbb; border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:hidden; margin-bottom:4px;">
+                ${editing && editing.photo ? `<img src="${String(editing.photo).replace(/"/g, '&quot;')}" style="max-width:100%; max-height:120px;">` : '<div style="color:#888; font-size:12px; padding:10px;">写真未登録</div>'}
+              </div>
+              <input type="file" accept="image/*" onchange="previewAdminVehiclePhoto_(this)" style="width:100%; font-size:12px;">
+              <button type="button" onclick="saveAdminVehicle()" style="background:${formColor}; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">${editing ? '更新する' : '車両を追加する'}</button>
+              ${editing ? '<button type="button" onclick="renderEquipmentVehiclePanel_()" style="background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">キャンセル</button>' : ''}
+            </div>
+          </div>
+        </div>
+        <div style="flex:1.5; min-width:320px;">
+          <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; display:flex; flex-direction:column; box-sizing:border-box;">
+            <div style="font-weight:bold; font-size:15px; color:#333; margin-bottom:12px; padding-bottom:8px; border-bottom:2px solid #e0e0e0;">登録済みデータ一覧 (${list.length}件)</div>
+            <div style="flex:1; overflow-y:auto;">
+              <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                <thead>
+                  <tr style="background:#f4f6f8; text-align:left; border-bottom:2px solid #e0e0e0; color:#555;">
+                    <th style="padding:10px;">名称 / 詳細</th>
+                    <th style="padding:10px; width:110px; text-align:right;">操作</th>
+                  </tr>
+                </thead>
+                <tbody>${listRows}</tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>`;
+};
+
+window.addAdminVehicleType_ = () => {
+    const val = prompt('新しい車種を入力してください（例：ステップワゴン、キャリー）');
+    if (!val) return;
+    const name = val.trim();
+    if (!name) return;
+    if (!window._adminVehicleTypes) window._adminVehicleTypes = [];
+    if (window._adminVehicleTypes.indexOf(name) < 0) window._adminVehicleTypes.push(name);
+    const sel = document.getElementById('admin_veh_type');
+    if (sel) {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        sel.appendChild(opt);
+        sel.value = name;
+    }
+};
+
+window.previewAdminVehiclePhoto_ = (input) => {
+    window._adminVehPhotoB64 = '';
+    const preview = document.getElementById('admin_veh_photo_preview');
+    if (!input.files || !input.files[0]) return;
+    const file = input.files[0];
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+            const cvs = document.createElement('canvas');
+            let w = img.width, h = img.height, max = 1200;
+            if (w > h && w > max) { h *= max / w; w = max; }
+            else if (h > max) { w *= max / h; h = max; }
+            cvs.width = w; cvs.height = h;
+            cvs.getContext('2d').drawImage(img, 0, 0, w, h);
+            window._adminVehPhotoB64 = cvs.toDataURL('image/jpeg', 0.8);
+            if (preview) preview.innerHTML = `<img src="${window._adminVehPhotoB64}" style="max-width:100%; max-height:120px;">`;
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+};
+
+window.openAdminVehicleEdit = (encoded) => {
+    try {
+        const v = JSON.parse(decodeURIComponent(encoded));
+        renderEquipmentVehiclePanel_(v);
+    } catch (e) {
+        customAlert('編集データを開けませんでした');
+    }
+};
+
+window.saveAdminVehicle = async () => {
+    const plateNumber = (document.getElementById('admin_veh_plate') || {}).value.trim();
+    if (!plateNumber) { customAlert('ナンバーを入力してください'); return; }
+    const editId = (document.getElementById('admin_veh_edit_id') || {}).value || '';
+    const existing = window.getAdminVehicleList_().find(x => String(x.id) === String(editId));
+    const mileageRaw = (document.getElementById('admin_veh_mileage') || {}).value;
+    const mainCategory = (document.getElementById('admin_veh_main') || {}).value || '自動車';
+    const vehicleType = (document.getElementById('admin_veh_type') || {}).value || '';
+    const vehicleNumber = ((document.getElementById('admin_veh_number') || {}).value || '').trim();
+    const model = ((document.getElementById('admin_veh_model') || {}).value || '').trim();
+    const driveType = mainCategory === '作業機' ? '作業車両' : '移動車両';
+    const payload = {
+        id: existing ? existing.id : ('v_' + Date.now()),
+        plateNumber,
+        mainCategory,
+        group: mainCategory,
+        vehicleType,
+        type: vehicleType,
+        vehicleNumber,
+        machineNumber: vehicleNumber,
+        model,
+        mileage: mileageRaw === '' ? '' : Number(mileageRaw),
+        driveType,
+        registrationDate: (document.getElementById('admin_veh_date') || {}).value || '',
+        photoBase64: window._adminVehPhotoB64 || '',
+        photoFilename: plateNumber.replace(/\s+/g, '_') + '.jpg',
+        photo: existing ? (existing.photo || '') : '',
+        status: existing ? (existing.status || '使用可能') : '使用可能',
+        lat: existing ? (existing.lat || '') : '',
+        lng: existing ? (existing.lng || '') : ''
+    };
+    showAdminSyncToast(existing ? '✅ 更新しました（同期中…）' : '✅ 追加しました（同期中…）', 'ok');
+    try {
+        const result = await callGAS('vehicle_saveVehicle', payload);
+        const saved = {
+            id: payload.id,
+            plateNumber: payload.plateNumber,
+            photo: (result && result.photo) || payload.photo || '',
+            mileage: payload.mileage,
+            driveType: payload.driveType,
+            mainCategory: payload.mainCategory,
+            group: payload.mainCategory,
+            vehicleType: payload.vehicleType,
+            type: payload.vehicleType,
+            vehicleNumber: payload.vehicleNumber,
+            machineNumber: payload.vehicleNumber,
+            model: payload.model,
+            registrationDate: payload.registrationDate,
+            status: payload.status,
+            lat: payload.lat,
+            lng: payload.lng
+        };
+        let list = window.getAdminVehicleList_().slice();
+        const idx = list.findIndex(x => String(x.id) === String(saved.id));
+        if (idx >= 0) list[idx] = Object.assign({}, list[idx], saved);
+        else list.push(saved);
+        window.setAdminVehicleList_(list);
+        window._adminVehPhotoB64 = '';
+        showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+        renderEquipmentVehiclePanel_();
+    } catch (e) {
+        customAlert('保存に失敗しました: ' + (e.message || e));
+    }
+};
+
+window.deleteAdminVehicle = async (id) => {
+    if (!id) return;
+    const v = window.getAdminVehicleList_().find(x => String(x.id) === String(id));
+    const label = adminVehicleDisplayName_(v) || id;
+    if (!await customConfirm(`車両「${label}」を削除しますか？`)) return;
+    try {
+        await callGAS('vehicle_deleteVehicle', { id });
+        window.setAdminVehicleList_(window.getAdminVehicleList_().filter(x => String(x.id) !== String(id)));
+        showAdminSyncToast('☁️ 削除しました', 'ok');
+        renderEquipmentVehiclePanel_();
+    } catch (e) {
+        customAlert('削除に失敗しました: ' + (e.message || e));
+    }
 };
 
 /** 詳細作業の複数枠 → カンマ区切り文字列 */
@@ -1493,6 +1839,10 @@ window.getMasterTypeInfo = (type) => {
 };
 
 window.renderMasterMenu = () => {
+    if (window._equipmentManageActive) {
+        // 機械管理モーダル中にメニューへ戻らない
+        return;
+    }
     currentActiveMasterType = null;
     const btnBack = document.getElementById('btnMasterBack');
     if (btnBack) btnBack.style.display = 'none';
@@ -1556,25 +1906,35 @@ window.switchPesticideMasterTab = tab => switchCatalogMasterTab('pesticide', tab
 
 window.openMasterDetail = (type, customEditHtml = null) => {
     currentActiveMasterType = type;
+    const inEquipment = !!window._equipmentManageActive && (type === 'machine' || type === 'tool');
     const btnBack = document.getElementById('btnMasterBack');
-    if (btnBack) btnBack.style.display = 'inline-block';
+    if (btnBack) btnBack.style.display = inEquipment ? 'none' : 'inline-block';
     
     const info = getMasterTypeInfo(type);
     const titleEl = document.getElementById('masterModalTitle');
-    if (titleEl) titleEl.innerHTML = `${info.title} の設定`;
+    if (titleEl && !inEquipment) titleEl.innerHTML = `${info.title} の設定`;
+    if (inEquipment) {
+        const mm = document.getElementById('masterModal');
+        if (mm) mm.style.display = 'none';
+    }
+
+    const masterTarget = () => (inEquipment ? document.getElementById('equipmentManageBody') : document.getElementById('masterSections'));
 
     if (type === 'cropChemPlan' && !customEditHtml) {
-        document.getElementById('masterSections').innerHTML = window.buildCropChemPlanUiHtml_();
+        const el = masterTarget();
+        if (el) el.innerHTML = window.buildCropChemPlanUiHtml_();
         window.initCropChemPlanUi_();
         return;
     }
     if (type === 'cropCostPlan' && !customEditHtml) {
-        document.getElementById('masterSections').innerHTML = window.buildCropCostPlanUiHtml_();
+        const el = masterTarget();
+        if (el) el.innerHTML = window.buildCropCostPlanUiHtml_();
         window.initCropCostPlanUi_();
         return;
     }
     if (type === 'cropWorkPlan' && !customEditHtml) {
-        document.getElementById('masterSections').innerHTML = window.buildCropWorkPlanUiHtml_();
+        const el = masterTarget();
+        if (el) el.innerHTML = window.buildCropWorkPlanUiHtml_();
         window.initCropWorkPlanUi_();
         return;
     }
@@ -2008,7 +2368,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 bits.push((v.unitPrice != null ? v.unitPrice : '-') + (v.priceUnit ? v.priceUnit : '円'));
                 if (bits.length) subInfo = `<div style="font-size:11px; color:#bf360c; margin-top:3px;">${bits.join(' ／ ')}</div>`;
             }
-            if (type === 'tool' || type === 'material') subInfo = `<span style="font-size:11px; background:#e0e0e0; padding:2px 6px; border-radius:4px; margin-left:6px;">${v.workCategory || '汎用'}</span>`;
+            if (type === 'tool' || type === 'material') subInfo = `<span style="font-size:11px; background:#e0e0e0; padding:2px 6px; border-radius:4px; margin-left:6px;">${v.workCategory || v.workTypes || '汎用'}</span>`;
             if (type === 'material' && v.unit) subInfo += ` <span style="font-size:11px; color:#1a73e8; margin-left:4px;">単位:${v.unit} (容量:${v.size||'-'})</span>`;
             if (type === 'pesticide') {
                 const bits = [];
@@ -2081,6 +2441,8 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 actionBtns = `<button onclick="openEditMachineGroupMaster('${safeName}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else if (type === 'machine') {
                 actionBtns = `<button onclick="openEditMachineMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
+            } else if (type === 'tool') {
+                actionBtns = `<button onclick="openEditToolMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else if (type === 'pesticide') {
                 actionBtns = `<button onclick="openEditPesticideMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else if (type === 'fertilizer') {
@@ -2126,7 +2488,10 @@ window.openMasterDetail = (type, customEditHtml = null) => {
           </div>
       </div>`;
 
-    document.getElementById('masterSections').innerHTML = containerHtml;
+    const _outEl = (typeof window.getMasterSectionsTargetEl_ === 'function')
+        ? window.getMasterSectionsTargetEl_()
+        : document.getElementById('masterSections');
+    if (_outEl) _outEl.innerHTML = containerHtml;
     if (type === 'fertilizer' && !customEditHtml) {
         switchFertilizerMasterTab(window._fertilizerMasterActiveTab || 'registered');
         refreshFertilizerCatalogStats();
@@ -2155,6 +2520,18 @@ window.filterMasterListTable = (keyword) => {
 };
 
 window.renderMasterSection = () => {
+    if (window._equipmentManageActive) {
+        const tab = window._equipmentManageTab || 'machine';
+        if (tab === 'vehicle') {
+            if (typeof window.renderEquipmentVehiclePanel_ === 'function') window.renderEquipmentVehiclePanel_();
+            return;
+        }
+        const type = (currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool')
+            ? currentActiveMasterType
+            : (tab === 'tool' ? 'tool' : 'machine');
+        openMasterDetail(type);
+        return;
+    }
     if (currentActiveMasterType) {
         openMasterDetail(currentActiveMasterType);
     } else {
@@ -4193,6 +4570,35 @@ window.clearAdminMachinePhoto = (which) => {
     window.renderAdminMachinePhotoPreview(which);
 };
 
+window.openEditToolMaster = (encodedStr) => {
+    const v = JSON.parse(decodeURIComponent(encodedStr));
+    const safeName = String(v.name || '').replace(/"/g, '&quot;');
+    const workCat = String(v.workCategory || v.workTypes || '').replace(/"/g, '&quot;');
+    const safeId = String(v.id || '').replace(/"/g, '&quot;');
+    const safeDate = String(v.date || '').replace(/"/g, '&quot;');
+    const safeReg = String(v.regNumber || '').replace(/"/g, '&quot;');
+    const wOpts = '<option value="">+ 関連作業を選ぶ...</option>' + (pdlWorkMaster || []).map(w => `<option value="${String(w.name || '').replace(/"/g, '&quot;')}">${w.name}</option>`).join('');
+    const editHtml = `
+        <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
+            <h4 style="margin-top:0; color:#1976D2; font-size:15px; border-bottom:2px solid #1976D2; padding-bottom:5px;">✏️ 道具マスタの編集</h4>
+            <input type="hidden" id="edit_tool_id" value="${safeId}">
+            <input type="hidden" id="edit_tool_original_name" value="${safeName}">
+            <input type="hidden" id="edit_tool_date" value="${safeDate}">
+            <input type="hidden" id="edit_tool_reg" value="${safeReg}">
+            <label class="form-label">道具名</label>
+            <input type="text" id="edit_tool_name" class="form-input" value="${safeName}">
+            <label class="form-label">関連作業 (任意)</label>
+            <select class="form-input" onchange="let tb=document.getElementById('edit_tool_cat'); if(this.value){ tb.value = tb.value ? tb.value + ',' + this.value : this.value; this.value=''; }">${wOpts}</select>
+            <input type="text" id="edit_tool_cat" class="form-input" style="font-size:12px; background:#e8f0fe;" value="${workCat}" placeholder="プルダウンから選んだ作業がここに追加されます">
+            <div style="display:flex; gap:10px; margin-top:15px;">
+                <button onclick="execMaster('tool', 'edit')" style="flex:1; background:#FF9800; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">更新する</button>
+                <button onclick="openMasterDetail('tool')" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">キャンセル</button>
+            </div>
+        </div>
+    `;
+    openMasterDetail('tool', editHtml);
+};
+
 window.openEditMachineMaster = (encodedStr) => {
     const v = JSON.parse(decodeURIComponent(encodedStr));
     const safeName = (v.name || "").replace(/"/g, '&quot;');
@@ -4372,6 +4778,51 @@ window.execMaster = async (type, act, val) => {
             showAdminSyncToast(act === 'edit' ? '✅ 更新しました（同期中…）' : (act === 'add' ? '✅ 追加しました（同期中…）' : '✅ 削除しました（同期中…）'), 'ok');
         } catch (e) {
             customAlert(e.message || "エラーが発生しました。再度お試しください。");
+            renderMasterSection();
+        }
+        return;
+    }
+
+    // 道具マスタの編集は専用GAS（列構成: C=名前 E=使う作業）
+    if (type === 'tool' && act === 'edit') {
+        try {
+            if (!await customConfirm('更新しますか？')) return;
+            const toolId = (document.getElementById('edit_tool_id') || {}).value || '';
+            const originalName = (document.getElementById('edit_tool_original_name') || {}).value || '';
+            const name = (document.getElementById('edit_tool_name') || {}).value.trim();
+            if (!name) { customAlert('道具名を入力してください'); return; }
+            const workCategory = (document.getElementById('edit_tool_cat') || {}).value.trim();
+            const date = (document.getElementById('edit_tool_date') || {}).value || '';
+            const regNumber = (document.getElementById('edit_tool_reg') || {}).value || '';
+            const key = toolId || originalName;
+            pdlTools = (pdlTools || []).map(t => {
+                const match = (toolId && String(t.id) === String(toolId)) || String(t.name) === String(originalName);
+                if (!match) return t;
+                return Object.assign({}, t, { name, workCategory, workTypes: workCategory, date: date || t.date, regNumber: regNumber || t.regNumber });
+            });
+            persistAdminInitCache_();
+            renderMasterSection();
+            showAdminSyncToast('✅ 更新しました（同期中…）', 'ok');
+            if (toolId) {
+                enqueueAdminSync_(() => callGAS('editToolInMaster', {
+                    toolId, name, works: workCategory, date, regNumber, userName: currentUser
+                })).then(() => {
+                    persistAdminInitCache_();
+                    showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+                }).catch(e => showAdminSyncToast('⚠️ 保存に失敗しました: ' + (e.message || e), 'error'));
+            } else {
+                enqueueAdminSync_(() => callGAS('manageMaster', {
+                    masterType: 'tool', manageAction: 'edit',
+                    value: { originalName, id: key, newData: { name, workCategory } },
+                    userName: currentUser
+                })).then(list => {
+                    if (Array.isArray(list)) applyMasterServerList_('tool', list);
+                    persistAdminInitCache_();
+                    showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+                }).catch(e => showAdminSyncToast('⚠️ 保存に失敗しました: ' + (e.message || e), 'error'));
+            }
+        } catch (e) {
+            customAlert(e.message || 'エラーが発生しました。再度お試しください。');
             renderMasterSection();
         }
         return;
@@ -4735,7 +5186,9 @@ window.execMaster = async (type, act, val) => {
     syncAdminCall_('manageMaster', payload, { key: 'manageMaster:' + type + ':' + act + ':' + Date.now(), op: 'manageMaster', payload }).then(updatedList => {
         applyMasterServerList_(type, updatedList);
         persistAdminInitCache_();
-        if (document.getElementById('masterModal') && document.getElementById('masterModal').style.display === 'flex') {
+        const mm = document.getElementById('masterModal');
+        const em = document.getElementById('equipmentManageModal');
+        if ((mm && mm.style.display === 'flex') || (em && em.style.display === 'flex' && window._equipmentManageActive)) {
             renderMasterSection();
         }
         showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');

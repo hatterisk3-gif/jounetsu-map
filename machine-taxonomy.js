@@ -74,7 +74,7 @@
     return String(item.plateNumber || item.vehicleNumber || item.machineNumber || item.name || '').trim();
   }
 
-  /** 農機名 = 機械名（機種）+ 型式名 + No.番号（B列 name は使わない） */
+  /** 農機名 = 機械名（機種）+ 型式名 + No.番号（可能なら B列 name は使わない） */
   function buildDisplayName(kind, typeName, number, model, fallbackName) {
     kind = kind === 'vehicle' ? 'vehicle' : 'machine';
     if (kind === 'vehicle') {
@@ -90,20 +90,38 @@
     }
     var mParts = [typePart, modelPart, numPart].filter(Boolean);
     if (mParts.length) return mParts.join(' ');
-    return '';
+    return String(fallbackName || '').trim();
+  }
+
+  function sanitizeLegacyName_(s) {
+    var n = String(s || '').trim();
+    if (!n || n === '(無名)' || n === '（無名）' || n === '名称未設定' || n === '（名称未設定）') return '';
+    return n;
   }
 
   function getDisplayName(item) {
     if (!item) return '';
-    if (item.isTool) return String(item.name || '').trim();
+    if (item.isTool) return sanitizeLegacyName_(item.name) || String(item.name || '').trim();
     var kind = getKindFromItem(item);
     var type = getItemTypeName(item);
+    var model = getItemModel(item);
+    var number = getItemNumber(item);
+    var legacy = sanitizeLegacyName_(item.name);
     if (kind === 'vehicle') {
       var plate = getVehiclePlate(item);
       if (type && plate && plate !== type) return type + ' ' + plate;
-      return plate || type || '';
+      return plate || type || legacy || '';
     }
-    return buildDisplayName('machine', type, getItemNumber(item), getItemModel(item), '');
+    // 機械名（type）+ 型式 + 番号。type が空なら name を機械名として使う
+    var built = buildDisplayName('machine', type, number, model, '');
+    if (built) return built;
+    if (legacy) {
+      var needModel = model && legacy.indexOf(model) < 0 ? model : '';
+      var needNum = number && legacy.indexOf(String(number)) < 0 && legacy.indexOf('No.' + number) < 0
+        ? number : '';
+      return buildDisplayName('machine', legacy, needNum, needModel, legacy);
+    }
+    return '';
   }
 
   function normalizeItem(item) {
@@ -194,7 +212,7 @@
     if (!main) {
       if (item.isTool) main = String(item.name || '').trim();
       else if (item._kind === 'vehicle' || item.isVehicle) main = String(item.plateNumber || item.name || '').trim();
-      else main = '(無名)';
+      else main = '（名称未設定）';
     }
     if (item._mainCategory) {
       return icon + ' [' + item._mainCategory + '] ' + main;

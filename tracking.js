@@ -153,13 +153,13 @@
         el.textContent = '👤 ' + (window.getPassionMapUserName() || 'アカウント');
       }
     });
+    const isAdmin = (typeof window.isWorkerAdmin === 'function')
+      ? window.isWorkerAdmin()
+      : ((localStorage.getItem('passionMapUserRole') || '作業員') === '管理者');
     const adminBtn = document.getElementById('accountMenuAdminBtn');
-    if (adminBtn) {
-      const isAdmin = (typeof window.isWorkerAdmin === 'function')
-        ? window.isWorkerAdmin()
-        : ((localStorage.getItem('passionMapUserRole') || '作業員') === '管理者');
-      adminBtn.style.display = isAdmin ? 'block' : 'none';
-    }
+    if (adminBtn) adminBtn.style.display = isAdmin ? 'block' : 'none';
+    const scheduleBtn = document.getElementById('accountMenuScheduleBtn');
+    if (scheduleBtn) scheduleBtn.style.display = isAdmin ? 'block' : 'none';
   };
 
   window.openAdminFromWorker = function () {
@@ -171,7 +171,35 @@
       else alert('管理者権限が必要です。');
       return;
     }
+    if (/admin(?:2)?\.html/i.test(location.pathname || '') || /admin(?:2)?\.html/i.test(location.href || '')) {
+      if (typeof window.closeAccountMenu === 'function') window.closeAccountMenu();
+      return;
+    }
     window.location.href = 'admin.html';
+  };
+
+  window.openScheduleFromWorker = function () {
+    const isAdmin = (typeof window.isWorkerAdmin === 'function')
+      ? window.isWorkerAdmin()
+      : ((localStorage.getItem('passionMapUserRole') || '作業員') === '管理者');
+    if (!isAdmin) {
+      if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+      else alert('管理者権限が必要です。');
+      return;
+    }
+    if (/schedule\.html/i.test(location.pathname || '') || /schedule\.html/i.test(location.href || '')) {
+      if (typeof window.closeAccountMenu === 'function') window.closeAccountMenu();
+      return;
+    }
+    window.location.href = 'schedule.html';
+  };
+
+  window.openWorkerFromAccount = function () {
+    if (/worker(?:2)?\.html/i.test(location.pathname || '') || /worker(?:2)?\.html/i.test(location.href || '')) {
+      if (typeof window.closeAccountMenu === 'function') window.closeAccountMenu();
+      return;
+    }
+    window.location.href = 'worker.html';
   };
 
   window.toggleAccountMenu = function (ev) {

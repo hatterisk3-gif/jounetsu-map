@@ -2044,6 +2044,34 @@ function manageMasterData(masterType, manageAction, value, userName) {
       } else {
         throw new Error('更新内容がありません');
       }
+    } else if (masterType === 'tool') {
+      const id = String((value && (value.id || value.originalId)) || '').trim();
+      const originalName = String((value && value.originalName) || '').trim();
+      const nd = (value && value.newData) || value || {};
+      const newName = String(nd.name || '').trim();
+      const workCat = String(nd.workCategory || nd.workTypes || nd.works || '').trim();
+      if (!newName) throw new Error('道具名を入力してください');
+      let found = false;
+      for (let i = 1; i < data.length; i++) {
+        const rowId = String(data[i][0] || '').trim();
+        const colB = String(data[i][1] || '').trim();
+        const colC = String(data[i][2] || '').trim();
+        const match = (id && rowId === id) || (!id && (colB === originalName || colC === originalName));
+        if (!match) continue;
+        // 在庫レイアウト: A=ID B=日付 C=名前 D=登録番号 E=使う作業
+        // manageMaster追加レイアウト: A=ID B=名前 C="" D=関連作業
+        if (colC) {
+          sheet.getRange(i + 1, 3).setValue(newName);
+          sheet.getRange(i + 1, 5).setValue(workCat);
+        } else {
+          sheet.getRange(i + 1, 2).setValue(newName);
+          sheet.getRange(i + 1, 4).setValue(workCat);
+        }
+        found = true;
+        writeLog(userName, "マスタ編集", newName, `対象: ${sheetName}` + (originalName ? ` (元: ${originalName})` : ''));
+        break;
+      }
+      if (!found) throw new Error('対象の道具が見つかりません');
     }
   } 
   else if (manageAction === 'delete') {
