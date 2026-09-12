@@ -65,8 +65,16 @@
     return String(item.machineNumber || item.serialNo || item.vehicleNumber || '').trim();
   }
 
+  function joinModels_(model, model2) {
+    var a = String(model || '').trim();
+    var b = String(model2 || '').trim();
+    if (a && b && a !== b) return a + ' / ' + b;
+    return a || b || '';
+  }
+
   function getItemModel(item) {
-    return String(item.model || item.modelType || '').trim();
+    if (!item) return '';
+    return joinModels_(item.model || item.modelType, item.model2);
   }
 
   function getVehiclePlate(item) {

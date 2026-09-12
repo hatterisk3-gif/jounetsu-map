@@ -9222,11 +9222,12 @@ function addMachineToSign(params) {
   const signId = params.signId || "";
   const fuel = params.fuel || params.fuelType || "";
   
-  // A–U スリム21列
+  // A–V スリム22列
   const row = buildNoukiMachineRow({
     id: newId,
     name: params.name,
     model: params.model || params.modelType || "",
+    model2: params.model2 || "",
     workCategory: params.workCategory || "",
     photo: photo1Url,
     photo2: photo2Url,
@@ -9254,7 +9255,7 @@ function addMachineToSign(params) {
   const nextRow = sheet.getLastRow() + 1;
   sheet.getRange(nextRow, 1, 1, row.length).setValues([row]);
 
-  const displayName = buildNoukiDisplayName_(params.type || '', params.model || params.modelType || '', params.machineNumber || params.serialNo || '', null)
+  const displayName = buildNoukiDisplayName_(params.type || '', params.model || params.modelType || '', params.machineNumber || params.serialNo || '', null, params.model2 || '')
     || params.name || newId;
   writeLog(params.userName, "農機新規登録", displayName, `定位置: ${signName}`);
   
@@ -9866,6 +9867,7 @@ function editMachineInMaster(params) {
   const merged = Object.assign({}, existing, {
     name: params.name != null ? params.name : existing.name,
     model: params.model != null ? params.model : (params.modelType != null ? params.modelType : existing.model),
+    model2: params.model2 != null ? params.model2 : existing.model2,
     workCategory: params.workCategory != null ? params.workCategory : existing.workCategory,
     purchaseDate: params.purchaseDate != null ? params.purchaseDate : existing.purchaseDate,
     machineNumber: params.machineNumber != null ? params.machineNumber : (params.serialNo != null ? params.serialNo : existing.machineNumber),
@@ -16469,15 +16471,15 @@ function getOrCreateSheet(sheetName, headers) {
 }
 
 // ==========================================
-// 農機マスタ（スリム21列）
+// 農機マスタ（スリム22列）
 // A ID / B 機種 / C 型式 / D 機械番号 / E 機械グループ / F 作業分類 / G 燃料 / H ヒッチ規格
 // I 写真 / J 写真2 / K 場所看板名 / L 場所看板id / M 現在地 / N 現在地ID
-// O 症状名 / P 部品名 / Q 整備内容候補 / R 稼働状況 / S 登録者 / T 購入年月日 / U 対応農機ID
+// O 症状名 / P 部品名 / Q 整備内容候補 / R 稼働状況 / S 登録者 / T 購入年月日 / U 対応農機ID / V 型式2
 // ==========================================
 const NOUKI_EXT_HEADERS = [
   'ID', '機種', '型式', '機械番号', '機械グループ', '作業分類', '燃料', 'ヒッチ規格',
   '写真', '写真2', '場所看板名', '場所看板id', '現在地', '現在地ID',
-  '症状名', '部品名', '整備内容候補', '稼働状況', '登録者', '購入年月日', '対応農機ID'
+  '症状名', '部品名', '整備内容候補', '稼働状況', '登録者', '購入年月日', '対応農機ID', '型式2'
 ];
 
 /** 1-based 列番号（新レイアウト） */
@@ -16502,12 +16504,20 @@ const NOUKI_COL = {
   status: 18,
   userName: 19,
   purchaseDate: 20,
-  targetMachineIds: 21
+  targetMachineIds: 21,
+  model2: 22
 };
 
-function buildNoukiDisplayName_(type, model, number, sameModelCount) {
+function joinNoukiModels_(model, model2) {
+  const a = String(model || '').trim();
+  const b = String(model2 || '').trim();
+  if (a && b && a !== b) return a + ' / ' + b;
+  return a || b || '';
+}
+
+function buildNoukiDisplayName_(type, model, number, sameModelCount, model2) {
   const typePart = String(type || '').trim();
-  const modelPart = String(model || '').trim();
+  const modelPart = joinNoukiModels_(model, model2);
   let numPart = String(number || '').trim();
   // 同じ型式が1台だけのときは番号を表示しない
   if (sameModelCount != null && Number(sameModelCount) <= 1) {
@@ -16518,14 +16528,19 @@ function buildNoukiDisplayName_(type, model, number, sameModelCount) {
   return [typePart, modelPart, numPart].filter(Boolean).join(' ');
 }
 
-function noukiSameModelKey_(group, type, model) {
-  return [String(group || '').trim(), String(type || '').trim(), String(model || '').trim()].join('\t');
+function noukiSameModelKey_(group, type, model, model2) {
+  return [
+    String(group || '').trim(),
+    String(type || '').trim(),
+    String(model || '').trim(),
+    String(model2 || '').trim()
+  ].join('\t');
 }
 
 /** シート上の同型式台数を数える */
-function countNoukiSameModelOnSheet_(sheet, group, type, model) {
+function countNoukiSameModelOnSheet_(sheet, group, type, model, model2) {
   if (!sheet) return 0;
-  const key = noukiSameModelKey_(group, type, model);
+  const key = noukiSameModelKey_(group, type, model, model2);
   if (!String(key).replace(/\t/g, '')) return 0;
   const data = sheet.getDataRange().getValues();
   let n = 0;
@@ -16534,7 +16549,8 @@ function countNoukiSameModelOnSheet_(sheet, group, type, model) {
     const t = String(data[i][1] || '').trim();
     const m = String(data[i][2] || '').trim();
     const g = String(data[i][4] || '').trim();
-    if (noukiSameModelKey_(g, t, m) === key) n++;
+    const m2 = String(data[i][21] || '').trim();
+    if (noukiSameModelKey_(g, t, m, m2) === key) n++;
   }
   return n;
 }
@@ -16545,13 +16561,15 @@ function finalizeNoukiMachineDisplay_(machine, sheet) {
     sheet || ensureNoukiMasterSheet(),
     machine.group || machine.mainCategory,
     machine.type,
-    machine.model || machine.modelType
+    machine.model || machine.modelType,
+    machine.model2
   );
   machine.name = buildNoukiDisplayName_(
     machine.type,
     machine.model || machine.modelType,
     machine.machineNumber || machine.serialNo,
-    count || 1
+    count || 1,
+    machine.model2
   ) || machine.type || machine.model || machine.machineNumber || machine.name || '';
   return machine;
 }
@@ -16562,13 +16580,13 @@ function applyNoukiDisplayNamesByModelCount_(machines) {
   const counts = {};
   list.forEach(function(m) {
     if (!m) return;
-    const key = noukiSameModelKey_(m.group || m.mainCategory, m.type, m.model || m.modelType);
+    const key = noukiSameModelKey_(m.group || m.mainCategory, m.type, m.model || m.modelType, m.model2);
     counts[key] = (counts[key] || 0) + 1;
   });
   list.forEach(function(m) {
     if (!m) return;
-    const key = noukiSameModelKey_(m.group || m.mainCategory, m.type, m.model || m.modelType);
-    const displayName = buildNoukiDisplayName_(m.type, m.model || m.modelType, m.machineNumber || m.serialNo, counts[key] || 1);
+    const key = noukiSameModelKey_(m.group || m.mainCategory, m.type, m.model || m.modelType, m.model2);
+    const displayName = buildNoukiDisplayName_(m.type, m.model || m.modelType, m.machineNumber || m.serialNo, counts[key] || 1, m.model2);
     m.name = displayName || m.type || m.model || m.machineNumber || m.name || '';
   });
   return list;
@@ -16627,12 +16645,14 @@ function parseNoukiMachineRow(row) {
   const userName = String(row[18] || '').trim();
   const purchaseDate = String(row[19] || '').trim();
   const targetMachineIds = String(row[20] || '').trim();
-  const displayName = buildNoukiDisplayName_(type, model, machineNumber, null);
+  const model2 = String(row[21] || '').trim();
+  const displayName = buildNoukiDisplayName_(type, model, machineNumber, null, model2);
   return {
     id: String(row[0] || '').trim(),
     name: displayName || type || model || machineNumber,
     type: type,
     model: model,
+    model2: model2,
     machineNumber: machineNumber,
     group: group,
     mainCategory: group,
@@ -16667,6 +16687,7 @@ function parseNoukiMachineRow(row) {
 function buildNoukiMachineRow(m) {
   const type = String(m.type || '').trim();
   const model = m.model != null ? String(m.model) : String(m.modelType || '');
+  const model2 = m.model2 != null ? String(m.model2) : '';
   const machineNumber = m.machineNumber != null ? String(m.machineNumber) : String(m.serialNo || '');
   const group = String(m.group || m.mainCategory || '').trim();
   const signName = String(m.signName || m.location || '').trim();
@@ -16698,7 +16719,8 @@ function buildNoukiMachineRow(m) {
     m.status || '使用可能',
     m.userName || '',
     m.purchaseDate || '',
-    m.targetMachineIds || ''
+    m.targetMachineIds || '',
+    model2
   ];
 }
 
@@ -16816,6 +16838,7 @@ function machine_saveMachine(p) {
   const merged = Object.assign({}, existing || {}, p, {
     id: id,
     model: p.model != null ? p.model : (p.modelType != null ? p.modelType : (existing && existing.model) || ""),
+    model2: p.model2 != null ? p.model2 : (existing && existing.model2) || "",
     fuel: p.fuel != null ? p.fuel : (p.fuelType != null ? p.fuelType : (existing && existing.fuel) || ""),
     machineNumber: p.machineNumber != null ? p.machineNumber : (p.serialNo != null ? p.serialNo : (existing && existing.machineNumber) || ""),
     status: p.status || (existing && existing.status) || "使用可能",

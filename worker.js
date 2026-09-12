@@ -31005,6 +31005,7 @@ window.buildEquipmentDisplayLabel_ = (item) => {
   }
   const type = String(enriched.type || '').trim();
   const model = String(enriched.model || enriched.modelType || '').trim();
+  const model2 = String(enriched.model2 || '').trim();
   const group = String(enriched.group || enriched.mainCategory || '').trim();
   let num = String(enriched.machineNumber || enriched.serialNo || '').trim();
   const list = window.pdlMachines || [];
@@ -31012,16 +31013,18 @@ window.buildEquipmentDisplayLabel_ = (item) => {
     if (!mac || mac.isVehicle || mac.isTool) return false;
     return String(mac.group || mac.mainCategory || '').trim() === group
       && String(mac.type || '').trim() === type
-      && String(mac.model || mac.modelType || '').trim() === model;
+      && String(mac.model || mac.modelType || '').trim() === model
+      && String(mac.model2 || '').trim() === model2;
   }).length;
   if (sameCount <= 1) num = '';
   else if (num && !/^no\./i.test(num)) num = 'No.' + num;
   const legacy = String(enriched.name || '').trim();
   const legacyOk = legacy && legacy !== '(無名)' && legacy !== '（無名）' ? legacy : '';
   const machineName = type || legacyOk;
+  const modelDisp = [model, model2].filter(Boolean).join(' / ');
   const parts = [];
   if (machineName) parts.push(machineName);
-  if (model && (!machineName || machineName.indexOf(model) < 0)) parts.push(model);
+  if (modelDisp && (!machineName || machineName.indexOf(modelDisp) < 0)) parts.push(modelDisp);
   if (num && (!machineName || (machineName.indexOf(num) < 0 && machineName.indexOf(String(enriched.machineNumber || enriched.serialNo || '')) < 0))) {
     parts.push(num);
   }
