@@ -74,9 +74,59 @@
     return String(item.plateNumber || item.vehicleNumber || item.machineNumber || item.name || '').trim();
   }
 
-  /** 農機名 = 機械名（機種）+ 型式名 + No.番号（可能なら B列 name は使わない） */
-  function buildDisplayName(kind, typeName, number, model, fallbackName) {
+  function getKnownMachines_() {
+    try {
+      if (typeof global.pdlMachines !== 'undefined' && Array.isArray(global.pdlMachines)) {
+        return global.pdlMachines;
+      }
+    } catch (e) {}
+    try {
+      if (typeof window !== 'undefined' && Array.isArray(window.pdlMachines)) {
+        return window.pdlMachines;
+      }
+    } catch (e) {}
+    return [];
+  }
+
+  /** 番号の共有単位（メインカテゴリ＋機械カテゴリ＋型式名） */
+  function sameModelKey_(group, typeName, model) {
+    return [
+      String(group || '').trim(),
+      String(typeName || '').trim(),
+      String(model || '').trim()
+    ].join('\t');
+  }
+
+  function getItemSameModelKey_(item) {
+    if (!item) return '\t\t';
+    return sameModelKey_(
+      item.group || item.mainCategory || item._mainCategory || '',
+      getItemTypeName(item),
+      getItemModel(item)
+    );
+  }
+
+  function countMachinesWithSameModel_(group, typeName, model, list) {
+    var key = sameModelKey_(group, typeName, model);
+    if (!String(key).replace(/\t/g, '')) return 0;
+    var n = 0;
+    (list || []).forEach(function (mac) {
+      if (!mac || mac.isVehicle || mac.isTool || mac.kind === 'vehicle' || mac.kind === 'tool') return;
+      if (getItemSameModelKey_(mac) === key) n++;
+    });
+    return n;
+  }
+
+  /** 同じ型式が1台以下なら番号を表示しない */
+  function shouldOmitMachineNumber_(group, typeName, model, list) {
+    if (!list || !list.length) return false;
+    return countMachinesWithSameModel_(group, typeName, model, list) <= 1;
+  }
+
+  /** 農機名 = 機械名（機種）+ 型式名 + No.番号（同じ型式が1台なら番号なし） */
+  function buildDisplayName(kind, typeName, number, model, fallbackName, opts) {
     kind = kind === 'vehicle' ? 'vehicle' : 'machine';
+    opts = opts || {};
     if (kind === 'vehicle') {
       var vParts = [typeName, number].map(function (x) { return String(x || '').trim(); }).filter(Boolean);
       if (vParts.length) return vParts.join(' ');
@@ -85,7 +135,16 @@
     var typePart = String(typeName || '').trim();
     var modelPart = String(model || '').trim();
     var numPart = String(number || '').trim();
-    if (numPart) {
+    var groupPart = String(opts.group || '').trim();
+    var list = opts.machineList;
+    if (list == null) list = getKnownMachines_();
+    var omitNumber = !!opts.omitNumber;
+    if (!omitNumber && opts.forceShowNumber !== true) {
+      omitNumber = shouldOmitMachineNumber_(groupPart, typePart, modelPart, list);
+    }
+    if (omitNumber) {
+      numPart = '';
+    } else if (numPart) {
       numPart = /^no\.?/i.test(numPart) ? numPart : ('No.' + numPart);
     }
     var mParts = [typePart, modelPart, numPart].filter(Boolean);
@@ -112,14 +171,14 @@
       if (type && plate && plate !== type) return type + ' ' + plate;
       return plate || type || legacy || '';
     }
-    // 機械名（type）+ 型式 + 番号。type が空なら name を機械名として使う
-    var built = buildDisplayName('machine', type, number, model, '');
+    var group = String(item.group || item.mainCategory || '').trim();
+    var built = buildDisplayName('machine', type, number, model, '', { group: group });
     if (built) return built;
     if (legacy) {
       var needModel = model && legacy.indexOf(model) < 0 ? model : '';
       var needNum = number && legacy.indexOf(String(number)) < 0 && legacy.indexOf('No.' + number) < 0
         ? number : '';
-      return buildDisplayName('machine', legacy, needNum, needModel, legacy);
+      return buildDisplayName('machine', legacy, needNum, needModel, legacy, { group: group });
     }
     return '';
   }
@@ -246,6 +305,9 @@
     getVehiclePlate: getVehiclePlate,
     buildDisplayName: buildDisplayName,
     getDisplayName: getDisplayName,
+    sameModelKey_: sameModelKey_,
+    countMachinesWithSameModel_: countMachinesWithSameModel_,
+    shouldOmitMachineNumber_: shouldOmitMachineNumber_,
     normalizeItem: normalizeItem,
     collectAllEquipment: collectAllEquipment,
     filterEquipment: filterEquipment,

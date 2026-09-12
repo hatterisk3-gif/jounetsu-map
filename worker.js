@@ -30982,7 +30982,7 @@ window.getBulkWorkMemoMaintenanceTargets_ = (draft) => {
   return items;
 };
 
-/** 整備対象・農機の表示名（機械名＋型式＋番号） */
+/** 整備対象・農機の表示名（機械名＋型式＋番号。同型式1台なら番号なし） */
 window.buildEquipmentDisplayLabel_ = (item) => {
   if (!item) return '';
   const enriched = Object.assign({}, item, {
@@ -31005,8 +31005,17 @@ window.buildEquipmentDisplayLabel_ = (item) => {
   }
   const type = String(enriched.type || '').trim();
   const model = String(enriched.model || enriched.modelType || '').trim();
+  const group = String(enriched.group || enriched.mainCategory || '').trim();
   let num = String(enriched.machineNumber || enriched.serialNo || '').trim();
-  if (num && !/^no\./i.test(num)) num = 'No.' + num;
+  const list = window.pdlMachines || [];
+  const sameCount = list.filter(mac => {
+    if (!mac || mac.isVehicle || mac.isTool) return false;
+    return String(mac.group || mac.mainCategory || '').trim() === group
+      && String(mac.type || '').trim() === type
+      && String(mac.model || mac.modelType || '').trim() === model;
+  }).length;
+  if (sameCount <= 1) num = '';
+  else if (num && !/^no\./i.test(num)) num = 'No.' + num;
   const legacy = String(enriched.name || '').trim();
   const legacyOk = legacy && legacy !== '(無名)' && legacy !== '（無名）' ? legacy : '';
   const machineName = type || legacyOk;

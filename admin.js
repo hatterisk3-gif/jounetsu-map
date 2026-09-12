@@ -1202,6 +1202,9 @@ function renderInitData(data, opts) {
     const keepLocalMasters = hasPendingAdminSyncOf_(['manageMaster']);
     if (!keepLocalMasters) {
         window.pdlMachines = data.pdl.machines || [];
+        if (typeof window.refreshAdminMachineDisplayNames_ === 'function') {
+            window.refreshAdminMachineDisplayNames_();
+        }
         pdlLocations = data.pdl.locations || [];
         pdlLocationDetails = data.pdl.locationDetails || pdlLocations.map(n => ({ name: n, prefecture: '', city: '', climate: '' }));
         if (data.pdl.locationDetails && data.pdl.locationDetails.length) {
@@ -2287,7 +2290,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <label style="font-size:12px; font-weight:bold; color:#555;">番号</label>
                 <input type="text" id="add_mac_number" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="自動採番（手動変更可）" oninput="markAdminMachineNumberManual_()">
                 <div id="add_mac_number_hint" style="font-size:11px; color:#888; margin-top:-4px;">メインカテゴリ・機械カテゴリ・型式名が一致する既存台があれば、次の番号を自動入力します</div>
-                <div style="font-size:11px; color:#888;">表示名は「機械カテゴリ 型式名 No.番号」から自動生成されます</div>
+                <div style="font-size:11px; color:#888;">表示名は「機械カテゴリ 型式名」＋（同型式が2台以上のときだけ）No.番号</div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">購入日 / 燃料</label>
                 <div style="display:flex; gap:5px;">
                   <input type="date" id="add_mac_date" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">
@@ -2338,7 +2341,17 @@ window.openMasterDetail = (type, customEditHtml = null) => {
         listHtml += `<tr><td colspan="2" style="padding:20px; text-align:center; color:#888;">登録されたデータはありません</td></tr>`;
     } else {
         list.forEach(v => {
-            const dispName = (type === 'cropCultSetting') ? (v.cropName || v.name || v) : (v.name || v);
+            let dispName = (type === 'cropCultSetting') ? (v.cropName || v.name || v) : (v.name || v);
+            if (type === 'machine' && typeof window.buildAdminMachineDisplayName_ === 'function') {
+                dispName = window.buildAdminMachineDisplayName_(
+                    v.type,
+                    v.machineNumber || v.serialNo,
+                    v.model || v.modelType,
+                    v.name || v,
+                    v.group || v.mainCategory,
+                    v.id
+                ) || dispName;
+            }
             const deleteVal = (type === 'cropCultSetting') ? (v.cropName || v.name || v) : (v.id || v.name || v);
             let subInfo = "";
 
@@ -2417,7 +2430,10 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             }
             if (type === 'machine') {
                 const bits = [];
-                if (v.machineNumber) bits.push(`No.${v.machineNumber}`);
+                const sameCount = (typeof window.findAdminMachinesMatchingTrio_ === 'function')
+                    ? window.findAdminMachinesMatchingTrio_(v.group || v.mainCategory, v.type, v.model || v.modelType, null).length
+                    : 0;
+                if (v.machineNumber && sameCount > 1) bits.push(`No.${v.machineNumber}`);
                 if (v.type) bits.push(v.type);
                 if (v.group) bits.push(v.group);
                 if (v.workCategory) bits.push(v.workCategory);
@@ -4668,7 +4684,7 @@ window.openEditMachineMaster = (encodedStr) => {
             <input type="text" id="edit_mac_model" class="form-input" value="${safeModel}">
             <label class="form-label">番号</label>
             <input type="text" id="edit_mac_number" class="form-input" value="${safeNumber}">
-            <div style="font-size:11px; color:#888; margin:-6px 0 10px;">表示名は「機械カテゴリ 型式名 No.番号」から自動生成されます</div>
+            <div style="font-size:11px; color:#888; margin:-6px 0 10px;">表示名は「機械カテゴリ 型式名」＋（同型式が2台以上のときだけ）No.番号</div>
             <label class="form-label">燃料</label>
             <select id="edit_mac_fuel" class="form-input">${fuelOpts}</select>
             <label class="form-label">購入年月日</label>
@@ -4697,16 +4713,45 @@ window.openEditMachineMaster = (encodedStr) => {
     if (typeof window.renderAdminMachinePhotoPreview === 'function') window.renderAdminMachinePhotoPreview('edit');
 };
 
-window.buildAdminMachineDisplayName_ = (typeName, number, model, fallback) => {
-    if (window.MachineTaxonomy && typeof MachineTaxonomy.buildDisplayName === 'function') {
-        return MachineTaxonomy.buildDisplayName('machine', typeName, number, model, fallback || '') || '';
-    }
+window.buildAdminMachineDisplayName_ = (typeName, number, model, fallback, group, excludeId) => {
+    const g = String(group || '').trim();
     const typePart = String(typeName || '').trim();
     const modelPart = String(model || '').trim();
+    const matched = (typeof window.findAdminMachinesMatchingTrio_ === 'function')
+        ? window.findAdminMachinesMatchingTrio_(g, typePart, modelPart, excludeId || null)
+        : [];
+    // 自分以外が0台＝同型式は自分だけ → 番号非表示
+    const omitNumber = matched.length === 0;
+    if (window.MachineTaxonomy && typeof MachineTaxonomy.buildDisplayName === 'function') {
+        return MachineTaxonomy.buildDisplayName('machine', typeName, number, model, fallback || '', {
+            group: g,
+            omitNumber: omitNumber,
+            forceShowNumber: !omitNumber
+        }) || '';
+    }
     let numPart = String(number || '').trim();
-    if (numPart && !/^no\.?/i.test(numPart)) numPart = 'No.' + numPart;
+    if (omitNumber) {
+        numPart = '';
+    } else if (numPart && !/^no\.?/i.test(numPart)) {
+        numPart = 'No.' + numPart;
+    }
     const parts = [typePart, modelPart, numPart].filter(Boolean);
     return parts.length ? parts.join(' ') : String(fallback || '').trim();
+};
+
+/** 同型式台数に応じて一覧の表示名を付け直す */
+window.refreshAdminMachineDisplayNames_ = () => {
+    (window.pdlMachines || []).forEach(m => {
+        if (!m) return;
+        m.name = window.buildAdminMachineDisplayName_(
+            m.type,
+            m.machineNumber || m.serialNo,
+            m.model || m.modelType,
+            m.name,
+            m.group || m.mainCategory,
+            m.id
+        ) || m.name;
+    });
 };
 
 /** メインカテゴリ＋機械カテゴリ＋型式名が一致する農機一覧 */
@@ -4933,7 +4978,7 @@ window.execMaster = async (type, act, val) => {
                         return;
                     }
                 }
-                const name = window.buildAdminMachineDisplayName_(macType, machineNumber, model, macType || model || machineNumber);
+                const name = window.buildAdminMachineDisplayName_(macType, machineNumber, model, macType || model || machineNumber, group);
                 const fuel = (document.getElementById('add_mac_fuel') || {}).value || '';
                 const purchaseDate = document.getElementById('add_mac_date').value;
                 const workCategory = collectDetailWorksFromInputs('add_mac_category_rows');
@@ -4950,6 +4995,7 @@ window.execMaster = async (type, act, val) => {
                     currentLocName: signName,
                     currentLocId: signId
                 });
+                if (typeof window.refreshAdminMachineDisplayNames_ === 'function') window.refreshAdminMachineDisplayNames_();
                 if (window._adminMacPhoto) window._adminMacPhoto.add = '';
                 persistAdminInitCache_();
                 renderMasterSection();
@@ -4999,7 +5045,7 @@ window.execMaster = async (type, act, val) => {
                         return;
                     }
                 }
-                const name = window.buildAdminMachineDisplayName_(macType, number, model, macType || model || number);
+                const name = window.buildAdminMachineDisplayName_(macType, number, model, macType || model || number, group, machineId);
                 const fuel = (document.getElementById('edit_mac_fuel') || {}).value || '';
                 const date = (document.getElementById('edit_mac_date').value || '').replace(/-/g, '/');
                 const category = collectDetailWorksFromInputs('edit_mac_category_rows');
@@ -5019,6 +5065,7 @@ window.execMaster = async (type, act, val) => {
                     if (photoB64) m.photo = photoB64;
                     else if (clearPhoto) m.photo = '';
                 }
+                if (typeof window.refreshAdminMachineDisplayNames_ === 'function') window.refreshAdminMachineDisplayNames_();
                 if (window._adminMacPhoto) {
                     window._adminMacPhoto.edit = '';
                     window._adminMacPhoto.clearEdit = false;
@@ -5044,6 +5091,7 @@ window.execMaster = async (type, act, val) => {
             } else {
                 if (!await customConfirm('削除しますか？')) return;
                 window.pdlMachines = (window.pdlMachines || []).filter(x => String(x.id) !== String(val));
+                if (typeof window.refreshAdminMachineDisplayNames_ === 'function') window.refreshAdminMachineDisplayNames_();
                 persistAdminInitCache_();
                 renderMasterSection();
                 showAdminSyncToast('✅ 削除しました（同期中…）', 'ok');

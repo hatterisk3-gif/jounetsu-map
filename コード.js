@@ -1089,6 +1089,7 @@ pdl.signLinks = {};
           }
         }
       }
+      applyNoukiDisplayNamesByModelCount_(pdl.machines);
     }
   } catch (e) {
     console.warn('農機マスタ読み込みスキップ:', e);
@@ -9253,11 +9254,11 @@ function addMachineToSign(params) {
   const nextRow = sheet.getLastRow() + 1;
   sheet.getRange(nextRow, 1, 1, row.length).setValues([row]);
 
-  const displayName = buildNoukiDisplayName_(params.type || '', params.model || params.modelType || '', params.machineNumber || params.serialNo || '')
+  const displayName = buildNoukiDisplayName_(params.type || '', params.model || params.modelType || '', params.machineNumber || params.serialNo || '', null)
     || params.name || newId;
   writeLog(params.userName, "農機新規登録", displayName, `定位置: ${signName}`);
   
-  return parseNoukiMachineRow(row);
+  return finalizeNoukiMachineDisplay_(parseNoukiMachineRow(row), sheet);
 }
 // ==========================================
 // 資材マスタの編集
@@ -9885,7 +9886,7 @@ function editMachineInMaster(params) {
   });
   const row = buildNoukiMachineRow(merged);
   sheet.getRange(targetRowIndex, 1, 1, row.length).setValues([row]);
-  return { success: true, machine: parseNoukiMachineRow(row) };
+  return { success: true, machine: finalizeNoukiMachineDisplay_(parseNoukiMachineRow(row), sheet) };
 }
 
 // ==========================================
@@ -16504,12 +16505,73 @@ const NOUKI_COL = {
   targetMachineIds: 21
 };
 
-function buildNoukiDisplayName_(type, model, number) {
+function buildNoukiDisplayName_(type, model, number, sameModelCount) {
   const typePart = String(type || '').trim();
   const modelPart = String(model || '').trim();
   let numPart = String(number || '').trim();
-  if (numPart && !/^no\.?/i.test(numPart)) numPart = 'No.' + numPart;
+  // 同じ型式が1台だけのときは番号を表示しない
+  if (sameModelCount != null && Number(sameModelCount) <= 1) {
+    numPart = '';
+  } else if (numPart && !/^no\.?/i.test(numPart)) {
+    numPart = 'No.' + numPart;
+  }
   return [typePart, modelPart, numPart].filter(Boolean).join(' ');
+}
+
+function noukiSameModelKey_(group, type, model) {
+  return [String(group || '').trim(), String(type || '').trim(), String(model || '').trim()].join('\t');
+}
+
+/** シート上の同型式台数を数える */
+function countNoukiSameModelOnSheet_(sheet, group, type, model) {
+  if (!sheet) return 0;
+  const key = noukiSameModelKey_(group, type, model);
+  if (!String(key).replace(/\t/g, '')) return 0;
+  const data = sheet.getDataRange().getValues();
+  let n = 0;
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][0] && !data[i][1]) continue;
+    const t = String(data[i][1] || '').trim();
+    const m = String(data[i][2] || '').trim();
+    const g = String(data[i][4] || '').trim();
+    if (noukiSameModelKey_(g, t, m) === key) n++;
+  }
+  return n;
+}
+
+function finalizeNoukiMachineDisplay_(machine, sheet) {
+  if (!machine) return machine;
+  const count = countNoukiSameModelOnSheet_(
+    sheet || ensureNoukiMasterSheet(),
+    machine.group || machine.mainCategory,
+    machine.type,
+    machine.model || machine.modelType
+  );
+  machine.name = buildNoukiDisplayName_(
+    machine.type,
+    machine.model || machine.modelType,
+    machine.machineNumber || machine.serialNo,
+    count || 1
+  ) || machine.type || machine.model || machine.machineNumber || machine.name || '';
+  return machine;
+}
+
+/** 読み込み済み農機配列の表示名を、同型式台数に応じて付け直す */
+function applyNoukiDisplayNamesByModelCount_(machines) {
+  const list = Array.isArray(machines) ? machines : [];
+  const counts = {};
+  list.forEach(function(m) {
+    if (!m) return;
+    const key = noukiSameModelKey_(m.group || m.mainCategory, m.type, m.model || m.modelType);
+    counts[key] = (counts[key] || 0) + 1;
+  });
+  list.forEach(function(m) {
+    if (!m) return;
+    const key = noukiSameModelKey_(m.group || m.mainCategory, m.type, m.model || m.modelType);
+    const displayName = buildNoukiDisplayName_(m.type, m.model || m.modelType, m.machineNumber || m.serialNo, counts[key] || 1);
+    m.name = displayName || m.type || m.model || m.machineNumber || m.name || '';
+  });
+  return list;
 }
 
 function ensureNoukiMasterSheet() {
@@ -16565,7 +16627,7 @@ function parseNoukiMachineRow(row) {
   const userName = String(row[18] || '').trim();
   const purchaseDate = String(row[19] || '').trim();
   const targetMachineIds = String(row[20] || '').trim();
-  const displayName = buildNoukiDisplayName_(type, model, machineNumber);
+  const displayName = buildNoukiDisplayName_(type, model, machineNumber, null);
   return {
     id: String(row[0] || '').trim(),
     name: displayName || type || model || machineNumber,
@@ -16716,6 +16778,7 @@ function machine_loadAll() {
     const m = parseNoukiMachineRow(mData[i]);
     if (m.id) machines[m.id] = m;
   }
+  applyNoukiDisplayNamesByModelCount_(Object.keys(machines).map(function(id) { return machines[id]; }));
 
   let maintenanceRecords = [];
   let maintData = maintSheet.getDataRange().getValues();
@@ -16791,7 +16854,7 @@ function machine_saveMachine(p) {
     const nextRow = sheet.getLastRow() + 1;
     sheet.getRange(nextRow, 1, 1, rowData.length).setValues([rowData]);
   }
-  return { success: true, machine: parseNoukiMachineRow(rowData) };
+  return { success: true, machine: finalizeNoukiMachineDisplay_(parseNoukiMachineRow(rowData), sheet) };
 }
 
 function updateNoukiMachineField(machineId, colIndex, value) {
