@@ -2745,10 +2745,21 @@ function createSignboardMarker(name, pos, icon, id) {
                    h += `<div style="font-size:12px;color:#555;margin-bottom:5px;">📦 資材・農機: ${item.data.usedMaterials}</div>`;
                  }
                  if (item.data.maintenanceTool) {
+                    const mtList = Array.isArray(item.data.maintenanceTargets) ? item.data.maintenanceTargets : [];
+                    const perMachine = mtList.some(t => t && (t.symptom || t.content || t.parts));
+                    const body = perMachine
+                      ? mtList.map(t => {
+                          const bits = [
+                            t.symptom ? `症状:${t.symptom}` : '',
+                            t.content ? `内容:${t.content}` : '',
+                            t.parts ? `部品:${t.parts}` : ''
+                          ].filter(Boolean).join(' / ') || '（詳細なし）';
+                          return `・${t.name || t.id || '対象'}: ${bits}`;
+                        }).join('<br>')
+                      : `症状: ${item.data.maintenanceSymptom || '-'}<br>内容: ${item.data.maintenanceContent || '-'} / 部品: ${item.data.maintenanceParts || '-'}`;
                     h += `<div style="font-size:12px; background:#fff3e0; border:1px solid #ffcc80; padding:6px; border-radius:4px; margin-bottom:5px; color:#e65100;">
                             <b>[整備記録]</b> 対象: ${item.data.maintenanceTool}<br>
-                            症状: ${item.data.maintenanceSymptom || '-'}<br>
-                            内容: ${item.data.maintenanceContent || '-'} / 部品: ${item.data.maintenanceParts || '-'}
+                            ${body}
                           </div>`;
                  }
               } else if (item.type !== 'work' && item.data) {
@@ -2892,9 +2903,21 @@ function createSignboardMarker(name, pos, icon, id) {
                    h += `<div style="font-size:12px;color:#555;margin-bottom:5px;">📦 資材・農機: ${item.data.usedMaterials}</div>`;
                  }
                  if (item.data.maintenanceTool) {
+                    const mtList = Array.isArray(item.data.maintenanceTargets) ? item.data.maintenanceTargets : [];
+                    const perMachine = mtList.some(t => t && (t.symptom || t.content || t.parts));
+                    const body = perMachine
+                      ? mtList.map(t => {
+                          const bits = [
+                            t.symptom ? `症状:${t.symptom}` : '',
+                            t.content ? `内容:${t.content}` : '',
+                            t.parts ? `部品:${t.parts}` : ''
+                          ].filter(Boolean).join(' / ') || '（詳細なし）';
+                          return `・${t.name || t.id || '対象'}: ${bits}`;
+                        }).join('<br>')
+                      : `内容: ${item.data.maintenanceContent || '-'} / 部品: ${item.data.maintenanceParts || '-'}`;
                     h += `<div style="font-size:12px; background:#fff3e0; border:1px solid #ffcc80; padding:6px; border-radius:4px; margin-bottom:5px; color:#e65100;">
                             <b>[整備記録]</b> 対象: ${item.data.maintenanceTool}<br>
-                            内容: ${item.data.maintenanceContent || '-'} / 部品: ${item.data.maintenanceParts || '-'}
+                            ${body}
                           </div>`;
                  }
               } else if (item.type !== 'work' && item.data) {
@@ -29249,10 +29272,12 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
     maintenanceTool: '',
     maintenanceTargetKind: '',
     maintenanceTargets: [],
+    maintenanceByTarget: {},
     maintenanceSymptom: '',
     maintenanceContent: '',
     maintenanceParts: '',
     _maintKindFilter: 'all',
+    _maintFocusId: '',
     detailedWorks: [],
     concurrentWorks: (work.isRest || !Array.isArray(concurrentGuess.concurrentWorks))
       ? []
@@ -31287,11 +31312,17 @@ window.syncBulkWorkMemoMaintPrimary_ = (d) => {
     d.maintenanceToolId = '';
     d.maintenanceTool = '';
     d.maintenanceTargetKind = '';
+    d._maintFocusId = '';
     return;
   }
   d.maintenanceToolId = list[0].id;
   d.maintenanceTool = list.map(t => t.name).filter(Boolean).join('、');
   d.maintenanceTargetKind = list[0].kind || 'machine';
+  const focusOk = list.some(t => String(t.id) === String(d._maintFocusId || ''));
+  if (!focusOk) d._maintFocusId = String(list[0].id || '');
+  if (typeof window.syncBulkWorkMemoMaintLegacyFields_ === 'function') {
+    window.syncBulkWorkMemoMaintLegacyFields_(d);
+  }
 };
 
 window.setBulkWorkMemoMaintTargets_ = (d, list) => {
@@ -31300,129 +31331,178 @@ window.setBulkWorkMemoMaintTargets_ = (d, list) => {
   window.syncBulkWorkMemoMaintPrimary_(d);
 };
 
-window.getBulkWorkMemoMaintenanceSymptomOptions_ = (draft) => {
-  const targets = typeof window.getBulkWorkMemoMaintTargetsSelected_ === 'function'
-    ? window.getBulkWorkMemoMaintTargetsSelected_(draft)
-    : [];
-  const machines = targets.length
-    ? targets.filter(t => (t.kind || 'machine') === 'machine').map(t => {
-        if (typeof window.findMaintenanceTargetById_ === 'function') return window.findMaintenanceTargetById_(t.id);
-        return (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
-          ? pdlMachines.find(m => m && String(m.id) === String(t.id)) || null
-          : null;
-      }).filter(Boolean)
-    : [window.getBulkWorkMemoMaintenanceMachine_(draft)].filter(Boolean);
-  if (!machines.length) {
-    return window.getMachineMaintenanceOptions_
-      ? window.getMachineMaintenanceOptions_(null, 'symptoms', draft && draft.maintenanceSymptom)
-      : [];
+/** 一括入力：整備詳細を機械別に持つ（symptom/content/parts） */
+window.ensureBulkWorkMemoMaintByTarget_ = (d) => {
+  if (!d) return {};
+  if (!d.maintenanceByTarget || typeof d.maintenanceByTarget !== 'object') {
+    d.maintenanceByTarget = {};
   }
-  const out = [];
-  const seen = new Set();
-  machines.forEach((machine) => {
-    const list = window.getMachineMaintenanceOptions_
-      ? window.getMachineMaintenanceOptions_(machine, 'symptoms', draft && draft.maintenanceSymptom)
+  return d.maintenanceByTarget;
+};
+
+window.getBulkWorkMemoMaintFocusId_ = (d) => {
+  if (!d) return '';
+  const list = (typeof window.getBulkWorkMemoMaintTargetsSelected_ === 'function')
+    ? window.getBulkWorkMemoMaintTargetsSelected_(d)
+    : [];
+  if (!list.length) return '';
+  const focus = String(d._maintFocusId || '').trim();
+  if (focus && list.some(t => String(t.id) === focus)) return focus;
+  return String(list[0].id || '');
+};
+
+window.getBulkWorkMemoMaintDetail_ = (d, targetId) => {
+  const map = window.ensureBulkWorkMemoMaintByTarget_(d);
+  const id = String(targetId || '').trim();
+  if (!id) return { symptom: '', content: '', parts: '' };
+  if (!map[id] || typeof map[id] !== 'object') {
+    // 旧データ互換: トップレベル値を最初の機械へ引き継ぐ
+    const list = (typeof window.getBulkWorkMemoMaintTargetsSelected_ === 'function')
+      ? window.getBulkWorkMemoMaintTargetsSelected_(d)
       : [];
-    (list || []).forEach((s) => {
-      const n = String(s || '').trim();
-      if (!n || seen.has(n)) return;
-      seen.add(n);
-      out.push(n);
-    });
-  });
-  return out;
+    const isPrimary = !list.length || String(list[0].id) === id;
+    map[id] = {
+      symptom: isPrimary ? String(d.maintenanceSymptom || '').trim() : '',
+      content: isPrimary ? String(d.maintenanceContent || '').trim() : '',
+      parts: isPrimary ? String(d.maintenanceParts || '').trim() : ''
+    };
+  }
+  const row = map[id];
+  return {
+    symptom: String(row.symptom || '').trim(),
+    content: String(row.content || '').trim(),
+    parts: String(row.parts || '').trim()
+  };
+};
+
+window.setBulkWorkMemoMaintDetailField_ = (d, targetId, field, value) => {
+  if (!d) return;
+  const id = String(targetId || window.getBulkWorkMemoMaintFocusId_(d) || '').trim();
+  if (!id) return;
+  const map = window.ensureBulkWorkMemoMaintByTarget_(d);
+  if (!map[id] || typeof map[id] !== 'object') map[id] = { symptom: '', content: '', parts: '' };
+  const key = (field === 'maintenanceSymptom' || field === 'symptom') ? 'symptom'
+    : (field === 'maintenanceContent' || field === 'content') ? 'content'
+    : (field === 'maintenanceParts' || field === 'parts') ? 'parts'
+    : '';
+  if (!key) return;
+  map[id][key] = String(value || '').trim();
+  window.syncBulkWorkMemoMaintLegacyFields_(d);
+};
+
+/** 互換のため先頭機械の値＋結合表示をトップレベルにも残す */
+window.syncBulkWorkMemoMaintLegacyFields_ = (d) => {
+  if (!d) return;
+  const list = (typeof window.getBulkWorkMemoMaintTargetsSelected_ === 'function')
+    ? window.getBulkWorkMemoMaintTargetsSelected_(d)
+    : [];
+  if (!list.length) {
+    d.maintenanceSymptom = '';
+    d.maintenanceContent = '';
+    d.maintenanceParts = '';
+    return;
+  }
+  const focusId = window.getBulkWorkMemoMaintFocusId_(d);
+  const focusDetail = window.getBulkWorkMemoMaintDetail_(d, focusId);
+  d.maintenanceSymptom = focusDetail.symptom;
+  d.maintenanceContent = focusDetail.content;
+  d.maintenanceParts = focusDetail.parts;
+};
+
+window.resolveBulkWorkMemoMaintMachine_ = (targetOrId) => {
+  const id = typeof targetOrId === 'object'
+    ? String((targetOrId && targetOrId.id) || '').trim()
+    : String(targetOrId || '').trim();
+  if (!id) return null;
+  if (typeof window.findMaintenanceTargetById_ === 'function') {
+    return window.findMaintenanceTargetById_(id);
+  }
+  return (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
+    ? (pdlMachines.find(m => m && String(m.id) === id) || null)
+    : null;
+};
+
+window.getBulkWorkMemoMaintFocusMachine_ = (draft) => {
+  const id = window.getBulkWorkMemoMaintFocusId_(draft);
+  if (!id) return window.getBulkWorkMemoMaintenanceMachine_(draft);
+  const machine = window.resolveBulkWorkMemoMaintMachine_(id);
+  if (machine && (machine.isTool || machine.isVehicle || machine.kind === 'tool' || machine.kind === 'vehicle')) {
+    return null;
+  }
+  const focusTarget = ((typeof window.getBulkWorkMemoMaintTargetsSelected_ === 'function')
+    ? window.getBulkWorkMemoMaintTargetsSelected_(draft)
+    : []).find(t => String(t.id) === id);
+  if (focusTarget && (focusTarget.kind === 'tool' || focusTarget.kind === 'vehicle')) return null;
+  return machine;
+};
+
+window.getBulkWorkMemoMaintenanceSymptomOptions_ = (draft) => {
+  const machine = window.getBulkWorkMemoMaintFocusMachine_(draft);
+  const cur = window.getBulkWorkMemoMaintDetail_(draft, window.getBulkWorkMemoMaintFocusId_(draft)).symptom
+    || (draft && draft.maintenanceSymptom) || '';
+  return window.getMachineMaintenanceOptions_
+    ? window.getMachineMaintenanceOptions_(machine, 'symptoms', cur)
+    : [];
 };
 
 window.getBulkWorkMemoMaintenanceContentOptions_ = (draft) => {
-  const targets = typeof window.getBulkWorkMemoMaintTargetsSelected_ === 'function'
-    ? window.getBulkWorkMemoMaintTargetsSelected_(draft)
+  const machine = window.getBulkWorkMemoMaintFocusMachine_(draft);
+  const cur = window.getBulkWorkMemoMaintDetail_(draft, window.getBulkWorkMemoMaintFocusId_(draft)).content
+    || (draft && draft.maintenanceContent) || '';
+  return window.getMachineMaintenanceOptions_
+    ? window.getMachineMaintenanceOptions_(machine, 'maintenanceContents', cur)
     : [];
-  const machines = targets.length
-    ? targets.filter(t => (t.kind || 'machine') === 'machine').map(t => {
-        if (typeof window.findMaintenanceTargetById_ === 'function') return window.findMaintenanceTargetById_(t.id);
-        return (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
-          ? pdlMachines.find(m => m && String(m.id) === String(t.id)) || null
-          : null;
-      }).filter(Boolean)
-    : [window.getBulkWorkMemoMaintenanceMachine_(draft)].filter(Boolean);
-  if (!machines.length) {
-    return window.getMachineMaintenanceOptions_
-      ? window.getMachineMaintenanceOptions_(null, 'maintenanceContents', draft && draft.maintenanceContent)
-      : [];
-  }
-  const out = [];
-  const seen = new Set();
-  machines.forEach((machine) => {
-    const list = window.getMachineMaintenanceOptions_
-      ? window.getMachineMaintenanceOptions_(machine, 'maintenanceContents', draft && draft.maintenanceContent)
-      : [];
-    (list || []).forEach((s) => {
-      const n = String(s || '').trim();
-      if (!n || seen.has(n)) return;
-      seen.add(n);
-      out.push(n);
-    });
-  });
-  return out;
 };
 
 window.getBulkWorkMemoMaintenancePartsOptions_ = (draft) => {
-  const targets = typeof window.getBulkWorkMemoMaintTargetsSelected_ === 'function'
-    ? window.getBulkWorkMemoMaintTargetsSelected_(draft)
+  const machine = window.getBulkWorkMemoMaintFocusMachine_(draft);
+  const cur = window.getBulkWorkMemoMaintDetail_(draft, window.getBulkWorkMemoMaintFocusId_(draft)).parts
+    || (draft && draft.maintenanceParts) || '';
+  return window.getMachineMaintenanceOptions_
+    ? window.getMachineMaintenanceOptions_(machine, 'parts', cur)
     : [];
-  const machines = targets.length
-    ? targets.filter(t => (t.kind || 'machine') === 'machine').map(t => {
-        if (typeof window.findMaintenanceTargetById_ === 'function') return window.findMaintenanceTargetById_(t.id);
-        return (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
-          ? pdlMachines.find(m => m && String(m.id) === String(t.id)) || null
-          : null;
-      }).filter(Boolean)
-    : [window.getBulkWorkMemoMaintenanceMachine_(draft)].filter(Boolean);
-  if (!machines.length) {
-    return window.getMachineMaintenanceOptions_
-      ? window.getMachineMaintenanceOptions_(null, 'parts', draft && draft.maintenanceParts)
-      : [];
-  }
-  const out = [];
-  const seen = new Set();
-  machines.forEach((machine) => {
-    const list = window.getMachineMaintenanceOptions_
-      ? window.getMachineMaintenanceOptions_(machine, 'parts', draft && draft.maintenanceParts)
-      : [];
-    (list || []).forEach((s) => {
-      const n = String(s || '').trim();
-      if (!n || seen.has(n)) return;
-      seen.add(n);
-      out.push(n);
-    });
-  });
-  return out;
 };
 
 window.guessBulkWorkMemoMaintenanceFields_ = (draft) => {
   const t = String(draft && draft.rawLine || '');
   if (!t) return;
-  const pickFromList = (list, key) => {
-    if (String(draft[key] || '').trim()) return;
-    for (let i = 0; i < list.length; i++) {
-      const item = String(list[i] || '').trim();
-      if (item.length >= 2 && t.indexOf(item) >= 0) {
-        draft[key] = item;
-        return;
+  const list = (typeof window.getBulkWorkMemoMaintTargetsSelected_ === 'function')
+    ? window.getBulkWorkMemoMaintTargetsSelected_(draft)
+    : [];
+  const targets = list.length ? list : [{ id: String(draft && draft.maintenanceToolId || '').trim() || '_legacy' }];
+  targets.forEach((tgt) => {
+    const id = String(tgt.id || '').trim();
+    if (!id) return;
+    const detail = window.getBulkWorkMemoMaintDetail_(draft, id);
+    const machine = window.resolveBulkWorkMemoMaintMachine_(id);
+    const canMachine = machine && !machine.isTool && !machine.isVehicle;
+    const pickFromList = (kind, key) => {
+      if (String(detail[key] || '').trim()) return;
+      const opts = (canMachine && window.getMachineMaintenanceOptions_)
+        ? (window.getMachineMaintenanceOptions_(machine, kind, '') || [])
+        : [];
+      for (let i = 0; i < opts.length; i++) {
+        const item = String(opts[i] || '').trim();
+        if (item.length >= 2 && t.indexOf(item) >= 0) {
+          window.setBulkWorkMemoMaintDetailField_(draft, id, key, item);
+          return;
+        }
       }
+    };
+    pickFromList('symptoms', 'symptom');
+    pickFromList('maintenanceContents', 'content');
+    pickFromList('parts', 'parts');
+    const after = window.getBulkWorkMemoMaintDetail_(draft, id);
+    if (!after.content) {
+      if (/修理/.test(t)) window.setBulkWorkMemoMaintDetailField_(draft, id, 'content', '本体修理');
+      else if (/点検|清掃/.test(t)) window.setBulkWorkMemoMaintDetailField_(draft, id, 'content', '清掃・点検');
+      else if (/オイル/.test(t)) window.setBulkWorkMemoMaintDetailField_(draft, id, 'content', 'オイル交換');
     }
-  };
-  pickFromList(window.getBulkWorkMemoMaintenanceSymptomOptions_(draft), 'maintenanceSymptom');
-  pickFromList(window.getBulkWorkMemoMaintenanceContentOptions_(draft), 'maintenanceContent');
-  pickFromList(window.getBulkWorkMemoMaintenancePartsOptions_(draft), 'maintenanceParts');
-  if (!String(draft.maintenanceContent || '').trim()) {
-    if (/修理/.test(t)) draft.maintenanceContent = '本体修理';
-    else if (/点検|清掃/.test(t)) draft.maintenanceContent = '清掃・点検';
-    else if (/オイル/.test(t)) draft.maintenanceContent = 'オイル交換';
-  }
+  });
+  window.syncBulkWorkMemoMaintLegacyFields_(draft);
 };
 
-window.buildBulkWorkMemoMaintenanceFieldChipsHtml_ = (uid, field, label, options, cur, tone) => {
+window.buildBulkWorkMemoMaintenanceFieldChipsHtml_ = (uid, field, label, options, cur, tone, opts) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const selected = String(cur || '').trim();
   const colors = {
@@ -31431,6 +31511,7 @@ window.buildBulkWorkMemoMaintenanceFieldChipsHtml_ = (uid, field, label, options
     blue: { on: '#1565C0', off: '#E3F2FD', border: '#64B5F6', offBorder: '#BBDEFB' }
   };
   const c = colors[tone] || colors.orange;
+  const canAdd = !!(opts && opts.canAdd);
   const chips = (options || []).slice(0, 16).map(val => {
     const on = val === selected;
     const safe = String(val).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -31439,13 +31520,25 @@ window.buildBulkWorkMemoMaintenanceFieldChipsHtml_ = (uid, field, label, options
   }).join('');
   const inputId = `bulk_maint_${field}_${esc(uid)}`;
   const placeholders = {
-    maintenanceSymptom: 'その他の症状を直接入力',
-    maintenanceContent: 'その他の整備内容を直接入力',
-    maintenanceParts: 'その他の部品名を直接入力'
+    maintenanceSymptom: 'その他の症状を直接入力（未登録ならこの機械に追加）',
+    maintenanceContent: 'その他の整備内容を直接入力（未登録ならこの機械に追加）',
+    maintenanceParts: 'その他の部品名を直接入力（未登録ならこの機械に追加）'
   };
+  const addKind = field === 'maintenanceSymptom' ? 'symptoms'
+    : field === 'maintenanceContent' ? 'maintenanceContents'
+    : field === 'maintenanceParts' ? 'parts' : '';
+  const addBtn = (canAdd && addKind)
+    ? `<button type="button" onclick="addBulkWorkMemoMaintOption_('${esc(uid)}','${addKind}')" style="background:${c.on}; color:#fff; border:none; border-radius:4px; padding:2px 8px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 追加</button>`
+    : '';
+  const emptyHint = canAdd
+    ? '候補がありません。「＋追加」か下の直接入力でこの機械に登録できます。'
+    : '候補がありません。下に直接入力してください。';
   return `<div style="margin-top:10px;">
-    <div style="font-size:10px; font-weight:bold; color:${c.on}; margin-bottom:6px;">${label}</div>
-    <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;">${chips || `<span style="font-size:11px; color:#888;">候補がありません。下に直接入力してください。</span>`}</div>
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; margin-bottom:6px;">
+      <div style="font-size:10px; font-weight:bold; color:${c.on};">${label}</div>
+      ${addBtn}
+    </div>
+    <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;">${chips || `<span style="font-size:11px; color:#888;">${emptyHint}</span>`}</div>
     <input type="text" id="${inputId}" value="${esc(selected)}" placeholder="${esc(placeholders[field] || '')}" onchange="updateBulkWorkMemoMaintenanceCustom_('${esc(uid)}','${String(field).replace(/'/g, "\\'")}', this.value)" style="width:100%; box-sizing:border-box; padding:7px 10px; border:1px solid ${c.offBorder}; border-radius:8px; font-size:12px;">
   </div>`;
 };
@@ -31531,11 +31624,59 @@ window.buildBulkWorkMemoMaintenanceTargetHtml_ = (d, uid) => {
   const selectedLabel = selected.map(t => t.name || t.id).filter(Boolean).join('、')
     || String(d.maintenanceTool || '').trim();
   const collapsed = selected.length && d._maintPickOpen !== true;
-  const detailsHtml = `
-    ${window.buildBulkWorkMemoMaintenanceFieldChipsHtml_(uid, 'maintenanceSymptom', '症状', window.getBulkWorkMemoMaintenanceSymptomOptions_(d), d.maintenanceSymptom, 'orange')}
-    ${window.buildBulkWorkMemoMaintenanceFieldChipsHtml_(uid, 'maintenanceContent', '整備内容', window.getBulkWorkMemoMaintenanceContentOptions_(d), d.maintenanceContent, 'green')}
-    ${window.buildBulkWorkMemoMaintenanceFieldChipsHtml_(uid, 'maintenanceParts', '交換部品名', window.getBulkWorkMemoMaintenancePartsOptions_(d), d.maintenanceParts, 'blue')}`;
+  const focusId = (typeof window.getBulkWorkMemoMaintFocusId_ === 'function')
+    ? window.getBulkWorkMemoMaintFocusId_(d)
+    : String(d._maintFocusId || (selected[0] && selected[0].id) || '');
+  const focusTarget = selected.find(t => String(t.id) === String(focusId)) || selected[0] || null;
+  const focusMachine = (typeof window.getBulkWorkMemoMaintFocusMachine_ === 'function')
+    ? window.getBulkWorkMemoMaintFocusMachine_(d)
+    : null;
+  const canAddMaint = !!(focusMachine && !focusMachine.isTool && !focusMachine.isVehicle);
+  const focusDetail = (typeof window.getBulkWorkMemoMaintDetail_ === 'function' && focusTarget)
+    ? window.getBulkWorkMemoMaintDetail_(d, focusTarget.id)
+    : {
+      symptom: String(d.maintenanceSymptom || '').trim(),
+      content: String(d.maintenanceContent || '').trim(),
+      parts: String(d.maintenanceParts || '').trim()
+    };
+  const focusTabs = selected.length
+    ? `<div style="margin-bottom:8px;">
+        <div style="font-size:10px; font-weight:bold; color:#E65100; margin-bottom:6px;">① 整備内容を入力する機械（1台ずつ）</div>
+        <div style="display:flex; flex-wrap:wrap; gap:6px;">${selected.map(t => {
+          const on = String(t.id) === String(focusId);
+          const safeId = String(t.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const detail = (typeof window.getBulkWorkMemoMaintDetail_ === 'function')
+            ? window.getBulkWorkMemoMaintDetail_(d, t.id)
+            : { symptom: '', content: '', parts: '' };
+          const filled = [detail.symptom, detail.content, detail.parts].filter(Boolean).length;
+          const badge = filled ? `<span style="font-size:9px; opacity:0.9; margin-left:4px;">(${filled})</span>` : '';
+          return `<button type="button" onclick="focusBulkWorkMemoMaintTarget_('${esc(uid)}','${safeId}')" style="padding:7px 10px; border-radius:10px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? '#BF360C' : '#FFE0B2'}; background:${on ? '#E65100' : '#fff'}; color:${on ? '#fff' : '#E65100'};">${esc(t.name || t.id)}${badge}</button>`;
+        }).join('')}</div>
+      </div>`
+    : '';
+  const focusHint = !selected.length
+    ? ''
+    : (canAddMaint
+      ? `<div style="font-size:11px; color:#BF360C; background:#fff; border:1px solid #FFE0B2; border-radius:8px; padding:8px; line-height:1.4; margin-bottom:4px;">「${esc((focusTarget && focusTarget.name) || '')}」の候補を表示中。＋追加／直接入力したものはこの機械に登録され、次回から候補に出ます。</div>`
+      : `<div style="font-size:11px; color:#666; background:#fff; border:1px solid #FFE0B2; border-radius:8px; padding:8px; line-height:1.4; margin-bottom:4px;">車両・道具は症状・整備内容・部品のマスタ登録対象外です。この記録用に直接入力できます。</div>`);
+  const detailsHtml = selected.length
+    ? `${focusTabs}${focusHint}
+    ${window.buildBulkWorkMemoMaintenanceFieldChipsHtml_(uid, 'maintenanceSymptom', '症状', window.getBulkWorkMemoMaintenanceSymptomOptions_(d), focusDetail.symptom, 'orange', { canAdd: canAddMaint })}
+    ${window.buildBulkWorkMemoMaintenanceFieldChipsHtml_(uid, 'maintenanceContent', '整備内容', window.getBulkWorkMemoMaintenanceContentOptions_(d), focusDetail.content, 'green', { canAdd: canAddMaint })}
+    ${window.buildBulkWorkMemoMaintenanceFieldChipsHtml_(uid, 'maintenanceParts', '交換部品名', window.getBulkWorkMemoMaintenancePartsOptions_(d), focusDetail.parts, 'blue', { canAdd: canAddMaint })}`
+    : `<div style="font-size:11px; color:#888; padding:4px 0;">先に整備対象を選ぶと、機械ごとに症状・整備内容・交換部品を登録できます。</div>`;
   if (collapsed) {
+    const summaryRows = selected.map(t => {
+      const detail = (typeof window.getBulkWorkMemoMaintDetail_ === 'function')
+        ? window.getBulkWorkMemoMaintDetail_(d, t.id)
+        : { symptom: '', content: '', parts: '' };
+      const bits = [
+        detail.symptom ? `症状:${detail.symptom}` : '',
+        detail.content ? `内容:${detail.content}` : '',
+        detail.parts ? `部品:${detail.parts}` : ''
+      ].filter(Boolean).join(' / ');
+      return `<div style="font-size:11px; color:#BF360C; line-height:1.35; margin-top:4px;"><b>${esc(t.name || t.id)}</b>${bits ? ` … ${esc(bits)}` : ' … 未入力'}</div>`;
+    }).join('');
     return `<div class="bulk-maint-target-box" style="margin:8px 0; background:#FFF3E0; border:2px solid #FFB74D; border-radius:10px; padding:10px;">
       ${window.buildBulkWorkMemoCollapsedPickHtml_({
         icon: '🔧',
@@ -31548,6 +31689,7 @@ window.buildBulkWorkMemoMaintenanceTargetHtml_ = (d, uid) => {
         bgColor: '#FFF8E1',
         textColor: '#E65100'
       })}
+      ${summaryRows}
       <div style="margin-top:10px; padding-top:10px; border-top:1px dashed #FFCC80;">${detailsHtml}</div>
     </div>`;
   }
@@ -31556,9 +31698,10 @@ window.buildBulkWorkMemoMaintenanceTargetHtml_ = (d, uid) => {
         const safeId = String(t.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         const safeName = String(t.name || t.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         const safeKind = String(t.kind || 'machine').replace(/'/g, "\\'");
-        return `<span style="display:inline-flex; align-items:center; gap:4px; background:#FFE0B2; color:#E65100; padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; border:1px solid #FF9800;">✅ ${esc(t.name || t.id)}<span onclick="event.stopPropagation(); editBulkWorkMemoMaintTarget_('${esc(uid)}','${safeId}')" style="cursor:pointer; color:#EF6C00; font-size:13px; line-height:1; margin-left:2px;" title="編集">✏️</span><span onclick="event.stopPropagation(); pickBulkWorkMemoMaintenanceTarget_('${esc(uid)}','${safeId}','${safeName}','${safeKind}')" style="cursor:pointer; color:#c62828; font-size:14px; line-height:1;" title="外す">×</span></span>`;
+        const onFocus = String(t.id) === String(focusId);
+        return `<span style="display:inline-flex; align-items:center; gap:4px; background:${onFocus ? '#E65100' : '#FFE0B2'}; color:${onFocus ? '#fff' : '#E65100'}; padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; border:1px solid #FF9800; cursor:pointer;" onclick="focusBulkWorkMemoMaintTarget_('${esc(uid)}','${safeId}')" title="この機械の整備内容を入力">✅ ${esc(t.name || t.id)}<span onclick="event.stopPropagation(); editBulkWorkMemoMaintTarget_('${esc(uid)}','${safeId}')" style="cursor:pointer; color:${onFocus ? '#FFE0B2' : '#EF6C00'}; font-size:13px; line-height:1; margin-left:2px;" title="編集">✏️</span><span onclick="event.stopPropagation(); pickBulkWorkMemoMaintenanceTarget_('${esc(uid)}','${safeId}','${safeName}','${safeKind}')" style="cursor:pointer; color:${onFocus ? '#FFCDD2' : '#c62828'}; font-size:14px; line-height:1;" title="外す">×</span></span>`;
       }).join('')}</div>`
-    : `<div style="margin-bottom:8px; font-size:11px; color:#666; background:#fff; padding:8px; border-radius:6px; line-height:1.35;">修理・点検した機械・道具・車両を複数選べます（圃場か機械のどちらかは必須）。ない場合は下の「新規登録」から追加できます。</div>`;
+    : `<div style="margin-bottom:8px; font-size:11px; color:#666; background:#fff; padding:8px; border-radius:6px; line-height:1.35;">修理・点検した機械・道具・車両を複数選べます（圃場か機械のどちらかは必須）。1台ずつ選んで症状・整備内容・部品を登録できます。</div>`;
   return `<div class="bulk-maint-target-box" data-bulk-uid="${esc(uid)}" style="margin:8px 0; background:#FFF3E0; border:2px solid #FFB74D; border-radius:10px; padding:10px;">
     <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
       <div style="font-size:11px; font-weight:bold; color:#E65100;">🔧 整備対象（複数可）</div>
@@ -31581,14 +31724,134 @@ window.pickBulkWorkMemoMaintenanceField_ = (uid, field, value) => {
   if (!row || !field) return;
   const key = String(field).trim();
   const next = String(value || '').trim();
-  row[key] = (String(row[key] || '').trim() === next) ? '' : next;
+  const focusId = (typeof window.getBulkWorkMemoMaintFocusId_ === 'function')
+    ? window.getBulkWorkMemoMaintFocusId_(row)
+    : String(row._maintFocusId || row.maintenanceToolId || '');
+  const detailKey = key === 'maintenanceSymptom' ? 'symptom'
+    : key === 'maintenanceContent' ? 'content'
+    : key === 'maintenanceParts' ? 'parts' : '';
+  if (focusId && detailKey && typeof window.getBulkWorkMemoMaintDetail_ === 'function') {
+    const cur = window.getBulkWorkMemoMaintDetail_(row, focusId)[detailKey] || '';
+    const nextVal = (String(cur).trim() === next) ? '' : next;
+    window.setBulkWorkMemoMaintDetailField_(row, focusId, detailKey, nextVal);
+  } else {
+    row[key] = (String(row[key] || '').trim() === next) ? '' : next;
+  }
   window.refreshBulkWorkMemoExtras_(uid);
 };
 
-window.updateBulkWorkMemoMaintenanceCustom_ = (uid, field, value) => {
+window.updateBulkWorkMemoMaintenanceCustom_ = async (uid, field, value) => {
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
   if (!row || !field) return;
-  row[String(field).trim()] = String(value || '').trim();
+  const next = String(value || '').trim();
+  const focusId = (typeof window.getBulkWorkMemoMaintFocusId_ === 'function')
+    ? window.getBulkWorkMemoMaintFocusId_(row)
+    : String(row._maintFocusId || row.maintenanceToolId || '');
+  if (focusId && typeof window.setBulkWorkMemoMaintDetailField_ === 'function') {
+    window.setBulkWorkMemoMaintDetailField_(row, focusId, field, next);
+  } else {
+    row[String(field).trim()] = next;
+  }
+  // 未登録の直接入力は、フォーカス中の農機マスタへその場で追加（次回から候補表示）
+  if (next && focusId) {
+    const machine = (typeof window.resolveBulkWorkMemoMaintMachine_ === 'function')
+      ? window.resolveBulkWorkMemoMaintMachine_(focusId)
+      : null;
+    if (machine && !machine.isTool && !machine.isVehicle) {
+      const kind = field === 'maintenanceSymptom' ? 'symptoms'
+        : field === 'maintenanceContent' ? 'maintenanceContents'
+        : field === 'maintenanceParts' ? 'parts' : '';
+      if (kind && typeof window.getMachineMaintenanceOptions_ === 'function') {
+        const known = window.getMachineMaintenanceOptions_(machine, kind, '') || [];
+        if (!known.includes(next)) {
+          try {
+            if (kind === 'symptoms' && typeof callGAS === 'function') {
+              await callGAS('addMachineSymptom', { machineId: machine.id, newSymptom: next });
+            } else if (kind === 'maintenanceContents' && typeof callGAS === 'function') {
+              await callGAS('addMachineMaintenanceContent', { machineId: machine.id, newContent: next });
+            } else if (kind === 'parts' && typeof callGAS === 'function') {
+              await callGAS('addMachinePart', { machineId: machine.id, newPart: next });
+            }
+            if (typeof window.appendMachineMaintOptionLocal_ === 'function') {
+              window.appendMachineMaintOptionLocal_(machine, kind, next);
+            }
+          } catch (e) {
+            console.warn('bulk maint option register failed', e);
+          }
+        }
+      }
+    }
+  }
+  window.refreshBulkWorkMemoExtras_(uid);
+};
+
+window.focusBulkWorkMemoMaintTarget_ = (uid, id) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  const nextId = String(id || '').trim();
+  if (!nextId) return;
+  row._maintFocusId = nextId;
+  if (typeof window.syncBulkWorkMemoMaintLegacyFields_ === 'function') {
+    window.syncBulkWorkMemoMaintLegacyFields_(row);
+  }
+  window.refreshBulkWorkMemoExtras_(uid);
+};
+
+window.addBulkWorkMemoMaintOption_ = async (uid, kind) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  const machine = (typeof window.getBulkWorkMemoMaintFocusMachine_ === 'function')
+    ? window.getBulkWorkMemoMaintFocusMachine_(row)
+    : null;
+  if (!machine || !machine.id) {
+    if (typeof customAlert === 'function') customAlert('先に農機を選んでください（車両・道具には候補登録できません）。');
+    return;
+  }
+  const focusId = String(machine.id);
+  row._maintFocusId = focusId;
+  const prompts = {
+    symptoms: 'この機械に追加する「症状」名 (例: ベルトゆるみ):',
+    maintenanceContents: 'この機械に追加する「整備内容」 (例: 定期点検・清掃):',
+    parts: 'この機械に追加する交換部品名:'
+  };
+  const detailKey = kind === 'symptoms' ? 'symptom'
+    : kind === 'maintenanceContents' ? 'content'
+    : kind === 'parts' ? 'parts' : '';
+  if (!detailKey || !prompts[kind]) return;
+  const inputName = await customPrompt(prompts[kind], '');
+  if (!inputName || !String(inputName).trim()) return;
+  const name = String(inputName).trim();
+  const known = (typeof window.getMachineMaintenanceOptions_ === 'function')
+    ? (window.getMachineMaintenanceOptions_(machine, kind, '') || [])
+    : [];
+  if (known.includes(name)) {
+    window.setBulkWorkMemoMaintDetailField_(row, focusId, detailKey, name);
+    window.refreshBulkWorkMemoExtras_(uid);
+    if (typeof customAlert === 'function') customAlert('既に登録されています。選択しました。');
+    return;
+  }
+  try {
+    if (kind === 'symptoms') {
+      await callGAS('addMachineSymptom', { machineId: machine.id, newSymptom: name });
+    } else if (kind === 'maintenanceContents') {
+      await callGAS('addMachineMaintenanceContent', { machineId: machine.id, newContent: name });
+    } else if (kind === 'parts') {
+      await callGAS('addMachinePart', { machineId: machine.id, newPart: name });
+    }
+    if (typeof window.appendMachineMaintOptionLocal_ === 'function') {
+      window.appendMachineMaintOptionLocal_(machine, kind, name);
+    }
+    window.setBulkWorkMemoMaintDetailField_(row, focusId, detailKey, name);
+    window.refreshBulkWorkMemoExtras_(uid);
+    const label = (typeof window.buildEquipmentDisplayLabel_ === 'function')
+      ? window.buildEquipmentDisplayLabel_(machine)
+      : (machine.name || '');
+    if (typeof customAlert === 'function') {
+      customAlert(`✅ 「${label || 'この機械'}」に「${name}」を登録しました。次回から候補に出ます。`);
+    }
+  } catch (e) {
+    if (typeof customAlert === 'function') customAlert('登録に失敗しました: ' + (e && e.message ? e.message : e));
+  }
 };
 
 window.pickBulkWorkMemoMaintenanceTarget_ = (uid, id, name, kind) => {
@@ -31611,8 +31874,19 @@ window.pickBulkWorkMemoMaintenanceTarget_ = (uid, id, name, kind) => {
     ? window.getBulkWorkMemoMaintTargetsSelected_(row).slice()
     : [];
   const idx = list.findIndex(t => String(t.id) === nextId);
-  if (idx >= 0) list.splice(idx, 1);
-  else list.push({ id: nextId, name: nextName, kind: nextKind });
+  if (idx >= 0) {
+    list.splice(idx, 1);
+    if (String(row._maintFocusId || '') === nextId) {
+      row._maintFocusId = list[0] ? String(list[0].id) : '';
+    }
+  } else {
+    list.push({ id: nextId, name: nextName, kind: nextKind });
+    row._maintFocusId = nextId;
+    if (typeof window.ensureBulkWorkMemoMaintByTarget_ === 'function') {
+      window.ensureBulkWorkMemoMaintByTarget_(row);
+      window.getBulkWorkMemoMaintDetail_(row, nextId);
+    }
+  }
   if (typeof window.setBulkWorkMemoMaintTargets_ === 'function') {
     window.setBulkWorkMemoMaintTargets_(row, list);
   } else {
@@ -31622,7 +31896,9 @@ window.pickBulkWorkMemoMaintenanceTarget_ = (uid, id, name, kind) => {
     row.maintenanceTargetKind = list[0] ? (list[0].kind || 'machine') : '';
   }
   row._maintPickOpen = true;
-  if (list.length) window.guessBulkWorkMemoMaintenanceFields_(row);
+  if (list.length && typeof window.guessBulkWorkMemoMaintenanceFields_ === 'function') {
+    window.guessBulkWorkMemoMaintenanceFields_(row);
+  }
   window.refreshBulkWorkMemoExtras_(uid);
 };
 
@@ -31691,78 +31967,86 @@ window.buildBulkWorkMemoMaintenanceMasterSideEffects_ = (d, queued) => {
     ? window.getBulkWorkMemoMaintTargetsSelected_(d)
     : [];
   const machines = selected.filter(t => (t.kind || 'machine') === 'machine').map(t => {
-    const machine = (typeof window.findMaintenanceTargetById_ === 'function')
-      ? window.findMaintenanceTargetById_(t.id)
-      : ((typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
-        ? pdlMachines.find(m => m && String(m.id) === String(t.id)) || null
-        : null);
-    return machine ? { id: String(t.id), machine } : null;
+    const machine = (typeof window.resolveBulkWorkMemoMaintMachine_ === 'function')
+      ? window.resolveBulkWorkMemoMaintMachine_(t.id)
+      : ((typeof window.findMaintenanceTargetById_ === 'function')
+        ? window.findMaintenanceTargetById_(t.id)
+        : ((typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
+          ? pdlMachines.find(m => m && String(m.id) === String(t.id)) || null
+          : null));
+    if (!machine || machine.isTool || machine.isVehicle) return null;
+    return { id: String(t.id), machine };
   }).filter(Boolean);
 
-  const resolveKnown = (machine, field, draftKey) => {
+  const resolveKnown = (machine, field) => {
     if (window.getMachineMaintenanceOptions_) {
       return window.getMachineMaintenanceOptions_(machine, field, '') || [];
     }
-    const draftProbe = Object.assign({}, d);
-    draftProbe[draftKey] = '';
-    if (field === 'symptoms') return window.getBulkWorkMemoMaintenanceSymptomOptions_(draftProbe) || [];
-    if (field === 'maintenanceContents') return window.getBulkWorkMemoMaintenanceContentOptions_(draftProbe) || [];
-    return window.getBulkWorkMemoMaintenancePartsOptions_(draftProbe) || [];
+    return [];
   };
 
-  const symptom = String(d.maintenanceSymptom || '').trim();
-  if (symptom) {
-    machines.forEach(({ id, machine }) => {
+  machines.forEach(({ id, machine }) => {
+    const detail = (typeof window.getBulkWorkMemoMaintDetail_ === 'function')
+      ? window.getBulkWorkMemoMaintDetail_(d, id)
+      : {
+        symptom: String(d.maintenanceSymptom || '').trim(),
+        content: String(d.maintenanceContent || '').trim(),
+        parts: String(d.maintenanceParts || '').trim()
+      };
+
+    const symptom = String(detail.symptom || '').trim();
+    if (symptom) {
       const key = id + '::' + symptom;
-      if (q.symptoms.has(key)) return;
-      const known = resolveKnown(machine, 'symptoms', 'maintenanceSymptom');
-      if ((known || []).includes(symptom)) return;
-      q.symptoms.add(key);
-      fx.push({ action: 'addMachineSymptom', params: { machineId: id, newSymptom: symptom } });
-      if (typeof window.appendMachineMaintOptionLocal_ === 'function') {
-        window.appendMachineMaintOptionLocal_(machine, 'symptoms', symptom);
-      } else {
-        const currentSymp = machine.symptoms ? machine.symptoms.split(/[,、]/).map(s => s.trim()) : [];
-        if (!currentSymp.includes(symptom)) {
-          machine.symptoms = machine.symptoms ? machine.symptoms + ',' + symptom : symptom;
+      if (!q.symptoms.has(key)) {
+        const known = resolveKnown(machine, 'symptoms');
+        if (!(known || []).includes(symptom)) {
+          q.symptoms.add(key);
+          fx.push({ action: 'addMachineSymptom', params: { machineId: id, newSymptom: symptom } });
+          if (typeof window.appendMachineMaintOptionLocal_ === 'function') {
+            window.appendMachineMaintOptionLocal_(machine, 'symptoms', symptom);
+          }
         }
       }
-    });
-  }
+    }
 
-  const content = String(d.maintenanceContent || '').trim();
-  if (content) {
-    machines.forEach(({ id, machine }) => {
+    const content = String(detail.content || '').trim();
+    if (content) {
       const key = id + '::' + content;
-      if (q.contents.has(key)) return;
-      const known = resolveKnown(machine, 'maintenanceContents', 'maintenanceContent');
-      if ((known || []).includes(content)) return;
-      q.contents.add(key);
-      fx.push({
-        action: 'addMachineMaintenanceContent',
-        params: { machineId: id, newContent: content }
-      });
-      if (typeof window.appendMachineMaintOptionLocal_ === 'function') {
-        window.appendMachineMaintOptionLocal_(machine, 'maintenanceContents', content);
+      if (!q.contents.has(key)) {
+        const known = resolveKnown(machine, 'maintenanceContents');
+        if (!(known || []).includes(content)) {
+          q.contents.add(key);
+          fx.push({
+            action: 'addMachineMaintenanceContent',
+            params: { machineId: id, newContent: content }
+          });
+          if (typeof window.appendMachineMaintOptionLocal_ === 'function') {
+            window.appendMachineMaintOptionLocal_(machine, 'maintenanceContents', content);
+          }
+        }
       }
-    });
-  }
+    }
 
-  const parts = String(d.maintenanceParts || '').trim();
-  if (parts) {
-    machines.forEach(({ id, machine }) => {
+    const parts = String(detail.parts || '').trim();
+    if (parts) {
       const key = id + '::' + parts;
-      if (q.parts.has(key)) return;
-      const known = resolveKnown(machine, 'parts', 'maintenanceParts');
-      if ((known || []).includes(parts)) return;
-      q.parts.add(key);
-      fx.push({ action: 'addMachinePart', params: { machineId: id, newPart: parts } });
-      const currentParts = machine.parts ? machine.parts.split(/[,、]/).map(p => p.trim()) : [];
-      if (!currentParts.includes(parts)) {
-        machine.parts = machine.parts ? machine.parts + ',' + parts : parts;
+      if (!q.parts.has(key)) {
+        const known = resolveKnown(machine, 'parts');
+        if (!(known || []).includes(parts)) {
+          q.parts.add(key);
+          fx.push({ action: 'addMachinePart', params: { machineId: id, newPart: parts } });
+          if (typeof window.appendMachineMaintOptionLocal_ === 'function') {
+            window.appendMachineMaintOptionLocal_(machine, 'parts', parts);
+          } else {
+            const currentParts = machine.parts ? machine.parts.split(/[,、]/).map(p => p.trim()) : [];
+            if (!currentParts.includes(parts)) {
+              machine.parts = machine.parts ? machine.parts + ',' + parts : parts;
+            }
+          }
+        }
       }
-    });
-  }
+    }
+  });
   return fx;
 };
 
@@ -32612,10 +32896,12 @@ window.addBulkWorkMemoPrepSiblingDraft_ = (uid, presetTarget) => {
     maintenanceTool: '',
     maintenanceTargetKind: '',
     maintenanceTargets: [],
+    maintenanceByTarget: {},
     maintenanceSymptom: '',
     maintenanceContent: '',
     maintenanceParts: '',
     _maintKindFilter: 'all',
+    _maintFocusId: '',
     detailedWorks: [],
     concurrentWorks: [],
     usedMachines: [],
@@ -32931,6 +33217,11 @@ window.pickBulkWorkMemoRestType_ = (uid, restName) => {
   row.maintenanceToolId = '';
   row.maintenanceTool = '';
   row.maintenanceTargets = [];
+  row.maintenanceByTarget = {};
+  row.maintenanceSymptom = '';
+  row.maintenanceContent = '';
+  row.maintenanceParts = '';
+  row._maintFocusId = '';
   row._restPickOpen = false;
   window.renderBulkWorkMemoDraftEditor_(uid);
 };
@@ -32989,9 +33280,11 @@ window.resetBulkWorkMemoDraftForRest_ = (row) => {
   row.maintenanceTool = '';
   row.maintenanceTargetKind = '';
   row.maintenanceTargets = [];
+  row.maintenanceByTarget = {};
   row.maintenanceSymptom = '';
   row.maintenanceContent = '';
   row.maintenanceParts = '';
+  row._maintFocusId = '';
   row._maintKindFilter = 'all';
   window.setBulkWorkMemoPolyIds_(row, []);
   window.setBulkWorkMemoCropNames_(row, ['共通']);
@@ -33043,9 +33336,11 @@ window.resetBulkWorkMemoDraftForWork_ = (row) => {
   row.maintenanceTool = '';
   row.maintenanceTargetKind = '';
   row.maintenanceTargets = [];
+  row.maintenanceByTarget = {};
   row.maintenanceSymptom = '';
   row.maintenanceContent = '';
   row.maintenanceParts = '';
+  row._maintFocusId = '';
   row._maintKindFilter = 'all';
   window.setBulkWorkMemoCropNames_(row, []);
   window.setBulkWorkMemoPolyIds_(row, []);
@@ -34448,9 +34743,11 @@ window.pickBulkWorkMemoWorkName_ = (uid, name) => {
   row.maintenanceTool = '';
   row.maintenanceTargetKind = '';
   row.maintenanceTargets = [];
+  row.maintenanceByTarget = {};
   row.maintenanceSymptom = '';
   row.maintenanceContent = '';
   row.maintenanceParts = '';
+  row._maintFocusId = '';
   row._pestSearchQ = '';
   if (row.isRest) {
     window.ensureBulkWorkMemoRestInMaster_();
@@ -34692,9 +34989,11 @@ window.pickBulkWorkMemoPrepTarget_ = (uid, targetName) => {
   row.maintenanceTool = '';
   row.maintenanceTargetKind = '';
   row.maintenanceTargets = [];
+  row.maintenanceByTarget = {};
   row.maintenanceSymptom = '';
   row.maintenanceContent = '';
   row.maintenanceParts = '';
+  row._maintFocusId = '';
   if (typeof window.setBulkWorkMemoPolyIds_ === 'function') {
     window.setBulkWorkMemoPolyIds_(row, []);
   } else {
@@ -35545,10 +35844,12 @@ window.createEmptyBulkWorkMemoDraft_ = () => {
     maintenanceTool: '',
     maintenanceTargetKind: '',
     maintenanceTargets: [],
+    maintenanceByTarget: {},
     maintenanceSymptom: '',
     maintenanceContent: '',
     maintenanceParts: '',
     _maintKindFilter: 'all',
+    _maintFocusId: '',
     detailedWorks: [],
     concurrentWorks: [],
     usedMachines: [],
@@ -35977,18 +36278,46 @@ window.executeBulkWorkMemoRegistration_ = async () => {
         if (typeof window.syncBulkWorkMemoMaintPrimary_ === 'function') {
           window.syncBulkWorkMemoMaintPrimary_(d);
         }
-        data.maintenanceTargets = maintTargets.map(t => ({
-          id: String(t.id || '').trim(),
-          name: String(t.name || '').trim(),
-          kind: String(t.kind || 'machine').trim() || 'machine'
-        }));
+        data.maintenanceTargets = maintTargets.map(t => {
+          const detail = (typeof window.getBulkWorkMemoMaintDetail_ === 'function')
+            ? window.getBulkWorkMemoMaintDetail_(d, t.id)
+            : { symptom: '', content: '', parts: '' };
+          return {
+            id: String(t.id || '').trim(),
+            name: String(t.name || '').trim(),
+            kind: String(t.kind || 'machine').trim() || 'machine',
+            symptom: String(detail.symptom || '').trim(),
+            content: String(detail.content || '').trim(),
+            parts: String(detail.parts || '').trim()
+          };
+        });
         data.maintenanceToolId = String(d.maintenanceToolId || maintTargets[0].id || '').trim();
         data.maintenanceTool = String(d.maintenanceTool || '').trim()
           || maintTargets.map(t => t.name).filter(Boolean).join('、');
         data.maintenanceTargetKind = String(d.maintenanceTargetKind || maintTargets[0].kind || '').trim();
-        data.maintenanceSymptom = String(d.maintenanceSymptom || '').trim();
-        data.maintenanceContent = String(d.maintenanceContent || '').trim();
-        data.maintenanceParts = String(d.maintenanceParts || '').trim();
+        // 互換: トップレベルは全機械の値を「、」結合（履歴表示用）
+        const joinUnique = (arr) => {
+          const seen = new Set();
+          const out = [];
+          arr.forEach((v) => {
+            const n = String(v || '').trim();
+            if (!n || seen.has(n)) return;
+            seen.add(n);
+            out.push(n);
+          });
+          return out.join('、');
+        };
+        data.maintenanceSymptom = joinUnique(data.maintenanceTargets.map(t => t.symptom))
+          || String(d.maintenanceSymptom || '').trim();
+        data.maintenanceContent = joinUnique(data.maintenanceTargets.map(t => t.content))
+          || String(d.maintenanceContent || '').trim();
+        data.maintenanceParts = joinUnique(data.maintenanceTargets.map(t => t.parts))
+          || String(d.maintenanceParts || '').trim();
+        data.maintenanceByTarget = data.maintenanceTargets.reduce((acc, t) => {
+          if (!t.id) return acc;
+          acc[t.id] = { symptom: t.symptom || '', content: t.content || '', parts: t.parts || '' };
+          return acc;
+        }, {});
       } else if (window.bulkWorkMemoIsMaintenance_(d)) {
         data.maintenanceSymptom = String(d.maintenanceSymptom || '').trim();
         data.maintenanceContent = String(d.maintenanceContent || '').trim();
