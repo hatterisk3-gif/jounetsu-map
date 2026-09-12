@@ -7,7 +7,8 @@
 
   var ACTIONS_WITHOUT_SHEET = {
     login: true,
-    signup: true
+    signup: true,
+    getSignupOptions: true
   };
 
   var HEAVY_TIMEOUT_MS = {

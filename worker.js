@@ -420,7 +420,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           const fromCache = !!options.fromCache;
           const id = document.getElementById('loginId').value;
           const pw = document.getElementById('loginPw').value;
-          const btn = document.querySelector('.login-btn');
+          const btn = document.getElementById('loginBtn') || document.querySelector('#workerAuthLogin .login-btn') || document.querySelector('.login-btn');
           const startupLoad = isAuto ? window._workerStartupLoading : null;
           if (startupLoad && !fromCache) {
               startupLoad.update({
@@ -466,6 +466,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   localStorage.setItem('passionMapUserName', result.name);
                   localStorage.setItem('passionMapUserRole', result.role || '作業員');
                   if (result.dept != null) localStorage.setItem('passionMapUserDept', result.dept || '');
+                  if (result.location != null) localStorage.setItem('passionMapUserLocation', result.location || '');
                   localStorage.setItem('spreadsheetId', result.spreadsheetId);
 
                   if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
@@ -551,6 +552,124 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
       function executeLogout() { localStorage.clear(); location.reload(); }
       window.executeLogin = executeLogin;
       window.executeLogout = executeLogout;
+
+      window.switchWorkerAuthTab = function(mode) {
+        const loginSec = document.getElementById('workerAuthLogin');
+        const signupSec = document.getElementById('workerAuthSignup');
+        const tabLogin = document.getElementById('loginTabBtn');
+        const tabSignup = document.getElementById('signupTabBtn');
+        const err = document.getElementById('loginError');
+        if (err) err.innerText = '';
+        const isSignup = mode === 'signup';
+        if (loginSec) loginSec.style.display = isSignup ? 'none' : 'block';
+        if (signupSec) signupSec.style.display = isSignup ? 'block' : 'none';
+        if (tabLogin) {
+          tabLogin.style.color = isSignup ? '#999' : '#2e7d32';
+          tabLogin.style.borderBottomColor = isSignup ? 'transparent' : '#4CAF50';
+          tabLogin.style.fontWeight = isSignup ? 'normal' : 'bold';
+        }
+        if (tabSignup) {
+          tabSignup.style.color = isSignup ? '#2e7d32' : '#999';
+          tabSignup.style.borderBottomColor = isSignup ? '#4CAF50' : 'transparent';
+          tabSignup.style.fontWeight = isSignup ? 'bold' : 'normal';
+        }
+        if (isSignup) {
+          loadWorkerSignupLocations_();
+          const first = document.getElementById('signupUserName');
+          if (first) setTimeout(function() { first.focus(); }, 40);
+        } else {
+          const first = document.getElementById('loginId');
+          if (first) setTimeout(function() { first.focus(); }, 40);
+        }
+      };
+
+      async function loadWorkerSignupLocations_() {
+        const sel = document.getElementById('signupLocation');
+        if (!sel || sel.getAttribute('data-loaded') === '1') return;
+        sel.innerHTML = '<option value="">読み込み中...</option>';
+        try {
+          const res = await callGAS('getSignupOptions', { orgId: 'default' });
+          const locs = (res && Array.isArray(res.locations)) ? res.locations : [];
+          let html = '<option value="">拠点を選択...</option>';
+          locs.forEach(function(l) {
+            const v = String(l || '').trim();
+            if (!v) return;
+            html += '<option value="' + v.replace(/"/g, '&quot;') + '">' + v.replace(/</g, '&lt;') + '</option>';
+          });
+          if (!locs.length) html += '<option value="" disabled>拠点マスタが空です</option>';
+          sel.innerHTML = html;
+          sel.setAttribute('data-loaded', '1');
+        } catch (e) {
+          sel.innerHTML = '<option value="">拠点の取得に失敗しました</option>';
+        }
+      }
+
+      window.submitWorkerSignup = async function() {
+        const err = document.getElementById('loginError');
+        const btn = document.getElementById('signupBtn');
+        const userName = String((document.getElementById('signupUserName') || {}).value || '').trim();
+        const password = String((document.getElementById('signupPassword') || {}).value || '');
+        const location = String((document.getElementById('signupLocation') || {}).value || '').trim();
+        const email = String((document.getElementById('signupEmail') || {}).value || '').trim();
+
+        if (!userName || !password) {
+          if (err) err.innerText = 'ユーザー名とパスワードを入力してください';
+          return;
+        }
+        if (password.length < 4) {
+          if (err) err.innerText = 'パスワードは4文字以上で入力してください';
+          return;
+        }
+        if (!location) {
+          if (err) err.innerText = '拠点名を選択してください';
+          return;
+        }
+        if (!email) {
+          if (err) err.innerText = 'メールアドレスを入力してください';
+          return;
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          if (err) err.innerText = 'メールアドレスの形式が正しくありません';
+          return;
+        }
+
+        if (btn) { btn.disabled = true; btn.innerText = '登録中...'; }
+        if (err) err.innerText = '';
+        try {
+          const res = await callGAS('signup', {
+            orgId: 'default',
+            userId: userName,
+            userName: userName,
+            password: password,
+            location: location,
+            email: email
+          });
+          if (!res || !res.success) {
+            if (err) err.innerText = (res && res.message) || '登録に失敗しました';
+            return;
+          }
+          const loginId = document.getElementById('loginId');
+          const loginPw = document.getElementById('loginPw');
+          if (loginId) loginId.value = userName;
+          if (loginPw) loginPw.value = password;
+          if (res.location != null) localStorage.setItem('passionMapUserLocation', res.location || location);
+          if (err) {
+            err.style.color = '#2e7d32';
+            err.innerText = '登録完了。ログインしています…';
+          }
+          window.switchWorkerAuthTab('login');
+          await executeLogin(false);
+          if (err) err.style.color = 'red';
+        } catch (e) {
+          if (err) {
+            err.style.color = 'red';
+            err.innerText = e.message || String(e);
+          }
+        } finally {
+          if (btn) { btn.disabled = false; btn.innerText = '登録する'; }
+        }
+      };
+
       if (typeof window.refreshAccountNameButtons === 'function') window.refreshAccountNameButtons();
       else setTimeout(function () {
         if (typeof window.refreshAccountNameButtons === 'function') window.refreshAccountNameButtons();
@@ -1153,7 +1272,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
         }
         if (safeCoords.length === 1) {
           const marker = createSignboardMarker(name, new google.maps.LatLng(safeCoords[0].lat, safeCoords[0].lng), color, id);
-          loadedPolygons[id] = { id, marker, name, color, photos: photos || [], author, isMarker: true, labelConfig: { text: name, color: '#333', fontSize: '13px', fontWeight: 'bold', className: 'signboard-label' }, signFunction: signFunc || '一般看板', linkedSigns: linkedSigns || "" };
+          loadedPolygons[id] = { id, marker, name, color, photos: photos || [], author, isMarker: true, location: loc || '', labelConfig: { text: name, color: '#333', fontSize: '13px', fontWeight: 'bold', className: 'signboard-label' }, signFunction: signFunc || '一般看板', linkedSigns: linkedSigns || "" };
         } else {
           const isUnused = (status === '未使用（返却）' || status === '未使用');
           let currentCrop = getCurrentCrop(photos);

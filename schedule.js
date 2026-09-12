@@ -61,6 +61,7 @@
                   localStorage.setItem('passionMapUserName', result.name);
                   localStorage.setItem('passionMapUserRole', result.role || '管理者');
                   if (result.dept != null) localStorage.setItem('passionMapUserDept', result.dept || '');
+                  if (result.location != null) localStorage.setItem('passionMapUserLocation', result.location || '');
                   localStorage.setItem('spreadsheetId', result.spreadsheetId);
 
                   if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {

@@ -241,14 +241,18 @@
             <div id="authSectionSignup" style="display:none;">
                 <p class="account-hint">作業員アカウントを作成できます。<br>権限の変更は管理者用MAPのマイページから行えます。</p>
                 <div id="signupMsg" class="account-msg" aria-live="polite"></div>
-                <label class="account-label" for="signupUserId">スタッフID</label>
-                <input class="account-input" id="signupUserId" type="text" autocomplete="username" placeholder="例: tanaka">
-                <label class="account-label" for="signupUserName">表示名</label>
-                <input class="account-input" id="signupUserName" type="text" autocomplete="name" placeholder="例: 田中">
+                <label class="account-label" for="signupUserName">ユーザー名</label>
+                <input class="account-input" id="signupUserName" type="text" autocomplete="username" placeholder="ログインに使う名前">
                 <label class="account-label" for="signupPassword">パスワード（4文字以上）</label>
                 <input class="account-input" id="signupPassword" type="password" autocomplete="new-password">
                 <label class="account-label" for="signupPasswordConfirm">パスワード（確認）</label>
                 <input class="account-input" id="signupPasswordConfirm" type="password" autocomplete="new-password">
+                <label class="account-label" for="signupLocation">拠点名</label>
+                <select class="account-input" id="signupLocation" style="width:100%;">
+                  <option value="">読み込み中...</option>
+                </select>
+                <label class="account-label" for="signupEmail">メールアドレス</label>
+                <input class="account-input" id="signupEmail" type="email" autocomplete="email" placeholder="example@mail.com">
                 <button type="button" class="btn btn-signup" id="signupBtn" onclick="submitSignup()" style="margin-bottom:8px;">登録する</button>
             </div>
             </div>
@@ -257,7 +261,7 @@
         </div>
     </div>
 
-    <script src="api-client.js?v=1788510000000"></script>
+    <script src="api-client.js?v=1788600000050"></script>
   <script>
       const PORTAL_ORG_ID = 'default';
 
@@ -299,8 +303,9 @@
           if (signupSec) signupSec.style.display = 'block';
           if (tabLogin) { tabLogin.style.color = '#aaa'; tabLogin.style.borderBottomColor = 'transparent'; tabLogin.style.fontWeight = 'normal'; }
           if (tabSignup) { tabSignup.style.color = '#a5d6a7'; tabSignup.style.borderBottomColor = '#4CAF50'; tabSignup.style.fontWeight = 'bold'; }
-          const first = document.getElementById('signupUserId');
+          const first = document.getElementById('signupUserName');
           if (first) setTimeout(function() { first.focus(); }, 50);
+          loadPortalSignupLocations();
         } else {
           if (loginSec) loginSec.style.display = 'block';
           if (signupSec) signupSec.style.display = 'none';
@@ -401,7 +406,7 @@
         return callGAS(action, Object.assign({ orgId: PORTAL_ORG_ID }, params || {}));
       }
 
-      function saveLoginLocal(userId, password, name, role, spreadsheetId) {
+      function saveLoginLocal(userId, password, name, role, spreadsheetId, extra) {
         try {
           localStorage.setItem('passionMapUserId', userId || '');
           localStorage.setItem('passionMapUserPw', password || '');
@@ -409,6 +414,9 @@
           localStorage.setItem('passionMapUserRole', role || '作業員');
           if (spreadsheetId) localStorage.setItem('spreadsheetId', spreadsheetId);
           localStorage.setItem('passionMapOrgId', PORTAL_ORG_ID);
+          if (extra && extra.location != null) {
+            localStorage.setItem('passionMapUserLocation', extra.location || '');
+          }
 
           if (role === '管理者') {
             localStorage.setItem('pMapAdminOrgId', PORTAL_ORG_ID);
@@ -418,6 +426,93 @@
           }
         } catch (e) {}
         updateLoginDisplay();
+      }
+
+      async function loadPortalSignupLocations() {
+        const sel = document.getElementById('signupLocation');
+        if (!sel || sel.getAttribute('data-loaded') === '1') return;
+        sel.innerHTML = '<option value="">読み込み中...</option>';
+        try {
+          const data = await callPortalGAS('getSignupOptions', {});
+          const locs = (data && Array.isArray(data.locations)) ? data.locations : [];
+          let html = '<option value="">拠点を選択...</option>';
+          locs.forEach(function(l) {
+            const v = String(l || '').trim();
+            if (!v) return;
+            html += '<option value="' + escapeHtml(v) + '">' + escapeHtml(v) + '</option>';
+          });
+          if (!locs.length) html += '<option value="" disabled>拠点マスタが空です</option>';
+          sel.innerHTML = html;
+          sel.setAttribute('data-loaded', '1');
+        } catch (e) {
+          sel.innerHTML = '<option value="">拠点の取得に失敗しました</option>';
+        }
+      }
+
+      async function submitSignup() {
+        const userName = (document.getElementById('signupUserName').value || '').trim();
+        const password = document.getElementById('signupPassword').value || '';
+        const confirm = document.getElementById('signupPasswordConfirm').value || '';
+        const location = (document.getElementById('signupLocation').value || '').trim();
+        const email = (document.getElementById('signupEmail').value || '').trim();
+        const btn = document.getElementById('signupBtn');
+
+        if (!userName || !password) {
+          setMsg('signupMsg', 'ユーザー名とパスワードを入力してください', false);
+          return;
+        }
+        if (password.length < 4) {
+          setMsg('signupMsg', 'パスワードは4文字以上で入力してください', false);
+          return;
+        }
+        if (password !== confirm) {
+          setMsg('signupMsg', 'パスワード（確認）が一致しません', false);
+          return;
+        }
+        if (!location) {
+          setMsg('signupMsg', '拠点名を選択してください', false);
+          return;
+        }
+        if (!email) {
+          setMsg('signupMsg', 'メールアドレスを入力してください', false);
+          return;
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          setMsg('signupMsg', 'メールアドレスの形式が正しくありません', false);
+          return;
+        }
+
+        if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
+        setMsg('signupMsg', '', true);
+        try {
+          const data = await callPortalGAS('signup', {
+            userId: userName,
+            userName: userName,
+            password: password,
+            location: location,
+            email: email
+          });
+          if (!data || !data.success) {
+            setMsg('signupMsg', (data && data.message) || '登録に失敗しました', false);
+            return;
+          }
+          saveLoginLocal(userName, password, data.name || userName, '作業員', data.spreadsheetId, {
+            location: data.location || location
+          });
+          setMsg('signupMsg', '登録完了。作業員用 MAP を開けます', true);
+          document.getElementById('signupPassword').value = '';
+          document.getElementById('signupPasswordConfirm').value = '';
+          if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
+            await PassionMapTerms.ensureAccepted({ userId: userName });
+          }
+          setTimeout(function() {
+            closeAccountModal();
+          }, 800);
+        } catch (e) {
+          setMsg('signupMsg', e.message || String(e), false);
+        } finally {
+          if (btn) { btn.disabled = false; btn.textContent = '登録する'; }
+        }
       }
 
       function logoutFromIndex() {
@@ -484,7 +579,9 @@
           const userRole = data.role || '作業員';
           const spreadsheetId = data.spreadsheetId || '';
 
-          saveLoginLocal(userId, password, userName, userRole, spreadsheetId);
+          saveLoginLocal(userId, password, userName, userRole, spreadsheetId, {
+            location: data.location || ''
+          });
           setMsg('loginMsg', `ログイン完了 (${userName})`, true);
           updateLoginDisplay();
           if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
@@ -498,55 +595,6 @@
           setMsg('loginMsg', e.message || String(e), false);
         } finally {
           if (btn) { btn.disabled = false; btn.textContent = 'ログインする'; }
-        }
-      }
-
-      async function submitSignup() {
-        const userId = (document.getElementById('signupUserId').value || '').trim();
-        const userName = (document.getElementById('signupUserName').value || '').trim();
-        const password = document.getElementById('signupPassword').value || '';
-        const confirm = document.getElementById('signupPasswordConfirm').value || '';
-        const btn = document.getElementById('signupBtn');
-
-        if (!userId || !userName || !password) {
-          setMsg('signupMsg', 'スタッフID・表示名・パスワードを入力してください', false);
-          return;
-        }
-        if (password.length < 4) {
-          setMsg('signupMsg', 'パスワードは4文字以上で入力してください', false);
-          return;
-        }
-        if (password !== confirm) {
-          setMsg('signupMsg', 'パスワード（確認）が一致しません', false);
-          return;
-        }
-
-        if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
-        setMsg('signupMsg', '', true);
-        try {
-          const data = await callPortalGAS('signup', {
-            userId: userId,
-            userName: userName,
-            password: password
-          });
-          if (!data || !data.success) {
-            setMsg('signupMsg', (data && data.message) || '登録に失敗しました', false);
-            return;
-          }
-          saveLoginLocal(userId, password, data.name || userName, '作業員', data.spreadsheetId);
-          setMsg('signupMsg', '登録完了。作業員用 MAP を開けます', true);
-          document.getElementById('signupPassword').value = '';
-          document.getElementById('signupPasswordConfirm').value = '';
-          if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
-            await PassionMapTerms.ensureAccepted({ userId: userId });
-          }
-          setTimeout(function() {
-            closeAccountModal();
-          }, 800);
-        } catch (e) {
-          setMsg('signupMsg', e.message || String(e), false);
-        } finally {
-          if (btn) { btn.disabled = false; btn.textContent = '登録する'; }
         }
       }
 

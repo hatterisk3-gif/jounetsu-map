@@ -59,12 +59,34 @@
     <span id="recordSyncBannerText">☁️ 記録を同期中…</span>
   </div>
   <div id="loginScreen" style="display:none;" aria-hidden="true">
-    <div class="login-box">
+    <div class="login-box" style="max-height:90vh; overflow-y:auto;">
       <h2 style="color:#4CAF50;">情熱MAP (v2.72)</h2>
-      <div id="loginError" style="color:red; margin-bottom:10px;"></div>
-      <input type="text" id="loginId" class="login-input" placeholder="スタッフID">
-      <input type="password" id="loginPw" class="login-input" placeholder="パスワード">
-      <button class="login-btn" onclick="executeLogin()">ログイン</button>
+      <div style="display:flex; border-bottom:1px solid #e0e0e0; margin:0 0 12px 0;">
+        <button type="button" id="loginTabBtn" onclick="switchWorkerAuthTab('login')" style="flex:1; padding:8px; border:none; background:transparent; color:#2e7d32; font-weight:bold; border-bottom:2px solid #4CAF50; cursor:pointer; font-size:13px;">ログイン</button>
+        <button type="button" id="signupTabBtn" onclick="switchWorkerAuthTab('signup')" style="flex:1; padding:8px; border:none; background:transparent; color:#999; font-weight:normal; border-bottom:2px solid transparent; cursor:pointer; font-size:13px;">新規登録</button>
+      </div>
+      <div id="loginError" style="color:red; margin-bottom:10px; font-size:13px;"></div>
+
+      <div id="workerAuthLogin">
+        <input type="text" id="loginId" class="login-input" placeholder="ユーザー名" autocomplete="username">
+        <input type="password" id="loginPw" class="login-input" placeholder="パスワード" autocomplete="current-password">
+        <button class="login-btn" id="loginBtn" onclick="executeLogin()">ログイン</button>
+      </div>
+
+      <div id="workerAuthSignup" style="display:none; text-align:left;">
+        <p style="font-size:12px; color:#666; margin:0 0 10px 0; line-height:1.4; text-align:center;">作業員アカウントを作成します。<br>権限変更は管理者のマイページから行えます。</p>
+        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin:0 5% 4px;">ユーザー名</label>
+        <input type="text" id="signupUserName" class="login-input" placeholder="ログインに使う名前" autocomplete="username">
+        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin:0 5% 4px;">パスワード（4文字以上）</label>
+        <input type="password" id="signupPassword" class="login-input" placeholder="パスワード" autocomplete="new-password">
+        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin:0 5% 4px;">拠点名</label>
+        <select id="signupLocation" class="login-input" style="background:#fff;">
+          <option value="">読み込み中...</option>
+        </select>
+        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin:0 5% 4px;">メールアドレス</label>
+        <input type="email" id="signupEmail" class="login-input" placeholder="example@mail.com" autocomplete="email">
+        <button class="login-btn" id="signupBtn" onclick="submitWorkerSignup()" style="background:#2e7d32;">登録する</button>
+      </div>
     </div>
   </div>
 
@@ -475,8 +497,8 @@
   <script src="map-loading.js?v=1786243000000"></script>
   <script src="machine-taxonomy.js?v=1788600000008"></script>
   <script src="weather-agri.js?v=1785489000300"></script>
-  <script src="api-client.js?v=1788510000000"></script>
-  <script src="worker.js?v=1788600000031"></script>
+  <script src="api-client.js?v=1788600000050"></script>
+  <script src="worker.js?v=1788600000033"></script>
   <script src="tracking.js?v=1788600000042"></script>
   <script>
     if ('serviceWorker' in navigator) {

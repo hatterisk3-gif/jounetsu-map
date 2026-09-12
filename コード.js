@@ -26,6 +26,7 @@ function requireTenantSs_() {
 const API_ACTIONS = {
   "login": function (p) { return checkLogin(p.orgId, p.userId, p.password); },
   "signup": function (p) { return signupUser(p); },
+  "getSignupOptions": function (p) { return getSignupOptions(p); },
   "adminAddUser": function (p) { return adminAddUser(p); },
   "listUsersForAdmin": function (p) { return listUsersForAdmin(p); },
   "updateUserRole": function (p) { return updateUserRole(p); },
@@ -97,6 +98,7 @@ const API_ACTIONS = {
   "updateScheduleRowDept": function (p) { return updateScheduleRowDept(p); },
   "saveDepartmentMaster": function (p) { return saveDepartmentMaster(p); },
   "updateUserDepts": function (p) { return updateUserDepts(p); },
+  "updateUserLocations": function (p) { return updateUserLocations(p); },
   "getWorkRecordAnalysis": function (p) { return getWorkRecordAnalysis(p); },
   "saveManualData": function (p) { return saveManualData(p.manual); },
   "getManualList": function (p) { return getManualList(); },
@@ -539,16 +541,22 @@ function checkLogin(orgId, userId, password) {
   try {
     deptCol = ensureMeiboDeptColumn_().col;
   } catch (e) {}
+  let locationCol = -1;
+  try {
+    locationCol = ensureMeiboLocationColumn_().col;
+  } catch (e) {}
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(userId) && String(data[i][1]) === String(password)) {
       writeLog(data[i][2], "ログイン", "システム", "ログイン成功");
       const dept = deptCol >= 0 ? (String(data[i][deptCol] || '').trim() || '') : '';
+      const location = locationCol >= 0 ? (String(data[i][locationCol] || '').trim() || '') : '';
       return {
         success: true,
         name: data[i][2],
         role: data[i][3] || "作業員",
         dept: dept,
+        location: location,
         spreadsheetId: targetSpreadsheetId
       };
     }
@@ -561,11 +569,13 @@ function createMeiboUser_(ss, opts) {
   const userId = String((opts && opts.userId) || '').trim();
   const password = String((opts && opts.password) || '');
   const userName = String((opts && opts.userName) || '').trim();
+  const location = String((opts && opts.location) || '').trim();
+  const email = String((opts && opts.email) || '').trim();
   let role = String((opts && opts.role) || '作業員').trim() || '作業員';
   if (role !== '管理者' && role !== '作業員') role = '作業員';
 
   if (!userId || !password || !userName) {
-    return { success: false, message: "スタッフID・表示名・パスワードは必須です" };
+    return { success: false, message: "ユーザー名・パスワードは必須です" };
   }
   if (password.length < 4) {
     return { success: false, message: "パスワードは4文字以上で入力してください" };
@@ -578,7 +588,7 @@ function createMeiboUser_(ss, opts) {
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]).trim() === userId) {
-      return { success: false, message: "このスタッフIDは既に登録されています" };
+      return { success: false, message: "このユーザー名は既に登録されています" };
     }
   }
 
@@ -591,8 +601,48 @@ function createMeiboUser_(ss, opts) {
   row[2] = userName;
   row[3] = role;
   sheet.appendRow(row);
+  const newRow = sheet.getLastRow();
 
-  return { success: true, userId: userId, userName: userName, role: role };
+  if (location) {
+    try {
+      const locInfo = ensureMeiboLocationColumn_();
+      locInfo.sheet.getRange(newRow, locInfo.col + 1).setValue(location);
+    } catch (e) {}
+  }
+  if (email) {
+    try {
+      const mailInfo = ensureMeiboGmailColumn_();
+      mailInfo.sheet.getRange(newRow, mailInfo.gmailCol + 1).setValue(email);
+    } catch (e) {}
+  }
+
+  return {
+    success: true,
+    userId: userId,
+    userName: userName,
+    role: role,
+    location: location,
+    email: email
+  };
+}
+
+/** 新規登録画面用：拠点一覧（未ログイン可） */
+function getSignupOptions(params) {
+  const p = params || {};
+  try {
+    openTenantByOrgId_(p.orgId || 'default');
+  } catch (e) {
+    return { success: false, message: e.message || String(e), locations: [] };
+  }
+  let locations = [];
+  try {
+    locations = readLocationMasterDetails_().map(function(l) {
+      return String((l && l.name) || '').trim();
+    }).filter(Boolean);
+  } catch (e) {
+    locations = [];
+  }
+  return { success: true, locations: locations };
 }
 
 /** 自己登録（役割は作業員固定） */
@@ -605,16 +655,37 @@ function signupUser(params) {
     return { success: false, message: e.message || String(e) };
   }
 
+  const userNameRaw = String(p.userName || p.userId || '').trim();
+  const userId = String(p.userId || p.userName || '').trim();
+  const password = String(p.password || '');
+  const location = String(p.location || '').trim();
+  const email = String(p.email || '').trim();
+
+  if (!userId || !password) {
+    return { success: false, message: 'ユーザー名とパスワードを入力してください' };
+  }
+  if (!location) {
+    return { success: false, message: '拠点名を選択してください' };
+  }
+  if (!email) {
+    return { success: false, message: 'メールアドレスを入力してください' };
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { success: false, message: 'メールアドレスの形式が正しくありません' };
+  }
+
   const created = createMeiboUser_(TENANT_SS, {
-    userId: p.userId,
-    password: p.password,
-    userName: p.userName,
-    role: '作業員'
+    userId: userId,
+    password: password,
+    userName: userNameRaw || userId,
+    role: '作業員',
+    location: location,
+    email: email
   });
   if (!created.success) return created;
 
   try {
-    writeLog(created.userName, "サインアップ", "システム", "自己登録: " + created.userId);
+    writeLog(created.userName, "サインアップ", "システム", "自己登録: " + created.userId + " / 拠点:" + location + " / メール:" + email);
   } catch (e) {}
 
   return {
@@ -623,6 +694,8 @@ function signupUser(params) {
     name: created.userName,
     role: '作業員',
     userId: created.userId,
+    location: location,
+    email: email,
     spreadsheetId: spreadsheetId
   };
 }
@@ -735,6 +808,11 @@ function listUsersForAdmin(params) {
     const info = ensureMeiboDeptColumn_();
     deptCol = info.col;
   } catch (e) {}
+  let locationCol = -1;
+  try {
+    const locInfo = ensureMeiboLocationColumn_();
+    locationCol = locInfo.col;
+  } catch (e) {}
   for (let i = 1; i < admin.data.length; i++) {
     const uid = String(admin.data[i][0] || '').trim();
     if (!uid) continue;
@@ -742,7 +820,8 @@ function listUsersForAdmin(params) {
       userId: uid,
       userName: String(admin.data[i][2] || '').trim(),
       role: String(admin.data[i][3] || '作業員').trim() || '作業員',
-      dept: deptCol >= 0 ? (String(admin.data[i][deptCol] || '').trim() || '未設定') : '未設定'
+      dept: deptCol >= 0 ? (String(admin.data[i][deptCol] || '').trim() || '未設定') : '未設定',
+      location: locationCol >= 0 ? (String(admin.data[i][locationCol] || '').trim() || '') : ''
     });
   }
   users.sort(function(a, b) {
@@ -753,7 +832,11 @@ function listUsersForAdmin(params) {
   });
   let departments = ['運営', '未設定'];
   try { departments = getDeptList_(); } catch (e) {}
-  return { success: true, users: users, departments: departments };
+  let locations = [];
+  try {
+    locations = readLocationMasterDetails_().map(function(l) { return String((l && l.name) || '').trim(); }).filter(Boolean);
+  } catch (e) { locations = []; }
+  return { success: true, users: users, departments: departments, locations: locations };
 }
 
 /** 管理者向け: ユーザー権限変更 */
@@ -1453,13 +1536,29 @@ function getMachineGroupMasterList_() {
 }
 
 function renameMachineGroupInMachines_(oldName, newName) {
-  const sheet = TENANT_SS.getSheetByName('農機マスタ');
+  const sheet = ensureNoukiMasterSheet();
   if (!sheet || sheet.getLastRow() <= 1) return 0;
   const data = sheet.getDataRange().getValues();
   let count = 0;
+  const col = (typeof NOUKI_COL !== 'undefined' && NOUKI_COL.group) ? NOUKI_COL.group : 5;
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][25] || '').trim() === oldName) {
-      sheet.getRange(i + 1, 26).setValue(newName);
+    if (String(data[i][col - 1] || '').trim() === oldName) {
+      sheet.getRange(i + 1, col).setValue(newName);
+      count++;
+    }
+  }
+  return count;
+}
+
+function renameMachineTypeInMachines_(oldName, newName) {
+  const sheet = ensureNoukiMasterSheet();
+  if (!sheet || sheet.getLastRow() <= 1) return 0;
+  const data = sheet.getDataRange().getValues();
+  let count = 0;
+  const col = (typeof NOUKI_COL !== 'undefined' && NOUKI_COL.type) ? NOUKI_COL.type : 2;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][col - 1] || '').trim() === oldName) {
+      sheet.getRange(i + 1, col).setValue(newName);
       count++;
     }
   }
@@ -1467,13 +1566,14 @@ function renameMachineGroupInMachines_(oldName, newName) {
 }
 
 function renameHitchTypeInMachines_(oldName, newName) {
-  const sheet = TENANT_SS.getSheetByName('農機マスタ');
+  const sheet = ensureNoukiMasterSheet();
   if (!sheet || sheet.getLastRow() <= 1) return 0;
   const data = sheet.getDataRange().getValues();
   let count = 0;
+  const col = (typeof NOUKI_COL !== 'undefined' && NOUKI_COL.hitch) ? NOUKI_COL.hitch : 8;
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][32] || '').trim() === oldName) {
-      sheet.getRange(i + 1, 33).setValue(newName);
+    if (String(data[i][col - 1] || '').trim() === oldName) {
+      sheet.getRange(i + 1, col).setValue(newName);
       count++;
     }
   }
@@ -1805,6 +1905,30 @@ function manageMasterData(masterType, manageAction, value, userName) {
           break;
         }
       }
+    } else if (masterType === 'machineType') {
+      const originalName = String(value.originalName || '').trim();
+      const newName = String((value.newData && value.newData.name) || value.name || '').trim();
+      if (!originalName) throw new Error('変更前の機械カテゴリ名がありません');
+      if (!newName) throw new Error('機械カテゴリ名を入力してください');
+      if (newName !== originalName) {
+        const existing = getMachineTypeMasterList_();
+        if (existing.indexOf(newName) >= 0) {
+          throw new Error(`機械カテゴリ「${newName}」は既に登録されています`);
+        }
+      }
+      let found = false;
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][0] || '').trim() === originalName) {
+          sheet.getRange(i + 1, 1).setValue(newName);
+          if (newName !== originalName) {
+            renameMachineTypeInMachines_(originalName, newName);
+          }
+          writeLog(userName, "マスタ編集", newName, `対象: ${sheetName} (元: ${originalName})`);
+          found = true;
+          break;
+        }
+      }
+      if (!found) throw new Error('機械カテゴリ「' + originalName + '」が見つかりません');
     } else if (masterType === 'hitchType') {
       const originalName = String(value.originalName || '').trim();
       const newName = String((value.newData && value.newData.name) || value.name || '').trim();
@@ -5598,6 +5722,8 @@ function getSavedPolygons() {
   // 看板シート
   const signSheet = ss.getSheetByName('看板');
   if (signSheet) {
+    let signLocCol = -1;
+    try { signLocCol = ensureSignLocationColumn_(signSheet); } catch (e) { signLocCol = -1; }
     const data = signSheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       if (!data[i][0]) continue;
@@ -5620,6 +5746,7 @@ function getSavedPolygons() {
           coords: coords,
           color: data[i][3],
           author: data[i][5],
+          location: signLocCol >= 0 ? (String(data[i][signLocCol] || '').trim() || '') : '',
           signFunction: data[i][7] || "一般看板", // ★ここが超重要！H列（看板機能）をアプリに送る！
           photos: photos,
           uneSimData: data[i][10] // K列(11)
@@ -5687,8 +5814,9 @@ function savePolygon(params) {
   
   if (isMarker) {
     // 【看板シートの列構成】
-    // A:ID, B:名前, C:座標, D:色/アイコン, E:登録日時, F:登録者, G:空白, H:看板機能, J:履歴, K:畝シミュレーションデータ
-    sheet.appendRow([
+    // A:ID, B:名前, C:座標, D:色/アイコン, E:登録日時, F:登録者, G:空白, H:看板機能, J:履歴, K:畝シミュレーションデータ, L〜:所属拠点
+    const locCol = ensureSignLocationColumn_(sheet); // 0-based
+    const row = [
       newId,
       params.name || "",
       params.coords,
@@ -5700,7 +5828,10 @@ function savePolygon(params) {
       "", // I列
       "[]", // J列
       params.uneSimData || "" // K列: 畝シミュレーションデータ
-    ]);
+    ];
+    while (row.length <= locCol) row.push("");
+    row[locCol] = params.location || "";
+    sheet.appendRow(row);
   } else {
     // 【圃場シートの列構成（画像に合わせて完全に修正）】
     // A:ID, B:圃場の名前, C:所属拠点名, D:圃場条件, E:圃場面積, F:座標, G:色/アイコン, H:登録日時, I:登録者, J:システム用データ(履歴), K:稼働状況, L:登記ID, M:親ID
@@ -5845,12 +5976,16 @@ function updatePolygon(params) {
 
   // --- 保存処理（正しい列番号に修正！） ---
   if (isSignboard) {
-    // 【看板】 B(2):名前, C(3):座標, D(4):色, H(8):看板機能, J(10):履歴, K(11):畝シミュレーションデータ
+    // 【看板】 B(2):名前, C(3):座標, D(4):色, H(8):看板機能, J(10):履歴, K(11):畝シミュレーションデータ, 所属拠点列
     sheet.getRange(targetRow, 2).setValue(newName);
     sheet.getRange(targetRow, 3).setValue(coords);
     sheet.getRange(targetRow, 4).setValue(color);
     if (params.signFunction !== undefined) sheet.getRange(targetRow, 8).setValue(params.signFunction);
     if (params.uneSimData !== undefined) sheet.getRange(targetRow, 11).setValue(params.uneSimData);
+    if (params.location !== undefined) {
+      const locCol = ensureSignLocationColumn_(sheet);
+      sheet.getRange(targetRow, locCol + 1).setValue(params.location || '');
+    }
     sheet.getRange(targetRow, historyCol).setValue(JSON.stringify(newPhotos));
   } else {
     // 【圃場】 画像に合わせて修正！
@@ -7010,6 +7145,63 @@ function ensureMeiboDeptColumn_() {
   return { sheet: sheet, col: col };
 }
 
+/** 名簿の所属拠点列を確保（0-based col） */
+function ensureMeiboLocationColumn_() {
+  const ss = TENANT_SS;
+  const sheet = ss.getSheetByName('名簿');
+  if (!sheet) throw new Error('名簿シートが見つかりません');
+  // 部署列を先に確保してから拠点列を追加する
+  try { ensureMeiboDeptColumn_(); } catch (e) {}
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+    return String(h || '').trim();
+  });
+  let col = -1;
+  for (let c = 0; c < headers.length; c++) {
+    const h = headers[c];
+    if (h === '所属拠点' || h === '拠点' || h === '拠点名') {
+      col = c;
+      break;
+    }
+  }
+  if (col < 0) {
+    col = Math.max(sheet.getLastColumn(), 1);
+    sheet.getRange(1, col + 1).setValue('所属拠点');
+    SpreadsheetApp.flush();
+  }
+  return { sheet: sheet, col: col };
+}
+
+/** 看板シートの所属拠点列を確保（0-based index） */
+function ensureSignLocationColumn_(sheet) {
+  if (!sheet) throw new Error('看板シートが見つかりません');
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+    return String(h || '').trim();
+  });
+  let col = -1;
+  for (let c = 0; c < headers.length; c++) {
+    const h = headers[c];
+    if (h === '所属拠点' || h === '拠点' || h === '拠点名') {
+      col = c;
+      break;
+    }
+  }
+  if (col < 0) {
+    // L列(12)を優先。埋まっていれば末尾に追加
+    const preferIdx = 11; // 0-based = L列
+    if (lastCol <= preferIdx || !headers[preferIdx]) {
+      sheet.getRange(1, preferIdx + 1).setValue('所属拠点');
+      col = preferIdx;
+    } else {
+      col = lastCol;
+      sheet.getRange(1, col + 1).setValue('所属拠点');
+    }
+    SpreadsheetApp.flush();
+  }
+  return col;
+}
+
 function readMeiboUserDept_(rowVals, deptCol) {
   if (deptCol < 0 || !rowVals) return '';
   return String(rowVals[deptCol] || '').trim();
@@ -7036,6 +7228,34 @@ function updateUserDepts(params) {
       updated++;
       try {
         writeLog(userName, 'ユーザー部署設定', uid, String(data[i][2] || uid) + ': ' + (dept || '未設定'));
+      } catch (e) {}
+      break;
+    }
+  });
+  return { success: true, updated: updated };
+}
+
+/** ユーザーの所属拠点を一括更新 */
+function updateUserLocations(params) {
+  const p = params || {};
+  const userName = String(p.userName || '').trim() || 'システム';
+  const updates = Array.isArray(p.updates) ? p.updates : [];
+  if (!updates.length) return { success: true, updated: 0 };
+
+  const info = ensureMeiboLocationColumn_();
+  const data = info.sheet.getDataRange().getValues();
+  let updated = 0;
+  updates.forEach(function(u) {
+    const uid = String((u && u.userId) || '').trim();
+    const location = String((u && u.location) || '').trim();
+    if (!uid) return;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0] || '').trim() !== uid) continue;
+      info.sheet.getRange(i + 1, info.col + 1).setValue(location);
+      data[i][info.col] = location;
+      updated++;
+      try {
+        writeLog(userName, 'ユーザー所属拠点設定', uid, String(data[i][2] || uid) + ': ' + (location || '未設定'));
       } catch (e) {}
       break;
     }
@@ -17312,17 +17532,20 @@ function collectScheduleTaskUsersMap_() {
 function ensureMeiboGmailColumn_() {
   const sheet = requireTenantSs_().getSheetByName('名簿');
   if (!sheet) throw new Error('名簿シートが見つかりません');
-  const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 5)).getValues()[0];
+  const lastCol = Math.max(sheet.getLastColumn(), 5);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   let gmailCol = -1;
   for (let c = 0; c < headers.length; c++) {
-    if (String(headers[c]).indexOf('Gmail') >= 0 || String(headers[c]).indexOf('gmail') >= 0 || String(headers[c]) === 'メール') {
+    const h = String(headers[c] || '').trim();
+    if (h.indexOf('Gmail') >= 0 || h.indexOf('gmail') >= 0 || h === 'メール' || h === 'メールアドレス' || h === 'Email') {
       gmailCol = c;
       break;
     }
   }
   if (gmailCol < 0) {
-    gmailCol = 4;
-    sheet.getRange(1, gmailCol + 1).setValue('Gmail');
+    gmailCol = Math.max(sheet.getLastColumn(), 1);
+    sheet.getRange(1, gmailCol + 1).setValue('メール');
+    SpreadsheetApp.flush();
   }
   return { sheet: sheet, gmailCol: gmailCol };
 }

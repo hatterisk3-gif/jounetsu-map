@@ -733,6 +733,7 @@ function syncUpdatePolygon_(p, extra) {
         if (payload.coords == null && p.coords) payload.coords = JSON.stringify(p.coords);
         if (payload.color == null && p.color != null) payload.color = p.color;
         if (payload.signFunction == null) payload.signFunction = p.signFunction;
+        if (payload.location == null) payload.location = p.location || '';
         if (payload.condition == null) payload.condition = p.linkedSigns || '';
     } else {
         if (payload.location == null) payload.location = p.location;
@@ -960,6 +961,8 @@ async function executeLogin(isAuto = false, options = {}) {
             localStorage.setItem('passionMapUserPw', pw);
             localStorage.setItem('passionMapUserName', res.name);
             localStorage.setItem('passionMapUserRole', res.role || '管理者');
+            if (res.dept != null) localStorage.setItem('passionMapUserDept', res.dept || '');
+            if (res.location != null) localStorage.setItem('passionMapUserLocation', res.location || '');
             localStorage.setItem('spreadsheetId', res.spreadsheetId);
             localStorage.setItem('pMapAdminOrgId', 'default');
             localStorage.setItem('pMapAdminId', id);
@@ -1783,7 +1786,8 @@ window.getAdminSignOptionsHtml = (selectedId) => {
     signs.forEach(p => {
         const sel = String(p.id) === String(selectedId || '') ? 'selected' : '';
         const mark = isMachineManageSign(p) ? '' : '（一般看板）';
-        html += `<option value="${String(p.id).replace(/"/g, '&quot;')}" ${sel}>${(p.name || p.id)}${mark}</option>`;
+        const loc = p.location ? `［${p.location}］` : '';
+        html += `<option value="${String(p.id).replace(/"/g, '&quot;')}" ${sel}>${loc}${(p.name || p.id)}${mark}</option>`;
     });
     return html;
 };
@@ -1801,7 +1805,7 @@ window.getMachineTypeOptionsHtml = (selected) => {
 window.getMachineGroupOptionsHtml = (selected) => {
     const list = [...(pdlMachineGroups || [])];
     if (selected && !list.includes(selected)) list.unshift(selected);
-    let html = '<option value="">② メインカテゴリ...</option>';
+    let html = '<option value="">メインカテゴリを選択...</option>';
     list.forEach(t => {
         const sel = String(t) === String(selected || '') ? 'selected' : '';
         html += `<option value="${String(t).replace(/"/g, '&quot;')}" ${sel}>${t}</option>`;
@@ -2271,7 +2275,13 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <label style="font-size:12px; font-weight:bold; color:#555;">メインカテゴリ</label>
                 <select id="add_mac_group" class="form-input" style="margin-bottom:0; padding:8px;" onchange="autoFillAdminMachineNumber_(true)">${getMachineGroupOptionsHtml('')}</select>
                 <label style="font-size:12px; font-weight:bold; color:#555;">機械カテゴリ</label>
-                <select id="add_mac_type" class="form-input" style="margin-bottom:0; padding:8px;" onchange="autoFillAdminMachineNumber_(true)">${getMachineTypeOptionsHtml('')}</select>
+                <div style="display:flex; gap:5px; align-items:center;">
+                  <select id="add_mac_type" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" onchange="autoFillAdminMachineNumber_(true)">${getMachineTypeOptionsHtml('')}</select>
+                  <button type="button" onclick="addAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="機械カテゴリを追加">➕</button>
+                  <button type="button" onclick="renameAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="選択中の名称を編集">✏️</button>
+                  <button type="button" onclick="removeAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; color:#c62828; cursor:pointer;" title="選択中を削除">➖</button>
+                </div>
+                <div style="font-size:11px; color:#888; margin-top:-4px;">例：トラクター / 定植機 — ➕で追加、✏️で名称変更、➖でマスタから削除</div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">型式名</label>
                 <input type="text" id="add_mac_model" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例：PH2R / MZ655" oninput="autoFillAdminMachineNumber_(true)">
                 <label style="font-size:12px; font-weight:bold; color:#555;">番号</label>
@@ -2440,6 +2450,9 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             } else if (type === 'machineGroup') {
                 const safeName = encodeURIComponent(String(dispName));
                 actionBtns = `<button onclick="openEditMachineGroupMaster('${safeName}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
+            } else if (type === 'machineType') {
+                const safeName = encodeURIComponent(String(dispName));
+                actionBtns = `<button onclick="openEditMachineTypeMaster('${safeName}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else if (type === 'machine') {
                 actionBtns = `<button onclick="openEditMachineMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else if (type === 'tool') {
@@ -2594,6 +2607,25 @@ window.openEditMachineGroupMaster = (encodedName) => {
         </div>
     `;
     openMasterDetail('machineGroup', editHtml);
+};
+
+window.openEditMachineTypeMaster = (encodedName) => {
+    const name = decodeURIComponent(encodedName || '');
+    const safeName = String(name).replace(/"/g, '&quot;');
+    const editHtml = `
+        <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
+            <h4 style="margin-top:0; color:#FF9800; font-size:15px; border-bottom:2px solid #FF9800; padding-bottom:5px;">✏️ 機械カテゴリの編集</h4>
+            <input type="hidden" id="edit_machineType_original_name" value="${safeName}">
+            <label class="form-label">機械カテゴリ名</label>
+            <input type="text" id="edit_machineType_name" class="form-input" value="${safeName}">
+            <div style="font-size:11px; color:#666; margin-top:6px;">※名前を変更すると、農機マスタ側の同じ機械カテゴリもまとめて更新されます。</div>
+            <div style="display:flex; gap:10px; margin-top:15px;">
+                <button onclick="execMaster('machineType', 'edit')" style="flex:1; background:#FF9800; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">更新する</button>
+                <button onclick="openMasterDetail('machineType')" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">キャンセル</button>
+            </div>
+        </div>
+    `;
+    openMasterDetail('machineType', editHtml);
 };
 
 window.buildContentUnitOptionsHtml = (selected) => {
@@ -4626,7 +4658,12 @@ window.openEditMachineMaster = (encodedStr) => {
             <label class="form-label">メインカテゴリ</label>
             <select id="edit_mac_group" class="form-input">${getMachineGroupOptionsHtml(v.group || '')}</select>
             <label class="form-label">機械カテゴリ</label>
-            <select id="edit_mac_type" class="form-input">${getMachineTypeOptionsHtml(v.type || '')}</select>
+            <div style="display:flex; gap:5px; align-items:center; margin-bottom:10px;">
+              <select id="edit_mac_type" class="form-input" style="flex:1; margin-bottom:0;">${getMachineTypeOptionsHtml(v.type || '')}</select>
+              <button type="button" onclick="addAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="機械カテゴリを追加">➕</button>
+              <button type="button" onclick="renameAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="選択中の名称を編集">✏️</button>
+              <button type="button" onclick="removeAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; color:#c62828; cursor:pointer;" title="選択中を削除">➖</button>
+            </div>
             <label class="form-label">型式名</label>
             <input type="text" id="edit_mac_model" class="form-input" value="${safeModel}">
             <label class="form-label">番号</label>
@@ -4739,6 +4776,121 @@ window.autoFillAdminMachineNumber_ = (force) => {
             hintEl.textContent = `同じ組み合わせはまだありません。番号「${next}」から登録できます`;
             hintEl.style.color = '#888';
         }
+    }
+};
+
+window.getAdminMachineTypeSelectEl_ = () => {
+    return document.getElementById('add_mac_type') || document.getElementById('edit_mac_type');
+};
+
+window.refreshAdminMachineTypeSelect_ = (selected) => {
+    const sel = window.getAdminMachineTypeSelectEl_();
+    if (!sel) return;
+    const cur = selected != null ? String(selected) : String(sel.value || '');
+    sel.innerHTML = getMachineTypeOptionsHtml(cur);
+    if (cur) sel.value = cur;
+};
+
+window.renameAdminMachineTypeInLocalMachines_ = (oldName, newName) => {
+    const o = String(oldName || '').trim();
+    const n = String(newName || '').trim();
+    if (!o || !n || o === n) return;
+    (window.pdlMachines || []).forEach(m => {
+        if (!m) return;
+        if (String(m.type || '').trim() === o) m.type = n;
+    });
+};
+
+window.addAdminMachineTypeFromForm_ = async () => {
+    const raw = prompt('新しい機械カテゴリ名を入力してください（例：トラクター）');
+    if (raw == null) return;
+    const name = String(raw).trim();
+    if (!name) return;
+    if ((pdlMachineTypes || []).includes(name)) {
+        customAlert('既に登録されています');
+        refreshAdminMachineTypeSelect_(name);
+        if (typeof autoFillAdminMachineNumber_ === 'function') autoFillAdminMachineNumber_(true);
+        return;
+    }
+    pdlMachineTypes = [...(pdlMachineTypes || []), name];
+    persistAdminInitCache_();
+    refreshAdminMachineTypeSelect_(name);
+    if (typeof autoFillAdminMachineNumber_ === 'function') autoFillAdminMachineNumber_(true);
+    showAdminSyncToast('✅ 機械カテゴリを追加しました（同期中…）', 'ok');
+    try {
+        const updated = await callGAS('manageMaster', {
+            masterType: 'machineType', manageAction: 'add', value: name, userName: currentUser
+        });
+        if (Array.isArray(updated)) pdlMachineTypes = updated;
+        persistAdminInitCache_();
+        refreshAdminMachineTypeSelect_(name);
+        showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+    } catch (e) {
+        showAdminSyncToast('⚠️ 保存に失敗しました: ' + (e.message || e), 'error');
+    }
+};
+
+window.renameAdminMachineTypeFromForm_ = async () => {
+    const sel = window.getAdminMachineTypeSelectEl_();
+    if (!sel || !sel.value) {
+        customAlert('編集する機械カテゴリを選択してください');
+        return;
+    }
+    const original = String(sel.value).trim();
+    const raw = prompt('機械カテゴリ名を変更', original);
+    if (raw == null) return;
+    const newName = String(raw).trim();
+    if (!newName) return;
+    if (newName !== original && (pdlMachineTypes || []).includes(newName)) {
+        customAlert('既に登録されています');
+        return;
+    }
+    if (!await customConfirm(`機械カテゴリ「${original}」を「${newName}」に変更しますか？\n※登録済み農機の同じカテゴリも更新されます。`)) return;
+    pdlMachineTypes = (pdlMachineTypes || []).map(t => String(t) === original ? newName : t);
+    window.renameAdminMachineTypeInLocalMachines_(original, newName);
+    persistAdminInitCache_();
+    refreshAdminMachineTypeSelect_(newName);
+    if (typeof autoFillAdminMachineNumber_ === 'function') autoFillAdminMachineNumber_(true);
+    showAdminSyncToast('✅ 機械カテゴリ名を更新しました（同期中…）', 'ok');
+    try {
+        const updated = await callGAS('manageMaster', {
+            masterType: 'machineType',
+            manageAction: 'edit',
+            value: { originalName: original, newData: { name: newName } },
+            userName: currentUser
+        });
+        if (Array.isArray(updated)) pdlMachineTypes = updated;
+        persistAdminInitCache_();
+        refreshAdminMachineTypeSelect_(newName);
+        showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+    } catch (e) {
+        showAdminSyncToast('⚠️ 保存に失敗しました: ' + (e.message || e), 'error');
+    }
+};
+
+window.removeAdminMachineTypeFromForm_ = async () => {
+    const sel = window.getAdminMachineTypeSelectEl_();
+    if (!sel || !sel.value) {
+        customAlert('削除する機械カテゴリを選択してください');
+        return;
+    }
+    const val = String(sel.value).trim();
+    if (!await customConfirm(`機械カテゴリ「${val}」をマスタから削除しますか？\n※既に登録済みの農機のカテゴリ値自体は残ります。`)) return;
+    pdlMachineTypes = (pdlMachineTypes || []).filter(t => String(t) !== val);
+    persistAdminInitCache_();
+    refreshAdminMachineTypeSelect_('');
+    if (typeof autoFillAdminMachineNumber_ === 'function') autoFillAdminMachineNumber_(true);
+    showAdminSyncToast('✅ 機械カテゴリを削除しました（同期中…）', 'ok');
+    try {
+        const updated = await callGAS('manageMaster', {
+            masterType: 'machineType', manageAction: 'delete', value: val, userName: currentUser
+        });
+        if (Array.isArray(updated)) pdlMachineTypes = updated;
+        persistAdminInitCache_();
+        refreshAdminMachineTypeSelect_('');
+        showAdminSyncToast('☁️ サーバーへ削除完了', 'ok');
+    } catch (e) {
+        showAdminSyncToast('⚠️ 削除に失敗しました: ' + (e.message || e), 'error');
     }
 };
 
@@ -5139,6 +5291,18 @@ window.execMaster = async (type, act, val) => {
                 originalName: originalName,
                 newData: { name: newName }
             };
+        } else if (type === 'machineType') {
+            const originalName = document.getElementById('edit_machineType_original_name').value;
+            const newName = document.getElementById('edit_machineType_name').value.trim();
+            if (!newName) { customAlert("機械カテゴリ名を入力してください"); return; }
+            if (newName !== String(originalName || "").trim() && (pdlMachineTypes || []).includes(newName)) {
+                customAlert("既に登録されています");
+                return;
+            }
+            value = {
+                originalName: originalName,
+                newData: { name: newName }
+            };
         } else if (type === 'workCategory') {
             const originalName = document.getElementById('edit_workCategory_original_name').value;
             const newName = document.getElementById('edit_workCategory_name').value.trim();
@@ -5283,6 +5447,13 @@ window.execMaster = async (type, act, val) => {
     }
     applyOptimisticMasterChange_(type, act, value);
     if (type === 'work') { try { closeWorkMasterEditModal(); } catch(e){} }
+    if (act === 'edit' && type === 'machineType' && value && value.originalName && value.newData) {
+        const o = String(value.originalName).trim();
+        const n = String(value.newData.name || '').trim();
+        if (o && n && o !== n && typeof window.renameAdminMachineTypeInLocalMachines_ === 'function') {
+            window.renameAdminMachineTypeInLocalMachines_(o, n);
+        }
+    }
     if (act === 'edit' && type === 'workCategory' && value && value.originalName && value.newData) {
         const o = String(value.originalName).trim();
         const n = String(value.newData.name || '').trim();
@@ -5370,12 +5541,17 @@ function openAttr(id) {
     if (p.isMarker) {
         let funcOptions = '<option value="機能なし">機能なし</option>';
         pdlSignFunctions.forEach(f => { if (f && f !== "看板機能") { const selected = (p.signFunction === f) ? 'selected' : ''; funcOptions += `<option value="${f}" ${selected}>${f}</option>`; } });
+        const defaultLoc = String(p.location || localStorage.getItem('passionMapUserLocation') || '').trim();
+        const locOptions = `<option value="">未設定</option>` + (pdlLocations || []).map(l =>
+            `<option value="${String(l).replace(/"/g, '&quot;')}" ${l === defaultLoc ? 'selected' : ''}>${l}</option>`
+        ).join('');
         if (!window.isReturningFromLinkSelect) { window.tempLinkedSigns = p.linkedSigns ? p.linkedSigns.split(',').filter(String) : []; }
         window.isReturningFromLinkSelect = false;
         infoWindow.setContent(`
              <div style="text-align:center; width:220px; box-sizing:border-box; padding:10px; font-family:sans-serif;">
                <div style="font-size:14px; margin-bottom:10px;">看板情報変更</div>
                <input type="text" id="rnIn" value="${p.name}" class="form-input" style="width:100%; margin-bottom:10px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">
+               <select id="rnLoc" class="form-input" style="width:100%; margin-bottom:10px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">${locOptions}</select>
                <select id="rnFunc" class="form-input" style="width:100%; margin-bottom:10px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;" onchange="if(window.onFuncChangeEdit) window.onFuncChangeEdit()">${funcOptions}</select>
                <button id="btnLinkSignEdit" onclick="startAdminLinkSelect('${id}')" style="display:${p.signFunction && p.signFunction.includes('給油') ? 'block' : 'none'}; width:100%; margin-bottom:15px; background:#E91E63; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">🗺️ 看板を選択 (${window.tempLinkedSigns.length}件)</button>
                <button onclick="execAttr('${id}')" style="width:100%; padding:10px; border-radius:4px; border:none; background:#d32f2f; color:white; font-weight:bold; cursor:pointer;">保存</button>
@@ -5390,8 +5566,11 @@ function execAttr(id) {
     const p = loadedPolygons[id];
     if (!p) return;
     if (p.isMarker) {
-        const n = document.getElementById('rnIn').value, f = document.getElementById('rnFunc').value; if (!n) return;
-        p.name = n; p.signFunction = f; p.labelConfig.text = n;
+        const n = document.getElementById('rnIn').value, f = document.getElementById('rnFunc').value;
+        const locEl = document.getElementById('rnLoc');
+        const loc = locEl ? locEl.value : (p.location || '');
+        if (!n) return;
+        p.name = n; p.signFunction = f; p.location = loc; p.labelConfig.text = n;
         p.linkedSigns = window.tempLinkedSigns ? window.tempLinkedSigns.join(',') : "";
         p.marker.setMap(null); p.marker = createSignboardMarker(n, p.marker.getPosition(), p.color, p._adminIdRef || id);
         infoWindow.close();
@@ -6104,10 +6283,15 @@ function openMarkerForm(markerObj) {
     };
     const icons = ['🪧', '🚻', '🚰', '⛲', '🚿', '🌀', '⛏️', '🪚', '✂️', '🧹', '🔬', '📦', '🏭', '🚚', '🛻', '🚙', '🏪', '⛽', '🛠️', '🏢', '⚠️', '🅿️', '📢', '🚫', '🧼', '🪵', '🔩', '🛢️', '🚜', '🐓', '⛰️', '🗑️'];
     const funcOpts = `<option value="機能なし">機能なし</option>` + pdlSignFunctions.map(f => `<option value="${f}">${f}</option>`).join('');
+    const defaultLoc = String(localStorage.getItem('passionMapUserLocation') || '').trim();
+    const locOpts = `<option value="">拠点を選択...</option>` + (pdlLocations || []).map(l =>
+        `<option value="${String(l).replace(/"/g, '&quot;')}" ${l === defaultLoc ? 'selected' : ''}>${l}</option>`
+    ).join('');
     infoWindow.setContent(`
             <div style="width:260px;max-width:100%;box-sizing:border-box;padding:4px;text-align:center;color:#000;">
               <b>看板登録</b><br>
               <input type="text" id="mName" class="form-input" placeholder="看板名">
+              <select id="mLoc" class="form-input" style="margin-bottom:8px;">${locOpts}</select>
               <select id="mFunc" class="form-input" style="margin-bottom:10px;">${funcOpts}</select>
               <div style="display:grid;grid-template-columns:repeat(6,1fr);font-size:20px;gap:2px;">
                 ${icons.map(i => `<span class="ib" id="i_${i}" onclick="selectMI('${i}')" style="cursor:pointer;padding:2px;border-radius:4px;">${i}</span>`).join('')}
@@ -7085,13 +7269,15 @@ document.getElementById('finalSaveBtn').onclick = async () => {
 window.saveM = () => {
     const n = document.getElementById('mName').value; if (!n) { customAlert("看板名を入力してください"); return; }
     const ic = document.getElementById('selIco').value, funcType = document.getElementById('mFunc').value, pos = currentMarker.getPosition(), coords = [{ lat: pos.lat(), lng: pos.lng() }];
+    const locEl = document.getElementById('mLoc');
+    const loc = locEl ? String(locEl.value || '').trim() : '';
     const tempId = newAdminTempId_('tmp');
     infoWindow.close();
-    createPolygonObject({ id: tempId, name: n, coords, color: ic, signFunction: funcType, isMarker: true });
+    createPolygonObject({ id: tempId, name: n, coords, color: ic, location: loc, signFunction: funcType, isMarker: true });
     document.getElementById('btnViewMode').click();
     persistAdminInitCache_();
     showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
-    const payload = { name: n, coords: JSON.stringify(coords), color: ic, signFunction: funcType, userName: currentUser };
+    const payload = { name: n, coords: JSON.stringify(coords), color: ic, location: loc, signFunction: funcType, userName: currentUser };
     syncAdminCall_('savePolygon', payload, { key: 'savePolygon:' + tempId, op: 'savePolygon', tempId, payload }).then(id => {
         remapLoadedPolygonId_(tempId, id);
         persistAdminInitCache_();
@@ -8122,8 +8308,8 @@ window.openMyPage = function() {
 
     if (isAdmin) {
         html += `
-        <h4 style="color:#555; margin-bottom:8px; margin-top:20px;">👥 ユーザー権限・部署の変更</h4>
-        <p style="font-size:12px; color:#777; margin:0 0 8px 0; line-height:1.4;">管理者はユーザーの権限（管理者／作業員）と所属部署を変更できます。最後の管理者は作業員に変更できません。</p>
+        <h4 style="color:#555; margin-bottom:8px; margin-top:20px;">👥 ユーザー権限・部署・拠点の変更</h4>
+        <p style="font-size:12px; color:#777; margin:0 0 8px 0; line-height:1.4;">管理者はユーザーの権限（管理者／作業員）、所属部署、所属拠点を変更できます。最後の管理者は作業員に変更できません。所属拠点は看板登録時に自動選択されます。</p>
         <div id="userRoleManageMsg" style="min-height:18px; margin-bottom:8px; font-size:13px; font-weight:bold;"></div>
         <div id="userRoleManageList" style="background:#fafafa; border:1px solid #e0e0e0; border-radius:8px; padding:8px; max-height:240px; overflow-y:auto; margin-bottom:8px;">
             <div style="text-align:center; color:#999; font-size:13px; padding:12px;">読み込み中...</div>
@@ -8181,13 +8367,24 @@ window.loadUserRoleManageList = async function() {
             const d = String((u && u.dept) || '').trim();
             if (d && deptOpts.indexOf(d) < 0) deptOpts.unshift(d);
         });
+        let locOpts = Array.isArray(res.locations) && res.locations.length
+            ? res.locations.slice()
+            : (Array.isArray(pdlLocations) ? pdlLocations.slice() : []);
+        users.forEach(u => {
+            const loc = String((u && u.location) || '').trim();
+            if (loc && locOpts.indexOf(loc) < 0) locOpts.unshift(loc);
+        });
         listEl.innerHTML = users.map((u, idx) => {
             const role = (u.role === '管理者') ? '管理者' : '作業員';
             const uid = esc(u.userId);
             const uname = esc(u.userName || '');
             const dept = String(u.dept || '未設定').trim() || '未設定';
+            const location = String(u.location || '').trim();
             const deptOptions = deptOpts.map(d =>
                 `<option value="${esc(d)}" ${d === dept ? 'selected' : ''}>${esc(d)}</option>`
+            ).join('');
+            const locationOptions = `<option value="" ${!location ? 'selected' : ''}>未設定</option>` + locOpts.map(l =>
+                `<option value="${esc(l)}" ${l === location ? 'selected' : ''}>${esc(l)}</option>`
             ).join('');
             return `
               <div style="display:flex; align-items:center; gap:8px; padding:8px; border-bottom:1px solid #eee; flex-wrap:wrap;" data-user-id="${uid}">
@@ -8202,8 +8399,12 @@ window.loadUserRoleManageList = async function() {
                 <select class="user-dept-select" data-idx="${idx}" style="padding:6px 8px; font-size:13px; border:1px solid #ccc; border-radius:4px; min-width:110px;" title="所属部署">
                   ${deptOptions}
                 </select>
+                <select class="user-location-select" data-idx="${idx}" style="padding:6px 8px; font-size:13px; border:1px solid #ccc; border-radius:4px; min-width:110px;" title="所属拠点">
+                  ${locationOptions}
+                </select>
                 <button type="button" class="user-role-change-btn" data-idx="${idx}" style="padding:6px 10px; background:#7B1FA2; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">権限</button>
                 <button type="button" class="user-dept-change-btn" data-idx="${idx}" style="padding:6px 10px; background:#455a64; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">部署</button>
+                <button type="button" class="user-location-change-btn" data-idx="${idx}" style="padding:6px 10px; background:#2e7d32; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">拠点</button>
               </div>
             `;
         }).join('');
@@ -8226,8 +8427,47 @@ window.loadUserRoleManageList = async function() {
                 changeUserDeptFromAdmin(user.userId, sel ? sel.value : user.dept);
             });
         });
+        listEl.querySelectorAll('.user-location-change-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const idx = parseInt(this.getAttribute('data-idx'), 10);
+                const user = (window._userRoleManageUsers || [])[idx];
+                if (!user) return;
+                const sel = listEl.querySelector('.user-location-select[data-idx="' + idx + '"]');
+                changeUserLocationFromAdmin(user.userId, sel ? sel.value : user.location);
+            });
+        });
     } catch (e) {
         listEl.innerHTML = `<div style="text-align:center; color:#c62828; font-size:13px; padding:12px;">${String(e.message || e)}</div>`;
+    }
+};
+
+window.changeUserLocationFromAdmin = async function(targetUserId, selectedLocation) {
+    const newLocation = String(selectedLocation || '').trim();
+    const adminUserId = localStorage.getItem('passionMapUserId') || localStorage.getItem('pMapAdminId') || '';
+    const adminPassword = localStorage.getItem('passionMapUserPw') || localStorage.getItem('pMapAdminPw') || '';
+    if (!adminUserId || !adminPassword) {
+        window.setUserRoleManageMsg('ログイン情報が不足しています', false);
+        return;
+    }
+    const label = newLocation || '未設定';
+    if (!confirm(`「${targetUserId}」の所属拠点を「${label}」に変更しますか？`)) return;
+    window.setUserRoleManageMsg('拠点を変更中...', true);
+    try {
+        const res = await callGAS('updateUserLocations', {
+            updates: [{ userId: targetUserId, location: newLocation }],
+            userName: localStorage.getItem('passionMapUserName') || adminUserId
+        });
+        if (!res || res.success === false) {
+            window.setUserRoleManageMsg((res && res.message) || '拠点の変更に失敗しました', false);
+            return;
+        }
+        window.setUserRoleManageMsg(`拠点を変更しました（${targetUserId}: ${label}）`, true);
+        if (String(targetUserId) === String(adminUserId)) {
+            localStorage.setItem('passionMapUserLocation', newLocation);
+        }
+        loadUserRoleManageList();
+    } catch (e) {
+        window.setUserRoleManageMsg(String(e.message || e), false);
     }
 };
 
