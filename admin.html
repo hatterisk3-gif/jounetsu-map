@@ -35,8 +35,14 @@
   </button>
 
   <button id="btnEquipmentManage" onclick="openEquipmentManageModal()"
-    style="position: fixed; bottom: 184px; right: 10px; width: 50px; height: 50px; background: white; color: #FB8C00; border: none; border-radius: 50%; font-weight: bold; font-size: 22px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;" title="機械管理" aria-label="機械管理">
+    style="position: fixed; bottom: 112px; right: 10px; width: 50px; height: 50px; background: white; color: #FB8C00; border: none; border-radius: 50%; font-weight: bold; font-size: 22px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;" title="機械管理" aria-label="機械管理">
     🚜
+  </button>
+
+  <button id="btnClockBoard" onclick="openClockBoardModal()"
+    style="position: fixed; bottom: 184px; right: 10px; width: 50px; height: 50px; background: white; color: #2E7D32; border: none; border-radius: 50%; font-weight: bold; font-size: 22px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;" title="出退勤確認" aria-label="出退勤確認">
+    🏃
+    <span id="clockBoardPendingBadge" style="display:none; position:absolute; top:-4px; right:-4px; background:#d32f2f; color:#fff; font-size:10px; min-width:18px; height:18px; line-height:18px; text-align:center; border-radius:9px; padding:0 5px; box-shadow:0 1px 3px rgba(0,0,0,0.3);">0</span>
   </button>
 
   <div id="equipmentManageModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9998; justify-content:center; align-items:center;">
@@ -692,21 +698,6 @@
     </div>
   </div>
 
-  <div id="feedbackModal">
-    <div
-      style="background:#222; color:#fff; width:90%; max-width:400px; border-radius:8px; display:flex; flex-direction:column; padding:20px; box-sizing:border-box; border:1px solid #444;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-        <h3 style="margin:0; color:#d32f2f; font-size:18px;">✉️ システム管理者へ連絡</h3>
-        <span onclick="closeFeedback()" style="cursor:pointer; font-size:24px; color:#999; line-height:1;">×</span>
-      </div>
-      <p style="font-size:12px; color:#aaa; margin-top:0;">バグの報告や機能追加の要望などをご記入ください。</p>
-      <textarea id="feedbackText" rows="6" placeholder="例：〇〇の画面でエラーが出ます。〇〇の機能を追加してほしいです。"
-        style="width:100%; padding:10px; border-radius:4px; border:1px solid #555; background:#333; color:#fff; box-sizing:border-box; margin-bottom:15px; resize:none;"></textarea>
-      <button id="sendFeedbackBtn" onclick="sendFeedback()"
-        style="width:100%; background:#d32f2f; color:#fff; border:none; padding:12px; border-radius:4px; font-weight:bold; font-size:16px;">送信する</button>
-    </div>
-  </div>
-
   <div class="control-panel">
     <div class="control-row">
       <div class="search-container">
@@ -722,9 +713,6 @@
       <button onclick="forceUpdateApp()"
         style="background:#4CAF50; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">🔄
         最新に更新</button>
-      <button onclick="openFeedback()"
-        style="background:rgba(68, 68, 68, 0.8); color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">✉️
-        連絡</button>
       <div style="position:relative; display:inline-block;">
         <button type="button" onclick="toggleAccountMenu(event)"
           style="background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px; cursor:pointer; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">👤
@@ -748,9 +736,6 @@
       <button id="btnViewMode" class="mode-btn active">👀 閲覧</button>
       <button id="btnDrawMode" class="mode-btn">✏️ 圃場</button>
       <button id="btnMarkerMode" class="mode-btn">📍 看板</button>
-      <button onclick="openClockBoardModal()"
-        style="background:rgba(46, 125, 50, 0.9); color:white; border-radius:5px; border:none; padding:8px 12px; font-weight:bold; font-size:13px; position:relative;">🏃
-        出退勤 <span id="clockBoardPendingBadge" style="display:none; position:absolute; top:-6px; right:-8px; background:#d32f2f; color:#fff; font-size:10px; min-width:18px; height:18px; line-height:18px; text-align:center; border-radius:9px; padding:0 5px;">0</span></button>
       <button onclick="openMasterModal()"
         style="background:rgba(33, 150, 243, 0.8); color:white; border-radius:5px; border:none; padding:8px 12px; font-weight:bold; font-size:13px;">⚙️
         マスタ</button>
@@ -848,7 +833,7 @@
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=ja&v=weekly" async defer></script>
 
   <script src="api-client.js?v=1788510000000" defer></script>
-  <script src="admin.js?v=1788600000049" defer></script>
+  <script src="admin.js?v=1788600000050" defer></script>
   <script src="admin_cost.js?v=1785489000008" defer></script>
   <script src="admin_crop_work.js?v=1787570400000" defer></script>
   <script src="tracking.js?v=1787790000001" defer></script>
@@ -904,10 +889,6 @@
     </div>
   </div>
 
-  <button id="btnTracking" onclick="toggleTracking()"
-    style="position: fixed; bottom: 112px; right: 10px; width: 50px; height: 50px; background: white; color: #4CAF50; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; flex-direction: column; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;" title="トラッキング" aria-label="トラッキング">
-    🏃‍♂️
-  </button>
 </body>
 
 </html>

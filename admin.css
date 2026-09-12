@@ -19,7 +19,7 @@ button { padding: 8px 12px; cursor: pointer; border-radius: 5px; border: none; f
 .polygon-label { text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; }
 .signboard-label { background: rgba(255,255,255,0.95); padding: 2px 6px; border-radius: 4px; border: 1px solid #666; font-size: 11px; font-weight: bold; margin-top: 5px; color: #000; }
 .signboard-label.selected { background-color: #FFEB3B !important; border: 2px solid #F57F17 !important; color: #000 !important; z-index: 1000; }
-#modal, #masterModal, #feedbackModal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 4000; justify-content: center; align-items: center; }
+#modal, #masterModal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 4000; justify-content: center; align-items: center; }
 .modal-content { background: #fff; color: #333; padding: 20px; border-radius: 12px; width: 90%; max-width: 400px; max-height: 85vh; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
 .form-label { display: block; font-size: 12px; color: #666; margin-bottom: 2px; font-weight: bold; text-align: left; }
 .form-input { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; background: #fff !important; color: #333 !important; }
