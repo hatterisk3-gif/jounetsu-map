@@ -5,7 +5,7 @@
  * L3: 機械名（機種） / 車両名 — type
  * L4: 型式名 — model
  * L5: 番号 — 農機=管理番号 / 車両=ナンバープレート番号
- * 農機の表示名は「機種 + 型式 + No.番号」（マスタB列 name は使わない）
+ * 農機の表示名は「機種 + 型式 + ①番号」（マスタB列 name は使わない）
  */
 (function (global) {
   'use strict';
@@ -13,6 +13,28 @@
   var MACHINE_MAIN_CATS = ['圃場', '出荷'];
   var VEHICLE_MAIN_CATS = ['自動車', '作業機'];
   var DEFAULT_VEHICLE_TYPES = ['軽トラ', '軽バン', '軽四', '普通車', 'トラック'];
+
+  /** 1→① … 50→㊿。それ以外は (n) */
+  function formatMachineNumberLabel(raw) {
+    var s = String(raw == null ? '' : raw).trim();
+    if (!s) return '';
+    // 既に丸数字ならそのまま
+    if (/^[①-⑳㉑-㉟㊱-㊿]$/.test(s)) return s;
+    s = s.replace(/^no\.?\s*/i, '').trim();
+    if (!s) return '';
+    // 全角数字を半角へ
+    s = s.replace(/[０-９]/g, function (ch) {
+      return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+    });
+    var m = s.match(/^(\d+)/);
+    if (!m) return s;
+    var n = parseInt(m[1], 10);
+    if (!isFinite(n) || n < 1) return s;
+    if (n <= 20) return String.fromCharCode(0x245F + n); // ①=0x2460
+    if (n <= 35) return String.fromCharCode(0x3251 + (n - 21)); // ㉑
+    if (n <= 50) return String.fromCharCode(0x32B1 + (n - 36)); // ㊱
+    return '(' + n + ')';
+  }
 
   var LEGACY_GROUP_MAP = {
     '農業機械': '圃場',
@@ -131,7 +153,7 @@
     return countMachinesWithSameModel_(group, typeName, model, list) <= 1;
   }
 
-  /** 農機名 = 機械名（機種）+ 型式名 + No.番号（同じ型式が1台なら番号なし） */
+  /** 農機名 = 機械名（機種）+ 型式名 + ①番号（同じ型式が1台なら番号なし） */
   function buildDisplayName(kind, typeName, number, model, fallbackName, opts) {
     kind = kind === 'vehicle' ? 'vehicle' : 'machine';
     opts = opts || {};
@@ -153,7 +175,7 @@
     if (omitNumber) {
       numPart = '';
     } else if (numPart) {
-      numPart = /^no\.?/i.test(numPart) ? numPart : ('No.' + numPart);
+      numPart = formatMachineNumberLabel(numPart);
     }
     var mParts = [typePart, modelPart, numPart].filter(Boolean);
     if (mParts.length) return mParts.join(' ');
@@ -184,7 +206,9 @@
     if (built) return built;
     if (legacy) {
       var needModel = model && legacy.indexOf(model) < 0 ? model : '';
-      var needNum = number && legacy.indexOf(String(number)) < 0 && legacy.indexOf('No.' + number) < 0
+      var needNum = number && legacy.indexOf(String(number)) < 0
+        && legacy.indexOf('No.' + number) < 0
+        && legacy.indexOf(formatMachineNumberLabel(number)) < 0
         ? number : '';
       return buildDisplayName('machine', legacy, needNum, needModel, legacy, { group: group });
     }
@@ -312,6 +336,7 @@
     getItemModel: getItemModel,
     getVehiclePlate: getVehiclePlate,
     buildDisplayName: buildDisplayName,
+    formatMachineNumberLabel: formatMachineNumberLabel,
     getDisplayName: getDisplayName,
     sameModelKey_: sameModelKey_,
     countMachinesWithSameModel_: countMachinesWithSameModel_,

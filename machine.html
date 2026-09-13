@@ -275,16 +275,19 @@
       </div>
       <div class="form-group">
         <label>拠点</label>
-        <select id="regLocation">
+        <select id="regLocation" onchange="refreshMachineRegSignOptions()">
           <option value="">-- 選択 --</option>
         </select>
       </div>
       <div class="form-group">
         <label>定位置看板</label>
-        <select id="regSign">
-          <option value="">-- 選択（農機管理機能付き） --</option>
-        </select>
-        <div style="font-size:11px; color:#888; margin-top:4px;">「車両・機械管理」機能が付いた看板のみ表示されます</div>
+        <div id="regSignWrap">
+          <select id="regSign">
+            <option value="">-- 選択（農機管理機能付き） --</option>
+          </select>
+          <div id="regSignHint" style="font-size:11px; color:#888; margin-top:4px;">拠点を選ぶと、その拠点の看板だけが表示されます</div>
+          <div id="regSignSetupBtns" style="display:none; gap:6px; flex-wrap:wrap; margin-top:6px;"></div>
+        </div>
       </div>
       <div class="form-group">
         <label>作業分類</label>
@@ -479,10 +482,10 @@
 
   <script
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=ja&v=weekly&callback=initMap" async defer></script>
-  <script src="machine-taxonomy.js?v=1788600000010" defer></script>
+  <script src="machine-taxonomy.js?v=1788600000011" defer></script>
   <script src="map-loading.js?v=1786243000000" defer></script>
   <script src="api-client.js?v=1788510000000" defer></script>
-  <script src="machine.js?v=1788600000041" defer></script>
+  <script src="machine.js?v=1788600000043" defer></script>
   <script src="tracking.js?v=1787790000000" defer></script>
   <script>
     function openMachineActionSheet(id) {

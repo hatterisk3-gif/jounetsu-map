@@ -1498,48 +1498,50 @@ window.renderEquipmentVehiclePanel_ = async (editVehicle) => {
     const formTitle = editing ? '✏️ 車両を編集' : '➕ 新規登録';
     const formColor = editing ? '#FF9800' : '#4CAF50';
     body.innerHTML = `
-      <div style="display:flex; gap:20px; height:100%; flex-wrap:wrap; box-sizing:border-box;">
-        <div style="flex:1; min-width:320px; max-width:420px;">
-          <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
-            <h4 style="margin-top:0; margin-bottom:10px; color:${formColor}; font-size:15px; border-bottom:2px solid ${formColor}; padding-bottom:5px;">${formTitle}</h4>
-            <input type="hidden" id="admin_veh_edit_id" value="${editing ? String(editing.id || '').replace(/"/g, '&quot;') : ''}">
-            <div style="display:flex; flex-direction:column; gap:8px;">
-              <label style="font-size:12px; font-weight:bold; color:#555;">ナンバー（登録番号）*</label>
-              <input type="text" id="admin_veh_plate" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例：徳島 480 あ 1234" value="${editing ? String(editing.plateNumber || '').replace(/"/g, '&quot;') : ''}">
-              <label style="font-size:12px; font-weight:bold; color:#555;">メインカテゴリ</label>
-              <select id="admin_veh_main" class="form-input" style="margin-bottom:0; padding:8px;">
-                <option value="自動車"${mainCat === '自動車' ? ' selected' : ''}>自動車</option>
-                <option value="作業機"${mainCat === '作業機' ? ' selected' : ''}>作業機</option>
-              </select>
-              <label style="font-size:12px; font-weight:bold; color:#555;">車種</label>
-              <div style="display:flex; gap:5px;">
-                <select id="admin_veh_type" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">${typeOpts}</select>
-                <button type="button" onclick="addAdminVehicleType_()" style="padding:8px; border-radius:4px; border:1px solid #ccc;" title="車種を追加">➕</button>
+      <div style="display:flex; gap:20px; min-height:100%; height:100%; align-items:stretch; flex-wrap:wrap; box-sizing:border-box;">
+        <div style="flex:1; min-width:320px; max-width:420px; display:flex; flex-direction:column; min-height:0;">
+          <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; flex:1; min-height:0; display:flex; flex-direction:column; box-sizing:border-box; margin-bottom:0;">
+            <h4 style="margin-top:0; margin-bottom:10px; color:${formColor}; font-size:15px; border-bottom:2px solid ${formColor}; padding-bottom:5px; flex-shrink:0;">${formTitle}</h4>
+            <div style="flex:1; min-height:0; overflow-y:auto;">
+              <input type="hidden" id="admin_veh_edit_id" value="${editing ? String(editing.id || '').replace(/"/g, '&quot;') : ''}">
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size:12px; font-weight:bold; color:#555;">ナンバー（登録番号）*</label>
+                <input type="text" id="admin_veh_plate" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例：徳島 480 あ 1234" value="${editing ? String(editing.plateNumber || '').replace(/"/g, '&quot;') : ''}">
+                <label style="font-size:12px; font-weight:bold; color:#555;">メインカテゴリ</label>
+                <select id="admin_veh_main" class="form-input" style="margin-bottom:0; padding:8px;">
+                  <option value="自動車"${mainCat === '自動車' ? ' selected' : ''}>自動車</option>
+                  <option value="作業機"${mainCat === '作業機' ? ' selected' : ''}>作業機</option>
+                </select>
+                <label style="font-size:12px; font-weight:bold; color:#555;">車種</label>
+                <div style="display:flex; gap:5px;">
+                  <select id="admin_veh_type" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">${typeOpts}</select>
+                  <button type="button" onclick="addAdminVehicleType_()" style="padding:8px; border-radius:4px; border:1px solid #ccc;" title="車種を追加">➕</button>
+                </div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">番号 / 型式</label>
+                <div style="display:flex; gap:5px;">
+                  <input type="text" id="admin_veh_number" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="管理番号" value="${editing ? String(editing.vehicleNumber || editing.machineNumber || '').replace(/"/g, '&quot;') : ''}">
+                  <input type="text" id="admin_veh_model" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="型式" value="${editing ? String(editing.model || '').replace(/"/g, '&quot;') : ''}">
+                </div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">走行距離(km) / 登録日</label>
+                <div style="display:flex; gap:5px;">
+                  <input type="number" id="admin_veh_mileage" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="例: 12000" value="${editing && (editing.mileage === 0 || editing.mileage) ? editing.mileage : ''}">
+                  <input type="date" id="admin_veh_date" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" value="${regDate}">
+                </div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">写真</label>
+                <div id="admin_veh_photo_preview" style="min-height:70px; background:#f5f5f5; border:1px dashed #bbb; border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:hidden; margin-bottom:4px;">
+                  ${editing && editing.photo ? `<img src="${String(editing.photo).replace(/"/g, '&quot;')}" style="max-width:100%; max-height:120px;">` : '<div style="color:#888; font-size:12px; padding:10px;">写真未登録</div>'}
+                </div>
+                <input type="file" accept="image/*" onchange="previewAdminVehiclePhoto_(this)" style="width:100%; font-size:12px;">
+                <button type="button" onclick="saveAdminVehicle()" style="background:${formColor}; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">${editing ? '更新する' : '車両を追加する'}</button>
+                ${editing ? '<button type="button" onclick="renderEquipmentVehiclePanel_()" style="background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">キャンセル</button>' : ''}
               </div>
-              <label style="font-size:12px; font-weight:bold; color:#555;">番号 / 型式</label>
-              <div style="display:flex; gap:5px;">
-                <input type="text" id="admin_veh_number" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="管理番号" value="${editing ? String(editing.vehicleNumber || editing.machineNumber || '').replace(/"/g, '&quot;') : ''}">
-                <input type="text" id="admin_veh_model" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="型式" value="${editing ? String(editing.model || '').replace(/"/g, '&quot;') : ''}">
-              </div>
-              <label style="font-size:12px; font-weight:bold; color:#555;">走行距離(km) / 登録日</label>
-              <div style="display:flex; gap:5px;">
-                <input type="number" id="admin_veh_mileage" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="例: 12000" value="${editing && (editing.mileage === 0 || editing.mileage) ? editing.mileage : ''}">
-                <input type="date" id="admin_veh_date" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" value="${regDate}">
-              </div>
-              <label style="font-size:12px; font-weight:bold; color:#555;">写真</label>
-              <div id="admin_veh_photo_preview" style="min-height:70px; background:#f5f5f5; border:1px dashed #bbb; border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:hidden; margin-bottom:4px;">
-                ${editing && editing.photo ? `<img src="${String(editing.photo).replace(/"/g, '&quot;')}" style="max-width:100%; max-height:120px;">` : '<div style="color:#888; font-size:12px; padding:10px;">写真未登録</div>'}
-              </div>
-              <input type="file" accept="image/*" onchange="previewAdminVehiclePhoto_(this)" style="width:100%; font-size:12px;">
-              <button type="button" onclick="saveAdminVehicle()" style="background:${formColor}; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">${editing ? '更新する' : '車両を追加する'}</button>
-              ${editing ? '<button type="button" onclick="renderEquipmentVehiclePanel_()" style="background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">キャンセル</button>' : ''}
             </div>
           </div>
         </div>
-        <div style="flex:1.5; min-width:320px;">
-          <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; display:flex; flex-direction:column; box-sizing:border-box;">
-            <div style="font-weight:bold; font-size:15px; color:#333; margin-bottom:12px; padding-bottom:8px; border-bottom:2px solid #e0e0e0;">登録済みデータ一覧 (${list.length}件)</div>
-            <div style="flex:1; overflow-y:auto;">
+        <div style="flex:1.5; min-width:320px; display:flex; flex-direction:column; min-height:0;">
+          <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; flex:1; min-height:0; display:flex; flex-direction:column; box-sizing:border-box;">
+            <div style="font-weight:bold; font-size:15px; color:#333; margin-bottom:12px; padding-bottom:8px; border-bottom:2px solid #e0e0e0; flex-shrink:0;">登録済みデータ一覧 (${list.length}件)</div>
+            <div style="flex:1; min-height:0; overflow-y:auto;">
               <table style="width:100%; border-collapse:collapse; font-size:13px;">
                 <thead>
                   <tr style="background:#f4f6f8; text-align:left; border-bottom:2px solid #e0e0e0; color:#555;">
@@ -1767,32 +1769,134 @@ window.isMachineManageSign = (p) => {
     return f.includes('車両・機械管理') || f.includes('農機管理');
 };
 
-window.getAdminSignOptionsHtml = (selectedId) => {
+/** 拠点に紐づく機械管理看板を取得（selectedId はフィルタ外でも残す） */
+window.getAdminMachineSignsForLocation_ = (locationFilter, selectedId) => {
+    const locFilter = String(locationFilter || '').trim();
     let signs = Object.values(loadedPolygons || {}).filter(p => p && p.isMarker && isMachineManageSign(p));
-    // 既存の定位置看板がフィルタ外でも選べるよう追加
+    if (locFilter) {
+        signs = signs.filter(p => String(p.location || '').trim() === locFilter);
+    }
     if (selectedId && loadedPolygons[selectedId] && loadedPolygons[selectedId].isMarker) {
         if (!signs.some(p => String(p.id) === String(selectedId))) {
             signs = [loadedPolygons[selectedId], ...signs];
         }
     }
     signs.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
+    return signs;
+};
+
+window.getAdminSignOptionsHtml = (selectedId, locationFilter) => {
+    const locFilter = String(locationFilter || '').trim();
+    let signs = window.getAdminMachineSignsForLocation_(locFilter, selectedId);
     let html = '<option value="">定位置・片付け場所の看板を選択...</option>';
-    if (signs.length === 0) {
-        // フォールバック: 全看板
-        signs = Object.values(loadedPolygons || {}).filter(p => p && p.isMarker);
-        signs.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
-        html = '<option value="">定位置・片付け場所の看板を選択...</option>';
-        if (signs.length === 0) {
-            html += '<option value="" disabled>※地図上に看板がありません</option>';
+    if (!locFilter) {
+        html += '<option value="" disabled>※先に拠点を選択してください</option>';
+        // 拠点未選択でも既存選択値は残す
+        if (selectedId && loadedPolygons[selectedId] && loadedPolygons[selectedId].isMarker) {
+            const p = loadedPolygons[selectedId];
+            const mark = isMachineManageSign(p) ? '' : '（一般看板）';
+            const loc = p.location ? `［${p.location}］` : '';
+            html += `<option value="${String(p.id).replace(/"/g, '&quot;')}" selected>${loc}${(p.name || p.id)}${mark}</option>`;
         }
+        return html;
+    }
+    if (signs.length === 0) {
+        html += `<option value="" disabled>※拠点「${String(locFilter).replace(/</g, '&lt;')}」に紐づく看板がありません</option>`;
+        return html;
     }
     signs.forEach(p => {
         const sel = String(p.id) === String(selectedId || '') ? 'selected' : '';
         const mark = isMachineManageSign(p) ? '' : '（一般看板）';
         const loc = p.location ? `［${p.location}］` : '';
-        html += `<option value="${String(p.id).replace(/"/g, '&quot;')}" ${sel}>${loc}${(p.name || p.id)}${mark}</option>`;
+        const outside = locFilter && String(p.location || '').trim() !== locFilter ? '（他拠点・現在の設定）' : '';
+        html += `<option value="${String(p.id).replace(/"/g, '&quot;')}" ${sel}>${loc}${(p.name || p.id)}${mark}${outside}</option>`;
     });
     return html;
+};
+
+/** 定位置看板UI（拠点連動＋未設定時の看板マスタ導線） */
+window.buildAdminMachineSignFieldHtml_ = (selectId, selectedId, location) => {
+    const loc = String(location || '').trim();
+    const signs = loc ? window.getAdminMachineSignsForLocation_(loc, selectedId) : [];
+    const matchedCount = loc
+        ? signs.filter(p => String(p.location || '').trim() === loc).length
+        : 0;
+    const opts = getAdminSignOptionsHtml(selectedId, loc);
+    const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    let hint = '拠点を選ぶと、その拠点に紐づく看板だけが表示されます。';
+    if (loc && matchedCount > 0) {
+        hint = `拠点「${esc(loc)}」の看板（車両・機械管理／農機管理）から選べます。`;
+    } else if (loc && matchedCount === 0) {
+        hint = `拠点「${esc(loc)}」に紐づく看板がありません。看板マスタで機能を確認し、地図で看板を登録してください。`;
+    }
+    const showSetup = !!(loc && matchedCount === 0);
+    const setupBtns = showSetup
+        ? `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
+            <button type="button" onclick="openSignMasterFromMachineForm_()" style="flex:1; min-width:120px; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🪧 看板マスタ</button>
+            <button type="button" onclick="startMarkerRegisterForMachineSign_()" style="flex:1; min-width:120px; background:#E3F2FD; color:#1565C0; border:1px solid #1565C0; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer;">📍 地図で看板登録</button>
+          </div>`
+        : '';
+    return `<select id="${esc(selectId)}" class="form-input" style="margin-bottom:0; padding:8px;">${opts}</select>
+      <div id="${esc(selectId)}_hint" style="font-size:11px; color:#666; margin:6px 0 0; line-height:1.4;">${hint}</div>
+      ${setupBtns}`;
+};
+
+window.refreshAdminMachineSignOptionsFromLocation_ = (mode) => {
+    const isEdit = String(mode || '') === 'edit';
+    const locEl = document.getElementById(isEdit ? 'edit_mac_location' : 'add_mac_location');
+    const signEl = document.getElementById(isEdit ? 'edit_mac_sign' : 'add_mac_sign');
+    const wrap = document.getElementById(isEdit ? 'edit_mac_sign_wrap' : 'add_mac_sign_wrap');
+    if (!locEl || !wrap) return;
+    const loc = String(locEl.value || '').trim();
+    const keepId = signEl ? String(signEl.value || '').trim() : '';
+    // 拠点変更で、選択中看板が別拠点ならクリア
+    let nextId = keepId;
+    if (keepId && loc && loadedPolygons[keepId]) {
+        const signLoc = String(loadedPolygons[keepId].location || '').trim();
+        if (signLoc && signLoc !== loc) nextId = '';
+    }
+    wrap.innerHTML = window.buildAdminMachineSignFieldHtml_(
+        isEdit ? 'edit_mac_sign' : 'add_mac_sign',
+        nextId,
+        loc
+    );
+};
+
+window.openSignMasterFromMachineForm_ = () => {
+    const loc = String(
+        (document.getElementById('edit_mac_location') || {}).value
+        || (document.getElementById('add_mac_location') || {}).value
+        || ''
+    ).trim();
+    window._pendingMarkerPrefill = {
+        location: loc,
+        signFunction: '車両・機械管理'
+    };
+    window._returnToEquipmentAfterSignMaster = !!window._equipmentManageActive;
+    if (typeof window.openMasterModal === 'function') window.openMasterModal();
+    if (typeof window.openMasterDetail === 'function') window.openMasterDetail('sign');
+};
+
+window.startMarkerRegisterForMachineSign_ = () => {
+    const loc = String(
+        (document.getElementById('edit_mac_location') || {}).value
+        || (document.getElementById('add_mac_location') || {}).value
+        || ''
+    ).trim();
+    window._pendingMarkerPrefill = {
+        location: loc,
+        signFunction: '車両・機械管理'
+    };
+    if (typeof window.closeEquipmentManageModal === 'function') {
+        window.closeEquipmentManageModal();
+    }
+    const mm = document.getElementById('masterModal');
+    if (mm) mm.style.display = 'none';
+    const btn = document.getElementById('btnMarkerMode');
+    if (btn) btn.click();
+    else if (typeof customAlert === 'function') {
+        customAlert('地図の「📍看板」モードで、拠点を選んで看板を登録してください。');
+    }
 };
 
 window.getMachineTypeOptionsHtml = (selected) => {
@@ -1959,11 +2063,16 @@ window.openMasterDetail = (type, customEditHtml = null) => {
     // フォーム部分の生成
     let formHtml = '';
     if (customEditHtml) {
-        formHtml = customEditHtml;
+        // 編集パネルも一覧と同じ高さになるよう、カードを伸縮対応にする
+        formHtml = String(customEditHtml).replace(
+            /style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;"/,
+            'style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; flex:1; min-height:0; display:flex; flex-direction:column; box-sizing:border-box; margin-bottom:0; overflow-y:auto;"'
+        );
     } else {
         const catalogNewPanelAttr = (type === 'fertilizer' || type === 'pesticide') ? ` id="${type}Panel_new"` : '';
-        formHtml = `<div${catalogNewPanelAttr} style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
-            <h4 style="margin-top:0; margin-bottom:10px; color:#4CAF50; font-size:15px; border-bottom:2px solid #4CAF50; padding-bottom:5px;">➕ 新規登録</h4>`;
+        formHtml = `<div${catalogNewPanelAttr} class="master-form-panel" style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; flex:1; min-height:0; display:flex; flex-direction:column; box-sizing:border-box; margin-bottom:0;">
+            <h4 style="margin-top:0; margin-bottom:10px; color:#4CAF50; font-size:15px; border-bottom:2px solid #4CAF50; padding-bottom:5px; flex-shrink:0;">➕ 新規登録</h4>
+            <div style="flex:1; min-height:0; overflow-y:auto;">`;
         
         if (type === 'crop') {
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
@@ -2270,11 +2379,16 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <button onclick="execMaster('work', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">作業マスタを追加</button>
             </div>`;
         } else if (type === 'machine') {
-            window._adminMacPhoto = { add: '', edit: '', clearEdit: false, existingEdit: '' };
+            window._adminMacPhoto = {
+                add: '', add2: '',
+                edit: '', edit2: '',
+                clearEdit: false, clearEdit2: false,
+                existingEdit: '', existingEdit2: ''
+            };
             const locOpts = '<option value="">拠点を選択...</option>' + (pdlLocations || []).map(l => `<option value="${String(l).replace(/"/g, '&quot;')}">${l}</option>`).join('');
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
                 <label style="font-size:12px; font-weight:bold; color:#555;">拠点名</label>
-                <select id="add_mac_location" class="form-input" style="margin-bottom:0; padding:8px;">${locOpts}</select>
+                <select id="add_mac_location" class="form-input" style="margin-bottom:0; padding:8px;" onchange="refreshAdminMachineSignOptionsFromLocation_('add')">${locOpts}</select>
                 <label style="font-size:12px; font-weight:bold; color:#555;">メインカテゴリ</label>
                 <select id="add_mac_group" class="form-input" style="margin-bottom:0; padding:8px;" onchange="autoFillAdminMachineNumber_(true)">${getMachineGroupOptionsHtml('')}</select>
                 <label style="font-size:12px; font-weight:bold; color:#555;">機械カテゴリ</label>
@@ -2293,7 +2407,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <label style="font-size:12px; font-weight:bold; color:#555;">番号</label>
                 <input type="text" id="add_mac_number" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="自動採番（手動変更可）" oninput="markAdminMachineNumberManual_()">
                 <div id="add_mac_number_hint" style="font-size:11px; color:#888; margin-top:-4px;">メインカテゴリ・機械カテゴリ・型式名が一致する既存台があれば、次の番号を自動入力します</div>
-                <div style="font-size:11px; color:#888;">表示名は「機械カテゴリ 型式1 / 型式2」＋（同型式が2台以上のときだけ）No.番号</div>
+                <div style="font-size:11px; color:#888;">表示名は「機械カテゴリ 型式1 / 型式2」＋（同型式が2台以上のときだけ）①②…</div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">購入日 / 燃料</label>
                 <div style="display:flex; gap:5px;">
                   <input type="date" id="add_mac_date" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">
@@ -2309,27 +2423,24 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <label style="font-size:12px; font-weight:bold; color:#555;">作業カテゴリ（対応可能な作業）</label>
                 ${buildMachineWorkCategoryEditorHtml('add_mac_category_rows', '', '作業名 (例:草刈)')}
                 <label style="font-size:12px; font-weight:bold; color:#555;">定位置（看板を選択）*</label>
-                <select id="add_mac_sign" class="form-input" style="margin-bottom:0; padding:8px;">${getAdminSignOptionsHtml('')}</select>
-                <label style="font-size:12px; font-weight:bold; color:#555;">写真（洗車・整備の選択用）</label>
-                <div id="add_mac_photo_preview" style="min-height:80px; background:#f5f5f5; border:1px dashed #bbb; border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:hidden; margin-bottom:6px;"><div style="color:#888; font-size:12px; padding:12px;">写真未登録</div></div>
-                <input type="file" id="add_mac_photo" accept="image/*" onchange="previewAdminMachinePhoto(this, 'add')" style="width:100%; font-size:12px; margin-bottom:4px;">
-                <button type="button" onclick="clearAdminMachinePhoto('add')" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px; font-size:12px; cursor:pointer;">写真を外す</button>
+                <div id="add_mac_sign_wrap">${buildAdminMachineSignFieldHtml_('add_mac_sign', '', '')}</div>
+                ${buildAdminMachinePhotoFieldsHtml_('add')}
                 <button onclick="execMaster('machine', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">農機を追加する</button>
             </div>`;
         }
 
-        formHtml += `</div>`;
+        formHtml += `</div></div>`;
     }
 
     // データ一覧テーブルの生成
     const catalogMasterType = (type === 'fertilizer' || type === 'pesticide') ? type : '';
     let listHtml = `
-      <div${catalogMasterType ? ` id="${catalogMasterType}Panel_registered"` : ''} style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; height:100%; ${catalogMasterType ? 'display:none;' : 'display:flex;'} flex-direction:column; box-sizing:border-box;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding-bottom:8px; border-bottom:2px solid #e0e0e0;">
+      <div${catalogMasterType ? ` id="${catalogMasterType}Panel_registered"` : ''} class="master-list-panel" style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; flex:1; min-height:0; ${catalogMasterType ? 'display:none;' : 'display:flex;'} flex-direction:column; box-sizing:border-box;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding-bottom:8px; border-bottom:2px solid #e0e0e0; flex-shrink:0;">
           <div style="font-weight:bold; font-size:15px; color:#333;">登録済みデータ一覧 (${list.length}件)</div>
           <input type="text" id="masterSearchFilter" oninput="filterMasterListTable(this.value)" placeholder="🔍 一覧から検索..." style="padding:6px 10px; border:1px solid #ccc; border-radius:6px; font-size:13px; width:180px;">
         </div>
-        <div style="flex:1; overflow-y:auto;">
+        <div style="flex:1; min-height:0; overflow-y:auto;">
           <table id="masterListTable" style="width:100%; border-collapse:collapse; font-size:13px;">
             <thead>
               <tr style="background:#f4f6f8; text-align:left; border-bottom:2px solid #e0e0e0; color:#555;">
@@ -2437,17 +2548,26 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 const sameCount = (typeof window.findAdminMachinesMatchingTrio_ === 'function')
                     ? window.findAdminMachinesMatchingTrio_(v.group || v.mainCategory, v.type, v.model || v.modelType, null, v.model2).length
                     : 0;
-                if (v.machineNumber && sameCount > 1) bits.push(`No.${v.machineNumber}`);
+                if (v.machineNumber && sameCount > 1) {
+                    const numLabel = (window.MachineTaxonomy && typeof MachineTaxonomy.formatMachineNumberLabel === 'function')
+                      ? MachineTaxonomy.formatMachineNumberLabel(v.machineNumber)
+                      : String(v.machineNumber);
+                    bits.push(numLabel);
+                }
                 if (v.type) bits.push(v.type);
                 if (v.group) bits.push(v.group);
                 if (v.workCategory) bits.push(v.workCategory);
                 if (v.signName || v.currentLocName) bits.push(`📍${v.signName || v.currentLocName}`);
-                const thumbUrl = (typeof window.adminMachinePhotoUrl === 'function') ? window.adminMachinePhotoUrl(v.photo || v.photo2 || '') : (v.photo || '');
+                const thumbUrl = (typeof window.adminMachinePhotoUrl === 'function') ? window.adminMachinePhotoUrl(v.photo || '') : (v.photo || '');
+                const thumb2Url = (typeof window.adminMachinePhotoUrl === 'function') ? window.adminMachinePhotoUrl(v.photo2 || '') : (v.photo2 || '');
                 const thumb = thumbUrl
-                    ? `<img src="${String(thumbUrl).replace(/"/g, '&quot;')}" alt="" style="width:36px; height:36px; object-fit:cover; border-radius:6px; border:1px solid #cfd8dc; vertical-align:middle; margin-right:8px;">`
+                    ? `<img src="${String(thumbUrl).replace(/"/g, '&quot;')}" alt="写真1" title="写真1" style="width:36px; height:36px; object-fit:cover; border-radius:6px; border:1px solid #cfd8dc; vertical-align:middle; margin-right:4px;">`
                     : '';
-                if (bits.length) subInfo = `${thumb}<div style="font-size:11px; color:#1565c0; margin-top:2px;">${bits.join(' / ')}</div>`;
-                else if (thumb) subInfo = thumb;
+                const thumb2 = thumb2Url
+                    ? `<img src="${String(thumb2Url).replace(/"/g, '&quot;')}" alt="写真2" title="写真2（型式・銘板）" style="width:36px; height:36px; object-fit:cover; border-radius:6px; border:1px solid #FFB74D; vertical-align:middle; margin-right:8px;">`
+                    : '';
+                if (bits.length) subInfo = `${thumb}${thumb2}<div style="font-size:11px; color:#1565c0; margin-top:2px;">${bits.join(' / ')}</div>`;
+                else if (thumb || thumb2) subInfo = `${thumb}${thumb2}`;
             }
 
             let actionBtns = '';
@@ -2513,11 +2633,11 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             ${listHtml}
           </div>
         </div>`
-      : `<div style="display:flex; gap:20px; height:100%; flex-wrap:wrap; box-sizing:border-box;">
-          <div style="flex:1; min-width:320px; max-width:420px;">
+      : `<div style="display:flex; gap:20px; min-height:100%; height:100%; align-items:stretch; flex-wrap:wrap; box-sizing:border-box;">
+          <div style="flex:1; min-width:320px; max-width:420px; display:flex; flex-direction:column; min-height:0;">
             ${formHtml}
           </div>
-          <div style="flex:1.5; min-width:320px; height:100%;">
+          <div style="flex:1.5; min-width:320px; display:flex; flex-direction:column; min-height:0;">
             ${listHtml}
           </div>
       </div>`;
@@ -4553,7 +4673,12 @@ window.openEditWorkMasterLegacy = (encodedStr) => {
     openMasterDetail('work', editHtml);
 };
 
-window._adminMacPhoto = { add: '', edit: '', clearEdit: false, existingEdit: '' };
+window._adminMacPhoto = {
+    add: '', add2: '',
+    edit: '', edit2: '',
+    clearEdit: false, clearEdit2: false,
+    existingEdit: '', existingEdit2: ''
+};
 
 window.adminMachinePhotoUrl = (url) => {
     if (!url || typeof url !== 'string') return '';
@@ -4591,28 +4716,59 @@ window.resizeAdminMachineImg = (file) => new Promise((resolve, reject) => {
     r.readAsDataURL(file);
 });
 
+window.ensureAdminMacPhotoState_ = () => {
+    window._adminMacPhoto = window._adminMacPhoto || {};
+    const st = window._adminMacPhoto;
+    if (st.add == null) st.add = '';
+    if (st.add2 == null) st.add2 = '';
+    if (st.edit == null) st.edit = '';
+    if (st.edit2 == null) st.edit2 = '';
+    if (st.clearEdit == null) st.clearEdit = false;
+    if (st.clearEdit2 == null) st.clearEdit2 = false;
+    if (st.existingEdit == null) st.existingEdit = '';
+    if (st.existingEdit2 == null) st.existingEdit2 = '';
+    return st;
+};
+
+/** which: 'add'|'edit'|'add2'|'edit2' */
 window.renderAdminMachinePhotoPreview = (which) => {
-    const el = document.getElementById(which === 'edit' ? 'edit_mac_photo_preview' : 'add_mac_photo_preview');
+    const key = String(which || 'add');
+    const is2 = key.endsWith('2');
+    const mode = is2 ? key.slice(0, -1) : key;
+    const el = document.getElementById(
+        mode === 'edit'
+            ? (is2 ? 'edit_mac_photo2_preview' : 'edit_mac_photo_preview')
+            : (is2 ? 'add_mac_photo2_preview' : 'add_mac_photo_preview')
+    );
     if (!el) return;
-    const st = window._adminMacPhoto || {};
-    const b64 = which === 'edit' ? st.edit : st.add;
-    const existing = which === 'edit' && !st.clearEdit ? (st.existingEdit || '') : '';
-    const url = b64 || (which === 'edit' ? window.adminMachinePhotoUrl(existing) : '');
+    const st = window.ensureAdminMacPhotoState_();
+    const b64 = is2
+        ? (mode === 'edit' ? st.edit2 : st.add2)
+        : (mode === 'edit' ? st.edit : st.add);
+    const cleared = is2 ? st.clearEdit2 : st.clearEdit;
+    const existing = mode === 'edit' && !cleared
+        ? (is2 ? (st.existingEdit2 || '') : (st.existingEdit || ''))
+        : '';
+    const url = b64 || (mode === 'edit' ? window.adminMachinePhotoUrl(existing) : '');
+    const emptyLabel = is2 ? '写真2（型式・銘板）未登録' : '写真未登録';
     if (url) {
         el.innerHTML = `<img src="${String(url).replace(/"/g, '&quot;')}" alt="" style="max-width:100%; max-height:160px; object-fit:contain; display:block;">`;
     } else {
-        el.innerHTML = '<div style="color:#888; font-size:12px; padding:12px;">写真未登録</div>';
+        el.innerHTML = `<div style="color:#888; font-size:12px; padding:12px;">${emptyLabel}</div>`;
     }
 };
 
 window.previewAdminMachinePhoto = async (input, which) => {
     if (!input || !input.files || !input.files[0]) return;
+    const key = String(which || 'add');
     try {
         const b64 = await window.resizeAdminMachineImg(input.files[0]);
-        window._adminMacPhoto = window._adminMacPhoto || { add: '', edit: '', clearEdit: false, existingEdit: '' };
-        window._adminMacPhoto[which] = b64;
-        if (which === 'edit') window._adminMacPhoto.clearEdit = false;
-        window.renderAdminMachinePhotoPreview(which);
+        const st = window.ensureAdminMacPhotoState_();
+        if (key === 'add2') st.add2 = b64;
+        else if (key === 'edit2') { st.edit2 = b64; st.clearEdit2 = false; }
+        else if (key === 'edit') { st.edit = b64; st.clearEdit = false; }
+        else { st.add = b64; }
+        window.renderAdminMachinePhotoPreview(key);
     } catch (e) {
         customAlert(e.message || '写真の読み込みに失敗しました');
     }
@@ -4620,10 +4776,32 @@ window.previewAdminMachinePhoto = async (input, which) => {
 };
 
 window.clearAdminMachinePhoto = (which) => {
-    window._adminMacPhoto = window._adminMacPhoto || { add: '', edit: '', clearEdit: false, existingEdit: '' };
-    window._adminMacPhoto[which] = '';
-    if (which === 'edit') window._adminMacPhoto.clearEdit = true;
-    window.renderAdminMachinePhotoPreview(which);
+    const key = String(which || 'add');
+    const st = window.ensureAdminMacPhotoState_();
+    if (key === 'add2') st.add2 = '';
+    else if (key === 'edit2') { st.edit2 = ''; st.clearEdit2 = true; }
+    else if (key === 'edit') { st.edit = ''; st.clearEdit = true; }
+    else st.add = '';
+    window.renderAdminMachinePhotoPreview(key);
+};
+
+window.buildAdminMachinePhotoFieldsHtml_ = (mode, existingPhoto, existingPhoto2) => {
+    const isEdit = mode === 'edit';
+    const p1Id = isEdit ? 'edit_mac_photo' : 'add_mac_photo';
+    const p2Id = isEdit ? 'edit_mac_photo2' : 'add_mac_photo2';
+    const which1 = isEdit ? 'edit' : 'add';
+    const which2 = isEdit ? 'edit2' : 'add2';
+    return `
+      <label class="form-label" style="margin-top:4px;">写真1（機体全体・洗車／整備の選択用）</label>
+      <div id="${p1Id}_preview" style="min-height:80px; background:#f5f5f5; border:1px dashed #bbb; border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:hidden; margin-bottom:6px;"><div style="color:#888; font-size:12px; padding:12px;">写真未登録</div></div>
+      <input type="file" id="${p1Id}" accept="image/*" onchange="previewAdminMachinePhoto(this, '${which1}')" style="width:100%; font-size:12px; margin-bottom:6px;">
+      <button type="button" onclick="clearAdminMachinePhoto('${which1}')" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px; font-size:12px; cursor:pointer; margin-bottom:10px;">写真1を外す</button>
+      <label class="form-label">写真2（型式・銘板）</label>
+      <div style="font-size:11px; color:#666; margin:-4px 0 6px; line-height:1.35;">型式ラベルや銘板が読める写真を登録できます（スプレッドシート「写真2」列）。</div>
+      <div id="${p2Id}_preview" style="min-height:80px; background:#FFF8E1; border:1px dashed #FFB74D; border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:hidden; margin-bottom:6px;"><div style="color:#888; font-size:12px; padding:12px;">写真2（型式・銘板）未登録</div></div>
+      <input type="file" id="${p2Id}" accept="image/*" onchange="previewAdminMachinePhoto(this, '${which2}')" style="width:100%; font-size:12px; margin-bottom:6px;">
+      <button type="button" onclick="clearAdminMachinePhoto('${which2}')" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px; font-size:12px; cursor:pointer; margin-bottom:8px;">写真2を外す</button>
+    `;
 };
 
 window.openEditToolMaster = (encodedStr) => {
@@ -4675,7 +4853,7 @@ window.openEditMachineMaster = (encodedStr) => {
             <h4 style="margin-top:0; color:#1976D2; font-size:15px; border-bottom:2px solid #1976D2; padding-bottom:5px;">✏️ 農機マスタの編集</h4>
             <input type="hidden" id="edit_mac_id" value="${String(v.id || '').replace(/"/g, '&quot;')}">
             <label class="form-label">拠点名</label>
-            <select id="edit_mac_location" class="form-input">${locOpts}</select>
+            <select id="edit_mac_location" class="form-input" onchange="refreshAdminMachineSignOptionsFromLocation_('edit')">${locOpts}</select>
             <label class="form-label">メインカテゴリ</label>
             <select id="edit_mac_group" class="form-input">${getMachineGroupOptionsHtml(v.group || '')}</select>
             <label class="form-label">機械カテゴリ</label>
@@ -4692,21 +4870,16 @@ window.openEditMachineMaster = (encodedStr) => {
             </div>
             <label class="form-label">番号</label>
             <input type="text" id="edit_mac_number" class="form-input" value="${safeNumber}">
-            <div style="font-size:11px; color:#888; margin:-6px 0 10px;">表示名は「機械カテゴリ 型式1 / 型式2」＋（同型式が2台以上のときだけ）No.番号</div>
+            <div style="font-size:11px; color:#888; margin:-6px 0 10px;">表示名は「機械カテゴリ 型式1 / 型式2」＋（同型式が2台以上のときだけ）①②…</div>
             <label class="form-label">燃料</label>
             <select id="edit_mac_fuel" class="form-input">${fuelOpts}</select>
             <label class="form-label">購入年月日</label>
             <input type="date" id="edit_mac_date" class="form-input" value="${purchaseDate}">
             <label class="form-label">定位置・片付け場所（看板）*</label>
-            <select id="edit_mac_sign" class="form-input">${getAdminSignOptionsHtml(v.signId || v.currentLocId || '')}</select>
-            <div style="font-size:11px; color:#666; margin:-6px 0 10px;">作業後の「片付け場所 → 定位置」の候補になります。看板機能に「車両・機械管理」または「農機管理」がある看板から選べます。</div>
+            <div id="edit_mac_sign_wrap">${buildAdminMachineSignFieldHtml_('edit_mac_sign', v.signId || v.currentLocId || '', v.location || '')}</div>
             <label class="form-label">作業分類（各枠で既存の作業から1つ選択）</label>
             ${buildMachineWorkCategoryEditorHtml('edit_mac_category_rows', v.workCategory || '')}
-            <label class="form-label">写真（洗車・整備の選択用）</label>
-            <input type="hidden" id="edit_mac_existing_photo" value="${String(v.photo || v.photo2 || '').replace(/"/g, '&quot;')}">
-            <div id="edit_mac_photo_preview" style="min-height:80px; background:#f5f5f5; border:1px dashed #bbb; border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:hidden; margin-bottom:6px;"></div>
-            <input type="file" id="edit_mac_photo" accept="image/*" onchange="previewAdminMachinePhoto(this, 'edit')" style="width:100%; font-size:12px; margin-bottom:6px;">
-            <button type="button" onclick="clearAdminMachinePhoto('edit')" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px; font-size:12px; cursor:pointer; margin-bottom:8px;">写真を外す</button>
+            ${buildAdminMachinePhotoFieldsHtml_('edit', v.photo || '', v.photo2 || '')}
             <div style="display:flex; gap:10px; margin-top:15px;">
                 <button onclick="execMaster('machine', 'edit')" style="flex:1; background:#FF9800; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">更新する</button>
                 <button onclick="openMasterDetail('machine')" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">キャンセル</button>
@@ -4714,11 +4887,17 @@ window.openEditMachineMaster = (encodedStr) => {
         </div>
     `;
     openMasterDetail('machine', editHtml);
-    window._adminMacPhoto = window._adminMacPhoto || { add: '', edit: '', clearEdit: false, existingEdit: '' };
-    window._adminMacPhoto.edit = '';
-    window._adminMacPhoto.clearEdit = false;
-    window._adminMacPhoto.existingEdit = v.photo || v.photo2 || '';
-    if (typeof window.renderAdminMachinePhotoPreview === 'function') window.renderAdminMachinePhotoPreview('edit');
+    const st = window.ensureAdminMacPhotoState_();
+    st.edit = '';
+    st.edit2 = '';
+    st.clearEdit = false;
+    st.clearEdit2 = false;
+    st.existingEdit = v.photo || '';
+    st.existingEdit2 = v.photo2 || '';
+    if (typeof window.renderAdminMachinePhotoPreview === 'function') {
+        window.renderAdminMachinePhotoPreview('edit');
+        window.renderAdminMachinePhotoPreview('edit2');
+    }
 };
 
 window.joinAdminMachineModels_ = (model, model2) => {
@@ -4747,8 +4926,10 @@ window.buildAdminMachineDisplayName_ = (typeName, number, model, fallback, group
     let numPart = String(number || '').trim();
     if (omitNumber) {
         numPart = '';
-    } else if (numPart && !/^no\.?/i.test(numPart)) {
-        numPart = 'No.' + numPart;
+    } else if (numPart) {
+        numPart = (window.MachineTaxonomy && typeof MachineTaxonomy.formatMachineNumberLabel === 'function')
+          ? MachineTaxonomy.formatMachineNumberLabel(numPart)
+          : numPart.replace(/^no\.?/i, '');
     }
     const parts = [typePart, modelPart, numPart].filter(Boolean);
     return parts.length ? parts.join(' ') : String(fallback || '').trim();
@@ -5004,33 +5185,41 @@ window.execMaster = async (type, act, val) => {
                 const purchaseDate = document.getElementById('add_mac_date').value;
                 const workCategory = collectDetailWorksFromInputs('add_mac_category_rows');
                 const photoB64 = (window._adminMacPhoto && window._adminMacPhoto.add) || '';
-                const photos = photoB64 ? [{ filename: (name || 'machine').replace(/\s+/g, '_') + '.jpg', base64: photoB64 }] : [];
+                const photo2B64 = (window._adminMacPhoto && window._adminMacPhoto.add2) || '';
+                const photos = photoB64
+                    ? [{ filename: (name || 'machine').replace(/\s+/g, '_') + '.jpg', base64: photoB64 }]
+                    : [];
                 const tempId = newAdminTempId_('tmp');
                 if (!window.pdlMachines) window.pdlMachines = [];
                 window.pdlMachines.push({
                     id: tempId,
                     name, machineNumber, workCategory, model, model2, type: macType, group, location, fuel, purchaseDate,
                     photo: photoB64 || '',
-                    photo2: '',
+                    photo2: photo2B64 || '',
                     signName, signId,
                     currentLocName: signName,
                     currentLocId: signId
                 });
                 if (typeof window.refreshAdminMachineDisplayNames_ === 'function') window.refreshAdminMachineDisplayNames_();
-                if (window._adminMacPhoto) window._adminMacPhoto.add = '';
+                if (window._adminMacPhoto) {
+                    window._adminMacPhoto.add = '';
+                    window._adminMacPhoto.add2 = '';
+                }
                 persistAdminInitCache_();
                 renderMasterSection();
                 showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
                 enqueueAdminSync_(() => callGAS('addMachineToSign', {
                     name, machineNumber, model, model2, type: macType, group, location, fuel, workCategory, purchaseDate,
-                    parts: "", photos, photoBase64: photoB64, photoFilename: (name || 'machine').replace(/\s+/g, '_') + '.jpg',
+                    parts: "", photos,
+                    photoBase64: photoB64, photoFilename: (name || 'machine').replace(/\s+/g, '_') + '.jpg',
+                    photo2Base64: photo2B64, photo2Filename: (name || 'machine').replace(/\s+/g, '_') + '_plate.jpg',
                     signId, signName, userName: currentUser
                 })).then(newMac => {
                     const m = (window.pdlMachines || []).find(x => String(x.id) === String(tempId));
                     if (m && newMac) {
                         m.id = newMac.id;
                         m.photo = newMac.photo || m.photo;
-                        m.photo2 = newMac.photo2 || '';
+                        m.photo2 = newMac.photo2 || m.photo2 || '';
                         m.signName = newMac.signName || signName;
                         m.signId = newMac.signId || signId;
                         if (newMac.name) m.name = newMac.name;
@@ -5076,8 +5265,12 @@ window.execMaster = async (type, act, val) => {
                 const sign = loadedPolygons[signId];
                 const signName = sign ? (sign.name || '') : '';
                 const photoB64 = (window._adminMacPhoto && window._adminMacPhoto.edit) || '';
+                const photo2B64 = (window._adminMacPhoto && window._adminMacPhoto.edit2) || '';
                 const clearPhoto = !!(window._adminMacPhoto && window._adminMacPhoto.clearEdit && !photoB64);
-                const photos = photoB64 ? [{ filename: (name || 'machine').replace(/\s+/g, '_') + '.jpg', base64: photoB64 }] : [];
+                const clearPhoto2 = !!(window._adminMacPhoto && window._adminMacPhoto.clearEdit2 && !photo2B64);
+                const photos = photoB64
+                    ? [{ filename: (name || 'machine').replace(/\s+/g, '_') + '.jpg', base64: photoB64 }]
+                    : [];
                 const m = (window.pdlMachines || []).find(x => String(x.id) === String(machineId));
                 if (m) {
                     m.name = name; m.machineNumber = number; m.model = model; m.model2 = model2;
@@ -5086,11 +5279,15 @@ window.execMaster = async (type, act, val) => {
                     m.signId = signId; m.signName = signName;
                     if (photoB64) m.photo = photoB64;
                     else if (clearPhoto) m.photo = '';
+                    if (photo2B64) m.photo2 = photo2B64;
+                    else if (clearPhoto2) m.photo2 = '';
                 }
                 if (typeof window.refreshAdminMachineDisplayNames_ === 'function') window.refreshAdminMachineDisplayNames_();
                 if (window._adminMacPhoto) {
                     window._adminMacPhoto.edit = '';
+                    window._adminMacPhoto.edit2 = '';
                     window._adminMacPhoto.clearEdit = false;
+                    window._adminMacPhoto.clearEdit2 = false;
                 }
                 persistAdminInitCache_();
                 renderMasterSection();
@@ -5098,12 +5295,15 @@ window.execMaster = async (type, act, val) => {
                 enqueueAdminSync_(() => callGAS('editMachineInMaster', {
                     machineId, name, machineNumber: number, model, model2, type: macType, group, location, fuel,
                     purchaseDate: date, workCategory: category, signId, signName,
-                    photos, photoBase64: photoB64, photoFilename: (name || 'machine').replace(/\s+/g, '_') + '.jpg',
-                    clearPhoto: clearPhoto
+                    photos,
+                    photoBase64: photoB64, photoFilename: (name || 'machine').replace(/\s+/g, '_') + '.jpg',
+                    photo2Base64: photo2B64, photo2Filename: (name || 'machine').replace(/\s+/g, '_') + '_plate.jpg',
+                    clearPhoto: clearPhoto,
+                    clearPhoto2: clearPhoto2
                 })).then(saved => {
                     if (m && saved && saved.machine) {
-                        m.photo = saved.machine.photo || m.photo;
-                        m.photo2 = saved.machine.photo2 || '';
+                        m.photo = saved.machine.photo != null ? saved.machine.photo : m.photo;
+                        m.photo2 = saved.machine.photo2 != null ? saved.machine.photo2 : m.photo2;
                         if (saved.machine.name) m.name = saved.machine.name;
                     }
                     persistAdminInitCache_();
@@ -6350,7 +6550,9 @@ function openMarkerForm(markerObj) {
     };
     const icons = ['🪧', '🚻', '🚰', '⛲', '🚿', '🌀', '⛏️', '🪚', '✂️', '🧹', '🔬', '📦', '🏭', '🚚', '🛻', '🚙', '🏪', '⛽', '🛠️', '🏢', '⚠️', '🅿️', '📢', '🚫', '🧼', '🪵', '🔩', '🛢️', '🚜', '🐓', '⛰️', '🗑️'];
     const funcOpts = `<option value="機能なし">機能なし</option>` + pdlSignFunctions.map(f => `<option value="${f}">${f}</option>`).join('');
-    const defaultLoc = String(localStorage.getItem('passionMapUserLocation') || '').trim();
+    const prefill = window._pendingMarkerPrefill || {};
+    const defaultLoc = String(prefill.location || localStorage.getItem('passionMapUserLocation') || '').trim();
+    const defaultFunc = String(prefill.signFunction || '').trim();
     const locOpts = `<option value="">拠点を選択...</option>` + (pdlLocations || []).map(l =>
         `<option value="${String(l).replace(/"/g, '&quot;')}" ${l === defaultLoc ? 'selected' : ''}>${l}</option>`
     ).join('');
@@ -6368,7 +6570,20 @@ function openMarkerForm(markerObj) {
             </div>
           `);
     infoWindow.setPosition(markerObj.getPosition()); infoWindow.open(map);
-    setTimeout(() => selectMI('🪧'), 10);
+    setTimeout(() => {
+        selectMI('🪧');
+        const mFunc = document.getElementById('mFunc');
+        if (mFunc && defaultFunc) {
+            const prefer = [defaultFunc, '車両・機械管理', '農機管理'];
+            for (let i = 0; i < prefer.length; i++) {
+                if (Array.from(mFunc.options).some(opt => opt.value === prefer[i])) {
+                    mFunc.value = prefer[i];
+                    break;
+                }
+            }
+        }
+        window._pendingMarkerPrefill = null;
+    }, 10);
 }
 
 function setupMapSearch() {
@@ -8032,6 +8247,16 @@ window.forceUpdateApp = () => {
 // 地図の初期化完了を待つPromiseは上部で定義済み
 
 document.addEventListener('DOMContentLoaded', () => {
+    try {
+        const pendingLoc = sessionStorage.getItem('passionMapPendingSignLocation');
+        if (pendingLoc) {
+            window._pendingMarkerPrefill = {
+                location: String(pendingLoc).trim(),
+                signFunction: '車両・機械管理'
+            };
+            sessionStorage.removeItem('passionMapPendingSignLocation');
+        }
+    } catch (e) {}
     let mapInitAttempts = 0;
     function tryInitMap() {
         const mapsReady = typeof google === 'object'

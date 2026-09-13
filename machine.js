@@ -560,6 +560,80 @@ function autoSetNextMachineNumber(force = false) {
     }
 }
 
+function getMachineSignsForLocation_(locationFilter, selectedId) {
+    const locFilter = String(locationFilter || '').trim();
+    let signs = (pdlSigns || []).slice();
+    if (locFilter) {
+        signs = signs.filter(s => String(s.location || '').trim() === locFilter);
+    }
+    if (selectedId && !(signs || []).some(s => String(s.id) === String(selectedId))) {
+        const all = (pdlSigns || []).find(s => String(s.id) === String(selectedId));
+        if (all) signs = [all, ...signs];
+    }
+    return signs.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
+}
+
+function refreshMachineRegSignOptions(keepSelectedId) {
+    const locSel = document.getElementById('regLocation');
+    const signSel = document.getElementById('regSign');
+    const hint = document.getElementById('regSignHint');
+    const setup = document.getElementById('regSignSetupBtns');
+    if (!signSel) return;
+    const loc = locSel ? String(locSel.value || '').trim() : '';
+    let keepId = keepSelectedId != null ? String(keepSelectedId || '').trim() : String(signSel.value || '').trim();
+    if (keepId && loc) {
+        const cur = (pdlSigns || []).find(s => String(s.id) === keepId);
+        if (cur && String(cur.location || '').trim() && String(cur.location || '').trim() !== loc) keepId = '';
+    }
+    const signs = getMachineSignsForLocation_(loc, keepId);
+    const matched = loc ? signs.filter(s => String(s.location || '').trim() === loc) : [];
+    let html = '<option value="">-- 選択（農機管理機能付き） --</option>';
+    if (!loc) {
+        html += '<option value="" disabled>※先に拠点を選択してください</option>';
+        if (keepId) {
+            const s = (pdlSigns || []).find(x => String(x.id) === keepId);
+            if (s) html += `<option value="${String(s.id).replace(/"/g, '&quot;')}" selected>${s.name || s.id}</option>`;
+        }
+    } else if (!matched.length) {
+        html += `<option value="" disabled>※拠点「${loc.replace(/</g, '')}」に紐づく看板がありません</option>`;
+        if (keepId) {
+            const s = signs.find(x => String(x.id) === keepId);
+            if (s) html += `<option value="${String(s.id).replace(/"/g, '&quot;')}" selected>${s.name || s.id}（他拠点・現在の設定）</option>`;
+        }
+    } else {
+        signs.forEach(s => {
+            const sel = String(s.id) === keepId ? 'selected' : '';
+            const locMark = s.location ? `［${s.location}］` : '';
+            html += `<option value="${String(s.id).replace(/"/g, '&quot;')}" ${sel}>${locMark}${s.name || s.id}</option>`;
+        });
+    }
+    signSel.innerHTML = html;
+    if (hint) {
+        hint.textContent = !loc
+            ? '拠点を選ぶと、その拠点の看板だけが表示されます'
+            : (matched.length
+                ? `拠点「${loc}」の看板（車両・機械管理／農機管理）から選べます`
+                : `拠点「${loc}」に紐づく看板がありません。管理者画面で拠点付きの看板を登録してください`);
+    }
+    if (setup) {
+        if (loc && !matched.length) {
+            setup.style.display = 'flex';
+            setup.innerHTML = `<button type="button" onclick="openAdminSignSetupFromMachine_()" style="flex:1; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🪧 看板マスタ（管理者画面）</button>`;
+        } else {
+            setup.style.display = 'none';
+            setup.innerHTML = '';
+        }
+    }
+}
+
+function openAdminSignSetupFromMachine_() {
+    const loc = String((document.getElementById('regLocation') || {}).value || '').trim();
+    try {
+        sessionStorage.setItem('passionMapPendingSignLocation', loc);
+    } catch (e) {}
+    window.location.href = 'admin.html';
+}
+
 function openMachineRegisterModal(editId) {
     machineGroups = (window.MachineTaxonomy && MachineTaxonomy.migrateGroupList)
         ? MachineTaxonomy.migrateGroupList(machineGroups)
@@ -581,13 +655,6 @@ function openMachineRegisterModal(editId) {
     if (locSel) {
         locSel.innerHTML = '<option value="">-- 選択 --</option>' + 
             pdlLocations.map(l => `<option value="${l}">${l}</option>`).join('');
-    }
-    // 定位置看板
-    let signSel = document.getElementById('regSign');
-    if (signSel) {
-        signSel.innerHTML = '<option value="">-- 選択（農機管理機能付き） --</option>' +
-            (pdlSigns.length ? pdlSigns.map(s => `<option value="${String(s.id).replace(/"/g, '&quot;')}">${s.name || s.id}</option>`).join('')
-            : '<option value="" disabled>※「車両・機械管理」機能の看板がありません</option>');
     }
 
     const editingId = editId || '';
@@ -611,7 +678,7 @@ function openMachineRegisterModal(editId) {
         document.getElementById('regMachineGroup').value = existing.group || '';
         document.getElementById('regMachineType').value = existing.type || '';
         document.getElementById('regLocation').value = existing.location || '';
-        document.getElementById('regSign').value = existing.signId || existing.currentLocId || '';
+        refreshMachineRegSignOptions(existing.signId || existing.currentLocId || '');
         const workCats = String(existing.workCategory || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
         renderRegWorkCategoryRows(workCats.length ? workCats : ['']);
         document.getElementById('regPurchaseDate').value = formatDateInputValue(existing.purchaseDate);
@@ -625,7 +692,7 @@ function openMachineRegisterModal(editId) {
     } else {
         if (title) title.textContent = '⚙️ 機械登録';
         document.getElementById('regLocation').value = '';
-        document.getElementById('regSign').value = '';
+        refreshMachineRegSignOptions('');
         renderRegWorkCategoryRows(['']);
         document.getElementById('regPurchaseDate').value = '';
         document.getElementById('regModel').value = '';
@@ -894,7 +961,10 @@ async function saveMachineRegistration() {
     if (window.MachineTaxonomy) {
         displayName = MachineTaxonomy.buildDisplayName('machine', typeName, machineNumber, model, '');
     } else {
-        displayName = [typeName, model, machineNumber ? (/^no\.?/i.test(String(machineNumber).trim()) ? String(machineNumber).trim() : ('No.' + String(machineNumber).trim())) : '']
+        const numLabel = machineNumber
+          ? String(machineNumber).replace(/^no\.?/i, '')
+          : '';
+        displayName = [typeName, model, numLabel]
           .map(x => String(x || '').trim()).filter(Boolean).join(' ');
     }
     let group = document.getElementById('regMachineGroup').value;

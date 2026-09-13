@@ -256,7 +256,11 @@
       } else if (category === 'machine_part') {
         options = Object.values(quotationMasters.machines || {}).map(item => ({
           id: item.id, name: item.name,
-          label: (item.name || item.id) + (item.machineNumber ? ' ／ No.' + item.machineNumber : ''),
+          label: (item.name || item.id) + (item.machineNumber
+            ? (' ／ ' + ((window.MachineTaxonomy && MachineTaxonomy.formatMachineNumberLabel)
+              ? MachineTaxonomy.formatMachineNumberLabel(item.machineNumber)
+              : String(item.machineNumber)))
+            : ''),
           help: [item.model, item.type, item.parts].filter(Boolean).join(' ／ ')
         }));
       }

@@ -18050,7 +18050,11 @@ function createSignboardMarker(name, pos, icon, id) {
           return parts.join(' ') || String(fields.plateNumber || '').trim();
         }
         const numRaw = String(fields.machineNumber || '').trim();
-        const numLabel = numRaw ? (/^no\.?/i.test(numRaw) ? numRaw : ('No.' + numRaw)) : '';
+        const numLabel = numRaw
+          ? ((window.MachineTaxonomy && typeof MachineTaxonomy.formatMachineNumberLabel === 'function')
+            ? MachineTaxonomy.formatMachineNumberLabel(numRaw)
+            : String(numRaw).replace(/^no\.?/i, ''))
+          : '';
         const parts = [fields.type, fields.model, numLabel].map(x => String(x || '').trim()).filter(Boolean);
         return parts.join(' ') || String(fields.type || '').trim();
       };
@@ -18194,7 +18198,12 @@ function createSignboardMarker(name, pos, icon, id) {
         if (window.MachineTaxonomy && MachineTaxonomy.buildDisplayName) {
           displayName = MachineTaxonomy.buildDisplayName('machine', type, machineNumber, model, '');
         } else {
-          displayName = [type, model, machineNumber ? (/^no\.?/i.test(String(machineNumber).trim()) ? String(machineNumber).trim() : ('No.' + String(machineNumber).trim())) : '']
+          const numLabel = machineNumber
+            ? ((window.MachineTaxonomy && MachineTaxonomy.formatMachineNumberLabel)
+              ? MachineTaxonomy.formatMachineNumberLabel(machineNumber)
+              : String(machineNumber).replace(/^no\.?/i, ''))
+            : '';
+          displayName = [type, model, numLabel]
             .map(x => String(x || '').trim()).filter(Boolean).join(' ');
         }
         return {
@@ -26523,7 +26532,12 @@ function createSignboardMarker(name, pos, icon, id) {
          if (window.MachineTaxonomy && MachineTaxonomy.buildDisplayName) {
            name = MachineTaxonomy.buildDisplayName('machine', type, number, model, '');
          } else {
-           name = [type, model, number ? (/^no\.?/i.test(String(number).trim()) ? String(number).trim() : ('No.' + String(number).trim())) : '']
+           const numLabel = number
+             ? ((window.MachineTaxonomy && MachineTaxonomy.formatMachineNumberLabel)
+               ? MachineTaxonomy.formatMachineNumberLabel(number)
+               : String(number).replace(/^no\.?/i, ''))
+             : '';
+           name = [type, model, numLabel]
              .map(x => String(x || '').trim()).filter(Boolean).join(' ');
          }
 
@@ -30631,7 +30645,11 @@ window.getBulkWorkMemoMachineList_ = (draft) => {
         ? MachineTaxonomy.getDisplayName(m)
         : (() => {
             const n = String(m.machineNumber || m.serialNo || '').trim();
-            const num = n ? (/^no\.?/i.test(n) ? n : ('No.' + n)) : '';
+            const num = n
+              ? ((window.MachineTaxonomy && MachineTaxonomy.formatMachineNumberLabel)
+                ? MachineTaxonomy.formatMachineNumberLabel(n)
+                : n.replace(/^no\.?/i, ''))
+              : '';
             return [m.type || m.name, m.model, num].map(x => String(x || '').trim()).filter(Boolean).join(' ');
           })());
     const label = String(name || '').trim();
@@ -31042,7 +31060,11 @@ window.buildEquipmentDisplayLabel_ = (item) => {
       && String(mac.model2 || '').trim() === model2;
   }).length;
   if (sameCount <= 1) num = '';
-  else if (num && !/^no\./i.test(num)) num = 'No.' + num;
+  else if (num) {
+    num = (window.MachineTaxonomy && typeof MachineTaxonomy.formatMachineNumberLabel === 'function')
+      ? MachineTaxonomy.formatMachineNumberLabel(num)
+      : ((/^no\./i.test(num) ? num.replace(/^no\.?/i, '') : num));
+  }
   const legacy = String(enriched.name || '').trim();
   const legacyOk = legacy && legacy !== '(無名)' && legacy !== '（無名）' ? legacy : '';
   const machineName = type || legacyOk;

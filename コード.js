@@ -9210,11 +9210,14 @@ function addMachineToSign(params) {
   if (params.photoBase64) {
     const u = saveNoukiMachinePhoto_({ base64: params.photoBase64, filename: params.photoFilename || "photo.jpg" });
     if (u) photo1Url = u;
-  } else if (params.photos && params.photos.length > 0) {
+  } else if (params.photos && params.photos.length > 0 && params.photos[0] && params.photos[0].base64) {
     const u = saveNoukiMachinePhoto_(params.photos[0]);
     if (u) photo1Url = u;
   }
-  if (params.photos && params.photos.length > 1) {
+  if (params.photo2Base64) {
+    const u = saveNoukiMachinePhoto_({ base64: params.photo2Base64, filename: params.photo2Filename || "photo2.jpg" });
+    if (u) photo2Url = u;
+  } else if (params.photos && params.photos.length > 1 && params.photos[1] && params.photos[1].base64) {
     const u = saveNoukiMachinePhoto_(params.photos[1]);
     if (u) photo2Url = u;
   }
@@ -9852,16 +9855,22 @@ function editMachineInMaster(params) {
   if (params.photoBase64) {
     const u = saveNoukiMachinePhoto_({ base64: params.photoBase64, filename: params.photoFilename || 'machine.jpg' });
     if (u) photo = u;
-  } else if (params.photos && params.photos[0]) {
+  } else if (params.photos && params.photos[0] && params.photos[0].base64) {
     const u = saveNoukiMachinePhoto_(params.photos[0]);
     if (u) photo = u;
   }
-  if (params.photos && params.photos[1]) {
+  if (params.photo2Base64) {
+    const u = saveNoukiMachinePhoto_({ base64: params.photo2Base64, filename: params.photo2Filename || 'machine2.jpg' });
+    if (u) photo2 = u;
+  } else if (params.photos && params.photos[1] && params.photos[1].base64) {
     const u = saveNoukiMachinePhoto_(params.photos[1]);
     if (u) photo2 = u;
   }
-  if (params.photo && !params.photoBase64 && !(params.photos && params.photos[0]) && !params.clearPhoto) {
+  if (params.photo && !params.photoBase64 && !(params.photos && params.photos[0] && params.photos[0].base64) && !params.clearPhoto) {
     photo = params.photo;
+  }
+  if (params.photo2 && !params.photo2Base64 && !(params.photos && params.photos[1] && params.photos[1].base64) && !params.clearPhoto2) {
+    photo2 = params.photo2;
   }
 
   const merged = Object.assign({}, existing, {
@@ -16522,10 +16531,30 @@ function buildNoukiDisplayName_(type, model, number, sameModelCount, model2) {
   // 同じ型式が1台だけのときは番号を表示しない
   if (sameModelCount != null && Number(sameModelCount) <= 1) {
     numPart = '';
-  } else if (numPart && !/^no\.?/i.test(numPart)) {
-    numPart = 'No.' + numPart;
+  } else if (numPart) {
+    numPart = formatNoukiNumberLabel_(numPart);
   }
   return [typePart, modelPart, numPart].filter(Boolean).join(' ');
+}
+
+/** 1→① … 50→㊿（表示用。保存値は数字のまま） */
+function formatNoukiNumberLabel_(raw) {
+  let s = String(raw == null ? '' : raw).trim();
+  if (!s) return '';
+  if (/^[①-⑳㉑-㉟㊱-㊿]$/.test(s)) return s;
+  s = s.replace(/^no\.?\s*/i, '').trim();
+  if (!s) return '';
+  s = s.replace(/[０-９]/g, function (ch) {
+    return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+  });
+  const m = s.match(/^(\d+)/);
+  if (!m) return s;
+  const n = parseInt(m[1], 10);
+  if (!isFinite(n) || n < 1) return s;
+  if (n <= 20) return String.fromCharCode(0x245F + n);
+  if (n <= 35) return String.fromCharCode(0x3251 + (n - 21));
+  if (n <= 50) return String.fromCharCode(0x32B1 + (n - 36));
+  return '(' + n + ')';
 }
 
 function noukiSameModelKey_(group, type, model, model2) {
