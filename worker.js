@@ -17166,6 +17166,24 @@ function createSignboardMarker(name, pos, icon, id) {
           && window.shouldPairFuelWithFieldMachinery_();
       };
 
+      /**
+       * 整備・点検文脈の文言か（作業名・詳細・一括メモ共通）
+       * 「23馬力」「オイル交換」「ロータリー爪交換」なども対象
+       */
+      window.looksLikeMaintenanceText_ = (s) => {
+        const t = String(s || '').trim();
+        if (!t) return false;
+        if (/整備|修理|点検|清掃|保全/.test(t)) return true;
+        if (/オイル|グリス(?:アップ)?|エレメント|フィルター/.test(t)) return true;
+        if (/爪交換|ロータリー爪|(?:ロータリー)?\s*爪\s*交換/.test(t)) return true;
+        if (/部品交換|ベルト交換|タイヤ交換|パッド交換|バッテリー交換|プラグ交換/.test(t)) return true;
+        // 馬力表記（「23馬力」「28 馬力」）＝農機の呼び名・整備メモで頻出
+        if (/\d+\s*馬力|馬力/.test(t)) return true;
+        // 「○○交換」（2文字以上＋交換）。給油・品種入替などは別判定に任せる
+        if (/[一-龥ぁ-んァ-ヶーA-Za-z0-9]{2,}\s*交換/.test(t)) return true;
+        return false;
+      };
+
       window.isMaintenanceRelatedWork = (workName) => {
         const name = String(workName || '').trim();
         const catEl = document.getElementById('rec_work_category');
@@ -17179,11 +17197,12 @@ function createSignboardMarker(name, pos, icon, id) {
           .map(cb => String(cb.value || '').trim())
           .filter(Boolean);
 
-        const looksLikeMaint = (s) => {
-          const t = String(s || '');
-          if (!t) return false;
-          return t.includes('整備') || t.includes('修理') || t.includes('点検') || t.includes('清掃') || t.includes('保全');
-        };
+        const looksLikeMaint = (s) => (typeof window.looksLikeMaintenanceText_ === 'function'
+          ? window.looksLikeMaintenanceText_(s)
+          : (() => {
+            const t = String(s || '');
+            return t.includes('整備') || t.includes('修理') || t.includes('点検') || t.includes('清掃') || t.includes('保全');
+          })());
 
         if (looksLikeMaint(name)) return true;
         if (cat === '保全/整備' || cat.includes('整備')) return true;
@@ -30938,20 +30957,28 @@ window.buildBulkWorkMemoFuelSideEffects_ = (d, userName) => {
 /** 一括入力：整備・修理・点検文脈か（通常フォームの isMaintenanceRelatedWork 相当） */
 window.bulkWorkMemoIsMaintenance_ = (draft) => {
   const wName = String(draft && draft.workName || '').trim();
-  if (!wName) return false;
-  const cat = String(draft && draft.category || window.getBulkWorkMemoWorkCategory_(wName) || '').trim();
+  const rawLine = String(draft && draft.rawLine || '').trim();
+  const matchText = String(draft && draft._workMatchText || '').trim();
+  // 作業名が空でも、メモ本文に整備系ワードがあれば点検整備UIを出す
+  if (!wName && !rawLine && !matchText) return false;
+  const cat = String(draft && draft.category || (wName ? window.getBulkWorkMemoWorkCategory_(wName) : '') || '').trim();
   // 準備／片づけでは対象作業が整備系でも整備UIは出さない
   if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat)) return false;
-  if (typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wName)) return false;
-  if (typeof window.isMachinePullWorkName === 'function' && window.isMachinePullWorkName(wName)) return false;
-  const looksLikeMaint = (s) => {
-    const t = String(s || '');
-    return t.includes('整備') || t.includes('修理') || t.includes('点検') || t.includes('清掃') || t.includes('保全');
-  };
-  if (looksLikeMaint(wName)) return true;
+  if (wName && typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wName)) return false;
+  if (wName && typeof window.isMachinePullWorkName === 'function' && window.isMachinePullWorkName(wName)) return false;
+  const looksLikeMaint = (s) => (typeof window.looksLikeMaintenanceText_ === 'function'
+    ? window.looksLikeMaintenanceText_(s)
+    : (() => {
+      const t = String(s || '');
+      return t.includes('整備') || t.includes('修理') || t.includes('点検') || t.includes('清掃') || t.includes('保全');
+    })());
+  if (wName && looksLikeMaint(wName)) return true;
   if (cat === '保全/整備' || cat.includes('整備') || cat.includes('保全')) return true;
   const details = Array.isArray(draft && draft.detailedWorks) ? draft.detailedWorks : [];
-  return details.some(looksLikeMaint);
+  if (details.some(looksLikeMaint)) return true;
+  if (rawLine && looksLikeMaint(rawLine)) return true;
+  if (matchText && looksLikeMaint(matchText)) return true;
+  return false;
 };
 
 window.getBulkWorkMemoMaintenanceTargets_ = (draft) => {
@@ -31094,6 +31121,20 @@ window.scoreBulkWorkMemoMaintenanceTarget_ = (text, item) => {
   }
   const num = String(item.machineNumber || item.serialNo || item.plateNumber || '').trim();
   if (num && num.length >= 2 && t.indexOf(num) >= 0) return 95 + Math.min(20, num.length);
+  // 「23馬力」「28 馬力」が機械名／型式に含まれる場合は高スコア
+  const hpTokens = t.match(/\d+\s*馬力/g) || [];
+  for (let h = 0; h < hpTokens.length; h++) {
+    const compact = String(hpTokens[h]).replace(/\s+/g, '');
+    const digits = compact.replace(/馬力/g, '');
+    const hay = labels.join(' ') + ' ' + String(item.model2 || '') + ' ' + String(item.note || item.memo || '');
+    const hayCompact = hay.replace(/\s+/g, '');
+    if (hayCompact.indexOf(compact) >= 0 || (digits && hayCompact.indexOf(digits + '馬力') >= 0)) {
+      return 96 + Math.min(10, digits.length);
+    }
+    if (digits && labels.some(lb => String(lb).indexOf(digits) >= 0 && /馬力|トラクタ|トラクター/.test(hay))) {
+      return 90;
+    }
+  }
   let stripped = t;
   stripped = stripped.replace(/(\d{1,2})\s*[:：]\s*(\d{1,2})/g, ' ');
   stripped = stripped.replace(/(\d{1,2})\s*時\s*(半|(\d{1,2})\s*分?)?/g, ' ');
@@ -31519,6 +31560,20 @@ window.guessBulkWorkMemoMaintenanceFields_ = (draft) => {
       if (/修理/.test(t)) window.setBulkWorkMemoMaintDetailField_(draft, id, 'content', '本体修理');
       else if (/点検|清掃/.test(t)) window.setBulkWorkMemoMaintDetailField_(draft, id, 'content', '清掃・点検');
       else if (/オイル/.test(t)) window.setBulkWorkMemoMaintDetailField_(draft, id, 'content', 'オイル交換');
+      else if (/爪交換|ロータリー爪|(?:ロータリー)?\s*爪\s*交換/.test(t)) {
+        window.setBulkWorkMemoMaintDetailField_(draft, id, 'content', 'ロータリー爪交換');
+      } else if (/[一-龥ぁ-んァ-ヶーA-Za-z0-9]{2,}\s*交換/.test(t)) {
+        const m = t.match(/([一-龥ぁ-んァ-ヶーA-Za-z0-9]{2,}\s*交換)/);
+        if (m && m[1]) window.setBulkWorkMemoMaintDetailField_(draft, id, 'content', String(m[1]).replace(/\s+/g, ''));
+      }
+    }
+    const afterParts = window.getBulkWorkMemoMaintDetail_(draft, id);
+    if (!afterParts.parts) {
+      if (/ロータリー爪|爪交換|(?:ロータリー)?\s*爪\s*交換/.test(t)) {
+        window.setBulkWorkMemoMaintDetailField_(draft, id, 'parts', 'ロータリー爪');
+      } else if (/オイル/.test(t)) {
+        window.setBulkWorkMemoMaintDetailField_(draft, id, 'parts', 'オイル');
+      }
     }
   });
   window.syncBulkWorkMemoMaintLegacyFields_(draft);
@@ -31676,11 +31731,9 @@ window.buildBulkWorkMemoMaintenanceTargetHtml_ = (d, uid) => {
         }).join('')}</div>
       </div>`
     : '';
-  const focusHint = !selected.length
+  const focusHint = (!selected.length || canAddMaint)
     ? ''
-    : (canAddMaint
-      ? `<div style="font-size:11px; color:#BF360C; background:#fff; border:1px solid #FFE0B2; border-radius:8px; padding:8px; line-height:1.4; margin-bottom:4px;">「${esc((focusTarget && focusTarget.name) || '')}」の候補を表示中。＋追加／直接入力したものはこの機械に登録され、次回から候補に出ます。</div>`
-      : `<div style="font-size:11px; color:#666; background:#fff; border:1px solid #FFE0B2; border-radius:8px; padding:8px; line-height:1.4; margin-bottom:4px;">車両・道具は症状・整備内容・部品のマスタ登録対象外です。この記録用に直接入力できます。</div>`);
+    : `<div style="font-size:11px; color:#666; background:#fff; border:1px solid #FFE0B2; border-radius:8px; padding:8px; line-height:1.4; margin-bottom:4px;">車両・道具は症状・整備内容・部品のマスタ登録対象外です。この記録用に直接入力できます。</div>`;
   const detailsHtml = selected.length
     ? `${focusTabs}${focusHint}
     ${window.buildBulkWorkMemoMaintenanceFieldChipsHtml_(uid, 'maintenanceSymptom', '症状', window.getBulkWorkMemoMaintenanceSymptomOptions_(d), focusDetail.symptom, 'orange', { canAdd: canAddMaint })}
