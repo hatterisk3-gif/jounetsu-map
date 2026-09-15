@@ -9286,8 +9286,131 @@ function editMaterial(params) {
   return false;
 }
 // ==========================================
-// 農機の部品を新規追加/編集/削除する
+// 農機の部品を新規追加/編集/削除する（整備内容別に紐づけ可）
 // ==========================================
+var MACHINE_PARTS_MAP_PREFIX_ = '__PARTS_MAP_V1__:';
+
+function splitMachinePartsList_(raw) {
+  return String(raw == null ? '' : raw)
+    .split(/[,、]/)
+    .map(function (s) { return String(s || '').trim(); })
+    .filter(Boolean);
+}
+
+function joinMachinePartsList_(list) {
+  var seen = {};
+  var out = [];
+  (list || []).forEach(function (s) {
+    var v = String(s || '').trim();
+    if (!v || seen[v]) return;
+    seen[v] = true;
+    out.push(v);
+  });
+  return out.join(',');
+}
+
+function parseMachinePartsMap_(raw) {
+  var empty = { common: [], byContent: {} };
+  var s = String(raw == null ? '' : raw).trim();
+  if (!s) return empty;
+  var obj = null;
+  if (s.indexOf(MACHINE_PARTS_MAP_PREFIX_) === 0) {
+    try { obj = JSON.parse(s.slice(MACHINE_PARTS_MAP_PREFIX_.length)); } catch (e) { obj = null; }
+  } else if (s.charAt(0) === '{') {
+    try { obj = JSON.parse(s); } catch (e) { obj = null; }
+  }
+  if (obj && typeof obj === 'object') {
+    var common = splitMachinePartsList_(
+      Object.prototype.toString.call(obj.common) === '[object Array]' ? obj.common.join(',') : (obj.common || '')
+    );
+    var byContent = {};
+    var src = (obj.byContent && typeof obj.byContent === 'object') ? obj.byContent : {};
+    Object.keys(src).forEach(function (k) {
+      var key = String(k || '').trim();
+      if (!key) return;
+      var list = splitMachinePartsList_(
+        Object.prototype.toString.call(src[k]) === '[object Array]' ? src[k].join(',') : src[k]
+      );
+      if (list.length) byContent[key] = list;
+    });
+    return { common: common, byContent: byContent };
+  }
+  return { common: splitMachinePartsList_(s), byContent: {} };
+}
+
+function serializeMachinePartsMap_(map) {
+  var common = splitMachinePartsList_(
+    Object.prototype.toString.call(map && map.common) === '[object Array]'
+      ? map.common.join(',')
+      : ((map && map.common) || '')
+  );
+  var byContent = {};
+  var src = (map && map.byContent && typeof map.byContent === 'object') ? map.byContent : {};
+  Object.keys(src).forEach(function (k) {
+    var key = String(k || '').trim();
+    if (!key) return;
+    var list = splitMachinePartsList_(
+      Object.prototype.toString.call(src[k]) === '[object Array]' ? src[k].join(',') : src[k]
+    );
+    if (list.length) byContent[key] = list;
+  });
+  if (!Object.keys(byContent).length) return joinMachinePartsList_(common);
+  return MACHINE_PARTS_MAP_PREFIX_ + JSON.stringify({ common: common, byContent: byContent });
+}
+
+function applyMachinePartsMutation_(raw, params) {
+  var map = parseMachinePartsMap_(raw);
+  var content = String(params.contentName || params.contentKey || '').trim();
+  var renameIn = function (list, oldName, newName) {
+    return splitMachinePartsList_((list || []).map(function (v) {
+      return v === oldName ? newName : v;
+    }).join(','));
+  };
+  if (params.fullParts != null) {
+    return String(params.fullParts || '');
+  }
+  if (params.oldPart && params.newPart) {
+    if (!content) {
+      map.common = renameIn(map.common, params.oldPart, params.newPart);
+      Object.keys(map.byContent).forEach(function (k) {
+        map.byContent[k] = renameIn(map.byContent[k], params.oldPart, params.newPart);
+      });
+    } else if (map.byContent[content]) {
+      map.byContent[content] = renameIn(map.byContent[content], params.oldPart, params.newPart);
+    } else {
+      map.common = renameIn(map.common, params.oldPart, params.newPart);
+    }
+    return serializeMachinePartsMap_(map);
+  }
+  if (params.deletePart) {
+    if (!content) {
+      map.common = (map.common || []).filter(function (v) { return v !== params.deletePart; });
+      Object.keys(map.byContent).forEach(function (k) {
+        map.byContent[k] = (map.byContent[k] || []).filter(function (v) { return v !== params.deletePart; });
+        if (!map.byContent[k].length) delete map.byContent[k];
+      });
+    } else if (map.byContent[content]) {
+      map.byContent[content] = (map.byContent[content] || []).filter(function (v) { return v !== params.deletePart; });
+      if (!map.byContent[content].length) delete map.byContent[content];
+    } else {
+      map.common = (map.common || []).filter(function (v) { return v !== params.deletePart; });
+    }
+    return serializeMachinePartsMap_(map);
+  }
+  if (params.newPart) {
+    var name = String(params.newPart || '').trim();
+    if (!name) return serializeMachinePartsMap_(map);
+    if (!content) {
+      if (map.common.indexOf(name) < 0) map.common.push(name);
+    } else {
+      if (!map.byContent[content]) map.byContent[content] = [];
+      if (map.byContent[content].indexOf(name) < 0) map.byContent[content].push(name);
+    }
+    return serializeMachinePartsMap_(map);
+  }
+  return serializeMachinePartsMap_(map);
+}
+
 function addMachinePart(params) {
   const ss = TENANT_SS;
   const sheet = ss.getSheetByName('農機マスタ');
@@ -9305,29 +9428,9 @@ function addMachinePart(params) {
     const matchCat = params.category && (rowType === String(params.category) || rowGroup === String(params.category));
     
     if (matchId || matchCat || (!params.machineId && !params.category)) {
-      if (params.fullParts != null) {
-        sheet.getRange(i+1, partsCol).setValue(String(params.fullParts || ""));
-        updatedCount++;
-      } else if (params.oldPart && params.newPart) {
-        let parts = String(data[i][partsIdx] || "").split(/[,、]/).map(p => p.trim()).filter(Boolean);
-        const idx = parts.indexOf(params.oldPart);
-        if (idx !== -1) {
-          parts[idx] = params.newPart;
-          sheet.getRange(i+1, partsCol).setValue(parts.join(','));
-          updatedCount++;
-        }
-      } else if (params.deletePart) {
-        let parts = String(data[i][partsIdx] || "").split(/[,、]/).map(p => p.trim()).filter(p => p && p !== params.deletePart);
-        sheet.getRange(i+1, partsCol).setValue(parts.join(','));
-        updatedCount++;
-      } else if (params.newPart) {
-        let parts = String(data[i][partsIdx] || "").split(/[,、]/).map(p => p.trim()).filter(Boolean);
-        if (!parts.includes(params.newPart)) {
-          parts.push(params.newPart);
-          sheet.getRange(i+1, partsCol).setValue(parts.join(','));
-          updatedCount++;
-        }
-      }
+      const next = applyMachinePartsMutation_(data[i][partsIdx], params || {});
+      sheet.getRange(i+1, partsCol).setValue(next);
+      updatedCount++;
     }
   }
   return updatedCount;

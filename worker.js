@@ -8975,13 +8975,15 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       // --- 交換部品名（機械別）追加・編集・削除 ---
-      window.editMachinePartMaster = async (oldName, newName, machine) => {
+      window.editMachinePartMaster = async (oldName, newName, machine, contentName) => {
         if (!newName || !machine || !machine.id) return;
-        window.renameMachineMaintOptionLocal_(machine, 'parts', oldName, newName);
+        const content = String(contentName != null ? contentName : (window.getSelectedMaintenanceContent_ ? window.getSelectedMaintenanceContent_() : '')).trim();
+        window.renameMachineMaintOptionLocal_(machine, 'parts', oldName, newName, { content: content });
         safeCallGAS('addMachinePart', {
           oldPart: oldName,
           newPart: newName,
-          machineId: machine.id
+          machineId: machine.id,
+          contentName: content
         });
         if (typeof window.updatePartsList === 'function') window.updatePartsList();
         if (document.getElementById('maintenanceMasterManageModal')) {
@@ -8990,12 +8992,14 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof customAlert === 'function') customAlert(`✅ 交換部品名を「${newName}」に更新しました。`);
       };
 
-      window.deleteMachinePartMaster = async (targetName, machine) => {
+      window.deleteMachinePartMaster = async (targetName, machine, contentName) => {
         if (!machine || !machine.id) return;
-        window.removeMachineMaintOptionLocal_(machine, 'parts', targetName);
+        const content = String(contentName != null ? contentName : (window.getSelectedMaintenanceContent_ ? window.getSelectedMaintenanceContent_() : '')).trim();
+        window.removeMachineMaintOptionLocal_(machine, 'parts', targetName, { content: content });
         safeCallGAS('addMachinePart', {
           deletePart: targetName,
-          machineId: machine.id
+          machineId: machine.id,
+          contentName: content
         });
         if (typeof window.updatePartsList === 'function') window.updatePartsList();
         if (document.getElementById('maintenanceMasterManageModal')) {
@@ -9011,22 +9015,29 @@ function createSignboardMarker(name, pos, icon, id) {
           if (typeof customAlert === 'function') customAlert('農機を選んでから部品を追加してください。');
           return;
         }
-        const n = await customPrompt('この機械に追加する交換部品名:');
+        const content = (typeof window.getSelectedMaintenanceContent_ === 'function')
+          ? window.getSelectedMaintenanceContent_()
+          : String(document.getElementById('m_content')?.value || '').trim();
+        if (!content) {
+          if (typeof customAlert === 'function') customAlert('先に整備内容を選んでください。交換部品はその整備内容ごとに登録します。');
+          return;
+        }
+        const n = await customPrompt(`「${content}」に追加する交換部品名:`);
         if (!n || !String(n).trim()) return;
         const name = String(n).trim();
-        const known = window.getMachineMaintenanceOptions_(target, 'parts');
+        const known = window.getMachineMaintenanceOptions_(target, 'parts', '', { content: content });
         if (known.includes(name)) {
           if (typeof customAlert === 'function') customAlert('既に登録されています。');
           return;
         }
         try {
-          await callGAS('addMachinePart', { machineId: target.id, newPart: name });
-          window.appendMachineMaintOptionLocal_(target, 'parts', name);
+          await callGAS('addMachinePart', { machineId: target.id, newPart: name, contentName: content });
+          window.appendMachineMaintOptionLocal_(target, 'parts', name, { content: content });
           const partsEl = document.getElementById('m_parts');
           if (partsEl) partsEl.value = name;
           if (typeof window.updatePartsList === 'function') window.updatePartsList();
           if (typeof window.refreshMachineItemEditorMaintLists_ === 'function') window.refreshMachineItemEditorMaintLists_();
-          if (typeof customAlert === 'function') customAlert(`✅ 「${target.name || ''}」に部品「${name}」を追加しました`);
+          if (typeof customAlert === 'function') customAlert(`✅ 「${content}」に部品「${name}」を追加しました`);
         } catch (e) {
           if (typeof customAlert === 'function') customAlert('失敗しました: ' + e.message);
         }
@@ -9035,27 +9046,34 @@ function createSignboardMarker(name, pos, icon, id) {
       window.openMachinePartManagerModal = (action) => {
         const machine = window.requireEditableMaintenanceMachine_();
         if (!machine) return;
+        const content = (typeof window.getSelectedMaintenanceContent_ === 'function')
+          ? window.getSelectedMaintenanceContent_()
+          : String(document.getElementById('m_content')?.value || '').trim();
         if (action === 'add') {
           window.addNewMachinePart(machine);
+          return;
+        }
+        if (!content) {
+          if (typeof customAlert === 'function') customAlert('先に整備内容を選んでください。交換部品はその整備内容ごとに管理します。');
           return;
         }
         if (typeof window.isWorkerAdmin === 'function' && !window.isWorkerAdmin()) {
           if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
           return;
         }
-        const items = window.getMachineMaintenanceOptions_(machine, 'parts');
+        const items = window.getMachineMaintenanceOptions_(machine, 'parts', '', { content: content });
         window.showMaintenanceMasterManageModal({
-          title: `交換部品（${machine.name || 'この機械'}）`,
+          title: `交換部品（${content}）`,
           items: items,
           onAdd: () => window.addNewMachinePart(machine),
           onEdit: async (oldName) => {
             const newName = await customPrompt('交換部品名の名称を編集:', oldName);
             if (!newName || !newName.trim() || newName.trim() === oldName) return;
-            window.editMachinePartMaster(oldName, newName.trim(), machine);
+            window.editMachinePartMaster(oldName, newName.trim(), machine, content);
           },
           onDelete: async (targetName) => {
-            if (await customConfirm(`交換部品「${targetName}」をこの機械から削除しますか？`)) {
-              window.deleteMachinePartMaster(targetName, machine);
+            if (await customConfirm(`交換部品「${targetName}」を「${content}」から削除しますか？`)) {
+              window.deleteMachinePartMaster(targetName, machine, content);
             }
           }
         });
@@ -10262,15 +10280,175 @@ function createSignboardMarker(name, pos, icon, id) {
         return 'maintenanceContents';
       };
 
+      /** 交換部品の整備内容別マップ（レガシー「a,b,c」も共通部品として読める） */
+      window.MACHINE_PARTS_MAP_PREFIX_ = '__PARTS_MAP_V1__:';
+
+      window.parseMachinePartsMap_ = (raw) => {
+        const empty = { common: [], byContent: {} };
+        const s = String(raw == null ? '' : raw).trim();
+        if (!s) return empty;
+        const prefix = window.MACHINE_PARTS_MAP_PREFIX_ || '__PARTS_MAP_V1__:';
+        let obj = null;
+        if (s.indexOf(prefix) === 0) {
+          try { obj = JSON.parse(s.slice(prefix.length)); } catch (e) { obj = null; }
+        } else if (s.charAt(0) === '{') {
+          try { obj = JSON.parse(s); } catch (e) { obj = null; }
+        }
+        if (obj && typeof obj === 'object') {
+          const common = window.splitMachineMaintList_(
+            Array.isArray(obj.common) ? obj.common.join(',') : (obj.common || '')
+          );
+          const byContent = {};
+          const src = (obj.byContent && typeof obj.byContent === 'object') ? obj.byContent : {};
+          Object.keys(src).forEach((k) => {
+            const key = String(k || '').trim();
+            if (!key) return;
+            const list = window.splitMachineMaintList_(
+              Array.isArray(src[k]) ? src[k].join(',') : src[k]
+            );
+            if (list.length) byContent[key] = list;
+          });
+          return { common: common, byContent: byContent };
+        }
+        return { common: window.splitMachineMaintList_(s), byContent: {} };
+      };
+
+      window.serializeMachinePartsMap_ = (map) => {
+        const common = window.splitMachineMaintList_(
+          Array.isArray(map && map.common) ? map.common.join(',') : ((map && map.common) || '')
+        );
+        const byContent = {};
+        const src = (map && map.byContent && typeof map.byContent === 'object') ? map.byContent : {};
+        Object.keys(src).forEach((k) => {
+          const key = String(k || '').trim();
+          if (!key) return;
+          const list = window.splitMachineMaintList_(
+            Array.isArray(src[k]) ? src[k].join(',') : src[k]
+          );
+          if (list.length) byContent[key] = list;
+        });
+        if (!Object.keys(byContent).length) {
+          return window.joinMachineMaintList_(common);
+        }
+        return (window.MACHINE_PARTS_MAP_PREFIX_ || '__PARTS_MAP_V1__:')
+          + JSON.stringify({ common: common, byContent: byContent });
+      };
+
+      window.syncMachinePartsFieldLocal_ = (machine, rawParts) => {
+        if (!machine) return;
+        machine.parts = String(rawParts == null ? '' : rawParts);
+        if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines) && machine.id) {
+          const idx = pdlMachines.findIndex(m => m && String(m.id) === String(machine.id));
+          if (idx >= 0) pdlMachines[idx].parts = machine.parts;
+        }
+      };
+
+      /** 整備内容名と同名の誤登録部品は除外して返す */
+      window.getMachinePartsForContent_ = (machine, contentName) => {
+        const map = window.parseMachinePartsMap_(machine && machine.parts);
+        const content = String(contentName || '').trim();
+        const contentNames = new Set(window.splitMachineMaintList_(machine && machine.maintenanceContents));
+        const set = new Set();
+        (map.common || []).forEach((p) => {
+          if (p && !contentNames.has(p)) set.add(p);
+        });
+        if (content && Array.isArray(map.byContent[content])) {
+          map.byContent[content].forEach((p) => { if (p) set.add(p); });
+        }
+        return Array.from(set);
+      };
+
+      window.appendMachinePartForContent_ = (machine, contentName, partName) => {
+        if (!machine || !partName) return;
+        const name = String(partName).trim();
+        if (!name) return;
+        const content = String(contentName || '').trim();
+        const map = window.parseMachinePartsMap_(machine.parts);
+        if (!content) {
+          if (!map.common.includes(name)) map.common.push(name);
+        } else {
+          if (!map.byContent[content]) map.byContent[content] = [];
+          if (!map.byContent[content].includes(name)) map.byContent[content].push(name);
+        }
+        window.syncMachinePartsFieldLocal_(machine, window.serializeMachinePartsMap_(map));
+      };
+
+      window.renameMachinePartForContent_ = (machine, contentName, oldName, newName) => {
+        if (!machine || !oldName || !newName) return;
+        const content = String(contentName || '').trim();
+        const map = window.parseMachinePartsMap_(machine.parts);
+        const renameIn = (list) => (list || []).map(v => (v === oldName ? newName : v))
+          .filter((v, i, arr) => v && arr.indexOf(v) === i);
+        if (!content) {
+          map.common = renameIn(map.common);
+          Object.keys(map.byContent).forEach((k) => {
+            map.byContent[k] = renameIn(map.byContent[k]);
+          });
+        } else if (map.byContent[content]) {
+          map.byContent[content] = renameIn(map.byContent[content]);
+        } else {
+          map.common = renameIn(map.common);
+        }
+        window.syncMachinePartsFieldLocal_(machine, window.serializeMachinePartsMap_(map));
+      };
+
+      window.removeMachinePartForContent_ = (machine, contentName, partName) => {
+        if (!machine || !partName) return;
+        const content = String(contentName || '').trim();
+        const name = String(partName).trim();
+        const map = window.parseMachinePartsMap_(machine.parts);
+        if (!content) {
+          map.common = (map.common || []).filter(v => v !== name);
+          Object.keys(map.byContent).forEach((k) => {
+            map.byContent[k] = (map.byContent[k] || []).filter(v => v !== name);
+          });
+        } else if (map.byContent[content]) {
+          map.byContent[content] = map.byContent[content].filter(v => v !== name);
+          if (!map.byContent[content].length) delete map.byContent[content];
+        } else {
+          map.common = (map.common || []).filter(v => v !== name);
+        }
+        window.syncMachinePartsFieldLocal_(machine, window.serializeMachinePartsMap_(map));
+      };
+
+      window.renameMachineContentPartsKey_ = (machine, oldContent, newContent) => {
+        if (!machine || !oldContent || !newContent || oldContent === newContent) return;
+        const map = window.parseMachinePartsMap_(machine.parts);
+        const oldList = map.byContent[oldContent] || [];
+        if (!oldList.length && !map.byContent[oldContent]) return;
+        const next = window.splitMachineMaintList_(
+          ((map.byContent[newContent] || []).concat(oldList)).join(',')
+        );
+        if (next.length) map.byContent[newContent] = next;
+        delete map.byContent[oldContent];
+        window.syncMachinePartsFieldLocal_(machine, window.serializeMachinePartsMap_(map));
+      };
+
+      window.removeMachineContentPartsKey_ = (machine, contentName) => {
+        if (!machine || !contentName) return;
+        const map = window.parseMachinePartsMap_(machine.parts);
+        if (!map.byContent[contentName]) return;
+        delete map.byContent[contentName];
+        window.syncMachinePartsFieldLocal_(machine, window.serializeMachinePartsMap_(map));
+      };
+
       /**
        * kind: 'symptoms' | 'maintenanceContents' | 'parts'
        * 機械に紐づく候補のみ（共通マスタは混ぜない）
+       * opts.content: 整備内容（parts の絞り込み用）
        */
-      window.getMachineMaintenanceOptions_ = (machine, kind, extraCurrent) => {
-        const key = window.getMachineMaintFieldKey_(kind);
+      window.getMachineMaintenanceOptions_ = (machine, kind, extraCurrent, opts) => {
         const set = new Set();
-        if (machine) {
-          window.splitMachineMaintList_(machine[key]).forEach(v => set.add(v));
+        if (kind === 'parts' || kind === 'part') {
+          const content = (opts && opts.content != null)
+            ? String(opts.content || '').trim()
+            : '';
+          window.getMachinePartsForContent_(machine, content).forEach(v => set.add(v));
+        } else {
+          const key = window.getMachineMaintFieldKey_(kind);
+          if (machine) {
+            window.splitMachineMaintList_(machine[key]).forEach(v => set.add(v));
+          }
         }
         const cur = String(extraCurrent || '').trim();
         if (cur) set.add(cur);
@@ -10301,8 +10479,16 @@ function createSignboardMarker(name, pos, icon, id) {
         return machine;
       };
 
-      window.appendMachineMaintOptionLocal_ = (machine, kind, name) => {
+      window.getSelectedMaintenanceContent_ = () => {
+        return String(document.getElementById('m_content')?.value || '').trim();
+      };
+
+      window.appendMachineMaintOptionLocal_ = (machine, kind, name, opts) => {
         if (!machine || !name) return;
+        if (kind === 'parts' || kind === 'part') {
+          window.appendMachinePartForContent_(machine, (opts && opts.content) || '', name);
+          return;
+        }
         const key = window.getMachineMaintFieldKey_(kind);
         const list = window.splitMachineMaintList_(machine[key]);
         if (!list.includes(name)) list.push(name);
@@ -10313,43 +10499,78 @@ function createSignboardMarker(name, pos, icon, id) {
         }
       };
 
-      window.renameMachineMaintOptionLocal_ = (machine, kind, oldName, newName) => {
+      window.renameMachineMaintOptionLocal_ = (machine, kind, oldName, newName, opts) => {
         if (!machine) return;
+        if (kind === 'parts' || kind === 'part') {
+          window.renameMachinePartForContent_(machine, (opts && opts.content) || '', oldName, newName);
+          return;
+        }
         const key = window.getMachineMaintFieldKey_(kind);
         const list = window.splitMachineMaintList_(machine[key]).map(v => (v === oldName ? newName : v));
         machine[key] = window.joinMachineMaintList_(list);
+        if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines) && machine.id) {
+          const idx = pdlMachines.findIndex(m => m && String(m.id) === String(machine.id));
+          if (idx >= 0) pdlMachines[idx][key] = machine[key];
+        }
+        if (key === 'maintenanceContents') {
+          window.renameMachineContentPartsKey_(machine, oldName, newName);
+        }
       };
 
-      window.removeMachineMaintOptionLocal_ = (machine, kind, name) => {
+      window.removeMachineMaintOptionLocal_ = (machine, kind, name, opts) => {
         if (!machine) return;
+        if (kind === 'parts' || kind === 'part') {
+          window.removeMachinePartForContent_(machine, (opts && opts.content) || '', name);
+          return;
+        }
         const key = window.getMachineMaintFieldKey_(kind);
         machine[key] = window.joinMachineMaintList_(
           window.splitMachineMaintList_(machine[key]).filter(v => v !== name)
         );
+        if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines) && machine.id) {
+          const idx = pdlMachines.findIndex(m => m && String(m.id) === String(machine.id));
+          if (idx >= 0) pdlMachines[idx][key] = machine[key];
+        }
+        if (key === 'maintenanceContents') {
+          window.removeMachineContentPartsKey_(machine, name);
+        }
       };
 
       window.updatePartsList = () => {
          const machine = (typeof window.getSelectedMaintenanceMachine_ === 'function')
            ? window.getSelectedMaintenanceMachine_()
            : null;
-         const emptyHint = machine
-           ? '候補がありません。＋追加でこの機械に登録できます'
-           : '先に対象機械を選んでください';
+         const selectedContent = (typeof window.getSelectedMaintenanceContent_ === 'function')
+           ? window.getSelectedMaintenanceContent_()
+           : String(document.getElementById('m_content')?.value || '').trim();
+         const emptyHint = !machine
+           ? '先に対象機械を選んでください'
+           : (!selectedContent
+             ? '整備内容を選ぶと、その内容に紐づく交換部品が出ます'
+             : '候補がありません。＋追加でこの整備内容に部品を登録できます');
 
-         const fill = (hiddenId, chipsId, kind, tone) => {
+         const fill = (hiddenId, chipsId, kind, tone, opts) => {
            const prevVal = document.getElementById(hiddenId)?.value || '';
-           const list = window.getMachineMaintenanceOptions_(machine, kind, prevVal);
+           const list = window.getMachineMaintenanceOptions_(machine, kind, '', opts || {});
            const el = document.getElementById(hiddenId);
-           if (el) el.value = prevVal;
+           const keep = (prevVal && list.indexOf(prevVal) >= 0) ? prevVal : '';
+           if (el) el.value = keep;
            window.renderMaintValueChips_(chipsId, hiddenId, list, {
              tone: tone,
              emptyLabel: '未選択',
-             emptyMessage: (!list.length && !prevVal) ? emptyHint : ''
+             emptyMessage: (!list.length && !keep) ? ((opts && opts.emptyMessage) || emptyHint) : ''
            });
          };
-         fill('m_symptom', 'm_symptom_chips', 'symptoms', 'orange');
-         fill('m_content', 'm_content_chips', 'maintenanceContents', 'green');
-         fill('m_parts', 'm_parts_chips', 'parts', 'blue');
+         fill('m_symptom', 'm_symptom_chips', 'symptoms', 'orange', {
+           emptyMessage: machine ? '候補がありません。＋追加でこの機械に登録できます' : '先に対象機械を選んでください'
+         });
+         fill('m_content', 'm_content_chips', 'maintenanceContents', 'green', {
+           emptyMessage: machine ? '候補がありません。＋追加でこの機械に登録できます' : '先に対象機械を選んでください'
+         });
+         fill('m_parts', 'm_parts_chips', 'parts', 'blue', {
+           content: selectedContent,
+           emptyMessage: emptyHint
+         });
 
          window.updateMaintenanceTargetInfoBadge();
       };
@@ -17112,11 +17333,17 @@ function createSignboardMarker(name, pos, icon, id) {
                   window.renderBulkWorkMemoManualAddModal_();
                 }
               }
+              if (typeof window.refreshBulkWorkMemoDetailManageModalIfOpen_ === 'function') {
+                window.refreshBulkWorkMemoDetailManageModalIfOpen_();
+              }
               if (returnPicker) {
                   window.openDetailWorkMasterAddOptions(returnPicker);
                   if (typeof window.showRecordSyncToast === 'function') {
                       window.showRecordSyncToast('✅ 詳細作業を' + actionLabel + 'しました', 'ok');
                   }
+              } else if (document.getElementById('bulkDetailWorkManageModal')
+                  && typeof window.showRecordSyncToast === 'function') {
+                  window.showRecordSyncToast('✅ 詳細作業を' + actionLabel + 'しました', 'ok');
               } else if (typeof customAlert === 'function') {
                   customAlert(`✅ 詳細作業を${actionLabel}しました！（${window.getWorkCropLabel(resolvedCrop)}）`);
               }
@@ -17126,6 +17353,9 @@ function createSignboardMarker(name, pos, icon, id) {
               window._detailWorkEditorReturnToPicker = '';
               const recWName = document.getElementById('rec_work_name')?.value || '';
               window.renderDetailWorksSection(recWName || wName);
+              if (typeof window.refreshBulkWorkMemoDetailManageModalIfOpen_ === 'function') {
+                window.refreshBulkWorkMemoDetailManageModalIfOpen_();
+              }
               if (returnPicker) window.openDetailWorkMasterAddOptions(returnPicker);
               if (typeof customAlert === 'function') customAlert(`詳細作業をローカルで${actionLabel}しました（通信: ${e.message || e}）`);
           }
@@ -17920,7 +18150,7 @@ function createSignboardMarker(name, pos, icon, id) {
               </div>
               <div id="mie_maint_options_section" style="display:none; background:#FFF3E0; border:1px solid #FFCC80; border-radius:10px; padding:10px; margin-bottom:12px;">
                 <div style="font-size:13px; font-weight:bold; color:#E65100; margin-bottom:4px;">🔧 この機械の整備候補</div>
-                <div style="font-size:11px; color:#BF360C; line-height:1.4; margin-bottom:8px;">症状・整備内容・交換部品は機械ごとに登録します。記録画面では選んだ機械の候補だけが出ます。</div>
+                <div style="font-size:11px; color:#BF360C; line-height:1.4; margin-bottom:8px;">症状・整備内容は機械ごと。交換部品は整備内容ごとに登録し、記録時は選んだ整備内容で絞り込みます。</div>
                 <div style="margin-bottom:8px;">
                   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                     <span style="font-size:12px; font-weight:bold; color:#E65100;">症状</span>
@@ -18292,7 +18522,7 @@ function createSignboardMarker(name, pos, icon, id) {
       window.refreshMachineItemEditorMaintLists_ = () => {
         const st = window._machineItemEditorState || {};
         const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-        const render = (boxId, kind, color) => {
+        const renderFlat = (boxId, kind, color) => {
           const box = document.getElementById(boxId);
           if (!box) return;
           const key = window.getMachineMaintFieldKey_(kind);
@@ -18309,9 +18539,40 @@ function createSignboardMarker(name, pos, icon, id) {
             </span>`;
           }).join('');
         };
-        render('mie_maint_symptoms_chips', 'symptoms', '#E65100');
-        render('mie_maint_contents_chips', 'maintenanceContents', '#2E7D32');
-        render('mie_maint_parts_chips', 'parts', '#1565C0');
+        const renderParts = () => {
+          const box = document.getElementById('mie_maint_parts_chips');
+          if (!box) return;
+          const map = (typeof window.parseMachinePartsMap_ === 'function')
+            ? window.parseMachinePartsMap_(st.parts || '')
+            : { common: window.splitMachineMaintList_(st.parts || ''), byContent: {} };
+          const rows = [];
+          (map.common || []).forEach((name) => {
+            rows.push({ content: '', name: name });
+          });
+          Object.keys(map.byContent || {}).forEach((content) => {
+            (map.byContent[content] || []).forEach((name) => {
+              rows.push({ content: content, name: name });
+            });
+          });
+          if (!rows.length) {
+            box.innerHTML = '<span style="font-size:11px; color:#888;">未登録（整備内容ごとに追加）</span>';
+            return;
+          }
+          box.innerHTML = rows.map((row) => {
+            const safe = String(row.name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const safeContent = String(row.content || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const tag = row.content
+              ? `<span style="font-size:10px; opacity:0.8;">[${esc(row.content)}]</span> `
+              : '';
+            return `<span style="display:inline-flex; align-items:center; gap:4px; background:#fff; border:1px solid #1565C0; color:#1565C0; border-radius:14px; padding:4px 8px; font-size:12px; font-weight:bold;">
+              ${tag}${esc(row.name)}
+              <button type="button" onclick="removeMachineItemEditorMaintOption_('parts','${safe}','${safeContent}')" title="削除" style="background:none; border:none; color:#c62828; font-weight:bold; cursor:pointer; padding:0 2px; line-height:1;">×</button>
+            </span>`;
+          }).join('');
+        };
+        renderFlat('mie_maint_symptoms_chips', 'symptoms', '#E65100');
+        renderFlat('mie_maint_contents_chips', 'maintenanceContents', '#2E7D32');
+        renderParts();
       };
 
       window.addMachineItemEditorMaintOption_ = async (kind) => {
@@ -18326,17 +18587,62 @@ function createSignboardMarker(name, pos, icon, id) {
           parts: '交換部品名'
         };
         const label = labels[kind] || kind;
-        const nameRaw = await customPrompt(`この機械に追加する「${label}」:`);
+        let contentName = '';
+        if (kind === 'parts') {
+          const contents = window.splitMachineMaintList_(st.maintenanceContents || '');
+          if (!contents.length) {
+            if (typeof customAlert === 'function') customAlert('先に整備内容を追加してください。交換部品は整備内容ごとに登録します。');
+            return;
+          }
+          if (contents.length === 1) {
+            contentName = contents[0];
+          } else {
+            const picked = await customPrompt(
+              'どの整備内容に紐づける部品ですか？\n候補: ' + contents.join(' / '),
+              contents[0]
+            );
+            contentName = String(picked || '').trim();
+            if (!contentName || contents.indexOf(contentName) < 0) {
+              if (typeof customAlert === 'function') customAlert('整備内容を候補から正確に指定してください。');
+              return;
+            }
+          }
+        }
+        const nameRaw = await customPrompt(
+          kind === 'parts'
+            ? `「${contentName}」に追加する「${label}」:`
+            : `この機械に追加する「${label}」:`
+        );
         if (!nameRaw || !String(nameRaw).trim()) return;
         const name = String(nameRaw).trim();
-        const key = window.getMachineMaintFieldKey_(kind);
-        const list = window.splitMachineMaintList_(st[key] || '');
-        if (list.includes(name)) {
-          if (typeof customAlert === 'function') customAlert('既に登録されています。');
-          return;
+        if (kind === 'parts') {
+          const contents = window.splitMachineMaintList_(st.maintenanceContents || '');
+          if (contents.indexOf(name) >= 0) {
+            if (typeof customAlert === 'function') customAlert('整備内容と同じ名前は交換部品に登録できません。');
+            return;
+          }
+          const known = (typeof window.getMachinePartsForContent_ === 'function')
+            ? window.getMachinePartsForContent_({ parts: st.parts, maintenanceContents: st.maintenanceContents }, contentName)
+            : [];
+          if (known.includes(name)) {
+            if (typeof customAlert === 'function') customAlert('既に登録されています。');
+            return;
+          }
+          if (typeof window.appendMachinePartForContent_ === 'function') {
+            const tmp = { parts: st.parts || '', id: st.itemId || '' };
+            window.appendMachinePartForContent_(tmp, contentName, name);
+            st.parts = tmp.parts;
+          }
+        } else {
+          const key = window.getMachineMaintFieldKey_(kind);
+          const list = window.splitMachineMaintList_(st[key] || '');
+          if (list.includes(name)) {
+            if (typeof customAlert === 'function') customAlert('既に登録されています。');
+            return;
+          }
+          list.push(name);
+          st[key] = window.joinMachineMaintList_(list);
         }
-        list.push(name);
-        st[key] = window.joinMachineMaintList_(list);
         window.refreshMachineItemEditorMaintLists_();
         // 編集中でIDがある場合はすぐサーバーへも反映
         if (st.mode === 'edit' && st.itemId) {
@@ -18344,13 +18650,16 @@ function createSignboardMarker(name, pos, icon, id) {
             if (kind === 'symptoms') {
               await callGAS('addMachineSymptom', { machineId: st.itemId, newSymptom: name });
             } else if (kind === 'parts') {
-              await callGAS('addMachinePart', { machineId: st.itemId, newPart: name });
+              await callGAS('addMachinePart', { machineId: st.itemId, newPart: name, contentName: contentName });
             } else {
               await callGAS('addMachineMaintenanceContent', { machineId: st.itemId, newContent: name });
             }
             if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) {
               const m = pdlMachines.find(x => String(x.id) === String(st.itemId));
-              if (m) m[key] = st[key];
+              if (m) {
+                if (kind === 'parts') m.parts = st.parts;
+                else m[window.getMachineMaintFieldKey_(kind)] = st[window.getMachineMaintFieldKey_(kind)];
+              }
             }
             if (typeof window.updatePartsList === 'function') window.updatePartsList();
           } catch (e) {
@@ -18359,24 +18668,48 @@ function createSignboardMarker(name, pos, icon, id) {
         }
       };
 
-      window.removeMachineItemEditorMaintOption_ = async (kind, name) => {
+      window.removeMachineItemEditorMaintOption_ = async (kind, name, contentName) => {
         const st = window._machineItemEditorState || {};
-        const key = window.getMachineMaintFieldKey_(kind);
-        const next = window.splitMachineMaintList_(st[key] || '').filter(v => v !== name);
-        st[key] = window.joinMachineMaintList_(next);
+        if (kind === 'parts') {
+          if (typeof window.removeMachinePartForContent_ === 'function') {
+            const tmp = { parts: st.parts || '', id: st.itemId || '' };
+            window.removeMachinePartForContent_(tmp, contentName || '', name);
+            st.parts = tmp.parts;
+          }
+        } else {
+          const key = window.getMachineMaintFieldKey_(kind);
+          const next = window.splitMachineMaintList_(st[key] || '').filter(v => v !== name);
+          st[key] = window.joinMachineMaintList_(next);
+          if (key === 'maintenanceContents' && typeof window.removeMachineContentPartsKey_ === 'function') {
+            const tmp = { parts: st.parts || '', id: st.itemId || '' };
+            window.removeMachineContentPartsKey_(tmp, name);
+            st.parts = tmp.parts;
+          }
+        }
         window.refreshMachineItemEditorMaintLists_();
         if (st.mode === 'edit' && st.itemId) {
           try {
             if (kind === 'symptoms') {
               await callGAS('addMachineSymptom', { machineId: st.itemId, deleteSymptom: name });
             } else if (kind === 'parts') {
-              await callGAS('addMachinePart', { machineId: st.itemId, deletePart: name });
+              await callGAS('addMachinePart', {
+                machineId: st.itemId,
+                deletePart: name,
+                contentName: String(contentName || '').trim()
+              });
             } else {
               await callGAS('addMachineMaintenanceContent', { machineId: st.itemId, deleteContent: name });
             }
             if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) {
               const m = pdlMachines.find(x => String(x.id) === String(st.itemId));
-              if (m) m[key] = st[key];
+              if (m) {
+                if (kind === 'parts') m.parts = st.parts;
+                else {
+                  const key = window.getMachineMaintFieldKey_(kind);
+                  m[key] = st[key];
+                  if (key === 'maintenanceContents') m.parts = st.parts;
+                }
+              }
             }
             if (typeof window.updatePartsList === 'function') window.updatePartsList();
           } catch (e) {
@@ -31519,10 +31852,13 @@ window.getBulkWorkMemoMaintenanceContentOptions_ = (draft) => {
 
 window.getBulkWorkMemoMaintenancePartsOptions_ = (draft) => {
   const machine = window.getBulkWorkMemoMaintFocusMachine_(draft);
-  const cur = window.getBulkWorkMemoMaintDetail_(draft, window.getBulkWorkMemoMaintFocusId_(draft)).parts
-    || (draft && draft.maintenanceParts) || '';
+  const focusId = window.getBulkWorkMemoMaintFocusId_(draft);
+  const detail = window.getBulkWorkMemoMaintDetail_(draft, focusId);
+  const content = String(detail.content || (draft && draft.maintenanceContent) || '').trim();
+  const cur = detail.parts || (draft && draft.maintenanceParts) || '';
+  if (!content) return cur ? [String(cur).trim()].filter(Boolean) : [];
   return window.getMachineMaintenanceOptions_
-    ? window.getMachineMaintenanceOptions_(machine, 'parts', cur)
+    ? window.getMachineMaintenanceOptions_(machine, 'parts', cur, { content: content })
     : [];
 };
 
@@ -31554,7 +31890,24 @@ window.guessBulkWorkMemoMaintenanceFields_ = (draft) => {
     };
     pickFromList('symptoms', 'symptom');
     pickFromList('maintenanceContents', 'content');
-    pickFromList('parts', 'parts');
+    const afterContent = window.getBulkWorkMemoMaintDetail_(draft, id);
+    const contentForParts = String(afterContent.content || '').trim();
+    if (contentForParts) {
+      const pickParts = () => {
+        if (String(afterContent.parts || '').trim()) return;
+        const opts = (canMachine && window.getMachineMaintenanceOptions_)
+          ? (window.getMachineMaintenanceOptions_(machine, 'parts', '', { content: contentForParts }) || [])
+          : [];
+        for (let i = 0; i < opts.length; i++) {
+          const item = String(opts[i] || '').trim();
+          if (item.length >= 2 && t.indexOf(item) >= 0) {
+            window.setBulkWorkMemoMaintDetailField_(draft, id, 'parts', item);
+            return;
+          }
+        }
+      };
+      pickParts();
+    }
     const after = window.getBulkWorkMemoMaintDetail_(draft, id);
     if (!after.content) {
       if (/修理/.test(t)) window.setBulkWorkMemoMaintDetailField_(draft, id, 'content', '本体修理');
@@ -31567,12 +31920,19 @@ window.guessBulkWorkMemoMaintenanceFields_ = (draft) => {
         if (m && m[1]) window.setBulkWorkMemoMaintDetailField_(draft, id, 'content', String(m[1]).replace(/\s+/g, ''));
       }
     }
+    // 部品は整備内容の候補からだけ選ぶ（整備内容名と同名の自動セットはしない）
     const afterParts = window.getBulkWorkMemoMaintDetail_(draft, id);
-    if (!afterParts.parts) {
-      if (/ロータリー爪|爪交換|(?:ロータリー)?\s*爪\s*交換/.test(t)) {
-        window.setBulkWorkMemoMaintDetailField_(draft, id, 'parts', 'ロータリー爪');
-      } else if (/オイル/.test(t)) {
-        window.setBulkWorkMemoMaintDetailField_(draft, id, 'parts', 'オイル');
+    const contentNow = String(afterParts.content || '').trim();
+    if (contentNow && !afterParts.parts && canMachine) {
+      const opts = window.getMachineMaintenanceOptions_
+        ? (window.getMachineMaintenanceOptions_(machine, 'parts', '', { content: contentNow }) || [])
+        : [];
+      for (let i = 0; i < opts.length; i++) {
+        const item = String(opts[i] || '').trim();
+        if (item.length >= 2 && t.indexOf(item) >= 0) {
+          window.setBulkWorkMemoMaintDetailField_(draft, id, 'parts', item);
+          break;
+        }
       }
     }
   });
@@ -31595,28 +31955,31 @@ window.buildBulkWorkMemoMaintenanceFieldChipsHtml_ = (uid, field, label, options
     const safeField = String(field).replace(/'/g, "\\'");
     return `<button type="button" onclick="pickBulkWorkMemoMaintenanceField_('${esc(uid)}','${safeField}','${safe}')" style="padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? c.on : c.offBorder}; background:${on ? c.on : c.off}; color:${on ? '#fff' : c.on};">${esc(val)}</button>`;
   }).join('');
-  const inputId = `bulk_maint_${field}_${esc(uid)}`;
-  const placeholders = {
-    maintenanceSymptom: 'その他の症状を直接入力（未登録ならこの機械に追加）',
-    maintenanceContent: 'その他の整備内容を直接入力（未登録ならこの機械に追加）',
-    maintenanceParts: 'その他の部品名を直接入力（未登録ならこの機械に追加）'
-  };
   const addKind = field === 'maintenanceSymptom' ? 'symptoms'
     : field === 'maintenanceContent' ? 'maintenanceContents'
     : field === 'maintenanceParts' ? 'parts' : '';
-  const addBtn = (canAdd && addKind)
-    ? `<button type="button" onclick="addBulkWorkMemoMaintOption_('${esc(uid)}','${addKind}')" style="background:${c.on}; color:#fff; border:none; border-radius:4px; padding:2px 8px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 追加</button>`
+  const manageBtns = (canAdd && addKind)
+    ? `<div style="display:flex; gap:4px; flex-shrink:0;">
+        <button type="button" onclick="addBulkWorkMemoMaintOption_('${esc(uid)}','${addKind}')" style="background:${c.on}; color:#fff; border:none; border-radius:4px; padding:2px 8px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 追加</button>
+        <button type="button" onclick="manageBulkWorkMemoMaintOption_('${esc(uid)}','${addKind}')" style="background:#78909C; color:#fff; border:none; border-radius:4px; padding:2px 8px; font-size:11px; font-weight:bold; cursor:pointer;">⚙️ 編集・削除</button>
+      </div>`
     : '';
-  const emptyHint = canAdd
-    ? '候補がありません。「＋追加」か下の直接入力でこの機械に登録できます。'
-    : '候補がありません。下に直接入力してください。';
+  const emptyHint = !canAdd
+    ? '候補がありません。'
+    : (field === 'maintenanceParts'
+      ? (String((opts && opts.contentHint) || '').trim()
+        ? '候補がありません。「＋追加」でこの整備内容に部品を登録できます。'
+        : '先に整備内容を選ぶと、その内容に紐づく交換部品が出ます。')
+      : '候補がありません。「＋追加」でこの機械に登録できます。');
+  const labelExtra = (field === 'maintenanceParts' && opts && opts.contentHint)
+    ? `<span style="font-weight:normal; opacity:0.85;">（${esc(opts.contentHint)}）</span>`
+    : '';
   return `<div style="margin-top:10px;">
     <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; margin-bottom:6px;">
-      <div style="font-size:10px; font-weight:bold; color:${c.on};">${label}</div>
-      ${addBtn}
+      <div style="font-size:10px; font-weight:bold; color:${c.on};">${label}${labelExtra}</div>
+      ${manageBtns}
     </div>
-    <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;">${chips || `<span style="font-size:11px; color:#888;">${emptyHint}</span>`}</div>
-    <input type="text" id="${inputId}" value="${esc(selected)}" placeholder="${esc(placeholders[field] || '')}" onchange="updateBulkWorkMemoMaintenanceCustom_('${esc(uid)}','${String(field).replace(/'/g, "\\'")}', this.value)" style="width:100%; box-sizing:border-box; padding:7px 10px; border:1px solid ${c.offBorder}; border-radius:8px; font-size:12px;">
+    <div style="display:flex; flex-wrap:wrap; gap:6px;">${chips || `<span style="font-size:11px; color:#888;">${emptyHint}</span>`}</div>
   </div>`;
 };
 
@@ -31733,12 +32096,14 @@ window.buildBulkWorkMemoMaintenanceTargetHtml_ = (d, uid) => {
     : '';
   const focusHint = (!selected.length || canAddMaint)
     ? ''
-    : `<div style="font-size:11px; color:#666; background:#fff; border:1px solid #FFE0B2; border-radius:8px; padding:8px; line-height:1.4; margin-bottom:4px;">車両・道具は症状・整備内容・部品のマスタ登録対象外です。この記録用に直接入力できます。</div>`;
+    : `<div style="font-size:11px; color:#666; background:#fff; border:1px solid #FFE0B2; border-radius:8px; padding:8px; line-height:1.4; margin-bottom:4px;">車両・道具は症状・整備内容・部品の候補登録対象外です。農機を選んでください。</div>`;
   const detailsHtml = selected.length
-    ? `${focusTabs}${focusHint}
-    ${window.buildBulkWorkMemoMaintenanceFieldChipsHtml_(uid, 'maintenanceSymptom', '症状', window.getBulkWorkMemoMaintenanceSymptomOptions_(d), focusDetail.symptom, 'orange', { canAdd: canAddMaint })}
-    ${window.buildBulkWorkMemoMaintenanceFieldChipsHtml_(uid, 'maintenanceContent', '整備内容', window.getBulkWorkMemoMaintenanceContentOptions_(d), focusDetail.content, 'green', { canAdd: canAddMaint })}
-    ${window.buildBulkWorkMemoMaintenanceFieldChipsHtml_(uid, 'maintenanceParts', '交換部品名', window.getBulkWorkMemoMaintenancePartsOptions_(d), focusDetail.parts, 'blue', { canAdd: canAddMaint })}`
+    ? (canAddMaint
+      ? `${focusTabs}${focusHint}
+    ${window.buildBulkWorkMemoMaintenanceFieldChipsHtml_(uid, 'maintenanceSymptom', '症状', window.getBulkWorkMemoMaintenanceSymptomOptions_(d), focusDetail.symptom, 'orange', { canAdd: true })}
+    ${window.buildBulkWorkMemoMaintenanceFieldChipsHtml_(uid, 'maintenanceContent', '整備内容', window.getBulkWorkMemoMaintenanceContentOptions_(d), focusDetail.content, 'green', { canAdd: true })}
+    ${window.buildBulkWorkMemoMaintenanceFieldChipsHtml_(uid, 'maintenanceParts', '交換部品名', window.getBulkWorkMemoMaintenancePartsOptions_(d), focusDetail.parts, 'blue', { canAdd: !!String(focusDetail.content || '').trim(), contentHint: String(focusDetail.content || '').trim() })}`
+      : `${focusTabs}${focusHint}`)
     : `<div style="font-size:11px; color:#888; padding:4px 0;">先に整備対象を選ぶと、機械ごとに症状・整備内容・交換部品を登録できます。</div>`;
   if (collapsed) {
     const summaryRows = selected.map(t => {
@@ -31809,6 +32174,22 @@ window.pickBulkWorkMemoMaintenanceField_ = (uid, field, value) => {
     const cur = window.getBulkWorkMemoMaintDetail_(row, focusId)[detailKey] || '';
     const nextVal = (String(cur).trim() === next) ? '' : next;
     window.setBulkWorkMemoMaintDetailField_(row, focusId, detailKey, nextVal);
+    // 整備内容を変えたら、紐づかない交換部品の選択を外す
+    if (detailKey === 'content') {
+      const detail = window.getBulkWorkMemoMaintDetail_(row, focusId);
+      const partsCur = String(detail.parts || '').trim();
+      if (partsCur) {
+        const machine = (typeof window.resolveBulkWorkMemoMaintMachine_ === 'function')
+          ? window.resolveBulkWorkMemoMaintMachine_(focusId)
+          : null;
+        const opts = (machine && window.getMachineMaintenanceOptions_)
+          ? (window.getMachineMaintenanceOptions_(machine, 'parts', '', { content: nextVal }) || [])
+          : [];
+        if (opts.indexOf(partsCur) < 0) {
+          window.setBulkWorkMemoMaintDetailField_(row, focusId, 'parts', '');
+        }
+      }
+    }
   } else {
     row[key] = (String(row[key] || '').trim() === next) ? '' : next;
   }
@@ -31884,10 +32265,18 @@ window.addBulkWorkMemoMaintOption_ = async (uid, kind) => {
   }
   const focusId = String(machine.id);
   row._maintFocusId = focusId;
+  const focusDetail = (typeof window.getBulkWorkMemoMaintDetail_ === 'function')
+    ? window.getBulkWorkMemoMaintDetail_(row, focusId)
+    : {};
+  const contentName = String(focusDetail.content || '').trim();
+  if (kind === 'parts' && !contentName) {
+    if (typeof customAlert === 'function') customAlert('先に整備内容を選んでください。交換部品はその整備内容ごとに登録します。');
+    return;
+  }
   const prompts = {
     symptoms: 'この機械に追加する「症状」名 (例: ベルトゆるみ):',
     maintenanceContents: 'この機械に追加する「整備内容」 (例: 定期点検・清掃):',
-    parts: 'この機械に追加する交換部品名:'
+    parts: `「${contentName}」に追加する交換部品名:`
   };
   const detailKey = kind === 'symptoms' ? 'symptom'
     : kind === 'maintenanceContents' ? 'content'
@@ -31896,8 +32285,18 @@ window.addBulkWorkMemoMaintOption_ = async (uid, kind) => {
   const inputName = await customPrompt(prompts[kind], '');
   if (!inputName || !String(inputName).trim()) return;
   const name = String(inputName).trim();
+  // 整備内容名と同名の部品登録は禁止（切り離し）
+  if (kind === 'parts') {
+    const contents = (typeof window.getMachineMaintenanceOptions_ === 'function')
+      ? (window.getMachineMaintenanceOptions_(machine, 'maintenanceContents', '') || [])
+      : [];
+    if (contents.indexOf(name) >= 0) {
+      if (typeof customAlert === 'function') customAlert('整備内容と同じ名前は交換部品に登録できません。部品名を入力してください。');
+      return;
+    }
+  }
   const known = (typeof window.getMachineMaintenanceOptions_ === 'function')
-    ? (window.getMachineMaintenanceOptions_(machine, kind, '') || [])
+    ? (window.getMachineMaintenanceOptions_(machine, kind, '', kind === 'parts' ? { content: contentName } : {}) || [])
     : [];
   if (known.includes(name)) {
     window.setBulkWorkMemoMaintDetailField_(row, focusId, detailKey, name);
@@ -31911,10 +32310,10 @@ window.addBulkWorkMemoMaintOption_ = async (uid, kind) => {
     } else if (kind === 'maintenanceContents') {
       await callGAS('addMachineMaintenanceContent', { machineId: machine.id, newContent: name });
     } else if (kind === 'parts') {
-      await callGAS('addMachinePart', { machineId: machine.id, newPart: name });
+      await callGAS('addMachinePart', { machineId: machine.id, newPart: name, contentName: contentName });
     }
     if (typeof window.appendMachineMaintOptionLocal_ === 'function') {
-      window.appendMachineMaintOptionLocal_(machine, kind, name);
+      window.appendMachineMaintOptionLocal_(machine, kind, name, kind === 'parts' ? { content: contentName } : undefined);
     }
     window.setBulkWorkMemoMaintDetailField_(row, focusId, detailKey, name);
     window.refreshBulkWorkMemoExtras_(uid);
@@ -31922,11 +32321,119 @@ window.addBulkWorkMemoMaintOption_ = async (uid, kind) => {
       ? window.buildEquipmentDisplayLabel_(machine)
       : (machine.name || '');
     if (typeof customAlert === 'function') {
-      customAlert(`✅ 「${label || 'この機械'}」に「${name}」を登録しました。次回から候補に出ます。`);
+      if (kind === 'parts') {
+        customAlert(`✅ 「${contentName}」に部品「${name}」を登録しました。`);
+      } else {
+        customAlert(`✅ 「${label || 'この機械'}」に「${name}」を登録しました。次回から候補に出ます。`);
+      }
     }
   } catch (e) {
     if (typeof customAlert === 'function') customAlert('登録に失敗しました: ' + (e && e.message ? e.message : e));
   }
+};
+
+/** 一括入力：症状・整備内容・交換部品の編集・削除 */
+window.manageBulkWorkMemoMaintOption_ = (uid, kind) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  const machine = (typeof window.getBulkWorkMemoMaintFocusMachine_ === 'function')
+    ? window.getBulkWorkMemoMaintFocusMachine_(row)
+    : null;
+  if (!machine || !machine.id || machine.isTool || machine.isVehicle) {
+    if (typeof customAlert === 'function') customAlert('先に農機を選んでください（車両・道具には候補登録できません）。');
+    return;
+  }
+  if (typeof window.showMaintenanceMasterManageModal !== 'function') {
+    if (typeof customAlert === 'function') customAlert('編集画面を開けませんでした。');
+    return;
+  }
+  const focusId = String(machine.id);
+  row._maintFocusId = focusId;
+  const focusDetail = (typeof window.getBulkWorkMemoMaintDetail_ === 'function')
+    ? window.getBulkWorkMemoMaintDetail_(row, focusId)
+    : {};
+  const contentName = String(focusDetail.content || '').trim();
+  if (kind === 'parts' && !contentName) {
+    if (typeof customAlert === 'function') customAlert('先に整備内容を選んでください。交換部品はその整備内容ごとに管理します。');
+    return;
+  }
+  const titles = {
+    symptoms: `症状（${machine.name || 'この機械'}）`,
+    maintenanceContents: `整備内容（${machine.name || 'この機械'}）`,
+    parts: `交換部品（${contentName}）`
+  };
+  const detailKey = kind === 'symptoms' ? 'symptom'
+    : kind === 'maintenanceContents' ? 'content'
+    : kind === 'parts' ? 'parts' : '';
+  const editPrompt = kind === 'symptoms' ? '症状の名称を編集:'
+    : kind === 'maintenanceContents' ? '整備内容の名称を編集:'
+    : '交換部品名の名称を編集:';
+  const deleteLabel = kind === 'symptoms' ? '症状'
+    : kind === 'maintenanceContents' ? '整備内容'
+    : '交換部品';
+  if (!detailKey || !titles[kind]) return;
+  const items = (typeof window.getMachineMaintenanceOptions_ === 'function')
+    ? (window.getMachineMaintenanceOptions_(machine, kind, '', kind === 'parts' ? { content: contentName } : {}) || [])
+    : [];
+  const refreshAfter = () => {
+    if (typeof window.refreshBulkWorkMemoExtras_ === 'function') {
+      window.refreshBulkWorkMemoExtras_(uid);
+    }
+  };
+  const clearIfSelected = (removedName) => {
+    const cur = (typeof window.getBulkWorkMemoMaintDetail_ === 'function')
+      ? window.getBulkWorkMemoMaintDetail_(row, focusId)
+      : {};
+    if (String(cur[detailKey] || '').trim() === String(removedName || '').trim()) {
+      window.setBulkWorkMemoMaintDetailField_(row, focusId, detailKey, '');
+    }
+  };
+  const renameIfSelected = (oldName, newName) => {
+    const cur = (typeof window.getBulkWorkMemoMaintDetail_ === 'function')
+      ? window.getBulkWorkMemoMaintDetail_(row, focusId)
+      : {};
+    if (String(cur[detailKey] || '').trim() === String(oldName || '').trim()) {
+      window.setBulkWorkMemoMaintDetailField_(row, focusId, detailKey, newName);
+    }
+  };
+  window.showMaintenanceMasterManageModal({
+    title: titles[kind],
+    items: items,
+    onAdd: () => window.addBulkWorkMemoMaintOption_(uid, kind),
+    onEdit: async (oldName) => {
+      const newName = await customPrompt(editPrompt, oldName);
+      if (!newName || !String(newName).trim() || String(newName).trim() === oldName) return;
+      const next = String(newName).trim();
+      if (kind === 'symptoms' && typeof window.editSymptomMaster === 'function') {
+        await window.editSymptomMaster(oldName, next, machine);
+      } else if (kind === 'maintenanceContents' && typeof window.editMaintenanceContentMaster === 'function') {
+        await window.editMaintenanceContentMaster(oldName, next, machine);
+      } else if (kind === 'parts' && typeof window.editMachinePartMaster === 'function') {
+        await window.editMachinePartMaster(oldName, next, machine, contentName);
+      } else {
+        return;
+      }
+      renameIfSelected(oldName, next);
+      refreshAfter();
+    },
+    onDelete: async (targetName) => {
+      const msg = kind === 'parts'
+        ? `${deleteLabel}「${targetName}」を「${contentName}」から削除しますか？`
+        : `${deleteLabel}「${targetName}」をこの機械から削除しますか？`;
+      if (!(await customConfirm(msg))) return;
+      if (kind === 'symptoms' && typeof window.deleteSymptomMaster === 'function') {
+        await window.deleteSymptomMaster(targetName, machine);
+      } else if (kind === 'maintenanceContents' && typeof window.deleteMaintenanceContentMaster === 'function') {
+        await window.deleteMaintenanceContentMaster(targetName, machine);
+      } else if (kind === 'parts' && typeof window.deleteMachinePartMaster === 'function') {
+        await window.deleteMachinePartMaster(targetName, machine, contentName);
+      } else {
+        return;
+      }
+      clearIfSelected(targetName);
+      refreshAfter();
+    }
+  });
 };
 
 window.pickBulkWorkMemoMaintenanceTarget_ = (uid, id, name, kind) => {
@@ -32053,9 +32560,14 @@ window.buildBulkWorkMemoMaintenanceMasterSideEffects_ = (d, queued) => {
     return { id: String(t.id), machine };
   }).filter(Boolean);
 
-  const resolveKnown = (machine, field) => {
+  const resolveKnown = (machine, field, contentName) => {
     if (window.getMachineMaintenanceOptions_) {
-      return window.getMachineMaintenanceOptions_(machine, field, '') || [];
+      return window.getMachineMaintenanceOptions_(
+        machine,
+        field,
+        '',
+        field === 'parts' ? { content: contentName || '' } : {}
+      ) || [];
     }
     return [];
   };
@@ -32104,19 +32616,18 @@ window.buildBulkWorkMemoMaintenanceMasterSideEffects_ = (d, queued) => {
 
     const parts = String(detail.parts || '').trim();
     if (parts) {
-      const key = id + '::' + parts;
+      const contentName = String(detail.content || '').trim();
+      const key = id + '::' + contentName + '::' + parts;
       if (!q.parts.has(key)) {
-        const known = resolveKnown(machine, 'parts');
+        const known = resolveKnown(machine, 'parts', contentName);
         if (!(known || []).includes(parts)) {
           q.parts.add(key);
-          fx.push({ action: 'addMachinePart', params: { machineId: id, newPart: parts } });
+          fx.push({
+            action: 'addMachinePart',
+            params: { machineId: id, newPart: parts, contentName: contentName }
+          });
           if (typeof window.appendMachineMaintOptionLocal_ === 'function') {
-            window.appendMachineMaintOptionLocal_(machine, 'parts', parts);
-          } else {
-            const currentParts = machine.parts ? machine.parts.split(/[,、]/).map(p => p.trim()) : [];
-            if (!currentParts.includes(parts)) {
-              machine.parts = machine.parts ? machine.parts + ',' + parts : parts;
-            }
+            window.appendMachineMaintOptionLocal_(machine, 'parts', parts, { content: contentName });
           }
         }
       }
@@ -32756,7 +33267,7 @@ window.refreshBulkWorkMemoExtras_ = (uid) => {
   if (extras) extras.innerHTML = window.buildBulkWorkMemoExtrasHtml_(row, uid);
 };
 
-/** 一括入力：詳細作業の編集・登録（作業マスタ編集へ） */
+/** 一括入力：詳細作業の編集・登録（一覧＋追加／編集／削除） */
 window.openBulkWorkMemoDetailEditor_ = (uid, workName) => {
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
   const wName = String(workName || (row && row.workName) || '').trim();
@@ -32768,20 +33279,131 @@ window.openBulkWorkMemoDetailEditor_ = (uid, workName) => {
   const crops = row && typeof window.getBulkWorkMemoCropNames_ === 'function'
     ? window.getBulkWorkMemoCropNames_(row)
     : [];
-  const cropKey = crops.length
-    ? (typeof window.normalizeWorkCropKey === 'function' ? window.normalizeWorkCropKey(crops[0]) : crops[0])
-    : '__common__';
-
-  // 詳細の追加モーダルがあれば優先（登録が速い）。なければ作業マスタ編集
+  let cropKey = '__common__';
+  if (crops.length) {
+    cropKey = (typeof window.normalizeWorkCropKey === 'function')
+      ? window.normalizeWorkCropKey(crops[0])
+      : crops[0];
+  } else if (typeof window.resolveDetailWorkCropKey_ === 'function') {
+    cropKey = window.resolveDetailWorkCropKey_('');
+  }
+  if (typeof window.openBulkWorkMemoDetailManageModal_ === 'function') {
+    window.openBulkWorkMemoDetailManageModal_(uid, wName, cropKey);
+    return;
+  }
   if (typeof window.adminAddDetailWork === 'function') {
     window.adminAddDetailWork(wName, cropKey);
     return;
   }
-  if (typeof window.adminEditWorkName === 'function') {
-    window.adminEditWorkName(wName);
+  if (typeof customAlert === 'function') customAlert('詳細作業の編集画面を開けませんでした。');
+};
+
+/** 詳細作業マスタ管理（追加・編集・削除） */
+window.openBulkWorkMemoDetailManageModal_ = (uid, workName, cropKey) => {
+  const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
+  if (userRole !== '管理者') {
+    if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
     return;
   }
-  if (typeof customAlert === 'function') customAlert('詳細作業の編集画面を開けませんでした。');
+  const wName = String(workName || '').trim();
+  if (!wName) return;
+  const resolvedCrop = (typeof window.resolveDetailWorkCropKey_ === 'function')
+    ? window.resolveDetailWorkCropKey_(cropKey)
+    : (typeof window.normalizeWorkCropKey === 'function'
+      ? window.normalizeWorkCropKey(cropKey || '__common__')
+      : String(cropKey || '__common__'));
+  window._bulkDetailManageContext = {
+    uid: String(uid || '').trim(),
+    workName: wName,
+    cropKey: resolvedCrop
+  };
+  window.renderBulkWorkMemoDetailManageModal_();
+};
+
+window.closeBulkWorkMemoDetailManageModal_ = () => {
+  const modal = document.getElementById('bulkDetailWorkManageModal');
+  if (modal) modal.remove();
+};
+
+window.renderBulkWorkMemoDetailManageModal_ = () => {
+  const ctx = window._bulkDetailManageContext || {};
+  const wName = String(ctx.workName || '').trim();
+  const cropKey = String(ctx.cropKey || '__common__').trim() || '__common__';
+  const uid = String(ctx.uid || '').trim();
+  if (!wName) return;
+
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const escJs = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const details = (typeof window.getAdminEditableDetailNames_ === 'function')
+    ? (window.getAdminEditableDetailNames_(wName, cropKey) || [])
+    : [];
+  const cropLabel = (typeof window.getWorkCropLabel === 'function')
+    ? window.getWorkCropLabel(cropKey)
+    : cropKey;
+
+  // 一括入力の作物が複数なら切り替え可能にする
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  const cropNames = (row && typeof window.getBulkWorkMemoCropNames_ === 'function')
+    ? window.getBulkWorkMemoCropNames_(row)
+    : [];
+  const cropKeys = cropNames.length
+    ? cropNames.map(n => (typeof window.normalizeWorkCropKey === 'function' ? window.normalizeWorkCropKey(n) : n))
+    : [cropKey];
+  const uniqueCropKeys = Array.from(new Set(cropKeys.filter(Boolean)));
+  if (uniqueCropKeys.indexOf(cropKey) < 0) uniqueCropKeys.unshift(cropKey);
+
+  const cropTabs = uniqueCropKeys.length > 1
+    ? `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;">${uniqueCropKeys.map(k => {
+        const on = k === cropKey;
+        const label = (typeof window.getWorkCropLabel === 'function') ? window.getWorkCropLabel(k) : k;
+        return `<button type="button" onclick="switchBulkWorkMemoDetailManageCrop_('${escJs(k)}')" style="padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? '#5E35B1' : '#D1C4E9'}; background:${on ? '#EDE7F6' : '#fff'}; color:#4527A0;">${esc(label)}</button>`;
+      }).join('')}</div>`
+    : `<div style="font-size:12px; color:#666; margin-bottom:10px;">登録先: <b>${esc(cropLabel)}</b></div>`;
+
+  const listHtml = details.length
+    ? details.map((name, idx) => {
+        return `<div style="display:flex; align-items:center; gap:8px; padding:10px 12px; background:#f8fbff; border:1px solid #c5cae9; border-radius:8px; margin-bottom:8px;">
+          <div style="flex:1; min-width:0; font-size:14px; font-weight:bold; color:#1a237e; word-break:break-word;">${esc(name)}</div>
+          <button type="button" onclick="adminEditDetailWork('${escJs(wName)}', ${idx}, '${escJs(cropKey)}')" title="編集" style="background:#fff; color:#1976d2; border:1px solid #bbdefb; border-radius:6px; padding:6px 10px; font-weight:bold; font-size:12px; cursor:pointer;">✏️ 編集</button>
+          <button type="button" onclick="adminDeleteDetailWork('${escJs(wName)}', ${idx}, '${escJs(cropKey)}')" title="削除" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:6px; padding:6px 10px; font-weight:bold; font-size:12px; cursor:pointer;">🗑️ 削除</button>
+        </div>`;
+      }).join('')
+    : `<div style="padding:14px; text-align:center; background:#fafafa; border:1px dashed #b39ddb; border-radius:8px; color:#666; font-size:13px; line-height:1.45; margin-bottom:8px;">まだ詳細作業がありません。<br>下の「＋ 追加」から登録できます。</div>`;
+
+  let modal = document.getElementById('bulkDetailWorkManageModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'bulkDetailWorkManageModal';
+    document.body.appendChild(modal);
+  }
+  modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:12150; display:flex; justify-content:center; align-items:center; padding:16px; box-sizing:border-box;';
+  modal.onclick = (e) => {
+    if (e.target === modal) window.closeBulkWorkMemoDetailManageModal_();
+  };
+  modal.innerHTML = `<div style="background:#fff; color:#333; width:100%; max-width:480px; max-height:85vh; overflow:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.25); box-sizing:border-box;" onclick="event.stopPropagation()">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:8px;">
+      <div>
+        <h3 style="margin:0 0 4px; font-size:16px; color:#5E35B1;">📋 詳細作業を編集・登録</h3>
+        <div style="font-size:12px; color:#666;">作業名: <b>${esc(wName)}</b></div>
+      </div>
+      <button type="button" onclick="closeBulkWorkMemoDetailManageModal_()" style="background:#eee; border:none; border-radius:8px; padding:6px 10px; font-weight:bold; cursor:pointer;">閉じる</button>
+    </div>
+    ${cropTabs}
+    <div style="margin-bottom:12px;">${listHtml}</div>
+    <button type="button" onclick="adminAddDetailWork('${escJs(wName)}', '${escJs(cropKey)}')" style="width:100%; box-sizing:border-box; background:#5E35B1; color:#fff; border:none; border-radius:10px; padding:12px; font-size:14px; font-weight:bold; cursor:pointer;">＋ 詳細作業を追加</button>
+  </div>`;
+};
+
+window.switchBulkWorkMemoDetailManageCrop_ = (cropKey) => {
+  if (!window._bulkDetailManageContext) return;
+  window._bulkDetailManageContext.cropKey = String(cropKey || '__common__');
+  window.renderBulkWorkMemoDetailManageModal_();
+};
+
+window.refreshBulkWorkMemoDetailManageModalIfOpen_ = () => {
+  if (!window._bulkDetailManageContext) return;
+  if (!document.getElementById('bulkDetailWorkManageModal')) return;
+  window.renderBulkWorkMemoDetailManageModal_();
 };
 
 /** 作物名チップの選択状態だけ更新（モーダル全体を再描画しない） */
@@ -33602,14 +34224,18 @@ window.buildBulkWorkMemoWorkPickSectionHtml_ = (d, uid) => {
       : (!workListOpen ? `<div style="font-size:11px; color:#3949AB; margin:0 0 8px;">カテゴリ: <b>${esc(selectedCat)}</b>（作業名から自動）</div>` : ''))
     : '';
   const closeBtn = cur
-    ? `<button type="button" onclick="collapseBulkWorkMemoWorkPick_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin:0 0 8px; padding:10px 12px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:1px solid ${isMeta ? '#CE93D8' : '#FFCC80'}; background:${isMeta ? '#F3E5F5' : '#FFF3E0'}; color:${isMeta ? '#6A1B9A' : '#E65100'};">閉じる（選択を確定）</button>`
+    ? `<button type="button" onclick="collapseBulkWorkMemoWorkPick_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin:0; padding:10px 12px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:1px solid ${isMeta ? '#CE93D8' : '#FFCC80'}; background:${isMeta ? '#F3E5F5' : '#FFF3E0'}; color:${isMeta ? '#6A1B9A' : '#E65100'};">閉じる（選択を確定）</button>`
     : '';
   const metaAddBtn = (isMeta && cur && typeof window.buildBulkWorkMemoPrepAddItemBtnHtml_ === 'function')
     ? window.buildBulkWorkMemoPrepAddItemBtnHtml_(d, uid)
     : '';
-  return `${metaHtml}${suggestionBlock}
-    ${window.buildBulkWorkMemoWorkManualPickHtml_(d, uid)}
-    ${catLine}${closeBtn}${metaAddBtn}`;
+  const manualHtml = window.buildBulkWorkMemoWorkManualPickHtml_(d, uid) || '';
+  // 「手動で探して登録」〜「閉じる」を薄いオレンジ枠でまとめて見やすくする
+  const pickTail = `${manualHtml}${catLine}${closeBtn}`;
+  const framedPick = String(pickTail).replace(/\s+/g, '')
+    ? `<div style="margin:0 0 10px; padding:12px; border:2px solid #FFCC80; border-radius:12px; background:#FFF8F0; box-sizing:border-box;">${pickTail}</div>`
+    : '';
+  return `${metaHtml}${suggestionBlock}${framedPick}${metaAddBtn}`;
 };
 
 window.buildBulkWorkMemoCropPickSectionHtml_ = (d, uid) => {
