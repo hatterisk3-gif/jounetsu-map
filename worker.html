@@ -15,7 +15,8 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
   <script>
-    // 保存済みセッションがあるときは、CSS読込前からログイン画面を隠さない（チラつき防止）    (function () {
+    // 保存済みセッションがあるときは、CSS読込前からログイン画面を隠さない（チラつき防止）
+    (function () {
       try {
         if (localStorage.getItem('passionMapUserId') && localStorage.getItem('passionMapUserPw')) {
           document.documentElement.classList.add('worker-has-session');
@@ -49,7 +50,7 @@
   <div id="mapDataLoadingOverlay" class="is-visible worker-boot-loading" aria-busy="true" aria-live="polite">
     <div class="map-data-loading-spinner" aria-hidden="true"></div>
     <div id="mapDataLoadingText" style="font-weight:bold;font-size:16px;text-align:center;padding:0 20px;">アプリを準備中...</div>
-    <div id="mapDataLoadingSub" style="font-size:12px;color:#bbb;margin-top:8px;text-align:center;">ログイン状態を確認しています/div>
+    <div id="mapDataLoadingSub" style="font-size:12px;color:#bbb;margin-top:8px;text-align:center;">ログイン状態を確認しています</div>
     <div id="mapDataLoadingProgress" class="is-visible is-indeterminate"><div id="mapDataLoadingBar"></div></div>
     <div id="mapDataLoadingPercent" style="display:none;"></div>
   </div>
@@ -76,7 +77,7 @@
         <p style="font-size:12px; color:#666; margin:0 0 10px 0; line-height:1.4; text-align:center;">作業員アカウントを作成します。<br>権限変更は管理者マイページから行えます。</p>
         <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin:0 5% 4px;">ユーザー名</label>
         <input type="text" id="signupUserName" class="login-input" placeholder="ログインに使う名前" autocomplete="username">
-        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin:0 5% 4px;">パスワード（6文字以上）/label>
+        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin:0 5% 4px;">パスワード（6文字以上）</label>
         <input type="password" id="signupPassword" class="login-input" placeholder="パスワード" autocomplete="new-password">
         <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin:0 5% 4px;">拠点名</label>
         <select id="signupLocation" class="login-input" style="background:#fff;">
@@ -249,8 +250,8 @@
         <button
           onclick="document.getElementById('recordTypeSelectModal').style.display='none'; openBulkWorkMemoModal_()"
           style="background: #FFF3E0; color: #E65100; padding: 15px; border-radius: 8px; border: 2px solid #FFB74D; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); text-align:left;">
-          <div>📋 メモから一括入力/div>
-          <div style="font-size:11px; font-weight:normal; margin-top:4px; line-height:1.35; opacity:0.9;">時間ごとのメモを貼り付け → 1件ずつ確認・編集して保存/div>
+          <div>📋 メモから一括入力</div>
+          <div style="font-size:11px; font-weight:normal; margin-top:4px; line-height:1.35; opacity:0.9;">時間ごとのメモを貼り付け → 1件ずつ確認・編集して保存</div>
         </button>
 
         <button
@@ -261,7 +262,7 @@
           onclick="document.getElementById('recordTypeSelectModal').style.display='none'; openRestBreakRecord()"
           style="background: #FFF3E0; color: #E65100; padding: 15px; border-radius: 8px; border: 2px solid #FF9800; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">☕          休憩時間を登録</button>
         <div style="background:#F3E5F5; border:1px solid #CE93D8; border-radius:8px; padding:10px; text-align:left;">
-          <div style="font-size:12px; font-weight:bold; color:#6A1B9A; margin-bottom:8px;">🌱 専用記録（保存後に作業記録へ続けられます）/div>
+          <div style="font-size:12px; font-weight:bold; color:#6A1B9A; margin-bottom:8px;">🌱 専用記録（保存後に作業記録へ続けられます）</div>
           <div style="display:flex; flex-direction:column; gap:8px;">
             <button
               onclick="document.getElementById('recordTypeSelectModal').style.display='none'; openSowingRecord()"
@@ -320,7 +321,7 @@
     style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:12000; flex-direction:column; justify-content:center; align-items:center; padding:16px; box-sizing:border-box;">
     <div
       style="background:#fff; color:#333; padding:20px; border-radius:12px; width:100%; max-width:320px; text-align:center; box-shadow:0 4px 20px rgba(0,0,0,0.35); box-sizing:border-box;">
-      <div id="timePickerTitle" style="font-size:16px; font-weight:bold; margin-bottom:16px;">時間を設定/div>
+      <div id="timePickerTitle" style="font-size:16px; font-weight:bold; margin-bottom:16px;">時間を設定</div>
       <div style="display:flex; gap:10px; align-items:center; justify-content:center; margin-bottom:20px;">
         <select id="timePickerHour" class="app-time-select" aria-label="時"></select>
         <span style="font-size:28px; font-weight:bold; line-height:1;">:</span>
@@ -340,18 +341,18 @@
     <div style="width:100%; text-align:center; font-weight:bold; font-size:14px; margin-bottom:4px;"
       id="mapSelectCount">🗺️記録する対象をタップしてください</div>
     <div style="width:100%; text-align:center; font-size:11px; color:#b2dfdb; margin-bottom:6px;"
-      id="mapSelectHint">CAD畝がある圃場は畝・区画単位で選べます/div>
+      id="mapSelectHint">CAD畝がある圃場は畝・区画単位で選べます</div>
     <div id="mapSelectSplitButtons"
       style="display:none; width:100%; gap:6px; flex-wrap:wrap; justify-content:center; margin-bottom:6px;"></div>
     <div id="mapSelectRidgeActions"
       style="display:none; width:100%; gap:6px; flex-wrap:wrap; justify-content:center; margin-bottom:6px;">
       <button type="button" onclick="selectWholeFieldInWorkMap()"
-        style="flex:1; min-width:120px; background:#FF9800; color:#fff; border:none; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">地図全体を選択/button>
+        style="flex:1; min-width:120px; background:#FF9800; color:#fff; border:none; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">地図全体を選択</button>
       <button type="button" onclick="exitWorkRidgeSelectionView()"
         style="flex:1; min-width:120px; background:#607D8B; color:#fff; border:none; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">畝選択を閉じる</button>
     </div>
     <button onclick="applyMapSelect()"
-      style="flex:1; background:#4CAF50; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">決定する/button>
+      style="flex:1; background:#4CAF50; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">決定する</button>
     <button onclick="cancelMapSelect()"
       style="flex:1; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">キャンセル</button>
   </div>
@@ -363,7 +364,7 @@
         <h3 style="margin:0; color:#4CAF50; font-size:18px;">✉️システム管理者へ連絡</h3>
         <span onclick="closeFeedback()" style="cursor:pointer; font-size:24px; color:#999; line-height:1;">×</span>
       </div>
-      <p style="font-size:12px; color:#aaa; margin-top:0;">バグの報告や機能追加の要望などをご記入ください。/p>
+      <p style="font-size:12px; color:#aaa; margin-top:0;">バグの報告や機能追加の要望などをご記入ください。</p>
       <textarea id="feedbackText" rows="6" placeholder="例：○○画面でエラーが出ます。／○○機能を追加してほしいです、E
         style="width:100%; padding:10px; border-radius:4px; border:1px solid #555; background:#333; color:#fff; box-sizing:border-box; margin-bottom:15px; resize:none;"></textarea>
       <button id="sendFeedbackBtn" onclick="sendFeedback()"
@@ -400,11 +401,11 @@
           <button type="button" onclick="closeAccountMenu(); openMyPage();"
             style="width:100%; background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">👤 マイページ</button>
           <button type="button" id="accountMenuScheduleBtn" onclick="closeAccountMenu(); openScheduleFromWorker();"
-            style="display:none; width:100%; background:#E3F2FD; color:#1565C0; border:1px solid #1565C0; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">📅 マネジメント/button>
+            style="display:none; width:100%; background:#E3F2FD; color:#1565C0; border:1px solid #1565C0; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">📅 マネジメント</button>
           <button type="button" id="accountMenuAdminBtn" onclick="closeAccountMenu(); openAdminFromWorker();"
-            style="display:none; width:100%; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">🗺️管理E面</button>
+            style="display:none; width:100%; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">🗺️管理画面</button>
           <button type="button" onclick="closeAccountMenu(); executeLogout();"
-            style="width:100%; background:#F44336; color:#fff; border:none; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; text-align:left;">🚪 ログアウト/button>
+            style="width:100%; background:#F44336; color:#fff; border:none; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; text-align:left;">🚪 ログアウト</button>
         </div>
       </div>
     </div>
@@ -443,7 +444,7 @@
         <span style="cursor:pointer; font-size:22px; line-height:1;" onclick="closePsGanttAddModal_()">×</span>
       </div>
       <div style="display:flex; gap:6px; margin-bottom:12px;">
-        <button type="button" id="psGanttAddTypeDay" class="ps-gantt-add-type active" onclick="setPsGanttAddType_('dayplan')">⏰ 時間予定/button>
+        <button type="button" id="psGanttAddTypeDay" class="ps-gantt-add-type active" onclick="setPsGanttAddType_('dayplan')">⏰ 時間予定</button>
         <button type="button" id="psGanttAddTypeTask" class="ps-gantt-add-type" onclick="setPsGanttAddType_('task')">✅ タスク内容</button>
       </div>
       <div id="psGanttAddDayFields">
@@ -451,7 +452,7 @@
         <input type="date" id="psGanttAddDate" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px;">
         <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">開始時刻</label>
         <input type="time" id="psGanttAddStartTime" value="09:00" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px;">
-        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">所要時間（・E/label>
+        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">所要時間（分）</label>
         <input type="number" id="psGanttAddDuration" value="30" min="15" step="15" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px;">
         <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">作業名</label>
         <input type="text" id="psGanttAddWorkName" placeholder="例：圃場点検" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px;">
@@ -461,7 +462,7 @@
       <div id="psGanttAddTaskFields" style="display:none;">
         <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">開始日</label>
         <input type="date" id="psGanttAddTaskDate" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px;">
-        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">期限任意）/label>
+        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">期限（任意）</label>
         <input type="date" id="psGanttAddTaskDeadline" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px;">
         <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">タスク内容</label>
         <textarea id="psGanttAddTaskText" rows="3" placeholder="やることを入力..." style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px; resize:vertical; font-family:inherit;"></textarea>
@@ -478,7 +479,7 @@
     style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.72); z-index:16000; justify-content:center; align-items:center;">
     <div style="width:96%; height:92%; background:#fff; border-radius:12px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 8px 28px rgba(0,0,0,0.35);">
       <div style="padding:10px 12px; background:#f5f5f5; border-bottom:1px solid #ddd; display:flex; justify-content:space-between; align-items:center; gap:8px;">
-        <div style="font-weight:bold; color:#E65100;">🚜 農業CAD（吸水ピン設定）/div>
+        <div style="font-weight:bold; color:#E65100;">🚜 農業CAD（吸水ピン設定）</div>
         <button type="button" onclick="closeAdminCadModal()"
           style="background:#f44336; color:#fff; border:none; padding:8px 14px; border-radius:6px; font-weight:bold; cursor:pointer;">閉じる</button>
       </div>
@@ -492,7 +493,7 @@
   <script src="machine-taxonomy.js?v=1788600000011"></script>
   <script src="weather-agri.js?v=1785489000300"></script>
   <script src="api-client.js?v=1788600000050"></script>
-  <script src="worker.js?v=1788600000045"></script>
+  <script src="worker.js?v=1788600000046"></script>
   <script src="tracking.js?v=1788600000042"></script>
   <script>
     if ('serviceWorker' in navigator) {
@@ -509,7 +510,8 @@
           el.setAttribute('aria-busy', 'false');
         }
         var login = document.getElementById('loginScreen');
-        // ログイン成功前／セッション確認中でなければログイン画面を出す        if (login && !window._workerLoginSucceeded && !window._workerLoginInFlight) {
+        // ログイン成功前／セッション確認中でなければログイン画面を出す
+        if (login && !window._workerLoginSucceeded && !window._workerLoginInFlight) {
           var hasSession = false;
           try {
             hasSession = !!(localStorage.getItem('passionMapUserId') && localStorage.getItem('passionMapUserPw'));
