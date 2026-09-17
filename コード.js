@@ -16919,10 +16919,47 @@ function migrateMachineMasterToNouki() {
   return migrated;
 }
 
+function ensureMachineMaintenanceSheet_() {
+  const headers = ['id', 'machineId', 'date', 'material', 'replaceParts', 'comment', 'photos'];
+  const sheet = getOrCreateSheet('MachineMaintenance', headers);
+  try {
+    const lastCol = Math.max(sheet.getLastColumn(), headers.length);
+    const existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    if (String(existing[0] || '') !== 'id') {
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    } else if (String(existing[6] || '') !== 'photos') {
+      sheet.getRange(1, 7).setValue('photos');
+    }
+  } catch (e) {}
+  return sheet;
+}
+
+function parseMachineMaintenancePhotos_(raw) {
+  if (raw == null || raw === '') return [];
+  if (Array.isArray(raw)) return raw.map(String).filter(Boolean);
+  const s = String(raw).trim();
+  if (!s || s === '[]') return [];
+  try {
+    const parsed = JSON.parse(s);
+    if (Array.isArray(parsed)) {
+      return parsed.map(function (u) {
+        if (typeof u === 'string') return u;
+        if (u && u.url) return String(u.url);
+        return '';
+      }).filter(Boolean);
+    }
+  } catch (e) {}
+  // カンマ区切りURL
+  if (s.indexOf('http') === 0) {
+    return s.split(/[\n,]/).map(function (x) { return String(x || '').trim(); }).filter(Boolean);
+  }
+  return [];
+}
+
 function machine_loadAll() {
   migrateMachineMasterToNouki();
   const masterSheet = ensureNoukiMasterSheet();
-  const maintSheet = getOrCreateSheet('MachineMaintenance', ['id', 'machineId', 'date', 'material', 'replaceParts', 'comment']);
+  const maintSheet = ensureMachineMaintenanceSheet_();
   const fuelSheet = getOrCreateSheet('MachineFuel', ['id', 'machineId', 'date', 'hourMeter', 'fuelAmount', 'fuelCanStatus', 'capCheck']);
 
   let machines = {};
@@ -16938,8 +16975,20 @@ function machine_loadAll() {
   let maintData = maintSheet.getDataRange().getValues();
   for (let i = 1; i < maintData.length; i++) {
     if (!maintData[i][0]) continue;
+    let dateVal = maintData[i][2];
+    if (Object.prototype.toString.call(dateVal) === '[object Date]' && !isNaN(dateVal.getTime())) {
+      dateVal = Utilities.formatDate(dateVal, Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd');
+    } else {
+      dateVal = String(dateVal || '').trim().slice(0, 10);
+    }
     maintenanceRecords.push({
-      id: maintData[i][0], machineId: maintData[i][1], date: maintData[i][2], material: maintData[i][3], replaceParts: maintData[i][4], comment: maintData[i][5]
+      id: maintData[i][0],
+      machineId: String(maintData[i][1] || ''),
+      date: dateVal,
+      material: maintData[i][3],
+      replaceParts: maintData[i][4],
+      comment: maintData[i][5],
+      photos: parseMachineMaintenancePhotos_(maintData[i][6])
     });
   }
 
@@ -17049,9 +17098,83 @@ function machine_saveFuelType(p) {
 }
 
 function machine_saveMaintenance(p) {
-  const sheet = getOrCreateSheet('MachineMaintenance');
-  sheet.appendRow([p.id, p.machineId, p.date, p.material, p.replaceParts, p.comment]);
-  return { success: true };
+  const sheet = ensureMachineMaintenanceSheet_();
+  let photoUrls = parseMachineMaintenancePhotos_(p.photoUrls || p.photosUrls || '');
+  if (Array.isArray(p.photoUrlList)) {
+    photoUrls = photoUrls.concat(p.photoUrlList.map(String).filter(Boolean));
+  }
+  // base64 アップロード（作業記録同期・整備登録から）
+  const photoObjs = Array.isArray(p.photos) ? p.photos : [];
+  for (let i = 0; i < photoObjs.length; i++) {
+    const obj = photoObjs[i];
+    if (!obj) continue;
+    if (typeof obj === 'string' && obj.indexOf('http') === 0) {
+      photoUrls.push(obj);
+      continue;
+    }
+    if (obj.url && String(obj.url).indexOf('http') === 0 && !obj.base64) {
+      photoUrls.push(String(obj.url));
+      continue;
+    }
+    const u = saveNoukiMachinePhoto_({
+      base64: obj.base64 || obj.photoBase64 || '',
+      filename: obj.filename || obj.photoFilename || ('maint_' + (i + 1) + '.jpg')
+    });
+    if (u) photoUrls.push(u);
+  }
+  if (p.photoBase64) {
+    const u = saveNoukiMachinePhoto_({
+      base64: p.photoBase64,
+      filename: p.photoFilename || 'maint.jpg'
+    });
+    if (u) photoUrls.push(u);
+  }
+  // 重複除去
+  const seen = {};
+  photoUrls = photoUrls.filter(function (u) {
+    const k = String(u || '').trim();
+    if (!k || seen[k]) return false;
+    seen[k] = true;
+    return true;
+  });
+
+  const rowValues = [
+    p.id,
+    p.machineId,
+    p.date,
+    p.material,
+    p.replaceParts,
+    p.comment,
+    JSON.stringify(photoUrls)
+  ];
+
+  // 同一 id なら上書き（再送で二重登録しない）
+  const recId = String(p.id || '').trim();
+  if (recId) {
+    const lastRow = sheet.getLastRow();
+    if (lastRow >= 2) {
+      const ids = sheet.getRange(2, 1, lastRow, 1).getValues();
+      for (let i = 0; i < ids.length; i++) {
+        if (String(ids[i][0] || '') === recId) {
+          const existingPhotos = parseMachineMaintenancePhotos_(sheet.getRange(i + 2, 7).getValue());
+          const mergedPhotos = photoUrls.length ? photoUrls : existingPhotos;
+          sheet.getRange(i + 2, 1, i + 2, 7).setValues([[
+            p.id,
+            p.machineId,
+            p.date,
+            p.material,
+            p.replaceParts,
+            p.comment,
+            JSON.stringify(mergedPhotos)
+          ]]);
+          return { success: true, photos: mergedPhotos, updated: true };
+        }
+      }
+    }
+  }
+
+  sheet.appendRow(rowValues);
+  return { success: true, photos: photoUrls };
 }
 
 function machine_saveFuel(p) {

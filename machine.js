@@ -1602,12 +1602,20 @@ function openMaintenanceHistoryModal() {
     let mRecords = maintenanceRecords.filter(r => r.machineId === currentMachineId);
     let historyHtml = mRecords.length === 0 ? "<p>整備履歴はありません。</p>" : "";
     mRecords.sort((a,b) => new Date(b.date) - new Date(a.date)).forEach(r => {
+        const photos = Array.isArray(r.photos) ? r.photos.filter(Boolean) : [];
+        const photosHtml = photos.length
+          ? `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;">${photos.map(url => {
+              const safe = String(url).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,"\\'");
+              return `<img src="${String(url).replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" alt="整備写真" onclick="window.open('${safe}','_blank')" style="width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid #ddd;cursor:pointer;">`;
+            }).join('')}</div>`
+          : '';
         historyHtml += `
         <div style="border-bottom:1px solid #ccc; padding:10px 0;">
             <div style="font-size:12px; color:#888;">${r.date}</div>
             <div style="font-weight:bold;">資材: ${r.material}</div>
             <div>部品: ${r.replaceParts || '-'}</div>
-            <div style="font-size:13px; margin-top:4px;">${r.comment}</div>
+            <div style="font-size:13px; margin-top:4px;">${r.comment || ''}</div>
+            ${photosHtml}
         </div>`;
     });
 
@@ -1630,6 +1638,7 @@ function openMaintenanceRegisterModal() {
     if (!m) return;
     
     let today = new Date().toISOString().split('T')[0];
+    window._maintRegPhotos = [];
     
     let html = buildDynamicOverlay('modalMaintReg', `
         <h3>🛠 整備登録</h3>
@@ -1651,6 +1660,13 @@ function openMaintenanceRegisterModal() {
             <label>コメント</label>
             <textarea id="maintComment" rows="3" placeholder="整備内容や気になった点など"></textarea>
         </div>
+        <div class="form-group">
+            <label>写真（任意・複数可）</label>
+            <div id="maintPhotoPreview" style="min-height:64px; background:#f5f5f5; border:1px dashed #bbb; border-radius:8px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; justify-content:center; padding:8px; margin-bottom:6px;">
+              <div style="color:#888; font-size:12px;">写真未選択</div>
+            </div>
+            <input type="file" id="maintPhotoInput" accept="image/*" multiple capture="environment" onchange="previewMaintRegPhotos_(this)">
+        </div>
         
         <div style="display:flex; gap:10px;">
             <button class="btn btn-register" style="flex:1;" onclick="saveMaintenance(this)">登録する</button>
@@ -1660,21 +1676,76 @@ function openMaintenanceRegisterModal() {
     document.getElementById('dynamicModals').innerHTML = html;
 }
 
+window.previewMaintRegPhotos_ = async function(input) {
+    const files = input && input.files ? Array.from(input.files) : [];
+    const preview = document.getElementById('maintPhotoPreview');
+    window._maintRegPhotos = [];
+    if (!files.length) {
+        if (preview) preview.innerHTML = '<div style="color:#888; font-size:12px;">写真未選択</div>';
+        return;
+    }
+    if (preview) preview.innerHTML = '<div style="color:#888; font-size:12px;">読み込み中...</div>';
+    const out = [];
+    const max = Math.min(files.length, 5);
+    for (let i = 0; i < max; i++) {
+        const file = files[i];
+        try {
+            const base64 = await new Promise((resolve, reject) => {
+                const r = new FileReader();
+                r.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const cvs = document.createElement('canvas');
+                        let w = img.width, h = img.height, maxW = 1200;
+                        if (w > h && w > maxW) { h *= maxW / w; w = maxW; }
+                        else if (h > maxW) { w *= maxW / h; h = maxW; }
+                        cvs.width = w; cvs.height = h;
+                        cvs.getContext('2d').drawImage(img, 0, 0, w, h);
+                        resolve(cvs.toDataURL('image/jpeg', 0.8));
+                    };
+                    img.onerror = () => reject(new Error('img'));
+                    img.src = e.target.result;
+                };
+                r.onerror = () => reject(new Error('file'));
+                r.readAsDataURL(file);
+            });
+            out.push({ filename: (file.name || ('maint_' + (i + 1) + '.jpg')).replace(/\s+/g, '_'), base64 });
+        } catch (e) {}
+    }
+    window._maintRegPhotos = out;
+    if (preview) {
+        preview.innerHTML = out.length
+          ? out.map(p => `<img src="${p.base64}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid #ccc;">`).join('')
+          : '<div style="color:#888; font-size:12px;">写真未選択</div>';
+    }
+};
+
 async function saveMaintenance(btn) {
+    const photosPayload = Array.isArray(window._maintRegPhotos) ? window._maintRegPhotos.slice() : [];
     let data = {
         id: "mr_" + new Date().getTime(),
         machineId: currentMachineId,
         date: document.getElementById('maintDate').value,
         material: document.getElementById('maintMaterial').value,
         replaceParts: document.getElementById('maintParts').value,
-        comment: document.getElementById('maintComment').value
+        comment: document.getElementById('maintComment').value,
+        photos: photosPayload
     };
     
     btn.disabled = true;
     showToast("保存中...");
     try {
-        await callGAS('machine_saveMaintenance', data);
-        maintenanceRecords.push(data);
+        const res = await callGAS('machine_saveMaintenance', data);
+        maintenanceRecords.push({
+            id: data.id,
+            machineId: data.machineId,
+            date: data.date,
+            material: data.material,
+            replaceParts: data.replaceParts,
+            comment: data.comment,
+            photos: (res && Array.isArray(res.photos)) ? res.photos : []
+        });
+        window._maintRegPhotos = [];
         removeDynamicModal('modalMaintReg');
         showToast("整備内容を登録しました");
     } catch(e) {

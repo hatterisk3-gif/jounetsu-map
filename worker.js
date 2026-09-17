@@ -22511,6 +22511,13 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.serializeRecordSyncJob_ = (job) => {
         if (!job || !job.localId || !job.data) return null;
+        // sideEffects（整備履歴・給油など）を落とすと再送時に履歴が消える
+        const sideEffects = Array.isArray(job.sideEffects)
+          ? job.sideEffects.filter(fx => fx && fx.action).map(fx => ({
+              action: String(fx.action),
+              params: (fx.params && typeof fx.params === 'object') ? fx.params : {}
+            }))
+          : [];
         return {
           localId: job.localId,
           isEdit: !!job.isEdit,
@@ -22524,8 +22531,24 @@ function createSignboardMarker(name, pos, icon, id) {
           nameStr: job.nameStr || '',
           userName: job.userName || '',
           clearTemp: !!job.clearTemp,
-          savedAtMs: job.savedAtMs || Date.now()
+          savedAtMs: job.savedAtMs || Date.now(),
+          sideEffects: sideEffects
         };
+      };
+
+      /** 再送ジョブに整備履歴 sideEffect が無い場合、作業データから復元する */
+      window.ensureRecordSyncMaintHistorySideEffects_ = (job) => {
+        if (!job || !job.data) return job;
+        const effects = Array.isArray(job.sideEffects) ? job.sideEffects.slice() : [];
+        const hasMaint = effects.some(fx => fx && fx.action === 'machine_saveMaintenance');
+        const isFormalEdit = !!(job.isEdit && job.editId && String(job.editId).indexOf('local_') !== 0);
+        if (!hasMaint && !isFormalEdit
+            && typeof window.buildMachineMaintenanceHistorySideEffectsFromWorkData_ === 'function') {
+          const histFx = window.buildMachineMaintenanceHistorySideEffectsFromWorkData_(job.data);
+          (histFx || []).forEach((fx) => effects.push(fx));
+        }
+        job.sideEffects = effects;
+        return job;
       };
 
       window.loadPersistedRecordSyncJobsMap_ = () => {
@@ -22753,6 +22776,9 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.sanitizeRecordSyncJob_ === 'function') {
           job = window.sanitizeRecordSyncJob_(job);
         }
+        if (typeof window.ensureRecordSyncMaintHistorySideEffects_ === 'function') {
+          job = window.ensureRecordSyncMaintHistorySideEffects_(job);
+        }
         const queued = (window._recordSyncQueue || []).some(j => j && j.localId === job.localId);
         const running = window._recordSyncCurrentJob && window._recordSyncCurrentJob.localId === job.localId;
         if (queued || running) return;
@@ -22825,6 +22851,9 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.sanitizeRecordSyncJob_ === 'function') {
           job = window.sanitizeRecordSyncJob_(job);
         }
+        if (typeof window.ensureRecordSyncMaintHistorySideEffects_ === 'function') {
+          job = window.ensureRecordSyncMaintHistorySideEffects_(job);
+        }
         const files = job.files || [];
         let photos = [];
         for (let i = 0; i < files.length; i++) {
@@ -22832,11 +22861,26 @@ function createSignboardMarker(name, pos, icon, id) {
           photos.push({ filename: files[i].name || ('photo_' + i + '.jpg'), base64: b64 });
         }
 
-        // 副作用（水弁・農機など）は裏で順次
+        // 副作用（水弁・農機など）は1件ずつ。1件失敗でも他（整備履歴など）は続行
         if (Array.isArray(job.sideEffects)) {
+          const sideErrs = [];
           for (const fx of job.sideEffects) {
             if (!fx || !fx.action) continue;
-            await callGAS(fx.action, fx.params || {});
+            // 整備履歴同期には作業写真も付ける
+            if (fx.action === 'machine_saveMaintenance' && photos.length) {
+              fx.params = Object.assign({}, fx.params || {}, { photos: photos.slice() });
+            }
+            try {
+              await callGAS(fx.action, fx.params || {});
+            } catch (e) {
+              console.warn('sideEffect failed:', fx.action, e);
+              sideErrs.push(fx.action + ': ' + ((e && e.message) ? e.message : String(e || '')));
+            }
+          }
+          // 整備履歴の失敗はジョブ全体失敗扱いにして再送できるようにする
+          const maintFail = sideErrs.find(s => String(s).indexOf('machine_saveMaintenance') === 0);
+          if (maintFail) {
+            throw new Error('整備履歴の同期に失敗しました（' + maintFail + '）');
           }
         }
 
@@ -32695,6 +32739,16 @@ window.buildMachineMaintenanceHistorySideEffectsFromWorkData_ = (data, queued) =
 
   if (!entries.length) return fx;
 
+  const stableId_ = (parts) => {
+    const raw = parts.join('|');
+    let h = 2166136261;
+    for (let i = 0; i < raw.length; i++) {
+      h ^= raw.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return 'mr_work_' + (h >>> 0).toString(36);
+  };
+
   entries.forEach((ent) => {
     const material = ent.content || workName || '整備';
     const replaceParts = ent.parts || '';
@@ -32707,7 +32761,7 @@ window.buildMachineMaintenanceHistorySideEffectsFromWorkData_ = (data, queued) =
     if (q.has(dedupeKey)) return;
     q.add(dedupeKey);
     const rec = {
-      id: 'mr_work_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      id: stableId_([ent.machineId, workDate, material, replaceParts, comment, String(data.bulkBatchId || data.recordId || '')]),
       machineId: ent.machineId,
       date: workDate,
       material: material,
@@ -32723,18 +32777,132 @@ window.buildMachineMaintenanceHistorySideEffectsFromWorkData_ = (data, queued) =
   return fx;
 };
 
+window.normalizeMaintHistoryDate_ = (d) => {
+  if (d == null || d === '') return '';
+  if (Object.prototype.toString.call(d) === '[object Date]' && !isNaN(d.getTime())) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  const s = String(d).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const t = Date.parse(s);
+  if (!isNaN(t)) {
+    const x = new Date(t);
+    return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+  }
+  return s.slice(0, 10);
+};
+
+window.maintHistoryRecordFingerprint_ = (r) => {
+  if (!r) return '';
+  // id ではなく内容で判定（再送・作業記録復元で id が違っても同一扱いにする）
+  return [
+    String(r.machineId || '').trim(),
+    window.normalizeMaintHistoryDate_(r.date),
+    String(r.material || '').trim(),
+    String(r.replaceParts || '').trim(),
+    String(r.comment || '').trim()
+  ].join('::');
+};
+
 window.rememberWorkerMachineMaintenanceLocal_ = (rec) => {
   if (!rec || !rec.machineId) return;
   if (!Array.isArray(window._workerMachineMaintenanceRecords)) {
     window._workerMachineMaintenanceRecords = [];
   }
-  window._workerMachineMaintenanceRecords.push(rec);
+  const fp = window.maintHistoryRecordFingerprint_(rec);
+  const list = window._workerMachineMaintenanceRecords;
+  const idx = list.findIndex(r =>
+    (r.id && rec.id && String(r.id) === String(rec.id))
+    || window.maintHistoryRecordFingerprint_(r) === fp
+  );
+  if (idx >= 0) {
+    list[idx] = Object.assign({}, list[idx], rec);
+  } else {
+    list.push(rec);
+  }
+};
+
+window.mergeMachineMaintenanceRecordsLists_ = (lists) => {
+  const out = [];
+  const seenFp = new Set();
+  const seenId = new Set();
+  (lists || []).forEach((list) => {
+    (Array.isArray(list) ? list : []).forEach((r) => {
+      if (!r || !r.machineId) return;
+      const id = String(r.id || '').trim();
+      const fp = window.maintHistoryRecordFingerprint_(r);
+      if (id && seenId.has(id)) return;
+      if (fp && seenFp.has(fp)) return;
+      if (id) seenId.add(id);
+      if (fp) seenFp.add(fp);
+      out.push(r);
+    });
+  });
+  return out;
+};
+
+/** 端末上の作業記録から整備履歴候補を復元（同期漏れの補完用） */
+window.collectMachineMaintenanceFromLocalWorkRecords_ = () => {
+  const out = [];
+  const q = new Set();
+  const pushFromData = (data) => {
+    if (!data || typeof window.buildMachineMaintenanceHistorySideEffectsFromWorkData_ !== 'function') return;
+    const hasTargets = (Array.isArray(data.maintenanceTargets) && data.maintenanceTargets.length)
+      || String(data.maintenanceToolId || '').trim();
+    if (!hasTargets) return;
+    const fx = window.buildMachineMaintenanceHistorySideEffectsFromWorkData_(data, q);
+    (fx || []).forEach((f) => {
+      if (f && f.params) out.push(f.params);
+    });
+  };
+  try {
+    const sources = (typeof window.buildWorkRecordPolygonSources_ === 'function')
+      ? window.buildWorkRecordPolygonSources_()
+      : new Map(Object.keys(loadedPolygons || {}).map(k => [k, loadedPolygons[k]]));
+    sources.forEach((p) => {
+      if (!p || !Array.isArray(p.photos)) return;
+      p.photos.forEach((ph) => {
+        if (!ph || !ph.data) return;
+        const isWork = (ph.type === 'work') || (ph.data && ph.data.workName);
+        if (!isWork) return;
+        pushFromData(ph.data);
+      });
+    });
+  } catch (e) {
+    console.warn('collectMachineMaintenanceFromLocalWorkRecords_', e);
+  }
+  return out;
 };
 
 window._escMaintHistHtml_ = (s) => String(s == null ? '' : s)
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
   .replace(/"/g, '&quot;');
+
+window.normalizeMaintHistoryPhotos_ = (r) => {
+  if (!r) return [];
+  if (Array.isArray(r.photos)) {
+    return r.photos.map((u) => {
+      if (typeof u === 'string') return u;
+      if (u && u.url) return String(u.url);
+      return '';
+    }).filter(Boolean);
+  }
+  return [];
+};
+
+window.buildMaintHistoryPhotosHtml_ = (r) => {
+  const urls = window.normalizeMaintHistoryPhotos_(r);
+  if (!urls.length) return '';
+  const esc = window._escMaintHistHtml_;
+  return `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;">${urls.map((url) => {
+    const safe = esc(url);
+    const open = (typeof window.openLightbox === 'function')
+      ? `openLightbox('${String(url).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`
+      : `window.open('${String(url).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}','_blank')`;
+    return `<img src="${safe}" alt="整備写真" onclick="${open}" style="width:72px; height:72px; object-fit:cover; border-radius:6px; border:1px solid #ddd; cursor:pointer; background:#f5f5f5;">`;
+  }).join('')}</div>`;
+};
 
 window.closeWorkerMachineMaintHistoryModal_ = () => {
   const el = document.getElementById('modal');
@@ -32756,21 +32924,34 @@ window.openWorkerMachineMaintHistoryModal_ = async () => {
     ? pdlMachines.filter(m => m && m.id && !m.isTool && !m.isVehicle)
     : [];
 
-  let serverRecords = Array.isArray(window._workerMachineMaintenanceRecords)
+  const localCached = Array.isArray(window._workerMachineMaintenanceRecords)
     ? window._workerMachineMaintenanceRecords.slice()
     : [];
+  const fromWorks = (typeof window.collectMachineMaintenanceFromLocalWorkRecords_ === 'function')
+    ? window.collectMachineMaintenanceFromLocalWorkRecords_()
+    : [];
+  let serverRecords = [];
   try {
     const res = await callGAS('machine_loadAll', {});
     if (res && Array.isArray(res.maintenanceRecords)) {
       serverRecords = res.maintenanceRecords.slice();
-      window._workerMachineMaintenanceRecords = serverRecords.slice();
     }
   } catch (e) {
     console.warn('machine_loadAll failed', e);
   }
+  // サーバー・端末キャッシュ・作業記録由来をマージ（同期漏れでも一覧に出す）
+  const merged = (typeof window.mergeMachineMaintenanceRecordsLists_ === 'function')
+    ? window.mergeMachineMaintenanceRecordsLists_([serverRecords, localCached, fromWorks])
+    : serverRecords.concat(localCached, fromWorks);
+  window._workerMachineMaintenanceRecords = merged.slice();
+
+  // シート未反映分を裏で補完保存
+  if (typeof window.backfillMissingMachineMaintenanceRecords_ === 'function') {
+    window.backfillMissingMachineMaintenanceRecords_(serverRecords, fromWorks.concat(localCached));
+  }
 
   const byMachine = new Map();
-  serverRecords.forEach((r) => {
+  merged.forEach((r) => {
     const id = String((r && r.machineId) || '').trim();
     if (!id) return;
     if (!byMachine.has(id)) byMachine.set(id, []);
@@ -32815,6 +32996,35 @@ window.openWorkerMachineMaintHistoryModal_ = async () => {
   `;
 };
 
+window.backfillMissingMachineMaintenanceRecords_ = async (serverRecords, candidates) => {
+  const existing = new Set();
+  (serverRecords || []).forEach((r) => {
+    const fp = window.maintHistoryRecordFingerprint_(r);
+    if (fp) existing.add(fp);
+  });
+  const todo = [];
+  const seenTodo = new Set();
+  (candidates || []).forEach((r) => {
+    if (!r || !r.machineId || !r.id) return;
+    const fp = window.maintHistoryRecordFingerprint_(r);
+    if (!fp || existing.has(fp) || seenTodo.has(fp)) return;
+    seenTodo.add(fp);
+    todo.push(r);
+  });
+  if (!todo.length || typeof callGAS !== 'function') return;
+  for (let i = 0; i < todo.length; i++) {
+    try {
+      await callGAS('machine_saveMaintenance', todo[i]);
+      existing.add(window.maintHistoryRecordFingerprint_(todo[i]));
+      if (typeof window.rememberWorkerMachineMaintenanceLocal_ === 'function') {
+        window.rememberWorkerMachineMaintenanceLocal_(todo[i]);
+      }
+    } catch (e) {
+      console.warn('backfill machine_saveMaintenance', e);
+    }
+  }
+};
+
 window.openWorkerMachineMaintHistoryForMachine_ = async (machineId) => {
   const modalBody = document.getElementById('modalBody');
   if (!modalBody) return;
@@ -32831,18 +33041,40 @@ window.openWorkerMachineMaintHistoryForMachine_ = async (machineId) => {
 
   modalBody.innerHTML = '<div style="text-align:center; padding:24px; font-weight:bold;">履歴を取得中...</div>';
 
-  let records = (Array.isArray(window._workerMachineMaintenanceRecords)
+  const localCached = (Array.isArray(window._workerMachineMaintenanceRecords)
     ? window._workerMachineMaintenanceRecords
     : []).filter(r => String(r.machineId) === id);
+  const fromWorks = ((typeof window.collectMachineMaintenanceFromLocalWorkRecords_ === 'function')
+    ? window.collectMachineMaintenanceFromLocalWorkRecords_()
+    : []).filter(r => String(r.machineId) === id);
 
+  let serverRecords = [];
   try {
     const res = await callGAS('machine_loadAll', {});
     if (res && Array.isArray(res.maintenanceRecords)) {
-      window._workerMachineMaintenanceRecords = res.maintenanceRecords.slice();
-      records = res.maintenanceRecords.filter(r => String(r.machineId) === id);
+      serverRecords = res.maintenanceRecords.slice();
+      const mergedAll = (typeof window.mergeMachineMaintenanceRecordsLists_ === 'function')
+        ? window.mergeMachineMaintenanceRecordsLists_([
+          serverRecords,
+          window._workerMachineMaintenanceRecords || [],
+          (typeof window.collectMachineMaintenanceFromLocalWorkRecords_ === 'function')
+            ? window.collectMachineMaintenanceFromLocalWorkRecords_()
+            : []
+        ])
+        : serverRecords;
+      window._workerMachineMaintenanceRecords = mergedAll;
     }
   } catch (e) {
     console.warn(e);
+  }
+
+  const serverForMachine = serverRecords.filter(r => String(r.machineId) === id);
+  let records = (typeof window.mergeMachineMaintenanceRecordsLists_ === 'function')
+    ? window.mergeMachineMaintenanceRecordsLists_([serverForMachine, localCached, fromWorks])
+    : serverForMachine.concat(localCached, fromWorks);
+
+  if (typeof window.backfillMissingMachineMaintenanceRecords_ === 'function') {
+    window.backfillMissingMachineMaintenanceRecords_(serverForMachine, fromWorks.concat(localCached));
   }
 
   records.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
@@ -32854,6 +33086,7 @@ window.openWorkerMachineMaintHistoryForMachine_ = async (machineId) => {
           <div style="font-weight:bold; color:#333; margin-top:2px;">資材・内容: ${esc(r.material || '-')}</div>
           <div style="font-size:13px; margin-top:2px;">部品: ${esc(r.replaceParts || '-')}</div>
           <div style="font-size:13px; margin-top:4px; color:#555;">${esc(r.comment || '')}</div>
+          ${(typeof window.buildMaintHistoryPhotosHtml_ === 'function') ? window.buildMaintHistoryPhotosHtml_(r) : ''}
         </div>
       `).join('');
 
@@ -38920,48 +39153,111 @@ window.refreshMyPageRecentWorkRecords_ = async function(opts) {
     }
 };
 
-/** 作業記録詳細（全期間）を最新化 */
-window.refreshMyWorkHistoryDetail_ = async function() {
+/** 作業記録詳細（全期間）を最新化（先に端末表示→裏でサーバー補完） */
+window.refreshMyWorkHistoryDetail_ = async function(opts) {
+    opts = opts || {};
     const body = document.getElementById('myWorkHistoryBody');
     const sub = document.getElementById('myWorkHistorySub');
     if (!body) return;
 
     const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
-    const historyLoad = window.AppLoading
-      ? AppLoading.inline(body, { label: '作業記録を読み込み中...', detail: 'サーバーと端末データを照合しています', delay: 0 })
-      : null;
-    if (!historyLoad) body.innerHTML = `<div style="text-align:center; color:#888; padding:30px 10px; font-size:14px;">読み込み中...</div>`;
-    if (sub) sub.innerText = '最新データを取得中...';
+    const PAGE = 80;
 
+    const paint = (all, meta) => {
+      meta = meta || {};
+      const list = Array.isArray(all) ? all : [];
+      window._myPageAllWorkRecordsCache = list.slice();
+      window._myWorkHistoryRenderOffset_ = 0;
+      if (sub) {
+        const bits = [`全 ${list.length} 件（新しい日付から）`];
+        if (meta.statusText) bits.push(meta.statusText);
+        sub.innerText = bits.join(' ');
+      }
+      window.renderMyWorkHistoryDetailPage_({ reset: true, pageSize: PAGE });
+    };
+
+    // 1) 端末データですぐ表示（loadInitData は重いので通常は呼ばない）
+    let all = [];
     try {
-        if (typeof loadInitData === 'function') {
-            await loadInitData({ background: true });
-        }
+      all = window.collectMyWorkRecords(null) || [];
     } catch (e) {
+      console.warn('refreshMyWorkHistoryDetail_ local:', e);
+      all = [];
+    }
+    paint(all, { statusText: '（端末データ）' });
+
+    // 明示指定時のみ全体再読込
+    if (opts.reloadInit === true && typeof loadInitData === 'function') {
+      if (sub) sub.innerText = `全 ${all.length} 件… 地図データを更新中`;
+      try {
+        await loadInitData({ background: true });
+        all = window.collectMyWorkRecords(null) || [];
+        paint(all, { statusText: '（端末更新済み・サーバー取得中…）' });
+      } catch (e) {
         console.warn('refreshMyWorkHistoryDetail_ loadInitData:', e);
+      }
     }
 
-    let all = window.collectMyWorkRecords(null);
+    // 2) サーバーは裏で取得してマージ（直近1年）
     try {
-        const now = new Date();
-        const toYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        const fromDt = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 365);
-        const fromYmd = `${fromDt.getFullYear()}-${String(fromDt.getMonth() + 1).padStart(2, '0')}-${String(fromDt.getDate()).padStart(2, '0')}`;
-        const analysis = await callGAS('getWorkRecordAnalysis', {
-            fromYmd: fromYmd,
-            toYmd: toYmd,
-            author: userName,
-            includeRecords: true
-        });
-        all = window.mergeMyWorkRecordsWithAnalysis_(all, (analysis && analysis.records) || [], null);
+      if (sub) {
+        const n = (window._myPageAllWorkRecordsCache || []).length;
+        sub.innerText = `全 ${n} 件… サーバーと照合中`;
+      }
+      const now = new Date();
+      const toYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const fromDt = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 365);
+      const fromYmd = `${fromDt.getFullYear()}-${String(fromDt.getMonth() + 1).padStart(2, '0')}-${String(fromDt.getDate()).padStart(2, '0')}`;
+      const analysis = await callGAS('getWorkRecordAnalysis', {
+        fromYmd: fromYmd,
+        toYmd: toYmd,
+        author: userName,
+        includeRecords: true
+      });
+      const localNow = window.collectMyWorkRecords(null) || [];
+      all = window.mergeMyWorkRecordsWithAnalysis_(localNow, (analysis && analysis.records) || [], null);
+      paint(all, { statusText: '' });
     } catch (e) {
-        console.warn('refreshMyWorkHistoryDetail_ getWorkRecordAnalysis:', e);
+      console.warn('refreshMyWorkHistoryDetail_ getWorkRecordAnalysis:', e);
+      if (sub) {
+        const n = (window._myPageAllWorkRecordsCache || []).length;
+        sub.innerText = `全 ${n} 件（端末データのみ・サーバー取得失敗）`;
+      }
     }
+};
 
-    if (historyLoad) historyLoad.done();
-    if (sub) sub.innerText = `全 ${all.length} 件（新しい日付から）`;
-    window._myPageAllWorkRecordsCache = all.slice();
-    body.innerHTML = window.renderMyWorkRecordsGroupedHtml(all, '作業記録はまだありません。');
+/** 全期間一覧をページ単位で描画（大量DOMで固まるのを防ぐ） */
+window.renderMyWorkHistoryDetailPage_ = function(opts) {
+  opts = opts || {};
+  const body = document.getElementById('myWorkHistoryBody');
+  if (!body) return;
+  const all = Array.isArray(window._myPageAllWorkRecordsCache) ? window._myPageAllWorkRecordsCache : [];
+  const pageSize = Math.max(20, parseInt(opts.pageSize, 10) || 80);
+  if (opts.reset) window._myWorkHistoryRenderOffset_ = 0;
+  let offset = parseInt(window._myWorkHistoryRenderOffset_, 10) || 0;
+  if (opts.append) {
+    offset = Math.min(all.length, offset + pageSize);
+  }
+  window._myWorkHistoryRenderOffset_ = offset;
+  const end = Math.min(all.length, offset + pageSize);
+  const slice = all.slice(0, end);
+
+  if (!all.length) {
+    body.innerHTML = window.renderMyWorkRecordsGroupedHtml([], '作業記録はまだありません。');
+    return;
+  }
+
+  let html = window.renderMyWorkRecordsGroupedHtml(slice, '作業記録はまだありません。');
+  if (end < all.length) {
+    const remain = all.length - end;
+    html += `<button type="button" id="myWorkHistoryLoadMoreBtn" onclick="renderMyWorkHistoryDetailPage_({ append: true, pageSize: ${pageSize} })"
+      style="width:100%; margin-top:12px; padding:12px; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; font-weight:bold; cursor:pointer;">
+      さらに表示（残り ${remain} 件）
+    </button>`;
+  } else if (all.length > pageSize) {
+    html += `<div style="text-align:center; color:#888; font-size:12px; margin-top:10px; padding:8px;">すべて表示しました（${all.length} 件）</div>`;
+  }
+  body.innerHTML = html;
 };
 
 /** ログインユーザーの作業記録を loadedPolygons から収集。allowedYmds があればその日付のみ */
