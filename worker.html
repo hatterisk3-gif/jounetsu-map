@@ -25,7 +25,7 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="worker.css?v=1788600000011">
+  <link rel="stylesheet" href="worker.css?v=1788600000012">
   <style>
     @keyframes workerBootSpin { to { transform: rotate(360deg); } }
     @keyframes workerBootSlide { from { transform: translateX(-120%); } to { transform: translateX(320%); } }
@@ -101,8 +101,6 @@
     </button>
     <button id="btnTracking" class="map-action-btn" onclick="toggleTracking()" style="color: #4CAF50;">
       🏃    </button>
-    <button id="btnRestBreak" class="map-action-btn" onclick="openRestBreakRecord()" title="休憩時間を登録" style="color: #E65100;">
-      ☕    </button>
     <button id="btnMeasureRidge" class="map-action-btn" onclick="toggleRidgeMeasureTool()" title="畝の長さを測る" style="color: #00838F;">
       📏
     </button>
@@ -114,8 +112,8 @@
     <button id="btnMachineMaintHistory" class="map-action-btn" onclick="openWorkerMachineMaintHistoryModal_()" title="機械の整備履歴" style="color: #E65100;">
       🔧
     </button>
-    <button id="btnGpsWorkRecord" class="map-action-btn" onclick="document.getElementById('recordTypeSelectModal').style.display='flex'" style="color: #4285F4;">
-      📝
+    <button id="btnGpsWorkRecord" class="map-action-btn map-action-btn--plus" onclick="document.getElementById('recordTypeSelectModal').style.display='flex'" title="記録を追加" style="color: #fff; background: #4285F4;">
+      ＋
     </button>
   </div>
 
@@ -493,7 +491,7 @@
   <script src="machine-taxonomy.js?v=1788600000011"></script>
   <script src="weather-agri.js?v=1785489000300"></script>
   <script src="api-client.js?v=1788600000050"></script>
-  <script src="worker.js?v=1788600000046"></script>
+  <script src="worker.js?v=1788600000047"></script>
   <script src="tracking.js?v=1788600000042"></script>
   <script>
     if ('serviceWorker' in navigator) {

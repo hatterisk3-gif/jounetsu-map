@@ -6431,6 +6431,7 @@ function initMap() {
             map.setOptions({ draggable: true, draggableCursor: null });
             document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
             document.getElementById('btnViewMode').classList.add('active');
+            if (typeof window.syncAdminRegPlusBtnState_ === 'function') window.syncAdminRegPlusBtnState_('view');
         }
         else if (customDrawingMode === 'polygon') {
             if (document.getElementById('drawStep2') && document.getElementById('drawStep2').style.display === 'block') return;
@@ -6536,11 +6537,31 @@ function fetchAddressHint(latLng) {
     });
 }
 
+window.cancelMarkerForm_ = () => {
+    try { if (infoWindow) infoWindow.close(); } catch (e) {}
+    if (currentMarker) {
+        currentMarker.setMap(null);
+        currentMarker = null;
+    }
+    window._pendingSignRegPhotos = [];
+    window._signRegState = null;
+    const modal = document.getElementById('modal');
+    if (modal) modal.style.display = 'none';
+};
+
+window._signRegQuickPresets_ = {
+    water: { label: '水地点', icon: '🚰', name: '水地点', signFunction: '機能なし' },
+    parking: { label: '駐車場', icon: '🅿️', name: '駐車場', signFunction: '駐車場' },
+    caution: { label: '注意', icon: '⚠️', name: '注意', signFunction: '事故注意' }
+};
+
 function openMarkerForm(markerObj) {
     window.selectMI = (i) => {
-        document.getElementById('selIco').value = i;
+        const sel = document.getElementById('selIco');
+        if (sel) sel.value = i;
         document.querySelectorAll('.ib').forEach(el => el.style.background = 'none');
-        document.getElementById('i_' + i).style.background = '#ddd';
+        const chip = document.getElementById('i_' + i);
+        if (chip) chip.style.background = '#ddd';
         const mappedFunc = iconFunctionMap[i] || '機能なし';
         const mFunc = document.getElementById('mFunc');
         if (mFunc) {
@@ -6548,43 +6569,262 @@ function openMarkerForm(markerObj) {
             else mFunc.value = '機能なし';
         }
     };
-    const icons = ['🪧', '🚻', '🚰', '⛲', '🚿', '🌀', '⛏️', '🪚', '✂️', '🧹', '🔬', '📦', '🏭', '🚚', '🛻', '🚙', '🏪', '⛽', '🛠️', '🏢', '⚠️', '🅿️', '📢', '🚫', '🧼', '🪵', '🔩', '🛢️', '🚜', '🐓', '⛰️', '🗑️'];
-    const funcOpts = `<option value="機能なし">機能なし</option>` + pdlSignFunctions.map(f => `<option value="${f}">${f}</option>`).join('');
+
     const prefill = window._pendingMarkerPrefill || {};
     const defaultLoc = String(prefill.location || localStorage.getItem('passionMapUserLocation') || '').trim();
     const defaultFunc = String(prefill.signFunction || '').trim();
+    const lat = markerObj && markerObj.getPosition ? markerObj.getPosition().lat() : null;
+    const lng = markerObj && markerObj.getPosition ? markerObj.getPosition().lng() : null;
+    const posLabel = (lat != null && lng != null)
+        ? `${Number(lat).toFixed(6)}, ${Number(lng).toFixed(6)}`
+        : '';
+
+    window._signRegState = {
+        markerObj: markerObj,
+        posLabel: posLabel,
+        defaultLoc: defaultLoc,
+        defaultFunc: defaultFunc,
+        // 機械管理などから来た場合は最初から従来画面
+        skipQuick: !!(defaultFunc && (defaultFunc.indexOf('車両') >= 0 || defaultFunc.indexOf('農機') >= 0 || defaultFunc.indexOf('機械') >= 0)),
+        quick: null
+    };
+    window._pendingSignRegPhotos = [];
+    window._pendingMarkerPrefill = null;
+
+    try { if (infoWindow) infoWindow.close(); } catch (e) {}
+    const modal = document.getElementById('modal');
+    if (!modal || !document.getElementById('modalBody')) {
+        customAlert('登録画面を開けませんでした。ページを再読み込みしてください。');
+        return;
+    }
+    modal.style.display = 'flex';
+    if (window._signRegState.skipQuick) {
+        window.renderSignRegDetailScreen_({});
+    } else {
+        window.renderSignRegQuickScreen_();
+    }
+}
+
+window.renderSignRegQuickScreen_ = () => {
+    const st = window._signRegState || {};
+    const modalBody = document.getElementById('modalBody');
+    if (!modalBody) return;
+    const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    modalBody.innerHTML = `
+      <div style="width:min(92vw,380px);max-width:100%;box-sizing:border-box;padding:4px;color:#000;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <h3 style="margin:0; color:#d32f2f; font-size:18px;">🪧 看板登録</h3>
+          <span onclick="cancelMarkerForm_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
+        </div>
+        ${st.posLabel ? `<div style="font-size:11px; color:#888; margin-bottom:10px; text-align:center;">📍 ${esc(st.posLabel)}</div>` : ''}
+        <div style="font-size:13px; font-weight:bold; color:#333; margin-bottom:8px;">よく使う種類（クイックセット）</div>
+        <div style="display:grid; grid-template-columns:1fr; gap:8px; margin-bottom:12px;">
+          <button type="button" onclick="pickSignRegQuick_('water')"
+            style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:14px 14px; border:2px solid #81D4FA; border-radius:10px; background:#E1F5FE; cursor:pointer;">
+            <span style="font-size:28px; line-height:1;">🚰</span>
+            <span><div style="font-weight:bold; color:#0277BD; font-size:15px;">水地点</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">名前・アイコンを自動セット</div></span>
+          </button>
+          <button type="button" onclick="pickSignRegQuick_('parking')"
+            style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:14px 14px; border:2px solid #90CAF9; border-radius:10px; background:#E3F2FD; cursor:pointer;">
+            <span style="font-size:28px; line-height:1;">🅿️</span>
+            <span><div style="font-weight:bold; color:#1565C0; font-size:15px;">駐車場</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">名前・アイコンを自動セット</div></span>
+          </button>
+          <button type="button" onclick="pickSignRegQuick_('caution')"
+            style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:14px 14px; border:2px solid #FFCC80; border-radius:10px; background:#FFF8E1; cursor:pointer;">
+            <span style="font-size:28px; line-height:1;">⚠️</span>
+            <span><div style="font-weight:bold; color:#E65100; font-size:15px;">注意</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">内容は任意で追記できます</div></span>
+          </button>
+        </div>
+        <div id="signRegCautionBox" style="display:none; margin-bottom:12px; padding:10px; background:#FFF3E0; border:1px solid #FFB74D; border-radius:8px; text-align:left;">
+          <label style="font-size:12px; font-weight:bold; color:#E65100; display:block; margin-bottom:4px;">注意の内容（任意）</label>
+          <input type="text" id="signRegCautionNote" class="form-input" placeholder="例：落石あり・ぬかるみ注意" style="margin-bottom:8px;">
+          <button type="button" onclick="confirmSignRegCautionQuick_()"
+            style="width:100%; background:#E65100; color:#fff; border:none; border-radius:6px; padding:11px; font-weight:bold; cursor:pointer;">この内容で次へ</button>
+        </div>
+        <div style="border-top:1px solid #eee; padding-top:12px; margin-top:4px;">
+          <button type="button" onclick="renderSignRegDetailScreen_({})"
+            style="width:100%; background:#fff; color:#37474F; border:1px solid #90A4AE; border-radius:8px; padding:13px; font-weight:bold; cursor:pointer; font-size:14px;">
+            その他・詳細登録へ →
+          </button>
+          <div style="font-size:11px; color:#888; text-align:center; margin-top:6px; line-height:1.35;">アイコンや機能を自分で選ぶ従来の登録画面です</div>
+        </div>
+        <button type="button" onclick="cancelMarkerForm_()"
+          style="width:100%; margin-top:10px; background:#eee; color:#666; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">キャンセル</button>
+      </div>
+    `;
+};
+
+window.pickSignRegQuick_ = (key) => {
+    const presets = window._signRegQuickPresets_ || {};
+    const preset = presets[key];
+    if (!preset) return;
+    if (key === 'caution') {
+        const box = document.getElementById('signRegCautionBox');
+        if (box) {
+            box.style.display = 'block';
+            const note = document.getElementById('signRegCautionNote');
+            if (note) note.focus();
+        }
+        return;
+    }
+    window.renderSignRegDetailScreen_({
+        name: preset.name,
+        icon: preset.icon,
+        signFunction: preset.signFunction,
+        fromQuick: key
+    });
+};
+
+window.confirmSignRegCautionQuick_ = () => {
+    const preset = (window._signRegQuickPresets_ || {}).caution || { name: '注意', icon: '⚠️', signFunction: '事故注意' };
+    const noteEl = document.getElementById('signRegCautionNote');
+    const note = noteEl ? String(noteEl.value || '').trim() : '';
+    const name = note ? (`注意：${note}`) : preset.name;
+    window.renderSignRegDetailScreen_({
+        name: name,
+        icon: preset.icon,
+        signFunction: preset.signFunction,
+        fromQuick: 'caution'
+    });
+};
+
+window.renderSignRegDetailScreen_ = (opts) => {
+    opts = opts || {};
+    const st = window._signRegState || {};
+    const modalBody = document.getElementById('modalBody');
+    if (!modalBody) return;
+
+    const icons = ['🪧', '🚻', '🚰', '⛲', '🚿', '🌀', '⛏️', '🪚', '✂️', '🧹', '🔬', '📦', '🏭', '🚚', '🛻', '🚙', '🏪', '⛽', '🛠️', '🏢', '⚠️', '🅿️', '📢', '🚫', '🧼', '🪵', '🔩', '🛢️', '🚜', '🐓', '⛰️', '🗑️'];
+    const funcOpts = `<option value="機能なし">機能なし</option>` + (pdlSignFunctions || []).map(f => `<option value="${f}">${f}</option>`).join('');
+    const defaultLoc = String(st.defaultLoc || '').trim();
     const locOpts = `<option value="">拠点を選択...</option>` + (pdlLocations || []).map(l =>
         `<option value="${String(l).replace(/"/g, '&quot;')}" ${l === defaultLoc ? 'selected' : ''}>${l}</option>`
     ).join('');
-    infoWindow.setContent(`
-            <div style="width:260px;max-width:100%;box-sizing:border-box;padding:4px;text-align:center;color:#000;">
-              <b>看板登録</b><br>
-              <input type="text" id="mName" class="form-input" placeholder="看板名">
+    const presetName = opts.name != null ? String(opts.name) : '';
+    const presetIcon = opts.icon || '🪧';
+    const presetFunc = opts.signFunction || st.defaultFunc || '';
+    const fromQuick = !!opts.fromQuick;
+    const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+
+    modalBody.innerHTML = `
+            <div style="width:min(92vw,360px);max-width:100%;box-sizing:border-box;padding:4px;text-align:center;color:#000;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <h3 style="margin:0; color:#d32f2f; font-size:18px;">🪧 ${fromQuick ? '内容確認・登録' : '詳細登録'}</h3>
+                <span onclick="cancelMarkerForm_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
+              </div>
+              ${!st.skipQuick ? `<button type="button" onclick="renderSignRegQuickScreen_()" style="width:100%; background:#f5f5f5; color:#555; border:1px solid #ddd; border-radius:6px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:10px;">← クイックセットに戻る</button>` : ''}
+              ${st.posLabel ? `<div style="font-size:11px; color:#888; margin-bottom:8px;">📍 ${esc(st.posLabel)}</div>` : ''}
+              ${fromQuick ? `<div style="font-size:12px; color:#2E7D32; background:#E8F5E9; border-radius:6px; padding:8px; margin-bottom:10px; line-height:1.4;">✅ 「${esc(presetName)}」 ${presetIcon} をセットしました。必要なら修正して登録してください。</div>` : ''}
+              <input type="text" id="mName" class="form-input" placeholder="看板名" value="${esc(presetName)}" style="margin-bottom:8px;">
               <select id="mLoc" class="form-input" style="margin-bottom:8px;">${locOpts}</select>
               <select id="mFunc" class="form-input" style="margin-bottom:10px;">${funcOpts}</select>
-              <div style="display:grid;grid-template-columns:repeat(6,1fr);font-size:20px;gap:2px;">
+              <div style="font-size:11px; color:#666; text-align:left; margin-bottom:4px;">アイコン</div>
+              <div style="display:grid;grid-template-columns:repeat(6,1fr);font-size:20px;gap:2px;max-height:140px;overflow-y:auto;">
                 ${icons.map(i => `<span class="ib" id="i_${i}" onclick="selectMI('${i}')" style="cursor:pointer;padding:2px;border-radius:4px;">${i}</span>`).join('')}
               </div>
-              <input type="hidden" id="selIco" value="🪧"><br>
-              <button onclick="saveM()" style="background:#d32f2f;color:white;width:100%;margin-top:10px;padding:10px;border-radius:4px;border:none;font-weight:bold;">マスタに登録</button>
+              <input type="hidden" id="selIco" value="${esc(presetIcon)}">
+              <div style="text-align:left; margin-top:12px;">
+                <div style="font-size:11px; color:#666; margin-bottom:4px; font-weight:bold;">📷 写真（任意・複数可）</div>
+                <div id="mPhotoPreview" style="min-height:72px; background:#f5f5f5; border:1px dashed #bbb; border-radius:8px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; justify-content:center; overflow:hidden; padding:8px; margin-bottom:6px;">
+                  <div style="color:#888; font-size:12px;">写真未選択</div>
+                </div>
+                <input type="file" id="mPhotoInput" accept="image/*" multiple capture="environment" onchange="previewSignRegPhotos_(this)" style="width:100%; font-size:12px; margin-bottom:6px;">
+                <button type="button" onclick="clearSignRegPhotos_()" style="width:100%; background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:7px; font-size:12px; cursor:pointer;">写真をクリア</button>
+              </div>
+              <div style="display:flex; gap:8px; margin-top:14px;">
+                <button type="button" id="btnSaveSignMarker" onclick="saveM()" style="background:#d32f2f;color:white;flex:2;padding:12px;border-radius:6px;border:none;font-weight:bold;cursor:pointer;">マスタに登録</button>
+                <button type="button" onclick="cancelMarkerForm_()" style="background:#ccc;color:#333;flex:1;padding:12px;border-radius:6px;border:none;font-weight:bold;cursor:pointer;">キャンセル</button>
+              </div>
             </div>
-          `);
-    infoWindow.setPosition(markerObj.getPosition()); infoWindow.open(map);
+          `;
+
+    // 写真選択は詳細画面に移っても維持
+    if (Array.isArray(window._pendingSignRegPhotos) && window._pendingSignRegPhotos.length) {
+        const preview = document.getElementById('mPhotoPreview');
+        const out = window._pendingSignRegPhotos;
+        if (preview) {
+            preview.innerHTML = out.map((p) =>
+                `<img src="${p.base64}" alt="preview" style="width:64px; height:64px; object-fit:cover; border-radius:6px; border:1px solid #ccc;">`
+            ).join('') + `<div style="width:100%; font-size:11px; color:#666; text-align:center;">${out.length}枚選択中</div>`;
+        }
+    }
+
     setTimeout(() => {
-        selectMI('🪧');
+        if (typeof window.selectMI === 'function') window.selectMI(presetIcon);
         const mFunc = document.getElementById('mFunc');
-        if (mFunc && defaultFunc) {
-            const prefer = [defaultFunc, '車両・機械管理', '農機管理'];
+        if (mFunc) {
+            const prefer = [presetFunc, st.defaultFunc, '車両・機械管理', '農機管理'].filter(Boolean);
             for (let i = 0; i < prefer.length; i++) {
                 if (Array.from(mFunc.options).some(opt => opt.value === prefer[i])) {
                     mFunc.value = prefer[i];
                     break;
                 }
             }
+            // クイックの機能名がマスタに無い場合でも、アイコン連動後に上書き
+            if (presetFunc && Array.from(mFunc.options).some(opt => opt.value === presetFunc)) {
+                mFunc.value = presetFunc;
+            }
         }
-        window._pendingMarkerPrefill = null;
+        const nameEl = document.getElementById('mName');
+        if (nameEl) {
+            if (!presetName) nameEl.focus();
+            else nameEl.select();
+        }
     }, 10);
-}
+};
+
+window.clearSignRegPhotos_ = () => {
+    window._pendingSignRegPhotos = [];
+    const input = document.getElementById('mPhotoInput');
+    if (input) input.value = '';
+    const preview = document.getElementById('mPhotoPreview');
+    if (preview) preview.innerHTML = '<div style="color:#888; font-size:12px;">写真未選択</div>';
+};
+
+window.previewSignRegPhotos_ = async (input) => {
+    const files = input && input.files ? Array.from(input.files) : [];
+    const preview = document.getElementById('mPhotoPreview');
+    if (!files.length) {
+        window.clearSignRegPhotos_();
+        return;
+    }
+    const maxCount = 5;
+    const picked = files.slice(0, maxCount);
+    if (files.length > maxCount && typeof customAlert === 'function') {
+        customAlert(`写真は最大${maxCount}枚まで登録できます（先頭${maxCount}枚を使います）。`);
+    }
+    if (preview) preview.innerHTML = '<div style="color:#888; font-size:12px; padding:8px;">読み込み中...</div>';
+    const out = [];
+    for (let i = 0; i < picked.length; i++) {
+        const file = picked[i];
+        try {
+            const base64 = (typeof window.resizeAdminMachineImg === 'function')
+                ? await window.resizeAdminMachineImg(file)
+                : await new Promise((resolve, reject) => {
+                    const r = new FileReader();
+                    r.onload = () => resolve(r.result);
+                    r.onerror = () => reject(new Error('読込失敗'));
+                    r.readAsDataURL(file);
+                });
+            out.push({
+                filename: (file.name || ('sign_' + (i + 1) + '.jpg')).replace(/\s+/g, '_'),
+                base64: base64
+            });
+        } catch (e) {
+            console.warn('sign photo resize failed', e);
+        }
+    }
+    window._pendingSignRegPhotos = out;
+    if (preview) {
+        if (!out.length) {
+            preview.innerHTML = '<div style="color:#888; font-size:12px;">写真未選択</div>';
+        } else {
+            preview.innerHTML = out.map((p) =>
+                `<img src="${p.base64}" alt="preview" style="width:64px; height:64px; object-fit:cover; border-radius:6px; border:1px solid #ccc;">`
+            ).join('') + `<div style="width:100%; font-size:11px; color:#666; text-align:center;">${out.length}枚選択中</div>`;
+        }
+    }
+};
 
 function setupMapSearch() {
     const input = document.getElementById('mapSearchInput');
@@ -6717,6 +6957,8 @@ document.getElementById('btnViewMode').onclick = () => {
     if (legendDiv) legendDiv.style.display = 'block';
 
     if (typeof updateMarkerLabels === 'function') updateMarkerLabels();
+    if (typeof window.closeAdminRegPlusMenu_ === 'function') window.closeAdminRegPlusMenu_();
+    if (typeof window.syncAdminRegPlusBtnState_ === 'function') window.syncAdminRegPlusBtnState_('view');
 };
 
 // 衛星タイルのCSS引き延ばし（ネイティブズーム超え）を有効化
@@ -6755,6 +6997,8 @@ document.getElementById('btnDrawMode').onclick = () => {
     if (legendDiv) legendDiv.style.display = 'none';
 
     customAlert("【圃場作成モード】\n地図上をタップして手動で頂点を打つか、\n「🤖 筆ポリゴンから登録」を押して枠を取得してください。", "drawMode");
+    if (typeof window.closeAdminRegPlusMenu_ === 'function') window.closeAdminRegPlusMenu_();
+    if (typeof window.syncAdminRegPlusBtnState_ === 'function') window.syncAdminRegPlusBtnState_('draw');
 };
 
 // 🌟看板ボタン
@@ -6775,8 +7019,64 @@ document.getElementById('btnMarkerMode').onclick = () => {
     let legendDiv = document.getElementById('adminLegendUI');
     if (legendDiv) legendDiv.style.display = 'none';
 
-    customAlert("【看板作成モード】\n地図上の看板を置きたい場所を1回タップしてください。", "markerMode");
+    // 登録操作のたびに案内を出す（「今後表示しない」で消えないようにする）
+    customAlert("【看板作成モード】\n地図上の看板を置きたい場所を1回タップしてください。\nタップ後に登録ポップアップが開きます。");
+    if (typeof window.closeAdminRegPlusMenu_ === 'function') window.closeAdminRegPlusMenu_();
+    if (typeof window.syncAdminRegPlusBtnState_ === 'function') window.syncAdminRegPlusBtnState_('marker');
 };
+
+window.closeAdminRegPlusMenu_ = () => {
+    const menu = document.getElementById('adminRegPlusMenu');
+    if (menu) menu.style.display = 'none';
+};
+
+window.toggleAdminRegPlusMenu_ = (ev) => {
+    if (ev) {
+        try { ev.preventDefault(); ev.stopPropagation(); } catch (e) {}
+    }
+    const menu = document.getElementById('adminRegPlusMenu');
+    if (!menu) return;
+    const open = menu.style.display === 'none' || !menu.style.display;
+    menu.style.display = open ? 'block' : 'none';
+};
+
+window.pickAdminRegPlus_ = (kind) => {
+    window.closeAdminRegPlusMenu_();
+    if (kind === 'draw') {
+        const btn = document.getElementById('btnDrawMode');
+        if (btn) btn.click();
+    } else if (kind === 'marker') {
+        const btn = document.getElementById('btnMarkerMode');
+        if (btn) btn.click();
+    }
+};
+
+window.syncAdminRegPlusBtnState_ = (mode) => {
+    const plus = document.getElementById('btnAdminRegPlus');
+    if (!plus) return;
+    plus.classList.remove('is-reg-active', 'active');
+    if (mode === 'draw') {
+        plus.classList.add('is-reg-active');
+        plus.textContent = '＋ 圃場中';
+        plus.title = '圃場登録モード中（タップで切替）';
+    } else if (mode === 'marker') {
+        plus.classList.add('is-reg-active');
+        plus.textContent = '＋ 看板中';
+        plus.title = '看板登録モード中（タップで切替）';
+    } else {
+        plus.textContent = '＋ 登録';
+        plus.title = '登録';
+    }
+};
+
+// メニュー外タップで閉じる
+document.addEventListener('click', (e) => {
+    const wrap = document.getElementById('adminRegPlusWrap');
+    const menu = document.getElementById('adminRegPlusMenu');
+    if (!wrap || !menu || menu.style.display === 'none') return;
+    if (wrap.contains(e.target)) return;
+    window.closeAdminRegPlusMenu_();
+});
 
 // --- 「進む」「戻る」の処理も修正 ---
 let undoBtn = document.getElementById('undoDrawBtn');
@@ -7548,23 +7848,101 @@ document.getElementById('finalSaveBtn').onclick = async () => {
     }
 };
 
-window.saveM = () => {
-    const n = document.getElementById('mName').value; if (!n) { customAlert("看板名を入力してください"); return; }
-    const ic = document.getElementById('selIco').value, funcType = document.getElementById('mFunc').value, pos = currentMarker.getPosition(), coords = [{ lat: pos.lat(), lng: pos.lng() }];
+window.saveM = async () => {
+    const nameEl = document.getElementById('mName');
+    const n = nameEl ? String(nameEl.value || '').trim() : '';
+    if (!n) { customAlert("看板名を入力してください"); return; }
+    if (!currentMarker) { customAlert("位置が設定されていません。地図をタップしてから登録してください。"); return; }
+    const ic = document.getElementById('selIco').value;
+    const funcType = document.getElementById('mFunc').value;
+    const pos = currentMarker.getPosition();
+    const coords = [{ lat: pos.lat(), lng: pos.lng() }];
     const locEl = document.getElementById('mLoc');
     const loc = locEl ? String(locEl.value || '').trim() : '';
+    const photos = Array.isArray(window._pendingSignRegPhotos) ? window._pendingSignRegPhotos.slice() : [];
     const tempId = newAdminTempId_('tmp');
-    infoWindow.close();
-    createPolygonObject({ id: tempId, name: n, coords, color: ic, location: loc, signFunction: funcType, isMarker: true });
+    const btn = document.getElementById('btnSaveSignMarker');
+    if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
+
+    const now = new Date();
+    const ymd = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
+    const hm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const localPhotos = photos.length
+        ? [{
+            id: 'local_sign_' + Date.now(),
+            type: 'growth',
+            date: ymd,
+            time: hm,
+            author: currentUser || '',
+            urls: photos.map(p => p.base64).filter(Boolean),
+            data: { notes: '看板登録時' },
+            _pendingSync: true
+          }]
+        : [];
+
+    try { if (infoWindow) infoWindow.close(); } catch (e) {}
+    const modal = document.getElementById('modal');
+    if (modal) modal.style.display = 'none';
+    if (currentMarker) { currentMarker.setMap(null); currentMarker = null; }
+    window._pendingSignRegPhotos = [];
+
+    createPolygonObject({
+        id: tempId,
+        name: n,
+        coords,
+        color: ic,
+        location: loc,
+        signFunction: funcType,
+        isMarker: true,
+        photos: localPhotos
+    });
     document.getElementById('btnViewMode').click();
     persistAdminInitCache_();
-    showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
-    const payload = { name: n, coords: JSON.stringify(coords), color: ic, location: loc, signFunction: funcType, userName: currentUser };
-    syncAdminCall_('savePolygon', payload, { key: 'savePolygon:' + tempId, op: 'savePolygon', tempId, payload }).then(id => {
+    showAdminSyncToast(photos.length ? '✅ 反映しました（写真も同期中…）' : '✅ 反映しました（同期中…）', 'ok');
+
+    const payload = {
+        name: n,
+        coords: JSON.stringify(coords),
+        color: ic,
+        location: loc,
+        signFunction: funcType,
+        userName: currentUser
+    };
+    try {
+        const id = await syncAdminCall_('savePolygon', payload, {
+            key: 'savePolygon:' + tempId,
+            op: 'savePolygon',
+            tempId,
+            payload
+        });
         remapLoadedPolygonId_(tempId, id);
+        if (photos.length && id) {
+            try {
+                const updated = await callGAS('saveRecord', {
+                    id: id,
+                    name: n,
+                    author: currentUser,
+                    recordType: 'growth',
+                    data: { notes: '看板登録時' },
+                    photos: photos
+                });
+                if (loadedPolygons[id] && Array.isArray(updated)) {
+                    loadedPolygons[id].photos = updated;
+                } else if (loadedPolygons[id] && localPhotos.length) {
+                    loadedPolygons[id].photos = localPhotos.map(ph => Object.assign({}, ph, { _pendingSync: false }));
+                }
+                showAdminSyncToast('☁️ 看板と写真を保存しました', 'ok');
+            } catch (photoErr) {
+                console.warn('sign photo save failed', photoErr);
+                showAdminSyncToast('⚠️ 看板は保存済み。写真の同期に失敗しました', 'error');
+            }
+        } else {
+            showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+        }
         persistAdminInitCache_();
-        showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
-    }).catch(() => {});
+    } catch (e) {
+        showAdminSyncToast('⚠️ 保存に失敗しました: ' + (e.message || e), 'error');
+    }
 };
 
 // 選択中の筆ポリゴンパスを合体して LatLng 配列を返す

@@ -15,6 +15,40 @@ input[type="text"], select, input[type="number"] { padding: 8px; border-radius: 
 #drawArea input[type="text"], #drawArea select { background: #333; color: #fff; border: 1px solid #666; }
 button { padding: 8px 12px; cursor: pointer; border-radius: 5px; border: none; font-weight: bold; font-size: 13px; }
 .mode-btn { background: rgba(68, 68, 68, 0.8); color: #fff; } .mode-btn.active { background: rgba(211, 47, 47, 0.8); color: #fff; }
+.admin-mode-btn-hidden { display: none !important; }
+.admin-reg-plus-wrap { position: relative; display: inline-block; }
+.admin-reg-plus-btn { min-width: 72px; }
+.admin-reg-plus-btn.is-reg-active { background: rgba(211, 47, 47, 0.8); color: #fff; }
+.admin-reg-plus-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 168px;
+  background: #fff;
+  border: 1px solid #cfd8dc;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.2);
+  z-index: 6000;
+  padding: 6px;
+}
+.admin-reg-plus-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: bold;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+.admin-reg-plus-menu button:last-child { margin-bottom: 0; }
+.admin-reg-plus-menu button:hover { filter: brightness(0.97); background: #fff3e0; }
 .gps-btn { background-color: rgba(255, 255, 255, 0.8); color: #4285F4; border: 1px solid #4285F4; font-weight: bold; }
 .polygon-label { text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; }
 .signboard-label { background: rgba(255,255,255,0.95); padding: 2px 6px; border-radius: 4px; border: 1px solid #666; font-size: 11px; font-weight: bold; margin-top: 5px; color: #000; }

@@ -15,7 +15,7 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
 
-  <link rel="stylesheet" href="admin.css">
+  <link rel="stylesheet" href="admin.css?v=1788600000059">
   <link rel="stylesheet" href="cad.css">
 </head>
 
@@ -732,8 +732,15 @@
     </div>
     <div class="control-row">
       <button id="btnViewMode" class="mode-btn active">👀 閲覧</button>
-      <button id="btnDrawMode" class="mode-btn">✏️ 圃場</button>
-      <button id="btnMarkerMode" class="mode-btn">📍 看板</button>
+      <div class="admin-reg-plus-wrap" id="adminRegPlusWrap">
+        <button type="button" id="btnAdminRegPlus" class="mode-btn admin-reg-plus-btn" onclick="toggleAdminRegPlusMenu_(event)" title="登録">＋ 登録</button>
+        <div id="adminRegPlusMenu" class="admin-reg-plus-menu" style="display:none;" onclick="event.stopPropagation()">
+          <button type="button" onclick="pickAdminRegPlus_('draw')">✏️ 圃場を登録</button>
+          <button type="button" onclick="pickAdminRegPlus_('marker')">📍 看板を登録</button>
+        </div>
+      </div>
+      <button id="btnDrawMode" class="mode-btn admin-mode-btn-hidden" aria-hidden="true" tabindex="-1">✏️ 圃場</button>
+      <button id="btnMarkerMode" class="mode-btn admin-mode-btn-hidden" aria-hidden="true" tabindex="-1">📍 看板</button>
       <button onclick="openMasterModal()"
         style="background:rgba(33, 150, 243, 0.8); color:white; border-radius:5px; border:none; padding:8px 12px; font-weight:bold; font-size:13px;">⚙️
         マスタ</button>
@@ -831,7 +838,7 @@
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=ja&v=weekly" async defer></script>
 
   <script src="api-client.js?v=1788510000000" defer></script>
-  <script src="admin.js?v=1788600000055" defer></script>
+  <script src="admin.js?v=1788600000059" defer></script>
   <script src="admin_cost.js?v=1785489000008" defer></script>
   <script src="admin_crop_work.js?v=1787570400000" defer></script>
   <script src="tracking.js?v=1788600000037" defer></script>
