@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>プロ惁E�EMAP [作業記録用] v2.71</title>
+  <title>プロ惁E�EMAP [作業記録用] v2.71</title>
   <link rel="apple-touch-icon" href="icon.png">
   <link rel="icon" href="icon.png">
   <link rel="manifest" href="manifest.json">
@@ -44,22 +44,22 @@
 </head>
 
 <body>
-    <!-- プロポ�Eタルに戻る×�Eタン -->
+    <!-- プロポ�Eタルに戻る×�Eタン -->
   <div id="mapDataLoadingOverlay" class="is-visible worker-boot-loading" aria-busy="true" aria-live="polite">
     <div class="map-data-loading-spinner" aria-hidden="true"></div>
     <div id="mapDataLoadingText" style="font-weight:bold;font-size:16px;text-align:center;padding:0 20px;">アプリを準備中...</div>
-    <div id="mapDataLoadingSub" style="font-size:12px;color:#bbb;margin-top:8px;text-align:center;">ログイン状態を確認してぁE��ぁE/div>
+    <div id="mapDataLoadingSub" style="font-size:12px;color:#bbb;margin-top:8px;text-align:center;">ログイン状態を確認してぁE��ぁE/div>
     <div id="mapDataLoadingProgress" class="is-visible is-indeterminate"><div id="mapDataLoadingBar"></div></div>
     <div id="mapDataLoadingPercent" style="display:none;"></div>
   </div>
   <div id="recordSyncBanner" aria-live="polite">
     <span class="rss-spin" aria-hidden="true"></span>
-    <span id="recordSyncBannerText">☁E��E記録を同期中…</span>
+    <span id="recordSyncBannerText">☁E��E記録を同期中…</span>
   </div>
 
   <div id="loginScreen" style="display:none;" aria-hidden="true">
     <div class="login-box" style="max-height:90vh; overflow-y:auto;">
-      <h2 style="color:#4CAF50;">プロ惁E�EMAP (v2.65)</h2>
+      <h2 style="color:#4CAF50;">プロ惁E�EMAP (v2.65)</h2>
       <div style="display:flex; border-bottom:1px solid #e0e0e0; margin:0 0 12px 0;">
         <button type="button" id="loginTabBtn" onclick="switchWorkerAuthTab('login')" style="flex:1; padding:8px; border:none; background:transparent; color:#2e7d32; font-weight:bold; border-bottom:2px solid #4CAF50; cursor:pointer; font-size:13px;">ログイン</button>
         <button type="button" id="signupTabBtn" onclick="switchWorkerAuthTab('signup')" style="flex:1; padding:8px; border:none; background:transparent; color:#999; font-weight:normal; border-bottom:2px solid transparent; cursor:pointer; font-size:13px;">新規登録</button>
@@ -73,10 +73,10 @@
       </div>
 
       <div id="workerAuthSignup" style="display:none; text-align:left;">
-        <p style="font-size:12px; color:#666; margin:0 0 10px 0; line-height:1.4; text-align:center;">作業員アカウントを作�Eします、Ebr>権限変更は管琁E��E�Eマイペ�Eジから行えます、E/p>
+        <p style="font-size:12px; color:#666; margin:0 0 10px 0; line-height:1.4; text-align:center;">作業員アカウントを作�Eします、Ebr>権限変更は管琁E��E�Eマイペ�Eジから行えます、E/p>
         <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin:0 5% 4px;">ユーザー吁E/label>
-        <input type="text" id="signupUserName" class="login-input" placeholder="ログインに使ぁE��剁E autocomplete="username">
-        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin:0 5% 4px;">パスワード！E斁E��以上！E/label>
+        <input type="text" id="signupUserName" class="login-input" placeholder="ログインに使ぁE��剁E autocomplete="username">
+        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin:0 5% 4px;">パスワード！E斁E��以上！E/label>
         <input type="password" id="signupPassword" class="login-input" placeholder="パスワーチE autocomplete="new-password">
         <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin:0 5% 4px;">拠点吁E/label>
         <select id="signupLocation" class="login-input" style="background:#fff;">
@@ -94,13 +94,13 @@
       🌀
     </button>
     <button id="btnWeather" class="map-action-btn" onclick="openWeatherModal()" style="color: #ff9800;">
-      ☁E��E    </button>
-    <button id="btnSkillTree" class="map-action-btn" onclick="openSkillTreeModal()" title="スキルチE��ー & 免許・賁E��" style="color: #2E7D32;">
+      ☁E��E    </button>
+    <button id="btnSkillTree" class="map-action-btn" onclick="openSkillTreeModal()" title="スキルチE��ー & 免許・賁E��" style="color: #2E7D32;">
       🌳
     </button>
     <button id="btnTracking" class="map-action-btn" onclick="toggleTracking()" style="color: #4CAF50;">
-      🏃‍♂�E�E    </button>
-    <button id="btnRestBreak" class="map-action-btn" onclick="openRestBreakRecord()" title="休�E時間を登録" style="color: #E65100;">
+      🏃‍♂�E�E    </button>
+    <button id="btnRestBreak" class="map-action-btn" onclick="openRestBreakRecord()" title="休�E時間を登録" style="color: #E65100;">
       ☁E    </button>
     <button id="btnCurrentLocation" class="map-action-btn" style="color: #4285F4;">
       📍
@@ -110,11 +110,11 @@
     </button>
   </div>
 
-  <!-- 🌳 スキルチE��ー �E�E免許・賁E�� モーダル -->
+  <!-- 🌳 スキルチE��ー �E�E免許・賁E�� モーダル -->
   <div id="skillTreeModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
     <div style="background: #fff; color: #333; border-radius: 12px; width: 92%; max-width: 520px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); max-height: 85vh; display: flex; flex-direction: column; overflow: hidden;">
       <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #2e7d32; color: white; font-weight: bold;">
-        <h3 style="margin: 0; font-size: 16px;">🌳 スキルチE��ー �E�E免許・賁E��</h3>
+        <h3 style="margin: 0; font-size: 16px;">🌳 スキルチE��ー �E�E免許・賁E��</h3>
         <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #ccc;" onclick="document.getElementById('skillTreeModal').style.display='none'">ÁE/span>
       </div>
       <div id="skillTreeContent" style="overflow-y: auto; flex: 1;">
@@ -144,7 +144,7 @@
         <button id="customConfirmOk"
           style="flex: 1; background: #d32f2f; color: #fff; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">はぁE/button>
         <button id="customConfirmCancel"
-          style="flex: 1; background: #ccc; color: #333; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">ぁE��ぁE/button>
+          style="flex: 1; background: #ccc; color: #333; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">ぁE��ぁE/button>
       </div>
     </div>
   </div>
@@ -186,7 +186,7 @@
     <div
       style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-        <h3 style="margin: 0; color: #d32f2f;">🌀 台風惁E��</h3>
+        <h3 style="margin: 0; color: #d32f2f;">🌀 台風惁E��</h3>
         <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;"
           onclick="document.getElementById('typhoonModal').style.display='none'">ÁE/span>
       </div>
@@ -212,7 +212,7 @@
           onclick="document.getElementById('recordTypeSelectModal').style.display='none'; openBulkWorkMemoModal_()"
           style="background: #FFF3E0; color: #E65100; padding: 15px; border-radius: 8px; border: 2px solid #FFB74D; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); text-align:left;">
           <div>📋 メモから一括入劁E/div>
-          <div style="font-size:11px; font-weight:normal; margin-top:4px; line-height:1.35; opacity:0.9;">時間ごとのメモを貼り付け ↁE1件ずつ確認�E編雁E��て保孁E/div>
+          <div style="font-size:11px; font-weight:normal; margin-top:4px; line-height:1.35; opacity:0.9;">時間ごとのメモを貼り付け ↁE1件ずつ確認�E編雁E��て保孁E/div>
         </button>
 
         <button
@@ -221,9 +221,9 @@
           現在地で作業記録</button>
         <button
           onclick="document.getElementById('recordTypeSelectModal').style.display='none'; openRestBreakRecord()"
-          style="background: #FFF3E0; color: #E65100; padding: 15px; border-radius: 8px; border: 2px solid #FF9800; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">☁E          休�E時間を登録</button>
+          style="background: #FFF3E0; color: #E65100; padding: 15px; border-radius: 8px; border: 2px solid #FF9800; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">☁E          休�E時間を登録</button>
         <div style="background:#F3E5F5; border:1px solid #CE93D8; border-radius:8px; padding:10px; text-align:left;">
-          <div style="font-size:12px; font-weight:bold; color:#6A1B9A; margin-bottom:8px;">🌱 専用記録�E�保存後に作業記録へ続けられます！E/div>
+          <div style="font-size:12px; font-weight:bold; color:#6A1B9A; margin-bottom:8px;">🌱 専用記録�E�保存後に作業記録へ続けられます！E/div>
           <div style="display:flex; flex-direction:column; gap:8px;">
             <button
               onclick="document.getElementById('recordTypeSelectModal').style.display='none'; openSowingRecord()"
@@ -235,7 +235,7 @@
               定植記録</button>
             <button
               onclick="document.getElementById('recordTypeSelectModal').style.display='none'; openRidgeMakeRecord()"
-              style="background:#00838F; color:#fff; padding:12px; border-radius:8px; border:none; font-weight:bold; font-size:15px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.15);">🛤�E�E              畝立て記録</button>
+              style="background:#00838F; color:#fff; padding:12px; border-radius:8px; border:none; font-weight:bold; font-size:15px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.15);">🛤�E�E              畝立て記録</button>
           </div>
         </div>
         <button onclick="document.getElementById('recordTypeSelectModal').style.display='none'"
@@ -248,7 +248,7 @@
     <div class="modal-content" id="modalBody"></div>
   </div>
 
-  <!-- スマ�E向けカスタム時刻ピッカー�E�ネイチE��ブ「設定」見�Eれ対策！E-->
+  <!-- スマ�E向けカスタム時刻ピッカー�E�ネイチE��ブ「設定」見�Eれ対策！E-->
   <div id="timePickerModal"
     style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:12000; flex-direction:column; justify-content:center; align-items:center; padding:16px; box-sizing:border-box;">
     <div
@@ -271,15 +271,15 @@
   <div id="mapSelectUI"
     style="display:none; position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.85); color:white; padding:15px; border-radius:12px; z-index:5000; align-items:center; gap:10px; width: 90%; max-width: 350px; box-shadow:0 4px 15px rgba(0,0,0,0.3); flex-wrap: wrap; justify-content: center;">
     <div style="width:100%; text-align:center; font-weight:bold; font-size:14px; margin-bottom:4px;"
-      id="mapSelectCount">🗺�E�E記録する対象をタチE�Eしてください</div>
+      id="mapSelectCount">🗺�E�E記録する対象をタチE�Eしてください</div>
     <div style="width:100%; text-align:center; font-size:11px; color:#b2dfdb; margin-bottom:6px;"
-      id="mapSelectHint">CAD畝がある圁E��は畝�E刁E��単位で選べまぁE/div>
+      id="mapSelectHint">CAD畝がある圁E��は畝�E刁E��単位で選べまぁE/div>
     <div id="mapSelectSplitButtons"
       style="display:none; width:100%; gap:6px; flex-wrap:wrap; justify-content:center; margin-bottom:6px;"></div>
     <div id="mapSelectRidgeActions"
       style="display:none; width:100%; gap:6px; flex-wrap:wrap; justify-content:center; margin-bottom:6px;">
       <button type="button" onclick="selectWholeFieldInWorkMap()"
-        style="flex:1; min-width:120px; background:#FF9800; color:#fff; border:none; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">圁E��全体を選抁E/button>
+        style="flex:1; min-width:120px; background:#FF9800; color:#fff; border:none; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">圁E��全体を選抁E/button>
       <button type="button" onclick="exitWorkRidgeSelectionView()"
         style="flex:1; min-width:120px; background:#607D8B; color:#fff; border:none; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">畝選択を閉じめE/button>
     </div>
@@ -293,11 +293,11 @@
     <div
       style="background:#222; color:#fff; width:90%; max-width:400px; border-radius:8px; display:flex; flex-direction:column; padding:20px; box-sizing:border-box; border:1px solid #444;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-        <h3 style="margin:0; color:#4CAF50; font-size:18px;">✉︁EシスチE��管琁E��E��連絡</h3>
+        <h3 style="margin:0; color:#4CAF50; font-size:18px;">✉︁EシスチE��管琁E��E��連絡</h3>
         <span onclick="closeFeedback()" style="cursor:pointer; font-size:24px; color:#999; line-height:1;">ÁE/span>
       </div>
-      <p style="font-size:12px; color:#aaa; margin-top:0;">バグの報告や機�E追加の要望などをご記�Eください、E/p>
-      <textarea id="feedbackText" rows="6" placeholder="例：、E��E�E画面でエラーが�Eます。、E��E�E機�Eを追加してほしいです、E
+      <p style="font-size:12px; color:#aaa; margin-top:0;">バグの報告や機�E追加の要望などをご記�Eください、E/p>
+      <textarea id="feedbackText" rows="6" placeholder="例：、E��E�E画面でエラーが�Eます。、E��E�E機�Eを追加してほしいです、E
         style="width:100%; padding:10px; border-radius:4px; border:1px solid #555; background:#333; color:#fff; box-sizing:border-box; margin-bottom:15px; resize:none;"></textarea>
       <button id="sendFeedbackBtn" onclick="sendFeedback()"
         style="width:100%; background:#4CAF50; color:#fff; border:none; padding:12px; border-radius:4px; font-weight:bold; font-size:16px;">送信する</button>
@@ -307,7 +307,7 @@
   <div class="control-panel">
     <div class="control-row">
       <div class="search-container">
-        <input type="text" id="searchInput" placeholder="🔍 圁E��・看板を検索...">
+        <input type="text" id="searchInput" placeholder="🔍 圁E��・看板を検索...">
         <div id="searchSuggestions"></div>
       </div>
       <button onclick="promptLineUrl()"
@@ -320,7 +320,7 @@
         style="background:#FFF9C4; color:#F57F17; border:1px solid #F57F17; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">📅
         予定一覧</button>
       <button onclick="openPersonalSchedule()"
-        style="background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">🗓�E�E        スケジュール</button>
+        style="background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">🗓�E�E        スケジュール</button>
       <button onclick="openAllHistory()"
         style="background:#E3F2FD; color:#1A73E8; border:1px solid #1A73E8; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">📋
         履歴</button>
@@ -329,15 +329,15 @@
       <div style="position:relative; display:inline-block;">
         <button type="button" onclick="toggleAccountMenu(event)"
           style="background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px; cursor:pointer; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">👤
-          <span data-account-name>マイペ�Eジ</span> ▾</button>
+          <span data-account-name>マイペ�Eジ</span> ▾</button>
         <div id="accountMenuDropdown" onclick="event.stopPropagation()"
           style="display:none; position:absolute; right:0; top:calc(100% + 6px); min-width:150px; background:#fff; border:1px solid #cfd8dc; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,.18); z-index:6000; padding:6px;">
           <button type="button" onclick="closeAccountMenu(); openMyPage();"
-            style="width:100%; background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">👤 マイペ�Eジ</button>
+            style="width:100%; background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">👤 マイペ�Eジ</button>
           <button type="button" id="accountMenuScheduleBtn" onclick="closeAccountMenu(); openScheduleFromWorker();"
             style="display:none; width:100%; background:#E3F2FD; color:#1565C0; border:1px solid #1565C0; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">📅 マネジメンチE/button>
           <button type="button" id="accountMenuAdminBtn" onclick="closeAccountMenu(); openAdminFromWorker();"
-            style="display:none; width:100%; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">🗺�E�E管琁E��E��面</button>
+            style="display:none; width:100%; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">🗺�E�E管琁E��E��面</button>
           <button type="button" onclick="closeAccountMenu(); executeLogout();"
             style="width:100%; background:#F44336; color:#fff; border:none; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; text-align:left;">🚪 ログアウチE/button>
         </div>
@@ -358,7 +358,7 @@
 
   <div id="personalSchedulePanel" aria-hidden="true">
     <div class="ps-panel-header">
-      <span class="ps-header-title">🗓�E�Eマイ・スケジュール</span>
+      <span class="ps-header-title">🗓�E�Eマイ・スケジュール</span>
       <div class="ps-main-tabs">
         <button type="button" id="psTabCalendar" class="ps-main-tab active" onclick="setPersonalScheduleMainTab_('calendar')">📅 カレンダー</button>
         <button type="button" id="psTabTasks" class="ps-main-tab" onclick="setPersonalScheduleMainTab_('tasks')">✁Eタスク</button>
@@ -372,7 +372,7 @@
   <div id="psGanttAddModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:3500; align-items:center; justify-content:center;">
     <div style="background:#fff; border-radius:12px; width:min(420px,94vw); max-height:90vh; overflow:auto; padding:16px; box-sizing:border-box;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-        <span style="font-weight:bold; font-size:16px;">�E�E予定を追加</span>
+        <span style="font-weight:bold; font-size:16px;">�E�E予定を追加</span>
         <span style="cursor:pointer; font-size:22px; line-height:1;" onclick="closePsGanttAddModal_()">ÁE/span>
       </div>
       <div style="display:flex; gap:6px; margin-bottom:12px;">
@@ -384,20 +384,20 @@
         <input type="date" id="psGanttAddDate" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px;">
         <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">開始時刻</label>
         <input type="time" id="psGanttAddStartTime" value="09:00" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px;">
-        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">所要時間（�E�E�E/label>
+        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">所要時間（�E�E�E/label>
         <input type="number" id="psGanttAddDuration" value="30" min="15" step="15" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px;">
         <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">作業吁E/label>
         <input type="text" id="psGanttAddWorkName" placeholder="例：圃場点椁E style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px;">
-        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">カチE��リ</label>
+        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">カチE��リ</label>
         <select id="psGanttAddCategory" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px;"></select>
       </div>
       <div id="psGanttAddTaskFields" style="display:none;">
         <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">開始日</label>
         <input type="date" id="psGanttAddTaskDate" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px;">
-        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">期限�E�任意！E/label>
+        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">期限�E�任意！E/label>
         <input type="date" id="psGanttAddTaskDeadline" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px;">
-        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">タスク冁E��</label>
-        <textarea id="psGanttAddTaskText" rows="3" placeholder="めE��ことを�E劁E.." style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px; resize:vertical; font-family:inherit;"></textarea>
+        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">タスク冁E��</label>
+        <textarea id="psGanttAddTaskText" rows="3" placeholder="めE��ことを�E劁E.." style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px; resize:vertical; font-family:inherit;"></textarea>
       </div>
       <button type="button" id="psGanttAddSubmitBtn" onclick="submitPsGanttAdd_()" style="width:100%; background:#1565c0; color:#fff; border:none; padding:12px; border-radius:8px; font-weight:bold; font-size:14px; cursor:pointer;">登録する</button>
       <div id="psGanttAddResult" style="margin-top:8px; font-size:12px; font-weight:bold;"></div>
@@ -406,12 +406,12 @@
 
   <div id="lightbox" onclick="this.style.display='none'"><img id="lightbox-img" src=""></div>
 
-  <!-- 管琁E��E��農業CAD�E�Edmin.html iframe�E�E-->
+  <!-- 管琁E��E��農業CAD�E�Edmin.html iframe�E�E-->
   <div id="adminCadModal"
     style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.72); z-index:16000; justify-content:center; align-items:center;">
     <div style="width:96%; height:92%; background:#fff; border-radius:12px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 8px 28px rgba(0,0,0,0.35);">
       <div style="padding:10px 12px; background:#f5f5f5; border-bottom:1px solid #ddd; display:flex; justify-content:space-between; align-items:center; gap:8px;">
-        <div style="font-weight:bold; color:#E65100;">🚜 農業CAD�E�吸水ピン設定！E/div>
+        <div style="font-weight:bold; color:#E65100;">🚜 農業CAD�E�吸水ピン設定！E/div>
         <button type="button" onclick="closeAdminCadModal()"
           style="background:#f44336; color:#fff; border:none; padding:8px 14px; border-radius:6px; font-weight:bold; cursor:pointer;">閉じめE/button>
       </div>
@@ -463,7 +463,7 @@
       style="background: #fff; width: 95%; height: 90vh; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden;">
       <div
         style="display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; background: #2196F3; color: white;">
-        <h3 style="margin: 0; font-size: 18px;">🌧�E�E雨雲レーダー</h3>
+        <h3 style="margin: 0; font-size: 18px;">🌧�E�E雨雲レーダー</h3>
         <span style="cursor: pointer; font-size: 28px; line-height: 1;" onclick="closeRadarModal()">ÁE/span>
       </div>
       <div id="radarContent" style="flex: 1; position: relative; -webkit-overflow-scrolling: touch;"></div>

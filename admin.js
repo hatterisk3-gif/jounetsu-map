@@ -5889,6 +5889,10 @@ function actionEditShape(id) {
     if (loadedPolygons[id].polygon) {
         originalCoordsForEdit = loadedPolygons[id].polygon.getPath().getArray().map(p => ({ lat: p.lat(), lng: p.lng() }));
         if (document.getElementById('editLoadFudeBtn')) document.getElementById('editLoadFudeBtn').style.display = 'inline-block';
+        // 範囲変更を開いた時点で県判定＋JSON先読み（「筆ポリから」押下を速くする）
+        if (typeof window.preloadFudeData === 'function') {
+            window.preloadFudeData();
+        }
     } else {
         originalCoordsForEdit = [loadedPolygons[id].marker.getPosition()];
         if (document.getElementById('editLoadFudeBtn')) document.getElementById('editLoadFudeBtn').style.display = 'none';
@@ -7202,38 +7206,9 @@ window.setFudeVisibility = (isVisible) => {
     if (!map || !map.data) return;
     window.isFudeVisibleFlag = isVisible; // ★状態を記録する
     if (isVisible) {
-        map.data.setStyle((feature) => {
-            // 1. ズームレベルによる制限（15未満なら非表示）
-            if (map.getZoom() < 15) {
-                return { visible: false };
-            }
-
-            // 2. 表示範囲による制限
-            const bounds = map.getBounds();
-            if (bounds) {
-                let isInside = false;
-                const geometry = feature.getGeometry();
-                if (geometry) {
-                    let point = null;
-                    if (geometry.getType() === 'Polygon') {
-                        const ring = geometry.getAt(0);
-                        if (ring && ring.getLength() > 0) point = ring.getAt(0);
-                    } else if (geometry.getType() === 'MultiPolygon') {
-                        const poly = geometry.getAt(0);
-                        if (poly) {
-                            const ring = poly.getAt(0);
-                            if (ring && ring.getLength() > 0) point = ring.getAt(0);
-                        }
-                    }
-                    if (point && bounds.contains(point)) {
-                        isInside = true;
-                    }
-                }
-                if (!isInside) {
-                    return { visible: false }; // 範囲外なら非表示
-                }
-            }
-
+        // 画面内の筆だけを data layer に載せるため、スタイルではズームのみ見る（高速化）
+        map.data.setStyle(() => {
+            if (map.getZoom() < 15) return { visible: false };
             return { fillColor: '#2196F3', fillOpacity: 0.15, strokeColor: '#2196F3', strokeWeight: 1, clickable: true, visible: true };
         });
     } else {
@@ -7241,17 +7216,8 @@ window.setFudeVisibility = (isVisible) => {
     }
 };
 
-// マップ初期化後にスクロール（移動・ズーム）時の再描画イベントを追加
-if (typeof mapInitPromise !== 'undefined') {
-    mapInitPromise.then(() => {
-        if (!map || typeof map.addListener !== 'function') return;
-        map.addListener('idle', () => {
-            if (window.isFudeVisibleFlag) {
-                setFudeVisibility(true);
-            }
-        });
-    });
-}
+// idle 時の再描画は map 初期化側（autoSwitchFudeRegion + refreshFudeMapData）に一本化
+
 // 🌟ここに追加：モードに応じて看板のラベル（文字）を隠す関数
 window.updateMarkerLabels = () => {
     const z = map ? map.getZoom() : 15;
@@ -7466,49 +7432,105 @@ const fudeFiles = {
 };
 // 🌟修正：違う県に移動した瞬間に、古い県のデータを【完全に忘れて】スマホを軽くする！
 
+const FUDE_R2_BASE_URL = "https://pub-bce70bc57bcf4e08b7a2394defbcc51a.r2.dev";
+const FUDE_FETCH_CONCURRENCY = 10;
+const FUDE_MAX_FEATURES_ON_MAP = 2200;
+
+/** GeoJSON の概算バウンディングボックス（ファイル単位スキップ用） */
+window.ensureFudeFileBounds_ = (geoJson) => {
+    if (!geoJson) return null;
+    if (geoJson.__bounds) return geoJson.__bounds;
+    let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+    let n = 0;
+    const feats = geoJson.features || [];
+    for (let i = 0; i < feats.length; i++) {
+        const f = feats[i];
+        let coords = null;
+        if (!f || !f.geometry) continue;
+        if (f.geometry.type === 'Polygon') coords = f.geometry.coordinates[0] && f.geometry.coordinates[0][0];
+        else if (f.geometry.type === 'MultiPolygon') coords = f.geometry.coordinates[0] && f.geometry.coordinates[0][0] && f.geometry.coordinates[0][0][0];
+        if (!coords || coords.length < 2) continue;
+        const lng = coords[0], lat = coords[1];
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+        if (lng < minLng) minLng = lng;
+        if (lng > maxLng) maxLng = lng;
+        n++;
+    }
+    geoJson.__bounds = n ? { minLat, maxLat, minLng, maxLng } : null;
+    return geoJson.__bounds;
+};
+
+window.fudeBoundsOverlap_ = (b, minLat, maxLat, minLng, maxLng) => {
+    if (!b) return true;
+    return !(b.maxLat < minLat || b.minLat > maxLat || b.maxLng < minLng || b.minLng > maxLng);
+};
+
 let fudeRenderTimer = null;
+window._lastFudeRenderKey = '';
 window.refreshFudeMapData = (immediate = false) => {
     if (!window.loadedFudeRegion || !window.isFudeVisibleFlag) return;
+    if (!map || !map.getBounds) return;
     const bounds = map.getBounds();
     if (!bounds) return;
 
     const run = () => {
-        let ne = bounds.getNorthEast();
-        let sw = bounds.getSouthWest();
-        let latBuf = (ne.lat() - sw.lat()) * 0.1;
-        let lngBuf = (ne.lng() - sw.lng()) * 0.1;
-        let minLat = sw.lat() - latBuf, maxLat = ne.lat() + latBuf;
-        let minLng = sw.lng() - lngBuf, maxLng = ne.lng() + lngBuf;
+        const ne = bounds.getNorthEast();
+        const sw = bounds.getSouthWest();
+        const latBuf = (ne.lat() - sw.lat()) * 0.12;
+        const lngBuf = (ne.lng() - sw.lng()) * 0.12;
+        const minLat = sw.lat() - latBuf, maxLat = ne.lat() + latBuf;
+        const minLng = sw.lng() - lngBuf, maxLng = ne.lng() + lngBuf;
+        const zoom = map.getZoom() || 0;
+        const renderKey = [
+            window.loadedFudeRegion,
+            zoom,
+            minLat.toFixed(4), maxLat.toFixed(4),
+            minLng.toFixed(4), maxLng.toFixed(4)
+        ].join('|');
 
-        // ★ メモリ節約：見えない領域のポリゴンを一度消す
-        map.data.forEach(f => map.data.remove(f));
+        // ほぼ同じ範囲なら再構築をスキップ（範囲変更→筆ポリの体感を短縮）
+        if (window._lastFudeRenderKey === renderKey && window._fudeDataLayerCount > 0) {
+            return;
+        }
 
-        let featuresToAdd = [];
         const regionData = fudeFiles[window.loadedFudeRegion];
         if (!regionData) return;
 
-        regionData.files.forEach(fileName => {
-            let geoJson = window.fudeCache[fileName];
-            if (geoJson && geoJson.features) {
-                geoJson.features.forEach(f => {
-                    let coords = null;
-                    if (f.geometry.type === "Polygon") coords = f.geometry.coordinates[0][0];
-                    else if (f.geometry.type === "MultiPolygon") coords = f.geometry.coordinates[0][0][0];
+        const featuresToAdd = [];
+        const files = regionData.files || [];
+        for (let fi = 0; fi < files.length; fi++) {
+            const geoJson = window.fudeCache[files[fi]];
+            if (!geoJson || !geoJson.features) continue;
+            const fileBounds = window.ensureFudeFileBounds_(geoJson);
+            if (!window.fudeBoundsOverlap_(fileBounds, minLat, maxLat, minLng, maxLng)) continue;
 
-                    if (coords) {
-                        let lng = coords[0], lat = coords[1];
-                        if (lat >= minLat && lat <= maxLat && lng >= minLng && lng <= maxLng) {
-                            featuresToAdd.push(f);
-                        }
-                    }
-                });
+            const feats = geoJson.features;
+            for (let i = 0; i < feats.length; i++) {
+                const f = feats[i];
+                let coords = null;
+                if (!f || !f.geometry) continue;
+                if (f.geometry.type === 'Polygon') coords = f.geometry.coordinates[0] && f.geometry.coordinates[0][0];
+                else if (f.geometry.type === 'MultiPolygon') coords = f.geometry.coordinates[0] && f.geometry.coordinates[0][0] && f.geometry.coordinates[0][0][0];
+                if (!coords) continue;
+                const lng = coords[0], lat = coords[1];
+                if (lat >= minLat && lat <= maxLat && lng >= minLng && lng <= maxLng) {
+                    featuresToAdd.push(f);
+                    if (featuresToAdd.length >= FUDE_MAX_FEATURES_ON_MAP) break;
+                }
             }
-        });
+            if (featuresToAdd.length >= FUDE_MAX_FEATURES_ON_MAP) break;
+        }
+
+        // ★ メモリ節約：見えない領域のポリゴンを一度消す
+        map.data.forEach(f => map.data.remove(f));
+        window._fudeDataLayerCount = 0;
 
         if (featuresToAdd.length > 0) {
-            if (featuresToAdd.length > 5000) featuresToAdd = featuresToAdd.slice(0, 5000);
-            map.data.addGeoJson({ type: "FeatureCollection", features: featuresToAdd });
+            map.data.addGeoJson({ type: 'FeatureCollection', features: featuresToAdd });
+            window._fudeDataLayerCount = featuresToAdd.length;
         }
+        window._lastFudeRenderKey = renderKey;
     };
 
     clearTimeout(fudeRenderTimer);
@@ -7516,12 +7538,9 @@ window.refreshFudeMapData = (immediate = false) => {
         fudeRenderTimer = null;
         run();
     } else {
-        fudeRenderTimer = setTimeout(run, 60);
+        fudeRenderTimer = setTimeout(run, 80);
     }
 };
-
-const FUDE_R2_BASE_URL = "https://pub-bce70bc57bcf4e08b7a2394defbcc51a.r2.dev";
-const FUDE_FETCH_CONCURRENCY = 8;
 
 /** 地図中心から都道府県名を取得（近傍キャッシュで Geocoder 待ちを短縮） */
 window.resolvePrefectureFromMap = () => {
@@ -7536,8 +7555,8 @@ window.resolvePrefectureFromMap = () => {
         if (window._fudePrefCache && window._fudePrefCache.name) {
             const dlat = Math.abs(window._fudePrefCache.lat - lat);
             const dlng = Math.abs(window._fudePrefCache.lng - lng);
-            // 約2km以内なら再問い合わせしない
-            if (dlat < 0.02 && dlng < 0.02) {
+            // 約5km以内なら再問い合わせしない
+            if (dlat < 0.045 && dlng < 0.045) {
                 resolve(window._fudePrefCache.name);
                 return;
             }
@@ -7607,6 +7626,7 @@ window.fetchFudeFilesParallel = async (regionData, options = {}) => {
                 const res = await fetch(`${FUDE_R2_BASE_URL}/${regionData.folder}/${fileName}`);
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 const geoJson = await res.json();
+                window.ensureFudeFileBounds_(geoJson);
                 window.fudeCache[fileName] = geoJson;
             } catch (err) {
                 console.warn('筆ポリ読込スキップ', fileName, err);
@@ -7636,6 +7656,8 @@ window.autoSwitchFudeRegion = async () => {
 
         // ★超重要：裏側で溜め込んでいたデータ（キャッシュ）も空っぽにしてフリーズを防ぐ！
         window.fudeCache = {};
+        window._lastFudeRenderKey = '';
+        window._fudeDataLayerCount = 0;
 
         if (window.selectedFudePaths && window.selectedFudePaths.length > 0) {
             clearCustomDrawing();
@@ -7658,7 +7680,14 @@ window.preloadFudeData = async () => {
 
     const regionData = fudeFiles[prefName];
     // 表示はしない。現在県だけ並列で先読み（操作を止めない）
-    window.fetchFudeFilesParallel(regionData).catch(err => console.warn('先読み失敗', err));
+    try {
+        await window.fetchFudeFilesParallel(regionData);
+        if (!window.loadedFudeRegion) {
+            window.loadedFudeRegion = prefName;
+        }
+    } catch (err) {
+        console.warn('先読み失敗', err);
+    }
 };
 // 🌟ここに追加：スマホをフリーズさせずに全県のデータを裏でゆっくり集めるステルス関数
 window.preloadAllFudeDataSlowly = () => {
@@ -7731,8 +7760,11 @@ document.getElementById('btnLoadFude').onclick = async () => {
         }
 
         const regionData = fudeFiles[prefName];
+        const files = regionData.files || [];
+        const allCached = files.length > 0 && files.every(f => window.fudeCache && window.fudeCache[f]);
 
-        if (window.loadedFudeRegion === prefName) {
+        if (window.loadedFudeRegion === prefName || allCached) {
+            window.loadedFudeRegion = prefName;
             setFudeVisibility(true);
             window.refreshFudeMapData(true);
             return;
@@ -7740,10 +7772,12 @@ document.getElementById('btnLoadFude').onclick = async () => {
 
         if (window.loadedFudeRegion !== null) {
             map.data.forEach(function (feature) { map.data.remove(feature); });
+            window._fudeDataLayerCount = 0;
+            window._lastFudeRenderKey = '';
         }
         window.loadedFudeRegion = prefName;
 
-        btn.innerHTML = `⏳ ${prefName} 0/${regionData.files.length}`;
+        btn.innerHTML = `⏳ ${prefName} 0/${files.length}`;
         map.setOptions({ draggableCursor: 'wait' });
         // 最初から表示スタイルを有効化し、到着次第青枠を出す
         setFudeVisibility(true);
@@ -8033,19 +8067,26 @@ document.getElementById('editLoadFudeBtn').onclick = async () => {
         }
 
         const regionData = fudeFiles[prefName];
+        const files = regionData.files || [];
+        const allCached = files.length > 0 && files.every(f => window.fudeCache && window.fudeCache[f]);
 
-        if (window.loadedFudeRegion === prefName) {
+        // 同県が既読込、または先読み済みならネット待ちなしで即表示
+        if (window.loadedFudeRegion === prefName || allCached) {
+            window.loadedFudeRegion = prefName;
             setFudeVisibility(true);
+            // 同一ビューポートなら renderKey でスキップ、移動後なら再構築
             window.refreshFudeMapData(true);
             return;
         }
 
         if (window.loadedFudeRegion !== null) {
             map.data.forEach(function (feature) { map.data.remove(feature); });
+            window._fudeDataLayerCount = 0;
+            window._lastFudeRenderKey = '';
         }
         window.loadedFudeRegion = prefName;
 
-        btn.innerHTML = `⏳ 0/${regionData.files.length}`;
+        btn.innerHTML = `⏳ 0/${files.length}`;
         map.setOptions({ draggableCursor: 'wait' });
         setFudeVisibility(true);
 
