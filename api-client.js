@@ -13,7 +13,7 @@
 
   var HEAVY_TIMEOUT_MS = {
     manageMaster: 90000,
-    getInitData: 60000,
+    getInitData: 180000,
     getWorkRecordAnalysis: 45000,
     saveCultivationPlans: 90000,
     saveCroptypeDBBatch: 90000,

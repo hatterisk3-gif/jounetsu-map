@@ -5671,16 +5671,27 @@ function createSignboardMarker(name, pos, icon, id) {
       const VALID_WORK_CATEGORIES_ = ['栽培', '生産', '出荷/配送', '育苗', '研修/調整', '管理/事務', '研究/開発', '保全/整備'];
 
       window.getValidWorkCategories_ = () => {
-        const set = new Set(VALID_WORK_CATEGORIES_);
-        const fromPdl = (pdlWorkCategories || []).map(c => String((typeof c === 'string' ? c : (c && c.name)) || '').trim()).filter(c => set.has(c));
-        if (fromPdl.length) return fromPdl;
+        const fromPdl = (pdlWorkCategories || []).map(c => String((typeof c === 'string' ? c : (c && c.name)) || '').trim()).filter(Boolean);
+        if (fromPdl.length) return [...new Set(fromPdl)];
         return VALID_WORK_CATEGORIES_.slice();
       };
 
       window.isValidWorkCategory_ = (cat) => {
         const c = String(cat || '').trim();
         if (!c || c === 'すべて') return false;
-        return VALID_WORK_CATEGORIES_.indexOf(c) >= 0;
+        if (VALID_WORK_CATEGORIES_.indexOf(c) >= 0) return true;
+        const master = (typeof window.getValidWorkCategories_ === 'function') ? window.getValidWorkCategories_() : [];
+        return master.indexOf(c) >= 0;
+      };
+
+      /** 「栽培/生産」は、統合前の「栽培」「生産」に付いた作業も同じ候補として扱う */
+      window.workCategoryMatches_ = (workCat, selectedCat) => {
+        const w = String(workCat || '').trim();
+        const s = String(selectedCat || '').trim();
+        if (!s || s === 'すべて') return true;
+        if (w === s) return true;
+        const parts = s.split(/[\/／]/).map(x => x.trim()).filter(Boolean);
+        return parts.length > 1 && parts.indexOf(w) >= 0;
       };
 
       window.getWorkMasterCategoryOrEmpty_ = (w) => {
@@ -5699,7 +5710,9 @@ function createSignboardMarker(name, pos, icon, id) {
       window.isFieldCategory = (cat) => {
         const c = String(cat || '').trim();
         if (!c) return false;
-        return FIELD_WORK_CATEGORIES_.indexOf(c) >= 0;
+        if (FIELD_WORK_CATEGORIES_.indexOf(c) >= 0) return true;
+        const parts = c.split(/[\/／]/).map(s => s.trim()).filter(Boolean);
+        return parts.length > 1 && parts.some(p => FIELD_WORK_CATEGORIES_.indexOf(p) >= 0);
       };
 
       window.FIELD_SELECT_RULES_KEY_ = 'passionMapFieldSelectRules';
@@ -7355,7 +7368,7 @@ function createSignboardMarker(name, pos, icon, id) {
           const catNorm = String(category).trim();
           // 準備は「対象となる全作業」から選ぶ
           if (!(typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(catNorm))) {
-            works = works.filter(w => window.getWorkMasterCategoryOrEmpty_(w) === catNorm);
+            works = works.filter(w => window.workCategoryMatches_(window.getWorkMasterCategoryOrEmpty_(w), catNorm));
           }
         }
         let cropKeys = [];
@@ -7428,7 +7441,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if (category && category !== 'すべて') {
           const catNorm = String(category).trim();
           if (!(typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(catNorm))) {
-            works = works.filter(w => window.getWorkMasterCategoryOrEmpty_(w) === catNorm);
+            works = works.filter(w => window.workCategoryMatches_(window.getWorkMasterCategoryOrEmpty_(w), catNorm));
           }
         }
         const keys = new Set();
@@ -15051,7 +15064,7 @@ function createSignboardMarker(name, pos, icon, id) {
           if (typeof window.isMetaShellWorkName_ === 'function' && window.isMetaShellWorkName_(name)) return;
           const wCat = window.getWorkMasterCategoryOrEmpty_(w);
           if (!window.isValidWorkCategory_(wCat)) return;
-          if (filter && wCat !== filter) return;
+          if (filter && !(typeof window.workCategoryMatches_ === 'function' ? window.workCategoryMatches_(wCat, filter) : wCat === filter)) return;
           // 準備／片づけカテゴリ自身の作業は対象候補から除外
           if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(wCat)) return;
           seen.add(name);
@@ -30792,7 +30805,9 @@ window.getBulkWorkMemoWorkCandidates_ = (category, cropName) => {
     ? window.filterWorkMasterWithValidCategory_(Array.isArray(pdlWorkMaster) ? pdlWorkMaster.slice() : [])
     : (Array.isArray(pdlWorkMaster) ? pdlWorkMaster.slice() : []);
   if (cat) {
-    list = list.filter(w => window.getWorkMasterCategoryOrEmpty_(w) === cat);
+    list = list.filter(w => (typeof window.workCategoryMatches_ === 'function')
+      ? window.workCategoryMatches_(window.getWorkMasterCategoryOrEmpty_(w), cat)
+      : window.getWorkMasterCategoryOrEmpty_(w) === cat);
   }
   const names = [];
   const seen = new Set();
@@ -30826,7 +30841,8 @@ window.getBulkWorkMemoAllWorkNames_ = (category) => {
     const wCat = window.getWorkMasterCategoryOrEmpty_(w);
     const isRestName = name.includes('休憩');
     if (cat && !metaAll) {
-      if (!window.isValidWorkCategory_(wCat) || wCat !== cat) return;
+      if (!window.isValidWorkCategory_(wCat)) return;
+      if (!(typeof window.workCategoryMatches_ === 'function' ? window.workCategoryMatches_(wCat, cat) : wCat === cat)) return;
     } else if (!isRestName && !window.isValidWorkCategory_(wCat)) {
       return;
     }
@@ -41420,7 +41436,9 @@ window.filterWorkChips = function() {
         const catNorm = String(cat).trim();
         const anyInCat = pdlWorkMaster.some(w => {
             const wCat = window.getWorkMasterCategoryOrEmpty_(w).trim();
-            return wCat === catNorm;
+            return (typeof window.workCategoryMatches_ === 'function')
+              ? window.workCategoryMatches_(wCat, catNorm)
+              : wCat === catNorm;
         });
         if (!anyInCat) useCategoryFilter = false;
     }
@@ -41434,7 +41452,11 @@ window.filterWorkChips = function() {
             if (!chipCat) chipCat = window.getWorkMasterCategoryOrEmpty_(wObj);
             if (!chipCrop) chipCrop = wObj ? window.normalizeWorkCropKey(wObj.cropName) : '__common__';
         }
-        const catOk = !useCategoryFilter || String(chipCat || '').trim() === String(cat).trim();
+        const catOk = !useCategoryFilter || (
+          (typeof window.workCategoryMatches_ === 'function')
+            ? window.workCategoryMatches_(String(chipCat || '').trim(), String(cat).trim())
+            : String(chipCat || '').trim() === String(cat).trim()
+        );
         // 共通作業は常に残し、選択作物はOR判定
         const cropOk = !cropKeys.length
           || chipCrop === '__common__'

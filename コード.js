@@ -1056,9 +1056,20 @@ function getInitData() {
   pdl.workStatuses = [...new Set(workStatuses)].filter(String);
   if (pdl.workStatuses.length === 0) pdl.workStatuses = ['未着手', '途中', '完了'];
   // コンテナマスタを正とし、旧・作業マスタのコンテナ名は移行用に渡す
-  pdl.containers = readContainerMasterList_(containerNames);
-  pdl.containerNames = [...new Set(pdl.containers.map(c => c.name))];
-  pdl.contentUnits = getContentUnitMasterList_(pdl.containers);
+  // 移行失敗で圃場読込ごと落とさない
+  try {
+    pdl.containers = readContainerMasterList_(containerNames);
+  } catch (containerErr) {
+    console.warn('コンテナマスタ読み込みスキップ:', containerErr);
+    pdl.containers = [];
+  }
+  pdl.containerNames = [...new Set((pdl.containers || []).map(c => c.name))];
+  try {
+    pdl.contentUnits = getContentUnitMasterList_(pdl.containers);
+  } catch (unitErr) {
+    console.warn('内容単位マスタ読み込みスキップ:', unitErr);
+    pdl.contentUnits = ['kg', 'g', '本', 'パック', '個', '束'];
+  }
   try {
     maintenanceContents = maintenanceContents.concat(readMaintenanceContentMaster_());
   } catch (e) {
@@ -1066,7 +1077,12 @@ function getInitData() {
   }
   pdl.maintenanceContents = [...new Set(maintenanceContents)].filter(String); 
 
-  pdl.crops = readMergedCropMasterList_();
+  try {
+    pdl.crops = readMergedCropMasterList_();
+  } catch (cropErr) {
+    console.warn('作物マスタ読み込みスキップ:', cropErr);
+    pdl.crops = [];
+  }
 pdl.signLinks = {};
   const signSh = ss.getSheetByName('看板');
   if(signSh) {
@@ -1232,10 +1248,30 @@ pdl.materials = [];
     pdl.deliveryDestinations = [];
   }
 
-  // =========================================================
-  // ★修正：履歴から見つけていただいた「完璧なreturn」に上書き！
-  return { pdl, polygons: getSavedPolygons(), toukiList: getCol(['登記ID'], 0), activeLots, prodCategories: getProdMgmtCategories() };
-  // =========================================================
+  // 圃場・生産管理の読込失敗で初期表示全体を落とさない
+  let polygons = [];
+  try {
+    polygons = getSavedPolygons();
+  } catch (polyErr) {
+    console.warn('圃場読込スキップ:', polyErr);
+    polygons = [];
+  }
+  let prodCategories = [];
+  try {
+    prodCategories = getProdMgmtCategories();
+  } catch (catErr) {
+    console.warn('生産管理カテゴリ読込スキップ:', catErr);
+    prodCategories = [];
+  }
+  let toukiList = [];
+  try {
+    toukiList = getCol(['登記ID'], 0);
+  } catch (toukiErr) {
+    console.warn('登記ID読込スキップ:', toukiErr);
+    toukiList = [];
+  }
+
+  return { pdl, polygons: polygons, toukiList: toukiList, activeLots: activeLots, prodCategories: prodCategories };
 
 } // ← これが getInitData を閉じる } です
 
@@ -3284,10 +3320,10 @@ function migrateContainerMasterToPerCrop_(sheet) {
   if (!needsRewrite) return;
   const lastRow = sheet.getLastRow();
   if (lastRow > 1) {
-    sheet.getRange(2, 1, lastRow, 4).clearContent();
+    sheet.getRange(2, 1, lastRow - 1, 4).clearContent();
   }
   if (newRows.length) {
-    sheet.getRange(2, 1, 1 + newRows.length, 4).setValues(newRows);
+    sheet.getRange(2, 1, newRows.length, 4).setValues(newRows);
   }
 }
 

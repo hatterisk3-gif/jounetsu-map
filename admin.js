@@ -1139,16 +1139,19 @@ function loadInitData(options) {
         schedulePendingAdminSyncFlush_();
     }).catch(e => {
         console.log("InitData Error:", e);
+        const detail = (e && e.message) ? String(e.message).replace(/\s+/g, ' ').slice(0, 80) : '';
+        const failLabel = detail ? ('圃場データの読み込みに失敗しました: ' + detail) : '圃場データの読み込みに失敗しました';
         if (cached && Object.keys(loadedPolygons || {}).length === 0) {
             try { renderInitData(JSON.parse(cached), { interim: false }); } catch (err) {
-                if (window._adminInitLoading) { window._adminInitLoading.fail('圃場データの読み込みに失敗しました'); window._adminInitLoading = null; }
+                if (window._adminInitLoading) { window._adminInitLoading.fail(failLabel); window._adminInitLoading = null; }
             }
         } else if (window._adminInitLoading) {
-            window._adminInitLoading.fail('圃場データの読み込みに失敗しました');
+            window._adminInitLoading.fail(failLabel);
             window._adminInitLoading = null;
         } else if (background) {
             showAdminSyncToast('⚠️ 最新データの取得に失敗（表示中のデータを維持）', 'error');
         }
+        if (detail) showAdminSyncToast('⚠️ ' + failLabel, 'error');
     });
 }
 
