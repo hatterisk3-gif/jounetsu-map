@@ -40,6 +40,7 @@ const API_ACTIONS = {
   "deletePolygon": function (p) { return deletePolygonData(p.id, p.userName); },
   "deletePolygonBatch": function (p) { return deletePolygonBatchData(p.ids, p.userName); },
   "saveRecord": function (p) { return saveRecord(p.id, p.name, p.author, p.recordType, p.data, p.photos); },
+  "saveRecordBatch": function (p) { return saveRecordBatch(p); },
   "updateRecordItem": function (p) { return updateRecordItem(p.id, p.recordId, p.recordType, p.data, p.photos, p.keptUrls, p.userName); },
   "updateWorkRecordById": function (p) { return updateWorkRecordById(p); },
   "batchUpdateWorkRecordDates": function (p) { return batchUpdateWorkRecordDates(p); },
@@ -6302,23 +6303,65 @@ function getOrCreateRecordSheet(sheetName) {
 // ==========================================
 // 記録の保存処理 ★開始・終了条件をマスタから取得し、K列の勝手な上書きを廃止
 // ==========================================
-function saveRecord(idStr, nameStr, author, recordType, recordData, photosBase64) {
+function buildRecordParentIndex_() {
+  const map = {};
+  const ss = TENANT_SS;
+  ['圃場', '看板'].forEach(function (name) {
+    const sheet = ss.getSheetByName(name);
+    if (!sheet) return;
+    const last = sheet.getLastRow();
+    if (last < 2) return;
+    const values = sheet.getRange(2, 1, last - 1, 10).getValues();
+    for (let i = 0; i < values.length; i++) {
+      const id = String(values[i][0] || '').trim();
+      if (!id || map[id]) continue;
+      map[id] = { sheet: sheet, rowIndex: i + 2, rowData: values[i] };
+    }
+  });
+  return map;
+}
+
+function loadFieldWorkColorKeywords_() {
+  const settingSheet = TENANT_SS.getSheetByName('圃場設定マスタ');
+  let startKeywords = [];
+  let resetKeywords = [];
+  if (settingSheet) {
+    const last = settingSheet.getLastRow();
+    if (last >= 2) {
+      const vals = settingSheet.getRange(2, 4, Math.min(last, 300) - 1, 2).getValues();
+      startKeywords = vals.map(function (r) { return r[0]; }).filter(String);
+      resetKeywords = vals.map(function (r) { return r[1]; }).filter(String);
+    }
+  }
+  if (startKeywords.length === 0) startKeywords = ['田植え', '定植', '播種'];
+  if (resetKeywords.length === 0) resetKeywords = ['片付け', '終了', '撤去', '稲刈り', '畝戻し'];
+  return { startKeywords: startKeywords, resetKeywords: resetKeywords };
+}
+
+function saveRecord(idStr, nameStr, author, recordType, recordData, photosBase64, parentIndex) {
+  photosBase64 = photosBase64 || [];
   const ids = String(idStr || '').split(',').map(s => String(s || '').trim()).filter(Boolean);
   const isWorkOnlyNoPoly = recordType === 'work' && ids.length === 0;
+  const index = parentIndex || buildRecordParentIndex_();
+  const lookupParent_ = function (id) {
+    if (index && index[id]) return index[id];
+    return findSheetAndRowById(id);
+  };
   let parentType = '圃場';
   if (!isWorkOnlyNoPoly) {
-    const firstFound = findSheetAndRowById(ids[0]);
+    const firstFound = lookupParent_(ids[0]);
     if (!firstFound) throw new Error("対象なし");
     parentType = firstFound.sheet.getName();
   }
   const recordId = Utilities.getUuid(); 
   let urls = [];
-  
-  const folders = DriveApp.getFoldersByName("圃場写真"); 
-  const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("圃場写真");
-  for (let i = 0; i < photosBase64.length; i++) {
-    const s = photosBase64[i].base64.split(','), type = s[0].split(';')[0].replace('data:',''), file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(s[1]), type, photosBase64[i].filename));
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); urls.push("https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w800");
+  if (photosBase64.length) {
+    const folders = DriveApp.getFoldersByName("圃場写真"); 
+    const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("圃場写真");
+    for (let i = 0; i < photosBase64.length; i++) {
+      const s = photosBase64[i].base64.split(','), type = s[0].split(';')[0].replace('data:',''), file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(s[1]), type, photosBase64[i].filename));
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); urls.push("https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w800");
+    }
   }
   const today = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd"), time = Utilities.formatDate(new Date(), "JST", "HH:mm");
   
@@ -6326,15 +6369,9 @@ function saveRecord(idStr, nameStr, author, recordType, recordData, photosBase64
   // ★開始条件(D列)と終了条件(E列)をマスタから取得
   // ====================================================
   const ss = TENANT_SS;
-  const settingSheet = ss.getSheetByName('圃場設定マスタ');
-  let startKeywords = [];
-  let resetKeywords = [];
-  if (settingSheet) {
-    startKeywords = settingSheet.getRange('D2:D').getValues().flat().filter(String);
-    resetKeywords = settingSheet.getRange('E2:E').getValues().flat().filter(String);
-  }
-  if (startKeywords.length === 0) startKeywords = ['田植え', '定植', '播種'];
-  if (resetKeywords.length === 0) resetKeywords = ['片付け', '終了', '撤去', '稲刈り', '畝戻し'];
+  const kw = loadFieldWorkColorKeywords_();
+  const startKeywords = kw.startKeywords;
+  const resetKeywords = kw.resetKeywords;
   // ====================================================
 
   if (recordType === 'work' && recordData) {
@@ -6373,7 +6410,7 @@ function saveRecord(idStr, nameStr, author, recordType, recordData, photosBase64
   let firstEx = [];
   
   for (let i = 0; i < ids.length; i++) {
-    const found = findSheetAndRowById(ids[i]);
+    const found = lookupParent_(ids[i]);
     if (!found) continue;
     const isHojo = found.sheet.getName() === '圃場';
     const pc = 10;
@@ -6381,6 +6418,7 @@ function saveRecord(idStr, nameStr, author, recordType, recordData, photosBase64
     if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch(e) {} }
     ex.push({ id: recordId, type: recordType || 'growth', date: today, time, author, urls, data: recordData }); 
     found.sheet.getRange(found.rowIndex, pc).setValue(JSON.stringify(ex));
+    found.rowData[pc - 1] = JSON.stringify(ex);
     
     // ====================================================
     // ★色(G列)の自動更新のみ行う（K列は稼働状況としてそのまま残す！）
@@ -6410,7 +6448,10 @@ function saveRecord(idStr, nameStr, author, recordType, recordData, photosBase64
       }
 
       // 色だけを更新し、K列（稼働状況）は絶対に上書きしない
-      if (autoColor) found.sheet.getRange(found.rowIndex, 7).setValue(autoColor);
+      if (autoColor) {
+        found.sheet.getRange(found.rowIndex, 7).setValue(autoColor);
+        found.rowData[6] = autoColor;
+      }
     }
 
     if (i === 0) firstEx = ex;
@@ -6423,6 +6464,25 @@ function saveRecord(idStr, nameStr, author, recordType, recordData, photosBase64
   
   return firstEx;
 }
+
+function saveRecordBatch(params) {
+  const records = (params && Array.isArray(params.records)) ? params.records : [];
+  const index = buildRecordParentIndex_();
+  const out = [];
+  for (let i = 0; i < records.length; i++) {
+    const rec = records[i] || {};
+    try {
+      const ex = saveRecord(rec.id, rec.name, rec.author, rec.recordType || 'work', rec.data || {}, rec.photos || [], index);
+      const item = Array.isArray(ex) ? ex[ex.length - 1] : null;
+      if (!item || !item.id) throw new Error('保存結果が空です');
+      out.push({ localId: rec.localId || '', ok: true, item: item });
+    } catch (e) {
+      out.push({ localId: rec.localId || '', ok: false, message: e.message || String(e) });
+    }
+  }
+  return out;
+}
+
 function updateRecordItem(polyId, recordId, recordType, newData, newPhotosBase64, keptUrls, user) {
   const found = findSheetAndRowById(polyId); if (!found) throw new Error("対象なし");
   const pType = found.sheet.getName(), pc = 10; let ex = []; if (found.rowData[pc-1]) { try { ex = JSON.parse(found.rowData[pc-1]); } catch(e) {} } if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch(e) {} }
@@ -11061,7 +11121,7 @@ function getTrackingData(params) {
       numRows = lastRow - startRow + 1;
     }
 
-    const values = sheet.getRange(startRow, 1, lastRow, 5).getValues();
+    const values = sheet.getRange(startRow, 1, numRows, 5).getValues();
     const data = [];
     for (let i = 0; i < values.length; i++) {
       const timeStr = values[i][0];

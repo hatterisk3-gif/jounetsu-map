@@ -3163,7 +3163,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
         if (typeof window.refreshLastWorkFieldButton === 'function') window.refreshLastWorkFieldButton();
         if (window.isDeliveryWorkRecordActive_ && window.getWorkRecordStep_() === 'place' && selectedPolyIds.length > 0) {
-          setTimeout(() => window.openDeliveryDestMapSelect(), 350);
+          if (typeof window.refreshDeliveryPlaceSection_ === 'function') window.refreshDeliveryPlaceSection_();
         }
         if (window._afterSavePickingField) {
           window._afterSavePickingField = false;
@@ -6045,8 +6045,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const cat = catEl ? catEl.value : '';
         const wName = (document.getElementById('rec_work_name')?.value || '').trim();
         const isRest = wName.includes('休憩');
-        const isDelivery = typeof window.isDeliveryWorkRecordActive_ === 'function' && window.isDeliveryWorkRecordActive_();
-        const allowField = !isRest && !isDelivery && (typeof window.resolveShowFieldSelect_ === 'function'
+        const allowField = !isRest && (typeof window.resolveShowFieldSelect_ === 'function'
           ? window.resolveShowFieldSelect_({ category: cat, workName: wName })
           : true);
         if (!allowField) {
@@ -15614,31 +15613,15 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.refreshDeliveryPlaceSection_ = () => {
         const box = document.getElementById('delivery_place_dest_section');
-        if (!box) return;
-        const active = typeof window.isDeliveryWorkRecordActive_ === 'function' && window.isDeliveryWorkRecordActive_();
-        if (!active) {
+        if (box) {
           box.style.display = 'none';
           box.innerHTML = '';
-          if (typeof window.refreshDeliveryOriginSection_ === 'function') window.refreshDeliveryOriginSection_();
-          return;
         }
-        const dest = window.getDeliveryDestFromForm_();
-        box.style.display = 'block';
-        box.innerHTML = window.buildDeliveryPlaceCardHtml_({
-          title: '🚚 運搬先（届け先）',
-          what: '運搬先',
-          place: dest,
-          chipSelectFn: 'window.selectDeliveryDestinationChip',
-          mapOpenFn: 'window.openDeliveryDestMapSelect',
-          mapLabel: '🗺️ 地図で運搬先を選ぶ',
-          clearFn: 'window.clearDeliveryDest_',
-          extraHtml: `
-            <input type="hidden" id="rec_delivery_name" value="${String(dest.name || '').replace(/"/g, '&quot;')}">
-            <input type="hidden" id="rec_delivery_lat" value="${dest.lat != null && dest.lat !== '' ? dest.lat : ''}">
-            <input type="hidden" id="rec_delivery_lng" value="${dest.lng != null && dest.lng !== '' ? dest.lng : ''}">
-            <input type="hidden" id="rec_delivery_poly_id" value="${String(dest.polyId || '').replace(/"/g, '&quot;')}">
-            <input type="hidden" id="rec_delivery_is_temp" value="${dest.isTemporary ? '1' : '0'}">`
-        });
+        const legacy = document.getElementById('delivery_destination_section');
+        if (legacy) {
+          legacy.style.display = 'none';
+          legacy.innerHTML = '';
+        }
         if (typeof window.refreshDeliveryOriginSection_ === 'function') window.refreshDeliveryOriginSection_();
       };
 
@@ -16041,7 +16024,7 @@ function createSignboardMarker(name, pos, icon, id) {
         return `
           <div style="background:#E1F5FE; border:2px solid #0288D1; border-radius:10px; padding:12px; margin-bottom:12px;">
             <div style="font-weight:bold; color:#01579B; margin-bottom:8px; font-size:14px;">${opts.title}</div>
-            <div style="font-size:12px; color:#555; margin-bottom:8px; line-height:1.45;">地図で${opts.what}の<b>圃場</b>または<b>看板</b>をタップしてください。登録がない場所は地図をタップしてピンを立てられます。</div>
+            <div style="font-size:12px; color:#555; margin-bottom:8px; line-height:1.45;">任意です。地図で${opts.what}の<b>圃場</b>または<b>看板</b>をタップできます。登録がない場所は地図をタップしてピンを立てられます。未入力のまま次へ進めます。</div>
             ${list.length ? `<div style="font-size:11px; font-weight:bold; color:#555; margin-bottom:4px;">記憶済み（タップで選択）:</div><div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">${chipsHtml}</div>` : ''}
             <button type="button" onclick="${opts.mapOnclick || (opts.mapOpenFn + '()')}" style="width:100%; background:#0288D1; color:#fff; border:none; padding:12px; border-radius:8px; font-size:14px; font-weight:bold; cursor:pointer; box-shadow:0 2px 5px rgba(2,136,209,0.3); margin-bottom:8px;">${opts.mapLabel}</button>
             <div style="display:${hasPlace ? 'block' : 'none'}; background:#B3E5FC; color:#01579B; padding:8px 10px; border-radius:6px; font-size:12px; line-height:1.45;">
@@ -16058,35 +16041,8 @@ function createSignboardMarker(name, pos, icon, id) {
       window.refreshDeliveryOriginSection_ = () => {
         const box = document.getElementById('delivery_origin_section');
         if (!box) return;
-        const active = typeof window.isDeliveryWorkRecordActive_ === 'function' && window.isDeliveryWorkRecordActive_();
-        if (!active) {
-          box.style.display = 'none';
-          box.innerHTML = '';
-          return;
-        }
-        // 運搬では圃場カードの代わりにこのカードを使う（運搬先と見た目をそろえる）
-        const fieldBox = document.getElementById('field_target_section');
-        if (fieldBox) fieldBox.style.display = 'none';
-
-        let origin = window.getDeliveryOrigin_();
-        if (!origin) {
-          // すでに圃場が選ばれている状態で運搬に切り替えた場合を引き継ぐ
-          const pid = (selectedPolyIds || []).find(id => loadedPolygons && loadedPolygons[id]);
-          if (pid) {
-            origin = window.buildPlaceFromPoly_(pid);
-            window._deliveryOrigin = origin;
-          }
-        }
-        box.style.display = 'block';
-        box.innerHTML = window.buildDeliveryPlaceCardHtml_({
-          title: '📤 運搬元（出発地）',
-          what: '出発元',
-          place: origin || {},
-          chipSelectFn: 'window.selectDeliveryOriginChip',
-          mapOpenFn: 'window.openDeliveryOriginMapSelect',
-          mapLabel: '🗺️ 地図で運搬元を選ぶ',
-          clearFn: 'window.clearDeliveryOrigin_'
-        });
+        box.style.display = 'none';
+        box.innerHTML = '';
       };
 
       window.getDeliveryOriginMapSelectUIHtml_ = () => {
@@ -16251,12 +16207,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const advance = window._deliveryOriginMapSelectAfterConfirm;
         window.cancelDeliveryOriginMapSelect();
         if (advance) {
-          const dest = (typeof window.getDeliveryDestFromForm_ === 'function') ? window.getDeliveryDestFromForm_() : { name: '' };
-          if (!dest.name) {
-            setTimeout(() => window.openDeliveryDestMapSelect({ afterConfirmAdvance: true }), 250);
-          } else {
-            window.setWorkRecordStep_(window.getWorkRecordNextStep_('place'), { forward: true });
-          }
+          window.setWorkRecordStep_(window.getWorkRecordNextStep_('place'), { forward: true });
         }
       };
 
@@ -20432,12 +20383,6 @@ function createSignboardMarker(name, pos, icon, id) {
           parts.push(`🌱 ${labels.join('・').replace(/</g, '&lt;')}`);
         }
         if (wName) parts.push(`🚜 ${wName.replace(/</g, '&lt;')}`);
-        if (typeof window.isDeliveryWork === 'function' && window.isDeliveryWork(wName)) {
-          const origin = (typeof window.getDeliveryOrigin_ === 'function') ? window.getDeliveryOrigin_() : null;
-          if (origin && origin.name) parts.push(`📤 ${String(origin.name).replace(/</g, '&lt;')}`);
-          const dest = (typeof window.getDeliveryDestFromForm_ === 'function') ? window.getDeliveryDestFromForm_() : null;
-          if (dest && dest.name) parts.push(`🚚 ${String(dest.name).replace(/</g, '&lt;')}`);
-        }
         if (!parts.length) return '';
         return `<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:8px;padding:8px 10px;font-size:12px;color:#E65100;line-height:1.45;">${parts.join(' ／ ')}</div>`;
       };
@@ -20523,25 +20468,8 @@ function createSignboardMarker(name, pos, icon, id) {
         if (step === 'place') {
           if (!window.workRecordNeedsPlaceStep_()) return true;
           const wName = String(document.getElementById('rec_work_name')?.value || '').trim();
-          // 圃場カテゴリ以外は圃場未選択でも次へ進める（運搬は除く）
-          if (typeof window.isDeliveryWork === 'function' && window.isDeliveryWork(wName)) {
-            const ids = (typeof selectedPolyIds !== 'undefined' && Array.isArray(selectedPolyIds))
-              ? selectedPolyIds.filter(Boolean)
-              : [];
-            const origin = (typeof window.getDeliveryOrigin_ === 'function') ? window.getDeliveryOrigin_() : null;
-            const hasOrigin = !!(origin && origin.name) || ids.length > 0
-              || (typeof activePolyId !== 'undefined' && !!activePolyId);
-            if (!hasOrigin) {
-              window.openDeliveryOriginMapSelect({ afterConfirmAdvance: true });
-              return false;
-            }
-            const dest = (typeof window.getDeliveryDestFromForm_ === 'function') ? window.getDeliveryDestFromForm_() : { name: '' };
-            if (!dest.name) {
-              window.openDeliveryDestMapSelect({ afterConfirmAdvance: true });
-              return false;
-            }
-            return true;
-          }
+          // 運搬元・運搬先は任意
+          if (typeof window.isDeliveryWork === 'function' && window.isDeliveryWork(wName)) return true;
           if (typeof window.workRecordRequiresField === 'function' && !window.workRecordRequiresField()) return true;
           const ids = (typeof selectedPolyIds !== 'undefined' && Array.isArray(selectedPolyIds))
             ? selectedPolyIds.filter(Boolean)
@@ -21997,9 +21925,12 @@ function createSignboardMarker(name, pos, icon, id) {
           const job = window._recordSyncCurrentJob;
           const hasPhotos = !!(job && Array.isArray(job.files) && job.files.length);
           const rest = pending > 1 ? `（残り${pending}件）` : '';
-          const msg = hasPhotos
+          const batchN = Number(window._recordSyncCurrentBatchCount) || 0;
+          const msg = batchN > 1
+            ? `☁️ 記録をまとめて同期中…（${batchN}件）${rest}`
+            : (hasPhotos
             ? `☁️ 写真つき記録を同期中…${rest}`
-            : `☁️ 記録を同期中…${rest}`;
+            : `☁️ 記録を同期中…${rest}`);
           window.setRecordSyncBanner_('syncing', msg);
           return;
         }
@@ -22817,6 +22748,47 @@ function createSignboardMarker(name, pos, icon, id) {
         let hadError = false;
         let errorMsg = '';
         while (window._recordSyncQueue.length) {
+          if (typeof window.canBatchRecordSyncJob_ === 'function'
+              && window.canBatchRecordSyncJob_(window._recordSyncQueue[0])) {
+            const batch = [];
+            while (window._recordSyncQueue.length && batch.length < 20
+                && window.canBatchRecordSyncJob_(window._recordSyncQueue[0])) {
+              batch.push(window._recordSyncQueue.shift());
+            }
+            window._recordSyncCurrentJob = batch[0];
+            window._recordSyncCurrentBatchCount = batch.length;
+            if (typeof window.refreshRecordSyncBanner_ === 'function') window.refreshRecordSyncBanner_();
+            const t0 = Date.now();
+            try {
+              const outcome = await window.runRecordSyncBatch_(batch);
+              if (outcome && outcome.failed) {
+                hadError = true;
+                errorMsg = outcome.message || '一部の記録を保存できませんでした';
+                if (typeof window.showRecordSyncToast === 'function') {
+                  window.showRecordSyncToast('⚠️ 同期に失敗しました（次回起動時に自動再送します）\n' + errorMsg, 'error');
+                }
+              } else if (Date.now() - t0 > 900 && typeof window.showRecordSyncToast === 'function') {
+                window.showRecordSyncToast('☁️ 記録の同期が完了しました', 'ok');
+              }
+            } catch (e) {
+              hadError = true;
+              errorMsg = (e && e.message) ? e.message : String(e || '');
+              console.error('record batch sync failed', e);
+              batch.forEach(function (job) {
+                if (!job || !job.localId) return;
+                window.markOptimisticRecordFailed_(job.localId, job.targetIds || []);
+                if (typeof window.savePersistedRecordSyncJob_ === 'function') {
+                  window.savePersistedRecordSyncJob_(job);
+                }
+              });
+              if (typeof window.showRecordSyncToast === 'function') {
+                window.showRecordSyncToast('⚠️ 同期に失敗しました（次回起動時に自動再送します）\n' + errorMsg, 'error');
+              }
+            }
+            window._recordSyncCurrentBatchCount = 0;
+            window._recordSyncCurrentJob = null;
+            continue;
+          }
           const job = window._recordSyncQueue.shift();
           window._recordSyncCurrentJob = job;
           if (typeof window.refreshRecordSyncBanner_ === 'function') window.refreshRecordSyncBanner_();
@@ -22857,6 +22829,66 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.refreshOpenRecordViews_ === 'function') {
           window.refreshOpenRecordViews_();
         }
+      };
+
+      window.canBatchRecordSyncJob_ = (job) => {
+        if (!job || job.isEdit) return false;
+        if (String(job.recordType || 'work') !== 'work') return false;
+        if (Array.isArray(job.files) && job.files.length) return false;
+        if (Array.isArray(job.sideEffects) && job.sideEffects.length) return false;
+        if (Array.isArray(job.newlyAddedIds) && job.newlyAddedIds.length) return false;
+        return true;
+      };
+
+      window.runRecordSyncBatch_ = async (batch) => {
+        const jobs = Array.isArray(batch) ? batch.filter(Boolean) : [];
+        if (!jobs.length) return;
+        const records = jobs.map(function (job) {
+          const serverTargetIds = window.normalizeRecordSyncTargetIdsForServer_
+            ? window.normalizeRecordSyncTargetIdsForServer_(job.targetIds)
+            : (job.targetIds || []);
+          return {
+            localId: job.localId,
+            id: serverTargetIds.join(','),
+            name: job.nameStr || '',
+            author: job.userName || '',
+            recordType: job.recordType || 'work',
+            data: job.data || {},
+            photos: []
+          };
+        });
+        const results = await callGAS('saveRecordBatch', { records: records });
+        const byLocal = {};
+        (Array.isArray(results) ? results : []).forEach(function (r) {
+          if (r && r.localId) byLocal[r.localId] = r;
+        });
+        const fails = [];
+        jobs.forEach(function (job) {
+          const r = byLocal[job.localId];
+          const serverTargetIds = window.normalizeRecordSyncTargetIdsForServer_
+            ? window.normalizeRecordSyncTargetIdsForServer_(job.targetIds)
+            : (job.targetIds || []);
+          if (r && r.ok && r.item && r.item.id) {
+            window.replaceOptimisticRecordItem_(job.localId, r.item, serverTargetIds);
+            if (typeof window.removePersistedRecordSyncJob_ === 'function') {
+              window.removePersistedRecordSyncJob_(job.localId);
+            }
+            if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
+              try { window.updateInitDataCacheWithLocalRecords_(); } catch (e) {}
+            }
+            return;
+          }
+          const msg = (r && r.message) ? r.message : '保存結果が返りませんでした';
+          fails.push(msg);
+          window.markOptimisticRecordFailed_(job.localId, job.targetIds || []);
+          if (typeof window.savePersistedRecordSyncJob_ === 'function') {
+            window.savePersistedRecordSyncJob_(job);
+          }
+        });
+        if (fails.length) {
+          return { failed: fails.length, message: fails[0] + (fails.length > 1 ? '（ほか' + (fails.length - 1) + '件）' : '') };
+        }
+        return { failed: 0, message: '' };
       };
 
       window.runRecordSyncJob_ = async (job) => {
@@ -34955,7 +34987,7 @@ window.buildBulkWorkMemoDeliveryHtml_ = (d, uid) => {
   const dest = d.deliveryDestination || {};
   const origin = d.deliveryOrigin || {};
   let html = window.buildDeliveryPlaceCardHtml_({
-    title: '🚚 運搬先（届け先）',
+    title: '🚚 運搬先（届け先・任意）',
     what: '運搬先',
     place: dest,
     chipSelectFn: 'window.selectBulkWorkMemoDeliveryDestChip_',
@@ -34966,7 +34998,7 @@ window.buildBulkWorkMemoDeliveryHtml_ = (d, uid) => {
     clearFn: 'window.clearBulkWorkMemoDeliveryDest_'
   });
   html += window.buildDeliveryPlaceCardHtml_({
-    title: '📤 運搬元（出発地）',
+    title: '📤 運搬元（出発地・任意）',
     what: '出発元',
     place: origin,
     chipSelectFn: 'window.selectBulkWorkMemoDeliveryOriginChip_',
@@ -35179,9 +35211,7 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
     if (typeof window.bulkWorkMemoIsFuel_ === 'function' && window.bulkWorkMemoIsFuel_(d)) {
       html += window.buildBulkWorkMemoFuelHtml_(d, uid);
     }
-    if (typeof window.bulkWorkMemoIsDelivery_ === 'function' && window.bulkWorkMemoIsDelivery_(d)) {
-      html += window.buildBulkWorkMemoDeliveryHtml_(d, uid);
-    }
+    // 運搬元・運搬先の入力欄は出さない
   }
   // メイン作業名未選択でも、メモから同時作業が付いていれば表示
   if ((d.workName || hasConcurrent) && typeof window.buildBulkConcurrentWorksHtml_ === 'function') {
@@ -35619,6 +35649,9 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
   const prevScroll = scrollEl ? scrollEl.scrollTop : 0;
   const scrollUid = String(opts.scrollUid || '').trim();
   const keepScroll = !!opts.keepScroll;
+  const anchorId = String(opts.anchorId || '').trim();
+  const anchorOffset = (opts.anchorOffset != null && !isNaN(Number(opts.anchorOffset)))
+    ? Number(opts.anchorOffset) : null;
 
   const drafts = window._bulkWorkMemoDrafts || [];
   const ymd = window._bulkWorkMemoDate || window.getBulkWorkMemoTodayYmd_();
@@ -35785,7 +35818,18 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
     el.scrollTop = savedScroll || 0;
   };
   requestAnimationFrame(() => {
-    window.restoreBulkWorkMemoReviewScroll_(prevScroll);
+    if (anchorId && anchorOffset != null) {
+      const anchor = document.getElementById(anchorId);
+      const el = document.getElementById('bulk_work_memo_review_scroll');
+      if (anchor && el) {
+        const visual = anchor.getBoundingClientRect().top - el.getBoundingClientRect().top;
+        el.scrollTop += visual - anchorOffset;
+      } else {
+        window.restoreBulkWorkMemoReviewScroll_(prevScroll);
+      }
+    } else {
+      window.restoreBulkWorkMemoReviewScroll_(prevScroll);
+    }
     (window._bulkWorkMemoDrafts || []).forEach(d => {
       if (!d || !d._uid) return;
       if (typeof window.refreshBulkWorkMemoLastFieldButton_ === 'function') {
@@ -36465,12 +36509,6 @@ window.buildBulkWorkMemoConfirmRowHtml_ = (d, index) => {
           : (cw.workName || '')
       ).filter(Boolean).map(s => esc(s)).join(' ／ ')}</div>`
     : '';
-  const deliveryOrigin = (!isRest && d.deliveryOrigin && d.deliveryOrigin.name)
-    ? `<div style="font-size:11px; color:#01579B; margin-top:4px;">📤 運搬元: ${esc(d.deliveryOrigin.name)}</div>`
-    : '';
-  const deliveryDest = (!isRest && d.deliveryDestination && d.deliveryDestination.name)
-    ? `<div style="font-size:11px; color:#01579B; margin-top:4px;">🚚 運搬先: ${esc(d.deliveryDestination.name)}</div>`
-    : '';
   const machines = (!isRest && Array.isArray(d.usedMachines) && d.usedMachines.length)
     ? `<div style="font-size:11px; color:#E65100; margin-top:4px;">🚜 ${d.usedMachines.map(m => m.name || m.id).filter(Boolean).map(s => esc(s)).join('、')}</div>`
     : '';
@@ -36483,7 +36521,7 @@ window.buildBulkWorkMemoConfirmRowHtml_ = (d, index) => {
       ${metaNote}
       <div style="font-size:12px; color:#555; margin-top:4px;">🕒 ${esc(start)}〜${esc(end)}</div>
       <div style="font-size:11px; color:#666; margin-top:3px;">🌱 ${esc(crops)}　📍 ${esc(fieldNames)}</div>
-      ${maint}${machines}${fuelNote}${concurrent}${deliveryOrigin}${deliveryDest}
+      ${maint}${machines}${fuelNote}${concurrent}
     </div>`;
 };
 
@@ -36636,7 +36674,16 @@ window.insertBulkWorkMemoGapRest_ = (gapKey, restName) => {
   const insertAfterIdx = drafts.findIndex(d => d && d._uid === gap.afterDraftUid);
   if (insertAfterIdx >= 0) drafts.splice(insertAfterIdx + 1, 0, row);
   else drafts.push(row);
-  window.renderBulkWorkMemoReviewModal_({ scrollUid: row._uid });
+  const scrollEl = document.getElementById('bulk_work_memo_review_scroll');
+  const gapsEl = document.getElementById('bulk_work_memo_time_gaps');
+  const anchorOffset = (scrollEl && gapsEl)
+    ? (gapsEl.getBoundingClientRect().top - scrollEl.getBoundingClientRect().top)
+    : null;
+  window.renderBulkWorkMemoReviewModal_({
+    keepScroll: true,
+    anchorId: 'bulk_work_memo_time_gaps',
+    anchorOffset: anchorOffset
+  });
 };
 
 /** 一括登録：昼休憩を端末連動＋昼休憩記録シートへ保存（作業記録には載せない） */
@@ -36875,12 +36922,20 @@ window.registerBulkWorkMemoClockIn_ = (ymd, timeHm) => {
 };
 
 /** 一括登録完了後：最終作業終了時刻を退勤として登録 */
-window.confirmBulkWorkMemoClockOut_ = (ymd, timeHm) => {
+window.confirmBulkWorkMemoClockOut_ = (ymd, timeHm, opts) => {
+  opts = opts || {};
   const dateYmd = String(ymd || window._bulkWorkMemoClockOutYmd || '').trim();
   const timeStr = String(timeHm || window._bulkWorkMemoClockOutTime || '').trim();
   if (!dateYmd || !timeStr) {
     if (typeof customAlert === 'function') customAlert('退勤時間が分かりませんでした。');
     return;
+  }
+  if (window._bulkWorkMemoClockOutSending) return;
+  window._bulkWorkMemoClockOutSending = true;
+  const outBtn = document.getElementById('bulk_work_memo_clockout_btn');
+  if (outBtn) {
+    outBtn.disabled = true;
+    outBtn.textContent = '退勤を登録しています...';
   }
   const today = window.getBulkWorkMemoTodayYmd_();
   const isToday = dateYmd === today;
@@ -36895,10 +36950,12 @@ window.confirmBulkWorkMemoClockOut_ = (ymd, timeHm) => {
         try { navigator.geolocation.clearWatch(window.passionWatchId); } catch (e) {}
         window.passionWatchId = null;
       }
-      if (typeof trackingWatchId !== 'undefined' && trackingWatchId !== null) {
-        try { navigator.geolocation.clearWatch(trackingWatchId); } catch (e) {}
-        trackingWatchId = null;
-      }
+      try {
+        if (typeof trackingWatchId !== 'undefined' && trackingWatchId !== null) {
+          try { navigator.geolocation.clearWatch(trackingWatchId); } catch (e) {}
+          trackingWatchId = null;
+        }
+      } catch (e) {}
       try { localStorage.removeItem('passionMapClockIn'); } catch (e) {}
       if (window.clockInMarker) {
         try { window.clockInMarker.setMap(null); } catch (e) {}
@@ -36916,17 +36973,25 @@ window.confirmBulkWorkMemoClockOut_ = (ymd, timeHm) => {
   };
 
   const finishOk_ = () => {
+    window._bulkWorkMemoClockOutSending = false;
     applyLocalBulkClockOutDone_();
     if (typeof window.showRecordSyncToast === 'function') {
       window.showRecordSyncToast(`✅ 退勤 ${timeStr} を登録しました`, 'ok');
     } else if (typeof customAlert === 'function') {
       customAlert(`退勤 ${timeStr} を登録しました。`);
     }
-    window.closeBulkWorkMemoModal_();
+    const doneLine = document.getElementById('bulk_work_memo_clockout_status');
+    if (doneLine) doneLine.textContent = `🏃 退勤 ${timeStr} を登録しました`;
+    if (!opts.keepOpen) window.closeBulkWorkMemoModal_();
   };
 
   const finishFail_ = (e) => {
+    window._bulkWorkMemoClockOutSending = false;
     console.warn('一括退勤送信エラー', e);
+    if (outBtn) {
+      outBtn.disabled = false;
+      outBtn.textContent = `✅ 最後の ${timeStr} で退勤登録する`;
+    }
     if (typeof customAlert === 'function') {
       customAlert('退勤の保存に失敗しました。通信状況を確認して、もう一度押してください。');
     } else {
@@ -36952,20 +37017,19 @@ window.confirmBulkWorkMemoClockOut_ = (ymd, timeHm) => {
     lunchStart: window._bulkWorkMemoClockOutLunchStart || '',
     lunchEnd: window._bulkWorkMemoClockOutLunchEnd || ''
   };
-  const send = (lat, lng) => callGAS('saveTrackingData', Object.assign({}, payloadBase, {
-    lat: lat,
-    lng: lng
-  }));
-
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(
-      (p) => send(p.coords.latitude, p.coords.longitude).then(finishOk_).catch(finishFail_),
-      () => send(0, 0).then(finishOk_).catch(finishFail_),
-      { enableHighAccuracy: true, timeout: 8000 }
-    );
-  } else {
-    send(0, 0).then(finishOk_).catch(finishFail_);
-  }
+  let lat = 0;
+  let lng = 0;
+  try {
+    const marker = (typeof userLocationMarker !== 'undefined') ? userLocationMarker : window.userLocationMarker;
+    const pos = marker && marker.getPosition ? marker.getPosition() : null;
+    if (pos) {
+      lat = pos.lat();
+      lng = pos.lng();
+    }
+  } catch (e) {}
+  callGAS('saveTrackingData', Object.assign({}, payloadBase, { lat: lat, lng: lng }))
+    .then(finishOk_)
+    .catch(finishFail_);
 };
 
 window.skipBulkWorkMemoClockOut_ = () => {
@@ -37269,7 +37333,13 @@ window.renderBulkWorkMemoConfirmModal_ = () => {
          </span>
        </label>`;
   const clockOutHint = att.clockOutTime
-    ? `<div style="font-size:11px; color:#555; margin-top:6px; line-height:1.4;">🏃 登録後、最終終了 <b>${esc(att.clockOutTime)}</b>（${esc(att.clockOutLabel || '最後の作業')}）を退勤にするか確認します</div>`
+    ? `<label style="display:flex; align-items:flex-start; gap:8px; margin-top:10px; padding:10px; background:#FFEBEE; border:1px solid #EF9A9A; border-radius:8px; cursor:pointer; touch-action:manipulation;">
+        <input type="checkbox" id="bulk_work_memo_sync_clockout" checked style="margin-top:2px; width:18px; height:18px; flex-shrink:0;">
+        <span style="font-size:12px; color:#C62828; line-height:1.45;">
+          <b>最後の ${esc(att.clockOutTime)} で退勤登録する</b><br>
+          ${esc(att.clockOutLabel || '最後の作業')} の終了時刻を退勤にします。外すと退勤は登録しません。
+        </span>
+      </label>`
     : '';
   const alreadyClockIn = window.hasBulkWorkMemoClockInForDate_(ymd);
   const clockInBlock = alreadyClockIn
@@ -37382,6 +37452,8 @@ window.executeBulkWorkMemoRegistration_ = async () => {
     && !window.hasBulkWorkMemoClockInForDate_(ymd);
   const syncLunchEl = document.getElementById('bulk_work_memo_sync_lunch');
   const doSyncLunch = !!(syncLunchEl && syncLunchEl.checked && !att.hasLunch);
+  const syncOutEl = document.getElementById('bulk_work_memo_sync_clockout');
+  const doSyncClockOut = !!(syncOutEl && syncOutEl.checked && att.clockOutTime);
   let optionalLunchStart = '';
   let optionalLunchEnd = '';
 
@@ -37682,13 +37754,25 @@ window.executeBulkWorkMemoRegistration_ = async () => {
     if (typeof window.clearBulkWorkMemoTemp_ === 'function') {
       window.clearBulkWorkMemoTemp_();
     }
+    const lunchStartForOut = att.hasLunch ? att.lunchStart : (optionalLunchDone ? optionalLunchStart : '');
+    const lunchEndForOut = att.hasLunch ? att.lunchEnd : (optionalLunchDone ? optionalLunchEnd : '');
+    if (doSyncClockOut && att.clockOutTime) {
+      window._bulkWorkMemoClockOutYmd = ymd;
+      window._bulkWorkMemoClockOutTime = att.clockOutTime;
+      window._bulkWorkMemoClockOutMidBreakMins = Number(att.midBreakMins) || 0;
+      window._bulkWorkMemoClockOutLunchStart = lunchStartForOut || '';
+      window._bulkWorkMemoClockOutLunchEnd = lunchEndForOut || '';
+      window.confirmBulkWorkMemoClockOut_(ymd, att.clockOutTime, { keepOpen: true });
+    }
     window.showBulkWorkMemoSavedModal_(savedItems, {
       clockInTime: clockInDone ? att.clockInTime : '',
       clockInLabel: att.clockInLabel || '',
-      lunchStart: att.hasLunch ? att.lunchStart : (optionalLunchDone ? optionalLunchStart : ''),
-      lunchEnd: att.hasLunch ? att.lunchEnd : (optionalLunchDone ? optionalLunchEnd : ''),
-      clockOutTime: att.clockOutTime || '',
+      lunchStart: lunchStartForOut || '',
+      lunchEnd: lunchEndForOut || '',
+      clockOutTime: doSyncClockOut ? '' : (att.clockOutTime || ''),
       clockOutLabel: att.clockOutLabel || '',
+      clockOutDoneTime: doSyncClockOut ? att.clockOutTime : '',
+      midBreakMins: Number(att.midBreakMins) || 0,
       workDate: ymd,
       bulkBatchId: batchId
     });
@@ -37733,6 +37817,9 @@ window.showBulkWorkMemoSavedModal_ = (savedItems, attendanceOpts) => {
   if (att.lunchStart || att.lunchEnd) {
     linkRows.push(`<div style="font-size:12px; color:#E65100; line-height:1.4;">🍱 昼休憩 <b>${esc(att.lunchStart || '--:--')}〜${esc(att.lunchEnd || '--:--')}</b> を連動しました</div>`);
   }
+  if (att.clockOutDoneTime) {
+    linkRows.push(`<div id="bulk_work_memo_clockout_status" style="font-size:12px; color:#C62828; line-height:1.4;">🏃 退勤 <b>${esc(att.clockOutDoneTime)}</b> を登録しています</div>`);
+  }
   const linkHtml = linkRows.length
     ? `<div style="background:#F1F8E9; border:1px solid #A5D6A7; border-radius:8px; padding:10px; margin-bottom:12px;">${linkRows.join('')}</div>`
     : '';
@@ -37743,8 +37830,6 @@ window.showBulkWorkMemoSavedModal_ = (savedItems, attendanceOpts) => {
     window._bulkWorkMemoClockOutMidBreakMins = Number(att.midBreakMins) || 0;
     window._bulkWorkMemoClockOutLunchStart = att.lunchStart || '';
     window._bulkWorkMemoClockOutLunchEnd = att.lunchEnd || '';
-    const safeYmd = String(workDate).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const safeT = String(att.clockOutTime).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     clockOutHtml = `
       <div style="background:#FFF3E0; border:2px solid #FFB74D; border-radius:10px; padding:12px; margin-bottom:12px;">
         <div style="font-size:14px; font-weight:bold; color:#E65100; margin-bottom:6px;">🏃 退勤も登録しますか？</div>
@@ -37752,7 +37837,7 @@ window.showBulkWorkMemoSavedModal_ = (savedItems, attendanceOpts) => {
           最後の作業終了 <b style="font-size:15px; color:#BF360C;">${esc(att.clockOutTime)}</b>
           ${att.clockOutLabel ? `（${esc(att.clockOutLabel)}）` : ''} を退勤時間として登録できます。
         </div>
-        <button type="button" onclick="confirmBulkWorkMemoClockOut_('${safeYmd}','${safeT}')" style="width:100%; background:#E53935; color:#fff; border:none; border-radius:8px; padding:13px; font-weight:bold; cursor:pointer; margin-bottom:8px;">✅ ${esc(att.clockOutTime)} で退勤する</button>
+        <button type="button" id="bulk_work_memo_clockout_btn" data-ymd="${esc(workDate)}" data-hm="${esc(att.clockOutTime)}" style="width:100%; background:#E53935; color:#fff; border:none; border-radius:8px; padding:13px; font-weight:bold; cursor:pointer; margin-bottom:8px; position:relative; z-index:2; pointer-events:auto; touch-action:manipulation;">✅ 最後の ${esc(att.clockOutTime)} で退勤登録する</button>
         <button type="button" onclick="skipBulkWorkMemoClockOut_()" style="width:100%; background:#fff; color:#666; border:1px solid #ccc; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">退勤はしない</button>
       </div>`;
   }
@@ -37779,6 +37864,17 @@ window.showBulkWorkMemoSavedModal_ = (savedItems, attendanceOpts) => {
   window._bulkWorkMemoActive = true;
   if (typeof window.setBulkWorkMemoModalClass_ === 'function') window.setBulkWorkMemoModalClass_('open');
   try { modalEl.onclick = null; } catch (e) {}
+  const clockOutBtn = document.getElementById('bulk_work_memo_clockout_btn');
+  if (clockOutBtn) {
+    clockOutBtn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      window.confirmBulkWorkMemoClockOut_(
+        clockOutBtn.getAttribute('data-ymd') || '',
+        clockOutBtn.getAttribute('data-hm') || ''
+      );
+    });
+  }
   if (typeof window.showRecordSyncToast === 'function') {
     window.showRecordSyncToast(`✅ メモから ${items.length}件を保存しました（同期中…）`, 'ok');
   }
@@ -39482,6 +39578,122 @@ window.delegateCompleteWorkRecord = async function(polyId, recordId) {
   }
 };
 
+window.buildWorkTimeTrackButtonHtml_ = function(ymd, startHm, endHm) {
+  const y = String(ymd || '').trim();
+  const s = String(startHm || '').trim();
+  const e = String(endHm || '').trim();
+  if (!y || !s || !e || e === '--:--') return '';
+  const q = (v) => String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  return `<button type="button" onclick="showWorkTimeTrack_('${q(y)}','${q(s)}','${q(e)}')" style="display:block; width:100%; margin-top:8px; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🗺️ この時間の軌跡を見る</button>`;
+};
+
+window.clearWorkTimeTrack_ = function() {
+  if (window._workTimeTrackLine) {
+    try { window._workTimeTrackLine.setMap(null); } catch (e) {}
+    window._workTimeTrackLine = null;
+  }
+  if (Array.isArray(window._workTimeTrackMarkers)) {
+    window._workTimeTrackMarkers.forEach(m => { try { m.setMap(null); } catch (e) {} });
+  }
+  window._workTimeTrackMarkers = [];
+  const bar = document.getElementById('workTimeTrackBar');
+  if (bar) bar.remove();
+};
+
+window.showWorkTimeTrack_ = async function(ymd, startHm, endHm) {
+  const y = String(ymd || '').trim();
+  const startMin = (typeof window.bulkWorkMemoHmToMin_ === 'function')
+    ? window.bulkWorkMemoHmToMin_(startHm)
+    : null;
+  const endMin = (typeof window.bulkWorkMemoHmToMin_ === 'function')
+    ? window.bulkWorkMemoHmToMin_(endHm)
+    : null;
+  if (!y || startMin == null || endMin == null) {
+    if (typeof customAlert === 'function') customAlert('開始時間と終了時間が分かる記録だけ軌跡を表示できます。');
+    return;
+  }
+  if (typeof map === 'undefined' || !map || typeof google === 'undefined' || !google.maps) {
+    if (typeof customAlert === 'function') customAlert('地図の準備ができていません。');
+    return;
+  }
+
+  if (typeof window.closeMyWorkHistoryDetail === 'function') window.closeMyWorkHistoryDetail();
+  if (typeof window.closeMyPageWorkDateSelectPopup_ === 'function') window.closeMyPageWorkDateSelectPopup_();
+  if (typeof window.closeAppModal === 'function') window.closeAppModal();
+  const panel = document.getElementById('rightPanel');
+  if (panel && panel.classList.contains('open')) panel.classList.remove('open');
+
+  window.clearWorkTimeTrack_();
+  const bar = document.createElement('div');
+  bar.id = 'workTimeTrackBar';
+  bar.style.cssText = 'position:fixed; z-index:12000; left:12px; right:12px; bottom:16px; background:#fff; border:1px solid #90CAF9; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,0.25); padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px;';
+  bar.innerHTML = `<div style="font-size:13px; font-weight:bold; color:#1565C0; line-height:1.4;">🗺️ ${String(startHm)}〜${String(endHm)} の軌跡を読み込み中...</div><button type="button" onclick="clearWorkTimeTrack_()" style="background:#f5f5f5; color:#555; border:1px solid #ccc; border-radius:8px; padding:8px 12px; font-weight:bold; cursor:pointer; flex-shrink:0;">閉じる</button>`;
+  document.body.appendChild(bar);
+
+  const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
+  try {
+    const res = await callGAS('getTrackingData', { targetDate: y, userName: userName });
+    const rows = (res && res.trackingData) ? res.trackingData : (Array.isArray(res) ? res : []);
+    const inWindow = (mins) => {
+      if (mins == null || isNaN(mins)) return false;
+      if (endMin >= startMin) return mins >= startMin && mins <= endMin;
+      return mins >= startMin || mins <= endMin;
+    };
+    const points = rows.map(d => {
+      const t = new Date(d.time);
+      if (isNaN(t.getTime())) return null;
+      const lat = parseFloat(d.lat);
+      const lng = parseFloat(d.lng);
+      if (isNaN(lat) || isNaN(lng)) return null;
+      if (lat === 0 && lng === 0) return null;
+      if (lat < 20 || lat > 46 || lng < 122 || lng > 154) return null;
+      const mins = t.getHours() * 60 + t.getMinutes();
+      if (!inWindow(mins)) return null;
+      return { lat: lat, lng: lng, ms: t.getTime() };
+    }).filter(Boolean).sort((a, b) => a.ms - b.ms);
+
+    if (points.length < 2) {
+      const label = bar.querySelector('div');
+      if (label) label.textContent = `🗺️ ${startHm}〜${endHm} の移動記録が足りません（${points.length}地点）`;
+      if (typeof customAlert === 'function') customAlert('この時間の移動地点が2つ未満のため、線を引けません。');
+      return;
+    }
+
+    const path = points.map(p => ({ lat: p.lat, lng: p.lng }));
+    window._workTimeTrackLine = new google.maps.Polyline({
+      path: path,
+      map: map,
+      strokeColor: '#1565C0',
+      strokeOpacity: 0.95,
+      strokeWeight: 5,
+      zIndex: 8000
+    });
+    const ends = [points[0], points[points.length - 1]];
+    window._workTimeTrackMarkers = ends.map((p, i) => new google.maps.Marker({
+      position: { lat: p.lat, lng: p.lng },
+      map: map,
+      zIndex: 8001,
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 7,
+        fillColor: i === 0 ? '#2E7D32' : '#C62828',
+        fillOpacity: 1,
+        strokeColor: '#fff',
+        strokeWeight: 2
+      }
+    }));
+    const bounds = new google.maps.LatLngBounds();
+    path.forEach(p => bounds.extend(p));
+    map.fitBounds(bounds);
+    const label = bar.querySelector('div');
+    if (label) label.textContent = `🗺️ ${startHm}〜${endHm} の軌跡（${points.length}地点）`;
+  } catch (e) {
+    const label = bar.querySelector('div');
+    if (label) label.textContent = '軌跡の取得に失敗しました';
+    if (typeof customAlert === 'function') customAlert(e.message || '軌跡の取得に失敗しました。');
+  }
+};
+
 window.renderMyWorkRecordCardHtml = function(rec) {
     const d = rec.data || {};
     const breakHint = (parseInt(d.breakMins, 10) > 0) ? ` 休憩${parseInt(d.breakMins, 10)}分` : '';
@@ -39533,9 +39745,8 @@ window.renderMyWorkRecordCardHtml = function(rec) {
                 ${progressBadge}
             </div>
             ${d.detailedWorks ? `<div style="font-size:11px; color:#1a73e8; margin-bottom:3px;">✅ 詳細: ${d.detailedWorks}</div>` : ''}
-            ${d.deliveryOrigin && d.deliveryOrigin.name ? `<div style="font-size:12px; color:#01579B; font-weight:bold; margin-top:3px; background:#E1F5FE; border:1px solid #81D4FA; padding:4px 8px; border-radius:6px; display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap;">📤 運搬元: ${String(d.deliveryOrigin.name).replace(/</g, '&lt;')} ${d.deliveryOrigin.lat != null && d.deliveryOrigin.lng != null ? `<a href="https://maps.google.com/?q=${d.deliveryOrigin.lat},${d.deliveryOrigin.lng}" target="_blank" rel="noopener" style="color:#0288D1; font-size:11px; text-decoration:underline; font-weight:bold;">📍 地図で開く</a>` : ''}</div>` : ''}
-            ${d.deliveryDestination && d.deliveryDestination.name ? `<div style="font-size:12px; color:#01579B; font-weight:bold; margin-top:3px; background:#E1F5FE; border:1px solid #81D4FA; padding:4px 8px; border-radius:6px; display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap;">🚚 配送先: ${String(d.deliveryDestination.name).replace(/</g, '&lt;')} ${d.deliveryDestination.lat != null && d.deliveryDestination.lng != null ? `<a href="https://maps.google.com/?q=${d.deliveryDestination.lat},${d.deliveryDestination.lng}" target="_blank" rel="noopener" style="color:#0288D1; font-size:11px; text-decoration:underline; font-weight:bold;">📍 地図で開く</a>` : ''}</div>` : ''}
             ${d.comment || d.notes ? `<div style="font-size:11px; color:#555; background:#f5f5f5; padding:4px 6px; border-radius:4px; margin-top:4px; white-space:pre-wrap;">${d.comment || d.notes}</div>` : ''}
+            ${window.buildWorkTimeTrackButtonHtml_(rec.recordYmd, d.startTime, d.endTime)}
             <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:6px; border-top:1px dashed #eee; padding-top:4px;">
                 <span onclick="window.deleteRecordFromMyPage('${safePolyId}', '${safeRecId}')" style="cursor:pointer; color:#F44336; font-size:12px; font-weight:bold;">🗑️ 削除</span>
                 <span onclick="openMyPageWorkRecordEdit('${safePolyId}', '${safeRecId}', event)" style="cursor:pointer; color:#2196F3; font-size:12px; font-weight:bold;">✏️ 編集</span>
@@ -39604,6 +39815,7 @@ window.renderMyPageWorkDateSelectListHtml_ = function(records) {
             <span style="display:block; font-size:12px; color:#555; line-height:1.4;">${field ? `📍 ${esc(field)}` : '📍 全体・共通'}${crop ? ` ／ 🌱 ${esc(crop)}` : ''}</span>
           </button>
         </div>
+        ${window.buildWorkTimeTrackButtonHtml_(ymd, d.startTime, d.endTime)}
         <div style="display:flex; gap:8px; margin-top:10px; padding-top:8px; border-top:1px dashed #ddd;">
           <button type="button" onclick="editRecordFromWorkManager_('${safePolyId}', '${safeRecId}', event)"
             style="flex:1; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:10px 8px; font-size:13px; font-weight:bold; cursor:pointer;">✏️ 編集</button>

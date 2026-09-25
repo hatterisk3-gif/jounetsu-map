@@ -13,6 +13,10 @@
 
   var HEAVY_TIMEOUT_MS = {
     manageMaster: 90000,
+    saveRecord: 120000,
+    saveRecordBatch: 120000,
+    updateRecordItem: 120000,
+    updateWorkRecordById: 120000,
     getInitData: 180000,
     getWorkRecordAnalysis: 45000,
     saveCultivationPlans: 90000,
@@ -25,6 +29,10 @@
   };
 
   var NO_RETRY_ACTIONS = {
+    saveRecord: true,
+    saveRecordBatch: true,
+    updateRecordItem: true,
+    updateWorkRecordById: true,
     manageMaster: true,
     saveCultivationPlans: true,
     saveCroptypeDBBatch: true,
