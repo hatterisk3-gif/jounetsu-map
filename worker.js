@@ -22634,7 +22634,10 @@ function createSignboardMarker(name, pos, icon, id) {
             }
           }
           const histModal = document.getElementById('myWorkHistoryModal');
-          if (histModal && histModal.style.display === 'flex' && typeof window.openMyWorkHistoryDetail === 'function') {
+          const mgrModal = document.getElementById('myPageWorkDateSelectModal');
+          if (mgrModal && mgrModal.style.display === 'flex' && typeof window.refreshMyPageWorkManagerList_ === 'function') {
+            window.refreshMyPageWorkManagerList_({ localOnly: true });
+          } else if (histModal && histModal.style.display === 'flex' && typeof window.openMyWorkHistoryDetail === 'function') {
             window.openMyWorkHistoryDetail();
           }
         } catch (e) {}
@@ -29777,6 +29780,53 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
   return row;
 };
 
+/**
+ * 「13時まで 休憩、14時15分まで システム開発」のように
+ * 「〇時まで／〇時で」が続く行を、終了時刻ごとの句に分ける。
+ * 「8時から12時まで」のような範囲は1件のまま。
+ * @returns {string[]}
+ */
+window.splitBulkWorkMemoUntilClauses_ = (line) => {
+  const raw = String(line || '').trim();
+  if (!raw) return [];
+  const norm = typeof window.normalizeBulkWorkMemoInputText_ === 'function'
+    ? window.normalizeBulkWorkMemoInputText_(raw)
+    : raw;
+  const times = (typeof window.extractBulkWorkMemoTimes_ === 'function')
+    ? window.extractBulkWorkMemoTimes_(norm)
+    : [];
+  if (times.length < 2) return [raw];
+  const isRangeJoin = (prev, cur) => {
+    if (!prev || !cur) return false;
+    const between = norm.slice(prev.index + prev.length, cur.index);
+    return /^[\s〜～\-~]*$/.test(between) || /^\s*から\s*$/.test(between);
+  };
+  const endMarkers = [];
+  times.forEach((t, i) => {
+    const after = norm.slice(t.index + t.length, t.index + t.length + 8);
+    if (!/^\s*(?:まで|で)/.test(after)) return;
+    if (isRangeJoin(times[i - 1], t)) return;
+    endMarkers.push(t);
+  });
+  if (!endMarkers.length) return [raw];
+  const trimEdge = (s) => String(s || '').replace(/^[、,，\s]+|[、,，\s]+$/g, '').trim();
+  const beforeFirst = trimEdge(norm.slice(0, endMarkers[0].index));
+  const beforeTimes = beforeFirst && typeof window.extractBulkWorkMemoTimes_ === 'function'
+    ? window.extractBulkWorkMemoTimes_(beforeFirst)
+    : [];
+  const beforeHasTime = !!(beforeFirst && beforeTimes.length);
+  if (!beforeHasTime && endMarkers.length < 2) return [raw];
+  const parts = [];
+  if (beforeHasTime) parts.push(beforeFirst);
+  for (let i = 0; i < endMarkers.length; i++) {
+    const startIdx = endMarkers[i].index;
+    const endIdx = i + 1 < endMarkers.length ? endMarkers[i + 1].index : norm.length;
+    const piece = trimEdge(norm.slice(startIdx, endIdx));
+    if (piece) parts.push(piece);
+  }
+  return parts.length >= 2 ? parts : [raw];
+};
+
 /** 時刻なし行が「畝・枚数などの補足」か（直前作業へ結合する） */
 window.isBulkWorkMemoContinuationLine_ = (line) => {
   const raw = String(line || '').trim();
@@ -29936,18 +29986,23 @@ window.parseBulkWorkMemo_ = (text) => {
       }
       return;
     }
-    let row = null;
-    try {
-      row = window.parseBulkWorkMemoLine_(line, prevEnd);
-    } catch (e) {
-      console.error('parseBulkWorkMemoLine_ failed', e, line);
-      row = window.makeBulkWorkMemoFallbackDraft_(line, prevEnd, idx);
-    }
-    if (!row) return;
-    row._uid = row._uid || ('bm_' + Date.now() + '_' + idx);
-    drafts.push(row);
-    if (row.endTime) prevEnd = row.endTime;
-    else if (row.startTime) prevEnd = row.startTime;
+    const clauses = (typeof window.splitBulkWorkMemoUntilClauses_ === 'function')
+      ? window.splitBulkWorkMemoUntilClauses_(line)
+      : [line];
+    clauses.forEach((clause, cIdx) => {
+      let row = null;
+      try {
+        row = window.parseBulkWorkMemoLine_(clause, prevEnd);
+      } catch (e) {
+        console.error('parseBulkWorkMemoLine_ failed', e, clause);
+        row = window.makeBulkWorkMemoFallbackDraft_(clause, prevEnd, idx * 10 + cIdx);
+      }
+      if (!row) return;
+      row._uid = row._uid || ('bm_' + Date.now() + '_' + idx + '_' + cIdx);
+      drafts.push(row);
+      if (row.endTime) prevEnd = row.endTime;
+      else if (row.startTime) prevEnd = row.startTime;
+    });
   });
   // 終了だけある行の開始が空なら、前行終了 → 設定日の最終作業終了 で埋める
   try {
@@ -35655,6 +35710,15 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
 
   const drafts = window._bulkWorkMemoDrafts || [];
   const ymd = window._bulkWorkMemoDate || window.getBulkWorkMemoTodayYmd_();
+  drafts.forEach((d, i) => {
+    if (d && !d._uid) d._uid = 'bm_' + i;
+  });
+  const conflictByUid = {};
+  try {
+    (window.findBulkWorkMemoExistingTimeConflicts_(ymd, drafts) || []).forEach(c => {
+      if (c && c.uid) conflictByUid[c.uid] = c;
+    });
+  } catch (e) {}
   const modalEl = document.getElementById('modal');
   if (!modalEl || typeof window.fillAppModalHtml_ !== 'function') return;
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -35749,6 +35813,12 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
             <button type="button" id="bulk_match_end_start_${esc(uid)}" onclick="matchBulkWorkMemoEndToStart_('${esc(uid)}')" ${hasStart ? '' : 'disabled'} style="width:100%; box-sizing:border-box; margin-top:6px; padding:7px 8px; border-radius:8px; font-size:11px; font-weight:bold; cursor:${hasStart ? 'pointer' : 'not-allowed'}; border:1px solid #90CAF9; background:${hasStart ? '#E3F2FD' : '#f5f5f5'}; color:${hasStart ? '#1565C0' : '#999'}; line-height:1.3; opacity:${hasStart ? '1' : '0.7'};">▶️ この開始時間に合わせる</button>
           </div>
         </div>
+        ${(() => {
+          const conflict = conflictByUid[uid];
+          if (!conflict || !conflict.existing || !conflict.existing.length) return '';
+          const exist = conflict.existing.map(sp => esc(`${sp.start || '--:--'}〜${sp.end || '--:--'} ${sp.workName || '作業'}`)).join('、');
+          return `<div style="font-size:11px; color:#c62828; background:#ffebee; border:1px solid #ef9a9a; border-radius:8px; padding:8px 10px; margin-bottom:8px; line-height:1.4;">⚠️ この時間には、すでに「${exist}」があります。このままでは保存できません。時間を変えるか、チェックを外してください。</div>`;
+        })()}
         ${kindSwitch}
         ${restBody}${workBody}
         <label style="font-size:10px; color:#555; font-weight:bold; margin-top:8px; display:block;">💬 コメント（補足）</label>
@@ -35802,6 +35872,7 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
       ${typeof window.buildBulkWorkMemoWorkMasterAdminBarHtml_ === 'function' ? window.buildBulkWorkMemoWorkMasterAdminBarHtml_() : ''}
       <div style="margin-bottom:12px;">${cards}</div>
       <div id="bulk_work_memo_time_gaps">${(() => { try { return window.buildBulkWorkMemoTimeGapsHtml_(drafts); } catch (e) { return ''; } })()}</div>
+      ${Object.keys(conflictByUid).length ? `<div style="background:#ffebee; border:1px solid #ef9a9a; color:#c62828; border-radius:8px; padding:10px 12px; margin-bottom:10px; font-size:12px; line-height:1.45; font-weight:bold;">同じ時間に、すでにあなたの作業があります。重なる行は保存できません。時間を変えるか、チェックを外してください。</div>` : ''}
       <button type="button" id="bulk_work_memo_temp_save_btn" onclick="saveBulkWorkMemoTemp_()" style="width:100%; background:#00BCD4; color:#fff; border:none; border-radius:8px; padding:13px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:8px;">💾 一時保存</button>
       <button type="button" id="bulk_work_memo_save_btn" onclick="openBulkWorkMemoConfirmSave_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">✅ チェックした作業を一括保存</button>
       <button type="button" onclick="openBulkWorkMemoModal_()" style="width:100%; background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-bottom:8px;">← メモをやり直す</button>
@@ -36379,6 +36450,127 @@ window.calcBulkWorkMemoTotalTime_ = (start, end, breakMins) => {
   return Math.floor(workMins / 60) + '時間' + (workMins % 60) + '分';
 };
 
+/** 時刻の重なり。端が接するだけ（12:00終了と12:00開始）は重ならない */
+window.bulkWorkMemoTimeRangesOverlap_ = (aStart, aEnd, bStart, bEnd) => {
+  const toMin = (hm) => {
+    const n = (typeof window.bulkWorkMemoNormHm_ === 'function')
+      ? window.bulkWorkMemoNormHm_(hm)
+      : String(hm || '').trim();
+    if (!n) return null;
+    const m = (typeof window.bulkWorkMemoHmToMin_ === 'function')
+      ? window.bulkWorkMemoHmToMin_(n)
+      : null;
+    return (m == null || isNaN(m)) ? null : m;
+  };
+  let a0 = toMin(aStart);
+  let a1 = toMin(aEnd);
+  let b0 = toMin(bStart);
+  let b1 = toMin(bEnd);
+  if (a0 == null) a0 = a1;
+  if (a1 == null) a1 = a0;
+  if (b0 == null) b0 = b1;
+  if (b1 == null) b1 = b0;
+  if (a0 == null || a1 == null || b0 == null || b1 == null) return false;
+  if (a1 < a0 || b1 < b0) return false;
+  if (a0 === a1) return a0 >= b0 && a0 < b1;
+  if (b0 === b1) return b0 >= a0 && b0 < a1;
+  return a0 < b1 && b0 < a1;
+};
+
+/** その日・ログイン中の人の既存作業（休憩・昼休憩を含む） */
+window.listBulkWorkMemoExistingTimeSpans_ = (ymd) => {
+  const dateYmd = (typeof window.normalizeDateStr === 'function')
+    ? window.normalizeDateStr(ymd)
+    : String(ymd || '').trim();
+  if (!dateYmd) return [];
+  const spans = [];
+  const seen = new Set();
+  const push = (start, end, name) => {
+    const s = (typeof window.bulkWorkMemoNormHm_ === 'function')
+      ? window.bulkWorkMemoNormHm_(start)
+      : String(start || '').trim();
+    const e = (typeof window.bulkWorkMemoNormHm_ === 'function')
+      ? window.bulkWorkMemoNormHm_(end)
+      : String(end || '').trim();
+    if (!s && !e) return;
+    const label = String(name || '作業').trim() || '作業';
+    const key = [s, e, label].join('|');
+    if (seen.has(key)) return;
+    seen.add(key);
+    spans.push({ start: s, end: e, workName: label });
+  };
+  try {
+    if (typeof window.collectMyWorkRecords === 'function') {
+      const set = new Set([dateYmd]);
+      (window.collectMyWorkRecords(set) || []).forEach(rec => {
+        if (!rec || !rec.data) return;
+        const ry = (typeof window.normalizeDateStr === 'function')
+          ? window.normalizeDateStr(rec.recordYmd || rec.data.workDate || rec.date)
+          : '';
+        if (ry && ry !== dateYmd) return;
+        push(rec.data.startTime, rec.data.endTime, rec.data.workName);
+      });
+    }
+  } catch (e) {}
+  try {
+    if (typeof window.getCachedRestBreaks === 'function') {
+      (window.getCachedRestBreaks(dateYmd) || []).forEach(r => {
+        if (!r) return;
+        push(r.start, r.end, r.workName || '休憩');
+      });
+    }
+  } catch (e2) {}
+  try {
+    if (typeof window.loadLunchBreak === 'function') {
+      const lunch = window.loadLunchBreak(dateYmd);
+      if (lunch && lunch.registered !== false && (lunch.start || lunch.end)) {
+        push(lunch.start, lunch.end, '昼休憩');
+      }
+    }
+  } catch (e3) {}
+  return spans;
+};
+
+/** チェック中の行のうち、既存作業と時間が重なるもの */
+window.findBulkWorkMemoExistingTimeConflicts_ = (ymd, drafts) => {
+  const spans = window.listBulkWorkMemoExistingTimeSpans_(ymd);
+  if (!spans.length) return [];
+  const list = Array.isArray(drafts) ? drafts : [];
+  const conflicts = [];
+  list.forEach((d, idx) => {
+    if (!d || d.included === false) return;
+    if (!String(d.startTime || '').trim() && !String(d.endTime || '').trim()) return;
+    const hits = spans.filter(sp => window.bulkWorkMemoTimeRangesOverlap_(d.startTime, d.endTime, sp.start, sp.end));
+    if (!hits.length) return;
+    conflicts.push({
+      index: idx,
+      uid: String(d._uid || ''),
+      draft: d,
+      start: window.bulkWorkMemoNormHm_(d.startTime) || String(d.startTime || '').trim(),
+      end: window.bulkWorkMemoNormHm_(d.endTime) || String(d.endTime || '').trim(),
+      workName: String(d.workName || d.guessedName || '').trim(),
+      existing: hits
+    });
+  });
+  return conflicts;
+};
+
+window.formatBulkWorkMemoTimeConflictMessage_ = (conflicts) => {
+  const lines = ['同じ日の同じ時間に、すでにあなたの作業があります。重なる行は登録できません。', ''];
+  (conflicts || []).forEach(c => {
+    const name = c.workName || '（作業名未設定）';
+    const slot = `${c.start || '--:--'}〜${c.end || '--:--'}`;
+    const exist = (c.existing || []).map(sp => {
+      return `${sp.start || '--:--'}〜${sp.end || '--:--'} ${sp.workName || '作業'}`;
+    }).join('、');
+    lines.push(`${c.index + 1}件目 ${slot} ${name}`);
+    lines.push(`　既存: ${exist}`);
+  });
+  lines.push('');
+  lines.push('時間を変えるか、その行のチェックを外してください。');
+  return lines.join('\n');
+};
+
 window.validateBulkWorkMemoDraftsForSave_ = () => {
   const drafts = (window._bulkWorkMemoDrafts || []).filter(d => d && d.included !== false);
   if (!drafts.length) {
@@ -36458,6 +36650,19 @@ window.validateBulkWorkMemoDraftsForSave_ = () => {
       return null;
     }
   }
+  try {
+    const ymd = window._bulkWorkMemoDate || (typeof window.getBulkWorkMemoTodayYmd_ === 'function'
+      ? window.getBulkWorkMemoTodayYmd_() : '');
+    const conflicts = (typeof window.findBulkWorkMemoExistingTimeConflicts_ === 'function')
+      ? window.findBulkWorkMemoExistingTimeConflicts_(ymd, window._bulkWorkMemoDrafts || drafts)
+      : [];
+    if (conflicts.length) {
+      const msg = window.formatBulkWorkMemoTimeConflictMessage_(conflicts);
+      if (typeof customAlert === 'function') customAlert(msg);
+      else alert(msg);
+      return null;
+    }
+  } catch (e) {}
   return drafts;
 };
 
@@ -39558,7 +39763,10 @@ window.delegateCompleteWorkRecord = async function(polyId, recordId) {
     if (typeof customAlert === 'function') customAlert('委任完了しました。途中→完了に更新しました。');
     else alert('委任完了しました。');
     // 表示中の画面を更新
-    if (document.getElementById('myWorkHistoryModal') && document.getElementById('myWorkHistoryModal').style.display === 'flex') {
+    const mgrModal = document.getElementById('myPageWorkDateSelectModal');
+    if (mgrModal && mgrModal.style.display === 'flex' && typeof window.refreshMyPageWorkManagerList_ === 'function') {
+      window.refreshMyPageWorkManagerList_({ localOnly: true });
+    } else if (document.getElementById('myWorkHistoryModal') && document.getElementById('myWorkHistoryModal').style.display === 'flex') {
       if (typeof window.openMyWorkHistoryDetail === 'function') window.openMyWorkHistoryDetail();
     }
     if (typeof window.openMyPage === 'function' && document.getElementById('modal') && document.getElementById('modal').style.display !== 'none') {
@@ -39811,8 +40019,10 @@ window.renderMyPageWorkDateSelectListHtml_ = function(records) {
           <button type="button" onclick="toggleMyPageWorkRecordSelect_('${safeRecId}')"
             style="min-width:0; flex:1; text-align:left; background:transparent; border:none; padding:0; cursor:pointer;">
             <span style="display:block; font-size:12px; color:#666; margin-bottom:4px;">⏰ ${esc(d.startTime || '--:--')} 〜 ${esc(d.endTime || '--:--')}${d.totalTime ? `（${esc(d.totalTime)}）` : ''}</span>
-            <span style="display:block; font-size:15px; font-weight:bold; color:#222; margin-bottom:4px;">🚜 ${esc(d.workName || '作業')}</span>
-            <span style="display:block; font-size:12px; color:#555; line-height:1.4;">${field ? `📍 ${esc(field)}` : '📍 全体・共通'}${crop ? ` ／ 🌱 ${esc(crop)}` : ''}</span>
+            <span style="display:block; font-size:15px; font-weight:bold; color:#222; margin-bottom:4px;">🚜 ${esc(d.workName || '作業')}${(typeof window.renderProgressStatusBadgeHtml === 'function') ? window.renderProgressStatusBadgeHtml(rec, { showDelegate: true }) : ''}</span>
+            <span style="display:block; font-size:12px; color:#555; line-height:1.4;">${String(d.category || '').trim() ? `📁 ${esc(String(d.category || '').trim())} ／ ` : ''}${field ? `📍 ${esc(field)}` : '📍 全体・共通'}${crop ? ` ／ 🌱 ${esc(crop)}` : ''}</span>
+            ${d.detailedWorks ? `<span style="display:block; font-size:12px; color:#1a73e8; margin-top:4px; line-height:1.4;">✅ ${esc(d.detailedWorks)}</span>` : ''}
+            ${(d.comment || d.notes) ? `<span style="display:block; font-size:12px; color:#555; background:#f5f5f5; padding:4px 6px; border-radius:4px; margin-top:4px; white-space:pre-wrap;">${esc(d.comment || d.notes)}</span>` : ''}
           </button>
         </div>
         ${window.buildWorkTimeTrackButtonHtml_(ymd, d.startTime, d.endTime)}
@@ -39843,7 +40053,7 @@ window.ensureMyPageWorkDateSelectPopup_ = function() {
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
           <div style="min-width:0; flex:1;">
             <div data-work-manager-title style="font-weight:bold; font-size:17px; color:#1B5E20;">📋 作業記録マネージャー</div>
-            <div id="myPageWorkDateSelectSub" style="font-size:12px; color:#666; margin-top:4px; line-height:1.4;">編集・削除、または選んで日付をまとめて変更</div>
+            <div id="myPageWorkDateSelectSub" style="font-size:12px; color:#666; margin-top:4px; line-height:1.4;">全期間の作業を表示。編集・削除、または選んで日付をまとめて変更</div>
           </div>
           <button type="button" onclick="closeMyPageWorkDateSelectPopup_()" aria-label="閉じる"
             style="background:#f5f5f5; color:#555; border:1px solid #ddd; width:40px; height:40px; border-radius:50%; font-size:22px; line-height:1; font-weight:bold; cursor:pointer; flex-shrink:0; padding:0;">×</button>
@@ -39877,7 +40087,17 @@ window.rerenderMyPageWorkDateSelectPopup_ = function() {
   const delBtn = document.getElementById('myPageWorkDateSelectDeleteBtn');
   if (!body) return;
   const records = Array.isArray(st.records) ? st.records : [];
-  body.innerHTML = window.renderMyPageWorkDateSelectListHtml_(records);
+  const pageSize = 80;
+  const shownCount = Math.max(pageSize, parseInt(st._renderCount, 10) || pageSize);
+  const shown = records.slice(0, shownCount);
+  let listHtml = window.renderMyPageWorkDateSelectListHtml_(shown);
+  if (shownCount < records.length) {
+    const remain = records.length - shownCount;
+    listHtml += `<button type="button" onclick="loadMoreMyPageWorkManager_()" style="width:100%; margin-top:8px; padding:12px; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; font-weight:bold; cursor:pointer;">さらに表示（残り ${remain} 件）</button>`;
+  } else if (records.length > pageSize) {
+    listHtml += `<div style="text-align:center; color:#888; font-size:12px; margin-top:10px; padding:8px;">すべて表示しました（${records.length} 件）</div>`;
+  }
+  body.innerHTML = listHtml;
   if (countEl) countEl.textContent = String(st.selected.size);
   if (sub) {
     const scopeLabel = (st.source === 'all' || st.source === 'history') ? '全期間' : '直近2週間';
@@ -39892,6 +40112,16 @@ window.rerenderMyPageWorkDateSelectPopup_ = function() {
     delBtn.disabled = !hasSel;
     delBtn.style.opacity = hasSel ? '1' : '0.55';
   }
+};
+
+window.loadMoreMyPageWorkManager_ = function() {
+  const st = window.getMyPageWorkDateSelectState_();
+  const body = document.getElementById('myPageWorkDateSelectBody');
+  const scroll = body ? body.scrollTop : 0;
+  st._renderCount = (parseInt(st._renderCount, 10) || 80) + 80;
+  window.rerenderMyPageWorkDateSelectPopup_();
+  const next = document.getElementById('myPageWorkDateSelectBody');
+  if (next) next.scrollTop = scroll;
 };
 
 window.editRecordFromWorkManager_ = function(polyId, recordId, evt) {
@@ -40009,6 +40239,7 @@ window.openMyPageWorkDateSelectPopup_ = async function(source, opts) {
   if (opts.keepSelected instanceof Set) st.selected = new Set(opts.keepSelected);
   else if (!opts.silent) st.selected = new Set();
   else if (!(st.selected instanceof Set)) st.selected = new Set();
+  if (!opts.silent) st._renderCount = 80;
   const modal = window.ensureMyPageWorkDateSelectPopup_();
   if (!document.getElementById('myPageWorkDateSelectDeleteBtn')) {
     const nextBtn = document.getElementById('myPageWorkDateSelectNextBtn');
@@ -40354,6 +40585,10 @@ window.renderMyWorkRecordsGroupedHtml = function(records, emptyMsg) {
 };
 
 window.openMyWorkHistoryDetail = function() {
+    if (typeof window.openMyPageWorkDateSelectPopup_ === 'function') {
+      window.openMyPageWorkDateSelectPopup_('all');
+      return;
+    }
     let modal = document.getElementById('myWorkHistoryModal');
     if (!modal) {
         modal = document.createElement('div');
@@ -40883,9 +41118,7 @@ window.openMyPage = function() {
     const recordsHtml = `<div id="myRecentWorkRecordsStatus" style="font-size:11px; color:#888; margin-bottom:6px; min-height:14px;"></div>
     <div id="myRecentWorkRecordsBody" style="max-height:360px; overflow-y:auto; padding-right:2px; margin-bottom:10px;">${
         window.renderMyWorkRecordsGroupedHtml(myRecentRecords, '直近2週間の作業記録はまだありません。')
-    }</div>
-    <button type="button" onclick="openMyWorkHistoryDetail()"
-      style="width:100%; background:#1565C0; color:white; border:none; padding:11px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:15px;">📖 詳細（全期間を表示）</button>`;
+    }</div>`;
 
     let html = `
         <div style="position:sticky; top:0; z-index:5; background:#fff; margin:-20px -20px 12px; padding:14px 16px 12px; border-bottom:1px solid #e0e0e0; display:flex; justify-content:space-between; align-items:center; gap:10px; border-radius:12px 12px 0 0;">
@@ -40918,8 +41151,8 @@ window.openMyPage = function() {
             <span>📋 直近2週間の作業記録 (<span id="myRecentWorkRecordsCount">${myRecentRecords.length}</span>件)</span>
         </h4>
         <div style="font-size:11px; color:#666; margin-bottom:8px;">${rangeLabel}</div>
-        <button type="button" id="myPageEnterDateSelectBtn" onclick="openMyPageWorkDateSelectPopup_('week')"
-          style="width:100%; background:#E8F5E9; color:#1B5E20; border:1px solid #81C784; padding:11px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:10px;">📋 作業記録マネージャー</button>
+        <button type="button" id="myPageEnterDateSelectBtn" onclick="openMyPageWorkDateSelectPopup_('all')"
+          style="width:100%; background:#E8F5E9; color:#1B5E20; border:1px solid #81C784; padding:11px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:10px;">📋 作業記録マネージャー（全期間）</button>
         ${recordsHtml}
 
         <h4 style="color:#c62828; margin-bottom:10px; margin-top:5px;">📧 Gmailアカウント</h4>
