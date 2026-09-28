@@ -38472,6 +38472,263 @@ window.getBulkWorkMemoHistoryLunch_ = (entry) => {
   return null;
 };
 
+/** 一括入力履歴に紐づく未同期ジョブを捨てる */
+window.dropPendingBulkWorkMemoSyncJobs_ = (batchId) => {
+  const id = String(batchId || '').trim();
+  if (!id) return;
+  const dropIds = [];
+  if (Array.isArray(window._recordSyncQueue)) {
+    window._recordSyncQueue = window._recordSyncQueue.filter(job => {
+      const hit = !!(job && job.data && String(job.data.bulkBatchId || '').trim() === id);
+      if (hit && job.localId) dropIds.push(String(job.localId));
+      return !hit;
+    });
+  }
+  dropIds.forEach(lid => {
+    if (typeof window.removePersistedRecordSyncJob_ === 'function') window.removePersistedRecordSyncJob_(lid);
+  });
+  try {
+    if (typeof window.loadPersistedRecordSyncJobsMap_ === 'function' && typeof window.removePersistedRecordSyncJob_ === 'function') {
+      const map = window.loadPersistedRecordSyncJobsMap_() || {};
+      Object.keys(map).forEach(lid => {
+        const job = map[lid];
+        if (job && job.data && String(job.data.bulkBatchId || '').trim() === id) {
+          window.removePersistedRecordSyncJob_(lid);
+        }
+      });
+    }
+  } catch (e) {}
+};
+
+/** 一括入力に含めた昼休憩を端末キャッシュから外す */
+window.clearBulkWorkMemoHistoryLunchLocally_ = (entry) => {
+  if (!entry) return;
+  const lunch = (typeof window.getBulkWorkMemoHistoryLunch_ === 'function')
+    ? window.getBulkWorkMemoHistoryLunch_(entry)
+    : null;
+  const ymd = (typeof window.normalizeDateStr === 'function')
+    ? (window.normalizeDateStr(entry.workDate) || String(entry.workDate || '').slice(0, 10))
+    : String(entry.workDate || '').slice(0, 10);
+  if (!ymd) return;
+  try {
+    if (typeof window.getCachedRestBreaks === 'function' && typeof window.saveCachedRestBreaks === 'function') {
+      const rests = window.getCachedRestBreaks(ymd) || [];
+      const start = lunch && String(lunch.start || '');
+      const end = lunch && String(lunch.end || '');
+      const stay = rests.filter(r => {
+        if (!r) return false;
+        const w = String(r.workName || '');
+        const isLunch = w === '昼休憩' || w.indexOf('昼休憩') >= 0;
+        if (!isLunch) return true;
+        if (!start && !end) return false;
+        return !(String(r.start || '') === start && String(r.end || '') === end);
+      });
+      if (stay.length !== rests.length) window.saveCachedRestBreaks(ymd, stay);
+    }
+  } catch (e) {}
+  try {
+    if (lunch && typeof window.loadLunchBreak === 'function' && typeof window.saveLunchBreak === 'function') {
+      const cur = window.loadLunchBreak(ymd);
+      if (cur && cur.registered !== false) {
+        const same = (!lunch.start || String(cur.start || '') === String(lunch.start || ''))
+          && (!lunch.end || String(cur.end || '') === String(lunch.end || ''));
+        if (same) {
+          window.saveLunchBreak({
+            registered: false,
+            enabled: false,
+            dateYmd: ymd,
+            start: '',
+            end: ''
+          });
+        }
+      }
+    }
+  } catch (e2) {}
+  if (typeof window.syncTrackingUI === 'function') {
+    try { window.syncTrackingUI(); } catch (e3) {}
+  }
+};
+
+window.collectBulkWorkMemoHistoryDeleteTargets_ = (batchId) => {
+  const entry = window.getBulkWorkMemoHistoryEntry_(batchId);
+  const fromMap = (typeof window.collectBulkWorkMemoBatchRecords_ === 'function')
+    ? window.collectBulkWorkMemoBatchRecords_(batchId)
+    : [];
+  const targets = [];
+  const seen = new Set();
+  const push = (recordId, polyId) => {
+    const rid = String(recordId || '').trim();
+    if (!rid || seen.has(rid)) return;
+    seen.add(rid);
+    targets.push({ recordId: rid, polyId: String(polyId || '__global__') });
+  };
+  fromMap.forEach(r => push(r.recordId, r.polyId));
+  const ids = (typeof window.resolveBulkWorkMemoHistoryRecordIds_ === 'function')
+    ? window.resolveBulkWorkMemoHistoryRecordIds_(batchId)
+    : [];
+  ids.forEach(rid => {
+    const mapped = fromMap.find(r => String(r.recordId || '') === String(rid));
+    const item = entry && Array.isArray(entry.items)
+      ? entry.items.find(it => it && String(it.recordId || '') === String(rid))
+      : null;
+    push(rid, (mapped && mapped.polyId) || (item && item.polyId) || '__global__');
+  });
+  return targets;
+};
+
+/** 一括入力を消した日の、端末に残っている出勤／退勤表示を外す */
+window.clearBulkWorkMemoAttendanceLocally_ = (ymd) => {
+  const dateYmd = (typeof window.normalizeDateStr === 'function')
+    ? (window.normalizeDateStr(ymd) || String(ymd || '').slice(0, 10))
+    : String(ymd || '').slice(0, 10);
+  if (!dateYmd) return;
+  const readYmd = (raw) => {
+    try {
+      const o = JSON.parse(raw || 'null');
+      if (!o) return '';
+      const src = o.dateYmd || o.workDateYmd || o.clockOutDate || o.savedDateYmd || '';
+      return (typeof window.normalizeDateStr === 'function')
+        ? (window.normalizeDateStr(src) || String(src).slice(0, 10))
+        : String(src).slice(0, 10);
+    } catch (e) {
+      return '';
+    }
+  };
+  try {
+    ['passionMapClockIn', 'passionMapClockInToday', 'passionMapLastClockOut'].forEach(key => {
+      if (readYmd(localStorage.getItem(key)) === dateYmd) localStorage.removeItem(key);
+    });
+  } catch (e) {}
+  try {
+    if (typeof window.loadCachedWorkTimeHints === 'function') {
+      const cache = window.loadCachedWorkTimeHints() || {};
+      const hintYmd = cache.clockIn
+        ? ((typeof window.normalizeDateStr === 'function')
+          ? window.normalizeDateStr(cache.clockIn.dateYmd)
+          : String(cache.clockIn.dateYmd || '').slice(0, 10))
+        : '';
+      if (hintYmd === dateYmd) {
+        delete cache.clockIn;
+        cache.updatedAt = Date.now();
+        localStorage.setItem(window.getWorkTimeHintsCacheKey(), JSON.stringify(cache));
+      }
+    }
+  } catch (e2) {}
+  if (typeof window.syncTrackingUI === 'function') {
+    try { window.syncTrackingUI(); } catch (e3) {}
+  } else if (typeof window.refreshTrackingModeUI === 'function') {
+    try { window.refreshTrackingModeUI(); } catch (e4) {}
+  }
+};
+
+/** 一括入力履歴1件と、その作業記録・昼休憩・その日の出退勤を削除する */
+window.deleteBulkWorkMemoHistoryEntry_ = async (batchId) => {
+  const id = String(batchId || window._bulkWorkMemoHistoryEditBatchId || '').trim();
+  const entry = window.getBulkWorkMemoHistoryEntry_(id);
+  if (!id || !entry) {
+    if (typeof customAlert === 'function') customAlert('この履歴が見つかりません。');
+    return;
+  }
+  const n = Number(entry.itemCount) || (Array.isArray(entry.items) ? entry.items.length : 0);
+  const dateLabel = String(entry.workDate || '日付不明');
+  const ok = (typeof customConfirm === 'function')
+    ? await customConfirm(`「${dateLabel}」の一括入力 ${n}件を削除しますか？\n作業記録と、その日の出勤・退勤も消えます。復元できません。`)
+    : confirm(`「${dateLabel}」の一括入力 ${n}件を削除しますか？\nその日の出勤・退勤も消えます。`);
+  if (!ok) return;
+
+  if (typeof showLoader === 'function') showLoader('削除中...');
+  let failed = 0;
+  let deleted = 0;
+  try {
+    window.dropPendingBulkWorkMemoSyncJobs_(id);
+    const targets = window.collectBulkWorkMemoHistoryDeleteTargets_(id);
+    const queue = targets.slice();
+    const runOne = async () => {
+      while (queue.length) {
+        const t = queue.shift();
+        if (!t || !t.recordId) continue;
+        try {
+          const res = await window.deleteRecordFromMyPageSilent_(t.polyId, t.recordId);
+          if (res) deleted++;
+          else failed++;
+        } catch (e) {
+          failed++;
+        }
+      }
+    };
+    const workers = [];
+    const wn = Math.min(4, Math.max(1, queue.length || 1));
+    for (let i = 0; i < wn; i++) workers.push(runOne());
+    await Promise.all(workers);
+
+    const lunch = window.getBulkWorkMemoHistoryLunch_(entry);
+    window.clearBulkWorkMemoHistoryLunchLocally_(entry);
+    const user = String(
+      (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || ''
+    ).trim();
+    if (lunch && lunch.start && lunch.end && user && typeof callGAS === 'function') {
+      try {
+        await callGAS('deleteLunchBreakRecord', {
+          userName: user,
+          workDate: entry.workDate,
+          startTime: lunch.start,
+          endTime: lunch.end
+        });
+      } catch (e) {
+        console.warn('昼休憩のサーバー削除エラー', e);
+      }
+    }
+
+    const ymdForAtt = (typeof window.normalizeDateStr === 'function')
+      ? (window.normalizeDateStr(entry.workDate) || String(entry.workDate || '').slice(0, 10))
+      : String(entry.workDate || '').slice(0, 10);
+    const otherSameDay = window.loadBulkWorkMemoHistory_().some(x => {
+      if (!x || x.batchId === id) return false;
+      const other = (typeof window.normalizeDateStr === 'function')
+        ? (window.normalizeDateStr(x.workDate) || String(x.workDate || '').slice(0, 10))
+        : String(x.workDate || '').slice(0, 10);
+      return other && other === ymdForAtt;
+    });
+    if (!otherSameDay && ymdForAtt && user && typeof callGAS === 'function') {
+      window.clearBulkWorkMemoAttendanceLocally_(ymdForAtt);
+      try {
+        await callGAS('deleteAttendanceForDate', {
+          userName: user,
+          workDate: ymdForAtt
+        });
+      } catch (e) {
+        console.warn('出退勤のサーバー削除エラー', e);
+      }
+    }
+
+    const list = window.loadBulkWorkMemoHistory_().filter(x => x && x.batchId !== id);
+    window.persistBulkWorkMemoHistory_(list);
+    const ymd = String(entry.workDate || '').slice(0, 10);
+    if (ymd && typeof window.recomputeCachedLatestWorkEnd === 'function') {
+      try { window.recomputeCachedLatestWorkEnd(ymd); } catch (e) {}
+    }
+    if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
+      try { window.updateInitDataCacheWithLocalRecords_(); } catch (e) {}
+    }
+    if (typeof window.refreshMyPageListsLocally_ === 'function') {
+      try { window.refreshMyPageListsLocally_(); } catch (e) {}
+    }
+    if (typeof window.loadMyAttendance === 'function' && document.getElementById('myAttendanceBody')) {
+      try { window.loadMyAttendance(); } catch (e) {}
+    }
+    const msg = failed
+      ? `${deleted}件を削除しました（サーバー失敗 ${failed}件）。履歴からは外しました。`
+      : `一括入力 ${n || deleted}件を削除しました。`;
+    if (typeof window.showRecordSyncToast === 'function') window.showRecordSyncToast(msg, failed ? 'warn' : 'ok');
+    else if (typeof customAlert === 'function') customAlert(msg);
+    window.openBulkWorkMemoHistoryModal_();
+  } catch (e) {
+    if (typeof customAlert === 'function') customAlert(e.message || '削除に失敗しました。');
+  } finally {
+    if (typeof hideLoader === 'function') hideLoader();
+  }
+};
+
 window.openBulkWorkMemoHistoryModal_ = () => {
   const modalEl = document.getElementById('modal');
   if (!modalEl || typeof window.fillAppModalHtml_ !== 'function') return;
@@ -38495,14 +38752,17 @@ window.openBulkWorkMemoHistoryModal_ = () => {
                 <div style="font-size:12px; color:#555; margin-top:4px;">${esc(entry.itemCount || 0)}件${when ? ` ／ 登録 ${esc(when)}` : ''}${(entry.lunch && entry.lunch.start) ? ` ／ 🍱${esc(entry.lunch.start)}〜${esc(entry.lunch.end || '')}` : ''}</div>
                 <div style="font-size:11px; color:#777; margin-top:4px; line-height:1.35;">${esc(entry.preview || '（内容プレビューなし）')}</div>
               </div>
-              <button type="button" onclick="openBulkWorkMemoHistoryDetail_('${safeId}')" style="flex-shrink:0; background:#1565C0; color:#fff; border:none; border-radius:8px; padding:10px 12px; font-size:12px; font-weight:bold; cursor:pointer;">日付変更</button>
+              <div style="display:flex; flex-direction:column; gap:6px; flex-shrink:0;">
+                <button type="button" onclick="openBulkWorkMemoHistoryDetail_('${safeId}')" style="background:#1565C0; color:#fff; border:none; border-radius:8px; padding:10px 12px; font-size:12px; font-weight:bold; cursor:pointer;">日付を一括変更</button>
+                <button type="button" onclick="deleteBulkWorkMemoHistoryEntry_('${safeId}')" style="background:#FFEBEE; color:#C62828; border:1px solid #EF9A9A; border-radius:8px; padding:10px 12px; font-size:12px; font-weight:bold; cursor:pointer;">削除</button>
+              </div>
             </div>
           </div>`;
       }).join('')
     : `<div style="padding:16px; text-align:center; color:#888; font-size:13px; line-height:1.5;">まだ一括入力の履歴がありません。<br>これから登録した一括入力がここに残ります。</div>`;
   window.fillAppModalHtml_(`
     <div style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
-      ${window.buildBulkWorkMemoModalHeaderHtml_('📜 一括入力履歴', '日付を1日ずらして登録してしまったときなど、まとめて直せます。')}
+      ${window.buildBulkWorkMemoModalHeaderHtml_('📜 一括入力履歴', '登録した一括分ごとに、日付の変更と削除ができます。')}
       <div style="margin-bottom:12px;">${rows}</div>
       <button type="button" onclick="openBulkWorkMemoModal_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer; margin-bottom:8px;">← 一括入力に戻る</button>
       <button type="button" onclick="closeBulkWorkMemoModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
@@ -38554,6 +38814,7 @@ window.openBulkWorkMemoHistoryDetail_ = (batchId) => {
       </div>
       <div style="margin-bottom:12px;">${itemRows || '<div style="color:#888; font-size:12px;">対象の作業が見つかりませんでした。</div>'}</div>
       <button type="button" id="bulk_work_memo_history_apply_btn" onclick="applyBulkWorkMemoHistoryDateChange_('${safeId}')" style="width:100%; background:#2E7D32; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">✅ この日付にまとめて変更</button>
+      <button type="button" onclick="deleteBulkWorkMemoHistoryEntry_('${safeId}')" style="width:100%; background:#C62828; color:#fff; border:none; border-radius:8px; padding:12px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:8px;">🗑️ この一括入力を削除</button>
       <button type="button" onclick="openBulkWorkMemoHistoryModal_()" style="width:100%; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-bottom:8px;">← 履歴一覧へ</button>
       <button type="button" onclick="closeBulkWorkMemoModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
     </div>`);
@@ -40092,6 +40353,9 @@ window.rerenderMyPageWorkDateSelectPopup_ = function() {
   const shown = records.slice(0, shownCount);
   let listHtml = window.renderMyPageWorkDateSelectListHtml_(shown);
   if (shownCount < records.length) {
+    listHtml = `<div style="background:#E3F2FD; border:1px solid #90CAF9; color:#1565C0; border-radius:8px; padding:10px 12px; margin-bottom:10px; font-size:12px; line-height:1.45; font-weight:bold;">全 ${records.length} 件のうち ${shown.length} 件を表示しています。続きは一番下の「さらに表示」です。</div>` + listHtml;
+  }
+  if (shownCount < records.length) {
     const remain = records.length - shownCount;
     listHtml += `<button type="button" onclick="loadMoreMyPageWorkManager_()" style="width:100%; margin-top:8px; padding:12px; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; font-weight:bold; cursor:pointer;">さらに表示（残り ${remain} 件）</button>`;
   } else if (records.length > pageSize) {
@@ -40101,7 +40365,9 @@ window.rerenderMyPageWorkDateSelectPopup_ = function() {
   if (countEl) countEl.textContent = String(st.selected.size);
   if (sub) {
     const scopeLabel = (st.source === 'all' || st.source === 'history') ? '全期間' : '直近2週間';
-    sub.textContent = scopeLabel + ' ' + records.length + '件 — 編集・削除、または選んで日付変更';
+    const shownN = Math.min(records.length, shown.length);
+    const more = records.length > shownN ? `（画面は ${shownN}件。続きは下の「さらに表示」）` : '';
+    sub.textContent = scopeLabel + ' ' + records.length + '件' + more + ' — 編集・削除、または選んで日付変更';
   }
   const hasSel = st.selected.size > 0;
   if (nextBtn) {
@@ -40267,9 +40533,18 @@ window.openMyPageWorkDateSelectPopup_ = async function(source, opts) {
   let records = [];
   try {
     if (st.source === 'all' || st.source === 'history') {
-      records = Array.isArray(window._myPageAllWorkRecordsCache) && window._myPageAllWorkRecordsCache.length
-        ? window._myPageAllWorkRecordsCache.slice()
-        : window.collectMyWorkRecords(null);
+      const cached = Array.isArray(window._myPageAllWorkRecordsCache) ? window._myPageAllWorkRecordsCache.slice() : [];
+      const fresh = window.collectMyWorkRecords(null) || [];
+      const byId = new Map();
+      cached.concat(fresh).forEach(r => {
+        const id = String((r && r.id) || '').trim();
+        if (id) byId.set(id, r);
+        else if (r) {
+          const fp = (typeof window.workRecordFingerprintKey_ === 'function') ? window.workRecordFingerprintKey_(r) : '';
+          byId.set(fp ? ('fp_' + fp) : ('anon_' + byId.size), r);
+        }
+      });
+      records = Array.from(byId.values());
     } else {
       const days = window.getMyPageRecentWorkDays_();
       const ymds = window.getPastYmdSet(days);
