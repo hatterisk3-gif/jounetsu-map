@@ -133,6 +133,8 @@ const API_ACTIONS = {
   "deleteInventoryHistory": function (p) { return deleteInventoryHistory(p); },
   "editInventoryHistory": function (p) { return editInventoryHistory(p); },
   "updateMachineLocations": function (p) { return updateMachineLocations(p); },
+  "updateToolLocations": function (p) { return updateToolLocations(p); },
+  "updateMaterialLocations": function (p) { return updateMaterialLocations(p); },
   "editMaterial": function (p) { return editMaterial(p); },
   "addMachineToSign": function (p) { return addMachineToSign(p); },
   "addMachinePart": function (p) { return addMachinePart(p); },
@@ -9345,6 +9347,46 @@ function updateMachineLocations(params) {
         macSh.getRange(i + 1, 14).setValue(upd.signId);   
         break;
       }
+    }
+  });
+  return true;
+}
+
+/** 道具マスタの所属看板（H/I列）を更新（在庫数は動かさない） */
+function updateToolLocations(params) {
+  const ss = TENANT_SS;
+  const sheet = ss.getSheetByName('道具マスタ');
+  if (!sheet) return false;
+  const data = sheet.getDataRange().getValues();
+  const updates = (params && params.updates) || [];
+  updates.forEach(upd => {
+    if (!upd || !upd.id) return;
+    const id = String(upd.id);
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]) !== id) continue;
+      sheet.getRange(i + 1, 8).setValue(upd.signName || ''); // H: 場所看板名
+      sheet.getRange(i + 1, 9).setValue(upd.signId || '');   // I: 場所看板id
+      break;
+    }
+  });
+  return true;
+}
+
+/** 資材マスタの所属看板（I/J列）を更新（在庫数量の移動はしない） */
+function updateMaterialLocations(params) {
+  const ss = TENANT_SS;
+  const sheet = ss.getSheetByName('資材マスタ');
+  if (!sheet) return false;
+  const data = sheet.getDataRange().getValues();
+  const updates = (params && params.updates) || [];
+  updates.forEach(upd => {
+    if (!upd || !upd.id) return;
+    const id = String(upd.id);
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]) !== id) continue;
+      sheet.getRange(i + 1, 9).setValue(upd.signName || '');  // I: 場所看板名
+      sheet.getRange(i + 1, 10).setValue(upd.signId || '');   // J: 場所看板id
+      break;
     }
   });
   return true;
