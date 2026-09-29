@@ -194,12 +194,14 @@ const API_ACTIONS = {
   "moveLunchBreakRecordDate": function (p) { return moveLunchBreakRecordDate_(p); },
   "deleteLunchBreakRecord": function (p) { return deleteLunchBreakRecord_(p); },
   "deleteAttendanceForDate": function (p) { return deleteAttendanceForDate_(p); },
+  "moveAttendanceForDate": function (p) { return moveAttendanceForDate_(p); },
   "getFertilizerRateSettings": function (p) { return getFertilizerRateSettings_(p); },
   "saveFertilizerRateSettings": function (p) { return saveFertilizerRateSettings_(p); },
   "getTrackingData": function (p) { return getTrackingData(p); },
   "getOpenClockInStatus": function (p) { return getOpenClockInStatus(p); },
   "updateOpenClockInTime": function (p) { return updateOpenClockInTime(p); },
   "updateClockInTimeForDate": function (p) { return updateClockInTimeForDate(p); },
+  "updateClockOutTimeForDate": function (p) { return updateClockOutTimeForDate_(p); },
   "getWorkRecordTimeHints": function (p) { return getWorkRecordTimeHints(p); },
   "saveWorkRecordTimeHint": function (p) { return saveWorkRecordTimeHint_(p); },
   "resetAllManureStatus": function (p) { return resetAllManureStatus(p.userName); },
@@ -10596,6 +10598,64 @@ function deleteAttendanceForDate_(params) {
   }
 }
 
+/** その人の出勤／退勤を、ある日から別の日へ移す（作業の日付まとめ直し用） */
+function moveAttendanceForDate_(params) {
+  try {
+    params = params || {};
+    const userName = String(params.userName || '').replace(/\s+/g, '');
+    const fromYmd = formatWorkDateYmd_(params.fromDate || params.oldWorkDate || params.fromYmd);
+    const toYmd = formatWorkDateYmd_(params.toDate || params.newWorkDate || params.toYmd);
+    if (!userName) return { success: false, error: 'ユーザー名がありません' };
+    if (!fromYmd || !toYmd) return { success: false, error: '日付が不正です' };
+    if (fromYmd === toYmd) return { success: true, moved: 0, skipped: true };
+
+    const sheet = TENANT_SS.getSheetByName('出退勤');
+    if (!sheet || sheet.getLastRow() <= 1) {
+      return { success: true, moved: 0, workDateFrom: fromYmd, workDateTo: toYmd };
+    }
+    const lastRow = sheet.getLastRow();
+    const values = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
+    const fromRows = [];
+    const toConflictRows = [];
+    for (let i = 0; i < values.length; i++) {
+      const d = formatWorkDateYmd_(values[i][0]) || String(values[i][0] || '').trim().replace(/\//g, '-').slice(0, 10);
+      if (!attendanceUserMatch_(values[i][2], userName)) continue;
+      const cat = attendancePunchCategory_(values[i][3]);
+      if (cat !== 'in' && cat !== 'out' && cat !== 'in_cancel' && cat !== 'out_cancel') continue;
+      if (d === fromYmd) fromRows.push({ row: i + 2, cat: cat });
+      else if (d === toYmd) toConflictRows.push({ row: i + 2, cat: cat });
+    }
+    // 移動先に同じ出勤／退勤があるときは先に消してから移す
+    const movingCats = {};
+    fromRows.forEach(function (r) { movingCats[r.cat] = true; });
+    toConflictRows.slice().reverse().forEach(function (r) {
+      if (!movingCats[r.cat]) return;
+      sheet.deleteRow(r.row);
+    });
+    // 行番号がずれるので、削除後に再スキャンして日付を書き換える
+    let moved = 0;
+    if (fromRows.length) {
+      const last2 = sheet.getLastRow();
+      if (last2 > 1) {
+        const values2 = sheet.getRange(2, 1, last2 - 1, 7).getValues();
+        for (let i = 0; i < values2.length; i++) {
+          const d = formatWorkDateYmd_(values2[i][0]) || String(values2[i][0] || '').trim().replace(/\//g, '-').slice(0, 10);
+          if (d !== fromYmd) continue;
+          if (!attendanceUserMatch_(values2[i][2], userName)) continue;
+          const cat = attendancePunchCategory_(values2[i][3]);
+          if (cat !== 'in' && cat !== 'out' && cat !== 'in_cancel' && cat !== 'out_cancel') continue;
+          sheet.getRange(i + 2, 1).setValue(toYmd);
+          moved++;
+        }
+      }
+    }
+    writeLog(String(params.userName || userName), '出退勤日付変更', toYmd, fromYmd + '→' + toYmd + ' / moved=' + moved);
+    return { success: true, moved: moved, workDateFrom: fromYmd, workDateTo: toYmd };
+  } catch (e) {
+    throw new Error('出退勤日付変更エラー: ' + e.message);
+  }
+}
+
 function ensureWorkRecordBreakMinsColumn_(sheet) {
   if (!sheet) return 16;
   const lastCol = Math.max(1, sheet.getLastColumn());
@@ -11872,6 +11932,71 @@ function updateClockInTimeForDate(params) {
     };
   } catch (e) {
     throw new Error('日付指定の出勤時間更新エラー: ' + e.message);
+  }
+}
+
+/** 指定日の退勤打刻を更新／新規。clearOut=true ならその日の退勤だけ消す */
+function updateClockOutTimeForDate_(params) {
+  try {
+    params = params || {};
+    const userName = String(params.userName || '').replace(/\s+/g, '');
+    let dateYmd = formatWorkDateYmd_(params.clockOutDateYmd || params.workDate || params.dateYmd);
+    const clearOut = params.clearOut === true || params.clearOut === 'true';
+    if (!userName) return { success: false, error: 'ユーザー名がありません' };
+    if (!dateYmd) return { success: false, error: '日付が不正です' };
+
+    const sheet = ensureAttendanceSheet_();
+    const lastRow = sheet.getLastRow();
+    const outRows = [];
+    if (lastRow > 1) {
+      const values = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
+      for (let i = 0; i < values.length; i++) {
+        const d = formatWorkDateYmd_(values[i][0]) || String(values[i][0] || '').trim().replace(/\//g, '-').slice(0, 10);
+        if (d !== dateYmd) continue;
+        if (!attendanceUserMatch_(values[i][2], userName)) continue;
+        if (attendancePunchCategory_(values[i][3]) !== 'out') continue;
+        outRows.push(i + 2);
+      }
+    }
+
+    if (clearOut) {
+      for (let i = outRows.length - 1; i >= 0; i--) sheet.deleteRow(outRows[i]);
+      writeLog(String(params.userName || userName), '退勤削除', dateYmd, 'deleted=' + outRows.length);
+      return { success: true, cleared: true, deleted: outRows.length, clockOutDateYmd: dateYmd };
+    }
+
+    const clockOutTime = String(params.clockOutTime || params.timeHm || '').trim();
+    const hm = clockOutTime.match(/^(\d{1,2}):(\d{2})$/);
+    if (!hm) return { success: false, error: '退勤時間が不正です' };
+    const padHm = ('0' + hm[1]).slice(-2) + ':' + hm[2];
+    const extras = parseAttendanceExtras_('退勤', params);
+
+    if (outRows.length) {
+      const row = outRows[outRows.length - 1];
+      sheet.getRange(row, 1).setValue(dateYmd);
+      sheet.getRange(row, 2).setValue(padHm);
+      if (extras && extras.hasMidBreak) sheet.getRange(row, 5).setValue(extras.midBreakMins);
+      if (extras && extras.lunchStart) sheet.getRange(row, 6).setValue(extras.lunchStart);
+      if (extras && extras.lunchEnd) sheet.getRange(row, 7).setValue(extras.lunchEnd);
+      // 古い重複退勤を掃除
+      for (let i = outRows.length - 2; i >= 0; i--) sheet.deleteRow(outRows[i]);
+      writeLog(String(params.userName || userName), '退勤時間更新', dateYmd, padHm);
+      return { success: true, clockOutTime: padHm, clockOutDateYmd: dateYmd, updatedRow: row };
+    }
+
+    saveAttendanceData_({
+      userName: params.userName || userName,
+      type: '退勤',
+      dateYmd: dateYmd,
+      timeHm: padHm,
+      midBreakMins: extras && extras.hasMidBreak ? extras.midBreakMins : '',
+      lunchStart: (extras && extras.lunchStart) || '',
+      lunchEnd: (extras && extras.lunchEnd) || '',
+      lunchEnabled: !!(extras && extras.lunchStart && extras.lunchEnd)
+    });
+    return { success: true, clockOutTime: padHm, clockOutDateYmd: dateYmd, created: true };
+  } catch (e) {
+    throw new Error('日付指定の退勤時間更新エラー: ' + e.message);
   }
 }
 
