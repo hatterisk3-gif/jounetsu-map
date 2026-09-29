@@ -35817,7 +35817,10 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
           const conflict = conflictByUid[uid];
           if (!conflict || !conflict.existing || !conflict.existing.length) return '';
           const exist = conflict.existing.map(sp => esc(`${sp.start || '--:--'}〜${sp.end || '--:--'} ${sp.workName || '作業'}`)).join('、');
-          return `<div style="font-size:11px; color:#c62828; background:#ffebee; border:1px solid #ef9a9a; border-radius:8px; padding:8px 10px; margin-bottom:8px; line-height:1.4;">⚠️ この時間には、すでに「${exist}」があります。このままでは保存できません。時間を変えるか、チェックを外してください。</div>`;
+          return `<div style="font-size:11px; color:#c62828; background:#ffebee; border:1px solid #ef9a9a; border-radius:8px; padding:8px 10px; margin-bottom:8px; line-height:1.4;">
+            <div style="margin-bottom:8px;">⚠️ この時間には、すでに「${exist}」があります。時間を変えるか、下のボタンで既存を消して上書きできます。</div>
+            <button type="button" onclick="overwriteBulkWorkMemoConflicts_('${esc(uid)}')" style="width:100%; box-sizing:border-box; background:#C62828; color:#fff; border:none; border-radius:8px; padding:9px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🗑 既存を削除して上書き</button>
+          </div>`;
         })()}
         ${kindSwitch}
         ${restBody}${workBody}
@@ -35872,7 +35875,10 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
       ${typeof window.buildBulkWorkMemoWorkMasterAdminBarHtml_ === 'function' ? window.buildBulkWorkMemoWorkMasterAdminBarHtml_() : ''}
       <div style="margin-bottom:12px;">${cards}</div>
       <div id="bulk_work_memo_time_gaps">${(() => { try { return window.buildBulkWorkMemoTimeGapsHtml_(drafts); } catch (e) { return ''; } })()}</div>
-      ${Object.keys(conflictByUid).length ? `<div style="background:#ffebee; border:1px solid #ef9a9a; color:#c62828; border-radius:8px; padding:10px 12px; margin-bottom:10px; font-size:12px; line-height:1.45; font-weight:bold;">同じ時間に、すでにあなたの作業があります。重なる行は保存できません。時間を変えるか、チェックを外してください。</div>` : ''}
+      ${Object.keys(conflictByUid).length ? `<div style="background:#ffebee; border:1px solid #ef9a9a; color:#c62828; border-radius:8px; padding:10px 12px; margin-bottom:10px; font-size:12px; line-height:1.45;">
+        <div style="font-weight:bold; margin-bottom:8px;">同じ時間に、すでにあなたの作業／休憩があります。時間を変えるか、既存を削除して上書きできます。</div>
+        <button type="button" onclick="overwriteBulkWorkMemoConflicts_('')" style="width:100%; box-sizing:border-box; background:#C62828; color:#fff; border:none; border-radius:8px; padding:11px; font-size:13px; font-weight:bold; cursor:pointer;">🗑 重なっている既存をすべて削除して上書き</button>
+      </div>` : ''}
       <button type="button" id="bulk_work_memo_temp_save_btn" onclick="saveBulkWorkMemoTemp_()" style="width:100%; background:#00BCD4; color:#fff; border:none; border-radius:8px; padding:13px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:8px;">💾 一時保存</button>
       <button type="button" id="bulk_work_memo_save_btn" onclick="openBulkWorkMemoConfirmSave_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">✅ チェックした作業を一括保存</button>
       <button type="button" onclick="openBulkWorkMemoModal_()" style="width:100%; background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-bottom:8px;">← メモをやり直す</button>
@@ -36655,30 +36661,34 @@ window.validateBulkWorkMemoDraftsForSave_ = () => {
   return drafts;
 };
 
-/** 一括入力と時間が重なる既存の休憩をサーバー／端末から消す */
-window.clearConflictingBulkRestRecords_ = async (ymd, conflicts) => {
+/** 一括入力と時間が重なる既存記録（作業・休憩）をサーバー／端末から消す */
+window.clearConflictingBulkExistingRecords_ = async (ymd, conflicts) => {
   const dateYmd = (typeof window.normalizeDateStr === 'function')
     ? (window.normalizeDateStr(ymd) || String(ymd || '').slice(0, 10))
     : String(ymd || '').slice(0, 10);
   const user = String(
     (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || ''
   ).trim();
-  const restSpans = [];
+  const spans = [];
+  const seen = new Set();
   (conflicts || []).forEach(c => {
     (c.existing || []).forEach(sp => {
-      const w = String(sp.workName || '').trim();
-      if (!w.includes('休憩')) return;
-      restSpans.push({
-        start: String(sp.start || '').trim(),
-        end: String(sp.end || '').trim(),
-        workName: w
-      });
+      const start = String(sp.start || '').trim();
+      const end = String(sp.end || '').trim();
+      const workName = String(sp.workName || '').trim() || '作業';
+      const key = [start, end, workName].join('|');
+      if (seen.has(key)) return;
+      seen.add(key);
+      spans.push({ start, end, workName });
     });
   });
-  if (!restSpans.length) return { deleted: 0 };
+  if (!spans.length) return { deleted: 0 };
   let deleted = 0;
+  const restSpans = spans.filter(sp => String(sp.workName || '').includes('休憩'));
   try {
-    if (typeof window.getCachedRestBreaks === 'function' && typeof window.saveCachedRestBreaks === 'function') {
+    if (restSpans.length
+        && typeof window.getCachedRestBreaks === 'function'
+        && typeof window.saveCachedRestBreaks === 'function') {
       const rests = window.getCachedRestBreaks(dateYmd) || [];
       const stay = rests.filter(r => {
         if (!r) return false;
@@ -36703,14 +36713,19 @@ window.clearConflictingBulkRestRecords_ = async (ymd, conflicts) => {
   } catch (e2) {}
 
   const toDelete = [];
+  const pushDel = (recordId, polyId) => {
+    const rid = String(recordId || '').trim();
+    if (!rid || toDelete.some(t => t.recordId === rid)) return;
+    toDelete.push({ recordId: rid, polyId: String(polyId || '__global__') });
+  };
   try {
     if (typeof window.collectRestBreakRecordsForDate === 'function') {
       (window.collectRestBreakRecordsForDate(dateYmd) || []).forEach(row => {
         if (!row) return;
-        const hit = restSpans.some(sp =>
+        const hit = spans.some(sp =>
           String(row.start || '') === sp.start && String(row.end || '') === sp.end
         );
-        if (hit && row.id) toDelete.push({ recordId: row.id, polyId: row.polyId || '__global__' });
+        if (hit && row.id) pushDel(row.id, row.polyId || '__global__');
       });
     }
   } catch (e3) {}
@@ -36719,18 +36734,43 @@ window.clearConflictingBulkRestRecords_ = async (ymd, conflicts) => {
       const set = new Set([dateYmd]);
       (window.collectMyWorkRecords(set) || []).forEach(rec => {
         if (!rec || !rec.data) return;
-        const w = String(rec.data.workName || '').trim();
-        if (!w.includes('休憩')) return;
-        const hit = restSpans.some(sp =>
-          String(rec.data.startTime || '') === sp.start && String(rec.data.endTime || '') === sp.end
+        if (typeof window.isWorkRecordDeleted_ === 'function' && window.isWorkRecordDeleted_(rec)) return;
+        const hit = spans.some(sp =>
+          String(rec.data.startTime || '') === sp.start
+          && String(rec.data.endTime || '') === sp.end
+          && (!sp.workName || String(rec.data.workName || '').trim() === sp.workName
+            || (sp.workName.includes('休憩') && String(rec.data.workName || '').includes('休憩')))
         );
         if (!hit) return;
-        const rid = String(rec.id || rec.recordId || (rec.data && rec.data.recordId) || '').trim();
-        if (!rid || toDelete.some(t => t.recordId === rid)) return;
-        toDelete.push({ recordId: rid, polyId: rec.polyId || '__global__' });
+        pushDel(rec.id || rec.recordId || (rec.data && rec.data.recordId), rec.polyId || '__global__');
       });
     }
   } catch (e4) {}
+  // 地図上の埋め込み記録も時刻一致で拾う
+  try {
+    if (typeof loadedPolygons !== 'undefined' && loadedPolygons) {
+      Object.keys(loadedPolygons).forEach(pid => {
+        const p = loadedPolygons[pid];
+        if (!p || !Array.isArray(p.photos)) return;
+        p.photos.forEach(ph => {
+          if (!ph || !ph.data) return;
+          if (typeof window.isWorkRecordDeleted_ === 'function' && window.isWorkRecordDeleted_(ph)) return;
+          const ry = (typeof window.normalizeDateStr === 'function')
+            ? window.normalizeDateStr(ph.data.workDate)
+            : String(ph.data.workDate || '').slice(0, 10);
+          if (dateYmd && ry && ry !== dateYmd) return;
+          const hit = spans.some(sp =>
+            String(ph.data.startTime || '') === sp.start
+            && String(ph.data.endTime || '') === sp.end
+            && (!sp.workName || String(ph.data.workName || '').trim() === sp.workName
+              || (sp.workName.includes('休憩') && String(ph.data.workName || '').includes('休憩')))
+          );
+          if (!hit) return;
+          pushDel(ph.id || ph.data.recordId, pid);
+        });
+      });
+    }
+  } catch (e5) {}
 
   for (let i = 0; i < toDelete.length; i++) {
     const t = toDelete[i];
@@ -36747,7 +36787,7 @@ window.clearConflictingBulkRestRecords_ = async (ymd, conflicts) => {
       await callGAS('deleteBulkWorkMemoBatch', {
         userName: user,
         workDate: dateYmd,
-        items: restSpans.map(sp => ({
+        items: spans.map(sp => ({
           workName: sp.workName,
           startTime: sp.start,
           endTime: sp.end,
@@ -36755,12 +36795,61 @@ window.clearConflictingBulkRestRecords_ = async (ymd, conflicts) => {
           isLunchOnly: sp.workName.indexOf('昼休憩') >= 0
         }))
       });
-      deleted += restSpans.length;
+      deleted += spans.length;
     } catch (eBatch) {
-      console.warn('残休憩のサーバー削除', eBatch);
+      console.warn('既存記録のサーバー削除', eBatch);
     }
   }
   return { deleted };
+};
+window.clearConflictingBulkRestRecords_ = window.clearConflictingBulkExistingRecords_;
+
+/** 確認画面から、重なっている既存記録を上書き（削除）する */
+window.overwriteBulkWorkMemoConflicts_ = async (uid) => {
+  const ymd = window._bulkWorkMemoDate || (typeof window.getBulkWorkMemoTodayYmd_ === 'function'
+    ? window.getBulkWorkMemoTodayYmd_() : '');
+  const drafts = window._bulkWorkMemoDrafts || [];
+  const allConflicts = (typeof window.findBulkWorkMemoExistingTimeConflicts_ === 'function')
+    ? (window.findBulkWorkMemoExistingTimeConflicts_(ymd, drafts) || [])
+    : [];
+  const targetUid = String(uid || '').trim();
+  const conflicts = targetUid
+    ? allConflicts.filter(c => c && String(c.uid || '') === targetUid)
+    : allConflicts;
+  if (!conflicts.length) {
+    if (typeof window.showRecordSyncToast === 'function') {
+      window.showRecordSyncToast('上書きする既存記録はありません', 'info');
+    }
+    if (typeof window.renderBulkWorkMemoReviewModal_ === 'function') {
+      window.renderBulkWorkMemoReviewModal_({ keepScroll: true, scrollUid: targetUid });
+    }
+    return;
+  }
+  const labels = [];
+  conflicts.forEach(c => (c.existing || []).forEach(sp => {
+    labels.push(`${sp.start || '--:--'}〜${sp.end || '--:--'} ${sp.workName || '作業'}`);
+  }));
+  const uniq = Array.from(new Set(labels));
+  const ask = (typeof customConfirm === 'function')
+    ? await customConfirm(
+      `次の既存記録を削除して、この入力で上書きしますか？\n${uniq.join('\n')}`
+    )
+    : confirm('既存記録を削除して上書きしますか？');
+  if (!ask) return;
+  if (typeof showLoader === 'function') showLoader('既存記録を削除中...');
+  try {
+    await window.clearConflictingBulkExistingRecords_(ymd, conflicts);
+    if (typeof window.showRecordSyncToast === 'function') {
+      window.showRecordSyncToast('既存記録を削除しました。続けて保存できます', 'ok');
+    }
+  } catch (e) {
+    if (typeof customAlert === 'function') customAlert(e.message || '既存記録の削除に失敗しました。');
+  } finally {
+    if (typeof hideLoader === 'function') hideLoader();
+  }
+  if (typeof window.renderBulkWorkMemoReviewModal_ === 'function') {
+    window.renderBulkWorkMemoReviewModal_({ keepScroll: true, scrollUid: targetUid });
+  }
 };
 
 window.buildBulkWorkMemoConfirmRowHtml_ = (d, index) => {
@@ -37738,42 +37827,31 @@ window.executeBulkWorkMemoRegistration_ = async () => {
       ? window.findBulkWorkMemoExistingTimeConflicts_(ymdCheck, window._bulkWorkMemoDrafts || drafts)
       : [];
     if (conflicts.length) {
-      const onlyRests = conflicts.every(c =>
-        (c.existing || []).length > 0
-        && (c.existing || []).every(sp => String(sp.workName || '').includes('休憩'))
-      );
-      if (onlyRests) {
-        const labels = [];
-        conflicts.forEach(c => (c.existing || []).forEach(sp => {
-          labels.push(`${sp.start || '--:--'}〜${sp.end || '--:--'} ${sp.workName || '休憩'}`);
-        }));
-        const uniq = Array.from(new Set(labels));
-        const ask = (typeof customConfirm === 'function')
-          ? await customConfirm(
-            `同じ時間に、以前の休憩が残っています。\n${uniq.join('\n')}\n\nこの休憩を削除してから登録しますか？`
-          )
-          : confirm('同じ時間に以前の休憩が残っています。削除してから登録しますか？');
-        if (!ask) {
-          const msg = window.formatBulkWorkMemoTimeConflictMessage_(conflicts);
-          if (typeof customAlert === 'function') customAlert(msg);
-          return;
-        }
-        if (typeof showLoader === 'function') showLoader('残っている休憩を削除中...');
-        try {
-          await window.clearConflictingBulkRestRecords_(ymdCheck, conflicts);
-        } finally {
-          if (typeof hideLoader === 'function') hideLoader();
-        }
-        const again = window.findBulkWorkMemoExistingTimeConflicts_(ymdCheck, window._bulkWorkMemoDrafts || drafts);
-        if (again.length) {
-          const msg = window.formatBulkWorkMemoTimeConflictMessage_(again);
-          if (typeof customAlert === 'function') customAlert(msg);
-          return;
-        }
-      } else {
+      const labels = [];
+      conflicts.forEach(c => (c.existing || []).forEach(sp => {
+        labels.push(`${sp.start || '--:--'}〜${sp.end || '--:--'} ${sp.workName || '作業'}`);
+      }));
+      const uniq = Array.from(new Set(labels));
+      const ask = (typeof customConfirm === 'function')
+        ? await customConfirm(
+          `同じ時間に、既存の記録があります。\n${uniq.join('\n')}\n\n既存を削除してから登録しますか？`
+        )
+        : confirm('同じ時間に既存の記録があります。削除してから登録しますか？');
+      if (!ask) {
         const msg = window.formatBulkWorkMemoTimeConflictMessage_(conflicts);
         if (typeof customAlert === 'function') customAlert(msg);
-        else alert(msg);
+        return;
+      }
+      if (typeof showLoader === 'function') showLoader('既存記録を削除中...');
+      try {
+        await window.clearConflictingBulkExistingRecords_(ymdCheck, conflicts);
+      } finally {
+        if (typeof hideLoader === 'function') hideLoader();
+      }
+      const again = window.findBulkWorkMemoExistingTimeConflicts_(ymdCheck, window._bulkWorkMemoDrafts || drafts);
+      if (again.length) {
+        const msg = window.formatBulkWorkMemoTimeConflictMessage_(again);
+        if (typeof customAlert === 'function') customAlert(msg);
         return;
       }
     }
