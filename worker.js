@@ -36504,6 +36504,7 @@ window.listBulkWorkMemoExistingTimeSpans_ = (ymd) => {
       const set = new Set([dateYmd]);
       (window.collectMyWorkRecords(set) || []).forEach(rec => {
         if (!rec || !rec.data) return;
+        if (typeof window.isWorkRecordDeleted_ === 'function' && window.isWorkRecordDeleted_(rec)) return;
         const ry = (typeof window.normalizeDateStr === 'function')
           ? window.normalizeDateStr(rec.recordYmd || rec.data.workDate || rec.date)
           : '';
@@ -36650,20 +36651,116 @@ window.validateBulkWorkMemoDraftsForSave_ = () => {
       return null;
     }
   }
+  // 時間重複は executeBulkWorkMemoRegistration_ 側で（残休憩の削除確認つき）判定する
+  return drafts;
+};
+
+/** 一括入力と時間が重なる既存の休憩をサーバー／端末から消す */
+window.clearConflictingBulkRestRecords_ = async (ymd, conflicts) => {
+  const dateYmd = (typeof window.normalizeDateStr === 'function')
+    ? (window.normalizeDateStr(ymd) || String(ymd || '').slice(0, 10))
+    : String(ymd || '').slice(0, 10);
+  const user = String(
+    (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || ''
+  ).trim();
+  const restSpans = [];
+  (conflicts || []).forEach(c => {
+    (c.existing || []).forEach(sp => {
+      const w = String(sp.workName || '').trim();
+      if (!w.includes('休憩')) return;
+      restSpans.push({
+        start: String(sp.start || '').trim(),
+        end: String(sp.end || '').trim(),
+        workName: w
+      });
+    });
+  });
+  if (!restSpans.length) return { deleted: 0 };
+  let deleted = 0;
   try {
-    const ymd = window._bulkWorkMemoDate || (typeof window.getBulkWorkMemoTodayYmd_ === 'function'
-      ? window.getBulkWorkMemoTodayYmd_() : '');
-    const conflicts = (typeof window.findBulkWorkMemoExistingTimeConflicts_ === 'function')
-      ? window.findBulkWorkMemoExistingTimeConflicts_(ymd, window._bulkWorkMemoDrafts || drafts)
-      : [];
-    if (conflicts.length) {
-      const msg = window.formatBulkWorkMemoTimeConflictMessage_(conflicts);
-      if (typeof customAlert === 'function') customAlert(msg);
-      else alert(msg);
-      return null;
+    if (typeof window.getCachedRestBreaks === 'function' && typeof window.saveCachedRestBreaks === 'function') {
+      const rests = window.getCachedRestBreaks(dateYmd) || [];
+      const stay = rests.filter(r => {
+        if (!r) return false;
+        return !restSpans.some(sp =>
+          String(r.start || '') === sp.start && String(r.end || '') === sp.end
+        );
+      });
+      if (stay.length !== rests.length) window.saveCachedRestBreaks(dateYmd, stay);
     }
   } catch (e) {}
-  return drafts;
+  try {
+    const hasLunch = restSpans.some(sp => sp.workName.indexOf('昼休憩') >= 0);
+    if (hasLunch && typeof window.saveLunchBreak === 'function') {
+      window.saveLunchBreak({
+        registered: false,
+        enabled: false,
+        dateYmd: dateYmd,
+        start: '',
+        end: ''
+      });
+    }
+  } catch (e2) {}
+
+  const toDelete = [];
+  try {
+    if (typeof window.collectRestBreakRecordsForDate === 'function') {
+      (window.collectRestBreakRecordsForDate(dateYmd) || []).forEach(row => {
+        if (!row) return;
+        const hit = restSpans.some(sp =>
+          String(row.start || '') === sp.start && String(row.end || '') === sp.end
+        );
+        if (hit && row.id) toDelete.push({ recordId: row.id, polyId: row.polyId || '__global__' });
+      });
+    }
+  } catch (e3) {}
+  try {
+    if (typeof window.collectMyWorkRecords === 'function') {
+      const set = new Set([dateYmd]);
+      (window.collectMyWorkRecords(set) || []).forEach(rec => {
+        if (!rec || !rec.data) return;
+        const w = String(rec.data.workName || '').trim();
+        if (!w.includes('休憩')) return;
+        const hit = restSpans.some(sp =>
+          String(rec.data.startTime || '') === sp.start && String(rec.data.endTime || '') === sp.end
+        );
+        if (!hit) return;
+        const rid = String(rec.id || rec.recordId || (rec.data && rec.data.recordId) || '').trim();
+        if (!rid || toDelete.some(t => t.recordId === rid)) return;
+        toDelete.push({ recordId: rid, polyId: rec.polyId || '__global__' });
+      });
+    }
+  } catch (e4) {}
+
+  for (let i = 0; i < toDelete.length; i++) {
+    const t = toDelete[i];
+    try {
+      if (typeof window.deleteRecordFromMyPageSilent_ === 'function') {
+        const ok = await window.deleteRecordFromMyPageSilent_(t.polyId, t.recordId);
+        if (ok) deleted++;
+      }
+    } catch (eDel) {}
+  }
+
+  if (user && typeof callGAS === 'function') {
+    try {
+      await callGAS('deleteBulkWorkMemoBatch', {
+        userName: user,
+        workDate: dateYmd,
+        items: restSpans.map(sp => ({
+          workName: sp.workName,
+          startTime: sp.start,
+          endTime: sp.end,
+          workDate: dateYmd,
+          isLunchOnly: sp.workName.indexOf('昼休憩') >= 0
+        }))
+      });
+      deleted += restSpans.length;
+    } catch (eBatch) {
+      console.warn('残休憩のサーバー削除', eBatch);
+    }
+  }
+  return { deleted };
 };
 
 window.buildBulkWorkMemoConfirmRowHtml_ = (d, index) => {
@@ -37633,7 +37730,57 @@ window.renderBulkWorkMemoConfirmModal_ = () => {
 };
 
 window.executeBulkWorkMemoRegistration_ = async () => {
-  const drafts = window.validateBulkWorkMemoDraftsForSave_();
+  let drafts = window.validateBulkWorkMemoDraftsForSave_();
+  if (!drafts) return;
+  const ymdCheck = window._bulkWorkMemoDate || window.getBulkWorkMemoTodayYmd_();
+  try {
+    const conflicts = (typeof window.findBulkWorkMemoExistingTimeConflicts_ === 'function')
+      ? window.findBulkWorkMemoExistingTimeConflicts_(ymdCheck, window._bulkWorkMemoDrafts || drafts)
+      : [];
+    if (conflicts.length) {
+      const onlyRests = conflicts.every(c =>
+        (c.existing || []).length > 0
+        && (c.existing || []).every(sp => String(sp.workName || '').includes('休憩'))
+      );
+      if (onlyRests) {
+        const labels = [];
+        conflicts.forEach(c => (c.existing || []).forEach(sp => {
+          labels.push(`${sp.start || '--:--'}〜${sp.end || '--:--'} ${sp.workName || '休憩'}`);
+        }));
+        const uniq = Array.from(new Set(labels));
+        const ask = (typeof customConfirm === 'function')
+          ? await customConfirm(
+            `同じ時間に、以前の休憩が残っています。\n${uniq.join('\n')}\n\nこの休憩を削除してから登録しますか？`
+          )
+          : confirm('同じ時間に以前の休憩が残っています。削除してから登録しますか？');
+        if (!ask) {
+          const msg = window.formatBulkWorkMemoTimeConflictMessage_(conflicts);
+          if (typeof customAlert === 'function') customAlert(msg);
+          return;
+        }
+        if (typeof showLoader === 'function') showLoader('残っている休憩を削除中...');
+        try {
+          await window.clearConflictingBulkRestRecords_(ymdCheck, conflicts);
+        } finally {
+          if (typeof hideLoader === 'function') hideLoader();
+        }
+        const again = window.findBulkWorkMemoExistingTimeConflicts_(ymdCheck, window._bulkWorkMemoDrafts || drafts);
+        if (again.length) {
+          const msg = window.formatBulkWorkMemoTimeConflictMessage_(again);
+          if (typeof customAlert === 'function') customAlert(msg);
+          return;
+        }
+      } else {
+        const msg = window.formatBulkWorkMemoTimeConflictMessage_(conflicts);
+        if (typeof customAlert === 'function') customAlert(msg);
+        else alert(msg);
+        return;
+      }
+    }
+  } catch (eConf) {
+    console.warn('bulk conflict check', eConf);
+  }
+  drafts = window.validateBulkWorkMemoDraftsForSave_();
   if (!drafts) return;
   const dateEl = document.getElementById('bulk_work_memo_confirm_date');
   if (dateEl && dateEl.value) window._bulkWorkMemoDate = dateEl.value;
@@ -38500,7 +38647,7 @@ window.dropPendingBulkWorkMemoSyncJobs_ = (batchId) => {
   } catch (e) {}
 };
 
-/** 一括入力に含めた昼休憩を端末キャッシュから外す */
+/** 一括入力に含めた休憩・昼休憩を端末キャッシュから外す */
 window.clearBulkWorkMemoHistoryLunchLocally_ = (entry) => {
   if (!entry) return;
   const lunch = (typeof window.getBulkWorkMemoHistoryLunch_ === 'function')
@@ -38510,20 +38657,57 @@ window.clearBulkWorkMemoHistoryLunchLocally_ = (entry) => {
     ? (window.normalizeDateStr(entry.workDate) || String(entry.workDate || '').slice(0, 10))
     : String(entry.workDate || '').slice(0, 10);
   if (!ymd) return;
+  const normHm = (hm) => (typeof window.bulkWorkMemoNormHm_ === 'function')
+    ? window.bulkWorkMemoNormHm_(hm)
+    : String(hm || '').trim();
+  const restSlots = [];
+  if (Array.isArray(entry.items)) {
+    entry.items.forEach(it => {
+      if (!it) return;
+      const w = String(it.workName || '').trim();
+      const isRest = !!it.isLunchOnly || w.includes('休憩');
+      if (!isRest) return;
+      restSlots.push({
+        start: normHm(it.startTime),
+        end: normHm(it.endTime),
+        workName: w || '休憩'
+      });
+    });
+  }
+  if (lunch && (lunch.start || lunch.end)) {
+    restSlots.push({
+      start: normHm(lunch.start),
+      end: normHm(lunch.end),
+      workName: '昼休憩'
+    });
+  }
   try {
     if (typeof window.getCachedRestBreaks === 'function' && typeof window.saveCachedRestBreaks === 'function') {
       const rests = window.getCachedRestBreaks(ymd) || [];
-      const start = lunch && String(lunch.start || '');
-      const end = lunch && String(lunch.end || '');
       const stay = rests.filter(r => {
         if (!r) return false;
-        const w = String(r.workName || '');
-        const isLunch = w === '昼休憩' || w.indexOf('昼休憩') >= 0;
-        if (!isLunch) return true;
-        if (!start && !end) return false;
-        return !(String(r.start || '') === start && String(r.end || '') === end);
+        const rs = normHm(r.start);
+        const re = normHm(r.end);
+        const rw = String(r.workName || '').trim();
+        return !restSlots.some(slot => {
+          const sameTime = (!slot.start || slot.start === rs) && (!slot.end || slot.end === re);
+          if (!sameTime) return false;
+          // 名前が空/休憩系なら時刻一致で消す
+          if (!slot.workName || !rw) return true;
+          if (slot.workName === rw) return true;
+          if (slot.workName.includes('休憩') && rw.includes('休憩')) return true;
+          return false;
+        });
       });
       if (stay.length !== rests.length) window.saveCachedRestBreaks(ymd, stay);
+      else if (restSlots.length && rests.length) {
+        // スロット指定があるのに残った場合は、その日の休憩キャッシュを再構築
+        try {
+          if (typeof window.collectRestBreakRecordsForDate === 'function') {
+            window.saveCachedRestBreaks(ymd, window.collectRestBreakRecordsForDate(ymd));
+          }
+        } catch (eRebuild) {}
+      }
     }
   } catch (e) {}
   try {
@@ -38621,7 +38805,7 @@ window.clearBulkWorkMemoAttendanceLocally_ = (ymd) => {
   }
 };
 
-/** 一括入力履歴1件と、その作業記録・昼休憩・その日の出退勤を削除する */
+/** 一括入力履歴1件と、その作業記録・休憩・昼休憩・その日の出退勤を削除する */
 window.deleteBulkWorkMemoHistoryEntry_ = async (batchId) => {
   const id = String(batchId || window._bulkWorkMemoHistoryEditBatchId || '').trim();
   const entry = window.getBulkWorkMemoHistoryEntry_(id);
@@ -38632,7 +38816,7 @@ window.deleteBulkWorkMemoHistoryEntry_ = async (batchId) => {
   const n = Number(entry.itemCount) || (Array.isArray(entry.items) ? entry.items.length : 0);
   const dateLabel = String(entry.workDate || '日付不明');
   const ok = (typeof customConfirm === 'function')
-    ? await customConfirm(`「${dateLabel}」の一括入力 ${n}件を削除しますか？\n作業記録と、その日の出勤・退勤も消えます。復元できません。`)
+    ? await customConfirm(`「${dateLabel}」の一括入力 ${n}件を削除しますか？\n作業記録・休憩と、その日の出勤・退勤も消えます。復元できません。`)
     : confirm(`「${dateLabel}」の一括入力 ${n}件を削除しますか？\nその日の出勤・退勤も消えます。`);
   if (!ok) return;
 
@@ -38640,8 +38824,51 @@ window.deleteBulkWorkMemoHistoryEntry_ = async (batchId) => {
   let failed = 0;
   let deleted = 0;
   try {
+    const user = String(
+      (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || ''
+    ).trim();
+    const ymdForAtt = (typeof window.normalizeDateStr === 'function')
+      ? (window.normalizeDateStr(entry.workDate) || String(entry.workDate || '').slice(0, 10))
+      : String(entry.workDate || '').slice(0, 10);
+    const lunch = window.getBulkWorkMemoHistoryLunch_(entry);
+    const historyItems = Array.isArray(entry.items) ? entry.items.slice() : [];
+
+    // サーバー側をバッチ単位で確実に削除（休憩・作業記録・昼休憩）
+    if (user && typeof callGAS === 'function') {
+      try {
+        const batchRes = await callGAS('deleteBulkWorkMemoBatch', {
+          userName: user,
+          bulkBatchId: id,
+          workDate: ymdForAtt,
+          lunch: lunch || null,
+          items: historyItems.map(it => ({
+            recordId: String(it.recordId || ''),
+            workName: String(it.workName || ''),
+            startTime: String(it.startTime || ''),
+            endTime: String(it.endTime || ''),
+            workDate: ymdForAtt,
+            isLunchOnly: !!it.isLunchOnly
+          }))
+        });
+        if (batchRes && (batchRes.sheetDeleted || batchRes.embeddedDeleted)) {
+          deleted += Number(batchRes.sheetDeleted || 0) + Number(batchRes.embeddedDeleted || 0);
+        }
+      } catch (eBatch) {
+        console.warn('一括バッチのサーバー削除エラー', eBatch);
+        failed++;
+      }
+    }
+
     window.dropPendingBulkWorkMemoSyncJobs_(id);
     const targets = window.collectBulkWorkMemoHistoryDeleteTargets_(id);
+    // 履歴 items からも削除対象を足す（地図側に残っていなくても照合削除）
+    historyItems.forEach(it => {
+      if (!it || it.isLunchOnly) return;
+      const rid = String(it.recordId || '').trim();
+      if (!rid) return;
+      if (targets.some(t => String(t.recordId) === rid)) return;
+      targets.push({ recordId: rid, polyId: String(it.polyId || '__global__') });
+    });
     const queue = targets.slice();
     const runOne = async () => {
       while (queue.length) {
@@ -38650,7 +38877,38 @@ window.deleteBulkWorkMemoHistoryEntry_ = async (batchId) => {
         try {
           const res = await window.deleteRecordFromMyPageSilent_(t.polyId, t.recordId);
           if (res) deleted++;
-          else failed++;
+          else {
+            // local_ ID でも日付・時刻照合でサーバー削除を試す
+            const it = historyItems.find(x => x && String(x.recordId || '') === String(t.recordId));
+            if (user && typeof callGAS === 'function' && it) {
+              try {
+                const r2 = await callGAS('deleteWorkRecordById', {
+                  recordId: t.recordId,
+                  userName: user,
+                  workDate: ymdForAtt,
+                  startTime: it.startTime || '',
+                  endTime: it.endTime || '',
+                  workName: it.workName || '',
+                  author: user
+                });
+                if (r2 && r2.success) {
+                  deleted++;
+                  if (typeof window.removeWorkRecordLocally_ === 'function') {
+                    window.removeWorkRecordLocally_(t.recordId, t.polyId, {
+                      data: {
+                        workDate: ymdForAtt,
+                        startTime: it.startTime || '',
+                        endTime: it.endTime || '',
+                        workName: it.workName || ''
+                      }
+                    });
+                  }
+                  continue;
+                }
+              } catch (e2) {}
+            }
+            failed++;
+          }
         } catch (e) {
           failed++;
         }
@@ -38661,27 +38919,40 @@ window.deleteBulkWorkMemoHistoryEntry_ = async (batchId) => {
     for (let i = 0; i < wn; i++) workers.push(runOne());
     await Promise.all(workers);
 
-    const lunch = window.getBulkWorkMemoHistoryLunch_(entry);
+    // 端末の休憩キャッシュを履歴内容に合わせて消す
     window.clearBulkWorkMemoHistoryLunchLocally_(entry);
-    const user = String(
-      (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || ''
-    ).trim();
-    if (lunch && lunch.start && lunch.end && user && typeof callGAS === 'function') {
-      try {
-        await callGAS('deleteLunchBreakRecord', {
-          userName: user,
-          workDate: entry.workDate,
-          startTime: lunch.start,
-          endTime: lunch.end
-        });
-      } catch (e) {
-        console.warn('昼休憩のサーバー削除エラー', e);
-      }
-    }
 
-    const ymdForAtt = (typeof window.normalizeDateStr === 'function')
-      ? (window.normalizeDateStr(entry.workDate) || String(entry.workDate || '').slice(0, 10))
-      : String(entry.workDate || '').slice(0, 10);
+    // 地図・一覧から、履歴の休憩時刻と一致する残りも落とす
+    try {
+      if (typeof loadedPolygons !== 'undefined' && loadedPolygons && historyItems.length) {
+        const normHm = (hm) => (typeof window.bulkWorkMemoNormHm_ === 'function')
+          ? window.bulkWorkMemoNormHm_(hm)
+          : String(hm || '').trim();
+        Object.keys(loadedPolygons).forEach(pid => {
+          const p = loadedPolygons[pid];
+          if (!p || !Array.isArray(p.photos)) return;
+          p.photos = p.photos.filter(ph => {
+            if (!ph || !ph.data) return true;
+            const w = String(ph.data.workName || '').trim();
+            if (!w.includes('休憩') && String(ph.data.bulkBatchId || '') !== id) return true;
+            if (String(ph.data.bulkBatchId || '').trim() === id) return false;
+            const ry = (typeof window.normalizeDateStr === 'function')
+              ? window.normalizeDateStr(ph.data.workDate)
+              : String(ph.data.workDate || '').slice(0, 10);
+            if (ymdForAtt && ry && ry !== ymdForAtt) return true;
+            const rs = normHm(ph.data.startTime);
+            const re = normHm(ph.data.endTime);
+            return !historyItems.some(it => {
+              if (!it) return false;
+              const iw = String(it.workName || '');
+              if (!it.isLunchOnly && !iw.includes('休憩') && String(ph.data.bulkBatchId || '') !== id) return false;
+              return normHm(it.startTime) === rs && normHm(it.endTime) === re;
+            });
+          });
+        });
+      }
+    } catch (eMap) {}
+
     const otherSameDay = window.loadBulkWorkMemoHistory_().some(x => {
       if (!x || x.batchId === id) return false;
       const other = (typeof window.normalizeDateStr === 'function')
@@ -38717,7 +38988,7 @@ window.deleteBulkWorkMemoHistoryEntry_ = async (batchId) => {
       try { window.loadMyAttendance(); } catch (e) {}
     }
     const msg = failed
-      ? `${deleted}件を削除しました（サーバー失敗 ${failed}件）。履歴からは外しました。`
+      ? `${deleted}件を削除しました（一部失敗 ${failed}）。履歴からは外しました。`
       : `一括入力 ${n || deleted}件を削除しました。`;
     if (typeof window.showRecordSyncToast === 'function') window.showRecordSyncToast(msg, failed ? 'warn' : 'ok');
     else if (typeof customAlert === 'function') customAlert(msg);
@@ -39279,6 +39550,35 @@ window.removeWorkRecordLocally_ = function(recordId, polyId, rec) {
     if (typeof window.markWorkRecordDeleted_ === 'function') {
         window.markWorkRecordDeleted_(recordId, tombRec || rec);
     }
+    // 休憩キャッシュからも外す（一括入力の時間重複判定に残らないように）
+    try {
+      const d = (tombRec && tombRec.data) ? tombRec.data : ((rec && rec.data) || {});
+      const wName = String(d.workName || (tombRec && tombRec.workName) || '').trim();
+      if (wName.includes('休憩')
+          && typeof window.getCachedRestBreaks === 'function'
+          && typeof window.saveCachedRestBreaks === 'function') {
+        const ymd = (typeof window.normalizeDateStr === 'function')
+          ? window.normalizeDateStr(d.workDate || (tombRec && (tombRec.recordYmd || tombRec.date)) || '')
+          : String(d.workDate || '').slice(0, 10);
+        if (ymd) {
+          const start = String(d.startTime || '').trim();
+          const end = String(d.endTime || '').trim();
+          const rests = window.getCachedRestBreaks(ymd) || [];
+          const stay = rests.filter(r => {
+            if (!r) return false;
+            if (r.id && String(r.id) === recordId) return false;
+            if (start && end
+                && String(r.start || '') === start
+                && String(r.end || '') === end
+                && String(r.workName || '').includes('休憩')) {
+              return false;
+            }
+            return true;
+          });
+          if (stay.length !== rests.length) window.saveCachedRestBreaks(ymd, stay);
+        }
+      }
+    } catch (eRest) {}
     if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
         try { window.updateInitDataCacheWithLocalRecords_(); } catch (e) {}
     }

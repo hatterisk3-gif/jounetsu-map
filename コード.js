@@ -193,6 +193,7 @@ const API_ACTIONS = {
   "saveLunchBreakRecord": function (p) { return saveLunchBreakRecord_(p); },
   "moveLunchBreakRecordDate": function (p) { return moveLunchBreakRecordDate_(p); },
   "deleteLunchBreakRecord": function (p) { return deleteLunchBreakRecord_(p); },
+  "deleteBulkWorkMemoBatch": function (p) { return deleteBulkWorkMemoBatch_(p); },
   "deleteAttendanceForDate": function (p) { return deleteAttendanceForDate_(p); },
   "moveAttendanceForDate": function (p) { return moveAttendanceForDate_(p); },
   "getFertilizerRateSettings": function (p) { return getFertilizerRateSettings_(p); },
@@ -1256,7 +1257,7 @@ pdl.materials = [];
   // 圃場・生産管理の読込失敗で初期表示全体を落とさない
   let polygons = [];
   try {
-    polygons = getSavedPolygons();
+    polygons = getSavedPolygons({ slimForInit: true, photoLimit: 25 });
   } catch (polyErr) {
     console.warn('圃場読込スキップ:', polyErr);
     polygons = [];
@@ -3324,11 +3325,12 @@ function migrateContainerMasterToPerCrop_(sheet) {
   }
   if (!needsRewrite) return;
   const lastRow = sheet.getLastRow();
+  // getRange(r1,c1,r2,c2) の第3引数は「行数」ではなく「終了行」
   if (lastRow > 1) {
-    sheet.getRange(2, 1, lastRow - 1, 4).clearContent();
+    sheet.getRange(2, 1, lastRow, 4).clearContent();
   }
   if (newRows.length) {
-    sheet.getRange(2, 1, newRows.length, 4).setValues(newRows);
+    sheet.getRange(2, 1, 1 + newRows.length, 4).setValues(newRows);
   }
 }
 
@@ -5695,9 +5697,69 @@ function ensureFieldSoilTypeHeader_(sheet) {
   } catch (e) {}
 }
 
-function getSavedPolygons() {
+/** 初期読込用に圃場履歴を間引く（通信失敗・タイムアウト対策） */
+function trimPolygonPhotosForInit_(photos, maxKeep) {
+  const list = Array.isArray(photos) ? photos : [];
+  const limit = (typeof maxKeep === 'number' && maxKeep > 0) ? maxKeep : 25;
+  let trimmed = list;
+  if (list.length > limit) {
+    const scored = list.map(function (ph, idx) {
+      let t = 0;
+      try {
+        const d = String((ph && (ph.date || (ph.data && ph.data.workDate))) || '').trim();
+        const tm = String((ph && ph.time) || '').trim();
+        if (d) {
+          const p = new Date(d.replace(/\//g, '-') + (tm ? ('T' + tm) : ''));
+          if (!isNaN(p.getTime())) t = p.getTime();
+        }
+      } catch (e) { t = 0; }
+      return { ph: ph, t: t, idx: idx };
+    });
+    scored.sort(function (a, b) {
+      if (b.t !== a.t) return b.t - a.t;
+      return b.idx - a.idx;
+    });
+    trimmed = scored.slice(0, limit).map(function (x) { return x.ph; });
+  }
+  // 地図描画・作物判定に必要な最小項目だけ残す
+  const keepDataKeys = {
+    workDate: 1, workName: 1, category: 1, crop: 1, cropName: 1,
+    startTime: 1, endTime: 1, totalTime: 1, progressStatus: 1,
+    notes: 1, comment: 1, placeLabel: 1,
+    // 一括入力の削除・日付変更で必要
+    bulkBatchId: 1, recordKind: 1, fromBulkMemo: 1
+  };
+  return trimmed.map(function (ph) {
+    if (!ph || typeof ph !== 'object') return ph;
+    const out = {
+      id: ph.id,
+      type: ph.type,
+      date: ph.date,
+      time: ph.time,
+      author: ph.author,
+      urls: []
+    };
+    if (Array.isArray(ph.urls) && ph.urls.length) out._hasUrls = true;
+    if (ph.data && typeof ph.data === 'object') {
+      const slimData = {};
+      Object.keys(ph.data).forEach(function (dk) {
+        if (!keepDataKeys[dk]) return;
+        const v = ph.data[dk];
+        if (typeof v === 'string' && v.length > 200) slimData[dk] = v.slice(0, 200) + '…';
+        else slimData[dk] = v;
+      });
+      out.data = slimData;
+    }
+    return out;
+  });
+}
+
+function getSavedPolygons(options) {
   const ss = TENANT_SS;
   let result = [];
+  const opts = options || {};
+  const slimForInit = !!opts.slimForInit;
+  const photoLimit = (typeof opts.photoLimit === 'number') ? opts.photoLimit : 40;
   
   // 圃場シート
   const fieldSheet = ss.getSheetByName('圃場');
@@ -5708,6 +5770,7 @@ function getSavedPolygons() {
       try {
         let photos = [];
         try { if (data[i][9]) photos = JSON.parse(data[i][9]); } catch(e){}
+        if (slimForInit) photos = trimPolygonPhotosForInit_(photos, photoLimit);
         let coords = [];
         try { coords = JSON.parse(data[i][5] || "[]"); } catch (e) {
           console.warn('圃場 coords 不正のためスキップ:', data[i][0], e);
@@ -5729,7 +5792,14 @@ function getSavedPolygons() {
           toukiId: data[i][11],
           ridgeDir: data[i][13],
           ridgeWidth: data[i][14],
-          uneSimData: data[i][15],
+          uneSimData: (function () {
+            const raw = data[i][15];
+            if (!slimForInit) return raw;
+            const s = (raw == null) ? '' : String(raw);
+            // 畝CADの巨大JSONは初期表示では省略（必要時に再取得）
+            if (s.length > 1500) return '';
+            return raw;
+          })(),
           water_status: data[i][16] || 'stopped',
           drainage_status: data[i][19] || '',
           soilType: data[i][20] || '' // U列: 土質（粘土質・砂質・壌質）
@@ -5775,6 +5845,7 @@ function getSavedPolygons() {
           if (data[i][9] && data[i][9] !== "[]") photos = JSON.parse(data[i][9]);
           else if (data[i][6] && data[i][6] !== "[]") photos = JSON.parse(data[i][6]);
         } catch(e){}
+        if (slimForInit) photos = trimPolygonPhotosForInit_(photos, photoLimit);
         let coords = [];
         try { coords = JSON.parse(data[i][2] || "[]"); } catch (e) {
           console.warn('看板 coords 不正のためスキップ:', data[i][0], e);
@@ -5791,7 +5862,13 @@ function getSavedPolygons() {
           location: signLocCol >= 0 ? (String(data[i][signLocCol] || '').trim() || '') : '',
           signFunction: data[i][7] || "一般看板", // ★ここが超重要！H列（看板機能）をアプリに送る！
           photos: photos,
-          uneSimData: data[i][10] // K列(11)
+          uneSimData: (function () {
+            const raw = data[i][10];
+            if (!slimForInit) return raw;
+            const s = (raw == null) ? '' : String(raw);
+            if (s.length > 1500) return '';
+            return raw;
+          })()
         });
       } catch (rowErr) {
         console.warn('看板行の読込スキップ:', data[i][0], rowErr);
@@ -10564,6 +10641,167 @@ function deleteLunchBreakRecord_(params) {
     return { success: true, lunchSheetDeleted: lunchSheetDeleted, attendanceCleared: attendanceCleared };
   } catch (e) {
     throw new Error('昼休憩削除エラー: ' + e.message);
+  }
+}
+
+/**
+ * 一括入力バッチをサーバーからまとめて削除
+ * - bulkBatchId 一致の作業記録
+ * - items の日付・時刻・作業名一致（休憩含む）
+ * - 昼休憩シート（lunch / isLunchOnly）
+ */
+function deleteBulkWorkMemoBatch_(params) {
+  params = params || {};
+  const userName = String(params.userName || '').trim();
+  const userKey = userName.replace(/\s+/g, '');
+  const batchId = String(params.bulkBatchId || '').trim();
+  const ymd = formatWorkDateYmd_(params.workDate || params.dateYmd);
+  const items = Array.isArray(params.items) ? params.items : [];
+  if (!userKey) return { success: false, error: 'ユーザー名がありません' };
+  if (!batchId && !items.length && !ymd) {
+    return { success: false, error: '削除対象がありません' };
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    let sheetDeleted = 0;
+    let embeddedDeleted = 0;
+    const deletedIds = {};
+
+    const itemMatch_ = (data, author) => {
+      if (!items.length) return false;
+      const dYmd = formatWorkDateYmd_((data && data.workDate) || '');
+      const dStart = normWorkRecordTimeHm_((data && data.startTime) || '');
+      const dEnd = normWorkRecordTimeHm_((data && data.endTime) || '');
+      const dName = String((data && data.workName) || '').trim();
+      const authorKey = String(author || (data && data.author) || '').replace(/\s+/g, '');
+      if (authorKey && userKey && authorKey !== userKey
+          && userKey.indexOf(authorKey) < 0 && authorKey.indexOf(userKey) < 0) {
+        return false;
+      }
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        if (!it || it.isLunchOnly) continue;
+        const itYmd = formatWorkDateYmd_(it.workDate || ymd);
+        if (itYmd && dYmd && itYmd !== dYmd) continue;
+        const itStart = normWorkRecordTimeHm_(it.startTime || it.start || '');
+        const itEnd = normWorkRecordTimeHm_(it.endTime || it.end || '');
+        const itName = String(it.workName || '').trim();
+        if (itStart && dStart && itStart !== dStart) continue;
+        if (itEnd && dEnd && itEnd !== dEnd) continue;
+        if (itName && dName && itName !== dName) continue;
+        return true;
+      }
+      return false;
+    };
+
+    const workSheet = TENANT_SS.getSheetByName('作業記録');
+    if (workSheet && workSheet.getLastRow() >= 2) {
+      const values = workSheet.getDataRange().getValues();
+      for (let i = values.length - 1; i >= 1; i--) {
+        const rowAuthor = String(values[i][2] || '').trim();
+        const rowAuthorKey = rowAuthor.replace(/\s+/g, '');
+        if (rowAuthorKey && userKey
+            && rowAuthorKey !== userKey
+            && userKey.indexOf(rowAuthorKey) < 0
+            && rowAuthorKey.indexOf(userKey) < 0) {
+          continue;
+        }
+        // 作業記録シートに bulkBatchId 列はないため、items の日付・時刻・作業名で消す
+        const dataLike = {
+          workDate: formatWorkDateYmd_(values[i][3]),
+          startTime: normWorkRecordTimeHm_(values[i][6]),
+          endTime: normWorkRecordTimeHm_(values[i][7]),
+          workName: String(values[i][4] || '').trim(),
+          author: rowAuthor
+        };
+        if (ymd && dataLike.workDate && dataLike.workDate !== ymd) continue;
+        if (!itemMatch_(dataLike, rowAuthor)) continue;
+        const rid = String(values[i][12] || '').trim();
+        if (rid) deletedIds[rid] = true;
+        workSheet.deleteRow(i + 1);
+        sheetDeleted++;
+      }
+    }
+
+    ['圃場', '看板'].forEach(function (sheetName) {
+      const sheet = TENANT_SS.getSheetByName(sheetName);
+      if (!sheet || sheet.getLastRow() < 2) return;
+      const values = sheet.getDataRange().getValues();
+      const pc = 10;
+      for (let i = 1; i < values.length; i++) {
+        let records = [];
+        try {
+          if (values[i][pc - 1]) records = JSON.parse(values[i][pc - 1]);
+          else if (values[i][6]) records = JSON.parse(values[i][6]);
+        } catch (e) { records = []; }
+        if (!Array.isArray(records) || !records.length) continue;
+        const kept = records.filter(function (item) {
+          if (!item) return true;
+          const data = item.data || {};
+          const itemBatch = String(data.bulkBatchId || '').trim();
+          const itemId = String(item.id || item.url || '').trim();
+          const author = item.author || data.author || '';
+          const authorKey = String(author || '').replace(/\s+/g, '');
+          if (authorKey && userKey
+              && authorKey !== userKey
+              && userKey.indexOf(authorKey) < 0
+              && authorKey.indexOf(userKey) < 0) {
+            return true;
+          }
+          let hit = false;
+          if (batchId && itemBatch && itemBatch === batchId) hit = true;
+          if (!hit && itemMatch_(data, author)) hit = true;
+          if (!hit) return true;
+          if (itemId) deletedIds[itemId] = true;
+          embeddedDeleted += 1;
+          return false;
+        });
+        if (kept.length !== records.length) {
+          sheet.getRange(i + 1, pc).setValue(JSON.stringify(kept));
+        }
+      }
+    });
+
+    let lunchDeleted = 0;
+    const lunchItems = items.filter(function (it) {
+      if (!it) return false;
+      if (it.isLunchOnly) return true;
+      const w = String(it.workName || '');
+      return w === '昼休憩' || w.indexOf('昼休憩') >= 0;
+    });
+    if (params.lunch && (params.lunch.start || params.lunch.end)) {
+      lunchItems.push({
+        isLunchOnly: true,
+        startTime: params.lunch.start,
+        endTime: params.lunch.end,
+        workDate: ymd
+      });
+    }
+    lunchItems.forEach(function (li) {
+      try {
+        const res = deleteLunchBreakRecord_({
+          userName: userName,
+          workDate: li.workDate || ymd,
+          startTime: li.startTime || li.start || '',
+          endTime: li.endTime || li.end || ''
+        });
+        if (res && res.lunchSheetDeleted) lunchDeleted += Number(res.lunchSheetDeleted) || 0;
+      } catch (eLunch) {}
+    });
+
+    writeLog(userName, '一括入力バッチ削除', ymd || batchId,
+      'batch=' + batchId + ' / sheet=' + sheetDeleted + ' / emb=' + embeddedDeleted + ' / lunch=' + lunchDeleted);
+    return {
+      success: true,
+      sheetDeleted: sheetDeleted,
+      embeddedDeleted: embeddedDeleted,
+      lunchDeleted: lunchDeleted,
+      deletedIds: Object.keys(deletedIds)
+    };
+  } finally {
+    lock.releaseLock();
   }
 }
 
