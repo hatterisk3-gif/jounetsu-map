@@ -41134,6 +41134,7 @@ function getWorkRecordAttendanceSummaryMap(userName) {
         if (p && p.photos && Array.isArray(p.photos)) {
             p.photos.forEach(ph => {
                 if (!ph) return;
+                if (typeof window.isWorkRecordDeleted_ === 'function' && window.isWorkRecordDeleted_(ph)) return;
                 const recId = ph.id || (ph.data && ph.data.recordId);
                 if (recId && seenIds.has(recId)) return;
                 if (recId) seenIds.add(recId);
@@ -41277,20 +41278,26 @@ function summarizeMyAttendanceList(rows, userName) {
     });
 
     // B. 打刻ログが無いが作業記録が存在する日付の自動カード作成
+    //    （ユーザーが出退勤削除した日は、作業から推定したカードを出さない）
+    const suppressed = (typeof window.loadSuppressedAttendanceEstimateDays_ === 'function')
+      ? window.loadSuppressedAttendanceEstimateDays_()
+      : {};
     Object.keys(workMap).forEach(ymd => {
-        if (!existingDates.has(ymd)) {
-            const wInfo = workMap[ymd];
-            const inTimeStr = wInfo.minStart || '—';
-            const outTimeStr = wInfo.maxEnd ? wInfo.maxEnd : (wInfo.hasOpen ? '未登録' : (wInfo.minStart ? wInfo.minStart : '—'));
-            sessions.push({
-                dateYmd: ymd,
-                inTime: inTimeStr,
-                outTime: outTimeStr,
-                note: `作業記録より算出 (${wInfo.count}件)`,
-                open: wInfo.hasOpen && !wInfo.maxEnd,
-                sortKey: new Date(`${ymd}T${inTimeStr !== '—' ? inTimeStr : '00:00'}:00`).getTime() || 0
-            });
-        }
+        if (existingDates.has(ymd)) return;
+        if (suppressed[ymd]) return;
+        const wInfo = workMap[ymd];
+        const inTimeStr = wInfo.minStart || '—';
+        const outTimeStr = wInfo.maxEnd ? wInfo.maxEnd : (wInfo.hasOpen ? '未登録' : (wInfo.minStart ? wInfo.minStart : '—'));
+        sessions.push({
+            dateYmd: ymd,
+            inTime: inTimeStr,
+            outTime: outTimeStr,
+            note: `作業記録より算出 (${wInfo.count}件)`,
+            open: wInfo.hasOpen && !wInfo.maxEnd,
+            fromWorkEstimate: true,
+            workCount: wInfo.count,
+            sortKey: new Date(`${ymd}T${inTimeStr !== '—' ? inTimeStr : '00:00'}:00`).getTime() || 0
+        });
     });
 
     // 日付新しい順 → 同日内は時刻順
@@ -41349,14 +41356,15 @@ window.loadMyAttendance = async function() {
             const safeYmd = String(s.dateYmd || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const safeIn = String(s.inTime || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const safeOut = String(s.outTime || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const fromEst = !!s.fromWorkEstimate;
             html += `
                 <div style="background:#fff; border:1px solid #e0e0e0; border-left:4px solid ${border}; border-radius:6px; padding:10px; margin-bottom:8px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                        <span style="font-size:12px; font-weight:bold; color:${s.open ? '#e65100' : '#2e7d32'};">${status}</span>
+                        <span style="font-size:12px; font-weight:bold; color:${s.open ? '#e65100' : '#2e7d32'};">${status}${fromEst ? ' <span style="font-weight:normal; color:#888;">（推定）</span>' : ''}</span>
                         <span style="display:flex; gap:6px; flex-shrink:0;">
                           <button type="button" onclick="openMyAttendanceEditModal_('${safeYmd}','${safeIn}','${safeOut}',${s.open ? 'true' : 'false'})"
                             style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:6px; padding:5px 8px; font-size:11px; font-weight:bold; cursor:pointer;">✏️ 編集</button>
-                          <button type="button" onclick="deleteMyAttendanceDay_('${safeYmd}')"
+                          <button type="button" onclick="deleteMyAttendanceDay_('${safeYmd}', ${fromEst ? 'true' : 'false'})"
                             style="background:#FFEBEE; color:#C62828; border:1px solid #EF9A9A; border-radius:6px; padding:5px 8px; font-size:11px; font-weight:bold; cursor:pointer;">🗑️ 削除</button>
                         </span>
                     </div>
@@ -41453,8 +41461,68 @@ window.loadMyAttendance = async function() {
     }
 };
 
-/** マイページ：その日の出退勤を削除 */
-window.deleteMyAttendanceDay_ = async function(ymd) {
+/** 作業から推定した出退勤カードを出さない日 */
+window.getSuppressedAttendanceEstimateKey_ = () => {
+  const user = String(
+    (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || 'anon'
+  ).replace(/\s+/g, '');
+  return 'passionMapSuppressedAttEstimate:' + (user || 'anon');
+};
+
+window.loadSuppressedAttendanceEstimateDays_ = () => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(window.getSuppressedAttendanceEstimateKey_()) || '{}');
+    return (raw && typeof raw === 'object') ? raw : {};
+  } catch (e) {
+    return {};
+  }
+};
+
+window.suppressAttendanceEstimateDay_ = (ymd) => {
+  const dateYmd = (typeof window.normalizeDateStr === 'function')
+    ? (window.normalizeDateStr(ymd) || String(ymd || '').slice(0, 10))
+    : String(ymd || '').slice(0, 10);
+  if (!dateYmd) return;
+  const map = window.loadSuppressedAttendanceEstimateDays_();
+  map[dateYmd] = Date.now();
+  try {
+    localStorage.setItem(window.getSuppressedAttendanceEstimateKey_(), JSON.stringify(map));
+  } catch (e) {}
+};
+
+/** 指定日の自分の作業記録（端末上に残っている分） */
+window.collectMyWorkRecordsForYmd_ = (ymd) => {
+  const dateYmd = (typeof window.normalizeDateStr === 'function')
+    ? (window.normalizeDateStr(ymd) || String(ymd || '').slice(0, 10))
+    : String(ymd || '').slice(0, 10);
+  if (!dateYmd) return [];
+  const byId = new Map();
+  const pushList = (list) => {
+    (Array.isArray(list) ? list : []).forEach(r => {
+      if (!r) return;
+      if (typeof window.isWorkRecordDeleted_ === 'function' && window.isWorkRecordDeleted_(r)) return;
+      const raw = r.recordYmd || (r.data && r.data.workDate) || r.date || '';
+      const ry = (typeof window.normalizeDateStr === 'function')
+        ? (window.normalizeDateStr(raw) || String(raw || '').slice(0, 10))
+        : String(raw || '').slice(0, 10);
+      if (ry !== dateYmd) return;
+      const id = String(r.id || (r.data && r.data.recordId) || '').trim();
+      if (id) byId.set(id, r);
+      else byId.set('anon_' + byId.size, r);
+    });
+  };
+  try {
+    if (typeof window.collectMyWorkRecords === 'function') {
+      pushList(window.collectMyWorkRecords(new Set([dateYmd])));
+    }
+  } catch (e) {}
+  pushList(window._myPageAllWorkRecordsCache);
+  pushList(window._myPageRecentWorkRecordsCache);
+  return Array.from(byId.values());
+};
+
+/** マイページ：その日の出退勤を削除（推定表示なら残作業も消す） */
+window.deleteMyAttendanceDay_ = async function(ymd, fromWorkEstimate) {
   const dateYmd = (typeof window.normalizeDateStr === 'function')
     ? (window.normalizeDateStr(ymd) || String(ymd || '').slice(0, 10))
     : String(ymd || '').slice(0, 10);
@@ -41462,20 +41530,69 @@ window.deleteMyAttendanceDay_ = async function(ymd) {
   const label = (typeof formatAttendanceDateLabel === 'function')
     ? formatAttendanceDateLabel(dateYmd)
     : dateYmd;
+  const leftover = (typeof window.collectMyWorkRecordsForYmd_ === 'function')
+    ? window.collectMyWorkRecordsForYmd_(dateYmd)
+    : [];
+  const est = fromWorkEstimate === true || fromWorkEstimate === 'true'
+    || leftover.length > 0;
+  const confirmMsg = est
+    ? `${label} の出退勤を削除します。\nこの日に残っている作業記録（${leftover.length}件）も一緒に消します。\n※復元できません`
+    : `${label} の出勤・退勤を削除しますか？\n※復元できません`;
   const ok = (typeof customConfirm === 'function')
-    ? await customConfirm(`${label} の出勤・退勤を削除しますか？\n※復元できません`)
-    : confirm(`${label} の出勤・退勤を削除しますか？`);
+    ? await customConfirm(confirmMsg)
+    : confirm(confirmMsg);
   if (!ok) return;
-  if (typeof showLoader === 'function') showLoader('出退勤を削除中...');
+  if (typeof showLoader === 'function') showLoader('削除中...');
+  let workDeleted = 0;
+  let workFailed = 0;
   try {
+    if (typeof window.suppressAttendanceEstimateDay_ === 'function') {
+      window.suppressAttendanceEstimateDay_(dateYmd);
+    }
     const res = (typeof window.deleteAttendanceForDateLinked_ === 'function')
       ? await window.deleteAttendanceForDateLinked_(dateYmd)
       : false;
+
+    if (leftover.length) {
+      for (let i = 0; i < leftover.length; i++) {
+        const rec = leftover[i];
+        const rid = String((rec && rec.id) || '').trim();
+        const polyId = String((rec && rec.polyId) || '__global__');
+        if (!rid) continue;
+        try {
+          const okDel = (typeof window.deleteRecordFromMyPageSilent_ === 'function')
+            ? await window.deleteRecordFromMyPageSilent_(polyId, rid)
+            : false;
+          if (okDel) {
+            workDeleted++;
+          } else {
+            if (typeof window.removeWorkRecordLocally_ === 'function') {
+              window.removeWorkRecordLocally_(rid, polyId, rec);
+            }
+            workFailed++;
+          }
+        } catch (e) {
+          if (typeof window.removeWorkRecordLocally_ === 'function') {
+            try { window.removeWorkRecordLocally_(rid, polyId, rec); } catch (e2) {}
+          }
+          workFailed++;
+        }
+      }
+      if (typeof window.refreshMyPageListsLocally_ === 'function') {
+        try { window.refreshMyPageListsLocally_(); } catch (e) {}
+      }
+    }
+
     if (typeof window.loadMyAttendance === 'function') {
       try { await window.loadMyAttendance(); } catch (e) {}
     }
-    const msg = res ? `${label} の出退勤を削除しました` : '出退勤の削除に失敗しました';
-    if (typeof window.showRecordSyncToast === 'function') window.showRecordSyncToast(msg, res ? 'ok' : 'warn');
+    let msg = res ? `${label} の出退勤を削除しました` : `${label} の出退勤表示を外しました`;
+    if (workDeleted || leftover.length) {
+      msg += workFailed
+        ? ` ／ 作業 ${workDeleted}件削除（失敗 ${workFailed}件）`
+        : ` ／ 作業 ${workDeleted || leftover.length}件も削除`;
+    }
+    if (typeof window.showRecordSyncToast === 'function') window.showRecordSyncToast(msg, workFailed ? 'warn' : 'ok');
     else if (typeof customAlert === 'function') customAlert(msg);
   } finally {
     if (typeof hideLoader === 'function') hideLoader();
