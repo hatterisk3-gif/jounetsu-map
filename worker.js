@@ -207,6 +207,12 @@
             // ローカルストレージに保存
             const clockInState = { lat: lat, lng: lng, time: timeStr, active: true };
             localStorage.setItem('passionMapClockIn', JSON.stringify(clockInState));
+            try {
+              const ymd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+              if (typeof window.unsuppressAttendanceEstimateDay_ === 'function') {
+                window.unsuppressAttendanceEstimateDay_(ymd);
+              }
+            } catch (e) {}
             
             // マーカーをプロット
             if (window.plotClockInMarker) {
@@ -4813,6 +4819,28 @@ function createSignboardMarker(name, pos, icon, id) {
           cache.updatedAt = Date.now();
           localStorage.setItem(window.getWorkTimeHintsCacheKey(), JSON.stringify(cache));
         } catch (e) {}
+      };
+
+      /** 指定日の作業時間ヒント（終了・休憩）を端末から消す。削除後の一括入力が古い終了を拾わないようにする */
+      window.clearDayWorkTimeHintsLocally_ = (dateYmd) => {
+        const ymd = window.normalizeDateStr(dateYmd);
+        if (!ymd) return;
+        if (typeof window.clearCachedLatestWorkEnd === 'function') {
+          window.clearCachedLatestWorkEnd(ymd);
+        }
+        try {
+          if (typeof window.saveCachedRestBreaks === 'function') {
+            window.saveCachedRestBreaks(ymd, []);
+          }
+        } catch (e) {}
+        try {
+          const hint = window._lastWorkTimeHints;
+          if (hint && window.normalizeDateStr(hint.dateYmd || '') === ymd) {
+            hint.latestEndTime = '';
+            hint.latestIsRest = false;
+            hint.restBreaks = [];
+          }
+        } catch (e2) {}
       };
 
       window.saveCachedLunchHint = (lunch) => {
@@ -30026,14 +30054,16 @@ window.parseBulkWorkMemo_ = (text) => {
   const drafts = [];
   const ymd = window._bulkWorkMemoDate || (typeof window.getBulkWorkMemoTodayYmd_ === 'function'
     ? window.getBulkWorkMemoTodayYmd_() : '');
-  // 先頭行が「〇時まで」など開始未指定のとき、設定日の最終作業終了を起点にする
+  // 先頭行が「〇時まで」など開始未指定のとき:
+  // その日の最終作業終了があればそれを使い、無ければ 08:00 から始める
+  const DEFAULT_DAY_START = '08:00';
   let dayLatest = '';
   try {
     dayLatest = (typeof window.getBulkWorkMemoDayLatestEnd_ === 'function')
       ? window.getBulkWorkMemoDayLatestEnd_(ymd)
       : '';
   } catch (e) {}
-  let prevEnd = dayLatest || '';
+  let prevEnd = dayLatest || DEFAULT_DAY_START;
   lines.forEach((line, idx) => {
     // 「9/7」「2026年9月7日」など日付だけの行は作業にしない（作業日推定用）
     if (typeof window.isBulkWorkMemoDateOnlyLine_ === 'function' && window.isBulkWorkMemoDateOnlyLine_(line)) {
@@ -30069,7 +30099,7 @@ window.parseBulkWorkMemo_ = (text) => {
       else if (row.startTime) prevEnd = row.startTime;
     });
   });
-  // 終了だけある行の開始が空なら、前行終了 → 設定日の最終作業終了 で埋める
+  // 終了だけある行の開始が空なら、前行終了 → その日の最終終了 → 08:00 で埋める
   try {
     if (!dayLatest && ymd) {
       dayLatest = (typeof window.getBulkWorkMemoDayLatestEnd_ === 'function')
@@ -30086,8 +30116,9 @@ window.parseBulkWorkMemo_ = (text) => {
           if (prev) break;
         }
       }
-      d.startTime = prev || dayLatest || '';
-      if (d.startTime) d._startFromDayLatest = !prev && !!dayLatest;
+      d.startTime = prev || dayLatest || DEFAULT_DAY_START;
+      d._startFromDayLatest = !prev && !!dayLatest;
+      d._startFromDefaultMorning = !prev && !dayLatest && d.startTime === DEFAULT_DAY_START;
     });
   } catch (e) {}
   return drafts;
@@ -30123,8 +30154,8 @@ window.openBulkWorkMemoModal_ = () => {
       ${window.buildBulkWorkMemoModalHeaderHtml_('📋 メモから一括入力', '1行＝1件。メモに「休憩」とあれば<b>休憩登録</b>として分けます。作業と休憩は確認画面で別枠です。')}
       ${tempRestoreHtml}
       <label class="form-label" style="margin:0 0 4px;">📅 作業日</label>
-      <input type="date" id="bulk_work_memo_date" class="form-input" value="${esc(keepDate)}" onchange="window._bulkWorkMemoDate=this.value; var h=document.getElementById('bulk_work_memo_date_hint'); if(h) h.textContent='※先頭が「〇時まで」など開始未指定のとき、この日の最後の作業終了が開始になります'; if(window.prefetchWorkTimeHints) window.prefetchWorkTimeHints(this.value,{applyToForm:false}).catch(function(){});" style="margin-bottom:6px;">
-      <div id="bulk_work_memo_date_hint" style="font-size:11px; color:#666; margin:-2px 0 10px; line-height:1.35;">※メモに「9/7」「9月7日」などがあれば作業日を自動で合わせます。先頭が「〇時まで」のときはこの日の最終作業終了が開始になります</div>
+      <input type="date" id="bulk_work_memo_date" class="form-input" value="${esc(keepDate)}" onchange="window._bulkWorkMemoDate=this.value; var h=document.getElementById('bulk_work_memo_date_hint'); if(h) h.textContent='※先頭が「〇時まで」など開始未指定のとき、この日の最終作業終了があればそれを、なければ 8:00 を開始にします'; if(window.prefetchWorkTimeHints) window.prefetchWorkTimeHints(this.value,{applyToForm:false}).catch(function(){});" style="margin-bottom:6px;">
+      <div id="bulk_work_memo_date_hint" style="font-size:11px; color:#666; margin:-2px 0 10px; line-height:1.35;">※メモに「9/7」「9月7日」などがあれば作業日を自動で合わせます。先頭が「〇時まで」のときは、この日の最終作業終了があればそれを、なければ <b>8:00</b> から開始します</div>
       <label class="form-label" style="margin:0 0 4px;">📝 作業メモ</label>
       <textarea id="bulk_work_memo_text" class="form-input" rows="12" placeholder="${sample.replace(/"/g, '&quot;')}" oninput="if(window.applyBulkWorkMemoDateFromText_) window.applyBulkWorkMemoDateFromText_(this.value, {prefetch:false})" style="margin-bottom:12px; font-size:13px; line-height:1.45; resize:vertical;">${esc(keepMemo)}</textarea>
       <button type="button" id="bulk_work_memo_parse_btn" onclick="parseAndReviewBulkWorkMemo_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">✂️ 時間ごとに分けて確認</button>
@@ -30406,6 +30437,15 @@ window.parseAndReviewBulkWorkMemo_ = () => {
       }
     } catch (e) {}
     try {
+      const hint = window._lastWorkTimeHints;
+      const hintYmd = hint && (typeof window.normalizeDateStr === 'function')
+        ? window.normalizeDateStr(hint.dateYmd || '')
+        : String((hint && hint.dateYmd) || '');
+      // サーバーがその日「終了なし」なら、削除前の ends / 休憩キャッシュを捨てる
+      if (hint && hintYmd === ymd && !hint.latestEndTime
+          && typeof window.clearDayWorkTimeHintsLocally_ === 'function') {
+        window.clearDayWorkTimeHintsLocally_(ymd);
+      }
       if (typeof window.getLatestEndInfoForDate === 'function') {
         window.getLatestEndInfoForDate(ymd);
       }
@@ -37957,6 +37997,9 @@ window.registerBulkWorkMemoClockIn_ = (ymd, timeHm) => {
   if (typeof window.saveCachedClockInHint === 'function') {
     window.saveCachedClockInHint(dateYmd, timeStr);
   }
+  if (typeof window.unsuppressAttendanceEstimateDay_ === 'function') {
+    window.unsuppressAttendanceEstimateDay_(dateYmd);
+  }
   if (isToday) {
     const clockInState = {
       lat: exLat,
@@ -39563,9 +39606,14 @@ window.clearBulkWorkMemoAttendanceLocally_ = (ymd) => {
         : '';
       if (hintYmd === dateYmd) {
         delete cache.clockIn;
-        cache.updatedAt = Date.now();
-        localStorage.setItem(window.getWorkTimeHintsCacheKey(), JSON.stringify(cache));
       }
+      if (cache.lunch && ((typeof window.normalizeDateStr === 'function')
+        ? window.normalizeDateStr(cache.lunch.dateYmd)
+        : String(cache.lunch.dateYmd || '').slice(0, 10)) === dateYmd) {
+        delete cache.lunch;
+      }
+      cache.updatedAt = Date.now();
+      localStorage.setItem(window.getWorkTimeHintsCacheKey(), JSON.stringify(cache));
     }
   } catch (e2) {}
   if (typeof window.syncTrackingUI === 'function') {
@@ -40349,6 +40397,20 @@ window.removeWorkRecordLocally_ = function(recordId, polyId, rec) {
         }
       }
     } catch (eRest) {}
+    // その日の最遅終了キャッシュを残作業から再計算（削除前の終了時刻が一括入力に残らないように）
+    try {
+      const d = (tombRec && tombRec.data) ? tombRec.data : ((rec && rec.data) || {});
+      const ymd = (typeof window.normalizeDateStr === 'function')
+        ? window.normalizeDateStr(d.workDate || (tombRec && (tombRec.recordYmd || tombRec.date)) || (rec && (rec.recordYmd || rec.date)) || '')
+        : String(d.workDate || '').slice(0, 10);
+      if (ymd) {
+        if (typeof window.recomputeCachedLatestWorkEnd === 'function') {
+          window.recomputeCachedLatestWorkEnd(ymd);
+        } else if (typeof window.clearDayWorkTimeHintsLocally_ === 'function') {
+          window.clearDayWorkTimeHintsLocally_(ymd);
+        }
+      }
+    } catch (eHint) {}
     if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
         try { window.updateInitDataCacheWithLocalRecords_(); } catch (e) {}
     }
@@ -41527,6 +41589,9 @@ window.deleteAttendanceForDateLinked_ = async (ymd) => {
   if (typeof window.clearBulkWorkMemoAttendanceLocally_ === 'function') {
     window.clearBulkWorkMemoAttendanceLocally_(dateYmd);
   }
+  if (typeof window.clearDayWorkTimeHintsLocally_ === 'function') {
+    window.clearDayWorkTimeHintsLocally_(dateYmd);
+  }
   const user = String(
     (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || ''
   ).trim();
@@ -41647,6 +41712,9 @@ window.deleteSelectedWorkManagerRecords_ = async function() {
     for (let i = 0; i < fullYmds.length; i++) {
       const okAtt = await window.deleteAttendanceForDateLinked_(fullYmds[i]);
       if (okAtt) attendanceCleared++;
+      if (typeof window.clearDayWorkTimeHintsLocally_ === 'function') {
+        try { window.clearDayWorkTimeHintsLocally_(fullYmds[i]); } catch (e) {}
+      }
     }
   } finally {
     if (typeof hideLoader === 'function') hideLoader();
@@ -42258,12 +42326,18 @@ function summarizeMyAttendanceList(rows, userName) {
             if (author !== normUser && !normUser.includes(author) && !author.includes(normUser)) return false;
             return isClockInType(row.type) || isClockOutType(row.type) || isClockCancelType(row.type) || isClockOutCancelType(row.type);
         })
-        .map((row) => ({
-            type: row.type,
-            time: row.time,
-            ymd: trackingTimeToYmd(row.time),
-            sortKey: new Date(row.time).getTime() || 0
-        }))
+        .map((row) => {
+            const ymdFromServer = (typeof window.normalizeDateStr === 'function')
+              ? window.normalizeDateStr(row.dateYmd || '')
+              : String(row.dateYmd || '').slice(0, 10);
+            const ymd = ymdFromServer || trackingTimeToYmd(row.time);
+            return {
+              type: row.type,
+              time: row.time,
+              ymd: ymd,
+              sortKey: new Date(row.time).getTime() || 0
+            };
+        })
         .filter((ev) => ev.ymd && !isNaN(ev.sortKey))
         .sort((a, b) => a.sortKey - b.sortKey);
 
@@ -42370,8 +42444,16 @@ function summarizeMyAttendanceList(rows, userName) {
         });
     });
 
+    // 削除済み日のカードが残らないよう最終フィルタ（推定も実打刻の残骸も出さない）
+    // ※同じ日に再出勤したときは unsuppressAttendanceEstimateDay_ で解除する
+    const filtered = sessions.filter((s) => {
+      if (!s || !s.dateYmd) return false;
+      if (suppressed[s.dateYmd]) return false;
+      return true;
+    });
+
     // 日付新しい順 → 同日内は時刻順
-    sessions.sort((a, b) => {
+    filtered.sort((a, b) => {
         if (a.dateYmd !== b.dateYmd) return a.dateYmd < b.dateYmd ? 1 : -1;
         return a.sortKey - b.sortKey;
     });
@@ -42379,12 +42461,12 @@ function summarizeMyAttendanceList(rows, userName) {
       const user = (userName || '').replace(/\s+/g, '');
       const raw = JSON.parse(localStorage.getItem('passionMapUsualClockOut:' + (user || 'anon')) || 'null');
       if ((!raw || !Array.isArray(raw.samples) || raw.samples.length < 3) && typeof window.rememberUsualClockOutTime_ === 'function') {
-        sessions.filter(s => !s.open && s.outTime && s.outTime !== '未登録' && s.outTime !== '—')
+        filtered.filter(s => !s.open && s.outTime && s.outTime !== '未登録' && s.outTime !== '—')
           .slice(0, 8)
           .forEach(s => window.rememberUsualClockOutTime_(s.outTime));
       }
     } catch (e) {}
-    return sessions;
+    return filtered;
 }
 
 window.loadMyAttendance = async function() {
@@ -42556,6 +42638,20 @@ window.suppressAttendanceEstimateDay_ = (ymd) => {
   const map = window.loadSuppressedAttendanceEstimateDays_();
   map[dateYmd] = Date.now();
   try {
+    localStorage.setItem(window.getSuppressedAttendanceEstimateKey_(), JSON.stringify(map));
+  } catch (e) {}
+};
+
+/** 出退勤を再登録した日は抑制を外す */
+window.unsuppressAttendanceEstimateDay_ = (ymd) => {
+  const dateYmd = (typeof window.normalizeDateStr === 'function')
+    ? (window.normalizeDateStr(ymd) || String(ymd || '').slice(0, 10))
+    : String(ymd || '').slice(0, 10);
+  if (!dateYmd) return;
+  try {
+    const map = window.loadSuppressedAttendanceEstimateDays_();
+    if (!map[dateYmd]) return;
+    delete map[dateYmd];
     localStorage.setItem(window.getSuppressedAttendanceEstimateKey_(), JSON.stringify(map));
   } catch (e) {}
 };
@@ -42784,6 +42880,10 @@ window.saveMyAttendanceEdit_ = async function() {
     }
     if (typeof window.saveCachedClockInHint === 'function') {
       window.saveCachedClockInHint(newYmd, inHm);
+    }
+    if (typeof window.unsuppressAttendanceEstimateDay_ === 'function') {
+      window.unsuppressAttendanceEstimateDay_(newYmd);
+      if (origYmd && origYmd !== newYmd) window.unsuppressAttendanceEstimateDay_(origYmd);
     }
     const today = (typeof window.getBulkWorkMemoTodayYmd_ === 'function')
       ? window.getBulkWorkMemoTodayYmd_()

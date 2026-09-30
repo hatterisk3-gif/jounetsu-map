@@ -10871,8 +10871,28 @@ function deleteAttendanceForDate_(params) {
         deleted++;
       }
     }
-    writeLog(String(params.userName || userName), '出退勤削除', ymd, 'deleted=' + deleted);
-    return { success: true, deleted: deleted, workDate: ymd };
+    // トラッキングに残った古い出勤／退勤も同日分を消す（読み込みフォールバックで復活しないように）
+    let trackDeleted = 0;
+    try {
+      const track = TENANT_SS.getSheetByName('トラッキング');
+      if (track && track.getLastRow() > 1) {
+        const lastRow = track.getLastRow();
+        const values = track.getRange(2, 1, lastRow - 1, 5).getValues();
+        for (let i = values.length - 1; i >= 0; i--) {
+          const type = String(values[i][4] || '');
+          if (!isAttendancePunchType_(type)) continue;
+          if (!attendanceUserMatch_(values[i][1], userName)) continue;
+          const tObj = new Date(values[i][0]);
+          if (isNaN(tObj.getTime())) continue;
+          const rowYmd = Utilities.formatDate(tObj, 'JST', 'yyyy-MM-dd');
+          if (rowYmd !== ymd) continue;
+          track.deleteRow(i + 2);
+          trackDeleted++;
+        }
+      }
+    } catch (te) {}
+    writeLog(String(params.userName || userName), '出退勤削除', ymd, 'deleted=' + deleted + ' track=' + trackDeleted);
+    return { success: true, deleted: deleted, trackDeleted: trackDeleted, workDate: ymd };
   } catch (e) {
     throw new Error('出退勤削除エラー: ' + e.message);
   }
@@ -11131,10 +11151,16 @@ function attendanceDateTimeMs_(dateYmd, timeHm) {
   const ymd = formatWorkDateYmd_(dateYmd) || String(dateYmd || '').trim();
   const m = String(timeHm || '').match(/^(\d{1,2}):(\d{2})$/);
   if (!ymd || !m) return NaN;
-  const y = Number(ymd.slice(0, 4));
-  const mo = Number(ymd.slice(5, 7));
-  const d = Number(ymd.slice(8, 10));
-  return new Date(y, mo - 1, d, Number(m[1]), Number(m[2]), 0, 0).getTime();
+  const hh = ('0' + m[1]).slice(-2);
+  const mm = m[2];
+  try {
+    return Utilities.parseDate(ymd + ' ' + hh + ':' + mm + ':00', 'JST', 'yyyy-MM-dd HH:mm:ss').getTime();
+  } catch (e) {
+    const y = Number(ymd.slice(0, 4));
+    const mo = Number(ymd.slice(5, 7));
+    const d = Number(ymd.slice(8, 10));
+    return new Date(y, mo - 1, d, Number(m[1]), Number(m[2]), 0, 0).getTime();
+  }
 }
 
 function attendancePadHm_(hm) {
@@ -11271,10 +11297,10 @@ function loadAttendanceEvents_(opts) {
     }
   }
 
-  // 出退勤シートに該当行が読めたらそれを正とする。
-  // 空のとき（または forceAlsoFromTracking）だけトラッキングをフォールバック。
-  // ※分離後にトラッキングの古い「出勤」が混ざると、退勤済みなのに未退勤扱いになる。
-  if (!events.length || opts.forceAlsoFromTracking) {
+  // 出退勤シートが存在する（1行以上のデータがある）ならそれを正とする。
+  // 「このユーザーの events が空」だけでトラッキングへ落とすと、削除済みの出勤が復活する。
+  const attHasData = !!(att && att.getLastRow() > 1);
+  if ((!attHasData && !events.length) || opts.forceAlsoFromTracking) {
     const track = ss.getSheetByName('トラッキング');
     if (track && track.getLastRow() > 1) {
       const lastRow = track.getLastRow();
@@ -11531,6 +11557,8 @@ function getTrackingData(params) {
           type: ev.type,
           time: ev.time,
           userName: ev.userName,
+          dateYmd: ev.dateYmd || '',
+          timeHm: ev.timeHm || '',
           lat: '',
           lng: ''
         });
