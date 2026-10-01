@@ -1307,6 +1307,12 @@ async function fetchWeatherAndUpdateUI() {
             workDeptCategories = data.workCategories.slice();
             window._workDeptCategories = workDeptCategories;
           }
+          // 再読込時に旧ポリゴンを地図上に残すと畑がダブるため、必ず消してから差し替える
+          for (const id in loadedPolygons) {
+            const old = loadedPolygons[id];
+            try { if (old && old.polygon) old.polygon.setMap(null); } catch (e) {}
+            try { if (old && old.marker) old.marker.setMap(null); } catch (e) {}
+          }
           loadedPolygons = {};
           (data.polygons || []).forEach(p => {
              p.isMarker = p.coords && p.coords.length === 1;
@@ -1505,8 +1511,15 @@ async function fetchWeatherAndUpdateUI() {
                 }
               });
             } else {
+              // 範囲変更後も同じオブジェクトを再利用する場合は座標も反映する
+              try { p.polygon.setPaths(p.coords); } catch (e) {}
               p.polygon.setOptions({ fillColor: polyColor, fillOpacity: polyOpacity, strokeColor: polyStroke, strokeWeight: hasProblem ? 4 : (isActiveForDept ? 3 : 1) });
-              p.marker.setLabel({text: labelText, color: markerColor, fontSize: '13px', fontWeight: 'bold', className: 'polygon-label'});
+              if (p.marker) {
+                const bounds = new google.maps.LatLngBounds();
+                p.coords.forEach(pt => bounds.extend(pt));
+                p.marker.setPosition(bounds.getCenter());
+                p.marker.setLabel({text: labelText, color: markerColor, fontSize: '13px', fontWeight: 'bold', className: 'polygon-label'});
+              }
             }
           }
         }
@@ -1636,7 +1649,7 @@ async function fetchWeatherAndUpdateUI() {
         }
 
         const mapsUrl = (lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
-          ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(lat.toFixed(6) + ',' + lng.toFixed(6))}`
+          ? `https://www.google.com/maps/place/${lat.toFixed(6)},${lng.toFixed(6)}`
           : '';
         // 相手にそのまま伝える用：台数メッセージ＋GoogleマップURLをコピー
         const textLines = [

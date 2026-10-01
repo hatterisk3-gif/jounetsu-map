@@ -10,6 +10,9 @@
       let pendingFiles = [];
       let latestUserPos = null;
       let map, infoWindow, loadedPolygons = {}, userLocationMarker = null;
+      // 再描画時に参照が外れた旧ポリゴンが地図に残るのを防ぐ
+      window._workerFieldOverlays = window._workerFieldOverlays || [];
+      let _workerRenderInitGen = 0;
 
       // トラッキング（移動履歴）用
       let trackingWatchId = null;
@@ -1033,9 +1036,23 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
         }
       };
 
+      function clearWorkerFieldOverlays_() {
+          for (const id in loadedPolygons) {
+              const old = loadedPolygons[id];
+              try { if (old && old.polygon) old.polygon.setMap(null); } catch (e) {}
+              try { if (old && old.marker) old.marker.setMap(null); } catch (e) {}
+          }
+          const tracked = window._workerFieldOverlays || [];
+          for (let i = 0; i < tracked.length; i++) {
+              try { if (tracked[i]) tracked[i].setMap(null); } catch (e) {}
+          }
+          window._workerFieldOverlays = [];
+      }
+
       // 🌟 3. キャッシュからも呼ばれる描画専用処理 🌟
       function renderInitData(data) {
           if (!data || !data.pdl) return; // データがない時は安全に止める
+          const renderGen = ++_workerRenderInitGen;
 
           const prevPendingLocals = (typeof window.snapshotPendingLocalRecordsBeforeInit_ === 'function')
             ? window.snapshotPendingLocalRecordsBeforeInit_()
@@ -1087,17 +1104,26 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
             ? data.pdl.hitchTypes.slice()
             : ['3点リンク 0形', '3点リンク 1形', '3点リンク 2形', 'オートヒッチ Aタイプ', 'オートヒッチ Bタイプ', 'スライドヒッチ'];
 
-          for(let id in loadedPolygons) { 
-              if(loadedPolygons[id].polygon) loadedPolygons[id].polygon.setMap(null); 
-              if(loadedPolygons[id].marker) loadedPolygons[id].marker.setMap(null); 
-          }
+          // キャッシュ→最新の再描画で旧範囲が残らないよう、参照切れ分も含めて消す
+          clearWorkerFieldOverlays_();
           loadedPolygons = {};
+          window.loadedPolygons = loadedPolygons;
 
           window.pdlSignLinks = data.pdl.signLinks || {}; // ★GASから連携IDを取得
           
           if (data.polygons) {
-              data.polygons.forEach(f => {
-                  if (!f || f.id == null) return;
+              const seenIds = {};
+              // 同一IDが複数ある場合は後勝ち（先に描いた旧参照を消す）
+              for (let i = data.polygons.length - 1; i >= 0; i--) {
+                  const f = data.polygons[i];
+                  if (!f || f.id == null) continue;
+                  const fid = String(f.id);
+                  if (seenIds[fid]) continue;
+                  seenIds[fid] = f;
+              }
+              Object.keys(seenIds).forEach(fid => {
+                  if (renderGen !== _workerRenderInitGen) return;
+                  const f = seenIds[fid];
                   try {
                       const linkedSigns = window.pdlSignLinks[f.id] || ""; // ★看板マスタにセット
                       // ★修正：f.location や f.signFunction など、元の変数名に完全一致させました！
@@ -1112,8 +1138,12 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                       console.warn('renderInitData polygon skip', f && f.id, polyErr);
                   }
               });
-              try { updateWorkerLegend(); } catch (eLeg) {}
+              if (renderGen === _workerRenderInitGen) {
+                  try { updateWorkerLegend(); } catch (eLeg) {}
+              }
           }
+          if (renderGen !== _workerRenderInitGen) return;
+          window.loadedPolygons = loadedPolygons;
           if (typeof window.restoreGlobalWorkRecordsAfterInit_ === 'function') {
             window.restoreGlobalWorkRecordsAfterInit_(prevGlobalPhotos);
           }
@@ -1265,6 +1295,11 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
       };
 
     function createPolygonObject(id, name, coords, color, photos, author, loc, cond, area, status, signFunc, linkedSigns) {
+        const existing = loadedPolygons[id];
+        if (existing) {
+          try { if (existing.polygon) existing.polygon.setMap(null); } catch (e) {}
+          try { if (existing.marker) existing.marker.setMap(null); } catch (e) {}
+        }
         const safeCoords = Array.isArray(coords) ? coords.filter(c => c && c.lat != null && c.lng != null) : [];
         // 座標欠損・地図未準備でも起動を落とさない
         if (!safeCoords.length || typeof google === 'undefined' || !google.maps || !map) {
@@ -1278,6 +1313,8 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
         }
         if (safeCoords.length === 1) {
           const marker = createSignboardMarker(name, new google.maps.LatLng(safeCoords[0].lat, safeCoords[0].lng), color, id);
+          if (!window._workerFieldOverlays) window._workerFieldOverlays = [];
+          window._workerFieldOverlays.push(marker);
           loadedPolygons[id] = { id, marker, name, color, photos: photos || [], author, isMarker: true, location: loc || '', labelConfig: { text: name, color: '#333', fontSize: '13px', fontWeight: 'bold', className: 'signboard-label' }, signFunction: signFunc || '一般看板', linkedSigns: linkedSigns || "" };
         } else {
           const isUnused = (status === '未使用（返却）' || status === '未使用');
@@ -1294,6 +1331,8 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
             zIndex: 1
           });
           const marker = createLabelMarker(name, safeCoords, color, area, id);
+          if (!window._workerFieldOverlays) window._workerFieldOverlays = [];
+          window._workerFieldOverlays.push(polygon, marker);
           
           google.maps.event.addListener(polygon, 'click', (e) => {
             handleFieldPolygonClick_(id, e);

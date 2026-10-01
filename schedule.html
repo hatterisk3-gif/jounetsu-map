@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>情熱MAP [予定確認用] v1.43</title>
+  <title>情熱MAP [予定確認用] v1.45</title>
   <link rel="apple-touch-icon" href="icon_schedule.png">
   <link rel="icon" href="icon_schedule.png">
   <link rel="manifest" href="manifest_schedule.json">
@@ -24,7 +24,7 @@
     style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a1a1a; z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
     <div
       style="background: #222; padding: 30px; border-radius: 8px; width: 80%; max-width: 320px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
-      <h2 style="color:#4CAF50; margin-top: 0;">情熱MAP (v1.43)</h2>
+      <h2 style="color:#4CAF50; margin-top: 0;">情熱MAP (v1.45)</h2>
       <div id="loginError" style="color:red; margin-bottom:10px; font-size:14px;"></div>
 
       <input type="text" id="loginId" placeholder="スタッフID"
@@ -741,6 +741,33 @@
 
   <script
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry&language=ja"></script>
+  <script>
+    // 予定データ再適用時に旧畑ポリゴンが地図に残る問題のガード（schedule.js 更新前でも有効）
+    (function installSchedulePolygonReplaceGuard_() {
+      let current = (window.loadedPolygons && typeof window.loadedPolygons === 'object')
+        ? window.loadedPolygons
+        : {};
+      function clearOverlays_(bag) {
+        if (!bag || typeof bag !== 'object') return;
+        Object.keys(bag).forEach(function (id) {
+          const p = bag[id];
+          try { if (p && p.polygon) p.polygon.setMap(null); } catch (e) {}
+          try { if (p && p.marker) p.marker.setMap(null); } catch (e) {}
+        });
+      }
+      try {
+        Object.defineProperty(window, 'loadedPolygons', {
+          configurable: true,
+          enumerable: true,
+          get: function () { return current; },
+          set: function (next) {
+            if (next !== current) clearOverlays_(current);
+            current = next || {};
+          }
+        });
+      } catch (e) {}
+    })();
+  </script>
   <script src="https://unpkg.com/deck.gl@^8.8.0/dist.min.js"></script>
   <script src="https://unpkg.com/@deck.gl/geo-layers@^8.8.0/dist.min.js"></script>
   <script src="https://d3js.org/d3.v7.min.js"></script>
@@ -748,7 +775,9 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000047';
+    const cacheBust = '1788600000049';
+    // 豚糞共有：台数＋GoogleマップURLを「コピー」して相手に渡す（v1.45）
+    // ※ /maps/place/緯度,経度（クエリなし）…楽天リンク等で壊れにくい
     const bootstrapFiles = [
       'api-client.js', 'cultivation_modal.html', 'weather-agri.js', 'schedule.js', 'day-planner.js',
       'attendance-calendar.js', 'market.js', 'tracking.js',
@@ -985,7 +1014,8 @@
     🏃‍♂️
   </button>
   <script>
-    // 豚糞共有：台数＋GoogleマップURLを「コピー」して相手に渡す（v1.43）
+    // 豚糞共有：台数＋GoogleマップURLを「コピー」して相手に渡す（v1.45）
+    // ※ /maps/place/緯度,経度（クエリなし）…楽天リンク等で壊れにくい
     // ※ navigator.share の url だけ送ると台数文面が消える端末がある
     (function () {
       function buildPigShareText_(fieldId) {
@@ -1031,7 +1061,7 @@
         }
 
         const mapsUrl = (lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
-          ? ('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(lat.toFixed(6) + ',' + lng.toFixed(6)))
+          ? ('https://www.google.com/maps/place/' + lat.toFixed(6) + ',' + lng.toFixed(6))
           : '';
         const lines = [name, '台数: ' + trucksLabel + '（1反1台）', '面積: ' + areaLabel];
         if (mapsUrl) lines.push(mapsUrl);
