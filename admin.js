@@ -214,7 +214,7 @@ function clearMapDeepLinkFromUrl() {
 function buildFieldShareUrl(id, centerLat, centerLng) {
     // Google Maps 公式の search URL（開いた瞬間にピン＆ズームされやすい）
     if (centerLat && centerLng) {
-        return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(centerLat + ',' + centerLng)}`;
+        return `https://www.google.com/maps/place/${centerLat},${centerLng}`;
     }
     return `${window.location.origin}${window.location.pathname}?fieldId=${encodeURIComponent(id)}`;
 }
@@ -5912,6 +5912,9 @@ function actionEditShape(id) {
     }
     
     document.getElementById('editShapePanel').style.display = 'block';
+    if (typeof window.enterShapeEditFocusMode_ === 'function') {
+        window.enterShapeEditFocusMode_(id);
+    }
     map.setZoom(map.getZoom());
 }
 async function actionDelete(id) {
@@ -7025,7 +7028,7 @@ document.getElementById('btnDrawMode').onclick = () => {
     let legendDiv = document.getElementById('adminLegendUI');
     if (legendDiv) legendDiv.style.display = 'none';
 
-    customAlert("【圃場作成モード】\n地図上をタップして手動で頂点を打つか、\n「🤖 筆ポリゴンから登録」を押して枠を取得してください。", "drawMode");
+    customAlert("【圃場作成モード】\n地図上をタップして手動で頂点を打つか、\n「✏️ 筆ポリから」を押して枠を取得してください。", "drawMode");
     if (typeof window.closeAdminRegPlusMenu_ === 'function') window.closeAdminRegPlusMenu_();
     if (typeof window.syncAdminRegPlusBtnState_ === 'function') window.syncAdminRegPlusBtnState_('draw');
 };
@@ -7240,6 +7243,91 @@ window.setFudeVisibility = (isVisible) => {
         });
     } else {
         map.data.setStyle({ visible: false }); // 隠す！
+    }
+    if (typeof window.syncFudeLoadButtonLabels_ === 'function') {
+        window.syncFudeLoadButtonLabels_();
+    }
+};
+
+window.FUDE_BTN_IDLE = '✏️ 筆ポリから';
+window.FUDE_BTN_SHOWING = '✏️ 筆ポリ表示中';
+
+window.syncFudeLoadButtonLabels_ = function () {
+    const showing = !!window.isFudeVisibleFlag;
+    const label = showing ? window.FUDE_BTN_SHOWING : window.FUDE_BTN_IDLE;
+    ['btnLoadFude', 'editLoadFudeBtn'].forEach(function (id) {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+        const t = String(btn.innerHTML || '');
+        if (t.indexOf('⏳') >= 0 || t.indexOf('🔍') >= 0) return;
+        btn.innerHTML = label;
+    });
+};
+
+/** 範囲変更中: 他UI・他圃場を隠して編集対象だけ残す */
+window.enterShapeEditFocusMode_ = function (editId) {
+    window._shapeEditFocusId = String(editId || '');
+    const chromeIds = [
+        'btnCurrentLocation', 'btnEquipmentManage', 'btnClockBoard', 'adminLegendUI'
+    ];
+    chromeIds.forEach(function (id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (el.dataset.shapeEditPrevDisplay === undefined) {
+            el.dataset.shapeEditPrevDisplay = el.style.display || '';
+        }
+        el.style.display = 'none';
+    });
+    const panel = document.querySelector('.control-panel');
+    if (panel) {
+        if (panel.dataset.shapeEditPrevDisplay === undefined) {
+            panel.dataset.shapeEditPrevDisplay = panel.style.display || '';
+        }
+        panel.style.display = 'none';
+    }
+    for (const id in loadedPolygons) {
+        const p = loadedPolygons[id];
+        if (!p) continue;
+        const keep = String(id) === window._shapeEditFocusId;
+        if (p.polygon) {
+            try { p.polygon.setMap(keep ? map : null); } catch (e) {}
+        }
+        if (p.marker) {
+            try { p.marker.setMap(keep ? map : null); } catch (e) {}
+        }
+    }
+};
+
+window.exitShapeEditFocusMode_ = function () {
+    window._shapeEditFocusId = null;
+    const chromeIds = [
+        'btnCurrentLocation', 'btnEquipmentManage', 'btnClockBoard', 'adminLegendUI'
+    ];
+    chromeIds.forEach(function (id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const prev = el.dataset.shapeEditPrevDisplay;
+        el.style.display = prev !== undefined ? prev : '';
+        delete el.dataset.shapeEditPrevDisplay;
+    });
+    const panel = document.querySelector('.control-panel');
+    if (panel) {
+        const prev = panel.dataset.shapeEditPrevDisplay;
+        panel.style.display = prev !== undefined ? prev : '';
+        delete panel.dataset.shapeEditPrevDisplay;
+    }
+    for (const id in loadedPolygons) {
+        const p = loadedPolygons[id];
+        if (!p) continue;
+        if (p.polygon) {
+            try { p.polygon.setMap(map); } catch (e) {}
+        }
+        if (p.marker) {
+            try { p.marker.setMap(map); } catch (e) {}
+        }
+    }
+    if (typeof window.updateMarkerLabels === 'function') {
+        try { window.updateMarkerLabels(); } catch (e) {}
     }
 };
 
@@ -7765,7 +7853,7 @@ window.preloadAllFudeDataSlowly = () => {
 // 🌟修正：並列取得＋最初の1件で即表示（待ち時間短縮）
 document.getElementById('btnLoadFude').onclick = async () => {
     const btn = document.getElementById('btnLoadFude');
-    const originalText = "🤖 筆ポリから"; // ★ボタンの文字を短いものに合わせました
+    const originalText = window.FUDE_BTN_IDLE || "✏️ 筆ポリから";
     btn.innerHTML = "🔍 エリアを判定中...";
     btn.disabled = true;
     window.isMapLoadingFude = true;
@@ -7834,10 +7922,13 @@ document.getElementById('btnLoadFude').onclick = async () => {
         console.error(e);
         customAlert("筆ポリの読み込みに失敗しました: " + (e.message || e));
     } finally {
-        btn.innerHTML = originalText;
+        btn.innerHTML = window.isFudeVisibleFlag
+            ? (window.FUDE_BTN_SHOWING || '✏️ 筆ポリ表示中')
+            : originalText;
         btn.disabled = false;
         window.isMapLoadingFude = false;
         map.setOptions({ draggableCursor: customDrawingMode ? pinCursor : null });
+        if (typeof window.syncFudeLoadButtonLabels_ === 'function') window.syncFudeLoadButtonLabels_();
     }
 };
 
@@ -8071,7 +8162,7 @@ function clearEditFudeSelection() {
 
 document.getElementById('editLoadFudeBtn').onclick = async () => {
     const btn = document.getElementById('editLoadFudeBtn');
-    const originalText = "🤖 筆ポリから";
+    const originalText = window.FUDE_BTN_IDLE || "✏️ 筆ポリから";
     btn.innerHTML = "🔍 読込中...";
     btn.disabled = true;
     window.isMapLoadingFude = true;
@@ -8143,10 +8234,13 @@ document.getElementById('editLoadFudeBtn').onclick = async () => {
         customAlert("筆ポリの読み込みに失敗しました: " + (e.message || e));
         window.isEditingFude = false;
     } finally {
-        btn.innerHTML = originalText;
+        btn.innerHTML = window.isFudeVisibleFlag
+            ? (window.FUDE_BTN_SHOWING || '✏️ 筆ポリ表示中')
+            : originalText;
         btn.disabled = false;
         window.isMapLoadingFude = false;
         map.setOptions({ draggableCursor: null });
+        if (typeof window.syncFudeLoadButtonLabels_ === 'function') window.syncFudeLoadButtonLabels_();
     }
 };
 
@@ -8180,6 +8274,7 @@ document.getElementById('saveShapeBtn').onclick = () => {
         p.marker = createLabelMarker(p.name, path, p.color, area);
     }
     document.getElementById('editShapePanel').style.display = 'none'; editingId = null;
+    if (typeof window.exitShapeEditFocusMode_ === 'function') window.exitShapeEditFocusMode_();
     showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
     syncUpdatePolygon_(p).then(ok => { if (ok) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok'); });
 };
@@ -8191,6 +8286,7 @@ document.getElementById('cancelShapeBtn').onclick = () => {
     if (p.isMarker) { p.marker.setDraggable(false); p.marker.setPosition(originalCoordsForEdit[0]); }
     else { p.polygon.setEditable(false); p.polygon.setPath(originalCoordsForEdit); }
     document.getElementById('editShapePanel').style.display = 'none'; editingId = null;
+    if (typeof window.exitShapeEditFocusMode_ === 'function') window.exitShapeEditFocusMode_();
 };
 
 window.executeNavigation = (id) => { const p = loadedPolygons[id]; let lat, lng; if (p.isMarker) { lat = p.marker.getPosition().lat(); lng = p.marker.getPosition().lng(); } else { const b = new google.maps.LatLngBounds(); p.polygon.getPath().forEach(pt => b.extend(pt)); lat = b.getCenter().lat(); lng = b.getCenter().lng(); } window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`, '_blank'); };

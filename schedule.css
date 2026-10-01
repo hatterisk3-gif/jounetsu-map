@@ -406,11 +406,15 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; displ
 
       /* スマホで見切れないように横スクロール対応 */
       @media screen and (max-width: 768px) {
-        .control-panel { flex-wrap: wrap; gap: 8px; padding: 10px 5px; }
-        .control-panel-buttons { width: 100%; overflow-x: auto; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
+        .control-panel { flex-wrap: wrap; gap: 8px; padding: 10px 5px; overflow: visible; position: relative; z-index: 50; }
+        .control-panel-buttons { width: 100%; overflow-x: auto; overflow-y: visible; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
         .control-panel-buttons::-webkit-scrollbar { height: 4px; }
         .control-panel-buttons::-webkit-scrollbar-thumb { background: #888; border-radius: 2px; }
         .control-panel-buttons > * { flex-shrink: 0; }
+        #accountMenuDropdown {
+          position: fixed !important;
+          z-index: 200000 !important;
+        }
         .legend {
           gap: 8px;
           font-size: 10px;

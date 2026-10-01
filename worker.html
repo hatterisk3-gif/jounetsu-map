@@ -370,9 +370,6 @@
       <button onclick="openScheduleList()"
         style="background:#FFF9C4; color:#F57F17; border:1px solid #F57F17; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">📅
         予定一覧</button>
-      <button onclick="openAllHistory()"
-        style="background:#E3F2FD; color:#1A73E8; border:1px solid #1A73E8; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">📋
-        履歴</button>
       <div style="position:relative; display:inline-block;">
         <button type="button" onclick="toggleAccountMenu(event)"
           style="background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px; cursor:pointer; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">👤
@@ -475,7 +472,7 @@
   <script src="weather-agri.js?v=1785489000300"></script>
   <script src="api-client.js?v=1788600000076"></script>
   <script src="worker.js?v=1788600000097"></script>
-  <script src="tracking.js?v=1788600000044"></script>
+  <script src="tracking.js?v=1788600000050"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js?v=worker2', { scope: '/worker.html' }).catch(function () {});

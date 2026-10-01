@@ -1651,12 +1651,16 @@ async function fetchWeatherAndUpdateUI() {
         const mapsUrl = (lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
           ? `https://www.google.com/maps/place/${lat.toFixed(6)},${lng.toFixed(6)}`
           : '';
+        const coordLabel = (lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
+          ? `座標: ${lat.toFixed(6)},${lng.toFixed(6)}`
+          : '';
         // 相手にそのまま伝える用：台数メッセージ＋GoogleマップURLをコピー
         const textLines = [
           name,
           `台数: ${trucksLabel}（1反1台）`,
           `面積: ${areaLabel}`
         ];
+        if (coordLabel) textLines.push(coordLabel);
         if (mapsUrl) textLines.push(mapsUrl);
         const text = textLines.join('\n');
 

@@ -338,6 +338,32 @@
     window.navigateWithSharedMapView_('worker.html');
   };
 
+  window.positionAccountMenuDropdown_ = function (menu, anchorEl) {
+    if (!menu) return;
+    const btn = anchorEl
+      || document.getElementById('accountMenuBtn')
+      || document.querySelector('[data-account-name-btn]')
+      || document.querySelector('[onclick*="toggleAccountMenu"]');
+    menu.style.position = 'fixed';
+    menu.style.zIndex = '200000';
+    menu.style.right = 'auto';
+    menu.style.bottom = 'auto';
+    if (!btn || typeof btn.getBoundingClientRect !== 'function') {
+      menu.style.top = '56px';
+      menu.style.left = '8px';
+      return;
+    }
+    const rect = btn.getBoundingClientRect();
+    menu.style.top = Math.round(rect.bottom + 6) + 'px';
+    menu.style.left = '0px';
+    const mw = Math.max(menu.offsetWidth || 160, 160);
+    let left = Math.round(rect.right - mw);
+    const maxLeft = Math.max(8, window.innerWidth - mw - 8);
+    if (left < 8) left = 8;
+    if (left > maxLeft) left = maxLeft;
+    menu.style.left = left + 'px';
+  };
+
   window.toggleAccountMenu = function (ev) {
     if (ev) {
       ev.preventDefault();
@@ -349,12 +375,25 @@
       window.refreshAccountNameButtons();
     }
     const open = menu.style.display === 'none' || menu.style.display === '';
-    menu.style.display = open ? 'block' : 'none';
+    if (!open) {
+      window.closeAccountMenu();
+      return;
+    }
+    menu.style.display = 'block';
+    // 横スクロールバー内だと absolute が切れるため fixed ではみ出して表示
+    const anchor = (ev && (ev.currentTarget || ev.target)) || null;
+    window.positionAccountMenuDropdown_(menu, anchor);
   };
 
   window.closeAccountMenu = function () {
     const menu = document.getElementById('accountMenuDropdown');
-    if (menu) menu.style.display = 'none';
+    if (!menu) return;
+    menu.style.display = 'none';
+    menu.style.position = '';
+    menu.style.top = '';
+    menu.style.left = '';
+    menu.style.right = '';
+    menu.style.bottom = '';
   };
 
   document.addEventListener('click', function () {

@@ -1121,7 +1121,7 @@ function getFieldGoogleMapsSearchUrl(pData) {
         } catch (e) {}
     }
     if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) return '';
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(lat.toFixed(6) + ',' + lng.toFixed(6))}`;
+    return `https://www.google.com/maps/place/${lat.toFixed(6)},${lng.toFixed(6)}`;
 }
 
 function resolveFieldAreaA(pData) {

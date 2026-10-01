@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>情熱MAP [予定確認用] v1.45</title>
+  <title>情熱MAP [予定確認用] v1.48</title>
   <link rel="apple-touch-icon" href="icon_schedule.png">
   <link rel="icon" href="icon_schedule.png">
   <link rel="manifest" href="manifest_schedule.json">
@@ -15,7 +15,7 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1786243000000"></script>
-  <link rel="stylesheet" href="schedule.css?v=1788073000000">
+  <link rel="stylesheet" href="schedule.css?v=1788600000050">
 </head>
 
 <body>
@@ -24,7 +24,7 @@
     style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a1a1a; z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
     <div
       style="background: #222; padding: 30px; border-radius: 8px; width: 80%; max-width: 320px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
-      <h2 style="color:#4CAF50; margin-top: 0;">情熱MAP (v1.45)</h2>
+      <h2 style="color:#4CAF50; margin-top: 0;">情熱MAP (v1.48)</h2>
       <div id="loginError" style="color:red; margin-bottom:10px; font-size:14px;"></div>
 
       <input type="text" id="loginId" placeholder="スタッフID"
@@ -775,9 +775,9 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000049';
-    // 豚糞共有：台数＋GoogleマップURLを「コピー」して相手に渡す（v1.45）
-    // ※ /maps/place/緯度,経度（クエリなし）…楽天リンク等で壊れにくい
+    const cacheBust = '1788600000055';
+    // 豚糞共有：台数＋GoogleマップURL＋座標（v1.48）
+    // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）
     const bootstrapFiles = [
       'api-client.js', 'cultivation_modal.html', 'weather-agri.js', 'schedule.js', 'day-planner.js',
       'attendance-calendar.js', 'market.js', 'tracking.js',
@@ -807,6 +807,9 @@
       window.__scheduleBootstrapFinished = true;
       if (typeof window.installPigManureShareOverride_ === 'function') {
         try { window.installPigManureShareOverride_(); } catch (e) {}
+      }
+      if (typeof window.installAccountMenuOverflowFix_ === 'function') {
+        try { window.installAccountMenuOverflowFix_(); } catch (e) {}
       }
       if (bootstrapLoading) {
         bootstrapLoading.update({
@@ -1014,8 +1017,7 @@
     🏃‍♂️
   </button>
   <script>
-    // 豚糞共有：台数＋GoogleマップURLを「コピー」して相手に渡す（v1.45）
-    // ※ /maps/place/緯度,経度（クエリなし）…楽天リンク等で壊れにくい
+    // 豚糞共有：台数＋GoogleマップURL＋座標をコピー（v1.48）
     // ※ navigator.share の url だけ送ると台数文面が消える端末がある
     (function () {
       function buildPigShareText_(fieldId) {
@@ -1063,7 +1065,11 @@
         const mapsUrl = (lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
           ? ('https://www.google.com/maps/place/' + lat.toFixed(6) + ',' + lng.toFixed(6))
           : '';
+        const coordLabel = (lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
+          ? ('座標: ' + lat.toFixed(6) + ',' + lng.toFixed(6))
+          : '';
         const lines = [name, '台数: ' + trucksLabel + '（1反1台）', '面積: ' + areaLabel];
+        if (coordLabel) lines.push(coordLabel);
         if (mapsUrl) lines.push(mapsUrl);
         return { name: name, text: lines.join('\n'), mapsUrl: mapsUrl };
       }
@@ -1125,6 +1131,74 @@
       setTimeout(window.installPigManureShareOverride_, 800);
       setTimeout(window.installPigManureShareOverride_, 2500);
       setTimeout(window.installPigManureShareOverride_, 6000);
+    })();
+  </script>
+  <script>
+    // スマホ上部バーの overflow でアカウントメニューが切れないよう fixed 表示（v1.46）
+    (function () {
+      function positionMenu_(menu, anchorEl) {
+        if (!menu) return;
+        const btn = anchorEl
+          || document.getElementById('accountMenuBtn')
+          || document.querySelector('[data-account-name-btn]');
+        menu.style.position = 'fixed';
+        menu.style.zIndex = '200000';
+        menu.style.right = 'auto';
+        menu.style.bottom = 'auto';
+        if (!btn || !btn.getBoundingClientRect) {
+          menu.style.top = '56px';
+          menu.style.left = '8px';
+          return;
+        }
+        const rect = btn.getBoundingClientRect();
+        menu.style.top = Math.round(rect.bottom + 6) + 'px';
+        menu.style.left = '0px';
+        const mw = Math.max(menu.offsetWidth || 160, 160);
+        let left = Math.round(rect.right - mw);
+        const maxLeft = Math.max(8, window.innerWidth - mw - 8);
+        if (left < 8) left = 8;
+        if (left > maxLeft) left = maxLeft;
+        menu.style.left = left + 'px';
+      }
+
+      function toggleFix(ev) {
+        if (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+        }
+        const menu = document.getElementById('accountMenuDropdown');
+        if (!menu) return;
+        if (typeof window.refreshAccountNameButtons === 'function') {
+          window.refreshAccountNameButtons();
+        }
+        const open = menu.style.display === 'none' || menu.style.display === '';
+        if (!open) {
+          closeFix();
+          return;
+        }
+        menu.style.display = 'block';
+        positionMenu_(menu, ev && (ev.currentTarget || ev.target));
+      }
+
+      function closeFix() {
+        const menu = document.getElementById('accountMenuDropdown');
+        if (!menu) return;
+        menu.style.display = 'none';
+        menu.style.position = '';
+        menu.style.top = '';
+        menu.style.left = '';
+        menu.style.right = '';
+        menu.style.bottom = '';
+      }
+
+      window.installAccountMenuOverflowFix_ = function () {
+        window.positionAccountMenuDropdown_ = positionMenu_;
+        window.toggleAccountMenu = toggleFix;
+        window.closeAccountMenu = closeFix;
+      };
+      window.installAccountMenuOverflowFix_();
+      setTimeout(window.installAccountMenuOverflowFix_, 800);
+      setTimeout(window.installAccountMenuOverflowFix_, 2500);
     })();
   </script>
 </body>
