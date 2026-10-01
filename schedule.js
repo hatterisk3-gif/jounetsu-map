@@ -1638,53 +1638,26 @@ async function fetchWeatherAndUpdateUI() {
         const mapsUrl = (lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
           ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(lat.toFixed(6) + ',' + lng.toFixed(6))}`
           : '';
-        // 情熱MAPアプリで開ける暗号化共有URL（座標を平文で出さない）
-        let appUrl = '';
-        try {
-          const payload = {
-            v: 1,
-            t: 'pig',
-            lat: (lat != null && !isNaN(lat)) ? Number(lat.toFixed(6)) : null,
-            lng: (lng != null && !isNaN(lng)) ? Number(lng.toFixed(6)) : null,
-            zoom: 18,
-            fieldId: String(fieldId || ''),
-            name: name,
-            units: trucks > 0 ? trucks : null,
-            area: areaA > 0 ? Math.round(areaA * 10) / 10 : null
-          };
-          if (typeof window.buildPassionMapShareUrl_ === 'function') {
-            appUrl = window.buildPassionMapShareUrl_(payload, 'worker.html');
-          } else if (typeof window.encodePassionMapSharePayload_ === 'function') {
-            const token = window.encodePassionMapSharePayload_(payload);
-            const u = new URL('worker.html', window.location.href);
-            u.searchParams.set('p', token);
-            appUrl = u.toString();
-          }
-        } catch (eUrl) {
-          appUrl = '';
-        }
-
+        // 相手にそのまま伝える用：GoogleマップURL ＋ 台数メッセージ（情熱MAPアプリのURLではない）
         const textLines = [
-          '🐷 豚糞散布依頼',
           name,
           `台数: ${trucksLabel}（1反1台）`,
           `面積: ${areaLabel}`
         ];
-        if (mapsUrl) textLines.push(`ナビ: ${mapsUrl}`);
+        if (mapsUrl) textLines.push(mapsUrl);
         const text = textLines.join('\n');
-        const sharePayload = appUrl
-          ? { title: `豚糞散布 ${name}`, text: text, url: appUrl }
-          : { title: `豚糞散布 ${name}`, text: text };
+        const sharePayload = mapsUrl
+          ? { title: name, text: text, url: mapsUrl }
+          : { title: name, text: text };
 
         const fallbackCopy = () => {
-          const full = appUrl ? `${text}\n${appUrl}` : text;
           if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(full).then(() => {
-              if (typeof customAlert === 'function') customAlert('📋 豚糞散布依頼の内容をコピーしました');
-              else alert('📋 豚糞散布依頼の内容をコピーしました');
-            }).catch(() => prompt('以下をコピーしてください', full));
+            navigator.clipboard.writeText(text).then(() => {
+              if (typeof customAlert === 'function') customAlert('📋 豚糞散布の内容をコピーしました\n（台数＋GoogleマップURL）');
+              else alert('📋 豚糞散布の内容をコピーしました');
+            }).catch(() => prompt('以下をコピーしてください', text));
           } else {
-            prompt('以下をコピーしてください', full);
+            prompt('以下をコピーしてください', text);
           }
         };
 
