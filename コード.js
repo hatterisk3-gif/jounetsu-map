@@ -207,6 +207,7 @@ const API_ACTIONS = {
   "updateClockOutTimeForDate": function (p) { return updateClockOutTimeForDate_(p); },
   "getWorkRecordTimeHints": function (p) { return getWorkRecordTimeHints(p); },
   "saveWorkRecordTimeHint": function (p) { return saveWorkRecordTimeHint_(p); },
+  "clearWorkRecordTimeHint": function (p) { return clearWorkRecordTimeHint_(p && p.userName, p && (p.dateYmd || p.workDate)); },
   "resetAllManureStatus": function (p) { return resetAllManureStatus(p.userName); },
   "getProdMgmtCategories": function (p) { return getProdMgmtCategories(); },
   "saveProdMgmtCategories": function (p) { return saveProdMgmtCategories(p.categories, p.userName); },
@@ -6818,77 +6819,92 @@ function batchUpdateWorkRecordDates(params) {
 }
 
 function deleteRecordItem(polyId, recordId, user) {
-  const found = findSheetAndRowById(polyId); if (!found) throw new Error("対象なし");
-  const pType = found.sheet.getName();
-  const pc = 10;
-  let ex = [];
-  if (found.rowData[pc - 1]) { try { ex = JSON.parse(found.rowData[pc - 1]); } catch (e) {} }
-  if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch (e) {} }
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const found = findSheetAndRowById(polyId); if (!found) throw new Error("対象なし");
+    const pType = found.sheet.getName();
+    const pc = 10;
+    let ex = [];
+    if (found.rowData[pc - 1]) { try { ex = JSON.parse(found.rowData[pc - 1]); } catch (e) {} }
+    if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch (e) {} }
 
-  const deleted = ex.find(item => item && (item.id === recordId || item.url === recordId));
-  const updated = ex.filter(item => item && item.id !== recordId && item.url !== recordId);
-  found.sheet.getRange(found.rowIndex, pc).setValue(JSON.stringify(updated));
+    const deleted = ex.find(item => item && (item.id === recordId || item.url === recordId));
+    const updated = ex.filter(item => item && item.id !== recordId && item.url !== recordId);
+    found.sheet.getRange(found.rowIndex, pc).setValue(JSON.stringify(updated));
 
-  // 一覧シート（作業記録／生育記録／看板記録）の行も削除して本体と揃える
-  const recordType = deleted ? String(deleted.type || '') : '';
-  const sheetSpecs = [];
-  if (recordType === 'work' || recordType === '作業') {
-    sheetSpecs.push({ name: '作業記録', idCol: 12 });
-  } else if (pType === '看板' || recordType === 'sign') {
-    sheetSpecs.push({ name: '看板記録', idCol: 4 });
-  } else if (recordType === 'growth' || recordType === '生育') {
-    sheetSpecs.push({ name: '生育記録', idCol: 21 });
-  } else {
-    // タイプ不明時は候補を順に探す（1件だけ消す）
-    sheetSpecs.push(
-      { name: '作業記録', idCol: 12 },
-      { name: '生育記録', idCol: 21 },
-      { name: '看板記録', idCol: 4 }
-    );
-  }
-
-  let listDeleted = false;
-  for (let s = 0; s < sheetSpecs.length; s++) {
-    if (listDeleted && sheetSpecs.length > 1 && !(recordType === 'work' || recordType === '作業' || recordType === 'growth' || recordType === '生育' || pType === '看板')) {
-      // 不明タイプで既に1件消したら打ち切り
-      break;
+    // 一覧シート（作業記録／生育記録／看板記録）の行も削除して本体と揃える
+    const recordType = deleted ? String(deleted.type || '') : '';
+    const sheetSpecs = [];
+    if (recordType === 'work' || recordType === '作業') {
+      sheetSpecs.push({ name: '作業記録', idCol: 12 });
+    } else if (pType === '看板' || recordType === 'sign') {
+      sheetSpecs.push({ name: '看板記録', idCol: 4 });
+    } else if (recordType === 'growth' || recordType === '生育') {
+      sheetSpecs.push({ name: '生育記録', idCol: 21 });
+    } else {
+      // タイプ不明時は候補を順に探す（1件だけ消す）
+      sheetSpecs.push(
+        { name: '作業記録', idCol: 12 },
+        { name: '生育記録', idCol: 21 },
+        { name: '看板記録', idCol: 4 }
+      );
     }
-    const spec = sheetSpecs[s];
-    const rs = TENANT_SS.getSheetByName(spec.name);
-    if (!rs || rs.getLastRow() < 2) continue;
-    const d = rs.getDataRange().getValues();
-    for (let i = d.length - 1; i >= 1; i--) {
-      if (String(d[i][spec.idCol] || '') === String(recordId)) {
-        rs.deleteRow(i + 1);
-        listDeleted = true;
+
+    let listDeleted = false;
+    for (let s = 0; s < sheetSpecs.length; s++) {
+      if (listDeleted && sheetSpecs.length > 1 && !(recordType === 'work' || recordType === '作業' || recordType === 'growth' || recordType === '生育' || pType === '看板')) {
+        // 不明タイプで既に1件消したら打ち切り
+        break;
+      }
+      const spec = sheetSpecs[s];
+      const rs = TENANT_SS.getSheetByName(spec.name);
+      if (!rs || rs.getLastRow() < 2) continue;
+      const d = rs.getDataRange().getValues();
+      for (let i = d.length - 1; i >= 1; i--) {
+        if (String(d[i][spec.idCol] || '') === String(recordId)) {
+          rs.deleteRow(i + 1);
+          listDeleted = true;
+          break;
+        }
+      }
+      // タイプが明確ならそのシートだけで終了
+      if (recordType === 'work' || recordType === '作業' || recordType === 'growth' || recordType === '生育' || pType === '看板' || recordType === 'sign') {
         break;
       }
     }
-    // タイプが明確ならそのシートだけで終了
-    if (recordType === 'work' || recordType === '作業' || recordType === 'growth' || recordType === '生育' || pType === '看板' || recordType === 'sign') {
-      break;
-    }
+
+    // 写真ファイルもゴミ箱へ（失敗しても記録削除自体は成功扱い）
+    try {
+      if (deleted && Array.isArray(deleted.urls)) {
+        deleted.urls.forEach(function (u) {
+          const s = String(u || '');
+          let fid = '';
+          const m1 = s.match(/[?&]id=([^&]+)/);
+          const m2 = s.match(/\/d\/([^/]+)/);
+          if (m1) fid = m1[1];
+          else if (m2) fid = m2[1];
+          if (fid) {
+            try { DriveApp.getFileById(fid).setTrashed(true); } catch (e2) {}
+          }
+        });
+      }
+    } catch (e) {}
+
+    // 作業削除後は開始時間ヒントも捨てる（空シート＋古い Script Cache が残らないように）
+    try {
+      if (recordType === 'work' || recordType === '作業' || listDeleted) {
+        const ymd = formatWorkDateYmd_((deleted && deleted.data && deleted.data.workDate) || '');
+        const uname = String(user || (deleted && deleted.author) || '').replace(/\s+/g, '');
+        if (ymd && uname) clearWorkRecordTimeHint_(uname, ymd);
+      }
+    } catch (ce) {}
+
+    writeLog(user, "記録削除", found.rowData[1], `対象ID: ${recordId}` + (listDeleted ? ' / 一覧シート削除済' : ' / 一覧シート該当なし'));
+    return updated;
+  } finally {
+    lock.releaseLock();
   }
-
-  // 写真ファイルもゴミ箱へ（失敗しても記録削除自体は成功扱い）
-  try {
-    if (deleted && Array.isArray(deleted.urls)) {
-      deleted.urls.forEach(function (u) {
-        const s = String(u || '');
-        let fid = '';
-        const m1 = s.match(/[?&]id=([^&]+)/);
-        const m2 = s.match(/\/d\/([^/]+)/);
-        if (m1) fid = m1[1];
-        else if (m2) fid = m2[1];
-        if (fid) {
-          try { DriveApp.getFileById(fid).setTrashed(true); } catch (e2) {}
-        }
-      });
-    }
-  } catch (e) {}
-
-  writeLog(user, "記録削除", found.rowData[1], `対象ID: ${recordId}` + (listDeleted ? ' / 一覧シート削除済' : ' / 一覧シート該当なし'));
-  return updated;
 }
 
 function normWorkRecordTimeHm_(v) {
@@ -7051,6 +7067,12 @@ function deleteWorkRecordById(params) {
       try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e2) {}
     });
 
+    try {
+      const ymd = formatWorkDateYmd_(params.workDate);
+      const uname = String(userName || params.author || '').replace(/\s+/g, '');
+      if (ymd && uname) clearWorkRecordTimeHint_(uname, ymd);
+    } catch (ce) {}
+
     writeLog(userName, '作業記録削除', rid, '一覧:' + (sheetDeleted ? 'Y' : 'N') + ' 埋込:' + embeddedDeleted);
     return { success: true, recordId: rid, sheetDeleted: sheetDeleted, embeddedDeleted: embeddedDeleted };
   } finally {
@@ -7176,6 +7198,7 @@ function cancelClockInAndDeleteTodayWorkRecords(params) {
     });
 
     const deletedCount = Math.max(workRowsToDelete.length, Object.keys(deletedKeys).length);
+    try { clearWorkRecordTimeHint_(normUser, targetYmd); } catch (ce) {}
     writeLog(userName, '誤出勤取消', targetYmd, '当日作業記録削除: ' + deletedCount + '件');
     return {
       success: true,
@@ -10252,8 +10275,8 @@ function getMapCoordinates(params) {
       var headers = response.getHeaders();
       var responseCode = response.getResponseCode();
       
-      if (responseCode >= 300 && responseCode < 400 && headers['Location']) {
-        var nextUrl = headers['Location'];
+      if (responseCode >= 300 && responseCode < 400 && (headers['Location'] || headers['location'])) {
+        var nextUrl = headers['Location'] || headers['location'];
         if (nextUrl.startsWith('/')) { nextUrl = "https://www.google.com" + nextUrl; }
         url = nextUrl;
         loopCount++;
@@ -10262,31 +10285,48 @@ function getMapCoordinates(params) {
       }
     }
     
-    // 展開された最終的なURLから座標を探す
-    var latitude, longitude;
-    var regexPin = /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/;
-    var regexAt = /@(-?\d+\.\d+),(-?\d+\.\d+)/;
-    var regexQ = /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/;
-    var regexLl = /[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/;
-
-    var match = url.match(regexPin);
-    if (match) { latitude = match[1]; longitude = match[2]; } 
-    else {
-      match = url.match(regexAt);
-      if (match) { latitude = match[1]; longitude = match[2]; } 
-      else {
-        match = url.match(regexQ);
-        if (match) { latitude = match[1]; longitude = match[2]; } 
-        else {
-          match = url.match(regexLl);
-          if (match) { latitude = match[1]; longitude = match[2]; }
-        }
+    // 展開された最終的なURLから座標を探す（%2C エンコードも許容）
+    function extractLatLngFromUrl_(u) {
+      if (!u) return null;
+      var decoded = String(u);
+      try { decoded = decodeURIComponent(decoded); } catch (e) {}
+      decoded = decoded.replace(/%2C/gi, ',');
+      var patterns = [
+        /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/,
+        /@(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/,
+        /[?&](?:q|query|ll|center)=(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/i,
+        /[?&]lat=(-?\d+\.\d+)[&]lng=(-?\d+\.\d+)/i
+      ];
+      for (var i = 0; i < patterns.length; i++) {
+        var m = decoded.match(patterns[i]);
+        if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
       }
+      return null;
     }
+
+    var found = extractLatLngFromUrl_(url);
     
-    // 【重要】HTML側が期待している通り「success, lat, lng」の形式で返す！
-    if (latitude && longitude) {
-      return { success: true, lat: parseFloat(latitude), lng: parseFloat(longitude), expandedUrl: url };
+    // URLに無ければ最終ページHTMLからも探す（短縮・暗号化リンク対策）
+    if (!found) {
+      try {
+        var htmlRes = UrlFetchApp.fetch(url, { followRedirects: true, muteHttpExceptions: true });
+        var finalUrl = htmlRes.getHeaders()['Location'] || url;
+        try {
+          // UrlFetchApp は最終URLを直接返さないことがあるので getAllHeaders 等は使わず本文を見る
+        } catch (e0) {}
+        found = extractLatLngFromUrl_(htmlRes.getHeaders()['Location'] || '') || extractLatLngFromUrl_(url);
+        if (!found) {
+          var body = String(htmlRes.getContentText() || '').slice(0, 200000);
+          var bm = body.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/)
+            || body.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/)
+            || body.match(/\[null,null,(-?\d+\.\d+),(-?\d+\.\d+)\]/);
+          if (bm) found = { lat: parseFloat(bm[1]), lng: parseFloat(bm[2]) };
+        }
+      } catch (eHtml) {}
+    }
+
+    if (found && !isNaN(found.lat) && !isNaN(found.lng)) {
+      return { success: true, lat: found.lat, lng: found.lng, expandedUrl: url };
     } else {
       return { success: false, error: "展開後のURLから座標が見つかりませんでした。", expandedUrl: url };
     }
@@ -10892,6 +10932,7 @@ function deleteAttendanceForDate_(params) {
       }
     } catch (te) {}
     writeLog(String(params.userName || userName), '出退勤削除', ymd, 'deleted=' + deleted + ' track=' + trackDeleted);
+    try { clearWorkRecordTimeHint_(userName, ymd); } catch (ce) {}
     return { success: true, deleted: deleted, trackDeleted: trackDeleted, workDate: ymd };
   } catch (e) {
     throw new Error('出退勤削除エラー: ' + e.message);
@@ -11729,6 +11770,16 @@ function readWorkRecordTimeHint_(userName, dateYmd) {
   }
 }
 
+function clearWorkRecordTimeHint_(userName, dateYmd) {
+  try {
+    const key = workRecordTimeHintCacheKey_(userName, dateYmd);
+    CacheService.getScriptCache().remove(key);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
 // ==========================================
 // 📍 作業記録の開始時間ヒント（軽量・高速）
 // 出勤時刻＋指定日の最遅終了時刻だけを返す
@@ -11777,7 +11828,14 @@ function getWorkRecordTimeHints(params) {
 
     // 2) 作業記録シートから指定日・本人の最遅終了時間
     const sheet = TENANT_SS.getSheetByName('作業記録');
-    if (!sheet || sheet.getLastRow() <= 1) return result;
+    if (!sheet || sheet.getLastRow() <= 1) {
+      // シートが空でも削除前の Script Cache ヒントは捨てる
+      try {
+        const hintEmpty = readWorkRecordTimeHint_(userName, dateYmd);
+        if (hintEmpty) clearWorkRecordTimeHint_(userName, dateYmd);
+      } catch (ce0) {}
+      return result;
+    }
 
     const lastRow = sheet.getLastRow();
     // 直近最大3000行だけ見る（当日分は末尾付近に集中しやすい）
@@ -11788,6 +11846,7 @@ function getWorkRecordTimeHints(params) {
     let latestEnd = '';
     let latestIsRest = false;
     const restBreaks = [];
+    let foundSheetRow = false;
 
     const normDate = (v) => {
       if (v instanceof Date && !isNaN(v.getTime())) {
@@ -11814,6 +11873,7 @@ function getWorkRecordTimeHints(params) {
       if (rowUser !== userName && userName.indexOf(rowUser) < 0 && rowUser.indexOf(userName) < 0) continue;
       const rowDate = normDate(values[i][3]);
       if (rowDate !== dateYmd) continue;
+      foundSheetRow = true;
       const workName = String(values[i][4] || '').trim();
       const startTime = normTime(values[i][6]);
       const endTime = normTime(values[i][7]);
@@ -11835,7 +11895,10 @@ function getWorkRecordTimeHints(params) {
       return String(a.start || '').localeCompare(String(b.start || ''));
     });
     const hint = readWorkRecordTimeHint_(userName, dateYmd);
-    if (hint && hint.endTime && isWorkRecordTimeLater_(hint.endTime, latestEnd)) {
+    // シートに当日行が無いときは、削除後に残った Script Cache ヒントを使わない
+    if (!foundSheetRow) {
+      if (hint) clearWorkRecordTimeHint_(userName, dateYmd);
+    } else if (hint && hint.endTime && isWorkRecordTimeLater_(hint.endTime, latestEnd)) {
       latestEnd = hint.endTime;
       latestIsRest = !!hint.isRest;
     }

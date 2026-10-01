@@ -152,11 +152,13 @@ function fieldCenter(field) {
 }
 
 function formatAmount(areaA) {
-  if (!areaA || areaA <= 0) return { area: "未設定", bags: "—", trucks: "—" };
+  if (!areaA || areaA <= 0) return { area: "未設定", bags: "—", trucks: "—", units: "—" };
   const a = Math.round(areaA * 10) / 10;
   const bags = Math.round(areaA * BAGS_PER_A * 10) / 10;
-  const trucks = Math.round(areaA * TRUCKS_PER_A * 100) / 100;
-  return { area: a + " a", bags: bags + "袋", trucks: trucks + "車" };
+  // 1反 = 10a = 1台
+  const units = Math.max(1, Math.ceil(areaA / 10));
+  const trucks = units;
+  return { area: a + " a", bags: bags + "袋", trucks: trucks + "台", units: units + "台" };
 }
 
 function escapeHtml(s) {
@@ -698,7 +700,7 @@ function renderRequestList() {
     return;
   }
   box.innerHTML = '<table class="manure-table"><thead><tr>' +
-    "<th>畑名</th><th>拠点</th><th>状態</th><th>面積</th><th>袋</th><th>車</th><th>期限 / 予定</th><th>操作</th>" +
+    "<th>畑名</th><th>拠点</th><th>状態</th><th>面積</th><th>袋</th><th>台数</th><th>期限 / 予定</th><th>操作</th>" +
     "</tr></thead><tbody>" + list.map((f) => {
       const st = getCompostStatus(f);
       const amt = formatAmount(fieldAreaA(f));

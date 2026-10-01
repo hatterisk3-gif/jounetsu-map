@@ -1217,11 +1217,19 @@ async function fetchWeatherAndUpdateUI() {
           }
           return;
         }
-        let savedLat = localStorage.getItem('lastLat');
-        let savedLng = localStorage.getItem('lastLng');
-        let savedZoom = localStorage.getItem('lastZoom');
-        let centerPos = (savedLat && savedLng) ? {lat: parseFloat(savedLat), lng: parseFloat(savedLng)} : {lat: 33.91, lng: 134.66};
-        let zoomLevel = savedZoom ? parseInt(savedZoom) : 15;
+        let centerPos = { lat: 33.91, lng: 134.66 };
+        let zoomLevel = 15;
+        if (typeof window.readSharedMapView_ === 'function') {
+          const shared = window.readSharedMapView_({ lat: 33.91, lng: 134.66, zoom: 15 });
+          centerPos = { lat: shared.lat, lng: shared.lng };
+          zoomLevel = shared.zoom || 15;
+        } else {
+          let savedLat = localStorage.getItem('lastLat');
+          let savedLng = localStorage.getItem('lastLng');
+          let savedZoom = localStorage.getItem('lastZoom');
+          centerPos = (savedLat && savedLng) ? { lat: parseFloat(savedLat), lng: parseFloat(savedLng) } : centerPos;
+          zoomLevel = savedZoom ? parseInt(savedZoom) : zoomLevel;
+        }
 
         map = new google.maps.Map(document.getElementById('map'), { center: centerPos, zoom: zoomLevel, maxZoom: 30, mapTypeId: 'hybrid', gestureHandling: 'greedy', disableDefaultUI: true, zoomControl: false });
         
@@ -1247,9 +1255,13 @@ async function fetchWeatherAndUpdateUI() {
         });
 
         map.addListener('idle', () => {
-          localStorage.setItem('lastLat', map.getCenter().lat());
-          localStorage.setItem('lastLng', map.getCenter().lng());
-          localStorage.setItem('lastZoom', map.getZoom());
+          if (typeof window.saveSharedMapView_ === 'function') {
+            window.saveSharedMapView_(map);
+          } else {
+            localStorage.setItem('lastLat', map.getCenter().lat());
+            localStorage.setItem('lastLng', map.getCenter().lng());
+            localStorage.setItem('lastZoom', map.getZoom());
+          }
           fetchWeatherAndUpdateUI();
         });
 
@@ -1596,8 +1608,10 @@ async function fetchWeatherAndUpdateUI() {
             areaA = Math.round(google.maps.geometry.spherical.computeArea(latLngs) / 100 * 10) / 10;
           } catch (e) {}
         }
-        const trucks = areaA > 0 ? Math.ceil(areaA / 20) : 0;
-        const trucksLabel = trucks > 0 ? `${trucks}車` : '面積未設定';
+        // 1反 = 10a = 1台
+        const trucks = areaA > 0 ? Math.max(1, Math.ceil(areaA / 10)) : 0;
+        const areaLabel = areaA > 0 ? `${Math.round(areaA * 10) / 10}a` : '面積未設定';
+        const trucksLabel = trucks > 0 ? `${trucks}台` : '台数未設定';
         const name = p.name || '圃場';
 
         let lat = null, lng = null;
@@ -1620,14 +1634,50 @@ async function fetchWeatherAndUpdateUI() {
           });
           if (n > 0) { lat = latSum / n; lng = lngSum / n; }
         }
-        const url = (lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
+
+        const mapsUrl = (lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
           ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(lat.toFixed(6) + ',' + lng.toFixed(6))}`
           : '';
-        const text = `${name}\n堆肥 ${trucksLabel}（20aに1車）`;
-        const sharePayload = url ? { title: name, text: text, url: url } : { title: name, text: text };
+        // 情熱MAPアプリで開ける暗号化共有URL（座標を平文で出さない）
+        let appUrl = '';
+        try {
+          const payload = {
+            v: 1,
+            t: 'pig',
+            lat: (lat != null && !isNaN(lat)) ? Number(lat.toFixed(6)) : null,
+            lng: (lng != null && !isNaN(lng)) ? Number(lng.toFixed(6)) : null,
+            zoom: 18,
+            fieldId: String(fieldId || ''),
+            name: name,
+            units: trucks > 0 ? trucks : null,
+            area: areaA > 0 ? Math.round(areaA * 10) / 10 : null
+          };
+          if (typeof window.buildPassionMapShareUrl_ === 'function') {
+            appUrl = window.buildPassionMapShareUrl_(payload, 'worker.html');
+          } else if (typeof window.encodePassionMapSharePayload_ === 'function') {
+            const token = window.encodePassionMapSharePayload_(payload);
+            const u = new URL('worker.html', window.location.href);
+            u.searchParams.set('p', token);
+            appUrl = u.toString();
+          }
+        } catch (eUrl) {
+          appUrl = '';
+        }
+
+        const textLines = [
+          '🐷 豚糞散布依頼',
+          name,
+          `台数: ${trucksLabel}（1反1台）`,
+          `面積: ${areaLabel}`
+        ];
+        if (mapsUrl) textLines.push(`ナビ: ${mapsUrl}`);
+        const text = textLines.join('\n');
+        const sharePayload = appUrl
+          ? { title: `豚糞散布 ${name}`, text: text, url: appUrl }
+          : { title: `豚糞散布 ${name}`, text: text };
 
         const fallbackCopy = () => {
-          const full = url ? `${text}\n${url}` : text;
+          const full = appUrl ? `${text}\n${appUrl}` : text;
           if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(full).then(() => {
               if (typeof customAlert === 'function') customAlert('📋 豚糞散布依頼の内容をコピーしました');

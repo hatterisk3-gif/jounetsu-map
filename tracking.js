@@ -170,6 +170,134 @@
     if (workerBtn) workerBtn.style.display = onWorker ? 'none' : 'block';
   };
 
+  /** 共有URL用：座標などを短く暗号化したトークンにする（URLに平文 lat/lng を出さない） */
+  window.PASSION_MAP_SHARE_XOR_KEY_ = 'passionMapShare2026';
+
+  window.encodePassionMapSharePayload_ = function (obj) {
+    try {
+      const json = JSON.stringify(obj || {});
+      const key = window.PASSION_MAP_SHARE_XOR_KEY_;
+      let xored = '';
+      for (let i = 0; i < json.length; i++) {
+        xored += String.fromCharCode(json.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+      }
+      const b64 = btoa(unescape(encodeURIComponent(xored)))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '');
+      return b64;
+    } catch (e) {
+      return '';
+    }
+  };
+
+  window.decodePassionMapSharePayload_ = function (token) {
+    try {
+      let b64 = String(token || '').trim().replace(/-/g, '+').replace(/_/g, '/');
+      if (!b64) return null;
+      while (b64.length % 4) b64 += '=';
+      const xored = decodeURIComponent(escape(atob(b64)));
+      const key = window.PASSION_MAP_SHARE_XOR_KEY_;
+      let json = '';
+      for (let i = 0; i < xored.length; i++) {
+        json += String.fromCharCode(xored.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+      }
+      const obj = JSON.parse(json);
+      return (obj && typeof obj === 'object') ? obj : null;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  window.buildPassionMapShareUrl_ = function (payload, page) {
+    try {
+      const token = window.encodePassionMapSharePayload_(payload);
+      if (!token) return '';
+      const u = new URL(page || 'worker.html', window.location.href);
+      u.search = '';
+      u.searchParams.set('p', token);
+      return u.toString();
+    } catch (e) {
+      return '';
+    }
+  };
+
+  window.saveSharedMapView_ = function (mapOrOpts) {
+    try {
+      let lat = null;
+      let lng = null;
+      let zoom = null;
+      if (mapOrOpts && typeof mapOrOpts.getCenter === 'function') {
+        const c = mapOrOpts.getCenter();
+        if (c) {
+          lat = c.lat();
+          lng = c.lng();
+        }
+        if (typeof mapOrOpts.getZoom === 'function') zoom = mapOrOpts.getZoom();
+      } else if (mapOrOpts && mapOrOpts.lat != null && mapOrOpts.lng != null) {
+        lat = mapOrOpts.lat;
+        lng = mapOrOpts.lng;
+        zoom = mapOrOpts.zoom;
+      } else if (typeof map !== 'undefined' && map && typeof map.getCenter === 'function') {
+        const c = map.getCenter();
+        if (c) {
+          lat = c.lat();
+          lng = c.lng();
+        }
+        if (typeof map.getZoom === 'function') zoom = map.getZoom();
+      }
+      const nLat = parseFloat(lat);
+      const nLng = parseFloat(lng);
+      if (isNaN(nLat) || isNaN(nLng)) return false;
+      localStorage.setItem('lastLat', String(nLat));
+      localStorage.setItem('lastLng', String(nLng));
+      // 管理画面側のキーも同期（画面切替で位置が戻らないように）
+      localStorage.setItem('pMapAdminLastLat', String(nLat));
+      localStorage.setItem('pMapAdminLastLng', String(nLng));
+      if (zoom != null && !isNaN(parseFloat(zoom))) {
+        const z = String(parseInt(zoom, 10));
+        localStorage.setItem('lastZoom', z);
+        localStorage.setItem('pMapAdminLastZoom', z);
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  window.readSharedMapView_ = function (defaults) {
+    defaults = defaults || { lat: 33.91, lng: 134.66, zoom: 15 };
+    const keySets = [
+      ['lastLat', 'lastLng', 'lastZoom'],
+      ['pMapAdminLastLat', 'pMapAdminLastLng', 'pMapAdminLastZoom']
+    ];
+    for (let i = 0; i < keySets.length; i++) {
+      const keys = keySets[i];
+      const lat = parseFloat(localStorage.getItem(keys[0]));
+      const lng = parseFloat(localStorage.getItem(keys[1]));
+      const zoom = parseInt(localStorage.getItem(keys[2]), 10);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        return {
+          lat: lat,
+          lng: lng,
+          zoom: !isNaN(zoom) ? zoom : defaults.zoom
+        };
+      }
+    }
+    return {
+      lat: defaults.lat,
+      lng: defaults.lng,
+      zoom: defaults.zoom
+    };
+  };
+
+  window.navigateWithSharedMapView_ = function (url) {
+    if (typeof window.saveSharedMapView_ === 'function') {
+      try { window.saveSharedMapView_(); } catch (e) {}
+    }
+    window.location.href = url;
+  };
+
   window.openAdminFromWorker = function () {
     const isAdmin = (typeof window.isWorkerAdmin === 'function')
       ? window.isWorkerAdmin()
@@ -183,7 +311,7 @@
       if (typeof window.closeAccountMenu === 'function') window.closeAccountMenu();
       return;
     }
-    window.location.href = 'admin.html';
+    window.navigateWithSharedMapView_('admin.html');
   };
 
   window.openScheduleFromWorker = function () {
@@ -199,7 +327,7 @@
       if (typeof window.closeAccountMenu === 'function') window.closeAccountMenu();
       return;
     }
-    window.location.href = 'schedule.html';
+    window.navigateWithSharedMapView_('schedule.html');
   };
 
   window.openWorkerFromAccount = function () {
@@ -207,7 +335,7 @@
       if (typeof window.closeAccountMenu === 'function') window.closeAccountMenu();
       return;
     }
-    window.location.href = 'worker.html';
+    window.navigateWithSharedMapView_('worker.html');
   };
 
   window.toggleAccountMenu = function (ev) {

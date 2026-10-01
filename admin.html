@@ -737,6 +737,7 @@
         <div id="adminRegPlusMenu" class="admin-reg-plus-menu" style="display:none;" onclick="event.stopPropagation()">
           <button type="button" onclick="pickAdminRegPlus_('draw')">✏️ 圃場を登録</button>
           <button type="button" onclick="pickAdminRegPlus_('marker')">📍 看板を登録</button>
+          <button type="button" onclick="pickAdminRegPlus_('batchDelete')" style="color:#c62828;">🗑️ 一括削除</button>
         </div>
       </div>
       <button id="btnDrawMode" class="mode-btn admin-mode-btn-hidden" aria-hidden="true" tabindex="-1">✏️ 圃場</button>
@@ -744,9 +745,6 @@
       <button onclick="openMasterModal()"
         style="background:rgba(33, 150, 243, 0.8); color:white; border-radius:5px; border:none; padding:8px 12px; font-weight:bold; font-size:13px;">⚙️
         マスタ</button>
-      <button onclick="openBatchDeleteModal()"
-        style="background:rgba(211, 47, 47, 0.8); color:white; border-radius:5px; border:none; padding:8px 12px; font-weight:bold; font-size:13px; margin-left:5px;">🗑️
-        一括削除</button>
     </div>
     <div id="drawArea" class="action-bar" style="display:none;">
       <div id="drawStep1">
@@ -838,10 +836,10 @@
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=ja&v=weekly" async defer></script>
 
   <script src="api-client.js?v=1788600000070" defer></script>
-  <script src="admin.js?v=1788600000070" defer></script>
+  <script src="admin.js?v=1788600000073" defer></script>
   <script src="admin_cost.js?v=1785489000008" defer></script>
   <script src="admin_crop_work.js?v=1787570400000" defer></script>
-  <script src="tracking.js?v=1788600000037" defer></script>
+  <script src="tracking.js?v=1788600000043" defer></script>
   <script src="cad.js?v=1785483000006" defer></script>
   <script type="importmap">
   {

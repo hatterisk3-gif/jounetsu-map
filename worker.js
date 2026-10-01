@@ -1844,11 +1844,19 @@ window.openTyphoonModal = function() {
 };
 
       function initMap() {
-        let savedLat = localStorage.getItem('lastLat');
-        let savedLng = localStorage.getItem('lastLng');
-        let savedZoom = localStorage.getItem('lastZoom');
-        let centerPos = (savedLat && savedLng) ? {lat: parseFloat(savedLat), lng: parseFloat(savedLng)} : {lat: 33.91, lng: 134.66};
-        let zoomLevel = savedZoom ? parseInt(savedZoom) : 15;
+        let centerPos = { lat: 33.91, lng: 134.66 };
+        let zoomLevel = 15;
+        if (typeof window.readSharedMapView_ === 'function') {
+          const shared = window.readSharedMapView_({ lat: 33.91, lng: 134.66, zoom: 15 });
+          centerPos = { lat: shared.lat, lng: shared.lng };
+          zoomLevel = shared.zoom || 15;
+        } else {
+          let savedLat = localStorage.getItem('lastLat');
+          let savedLng = localStorage.getItem('lastLng');
+          let savedZoom = localStorage.getItem('lastZoom');
+          centerPos = (savedLat && savedLng) ? { lat: parseFloat(savedLat), lng: parseFloat(savedLng) } : centerPos;
+          zoomLevel = savedZoom ? parseInt(savedZoom) : zoomLevel;
+        }
 
         map = new google.maps.Map(document.getElementById('map'), { center: centerPos, zoom: zoomLevel, maxZoom: 30, mapTypeId: 'hybrid', gestureHandling: 'greedy', mapTypeControl: false, fullscreenControl: false, streetViewControl: false, rotateControl: false, cameraControl: false, zoomControl: false, styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }] });
         
@@ -2112,10 +2120,14 @@ window.openTyphoonModal = function() {
         fetchTyphoonInfo(); // 起動時に台風情報を取得
 
         map.addListener('idle', () => {
-          let center = map.getCenter();
-          localStorage.setItem('lastLat', center.lat());
-          localStorage.setItem('lastLng', center.lng());
-          localStorage.setItem('lastZoom', map.getZoom());
+          if (typeof window.saveSharedMapView_ === 'function') {
+            window.saveSharedMapView_(map);
+          } else {
+            let center = map.getCenter();
+            localStorage.setItem('lastLat', center.lat());
+            localStorage.setItem('lastLng', center.lng());
+            localStorage.setItem('lastZoom', map.getZoom());
+          }
           fetchWeatherAndUpdateUI();
         });
         
@@ -4467,6 +4479,8 @@ function createSignboardMarker(name, pos, icon, id) {
               if (recId && excludeSet[String(recId)]) return;
               if (recId && seenIds.has(recId)) return;
               if (recId) seenIds.add(recId);
+              // 端末で削除済み（tombstone）の記録は最遅終了に使わない
+              if (typeof window.isWorkRecordDeleted_ === 'function' && window.isWorkRecordDeleted_(ph)) return;
 
               const phAuthor = (ph.author || '').replace(/\s+/g, '');
               const isAuthorMatch = !normUser || !phAuthor || phAuthor === normUser || normUser === 'システム';
@@ -28599,74 +28613,191 @@ function createSignboardMarker(name, pos, icon, id) {
         }
       };
 
-    // 🌟ここから上書き：共有されたURLを開いた瞬間に「全自動」で解析＆判定する！🌟
+    // 🌟共有URL／豚糞散布ディープリンクを開いたときの地図ジャンプ
     try {
       const urlParams = new URLSearchParams((window.location && window.location.search) || '');
-      const sharedText = [urlParams.get('title'), urlParams.get('text'), urlParams.get('url')].filter(Boolean).join(' ');
-      
-      if (sharedText) {
-          // アプリの地図や圃場データが読み込まれるのを待つため、2秒遅らせてから自動実行する
+      const decodeShareChunk = (s) => {
+        let out = String(s || '');
+        try { out = decodeURIComponent(out.replace(/\+/g, ' ')); } catch (e) {}
+        // 二重エンコードや %2C 残りを吸収
+        try {
+          if (/%[0-9A-Fa-f]{2}/.test(out)) out = decodeURIComponent(out);
+        } catch (e2) {}
+        return out;
+      };
+      const extractLatLngFromText_ = (raw) => {
+        const sharedText = decodeShareChunk(raw);
+        if (!sharedText) return null;
+        const normalized = sharedText.replace(/%2C/gi, ',');
+        const matchURL = normalized.match(/@(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/)
+          || normalized.match(/[?&](?:q|query|ll|center)=(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/)
+          || normalized.match(/[?&](?:q|query|ll|center)=(-?\d+\.\d+)%2C(-?\d+\.\d+)/i)
+          || normalized.match(/[?&]lat=(-?\d+\.\d+)&(?:amp;)?lng=(-?\d+\.\d+)/i)
+          || normalized.match(/place\/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/)
+          || normalized.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+        const matchDMS = normalized.match(/(\d+)°(\d+)'([\d.]+)"N\s*(\d+)°(\d+)'([\d.]+)"E/);
+        const matchDec = normalized.match(/(-?\d{1,2}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/);
+        if (matchURL) return { lat: parseFloat(matchURL[1]), lng: parseFloat(matchURL[2]) };
+        if (matchDMS) {
+          return {
+            lat: parseInt(matchDMS[1], 10) + parseInt(matchDMS[2], 10) / 60 + parseFloat(matchDMS[3]) / 3600,
+            lng: parseInt(matchDMS[4], 10) + parseInt(matchDMS[5], 10) / 60 + parseFloat(matchDMS[6]) / 3600
+          };
+        }
+        if (matchDec) return { lat: parseFloat(matchDec[1]), lng: parseFloat(matchDec[2]) };
+        return null;
+      };
+
+      const applySharedMapJump_ = async (shareLat, shareLng, meta) => {
+        meta = meta || {};
+        if (!shareLat || !shareLng || !map) return false;
+        const alertModal = document.getElementById('customAlertModal');
+        if (alertModal) alertModal.style.display = 'none';
+        const sharedPos = new google.maps.LatLng(shareLat, shareLng);
+        map.setCenter(sharedPos);
+        map.setZoom(meta.zoom || 18);
+        if (window.sharedLocationMarker) {
+          try { window.sharedLocationMarker.setMap(null); } catch (e) {}
+        }
+        window.sharedLocationMarker = new google.maps.Marker({
+          position: sharedPos, map: map,
+          icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
+          zIndex: 9999, animation: google.maps.Animation.DROP
+        });
+
+        let foundHojoId = String(meta.fieldId || '').trim() || null;
+        if (foundHojoId && !(typeof loadedPolygons !== 'undefined' && loadedPolygons[foundHojoId])) {
+          foundHojoId = null;
+        }
+        if (!foundHojoId && google.maps.geometry && google.maps.geometry.poly) {
+          for (let id in loadedPolygons) {
+            const p = loadedPolygons[id];
+            if (!p.isMarker && p.polygon && google.maps.geometry.poly.containsLocation(sharedPos, p.polygon)) {
+              foundHojoId = id;
+              break;
+            }
+          }
+        }
+
+        const units = meta.units ? String(meta.units) : '';
+        const fname = meta.name ? String(meta.name) : '';
+        const pigNote = meta.pigManure
+          ? (`\n🐷 豚糞散布${fname ? '（' + fname + '）' : ''}${units ? '\n台数: ' + units + '台（1反1台）' : ''}`)
+          : '';
+
+        if (foundHojoId) {
+          if (typeof customAlert === 'function') {
+            customAlert('📍 既存の圃場が見つかりました！' + pigNote);
+          }
           setTimeout(() => {
-              customAlert("🔍 共有された場所を解析中です...");
-              
-              (async () => {
-                  let shareLat = null, shareLng = null;
-                  
-                  const matchURL = sharedText.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/[?&](?:q|query|ll|center)=(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
-                  const matchDMS = sharedText.match(/(\d+)°(\d+)'([\d.]+)"N\s*(\d+)°(\d+)'([\d.]+)"E/);
-                  const matchDec = sharedText.match(/(-?\d{1,2}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/);
+            if (typeof focusAndOpen === 'function') focusAndOpen(foundHojoId);
+          }, 800);
+        } else if (meta.pigManure) {
+          if (typeof customAlert === 'function') {
+            customAlert('📍 豚糞散布の場所を地図に表示しました。' + pigNote);
+          }
+        } else if (typeof customConfirm === 'function') {
+          if (await customConfirm('📍 ここには圃場登録がありません。\n管理者画面を開いて新しく登録しますか？')) {
+            window.location.href = `/admin.html?lat=${shareLat}&lng=${shareLng}&action=draw`;
+          }
+        }
+        return true;
+      };
 
-                  if (matchURL) { shareLat = parseFloat(matchURL[1]); shareLng = parseFloat(matchURL[2]); } 
-                  else if (matchDMS) { shareLat = parseInt(matchDMS[1]) + parseInt(matchDMS[2])/60 + parseFloat(matchDMS[3])/3600; shareLng = parseInt(matchDMS[4]) + parseInt(matchDMS[5])/60 + parseFloat(matchDMS[6])/3600; } 
-                  else if (matchDec) { shareLat = parseFloat(matchDec[1]); shareLng = parseFloat(matchDec[2]); }
-                  
-                  if (!shareLat || !shareLng) {
-                      const shortUrlMatch = sharedText.match(/https?:\/\/[^\s]+/);
-                      if (shortUrlMatch) {
-                          try {
-                              const result = await callGAS('getMapCoordinates', { url: shortUrlMatch[0] });
-                              if (result && result.success) { shareLat = result.lat; shareLng = result.lng; }
-                          } catch(e) { console.warn("短縮URL展開エラー", e); }
-                      }
+      window.consumePigManureDeepLink_ = async function () {
+        if (window._pigManureDeepLinkConsumed) return;
+        let params;
+        try { params = new URLSearchParams(window.location.search); } catch (e) { return; }
+        const sharedText = [params.get('title'), params.get('text'), params.get('url')].filter(Boolean).join(' ');
+
+        // 暗号化トークン ?p=... （共有文中の URL からも拾う）
+        let payload = null;
+        let pTok = params.get('p') || params.get('s') || '';
+        if (!pTok && sharedText) {
+          const m = decodeShareChunk(sharedText).match(/[?&]p=([A-Za-z0-9\-_]+)/);
+          if (m) pTok = m[1];
+        }
+        if (pTok && typeof window.decodePassionMapSharePayload_ === 'function') {
+          payload = window.decodePassionMapSharePayload_(pTok);
+        }
+
+        const pig = params.get('pigManure') || (payload && payload.t === 'pig' ? '1' : '');
+        const lat = parseFloat((payload && payload.lat != null) ? payload.lat : params.get('lat'));
+        const lng = parseFloat((payload && payload.lng != null) ? payload.lng : params.get('lng'));
+        const zoom = parseInt(String((payload && payload.zoom != null) ? payload.zoom : (params.get('zoom') || '18')), 10);
+        const fieldId = String((payload && payload.fieldId) || params.get('fieldId') || '');
+        const name = String((payload && payload.name) || params.get('name') || '');
+        const units = String((payload && payload.units != null) ? payload.units : (params.get('units') || ''));
+        const hasDirect = !isNaN(lat) && !isNaN(lng);
+        const hasShare = !!sharedText;
+        const hasPig = pig === '1' || pig === 'true' || !!(payload && payload.t === 'pig');
+        const hasToken = !!payload;
+        if (!hasDirect && !hasShare && !hasPig && !hasToken) return;
+        window._pigManureDeepLinkConsumed = true;
+        try { window.history.replaceState(null, '', window.location.pathname); } catch (e) {}
+
+        const run = async (attempt) => {
+          if (typeof map === 'undefined' || !map) {
+            if ((attempt || 0) < 40) return setTimeout(() => run((attempt || 0) + 1), 250);
+            if (typeof customAlert === 'function') customAlert('📍 地図の準備が終わる前にタイムアウトしました。もう一度リンクを開いてください。');
+            return;
+          }
+          let shareLat = hasDirect ? lat : null;
+          let shareLng = hasDirect ? lng : null;
+          if ((shareLat == null || shareLng == null) && sharedText) {
+            if (typeof customAlert === 'function') customAlert('🔍 共有された場所を解析中です...');
+            const parsed = extractLatLngFromText_(sharedText);
+            if (parsed) {
+              shareLat = parsed.lat;
+              shareLng = parsed.lng;
+            }
+            if ((shareLat == null || shareLng == null)) {
+              const shortUrlMatch = decodeShareChunk(sharedText).match(/https?:\/\/[^\s]+/);
+              if (shortUrlMatch && typeof callGAS === 'function') {
+                try {
+                  const result = await callGAS('getMapCoordinates', { url: shortUrlMatch[0] });
+                  if (result && result.success) {
+                    shareLat = result.lat;
+                    shareLng = result.lng;
                   }
+                } catch (e) { console.warn('短縮URL展開エラー', e); }
+              }
+            }
+          }
+          // worker.html 自身の共有URL（url=...worker.html?lat=... / ?p=...）からも拾う
+          if ((shareLat == null || shareLng == null) && sharedText) {
+            const selfMatch = decodeShareChunk(sharedText).match(/[?&]lat=(-?\d+\.\d+)[&\s](?:amp;)?lng=(-?\d+\.\d+)/i);
+            if (selfMatch) {
+              shareLat = parseFloat(selfMatch[1]);
+              shareLng = parseFloat(selfMatch[2]);
+            }
+          }
+          if (shareLat != null && shareLng != null && !isNaN(shareLat) && !isNaN(shareLng)) {
+            // 圃場ポリゴン描画待ち（少し遅らせてから再判定）
+            const waitPolys = (attempt || 0) < 8
+              && typeof loadedPolygons !== 'undefined'
+              && Object.keys(loadedPolygons || {}).length < 1;
+            if (waitPolys) return setTimeout(() => run((attempt || 0) + 1), 400);
+            await applySharedMapJump_(shareLat, shareLng, {
+              zoom: !isNaN(zoom) ? zoom : 18,
+              fieldId: fieldId,
+              name: name,
+              units: units,
+              pigManure: hasPig || /豚糞/.test(sharedText || '')
+            });
+          } else if (hasShare || hasPig || hasToken) {
+            if (typeof customAlert === 'function') {
+              customAlert(hasToken
+                ? '📍 共有リンクの復号に失敗したか、座標がありません。'
+                : '📍 座標を取得できませんでした。');
+            }
+          }
+        };
+        setTimeout(() => run(0), (hasDirect || hasToken) ? 600 : 1200);
+      };
 
-                  if (shareLat && shareLng) {
-                      document.getElementById('customAlertModal').style.display = 'none';
-                      const sharedPos = new google.maps.LatLng(shareLat, shareLng);
-                      map.setCenter(sharedPos); map.setZoom(18);
-                      
-                      new google.maps.Marker({
-                          position: sharedPos, map: map,
-                          icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
-                          zIndex: 9999, animation: google.maps.Animation.DROP
-                      });
-
-                      // 🚀 Googleマップの機能で「図形（圃場）の内側か」を計算！
-                      let foundHojoId = null;
-                      if (google.maps.geometry && google.maps.geometry.poly) {
-                          for (let id in loadedPolygons) {
-                              const p = loadedPolygons[id];
-                              if (!p.isMarker && p.polygon && google.maps.geometry.poly.containsLocation(sharedPos, p.polygon)) {
-                                  foundHojoId = id; break;
-                              }
-                          }
-                      }
-
-                      if (foundHojoId) {
-                          customAlert("📍 既存の圃場が見つかりました！");
-                          // 1秒後に詳細画面（作業記録モーダル）を自動で開く
-                          setTimeout(() => { focusAndOpen(foundHojoId); }, 1000);
-                      } else {
-                          if (await customConfirm("📍 ここには圃場登録がありません。\n管理者画面を開いて新しく登録しますか？")) {
-                              // 「はい」ならAdminへ座標を持たせて飛ばす！
-                              window.location.href = `/admin.html?lat=${shareLat}&lng=${shareLng}&action=draw`;
-                          }
-                      }
-                  } else {
-                      customAlert("📍 座標を取得できませんでした。");
-                  }
-              })();
-          }, 2000); // 読み込み待機2秒
+      if (typeof window.consumePigManureDeepLink_ === 'function') {
+        window.consumePigManureDeepLink_();
       }
     } catch (e) {
       console.warn('share URL bootstrap skipped', e);
@@ -39688,19 +39819,21 @@ window.deleteBulkWorkMemoHistoryEntry_ = async (batchId) => {
       targets.push({ recordId: rid, polyId: String(it.polyId || '__global__') });
     });
     const queue = targets.slice();
-    const runOne = async () => {
-      while (queue.length) {
-        const t = queue.shift();
-        if (!t || !t.recordId) continue;
-        try {
-          const res = await window.deleteRecordFromMyPageSilent_(t.polyId, t.recordId);
-          if (res) deleted++;
-          else {
-            // local_ ID でも日付・時刻照合でサーバー削除を試す
-            const it = historyItems.find(x => x && String(x.recordId || '') === String(t.recordId));
-            if (user && typeof callGAS === 'function' && it) {
+    // 直列削除（並列だとシート行の取りこぼしが起きやすい）
+    while (queue.length) {
+      const t = queue.shift();
+      if (!t || !t.recordId) continue;
+      try {
+        const res = await window.deleteRecordFromMyPageSilent_(t.polyId, t.recordId, { retries: 3 });
+        if (res) deleted++;
+        else {
+          // local_ ID でも日付・時刻照合でサーバー削除を試す
+          const it = historyItems.find(x => x && String(x.recordId || '') === String(t.recordId));
+          if (user && typeof callGAS === 'function' && it) {
+            let r2 = null;
+            for (let attempt = 1; attempt <= 3 && !(r2 && r2.success); attempt++) {
               try {
-                const r2 = await callGAS('deleteWorkRecordById', {
+                r2 = await callGAS('deleteWorkRecordById', {
                   recordId: t.recordId,
                   userName: user,
                   workDate: ymdForAtt,
@@ -39709,33 +39842,34 @@ window.deleteBulkWorkMemoHistoryEntry_ = async (batchId) => {
                   workName: it.workName || '',
                   author: user
                 });
-                if (r2 && r2.success) {
-                  deleted++;
-                  if (typeof window.removeWorkRecordLocally_ === 'function') {
-                    window.removeWorkRecordLocally_(t.recordId, t.polyId, {
-                      data: {
-                        workDate: ymdForAtt,
-                        startTime: it.startTime || '',
-                        endTime: it.endTime || '',
-                        workName: it.workName || ''
-                      }
-                    });
-                  }
-                  continue;
-                }
-              } catch (e2) {}
+              } catch (e2) {
+                r2 = null;
+              }
+              if (!(r2 && r2.success) && attempt < 3 && typeof window.sleepMs_ === 'function') {
+                await window.sleepMs_(400 * attempt);
+              }
             }
-            failed++;
+            if (r2 && r2.success) {
+              deleted++;
+              if (typeof window.removeWorkRecordLocally_ === 'function') {
+                window.removeWorkRecordLocally_(t.recordId, t.polyId, {
+                  data: {
+                    workDate: ymdForAtt,
+                    startTime: it.startTime || '',
+                    endTime: it.endTime || '',
+                    workName: it.workName || ''
+                  }
+                });
+              }
+              continue;
+            }
           }
-        } catch (e) {
           failed++;
         }
+      } catch (e) {
+        failed++;
       }
-    };
-    const workers = [];
-    const wn = Math.min(4, Math.max(1, queue.length || 1));
-    for (let i = 0; i < wn; i++) workers.push(runOne());
-    await Promise.all(workers);
+    }
 
     // 端末の休憩キャッシュを履歴内容に合わせて消す
     window.clearBulkWorkMemoHistoryLunchLocally_(entry);
@@ -40312,6 +40446,18 @@ window.markWorkRecordDeleted_ = function(recordId, rec) {
     window.saveDeletedWorkRecordTombstones_(store);
 };
 
+/** サーバー削除失敗時などに tombstone を外して再表示できるようにする */
+window.unmarkWorkRecordDeleted_ = function(recordId, rec) {
+    const store = window.loadDeletedWorkRecordTombstones_();
+    const id = String(recordId || (rec && rec.id) || '').trim();
+    if (id) store.ids = (store.ids || []).filter((x) => String(x) !== id);
+    const fp = (typeof window.workRecordFingerprintKey_ === 'function')
+        ? window.workRecordFingerprintKey_(rec || { id: id, data: (rec && rec.data) || {} })
+        : '';
+    if (fp) store.fps = (store.fps || []).filter((x) => String(x) !== fp);
+    window.saveDeletedWorkRecordTombstones_(store);
+};
+
 window.isWorkRecordDeleted_ = function(rec) {
     if (!rec) return false;
     const store = window.loadDeletedWorkRecordTombstones_();
@@ -40321,6 +40467,133 @@ window.isWorkRecordDeleted_ = function(rec) {
         ? window.workRecordFingerprintKey_(rec)
         : '';
     return !!(fp && store.fps.indexOf(fp) >= 0);
+};
+
+window.cloneWorkRecordSnapshot_ = function(rec) {
+    if (!rec) return null;
+    try {
+        return JSON.parse(JSON.stringify(rec));
+    } catch (e) {
+        return rec;
+    }
+};
+
+window.sleepMs_ = function(ms) {
+    return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+};
+
+/** 削除失敗時：端末表示・キャッシュへ作業記録を戻す */
+window.restoreWorkRecordLocally_ = function(snapshot) {
+    if (!snapshot) return false;
+    const recordId = String(snapshot.id || (snapshot.data && snapshot.data.recordId) || '').trim();
+    if (!recordId) return false;
+    const polyId = String(snapshot.polyId || '__global__').trim() || '__global__';
+    const matchRec = (r) => r && (
+      String(r.id || '') === recordId
+      || String(r.recordId || '') === recordId
+      || String((r.data && r.data.recordId) || '') === recordId
+    );
+
+    if (typeof window.unmarkWorkRecordDeleted_ === 'function') {
+        window.unmarkWorkRecordDeleted_(recordId, snapshot);
+    }
+
+    if (typeof loadedPolygons !== 'undefined') {
+        if (!loadedPolygons[polyId]) {
+            if (polyId === '__global__') {
+                loadedPolygons[polyId] = { id: '__global__', name: '共通・全体', isMarker: true, coords: [], photos: [] };
+            }
+        }
+        const p = loadedPolygons[polyId];
+        if (p) {
+            if (!Array.isArray(p.photos)) p.photos = [];
+            const exists = p.photos.some((ph) => ph && (
+              String(ph.id || '') === recordId
+              || String(ph.url || '') === recordId
+              || String((ph.data && ph.data.recordId) || '') === recordId
+            ));
+            if (!exists) {
+                p.photos.push({
+                    id: snapshot.id || recordId,
+                    type: snapshot.type || 'work',
+                    date: snapshot.date || snapshot.recordYmd || '',
+                    time: snapshot.time || (snapshot.data && snapshot.data.startTime) || '',
+                    author: snapshot.author || '',
+                    urls: Array.isArray(snapshot.urls) ? snapshot.urls.slice() : [],
+                    url: snapshot.url || '',
+                    data: (snapshot.data && typeof snapshot.data === 'object')
+                      ? JSON.parse(JSON.stringify(snapshot.data))
+                      : {}
+                });
+            }
+        }
+    }
+
+    const pushUniqueList = (arrName) => {
+        const arr = window[arrName];
+        if (!Array.isArray(arr)) return;
+        if (arr.some(matchRec)) return;
+        arr.unshift(snapshot);
+    };
+    pushUniqueList('myWorkRecords');
+    if (Array.isArray(window._myPageRecentWorkRecordsCache)
+        && !window._myPageRecentWorkRecordsCache.some(matchRec)) {
+        window._myPageRecentWorkRecordsCache.unshift(snapshot);
+    }
+    if (Array.isArray(window._myPageAllWorkRecordsCache)
+        && !window._myPageAllWorkRecordsCache.some(matchRec)) {
+        window._myPageAllWorkRecordsCache.unshift(snapshot);
+    }
+    if (window._myPageWorkDateSelect && Array.isArray(window._myPageWorkDateSelect.records)
+        && !window._myPageWorkDateSelect.records.some(matchRec)) {
+        window._myPageWorkDateSelect.records.unshift(snapshot);
+    }
+
+    // 休憩なら端末キャッシュも戻す
+    try {
+        const d = snapshot.data || {};
+        const wName = String(d.workName || '').trim();
+        if (wName.includes('休憩')
+            && typeof window.getCachedRestBreaks === 'function'
+            && typeof window.saveCachedRestBreaks === 'function') {
+            const ymd = (typeof window.normalizeDateStr === 'function')
+              ? window.normalizeDateStr(d.workDate || snapshot.recordYmd || snapshot.date || '')
+              : String(d.workDate || '').slice(0, 10);
+            if (ymd) {
+                const rests = window.getCachedRestBreaks(ymd) || [];
+                const start = String(d.startTime || '').trim();
+                const end = String(d.endTime || '').trim();
+                const exists = rests.some((r) => r && (
+                  (r.id && String(r.id) === recordId)
+                  || (start && end && String(r.start || '') === start && String(r.end || '') === end)
+                ));
+                if (!exists) {
+                    rests.push({
+                        id: recordId,
+                        workName: wName,
+                        start: start,
+                        end: end
+                    });
+                    window.saveCachedRestBreaks(ymd, rests);
+                }
+            }
+        }
+    } catch (eRest) {}
+
+    try {
+        const d = snapshot.data || {};
+        const ymd = (typeof window.normalizeDateStr === 'function')
+          ? window.normalizeDateStr(d.workDate || snapshot.recordYmd || snapshot.date || '')
+          : String(d.workDate || '').slice(0, 10);
+        if (ymd && typeof window.recomputeCachedLatestWorkEnd === 'function') {
+            window.recomputeCachedLatestWorkEnd(ymd);
+        }
+    } catch (eHint) {}
+
+    if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
+        try { window.updateInitDataCacheWithLocalRecords_(); } catch (e) {}
+    }
+    return true;
 };
 
 window.removeWorkRecordLocally_ = function(recordId, polyId, rec) {
@@ -40514,61 +40787,105 @@ window.deleteRecordFromMyPage = async function(polyId, recordId) {
     }
 };
 
-/** 確認ダイアログなしの削除（一括削除用）。成功時 true */
-window.deleteRecordFromMyPageSilent_ = async function(polyId, recordId) {
+/** 確認ダイアログなしの削除（一括削除用）。成功時 true。失敗時は端末を消さない */
+window.deleteRecordFromMyPageSilent_ = async function(polyId, recordId, opts) {
+    opts = opts || {};
     recordId = String(recordId || '').trim();
     polyId = String(polyId || '').trim();
     if (!recordId) return false;
 
-    const rec = window.findMyWorkRecordForDelete_(recordId);
-    const d = (rec && rec.data) ? rec.data : {};
+    const rec = opts.rec || window.findMyWorkRecordForDelete_(recordId);
+    const d = (rec && rec.data) ? rec.data : (opts.data || {});
     const isLocalOnly = recordId.indexOf('local_') === 0;
     const pendingOnly = isLocalOnly || (Array.isArray(window._recordSyncQueue)
       && window._recordSyncQueue.some(job => job && job.localId === recordId));
     let deleted = false;
+    const maxTries = Math.max(1, Math.min(5, Number(opts.retries) || 3));
+    const skipLocalRemove = !!opts.skipLocalRemove;
 
     if (pendingOnly) {
         deleted = true;
     } else {
+        // 必ず deleteWorkRecordById で作業記録シートも消す。
+        // 以前は deleteRecordItem 成功だけで打ち切っており、並列削除の競合でシート行が残ることがあった。
+        const deleteParams = {
+            recordId: recordId,
+            userName: currentUser,
+            workDate: d.workDate || (rec && (rec.recordYmd || rec.date)) || opts.workDate || '',
+            startTime: d.startTime || (rec && rec.time) || opts.startTime || '',
+            endTime: d.endTime || opts.endTime || '',
+            workName: d.workName || opts.workName || '',
+            author: (rec && rec.author) || currentUser || localStorage.getItem('passionMapUserName') || ''
+        };
+
+        for (let attempt = 1; attempt <= maxTries && !deleted; attempt++) {
+            try {
+                const res = await callGAS('deleteWorkRecordById', deleteParams);
+                deleted = !!(res && res.success);
+            } catch (e0) {
+                console.warn('deleteRecordFromMyPageSilent_ deleteWorkRecordById try' + attempt + ':', e0);
+                deleted = false;
+            }
+            if (!deleted && attempt < maxTries) {
+                await window.sleepMs_(400 * attempt);
+            }
+        }
+
         const inPoly = polyId && polyId !== '__global__'
           && typeof loadedPolygons !== 'undefined' && loadedPolygons[polyId]
           && Array.isArray(loadedPolygons[polyId].photos)
           && loadedPolygons[polyId].photos.some(ph =>
             ph && (ph.id === recordId || ph.url === recordId || (ph.data && ph.data.recordId === recordId))
           );
-
-        if (inPoly) {
-            try {
-                const updatedPhotos = await callGAS('deleteRecordItem', {
-                    id: polyId,
-                    recordId: recordId,
-                    userName: currentUser
-                });
-                if (Array.isArray(updatedPhotos)) {
-                    loadedPolygons[polyId].photos = updatedPhotos;
-                    deleted = true;
+        if (!deleted && inPoly) {
+            for (let attempt = 1; attempt <= maxTries && !deleted; attempt++) {
+                try {
+                    const updatedPhotos = await callGAS('deleteRecordItem', {
+                        id: polyId,
+                        recordId: recordId,
+                        userName: currentUser
+                    });
+                    if (Array.isArray(updatedPhotos)) {
+                        loadedPolygons[polyId].photos = updatedPhotos;
+                        deleted = true;
+                    }
+                } catch (e1) {
+                    console.warn('deleteRecordFromMyPageSilent_ deleteRecordItem try' + attempt + ':', e1);
                 }
-            } catch (e1) {
-                console.warn('deleteRecordFromMyPageSilent_ deleteRecordItem:', e1);
+                if (!deleted && attempt < maxTries) {
+                    await window.sleepMs_(400 * attempt);
+                }
             }
+        } else if (deleted && inPoly && typeof loadedPolygons !== 'undefined' && loadedPolygons[polyId]
+            && Array.isArray(loadedPolygons[polyId].photos)) {
+            loadedPolygons[polyId].photos = loadedPolygons[polyId].photos.filter(ph =>
+              !(ph && (ph.id === recordId || ph.url === recordId || (ph.data && ph.data.recordId === recordId)))
+            );
         }
 
-        if (!deleted) {
-            const deleteParams = {
-                recordId: recordId,
-                userName: currentUser,
-                workDate: d.workDate || (rec && (rec.recordYmd || rec.date)) || '',
-                startTime: d.startTime || (rec && rec.time) || '',
-                endTime: d.endTime || '',
-                workName: d.workName || '',
-                author: (rec && rec.author) || currentUser || localStorage.getItem('passionMapUserName') || ''
-            };
-            const res = await callGAS('deleteWorkRecordById', deleteParams);
-            deleted = !!(res && res.success);
+        // 成功時のみ端末の古い ends / サーバー Script Cache ヒントを捨てる
+        if (deleted) {
+            try {
+              const ymd = (typeof window.normalizeDateStr === 'function')
+                ? window.normalizeDateStr(deleteParams.workDate)
+                : String(deleteParams.workDate || '').slice(0, 10);
+              if (ymd && typeof window.clearDayWorkTimeHintsLocally_ === 'function') {
+                window.clearDayWorkTimeHintsLocally_(ymd);
+              }
+              if (ymd && typeof callGAS === 'function' && currentUser) {
+                callGAS('clearWorkRecordTimeHint', {
+                  userName: currentUser,
+                  dateYmd: ymd
+                }).catch(() => {});
+              }
+            } catch (eHint) {}
         }
     }
 
-    window.removeWorkRecordLocally_(recordId, polyId, rec);
+    // 失敗時は画面を消さない（シートに残ったまま tombstone だけ付く事故を防ぐ）
+    if (deleted && !skipLocalRemove) {
+        window.removeWorkRecordLocally_(recordId, polyId, rec);
+    }
     return deleted;
 };
 
@@ -41667,12 +41984,17 @@ window.deleteSelectedWorkManagerRecords_ = async function() {
   if (!ok) return;
 
   const byId = {};
+  const snapshots = {};
   recordsBefore.forEach(r => {
     const id = String((r && r.id) || '').trim();
-    if (id) byId[id] = r;
+    if (!id) return;
+    byId[id] = r;
+    snapshots[id] = (typeof window.cloneWorkRecordSnapshot_ === 'function')
+      ? window.cloneWorkRecordSnapshot_(r)
+      : r;
   });
 
-  // 先に画面から消す
+  // 先に画面から消す（失敗したら下で復元）
   ids.forEach(id => {
     const rec = byId[id];
     const polyId = String((rec && rec.polyId) || '__global__');
@@ -41688,32 +42010,48 @@ window.deleteSelectedWorkManagerRecords_ = async function() {
   let deleted = 0;
   let failed = 0;
   let attendanceCleared = 0;
+  const succeededIds = [];
   try {
-    const queue = ids.slice();
-    const workers = [];
-    const runOne = async () => {
-      while (queue.length) {
-        const id = queue.shift();
-        const rec = byId[id];
-        const polyId = String((rec && rec.polyId) || '__global__');
-        try {
-          const res = await window.deleteRecordFromMyPageSilent_(polyId, id);
-          if (res) deleted++;
-          else failed++;
-        } catch (e) {
-          failed++;
+    // シート行削除はロック付きでも並列だと取りこぼしやすいので直列にする
+    for (let qi = 0; qi < ids.length; qi++) {
+      const id = ids[qi];
+      const rec = byId[id] || snapshots[id];
+      const polyId = String((rec && rec.polyId) || '__global__');
+      let res = false;
+      try {
+        // 楽観的に端末は消済みなので skipLocalRemove。失敗時は snapshot から復元
+        res = await window.deleteRecordFromMyPageSilent_(polyId, id, {
+          rec: rec,
+          skipLocalRemove: true,
+          retries: 3
+        });
+      } catch (e) {
+        res = false;
+      }
+      if (res) {
+        deleted++;
+        succeededIds.push(id);
+        // tombstone / キャッシュ掃除は成功時に確定
+        if (typeof window.removeWorkRecordLocally_ === 'function') {
+          window.removeWorkRecordLocally_(id, polyId, rec);
+        }
+      } else {
+        failed++;
+        if (snapshots[id] && typeof window.restoreWorkRecordLocally_ === 'function') {
+          try { window.restoreWorkRecordLocally_(snapshots[id]); } catch (eRest) {}
         }
       }
-    };
-    const n = Math.min(4, Math.max(1, ids.length));
-    for (let i = 0; i < n; i++) workers.push(runOne());
-    await Promise.all(workers);
+    }
 
-    for (let i = 0; i < fullYmds.length; i++) {
-      const okAtt = await window.deleteAttendanceForDateLinked_(fullYmds[i]);
+    // 出退勤は「その日の作業がすべてサーバー削除できた日」だけ消す
+    const fullYmdsOk = (typeof window.findFullyCoveredWorkYmdsByIds_ === 'function')
+      ? window.findFullyCoveredWorkYmdsByIds_(succeededIds, recordsBefore)
+      : [];
+    for (let i = 0; i < fullYmdsOk.length; i++) {
+      const okAtt = await window.deleteAttendanceForDateLinked_(fullYmdsOk[i]);
       if (okAtt) attendanceCleared++;
       if (typeof window.clearDayWorkTimeHintsLocally_ === 'function') {
-        try { window.clearDayWorkTimeHintsLocally_(fullYmds[i]); } catch (e) {}
+        try { window.clearDayWorkTimeHintsLocally_(fullYmdsOk[i]); } catch (e) {}
       }
     }
   } finally {
@@ -41732,7 +42070,7 @@ window.deleteSelectedWorkManagerRecords_ = async function() {
   }
 
   let msg = failed
-    ? `${Math.max(deleted, ids.length - failed)}件を画面から削除（サーバー失敗 ${failed}件）`
+    ? `${deleted}件を削除（失敗 ${failed}件は画面に戻しました）`
     : `${deleted}件の作業記録を削除しました`;
   if (attendanceCleared) msg += ` ／ ${attendanceCleared}日分の出退勤も削除`;
   if (typeof window.showRecordSyncToast === 'function') window.showRecordSyncToast(msg, failed ? 'warn' : 'ok');
@@ -42727,20 +43065,11 @@ window.deleteMyAttendanceDay_ = async function(ymd, fromWorkEstimate) {
         if (!rid) continue;
         try {
           const okDel = (typeof window.deleteRecordFromMyPageSilent_ === 'function')
-            ? await window.deleteRecordFromMyPageSilent_(polyId, rid)
+            ? await window.deleteRecordFromMyPageSilent_(polyId, rid, { rec: rec, retries: 3 })
             : false;
-          if (okDel) {
-            workDeleted++;
-          } else {
-            if (typeof window.removeWorkRecordLocally_ === 'function') {
-              window.removeWorkRecordLocally_(rid, polyId, rec);
-            }
-            workFailed++;
-          }
+          if (okDel) workDeleted++;
+          else workFailed++;
         } catch (e) {
-          if (typeof window.removeWorkRecordLocally_ === 'function') {
-            try { window.removeWorkRecordLocally_(rid, polyId, rec); } catch (e2) {}
-          }
           workFailed++;
         }
       }

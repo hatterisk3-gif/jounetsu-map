@@ -264,8 +264,18 @@ async function applySharedTextMapDeepLink(sharedText) {
     if (!sharedText || !map) return;
     let shareLat = null, shareLng = null;
     let finalExpandedUrl = "";
+    try {
+        sharedText = decodeURIComponent(String(sharedText).replace(/\+/g, ' '));
+        if (/%[0-9A-Fa-f]{2}/.test(sharedText)) sharedText = decodeURIComponent(sharedText);
+    } catch (e) {}
+    sharedText = String(sharedText || '').replace(/%2C/gi, ',');
 
-    const matchURL = sharedText.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/[?&](?:q|query|ll|center)=(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/) || sharedText.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+    const matchURL = sharedText.match(/@(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/)
+        || sharedText.match(/[?&](?:q|query|ll|center)=(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/)
+        || sharedText.match(/[?&](?:q|query|ll|center)=(-?\d+\.\d+)%2C(-?\d+\.\d+)/i)
+        || sharedText.match(/[?&]lat=(-?\d+\.\d+)&(?:amp;)?lng=(-?\d+\.\d+)/i)
+        || sharedText.match(/place\/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/)
+        || sharedText.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
     const matchDMS = sharedText.match(/(\d+)°(\d+)'([\d.]+)"N\s*(\d+)°(\d+)'([\d.]+)"E/);
     const matchDec = sharedText.match(/(-?\d{1,2}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/);
 
@@ -6157,12 +6167,20 @@ function initMap() {
         centerPos = { lat: deepLinkForInit.lat, lng: deepLinkForInit.lng };
         zoomLevel = deepLinkForInit.zoom || 18;
     } else {
-        let savedLat = localStorage.getItem('pMapAdminLastLat');
-        let savedLng = localStorage.getItem('pMapAdminLastLng');
-        let savedZoom = localStorage.getItem('pMapAdminLastZoom');
-        let parsedLat = parseFloat(savedLat), parsedLng = parseFloat(savedLng);
-        if (!isNaN(parsedLat) && !isNaN(parsedLng)) centerPos = { lat: parsedLat, lng: parsedLng };
-        if (savedZoom) zoomLevel = parseInt(savedZoom);
+        const shared = (typeof window.readSharedMapView_ === 'function')
+          ? window.readSharedMapView_({ lat: 33.91, lng: 134.66, zoom: 15 })
+          : null;
+        if (shared && shared.lat != null && shared.lng != null) {
+          centerPos = { lat: shared.lat, lng: shared.lng };
+          zoomLevel = shared.zoom || 15;
+        } else {
+          let savedLat = localStorage.getItem('pMapAdminLastLat');
+          let savedLng = localStorage.getItem('pMapAdminLastLng');
+          let savedZoom = localStorage.getItem('pMapAdminLastZoom');
+          let parsedLat = parseFloat(savedLat), parsedLng = parseFloat(savedLng);
+          if (!isNaN(parsedLat) && !isNaN(parsedLng)) centerPos = { lat: parsedLat, lng: parsedLng };
+          if (savedZoom) zoomLevel = parseInt(savedZoom);
+        }
     }
 
     class StretchedMapType {
@@ -6481,9 +6499,13 @@ function initMap() {
     let idleTimer = null;
     map.addListener('idle', () => {
         let center = map.getCenter();
-        localStorage.setItem('pMapAdminLastLat', center.lat());
-        localStorage.setItem('pMapAdminLastLng', center.lng());
-        localStorage.setItem('pMapAdminLastZoom', map.getZoom());
+        if (typeof window.saveSharedMapView_ === 'function') {
+          window.saveSharedMapView_(map);
+        } else {
+          localStorage.setItem('pMapAdminLastLat', center.lat());
+          localStorage.setItem('pMapAdminLastLng', center.lng());
+          localStorage.setItem('pMapAdminLastZoom', map.getZoom());
+        }
 
         if (typeof autoSwitchFudeRegion === 'function') {
             clearTimeout(idleTimer);
@@ -7055,6 +7077,8 @@ window.pickAdminRegPlus_ = (kind) => {
     } else if (kind === 'marker') {
         const btn = document.getElementById('btnMarkerMode');
         if (btn) btn.click();
+    } else if (kind === 'batchDelete') {
+        if (typeof window.openBatchDeleteModal === 'function') window.openBatchDeleteModal();
     }
 };
 
