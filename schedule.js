@@ -1638,7 +1638,7 @@ async function fetchWeatherAndUpdateUI() {
         const mapsUrl = (lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
           ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(lat.toFixed(6) + ',' + lng.toFixed(6))}`
           : '';
-        // 相手にそのまま伝える用：GoogleマップURL ＋ 台数メッセージ（情熱MAPアプリのURLではない）
+        // 相手にそのまま伝える用：台数メッセージ＋GoogleマップURLをコピー
         const textLines = [
           name,
           `台数: ${trucksLabel}（1反1台）`,
@@ -1646,28 +1646,23 @@ async function fetchWeatherAndUpdateUI() {
         ];
         if (mapsUrl) textLines.push(mapsUrl);
         const text = textLines.join('\n');
-        const sharePayload = mapsUrl
-          ? { title: name, text: text, url: mapsUrl }
-          : { title: name, text: text };
 
-        const fallbackCopy = () => {
+        const fallbackPrompt = () => prompt('以下をコピーしてください', text);
+        const copyThenAlert = () => {
           if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(text).then(() => {
-              if (typeof customAlert === 'function') customAlert('📋 豚糞散布の内容をコピーしました\n（台数＋GoogleマップURL）');
-              else alert('📋 豚糞散布の内容をコピーしました');
-            }).catch(() => prompt('以下をコピーしてください', text));
+              if (typeof customAlert === 'function') {
+                customAlert('📋 コピーしました。そのまま相手に貼り付けて送れます。\n\n' + text);
+              } else {
+                alert('📋 コピーしました\n\n' + text);
+              }
+            }).catch(fallbackPrompt);
           } else {
-            prompt('以下をコピーしてください', text);
+            fallbackPrompt();
           }
         };
-
-        if (navigator.share) {
-          navigator.share(sharePayload).catch(err => {
-            if (err && err.name !== 'AbortError') fallbackCopy();
-          });
-        } else {
-          fallbackCopy();
-        }
+        // 共有シートに url だけ渡すと台数文面が消える端末があるため、コピー優先
+        copyThenAlert();
       };
 
       function formatWorkStatusBadgeHtml(t) {
