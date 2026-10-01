@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>情熱MAP [予定確認用] v1.41</title>
+  <title>情熱MAP [予定確認用] v1.42</title>
   <link rel="apple-touch-icon" href="icon_schedule.png">
   <link rel="icon" href="icon_schedule.png">
   <link rel="manifest" href="manifest_schedule.json">
@@ -24,7 +24,7 @@
     style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a1a1a; z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
     <div
       style="background: #222; padding: 30px; border-radius: 8px; width: 80%; max-width: 320px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
-      <h2 style="color:#4CAF50; margin-top: 0;">情熱MAP (v1.41)</h2>
+      <h2 style="color:#4CAF50; margin-top: 0;">情熱MAP (v1.42)</h2>
       <div id="loginError" style="color:red; margin-bottom:10px; font-size:14px;"></div>
 
       <input type="text" id="loginId" placeholder="スタッフID"
@@ -748,7 +748,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000045';
+    const cacheBust = '1788600000046';
     const bootstrapFiles = [
       'api-client.js', 'cultivation_modal.html', 'weather-agri.js', 'schedule.js', 'day-planner.js',
       'attendance-calendar.js', 'market.js', 'tracking.js',
@@ -981,6 +981,91 @@
     style="position: fixed; bottom: 80px; right: 10px; width: 50px; height: 50px; background: white; color: #4CAF50; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; flex-direction: column; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;">
     🏃‍♂️
   </button>
+  <script>
+    // schedule.js が本番に古い場合でも豚糞共有を最新にする（v1.42）
+    (function () {
+      function installPigShare() {
+        window.sharePigManureRequestFromSchedule = function (fieldId) {
+          const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[fieldId] : null;
+          if (!p) {
+            if (typeof customAlert === 'function') customAlert('圃場が見つかりません。');
+            else alert('圃場が見つかりません。');
+            return;
+          }
+          let areaA = parseFloat(p.area) || 0;
+          if ((!areaA || areaA <= 0) && p.coords && p.coords.length > 2
+              && window.google && google.maps && google.maps.geometry && google.maps.geometry.spherical) {
+            try {
+              const latLngs = p.coords.map(function (pt) {
+                return new google.maps.LatLng(
+                  (typeof pt.lat === 'function') ? pt.lat() : pt.lat,
+                  (typeof pt.lng === 'function') ? pt.lng() : pt.lng
+                );
+              });
+              areaA = Math.round(google.maps.geometry.spherical.computeArea(latLngs) / 100 * 10) / 10;
+            } catch (e) {}
+          }
+          const trucks = areaA > 0 ? Math.max(1, Math.ceil(areaA / 10)) : 0;
+          const areaLabel = areaA > 0 ? (Math.round(areaA * 10) / 10) + 'a' : '面積未設定';
+          const trucksLabel = trucks > 0 ? (trucks + '台') : '台数未設定';
+          const name = p.name || '圃場';
+
+          let lat = null, lng = null;
+          if (p.marker && typeof p.marker.getPosition === 'function' && p.marker.getPosition()) {
+            const pos = p.marker.getPosition();
+            lat = pos.lat();
+            lng = pos.lng();
+          } else if (p.polygon && typeof p.polygon.getPath === 'function') {
+            const b = new google.maps.LatLngBounds();
+            p.polygon.getPath().forEach(function (pt) { b.extend(pt); });
+            const c = b.getCenter();
+            lat = c.lat();
+            lng = c.lng();
+          } else if (p.coords && p.coords.length) {
+            let latSum = 0, lngSum = 0, n = 0;
+            p.coords.forEach(function (pt) {
+              const pla = (typeof pt.lat === 'function') ? pt.lat() : parseFloat(pt.lat);
+              const pln = (typeof pt.lng === 'function') ? pt.lng() : parseFloat(pt.lng);
+              if (!isNaN(pla) && !isNaN(pln)) { latSum += pla; lngSum += pln; n++; }
+            });
+            if (n > 0) { lat = latSum / n; lng = lngSum / n; }
+          }
+
+          const mapsUrl = (lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
+            ? ('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(lat.toFixed(6) + ',' + lng.toFixed(6)))
+            : '';
+          const textLines = [name, '台数: ' + trucksLabel + '（1反1台）', '面積: ' + areaLabel];
+          if (mapsUrl) textLines.push(mapsUrl);
+          const text = textLines.join('\n');
+          const sharePayload = mapsUrl
+            ? { title: name, text: text, url: mapsUrl }
+            : { title: name, text: text };
+
+          const fallbackCopy = function () {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(text).then(function () {
+                if (typeof customAlert === 'function') customAlert('📋 豚糞散布の内容をコピーしました\n（台数＋GoogleマップURL）');
+                else alert('📋 豚糞散布の内容をコピーしました');
+              }).catch(function () { prompt('以下をコピーしてください', text); });
+            } else {
+              prompt('以下をコピーしてください', text);
+            }
+          };
+
+          if (navigator.share) {
+            navigator.share(sharePayload).catch(function (err) {
+              if (err && err.name !== 'AbortError') fallbackCopy();
+            });
+          } else {
+            fallbackCopy();
+          }
+        };
+      }
+      installPigShare();
+      setTimeout(installPigShare, 1500);
+      setTimeout(installPigShare, 4000);
+    })();
+  </script>
 </body>
 
 </html>
