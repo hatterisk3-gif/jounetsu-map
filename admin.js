@@ -214,7 +214,7 @@ function clearMapDeepLinkFromUrl() {
 function buildFieldShareUrl(id, centerLat, centerLng) {
     // Google Maps 公式の search URL（開いた瞬間にピン＆ズームされやすい）
     if (centerLat && centerLng) {
-        return `https://www.google.com/maps/place/${centerLat},${centerLng}`;
+        return `https://maps.google.com/?q=${centerLat},${centerLng}`;
     }
     return `${window.location.origin}${window.location.pathname}?fieldId=${encodeURIComponent(id)}`;
 }

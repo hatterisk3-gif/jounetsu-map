@@ -1649,7 +1649,7 @@ async function fetchWeatherAndUpdateUI() {
         }
 
         const mapsUrl = (lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
-          ? `https://www.google.com/maps/place/${lat.toFixed(6)},${lng.toFixed(6)}`
+          ? `https://maps.google.com/?q=${lat.toFixed(6)},${lng.toFixed(6)}`
           : '';
         const coordLabel = (lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
           ? `座標: ${lat.toFixed(6)},${lng.toFixed(6)}`
