@@ -4532,7 +4532,7 @@ function buildWorkRecordUiFlagsHtml_(prefix, flags) {
         <div style="font-size:12px; font-weight:bold; color:#33691E; margin-bottom:4px;">記録画面に出す項目</div>
         <div style="font-size:11px; color:#558B2F; margin-bottom:8px; line-height:1.4;">作業記録で、チェックした項目の選択欄を出します。防除・除草は薬剤が自動でオンになります。</div>
         <div style="display:flex; flex-direction:column; gap:6px;">
-            ${row('show_field', f.showField !== false, '🗺️ 圃場選択を出す', 'マップから圃場を選べます（給油・準備などは初期オフ）')}
+            ${row('show_field', f.showField !== false, '🗺️ 圃場選択を出す', 'マップから圃場を選べます')}
             ${row('show_machine', !!f.showMachine, '🚜 農機マスタを出す', '使用した機械を選べます')}
             ${row('show_material', !!f.showMaterial, '📦 資材マスタを出す', '肥料・マルチなどの資材を選べます')}
             ${row('show_pesticide', !!f.showPesticide, '🧪 薬剤（農薬マスタ）を出す', '使った薬剤名を記入・選択できます')}

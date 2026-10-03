@@ -8311,7 +8311,7 @@ function createSignboardMarker(name, pos, icon, id) {
           <div style="font-size:12px; font-weight:bold; color:#33691E; margin-bottom:4px;">記録画面に出す項目</div>
           <div style="font-size:11px; color:#558B2F; margin-bottom:8px; line-height:1.4;">作業記録で、チェックした項目の選択欄を出します。防除・除草は薬剤が自動でオンになります。カテゴリ横断の設定は「圃場選択の表示設定」からも変えられます。</div>
           <div style="display:flex; flex-direction:column; gap:6px;">
-            ${row('show_field', f.showField !== false, '🗺️ 圃場選択を出す', 'マップから圃場を選べます（給油・準備などは初期オフ）')}
+            ${row('show_field', f.showField !== false, '🗺️ 圃場選択を出す', 'マップから圃場を選べます')}
             ${row('show_machine', !!f.showMachine, '🚜 農機マスタを出す', '使用した機械を選べます')}
             ${row('show_material', !!f.showMaterial, '📦 資材マスタを出す', '肥料・マルチなどの資材を選べます')}
             ${row('show_pesticide', !!f.showPesticide, '🧪 薬剤（農薬マスタ）を出す', '使った薬剤名を記入・選択できます')}
@@ -36149,29 +36149,7 @@ window.buildBulkWorkMemoMetaGroupHeaderHtml_ = (group, globalStartIndex) => {
   </div>`;
 };
 
-window.getBulkWorkMemoCardDetailSummary_ = (d) => {
-  if (!d) return '';
-  const parts = [];
-  const details = Array.isArray(d.detailedWorks) ? d.detailedWorks.filter(Boolean) : [];
-  const machines = Array.isArray(d.usedMachines) ? d.usedMachines.filter(m => m && (m.id || m.name)) : [];
-  const materials = Array.isArray(d.usedMaterials) ? d.usedMaterials.filter(m => m && (m.id || m.name)) : [];
-  const tools = Array.isArray(d.usedTools) ? d.usedTools.filter(m => m && (m.id || m.name)) : [];
-  const moves = Array.isArray(d.assetMoves) ? d.assetMoves.filter(a => a && a.toId) : [];
-  const concurrent = Array.isArray(d.concurrentWorks) ? d.concurrentWorks.filter(Boolean) : [];
-  if (details.length) parts.push('詳細' + details.length);
-  if (machines.length) parts.push('機械' + machines.length);
-  if (materials.length) parts.push('資材' + materials.length);
-  if (tools.length) parts.push('道具' + tools.length);
-  if (moves.length) parts.push('運搬先' + moves.length);
-  if (concurrent.length) parts.push('同時' + concurrent.length);
-  if (String(d.comment || '').trim()) parts.push('コメントあり');
-  return parts.join(' / ');
-};
-
-window.toggleBulkWorkMemoCardDetail_ = (uid) => {
-  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
-  if (!row) return;
-  row._detailOpen = !row._detailOpen;
+window.rerenderBulkWorkMemoCardUi_ = (uid) => {
   if (window._bulkWorkMemoManualAddUid && typeof window.renderBulkWorkMemoManualAddModal_ === 'function') {
     window.renderBulkWorkMemoManualAddModal_();
     return;
@@ -36179,6 +36157,20 @@ window.toggleBulkWorkMemoCardDetail_ = (uid) => {
   if (typeof window.renderBulkWorkMemoReviewModal_ === 'function') {
     window.renderBulkWorkMemoReviewModal_({ scrollUid: uid, keepScroll: true });
   }
+};
+
+window.toggleBulkWorkMemoTimeAdjust_ = (uid) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  row._timeAdjustOpen = !row._timeAdjustOpen;
+  window.rerenderBulkWorkMemoCardUi_(uid);
+};
+
+window.toggleBulkWorkMemoComment_ = (uid) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  row._commentOpen = !row._commentOpen;
+  window.rerenderBulkWorkMemoCardUi_(uid);
 };
 
 window.renderBulkWorkMemoReviewModal_ = (opts) => {
@@ -36243,16 +36235,18 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
       : '▶️ 次の開始に合わせる';
     const hasStart = !!String(d.startTime || '').trim();
     const hasNextStart = !!nextStartHint;
-    const detailOpen = d._detailOpen === true;
-    const detailSummary = (typeof window.getBulkWorkMemoCardDetailSummary_ === 'function')
-      ? window.getBulkWorkMemoCardDetailSummary_(d)
+    const timeAdjustOpen = d._timeAdjustOpen === true;
+    const commentOpen = d._commentOpen === true;
+    const hasComment = !!String(d.comment || '').trim();
+    const timeAdjustSummary = (!timeAdjustOpen && nextStartHint)
+      ? `次の開始 ${nextStartHint}`
       : '';
+    const commentSummary = (!commentOpen && hasComment) ? 'コメントあり' : '';
     const workCore = isRestCard ? '' : `
         ${window.buildBulkWorkMemoWorkPickSectionHtml_(d, uid)}
         <div id="bulk_work_hint_${esc(uid)}" style="display:${hint && !d._workListOpen ? 'block' : 'none'}; font-size:11px; color:#E65100; margin:0 0 8px; line-height:1.35;">${hint}</div>
         <div id="bulk_crop_pick_${esc(uid)}">${window.buildBulkWorkMemoCropPickSectionHtml_(d, uid)}</div>
-        ${fieldHtml}`;
-    const workDetails = isRestCard ? '' : `
+        ${fieldHtml}
         <div id="bulk_extras_${esc(uid)}">${window.buildBulkWorkMemoExtrasHtml_(d, uid)}</div>
         ${window.buildBulkWorkMemoCardWorkAdminBarHtml_(d, uid)}`;
     const inMetaGroup = !!(metaCtx && metaCtx.groupSize >= 1);
@@ -36301,7 +36295,17 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
             <input type="text" class="form-input app-time-input" readonly inputmode="none" value="${esc(d.endTime)}" onclick="if(window.openAppTimePicker) window.openAppTimePicker(this.id, '終了')" id="bulk_end_${esc(uid)}" onchange="updateBulkWorkMemoDraftField_('${esc(uid)}','endTime', this.value)" style="margin:0; text-align:center; font-weight:bold;">
           </div>
         </div>
-        <button type="button" id="bulk_match_prev_${esc(uid)}" onclick="matchBulkWorkMemoStartToPrevEnd_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin:0 0 8px; padding:8px 10px; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid #A5D6A7; background:#E8F5E9; color:#2E7D32; line-height:1.3;">${prevEndBtnLabel}</button>
+        <button type="button" id="bulk_match_prev_${esc(uid)}" onclick="matchBulkWorkMemoStartToPrevEnd_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin:0 0 6px; padding:8px 10px; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid #A5D6A7; background:#E8F5E9; color:#2E7D32; line-height:1.3;">${prevEndBtnLabel}</button>
+        <button type="button" id="bulk_time_adjust_toggle_${esc(uid)}" onclick="toggleBulkWorkMemoTimeAdjust_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin:0 0 8px; padding:8px 10px; border-radius:8px; border:1px solid #CE93D8; background:${timeAdjustOpen ? '#F3E5F5' : '#fff'}; color:#6A1B9A; font-weight:bold; font-size:12px; cursor:pointer; text-align:left; line-height:1.35;">
+          ${timeAdjustOpen ? '▼ 時間の調整を閉じる' : '▶ 時間の調整'}
+          ${timeAdjustSummary ? `<div style="font-size:11px; font-weight:normal; color:#8E24AA; margin-top:3px;">${esc(timeAdjustSummary)}</div>` : ''}
+        </button>
+        <div id="bulk_time_adjust_panel_${esc(uid)}" style="display:${timeAdjustOpen ? 'block' : 'none'}; margin:0 0 10px; padding:8px 0 0;">
+          <div style="display:flex; flex-direction:column; gap:6px;">
+            <button type="button" id="bulk_match_next_${esc(uid)}" onclick="matchBulkWorkMemoEndToNextStart_('${esc(uid)}')" ${hasNextStart ? '' : 'disabled'} style="width:100%; box-sizing:border-box; padding:7px 8px; border-radius:8px; font-size:11px; font-weight:bold; cursor:${hasNextStart ? 'pointer' : 'not-allowed'}; border:1px solid #CE93D8; background:${hasNextStart ? '#F3E5F5' : '#f5f5f5'}; color:${hasNextStart ? '#6A1B9A' : '#999'}; line-height:1.3; opacity:${hasNextStart ? '1' : '0.7'};">${nextStartBtnLabel}</button>
+            <button type="button" id="bulk_match_end_start_${esc(uid)}" onclick="matchBulkWorkMemoEndToStart_('${esc(uid)}')" ${hasStart ? '' : 'disabled'} style="width:100%; box-sizing:border-box; padding:7px 8px; border-radius:8px; font-size:11px; font-weight:bold; cursor:${hasStart ? 'pointer' : 'not-allowed'}; border:1px solid #90CAF9; background:${hasStart ? '#E3F2FD' : '#f5f5f5'}; color:${hasStart ? '#1565C0' : '#999'}; line-height:1.3; opacity:${hasStart ? '1' : '0.7'};">▶️ この開始時間に合わせる</button>
+          </div>
+        </div>
         ${(() => {
           const conflict = conflictByUid[uid];
           if (!conflict || !conflict.existing || !conflict.existing.length) return '';
@@ -36313,18 +36317,13 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
         })()}
         ${kindSwitch}
         ${restBody}${workCore}
-        <button type="button" id="bulk_detail_toggle_${esc(uid)}" onclick="toggleBulkWorkMemoCardDetail_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin-top:10px; padding:10px 12px; border-radius:10px; border:1px solid #B0BEC5; background:${detailOpen ? '#ECEFF1' : '#fff'}; color:#37474F; font-weight:bold; font-size:13px; cursor:pointer; text-align:left; line-height:1.35;">
-          ${detailOpen ? '▼ 詳細を閉じる' : '▶ 詳細を開く'}
-          ${(!detailOpen && detailSummary) ? `<div style="font-size:11px; font-weight:normal; color:#607D8B; margin-top:4px;">${esc(detailSummary)}</div>` : ''}
+        <button type="button" id="bulk_comment_toggle_${esc(uid)}" onclick="toggleBulkWorkMemoComment_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin-top:10px; padding:8px 10px; border-radius:8px; border:1px solid #B0BEC5; background:${commentOpen ? '#ECEFF1' : '#fff'}; color:#37474F; font-weight:bold; font-size:12px; cursor:pointer; text-align:left; line-height:1.35;">
+          ${commentOpen ? '▼ コメントを閉じる' : '▶ コメント'}
+          ${commentSummary ? `<div style="font-size:11px; font-weight:normal; color:#607D8B; margin-top:3px;">${esc(commentSummary)}</div>` : ''}
         </button>
-        <div id="bulk_detail_panel_${esc(uid)}" style="display:${detailOpen ? 'block' : 'none'}; margin-top:10px; padding-top:10px; border-top:1px dashed #CFD8DC;">
+        <div id="bulk_comment_panel_${esc(uid)}" style="display:${commentOpen ? 'block' : 'none'}; margin-top:8px; padding-top:8px; border-top:1px dashed #CFD8DC;">
           <div style="font-size:11px; color:#888; margin-bottom:8px; line-height:1.35;">元メモ: ${esc(d.rawLine)}</div>
-          <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;">
-            <button type="button" id="bulk_match_next_${esc(uid)}" onclick="matchBulkWorkMemoEndToNextStart_('${esc(uid)}')" ${hasNextStart ? '' : 'disabled'} style="width:100%; box-sizing:border-box; padding:7px 8px; border-radius:8px; font-size:11px; font-weight:bold; cursor:${hasNextStart ? 'pointer' : 'not-allowed'}; border:1px solid #CE93D8; background:${hasNextStart ? '#F3E5F5' : '#f5f5f5'}; color:${hasNextStart ? '#6A1B9A' : '#999'}; line-height:1.3; opacity:${hasNextStart ? '1' : '0.7'};">${nextStartBtnLabel}</button>
-            <button type="button" id="bulk_match_end_start_${esc(uid)}" onclick="matchBulkWorkMemoEndToStart_('${esc(uid)}')" ${hasStart ? '' : 'disabled'} style="width:100%; box-sizing:border-box; padding:7px 8px; border-radius:8px; font-size:11px; font-weight:bold; cursor:${hasStart ? 'pointer' : 'not-allowed'}; border:1px solid #90CAF9; background:${hasStart ? '#E3F2FD' : '#f5f5f5'}; color:${hasStart ? '#1565C0' : '#999'}; line-height:1.3; opacity:${hasStart ? '1' : '0.7'};">▶️ この開始時間に合わせる</button>
-          </div>
-          ${workDetails}
-          <label style="font-size:10px; color:#555; font-weight:bold; margin-top:8px; display:block;">💬 コメント（補足）</label>
+          <label style="font-size:10px; color:#555; font-weight:bold; display:block;">💬 コメント（補足）</label>
           <textarea id="bulk_comment_${esc(uid)}" class="form-input" rows="2" placeholder="伝達事項・補足メモなど（任意）" onchange="updateBulkWorkMemoDraftField_('${esc(uid)}','comment', this.value)" oninput="updateBulkWorkMemoDraftField_('${esc(uid)}','comment', this.value)" style="margin:4px 0 0; font-size:12px; line-height:1.4; resize:vertical; min-height:52px;">${esc(d.comment || '')}</textarea>
         </div>
       </div>`;
@@ -38602,8 +38601,7 @@ window.renderBulkWorkMemoManualAddModal_ = () => {
   const workCore = isRest ? '' : `
     ${window.buildBulkWorkMemoWorkPickSectionHtml_(d, uid)}
     <div id="bulk_crop_pick_${esc(uid)}">${window.buildBulkWorkMemoCropPickSectionHtml_(d, uid)}</div>
-    ${fieldHtml}`;
-  const workDetails = isRest ? '' : `
+    ${fieldHtml}
     <div id="bulk_extras_${esc(uid)}">${window.buildBulkWorkMemoExtrasHtml_(d, uid)}</div>
     ${typeof window.buildBulkWorkMemoCardWorkAdminBarHtml_ === 'function' ? window.buildBulkWorkMemoCardWorkAdminBarHtml_(d, uid) : ''}`;
   const prevEndHint = window.getBulkWorkMemoPrevEndHint_(uid);
@@ -38616,10 +38614,13 @@ window.renderBulkWorkMemoManualAddModal_ = () => {
     : '▶️ 次の開始に合わせる';
   const hasStart = !!String(d.startTime || '').trim();
   const hasNextStart = !!nextStartHint;
-  const detailOpen = d._detailOpen === true;
-  const detailSummary = (typeof window.getBulkWorkMemoCardDetailSummary_ === 'function')
-    ? window.getBulkWorkMemoCardDetailSummary_(d)
+  const timeAdjustOpen = d._timeAdjustOpen === true;
+  const commentOpen = d._commentOpen === true;
+  const hasComment = !!String(d.comment || '').trim();
+  const timeAdjustSummary = (!timeAdjustOpen && nextStartHint)
+    ? `次の開始 ${nextStartHint}`
     : '';
+  const commentSummary = (!commentOpen && hasComment) ? 'コメントあり' : '';
   window.fillAppModalHtml_(`
     <div id="bulk_work_memo_manual_add_scroll" style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
       ${window.buildBulkWorkMemoModalHeaderHtml_('➕ 作業を追加', `作業日 <b>${esc(ymd)}</b> に追加する行を入力してください。`)}
@@ -38633,20 +38634,25 @@ window.renderBulkWorkMemoManualAddModal_ = () => {
           <input type="text" class="form-input app-time-input" readonly inputmode="none" value="${esc(d.endTime)}" onclick="if(window.openAppTimePicker) window.openAppTimePicker(this.id, '終了')" id="bulk_end_${esc(uid)}" onchange="updateBulkWorkMemoDraftField_('${esc(uid)}','endTime', this.value)" style="margin:0; text-align:center; font-weight:bold;">
         </div>
       </div>
-      <button type="button" id="bulk_match_prev_${esc(uid)}" onclick="matchBulkWorkMemoStartToPrevEnd_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin:0 0 10px; padding:8px 10px; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid #A5D6A7; background:#E8F5E9; color:#2E7D32; line-height:1.3;">${prevEndBtnLabel}</button>
-      ${kindSwitch}
-      ${restBody}${workCore}
-      <button type="button" id="bulk_detail_toggle_${esc(uid)}" onclick="toggleBulkWorkMemoCardDetail_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin-top:10px; padding:10px 12px; border-radius:10px; border:1px solid #B0BEC5; background:${detailOpen ? '#ECEFF1' : '#fff'}; color:#37474F; font-weight:bold; font-size:13px; cursor:pointer; text-align:left; line-height:1.35;">
-        ${detailOpen ? '▼ 詳細を閉じる' : '▶ 詳細を開く'}
-        ${(!detailOpen && detailSummary) ? `<div style="font-size:11px; font-weight:normal; color:#607D8B; margin-top:4px;">${esc(detailSummary)}</div>` : ''}
+      <button type="button" id="bulk_match_prev_${esc(uid)}" onclick="matchBulkWorkMemoStartToPrevEnd_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin:0 0 6px; padding:8px 10px; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid #A5D6A7; background:#E8F5E9; color:#2E7D32; line-height:1.3;">${prevEndBtnLabel}</button>
+      <button type="button" id="bulk_time_adjust_toggle_${esc(uid)}" onclick="toggleBulkWorkMemoTimeAdjust_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin:0 0 10px; padding:8px 10px; border-radius:8px; border:1px solid #CE93D8; background:${timeAdjustOpen ? '#F3E5F5' : '#fff'}; color:#6A1B9A; font-weight:bold; font-size:12px; cursor:pointer; text-align:left; line-height:1.35;">
+        ${timeAdjustOpen ? '▼ 時間の調整を閉じる' : '▶ 時間の調整'}
+        ${timeAdjustSummary ? `<div style="font-size:11px; font-weight:normal; color:#8E24AA; margin-top:3px;">${esc(timeAdjustSummary)}</div>` : ''}
       </button>
-      <div id="bulk_detail_panel_${esc(uid)}" style="display:${detailOpen ? 'block' : 'none'}; margin:10px 0 12px; padding-top:10px; border-top:1px dashed #CFD8DC;">
-        <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;">
+      <div id="bulk_time_adjust_panel_${esc(uid)}" style="display:${timeAdjustOpen ? 'block' : 'none'}; margin:0 0 10px; padding:8px 0 0;">
+        <div style="display:flex; flex-direction:column; gap:6px;">
           <button type="button" id="bulk_match_next_${esc(uid)}" onclick="matchBulkWorkMemoEndToNextStart_('${esc(uid)}')" ${hasNextStart ? '' : 'disabled'} style="width:100%; box-sizing:border-box; padding:7px 8px; border-radius:8px; font-size:11px; font-weight:bold; cursor:${hasNextStart ? 'pointer' : 'not-allowed'}; border:1px solid #CE93D8; background:${hasNextStart ? '#F3E5F5' : '#f5f5f5'}; color:${hasNextStart ? '#6A1B9A' : '#999'}; line-height:1.3; opacity:${hasNextStart ? '1' : '0.7'};">${nextStartBtnLabel}</button>
           <button type="button" id="bulk_match_end_start_${esc(uid)}" onclick="matchBulkWorkMemoEndToStart_('${esc(uid)}')" ${hasStart ? '' : 'disabled'} style="width:100%; box-sizing:border-box; padding:7px 8px; border-radius:8px; font-size:11px; font-weight:bold; cursor:${hasStart ? 'pointer' : 'not-allowed'}; border:1px solid #90CAF9; background:${hasStart ? '#E3F2FD' : '#f5f5f5'}; color:${hasStart ? '#1565C0' : '#999'}; line-height:1.3; opacity:${hasStart ? '1' : '0.7'};">▶️ この開始時間に合わせる</button>
         </div>
-        ${workDetails}
-        <label style="font-size:10px; color:#555; font-weight:bold; margin-top:8px; display:block;">💬 コメント（任意）</label>
+      </div>
+      ${kindSwitch}
+      ${restBody}${workCore}
+      <button type="button" id="bulk_comment_toggle_${esc(uid)}" onclick="toggleBulkWorkMemoComment_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin:10px 0 0; padding:8px 10px; border-radius:8px; border:1px solid #B0BEC5; background:${commentOpen ? '#ECEFF1' : '#fff'}; color:#37474F; font-weight:bold; font-size:12px; cursor:pointer; text-align:left; line-height:1.35;">
+        ${commentOpen ? '▼ コメントを閉じる' : '▶ コメント'}
+        ${commentSummary ? `<div style="font-size:11px; font-weight:normal; color:#607D8B; margin-top:3px;">${esc(commentSummary)}</div>` : ''}
+      </button>
+      <div id="bulk_comment_panel_${esc(uid)}" style="display:${commentOpen ? 'block' : 'none'}; margin:8px 0 12px; padding-top:8px; border-top:1px dashed #CFD8DC;">
+        <label style="font-size:10px; color:#555; font-weight:bold; display:block;">💬 コメント（任意）</label>
         <textarea id="bulk_comment_${esc(uid)}" class="form-input" rows="2" placeholder="補足メモなど" onchange="updateBulkWorkMemoDraftField_('${esc(uid)}','comment', this.value)" oninput="updateBulkWorkMemoDraftField_('${esc(uid)}','comment', this.value)" style="margin:4px 0 0; font-size:12px; line-height:1.4; resize:vertical; min-height:52px;">${esc(d.comment || '')}</textarea>
       </div>
       <button type="button" onclick="confirmBulkWorkMemoManualAdd_()" style="width:100%; background:#2E7D32; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">✅ 追加して確認画面に戻る</button>
