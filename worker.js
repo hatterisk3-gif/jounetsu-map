@@ -37393,6 +37393,12 @@ window.toggleBulkAssetMoveAddKind_ = (kind) => {
   window.renderBulkAssetMoveModal_();
 };
 
+window.setBulkAssetMoveDestMode_ = (mode) => {
+  const next = String(mode || '').trim() === 'individual' ? 'individual' : 'bulk';
+  window._bulkAssetMoveDestMode = next;
+  window.renderBulkAssetMoveModal_();
+};
+
 window.renderBulkAssetMoveModal_ = () => {
   const uid = window._bulkAssetMoveModalUid;
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
@@ -37401,7 +37407,9 @@ window.renderBulkAssetMoveModal_ = () => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const kindLabel = { machine: '🚜 機械', material: '📦 資材', tool: '🔧 道具' };
   const addKind = String(window._bulkAssetMoveAddKind || '').trim();
+  const destMode = String(window._bulkAssetMoveDestMode || 'bulk') === 'individual' ? 'individual' : 'bulk';
   const selectedKeys = new Set(moves.map(a => `${a.kind}\0${a.id || ''}\0${a.name || ''}`));
+  const doneCount = moves.filter(a => a && a.toId).length;
   const sections = ['machine', 'material', 'tool'].map((kind) => {
     const list = moves.filter(a => a && a.kind === kind);
     if (!list.length) return '';
@@ -37411,14 +37419,17 @@ window.renderBulkAssetMoveModal_ = () => {
       const toLabel = a.toName
         ? `✅ ${esc(a.toName)}`
         : '<span style="color:#888;">未選択</span>';
+      const locBtn = destMode === 'individual'
+        ? `<button type="button" onclick="openBulkAssetMoveLocSelect_('${esc(uid)}','${kind}','${safeId}')" style="width:100%; box-sizing:border-box; padding:10px; border-radius:8px; border:1px solid #2196F3; background:#E3F2FD; color:#1565C0; font-weight:bold; font-size:13px; cursor:pointer;">🗺️ 運搬先を地図で選ぶ</button>`
+        : '';
       return `<div style="background:#fff; border:1px solid #e0e0e0; border-radius:10px; padding:10px 12px; margin-bottom:8px;">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:6px;">
           <div style="font-weight:bold; font-size:14px; color:#333; flex:1; min-width:0;">${esc(a.name || a.id)}</div>
           <button type="button" onclick="removeBulkAssetMoveItem_('${esc(uid)}','${kind}','${safeId}','${safeName}')" style="flex-shrink:0; background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">削除</button>
         </div>
         <div style="font-size:12px; color:#555; margin-bottom:4px;">現在地: <b>${esc(a.fromName || '（未設定）')}</b></div>
-        <div style="font-size:12px; color:#555; margin-bottom:8px;">運搬先: ${toLabel}</div>
-        <button type="button" onclick="openBulkAssetMoveLocSelect_('${esc(uid)}','${kind}','${safeId}')" style="width:100%; box-sizing:border-box; padding:10px; border-radius:8px; border:1px solid #2196F3; background:#E3F2FD; color:#1565C0; font-weight:bold; font-size:13px; cursor:pointer;">🗺️ 運搬先を地図で選ぶ</button>
+        <div style="font-size:12px; color:#555; margin-bottom:${locBtn ? '8px' : '0'};">運搬先: ${toLabel}</div>
+        ${locBtn}
       </div>`;
     }).join('');
     return `<div style="margin-bottom:14px;">
@@ -37448,6 +37459,19 @@ window.renderBulkAssetMoveModal_ = () => {
       <div style="display:flex; flex-wrap:wrap; gap:6px; max-height:160px; overflow-y:auto;">${chips}</div>
     </div>`;
   })() : '';
+  const modeToggle = moves.length ? `
+    <div style="display:flex; gap:6px; margin-bottom:10px;">
+      <button type="button" onclick="setBulkAssetMoveDestMode_('bulk')" style="flex:1; box-sizing:border-box; padding:10px 8px; border-radius:8px; border:2px solid ${destMode === 'bulk' ? '#1565C0' : '#BBDEFB'}; background:${destMode === 'bulk' ? '#E3F2FD' : '#fff'}; color:#0D47A1; font-weight:bold; font-size:12px; cursor:pointer;">まとめて登録</button>
+      <button type="button" onclick="setBulkAssetMoveDestMode_('individual')" style="flex:1; box-sizing:border-box; padding:10px 8px; border-radius:8px; border:2px solid ${destMode === 'individual' ? '#1565C0' : '#BBDEFB'}; background:${destMode === 'individual' ? '#E3F2FD' : '#fff'}; color:#0D47A1; font-weight:bold; font-size:12px; cursor:pointer;">個別に登録</button>
+    </div>
+    <div style="font-size:11px; color:#546E7A; margin:0 0 10px; line-height:1.4;">${destMode === 'bulk'
+      ? '同じ運搬先を、追加した移動物すべてに一度で設定します。'
+      : '移動物ごとに、別々の運搬先を地図で選べます。'}</div>
+    ${destMode === 'bulk' ? `
+      <button type="button" onclick="openBulkAssetMoveLocSelectAll_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin:0 0 12px; padding:12px; border-radius:10px; border:2px solid #1565C0; background:#1565C0; color:#fff; font-weight:bold; font-size:14px; cursor:pointer;">
+        🗺️ 全員同じ運搬先を地図で選ぶ<br>
+        <span style="font-size:11px; font-weight:normal; opacity:0.9;">対象 ${moves.length}件${doneCount ? `（設定済 ${doneCount}件）` : ''}</span>
+      </button>` : ''}` : '';
   const body = moves.length
     ? sections
     : `<div style="padding:16px; text-align:center; color:#666; font-size:13px; line-height:1.5; background:#fff; border-radius:10px; margin-bottom:10px;">移動する物がまだありません。<br>下のボタンから追加してください。</div>`;
@@ -37472,6 +37496,7 @@ window.renderBulkAssetMoveModal_ = () => {
           <button type="button" onclick="toggleBulkAssetMoveAddKind_('tool')" style="flex:1; min-width:90px; box-sizing:border-box; padding:10px 8px; border-radius:8px; border:1px solid ${addKind === 'tool' ? '#1565C0' : '#BBDEFB'}; background:${addKind === 'tool' ? '#1565C0' : '#fff'}; color:${addKind === 'tool' ? '#fff' : '#1565C0'}; font-weight:bold; font-size:12px; cursor:pointer;">＋ 道具</button>
         </div>
         ${addPicker}
+        ${modeToggle}
         ${body}
       </div>
       <div style="padding:12px 14px; border-top:1px solid #ddd; background:#fff;">
@@ -37480,8 +37505,19 @@ window.renderBulkAssetMoveModal_ = () => {
     </div>`;
 };
 
-window.openBulkAssetMoveLocSelect_ = (uid, kind, assetId) => {
-  window._bulkAssetMoveSelect = { uid: String(uid || ''), kind: String(kind || ''), assetId: String(assetId || '') };
+window.openBulkAssetMoveLocSelectAll_ = (uid) => {
+  window.openBulkAssetMoveLocSelect_(uid, '', '', { applyAll: true });
+};
+
+window.openBulkAssetMoveLocSelect_ = (uid, kind, assetId, opts) => {
+  opts = opts || {};
+  const applyAll = !!opts.applyAll;
+  window._bulkAssetMoveSelect = {
+    uid: String(uid || ''),
+    kind: String(kind || ''),
+    assetId: String(assetId || ''),
+    applyAll: applyAll
+  };
   window.selectingMachineIdForLoc = '__bulk_asset_move__';
   const modal = document.getElementById('bulk_asset_move_modal');
   if (modal) modal.style.display = 'none';
@@ -37500,7 +37536,7 @@ window.openBulkAssetMoveLocSelect_ = (uid, kind, assetId) => {
   const selectUI = document.getElementById('mapSelectUI');
   if (selectUI) {
     selectUI.innerHTML = `
-      <div style="width:100%; text-align:center; font-weight:bold; font-size:14px; margin-bottom:5px;">🗺️ 運搬先の看板・圃場をタップ</div>
+      <div style="width:100%; text-align:center; font-weight:bold; font-size:14px; margin-bottom:5px;">🗺️ ${applyAll ? '全員の運搬先になる看板・圃場をタップ' : '運搬先の看板・圃場をタップ'}</div>
       <button onclick="cancelBulkAssetMoveLocSelect_()" style="width:100%; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">キャンセル</button>
     `;
     selectUI.style.display = 'flex';
@@ -37551,11 +37587,21 @@ window.applyBulkAssetMoveLocSelect_ = (polyId) => {
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === sel.uid);
   if (row) {
     window.ensureBulkAssetMovesSynced_(row);
-    const move = (row.assetMoves || []).find(a => a && a.kind === sel.kind
-      && (String(a.id || '') === String(sel.assetId) || String(a.name || '') === String(sel.assetId)));
-    if (move) {
-      move.toId = String(polyId);
-      move.toName = String(p.name || '').trim();
+    const toId = String(polyId);
+    const toName = String(p.name || '').trim();
+    if (sel.applyAll) {
+      (row.assetMoves || []).forEach((a) => {
+        if (!a || !(a.id || a.name)) return;
+        a.toId = toId;
+        a.toName = toName;
+      });
+    } else {
+      const move = (row.assetMoves || []).find(a => a && a.kind === sel.kind
+        && (String(a.id || '') === String(sel.assetId) || String(a.name || '') === String(sel.assetId)));
+      if (move) {
+        move.toId = toId;
+        move.toName = toName;
+      }
     }
   }
   window._bulkAssetMoveSelect = null;
