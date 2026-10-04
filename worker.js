@@ -30000,9 +30000,9 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
     concurrentWorks: (work.isRest || !Array.isArray(concurrentGuess.concurrentWorks))
       ? []
       : concurrentGuess.concurrentWorks.slice(),
-    usedMachines: (uiFlags.showMachine || mentionedMachines.length) ? mentionedMachines : [],
-    usedMaterials: (uiFlags.showMaterial || mentionedMaterials.length) ? mentionedMaterials : [],
-    usedTools: (uiFlags.showTool || mentionedTools.length) ? mentionedTools : [],
+    usedMachines: (uiFlags.isDelivery || !uiFlags.showMachine) ? [] : (mentionedMachines.length ? mentionedMachines : []),
+    usedMaterials: (uiFlags.isDelivery || !uiFlags.showMaterial) ? [] : (mentionedMaterials.length ? mentionedMaterials : []),
+    usedTools: (uiFlags.isDelivery || !uiFlags.showTool) ? [] : (mentionedTools.length ? mentionedTools : []),
     assetMoves: [],
     usedPesticides: uiFlags.showPesticide ? (window.guessBulkWorkMemoPesticides_(workMatchText) || []) : [],
     _pestSearchQ: '',
@@ -31370,10 +31370,11 @@ window.getBulkWorkMemoUiFlags_ = (draft) => {
   };
   const hasMats = Array.isArray(draft && draft.usedMaterials) && draft.usedMaterials.some(m => m && (m.id || m.name));
   const hasTools = Array.isArray(draft && draft.usedTools) && draft.usedTools.some(t => t && (t.id || t.name));
+  // 運搬は「移動物の置き場所」で扱う。使用機械／資材／道具のチェックUIは出さない
   return {
-    showMachine: isDelivery || isMachineryCat ? true : pick(w && w.showMachine, inferred.showMachine),
-    showMaterial: hasMats || isDelivery ? true : pick(w && w.showMaterial, inferred.showMaterial),
-    showTool: hasTools || isDelivery ? true : false,
+    showMachine: isDelivery ? false : (isMachineryCat ? true : pick(w && w.showMachine, inferred.showMachine)),
+    showMaterial: isDelivery ? false : (hasMats ? true : pick(w && w.showMaterial, inferred.showMaterial)),
+    showTool: isDelivery ? false : (hasTools ? true : false),
     showPesticide: pick(w && w.showPesticide, inferred.showPesticide),
     showField: pick(w && w.showField, inferred.showField),
     isPrep: false,
@@ -31521,6 +31522,9 @@ window.getBulkWorkMemoToolList_ = (draft) => {
 
 window.applyBulkWorkMemoAssetGuesses_ = (row) => {
   if (!row || row.isRest) return row;
+  if (typeof window.bulkWorkMemoIsDelivery_ === 'function' && window.bulkWorkMemoIsDelivery_(row)) {
+    return row;
+  }
   const base = {
     workName: row.workName,
     category: row.category,
@@ -31540,7 +31544,8 @@ window.applyBulkWorkMemoAssetGuesses_ = (row) => {
 
 window.getBulkWorkMemoMachineList_ = (draft) => {
   const flags = window.getBulkWorkMemoUiFlags_(draft || {});
-  if (!flags.showMachine) return [];
+  // 運搬の移動物追加でも一覧が必要なので isDelivery は許可
+  if (!flags.showMachine && !flags.isDelivery) return [];
   if (window.bulkWorkMemoIsMaintenance_(draft)) return [];
   const machines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
   if (!machines.length) return [];
@@ -33669,7 +33674,7 @@ window.getBulkWorkMemoManualWorkList_ = (d) => {
     fallbackNote = `「${filterCat}」に該当する作業がないため、すべての作業を表示しています。`;
   }
   if (!names.length) {
-    fallbackNote = '作業マスタが空です。「＋ マスタにない作業を登録」から追加できます。';
+    fallbackNote = '作業マスタが空です。「＋ 新しい作業を追加」から追加できます。';
   }
   return { names, fallbackNote, filterCat };
 };
@@ -35203,19 +35208,22 @@ window.buildBulkWorkMemoWorkPickSectionHtml_ = (d, uid) => {
   const catLine = selectedCat
     ? (isMeta
       ? `<div style="font-size:11px; color:#6A1B9A; margin:0 0 8px; line-height:1.45;">カテゴリ: <b>${esc(selectedCat)}</b><br>対象カテゴリ: <b>${esc(d.prepTargetCategory || '（未選択＝すべて）')}</b><br>対象作業名: <b>${esc(metaTarget || '（未選択）')}</b></div>`
-      : (!workListOpen ? `<div style="font-size:11px; color:#3949AB; margin:0 0 8px;">カテゴリ: <b>${esc(selectedCat)}</b>（作業名から自動）</div>` : ''))
+      : (cur ? `<div style="font-size:11px; color:#546E7A; margin:8px 0 6px;">カテゴリ　<b style="color:#37474F;">${esc(selectedCat)}</b></div>` : ''))
     : '';
   const closeBtn = cur
-    ? `<button type="button" onclick="collapseBulkWorkMemoWorkPick_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin:0; padding:10px 12px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:1px solid ${isMeta ? '#CE93D8' : '#FFCC80'}; background:${isMeta ? '#F3E5F5' : '#FFF3E0'}; color:${isMeta ? '#6A1B9A' : '#E65100'};">閉じる（選択を確定）</button>`
+    ? `<button type="button" onclick="collapseBulkWorkMemoWorkPick_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin:0; padding:12px; border-radius:10px; font-size:14px; font-weight:bold; cursor:pointer; border:none; background:${isMeta ? '#8E24AA' : '#E65100'}; color:#fff;">この作業名で確定</button>`
     : '';
   const metaAddBtn = (isMeta && cur && typeof window.buildBulkWorkMemoPrepAddItemBtnHtml_ === 'function')
     ? window.buildBulkWorkMemoPrepAddItemBtnHtml_(d, uid)
     : '';
   const manualHtml = window.buildBulkWorkMemoWorkManualPickHtml_(d, uid) || '';
-  // 「手動で探して登録」〜「閉じる」を薄いオレンジ枠でまとめて見やすくする
+  // 一覧トグル →（開時）一覧＋追加／管理 → カテゴリ → 確定
   const pickTail = `${manualHtml}${catLine}${closeBtn}`;
   const framedPick = String(pickTail).replace(/\s+/g, '')
-    ? `<div style="margin:0 0 10px; padding:12px; border:2px solid #FFCC80; border-radius:12px; background:#FFF8F0; box-sizing:border-box;">${pickTail}</div>`
+    ? `<div style="margin:0 0 10px; padding:12px; border:2px solid #FFCC80; border-radius:12px; background:#FFF8F0; box-sizing:border-box;">
+        <div style="font-size:12px; font-weight:bold; color:#E65100; margin:0 0 8px;">🚜 作業名を選ぶ</div>
+        ${pickTail}
+      </div>`
     : '';
   return `${metaHtml}${suggestionBlock}${framedPick}${metaAddBtn}`;
 };
@@ -35287,7 +35295,7 @@ window.buildBulkWorkMemoWorkChipsHtml_ = (d, uid) => {
   names = names.filter(Boolean).slice(0, 8);
   maybeNames = maybeNames.filter(Boolean).slice(0, 4);
   if (!names.length && !maybeNames.length) {
-    return '<div style="font-size:11px; color:#888; margin-bottom:8px;">メモから近い作業名が見つかりません。下の「手動で探して登録」から選んでください。</div>';
+    return '<div style="font-size:11px; color:#888; margin-bottom:8px;">メモから近い作業名が見つかりません。下の「一覧から選ぶ」から選んでください。</div>';
   }
   const aliasNote = Object.keys(aliasHints).length
     ? `<div style="font-size:11px; color:#E65100; margin:0 0 6px; line-height:1.35;">📝 メモの呼び方が、作業マスタの<strong>類似作業名</strong>に一致しました。タップで選択できます。</div>`
@@ -35303,7 +35311,7 @@ window.buildBulkWorkMemoWorkChipsHtml_ = (d, uid) => {
   return html;
 };
 
-/** 合いそうな作業名の下：マスタから手動で探す */
+/** 合いそうな作業名の下：マスタ一覧から選ぶ */
 window.buildBulkWorkMemoWorkManualPickHtml_ = (d, uid) => {
   if (window.bulkWorkMemoIsRestDraft_(d)) return '';
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -35311,18 +35319,23 @@ window.buildBulkWorkMemoWorkManualPickHtml_ = (d, uid) => {
   const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
   // 閉じているときは全作業チップを生成しない（件数×マスタ数で確認画面が落ちるのを防ぐ）
   const listHtml = workListOpen ? window.buildBulkWorkMemoAllWorkChipsHtml_(d, uid) : '';
+  const listExtras = workListOpen ? `
+      <div style="margin-top:10px; padding-top:10px; border-top:1px dashed #FFCC80;">
+        <div style="font-size:11px; color:#666; margin:0 0 6px; line-height:1.35;">見つからないとき</div>
+        <button type="button" onclick="window._bulkWorkMemoMasterEditUid='${esc(uid)}'; adminAddWorkName()" style="width:100%; box-sizing:border-box; background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:8px; padding:10px 12px; font-size:13px; font-weight:bold; cursor:pointer; margin-bottom:${isAdmin ? '8px' : '0'};">＋ 新しい作業を追加</button>
+        ${isAdmin ? `<div style="display:flex; flex-wrap:wrap; gap:6px;">
+          <button type="button" onclick="window._bulkWorkMemoMasterEditUid='${esc(uid)}'; openWorkMasterManager()" style="flex:1; min-width:120px; box-sizing:border-box; background:#fff; color:#E65100; border:1px solid #FFCC80; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">マスタ管理</button>
+          <button type="button" onclick="openCategoryMasterManager()" style="flex:1; min-width:120px; box-sizing:border-box; background:#fff; color:#1565c0; border:1px solid #90caf9; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">カテゴリ管理</button>
+        </div>` : ''}
+      </div>` : '';
   return `
-    <button type="button" onclick="toggleBulkWorkMemoWorkList_('${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:10px 14px; margin-bottom:${workListOpen ? '8px' : '8px'}; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid #FF9800; background:${workListOpen ? '#FFF3E0' : '#fff'}; color:#E65100; text-align:left; display:flex; justify-content:space-between; align-items:center;">
-      <span>🔍 手動で探して登録</span>
+    <button type="button" onclick="toggleBulkWorkMemoWorkList_('${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:10px 14px; margin-bottom:${workListOpen ? '8px' : '0'}; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid #FF9800; background:${workListOpen ? '#FFF3E0' : '#fff'}; color:#E65100; text-align:left; display:flex; justify-content:space-between; align-items:center;">
+      <span>📋 一覧から選ぶ</span>
       <span style="font-size:11px; font-weight:normal; opacity:0.85;">${workListOpen ? '▲ 閉じる' : '▼ 開く'}</span>
     </button>
-    <div id="bulk_work_list_${esc(uid)}" style="display:${workListOpen ? 'block' : 'none'}; margin-bottom:8px;">
+    <div id="bulk_work_list_${esc(uid)}" style="display:${workListOpen ? 'block' : 'none'}; margin-bottom:${workListOpen ? '0' : '0'};">
       ${listHtml}
-    </div>
-    <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:8px;">
-      <button type="button" onclick="window._bulkWorkMemoMasterEditUid='${esc(uid)}'; adminAddWorkName()" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer;">＋ マスタにない作業を登録</button>
-      ${isAdmin ? `<button type="button" onclick="window._bulkWorkMemoMasterEditUid='${esc(uid)}'; openWorkMasterManager()" style="background:#fff3e0; color:#e65100; border:1px solid #ffb74d; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer;">📋 作業マスタ管理</button>
-      <button type="button" onclick="openCategoryMasterManager()" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer;">📂 カテゴリ管理</button>` : ''}
+      ${listExtras}
     </div>`;
 };
 
@@ -35347,7 +35360,7 @@ window.buildBulkWorkMemoAllWorkChipsHtml_ = (d, uid) => {
       ${window.buildBulkWorkMemoCategoryChipsHtml_(d, uid)}
       <input type="search" placeholder="作業名を絞り込み（誤字も候補表示）…" oninput="filterBulkWorkMemoAllWorkChips_(this, '${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #FFCC80; border-radius:8px; font-size:13px; margin-bottom:8px;">
       <div class="bulk-work-fuzzy-row" id="bulk_work_fuzzy_${esc(uid)}" style="display:none; margin-bottom:8px;"></div>
-      <div class="bulk-work-all-chips" style="display:flex; flex-wrap:wrap; gap:6px; max-height:180px; overflow-y:auto; padding:4px 2px;">${chips || '<span style="font-size:11px; color:#888;">該当する作業がありません。上の「＋ マスタにない作業を登録」から追加できます。</span>'}</div>
+      <div class="bulk-work-all-chips" style="display:flex; flex-wrap:wrap; gap:6px; max-height:180px; overflow-y:auto; padding:4px 2px;">${chips || '<span style="font-size:11px; color:#888;">該当する作業がありません。下の「＋ 新しい作業を追加」から追加できます。</span>'}</div>
     </div>`;
 };
 
@@ -35702,16 +35715,16 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
       });
     }
     if (flags.isDelivery || (typeof window.bulkWorkMemoIsDelivery_ === 'function' && window.bulkWorkMemoIsDelivery_(d))) {
-      const moves = Array.isArray(d.assetMoves) ? d.assetMoves.filter(a => a && a.toId) : [];
-      const selCount = (Array.isArray(d.usedMachines) ? d.usedMachines.length : 0)
-        + (Array.isArray(d.usedMaterials) ? d.usedMaterials.length : 0)
-        + (Array.isArray(d.usedTools) ? d.usedTools.length : 0);
-      const summary = moves.length
-        ? `運搬先設定済 ${moves.length}件`
-        : (selCount ? `対象 ${selCount}件（運搬先未設定）` : '機械・資材・道具を選んでから開く');
+      const allMoves = Array.isArray(d.assetMoves) ? d.assetMoves.filter(a => a && (a.id || a.name)) : [];
+      const doneMoves = allMoves.filter(a => a && a.toId);
+      const summary = allMoves.length
+        ? (doneMoves.length === allMoves.length
+          ? `運搬先設定済 ${doneMoves.length}件`
+          : `対象 ${allMoves.length}件（運搬先 ${doneMoves.length}/${allMoves.length}）`)
+        : '移動する物を追加して運搬先を指定';
       html += `<div style="margin:10px 0 8px;">
         <button type="button" onclick="openBulkAssetMoveModal_('${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:12px 14px; border-radius:10px; border:2px solid #1565C0; background:#E3F2FD; color:#0D47A1; font-weight:bold; font-size:14px; cursor:pointer; text-align:left; line-height:1.4;">
-          🚚 移動物の置き場所を登録<br><span style="font-size:11px; font-weight:normal; color:#546E7A;">${esc(summary)} — 現在地→運搬先</span>
+          🚚 移動物の置き場所を登録<br><span style="font-size:11px; font-weight:normal; color:#546E7A;">${esc(summary)}</span>
         </button>
       </div>`;
     }
@@ -36617,15 +36630,19 @@ window.pickBulkWorkMemoWorkName_ = (uid, name) => {
       }
     }
   }
-  row.usedMachines = (typeof window.guessBulkWorkMemoMachinesFromMemo_ === 'function')
-    ? window.mergeBulkWorkMemoAssetItems_(row.usedMachines, window.guessBulkWorkMemoMachinesFromMemo_(row))
-    : (Array.isArray(row.usedMachines) ? row.usedMachines : []);
-  row.usedMaterials = (typeof window.guessBulkWorkMemoMaterialsFromMemo_ === 'function')
-    ? window.mergeBulkWorkMemoAssetItems_(row.usedMaterials, window.guessBulkWorkMemoMaterialsFromMemo_(row))
-    : (Array.isArray(row.usedMaterials) ? row.usedMaterials : []);
-  row.usedTools = (typeof window.guessBulkWorkMemoToolsFromMemo_ === 'function')
-    ? window.mergeBulkWorkMemoAssetItems_(row.usedTools, window.guessBulkWorkMemoToolsFromMemo_(row))
-    : (Array.isArray(row.usedTools) ? row.usedTools : []);
+  const pickingDelivery = (typeof window.bulkWorkMemoIsDelivery_ === 'function')
+    && window.bulkWorkMemoIsDelivery_(row);
+  if (!pickingDelivery) {
+    row.usedMachines = (typeof window.guessBulkWorkMemoMachinesFromMemo_ === 'function')
+      ? window.mergeBulkWorkMemoAssetItems_(row.usedMachines, window.guessBulkWorkMemoMachinesFromMemo_(row))
+      : (Array.isArray(row.usedMachines) ? row.usedMachines : []);
+    row.usedMaterials = (typeof window.guessBulkWorkMemoMaterialsFromMemo_ === 'function')
+      ? window.mergeBulkWorkMemoAssetItems_(row.usedMaterials, window.guessBulkWorkMemoMaterialsFromMemo_(row))
+      : (Array.isArray(row.usedMaterials) ? row.usedMaterials : []);
+    row.usedTools = (typeof window.guessBulkWorkMemoToolsFromMemo_ === 'function')
+      ? window.mergeBulkWorkMemoAssetItems_(row.usedTools, window.guessBulkWorkMemoToolsFromMemo_(row))
+      : (Array.isArray(row.usedTools) ? row.usedTools : []);
+  }
   if (!Array.isArray(row.assetMoves)) row.assetMoves = [];
   if (row.usedMachines.length) row._machinePickOpen = false;
   if (row.usedMaterials.length) row._materialPickOpen = false;
@@ -36675,7 +36692,13 @@ window.pickBulkWorkMemoWorkName_ = (uid, name) => {
       row.maintenanceTargetKind = '';
       row.maintenanceTargets = [];
     }
-    if (!flags.showMachine) row.usedMachines = [];
+    if (!flags.showMachine && !flags.isDelivery) row.usedMachines = [];
+    if (!flags.showMaterial && !flags.isDelivery) row.usedMaterials = [];
+    if (!flags.showTool && !flags.isDelivery) row.usedTools = [];
+  }
+  if (flags.isDelivery && typeof window.ensureBulkAssetMovesSynced_ === 'function') {
+    // 移動物はモーダル側が正。used* を合わせる（メモ推定では載せない）
+    window.ensureBulkAssetMovesSynced_(row);
   }
   if (flags.isPrep) {
     // 準備本体作業を選んだときだけ対象をクリア（カテゴリ経由で対象作業を選んだ場合は上でセット済み）
@@ -37068,6 +37091,37 @@ window.getBulkAssetCurrentLoc_ = (kind, id, name) => {
 window.ensureBulkAssetMovesSynced_ = (row) => {
   if (!row) return [];
   if (!Array.isArray(row.assetMoves)) row.assetMoves = [];
+  const isDelivery = (typeof window.bulkWorkMemoIsDelivery_ === 'function')
+    && window.bulkWorkMemoIsDelivery_(row);
+
+  // 運搬：assetMoves を正とし、used* と現在地だけ合わせる
+  if (isDelivery) {
+    const machines = [];
+    const materials = [];
+    const tools = [];
+    row.assetMoves = row.assetMoves.filter(a => a && (a.id || a.name)).map((a) => {
+      const kind = String(a.kind || '').trim() || 'machine';
+      const id = String(a.id || '').trim();
+      const name = String(a.name || '').trim();
+      const from = window.getBulkAssetCurrentLoc_(kind, id, name);
+      a.kind = kind;
+      a.id = id || name;
+      a.name = name || id;
+      a.fromId = from.id;
+      a.fromName = from.name;
+      if (!a.toId) { a.toId = ''; a.toName = a.toName || ''; }
+      const item = { id: a.id, name: a.name };
+      if (kind === 'material') materials.push(item);
+      else if (kind === 'tool') tools.push(item);
+      else machines.push(item);
+      return a;
+    });
+    row.usedMachines = machines;
+    row.usedMaterials = materials;
+    row.usedTools = tools;
+    return row.assetMoves;
+  }
+
   const items = [];
   (Array.isArray(row.usedMachines) ? row.usedMachines : []).forEach(m => {
     if (m && (m.id || m.name)) items.push({ kind: 'machine', id: String(m.id || ''), name: String(m.name || '') });
@@ -37178,6 +37232,85 @@ window.openBulkAssetMoveModal_ = (uid) => {
   window.renderBulkAssetMoveModal_();
 };
 
+window.getBulkAssetMoveCandidateList_ = (row, kind) => {
+  if (kind === 'machine') {
+    return (typeof window.getBulkWorkMemoMachineList_ === 'function')
+      ? window.getBulkWorkMemoMachineList_(row)
+      : [];
+  }
+  if (kind === 'material') {
+    return (typeof window.getBulkWorkMemoMaterialList_ === 'function')
+      ? window.getBulkWorkMemoMaterialList_(row)
+      : [];
+  }
+  if (kind === 'tool') {
+    return (typeof window.getBulkWorkMemoToolList_ === 'function')
+      ? window.getBulkWorkMemoToolList_(row)
+      : [];
+  }
+  return [];
+};
+
+window.addBulkAssetMoveItem_ = (uid, kind, id, name) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  const k = String(kind || '').trim();
+  const mid = String(id || '').trim();
+  const mname = String(name || '').trim();
+  if (!k || (!mid && !mname)) return;
+  if (!Array.isArray(row.assetMoves)) row.assetMoves = [];
+  const exists = row.assetMoves.some(a => a && a.kind === k
+    && (String(a.id || '') === mid || String(a.name || '') === mname));
+  if (!exists) {
+    const from = (typeof window.getBulkAssetCurrentLoc_ === 'function')
+      ? window.getBulkAssetCurrentLoc_(k, mid, mname)
+      : { id: '', name: '' };
+    row.assetMoves.push({
+      kind: k,
+      id: mid || mname,
+      name: mname || mid,
+      fromId: from.id || '',
+      fromName: from.name || '',
+      toId: '',
+      toName: ''
+    });
+  }
+  const listKey = k === 'machine' ? 'usedMachines' : (k === 'material' ? 'usedMaterials' : 'usedTools');
+  if (!Array.isArray(row[listKey])) row[listKey] = [];
+  if (!row[listKey].some(m => m && (String(m.id || '') === mid || String(m.name || '') === mname))) {
+    row[listKey].push({ id: mid || mname, name: mname || mid });
+  }
+  window._bulkAssetMoveAddKind = '';
+  window.ensureBulkAssetMovesSynced_(row);
+  window.renderBulkAssetMoveModal_();
+  if (typeof window.refreshBulkWorkMemoExtras_ === 'function') window.refreshBulkWorkMemoExtras_(uid);
+};
+
+window.removeBulkAssetMoveItem_ = (uid, kind, id, name) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  const k = String(kind || '').trim();
+  const mid = String(id || '').trim();
+  const mname = String(name || '').trim();
+  const listKey = k === 'machine' ? 'usedMachines' : (k === 'material' ? 'usedMaterials' : 'usedTools');
+  if (Array.isArray(row[listKey])) {
+    row[listKey] = row[listKey].filter(m => !(m && (String(m.id || '') === mid || String(m.name || '') === mname)));
+  }
+  if (Array.isArray(row.assetMoves)) {
+    row.assetMoves = row.assetMoves.filter(a => !(a && a.kind === k
+      && (String(a.id || '') === mid || String(a.name || '') === mname)));
+  }
+  window.ensureBulkAssetMovesSynced_(row);
+  window.renderBulkAssetMoveModal_();
+  if (typeof window.refreshBulkWorkMemoExtras_ === 'function') window.refreshBulkWorkMemoExtras_(uid);
+};
+
+window.toggleBulkAssetMoveAddKind_ = (kind) => {
+  const next = String(kind || '').trim();
+  window._bulkAssetMoveAddKind = (window._bulkAssetMoveAddKind === next) ? '' : next;
+  window.renderBulkAssetMoveModal_();
+};
+
 window.renderBulkAssetMoveModal_ = () => {
   const uid = window._bulkAssetMoveModalUid;
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
@@ -37185,16 +37318,22 @@ window.renderBulkAssetMoveModal_ = () => {
   const moves = window.ensureBulkAssetMovesSynced_(row);
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const kindLabel = { machine: '🚜 機械', material: '📦 資材', tool: '🔧 道具' };
+  const addKind = String(window._bulkAssetMoveAddKind || '').trim();
+  const selectedKeys = new Set(moves.map(a => `${a.kind}\0${a.id || ''}\0${a.name || ''}`));
   const sections = ['machine', 'material', 'tool'].map((kind) => {
     const list = moves.filter(a => a && a.kind === kind);
     if (!list.length) return '';
-    const rows = list.map((a, idx) => {
+    const rows = list.map((a) => {
       const safeId = String(a.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const safeName = String(a.name || a.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       const toLabel = a.toName
         ? `✅ ${esc(a.toName)}`
         : '<span style="color:#888;">未選択</span>';
       return `<div style="background:#fff; border:1px solid #e0e0e0; border-radius:10px; padding:10px 12px; margin-bottom:8px;">
-        <div style="font-weight:bold; font-size:14px; color:#333; margin-bottom:6px;">${esc(a.name || a.id)}</div>
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:6px;">
+          <div style="font-weight:bold; font-size:14px; color:#333; flex:1; min-width:0;">${esc(a.name || a.id)}</div>
+          <button type="button" onclick="removeBulkAssetMoveItem_('${esc(uid)}','${kind}','${safeId}','${safeName}')" style="flex-shrink:0; background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">削除</button>
+        </div>
         <div style="font-size:12px; color:#555; margin-bottom:4px;">現在地: <b>${esc(a.fromName || '（未設定）')}</b></div>
         <div style="font-size:12px; color:#555; margin-bottom:8px;">運搬先: ${toLabel}</div>
         <button type="button" onclick="openBulkAssetMoveLocSelect_('${esc(uid)}','${kind}','${safeId}')" style="width:100%; box-sizing:border-box; padding:10px; border-radius:8px; border:1px solid #2196F3; background:#E3F2FD; color:#1565C0; font-weight:bold; font-size:13px; cursor:pointer;">🗺️ 運搬先を地図で選ぶ</button>
@@ -37205,9 +37344,31 @@ window.renderBulkAssetMoveModal_ = () => {
       ${rows}
     </div>`;
   }).join('');
+  const addPicker = addKind ? (() => {
+    const cands = window.getBulkAssetMoveCandidateList_(row, addKind) || [];
+    const unused = cands.filter(m => m && (m.id || m.name)
+      && !selectedKeys.has(`${addKind}\0${m.id || ''}\0${m.name || ''}`)
+      && !selectedKeys.has(`${addKind}\0${m.id || ''}\0`)
+      && !moves.some(a => a && a.kind === addKind
+        && (String(a.id || '') === String(m.id || '') || String(a.name || '') === String(m.name || ''))));
+    const chips = unused.length
+      ? unused.map(m => {
+          const safeId = String(m.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const safeName = String(m.name || m.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          return `<button type="button" onclick="addBulkAssetMoveItem_('${esc(uid)}','${addKind}','${safeId}','${safeName}')" style="padding:7px 11px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid #90CAF9; background:#fff; color:#1565C0;">＋ ${esc(m.name || m.id)}</button>`;
+        }).join('')
+      : '<span style="font-size:12px; color:#888;">追加できる項目がありません</span>';
+    return `<div style="margin:0 0 12px; padding:10px; background:#E3F2FD; border:1px solid #90CAF9; border-radius:10px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
+        <div style="font-size:12px; font-weight:bold; color:#0D47A1;">${esc(kindLabel[addKind] || addKind)}を追加</div>
+        <button type="button" onclick="toggleBulkAssetMoveAddKind_('')" style="background:#fff; border:1px solid #90CAF9; color:#1565C0; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">閉じる</button>
+      </div>
+      <div style="display:flex; flex-wrap:wrap; gap:6px; max-height:160px; overflow-y:auto;">${chips}</div>
+    </div>`;
+  })() : '';
   const body = moves.length
     ? sections
-    : `<div style="padding:20px; text-align:center; color:#666; font-size:13px; line-height:1.5;">移動する機械・資材・道具がまだありません。<br>確認画面でチェックしてから開いてください。</div>`;
+    : `<div style="padding:16px; text-align:center; color:#666; font-size:13px; line-height:1.5; background:#fff; border-radius:10px; margin-bottom:10px;">移動する物がまだありません。<br>下のボタンから追加してください。</div>`;
   let modal = document.getElementById('bulk_asset_move_modal');
   if (!modal) {
     modal = document.createElement('div');
@@ -37222,7 +37383,13 @@ window.renderBulkAssetMoveModal_ = () => {
         <button type="button" onclick="closeBulkAssetMoveModal_()" style="background:transparent; border:none; color:#fff; font-size:22px; cursor:pointer; line-height:1;">×</button>
       </div>
       <div style="padding:12px 14px; overflow-y:auto; flex:1;">
-        <div style="font-size:11px; color:#666; margin-bottom:10px; line-height:1.4;">各アイテムの現在地を確認し、運搬先（看板・圃場）を地図で指定してください。保存時にマスタの置き場所が更新されます。</div>
+        <div style="font-size:11px; color:#666; margin-bottom:10px; line-height:1.4;">移動する物を追加し、運搬先（看板・圃場）を地図で指定してください。保存時にマスタの置き場所が更新されます。</div>
+        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;">
+          <button type="button" onclick="toggleBulkAssetMoveAddKind_('machine')" style="flex:1; min-width:90px; box-sizing:border-box; padding:10px 8px; border-radius:8px; border:1px solid ${addKind === 'machine' ? '#1565C0' : '#BBDEFB'}; background:${addKind === 'machine' ? '#1565C0' : '#fff'}; color:${addKind === 'machine' ? '#fff' : '#1565C0'}; font-weight:bold; font-size:12px; cursor:pointer;">＋ 機械</button>
+          <button type="button" onclick="toggleBulkAssetMoveAddKind_('material')" style="flex:1; min-width:90px; box-sizing:border-box; padding:10px 8px; border-radius:8px; border:1px solid ${addKind === 'material' ? '#1565C0' : '#BBDEFB'}; background:${addKind === 'material' ? '#1565C0' : '#fff'}; color:${addKind === 'material' ? '#fff' : '#1565C0'}; font-weight:bold; font-size:12px; cursor:pointer;">＋ 資材</button>
+          <button type="button" onclick="toggleBulkAssetMoveAddKind_('tool')" style="flex:1; min-width:90px; box-sizing:border-box; padding:10px 8px; border-radius:8px; border:1px solid ${addKind === 'tool' ? '#1565C0' : '#BBDEFB'}; background:${addKind === 'tool' ? '#1565C0' : '#fff'}; color:${addKind === 'tool' ? '#fff' : '#1565C0'}; font-weight:bold; font-size:12px; cursor:pointer;">＋ 道具</button>
+        </div>
+        ${addPicker}
         ${body}
       </div>
       <div style="padding:12px 14px; border-top:1px solid #ddd; background:#fff;">
