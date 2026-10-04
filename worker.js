@@ -34505,28 +34505,8 @@ window.buildBulkWorkMemoWorkMasterAdminBarHtml_ = () => {
   </div>`;
 };
 
-window.buildBulkWorkMemoCardWorkAdminBarHtml_ = (d, uid) => {
-  if (window.bulkWorkMemoIsRestDraft_(d)) return '';
-  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
-  if (!isAdmin) return '';
-  const wName = String(d.workName || '').trim();
-  const safe = wName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-  const cat = String(d.listFilterCategory || d.category || '').trim();
-  const safeCat = cat.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-  const btns = [];
-  if (wName) {
-    btns.push(`<button type="button" onclick="window._bulkWorkMemoMasterEditUid='${esc(uid)}'; adminEditWorkName('${safe}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">✏️ 作業を編集</button>`);
-    btns.push(`<button type="button" onclick="window._bulkWorkMemoMasterEditUid='${esc(uid)}'; adminDeleteWorkName('${safe}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">🗑️ 作業を削除</button>`);
-  }
-  if (cat && !(typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat))) {
-    btns.push(`<button type="button" onclick="window._bulkWorkMemoCategoryEditUid='${esc(uid)}'; adminEditWorkCategory('${safeCat}')" style="background:#fff8e1; color:#f57c00; border:1px solid #ffcc80; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">✏️ カテゴリを編集</button>`);
-    btns.push(`<button type="button" onclick="window._bulkWorkMemoCategoryEditUid='${esc(uid)}'; adminDeleteWorkCategory('${safeCat}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">🗑️ カテゴリを削除</button>`);
-  }
-  btns.push(`<button type="button" onclick="window._bulkWorkMemoMasterEditUid='${esc(uid)}'; openWorkMasterManager()" style="background:#fff3e0; color:#e65100; border:1px solid #ffb74d; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">📋 マスタ管理</button>`);
-  if (!btns.length) return '';
-  return `<div style="display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 0;">${btns.join('')}</div>`;
-};
+/** カード直下の作業/カテゴリ編集バーは廃止（一覧内のマスタ管理・カテゴリ管理で代用） */
+window.buildBulkWorkMemoCardWorkAdminBarHtml_ = () => '';
 
 window.getBulkWorkMemoPrepTargetWorks_ = (d) => {
   if (!d) return [];
@@ -36289,8 +36269,7 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
         <div id="bulk_work_hint_${esc(uid)}" style="display:${hint && !d._workListOpen ? 'block' : 'none'}; font-size:11px; color:#E65100; margin:0 0 8px; line-height:1.35;">${hint}</div>
         <div id="bulk_crop_pick_${esc(uid)}">${window.buildBulkWorkMemoCropPickSectionHtml_(d, uid)}</div>
         ${fieldHtml}
-        <div id="bulk_extras_${esc(uid)}">${window.buildBulkWorkMemoExtrasHtml_(d, uid)}</div>
-        ${window.buildBulkWorkMemoCardWorkAdminBarHtml_(d, uid)}`;
+        <div id="bulk_extras_${esc(uid)}">${window.buildBulkWorkMemoExtrasHtml_(d, uid)}</div>`;
     const inMetaGroup = !!(metaCtx && metaCtx.groupSize >= 1);
     const isMetaSibling = !!(inMetaGroup && metaCtx.itemIndex > 1);
     const cardBg = isRestCard ? '#FFFBF0' : (inMetaGroup ? '#F8F1FC' : '#fafafa');
@@ -38808,8 +38787,7 @@ window.renderBulkWorkMemoManualAddModal_ = () => {
     ${window.buildBulkWorkMemoWorkPickSectionHtml_(d, uid)}
     <div id="bulk_crop_pick_${esc(uid)}">${window.buildBulkWorkMemoCropPickSectionHtml_(d, uid)}</div>
     ${fieldHtml}
-    <div id="bulk_extras_${esc(uid)}">${window.buildBulkWorkMemoExtrasHtml_(d, uid)}</div>
-    ${typeof window.buildBulkWorkMemoCardWorkAdminBarHtml_ === 'function' ? window.buildBulkWorkMemoCardWorkAdminBarHtml_(d, uid) : ''}`;
+    <div id="bulk_extras_${esc(uid)}">${window.buildBulkWorkMemoExtrasHtml_(d, uid)}</div>`;
   const prevEndHint = window.getBulkWorkMemoPrevEndHint_(uid);
   const prevEndBtnLabel = prevEndHint
     ? `◀️ 前の終了(${esc(prevEndHint)})に合わせる`
