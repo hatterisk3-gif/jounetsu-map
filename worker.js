@@ -36266,6 +36266,10 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
     const titleLabel = inMetaGroup
       ? `全体 ${i + 1}件目${metaItemBadge}${typeBadge}`
       : `${i + 1}件目${typeBadge}`;
+    const rawMemoText = String(d.rawLine || '').trim();
+    const rawMemoBeside = rawMemoText
+      ? `<span style="font-size:11px; font-weight:normal; color:#607D8B; line-height:1.35; max-width:100%; word-break:break-word;">${esc(rawMemoText)}</span>`
+      : '';
     const sameTimeNote = isMetaSibling
       ? `<div style="font-size:11px; color:#6A1B9A; background:#EDE7F6; border:1px solid #CE93D8; border-radius:8px; padding:8px 10px; margin-bottom:8px; line-height:1.4;">⏱ 上の項目と同じ時間帯です（${esc(d.startTime || '--:--')}〜${esc(d.endTime || '--:--')}）。必要なら下で時間だけ変えられます。</div>`
       : '';
@@ -36277,12 +36281,13 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
     if (d._metaJustAdded) d._metaJustAdded = false;
     return `
       <div id="bulk_card_${esc(uid)}" style="background:${cardBg}; border:1px solid ${cardBorder}; ${leftBar} border-radius:10px; padding:12px; margin-bottom:${marginBottom}; ${highlight}">
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
-          <label style="font-size:12px; font-weight:bold; color:#555; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:8px;">
+          <label style="font-size:12px; font-weight:bold; color:#555; display:flex; align-items:center; gap:6px; flex-wrap:wrap; flex:1; min-width:0;">
             <input type="checkbox" ${d.included !== false ? 'checked' : ''} onchange="updateBulkWorkMemoDraftField_('${esc(uid)}','included', this.checked)">
             ${titleLabel}
+            ${rawMemoBeside}
           </label>
-          <button type="button" onclick="removeBulkWorkMemoDraft_('${esc(uid)}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">削除</button>
+          <button type="button" onclick="removeBulkWorkMemoDraft_('${esc(uid)}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer; flex-shrink:0;">削除</button>
         </div>
         ${sameTimeNote}
         <div style="display:flex; gap:8px; margin-bottom:8px;">
@@ -36322,7 +36327,6 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
           ${commentSummary ? `<div style="font-size:11px; font-weight:normal; color:#607D8B; margin-top:3px;">${esc(commentSummary)}</div>` : ''}
         </button>
         <div id="bulk_comment_panel_${esc(uid)}" style="display:${commentOpen ? 'block' : 'none'}; margin-top:8px; padding-top:8px; border-top:1px dashed #CFD8DC;">
-          <div style="font-size:11px; color:#888; margin-bottom:8px; line-height:1.35;">元メモ: ${esc(d.rawLine)}</div>
           <label style="font-size:10px; color:#555; font-weight:bold; display:block;">💬 コメント（補足）</label>
           <textarea id="bulk_comment_${esc(uid)}" class="form-input" rows="2" placeholder="伝達事項・補足メモなど（任意）" onchange="updateBulkWorkMemoDraftField_('${esc(uid)}','comment', this.value)" oninput="updateBulkWorkMemoDraftField_('${esc(uid)}','comment', this.value)" style="margin:4px 0 0; font-size:12px; line-height:1.4; resize:vertical; min-height:52px;">${esc(d.comment || '')}</textarea>
         </div>
