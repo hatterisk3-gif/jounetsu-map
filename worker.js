@@ -33666,16 +33666,53 @@ window.refreshBulkWorkMemoWorkSuggestions_ = (d) => {
 window.getBulkWorkMemoManualWorkList_ = (d) => {
   const filterCat = String(d && d.listFilterCategory != null ? d.listFilterCategory : '').trim();
   const metaAll = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(filterCat);
-  let names = (window.getBulkWorkMemoAllWorkNames_(filterCat) || []).filter(n => !window.isBulkWorkMemoRestWorkName_(n));
+  const cropNames = (typeof window.getBulkWorkMemoCropNames_ === 'function')
+    ? window.getBulkWorkMemoCropNames_(d)
+    : [];
+  let names = [];
   let fallbackNote = '';
+  if (typeof window.getWorksByCategoryAndCrop === 'function' && cropNames.length) {
+    const works = window.getWorksByCategoryAndCrop(filterCat, cropNames, null) || [];
+    const seen = new Set();
+    works.forEach(w => {
+      const n = String((w && w.name) || '').trim();
+      if (!n || seen.has(n) || window.isBulkWorkMemoRestWorkName_(n)) return;
+      seen.add(n);
+      names.push(n);
+    });
+    names.sort((a, b) => a.localeCompare(b, 'ja'));
+  } else {
+    names = (window.getBulkWorkMemoAllWorkNames_(filterCat) || []).filter(n => !window.isBulkWorkMemoRestWorkName_(n));
+  }
   if (metaAll) {
     fallbackNote = `「${filterCat}」：下の「対象カテゴリ → 対象作業」から選ぶか、全作業一覧から対象作業を選んでください（カテゴリは「${filterCat}」のまま保存されます）。`;
+  } else if (!names.length && filterCat && cropNames.length) {
+    const works = (typeof window.getWorksByCategoryAndCrop === 'function')
+      ? (window.getWorksByCategoryAndCrop('', cropNames, null) || [])
+      : [];
+    const seen = new Set();
+    names = [];
+    works.forEach(w => {
+      const n = String((w && w.name) || '').trim();
+      if (!n || seen.has(n) || window.isBulkWorkMemoRestWorkName_(n)) return;
+      seen.add(n);
+      names.push(n);
+    });
+    names.sort((a, b) => a.localeCompare(b, 'ja'));
+    fallbackNote = names.length
+      ? `「${filterCat}」×作物に該当する作業がないため、作物のみで絞った一覧を表示しています。`
+      : `「${filterCat}」に該当する作業がないため、すべての作業を表示しています。`;
+    if (!names.length) {
+      names = (window.getBulkWorkMemoAllWorkNames_('') || []).filter(n => !window.isBulkWorkMemoRestWorkName_(n));
+    }
   } else if (!names.length && filterCat) {
     names = (window.getBulkWorkMemoAllWorkNames_('') || []).filter(n => !window.isBulkWorkMemoRestWorkName_(n));
     fallbackNote = `「${filterCat}」に該当する作業がないため、すべての作業を表示しています。`;
   }
   if (!names.length) {
-    fallbackNote = '作業マスタが空です。「＋ 新しい作業を追加」から追加できます。';
+    fallbackNote = cropNames.length
+      ? 'この作物に合う作業がありません。「＋ 新しい作業を追加」から追加できます。'
+      : '作業マスタが空です。「＋ 新しい作業を追加」から追加できます。';
   }
   return { names, fallbackNote, filterCat };
 };
@@ -34418,7 +34455,7 @@ window.refreshBulkWorkMemoDetailManageModalIfOpen_ = () => {
   window.renderBulkWorkMemoDetailManageModal_();
 };
 
-/** 作物名チップの選択状態だけ更新（モーダル全体を再描画しない） */
+/** 作物名チップの選択状態を更新し、連動する作業名UIも同期 */
 window.refreshBulkWorkMemoCropPick_ = (uid) => {
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
   if (!row) return;
@@ -34426,13 +34463,24 @@ window.refreshBulkWorkMemoCropPick_ = (uid) => {
   if (cropEl) {
     cropEl.innerHTML = window.buildBulkWorkMemoCropPickSectionHtml_(row, uid);
   }
+  const workEl = document.getElementById('bulk_work_pick_' + uid);
+  if (workEl && typeof window.buildBulkWorkMemoWorkPickSectionHtml_ === 'function') {
+    workEl.innerHTML = window.buildBulkWorkMemoWorkPickSectionHtml_(row, uid);
+  }
   window.refreshBulkWorkMemoExtras_(uid);
   const hintEl = document.getElementById('bulk_work_hint_' + uid);
-  if (hintEl && row.workName && !window.bulkWorkMemoIsRestDraft_(row)) {
-    const needCrop = !window.getBulkWorkMemoCropNames_(row).length;
-    const msg = needCrop ? '作業名OK。作物名を1つ以上選んでください（該当なしは「共通」）' : '';
+  if (hintEl && !window.bulkWorkMemoIsRestDraft_(row)) {
+    const hasCrop = !!window.getBulkWorkMemoCropNames_(row).length;
+    let msg = '';
+    if (!hasCrop) {
+      msg = '先に作物名を選んでください（該当なしは「共通」）';
+    } else if (!row.workName) {
+      msg = row.guessedName
+        ? `メモ推定「${row.guessedName}」→ 作業名チップを選んでください`
+        : '合いそうな作業名を選んでください';
+    }
     hintEl.textContent = msg;
-    hintEl.style.display = (needCrop && !row._workListOpen) ? 'block' : 'none';
+    hintEl.style.display = (msg && !row._workListOpen) ? 'block' : 'none';
   }
   const card = document.getElementById('bulk_card_' + uid);
   if (card && !window.bulkWorkMemoIsRestDraft_(row)) {
@@ -34442,7 +34490,13 @@ window.refreshBulkWorkMemoCropPick_ = (uid) => {
 };
 
 window.refreshBulkWorkMemoCropPickOrReview_ = (uid) => {
-  if (document.getElementById('bulk_crop_pick_' + uid)) {
+  // 作物確定で作業UIを開くときなど、全体再描画の方が安全
+  if (document.getElementById('bulk_crop_pick_' + uid) && document.getElementById('bulk_work_pick_' + uid)) {
+    const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+    if (row && row._cropPickOpen === false) {
+      window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+      return;
+    }
     window.refreshBulkWorkMemoCropPick_(uid);
     return;
   }
@@ -35114,7 +35168,14 @@ window.toggleBulkWorkMemoCropPick_ = (uid) => {
 window.collapseBulkWorkMemoCropPick_ = (uid) => {
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
   if (!row) return;
+  if (!window.getBulkWorkMemoCropNames_(row).length) {
+    if (typeof customAlert === 'function') customAlert('作物名を選んでから閉じてください（該当なしは「共通」）。');
+    return;
+  }
   row._cropPickOpen = false;
+  if (!String(row.workName || '').trim()) {
+    row._workPickOpen = true;
+  }
   window.refreshBulkWorkMemoCropPickOrReview_(uid);
 };
 
@@ -35163,6 +35224,15 @@ window.toggleBulkWorkMemoRestPick_ = (uid) => {
 window.buildBulkWorkMemoWorkPickSectionHtml_ = (d, uid) => {
   if (window.bulkWorkMemoIsRestDraft_(d)) return '';
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const crops = (typeof window.getBulkWorkMemoCropNames_ === 'function')
+    ? window.getBulkWorkMemoCropNames_(d)
+    : [];
+  if (!crops.length) {
+    return `<div style="margin:0 0 10px; padding:12px; border:2px dashed #FFCC80; border-radius:10px; background:#FFF8F0; box-sizing:border-box;">
+      <div style="font-size:12px; font-weight:bold; color:#E65100; margin-bottom:4px;">🚜 作業名</div>
+      <div style="font-size:11px; color:#666; line-height:1.35;">作物名を選ぶと作業名を選べます。</div>
+    </div>`;
+  }
   const cur = String(d.workName || '').trim();
   const metaCat = String(d.category || d.listFilterCategory || '').trim();
   const isMeta = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(metaCat);
@@ -35239,12 +35309,6 @@ window.buildBulkWorkMemoWorkPickSectionHtml_ = (d, uid) => {
 window.buildBulkWorkMemoCropPickSectionHtml_ = (d, uid) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const selected = window.getBulkWorkMemoCropNames_(d);
-  if (!String(d.workName || '').trim()) {
-    return `<div style="margin:0 0 10px; padding:12px; border:2px dashed #A5D6A7; border-radius:10px; background:#F1F8E9; box-sizing:border-box;">
-      <div style="font-size:12px; font-weight:bold; color:#2E7D32; margin-bottom:4px;">🌱 作物名</div>
-      <div style="font-size:11px; color:#666; line-height:1.35;">作業名を選ぶと作物名を選べます。</div>
-    </div>`;
-  }
   if (selected.length && d._cropPickOpen === false) {
     return window.buildBulkWorkMemoCollapsedPickHtml_({
       icon: '🌱',
@@ -35295,10 +35359,11 @@ window.buildBulkWorkMemoWorkChipsHtml_ = (d, uid) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const cur = String(d.workName || '').trim();
   const aliasHints = (d.workAliasHints && typeof d.workAliasHints === 'object') ? d.workAliasHints : {};
+  const allowed = new Set((window.getBulkWorkMemoManualWorkList_(d).names || []).map(String));
   let names = Array.isArray(d.workCandidates) ? d.workCandidates.slice() : [];
   let maybeNames = Array.isArray(d.workMaybeCandidates) ? d.workMaybeCandidates.slice() : [];
-  names = names.filter(n => !window.isBulkWorkMemoRestWorkName_(n));
-  maybeNames = maybeNames.filter(n => !window.isBulkWorkMemoRestWorkName_(n) && names.indexOf(n) < 0);
+  names = names.filter(n => !window.isBulkWorkMemoRestWorkName_(n) && (!allowed.size || allowed.has(n)));
+  maybeNames = maybeNames.filter(n => !window.isBulkWorkMemoRestWorkName_(n) && names.indexOf(n) < 0 && (!allowed.size || allowed.has(n)));
   if (cur && names.indexOf(cur) < 0 && !window.isBulkWorkMemoRestWorkName_(cur)) names.unshift(cur);
   names = names.filter(Boolean).slice(0, 8);
   maybeNames = maybeNames.filter(Boolean).slice(0, 4);
@@ -36231,17 +36296,20 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
     const needPick = isRestCard
       ? !window.isBulkWorkMemoRestWorkName_(d.workName)
       : (!d.workName || !d.workMatched || !window.getBulkWorkMemoCropNames_(d).length);
+    const hasCrop = !!window.getBulkWorkMemoCropNames_(d).length;
     const hint = isRestCard
       ? ''
-      : (!d.workName
-        ? (d.guessedName
-          ? ((Array.isArray(d.workMaybeCandidates) && d.workMaybeCandidates.indexOf(d.guessedName) >= 0 && !(Array.isArray(d.workCandidates) && d.workCandidates.length))
-            ? `もしかして「${esc(d.guessedName)}」${d.guessedAlias ? `（類似「${esc(d.guessedAlias)}」）` : ''}？下の候補をタップしてください`
-            : (d.guessedAlias
-              ? `メモ「${esc(d.guessedAlias)}」→ 類似作業名から「${esc(d.guessedName)}」が合いそうです。チップを選んでください`
-              : `メモ推定「${esc(d.guessedName)}」→ 作業名チップを選んでください`))
-          : '合いそうな作業名を選んでください')
-        : (!window.getBulkWorkMemoCropNames_(d).length ? '作業名OK。作物名を1つ以上選んでください（該当なしは「共通」）' : ''));
+      : (!hasCrop
+        ? '先に作物名を選んでください（該当なしは「共通」）'
+        : (!d.workName
+          ? (d.guessedName
+            ? ((Array.isArray(d.workMaybeCandidates) && d.workMaybeCandidates.indexOf(d.guessedName) >= 0 && !(Array.isArray(d.workCandidates) && d.workCandidates.length))
+              ? `もしかして「${esc(d.guessedName)}」${d.guessedAlias ? `（類似「${esc(d.guessedAlias)}」）` : ''}？下の候補をタップしてください`
+              : (d.guessedAlias
+                ? `メモ「${esc(d.guessedAlias)}」→ 類似作業名から「${esc(d.guessedName)}」が合いそうです。チップを選んでください`
+                : `メモ推定「${esc(d.guessedName)}」→ 作業名チップを選んでください`))
+            : '合いそうな作業名を選んでください')
+          : ''));
     const showField = !isRestCard && window.bulkWorkMemoShowFieldSection_(d);
     const fieldHtml = showField ? window.buildBulkWorkMemoFieldHtml_(d, uid) : '';
     const restBody = isRestCard ? window.buildBulkWorkMemoRestTypeHtml_(d, uid) : '';
@@ -36265,9 +36333,9 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
     const timeAdjustSummary = timeAdjustSummaryParts.join(' ／ ');
     const commentSummary = (!commentOpen && hasComment) ? 'コメントあり' : '';
     const workCore = isRestCard ? '' : `
-        ${window.buildBulkWorkMemoWorkPickSectionHtml_(d, uid)}
-        <div id="bulk_work_hint_${esc(uid)}" style="display:${hint && !d._workListOpen ? 'block' : 'none'}; font-size:11px; color:#E65100; margin:0 0 8px; line-height:1.35;">${hint}</div>
         <div id="bulk_crop_pick_${esc(uid)}">${window.buildBulkWorkMemoCropPickSectionHtml_(d, uid)}</div>
+        <div id="bulk_work_pick_${esc(uid)}">${window.buildBulkWorkMemoWorkPickSectionHtml_(d, uid)}</div>
+        <div id="bulk_work_hint_${esc(uid)}" style="display:${hint && !d._workListOpen ? 'block' : 'none'}; font-size:11px; color:#E65100; margin:0 0 8px; line-height:1.35;">${hint}</div>
         ${fieldHtml}
         <div id="bulk_extras_${esc(uid)}">${window.buildBulkWorkMemoExtrasHtml_(d, uid)}</div>`;
     const inMetaGroup = !!(metaCtx && metaCtx.groupSize >= 1);
@@ -38784,8 +38852,8 @@ window.renderBulkWorkMemoManualAddModal_ = () => {
   const restBody = isRest ? window.buildBulkWorkMemoRestTypeHtml_(d, uid) : '';
   const kindSwitch = window.buildBulkWorkMemoKindSwitchHtml_(d, uid);
   const workCore = isRest ? '' : `
-    ${window.buildBulkWorkMemoWorkPickSectionHtml_(d, uid)}
     <div id="bulk_crop_pick_${esc(uid)}">${window.buildBulkWorkMemoCropPickSectionHtml_(d, uid)}</div>
+    <div id="bulk_work_pick_${esc(uid)}">${window.buildBulkWorkMemoWorkPickSectionHtml_(d, uid)}</div>
     ${fieldHtml}
     <div id="bulk_extras_${esc(uid)}">${window.buildBulkWorkMemoExtrasHtml_(d, uid)}</div>`;
   const prevEndHint = window.getBulkWorkMemoPrevEndHint_(uid);
