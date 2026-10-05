@@ -31155,10 +31155,7 @@ window.buildBulkWorkMemoCropChipsHtml_ = (d, uid) => {
     const safeArg = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     return `<button type="button" onclick="pickBulkWorkMemoCropName_('${esc(uid)}','${safeArg}')" style="padding:8px 12px; border-radius:16px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid ${on ? '#2E7D32' : (isPref ? '#A5D6A7' : '#C8E6C9')}; background:${on ? '#C8E6C9' : '#fff'}; color:#2E7D32; box-shadow:${on ? 'inset 0 0 0 1px #2E7D32' : 'none'};">${esc(name)}</button>`;
   }).join('');
-  const selHint = selected.length
-    ? `<div style="font-size:11px; color:#2E7D32; margin-bottom:6px; font-weight:bold;">選択中: ${esc(selected.join('、'))}</div>`
-    : `<div style="font-size:11px; color:#E65100; margin-bottom:6px;">「共通」か個別の作物名を選んでください（同時には選べません）</div>`;
-  return `${selHint}<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; max-height:200px; overflow-y:auto; padding:2px;">${chipHtml}</div>`;
+  return `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; max-height:200px; overflow-y:auto; padding:2px;">${chipHtml}</div>`;
 };
 
 window.getBulkWorkMemoWorkCandidates_ = (category, cropName) => {
@@ -34473,7 +34470,7 @@ window.refreshBulkWorkMemoCropPick_ = (uid) => {
     const hasCrop = !!window.getBulkWorkMemoCropNames_(row).length;
     let msg = '';
     if (!hasCrop) {
-      msg = '先に作物名を選んでください（該当なしは「共通」）';
+      msg = '先に作物を選んでください';
     } else if (!row.workName) {
       msg = row.guessedName
         ? `メモ推定「${row.guessedName}」→ 作業名チップを選んでください`
@@ -35324,13 +35321,16 @@ window.buildBulkWorkMemoCropPickSectionHtml_ = (d, uid) => {
   const needPick = !selected.length;
   const border = needPick ? '2px solid #66BB6A' : '2px solid #A5D6A7';
   const bg = needPick ? '#F1F8E9' : '#E8F5E9';
-  const hint = needPick
-    ? `<div style="font-size:11px; color:#E65100; margin:0 0 8px; line-height:1.35; font-weight:bold;">※ 共通 または 作物を1つ以上選んでください</div>`
-    : '';
+  const guide = needPick
+    ? `<div style="font-size:11px; color:#558B2F; margin:0 0 8px; line-height:1.4;">共通か作物を選ぶ<span style="opacity:0.75;">（併用不可）</span></div>`
+    : `<div style="font-size:11px; color:#2E7D32; margin:0 0 8px; line-height:1.4;">選択中　<b>${esc(selected.join('、'))}</b></div>`;
   return `
     <div style="margin:0 0 10px; padding:12px; border:${border}; border-radius:10px; background:${bg}; box-sizing:border-box;">
-      <label style="display:block; font-size:12px; color:#2E7D32; font-weight:bold; margin-bottom:6px;">🌱 作物名（共通 または 個別作物）${needPick ? ' <span style="color:#c62828;">*</span>' : ''}</label>
-      ${hint}
+      <div style="display:flex; align-items:baseline; gap:6px; margin-bottom:4px;">
+        <div style="font-size:12px; color:#2E7D32; font-weight:bold;">🌱 作物名</div>
+        ${needPick ? '<span style="font-size:11px; color:#c62828; font-weight:bold;">必須</span>' : ''}
+      </div>
+      ${guide}
       ${window.buildBulkWorkMemoCropChipsHtml_(d, uid)}
       <div style="display:flex; gap:8px; margin-top:4px;">
         <button type="button" onclick="addBulkWorkMemoCrop_('${esc(uid)}')" style="flex:1; box-sizing:border-box; padding:10px 14px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid #66BB6A; background:#fff; color:#2E7D32; text-align:left;">＋ 作物を追加</button>
@@ -36300,7 +36300,7 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
     const hint = isRestCard
       ? ''
       : (!hasCrop
-        ? '先に作物名を選んでください（該当なしは「共通」）'
+        ? '先に作物を選んでください'
         : (!d.workName
           ? (d.guessedName
             ? ((Array.isArray(d.workMaybeCandidates) && d.workMaybeCandidates.indexOf(d.guessedName) >= 0 && !(Array.isArray(d.workCandidates) && d.workCandidates.length))
