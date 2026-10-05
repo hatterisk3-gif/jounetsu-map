@@ -30711,9 +30711,7 @@ window.buildBulkWorkMemoCategoryChipsHtml_ = (d, uid, mode) => {
   const adminCatBtns = (isAdmin && cur)
     ? `<button type="button" onclick="window._bulkWorkMemoCategoryEditUid='${esc(uid)}'; window._bulkWorkMemoCategoryEditMode='${modeArg}'; adminEditWorkCategory('${String(cur).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')" style="padding:7px 11px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0;">✏️ 選択中カテゴリ</button>
        <button type="button" onclick="window._bulkWorkMemoCategoryEditUid='${esc(uid)}'; window._bulkWorkMemoCategoryEditMode='${modeArg}'; adminDeleteWorkCategory('${String(cur).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')" style="padding:7px 11px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid #ef9a9a; background:#ffebee; color:#c62828;">🗑️ 選択中カテゴリ</button>`
-    : (isAdmin
-      ? `<button type="button" onclick="openCategoryMasterManager()" style="padding:7px 11px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0;">📂 カテゴリ管理</button>`
-      : '');
+    : '';
   return `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; align-items:center;">
     ${chips}
     <button type="button" onclick="addBulkWorkMemoCategory_('${esc(uid)}','${modeArg}')" style="padding:7px 11px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:2px dashed #7986CB; background:#fff; color:#3949AB;">＋ カテゴリを追加</button>
@@ -34548,15 +34546,13 @@ window.buildBulkWorkMemoWorkMasterAdminBarHtml_ = () => {
   const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
   if (!isAdmin) return '';
   return `<div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:10px; padding:8px 10px; background:#fff8e1; border:1px solid #ffe0b2; border-radius:8px;">
-    <button type="button" onclick="openWorkMasterManager()" style="background:#fff3e0; color:#e65100; border:1px solid #ffb74d; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer;">📋 作業マスタ管理</button>
-    <button type="button" onclick="openCategoryMasterManager()" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer;">📂 カテゴリ管理</button>
     <button type="button" onclick="openFieldSelectSettingsModal_()" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer;">🗺️ 圃場選択の表示</button>
     <button type="button" onclick="adminAddWorkName()" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 作業を追加</button>
-    <span style="font-size:11px; color:#888; line-height:1.35;">管理者：カテゴリ・作業名の追加／編集／削除</span>
+    <span style="font-size:11px; color:#888; line-height:1.35;">管理者：作業の追加／選択中作業の編集・削除は一覧内から</span>
   </div>`;
 };
 
-/** カード直下の作業/カテゴリ編集バーは廃止（一覧内のマスタ管理・カテゴリ管理で代用） */
+/** カード直下の作業/カテゴリ編集バーは廃止（一覧内の選択中作業編集で代用） */
 window.buildBulkWorkMemoCardWorkAdminBarHtml_ = () => '';
 
 window.getBulkWorkMemoPrepTargetWorks_ = (d) => {
@@ -35392,15 +35388,22 @@ window.buildBulkWorkMemoWorkManualPickHtml_ = (d, uid) => {
   const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
   // 閉じているときは全作業チップを生成しない（件数×マスタ数で確認画面が落ちるのを防ぐ）
   const listHtml = workListOpen ? window.buildBulkWorkMemoAllWorkChipsHtml_(d, uid) : '';
-  const listExtras = workListOpen ? `
+  const listExtras = workListOpen ? (() => {
+    const curWork = String(d.workName || '').trim();
+    const safeWork = curWork.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const selectedWorkBtns = (isAdmin && curWork)
+      ? `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;">
+          <button type="button" onclick="window._bulkWorkMemoMasterEditUid='${esc(uid)}'; adminEditWorkName('${safeWork}')" style="flex:1; min-width:120px; box-sizing:border-box; background:#fff; color:#1565c0; border:1px solid #90caf9; border-radius:8px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer;">✏️ 選択中作業</button>
+          <button type="button" onclick="window._bulkWorkMemoMasterEditUid='${esc(uid)}'; adminDeleteWorkName('${safeWork}')" style="flex:1; min-width:120px; box-sizing:border-box; background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:8px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🗑️ 選択中作業</button>
+        </div>`
+      : '';
+    return `
       <div style="margin-top:10px; padding-top:10px; border-top:1px dashed #FFCC80;">
         <div style="font-size:11px; color:#666; margin:0 0 6px; line-height:1.35;">見つからないとき</div>
-        <button type="button" onclick="window._bulkWorkMemoMasterEditUid='${esc(uid)}'; adminAddWorkName()" style="width:100%; box-sizing:border-box; background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:8px; padding:10px 12px; font-size:13px; font-weight:bold; cursor:pointer; margin-bottom:${isAdmin ? '8px' : '0'};">＋ 新しい作業を追加</button>
-        ${isAdmin ? `<div style="display:flex; flex-wrap:wrap; gap:6px;">
-          <button type="button" onclick="window._bulkWorkMemoMasterEditUid='${esc(uid)}'; openWorkMasterManager()" style="flex:1; min-width:120px; box-sizing:border-box; background:#fff; color:#E65100; border:1px solid #FFCC80; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">マスタ管理</button>
-          <button type="button" onclick="openCategoryMasterManager()" style="flex:1; min-width:120px; box-sizing:border-box; background:#fff; color:#1565c0; border:1px solid #90caf9; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">カテゴリ管理</button>
-        </div>` : ''}
-      </div>` : '';
+        <button type="button" onclick="window._bulkWorkMemoMasterEditUid='${esc(uid)}'; adminAddWorkName()" style="width:100%; box-sizing:border-box; background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:8px; padding:10px 12px; font-size:13px; font-weight:bold; cursor:pointer;">＋ 新しい作業を追加</button>
+        ${selectedWorkBtns}
+      </div>`;
+  })() : '';
   return `
     <button type="button" onclick="toggleBulkWorkMemoWorkList_('${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:10px 14px; margin-bottom:${workListOpen ? '8px' : '0'}; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid #FF9800; background:${workListOpen ? '#FFF3E0' : '#fff'}; color:#E65100; text-align:left; display:flex; justify-content:space-between; align-items:center;">
       <span>📋 一覧から選ぶ</span>
