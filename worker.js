@@ -11586,8 +11586,10 @@ function createSignboardMarker(name, pos, icon, id) {
                 <button type="button" onclick="this.closest('.detail-work-row').remove()" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:8px 10px; font-weight:bold; cursor:pointer; flex-shrink:0;">×</button>
               </div>`;
           }).join('');
-          return `<div id="${containerId}" style="background:#fafafa; border:1px solid #ddd; border-radius:6px; padding:8px; margin-bottom:8px;">${rows}</div>
-            <button type="button" onclick="addWorkerDetailWorkRow('${containerId}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:10px;">＋ 詳細作業を追加</button>`;
+          return `<div id="${containerId}" style="background:#fafafa; border:1px solid #ddd; border-radius:6px; padding:8px; margin-bottom:8px;">
+            ${rows}
+            <button type="button" onclick="addWorkerDetailWorkRow('${containerId}')" title="詳細作業を追加" style="margin-top:2px; width:32px; height:32px; background:#fff; color:#1565c0; border:1px dashed #90caf9; border-radius:8px; font-size:18px; font-weight:bold; cursor:pointer; line-height:1;">＋</button>
+          </div>`;
       };
 
       window.isWorkCropCommonKey_ = (val) => {
@@ -11638,6 +11640,7 @@ function createSignboardMarker(name, pos, icon, id) {
               <input type="checkbox" class="${prefix}_crop_cb" value="${String(cName).replace(/"/g, '&quot;')}" ${checked ? 'checked' : ''} onchange="onWorkCropsChange('${prefix}', this)"> 🌱 ${String(cName).replace(/</g, '&lt;')}
             </label>`;
           });
+          html += `<button type="button" onclick="addNewCropFromWorkMaster()" title="作物を追加" style="width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center; background:#fff; color:#2196F3; border:1px dashed #90CAF9; border-radius:15px; font-size:18px; font-weight:bold; cursor:pointer; line-height:1;">＋</button>`;
           html += `</div>
             <div style="font-size:11px; color:#666; margin-top:6px; line-height:1.4;">個別作物は複数選択可。「共通」と個別作物は同時に選べません。詳細作業は下のタブで作物ごとに分けて登録できます。</div>`;
           return html;
@@ -11742,7 +11745,7 @@ function createSignboardMarker(name, pos, icon, id) {
             </div>`;
           }).join('');
           return `<div style="margin-top:4px;">
-            <div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">詳細作業（作物別）</div>
+            <div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">詳細作業設定</div>
             <div id="${prefix}_crop_tabs" data-active-tab="${activeTab}" style="display:flex; border-bottom:1px solid #ccc; margin-bottom:0; overflow-x:auto;">${tabsHtml}</div>
             <div id="${prefix}_details_panels" style="background:#fff; border:1px solid #e0e0e0; border-radius:0 0 6px 6px; padding:10px;">${panelsHtml}</div>
           </div>`;
@@ -11919,7 +11922,7 @@ function createSignboardMarker(name, pos, icon, id) {
       window.buildWorkNameEditorCategoryChipsHtml_ = (selectedCat) => {
         const categories = window.getWorkCategoryOptionsForUI_({ includeAll: false });
         const current = String(selectedCat || '').trim();
-        return categories.map(c => {
+        const chips = categories.map(c => {
           const isSelected = (c === current);
           const styles = (typeof window.getWorkMetaChipStyles === 'function')
             ? window.getWorkMetaChipStyles('category', c, isSelected)
@@ -11927,6 +11930,7 @@ function createSignboardMarker(name, pos, icon, id) {
           const safeCat = String(c).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
           return `<button type="button" class="wn-edit-category-chip" data-category="${String(c).replace(/"/g, '&quot;')}" onclick="selectWorkNameEditorCategory_('${safeCat}')" style="background:${styles.background}; color:${styles.color}; border:${styles.border}; font-weight:${styles.fontWeight}; padding:8px 12px; border-radius:20px; font-size:12px; cursor:pointer;">${String(c).replace(/</g, '&lt;')}</button>`;
         }).join('');
+        return `${chips}<button type="button" onclick="addNewCategoryFromWorkMaster()" title="カテゴリを追加" style="width:32px; height:32px; background:#fff; color:#3949AB; border:1px dashed #9FA8DA; border-radius:16px; font-size:18px; font-weight:bold; cursor:pointer; line-height:1;">＋</button>`;
       };
 
       window.selectWorkNameEditorCategory_ = (cat) => {
@@ -12000,15 +12004,9 @@ function createSignboardMarker(name, pos, icon, id) {
               <h3 style="margin:0 0 12px; font-size:16px; color:#FF9800;">${title}</h3>
               <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:6px;">カテゴリ</label>
               <input type="hidden" id="wn_edit_category" value="${safeDefaultCat}">
-              <div id="wn_edit_category_chips" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;">${catChipsHtml}</div>
-              <div style="margin-bottom:10px;">
-                <button type="button" onclick="addNewCategoryFromWorkMaster()" style="background:#3949AB; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-weight:bold; cursor:pointer; font-size:12px;">＋ カテゴリを追加</button>
-              </div>
+              <div id="wn_edit_category_chips" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; align-items:center;">${catChipsHtml}</div>
               <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">作物（複数可）</label>
-              <div id="wn_edit_crops_wrap" style="margin-bottom:8px;">${cropsHtml}</div>
-              <div style="margin-bottom:10px;">
-                <button type="button" onclick="addNewCropFromWorkMaster()" style="background:#2196F3; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-weight:bold; cursor:pointer; font-size:12px;">＋ 作物を追加</button>
-              </div>
+              <div id="wn_edit_crops_wrap" style="margin-bottom:10px;">${cropsHtml}</div>
               <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">作業名（正順名）</label>
               <input type="text" id="wn_edit_name" value="${String((existing && existing.name) || '').replace(/"/g, '&quot;')}" placeholder="例: 畝つぶし" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; margin-bottom:10px; font-size:15px;">
               <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">類似作業名（地域呼称・別名など）</label>
@@ -12295,8 +12293,28 @@ function createSignboardMarker(name, pos, icon, id) {
           }
       };
 
-      window.adminAddWorkName = () => {
-          window.openWorkNameEditorModal('add', '');
+      window.adminAddWorkName = (presetCat, presetCrop) => {
+          window.openWorkNameEditorModal('add', '', presetCat || '', presetCrop || '');
+      };
+
+      /** 一括入力：直前に選んでいたカテゴリ・作物を引き継いで作業マスタ追加 */
+      window.adminAddWorkNameFromBulk_ = (uid) => {
+          const id = String(uid || '').trim();
+          if (id) window._bulkWorkMemoMasterEditUid = id;
+          const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === id);
+          const cat = row
+            ? String(row.listFilterCategory || row.category || '').trim()
+            : '';
+          const crops = (row && typeof window.getBulkWorkMemoCropNames_ === 'function')
+            ? window.getBulkWorkMemoCropNames_(row)
+            : [];
+          const cropPreset = crops.map((c) => {
+            if (typeof window.isBulkWorkMemoCommonCrop_ === 'function' && window.isBulkWorkMemoCommonCrop_(c)) {
+              return '__common__';
+            }
+            return String(c || '').trim();
+          }).filter(Boolean).join(',');
+          window.openWorkNameEditorModal('add', '', cat, cropPreset);
       };
 
       window.adminEditWorkName = (wName) => {
@@ -30714,7 +30732,7 @@ window.buildBulkWorkMemoCategoryChipsHtml_ = (d, uid, mode) => {
     : '';
   return `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; align-items:center;">
     ${chips}
-    <button type="button" onclick="addBulkWorkMemoCategory_('${esc(uid)}','${modeArg}')" style="padding:7px 11px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:2px dashed #7986CB; background:#fff; color:#3949AB;">＋ カテゴリを追加</button>
+    <button type="button" onclick="addBulkWorkMemoCategory_('${esc(uid)}','${modeArg}')" title="カテゴリを追加" style="width:32px; height:32px; padding:0; border-radius:16px; font-size:18px; font-weight:bold; cursor:pointer; border:2px dashed #7986CB; background:#fff; color:#3949AB; line-height:1;">＋</button>
     ${adminCatBtns}
   </div>`;
 };
@@ -31145,7 +31163,10 @@ window.buildBulkWorkMemoCropChipsHtml_ = (d, uid) => {
   let chips = all.slice();
   selected.forEach(n => { if (chips.indexOf(n) < 0) chips.push(n); });
   if (!chips.length) {
-    return `<div style="font-size:11px; color:#888; margin-bottom:8px;">作物マスタがありません。「＋ 作物を追加」から登録してください。</div>`;
+    return `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; align-items:center;">
+      <div style="font-size:11px; color:#888;">作物マスタがありません。</div>
+      <button type="button" onclick="addBulkWorkMemoCrop_('${esc(uid)}')" title="作物を追加" style="width:32px; height:32px; padding:0; border-radius:16px; font-size:18px; font-weight:bold; cursor:pointer; border:2px dashed #66BB6A; background:#fff; color:#2E7D32; line-height:1;">＋</button>
+    </div>`;
   }
   const chipHtml = chips.map(name => {
     const on = selectedSet.has(name);
@@ -31153,7 +31174,7 @@ window.buildBulkWorkMemoCropChipsHtml_ = (d, uid) => {
     const safeArg = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     return `<button type="button" onclick="pickBulkWorkMemoCropName_('${esc(uid)}','${safeArg}')" style="padding:8px 12px; border-radius:16px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid ${on ? '#2E7D32' : (isPref ? '#A5D6A7' : '#C8E6C9')}; background:${on ? '#C8E6C9' : '#fff'}; color:#2E7D32; box-shadow:${on ? 'inset 0 0 0 1px #2E7D32' : 'none'};">${esc(name)}</button>`;
   }).join('');
-  return `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; max-height:200px; overflow-y:auto; padding:2px;">${chipHtml}</div>`;
+  return `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; max-height:200px; overflow-y:auto; padding:2px; align-items:center;">${chipHtml}<button type="button" onclick="addBulkWorkMemoCrop_('${esc(uid)}')" title="作物を追加" style="width:32px; height:32px; padding:0; border-radius:16px; font-size:18px; font-weight:bold; cursor:pointer; border:2px dashed #66BB6A; background:#fff; color:#2E7D32; line-height:1; flex-shrink:0;">＋</button></div>`;
 };
 
 window.getBulkWorkMemoWorkCandidates_ = (category, cropName) => {
@@ -34405,14 +34426,20 @@ window.renderBulkWorkMemoDetailManageModal_ = () => {
     <div style="font-size:11px; color:#666; margin:-4px 0 12px; line-height:1.35;">いま編集中: <b>${esc(cropKey === '__common__' ? '共通' : cropLabel)}</b>（共通と作物別は別々に登録されます）</div>`;
 
   const listHtml = details.length
-    ? details.map((name, idx) => {
-        return `<div style="display:flex; align-items:center; gap:8px; padding:10px 12px; background:#f8fbff; border:1px solid #c5cae9; border-radius:8px; margin-bottom:8px;">
+    ? `<div style="background:#f8fbff; border:1px solid #c5cae9; border-radius:10px; padding:10px;">
+        ${details.map((name, idx) => {
+        return `<div style="display:flex; align-items:center; gap:8px; padding:10px 12px; background:#fff; border:1px solid #c5cae9; border-radius:8px; margin-bottom:8px;">
           <div style="flex:1; min-width:0; font-size:14px; font-weight:bold; color:#1a237e; word-break:break-word;">${esc(name)}</div>
           <button type="button" onclick="adminEditDetailWork('${escJs(wName)}', ${idx}, '${escJs(cropKey)}')" title="編集" style="background:#fff; color:#1976d2; border:1px solid #bbdefb; border-radius:6px; padding:6px 10px; font-weight:bold; font-size:12px; cursor:pointer;">✏️ 編集</button>
           <button type="button" onclick="adminDeleteDetailWork('${escJs(wName)}', ${idx}, '${escJs(cropKey)}')" title="削除" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:6px; padding:6px 10px; font-weight:bold; font-size:12px; cursor:pointer;">🗑️ 削除</button>
         </div>`;
-      }).join('')
-    : `<div style="padding:14px; text-align:center; background:#fafafa; border:1px dashed #b39ddb; border-radius:8px; color:#666; font-size:13px; line-height:1.45; margin-bottom:8px;">まだ詳細作業がありません。<br>下の「＋ 追加」から登録できます。</div>`;
+      }).join('')}
+        <button type="button" onclick="adminAddDetailWork('${escJs(wName)}', '${escJs(cropKey)}')" title="詳細作業を追加" style="width:32px; height:32px; background:#fff; color:#5E35B1; border:1px dashed #B39DDB; border-radius:8px; font-size:18px; font-weight:bold; cursor:pointer; line-height:1;">＋</button>
+      </div>`
+    : `<div style="padding:14px; text-align:center; background:#fafafa; border:1px dashed #b39ddb; border-radius:8px; color:#666; font-size:13px; line-height:1.45; margin-bottom:8px;">
+        まだ詳細作業がありません。
+        <div style="margin-top:10px;"><button type="button" onclick="adminAddDetailWork('${escJs(wName)}', '${escJs(cropKey)}')" title="詳細作業を追加" style="width:36px; height:36px; background:#fff; color:#5E35B1; border:1px dashed #B39DDB; border-radius:8px; font-size:20px; font-weight:bold; cursor:pointer; line-height:1;">＋</button></div>
+      </div>`;
 
   let modal = document.getElementById('bulkDetailWorkManageModal');
   if (!modal) {
@@ -34427,14 +34454,13 @@ window.renderBulkWorkMemoDetailManageModal_ = () => {
   modal.innerHTML = `<div style="background:#fff; color:#333; width:100%; max-width:480px; max-height:85vh; overflow:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.25); box-sizing:border-box;" onclick="event.stopPropagation()">
     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:8px;">
       <div>
-        <h3 style="margin:0 0 4px; font-size:16px; color:#5E35B1;">📋 詳細作業を編集・登録</h3>
+        <h3 style="margin:0 0 4px; font-size:16px; color:#5E35B1;">📋 詳細作業設定</h3>
         <div style="font-size:12px; color:#666;">作業名: <b>${esc(wName)}</b></div>
       </div>
       <button type="button" onclick="closeBulkWorkMemoDetailManageModal_()" style="background:#eee; border:none; border-radius:8px; padding:6px 10px; font-weight:bold; cursor:pointer;">閉じる</button>
     </div>
     ${cropTabs}
-    <div style="margin-bottom:12px;">${listHtml}</div>
-    <button type="button" onclick="adminAddDetailWork('${escJs(wName)}', '${escJs(cropKey)}')" style="width:100%; box-sizing:border-box; background:#5E35B1; color:#fff; border:none; border-radius:10px; padding:12px; font-size:14px; font-weight:bold; cursor:pointer;">＋ 詳細作業を追加</button>
+    <div style="margin-bottom:4px;">${listHtml}</div>
   </div>`;
 };
 
@@ -35328,10 +35354,7 @@ window.buildBulkWorkMemoCropPickSectionHtml_ = (d, uid) => {
       </div>
       ${guide}
       ${window.buildBulkWorkMemoCropChipsHtml_(d, uid)}
-      <div style="display:flex; gap:8px; margin-top:4px;">
-        <button type="button" onclick="addBulkWorkMemoCrop_('${esc(uid)}')" style="flex:1; box-sizing:border-box; padding:10px 14px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid #66BB6A; background:#fff; color:#2E7D32; text-align:left;">＋ 作物を追加</button>
-        ${selected.length ? `<button type="button" onclick="collapseBulkWorkMemoCropPick_('${esc(uid)}')" style="flex-shrink:0; box-sizing:border-box; padding:10px 12px; border-radius:10px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid #A5D6A7; background:#fff; color:#2E7D32;">閉じる</button>` : ''}
-      </div>
+      ${selected.length ? `<div style="display:flex; justify-content:flex-end; margin-top:4px;"><button type="button" onclick="collapseBulkWorkMemoCropPick_('${esc(uid)}')" style="box-sizing:border-box; padding:10px 12px; border-radius:10px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid #A5D6A7; background:#fff; color:#2E7D32;">閉じる</button></div>` : ''}
     </div>`;
 };
 
@@ -35400,7 +35423,7 @@ window.buildBulkWorkMemoWorkManualPickHtml_ = (d, uid) => {
     return `
       <div style="margin-top:10px; padding-top:10px; border-top:1px dashed #FFCC80;">
         <div style="font-size:11px; color:#666; margin:0 0 6px; line-height:1.35;">見つからないとき</div>
-        <button type="button" onclick="window._bulkWorkMemoMasterEditUid='${esc(uid)}'; adminAddWorkName()" style="width:100%; box-sizing:border-box; background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:8px; padding:10px 12px; font-size:13px; font-weight:bold; cursor:pointer;">＋ 新しい作業を追加</button>
+        <button type="button" onclick="window._bulkWorkMemoMasterEditUid='${esc(uid)}'; adminAddWorkNameFromBulk_('${esc(uid)}')" style="width:100%; box-sizing:border-box; background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:8px; padding:10px 12px; font-size:13px; font-weight:bold; cursor:pointer;">＋ 新しい作業を追加</button>
         ${selectedWorkBtns}
       </div>`;
   })() : '';
@@ -35673,9 +35696,9 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
     const selectedDetails = Array.isArray(d.detailedWorks) ? d.detailedWorks : [];
     const selectedMachines = Array.isArray(d.usedMachines) ? d.usedMachines.map(m => String(m.id || m.name || '')) : [];
     if (details.length) {
-      html += `<div style="margin:8px 0;">
-        <div style="font-size:10px; color:#5E35B1; font-weight:bold; margin-bottom:6px;">📋 詳細作業（任意）</div>
-        <div style="display:flex; flex-wrap:wrap; gap:6px;">
+      html += `<div style="margin:8px 0; padding:10px 12px; border:1px solid #D1C4E9; border-radius:10px; background:#FAF8FF; box-sizing:border-box;">
+        <div style="font-size:10px; color:#5E35B1; font-weight:bold; margin-bottom:6px;">📋 詳細作業設定（任意）</div>
+        <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
           ${details.map(name => {
             const on = selectedDetails.indexOf(name) >= 0;
             const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -35683,14 +35706,17 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
               <input type="checkbox" ${on ? 'checked' : ''} onchange="toggleBulkWorkMemoDetail_('${esc(uid)}','${safe}', this.checked)" style="margin:0;"> ${esc(name)}
             </label>`;
           }).join('')}
+          <button type="button" onclick="openBulkWorkMemoDetailEditor_('${esc(uid)}','${String(d.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')" title="詳細作業設定" style="width:32px; height:32px; padding:0; border-radius:16px; font-size:18px; font-weight:bold; cursor:pointer; border:2px dashed #7E57C2; background:#fff; color:#5E35B1; line-height:1;">＋</button>
         </div>
-        <button type="button" onclick="openBulkWorkMemoDetailEditor_('${esc(uid)}','${String(d.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')" style="width:100%; box-sizing:border-box; margin-top:8px; padding:10px 12px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid #7E57C2; background:#fff; color:#5E35B1; text-align:center;">📋 詳細作業を編集・登録</button>
       </div>`;
     } else if (d.workMatched || String(d.workName || '').trim()) {
       const safeWork = String(d.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-      html += `<div style="margin:8px 0;">
-        <div style="padding:10px 12px; background:#F5F5F5; border:1px dashed #BDBDBD; border-radius:8px; font-size:12px; color:#666; line-height:1.4;">📋 この作業に登録されている詳細作業はありません</div>
-        <button type="button" onclick="openBulkWorkMemoDetailEditor_('${esc(uid)}','${safeWork}')" style="width:100%; box-sizing:border-box; margin-top:8px; padding:10px 12px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid #7E57C2; background:#fff; color:#5E35B1; text-align:center;">📋 詳細作業を編集・登録</button>
+      html += `<div style="margin:8px 0; padding:10px 12px; border:1px dashed #BDBDBD; border-radius:10px; background:#F5F5F5; box-sizing:border-box;">
+        <div style="font-size:10px; color:#5E35B1; font-weight:bold; margin-bottom:6px;">📋 詳細作業設定</div>
+        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+          <div style="font-size:12px; color:#666; line-height:1.4;">この作業に登録されている詳細作業はありません</div>
+          <button type="button" onclick="openBulkWorkMemoDetailEditor_('${esc(uid)}','${safeWork}')" title="詳細作業設定" style="width:32px; height:32px; padding:0; border-radius:16px; font-size:18px; font-weight:bold; cursor:pointer; border:2px dashed #7E57C2; background:#fff; color:#5E35B1; line-height:1;">＋</button>
+        </div>
       </div>`;
     }
     if (window.bulkWorkMemoIsMaintenance_(d)) {
