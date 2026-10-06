@@ -109,6 +109,9 @@
     <button id="btnCurrentLocation" class="map-action-btn" style="color: #4285F4;">
       📍
     </button>
+    <button id="btnActivityNotice" class="map-action-btn" onclick="openWorkerActivityNoticeModal_()" title="お知らせ" style="color: #5E35B1; position: relative;">
+      🔔<span id="activityNoticeBadge" style="display:none; position:absolute; top:-2px; right:-2px; background:#d32f2f; color:#fff; font-size:10px; min-width:16px; height:16px; line-height:16px; border-radius:8px; padding:0 4px; font-weight:bold; box-sizing:border-box;">0</span>
+    </button>
     <button id="btnMachineMaintHistory" class="map-action-btn" onclick="openWorkerMachineMaintHistoryModal_()" title="機械の整備履歴" style="color: #E65100;">
       🔧
     </button>
@@ -514,7 +517,7 @@
   <script src="machine-taxonomy.js?v=1788600000011"></script>
   <script src="weather-agri.js?v=1785489000300"></script>
   <script src="api-client.js?v=1788600000076"></script>
-  <script src="worker.js?v=1788600000117"></script>
+  <script src="worker.js?v=1788600000118"></script>
   <script src="tracking.js?v=1788600000050"></script>
   <script>
     if ('serviceWorker' in navigator) {

@@ -1175,6 +1175,9 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
             if (typeof window.refreshHarvestPendingBadge === 'function') window.refreshHarvestPendingBadge();
           } catch (e) {}
           try {
+            if (typeof window.refreshActivityNoticeBadge_ === 'function') window.refreshActivityNoticeBadge_();
+          } catch (e) {}
+          try {
             if (typeof window.consumeOpsDeepLink === 'function') {
               setTimeout(() => window.consumeOpsDeepLink(), 200);
             }
@@ -40218,6 +40221,9 @@ window.saveBulkWorkMemoHistoryEntry_ = (entry) => {
   const filtered = list.filter(x => x && x.batchId !== next.batchId);
   filtered.unshift(next);
   window.persistBulkWorkMemoHistory_(filtered);
+  if (typeof window.refreshActivityNoticeBadge_ === 'function') {
+    try { window.refreshActivityNoticeBadge_(); } catch (e) {}
+  }
 };
 
 window.getBulkWorkMemoHistoryEntry_ = (batchId) => {
@@ -40920,6 +40926,98 @@ window.deleteBulkWorkMemoHistoryEntry_ = async (batchId) => {
   } finally {
     if (typeof hideLoader === 'function') hideLoader();
   }
+};
+
+/** お知らせ（一括入力アクティビティ） */
+window.getActivityNoticeSeenAtKey_ = () => {
+  const user = String(
+    (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || 'anon'
+  ).replace(/\s+/g, '');
+  return 'passionMapActivityNoticeSeenAt:' + (user || 'anon');
+};
+
+window.getActivityNoticeSeenAt_ = () => {
+  try {
+    const n = Number(localStorage.getItem(window.getActivityNoticeSeenAtKey_()) || 0);
+    return isNaN(n) ? 0 : n;
+  } catch (e) {
+    return 0;
+  }
+};
+
+window.markActivityNoticeSeen_ = () => {
+  try {
+    localStorage.setItem(window.getActivityNoticeSeenAtKey_(), String(Date.now()));
+  } catch (e) {}
+  if (typeof window.refreshActivityNoticeBadge_ === 'function') {
+    window.refreshActivityNoticeBadge_();
+  }
+};
+
+window.countUnreadActivityNotices_ = () => {
+  const seenAt = window.getActivityNoticeSeenAt_();
+  const list = (typeof window.loadBulkWorkMemoHistory_ === 'function')
+    ? window.loadBulkWorkMemoHistory_()
+    : [];
+  return list.filter(x => x && Number(x.savedAt || 0) > seenAt).length;
+};
+
+window.refreshActivityNoticeBadge_ = () => {
+  const count = window.countUnreadActivityNotices_();
+  const badge = document.getElementById('activityNoticeBadge');
+  if (!badge) return count;
+  if (count > 0) {
+    badge.style.display = 'inline-block';
+    badge.textContent = count > 99 ? '99+' : String(count);
+  } else {
+    badge.style.display = 'none';
+    badge.textContent = '';
+  }
+  return count;
+};
+
+window.formatActivityNoticeWhen_ = (savedAt) => {
+  const d = new Date(Number(savedAt) || 0);
+  if (isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
+window.openWorkerActivityNoticeModal_ = () => {
+  const modalEl = document.getElementById('modal');
+  if (!modalEl || typeof window.fillAppModalHtml_ !== 'function') return;
+  window.markActivityNoticeSeen_();
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const list = (typeof window.loadBulkWorkMemoHistory_ === 'function')
+    ? window.loadBulkWorkMemoHistory_()
+    : [];
+  const rows = list.length
+    ? list.map(entry => {
+        const safeId = String(entry.batchId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const when = window.formatActivityNoticeWhen_(entry.savedAt);
+        const n = Number(entry.itemCount) || (Array.isArray(entry.items) ? entry.items.length : 0) || 0;
+        const workDate = String(entry.workDate || '').trim();
+        return `
+          <button type="button" onclick="openBulkWorkMemoHistoryDetail_('${safeId}')" style="display:block; width:100%; box-sizing:border-box; text-align:left; border:1px solid #D1C4E9; border-radius:10px; padding:12px; margin-bottom:10px; background:#FAF8FF; cursor:pointer;">
+            <div style="font-size:11px; color:#7E57C2; font-weight:bold; margin-bottom:4px;">${when ? esc(when) : '登録時刻不明'}${workDate ? ` ／ 作業日 ${esc(workDate)}` : ''}</div>
+            <div style="font-size:13px; font-weight:bold; color:#4527A0; line-height:1.4;">一括入力で作業記録が ${n} 件登録されました</div>
+            ${entry.preview ? `<div style="font-size:11px; color:#666; margin-top:6px; line-height:1.35;">${esc(entry.preview)}</div>` : ''}
+          </button>`;
+      }).join('')
+    : `<div style="padding:20px 12px; text-align:center; color:#888; font-size:13px; line-height:1.5;">まだお知らせはありません。<br>一括入力で作業を登録するとここに表示されます。</div>`;
+  const headerHtml = (typeof window.buildBulkWorkMemoModalHeaderHtml_ === 'function')
+    ? window.buildBulkWorkMemoModalHeaderHtml_('🔔 お知らせ', '一括入力で登録した作業のアクティビティです。タップで詳細・日付変更へ。')
+    : `<div style="font-size:17px; font-weight:bold; color:#5E35B1; margin-bottom:12px;">🔔 お知らせ</div>`;
+  window.fillAppModalHtml_(`
+    <div style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
+      ${headerHtml}
+      <div style="margin-bottom:12px;">${rows}</div>
+      <button type="button" onclick="openBulkWorkMemoHistoryModal_()" style="width:100%; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-bottom:8px;">📜 一括入力履歴を開く</button>
+      <button type="button" onclick="closeBulkWorkMemoModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
+    </div>`);
+  modalEl.style.display = 'flex';
+  window._bulkWorkMemoActive = true;
+  if (typeof window.setBulkWorkMemoModalClass_ === 'function') window.setBulkWorkMemoModalClass_('open');
+  try { modalEl.onclick = null; } catch (e) {}
 };
 
 window.openBulkWorkMemoHistoryModal_ = () => {
