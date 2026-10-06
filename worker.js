@@ -25410,11 +25410,37 @@ function createSignboardMarker(name, pos, icon, id) {
              }
 
              if (machineUpdates.length > 0) {
+                 const noticeMachines = [];
                  machineUpdates.forEach(upd => {
                     const m = (pdlMachines || []).find(x => x.id === upd.id);
+                    const fromId = m ? String(m.currentLocId || m.signId || '').trim() : '';
+                    const fromName = m ? String(m.currentLocName || m.signName || '').trim() : '';
+                    const toId = String(upd.signId || '').trim();
+                    if (toId && toId !== fromId) {
+                      noticeMachines.push({
+                        id: String(upd.id || ''),
+                        name: String((m && m.name) || upd.id || '').trim(),
+                        fromName: fromName,
+                        toName: String(upd.signName || '').trim()
+                      });
+                    }
                     if (m) { m.currentLocId = upd.signId; m.currentLocName = upd.signName; }
                  });
                  sideEffects.push({ action: 'updateMachineLocations', params: { updates: machineUpdates } });
+                 if (noticeMachines.length && typeof window.pushMachineLocationActivityNotice_ === 'function') {
+                   try {
+                     const wDate = String(
+                       (data && data.workDate)
+                       || (document.getElementById('rec_work_date') && document.getElementById('rec_work_date').value)
+                       || ''
+                     ).slice(0, 10);
+                     window.pushMachineLocationActivityNotice_({
+                       machines: noticeMachines,
+                       workDate: wDate,
+                       userName: String(localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '')
+                     });
+                   } catch (e) {}
+                 }
              }
           }
 
@@ -41039,6 +41065,8 @@ window.collectBulkMachineLocationUpdatesFromDrafts_ = (drafts) => {
         const m = pdlMachines.find(x => x && String(x.id) === id);
         if (m) name = String(m.name || '').trim();
       }
+      const fromId = String(a.fromId || '').trim();
+      if (fromId && fromId === toId) return;
       const key = (id || name) + '=>' + toId;
       if (!id && !name) return;
       if (seen.has(key)) return;
@@ -41054,17 +41082,21 @@ window.collectBulkMachineLocationUpdatesFromDrafts_ = (drafts) => {
   return out;
 };
 
-window.pushBulkMachineLocationActivityNotice_ = (opts) => {
+window.pushMachineLocationActivityNotice_ = (opts) => {
   opts = opts || {};
-  const machines = window.collectBulkMachineLocationUpdatesFromDrafts_(opts.drafts);
+  let machines = Array.isArray(opts.machines) ? opts.machines : [];
+  if (!machines.length && opts.drafts) {
+    machines = window.collectBulkMachineLocationUpdatesFromDrafts_(opts.drafts);
+  }
+  machines = machines.filter(m => m && String(m.toName || '').trim() && String(m.name || m.id || '').trim());
   if (!machines.length) return;
   const batchId = String(opts.batchId || '').trim();
   const preview = machines.slice(0, 6).map(m => {
     const from = m.fromName ? `${m.fromName} → ` : '';
-    return `${m.name}: ${from}${m.toName}`;
+    return `${m.name || m.id}: ${from}${m.toName}`;
   }).join(' ／ ');
   window.pushActivityNoticeExtra_({
-    id: 'ml_' + (batchId || Date.now()),
+    id: 'ml_' + (batchId || ('form_' + Date.now() + '_' + Math.floor(Math.random() * 1000))),
     type: 'machine_location',
     savedAt: Date.now(),
     workDate: String(opts.workDate || '').slice(0, 10),
@@ -41074,6 +41106,10 @@ window.pushBulkMachineLocationActivityNotice_ = (opts) => {
     userName: String(opts.userName || ''),
     machines: machines
   });
+};
+
+window.pushBulkMachineLocationActivityNotice_ = (opts) => {
+  window.pushMachineLocationActivityNotice_(opts || {});
 };
 
 window.getActivityNoticeFeed_ = () => {
@@ -41138,28 +41174,29 @@ window.openWorkerActivityNoticeModal_ = () => {
         const when = window.formatActivityNoticeWhen_(entry.savedAt);
         const n = Number(entry.itemCount) || 0;
         const workDate = String(entry.workDate || '').trim();
-        const click = safeBatch
-          ? `openBulkWorkMemoHistoryDetail_('${safeBatch}')`
-          : 'openBulkWorkMemoHistoryModal_()';
         const isMachine = String(entry.type || '') === 'machine_location';
+        const clickAttr = safeBatch
+          ? ` onclick="openBulkWorkMemoHistoryDetail_('${safeBatch}')"`
+          : (isMachine ? '' : ' onclick="openBulkWorkMemoHistoryModal_()"');
+        const cursor = (safeBatch || !isMachine) ? 'pointer' : 'default';
         const title = isMachine
-          ? `一括入力で機械の場所が ${n} 件更新されました`
-          : `一括入力で作業記録が ${n} 件登録されました`;
+          ? `機械の場所が ${n} 件更新されました`
+          : `作業記録が ${n} 件登録されました`;
         const border = isMachine ? '#FFE0B2' : '#D1C4E9';
         const bg = isMachine ? '#FFF8E1' : '#FAF8FF';
         const titleColor = isMachine ? '#E65100' : '#4527A0';
         const metaColor = isMachine ? '#EF6C00' : '#7E57C2';
         const icon = isMachine ? '🚜 ' : '';
         return `
-          <button type="button" onclick="${click}" style="display:block; width:100%; box-sizing:border-box; text-align:left; border:1px solid ${border}; border-radius:10px; padding:12px; margin-bottom:10px; background:${bg}; cursor:pointer;">
+          <button type="button"${clickAttr} style="display:block; width:100%; box-sizing:border-box; text-align:left; border:1px solid ${border}; border-radius:10px; padding:12px; margin-bottom:10px; background:${bg}; cursor:${cursor};">
             <div style="font-size:11px; color:${metaColor}; font-weight:bold; margin-bottom:4px;">${when ? esc(when) : '登録時刻不明'}${workDate ? ` ／ 作業日 ${esc(workDate)}` : ''}</div>
             <div style="font-size:13px; font-weight:bold; color:${titleColor}; line-height:1.4;">${icon}${esc(title)}</div>
             ${entry.preview ? `<div style="font-size:11px; color:#666; margin-top:6px; line-height:1.35;">${esc(entry.preview)}</div>` : ''}
           </button>`;
       }).join('')
-    : `<div style="padding:20px 12px; text-align:center; color:#888; font-size:13px; line-height:1.5;">まだお知らせはありません。<br>一括入力で作業や機械の場所を更新するとここに表示されます。</div>`;
+    : `<div style="padding:20px 12px; text-align:center; color:#888; font-size:13px; line-height:1.5;">まだお知らせはありません。<br>作業の登録や機械の場所を更新するとここに表示されます。</div>`;
   const headerHtml = (typeof window.buildBulkWorkMemoModalHeaderHtml_ === 'function')
-    ? window.buildBulkWorkMemoModalHeaderHtml_('🔔 お知らせ', '一括入力の登録・機械の場所更新を確認できます。タップで詳細へ。')
+    ? window.buildBulkWorkMemoModalHeaderHtml_('🔔 お知らせ', '作業記録の登録・機械の場所更新を確認できます。')
     : `<div style="font-size:17px; font-weight:bold; color:#5E35B1; margin-bottom:12px;">🔔 お知らせ</div>`;
   window.fillAppModalHtml_(`
     <div style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
