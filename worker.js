@@ -1927,35 +1927,86 @@ window.openTyphoonModal = function() {
         map.addListener('zoom_changed', updateMarkersVisibility);
 
         // ==========================================
-        // 📏 畝の長さ（距離）計測機能
+        // 📏 計測メニュー（距離 / 圃場合計面積）
         // ==========================================
         window._isRidgeMeasuring = false;
         window._ridgeMeasurePoints = [];
         window._ridgeMeasureOverlays = [];
         window._latestRidgeMeasuredLength = null;
+        window._isFieldAreaMeasuring = false;
+        window._fieldAreaMeasureBackupIds = [];
 
-        window.toggleRidgeMeasureTool = () => {
+        window.setMeasureBtnActive_ = (active, color) => {
+          const btn = document.getElementById('btnMeasureRidge');
+          if (!btn) return;
+          if (active) {
+            btn.style.background = color || '#00838F';
+            btn.style.color = '#fff';
+          } else {
+            btn.style.background = '';
+            btn.style.color = '#00838F';
+          }
+        };
+
+        window.closeMeasureToolChooser = () => {
+          const chooser = document.getElementById('measureToolChooser');
+          if (chooser) chooser.style.display = 'none';
+          if (!window._isRidgeMeasuring && !window._isFieldAreaMeasuring) {
+            window.setMeasureBtnActive_(false);
+          }
+        };
+
+        window.openMeasureToolChooser = () => {
+          if (window._isRidgeMeasuring) window.closeRidgeMeasureTool();
+          if (window._isFieldAreaMeasuring) window.closeFieldAreaMeasureTool();
+          const chooser = document.getElementById('measureToolChooser');
+          if (chooser) chooser.style.display = 'block';
+          window.setMeasureBtnActive_(true, '#00838F');
+        };
+
+        window.toggleMeasureToolMenu = () => {
           if (window._isRidgeMeasuring) {
             window.closeRidgeMeasureTool();
+            return;
+          }
+          if (window._isFieldAreaMeasuring) {
+            window.closeFieldAreaMeasureTool();
+            return;
+          }
+          const chooser = document.getElementById('measureToolChooser');
+          const open = chooser && chooser.style.display !== 'none' && chooser.style.display !== '';
+          if (open) {
+            window.closeMeasureToolChooser();
+          } else {
+            window.openMeasureToolChooser();
+          }
+        };
+
+        window.startMeasureToolMode_ = (mode) => {
+          window.closeMeasureToolChooser();
+          if (mode === 'area') {
+            window.openFieldAreaMeasureTool();
           } else {
             window.openRidgeMeasureTool();
           }
         };
 
+        // 互換: 旧呼び出し名
+        window.toggleRidgeMeasureTool = () => {
+          window.toggleMeasureToolMenu();
+        };
+
         window.openRidgeMeasureTool = () => {
+          if (window._isFieldAreaMeasuring) window.closeFieldAreaMeasureTool();
+          window.closeMeasureToolChooser();
           window._isRidgeMeasuring = true;
           window.resetRidgeMeasurePoints();
 
           const bar = document.getElementById('ridgeMeasureBar');
           if (bar) bar.style.display = 'block';
-
-          const btn = document.getElementById('btnMeasureRidge');
-          if (btn) {
-            btn.style.background = '#00838F';
-            btn.style.color = '#fff';
-          }
+          window.setMeasureBtnActive_(true, '#00838F');
           if (typeof window.showRecordSyncToast === 'function') {
-            window.showRecordSyncToast('📏 畝の長さ計測モード: 地図上をタップして起点と終点を選んでください', 'info');
+            window.showRecordSyncToast('📏 距離計測モード: 地図上をタップして起点と終点を選んでください', 'info');
           }
         };
 
@@ -1965,12 +2016,105 @@ window.openTyphoonModal = function() {
 
           const bar = document.getElementById('ridgeMeasureBar');
           if (bar) bar.style.display = 'none';
+          if (!window._isFieldAreaMeasuring) window.setMeasureBtnActive_(false);
+        };
 
-          const btn = document.getElementById('btnMeasureRidge');
-          if (btn) {
-            btn.style.background = '';
-            btn.style.color = '#00838F';
+        window.openFieldAreaMeasureTool = () => {
+          if (window._isRidgeMeasuring) window.closeRidgeMeasureTool();
+          window.closeMeasureToolChooser();
+          window._isFieldAreaMeasuring = true;
+          window._fieldAreaMeasureBackupIds = Array.isArray(selectedPolyIds) ? selectedPolyIds.slice() : [];
+          selectedPolyIds = [];
+          window.setMapSelectingMode_(true);
+          try { if (infoWindow && infoWindow.close) infoWindow.close(); } catch (e) {}
+          const rp = document.getElementById('rightPanel');
+          if (rp) rp.style.display = 'none';
+          const mapUi = document.getElementById('mapSelectUI');
+          if (mapUi) mapUi.style.display = 'none';
+          const bar = document.getElementById('fieldAreaMeasureBar');
+          if (bar) bar.style.display = 'block';
+          window.setMeasureBtnActive_(true, '#2E7D32');
+          window.refreshFieldAreaMeasureUI_();
+          if (typeof updateMapSelectVisuals === 'function') updateMapSelectVisuals();
+          if (typeof window.showRecordSyncToast === 'function') {
+            window.showRecordSyncToast('🟩 圃場面積モード: 圃場をタップして複数選択してください', 'info');
           }
+        };
+
+        window.closeFieldAreaMeasureTool = () => {
+          window._isFieldAreaMeasuring = false;
+          selectedPolyIds = Array.isArray(window._fieldAreaMeasureBackupIds)
+            ? window._fieldAreaMeasureBackupIds.slice()
+            : [];
+          window._fieldAreaMeasureBackupIds = [];
+          window.setMapSelectingMode_(false);
+          const bar = document.getElementById('fieldAreaMeasureBar');
+          if (bar) bar.style.display = 'none';
+          const rp = document.getElementById('rightPanel');
+          if (rp) rp.style.display = 'flex';
+          if (typeof updateMapSelectVisuals === 'function') updateMapSelectVisuals();
+          if (!window._isRidgeMeasuring) window.setMeasureBtnActive_(false);
+        };
+
+        window.clearFieldAreaMeasureSelection_ = () => {
+          if (!window._isFieldAreaMeasuring) return;
+          selectedPolyIds = [];
+          window.refreshFieldAreaMeasureUI_();
+          if (typeof updateMapSelectVisuals === 'function') updateMapSelectVisuals();
+        };
+
+        window.refreshFieldAreaMeasureUI_ = () => {
+          const ids = (selectedPolyIds || []).filter((id) => {
+            const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
+            return p && !p.isMarker;
+          });
+          const totalA = (typeof window.getPolyIdsAreaA_ === 'function')
+            ? window.getPolyIdsAreaA_(ids)
+            : ids.reduce((sum, id) => {
+                const p = loadedPolygons[id];
+                const a = Number(p && p.area);
+                return sum + ((!isNaN(a) && a > 0) ? a : 0);
+              }, 0);
+          const m2 = Math.round(Number(totalA || 0) * 100);
+          const valEl = document.getElementById('fieldAreaMeasureValue');
+          const subEl = document.getElementById('fieldAreaMeasureSub');
+          const listEl = document.getElementById('fieldAreaMeasureList');
+          const hintEl = document.getElementById('fieldAreaMeasureHint');
+          if (valEl) valEl.textContent = `${Number(totalA || 0)} a`;
+          if (subEl) subEl.textContent = `${m2.toLocaleString('ja-JP')} ㎡ ／ ${ids.length}件`;
+          if (listEl) {
+            if (!ids.length) {
+              listEl.textContent = 'まだ圃場が選ばれていません';
+            } else {
+              listEl.innerHTML = ids.map((id) => {
+                const p = loadedPolygons[id];
+                const name = (p && p.name) ? String(p.name) : id;
+                const a = (typeof window.getPolyAreaA_ === 'function')
+                  ? window.getPolyAreaA_(id)
+                  : (Number(p && p.area) || 0);
+                return `・${name}（${a}a）`;
+              }).join('<br>');
+            }
+          }
+          if (hintEl) {
+            hintEl.textContent = ids.length
+              ? '続けて圃場をタップで追加／再タップで解除できます。'
+              : '地図上の圃場をタップして複数選択すると、合計面積が分かります。';
+          }
+        };
+
+        window.handleFieldAreaMeasureTap_ = (id) => {
+          if (!window._isFieldAreaMeasuring) return false;
+          const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
+          if (!p || p.isMarker) return true;
+          if (selectedPolyIds.includes(id)) {
+            selectedPolyIds = selectedPolyIds.filter(i => i !== id);
+          } else {
+            selectedPolyIds.push(id);
+          }
+          window.refreshFieldAreaMeasureUI_();
+          if (typeof updateMapSelectVisuals === 'function') updateMapSelectVisuals();
+          return true;
         };
 
         window.resetRidgeMeasurePoints = () => {
@@ -2243,6 +2387,10 @@ function createSignboardMarker(name, pos, icon, id) {
       /** 圃場ポリゴン／ラベルタップ（マップ選択中は選択、通常時は作業・生育メニュー） */
       function handleFieldPolygonClick_(id, e) {
         if (typeof window.stopMapEvent_ === 'function') window.stopMapEvent_(e);
+        if (window._isFieldAreaMeasuring && typeof window.handleFieldAreaMeasureTap_ === 'function') {
+          window.handleFieldAreaMeasureTap_(id);
+          return;
+        }
         if (isMapSelecting) {
           if (window._deliveryDestMapSelectMode && typeof window.handleDeliveryDestMapTap === 'function') {
             window.handleDeliveryDestMapTap(id);

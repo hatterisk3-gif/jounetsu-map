@@ -101,7 +101,7 @@
     </button>
     <button id="btnTracking" class="map-action-btn" onclick="toggleTracking()" style="color: #4CAF50;">
       🏃    </button>
-    <button id="btnMeasureRidge" class="map-action-btn" onclick="toggleRidgeMeasureTool()" title="畝の長さを測る" style="color: #00838F;">
+    <button id="btnMeasureRidge" class="map-action-btn" onclick="toggleMeasureToolMenu()" title="計測（距離・面積）" style="color: #00838F;">
       📏
     </button>
     <button id="btnPersonalSchedule" class="map-action-btn" onclick="openPersonalSchedule()" title="スケジュール" style="color: #2E7D32;">
@@ -115,6 +115,26 @@
     <button id="btnGpsWorkRecord" class="map-action-btn map-action-btn--plus" onclick="document.getElementById('recordTypeSelectModal').style.display='flex'" title="記録を追加" style="color: #fff; background: #4285F4;">
       ＋
     </button>
+  </div>
+
+  <!-- 📏 計測メニュー（距離 / 面積） -->
+  <div id="measureToolChooser"
+    style="display:none; position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(15,23,42,0.96); color:#fff; padding:14px; border-radius:12px; z-index:10000; width:92%; max-width:420px; box-shadow:0 8px 24px rgba(0,0,0,0.4); box-sizing:border-box;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <div style="font-weight:bold; font-size:15px; color:#4DD0E1;">📏 計測メニュー</div>
+      <button type="button" onclick="closeMeasureToolChooser()" style="background:none; border:none; color:#ccc; font-size:20px; cursor:pointer; line-height:1;">×</button>
+    </div>
+    <div style="font-size:12px; color:#E0F7FA; margin-bottom:12px; line-height:1.4;">使いたい計測を選んでください。</div>
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      <button type="button" onclick="startMeasureToolMode_('distance')" style="width:100%; box-sizing:border-box; text-align:left; background:#00838F; color:#fff; border:none; border-radius:10px; padding:12px 14px; font-weight:bold; font-size:14px; cursor:pointer; line-height:1.35;">
+        📐 地図の距離を測る<br>
+        <span style="font-size:11px; font-weight:normal; opacity:0.9;">2点タップで畝長・距離を計測</span>
+      </button>
+      <button type="button" onclick="startMeasureToolMode_('area')" style="width:100%; box-sizing:border-box; text-align:left; background:#2E7D32; color:#fff; border:none; border-radius:10px; padding:12px 14px; font-weight:bold; font-size:14px; cursor:pointer; line-height:1.35;">
+        🟩 圃場面積を算出する<br>
+        <span style="font-size:11px; font-weight:normal; opacity:0.9;">複数圃場を選んで合計面積を表示</span>
+      </button>
+    </div>
   </div>
 
   <!-- 📏 畝の長さ計測バー -->
@@ -144,6 +164,29 @@
 
     <div id="ridgeMeasureApplyRow" style="display:none; margin-top:8px; gap:6px;">
       <button type="button" onclick="applyRidgeMeasureResultToRecord()" style="width:100%; background:#2E7D32; color:#fff; border:none; padding:10px; border-radius:6px; font-size:13px; font-weight:bold; cursor:pointer;">📋 計測長を作業記録に適用・コピー</button>
+    </div>
+  </div>
+
+  <!-- 🟩 圃場面積算出バー -->
+  <div id="fieldAreaMeasureBar"
+    style="display:none; position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(15,23,42,0.94); color:#fff; padding:14px; border-radius:12px; z-index:10000; width:92%; max-width:420px; box-shadow:0 8px 24px rgba(0,0,0,0.4); box-sizing:border-box;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <div style="font-weight:bold; font-size:15px; color:#81C784; display:flex; align-items:center; gap:6px;">
+        🟩 圃場面積を算出
+      </div>
+      <button type="button" onclick="closeFieldAreaMeasureTool()" style="background:none; border:none; color:#ccc; font-size:20px; cursor:pointer; line-height:1;">×</button>
+    </div>
+    <div id="fieldAreaMeasureHint" style="font-size:12px; color:#E8F5E9; margin-bottom:10px; line-height:1.4;">
+      地図上の圃場をタップして複数選択すると、合計面積が分かります。</div>
+    <div id="fieldAreaMeasureResultBox" style="background:#1B5E20; border:1px solid #43A047; border-radius:8px; padding:10px; text-align:center; margin-bottom:10px;">
+      <div style="font-size:11px; color:#A5D6A7; font-weight:bold;">選択中の合計面積</div>
+      <div id="fieldAreaMeasureValue" style="font-size:24px; font-weight:bold; color:#C8E6C9; margin:2px 0;">0 a</div>
+      <div id="fieldAreaMeasureSub" style="font-size:11px; color:#E8F5E9;">0 ㎡ ／ 0件</div>
+    </div>
+    <div id="fieldAreaMeasureList" style="font-size:11px; color:#C8E6C9; line-height:1.45; max-height:90px; overflow-y:auto; margin-bottom:10px; background:rgba(0,0,0,0.2); border-radius:8px; padding:8px;">まだ圃場が選ばれていません</div>
+    <div style="display:flex; gap:6px;">
+      <button type="button" onclick="clearFieldAreaMeasureSelection_()" style="flex:1; background:#546E7A; color:#fff; border:none; padding:10px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer;">🔄 選択解除</button>
+      <button type="button" onclick="closeFieldAreaMeasureTool()" style="flex:1; background:#2E7D32; color:#fff; border:none; padding:10px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer;">完了</button>
     </div>
   </div>
 
@@ -471,7 +514,7 @@
   <script src="machine-taxonomy.js?v=1788600000011"></script>
   <script src="weather-agri.js?v=1785489000300"></script>
   <script src="api-client.js?v=1788600000076"></script>
-  <script src="worker.js?v=1788600000115"></script>
+  <script src="worker.js?v=1788600000116"></script>
   <script src="tracking.js?v=1788600000050"></script>
   <script>
     if ('serviceWorker' in navigator) {
