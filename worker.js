@@ -13943,7 +13943,11 @@ function createSignboardMarker(name, pos, icon, id) {
           ? draft.detailedWorks.map(s => String(s || '').trim()).filter(Boolean)
           : [],
         prepTargetWork: String(draft && draft.prepTargetWork || '').trim(),
-        prepTargetCategory: String(draft && draft.prepTargetCategory || '').trim()
+        prepTargetCategory: String(draft && draft.prepTargetCategory || '').trim(),
+        minutes: (draft && draft.minutes != null && !isNaN(Number(draft.minutes)))
+          ? Math.max(0, Math.round(Number(draft.minutes)))
+          : null,
+        minutesMode: (String(draft && draft.minutesMode || '').trim() === 'equal') ? 'equal' : 'fixed'
       });
 
       window.formatConcurrentWorkSummary_ = (entry) => {
@@ -13955,13 +13959,16 @@ function createSignboardMarker(name, pos, icon, id) {
         const details = (Array.isArray(entry.detailedWorks) && entry.detailedWorks.length)
           ? `（${entry.detailedWorks.join('、')}）`
           : '';
+        const mins = (entry.minutes != null && !isNaN(Number(entry.minutes)) && Number(entry.minutes) > 0)
+          ? `（${Math.round(Number(entry.minutes))}分${entry.minutesMode === 'equal' ? '・均等' : ''}）`
+          : '';
         const isMeta = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat);
         const prepTarget = String(entry.prepTargetWork || '').trim();
         const prepTargetCat = String(entry.prepTargetCategory || '').trim();
         if (isMeta) {
           const target = prepTarget || String(entry.workName || '').trim() || '（対象未選択）';
           const tCat = prepTargetCat ? `／対象カテゴリ:${prepTargetCat}` : '';
-          return `[${cat}] ${crops} / 対象:${target}${tCat}${details}`;
+          return `[${cat}] ${crops} / 対象:${target}${tCat}${details}${mins}`;
         }
         const catLabel = cat ? `[${cat}] ` : '';
         const wName = String(entry.workName || '').trim()
@@ -13969,7 +13976,7 @@ function createSignboardMarker(name, pos, icon, id) {
           || String(entry.rawHint || '').trim()
           || '（未選択）';
         const memoTag = entry._fromMemo && !entry.workName ? '📝' : '';
-        return `${memoTag}${catLabel}${crops} / ${wName}${details}`;
+        return `${memoTag}${catLabel}${crops} / ${wName}${details}${mins}`;
       };
 
       /** 同時作業モーダル用カテゴリ（登録済みカテゴリのみ。準備／片づけもマスタにあれば含む） */
@@ -14508,6 +14515,84 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!row || !Array.isArray(row.concurrentWorks)) return;
         const sid = String(id || '').trim();
         row.concurrentWorks = row.concurrentWorks.filter(cw => cw && String(cw.id) !== sid);
+        if (typeof window.syncBulkConcurrentEqualMinutes_ === 'function') {
+          window.syncBulkConcurrentEqualMinutes_(row);
+        }
+        window.rerenderBulkConcurrentCard_(uid);
+      };
+
+      window.getBulkConcurrentSlotMins_ = (d) => {
+        const parse = (t) => {
+          const s = (typeof window.normalizeTimeHm === 'function')
+            ? (window.normalizeTimeHm(t) || '')
+            : String(t || '').trim();
+          const m = String(s).match(/^(\d{1,2}):(\d{2})$/);
+          if (!m) return null;
+          return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+        };
+        const a = parse(d && d.startTime);
+        const b = parse(d && d.endTime);
+        if (a == null || b == null) return 0;
+        let diff = b - a;
+        if (diff < 0) diff += 24 * 60;
+        return Math.max(0, diff);
+      };
+
+      window.getBulkConcurrentDurationOptions_ = (slotMins) => {
+        const slot = Math.max(0, Math.round(Number(slotMins) || 0));
+        const fixed = [5, 10, 15, 20, 25, 30, 60, 120].filter(n => n <= slot);
+        return { slotMins: slot, fixed, equalLabel: '均等割り' };
+      };
+
+      window.ensureBulkConcurrentDraft_ = (d) => {
+        if (!d) return null;
+        if (!d._concurrentDraft || typeof d._concurrentDraft !== 'object') {
+          d._concurrentDraft = {
+            cropNames: [],
+            cropName: '',
+            listFilterCategory: '',
+            category: '',
+            workName: '',
+            detailedWorks: [],
+            prepTargetWork: '',
+            prepTargetCategory: '',
+            minutes: null,
+            minutesMode: 'fixed'
+          };
+        }
+        if (!Array.isArray(d._concurrentDraft.cropNames)) d._concurrentDraft.cropNames = [];
+        if (!Array.isArray(d._concurrentDraft.detailedWorks)) d._concurrentDraft.detailedWorks = [];
+        return d._concurrentDraft;
+      };
+
+      window.clearBulkConcurrentDraft_ = (d) => {
+        if (!d) return;
+        d._concurrentDraft = {
+          cropNames: [],
+          cropName: '',
+          listFilterCategory: '',
+          category: '',
+          workName: '',
+          detailedWorks: [],
+          prepTargetWork: '',
+          prepTargetCategory: '',
+          minutes: null,
+          minutesMode: 'fixed'
+        };
+      };
+
+      window.syncBulkConcurrentEqualMinutes_ = (d) => {
+        if (!d || !Array.isArray(d.concurrentWorks) || !d.concurrentWorks.length) return;
+        const n = d.concurrentWorks.length;
+        const slot = window.getBulkConcurrentSlotMins_(d);
+        const equalMins = n > 0 ? Math.floor(slot / n) : 0;
+        d.concurrentWorks.forEach(cw => {
+          if (!cw || cw.minutesMode !== 'equal') return;
+          cw.minutes = equalMins;
+        });
+      };
+
+      window.rerenderBulkConcurrentCard_ = (uid) => {
         if (window._bulkWorkMemoManualAddUid === uid) {
           window.renderBulkWorkMemoManualAddModal_();
         } else if (document.getElementById('bulk_work_memo_confirm_scroll')) {
@@ -14517,13 +14602,251 @@ function createSignboardMarker(name, pos, icon, id) {
         }
       };
 
+      window.toggleBulkConcurrentPanel_ = (uid) => {
+        const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+        if (!row) return;
+        row._concurrentPanelOpen = !row._concurrentPanelOpen;
+        if (row._concurrentPanelOpen) window.ensureBulkConcurrentDraft_(row);
+        window.rerenderBulkConcurrentCard_(uid);
+      };
+
+      window.pickBulkConcurrentDraftCrop_ = (uid, name) => {
+        const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+        if (!row) return;
+        const draft = window.ensureBulkConcurrentDraft_(row);
+        const cur = typeof window.getBulkWorkMemoCropNames_ === 'function'
+          ? window.getBulkWorkMemoCropNames_(draft)
+          : (Array.isArray(draft.cropNames) ? draft.cropNames.slice() : []);
+        const next = (typeof window.toggleBulkWorkMemoCropNames_ === 'function')
+          ? window.toggleBulkWorkMemoCropNames_(cur, name)
+          : (() => {
+              const n = String(name || '').trim();
+              if (!n) return cur;
+              if (cur.indexOf(n) >= 0) return cur.filter(x => x !== n);
+              return cur.concat([n]);
+            })();
+        draft.cropNames = next;
+        draft.cropName = next[0] || '';
+        window.rerenderBulkConcurrentCard_(uid);
+      };
+
+      window.pickBulkConcurrentDraftCategory_ = (uid, category) => {
+        const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+        if (!row) return;
+        const draft = window.ensureBulkConcurrentDraft_(row);
+        let next = String(category || '').trim();
+        if (next && next === String(draft.listFilterCategory || '').trim()) next = '';
+        draft.listFilterCategory = next;
+        const isMeta = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(next);
+        if (isMeta) {
+          draft.category = next;
+          draft.workName = '';
+          draft.detailedWorks = [];
+          draft.prepTargetWork = '';
+          draft.prepTargetCategory = '';
+        } else {
+          if (typeof window.isMetaTargetCategory_ === 'function'
+              && window.isMetaTargetCategory_(String(draft.category || '').trim())) {
+            draft.category = '';
+            draft.prepTargetWork = '';
+            draft.prepTargetCategory = '';
+          }
+          if (draft.workName && typeof window.getBulkWorkMemoWorkCategory_ === 'function') {
+            const wCat = window.getBulkWorkMemoWorkCategory_(draft.workName);
+            if (wCat) draft.category = wCat;
+          }
+        }
+        window.rerenderBulkConcurrentCard_(uid);
+      };
+
+      window.pickBulkConcurrentDraftWork_ = (uid, name) => {
+        const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+        if (!row) return;
+        const draft = window.ensureBulkConcurrentDraft_(row);
+        const workName = String(name || '').trim();
+        if (!workName) return;
+        const filterCat = String(draft.listFilterCategory || '').trim();
+        const isMeta = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(filterCat);
+        draft.workName = workName;
+        draft.detailedWorks = [];
+        if (isMeta) {
+          draft.category = filterCat;
+          draft.prepTargetWork = workName;
+          draft.prepTargetCategory = (typeof window.getBulkWorkMemoWorkCategory_ === 'function')
+            ? (window.getBulkWorkMemoWorkCategory_(workName) || '')
+            : '';
+        } else {
+          draft.prepTargetWork = '';
+          draft.prepTargetCategory = '';
+          const cat = (typeof window.getBulkWorkMemoWorkCategory_ === 'function')
+            ? window.getBulkWorkMemoWorkCategory_(workName)
+            : '';
+          if (cat) draft.category = cat;
+          else if (filterCat) draft.category = filterCat;
+        }
+        window.rerenderBulkConcurrentCard_(uid);
+      };
+
+      window.toggleBulkConcurrentDraftDetail_ = (uid, name, checked) => {
+        const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+        if (!row) return;
+        const draft = window.ensureBulkConcurrentDraft_(row);
+        if (!Array.isArray(draft.detailedWorks)) draft.detailedWorks = [];
+        const n = String(name || '').trim();
+        if (!n) return;
+        if (checked) {
+          if (draft.detailedWorks.indexOf(n) < 0) draft.detailedWorks.push(n);
+        } else {
+          draft.detailedWorks = draft.detailedWorks.filter(x => x !== n);
+        }
+        window.rerenderBulkConcurrentCard_(uid);
+      };
+
+      window.setBulkConcurrentDraftMinutes_ = (uid, value) => {
+        const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+        if (!row) return;
+        const draft = window.ensureBulkConcurrentDraft_(row);
+        if (String(value) === 'equal') {
+          draft.minutesMode = 'equal';
+          const n = (Array.isArray(row.concurrentWorks) ? row.concurrentWorks.length : 0) + 1;
+          const slot = window.getBulkConcurrentSlotMins_(row);
+          draft.minutes = n > 0 ? Math.floor(slot / n) : 0;
+        } else {
+          draft.minutesMode = 'fixed';
+          draft.minutes = Math.max(0, Math.round(Number(value) || 0));
+        }
+        window.rerenderBulkConcurrentCard_(uid);
+      };
+
+      window.setBulkConcurrentMinutes_ = (uid, cwId, value) => {
+        const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+        if (!row || !Array.isArray(row.concurrentWorks)) return;
+        const entry = row.concurrentWorks.find(cw => cw && String(cw.id) === String(cwId || '').trim());
+        if (!entry) return;
+        if (String(value) === 'equal') {
+          entry.minutesMode = 'equal';
+        } else {
+          entry.minutesMode = 'fixed';
+          entry.minutes = Math.max(0, Math.round(Number(value) || 0));
+        }
+        window.syncBulkConcurrentEqualMinutes_(row);
+        window.rerenderBulkConcurrentCard_(uid);
+      };
+
+      window.confirmBulkConcurrentDraft_ = (uid) => {
+        const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+        if (!row) return;
+        const draft = window.ensureBulkConcurrentDraft_(row);
+        const crops = typeof window.getBulkWorkMemoCropNames_ === 'function'
+          ? window.getBulkWorkMemoCropNames_(draft)
+          : (Array.isArray(draft.cropNames) ? draft.cropNames.slice() : []);
+        const workName = String(draft.workName || '').trim();
+        const cat = String(draft.category || draft.listFilterCategory || '').trim();
+        const isMeta = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat);
+        if (!crops.length) {
+          if (typeof customAlert === 'function') customAlert('作物名を1つ以上選んでください。');
+          return;
+        }
+        if (!workName) {
+          if (typeof customAlert === 'function') customAlert('作業名を選んでください。');
+          return;
+        }
+        if (draft.minutesMode !== 'equal' && !(draft.minutes != null && Number(draft.minutes) > 0)) {
+          if (typeof customAlert === 'function') customAlert('時間数（分）を選んでください。');
+          return;
+        }
+        if (isMeta) {
+          draft.prepTargetWork = String(draft.prepTargetWork || workName).trim();
+          draft.workName = draft.prepTargetWork;
+          if (!draft.prepTargetCategory && typeof window.getBulkWorkMemoWorkCategory_ === 'function') {
+            draft.prepTargetCategory = window.getBulkWorkMemoWorkCategory_(draft.prepTargetWork) || '';
+          }
+          draft.detailedWorks = [];
+        }
+        draft.cropNames = crops;
+        const entry = window.createConcurrentWorkEntry_(draft);
+        if (!Array.isArray(row.concurrentWorks)) row.concurrentWorks = [];
+        row.concurrentWorks.push(entry);
+        window.syncBulkConcurrentEqualMinutes_(row);
+        window.clearBulkConcurrentDraft_(row);
+        row._concurrentPanelOpen = true;
+        window.rerenderBulkConcurrentCard_(uid);
+      };
+
       window.buildBulkConcurrentWorksHtml_ = (d, uid) => {
         const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
         if (!d || (typeof window.bulkWorkMemoIsRestDraft_ === 'function' ? window.bulkWorkMemoIsRestDraft_(d) : (d.isRest || String(d.workName || '').includes('休憩')))) {
           return '';
         }
+        if (typeof window.syncBulkConcurrentEqualMinutes_ === 'function') {
+          window.syncBulkConcurrentEqualMinutes_(d);
+        }
         const list = Array.isArray(d.concurrentWorks) ? d.concurrentWorks : [];
-        let rows = list.map(entry => {
+        const panelOpen = !!d._concurrentPanelOpen;
+        const draft = window.ensureBulkConcurrentDraft_(d);
+        const slotMins = window.getBulkConcurrentSlotMins_(d);
+        const durOpts = window.getBulkConcurrentDurationOptions_(slotMins);
+        const selectedCrops = typeof window.getBulkWorkMemoCropNames_ === 'function'
+          ? window.getBulkWorkMemoCropNames_(draft)
+          : (Array.isArray(draft.cropNames) ? draft.cropNames : []);
+        const cropNames = typeof window.getBulkWorkMemoCropChipNames_ === 'function'
+          ? window.getBulkWorkMemoCropChipNames_(draft.workName || draft.prepTargetWork, '')
+          : [];
+        const cropHtml = cropNames.map(name => {
+          const on = selectedCrops.indexOf(name) >= 0;
+          const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          return `<button type="button" onclick="pickBulkConcurrentDraftCrop_('${esc(uid)}','${safe}')" style="padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? '#2E7D32' : '#C8E6C9'}; background:${on ? '#E8F5E9' : '#fff'}; color:#2E7D32;">${on ? '✅ ' : ''}${esc(name)}</button>`;
+        }).join('');
+        const cats = typeof window.getBulkWorkMemoCategories_ === 'function'
+          ? window.getBulkWorkMemoCategories_()
+          : [];
+        const curFilter = String(draft.listFilterCategory || '').trim();
+        const catHtml = cats.map(name => {
+          const on = name === curFilter;
+          const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          return `<button type="button" onclick="pickBulkConcurrentDraftCategory_('${esc(uid)}','${safe}')" style="padding:6px 10px; border-radius:14px; font-size:11px; font-weight:bold; cursor:pointer; border:2px solid ${on ? '#3949AB' : '#C5CAE9'}; background:${on ? '#E8EAF6' : '#fff'}; color:#283593;">${esc(name)}</button>`;
+        }).join('');
+        const listProxy = {
+          listFilterCategory: draft.listFilterCategory,
+          cropNames: selectedCrops.slice(),
+          cropName: selectedCrops[0] || '',
+          workName: draft.workName,
+          category: draft.category
+        };
+        const { names: workNames, fallbackNote } = typeof window.getBulkWorkMemoManualWorkList_ === 'function'
+          ? window.getBulkWorkMemoManualWorkList_(listProxy)
+          : { names: [], fallbackNote: '' };
+        const curWork = String(draft.workName || '').trim();
+        const workHtml = workNames.map(name => {
+          const on = name === curWork;
+          const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          return `<button type="button" onclick="pickBulkConcurrentDraftWork_('${esc(uid)}','${safe}')" style="padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? '#E65100' : '#FFCC80'}; background:${on ? '#FFF3E0' : '#fff'}; color:#E65100;">${esc(name)}</button>`;
+        }).join('');
+        const metaCat = String(draft.category || draft.listFilterCategory || '').trim();
+        const isMeta = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(metaCat);
+        const detailOpts = (!isMeta && curWork && typeof window.getBulkWorkMemoDetailOptions_ === 'function')
+          ? window.getBulkWorkMemoDetailOptions_(curWork, draft, '')
+          : [];
+        const selectedDetails = Array.isArray(draft.detailedWorks) ? draft.detailedWorks : [];
+        const detailHtml = detailOpts.length
+          ? `<div style="display:flex; flex-wrap:wrap; gap:6px;">${detailOpts.map(name => {
+              const on = selectedDetails.indexOf(name) >= 0;
+              const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+              return `<label style="display:inline-flex; align-items:center; gap:4px; padding:5px 9px; border-radius:12px; font-size:11px; cursor:pointer; border:1px solid ${on ? '#7E57C2' : '#D1C4E9'}; background:${on ? '#EDE7F6' : '#fff'}; color:#4527A0;">
+                <input type="checkbox" ${on ? 'checked' : ''} onchange="toggleBulkConcurrentDraftDetail_('${esc(uid)}','${safe}', this.checked)" style="margin:0;"> ${esc(name)}
+              </label>`;
+            }).join('')}</div>`
+          : (curWork && !isMeta
+            ? '<div style="font-size:11px; color:#888;">この作業に登録されている詳細作業はありません。</div>'
+            : '');
+        const draftEqualOn = draft.minutesMode === 'equal';
+        const draftMins = draft.minutes != null ? Number(draft.minutes) : null;
+        const minsHtml = durOpts.fixed.map(n => {
+          const on = !draftEqualOn && draftMins === n;
+          return `<button type="button" onclick="setBulkConcurrentDraftMinutes_('${esc(uid)}',${n})" style="padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? '#00838F' : '#B2EBF2'}; background:${on ? '#E0F7FA' : '#fff'}; color:#006064;">${n}分</button>`;
+        }).join('') + `<button type="button" onclick="setBulkConcurrentDraftMinutes_('${esc(uid)}','equal')" style="padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${draftEqualOn ? '#6A1B9A' : '#CE93D8'}; background:${draftEqualOn ? '#F3E5F5' : '#fff'}; color:#6A1B9A;">均等割り${draftEqualOn && draftMins != null ? `（${draftMins}分）` : ''}</button>`;
+
+        const rows = list.map((entry, idx) => {
           const safeId = String(entry.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
           const hasName = !!String(entry.workName || '').trim();
           const hint = String(entry.rawHint || entry.guessedName || '').trim();
@@ -14543,20 +14866,54 @@ function createSignboardMarker(name, pos, icon, id) {
           const autoBadge = entry._fromMemo
             ? `<span style="font-size:9px; font-weight:bold; color:#fff; background:#7E57C2; padding:1px 6px; border-radius:8px; margin-left:4px;">メモから</span>`
             : '';
+          const rowEqualOn = entry.minutesMode === 'equal';
+          const rowMins = entry.minutes != null ? Number(entry.minutes) : null;
+          const rowMinsHtml = durOpts.fixed.map(n => {
+            const on = !rowEqualOn && rowMins === n;
+            return `<button type="button" onclick="setBulkConcurrentMinutes_('${esc(uid)}','${safeId}',${n})" style="padding:4px 8px; border-radius:12px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${on ? '#00838F' : '#B2EBF2'}; background:${on ? '#E0F7FA' : '#fff'}; color:#006064;">${n}分</button>`;
+          }).join('') + `<button type="button" onclick="setBulkConcurrentMinutes_('${esc(uid)}','${safeId}','equal')" style="padding:4px 8px; border-radius:12px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${rowEqualOn ? '#6A1B9A' : '#CE93D8'}; background:${rowEqualOn ? '#F3E5F5' : '#fff'}; color:#6A1B9A;">均等</button>`;
           return `<div style="padding:8px 10px; background:#fff; border:1px solid ${hasName ? '#D1C4E9' : '#CE93D8'}; border-radius:8px; margin-bottom:6px;">
             <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px;">
-              <div style="font-size:12px; color:#4527A0; line-height:1.4; min-width:0; flex:1;">${esc(window.formatConcurrentWorkSummary_(entry))}${autoBadge}</div>
+              <div style="font-size:12px; color:#4527A0; line-height:1.4; min-width:0; flex:1;">
+                <span style="font-size:10px; font-weight:bold; color:#6A1B9A; margin-right:4px;">この時間に行った作業${idx + 1}</span>
+                ${esc(window.formatConcurrentWorkSummary_(entry))}${autoBadge}
+              </div>
               <button type="button" onclick="removeBulkConcurrentWork_('${esc(uid)}','${safeId}')" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; width:26px; height:26px; flex-shrink:0; cursor:pointer;">×</button>
             </div>
+            <div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:6px;">${rowMinsHtml}</div>
             ${needPick}
           </div>`;
         }).join('');
+
+        const panelHtml = panelOpen ? `
+          <div style="margin-top:8px; padding:10px; background:#fff; border:1px solid #CE93D8; border-radius:10px;">
+            <div style="font-size:11px; font-weight:bold; color:#6A1B9A; margin-bottom:8px;">新規追加（この時間帯・${slotMins || '—'}分）</div>
+            <div style="font-size:11px; font-weight:bold; color:#2E7D32; margin-bottom:4px;">① 作物名</div>
+            ${selectedCrops.length
+              ? `<div style="font-size:11px; color:#2E7D32; margin-bottom:4px;">選択中: ${esc(selectedCrops.join('、'))}</div>`
+              : '<div style="font-size:11px; color:#E65100; margin-bottom:4px;">1つ以上選んでください</div>'}
+            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; max-height:120px; overflow-y:auto;">${cropHtml || '<span style="font-size:11px; color:#888;">作物マスタがありません</span>'}</div>
+            <div style="font-size:11px; font-weight:bold; color:#283593; margin-bottom:4px;">② 作業カテゴリ（絞り込み）</div>
+            <div style="font-size:10px; color:#666; margin-bottom:4px;">再タップで解除</div>
+            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">${catHtml || '<span style="font-size:11px; color:#888;">カテゴリがありません</span>'}</div>
+            <div style="font-size:11px; font-weight:bold; color:#E65100; margin-bottom:4px;">③ 作業名</div>
+            ${curWork ? `<div style="font-size:12px; color:#E65100; font-weight:bold; margin-bottom:4px;">選択中: ${esc(curWork)}</div>` : ''}
+            ${fallbackNote ? `<div style="font-size:11px; color:#E65100; background:#FFF8E1; border:1px solid #FFCC80; border-radius:8px; padding:6px 8px; margin-bottom:6px;">${esc(fallbackNote)}</div>` : ''}
+            <div style="display:flex; flex-wrap:wrap; gap:6px; max-height:140px; overflow-y:auto; margin-bottom:10px;">${workHtml || '<span style="font-size:11px; color:#888;">該当する作業がありません</span>'}</div>
+            <div style="font-size:11px; font-weight:bold; color:#5E35B1; margin-bottom:4px;">④ 詳細作業（任意）</div>
+            <div style="margin-bottom:10px;">${detailHtml || '<div style="font-size:11px; color:#888;">作業名を選ぶと表示されます</div>'}</div>
+            <div style="font-size:11px; font-weight:bold; color:#006064; margin-bottom:4px;">⑤ 時間数（分）</div>
+            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">${minsHtml || '<span style="font-size:11px; color:#888;">この時間帯では選べる分数がありません</span>'}</div>
+            <button type="button" onclick="confirmBulkConcurrentDraft_('${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:10px 12px; border:none; border-radius:8px; background:#7E57C2; color:#fff; font-size:13px; font-weight:bold; cursor:pointer;">追加</button>
+          </div>` : '';
+
         return `<div style="margin:8px 0; background:#F3E5F5; border:1px solid #CE93D8; border-radius:10px; padding:10px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
-            <div style="font-size:10px; font-weight:bold; color:#6A1B9A;">🔀 同時に行った作業</div>
-            <button type="button" onclick="openConcurrentWorkModal_({ mode: 'bulk', bulkUid: '${esc(uid)}' })" style="background:#EDE7F6; color:#5E35B1; border:1px solid #D1C4E9; border-radius:6px; padding:4px 10px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 追加</button>
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+            <div style="font-size:10px; font-weight:bold; color:#6A1B9A;">🔀 この時間に行った作業</div>
+            <button type="button" onclick="toggleBulkConcurrentPanel_('${esc(uid)}')" style="background:${panelOpen ? '#CE93D8' : '#EDE7F6'}; color:#5E35B1; border:1px solid #D1C4E9; border-radius:6px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">${panelOpen ? '▲ 閉じる' : 'この時間に行った作業を追加する'}</button>
           </div>
           ${rows || '<div style="font-size:11px; color:#888;">まだありません</div>'}
+          ${panelHtml}
         </div>`;
       };
 
@@ -14580,13 +14937,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!Array.isArray(entry.cropNames) || !entry.cropNames.length) {
           entry.cropNames = ['共通'];
         }
-        if (window._bulkWorkMemoManualAddUid === uid) {
-          window.renderBulkWorkMemoManualAddModal_();
-        } else if (document.getElementById('bulk_work_memo_confirm_scroll')) {
-          window.renderBulkWorkMemoConfirmModal_();
-        } else if (typeof window.renderBulkWorkMemoReviewModal_ === 'function') {
-          window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
-        }
+        window.rerenderBulkConcurrentCard_(uid);
       };
 
       window.findWorkMasterByName_ = (workName) => {
@@ -21713,7 +22064,9 @@ function createSignboardMarker(name, pos, icon, id) {
                 workName: String(cw.workName || '').trim(),
                 prepTargetWork: String(cw.prepTargetWork || '').trim(),
                 prepTargetCategory: String(cw.prepTargetCategory || '').trim(),
-                detailedWorks: Array.isArray(cw.detailedWorks) ? cw.detailedWorks.slice() : []
+                detailedWorks: Array.isArray(cw.detailedWorks) ? cw.detailedWorks.slice() : [],
+                minutes: (cw.minutes != null && !isNaN(Number(cw.minutes))) ? Math.round(Number(cw.minutes)) : null,
+                minutesMode: (String(cw.minutesMode || '').trim() === 'equal') ? 'equal' : 'fixed'
               }));
               setTimeout(() => {
                 if (typeof window.renderConcurrentWorksSection_ === 'function') {
@@ -24796,7 +25149,9 @@ function createSignboardMarker(name, pos, icon, id) {
                     workName: cw.workName || '',
                     detailedWorks: Array.isArray(cw.detailedWorks) ? cw.detailedWorks.slice() : [],
                     prepTargetWork: cw.prepTargetWork || '',
-                    prepTargetCategory: cw.prepTargetCategory || ''
+                    prepTargetCategory: cw.prepTargetCategory || '',
+                    minutes: (cw.minutes != null && !isNaN(Number(cw.minutes))) ? Math.round(Number(cw.minutes)) : null,
+                    minutesMode: (String(cw.minutesMode || '').trim() === 'equal') ? 'equal' : 'fixed'
                   }))
                 : []
             };
@@ -29855,6 +30210,8 @@ window.guessBulkWorkMemoConcurrentWorks_ = (raw, startTime) => {
       workAliasHints: aliasHints,
       workMatched: !!(autoName && typeof window.isBulkWorkMemoWorkInMaster_ === 'function'
         && window.isBulkWorkMemoWorkInMaster_(autoName)),
+      minutes: null,
+      minutesMode: 'fixed',
       _fromMemo: true
     });
   });
@@ -39429,7 +39786,9 @@ window.executeBulkWorkMemoRegistration_ = async () => {
               workName: cw.workName || '',
               prepTargetWork: cw.prepTargetWork || '',
               prepTargetCategory: cw.prepTargetCategory || '',
-              detailedWorks: Array.isArray(cw.detailedWorks) ? cw.detailedWorks.slice() : []
+              detailedWorks: Array.isArray(cw.detailedWorks) ? cw.detailedWorks.slice() : [],
+              minutes: (cw.minutes != null && !isNaN(Number(cw.minutes))) ? Math.round(Number(cw.minutes)) : null,
+              minutesMode: (String(cw.minutesMode || '').trim() === 'equal') ? 'equal' : 'fixed'
             }))
           : [],
         fromBulkMemo: true,
