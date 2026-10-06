@@ -105,9 +105,6 @@
     <button id="btnCurrentLocation" class="map-action-btn" style="color: #4285F4;">
       📍
     </button>
-    <button id="btnActivityNotice" class="map-action-btn" onclick="openWorkerActivityNoticeModal_()" title="お知らせ" style="color: #5E35B1; position: relative;">
-      🔔<span id="activityNoticeBadge" style="display:none; position:absolute; top:-2px; right:-2px; background:#d32f2f; color:#fff; font-size:10px; min-width:16px; height:16px; line-height:16px; border-radius:8px; padding:0 4px; font-weight:bold; box-sizing:border-box;">0</span>
-    </button>
     <button id="btnGpsWorkRecord" class="map-action-btn" onclick="document.getElementById('recordTypeSelectModal').style.display='flex'" style="color: #4285F4;">
       📝
     </button>
@@ -322,6 +319,9 @@
       <button onclick="openScheduleList()"
         style="background:#FFF9C4; color:#F57F17; border:1px solid #F57F17; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">📅
         予定一覧</button>
+      <button type="button" id="btnActivityNotice" onclick="openWorkerActivityNoticeModal_()" title="お知らせ"
+        style="position:relative; background:#EDE7F6; color:#5E35B1; border:1px solid #5E35B1; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px; cursor:pointer;">🔔
+        お知らせ<span id="activityNoticeBadge" style="display:none; position:absolute; top:-6px; right:-6px; background:#d32f2f; color:#fff; font-size:10px; min-width:16px; height:16px; line-height:16px; border-radius:8px; padding:0 4px; font-weight:bold; box-sizing:border-box;">0</span></button>
       <button onclick="openPersonalSchedule()"
         style="background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">🗓�E�E        スケジュール</button>
       <button onclick="openAllHistory()"
@@ -428,7 +428,7 @@
   <script src="machine-taxonomy.js?v=1788600000011"></script>
   <script src="weather-agri.js?v=1785489000300"></script>
   <script src="api-client.js?v=1788600000076"></script>
-  <script src="worker.js?v=1788600000120"></script>
+  <script src="worker.js?v=1788600000121"></script>
   <script src="tracking.js?v=1788600000050"></script>
   <script>
     if ('serviceWorker' in navigator) {
