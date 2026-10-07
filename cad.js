@@ -1330,8 +1330,13 @@ window.loadCadStateFromHistory = (index) => {
         document.getElementById('cadWidth').value = state.width || '';
     }
     document.getElementById('cadUneCount').value = state.uneCount || 0;
-    if (document.getElementById('cadMarginSide')) document.getElementById('cadMarginSide').value = state.marginSide || 0;
-    if (document.getElementById('cadMarginEnd')) document.getElementById('cadMarginEnd').value = state.marginEnd || 0;
+    if (typeof window.setCadMarginCm === 'function') {
+        window.setCadMarginCm('Side', state.marginSide, 150);
+        window.setCadMarginCm('End', state.marginEnd, 200);
+    } else {
+        if (document.getElementById('cadMarginSide')) document.getElementById('cadMarginSide').value = state.marginSide || 0;
+        if (document.getElementById('cadMarginEnd')) document.getElementById('cadMarginEnd').value = state.marginEnd || 0;
+    }
     if (typeof window.setCadPinNumFontSize === 'function') {
         window.setCadPinNumFontSize(state.pinNumFontSize || 20, { refresh: false });
     } else {
@@ -1617,8 +1622,8 @@ window.handleMapClick = (pageX, pageY) => {
 
             if (msgEl) {
                 msgEl.innerText = window.cadSnapGridOn
-                    ? `🎯 角度 ${angle}° とグリッドをこの辺に揃えました。「🔄 180°反転」で向きを反対にできます。`
-                    : `🎯 角度をセットしました（${angle}°）。「🔄 180°反転」で向きを反対にできます。`;
+                    ? `🎯 角度 ${angle}° とグリッドをこの辺に揃えました。`
+                    : `🎯 角度をセットしました（${angle}°）。`;
                 msgEl.style.color = "#4CAF50";
             }
 
@@ -2382,10 +2387,15 @@ window.openCADMode = async (id) => {
             // 基準畝幅は計画連動時のみ自動選択。保存値では選択しない
             document.getElementById('cadUneCount').value = saved.uneCount !== undefined ? saved.uneCount : 0;
             
-            const marginSideEl = document.getElementById('cadMarginSide');
-            const marginEndEl = document.getElementById('cadMarginEnd');
-            if (marginSideEl) marginSideEl.value = saved.marginSide !== undefined ? saved.marginSide : 150;
-            if (marginEndEl) marginEndEl.value = saved.marginEnd !== undefined ? saved.marginEnd : 250;
+            if (typeof window.setCadMarginCm === 'function') {
+                window.setCadMarginCm('Side', saved.marginSide !== undefined ? saved.marginSide : 150, 150);
+                window.setCadMarginCm('End', saved.marginEnd !== undefined ? saved.marginEnd : 200, 200);
+            } else {
+                const marginSideEl = document.getElementById('cadMarginSide');
+                const marginEndEl = document.getElementById('cadMarginEnd');
+                if (marginSideEl) marginSideEl.value = saved.marginSide !== undefined ? saved.marginSide : 150;
+                if (marginEndEl) marginEndEl.value = saved.marginEnd !== undefined ? saved.marginEnd : 200;
+            }
             if (typeof window.setCadPinNumFontSize === 'function') {
                 window.setCadPinNumFontSize(saved.pinNumFontSize || 20, { refresh: false });
             } else {
@@ -2442,10 +2452,15 @@ window.openCADMode = async (id) => {
     } else {
         document.getElementById('cadAngle').value = 0;
         
-        const marginSideEl = document.getElementById('cadMarginSide');
-        const marginEndEl = document.getElementById('cadMarginEnd');
-        if (marginSideEl) marginSideEl.value = 150;
-        if (marginEndEl) marginEndEl.value = 250;
+        if (typeof window.setCadMarginCm === 'function') {
+            window.setCadMarginCm('Side', 150, 150);
+            window.setCadMarginCm('End', 200, 200);
+        } else {
+            const marginSideEl = document.getElementById('cadMarginSide');
+            const marginEndEl = document.getElementById('cadMarginEnd');
+            if (marginSideEl) marginSideEl.value = 150;
+            if (marginEndEl) marginEndEl.value = 200;
+        }
         
         const countEl = document.getElementById('cadUneCount');
         if (countEl) countEl.value = 0;
@@ -2503,8 +2518,46 @@ window.applyCultivationPlanWidthToCad = async (fieldId) => {
 };
 
 window.CAD_DEFAULT_RIDGE_WIDTHS_CM = [100, 120, 150, 180, 200];
+window.CAD_MARGIN_PRESETS_CM = [50, 100, 150, 200];
 window.cadWidthOptions = window.CAD_DEFAULT_RIDGE_WIDTHS_CM.slice();
 window.cadWidthLinkedFromPlan = false;
+
+/** 側面/端面余白のプルダウン変更（suffix: 'Side' | 'End'） */
+window.cadOnMarginSelectChange = (suffix) => {
+    const sel = document.getElementById('cadMargin' + suffix + 'Select');
+    const inp = document.getElementById('cadMargin' + suffix);
+    if (!sel || !inp) return;
+    if (sel.value === 'custom') {
+        inp.style.display = 'block';
+        try { inp.focus(); } catch (e) {}
+    } else {
+        inp.style.display = 'none';
+        inp.value = sel.value;
+    }
+    if (typeof window.updateCadPreviewCount === 'function') window.updateCadPreviewCount();
+};
+
+/** 余白cmをセットし、プリセット内ならプルダウン／外なら手入力欄を表示 */
+window.setCadMarginCm = (suffix, cm, fallback) => {
+    const sel = document.getElementById('cadMargin' + suffix + 'Select');
+    const inp = document.getElementById('cadMargin' + suffix);
+    if (!inp) return;
+    const fb = (fallback != null && Number.isFinite(Number(fallback))) ? Number(fallback) : 150;
+    const n = parseFloat(cm);
+    const val = Number.isFinite(n) ? n : fb;
+    inp.value = String(val);
+    const presets = window.CAD_MARGIN_PRESETS_CM || [50, 100, 150, 200];
+    const matched = presets.find(p => Number(p) === Number(val));
+    if (sel) {
+        if (matched !== undefined) {
+            sel.value = String(matched);
+            inp.style.display = 'none';
+        } else {
+            sel.value = 'custom';
+            inp.style.display = 'block';
+        }
+    }
+};
 
 window.getCadWidthCm = () => {
     const el = document.getElementById('cadWidth');
@@ -5312,7 +5365,7 @@ window.cadAddMakura = () => {
     window.cadPinMode = 'makuraune';
     const msgEl = document.getElementById('cadPinModeMsg');
     if (msgEl) {
-        msgEl.innerText = '枕畝：外殻（辺）の近くをタップすると、その外周に沿った曲がった枕畝を生成します。';
+        msgEl.innerText = '枕畝：外殻（辺）の近くをタップすると、段差も含めて外周に沿った一定幅の枕畝を1本生成します。';
         msgEl.style.color = "#ea580c";
     }
 };
@@ -5324,48 +5377,203 @@ window.cadBearingDiff = (a, b) => {
     return d;
 };
 
+/** 符号付き方位差（-180〜180）。左折+ / 右折- */
+window.cadSignedBearingDelta = (fromDeg, toDeg) => {
+    let d = (Number(toDeg) - Number(fromDeg)) % 360;
+    if (d > 180) d -= 360;
+    if (d <= -180) d += 360;
+    return d;
+};
+
 /**
- * タップ点に近い圃場外周の辺を起点に、角度が近い連続辺をたどる
- * @returns {number[][]} [lng,lat] の折れ線（外殻に追随）
+ * 閉じたリング座標からユニーク頂点数を返す（末尾の閉じ点を除く）
  */
-window.cadFindBoundaryEdgeChainNearPoint = (ringCoords, centerPt, maxAngleDiffDeg) => {
+window.cadRingVertexCount = (ringCoords) => {
+    if (!ringCoords || ringCoords.length < 2) return 0;
+    const first = ringCoords[0];
+    const last = ringCoords[ringCoords.length - 1];
+    const closed = first && last && first[0] === last[0] && first[1] === last[1];
+    return closed ? ringCoords.length - 1 : ringCoords.length;
+};
+
+/**
+ * 辺 i の方位・長さ（リングは閉じている想定）
+ */
+window.cadRingEdgeInfo = (ringCoords, edgeIndex) => {
+    const n = window.cadRingVertexCount(ringCoords);
+    if (n < 2) return null;
+    const i = ((edgeIndex % n) + n) % n;
+    const a = ringCoords[i];
+    const b = ringCoords[(i + 1) % n];
+    if (!a || !b) return null;
+    const len = turf.distance(turf.point(a), turf.point(b), { units: 'meters' });
+    const bearing = turf.bearing(turf.point(a), turf.point(b));
+    return { i, a, b, len, bearing };
+};
+
+/**
+ * 90°段差などの「ジョグ」なら角を回り込む。
+ * 短い折れ辺の先に、元の方位へ戻る辺があればジョグとみなす。
+ */
+window.cadIsBoundaryJogAhead = (ringCoords, fromEdgeIndex, direction, startBearing, widthM) => {
+    const n = window.cadRingVertexCount(ringCoords);
+    if (n < 3) return false;
+    const w = Math.max(Number(widthM) || 1.5, 0.5);
+    const maxLookM = Math.max(w * 8, 12);
+    const dir = direction >= 0 ? 1 : -1;
+    let traveled = 0;
+    let idx = fromEdgeIndex;
+
+    for (let step = 0; step < n - 1; step++) {
+        idx = (idx + dir + n) % n;
+        const info = window.cadRingEdgeInfo(ringCoords, idx);
+        if (!info || info.len < 0.15) continue;
+        traveled += info.len;
+        if (traveled > maxLookM) break;
+        // 元の長手方位に戻ってきた → 段差ジョグ
+        if (window.cadBearingDiff(info.bearing, startBearing) <= 40) return true;
+        // 短い折れ辺（畝幅の数倍以内）ならさらに先を見る
+        if (info.len > w * 4.5) break;
+    }
+    return false;
+};
+
+/**
+ * タップ点に近い圃場外周の辺を起点に、連続辺をたどる。
+ * ほぼ一直線は常に接続。90°前後の角は「短い段差（ジョグ）」なら回り込む。
+ * @returns {{ chain:number[][], nearestDist:number, startBearing:number, edgeIndexes:number[] }|null}
+ */
+window.cadFindBoundaryEdgeChainNearPoint = (ringCoords, centerPt, maxAngleDiffDeg, ridgeWidthM) => {
     const coords = ringCoords;
-    if (!coords || coords.length < 2) return null;
-    const maxDiff = (maxAngleDiffDeg != null) ? maxAngleDiffDeg : 40;
+    const n = window.cadRingVertexCount(coords);
+    if (n < 2) return null;
+    // 後方互換: 第3引数は「隣接辺の最大折れ角」として扱う（既定100°で直角を許可）
+    const maxAdjacentTurn = (maxAngleDiffDeg != null) ? maxAngleDiffDeg : 100;
 
     let best = { dist: Infinity, i: 0 };
-    for (let i = 0; i < coords.length - 1; i++) {
-        const a = coords[i];
-        const b = coords[i + 1];
-        if (!a || !b) continue;
-        // ごく短い辺は無視
-        if (turf.distance(turf.point(a), turf.point(b), { units: 'meters' }) < 0.15) continue;
-        const line = turf.lineString([a, b]);
+    for (let i = 0; i < n; i++) {
+        const info = window.cadRingEdgeInfo(coords, i);
+        if (!info || info.len < 0.15) continue;
+        const line = turf.lineString([info.a, info.b]);
         const d = turf.pointToLineDistance(centerPt, line, { units: 'meters' });
         if (d < best.dist) best = { dist: d, i };
     }
     if (!isFinite(best.dist)) return null;
 
-    const startBearing = turf.bearing(turf.point(coords[best.i]), turf.point(coords[best.i + 1]));
-    let i0 = best.i;
-    let i1 = best.i + 1;
+    const startInfo = window.cadRingEdgeInfo(coords, best.i);
+    if (!startInfo) return null;
+    const startBearing = startInfo.bearing;
+    const widthGuess = (ridgeWidthM && ridgeWidthM > 0) ? ridgeWidthM : 1.5;
 
-    while (i0 > 0) {
-        const b = turf.bearing(turf.point(coords[i0 - 1]), turf.point(coords[i0]));
-        if (window.cadBearingDiff(b, startBearing) > maxDiff) break;
-        if (turf.distance(turf.point(coords[i0 - 1]), turf.point(coords[i0]), { units: 'meters' }) < 0.15) break;
-        i0--;
+    let perimeter = 0;
+    for (let i = 0; i < n; i++) {
+        const info = window.cadRingEdgeInfo(coords, i);
+        if (info) perimeter += info.len;
     }
-    while (i1 < coords.length - 1) {
-        const b = turf.bearing(turf.point(coords[i1]), turf.point(coords[i1 + 1]));
-        if (window.cadBearingDiff(b, startBearing) > maxDiff) break;
-        if (turf.distance(turf.point(coords[i1]), turf.point(coords[i1 + 1]), { units: 'meters' }) < 0.15) break;
-        i1++;
+    const maxChainLen = Math.max(perimeter * 0.55, startInfo.len);
+
+    const canTakeEdge = (prevBearing, nextEdgeIndex, direction, netTurn) => {
+        const next = window.cadRingEdgeInfo(coords, nextEdgeIndex);
+        if (!next || next.len < 0.15) return null;
+        const turn = window.cadSignedBearingDelta(prevBearing, next.bearing);
+        const absTurn = Math.abs(turn);
+        if (absTurn > maxAdjacentTurn) return null; // 鋭い折り返しは打ち切り
+        const nextNet = netTurn + turn;
+        if (absTurn <= 45) {
+            return { turn, nextNet, next };
+        }
+        // 直角前後: 短い辺、または先に元方位へ戻るジョグなら回り込み
+        const shortCorner = next.len <= Math.max(widthGuess * 4.5, 8);
+        const jog = window.cadIsBoundaryJogAhead(coords, nextEdgeIndex, direction, startBearing, widthGuess);
+        if (shortCorner || jog) {
+            // 一周して反対側まで行かないよう、累積旋回の上限
+            if (Math.abs(nextNet) > 200) return null;
+            return { turn, nextNet, next };
+        }
+        return null;
+    };
+
+    // 辺インデックスを両方向に収集（順序は後でチェーン化）
+    const selected = new Set([best.i]);
+    let chainLen = startInfo.len;
+
+    // 前方（リング順）
+    let prevBearing = startBearing;
+    let netTurn = 0;
+    let idx = best.i;
+    for (let step = 0; step < n - 1; step++) {
+        const nextIdx = (idx + 1) % n;
+        if (selected.has(nextIdx)) break;
+        const take = canTakeEdge(prevBearing, nextIdx, 1, netTurn);
+        if (!take) break;
+        if (chainLen + take.next.len > maxChainLen) break;
+        selected.add(nextIdx);
+        chainLen += take.next.len;
+        prevBearing = take.next.bearing;
+        netTurn = take.nextNet;
+        idx = nextIdx;
     }
 
-    const chain = coords.slice(i0, i1 + 1);
+    // 後方（リング逆順）: 辿る進行方位は辺の逆向き
+    prevBearing = (startBearing + 180) % 360;
+    if (prevBearing >= 360) prevBearing -= 360;
+    netTurn = 0;
+    idx = best.i;
+    for (let step = 0; step < n - 1; step++) {
+        const prevIdx = (idx - 1 + n) % n;
+        if (selected.has(prevIdx)) break;
+        const prevInfo = window.cadRingEdgeInfo(coords, prevIdx);
+        if (!prevInfo || prevInfo.len < 0.15) break;
+        // 逆向きに進むとき、prev辺を逆走した方位
+        let travelBearing = (prevInfo.bearing + 180) % 360;
+        if (travelBearing >= 360) travelBearing -= 360;
+        const turn = window.cadSignedBearingDelta(prevBearing, travelBearing);
+        const absTurn = Math.abs(turn);
+        if (absTurn > maxAdjacentTurn) break;
+        const nextNet = netTurn + turn;
+        if (absTurn > 45) {
+            const shortCorner = prevInfo.len <= Math.max(widthGuess * 4.5, 8);
+            const jog = window.cadIsBoundaryJogAhead(coords, prevIdx, -1, startBearing, widthGuess);
+            if (!(shortCorner || jog)) break;
+            if (Math.abs(nextNet) > 200) break;
+        }
+        if (chainLen + prevInfo.len > maxChainLen) break;
+        selected.add(prevIdx);
+        chainLen += prevInfo.len;
+        prevBearing = travelBearing;
+        netTurn = nextNet;
+        idx = prevIdx;
+    }
+
+    // 選択辺をリング順の連続チェーンに並べる
+    const edgeIndexes = [];
+    let startEdge = best.i;
+    for (let step = 0; step < n; step++) {
+        const prevIdx = (startEdge - 1 + n) % n;
+        if (!selected.has(prevIdx)) break;
+        startEdge = prevIdx;
+    }
+    for (let step = 0; step < n; step++) {
+        const ei = (startEdge + step) % n;
+        if (!selected.has(ei)) break;
+        edgeIndexes.push(ei);
+    }
+    if (!edgeIndexes.length) edgeIndexes.push(best.i);
+
+    const chain = [];
+    edgeIndexes.forEach((ei, k) => {
+        const info = window.cadRingEdgeInfo(coords, ei);
+        if (!info) return;
+        if (k === 0) chain.push(info.a);
+        chain.push(info.b);
+    });
     if (chain.length < 2) return null;
-    return { chain: chain, nearestDist: best.dist, startBearing: startBearing };
+    return {
+        chain: chain,
+        nearestDist: best.dist,
+        startBearing: startBearing,
+        edgeIndexes: edgeIndexes
+    };
 };
 
 /**
@@ -5441,51 +5649,106 @@ window.cadPickBestMakuraFeature = (flattened, centerPt, edgeChain, maxEdgeDistM)
 };
 
 /**
- * 圃場ポリゴン内で、枕帯が左右（長手方向）に端まで届くよう補正する。
- * タップ辺方向に長い帯を作り直し、圃場∩帯で左右端まで埋める。
+ * 圃場を内側に畝幅ぶんオフセットし、外周の一定幅リング（枕帯）を作る。
+ * 折れ線バッファだと凹みを塗り潰すため、内向きオフセット差を使う。
  */
-window.cadStretchMakuraToFieldSides = (makuraPoly, fieldPoly, edgeChain, widthM) => {
+window.cadBuildInwardMakuraRing = (fieldPoly, widthM) => {
     try {
-        if (!makuraPoly || !fieldPoly || !edgeChain || edgeChain.length < 2) return makuraPoly;
-        const w = Math.max(Number(widthM) || 1.5, 0.5);
-
-        // 辺の中点と方位
-        const midIdx = Math.floor((edgeChain.length - 1) / 2);
-        const a = edgeChain[Math.max(0, midIdx)];
-        const b = edgeChain[Math.min(edgeChain.length - 1, midIdx + 1)];
-        const alongBearing = turf.bearing(turf.point(a), turf.point(b));
-        const center = turf.center(makuraPoly);
-
-        // 圃場対角線より十分長い帯を長手方向に作る
-        const bbox = turf.bbox(fieldPoly);
-        const diag = turf.distance([bbox[0], bbox[1]], [bbox[2], bbox[3]], { units: 'meters' }) + 20;
-        const p1 = turf.destination(center, diag / 2, alongBearing, { units: 'meters' });
-        const p2 = turf.destination(center, diag / 2, alongBearing + 180, { units: 'meters' });
-        const longLine = turf.lineString([
-            p2.geometry.coordinates,
-            p1.geometry.coordinates
-        ]);
-        // 端欠け防止でさらに延長してからバッファ
-        const extended = window.cadExtendLineStringEnds(longLine, Math.max(w * 4, 8));
-        const strip = turf.buffer(extended, w / 2, { units: 'meters' });
-        if (!strip) return makuraPoly;
-
-        let stretched = turf.intersect(fieldPoly, strip);
-        if (!stretched) return makuraPoly;
-
-        // 元の枕と合成（欠けた左右を補完しつつ、元の形状も維持）
+        const w = Math.max(Number(widthM) || 1.5, 0.3);
+        let inset = null;
         try {
-            const united = turf.union(makuraPoly, stretched);
-            if (united) {
-                const clipped = turf.intersect(fieldPoly, united);
-                if (clipped) return clipped;
-            }
-        } catch (eUnion) {}
-        return stretched;
+            inset = turf.buffer(fieldPoly, -w, { units: 'meters' });
+        } catch (eBuf) {
+            inset = null;
+        }
+        if (!inset) {
+            // 狭すぎて内側が消える場合は圃場全体を枕候補にする
+            return fieldPoly;
+        }
+        // MultiPolygon になり得る内側をまとめて差を取る
+        let ring = null;
+        try {
+            ring = turf.difference(fieldPoly, inset);
+        } catch (eDiff) {
+            ring = null;
+        }
+        return ring || null;
     } catch (e) {
-        console.warn('cadStretchMakuraToFieldSides failed:', e);
-        return makuraPoly;
+        console.warn('cadBuildInwardMakuraRing failed:', e);
+        return null;
     }
+};
+
+/**
+ * 外殻チェーン近傍の枕片を1つに結合する（段差で2・3に分かれないようにする）
+ */
+window.cadUnionMakuraFeaturesNearChain = (flattened, centerPt, edgeChain, maxEdgeDistM) => {
+    try {
+        if (!flattened || !flattened.features || !flattened.features.length) return null;
+        const maxDist = (maxEdgeDistM != null && maxEdgeDistM > 0) ? maxEdgeDistM : 3;
+        let edgeLine = null;
+        if (edgeChain && edgeChain.length >= 2) {
+            try { edgeLine = turf.lineString(edgeChain); } catch (e) { edgeLine = null; }
+        }
+        const near = [];
+        flattened.features.forEach((feature) => {
+            if (!feature || !feature.geometry) return;
+            const gType = feature.geometry.type;
+            if (gType !== 'Polygon' && gType !== 'MultiPolygon') return;
+            let area = 0;
+            try { area = turf.area(feature); } catch (eA) { area = 0; }
+            if (!(area > 0.05)) return;
+            let center;
+            try { center = turf.center(feature); } catch (eC) { return; }
+            let edgeDist = 999;
+            if (edgeLine) {
+                try { edgeDist = turf.pointToLineDistance(center, edgeLine, { units: 'meters' }); } catch (eD) { edgeDist = 999; }
+            } else if (centerPt) {
+                try { edgeDist = turf.distance(center, centerPt, { units: 'meters' }); } catch (eD2) { edgeDist = 999; }
+            }
+            if (edgeDist <= maxDist) near.push(feature);
+        });
+        if (!near.length) return null;
+        if (near.length === 1) return near[0];
+
+        // 角でわずかに隙間が空いてもつながるよう、ごく薄く膨らませてから結合
+        const grown = near.map((f) => {
+            try {
+                return turf.buffer(f, 0.12, { units: 'meters' }) || f;
+            } catch (eB) {
+                return f;
+            }
+        });
+
+        let united = grown[0];
+        for (let i = 1; i < grown.length; i++) {
+            try {
+                const u = turf.union(united, grown[i]);
+                if (u) united = u;
+            } catch (eU) {}
+        }
+        if (united && united.geometry && united.geometry.type === 'MultiPolygon') {
+            try {
+                const flatU = turf.flatten(united);
+                // まだ分かれる場合は面積最大（呼び出し側で連続帯へフォールバック可）
+                return window.cadPickBestMakuraFeature(flatU, centerPt, edgeChain, maxDist) || united;
+            } catch (eF) {
+                return united;
+            }
+        }
+        return united;
+    } catch (e) {
+        console.warn('cadUnionMakuraFeaturesNearChain failed:', e);
+        return null;
+    }
+};
+
+/**
+ * 旧: 左右延伸補正。L字・段差を直線帯で潰してしまうため、外殻追随では使わない。
+ * 互換のため残し、渡されたポリゴンをそのまま返す。
+ */
+window.cadStretchMakuraToFieldSides = (makuraPoly) => {
+    return makuraPoly;
 };
 
 window.cadExecuteAddMakura = (latLng) => {
@@ -5506,26 +5769,74 @@ window.cadExecuteAddMakura = (latLng) => {
     }
     const tPoly = turf.polygon([coords]);
 
-    // --- 外殻追随: 近い辺＋角度の近い連続辺に沿った帯 ---
-    // 外殻線中心のバッファは外側にも広がるため、半径=畝幅で圃場内に約1畝幅の帯になる
+    // --- 外殻追随: 内向き一定幅リング × タップ辺チェーン（直角段差も回り込み、1本に連結） ---
     let continuousStrip = null;
     let finalPoly = null;
     let usedEdgeChain = null;
-    // 角まで辿りやすいよう角度許容を少し広めに
-    const edgeInfo = window.cadFindBoundaryEdgeChainNearPoint(coords, centerPt, 55);
+    const edgeInfo = window.cadFindBoundaryEdgeChainNearPoint(coords, centerPt, 100, actualWidthM);
     if (edgeInfo && edgeInfo.chain && edgeInfo.chain.length >= 2) {
         try {
             usedEdgeChain = edgeInfo.chain;
+            const ring = window.cadBuildInwardMakuraRing(tPoly, actualWidthM);
             let edgeLine = turf.lineString(edgeInfo.chain);
-            // バッファの丸端で左右が欠けるのを防ぐため、両端を延長してから帯にする
-            edgeLine = window.cadExtendLineStringEnds(edgeLine, Math.max(actualWidthM * 4, 8));
-            const strip = turf.buffer(edgeLine, actualWidthM, { units: 'meters' });
-            if (strip) continuousStrip = turf.intersect(tPoly, strip);
-            // 圃場の左右端まで届くよう補正
-            if (continuousStrip) {
-                continuousStrip = window.cadStretchMakuraToFieldSides(continuousStrip, tPoly, edgeInfo.chain, actualWidthM);
+            // 角まわりの取りこぼし防止で両端を少し延長し、畝幅より広めにマスク
+            edgeLine = window.cadExtendLineStringEnds(edgeLine, Math.max(actualWidthM * 2, 4));
+            const mask = turf.buffer(edgeLine, Math.max(actualWidthM * 1.65, 2), { units: 'meters' });
+            if (ring && mask) {
+                const masked = turf.intersect(ring, mask);
+                if (masked) {
+                    continuousStrip = turf.intersect(tPoly, masked) || masked;
+                    finalPoly = continuousStrip;
+                }
             }
-            finalPoly = continuousStrip;
+            // 内向きリングが取れない場合のフォールバック: 辺ごと内向き矩形を結合
+            if (!finalPoly) {
+                const edgeIndexes = edgeInfo.edgeIndexes || [];
+                let unionStrip = null;
+                const indexes = edgeIndexes.length ? edgeIndexes : [];
+                if (!indexes.length) {
+                    // chain だけある場合は連続点から辺を復元せずバッファ交差へ
+                    let line = turf.lineString(edgeInfo.chain);
+                    line = window.cadExtendLineStringEnds(line, Math.max(actualWidthM * 2, 4));
+                    const strip = turf.buffer(line, actualWidthM, { units: 'meters' });
+                    if (strip) unionStrip = turf.intersect(tPoly, strip);
+                } else {
+                    indexes.forEach((ei) => {
+                        const info = window.cadRingEdgeInfo(coords, ei);
+                        if (!info || info.len < 0.15) return;
+                        // 辺を内向き（圃場重心側）に幅ぶんオフセットした帯
+                        const mid = turf.midpoint(turf.point(info.a), turf.point(info.b));
+                        const fieldCenter = turf.center(tPoly);
+                        const toCenter = turf.bearing(mid, fieldCenter);
+                        // 辺の左右どちらが内側か: 法線2方向のうち重心に近い方
+                        const left = (info.bearing + 90) % 360;
+                        const right = (info.bearing + 270) % 360;
+                        const inward = (window.cadBearingDiff(left, toCenter) <= window.cadBearingDiff(right, toCenter)) ? left : right;
+                        let seg = turf.lineString([info.a, info.b]);
+                        seg = window.cadExtendLineStringEnds(seg, Math.max(actualWidthM * 0.6, 0.8));
+                        // 中心線を内側に半幅ずらしてから半幅バッファ → ほぼ内向きの帯
+                        const shift = turf.destination(mid, actualWidthM / 2, inward, { units: 'meters' });
+                        const dx = shift.geometry.coordinates[0] - mid.geometry.coordinates[0];
+                        const dy = shift.geometry.coordinates[1] - mid.geometry.coordinates[1];
+                        const shifted = turf.lineString(seg.geometry.coordinates.map(c => [c[0] + dx, c[1] + dy]));
+                        const strip = turf.buffer(shifted, actualWidthM / 2 + 0.08, { units: 'meters' });
+                        if (!strip) return;
+                        const clipped = turf.intersect(tPoly, strip);
+                        if (!clipped) return;
+                        if (!unionStrip) unionStrip = clipped;
+                        else {
+                            try {
+                                const u = turf.union(unionStrip, clipped);
+                                if (u) unionStrip = u;
+                            } catch (eU) {}
+                        }
+                    });
+                }
+                if (unionStrip) {
+                    continuousStrip = unionStrip;
+                    finalPoly = unionStrip;
+                }
+            }
         } catch (e) {
             console.warn('外殻追随枕畝の生成に失敗、直線帯にフォールバック:', e);
             finalPoly = null;
@@ -5577,45 +5888,19 @@ window.cadExecuteAddMakura = (latLng) => {
         } catch (e) { console.error(e); }
     }
 
-    // difference 後に左右が欠けた場合の再補正
-    if (differenced && usedEdgeChain) {
-        try {
-            const stretched = window.cadStretchMakuraToFieldSides(differenced, tPoly, usedEdgeChain, actualWidthM);
-            if (stretched) {
-                let repaired = stretched;
-                for (let av of avoidPolys) {
-                    if (!repaired) break;
-                    try { repaired = turf.difference(repaired, av); } catch (e2) {}
-                }
-                if (repaired) differenced = repaired;
-            }
-        } catch (e3) {}
-    }
-
-    // 外殻に沿った連続1本を優先。差分解で2本以上に割れたら連続帯にフォールバック
-    const pickMaxDist = Math.max(actualWidthM * 1.35, 2.5);
+    // 外殻に沿った近傍片をすべて結合して1本にする（段差で2・3に分けない）
+    const pickMaxDist = Math.max(actualWidthM * 2.2, 3.5);
     let chosenFeature = null;
     if (differenced) {
         const flatDiff = turf.flatten(differenced);
-        const nearCount = (flatDiff.features || []).filter((f) => {
-            try {
-                if (!f || !f.geometry) return false;
-                const c = turf.center(f);
-                if (usedEdgeChain && usedEdgeChain.length >= 2) {
-                    return turf.pointToLineDistance(c, turf.lineString(usedEdgeChain), { units: 'meters' }) <= pickMaxDist;
-                }
-                return turf.distance(c, centerPt, { units: 'meters' }) <= pickMaxDist;
-            } catch (e) { return false; }
-        }).length;
-
-        if (nearCount <= 1) {
-            chosenFeature = window.cadPickBestMakuraFeature(flatDiff, centerPt, usedEdgeChain, pickMaxDist);
-        }
+        chosenFeature = window.cadUnionMakuraFeaturesNearChain(flatDiff, centerPt, usedEdgeChain, pickMaxDist)
+            || window.cadPickBestMakuraFeature(flatDiff, centerPt, usedEdgeChain, pickMaxDist);
     }
-    // 割れ・消失時は外枠〜畝の間を埋める連続帯をそのまま使う（1本のみ）
+    // 割れ・消失時は連続帯を結合して使う
     if (!chosenFeature && continuousStrip) {
         const flatCont = turf.flatten(continuousStrip);
-        chosenFeature = window.cadPickBestMakuraFeature(flatCont, centerPt, usedEdgeChain, pickMaxDist)
+        chosenFeature = window.cadUnionMakuraFeaturesNearChain(flatCont, centerPt, usedEdgeChain, pickMaxDist)
+            || window.cadPickBestMakuraFeature(flatCont, centerPt, usedEdgeChain, pickMaxDist)
             || (flatCont.features && flatCont.features[0]) || null;
     }
 
@@ -5624,12 +5909,28 @@ window.cadExecuteAddMakura = (latLng) => {
         return;
     }
 
+    // 結合時の微小バッファ分を圃場内へ戻す
+    try {
+        const clippedChosen = turf.intersect(tPoly, chosenFeature);
+        if (clippedChosen) chosenFeature = clippedChosen;
+    } catch (eClip) {}
+
     let coordinates = chosenFeature.geometry.coordinates;
     if (!coordinates || coordinates.length === 0) {
         alert("枕畝を生成できるスペースがありませんでした。");
         return;
     }
-    // Polygon / 穴あきに対応（MultiPolygon の場合は最大面積の1面だけ）
+    // Polygon / 穴あきに対応。MultiPolygon なら薄く膨らませて再結合を試し、だめなら最大面
+    if (chosenFeature.geometry.type === 'MultiPolygon') {
+        try {
+            const flatM = turf.flatten(chosenFeature);
+            const remerged = window.cadUnionMakuraFeaturesNearChain(flatM, centerPt, usedEdgeChain, pickMaxDist);
+            if (remerged && remerged.geometry && remerged.geometry.type === 'Polygon') {
+                chosenFeature = remerged;
+                coordinates = chosenFeature.geometry.coordinates;
+            }
+        } catch (eRemerge) {}
+    }
     if (chosenFeature.geometry.type === 'MultiPolygon') {
         let bestRingSet = null;
         let bestArea = -1;
@@ -5654,7 +5955,7 @@ window.cadExecuteAddMakura = (latLng) => {
     window.saveCadStateToHistory();
     const msgEl = document.getElementById('cadPinModeMsg');
     if (msgEl) {
-        msgEl.innerText = '枕畝を外殻に沿って1本生成しました（外枠と畝の間を埋めています）';
+        msgEl.innerText = '枕畝を外殻に沿って1本生成しました（段差も回り込んで接続）';
         msgEl.style.color = '#ea580c';
     }
 };

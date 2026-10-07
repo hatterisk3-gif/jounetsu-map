@@ -111,13 +111,6 @@
           <button onclick="cadSetPinMode('snap_line')"
             style="flex:1; background:#333; color:#4CAF50; border:1px solid #4CAF50; padding:6px; border-radius:4px; font-size:10px; font-weight:bold;">🎯
             選んだ線に合わせる</button>
-          <button onclick="cadFlipDirection()"
-            style="flex:0.8; background:#333; color:#FF9800; border:1px solid #FF9800; padding:6px; border-radius:4px; font-size:10px; font-weight:bold;"
-            title="圃場の向きを180度反転させます">🔄 180°反転</button>
-          <button onclick="cadRotateMap(-5)"
-            style="flex:0.4; background:#555; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold;">↩️</button>
-          <button onclick="cadRotateMap(5)"
-            style="flex:0.4; background:#555; color:#fff; border:none; border-radius:4px; font-size:12px; font-weight:bold;">↪️</button>
         </div>
         <div style="display:flex; gap:10px; margin-bottom:8px; align-items:flex-end;">
           <div style="flex:1; display:none;">
@@ -127,20 +120,36 @@
           </div>
           <div style="flex:1;">
             <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🚫 側面の余白(cm)</label>
-            <input type="number" id="cadMarginSide" value="150" oninput="updateCadPreviewCount()"
+            <select id="cadMarginSideSelect" onchange="cadOnMarginSelectChange('Side')"
               style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;">
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="150" selected>150</option>
+              <option value="200">200</option>
+              <option value="custom">その他（手入力）</option>
+            </select>
+            <input type="number" id="cadMarginSide" value="150" oninput="updateCadPreviewCount()"
+              style="display:none; width:100%; margin-top:4px; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;">
           </div>
           <div style="flex:1;">
             <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🚫 端面の余白(cm)</label>
-            <input type="number" id="cadMarginEnd" value="250" oninput="updateCadPreviewCount()"
+            <select id="cadMarginEndSelect" onchange="cadOnMarginSelectChange('End')"
               style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;">
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="150">150</option>
+              <option value="200" selected>200</option>
+              <option value="custom">その他（手入力）</option>
+            </select>
+            <input type="number" id="cadMarginEnd" value="200" oninput="updateCadPreviewCount()"
+              style="display:none; width:100%; margin-top:4px; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;">
           </div>
         </div>
         <div style="margin-bottom:8px;">
-          <label style="font-size:11px; color:#aaa; margin-bottom:4px; display:block;">📏 基準の畝幅(cm) ※栽培プリセットから選択／計画があれば連動</label>
+          <label style="font-size:11px; color:#aaa; margin-bottom:4px; display:block;">📏 基準の畝幅(cm)</label>
           <input type="hidden" id="cadWidth" value="">
           <div id="cadWidthChoices" style="display:flex; flex-wrap:wrap; gap:4px; align-items:center;"></div>
-          <div id="cadWidthHint" style="font-size:10px; color:#FF9800; margin-top:4px;">未選択（ボタンで畝幅を選んでください）</div>
+          <div id="cadWidthHint" style="font-size:10px; color:#FF9800; margin-top:4px;">未選択（計画があれば連動）</div>
         </div>
 
         <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
@@ -155,154 +164,168 @@
             畝を生成</button>
         </div>
 
-        <div style="border:1px solid #555; border-radius:6px; padding:8px; margin-bottom:10px; background:#2a2a2a;">
-          <div style="font-size:11px; color:#FFB74D; font-weight:bold; margin-bottom:4px;">📍 途中から畝を立てる（追加）</div>
-          <div style="font-size:10px; color:#888; margin-bottom:6px; line-height:1.35;">GPSやタップで起点を決め、左／右へ畝を並べます。終点を置くと「途中〜途中」の長さだけ立てられます。</div>
-          <div style="display:flex; gap:5px; margin-bottom:6px; flex-wrap:wrap;">
-            <button type="button" onclick="cadBeginPartialPoint('start')"
-              style="flex:1; min-width:90px; background:#1565C0; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">起点をタップ</button>
-            <button type="button" onclick="cadBeginPartialPoint('end')"
-              style="flex:1; min-width:90px; background:#EF6C00; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">終点をタップ</button>
-            <button type="button" onclick="cadToggleGpsMenu('cadGpsSubPartial')"
-              style="flex:1; min-width:110px; background:#283593; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">📡 GPSで指定 ▾</button>
-          </div>
-          <div id="cadGpsSubPartial" style="display:none; background:#1e2846; padding:6px; border-radius:4px; margin-bottom:6px;">
-            <div style="display:flex; gap:5px;">
-              <button type="button" id="cadPartialGpsStartBtn" onclick="cadStartPartialGps('start')"
-                style="flex:1; background:#283593; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">📡 GPS起点</button>
-              <button type="button" id="cadPartialGpsEndBtn" onclick="cadStartPartialGps('end')"
-                style="flex:1; background:#E65100; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">📡 GPS終点</button>
+        <details style="border:1px solid #555; border-radius:6px; margin-bottom:8px; background:#2a2a2a; overflow:hidden;">
+          <summary
+            style="font-size:11px; color:#FFB74D; font-weight:bold; padding:8px; cursor:pointer; list-style:none; display:flex; align-items:center; gap:6px;">
+            <span style="opacity:0.8;">▸</span> 途中から畝を立てる</summary>
+          <div style="padding:0 8px 8px;">
+            <div style="font-size:10px; color:#888; margin-bottom:6px; line-height:1.35;">GPSやタップで起点を決め、左／右へ畝を並べます。終点を置くと「途中〜途中」の長さだけ立てられます。</div>
+            <div style="display:flex; gap:5px; margin-bottom:6px; flex-wrap:wrap;">
+              <button type="button" onclick="cadBeginPartialPoint('start')"
+                style="flex:1; min-width:90px; background:#1565C0; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">起点をタップ</button>
+              <button type="button" onclick="cadBeginPartialPoint('end')"
+                style="flex:1; min-width:90px; background:#EF6C00; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">終点をタップ</button>
+              <button type="button" onclick="cadToggleGpsMenu('cadGpsSubPartial')"
+                style="flex:1; min-width:110px; background:#283593; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">📡 GPSで指定 ▾</button>
             </div>
-          </div>
-          <div id="cadPartialGpsBar" style="display:none; background:#1a237e; border:1px solid #3949ab; border-radius:6px; padding:8px; margin-bottom:6px;">
-            <div id="cadPartialGpsStatus" style="font-size:11px; color:#90CAF9; line-height:1.35; margin-bottom:6px;">GPS測位中…</div>
-            <div style="display:flex; gap:5px;">
-              <button type="button" id="cadPartialGpsConfirmBtn" onclick="cadConfirmPartialGps()" disabled
-                style="flex:1; background:#455A64; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:not-allowed; opacity:0.6;">ここに置く</button>
-              <button type="button" onclick="cadCancelPartialGps()"
-                style="flex:0.7; background:#616161; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px;">取消</button>
+            <div id="cadGpsSubPartial" style="display:none; background:#1e2846; padding:6px; border-radius:4px; margin-bottom:6px;">
+              <div style="display:flex; gap:5px;">
+                <button type="button" id="cadPartialGpsStartBtn" onclick="cadStartPartialGps('start')"
+                  style="flex:1; background:#283593; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">📡 GPS起点</button>
+                <button type="button" id="cadPartialGpsEndBtn" onclick="cadStartPartialGps('end')"
+                  style="flex:1; background:#E65100; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">📡 GPS終点</button>
+              </div>
             </div>
+            <div id="cadPartialGpsBar" style="display:none; background:#1a237e; border:1px solid #3949ab; border-radius:6px; padding:8px; margin-bottom:6px;">
+              <div id="cadPartialGpsStatus" style="font-size:11px; color:#90CAF9; line-height:1.35; margin-bottom:6px;">GPS測位中…</div>
+              <div style="display:flex; gap:5px;">
+                <button type="button" id="cadPartialGpsConfirmBtn" onclick="cadConfirmPartialGps()" disabled
+                  style="flex:1; background:#455A64; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:not-allowed; opacity:0.6;">ここに置く</button>
+                <button type="button" onclick="cadCancelPartialGps()"
+                  style="flex:0.7; background:#616161; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px;">取消</button>
+              </div>
+            </div>
+            <div id="cadPartialStatus" style="font-size:10px; color:#90CAF9; margin-bottom:6px; line-height:1.35;">起点未設定</div>
+            <div style="display:flex; gap:5px; margin-bottom:6px;">
+              <button type="button" id="cadPartialDirLeft" onclick="cadSetPartialDir('left')"
+                style="flex:1; background:#333; color:#fff; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">← 左へ</button>
+              <button type="button" id="cadPartialDirRight" onclick="cadSetPartialDir('right')"
+                style="flex:1; background:#4CAF50; color:#fff; border:1px solid #4CAF50; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">右へ →</button>
+              <button type="button" id="cadPartialDirBoth" onclick="cadSetPartialDir('both')"
+                style="flex:1; background:#333; color:#fff; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">両側</button>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+              <span style="font-size:11px; color:#aaa; white-space:nowrap;">追加畝数</span>
+              <input type="number" id="cadPartialCount" value="5" min="1"
+                style="width:56px; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px; font-weight:bold; text-align:center;">
+              <button type="button" onclick="cadGeneratePartialLines()"
+                style="flex:1; background:#FF9800; color:#fff; border:none; padding:9px; border-radius:4px; font-weight:bold; font-size:12px;">途中から生成</button>
+            </div>
+            <button type="button" onclick="cadClearPartialPoints()"
+              style="width:100%; background:#444; color:#ccc; border:none; padding:6px; border-radius:4px; font-size:10px;">起点・終点をクリア</button>
           </div>
-          <div id="cadPartialStatus" style="font-size:10px; color:#90CAF9; margin-bottom:6px; line-height:1.35;">起点未設定</div>
-          <div style="display:flex; gap:5px; margin-bottom:6px;">
-            <button type="button" id="cadPartialDirLeft" onclick="cadSetPartialDir('left')"
-              style="flex:1; background:#333; color:#fff; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">← 左へ</button>
-            <button type="button" id="cadPartialDirRight" onclick="cadSetPartialDir('right')"
-              style="flex:1; background:#4CAF50; color:#fff; border:1px solid #4CAF50; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">右へ →</button>
-            <button type="button" id="cadPartialDirBoth" onclick="cadSetPartialDir('both')"
-              style="flex:1; background:#333; color:#fff; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">両側</button>
-          </div>
-          <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
-            <span style="font-size:11px; color:#aaa; white-space:nowrap;">追加畝数</span>
-            <input type="number" id="cadPartialCount" value="5" min="1"
-              style="width:56px; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px; font-weight:bold; text-align:center;">
-            <button type="button" onclick="cadGeneratePartialLines()"
-              style="flex:1; background:#FF9800; color:#fff; border:none; padding:9px; border-radius:4px; font-weight:bold; font-size:12px;">途中から生成</button>
-          </div>
-          <button type="button" onclick="cadClearPartialPoints()"
-            style="width:100%; background:#444; color:#ccc; border:none; padding:6px; border-radius:4px; font-size:10px;">起点・終点をクリア</button>
-        </div>
+        </details>
 
-        <div style="border:1px solid #555; border-radius:6px; padding:8px; margin-bottom:10px; background:#2a2a2a;">
-          <div style="font-size:11px; color:#81D4FA; font-weight:bold; margin-bottom:4px;">📐 4点で囲んで分割畝</div>
-          <div style="font-size:10px; color:#888; margin-bottom:6px; line-height:1.35;">圃場内に4つの角をタップまたはGPSで打ち、その四角形を〇分割して畝を立てます。</div>
-          <div style="display:flex; gap:4px; margin-bottom:6px;">
-            <button type="button" id="cadQuadCornerBtn0" onclick="cadBeginQuadCorner(0)"
-              style="flex:1; background:#0277BD; color:#fff; border:none; padding:7px 4px; border-radius:4px; font-size:10px; font-weight:bold;">角1</button>
-            <button type="button" id="cadQuadCornerBtn1" onclick="cadBeginQuadCorner(1)"
-              style="flex:1; background:#333; color:#ccc; border:1px solid #666; padding:7px 4px; border-radius:4px; font-size:10px; font-weight:bold;">角2</button>
-            <button type="button" id="cadQuadCornerBtn2" onclick="cadBeginQuadCorner(2)"
-              style="flex:1; background:#333; color:#ccc; border:1px solid #666; padding:7px 4px; border-radius:4px; font-size:10px; font-weight:bold;">角3</button>
-            <button type="button" id="cadQuadCornerBtn3" onclick="cadBeginQuadCorner(3)"
-              style="flex:1; background:#333; color:#ccc; border:1px solid #666; padding:7px 4px; border-radius:4px; font-size:10px; font-weight:bold;">角4</button>
-          </div>
-          <div style="display:flex; gap:5px; margin-bottom:6px;">
-            <button type="button" onclick="cadToggleGpsMenu('cadGpsSubQuad')"
-              style="flex:1; background:#1565C0; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">📡 GPSで打つ ▾</button>
-            <button type="button" onclick="cadClearQuadCorners()"
-              style="flex:0.7; background:#444; color:#ccc; border:none; padding:7px; border-radius:4px; font-size:11px;">クリア</button>
-          </div>
-          <div id="cadGpsSubQuad" style="display:none; margin-bottom:6px;">
-            <button type="button" onclick="cadStartQuadGps()"
-              style="width:100%; background:#1565C0; color:#fff; border:none; padding:8px; border-radius:4px; font-size:11px; font-weight:bold;">📡 GPSで現在の角を登録</button>
-          </div>
-          <div id="cadQuadGpsBar" style="display:none; background:#1a237e; border:1px solid #3949ab; border-radius:6px; padding:8px; margin-bottom:6px;">
-            <div id="cadQuadGpsStatus" style="font-size:11px; color:#90CAF9; line-height:1.35; margin-bottom:6px;">GPS測位中…</div>
-            <div style="display:flex; gap:5px;">
-              <button type="button" id="cadQuadGpsConfirmBtn" onclick="cadConfirmQuadGps()" disabled
-                style="flex:1; background:#455A64; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:not-allowed; opacity:0.6;">ここに角を打つ</button>
-              <button type="button" onclick="cadStopGpsPinPlace()"
-                style="flex:0.7; background:#616161; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px;">取消</button>
+        <details style="border:1px solid #555; border-radius:6px; margin-bottom:8px; background:#2a2a2a; overflow:hidden;">
+          <summary
+            style="font-size:11px; color:#81D4FA; font-weight:bold; padding:8px; cursor:pointer; list-style:none; display:flex; align-items:center; gap:6px;">
+            <span style="opacity:0.8;">▸</span> 4点で囲んで分割畝</summary>
+          <div style="padding:0 8px 8px;">
+            <div style="font-size:10px; color:#888; margin-bottom:6px; line-height:1.35;">圃場内に4つの角をタップまたはGPSで打ち、その四角形を〇分割して畝を立てます。</div>
+            <div style="display:flex; gap:4px; margin-bottom:6px;">
+              <button type="button" id="cadQuadCornerBtn0" onclick="cadBeginQuadCorner(0)"
+                style="flex:1; background:#0277BD; color:#fff; border:none; padding:7px 4px; border-radius:4px; font-size:10px; font-weight:bold;">角1</button>
+              <button type="button" id="cadQuadCornerBtn1" onclick="cadBeginQuadCorner(1)"
+                style="flex:1; background:#333; color:#ccc; border:1px solid #666; padding:7px 4px; border-radius:4px; font-size:10px; font-weight:bold;">角2</button>
+              <button type="button" id="cadQuadCornerBtn2" onclick="cadBeginQuadCorner(2)"
+                style="flex:1; background:#333; color:#ccc; border:1px solid #666; padding:7px 4px; border-radius:4px; font-size:10px; font-weight:bold;">角3</button>
+              <button type="button" id="cadQuadCornerBtn3" onclick="cadBeginQuadCorner(3)"
+                style="flex:1; background:#333; color:#ccc; border:1px solid #666; padding:7px 4px; border-radius:4px; font-size:10px; font-weight:bold;">角4</button>
+            </div>
+            <div style="display:flex; gap:5px; margin-bottom:6px;">
+              <button type="button" onclick="cadToggleGpsMenu('cadGpsSubQuad')"
+                style="flex:1; background:#1565C0; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">📡 GPSで打つ ▾</button>
+              <button type="button" onclick="cadClearQuadCorners()"
+                style="flex:0.7; background:#444; color:#ccc; border:none; padding:7px; border-radius:4px; font-size:11px;">クリア</button>
+            </div>
+            <div id="cadGpsSubQuad" style="display:none; margin-bottom:6px;">
+              <button type="button" onclick="cadStartQuadGps()"
+                style="width:100%; background:#1565C0; color:#fff; border:none; padding:8px; border-radius:4px; font-size:11px; font-weight:bold;">📡 GPSで現在の角を登録</button>
+            </div>
+            <div id="cadQuadGpsBar" style="display:none; background:#1a237e; border:1px solid #3949ab; border-radius:6px; padding:8px; margin-bottom:6px;">
+              <div id="cadQuadGpsStatus" style="font-size:11px; color:#90CAF9; line-height:1.35; margin-bottom:6px;">GPS測位中…</div>
+              <div style="display:flex; gap:5px;">
+                <button type="button" id="cadQuadGpsConfirmBtn" onclick="cadConfirmQuadGps()" disabled
+                  style="flex:1; background:#455A64; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:not-allowed; opacity:0.6;">ここに角を打つ</button>
+                <button type="button" onclick="cadStopGpsPinPlace()"
+                  style="flex:0.7; background:#616161; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px;">取消</button>
+              </div>
+            </div>
+            <div id="cadQuadStatus" style="font-size:10px; color:#81D4FA; margin-bottom:6px; line-height:1.35;">角 0/4</div>
+            <div style="display:flex; gap:5px; margin-bottom:6px;">
+              <button type="button" id="cadQuadDirAb" onclick="cadSetQuadDir('ab')"
+                style="flex:1; background:#0277BD; color:#fff; border:1px solid #0277BD; padding:7px; border-radius:4px; font-size:10px; font-weight:bold;">畝＝辺1→2</button>
+              <button type="button" id="cadQuadDirAd" onclick="cadSetQuadDir('ad')"
+                style="flex:1; background:#333; color:#ccc; border:1px solid #666; padding:7px; border-radius:4px; font-size:10px; font-weight:bold;">畝＝辺1→4</button>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <span style="font-size:11px; color:#aaa; white-space:nowrap;">分割数</span>
+              <input type="number" id="cadQuadSplitCount" value="8" min="1" max="200"
+                style="width:56px; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px; font-weight:bold; text-align:center;">
+              <button type="button" onclick="cadGenerateQuadStripLines()"
+                style="flex:1; background:#0288D1; color:#fff; border:none; padding:9px; border-radius:4px; font-weight:bold; font-size:12px;">分割して畝生成</button>
             </div>
           </div>
-          <div id="cadQuadStatus" style="font-size:10px; color:#81D4FA; margin-bottom:6px; line-height:1.35;">角 0/4</div>
-          <div style="display:flex; gap:5px; margin-bottom:6px;">
-            <button type="button" id="cadQuadDirAb" onclick="cadSetQuadDir('ab')"
-              style="flex:1; background:#0277BD; color:#fff; border:1px solid #0277BD; padding:7px; border-radius:4px; font-size:10px; font-weight:bold;">畝＝辺1→2</button>
-            <button type="button" id="cadQuadDirAd" onclick="cadSetQuadDir('ad')"
-              style="flex:1; background:#333; color:#ccc; border:1px solid #666; padding:7px; border-radius:4px; font-size:10px; font-weight:bold;">畝＝辺1→4</button>
-          </div>
-          <div style="display:flex; gap:8px; align-items:center;">
-            <span style="font-size:11px; color:#aaa; white-space:nowrap;">分割数</span>
-            <input type="number" id="cadQuadSplitCount" value="8" min="1" max="200"
-              style="width:56px; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px; font-weight:bold; text-align:center;">
-            <button type="button" onclick="cadGenerateQuadStripLines()"
-              style="flex:1; background:#0288D1; color:#fff; border:none; padding:9px; border-radius:4px; font-weight:bold; font-size:12px;">分割して畝生成</button>
-          </div>
-        </div>
+        </details>
 
-        <div style="font-size:11px; color:#aaa; margin-bottom:2px;">⬛ 自由畝の追加 (タップ／GPSで配置・移動/変形可能)</div>
-        <div style="border:1px solid #555; border-radius:6px; padding:7px; margin-bottom:6px; background:#2a2a2a;">
-          <div style="display:flex; gap:5px; align-items:center; margin-bottom:4px;">
-            <button type="button" id="cadSnapGridToggleBtn" onclick="cadToggleSnapGrid()"
-              style="flex:1.1; background:#333; color:#ccc; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">グリッド OFF</button>
-            <span style="font-size:10px; color:#aaa; white-space:nowrap;">間隔</span>
-            <input type="number" id="cadSnapGridCm" value="150" min="20" max="2000" step="10"
-              onchange="cadOnSnapGridCmChange()" oninput="cadOnSnapGridCmChange()"
-              style="width:58px; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:13px; font-weight:bold; text-align:center;" title="セル間隔(cm)">
-            <span style="font-size:10px; color:#aaa;">cm</span>
+        <details style="border:1px solid #555; border-radius:6px; margin-bottom:8px; background:#2a2a2a; overflow:hidden;">
+          <summary
+            style="font-size:11px; color:#AED581; font-weight:bold; padding:8px; cursor:pointer; list-style:none; display:flex; align-items:center; gap:6px;">
+            <span style="opacity:0.8;">▸</span> 自由畝の追加</summary>
+          <div style="padding:0 8px 8px;">
+            <div style="font-size:10px; color:#888; margin-bottom:6px; line-height:1.35;">タップ／GPSで配置。移動・変形できます。</div>
+            <div style="border:1px solid #444; border-radius:6px; padding:7px; margin-bottom:6px; background:#242424;">
+              <div style="display:flex; gap:5px; align-items:center; margin-bottom:4px;">
+                <button type="button" id="cadSnapGridToggleBtn" onclick="cadToggleSnapGrid()"
+                  style="flex:1.1; background:#333; color:#ccc; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">グリッド OFF</button>
+                <span style="font-size:10px; color:#aaa; white-space:nowrap;">間隔</span>
+                <input type="number" id="cadSnapGridCm" value="150" min="20" max="2000" step="10"
+                  onchange="cadOnSnapGridCmChange()" oninput="cadOnSnapGridCmChange()"
+                  style="width:58px; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:13px; font-weight:bold; text-align:center;" title="セル間隔(cm)">
+                <span style="font-size:10px; color:#aaa;">cm</span>
+              </div>
+              <div style="display:flex; gap:4px; margin-bottom:4px; align-items:center;">
+                <span style="font-size:10px; color:#81D4FA;">セル幅:</span>
+                <button type="button" onclick="cadSetSnapGridCm(50)" style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">50cm</button>
+                <button type="button" onclick="cadSetSnapGridCm(100)" style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">1m</button>
+                <button type="button" onclick="cadSetSnapGridCm(150)" style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">1.5m</button>
+                <button type="button" onclick="cadSetSnapGridCm(200)" style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">2m</button>
+              </div>
+              <div id="cadCellPaintBar" style="display:none; gap:5px; margin-bottom:4px;">
+                <button type="button" id="cadCellPaintBtn" onclick="cadSetCellEraseMode(false); cadAddCustomShape('rect');"
+                  style="flex:1; background:#558B2F; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">🖌 セル塗り</button>
+                <button type="button" id="cadCellEraseBtn" onclick="cadSetCellEraseMode(true); if(!window.cadPinMode) window.cadPinMode='custom_rect';"
+                  style="flex:1; background:#333; color:#ccc; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">🧹 消しゴム</button>
+              </div>
+              <div id="cadSnapGridHint" style="font-size:10px; color:#81D4FA; line-height:1.35;">OFF時は自由配置。ONにするとセルを塗るように畝を置けます</div>
+            </div>
+            <div style="display:flex; gap:5px; margin-bottom:5px;">
+              <button onclick="cadAddCustomShape('rect')"
+                style="flex:1; background:#8BC34A; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">⬛ 四角畝</button>
+              <button onclick="cadAddCustomShape('circle')"
+                style="flex:1; background:#8BC34A; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">⚫ 丸畝</button>
+              <button type="button" onclick="cadToggleGpsMenu('cadGpsSubCustom')"
+                style="flex:1.2; background:#1565C0; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">📡 GPS配置 ▾</button>
+            </div>
+            <div id="cadGpsSubCustom" style="display:none; background:#1e2846; padding:6px; border-radius:4px; margin-bottom:5px;">
+              <div style="display:flex; gap:5px;">
+                <button type="button" onclick="cadStartCustomShapeGps('rect')"
+                  style="flex:1; background:#1565C0; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">📡 GPSで四角畝</button>
+                <button type="button" onclick="cadStartCustomShapeGps('circle')"
+                  style="flex:1; background:#1565C0; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">📡 GPSで丸畝</button>
+              </div>
+            </div>
+            <div id="cadCustomGpsBar" style="display:none; background:#1a237e; border:1px solid #3949ab; border-radius:6px; padding:8px; margin-bottom:6px;">
+              <div id="cadCustomGpsStatus" style="font-size:11px; color:#90CAF9; line-height:1.35; margin-bottom:6px;">GPS測位中…</div>
+              <div style="display:flex; gap:5px;">
+                <button type="button" id="cadCustomGpsConfirmBtn" onclick="cadConfirmCustomShapeGps()" disabled
+                  style="flex:1; background:#455A64; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:not-allowed; opacity:0.6;">ここに置く</button>
+                <button type="button" onclick="cadStopGpsPinPlace()"
+                  style="flex:0.7; background:#616161; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">取消</button>
+              </div>
+            </div>
           </div>
-          <!-- 🌟 ワンタップセルサイズ切替チップ -->
-          <div style="display:flex; gap:4px; margin-bottom:4px; align-items:center;">
-            <span style="font-size:10px; color:#81D4FA;">セル幅:</span>
-            <button type="button" onclick="cadSetSnapGridCm(50)" style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">50cm</button>
-            <button type="button" onclick="cadSetSnapGridCm(100)" style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">1m</button>
-            <button type="button" onclick="cadSetSnapGridCm(150)" style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">1.5m</button>
-            <button type="button" onclick="cadSetSnapGridCm(200)" style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">2m</button>
-          </div>
-          <div id="cadCellPaintBar" style="display:none; gap:5px; margin-bottom:4px;">
-            <button type="button" id="cadCellPaintBtn" onclick="cadSetCellEraseMode(false); cadAddCustomShape('rect');"
-              style="flex:1; background:#558B2F; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">🖌 セル塗り</button>
-            <button type="button" id="cadCellEraseBtn" onclick="cadSetCellEraseMode(true); if(!window.cadPinMode) window.cadPinMode='custom_rect';"
-              style="flex:1; background:#333; color:#ccc; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">🧹 消しゴム</button>
-          </div>
-          <div id="cadSnapGridHint" style="font-size:10px; color:#81D4FA; line-height:1.35;">OFF時は自由配置。ONにするとセルを塗るように畝を置けます</div>
-        </div>
-        <div style="display:flex; gap:5px; margin-bottom:5px;">
-          <button onclick="cadAddCustomShape('rect')"
-            style="flex:1; background:#8BC34A; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">⬛ 四角畝</button>
-          <button onclick="cadAddCustomShape('circle')"
-            style="flex:1; background:#8BC34A; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">⚫ 丸畝</button>
-          <button type="button" onclick="cadToggleGpsMenu('cadGpsSubCustom')"
-            style="flex:1.2; background:#1565C0; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">📡 GPS配置 ▾</button>
-        </div>
-        <div id="cadGpsSubCustom" style="display:none; background:#1e2846; padding:6px; border-radius:4px; margin-bottom:5px;">
-          <div style="display:flex; gap:5px;">
-            <button type="button" onclick="cadStartCustomShapeGps('rect')"
-              style="flex:1; background:#1565C0; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">📡 GPSで四角畝</button>
-            <button type="button" onclick="cadStartCustomShapeGps('circle')"
-              style="flex:1; background:#1565C0; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">📡 GPSで丸畝</button>
-          </div>
-        </div>
-        <div id="cadCustomGpsBar" style="display:none; background:#1a237e; border:1px solid #3949ab; border-radius:6px; padding:8px; margin-bottom:6px;">
-          <div id="cadCustomGpsStatus" style="font-size:11px; color:#90CAF9; line-height:1.35; margin-bottom:6px;">GPS測位中…</div>
-          <div style="display:flex; gap:5px;">
-            <button type="button" id="cadCustomGpsConfirmBtn" onclick="cadConfirmCustomShapeGps()" disabled
-              style="flex:1; background:#455A64; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:not-allowed; opacity:0.6;">ここに置く</button>
-            <button type="button" onclick="cadStopGpsPinPlace()"
-              style="flex:0.7; background:#616161; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">取消</button>
-          </div>
-        </div>
+        </details>
       </div>
 
       <div id="cadMode2" style="display:none;">
