@@ -6377,7 +6377,7 @@ function getOrCreateRecordSheet(sheetName) {
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
     if (sheetName === '看板記録') { sheet.appendRow(["日時", "圃場名", "登録者", "写真URL", "システムID"]); } 
-    else if (sheetName === '作業記録') { sheet.appendRow(["記録時間", "圃場名", "記録者", "作業日", "作業名", "作物名", "開始時間", "終了時間", "人数", "合計時間", "進捗状況", "写真URL", "システムID", "今回作業畝", "次回開始畝", "作業内休憩(分)"]); }
+    else if (sheetName === '作業記録') { sheet.appendRow(["記録時間", "圃場名", "記録者", "作業日", "作業名", "作物名", "開始時間", "終了時間", "人数", "合計時間", "進捗状況", "写真URL", "システムID", "今回作業畝", "次回開始畝", "作業時間（分）", "休憩時間（分）", "実作業時間（分）"]); }
     else if (sheetName === 'ロット記録') { sheet.appendRow(["ロットID", "生成日時", "生成者", "作物名", "圃場名", "コンテナ種類", "初期コンテナ数", "残コンテナ数", "ステータス", "拠点", "内容単位", "内容個数", "内容内訳"]); }
     else { sheet.appendRow(["日時", "圃場名", "登録者", "作物名", "開始時間", "終了時間", "草刈り", "草抜き", "排水", "虫食い", "病気", "収穫見込み日", "残存率(%)", "葉長(cm)", "収穫サイズ(cm)", "収穫可能量(個/本)", "栽培ステージ", "土壌PH", "花芽", "気づいたこと", "写真URL", "システムID"]); }
     sheet.getRange("A1:V1").setFontWeight("bold").setBackground("#e0e0e0");
@@ -6479,12 +6479,18 @@ function saveRecord(idStr, nameStr, author, recordType, recordData, photosBase64
   const rsName = recordType === 'work' ? '作業記録' : (parentType === '看板' ? '看板記録' : '生育記録');
   const rs = getOrCreateRecordSheet(rsName);
   if (recordType === 'work') {
-    const breakCol = ensureWorkRecordBreakMinsColumn_(rs);
-    const breakMins = Math.max(0, parseInt(recordData && recordData.breakMins, 10) || 0);
+    const minCols = ensureWorkRecordMinutesColumns_(rs);
+    const mins = computeWorkRecordMinutes_(recordData || {});
     const row = [today+" "+time, nameStr, author, recordData.workDate||"", recordData.workName||"", recordData.crop||"", recordData.startTime||"", recordData.endTime||"", recordData.workerCount||"1", recordData.totalTime||"", recordData.progressStatus||"", urls.join(", "), recordId, recordData.workedRidges||"", recordData.nextRidge||""];
-    while (row.length < breakCol - 1) row.push('');
-    row[breakCol - 1] = breakMins > 0 ? breakMins : '';
+    const maxCol = Math.max(minCols.work, minCols.rest, minCols.actual);
+    while (row.length < maxCol) row.push('');
+    row[minCols.work - 1] = mins.work;
+    row[minCols.rest - 1] = mins.rest;
+    row[minCols.actual - 1] = mins.actual;
     rs.appendRow(row);
+    if (Number(mins.rest) > 0) {
+      try { syncAttendanceRestRows_(author, recordData.workDate); } catch (eRest) {}
+    }
   }
     else if (parentType === '看板') rs.appendRow([today+" "+time, nameStr, author, urls.join(", "), recordId]);
     else rs.appendRow([today+" "+time, nameStr, author, recordData.crop||"", recordData.startTime||"", recordData.endTime||"", recordData.mowing?"済":"", recordData.weeding?"済":"", recordData.drainage?"済":"", recordData.bug?"有":"", recordData.disease?"有":"", recordData.harvestDate||"", recordData.survivalRate||"", recordData.leafLength||"", recordData.harvestSize||"", recordData.harvestAmount||"", recordData.fieldStatus||"", recordData.ph||"", recordData.flower?"有":"", recordData.notes||"", urls.join(", "), recordId]);
@@ -6590,9 +6596,11 @@ function updateRecordItem(polyId, recordId, recordType, newData, newPhotosBase64
           if (recordType === 'work') {
           if (String(d[i][12] || '') === String(recordId)) { 
             const r = i + 1;
-            const breakCol = ensureWorkRecordBreakMinsColumn_(rs);
-            const breakMins = Math.max(0, parseInt(newData && newData.breakMins, 10) || 0);
-            rs.getRange(r, 4).setValue(newData.workDate||""); rs.getRange(r, 5).setValue(newData.workName||""); rs.getRange(r, 6).setValue(newData.crop||""); rs.getRange(r, 7).setValue(newData.startTime||""); rs.getRange(r, 8).setValue(newData.endTime||""); rs.getRange(r, 9).setValue(newData.workerCount||"1"); rs.getRange(r, 10).setValue(newData.totalTime||""); rs.getRange(r, 11).setValue(newData.progressStatus||""); rs.getRange(r, 12).setValue(tgt.urls.join(" , ")); rs.getRange(r, 14).setValue(newData.workedRidges||""); rs.getRange(r, 15).setValue(newData.nextRidge||""); rs.getRange(r, breakCol).setValue(breakMins > 0 ? breakMins : "");
+            const oldAuthor = d[i][2];
+            const oldYmd = formatWorkDateYmd_(d[i][3]);
+            rs.getRange(r, 4).setValue(newData.workDate||""); rs.getRange(r, 5).setValue(newData.workName||""); rs.getRange(r, 6).setValue(newData.crop||""); rs.getRange(r, 7).setValue(newData.startTime||""); rs.getRange(r, 8).setValue(newData.endTime||""); rs.getRange(r, 9).setValue(newData.workerCount||"1"); rs.getRange(r, 10).setValue(newData.totalTime||""); rs.getRange(r, 11).setValue(newData.progressStatus||""); rs.getRange(r, 12).setValue(tgt.urls.join(" , ")); rs.getRange(r, 14).setValue(newData.workedRidges||""); rs.getRange(r, 15).setValue(newData.nextRidge||"");
+            writeWorkRecordMinutes_(rs, r, newData);
+            syncAttendanceRestRowsForDays_([[oldAuthor, oldYmd], [oldAuthor, newData.workDate]]);
             break;
           }
       } else if (pType === '看板') {
@@ -6650,8 +6658,8 @@ function updateWorkRecordById(params) {
       for (let i = 1; i < d.length; i++) {
         if (String(d[i][12] || '').trim() !== recordId) continue;
         const r = i + 1;
-        const breakCol = ensureWorkRecordBreakMinsColumn_(rs);
-        const breakMins = Math.max(0, parseInt(newData && newData.breakMins, 10) || 0);
+        const oldAuthor = d[i][2];
+        const oldYmd = formatWorkDateYmd_(d[i][3]);
         const urlsCell = finalUrls.length ? finalUrls.join(' , ') : String(d[i][11] || '');
         rs.getRange(r, 4).setValue(newData.workDate || '');
         rs.getRange(r, 5).setValue(newData.workName || '');
@@ -6664,7 +6672,8 @@ function updateWorkRecordById(params) {
         rs.getRange(r, 12).setValue(urlsCell);
         rs.getRange(r, 14).setValue(newData.workedRidges || '');
         rs.getRange(r, 15).setValue(newData.nextRidge || '');
-        rs.getRange(r, breakCol).setValue(breakMins > 0 ? breakMins : '');
+        writeWorkRecordMinutes_(rs, r, newData);
+        syncAttendanceRestRowsForDays_([[oldAuthor, oldYmd], [oldAuthor, newData.workDate]]);
         sheetUpdated = true;
         break;
       }
@@ -6729,6 +6738,7 @@ function batchUpdateWorkRecordDates(params) {
     const displayDate = String(newYmd).replace(/-/g, '/');
     let sheetUpdated = 0;
     let embeddedUpdated = 0;
+    const restDays = [];
 
     // 1) 作業記録シート（D列=作業日, M列=recordId）
     const rs = TENANT_SS.getSheetByName('作業記録');
@@ -6743,6 +6753,7 @@ function batchUpdateWorkRecordDates(params) {
         }
         if (hit) {
           rs.getRange(i + 1, 4).setValue(newYmd);
+          restDays.push([values[i][2], values[i][3]], [values[i][2], newYmd]);
           sheetUpdated++;
         }
       }
@@ -6797,10 +6808,12 @@ function batchUpdateWorkRecordDates(params) {
         const cur = formatWorkDateYmd_(values[i][3]);
         if (cur !== newYmd) {
           rs.getRange(i + 1, 4).setValue(newYmd);
+          restDays.push([values[i][2], cur], [values[i][2], newYmd]);
           sheetUpdated++;
         }
       }
     }
+    syncAttendanceRestRowsForDays_(restDays);
 
     const userName = String((params && params.userName) || '').trim();
     if (userName) {
@@ -6865,6 +6878,7 @@ function deleteRecordItem(polyId, recordId, user) {
         if (String(d[i][spec.idCol] || '') === String(recordId)) {
           rs.deleteRow(i + 1);
           listDeleted = true;
+          if (spec.name === '作業記録') syncAttendanceRestRowsForDays_([[d[i][2], d[i][3]]]);
           break;
         }
       }
@@ -7014,6 +7028,7 @@ function deleteWorkRecordById(params) {
         });
         workSheet.deleteRow(i + 1);
         sheetDeleted = true;
+        syncAttendanceRestRowsForDays_([[values[i][2], values[i][3]]]);
         break;
       }
     }
@@ -7178,6 +7193,7 @@ function cancelClockInAndDeleteTodayWorkRecords(params) {
     for (let i = workRowsToDelete.length - 1; i >= 0; i--) {
       workSheet.deleteRow(workRowsToDelete[i]);
     }
+    if (workRowsToDelete.length) syncAttendanceRestRowsForDays_([[userName, targetYmd]]);
 
     // 添付写真も既存の個別削除と同様にゴミ箱へ移す。
     Object.keys(deletedUrls).forEach(function(url) {
@@ -10482,55 +10498,23 @@ function getFieldMemoHistory(params) {
   }
 }
 
-function ensureLunchBreakRecordSheet_() {
-  const ss = TENANT_SS;
-  let sheet = ss.getSheetByName('昼休憩記録');
-  if (!sheet) {
-    sheet = ss.insertSheet('昼休憩記録');
-    sheet.appendRow(['ユーザー名', '作業日', '開始時間', '終了時間', '登録日時', 'システムID']);
-    sheet.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#e0e0e0');
-  }
-  return sheet;
-}
-
-/** 昼休憩を専用シートへ保存し、出退勤シートの F/G 列にも開始・終了を書く */
+/**
+ * 昼休憩を出退勤シートへ保存（1日1回分で上書き）。
+ * 昼あり → 「昼休憩開始」「昼休憩終了」行、noLunch → 「昼休憩なし」行。
+ */
 function saveLunchBreakRecord_(params) {
   params = params || {};
   const userName = String(params.userName || '').trim();
-  const workDate = String(params.workDate || params.dateYmd || '').trim().replace(/\//g, '-').slice(0, 10);
+  const workDate = formatWorkDateYmd_(params.workDate || params.dateYmd || '');
+  const noLunch = params.noLunch === true || params.noLunch === 'true' || params.enabled === false;
   const startTime = attendancePadHm_(params.startTime || params.start || '');
   const endTime = attendancePadHm_(params.endTime || params.end || '');
-  if (!userName || !workDate || !startTime || !endTime) {
+  if (!userName || !workDate || (!noLunch && (!startTime || !endTime))) {
     throw new Error('昼休憩記録に必要な項目が不足しています');
   }
-  const sheet = ensureLunchBreakRecordSheet_();
-  const now = Utilities.formatDate(new Date(), 'JST', 'yyyy/MM/dd HH:mm');
-  const recordId = Utilities.getUuid();
-  // 同日同人の昼休憩は上書き（最終行を優先して更新）
-  let lunchUpdated = false;
-  if (sheet.getLastRow() > 1) {
-    const values = sheet.getDataRange().getValues();
-    for (let i = values.length - 1; i >= 1; i--) {
-      const rowUser = String(values[i][0] || '').replace(/\s+/g, '');
-      if (!rowUser) continue;
-      if (!attendanceUserMatch_(rowUser, userName)) continue;
-      const rowYmd = formatWorkDateYmd_(values[i][1]);
-      if (rowYmd !== workDate) continue;
-      sheet.getRange(i + 1, 3).setValue(startTime);
-      sheet.getRange(i + 1, 4).setValue(endTime);
-      sheet.getRange(i + 1, 5).setValue(now);
-      lunchUpdated = true;
-      break;
-    }
-  }
-  if (!lunchUpdated) {
-    sheet.appendRow([userName, workDate, startTime, endTime, now, recordId]);
-  }
-  try {
-    upsertAttendanceLunchColumns_(userName, workDate, startTime, endTime);
-  } catch (e) {}
-  writeLog(userName, '昼休憩登録', workDate, startTime + '〜' + endTime);
-  return { ok: true, id: recordId, updated: lunchUpdated };
+  const res = writeAttendanceLunchRows_(userName, workDate, startTime, endTime, noLunch);
+  writeLog(userName, '昼休憩登録', workDate, noLunch ? '昼休憩なし' : (startTime + '〜' + endTime));
+  return { ok: true, updated: !!res.updated, noLunch: noLunch };
 }
 
 /**
@@ -10576,36 +10560,49 @@ function moveLunchBreakRecordDate_(params) {
       }
     }
 
-    // 出退勤シートの昼休憩開始/終了も日付に合わせて移す
+    // 出退勤シートの昼休憩行（開始/終了/なし）を新日付へ移す
     let attendanceLunchUpdated = 0;
     try {
       const att = TENANT_SS.getSheetByName('出退勤');
       if (att && att.getLastRow() > 1) {
-        const values = att.getRange(2, 1, att.getLastRow(), 7).getValues();
-        let moveStart = startPad;
-        let moveEnd = endPad;
-        // 旧日付の行から昼を読み取り、クリアして新日付へ
-        for (let i = 0; i < values.length; i++) {
-          const d = formatWorkDateYmd_(values[i][0]) || String(values[i][0] || '').trim().replace(/\//g, '-').slice(0, 10);
-          if (d !== oldYmd) continue;
-          if (!attendanceUserMatch_(values[i][2], userName)) continue;
-          const cat = attendancePunchCategory_(values[i][3]);
-          if (cat !== 'in' && cat !== 'out') continue;
-          const ls = attendanceCellToHm_(values[i][5]) || padHm(values[i][5]);
-          const le = attendanceCellToHm_(values[i][6]) || padHm(values[i][6]);
-          if (startPad && ls && ls !== startPad) continue;
-          if (endPad && le && le !== endPad) continue;
-          if (!moveStart && ls) moveStart = ls;
-          if (!moveEnd && le) moveEnd = le;
-          att.getRange(i + 2, 6).setValue('');
-          att.getRange(i + 2, 7).setValue('');
-          attendanceLunchUpdated++;
-        }
-        if (moveStart && moveEnd) {
-          upsertAttendanceLunchColumns_(params.userName || userName, newYmd, moveStart, moveEnd);
+        const from = readAttendanceLunchRows_(att, userName, oldYmd);
+        if (from.rows.length && attendanceLunchTimesMatch_(from, startPad, endPad)) {
+          deleteSheetRowsDesc_(att, readAttendanceLunchRows_(att, userName, newYmd).rows);
+          readAttendanceLunchRows_(att, userName, oldYmd).rows.forEach(function (r) {
+            att.getRange(r, 1).setValue(newYmd);
+            attendanceLunchUpdated++;
+          });
         }
       }
     } catch (eAtt) {}
+
+    // 互換: 旧 F/G 列に残った昼休憩は、新日付の昼休憩行へ移す
+    try {
+      const att = TENANT_SS.getSheetByName('出退勤');
+      if (att && att.getLastRow() > 1) {
+        const values = att.getRange(2, 1, att.getLastRow() - 1, 7).getValues();
+        let moveStart = '';
+        let moveEnd = '';
+        for (let i = 0; i < values.length; i++) {
+          if (attendanceRowYmd_(values[i][0]) !== oldYmd) continue;
+          if (!attendanceUserMatch_(values[i][2], userName)) continue;
+          const cat = attendancePunchCategory_(values[i][3]);
+          if (cat !== 'in' && cat !== 'out') continue;
+          const ls = attendanceCellToHm_(values[i][5]);
+          const le = attendanceCellToHm_(values[i][6]);
+          if (!ls && !le) continue;
+          if (startPad && ls && ls !== startPad) continue;
+          if (endPad && le && le !== endPad) continue;
+          if (ls) moveStart = ls;
+          if (le) moveEnd = le;
+          att.getRange(i + 2, 6, 1, 2).setValues([['', '']]);
+        }
+        if (!attendanceLunchUpdated && moveStart && moveEnd) {
+          writeAttendanceLunchRows_(params.userName || userName, newYmd, moveStart, moveEnd, false);
+          attendanceLunchUpdated += 2;
+        }
+      }
+    } catch (eAttLegacy) {}
 
     // トラッキング: 種類「昼休憩(HH:MM-HH:MM)」の日時を新日付へ
     let trackingUpdated = 0;
@@ -10701,7 +10698,17 @@ function deleteLunchBreakRecord_(params) {
     try {
       const att = TENANT_SS.getSheetByName('出退勤');
       if (att && att.getLastRow() > 1) {
-        const values = att.getRange(2, 1, att.getLastRow(), 7).getValues();
+        const found = readAttendanceLunchRows_(att, userName, ymd);
+        if (found.rows.length && attendanceLunchTimesMatch_(found, startPad, endPad)) {
+          deleteSheetRowsDesc_(att, found.rows);
+          attendanceCleared += found.rows.length;
+        }
+      }
+    } catch (eRows) {}
+    try {
+      const att = TENANT_SS.getSheetByName('出退勤');
+      if (att && att.getLastRow() > 1) {
+        const values = att.getRange(2, 1, att.getLastRow() - 1, 7).getValues();
         for (let i = 0; i < values.length; i++) {
           const d = formatWorkDateYmd_(values[i][0]) || String(values[i][0] || '').trim().replace(/\//g, '-').slice(0, 10);
           if (d !== ymd) continue;
@@ -10750,6 +10757,7 @@ function deleteBulkWorkMemoBatch_(params) {
     let sheetDeleted = 0;
     let embeddedDeleted = 0;
     const deletedIds = {};
+    const restDays = [];
 
     const itemMatch_ = (data, author) => {
       if (!items.length) return false;
@@ -10803,9 +10811,11 @@ function deleteBulkWorkMemoBatch_(params) {
         const rid = String(values[i][12] || '').trim();
         if (rid) deletedIds[rid] = true;
         workSheet.deleteRow(i + 1);
+        restDays.push([rowAuthor, dataLike.workDate]);
         sheetDeleted++;
       }
     }
+    syncAttendanceRestRowsForDays_(restDays);
 
     ['圃場', '看板'].forEach(function (sheetName) {
       const sheet = TENANT_SS.getSheetByName(sheetName);
@@ -10869,7 +10879,7 @@ function deleteBulkWorkMemoBatch_(params) {
           startTime: li.startTime || li.start || '',
           endTime: li.endTime || li.end || ''
         });
-        if (res && res.lunchSheetDeleted) lunchDeleted += Number(res.lunchSheetDeleted) || 0;
+        if (res) lunchDeleted += (Number(res.lunchSheetDeleted) || 0) + (Number(res.attendanceCleared) || 0);
       } catch (eLunch) {}
     });
 
@@ -10997,43 +11007,325 @@ function moveAttendanceForDate_(params) {
   }
 }
 
+var WORK_RECORD_WORK_MINS_HEADER_ = '作業時間（分）';
+var WORK_RECORD_REST_MINS_HEADER_ = '休憩時間（分）';
+var WORK_RECORD_ACTUAL_MINS_HEADER_ = '実作業時間（分）';
+var WORK_RECORD_REST_MINS_LEGACY_HEADERS_ = ['作業内休憩(分)', '休憩時間(分)'];
+var workRecordMinutesColsCache_ = null;
+
+/**
+ * 作業記録の「作業時間（分）」「休憩時間（分）」「実作業時間（分）」列を見出しで探す（無ければ作る）。
+ * 旧「作業内休憩(分)」列は「休憩時間（分）」へ改名して使う。
+ */
+function ensureWorkRecordMinutesColumns_(sheet) {
+  if (!sheet) return { work: 16, rest: 17, actual: 18 };
+  if (workRecordMinutesColsCache_ && workRecordMinutesColsCache_.sheetId === sheet.getSheetId()) {
+    return workRecordMinutesColsCache_.cols;
+  }
+  const readHeaders = function () {
+    const lastCol = Math.max(1, sheet.getLastColumn());
+    return sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h || '').trim(); });
+  };
+  let headers = readHeaders();
+  let restIdx = headers.indexOf(WORK_RECORD_REST_MINS_HEADER_);
+  if (restIdx < 0) {
+    for (let i = 0; i < WORK_RECORD_REST_MINS_LEGACY_HEADERS_.length; i++) {
+      const li = headers.indexOf(WORK_RECORD_REST_MINS_LEGACY_HEADERS_[i]);
+      if (li < 0) continue;
+      sheet.getRange(1, li + 1).setValue(WORK_RECORD_REST_MINS_HEADER_).setFontWeight('bold');
+      restIdx = li;
+      break;
+    }
+  }
+  if (restIdx < 0) {
+    const col = Math.max(15, sheet.getLastColumn()) + 1;
+    sheet.getRange(1, col).setValue(WORK_RECORD_REST_MINS_HEADER_).setFontWeight('bold');
+    restIdx = col - 1;
+    headers = readHeaders();
+  }
+  if (headers.indexOf(WORK_RECORD_WORK_MINS_HEADER_) < 0) {
+    sheet.insertColumnBefore(restIdx + 1);
+    sheet.getRange(1, restIdx + 1).setValue(WORK_RECORD_WORK_MINS_HEADER_).setFontWeight('bold');
+    headers = readHeaders();
+    restIdx = headers.indexOf(WORK_RECORD_REST_MINS_HEADER_);
+  }
+  if (headers.indexOf(WORK_RECORD_ACTUAL_MINS_HEADER_) < 0) {
+    sheet.insertColumnAfter(restIdx + 1);
+    sheet.getRange(1, restIdx + 2).setValue(WORK_RECORD_ACTUAL_MINS_HEADER_).setFontWeight('bold');
+    headers = readHeaders();
+  }
+  const cols = {
+    work: headers.indexOf(WORK_RECORD_WORK_MINS_HEADER_) + 1,
+    rest: headers.indexOf(WORK_RECORD_REST_MINS_HEADER_) + 1,
+    actual: headers.indexOf(WORK_RECORD_ACTUAL_MINS_HEADER_) + 1
+  };
+  workRecordMinutesColsCache_ = { sheetId: sheet.getSheetId(), cols: cols };
+  return cols;
+}
+
 function ensureWorkRecordBreakMinsColumn_(sheet) {
-  if (!sheet) return 16;
-  const lastCol = Math.max(1, sheet.getLastColumn());
-  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) { return String(h || '').trim(); });
-  const idx = headers.indexOf('作業内休憩(分)');
-  if (idx >= 0) return idx + 1;
-  const col = lastCol + 1;
-  sheet.getRange(1, col).setValue('作業内休憩(分)').setFontWeight('bold');
-  return col;
+  return ensureWorkRecordMinutesColumns_(sheet).rest;
+}
+
+/** 休憩記録（作業名に「休憩」を含み、昼休憩ではないもの） */
+function isRestWorkName_(workName) {
+  const s = String(workName || '');
+  return s.indexOf('休憩') >= 0 && s.indexOf('昼休憩') < 0;
+}
+
+/**
+ * 作業記録1件の 作業時間・休憩時間・実作業時間（分）。
+ * 休憩記録は 作業時間＝休憩時間、実作業 0。開始・終了が無ければ空欄。
+ */
+function computeWorkRecordMinutes_(data) {
+  data = data || {};
+  const st = normWorkRecordTimeHm_(data.startTime);
+  const et = normWorkRecordTimeHm_(data.endTime);
+  let span = 0;
+  if (st && et) {
+    const sp = st.split(':').map(Number);
+    const ep = et.split(':').map(Number);
+    span = (ep[0] * 60 + ep[1]) - (sp[0] * 60 + sp[1]);
+    if (span < 0) span += 24 * 60;
+  }
+  const breakMins = Math.max(0, parseInt(data.breakMins, 10) || 0);
+  if (!(span > 0)) {
+    return { work: '', rest: (!isRestWorkName_(data.workName) && breakMins > 0) ? breakMins : '', actual: '' };
+  }
+  if (isRestWorkName_(data.workName)) return { work: span, rest: span, actual: 0 };
+  const rest = Math.min(span, breakMins);
+  return { work: span, rest: rest, actual: span - rest };
+}
+
+function writeWorkRecordMinutes_(sheet, rowIndex, data) {
+  const cols = ensureWorkRecordMinutesColumns_(sheet);
+  const mins = computeWorkRecordMinutes_(data);
+  sheet.getRange(rowIndex, cols.work).setValue(mins.work);
+  sheet.getRange(rowIndex, cols.rest).setValue(mins.rest);
+  sheet.getRange(rowIndex, cols.actual).setValue(mins.actual);
+  return mins;
+}
+
+var ATTENDANCE_REST_TYPE_ = '休憩';
+var ATTENDANCE_LUNCH_START_TYPE_ = '昼休憩開始';
+var ATTENDANCE_LUNCH_END_TYPE_ = '昼休憩終了';
+var ATTENDANCE_LUNCH_NONE_TYPE_ = '昼休憩なし';
+var ATTENDANCE_REST_CLOCKOUT_ID_ = '退勤時入力';
+
+function isAttendanceLunchRowType_(type) {
+  const t = String(type || '').trim();
+  return t === ATTENDANCE_LUNCH_START_TYPE_ || t === ATTENDANCE_LUNCH_END_TYPE_ || t === ATTENDANCE_LUNCH_NONE_TYPE_;
+}
+
+function attendanceRowYmd_(val) {
+  return formatWorkDateYmd_(val) || String(val || '').trim().replace(/\//g, '-').slice(0, 10);
+}
+
+function appendAttendanceRows_(sheet, rows) {
+  if (!rows || !rows.length) return;
+  const start = sheet.getLastRow() + 1;
+  sheet.getRange(start, 1, rows.length, 8).setValues(rows);
+}
+
+function deleteSheetRowsDesc_(sheet, rowIndexes) {
+  rowIndexes.slice().sort(function (a, b) { return b - a; }).forEach(function (r) {
+    sheet.deleteRow(r);
+  });
+}
+
+/**
+ * 作業記録シートを正として、その人・その日の出退勤「休憩」行（B=開始, E=分, H=記録ID）を作り直す。
+ * 退勤時入力の休憩行は残す。
+ */
+function syncAttendanceRestRows_(userName, dateYmd) {
+  const ymd = formatWorkDateYmd_(dateYmd);
+  const uname = String(userName || '').trim();
+  if (!ymd || !uname) return { synced: false };
+
+  const desired = [];
+  const rs = TENANT_SS.getSheetByName('作業記録');
+  if (rs && rs.getLastRow() > 1) {
+    const cols = ensureWorkRecordMinutesColumns_(rs);
+    const lastRow = rs.getLastRow();
+    const startRow = Math.max(2, lastRow - 7999);
+    const width = Math.max(13, cols.rest);
+    const values = rs.getRange(startRow, 1, lastRow - startRow + 1, width).getValues();
+    for (let i = 0; i < values.length; i++) {
+      const row = values[i];
+      if (!attendanceUserMatch_(row[2], uname)) continue;
+      if (formatWorkDateYmd_(row[3]) !== ymd) continue;
+      const mins = computeWorkRecordMinutes_({
+        workName: row[4],
+        startTime: row[6],
+        endTime: row[7],
+        breakMins: row[cols.rest - 1]
+      });
+      if (!(Number(mins.rest) > 0)) continue;
+      desired.push([ymd, normWorkRecordTimeHm_(row[6]), String(row[2] || uname).trim(), ATTENDANCE_REST_TYPE_, mins.rest, '', '', String(row[12] || '').trim()]);
+    }
+  }
+
+  const att = ensureAttendanceSheet_();
+  const existingRows = [];
+  const existingKeys = [];
+  const keyOf = function (r) {
+    return [attendanceCellToHm_(r[1]), Number(r[4]) || 0, String(r[7] || '').trim()].join('|');
+  };
+  if (att.getLastRow() > 1) {
+    const values = att.getRange(2, 1, att.getLastRow() - 1, 8).getValues();
+    for (let i = 0; i < values.length; i++) {
+      if (String(values[i][3] || '').trim() !== ATTENDANCE_REST_TYPE_) continue;
+      if (String(values[i][7] || '').trim() === ATTENDANCE_REST_CLOCKOUT_ID_) continue;
+      if (attendanceRowYmd_(values[i][0]) !== ymd) continue;
+      if (!attendanceUserMatch_(values[i][2], uname)) continue;
+      existingRows.push(i + 2);
+      existingKeys.push(keyOf(values[i]));
+    }
+  }
+  const desiredKeys = desired.map(keyOf);
+  if (existingKeys.slice().sort().join(',') === desiredKeys.slice().sort().join(',')) {
+    return { synced: true, unchanged: true, count: desired.length };
+  }
+  deleteSheetRowsDesc_(att, existingRows);
+  appendAttendanceRows_(att, desired);
+  return { synced: true, count: desired.length };
+}
+
+/** [[userName, date], ...] の重複を除いて休憩行を同期（失敗しても呼び出し元は止めない） */
+function syncAttendanceRestRowsForDays_(pairs) {
+  const seen = {};
+  (pairs || []).forEach(function (p) {
+    if (!p) return;
+    const u = String(p[0] || '').trim();
+    const ymd = formatWorkDateYmd_(p[1]);
+    if (!u || !ymd) return;
+    const key = u.replace(/\s+/g, '') + '|' + ymd;
+    if (seen[key]) return;
+    seen[key] = true;
+    try { syncAttendanceRestRows_(u, ymd); } catch (e) {}
+  });
+}
+
+/** その人・その日の昼休憩行（開始/終了/なし）を探す */
+function findAttendanceLunchRows_(values, userName, ymd, rowOffset) {
+  const out = { rows: [], start: '', end: '', none: false };
+  for (let i = 0; i < values.length; i++) {
+    const type = String(values[i][3] || '').trim();
+    if (!isAttendanceLunchRowType_(type)) continue;
+    if (attendanceRowYmd_(values[i][0]) !== ymd) continue;
+    if (!attendanceUserMatch_(values[i][2], userName)) continue;
+    out.rows.push(i + rowOffset);
+    if (type === ATTENDANCE_LUNCH_START_TYPE_) out.start = attendanceCellToHm_(values[i][1]);
+    else if (type === ATTENDANCE_LUNCH_END_TYPE_) out.end = attendanceCellToHm_(values[i][1]);
+    else out.none = true;
+  }
+  return out;
+}
+
+function readAttendanceLunchRows_(sheet, userName, ymd) {
+  if (!sheet || sheet.getLastRow() <= 1) return { rows: [], start: '', end: '', none: false };
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getValues();
+  return findAttendanceLunchRows_(values, userName, ymd, 2);
+}
+
+function attendanceLunchTimesMatch_(found, startPad, endPad) {
+  if (startPad && found.start && found.start !== startPad) return false;
+  if (endPad && found.end && found.end !== endPad) return false;
+  return true;
+}
+
+/** 旧保存先（出退勤 F/G・昼休憩記録シート）からその日の昼休憩を消す */
+function clearLegacyLunchForDate_(userName, ymd) {
+  try {
+    const att = TENANT_SS.getSheetByName('出退勤');
+    if (att && att.getLastRow() > 1) {
+      const values = att.getRange(2, 1, att.getLastRow() - 1, 7).getValues();
+      for (let i = 0; i < values.length; i++) {
+        if (attendanceRowYmd_(values[i][0]) !== ymd) continue;
+        if (!attendanceUserMatch_(values[i][2], userName)) continue;
+        if (values[i][5] === '' && values[i][6] === '') continue;
+        att.getRange(i + 2, 6, 1, 2).setValues([['', '']]);
+      }
+    }
+  } catch (e) {}
+  try {
+    const sheet = TENANT_SS.getSheetByName('昼休憩記録');
+    if (sheet && sheet.getLastRow() > 1) {
+      const values = sheet.getDataRange().getValues();
+      const rows = [];
+      for (let i = 1; i < values.length; i++) {
+        if (!attendanceUserMatch_(values[i][0], userName)) continue;
+        if (formatWorkDateYmd_(values[i][1]) !== ymd) continue;
+        rows.push(i + 1);
+      }
+      deleteSheetRowsDesc_(sheet, rows);
+    }
+  } catch (e) {}
+}
+
+/**
+ * 出退勤シートへ昼休憩を1日1回分で上書き保存。
+ * 昼あり → 「昼休憩開始」「昼休憩終了」の2行（B=時刻）、昼なし → 「昼休憩なし」1行。
+ */
+function writeAttendanceLunchRows_(userName, dateYmd, startHm, endHm, noLunch) {
+  const uname = String(userName || '').trim();
+  const ymd = formatWorkDateYmd_(dateYmd);
+  const start = attendancePadHm_(startHm);
+  const end = attendancePadHm_(endHm);
+  if (!uname || !ymd) throw new Error('昼休憩の保存に必要なユーザー名・日付がありません');
+  if (!noLunch && (!start || !end)) throw new Error('昼休憩の開始・終了時刻がありません');
+  const sheet = ensureAttendanceSheet_();
+  const cur = readAttendanceLunchRows_(sheet, uname, ymd);
+  const unchanged = noLunch
+    ? (cur.none && cur.rows.length === 1)
+    : (!cur.none && cur.rows.length === 2 && cur.start === start && cur.end === end);
+  if (!unchanged) {
+    deleteSheetRowsDesc_(sheet, cur.rows);
+    appendAttendanceRows_(sheet, noLunch
+      ? [[ymd, '', uname, ATTENDANCE_LUNCH_NONE_TYPE_, '', '', '', '']]
+      : [
+        [ymd, start, uname, ATTENDANCE_LUNCH_START_TYPE_, '', '', '', ''],
+        [ymd, end, uname, ATTENDANCE_LUNCH_END_TYPE_, '', '', '', '']
+      ]);
+  }
+  clearLegacyLunchForDate_(uname, ymd);
+  return { updated: cur.rows.length > 0, unchanged: unchanged };
 }
 
 // ==========================================
 // 📍 出退勤シート（日付・時刻・ユーザー・種類・休憩分・昼開始・昼終了）／トラッキングは移動のみ
 // ==========================================
 
-/** 出退勤シート列: A日付 B時刻 Cユーザー名 D種類 E休憩(分) F昼休憩開始 G昼休憩終了 */
+/**
+ * 出退勤シート列: A日付 B時刻 Cユーザー名 D種類 E休憩(分) F昼休憩開始(旧) G昼休憩終了(旧) H記録ID
+ * D種類: 出勤/退勤/取消、休憩（B=開始・E=分・H=作業記録ID）、昼休憩開始/昼休憩終了（B=時刻）、昼休憩なし
+ */
 function ensureAttendanceSheet_() {
   const ss = TENANT_SS;
-  const headers = ['日付', '時刻', 'ユーザー名', '種類', '休憩(分)', '昼休憩開始', '昼休憩終了'];
+  const headers = ['日付', '時刻', 'ユーザー名', '種類', '休憩(分)', '昼休憩開始', '昼休憩終了', '記録ID'];
   let sheet = ss.getSheetByName('出退勤');
   if (!sheet) {
     sheet = ss.insertSheet('出退勤');
     sheet.appendRow(headers);
     try {
-      sheet.getRange(1, 1, 1, 7).setFontWeight('bold').setBackground('#e0e0e0');
+      sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#e0e0e0');
     } catch (e) {}
     return sheet;
   }
   try {
+    if (sheet.getMaxColumns() < headers.length) {
+      sheet.insertColumnsAfter(sheet.getMaxColumns(), headers.length - sheet.getMaxColumns());
+    }
     const lastCol = Math.max(sheet.getLastColumn(), 1);
-    const existing = sheet.getRange(1, 1, 1, Math.max(lastCol, 7)).getValues()[0];
+    const existing = sheet.getRange(1, 1, 1, Math.max(lastCol, headers.length)).getValues()[0];
+    let changed = false;
     for (let c = 0; c < headers.length; c++) {
       if (String(existing[c] || '').trim() !== headers[c]) {
         sheet.getRange(1, c + 1).setValue(headers[c]);
+        changed = true;
       }
     }
-    sheet.getRange(1, 1, 1, 7).setFontWeight('bold').setBackground('#e0e0e0');
+    if (changed) sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#e0e0e0');
   } catch (e) {}
   return sheet;
 }
@@ -11096,13 +11388,26 @@ function parseAttendanceExtras_(type, params) {
     hasMidBreak: !!hasMidBreak,
     lunchStart: lunchStart,
     lunchEnd: lunchEnd,
-    lunchEnabled: lunchEnabled
+    lunchEnabled: lunchEnabled,
+    noLunch: params.lunchEnabled === false || /昼なし/.test(t)
   };
+}
+
+/** 退勤時に送られた昼休憩を出退勤の昼休憩行へ反映（昼の指定が無ければ何もしない） */
+function applyClockOutLunchExtras_(userName, dateYmd, extras) {
+  if (!extras) return;
+  try {
+    if (extras.lunchStart && extras.lunchEnd) {
+      writeAttendanceLunchRows_(userName, dateYmd, extras.lunchStart, extras.lunchEnd, false);
+    } else if (extras.noLunch) {
+      writeAttendanceLunchRows_(userName, dateYmd, '', '', true);
+    }
+  } catch (e) {}
 }
 
 /**
  * 同日・同人・同カテゴリ（出勤/退勤）があれば上書き。古い重複行は削除。
- * 退勤時は E列=休憩(分)、F/G=昼休憩開始/終了。
+ * 休憩は「休憩」行、昼休憩は「昼休憩開始/終了/なし」行に持つため、退勤行の E〜G には書かない。
  */
 function upsertAttendancePunchRow_(sheet, dateYmd, userName, type, timeHm, extras) {
   extras = extras || {};
@@ -11111,76 +11416,37 @@ function upsertAttendancePunchRow_(sheet, dateYmd, userName, type, timeHm, extra
   const dupRows = [];
   let existingLunchStart = '';
   let existingLunchEnd = '';
-  let existingBreak = '';
 
   if (lastRow > 1 && (category === 'in' || category === 'out')) {
-    const values = sheet.getRange(2, 1, lastRow, 7).getValues();
+    const values = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
     for (let i = 0; i < values.length; i++) {
-      const d = formatWorkDateYmd_(values[i][0]) || String(values[i][0] || '').trim().replace(/\//g, '-').slice(0, 10);
-      if (d !== dateYmd) continue;
+      if (attendanceRowYmd_(values[i][0]) !== dateYmd) continue;
       if (!attendanceUserMatch_(values[i][2], userName)) continue;
       const cat = attendancePunchCategory_(values[i][3]);
       if (cat !== category) continue;
       dupRows.push(i + 2);
-      existingBreak = values[i][4];
-      existingLunchStart = attendanceCellToHm_(values[i][5]) || String(values[i][5] || '').trim();
-      existingLunchEnd = attendanceCellToHm_(values[i][6]) || String(values[i][6] || '').trim();
+      existingLunchStart = values[i][5];
+      existingLunchEnd = values[i][6];
     }
   }
 
-  let breakVal = '';
-  if (category === 'out') {
-    breakVal = extras.hasMidBreak ? extras.midBreakMins : (existingBreak !== '' && existingBreak != null ? existingBreak : 0);
-  }
-
-  let lunchStart = extras.lunchStart || '';
-  let lunchEnd = extras.lunchEnd || '';
-  if (extras.lunchEnabled === false) {
-    lunchStart = '';
-    lunchEnd = '';
-  } else if (!lunchStart && !lunchEnd) {
-    lunchStart = existingLunchStart || '';
-    lunchEnd = existingLunchEnd || '';
-  }
-
-  const rowVals = [dateYmd, timeHm, userName, type, breakVal, lunchStart, lunchEnd];
+  const rowVals = [dateYmd, timeHm, userName, type, '', existingLunchStart, existingLunchEnd];
+  let result;
 
   if (dupRows.length && (category === 'in' || category === 'out')) {
     const targetRow = dupRows[dupRows.length - 1];
-    sheet.getRange(targetRow, 1, targetRow, 7).setValues([rowVals]);
+    sheet.getRange(targetRow, 1, 1, 7).setValues([rowVals]);
     const toDelete = dupRows.slice(0, -1).sort(function (a, b) { return b - a; });
     for (let j = 0; j < toDelete.length; j++) {
       try { sheet.deleteRow(toDelete[j]); } catch (e) {}
     }
-    return { success: true, updated: true, row: targetRow, dateYmd: dateYmd, timeHm: timeHm, type: type };
+    result = { success: true, updated: true, row: targetRow, dateYmd: dateYmd, timeHm: timeHm, type: type };
+  } else {
+    sheet.appendRow(rowVals);
+    result = { success: true, updated: false, dateYmd: dateYmd, timeHm: timeHm, type: type };
   }
-
-  sheet.appendRow(rowVals);
-  return { success: true, updated: false, dateYmd: dateYmd, timeHm: timeHm, type: type };
-}
-
-/** 同日同人の出退勤行へ昼休憩開始/終了を書き込む（あれば上書き） */
-function upsertAttendanceLunchColumns_(userName, dateYmd, startHm, endHm) {
-  const sheet = ensureAttendanceSheet_();
-  const ymd = formatWorkDateYmd_(dateYmd) || String(dateYmd || '').trim();
-  const start = attendancePadHm_(startHm);
-  const end = attendancePadHm_(endHm);
-  if (!ymd || !userName) return { updated: 0 };
-  const lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return { updated: 0 };
-  const values = sheet.getRange(2, 1, lastRow, 7).getValues();
-  let updated = 0;
-  for (let i = 0; i < values.length; i++) {
-    const d = formatWorkDateYmd_(values[i][0]) || String(values[i][0] || '').trim().replace(/\//g, '-').slice(0, 10);
-    if (d !== ymd) continue;
-    if (!attendanceUserMatch_(values[i][2], userName)) continue;
-    const cat = attendancePunchCategory_(values[i][3]);
-    if (cat !== 'in' && cat !== 'out') continue;
-    sheet.getRange(i + 2, 6).setValue(start);
-    sheet.getRange(i + 2, 7).setValue(end);
-    updated++;
-  }
-  return { updated: updated };
+  if (category === 'out') applyClockOutLunchExtras_(userName, dateYmd, extras);
+  return result;
 }
 
 function isLunchTrackingType_(type) {
@@ -11293,6 +11559,156 @@ function migrateAttendanceFromTracking_() {
 }
 
 /**
+ * 休憩・昼休憩の保存先を出退勤シートへ1回だけ移行する。
+ * - 作業記録: 作業時間・休憩時間・実作業時間（分）を全行に埋める
+ * - 休憩: 作業記録の休憩を「休憩」行へ。退勤行 E 列の合計が記録より多い分は「退勤時入力」の休憩行にして E 列は空にする
+ * - 昼休憩: 旧 F/G 列・昼休憩記録シートから「昼休憩開始/終了」行へ（旧データは読み込み互換のため残す）
+ */
+function migrateBreakStorageToAttendance_() {
+  const props = PropertiesService.getScriptProperties();
+  let ssId = 'default';
+  try { ssId = String(TENANT_SS.getId() || 'default'); } catch (e) {}
+  const flagKey = 'attendanceBreakMigrated_v1_' + ssId;
+  if (props.getProperty(flagKey) === '1') return { migrated: false, skipped: true };
+
+  const lock = LockService.getScriptLock();
+  const alreadyHeld = lock.hasLock();
+  if (!alreadyHeld && !lock.tryLock(10000)) return { migrated: false, locked: true };
+  try {
+    if (props.getProperty(flagKey) === '1') return { migrated: false, skipped: true };
+    const result = runBreakStorageMigration_();
+    props.setProperty(flagKey, '1');
+    writeLog('system', '休憩保存先移行', ssId, JSON.stringify(result));
+    return result;
+  } finally {
+    if (!alreadyHeld) lock.releaseLock();
+  }
+}
+
+function runBreakStorageMigration_() {
+  const att = ensureAttendanceSheet_();
+  const attValues = att.getLastRow() > 1 ? att.getRange(2, 1, att.getLastRow() - 1, 8).getValues() : [];
+  const dayKey = function (user, ymd) { return String(user || '').replace(/\s+/g, '') + '|' + ymd; };
+
+  const hasLunchRows = {};
+  const restIds = {};
+  const legacyLunch = {};
+  const outBreaks = [];
+  for (let i = 0; i < attValues.length; i++) {
+    const r = attValues[i];
+    const ymd = attendanceRowYmd_(r[0]);
+    const user = String(r[2] || '').trim();
+    if (!ymd || !user) continue;
+    const type = String(r[3] || '').trim();
+    if (isAttendanceLunchRowType_(type)) {
+      hasLunchRows[dayKey(user, ymd)] = true;
+      continue;
+    }
+    if (type === ATTENDANCE_REST_TYPE_) {
+      const rid = String(r[7] || '').trim();
+      if (rid) restIds[rid] = true;
+      continue;
+    }
+    const cat = attendancePunchCategory_(type);
+    if (cat !== 'in' && cat !== 'out') continue;
+    const ls = attendanceCellToHm_(r[5]);
+    const le = attendanceCellToHm_(r[6]);
+    if (ls && le) legacyLunch[dayKey(user, ymd)] = { user: user, ymd: ymd, start: ls, end: le };
+    const brk = Number(r[4]) || 0;
+    if (cat === 'out' && r[4] !== '' && r[4] != null) {
+      outBreaks.push({ rowIndex: i + 2, user: user, ymd: ymd, timeHm: attendanceCellToHm_(r[1]), mins: brk });
+    }
+  }
+
+  // 昼休憩記録シートは F/G が無い日だけ使う
+  const lunchSheet = TENANT_SS.getSheetByName('昼休憩記録');
+  if (lunchSheet && lunchSheet.getLastRow() > 1) {
+    const lv = lunchSheet.getDataRange().getValues();
+    for (let i = 1; i < lv.length; i++) {
+      const user = String(lv[i][0] || '').trim();
+      const ymd = formatWorkDateYmd_(lv[i][1]);
+      const ls = attendanceCellToHm_(lv[i][2]);
+      const le = attendanceCellToHm_(lv[i][3]);
+      if (!user || !ymd || !ls || !le) continue;
+      const k = dayKey(user, ymd);
+      if (!legacyLunch[k]) legacyLunch[k] = { user: user, ymd: ymd, start: ls, end: le };
+    }
+  }
+
+  const newRows = [];
+  let lunchDays = 0;
+  Object.keys(legacyLunch).forEach(function (k) {
+    if (hasLunchRows[k]) return;
+    const l = legacyLunch[k];
+    newRows.push([l.ymd, l.start, l.user, ATTENDANCE_LUNCH_START_TYPE_, '', '', '', '']);
+    newRows.push([l.ymd, l.end, l.user, ATTENDANCE_LUNCH_END_TYPE_, '', '', '', '']);
+    lunchDays++;
+  });
+
+  // 作業記録: 分の3列を埋め、休憩を「休憩」行へ
+  const recordRestByDay = {};
+  let restRows = 0;
+  let backfilled = 0;
+  const rs = TENANT_SS.getSheetByName('作業記録');
+  if (rs && rs.getLastRow() > 1) {
+    const cols = ensureWorkRecordMinutesColumns_(rs);
+    const n = rs.getLastRow() - 1;
+    const width = Math.max(13, cols.work, cols.rest, cols.actual);
+    const values = rs.getRange(2, 1, n, width).getValues();
+    const workCol = [];
+    const restCol = [];
+    const actualCol = [];
+    for (let i = 0; i < values.length; i++) {
+      const row = values[i];
+      const mins = computeWorkRecordMinutes_({
+        workName: row[4],
+        startTime: row[6],
+        endTime: row[7],
+        breakMins: row[cols.rest - 1]
+      });
+      workCol.push([mins.work]);
+      restCol.push([mins.rest]);
+      actualCol.push([mins.actual]);
+      if (mins.work !== '') backfilled++;
+      const user = String(row[2] || '').trim();
+      const ymd = formatWorkDateYmd_(row[3]);
+      if (!(Number(mins.rest) > 0) || !user || !ymd) continue;
+      const k = dayKey(user, ymd);
+      recordRestByDay[k] = (recordRestByDay[k] || 0) + Number(mins.rest);
+      const rid = String(row[12] || '').trim();
+      if (rid && restIds[rid]) continue;
+      newRows.push([ymd, normWorkRecordTimeHm_(row[6]), user, ATTENDANCE_REST_TYPE_, mins.rest, '', '', rid]);
+      restRows++;
+    }
+    rs.getRange(2, cols.work, n, 1).setValues(workCol);
+    rs.getRange(2, cols.rest, n, 1).setValues(restCol);
+    rs.getRange(2, cols.actual, n, 1).setValues(actualCol);
+  }
+
+  // 退勤行 E 列: 記録より多い分だけ「退勤時入力」の休憩行にして、E 列は空にする
+  let clockOutRestRows = 0;
+  outBreaks.forEach(function (o) {
+    const extra = o.mins - (recordRestByDay[dayKey(o.user, o.ymd)] || 0);
+    if (extra > 0) {
+      newRows.push([o.ymd, o.timeHm, o.user, ATTENDANCE_REST_TYPE_, extra, '', '', ATTENDANCE_REST_CLOCKOUT_ID_]);
+      clockOutRestRows++;
+    }
+  });
+
+  appendAttendanceRows_(att, newRows);
+  outBreaks.forEach(function (o) {
+    att.getRange(o.rowIndex, 5).setValue('');
+  });
+  return {
+    lunchDays: lunchDays,
+    restRows: restRows,
+    clockOutRestRows: clockOutRestRows,
+    clearedOutBreaks: outBreaks.length,
+    workRecordRowsBackfilled: backfilled
+  };
+}
+
+/**
  * 出退勤イベント一覧（新しい順ではなく時系列昇順）
  * 出退勤シートを正とする。トラッキングは「出退勤が空」のときだけフォールバック。
  * （分離後にトラッキングの古い出勤が混ざると、退勤済みなのに未退勤扱いになるため）
@@ -11301,6 +11717,8 @@ function migrateAttendanceFromTracking_() {
 function loadAttendanceEvents_(opts) {
   opts = opts || {};
   try { migrateAttendanceFromTracking_(); } catch (e) {}
+
+  try { migrateBreakStorageToAttendance_(); } catch (e) {}
 
   const filterUser = String(opts.userName || '').replace(/\s+/g, '');
   const events = [];
@@ -11390,11 +11808,15 @@ function loadLunchHintForUserDate_(userName, dateYmd) {
   const ymd = formatWorkDateYmd_(dateYmd) || String(dateYmd || '').trim();
   if (!uname || !ymd) return null;
 
-  // 1) 出退勤シートの F/G（昼休憩開始・終了）を優先
   try {
     const att = TENANT_SS.getSheetByName('出退勤');
     if (att && att.getLastRow() > 1) {
-      const values = att.getRange(2, 1, att.getLastRow(), 7).getValues();
+      const values = att.getRange(2, 1, att.getLastRow() - 1, 7).getValues();
+      // 1) 出退勤の「昼休憩開始/終了/なし」行
+      const rows = findAttendanceLunchRows_(values, uname, ymd, 2);
+      if (rows.none) return { registered: true, enabled: false, start: '', end: '' };
+      if (rows.start && rows.end) return { registered: true, enabled: true, start: rows.start, end: rows.end };
+      // 2) 互換: 旧 F/G 列
       for (let i = values.length - 1; i >= 0; i--) {
         const d = formatWorkDateYmd_(values[i][0]) || String(values[i][0] || '').trim().replace(/\//g, '-').slice(0, 10);
         if (d !== ymd) continue;
@@ -11408,7 +11830,7 @@ function loadLunchHintForUserDate_(userName, dateYmd) {
     }
   } catch (e) {}
 
-  // 2) 互換: 昼休憩記録シート
+  // 3) 互換: 昼休憩記録シート
   const sheet = TENANT_SS.getSheetByName('昼休憩記録');
   if (!sheet || sheet.getLastRow() <= 1) return null;
   const values = sheet.getDataRange().getValues();
@@ -11428,10 +11850,11 @@ function loadLunchHintForUserDate_(userName, dateYmd) {
   return null;
 }
 
-/** 出退勤の保存（同日同人の出勤/退勤は上書き。退勤時は E=休憩分・F/G=昼） */
+/** 出退勤の保存（同日同人の出勤/退勤は上書き。退勤時の昼休憩は昼休憩行へ） */
 function saveAttendanceData_(params) {
   try {
     try { migrateAttendanceFromTracking_(); } catch (e) {}
+    try { migrateBreakStorageToAttendance_(); } catch (e) {}
     const userName = String((params && (params.userName || params.user)) || '').trim();
     const type = String((params && params.type) || '').trim();
     if (!userName) throw new Error('ユーザー名がありません');
@@ -11504,9 +11927,20 @@ function saveTrackingData(params) {
       return 'success';
     }
 
-    // 昼休憩は専用シート＋出退勤の F/G へ
+    // 昼休憩は出退勤の昼休憩行へ
     if (isLunchTrackingType_(type)) {
-      if (type === '昼休憩なし') return 'skipped_lunch_none';
+      if (type === '昼休憩なし') {
+        if (params.userName) {
+          try {
+            saveLunchBreakRecord_({
+              userName: params.userName,
+              workDate: params.dateYmd || params.workDate || Utilities.formatDate(new Date(params.time || Date.now()), 'JST', 'yyyy-MM-dd'),
+              noLunch: true
+            });
+          } catch (e) {}
+        }
+        return 'saved_lunch_none';
+      }
       const m = String(type).match(/昼休憩[（(]\s*(\d{1,2}:\d{2})\s*[-〜~－]\s*(\d{1,2}:\d{2})\s*[)）]/);
       if (m && params.userName) {
         try {
@@ -12346,11 +12780,9 @@ function updateClockOutTimeForDate_(params) {
       const row = outRows[outRows.length - 1];
       sheet.getRange(row, 1).setValue(dateYmd);
       sheet.getRange(row, 2).setValue(padHm);
-      if (extras && extras.hasMidBreak) sheet.getRange(row, 5).setValue(extras.midBreakMins);
-      if (extras && extras.lunchStart) sheet.getRange(row, 6).setValue(extras.lunchStart);
-      if (extras && extras.lunchEnd) sheet.getRange(row, 7).setValue(extras.lunchEnd);
       // 古い重複退勤を掃除
       for (let i = outRows.length - 2; i >= 0; i--) sheet.deleteRow(outRows[i]);
+      applyClockOutLunchExtras_(params.userName || userName, dateYmd, extras);
       writeLog(String(params.userName || userName), '退勤時間更新', dateYmd, padHm);
       return { success: true, clockOutTime: padHm, clockOutDateYmd: dateYmd, updatedRow: row };
     }
@@ -12360,10 +12792,9 @@ function updateClockOutTimeForDate_(params) {
       type: '退勤',
       dateYmd: dateYmd,
       timeHm: padHm,
-      midBreakMins: extras && extras.hasMidBreak ? extras.midBreakMins : '',
       lunchStart: (extras && extras.lunchStart) || '',
       lunchEnd: (extras && extras.lunchEnd) || '',
-      lunchEnabled: !!(extras && extras.lunchStart && extras.lunchEnd)
+      lunchEnabled: extras && extras.noLunch ? false : undefined
     });
     return { success: true, clockOutTime: padHm, clockOutDateYmd: dateYmd, created: true };
   } catch (e) {

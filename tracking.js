@@ -3128,13 +3128,14 @@
     else refreshTrackingModeUI();
 
     const user = getCurrentUserName();
-    // 昼休憩は「昼休憩記録」＋出退勤シートの開始/終了列へ
-    if (lunchData.enabled && user && typeof callGAS === 'function') {
+    // 昼休憩は出退勤シートの「昼休憩開始/終了」行、昼なしは「昼休憩なし」行へ
+    if (user && typeof callGAS === 'function') {
       callGAS('saveLunchBreakRecord', {
         userName: user,
         workDate: lunchData.dateYmd || getActiveClockInDateYmd(),
-        startTime: lunchData.start || '',
-        endTime: lunchData.end || ''
+        startTime: lunchData.enabled ? (lunchData.start || '') : '',
+        endTime: lunchData.enabled ? (lunchData.end || '') : '',
+        noLunch: !lunchData.enabled
       }).catch((e) => console.warn('昼休憩記録送信エラー', e));
     }
     if (window._isModifyingLunchFromClockOut) {

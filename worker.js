@@ -36387,7 +36387,7 @@ window.buildBulkWorkMemoCommentForSave_ = (draft) => {
   return raw + '\n' + extra;
 };
 
-/** 昼休憩を専用シート（昼休憩記録）へ保存 */
+/** 昼休憩を出退勤シートの「昼休憩開始/終了」行へ保存 */
 window.saveLunchBreakRecordToServer_ = (ymd, startHm, endHm) => {
   const user = (typeof currentUser !== 'undefined' && currentUser)
     ? currentUser
