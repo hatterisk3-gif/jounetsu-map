@@ -3015,6 +3015,15 @@ async function fetchWeatherAndUpdateUI() {
         switchScheduleView(window._scheduleViewMode || 'tasks');
       };
 
+      /** 予定モーダルをガント表示で開く（トップ右ボタン用） */
+      window.openScheduleGantt = function() {
+        const modal = document.getElementById('scheduleModal');
+        if (modal) modal.style.display = 'flex';
+        if (typeof window.switchScheduleView === 'function') {
+          window.switchScheduleView('gantt');
+        }
+      };
+
       window.completeScheduleFromList = async function(sheetRow, scheduleKey, workName, fieldName, cropName, isMid, polyId, recordId) {
         if (window._schedCompleteBusy) return;
         const label = String(workName || 'この作業');
