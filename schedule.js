@@ -8113,15 +8113,54 @@ async function applyGanttBarShift_(st, dayShift) {
   }
 }
 
+window._ganttAddType = 'master'; // master | free
+
+window.setGanttAddType_ = function(type) {
+  window._ganttAddType = (type === 'free') ? 'free' : 'master';
+  const masterEl = document.getElementById('ganttAddMasterFields');
+  const freeEl = document.getElementById('ganttAddFreeFields');
+  const masterBtn = document.getElementById('ganttAddTypeMaster');
+  const freeBtn = document.getElementById('ganttAddTypeFree');
+  const titleEl = document.getElementById('ganttAddModalTitle');
+  const isFree = window._ganttAddType === 'free';
+  if (masterEl) masterEl.style.display = isFree ? 'none' : 'block';
+  if (freeEl) freeEl.style.display = isFree ? 'block' : 'none';
+  if (masterBtn) masterBtn.classList.toggle('active', !isFree);
+  if (freeBtn) freeBtn.classList.toggle('active', isFree);
+  if (titleEl) titleEl.textContent = isFree ? '＋ フリー入力で追加' : '＋ ガントに作業を追加';
+  const resDiv = document.getElementById('ganttAddResult');
+  if (resDiv) resDiv.textContent = '';
+  if (isFree) {
+    const freeWork = document.getElementById('ganttAddFreeWork');
+    try { if (freeWork) freeWork.focus(); } catch (e) {}
+  }
+};
+
+function populateGanttFreeCategorySelect_() {
+  const sel = document.getElementById('ganttAddFreeCategory');
+  if (!sel) return;
+  const cats = getGanttCategories_();
+  let html = '<option value="">未指定</option>';
+  cats.forEach(function(c) {
+    html += '<option value="' + String(c).replace(/"/g, '&quot;') + '">' + ganttEsc_(c) + '</option>';
+  });
+  sel.innerHTML = html;
+}
+
 window.openGanttAddModal = async function() {
   const modal = document.getElementById('ganttAddModal');
   if (!modal) return;
   window._ganttAddDraft = { category: '', crop: '', workName: '' };
+  window._ganttAddInputKind = null;
   const startEl = document.getElementById('ganttAddStart');
   const endEl = document.getElementById('ganttAddEnd');
   const ymd = window._ganttClickDate || ganttYmd_(ganttToday_());
   if (startEl) startEl.value = ymd;
   if (endEl) endEl.value = '';
+  const freeWork = document.getElementById('ganttAddFreeWork');
+  const freeCrop = document.getElementById('ganttAddFreeCrop');
+  if (freeWork) freeWork.value = '';
+  if (freeCrop) freeCrop.value = '';
   const fieldSel = document.getElementById('ganttAddField');
   if (fieldSel && typeof populateAddWorkFieldSelect_ === 'function') {
     populateAddWorkFieldSelect_();
@@ -8145,7 +8184,9 @@ window.openGanttAddModal = async function() {
       window._ganttMasters = { categories: [], crops: [], works: [] };
     }
   }
+  populateGanttFreeCategorySelect_();
   renderGanttAddChips_();
+  setGanttAddType_(window._ganttAddType || 'master');
 };
 
 window.closeGanttAddModal = function() {
@@ -8157,10 +8198,27 @@ function ganttFallbackCategories_() {
   return ['栽培', '生産', '出荷/配送', '育苗', '研修/調整', '管理/事務', '研究/開発', '保全/整備'];
 }
 
+function ensureGanttAddCustoms_() {
+  if (!window._ganttAddCustoms) {
+    window._ganttAddCustoms = { categories: [], crops: [], works: [] };
+  }
+  return window._ganttAddCustoms;
+}
+
+function pushUniqueName_(list, name) {
+  const s = String(name || '').trim();
+  if (!s) return '';
+  if (list.indexOf(s) < 0) list.push(s);
+  return s;
+}
+
 function getGanttCategories_() {
   const fromMaster = (window._ganttMasters && window._ganttMasters.categories) || [];
   const list = fromMaster.filter(Boolean);
-  return list.length ? list : ganttFallbackCategories_();
+  const base = list.length ? list.slice() : ganttFallbackCategories_().slice();
+  const customs = ensureGanttAddCustoms_().categories || [];
+  customs.forEach(function(c) { pushUniqueName_(base, c); });
+  return base;
 }
 
 function getGanttCrops_() {
@@ -8178,6 +8236,7 @@ function getGanttCrops_() {
     const p = loadedPolygons[id];
     if (p && p.crop) push(p.crop);
   });
+  (ensureGanttAddCustoms_().crops || []).forEach(push);
   names.sort(function(a, b) { return a.localeCompare(b, 'ja'); });
   if (names.indexOf('共通') < 0) names.unshift('共通');
   return names;
@@ -8207,80 +8266,200 @@ function getGanttWorks_() {
   if (!names.length) {
     (globalSchedules || []).forEach(function(t) { push(t.workName); });
   }
+  (ensureGanttAddCustoms_().works || []).forEach(push);
   names.sort(function(a, b) { return a.localeCompare(b, 'ja'); });
   return names;
 }
+
+function ganttChipAddPlaceholder_(kind) {
+  if (kind === 'crop') return '新しい作物名';
+  if (kind === 'work') return '新しい作業名';
+  return '新しいカテゴリ名';
+}
+
+function ganttChipAddInputHtml_(kind) {
+  const ph = ganttChipAddPlaceholder_(kind);
+  return '<span class="gantt-chip-input-wrap" data-gantt-add-input="' + kind + '">'
+    + '<input type="text" id="ganttChipAddInput" placeholder="' + ph + '" maxlength="40" autocomplete="off">'
+    + '<button type="button" class="gantt-chip-add-ok">追加</button>'
+    + '<button type="button" class="gantt-chip-add-cancel">取消</button>'
+    + '</span>';
+}
+
+function bindGanttChipAddUi_(el, kind) {
+  if (!el) return;
+  const addBtn = el.querySelector('[data-gantt-add="' + kind + '"]');
+  if (addBtn) {
+    addBtn.addEventListener('click', function(ev) {
+      ev.preventDefault();
+      beginGanttChipAdd_(kind);
+    });
+  }
+  const wrap = el.querySelector('[data-gantt-add-input="' + kind + '"]');
+  if (!wrap) return;
+  const input = wrap.querySelector('input');
+  const okBtn = wrap.querySelector('.gantt-chip-add-ok');
+  const cancelBtn = wrap.querySelector('.gantt-chip-add-cancel');
+  if (okBtn) okBtn.addEventListener('click', function() { confirmGanttChipAdd_(kind); });
+  if (cancelBtn) cancelBtn.addEventListener('click', function() { cancelGanttChipAdd_(); });
+  if (input) {
+    input.addEventListener('keydown', function(ev) {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        confirmGanttChipAdd_(kind);
+      } else if (ev.key === 'Escape') {
+        ev.preventDefault();
+        cancelGanttChipAdd_();
+      }
+    });
+    setTimeout(function() { try { input.focus(); } catch (e) {} }, 0);
+  }
+}
+
+window.beginGanttChipAdd_ = function(kind) {
+  window._ganttAddInputKind = (kind === 'crop' || kind === 'work') ? kind : 'cat';
+  renderGanttAddChips_();
+};
+
+window.cancelGanttChipAdd_ = function() {
+  window._ganttAddInputKind = null;
+  renderGanttAddChips_();
+};
+
+window.confirmGanttChipAdd_ = function(kind) {
+  const k = (kind === 'crop' || kind === 'work') ? kind : 'cat';
+  const input = document.getElementById('ganttChipAddInput');
+  const name = String(input && input.value || '').trim();
+  if (!name) {
+    const resDiv = document.getElementById('ganttAddResult');
+    if (resDiv) {
+      resDiv.textContent = ganttChipAddPlaceholder_(k) + 'を入力してください';
+      resDiv.style.color = '#c62828';
+    }
+    if (input) try { input.focus(); } catch (e) {}
+    return;
+  }
+  const customs = ensureGanttAddCustoms_();
+  if (k === 'crop') {
+    pushUniqueName_(customs.crops, name);
+    window._ganttAddInputKind = null;
+    pickGanttAddCrop_(name);
+    return;
+  }
+  if (k === 'work') {
+    pushUniqueName_(customs.works, name);
+    window._ganttAddInputKind = null;
+    pickGanttAddWork_(name);
+    return;
+  }
+  pushUniqueName_(customs.categories, name);
+  window._ganttAddInputKind = null;
+  pickGanttAddCategory_(name);
+};
 
 function renderGanttAddChips_() {
   const draft = window._ganttAddDraft || { category: '', crop: '', workName: '' };
   const catsEl = document.getElementById('ganttAddCats');
   const cropsEl = document.getElementById('ganttAddCrops');
   const worksEl = document.getElementById('ganttAddWorks');
+  const inputKind = window._ganttAddInputKind || null;
+
   if (catsEl) {
-    catsEl.innerHTML = getGanttCategories_().map(function(c) {
+    let html = getGanttCategories_().map(function(c) {
       const on = draft.category === c;
       return '<button type="button" class="gantt-chip' + (on ? ' on-cat' : '') + '" data-gantt-pick="cat">' + ganttEsc_(c) + '</button>';
     }).join('');
+    if (inputKind === 'cat') html += ganttChipAddInputHtml_('cat');
+    else html += '<button type="button" class="gantt-chip gantt-chip-add" data-gantt-add="cat" title="カテゴリを追加">＋</button>';
+    catsEl.innerHTML = html;
     Array.prototype.forEach.call(catsEl.querySelectorAll('[data-gantt-pick="cat"]'), function(btn) {
       btn.addEventListener('click', function() { pickGanttAddCategory_(btn.textContent); });
     });
+    bindGanttChipAddUi_(catsEl, 'cat');
   }
   if (cropsEl) {
-    cropsEl.innerHTML = getGanttCrops_().map(function(c) {
+    let html = getGanttCrops_().map(function(c) {
       const on = draft.crop === c;
       return '<button type="button" class="gantt-chip' + (on ? ' on-crop' : '') + '" data-gantt-pick="crop">' + ganttEsc_(c) + '</button>';
     }).join('');
+    if (inputKind === 'crop') html += ganttChipAddInputHtml_('crop');
+    else html += '<button type="button" class="gantt-chip gantt-chip-add" data-gantt-add="crop" title="作物名を追加">＋</button>';
+    cropsEl.innerHTML = html;
     Array.prototype.forEach.call(cropsEl.querySelectorAll('[data-gantt-pick="crop"]'), function(btn) {
       btn.addEventListener('click', function() { pickGanttAddCrop_(btn.textContent); });
     });
+    bindGanttChipAddUi_(cropsEl, 'crop');
   }
   if (worksEl) {
     const works = getGanttWorks_();
-    worksEl.innerHTML = works.length
+    let html = works.length
       ? works.map(function(c) {
           const on = draft.workName === c;
           return '<button type="button" class="gantt-chip' + (on ? ' on-work' : '') + '" data-gantt-pick="work">' + ganttEsc_(c) + '</button>';
         }).join('')
-      : '<div style="font-size:12px;color:#888;">該当する作業がありません。カテゴリ・作物を変えるか、作業一覧の「＋作業」から登録してください。</div>';
+      : '<div style="font-size:12px;color:#888;width:100%;">該当する作業がありません。＋で追加できます。</div>';
+    if (inputKind === 'work') html += ganttChipAddInputHtml_('work');
+    else html += '<button type="button" class="gantt-chip gantt-chip-add" data-gantt-add="work" title="作業を追加">＋</button>';
+    worksEl.innerHTML = html;
     Array.prototype.forEach.call(worksEl.querySelectorAll('[data-gantt-pick="work"]'), function(btn) {
       btn.addEventListener('click', function() { pickGanttAddWork_(btn.textContent); });
     });
+    bindGanttChipAddUi_(worksEl, 'work');
   }
 }
 
 window.pickGanttAddCategory_ = function(name) {
   window._ganttAddDraft.category = String(name || '');
   window._ganttAddDraft.workName = '';
+  window._ganttAddInputKind = null;
   renderGanttAddChips_();
 };
 
 window.pickGanttAddCrop_ = function(name) {
   window._ganttAddDraft.crop = String(name || '');
   window._ganttAddDraft.workName = '';
+  window._ganttAddInputKind = null;
   renderGanttAddChips_();
 };
 
 window.pickGanttAddWork_ = function(name) {
   window._ganttAddDraft.workName = String(name || '');
+  window._ganttAddInputKind = null;
   renderGanttAddChips_();
 };
 
 window.submitGanttAddWork_ = async function() {
+  const isFree = window._ganttAddType === 'free';
   const draft = window._ganttAddDraft || {};
   const resDiv = document.getElementById('ganttAddResult');
   const btn = document.getElementById('ganttAddSubmitBtn');
-  if (!draft.category) {
-    if (resDiv) { resDiv.textContent = 'カテゴリを選んでください'; resDiv.style.color = '#c62828'; }
-    return;
+
+  let workName = '';
+  let cropName = '';
+  let category = '';
+
+  if (isFree) {
+    workName = String(document.getElementById('ganttAddFreeWork')?.value || '').trim();
+    cropName = String(document.getElementById('ganttAddFreeCrop')?.value || '').trim();
+    category = String(document.getElementById('ganttAddFreeCategory')?.value || '').trim();
+  } else {
+    if (!draft.category) {
+      if (resDiv) { resDiv.textContent = 'カテゴリを選んでください'; resDiv.style.color = '#c62828'; }
+      return;
+    }
+    if (!draft.crop) {
+      if (resDiv) { resDiv.textContent = '作物名を選んでください'; resDiv.style.color = '#c62828'; }
+      return;
+    }
+    if (!draft.workName) {
+      if (resDiv) { resDiv.textContent = '作業を選んでください'; resDiv.style.color = '#c62828'; }
+      return;
+    }
+    workName = draft.workName;
+    cropName = draft.crop === '共通' ? '' : draft.crop;
+    category = draft.category;
   }
-  if (!draft.crop) {
-    if (resDiv) { resDiv.textContent = '作物名を選んでください'; resDiv.style.color = '#c62828'; }
-    return;
-  }
-  if (!draft.workName) {
-    if (resDiv) { resDiv.textContent = '作業を選んでください'; resDiv.style.color = '#c62828'; }
-    return;
-  }
+
   const start = document.getElementById('ganttAddStart')?.value || ganttYmd_(ganttToday_());
   const end = document.getElementById('ganttAddEnd')?.value || '';
   const fieldSel = document.getElementById('ganttAddField');
@@ -8288,13 +8467,26 @@ window.submitGanttAddWork_ = async function() {
   const selectedOpt = fieldSel ? fieldSel.options[fieldSel.selectedIndex] : null;
   const polyId = selectedOpt ? (selectedOpt.dataset.polyId || '') : '';
   const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+
+  if (isFree) {
+    // フリー入力は必須なし。どれか1項目（作業名/作物/カテゴリ/圃場/期限）があればOK
+    if (!workName && !cropName && !category && !fieldName && !end) {
+      if (resDiv) { resDiv.textContent = 'どれか1つ以上の項目を入力してください'; resDiv.style.color = '#c62828'; }
+      return;
+    }
+    // サーバ側は作業名必須のため、空なら他項目から表示名を組み立てる
+    if (!workName) {
+      workName = [cropName, category, fieldName].filter(Boolean).join(' / ') || '予定';
+    }
+  }
+
   if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
   try {
     await callGAS('addWorkSchedule', {
-      workName: draft.workName,
+      workName: workName,
       fieldName: fieldName,
-      cropName: draft.crop === '共通' ? '' : draft.crop,
-      category: draft.category,
+      cropName: cropName,
+      category: category,
       person: userName,
       schedDate: start,
       deadline: end,

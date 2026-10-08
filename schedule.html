@@ -15,7 +15,7 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1786243000000"></script>
-  <link rel="stylesheet" href="schedule.css?v=1788600000050">
+  <link rel="stylesheet" href="schedule.css?v=1788600000052">
 </head>
 
 <body>
@@ -388,16 +388,42 @@
   <div id="ganttAddModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10035; align-items:center; justify-content:center;">
     <div style="background:#fff; width:min(440px,94vw); max-height:90vh; border-radius:10px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,.25); display:flex; flex-direction:column;">
       <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#1565c0; color:#fff;">
-        <span style="font-weight:bold;">＋ ガントに作業を追加</span>
+        <span style="font-weight:bold;" id="ganttAddModalTitle">＋ ガントに作業を追加</span>
         <span style="cursor:pointer; font-size:22px;" onclick="closeGanttAddModal()">×</span>
       </div>
       <div style="padding:14px 16px; overflow:auto; flex:1;">
-        <div style="font-size:12px; font-weight:bold; color:#1565c0; margin-bottom:6px;">① カテゴリ</div>
-        <div id="ganttAddCats" class="gantt-chip-wrap"></div>
-        <div style="font-size:12px; font-weight:bold; color:#2e7d32; margin:12px 0 6px;">② 作物名</div>
-        <div id="ganttAddCrops" class="gantt-chip-wrap"></div>
-        <div style="font-size:12px; font-weight:bold; color:#e65100; margin:12px 0 6px;">③ 作業</div>
-        <div id="ganttAddWorks" class="gantt-chip-wrap"></div>
+        <div class="gantt-add-type-tabs" role="tablist">
+          <button type="button" id="ganttAddTypeMaster" class="gantt-add-type-tab active" onclick="setGanttAddType_('master')">📋 マスタから選ぶ</button>
+          <button type="button" id="ganttAddTypeFree" class="gantt-add-type-tab" onclick="setGanttAddType_('free')">✏️ フリー入力</button>
+        </div>
+
+        <div id="ganttAddMasterFields">
+          <div style="font-size:12px; font-weight:bold; color:#1565c0; margin-bottom:6px;">① カテゴリ</div>
+          <div id="ganttAddCats" class="gantt-chip-wrap"></div>
+          <div style="font-size:12px; font-weight:bold; color:#2e7d32; margin:12px 0 6px;">② 作物名</div>
+          <div id="ganttAddCrops" class="gantt-chip-wrap"></div>
+          <div style="font-size:12px; font-weight:bold; color:#e65100; margin:12px 0 6px;">③ 作業</div>
+          <div id="ganttAddWorks" class="gantt-chip-wrap"></div>
+        </div>
+
+        <div id="ganttAddFreeFields" style="display:none;">
+          <div style="margin-bottom:10px;">
+            <label style="font-size:12px;font-weight:bold;color:#e65100;display:block;margin-bottom:4px;">作業名（任意）</label>
+            <input type="text" id="ganttAddFreeWork" placeholder="例：圃場点検・片付け　空欄可" style="width:100%;padding:9px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;font-size:14px;">
+          </div>
+          <div style="margin-bottom:10px;">
+            <label style="font-size:12px;font-weight:bold;color:#2e7d32;display:block;margin-bottom:4px;">作物名（任意）</label>
+            <input type="text" id="ganttAddFreeCrop" placeholder="例：トマト　空欄可" style="width:100%;padding:9px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;font-size:14px;">
+          </div>
+          <div style="margin-bottom:4px;">
+            <label style="font-size:12px;font-weight:bold;color:#1565c0;display:block;margin-bottom:4px;">カテゴリ（任意）</label>
+            <select id="ganttAddFreeCategory" style="width:100%;padding:9px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;font-size:14px;">
+              <option value="">未指定</option>
+            </select>
+          </div>
+          <div style="font-size:11px;color:#888;margin-top:6px;line-height:1.4;">必要な項目だけ入力して登録できます（作業名も空欄可）。</div>
+        </div>
+
         <div style="display:flex; gap:8px; margin-top:12px;">
           <div style="flex:1;">
             <label style="font-size:11px;color:#555;">予定日</label>

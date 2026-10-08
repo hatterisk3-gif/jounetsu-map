@@ -8396,11 +8396,14 @@ function bulkUndoCompleteWorkSchedule(params) {
  */
 function addWorkSchedule(params) {
   params = params || {};
-  const workName = String(params.workName || '').trim();
-  if (!workName) throw new Error('作業名を入力してください');
+  let workName = String(params.workName || '').trim();
   const fieldName = String(params.fieldName || '').trim();
   const cropName = String(params.cropName || '').trim();
   const dept = String(params.dept || params.category || '').trim();
+  // フリー入力など作業名空欄を許容（他項目から表示名を補完）
+  if (!workName) {
+    workName = [cropName, dept, fieldName].filter(Boolean).join(' / ') || '予定';
+  }
   let schedDateStr = '';
   if (params.schedDate) {
     try { schedDateStr = Utilities.formatDate(new Date(params.schedDate), "Asia/Tokyo", "yyyy/MM/dd"); } catch(e) { schedDateStr = String(params.schedDate); }

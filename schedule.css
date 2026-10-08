@@ -1008,3 +1008,68 @@ select.snr-input { appearance:auto; }
 .gantt-chip.on-cat { border-color: #1565c0; background: #e3f2fd; color: #0d47a1; }
 .gantt-chip.on-crop { border-color: #2e7d32; background: #e8f5e9; color: #1b5e20; }
 .gantt-chip.on-work { border-color: #ef6c00; background: #fff3e0; color: #e65100; }
+.gantt-chip-add {
+  border-style: dashed;
+  border-color: #90a4ae;
+  background: #f5f7f8;
+  color: #1565c0;
+  min-width: 36px;
+}
+.gantt-chip-input-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  width: 100%;
+  margin-top: 4px;
+}
+.gantt-chip-input-wrap input {
+  flex: 1;
+  min-width: 120px;
+  padding: 6px 8px;
+  border: 1px solid #90caf9;
+  border-radius: 6px;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+.gantt-chip-input-wrap .gantt-chip-add-ok {
+  border: none;
+  background: #1565c0;
+  color: #fff;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+}
+.gantt-chip-input-wrap .gantt-chip-add-cancel {
+  border: 1px solid #b0bec5;
+  background: #fff;
+  color: #546e7a;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+}
+.gantt-add-type-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.gantt-add-type-tab {
+  flex: 1;
+  border: 2px solid #cfd8dc;
+  background: #fafafa;
+  color: #546e7a;
+  border-radius: 8px;
+  padding: 9px 8px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+}
+.gantt-add-type-tab.active {
+  border-color: #1565c0;
+  background: #e3f2fd;
+  color: #0d47a1;
+}
