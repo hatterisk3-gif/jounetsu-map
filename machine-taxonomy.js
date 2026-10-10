@@ -62,28 +62,48 @@
     return (kind === 'vehicle' ? VEHICLE_MAIN_CATS : MACHINE_MAIN_CATS).slice();
   }
 
+  function looksLikeVehicle_(item) {
+    if (!item) return false;
+    if (item._kind === 'vehicle' || item.isVehicle) return true;
+    if (item.plateNumber) return true;
+    var drive = String(item.driveType || '').trim();
+    if (drive && (LEGACY_DRIVE_MAP[drive] || drive === '自動車' || drive === '作業機')) return true;
+    var group = String(item.group || item.mainCategory || '').trim();
+    if (group && (LEGACY_DRIVE_MAP[group] || group === '自動車' || group === '作業機' || group === '移動車両' || group === '作業車両')) {
+      return true;
+    }
+    return false;
+  }
+
   function getKindFromItem(item) {
     if (!item) return 'machine';
-    if (item._kind === 'vehicle' || item.isVehicle) return 'vehicle';
-    if (item.plateNumber && !item.group && !item.workCategory) return 'vehicle';
+    if (item.isTool) return 'machine';
+    if (looksLikeVehicle_(item)) return 'vehicle';
     return 'machine';
   }
 
   function getItemMainCategory(item) {
     var kind = getKindFromItem(item);
     if (kind === 'vehicle') {
-      return normalizeMainCategory('vehicle', item.mainCategory || item.group || item.driveType);
+      return normalizeMainCategory('vehicle', item.mainCategory || item.driveType || item.group);
     }
     return normalizeMainCategory('machine', item.mainCategory || item.group);
   }
 
   function getItemTypeName(item) {
     if (!item) return '';
+    if (getKindFromItem(item) === 'vehicle') {
+      return String(item.vehicleType || item.type || '').trim();
+    }
     return String(item.type || item.vehicleType || '').trim();
   }
 
   function getItemNumber(item) {
     if (!item) return '';
+    // 車両はナンバー／管理番号を「具体車両」の識別子として使う
+    if (getKindFromItem(item) === 'vehicle') {
+      return getVehiclePlate(item);
+    }
     return String(item.machineNumber || item.serialNo || item.vehicleNumber || '').trim();
   }
 
@@ -234,16 +254,36 @@
 
   function collectAllEquipment(machines, vehicles) {
     var out = [];
+    var seen = {};
+    var pushItem = function (item) {
+      if (!item) return;
+      var key = String(item.id || item.plateNumber || item.name || '').trim();
+      if (key && seen[key]) return;
+      if (key) seen[key] = true;
+      out.push(item);
+    };
+
     (machines || []).forEach(function (m) {
-      var n = normalizeItem(Object.assign({}, m, { isVehicle: false }));
-      if (n) out.push(n);
+      if (!m) return;
+      var asVehicle = looksLikeVehicle_(m);
+      var n = normalizeItem(Object.assign({}, m, {
+        isVehicle: asVehicle,
+        _kind: asVehicle ? 'vehicle' : 'machine'
+      }));
+      pushItem(n);
     });
     (vehicles || []).forEach(function (v) {
+      if (!v) return;
+      var rawId = String(v.id || '').trim();
+      var id = rawId ? (rawId.indexOf('veh:') === 0 ? rawId : ('veh:' + rawId)) : '';
       var n = normalizeItem(Object.assign({}, v, {
+        id: id || v.id,
         isVehicle: true,
-        name: v.plateNumber || v.name || ''
+        _kind: 'vehicle',
+        name: v.plateNumber || v.name || '',
+        plateNumber: v.plateNumber || v.vehicleNumber || v.machineNumber || v.name || ''
       }));
-      if (n) out.push(n);
+      pushItem(n);
     });
     return out;
   }
@@ -287,6 +327,7 @@
     var afterType = afterMain.filter(function (i) {
       return !filters.typeName || i._typeName === filters.typeName;
     });
+    // 車両はナンバーを具体車両の候補として出す
     var numbers = uniqueSorted(afterType.map(function (i) { return i._number; }).filter(Boolean));
 
     return {

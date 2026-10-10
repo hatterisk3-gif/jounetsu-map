@@ -7970,13 +7970,20 @@ function createSignboardMarker(name, pos, icon, id) {
         const filtered = (window.MachineTaxonomy && MachineTaxonomy.filterEquipment)
           ? MachineTaxonomy.filterEquipment(allItems, f)
           : allItems;
+        const isVehicleKind = f.kind === 'vehicle';
+        const labelMain = isVehicleKind ? '② 自動車/作業機' : '② メインカテゴリ';
+        const labelType = isVehicleKind ? '③ 車種' : '③ 機械名';
+        const labelNumber = isVehicleKind ? '④ ナンバー（具体車両）' : '④ 番号';
+        const guideText = isVehicleKind
+          ? '①車両 → ②区分 → ③車種 → ④ナンバー で具体車両を選べます'
+          : '①種別 → ②メインカテゴリ → ③機械名 → ④番号 で絞り込み（作業記録用）';
 
         let html = `
           <div style="font-weight:bold; color:#E65100; margin-bottom:6px; font-size:13px; display:flex; align-items:center; gap:6px;">
             <span>🚜 使用農機・車両の記録</span>
           </div>
           <div style="font-size:11px; color:#666; margin-bottom:8px;">
-            ①種別 → ②メインカテゴリ → ③機械名 → ④番号 で絞り込み（作業記録用）
+            ${guideText}
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px;">
             <select class="form-input" onchange="window.onFieldMachineFilterChange_('kind', this.value)" style="margin:0; font-size:12px;">
@@ -7985,15 +7992,15 @@ function createSignboardMarker(name, pos, icon, id) {
               <option value="vehicle" ${f.kind === 'vehicle' ? 'selected' : ''}>① 車両(B)</option>
             </select>
             <select class="form-input" onchange="window.onFieldMachineFilterChange_('mainCategory', this.value)" style="margin:0; font-size:12px;">
-              <option value="">② メインカテゴリ</option>
+              <option value="">${labelMain}</option>
               ${cascade.mainCategories.map(c => `<option value="${String(c).replace(/"/g, '&quot;')}" ${f.mainCategory === c ? 'selected' : ''}>${c}</option>`).join('')}
             </select>
             <select class="form-input" onchange="window.onFieldMachineFilterChange_('typeName', this.value)" style="margin:0; font-size:12px;">
-              <option value="">③ 機械名/車両名</option>
+              <option value="">${labelType}</option>
               ${cascade.typeNames.map(c => `<option value="${String(c).replace(/"/g, '&quot;')}" ${f.typeName === c ? 'selected' : ''}>${c}</option>`).join('')}
             </select>
             <select class="form-input" onchange="window.onFieldMachineFilterChange_('number', this.value)" style="margin:0; font-size:12px;">
-              <option value="">④ 番号</option>
+              <option value="">${labelNumber}</option>
               ${cascade.numbers.map(c => `<option value="${String(c).replace(/"/g, '&quot;')}" ${f.number === c ? 'selected' : ''}>${c}</option>`).join('')}
             </select>
           </div>
@@ -8001,16 +8008,26 @@ function createSignboardMarker(name, pos, icon, id) {
 
         html += `
           <div style="display:flex; justify-content:space-between; align-items:center; margin:-4px 0 8px; gap:8px; flex-wrap:wrap;">
-            <span style="font-size:11px; color:#888;">${filtered.length} 件表示</span>
+            <span style="font-size:11px; color:#888;">${filtered.length} 件表示${isVehicleKind ? '（具体車両）' : ''}</span>
             <button type="button" onclick="window._fieldMachineFilter={kind:'all',mainCategory:'',typeName:'',number:''}; populateFieldMachineOptions([])" style="background:#eee; color:#333; border:1px solid #ccc; border-radius:6px; padding:4px 8px; font-size:11px; cursor:pointer;">絞り込み解除</button>
-            <button type="button" onclick="addNewMachineFromWorkRecord()" style="background:#2196F3; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 機械を新規登録</button>
+            <button type="button" onclick="addNewMachineFromWorkRecord('${isVehicleKind ? 'vehicle' : 'machine'}')" style="background:#2196F3; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">${isVehicleKind ? '＋ 車両を新規登録' : '＋ 機械を新規登録'}</button>
           </div>
         `;
 
         if (!filtered.length) {
-          html += `<div style="font-size:12px; color:#888;">該当する農機・車両がありません。絞り込みを解除するか、新規登録してください。</div>`;
+          html += isVehicleKind
+            ? `<div style="font-size:12px; color:#888; line-height:1.45;">具体的な車両がありません。絞り込みを緩めるか、「＋ 車両を新規登録」からナンバー付きで登録してください。</div>`
+            : `<div style="font-size:12px; color:#888;">該当する農機・車両がありません。絞り込みを解除するか、新規登録してください。</div>`;
         } else {
           const activeSelected = Array.isArray(selectedMachineIds) ? selectedMachineIds.map(String) : [];
+          const selectedSet = new Set();
+          activeSelected.forEach((s) => {
+            const t = String(s || '').trim();
+            if (!t) return;
+            selectedSet.add(t);
+            selectedSet.add(t.replace(/^veh:/, ''));
+            if (t.indexOf('veh:') !== 0) selectedSet.add('veh:' + t);
+          });
 
           const selOptions = filtered.map(m => {
             const id = String(m.id || m.name || '').replace(/"/g, '&quot;');
@@ -8023,7 +8040,7 @@ function createSignboardMarker(name, pos, icon, id) {
           html += `
             <div style="margin-bottom:8px;">
               <select id="rec_field_machine_select" class="form-input" onchange="if(window.onFieldMachineSelectChange) window.onFieldMachineSelectChange(this)" style="margin-bottom:6px;">
-                <option value="">一覧から選択...</option>
+                <option value="">${isVehicleKind ? '具体的な車両を選択...' : '一覧から選択...'}</option>
                 ${selOptions}
               </select>
             </div>
@@ -8035,20 +8052,23 @@ function createSignboardMarker(name, pos, icon, id) {
             const id = String(m.id || m.name || '');
             const name = String(m._displayName || m.name || m.plateNumber || m.id || '');
             const isDiesel = typeof window.isDieselFuelMachine_ === 'function' && window.isDieselFuelMachine_(m);
-            const isChecked = activeSelected.includes(id) || activeSelected.includes(name);
+            const isChecked = selectedSet.has(id) || selectedSet.has(name) || selectedSet.has(String(m.plateNumber || ''));
             const photoUrl = (typeof window.getMachinePhotoUrl === 'function') ? window.getMachinePhotoUrl(m) : (m.photo || '');
             const thumb = photoUrl
               ? `<img src="${String(photoUrl).replace(/"/g, '&quot;')}" alt="" style="width:22px; height:22px; object-fit:cover; border-radius:50%; border:1px solid #ffcc80;">`
               : (m._kind === 'vehicle' ? '🛻' : '🚜');
-            const editBtn = canEditFieldPhoto && m._kind !== 'vehicle'
-              ? `<button type="button" onclick="event.preventDefault(); event.stopPropagation(); openMachinePhotoEditorById('${String(id).replace(/'/g, "\\'")}')" style="background:transparent; border:none; color:#1565c0; font-size:11px; cursor:pointer; padding:0 2px;" title="登録内容を変更">✏️</button>`
+            const editKind = m._kind === 'vehicle' ? 'vehicle' : 'machine';
+            const editBtn = canEditFieldPhoto
+              ? `<button type="button" onclick="event.preventDefault(); event.stopPropagation(); openMachinePhotoEditorById('${String(id).replace(/'/g, "\\'")}','${editKind}')" style="background:transparent; border:none; color:#1565c0; font-size:11px; cursor:pointer; padding:0 2px;" title="登録内容を変更">✏️</button>`
               : '';
-            const meta = [m._mainCategory, m._typeName, m._number].filter(Boolean).join('·');
+            const meta = isVehicleKind
+              ? [m._typeName, m._number || m.plateNumber].filter(Boolean).join(' · ')
+              : [m._mainCategory, m._typeName, m._number].filter(Boolean).join('·');
             const hitch = window.getMachineHitch_(m);
             return `
               <label style="display:inline-flex; align-items:center; gap:4px; padding:5px 10px; background:${isChecked ? '#FFE0B2' : '#FAFAFA'}; border:1px solid ${isChecked ? '#FF9800' : '#DDD'}; border-radius:16px; font-size:12px; cursor:pointer; font-weight:${isChecked ? 'bold' : 'normal'};">
                 <input type="checkbox" class="used-machine-check" value="${id.replace(/"/g, '&quot;')}" data-name="${name.replace(/"/g, '&quot;')}" ${isChecked ? 'checked' : ''} onchange="if(window.syncFieldMachineChipStyle) window.syncFieldMachineChipStyle(this)">
-                ${thumb} <span>${name.replace(/</g, '&lt;')}</span>${meta ? `<span style="font-size:10px;color:#888;">(${meta})</span>` : ''}${hitch ? ` <span style="font-size:10px; color:#4527A0;" title="ヒッチ規格">🔗${hitch.replace(/</g, '&lt;')}</span>` : ''}${isDiesel ? ' <span style="font-size:10px; color:#C2185B; font-weight:bold;">⛽</span>' : ''} ${editBtn}
+                ${thumb} <span>${name.replace(/</g, '&lt;')}</span>${meta ? `<span style="font-size:10px;color:#888;">(${meta.replace(/</g, '&lt;')})</span>` : ''}${(!isVehicleKind && hitch) ? ` <span style="font-size:10px; color:#4527A0;" title="ヒッチ規格">🔗${hitch.replace(/</g, '&lt;')}</span>` : ''}${isDiesel ? ' <span style="font-size:10px; color:#C2185B; font-weight:bold;">⛽</span>' : ''} ${editBtn}
               </label>
             `;
           }).join('');
@@ -8058,6 +8078,21 @@ function createSignboardMarker(name, pos, icon, id) {
         }
 
         section.innerHTML = html;
+        // ④ナンバーを選んだら、該当する具体車両を自動チェック
+        if (isVehicleKind && f.number && filtered.length) {
+          filtered.forEach((m) => {
+            const mid = String(m.id || m.name || '');
+            if (!mid) return;
+            document.querySelectorAll('#field_machinery_section .used-machine-check').forEach((chk) => {
+              if (String(chk.value) === mid || String(chk.getAttribute('data-name')) === String(m._displayName || m.name || '')) {
+                if (!chk.checked) {
+                  chk.checked = true;
+                  if (window.syncFieldMachineChipStyle) window.syncFieldMachineChipStyle(chk);
+                }
+              }
+            });
+          });
+        }
         if (typeof window.syncFieldMachineryFuelPairing_ === 'function') {
           setTimeout(() => { try { window.syncFieldMachineryFuelPairing_(); } catch (e) {} }, 0);
         }
@@ -8229,8 +8264,23 @@ function createSignboardMarker(name, pos, icon, id) {
         if (found) return found;
         const vehs = window.pdlMobileVehicles || [];
         const vid = t.indexOf('veh:') === 0 ? t.slice(4) : t;
-        const v = vehs.find(x => String(x.id) === vid || String(x.plateNumber) === t);
-        if (v) return Object.assign({}, v, { isVehicle: true, name: v.plateNumber || v.name, id: v.id });
+        const v = vehs.find(x =>
+          String(x.id) === vid
+          || String(x.plateNumber || '') === t
+          || String(x.plateNumber || '') === vid
+          || String(x.vehicleNumber || '') === t
+        );
+        if (v) {
+          const oid = (typeof window.getMobileVehicleOptionId_ === 'function')
+            ? window.getMobileVehicleOptionId_(v)
+            : ('veh:' + String(v.id || ''));
+          return Object.assign({}, v, {
+            isVehicle: true,
+            _kind: 'vehicle',
+            name: v.plateNumber || v.name || v.id,
+            id: oid
+          });
+        }
         return null;
       };
 
@@ -13947,6 +13997,13 @@ function createSignboardMarker(name, pos, icon, id) {
           : [],
         prepTargetWork: String(draft && draft.prepTargetWork || '').trim(),
         prepTargetCategory: String(draft && draft.prepTargetCategory || '').trim(),
+        usedMachines: Array.isArray(draft && draft.usedMachines)
+          ? draft.usedMachines.map(m => ({
+              id: String(m && (m.id || m.name) || '').trim(),
+              name: String(m && (m.name || m.id) || '').trim(),
+              kind: String(m && m.kind || '').trim() || undefined
+            })).filter(m => m.id || m.name)
+          : [],
         minutes: (draft && draft.minutes != null && !isNaN(Number(draft.minutes)))
           ? Math.max(0, Math.round(Number(draft.minutes)))
           : null,
@@ -13962,6 +14019,9 @@ function createSignboardMarker(name, pos, icon, id) {
         const details = (Array.isArray(entry.detailedWorks) && entry.detailedWorks.length)
           ? `（${entry.detailedWorks.join('、')}）`
           : '';
+        const machines = (Array.isArray(entry.usedMachines) && entry.usedMachines.length)
+          ? ` ／ ${entry.usedMachines.map(m => m.name || m.id).filter(Boolean).join('、')}`
+          : '';
         const mins = (entry.minutes != null && !isNaN(Number(entry.minutes)) && Number(entry.minutes) > 0)
           ? `（${Math.round(Number(entry.minutes))}分${entry.minutesMode === 'equal' ? '・均等' : ''}）`
           : '';
@@ -13971,7 +14031,7 @@ function createSignboardMarker(name, pos, icon, id) {
         if (isMeta) {
           const target = prepTarget || String(entry.workName || '').trim() || '（対象未選択）';
           const tCat = prepTargetCat ? `／対象カテゴリ:${prepTargetCat}` : '';
-          return `[${cat}] ${crops} / 対象:${target}${tCat}${details}${mins}`;
+          return `[${cat}] ${crops} / 対象:${target}${tCat}${details}${machines}${mins}`;
         }
         const catLabel = cat ? `[${cat}] ` : '';
         const wName = String(entry.workName || '').trim()
@@ -13979,7 +14039,375 @@ function createSignboardMarker(name, pos, icon, id) {
           || String(entry.rawHint || '').trim()
           || '（未選択）';
         const memoTag = entry._fromMemo && !entry.workName ? '📝' : '';
-        return `${memoTag}${catLabel}${crops} / ${wName}${details}${mins}`;
+        return `${memoTag}${catLabel}${crops} / ${wName}${details}${machines}${mins}`;
+      };
+
+      /** 同時作業登録用：農機＋車両一覧（車両は veh:ID・ナンバー付き） */
+      window.getConcurrentEquipmentItems_ = () => {
+        const machines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+        const vehicles = window.pdlMobileVehicles || [];
+        if (window.MachineTaxonomy && MachineTaxonomy.collectAllEquipment) {
+          return MachineTaxonomy.collectAllEquipment(machines, vehicles);
+        }
+        const out = machines.map(m => Object.assign({}, m, {
+          _kind: 'machine',
+          _displayName: m.name || m.id
+        }));
+        vehicles.forEach(v => {
+          const oid = (typeof window.getMobileVehicleOptionId_ === 'function')
+            ? window.getMobileVehicleOptionId_(v)
+            : ('veh:' + String(v.id || ''));
+          const plate = v.plateNumber || v.vehicleNumber || v.name || '';
+          out.push(Object.assign({}, v, {
+            id: oid,
+            isVehicle: true,
+            _kind: 'vehicle',
+            plateNumber: plate,
+            name: plate || v.name || oid,
+            _displayName: plate || v.name || oid
+          }));
+        });
+        return out;
+      };
+
+      /** 同時作業の作業名が運搬系か */
+      window.isConcurrentDraftDelivery_ = (draft) => {
+        const wName = String(draft && (draft.workName || draft.prepTargetWork) || '').trim();
+        const cat = String(draft && (draft.category || draft.listFilterCategory) || '').trim();
+        if (typeof window.isDeliveryWork === 'function') return window.isDeliveryWork(wName, cat);
+        return cat === '出荷・運搬' || /運搬|配送|出荷|納品|集荷|配達|移動/.test(wName);
+      };
+
+      /** 同時作業登録：農機／車両ピッカーHTML（mode: modal|bulk） */
+      window.buildConcurrentEquipmentPickerHtml_ = (draft, opts) => {
+        opts = opts || {};
+        const mode = opts.mode === 'bulk' ? 'bulk' : 'modal';
+        const uid = String(opts.uid || '').trim();
+        const isDelivery = typeof window.isConcurrentDraftDelivery_ === 'function'
+          && window.isConcurrentDraftDelivery_(draft);
+        const stepLabel = String(opts.stepLabel || (isDelivery ? '移動する機械・車両（任意）' : '使用農機・車両（任意）'));
+        const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        const escJs = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const kind = String((draft && draft._equipKindFilter) || 'all');
+        const isVehicleKind = kind === 'vehicle';
+        const isMachineKind = kind === 'machine';
+        const mainCategory = String((draft && draft._equipMainCategory) || '');
+        const typeName = String((draft && draft._equipTypeName) || '');
+        const number = String((draft && draft._equipNumber) || '');
+        const allItems = (typeof window.getConcurrentEquipmentItems_ === 'function')
+          ? window.getConcurrentEquipmentItems_()
+          : [];
+        const filters = {
+          kind: kind === 'all' ? 'all' : kind,
+          mainCategory: mainCategory,
+          typeName: typeName,
+          number: number
+        };
+        const cascade = (window.MachineTaxonomy && MachineTaxonomy.getCascadeOptions)
+          ? MachineTaxonomy.getCascadeOptions(allItems, filters)
+          : { mainCategories: [], typeNames: [], numbers: [] };
+        const filtered = (window.MachineTaxonomy && MachineTaxonomy.filterEquipment)
+          ? MachineTaxonomy.filterEquipment(allItems, filters)
+          : allItems.filter(i => kind === 'all' || i._kind === kind);
+        const selected = Array.isArray(draft && draft.usedMachines) ? draft.usedMachines : [];
+        const selectedSet = new Set();
+        selected.forEach((m) => {
+          const id = String(m && m.id || '').trim();
+          const name = String(m && m.name || '').trim();
+          if (id) {
+            selectedSet.add(id);
+            selectedSet.add(id.replace(/^veh:/, ''));
+            if (id.indexOf('veh:') !== 0) selectedSet.add('veh:' + id);
+          }
+          if (name) selectedSet.add(name);
+        });
+        const kindBtn = (k, icon, label) => {
+          const on = kind === k;
+          const click = mode === 'bulk'
+            ? `setBulkConcurrentEquipKind_('${esc(uid)}','${k}')`
+            : `setConcurrentModalEquipKind_('${k}')`;
+          return `<button type="button" onclick="${click}" style="flex:1; min-width:70px; padding:7px 8px; border-radius:10px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? '#E65100' : '#FFE0B2'}; background:${on ? '#FFF3E0' : '#fff'}; color:${on ? '#E65100' : '#666'};">${icon}${label}</button>`;
+        };
+        const cascadeClick = (level) => mode === 'bulk'
+          ? `setBulkConcurrentEquipCascade_('${esc(uid)}','${level}', this.value)`
+          : `setConcurrentModalEquipCascade_('${level}', this.value)`;
+        const labelMain = isVehicleKind ? '② 自動車/作業機' : (isMachineKind ? '② メインカテゴリ' : '② カテゴリ');
+        const labelType = isVehicleKind ? '③ 車種' : (isMachineKind ? '③ 機械名（機種）' : '③ 機種/車種');
+        const labelNumber = isVehicleKind ? '④ ナンバー（具体車両）' : (isMachineKind ? '④ 番号（具体機械）' : '④ 番号');
+        const showCascade = kind === 'machine' || kind === 'vehicle';
+        const cascadeHtml = showCascade ? `
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px;">
+            <select class="form-input" onchange="${cascadeClick('mainCategory')}" style="margin:0; font-size:12px;">
+              <option value="">${esc(labelMain)}</option>
+              ${(cascade.mainCategories || []).map(c => `<option value="${esc(c)}" ${mainCategory === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+            </select>
+            <select class="form-input" onchange="${cascadeClick('typeName')}" style="margin:0; font-size:12px;">
+              <option value="">${esc(labelType)}</option>
+              ${(cascade.typeNames || []).map(c => `<option value="${esc(c)}" ${typeName === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+            </select>
+            <select class="form-input" onchange="${cascadeClick('number')}" style="margin:0; font-size:12px; grid-column:1 / -1;">
+              <option value="">${esc(labelNumber)}</option>
+              ${(cascade.numbers || []).map(c => `<option value="${esc(c)}" ${number === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+            </select>
+          </div>
+          <div style="font-size:10px; color:#888; margin:-2px 0 8px;">${filtered.length} 件${isMachineKind ? '（具体機械）' : (isVehicleKind ? '（具体車両）' : '')}</div>
+        ` : '';
+        const emptyHint = isMachineKind
+          ? (isDelivery
+            ? '具体的な機械がありません。絞り込みを緩めるか、農機マスタに登録してください。'
+            : '具体的な機械がありません。カテゴリ・機種の絞り込みを緩めてください。')
+          : (isVehicleKind
+            ? '具体的な車両がありません。車両マスタにナンバー付きで登録してください。'
+            : '使った農機・車両があれば選んでください。');
+        const selectedChips = selected.length
+          ? `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${selected.map(m => {
+              const safeId = escJs(m.id || '');
+              const safeName = escJs(m.name || m.id || '');
+              const click = mode === 'bulk'
+                ? `toggleBulkConcurrentEquip_('${esc(uid)}','${safeId}','${safeName}',false)`
+                : `toggleConcurrentModalEquip_('${safeId}','${safeName}',false)`;
+              return `<span style="display:inline-flex; align-items:center; gap:4px; background:#FFF3E0; color:#E65100; padding:5px 9px; border-radius:14px; font-size:12px; font-weight:bold; border:1px solid #FF9800;">✅ ${esc(m.name || m.id)}<span onclick="${click}" style="cursor:pointer; color:#c62828; font-size:14px; line-height:1;" title="外す">×</span></span>`;
+            }).join('')}</div>`
+          : `<div style="font-size:11px; color:#888; margin-bottom:8px; line-height:1.35;">${esc(emptyHint)}</div>`;
+        const displayNameOf = (m) => {
+          if (typeof window.buildEquipmentDisplayLabel_ === 'function') {
+            const n = String(window.buildEquipmentDisplayLabel_(m) || '').trim();
+            if (n) return n;
+          }
+          if (window.MachineTaxonomy && MachineTaxonomy.getDisplayName) {
+            const n = String(MachineTaxonomy.getDisplayName(m) || '').trim();
+            if (n) return n;
+          }
+          return String(m._displayName || m.name || m.plateNumber || m.id || '');
+        };
+        const chips = filtered.map(m => {
+          const id = String(m.id || m.name || '');
+          const name = displayNameOf(m);
+          const on = selectedSet.has(id) || selectedSet.has(name) || selectedSet.has(String(m.plateNumber || ''));
+          const safeId = escJs(id);
+          const safeName = escJs(name);
+          const click = mode === 'bulk'
+            ? `toggleBulkConcurrentEquip_('${esc(uid)}','${safeId}','${safeName}',${!on})`
+            : `toggleConcurrentModalEquip_('${safeId}','${safeName}',${!on})`;
+          const meta = isVehicleKind
+            ? [m._typeName, m._number || m.plateNumber].filter(Boolean).join(' · ')
+            : [m._mainCategory, m._typeName, m._model, m._number].filter(Boolean).join(' · ');
+          const icon = m._kind === 'vehicle' ? '🛻' : '🚜';
+          return `<button type="button" onclick="${click}" style="display:inline-flex; align-items:center; gap:4px; padding:6px 10px; border-radius:14px; font-size:12px; font-weight:${on ? 'bold' : 'normal'}; cursor:pointer; border:1px solid ${on ? '#FF9800' : '#FFE0B2'}; background:${on ? '#FFF3E0' : '#fff'}; color:#E65100;">${on ? '✅ ' : ''}${icon} ${esc(name)}${meta ? `<span style="font-size:10px;color:#888;">(${esc(meta)})</span>` : ''}</button>`;
+        }).join('');
+        const emptyMsg = !filtered.length
+          ? `<div style="font-size:11px; color:#888; line-height:1.4;">${esc(emptyHint)}</div>`
+          : '';
+        const guide = isDelivery
+          ? (isMachineKind
+            ? '機械を選んだあと、カテゴリ→機種→番号で具体的な機械を選べます。'
+            : (isVehicleKind
+              ? '車両を選んだあと、ナンバー付きの具体車両を選べます。'
+              : '運搬する物の種類（機械／車両）を選んでから、具体を選んでください。'))
+          : (isMachineKind
+            ? '機械 → カテゴリ → 機種 → 番号 で具体機械を選べます。'
+            : (isVehicleKind
+              ? '車両を選ぶと、ナンバー付きの具体車両が一覧になります。'
+              : '農機／車両を切り替えて選べます。'));
+        const machineLabel = isDelivery ? '機械' : '農機';
+        return `<div style="margin:10px 0; padding:10px; background:#FFF8E1; border:1px solid #FFE0B2; border-radius:10px;">
+          <div style="font-size:11px; font-weight:bold; color:#E65100; margin-bottom:6px;">🚜 ${esc(stepLabel)}</div>
+          <div style="font-size:10px; color:#888; margin-bottom:8px; line-height:1.35;">${guide}</div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
+            ${kindBtn('all', '', 'すべて')}
+            ${kindBtn('machine', '🚜 ', machineLabel)}
+            ${kindBtn('vehicle', '🛻 ', '車両')}
+          </div>
+          ${cascadeHtml}
+          ${selectedChips}
+          ${emptyMsg || `<div style="display:flex; flex-wrap:wrap; gap:6px; max-height:160px; overflow-y:auto;">${chips}</div>`}
+        </div>`;
+      };
+
+      window.applyConcurrentEquipKindReset_ = (draft, kind) => {
+        if (!draft) return;
+        draft._equipKindFilter = String(kind || 'all');
+        draft._equipMainCategory = '';
+        draft._equipTypeName = '';
+        draft._equipNumber = '';
+      };
+
+      window.applyConcurrentEquipCascade_ = (draft, level, value) => {
+        if (!draft) return;
+        const v = String(value || '');
+        if (level === 'mainCategory') {
+          draft._equipMainCategory = v;
+          draft._equipTypeName = '';
+          draft._equipNumber = '';
+        } else if (level === 'typeName') {
+          draft._equipTypeName = v;
+          draft._equipNumber = '';
+        } else if (level === 'number') {
+          draft._equipNumber = v;
+        }
+      };
+
+      window.setConcurrentModalEquipKind_ = (kind) => {
+        const d = window.getConcurrentWorkModalDraft_();
+        window.applyConcurrentEquipKindReset_(d, kind);
+        const apply = () => window.renderConcurrentWorkModal_();
+        if (d._equipKindFilter === 'vehicle' && typeof window.ensureMobileVehiclesLoaded_ === 'function') {
+          window.ensureMobileVehiclesLoaded_().then(apply).catch(apply);
+          return;
+        }
+        apply();
+      };
+
+      window.setConcurrentModalEquipCascade_ = (level, value) => {
+        const d = window.getConcurrentWorkModalDraft_();
+        window.applyConcurrentEquipCascade_(d, level, value);
+        if (level === 'number' && d._equipNumber) {
+          const filters = {
+            kind: d._equipKindFilter || 'all',
+            mainCategory: d._equipMainCategory || '',
+            typeName: d._equipTypeName || '',
+            number: d._equipNumber || ''
+          };
+          const allItems = (typeof window.getConcurrentEquipmentItems_ === 'function')
+            ? window.getConcurrentEquipmentItems_()
+            : [];
+          const hits = (window.MachineTaxonomy && MachineTaxonomy.filterEquipment)
+            ? MachineTaxonomy.filterEquipment(allItems, filters)
+            : [];
+          if (!Array.isArray(d.usedMachines)) d.usedMachines = [];
+          hits.forEach((m) => {
+            const id = String(m.id || m.name || '');
+            const name = (typeof window.buildEquipmentDisplayLabel_ === 'function')
+              ? (window.buildEquipmentDisplayLabel_(m) || m._displayName || m.name || id)
+              : String(m._displayName || m.name || id);
+            if (!id && !name) return;
+            const exists = d.usedMachines.some(x =>
+              String(x.id || '') === id || String(x.name || '') === name
+            );
+            if (!exists) {
+              d.usedMachines.push({
+                id: id || name,
+                name: name || id,
+                kind: m._kind === 'vehicle' ? 'vehicle' : 'machine'
+              });
+            }
+          });
+        }
+        window.renderConcurrentWorkModal_();
+      };
+
+      window.toggleConcurrentModalEquip_ = (id, name, checked) => {
+        const d = window.getConcurrentWorkModalDraft_();
+        if (!Array.isArray(d.usedMachines)) d.usedMachines = [];
+        const sid = String(id || '').trim();
+        const sname = String(name || '').trim();
+        if (!sid && !sname) return;
+        if (checked) {
+          const exists = d.usedMachines.some(m =>
+            (sid && String(m.id || '') === sid) || (sname && String(m.name || '') === sname)
+          );
+          if (!exists) {
+            const item = (typeof window.getConcurrentEquipmentItems_ === 'function')
+              ? window.getConcurrentEquipmentItems_().find(x =>
+                String(x.id) === sid || String(x._displayName || x.name) === sname)
+              : null;
+            d.usedMachines.push({
+              id: sid || sname,
+              name: sname || sid,
+              kind: item && item._kind === 'vehicle' ? 'vehicle' : (sid.indexOf('veh:') === 0 ? 'vehicle' : 'machine')
+            });
+          }
+        } else {
+          d.usedMachines = d.usedMachines.filter(m =>
+            !(sid && String(m.id || '') === sid) && !(sname && String(m.name || '') === sname)
+          );
+        }
+        window.renderConcurrentWorkModal_();
+      };
+
+      window.setBulkConcurrentEquipKind_ = (uid, kind) => {
+        const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+        if (!row) return;
+        const draft = window.ensureBulkConcurrentDraft_(row);
+        window.applyConcurrentEquipKindReset_(draft, kind);
+        const apply = () => window.rerenderBulkConcurrentCard_(uid);
+        if (draft._equipKindFilter === 'vehicle' && typeof window.ensureMobileVehiclesLoaded_ === 'function') {
+          window.ensureMobileVehiclesLoaded_().then(apply).catch(apply);
+          return;
+        }
+        apply();
+      };
+
+      window.setBulkConcurrentEquipCascade_ = (uid, level, value) => {
+        const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+        if (!row) return;
+        const draft = window.ensureBulkConcurrentDraft_(row);
+        window.applyConcurrentEquipCascade_(draft, level, value);
+        // 番号まで選んだら該当する具体機械／車両を自動選択
+        if (level === 'number' && draft._equipNumber) {
+          const filters = {
+            kind: draft._equipKindFilter || 'all',
+            mainCategory: draft._equipMainCategory || '',
+            typeName: draft._equipTypeName || '',
+            number: draft._equipNumber || ''
+          };
+          const allItems = (typeof window.getConcurrentEquipmentItems_ === 'function')
+            ? window.getConcurrentEquipmentItems_()
+            : [];
+          const hits = (window.MachineTaxonomy && MachineTaxonomy.filterEquipment)
+            ? MachineTaxonomy.filterEquipment(allItems, filters)
+            : [];
+          if (!Array.isArray(draft.usedMachines)) draft.usedMachines = [];
+          hits.forEach((m) => {
+            const id = String(m.id || m.name || '');
+            const name = (typeof window.buildEquipmentDisplayLabel_ === 'function')
+              ? (window.buildEquipmentDisplayLabel_(m) || m._displayName || m.name || id)
+              : String(m._displayName || m.name || id);
+            if (!id && !name) return;
+            const exists = draft.usedMachines.some(x =>
+              String(x.id || '') === id || String(x.name || '') === name
+            );
+            if (!exists) {
+              draft.usedMachines.push({
+                id: id || name,
+                name: name || id,
+                kind: m._kind === 'vehicle' ? 'vehicle' : 'machine'
+              });
+            }
+          });
+        }
+        window.rerenderBulkConcurrentCard_(uid);
+      };
+
+      window.toggleBulkConcurrentEquip_ = (uid, id, name, checked) => {
+        const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+        if (!row) return;
+        const draft = window.ensureBulkConcurrentDraft_(row);
+        if (!Array.isArray(draft.usedMachines)) draft.usedMachines = [];
+        const sid = String(id || '').trim();
+        const sname = String(name || '').trim();
+        if (!sid && !sname) return;
+        if (checked) {
+          const exists = draft.usedMachines.some(m =>
+            (sid && String(m.id || '') === sid) || (sname && String(m.name || '') === sname)
+          );
+          if (!exists) {
+            const item = (typeof window.getConcurrentEquipmentItems_ === 'function')
+              ? window.getConcurrentEquipmentItems_().find(x =>
+                String(x.id) === sid || String(x._displayName || x.name) === sname)
+              : null;
+            draft.usedMachines.push({
+              id: sid || sname,
+              name: sname || sid,
+              kind: item && item._kind === 'vehicle' ? 'vehicle' : (sid.indexOf('veh:') === 0 ? 'vehicle' : 'machine')
+            });
+          }
+        } else {
+          draft.usedMachines = draft.usedMachines.filter(m =>
+            !(sid && String(m.id || '') === sid) && !(sname && String(m.name || '') === sname)
+          );
+        }
+        window.rerenderBulkConcurrentCard_(uid);
       };
 
       /** 同時作業モーダル用カテゴリ（登録済みカテゴリのみ。準備／片づけもマスタにあれば含む） */
@@ -14042,21 +14470,34 @@ function createSignboardMarker(name, pos, icon, id) {
           cropName: '',
           workName: '',
           detailedWorks: [],
+          usedMachines: [],
+          _equipKindFilter: 'all',
           rawLine: '',
           prepTargetWork: '',
           prepTargetCategory: '',
           _workListOpen: true
         };
-        window.renderConcurrentWorkModal_();
+        const paint = () => window.renderConcurrentWorkModal_();
+        if (typeof window.ensureMobileVehiclesLoaded_ === 'function') {
+          window.ensureMobileVehiclesLoaded_().then(paint).catch(paint);
+        } else {
+          paint();
+        }
       };
 
       window.getConcurrentWorkModalDraft_ = () => {
         if (!window._concurrentWorkModalDraft) {
           window._concurrentWorkModalDraft = {
             category: '', listFilterCategory: '', cropNames: [], cropName: '',
-            workName: '', detailedWorks: [], rawLine: '',
-            prepTargetWork: '', prepTargetCategory: '', _workListOpen: true
+            workName: '', detailedWorks: [], usedMachines: [], _equipKindFilter: 'all',
+            rawLine: '', prepTargetWork: '', prepTargetCategory: '', _workListOpen: true
           };
+        }
+        if (!Array.isArray(window._concurrentWorkModalDraft.usedMachines)) {
+          window._concurrentWorkModalDraft.usedMachines = [];
+        }
+        if (!window._concurrentWorkModalDraft._equipKindFilter) {
+          window._concurrentWorkModalDraft._equipKindFilter = 'all';
         }
         return window._concurrentWorkModalDraft;
       };
@@ -14203,15 +14644,26 @@ function createSignboardMarker(name, pos, icon, id) {
             ${detailHtml}`;
         }
 
+        const showEquip = !isMeta && !!String(d.workName || '').trim();
+        const isDeliveryCw = showEquip && typeof window.isConcurrentDraftDelivery_ === 'function'
+          && window.isConcurrentDraftDelivery_(d);
+        const equipHtml = showEquip && typeof window.buildConcurrentEquipmentPickerHtml_ === 'function'
+          ? window.buildConcurrentEquipmentPickerHtml_(d, {
+              mode: 'modal',
+              stepLabel: isDeliveryCw ? '④ 移動する機械・車両（任意）' : '④ 使用農機・車両（任意）'
+            })
+          : '';
+
         const title = window._concurrentWorkModalContext === 'bulk' ? '🔀 同時作業を追加（一括入力）' : '🔀 同時に行った作業を登録';
         window.fillAppModalHtml_(`
           <div id="concurrent_work_modal_scroll" style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
             <div style="font-size:16px; font-weight:bold; color:#5E35B1; margin-bottom:4px;">${title}</div>
-            <div style="font-size:11px; color:#666; line-height:1.4; margin-bottom:14px;">カテゴリ・作物・作業・詳細作業をこの枠で選んでください。圃場と時間はメイン作業と同じです。準備／片づけ・掃除も選べます。</div>
+            <div style="font-size:11px; color:#666; line-height:1.4; margin-bottom:14px;">カテゴリ・作物・作業・詳細作業をこの枠で選んでください。圃場と時間はメイン作業と同じです。準備／片づけ・掃除も選べます。車両を使う場合は「車両」から具体車両を選べます。</div>
             <div style="border:2px solid #CE93D8; border-radius:12px; overflow:hidden; margin-bottom:8px;">
             <div style="background:#EDE7F6; padding:8px 10px; font-size:12px; font-weight:bold; color:#5E35B1;">📁🌱🚜 カテゴリ・作物・作業名</div>
             <div style="padding:10px 12px; background:#fff;">
             ${bodyHtml}
+            ${equipHtml}
             </div>
             </div>
             <button type="button" onclick="confirmConcurrentWorkModal_()" style="width:100%; background:#5E35B1; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-top:16px;">✅ 登録する</button>
@@ -14363,8 +14815,10 @@ function createSignboardMarker(name, pos, icon, id) {
         const d = window.getConcurrentWorkModalDraft_();
         const workName = String(name || '').trim();
         if (!workName) return;
+        const prevWork = String(d.workName || '').trim();
         d.workName = workName;
         d.detailedWorks = [];
+        if (prevWork !== workName) d.usedMachines = [];
         const filterCat = String(d.listFilterCategory || '').trim();
         const keepMetaCat = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(filterCat);
         if (keepMetaCat) {
@@ -14557,6 +15011,11 @@ function createSignboardMarker(name, pos, icon, id) {
             category: '',
             workName: '',
             detailedWorks: [],
+            usedMachines: [],
+            _equipKindFilter: 'all',
+            _equipMainCategory: '',
+            _equipTypeName: '',
+            _equipNumber: '',
             prepTargetWork: '',
             prepTargetCategory: '',
             minutes: null,
@@ -14565,6 +15024,11 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         if (!Array.isArray(d._concurrentDraft.cropNames)) d._concurrentDraft.cropNames = [];
         if (!Array.isArray(d._concurrentDraft.detailedWorks)) d._concurrentDraft.detailedWorks = [];
+        if (!Array.isArray(d._concurrentDraft.usedMachines)) d._concurrentDraft.usedMachines = [];
+        if (!d._concurrentDraft._equipKindFilter) d._concurrentDraft._equipKindFilter = 'all';
+        if (d._concurrentDraft._equipMainCategory == null) d._concurrentDraft._equipMainCategory = '';
+        if (d._concurrentDraft._equipTypeName == null) d._concurrentDraft._equipTypeName = '';
+        if (d._concurrentDraft._equipNumber == null) d._concurrentDraft._equipNumber = '';
         return d._concurrentDraft;
       };
 
@@ -14577,6 +15041,11 @@ function createSignboardMarker(name, pos, icon, id) {
           category: '',
           workName: '',
           detailedWorks: [],
+          usedMachines: [],
+          _equipKindFilter: 'all',
+          _equipMainCategory: '',
+          _equipTypeName: '',
+          _equipNumber: '',
           prepTargetWork: '',
           prepTargetCategory: '',
           minutes: null,
@@ -14609,7 +15078,15 @@ function createSignboardMarker(name, pos, icon, id) {
         const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
         if (!row) return;
         row._concurrentPanelOpen = !row._concurrentPanelOpen;
-        if (row._concurrentPanelOpen) window.ensureBulkConcurrentDraft_(row);
+        if (row._concurrentPanelOpen) {
+          window.ensureBulkConcurrentDraft_(row);
+          if (typeof window.ensureMobileVehiclesLoaded_ === 'function') {
+            window.ensureMobileVehiclesLoaded_().then(() => window.rerenderBulkConcurrentCard_(uid)).catch(() => {
+              window.rerenderBulkConcurrentCard_(uid);
+            });
+            return;
+          }
+        }
         window.rerenderBulkConcurrentCard_(uid);
       };
 
@@ -14670,8 +15147,10 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!workName) return;
         const filterCat = String(draft.listFilterCategory || '').trim();
         const isMeta = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(filterCat);
+        const prevWork = String(draft.workName || '').trim();
         draft.workName = workName;
         draft.detailedWorks = [];
+        if (prevWork !== workName) draft.usedMachines = [];
         if (isMeta) {
           draft.category = filterCat;
           draft.prepTargetWork = workName;
@@ -14687,7 +15166,12 @@ function createSignboardMarker(name, pos, icon, id) {
           if (cat) draft.category = cat;
           else if (filterCat) draft.category = filterCat;
         }
-        window.rerenderBulkConcurrentCard_(uid);
+        const apply = () => window.rerenderBulkConcurrentCard_(uid);
+        if (!isMeta && typeof window.ensureMobileVehiclesLoaded_ === 'function') {
+          window.ensureMobileVehiclesLoaded_().then(apply).catch(apply);
+          return;
+        }
+        apply();
       };
 
       window.toggleBulkConcurrentDraftDetail_ = (uid, name, checked) => {
@@ -14772,7 +15256,8 @@ function createSignboardMarker(name, pos, icon, id) {
         row.concurrentWorks.push(entry);
         window.syncBulkConcurrentEqualMinutes_(row);
         window.clearBulkConcurrentDraft_(row);
-        row._concurrentPanelOpen = true;
+        // 登録後は新規追加枠をアコーディオンで閉じる（再追加はボタンから開く）
+        row._concurrentPanelOpen = false;
         window.rerenderBulkConcurrentCard_(uid);
       };
 
@@ -14905,7 +15390,16 @@ function createSignboardMarker(name, pos, icon, id) {
             <div style="display:flex; flex-wrap:wrap; gap:6px; max-height:140px; overflow-y:auto; margin-bottom:10px;">${workHtml || '<span style="font-size:11px; color:#888;">該当する作業がありません</span>'}</div>
             <div style="font-size:11px; font-weight:bold; color:#5E35B1; margin-bottom:4px;">④ 詳細作業（任意）</div>
             <div style="margin-bottom:10px;">${detailHtml || '<div style="font-size:11px; color:#888;">作業名を選ぶと表示されます</div>'}</div>
-            <div style="font-size:11px; font-weight:bold; color:#006064; margin-bottom:4px;">⑤ 時間数（分）</div>
+            ${(!isMeta && curWork && typeof window.buildConcurrentEquipmentPickerHtml_ === 'function')
+              ? window.buildConcurrentEquipmentPickerHtml_(draft, {
+                  mode: 'bulk',
+                  uid: uid,
+                  stepLabel: (typeof window.isConcurrentDraftDelivery_ === 'function' && window.isConcurrentDraftDelivery_(draft))
+                    ? '⑤ 移動する機械・車両（任意）'
+                    : '⑤ 使用農機・車両（任意）'
+                })
+              : ''}
+            <div style="font-size:11px; font-weight:bold; color:#006064; margin-bottom:4px;">⑥ 時間数（分）</div>
             <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">${minsHtml || '<span style="font-size:11px; color:#888;">この時間帯では選べる分数がありません</span>'}</div>
             <button type="button" onclick="confirmBulkConcurrentDraft_('${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:10px 12px; border:none; border-radius:8px; background:#7E57C2; color:#fff; font-size:13px; font-weight:bold; cursor:pointer;">追加</button>
           </div>` : '';
@@ -20538,19 +21032,42 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.addNewMachineFromWorkRecord = async (preselect) => {
         const wName = (document.getElementById('rec_work_name')?.value || '').trim();
+        let kind = 'machine';
+        if (preselect === 'vehicle' || (preselect && preselect.kind === 'vehicle')) kind = 'vehicle';
+        else if (preselect === 'machine' || (preselect && preselect.kind === 'machine')) kind = 'machine';
+        else if (window._fieldMachineFilter && window._fieldMachineFilter.kind === 'vehicle') kind = 'vehicle';
         window.openMachineItemEditorModal({
           mode: 'add',
-          kind: 'machine',
-          workCategory: wName || '機械',
-          afterSave: (newMachine) => {
+          kind: kind,
+          workCategory: wName || (kind === 'vehicle' ? '車両' : '機械'),
+          afterSave: (newMachine, optionId) => {
             if (typeof window.renderUsedItems === 'function') window.renderUsedItems(wName);
-            setTimeout(() => {
-              const chk = document.querySelector('.used-machine-check[value="' + String(newMachine.id).replace(/"/g, '\\"') + '"]');
-              if (chk) {
-                chk.checked = true;
-                chk.dispatchEvent(new Event('change'));
+            const pickId = String(optionId || (kind === 'vehicle' && typeof window.getMobileVehicleOptionId_ === 'function'
+              ? window.getMobileVehicleOptionId_(newMachine)
+              : (newMachine && newMachine.id)) || '').trim();
+            const selected = Array.from(document.querySelectorAll('#field_machinery_section .used-machine-check:checked')).map(c => c.value);
+            if (pickId && selected.indexOf(pickId) < 0) selected.push(pickId);
+            if (kind === 'vehicle') {
+              window._fieldMachineFilter = Object.assign({}, window._fieldMachineFilter || {}, { kind: 'vehicle' });
+            }
+            const refresh = () => {
+              if (typeof window.populateFieldMachineOptions === 'function') {
+                window.populateFieldMachineOptions(selected).then(() => {
+                  const chk = document.querySelector('#field_machinery_section .used-machine-check[value="' + pickId.replace(/"/g, '\\"') + '"]')
+                    || document.querySelector('.used-machine-check[value="' + pickId.replace(/"/g, '\\"') + '"]');
+                  if (chk) {
+                    chk.checked = true;
+                    chk.dispatchEvent(new Event('change'));
+                  }
+                }).catch(() => {});
               }
-            }, 30);
+            };
+            if (kind === 'vehicle' && typeof window.ensureMobileVehiclesLoaded_ === 'function') {
+              window._mobileVehiclesLoaded = false;
+              window.ensureMobileVehiclesLoaded_().then(refresh).catch(refresh);
+            } else {
+              setTimeout(refresh, 30);
+            }
           }
         });
       };
@@ -22068,6 +22585,13 @@ function createSignboardMarker(name, pos, icon, id) {
                 prepTargetWork: String(cw.prepTargetWork || '').trim(),
                 prepTargetCategory: String(cw.prepTargetCategory || '').trim(),
                 detailedWorks: Array.isArray(cw.detailedWorks) ? cw.detailedWorks.slice() : [],
+                usedMachines: Array.isArray(cw.usedMachines)
+                  ? cw.usedMachines.map(m => ({
+                      id: String(m && (m.id || m.name) || '').trim(),
+                      name: String(m && (m.name || m.id) || '').trim(),
+                      kind: String(m && m.kind || '').trim() || undefined
+                    })).filter(m => m.id || m.name)
+                  : [],
                 minutes: (cw.minutes != null && !isNaN(Number(cw.minutes))) ? Math.round(Number(cw.minutes)) : null,
                 minutesMode: (String(cw.minutesMode || '').trim() === 'equal') ? 'equal' : 'fixed'
               }));
@@ -25153,6 +25677,13 @@ function createSignboardMarker(name, pos, icon, id) {
                     detailedWorks: Array.isArray(cw.detailedWorks) ? cw.detailedWorks.slice() : [],
                     prepTargetWork: cw.prepTargetWork || '',
                     prepTargetCategory: cw.prepTargetCategory || '',
+                    usedMachines: Array.isArray(cw.usedMachines)
+                      ? cw.usedMachines.map(m => ({
+                          id: String(m && (m.id || m.name) || '').trim(),
+                          name: String(m && (m.name || m.id) || '').trim(),
+                          kind: String(m && m.kind || '').trim() || undefined
+                        })).filter(m => m.id || m.name)
+                      : [],
                     minutes: (cw.minutes != null && !isNaN(Number(cw.minutes))) ? Math.round(Number(cw.minutes)) : null,
                     minutesMode: (String(cw.minutesMode || '').trim() === 'equal') ? 'equal' : 'fixed'
                   }))
@@ -39816,6 +40347,13 @@ window.executeBulkWorkMemoRegistration_ = async () => {
               prepTargetWork: cw.prepTargetWork || '',
               prepTargetCategory: cw.prepTargetCategory || '',
               detailedWorks: Array.isArray(cw.detailedWorks) ? cw.detailedWorks.slice() : [],
+              usedMachines: Array.isArray(cw.usedMachines)
+                ? cw.usedMachines.map(m => ({
+                    id: String(m && (m.id || m.name) || '').trim(),
+                    name: String(m && (m.name || m.id) || '').trim(),
+                    kind: String(m && m.kind || '').trim() || undefined
+                  })).filter(m => m.id || m.name)
+                : [],
               minutes: (cw.minutes != null && !isNaN(Number(cw.minutes))) ? Math.round(Number(cw.minutes)) : null,
               minutesMode: (String(cw.minutesMode || '').trim() === 'equal') ? 'equal' : 'fixed'
             }))
