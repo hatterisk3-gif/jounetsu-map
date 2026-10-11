@@ -25,7 +25,9 @@
     getCultivationPlans: 75000,
     saveProdMgmtCategories: 60000,
     resetAllManureStatus: 60000,
-    login: 20000
+    login: 20000,
+    getOsakaMarketDaily: 45000,
+    importOsakaMarketDaily: 45000
   };
 
   var NO_RETRY_ACTIONS = {

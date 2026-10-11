@@ -543,15 +543,17 @@
   <div id="cropMarketModal"
     style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center; padding: 12px; box-sizing: border-box;">
     <div
-      style="background: #fff; color: #333; padding: 18px 20px; border-radius: 8px; width: 100%; max-width: 420px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); box-sizing: border-box;">
+      style="background: #fff; color: #333; padding: 18px 20px; border-radius: 8px; width: 100%; max-width: 640px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); box-sizing: border-box; max-height: 92vh; overflow: auto;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
         <h3 style="margin: 0; color: #E65100; font-size: 18px;">📈 野菜市況情報</h3>
         <span id="marketModalClose" style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;">×</span>
       </div>
 
       <p style="margin: 0 0 12px 0; font-size: 13px; color: #555; line-height: 1.5;">
-        東京都・大阪府の中央卸売市場の市況を開きます。
+        大阪市中央卸売市場の品目別市況を表示します。必要に応じて公式サイトも開けます。
       </p>
+
+      <!-- 大阪市本場の品目別テーブルは market.js が挿入 -->
 
       <button type="button" id="marketOpenTokyo"
         style="width:100%; background:#e65100; color:#fff; border:none; padding:14px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:15px; text-align:left; margin-bottom:10px;">
@@ -561,8 +563,8 @@
 
       <button type="button" id="marketOpenOsaka"
         style="width:100%; background:#1565C0; color:#fff; border:none; padding:14px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:15px; text-align:left; margin-bottom:10px;">
-        🏯 大阪府・大阪市中央卸売市場 市況
-        <div style="font-size:11px; font-weight:normal; opacity:0.9; margin-top:4px;">大阪市市場の品目別日報・取扱量</div>
+        🏯 大阪市中央卸売市場 公式サイト
+        <div style="font-size:11px; font-weight:normal; opacity:0.9; margin-top:4px;">品目別日報・月報のWeb表示</div>
       </button>
 
       <button type="button" id="marketOpenOsakaPref"
