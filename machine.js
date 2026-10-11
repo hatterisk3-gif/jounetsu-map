@@ -678,7 +678,8 @@ function openMachineRegisterModal(editId) {
         document.getElementById('regMachineGroup').value = existing.group || '';
         document.getElementById('regMachineType').value = existing.type || '';
         document.getElementById('regLocation').value = existing.location || '';
-        refreshMachineRegSignOptions(existing.signId || existing.currentLocId || '');
+        const regSignEl = document.getElementById('regSign');
+        if (regSignEl) regSignEl.value = existing.signId || existing.currentLocId || '';
         const workCats = String(existing.workCategory || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
         renderRegWorkCategoryRows(workCats.length ? workCats : ['']);
         document.getElementById('regPurchaseDate').value = formatDateInputValue(existing.purchaseDate);
@@ -692,7 +693,8 @@ function openMachineRegisterModal(editId) {
     } else {
         if (title) title.textContent = '⚙️ 機械登録';
         document.getElementById('regLocation').value = '';
-        refreshMachineRegSignOptions('');
+        const regSignEl = document.getElementById('regSign');
+        if (regSignEl) regSignEl.value = '';
         renderRegWorkCategoryRows(['']);
         document.getElementById('regPurchaseDate').value = '';
         document.getElementById('regModel').value = '';
@@ -949,11 +951,11 @@ async function removeSelectedMachineType() {
 }
 
 async function saveMachineRegistration() {
-    const signId = document.getElementById('regSign').value;
-    const sign = pdlSigns.find(s => String(s.id) === String(signId));
-    const signName = sign ? (sign.name || '') : '';
     const editId = (document.getElementById('regMachineEditId') || {}).value || '';
     const existing = editId && machines[editId] ? machines[editId] : null;
+    // 定位置看板UIは撤去。既存値は維持し、新規は空で保存
+    const signId = existing ? String(existing.signId || '') : '';
+    const signName = existing ? String(existing.signName || '') : '';
     const typeName = document.getElementById('regMachineType').value;
     const machineNumber = document.getElementById('regMachineNumber').value.trim();
     const model = document.getElementById('regModel').value.trim();
@@ -984,8 +986,8 @@ async function saveMachineRegistration() {
         workCategory: collectRegWorkCategoryValue(),
         signId: signId,
         signName: signName,
-        currentLocId: existing ? (existing.currentLocId || signId) : signId,
-        currentLocName: existing ? (existing.currentLocName || signName) : signName,
+        currentLocId: existing ? (existing.currentLocId || '') : '',
+        currentLocName: existing ? (existing.currentLocName || '') : '',
         status: existing ? (existing.status || '使用可能') : '使用可能',
         lat: existing ? (existing.lat || null) : null,
         lng: existing ? (existing.lng || null) : null,
@@ -1371,8 +1373,7 @@ function renderMachineList() {
             const pin = (m.lat && m.lng) ? '📍' : '・';
             const safeId = String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const sub = [m.group, m.type, m.machineNumber || m.serialNo].filter(Boolean).join(' / ') || '-';
-            const home = m.signName || m.location || '定位置未設定';
-            const cur = m.currentLocName || m.signName || '-';
+            const hub = m.location || '拠点未設定';
             const selected = String(currentMachineId) === String(id);
             const photoUrl = getDriveDirectImageUrl(m.photo);
             html += `<div onclick="selectMachineFromList('${safeId}')" style="display:flex; gap:10px; align-items:center; padding:10px 12px; border-bottom:1px solid #f0f0f0; cursor:pointer; background:${selected ? '#e3f2fd' : 'transparent'};">
@@ -1382,7 +1383,7 @@ function renderMachineList() {
                 <div style="flex:1; min-width:0;">
                     <div style="font-weight:bold; color:#333;">${statusIcon} ${(window.MachineTaxonomy && MachineTaxonomy.getDisplayName) ? MachineTaxonomy.getDisplayName(m) : (m.name || '(未設定)')}</div>
                     <div style="font-size:12px; color:#666;">${sub}</div>
-                    <div style="font-size:11px; color:#888;">${pin} 定位置: ${home} / 現在地: ${cur}</div>
+                    <div style="font-size:11px; color:#888;">📍 拠点: ${hub}${pin === '📍' ? ' / 地図ピンあり' : ''}</div>
                 </div>
                 <div style="display:flex; flex-direction:column; gap:4px; flex-shrink:0;" onclick="event.stopPropagation();">
                     <button type="button" onclick="editMachineFromList('${safeId}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">編集</button>
@@ -1452,15 +1453,12 @@ function loadMachineSettings() {
             const photoHtml = photoUrl
                 ? `<div style="margin-bottom:8px;"><img src="${photoUrl}" style="max-width:100%; max-height:120px; border-radius:6px;"></div>`
                 : '';
-            const homeLabel = m.signName || m.location || '-';
             detailEl.innerHTML =
                 photoHtml +
                 `機番: <b>${m.machineNumber || m.serialNo || '-'}</b><br>` +
                 `グループ: <b>${m.group || '-'}</b> / カテゴリ: <b>${m.type || '-'}</b><br>` +
                 `型式: <b>${m.model || m.modelType || '-'}</b> / 燃料: <b>${m.fuel || m.fuelType || '-'}</b><br>` +
-                `拠点: <b>${m.location || '-'}</b><br>` +
-                `定位置: <b>${homeLabel}</b>${(m.lat && m.lng) ? ' <span style="color:#888; font-size:12px;">(地図ピンあり)</span>' : ''}<br>` +
-                `現在地: <b>${m.currentLocName || m.signName || '-'}</b><br>` +
+                `拠点名: <b>${m.location || '-'}</b>${(m.lat && m.lng) ? ' <span style="color:#888; font-size:12px;">(地図ピンあり)</span>' : ''}<br>` +
                 `稼働状況: <b>${m.status || '使用可能'}</b>`;
         }
         panel.style.display = "block";
@@ -1473,7 +1471,7 @@ function focusSelectedMachine() {
     if (!currentMachineId || !machines[currentMachineId]) return;
     const m = machines[currentMachineId];
     if (!m.lat || !m.lng) {
-        alert("地図上の定位置が未設定です。先に定位置（地図ピン）を登録してください。");
+        alert("地図ピンが未設定です。");
         return;
     }
     closeModal('modalMachineSettings');

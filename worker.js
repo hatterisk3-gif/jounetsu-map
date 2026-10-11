@@ -29135,9 +29135,13 @@ function createSignboardMarker(name, pos, icon, id) {
           }, 300);
       };
 
-      window.openEditMachineModal = (machineId, signId) => {
+      window.openEditMachineModal = (machineId, signId, opts) => {
           const m = pdlMachines.find(x => x.id === machineId);
           if(!m) return;
+          window._editMachineReturnTo = (opts && opts.returnTo) || '';
+          const cancelAction = window._editMachineReturnTo === 'maintHistory'
+            ? "openWorkerMachineMaintHistoryModal_()"
+            : "document.getElementById('modal').style.display='none'";
           const locOpts = '<option value="">拠点を選択...</option>' + (pdlLocations || []).map(l => {
               const sel = String(l) === String(m.location || '') ? 'selected' : '';
               return `<option value="${String(l).replace(/"/g, '&quot;')}" ${sel}>${l}</option>`;
@@ -29149,7 +29153,7 @@ function createSignboardMarker(name, pos, icon, id) {
           }).join('');
           
           document.getElementById('modalBody').innerHTML = `
-              <h3 style="margin-top:0; color:#1976D2; border-bottom:2px solid #1976D2; padding-bottom:8px;">✏️ 農機の編集</h3>
+              <h3 style="margin-top:0; color:#1976D2; border-bottom:2px solid #1976D2; padding-bottom:8px;">✏️ 農機マスタの設定</h3>
               <div style="display:flex; gap:5px; margin-bottom:10px;">
                   <div style="flex:2;"><label class="form-label">🚜 車両名</label><input type="text" id="edit_mac_name" class="form-input" value="${(m.name || '').replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
                   <div style="flex:1;"><label class="form-label">🔢 機械番号</label><input type="text" id="edit_mac_number" class="form-input" value="${(m.machineNumber || '').replace(/"/g, '&quot;')}" style="margin-bottom:0;"></div>
@@ -29189,8 +29193,8 @@ function createSignboardMarker(name, pos, icon, id) {
               ${window.buildWorkCategoryFieldHTML('edit_mac_category_rows', '作業分類')}
               
               <div style="display:flex; gap:10px; margin-top:15px;">
-                  <button onclick="execEditMachine('${machineId}', '${signId}')" style="flex:2; padding:12px; background:#1976D2; color:white; font-weight:bold; border:none; border-radius:8px;">更新する</button>
-                  <button onclick="document.getElementById('modal').style.display='none'" style="flex:1; padding:12px; background:#ccc; color:#333; font-weight:bold; border:none; border-radius:8px;">キャンセル</button>
+                  <button onclick="execEditMachine('${machineId}', '${signId || ''}')" style="flex:2; padding:12px; background:#1976D2; color:white; font-weight:bold; border:none; border-radius:8px;">更新する</button>
+                  <button onclick="${cancelAction}" style="flex:1; padding:12px; background:#ccc; color:#333; font-weight:bold; border:none; border-radius:8px;">キャンセル</button>
               </div>
           `;
           document.getElementById('modal').style.display = 'flex';
@@ -29210,6 +29214,7 @@ function createSignboardMarker(name, pos, icon, id) {
           const fuel = (document.getElementById('edit_mac_fuel') || {}).value || '';
           const date = document.getElementById('edit_mac_date').value.replace(/-/g, '/');
           const category = window.collectWorkCategoryValue('edit_mac_category_rows');
+          const returnTo = window._editMachineReturnTo || '';
 
           document.getElementById('modalBody').innerHTML = "<div style='text-align:center; padding:30px; font-weight:bold; color:#1976D2;'>更新中...</div>";
           try {
@@ -29220,10 +29225,17 @@ function createSignboardMarker(name, pos, icon, id) {
               });
               m.name = name; m.machineNumber = number; m.model = model; m.purchaseDate = date; m.workCategory = category;
               m.type = type; m.group = group; m.location = location; m.fuel = fuel;
-              document.getElementById('modal').style.display = 'none';
-              customAlert("更新しました！");
-              openMachineStatusUI(signId);
+              window._editMachineReturnTo = '';
+              if (returnTo === 'maintHistory' && typeof window.openWorkerMachineMaintHistoryModal_ === 'function') {
+                  await window.openWorkerMachineMaintHistoryModal_();
+                  if (typeof customAlert === 'function') customAlert('更新しました！');
+              } else {
+                  document.getElementById('modal').style.display = 'none';
+                  customAlert("更新しました！");
+                  if (typeof openMachineStatusUI === 'function' && signId) openMachineStatusUI(signId);
+              }
           } catch(e) {
+              window._editMachineReturnTo = '';
               document.getElementById('modal').style.display = 'none';
               customAlert("エラー: " + e.message);
           }
@@ -34662,7 +34674,8 @@ window.labelWorkerMaintMachine_ = (m) => {
 };
 
 window.hubOfWorkerMaintMachine_ = (m) => {
-  const loc = String((m && (m.location || m.currentLocName || m.signName)) || '').trim();
+  // 置き場所（現在地看板）ではなく、農機マスタの「拠点名」でグルーピング
+  const loc = String((m && m.location) || '').trim();
   return loc || '拠点未設定';
 };
 
@@ -34727,6 +34740,7 @@ window.renderWorkerMachineMaintHistoryList_ = (merged) => {
     if (b === '拠点未設定') return -1;
     return String(a).localeCompare(String(b), 'ja');
   });
+  const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
 
   const sections = hubs.map((hub) => {
     const items = rows.filter(r => r.hub === hub).sort((a, b) => {
@@ -34756,16 +34770,23 @@ window.renderWorkerMachineMaintHistoryList_ = (merged) => {
           return `<img src="${esc(u)}" alt="" loading="lazy" onclick="${open}" style="width:36px; height:36px; object-fit:cover; border-radius:4px; border:1px solid #eee;">`;
         }).join('')}</div>`
         : '';
-      return `<button type="button" onclick="openWorkerMachineMaintHistoryForMachine_('${safeId}')"
-        style="width:100%; text-align:left; padding:10px 12px; margin-bottom:8px; border:1px solid #FFE0B2; border-radius:10px; background:${count ? '#FFF8E1' : '#fafafa'}; cursor:pointer; display:flex; gap:10px; align-items:flex-start; box-sizing:border-box;">
-        ${thumbHtml}
-        <div style="flex:1; min-width:0;">
-          <div style="font-weight:bold; color:#E65100; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(window.labelWorkerMaintMachine_(m))}</div>
-          <div style="font-size:11px; color:#888; margin-top:2px;">整備履歴 ${count} 件</div>
-          ${latestLine}
-          ${miniPhotos}
-        </div>
-      </button>`;
+      const adminBtn = isAdmin
+        ? `<button type="button" onclick="event.stopPropagation(); openWorkerMaintMachineEdit_('${safeId}')"
+            style="flex-shrink:0; margin-top:2px; padding:8px 10px; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; font-size:11px; font-weight:bold; cursor:pointer;">✏️ 設定</button>`
+        : '';
+      return `<div style="display:flex; gap:8px; align-items:stretch; margin-bottom:8px;">
+        <button type="button" onclick="openWorkerMachineMaintHistoryForMachine_('${safeId}')"
+          style="flex:1; text-align:left; padding:10px 12px; border:1px solid #FFE0B2; border-radius:10px; background:${count ? '#FFF8E1' : '#fafafa'}; cursor:pointer; display:flex; gap:10px; align-items:flex-start; box-sizing:border-box;">
+          ${thumbHtml}
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:bold; color:#E65100; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(window.labelWorkerMaintMachine_(m))}</div>
+            <div style="font-size:11px; color:#888; margin-top:2px;">整備履歴 ${count} 件</div>
+            ${latestLine}
+            ${miniPhotos}
+          </div>
+        </button>
+        ${adminBtn}
+      </div>`;
     }).join('');
     return `<div style="margin-bottom:14px;">
       <div style="display:flex; justify-content:space-between; align-items:baseline; margin:0 0 8px; padding:6px 8px; background:#FFF3E0; border-radius:8px; border-left:4px solid #E65100;">
@@ -34785,7 +34806,7 @@ window.renderWorkerMachineMaintHistoryList_ = (merged) => {
       <h3 style="margin:0; color:#E65100; font-size:17px;">🔧 整備履歴（拠点別）</h3>
       <span onclick="closeWorkerMachineMaintHistoryModal_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
     </div>
-    <p style="font-size:12px; color:#666; margin:0 0 12px; line-height:1.45;">拠点ごとに農機を表示しています。写真タップで拡大できます。</p>
+    <p style="font-size:12px; color:#666; margin:0 0 12px; line-height:1.45;">農機マスタの拠点名ごとに表示しています。${isAdmin ? '管理者は「✏️ 設定」からマスタを編集できます。' : '写真タップで拡大できます。'}</p>
     <div style="max-height:62vh; overflow-y:auto; -webkit-overflow-scrolling:touch;">${listHtml}</div>
     <div style="display:flex; gap:8px; margin-top:12px;">
       <button type="button" onclick="openWorkerMachineMaintHistoryModal_({force:true})"
@@ -34887,6 +34908,18 @@ window.backfillMissingMachineMaintenanceRecords_ = async (serverRecords, candida
   }
 };
 
+window.openWorkerMaintMachineEdit_ = (machineId) => {
+  if (typeof window.isWorkerAdmin === 'function' && !window.isWorkerAdmin()) {
+    if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+    return;
+  }
+  if (typeof window.openEditMachineModal !== 'function') {
+    if (typeof customAlert === 'function') customAlert('農機編集画面の準備ができていません。');
+    return;
+  }
+  window.openEditMachineModal(machineId, '', { returnTo: 'maintHistory' });
+};
+
 window.openWorkerMachineMaintHistoryForMachine_ = async (machineId) => {
   const modalBody = document.getElementById('modalBody');
   if (!modalBody) return;
@@ -34898,6 +34931,7 @@ window.openWorkerMachineMaintHistoryForMachine_ = async (machineId) => {
   const machinePhoto = (typeof window.getMachinePhotoUrl === 'function')
     ? window.getMachinePhotoUrl(machine)
     : '';
+  const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
 
   // キャッシュがあれば即描画（再通信しない）
   const paint = (records) => {
@@ -34905,6 +34939,10 @@ window.openWorkerMachineMaintHistoryForMachine_ = async (machineId) => {
       .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
     const headerPhoto = machinePhoto
       ? `<img src="${esc(machinePhoto)}" alt="" style="width:64px; height:64px; object-fit:cover; border-radius:8px; border:1px solid #FFE0B2; margin-right:10px;">`
+      : '';
+    const adminEditBtn = isAdmin
+      ? `<button type="button" onclick="openWorkerMaintMachineEdit_('${String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"
+          style="margin-top:8px; padding:8px 12px; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer;">✏️ 農機マスタを設定</button>`
       : '';
     const historyHtml = list.length === 0
       ? '<p style="color:#666; text-align:center; padding:20px;">整備履歴はありません。</p>'
@@ -34922,14 +34960,15 @@ window.openWorkerMachineMaintHistoryForMachine_ = async (machineId) => {
         <h3 style="margin:0; color:#E65100; font-size:16px;">📋 整備履歴</h3>
         <span onclick="closeWorkerMachineMaintHistoryModal_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
       </div>
-      <div style="display:flex; align-items:center; margin:0 0 12px;">
+      <div style="display:flex; align-items:flex-start; margin:0 0 12px;">
         ${headerPhoto}
         <div style="min-width:0;">
           <div style="font-size:14px; font-weight:bold; color:#333;">${esc(label)}</div>
-          <div style="font-size:12px; color:#888; margin-top:2px;">📍 ${esc(hub)} ／ ${list.length}件</div>
+          <div style="font-size:12px; color:#888; margin-top:2px;">📍 拠点: ${esc(hub)} ／ ${list.length}件</div>
+          ${adminEditBtn}
         </div>
       </div>
-      <div style="max-height:54vh; overflow-y:auto; border:1px solid #eee; border-radius:8px; padding:10px; margin-bottom:12px;">
+      <div style="max-height:50vh; overflow-y:auto; border:1px solid #eee; border-radius:8px; padding:10px; margin-bottom:12px;">
         ${historyHtml}
       </div>
       <div style="display:flex; gap:8px;">

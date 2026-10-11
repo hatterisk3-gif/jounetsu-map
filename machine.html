@@ -207,9 +207,6 @@
     <button type="button" onclick="openBadgeSelect('fuel')">
       <span class="bar-ico">⛽</span><span>給油</span>
     </button>
-    <button type="button" onclick="openBadgeSelect('location')">
-      <span class="bar-ico">📌</span><span>置き場所</span>
-    </button>
   </div>
 
   <!-- アクションシート: 登録 -->
@@ -274,21 +271,13 @@
         <input type="text" id="regModel" placeholder="例：PH2R / MZ655">
       </div>
       <div class="form-group">
-        <label>拠点</label>
-        <select id="regLocation" onchange="refreshMachineRegSignOptions()">
+        <label>拠点名</label>
+        <select id="regLocation">
           <option value="">-- 選択 --</option>
         </select>
+        <div style="font-size:11px; color:#888; margin-top:4px;">整備履歴などのグルーピングに使います</div>
       </div>
-      <div class="form-group">
-        <label>定位置看板</label>
-        <div id="regSignWrap">
-          <select id="regSign">
-            <option value="">-- 選択（農機管理機能付き） --</option>
-          </select>
-          <div id="regSignHint" style="font-size:11px; color:#888; margin-top:4px;">拠点を選ぶと、その拠点の看板だけが表示されます</div>
-          <div id="regSignSetupBtns" style="display:none; gap:6px; flex-wrap:wrap; margin-top:6px;"></div>
-        </div>
-      </div>
+      <input type="hidden" id="regSign" value="">
       <div class="form-group">
         <label>作業分類</label>
         <div id="regWorkCategoryRows" style="background:#fafafa; border:1px solid #ddd; border-radius:6px; padding:8px; margin-bottom:6px;"></div>
@@ -430,7 +419,6 @@
         <div id="selectedVehicleDetail" style="font-size:13px; color:#555; margin-bottom:12px; line-height:1.6;"></div>
         <div class="modal-actions">
           <button class="btn btn-vehicle" onclick="editSelectedVehicle()"><span class="btn-ico">✏️</span><span class="btn-txt">編集</span></button>
-          <button class="btn" style="background:#8E24AA;" onclick="startVehicleLocationPick()"><span class="btn-ico">📌</span><span class="btn-txt">置き場所</span></button>
           <button class="btn" style="background:#FB8C00;" onclick="openVehicleStatusModal()"><span class="btn-ico">🔄</span><span class="btn-txt">稼働状況</span></button>
           <button class="btn" style="background:#546E7A;" onclick="focusSelectedVehicle()"><span class="btn-ico">🗺</span><span class="btn-txt">地図表示</span></button>
         </div>
@@ -485,7 +473,7 @@
   <script src="machine-taxonomy.js?v=1788600000011" defer></script>
   <script src="map-loading.js?v=1786243000000" defer></script>
   <script src="api-client.js?v=1788510000000" defer></script>
-  <script src="machine.js?v=1788600000044" defer></script>
+  <script src="machine.js?v=1788600000045" defer></script>
   <script src="tracking.js?v=1787790000000" defer></script>
   <script>
     function openMachineActionSheet(id) {
