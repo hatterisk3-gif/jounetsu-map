@@ -214,6 +214,7 @@ const API_ACTIONS = {
   "changeId": function (p) { return changeId(p.userId, p.password, p.newId); },
   "changePassword": function (p) { return changePassword(p.userId, p.currentPassword, p.newPassword); },
   "machine_loadAll": function (p) { return machine_loadAll(); },
+  "machine_loadMaintenanceRecords": function (p) { return machine_loadMaintenanceRecords_(); },
   "machine_saveMachine": function (p) { return machine_saveMachine(p); },
   "machine_saveStatus": function (p) { return machine_saveStatus(p); },
   "machine_saveLocation": function (p) { return machine_saveLocation(p); },
@@ -18079,28 +18080,20 @@ function parseMachineMaintenancePhotos_(raw) {
   return [];
 }
 
-function machine_loadAll() {
-  migrateMachineMasterToNouki();
-  const masterSheet = ensureNoukiMasterSheet();
+/** 整備履歴だけを軽量取得（農機マスタ／給油を読まない） */
+function machine_loadMaintenanceRecords_() {
   const maintSheet = ensureMachineMaintenanceSheet_();
-  const fuelSheet = getOrCreateSheet('MachineFuel', ['id', 'machineId', 'date', 'hourMeter', 'fuelAmount', 'fuelCanStatus', 'capCheck']);
+  const lastRow = maintSheet.getLastRow();
+  if (lastRow < 2) return { success: true, maintenanceRecords: [] };
 
-  let machines = {};
-  let mData = masterSheet.getDataRange().getValues();
-  for (let i = 1; i < mData.length; i++) {
-    if (!mData[i][0] && !mData[i][1]) continue;
-    const m = parseNoukiMachineRow(mData[i]);
-    if (m.id) machines[m.id] = m;
-  }
-  applyNoukiDisplayNamesByModelCount_(Object.keys(machines).map(function(id) { return machines[id]; }));
-
-  let maintenanceRecords = [];
-  let maintData = maintSheet.getDataRange().getValues();
-  for (let i = 1; i < maintData.length; i++) {
+  const maintData = maintSheet.getRange(2, 1, lastRow, 7).getValues();
+  const tz = Session.getScriptTimeZone() || 'Asia/Tokyo';
+  const maintenanceRecords = [];
+  for (let i = 0; i < maintData.length; i++) {
     if (!maintData[i][0]) continue;
     let dateVal = maintData[i][2];
     if (Object.prototype.toString.call(dateVal) === '[object Date]' && !isNaN(dateVal.getTime())) {
-      dateVal = Utilities.formatDate(dateVal, Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd');
+      dateVal = Utilities.formatDate(dateVal, tz, 'yyyy-MM-dd');
     } else {
       dateVal = String(dateVal || '').trim().slice(0, 10);
     }
@@ -18114,6 +18107,25 @@ function machine_loadAll() {
       photos: parseMachineMaintenancePhotos_(maintData[i][6])
     });
   }
+  return { success: true, maintenanceRecords: maintenanceRecords };
+}
+
+function machine_loadAll() {
+  migrateMachineMasterToNouki();
+  const masterSheet = ensureNoukiMasterSheet();
+  const fuelSheet = getOrCreateSheet('MachineFuel', ['id', 'machineId', 'date', 'hourMeter', 'fuelAmount', 'fuelCanStatus', 'capCheck']);
+
+  let machines = {};
+  let mData = masterSheet.getDataRange().getValues();
+  for (let i = 1; i < mData.length; i++) {
+    if (!mData[i][0] && !mData[i][1]) continue;
+    const m = parseNoukiMachineRow(mData[i]);
+    if (m.id) machines[m.id] = m;
+  }
+  applyNoukiDisplayNamesByModelCount_(Object.keys(machines).map(function(id) { return machines[id]; }));
+
+  const maintRes = machine_loadMaintenanceRecords_();
+  const maintenanceRecords = (maintRes && maintRes.maintenanceRecords) ? maintRes.maintenanceRecords : [];
 
   let fuelRecords = [];
   let fData = fuelSheet.getDataRange().getValues();

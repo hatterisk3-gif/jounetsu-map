@@ -1189,6 +1189,14 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
               }
             } catch (e) {}
           }, 800);
+          // 整備履歴を裏で先読み（🔧ボタン押下時の待ちを短縮）
+          setTimeout(() => {
+            try {
+              if (typeof window.fetchWorkerMachineMaintenanceRecords_ === 'function') {
+                window.fetchWorkerMachineMaintenanceRecords_({ force: false }).catch(() => {});
+              }
+            } catch (e) {}
+          }, 2500);
       }
           
 
@@ -34551,14 +34559,29 @@ window.mergeMachineMaintenanceRecordsLists_ = (lists) => {
 window.collectMachineMaintenanceFromLocalWorkRecords_ = () => {
   const out = [];
   const q = new Set();
-  const pushFromData = (data) => {
+  const photoUrlsFromWork_ = (ph) => {
+    const urls = [];
+    if (!ph) return urls;
+    if (ph.url) urls.push(String(ph.url));
+    if (Array.isArray(ph.urls)) ph.urls.forEach(u => { if (u) urls.push(String(u)); });
+    if (ph.data && Array.isArray(ph.data.photoUrls)) {
+      ph.data.photoUrls.forEach(u => { if (u) urls.push(String(u)); });
+    }
+    return urls.filter(Boolean);
+  };
+  const pushFromData = (data, photoUrls) => {
     if (!data || typeof window.buildMachineMaintenanceHistorySideEffectsFromWorkData_ !== 'function') return;
     const hasTargets = (Array.isArray(data.maintenanceTargets) && data.maintenanceTargets.length)
       || String(data.maintenanceToolId || '').trim();
     if (!hasTargets) return;
     const fx = window.buildMachineMaintenanceHistorySideEffectsFromWorkData_(data, q);
     (fx || []).forEach((f) => {
-      if (f && f.params) out.push(f.params);
+      if (!f || !f.params) return;
+      const rec = Object.assign({}, f.params);
+      if (photoUrls && photoUrls.length && (!rec.photos || !rec.photos.length)) {
+        rec.photos = photoUrls.slice();
+      }
+      out.push(rec);
     });
   };
   try {
@@ -34571,7 +34594,7 @@ window.collectMachineMaintenanceFromLocalWorkRecords_ = () => {
         if (!ph || !ph.data) return;
         const isWork = (ph.type === 'work') || (ph.data && ph.data.workName);
         if (!isWork) return;
-        pushFromData(ph.data);
+        pushFromData(ph.data, photoUrlsFromWork_(ph));
       });
     });
   } catch (e) {
@@ -34587,26 +34610,27 @@ window._escMaintHistHtml_ = (s) => String(s == null ? '' : s)
 
 window.normalizeMaintHistoryPhotos_ = (r) => {
   if (!r) return [];
-  if (Array.isArray(r.photos)) {
-    return r.photos.map((u) => {
-      if (typeof u === 'string') return u;
-      if (u && u.url) return String(u.url);
-      return '';
-    }).filter(Boolean);
-  }
-  return [];
+  const raw = Array.isArray(r.photos) ? r.photos
+    : (Array.isArray(r.photoUrls) ? r.photoUrls : []);
+  return raw.map((u) => {
+    if (typeof u === 'string') return u;
+    if (u && u.url) return String(u.url);
+    return '';
+  }).map((u) => (typeof window.toDriveThumbUrl === 'function' ? window.toDriveThumbUrl(u) : u))
+    .filter(Boolean);
 };
 
-window.buildMaintHistoryPhotosHtml_ = (r) => {
+window.buildMaintHistoryPhotosHtml_ = (r, opts) => {
   const urls = window.normalizeMaintHistoryPhotos_(r);
   if (!urls.length) return '';
+  const size = (opts && opts.size) || 72;
   const esc = window._escMaintHistHtml_;
   return `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;">${urls.map((url) => {
     const safe = esc(url);
     const open = (typeof window.openLightbox === 'function')
       ? `openLightbox('${String(url).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`
       : `window.open('${String(url).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}','_blank')`;
-    return `<img src="${safe}" alt="整備写真" onclick="${open}" style="width:72px; height:72px; object-fit:cover; border-radius:6px; border:1px solid #ddd; cursor:pointer; background:#f5f5f5;">`;
+    return `<img src="${safe}" alt="整備写真" loading="lazy" onclick="${open}" style="width:${size}px; height:${size}px; object-fit:cover; border-radius:6px; border:1px solid #ddd; cursor:pointer; background:#f5f5f5;">`;
   }).join('')}</div>`;
 };
 
@@ -34615,91 +34639,223 @@ window.closeWorkerMachineMaintHistoryModal_ = () => {
   if (el) el.style.display = 'none';
 };
 
-window.openWorkerMachineMaintHistoryModal_ = async () => {
-  const modal = document.getElementById('modal');
-  const modalBody = document.getElementById('modalBody');
-  if (!modal || !modalBody) {
-    if (typeof customAlert === 'function') customAlert('画面の準備ができていません。再読み込みしてください。');
-    return;
-  }
-  const esc = window._escMaintHistHtml_;
-  modalBody.innerHTML = '<div style="text-align:center; padding:24px; font-weight:bold; color:#E65100;">整備履歴を読み込み中...</div>';
-  modal.style.display = 'flex';
+window.WORKER_MAINT_CACHE_TTL_MS_ = 3 * 60 * 1000;
 
-  const machines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
+window.isWorkerMaintHistoryCacheFresh_ = () => {
+  const at = Number(window._workerMachineMaintCacheAt || 0);
+  return !!(at && (Date.now() - at) < window.WORKER_MAINT_CACHE_TTL_MS_
+    && Array.isArray(window._workerMachineMaintenanceRecords));
+};
+
+window.getWorkerMaintMachines_ = () => {
+  return (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
     ? pdlMachines.filter(m => m && m.id && !m.isTool && !m.isVehicle)
     : [];
+};
 
+window.labelWorkerMaintMachine_ = (m) => {
+  if (!m) return '';
+  if (typeof window.buildEquipmentDisplayLabel_ === 'function') {
+    return window.buildEquipmentDisplayLabel_(m) || m.name || m.id;
+  }
+  return m.name || m.id;
+};
+
+window.hubOfWorkerMaintMachine_ = (m) => {
+  const loc = String((m && (m.location || m.currentLocName || m.signName)) || '').trim();
+  return loc || '拠点未設定';
+};
+
+/** 整備履歴を軽量APIで取得（キャッシュあり）。force で再取得 */
+window.fetchWorkerMachineMaintenanceRecords_ = async (opts) => {
+  const force = !!(opts && opts.force);
   const localCached = Array.isArray(window._workerMachineMaintenanceRecords)
     ? window._workerMachineMaintenanceRecords.slice()
     : [];
-  const fromWorks = (typeof window.collectMachineMaintenanceFromLocalWorkRecords_ === 'function')
-    ? window.collectMachineMaintenanceFromLocalWorkRecords_()
-    : [];
+
+  if (!force && window.isWorkerMaintHistoryCacheFresh_()) {
+    return { records: localCached, fromCache: true, serverRecords: localCached };
+  }
+
   let serverRecords = [];
   try {
-    const res = await callGAS('machine_loadAll', {});
+    let res = null;
+    try {
+      res = await callGAS('machine_loadMaintenanceRecords', {});
+    } catch (e1) {
+      // 旧デプロイ互換
+      res = await callGAS('machine_loadAll', {});
+    }
     if (res && Array.isArray(res.maintenanceRecords)) {
       serverRecords = res.maintenanceRecords.slice();
     }
   } catch (e) {
-    console.warn('machine_loadAll failed', e);
+    console.warn('fetchWorkerMachineMaintenanceRecords_', e);
   }
-  // サーバー・端末キャッシュ・作業記録由来をマージ（同期漏れでも一覧に出す）
+
   const merged = (typeof window.mergeMachineMaintenanceRecordsLists_ === 'function')
-    ? window.mergeMachineMaintenanceRecordsLists_([serverRecords, localCached, fromWorks])
-    : serverRecords.concat(localCached, fromWorks);
+    ? window.mergeMachineMaintenanceRecordsLists_([serverRecords, localCached])
+    : serverRecords.concat(localCached);
   window._workerMachineMaintenanceRecords = merged.slice();
+  window._workerMachineMaintCacheAt = Date.now();
+  return { records: merged, fromCache: false, serverRecords: serverRecords };
+};
 
-  // シート未反映分を裏で補完保存
-  if (typeof window.backfillMissingMachineMaintenanceRecords_ === 'function') {
-    window.backfillMissingMachineMaintenanceRecords_(serverRecords, fromWorks.concat(localCached));
-  }
-
+window.renderWorkerMachineMaintHistoryList_ = (merged) => {
+  const modalBody = document.getElementById('modalBody');
+  if (!modalBody) return;
+  const esc = window._escMaintHistHtml_;
+  const machines = window.getWorkerMaintMachines_();
   const byMachine = new Map();
-  merged.forEach((r) => {
+  (merged || []).forEach((r) => {
     const id = String((r && r.machineId) || '').trim();
     if (!id) return;
     if (!byMachine.has(id)) byMachine.set(id, []);
     byMachine.get(id).push(r);
   });
 
-  const labelOf = (m) => {
-    if (!m) return '';
-    if (typeof window.buildEquipmentDisplayLabel_ === 'function') {
-      return window.buildEquipmentDisplayLabel_(m) || m.name || m.id;
-    }
-    return m.name || m.id;
-  };
+  const rows = machines.map((m) => {
+    const recs = byMachine.get(String(m.id)) || [];
+    recs.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    return { m, count: recs.length, latest: recs[0] || null, hub: window.hubOfWorkerMaintMachine_(m) };
+  });
 
-  const withHistory = machines
-    .map((m) => ({ m, count: (byMachine.get(String(m.id)) || []).length }))
-    .sort((a, b) => {
+  // 拠点順 → 履歴件数多い順 → 名前
+  const hubs = [...new Set(rows.map(r => r.hub))];
+  hubs.sort((a, b) => {
+    if (a === '拠点未設定') return 1;
+    if (b === '拠点未設定') return -1;
+    return String(a).localeCompare(String(b), 'ja');
+  });
+
+  const sections = hubs.map((hub) => {
+    const items = rows.filter(r => r.hub === hub).sort((a, b) => {
       if (b.count !== a.count) return b.count - a.count;
-      return String(labelOf(a.m)).localeCompare(String(labelOf(b.m)), 'ja');
+      return String(window.labelWorkerMaintMachine_(a.m))
+        .localeCompare(String(window.labelWorkerMaintMachine_(b.m)), 'ja');
     });
-
-  const listHtml = withHistory.length === 0
-    ? '<p style="color:#666; text-align:center; padding:16px;">登録されている農機がありません。</p>'
-    : withHistory.map(({ m, count }) => {
+    const hubCount = items.reduce((s, x) => s + x.count, 0);
+    const cards = items.map(({ m, count, latest }) => {
       const safeId = String(m.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const machinePhoto = (typeof window.getMachinePhotoUrl === 'function')
+        ? window.getMachinePhotoUrl(m)
+        : '';
+      const latestPhotos = latest ? window.normalizeMaintHistoryPhotos_(latest).slice(0, 2) : [];
+      const thumb = machinePhoto || latestPhotos[0] || '';
+      const thumbHtml = thumb
+        ? `<img src="${esc(thumb)}" alt="" loading="lazy" style="width:56px; height:56px; object-fit:cover; border-radius:8px; border:1px solid #FFE0B2; background:#fff; flex-shrink:0;">`
+        : `<div style="width:56px; height:56px; border-radius:8px; background:#FFF3E0; border:1px dashed #FFCC80; display:flex; align-items:center; justify-content:center; color:#FF9800; font-size:22px; flex-shrink:0;">🔧</div>`;
+      const latestLine = latest
+        ? `<div style="font-size:11px; color:#666; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">直近: ${esc(latest.date || '')} ${esc(latest.material || '')}</div>`
+        : `<div style="font-size:11px; color:#aaa; margin-top:3px;">整備履歴なし</div>`;
+      const miniPhotos = latestPhotos.length
+        ? `<div style="display:flex; gap:4px; margin-top:6px;">${latestPhotos.map((u) => {
+          const open = (typeof window.openLightbox === 'function')
+            ? `event.stopPropagation(); openLightbox('${String(u).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}');`
+            : '';
+          return `<img src="${esc(u)}" alt="" loading="lazy" onclick="${open}" style="width:36px; height:36px; object-fit:cover; border-radius:4px; border:1px solid #eee;">`;
+        }).join('')}</div>`
+        : '';
       return `<button type="button" onclick="openWorkerMachineMaintHistoryForMachine_('${safeId}')"
-        style="width:100%; text-align:left; padding:12px 14px; margin-bottom:8px; border:1px solid #FFE0B2; border-radius:8px; background:${count ? '#FFF8E1' : '#fafafa'}; cursor:pointer;">
-        <div style="font-weight:bold; color:#E65100; font-size:14px;">🔧 ${esc(labelOf(m))}</div>
-        <div style="font-size:11px; color:#888; margin-top:4px;">整備履歴 ${count} 件</div>
+        style="width:100%; text-align:left; padding:10px 12px; margin-bottom:8px; border:1px solid #FFE0B2; border-radius:10px; background:${count ? '#FFF8E1' : '#fafafa'}; cursor:pointer; display:flex; gap:10px; align-items:flex-start; box-sizing:border-box;">
+        ${thumbHtml}
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:bold; color:#E65100; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(window.labelWorkerMaintMachine_(m))}</div>
+          <div style="font-size:11px; color:#888; margin-top:2px;">整備履歴 ${count} 件</div>
+          ${latestLine}
+          ${miniPhotos}
+        </div>
       </button>`;
     }).join('');
+    return `<div style="margin-bottom:14px;">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; margin:0 0 8px; padding:6px 8px; background:#FFF3E0; border-radius:8px; border-left:4px solid #E65100;">
+        <div style="font-weight:bold; color:#BF360C; font-size:13px;">📍 ${esc(hub)}</div>
+        <div style="font-size:11px; color:#888;">${items.length}台 / 履歴 ${hubCount}件</div>
+      </div>
+      ${cards || '<div style="color:#999; font-size:12px; padding:4px 8px;">農機なし</div>'}
+    </div>`;
+  }).join('');
+
+  const listHtml = rows.length === 0
+    ? '<p style="color:#666; text-align:center; padding:16px;">登録されている農機がありません。</p>'
+    : sections;
 
   modalBody.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #E65100; padding-bottom:8px; margin-bottom:12px;">
-      <h3 style="margin:0; color:#E65100; font-size:17px;">🔧 機械別 整備履歴</h3>
+      <h3 style="margin:0; color:#E65100; font-size:17px;">🔧 整備履歴（拠点別）</h3>
       <span onclick="closeWorkerMachineMaintHistoryModal_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
     </div>
-    <p style="font-size:12px; color:#666; margin:0 0 12px; line-height:1.45;">作業記録・一括入力で登録した整備もここに反映されます。機械を選んでください。</p>
+    <p style="font-size:12px; color:#666; margin:0 0 12px; line-height:1.45;">拠点ごとに農機を表示しています。写真タップで拡大できます。</p>
     <div style="max-height:62vh; overflow-y:auto; -webkit-overflow-scrolling:touch;">${listHtml}</div>
-    <button type="button" onclick="closeWorkerMachineMaintHistoryModal_()"
-      style="width:100%; margin-top:12px; padding:12px; background:#ccc; color:#333; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">閉じる</button>
+    <div style="display:flex; gap:8px; margin-top:12px;">
+      <button type="button" onclick="openWorkerMachineMaintHistoryModal_({force:true})"
+        style="flex:1; padding:12px; background:#FFF3E0; color:#E65100; border:1px solid #FFB74D; border-radius:8px; font-weight:bold; cursor:pointer;">🔄 再読込</button>
+      <button type="button" onclick="closeWorkerMachineMaintHistoryModal_()"
+        style="flex:1; padding:12px; background:#ccc; color:#333; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">閉じる</button>
+    </div>
   `;
+};
+
+window.openWorkerMachineMaintHistoryModal_ = async (opts) => {
+  const modal = document.getElementById('modal');
+  const modalBody = document.getElementById('modalBody');
+  if (!modal || !modalBody) {
+    if (typeof customAlert === 'function') customAlert('画面の準備ができていません。再読み込みしてください。');
+    return;
+  }
+  const force = !!(opts && opts.force);
+  modal.style.display = 'flex';
+
+  // キャッシュがあれば即表示して待ちをなくす
+  const hasCache = Array.isArray(window._workerMachineMaintenanceRecords)
+    && window._workerMachineMaintenanceRecords.length >= 0
+    && window._workerMachineMaintCacheAt;
+  if (hasCache && !force) {
+    window.renderWorkerMachineMaintHistoryList_(window._workerMachineMaintenanceRecords);
+  } else {
+    modalBody.innerHTML = '<div style="text-align:center; padding:24px; font-weight:bold; color:#E65100;">整備履歴を読み込み中...</div>';
+  }
+
+  try {
+    const res = await window.fetchWorkerMachineMaintenanceRecords_({ force: force || !window.isWorkerMaintHistoryCacheFresh_() });
+    window.renderWorkerMachineMaintHistoryList_(res.records || []);
+
+    // 作業記録からの補完・未反映保存は裏で（UIを待たせない）
+    setTimeout(() => {
+      try {
+        const fromWorks = (typeof window.collectMachineMaintenanceFromLocalWorkRecords_ === 'function')
+          ? window.collectMachineMaintenanceFromLocalWorkRecords_()
+          : [];
+        if (fromWorks.length) {
+          const merged = (typeof window.mergeMachineMaintenanceRecordsLists_ === 'function')
+            ? window.mergeMachineMaintenanceRecordsLists_([
+              window._workerMachineMaintenanceRecords || [],
+              fromWorks
+            ])
+            : (window._workerMachineMaintenanceRecords || []).concat(fromWorks);
+          window._workerMachineMaintenanceRecords = merged;
+          const body = document.getElementById('modalBody');
+          if (body && modal.style.display === 'flex' && String(body.innerHTML || '').indexOf('整備履歴（拠点別）') >= 0) {
+            window.renderWorkerMachineMaintHistoryList_(merged);
+          }
+        }
+        if (typeof window.backfillMissingMachineMaintenanceRecords_ === 'function') {
+          window.backfillMissingMachineMaintenanceRecords_(
+            res.serverRecords || [],
+            fromWorks.concat(Array.isArray(window._workerMachineMaintenanceRecords)
+              ? window._workerMachineMaintenanceRecords : [])
+          );
+        }
+      } catch (e) {
+        console.warn('maint history background merge', e);
+      }
+    }, 0);
+  } catch (e) {
+    console.warn(e);
+    if (!hasCache) {
+      modalBody.innerHTML = `<div style="padding:20px; color:#c62828; text-align:center;">読み込みに失敗しました。<br><button type="button" onclick="openWorkerMachineMaintHistoryModal_({force:true})" style="margin-top:12px; padding:10px 16px; border:none; border-radius:8px; background:#E65100; color:#fff; font-weight:bold;">再試行</button></div>`;
+    }
+  }
 };
 
 window.backfillMissingMachineMaintenanceRecords_ = async (serverRecords, candidates) => {
@@ -34736,82 +34892,68 @@ window.openWorkerMachineMaintHistoryForMachine_ = async (machineId) => {
   if (!modalBody) return;
   const esc = window._escMaintHistHtml_;
   const id = String(machineId || '').trim();
-  const machine = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
-    ? pdlMachines.find(m => m && String(m.id) === id)
-    : null;
-  const label = machine
-    ? ((typeof window.buildEquipmentDisplayLabel_ === 'function')
-      ? (window.buildEquipmentDisplayLabel_(machine) || machine.name || id)
-      : (machine.name || id))
-    : id;
+  const machine = window.getWorkerMaintMachines_().find(m => m && String(m.id) === id) || null;
+  const label = window.labelWorkerMaintMachine_(machine) || id;
+  const hub = window.hubOfWorkerMaintMachine_(machine);
+  const machinePhoto = (typeof window.getMachinePhotoUrl === 'function')
+    ? window.getMachinePhotoUrl(machine)
+    : '';
+
+  // キャッシュがあれば即描画（再通信しない）
+  const paint = (records) => {
+    const list = (records || []).filter(r => String(r.machineId) === id)
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    const headerPhoto = machinePhoto
+      ? `<img src="${esc(machinePhoto)}" alt="" style="width:64px; height:64px; object-fit:cover; border-radius:8px; border:1px solid #FFE0B2; margin-right:10px;">`
+      : '';
+    const historyHtml = list.length === 0
+      ? '<p style="color:#666; text-align:center; padding:20px;">整備履歴はありません。</p>'
+      : list.map((r) => `
+          <div style="border-bottom:1px solid #eee; padding:12px 0;">
+            <div style="font-size:12px; color:#888;">${esc(r.date)}</div>
+            <div style="font-weight:bold; color:#333; margin-top:2px;">資材・内容: ${esc(r.material || '-')}</div>
+            <div style="font-size:13px; margin-top:2px;">部品: ${esc(r.replaceParts || '-')}</div>
+            <div style="font-size:13px; margin-top:4px; color:#555;">${esc(r.comment || '')}</div>
+            ${(typeof window.buildMaintHistoryPhotosHtml_ === 'function') ? window.buildMaintHistoryPhotosHtml_(r, { size: 88 }) : ''}
+          </div>
+        `).join('');
+    modalBody.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #E65100; padding-bottom:8px; margin-bottom:10px;">
+        <h3 style="margin:0; color:#E65100; font-size:16px;">📋 整備履歴</h3>
+        <span onclick="closeWorkerMachineMaintHistoryModal_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
+      </div>
+      <div style="display:flex; align-items:center; margin:0 0 12px;">
+        ${headerPhoto}
+        <div style="min-width:0;">
+          <div style="font-size:14px; font-weight:bold; color:#333;">${esc(label)}</div>
+          <div style="font-size:12px; color:#888; margin-top:2px;">📍 ${esc(hub)} ／ ${list.length}件</div>
+        </div>
+      </div>
+      <div style="max-height:54vh; overflow-y:auto; border:1px solid #eee; border-radius:8px; padding:10px; margin-bottom:12px;">
+        ${historyHtml}
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button type="button" onclick="openWorkerMachineMaintHistoryModal_()"
+          style="flex:1; padding:12px; background:#FFF3E0; color:#E65100; border:1px solid #FFB74D; border-radius:8px; font-weight:bold; cursor:pointer;">← 拠点一覧</button>
+        <button type="button" onclick="closeWorkerMachineMaintHistoryModal_()"
+          style="flex:1; padding:12px; background:#ccc; color:#333; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">閉じる</button>
+      </div>
+    `;
+  };
+
+  if (window.isWorkerMaintHistoryCacheFresh_()) {
+    paint(window._workerMachineMaintenanceRecords || []);
+    return;
+  }
 
   modalBody.innerHTML = '<div style="text-align:center; padding:24px; font-weight:bold;">履歴を取得中...</div>';
-
-  const localCached = (Array.isArray(window._workerMachineMaintenanceRecords)
-    ? window._workerMachineMaintenanceRecords
-    : []).filter(r => String(r.machineId) === id);
-  const fromWorks = ((typeof window.collectMachineMaintenanceFromLocalWorkRecords_ === 'function')
-    ? window.collectMachineMaintenanceFromLocalWorkRecords_()
-    : []).filter(r => String(r.machineId) === id);
-
-  let serverRecords = [];
   try {
-    const res = await callGAS('machine_loadAll', {});
-    if (res && Array.isArray(res.maintenanceRecords)) {
-      serverRecords = res.maintenanceRecords.slice();
-      const mergedAll = (typeof window.mergeMachineMaintenanceRecordsLists_ === 'function')
-        ? window.mergeMachineMaintenanceRecordsLists_([
-          serverRecords,
-          window._workerMachineMaintenanceRecords || [],
-          (typeof window.collectMachineMaintenanceFromLocalWorkRecords_ === 'function')
-            ? window.collectMachineMaintenanceFromLocalWorkRecords_()
-            : []
-        ])
-        : serverRecords;
-      window._workerMachineMaintenanceRecords = mergedAll;
-    }
+    const res = await window.fetchWorkerMachineMaintenanceRecords_({ force: false });
+    paint(res.records || []);
   } catch (e) {
     console.warn(e);
+    paint(window._workerMachineMaintenanceRecords || []);
   }
-
-  const serverForMachine = serverRecords.filter(r => String(r.machineId) === id);
-  let records = (typeof window.mergeMachineMaintenanceRecordsLists_ === 'function')
-    ? window.mergeMachineMaintenanceRecordsLists_([serverForMachine, localCached, fromWorks])
-    : serverForMachine.concat(localCached, fromWorks);
-
-  if (typeof window.backfillMissingMachineMaintenanceRecords_ === 'function') {
-    window.backfillMissingMachineMaintenanceRecords_(serverForMachine, fromWorks.concat(localCached));
-  }
-
-  records.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-  const historyHtml = records.length === 0
-    ? '<p style="color:#666; text-align:center; padding:20px;">整備履歴はありません。</p>'
-    : records.map((r) => `
-        <div style="border-bottom:1px solid #eee; padding:10px 0;">
-          <div style="font-size:12px; color:#888;">${esc(r.date)}</div>
-          <div style="font-weight:bold; color:#333; margin-top:2px;">資材・内容: ${esc(r.material || '-')}</div>
-          <div style="font-size:13px; margin-top:2px;">部品: ${esc(r.replaceParts || '-')}</div>
-          <div style="font-size:13px; margin-top:4px; color:#555;">${esc(r.comment || '')}</div>
-          ${(typeof window.buildMaintHistoryPhotosHtml_ === 'function') ? window.buildMaintHistoryPhotosHtml_(r) : ''}
-        </div>
-      `).join('');
-
-  modalBody.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #E65100; padding-bottom:8px; margin-bottom:10px;">
-      <h3 style="margin:0; color:#E65100; font-size:16px;">📋 整備履歴</h3>
-      <span onclick="closeWorkerMachineMaintHistoryModal_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
-    </div>
-    <p style="margin:0 0 10px; font-size:13px;">対象: <b>${esc(label)}</b></p>
-    <div style="max-height:58vh; overflow-y:auto; border:1px solid #eee; border-radius:8px; padding:10px; margin-bottom:12px;">
-      ${historyHtml}
-    </div>
-    <div style="display:flex; gap:8px;">
-      <button type="button" onclick="openWorkerMachineMaintHistoryModal_()"
-        style="flex:1; padding:12px; background:#FFF3E0; color:#E65100; border:1px solid #FFB74D; border-radius:8px; font-weight:bold; cursor:pointer;">← 機械一覧</button>
-      <button type="button" onclick="closeWorkerMachineMaintHistoryModal_()"
-        style="flex:1; padding:12px; background:#ccc; color:#333; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">閉じる</button>
-    </div>
-  `;
 };
 
 window.toggleBulkWorkMemoWorkList_ = (uid) => {
