@@ -1232,12 +1232,14 @@ async function fetchWeatherAndUpdateUI() {
         }
 
         map = new google.maps.Map(document.getElementById('map'), { center: centerPos, zoom: zoomLevel, maxZoom: 30, mapTypeId: 'hybrid', gestureHandling: 'greedy', disableDefaultUI: true, zoomControl: false });
+        window.map = map;
         
         google.maps.event.addListenerOnce(map, 'idle', () => {
             // Native scaling enabled by NOT overriding satType.maxZoom
         });
 
         infoWindow = new google.maps.InfoWindow();
+        window.infoWindow = infoWindow;
         google.maps.event.addListener(map, 'click', () => infoWindow.close());
 
         map.addListener('zoom_changed', () => { 
@@ -1534,6 +1536,12 @@ async function fetchWeatherAndUpdateUI() {
       }
 
       function showPopup(p, latLng) {
+        // 土壌水分表示中は、予定ポップアップの代わりに条件・土質の編集を開く
+        if (window._soilMoistureOverlayOn && p && !p.isMarker
+            && typeof window.openSoilMoistureFieldEditor === 'function') {
+          window.openSoilMoistureFieldEditor(p, latLng);
+          return;
+        }
         const tasks = p.filteredTasks; // フィルター済みのタスクを使用
         const cropWorks = (tasks || []).filter(t => t.cpKind === 'work' || (t.isCultivation && t.cpKind === 'work'));
         const plantWorks = (tasks || []).filter(t => t.cpKind === 'plant' || String(t.workName || '').trim() === '定植');

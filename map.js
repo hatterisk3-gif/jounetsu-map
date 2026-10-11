@@ -687,6 +687,7 @@ function initMap() {
         draggable: true,
         disableDoubleClickZoom: false
     });
+    window.map = map;
 
     map.addListener('idle', () => {
         let center = map.getCenter();
@@ -881,7 +882,11 @@ function drawPolygons(dataList) {
         labelMarker._fieldId = pData.id || pData.name;
         markers.push(labelMarker);
 
-        const handleFieldClick = () => {
+        const handleFieldClick = (e) => {
+            if (window._soilMoistureOverlayOn && typeof window.openSoilMoistureFieldEditor === 'function') {
+                window.openSoilMoistureFieldEditor(pData, e && e.latLng);
+                return;
+            }
             migratePDataManure(pData);
             const catSt = getCatStatus(pData, activeProdCategoryId);
             const hadPin = !!catSt.has_pin || (activeProdCategoryId === COMPOST_CATEGORY_ID && pData.manure_has_pin);

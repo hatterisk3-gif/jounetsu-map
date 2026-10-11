@@ -1083,11 +1083,189 @@
     }
     if (applySoilMoistureColors()) {
       const m = insights.moisture != null ? Math.round(insights.moisture) : '';
-      showMoistureToast_('土壌水分を表示（土質補正あり・地域基準 ' + m + '%）', 'ok');
+      showMoistureToast_('土壌水分を表示（圃場タップで条件・土質を変更できます）', 'ok');
     } else {
       showMoistureToast_('表示できる圃場がありません', 'error');
     }
   }
+
+  function getFieldConditionOptions_() {
+    const lists = [
+      global.pdlConditions,
+      global.cultivationMaster && global.cultivationMaster.conditions,
+      global.weatherSunshineState && global.weatherSunshineState.conditions
+    ];
+    for (let i = 0; i < lists.length; i++) {
+      if (Array.isArray(lists[i]) && lists[i].length) {
+        return lists[i].map(String).filter(Boolean);
+      }
+    }
+    return ['露地', 'ハウス', 'トンネル', '雨よけ'];
+  }
+
+  function findSoilMoistureFieldMeta_(fieldId) {
+    const id = String(fieldId || '');
+    const loaded = global.loadedPolygons;
+    if (loaded && loaded[id]) return loaded[id];
+    if (loaded && typeof loaded === 'object') {
+      const hit = Object.keys(loaded).map(k => loaded[k]).find(p => p && String(p.id) === id);
+      if (hit) return hit;
+    }
+    const list = global.polygons;
+    if (Array.isArray(list)) {
+      for (let i = 0; i < list.length; i++) {
+        const poly = list[i];
+        const pd = poly && poly.pData;
+        if (pd && String(pd.id) === id) {
+          return Object.assign({}, pd, { polygon: poly, photos: pd.photos });
+        }
+      }
+    }
+    return null;
+  }
+
+  function getSoilMoistureInfoWindow_() {
+    if (global.infoWindow && typeof global.infoWindow.setContent === 'function') return global.infoWindow;
+    if (!global._soilMoistureEditInfoWindow && global.google && google.maps) {
+      global._soilMoistureEditInfoWindow = new google.maps.InfoWindow();
+    }
+    return global._soilMoistureEditInfoWindow;
+  }
+
+  function escSmHtml_(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /** 土壌水分表示中：圃場タップで条件・土質を編集 */
+  function openSoilMoistureFieldEditor(meta, latLng) {
+    if (!meta || meta.isMarker) return false;
+    const mapObj = global.map;
+    const iw = getSoilMoistureInfoWindow_();
+    if (!mapObj || !iw) return false;
+
+    const insights = ensureAgriInsightsReady_();
+    const resolved = resolveFieldMoisturePct_(meta, insights || { moisture: BASE_MOISTURE });
+    const lb = moistureLabel(resolved.pct);
+    const fieldId = String(meta.id || '');
+    const safeId = fieldId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const condOpts = getFieldConditionOptions_();
+    const curCond = String(meta.condition || '');
+    if (curCond && condOpts.indexOf(curCond) < 0) condOpts.unshift(curCond);
+    const soils = ['粘土質', '砂質', '壌質'];
+    const curSoil = String(meta.soilType || '');
+
+    const condHtml = condOpts.map(c =>
+      `<option value="${escSmHtml_(c)}" ${c === curCond ? 'selected' : ''}>${escSmHtml_(c)}</option>`
+    ).join('');
+    const soilHtml = soils.map(s =>
+      `<option value="${escSmHtml_(s)}" ${s === curSoil ? 'selected' : ''}>${escSmHtml_(s)}</option>`
+    ).join('');
+
+    let pos = latLng;
+    if (!pos && meta.polygon && typeof meta.polygon.getPath === 'function') {
+      try {
+        const b = new google.maps.LatLngBounds();
+        meta.polygon.getPath().forEach(pt => b.extend(pt));
+        pos = b.getCenter();
+      } catch (e) {}
+    }
+    if (!pos && meta.marker && typeof meta.marker.getPosition === 'function') {
+      pos = meta.marker.getPosition();
+    }
+
+    iw.setContent(`
+      <div style="width:min(260px,86vw);padding:6px 4px;font-family:sans-serif;box-sizing:border-box;">
+        <div style="font-weight:800;font-size:14px;color:#0d47a1;margin-bottom:4px;">🌱 ${escSmHtml_(meta.name || '圃場')}</div>
+        <div style="font-size:12px;margin-bottom:8px;padding:6px 8px;border-radius:8px;background:${lb.bg};color:${lb.color};font-weight:bold;">
+          推定水分 ${resolved.pct}%（${lb.text}）／土質補正: ${escSmHtml_(resolved.soilLabel)}
+        </div>
+        <label style="display:block;font-size:11px;font-weight:bold;color:#555;margin-bottom:3px;">条件</label>
+        <select id="smEditCondition" style="width:100%;padding:8px;border:1px solid #90caf9;border-radius:6px;box-sizing:border-box;margin-bottom:8px;font-size:13px;">
+          <option value="">未設定</option>
+          ${condHtml}
+        </select>
+        <label style="display:block;font-size:11px;font-weight:bold;color:#555;margin-bottom:3px;">土質（水分補正に使用）</label>
+        <select id="smEditSoilType" style="width:100%;padding:8px;border:1px solid #ffcc80;border-radius:6px;box-sizing:border-box;margin-bottom:10px;font-size:13px;">
+          <option value="">未設定</option>
+          ${soilHtml}
+        </select>
+        <button type="button" onclick="saveSoilMoistureFieldAttrs_('${safeId}')"
+          style="width:100%;padding:10px;background:#1565c0;color:#fff;border:none;border-radius:8px;font-weight:bold;font-size:13px;cursor:pointer;">💾 保存して水分を更新</button>
+        <div style="font-size:10px;color:#78909c;margin-top:6px;line-height:1.35;">土質を変えると、この圃場の推定水分がすぐ反映されます。</div>
+      </div>
+    `);
+    if (pos) iw.setPosition(pos);
+    iw.open(mapObj);
+    return true;
+  }
+
+  global.saveSoilMoistureFieldAttrs_ = async function(fieldId) {
+    const meta = findSoilMoistureFieldMeta_(fieldId);
+    if (!meta) {
+      showMoistureToast_('圃場が見つかりません', 'error');
+      return;
+    }
+    const condEl = document.getElementById('smEditCondition');
+    const soilEl = document.getElementById('smEditSoilType');
+    const condition = condEl ? String(condEl.value || '') : String(meta.condition || '');
+    const soilType = soilEl ? String(soilEl.value || '') : String(meta.soilType || '');
+    const userName = localStorage.getItem('passionMapUserName')
+      || localStorage.getItem('passionMapUserId')
+      || '';
+
+    const iw = getSoilMoistureInfoWindow_();
+    if (iw) {
+      iw.setContent('<div style="padding:14px;font-weight:bold;color:#1565c0;">保存中...</div>');
+    }
+
+    try {
+      if (typeof global.callGAS !== 'function') throw new Error('通信の準備ができていません');
+      await global.callGAS('updatePolygon', {
+        id: meta.id,
+        name: meta.name || '',
+        location: meta.location || '',
+        condition: condition,
+        soilType: soilType,
+        status: meta.status || '',
+        toukiId: meta.toukiId || '',
+        ridgeDir: meta.ridgeDir || '',
+        ridgeWidth: meta.ridgeWidth || '',
+        userName: userName
+      });
+      meta.condition = condition;
+      meta.soilType = soilType;
+      if (meta.pData) {
+        meta.pData.condition = condition;
+        meta.pData.soilType = soilType;
+      }
+      // schedule キャッシュも更新
+      try {
+        const cachedStr = localStorage.getItem('passionMapScheduleData');
+        if (cachedStr) {
+          const data = JSON.parse(cachedStr);
+          if (data && Array.isArray(data.polygons)) {
+            const hit = data.polygons.find(p => p && String(p.id) === String(meta.id));
+            if (hit) {
+              hit.condition = condition;
+              hit.soilType = soilType;
+              localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
+            }
+          }
+        }
+      } catch (e) {}
+
+      if (iw && typeof iw.close === 'function') iw.close();
+      if (global._soilMoistureOverlayOn) applySoilMoistureColors();
+      showMoistureToast_('圃場条件を保存しました（水分表示を更新）', 'ok');
+    } catch (e) {
+      console.warn('saveSoilMoistureFieldAttrs_', e);
+      showMoistureToast_('保存に失敗しました: ' + ((e && e.message) || e), 'error');
+      openSoilMoistureFieldEditor(meta, null);
+    }
+  };
 
   global.computeAgriWeatherInsights = computeAgriWeatherInsights;
   global.renderAgriWeatherPanelHtml = renderAgriWeatherPanelHtml;
@@ -1099,4 +1277,5 @@
   global.estimateSoilMoistureLabel = moistureLabel;
   global.computeMoisturePctForSoil = computeMoisturePctForSoil_;
   global.normalizeSoilKind = normalizeSoilKind_;
+  global.openSoilMoistureFieldEditor = openSoilMoistureFieldEditor;
 })(window);
