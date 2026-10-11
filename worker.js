@@ -14210,6 +14210,15 @@ function createSignboardMarker(name, pos, icon, id) {
               ? '車両を選ぶと、ナンバー付きの具体車両が一覧になります。'
               : '農機／車両を切り替えて選べます。'));
         const machineLabel = isDelivery ? '機械' : '農機';
+        const addKind = isVehicleKind ? 'vehicle' : 'machine';
+        const addBtnLabel = isVehicleKind ? '＋ 車両を登録' : (isDelivery ? '＋ 機械を登録' : '＋ 農機を登録');
+        const addClick = mode === 'bulk'
+          ? `addConcurrentEquipFromPicker_('bulk','${esc(uid)}','${addKind}')`
+          : `addConcurrentEquipFromPicker_('modal','','${addKind}')`;
+        const addBtnHtml = `<div style="display:flex; justify-content:flex-end; flex-wrap:wrap; gap:6px; margin:0 0 8px;">
+          <button type="button" onclick="${addClick}" style="background:#2196F3; color:#fff; border:none; border-radius:8px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; box-shadow:0 1px 3px rgba(33,150,243,0.28);">${addBtnLabel}</button>
+          ${(!isVehicleKind && !isMachineKind) ? `<button type="button" onclick="${mode === 'bulk' ? `addConcurrentEquipFromPicker_('bulk','${esc(uid)}','vehicle')` : `addConcurrentEquipFromPicker_('modal','','vehicle')`}" style="background:#00897B; color:#fff; border:none; border-radius:8px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 車両を登録</button>` : ''}
+        </div>`;
         return `<div style="margin:10px 0; padding:10px; background:#FFF8E1; border:1px solid #FFE0B2; border-radius:10px;">
           <div style="font-size:11px; font-weight:bold; color:#E65100; margin-bottom:6px;">🚜 ${esc(stepLabel)}</div>
           <div style="font-size:10px; color:#888; margin-bottom:8px; line-height:1.35;">${guide}</div>
@@ -14218,10 +14227,97 @@ function createSignboardMarker(name, pos, icon, id) {
             ${kindBtn('machine', '🚜 ', machineLabel)}
             ${kindBtn('vehicle', '🛻 ', '車両')}
           </div>
+          ${addBtnHtml}
           ${cascadeHtml}
           ${selectedChips}
           ${emptyMsg || `<div style="display:flex; flex-wrap:wrap; gap:6px; max-height:160px; overflow-y:auto;">${chips}</div>`}
         </div>`;
+      };
+
+      /** 同時作業の農機・車両ピッカーから新規登録 */
+      window.addConcurrentEquipFromPicker_ = (mode, uid, kind) => {
+        const m = mode === 'bulk' ? 'bulk' : 'modal';
+        const k = (kind === 'vehicle') ? 'vehicle' : 'machine';
+        const bulkUid = String(uid || '').trim();
+        if (typeof window.openMachineItemEditorModal !== 'function') {
+          if (typeof customAlert === 'function') customAlert('登録画面を開けませんでした。');
+          return;
+        }
+        let workCategory = '';
+        if (m === 'bulk') {
+          const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === bulkUid);
+          const draft = row ? window.ensureBulkConcurrentDraft_(row) : null;
+          workCategory = String((draft && draft.workName) || (row && row.workName) || '').trim();
+          window._concurrentEquipAddContext = { mode: 'bulk', uid: bulkUid, kind: k };
+          if (draft) window.applyConcurrentEquipKindReset_(draft, k);
+        } else {
+          const d = window.getConcurrentWorkModalDraft_();
+          workCategory = String((d && d.workName) || '').trim();
+          window._concurrentEquipAddContext = { mode: 'modal', uid: '', kind: k };
+          if (d) window.applyConcurrentEquipKindReset_(d, k);
+        }
+        window.openMachineItemEditorModal({
+          mode: 'add',
+          kind: k,
+          workCategory: workCategory || (k === 'vehicle' ? '車両' : '機械'),
+          afterSave: (rec, optionId) => {
+            const ctx = window._concurrentEquipAddContext || { mode: m, uid: bulkUid, kind: k };
+            window._concurrentEquipAddContext = null;
+            const pickId = String(optionId || (k === 'vehicle' && typeof window.getMobileVehicleOptionId_ === 'function'
+              ? window.getMobileVehicleOptionId_(rec)
+              : (rec && rec.id)) || '').trim();
+            let pickName = '';
+            if (rec) {
+              if (typeof window.buildEquipmentDisplayLabel_ === 'function') {
+                pickName = String(window.buildEquipmentDisplayLabel_(Object.assign({}, rec, {
+                  isVehicle: k === 'vehicle',
+                  kind: k
+                })) || '').trim();
+              }
+              if (!pickName && window.MachineTaxonomy && MachineTaxonomy.getDisplayName) {
+                pickName = String(MachineTaxonomy.getDisplayName(Object.assign({}, rec, { isVehicle: k === 'vehicle' })) || '').trim();
+              }
+              if (!pickName) pickName = String(rec.plateNumber || rec.name || pickId).trim();
+            }
+            const pushSelected = (draft) => {
+              if (!draft) return;
+              if (!Array.isArray(draft.usedMachines)) draft.usedMachines = [];
+              draft._equipKindFilter = k;
+              if (!pickId && !pickName) return;
+              const exists = draft.usedMachines.some(x =>
+                (pickId && String(x.id || '') === pickId) || (pickName && String(x.name || '') === pickName)
+              );
+              if (!exists) {
+                draft.usedMachines.push({
+                  id: pickId || pickName,
+                  name: pickName || pickId,
+                  kind: k
+                });
+              }
+            };
+            const refresh = () => {
+              if (ctx.mode === 'bulk') {
+                const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === String(ctx.uid || '').trim());
+                if (row) {
+                  const draft = window.ensureBulkConcurrentDraft_(row);
+                  pushSelected(draft);
+                  row._concurrentPanelOpen = true;
+                }
+                window.rerenderBulkConcurrentCard_(ctx.uid);
+              } else {
+                const d = window.getConcurrentWorkModalDraft_();
+                pushSelected(d);
+                window.renderConcurrentWorkModal_();
+              }
+            };
+            if (k === 'vehicle' && typeof window.ensureMobileVehiclesLoaded_ === 'function') {
+              window._mobileVehiclesLoaded = false;
+              window.ensureMobileVehiclesLoaded_().then(refresh).catch(refresh);
+            } else {
+              refresh();
+            }
+          }
+        });
       };
 
       window.applyConcurrentEquipKindReset_ = (draft, kind) => {
