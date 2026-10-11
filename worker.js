@@ -29584,6 +29584,78 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       /**
+       * 整備記録フォームを開く（保全/整備カテゴリを選択した作業記録）
+       */
+      window.openMaintenanceRecord = () => {
+          currentEditRecordId = null;
+          currentRecordType = 'work';
+          window._pendingOpenMaintenanceRecord = true;
+          window._specialWorkSession = null;
+          const typeModal = document.getElementById('recordTypeSelectModal');
+          if (typeModal) typeModal.style.display = 'none';
+
+          if (typeof window.findCurrentFieldAndOpenForm === 'function') {
+              window.findCurrentFieldAndOpenForm('work');
+          } else if (typeof directOpenForm === 'function') {
+              directOpenForm(null, 'work');
+          } else {
+              activePolyId = null;
+              selectedPolyIds = [];
+              if (typeof renderRecordForm === 'function') renderRecordForm();
+              const panel = document.getElementById('rightPanel');
+              if (panel) panel.classList.add('open');
+          }
+
+          const resolveMaintCategory_ = () => {
+              const cats = (typeof pdlWorkCategories !== 'undefined' && Array.isArray(pdlWorkCategories))
+                ? pdlWorkCategories
+                : ['保全/整備'];
+              const hit = cats.find(c => {
+                  const s = String(c || '').trim();
+                  return s === '保全/整備' || /整備|保全|修理/.test(s);
+              });
+              return String(hit || '保全/整備').trim();
+          };
+
+          const applyMaint = () => {
+              const maintCat = resolveMaintCategory_();
+              if (typeof window.selectWorkCategory === 'function') {
+                  try { window.selectWorkCategory(maintCat); } catch (e) {}
+              } else {
+                  const catInput = document.getElementById('rec_work_category');
+                  if (catInput) catInput.value = maintCat;
+                  if (typeof window.renderCategoryButtons === 'function') {
+                      try { window.renderCategoryButtons(maintCat); } catch (e) {}
+                  }
+                  if (typeof window.renderWorkOptions === 'function') {
+                      try { window.renderWorkOptions(maintCat, ''); } catch (e) {}
+                  }
+              }
+              // 整備・修理を含む作業名があれば先頭を選択
+              const works = (typeof pdlWorkMaster !== 'undefined' && Array.isArray(pdlWorkMaster))
+                ? pdlWorkMaster.filter(w => {
+                    if (!w) return false;
+                    const n = String(w.name || '');
+                    const c = String(w.category || '');
+                    return /整備|修理|点検/.test(n) || /整備|保全|修理/.test(c);
+                  })
+                : [];
+              const prefer = works.find(w => /整備|修理/.test(String(w.name || ''))) || works[0];
+              if (prefer && prefer.name) {
+                  if (typeof selectWorkChip === 'function') {
+                      try { selectWorkChip(String(prefer.name)); } catch (e) {}
+                  } else if (typeof handleWorkNameChange === 'function') {
+                      try { handleWorkNameChange(String(prefer.name)); } catch (e) {}
+                  }
+              }
+              window._pendingOpenMaintenanceRecord = false;
+          };
+          setTimeout(applyMaint, 80);
+          setTimeout(applyMaint, 280);
+          setTimeout(applyMaint, 520);
+      };
+
+      /**
        * 休憩を「休憩」作業記録として登録するフォームを開く（1日に何度でも新規追加）。
        * 開始＝前記録（作業 or 休憩）の終了、終了＝いま。
        */

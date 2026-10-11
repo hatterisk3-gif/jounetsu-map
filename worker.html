@@ -104,9 +104,6 @@
     <button id="btnCurrentLocation" class="map-action-btn" style="color: #4285F4;">
       📍
     </button>
-    <button id="btnMachineMaintHistory" class="map-action-btn" onclick="openWorkerMachineMaintHistoryModal_()" title="機械の整備履歴" style="color: #E65100;">
-      🔧
-    </button>
     <button id="btnGpsWorkRecord" class="map-action-btn map-action-btn--plus" onclick="document.getElementById('recordTypeSelectModal').style.display='flex'" title="記録を追加" style="color: #fff; background: #4285F4;">
       ＋
     </button>
@@ -297,6 +294,12 @@
         <button
           onclick="document.getElementById('recordTypeSelectModal').style.display='none'; openRestBreakRecord()"
           style="background: #FFF3E0; color: #E65100; padding: 15px; border-radius: 8px; border: 2px solid #FF9800; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">☕          休憩時間を登録</button>
+        <button
+          onclick="document.getElementById('recordTypeSelectModal').style.display='none'; openMaintenanceRecord()"
+          style="background: #FFF8E1; color: #E65100; padding: 15px; border-radius: 8px; border: 2px solid #FFB74D; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); text-align:left;">
+          <div>🔧 整備記録</div>
+          <div style="font-size:11px; font-weight:normal; margin-top:4px; line-height:1.35; opacity:0.9;">保全／整備カテゴリで機械の整備・修理を登録</div>
+        </button>
         <div style="background:#F3E5F5; border:1px solid #CE93D8; border-radius:8px; padding:10px; text-align:left;">
           <div style="font-size:12px; font-weight:bold; color:#6A1B9A; margin-bottom:8px;">🌱 専用記録（保存後に作業記録へ続けられます）</div>
           <div style="display:flex; flex-direction:column; gap:8px;">
@@ -512,7 +515,7 @@
   <script src="machine-taxonomy.js?v=1788600000012"></script>
   <script src="weather-agri.js?v=1788600000102"></script>
   <script src="api-client.js?v=1788600000076"></script>
-  <script src="worker.js?v=1788600000135"></script>
+  <script src="worker.js?v=1788600000136"></script>
   <script src="tracking.js?v=1788600000051"></script>
   <script>
     if ('serviceWorker' in navigator) {

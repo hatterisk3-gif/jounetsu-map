@@ -222,6 +222,12 @@
         <button
           onclick="document.getElementById('recordTypeSelectModal').style.display='none'; openRestBreakRecord()"
           style="background: #FFF3E0; color: #E65100; padding: 15px; border-radius: 8px; border: 2px solid #FF9800; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">☁E          休�E時間を登録</button>
+        <button
+          onclick="document.getElementById('recordTypeSelectModal').style.display='none'; openMaintenanceRecord()"
+          style="background: #FFF8E1; color: #E65100; padding: 15px; border-radius: 8px; border: 2px solid #FFB74D; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); text-align:left;">
+          <div>🔧 整備記録</div>
+          <div style="font-size:11px; font-weight:normal; margin-top:4px; line-height:1.35; opacity:0.9;">保全／整備カテゴリで機械の整備・修理を登録</div>
+        </button>
         <div style="background:#F3E5F5; border:1px solid #CE93D8; border-radius:8px; padding:10px; text-align:left;">
           <div style="font-size:12px; font-weight:bold; color:#6A1B9A; margin-bottom:8px;">🌱 専用記録�E�保存後に作業記録へ続けられます！E/div>
           <div style="display:flex; flex-direction:column; gap:8px;">
@@ -428,7 +434,7 @@
   <script src="machine-taxonomy.js?v=1788600000011"></script>
   <script src="weather-agri.js?v=1785489000300"></script>
   <script src="api-client.js?v=1788600000076"></script>
-  <script src="worker.js?v=1788600000135"></script>
+  <script src="worker.js?v=1788600000136"></script>
   <script src="tracking.js?v=1788600000051"></script>
   <script>
     if ('serviceWorker' in navigator) {

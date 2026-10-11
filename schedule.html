@@ -60,6 +60,8 @@
         台風</button>
       <button id="btnWeather" onclick="openWeatherModal()"
         style="margin-right:10px; background:white; color:#ff9800; border:1px solid #ccc; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; display:flex; align-items:center; cursor:pointer;">☁️</button>
+      <button id="btnMachineMaintHistory" type="button" onclick="openWorkerMachineMaintHistoryModal_()" title="機械の整備履歴"
+        style="margin-right:10px; background:white; color:#E65100; border:1px solid #ccc; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; display:flex; align-items:center; cursor:pointer;">🔧</button>
       <button id="btnSoilMoisture" onclick="toggleSoilMoistureMapOverlay()" title="推定土壌水分を地図表示"
         style="margin-right:10px; background:white; color:#1565c0; border:1px solid #ccc; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; display:flex; align-items:center; cursor:pointer;">🌱</button>
       <button class="btn-reload" onclick="location.reload()" style="margin-right:10px;">🔄 更新</button>
@@ -780,7 +782,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000102';
+    const cacheBust = '1788600000136';
     // 豚糞共有：台数＋短いGoogleマップURL＋座標（v1.49）
     // ※ https://maps.google.com/?q=緯度,経度
     // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）
@@ -902,6 +904,8 @@
       .then(() => appendScript('attendance-calendar.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('attendance-calendar.js')))
       .then(() => appendScript('market.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('market.js')))
       .then(() => appendScript('tracking.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('tracking.js')))
+      .then(() => appendScript('machine-taxonomy.js?v=' + cacheBust).catch(function () {}))
+      .then(() => appendScript('maint-history.js?v=' + cacheBust).catch(function () {}))
       .then(() => appendScript('variety_maker_catalog.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('variety_maker_catalog.js')))
       .then(() => appendScript('cultivation.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('cultivation.js')))
       .then(() => appendScript('cost_calc.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('cost_calc.js')))
