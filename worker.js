@@ -30771,7 +30771,14 @@ window.bulkWorkMemoLooseMatchScore_ = (token, target) => {
 window.bulkWorkMemoFuzzyMatchScore_ = (token, target) => {
   const tok = window.bulkWorkMemoToHalfWidthKana_(String(token || '').trim());
   const tgt = window.bulkWorkMemoToHalfWidthKana_(String(target || '').trim());
-  if (!tok || !tgt || tok.length < 2) return 0;
+  if (!tok || !tgt) return 0;
+  // 1文字は漢字のみ・作業名に含まれるときだけ（「苗」→「育苗」など）
+  if (tok.length < 2) {
+    if (tok.length === 1 && /[\u3400-\u9fff\uF900-\uFAFF々]/.test(String(token || '')) && tgt.indexOf(tok) >= 0) {
+      return 48;
+    }
+    return 0;
+  }
   if (tok === tgt) return 95;
   if (tgt.indexOf(tok) >= 0) return 55 + tok.length;
   if (tok.indexOf(tgt) >= 0 && tgt.length >= 2) return 70 + tgt.length;
@@ -30795,8 +30802,107 @@ window.splitBulkWorkMemoWorkSuggestions_ = (scoredList) => {
   const maybe = list.filter(x => x && x.score >= MAYBE_MIN && x.score < CONF && !primaryNames.has(x.name));
   return {
     primary: primary.slice(0, 8),
-    maybe: maybe.slice(0, 4)
+    maybe: maybe.slice(0, 8)
   };
+};
+
+/** 作業マスタ名／別名から、メモ照合用のキーワード索引（1文字漢字・2文字以上）を作る */
+window.getBulkWorkMemoMasterKeywordIndex_ = () => {
+  const master = (typeof pdlWorkMaster !== 'undefined' && Array.isArray(pdlWorkMaster)) ? pdlWorkMaster : [];
+  if (window._bulkWorkMemoKwIndex
+      && window._bulkWorkMemoKwIndex.ref === master
+      && window._bulkWorkMemoKwIndex.len === master.length) {
+    return window._bulkWorkMemoKwIndex;
+  }
+  const chars = new Set();
+  const digrams = new Set();
+  const words = new Set();
+  const addText = (raw) => {
+    const s = String(raw || '').trim();
+    if (!s) return;
+    const compact = s.replace(/[　\s・、。,!！?？]/g, '');
+    if (compact.length >= 2) words.add(compact);
+    for (let i = 0; i < compact.length; i++) {
+      const ch = compact.charAt(i);
+      if (/[\u3400-\u9fff\uF900-\uFAFF々]/.test(ch)) chars.add(ch);
+      if (i + 1 < compact.length) {
+        const dg = compact.slice(i, i + 2);
+        if (dg.length === 2) digrams.add(dg);
+      }
+    }
+  };
+  master.forEach(w => {
+    if (!w) return;
+    addText(w.name);
+    const aliases = typeof window.getBulkWorkMemoWorkAliases_ === 'function'
+      ? window.getBulkWorkMemoWorkAliases_(w)
+      : [];
+    aliases.forEach(addText);
+  });
+  window._bulkWorkMemoKwIndex = { ref: master, len: master.length, chars, digrams, words };
+  return window._bulkWorkMemoKwIndex;
+};
+
+/**
+ * メモ文から作業名予測用キーワードを抽出。
+ * マスタに実在する文字／語句だけを拾うので、「苗」→育苗・苗運搬 などの幅広候補が可能。
+ */
+window.extractBulkWorkMemoKeywords_ = (text) => {
+  const raw = String(text || '').trim();
+  if (!raw) return [];
+  const idx = typeof window.getBulkWorkMemoMasterKeywordIndex_ === 'function'
+    ? window.getBulkWorkMemoMasterKeywordIndex_()
+    : null;
+  if (!idx) return [];
+  let stripped = raw;
+  stripped = stripped.replace(/(\d{1,2})\s*[:：]\s*(\d{1,2})/g, ' ');
+  stripped = stripped.replace(/(\d{1,2})\s*時\s*(半|(\d{1,2})\s*分?)?/g, ' ');
+  stripped = stripped.replace(/\d+\s*分(?!間)/g, ' ');
+  stripped = stripped.replace(/(から|まで|にて|で|に|へ|を|の|が|は|と|＆|&|終了|完了|途中|した|します|する|して|です|ます)/g, ' ');
+  stripped = stripped.replace(/\s+/g, ' ').trim();
+  const compact = stripped.replace(/[　\s]/g, '');
+  const out = [];
+  const seen = new Set();
+  const add = (k) => {
+    const s = String(k || '').trim();
+    if (!s || seen.has(s)) return;
+    seen.add(s);
+    out.push(s);
+  };
+  stripped.split(/\s+/).forEach(tok => {
+    if (tok.length >= 2) add(tok);
+  });
+  (compact.match(/[\u3040-\u30ff\u3400-\u9fff\uF900-\uFAFF々〆ヵヶ\u30fc\uff66-\uff9f]+/g) || []).forEach(run => {
+    if (run.length >= 2) add(run);
+  });
+  // マスタに存在する2文字連続・漢字1文字をメモから拾う
+  for (let i = 0; i < compact.length; i++) {
+    const ch = compact.charAt(i);
+    if (idx.chars.has(ch)) add(ch);
+    if (i + 1 < compact.length) {
+      const dg = compact.slice(i, i + 2);
+      if (idx.digrams.has(dg) || idx.words.has(dg)) add(dg);
+    }
+  }
+  // 長い順を先に（より具体的な一致を優先しやすい）
+  out.sort((a, b) => b.length - a.length || a.localeCompare(b, 'ja'));
+  return out.slice(0, 40);
+};
+
+window.bulkWorkMemoKeywordHitScore_ = (keyword, target) => {
+  const key = String(keyword || '').trim();
+  const tgt = String(target || '').trim();
+  if (!key || !tgt) return 0;
+  if (!window.bulkWorkMemoKanaKeyContains_(tgt, key)
+      && tgt.indexOf(key) < 0
+      && window.bulkWorkMemoToHalfWidthKana_(tgt).indexOf(window.bulkWorkMemoToHalfWidthKana_(key)) < 0) {
+    return 0;
+  }
+  if (key.length >= 4) return 62 + Math.min(18, key.length);
+  if (key.length === 3) return 58;
+  if (key.length === 2) return 52;
+  // 1文字漢字：候補表示（もしかして）向け。自動確定はしない
+  return 46;
 };
 
 /** 作業マスタの類似作業名（別名）一覧 */
@@ -30956,6 +31062,13 @@ window.suggestBulkWorkMemoWorkNames_ = (text, startTime, _depth) => {
   jpRuns.forEach(run => {
     if (tokens.indexOf(run) < 0) tokens.push(run);
   });
+  // メモ内の「苗」など短い語も含め、マスタに実在するキーワードを幅広く拾う
+  const keywords = (typeof window.extractBulkWorkMemoKeywords_ === 'function')
+    ? window.extractBulkWorkMemoKeywords_(stripped || t)
+    : [];
+  keywords.forEach(k => {
+    if (k && tokens.indexOf(k) < 0) tokens.push(k);
+  });
 
   const scoreTokenAgainstName_ = (tok, compareName, masterName, cat, matchedAlias) => {
     const score = window.bulkWorkMemoFuzzyMatchScore_(tok, compareName);
@@ -30999,6 +31112,20 @@ window.suggestBulkWorkMemoWorkNames_ = (text, startTime, _depth) => {
 
     tokens.forEach(tok => {
       scoreTokenAgainstName_(tok, name, name, cat, '');
+      // キーワードが作業名に含まれる逆引き（「苗」→「育苗」「苗運搬」など）
+      if (typeof window.bulkWorkMemoKeywordHitScore_ === 'function') {
+        const kwScore = window.bulkWorkMemoKeywordHitScore_(tok, name);
+        if (kwScore) bump(name, kwScore, cat, '');
+      }
+    });
+    // 別名側のキーワード逆引き
+    aliases.forEach(alias => {
+      const a = String(alias || '').trim();
+      if (!a || typeof window.bulkWorkMemoKeywordHitScore_ !== 'function') return;
+      keywords.forEach(tok => {
+        const kwScore = window.bulkWorkMemoKeywordHitScore_(tok, a);
+        if (kwScore) bump(name, kwScore, cat, a);
+      });
     });
   });
 
@@ -31016,7 +31143,7 @@ window.suggestBulkWorkMemoWorkNames_ = (text, startTime, _depth) => {
 
   return Array.from(scores.values())
     .sort((a, b) => b.score - a.score || b.name.length - a.name.length || a.name.localeCompare(b.name, 'ja'))
-    .slice(0, 12);
+    .slice(0, 16);
 };
 
 window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
@@ -35026,7 +35153,7 @@ window.refreshBulkWorkMemoWorkSuggestions_ = (d) => {
   const sorted = Array.from(scored.values()).sort((a, b) => b.score - a.score);
   const split = window.splitBulkWorkMemoWorkSuggestions_(sorted);
   d.workCandidates = split.primary.map(x => x.name).filter(Boolean).slice(0, 8);
-  d.workMaybeCandidates = split.maybe.map(x => x.name).filter(Boolean).slice(0, 4);
+  d.workMaybeCandidates = split.maybe.map(x => x.name).filter(Boolean).slice(0, 8);
   d.workAliasHints = typeof window.buildBulkWorkMemoAliasHintsFromScored_ === 'function'
     ? window.buildBulkWorkMemoAliasHintsFromScored_(sorted)
     : {};
@@ -36740,7 +36867,7 @@ window.buildBulkWorkMemoWorkChipsHtml_ = (d, uid) => {
   maybeNames = maybeNames.filter(n => !window.isBulkWorkMemoRestWorkName_(n) && names.indexOf(n) < 0 && (!allowed.size || allowed.has(n)));
   if (cur && names.indexOf(cur) < 0 && !window.isBulkWorkMemoRestWorkName_(cur)) names.unshift(cur);
   names = names.filter(Boolean).slice(0, 8);
-  maybeNames = maybeNames.filter(Boolean).slice(0, 4);
+  maybeNames = maybeNames.filter(Boolean).slice(0, 8);
   if (!names.length && !maybeNames.length) {
     return '<div style="font-size:11px; color:#888; margin-bottom:8px;">メモから近い作業名が見つかりません。下の「一覧から選ぶ」から選んでください。</div>';
   }
