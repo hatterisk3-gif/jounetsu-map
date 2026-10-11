@@ -1249,9 +1249,13 @@ async function fetchWeatherAndUpdateUI() {
               if(z < 17) p.marker.setLabel(null); 
               else if(p.labelConfig) p.marker.setLabel(p.labelConfig); 
             } else if(p.marker) {
-              p.marker.setVisible(z >= 14); 
+              // 土壌水分表示中は % ラベルを常時見せる
+              p.marker.setVisible(window._soilMoistureOverlayOn ? true : (z >= 14)); 
             }
-          } 
+          }
+          if (window._soilMoistureOverlayOn && typeof window.applySoilMoistureColors === 'function') {
+            window.applySoilMoistureColors();
+          }
         });
 
         map.addListener('idle', () => {
@@ -1522,6 +1526,10 @@ async function fetchWeatherAndUpdateUI() {
               }
             }
           }
+        }
+        // 土壌水分オーバーレイ中は色・%ラベルを再適用（予定色で上書きされないように）
+        if (window._soilMoistureOverlayOn && typeof window.applySoilMoistureColors === 'function') {
+          window.applySoilMoistureColors();
         }
       }
 

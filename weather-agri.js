@@ -708,12 +708,127 @@
     return clamp(boost, 0, 30);
   }
 
+  /** 土質キー（粘土質 / 砂質 / 壌質） */
+  function normalizeSoilKind_(soilType) {
+    const t = String(soilType || '').trim();
+    if (!t) return 'unknown';
+    if (t.indexOf('粘土') >= 0) return 'clay';
+    if (t.indexOf('砂') >= 0) return 'sand';
+    if (t.indexOf('壌') >= 0) return 'loam';
+    return 'unknown';
+  }
+
+  function soilKindLabel_(kind) {
+    if (kind === 'clay') return '粘土質';
+    if (kind === 'sand') return '砂質';
+    if (kind === 'loam') return '壌質';
+    return '未設定';
+  }
+
+  /**
+   * 土質パラメータ
+   * rainRetain: 降雨の保持しやすさ / etFactor: 蒸発の効きやすさ / baseBias: 初期水分の偏り
+   */
+  function soilHydrologyParams_(kind) {
+    switch (kind) {
+      case 'clay':
+        // 保水力が高い・乾きにくい
+        return { rainRetain: 1.35, etFactor: 0.70, baseBias: 8 };
+      case 'sand':
+        // 排水が良い・乾きやすい
+        return { rainRetain: 0.62, etFactor: 1.40, baseBias: -10 };
+      case 'loam':
+        return { rainRetain: 1.05, etFactor: 0.95, baseBias: 0 };
+      default:
+        return { rainRetain: 1.0, etFactor: 1.0, baseBias: 0 };
+    }
+  }
+
+  function getPolySoilType_(meta) {
+    if (!meta) return '';
+    if (meta.soilType) return String(meta.soilType);
+    if (meta.pData && meta.pData.soilType) return String(meta.pData.soilType);
+    return '';
+  }
+
+  /** 天気日次データ＋土質で圃場ごとの推定水分を再計算 */
+  function computeMoisturePctForSoil_(daily, todayStr, soilType) {
+    if (!daily || !daily.time || !todayStr) return null;
+    const todayIndex = daily.time.indexOf(todayStr);
+    if (todayIndex < 0) return null;
+    const kind = normalizeSoilKind_(soilType);
+    const params = soilHydrologyParams_(kind);
+    const tmaxA = daily.temperature_2m_max || [];
+    const tminA = daily.temperature_2m_min || [];
+    const rainA = daily.precipitation_sum || [];
+    const sunA = daily.sunshine_duration || [];
+    const windA = daily.wind_speed_10m_max || [];
+    let moisture = BASE_MOISTURE + params.baseBias;
+    for (let i = 0; i <= todayIndex; i++) {
+      const rain = num(rainA[i]);
+      const et = estimateDailyET(tmaxA[i], tminA[i], sunA[i], windA[i]);
+      moisture = clamp(moisture + rain * 1.15 * params.rainRetain - et * params.etFactor, 12, 98);
+    }
+    return Math.round(moisture);
+  }
+
+  /** 日次データが無いときの簡易補正（地域推定＋無降水日数） */
+  function adjustMoistureBySoilFallback_(baseMoisture, soilType, dryStreak) {
+    const kind = normalizeSoilKind_(soilType);
+    const streak = Math.max(0, num(dryStreak));
+    if (kind === 'clay') {
+      return Math.round(clamp(baseMoisture + 8 + Math.min(streak, 6) * 1.2, 12, 98));
+    }
+    if (kind === 'sand') {
+      return Math.round(clamp(baseMoisture - 10 - Math.min(streak, 8) * 1.6, 12, 98));
+    }
+    if (kind === 'loam') {
+      return Math.round(clamp(baseMoisture + 1, 12, 98));
+    }
+    return Math.round(clamp(baseMoisture, 12, 98));
+  }
+
+  function resolveFieldMoisturePct_(meta, insights) {
+    const soilType = getPolySoilType_(meta);
+    const st = global.weatherSunshineState || {};
+    const daily = st.data && st.data.daily;
+    const todayStr = st.todayStr || (insights && insights.todayStr);
+    let base = null;
+    if (daily && todayStr) {
+      base = computeMoisturePctForSoil_(daily, todayStr, soilType);
+    }
+    if (base == null) {
+      base = adjustMoistureBySoilFallback_(
+        insights && insights.moisture != null ? insights.moisture : BASE_MOISTURE,
+        soilType,
+        insights && insights.dryStreak
+      );
+    }
+    const pct = clamp(base + getRecentIrrigationBoost(meta), 12, 98);
+    return {
+      pct: Math.round(pct),
+      soilType: soilType,
+      soilKind: normalizeSoilKind_(soilType),
+      soilLabel: soilKindLabel_(normalizeSoilKind_(soilType))
+    };
+  }
+
+  /** 視認性の高い段階色（乾き=茶橙 → 適湿=緑 → 湿り=青） */
   function moistureFillColor(pct) {
-    if (pct < 35) return '#ffcc80';
-    if (pct < 48) return '#ffe082';
-    if (pct <= 68) return '#a5d6a7';
-    if (pct <= 80) return '#81d4fa';
-    return '#64b5f6';
+    if (pct < 30) return '#bf360c';
+    if (pct < 38) return '#e65100';
+    if (pct < 46) return '#f9a825';
+    if (pct < 54) return '#9ccc65';
+    if (pct <= 65) return '#43a047';
+    if (pct <= 74) return '#039be5';
+    if (pct <= 84) return '#1565c0';
+    return '#0d47a1';
+  }
+
+  function moistureStrokeColor(pct) {
+    if (pct < 38) return '#fff8e1';
+    if (pct <= 65) return '#ffffff';
+    return '#e3f2fd';
   }
 
   function showMoistureToast_(msg, kind) {
@@ -728,6 +843,112 @@
     }
     if (typeof customAlert === 'function') customAlert(msg);
     else alert(msg);
+  }
+
+  function ensureSoilMoistureLabelStyle_() {
+    if (document.getElementById('soilMoistureLabelStyle')) return;
+    const style = document.createElement('style');
+    style.id = 'soilMoistureLabelStyle';
+    style.textContent = [
+      '.soil-moisture-label{',
+      'background:rgba(0,0,0,.72)!important;color:#fff!important;',
+      'padding:2px 7px!important;border-radius:999px!important;',
+      'border:1px solid rgba(255,255,255,.55)!important;',
+      'font-size:12px!important;font-weight:800!important;letter-spacing:.02em;',
+      'white-space:nowrap!important;box-shadow:0 2px 6px rgba(0,0,0,.35);',
+      '}'
+    ].join('');
+    document.head.appendChild(style);
+  }
+
+  function ensureSoilMoistureLegend_() {
+    let el = document.getElementById('soilMoistureLegend');
+    if (el) return el;
+    el = document.createElement('div');
+    el.id = 'soilMoistureLegend';
+    el.style.cssText = [
+      'display:none',
+      'position:fixed',
+      'left:10px',
+      'bottom:max(88px, calc(12px + env(safe-area-inset-bottom, 0px)))',
+      'z-index:2100',
+      'background:rgba(15,23,42,.92)',
+      'color:#fff',
+      'padding:10px 12px',
+      'border-radius:12px',
+      'box-shadow:0 6px 18px rgba(0,0,0,.35)',
+      'font-size:11px',
+      'line-height:1.35',
+      'max-width:min(280px, calc(100vw - 24px))',
+      'pointer-events:none',
+      'box-sizing:border-box'
+    ].join(';');
+    document.body.appendChild(el);
+    return el;
+  }
+
+  function showSoilMoistureLegend_(insights) {
+    ensureSoilMoistureLabelStyle_();
+    const el = ensureSoilMoistureLegend_();
+    const regional = insights && insights.moisture != null ? Math.round(insights.moisture) : '-';
+    const swatches = [
+      { c: '#bf360c', t: '乾' },
+      { c: '#e65100', t: '' },
+      { c: '#f9a825', t: 'やや乾' },
+      { c: '#43a047', t: '適湿' },
+      { c: '#039be5', t: 'やや湿' },
+      { c: '#0d47a1', t: '湿' }
+    ];
+    const bar = swatches.map(s =>
+      `<div style="flex:1;min-width:28px;text-align:center;">
+        <div style="height:14px;background:${s.c};border-radius:3px;border:1px solid rgba(255,255,255,.35);"></div>
+        <div style="margin-top:2px;font-size:9px;color:#cfd8dc;">${s.t}</div>
+      </div>`
+    ).join('');
+    el.innerHTML = `
+      <div style="font-weight:800;font-size:12px;margin-bottom:6px;color:#80cbc4;">🌱 推定土壌水分（土質補正あり）</div>
+      <div style="display:flex;gap:3px;margin-bottom:6px;">${bar}</div>
+      <div style="color:#e0f7fa;font-size:10px;">地域基準 ${regional}% ／ 圃場ごとに土質・潅水で補正</div>
+      <div style="margin-top:4px;color:#b0bec5;font-size:10px;">粘土＝保水↑　砂＝乾きやすい　壌＝標準　数字＝推定%</div>
+    `;
+    el.style.display = 'block';
+  }
+
+  function hideSoilMoistureLegend_() {
+    const el = document.getElementById('soilMoistureLegend');
+    if (el) el.style.display = 'none';
+  }
+
+  function setSoilMoistureLabel_(meta, pct, labelInfo) {
+    const marker = meta && meta.marker;
+    if (!marker || typeof marker.setLabel !== 'function') return;
+    if (!marker._soilMoistureLabelBackupDone) {
+      try {
+        marker._soilMoistureLabelBackup = typeof marker.getLabel === 'function' ? marker.getLabel() : null;
+      } catch (e) {
+        marker._soilMoistureLabelBackup = null;
+      }
+      marker._soilMoistureLabelBackupDone = true;
+    }
+    const short = labelInfo && labelInfo.text ? String(labelInfo.text).replace('気味', '').replace('すぎ', '') : '';
+    marker.setLabel({
+      text: Math.round(pct) + '% ' + short,
+      color: '#ffffff',
+      fontSize: '12px',
+      fontWeight: 'bold',
+      className: 'soil-moisture-label'
+    });
+    try { marker.setVisible(true); } catch (e) {}
+  }
+
+  function restoreSoilMoistureLabel_(meta) {
+    const marker = meta && meta.marker;
+    if (!marker || !marker._soilMoistureLabelBackupDone) return;
+    try {
+      marker.setLabel(marker._soilMoistureLabelBackup || null);
+    } catch (e) {}
+    delete marker._soilMoistureLabelBackup;
+    delete marker._soilMoistureLabelBackupDone;
   }
 
   /** worker(loadedPolygons) と圃場マップ(polygons配列)の両方に対応 */
@@ -747,7 +968,9 @@
     if (Array.isArray(list) && list.length) {
       list.forEach(poly => {
         if (!poly || typeof poly.setOptions !== 'function') return;
-        const meta = poly.pData ? { pData: poly.pData, photos: poly.pData.photos } : poly;
+        const meta = poly.pData
+          ? { pData: poly.pData, photos: poly.pData.photos, soilType: poly.pData.soilType, marker: poly.labelMarker || poly.marker }
+          : poly;
         fn(poly, meta);
         count++;
       });
@@ -755,24 +978,30 @@
     return count;
   }
 
-  function paintSoilMoisturePolygon_(gPoly, meta, baseMoisture) {
+  function paintSoilMoisturePolygon_(gPoly, meta, insights) {
     if (!gPoly || typeof gPoly.setOptions !== 'function') return;
     if (!gPoly._soilMoistureBackup) {
       gPoly._soilMoistureBackup = {
         fillColor: gPoly.fillColor,
         fillOpacity: gPoly.fillOpacity,
         strokeColor: gPoly.strokeColor,
-        strokeWeight: gPoly.strokeWeight
+        strokeWeight: gPoly.strokeWeight,
+        zIndex: gPoly.zIndex
       };
     }
-    const pct = clamp(baseMoisture + getRecentIrrigationBoost(meta), 12, 98);
+    const resolved = resolveFieldMoisturePct_(meta, insights);
+    const pct = resolved.pct;
+    const lb = moistureLabel(pct);
     gPoly._soilMoisturePct = pct;
+    gPoly._soilMoistureSoil = resolved.soilLabel;
     gPoly.setOptions({
       fillColor: moistureFillColor(pct),
-      fillOpacity: 0.55,
-      strokeColor: '#37474f',
-      strokeWeight: 1.5
+      fillOpacity: 0.78,
+      strokeColor: moistureStrokeColor(pct),
+      strokeWeight: 2.5,
+      zIndex: (gPoly._soilMoistureBackup.zIndex || 1) + 20
     });
+    setSoilMoistureLabel_(meta, pct, lb);
   }
 
   function ensureAgriInsightsReady_() {
@@ -802,12 +1031,13 @@
   function applySoilMoistureColors() {
     const insights = ensureAgriInsightsReady_();
     if (!insights) return false;
-    const base = insights.moisture;
+    ensureSoilMoistureLabelStyle_();
     const painted = forEachSoilMoistureTarget_(function (gPoly, meta) {
-      paintSoilMoisturePolygon_(gPoly, meta, base);
+      paintSoilMoisturePolygon_(gPoly, meta, insights);
     });
     if (!painted) return false;
     global._soilMoistureOverlayOn = true;
+    showSoilMoistureLegend_(insights);
     const btn = document.getElementById('btnSoilMoisture');
     if (btn) {
       btn.style.background = '#1565c0';
@@ -817,18 +1047,22 @@
   }
 
   function clearSoilMoistureColors() {
-    forEachSoilMoistureTarget_(function (gPoly) {
+    forEachSoilMoistureTarget_(function (gPoly, meta) {
+      restoreSoilMoistureLabel_(meta);
       if (!gPoly._soilMoistureBackup) return;
       gPoly.setOptions({
         fillColor: gPoly._soilMoistureBackup.fillColor,
         fillOpacity: gPoly._soilMoistureBackup.fillOpacity,
         strokeColor: gPoly._soilMoistureBackup.strokeColor,
-        strokeWeight: gPoly._soilMoistureBackup.strokeWeight
+        strokeWeight: gPoly._soilMoistureBackup.strokeWeight,
+        zIndex: gPoly._soilMoistureBackup.zIndex
       });
       delete gPoly._soilMoistureBackup;
       delete gPoly._soilMoisturePct;
+      delete gPoly._soilMoistureSoil;
     });
     global._soilMoistureOverlayOn = false;
+    hideSoilMoistureLegend_();
     const btn = document.getElementById('btnSoilMoisture');
     if (btn) {
       btn.style.background = '';
@@ -849,7 +1083,7 @@
     }
     if (applySoilMoistureColors()) {
       const m = insights.moisture != null ? Math.round(insights.moisture) : '';
-      showMoistureToast_('地図に土壌水分を表示（地域推定 ' + m + '%）', 'ok');
+      showMoistureToast_('土壌水分を表示（土質補正あり・地域基準 ' + m + '%）', 'ok');
     } else {
       showMoistureToast_('表示できる圃場がありません', 'error');
     }
@@ -863,4 +1097,6 @@
   global.applySoilMoistureColors = applySoilMoistureColors;
   global.clearSoilMoistureColors = clearSoilMoistureColors;
   global.estimateSoilMoistureLabel = moistureLabel;
+  global.computeMoisturePctForSoil = computeMoisturePctForSoil_;
+  global.normalizeSoilKind = normalizeSoilKind_;
 })(window);
