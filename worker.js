@@ -8549,8 +8549,7 @@ function createSignboardMarker(name, pos, icon, id) {
         section.style.display = show ? 'block' : 'none';
         if (!show && typeof window.syncFieldMachineryFuelPairing_ === 'function') {
           const wNameNow = (document.getElementById('rec_work_name')?.value || '').trim();
-          const keepFuelOpen = (typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wNameNow))
-            || (typeof window.isFuelDetailWorkSelected_ === 'function' && window.isFuelDetailWorkSelected_());
+          const keepFuelOpen = (typeof window.isFuelDetailWorkSelected_ === 'function' && window.isFuelDetailWorkSelected_());
           if (!keepFuelOpen) window.setExtraRecordOpen_('fuel', false);
         }
         if (show) {
@@ -16611,13 +16610,13 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         const pairFuel = typeof window.shouldPairFuelWithFieldMachinery_ === 'function'
           && window.shouldPairFuelWithFieldMachinery_();
-        const fuelByName = typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(name);
         const fuelByDetail = typeof window.isFuelDetailWorkSelected_ === 'function' && window.isFuelDetailWorkSelected_();
-        if (fuelByName || pairFuel || fuelByDetail) {
+        // 作業名「給油」だけでは給油記録を出さない（詳細作業の給油／圃場農機×軽油のみ）
+        if (pairFuel || fuelByDetail) {
           defs.push({ key: 'fuel', label: '給油記録', emoji: '⛽', color: '#C2185B' });
         }
         // 整備・点検の詳細作業として給油を選んだ場合は、整備パネルも合わせて残す
-        if (!fuelByName && !pairFuel
+        if (!pairFuel
             && typeof window.isMaintenanceRelatedWork === 'function' && window.isMaintenanceRelatedWork(name)) {
           defs.push({ key: 'maintenance', label: '整備・修理詳細', emoji: '🔧', color: '#E65100' });
         }
@@ -16752,11 +16751,8 @@ function createSignboardMarker(name, pos, icon, id) {
             window.clearMaintenanceFormFields_();
           }
         }
-        // 給油は給油記録パネルを自動で開く
-        if (typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(name)) {
-          window.setExtraRecordOpen_('fuel', true);
-        }
-        // 整備・点検などで詳細作業に給油を選んでいる場合も開く
+        // 作業名「給油」だけでは給油記録を自動で開かない
+        // 整備・点検などで詳細作業に給油を選んでいる場合は開く
         if (typeof window.isFuelDetailWorkSelected_ === 'function' && window.isFuelDetailWorkSelected_()) {
           window._fuelDetailWorkActive = true;
           window.setExtraRecordOpen_('fuel', true);
@@ -18578,14 +18574,10 @@ function createSignboardMarker(name, pos, icon, id) {
         return names.some(n => window.isFuelWorkName(n));
       };
 
-      /** 給油記録パネルを出す条件（作業名が給油 / 詳細作業が給油 / 圃場農機×軽油） */
+      /** 給油記録パネルを出す条件（詳細作業が給油 / 圃場農機×軽油）。作業名「給油」だけでは出さない */
       window.isFuelRecordApplicable_ = (workName) => {
         const formCat = String(document.getElementById('rec_work_category')?.value || '').trim();
         if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(formCat)) return false;
-        const wName = workName != null
-          ? String(workName)
-          : (document.getElementById('rec_work_name')?.value || '');
-        if (window.isFuelWorkName(wName)) return true;
         if (window.isFuelDetailWorkSelected_()) return true;
         return typeof window.shouldPairFuelWithFieldMachinery_ === 'function'
           && window.shouldPairFuelWithFieldMachinery_();
@@ -22758,7 +22750,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   if (typeof window.updateMaintenanceTargetInfoBadge === 'function') window.updateMaintenanceTargetInfoBadge();
                }, 100);
             }
-            if (d.refuelRecord || (d.workName && typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(d.workName))) {
+            if (d.refuelRecord) {
               setTimeout(() => {
                 window.setExtraRecordOpen_('fuel', true);
                 const recs = Array.isArray(d.refuelRecord)
@@ -25945,11 +25937,6 @@ function createSignboardMarker(name, pos, icon, id) {
               ? window.collectWorkFuelRecordData()
               : null;
             const fuelList = !fuelRaw ? [] : (Array.isArray(fuelRaw) ? fuelRaw : [fuelRaw]);
-            if (typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wName) && !fuelList.length) {
-              customAlert('給油記録では給油する機械・車両と給油量を入力してください。');
-              if (btn) { btn.disabled = false; btn.innerText = isEditBtn ? "更新する" : "保存する"; }
-              return;
-            }
             if (fuelList.length) {
               for (let fi = 0; fi < fuelList.length; fi++) {
                 const fuelRec = fuelList[fi];
@@ -31179,9 +31166,9 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
     concurrentWorks: (work.isRest || !Array.isArray(concurrentGuess.concurrentWorks))
       ? []
       : concurrentGuess.concurrentWorks.slice(),
-    usedMachines: (uiFlags.isDelivery || !uiFlags.showMachine) ? [] : (mentionedMachines.length ? mentionedMachines : []),
-    usedMaterials: (uiFlags.isDelivery || !uiFlags.showMaterial) ? [] : (mentionedMaterials.length ? mentionedMaterials : []),
-    usedTools: (uiFlags.isDelivery || !uiFlags.showTool) ? [] : (mentionedTools.length ? mentionedTools : []),
+    usedMachines: !uiFlags.showMachine ? [] : (mentionedMachines.length ? mentionedMachines : []),
+    usedMaterials: !uiFlags.showMaterial ? [] : (mentionedMaterials.length ? mentionedMaterials : []),
+    usedTools: !uiFlags.showTool ? [] : (mentionedTools.length ? mentionedTools : []),
     assetMoves: [],
     usedPesticides: uiFlags.showPesticide ? (window.guessBulkWorkMemoPesticides_(workMatchText) || []) : [],
     _pestSearchQ: '',
@@ -32548,11 +32535,14 @@ window.getBulkWorkMemoUiFlags_ = (draft) => {
   };
   const hasMats = Array.isArray(draft && draft.usedMaterials) && draft.usedMaterials.some(m => m && (m.id || m.name));
   const hasTools = Array.isArray(draft && draft.usedTools) && draft.usedTools.some(t => t && (t.id || t.name));
-  // 運搬は「移動物の置き場所」で扱う。使用機械／資材／道具のチェックUIは出さない
+  // 移動物UIが有効なときだけ、運搬では使用機械／資材／道具のチェックUIを出さない
+  const useAssetMoveUi = !!isDelivery && (typeof window.isBulkAssetMoveUiEnabled_ === 'function'
+    ? window.isBulkAssetMoveUiEnabled_()
+    : !!window.BULK_ASSET_MOVE_UI_ENABLED);
   return {
-    showMachine: isDelivery ? false : (isMachineryCat ? true : pick(w && w.showMachine, inferred.showMachine)),
-    showMaterial: isDelivery ? false : (hasMats ? true : pick(w && w.showMaterial, inferred.showMaterial)),
-    showTool: isDelivery ? false : (hasTools ? true : false),
+    showMachine: useAssetMoveUi ? false : (isMachineryCat ? true : pick(w && w.showMachine, inferred.showMachine)),
+    showMaterial: useAssetMoveUi ? false : (hasMats ? true : pick(w && w.showMaterial, inferred.showMaterial)),
+    showTool: useAssetMoveUi ? false : (hasTools ? true : false),
     showPesticide: pick(w && w.showPesticide, inferred.showPesticide),
     showField: pick(w && w.showField, inferred.showField),
     isPrep: false,
@@ -32773,12 +32763,10 @@ window.getBulkWorkMemoMachineList_ = (draft) => {
   return allItems;
 };
 
-/** 一括入力：給油作業か（作業名 or 詳細作業に給油） */
+/** 一括入力：給油記録UIを出すか（詳細作業に給油があるときのみ。作業名「給油」だけでは出さない） */
 window.bulkWorkMemoIsFuel_ = (draft) => {
   const cat = String(draft && draft.category || '').trim();
   if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat)) return false;
-  const wName = String(draft && draft.workName || '').trim();
-  if (typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wName)) return true;
   const details = Array.isArray(draft && draft.detailedWorks) ? draft.detailedWorks : [];
   return details.some(n => typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(n));
 };
@@ -36977,7 +36965,8 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
         open: d._toolPickOpen === true || !(Array.isArray(d.usedTools) && d.usedTools.length)
       });
     }
-    if (flags.isDelivery || (typeof window.bulkWorkMemoIsDelivery_ === 'function' && window.bulkWorkMemoIsDelivery_(d))) {
+    if ((typeof window.isBulkAssetMoveUiEnabled_ === 'function' ? window.isBulkAssetMoveUiEnabled_() : !!window.BULK_ASSET_MOVE_UI_ENABLED)
+        && (flags.isDelivery || (typeof window.bulkWorkMemoIsDelivery_ === 'function' && window.bulkWorkMemoIsDelivery_(d)))) {
       const allMoves = Array.isArray(d.assetMoves) ? d.assetMoves.filter(a => a && (a.id || a.name)) : [];
       const doneMoves = allMoves.filter(a => a && a.toId);
       const summary = allMoves.length
@@ -37966,7 +37955,9 @@ window.pickBulkWorkMemoWorkName_ = (uid, name) => {
     if (!flags.showMaterial && !flags.isDelivery) row.usedMaterials = [];
     if (!flags.showTool && !flags.isDelivery) row.usedTools = [];
   }
-  if (flags.isDelivery && typeof window.ensureBulkAssetMovesSynced_ === 'function') {
+  if (flags.isDelivery
+      && (typeof window.isBulkAssetMoveUiEnabled_ === 'function' ? window.isBulkAssetMoveUiEnabled_() : !!window.BULK_ASSET_MOVE_UI_ENABLED)
+      && typeof window.ensureBulkAssetMovesSynced_ === 'function') {
     // 移動物はモーダル側が正。used* を合わせる（メモ推定では載せない）
     window.ensureBulkAssetMovesSynced_(row);
   }
@@ -38496,7 +38487,12 @@ window.closeBulkAssetMoveModal_ = () => {
   window._bulkAssetMoveModalUid = '';
 };
 
+/** 移動物の置き場所UI（いったんOFF。戻すときは true） */
+window.BULK_ASSET_MOVE_UI_ENABLED = false;
+window.isBulkAssetMoveUiEnabled_ = () => !!window.BULK_ASSET_MOVE_UI_ENABLED;
+
 window.openBulkAssetMoveModal_ = (uid) => {
+  if (typeof window.isBulkAssetMoveUiEnabled_ === 'function' && !window.isBulkAssetMoveUiEnabled_()) return;
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
   if (!row) return;
   window.ensureBulkAssetMovesSynced_(row);
