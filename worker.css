@@ -462,6 +462,13 @@ body.bulk-work-memo-map-picking .map-action-bar {
 .map-action-bar.map-selecting-mode .map-action-btn:not(#btnCurrentLocation) {
   display: none !important;
 }
+/* 畝の長さ計測中は地図操作に集中できるよう他UIを隠す */
+body.ridge-measuring-mode .map-action-bar,
+body.ridge-measuring-mode #mainControlPanel,
+body.ridge-measuring-mode #rightPanel,
+body.ridge-measuring-mode #clockOutNudgeBanner {
+  display: none !important;
+}
 .map-action-btn {
   pointer-events: auto;
   width: 50px;

@@ -1999,11 +1999,19 @@ window.openTyphoonModal = function() {
           window.toggleMeasureToolMenu();
         };
 
+        window.setRidgeMeasureChromeHidden_ = (hidden) => {
+          try {
+            document.body.classList.toggle('ridge-measuring-mode', !!hidden);
+          } catch (e) {}
+        };
+
         window.openRidgeMeasureTool = () => {
           if (window._isFieldAreaMeasuring) window.closeFieldAreaMeasureTool();
           window.closeMeasureToolChooser();
           window._isRidgeMeasuring = true;
           window.resetRidgeMeasurePoints();
+          try { if (infoWindow && infoWindow.close) infoWindow.close(); } catch (e) {}
+          window.setRidgeMeasureChromeHidden_(true);
 
           const bar = document.getElementById('ridgeMeasureBar');
           if (bar) bar.style.display = 'block';
@@ -2016,6 +2024,7 @@ window.openTyphoonModal = function() {
         window.closeRidgeMeasureTool = () => {
           window._isRidgeMeasuring = false;
           window.resetRidgeMeasurePoints();
+          window.setRidgeMeasureChromeHidden_(false);
 
           const bar = document.getElementById('ridgeMeasureBar');
           if (bar) bar.style.display = 'none';
@@ -2348,7 +2357,11 @@ window.openTyphoonModal = function() {
 function createSignboardMarker(name, pos, icon, id) {
         const zoom = map.getZoom(), config = { text: name, color: '#333', fontSize: '13px', fontWeight: 'bold', className: 'signboard-label' };
         const marker = new google.maps.Marker({ position: pos, map: map, visible: zoom >= 15, label: zoom >= 17 ? config : null, icon: { url: `data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="20">${icon}</text></svg>`, scaledSize: new google.maps.Size(26,26), labelOrigin: new google.maps.Point(13,30) } });
-        google.maps.event.addListener(marker, 'click', (e) => { 
+        google.maps.event.addListener(marker, 'click', (e) => {
+          if (window._isRidgeMeasuring && typeof window.handleRidgeMeasureMapClick === 'function') {
+            window.handleRidgeMeasureMapClick(e);
+            return;
+          }
           if (isMapSelecting) {
              if (window._deliveryDestMapSelectMode && typeof window.handleDeliveryDestMapTap === 'function') {
                window.handleDeliveryDestMapTap(id);
@@ -2390,6 +2403,11 @@ function createSignboardMarker(name, pos, icon, id) {
       /** 圃場ポリゴン／ラベルタップ（マップ選択中は選択、通常時は作業・生育メニュー） */
       function handleFieldPolygonClick_(id, e) {
         if (typeof window.stopMapEvent_ === 'function') window.stopMapEvent_(e);
+        // 距離計測中はポップアップを出さず、タップ位置に計測点を打つ
+        if (window._isRidgeMeasuring && typeof window.handleRidgeMeasureMapClick === 'function') {
+          window.handleRidgeMeasureMapClick(e);
+          return;
+        }
         if (window._isFieldAreaMeasuring && typeof window.handleFieldAreaMeasureTap_ === 'function') {
           window.handleFieldAreaMeasureTap_(id);
           return;
@@ -2420,6 +2438,13 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.showPolygonActionMenu_ = (id, latLng, e) => {
         if (typeof window.stopMapEvent_ === 'function') window.stopMapEvent_(e);
+        // 距離計測中はメニューを出さない（計測点優先）
+        if (window._isRidgeMeasuring) {
+          if (typeof window.handleRidgeMeasureMapClick === 'function' && e) {
+            window.handleRidgeMeasureMapClick(e);
+          }
+          return;
+        }
         if (typeof window.isBulkWorkMemoModalOpen_ === 'function' && window.isBulkWorkMemoModalOpen_()) return;
         const p = loadedPolygons[id];
         if (!p) return;
@@ -45285,12 +45310,6 @@ window.openMyPage = function() {
             <button type="button" id="myAuthOpenBtn" onclick="openScriptAuthorizationUrl()" style="display:none; width:100%; background:#1a73e8; color:white; border:none; padding:11px; border-radius:6px; font-weight:bold; cursor:pointer; margin-bottom:8px;">🔐 権限を許可する（新しいタブ）</button>
             <button type="button" onclick="loadMyAuthorizationStatus()" style="width:100%; background:#fff; color:#1565c0; border:1px solid #90caf9; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">🔄 許可状態を再確認</button>
             <div id="myAuthHint" style="margin-top:8px; font-size:11px; color:#666; line-height:1.5;"></div>
-        </div>
-
-        <h4 style="color:#2e7d32; margin-bottom:10px; margin-top:5px;">🗓️ マイ・スケジュール</h4>
-        <div style="background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px; padding:12px; margin-bottom:15px;">
-            <div style="font-size:12px; color:#555; margin-bottom:8px;">個人予定とGoogleカレンダー（今日・明日）を表示します。</div>
-            <button type="button" onclick="closeAppModal(); openPersonalSchedule();" style="width:100%; background:#2e7d32; color:white; border:none; padding:11px; border-radius:6px; font-weight:bold; cursor:pointer;">スケジュールを開く</button>
         </div>
 
         <h4 style="color:#555; margin-bottom:10px;">🔑 パスワード変更</h4>
