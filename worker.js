@@ -7992,9 +7992,12 @@ function createSignboardMarker(name, pos, icon, id) {
 
         const machines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
         const vehicles = window.pdlMobileVehicles || [];
-        const allItems = (window.MachineTaxonomy && MachineTaxonomy.collectAllEquipment)
+        const collected = (window.MachineTaxonomy && MachineTaxonomy.collectAllEquipment)
           ? MachineTaxonomy.collectAllEquipment(machines, vehicles)
           : machines.map(m => Object.assign({}, m, { _kind: 'machine', _displayName: m.name || m.id }));
+        const allItems = (typeof window.filterEquipmentByUserLocation_ === 'function')
+          ? window.filterEquipmentByUserLocation_(collected)
+          : collected;
 
         const f = window._fieldMachineFilter || { kind: 'all', mainCategory: '', typeName: '', number: '' };
         const cascade = (window.MachineTaxonomy && MachineTaxonomy.getCascadeOptions)
@@ -8039,18 +8042,28 @@ function createSignboardMarker(name, pos, icon, id) {
           </div>
         `;
 
+        const userLocsField = (typeof window.getUserAffiliatedLocations_ === 'function')
+          ? window.getUserAffiliatedLocations_()
+          : [];
+        const locFilterNote = userLocsField.length
+          ? ` ／ 所属拠点: ${userLocsField.join('・')}`
+          : '';
         html += `
           <div style="display:flex; justify-content:space-between; align-items:center; margin:-4px 0 8px; gap:8px; flex-wrap:wrap;">
-            <span style="font-size:11px; color:#888;">${filtered.length} 件表示${isVehicleKind ? '（具体車両）' : ''}</span>
+            <span style="font-size:11px; color:#888;">${filtered.length} 件表示${isVehicleKind ? '（具体車両）' : ''}${locFilterNote}</span>
             <button type="button" onclick="window._fieldMachineFilter={kind:'all',mainCategory:'',typeName:'',number:''}; populateFieldMachineOptions([])" style="background:#eee; color:#333; border:1px solid #ccc; border-radius:6px; padding:4px 8px; font-size:11px; cursor:pointer;">絞り込み解除</button>
             <button type="button" onclick="addNewMachineFromWorkRecord('${isVehicleKind ? 'vehicle' : 'machine'}')" style="background:#2196F3; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">${isVehicleKind ? '＋ 車両を新規登録' : '＋ 機械を新規登録'}</button>
           </div>
         `;
 
         if (!filtered.length) {
-          html += isVehicleKind
-            ? `<div style="font-size:12px; color:#888; line-height:1.45;">具体的な車両がありません。絞り込みを緩めるか、「＋ 車両を新規登録」からナンバー付きで登録してください。</div>`
-            : `<div style="font-size:12px; color:#888;">該当する農機・車両がありません。絞り込みを解除するか、新規登録してください。</div>`;
+          if (userLocsField.length && !allItems.length) {
+            html += `<div style="font-size:12px; color:#888; line-height:1.45;">所属拠点（${userLocsField.join('・')}）に登録された農機・車両がありません。</div>`;
+          } else {
+            html += isVehicleKind
+              ? `<div style="font-size:12px; color:#888; line-height:1.45;">具体的な車両がありません。絞り込みを緩めるか、「＋ 車両を新規登録」からナンバー付きで登録してください。</div>`
+              : `<div style="font-size:12px; color:#888;">該当する農機・車両がありません。絞り込みを解除するか、新規登録してください。</div>`;
+          }
         } else {
           const activeSelected = Array.isArray(selectedMachineIds) ? selectedMachineIds.map(String) : [];
           const selectedSet = new Set();
@@ -8094,14 +8107,15 @@ function createSignboardMarker(name, pos, icon, id) {
             const editBtn = canEditFieldPhoto
               ? `<button type="button" onclick="event.preventDefault(); event.stopPropagation(); openMachinePhotoEditorById('${String(id).replace(/'/g, "\\'")}','${editKind}')" style="background:transparent; border:none; color:#1565c0; font-size:11px; cursor:pointer; padding:0 2px;" title="登録内容を変更">✏️</button>`
               : '';
-            const meta = isVehicleKind
-              ? [m._typeName, m._number || m.plateNumber].filter(Boolean).join(' · ')
-              : [m._mainCategory, m._typeName, m._number].filter(Boolean).join('·');
+            const baseLoc = (typeof window.getEquipmentBaseLocation_ === 'function')
+              ? window.getEquipmentBaseLocation_(m)
+              : String(m.location || '').trim();
+            const meta = baseLoc || '';
             const hitch = window.getMachineHitch_(m);
             return `
               <label style="display:inline-flex; align-items:center; gap:4px; padding:5px 10px; background:${isChecked ? '#FFE0B2' : '#FAFAFA'}; border:1px solid ${isChecked ? '#FF9800' : '#DDD'}; border-radius:16px; font-size:12px; cursor:pointer; font-weight:${isChecked ? 'bold' : 'normal'};">
                 <input type="checkbox" class="used-machine-check" value="${id.replace(/"/g, '&quot;')}" data-name="${name.replace(/"/g, '&quot;')}" ${isChecked ? 'checked' : ''} onchange="if(window.syncFieldMachineChipStyle) window.syncFieldMachineChipStyle(this)">
-                ${thumb} <span>${name.replace(/</g, '&lt;')}</span>${meta ? `<span style="font-size:10px;color:#888;">(${meta.replace(/</g, '&lt;')})</span>` : ''}${(!isVehicleKind && hitch) ? ` <span style="font-size:10px; color:#4527A0;" title="ヒッチ規格">🔗${hitch.replace(/</g, '&lt;')}</span>` : ''}${isDiesel ? ' <span style="font-size:10px; color:#C2185B; font-weight:bold;">⛽</span>' : ''} ${editBtn}
+                ${thumb} <span>${name.replace(/</g, '&lt;')}</span>${meta ? `<span style="font-size:10px;color:#888;">(📍${meta.replace(/</g, '&lt;')})</span>` : ''}${(!isVehicleKind && hitch) ? ` <span style="font-size:10px; color:#4527A0;" title="ヒッチ規格">🔗${hitch.replace(/</g, '&lt;')}</span>` : ''}${isDiesel ? ' <span style="font-size:10px; color:#C2185B; font-weight:bold;">⛽</span>' : ''} ${editBtn}
               </label>
             `;
           }).join('');
@@ -14074,32 +14088,69 @@ function createSignboardMarker(name, pos, icon, id) {
         return `${memoTag}${catLabel}${crops} / ${wName}${details}${machines}${mins}`;
       };
 
-      /** 同時作業登録用：農機＋車両一覧（車両は veh:ID・ナンバー付き） */
+      /** ログインユーザーの所属拠点（名簿）。複数は「・」「,」「、」区切り */
+      window.getUserAffiliatedLocations_ = () => {
+        const raw = String(localStorage.getItem('passionMapUserLocation') || '').trim();
+        if (!raw) return [];
+        return raw.split(/[・,、\/｜|]+/).map(s => String(s || '').trim()).filter(Boolean);
+      };
+
+      /** 農機・車両マスタの「拠点名」（置き場所看板ではなく所属拠点） */
+      window.getEquipmentBaseLocation_ = (item) => {
+        if (!item) return '';
+        return String(item.location || item.baseLocation || item.hub || '').trim();
+      };
+
+      /** 所属拠点と機械拠点が一致するか（部分一致も許容） */
+      window.equipmentMatchesUserLocation_ = (item, userLocs) => {
+        const locs = Array.isArray(userLocs) ? userLocs : window.getUserAffiliatedLocations_();
+        if (!locs.length) return true; // 未設定時は絞らない（既存運用互換）
+        const mLoc = window.getEquipmentBaseLocation_(item);
+        if (!mLoc) return false;
+        return locs.some((ul) => {
+          if (!ul) return false;
+          return mLoc === ul || mLoc.indexOf(ul) >= 0 || ul.indexOf(mLoc) >= 0;
+        });
+      };
+
+      /** アカウント所属拠点で農機・車両を絞り込み */
+      window.filterEquipmentByUserLocation_ = (items) => {
+        const list = Array.isArray(items) ? items : [];
+        const locs = window.getUserAffiliatedLocations_();
+        if (!locs.length) return list.slice();
+        return list.filter(item => window.equipmentMatchesUserLocation_(item, locs));
+      };
+
+      /** 同時作業登録用：農機＋車両一覧（車両は veh:ID・ナンバー付き／所属拠点でフィルター） */
       window.getConcurrentEquipmentItems_ = () => {
         const machines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
         const vehicles = window.pdlMobileVehicles || [];
+        let out;
         if (window.MachineTaxonomy && MachineTaxonomy.collectAllEquipment) {
-          return MachineTaxonomy.collectAllEquipment(machines, vehicles);
-        }
-        const out = machines.map(m => Object.assign({}, m, {
-          _kind: 'machine',
-          _displayName: m.name || m.id
-        }));
-        vehicles.forEach(v => {
-          const oid = (typeof window.getMobileVehicleOptionId_ === 'function')
-            ? window.getMobileVehicleOptionId_(v)
-            : ('veh:' + String(v.id || ''));
-          const plate = v.plateNumber || v.vehicleNumber || v.name || '';
-          out.push(Object.assign({}, v, {
-            id: oid,
-            isVehicle: true,
-            _kind: 'vehicle',
-            plateNumber: plate,
-            name: plate || v.name || oid,
-            _displayName: plate || v.name || oid
+          out = MachineTaxonomy.collectAllEquipment(machines, vehicles);
+        } else {
+          out = machines.map(m => Object.assign({}, m, {
+            _kind: 'machine',
+            _displayName: m.name || m.id
           }));
-        });
-        return out;
+          vehicles.forEach(v => {
+            const oid = (typeof window.getMobileVehicleOptionId_ === 'function')
+              ? window.getMobileVehicleOptionId_(v)
+              : ('veh:' + String(v.id || ''));
+            const plate = v.plateNumber || v.vehicleNumber || v.name || '';
+            out.push(Object.assign({}, v, {
+              id: oid,
+              isVehicle: true,
+              _kind: 'vehicle',
+              plateNumber: plate,
+              name: plate || v.name || oid,
+              _displayName: plate || v.name || oid
+            }));
+          });
+        }
+        return (typeof window.filterEquipmentByUserLocation_ === 'function')
+          ? window.filterEquipmentByUserLocation_(out)
+          : out;
       };
 
       /** 同時作業の作業名が運搬系か */
@@ -14167,6 +14218,12 @@ function createSignboardMarker(name, pos, icon, id) {
         const labelType = isVehicleKind ? '③ 車種' : (isMachineKind ? '③ 機械名（機種）' : '③ 機種/車種');
         const labelNumber = isVehicleKind ? '④ ナンバー（具体車両）' : (isMachineKind ? '④ 番号（具体機械）' : '④ 番号');
         const showCascade = kind === 'machine' || kind === 'vehicle';
+        const userLocsForCount = (typeof window.getUserAffiliatedLocations_ === 'function')
+          ? window.getUserAffiliatedLocations_()
+          : [];
+        const locCountNote = userLocsForCount.length
+          ? ` ／ 所属拠点: ${userLocsForCount.join('・')}`
+          : '';
         const cascadeHtml = showCascade ? `
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px;">
             <select class="form-input" onchange="${cascadeClick('mainCategory')}" style="margin:0; font-size:12px;">
@@ -14182,7 +14239,7 @@ function createSignboardMarker(name, pos, icon, id) {
               ${(cascade.numbers || []).map(c => `<option value="${esc(c)}" ${number === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
             </select>
           </div>
-          <div style="font-size:10px; color:#888; margin:-2px 0 8px;">${filtered.length} 件${isMachineKind ? '（具体機械）' : (isVehicleKind ? '（具体車両）' : '')}</div>
+          <div style="font-size:10px; color:#888; margin:-2px 0 8px;">${filtered.length} 件${isMachineKind ? '（具体機械）' : (isVehicleKind ? '（具体車両）' : '')}${esc(locCountNote)}</div>
         ` : '';
         const emptyHint = isMachineKind
           ? (isDelivery
@@ -14191,6 +14248,34 @@ function createSignboardMarker(name, pos, icon, id) {
           : (isVehicleKind
             ? '具体的な車両がありません。車両マスタにナンバー付きで登録してください。'
             : '使った農機・車両があれば選んでください。');
+        const findEquipPhoto_ = (ref) => {
+          if (!ref) return '';
+          const id = String(ref.id || '').trim();
+          const name = String(ref.name || '').trim();
+          const plate = String(ref.plateNumber || '').trim();
+          const fromItem = (item) => (typeof window.getMachinePhotoUrl === 'function')
+            ? window.getMachinePhotoUrl(item)
+            : String(item.photo || item.photoUrl || '');
+          if (ref.photo || ref.photoUrl) {
+            const u = fromItem(ref);
+            if (u) return u;
+          }
+          const hit = allItems.find(item => {
+            const iid = String(item.id || '').trim();
+            const iname = String(item.name || item._displayName || item.plateNumber || '').trim();
+            const iplate = String(item.plateNumber || '').trim();
+            return (id && (iid === id || iid === id.replace(/^veh:/, '') || ('veh:' + iid.replace(/^veh:/, '')) === id))
+              || (name && iname === name)
+              || (plate && iplate === plate);
+          });
+          return hit ? fromItem(hit) : '';
+        };
+        const thumbHtml_ = (url, fallbackIcon) => {
+          if (url) {
+            return `<img src="${esc(url)}" alt="" style="width:36px; height:36px; object-fit:cover; border-radius:6px; border:1px solid #ffcc80; flex-shrink:0;" onerror="this.style.display='none';">`;
+          }
+          return `<div style="width:36px; height:36px; border-radius:6px; background:#FFF3E0; color:#E65100; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; border:1px solid #FFE0B2;">${fallbackIcon}</div>`;
+        };
         const selectedChips = selected.length
           ? `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${selected.map(m => {
               const safeId = escJs(m.id || '');
@@ -14198,7 +14283,9 @@ function createSignboardMarker(name, pos, icon, id) {
               const click = mode === 'bulk'
                 ? `toggleBulkConcurrentEquip_('${esc(uid)}','${safeId}','${safeName}',false)`
                 : `toggleConcurrentModalEquip_('${safeId}','${safeName}',false)`;
-              return `<span style="display:inline-flex; align-items:center; gap:4px; background:#FFF3E0; color:#E65100; padding:5px 9px; border-radius:14px; font-size:12px; font-weight:bold; border:1px solid #FF9800;">✅ ${esc(m.name || m.id)}<span onclick="${click}" style="cursor:pointer; color:#c62828; font-size:14px; line-height:1;" title="外す">×</span></span>`;
+              const photoUrl = findEquipPhoto_(m);
+              const icon = (m.kind === 'vehicle' || String(m.id || '').indexOf('veh:') === 0) ? '🛻' : '🚜';
+              return `<span style="display:inline-flex; align-items:center; gap:6px; background:#FFF3E0; color:#E65100; padding:5px 9px 5px 5px; border-radius:14px; font-size:12px; font-weight:bold; border:1px solid #FF9800;">${thumbHtml_(photoUrl, icon)}<span>✅ ${esc(m.name || m.id)}</span><span onclick="${click}" style="cursor:pointer; color:#c62828; font-size:14px; line-height:1;" title="外す">×</span></span>`;
             }).join('')}</div>`
           : `<div style="font-size:11px; color:#888; margin-bottom:8px; line-height:1.35;">${esc(emptyHint)}</div>`;
         const displayNameOf = (m) => {
@@ -14221,26 +14308,32 @@ function createSignboardMarker(name, pos, icon, id) {
           const click = mode === 'bulk'
             ? `toggleBulkConcurrentEquip_('${esc(uid)}','${safeId}','${safeName}',${!on})`
             : `toggleConcurrentModalEquip_('${safeId}','${safeName}',${!on})`;
-          const meta = isVehicleKind
-            ? [m._typeName, m._number || m.plateNumber].filter(Boolean).join(' · ')
-            : [m._mainCategory, m._typeName, m._model, m._number].filter(Boolean).join(' · ');
+          const baseLoc = (typeof window.getEquipmentBaseLocation_ === 'function')
+            ? window.getEquipmentBaseLocation_(m)
+            : String(m.location || '').trim();
+          const meta = baseLoc || '';
           const icon = m._kind === 'vehicle' ? '🛻' : '🚜';
-          return `<button type="button" onclick="${click}" style="display:inline-flex; align-items:center; gap:4px; padding:6px 10px; border-radius:14px; font-size:12px; font-weight:${on ? 'bold' : 'normal'}; cursor:pointer; border:1px solid ${on ? '#FF9800' : '#FFE0B2'}; background:${on ? '#FFF3E0' : '#fff'}; color:#E65100;">${on ? '✅ ' : ''}${icon} ${esc(name)}${meta ? `<span style="font-size:10px;color:#888;">(${esc(meta)})</span>` : ''}</button>`;
+          const photoUrl = findEquipPhoto_(m);
+          return `<button type="button" onclick="${click}" style="display:inline-flex; align-items:center; gap:6px; padding:6px 10px 6px 6px; border-radius:14px; font-size:12px; font-weight:${on ? 'bold' : 'normal'}; cursor:pointer; border:1px solid ${on ? '#FF9800' : '#FFE0B2'}; background:${on ? '#FFF3E0' : '#fff'}; color:#E65100; text-align:left;">${thumbHtml_(photoUrl, icon)}<span style="display:flex; flex-direction:column; gap:1px; min-width:0;"><span>${on ? '✅ ' : ''}${esc(name)}</span>${meta ? `<span style="font-size:10px;color:#888;font-weight:normal;">📍 ${esc(meta)}</span>` : ''}</span></button>`;
         }).join('');
         const emptyMsg = !filtered.length
-          ? `<div style="font-size:11px; color:#888; line-height:1.4;">${esc(emptyHint)}</div>`
+          ? `<div style="font-size:11px; color:#888; line-height:1.4;">${esc(
+              userLocsForCount.length
+                ? (`所属拠点（${userLocsForCount.join('・')}）に登録された農機・車両がありません。`)
+                : emptyHint
+            )}</div>`
           : '';
         const guide = isDelivery
           ? (isMachineKind
-            ? '機械を選んだあと、カテゴリ→機種→番号で具体的な機械を選べます。'
+            ? '機械を選んだあと、カテゴリ→機種→番号で具体的な機械を選べます。写真付きで表示されます。'
             : (isVehicleKind
-              ? '車両を選んだあと、ナンバー付きの具体車両を選べます。'
+              ? '車両を選んだあと、ナンバー付きの具体車両を選べます。写真付きで表示されます。'
               : '運搬する物の種類（機械／車両）を選んでから、具体を選んでください。'))
           : (isMachineKind
             ? '機械 → カテゴリ → 機種 → 番号 で具体機械を選べます。'
             : (isVehicleKind
               ? '車両を選ぶと、ナンバー付きの具体車両が一覧になります。'
-              : '農機／車両を切り替えて選べます。'));
+              : '農機／車両を切り替えて選べます。写真がある場合はサムネイルも表示します。'));
         const machineLabel = isDelivery ? '機械' : '農機';
         const addKind = isVehicleKind ? 'vehicle' : 'machine';
         const addBtnLabel = isVehicleKind ? '＋ 車両を登録' : (isDelivery ? '＋ 機械を登録' : '＋ 農機を登録');
@@ -14262,7 +14355,7 @@ function createSignboardMarker(name, pos, icon, id) {
           ${addBtnHtml}
           ${cascadeHtml}
           ${selectedChips}
-          ${emptyMsg || `<div style="display:flex; flex-wrap:wrap; gap:6px; max-height:160px; overflow-y:auto;">${chips}</div>`}
+          ${emptyMsg || `<div style="display:flex; flex-wrap:wrap; gap:6px; max-height:220px; overflow-y:auto;">${chips}</div>`}
         </div>`;
       };
 
@@ -15125,8 +15218,41 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.getBulkConcurrentDurationOptions_ = (slotMins) => {
         const slot = Math.max(0, Math.round(Number(slotMins) || 0));
-        const fixed = [5, 10, 15, 20, 25, 30, 60, 120].filter(n => n <= slot);
+        // 5分刻み＋よく使う値。60分枠で45分などが選べるようにする
+        const presets = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 75, 90, 105, 120, 150, 180];
+        const fixed = [];
+        const seen = {};
+        presets.forEach(n => {
+          if (n > 0 && n <= slot && !seen[n]) {
+            seen[n] = true;
+            fixed.push(n);
+          }
+        });
+        if (slot > 0 && !seen[slot]) fixed.push(slot);
         return { slotMins: slot, fixed, equalLabel: '均等割り' };
+      };
+
+      /** 同時作業に配分済みの分数合計（equal 含む） */
+      window.getBulkConcurrentAllocatedMins_ = (d, opts) => {
+        opts = opts || {};
+        const excludeId = String(opts.excludeId || '').trim();
+        let sum = 0;
+        (Array.isArray(d && d.concurrentWorks) ? d.concurrentWorks : []).forEach(cw => {
+          if (!cw) return;
+          if (excludeId && String(cw.id) === excludeId) return;
+          const m = Number(cw.minutes);
+          if (!isNaN(m) && m > 0) sum += Math.round(m);
+        });
+        return sum;
+      };
+
+      /** 時間帯のうち、メイン作業に残せる分数 */
+      window.getBulkConcurrentRemainingMins_ = (d, opts) => {
+        const slot = (typeof window.getBulkConcurrentSlotMins_ === 'function')
+          ? window.getBulkConcurrentSlotMins_(d)
+          : 0;
+        const used = window.getBulkConcurrentAllocatedMins_(d, opts);
+        return Math.max(0, slot - used);
       };
 
       window.ensureBulkConcurrentDraft_ = (d) => {
@@ -15321,16 +15447,27 @@ function createSignboardMarker(name, pos, icon, id) {
         const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
         if (!row) return;
         const draft = window.ensureBulkConcurrentDraft_(row);
+        const slot = window.getBulkConcurrentSlotMins_(row);
         if (String(value) === 'equal') {
           draft.minutesMode = 'equal';
           const n = (Array.isArray(row.concurrentWorks) ? row.concurrentWorks.length : 0) + 1;
-          const slot = window.getBulkConcurrentSlotMins_(row);
           draft.minutes = n > 0 ? Math.floor(slot / n) : 0;
+        } else if (String(value) === 'remain') {
+          draft.minutesMode = 'fixed';
+          draft.minutes = window.getBulkConcurrentRemainingMins_(row);
         } else {
           draft.minutesMode = 'fixed';
-          draft.minutes = Math.max(0, Math.round(Number(value) || 0));
+          let mins = Math.max(0, Math.round(Number(value) || 0));
+          if (slot > 0) mins = Math.min(mins, slot);
+          draft.minutes = mins;
         }
         window.rerenderBulkConcurrentCard_(uid);
+      };
+
+      window.setBulkConcurrentDraftMinutesCustom_ = (uid) => {
+        const el = document.getElementById('bulk_cw_draft_min_' + String(uid || '').trim());
+        if (!el) return;
+        window.setBulkConcurrentDraftMinutes_(uid, el.value);
       };
 
       window.setBulkConcurrentMinutes_ = (uid, cwId, value) => {
@@ -15338,14 +15475,53 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!row || !Array.isArray(row.concurrentWorks)) return;
         const entry = row.concurrentWorks.find(cw => cw && String(cw.id) === String(cwId || '').trim());
         if (!entry) return;
+        const slot = window.getBulkConcurrentSlotMins_(row);
         if (String(value) === 'equal') {
           entry.minutesMode = 'equal';
+        } else if (String(value) === 'remain') {
+          entry.minutesMode = 'fixed';
+          entry.minutes = window.getBulkConcurrentRemainingMins_(row, { excludeId: entry.id });
         } else {
           entry.minutesMode = 'fixed';
-          entry.minutes = Math.max(0, Math.round(Number(value) || 0));
+          let mins = Math.max(0, Math.round(Number(value) || 0));
+          if (slot > 0) mins = Math.min(mins, slot);
+          entry.minutes = mins;
         }
         window.syncBulkConcurrentEqualMinutes_(row);
         window.rerenderBulkConcurrentCard_(uid);
+      };
+
+      window.setBulkConcurrentMinutesCustom_ = (uid, cwId) => {
+        const sid = String(cwId || '').trim();
+        const el = document.getElementById('bulk_cw_min_' + String(uid || '').trim() + '_' + sid);
+        if (!el) return;
+        window.setBulkConcurrentMinutes_(uid, sid, el.value);
+      };
+
+      window.setBulkMainWorkMinutes_ = (uid, value) => {
+        const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+        if (!row) return;
+        const slot = window.getBulkConcurrentSlotMins_(row);
+        if (String(value) === 'remain') {
+          row.mainWorkMinutesMode = 'fixed';
+          row.mainWorkMinutes = window.getBulkConcurrentRemainingMins_(row);
+        } else if (String(value) === 'equal') {
+          const n = 1 + (Array.isArray(row.concurrentWorks) ? row.concurrentWorks.length : 0);
+          row.mainWorkMinutesMode = 'equal';
+          row.mainWorkMinutes = n > 0 ? Math.floor(slot / n) : 0;
+        } else {
+          row.mainWorkMinutesMode = 'fixed';
+          let mins = Math.max(0, Math.round(Number(value) || 0));
+          if (slot > 0) mins = Math.min(mins, slot);
+          row.mainWorkMinutes = mins;
+        }
+        window.rerenderBulkConcurrentCard_(uid);
+      };
+
+      window.setBulkMainWorkMinutesCustom_ = (uid) => {
+        const el = document.getElementById('bulk_main_min_' + String(uid || '').trim());
+        if (!el) return;
+        window.setBulkMainWorkMinutes_(uid, el.value);
       };
 
       window.confirmBulkConcurrentDraft_ = (uid) => {
@@ -15367,8 +15543,15 @@ function createSignboardMarker(name, pos, icon, id) {
           return;
         }
         if (draft.minutesMode !== 'equal' && !(draft.minutes != null && Number(draft.minutes) > 0)) {
-          if (typeof customAlert === 'function') customAlert('時間数（分）を選んでください。');
-          return;
+          // 未選択なら残り分数を自動セット（例: 60分枠で15分登録済み → 45分）
+          const remain = window.getBulkConcurrentRemainingMins_(row);
+          if (remain > 0) {
+            draft.minutesMode = 'fixed';
+            draft.minutes = remain;
+          } else {
+            if (typeof customAlert === 'function') customAlert('時間数（分）を選んでください。');
+            return;
+          }
         }
         if (isMeta) {
           draft.prepTargetWork = String(draft.prepTargetWork || workName).trim();
@@ -15383,6 +15566,14 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!Array.isArray(row.concurrentWorks)) row.concurrentWorks = [];
         row.concurrentWorks.push(entry);
         window.syncBulkConcurrentEqualMinutes_(row);
+        // メイン作業の分数が未設定なら、残り時間を自動セット（例: 60分枠で15分追加 → メイン45分）
+        if (!(row.mainWorkMinutes != null && Number(row.mainWorkMinutes) > 0)) {
+          const remainMain = window.getBulkConcurrentRemainingMins_(row);
+          if (remainMain > 0) {
+            row.mainWorkMinutes = remainMain;
+            row.mainWorkMinutesMode = 'fixed';
+          }
+        }
         window.clearBulkConcurrentDraft_(row);
         // 登録後は新規追加枠をアコーディオンで閉じる（再追加はボタンから開く）
         row._concurrentPanelOpen = false;
@@ -15455,12 +15646,78 @@ function createSignboardMarker(name, pos, icon, id) {
           : (curWork && !isMeta
             ? '<div style="font-size:11px; color:#888;">この作業に登録されている詳細作業はありません。</div>'
             : '');
+        const allocatedCw = window.getBulkConcurrentAllocatedMins_(d);
+        const mainMinsVal = (d.mainWorkMinutes != null && !isNaN(Number(d.mainWorkMinutes)))
+          ? Math.round(Number(d.mainWorkMinutes))
+          : null;
+        const mainEqualOn = String(d.mainWorkMinutesMode || '') === 'equal';
+        const remainForMain = Math.max(0, slotMins - allocatedCw);
+        const totalAllocated = allocatedCw + (mainMinsVal != null ? mainMinsVal : 0);
+        const allocOk = slotMins > 0 && totalAllocated === slotMins;
+        const allocOver = slotMins > 0 && totalAllocated > slotMins;
+        const mainWorkLabel = String(d.workName || '').trim() || 'メイン作業';
+        const buildMinsButtons_ = (fixedOnClick, equalOnClick, remainOnClick, selectedMins, equalOn, inputId, customOnClick) => {
+          const btns = durOpts.fixed.map(n => {
+            const on = !equalOn && selectedMins === n;
+            return `<button type="button" onclick="${fixedOnClick(n)}" style="padding:5px 9px; border-radius:12px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${on ? '#00838F' : '#B2EBF2'}; background:${on ? '#E0F7FA' : '#fff'}; color:#006064;">${n}分</button>`;
+          }).join('');
+          const remainOn = !equalOn && selectedMins != null && selectedMins === remainForMain && remainForMain > 0
+            && durOpts.fixed.indexOf(remainForMain) < 0;
+          return `${btns}
+            <button type="button" onclick="${remainOnClick}" style="padding:5px 9px; border-radius:12px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${remainOn ? '#2E7D32' : '#A5D6A7'}; background:${remainOn ? '#E8F5E9' : '#fff'}; color:#2E7D32;">残り${remainForMain}分</button>
+            <button type="button" onclick="${equalOnClick}" style="padding:5px 9px; border-radius:12px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${equalOn ? '#6A1B9A' : '#CE93D8'}; background:${equalOn ? '#F3E5F5' : '#fff'}; color:#6A1B9A;">均等</button>
+            <span style="display:inline-flex; align-items:center; gap:4px; margin-left:2px;">
+              <input type="number" id="${esc(inputId)}" min="1" max="${slotMins || 999}" step="1" placeholder="分" value="${selectedMins != null && !equalOn && durOpts.fixed.indexOf(selectedMins) < 0 && !(remainOn) ? selectedMins : ''}"
+                style="width:64px; padding:5px 6px; border:1px solid #80CBC4; border-radius:8px; font-size:12px; box-sizing:border-box;"
+                onkeydown="if(event.key==='Enter'){event.preventDefault();${customOnClick};}">
+              <button type="button" onclick="${customOnClick}" style="padding:5px 8px; border-radius:8px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid #00838F; background:#E0F7FA; color:#006064;">指定</button>
+            </span>`;
+        };
+
         const draftEqualOn = draft.minutesMode === 'equal';
-        const draftMins = draft.minutes != null ? Number(draft.minutes) : null;
-        const minsHtml = durOpts.fixed.map(n => {
-          const on = !draftEqualOn && draftMins === n;
-          return `<button type="button" onclick="setBulkConcurrentDraftMinutes_('${esc(uid)}',${n})" style="padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? '#00838F' : '#B2EBF2'}; background:${on ? '#E0F7FA' : '#fff'}; color:#006064;">${n}分</button>`;
-        }).join('') + `<button type="button" onclick="setBulkConcurrentDraftMinutes_('${esc(uid)}','equal')" style="padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${draftEqualOn ? '#6A1B9A' : '#CE93D8'}; background:${draftEqualOn ? '#F3E5F5' : '#fff'}; color:#6A1B9A;">均等割り${draftEqualOn && draftMins != null ? `（${draftMins}分）` : ''}</button>`;
+        const draftMinsShow = draft.minutes != null ? Number(draft.minutes) : null;
+        const draftRemain = window.getBulkConcurrentRemainingMins_(d);
+        const minsHtml = (() => {
+          const btns = durOpts.fixed.map(n => {
+            const on = !draftEqualOn && draftMinsShow === n;
+            return `<button type="button" onclick="setBulkConcurrentDraftMinutes_('${esc(uid)}',${n})" style="padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? '#00838F' : '#B2EBF2'}; background:${on ? '#E0F7FA' : '#fff'}; color:#006064;">${n}分</button>`;
+          }).join('');
+          const remainOn = !draftEqualOn && draftMinsShow === draftRemain && draftRemain > 0;
+          return `${btns}
+            <button type="button" onclick="setBulkConcurrentDraftMinutes_('${esc(uid)}','remain')" style="padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${remainOn ? '#2E7D32' : '#A5D6A7'}; background:${remainOn ? '#E8F5E9' : '#fff'}; color:#2E7D32;">残り${draftRemain}分</button>
+            <button type="button" onclick="setBulkConcurrentDraftMinutes_('${esc(uid)}','equal')" style="padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${draftEqualOn ? '#6A1B9A' : '#CE93D8'}; background:${draftEqualOn ? '#F3E5F5' : '#fff'}; color:#6A1B9A;">均等割り${draftEqualOn && draftMinsShow != null ? `（${draftMinsShow}分）` : ''}</button>
+            <span style="display:inline-flex; align-items:center; gap:4px;">
+              <input type="number" id="bulk_cw_draft_min_${esc(uid)}" min="1" max="${slotMins || 999}" step="1" placeholder="例:45"
+                value="${draftMinsShow != null && !draftEqualOn && durOpts.fixed.indexOf(draftMinsShow) < 0 && draftMinsShow !== draftRemain ? draftMinsShow : ''}"
+                style="width:72px; padding:6px 8px; border:1px solid #80CBC4; border-radius:8px; font-size:12px; box-sizing:border-box;"
+                onkeydown="if(event.key==='Enter'){event.preventDefault();setBulkConcurrentDraftMinutesCustom_('${esc(uid)}');}">
+              <button type="button" onclick="setBulkConcurrentDraftMinutesCustom_('${esc(uid)}')" style="padding:6px 10px; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid #00838F; background:#E0F7FA; color:#006064;">指定</button>
+            </span>`;
+        })();
+
+        const mainMinsHtml = (list.length || panelOpen) ? `
+          <div style="padding:8px 10px; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px; margin-bottom:8px;">
+            <div style="font-size:11px; font-weight:bold; color:#2E7D32; margin-bottom:4px;">メイン作業の時間（${esc(mainWorkLabel)}）</div>
+            <div style="font-size:10px; color:#666; margin-bottom:6px; line-height:1.35;">同じ時間帯で複数作業したとき、メイン側の分数も指定できます（例: 苗準備45分＋定植15分）。</div>
+            <div style="display:flex; flex-wrap:wrap; gap:4px; align-items:center;">
+              ${buildMinsButtons_(
+                (n) => `setBulkMainWorkMinutes_('${esc(uid)}',${n})`,
+                `setBulkMainWorkMinutes_('${esc(uid)}','equal')`,
+                `setBulkMainWorkMinutes_('${esc(uid)}','remain')`,
+                mainMinsVal,
+                mainEqualOn,
+                'bulk_main_min_' + uid,
+                `setBulkMainWorkMinutesCustom_('${esc(uid)}')`
+              )}
+            </div>
+          </div>` : '';
+
+        const allocSummary = (list.length || mainMinsVal != null) ? `
+          <div style="font-size:11px; margin-bottom:8px; padding:6px 8px; border-radius:8px; line-height:1.4; background:${allocOver ? '#FFEBEE' : (allocOk ? '#E8F5E9' : '#FFF8E1')}; color:${allocOver ? '#C62828' : (allocOk ? '#2E7D32' : '#E65100')}; border:1px solid ${allocOver ? '#EF9A9A' : (allocOk ? '#A5D6A7' : '#FFCC80')};">
+            時間帯 ${slotMins || '—'}分 ／ 配分合計 ${totalAllocated}分
+            ${mainMinsVal != null ? `（メイン${mainMinsVal}＋同時${allocatedCw}）` : `（同時${allocatedCw}）`}
+            ${allocOk ? ' ✓' : (allocOver ? ' ※時間帯を超えています' : (slotMins ? ` ／ 残り ${Math.max(0, slotMins - totalAllocated)}分` : ''))}
+          </div>` : '';
 
         const rows = list.map((entry, idx) => {
           const safeId = String(entry.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -15484,10 +15741,20 @@ function createSignboardMarker(name, pos, icon, id) {
             : '';
           const rowEqualOn = entry.minutesMode === 'equal';
           const rowMins = entry.minutes != null ? Number(entry.minutes) : null;
+          const rowRemain = window.getBulkConcurrentRemainingMins_(d, { excludeId: entry.id });
           const rowMinsHtml = durOpts.fixed.map(n => {
             const on = !rowEqualOn && rowMins === n;
             return `<button type="button" onclick="setBulkConcurrentMinutes_('${esc(uid)}','${safeId}',${n})" style="padding:4px 8px; border-radius:12px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${on ? '#00838F' : '#B2EBF2'}; background:${on ? '#E0F7FA' : '#fff'}; color:#006064;">${n}分</button>`;
-          }).join('') + `<button type="button" onclick="setBulkConcurrentMinutes_('${esc(uid)}','${safeId}','equal')" style="padding:4px 8px; border-radius:12px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${rowEqualOn ? '#6A1B9A' : '#CE93D8'}; background:${rowEqualOn ? '#F3E5F5' : '#fff'}; color:#6A1B9A;">均等</button>`;
+          }).join('')
+            + `<button type="button" onclick="setBulkConcurrentMinutes_('${esc(uid)}','${safeId}','remain')" style="padding:4px 8px; border-radius:12px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${(!rowEqualOn && rowMins === rowRemain && rowRemain > 0) ? '#2E7D32' : '#A5D6A7'}; background:${(!rowEqualOn && rowMins === rowRemain && rowRemain > 0) ? '#E8F5E9' : '#fff'}; color:#2E7D32;">残り${rowRemain}</button>`
+            + `<button type="button" onclick="setBulkConcurrentMinutes_('${esc(uid)}','${safeId}','equal')" style="padding:4px 8px; border-radius:12px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${rowEqualOn ? '#6A1B9A' : '#CE93D8'}; background:${rowEqualOn ? '#F3E5F5' : '#fff'}; color:#6A1B9A;">均等</button>`
+            + `<span style="display:inline-flex; align-items:center; gap:3px;">
+                <input type="number" id="bulk_cw_min_${esc(uid)}_${esc(safeId)}" min="1" max="${slotMins || 999}" step="1" placeholder="分"
+                  value="${rowMins != null && !rowEqualOn && durOpts.fixed.indexOf(rowMins) < 0 && rowMins !== rowRemain ? rowMins : ''}"
+                  style="width:56px; padding:4px 6px; border:1px solid #80CBC4; border-radius:8px; font-size:11px; box-sizing:border-box;"
+                  onkeydown="if(event.key==='Enter'){event.preventDefault();setBulkConcurrentMinutesCustom_('${esc(uid)}','${safeId}');}">
+                <button type="button" onclick="setBulkConcurrentMinutesCustom_('${esc(uid)}','${safeId}')" style="padding:4px 7px; border-radius:8px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid #00838F; background:#E0F7FA; color:#006064;">指定</button>
+              </span>`;
           return `<div style="padding:8px 10px; background:#fff; border:1px solid ${hasName ? '#D1C4E9' : '#CE93D8'}; border-radius:8px; margin-bottom:6px;">
             <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px;">
               <div style="font-size:12px; color:#4527A0; line-height:1.4; min-width:0; flex:1;">
@@ -15496,7 +15763,7 @@ function createSignboardMarker(name, pos, icon, id) {
               </div>
               <button type="button" onclick="removeBulkConcurrentWork_('${esc(uid)}','${safeId}')" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; width:26px; height:26px; flex-shrink:0; cursor:pointer;">×</button>
             </div>
-            <div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:6px;">${rowMinsHtml}</div>
+            <div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; align-items:center;">${rowMinsHtml}</div>
             ${needPick}
           </div>`;
         }).join('');
@@ -15537,6 +15804,8 @@ function createSignboardMarker(name, pos, icon, id) {
             <div style="font-size:10px; font-weight:bold; color:#6A1B9A;">🔀 この時間に行った作業</div>
             <button type="button" onclick="toggleBulkConcurrentPanel_('${esc(uid)}')" style="background:${panelOpen ? '#CE93D8' : '#EDE7F6'}; color:#5E35B1; border:1px solid #D1C4E9; border-radius:6px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">${panelOpen ? '▲ 閉じる' : 'この時間に行った作業を追加する'}</button>
           </div>
+          ${allocSummary}
+          ${mainMinsHtml}
           ${rows || '<div style="font-size:11px; color:#888;">まだありません</div>'}
           ${panelHtml}
         </div>`;
@@ -40855,6 +41124,10 @@ window.executeBulkWorkMemoRegistration_ = async () => {
               minutesMode: (String(cw.minutesMode || '').trim() === 'equal') ? 'equal' : 'fixed'
             }))
           : [],
+        mainWorkMinutes: (d.mainWorkMinutes != null && !isNaN(Number(d.mainWorkMinutes)) && Number(d.mainWorkMinutes) > 0)
+          ? Math.round(Number(d.mainWorkMinutes))
+          : null,
+        mainWorkMinutesMode: (String(d.mainWorkMinutesMode || '').trim() === 'equal') ? 'equal' : 'fixed',
         fromBulkMemo: true,
         bulkBatchId: batchId,
         recordKind: isRestSave ? 'rest' : 'work'
@@ -45611,6 +45884,9 @@ window.openMyPage = function() {
     const staffId = localStorage.getItem('passionMapUserId') || '';
     const userName = localStorage.getItem('passionMapUserName') || currentUser || '';
     const userRole = localStorage.getItem('passionMapUserRole') || '作業員';
+    const userLocationRaw = String(localStorage.getItem('passionMapUserLocation') || '').trim();
+    const userLocation = userLocationRaw || '未設定';
+    const escMy = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 
     const recentDays = (typeof window.getMyPageRecentWorkDays_ === 'function')
       ? window.getMyPageRecentWorkDays_() : 14;
@@ -45635,11 +45911,13 @@ window.openMyPage = function() {
         </div>
         <div style="background:#f5f5f5; padding:15px; border-radius:8px; margin-bottom:15px;">
             <div style="font-size:13px; color:#999;">スタッフID</div>
-            <div style="font-size:16px; font-weight:bold; margin-bottom:10px;">${staffId}</div>
+            <div style="font-size:16px; font-weight:bold; margin-bottom:10px;">${escMy(staffId)}</div>
             <div style="font-size:13px; color:#999;">名前</div>
-            <div style="font-size:16px; font-weight:bold; margin-bottom:10px;">${userName}</div>
+            <div style="font-size:16px; font-weight:bold; margin-bottom:10px;">${escMy(userName)}</div>
             <div style="font-size:13px; color:#999;">権限</div>
-            <div style="font-size:16px; font-weight:bold;">${userRole}</div>
+            <div style="font-size:16px; font-weight:bold; margin-bottom:10px;">${escMy(userRole)}</div>
+            <div style="font-size:13px; color:#999;">所属拠点</div>
+            <div style="font-size:16px; font-weight:bold;${userLocationRaw ? '' : ' color:#999;'}">${userLocationRaw ? '📍 ' : ''}${escMy(userLocation)}</div>
         </div>
 
         <h4 style="color:#1565c0; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
@@ -45662,62 +45940,51 @@ window.openMyPage = function() {
           style="width:100%; background:#E8F5E9; color:#1B5E20; border:1px solid #81C784; padding:11px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:10px;">📋 作業記録マネージャー（全期間）</button>
         ${recordsHtml}
 
-        <h4 style="color:#c62828; margin-bottom:10px; margin-top:5px;">📧 Gmailアカウント</h4>
-        <div style="background:#fff8e1; border:1px solid #ffe082; border-radius:8px; padding:12px; margin-bottom:15px;">
-            <div style="font-size:12px; color:#666; margin-bottom:8px;">Googleカレンダー連動用。登録後、スケジュール画面で今日・明日の予定が自動表示されます。</div>
-            <input type="email" id="myGmailInput" style="width:100%; padding:10px; margin-bottom:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="example@gmail.com" value="">
-            <button id="saveGmailBtn" onclick="doSaveUserGmail()" style="width:100%; background:#DB4437; color:white; border:none; padding:11px; border-radius:6px; font-weight:bold; cursor:pointer;">Gmailを保存</button>
-            <div id="saveGmailResult" style="margin-top:8px; font-size:13px; font-weight:bold;"></div>
-        </div>
-
-        <h4 style="color:#1565c0; margin-bottom:10px; margin-top:5px;">📅 表示するカレンダー</h4>
-        <div style="background:#e8eaf6; border:1px solid #c5cae9; border-radius:8px; padding:12px; margin-bottom:15px;">
-            <div style="font-size:12px; color:#555; margin-bottom:8px; line-height:1.5;">表示したいGoogleカレンダーにチェックを入れて保存してください。<br>未設定のときは、見えるカレンダーがすべて表示されます。</div>
-            <div id="myCalendarSelectList" style="max-height:200px; overflow-y:auto; margin-bottom:8px;"><div style="color:#888; font-size:13px;">読み込み中...</div></div>
-            <div style="display:flex; gap:8px; margin-bottom:8px;">
-              <button type="button" onclick="setAllMyCalendarChecks(true)" style="flex:1; background:#fff; color:#3949ab; border:1px solid #9fa8da; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px;">すべて選択</button>
-              <button type="button" onclick="setAllMyCalendarChecks(false)" style="flex:1; background:#fff; color:#666; border:1px solid #ccc; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px;">すべて解除</button>
+        <div style="margin-top:8px; margin-bottom:8px;">
+          <div style="font-size:13px; font-weight:bold; color:#666; margin-bottom:8px;">⚙️ アカウント設定</div>
+          <details id="myPwDetails" style="background:#fff8e1; border:1px solid #ffe0b2; border-radius:8px; margin-bottom:8px; overflow:hidden;">
+            <summary style="list-style:none; cursor:pointer; padding:12px 14px; font-size:14px; font-weight:bold; color:#E65100; display:flex; align-items:center; justify-content:space-between; gap:8px; user-select:none;">
+              <span>🔑 パスワード変更</span>
+              <span style="font-size:11px; font-weight:normal; color:#999;">タップで開く ▾</span>
+            </summary>
+            <div style="padding:0 12px 12px; border-top:1px solid #ffe0b2;">
+              <div style="font-size:11px; color:#888; margin:10px 0 8px; line-height:1.4;">4文字以上。変更後は新しいパスワードでログインします。</div>
+              <input type="password" id="myCurrentPw" autocomplete="current-password" style="width:100%; padding:10px; margin-bottom:6px; border:1px solid #ddd; border-radius:6px; box-sizing:border-box; font-size:15px;" placeholder="現在のパスワード">
+              <input type="password" id="myNewPw" autocomplete="new-password" style="width:100%; padding:10px; margin-bottom:6px; border:1px solid #ddd; border-radius:6px; box-sizing:border-box; font-size:15px;" placeholder="新しいパスワード（4文字以上）">
+              <input type="password" id="myNewPwConfirm" autocomplete="new-password" style="width:100%; padding:10px; margin-bottom:8px; border:1px solid #ddd; border-radius:6px; box-sizing:border-box; font-size:15px;" placeholder="新しいパスワード（確認）">
+              <button type="button" id="changePwBtn" onclick="doChangePassword()" style="width:100%; background:#FF9800; color:#fff; border:none; padding:11px; border-radius:6px; font-weight:bold; cursor:pointer;">変更する</button>
+              <div id="changePwResult" style="margin-top:8px; font-size:13px; font-weight:bold; min-height:1.2em;"></div>
             </div>
-            <button id="saveCalendarIdsBtn" onclick="doSaveUserCalendarIds()" style="width:100%; background:#3949ab; color:white; border:none; padding:11px; border-radius:6px; font-weight:bold; cursor:pointer;">表示カレンダーを保存</button>
-            <div id="saveCalendarIdsResult" style="margin-top:8px; font-size:13px; font-weight:bold;"></div>
+          </details>
+          <details id="myIdDetails" style="background:#e3f2fd; border:1px solid #bbdefb; border-radius:8px; margin-bottom:4px; overflow:hidden;">
+            <summary style="list-style:none; cursor:pointer; padding:12px 14px; font-size:14px; font-weight:bold; color:#1565C0; display:flex; align-items:center; justify-content:space-between; gap:8px; user-select:none;">
+              <span>🆔 ID変更</span>
+              <span style="font-size:11px; font-weight:normal; color:#999;">タップで開く ▾</span>
+            </summary>
+            <div style="padding:0 12px 12px; border-top:1px solid #bbdefb;">
+              <div style="font-size:11px; color:#888; margin:10px 0 8px; line-height:1.4;">現在のID: <b style="color:#333;">${escMy(staffId)}</b> ／ 変更には現在のパスワードが必要です。</div>
+              <input type="text" id="myNewId" autocomplete="username" style="width:100%; padding:10px; margin-bottom:6px; border:1px solid #ddd; border-radius:6px; box-sizing:border-box; font-size:15px;" placeholder="新しいID">
+              <input type="password" id="myPwForIdChange" autocomplete="current-password" style="width:100%; padding:10px; margin-bottom:8px; border:1px solid #ddd; border-radius:6px; box-sizing:border-box; font-size:15px;" placeholder="現在のパスワード（確認用）">
+              <button type="button" id="changeIdBtn" onclick="doChangeId()" style="width:100%; background:#2196F3; color:#fff; border:none; padding:11px; border-radius:6px; font-weight:bold; cursor:pointer;">変更する</button>
+              <div id="changeIdResult" style="margin-top:8px; font-size:13px; font-weight:bold; min-height:1.2em;"></div>
+            </div>
+          </details>
         </div>
-
-        <h4 style="color:#1565c0; margin-bottom:10px; margin-top:5px;">🔐 Google権限（カレンダー等）</h4>
-        <div style="background:#e3f2fd; border:1px solid #90caf9; border-radius:8px; padding:12px; margin-bottom:15px;">
-            <div style="font-size:12px; color:#555; margin-bottom:8px; line-height:1.5;">カレンダー取得に必要なApps Script権限を許可します。ボタンを押すとGoogleの許可画面が開きます。</div>
-            <div id="myAuthStatus" style="font-size:13px; font-weight:bold; margin-bottom:8px; color:#666;">確認中...</div>
-            <div id="myAuthUser" style="font-size:11px; color:#888; margin-bottom:8px;"></div>
-            <button type="button" id="myAuthOpenBtn" onclick="openScriptAuthorizationUrl()" style="display:none; width:100%; background:#1a73e8; color:white; border:none; padding:11px; border-radius:6px; font-weight:bold; cursor:pointer; margin-bottom:8px;">🔐 権限を許可する（新しいタブ）</button>
-            <button type="button" onclick="loadMyAuthorizationStatus()" style="width:100%; background:#fff; color:#1565c0; border:1px solid #90caf9; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">🔄 許可状態を再確認</button>
-            <div id="myAuthHint" style="margin-top:8px; font-size:11px; color:#666; line-height:1.5;"></div>
-        </div>
-
-        <h4 style="color:#555; margin-bottom:10px;">🔑 パスワード変更</h4>
-        <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">現在のパスワード</label>
-        <input type="password" id="myCurrentPw" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="現在のパスワード">
-        <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">新しいパスワード</label>
-        <input type="password" id="myNewPw" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="新しいパスワード (4文字以上)">
-        <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">新しいパスワード (確認)</label>
-        <input type="password" id="myNewPwConfirm" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="もう一度入力">
-        <button id="changePwBtn" onclick="doChangePassword()" style="width:100%; background:#FF9800; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:5px;">パスワードを変更する</button>
-        <div id="changePwResult" style="margin-top:10px; font-size:14px; font-weight:bold;"></div>
-
-        <h4 style="color:#555; margin-bottom:10px; margin-top:20px;">🆔 ID変更</h4>
-        <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">新しいID</label>
-        <input type="text" id="myNewId" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="新しいID">
-        <label style="display:block; font-size:14px; color:#555; margin-bottom:5px; font-weight:bold;">現在のパスワード</label>
-        <input type="password" id="myPwForIdChange" style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:16px;" placeholder="認証のため入力">
-        <button id="changeIdBtn" onclick="doChangeId()" style="width:100%; background:#2196F3; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:5px;">IDを変更する</button>
-        <div id="changeIdResult" style="margin-top:10px; font-size:14px; font-weight:bold;"></div>
-
-        <button onclick="closeAppModal()" style="width:100%; background:#9e9e9e; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; margin-top:15px;">閉じる</button>
     `;
     document.getElementById('modalBody').innerHTML = html;
     document.getElementById('modal').style.display = 'flex';
+    ['myPwDetails', 'myIdDetails'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const hint = el.querySelector('summary span:last-child');
+      const syncHint = () => {
+        if (!hint) return;
+        hint.textContent = el.open ? '閉じる ▴' : 'タップで開く ▾';
+      };
+      syncHint();
+      el.addEventListener('toggle', syncHint);
+    });
     loadMyAttendance();
-    loadMyGmailIntoMyPage();
-    loadMyCalendarSelectIntoMyPage();
-    loadMyAuthorizationStatus();
     if (typeof window.refreshMyPageRecentWorkRecords_ === 'function') {
         window.refreshMyPageRecentWorkRecords_();
     }
