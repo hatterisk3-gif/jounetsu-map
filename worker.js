@@ -15755,49 +15755,89 @@ function createSignboardMarker(name, pos, icon, id) {
             ${allocOk ? ' ✓' : (allocOver ? ' ※同時作業が時間帯を超えています' : '')}
           </div>` : '';
 
-        // この時間帯の作業予測（同時作業の追加候補）
-        const predAtHm = (typeof window.normalizeTimeHm === 'function')
-          ? (window.normalizeTimeHm(d.startTime) || String(d.startTime || '').trim())
-          : String(d.startTime || '').trim();
-        const predData = (typeof window.getNextWorkPredictions_ === 'function')
-          ? window.getNextWorkPredictions_({ atHm: predAtHm || undefined })
-          : { timeCandidates: [], candidates: [] };
+        // メモ内容からの作業予測（追加パネルを開いたときだけ表示）
         const mainCanon = (typeof window.getCanonicalWorkName === 'function')
           ? window.getCanonicalWorkName(mainWorkLabel)
           : mainWorkLabel;
-        const predList = (predData.candidates || predData.timeCandidates || [])
-          .filter(c => c && c.workName)
-          .filter(c => {
-            const w = String(c.workName || '').trim();
-            if (!w || w.includes('休憩')) return false;
-            const canon = (typeof window.getCanonicalWorkName === 'function')
-              ? window.getCanonicalWorkName(w)
-              : w;
-            if (mainCanon && canon && canon === mainCanon) return false;
-            return !list.some(cw => {
-              const cwName = String(cw && cw.workName || '').trim();
-              if (!cwName) return false;
-              const cwCanon = (typeof window.getCanonicalWorkName === 'function')
-                ? window.getCanonicalWorkName(cwName)
-                : cwName;
-              return cwCanon === canon;
+        const isExcludedPredWork_ = (workName) => {
+          const w = String(workName || '').trim();
+          if (!w || w.includes('休憩')) return true;
+          const canon = (typeof window.getCanonicalWorkName === 'function')
+            ? window.getCanonicalWorkName(w)
+            : w;
+          if (mainCanon && canon && canon === mainCanon) return true;
+          return list.some(cw => {
+            const cwName = String(cw && cw.workName || '').trim();
+            if (!cwName) return false;
+            const cwCanon = (typeof window.getCanonicalWorkName === 'function')
+              ? window.getCanonicalWorkName(cwName)
+              : cwName;
+            return cwCanon === canon;
+          });
+        };
+        let predHtml = '';
+        if (panelOpen) {
+          const memoRaw = String(d.rawLine || '').trim();
+          const predMap = new Map();
+          const pushPred_ = (item, hint) => {
+            if (!item || !item.name) return;
+            if (isExcludedPredWork_(item.name)) return;
+            const key = String(item.name);
+            const prev = predMap.get(key);
+            const score = Number(item.score) || 0;
+            if (prev && prev.score >= score) return;
+            const crop = (typeof window.matchBulkWorkMemoCrop_ === 'function')
+              ? String(window.matchBulkWorkMemoCrop_(hint || memoRaw) || '').trim()
+              : '';
+            predMap.set(key, {
+              workName: key,
+              crop: crop,
+              score: score,
+              matchedAlias: String(item.matchedAlias || '').trim(),
+              hint: String(hint || '').trim()
             });
-          })
-          .slice(0, 6);
-        const predHtml = predList.length ? `
-          <div style="margin-bottom:8px; padding:8px 10px; background:linear-gradient(135deg,#e8f5e9 0%,#e3f2fd 100%); border:1px solid #A5D6A7; border-radius:8px;">
+          };
+          if (memoRaw && typeof window.suggestBulkWorkMemoWorkNames_ === 'function') {
+            (window.suggestBulkWorkMemoWorkNames_(memoRaw, d.startTime) || []).forEach(x => pushPred_(x, memoRaw));
+          }
+          if (memoRaw && typeof window.splitBulkWorkMemoConcurrentText_ === 'function') {
+            const split = window.splitBulkWorkMemoConcurrentText_(memoRaw) || {};
+            (split.concurrentTexts || []).forEach(hint => {
+              const h = String(hint || '').trim();
+              if (!h || typeof window.suggestBulkWorkMemoWorkNames_ !== 'function') return;
+              (window.suggestBulkWorkMemoWorkNames_(h, d.startTime) || []).forEach(x => pushPred_(x, h));
+            });
+          }
+          // 未確定のメモ同時作業候補もチップに載せる
+          list.forEach(cw => {
+            if (!cw || String(cw.workName || '').trim()) return;
+            (Array.isArray(cw.workCandidates) ? cw.workCandidates : []).forEach(name => {
+              pushPred_({ name: name, score: 65, matchedAlias: (cw.workAliasHints && cw.workAliasHints[name]) || '' }, cw.rawHint || '');
+            });
+            if (cw.guessedName) pushPred_({ name: cw.guessedName, score: 68 }, cw.rawHint || '');
+          });
+          const predList = Array.from(predMap.values())
+            .sort((a, b) => (b.score || 0) - (a.score || 0) || String(a.workName).localeCompare(String(b.workName), 'ja'))
+            .slice(0, 8);
+          if (predList.length) {
+            predHtml = `
+          <div style="margin-bottom:10px; padding:8px 10px; background:linear-gradient(135deg,#e8f5e9 0%,#e3f2fd 100%); border:1px solid #A5D6A7; border-radius:8px;">
             <div style="font-size:11px; font-weight:bold; color:#1B5E20; margin-bottom:6px; display:flex; justify-content:space-between; gap:6px; flex-wrap:wrap;">
-              <span>🔮 この時間の作業予測</span>
-              <span style="font-size:10px; font-weight:normal; color:#66BB6A;">タップで同時作業にセット${predData.timeLabel ? `（${esc(predData.timeLabel)}）` : ''}</span>
+              <span>🔮 メモから推測した作業</span>
+              <span style="font-size:10px; font-weight:normal; color:#66BB6A;">タップで同時作業にセット</span>
             </div>
             <div style="display:flex; flex-wrap:wrap; gap:6px;">${predList.map(c => {
               const label = (c.crop ? (c.crop + ' ') : '') + c.workName;
               const jsCrop = String(c.crop || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
               const jsWork = String(c.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-              const rate = (c.rate != null) ? `<span style="background:#fff; color:#2E7D32; border:1px solid #81C784; border-radius:10px; padding:1px 5px; font-size:10px; margin-left:4px;">${c.rate}%</span>` : '';
-              return `<button type="button" onclick="applyBulkConcurrentPrediction_('${esc(uid)}','${jsCrop}','${jsWork}')" style="background:#fff; color:#1B5E20; border:1.5px solid #81C784; border-radius:16px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer;">🚜 ${esc(label)}${rate}</button>`;
+              const alias = c.matchedAlias
+                ? `<span style="display:block; font-size:9px; font-weight:normal; opacity:0.85;">🏷️ ${esc(c.matchedAlias)}</span>`
+                : '';
+              return `<button type="button" onclick="applyBulkConcurrentPrediction_('${esc(uid)}','${jsCrop}','${jsWork}')" style="background:#fff; color:#1B5E20; border:1.5px solid #81C784; border-radius:16px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer; text-align:left; line-height:1.25;">📝 ${esc(label)}${alias}</button>`;
             }).join('')}</div>
-          </div>` : '';
+          </div>`;
+          }
+        }
 
         const rows = list.map((entry, idx) => {
           const safeId = String(entry.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -15851,6 +15891,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const panelHtml = panelOpen ? `
           <div style="margin-top:8px; padding:10px; background:#fff; border:1px solid #CE93D8; border-radius:10px;">
             <div style="font-size:11px; font-weight:bold; color:#6A1B9A; margin-bottom:8px;">新規追加（この時間帯・${slotMins || '—'}分）</div>
+            ${predHtml}
             <div style="font-size:11px; font-weight:bold; color:#2E7D32; margin-bottom:4px;">① 作物名</div>
             ${selectedCrops.length
               ? `<div style="font-size:11px; color:#2E7D32; margin-bottom:4px;">選択中: ${esc(selectedCrops.join('、'))}</div>`
@@ -15888,7 +15929,6 @@ function createSignboardMarker(name, pos, icon, id) {
             <div style="font-size:10px; font-weight:bold; color:#6A1B9A;">🔀 この時間に行った作業</div>
             <button type="button" onclick="toggleBulkConcurrentPanel_('${esc(uid)}')" style="background:${panelOpen ? '#CE93D8' : '#EDE7F6'}; color:#5E35B1; border:1px solid #D1C4E9; border-radius:6px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">${panelOpen ? '▲ 閉じる' : 'この時間に行った作業を追加する'}</button>
           </div>
-          ${predHtml}
           ${allocSummary}
           ${mainMinsHtml}
           ${rows || '<div style="font-size:11px; color:#888;">まだありません</div>'}
