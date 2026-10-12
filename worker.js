@@ -15196,6 +15196,9 @@ function createSignboardMarker(name, pos, icon, id) {
         if (typeof window.syncBulkConcurrentEqualMinutes_ === 'function') {
           window.syncBulkConcurrentEqualMinutes_(row);
         }
+        if (typeof window.syncBulkMainWorkMinutesAuto_ === 'function') {
+          window.syncBulkMainWorkMinutesAuto_(row);
+        }
         window.rerenderBulkConcurrentCard_(uid);
       };
 
@@ -15253,6 +15256,22 @@ function createSignboardMarker(name, pos, icon, id) {
           : 0;
         const used = window.getBulkConcurrentAllocatedMins_(d, opts);
         return Math.max(0, slot - used);
+      };
+
+      /** 同時作業の分数確定後、メイン作業＝時間帯−同時作業合計 で自動セット */
+      window.syncBulkMainWorkMinutesAuto_ = (d) => {
+        if (!d) return 0;
+        if (!Array.isArray(d.concurrentWorks) || !d.concurrentWorks.length) {
+          d.mainWorkMinutes = null;
+          d.mainWorkMinutesMode = 'fixed';
+          return 0;
+        }
+        const remain = (typeof window.getBulkConcurrentRemainingMins_ === 'function')
+          ? window.getBulkConcurrentRemainingMins_(d)
+          : 0;
+        d.mainWorkMinutes = remain;
+        d.mainWorkMinutesMode = 'fixed';
+        return remain;
       };
 
       window.ensureBulkConcurrentDraft_ = (d) => {
@@ -15488,6 +15507,9 @@ function createSignboardMarker(name, pos, icon, id) {
           entry.minutes = mins;
         }
         window.syncBulkConcurrentEqualMinutes_(row);
+        if (typeof window.syncBulkMainWorkMinutesAuto_ === 'function') {
+          window.syncBulkMainWorkMinutesAuto_(row);
+        }
         window.rerenderBulkConcurrentCard_(uid);
       };
 
@@ -15498,30 +15520,55 @@ function createSignboardMarker(name, pos, icon, id) {
         window.setBulkConcurrentMinutes_(uid, sid, el.value);
       };
 
+      /** 互換：メイン作業分数は同時作業確定後に自動計算（手動指定UIは廃止） */
       window.setBulkMainWorkMinutes_ = (uid, value) => {
         const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
         if (!row) return;
-        const slot = window.getBulkConcurrentSlotMins_(row);
-        if (String(value) === 'remain') {
-          row.mainWorkMinutesMode = 'fixed';
-          row.mainWorkMinutes = window.getBulkConcurrentRemainingMins_(row);
-        } else if (String(value) === 'equal') {
-          const n = 1 + (Array.isArray(row.concurrentWorks) ? row.concurrentWorks.length : 0);
-          row.mainWorkMinutesMode = 'equal';
-          row.mainWorkMinutes = n > 0 ? Math.floor(slot / n) : 0;
+        if (typeof window.syncBulkMainWorkMinutesAuto_ === 'function') {
+          window.syncBulkMainWorkMinutesAuto_(row);
         } else {
           row.mainWorkMinutesMode = 'fixed';
-          let mins = Math.max(0, Math.round(Number(value) || 0));
-          if (slot > 0) mins = Math.min(mins, slot);
-          row.mainWorkMinutes = mins;
+          row.mainWorkMinutes = window.getBulkConcurrentRemainingMins_(row);
         }
         window.rerenderBulkConcurrentCard_(uid);
       };
 
       window.setBulkMainWorkMinutesCustom_ = (uid) => {
-        const el = document.getElementById('bulk_main_min_' + String(uid || '').trim());
-        if (!el) return;
-        window.setBulkMainWorkMinutes_(uid, el.value);
+        window.setBulkMainWorkMinutes_(uid, 'remain');
+      };
+
+      /** 作業予測チップ → 同時作業の下書きに作物・作業名をセット */
+      window.applyBulkConcurrentPrediction_ = (uid, cropName, workName) => {
+        const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+        if (!row) return;
+        row._concurrentPanelOpen = true;
+        const draft = window.ensureBulkConcurrentDraft_(row);
+        const crop = String(cropName || '').trim();
+        const work = String(workName || '').trim();
+        if (crop) {
+          draft.cropNames = [crop];
+          draft.cropName = crop;
+        } else if (!Array.isArray(draft.cropNames) || !draft.cropNames.length) {
+          draft.cropNames = ['共通'];
+          draft.cropName = '共通';
+        }
+        if (work) {
+          draft.workName = work;
+          const cat = (typeof window.getBulkWorkMemoWorkCategory_ === 'function')
+            ? window.getBulkWorkMemoWorkCategory_(work)
+            : '';
+          if (cat) {
+            draft.category = cat;
+            draft.listFilterCategory = cat;
+          }
+          draft.detailedWorks = [];
+        }
+        const apply = () => window.rerenderBulkConcurrentCard_(uid);
+        if (typeof window.ensureMobileVehiclesLoaded_ === 'function') {
+          window.ensureMobileVehiclesLoaded_().then(apply).catch(apply);
+          return;
+        }
+        apply();
       };
 
       window.confirmBulkConcurrentDraft_ = (uid) => {
@@ -15566,13 +15613,9 @@ function createSignboardMarker(name, pos, icon, id) {
         if (!Array.isArray(row.concurrentWorks)) row.concurrentWorks = [];
         row.concurrentWorks.push(entry);
         window.syncBulkConcurrentEqualMinutes_(row);
-        // メイン作業の分数が未設定なら、残り時間を自動セット（例: 60分枠で15分追加 → メイン45分）
-        if (!(row.mainWorkMinutes != null && Number(row.mainWorkMinutes) > 0)) {
-          const remainMain = window.getBulkConcurrentRemainingMins_(row);
-          if (remainMain > 0) {
-            row.mainWorkMinutes = remainMain;
-            row.mainWorkMinutesMode = 'fixed';
-          }
+        // ⑥確定後 → メイン作業＝時間帯−同時作業合計
+        if (typeof window.syncBulkMainWorkMinutesAuto_ === 'function') {
+          window.syncBulkMainWorkMinutesAuto_(row);
         }
         window.clearBulkConcurrentDraft_(row);
         // 登録後は新規追加枠をアコーディオンで閉じる（再追加はボタンから開く）
@@ -15589,6 +15632,9 @@ function createSignboardMarker(name, pos, icon, id) {
           window.syncBulkConcurrentEqualMinutes_(d);
         }
         const list = Array.isArray(d.concurrentWorks) ? d.concurrentWorks : [];
+        if (list.length && typeof window.syncBulkMainWorkMinutesAuto_ === 'function') {
+          window.syncBulkMainWorkMinutesAuto_(d);
+        }
         const panelOpen = !!d._concurrentPanelOpen;
         const draft = window.ensureBulkConcurrentDraft_(d);
         const slotMins = window.getBulkConcurrentSlotMins_(d);
@@ -15647,36 +15693,22 @@ function createSignboardMarker(name, pos, icon, id) {
             ? '<div style="font-size:11px; color:#888;">この作業に登録されている詳細作業はありません。</div>'
             : '');
         const allocatedCw = window.getBulkConcurrentAllocatedMins_(d);
-        const mainMinsVal = (d.mainWorkMinutes != null && !isNaN(Number(d.mainWorkMinutes)))
-          ? Math.round(Number(d.mainWorkMinutes))
-          : null;
-        const mainEqualOn = String(d.mainWorkMinutesMode || '') === 'equal';
-        const remainForMain = Math.max(0, slotMins - allocatedCw);
-        const totalAllocated = allocatedCw + (mainMinsVal != null ? mainMinsVal : 0);
-        const allocOk = slotMins > 0 && totalAllocated === slotMins;
-        const allocOver = slotMins > 0 && totalAllocated > slotMins;
-        const mainWorkLabel = String(d.workName || '').trim() || 'メイン作業';
-        const buildMinsButtons_ = (fixedOnClick, equalOnClick, remainOnClick, selectedMins, equalOn, inputId, customOnClick) => {
-          const btns = durOpts.fixed.map(n => {
-            const on = !equalOn && selectedMins === n;
-            return `<button type="button" onclick="${fixedOnClick(n)}" style="padding:5px 9px; border-radius:12px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${on ? '#00838F' : '#B2EBF2'}; background:${on ? '#E0F7FA' : '#fff'}; color:#006064;">${n}分</button>`;
-          }).join('');
-          const remainOn = !equalOn && selectedMins != null && selectedMins === remainForMain && remainForMain > 0
-            && durOpts.fixed.indexOf(remainForMain) < 0;
-          return `${btns}
-            <button type="button" onclick="${remainOnClick}" style="padding:5px 9px; border-radius:12px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${remainOn ? '#2E7D32' : '#A5D6A7'}; background:${remainOn ? '#E8F5E9' : '#fff'}; color:#2E7D32;">残り${remainForMain}分</button>
-            <button type="button" onclick="${equalOnClick}" style="padding:5px 9px; border-radius:12px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${equalOn ? '#6A1B9A' : '#CE93D8'}; background:${equalOn ? '#F3E5F5' : '#fff'}; color:#6A1B9A;">均等</button>
-            <span style="display:inline-flex; align-items:center; gap:4px; margin-left:2px;">
-              <input type="number" id="${esc(inputId)}" min="1" max="${slotMins || 999}" step="1" placeholder="分" value="${selectedMins != null && !equalOn && durOpts.fixed.indexOf(selectedMins) < 0 && !(remainOn) ? selectedMins : ''}"
-                style="width:64px; padding:5px 6px; border:1px solid #80CBC4; border-radius:8px; font-size:12px; box-sizing:border-box;"
-                onkeydown="if(event.key==='Enter'){event.preventDefault();${customOnClick};}">
-              <button type="button" onclick="${customOnClick}" style="padding:5px 8px; border-radius:8px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid #00838F; background:#E0F7FA; color:#006064;">指定</button>
-            </span>`;
-        };
-
+        const mainMinsVal = list.length
+          ? Math.max(0, slotMins - allocatedCw)
+          : ((d.mainWorkMinutes != null && !isNaN(Number(d.mainWorkMinutes)))
+            ? Math.round(Number(d.mainWorkMinutes))
+            : null);
         const draftEqualOn = draft.minutesMode === 'equal';
         const draftMinsShow = draft.minutes != null ? Number(draft.minutes) : null;
         const draftRemain = window.getBulkConcurrentRemainingMins_(d);
+        const draftPreviewMins = (panelOpen && draftMinsShow != null && !isNaN(draftMinsShow) && draftMinsShow > 0)
+          ? Math.round(draftMinsShow)
+          : 0;
+        const mainAfterDraft = Math.max(0, slotMins - allocatedCw - draftPreviewMins);
+        const totalAllocated = allocatedCw + (mainMinsVal != null ? mainMinsVal : 0);
+        const allocOk = slotMins > 0 && list.length > 0 && totalAllocated === slotMins;
+        const allocOver = slotMins > 0 && allocatedCw > slotMins;
+        const mainWorkLabel = String(d.workName || '').trim() || 'メイン作業';
         const minsHtml = (() => {
           const btns = durOpts.fixed.map(n => {
             const on = !draftEqualOn && draftMinsShow === n;
@@ -15695,28 +15727,76 @@ function createSignboardMarker(name, pos, icon, id) {
             </span>`;
         })();
 
-        const mainMinsHtml = (list.length || panelOpen) ? `
-          <div style="padding:8px 10px; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px; margin-bottom:8px;">
-            <div style="font-size:11px; font-weight:bold; color:#2E7D32; margin-bottom:4px;">メイン作業の時間（${esc(mainWorkLabel)}）</div>
-            <div style="font-size:10px; color:#666; margin-bottom:6px; line-height:1.35;">同じ時間帯で複数作業したとき、メイン側の分数も指定できます（例: 苗準備45分＋定植15分）。</div>
-            <div style="display:flex; flex-wrap:wrap; gap:4px; align-items:center;">
-              ${buildMinsButtons_(
-                (n) => `setBulkMainWorkMinutes_('${esc(uid)}',${n})`,
-                `setBulkMainWorkMinutes_('${esc(uid)}','equal')`,
-                `setBulkMainWorkMinutes_('${esc(uid)}','remain')`,
-                mainMinsVal,
-                mainEqualOn,
-                'bulk_main_min_' + uid,
-                `setBulkMainWorkMinutesCustom_('${esc(uid)}')`
-              )}
+        // ⑥確定後にメイン作業分を表示（先にメインを選ばせない）
+        let mainMinsHtml = '';
+        if (list.length) {
+          mainMinsHtml = `
+          <div style="padding:10px 12px; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px; margin-bottom:8px;">
+            <div style="font-size:12px; font-weight:bold; color:#2E7D32; line-height:1.45;">
+              メイン作業（${esc(mainWorkLabel)}）は <span style="font-size:18px;">${mainMinsVal != null ? mainMinsVal : '—'}</span> 分となります
             </div>
+            <div style="font-size:10px; color:#666; margin-top:4px; line-height:1.35;">
+              時間帯 ${slotMins || '—'}分 − 同時作業 ${allocatedCw}分
+            </div>
+          </div>`;
+        } else if (panelOpen && draftPreviewMins > 0 && slotMins > 0) {
+          mainMinsHtml = `
+          <div style="padding:8px 10px; background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; margin-bottom:8px;">
+            <div style="font-size:11px; color:#E65100; line-height:1.4;">
+              この同時作業を追加すると、メイン作業（${esc(mainWorkLabel)}）は <b>${mainAfterDraft}分</b> になります
+              <span style="color:#888;">（時間帯${slotMins} − 同時${draftPreviewMins}）</span>
+            </div>
+          </div>`;
+        }
+
+        const allocSummary = list.length ? `
+          <div style="font-size:11px; margin-bottom:8px; padding:6px 8px; border-radius:8px; line-height:1.4; background:${allocOver ? '#FFEBEE' : (allocOk ? '#E8F5E9' : '#FFF8E1')}; color:${allocOver ? '#C62828' : (allocOk ? '#2E7D32' : '#E65100')}; border:1px solid ${allocOver ? '#EF9A9A' : (allocOk ? '#A5D6A7' : '#FFCC80')};">
+            時間帯 ${slotMins || '—'}分 ＝ メイン ${mainMinsVal != null ? mainMinsVal : '—'}分 ＋ 同時 ${allocatedCw}分
+            ${allocOk ? ' ✓' : (allocOver ? ' ※同時作業が時間帯を超えています' : '')}
           </div>` : '';
 
-        const allocSummary = (list.length || mainMinsVal != null) ? `
-          <div style="font-size:11px; margin-bottom:8px; padding:6px 8px; border-radius:8px; line-height:1.4; background:${allocOver ? '#FFEBEE' : (allocOk ? '#E8F5E9' : '#FFF8E1')}; color:${allocOver ? '#C62828' : (allocOk ? '#2E7D32' : '#E65100')}; border:1px solid ${allocOver ? '#EF9A9A' : (allocOk ? '#A5D6A7' : '#FFCC80')};">
-            時間帯 ${slotMins || '—'}分 ／ 配分合計 ${totalAllocated}分
-            ${mainMinsVal != null ? `（メイン${mainMinsVal}＋同時${allocatedCw}）` : `（同時${allocatedCw}）`}
-            ${allocOk ? ' ✓' : (allocOver ? ' ※時間帯を超えています' : (slotMins ? ` ／ 残り ${Math.max(0, slotMins - totalAllocated)}分` : ''))}
+        // この時間帯の作業予測（同時作業の追加候補）
+        const predAtHm = (typeof window.normalizeTimeHm === 'function')
+          ? (window.normalizeTimeHm(d.startTime) || String(d.startTime || '').trim())
+          : String(d.startTime || '').trim();
+        const predData = (typeof window.getNextWorkPredictions_ === 'function')
+          ? window.getNextWorkPredictions_({ atHm: predAtHm || undefined })
+          : { timeCandidates: [], candidates: [] };
+        const mainCanon = (typeof window.getCanonicalWorkName === 'function')
+          ? window.getCanonicalWorkName(mainWorkLabel)
+          : mainWorkLabel;
+        const predList = (predData.candidates || predData.timeCandidates || [])
+          .filter(c => c && c.workName)
+          .filter(c => {
+            const w = String(c.workName || '').trim();
+            if (!w || w.includes('休憩')) return false;
+            const canon = (typeof window.getCanonicalWorkName === 'function')
+              ? window.getCanonicalWorkName(w)
+              : w;
+            if (mainCanon && canon && canon === mainCanon) return false;
+            return !list.some(cw => {
+              const cwName = String(cw && cw.workName || '').trim();
+              if (!cwName) return false;
+              const cwCanon = (typeof window.getCanonicalWorkName === 'function')
+                ? window.getCanonicalWorkName(cwName)
+                : cwName;
+              return cwCanon === canon;
+            });
+          })
+          .slice(0, 6);
+        const predHtml = predList.length ? `
+          <div style="margin-bottom:8px; padding:8px 10px; background:linear-gradient(135deg,#e8f5e9 0%,#e3f2fd 100%); border:1px solid #A5D6A7; border-radius:8px;">
+            <div style="font-size:11px; font-weight:bold; color:#1B5E20; margin-bottom:6px; display:flex; justify-content:space-between; gap:6px; flex-wrap:wrap;">
+              <span>🔮 この時間の作業予測</span>
+              <span style="font-size:10px; font-weight:normal; color:#66BB6A;">タップで同時作業にセット${predData.timeLabel ? `（${esc(predData.timeLabel)}）` : ''}</span>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:6px;">${predList.map(c => {
+              const label = (c.crop ? (c.crop + ' ') : '') + c.workName;
+              const jsCrop = String(c.crop || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+              const jsWork = String(c.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+              const rate = (c.rate != null) ? `<span style="background:#fff; color:#2E7D32; border:1px solid #81C784; border-radius:10px; padding:1px 5px; font-size:10px; margin-left:4px;">${c.rate}%</span>` : '';
+              return `<button type="button" onclick="applyBulkConcurrentPrediction_('${esc(uid)}','${jsCrop}','${jsWork}')" style="background:#fff; color:#1B5E20; border:1.5px solid #81C784; border-radius:16px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer;">🚜 ${esc(label)}${rate}</button>`;
+            }).join('')}</div>
           </div>` : '';
 
         const rows = list.map((entry, idx) => {
@@ -15795,7 +15875,11 @@ function createSignboardMarker(name, pos, icon, id) {
                 })
               : ''}
             <div style="font-size:11px; font-weight:bold; color:#006064; margin-bottom:4px;">⑥ 時間数（分）</div>
-            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">${minsHtml || '<span style="font-size:11px; color:#888;">この時間帯では選べる分数がありません</span>'}</div>
+            <div style="font-size:10px; color:#666; margin-bottom:4px; line-height:1.35;">先に同時作業の分数を決めます。追加後、メイン作業の残り時間が自動で出ます。</div>
+            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${minsHtml || '<span style="font-size:11px; color:#888;">この時間帯では選べる分数がありません</span>'}</div>
+            ${(draftPreviewMins > 0 && slotMins > 0)
+              ? `<div style="font-size:11px; color:#2E7D32; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px; padding:7px 9px; margin-bottom:10px; line-height:1.4;">追加するとメイン作業（${esc(mainWorkLabel)}）は <b>${mainAfterDraft}分</b> となります</div>`
+              : ''}
             <button type="button" onclick="confirmBulkConcurrentDraft_('${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:10px 12px; border:none; border-radius:8px; background:#7E57C2; color:#fff; font-size:13px; font-weight:bold; cursor:pointer;">追加</button>
           </div>` : '';
 
@@ -15804,6 +15888,7 @@ function createSignboardMarker(name, pos, icon, id) {
             <div style="font-size:10px; font-weight:bold; color:#6A1B9A;">🔀 この時間に行った作業</div>
             <button type="button" onclick="toggleBulkConcurrentPanel_('${esc(uid)}')" style="background:${panelOpen ? '#CE93D8' : '#EDE7F6'}; color:#5E35B1; border:1px solid #D1C4E9; border-radius:6px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">${panelOpen ? '▲ 閉じる' : 'この時間に行った作業を追加する'}</button>
           </div>
+          ${predHtml}
           ${allocSummary}
           ${mainMinsHtml}
           ${rows || '<div style="font-size:11px; color:#888;">まだありません</div>'}
