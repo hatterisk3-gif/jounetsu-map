@@ -1,0 +1,107 @@
+<!-- dump-embed panels (tree / gantt) -->
+<div id="gantt-mode" class="dump-panel tab-content" data-dump-view="gantt">
+  <div class="dump-pm-head">
+    <h2>ガント</h2>
+    <button type="button" class="dump-pm-btn" onclick="jumpGanttToToday()">今日へ</button>
+  </div>
+  <div class="dump-pm-nav">
+    <button type="button" class="dump-pm-nav-btn" onclick="shiftGanttView(-7)" aria-label="前へ">‹</button>
+    <div class="dump-pm-range">
+      <div id="gantt-range-label"></div>
+      <div id="gantt-sync-status"></div>
+    </div>
+    <button type="button" class="dump-pm-nav-btn" onclick="shiftGanttView(7)" aria-label="次へ">›</button>
+  </div>
+  <div id="gantt-chart-wrap" class="gantt-chart-wrap mb-3">
+    <div id="gantt-chart" class="gantt-chart"></div>
+  </div>
+  <div class="dump-pm-form">
+    <div class="dump-pm-form-label">タスクを追加</div>
+    <input id="gantt-new-title" class="dump-pm-input" type="text" maxlength="60" placeholder="タスク名">
+    <div class="dump-pm-dates">
+      <label>開始<input id="gantt-new-start" class="dump-pm-input" type="date"></label>
+      <label>終了<input id="gantt-new-end" class="dump-pm-input" type="date"></label>
+    </div>
+    <button type="button" class="dump-pm-add" onclick="addGanttTaskFromForm()">追加</button>
+  </div>
+  <div class="dump-pm-section-title">タスク一覧</div>
+  <div id="gantt-task-list" class="space-y-2"></div>
+</div>
+
+<div id="tree-mode" class="dump-panel tab-content" data-dump-view="tree">
+  <div class="tree-chrome">
+    <div class="tree-chrome-head">
+      <h2 class="font-black tracking-wide">ツリー</h2>
+      <p id="tree-hint">交点で追加 · 番号でジャンル · メモから挿入 · ホイール/ピンチで拡大縮小 · 右ドラッグで移動</p>
+    </div>
+    <div class="tree-bars">
+      <div class="tree-bar-row">
+        <div class="tree-toolbar">
+          <select id="tree-palette-select" onchange="treeSwitchPalette(this.value)" title="パレット切替" aria-label="パレット切替"></select>
+          <button type="button" onclick="treeAddPalette()" class="tree-tool-icon" title="パレットを新規保存" aria-label="パレット新規">＋</button>
+          <button type="button" onclick="treeRenamePalette()" class="tree-tool-icon" title="パレット名を変更" aria-label="パレット名変更">✎</button>
+          <span class="w-px" aria-hidden="true" style="width:1px;height:20px;background:#c8e6c9;"></span>
+          <button type="button" id="tree-undo-btn" onclick="treeUndo()" class="tree-tool-icon" title="元に戻す" aria-label="元に戻す">↶</button>
+          <button type="button" id="tree-redo-btn" onclick="treeRedo()" class="tree-tool-icon" title="次に進む" aria-label="次に進む">↷</button>
+          <span class="w-px" aria-hidden="true" style="width:1px;height:20px;background:#c8e6c9;"></span>
+          <button type="button" id="tree-link-style-btn" onclick="treeToggleLinkStyle()" class="tree-tool-icon" title="接続の形" aria-label="接続の形">→</button>
+          <button type="button" onclick="treeToggleAccent()" class="tree-tool-icon" title="色強調" aria-label="色強調">◆</button>
+          <button type="button" onclick="treeDeleteSelection()" class="tree-tool-icon" title="削除" aria-label="削除">🗑</button>
+          <span class="w-px" aria-hidden="true" style="width:1px;height:20px;background:#c8e6c9;"></span>
+          <button type="button" id="tree-memo-btn" onclick="toggleTreeMemoDrawer()" class="tree-tool-icon" title="メモから挿入" aria-label="メモ">メモ</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tree-board">
+    <div class="tree-ruler-row">
+      <div class="tree-ruler-corner" aria-hidden="true"></div>
+      <div id="tree-ruler-top" class="tree-ruler is-x" aria-hidden="true"></div>
+      <div class="tree-ruler-corner" aria-hidden="true"></div>
+    </div>
+    <div class="tree-board-mid">
+      <div id="tree-ruler-left" class="tree-ruler is-y" aria-hidden="true"></div>
+      <div id="tree-canvas-wrap">
+        <div id="tree-zoom-sizer">
+          <div id="tree-stage">
+            <div id="tree-lanes-layer" aria-hidden="true"></div>
+            <svg id="tree-rails-svg" aria-hidden="true"></svg>
+            <div id="tree-nodes-layer"></div>
+            <svg id="tree-edges-svg">
+              <g id="tree-edges-g"></g>
+              <path id="tree-link-preview" class="tree-edge is-preview hidden" d=""></path>
+            </svg>
+          </div>
+        </div>
+      </div>
+      <div id="tree-ruler-right" class="tree-ruler is-y" aria-hidden="true"></div>
+    </div>
+    <div class="tree-ruler-row">
+      <div class="tree-ruler-corner" aria-hidden="true"></div>
+      <div id="tree-ruler-bottom" class="tree-ruler is-x" aria-hidden="true"></div>
+      <div class="tree-ruler-corner" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <div id="tree-memo-backdrop" onclick="closeTreeMemoDrawer()" aria-hidden="true"></div>
+  <aside id="tree-memo-drawer" aria-hidden="true" aria-label="メモ一覧">
+    <div id="tree-memo-drawer-head">
+      <h3>メモ</h3>
+      <span id="tree-memo-count">0件</span>
+      <button type="button" id="tree-memo-close-btn" onclick="closeTreeMemoDrawer()" aria-label="閉じる" title="閉じる">✕</button>
+    </div>
+    <div id="tree-memo-list"></div>
+  </aside>
+
+  <div id="tree-edit-modal" class="hidden" onclick="if(event.target===this)closeTreeEditModal()">
+    <div style="background:#fff;border:1px solid #a5d6a7;width:100%;max-width:22rem;border-radius:1.25rem;padding:1.25rem;box-shadow:0 8px 28px rgba(27,94,32,0.2);">
+      <h3 style="color:#1b5e20;font-weight:900;font-size:1rem;margin:0 0 0.75rem;">ノード名を編集</h3>
+      <input type="text" id="tree-edit-input" maxlength="40" class="dump-pm-input" placeholder="名前を入力">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-top:1rem;">
+        <button type="button" onclick="closeTreeEditModal()" class="dump-pm-btn">キャンセル</button>
+        <button type="button" onclick="confirmTreeEditLabel()" class="dump-pm-add">保存</button>
+      </div>
+    </div>
+  </div>
+</div>

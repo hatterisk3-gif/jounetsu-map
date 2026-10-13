@@ -1073,3 +1073,186 @@ select.snr-input { appearance:auto; }
   background: #e3f2fd;
   color: #0d47a1;
 }
+
+/* ===== DUMP ツリー／ガント FAB（情熱MAP寄り） ===== */
+.dump-fab-root {
+  position: fixed;
+  right: 14px;
+  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  z-index: 3500;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+}
+.dump-fab-root > * { pointer-events: auto; }
+.dump-fab-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(145deg, #66BB6A 0%, #2E7D32 100%);
+  color: #fff;
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(46, 125, 50, 0.45);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+  padding: 0;
+}
+.dump-fab-btn:hover {
+  box-shadow: 0 6px 18px rgba(46, 125, 50, 0.55);
+  transform: translateY(-1px);
+}
+.dump-fab-btn.is-open {
+  background: linear-gradient(145deg, #FFB74D 0%, #E65100 100%);
+  box-shadow: 0 4px 14px rgba(230, 81, 0, 0.4);
+  transform: rotate(45deg);
+}
+.dump-fab-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+  min-width: 200px;
+  max-width: min(260px, calc(100vw - 40px));
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #C8E6C9;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(27, 94, 32, 0.18);
+  animation: dumpFabMenuIn 0.16s ease;
+}
+.dump-fab-menu[hidden] { display: none !important; }
+@keyframes dumpFabMenuIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.dump-fab-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid #E0E0E0;
+  border-radius: 12px;
+  background: #FAFAFA;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.dump-fab-option:hover {
+  background: #F1F8E9;
+  border-color: #A5D6A7;
+}
+.dump-fab-option-tree:hover { background: #E8F5E9; border-color: #81C784; }
+.dump-fab-option-gantt:hover { background: #E3F2FD; border-color: #90CAF9; }
+.dump-fab-option-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  background: #E8F5E9;
+  flex-shrink: 0;
+}
+.dump-fab-option-gantt .dump-fab-option-icon { background: #E3F2FD; }
+.dump-fab-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.dump-fab-option-text strong {
+  font-size: 14px;
+  color: #1B5E20;
+  font-weight: 800;
+}
+.dump-fab-option-gantt .dump-fab-option-text strong { color: #0D47A1; }
+.dump-fab-option-text small {
+  font-size: 11px;
+  color: #78909C;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.dump-app-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 12050;
+  background: rgba(0, 0, 0, 0.55);
+  display: none;
+  align-items: stretch;
+  justify-content: center;
+}
+.dump-app-overlay.is-open { display: flex !important; }
+.dump-app-shell {
+  width: 100%;
+  height: 100%;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.dump-app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  padding-top: calc(10px + env(safe-area-inset-top, 0px));
+  background: linear-gradient(135deg, #2E7D32 0%, #66BB6A 55%, #43A047 100%);
+  color: #fff;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(27, 94, 32, 0.25);
+}
+.dump-app-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  font-size: 16px;
+  min-width: 0;
+}
+.dump-app-title span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dump-app-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.dump-app-ext-btn {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.dump-app-close-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(0, 0, 0, 0.12);
+  color: #fff;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.dump-app-shell #dumpAppMount {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+}

@@ -8537,3 +8537,133 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }, 500);
 });
+
+// ===== DUMP ツリー／ガント（schedule 内蔵） =====
+window._dumpPanelsReady = false;
+window._dumpPanelsLoading = null;
+
+window.closeDumpFabMenu_ = function () {
+  const menu = document.getElementById('dumpFabMenu');
+  const btn = document.getElementById('dumpFabBtn');
+  if (menu) menu.hidden = true;
+  if (btn) {
+    btn.classList.remove('is-open');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.textContent = '＋';
+  }
+};
+
+window.toggleDumpFabMenu_ = function () {
+  const menu = document.getElementById('dumpFabMenu');
+  const btn = document.getElementById('dumpFabBtn');
+  if (!menu || !btn) return;
+  const open = !!menu.hidden;
+  menu.hidden = !open;
+  btn.classList.toggle('is-open', open);
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+};
+
+window.ensureDumpPanels_ = function () {
+  if (window._dumpPanelsReady) return Promise.resolve();
+  if (window._dumpPanelsLoading) return window._dumpPanelsLoading;
+  const mount = document.getElementById('dumpAppMount');
+  if (!mount) return Promise.reject(new Error('dumpAppMount missing'));
+  window._dumpPanelsLoading = fetch('dump-embed/dump-panels.html?v=1788600000055')
+    .then((res) => {
+      if (!res.ok) throw new Error('dump-panels HTTP ' + res.status);
+      return res.text();
+    })
+    .then((html) => {
+      mount.innerHTML = html;
+      window._dumpPanelsReady = true;
+      window._dumpPanelsLoading = null;
+    })
+    .catch((err) => {
+      window._dumpPanelsLoading = null;
+      throw err;
+    });
+  return window._dumpPanelsLoading;
+};
+
+window.showDumpPanel_ = function (view) {
+  const v = (view === 'gantt' || view === 'gantt-mode') ? 'gantt' : 'tree';
+  const tree = document.getElementById('tree-mode');
+  const gantt = document.getElementById('gantt-mode');
+  if (tree) {
+    tree.classList.toggle('is-active', v === 'tree');
+    tree.classList.toggle('active', v === 'tree');
+  }
+  if (gantt) {
+    gantt.classList.toggle('is-active', v === 'gantt');
+    gantt.classList.toggle('active', v === 'gantt');
+  }
+  if (v === 'tree' && typeof window.initTreeMode === 'function') {
+    window.initTreeMode();
+  } else if (v === 'gantt' && typeof window.initGanttMode === 'function') {
+    window.initGanttMode();
+  }
+};
+
+window.openDumpAppView_ = function (view) {
+  const v = (view === 'gantt' || view === 'gantt-mode') ? 'gantt' : 'tree';
+  const overlay = document.getElementById('dumpAppOverlay');
+  const titleIcon = document.getElementById('dumpAppTitleIcon');
+  const titleText = document.getElementById('dumpAppTitleText');
+  window._dumpAppCurrentView = v;
+  if (titleIcon) titleIcon.textContent = v === 'gantt' ? '▤' : '🌳';
+  if (titleText) titleText.textContent = v === 'gantt' ? 'ガント' : 'ツリー';
+  window.closeDumpFabMenu_();
+  window.ensureDumpPanels_()
+    .then(() => {
+      if (overlay) {
+        overlay.style.display = 'flex';
+        overlay.classList.add('is-open');
+        overlay.setAttribute('aria-hidden', 'false');
+      }
+      window.showDumpPanel_(v);
+      // ツリーはレイアウト確定後に再描画
+      if (v === 'tree' && typeof window.renderTree === 'function') {
+        requestAnimationFrame(() => {
+          try { window.renderTree(); } catch (e) {}
+        });
+      }
+    })
+    .catch((err) => {
+      console.error('DUMPパネル読み込み失敗', err);
+      alert('ツリー／ガントの読み込みに失敗しました');
+    });
+};
+
+window.closeDumpAppOverlay_ = function () {
+  const overlay = document.getElementById('dumpAppOverlay');
+  if (overlay) {
+    overlay.classList.remove('is-open');
+    overlay.style.display = 'none';
+    overlay.setAttribute('aria-hidden', 'true');
+  }
+  try {
+    if (typeof window.closeTreeMemoDrawer === 'function') window.closeTreeMemoDrawer();
+    if (typeof window.closeTreeEditModal === 'function') window.closeTreeEditModal();
+  } catch (e) {}
+};
+
+document.addEventListener('click', (ev) => {
+  const root = document.getElementById('dumpFabRoot');
+  if (!root || root.contains(ev.target)) return;
+  window.closeDumpFabMenu_();
+});
+
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Escape') return;
+  try {
+    if (typeof window.isTreeMemoDrawerOpen === 'function' && window.isTreeMemoDrawerOpen()) return;
+  } catch (e) {}
+  const editModal = document.getElementById('tree-edit-modal');
+  if (editModal && !editModal.classList.contains('hidden')) return;
+  const overlay = document.getElementById('dumpAppOverlay');
+  if (overlay && overlay.classList.contains('is-open')) {
+    window.closeDumpAppOverlay_();
+    return;
+  }
+  window.closeDumpFabMenu_();
+});

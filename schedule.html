@@ -15,7 +15,8 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1786243000000"></script>
-  <link rel="stylesheet" href="schedule.css?v=1788600000052">
+  <link rel="stylesheet" href="schedule.css?v=1788600000055">
+  <link rel="stylesheet" href="dump-embed/dump-tree-gantt.css?v=1788600000055">
 </head>
 
 <body>
@@ -568,6 +569,41 @@
     <div class="modal-content" id="modalBody" onclick="event.stopPropagation()"></div>
   </div>
 
+  <!-- DUMP ツリー／ガント起動（右丸＋） -->
+  <div id="dumpFabRoot" class="dump-fab-root" aria-live="polite">
+    <div id="dumpFabMenu" class="dump-fab-menu" hidden>
+      <button type="button" class="dump-fab-option dump-fab-option-tree" onclick="openDumpAppView_('tree')">
+        <span class="dump-fab-option-icon">🌳</span>
+        <span class="dump-fab-option-text">
+          <strong>ツリー</strong>
+          <small>関係図・構成を整理</small>
+        </span>
+      </button>
+      <button type="button" class="dump-fab-option dump-fab-option-gantt" onclick="openDumpAppView_('gantt')">
+        <span class="dump-fab-option-icon">▤</span>
+        <span class="dump-fab-option-text">
+          <strong>ガント</strong>
+          <small>期間タスクを一覧</small>
+        </span>
+      </button>
+    </div>
+    <button type="button" id="dumpFabBtn" class="dump-fab-btn" onclick="toggleDumpFabMenu_()" aria-label="DUMPツールを開く" aria-expanded="false" title="DUMP ツリー／ガント">＋</button>
+  </div>
+  <div id="dumpAppOverlay" class="dump-app-overlay" style="display:none;" aria-hidden="true">
+    <div class="dump-app-shell">
+      <div class="dump-app-header">
+        <div class="dump-app-title">
+          <span id="dumpAppTitleIcon">🌳</span>
+          <span id="dumpAppTitleText">ツリー</span>
+        </div>
+        <div class="dump-app-header-actions">
+          <button type="button" class="dump-app-close-btn" onclick="closeDumpAppOverlay_()" aria-label="閉じる">×</button>
+        </div>
+      </div>
+      <div id="dumpAppMount" aria-live="polite"></div>
+    </div>
+  </div>
+
   <!-- 下部ナビゲーション（PC / モバイル共通） -->
   <div class="mobile-bottom-bar">
     <button type="button" onclick="openScheduleTable()">
@@ -900,6 +936,7 @@
       })
       .then(() => appendScript('weather-agri.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('weather-agri.js')))
       .then(() => appendScript('schedule.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('schedule.js')))
+      .then(() => appendScript('dump-embed/dump-tree-gantt.js?v=' + cacheBust).catch(function () {}))
       .then(() => appendScript('day-planner.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('day-planner.js')))
       .then(() => appendScript('attendance-calendar.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('attendance-calendar.js')))
       .then(() => appendScript('market.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('market.js')))
