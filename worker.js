@@ -12541,107 +12541,153 @@ function createSignboardMarker(name, pos, icon, id) {
           }
 
           const finishSuccess_ = (successMsg) => {
-              if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
-              else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
-              try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
+              try {
+                  if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+                  else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+                  try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
+              } catch (eCache) {}
 
               const isPrepTarget = !!(window._workNameEditorOpts && window._workNameEditorOpts.isPrepTarget);
               const isAfterSaveNextWork = !!(window._workNameEditorOpts && window._workNameEditorOpts.afterSaveNextWork);
               window._workNameEditorOpts = null;
-              window.closeWorkNameEditorModal();
+              try { window.closeWorkNameEditorModal(); } catch (eClose) {}
 
-              const currentWork = document.getElementById('rec_work_name')?.value || '';
-              if (isAfterSaveNextWork) {
-                  window._afterSaveDraftWorkName = name;
-                  window._afterSavePickerStep = 'work';
-                  if (typeof window.showAfterSaveNextWorkPicker_ === 'function') {
-                      window.showAfterSaveNextWorkPicker_();
-                  }
-                  setTimeout(() => {
-                      if (typeof window.selectAfterSaveNextWork_ === 'function') {
-                          window.selectAfterSaveNextWork_(name, window._afterSaveDraftCrop || '');
+              try {
+                  const currentWork = document.getElementById('rec_work_name')?.value || '';
+                  if (isAfterSaveNextWork) {
+                      window._afterSaveDraftWorkName = name;
+                      window._afterSavePickerStep = 'work';
+                      if (typeof window.showAfterSaveNextWorkPicker_ === 'function') {
+                          window.showAfterSaveNextWorkPicker_();
                       }
-                  }, 60);
-                  if (typeof window.showRecordSyncToast === 'function') {
-                      window.showRecordSyncToast(`✅ 作業「${name}」を追加して選択しました`, 'ok');
+                      setTimeout(() => {
+                          if (typeof window.selectAfterSaveNextWork_ === 'function') {
+                              window.selectAfterSaveNextWork_(name, window._afterSaveDraftCrop || '');
+                          }
+                      }, 60);
+                      if (typeof window.showRecordSyncToast === 'function') {
+                          window.showRecordSyncToast(`✅ 作業「${name}」を追加して選択しました`, 'ok');
+                      }
+                  } else if (isPrepTarget || (typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(currentWork))) {
+                      if (typeof window.onPrepTargetWorkChange === 'function') {
+                          window.onPrepTargetWorkChange(name);
+                      } else if (typeof window.refreshPrepTargetWorkSection === 'function') {
+                          window.refreshPrepTargetWorkSection(name);
+                      }
+                  } else if (typeof window.refreshWorkChipsAfterMasterChange === 'function') {
+                      window.refreshWorkChipsAfterMasterChange(name);
                   }
-              } else if (isPrepTarget || (typeof window.isPrepWorkName === 'function' && window.isPrepWorkName(currentWork))) {
-                  if (typeof window.onPrepTargetWorkChange === 'function') {
-                      window.onPrepTargetWorkChange(name);
-                  } else if (typeof window.refreshPrepTargetWorkSection === 'function') {
-                      window.refreshPrepTargetWorkSection(name);
-                  }
-              } else {
-                  window.refreshWorkChipsAfterMasterChange(name);
+              } catch (eUi) {
+                  console.warn('work master UI refresh failed', eUi);
               }
 
               if (!isAfterSaveNextWork && typeof customAlert === 'function') {
-                customAlert(successMsg);
+                try { customAlert(successMsg); } catch (eAlert) {}
               }
           };
 
+          const payload = { name, category, cropName, crops, cropDetails, detailWorks, aliasNames, ...uiFlags };
+          const successMsg = manageAction === 'merge'
+            ? `✅ 「${name}」に統合して登録しました！`
+            : (mode === 'edit' ? '✅ 作業マスタを更新しました！' : '✅ 作業マスタを追加しました！');
+          const applyAckOrLocal_ = (updatedList) => {
+              if (Array.isArray(updatedList)) {
+                  pdlWorkMaster = updatedList;
+                  return;
+              }
+              const ackOrig = (updatedList && updatedList.originalName != null && updatedList.originalName !== '')
+                ? updatedList.originalName
+                : orig;
+              if (typeof window.applyLocalWorkMasterPayload_ === 'function') {
+                  window.applyLocalWorkMasterPayload_(mode, ackOrig, payload, manageAction);
+              }
+          };
+          const restoreSubmitBtn_ = () => {
+              if (!submitBtn) return;
+              // モーダルが閉じ済みなら何もしない
+              if (!document.getElementById('workNameEditorModal')) return;
+              submitBtn.disabled = false;
+              submitBtn.style.pointerEvents = '';
+              submitBtn.style.opacity = '';
+              submitBtn.innerText = oldBtnText || (mode === 'edit' ? '更新する' : '追加する');
+          };
+
           try {
-              let updatedList;
-              const payload = { name, category, cropName, crops, cropDetails, detailWorks, aliasNames, ...uiFlags };
-              if (manageAction === 'merge') {
-                  updatedList = await callGAS('manageMaster', {
-                      masterType: 'work',
-                      manageAction: 'merge',
-                      value: { originalName: orig, name: name, newData: payload },
-                      userName: localStorage.getItem('passionMapUserName') || currentUser
-                  });
-              } else if (mode === 'add') {
-                  updatedList = await callGAS('manageMaster', {
+              const reqParams = (manageAction === 'merge')
+                ? {
+                    masterType: 'work',
+                    manageAction: 'merge',
+                    value: { originalName: orig, name: name, newData: payload },
+                    userName: localStorage.getItem('passionMapUserName') || currentUser
+                  }
+                : (mode === 'add')
+                  ? {
                       masterType: 'work',
                       manageAction: 'add',
                       value: payload,
                       userName: localStorage.getItem('passionMapUserName') || currentUser
-                  });
-              } else {
-                  updatedList = await callGAS('manageMaster', {
+                    }
+                  : {
                       masterType: 'work',
                       manageAction: 'edit',
-                      value: {
-                          originalName: orig,
-                          newData: payload
-                      },
+                      value: { originalName: orig, newData: payload },
                       userName: localStorage.getItem('passionMapUserName') || currentUser
-                  });
-              }
-              if (Array.isArray(updatedList)) {
-                  pdlWorkMaster = updatedList;
-              } else {
-                  const ackOrig = (updatedList && updatedList.originalName != null && updatedList.originalName !== '')
-                    ? updatedList.originalName
-                    : orig;
-                  if (typeof window.applyLocalWorkMasterPayload_ === 'function') {
-                      // ACK は名前だけ。詳細は送信済み payload でローカル反映
-                      window.applyLocalWorkMasterPayload_(mode, ackOrig, payload, manageAction);
+                    };
+
+              // 編集は応答待ちで固まりやすいので、18秒で画面を先に進める（通信は裏で継続）
+              const UI_WAIT_MS = (mode === 'edit' || manageAction === 'merge') ? 18000 : 45000;
+              const callPromise = callGAS('manageMaster', reqParams, 0, { timeoutMs: 45000 });
+              let settled = false;
+              const uiTimeout = new Promise((resolve) => {
+                  setTimeout(() => resolve({ __uiTimeout: true }), UI_WAIT_MS);
+              });
+              const raced = await Promise.race([
+                  callPromise.then((data) => ({ __uiTimeout: false, data: data })).catch((err) => { throw err; }),
+                  uiTimeout
+              ]);
+
+              if (raced && raced.__uiTimeout) {
+                  // 画面は成功扱いで進める。裏の通信結果はローカルに反映できれば反映
+                  if (mode === 'edit' || manageAction === 'merge') {
+                      applyAckOrLocal_(null);
+                      finishSuccess_(successMsg);
+                      settled = true;
+                      callPromise.then((data) => {
+                          try { applyAckOrLocal_(data); } catch (eBg) {}
+                          if (typeof window.syncLivePdlIntoInitCache_ === 'function') {
+                              try { window.syncLivePdlIntoInitCache_(); } catch (eSync) {}
+                          }
+                      }).catch(() => { /* 裏失敗は無視（画面は既に更新済み） */ });
+                      return;
                   }
+                  // 追加は重複リスクがあるので、タイムアウトまで待たずエラーにしないで継続待ち…
+                  // ここではそのまま await にフォールスルーせず、追加も固まるので短めに待つ
+                  try {
+                      const data = await callPromise;
+                      applyAckOrLocal_(data);
+                      finishSuccess_(successMsg);
+                  } catch (eAdd) {
+                      throw eAdd;
+                  }
+                  return;
               }
-              finishSuccess_(manageAction === 'merge'
-                  ? `✅ 「${name}」に統合して登録しました！`
-                  : (mode === 'edit' ? '✅ 作業マスタを更新しました！' : '✅ 作業マスタを追加しました！'));
+
+              applyAckOrLocal_(raced && raced.data);
+              finishSuccess_(successMsg);
+              settled = true;
+              void settled;
           } catch (e) {
               const errMsg = String((e && e.message) || '');
-              const looksNet = /Failed to fetch|通信に失敗|通信がタイムアウト|一時的な通信/i.test(errMsg);
+              const looksNet = /Failed to fetch|通信に失敗|通信がタイムアウト|一時的な通信|cancelled/i.test(errMsg)
+                || (e && e.name === 'AbortError');
               // 編集・統合はサーバー書込み後に応答だけ落ちることが多いので、画面は成功扱いにする
               if (looksNet && (mode === 'edit' || manageAction === 'merge')) {
-                  if (typeof window.applyLocalWorkMasterPayload_ === 'function') {
-                      window.applyLocalWorkMasterPayload_(mode, orig, payload, manageAction);
-                  }
-                  finishSuccess_(manageAction === 'merge'
-                      ? `✅ 「${name}」に統合して登録しました！`
-                      : '✅ 作業マスタを更新しました！');
+                  applyAckOrLocal_(null);
+                  finishSuccess_(successMsg);
                   return;
               }
               if (typeof customAlert === 'function') customAlert(errMsg || '保存に失敗しました。');
-              if (submitBtn) {
-                  submitBtn.disabled = false;
-                  submitBtn.style.pointerEvents = '';
-                  submitBtn.style.opacity = '';
-                  submitBtn.innerText = oldBtnText || (mode === 'edit' ? '更新する' : '追加する');
-              }
+              restoreSubmitBtn_();
           }
       };
 
@@ -15668,6 +15714,10 @@ function createSignboardMarker(name, pos, icon, id) {
             draft.listFilterCategory = cat;
           }
           draft.detailedWorks = [];
+          if (typeof window.recordBulkMemoWorkPickStat_ === 'function') {
+            const memo = String(row._workMatchText || row.rawLine || draft.rawHint || '').trim();
+            try { window.recordBulkMemoWorkPickStat_(memo, work, 1); } catch (eStat) {}
+          }
         }
         const apply = () => window.rerenderBulkConcurrentCard_(uid);
         if (typeof window.ensureMobileVehiclesLoaded_ === 'function') {
@@ -31668,6 +31718,263 @@ window.guessBulkWorkMemoConcurrentWorks_ = (raw, startTime) => {
   return { mainText: split.mainText, concurrentWorks: entries };
 };
 
+/** 一括入力：メモ→選んだ作業の統計（端末・ユーザー別） */
+window.getBulkMemoWorkStatsCacheKey_ = () => {
+  const user = String(
+    (typeof currentUser !== 'undefined' && currentUser) || localStorage.getItem('passionMapUserName') || 'anon'
+  ).replace(/\s+/g, '');
+  return 'passionMapBulkMemoWorkPickStats:' + (user || 'anon');
+};
+
+window.normalizeBulkMemoWorkStatKey_ = (text) => {
+  let s = String(text || '').trim();
+  if (!s) return '';
+  if (typeof window.normalizeBulkWorkMemoTypoText_ === 'function') {
+    s = window.normalizeBulkWorkMemoTypoText_(s);
+  }
+  s = s.replace(/(\d{1,2})\s*[:：]\s*(\d{1,2})/g, ' ');
+  s = s.replace(/(\d{1,2})\s*時\s*(半|(\d{1,2})\s*分?)?/g, ' ');
+  s = s.replace(/\d+\s*分(間)?/g, ' ');
+  s = s.replace(/(から|まで|にて|で|に|へ|を|の|が|は|と|＆|&|終了|完了|途中|同時に)/g, ' ');
+  s = s.replace(/[　\s]+/g, ' ').trim();
+  if (typeof window.bulkWorkMemoToHalfWidthKana_ === 'function') {
+    try {
+      const k = window.bulkWorkMemoToHalfWidthKana_(s);
+      if (k) s = String(k);
+    } catch (e) { /* ignore */ }
+  }
+  return s.slice(0, 80);
+};
+
+window.seedBulkMemoWorkPickStatsFromHistory_ = (data) => {
+  if (!data) return data;
+  const hasAny = Object.keys(data.exact || {}).length || Object.keys(data.works || {}).length;
+  if (hasAny) return data;
+  if (typeof window.loadBulkWorkMemoHistory_ !== 'function') return data;
+  try {
+    const hist = window.loadBulkWorkMemoHistory_() || [];
+    hist.forEach(entry => {
+      (Array.isArray(entry && entry.items) ? entry.items : []).forEach(it => {
+        if (!it || it.isLunchOnly) return;
+        const wn = String(it.workName || '').trim();
+        if (!wn || wn.includes('休憩')) return;
+        const memo = String(it.memoHint || '').trim() || wn;
+        // 履歴からの初期シード（重み1）
+        const exactKey = window.normalizeBulkMemoWorkStatKey_(memo);
+        const tokens = window.extractBulkMemoWorkStatTokens_(memo);
+        const bumpBag_ = (bag, key) => {
+          if (!key) return;
+          if (!bag[key] || typeof bag[key] !== 'object') bag[key] = {};
+          bag[key][wn] = (Number(bag[key][wn]) || 0) + 1;
+        };
+        if (exactKey) bumpBag_(data.exact, exactKey);
+        tokens.forEach(tok => bumpBag_(data.tokens, tok));
+        data.works[wn] = (Number(data.works[wn]) || 0) + 1;
+      });
+    });
+    if (Object.keys(data.works).length) {
+      data.updatedAt = Date.now();
+      try {
+        localStorage.setItem(window.getBulkMemoWorkStatsCacheKey_(), JSON.stringify({
+          exact: data.exact,
+          tokens: data.tokens,
+          works: data.works,
+          updatedAt: data.updatedAt
+        }));
+      } catch (e) { /* ignore */ }
+    }
+  } catch (e) { /* ignore */ }
+  return data;
+};
+
+window.loadBulkMemoWorkPickStats_ = () => {
+  if (window._bulkMemoWorkPickStatsCache
+      && window._bulkMemoWorkPickStatsCache._key === window.getBulkMemoWorkStatsCacheKey_()) {
+    return window._bulkMemoWorkPickStatsCache;
+  }
+  let data = { exact: {}, tokens: {}, works: {}, updatedAt: 0 };
+  try {
+    const raw = JSON.parse(localStorage.getItem(window.getBulkMemoWorkStatsCacheKey_()) || 'null');
+    if (raw && typeof raw === 'object') {
+      data.exact = (raw.exact && typeof raw.exact === 'object') ? raw.exact : {};
+      data.tokens = (raw.tokens && typeof raw.tokens === 'object') ? raw.tokens : {};
+      data.works = (raw.works && typeof raw.works === 'object') ? raw.works : {};
+      data.updatedAt = Number(raw.updatedAt) || 0;
+    }
+  } catch (e) { /* ignore */ }
+  data = window.seedBulkMemoWorkPickStatsFromHistory_(data) || data;
+  data._key = window.getBulkMemoWorkStatsCacheKey_();
+  window._bulkMemoWorkPickStatsCache = data;
+  return data;
+};
+
+window.persistBulkMemoWorkPickStats_ = (data) => {
+  const src = data || window.loadBulkMemoWorkPickStats_();
+  const trimMapCounts_ = (mapObj, maxKeys) => {
+    const keys = Object.keys(mapObj || {});
+    if (keys.length <= maxKeys) return mapObj || {};
+    // 合計カウントが少ないキーから落とす
+    const scored = keys.map(k => {
+      const bag = mapObj[k] || {};
+      let sum = 0;
+      Object.keys(bag).forEach(w => { sum += Number(bag[w]) || 0; });
+      return { k: k, sum: sum };
+    }).sort((a, b) => b.sum - a.sum);
+    const next = {};
+    scored.slice(0, maxKeys).forEach(x => { next[x.k] = mapObj[x.k]; });
+    return next;
+  };
+  const trimWorks_ = (works, maxKeys) => {
+    const keys = Object.keys(works || {});
+    if (keys.length <= maxKeys) return works || {};
+    return keys
+      .map(k => ({ k: k, n: Number(works[k]) || 0 }))
+      .sort((a, b) => b.n - a.n)
+      .slice(0, maxKeys)
+      .reduce((acc, x) => { acc[x.k] = x.n; return acc; }, {});
+  };
+  const out = {
+    exact: trimMapCounts_(src.exact, 400),
+    tokens: trimMapCounts_(src.tokens, 240),
+    works: trimWorks_(src.works, 120),
+    updatedAt: Date.now()
+  };
+  try {
+    localStorage.setItem(window.getBulkMemoWorkStatsCacheKey_(), JSON.stringify(out));
+  } catch (e) {
+    console.warn('メモ→作業統計の保存に失敗', e);
+  }
+  out._key = window.getBulkMemoWorkStatsCacheKey_();
+  window._bulkMemoWorkPickStatsCache = out;
+  return out;
+};
+
+window.extractBulkMemoWorkStatTokens_ = (text) => {
+  const key = window.normalizeBulkMemoWorkStatKey_(text);
+  if (!key) return [];
+  const tokens = key.split(/\s+/).map(s => s.trim()).filter(s => s.length >= 2);
+  const jp = (key.match(/[\u3040-\u30ff\u3400-\u9fff\uF900-\uFAFF々〆ヵヶ\u30fc\uff66-\uff9f]{2,}/g) || []);
+  jp.forEach(t => {
+    if (tokens.indexOf(t) < 0) tokens.push(t);
+  });
+  if (typeof window.extractBulkWorkMemoKeywords_ === 'function') {
+    (window.extractBulkWorkMemoKeywords_(key) || []).forEach(k => {
+      if (k && tokens.indexOf(k) < 0) tokens.push(k);
+    });
+  }
+  return tokens.slice(0, 12);
+};
+
+/** メモ文と選んだ作業名を統計に加算 */
+window.recordBulkMemoWorkPickStat_ = (memoText, workName, weight) => {
+  const name = String(workName || '').trim();
+  if (!name || name.includes('休憩')) return;
+  const w = Math.max(1, Math.min(5, parseInt(weight, 10) || 1));
+  const exactKey = window.normalizeBulkMemoWorkStatKey_(memoText);
+  const tokens = window.extractBulkMemoWorkStatTokens_(memoText);
+  if (!exactKey && !tokens.length) return;
+  const data = window.loadBulkMemoWorkPickStats_();
+  const bumpBag_ = (bag, key, n) => {
+    if (!key) return;
+    if (!bag[key] || typeof bag[key] !== 'object') bag[key] = {};
+    bag[key][name] = (Number(bag[key][name]) || 0) + n;
+  };
+  if (exactKey) bumpBag_(data.exact, exactKey, w);
+  tokens.forEach(tok => bumpBag_(data.tokens, tok, w));
+  data.works[name] = (Number(data.works[name]) || 0) + w;
+  window.persistBulkMemoWorkPickStats_(data);
+};
+
+window.recordBulkMemoWorkPickStatFromDraft_ = (draft, weight) => {
+  if (!draft) return;
+  const name = String(draft.workName || '').trim();
+  if (!name) return;
+  const memo = String(draft._workMatchText || draft.rawLine || draft.guessedName || '').trim();
+  window.recordBulkMemoWorkPickStat_(memo, name, weight);
+};
+
+window.recordBulkMemoWorkPickStatsFromDrafts_ = (drafts, weight) => {
+  (Array.isArray(drafts) ? drafts : []).forEach(d => {
+    if (!d || d.isRest || d.isLunchOnly) return;
+    window.recordBulkMemoWorkPickStatFromDraft_(d, weight);
+  });
+};
+
+/**
+ * メモ文に対する「よく選ばれる作業」ブースト一覧
+ * @returns {Array<{name:string, boost:number, count:number, source:string}>}
+ */
+window.getBulkMemoWorkStatBoosts_ = (text, startTime) => {
+  const data = window.loadBulkMemoWorkPickStats_();
+  const exactKey = window.normalizeBulkMemoWorkStatKey_(text);
+  const tokens = window.extractBulkMemoWorkStatTokens_(text);
+  const byName = new Map();
+  const add_ = (name, boost, count, source) => {
+    const n = String(name || '').trim();
+    if (!n || n.includes('休憩')) return;
+    const prev = byName.get(n);
+    if (!prev) {
+      byName.set(n, { name: n, boost: boost, count: count, source: source });
+      return;
+    }
+    prev.boost += boost;
+    prev.count = Math.max(prev.count, count);
+    if (source === 'exact') prev.source = 'exact';
+  };
+  if (exactKey && data.exact[exactKey]) {
+    const bag = data.exact[exactKey];
+    Object.keys(bag).forEach(w => {
+      const c = Number(bag[w]) || 0;
+      if (c <= 0) return;
+      // 同じメモで選ばれた回数を強く反映
+      add_(w, Math.min(55, 22 + Math.round(12 * Math.log2(1 + c))), c, 'exact');
+    });
+  }
+  tokens.forEach(tok => {
+    const bag = data.tokens[tok];
+    if (!bag) return;
+    Object.keys(bag).forEach(w => {
+      const c = Number(bag[w]) || 0;
+      if (c <= 0) return;
+      add_(w, Math.min(28, 8 + Math.round(6 * Math.log2(1 + c))), c, 'token');
+    });
+  });
+  // 全体でよく選ばれる作業（メモ断片が弱いとき用の控えめブースト）
+  const workEntries = Object.keys(data.works || {})
+    .map(w => ({ w: w, c: Number(data.works[w]) || 0 }))
+    .filter(x => x.c >= 2)
+    .sort((a, b) => b.c - a.c)
+    .slice(0, 8);
+  workEntries.forEach(x => {
+    add_(x.w, Math.min(12, 4 + Math.round(2 * Math.log2(1 + x.c))), x.c, 'popular');
+  });
+  // 時間帯のよくやる作業も少し足す（既存統計を流用）
+  if (startTime && typeof window.getTimeOfDayWorkPredictions_ === 'function') {
+    try {
+      const tp = window.getTimeOfDayWorkPredictions_(startTime);
+      (tp && tp.candidates ? tp.candidates : []).slice(0, 4).forEach(c => {
+        const wn = String(c.workName || '').trim();
+        if (!wn) return;
+        add_(wn, Math.min(14, 4 + Math.round((Number(c.rate) || 0) / 12)), Number(c.count) || 1, 'time');
+      });
+    } catch (e) { /* ignore */ }
+  }
+  return Array.from(byName.values())
+    .sort((a, b) => b.boost - a.boost || b.count - a.count)
+    .slice(0, 16);
+};
+
+window.lookupBulkMemoWorkStatCounts_ = (text) => {
+  const boosts = window.getBulkMemoWorkStatBoosts_(text, '');
+  const out = {};
+  boosts.forEach(b => {
+    if (b && b.name && (b.source === 'exact' || b.source === 'token') && b.count > 0) {
+      out[b.name] = b.count;
+    }
+  });
+  return out;
+};
+
 window.suggestBulkWorkMemoWorkNames_ = (text, startTime, _depth) => {
   const rawT = String(text || '').trim();
   if (!rawT) return [];
@@ -31678,20 +31985,26 @@ window.suggestBulkWorkMemoWorkNames_ = (text, startTime, _depth) => {
   if (depth > 2) return [];
   window.ensureBulkWorkMemoRestInMaster_();
   const scores = new Map();
-  const bump = (name, score, category, matchedAlias) => {
+  const bump = (name, score, category, matchedAlias, extra) => {
     const n = String(name || '').trim();
     if (!n) return;
     const prev = scores.get(n);
     const alias = matchedAlias ? String(matchedAlias).trim() : '';
+    const statCount = extra && extra.statCount != null ? Number(extra.statCount) : 0;
+    const fromStats = !!(extra && extra.fromStats);
     if (!prev || score > prev.score) {
       scores.set(n, {
         name: n,
         score: score,
         category: String(category || (prev && prev.category) || '').trim(),
-        matchedAlias: alias || (prev && prev.matchedAlias) || ''
+        matchedAlias: alias || (prev && prev.matchedAlias) || '',
+        statCount: Math.max(statCount, (prev && prev.statCount) || 0),
+        fromStats: fromStats || !!(prev && prev.fromStats)
       });
-    } else if (prev && score === prev.score && alias && !prev.matchedAlias) {
-      prev.matchedAlias = alias;
+    } else {
+      if (prev && score === prev.score && alias && !prev.matchedAlias) prev.matchedAlias = alias;
+      if (prev && statCount > (prev.statCount || 0)) prev.statCount = statCount;
+      if (prev && fromStats) prev.fromStats = true;
     }
   };
 
@@ -31792,13 +32105,48 @@ window.suggestBulkWorkMemoWorkNames_ = (text, startTime, _depth) => {
     const workOnly = stripped.split(cropInMemo).join(' ').replace(/\s+/g, ' ').trim();
     if (workOnly && workOnly.length >= 2 && workOnly !== stripped) {
       (window.suggestBulkWorkMemoWorkNames_(workOnly, startTime, depth + 1) || []).forEach(x => {
-        if (x && x.name) bump(x.name, x.score, x.category, x.matchedAlias || '');
+        if (x && x.name) {
+          bump(x.name, x.score, x.category, x.matchedAlias || '', {
+            statCount: x.statCount || 0,
+            fromStats: !!x.fromStats
+          });
+        }
       });
     }
   }
 
+  // メモ→よく選ばれる作業の統計ブースト（最上位 depth のみ）
+  if (depth === 0 && typeof window.getBulkMemoWorkStatBoosts_ === 'function') {
+    const catOf_ = (workName) => {
+      if (typeof window.getBulkWorkMemoWorkCategory_ === 'function') {
+        return String(window.getBulkWorkMemoWorkCategory_(workName) || '').trim();
+      }
+      const wObj = (pdlWorkMaster || []).find(w => w && String(w.name || '').trim() === workName);
+      return wObj ? String(window.getWorkMasterCategoryOrEmpty_(wObj) || wObj.category || '').trim() : '';
+    };
+    (window.getBulkMemoWorkStatBoosts_(t, startTime) || []).forEach(b => {
+      if (!b || !b.name) return;
+      const n = String(b.name).trim();
+      const boost = Number(b.boost) || 0;
+      if (!boost) return;
+      const prev = scores.get(n);
+      if (prev) {
+        prev.score += boost;
+        prev.statCount = Math.max(prev.statCount || 0, Number(b.count) || 0);
+        prev.fromStats = true;
+      } else if ((Number(b.count) || 0) >= 2 || b.source === 'exact') {
+        // 文字列一致が弱くても、よく選ばれている作業は候補に出す
+        const base = b.source === 'exact' ? 58 : 48;
+        bump(n, base + Math.min(20, Math.round(boost / 3)), catOf_(n), '', {
+          statCount: Number(b.count) || 0,
+          fromStats: true
+        });
+      }
+    });
+  }
+
   return Array.from(scores.values())
-    .sort((a, b) => b.score - a.score || b.name.length - a.name.length || a.name.localeCompare(b.name, 'ja'))
+    .sort((a, b) => b.score - a.score || (b.statCount || 0) - (a.statCount || 0) || b.name.length - a.name.length || a.name.localeCompare(b.name, 'ja'))
     .slice(0, 16);
 };
 
@@ -37495,7 +37843,7 @@ window.buildBulkWorkMemoCropPickSectionHtml_ = (d, uid) => {
     </div>`;
 };
 
-window.buildBulkWorkMemoWorkChipBtnHtml_ = (uid, name, cur, esc, style, aliasHint) => {
+window.buildBulkWorkMemoWorkChipBtnHtml_ = (uid, name, cur, esc, style, aliasHint, statCount) => {
   const on = name === cur;
   const safeArg = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const wCat = window.getBulkWorkMemoWorkCategory_(name);
@@ -37504,10 +37852,14 @@ window.buildBulkWorkMemoWorkChipBtnHtml_ = (uid, name, cur, esc, style, aliasHin
   const aliasBadge = (!on && alias)
     ? `<span style="display:block; font-size:10px; font-weight:normal; opacity:0.9; margin-top:2px;">🏷️ 類似「${esc(alias)}」</span>`
     : '';
+  const sc = parseInt(statCount, 10) || 0;
+  const statBadge = (!on && sc > 0)
+    ? `<span style="display:block; font-size:10px; font-weight:normal; opacity:0.9; margin-top:2px;">📊 よく選ぶ${sc >= 2 ? ' ×' + sc : ''}</span>`
+    : '';
   const border = style === 'maybe' ? (on ? '#7B1FA2' : '#CE93D8') : (on ? '#E65100' : (alias ? '#FF9800' : '#FFCC80'));
   const bg = style === 'maybe' ? (on ? '#F3E5F5' : '#fff') : (on ? '#FFF3E0' : (alias ? '#FFF8E1' : '#fff'));
   const color = style === 'maybe' ? '#6A1B9A' : '#E65100';
-  return `<button type="button" onclick="pickBulkWorkMemoWorkName_('${esc(uid)}','${safeArg}')" style="padding:8px 12px; border-radius:16px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid ${border}; background:${bg}; color:${color}; text-align:left; line-height:1.25;">${esc(name)}${catHint}${aliasBadge}</button>`;
+  return `<button type="button" onclick="pickBulkWorkMemoWorkName_('${esc(uid)}','${safeArg}')" style="padding:8px 12px; border-radius:16px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid ${border}; background:${bg}; color:${color}; text-align:left; line-height:1.25;">${esc(name)}${catHint}${aliasBadge}${statBadge}</button>`;
 };
 
 window.buildBulkWorkMemoWorkChipsHtml_ = (d, uid) => {
@@ -37526,16 +37878,20 @@ window.buildBulkWorkMemoWorkChipsHtml_ = (d, uid) => {
   if (!names.length && !maybeNames.length) {
     return '<div style="font-size:11px; color:#888; margin-bottom:8px;">メモから近い作業名が見つかりません。下の「一覧から選ぶ」から選んでください。</div>';
   }
+  const memoHint = String(d._workMatchText || d.rawLine || d.guessedName || '').trim();
+  const statCounts = (typeof window.lookupBulkMemoWorkStatCounts_ === 'function')
+    ? (window.lookupBulkMemoWorkStatCounts_(memoHint) || {})
+    : {};
   const aliasNote = Object.keys(aliasHints).length
     ? `<div style="font-size:11px; color:#E65100; margin:0 0 6px; line-height:1.35;">📝 メモの呼び方が、作業マスタの<strong>類似作業名</strong>に一致しました。タップで選択できます。</div>`
     : '';
   let html = aliasNote;
   if (names.length) {
-    html += `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${names.map(name => window.buildBulkWorkMemoWorkChipBtnHtml_(uid, name, cur, esc, 'primary', aliasHints[name] || '')).join('')}</div>`;
+    html += `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${names.map(name => window.buildBulkWorkMemoWorkChipBtnHtml_(uid, name, cur, esc, 'primary', aliasHints[name] || '', statCounts[name] || 0)).join('')}</div>`;
   }
   if (maybeNames.length) {
     html += `<div style="font-size:10px; color:#7B1FA2; font-weight:bold; margin:${names.length ? '0' : '0'} 0 6px;">もしかして：</div>`;
-    html += `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${maybeNames.map(name => window.buildBulkWorkMemoWorkChipBtnHtml_(uid, name, cur, esc, 'maybe', aliasHints[name] || '')).join('')}</div>`;
+    html += `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${maybeNames.map(name => window.buildBulkWorkMemoWorkChipBtnHtml_(uid, name, cur, esc, 'maybe', aliasHints[name] || '', statCounts[name] || 0)).join('')}</div>`;
   }
   return html;
 };
@@ -39011,6 +39367,10 @@ window.pickBulkWorkMemoWorkName_ = (uid, name) => {
     row.fieldCandidates = [];
   } else if (typeof window.applyBulkWorkMemoFieldHints_ === 'function') {
     window.applyBulkWorkMemoFieldHints_(row, { mergePolyIds: true });
+  }
+  // メモ→作業の選択統計（次回予測に使う）
+  if (typeof window.recordBulkMemoWorkPickStatFromDraft_ === 'function') {
+    try { window.recordBulkMemoWorkPickStatFromDraft_(row, 1); } catch (eStat) {}
   }
   window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
 };
@@ -41637,10 +41997,20 @@ window.executeBulkWorkMemoRegistration_ = async () => {
         customAlert('昼休憩の連動登録に失敗しました。作業の登録は完了しています。');
       }
     }
+    if (typeof window.recordBulkMemoWorkPickStatsFromDrafts_ === 'function') {
+      try { window.recordBulkMemoWorkPickStatsFromDrafts_(drafts, 2); } catch (eStatSave) {}
+    }
     if (typeof window.saveBulkWorkMemoHistoryEntry_ === 'function') {
       try {
         const preview = drafts.slice(0, 4).map(d => String(d.workName || d.rawLine || '').trim()).filter(Boolean).join(' / ');
         const lunchItem = savedItems.find(it => it && it.isLunchOnly && it.startTime && it.endTime);
+        const draftByWork = {};
+        drafts.forEach(d => {
+          if (!d) return;
+          const wn = String(d.workName || '').trim();
+          if (!wn || draftByWork[wn]) return;
+          draftByWork[wn] = String(d._workMatchText || d.rawLine || '').trim();
+        });
         window.saveBulkWorkMemoHistoryEntry_({
           batchId: batchId,
           workDate: ymd,
@@ -41659,7 +42029,8 @@ window.executeBulkWorkMemoRegistration_ = async () => {
             workName: it.workName || '',
             startTime: it.startTime || '',
             endTime: it.endTime || '',
-            isLunchOnly: !!it.isLunchOnly
+            isLunchOnly: !!it.isLunchOnly,
+            memoHint: draftByWork[String(it.workName || '').trim()] || ''
           }))
         });
       } catch (e) {
@@ -41875,7 +42246,8 @@ window.saveBulkWorkMemoHistoryEntry_ = (entry) => {
       workName: String(it.workName || ''),
       startTime: String(it.startTime || ''),
       endTime: String(it.endTime || ''),
-      isLunchOnly: !!it.isLunchOnly
+      isLunchOnly: !!it.isLunchOnly,
+      memoHint: String(it.memoHint || '').slice(0, 80)
     })) : []
   };
   const filtered = list.filter(x => x && x.batchId !== next.batchId);

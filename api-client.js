@@ -12,7 +12,8 @@
   };
 
   var HEAVY_TIMEOUT_MS = {
-    manageMaster: 120000,
+    // 作業マスタ等はACK返却前提。長すぎると「更新しています…」のまま固まる
+    manageMaster: 45000,
     saveRecord: 120000,
     saveRecordBatch: 120000,
     updateRecordItem: 120000,
@@ -72,13 +73,18 @@
       || (err.name === 'TypeError' && msg.indexOf('fetch') >= 0);
   }
 
-  /** manageMaster 等：回線切断に加え、コールドスタート由来の Abort も再送対象にする */
-  function isSoftRetryableError(err) {
+  /** 回線切断は再送。Abort（タイムアウト）はコールドスタート系だけ再送し、manageMaster は早めに諦める */
+  function isSoftRetryableError(err, action) {
     if (!err) return false;
     if (isNetworkFetchError(err)) return true;
-    if (err.name === 'AbortError') return true;
     var msg = String(err.message || '');
-    return msg.indexOf('一時的な通信エラー') >= 0;
+    if (msg.indexOf('一時的な通信エラー') >= 0) return true;
+    if (err.name === 'AbortError') {
+      // manageMaster を Abort 再送すると最大数分「更新中」のままになる
+      if (action === 'manageMaster') return false;
+      return true;
+    }
+    return false;
   }
 
   function readSpreadsheetId() {
@@ -114,7 +120,10 @@
 
     var baseTimeoutMs = callOptions.timeoutMs || HEAVY_TIMEOUT_MS[action] || 30000;
     var maxRetries = NO_RETRY_ACTIONS[action] ? 0 : retries;
-    var softNetRetries = NETWORK_SOFT_RETRY_ACTIONS[action] ? 2 : 0;
+    // manageMaster は1回だけ再送（Failed to fetch）。タイムアウト再送はしない
+    var softNetRetries = NETWORK_SOFT_RETRY_ACTIONS[action]
+      ? (action === 'manageMaster' ? 1 : 2)
+      : 0;
     var maxAttempts = Math.max(maxRetries, softNetRetries) + 1;
     var lastError = null;
     var cancelAtStart = cancelGen[action] || 0;
@@ -163,7 +172,7 @@
         var msg = String((err && err.message) || '');
         if (isNoRetryMessage(msg)) break;
         var isNet = isNetworkFetchError(err);
-        var isSoft = isSoftRetryableError(err);
+        var isSoft = isSoftRetryableError(err, action);
         var canRetry = i < maxRetries;
         if (!canRetry && isSoft && netRetryUsed < softNetRetries) {
           canRetry = true;
