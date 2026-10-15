@@ -12,7 +12,7 @@
   };
 
   var HEAVY_TIMEOUT_MS = {
-    manageMaster: 90000,
+    manageMaster: 120000,
     saveRecord: 120000,
     saveRecordBatch: 120000,
     updateRecordItem: 120000,
@@ -46,11 +46,30 @@
     saveProdMgmtCategories: true
   };
 
+  // 二重保存は避けたいが、CORS/回線切断の Failed to fetch だけは再送する
+  var NETWORK_SOFT_RETRY_ACTIONS = {
+    manageMaster: true,
+    getInitData: true,
+    login: true
+  };
+
   var controllers = {};
   var cancelGen = {};
 
   function isNoRetryMessage(msg) {
     return msg.indexOf('既に登録') >= 0 || msg.indexOf('ログインセッション') >= 0;
+  }
+
+  function isNetworkFetchError(err) {
+    if (!err) return false;
+    if (err.name === 'AbortError') return false;
+    var msg = String(err.message || '');
+    return msg === 'Failed to fetch'
+      || msg.indexOf('NetworkError') >= 0
+      || msg.indexOf('Load failed') >= 0
+      || msg.indexOf('network') >= 0
+      || msg.indexOf('一時的な通信エラー') >= 0
+      || (err.name === 'TypeError' && msg.indexOf('fetch') >= 0);
   }
 
   function readSpreadsheetId() {
@@ -86,10 +105,13 @@
 
     var baseTimeoutMs = callOptions.timeoutMs || HEAVY_TIMEOUT_MS[action] || 30000;
     var maxRetries = NO_RETRY_ACTIONS[action] ? 0 : retries;
+    var softNetRetries = NETWORK_SOFT_RETRY_ACTIONS[action] ? 2 : 0;
+    var maxAttempts = Math.max(maxRetries, softNetRetries) + 1;
     var lastError = null;
     var cancelAtStart = cancelGen[action] || 0;
+    var netRetryUsed = 0;
 
-    for (var i = 0; i <= maxRetries; i++) {
+    for (var i = 0; i < maxAttempts; i++) {
       if ((cancelGen[action] || 0) > cancelAtStart) {
         lastError = new Error('cancelled');
         lastError.name = 'AbortError';
@@ -106,6 +128,8 @@
       try {
         var res = await fetch(GAS_URL, {
           method: 'POST',
+          redirect: 'follow',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify(params),
           signal: controller.signal
         });
@@ -129,11 +153,20 @@
         lastError = err;
         var msg = String((err && err.message) || '');
         if (isNoRetryMessage(msg)) break;
-        if (i < maxRetries) {
-          // タイムアウト／一時エラーは少し待ってから再試行
-          var waitMs = (err && err.name === 'AbortError') ? 2500 : 1500;
-          await new Promise(function (r) { setTimeout(r, waitMs); });
+        var isNet = isNetworkFetchError(err);
+        var canRetry = i < maxRetries;
+        if (!canRetry && isNet && netRetryUsed < softNetRetries) {
+          canRetry = true;
+          netRetryUsed += 1;
         }
+        // 通常リトライ枠を使い切っても、ネットワーク再送枠が残っていれば続行
+        if (!canRetry && i + 1 >= maxAttempts) break;
+        if (canRetry && i + 1 < maxAttempts) {
+          var waitMs = (err && err.name === 'AbortError') ? 2500 : (isNet ? 2000 : 1500);
+          await new Promise(function (r) { setTimeout(r, waitMs); });
+          continue;
+        }
+        break;
       } finally {
         delete controllers[reqKey];
         if (controllers[action] === controller) delete controllers[action];
@@ -147,6 +180,9 @@
         throw new Error('通信がタイムアウトしました。サーバー側では更新が完了している場合があります。画面を再読み込みして確認してください。');
       }
       throw new Error('通信がタイムアウトしました。電波の良い場所で再度お試しください。');
+    }
+    if (isNetworkFetchError(lastError)) {
+      throw new Error('サーバーとの通信に失敗しました。更新は完了している場合があります。画面を再読み込みして確認してください。');
     }
     throw lastError;
   }

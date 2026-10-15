@@ -12445,6 +12445,31 @@ function createSignboardMarker(name, pos, icon, id) {
           }
       };
 
+      window.applyLocalWorkMasterPayload_ = (mode, originalName, payload, manageAction) => {
+          if (!Array.isArray(pdlWorkMaster)) pdlWorkMaster = [];
+          const item = Object.assign({}, payload || {});
+          const name = String(item.name || '').trim();
+          const orig = String(originalName || '').trim();
+          if (manageAction === 'merge') {
+              const keepIdx = pdlWorkMaster.findIndex(w => String(w && w.name || '').trim() === name);
+              if (keepIdx >= 0) pdlWorkMaster[keepIdx] = Object.assign({}, pdlWorkMaster[keepIdx], item);
+              else pdlWorkMaster.push(item);
+              if (orig && orig !== name) {
+                  pdlWorkMaster = pdlWorkMaster.filter(w => String(w && w.name || '').trim() !== orig);
+              }
+              return;
+          }
+          if (mode === 'add') {
+              if (!pdlWorkMaster.some(w => String(w && w.name || '').trim() === name)) {
+                  pdlWorkMaster.push(item);
+              }
+              return;
+          }
+          const idx = pdlWorkMaster.findIndex(w => String(w && w.name || '').trim() === orig);
+          if (idx >= 0) pdlWorkMaster[idx] = Object.assign({}, pdlWorkMaster[idx], item);
+          else if (name) pdlWorkMaster.push(item);
+      };
+
       window.submitWorkNameEditor = async (mode, originalName, btnEl) => {
           if (mode === 'edit' && !window.isWorkerAdmin()) {
               if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
@@ -12499,35 +12524,7 @@ function createSignboardMarker(name, pos, icon, id) {
               submitBtn.innerText = (manageAction === 'merge') ? '⏳ 統合しています…' : ((mode === 'edit') ? '⏳ 更新しています…' : '⏳ 追加しています…');
           }
 
-          try {
-              let updatedList;
-              const payload = { name, category, cropName, crops, cropDetails, detailWorks, aliasNames, ...uiFlags };
-              if (manageAction === 'merge') {
-                  updatedList = await callGAS('manageMaster', {
-                      masterType: 'work',
-                      manageAction: 'merge',
-                      value: { originalName: orig, name: name, newData: payload },
-                      userName: localStorage.getItem('passionMapUserName') || currentUser
-                  });
-              } else if (mode === 'add') {
-                  updatedList = await callGAS('manageMaster', {
-                      masterType: 'work',
-                      manageAction: 'add',
-                      value: payload,
-                      userName: localStorage.getItem('passionMapUserName') || currentUser
-                  });
-              } else {
-                  updatedList = await callGAS('manageMaster', {
-                      masterType: 'work',
-                      manageAction: 'edit',
-                      value: {
-                          originalName: orig,
-                          newData: payload
-                      },
-                      userName: localStorage.getItem('passionMapUserName') || currentUser
-                  });
-              }
-              if (Array.isArray(updatedList)) pdlWorkMaster = updatedList;
+          const finishSuccess_ = (successMsg) => {
               if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
               else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
               try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
@@ -12563,12 +12560,77 @@ function createSignboardMarker(name, pos, icon, id) {
               }
 
               if (!isAfterSaveNextWork && typeof customAlert === 'function') {
-                customAlert(manageAction === 'merge'
+                customAlert(successMsg);
+              }
+          };
+
+          try {
+              let updatedList;
+              const payload = { name, category, cropName, crops, cropDetails, detailWorks, aliasNames, ...uiFlags };
+              if (manageAction === 'merge') {
+                  updatedList = await callGAS('manageMaster', {
+                      masterType: 'work',
+                      manageAction: 'merge',
+                      value: { originalName: orig, name: name, newData: payload },
+                      userName: localStorage.getItem('passionMapUserName') || currentUser
+                  });
+              } else if (mode === 'add') {
+                  updatedList = await callGAS('manageMaster', {
+                      masterType: 'work',
+                      manageAction: 'add',
+                      value: payload,
+                      userName: localStorage.getItem('passionMapUserName') || currentUser
+                  });
+              } else {
+                  updatedList = await callGAS('manageMaster', {
+                      masterType: 'work',
+                      manageAction: 'edit',
+                      value: {
+                          originalName: orig,
+                          newData: payload
+                      },
+                      userName: localStorage.getItem('passionMapUserName') || currentUser
+                  });
+              }
+              if (Array.isArray(updatedList)) pdlWorkMaster = updatedList;
+              else if (typeof window.applyLocalWorkMasterPayload_ === 'function') {
+                  window.applyLocalWorkMasterPayload_(mode, orig, payload, manageAction);
+              }
+              finishSuccess_(manageAction === 'merge'
                   ? `✅ 「${name}」に統合して登録しました！`
                   : (mode === 'edit' ? '✅ 作業マスタを更新しました！' : '✅ 作業マスタを追加しました！'));
-              }
           } catch (e) {
-              if (typeof customAlert === 'function') customAlert(e.message || '保存に失敗しました。');
+              const errMsg = String((e && e.message) || '');
+              const looksNet = /Failed to fetch|通信に失敗|通信がタイムアウト|一覧の再取得に失敗/i.test(errMsg);
+              // 編集はサーバー側完了済みのことが多いので、一覧再取得でリカバリする
+              if (looksNet && (mode === 'edit' || manageAction === 'merge')) {
+                  try {
+                      if (submitBtn) submitBtn.innerText = '⏳ 確認しています…';
+                      const verified = await callGAS('manageMaster', {
+                          masterType: 'work',
+                          manageAction: 'list',
+                          userName: localStorage.getItem('passionMapUserName') || currentUser
+                      }, 1);
+                      if (Array.isArray(verified)) {
+                          pdlWorkMaster = verified;
+                          const ok = verified.some(w => String(w && w.name || '').trim() === name);
+                          if (ok) {
+                              finishSuccess_(mode === 'edit'
+                                  ? '✅ 作業マスタを更新しました！'
+                                  : `✅ 「${name}」に統合して登録しました！`);
+                              return;
+                          }
+                      }
+                  } catch (verifyErr) { /* fall through */ }
+                  if (typeof window.applyLocalWorkMasterPayload_ === 'function') {
+                      window.applyLocalWorkMasterPayload_(mode, orig, {
+                          name, category, cropName, crops, cropDetails, detailWorks, aliasNames, ...uiFlags
+                      }, manageAction);
+                      finishSuccess_('⚠️ 通信が不安定でしたが、画面上は更新済みにしました。反映されない場合は再読み込みして確認してください。');
+                      return;
+                  }
+              }
+              if (typeof customAlert === 'function') customAlert(errMsg || '保存に失敗しました。');
               // エラー発生時はボタンを活性化状態に復元
               if (submitBtn) {
                   submitBtn.disabled = false;

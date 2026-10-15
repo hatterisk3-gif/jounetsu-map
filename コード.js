@@ -5,7 +5,13 @@ const MASTER_SPREADSHEET_ID = "1Kfg5JzNE8pZVQuyuHExz1Q00vzd75MmWrtKLLHUG89c"; //
 let TENANT_SS = null;
 
 function jsonOut_(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+  try {
+    return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+  } catch (stringifyErr) {
+    // 巨大レスポンス等で stringify 自体が落ちると CORS なし HTML になり Failed to fetch になる
+    const fallback = { status: 'error', message: '応答の生成に失敗しました: ' + String((stringifyErr && stringifyErr.message) || stringifyErr) };
+    return ContentService.createTextOutput(JSON.stringify(fallback)).setMimeType(ContentService.MimeType.JSON);
+  }
 }
 
 function bindTenantSpreadsheet_(params) {
@@ -474,15 +480,20 @@ JSONのみ:
 }
 
 function writeLog(user, action, target, detail) {
-  const ss = TENANT_SS;
-  let sheet = ss.getSheetByName('操作ログ');
-  if (!sheet) {
-    sheet = ss.insertSheet('操作ログ');
-    sheet.appendRow(["日時", "ユーザー", "操作内容", "対象", "詳細"]);
-    sheet.getRange("A1:E1").setFontWeight("bold").setBackground("#e0e0e0");
+  try {
+    const ss = TENANT_SS;
+    if (!ss) return;
+    let sheet = ss.getSheetByName('操作ログ');
+    if (!sheet) {
+      sheet = ss.insertSheet('操作ログ');
+      sheet.appendRow(["日時", "ユーザー", "操作内容", "対象", "詳細"]);
+      sheet.getRange("A1:E1").setFontWeight("bold").setBackground("#e0e0e0");
+    }
+    const now = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm:ss");
+    sheet.appendRow([now, user || "不明", action, target, detail]);
+  } catch (e) {
+    // ログ失敗で本体APIを落とさない（落とすとブラウザは Failed to fetch になる）
   }
-  const now = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm:ss");
-  sheet.appendRow([now, user || "不明", action, target, detail]);
 }
 
 /** 組織IDからテナントSpreadsheet IDを解決する（ログイン／サインアップ共用） */
@@ -1739,6 +1750,12 @@ function manageMasterData(masterType, manageAction, value, userName) {
 
   const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(h => String(h).trim());
 
+  // 参照のみ（更新後の通信切れリカバリ用）
+  if (manageAction === 'list' || manageAction === 'get') {
+    if (masterType === 'work') return readWorkMasterList_(sheet);
+    // 他マスタは末尾の共通 return に任せる
+  }
+
   if (manageAction === 'merge') {
     if (masterType !== 'work') throw new Error('統合できるのは作業マスタのみです');
     mergeWorkMasterConflict_(sheet, value, userName);
@@ -1885,22 +1902,39 @@ function manageMasterData(masterType, manageAction, value, userName) {
       const keyIdx = workHeaders.indexOf('作業名');
       const originalName = String(value.originalName || "").trim();
       const newName = String((value.newData && value.newData.name) || "").trim();
-      if (newName && newName !== originalName && workMasterNameExists_(sheet, workHeaders, newName, originalName)) {
-        throw new Error(`作業名「${newName}」は既に登録されています`);
+      if (!originalName) throw new Error('変更前の作業名がありません');
+      if (!newName) throw new Error('作業名を入力してください');
+      // 同一データで重複チェック（getDataRange の多重呼び出しを避ける）
+      if (newName !== originalName && keyIdx >= 0) {
+        for (let di = 1; di < data.length; di++) {
+          const n = String(data[di][keyIdx] || '').trim();
+          if (n && n === newName) {
+            throw new Error(`作業名「${newName}」は既に登録されています`);
+          }
+        }
       }
-      const latestData = sheet.getDataRange().getValues();
-      for (let i = 1; i < latestData.length; i++) {
-        if (keyIdx >= 0 && String(latestData[i][keyIdx]).trim() === originalName) {
+      let workEditFound = false;
+      for (let i = 1; i < data.length; i++) {
+        if (keyIdx >= 0 && String(data[i][keyIdx]).trim() === originalName) {
           // 既存行をベースに必要な列だけ更新（担当部署など他列は維持）
-          const rowVals = latestData[i].slice();
+          const rowVals = data[i].slice();
           while (rowVals.length < workHeaders.length) rowVals.push("");
           applyWorkMasterValuesToRow_(rowVals, workHeaders, value.newData || {});
           const outRow = rowVals.slice(0, workHeaders.length);
+          // セル上限（5万文字）超過を先に弾く（落とすと Failed to fetch になる）
+          for (let ci = 0; ci < outRow.length; ci++) {
+            const cell = outRow[ci];
+            if (typeof cell === 'string' && cell.length > 49000) {
+              throw new Error('作物別詳細作業などのデータが大きすぎます。詳細作業を減らしてから再度お試しください。');
+            }
+          }
           sheet.getRange(i + 1, 1, 1, outRow.length).setValues([outRow]);
-          writeLog(userName, "マスタ編集", (value.newData && value.newData.name) || originalName, `対象: ${sheetName} (元: ${originalName})`);
+          writeLog(userName, "マスタ編集", newName || originalName, `対象: ${sheetName} (元: ${originalName})`);
+          workEditFound = true;
           break;
         }
       }
+      if (!workEditFound) throw new Error('作業「' + originalName + '」が作業マスタにありません');
     } else if (masterType === 'location') {
       const originalName = String(value.originalName || '').trim();
       const loc = value.newData || {};
@@ -2387,7 +2421,13 @@ function manageMasterData(masterType, manageAction, value, userName) {
   } else if (masterType === 'material') {
     return newData.slice(1).filter(r => r[1]).map(r => ({ id: r[0], name: r[1], workCategory: r[2] || "", unit: r[4] || "" }));
   } else if (masterType === 'work') {
-    return readWorkMasterList_(sheet);
+    try {
+      return readWorkMasterList_(sheet);
+    } catch (workListErr) {
+      // 一覧再読込失敗でも write は済んでいるので空配列ではなくエラーにしない
+      // クライアントは Array 以外をローカル反映で扱う
+      return { ok: true, partial: true, message: '一覧再取得に失敗' };
+    }
   } else {
     return newData.slice(1).map(r=>r[0]).filter(String);
   }
