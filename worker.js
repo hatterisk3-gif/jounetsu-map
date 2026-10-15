@@ -420,9 +420,9 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           try { document.documentElement.classList.add('worker-has-session'); } catch (e) {}
           setWorkerLoginScreenVisible_(false);
           if (message && typeof window.showRecordSyncToast === 'function') {
-              window.showRecordSyncToast(message, toastType || 'error');
+              window.showRecordSyncToast(message, toastType || 'info');
           }
-          loadInitData({ background: true });
+          loadInitData({ background: true, silentRetry: true });
       }
 
       async function executeLogin(isAuto = false, options = {}) {
@@ -459,14 +459,20 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           }
 
           try {
+              // キャッシュ起動時もコールドスタートを見込んで長め＋再試行
               const result = await callGAS(
                   'login',
                   { orgId: 'default', userId: id, password: pw },
-                  fromCache ? 1 : 2,
-                  fromCache ? { timeoutMs: 25000 } : {}
+                  fromCache ? 2 : 2,
+                  fromCache ? { timeoutMs: 60000 } : { timeoutMs: 60000 }
               );
               if (result.success) {
                   window._workerLoginSucceeded = true;
+                  window._workerCacheLoginRetryCount = 0;
+                  if (window._workerCacheLoginRetryTimer) {
+                    clearTimeout(window._workerCacheLoginRetryTimer);
+                    window._workerCacheLoginRetryTimer = null;
+                  }
                   currentUser = result.name;
                   try { document.documentElement.classList.add('worker-has-session'); } catch (e) {}
                   setWorkerLoginScreenVisible_(false);
@@ -496,7 +502,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
 
                   if (fromCache) {
                       // キャッシュ描画済み → 操作可能なまま裏で最新を取得
-                      loadInitData({ background: true });
+                      loadInitData({ background: true, silentRetry: true });
                   } else {
                       // 初回などキャッシュなし → 完了までブロック
                       const loaded = await loadInitData({ loadingHandle: startupLoad });
@@ -508,9 +514,10 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   }
               } else {
                   if (fromCache) {
+                      // キャッシュで既に動いているのでエラー表示は控えめに、裏で最新取得を続ける
                       continueCachedWorkerSession_(
-                          '⚠️ ログイン確認に失敗しました（キャッシュで続行中）',
-                          'error'
+                          '📦 キャッシュで続行中（サーバー確認を再試行します）',
+                          'info'
                       );
                       return;
                   }
@@ -534,10 +541,26 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           } catch(e) { 
               if (fromCache) {
                   console.warn('Cache-mode login sync failed, continuing offline:', e);
-                  continueCachedWorkerSession_(
-                      '⚠️ 通信タイムアウト（キャッシュで続行中）',
-                      'error'
-                  );
+                  // 電波が良くても Apps Script 起動待ちで落ちやすいので、
+                  // キャッシュ起動時は大きなエラー表示をせず裏で再試行する
+                  continueCachedWorkerSession_(null, 'info');
+                  // 少し後にもう一度ログイン確認（コールドスタート後は通ることが多い）
+                  window._workerLoginInFlight = null;
+                  const retryN = (window._workerCacheLoginRetryCount || 0) + 1;
+                  window._workerCacheLoginRetryCount = retryN;
+                  if (retryN <= 2 && !window._workerCacheLoginRetryTimer) {
+                    window._workerCacheLoginRetryTimer = setTimeout(() => {
+                      window._workerCacheLoginRetryTimer = null;
+                      if (window._workerLoginBusy) return;
+                      try {
+                        window._workerLoginBusy = true;
+                        Promise.resolve(executeLogin(true, { fromCache: true }))
+                          .finally(() => { window._workerLoginBusy = false; });
+                      } catch (e2) {
+                        window._workerLoginBusy = false;
+                      }
+                    }, 8000 * retryN);
+                  }
                   return;
               }
               const overlayEl = document.getElementById('mapDataLoadingOverlay');
@@ -829,8 +852,13 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
     // 🌟 2. データの取得とキャッシュ保存（超軽量化＆SWRバックグラウンド更新版！） 🌟
       function loadInitData(options = {}) {
           const background = !!options.background;
+          const silentRetry = !!options.silentRetry;
           const hasCache = !!localStorage.getItem('passionMapInitData');
           const externalLoad = options.loadingHandle || null;
+          // 進行中の取得があれば再利用（二重通信・タイムアウト連鎖を防ぐ）
+          if (window._workerInitDataInFlight) {
+            return window._workerInitDataInFlight;
+          }
           // バックグラウンド更新時は操作をブロックしない
           const appLoad = background
               ? null
@@ -857,7 +885,7 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
           if (!background && !appLoad && typeof beginMapDataLoad === 'function') {
               beginMapDataLoad('圃場データを読み込み中...');
           }
-          const flight = callGAS('getInitData').then(data => {
+          const flight = callGAS('getInitData', {}, background ? 3 : 2).then(data => {
               let renderFailed = false;
               let changed = false;
               try {
@@ -932,10 +960,21 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
               console.log("InitData Error:", e);
               if (ownsLoad) appLoad.fail('圃場データの読み込みに失敗しました');
               else if (background) {
+                  // 裏更新は1回静かに再試行してから、それでもダメなら表示
+                  const retryKey = '_workerInitDataSilentRetryAt';
+                  const last = Number(window[retryKey] || 0);
+                  const now = Date.now();
+                  if (silentRetry && hasCache && (now - last) > 15000) {
+                      window[retryKey] = now;
+                      setTimeout(() => {
+                        try { loadInitData({ background: true, silentRetry: false }); } catch (e2) {}
+                      }, 5000);
+                      return false;
+                  }
                   if (typeof window.showRecordSyncToast === 'function') {
                       window.showRecordSyncToast(hasCache
                           ? '⚠️ 最新の読み込みに失敗しました（キャッシュで続行中）'
-                          : '⚠️ データの読み込みに失敗しました', 'error');
+                          : '⚠️ データの読み込みに失敗しました', hasCache ? 'info' : 'error');
                   }
               } else if (!appLoad) {
                   if (typeof hideMapDataLoading === 'function') hideMapDataLoading();

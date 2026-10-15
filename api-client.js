@@ -25,7 +25,8 @@
     getCultivationPlans: 75000,
     saveProdMgmtCategories: 60000,
     resetAllManureStatus: 60000,
-    login: 20000,
+    // Apps Script のコールドスタートで 20〜40 秒かかることがある
+    login: 60000,
     getOsakaMarketDaily: 45000,
     importOsakaMarketDaily: 45000,
     getTokyoMarketDaily: 45000,
@@ -83,7 +84,7 @@
       params.spreadsheetId = spreadsheetId;
     }
 
-    var timeoutMs = callOptions.timeoutMs || HEAVY_TIMEOUT_MS[action] || 30000;
+    var baseTimeoutMs = callOptions.timeoutMs || HEAVY_TIMEOUT_MS[action] || 30000;
     var maxRetries = NO_RETRY_ACTIONS[action] ? 0 : retries;
     var lastError = null;
     var cancelAtStart = cancelGen[action] || 0;
@@ -94,7 +95,12 @@
         lastError.name = 'AbortError';
         break;
       }
+      // タイムアウト時は次の試行で待ち時間を伸ばす（コールドスタート対策）
+      var timeoutMs = baseTimeoutMs + (i * 20000);
       var controller = new AbortController();
+      // 同一 action の並行呼び出しが互いの Abort を踏まないよう、要求ごとに独立管理
+      var reqKey = action + '#' + Date.now() + '_' + i + '_' + Math.floor(Math.random() * 1000);
+      controllers[reqKey] = controller;
       controllers[action] = controller;
       var timeoutId = setTimeout(function () { controller.abort(); }, timeoutMs);
       try {
@@ -124,9 +130,12 @@
         var msg = String((err && err.message) || '');
         if (isNoRetryMessage(msg)) break;
         if (i < maxRetries) {
-          await new Promise(function (r) { setTimeout(r, 1500); });
+          // タイムアウト／一時エラーは少し待ってから再試行
+          var waitMs = (err && err.name === 'AbortError') ? 2500 : 1500;
+          await new Promise(function (r) { setTimeout(r, waitMs); });
         }
       } finally {
+        delete controllers[reqKey];
         if (controllers[action] === controller) delete controllers[action];
       }
     }
