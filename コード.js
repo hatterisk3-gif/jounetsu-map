@@ -2381,11 +2381,10 @@ function manageMasterData(masterType, manageAction, value, userName) {
   }
 
   // 作業マスタの追加/編集/統合/削除は巨大な全件一覧を返さない。
-  // 全件返却＋flush が通信切断（Failed to fetch）の主因になっていた。
+  // flush もしない（flush 待ちでブラウザ側が Failed to fetch になることがある。書込み自体は setValues 済み）
   if (masterType === 'work'
       && (manageAction === 'add' || manageAction === 'edit'
           || manageAction === 'merge' || manageAction === 'delete')) {
-    try { SpreadsheetApp.flush(); } catch (eFlushWork) {}
     return buildWorkMasterMutationAck_(manageAction, value);
   }
 
@@ -2438,7 +2437,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
   }
 }
 
-/** 作業マスタ変異APIの軽量ACK（クライアントはローカル一覧をパッチする） */
+/** 作業マスタ変異APIの超軽量ACK（cropDetails等はエコーしない。クライアントが送信済みpayloadでパッチする） */
 function buildWorkMasterMutationAck_(manageAction, value) {
   const incoming = (value && value.newData && typeof value.newData === 'object')
     ? value.newData
@@ -2452,29 +2451,12 @@ function buildWorkMasterMutationAck_(manageAction, value) {
     name = String((incoming && incoming.name) || (value && value.name) || '').trim();
     originalName = String((value && value.originalName) || '').trim();
   }
-  const item = {
-    name: name,
-    category: String((incoming && incoming.category) || '').trim(),
-    cropName: String((incoming && incoming.cropName) || '').trim(),
-    crops: Array.isArray(incoming && incoming.crops) ? incoming.crops : undefined,
-    cropDetails: (incoming && Object.prototype.hasOwnProperty.call(incoming, 'cropDetails')) ? incoming.cropDetails : undefined,
-    detailWorks: String((incoming && incoming.detailWorks) || '').trim(),
-    aliasNames: String((incoming && incoming.aliasNames) || '').trim(),
-    showMachine: (incoming && Object.prototype.hasOwnProperty.call(incoming, 'showMachine')) ? incoming.showMachine : undefined,
-    showMaterial: (incoming && Object.prototype.hasOwnProperty.call(incoming, 'showMaterial')) ? incoming.showMaterial : undefined,
-    showPesticide: (incoming && Object.prototype.hasOwnProperty.call(incoming, 'showPesticide')) ? incoming.showPesticide : undefined,
-    showField: (incoming && Object.prototype.hasOwnProperty.call(incoming, 'showField')) ? incoming.showField : undefined
-  };
-  // undefined を落とす（レスポンスを小さく保つ）
-  Object.keys(item).forEach(function (k) {
-    if (item[k] === undefined) delete item[k];
-  });
   return {
     ok: true,
     masterType: 'work',
     manageAction: String(manageAction || ''),
     originalName: originalName,
-    item: item
+    name: name
   };
 }
 

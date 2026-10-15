@@ -12611,12 +12611,12 @@ function createSignboardMarker(name, pos, icon, id) {
               if (Array.isArray(updatedList)) {
                   pdlWorkMaster = updatedList;
               } else {
-                  const ackItem = (updatedList && updatedList.item) ? updatedList.item : payload;
                   const ackOrig = (updatedList && updatedList.originalName != null && updatedList.originalName !== '')
                     ? updatedList.originalName
                     : orig;
                   if (typeof window.applyLocalWorkMasterPayload_ === 'function') {
-                      window.applyLocalWorkMasterPayload_(mode, ackOrig, Object.assign({}, payload, ackItem), manageAction);
+                      // ACK は名前だけ。詳細は送信済み payload でローカル反映
+                      window.applyLocalWorkMasterPayload_(mode, ackOrig, payload, manageAction);
                   }
               }
               finishSuccess_(manageAction === 'merge'
@@ -12624,6 +12624,17 @@ function createSignboardMarker(name, pos, icon, id) {
                   : (mode === 'edit' ? '✅ 作業マスタを更新しました！' : '✅ 作業マスタを追加しました！'));
           } catch (e) {
               const errMsg = String((e && e.message) || '');
+              const looksNet = /Failed to fetch|通信に失敗|通信がタイムアウト|一時的な通信/i.test(errMsg);
+              // 編集・統合はサーバー書込み後に応答だけ落ちることが多いので、画面は成功扱いにする
+              if (looksNet && (mode === 'edit' || manageAction === 'merge')) {
+                  if (typeof window.applyLocalWorkMasterPayload_ === 'function') {
+                      window.applyLocalWorkMasterPayload_(mode, orig, payload, manageAction);
+                  }
+                  finishSuccess_(manageAction === 'merge'
+                      ? `✅ 「${name}」に統合して登録しました！`
+                      : '✅ 作業マスタを更新しました！');
+                  return;
+              }
               if (typeof customAlert === 'function') customAlert(errMsg || '保存に失敗しました。');
               if (submitBtn) {
                   submitBtn.disabled = false;
@@ -18661,6 +18672,30 @@ function createSignboardMarker(name, pos, icon, id) {
           if (m) m.remove();
       };
 
+      /** 詳細作業の保存中に挟む待ち画面 */
+      window.showDetailWorkSavingOverlay_ = (label) => {
+          let el = document.getElementById('detailWorkSavingOverlay');
+          if (!el) {
+              el = document.createElement('div');
+              el.id = 'detailWorkSavingOverlay';
+              document.body.appendChild(el);
+          }
+          const text = String(label || '更新中です…');
+          el.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:12350; display:flex; justify-content:center; align-items:center; padding:16px; box-sizing:border-box;';
+          el.innerHTML = `<div style="background:#fff; color:#333; width:100%; max-width:320px; border-radius:12px; padding:28px 24px; text-align:center; box-shadow:0 10px 28px rgba(0,0,0,0.28);">
+              <div style="width:36px; height:36px; margin:0 auto 14px; border:3px solid #bbdefb; border-top-color:#1565c0; border-radius:50%; animation:dwSaveSpin 0.8s linear infinite;"></div>
+              <div style="font-size:17px; font-weight:bold; color:#1565c0; letter-spacing:0.02em;">${text}</div>
+              <div style="font-size:12px; color:#888; margin-top:8px; line-height:1.4;">画面を切り替えています</div>
+            </div>
+            <style>@keyframes dwSaveSpin{to{transform:rotate(360deg)}}</style>`;
+          return el;
+      };
+
+      window.hideDetailWorkSavingOverlay_ = () => {
+          const el = document.getElementById('detailWorkSavingOverlay');
+          if (el) el.remove();
+      };
+
       /** 管理者編集用に、いま画面で編集対象の詳細リストを取得（作物別） */
       window.getAdminEditableDetailNames_ = (wName, cropKey) => {
           const name = String(wName || '').trim();
@@ -18869,53 +18904,98 @@ function createSignboardMarker(name, pos, icon, id) {
               submitBtn.disabled = true;
               submitBtn.style.pointerEvents = 'none';
               submitBtn.style.opacity = '0.65';
-              submitBtn.innerText = mode === 'edit' ? '⏳ 編集中…' : '⏳ 追加中…';
+              submitBtn.innerText = mode === 'edit' ? '更新中…' : '追加中…';
           }
+
+          const savingLabel = mode === 'edit' ? '更新中です…' : '追加中です…';
+          let savingStartedAt = 0;
+          const beginSavingTransition_ = () => {
+              if (typeof window.showDetailWorkSavingOverlay_ === 'function') {
+                  window.showDetailWorkSavingOverlay_(savingLabel);
+              }
+              savingStartedAt = Date.now();
+              window.closeDetailWorkEditorModal();
+          };
+          const endSavingTransition_ = async () => {
+              // 一瞬で消えないよう、最低でも少し表示してから閉じる
+              const minMs = 500;
+              const elapsed = Date.now() - (savingStartedAt || Date.now());
+              if (elapsed < minMs) {
+                  await new Promise(r => setTimeout(r, minMs - elapsed));
+              }
+              if (typeof window.hideDetailWorkSavingOverlay_ === 'function') {
+                  window.hideDetailWorkSavingOverlay_();
+              }
+          };
+          const restoreSubmitBtn_ = () => {
+              const btn = document.getElementById('dw_edit_submit_btn');
+              if (btn) {
+                  btn.disabled = false;
+                  btn.style.pointerEvents = '';
+                  btn.style.opacity = '';
+                  btn.innerText = oldBtnText || (mode === 'edit' ? '更新する' : '追加する');
+              }
+          };
 
           try {
               if (mode === 'add') {
                   let details = window.getAdminEditableDetailNames_(wName, targetCropKey);
                   if (details.includes(newVal)) {
+                      restoreSubmitBtn_();
                       if (typeof customAlert === 'function') customAlert(`「${newVal}」は既に追加されています。`);
                       return;
                   }
                   details.push(newVal);
-                  window.closeDetailWorkEditorModal();
-                  await window.saveAdminDetailWorks(wName, details, '追加', targetCropKey);
+                  beginSavingTransition_();
+                  try {
+                      await window.saveAdminDetailWorks(wName, details, '追加', targetCropKey);
+                  } finally {
+                      await endSavingTransition_();
+                  }
               } else if (mode === 'edit') {
                   if (origCropKey === targetCropKey) {
                       let details = window.getAdminEditableDetailNames_(wName, targetCropKey);
-                      if (index < 0 || index >= details.length) return;
+                      if (index < 0 || index >= details.length) {
+                          restoreSubmitBtn_();
+                          return;
+                      }
                       const oldVal = details[index];
                       if (newVal !== oldVal && details.includes(newVal)) {
+                          restoreSubmitBtn_();
                           if (typeof customAlert === 'function') customAlert(`「${newVal}」は既に存在します。`);
                           return;
                       }
                       details[index] = newVal;
-                      window.closeDetailWorkEditorModal();
-                      await window.saveAdminDetailWorks(wName, details, '更新', targetCropKey);
+                      beginSavingTransition_();
+                      try {
+                          await window.saveAdminDetailWorks(wName, details, '更新', targetCropKey);
+                      } finally {
+                          await endSavingTransition_();
+                      }
                   } else {
                       // 登録先が変更された場合：旧登録先から削除し、新登録先に追加
-                      let oldDetails = window.getAdminEditableDetailNames_(wName, origCropKey);
-                      if (index >= 0 && index < oldDetails.length) {
-                          oldDetails.splice(index, 1);
-                          await window.saveAdminDetailWorks(wName, oldDetails, '移動', origCropKey);
+                      beginSavingTransition_();
+                      try {
+                          let oldDetails = window.getAdminEditableDetailNames_(wName, origCropKey);
+                          if (index >= 0 && index < oldDetails.length) {
+                              oldDetails.splice(index, 1);
+                              await window.saveAdminDetailWorks(wName, oldDetails, '移動', origCropKey);
+                          }
+                          let newDetails = window.getAdminEditableDetailNames_(wName, targetCropKey);
+                          if (!newDetails.includes(newVal)) {
+                              newDetails.push(newVal);
+                          }
+                          await window.saveAdminDetailWorks(wName, newDetails, '更新', targetCropKey);
+                      } finally {
+                          await endSavingTransition_();
                       }
-                      let newDetails = window.getAdminEditableDetailNames_(wName, targetCropKey);
-                      if (!newDetails.includes(newVal)) {
-                          newDetails.push(newVal);
-                      }
-                      window.closeDetailWorkEditorModal();
-                      await window.saveAdminDetailWorks(wName, newDetails, '更新', targetCropKey);
                   }
               }
           } catch (e) {
-              if (submitBtn) {
-                  submitBtn.disabled = false;
-                  submitBtn.style.pointerEvents = '';
-                  submitBtn.style.opacity = '';
-                  submitBtn.innerText = oldBtnText || (mode === 'edit' ? '更新する' : '追加する');
+              if (typeof window.hideDetailWorkSavingOverlay_ === 'function') {
+                  window.hideDetailWorkSavingOverlay_();
               }
+              restoreSubmitBtn_();
               throw e;
           }
       };

@@ -72,6 +72,15 @@
       || (err.name === 'TypeError' && msg.indexOf('fetch') >= 0);
   }
 
+  /** manageMaster 等：回線切断に加え、コールドスタート由来の Abort も再送対象にする */
+  function isSoftRetryableError(err) {
+    if (!err) return false;
+    if (isNetworkFetchError(err)) return true;
+    if (err.name === 'AbortError') return true;
+    var msg = String(err.message || '');
+    return msg.indexOf('一時的な通信エラー') >= 0;
+  }
+
   function readSpreadsheetId() {
     try {
       return String(localStorage.getItem('spreadsheetId') || '').trim();
@@ -154,15 +163,16 @@
         var msg = String((err && err.message) || '');
         if (isNoRetryMessage(msg)) break;
         var isNet = isNetworkFetchError(err);
+        var isSoft = isSoftRetryableError(err);
         var canRetry = i < maxRetries;
-        if (!canRetry && isNet && netRetryUsed < softNetRetries) {
+        if (!canRetry && isSoft && netRetryUsed < softNetRetries) {
           canRetry = true;
           netRetryUsed += 1;
         }
         // 通常リトライ枠を使い切っても、ネットワーク再送枠が残っていれば続行
         if (!canRetry && i + 1 >= maxAttempts) break;
         if (canRetry && i + 1 < maxAttempts) {
-          var waitMs = (err && err.name === 'AbortError') ? 2500 : (isNet ? 2000 : 1500);
+          var waitMs = (err && err.name === 'AbortError') ? 3000 : (isNet ? 2000 : 1500);
           await new Promise(function (r) { setTimeout(r, waitMs); });
           continue;
         }
