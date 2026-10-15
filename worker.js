@@ -895,9 +895,8 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   const incomingCount = (data && Array.isArray(data.polygons)) ? data.polygons.length : 0;
                   if (hasCache && (!data || !data.pdl || incomingCount === 0)) {
                       console.warn('getInitData が空のためキャッシュを維持します');
-                      if (background && typeof window.showRecordSyncToast === 'function') {
-                          window.showRecordSyncToast('☁️ 読み込み完了しました', 'ok');
-                      }
+                      window._workerInitDataBgFailCount = 0;
+                      // 空応答でキャッシュ維持は正常系なのでトースト不要
                       if (ownsLoad) appLoad.done();
                       else if (!background && !appLoad) {
                           if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
@@ -912,9 +911,8 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                   // ★爆速化の秘訣：前回とデータが全く同じなら、再描画をスキップする！
                   if (newDataStr === oldDataStr) {
                       console.log("変更なし：再描画をスキップしました");
-                      if (background && typeof window.showRecordSyncToast === 'function') {
-                          window.showRecordSyncToast('☁️ 読み込み完了しました', 'ok');
-                      }
+                      window._workerInitDataBgFailCount = 0;
+                      // 変更なしの裏更新完了トーストは出さない（毎回うっさいため）
                       if (ownsLoad) appLoad.done();
                       else if (!background && !appLoad) {
                           if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
@@ -937,16 +935,16 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
                         window.scheduleStartupRecordSync_({ delayMs: 400, force: true, silent: true });
                       }
                   }
-                  if (background && typeof window.showRecordSyncToast === 'function') {
-                      window.showRecordSyncToast(changed ? '☁️ 読み込み完了しました（最新に更新）' : '☁️ 読み込み完了しました', 'ok');
+                  // 成功したら裏更新の失敗カウンタをリセット
+                  window._workerInitDataBgFailCount = 0;
+                  if (background && changed && typeof window.showRecordSyncToast === 'function') {
+                      window.showRecordSyncToast('☁️ 最新に更新しました', 'ok');
                   }
               } catch (err) {
                   console.error("renderInitData/Data processing Error:", err);
                   renderFailed = true;
                   if (ownsLoad) appLoad.fail('圃場データの表示に失敗しました');
-                  else if (background && typeof window.showRecordSyncToast === 'function') {
-                      window.showRecordSyncToast('⚠️ 最新データの反映に失敗しました（キャッシュで続行中）', 'error');
-                  }
+                  // キャッシュ描画済みの裏更新は反映失敗トーストを出さない
                   return false;
               } finally {
                   if (ownsLoad && !renderFailed) appLoad.done();
@@ -960,21 +958,39 @@ if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
               console.log("InitData Error:", e);
               if (ownsLoad) appLoad.fail('圃場データの読み込みに失敗しました');
               else if (background) {
-                  // 裏更新は1回静かに再試行してから、それでもダメなら表示
-                  const retryKey = '_workerInitDataSilentRetryAt';
-                  const last = Number(window[retryKey] || 0);
-                  const now = Date.now();
-                  if (silentRetry && hasCache && (now - last) > 15000) {
-                      window[retryKey] = now;
-                      setTimeout(() => {
-                        try { loadInitData({ background: true, silentRetry: false }); } catch (e2) {}
-                      }, 5000);
+                  // キャッシュがある裏更新失敗は操作に影響しないのでトーストを出さず再試行する
+                  const failCountKey = '_workerInitDataBgFailCount';
+                  const toastAtKey = '_workerInitDataFailToastAt';
+                  const retryTimerKey = '_workerInitDataBgRetryTimer';
+                  window[failCountKey] = (Number(window[failCountKey] || 0) || 0) + 1;
+                  const failCount = window[failCountKey];
+                  const errMsg = String((e && e.message) || '');
+                  const isTransient = /Failed to fetch|通信に失敗|タイムアウト|一時的な通信|cancelled|Abort/i.test(errMsg)
+                    || (e && e.name === 'AbortError');
+
+                  if (hasCache) {
+                      // 指数バックオフで静かに再取得（最大約2分間隔）
+                      if (!window[retryTimerKey]) {
+                          const delayMs = Math.min(120000, 8000 * Math.pow(1.6, Math.min(failCount, 6)));
+                          window[retryTimerKey] = setTimeout(() => {
+                              window[retryTimerKey] = null;
+                              try { loadInitData({ background: true, silentRetry: true }); } catch (e2) {}
+                          }, delayMs);
+                      }
+                      // 連続失敗が続くときだけ、10分に1回だけ控えめに通知
+                      const lastToast = Number(window[toastAtKey] || 0);
+                      if (!isTransient && failCount >= 5 && (Date.now() - lastToast) > 600000) {
+                          window[toastAtKey] = Date.now();
+                          if (typeof window.showRecordSyncToast === 'function') {
+                              window.showRecordSyncToast('📦 オフラインの可能性があります（キャッシュで作業できます）', 'info');
+                          }
+                      }
                       return false;
                   }
+
+                  // キャッシュなしの裏更新失敗だけは知らせる
                   if (typeof window.showRecordSyncToast === 'function') {
-                      window.showRecordSyncToast(hasCache
-                          ? '⚠️ 最新の読み込みに失敗しました（キャッシュで続行中）'
-                          : '⚠️ データの読み込みに失敗しました', hasCache ? 'info' : 'error');
+                      window.showRecordSyncToast('⚠️ データの読み込みに失敗しました', 'error');
                   }
               } else if (!appLoad) {
                   if (typeof hideMapDataLoading === 'function') hideMapDataLoading();
@@ -12592,46 +12608,23 @@ function createSignboardMarker(name, pos, icon, id) {
                       userName: localStorage.getItem('passionMapUserName') || currentUser
                   });
               }
-              if (Array.isArray(updatedList)) pdlWorkMaster = updatedList;
-              else if (typeof window.applyLocalWorkMasterPayload_ === 'function') {
-                  window.applyLocalWorkMasterPayload_(mode, orig, payload, manageAction);
+              if (Array.isArray(updatedList)) {
+                  pdlWorkMaster = updatedList;
+              } else {
+                  const ackItem = (updatedList && updatedList.item) ? updatedList.item : payload;
+                  const ackOrig = (updatedList && updatedList.originalName != null && updatedList.originalName !== '')
+                    ? updatedList.originalName
+                    : orig;
+                  if (typeof window.applyLocalWorkMasterPayload_ === 'function') {
+                      window.applyLocalWorkMasterPayload_(mode, ackOrig, Object.assign({}, payload, ackItem), manageAction);
+                  }
               }
               finishSuccess_(manageAction === 'merge'
                   ? `✅ 「${name}」に統合して登録しました！`
                   : (mode === 'edit' ? '✅ 作業マスタを更新しました！' : '✅ 作業マスタを追加しました！'));
           } catch (e) {
               const errMsg = String((e && e.message) || '');
-              const looksNet = /Failed to fetch|通信に失敗|通信がタイムアウト|一覧の再取得に失敗/i.test(errMsg);
-              // 編集はサーバー側完了済みのことが多いので、一覧再取得でリカバリする
-              if (looksNet && (mode === 'edit' || manageAction === 'merge')) {
-                  try {
-                      if (submitBtn) submitBtn.innerText = '⏳ 確認しています…';
-                      const verified = await callGAS('manageMaster', {
-                          masterType: 'work',
-                          manageAction: 'list',
-                          userName: localStorage.getItem('passionMapUserName') || currentUser
-                      }, 1);
-                      if (Array.isArray(verified)) {
-                          pdlWorkMaster = verified;
-                          const ok = verified.some(w => String(w && w.name || '').trim() === name);
-                          if (ok) {
-                              finishSuccess_(mode === 'edit'
-                                  ? '✅ 作業マスタを更新しました！'
-                                  : `✅ 「${name}」に統合して登録しました！`);
-                              return;
-                          }
-                      }
-                  } catch (verifyErr) { /* fall through */ }
-                  if (typeof window.applyLocalWorkMasterPayload_ === 'function') {
-                      window.applyLocalWorkMasterPayload_(mode, orig, {
-                          name, category, cropName, crops, cropDetails, detailWorks, aliasNames, ...uiFlags
-                      }, manageAction);
-                      finishSuccess_('⚠️ 通信が不安定でしたが、画面上は更新済みにしました。反映されない場合は再読み込みして確認してください。');
-                      return;
-                  }
-              }
               if (typeof customAlert === 'function') customAlert(errMsg || '保存に失敗しました。');
-              // エラー発生時はボタンを活性化状態に復元
               if (submitBtn) {
                   submitBtn.disabled = false;
                   submitBtn.style.pointerEvents = '';
@@ -12691,6 +12684,7 @@ function createSignboardMarker(name, pos, icon, id) {
                   userName: localStorage.getItem('passionMapUserName') || currentUser
               });
               if (Array.isArray(updatedList)) pdlWorkMaster = updatedList;
+              else pdlWorkMaster = (pdlWorkMaster || []).filter(w => String(w && w.name || '').trim() !== name);
               if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
               else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
               try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
@@ -19028,6 +19022,8 @@ function createSignboardMarker(name, pos, icon, id) {
 
               if (Array.isArray(updatedList) && updatedList.length > 0) {
                   pdlWorkMaster = updatedList;
+              } else if (typeof window.applyLocalWorkMasterPayload_ === 'function') {
+                  window.applyLocalWorkMasterPayload_('edit', wName, newData, 'edit');
               }
 
               if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
@@ -19068,6 +19064,8 @@ function createSignboardMarker(name, pos, icon, id) {
               }
           } catch (e) {
               console.warn('saveAdminDetailWorks Error:', e);
+              // この関数は try 前に pdlWorkMaster 上の workData を既に更新済み
+              if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
               const returnPicker = window._detailWorkEditorReturnToPicker || '';
               window._detailWorkEditorReturnToPicker = '';
               const recWName = document.getElementById('rec_work_name')?.value || '';
@@ -19076,7 +19074,18 @@ function createSignboardMarker(name, pos, icon, id) {
                 window.refreshBulkWorkMemoDetailManageModalIfOpen_();
               }
               if (returnPicker) window.openDetailWorkMasterAddOptions(returnPicker);
-              if (typeof customAlert === 'function') customAlert(`詳細作業をローカルで${actionLabel}しました（通信: ${e.message || e}）`);
+              const errMsg = String((e && e.message) || e || '');
+              const looksNet = /Failed to fetch|通信に失敗|タイムアウト|一時的な通信/i.test(errMsg);
+              // 旧GAS（全件一覧返却）だとここで落ちる。再デプロイ後は通常ここまで来ない
+              if (looksNet) {
+                  if (typeof window.showRecordSyncToast === 'function') {
+                      window.showRecordSyncToast(`✅ 詳細作業を${actionLabel}しました（画面に反映済み）`, 'ok');
+                  } else if (typeof customAlert === 'function') {
+                      customAlert(`✅ 詳細作業を${actionLabel}しました！`);
+                  }
+              } else if (typeof customAlert === 'function') {
+                  customAlert(errMsg || `詳細作業の${actionLabel}に失敗しました`);
+              }
           }
       };
 

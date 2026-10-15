@@ -2380,6 +2380,15 @@ function manageMasterData(masterType, manageAction, value, userName) {
     }
   }
 
+  // 作業マスタの追加/編集/統合/削除は巨大な全件一覧を返さない。
+  // 全件返却＋flush が通信切断（Failed to fetch）の主因になっていた。
+  if (masterType === 'work'
+      && (manageAction === 'add' || manageAction === 'edit'
+          || manageAction === 'merge' || manageAction === 'delete')) {
+    try { SpreadsheetApp.flush(); } catch (eFlushWork) {}
+    return buildWorkMasterMutationAck_(manageAction, value);
+  }
+
   SpreadsheetApp.flush();
   if (masterType === 'location') {
     return readLocationMasterDetails_();
@@ -2414,23 +2423,59 @@ function manageMasterData(masterType, manageAction, value, userName) {
   if (masterType === 'cropCultSetting') {
     return readCropCultSettingList_();
   }
+  if (masterType === 'work') {
+    // list/get など参照のみ
+    return readWorkMasterList_(sheet);
+  }
   const newData = sheet.getDataRange().getValues();
   const returnHeaders = newData[0].map(h => String(h).trim());
   if (masterType === 'tool') {
     return newData.slice(1).filter(r => r[1]).map(r => ({ id: r[0], name: r[1], workCategory: r[3] || "" }));
   } else if (masterType === 'material') {
     return newData.slice(1).filter(r => r[1]).map(r => ({ id: r[0], name: r[1], workCategory: r[2] || "", unit: r[4] || "" }));
-  } else if (masterType === 'work') {
-    try {
-      return readWorkMasterList_(sheet);
-    } catch (workListErr) {
-      // 一覧再読込失敗でも write は済んでいるので空配列ではなくエラーにしない
-      // クライアントは Array 以外をローカル反映で扱う
-      return { ok: true, partial: true, message: '一覧再取得に失敗' };
-    }
   } else {
     return newData.slice(1).map(r=>r[0]).filter(String);
   }
+}
+
+/** 作業マスタ変異APIの軽量ACK（クライアントはローカル一覧をパッチする） */
+function buildWorkMasterMutationAck_(manageAction, value) {
+  const incoming = (value && value.newData && typeof value.newData === 'object')
+    ? value.newData
+    : ((value && typeof value === 'object') ? value : {});
+  let name = '';
+  let originalName = '';
+  if (manageAction === 'delete') {
+    name = String((value && (value.id || value.name)) || value || '').trim();
+    originalName = name;
+  } else {
+    name = String((incoming && incoming.name) || (value && value.name) || '').trim();
+    originalName = String((value && value.originalName) || '').trim();
+  }
+  const item = {
+    name: name,
+    category: String((incoming && incoming.category) || '').trim(),
+    cropName: String((incoming && incoming.cropName) || '').trim(),
+    crops: Array.isArray(incoming && incoming.crops) ? incoming.crops : undefined,
+    cropDetails: (incoming && Object.prototype.hasOwnProperty.call(incoming, 'cropDetails')) ? incoming.cropDetails : undefined,
+    detailWorks: String((incoming && incoming.detailWorks) || '').trim(),
+    aliasNames: String((incoming && incoming.aliasNames) || '').trim(),
+    showMachine: (incoming && Object.prototype.hasOwnProperty.call(incoming, 'showMachine')) ? incoming.showMachine : undefined,
+    showMaterial: (incoming && Object.prototype.hasOwnProperty.call(incoming, 'showMaterial')) ? incoming.showMaterial : undefined,
+    showPesticide: (incoming && Object.prototype.hasOwnProperty.call(incoming, 'showPesticide')) ? incoming.showPesticide : undefined,
+    showField: (incoming && Object.prototype.hasOwnProperty.call(incoming, 'showField')) ? incoming.showField : undefined
+  };
+  // undefined を落とす（レスポンスを小さく保つ）
+  Object.keys(item).forEach(function (k) {
+    if (item[k] === undefined) delete item[k];
+  });
+  return {
+    ok: true,
+    masterType: 'work',
+    manageAction: String(manageAction || ''),
+    originalName: originalName,
+    item: item
+  };
 }
 
 /** 作業マスタに同名の作業名があるか（excludeName は編集時の自分自身を除外） */

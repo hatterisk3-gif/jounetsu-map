@@ -17,7 +17,7 @@
     saveRecordBatch: 120000,
     updateRecordItem: 120000,
     updateWorkRecordById: 120000,
-    getInitData: 180000,
+    getInitData: 240000,
     getWorkRecordAnalysis: 45000,
     saveCultivationPlans: 90000,
     saveCroptypeDBBatch: 90000,
