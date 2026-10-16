@@ -991,7 +991,6 @@ async function executeLogin(isAuto = false, options = {}) {
                 loadInitData({ background: true });
             } else if (hasCache) {
                 try { renderInitData(JSON.parse(localStorage.getItem('pMapAdminInitData')), { interim: true }); } catch (e) {}
-                showAdminSyncToast('📦 キャッシュで表示（最新を裏で確認中…）', 'info');
                 loadInitData({ background: true });
             } else {
                 loadInitData();
@@ -8873,7 +8872,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const cachedData = localStorage.getItem('pMapAdminInitData');
         if (cachedData) {
             try { renderInitData(JSON.parse(cachedData), { interim: true }); } catch (e) {}
-            showAdminSyncToast('📦 キャッシュで起動（最新を裏で確認中…）', 'info');
+            // キャッシュ即起動の案内トーストは出さない
             executeLogin(true, { fromCache: true });
         } else {
             executeLogin(true);

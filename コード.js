@@ -1726,10 +1726,11 @@ function manageMasterData(masterType, manageAction, value, userName) {
     sheet = ensureCropCultSettingSheet_();
   }
 
-  // 作業マスタの追加/編集/統合/削除は専用高速パス（全件返却・flush・重複読込を避ける）
+  // 作業マスタの追加/編集/統合/削除/存在確認は専用高速パス（全件返却・flush・重複読込を避ける）
   if (masterType === 'work'
       && (manageAction === 'add' || manageAction === 'edit'
-          || manageAction === 'merge' || manageAction === 'delete')) {
+          || manageAction === 'merge' || manageAction === 'delete'
+          || manageAction === 'exists')) {
     return mutateWorkMasterFast_(sheet, manageAction, value, userName);
   }
 
@@ -2464,74 +2465,101 @@ function mutateWorkMasterFast_(sheet, manageAction, value, userName) {
   const keyIdx = workHeaders.indexOf('作業名');
   if (keyIdx < 0) throw new Error('作業マスタに「作業名」列がありません');
 
-  if (manageAction === 'add') {
-    const workName = String((value && value.name) || '').trim();
-    if (!workName) throw new Error('作業名を入力してください');
-    const existing = sheet.getDataRange().getValues();
-    for (let i = 1; i < existing.length; i++) {
-      if (String(existing[i][keyIdx] || '').trim() === workName) {
-        throw new Error('作業名「' + workName + '」は既に登録されています');
-      }
-    }
-    const newRow = new Array(workHeaders.length).fill('');
-    applyWorkMasterValuesToRow_(newRow, workHeaders, value || {});
-    assertWorkMasterRowCellSizes_(newRow);
-    sheet.appendRow(newRow);
-    return buildWorkMasterMutationAck_('add', value);
-  }
-
-  if (manageAction === 'delete') {
-    const tv = String((value && (value.id || value.name)) || value || '').trim();
-    if (!tv) throw new Error('削除する作業名がありません');
+  // 通信切れ後のクライアント復旧用（超軽量・ロック不要）
+  if (manageAction === 'exists') {
+    const workName = String((value && (value.name || value.id)) || value || '').trim();
+    if (!workName) return { ok: true, exists: false, name: '' };
     const data = sheet.getDataRange().getValues();
-    let deleted = false;
+    let exists = false;
     for (let i = 1; i < data.length; i++) {
-      if (String(data[i][keyIdx] || '').trim() === tv) {
-        sheet.deleteRow(i + 1);
-        deleted = true;
+      if (String(data[i][keyIdx] || '').trim() === workName) {
+        exists = true;
         break;
       }
     }
-    if (!deleted) throw new Error('作業「' + tv + '」が作業マスタにありません');
-    return buildWorkMasterMutationAck_('delete', value);
+    return { ok: true, exists: exists, name: workName, masterType: 'work', manageAction: 'exists' };
   }
 
-  if (manageAction === 'edit') {
-    const originalName = String((value && value.originalName) || '').trim();
-    const newData = (value && value.newData) || {};
-    const newName = String((newData && newData.name) || '').trim();
-    if (!originalName) throw new Error('変更前の作業名がありません');
-    if (!newName) throw new Error('作業名を入力してください');
-    const data = sheet.getDataRange().getValues();
-    if (newName !== originalName) {
-      for (let di = 1; di < data.length; di++) {
-        if (String(data[di][keyIdx] || '').trim() === newName) {
-          throw new Error('作業名「' + newName + '」は既に登録されています');
+  // 再送による二重追加を防ぐ
+  const lock = LockService.getScriptLock();
+  const gotLock = lock.tryLock(30000);
+  if (!gotLock) throw new Error('他の更新処理中です。数秒後に再度お試しください。');
+  try {
+    if (manageAction === 'add') {
+      const workName = String((value && value.name) || '').trim();
+      if (!workName) throw new Error('作業名を入力してください');
+      const existing = sheet.getDataRange().getValues();
+      for (let i = 1; i < existing.length; i++) {
+        if (String(existing[i][keyIdx] || '').trim() === workName) {
+          // 再送で既にあれば成功ACK（二重行を作らない）
+          return buildWorkMasterMutationAck_('add', value);
         }
       }
+      const newRow = new Array(workHeaders.length).fill('');
+      applyWorkMasterValuesToRow_(newRow, workHeaders, value || {});
+      assertWorkMasterRowCellSizes_(newRow);
+      sheet.appendRow(newRow);
+      return buildWorkMasterMutationAck_('add', value);
     }
-    let found = false;
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][keyIdx] || '').trim() !== originalName) continue;
-      const rowVals = data[i].slice();
-      while (rowVals.length < workHeaders.length) rowVals.push('');
-      applyWorkMasterValuesToRow_(rowVals, workHeaders, newData);
-      const outRow = rowVals.slice(0, workHeaders.length);
-      assertWorkMasterRowCellSizes_(outRow);
-      sheet.getRange(i + 1, 1, 1, outRow.length).setValues([outRow]);
-      found = true;
-      break;
+
+    if (manageAction === 'delete') {
+      const tv = String((value && (value.id || value.name)) || value || '').trim();
+      if (!tv) throw new Error('削除する作業名がありません');
+      const data = sheet.getDataRange().getValues();
+      let deleted = false;
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][keyIdx] || '').trim() === tv) {
+          sheet.deleteRow(i + 1);
+          deleted = true;
+          break;
+        }
+      }
+      if (!deleted) {
+        // 再送で既に無い＝削除済みとして成功
+        return buildWorkMasterMutationAck_('delete', value);
+      }
+      return buildWorkMasterMutationAck_('delete', value);
     }
-    if (!found) throw new Error('作業「' + originalName + '」が作業マスタにありません');
-    return buildWorkMasterMutationAck_('edit', value);
-  }
 
-  if (manageAction === 'merge') {
-    mergeWorkMasterConflict_(sheet, value, userName, { skipLog: true, skipFlush: true });
-    return buildWorkMasterMutationAck_('merge', value);
-  }
+    if (manageAction === 'edit') {
+      const originalName = String((value && value.originalName) || '').trim();
+      const newData = (value && value.newData) || {};
+      const newName = String((newData && newData.name) || '').trim();
+      if (!originalName) throw new Error('変更前の作業名がありません');
+      if (!newName) throw new Error('作業名を入力してください');
+      const data = sheet.getDataRange().getValues();
+      if (newName !== originalName) {
+        for (let di = 1; di < data.length; di++) {
+          if (String(data[di][keyIdx] || '').trim() === newName) {
+            throw new Error('作業名「' + newName + '」は既に登録されています');
+          }
+        }
+      }
+      let found = false;
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][keyIdx] || '').trim() !== originalName) continue;
+        const rowVals = data[i].slice();
+        while (rowVals.length < workHeaders.length) rowVals.push('');
+        applyWorkMasterValuesToRow_(rowVals, workHeaders, newData);
+        const outRow = rowVals.slice(0, workHeaders.length);
+        assertWorkMasterRowCellSizes_(outRow);
+        sheet.getRange(i + 1, 1, 1, outRow.length).setValues([outRow]);
+        found = true;
+        break;
+      }
+      if (!found) throw new Error('作業「' + originalName + '」が作業マスタにありません');
+      return buildWorkMasterMutationAck_('edit', value);
+    }
 
-  throw new Error('未知の作業マスタ操作です: ' + manageAction);
+    if (manageAction === 'merge') {
+      mergeWorkMasterConflict_(sheet, value, userName, { skipLog: true, skipFlush: true });
+      return buildWorkMasterMutationAck_('merge', value);
+    }
+
+    throw new Error('未知の作業マスタ操作です: ' + manageAction);
+  } finally {
+    try { lock.releaseLock(); } catch (eUnlock) {}
+  }
 }
 
 function assertWorkMasterRowCellSizes_(row) {

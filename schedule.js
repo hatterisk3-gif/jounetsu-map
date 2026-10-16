@@ -1335,11 +1335,7 @@ async function fetchWeatherAndUpdateUI() {
         if (cachedStr && !silentRetry) {
           try {
             applyScheduleData(JSON.parse(cachedStr));
-            if (typeof window.showRecordSyncToast === 'function') {
-              window.showRecordSyncToast('📦 キャッシュで起動（最新を裏で確認中…）', 'info');
-            } else if (typeof showMapSyncToast === 'function') {
-              showMapSyncToast('📦 キャッシュで起動（最新を裏で確認中…）', 'info');
-            }
+            // キャッシュ即起動の案内トーストは出さない
           } catch(e) { console.error("Cache parse error", e); }
         }
         if (bootstrapStillOpen && typeof window.markScheduleInitialLoadStep === 'function') {

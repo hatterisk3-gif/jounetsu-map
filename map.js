@@ -390,7 +390,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 drawPolygons(JSON.parse(cached));
                 if (cacheLoad) cacheLoad.done();
                 else restoreMapInteractions_();
-                showMapSyncToast('📦 キャッシュで起動（最新を裏で確認中…）', 'info');
+                // キャッシュ即起動の案内トーストは出さない
                 setTimeout(refreshProductionMapDisplay_, 120);
                 schedulePendingFieldSyncFlush_();
                 // ログイン＋最新取得は裏で（ブロックしない）

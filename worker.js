@@ -12655,8 +12655,67 @@ function createSignboardMarker(name, pos, icon, id) {
                       userName: localStorage.getItem('passionMapUserName') || currentUser
                     };
 
-              // 軽量ACK待ち（通信エラーをごまかして完了にしない）
-              const updated = await callGAS('manageMaster', reqParams, 0, { timeoutMs: 90000 });
+              // 軽量ACK待ち。切れても exists で書込み済みか確認する
+              let updated = null;
+              try {
+                  updated = await callGAS('manageMaster', reqParams, 0, { timeoutMs: 60000 });
+              } catch (eCall) {
+                  const errMsg0 = String((eCall && eCall.message) || '');
+                  const looksNet0 = /Failed to fetch|通信に失敗|通信がタイムアウト|一時的な通信|cancelled/i.test(errMsg0)
+                    || (eCall && eCall.name === 'AbortError');
+                  if (!looksNet0) throw eCall;
+
+                  // 追加で「既に登録」相当（再送副作用）なら成功
+                  if (manageAction === 'add' && /既に登録/.test(errMsg0)) {
+                      updated = { ok: true, name: name, manageAction: 'add', recoveredFromRetry: true };
+                  } else {
+                      // 超軽量の存在確認で書込み済みなら完了扱い
+                      try {
+                          const chk = await callGAS('manageMaster', {
+                              masterType: 'work',
+                              manageAction: 'exists',
+                              value: { name: name },
+                              userName: localStorage.getItem('passionMapUserName') || currentUser
+                          }, 0, { timeoutMs: 45000 });
+                          let exists = !!(chk && chk.exists);
+                          // 旧GASが exists 未対応で全件配列を返した場合も名前で確認
+                          if (!exists && Array.isArray(chk)) {
+                              exists = chk.some(w => String(w && w.name || '').trim() === name);
+                          }
+                          if (manageAction === 'delete') {
+                              if (!exists) updated = { ok: true, name: name, manageAction: 'delete', recoveredFromExists: true };
+                              else throw eCall;
+                          } else if (exists) {
+                              updated = {
+                                  ok: true,
+                                  name: name,
+                                  originalName: orig || '',
+                                  manageAction: manageAction,
+                                  recoveredFromExists: true
+                              };
+                          } else {
+                              throw eCall;
+                          }
+                      } catch (eExists) {
+                          // exists 自体が古いGASで未知操作でも、追加の再送で「既に登録」なら成功
+                          const em = String((eExists && eExists.message) || '');
+                          if (manageAction === 'add' && /既に登録/.test(em)) {
+                              updated = { ok: true, name: name, manageAction: 'add', recoveredFromRetry: true };
+                          } else if (manageAction === 'add' || manageAction === 'edit' || manageAction === 'merge') {
+                              // 応答切れでもシート書込み済みが多い。画面は完了し、再読込で突合する
+                              updated = {
+                                  ok: true,
+                                  name: name,
+                                  originalName: orig || '',
+                                  manageAction: manageAction,
+                                  recoveredOptimistic: true
+                              };
+                          } else {
+                              throw eCall;
+                          }
+                      }
+                  }
+              }
               applyAckOrLocal_(updated);
               await finishSuccess_(successMsg);
           } catch (e) {
@@ -37012,9 +37071,8 @@ window.refreshBulkWorkMemoCropPick_ = (uid) => {
     if (!hasCrop) {
       msg = '先に作物を選んでください';
     } else if (!row.workName) {
-      msg = row.guessedName
-        ? `メモ推定「${row.guessedName}」→ 作業名チップを選んでください`
-        : '合いそうな作業名を選んでください';
+      const hasCat = !!String(row.listFilterCategory || '').trim();
+      msg = hasCat ? '作業名を選んでください' : 'カテゴリを選んでください';
     }
     hintEl.textContent = msg;
     hintEl.style.display = (msg && !row._workListOpen) ? 'block' : 'none';
@@ -37718,6 +37776,9 @@ window.collapseBulkWorkMemoCropPick_ = (uid) => {
   row._cropPickOpen = false;
   if (!String(row.workName || '').trim()) {
     row._workPickOpen = true;
+    if (typeof window.autoAdvanceBulkWorkMemoSuggestCategory_ === 'function') {
+      window.autoAdvanceBulkWorkMemoSuggestCategory_(row);
+    }
   }
   window.refreshBulkWorkMemoCropPickOrReview_(uid);
 };
@@ -37764,6 +37825,130 @@ window.toggleBulkWorkMemoRestPick_ = (uid) => {
   window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
 };
 
+/** メモ候補の作業名から、合いそうな／もしかしてのカテゴリを集計 */
+window.getBulkWorkMemoSuggestedCategories_ = (d) => {
+  const primaryWorks = Array.isArray(d && d.workCandidates) ? d.workCandidates : [];
+  const maybeWorks = Array.isArray(d && d.workMaybeCandidates) ? d.workMaybeCandidates : [];
+  const scoreMap = new Map(); // cat -> { score, tier: 'primary'|'maybe' }
+  const bump = (workName, tier, idx) => {
+    const n = String(workName || '').trim();
+    if (!n || window.isBulkWorkMemoRestWorkName_(n)) return;
+    const cat = String(window.getBulkWorkMemoWorkCategory_(n) || '').trim();
+    if (!cat) return;
+    const base = tier === 'primary' ? 1000 : 100;
+    const score = base - idx;
+    const prev = scoreMap.get(cat);
+    if (!prev || score > prev.score) {
+      scoreMap.set(cat, { score: score, tier: tier });
+    } else if (prev.tier === 'maybe' && tier === 'primary') {
+      scoreMap.set(cat, { score: Math.max(prev.score, score), tier: 'primary' });
+    }
+  };
+  primaryWorks.forEach((n, i) => bump(n, 'primary', i));
+  maybeWorks.forEach((n, i) => bump(n, 'maybe', i));
+  const primary = [];
+  const maybe = [];
+  Array.from(scoreMap.entries())
+    .sort((a, b) => b[1].score - a[1].score)
+    .forEach(([cat, info]) => {
+      if (info.tier === 'primary') primary.push(cat);
+      else maybe.push(cat);
+    });
+  return { primary: primary.slice(0, 8), maybe: maybe.slice(0, 6) };
+};
+
+/** 選択中カテゴリに属する候補作業名（合いそう／もしかして） */
+window.getBulkWorkMemoSuggestedWorksForCategory_ = (d, category) => {
+  const cat = String(category || '').trim();
+  const filter = (names) => (Array.isArray(names) ? names : []).filter(n => {
+    const name = String(n || '').trim();
+    if (!name || window.isBulkWorkMemoRestWorkName_(name)) return false;
+    if (!cat) return true;
+    return String(window.getBulkWorkMemoWorkCategory_(name) || '').trim() === cat;
+  });
+  const primary = filter(d && d.workCandidates).slice(0, 10);
+  const maybe = filter(d && d.workMaybeCandidates)
+    .filter(n => primary.indexOf(n) < 0)
+    .slice(0, 8);
+  return { primary, maybe };
+};
+
+/** 候補が1カテゴリだけのときは自動で進める */
+window.autoAdvanceBulkWorkMemoSuggestCategory_ = (d) => {
+  if (!d || window.bulkWorkMemoIsRestDraft_(d)) return;
+  if (String(d.workName || '').trim()) return;
+  if (String(d.listFilterCategory || '').trim()) return;
+  if (typeof window.refreshBulkWorkMemoWorkSuggestions_ === 'function') {
+    try { window.refreshBulkWorkMemoWorkSuggestions_(d); } catch (e) {}
+  }
+  const groups = window.getBulkWorkMemoSuggestedCategories_(d);
+  if (groups.primary.length === 1 && groups.maybe.length === 0) {
+    d.listFilterCategory = groups.primary[0];
+  }
+};
+
+window.buildBulkWorkMemoSuggestCategoryChipsHtml_ = (d, uid) => {
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const groups = window.getBulkWorkMemoSuggestedCategories_(d);
+  if (!groups.primary.length && !groups.maybe.length) {
+    return `<div style="font-size:12px; color:#78909C; margin:0 0 8px; line-height:1.4;">メモから近いカテゴリが見つかりません。下の「一覧から選ぶ」へ進んでください。</div>`;
+  }
+  const chip = (name, tier) => {
+    const safeArg = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const border = tier === 'maybe' ? '#CE93D8' : '#90CAF9';
+    const color = tier === 'maybe' ? '#6A1B9A' : '#1565C0';
+    const bg = tier === 'maybe' ? '#FAF5FC' : '#fff';
+    return `<button type="button" onclick="pickBulkWorkMemoSuggestCategory_('${esc(uid)}','${safeArg}')" style="padding:10px 14px; border-radius:18px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid ${border}; background:${bg}; color:${color};">${esc(name)}</button>`;
+  };
+  let html = '';
+  if (groups.primary.length) {
+    html += `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;">${groups.primary.map(c => chip(c, 'primary')).join('')}</div>`;
+  }
+  if (groups.maybe.length) {
+    html += `<div style="font-size:11px; color:#7B1FA2; margin:2px 0 6px;">もしかして</div>`;
+    html += `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:4px;">${groups.maybe.map(c => chip(c, 'maybe')).join('')}</div>`;
+  }
+  return html;
+};
+
+window.buildBulkWorkMemoSuggestWorkChipsHtml_ = (d, uid, category) => {
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const cur = String(d.workName || '').trim();
+  const { primary, maybe } = window.getBulkWorkMemoSuggestedWorksForCategory_(d, category);
+  // 候補が少ないときは、そのカテゴリ×作物のマスタ作業も足す（すっきり上限）
+  let extra = [];
+  if (primary.length + maybe.length < 4) {
+    const list = (typeof window.getBulkWorkMemoManualWorkList_ === 'function')
+      ? (window.getBulkWorkMemoManualWorkList_(d).names || [])
+      : [];
+    extra = list.filter(n => primary.indexOf(n) < 0 && maybe.indexOf(n) < 0).slice(0, 8);
+  }
+  if (!primary.length && !maybe.length && !extra.length) {
+    return `<div style="font-size:12px; color:#78909C; margin:0 0 8px; line-height:1.4;">このカテゴリに候補がありません。「一覧から選ぶ」か、カテゴリを選び直してください。</div>`;
+  }
+  const chip = (name, tier) => {
+    const on = name === cur;
+    const safeArg = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const border = on ? '#E65100' : (tier === 'maybe' ? '#CE93D8' : '#FFCC80');
+    const bg = on ? '#FFF3E0' : '#fff';
+    const color = tier === 'maybe' ? '#6A1B9A' : '#E65100';
+    return `<button type="button" onclick="pickBulkWorkMemoWorkName_('${esc(uid)}','${safeArg}')" style="padding:10px 14px; border-radius:18px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid ${border}; background:${bg}; color:${color};">${esc(name)}</button>`;
+  };
+  let html = '';
+  if (primary.length) {
+    html += `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;">${primary.map(n => chip(n, 'primary')).join('')}</div>`;
+  }
+  if (maybe.length) {
+    html += `<div style="font-size:11px; color:#7B1FA2; margin:2px 0 6px;">もしかして</div>`;
+    html += `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;">${maybe.map(n => chip(n, 'maybe')).join('')}</div>`;
+  }
+  if (extra.length) {
+    html += `<div style="font-size:11px; color:#78909C; margin:2px 0 6px;">このカテゴリの作業</div>`;
+    html += `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:4px;">${extra.map(n => chip(n, 'extra')).join('')}</div>`;
+  }
+  return html;
+};
+
 window.buildBulkWorkMemoWorkPickSectionHtml_ = (d, uid) => {
   if (window.bulkWorkMemoIsRestDraft_(d)) return '';
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -37773,7 +37958,7 @@ window.buildBulkWorkMemoWorkPickSectionHtml_ = (d, uid) => {
   if (!crops.length) {
     return `<div style="margin:0 0 10px; padding:12px; border:2px dashed #FFCC80; border-radius:10px; background:#FFF8F0; box-sizing:border-box;">
       <div style="font-size:12px; font-weight:bold; color:#E65100; margin-bottom:4px;">🚜 作業名</div>
-      <div style="font-size:11px; color:#666; line-height:1.35;">作物名を選ぶと作業名を選べます。</div>
+      <div style="font-size:12px; color:#78909C; line-height:1.4;">作物を選ぶと、カテゴリ → 作業名の順で選べます。</div>
     </div>`;
   }
   const cur = String(d.workName || '').trim();
@@ -37812,41 +37997,56 @@ window.buildBulkWorkMemoWorkPickSectionHtml_ = (d, uid) => {
     return collapsed + (typeof window.buildBulkWorkMemoPrepAddItemBtnHtml_ === 'function'
       ? window.buildBulkWorkMemoPrepAddItemBtnHtml_(d, uid) : '');
   }
-  const selectedCat = cur ? String(d.category || window.getBulkWorkMemoWorkCategory_(cur) || '').trim() : String(d.listFilterCategory || d.category || '').trim();
+  const selectedCat = cur
+    ? String(d.category || window.getBulkWorkMemoWorkCategory_(cur) || '').trim()
+    : String(d.listFilterCategory || d.category || '').trim();
   const workListOpen = !!d._workListOpen;
-  // 準備／片づけは対象作業UIがあるので「合いそうな作業名」は出さない。選択済みも非表示。
-  const showSuggestions = !workListOpen && !isMeta && !cur;
-  const suggestionBlock = showSuggestions ? `
-    <label style="font-size:10px; color:#E65100; font-weight:bold;">🚜 合いそうな作業名</label>
-    ${window.buildBulkWorkMemoWorkChipsHtml_(d, uid)}` : '';
   const metaHtml = window.buildBulkWorkMemoPrepTargetHtml_(d, uid);
   const metaTarget = isMeta
     ? String((Array.isArray(d.prepTargetWorks) && d.prepTargetWorks[0]) || d.prepTargetWork || cur || '').trim()
     : '';
+
+  // 通常作業：カテゴリ → 作業名の2段階（一覧を開いているときは省略）
+  let stageHtml = '';
+  if (!isMeta && !cur && !workListOpen) {
+    if (!selectedCat) {
+      stageHtml = `
+        <div style="font-size:12px; font-weight:bold; color:#1565C0; margin:0 0 8px;">① カテゴリ</div>
+        <div style="font-size:12px; color:#607D8B; margin:0 0 10px; line-height:1.4;">合いそうなカテゴリを選ぶと、作業名が出ます。</div>
+        ${window.buildBulkWorkMemoSuggestCategoryChipsHtml_(d, uid)}`;
+    } else {
+      const safeCat = String(selectedCat).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      stageHtml = `
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 10px;">
+          <div style="font-size:12px; color:#546E7A; line-height:1.35;">① カテゴリ　<b style="color:#1565C0;">${esc(selectedCat)}</b></div>
+          <button type="button" onclick="pickBulkWorkMemoSuggestCategory_('${esc(uid)}','${safeCat}')" style="flex-shrink:0; padding:6px 10px; border-radius:8px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid #90CAF9; background:#fff; color:#1565C0;">変更</button>
+        </div>
+        <div style="font-size:12px; font-weight:bold; color:#E65100; margin:0 0 8px;">② 作業名</div>
+        ${window.buildBulkWorkMemoSuggestWorkChipsHtml_(d, uid, selectedCat)}`;
+    }
+  }
+
   const selectedWorkLine = cur
-    ? `<div style="font-size:14px; font-weight:bold; color:#E65100; margin:0 0 8px; line-height:1.35;">${esc(cur)}</div>`
+    ? `<div style="font-size:15px; font-weight:bold; color:#E65100; margin:0 0 8px; line-height:1.35;">${esc(cur)}</div>`
     : '';
-  const catLine = selectedCat
+  const catLine = (cur && selectedCat)
     ? (isMeta
       ? `<div style="font-size:11px; color:#6A1B9A; margin:0 0 8px; line-height:1.45;">カテゴリ: <b>${esc(selectedCat)}</b><br>対象カテゴリ: <b>${esc(d.prepTargetCategory || '（未選択＝すべて）')}</b><br>対象作業名: <b>${esc(metaTarget || '（未選択）')}</b></div>`
-      : (cur ? `<div style="font-size:11px; color:#546E7A; margin:8px 0 6px;">カテゴリ　<b style="color:#37474F;">${esc(selectedCat)}</b></div>` : ''))
+      : `<div style="font-size:11px; color:#546E7A; margin:0 0 8px;">カテゴリ　<b style="color:#37474F;">${esc(selectedCat)}</b></div>`)
     : '';
   const closeBtn = cur
-    ? `<button type="button" onclick="collapseBulkWorkMemoWorkPick_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin:0; padding:12px; border-radius:10px; font-size:14px; font-weight:bold; cursor:pointer; border:none; background:${isMeta ? '#8E24AA' : '#E65100'}; color:#fff;">この作業名で確定</button>`
+    ? `<button type="button" onclick="collapseBulkWorkMemoWorkPick_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin:8px 0 0; padding:12px; border-radius:10px; font-size:14px; font-weight:bold; cursor:pointer; border:none; background:${isMeta ? '#8E24AA' : '#E65100'}; color:#fff;">この作業名で確定</button>`
     : '';
   const metaAddBtn = (isMeta && cur && typeof window.buildBulkWorkMemoPrepAddItemBtnHtml_ === 'function')
     ? window.buildBulkWorkMemoPrepAddItemBtnHtml_(d, uid)
     : '';
   const manualHtml = window.buildBulkWorkMemoWorkManualPickHtml_(d, uid) || '';
-  // 選択中作業名 → 一覧トグル →（開時）一覧＋追加／管理 → カテゴリ → 確定
-  const pickTail = `${selectedWorkLine}${manualHtml}${catLine}${closeBtn}`;
-  const framedPick = String(pickTail).replace(/\s+/g, '')
-    ? `<div style="margin:0 0 10px; padding:12px; border:2px solid #FFCC80; border-radius:12px; background:#FFF8F0; box-sizing:border-box;">
-        <div style="font-size:12px; font-weight:bold; color:#E65100; margin:0 0 8px;">🚜 作業名を選ぶ</div>
-        ${pickTail}
-      </div>`
-    : '';
-  return `${metaHtml}${suggestionBlock}${framedPick}${metaAddBtn}`;
+  const pickBody = `${stageHtml}${selectedWorkLine}${catLine}${manualHtml}${closeBtn}`;
+  const framedPick = `<div style="margin:0 0 10px; padding:14px; border:2px solid #FFCC80; border-radius:12px; background:#FFF8F0; box-sizing:border-box;">
+      <div style="font-size:13px; font-weight:bold; color:#E65100; margin:0 0 10px;">🚜 作業名</div>
+      ${pickBody}
+    </div>`;
+  return `${metaHtml}${framedPick}${metaAddBtn}`;
 };
 
 window.buildBulkWorkMemoCropPickSectionHtml_ = (d, uid) => {
@@ -37960,9 +38160,9 @@ window.buildBulkWorkMemoWorkManualPickHtml_ = (d, uid) => {
       </div>`;
   })() : '';
   return `
-    <button type="button" onclick="toggleBulkWorkMemoWorkList_('${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:10px 14px; margin-bottom:${workListOpen ? '8px' : '0'}; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid #FF9800; background:${workListOpen ? '#FFF3E0' : '#fff'}; color:#E65100; text-align:left; display:flex; justify-content:space-between; align-items:center;">
-      <span>📋 一覧から選ぶ</span>
-      <span style="font-size:11px; font-weight:normal; opacity:0.85;">${workListOpen ? '▲ 閉じる' : '▼ 開く'}</span>
+    <button type="button" onclick="toggleBulkWorkMemoWorkList_('${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:10px 14px; margin:${workListOpen ? '10px 0 8px' : '10px 0 0'}; border-radius:10px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid #FFCC80; background:${workListOpen ? '#FFF3E0' : '#fff'}; color:#BF360C; text-align:left; display:flex; justify-content:space-between; align-items:center;">
+      <span>📋 一覧から選ぶ${workListOpen ? '' : '（候補にないとき）'}</span>
+      <span style="font-size:11px; font-weight:normal; opacity:0.85;">${workListOpen ? '▲' : '▼'}</span>
     </button>
     <div id="bulk_work_list_${esc(uid)}" style="display:${workListOpen ? 'block' : 'none'}; margin-bottom:${workListOpen ? '0' : '0'};">
       ${listHtml}
@@ -39174,6 +39374,71 @@ window.pickBulkWorkMemoCategory_ = (uid, category) => {
   window.pickBulkWorkMemoListFilter_(uid, category);
 };
 
+/** 2段階候補：カテゴリ選択（一覧は開かず、次に作業名を出す） */
+window.pickBulkWorkMemoSuggestCategory_ = (uid, category) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  let nextFilter = String(category || '').trim();
+  // 同じカテゴリ再タップ＝選び直し（作業名ステージからカテゴリへ戻る）
+  if (nextFilter && nextFilter === String(row.listFilterCategory || '').trim()) {
+    nextFilter = '';
+  }
+  const prevWasMeta = typeof window.isMetaTargetCategory_ === 'function'
+    && (window.isMetaTargetCategory_(String(row.listFilterCategory || '').trim())
+      || window.isMetaTargetCategory_(String(row.category || '').trim()));
+  const nextIsMeta = typeof window.isMetaTargetCategory_ === 'function'
+    && window.isMetaTargetCategory_(nextFilter);
+
+  row.listFilterCategory = nextFilter;
+  row._workListOpen = false;
+  row._workPickOpen = true;
+
+  if (nextIsMeta) {
+    row.category = nextFilter;
+    row.prepTargetCategory = '';
+    if (typeof window.setBulkWorkMemoPrepTargetWorks_ === 'function') {
+      window.setBulkWorkMemoPrepTargetWorks_(row, []);
+    } else {
+      row.prepTargetWork = '';
+      row.prepTargetWorks = [];
+    }
+    row.workName = '';
+    row.workMatched = false;
+    row.detailedWorks = [];
+    if (typeof window.setBulkWorkMemoPolyIds_ === 'function') {
+      window.setBulkWorkMemoPolyIds_(row, []);
+    } else {
+      row.polyIds = [];
+      row.polyId = '';
+    }
+    row.fieldHintTokens = [];
+    row.fieldTokenResults = [];
+    row.fieldCandidates = [];
+  } else if (prevWasMeta) {
+    row.category = '';
+    row.prepTargetCategory = '';
+    row.prepListFilterCategory = '';
+    if (typeof window.setBulkWorkMemoPrepTargetWorks_ === 'function') {
+      window.setBulkWorkMemoPrepTargetWorks_(row, []);
+    } else {
+      row.prepTargetWork = '';
+      row.prepTargetWorks = [];
+    }
+    row.workName = '';
+    row.workMatched = false;
+    row.detailedWorks = [];
+  } else if (!String(row.workName || '').trim()) {
+    // カテゴリ変更時は未確定の作業名だけクリア
+    row.workName = '';
+    row.workMatched = false;
+  }
+
+  if (typeof window.refreshBulkWorkMemoWorkSuggestions_ === 'function') {
+    try { window.refreshBulkWorkMemoWorkSuggestions_(row); } catch (e) {}
+  }
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+};
+
 window.pickBulkWorkMemoWorkName_ = (uid, name) => {
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
   if (!row) return;
@@ -39424,6 +39689,18 @@ window.pickBulkWorkMemoCropName_ = (uid, name) => {
   window.setBulkWorkMemoCropNames_(row, next);
   row.detailedWorks = [];
   row._cropPickOpen = true;
+  // 作物が変わったらカテゴリ→作業名の段階をリセット
+  if (!String(row.workName || '').trim()) {
+    const metaKeep = typeof window.isMetaTargetCategory_ === 'function'
+      && window.isMetaTargetCategory_(String(row.listFilterCategory || row.category || '').trim());
+    if (!metaKeep) {
+      row.listFilterCategory = '';
+      row._workListOpen = false;
+    }
+    if (typeof window.autoAdvanceBulkWorkMemoSuggestCategory_ === 'function') {
+      window.autoAdvanceBulkWorkMemoSuggestCategory_(row);
+    }
+  }
   window.refreshBulkWorkMemoCropPickOrReview_(uid);
 };
 
@@ -43552,7 +43829,7 @@ window.applyBulkWorkMemoHistoryDateChange_ = async (batchId) => {
                               if (typeof endMapDataLoad === 'function') endMapDataLoad(true);
                           }
                           if (ok && typeof window.showRecordSyncToast === 'function') {
-                              window.showRecordSyncToast('📦 キャッシュで起動しました（最新データを裏で確認中…）', 'info');
+                              // キャッシュ即起動の案内トーストは出さない（操作の邪魔になるため）
                           }
                           window._workerLoginInFlight = executeLogin(true, { fromCache: !!ok });
                       } catch (e) {

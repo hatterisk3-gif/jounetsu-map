@@ -175,8 +175,9 @@
         }
         if (!json || json.status !== 'success') {
           var failMsg = (json && json.message) || 'エラーが発生しました';
-          // 先の書込み成功後の再送で「既に登録／無い」になった場合は成功扱い
-          if (i > 0 && isIdempotentSuccessMessage(failMsg, action, params)) {
+          // 書込み成功後の再送／応答切れで「既に登録／無い」になった場合は成功扱い
+          //（i===0 でも add の「既に登録」は二重送信や先成功の可能性が高いので回復）
+          if (isIdempotentSuccessMessage(failMsg, action, params) && (i > 0 || String(params.manageAction || '') === 'add')) {
             return {
               ok: true,
               masterType: params.masterType || 'work',
@@ -195,8 +196,7 @@
         lastError = err;
         var msg = String((err && err.message) || '');
         if (isNoRetryMessage(msg)) {
-          // 「既に登録」でも再送後なら成功扱い（上の json 分岐と二重だが fetch 例外経路用）
-          if (i > 0 && isIdempotentSuccessMessage(msg, action, params)) {
+          if (isIdempotentSuccessMessage(msg, action, params) && (i > 0 || String(params.manageAction || '') === 'add')) {
             return {
               ok: true,
               masterType: params.masterType || 'work',
