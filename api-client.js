@@ -19,6 +19,7 @@
     updateRecordItem: 120000,
     updateWorkRecordById: 120000,
     getInitData: 240000,
+    getScheduleData: 180000,
     getWorkRecordAnalysis: 45000,
     saveCultivationPlans: 90000,
     saveCroptypeDBBatch: 90000,
@@ -47,10 +48,11 @@
     saveProdMgmtCategories: true
   };
 
-  // 二重保存は避けたいが、CORS/回線切断の Failed to fetch だけは再送する
+  // 二重保存は避けたいが、CORS/回線切断・コールドスタートの Failed to fetch は再送する
   var NETWORK_SOFT_RETRY_ACTIONS = {
     manageMaster: true,
     getInitData: true,
+    getScheduleData: true,
     login: true
   };
 
@@ -126,10 +128,13 @@
 
     var baseTimeoutMs = callOptions.timeoutMs || HEAVY_TIMEOUT_MS[action] || 30000;
     var maxRetries = NO_RETRY_ACTIONS[action] ? 0 : retries;
-    // manageMaster: Failed to fetch / タイムアウトを最大2回再送（コールドスタート＋応答切れ対策）
-    var softNetRetries = NETWORK_SOFT_RETRY_ACTIONS[action]
-      ? (action === 'manageMaster' ? 2 : 2)
-      : 0;
+    // 起動系・マスタ系: Failed to fetch / タイムアウトを再送（コールドスタート＋応答切れ対策）
+    var softNetRetries = 0;
+    if (NETWORK_SOFT_RETRY_ACTIONS[action]) {
+      if (action === 'getInitData' || action === 'getScheduleData') softNetRetries = 3;
+      else if (action === 'manageMaster') softNetRetries = 2;
+      else softNetRetries = 2;
+    }
     var maxAttempts = Math.max(maxRetries, softNetRetries) + 1;
     var lastError = null;
     var cancelAtStart = cancelGen[action] || 0;

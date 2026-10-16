@@ -1099,7 +1099,8 @@ function loadInitData(options) {
         }
         if (window._adminInitLoading) window._adminInitLoading.update({ label: '最新データを取得中...', detail: 'サーバーに接続しています', current: 1, total: 3 });
     }
-    callGAS('getInitData').then(data => {
+    callGAS('getInitData', {}, background ? 0 : 0, { timeoutMs: 240000 }).then(data => {
+        window._adminInitDataBgFailCount = 0;
         if (window._adminInitLoading) window._adminInitLoading.update({ label: '表示データを準備中...', detail: 'マスタと圃場を反映しています', current: 2, total: 3 });
         const incomingCount = (data && Array.isArray(data.polygons)) ? data.polygons.length : 0;
         let skipCacheSave = false;
@@ -1151,6 +1152,28 @@ function loadInitData(options) {
         console.log("InitData Error:", e);
         const detail = (e && e.message) ? String(e.message).replace(/\s+/g, ' ').slice(0, 80) : '';
         const failLabel = detail ? ('圃場データの読み込みに失敗しました: ' + detail) : '圃場データの読み込みに失敗しました';
+        const errMsg = String((e && e.message) || '');
+        const isTransient = /Failed to fetch|通信に失敗|タイムアウト|一時的な通信|cancelled|Abort/i.test(errMsg)
+          || (e && e.name === 'AbortError');
+
+        // キャッシュ表示中の裏更新失敗は静かに再試行（ワーカーと同様）
+        if (background && cached && isTransient) {
+            window._adminInitDataBgFailCount = (Number(window._adminInitDataBgFailCount || 0) || 0) + 1;
+            const failCount = window._adminInitDataBgFailCount;
+            if (!window._adminInitDataBgRetryTimer) {
+                const delayMs = Math.min(120000, 8000 * Math.pow(1.6, Math.min(failCount, 6)));
+                window._adminInitDataBgRetryTimer = setTimeout(() => {
+                    window._adminInitDataBgRetryTimer = null;
+                    try { loadInitData({ background: true }); } catch (e2) {}
+                }, delayMs);
+            }
+            // 何度も失敗したときだけトースト
+            if (failCount >= 3) {
+                showAdminSyncToast('⚠️ 最新データの取得に失敗（表示中のデータを維持・再試行中）', 'error');
+            }
+            return;
+        }
+
         if (cached && Object.keys(loadedPolygons || {}).length === 0) {
             try { renderInitData(JSON.parse(cached), { interim: false }); } catch (err) {
                 if (window._adminInitLoading) { window._adminInitLoading.fail(failLabel); window._adminInitLoading = null; }
@@ -1161,7 +1184,7 @@ function loadInitData(options) {
         } else if (background) {
             showAdminSyncToast('⚠️ 最新データの取得に失敗（表示中のデータを維持）', 'error');
         }
-        if (detail) showAdminSyncToast('⚠️ ' + failLabel, 'error');
+        if (detail && !background) showAdminSyncToast('⚠️ ' + failLabel, 'error');
     });
 }
 

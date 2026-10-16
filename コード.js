@@ -962,34 +962,12 @@ function getInitData() {
     return [];
   };
 
-  // 拠点マスタの自動移行処理（失敗しても圃場読込は続ける）
+  // 拠点マスタの自動移行は getInitData では行わない（読取中の書込みが起動同期切れの主因）
   try {
-    ensureLocationMasterSheet_();
-    let locSheet = ss.getSheetByName('拠点マスタ');
-    
-    if (locSheet && locSheet.getLastRow() <= 1) {
-      const fieldSheet = ss.getSheetByName('圃場設定マスタ');
-      if (fieldSheet) {
-        const fieldData = fieldSheet.getDataRange().getValues();
-        let locs = new Set();
-        for (let i = 1; i < fieldData.length; i++) {
-          if (fieldData[i][0]) locs.add(String(fieldData[i][0]).trim());
-        }
-        locs.forEach(l => {
-          if (l !== '拠点名' && l !== '拠点') {
-            // appendRow の列数不一致を避ける
-            const r = locSheet.getLastRow() + 1;
-            locSheet.getRange(r, 1, 1, 4).setValues([[l, '', '', '']]);
-          }
-        });
-        // 移行後、圃場設定マスタのA列(値のみ)をクリアする（ヘッダー行は残す）
-        if (fieldData.length > 1) {
-          fieldSheet.getRange(2, 1, fieldData.length - 1, 1).clearContent();
-        }
-      }
-    }
+    // シートが無ければ作るだけ（空でもOK）。中身の移行は別途メンテ用に任せる
+    if (!ss.getSheetByName('拠点マスタ')) ensureLocationMasterSheet_();
   } catch (e) {
-    console.warn('拠点マスタ移行スキップ:', e);
+    console.warn('拠点マスタ確保スキップ:', e);
   }
 
   let locationDetails = [];
@@ -1027,7 +1005,7 @@ function getInitData() {
   
   const workSheet = ss.getSheetByName('作業マスタ');
   if (workSheet) {
-    try { ensureWorkMasterHeaders_(workSheet); } catch (e) {}
+    try { ensureWorkMasterHeaders_(workSheet, { skipFlush: true }); } catch (e) {}
     const data = workSheet.getDataRange().getValues();
     if (data.length > 0) {
       const headers = data[0].map(h => String(h).trim()); 
@@ -6052,7 +6030,12 @@ function getSavedPolygons(options) {
   const signSheet = ss.getSheetByName('看板');
   if (signSheet) {
     let signLocCol = -1;
-    try { signLocCol = ensureSignLocationColumn_(signSheet); } catch (e) { signLocCol = -1; }
+    // 初期同期では列追加+flushしない（読取専用で列を探す）
+    try {
+      signLocCol = slimForInit
+        ? findSignLocationColumnIndex_(signSheet)
+        : ensureSignLocationColumn_(signSheet);
+    } catch (e) { signLocCol = -1; }
     const data = signSheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       if (!data[i][0]) continue;
@@ -7606,32 +7589,38 @@ function ensureMeiboLocationColumn_() {
 }
 
 /** 看板シートの所属拠点列を確保（0-based index） */
-function ensureSignLocationColumn_(sheet) {
-  if (!sheet) throw new Error('看板シートが見つかりません');
+/** 看板の拠点列を探すだけ（無ければ -1。初期同期の書込みを避ける） */
+function findSignLocationColumnIndex_(sheet) {
+  if (!sheet) return -1;
   const lastCol = Math.max(sheet.getLastColumn(), 1);
   const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
     return String(h || '').trim();
   });
-  let col = -1;
   for (let c = 0; c < headers.length; c++) {
     const h = headers[c];
-    if (h === '所属拠点' || h === '拠点' || h === '拠点名') {
-      col = c;
-      break;
-    }
+    if (h === '所属拠点' || h === '拠点' || h === '拠点名') return c;
   }
-  if (col < 0) {
-    // L列(12)を優先。埋まっていれば末尾に追加
-    const preferIdx = 11; // 0-based = L列
-    if (lastCol <= preferIdx || !headers[preferIdx]) {
-      sheet.getRange(1, preferIdx + 1).setValue('所属拠点');
-      col = preferIdx;
-    } else {
-      col = lastCol;
-      sheet.getRange(1, col + 1).setValue('所属拠点');
-    }
-    SpreadsheetApp.flush();
+  return -1;
+}
+
+function ensureSignLocationColumn_(sheet) {
+  if (!sheet) throw new Error('看板シートが見つかりません');
+  let col = findSignLocationColumnIndex_(sheet);
+  if (col >= 0) return col;
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+    return String(h || '').trim();
+  });
+  // L列(12)を優先。埋まっていれば末尾に追加
+  const preferIdx = 11; // 0-based = L列
+  if (lastCol <= preferIdx || !headers[preferIdx]) {
+    sheet.getRange(1, preferIdx + 1).setValue('所属拠点');
+    col = preferIdx;
+  } else {
+    col = lastCol;
+    sheet.getRange(1, col + 1).setValue('所属拠点');
   }
+  SpreadsheetApp.flush();
   return col;
 }
 
@@ -7954,6 +7943,27 @@ function formatWorkDateYmd_(val) {
 }
 
 var globalCpPlanLookup_ = null;
+/** 圃場名・看板名 → id の軽量マップ（座標・写真を読まない） */
+function buildFieldNameToPolyIdMap_() {
+  const map = {};
+  const ss = TENANT_SS;
+  if (!ss) return map;
+  ['圃場', '看板'].forEach(function(sheetName) {
+    const sh = ss.getSheetByName(sheetName);
+    if (!sh) return;
+    const lastRow = sh.getLastRow();
+    if (lastRow < 2) return;
+    // A=ID, B=名前 だけ読む（getRange は endRow/endCol）
+    const values = sh.getRange(2, 1, lastRow, 2).getValues();
+    for (let i = 0; i < values.length; i++) {
+      const id = String(values[i][0] || '').trim();
+      const name = String(values[i][1] || '').trim();
+      if (id && name) map[name] = id;
+    }
+  });
+  return map;
+}
+
 function getScheduleData() {
   const ss = TENANT_SS;
   const today = new Date(); today.setHours(0,0,0,0);
@@ -7962,13 +7972,10 @@ function getScheduleData() {
   // 1. 作業マスタから「作業名 -> 担当部署」の辞書を作成
   const workDeptMap = buildWorkDeptMapFromMaster_();
 
-  // 圃場名 → polyId
-  const fieldNameToPolyId = {};
+  // 圃場名 → polyId（フルポリゴン読込はしない）
+  let fieldNameToPolyId = {};
   try {
-    const polygons = getSavedPolygons();
-    polygons.forEach(function(p) {
-      if (p && p.name && p.id) fieldNameToPolyId[String(p.name)] = p.id;
-    });
+    fieldNameToPolyId = buildFieldNameToPolyIdMap_();
   } catch (e) {}
 
   // 2. 作業実績から収穫中・完了・途中を抽出
@@ -8180,13 +8187,10 @@ function getScheduleData() {
         }
       }
     }
-    // 空欄を自動補完
-    if (scheduleUpdates.length > 0) {
-      scheduleUpdates.forEach(upd => schedSheet.getRange(upd.row, upd.col).setValue(upd.val));
-    }
-    try {
-      ensureSowingAfterCompletedProcure_(sData, completedProcurePlaceIds);
-    } catch (eProcureSow) {}
+    // 部署・完了日のシート書込みと調達→播種自動生成は起動GETでは行わない
+    // （個別 setValue / upsert が同期切れの主因。応答オブジェクトには反映済み）
+    void scheduleUpdates;
+    void completedProcurePlaceIds;
   }
 
   // 途中作業を予定一覧へ追加
@@ -8226,8 +8230,14 @@ function getScheduleData() {
   applyWorkScheduleStatus_(activeSchedules);
   applyWorkScheduleStatus_(completedSchedules);
 
-  // 4. ポリゴン情報の収集（ステータスはフロントエンドで計算させるために付加情報を乗せる）
-  const polygons = getSavedPolygons();
+  // 4. ポリゴン情報（初期同期向けに写真・畝CADを削る）
+  let polygons = [];
+  try {
+    polygons = getSavedPolygons({ slimForInit: true, photoLimit: 8 });
+  } catch (polyErr) {
+    console.warn('getScheduleData polygons skip:', polyErr);
+    polygons = [];
+  }
   polygons.forEach(p => {
     p.harvestingDepts = harvestingFields[p.name] || []; 
   });

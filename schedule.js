@@ -1276,11 +1276,13 @@ async function fetchWeatherAndUpdateUI() {
         loadData();
       }
 
-      function loadData() {
+      function loadData(options) {
+        options = options || {};
+        const silentRetry = !!options.silentRetry;
         if (!checkLoginStatus()) return;
         // 起動オーバーレイはスクリプト完了で閉じる。データ取得は裏で進め、起動を塞がない
         const bootstrapStillOpen = !!(window.scheduleBootstrapLoading && !window.__scheduleBootstrapFinished);
-        const initialLoad = bootstrapStillOpen
+        const initialLoad = (bootstrapStillOpen || silentRetry)
           ? null
           : (window.AppLoading
           ? AppLoading.start({
@@ -1291,12 +1293,12 @@ async function fetchWeatherAndUpdateUI() {
               delay: 0
             })
           : null);
-        if (!bootstrapStillOpen && !initialLoad && typeof beginMapDataLoad === 'function') {
+        if (!bootstrapStillOpen && !silentRetry && !initialLoad && typeof beginMapDataLoad === 'function') {
           beginMapDataLoad('スケジュールデータを読み込み中...');
         }
         const btn = document.querySelector('.btn-primary') || document.querySelector('.btn-reload');
         const orgTxt = btn ? btn.innerText : '';
-        if (btn) {
+        if (btn && !silentRetry) {
           btn.innerText = "通信中...";
           btn.disabled = true;
         }
@@ -1330,7 +1332,7 @@ async function fetchWeatherAndUpdateUI() {
         };
 
         const cachedStr = localStorage.getItem('passionMapScheduleData');
-        if (cachedStr) {
+        if (cachedStr && !silentRetry) {
           try {
             applyScheduleData(JSON.parse(cachedStr));
             if (typeof window.showRecordSyncToast === 'function') {
@@ -1346,11 +1348,16 @@ async function fetchWeatherAndUpdateUI() {
           initialLoad.update({ detail: '最新データを取得しています', current: 1, total: 3 });
         }
   
-        callGAS('getScheduleData').then(data => {
+        callGAS('getScheduleData', {}, 0, { timeoutMs: 180000 }).then(data => {
+          window._scheduleDataBgFailCount = 0;
           if (initialLoad) {
             initialLoad.update({ detail: '地図表示を更新しています', current: 2, total: 3 });
           }
-          localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
+          try {
+            localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
+          } catch (eCache) {
+            console.warn('schedule cache save failed', eCache);
+          }
           applyScheduleData(data);
           if (initialLoad) {
             initialLoad.update({ detail: '読み込み完了', current: 3, total: 3 });
@@ -1361,21 +1368,56 @@ async function fetchWeatherAndUpdateUI() {
             btn.disabled = false;
           }
           if (!initialLoad && typeof hideMapDataLoading === 'function') hideMapDataLoading();
+          if (cachedStr && typeof window.showRecordSyncToast === 'function') {
+            window.showRecordSyncToast('☁️ スケジュールを最新に更新しました', 'ok');
+          } else if (cachedStr && typeof showMapSyncToast === 'function') {
+            showMapSyncToast('☁️ スケジュールを最新に更新しました', 'ok');
+          }
         }).catch(e => {
           console.error('getScheduleData failed', e);
           if (btn) {
             btn.innerText = orgTxt;
             btn.disabled = false;
           }
+          const errMsg = String((e && e.message) || '');
+          const isTransient = /Failed to fetch|通信に失敗|タイムアウト|一時的な通信|cancelled|Abort/i.test(errMsg)
+            || (e && e.name === 'AbortError');
+
+          // キャッシュ表示済みなら静かに再試行（起動アラートで塞がない）
+          if (cachedStr && isTransient) {
+            window._scheduleDataBgFailCount = (Number(window._scheduleDataBgFailCount || 0) || 0) + 1;
+            const failCount = window._scheduleDataBgFailCount;
+            if (!window._scheduleDataBgRetryTimer) {
+              const delayMs = Math.min(120000, 8000 * Math.pow(1.6, Math.min(failCount, 6)));
+              window._scheduleDataBgRetryTimer = setTimeout(() => {
+                window._scheduleDataBgRetryTimer = null;
+                try { loadData({ silentRetry: true }); } catch (e2) {}
+              }, delayMs);
+            }
+            if (initialLoad) {
+              initialLoad.done();
+            } else if (!silentRetry && typeof hideMapDataLoading === 'function') {
+              hideMapDataLoading();
+            }
+            if (failCount >= 3 && window.__scheduleBootstrapFinished) {
+              if (typeof window.showRecordSyncToast === 'function') {
+                window.showRecordSyncToast('⚠️ 最新取得に失敗（キャッシュ表示・再試行中）', 'error');
+              } else if (typeof showMapSyncToast === 'function') {
+                showMapSyncToast('⚠️ 最新取得に失敗（キャッシュ表示・再試行中）', 'error');
+              }
+            }
+            return;
+          }
+
           if (initialLoad) {
             initialLoad.fail('スケジュールの読み込みに失敗しました');
           } else if (typeof hideMapDataLoading === 'function') {
             hideMapDataLoading();
           }
-          // 起動中はアラートで画面を塞がない（キャッシュ表示を優先）
-          if (window.__scheduleBootstrapFinished) {
-            if (typeof customAlert === 'function') customAlert("スケジュールの最新取得に失敗しました。キャッシュを表示しています。");
-            else alert("スケジュールの最新取得に失敗しました。キャッシュを表示しています。");
+          // キャッシュ無しのときだけアラート
+          if (!cachedStr && window.__scheduleBootstrapFinished) {
+            if (typeof customAlert === 'function') customAlert("スケジュールの読み込みに失敗しました。");
+            else alert("スケジュールの読み込みに失敗しました。");
           }
         });
       }
