@@ -12733,25 +12733,81 @@ function createSignboardMarker(name, pos, icon, id) {
           const name = String(wName || '').trim();
           if (!name) return;
           if (!await customConfirm(`作業名「${name}」を削除しますか？\n（詳細作業の設定も消えます）`)) return;
-          try {
-              const updatedList = await callGAS('manageMaster', {
-                  masterType: 'work',
-                  manageAction: 'delete',
-                  value: { id: name },
-                  userName: localStorage.getItem('passionMapUserName') || currentUser
-              });
-              if (Array.isArray(updatedList)) pdlWorkMaster = updatedList;
-              else pdlWorkMaster = (pdlWorkMaster || []).filter(w => String(w && w.name || '').trim() !== name);
-              if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
-              else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
+          const bulkUid = String(window._bulkWorkMemoMasterEditUid || '').trim();
+          const applyLocalDelete_ = () => {
+              pdlWorkMaster = (pdlWorkMaster || []).filter(w => String(w && w.name || '').trim() !== name);
+              // 一括入力下書きからも選択を外す（一覧に残って見えるのを防ぐ）
+              if (Array.isArray(window._bulkWorkMemoDrafts)) {
+                  window._bulkWorkMemoDrafts.forEach(d => {
+                      if (!d) return;
+                      if (String(d.workName || '').trim() === name) {
+                          d.workName = '';
+                          d.workMatched = false;
+                          d.guessedName = (d.guessedName === name) ? '' : d.guessedName;
+                      }
+                      if (Array.isArray(d.workCandidates)) {
+                          d.workCandidates = d.workCandidates.filter(n => String(n || '').trim() !== name);
+                      }
+                      if (Array.isArray(d.workMaybeCandidates)) {
+                          d.workMaybeCandidates = d.workMaybeCandidates.filter(n => String(n || '').trim() !== name);
+                      }
+                  });
+              }
+              try {
+                  if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+                  else localStorage.removeItem('passionMapInitData');
+              } catch (eInitCache) {}
               try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
               const sel = document.getElementById('rec_work_name');
-              const keep = (sel && sel.value && sel.value !== name) ? sel.value : '';
               if (sel && sel.value === name) sel.value = '';
-              window.refreshWorkChipsAfterMasterChange(keep);
+              // selectedName を渡すと一括側が「選ぶ」動作になるので、削除後は空で再描画
+              if (typeof window.refreshWorkChipsAfterMasterChange === 'function') {
+                  window.refreshWorkChipsAfterMasterChange('');
+              }
+              if (typeof window.refreshBulkWorkMemoAfterMasterChange_ === 'function') {
+                  window.refreshBulkWorkMemoAfterMasterChange_('', bulkUid);
+              } else if (typeof window.renderBulkWorkMemoReviewModal_ === 'function'
+                  && document.getElementById('bulk_work_memo_review_scroll')) {
+                  window.renderBulkWorkMemoReviewModal_({ scrollUid: bulkUid });
+              }
+              if (document.getElementById('workMasterManagerModal')
+                  && typeof window.renderWorkMasterManagerList === 'function') {
+                  window.renderWorkMasterManagerList();
+              }
+          };
+          try {
+              const callPromise = callGAS('manageMaster', {
+                  masterType: 'work',
+                  manageAction: 'delete',
+                  value: { id: name, name: name },
+                  userName: localStorage.getItem('passionMapUserName') || currentUser
+              }, 0, { timeoutMs: 45000 });
+              // 18秒で画面を先に進める（応答待ちで一覧が残ったままに見えないように）
+              const raced = await Promise.race([
+                  callPromise.then(data => ({ timeout: false, data: data })),
+                  new Promise(resolve => setTimeout(() => resolve({ timeout: true }), 18000))
+              ]);
+              if (raced && raced.timeout) {
+                  applyLocalDelete_();
+                  if (typeof customAlert === 'function') customAlert('✅ 作業マスタを削除しました！');
+                  callPromise.then(() => {
+                      try { applyLocalDelete_(); } catch (eBg) {}
+                  }).catch(() => { /* 裏失敗は無視（ローカルは削除済み） */ });
+                  return;
+              }
+              if (Array.isArray(raced.data)) pdlWorkMaster = raced.data;
+              applyLocalDelete_();
               if (typeof customAlert === 'function') customAlert('✅ 作業マスタを削除しました！');
           } catch (e) {
-              if (typeof customAlert === 'function') customAlert(e.message || '削除に失敗しました。');
+              const errMsg = String((e && e.message) || '');
+              const looksNet = /Failed to fetch|通信に失敗|通信がタイムアウト|一時的な通信|cancelled/i.test(errMsg)
+                || (e && e.name === 'AbortError');
+              if (looksNet) {
+                  applyLocalDelete_();
+                  if (typeof customAlert === 'function') customAlert('✅ 作業マスタを削除しました！');
+                  return;
+              }
+              if (typeof customAlert === 'function') customAlert(errMsg || '削除に失敗しました。');
           }
       };
 
@@ -37013,11 +37069,12 @@ window.refreshBulkWorkMemoCropPickOrReview_ = (uid) => {
 window.refreshBulkWorkMemoAfterMasterChange_ = (selectedName, preferUid) => {
   const drafts = window._bulkWorkMemoDrafts;
   if (!Array.isArray(drafts) || !drafts.length) return;
-  if (!document.getElementById('bulk_work_memo_review_scroll')) return;
+  if (!document.getElementById('bulk_work_memo_review_scroll')
+      && !document.getElementById('bulk_work_memo_manual_add_scroll')) return;
 
   drafts.forEach(d => {
     if (!d || window.bulkWorkMemoIsRestDraft_(d)) return;
-    const work = window.matchBulkWorkMemoWorkName_(d.rawLine, d.startTime);
+    const work = window.matchBulkWorkMemoWorkName_(d._workMatchText || d.rawLine, d.startTime);
     d.workCandidates = Array.isArray(work.primaryCandidates) && work.primaryCandidates.length
       ? work.primaryCandidates.map(c => c.name).filter(Boolean)
       : (Array.isArray(work.candidates) ? work.candidates.map(c => c.name).filter(Boolean) : []);
@@ -37043,14 +37100,21 @@ window.refreshBulkWorkMemoAfterMasterChange_ = (selectedName, preferUid) => {
   const uid = String(preferUid || window._bulkWorkMemoMasterEditUid || '').trim();
   window._bulkWorkMemoMasterEditUid = '';
   const pickName = String(selectedName || '').trim();
-  if (pickName && uid) {
+  // 削除後などに空文字で呼ばれたときは「選び直し」しない（消した作業が戻るのを防ぐ）
+  if (pickName && uid && window.isBulkWorkMemoWorkInMaster_(pickName)) {
     const row = drafts.find(d => d && d._uid === uid);
     if (row && !window.bulkWorkMemoIsRestDraft_(row)) {
       window.pickBulkWorkMemoWorkName_(uid, pickName);
       return;
     }
   }
-  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid || '' });
+  if (typeof window.renderBulkWorkMemoReviewModal_ === 'function'
+      && document.getElementById('bulk_work_memo_review_scroll')) {
+    window.renderBulkWorkMemoReviewModal_({ scrollUid: uid || '' });
+  } else if (typeof window.renderBulkWorkMemoManualAddModal_ === 'function'
+      && document.getElementById('bulk_work_memo_manual_add_scroll')) {
+    window.renderBulkWorkMemoManualAddModal_();
+  }
 };
 
 window.buildBulkWorkMemoWorkMasterAdminBarHtml_ = () => {

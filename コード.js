@@ -2288,10 +2288,27 @@ function manageMasterData(masterType, manageAction, value, userName) {
     const targetVal = value.id || value.name || value;
     const targetCrop = (typeof value === 'object' && value) ? String(value.crop || '').trim() : '';
     
-    const keyIdx = masterType === 'work' ? headers.indexOf('作業名') : 0;
+    let keyIdx = masterType === 'work' ? headers.indexOf('作業名') : 0;
     let deleted = false;
 
-    if (masterType === 'nurseryLocation') {
+    // 作業マスタ削除はヘッダー保証＋trim照合（旧コードはスペース差で見つからず、ACKだけ成功していた）
+    if (masterType === 'work') {
+      const workHeaders = ensureWorkMasterHeaders_(sheet);
+      keyIdx = workHeaders.indexOf('作業名');
+      const tv = String(targetVal || '').trim();
+      if (!tv) throw new Error('削除する作業名がありません');
+      if (keyIdx < 0) throw new Error('作業マスタに「作業名」列がありません');
+      const latest = sheet.getDataRange().getValues();
+      for (let i = 1; i < latest.length; i++) {
+        if (String(latest[i][keyIdx] || '').trim() === tv) {
+          sheet.deleteRow(i + 1);
+          deleted = true;
+          writeLog(userName, "マスタ削除", tv, `対象: ${sheetName}`);
+          break;
+        }
+      }
+      if (!deleted) throw new Error('作業「' + tv + '」が作業マスタにありません');
+    } else if (masterType === 'nurseryLocation') {
       const val = (typeof value === 'object' && value) ? value : { id: value, name: value };
       const targetId = String(val.id || '').trim();
       const polyName = String(val.polyName || '').trim();
@@ -2345,11 +2362,9 @@ function manageMasterData(masterType, manageAction, value, userName) {
       if (direction) labelParts.push(direction);
       const label = labelParts.length ? labelParts.join('/') : (targetId || String(targetVal || ''));
       writeLog(userName, "マスタ削除", label + (rowsToDelete.length > 1 ? ' (' + rowsToDelete.length + '件)' : ''), `対象: ${sheetName} / ${polyName || '-'}`);
-    } else for (let i = 1; i < data.length; i++) {
+    } else if (masterType !== 'work') for (let i = 1; i < data.length; i++) {
       let match = false;
-      if (masterType === 'work') {
-          if (keyIdx >= 0 && data[i][keyIdx] === targetVal) match = true;
-      } else if (masterType === 'container') {
+      if (masterType === 'container') {
           const rowName = String(data[i][0] || '').trim();
           const rowCrop = String(data[i][1] || '').trim();
           if (rowName === String(targetVal || '').trim() && (!targetCrop || rowCrop === targetCrop)) match = true;
