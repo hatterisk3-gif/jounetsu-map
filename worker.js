@@ -12529,7 +12529,7 @@ function createSignboardMarker(name, pos, icon, id) {
               manageAction = 'merge';
           }
 
-          // 🌟 ボタンの連打防止・二重押しガード ＆ 「追加しています…」表示
+          // 🌟 ボタンの連打防止・二重押しガード
           const submitBtn = btnEl || document.querySelector('#workNameEditorModal button[onclick*="submitWorkNameEditor"]');
           let oldBtnText = '';
           if (submitBtn) {
@@ -12537,10 +12537,34 @@ function createSignboardMarker(name, pos, icon, id) {
               submitBtn.disabled = true;
               submitBtn.style.pointerEvents = 'none';
               submitBtn.style.opacity = '0.65';
-              submitBtn.innerText = (manageAction === 'merge') ? '⏳ 統合しています…' : ((mode === 'edit') ? '⏳ 更新しています…' : '⏳ 追加しています…');
+              submitBtn.innerText = (manageAction === 'merge') ? '統合中…' : ((mode === 'edit') ? '更新中…' : '追加中…');
           }
 
-          const finishSuccess_ = (successMsg) => {
+          const busyLabel = (manageAction === 'merge')
+            ? '統合中です…'
+            : ((mode === 'edit') ? '更新中です…' : '追加中です…');
+          const successMsg = (manageAction === 'merge')
+            ? `✅ 「${name}」への統合を完了しました`
+            : ((mode === 'edit') ? '✅ 更新を完了しました' : '✅ 追加を完了しました');
+          const busyStartedAt = Date.now();
+          if (typeof window.showMasterBusyOverlay_ === 'function') {
+              window.showMasterBusyOverlay_(busyLabel, {
+                  accent: '#EF6C00',
+                  ring: '#FFE0B2',
+                  sub: '作業マスタを保存しています'
+              });
+          } else if (typeof window.showDetailWorkSavingOverlay_ === 'function') {
+              window.showDetailWorkSavingOverlay_(busyLabel);
+          }
+          const endBusy_ = async () => {
+              const minMs = 450;
+              const elapsed = Date.now() - busyStartedAt;
+              if (elapsed < minMs) await new Promise(r => setTimeout(r, minMs - elapsed));
+              if (typeof window.hideMasterBusyOverlay_ === 'function') window.hideMasterBusyOverlay_();
+              else if (typeof window.hideDetailWorkSavingOverlay_ === 'function') window.hideDetailWorkSavingOverlay_();
+          };
+
+          const finishSuccess_ = async (msg) => {
               try {
                   if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
                   else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
@@ -12551,6 +12575,7 @@ function createSignboardMarker(name, pos, icon, id) {
               const isAfterSaveNextWork = !!(window._workNameEditorOpts && window._workNameEditorOpts.afterSaveNextWork);
               window._workNameEditorOpts = null;
               try { window.closeWorkNameEditorModal(); } catch (eClose) {}
+              await endBusy_();
 
               try {
                   const currentWork = document.getElementById('rec_work_name')?.value || '';
@@ -12582,14 +12607,11 @@ function createSignboardMarker(name, pos, icon, id) {
               }
 
               if (!isAfterSaveNextWork && typeof customAlert === 'function') {
-                try { customAlert(successMsg); } catch (eAlert) {}
+                try { customAlert(msg || successMsg); } catch (eAlert) {}
               }
           };
 
           const payload = { name, category, cropName, crops, cropDetails, detailWorks, aliasNames, ...uiFlags };
-          const successMsg = manageAction === 'merge'
-            ? `✅ 「${name}」に統合して登録しました！`
-            : (mode === 'edit' ? '✅ 作業マスタを更新しました！' : '✅ 作業マスタを追加しました！');
           const applyAckOrLocal_ = (updatedList) => {
               if (Array.isArray(updatedList)) {
                   pdlWorkMaster = updatedList;
@@ -12604,7 +12626,6 @@ function createSignboardMarker(name, pos, icon, id) {
           };
           const restoreSubmitBtn_ = () => {
               if (!submitBtn) return;
-              // モーダルが閉じ済みなら何もしない
               if (!document.getElementById('workNameEditorModal')) return;
               submitBtn.disabled = false;
               submitBtn.style.pointerEvents = '';
@@ -12634,58 +12655,13 @@ function createSignboardMarker(name, pos, icon, id) {
                       userName: localStorage.getItem('passionMapUserName') || currentUser
                     };
 
-              // 編集は応答待ちで固まりやすいので、18秒で画面を先に進める（通信は裏で継続）
-              const UI_WAIT_MS = (mode === 'edit' || manageAction === 'merge') ? 18000 : 45000;
-              const callPromise = callGAS('manageMaster', reqParams, 0, { timeoutMs: 45000 });
-              let settled = false;
-              const uiTimeout = new Promise((resolve) => {
-                  setTimeout(() => resolve({ __uiTimeout: true }), UI_WAIT_MS);
-              });
-              const raced = await Promise.race([
-                  callPromise.then((data) => ({ __uiTimeout: false, data: data })).catch((err) => { throw err; }),
-                  uiTimeout
-              ]);
-
-              if (raced && raced.__uiTimeout) {
-                  // 画面は成功扱いで進める。裏の通信結果はローカルに反映できれば反映
-                  if (mode === 'edit' || manageAction === 'merge') {
-                      applyAckOrLocal_(null);
-                      finishSuccess_(successMsg);
-                      settled = true;
-                      callPromise.then((data) => {
-                          try { applyAckOrLocal_(data); } catch (eBg) {}
-                          if (typeof window.syncLivePdlIntoInitCache_ === 'function') {
-                              try { window.syncLivePdlIntoInitCache_(); } catch (eSync) {}
-                          }
-                      }).catch(() => { /* 裏失敗は無視（画面は既に更新済み） */ });
-                      return;
-                  }
-                  // 追加は重複リスクがあるので、タイムアウトまで待たずエラーにしないで継続待ち…
-                  // ここではそのまま await にフォールスルーせず、追加も固まるので短めに待つ
-                  try {
-                      const data = await callPromise;
-                      applyAckOrLocal_(data);
-                      finishSuccess_(successMsg);
-                  } catch (eAdd) {
-                      throw eAdd;
-                  }
-                  return;
-              }
-
-              applyAckOrLocal_(raced && raced.data);
-              finishSuccess_(successMsg);
-              settled = true;
-              void settled;
+              // 軽量ACK待ち（通信エラーをごまかして完了にしない）
+              const updated = await callGAS('manageMaster', reqParams, 0, { timeoutMs: 90000 });
+              applyAckOrLocal_(updated);
+              await finishSuccess_(successMsg);
           } catch (e) {
               const errMsg = String((e && e.message) || '');
-              const looksNet = /Failed to fetch|通信に失敗|通信がタイムアウト|一時的な通信|cancelled/i.test(errMsg)
-                || (e && e.name === 'AbortError');
-              // 編集・統合はサーバー書込み後に応答だけ落ちることが多いので、画面は成功扱いにする
-              if (looksNet && (mode === 'edit' || manageAction === 'merge')) {
-                  applyAckOrLocal_(null);
-                  finishSuccess_(successMsg);
-                  return;
-              }
+              await endBusy_();
               if (typeof customAlert === 'function') customAlert(errMsg || '保存に失敗しました。');
               restoreSubmitBtn_();
           }
@@ -12734,6 +12710,20 @@ function createSignboardMarker(name, pos, icon, id) {
           if (!name) return;
           if (!await customConfirm(`作業名「${name}」を削除しますか？\n（詳細作業の設定も消えます）`)) return;
           const bulkUid = String(window._bulkWorkMemoMasterEditUid || '').trim();
+          const busyStartedAt = Date.now();
+          if (typeof window.showMasterBusyOverlay_ === 'function') {
+              window.showMasterBusyOverlay_('削除中です…', {
+                  accent: '#c62828',
+                  ring: '#ffcdd2',
+                  sub: '作業マスタから削除しています'
+              });
+          }
+          const endBusy_ = async () => {
+              const minMs = 450;
+              const elapsed = Date.now() - busyStartedAt;
+              if (elapsed < minMs) await new Promise(r => setTimeout(r, minMs - elapsed));
+              if (typeof window.hideMasterBusyOverlay_ === 'function') window.hideMasterBusyOverlay_();
+          };
           const applyLocalDelete_ = () => {
               pdlWorkMaster = (pdlWorkMaster || []).filter(w => String(w && w.name || '').trim() !== name);
               // 一括入力下書きからも選択を外す（一覧に残って見えるのを防ぐ）
@@ -12776,37 +12766,19 @@ function createSignboardMarker(name, pos, icon, id) {
               }
           };
           try {
-              const callPromise = callGAS('manageMaster', {
+              const updated = await callGAS('manageMaster', {
                   masterType: 'work',
                   manageAction: 'delete',
                   value: { id: name, name: name },
                   userName: localStorage.getItem('passionMapUserName') || currentUser
-              }, 0, { timeoutMs: 45000 });
-              // 18秒で画面を先に進める（応答待ちで一覧が残ったままに見えないように）
-              const raced = await Promise.race([
-                  callPromise.then(data => ({ timeout: false, data: data })),
-                  new Promise(resolve => setTimeout(() => resolve({ timeout: true }), 18000))
-              ]);
-              if (raced && raced.timeout) {
-                  applyLocalDelete_();
-                  if (typeof customAlert === 'function') customAlert('✅ 作業マスタを削除しました！');
-                  callPromise.then(() => {
-                      try { applyLocalDelete_(); } catch (eBg) {}
-                  }).catch(() => { /* 裏失敗は無視（ローカルは削除済み） */ });
-                  return;
-              }
-              if (Array.isArray(raced.data)) pdlWorkMaster = raced.data;
+              }, 0, { timeoutMs: 90000 });
+              if (Array.isArray(updated)) pdlWorkMaster = updated;
               applyLocalDelete_();
+              await endBusy_();
               if (typeof customAlert === 'function') customAlert('✅ 作業マスタを削除しました！');
           } catch (e) {
               const errMsg = String((e && e.message) || '');
-              const looksNet = /Failed to fetch|通信に失敗|通信がタイムアウト|一時的な通信|cancelled/i.test(errMsg)
-                || (e && e.name === 'AbortError');
-              if (looksNet) {
-                  applyLocalDelete_();
-                  if (typeof customAlert === 'function') customAlert('✅ 作業マスタを削除しました！');
-                  return;
-              }
+              await endBusy_();
               if (typeof customAlert === 'function') customAlert(errMsg || '削除に失敗しました。');
           }
       };
@@ -18778,29 +18750,40 @@ function createSignboardMarker(name, pos, icon, id) {
           if (m) m.remove();
       };
 
-      /** 詳細作業の保存中に挟む待ち画面 */
-      window.showDetailWorkSavingOverlay_ = (label) => {
-          let el = document.getElementById('detailWorkSavingOverlay');
+      /** マスタ更新・削除などの待ち画面（詳細作業／作業名削除などで共用） */
+      window.showMasterBusyOverlay_ = (label, opts) => {
+          opts = opts || {};
+          let el = document.getElementById('masterBusyOverlay');
           if (!el) {
               el = document.createElement('div');
-              el.id = 'detailWorkSavingOverlay';
+              el.id = 'masterBusyOverlay';
               document.body.appendChild(el);
           }
-          const text = String(label || '更新中です…');
-          el.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:12350; display:flex; justify-content:center; align-items:center; padding:16px; box-sizing:border-box;';
+          const text = String(label || '処理中です…');
+          const accent = String(opts.accent || '#1565c0');
+          const ring = String(opts.ring || '#bbdefb');
+          const sub = String(opts.sub || '画面を切り替えています');
+          el.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:14000; display:flex; justify-content:center; align-items:center; padding:16px; box-sizing:border-box;';
           el.innerHTML = `<div style="background:#fff; color:#333; width:100%; max-width:320px; border-radius:12px; padding:28px 24px; text-align:center; box-shadow:0 10px 28px rgba(0,0,0,0.28);">
-              <div style="width:36px; height:36px; margin:0 auto 14px; border:3px solid #bbdefb; border-top-color:#1565c0; border-radius:50%; animation:dwSaveSpin 0.8s linear infinite;"></div>
-              <div style="font-size:17px; font-weight:bold; color:#1565c0; letter-spacing:0.02em;">${text}</div>
-              <div style="font-size:12px; color:#888; margin-top:8px; line-height:1.4;">画面を切り替えています</div>
+              <div style="width:36px; height:36px; margin:0 auto 14px; border:3px solid ${ring}; border-top-color:${accent}; border-radius:50%; animation:masterBusySpin 0.8s linear infinite;"></div>
+              <div style="font-size:17px; font-weight:bold; color:${accent}; letter-spacing:0.02em;">${text}</div>
+              <div style="font-size:12px; color:#888; margin-top:8px; line-height:1.4;">${sub}</div>
             </div>
-            <style>@keyframes dwSaveSpin{to{transform:rotate(360deg)}}</style>`;
+            <style>@keyframes masterBusySpin{to{transform:rotate(360deg)}}</style>`;
           return el;
       };
 
-      window.hideDetailWorkSavingOverlay_ = () => {
-          const el = document.getElementById('detailWorkSavingOverlay');
+      window.hideMasterBusyOverlay_ = () => {
+          const el = document.getElementById('masterBusyOverlay');
           if (el) el.remove();
+          // 旧ID互換
+          const legacy = document.getElementById('detailWorkSavingOverlay');
+          if (legacy) legacy.remove();
       };
+
+      window.showDetailWorkSavingOverlay_ = (label) =>
+          window.showMasterBusyOverlay_(label || '更新中です…', { accent: '#1565c0', ring: '#bbdefb' });
+      window.hideDetailWorkSavingOverlay_ = () => window.hideMasterBusyOverlay_();
 
       /** 管理者編集用に、いま画面で編集対象の詳細リストを取得（作物別） */
       window.getAdminEditableDetailNames_ = (wName, cropKey) => {
@@ -19250,7 +19233,7 @@ function createSignboardMarker(name, pos, icon, id) {
               }
           } catch (e) {
               console.warn('saveAdminDetailWorks Error:', e);
-              // この関数は try 前に pdlWorkMaster 上の workData を既に更新済み
+              // 通信失敗時はローカル先行更新を巻き戻さない代わりに、失敗を明示する
               if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
               const returnPicker = window._detailWorkEditorReturnToPicker || '';
               window._detailWorkEditorReturnToPicker = '';
@@ -19261,15 +19244,7 @@ function createSignboardMarker(name, pos, icon, id) {
               }
               if (returnPicker) window.openDetailWorkMasterAddOptions(returnPicker);
               const errMsg = String((e && e.message) || e || '');
-              const looksNet = /Failed to fetch|通信に失敗|タイムアウト|一時的な通信/i.test(errMsg);
-              // 旧GAS（全件一覧返却）だとここで落ちる。再デプロイ後は通常ここまで来ない
-              if (looksNet) {
-                  if (typeof window.showRecordSyncToast === 'function') {
-                      window.showRecordSyncToast(`✅ 詳細作業を${actionLabel}しました（画面に反映済み）`, 'ok');
-                  } else if (typeof customAlert === 'function') {
-                      customAlert(`✅ 詳細作業を${actionLabel}しました！`);
-                  }
-              } else if (typeof customAlert === 'function') {
+              if (typeof customAlert === 'function') {
                   customAlert(errMsg || `詳細作業の${actionLabel}に失敗しました`);
               }
           }
@@ -39209,8 +39184,8 @@ window.pickBulkWorkMemoWorkName_ = (uid, name) => {
   }
   row.workName = workName;
   row.workMatched = window.isBulkWorkMemoWorkInMaster_(workName);
-  row._workListOpen = false;
-  row._workPickOpen = false;
+  // チップ選択ではピッカー／一覧を閉じない（「この作業名で確定」で閉じる）
+  row._workPickOpen = true;
   row.isRest = workName.includes('休憩');
   if (row.isRest) {
     row.recordKind = 'rest';

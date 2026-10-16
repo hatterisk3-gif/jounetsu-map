@@ -12,8 +12,8 @@
   };
 
   var HEAVY_TIMEOUT_MS = {
-    // 作業マスタ等はACK返却前提。長すぎると「更新しています…」のまま固まる
-    manageMaster: 45000,
+    // 作業マスタは軽量ACK前提。コールドスタート込みで余裕を持たせる
+    manageMaster: 90000,
     saveRecord: 120000,
     saveRecordBatch: 120000,
     updateRecordItem: 120000,
@@ -73,17 +73,23 @@
       || (err.name === 'TypeError' && msg.indexOf('fetch') >= 0);
   }
 
-  /** 回線切断は再送。Abort（タイムアウト）はコールドスタート系だけ再送し、manageMaster は早めに諦める */
+  /** 回線切断は再送。Abort（タイムアウト）もコールドスタート想定で1回だけ再送 */
   function isSoftRetryableError(err, action) {
     if (!err) return false;
     if (isNetworkFetchError(err)) return true;
     var msg = String(err.message || '');
     if (msg.indexOf('一時的な通信エラー') >= 0) return true;
-    if (err.name === 'AbortError') {
-      // manageMaster を Abort 再送すると最大数分「更新中」のままになる
-      if (action === 'manageMaster') return false;
-      return true;
-    }
+    if (err.name === 'AbortError') return true;
+    return false;
+  }
+
+  /** 再送で「既に登録」になった＝先の書込みは成功している */
+  function isIdempotentSuccessMessage(msg, action, params) {
+    if (action !== 'manageMaster') return false;
+    var m = String(msg || '');
+    var act = String((params && params.manageAction) || '');
+    if (act === 'add' && m.indexOf('既に登録') >= 0) return true;
+    if (act === 'delete' && (m.indexOf('ありません') >= 0 || m.indexOf('見つかりません') >= 0)) return true;
     return false;
   }
 
@@ -120,9 +126,9 @@
 
     var baseTimeoutMs = callOptions.timeoutMs || HEAVY_TIMEOUT_MS[action] || 30000;
     var maxRetries = NO_RETRY_ACTIONS[action] ? 0 : retries;
-    // manageMaster は1回だけ再送（Failed to fetch）。タイムアウト再送はしない
+    // manageMaster: Failed to fetch / タイムアウトを最大2回再送（コールドスタート＋応答切れ対策）
     var softNetRetries = NETWORK_SOFT_RETRY_ACTIONS[action]
-      ? (action === 'manageMaster' ? 1 : 2)
+      ? (action === 'manageMaster' ? 2 : 2)
       : 0;
     var maxAttempts = Math.max(maxRetries, softNetRetries) + 1;
     var lastError = null;
@@ -136,7 +142,7 @@
         break;
       }
       // タイムアウト時は次の試行で待ち時間を伸ばす（コールドスタート対策）
-      var timeoutMs = baseTimeoutMs + (i * 20000);
+      var timeoutMs = baseTimeoutMs + (i * 30000);
       var controller = new AbortController();
       // 同一 action の並行呼び出しが互いの Abort を踏まないよう、要求ごとに独立管理
       var reqKey = action + '#' + Date.now() + '_' + i + '_' + Math.floor(Math.random() * 1000);
@@ -163,14 +169,41 @@
           throw new Error('サーバーから不正な応答がありました: ' + text.substring(0, 50));
         }
         if (!json || json.status !== 'success') {
-          throw new Error((json && json.message) || 'エラーが発生しました');
+          var failMsg = (json && json.message) || 'エラーが発生しました';
+          // 先の書込み成功後の再送で「既に登録／無い」になった場合は成功扱い
+          if (i > 0 && isIdempotentSuccessMessage(failMsg, action, params)) {
+            return {
+              ok: true,
+              masterType: params.masterType || 'work',
+              manageAction: String(params.manageAction || ''),
+              originalName: (params.value && params.value.originalName) || '',
+              name: (params.value && (params.value.name || (params.value.newData && params.value.newData.name)
+                || params.value.id)) || '',
+              recoveredFromRetry: true
+            };
+          }
+          throw new Error(failMsg);
         }
         return json.data;
       } catch (err) {
         clearTimeout(timeoutId);
         lastError = err;
         var msg = String((err && err.message) || '');
-        if (isNoRetryMessage(msg)) break;
+        if (isNoRetryMessage(msg)) {
+          // 「既に登録」でも再送後なら成功扱い（上の json 分岐と二重だが fetch 例外経路用）
+          if (i > 0 && isIdempotentSuccessMessage(msg, action, params)) {
+            return {
+              ok: true,
+              masterType: params.masterType || 'work',
+              manageAction: String(params.manageAction || ''),
+              originalName: (params.value && params.value.originalName) || '',
+              name: (params.value && (params.value.name || (params.value.newData && params.value.newData.name)
+                || params.value.id)) || '',
+              recoveredFromRetry: true
+            };
+          }
+          break;
+        }
         var isNet = isNetworkFetchError(err);
         var isSoft = isSoftRetryableError(err, action);
         var canRetry = i < maxRetries;
@@ -181,7 +214,7 @@
         // 通常リトライ枠を使い切っても、ネットワーク再送枠が残っていれば続行
         if (!canRetry && i + 1 >= maxAttempts) break;
         if (canRetry && i + 1 < maxAttempts) {
-          var waitMs = (err && err.name === 'AbortError') ? 3000 : (isNet ? 2000 : 1500);
+          var waitMs = (err && err.name === 'AbortError') ? 2500 : (isNet ? 1800 : 1500);
           await new Promise(function (r) { setTimeout(r, waitMs); });
           continue;
         }
@@ -195,13 +228,10 @@
     lastError = lastError || new Error('通信エラー');
     lastError.message = String(lastError.message || '').replace('（リトライ中...）', '');
     if (lastError.name === 'AbortError') {
-      if (NO_RETRY_ACTIONS[action]) {
-        throw new Error('通信がタイムアウトしました。サーバー側では更新が完了している場合があります。画面を再読み込みして確認してください。');
-      }
       throw new Error('通信がタイムアウトしました。電波の良い場所で再度お試しください。');
     }
     if (isNetworkFetchError(lastError)) {
-      throw new Error('サーバーとの通信に失敗しました。更新は完了している場合があります。画面を再読み込みして確認してください。');
+      throw new Error('サーバーとの通信に失敗しました。しばらくしてから再度お試しください。');
     }
     throw lastError;
   }

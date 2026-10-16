@@ -1748,6 +1748,13 @@ function manageMasterData(masterType, manageAction, value, userName) {
     sheet = ensureCropCultSettingSheet_();
   }
 
+  // 作業マスタの追加/編集/統合/削除は専用高速パス（全件返却・flush・重複読込を避ける）
+  if (masterType === 'work'
+      && (manageAction === 'add' || manageAction === 'edit'
+          || manageAction === 'merge' || manageAction === 'delete')) {
+    return mutateWorkMasterFast_(sheet, manageAction, value, userName);
+  }
+
   const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(h => String(h).trim());
 
   // 参照のみ（更新後の通信切れリカバリ用）
@@ -2395,14 +2402,6 @@ function manageMasterData(masterType, manageAction, value, userName) {
     }
   }
 
-  // 作業マスタの追加/編集/統合/削除は巨大な全件一覧を返さない。
-  // flush もしない（flush 待ちでブラウザ側が Failed to fetch になることがある。書込み自体は setValues 済み）
-  if (masterType === 'work'
-      && (manageAction === 'add' || manageAction === 'edit'
-          || manageAction === 'merge' || manageAction === 'delete')) {
-    return buildWorkMasterMutationAck_(manageAction, value);
-  }
-
   SpreadsheetApp.flush();
   if (masterType === 'location') {
     return readLocationMasterDetails_();
@@ -2473,6 +2472,97 @@ function buildWorkMasterMutationAck_(manageAction, value) {
     originalName: originalName,
     name: name
   };
+}
+
+/**
+ * 作業マスタ変異の高速パス。
+ * - 全件一覧を返さない（巨大JSON→Failed to fetch の主因）
+ * - SpreadsheetApp.flush しない（応答前待ちで接続切れやすい）
+ * - getDataRange は原則1回
+ * - 操作ログは書かない（別シートI/Oで遅延するため。必要なら後続で非同期化）
+ */
+function mutateWorkMasterFast_(sheet, manageAction, value, userName) {
+  const workHeaders = ensureWorkMasterHeaders_(sheet, { skipFlush: true });
+  const keyIdx = workHeaders.indexOf('作業名');
+  if (keyIdx < 0) throw new Error('作業マスタに「作業名」列がありません');
+
+  if (manageAction === 'add') {
+    const workName = String((value && value.name) || '').trim();
+    if (!workName) throw new Error('作業名を入力してください');
+    const existing = sheet.getDataRange().getValues();
+    for (let i = 1; i < existing.length; i++) {
+      if (String(existing[i][keyIdx] || '').trim() === workName) {
+        throw new Error('作業名「' + workName + '」は既に登録されています');
+      }
+    }
+    const newRow = new Array(workHeaders.length).fill('');
+    applyWorkMasterValuesToRow_(newRow, workHeaders, value || {});
+    assertWorkMasterRowCellSizes_(newRow);
+    sheet.appendRow(newRow);
+    return buildWorkMasterMutationAck_('add', value);
+  }
+
+  if (manageAction === 'delete') {
+    const tv = String((value && (value.id || value.name)) || value || '').trim();
+    if (!tv) throw new Error('削除する作業名がありません');
+    const data = sheet.getDataRange().getValues();
+    let deleted = false;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][keyIdx] || '').trim() === tv) {
+        sheet.deleteRow(i + 1);
+        deleted = true;
+        break;
+      }
+    }
+    if (!deleted) throw new Error('作業「' + tv + '」が作業マスタにありません');
+    return buildWorkMasterMutationAck_('delete', value);
+  }
+
+  if (manageAction === 'edit') {
+    const originalName = String((value && value.originalName) || '').trim();
+    const newData = (value && value.newData) || {};
+    const newName = String((newData && newData.name) || '').trim();
+    if (!originalName) throw new Error('変更前の作業名がありません');
+    if (!newName) throw new Error('作業名を入力してください');
+    const data = sheet.getDataRange().getValues();
+    if (newName !== originalName) {
+      for (let di = 1; di < data.length; di++) {
+        if (String(data[di][keyIdx] || '').trim() === newName) {
+          throw new Error('作業名「' + newName + '」は既に登録されています');
+        }
+      }
+    }
+    let found = false;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][keyIdx] || '').trim() !== originalName) continue;
+      const rowVals = data[i].slice();
+      while (rowVals.length < workHeaders.length) rowVals.push('');
+      applyWorkMasterValuesToRow_(rowVals, workHeaders, newData);
+      const outRow = rowVals.slice(0, workHeaders.length);
+      assertWorkMasterRowCellSizes_(outRow);
+      sheet.getRange(i + 1, 1, 1, outRow.length).setValues([outRow]);
+      found = true;
+      break;
+    }
+    if (!found) throw new Error('作業「' + originalName + '」が作業マスタにありません');
+    return buildWorkMasterMutationAck_('edit', value);
+  }
+
+  if (manageAction === 'merge') {
+    mergeWorkMasterConflict_(sheet, value, userName, { skipLog: true, skipFlush: true });
+    return buildWorkMasterMutationAck_('merge', value);
+  }
+
+  throw new Error('未知の作業マスタ操作です: ' + manageAction);
+}
+
+function assertWorkMasterRowCellSizes_(row) {
+  for (let ci = 0; ci < (row || []).length; ci++) {
+    const cell = row[ci];
+    if (typeof cell === 'string' && cell.length > 49000) {
+      throw new Error('作物別詳細作業などのデータが大きすぎます。詳細作業を減らしてから再度お試しください。');
+    }
+  }
 }
 
 /** 作業マスタに同名の作業名があるか（excludeName は編集時の自分自身を除外） */
@@ -2579,22 +2669,48 @@ function mergeWorkMasterObjects_(keepObj, origObj, incoming, originalName) {
   };
 }
 
+/** シート1行から作業マスタオブジェクトを組み立て（全件パースを避ける） */
+function workMasterObjectFromRow_(headers, row) {
+  const idxName = headers.indexOf('作業名');
+  const idxCategory = findWorkCategoryColumnIndex_(headers);
+  const idxCrop = findWorkCropColumnIndex_(headers);
+  const idxDetail = findWorkDetailColumnIndex_(headers);
+  const idxCropDetails = headers.indexOf('作物別詳細作業');
+  const idxAlias = findWorkAliasColumnIndex_(headers);
+  const cropStr = idxCrop >= 0 ? String(row[idxCrop] || '').trim() : '';
+  const crops = cropStr ? cropStr.split(/[,、]/).map(function (s) { return s.trim(); }).filter(Boolean) : [];
+  const aliasStr = idxAlias >= 0 ? String(row[idxAlias] || '').trim() : '';
+  const aliases = aliasStr ? aliasStr.split(/[,、\n]/).map(function (s) { return s.trim(); }).filter(Boolean) : [];
+  let cropDetails = null;
+  if (idxCropDetails >= 0 && row[idxCropDetails]) {
+    try { cropDetails = JSON.parse(row[idxCropDetails]); } catch (e) { cropDetails = null; }
+  }
+  const uiFlags = readWorkMasterUiFlagsFromRow_(headers, row);
+  return {
+    name: idxName >= 0 ? String(row[idxName] || '').trim() : '',
+    category: idxCategory >= 0 ? String(row[idxCategory] || '').trim() : '',
+    cropName: cropStr,
+    crops: crops,
+    cropDetails: cropDetails,
+    detailWorks: idxDetail >= 0 && row[idxDetail] ? String(row[idxDetail]).trim() : '',
+    aliasNames: aliasStr,
+    aliases: aliases,
+    showMachine: uiFlags.showMachine,
+    showMaterial: uiFlags.showMaterial,
+    showPesticide: uiFlags.showPesticide,
+    showField: uiFlags.showField
+  };
+}
+
 /** 同名の作業マスタへ作物・詳細・別名を統合し、元の行があれば削除する */
-function mergeWorkMasterConflict_(sheet, value, userName) {
-  const workHeaders = ensureWorkMasterHeaders_(sheet);
+function mergeWorkMasterConflict_(sheet, value, userName, opts) {
+  opts = opts || {};
+  const workHeaders = ensureWorkMasterHeaders_(sheet, { skipFlush: !!opts.skipFlush });
   const incoming = (value && value.newData) ? value.newData : (value || {});
   const keepName = String(incoming.name || (value && value.name) || '').trim();
   const originalName = String((value && value.originalName) || '').trim();
   if (!keepName) throw new Error('作業名を入力してください');
 
-  const list = readWorkMasterList_(sheet) || [];
-  const keepObj = list.find(function (w) { return w && String(w.name || '').trim() === keepName; }) || null;
-  const origObj = (originalName && originalName !== keepName)
-    ? (list.find(function (w) { return w && String(w.name || '').trim() === originalName; }) || null)
-    : null;
-  if (!keepObj) throw new Error(`作業名「${keepName}」が見つかりません`);
-
-  const merged = mergeWorkMasterObjects_(keepObj, origObj, incoming, originalName);
   const data = sheet.getDataRange().getValues();
   const keyIdx = workHeaders.indexOf('作業名');
   let keepRow = -1;
@@ -2604,18 +2720,27 @@ function mergeWorkMasterConflict_(sheet, value, userName) {
     if (n === keepName && keepRow < 0) keepRow = i;
     if (originalName && n === originalName && origRow < 0) origRow = i;
   }
-  if (keepRow < 0) throw new Error(`作業名「${keepName}」が見つかりません`);
+  if (keepRow < 0) throw new Error('作業名「' + keepName + '」が見つかりません');
+
+  const keepObj = workMasterObjectFromRow_(workHeaders, data[keepRow]);
+  const origObj = (origRow >= 0 && origRow !== keepRow)
+    ? workMasterObjectFromRow_(workHeaders, data[origRow])
+    : null;
+  const merged = mergeWorkMasterObjects_(keepObj, origObj, incoming, originalName);
 
   const rowVals = data[keepRow].slice();
   while (rowVals.length < workHeaders.length) rowVals.push('');
   applyWorkMasterValuesToRow_(rowVals, workHeaders, merged);
   const outRow = rowVals.slice(0, workHeaders.length);
+  assertWorkMasterRowCellSizes_(outRow);
   sheet.getRange(keepRow + 1, 1, 1, outRow.length).setValues([outRow]);
 
   if (origRow >= 0 && origRow !== keepRow) {
     sheet.deleteRow(origRow + 1);
   }
-  writeLog(userName, "作業マスタ統合", keepName, originalName && originalName !== keepName ? (`元: ${originalName}`) : '既存へ統合');
+  if (!opts.skipLog) {
+    writeLog(userName, "作業マスタ統合", keepName, originalName && originalName !== keepName ? ('元: ' + originalName) : '既存へ統合');
+  }
 }
 
 const WORK_UI_FLAG_HEADERS_ = {
@@ -2662,7 +2787,8 @@ function readWorkMasterUiFlagsFromRow_(headers, row) {
 }
 
 /** 作業マスタ必須ヘッダーを保証（欠けていれば末尾に追加） */
-function ensureWorkMasterHeaders_(sheet) {
+function ensureWorkMasterHeaders_(sheet, opts) {
+  opts = opts || {};
   const required = ['作業名', 'カテゴリ', '作物名', '詳細作業名', '作物別詳細作業', '類似作業名', '使用農機を出す', '使用資材を出す', '使用薬剤を出す', '圃場選択を出す'];
   let lastCol = Math.max(sheet.getLastColumn(), 1);
   let headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
@@ -2696,7 +2822,8 @@ function ensureWorkMasterHeaders_(sheet) {
       changed = true;
     }
   });
-  if (changed) {
+  // flush は応答遅延・Failed to fetch の原因になりやすい。変異APIでは原則スキップ
+  if (changed && !opts.skipFlush) {
     SpreadsheetApp.flush();
     lastCol = Math.max(sheet.getLastColumn(), 1);
     headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
