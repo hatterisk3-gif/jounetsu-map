@@ -38212,7 +38212,6 @@ window.buildBulkWorkMemoKindSwitchHtml_ = (d, uid) => {
       <button type="button" onclick="setBulkWorkMemoDraftAsWork_('${esc(uid)}')" style="flex:1; padding:10px 8px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; ${workStyle}">🚜 作業</button>
       <button type="button" onclick="setBulkWorkMemoDraftAsRest_('${esc(uid)}')" style="flex:1; padding:10px 8px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; ${restStyle}">☕ 休憩</button>
     </div>
-    <div style="font-size:10px; color:#888; margin-top:5px; line-height:1.35;">時間はそのまま。種別だけ切り替わります。</div>
   </div>`;
 };
 
@@ -39733,10 +39732,6 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
     const timeAdjustOpen = d._timeAdjustOpen === true;
     const commentOpen = d._commentOpen === true;
     const hasComment = !!String(d.comment || '').trim();
-    const timeAdjustSummaryParts = [];
-    if (!timeAdjustOpen && prevEndHint) timeAdjustSummaryParts.push('前の終了 ' + prevEndHint);
-    if (!timeAdjustOpen && nextStartHint) timeAdjustSummaryParts.push('次の開始 ' + nextStartHint);
-    const timeAdjustSummary = timeAdjustSummaryParts.join(' ／ ');
     const commentSummary = (!commentOpen && hasComment) ? 'コメントあり' : '';
     const workCore = isRestCard ? '' : `
         <div id="bulk_crop_pick_${esc(uid)}">${window.buildBulkWorkMemoCropPickSectionHtml_(d, uid)}</div>
@@ -39797,7 +39792,6 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
         </div>
         <button type="button" id="bulk_time_adjust_toggle_${esc(uid)}" onclick="toggleBulkWorkMemoTimeAdjust_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin:0 0 8px; padding:8px 10px; border-radius:8px; border:1px solid #CE93D8; background:${timeAdjustOpen ? '#F3E5F5' : '#fff'}; color:#6A1B9A; font-weight:bold; font-size:12px; cursor:pointer; text-align:left; line-height:1.35;">
           ${timeAdjustOpen ? '▼ 時間の調整を閉じる' : '▶ 時間の調整'}
-          ${timeAdjustSummary ? `<div style="font-size:11px; font-weight:normal; color:#8E24AA; margin-top:3px;">${esc(timeAdjustSummary)}</div>` : ''}
         </button>
         <div id="bulk_time_adjust_panel_${esc(uid)}" style="display:${timeAdjustOpen ? 'block' : 'none'}; margin:0 0 10px; padding:8px 0 0;">
           <div style="display:flex; flex-direction:column; gap:6px;">
@@ -42421,10 +42415,6 @@ window.renderBulkWorkMemoManualAddModal_ = () => {
   const timeAdjustOpen = d._timeAdjustOpen === true;
   const commentOpen = d._commentOpen === true;
   const hasComment = !!String(d.comment || '').trim();
-  const timeAdjustSummaryParts = [];
-  if (!timeAdjustOpen && prevEndHint) timeAdjustSummaryParts.push('前の終了 ' + prevEndHint);
-  if (!timeAdjustOpen && nextStartHint) timeAdjustSummaryParts.push('次の開始 ' + nextStartHint);
-  const timeAdjustSummary = timeAdjustSummaryParts.join(' ／ ');
   const commentSummary = (!commentOpen && hasComment) ? 'コメントあり' : '';
   window.fillAppModalHtml_(`
     <div id="bulk_work_memo_manual_add_scroll" style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
@@ -42441,7 +42431,6 @@ window.renderBulkWorkMemoManualAddModal_ = () => {
       </div>
       <button type="button" id="bulk_time_adjust_toggle_${esc(uid)}" onclick="toggleBulkWorkMemoTimeAdjust_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin:0 0 10px; padding:8px 10px; border-radius:8px; border:1px solid #CE93D8; background:${timeAdjustOpen ? '#F3E5F5' : '#fff'}; color:#6A1B9A; font-weight:bold; font-size:12px; cursor:pointer; text-align:left; line-height:1.35;">
         ${timeAdjustOpen ? '▼ 時間の調整を閉じる' : '▶ 時間の調整'}
-        ${timeAdjustSummary ? `<div style="font-size:11px; font-weight:normal; color:#8E24AA; margin-top:3px;">${esc(timeAdjustSummary)}</div>` : ''}
       </button>
       <div id="bulk_time_adjust_panel_${esc(uid)}" style="display:${timeAdjustOpen ? 'block' : 'none'}; margin:0 0 10px; padding:8px 0 0;">
         <div style="display:flex; flex-direction:column; gap:6px;">
