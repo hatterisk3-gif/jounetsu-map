@@ -16715,7 +16715,7 @@ function createSignboardMarker(name, pos, icon, id) {
           </div>
           ${allocSummary}
           ${mainMinsHtml}
-          ${rows || '<div style="font-size:11px; color:#888;">まだありません</div>'}
+          ${rows || ''}
           ${panelHtml}
         </div>`;
       };
@@ -39037,26 +39037,43 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
     const selectedDetails = Array.isArray(d.detailedWorks) ? d.detailedWorks : [];
     const selectedMachines = Array.isArray(d.usedMachines) ? d.usedMachines.map(m => String(m.id || m.name || '')) : [];
     if (details.length) {
+      const chipBtn = (typeof window.bulk_equalChipBtnStyle_ === 'function')
+        ? window.bulk_equalChipBtnStyle_
+        : ((o) => {
+            const x = o || {};
+            return `width:100%; box-sizing:border-box; min-height:42px; padding:8px 10px; border-radius:12px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid ${x.border || '#ccc'}; background:${x.bg || '#fff'}; color:${x.color || '#333'}; text-align:center; line-height:1.25; white-space:normal; word-break:break-word; display:flex; align-items:center; justify-content:center;`;
+          });
+      const chipGrid = (typeof window.bulkChipGridWrapStyle_ === 'function')
+        ? window.bulkChipGridWrapStyle_
+        : ((extra) => `display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; margin-bottom:4px;${extra ? ' ' + extra : ''}`);
+      const detailChips = details.map(name => {
+        const on = selectedDetails.indexOf(name) >= 0;
+        const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const style = chipBtn({
+          on: on,
+          border: on ? '#7E57C2' : '#D1C4E9',
+          bg: on ? '#EDE7F6' : '#fff',
+          color: '#4527A0'
+        });
+        return `<label style="${style} cursor:pointer;">
+          <input type="checkbox" ${on ? 'checked' : ''} onchange="toggleBulkWorkMemoDetail_('${esc(uid)}','${safe}', this.checked)" style="margin:0 6px 0 0; flex-shrink:0;"> <span>${esc(name)}</span>
+        </label>`;
+      }).join('');
+      const addBtn = `<button type="button" onclick="openBulkWorkMemoDetailEditor_('${esc(uid)}','${String(d.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')" title="詳細作業設定" style="width:100%; min-height:42px; box-sizing:border-box; padding:0; border-radius:12px; font-size:18px; font-weight:bold; cursor:pointer; border:2px dashed #7E57C2; background:#fff; color:#5E35B1; line-height:1;">＋</button>`;
       html += `<div style="margin:8px 0; padding:10px 12px; border:1px solid #D1C4E9; border-radius:10px; background:#FAF8FF; box-sizing:border-box;">
         <div style="font-size:10px; color:#5E35B1; font-weight:bold; margin-bottom:6px;">📋 詳細作業設定（任意）</div>
-        <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
-          ${details.map(name => {
-            const on = selectedDetails.indexOf(name) >= 0;
-            const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            return `<label style="display:inline-flex; align-items:center; gap:4px; padding:6px 10px; border-radius:14px; font-size:12px; cursor:pointer; border:1px solid ${on ? '#7E57C2' : '#D1C4E9'}; background:${on ? '#EDE7F6' : '#fff'}; color:#4527A0;">
-              <input type="checkbox" ${on ? 'checked' : ''} onchange="toggleBulkWorkMemoDetail_('${esc(uid)}','${safe}', this.checked)" style="margin:0;"> ${esc(name)}
-            </label>`;
-          }).join('')}
-          <button type="button" onclick="openBulkWorkMemoDetailEditor_('${esc(uid)}','${String(d.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')" title="詳細作業設定" style="width:32px; height:32px; padding:0; border-radius:16px; font-size:18px; font-weight:bold; cursor:pointer; border:2px dashed #7E57C2; background:#fff; color:#5E35B1; line-height:1;">＋</button>
-        </div>
+        <div style="${chipGrid()}">${detailChips}${addBtn}</div>
       </div>`;
     } else if (d.workMatched || String(d.workName || '').trim()) {
       const safeWork = String(d.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const chipGrid = (typeof window.bulkChipGridWrapStyle_ === 'function')
+        ? window.bulkChipGridWrapStyle_
+        : ((extra) => `display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; margin-bottom:4px;${extra ? ' ' + extra : ''}`);
       html += `<div style="margin:8px 0; padding:10px 12px; border:1px dashed #BDBDBD; border-radius:10px; background:#F5F5F5; box-sizing:border-box;">
         <div style="font-size:10px; color:#5E35B1; font-weight:bold; margin-bottom:6px;">📋 詳細作業設定</div>
-        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
-          <div style="font-size:12px; color:#666; line-height:1.4;">この作業に登録されている詳細作業はありません</div>
-          <button type="button" onclick="openBulkWorkMemoDetailEditor_('${esc(uid)}','${safeWork}')" title="詳細作業設定" style="width:32px; height:32px; padding:0; border-radius:16px; font-size:18px; font-weight:bold; cursor:pointer; border:2px dashed #7E57C2; background:#fff; color:#5E35B1; line-height:1;">＋</button>
+        <div style="${chipGrid()}">
+          <div style="font-size:12px; color:#666; line-height:1.4; grid-column:1 / -1;">この作業に登録されている詳細作業はありません</div>
+          <button type="button" onclick="openBulkWorkMemoDetailEditor_('${esc(uid)}','${safeWork}')" title="詳細作業設定" style="width:100%; min-height:42px; box-sizing:border-box; padding:0; border-radius:12px; font-size:18px; font-weight:bold; cursor:pointer; border:2px dashed #7E57C2; background:#fff; color:#5E35B1; line-height:1;">＋</button>
         </div>
       </div>`;
     }
