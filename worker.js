@@ -11960,7 +11960,21 @@ function createSignboardMarker(name, pos, icon, id) {
                       if (String(d.listFilterCategory || '') === original) d.listFilterCategory = name;
                       if (String(d.prepListFilterCategory || '') === original) d.prepListFilterCategory = name;
                       if (String(d.prepTargetCategory || '') === original) d.prepTargetCategory = name;
+                      if (d._concurrentDraft && typeof d._concurrentDraft === 'object') {
+                          if (String(d._concurrentDraft.category || '') === original) d._concurrentDraft.category = name;
+                          if (String(d._concurrentDraft.listFilterCategory || '') === original) d._concurrentDraft.listFilterCategory = name;
+                          if (String(d._concurrentDraft.prepTargetCategory || '') === original) d._concurrentDraft.prepTargetCategory = name;
+                      }
+                      (Array.isArray(d.concurrentWorks) ? d.concurrentWorks : []).forEach(cw => {
+                          if (cw && String(cw.category || '') === original) cw.category = name;
+                      });
                   });
+              }
+              if (window._concurrentWorkModalDraft && typeof window._concurrentWorkModalDraft === 'object') {
+                  const md = window._concurrentWorkModalDraft;
+                  if (String(md.category || '') === original) md.category = name;
+                  if (String(md.listFilterCategory || '') === original) md.listFilterCategory = name;
+                  if (String(md.prepTargetCategory || '') === original) md.prepTargetCategory = name;
               }
               if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
               else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
@@ -12003,7 +12017,21 @@ function createSignboardMarker(name, pos, icon, id) {
                       if (String(d.listFilterCategory || '') === name) d.listFilterCategory = '';
                       if (String(d.prepListFilterCategory || '') === name) d.prepListFilterCategory = '';
                       if (String(d.prepTargetCategory || '') === name) d.prepTargetCategory = '';
+                      if (d._concurrentDraft && typeof d._concurrentDraft === 'object') {
+                          if (String(d._concurrentDraft.category || '') === name) d._concurrentDraft.category = '';
+                          if (String(d._concurrentDraft.listFilterCategory || '') === name) d._concurrentDraft.listFilterCategory = '';
+                          if (String(d._concurrentDraft.prepTargetCategory || '') === name) d._concurrentDraft.prepTargetCategory = '';
+                      }
+                      (Array.isArray(d.concurrentWorks) ? d.concurrentWorks : []).forEach(cw => {
+                          if (cw && String(cw.category || '') === name) cw.category = '';
+                      });
                   });
+              }
+              if (window._concurrentWorkModalDraft && typeof window._concurrentWorkModalDraft === 'object') {
+                  const md = window._concurrentWorkModalDraft;
+                  if (String(md.category || '') === name) md.category = '';
+                  if (String(md.listFilterCategory || '') === name) md.listFilterCategory = '';
+                  if (String(md.prepTargetCategory || '') === name) md.prepTargetCategory = '';
               }
               if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
               else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
@@ -15481,17 +15509,45 @@ function createSignboardMarker(name, pos, icon, id) {
             const color = metaStyle ? '#6A1B9A' : '#283593';
             return `<button type="button" onclick="pickConcurrentWorkModalListFilter_('${safe}')" style="${chipBtn({ on: on, border: border, bg: bg, color: color })}">${esc(name)}</button>`;
           }).join('');
-          const { names: workNames, fallbackNote } = typeof window.getBulkWorkMemoManualWorkList_ === 'function'
-            ? window.getBulkWorkMemoManualWorkList_(d)
-            : { names: [], fallbackNote: '' };
+          let workNames = [];
+          let fallbackNote = '';
+          if (typeof window.getBulkWorkMemoManualWorkList_ === 'function') {
+            const listRes = window.getBulkWorkMemoManualWorkList_(d) || {};
+            workNames = Array.isArray(listRes.names) ? listRes.names.slice() : [];
+            fallbackNote = String(listRes.fallbackNote || '');
+          }
+          const metaForList = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(curFilter);
+          if (curFilter && !metaForList && typeof window.getBulkWorkMemoWorkCategory_ === 'function') {
+            workNames = workNames.filter(n => String(window.getBulkWorkMemoWorkCategory_(n) || '').trim() === curFilter);
+            if (fallbackNote && (fallbackNote.indexOf('作物のみ') >= 0 || fallbackNote.indexOf('すべての作業') >= 0)) {
+              fallbackNote = '';
+            }
+          }
           const workHtml = workNames.map(name => {
             const on = name === curWork;
             const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             return `<button type="button" onclick="pickConcurrentWorkModalWork_('${safe}')" style="${chipBtn({ on: on, border: on ? '#E65100' : '#FFCC80', bg: on ? '#FFF3E0' : '#fff', color: '#E65100' })}">${esc(name)}</button>`;
           }).join('');
+          const modalUid = String(window._concurrentWorkModalBulkUid || '').trim();
+          const isAdminCat = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
+          const safeCurFilter = String(curFilter || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const catAdminBtns = `<button type="button" onclick="addBulkWorkMemoCategory_('${esc(modalUid)}','concurrent')" title="カテゴリを追加" style="width:100%; min-height:42px; box-sizing:border-box; padding:0; border-radius:12px; font-size:18px; font-weight:bold; cursor:pointer; border:2px dashed #7986CB; background:#fff; color:#3949AB; line-height:1;">＋</button>${
+            (isAdminCat && curFilter)
+              ? `<button type="button" onclick="window._bulkWorkMemoCategoryEditUid='${esc(modalUid)}'; window._bulkWorkMemoCategoryEditMode='concurrent'; adminEditWorkCategory('${safeCurFilter}')" style="${chipBtn({ border: '#90CAF9', bg: '#E3F2FD', color: '#1565C0' })}">✏️ 選択中</button>
+                 <button type="button" onclick="window._bulkWorkMemoCategoryEditUid='${esc(modalUid)}'; window._bulkWorkMemoCategoryEditMode='concurrent'; adminDeleteWorkCategory('${safeCurFilter}')" style="${chipBtn({ border: '#ef9a9a', bg: '#ffebee', color: '#c62828' })}">🗑️ 選択中</button>`
+              : ''
+          }`;
+          const workCatEditLine = (curFilter && isAdminCat)
+            ? `<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 8px; flex-wrap:wrap;">
+                <div style="font-size:11px; color:#546E7A;">カテゴリ　<b style="color:#283593;">${esc(curFilter)}</b></div>
+                <span style="display:inline-flex; gap:6px;">
+                  <button type="button" onclick="window._bulkWorkMemoCategoryEditUid='${esc(modalUid)}'; window._bulkWorkMemoCategoryEditMode='concurrent'; adminEditWorkCategory('${safeCurFilter}')" style="padding:5px 8px; border-radius:8px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0;">✏️ 編集</button>
+                  <button type="button" onclick="window._bulkWorkMemoCategoryEditUid='${esc(modalUid)}'; window._bulkWorkMemoCategoryEditMode='concurrent'; adminDeleteWorkCategory('${safeCurFilter}')" style="padding:5px 8px; border-radius:8px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid #ef9a9a; background:#ffebee; color:#c62828;">🗑️ 削除</button>
+                </span>
+              </div>`
+            : '';
           const workInner = curFilter
-            ? `${curWork ? `<div style="font-size:12px; color:#E65100; font-weight:bold; margin-bottom:8px;">選択中: ${esc(curWork)}</div>` : ''}
-              ${fallbackNote ? `<div style="font-size:11px; color:#E65100; background:#FFF8E1; border:1px solid #FFCC80; border-radius:8px; padding:8px; margin-bottom:8px;">${esc(fallbackNote)}</div>` : ''}
+            ? `${workCatEditLine}${fallbackNote ? `<div style="font-size:11px; color:#E65100; background:#FFF8E1; border:1px solid #FFCC80; border-radius:8px; padding:8px; margin-bottom:8px;">${esc(fallbackNote)}</div>` : ''}
               <div style="${chipGrid('max-height:180px; overflow-y:auto;')}">${workHtml || '<span style="font-size:11px; color:#888; grid-column:1 / -1;">該当する作業がありません</span>'}</div>
               ${detailHtml}`
             : '<div style="font-size:11px; color:#888; line-height:1.4;">カテゴリを選ぶと作業名が表示されます</div>';
@@ -15512,7 +15568,7 @@ function createSignboardMarker(name, pos, icon, id) {
               '#283593',
               '② 作業カテゴリ <span style="color:#c62828;">*</span>',
               `<div style="font-size:10px; color:#666; margin-bottom:8px;">選ぶと作業名を絞り込み（再タップで解除）</div>
-              <div style="${chipGrid()}">${filterHtml || catHtml}</div>`
+              <div style="${chipGrid()}">${filterHtml || catHtml}${catAdminBtns}</div>`
             )}
             ${stepBox(
               curFilter ? '#FFCC80' : '#FFE0B2',
@@ -15596,6 +15652,15 @@ function createSignboardMarker(name, pos, icon, id) {
           d.category = next;
           d.prepTargetWork = '';
           d.prepTargetCategory = '';
+          const curWork = String(d.workName || '').trim();
+          if (curWork && typeof window.getBulkWorkMemoWorkCategory_ === 'function') {
+            const wCat = String(window.getBulkWorkMemoWorkCategory_(curWork) || '').trim();
+            if (wCat && wCat !== next) {
+              d.workName = '';
+              d.detailedWorks = [];
+              d.usedMachines = [];
+            }
+          }
         } else {
           d.category = '';
           d.workName = '';
@@ -16069,9 +16134,23 @@ function createSignboardMarker(name, pos, icon, id) {
             draft.prepTargetWork = '';
             draft.prepTargetCategory = '';
           }
-          if (draft.workName && typeof window.getBulkWorkMemoWorkCategory_ === 'function') {
-            const wCat = window.getBulkWorkMemoWorkCategory_(draft.workName);
-            if (wCat) draft.category = wCat;
+          // 選んだカテゴリと違う作業名が残らないようにする
+          const curWork = String(draft.workName || '').trim();
+          if (curWork && next && typeof window.getBulkWorkMemoWorkCategory_ === 'function') {
+            const wCat = String(window.getBulkWorkMemoWorkCategory_(curWork) || '').trim();
+            if (wCat && wCat !== next) {
+              draft.workName = '';
+              draft.detailedWorks = [];
+              draft.usedMachines = [];
+              draft.category = next;
+            } else if (wCat) {
+              draft.category = wCat;
+            } else {
+              draft.category = next;
+            }
+          } else if (next) {
+            draft.category = next;
+            if (!curWork) draft.detailedWorks = [];
           }
         }
         window.rerenderBulkConcurrentCard_(uid);
@@ -16349,9 +16428,24 @@ function createSignboardMarker(name, pos, icon, id) {
           workName: draft.workName,
           category: draft.category
         };
-        const { names: workNames, fallbackNote } = typeof window.getBulkWorkMemoManualWorkList_ === 'function'
-          ? window.getBulkWorkMemoManualWorkList_(listProxy)
-          : { names: [], fallbackNote: '' };
+        let workNames = [];
+        let fallbackNote = '';
+        if (typeof window.getBulkWorkMemoManualWorkList_ === 'function') {
+          const listRes = window.getBulkWorkMemoManualWorkList_(listProxy) || {};
+          workNames = Array.isArray(listRes.names) ? listRes.names.slice() : [];
+          fallbackNote = String(listRes.fallbackNote || '');
+        }
+        // 同時作業③：選んだカテゴリ以外は出さない（作物のみ／全作業へのフォールバックは使わない）
+        const metaForList = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(curFilter);
+        if (curFilter && !metaForList && typeof window.getBulkWorkMemoWorkCategory_ === 'function') {
+          workNames = workNames.filter(n => {
+            const c = String(window.getBulkWorkMemoWorkCategory_(n) || '').trim();
+            return c === curFilter;
+          });
+          if (fallbackNote && (fallbackNote.indexOf('作物のみ') >= 0 || fallbackNote.indexOf('すべての作業') >= 0)) {
+            fallbackNote = '';
+          }
+        }
         const curWork = String(draft.workName || '').trim();
         // もしかしてに出す分は下の一覧から除外するため、予測後にチップHTMLを組み立てる
         let suggestCatNames = [];
@@ -16568,11 +16662,11 @@ function createSignboardMarker(name, pos, icon, id) {
               </div>`;
             }
           }
-          // もしかして：作業名（③枠内・選択中カテゴリに絞る）
+          // もしかして：作業名（③枠内・選択中カテゴリのみ）
           if (curFilter && predList.length) {
             const workPreds = predList.filter(p => {
               const cat = String(p.category || '').trim();
-              return !cat || cat === curFilter;
+              return cat === curFilter;
             }).slice(0, 8);
             suggestWorkNames = workPreds
               .map(c => String(c.workName || '').trim())
@@ -16660,6 +16754,14 @@ function createSignboardMarker(name, pos, icon, id) {
             : '<div style="font-size:11px; color:#E65100; margin-bottom:8px;">1つ以上選んでください</div>'}
           <div style="${chipGrid('max-height:140px; overflow-y:auto;')}">${cropHtml || '<span style="font-size:11px; color:#888; grid-column:1 / -1;">作物マスタがありません</span>'}</div>`
         );
+        const isAdminCat = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
+        const safeCurFilter = String(curFilter || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const catAdminBtns = `<button type="button" onclick="addBulkWorkMemoCategory_('${esc(uid)}','concurrent')" title="カテゴリを追加" style="width:100%; min-height:42px; box-sizing:border-box; padding:0; border-radius:12px; font-size:18px; font-weight:bold; cursor:pointer; border:2px dashed #7986CB; background:#fff; color:#3949AB; line-height:1;">＋</button>${
+          (isAdminCat && curFilter)
+            ? `<button type="button" onclick="window._bulkWorkMemoCategoryEditUid='${esc(uid)}'; window._bulkWorkMemoCategoryEditMode='concurrent'; adminEditWorkCategory('${safeCurFilter}')" style="${chipBtn({ border: '#90CAF9', bg: '#E3F2FD', color: '#1565C0' })}">✏️ 選択中</button>
+               <button type="button" onclick="window._bulkWorkMemoCategoryEditUid='${esc(uid)}'; window._bulkWorkMemoCategoryEditMode='concurrent'; adminDeleteWorkCategory('${safeCurFilter}')" style="${chipBtn({ border: '#ef9a9a', bg: '#ffebee', color: '#c62828' })}">🗑️ 選択中</button>`
+            : ''
+        }`;
         const catStep = stepBox(
           curFilter ? '#9FA8DA' : '#C5CAE9',
           curFilter ? '#E8EAF6' : '#F5F7FF',
@@ -16667,16 +16769,24 @@ function createSignboardMarker(name, pos, icon, id) {
           '② 作業カテゴリ',
           `${predCatSuggestHtml}
           <div style="font-size:10px; color:#666; margin-bottom:8px;">選ぶと作業名を絞り込み（再タップで解除）</div>
-          <div style="${chipGrid()}">${catHtml || '<span style="font-size:11px; color:#888; grid-column:1 / -1;">カテゴリがありません</span>'}</div>`
+          <div style="${chipGrid()}">${catHtml || '<span style="font-size:11px; color:#888; grid-column:1 / -1;">カテゴリがありません</span>'}${catAdminBtns}</div>`
         );
+        const workCatEditLine = (curFilter && isAdminCat)
+          ? `<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 8px; flex-wrap:wrap;">
+              <div style="font-size:11px; color:#546E7A;">カテゴリ　<b style="color:#283593;">${esc(curFilter)}</b></div>
+              <span style="display:inline-flex; gap:6px;">
+                <button type="button" onclick="window._bulkWorkMemoCategoryEditUid='${esc(uid)}'; window._bulkWorkMemoCategoryEditMode='concurrent'; adminEditWorkCategory('${safeCurFilter}')" style="padding:5px 8px; border-radius:8px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0;">✏️ 編集</button>
+                <button type="button" onclick="window._bulkWorkMemoCategoryEditUid='${esc(uid)}'; window._bulkWorkMemoCategoryEditMode='concurrent'; adminDeleteWorkCategory('${safeCurFilter}')" style="padding:5px 8px; border-radius:8px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid #ef9a9a; background:#ffebee; color:#c62828;">🗑️ 削除</button>
+              </span>
+            </div>`
+          : '';
         const workStep = curFilter
           ? stepBox(
               '#FFCC80',
               '#FFF8F0',
               '#E65100',
               '③ 作業名',
-              `${predWorkSuggestHtml}
-              ${curWork ? `<div style="font-size:12px; color:#E65100; font-weight:bold; margin-bottom:8px;">選択中: ${esc(curWork)}</div>` : ''}
+              `${workCatEditLine}${predWorkSuggestHtml}
               ${fallbackNote ? `<div style="font-size:11px; color:#E65100; background:#FFF8E1; border:1px solid #FFCC80; border-radius:8px; padding:6px 8px; margin-bottom:8px;">${esc(fallbackNote)}</div>` : ''}
               <div style="${chipGrid('max-height:180px; overflow-y:auto;')}">${workHtml || '<span style="font-size:11px; color:#888; grid-column:1 / -1;">該当する作業がありません</span>'}</div>`
             )
@@ -34162,15 +34272,24 @@ window.buildBulkWorkMemoCropChipsHtml_ = (d, uid) => {
   }
   const chipHtml = chips.map(name => {
     const on = selectedSet.has(name);
-    const isPref = preferred.indexOf(name) >= 0 || name === '共通' || name === memoCrop;
+    const isCommon = name === '共通' || name === '__common__';
+    const isPref = preferred.indexOf(name) >= 0 || isCommon || name === memoCrop;
     const safeArg = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const style = window.bulk_equalChipBtnStyle_({
-      on: on,
-      border: on ? '#2E7D32' : (isPref ? '#A5D6A7' : '#C8E6C9'),
-      bg: on ? '#C8E6C9' : '#fff',
-      color: '#2E7D32',
-      boxShadow: on ? 'inset 0 0 0 1px #2E7D32' : ''
-    });
+    const style = isCommon
+      ? window.bulk_equalChipBtnStyle_({
+          on: on,
+          border: on ? '#546E7A' : '#90A4AE',
+          bg: on ? '#CFD8DC' : '#ECEFF1',
+          color: '#37474F',
+          boxShadow: on ? 'inset 0 0 0 1px #546E7A' : ''
+        })
+      : window.bulk_equalChipBtnStyle_({
+          on: on,
+          border: on ? '#2E7D32' : (isPref ? '#A5D6A7' : '#C8E6C9'),
+          bg: on ? '#C8E6C9' : '#fff',
+          color: '#2E7D32',
+          boxShadow: on ? 'inset 0 0 0 1px #2E7D32' : ''
+        });
     const label = (typeof window.formatCropLabelWithIcon_ === 'function')
       ? window.formatCropLabelWithIcon_(name)
       : name;
@@ -37255,8 +37374,16 @@ window.refreshBulkWorkMemoAfterCropChange_ = (cropName) => {
 };
 
 window.refreshBulkWorkMemoAfterCategoryChange_ = (categoryName, uid, mode) => {
-  if (!document.getElementById('bulk_work_memo_review_scroll')
-      && !document.getElementById('bulk_work_memo_manual_add_scroll')) return;
+  const reviewOpen = !!(document.getElementById('bulk_work_memo_review_scroll')
+    || document.getElementById('bulk_work_memo_manual_add_scroll'));
+  const concurrentModalOpen = !!(document.getElementById('concurrent_work_modal_scroll')
+    || (window._concurrentWorkModalContext && String(window._concurrentWorkModalContext || '').trim()));
+  if (!reviewOpen && !concurrentModalOpen) {
+    // 同時作業パネルだけ開いている場合もある
+    const idEarly = String(uid || window._bulkWorkMemoCategoryEditUid || '').trim();
+    const rowEarly = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === idEarly);
+    if (!(rowEarly && rowEarly._concurrentPanelOpen)) return;
+  }
   const id = String(uid || window._bulkWorkMemoCategoryEditUid || '').trim();
   const useMode = mode || window._bulkWorkMemoCategoryEditMode || '';
   window._bulkWorkMemoCategoryEditUid = '';
@@ -37266,24 +37393,54 @@ window.refreshBulkWorkMemoAfterCategoryChange_ = (categoryName, uid, mode) => {
   if (row && pick && pick !== 'すべて') {
     if (useMode === 'prep') {
       row.prepListFilterCategory = pick;
+    } else if (useMode === 'concurrent') {
+      const draft = (typeof window.ensureBulkConcurrentDraft_ === 'function')
+        ? window.ensureBulkConcurrentDraft_(row)
+        : (row._concurrentDraft || null);
+      if (draft) {
+        draft.listFilterCategory = pick;
+        draft.category = pick;
+      }
     } else {
       row.listFilterCategory = pick;
       row._workListOpen = true;
     }
   }
-  window.renderBulkWorkMemoReviewModal_({ scrollUid: id });
+  if (window._concurrentWorkModalDraft && typeof window._concurrentWorkModalDraft === 'object'
+      && pick && pick !== 'すべて' && (useMode === 'concurrent' || concurrentModalOpen)) {
+    window._concurrentWorkModalDraft.listFilterCategory = pick;
+    window._concurrentWorkModalDraft.category = pick;
+  }
+  if (reviewOpen && typeof window.renderBulkWorkMemoReviewModal_ === 'function') {
+    window.renderBulkWorkMemoReviewModal_({ scrollUid: id });
+  }
+  if (typeof window.rerenderBulkConcurrentCard_ === 'function') {
+    if (row && row._concurrentPanelOpen) {
+      window.rerenderBulkConcurrentCard_(id);
+    } else if (!id) {
+      (window._bulkWorkMemoDrafts || []).forEach(d => {
+        if (d && d._concurrentPanelOpen && d._uid) window.rerenderBulkConcurrentCard_(d._uid);
+      });
+    }
+  }
+  if (concurrentModalOpen && typeof window.renderConcurrentWorkModal_ === 'function') {
+    window.renderConcurrentWorkModal_();
+  }
 };
 
 /** カテゴリマスタ変更後：一括入力の下書きカテゴリを作業名から再同期して再描画 */
 window.syncBulkWorkMemoAfterCategoryMasterChange_ = (preferCategory) => {
   const open = !!(document.getElementById('bulk_work_memo_review_scroll')
     || document.getElementById('bulk_work_memo_manual_add_scroll')
-    || document.getElementById('bulk_work_memo_confirm_scroll'));
+    || document.getElementById('bulk_work_memo_confirm_scroll')
+    || document.getElementById('concurrent_work_modal_scroll')
+    || (window._bulkWorkMemoDrafts || []).some(d => d && d._concurrentPanelOpen));
   if (!open || !Array.isArray(window._bulkWorkMemoDrafts)) return;
   const validCats = new Set((typeof window.getBulkWorkMemoCategories_ === 'function')
     ? window.getBulkWorkMemoCategories_()
     : (pdlWorkCategories || []).map(c => String((typeof c === 'string' ? c : (c && c.name)) || '').trim()).filter(Boolean));
   const prefer = String(preferCategory || '').trim();
+  const preferOk = prefer && prefer !== 'すべて' && validCats.has(prefer);
   (window._bulkWorkMemoDrafts || []).forEach(d => {
     if (!d || window.bulkWorkMemoIsRestDraft_(d)) return;
     if (d.workName && typeof window.getBulkWorkMemoWorkCategory_ === 'function') {
@@ -37291,7 +37448,7 @@ window.syncBulkWorkMemoAfterCategoryMasterChange_ = (preferCategory) => {
       if (cat) d.category = cat;
     }
     if (d.listFilterCategory && !validCats.has(String(d.listFilterCategory).trim())) {
-      d.listFilterCategory = (prefer && prefer !== 'すべて' && validCats.has(prefer)) ? prefer : '';
+      d.listFilterCategory = preferOk ? prefer : '';
     }
     if (d.prepListFilterCategory && !validCats.has(String(d.prepListFilterCategory).trim())) {
       d.prepListFilterCategory = '';
@@ -37299,9 +37456,34 @@ window.syncBulkWorkMemoAfterCategoryMasterChange_ = (preferCategory) => {
     if (d.prepTargetCategory && !validCats.has(String(d.prepTargetCategory).trim())) {
       d.prepTargetCategory = '';
     }
+    if (d._concurrentDraft && typeof d._concurrentDraft === 'object') {
+      const cd = d._concurrentDraft;
+      if (cd.workName && typeof window.getBulkWorkMemoWorkCategory_ === 'function') {
+        const cat = window.getBulkWorkMemoWorkCategory_(cd.workName);
+        if (cat) cd.category = cat;
+      }
+      if (cd.listFilterCategory && !validCats.has(String(cd.listFilterCategory).trim())) {
+        cd.listFilterCategory = preferOk ? prefer : '';
+      }
+      if (cd.category && !validCats.has(String(cd.category).trim())) {
+        cd.category = preferOk ? prefer : '';
+      }
+      if (cd.prepTargetCategory && !validCats.has(String(cd.prepTargetCategory).trim())) {
+        cd.prepTargetCategory = '';
+      }
+    }
   });
+  if (window._concurrentWorkModalDraft && typeof window._concurrentWorkModalDraft === 'object') {
+    const md = window._concurrentWorkModalDraft;
+    if (md.listFilterCategory && !validCats.has(String(md.listFilterCategory).trim())) {
+      md.listFilterCategory = preferOk ? prefer : '';
+    }
+    if (md.category && !validCats.has(String(md.category).trim())) {
+      md.category = preferOk ? prefer : '';
+    }
+  }
   if (typeof window.refreshBulkWorkMemoAfterCategoryChange_ === 'function') {
-    window.refreshBulkWorkMemoAfterCategoryChange_(prefer && prefer !== 'すべて' ? prefer : '', '', '');
+    window.refreshBulkWorkMemoAfterCategoryChange_(preferOk ? prefer : '', '', '');
   } else if (typeof window.renderBulkWorkMemoReviewModal_ === 'function') {
     window.renderBulkWorkMemoReviewModal_();
   }
@@ -38207,7 +38389,7 @@ window.buildBulkWorkMemoKindSwitchHtml_ = (d, uid) => {
     ? 'border:2px solid #E65100; background:#FFF8E1; color:#E65100; box-shadow:0 2px 6px rgba(230,81,0,0.2);'
     : 'border:2px solid #e0e0e0; background:#fff; color:#888;';
   return `<div style="margin-bottom:10px;">
-    <div style="font-size:10px; font-weight:bold; color:#555; margin-bottom:6px;">登録種別（間違えたら切り替え）</div>
+    <div style="font-size:10px; font-weight:bold; color:#555; margin-bottom:6px;">登録種別</div>
     <div style="display:flex; gap:8px;">
       <button type="button" onclick="setBulkWorkMemoDraftAsWork_('${esc(uid)}')" style="flex:1; padding:10px 8px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; ${workStyle}">🚜 作業</button>
       <button type="button" onclick="setBulkWorkMemoDraftAsRest_('${esc(uid)}')" style="flex:1; padding:10px 8px; border-radius:10px; font-size:13px; font-weight:bold; cursor:pointer; ${restStyle}">☕ 休憩</button>
@@ -38688,7 +38870,7 @@ window.buildBulkWorkMemoCropPickSectionHtml_ = (d, uid) => {
   const border = needPick ? '2px solid #66BB6A' : '2px solid #A5D6A7';
   const bg = needPick ? '#F1F8E9' : '#E8F5E9';
   const guide = needPick
-    ? `<div style="font-size:11px; color:#558B2F; margin:0 0 8px; line-height:1.4;">共通か作物を選ぶ<span style="opacity:0.75;">（併用不可）</span></div>`
+    ? `<div style="font-size:11px; color:#558B2F; margin:0 0 8px; line-height:1.4;">共通か、作物（複数可）を選ぶ</div>`
     : `<div style="font-size:11px; color:#2E7D32; margin:0 0 8px; line-height:1.4;">選択中　<b>${esc(selected.join('、'))}</b></div>`;
   return `
     <div style="margin:0 0 10px; padding:12px; border:${border}; border-radius:10px; background:${bg}; box-sizing:border-box;">
