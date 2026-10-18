@@ -3394,6 +3394,18 @@ function createSignboardMarker(name, pos, icon, id) {
         return `${window.getCropIconEmoji_(label)} ${label}`;
       };
 
+      /** アイコンボタン共通スタイル（絵文字を枠の中央に） */
+      window.cropIconBtnStyle_ = (opts) => {
+        const o = opts || {};
+        const size = o.size || 42;
+        const fontSize = o.fontSize || 22;
+        const border = o.border || '#E0E0E0';
+        const bg = o.bg || '#fff';
+        return `width:${size}px; height:${size}px; border-radius:10px; border:2px solid ${border}; background:${bg}; padding:0; margin:0; box-sizing:border-box; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; line-height:1; font-size:${fontSize}px; font-family:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;`;
+      };
+      window.cropIconBtnInnerHtml_ = (icon) =>
+        `<span style="display:block; line-height:1; transform:translateY(-0.5px); pointer-events:none;">${icon}</span>`;
+
       /** 管理画面など埋め込み用：アイコン選択グリッドHTML */
       window.buildCropIconPickerHtml_ = (inputId, selectedIcon) => {
         const id = String(inputId || 'crop_icon').trim() || 'crop_icon';
@@ -3403,13 +3415,18 @@ function createSignboardMarker(name, pos, icon, id) {
         const btns = presets.map(ic => {
           const on = ic === cur;
           const safe = String(ic).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-          return `<button type="button" onclick="window.pickCropIconInput_('${esc(id)}','${safe}', true)" style="width:40px; height:40px; border-radius:10px; border:2px solid ${on ? '#2E7D32' : '#E0E0E0'}; background:${on ? '#E8F5E9' : '#fff'}; font-size:20px; cursor:pointer; line-height:1;">${ic}</button>`;
+          const style = window.cropIconBtnStyle_({
+            size: 40, fontSize: 20,
+            border: on ? '#2E7D32' : '#E0E0E0',
+            bg: on ? '#E8F5E9' : '#fff'
+          });
+          return `<button type="button" onclick="window.pickCropIconInput_('${esc(id)}','${safe}', true)" style="${style}">${window.cropIconBtnInnerHtml_(ic)}</button>`;
         }).join('');
         return `<input type="hidden" id="${esc(id)}" value="${esc(cur)}" data-manual="0">
-          <div style="font-size:12px; color:#555; margin-bottom:4px;">選択中: <span id="${esc(id)}_preview" style="font-size:20px;">${cur}</span></div>
+          <div style="font-size:12px; color:#555; margin-bottom:4px;">選択中: <span id="${esc(id)}_preview" style="font-size:20px; line-height:1; vertical-align:middle;">${cur}</span></div>
           <div id="${esc(id)}_suggest" style="display:none; margin-bottom:8px;"></div>
           <div style="font-size:11px; color:#888; margin-bottom:4px;">すべて</div>
-          <div id="${esc(id)}_grid" style="display:flex; flex-wrap:wrap; gap:6px; max-height:140px; overflow-y:auto; padding:2px;">${btns}</div>`;
+          <div id="${esc(id)}_grid" style="display:flex; flex-wrap:wrap; gap:6px; max-height:140px; overflow-y:auto; padding:2px; align-items:center;">${btns}</div>`;
       };
 
       window.pickCropIconInput_ = (inputId, icon, manual) => {
@@ -3458,11 +3475,16 @@ function createSignboardMarker(name, pos, icon, id) {
         const btns = suggestions.map(ic => {
           const on = ic === cur;
           const safe = String(ic).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-          return `<button type="button" data-icon="${esc(ic)}" onclick="window.pickCropIconInput_('${esc(id)}','${safe}', true)" style="width:44px; height:44px; border-radius:10px; border:2px solid ${on ? '#2E7D32' : '#A5D6A7'}; background:${on ? '#E8F5E9' : '#F1F8E9'}; font-size:22px; cursor:pointer; line-height:1;">${ic}</button>`;
+          const style = window.cropIconBtnStyle_({
+            size: 44, fontSize: 22,
+            border: on ? '#2E7D32' : '#A5D6A7',
+            bg: on ? '#E8F5E9' : '#F1F8E9'
+          });
+          return `<button type="button" data-icon="${esc(ic)}" onclick="window.pickCropIconInput_('${esc(id)}','${safe}', true)" style="${style}">${window.cropIconBtnInnerHtml_(ic)}</button>`;
         }).join('');
         suggestBox.style.display = 'block';
         suggestBox.innerHTML = `<div style="font-size:11px; font-weight:bold; color:#2E7D32; margin-bottom:4px;">名前からの候補</div>
-          <div style="display:flex; flex-wrap:wrap; gap:6px;">${btns}</div>`;
+          <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">${btns}</div>`;
         if (!manual && opts.autoSelect !== false && suggestions[0] && suggestions[0] !== cur) {
           window.pickCropIconInput_(id, suggestions[0], false);
         }
@@ -3487,17 +3509,22 @@ function createSignboardMarker(name, pos, icon, id) {
           modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:14000; display:flex; justify-content:center; align-items:center; padding:16px; box-sizing:border-box;';
           const iconBtns = presets.map(ic => {
             const on = ic === defaultIcon;
-            return `<button type="button" class="crop-icon-pick-btn" data-icon="${esc(ic)}" style="width:42px; height:42px; border-radius:10px; border:2px solid ${on ? '#2E7D32' : '#E0E0E0'}; background:${on ? '#E8F5E9' : '#fff'}; font-size:22px; cursor:pointer; line-height:1;">${ic}</button>`;
+            const style = window.cropIconBtnStyle_({
+              size: 42, fontSize: 22,
+              border: on ? '#2E7D32' : '#E0E0E0',
+              bg: on ? '#E8F5E9' : '#fff'
+            });
+            return `<button type="button" class="crop-icon-pick-btn" data-icon="${esc(ic)}" style="${style}">${window.cropIconBtnInnerHtml_(ic)}</button>`;
           }).join('');
           modal.innerHTML = `<div style="background:#fff; width:100%; max-width:380px; border-radius:12px; box-shadow:0 8px 28px rgba(0,0,0,0.28); padding:16px; box-sizing:border-box;" onclick="event.stopPropagation()">
             <div style="font-size:16px; font-weight:bold; color:#2E7D32; margin-bottom:12px;">${esc(title)}</div>
             <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">作物名</label>
             <input type="text" id="crop_add_editor_name" class="form-input" value="${esc(defaultName)}" placeholder="例: トマト" style="width:100%; box-sizing:border-box; margin-bottom:12px; font-size:15px;">
-            <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:6px;">アイコン <span id="crop_add_editor_icon_preview" style="font-size:20px; margin-left:4px;">${defaultIcon}</span></label>
+            <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:6px;">アイコン <span id="crop_add_editor_icon_preview" style="font-size:20px; margin-left:4px; line-height:1; vertical-align:middle;">${defaultIcon}</span></label>
             <input type="hidden" id="crop_add_editor_icon" value="${esc(defaultIcon)}" data-manual="${opts.defaultIcon ? '1' : '0'}">
             <div id="crop_add_editor_icon_suggest" style="margin-bottom:8px;"></div>
             <div style="font-size:11px; color:#888; margin-bottom:4px;">すべて</div>
-            <div id="crop_add_editor_icon_grid" style="display:flex; flex-wrap:wrap; gap:6px; max-height:140px; overflow-y:auto; margin-bottom:14px; padding:2px;">${iconBtns}</div>
+            <div id="crop_add_editor_icon_grid" style="display:flex; flex-wrap:wrap; gap:6px; max-height:140px; overflow-y:auto; margin-bottom:14px; padding:2px; align-items:center;">${iconBtns}</div>
             <div style="display:flex; gap:8px;">
               <button type="button" id="crop_add_editor_ok" style="flex:1; background:#4CAF50; color:#fff; border:none; border-radius:8px; padding:12px; font-weight:bold; font-size:14px; cursor:pointer;">保存</button>
               <button type="button" id="crop_add_editor_cancel" style="flex:1; background:#eee; color:#333; border:none; border-radius:8px; padding:12px; font-weight:bold; font-size:14px; cursor:pointer;">キャンセル</button>
@@ -3544,9 +3571,14 @@ function createSignboardMarker(name, pos, icon, id) {
               return;
             }
             suggestBox.innerHTML = `<div style="font-size:11px; font-weight:bold; color:#2E7D32; margin-bottom:4px;">名前からの候補</div>
-              <div style="display:flex; flex-wrap:wrap; gap:6px;">${suggestions.map(ic =>
-                `<button type="button" data-icon="${esc(ic)}" style="width:44px; height:44px; border-radius:10px; border:2px solid ${ic === cur ? '#2E7D32' : '#A5D6A7'}; background:${ic === cur ? '#E8F5E9' : '#F1F8E9'}; font-size:22px; cursor:pointer; line-height:1;">${ic}</button>`
-              ).join('')}</div>`;
+              <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">${suggestions.map(ic => {
+                const style = window.cropIconBtnStyle_({
+                  size: 44, fontSize: 22,
+                  border: ic === cur ? '#2E7D32' : '#A5D6A7',
+                  bg: ic === cur ? '#E8F5E9' : '#F1F8E9'
+                });
+                return `<button type="button" data-icon="${esc(ic)}" style="${style}">${window.cropIconBtnInnerHtml_(ic)}</button>`;
+              }).join('')}</div>`;
             suggestBox.querySelectorAll('button[data-icon]').forEach(btn => {
               btn.onclick = (e) => {
                 e.stopPropagation();

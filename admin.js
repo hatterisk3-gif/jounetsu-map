@@ -86,6 +86,17 @@ window.getCropIconEmoji_ = (cropName) => {
   return window.guessCropIconFromName_(n);
 };
 
+window.cropIconBtnStyle_ = (opts) => {
+  const o = opts || {};
+  const size = o.size || 42;
+  const fontSize = o.fontSize || 22;
+  const border = o.border || '#E0E0E0';
+  const bg = o.bg || '#fff';
+  return `width:${size}px; height:${size}px; border-radius:10px; border:2px solid ${border}; background:${bg}; padding:0; margin:0; box-sizing:border-box; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; line-height:1; font-size:${fontSize}px; font-family:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;`;
+};
+window.cropIconBtnInnerHtml_ = (icon) =>
+  `<span style="display:block; line-height:1; transform:translateY(-0.5px); pointer-events:none;">${icon}</span>`;
+
 window.buildCropIconPickerHtml_ = (inputId, selectedIcon) => {
   const id = String(inputId || 'crop_icon').trim() || 'crop_icon';
   const cur = String(selectedIcon || '🌱').trim() || '🌱';
@@ -94,13 +105,18 @@ window.buildCropIconPickerHtml_ = (inputId, selectedIcon) => {
   const btns = presets.map(ic => {
     const on = ic === cur;
     const safe = String(ic).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    return `<button type="button" onclick="window.pickCropIconInput_('${esc(id)}','${safe}', true)" style="width:40px; height:40px; border-radius:10px; border:2px solid ${on ? '#2E7D32' : '#E0E0E0'}; background:${on ? '#E8F5E9' : '#fff'}; font-size:20px; cursor:pointer; line-height:1;">${ic}</button>`;
+    const style = window.cropIconBtnStyle_({
+      size: 40, fontSize: 20,
+      border: on ? '#2E7D32' : '#E0E0E0',
+      bg: on ? '#E8F5E9' : '#fff'
+    });
+    return `<button type="button" onclick="window.pickCropIconInput_('${esc(id)}','${safe}', true)" style="${style}">${window.cropIconBtnInnerHtml_(ic)}</button>`;
   }).join('');
   return `<input type="hidden" id="${esc(id)}" value="${esc(cur)}" data-manual="0">
-    <div style="font-size:12px; color:#555; margin-bottom:4px;">選択中: <span id="${esc(id)}_preview" style="font-size:20px;">${cur}</span></div>
+    <div style="font-size:12px; color:#555; margin-bottom:4px;">選択中: <span id="${esc(id)}_preview" style="font-size:20px; line-height:1; vertical-align:middle;">${cur}</span></div>
     <div id="${esc(id)}_suggest" style="margin-bottom:8px;"></div>
     <div style="font-size:11px; color:#888; margin-bottom:4px;">すべて</div>
-    <div id="${esc(id)}_grid" style="display:flex; flex-wrap:wrap; gap:6px; max-height:140px; overflow-y:auto; padding:2px;">${btns}</div>`;
+    <div id="${esc(id)}_grid" style="display:flex; flex-wrap:wrap; gap:6px; max-height:140px; overflow-y:auto; padding:2px; align-items:center;">${btns}</div>`;
 };
 
 window.pickCropIconInput_ = (inputId, icon, manual) => {
@@ -141,10 +157,15 @@ window.refreshCropIconSuggestions_ = (inputId, cropName) => {
     return;
   }
   suggestBox.innerHTML = `<div style="font-size:11px; font-weight:bold; color:#2E7D32; margin-bottom:4px;">名前からの候補</div>
-    <div style="display:flex; flex-wrap:wrap; gap:6px;">${suggestions.map(ic => {
+    <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">${suggestions.map(ic => {
       const on = ic === cur;
       const safe = String(ic).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-      return `<button type="button" data-icon="${esc(ic)}" onclick="window.pickCropIconInput_('${esc(id)}','${safe}', true)" style="width:44px; height:44px; border-radius:10px; border:2px solid ${on ? '#2E7D32' : '#A5D6A7'}; background:${on ? '#E8F5E9' : '#F1F8E9'}; font-size:22px; cursor:pointer; line-height:1;">${ic}</button>`;
+      const style = window.cropIconBtnStyle_({
+        size: 44, fontSize: 22,
+        border: on ? '#2E7D32' : '#A5D6A7',
+        bg: on ? '#E8F5E9' : '#F1F8E9'
+      });
+      return `<button type="button" data-icon="${esc(ic)}" onclick="window.pickCropIconInput_('${esc(id)}','${safe}', true)" style="${style}">${window.cropIconBtnInnerHtml_(ic)}</button>`;
     }).join('')}</div>`;
   if (!manual && suggestions[0]) window.pickCropIconInput_(id, suggestions[0], false);
 };
