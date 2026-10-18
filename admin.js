@@ -8,6 +8,155 @@ const JP_CITIES_API_URL = 'https://geolonia.github.io/japanese-addresses/api/ja.
 let jpCitiesByPref = null;
 let jpCitiesLoadPromise = null;
 
+window.CROP_ICON_PRESETS_ = [
+  '🌱', '🥬', '🥦', '🥒', '🍅', '🌶️', '🥕', '🧅', '🧄', '🥔',
+  '🍆', '🌽', '🫘', '🫛', '🍄', '🍓', '🍇', '🍉', '🍑', '🍎',
+  '🍊', '🍋', '🥝', '🍍', '🥑', '🌿', '🍃', '🌾', '🌻', '🌷',
+  '🌸', '🪴', '🌳', '☘️', '🍀', '🎋', '💮', '🫐', '🍈', '🥜'
+];
+
+window.CROP_ICON_NAME_RULES_ = [
+  [/トマト|とまと|tomato/i, '🍅'],
+  [/きゅうり|キュウリ|胡瓜/i, '🥒'],
+  [/なす|ナス|茄子/i, '🍆'],
+  [/ピーマン|ししとう|唐辛子|とうがらし|パプリカ/i, '🌶️'],
+  [/キャベツ|レタス|白菜|はくさい|ほうれん草|ホウレン|小松菜|こまつな|チンゲン|水菜|みずな|春菊/i, '🥬'],
+  [/ブロッコリ|カリフラワー/i, '🥦'],
+  [/にんじん|ニンジン|人参/i, '🥕'],
+  [/たまねぎ|タマネギ|玉ねぎ|ねぎ|ネギ/i, '🧅'],
+  [/にんにく|ニンニク/i, '🧄'],
+  [/じゃがいも|ジャガイモ|馬鈴薯|さつまいも|サツマイモ|里芋|さといも/i, '🥔'],
+  [/とうもろこし|トウモロコシ|コーン/i, '🌽'],
+  [/えだまめ|枝豆|大豆|いんげん|豆/i, '🫘'],
+  [/いちご|イチゴ|苺/i, '🍓'],
+  [/ぶどう|ブドウ|葡萄/i, '🍇'],
+  [/すいか|スイカ|西瓜/i, '🍉'],
+  [/メロン/i, '🍈'],
+  [/もも|モモ|桃/i, '🍑'],
+  [/りんご|リンゴ|林檎/i, '🍎'],
+  [/みかん|ミカン|柑橘|オレンジ|ゆず|レモン/i, '🍊'],
+  [/キウイ/i, '🥝'],
+  [/アボカド/i, '🥑'],
+  [/きのこ|シイタケ|しいたけ|マッシュルーム/i, '🍄'],
+  [/米|稲|いね|もみ/i, '🌾'],
+  [/花|バラ|菊|きく/i, '🌸']
+];
+
+window.guessCropIconFromName_ = (cropName) => {
+  const n = String(cropName || '').trim();
+  if (!n || n === '共通' || n === '__common__') return '🌿';
+  const rules = Array.isArray(window.CROP_ICON_NAME_RULES_) ? window.CROP_ICON_NAME_RULES_ : [];
+  for (let i = 0; i < rules.length; i++) {
+    if (rules[i][0].test(n)) return rules[i][1];
+  }
+  return '🌱';
+};
+
+window.suggestCropIconsFromName_ = (cropName) => {
+  const n = String(cropName || '').trim();
+  const out = [];
+  const seen = new Set();
+  const push = (ic) => {
+    const icon = String(ic || '').trim();
+    if (!icon || seen.has(icon)) return;
+    seen.add(icon);
+    out.push(icon);
+  };
+  if (!n || n === '共通' || n === '__common__') {
+    push('🌿');
+    return out;
+  }
+  (window.CROP_ICON_NAME_RULES_ || []).forEach(rule => {
+    if (rule[0].test(n)) push(rule[1]);
+  });
+  push('🌱');
+  push('🥬');
+  push('🌿');
+  return out.slice(0, 8);
+};
+
+window.getCropIconEmoji_ = (cropName) => {
+  const n = String(cropName || '').trim();
+  if (!n || n === '共通' || n === '__common__') return '🌿';
+  const hit = (typeof pdlCrops !== 'undefined' && Array.isArray(pdlCrops))
+    ? pdlCrops.find(c => c && String(c.name || '').trim() === n)
+    : null;
+  const stored = hit ? String(hit.icon || '').trim() : '';
+  if (stored) return stored;
+  return window.guessCropIconFromName_(n);
+};
+
+window.buildCropIconPickerHtml_ = (inputId, selectedIcon) => {
+  const id = String(inputId || 'crop_icon').trim() || 'crop_icon';
+  const cur = String(selectedIcon || '🌱').trim() || '🌱';
+  const presets = Array.isArray(window.CROP_ICON_PRESETS_) ? window.CROP_ICON_PRESETS_ : ['🌱'];
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const btns = presets.map(ic => {
+    const on = ic === cur;
+    const safe = String(ic).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return `<button type="button" onclick="window.pickCropIconInput_('${esc(id)}','${safe}', true)" style="width:40px; height:40px; border-radius:10px; border:2px solid ${on ? '#2E7D32' : '#E0E0E0'}; background:${on ? '#E8F5E9' : '#fff'}; font-size:20px; cursor:pointer; line-height:1;">${ic}</button>`;
+  }).join('');
+  return `<input type="hidden" id="${esc(id)}" value="${esc(cur)}" data-manual="0">
+    <div style="font-size:12px; color:#555; margin-bottom:4px;">選択中: <span id="${esc(id)}_preview" style="font-size:20px;">${cur}</span></div>
+    <div id="${esc(id)}_suggest" style="margin-bottom:8px;"></div>
+    <div style="font-size:11px; color:#888; margin-bottom:4px;">すべて</div>
+    <div id="${esc(id)}_grid" style="display:flex; flex-wrap:wrap; gap:6px; max-height:140px; overflow-y:auto; padding:2px;">${btns}</div>`;
+};
+
+window.pickCropIconInput_ = (inputId, icon, manual) => {
+  const id = String(inputId || '').trim();
+  const ic = String(icon || '🌱').trim() || '🌱';
+  const input = document.getElementById(id);
+  const preview = document.getElementById(id + '_preview');
+  const grid = document.getElementById(id + '_grid');
+  const suggest = document.getElementById(id + '_suggest');
+  if (input) {
+    input.value = ic;
+    if (manual) input.setAttribute('data-manual', '1');
+  }
+  if (preview) preview.textContent = ic;
+  const paint = (box) => {
+    if (!box) return;
+    box.querySelectorAll('button').forEach(btn => {
+      const on = String(btn.getAttribute('data-icon') || btn.textContent || '').trim() === ic;
+      btn.style.border = on ? '2px solid #2E7D32' : '2px solid #E0E0E0';
+      btn.style.background = on ? '#E8F5E9' : '#fff';
+    });
+  };
+  paint(grid);
+  paint(suggest);
+};
+
+window.refreshCropIconSuggestions_ = (inputId, cropName) => {
+  const id = String(inputId || '').trim();
+  const suggestBox = document.getElementById(id + '_suggest');
+  const input = document.getElementById(id);
+  if (!suggestBox) return;
+  const suggestions = window.suggestCropIconsFromName_(cropName);
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const cur = String((input && input.value) || '').trim() || '🌱';
+  const manual = input && input.getAttribute('data-manual') === '1';
+  if (!String(cropName || '').trim()) {
+    suggestBox.innerHTML = '<div style="font-size:11px; color:#888;">作物名を入れると候補が出ます</div>';
+    return;
+  }
+  suggestBox.innerHTML = `<div style="font-size:11px; font-weight:bold; color:#2E7D32; margin-bottom:4px;">名前からの候補</div>
+    <div style="display:flex; flex-wrap:wrap; gap:6px;">${suggestions.map(ic => {
+      const on = ic === cur;
+      const safe = String(ic).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      return `<button type="button" data-icon="${esc(ic)}" onclick="window.pickCropIconInput_('${esc(id)}','${safe}', true)" style="width:44px; height:44px; border-radius:10px; border:2px solid ${on ? '#2E7D32' : '#A5D6A7'}; background:${on ? '#E8F5E9' : '#F1F8E9'}; font-size:22px; cursor:pointer; line-height:1;">${ic}</button>`;
+    }).join('')}</div>`;
+  if (!manual && suggestions[0]) window.pickCropIconInput_(id, suggestions[0], false);
+};
+
+window.bindCropNameToIconSuggestions_ = (nameInputId, iconInputId) => {
+  const nameEl = document.getElementById(nameInputId);
+  if (!nameEl) return;
+  const run = () => window.refreshCropIconSuggestions_(iconInputId, nameEl.value);
+  nameEl.addEventListener('input', run);
+  run();
+};
+
 /** 県から産地の初期候補を返す（手動変更可） */
 function suggestClimateFromPrefecture(pref) {
     const warm = ['沖縄県','鹿児島県','宮崎県','熊本県','長崎県','佐賀県','福岡県','大分県','高知県','愛媛県','香川県','徳島県','山口県','広島県','岡山県','和歌山県','三重県','静岡県','愛知県','千葉県','神奈川県','東京都','大阪府','兵庫県','京都府','滋賀県','奈良県'];
@@ -2110,15 +2259,25 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             <div style="flex:1; min-height:0; overflow-y:auto;">`;
         
         if (type === 'crop') {
+            const iconPicker = (typeof window.buildCropIconPickerHtml_ === 'function')
+              ? window.buildCropIconPickerHtml_('add_crop_icon', '🌱')
+              : `<input type="hidden" id="add_crop_icon" value="🌱"><div style="font-size:12px; color:#888;">🌱（既定）</div>`;
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
                 <label style="font-size:12px; font-weight:bold; color:#555;">作物名</label>
-                <input type="text" id="add_crop_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: キャベツ">
+                <input type="text" id="add_crop_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: キャベツ" oninput="if(window.refreshCropIconSuggestions_) window.refreshCropIconSuggestions_('add_crop_icon', this.value)">
+                <label style="font-size:12px; font-weight:bold; color:#555;">アイコン</label>
+                ${iconPicker}
                 <label style="font-size:12px; font-weight:bold; color:#555;">タグ略称</label>
                 <input type="text" id="add_crop_tag_abbreviation" class="form-input" maxlength="10" style="margin-bottom:0; padding:8px;" placeholder="例: キャ">
                 <div style="font-size:11px; color:#777;">栽培タグに使用します（例: 徳阿-キャ本1）。空欄時は作物名を使用します。</div>
                 <input type="hidden" id="add_crop_density" value="0">
                 <button onclick="execMaster('crop', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
+            setTimeout(() => {
+              if (typeof window.refreshCropIconSuggestions_ === 'function') {
+                window.refreshCropIconSuggestions_('add_crop_icon', document.getElementById('add_crop_name')?.value || '');
+              }
+            }, 0);
         } else if (type === 'cropCultSetting') {
             const cropOpts = (pdlCrops || []).map(c => `<option value="${String(c.name || '').replace(/"/g, '&quot;')}">${c.name}</option>`).join('');
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
@@ -2509,7 +2668,10 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 const tagLabel = v.tagAbbreviation
                     ? `<span style="font-size:11px; color:#c2185b; margin-left:6px;">タグ:${v.tagAbbreviation}</span>`
                     : '';
-                subInfo = `<span style="color:#666;">(${v.density || 0}本/10a)</span>${tagLabel}`;
+                const icon = (typeof window.getCropIconEmoji_ === 'function')
+                  ? window.getCropIconEmoji_(v.name)
+                  : (String(v.icon || '').trim() || '🌱');
+                subInfo = `<span style="margin-right:4px;">${icon}</span><span style="color:#666;">(${v.density || 0}本/10a)</span>${tagLabel}`;
             }
             if (type === 'cropCultSetting') subInfo = `<span style="font-size:11px; color:#1565c0; margin-left:6px;">穴数: ${v.sowingHoles != null && v.sowingHoles !== '' ? v.sowingHoles : '-'}</span>`;
             if (type === 'nurseryLocation') {
@@ -2858,12 +3020,20 @@ window.openEditCropMaster = (encoded) => {
     const name = String(v.name || '').replace(/"/g, '&quot;');
     const density = v.density != null ? v.density : 0;
     const safeTagAbbreviation = String(v.tagAbbreviation || '').replace(/"/g, '&quot;');
+    const curIcon = String(v.icon || '').trim()
+      || ((typeof window.getCropIconEmoji_ === 'function') ? window.getCropIconEmoji_(v.name) : '🌱')
+      || '🌱';
+    const iconPicker = (typeof window.buildCropIconPickerHtml_ === 'function')
+      ? window.buildCropIconPickerHtml_('edit_crop_icon', curIcon)
+      : `<input type="hidden" id="edit_crop_icon" value="${String(curIcon).replace(/"/g, '&quot;')}">`;
     const editHtml = `
         <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
             <h4 style="margin-top:0; color:#2e7d32; font-size:15px; border-bottom:2px solid #4CAF50; padding-bottom:5px;">✏️ 作物マスタの編集</h4>
             <input type="hidden" id="edit_crop_original_name" value="${name}">
             <label class="form-label">作物名</label>
-            <input type="text" id="edit_crop_name" class="form-input" value="${name}">
+            <input type="text" id="edit_crop_name" class="form-input" value="${name}" oninput="if(window.refreshCropIconSuggestions_) window.refreshCropIconSuggestions_('edit_crop_icon', this.value)">
+            <label class="form-label">アイコン</label>
+            ${iconPicker}
             <label class="form-label">タグ略称</label>
             <input type="text" id="edit_crop_tag_abbreviation" class="form-input" maxlength="10" value="${safeTagAbbreviation}" placeholder="例: キャ">
             <div style="font-size:11px; color:#777; margin-top:-8px; margin-bottom:10px;">栽培タグに使用します（例: 徳阿-キャ本1）。空欄時は作物名を使用します。本作→本／試作→試 が続きます。</div>
@@ -2877,6 +3047,13 @@ window.openEditCropMaster = (encoded) => {
         </div>
     `;
     openMasterDetail('crop', editHtml);
+    setTimeout(() => {
+      const iconEl = document.getElementById('edit_crop_icon');
+      if (iconEl) iconEl.setAttribute('data-manual', '1');
+      if (typeof window.refreshCropIconSuggestions_ === 'function') {
+        window.refreshCropIconSuggestions_('edit_crop_icon', document.getElementById('edit_crop_name')?.value || '');
+      }
+    }, 0);
 };
 
 window.openEditPesticideMaster = (encoded) => {
@@ -5415,7 +5592,7 @@ window.execMaster = async (type, act, val) => {
 
     let value = val;
     if (act === 'add') {
-        if (type === 'crop') { const name = document.getElementById('add_crop_name').value.trim(); if (!name) { customAlert("作物名を入力してください"); return; } value = { name: name, density: parseInt(document.getElementById('add_crop_density').value || 0), tagAbbreviation: (document.getElementById('add_crop_tag_abbreviation')?.value || '').trim() }; }
+        if (type === 'crop') { const name = document.getElementById('add_crop_name').value.trim(); if (!name) { customAlert("作物名を入力してください"); return; } value = { name: name, density: parseInt(document.getElementById('add_crop_density').value || 0), tagAbbreviation: (document.getElementById('add_crop_tag_abbreviation')?.value || '').trim(), icon: (document.getElementById('add_crop_icon')?.value || '🌱').trim() || '🌱' }; }
         else if (type === 'cropCultSetting') {
             const cropName = (document.getElementById('add_ccs_crop')?.value || '').trim();
             if (!cropName) { customAlert('作物名を選択してください'); return; }
@@ -5645,7 +5822,8 @@ window.execMaster = async (type, act, val) => {
                 newData: {
                     name: newName,
                     density: parseInt(document.getElementById('edit_crop_density').value || 0, 10) || 0,
-                    tagAbbreviation: (document.getElementById('edit_crop_tag_abbreviation')?.value || '').trim()
+                    tagAbbreviation: (document.getElementById('edit_crop_tag_abbreviation')?.value || '').trim(),
+                    icon: (document.getElementById('edit_crop_icon')?.value || '🌱').trim() || '🌱'
                 }
             };
         } else if (type === 'container') {

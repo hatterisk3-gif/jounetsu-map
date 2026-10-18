@@ -3286,6 +3286,308 @@ function createSignboardMarker(name, pos, icon, id) {
       // 部品追加は機械別マスタ関数（addNewMachinePart）を使用
       window.selectedWorkCrops = [];
 
+      /** 作物アイコン候補（追加・編集時に選択） */
+      window.CROP_ICON_PRESETS_ = [
+        '🌱', '🥬', '🥦', '🥒', '🍅', '🌶️', '🥕', '🧅', '🧄', '🥔',
+        '🍆', '🌽', '🫘', '🫛', '🍄', '🍓', '🍇', '🍉', '🍑', '🍎',
+        '🍊', '🍋', '🥝', '🍍', '🥑', '🌿', '🍃', '🌾', '🌻', '🌷',
+        '🌸', '🪴', '🌳', '☘️', '🍀', '🎋', '💮', '🫐', '🍈', '🥜'
+      ];
+
+      /** 作物名 → アイコン推定ルール（上から優先） */
+      window.CROP_ICON_NAME_RULES_ = [
+        [/トマト|とまと|tomato/i, '🍅'],
+        [/きゅうり|キュウリ|胡瓜/i, '🥒'],
+        [/なす|ナス|茄子/i, '🍆'],
+        [/ピーマン|ししとう|唐辛子|とうがらし|パプリカ/i, '🌶️'],
+        [/キャベツ|レタス|白菜|はくさい|ほうれん草|ホウレン|小松菜|こまつな|チンゲン|水菜|みずな|春菊/i, '🥬'],
+        [/ブロッコリ|カリフラワー/i, '🥦'],
+        [/にんじん|ニンジン|人参/i, '🥕'],
+        [/たまねぎ|タマネギ|玉ねぎ/i, '🧅'],
+        [/ねぎ|ネギ|長ねぎ|葉ねぎ/i, '🧅'],
+        [/にんにく|ニンニク/i, '🧄'],
+        [/じゃがいも|ジャガイモ|馬鈴薯/i, '🥔'],
+        [/さつまいも|サツマイモ|里芋|さといも|やまいも|山芋/i, '🥔'],
+        [/とうもろこし|トウモロコシ|コーン/i, '🌽'],
+        [/えだまめ|枝豆|大豆|いんげん|そらまめ|落花生|ピーナッツ/i, '🫘'],
+        [/豆/i, '🫘'],
+        [/いちご|イチゴ|苺/i, '🍓'],
+        [/ぶどう|ブドウ|葡萄/i, '🍇'],
+        [/すいか|スイカ|西瓜/i, '🍉'],
+        [/メロン/i, '🍈'],
+        [/もも|モモ|桃/i, '🍑'],
+        [/りんご|リンゴ|林檎/i, '🍎'],
+        [/みかん|ミカン|柑橘|オレンジ|ゆず|レモン|ライム/i, '🍊'],
+        [/キウイ/i, '🥝'],
+        [/パイナップル|パイン/i, '🍍'],
+        [/アボカド/i, '🥑'],
+        [/きのこ|シイタケ|しいたけ|マッシュルーム|えのき|しめじ/i, '🍄'],
+        [/米|稲|いね|もみ|稲作/i, '🌾'],
+        [/ひまわり|ヒマワリ/i, '🌻'],
+        [/花|バラ|菊|きく|チューリップ/i, '🌸'],
+        [/ハーブ|バジル|ミント|パセリ/i, '🌿'],
+        [/木|果樹|樹木/i, '🌳']
+      ];
+
+      /** 名前だけからアイコンを推定（マスタは見ない） */
+      window.guessCropIconFromName_ = (cropName) => {
+        const n = String(cropName || '').trim();
+        if (!n || n === '共通' || n === '__common__') return '🌿';
+        const rules = Array.isArray(window.CROP_ICON_NAME_RULES_) ? window.CROP_ICON_NAME_RULES_ : [];
+        for (let i = 0; i < rules.length; i++) {
+          if (rules[i][0].test(n)) return rules[i][1];
+        }
+        return '🌱';
+      };
+
+      /** 名前から候補アイコンを複数返す（先頭が最有力） */
+      window.suggestCropIconsFromName_ = (cropName) => {
+        const n = String(cropName || '').trim();
+        const out = [];
+        const seen = new Set();
+        const push = (ic) => {
+          const icon = String(ic || '').trim();
+          if (!icon || seen.has(icon)) return;
+          seen.add(icon);
+          out.push(icon);
+        };
+        if (!n || n === '共通' || n === '__common__') {
+          push('🌿');
+          return out;
+        }
+        const rules = Array.isArray(window.CROP_ICON_NAME_RULES_) ? window.CROP_ICON_NAME_RULES_ : [];
+        rules.forEach(rule => {
+          if (rule[0].test(n)) push(rule[1]);
+        });
+        // 部分一致が弱いときも、先頭1〜2文字の作物っぽい語で追加候補
+        if (!out.length && n.length >= 2) {
+          const head = n.slice(0, 2);
+          rules.forEach(rule => {
+            const src = String(rule[0]);
+            if (src.indexOf(head) >= 0) push(rule[1]);
+          });
+        }
+        push('🌱');
+        push('🥬');
+        push('🌿');
+        return out.slice(0, 8);
+      };
+
+      /** 作物名から表示用アイコンを取得（マスタ優先、なければ名前から推定） */
+      window.getCropIconEmoji_ = (cropName) => {
+        const n = String(cropName || '').trim();
+        if (!n || n === '共通' || n === '__common__') return '🌿';
+        const hit = (typeof pdlCrops !== 'undefined' && Array.isArray(pdlCrops))
+          ? pdlCrops.find(c => c && String(c.name || '').trim() === n)
+          : null;
+        const stored = hit ? String(hit.icon || '').trim() : '';
+        if (stored) return stored;
+        return (typeof window.guessCropIconFromName_ === 'function')
+          ? window.guessCropIconFromName_(n)
+          : '🌱';
+      };
+
+      window.formatCropLabelWithIcon_ = (cropName) => {
+        const n = String(cropName || '').trim();
+        if (!n) return '';
+        const label = (n === '__common__') ? '共通' : n;
+        return `${window.getCropIconEmoji_(label)} ${label}`;
+      };
+
+      /** 管理画面など埋め込み用：アイコン選択グリッドHTML */
+      window.buildCropIconPickerHtml_ = (inputId, selectedIcon) => {
+        const id = String(inputId || 'crop_icon').trim() || 'crop_icon';
+        const cur = String(selectedIcon || '🌱').trim() || '🌱';
+        const presets = Array.isArray(window.CROP_ICON_PRESETS_) ? window.CROP_ICON_PRESETS_ : ['🌱'];
+        const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        const btns = presets.map(ic => {
+          const on = ic === cur;
+          const safe = String(ic).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          return `<button type="button" onclick="window.pickCropIconInput_('${esc(id)}','${safe}', true)" style="width:40px; height:40px; border-radius:10px; border:2px solid ${on ? '#2E7D32' : '#E0E0E0'}; background:${on ? '#E8F5E9' : '#fff'}; font-size:20px; cursor:pointer; line-height:1;">${ic}</button>`;
+        }).join('');
+        return `<input type="hidden" id="${esc(id)}" value="${esc(cur)}" data-manual="0">
+          <div style="font-size:12px; color:#555; margin-bottom:4px;">選択中: <span id="${esc(id)}_preview" style="font-size:20px;">${cur}</span></div>
+          <div id="${esc(id)}_suggest" style="display:none; margin-bottom:8px;"></div>
+          <div style="font-size:11px; color:#888; margin-bottom:4px;">すべて</div>
+          <div id="${esc(id)}_grid" style="display:flex; flex-wrap:wrap; gap:6px; max-height:140px; overflow-y:auto; padding:2px;">${btns}</div>`;
+      };
+
+      window.pickCropIconInput_ = (inputId, icon, manual) => {
+        const id = String(inputId || '').trim();
+        const ic = String(icon || '🌱').trim() || '🌱';
+        const input = document.getElementById(id);
+        const preview = document.getElementById(id + '_preview');
+        const grid = document.getElementById(id + '_grid');
+        const suggest = document.getElementById(id + '_suggest');
+        if (input) {
+          input.value = ic;
+          if (manual) input.setAttribute('data-manual', '1');
+        }
+        if (preview) preview.textContent = ic;
+        const paint = (box) => {
+          if (!box) return;
+          box.querySelectorAll('button').forEach(btn => {
+            const on = String(btn.getAttribute('data-icon') || btn.textContent || '').trim() === ic;
+            btn.style.border = on ? '2px solid #2E7D32' : '2px solid #E0E0E0';
+            btn.style.background = on ? '#E8F5E9' : '#fff';
+          });
+        };
+        paint(grid);
+        paint(suggest);
+      };
+
+      /** 作物名に合わせて候補行を更新。手動選択していなければ先頭候補を自動セット */
+      window.refreshCropIconSuggestions_ = (inputId, cropName, opts) => {
+        opts = opts || {};
+        const id = String(inputId || '').trim();
+        if (!id) return;
+        const suggestBox = document.getElementById(id + '_suggest');
+        const input = document.getElementById(id);
+        if (!suggestBox) return;
+        const suggestions = (typeof window.suggestCropIconsFromName_ === 'function')
+          ? window.suggestCropIconsFromName_(cropName)
+          : ['🌱'];
+        const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        const cur = String((input && input.value) || '').trim() || '🌱';
+        const manual = input && input.getAttribute('data-manual') === '1';
+        if (!String(cropName || '').trim() || !suggestions.length) {
+          suggestBox.style.display = 'none';
+          suggestBox.innerHTML = '';
+          return;
+        }
+        const btns = suggestions.map(ic => {
+          const on = ic === cur;
+          const safe = String(ic).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          return `<button type="button" data-icon="${esc(ic)}" onclick="window.pickCropIconInput_('${esc(id)}','${safe}', true)" style="width:44px; height:44px; border-radius:10px; border:2px solid ${on ? '#2E7D32' : '#A5D6A7'}; background:${on ? '#E8F5E9' : '#F1F8E9'}; font-size:22px; cursor:pointer; line-height:1;">${ic}</button>`;
+        }).join('');
+        suggestBox.style.display = 'block';
+        suggestBox.innerHTML = `<div style="font-size:11px; font-weight:bold; color:#2E7D32; margin-bottom:4px;">名前からの候補</div>
+          <div style="display:flex; flex-wrap:wrap; gap:6px;">${btns}</div>`;
+        if (!manual && opts.autoSelect !== false && suggestions[0] && suggestions[0] !== cur) {
+          window.pickCropIconInput_(id, suggestions[0], false);
+        }
+      };
+
+      /** 作物名＋アイコンの追加／編集モーダル。{ name, icon } または null を返す */
+      window.openCropAddEditor_ = (opts) => {
+        opts = opts || {};
+        return new Promise((resolve) => {
+          const existing = document.getElementById('cropAddEditorModal');
+          if (existing) existing.remove();
+          const defaultName = String(opts.defaultName || '').trim();
+          const guessed = (typeof window.guessCropIconFromName_ === 'function')
+            ? window.guessCropIconFromName_(defaultName)
+            : '🌱';
+          const defaultIcon = String(opts.defaultIcon || guessed || '🌱').trim() || '🌱';
+          const title = String(opts.title || (defaultName ? '作物を編集' : '新しい作物を追加'));
+          const presets = Array.isArray(window.CROP_ICON_PRESETS_) ? window.CROP_ICON_PRESETS_ : ['🌱'];
+          const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+          const modal = document.createElement('div');
+          modal.id = 'cropAddEditorModal';
+          modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:14000; display:flex; justify-content:center; align-items:center; padding:16px; box-sizing:border-box;';
+          const iconBtns = presets.map(ic => {
+            const on = ic === defaultIcon;
+            return `<button type="button" class="crop-icon-pick-btn" data-icon="${esc(ic)}" style="width:42px; height:42px; border-radius:10px; border:2px solid ${on ? '#2E7D32' : '#E0E0E0'}; background:${on ? '#E8F5E9' : '#fff'}; font-size:22px; cursor:pointer; line-height:1;">${ic}</button>`;
+          }).join('');
+          modal.innerHTML = `<div style="background:#fff; width:100%; max-width:380px; border-radius:12px; box-shadow:0 8px 28px rgba(0,0,0,0.28); padding:16px; box-sizing:border-box;" onclick="event.stopPropagation()">
+            <div style="font-size:16px; font-weight:bold; color:#2E7D32; margin-bottom:12px;">${esc(title)}</div>
+            <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">作物名</label>
+            <input type="text" id="crop_add_editor_name" class="form-input" value="${esc(defaultName)}" placeholder="例: トマト" style="width:100%; box-sizing:border-box; margin-bottom:12px; font-size:15px;">
+            <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:6px;">アイコン <span id="crop_add_editor_icon_preview" style="font-size:20px; margin-left:4px;">${defaultIcon}</span></label>
+            <input type="hidden" id="crop_add_editor_icon" value="${esc(defaultIcon)}" data-manual="${opts.defaultIcon ? '1' : '0'}">
+            <div id="crop_add_editor_icon_suggest" style="margin-bottom:8px;"></div>
+            <div style="font-size:11px; color:#888; margin-bottom:4px;">すべて</div>
+            <div id="crop_add_editor_icon_grid" style="display:flex; flex-wrap:wrap; gap:6px; max-height:140px; overflow-y:auto; margin-bottom:14px; padding:2px;">${iconBtns}</div>
+            <div style="display:flex; gap:8px;">
+              <button type="button" id="crop_add_editor_ok" style="flex:1; background:#4CAF50; color:#fff; border:none; border-radius:8px; padding:12px; font-weight:bold; font-size:14px; cursor:pointer;">保存</button>
+              <button type="button" id="crop_add_editor_cancel" style="flex:1; background:#eee; color:#333; border:none; border-radius:8px; padding:12px; font-weight:bold; font-size:14px; cursor:pointer;">キャンセル</button>
+            </div>
+          </div>`;
+          const finish = (val) => {
+            try { modal.remove(); } catch (e) {}
+            resolve(val);
+          };
+          modal.onclick = () => finish(null);
+          document.body.appendChild(modal);
+          const grid = modal.querySelector('#crop_add_editor_icon_grid');
+          const iconInput = modal.querySelector('#crop_add_editor_icon');
+          const preview = modal.querySelector('#crop_add_editor_icon_preview');
+          const suggestBox = modal.querySelector('#crop_add_editor_icon_suggest');
+          const applyIcon_ = (ic, manual) => {
+            const icon = String(ic || '🌱').trim() || '🌱';
+            if (iconInput) {
+              iconInput.value = icon;
+              if (manual) iconInput.setAttribute('data-manual', '1');
+            }
+            if (preview) preview.textContent = icon;
+            const paint = (box) => {
+              if (!box) return;
+              box.querySelectorAll('button[data-icon]').forEach(b => {
+                const on = String(b.getAttribute('data-icon') || '').trim() === icon;
+                b.style.border = on ? '2px solid #2E7D32' : (box === suggestBox ? '2px solid #A5D6A7' : '2px solid #E0E0E0');
+                b.style.background = on ? '#E8F5E9' : (box === suggestBox ? '#F1F8E9' : '#fff');
+              });
+            };
+            paint(grid);
+            paint(suggestBox);
+          };
+          const refreshSuggest_ = () => {
+            const name = String((nameEl && nameEl.value) || '').trim();
+            const suggestions = (typeof window.suggestCropIconsFromName_ === 'function')
+              ? window.suggestCropIconsFromName_(name)
+              : ['🌱'];
+            const cur = String((iconInput && iconInput.value) || '').trim() || '🌱';
+            const manual = iconInput && iconInput.getAttribute('data-manual') === '1';
+            if (!suggestBox) return;
+            if (!name) {
+              suggestBox.innerHTML = '<div style="font-size:11px; color:#888;">作物名を入れると候補が出ます</div>';
+              return;
+            }
+            suggestBox.innerHTML = `<div style="font-size:11px; font-weight:bold; color:#2E7D32; margin-bottom:4px;">名前からの候補</div>
+              <div style="display:flex; flex-wrap:wrap; gap:6px;">${suggestions.map(ic =>
+                `<button type="button" data-icon="${esc(ic)}" style="width:44px; height:44px; border-radius:10px; border:2px solid ${ic === cur ? '#2E7D32' : '#A5D6A7'}; background:${ic === cur ? '#E8F5E9' : '#F1F8E9'}; font-size:22px; cursor:pointer; line-height:1;">${ic}</button>`
+              ).join('')}</div>`;
+            suggestBox.querySelectorAll('button[data-icon]').forEach(btn => {
+              btn.onclick = (e) => {
+                e.stopPropagation();
+                applyIcon_(btn.getAttribute('data-icon'), true);
+              };
+            });
+            if (!manual && suggestions[0]) applyIcon_(suggestions[0], false);
+            else applyIcon_(cur, false);
+          };
+          if (grid) {
+            grid.querySelectorAll('.crop-icon-pick-btn').forEach(btn => {
+              btn.onclick = (e) => {
+                e.stopPropagation();
+                applyIcon_(btn.getAttribute('data-icon'), true);
+              };
+            });
+          }
+          const nameEl = modal.querySelector('#crop_add_editor_name');
+          if (nameEl) {
+            nameEl.addEventListener('input', refreshSuggest_);
+            setTimeout(() => { try { nameEl.focus(); nameEl.select(); } catch (e) {} }, 50);
+          }
+          refreshSuggest_();
+          const okBtn = modal.querySelector('#crop_add_editor_ok');
+          const cancelBtn = modal.querySelector('#crop_add_editor_cancel');
+          if (cancelBtn) cancelBtn.onclick = (e) => { e.stopPropagation(); finish(null); };
+          if (okBtn) {
+            okBtn.onclick = (e) => {
+              e.stopPropagation();
+              const name = String((nameEl && nameEl.value) || '').trim();
+              if (!name) {
+                if (typeof customAlert === 'function') customAlert('作物名を入力してください');
+                return;
+              }
+              const icon = String((iconInput && iconInput.value) || '🌱').trim() || '🌱';
+              finish({ name: name, icon: icon });
+            };
+          }
+        });
+      };
+
       window.renderCropChips = (selectedArray) => {
         if (Array.isArray(selectedArray)) {
           window.selectedWorkCrops = [...selectedArray];
@@ -3303,9 +3605,12 @@ function createSignboardMarker(name, pos, icon, id) {
           const bg = isSelected ? '#e8f5e9' : '#fff';
           const color = isSelected ? '#2e7d32' : '#333';
           const border = isSelected ? '1px solid #81c784' : '1px solid #ccc';
-          const icon = isSelected ? '✅ ' : '🌱 ';
+          const cropIcon = (typeof window.getCropIconEmoji_ === 'function')
+            ? window.getCropIconEmoji_(c.name)
+            : '🌱';
+          const mark = isSelected ? '✓ ' : '';
           const safeName = String(c.name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-          return `<button type="button" class="work-crop-chip" data-crop="${String(c.name).replace(/"/g, '&quot;')}" onclick="toggleWorkCropChip('${safeName}')" style="background:${bg}; color:${color}; border:${border}; padding:6px 12px; border-radius:16px; font-size:12px; font-weight:${isSelected ? 'bold' : 'normal'}; cursor:pointer;">${icon}${c.name}</button>`;
+          return `<button type="button" class="work-crop-chip" data-crop="${String(c.name).replace(/"/g, '&quot;')}" onclick="toggleWorkCropChip('${safeName}')" style="background:${bg}; color:${color}; border:${border}; padding:6px 12px; border-radius:16px; font-size:12px; font-weight:${isSelected ? 'bold' : 'normal'}; cursor:pointer;">${mark}${cropIcon} ${c.name}</button>`;
         }).join('');
       };
 
@@ -3332,30 +3637,33 @@ function createSignboardMarker(name, pos, icon, id) {
         return (window.selectedWorkCrops || []).join(', ');
       };
 
-      window.addNewCrop = async () => { 
-        const n = await customPrompt("新規作物名:"); 
-        if(!n || !n.trim()) return; 
-        const name = n.trim();
-        if(pdlCrops.some(c=>c.name===name)){customAlert("登録済み"); return;} 
+      window.addNewCrop = async () => {
+        const picked = (typeof window.openCropAddEditor_ === 'function')
+          ? await window.openCropAddEditor_({ title: '新しい作物を追加' })
+          : null;
+        if (!picked || !picked.name) return;
+        const name = String(picked.name).trim();
+        const icon = String(picked.icon || '🌱').trim() || '🌱';
+        if (pdlCrops.some(c => c.name === name)) { customAlert('登録済み'); return; }
         if (typeof window.showRecordSyncToast === 'function') {
           window.showRecordSyncToast(`⏳ 作物「${name}」を追加中です...`, 'info');
         }
-        try { 
+        try {
           const updated = await callGAS('manageMaster', {
             masterType: 'crop',
             manageAction: 'add',
-            value: { name, density: 0 },
+            value: { name, density: 0, icon },
             userName: localStorage.getItem('passionMapUserName') || currentUser
           });
           if (Array.isArray(updated)) pdlCrops = updated;
-          else pdlCrops.push({name, density:0});
+          else pdlCrops.push({ name, density: 0, icon });
           if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
           else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
           try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
           if (!window.selectedWorkCrops.includes(name)) {
             window.selectedWorkCrops.push(name);
           }
-          if(document.getElementById('rec_crop')) {document.getElementById('rec_crop').value=name; if(typeof handleCropSelection==='function') handleCropSelection();}
+          if (document.getElementById('rec_crop')) { document.getElementById('rec_crop').value = name; if (typeof handleCropSelection === 'function') handleCropSelection(); }
           if (typeof window.renderCropChips === 'function') window.renderCropChips();
           if (typeof window.renderCropFilterButtons === 'function') {
             window.renderCropFilterButtons(document.getElementById('rec_work_crop_filter')?.value || '');
@@ -3363,7 +3671,7 @@ function createSignboardMarker(name, pos, icon, id) {
           if (typeof window.showRecordSyncToast === 'function') {
             window.showRecordSyncToast(`✅ 作物「${name}」を追加しました！`, 'ok');
           }
-        } catch(e) { if (typeof customAlert === 'function') customAlert(e.message || "失敗"); } 
+        } catch (e) { if (typeof customAlert === 'function') customAlert(e.message || '失敗'); }
       };
 
       window.addPhotoFromInput = (input) => {
@@ -7887,8 +8195,11 @@ function createSignboardMarker(name, pos, icon, id) {
             ? window.getWorkMetaChipStyles('crop', opt.key === '__common__' ? '共通' : opt.label, isSelected)
             : { background: isSelected ? '#4CAF50' : '#f4f6f8', color: isSelected ? '#fff' : '#333', border: isSelected ? '2px solid #1B5E20' : '1px solid #ccc', fontWeight: isSelected ? 'bold' : 'normal' };
           const mark = isSelected ? '✓ ' : '';
+          const cropIcon = (typeof window.getCropIconEmoji_ === 'function')
+            ? window.getCropIconEmoji_(opt.key === '__common__' ? '共通' : opt.label)
+            : '🌱';
           const safeKey = String(opt.key).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-          return `<button type="button" class="work-crop-filter-btn" data-crop-key="${String(opt.key).replace(/"/g, '&quot;')}" data-selected="${isSelected ? '1' : '0'}" onclick="toggleWorkCropFilter('${safeKey}')" style="background:${styles.background}; color:${styles.color}; border:${styles.border}; font-weight:${styles.fontWeight}; padding:8px 14px; border-radius:20px; font-size:13px; cursor:pointer;">${mark}${opt.label}</button>`;
+          return `<button type="button" class="work-crop-filter-btn" data-crop-key="${String(opt.key).replace(/"/g, '&quot;')}" data-selected="${isSelected ? '1' : '0'}" onclick="toggleWorkCropFilter('${safeKey}')" style="background:${styles.background}; color:${styles.color}; border:${styles.border}; font-weight:${styles.fontWeight}; padding:8px 14px; border-radius:20px; font-size:13px; cursor:pointer;">${mark}${cropIcon} ${opt.label}</button>`;
         }).join('');
 
         const hiddenInput = document.getElementById('rec_work_crop_filter');
@@ -11719,10 +12030,13 @@ function createSignboardMarker(name, pos, icon, id) {
           list.innerHTML = crops.map(c => {
               const name = String(c.name || '');
               const density = c.density != null ? c.density : 0;
+              const icon = (typeof window.getCropIconEmoji_ === 'function')
+                ? window.getCropIconEmoji_(name)
+                : (String(c.icon || '').trim() || '🌱');
               const safe = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
               return `<div style="border:1px solid #eee; border-radius:8px; padding:10px 12px; margin-bottom:8px; background:#fafafa; display:flex; justify-content:space-between; align-items:center; gap:8px;">
                 <div style="min-width:0; flex:1;">
-                  <div style="font-weight:bold; font-size:14px; word-break:break-all;">${name.replace(/</g, '&lt;')}</div>
+                  <div style="font-weight:bold; font-size:14px; word-break:break-all;">${icon} ${name.replace(/</g, '&lt;')}</div>
                   <div style="font-size:11px; color:#666; margin-top:2px;">栽植密度: ${density} 本/10a</div>
                 </div>
                 <div style="display:flex; gap:4px; flex-shrink:0;">
@@ -11738,9 +12052,12 @@ function createSignboardMarker(name, pos, icon, id) {
               if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
               return;
           }
-          const n = await customPrompt('新しい作物名:');
-          if (!n || !String(n).trim()) return;
-          const name = String(n).trim();
+          const picked = (typeof window.openCropAddEditor_ === 'function')
+            ? await window.openCropAddEditor_({ title: '新しい作物を追加' })
+            : null;
+          if (!picked || !picked.name) return;
+          const name = String(picked.name).trim();
+          const icon = String(picked.icon || '🌱').trim() || '🌱';
           if ((pdlCrops || []).some(c => c.name === name)) {
               if (typeof customAlert === 'function') customAlert(`作物名「${name}」は既に登録されています。`);
               return;
@@ -11750,11 +12067,11 @@ function createSignboardMarker(name, pos, icon, id) {
               const updated = await callGAS('manageMaster', {
                   masterType: 'crop',
                   manageAction: 'add',
-                  value: { name, density },
+                  value: { name, density, icon },
                   userName: localStorage.getItem('passionMapUserName') || currentUser
               });
               if (Array.isArray(updated)) pdlCrops = updated;
-              else pdlCrops.push({ name, density });
+              else pdlCrops.push({ name, density, icon });
               if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
               else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
               try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
@@ -11773,9 +12090,17 @@ function createSignboardMarker(name, pos, icon, id) {
           const original = String(cropName || '').trim();
           if (!original || original === '__common__') return;
           const existing = (pdlCrops || []).find(c => c.name === original) || { name: original, density: 0 };
-          const n = await customPrompt('作物名を編集:', original);
-          if (!n || !String(n).trim()) return;
-          const name = String(n).trim();
+          const picked = (typeof window.openCropAddEditor_ === 'function')
+            ? await window.openCropAddEditor_({
+                title: '作物を編集',
+                defaultName: original,
+                defaultIcon: String(existing.icon || '').trim()
+                  || ((typeof window.getCropIconEmoji_ === 'function') ? window.getCropIconEmoji_(original) : '🌱')
+              })
+            : null;
+          if (!picked || !picked.name) return;
+          const name = String(picked.name).trim();
+          const icon = String(picked.icon || '🌱').trim() || '🌱';
           if (name !== original && (pdlCrops || []).some(c => c.name === name)) {
               if (typeof customAlert === 'function') customAlert(`作物名「${name}」は既に登録されています。`);
               return;
@@ -11785,12 +12110,12 @@ function createSignboardMarker(name, pos, icon, id) {
               const updated = await callGAS('manageMaster', {
                   masterType: 'crop',
                   manageAction: 'edit',
-                  value: { originalName: original, newData: { name, density } },
+                  value: { originalName: original, newData: { name, density, icon } },
                   userName: localStorage.getItem('passionMapUserName') || currentUser
               });
               if (Array.isArray(updated)) pdlCrops = updated;
               else {
-                  pdlCrops = (pdlCrops || []).map(c => c.name === original ? { name, density } : c);
+                  pdlCrops = (pdlCrops || []).map(c => c.name === original ? { ...c, name, density, icon } : c);
               }
               if (Array.isArray(pdlWorkMaster) && name !== original) {
                   pdlWorkMaster.forEach(w => {
@@ -11938,8 +12263,11 @@ function createSignboardMarker(name, pos, icon, id) {
           crops.forEach(cName => {
             const key = window.normalizeWorkCropKey(cName);
             const checked = normSelected.includes(key);
+            const cropIcon = (typeof window.getCropIconEmoji_ === 'function')
+              ? window.getCropIconEmoji_(cName)
+              : '🌱';
             html += `<label style="display:inline-flex; align-items:center; gap:4px; font-size:13px; background:${checked ? '#e8f5e9' : '#fff'}; border:1px solid ${checked ? '#4CAF50' : '#ccc'}; padding:4px 10px; border-radius:15px; cursor:pointer;">
-              <input type="checkbox" class="${prefix}_crop_cb" value="${String(cName).replace(/"/g, '&quot;')}" ${checked ? 'checked' : ''} onchange="onWorkCropsChange('${prefix}', this)"> 🌱 ${String(cName).replace(/</g, '&lt;')}
+              <input type="checkbox" class="${prefix}_crop_cb" value="${String(cName).replace(/"/g, '&quot;')}" ${checked ? 'checked' : ''} onchange="onWorkCropsChange('${prefix}', this)"> ${cropIcon} ${String(cName).replace(/</g, '&lt;')}
             </label>`;
           });
           html += `<button type="button" onclick="addNewCropFromWorkMaster()" title="作物を追加" style="width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center; background:#fff; color:#2196F3; border:1px dashed #90CAF9; border-radius:15px; font-size:18px; font-weight:bold; cursor:pointer; line-height:1;">＋</button>`;
@@ -12413,9 +12741,12 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       window.addNewCropFromWorkMaster = async () => {
-          const n = await customPrompt('新規作物名:');
-          if (!n || !String(n).trim()) return;
-          const name = String(n).trim();
+          const picked = (typeof window.openCropAddEditor_ === 'function')
+            ? await window.openCropAddEditor_({ title: '新しい作物を追加' })
+            : null;
+          if (!picked || !picked.name) return;
+          const name = String(picked.name).trim();
+          const icon = String(picked.icon || '🌱').trim() || '🌱';
           if ((pdlCrops || []).some(c => c.name === name)) {
               const selected = window.getSelectedWorkCrops('wn_edit');
               if (selected.indexOf(name) < 0) selected.push(name);
@@ -12433,11 +12764,11 @@ function createSignboardMarker(name, pos, icon, id) {
               const updated = await callGAS('manageMaster', {
                   masterType: 'crop',
                   manageAction: 'add',
-                  value: { name: name, density: 0 },
+                  value: { name: name, density: 0, icon },
                   userName: localStorage.getItem('passionMapUserName') || currentUser
               });
               if (Array.isArray(updated)) pdlCrops = updated;
-              else pdlCrops.push({ name: name, density: 0 });
+              else pdlCrops.push({ name: name, density: 0, icon });
               if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
               else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
               try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}
@@ -15055,7 +15386,10 @@ function createSignboardMarker(name, pos, icon, id) {
         const cropHtml = cropNames.map(name => {
           const on = selectedCrops.indexOf(name) >= 0;
           const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-          return `<button type="button" onclick="pickConcurrentWorkModalCrop_('${safe}')" style="${chipBtn({ on: on, border: on ? '#2E7D32' : '#C8E6C9', bg: on ? '#E8F5E9' : '#fff', color: '#2E7D32' })}">${esc(name)}</button>`;
+          const label = (typeof window.formatCropLabelWithIcon_ === 'function')
+            ? window.formatCropLabelWithIcon_(name)
+            : name;
+          return `<button type="button" onclick="pickConcurrentWorkModalCrop_('${safe}')" style="${chipBtn({ on: on, border: on ? '#2E7D32' : '#C8E6C9', bg: on ? '#E8F5E9' : '#fff', color: '#2E7D32' })}">${esc(label)}</button>`;
         }).join('');
         const curWork = String(d.workName || '').trim();
         const prepTarget = String(d.prepTargetWork || '').trim();
@@ -15965,7 +16299,10 @@ function createSignboardMarker(name, pos, icon, id) {
             bg: on ? '#E8F5E9' : '#fff',
             color: '#2E7D32'
           });
-          return `<button type="button" onclick="pickBulkConcurrentDraftCrop_('${esc(uid)}','${safe}')" style="${style}">${esc(name)}</button>`;
+          const label = (typeof window.formatCropLabelWithIcon_ === 'function')
+            ? window.formatCropLabelWithIcon_(name)
+            : name;
+          return `<button type="button" onclick="pickBulkConcurrentDraftCrop_('${esc(uid)}','${safe}')" style="${style}">${esc(label)}</button>`;
         }).join('');
         const cats = typeof window.getBulkWorkMemoCategories_ === 'function'
           ? window.getBulkWorkMemoCategories_()
@@ -32925,7 +33262,7 @@ window.openBulkWorkMemoModal_ = () => {
   }
   window.fillAppModalHtml_(`
     <div style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
-      ${window.buildBulkWorkMemoModalHeaderHtml_('📋 メモから一括入力', '1行＝1件。メモに「休憩」とあれば<b>休憩登録</b>として分けます。作業と休憩は確認画面で別枠です。')}
+      ${window.buildBulkWorkMemoModalHeaderHtml_('📋 メモから一括入力', '')}
       ${tempRestoreHtml}
       <label class="form-label" style="margin:0 0 4px;">📅 作業日</label>
       <input type="date" id="bulk_work_memo_date" class="form-input" value="${esc(keepDate)}" onchange="window._bulkWorkMemoDate=this.value; var h=document.getElementById('bulk_work_memo_date_hint'); if(h) h.textContent='※先頭が「〇時まで」など開始未指定のとき、この日の最終作業終了があればそれを、なければ 8:00 を開始にします'; if(window.prefetchWorkTimeHints) window.prefetchWorkTimeHints(this.value,{applyToForm:false}).catch(function(){});" style="margin-bottom:6px;">
@@ -33784,7 +34121,10 @@ window.buildBulkWorkMemoCropChipsHtml_ = (d, uid) => {
       color: '#2E7D32',
       boxShadow: on ? 'inset 0 0 0 1px #2E7D32' : ''
     });
-    return `<button type="button" onclick="pickBulkWorkMemoCropName_('${esc(uid)}','${safeArg}')" style="${style}">${esc(name)}</button>`;
+    const label = (typeof window.formatCropLabelWithIcon_ === 'function')
+      ? window.formatCropLabelWithIcon_(name)
+      : name;
+    return `<button type="button" onclick="pickBulkWorkMemoCropName_('${esc(uid)}','${safeArg}')" style="${style}">${esc(label)}</button>`;
   }).join('');
   return `<div style="${window.bulkChipGridWrapStyle_('margin-bottom:8px; max-height:220px; overflow-y:auto; padding:2px;')}">${chipHtml}${addBtn}</div>`;
 };
@@ -36967,14 +37307,15 @@ window.addBulkWorkMemoCategory_ = async (uid, mode) => {
 
 window.addBulkWorkMemoCrop_ = async (uid) => {
   window._bulkWorkMemoCropEditUid = String(uid || '').trim();
-  const n = (typeof customPrompt === 'function')
-    ? await customPrompt('新しい作物名:')
-    : prompt('新しい作物名:');
-  if (!n || !String(n).trim()) {
+  const picked = (typeof window.openCropAddEditor_ === 'function')
+    ? await window.openCropAddEditor_({ title: '新しい作物を追加' })
+    : null;
+  if (!picked || !picked.name) {
     window._bulkWorkMemoCropEditUid = '';
     return;
   }
-  const name = String(n).trim();
+  const name = String(picked.name).trim();
+  const icon = String(picked.icon || '🌱').trim() || '🌱';
   if ((pdlCrops || []).some(c => c && String(c.name || '').trim() === name)) {
     window.refreshBulkWorkMemoAfterCropChange_(name);
     return;
@@ -36983,12 +37324,12 @@ window.addBulkWorkMemoCrop_ = async (uid) => {
     const updated = await callGAS('manageMaster', {
       masterType: 'crop',
       manageAction: 'add',
-      value: { name, density: 0 },
+      value: { name, density: 0, icon },
       userName: localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '')
     });
     if (Array.isArray(updated)) pdlCrops = updated;
-    else if (Array.isArray(pdlCrops)) pdlCrops.push({ name, density: 0 });
-    else pdlCrops = [{ name, density: 0 }];
+    else if (Array.isArray(pdlCrops)) pdlCrops.push({ name, density: 0, icon });
+    else pdlCrops = [{ name, density: 0, icon }];
     if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
     else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) {}
     try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) {}

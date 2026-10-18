@@ -1752,6 +1752,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
       if (!cropName) throw new Error('作物名を入力してください');
       const density = Number((value && value.density) || 0) || 0;
       const tagAbbreviation = String((value && value.tagAbbreviation) || '').trim();
+      const icon = String((value && value.icon) || '').trim();
       const existing = sheet.getDataRange().getValues();
       for (let i = 1; i < existing.length; i++) {
         if (String(existing[i][0] || '').trim() === cropName) {
@@ -1759,7 +1760,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
         }
       }
       assertTagAbbreviationUnique_(tagAbbreviation || cropName, {});
-      sheet.appendRow([cropName, density, '', tagAbbreviation]);
+      sheet.appendRow([cropName, density, '', tagAbbreviation, icon]);
       syncCropNameInSeikuMaster_('', cropName, density); // 新規を生育記録マスタにも反映
     } else if (masterType === 'tool') {
       const newId = "TOOL-" + Utilities.getUuid().substring(0,6);
@@ -2070,6 +2071,8 @@ function manageMasterData(masterType, manageAction, value, userName) {
       const newDensity = (newData.density != null && newData.density !== '') ? Number(newData.density) || 0 : null;
       const hasTagAbbr = Object.prototype.hasOwnProperty.call(newData, 'tagAbbreviation');
       const newTagAbbreviation = hasTagAbbr ? String(newData.tagAbbreviation || '').trim() : null;
+      const hasIcon = Object.prototype.hasOwnProperty.call(newData, 'icon');
+      const newIcon = hasIcon ? String(newData.icon || '').trim() : null;
       if (!originalName) throw new Error('変更前の作物名がありません');
       if (!newName) throw new Error('作物名を入力してください');
       if (newName !== originalName) {
@@ -2083,6 +2086,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
       let densityToWrite = 0;
       let tagAbbrToWrite = '';
       let colorToKeep = '';
+      let iconToWrite = '';
       for (let i = 1; i < data.length; i++) {
         if (String(data[i][0] || '').trim() === originalName) {
           densityToWrite = (newDensity != null) ? newDensity : (Number(data[i][1]) || 0);
@@ -2090,11 +2094,15 @@ function manageMasterData(masterType, manageAction, value, userName) {
           tagAbbrToWrite = (newTagAbbreviation != null)
             ? newTagAbbreviation
             : String(data[i][3] || '').trim();
+          iconToWrite = (newIcon != null)
+            ? newIcon
+            : String(data[i][4] || '').trim();
           assertTagAbbreviationUnique_(tagAbbrToWrite || newName, { excludeCropName: originalName });
           sheet.getRange(i + 1, 1).setValue(newName);
           sheet.getRange(i + 1, 2).setValue(densityToWrite);
           if (colorToKeep) sheet.getRange(i + 1, 3).setValue(colorToKeep);
           sheet.getRange(i + 1, 4).setValue(tagAbbrToWrite);
+          sheet.getRange(i + 1, 5).setValue(iconToWrite);
           found = true;
           break;
         }
@@ -2103,8 +2111,9 @@ function manageMasterData(masterType, manageAction, value, userName) {
         // 作物マスタに無い場合は追記（生育記録マスタ側だけの旧データ向け）
         densityToWrite = (newDensity != null) ? newDensity : 0;
         tagAbbrToWrite = (newTagAbbreviation != null) ? newTagAbbreviation : '';
+        iconToWrite = (newIcon != null) ? newIcon : '';
         assertTagAbbreviationUnique_(tagAbbrToWrite || newName, { excludeCropName: originalName });
-        sheet.appendRow([newName, densityToWrite, '', tagAbbrToWrite]);
+        sheet.appendRow([newName, densityToWrite, '', tagAbbrToWrite, iconToWrite]);
       }
       syncCropNameInSeikuMaster_(originalName, newName, densityToWrite);
       if (newName !== originalName) {
@@ -3320,8 +3329,9 @@ function addCropToMaster(cropData) {
   if (!name) throw new Error('作物名を入力してください');
   const density = Number((cropData && cropData.density) || 0) || 0;
   const tagAbbreviation = String((cropData && cropData.tagAbbreviation) || '').trim();
-  manageMasterData('crop', 'add', { name: name, density: density, tagAbbreviation: tagAbbreviation }, 'system');
-  return { name: name, density: density, tagAbbreviation: tagAbbreviation };
+  const icon = String((cropData && cropData.icon) || '').trim();
+  manageMasterData('crop', 'add', { name: name, density: density, tagAbbreviation: tagAbbreviation, icon: icon }, 'system');
+  return { name: name, density: density, tagAbbreviation: tagAbbreviation, icon: icon };
 }
 function deleteCropFromMaster(cropName) {
   const name = String(cropName || '').trim();
@@ -3330,17 +3340,17 @@ function deleteCropFromMaster(cropName) {
   return name;
 }
 
-/** 作物マスタ（作物名・栽植密度・色・タグ略称） */
+/** 作物マスタ（作物名・栽植密度・色・タグ略称・アイコン） */
 function ensureCropMasterSheet_() {
   const ss = TENANT_SS;
   let sheet = ss.getSheetByName('作物マスタ');
   if (!sheet) {
     sheet = ss.insertSheet('作物マスタ');
-    sheet.appendRow(['作物名', '栽植密度', '色', 'タグ略称']);
-    sheet.getRange(1, 1, 1, 4).setFontWeight('bold').setBackground('#e0e0e0');
+    sheet.appendRow(['作物名', '栽植密度', '色', 'タグ略称', 'アイコン']);
+    sheet.getRange(1, 1, 1, 5).setFontWeight('bold').setBackground('#e0e0e0');
     return sheet;
   }
-  const headers = ['作物名', '栽植密度', '色', 'タグ略称'];
+  const headers = ['作物名', '栽植密度', '色', 'タグ略称', 'アイコン'];
   headers.forEach((h, i) => {
     const cur = String(sheet.getRange(1, i + 1).getValue() || '').trim();
     if (cur !== h) {
@@ -3427,18 +3437,23 @@ function readMergedCropMasterList_() {
       const tagAbbreviation = (sheetName === '作物マスタ')
         ? String(data[i][3] || '').trim()
         : '';
+      const icon = (sheetName === '作物マスタ')
+        ? String(data[i][4] || '').trim()
+        : '';
       if (!map[n]) {
         map[n] = {
           name: n,
           density: density,
           color: color || '',
-          tagAbbreviation: tagAbbreviation || cropSheetTagMap[n] || ''
+          tagAbbreviation: tagAbbreviation || cropSheetTagMap[n] || '',
+          icon: icon || ''
         };
       } else {
         if (!map[n].density && density) map[n].density = density;
         if (!map[n].color && color) map[n].color = color;
         if (!map[n].tagAbbreviation && tagAbbreviation) map[n].tagAbbreviation = tagAbbreviation;
         if (!map[n].tagAbbreviation && cropSheetTagMap[n]) map[n].tagAbbreviation = cropSheetTagMap[n];
+        if (!map[n].icon && icon) map[n].icon = icon;
       }
     }
   }
