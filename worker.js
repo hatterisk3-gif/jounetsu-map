@@ -15992,7 +15992,8 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.syncBulkConcurrentEqualMinutes_ = (d) => {
         if (!d || !Array.isArray(d.concurrentWorks) || !d.concurrentWorks.length) return;
-        const n = d.concurrentWorks.length;
+        // 分母＝メイン作業1 + 同時作業数（例: 80分で同時1件 → 40分ずつ）
+        const n = d.concurrentWorks.length + 1;
         const slot = window.getBulkConcurrentSlotMins_(d);
         const equalMins = n > 0 ? Math.floor(slot / n) : 0;
         d.concurrentWorks.forEach(cw => {
@@ -16133,7 +16134,8 @@ function createSignboardMarker(name, pos, icon, id) {
         const slot = window.getBulkConcurrentSlotMins_(row);
         if (String(value) === 'equal') {
           draft.minutesMode = 'equal';
-          const n = (Array.isArray(row.concurrentWorks) ? row.concurrentWorks.length : 0) + 1;
+          // 追加予定の同時作業も含め、メイン＋同時（既存＋今回）で割る
+          const n = (Array.isArray(row.concurrentWorks) ? row.concurrentWorks.length : 0) + 2;
           draft.minutes = n > 0 ? Math.floor(slot / n) : 0;
         } else if (String(value) === 'remain') {
           draft.minutesMode = 'fixed';
@@ -16340,17 +16342,6 @@ function createSignboardMarker(name, pos, icon, id) {
           ? window.getBulkWorkMemoCategories_()
           : [];
         const curFilter = String(draft.listFilterCategory || '').trim();
-        const catHtml = cats.map(name => {
-          const on = name === curFilter;
-          const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-          const style = chipBtn({
-            on: on,
-            border: on ? '#3949AB' : '#C5CAE9',
-            bg: on ? '#E8EAF6' : '#fff',
-            color: '#283593'
-          });
-          return `<button type="button" onclick="pickBulkConcurrentDraftCategory_('${esc(uid)}','${safe}')" style="${style}">${esc(name)}</button>`;
-        }).join('');
         const listProxy = {
           listFilterCategory: draft.listFilterCategory,
           cropNames: selectedCrops.slice(),
@@ -16362,17 +16353,39 @@ function createSignboardMarker(name, pos, icon, id) {
           ? window.getBulkWorkMemoManualWorkList_(listProxy)
           : { names: [], fallbackNote: '' };
         const curWork = String(draft.workName || '').trim();
-        const workHtml = workNames.map(name => {
-          const on = name === curWork;
-          const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-          const style = chipBtn({
-            on: on,
-            border: on ? '#E65100' : '#FFCC80',
-            bg: on ? '#FFF3E0' : '#fff',
-            color: '#E65100'
-          });
-          return `<button type="button" onclick="pickBulkConcurrentDraftWork_('${esc(uid)}','${safe}')" style="${style}">${esc(name)}</button>`;
-        }).join('');
+        // もしかしてに出す分は下の一覧から除外するため、予測後にチップHTMLを組み立てる
+        let suggestCatNames = [];
+        let suggestWorkNames = [];
+        const buildCatChipHtml_ = (excludeNames) => {
+          const ex = new Set((excludeNames || []).map(n => String(n || '').trim()).filter(Boolean));
+          return cats.filter(name => !ex.has(String(name || '').trim())).map(name => {
+            const on = name === curFilter;
+            const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const style = chipBtn({
+              on: on,
+              border: on ? '#3949AB' : '#C5CAE9',
+              bg: on ? '#E8EAF6' : '#fff',
+              color: '#283593'
+            });
+            return `<button type="button" onclick="pickBulkConcurrentDraftCategory_('${esc(uid)}','${safe}')" style="${style}">${esc(name)}</button>`;
+          }).join('');
+        };
+        const buildWorkChipHtml_ = (excludeNames) => {
+          const ex = new Set((excludeNames || []).map(n => String(n || '').trim()).filter(Boolean));
+          return (workNames || []).filter(name => !ex.has(String(name || '').trim())).map(name => {
+            const on = name === curWork;
+            const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const style = chipBtn({
+              on: on,
+              border: on ? '#E65100' : '#FFCC80',
+              bg: on ? '#FFF3E0' : '#fff',
+              color: '#E65100'
+            });
+            return `<button type="button" onclick="pickBulkConcurrentDraftWork_('${esc(uid)}','${safe}')" style="${style}">${esc(name)}</button>`;
+          }).join('');
+        };
+        let catHtml = buildCatChipHtml_([]);
+        let workHtml = buildWorkChipHtml_([]);
         const metaCat = String(draft.category || draft.listFilterCategory || '').trim();
         const isMeta = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(metaCat);
         const detailOpts = (!isMeta && curWork && typeof window.getBulkWorkMemoDetailOptions_ === 'function')
@@ -16404,7 +16417,6 @@ function createSignboardMarker(name, pos, icon, id) {
             : null);
         const draftEqualOn = draft.minutesMode === 'equal';
         const draftMinsShow = draft.minutes != null ? Number(draft.minutes) : null;
-        const draftRemain = window.getBulkConcurrentRemainingMins_(d);
         const draftPreviewMins = (panelOpen && draftMinsShow != null && !isNaN(draftMinsShow) && draftMinsShow > 0)
           ? Math.round(draftMinsShow)
           : 0;
@@ -16414,21 +16426,23 @@ function createSignboardMarker(name, pos, icon, id) {
         const allocOver = slotMins > 0 && allocatedCw > slotMins;
         const mainWorkLabel = String(d.workName || '').trim() || 'メイン作業';
         const minsHtml = (() => {
-          const btns = durOpts.fixed.map(n => {
+          const minChip = (o) => {
+            const x = o || {};
+            return `width:100%; box-sizing:border-box; min-height:36px; padding:6px 4px; border-radius:10px; font-size:11px; font-weight:bold; cursor:pointer; border:2px solid ${x.border || '#ccc'}; background:${x.bg || '#fff'}; color:${x.color || '#333'}; text-align:center; line-height:1.2; white-space:normal; word-break:break-word; display:flex; align-items:center; justify-content:center;`;
+          };
+          const chips = durOpts.fixed.map(n => {
             const on = !draftEqualOn && draftMinsShow === n;
-            return `<button type="button" onclick="setBulkConcurrentDraftMinutes_('${esc(uid)}',${n})" style="padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? '#00838F' : '#B2EBF2'}; background:${on ? '#E0F7FA' : '#fff'}; color:#006064;">${n}分</button>`;
-          }).join('');
-          const remainOn = !draftEqualOn && draftMinsShow === draftRemain && draftRemain > 0;
-          return `${btns}
-            <button type="button" onclick="setBulkConcurrentDraftMinutes_('${esc(uid)}','remain')" style="padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${remainOn ? '#2E7D32' : '#A5D6A7'}; background:${remainOn ? '#E8F5E9' : '#fff'}; color:#2E7D32;">残り${draftRemain}分</button>
-            <button type="button" onclick="setBulkConcurrentDraftMinutes_('${esc(uid)}','equal')" style="padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${draftEqualOn ? '#6A1B9A' : '#CE93D8'}; background:${draftEqualOn ? '#F3E5F5' : '#fff'}; color:#6A1B9A;">均等割り${draftEqualOn && draftMinsShow != null ? `（${draftMinsShow}分）` : ''}</button>
-            <span style="display:inline-flex; align-items:center; gap:4px;">
+            return `<button type="button" onclick="setBulkConcurrentDraftMinutes_('${esc(uid)}',${n})" style="${minChip({ border: on ? '#00838F' : '#B2EBF2', bg: on ? '#E0F7FA' : '#fff', color: '#006064' })}">${n}分</button>`;
+          }).join('')
+            + `<button type="button" onclick="setBulkConcurrentDraftMinutes_('${esc(uid)}','equal')" style="${minChip({ border: draftEqualOn ? '#6A1B9A' : '#CE93D8', bg: draftEqualOn ? '#F3E5F5' : '#fff', color: '#6A1B9A' })}">均等${draftEqualOn && draftMinsShow != null ? ` ${draftMinsShow}` : ''}</button>`;
+          return `<div style="display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:6px; margin-bottom:4px;">${chips}</div>
+            <div style="display:flex; align-items:center; gap:6px; margin-top:8px;">
               <input type="number" id="bulk_cw_draft_min_${esc(uid)}" min="1" max="${slotMins || 999}" step="1" placeholder="例:45"
-                value="${draftMinsShow != null && !draftEqualOn && durOpts.fixed.indexOf(draftMinsShow) < 0 && draftMinsShow !== draftRemain ? draftMinsShow : ''}"
-                style="width:72px; padding:6px 8px; border:1px solid #80CBC4; border-radius:8px; font-size:12px; box-sizing:border-box;"
+                value="${draftMinsShow != null && !draftEqualOn && durOpts.fixed.indexOf(draftMinsShow) < 0 ? draftMinsShow : ''}"
+                style="flex:1; min-width:0; padding:8px 10px; border:1px solid #80CBC4; border-radius:8px; font-size:12px; box-sizing:border-box;"
                 onkeydown="if(event.key==='Enter'){event.preventDefault();setBulkConcurrentDraftMinutesCustom_('${esc(uid)}');}">
-              <button type="button" onclick="setBulkConcurrentDraftMinutesCustom_('${esc(uid)}')" style="padding:6px 10px; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid #00838F; background:#E0F7FA; color:#006064;">指定</button>
-            </span>`;
+              <button type="button" onclick="setBulkConcurrentDraftMinutesCustom_('${esc(uid)}')" style="flex-shrink:0; padding:8px 12px; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid #00838F; background:#E0F7FA; color:#006064;">指定</button>
+            </div>`;
         })();
 
         // ⑥確定後にメイン作業分を表示（先にメインを選ばせない）
@@ -16538,15 +16552,15 @@ function createSignboardMarker(name, pos, icon, id) {
               const prev = catScore.get(cat) || 0;
               if ((p.score || 0) > prev) catScore.set(cat, p.score || 0);
             });
-            const catNames = Array.from(catScore.entries())
+            suggestCatNames = Array.from(catScore.entries())
               .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ja'))
               .map(x => x[0])
               .slice(0, 8);
-            if (catNames.length) {
+            if (suggestCatNames.length) {
               predCatSuggestHtml = `
               <div style="margin:0 0 10px;">
                 <div style="font-size:11px; color:#546E7A; margin:0 0 6px;">もしかして</div>
-                <div style="${chipGrid()}">${catNames.map(name => {
+                <div style="${chipGrid()}">${suggestCatNames.map(name => {
                   const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                   const style = chipBtn({ border: '#90CAF9', bg: '#fff', color: '#1565C0' });
                   return `<button type="button" onclick="pickBulkConcurrentDraftCategory_('${esc(uid)}','${safe}')" style="${style}">${esc(name)}</button>`;
@@ -16560,6 +16574,9 @@ function createSignboardMarker(name, pos, icon, id) {
               const cat = String(p.category || '').trim();
               return !cat || cat === curFilter;
             }).slice(0, 8);
+            suggestWorkNames = workPreds
+              .map(c => String(c.workName || '').trim())
+              .filter(Boolean);
             if (workPreds.length) {
               predWorkSuggestHtml = `
               <div style="margin:0 0 10px;">
@@ -16574,6 +16591,9 @@ function createSignboardMarker(name, pos, icon, id) {
               </div>`;
             }
           }
+          // もしかしてに出した項目は、下の絞り込み一覧から除外
+          if (suggestCatNames.length) catHtml = buildCatChipHtml_(suggestCatNames);
+          if (suggestWorkNames.length) workHtml = buildWorkChipHtml_(suggestWorkNames);
         }
 
         const rows = list.map((entry, idx) => {
@@ -16600,16 +16620,14 @@ function createSignboardMarker(name, pos, icon, id) {
             : '';
           const rowEqualOn = entry.minutesMode === 'equal';
           const rowMins = entry.minutes != null ? Number(entry.minutes) : null;
-          const rowRemain = window.getBulkConcurrentRemainingMins_(d, { excludeId: entry.id });
           const rowMinsHtml = durOpts.fixed.map(n => {
             const on = !rowEqualOn && rowMins === n;
             return `<button type="button" onclick="setBulkConcurrentMinutes_('${esc(uid)}','${safeId}',${n})" style="padding:4px 8px; border-radius:12px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${on ? '#00838F' : '#B2EBF2'}; background:${on ? '#E0F7FA' : '#fff'}; color:#006064;">${n}分</button>`;
           }).join('')
-            + `<button type="button" onclick="setBulkConcurrentMinutes_('${esc(uid)}','${safeId}','remain')" style="padding:4px 8px; border-radius:12px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${(!rowEqualOn && rowMins === rowRemain && rowRemain > 0) ? '#2E7D32' : '#A5D6A7'}; background:${(!rowEqualOn && rowMins === rowRemain && rowRemain > 0) ? '#E8F5E9' : '#fff'}; color:#2E7D32;">残り${rowRemain}</button>`
             + `<button type="button" onclick="setBulkConcurrentMinutes_('${esc(uid)}','${safeId}','equal')" style="padding:4px 8px; border-radius:12px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${rowEqualOn ? '#6A1B9A' : '#CE93D8'}; background:${rowEqualOn ? '#F3E5F5' : '#fff'}; color:#6A1B9A;">均等</button>`
             + `<span style="display:inline-flex; align-items:center; gap:3px;">
                 <input type="number" id="bulk_cw_min_${esc(uid)}_${esc(safeId)}" min="1" max="${slotMins || 999}" step="1" placeholder="分"
-                  value="${rowMins != null && !rowEqualOn && durOpts.fixed.indexOf(rowMins) < 0 && rowMins !== rowRemain ? rowMins : ''}"
+                  value="${rowMins != null && !rowEqualOn && durOpts.fixed.indexOf(rowMins) < 0 ? rowMins : ''}"
                   style="width:56px; padding:4px 6px; border:1px solid #80CBC4; border-radius:8px; font-size:11px; box-sizing:border-box;"
                   onkeydown="if(event.key==='Enter'){event.preventDefault();setBulkConcurrentMinutesCustom_('${esc(uid)}','${safeId}');}">
                 <button type="button" onclick="setBulkConcurrentMinutesCustom_('${esc(uid)}','${safeId}')" style="padding:4px 7px; border-radius:8px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid #00838F; background:#E0F7FA; color:#006064;">指定</button>
@@ -16690,10 +16708,10 @@ function createSignboardMarker(name, pos, icon, id) {
           '#E0F7FA',
           '#006064',
           '⑥ 時間数（分）',
-          `<div style="font-size:10px; color:#666; margin-bottom:8px; line-height:1.35;">先に同時作業の分数を決めます。追加後、メイン作業の残り時間が自動で出ます。</div>
-          <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${minsHtml || '<span style="font-size:11px; color:#888;">この時間帯では選べる分数がありません</span>'}</div>
+          `<div style="font-size:10px; color:#666; margin-bottom:8px; line-height:1.35;">作業時間内で、この作業を行った時間</div>
+          ${minsHtml || '<div style="font-size:11px; color:#888;">この時間帯では選べる分数がありません</div>'}
           ${(draftPreviewMins > 0 && slotMins > 0)
-            ? `<div style="font-size:11px; color:#2E7D32; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px; padding:7px 9px; line-height:1.4;">追加するとメイン作業（${esc(mainWorkLabel)}）は <b>${mainAfterDraft}分</b> となります</div>`
+            ? `<div style="font-size:11px; color:#2E7D32; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px; padding:7px 9px; line-height:1.4; margin-top:8px;">追加するとメイン作業（${esc(mainWorkLabel)}）は <b>${mainAfterDraft}分</b> となります</div>`
             : ''}`
         );
         const panelHtml = panelOpen ? `
