@@ -16110,7 +16110,9 @@ function createSignboardMarker(name, pos, icon, id) {
             return cwCanon === canon;
           });
         };
-        let predHtml = '';
+        let predCatSuggestHtml = '';
+        let predWorkSuggestHtml = '';
+        let predList = [];
         if (panelOpen) {
           const memoRaw = String(d.rawLine || '').trim();
           const predMap = new Map();
@@ -16124,9 +16126,13 @@ function createSignboardMarker(name, pos, icon, id) {
             const crop = (typeof window.matchBulkWorkMemoCrop_ === 'function')
               ? String(window.matchBulkWorkMemoCrop_(hint || memoRaw) || '').trim()
               : '';
+            const cat = (typeof window.getBulkWorkMemoWorkCategory_ === 'function')
+              ? String(window.getBulkWorkMemoWorkCategory_(key) || '').trim()
+              : '';
             predMap.set(key, {
               workName: key,
               crop: crop,
+              category: cat,
               score: score,
               matchedAlias: String(item.matchedAlias || '').trim(),
               hint: String(hint || '').trim()
@@ -16151,25 +16157,53 @@ function createSignboardMarker(name, pos, icon, id) {
             });
             if (cw.guessedName) pushPred_({ name: cw.guessedName, score: 68 }, cw.rawHint || '');
           });
-          const predList = Array.from(predMap.values())
+          predList = Array.from(predMap.values())
             .sort((a, b) => (b.score || 0) - (a.score || 0) || String(a.workName).localeCompare(String(b.workName), 'ja'))
-            .slice(0, 8);
-          if (predList.length) {
-            predHtml = `
-          <div style="margin-bottom:10px; padding:8px 10px; background:#F1F8E9; border:1px solid #C5E1A5; border-radius:8px;">
-            <div style="font-size:11px; font-weight:bold; color:#33691E; margin-bottom:6px;">もしかして（タップでセット）</div>
-            <div style="${chipGrid()}">${predList.map(c => {
-              const label = (c.crop ? (c.crop + ' ') : '') + c.workName;
-              const jsCrop = String(c.crop || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-              const jsWork = String(c.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-              const style = chipBtn({
-                border: '#81C784',
-                bg: '#fff',
-                color: '#2E7D32'
-              });
-              return `<button type="button" onclick="applyBulkConcurrentPrediction_('${esc(uid)}','${jsCrop}','${jsWork}')" style="${style}">${esc(label)}</button>`;
-            }).join('')}</div>
-          </div>`;
+            .slice(0, 12);
+          // もしかして：カテゴリ（②枠内）
+          if (!curFilter && predList.length) {
+            const catScore = new Map();
+            predList.forEach(p => {
+              const cat = String(p.category || '').trim();
+              if (!cat) return;
+              const prev = catScore.get(cat) || 0;
+              if ((p.score || 0) > prev) catScore.set(cat, p.score || 0);
+            });
+            const catNames = Array.from(catScore.entries())
+              .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ja'))
+              .map(x => x[0])
+              .slice(0, 8);
+            if (catNames.length) {
+              predCatSuggestHtml = `
+              <div style="margin:0 0 10px;">
+                <div style="font-size:11px; color:#546E7A; margin:0 0 6px;">もしかして</div>
+                <div style="${chipGrid()}">${catNames.map(name => {
+                  const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                  const style = chipBtn({ border: '#90CAF9', bg: '#fff', color: '#1565C0' });
+                  return `<button type="button" onclick="pickBulkConcurrentDraftCategory_('${esc(uid)}','${safe}')" style="${style}">${esc(name)}</button>`;
+                }).join('')}</div>
+              </div>`;
+            }
+          }
+          // もしかして：作業名（③枠内・選択中カテゴリに絞る）
+          if (curFilter && predList.length) {
+            const workPreds = predList.filter(p => {
+              const cat = String(p.category || '').trim();
+              return !cat || cat === curFilter;
+            }).slice(0, 8);
+            if (workPreds.length) {
+              predWorkSuggestHtml = `
+              <div style="margin:0 0 10px;">
+                <div style="font-size:11px; color:#546E7A; margin:0 0 6px;">もしかして</div>
+                <div style="${chipGrid()}">${workPreds.map(c => {
+                  const label = (c.crop ? (c.crop + ' ') : '') + c.workName;
+                  const jsCrop = String(c.crop || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                  const jsWork = String(c.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                  const style = chipBtn({ border: '#FFCC80', bg: '#fff', color: '#E65100' });
+                  return `<button type="button" onclick="applyBulkConcurrentPrediction_('${esc(uid)}','${jsCrop}','${jsWork}')" style="${style}">${esc(label)}</button>`;
+                }).join('')}</div>
+              </div>`;
+            }
           }
         }
 
@@ -16214,7 +16248,7 @@ function createSignboardMarker(name, pos, icon, id) {
           return `<div style="padding:8px 10px; background:#fff; border:1px solid ${hasName ? '#D1C4E9' : '#CE93D8'}; border-radius:8px; margin-bottom:6px;">
             <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px;">
               <div style="font-size:12px; color:#4527A0; line-height:1.4; min-width:0; flex:1;">
-                <span style="font-size:10px; font-weight:bold; color:#6A1B9A; margin-right:4px;">この時間に行った作業${idx + 1}</span>
+                <span style="font-size:10px; font-weight:bold; color:#6A1B9A; margin-right:4px;">同時に行った作業${idx + 1}</span>
                 ${esc(window.formatConcurrentWorkSummary_(entry))}${autoBadge}
               </div>
               <button type="button" onclick="removeBulkConcurrentWork_('${esc(uid)}','${safeId}')" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; width:26px; height:26px; flex-shrink:0; cursor:pointer;">×</button>
@@ -16244,7 +16278,8 @@ function createSignboardMarker(name, pos, icon, id) {
           curFilter ? '#E8EAF6' : '#F5F7FF',
           '#283593',
           '② 作業カテゴリ',
-          `<div style="font-size:10px; color:#666; margin-bottom:8px;">選ぶと作業名を絞り込み（再タップで解除）</div>
+          `${predCatSuggestHtml}
+          <div style="font-size:10px; color:#666; margin-bottom:8px;">選ぶと作業名を絞り込み（再タップで解除）</div>
           <div style="${chipGrid()}">${catHtml || '<span style="font-size:11px; color:#888; grid-column:1 / -1;">カテゴリがありません</span>'}</div>`
         );
         const workStep = curFilter
@@ -16253,7 +16288,8 @@ function createSignboardMarker(name, pos, icon, id) {
               '#FFF8F0',
               '#E65100',
               '③ 作業名',
-              `${curWork ? `<div style="font-size:12px; color:#E65100; font-weight:bold; margin-bottom:8px;">選択中: ${esc(curWork)}</div>` : ''}
+              `${predWorkSuggestHtml}
+              ${curWork ? `<div style="font-size:12px; color:#E65100; font-weight:bold; margin-bottom:8px;">選択中: ${esc(curWork)}</div>` : ''}
               ${fallbackNote ? `<div style="font-size:11px; color:#E65100; background:#FFF8E1; border:1px solid #FFCC80; border-radius:8px; padding:6px 8px; margin-bottom:8px;">${esc(fallbackNote)}</div>` : ''}
               <div style="${chipGrid('max-height:180px; overflow-y:auto;')}">${workHtml || '<span style="font-size:11px; color:#888; grid-column:1 / -1;">該当する作業がありません</span>'}</div>`
             )
@@ -16294,7 +16330,6 @@ function createSignboardMarker(name, pos, icon, id) {
         const panelHtml = panelOpen ? `
           <div style="margin-top:8px; padding:10px; background:#fff; border:1px solid #CE93D8; border-radius:10px;">
             <div style="font-size:11px; font-weight:bold; color:#6A1B9A; margin-bottom:8px;">新規追加（この時間帯・${slotMins || '—'}分）</div>
-            ${predHtml}
             ${cropStep}
             ${catStep}
             ${workStep}
@@ -16306,8 +16341,8 @@ function createSignboardMarker(name, pos, icon, id) {
 
         return `<div style="margin:8px 0; background:#F3E5F5; border:1px solid #CE93D8; border-radius:10px; padding:10px;">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
-            <div style="font-size:10px; font-weight:bold; color:#6A1B9A;">🔀 この時間に行った作業</div>
-            <button type="button" onclick="toggleBulkConcurrentPanel_('${esc(uid)}')" style="background:${panelOpen ? '#CE93D8' : '#EDE7F6'}; color:#5E35B1; border:1px solid #D1C4E9; border-radius:6px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">${panelOpen ? '▲ 閉じる' : 'この時間に行った作業を追加する'}</button>
+            <div style="font-size:10px; font-weight:bold; color:#6A1B9A;">🔀 同時に行った作業</div>
+            <button type="button" onclick="toggleBulkConcurrentPanel_('${esc(uid)}')" style="background:${panelOpen ? '#CE93D8' : '#EDE7F6'}; color:#5E35B1; border:1px solid #D1C4E9; border-radius:6px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">${panelOpen ? '▲ 閉じる' : '同時に行った作業を追加する'}</button>
           </div>
           ${allocSummary}
           ${mainMinsHtml}
