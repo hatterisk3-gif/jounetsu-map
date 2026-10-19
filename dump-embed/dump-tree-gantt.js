@@ -138,6 +138,9 @@ let treeLibrary = null;
 let treeSelectedNodeId = null;
 let treeSelectedEdgeId = null;
 let treeDrag = null;
+let treeDragDocBound = false; // ドラッグ中の document フォールバック監視
+let treeDragEnding = false; // pointerup 処理中（lostpointercapture との二重処理防止）
+let treeEdgeFinalizeTimer = 0;
 let treePan = null; // { pointerId, startX, startY, scrollLeft, scrollTop, moved, button }
 let treePinch = null; // { startDist, startZoom }
 const treeTouchPoints = new Map(); // pointerId -> { x, y }
@@ -1229,7 +1232,9 @@ function treePortOut(pt, side, len) {
   return { x: pt.x + d, y: pt.y };
 }
 
-function treeSnapColRow(clientX, clientY) {
+function treeSnapColRow(clientX, clientY, opts) {
+  opts = opts || {};
+  const allowGrow = opts.grow !== false;
   const pt = treeClientToStage(clientX, clientY);
   if (!treeState) return { col: treeOriginCol(), row: treeOriginRow() };
   let layoutCol = Math.round((pt.x - TREE_PAD - TREE_COL_W / 2) / TREE_COL_W);
@@ -1237,21 +1242,27 @@ function treeSnapColRow(clientX, clientY) {
   const cols = treeState.cols || TREE_DEFAULT_COLS;
   const rows = treeState.rows || TREE_DEFAULT_ROWS;
   const margin = TREE_EDGE_BUFFER;
-  // 端付近だけで拡張。中央のドラッグでは毎フレーム ensure しない
+  // 端付近だけで拡張。ドラッグ中は毎フレーム拡張しない（ドロップ時にまとめて行う）
   const nearEdge = layoutCol < margin || layoutRow < margin
     || layoutCol >= cols - margin || layoutRow >= rows - margin
     || layoutCol < 0 || layoutRow < 0 || layoutCol >= cols || layoutRow >= rows;
-  if (nearEdge) {
-    const ensured = treeEnsureCanvasBounds({
-      includeCol: layoutCol,
-      includeRow: layoutRow,
-      apply: true,
-      rerender: false,
-      skipViewport: true,
-      skipRulers: true
-    });
-    layoutCol += ensured.dCol;
-    layoutRow += ensured.dRow;
+  if (allowGrow && nearEdge) {
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const busy = treeUiLite || treeIsInteractBusy();
+    const throttled = busy && (now - treeGrowLastAt) < TREE_GROW_THROTTLE_BUSY_MS;
+    if (!throttled) {
+      treeGrowLastAt = now;
+      const ensured = treeEnsureCanvasBounds({
+        includeCol: layoutCol,
+        includeRow: layoutRow,
+        apply: true,
+        rerender: false,
+        skipViewport: true,
+        skipRulers: true
+      });
+      layoutCol += ensured.dCol;
+      layoutRow += ensured.dRow;
+    }
   }
   layoutCol = Math.max(0, Math.min((treeState.cols || cols) - 1, layoutCol));
   layoutRow = Math.max(0, Math.min((treeState.rows || rows) - 1, layoutRow));
@@ -2697,7 +2708,26 @@ function treeScheduleEdgeRefresh(live) {
 function treeFinalizeEdgesIfDirty() {
   if (!treeEdgesDirty && !treeLiveRouting) return;
   treeLiveRouting = false;
-  treeRefreshEdgesOnly({ live: false });
+  // まず簡易配線で画面を戻し、重い Dijkstra はアイドル時に回す（ドロップ固まり対策）
+  treeRefreshEdgesOnly({ live: true });
+  treeEdgesDirty = true;
+  if (treeEdgeFinalizeTimer) {
+    clearTimeout(treeEdgeFinalizeTimer);
+    treeEdgeFinalizeTimer = 0;
+  }
+  const runFull = () => {
+    treeEdgeFinalizeTimer = 0;
+    if (treeIsInteractBusy()) {
+      treeEdgeFinalizeTimer = setTimeout(runFull, 80);
+      return;
+    }
+    treeRefreshEdgesOnly({ live: false });
+  };
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(() => { runFull(); }, { timeout: 500 });
+  } else {
+    treeEdgeFinalizeTimer = setTimeout(runFull, 0);
+  }
 }
 
 /** 選択状態だけ DOM に反映（全再描画しない） */
@@ -3352,6 +3382,46 @@ function treeStartPan(e, button) {
   return true;
 }
 
+function treeDetachDragDocListeners() {
+  if (!treeDragDocBound) return;
+  treeDragDocBound = false;
+  document.removeEventListener('pointermove', treeOnDocDragPointerMove, true);
+  document.removeEventListener('pointerup', treeOnDocDragPointerUp, true);
+  document.removeEventListener('pointercancel', treeOnDocDragPointerUp, true);
+  document.removeEventListener('lostpointercapture', treeOnLostPointerCapture, true);
+}
+
+function treeAttachDragDocListeners() {
+  if (treeDragDocBound) return;
+  treeDragDocBound = true;
+  document.addEventListener('pointermove', treeOnDocDragPointerMove, true);
+  document.addEventListener('pointerup', treeOnDocDragPointerUp, true);
+  document.addEventListener('pointercancel', treeOnDocDragPointerUp, true);
+  document.addEventListener('lostpointercapture', treeOnLostPointerCapture, true);
+}
+
+function treeClearDragVisual(el) {
+  if (!el) return;
+  el.classList.remove('is-dragging');
+}
+
+function treeOnDocDragPointerMove(e) {
+  if (!treeDrag || treeDrag.pointerId !== e.pointerId) return;
+  treeOnNodePointerMove(e);
+}
+
+function treeOnDocDragPointerUp(e) {
+  if (!treeDrag || treeDrag.pointerId !== e.pointerId) return;
+  treeOnNodePointerUp(e);
+}
+
+function treeOnLostPointerCapture(e) {
+  if (treeDragEnding) return;
+  if (!treeDrag || treeDrag.pointerId !== e.pointerId) return;
+  // キャプチャ喪失時はキャンセル扱い（半透明ゴーストが残って固まるのを防ぐ）
+  treeCancelActiveGestures();
+}
+
 /** ピンチ開始時など、進行中の操作を打ち切る */
 function treeCancelActiveGestures() {
   const wrap = document.getElementById('tree-canvas-wrap');
@@ -3367,11 +3437,13 @@ function treeCancelActiveGestures() {
       n.row = treeDrag.originRow;
     }
     if (el) {
-      el.classList.remove('is-dragging');
+      treeClearDragVisual(el);
       if (n) treePlaceNodeEl(el, n);
     }
     treeDrag = null;
     treeLiveRouting = false;
+    treeDragEnding = false;
+    treeDetachDragDocListeners();
     treeFinalizeEdgesIfDirty();
   }
   if (treePortLink) {
@@ -3529,10 +3601,18 @@ function treeOnKeyDown(e) {
   if (!mode || !mode.classList.contains('active')) return;
   const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
   if (tag === 'input' || tag === 'textarea' || (e.target && e.target.isContentEditable)) return;
-  if (e.key === 'Escape' && isTreeMemoDrawerOpen()) {
-    e.preventDefault();
-    closeTreeMemoDrawer();
-    return;
+  if (e.key === 'Escape') {
+    if (treeDrag || treePortLink || treeEdgeRebind || treePan || treePinch) {
+      e.preventDefault();
+      treeCancelActiveGestures();
+      setTreeHint('操作をキャンセルしました');
+      return;
+    }
+    if (isTreeMemoDrawerOpen()) {
+      e.preventDefault();
+      closeTreeMemoDrawer();
+      return;
+    }
   }
   if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'z' || e.key === 'Z')) {
     e.preventDefault();
@@ -3598,6 +3678,9 @@ function treeOnNodePointerDown(e) {
   }
   treeLastTap = { id, at: now };
 
+  // 前回ドラッグが残っていたら先に解除
+  if (treeDrag) treeCancelActiveGestures();
+
   treeEnterUiLite();
   treeDrag = {
     id,
@@ -3613,6 +3696,7 @@ function treeOnNodePointerDown(e) {
   treeLiveRouting = true;
   try { nodeEl.setPointerCapture(e.pointerId); } catch (_) {}
   nodeEl.classList.add('is-dragging');
+  treeAttachDragDocListeners();
   treeSelectedNodeId = id;
   treeSelectedEdgeId = null;
   treeUpdateSelectionDom();
@@ -3663,7 +3747,8 @@ function treeOnNodePointerMove(e) {
     el.style.left = (pt.x - TREE_NODE_W / 2 - treeLiteOriginTx) + 'px';
     el.style.top = (pt.y - TREE_NODE_H / 2 - treeLiteOriginTy) + 'px';
   }
-  const pos = treeSnapColRow(e.clientX, e.clientY);
+  // ドラッグ中はキャンバス拡張しない（固まり防止）。ドロップ時に拡張する
+  const pos = treeSnapColRow(e.clientX, e.clientY, { grow: false });
   treeDrag.hoverCol = pos.col;
   treeDrag.hoverRow = pos.row;
 }
@@ -3733,13 +3818,14 @@ function treeOnNodePointerUp(e) {
   }
 
   if (!treeDrag || treeDrag.pointerId !== e.pointerId) return;
+  treeDragEnding = true;
   const nodeEl = treeDrag.el || (e.target.closest && e.target.closest('.tree-node'));
   if (nodeEl) {
     try { nodeEl.releasePointerCapture(e.pointerId); } catch (_) {}
-    nodeEl.classList.remove('is-dragging');
+    treeClearDragVisual(nodeEl);
   }
   const moved = !!treeDrag.moved;
-  const beforeState = treeDrag.beforeState ? treeCloneState(treeDrag.beforeState) : null;
+  const beforeState = treeDrag.beforeState || null;
   const originCol = treeDrag.originCol;
   const originRow = treeDrag.originRow;
   const hoverCol = treeDrag.hoverCol;
@@ -3747,12 +3833,27 @@ function treeOnNodePointerUp(e) {
   const dragId = treeDrag.id;
   treeDrag = null;
   treeLiveRouting = false;
+  treeDetachDragDocListeners();
+  treeDragEnding = false;
 
   const n = treeFindNode(dragId);
   if (moved && n) {
-    const pos = (hoverCol != null && hoverRow != null)
+    // ドロップ時だけキャンバスを必要なら拡張
+    let pos = (hoverCol != null && hoverRow != null)
       ? { col: hoverCol, row: hoverRow }
-      : treeSnapColRow(e.clientX, e.clientY);
+      : null;
+    if (!pos) {
+      pos = treeSnapColRow(e.clientX, e.clientY, { grow: true });
+    } else {
+      treeEnsureCanvasBounds({
+        includeCol: treeWorldToLayoutCol(pos.col),
+        includeRow: treeWorldToLayoutRow(pos.row),
+        apply: true,
+        rerender: false,
+        skipViewport: true,
+        skipRulers: true
+      });
+    }
     if (pos.col === originCol && pos.row === originRow) {
       n.col = originCol;
       n.row = originRow;

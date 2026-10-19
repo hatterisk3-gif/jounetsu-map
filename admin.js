@@ -1251,13 +1251,23 @@ function openMasterFromQuery_() {
 
 function loadInitData(options) {
     options = options || {};
-    const background = !!options.background;
+    let background = !!options.background;
+    const cached = localStorage.getItem('pMapAdminInitData');
+    const hasPolygons = Object.keys(loadedPolygons || {}).length > 0;
+    // キャッシュ／描画済みがあるのにフォアグラウンド取得すると、地図準備との競合で失敗トーストが出やすい
+    if (!background && (cached || hasPolygons)) background = true;
+
     initDataLoadStarted = true;
+
+    // 二重 getInitData を避ける（ログイン完了と mapInit のレース対策）
+    if (window._adminInitDataInFlight) {
+        return window._adminInitDataInFlight;
+    }
+
     if (window._adminInitLoading) {
         window._adminInitLoading.done();
         window._adminInitLoading = null;
     }
-    const cached = localStorage.getItem('pMapAdminInitData');
     if (!background) {
         window._adminInitLoading = (window.AppLoading && AppLoading.start)
             ? AppLoading.start({ label: '管理画面を準備中...', detail: '初期データを確認しています', current: 0, total: 3, delay: 0 })
@@ -1267,8 +1277,11 @@ function loadInitData(options) {
             try { renderInitData(JSON.parse(cached), { interim: true }); } catch (e) {}
         }
         if (window._adminInitLoading) window._adminInitLoading.update({ label: '最新データを取得中...', detail: 'サーバーに接続しています', current: 1, total: 3 });
+    } else if (cached && !hasPolygons) {
+        try { renderInitData(JSON.parse(cached), { interim: true }); } catch (e) {}
     }
-    callGAS('getInitData', {}, background ? 0 : 0, { timeoutMs: 240000 }).then(data => {
+
+    const p = callGAS('getInitData', {}, 2, { timeoutMs: 240000 }).then(data => {
         window._adminInitDataBgFailCount = 0;
         if (window._adminInitLoading) window._adminInitLoading.update({ label: '表示データを準備中...', detail: 'マスタと圃場を反映しています', current: 2, total: 3 });
         const incomingCount = (data && Array.isArray(data.polygons)) ? data.polygons.length : 0;
@@ -1324,9 +1337,17 @@ function loadInitData(options) {
         const errMsg = String((e && e.message) || '');
         const isTransient = /Failed to fetch|通信に失敗|タイムアウト|一時的な通信|cancelled|Abort/i.test(errMsg)
           || (e && e.name === 'AbortError');
+        const canKeepShowing = !!(cached || Object.keys(loadedPolygons || {}).length > 0);
 
-        // キャッシュ表示中の裏更新失敗は静かに再試行（ワーカーと同様）
-        if (background && cached && isTransient) {
+        // 表示できるデータがある／裏更新の一時失敗は静かに再試行（ワーカーと同様）
+        if ((background || canKeepShowing) && isTransient) {
+            if (window._adminInitLoading) {
+                window._adminInitLoading.done();
+                window._adminInitLoading = null;
+            }
+            if (cached && Object.keys(loadedPolygons || {}).length === 0) {
+                try { renderInitData(JSON.parse(cached), { interim: false }); } catch (err) {}
+            }
             window._adminInitDataBgFailCount = (Number(window._adminInitDataBgFailCount || 0) || 0) + 1;
             const failCount = window._adminInitDataBgFailCount;
             if (!window._adminInitDataBgRetryTimer) {
@@ -1336,7 +1357,6 @@ function loadInitData(options) {
                     try { loadInitData({ background: true }); } catch (e2) {}
                 }, delayMs);
             }
-            // 何度も失敗したときだけトースト
             if (failCount >= 3) {
                 showAdminSyncToast('⚠️ 最新データの取得に失敗（表示中のデータを維持・再試行中）', 'error');
             }
@@ -1344,7 +1364,18 @@ function loadInitData(options) {
         }
 
         if (cached && Object.keys(loadedPolygons || {}).length === 0) {
-            try { renderInitData(JSON.parse(cached), { interim: false }); } catch (err) {
+            try {
+                renderInitData(JSON.parse(cached), { interim: false });
+                if (window._adminInitLoading) { window._adminInitLoading.done(); window._adminInitLoading = null; }
+                showAdminSyncToast('⚠️ 最新の取得に失敗（キャッシュで表示・再試行します）', 'error');
+                if (!window._adminInitDataBgRetryTimer) {
+                    window._adminInitDataBgRetryTimer = setTimeout(() => {
+                        window._adminInitDataBgRetryTimer = null;
+                        try { loadInitData({ background: true }); } catch (e2) {}
+                    }, 10000);
+                }
+                return;
+            } catch (err) {
                 if (window._adminInitLoading) { window._adminInitLoading.fail(failLabel); window._adminInitLoading = null; }
             }
         } else if (window._adminInitLoading) {
@@ -1353,8 +1384,15 @@ function loadInitData(options) {
         } else if (background) {
             showAdminSyncToast('⚠️ 最新データの取得に失敗（表示中のデータを維持）', 'error');
         }
-        if (detail && !background) showAdminSyncToast('⚠️ ' + failLabel, 'error');
+        // 何も表示できないときだけ強い失敗トースト
+        if (detail && !background && !canKeepShowing) {
+            showAdminSyncToast('⚠️ ' + failLabel, 'error');
+        }
+    }).finally(() => {
+        if (window._adminInitDataInFlight === p) window._adminInitDataInFlight = null;
     });
+    window._adminInitDataInFlight = p;
+    return p;
 }
 
 function flushPendingInitData() {
@@ -9080,7 +9118,8 @@ document.addEventListener('DOMContentLoaded', () => {
         mapInitPromise.then(() => {
             try { flushPendingInitData(); } catch (e) {}
             if (!initDataLoadStarted && localStorage.getItem('spreadsheetId')) {
-                loadInitData();
+                // ログイン完了前の保険起動。キャッシュがあれば裏取得にして失敗トーストを出さない
+                loadInitData({ background: !!localStorage.getItem('pMapAdminInitData') });
             }
         });
     } else {
