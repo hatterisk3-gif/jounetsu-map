@@ -1149,6 +1149,42 @@ function ensureAdminInitDataLoad_(reason) {
     }
 }
 
+/** Admin専用キャッシュ → Worker/Scheduleキャッシュの順で起動用データを探す */
+function readAdminBootInitData_() {
+    const tryParse_ = (raw, source) => {
+        if (!raw) return null;
+        try {
+            const data = JSON.parse(raw);
+            if (!data || typeof data !== 'object') return null;
+            const polys = Array.isArray(data.polygons) ? data.polygons : [];
+            if (!data.pdl && polys.length === 0) return null;
+            if (!data.pdl) data.pdl = {};
+            data._bootSource = source;
+            data._bootPolyCount = polys.length;
+            return data;
+        } catch (e) {
+            return null;
+        }
+    };
+    const admin = tryParse_(localStorage.getItem('pMapAdminInitData'), 'admin');
+    if (admin && admin._bootPolyCount > 0) return admin;
+    const worker = tryParse_(localStorage.getItem('passionMapInitData'), 'worker');
+    if (worker && worker._bootPolyCount > 0) {
+        // Adminキャッシュが空/無いとき、Workerの圃場で地図を先に出す
+        return worker;
+    }
+    const schedule = tryParse_(localStorage.getItem('passionMapScheduleData'), 'schedule');
+    if (schedule && schedule._bootPolyCount > 0) {
+        if (!schedule.pdl) schedule.pdl = {};
+        return schedule;
+    }
+    return admin || worker || schedule || null;
+}
+
+function countInitPolygons_(data) {
+    return (data && Array.isArray(data.polygons)) ? data.polygons.length : 0;
+}
+
 async function executeLogin(isAuto = false, options = {}) {
     const fromCache = !!(options && options.fromCache);
     const id = document.getElementById('loginId').value;
@@ -1317,6 +1353,7 @@ function loadInitData(options) {
     options = options || {};
     // 既定は裏取得。地図を塞ぐ失敗画面を避けるため、特別な理由がなければ background
     let background = options.foreground !== true;
+    const bootCache = readAdminBootInitData_();
     const cached = localStorage.getItem('pMapAdminInitData');
     const hasPolygons = Object.keys(loadedPolygons || {}).length > 0;
 
@@ -1344,14 +1381,14 @@ function loadInitData(options) {
                 lockMap: false
             })
             : null;
-        if (cached) {
+        if (bootCache) {
             if (window._adminInitLoading) window._adminInitLoading.update({ label: '保存データを読み込み中...', detail: '地図を先に表示します', current: 1, total: 3 });
-            try { renderInitData(JSON.parse(cached), { interim: true }); } catch (e) {}
+            try { renderInitData(bootCache, { interim: true }); } catch (e) {}
         }
         if (window._adminInitLoading) window._adminInitLoading.update({ label: '最新データを取得中...', detail: 'サーバーに接続しています', current: 1, total: 3 });
-    } else if (cached && !hasPolygons) {
-        try { renderInitData(JSON.parse(cached), { interim: true }); } catch (e) {}
-    } else if (!cached && !hasPolygons && typeof showAdminSyncToast === 'function') {
+    } else if (bootCache && !hasPolygons) {
+        try { renderInitData(bootCache, { interim: true }); } catch (e) {}
+    } else if (!bootCache && !hasPolygons && typeof showAdminSyncToast === 'function') {
         // 初回などでキャッシュが無いときも、画面を塞がず控えめに案内
         showAdminSyncToast('☁️ 圃場データを取得しています…', 'info');
     }
@@ -1449,6 +1486,27 @@ function loadInitData(options) {
             closeAdminInitLoadingSoft_();
             return;
         }
+        // 空の圃場配列で画面を消さない（ここが Admin だけ圃場が消える主因だった）
+        if (incomingCount === 0) {
+            const fallback = bootCache || readAdminBootInitData_();
+            if (fallback && countInitPolygons_(fallback) > 0) {
+                if (Object.keys(loadedPolygons || {}).length === 0) {
+                    try { renderInitData(fallback, { interim: false }); } catch (e) {}
+                } else {
+                    try { renderInitData(Object.assign({}, data, { polygons: fallback.polygons }), { interim: false, mastersOnly: true }); } catch (e) {}
+                }
+                if (background) showAdminSyncToast('☁️ サーバー応答が空のため表示中の圃場を維持', 'info');
+                closeAdminInitLoadingSoft_();
+                scheduleAdminInitRetry_(5000);
+                return;
+            }
+            if (Object.keys(loadedPolygons || {}).length > 0) {
+                try { renderInitData(data, { interim: false, mastersOnly: true }); } catch (e) {}
+                closeAdminInitLoadingSoft_();
+                scheduleAdminInitRetry_(5000);
+                return;
+            }
+        }
         if (background && cached && data && data.polygons) {
             try {
                 const oldPolys = JSON.parse(cached).polygons || [];
@@ -1494,8 +1552,11 @@ function loadInitData(options) {
         // 通信系の失敗では絶対に fail() オーバーレイを出さない（地図を塞がない）
         closeAdminInitLoadingSoft_();
 
-        if (cached && Object.keys(loadedPolygons || {}).length === 0) {
-            try { renderInitData(JSON.parse(cached), { interim: false }); } catch (err) {}
+        if (Object.keys(loadedPolygons || {}).length === 0) {
+            const fallback = bootCache || readAdminBootInitData_();
+            if (fallback) {
+                try { renderInitData(fallback, { interim: false }); } catch (err) {}
+            }
         }
 
         window._adminInitDataBgFailCount = (Number(window._adminInitDataBgFailCount || 0) || 0) + 1;
@@ -1530,15 +1591,25 @@ function flushPendingInitData() {
     if (pendingInitData) {
         const data = pendingInitData;
         const interim = !!window.pendingInitDataInterim;
+        // 空待ち行列で本描画を潰さない
+        if (countInitPolygons_(data) === 0 && Object.keys(loadedPolygons || {}).length === 0) {
+            const fallback = readAdminBootInitData_();
+            if (fallback && countInitPolygons_(fallback) > 0) {
+                pendingInitData = null;
+                window.pendingInitDataInterim = false;
+                renderInitData(fallback, { interim: false });
+                return;
+            }
+        }
         pendingInitData = null;
         window.pendingInitDataInterim = false;
         renderInitData(data, { interim: interim });
         return;
     }
     if (Object.keys(loadedPolygons || {}).length > 0) return;
-    const cached = localStorage.getItem('pMapAdminInitData');
-    if (!cached) return;
-    try { renderInitData(JSON.parse(cached)); } catch (e) {
+    const boot = readAdminBootInitData_();
+    if (!boot) return;
+    try { renderInitData(boot); } catch (e) {
         console.warn('キャッシュからの圃場描画に失敗:', e);
     }
 }
@@ -1546,8 +1617,18 @@ function flushPendingInitData() {
 function renderInitData(data, opts) {
     if (!data) return;
     const interim = !!(opts && opts.interim);
-    pendingInitData = data;
-    window.pendingInitDataInterim = interim;
+    const incomingCount = countInitPolygons_(data);
+    // 地図待ち中に空データで pending を上書きすると、地図準備後に圃場0件になる
+    if (incomingCount === 0 && pendingInitData && countInitPolygons_(pendingInitData) > 0) {
+        if (!(opts && opts.mastersOnly)) {
+            console.warn('空の圃場データは無視（待ち中のキャッシュを維持）');
+            return;
+        }
+    }
+    if (incomingCount > 0 || !pendingInitData || countInitPolygons_(pendingInitData) === 0) {
+        pendingInitData = data;
+        window.pendingInitDataInterim = interim;
+    }
     if (!map) {
         // 地図が出るまで諦めない（Google Maps 遅延で描画スキップすると圃場が一生出ない）
         let attempts = 0;
@@ -1566,8 +1647,12 @@ function renderInitData(data, opts) {
         return;
     }
     if (!data.pdl) {
-        if (!interim && window._adminInitLoading) { window._adminInitLoading.fail('表示データがありません'); window._adminInitLoading = null; }
-        return;
+        // Worker/Scheduleキャッシュに pdl が薄い場合でも圃場だけは描く
+        if (incomingCount > 0) data.pdl = data.pdl || {};
+        else {
+            if (!interim && window._adminInitLoading) { window._adminInitLoading.fail('表示データがありません'); window._adminInitLoading = null; }
+            return;
+        }
     }
     pendingInitData = null;
 
@@ -1629,12 +1714,23 @@ function renderInitData(data, opts) {
         statEl.setAttribute('onchange', 'handleStatusSelect(this)');
     }
 
-    // 🌟防御：空（0件）のデータで、表示済みの圃場・看板を消さない
+    // 🌟防御：空（0件）のデータで、表示済み／キャッシュの圃場・看板を消さない
     const incomingPolys = Array.isArray(data.polygons) ? data.polygons : [];
     const mastersOnly = !!(opts && opts.mastersOnly);
     if (mastersOnly || (incomingPolys.length === 0 && Object.keys(loadedPolygons).length > 0)) {
         if (!mastersOnly) console.warn('取得データの圃場が0件のため、表示中の圃場・看板を保持します（マスタのみ更新）');
         if (!interim && window._adminInitLoading) { window._adminInitLoading.update({ label: '表示を更新しました', detail: '既存の圃場表示を保持しました', current: 1, total: 1 }); window._adminInitLoading.done(); window._adminInitLoading = null; }
+        return;
+    }
+    if (incomingPolys.length === 0) {
+        const fallback = readAdminBootInitData_();
+        if (fallback && countInitPolygons_(fallback) > 0) {
+            console.warn('取得圃場0件のためキャッシュから描画します', fallback._bootSource || '');
+            renderInitData(fallback, { interim: false });
+            return;
+        }
+        console.warn('描画できる圃場データがありません');
+        if (!interim && window._adminInitLoading) { window._adminInitLoading.done(); window._adminInitLoading = null; }
         return;
     }
     console.log('圃場・看板の描画開始:', incomingPolys.length + '件');
@@ -6944,11 +7040,11 @@ function initMap() {
     try { flushPendingInitData(); } catch (e) {
         console.warn('地図準備後の圃場描画に失敗:', e);
     }
-    // まだ描画が無ければキャッシュを即反映
+    // まだ描画が無ければキャッシュを即反映（Admin→Worker→Schedule の順）
     if (Object.keys(loadedPolygons || {}).length === 0) {
-        const cached = localStorage.getItem('pMapAdminInitData');
-        if (cached) {
-            try { renderInitData(JSON.parse(cached), { interim: true }); } catch (e) {}
+        const boot = readAdminBootInitData_();
+        if (boot) {
+            try { renderInitData(boot, { interim: true }); } catch (e) {}
         }
     }
     // spreadsheetId があればログイン完了を待たず最新取得（Schedule と同じ）
@@ -9263,10 +9359,15 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('loginPw').value = pw;
 
         // Worker/Schedule と同じ：キャッシュ即描画＋地図準備と並行して取得。ログインは裏で確認
-        const cachedData = localStorage.getItem('pMapAdminInitData');
-        if (cachedData) {
-            try { renderInitData(JSON.parse(cachedData), { interim: true }); } catch (e) {}
+        const bootData = readAdminBootInitData_();
+        if (bootData && countInitPolygons_(bootData) > 0) {
+            try { renderInitData(bootData, { interim: true }); } catch (e) {}
             continueCachedAdminSession_(null, 'info');
+            executeLogin(true, { fromCache: true });
+        } else if (bootData) {
+            try { renderInitData(bootData, { interim: true }); } catch (e) {}
+            continueCachedAdminSession_(null, 'info');
+            if (localStorage.getItem('spreadsheetId')) ensureAdminInitDataLoad_('boot-thin-cache');
             executeLogin(true, { fromCache: true });
         } else {
             // キャッシュ無しでも spreadsheetId があれば地図と同時に取得開始
