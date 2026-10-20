@@ -430,7 +430,19 @@ function tryFocusFieldById(fieldId, attempt) {
     }
 }
 
-async function applySharedTextMapDeepLink(sharedText) {
+function normalizeMapLinkText_(text) {
+    const s = String(text || '').trim();
+    if (!s) return '';
+    const http = s.match(/https?:\/\/\S+/i);
+    if (http) return http[0].replace(/[)\]>,.，。]+$/, '');
+    const bare = s.match(/(?:maps\.app\.goo\.gl|goo\.gl|maps\.google\.[a-z.]+|www\.google\.[a-z.]+\/maps|google\.[a-z.]+\/maps)\/\S+/i);
+    if (bare) return 'https://' + bare[0].replace(/[)\]>,.，。]+$/, '');
+    return '';
+}
+
+async function applySharedTextMapDeepLink(sharedText, opts) {
+    opts = opts || {};
+    const flyOnly = !!opts.flyOnly;
     if (!sharedText || !map) return;
     let shareLat = null, shareLng = null;
     let finalExpandedUrl = "";
@@ -499,17 +511,25 @@ async function applySharedTextMapDeepLink(sharedText) {
             }
         }
         if (foundHojoId) {
-            customAlert("📍 既存の圃場が見つかりました！");
+            if (flyOnly && typeof showAdminSyncToast === 'function') {
+                showAdminSyncToast('📍 この場所の圃場を開きます', 'ok');
+            } else {
+                customAlert("📍 既存の圃場が見つかりました！");
+            }
             setTimeout(() => {
                 document.getElementById('btnViewMode').click();
                 openM(foundHojoId);
-            }, 600);
+            }, flyOnly ? 300 : 600);
+        } else if (flyOnly) {
+            if (typeof showAdminSyncToast === 'function') showAdminSyncToast('📍 この場所へ移動しました', 'ok');
         } else {
             customAlert("📍 ここには圃場登録がありません。\n新規登録モードに切り替えます。");
             setTimeout(() => {
                 document.getElementById('btnDrawMode').click();
             }, 800);
         }
+    } else if (flyOnly) {
+        if (typeof showAdminSyncToast === 'function') showAdminSyncToast('座標を読み取れませんでした。住所で検索するか、別のURLを試してください', 'error');
     } else {
         const debugText = finalExpandedUrl ? "\n(展開後: " + finalExpandedUrl + ")" : "";
         customAlert("📍 座標を取得できませんでした。\n手動で検索するか、地図上で場所を探してください。" + debugText);
@@ -753,9 +773,10 @@ function showAdminSyncToast(msg, kind) {
     el.textContent = msg;
     el.style.display = 'block';
     clearTimeout(window._adminSyncToastTimer);
+    const stay = (arguments.length >= 3 && arguments[2] > 0) ? arguments[2] : (kind === 'error' ? 8000 : 2800);
     window._adminSyncToastTimer = setTimeout(() => {
         if (el) el.style.display = 'none';
-    }, kind === 'error' ? 8000 : 2800);
+    }, stay);
 }
 window.showAdminSyncToast = showAdminSyncToast;
 
@@ -1020,73 +1041,127 @@ function syncUpdatePolygon_(p, extra) {
     }).then(() => true).catch(() => false);
 }
 
+function pendingSyncWriteOpts_(action) {
+    const save = String(action || '').indexOf('savePolygon') === 0 || action === 'splitField';
+    return { timeoutMs: save ? 120000 : 90000, timeoutStepMs: 20000, softNetRetries: 1 };
+}
+
+function pendingSyncAlreadyApplied_(err) {
+    const m = String((err && err.message) || err || '');
+    return /見つかりません|ALREADY_DELETED|既に削除|既に登録されています/.test(m);
+}
+
+function pendingSyncIsTransient_(err) {
+    const m = String((err && err.message) || err || '');
+    return /Failed to fetch|通信に失敗|タイムアウト|一時的な通信|cancelled|Abort|NetworkError|Load failed/i.test(m);
+}
+
 async function flushPendingAdminSyncs_() {
+    if (window._adminPendingFlushRunning) {
+        window._adminPendingFlushAgain = true;
+        return;
+    }
     let list = [];
     try {
         list = JSON.parse(localStorage.getItem(ADMIN_PENDING_SYNC_KEY) || '[]');
     } catch (e) {
         return;
     }
+    list = (list || []).filter(item => item && item.op);
     if (!list.length) return;
-    showAdminSyncToast('☁️ 未同期の更新を再送中…', 'info');
+    if (!localStorage.getItem('spreadsheetId')) return;
+
+    window._adminPendingFlushRunning = true;
     let ok = 0;
-    for (const item of list) {
-        if (!item || !item.op) continue;
-        try {
-            if (item.op === 'savePolygon' && item.tempId && loadedPolygons[item.tempId]) {
-                if (item.payload && !item.payload.clientTempId) item.payload.clientTempId = item.tempId;
-                const newId = await enqueueAdminSync_(() => callGAS('savePolygon', item.payload, 1, { timeoutMs: 120000, timeoutStepMs: 20000, softNetRetries: 2 }));
-                remapLoadedPolygonId_(item.tempId, newId);
+    let failed = 0;
+    let dropped = 0;
+    let lastErr = '';
+    showAdminSyncToast('☁️ 未同期 ' + list.length + '件を再送しています…', 'info', 20000);
+    try {
+        for (const item of list) {
+            const canSend = item.payload && (
+                item.op === 'savePolygon' || item.op === 'savePolygonBatch' || item.op === 'updatePolygon'
+                || item.op === 'deletePolygon' || item.op === 'deletePolygonBatch'
+                || item.op === 'splitField' || item.op === 'mergeFields'
+                || item.op === 'manageMaster' || item.op === 'saveTouki'
+            );
+            if (!canSend || (item.op === 'savePolygonBatch' && !Array.isArray(item.payload.polygons))) {
                 clearPendingAdminSync_(item.key);
-                ok++;
-            } else if (item.op === 'savePolygonBatch' && Array.isArray(item.tempIds) && Array.isArray(item.payload && item.payload.polygons)) {
-                if (item.payload && !item.payload.clientBatchId) item.payload.clientBatchId = item.tempIds.join(',');
-                const newIds = await enqueueAdminSync_(() => callGAS('savePolygonBatch', item.payload, 1, { timeoutMs: 120000, timeoutStepMs: 20000, softNetRetries: 2 }));
-                if (Array.isArray(newIds)) {
-                    item.tempIds.forEach((tid, i) => { if (newIds[i]) remapLoadedPolygonId_(tid, newIds[i]); });
-                }
-                clearPendingAdminSync_(item.key);
-                ok++;
-            } else if (item.op === 'updatePolygon' && item.payload) {
-                await enqueueAdminSync_(() => callGAS('updatePolygon', item.payload));
-                clearPendingAdminSync_(item.key);
-                ok++;
-            } else if (item.op === 'deletePolygon' && item.payload) {
-                await enqueueAdminSync_(() => callGAS('deletePolygon', item.payload, 1, { timeoutMs: 90000, timeoutStepMs: 20000, softNetRetries: 2 }));
-                clearPendingAdminSync_(item.key);
-                ok++;
-            } else if (item.op === 'deletePolygonBatch' && item.payload) {
-                await enqueueAdminSync_(() => callGAS('deletePolygonBatch', item.payload, 1, { timeoutMs: 90000, timeoutStepMs: 20000, softNetRetries: 2 }));
-                clearPendingAdminSync_(item.key);
-                ok++;
-            } else if (item.op === 'splitField' && item.payload && item.tempId) {
-                const newId = await enqueueAdminSync_(() => callGAS('splitField', item.payload));
-                remapLoadedPolygonId_(item.tempId, newId);
-                clearPendingAdminSync_(item.key);
-                ok++;
-            } else if (item.op === 'mergeFields' && item.payload) {
-                await enqueueAdminSync_(() => callGAS('mergeFields', item.payload));
-                clearPendingAdminSync_(item.key);
-                ok++;
-            } else if (item.op === 'manageMaster' && item.payload) {
-                await enqueueAdminSync_(() => callGAS('manageMaster', item.payload));
-                clearPendingAdminSync_(item.key);
-                ok++;
-            } else if (item.op === 'saveTouki' && item.payload) {
-                await enqueueAdminSync_(() => callGAS('saveTouki', item.payload));
-                clearPendingAdminSync_(item.key);
-                ok++;
+                dropped++;
+                continue;
             }
-        } catch (e) {
-            console.warn('flushPendingAdminSyncs_ item failed', item.op, e);
+            try {
+                if (item.op === 'savePolygon') {
+                    if (!item.payload.clientTempId && item.tempId) item.payload.clientTempId = item.tempId;
+                    const newId = await enqueueAdminSync_(() => callGAS('savePolygon', item.payload, 1, pendingSyncWriteOpts_('savePolygon')));
+                    if (item.tempId && newId && loadedPolygons[item.tempId]) remapLoadedPolygonId_(item.tempId, newId);
+                    clearPendingAdminSync_(item.key);
+                    ok++;
+                } else if (item.op === 'savePolygonBatch') {
+                    if (!item.payload.clientBatchId && Array.isArray(item.tempIds)) item.payload.clientBatchId = item.tempIds.join(',');
+                    const newIds = await enqueueAdminSync_(() => callGAS('savePolygonBatch', item.payload, 1, pendingSyncWriteOpts_('savePolygonBatch')));
+                    if (Array.isArray(newIds) && Array.isArray(item.tempIds)) {
+                        item.tempIds.forEach((tid, i) => { if (newIds[i] && loadedPolygons[tid]) remapLoadedPolygonId_(tid, newIds[i]); });
+                    }
+                    clearPendingAdminSync_(item.key);
+                    ok++;
+                } else if (item.op === 'splitField') {
+                    const newId = await enqueueAdminSync_(() => callGAS('splitField', item.payload, 1, pendingSyncWriteOpts_('splitField')));
+                    if (item.tempId && newId && loadedPolygons[item.tempId]) remapLoadedPolygonId_(item.tempId, newId);
+                    clearPendingAdminSync_(item.key);
+                    ok++;
+                } else {
+                    await enqueueAdminSync_(() => callGAS(item.op, item.payload, 1, pendingSyncWriteOpts_(item.op)));
+                    clearPendingAdminSync_(item.key);
+                    ok++;
+                }
+            } catch (e) {
+                console.warn('flushPendingAdminSyncs_ item failed', item.op, e);
+                if (pendingSyncAlreadyApplied_(e)) {
+                    clearPendingAdminSync_(item.key);
+                    ok++;
+                    continue;
+                }
+                item.failCount = (Number(item.failCount) || 0) + 1;
+                lastErr = String((e && e.message) || e || '').replace(/\s+/g, ' ').slice(0, 60);
+                if (!pendingSyncIsTransient_(e) && item.failCount >= 3) {
+                    clearPendingAdminSync_(item.key);
+                    dropped++;
+                } else {
+                    rememberPendingAdminSync_(item);
+                    failed++;
+                }
+            }
         }
+    } finally {
+        window._adminPendingFlushRunning = false;
     }
     persistAdminInitCache_();
-    if (ok > 0) showAdminSyncToast('☁️ 未同期 ' + ok + '件をサーバーへ反映しました', 'ok');
+    if (ok > 0 && failed === 0) {
+        window._adminPendingFlushFailAt = 0;
+        showAdminSyncToast('☁️ 未同期 ' + ok + '件をサーバーへ反映しました', 'ok', 4000);
+    } else if (failed > 0) {
+        window._adminPendingFlushFailAt = Date.now();
+        showAdminSyncToast('⚠️ 未同期 ' + failed + '件をまだ送れません' + (lastErr ? '（' + lastErr + '）' : ''), 'error', 8000);
+    } else if (dropped > 0 && ok === 0) {
+        window._adminPendingFlushFailAt = 0;
+        showAdminSyncToast('送れなかった下書きを整理しました', 'info', 4000);
+    }
+    if (window._adminPendingFlushAgain) {
+        window._adminPendingFlushAgain = false;
+        schedulePendingAdminSyncFlush_();
+    }
 }
 
 function schedulePendingAdminSyncFlush_() {
-    setTimeout(() => { flushPendingAdminSyncs_().catch(() => {}); }, 2500);
+    if (window._adminPendingFlushTimer) return;
+    const failAt = Number(window._adminPendingFlushFailAt || 0);
+    const waitAfterFail = failAt ? Math.max(0, 60000 - (Date.now() - failAt)) : 0;
+    const delay = Math.max(2500, waitAfterFail);
+    window._adminPendingFlushTimer = setTimeout(() => {
+        window._adminPendingFlushTimer = null;
+        flushPendingAdminSyncs_().catch(() => {});
+    }, delay);
 }
 
 window.addEventListener('online', () => { schedulePendingAdminSyncFlush_(); });
@@ -7522,12 +7597,44 @@ window.previewSignRegPhotos_ = async (input) => {
     }
 };
 
+function submitMapSearchLink_(raw) {
+    const link = normalizeMapLinkText_(raw);
+    if (!link) return false;
+    const input = document.getElementById('mapSearchInput');
+    if (input) input.value = '';
+    if (!map) {
+        if (typeof showAdminSyncToast === 'function') showAdminSyncToast('地図の準備ができてからもう一度開いてください', 'error');
+        return true;
+    }
+    window._mapSearchLinkLock = true;
+    setTimeout(() => { window._mapSearchLinkLock = false; }, 1500);
+    if (typeof showAdminSyncToast === 'function') showAdminSyncToast('短縮URLの場所を開いています…', 'info');
+    applySharedTextMapDeepLink(link, { flyOnly: true });
+    return true;
+}
+
 function setupMapSearch() {
     const input = document.getElementById('mapSearchInput');
-    if (!input || !map || !google.maps.places || typeof google.maps.places.SearchBox !== 'function') return;
+    if (!input || input.dataset.mapSearchBound) return;
+    input.dataset.mapSearchBound = '1';
+    input.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        if (!submitMapSearchLink_(input.value)) return;
+        e.preventDefault();
+        e.stopPropagation();
+    }, true);
+    input.addEventListener('paste', (e) => {
+        const text = (e.clipboardData && e.clipboardData.getData('text')) || '';
+        if (!normalizeMapLinkText_(text)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        submitMapSearchLink_(text);
+    }, true);
+    if (!map || !google.maps.places || typeof google.maps.places.SearchBox !== 'function') return;
     const searchBox = new google.maps.places.SearchBox(input);
     map.addListener('bounds_changed', () => { searchBox.setBounds(map.getBounds()); });
     searchBox.addListener('places_changed', () => {
+        if (window._mapSearchLinkLock) return;
         const places = searchBox.getPlaces();
         if (!places || places.length == 0) return;
         const bounds = new google.maps.LatLngBounds();

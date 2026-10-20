@@ -732,11 +732,8 @@
         <div id="searchSuggestions"></div>
       </div>
       <div class="search-container">
-        <input type="text" id="mapSearchInput" class="search-input" placeholder="🌍 住所・地域...">
+        <input type="text" id="mapSearchInput" class="search-input" placeholder="🌍 住所・短縮URL...">
       </div>
-      <button onclick="promptLineUrl()"
-        style="background:rgba(156, 39, 176, 0.8); color:white; border:none; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:11px;">📍
-        座標検索</button>
       <button onclick="forceUpdateApp()"
         style="background:#4CAF50; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">🔄
         最新に更新</button>
@@ -862,7 +859,7 @@
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=ja&v=weekly" async defer></script>
 
   <script src="api-client.js?v=1788600000090" defer></script>
-  <script src="admin.js?v=1788600000108" defer></script>
+  <script src="admin.js?v=1788600000110" defer></script>
   <script src="admin_cost.js?v=1785489000008" defer></script>
   <script src="admin_crop_work.js?v=1787570400000" defer></script>
   <script src="tracking.js?v=1788600000043" defer></script>
