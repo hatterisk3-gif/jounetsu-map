@@ -1114,7 +1114,11 @@ function continueCachedAdminSession_(message, toastType) {
     startLocationWatch();
     schedulePendingAdminSyncFlush_();
     if (message) showAdminSyncToast(message, toastType || 'info');
-    // ※ getInitData はここでは開始しない（login と同時打つとコールドスタートで両方落ちやすい）
+    // Worker/Schedule と同様：セッションIDがあれば地図と並行して圃場取得を開始
+    // （login 完了待ちにすると Admin だけ地図だけ先に出て圃場が遅れる）
+    if (localStorage.getItem('spreadsheetId')) {
+        ensureAdminInitDataLoad_('cache-session');
+    }
 }
 
 function scheduleCachedAdminLoginRetry_() {
@@ -6936,8 +6940,20 @@ function initMap() {
     }
     if (typeof resolveMapInit === 'function') resolveMapInit();
     // 地図完成直後に、待ち行列・キャッシュの圃場を必ず描画する
+    // （Schedule の initMap→loadData、Worker の map ready→renderInitData と同じタイミング）
     try { flushPendingInitData(); } catch (e) {
         console.warn('地図準備後の圃場描画に失敗:', e);
+    }
+    // まだ描画が無ければキャッシュを即反映
+    if (Object.keys(loadedPolygons || {}).length === 0) {
+        const cached = localStorage.getItem('pMapAdminInitData');
+        if (cached) {
+            try { renderInitData(JSON.parse(cached), { interim: true }); } catch (e) {}
+        }
+    }
+    // spreadsheetId があればログイン完了を待たず最新取得（Schedule と同じ）
+    if (localStorage.getItem('spreadsheetId') && !window._adminInitDataInFlight) {
+        try { ensureAdminInitDataLoad_('map-ready'); } catch (e) {}
     }
 }
 window.initMap = initMap;
@@ -9246,20 +9262,23 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('loginId').value = id;
         document.getElementById('loginPw').value = pw;
 
-        // 楽観UI：キャッシュで即表示。getInitData は login 成功後にだけ開始（同時打診で失敗しやすい）
+        // Worker/Schedule と同じ：キャッシュ即描画＋地図準備と並行して取得。ログインは裏で確認
         const cachedData = localStorage.getItem('pMapAdminInitData');
         if (cachedData) {
             try { renderInitData(JSON.parse(cachedData), { interim: true }); } catch (e) {}
             continueCachedAdminSession_(null, 'info');
             executeLogin(true, { fromCache: true });
         } else {
+            // キャッシュ無しでも spreadsheetId があれば地図と同時に取得開始
+            if (localStorage.getItem('spreadsheetId')) {
+                ensureAdminInitDataLoad_('boot-no-cache');
+            }
             executeLogin(true);
         }
-        // 地図が後からできても再描画する保険（ログイン中は getInitData を始めない）
         mapInitPromise.then(() => {
             try { flushPendingInitData(); } catch (e) {}
-            if (!initDataLoadStarted && localStorage.getItem('spreadsheetId') && !window._adminLoginBusy) {
-                loadInitData({ background: true, light: !localStorage.getItem('pMapAdminInitData') });
+            if (!initDataLoadStarted && localStorage.getItem('spreadsheetId')) {
+                ensureAdminInitDataLoad_('map-promise');
             }
         });
     } else {
