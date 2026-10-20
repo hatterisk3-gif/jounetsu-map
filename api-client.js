@@ -20,6 +20,10 @@
     updateWorkRecordById: 120000,
     getInitData: 240000,
     getScheduleData: 180000,
+    savePolygon: 120000,
+    savePolygonBatch: 120000,
+    updatePolygon: 90000,
+    deletePolygon: 90000,
     getWorkRecordAnalysis: 45000,
     saveCultivationPlans: 90000,
     saveCroptypeDBBatch: 90000,
@@ -53,18 +57,26 @@
     manageMaster: true,
     getInitData: true,
     getScheduleData: true,
-    login: true
+    login: true,
+    savePolygon: true,
+    savePolygonBatch: true,
+    updatePolygon: true,
+    deletePolygon: true,
+    deletePolygonBatch: true
+  };
+  var WRITE_PRIORITY_ACTIONS = {
+    savePolygon: true,
+    savePolygonBatch: true,
+    updatePolygon: true,
+    deletePolygon: true,
+    deletePolygonBatch: true
   };
 
   var controllers = {};
   var cancelGen = {};
-  // 重い読取同士の同時打診を避ける（login はここに入れない：
-  // login の長リトライがゲートを占有すると getInitData が永久に始まらず圃場が出ない）
-  var heavyGate_ = Promise.resolve();
-  var HEAVY_SERIAL_ACTIONS = {
-    getInitData: true,
-    getScheduleData: true
-  };
+  // script.google.com へ同時に何本も張ると Failed to fetch になる（ブラウザの接続上限）。
+  // 常に1本だけ。保存・削除は進行中の読取を切ってからこの列に入る。
+  var laneTail_ = Promise.resolve();
 
   function isNoRetryMessage(msg) {
     return msg.indexOf('既に登録') >= 0 || msg.indexOf('ログインセッション') >= 0;
@@ -100,12 +112,25 @@
     return Math.min(12000, 1500 + n * 1500);
   }
 
-  function withHeavyGate_(action, fn) {
-    if (!HEAVY_SERIAL_ACTIONS[action]) return fn();
-    var run = heavyGate_.then(fn, fn);
-    // 次の重処理は成功/失敗どちらでも待ってから
-    heavyGate_ = run.then(function () {}, function () {});
+  function enqueueGasLane_(fn) {
+    var run = laneTail_.then(fn, fn);
+    laneTail_ = run.then(function () {}, function () {});
     return run;
+  }
+
+  function wasCancelled_(action, cancelAtStart) {
+    return (cancelGen[action] || 0) > cancelAtStart;
+  }
+
+  async function interruptibleWait_(ms, action, cancelAtStart) {
+    var left = ms;
+    while (left > 0) {
+      if (wasCancelled_(action, cancelAtStart)) return false;
+      var slice = Math.min(200, left);
+      await new Promise(function (r) { setTimeout(r, slice); });
+      left -= slice;
+    }
+    return !wasCancelled_(action, cancelAtStart);
   }
 
   /** 再送で「既に登録」になった＝先の書込みは成功している */
@@ -136,7 +161,12 @@
   }
 
   async function callGAS(action, params, retries, callOptions) {
-    return withHeavyGate_(action, function () {
+    // 保存・削除は読取を切ってから1本の列に入れる（切った読取は再送しない）
+    if (WRITE_PRIORITY_ACTIONS[action]) {
+      try { abortCallGAS('getInitData'); } catch (e) {}
+      try { abortCallGAS('getScheduleData'); } catch (e) {}
+    }
+    return enqueueGasLane_(function () {
       return callGASInner_(action, params, retries, callOptions);
     });
   }
@@ -163,6 +193,7 @@
       if (action === 'getInitData' || action === 'getScheduleData') softNetRetries = 5;
       else if (action === 'manageMaster') softNetRetries = 2;
       else if (action === 'login') softNetRetries = 1; // 認証は早く諦めてデータ取得へ回す
+      else if (WRITE_PRIORITY_ACTIONS[action]) softNetRetries = 2;
       else softNetRetries = 3;
     }
     if (callOptions.softNetRetries != null) softNetRetries = Number(callOptions.softNetRetries) || 0;
@@ -172,11 +203,22 @@
     var netRetryUsed = 0;
     var timeoutStepMs = (callOptions.timeoutStepMs != null) ? Number(callOptions.timeoutStepMs) : 45000;
     if (!(timeoutStepMs >= 0)) timeoutStepMs = 45000;
+    // 直前の読取を切った直後は、接続が空くまで少し待つ
+    if (WRITE_PRIORITY_ACTIONS[action]) {
+      var still = await interruptibleWait_(450, action, cancelAtStart);
+      if (!still) {
+        var early = new Error('cancelled');
+        early.name = 'AbortError';
+        early.cancelled = true;
+        throw early;
+      }
+    }
 
     for (var i = 0; i < maxAttempts; i++) {
-      if ((cancelGen[action] || 0) > cancelAtStart) {
+      if (wasCancelled_(action, cancelAtStart)) {
         lastError = new Error('cancelled');
         lastError.name = 'AbortError';
+        lastError.cancelled = true;
         break;
       }
       // タイムアウト時は次の試行で待ち時間を伸ばす（コールドスタート対策）
@@ -188,9 +230,11 @@
       controllers[action] = controller;
       var timeoutId = setTimeout(function () { controller.abort(); }, timeoutMs);
       try {
-        var res = await fetch(GAS_URL, {
+        var reqUrl = GAS_URL + (GAS_URL.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now() + '_' + i;
+        var res = await fetch(reqUrl, {
           method: 'POST',
           redirect: 'follow',
+          cache: 'no-store',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify(params),
           signal: controller.signal
@@ -230,6 +274,12 @@
         return json.data;
       } catch (err) {
         clearTimeout(timeoutId);
+        if (wasCancelled_(action, cancelAtStart) || (err && err.name === 'AbortError' && wasCancelled_(action, cancelAtStart))) {
+          lastError = new Error('cancelled');
+          lastError.name = 'AbortError';
+          lastError.cancelled = true;
+          break;
+        }
         lastError = err;
         var msg = String((err && err.message) || '');
         if (isNoRetryMessage(msg)) {
@@ -256,7 +306,14 @@
         if (!canRetry && i + 1 >= maxAttempts) break;
         if (canRetry && i + 1 < maxAttempts) {
           var waitMs = retryWaitMs_(err, i);
-          await new Promise(function (r) { setTimeout(r, waitMs); });
+          if (WRITE_PRIORITY_ACTIONS[action]) waitMs = Math.min(waitMs, 1200 + i * 800);
+          var keepGoing = await interruptibleWait_(waitMs, action, cancelAtStart);
+          if (!keepGoing) {
+            lastError = new Error('cancelled');
+            lastError.name = 'AbortError';
+            lastError.cancelled = true;
+            break;
+          }
           continue;
         }
         break;
@@ -267,6 +324,12 @@
     }
 
     lastError = lastError || new Error('通信エラー');
+    if (lastError.cancelled || String(lastError.message || '') === 'cancelled') {
+      var cancelledErr = new Error('cancelled');
+      cancelledErr.name = 'AbortError';
+      cancelledErr.cancelled = true;
+      throw cancelledErr;
+    }
     lastError.message = String(lastError.message || '').replace('（リトライ中...）', '');
     if (lastError.name === 'AbortError') {
       throw new Error('通信がタイムアウトしました。電波の良い場所で再度お試しください。');

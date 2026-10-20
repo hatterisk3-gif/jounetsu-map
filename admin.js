@@ -884,9 +884,36 @@ function clearPendingAdminSync_(key) {
     } catch (e) {}
 }
 
+function holdAdminReadsForWrite_() {
+    window._adminSyncWriteHold = (window._adminSyncWriteHold || 0) + 1;
+    // 削除・保存の直後に「最新データの取得に失敗」を出さない
+    window._adminSuppressInitFailToastUntil = Date.now() + 30000;
+    if (window._adminInitDataBgRetryTimer) {
+        clearTimeout(window._adminInitDataBgRetryTimer);
+        window._adminInitDataBgRetryTimer = null;
+    }
+}
+
+function releaseAdminReadsForWrite_() {
+    window._adminSyncWriteHold = Math.max(0, (window._adminSyncWriteHold || 0) - 1);
+}
+
 function syncAdminCall_(action, payload, pendingItem) {
+    payload = payload || {};
+    if (pendingItem && pendingItem.tempId && !payload.clientTempId) payload.clientTempId = pendingItem.tempId;
+    if (pendingItem && Array.isArray(pendingItem.tempIds)) {
+        if (!payload.clientBatchId) payload.clientBatchId = pendingItem.tempIds.join(',');
+        if (Array.isArray(payload.polygons)) {
+            payload.polygons.forEach((p, i) => {
+                if (p && !p.clientTempId && pendingItem.tempIds[i]) p.clientTempId = pendingItem.tempIds[i];
+            });
+        }
+    }
+    const isWrite = action === 'savePolygon' || action === 'savePolygonBatch' || action === 'updatePolygon' || action === 'deletePolygon' || action === 'deletePolygonBatch';
     if (pendingItem) rememberPendingAdminSync_(pendingItem);
-    return enqueueAdminSync_(() => callGAS(action, payload)).then(res => {
+    if (isWrite) holdAdminReadsForWrite_();
+    const writeOpts = isWrite ? { timeoutMs: action.indexOf('savePolygon') === 0 ? 120000 : 90000, timeoutStepMs: 20000, softNetRetries: 2 } : null;
+    return enqueueAdminSync_(() => callGAS(action, payload, isWrite ? 1 : 2, writeOpts || undefined)).then(res => {
         if (pendingItem && pendingItem.key) clearPendingAdminSync_(pendingItem.key);
         persistAdminInitCache_();
         return res;
@@ -894,6 +921,8 @@ function syncAdminCall_(action, payload, pendingItem) {
         console.warn('syncAdminCall_ failed', action, e);
         showAdminSyncToast('⚠️ 保存に失敗しました（未同期として保持・自動再送します）: ' + (e.message || e), 'error');
         throw e;
+    }).finally(() => {
+        if (isWrite) releaseAdminReadsForWrite_();
     });
 }
 
@@ -949,12 +978,14 @@ async function flushPendingAdminSyncs_() {
         if (!item || !item.op) continue;
         try {
             if (item.op === 'savePolygon' && item.tempId && loadedPolygons[item.tempId]) {
-                const newId = await enqueueAdminSync_(() => callGAS('savePolygon', item.payload));
+                if (item.payload && !item.payload.clientTempId) item.payload.clientTempId = item.tempId;
+                const newId = await enqueueAdminSync_(() => callGAS('savePolygon', item.payload, 1, { timeoutMs: 120000, timeoutStepMs: 20000, softNetRetries: 2 }));
                 remapLoadedPolygonId_(item.tempId, newId);
                 clearPendingAdminSync_(item.key);
                 ok++;
             } else if (item.op === 'savePolygonBatch' && Array.isArray(item.tempIds) && Array.isArray(item.payload && item.payload.polygons)) {
-                const newIds = await enqueueAdminSync_(() => callGAS('savePolygonBatch', item.payload));
+                if (item.payload && !item.payload.clientBatchId) item.payload.clientBatchId = item.tempIds.join(',');
+                const newIds = await enqueueAdminSync_(() => callGAS('savePolygonBatch', item.payload, 1, { timeoutMs: 120000, timeoutStepMs: 20000, softNetRetries: 2 }));
                 if (Array.isArray(newIds)) {
                     item.tempIds.forEach((tid, i) => { if (newIds[i]) remapLoadedPolygonId_(tid, newIds[i]); });
                 }
@@ -965,11 +996,11 @@ async function flushPendingAdminSyncs_() {
                 clearPendingAdminSync_(item.key);
                 ok++;
             } else if (item.op === 'deletePolygon' && item.payload) {
-                await enqueueAdminSync_(() => callGAS('deletePolygon', item.payload));
+                await enqueueAdminSync_(() => callGAS('deletePolygon', item.payload, 1, { timeoutMs: 90000, timeoutStepMs: 20000, softNetRetries: 2 }));
                 clearPendingAdminSync_(item.key);
                 ok++;
             } else if (item.op === 'deletePolygonBatch' && item.payload) {
-                await enqueueAdminSync_(() => callGAS('deletePolygonBatch', item.payload));
+                await enqueueAdminSync_(() => callGAS('deletePolygonBatch', item.payload, 1, { timeoutMs: 90000, timeoutStepMs: 20000, softNetRetries: 2 }));
                 clearPendingAdminSync_(item.key);
                 ok++;
             } else if (item.op === 'splitField' && item.payload && item.tempId) {
@@ -1359,6 +1390,17 @@ function loadInitData(options) {
 
     initDataLoadStarted = true;
 
+    // 圃場保存中は読取を遅らせる（同時実行で保存がタイムアウトする）
+    if (window._adminSyncWriteHold) {
+        if (!window._adminInitDataBgRetryTimer) {
+            window._adminInitDataBgRetryTimer = setTimeout(() => {
+                window._adminInitDataBgRetryTimer = null;
+                try { loadInitData({ background: true, light: true }); } catch (e2) {}
+            }, 6000);
+        }
+        return null;
+    }
+
     // 二重 getInitData を避ける（ログイン完了と mapInit のレース対策）
     if (window._adminInitDataInFlight) {
         return window._adminInitDataInFlight;
@@ -1557,6 +1599,21 @@ function loadInitData(options) {
             if (fallback) {
                 try { renderInitData(fallback, { interim: false }); } catch (err) {}
             }
+        }
+
+        // 保存・削除を優先して読取を中断したときは失敗扱いにしない
+        const suppressInitToast = window._adminSyncWriteHold
+            || /cancelled/i.test(errMsg)
+            || (window._adminSuppressInitFailToastUntil && Date.now() < window._adminSuppressInitFailToastUntil);
+        if (suppressInitToast) {
+            closeAdminInitLoadingSoft_();
+            if (!window._adminInitDataBgRetryTimer) {
+                window._adminInitDataBgRetryTimer = setTimeout(() => {
+                    window._adminInitDataBgRetryTimer = null;
+                    try { loadInitData({ background: true, light: true }); } catch (e2) {}
+                }, 8000);
+            }
+            return;
         }
 
         window._adminInitDataBgFailCount = (Number(window._adminInitDataBgFailCount || 0) || 0) + 1;

@@ -6185,12 +6185,45 @@ function savePolygonsBatch(paramsList) {
   return insertedIds;
 }
 
+function polygonTempCacheKey_(tempId) {
+  const id = String(tempId || '').trim();
+  if (!id) return '';
+  return 'polyTemp:' + id.slice(0, 180);
+}
+
+function findSavedPolygonByClientTemp_(tempId) {
+  const key = polygonTempCacheKey_(tempId);
+  if (!key) return '';
+  try {
+    return String(CacheService.getScriptCache().get(key) || '');
+  } catch (e) {
+    return '';
+  }
+}
+
+function rememberSavedPolygonClientTemp_(tempId, newId) {
+  const key = polygonTempCacheKey_(tempId);
+  if (!key || !newId) return;
+  try {
+    CacheService.getScriptCache().put(key, String(newId), 21600);
+  } catch (e) {}
+}
+
 function savePolygon(params) {
   const ss = TENANT_SS;
+  if (!ss) throw new Error('データベースに接続できません。再ログインしてください。');
+  const already = findSavedPolygonByClientTemp_(params && params.clientTempId);
+  if (already) return already;
   // 座標が1点なら看板、それ以上なら圃場と判定
-  const isMarker = JSON.parse(params.coords).length === 1;
+  let coords;
+  try { coords = JSON.parse(params.coords); } catch (e) {
+    throw new Error('座標データが不正です');
+  }
+  if (!Array.isArray(coords) || !coords.length) throw new Error('座標データがありません');
+  const isMarker = coords.length === 1;
   const sheetName = isMarker ? '看板' : '圃場';
   const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) throw new Error('「' + sheetName + '」シートが見つかりません');
   
   const newId = Utilities.getUuid();
   const now = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm");
@@ -6245,12 +6278,22 @@ function savePolygon(params) {
   }
   
   writeLog(params.userName, "図形登録", params.name, `対象: ${sheetName}`);
+  rememberSavedPolygonClientTemp_(params && params.clientTempId, newId);
   return newId;
 }
 
 function savePolygonBatch(params) {
   const ss = TENANT_SS;
+  if (!ss) throw new Error('データベースに接続できません。再ログインしてください。');
+  const batchKey = polygonTempCacheKey_(params && params.clientBatchId);
+  if (batchKey) {
+    try {
+      const hit = CacheService.getScriptCache().get(batchKey);
+      if (hit) return JSON.parse(hit);
+    } catch (e) {}
+  }
   const sheet = ss.getSheetByName('圃場');
+  if (!sheet) throw new Error('「圃場」シートが見つかりません');
   const now = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm");
   const newIds = [];
   
@@ -6287,6 +6330,9 @@ function savePolygonBatch(params) {
   }
   
   writeLog(params.polygons[0].userName, "図形登録(一括)", `${params.polygons.length}件の圃場`, `対象: 圃場`);
+  if (batchKey) {
+    try { CacheService.getScriptCache().put(batchKey, JSON.stringify(newIds), 21600); } catch (e) {}
+  }
   return newIds;
 }
 
@@ -6574,14 +6620,13 @@ function mergeFields(baseId, targetId, userName) {
 function deletePolygonData(id, user) { 
   if (!checkAdminRole(user)) throw new Error("管理者権限がないため、削除できません。"); 
   const found = findSheetAndRowById(id); 
-  if (found) { 
-    const name = found.rowData[1];
-    const isHojo = found.sheet.getName() === '圃場'; 
-    found.sheet.deleteRow(found.rowIndex); 
-    if(isHojo) syncToukiMapping(); 
-    writeLog(user, "図形削除", name, `システムID: ${id}`);
-    return "DELETED"; 
-  } 
+  if (!found) return "ALREADY_DELETED";
+  const name = found.rowData[1];
+  const isHojo = found.sheet.getName() === '圃場'; 
+  found.sheet.deleteRow(found.rowIndex); 
+  if(isHojo) syncToukiMapping(); 
+  writeLog(user, "図形削除", name, `システムID: ${id}`);
+  return "DELETED"; 
 }
 
 function deletePolygonBatchData(ids, user) {
