@@ -36,7 +36,7 @@ const API_ACTIONS = {
   "adminAddUser": function (p) { return adminAddUser(p); },
   "listUsersForAdmin": function (p) { return listUsersForAdmin(p); },
   "updateUserRole": function (p) { return updateUserRole(p); },
-  "getInitData": function (p) { return getInitData(); },
+  "getInitData": function (p) { return getInitData(p || {}); },
   "getDeliveryDestinations": function (p) { return getDeliveryDestinations(); },
   "saveDeliveryDestination": function (p) { return saveDeliveryDestination(p); },
   "deleteDeliveryDestination": function (p) { return deleteDeliveryDestination(p); },
@@ -948,7 +948,10 @@ function changePassword(userId, currentPassword, newPassword) {
 // ==========================================
 // 初期データ取得
 // ==========================================
-function getInitData() {
+function getInitData(opts) {
+  opts = opts || {};
+  // light: 起動時の Failed to fetch 対策。重いマスタを後回しにして応答を軽くする
+  const light = !!(opts.light || opts.slim);
   const ss = TENANT_SS;
   
   const getCol = (sheetNames, colIndex) => {
@@ -1160,101 +1163,112 @@ pdl.materials = [];
       }
     }
   }
-  // 🌟農薬マスタ
-  try {
-    pdl.pesticides = readPesticideMasterList_();
-  } catch (peErr) {
+  // 🌟農薬・肥料・計画系（light時は省略して応答サイズと実行時間を抑える）
+  if (light) {
     pdl.pesticides = [];
-  }
-  try {
-    pdl.fertilizers = readFertilizerMasterList_();
-  } catch (feErr) {
     pdl.fertilizers = [];
-  }
-  try {
-    pdl.cropChemPlans = listCropChemPlansBrief_();
-  } catch (ccpErr) {
     pdl.cropChemPlans = [];
-  }
-  try {
-    pdl.costItems = readCostMasterList_();
-  } catch (ciErr) {
     pdl.costItems = [];
-  }
-  try {
-    pdl.cropCostPlans = listCropCostPlansBrief_();
-  } catch (ccp2Err) {
     pdl.cropCostPlans = [];
-  }
-  try {
-    pdl.cropWorkPlans = listCropWorkPlansBrief_();
-  } catch (cwpErr) {
     pdl.cropWorkPlans = [];
-  }
-  try {
-    pdl.nurseryLocations = readNurseryLocationList_();
-  } catch (nlErr) {
     pdl.nurseryLocations = [];
-  }
-  try {
-    pdl.cropCultSettings = readCropCultSettingList_();
-  } catch (ccsErr) {
     pdl.cropCultSettings = [];
-  }
-  // 🌟ここまで🌟
-  let pastReports = {};
-  const schedSheet = ss.getSheetByName('作業予定');
-  if (schedSheet) {
-    const data = schedSheet.getDataRange().getValues();
-    for (let i = 1; i < data.length; i++) {
-      const workName = String(data[i][0]); const polyId = String(data[i][10]); 
-      if (workName.includes('⚠️問題対応:') && polyId) {
-        let reason = workName.replace('⚠️問題対応: ', '').replace('⚠️問題対応:', '').trim();
-        if (reason.includes(' / ')) reason = reason.split(' / ')[0].trim();
-        if (!pastReports[polyId]) pastReports[polyId] = [];
-        if (!pastReports[polyId].includes(reason) && reason !== '') pastReports[polyId].push(reason);
+    pdl.pastReports = {};
+    pdl.deliveryDestinations = [];
+  } else {
+    try {
+      pdl.pesticides = readPesticideMasterList_();
+    } catch (peErr) {
+      pdl.pesticides = [];
+    }
+    try {
+      pdl.fertilizers = readFertilizerMasterList_();
+    } catch (feErr) {
+      pdl.fertilizers = [];
+    }
+    try {
+      pdl.cropChemPlans = listCropChemPlansBrief_();
+    } catch (ccpErr) {
+      pdl.cropChemPlans = [];
+    }
+    try {
+      pdl.costItems = readCostMasterList_();
+    } catch (ciErr) {
+      pdl.costItems = [];
+    }
+    try {
+      pdl.cropCostPlans = listCropCostPlansBrief_();
+    } catch (ccp2Err) {
+      pdl.cropCostPlans = [];
+    }
+    try {
+      pdl.cropWorkPlans = listCropWorkPlansBrief_();
+    } catch (cwpErr) {
+      pdl.cropWorkPlans = [];
+    }
+    try {
+      pdl.nurseryLocations = readNurseryLocationList_();
+    } catch (nlErr) {
+      pdl.nurseryLocations = [];
+    }
+    try {
+      pdl.cropCultSettings = readCropCultSettingList_();
+    } catch (ccsErr) {
+      pdl.cropCultSettings = [];
+    }
+    let pastReports = {};
+    const schedSheet = ss.getSheetByName('作業予定');
+    if (schedSheet) {
+      const data = schedSheet.getDataRange().getValues();
+      for (let i = 1; i < data.length; i++) {
+        const workName = String(data[i][0]); const polyId = String(data[i][10]);
+        if (workName.includes('⚠️問題対応:') && polyId) {
+          let reason = workName.replace('⚠️問題対応: ', '').replace('⚠️問題対応:', '').trim();
+          if (reason.includes(' / ')) reason = reason.split(' / ')[0].trim();
+          if (!pastReports[polyId]) pastReports[polyId] = [];
+          if (!pastReports[polyId].includes(reason) && reason !== '') pastReports[polyId].push(reason);
+        }
       }
     }
-  }
-  pdl.pastReports = pastReports;
-
-  let activeLots = [];
-  const lotSheet = ss.getSheetByName('ロット記録');
-  if (lotSheet) {
-    const data = lotSheet.getDataRange().getValues();
-    if(data.length > 0){
-       const head = data[0].map(String);
-       const locIdx = head.indexOf('拠点') >= 0 ? head.indexOf('拠点') : 9;
-       const unitIdx = head.indexOf('内容単位');
-       const qtyIdx = head.indexOf('内容個数');
-       for (let i = 1; i < data.length; i++) {
-         if (data[i][8] !== '完了' && data[i][8] !== '出荷済' && data[i][0]) {
-           activeLots.push({
-             lotId: data[i][0],
-             containerType: data[i][5],
-             remain: data[i][7],
-             location: data[i][locIdx] || '未設定',
-             contentUnit: unitIdx >= 0 ? (data[i][unitIdx] || '') : (data[i][10] || ''),
-             contentQty: qtyIdx >= 0 ? (data[i][qtyIdx] != null ? data[i][qtyIdx] : '') : (data[i][11] != null ? data[i][11] : '')
-           });
-         }
-       }
+    pdl.pastReports = pastReports;
+    try {
+      pdl.deliveryDestinations = getDeliveryDestinations();
+    } catch (ddErr) {
+      pdl.deliveryDestinations = [];
     }
   }
+  // 🌟ここまで🌟
 
-    
-  
-
-  try {
-    pdl.deliveryDestinations = getDeliveryDestinations();
-  } catch (ddErr) {
-    pdl.deliveryDestinations = [];
+  let activeLots = [];
+  if (!light) {
+    const lotSheet = ss.getSheetByName('ロット記録');
+    if (lotSheet) {
+      const data = lotSheet.getDataRange().getValues();
+      if(data.length > 0){
+         const head = data[0].map(String);
+         const locIdx = head.indexOf('拠点') >= 0 ? head.indexOf('拠点') : 9;
+         const unitIdx = head.indexOf('内容単位');
+         const qtyIdx = head.indexOf('内容個数');
+         for (let i = 1; i < data.length; i++) {
+           if (data[i][8] !== '完了' && data[i][8] !== '出荷済' && data[i][0]) {
+             activeLots.push({
+               lotId: data[i][0],
+               containerType: data[i][5],
+               remain: data[i][7],
+               location: data[i][locIdx] || '未設定',
+               contentUnit: unitIdx >= 0 ? (data[i][unitIdx] || '') : (data[i][10] || ''),
+               contentQty: qtyIdx >= 0 ? (data[i][qtyIdx] != null ? data[i][qtyIdx] : '') : (data[i][11] != null ? data[i][11] : '')
+             });
+           }
+         }
+      }
+    }
   }
 
   // 圃場・生産管理の読込失敗で初期表示全体を落とさない
   let polygons = [];
   try {
-    polygons = getSavedPolygons({ slimForInit: true, photoLimit: 25 });
+    polygons = getSavedPolygons({ slimForInit: true, photoLimit: light ? 8 : 16 });
   } catch (polyErr) {
     console.warn('圃場読込スキップ:', polyErr);
     polygons = [];
@@ -1274,7 +1288,14 @@ pdl.materials = [];
     toukiList = [];
   }
 
-  return { pdl, polygons: polygons, toukiList: toukiList, activeLots: activeLots, prodCategories: prodCategories };
+  return {
+    pdl: pdl,
+    polygons: polygons,
+    toukiList: toukiList,
+    activeLots: activeLots,
+    prodCategories: prodCategories,
+    _light: light
+  };
 
 } // ← これが getInitData を閉じる } です
 

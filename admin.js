@@ -1114,9 +1114,7 @@ function continueCachedAdminSession_(message, toastType) {
     startLocationWatch();
     schedulePendingAdminSyncFlush_();
     if (message) showAdminSyncToast(message, toastType || 'info');
-    if (localStorage.getItem('spreadsheetId') && !window._adminInitDataInFlight) {
-        try { loadInitData({ background: true }); } catch (e) {}
-    }
+    // ※ getInitData はここでは開始しない（login と同時打つとコールドスタートで両方落ちやすい）
 }
 
 function scheduleCachedAdminLoginRetry_() {
@@ -1150,6 +1148,7 @@ async function executeLogin(isAuto = false, options = {}) {
     }
 
     if (!isAuto && btn) { btn.innerText = "認証中..."; btn.disabled = true; }
+    window._adminLoginBusy = true;
 
     try {
         const res = await callGAS('login', { orgId: 'default', userId: id, password: pw }, 2, { timeoutMs: 60000 });
@@ -1182,9 +1181,8 @@ async function executeLogin(isAuto = false, options = {}) {
                 window.refreshAccountNameButtons();
             }
 
-            // キャッシュ起動時は利用規約確認を待たず、最新取得を優先
+            // ログイン成功後にだけ getInitData（コールドスタートを温めてから取る）
             if (fromCache) {
-                if (!window._adminInitDataInFlight) loadInitData({ background: true });
                 if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
                     Promise.resolve(PassionMapTerms.ensureAccepted({ userId: id })).catch(() => {});
                 }
@@ -1194,10 +1192,11 @@ async function executeLogin(isAuto = false, options = {}) {
                 }
                 if (hasCache) {
                     try { renderInitData(JSON.parse(localStorage.getItem('pMapAdminInitData')), { interim: true }); } catch (e) {}
-                    loadInitData({ background: true });
-                } else {
-                    loadInitData();
                 }
+            }
+            // 必ず軽量取得→成功後にフル取得（同時に重いJSONを取らない）
+            if (!window._adminInitDataInFlight) {
+                loadInitData({ background: true, light: true });
             }
             startLocationWatch();
             mapInitPromise.then(() => applyPendingMapDeepLink());
@@ -1220,12 +1219,20 @@ async function executeLogin(isAuto = false, options = {}) {
                 // コールドスタート失敗でも地図操作は維持し、裏で再試行
                 continueCachedAdminSession_(null, 'info');
                 scheduleCachedAdminLoginRetry_();
+                // ログインがサーバーを起こした直後に少し待ってからデータ取得
+                if (localStorage.getItem('spreadsheetId') && !window._adminInitDataInFlight) {
+                    setTimeout(() => {
+                        try { loadInitData({ background: true, light: true }); } catch (e2) {}
+                    }, 2500);
+                }
                 return;
             }
             startLocationWatch();
             try {
                 if (localStorage.getItem('spreadsheetId')) {
-                    loadInitData({ background: hasCache });
+                    setTimeout(() => {
+                        try { loadInitData({ background: true, light: true }); } catch (e2) {}
+                    }, 1500);
                 } else {
                     const cached = localStorage.getItem('pMapAdminInitData');
                     if (cached) renderInitData(JSON.parse(cached));
@@ -1238,6 +1245,8 @@ async function executeLogin(isAuto = false, options = {}) {
             if (err) err.innerText = "⚠️ 通信エラー: " + e.message;
             if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
         }
+    } finally {
+        window._adminLoginBusy = false;
     }
 }
 
@@ -1287,11 +1296,10 @@ function openMasterFromQuery_() {
 
 function loadInitData(options) {
     options = options || {};
-    let background = !!options.background;
+    // 既定は裏取得。地図を塞ぐ失敗画面を避けるため、特別な理由がなければ background
+    let background = options.foreground !== true;
     const cached = localStorage.getItem('pMapAdminInitData');
     const hasPolygons = Object.keys(loadedPolygons || {}).length > 0;
-    // キャッシュ／描画済みがあるのにフォアグラウンド取得すると、地図準備との競合で失敗トーストが出やすい
-    if (!background && (cached || hasPolygons)) background = true;
 
     initDataLoadStarted = true;
 
@@ -1301,12 +1309,21 @@ function loadInitData(options) {
     }
 
     if (window._adminInitLoading) {
-        window._adminInitLoading.done();
+        try { window._adminInitLoading.done(); } catch (e) {}
         window._adminInitLoading = null;
     }
     if (!background) {
+        // 手動の強制フォアグラウンド時のみ。地図は操作可能な非ブロック表示
         window._adminInitLoading = (window.AppLoading && AppLoading.start)
-            ? AppLoading.start({ label: '管理画面を準備中...', detail: '初期データを確認しています', current: 0, total: 3, delay: 0 })
+            ? AppLoading.start({
+                label: '管理画面を準備中...',
+                detail: '初期データを確認しています',
+                current: 0,
+                total: 3,
+                delay: 0,
+                blocking: false,
+                lockMap: false
+            })
             : null;
         if (cached) {
             if (window._adminInitLoading) window._adminInitLoading.update({ label: '保存データを読み込み中...', detail: '地図を先に表示します', current: 1, total: 3 });
@@ -1315,17 +1332,75 @@ function loadInitData(options) {
         if (window._adminInitLoading) window._adminInitLoading.update({ label: '最新データを取得中...', detail: 'サーバーに接続しています', current: 1, total: 3 });
     } else if (cached && !hasPolygons) {
         try { renderInitData(JSON.parse(cached), { interim: true }); } catch (e) {}
+    } else if (!cached && !hasPolygons && typeof showAdminSyncToast === 'function') {
+        // 初回などでキャッシュが無いときも、画面を塞がず控えめに案内
+        showAdminSyncToast('☁️ 圃場データを取得しています…', 'info');
     }
 
-    const p = callGAS('getInitData', {}, 2, { timeoutMs: 240000 }).then(data => {
+    const closeAdminInitLoadingSoft_ = () => {
+        if (!window._adminInitLoading) return;
+        try { window._adminInitLoading.done(); } catch (e) {}
+        window._adminInitLoading = null;
+    };
+
+    const scheduleAdminInitRetry_ = (delayMs) => {
+        if (window._adminInitDataBgRetryTimer) return;
+        window._adminInitDataBgRetryTimer = setTimeout(() => {
+            window._adminInitDataBgRetryTimer = null;
+            try { loadInitData({ background: true }); } catch (e2) {}
+        }, delayMs);
+    };
+
+    // light: 農薬・肥料など重いマスタを省略して成功率を上げる（full 指定時のみフル）
+    const useLight = options.full !== true;
+    const p = callGAS('getInitData', useLight ? { light: true } : {}, 2, { timeoutMs: 240000 }).then(data => {
         window._adminInitDataBgFailCount = 0;
         if (window._adminInitLoading) window._adminInitLoading.update({ label: '表示データを準備中...', detail: 'マスタと圃場を反映しています', current: 2, total: 3 });
         const incomingCount = (data && Array.isArray(data.polygons)) ? data.polygons.length : 0;
         let skipCacheSave = false;
+        // 軽量応答でフルキャッシュを潰さない
+        if (useLight && cached) {
+            try {
+                const c = JSON.parse(cached);
+                const hadHeavy = c && c.pdl && (
+                    (Array.isArray(c.pdl.pesticides) && c.pdl.pesticides.length)
+                    || (Array.isArray(c.pdl.fertilizers) && c.pdl.fertilizers.length)
+                );
+                if (hadHeavy) skipCacheSave = true;
+            } catch (e) {}
+        }
         if (incomingCount === 0 && cached) {
             try {
                 const c = JSON.parse(cached);
                 if (c && Array.isArray(c.polygons) && c.polygons.length > 0) skipCacheSave = true;
+            } catch (e) {}
+        }
+        // 軽量応答でメモリ上の重いマスタが空にならないよう、既存キャッシュから補完
+        if (useLight && cached && data && data.pdl) {
+            try {
+                const c = JSON.parse(cached);
+                if (c && c.pdl) {
+                    const heavyKeys = [
+                        'pesticides', 'fertilizers', 'cropChemPlans', 'costItems',
+                        'cropCostPlans', 'cropWorkPlans', 'nurseryLocations', 'cropCultSettings',
+                        'deliveryDestinations'
+                    ];
+                    heavyKeys.forEach((k) => {
+                        if ((!Array.isArray(data.pdl[k]) || !data.pdl[k].length)
+                            && Array.isArray(c.pdl[k]) && c.pdl[k].length) {
+                            data.pdl[k] = c.pdl[k];
+                        }
+                    });
+                    if (c.pdl.pastReports && typeof c.pdl.pastReports === 'object'
+                        && Object.keys(c.pdl.pastReports).length
+                        && (!data.pdl.pastReports || !Object.keys(data.pdl.pastReports || {}).length)) {
+                        data.pdl.pastReports = c.pdl.pastReports;
+                    }
+                }
+                if (c && (!Array.isArray(data.activeLots) || !data.activeLots.length)
+                    && Array.isArray(c.activeLots) && c.activeLots.length) {
+                    data.activeLots = c.activeLots;
+                }
             } catch (e) {}
         }
         const skipRedraw = background && (editingId || customDrawingMode || (window.isEditingFude && window.selectedFudePaths && window.selectedFudePaths.length));
@@ -1336,12 +1411,12 @@ function loadInitData(options) {
                 console.warn('InitData cache save failed:', e);
             }
         } else if (skipCacheSave) {
-            console.warn('取得データの圃場が0件のため、キャッシュを保持します');
+            console.warn('軽量/空応答のため、既存キャッシュを保持します');
         }
         if (skipRedraw) {
             persistAdminInitCache_();
             if (background) showAdminSyncToast('☁️ 読み込み完了（編集中のため地図は維持）', 'ok');
-            if (window._adminInitLoading) { window._adminInitLoading.done(); window._adminInitLoading = null; }
+            closeAdminInitLoadingSoft_();
             return;
         }
         if (background && cached && data && data.polygons) {
@@ -1350,7 +1425,7 @@ function loadInitData(options) {
                 if (JSON.stringify(oldPolys) === JSON.stringify(data.polygons) && Object.keys(loadedPolygons || {}).length > 0) {
                     renderInitData(data, { interim: false, mastersOnly: true });
                     showAdminSyncToast('☁️ 読み込み完了しました', 'ok');
-                    if (window._adminInitLoading) { window._adminInitLoading.done(); window._adminInitLoading = null; }
+                    closeAdminInitLoadingSoft_();
                     const mmSame = document.getElementById('masterModal');
                     if (mmSame && mmSame.style.display === 'flex' && typeof renderMasterSection === 'function') {
                         renderMasterSection();
@@ -1366,64 +1441,52 @@ function loadInitData(options) {
             renderMasterSection();
         }
         schedulePendingAdminSyncFlush_();
+        closeAdminInitLoadingSoft_();
+        // 軽量取得できたあと、少し間を置いてフルマスタを裏取り（起動失敗を避ける）
+        if (useLight && data && !window._adminInitDataFullScheduled) {
+            window._adminInitDataFullScheduled = true;
+            setTimeout(() => {
+                window._adminInitDataFullScheduled = false;
+                if (!window._adminInitDataInFlight) {
+                    try { loadInitData({ background: true, full: true }); } catch (e3) {}
+                }
+            }, 4000);
+        }
     }).catch(e => {
         console.log("InitData Error:", e);
         const detail = (e && e.message) ? String(e.message).replace(/\s+/g, ' ').slice(0, 80) : '';
-        const failLabel = detail ? ('圃場データの読み込みに失敗しました: ' + detail) : '圃場データの読み込みに失敗しました';
         const errMsg = String((e && e.message) || '');
-        const isTransient = /Failed to fetch|通信に失敗|タイムアウト|一時的な通信|cancelled|Abort/i.test(errMsg)
-          || (e && e.name === 'AbortError');
-        const canKeepShowing = !!(cached || Object.keys(loadedPolygons || {}).length > 0);
+        const isTransient = /Failed to fetch|通信に失敗|タイムアウト|一時的な通信|cancelled|Abort|NetworkError|Load failed/i.test(errMsg)
+          || (e && e.name === 'AbortError')
+          || (e && e.name === 'TypeError');
+        const canKeepShowing = !!(cached || Object.keys(loadedPolygons || {}).length > 0 || pendingInitData);
 
-        // 表示できるデータがある／裏更新の一時失敗は静かに再試行（ワーカーと同様）
-        if ((background || canKeepShowing) && isTransient) {
-            if (window._adminInitLoading) {
-                window._adminInitLoading.done();
-                window._adminInitLoading = null;
-            }
-            if (cached && Object.keys(loadedPolygons || {}).length === 0) {
-                try { renderInitData(JSON.parse(cached), { interim: false }); } catch (err) {}
-            }
-            window._adminInitDataBgFailCount = (Number(window._adminInitDataBgFailCount || 0) || 0) + 1;
-            const failCount = window._adminInitDataBgFailCount;
-            if (!window._adminInitDataBgRetryTimer) {
-                const delayMs = Math.min(120000, 8000 * Math.pow(1.6, Math.min(failCount, 6)));
-                window._adminInitDataBgRetryTimer = setTimeout(() => {
-                    window._adminInitDataBgRetryTimer = null;
-                    try { loadInitData({ background: true }); } catch (e2) {}
-                }, delayMs);
-            }
+        // 通信系の失敗では絶対に fail() オーバーレイを出さない（地図を塞がない）
+        closeAdminInitLoadingSoft_();
+
+        if (cached && Object.keys(loadedPolygons || {}).length === 0) {
+            try { renderInitData(JSON.parse(cached), { interim: false }); } catch (err) {}
+        }
+
+        window._adminInitDataBgFailCount = (Number(window._adminInitDataBgFailCount || 0) || 0) + 1;
+        const failCount = window._adminInitDataBgFailCount;
+        const delayMs = Math.min(120000, 8000 * Math.pow(1.6, Math.min(failCount, 6)));
+        scheduleAdminInitRetry_(isTransient ? delayMs : Math.max(delayMs, 15000));
+
+        if (canKeepShowing) {
             if (failCount >= 3) {
                 showAdminSyncToast('⚠️ 最新データの取得に失敗（表示中のデータを維持・再試行中）', 'error');
             }
             return;
         }
 
-        if (cached && Object.keys(loadedPolygons || {}).length === 0) {
-            try {
-                renderInitData(JSON.parse(cached), { interim: false });
-                if (window._adminInitLoading) { window._adminInitLoading.done(); window._adminInitLoading = null; }
-                showAdminSyncToast('⚠️ 最新の取得に失敗（キャッシュで表示・再試行します）', 'error');
-                if (!window._adminInitDataBgRetryTimer) {
-                    window._adminInitDataBgRetryTimer = setTimeout(() => {
-                        window._adminInitDataBgRetryTimer = null;
-                        try { loadInitData({ background: true }); } catch (e2) {}
-                    }, 10000);
-                }
-                return;
-            } catch (err) {
-                if (window._adminInitLoading) { window._adminInitLoading.fail(failLabel); window._adminInitLoading = null; }
-            }
-        } else if (window._adminInitLoading) {
-            window._adminInitLoading.fail(failLabel);
-            window._adminInitLoading = null;
-        } else if (background) {
-            showAdminSyncToast('⚠️ 最新データの取得に失敗（表示中のデータを維持）', 'error');
-        }
-        // 何も表示できないときだけ強い失敗トースト
-        if (detail && !background && !canKeepShowing) {
-            showAdminSyncToast('⚠️ ' + failLabel, 'error');
-        }
+        // まだ何も表示できないときだけ、短い案内（赤い全画面エラーは出さない）
+        showAdminSyncToast(
+            isTransient
+                ? '⚠️ サーバーに接続できません。自動で再試行します…'
+                : ('⚠️ 圃場データの取得に失敗しました' + (detail ? '（' + detail + '）' : '')),
+            'error'
+        );
     }).finally(() => {
         if (window._adminInitDataInFlight === p) window._adminInitDataInFlight = null;
     });
@@ -1479,6 +1542,12 @@ function renderInitData(data, opts) {
     pendingInitData = null;
 
     const keepLocalMasters = hasPendingAdminSyncOf_(['manageMaster']);
+    const isLightPayload = !!(data._light || (opts && opts.light));
+    const keepIfLight_ = (incoming, current) => {
+        if (!isLightPayload) return (incoming || []);
+        if (Array.isArray(incoming) && incoming.length) return incoming;
+        return Array.isArray(current) ? current : [];
+    };
     if (!keepLocalMasters) {
         window.pdlMachines = data.pdl.machines || [];
         if (typeof window.refreshAdminMachineDisplayNames_ === 'function') {
@@ -1498,14 +1567,14 @@ function renderInitData(data, opts) {
         pdlWorkMaster = data.pdl.workMaster || [];
         pdlTools = data.pdl.tools || [];
         pdlMaterials = data.pdl.materials || [];
-        pdlPesticides = data.pdl.pesticides || [];
-        pdlFertilizers = data.pdl.fertilizers || [];
-        pdlCropChemPlans = data.pdl.cropChemPlans || [];
-        pdlCostItems = data.pdl.costItems || [];
-        pdlCropCostPlans = data.pdl.cropCostPlans || [];
-        pdlCropWorkPlans = data.pdl.cropWorkPlans || [];
-        pdlNurseryLocations = data.pdl.nurseryLocations || [];
-        pdlCropCultSettings = data.pdl.cropCultSettings || [];
+        pdlPesticides = keepIfLight_(data.pdl.pesticides, pdlPesticides);
+        pdlFertilizers = keepIfLight_(data.pdl.fertilizers, pdlFertilizers);
+        pdlCropChemPlans = keepIfLight_(data.pdl.cropChemPlans, pdlCropChemPlans);
+        pdlCostItems = keepIfLight_(data.pdl.costItems, pdlCostItems);
+        pdlCropCostPlans = keepIfLight_(data.pdl.cropCostPlans, pdlCropCostPlans);
+        pdlCropWorkPlans = keepIfLight_(data.pdl.cropWorkPlans, pdlCropWorkPlans);
+        pdlNurseryLocations = keepIfLight_(data.pdl.nurseryLocations, pdlNurseryLocations);
+        pdlCropCultSettings = keepIfLight_(data.pdl.cropCultSettings, pdlCropCultSettings);
         pdlSignFunctions = data.pdl.signFunctionsMaster || data.pdl.signFunctions || [];
         pdlWorkCategories = data.pdl.workCategories || ["圃場作業", "事務作業", "保全・整備"];
         pdlContentUnits = data.pdl.contentUnits || ['kg', 'g', '本', 'パック', '個', '束'];
@@ -8715,7 +8784,18 @@ window.startAdminLinkSelect = (targetId) => {
         document.body.appendChild(div);
     }
     document.getElementById('adminMapSelectUI').style.display = 'flex';
-    setTimeout(() => { if (!window.pdlMachines) { callGAS('getInitData').then(data => { window.pdlMachines = data.pdl.machines || []; updateAdminMapVisuals(); }); } else { updateAdminMapVisuals(); } }, 10);
+    setTimeout(() => {
+        if (window.pdlMachines) {
+            updateAdminMapVisuals();
+            return;
+        }
+        // 起動中の getInitData と二重に打たない
+        if (window._adminInitDataInFlight) {
+            Promise.resolve(window._adminInitDataInFlight).then(() => updateAdminMapVisuals()).catch(() => {});
+            return;
+        }
+        loadInitData({ background: true, full: true });
+    }, 10);
 };
 
 window.applyAdminMapSelect = () => {
@@ -9140,24 +9220,20 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('loginId').value = id;
         document.getElementById('loginPw').value = pw;
 
-        // 楽観UI：キャッシュがあればログイン完了を待たず地図表示＋裏更新を並行開始
+        // 楽観UI：キャッシュで即表示。getInitData は login 成功後にだけ開始（同時打診で失敗しやすい）
         const cachedData = localStorage.getItem('pMapAdminInitData');
         if (cachedData) {
             try { renderInitData(JSON.parse(cachedData), { interim: true }); } catch (e) {}
             continueCachedAdminSession_(null, 'info');
-            // ログイン確認と最新データ取得を並行（ログイン待ちで起動を遅らせない）
-            if (localStorage.getItem('spreadsheetId')) {
-                try { loadInitData({ background: true }); } catch (e) {}
-            }
             executeLogin(true, { fromCache: true });
         } else {
             executeLogin(true);
         }
-        // 地図が後からできても再描画する保険
+        // 地図が後からできても再描画する保険（ログイン中は getInitData を始めない）
         mapInitPromise.then(() => {
             try { flushPendingInitData(); } catch (e) {}
-            if (!initDataLoadStarted && localStorage.getItem('spreadsheetId')) {
-                loadInitData({ background: !!localStorage.getItem('pMapAdminInitData') });
+            if (!initDataLoadStarted && localStorage.getItem('spreadsheetId') && !window._adminLoginBusy) {
+                loadInitData({ background: true, light: !localStorage.getItem('pMapAdminInitData') });
             }
         });
     } else {
