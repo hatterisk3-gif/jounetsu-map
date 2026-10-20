@@ -848,7 +848,7 @@
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=ja&v=weekly" async defer></script>
 
   <script src="api-client.js?v=1788600000090" defer></script>
-  <script src="admin.js?v=1788600000098" defer></script>
+  <script src="admin.js?v=1788600000102" defer></script>
   <script src="admin_cost.js?v=1785489000008" defer></script>
   <script src="admin_crop_work.js?v=1787570400000" defer></script>
   <script src="tracking.js?v=1788600000043" defer></script>
@@ -878,14 +878,57 @@
       <button onclick="document.getElementById('cadHistoryModal').style.display='none'" style="width:100%; background:#f44336; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer;">閉じる</button>
     </div>
   </div>
-  <div id="splitPolygonPanel" style="display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#009688; color:#fff; padding:15px; font-weight:bold; text-align:center; z-index:2000; width:90%; max-width:440px; border-radius:8px; box-shadow:0 4px 15px rgba(0,0,0,0.3);">
-    ✂️ 圃場を均等分割しますか？
-    <div style="margin-top:10px; display:flex; gap:5px; flex-wrap:wrap; justify-content:center;">
-      <button onclick="promptSplitPolygon('edge')" style="background:#4CAF50; color:white; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; flex:1; min-width:130px;">🎯 指定の辺に合わせる</button>
-      <button onclick="promptSplitPolygon('cad_angle')" style="background:#2196F3; color:white; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; flex:1; min-width:130px;">🧭 CAD角度で分割</button>
-      <button onclick="promptSplitPolygon('long')" style="background:#E91E63; color:white; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; flex:1; min-width:120px;">長辺方向（自動）</button>
-      <button onclick="promptSplitPolygon('short')" style="background:#FF9800; color:white; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; flex:1; min-width:120px;">短辺方向（自動）</button>
-      <button onclick="cancelSplitPolygon()" style="background:#666; color:#fff; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; flex:1; min-width:100px;">そのまま</button>
+  <div id="splitPolygonPanel" style="display:none; position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:#00695C; color:#fff; padding:12px; text-align:left; z-index:2000; width:92%; max-width:420px; max-height:78vh; overflow:auto; border-radius:12px; box-shadow:0 4px 18px rgba(0,0,0,0.35); box-sizing:border-box;">
+    <div style="text-align:center; font-size:15px; font-weight:bold; line-height:1.35;">✂️ この形を同じ大きさに分けますか？</div>
+    <div style="text-align:center; font-size:11px; font-weight:normal; opacity:0.92; margin:2px 0 10px;">切り口の向きを選んでください</div>
+    <div style="display:flex; flex-direction:column; gap:6px;">
+      <button type="button" onclick="promptSplitPolygon('edge')" style="display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:#fff; color:#1B5E20; border:none; border-radius:8px; padding:8px 10px; cursor:pointer;">
+        <span aria-hidden="true" style="position:relative; width:36px; height:22px; flex:none;">
+          <span style="position:absolute; left:2px; top:3px; width:24px; height:3px; background:currentColor; border-radius:2px; transform:rotate(-24deg); transform-origin:left center;"></span>
+          <span style="position:absolute; left:6px; top:10px; width:24px; height:3px; background:currentColor; border-radius:2px; transform:rotate(-24deg); transform-origin:left center;"></span>
+          <span style="position:absolute; left:10px; top:17px; width:24px; height:3px; background:currentColor; border-radius:2px; transform:rotate(-24deg); transform-origin:left center;"></span>
+        </span>
+        <span style="min-width:0;">
+          <span style="display:block; font-size:14px; font-weight:bold;">辺を選んで、その辺と平行に切る</span>
+          <span style="display:block; font-size:11px; font-weight:normal; color:#555; margin-top:1px;">合わせたい辺を地図でタップ</span>
+        </span>
+      </button>
+      <button type="button" onclick="promptSplitPolygon('cad_angle')" style="display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:#fff; color:#0D47A1; border:none; border-radius:8px; padding:8px 10px; cursor:pointer;">
+        <span aria-hidden="true" style="width:36px; height:22px; flex:none; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:bold; letter-spacing:-0.5px;">N↑</span>
+        <span style="min-width:0;">
+          <span style="display:block; font-size:14px; font-weight:bold;">角度を入れて、その向きと平行に切る</span>
+          <span style="display:block; font-size:11px; font-weight:normal; color:#555; margin-top:1px;">北が0°。時計回りで指定</span>
+        </span>
+      </button>
+      <button type="button" onclick="promptSplitPolygon('long')" style="display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:#fff; color:#AD1457; border:none; border-radius:8px; padding:8px 10px; cursor:pointer;">
+        <span aria-hidden="true" style="display:inline-flex; width:36px; height:18px; border:2px solid currentColor; border-radius:2px; box-sizing:border-box; flex:none;">
+          <span style="flex:1; border-right:2px solid currentColor;"></span>
+          <span style="flex:1; border-right:2px solid currentColor;"></span>
+          <span style="flex:1;"></span>
+        </span>
+        <span style="min-width:0;">
+          <span style="display:block; font-size:14px; font-weight:bold;">長いほうを等分する</span>
+          <span style="display:block; font-size:11px; font-weight:normal; color:#555; margin-top:1px;">長い辺を横切って、自動で切る</span>
+        </span>
+      </button>
+      <button type="button" onclick="promptSplitPolygon('short')" style="display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:#fff; color:#E65100; border:none; border-radius:8px; padding:8px 10px; cursor:pointer;">
+        <span aria-hidden="true" style="display:inline-flex; flex-direction:column; width:36px; height:20px; border:2px solid currentColor; border-radius:2px; box-sizing:border-box; flex:none;">
+          <span style="flex:1; border-bottom:2px solid currentColor;"></span>
+          <span style="flex:1; border-bottom:2px solid currentColor;"></span>
+          <span style="flex:1;"></span>
+        </span>
+        <span style="min-width:0;">
+          <span style="display:block; font-size:14px; font-weight:bold;">短いほうを等分する</span>
+          <span style="display:block; font-size:11px; font-weight:normal; color:#555; margin-top:1px;">短い辺を横切って、自動で切る</span>
+        </span>
+      </button>
+      <button type="button" onclick="cancelSplitPolygon()" style="display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:#ECEFF1; color:#37474F; border:none; border-radius:8px; padding:8px 10px; cursor:pointer;">
+        <span aria-hidden="true" style="width:36px; height:18px; border:2px solid currentColor; border-radius:2px; box-sizing:border-box; flex:none;"></span>
+        <span style="min-width:0;">
+          <span style="display:block; font-size:14px; font-weight:bold;">分けずに、この形のまま進む</span>
+          <span style="display:block; font-size:11px; font-weight:normal; color:#555; margin-top:1px;">分割しない</span>
+        </span>
+      </button>
     </div>
   </div>
 
@@ -894,10 +937,10 @@
       <h3 id="splitModalTitle" style="margin-top:0; border-bottom:2px solid #009688; padding-bottom:10px; font-size:16px; text-align:center;">✂️ 分割数の指定</h3>
       <div style="margin-bottom:15px;">
         <div id="splitAngleRow" style="display:none; margin-bottom:12px;">
-          <label style="font-size:12px; font-weight:bold; color:#555;">分割線の角度（北が0°・時計回り・辺に平行）:</label>
+          <label style="font-size:12px; font-weight:bold; color:#555;">切り口の向き（北が0°・時計回り。この角度と平行に切ります）</label>
           <input type="number" id="splitAngleInput" step="0.1" value="0" style="width:100%; padding:8px; margin-top:3px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">
         </div>
-        <label style="font-size:12px; font-weight:bold; color:#555;">いくつに分割しますか？:</label>
+        <label style="font-size:12px; font-weight:bold; color:#555;">いくつに分けますか？</label>
         <input type="number" id="splitCountInput" value="2" min="2" max="100" style="width:100%; padding:8px; margin-top:3px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">
         <input type="hidden" id="splitTargetAxis" value="">
       </div>

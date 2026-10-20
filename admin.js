@@ -676,7 +676,7 @@ window.promptLineUrl = async () => {
         customAlert("通信エラーが発生しました。デプロイが最新か確認してください。");
     }
 };
-const iconFunctionMap = { '🚻': 'トイレ', '🚰': '洗車場', '🚿': '洗車場', '💧': '給水口', '🕳️': '排水口', '📦': '倉庫', '🏭': 'パックセンター', '🏪': '事務所', '🏠': '事務所', '🏢': '研究所', '🚚': '残渣運搬', '🛻': '残渣運搬', '🚛': '残渣運搬', '🚜': '農機具整備', '🚁': '農機具整備', '🛠️': '車両整備', '⛽': '整備', '⚠️': '事故注意', '🚧': '事故注意', '📢': 'バードソニック', '🚫': '鳥被害', '🐦': '鳥被害', '🅿️': '駐車場', '🚗': '駐車場', '🚙': '駐車場（軽トラ）' };
+const iconFunctionMap = { '🚻': 'トイレ', '🚰': '洗車場', '🚿': '洗車場', '⛲': '給水口', '🕳️': '排水口', '📦': '倉庫', '🏭': 'パックセンター', '🏪': '事務所', '🏠': '事務所', '🏢': '研究所', '🚚': '残渣運搬', '🛻': '残渣運搬', '🚛': '残渣運搬', '🚜': '農機具整備', '🚁': '農機具整備', '🛠️': '車両整備', '⛽': '整備', '⚠️': '事故注意', '🚧': '事故注意', '📢': 'バードソニック', '🚫': '鳥被害', '🐦': '鳥被害', '🅿️': '駐車場', '🚗': '駐車場', '🚙': '駐車場（軽トラ）' };
 /** 看板登録・アイコン変更で共通。ジャンル見出し付きで表示する */
 const ADMIN_SIGN_ICON_GROUPS = [
     { label: '案内・注意', icons: ['🪧', '⚠️', '🚧', '🚫', '🚩', '📢', '🔒', '📷'] },
@@ -696,17 +696,43 @@ function renderAdminSignIconPickerHtml_(opts) {
     opts = opts || {};
     const onPick = opts.onPick || 'selectMI';
     const arg0 = opts.arg0 != null ? String(opts.arg0).replace(/\\/g, '\\\\').replace(/'/g, "\\'") : '';
-    return ADMIN_SIGN_ICON_GROUPS.map((group) => {
+    const pickerId = 'sip' + Math.floor(Math.random() * 1e9);
+    let activeIdx = 0;
+    if (opts.activeIcon) {
+        const found = ADMIN_SIGN_ICON_GROUPS.findIndex((group) => group.icons.indexOf(opts.activeIcon) >= 0);
+        if (found >= 0) activeIdx = found;
+    }
+    const tabs = ADMIN_SIGN_ICON_GROUPS.map((group, i) => {
+        const on = i === activeIdx;
+        return `<button type="button" class="sign-icon-tab" data-picker="${pickerId}" data-idx="${i}" onclick="switchAdminSignIconTab_(this)" style="flex:none;white-space:nowrap;font-size:12px;font-weight:bold;padding:6px 10px;border-radius:999px;border:1px solid ${on ? '#00695C' : '#CFD8DC'};background:${on ? '#00695C' : '#fff'};color:${on ? '#fff' : '#455A64'};cursor:pointer;">${group.label}</button>`;
+    }).join('');
+    const panels = ADMIN_SIGN_ICON_GROUPS.map((group, i) => {
         const cells = group.icons.map((icon) => {
             const click = arg0 ? `${onPick}('${arg0}','${icon}')` : `${onPick}('${icon}')`;
             return `<span class="ib" id="i_${icon}" onclick="${click}" style="cursor:pointer;padding:4px 0;border-radius:4px;line-height:1.1;">${icon}</span>`;
         }).join('');
-        return `<div style="margin-bottom:8px;">
-            <div style="font-size:11px;font-weight:bold;color:#455A64;text-align:left;margin:0 0 3px;padding-bottom:2px;border-bottom:1px solid #ECEFF1;">${group.label}</div>
-            <div style="display:grid;grid-template-columns:repeat(6,1fr);font-size:22px;gap:2px;">${cells}</div>
-        </div>`;
+        return `<div class="sign-icon-panel" data-picker="${pickerId}" data-idx="${i}" style="display:${i === activeIdx ? 'grid' : 'none'};grid-template-columns:repeat(6,1fr);font-size:22px;gap:2px;">${cells}</div>`;
     }).join('');
+    return `<div>
+        <div style="display:flex;flex-wrap:nowrap;gap:4px;overflow-x:auto;padding-bottom:6px;margin-bottom:4px;-webkit-overflow-scrolling:touch;">${tabs}</div>
+        ${panels}
+    </div>`;
 }
+
+window.switchAdminSignIconTab_ = (btn) => {
+    if (!btn) return;
+    const picker = btn.getAttribute('data-picker');
+    const idx = btn.getAttribute('data-idx');
+    document.querySelectorAll('.sign-icon-tab[data-picker="' + picker + '"]').forEach((el) => {
+        const on = el.getAttribute('data-idx') === idx;
+        el.style.background = on ? '#00695C' : '#fff';
+        el.style.color = on ? '#fff' : '#455A64';
+        el.style.borderColor = on ? '#00695C' : '#CFD8DC';
+    });
+    document.querySelectorAll('.sign-icon-panel[data-picker="' + picker + '"]').forEach((el) => {
+        el.style.display = el.getAttribute('data-idx') === idx ? 'grid' : 'none';
+    });
+};
 
 const ADMIN_PENDING_SYNC_KEY = 'pMapAdminPendingSync';
 const adminSyncQueue_ = [];
@@ -1484,10 +1510,10 @@ function loadInitData(options) {
     // 軽量は少し短め。未デプロイでフル応答になっても切れるよう余裕は残す
     const initTimeoutMs = useLight ? 120000 : 240000;
     const initTimeoutStepMs = useLight ? 30000 : 45000;
-    const p = callGAS('getInitData', useLight ? { light: true } : {}, useLight ? 3 : 2, {
+    const p = callGAS('getInitData', useLight ? { light: true } : {}, 1, {
         timeoutMs: initTimeoutMs,
         timeoutStepMs: initTimeoutStepMs,
-        softNetRetries: useLight ? 4 : 5
+        softNetRetries: 1
     }).then(data => {
         window._adminInitDataBgFailCount = 0;
         if (window._adminInitLoading) window._adminInitLoading.update({ label: '表示データを準備中...', detail: 'マスタと圃場を反映しています', current: 2, total: 3 });
@@ -1567,15 +1593,20 @@ function loadInitData(options) {
                 } else {
                     try { renderInitData(Object.assign({}, data, { polygons: fallback.polygons }), { interim: false, mastersOnly: true }); } catch (e) {}
                 }
-                if (background) showAdminSyncToast('☁️ サーバー応答が空のため表示中の圃場を維持', 'info');
                 closeAdminInitLoadingSoft_();
-                scheduleAdminInitRetry_(5000);
+                if (!window._adminEmptyInitRetried) {
+                    window._adminEmptyInitRetried = true;
+                    scheduleAdminInitRetry_(30000);
+                }
                 return;
             }
             if (Object.keys(loadedPolygons || {}).length > 0) {
                 try { renderInitData(data, { interim: false, mastersOnly: true }); } catch (e) {}
                 closeAdminInitLoadingSoft_();
-                scheduleAdminInitRetry_(5000);
+                if (!window._adminEmptyInitRetried) {
+                    window._adminEmptyInitRetried = true;
+                    scheduleAdminInitRetry_(30000);
+                }
                 return;
             }
         }
@@ -1602,15 +1633,19 @@ function loadInitData(options) {
         }
         schedulePendingAdminSyncFlush_();
         closeAdminInitLoadingSoft_();
-        // 軽量取得できたあと、少し間を置いてフルマスタを裏取り（既にフルなら不要）
+        // フル取得は軽量成功の直後に重ねない。キャッシュに重いマスタが無いときだけ、間隔を空けて1回
         if (useLight && data && !serverLooksFull && !window._adminInitDataFullScheduled) {
-            window._adminInitDataFullScheduled = true;
-            setTimeout(() => {
-                window._adminInitDataFullScheduled = false;
-                if (!window._adminInitDataInFlight) {
-                    try { loadInitData({ background: true, full: true }); } catch (e3) {}
-                }
-            }, 4000);
+            const heavyReady = data.pdl && (
+                (Array.isArray(data.pdl.pesticides) && data.pdl.pesticides.length)
+                || (Array.isArray(data.pdl.fertilizers) && data.pdl.fertilizers.length)
+            );
+            if (!heavyReady) {
+                window._adminInitDataFullScheduled = true;
+                setTimeout(() => {
+                    if (window._adminInitDataInFlight || window._adminSyncWriteHold) return;
+                    try { loadInitData({ background: true, full: true, quiet: true }); } catch (e3) {}
+                }, 120000);
+            }
         }
     }).catch(e => {
         console.log("InitData Error:", e);
@@ -1648,14 +1683,12 @@ function loadInitData(options) {
 
         window._adminInitDataBgFailCount = (Number(window._adminInitDataBgFailCount || 0) || 0) + 1;
         const failCount = window._adminInitDataBgFailCount;
-        // 初回失敗はすぐ再試行（8秒待ちだと「いつまでも出ない」に見える）
-        const delayMs = Math.min(60000, (failCount === 1 ? 2000 : 4000) * Math.pow(1.5, Math.min(failCount - 1, 5)));
-        scheduleAdminInitRetry_(isTransient ? delayMs : Math.max(delayMs, 8000));
+        const delayMs = Math.min(120000, failCount === 1 ? 8000 : 20000 * Math.min(failCount, 4));
+        scheduleAdminInitRetry_(isTransient ? delayMs : Math.max(delayMs, 20000));
 
-        if (canKeepShowing) {
-            if (failCount >= 3) {
-                showAdminSyncToast('⚠️ 最新データの取得に失敗（表示中のデータを維持・再試行中）', 'error');
-            }
+        // すでに圃場が見えているときの裏取り失敗は案内しない（連打で赤トーストが出ていた）
+        if (canKeepShowing || options.quiet) {
+            console.warn('最新データの取得に失敗（表示中のデータを維持）', detail);
             return;
         }
 
@@ -6451,7 +6484,7 @@ window.onFuncChangeEdit = () => { const val = document.getElementById('rnFunc').
 function openCol(id) {
     const p = loadedPolygons[id]; let h;
     if (p.isMarker) {
-        h = `<div style="max-height:300px;overflow-y:auto;width:250px;padding-right:2px;">${renderAdminSignIconPickerHtml_({ onPick: 'applyCol', arg0: id })}</div>`;
+        h = `<div style="max-height:300px;overflow-y:auto;width:250px;padding-right:2px;">${renderAdminSignIconPickerHtml_({ onPick: 'applyCol', arg0: id, activeIcon: p.color })}</div>`;
     } else {
         const cl = ['#FF0000', '#FF6600', '#FFFF00', '#00FF00', '#556B2F', '#00CCFF', '#0033FF', '#9900FF', '#d32f2f'];
         h = `<div style="display:flex;flex-wrap:wrap;gap:5px;justify-content:center;">${cl.map(c => `<button style="background:${c};width:35px;height:35px;border-radius:4px;border:1px solid #ccc;" onclick="applyCol('${id}','${c}')"></button>`).join('')}</div>`;
@@ -7178,8 +7211,8 @@ window.cancelMarkerForm_ = () => {
 };
 
 window._signRegQuickPresets_ = {
-    water: { label: '水地点', icon: '⛲', name: '水地点', signFunction: '機能なし' },
-    inlet: { label: '給水口', icon: '💧', name: '給水口', signFunction: '給水口' },
+    water: { label: '給水地点', icon: '💧', name: '給水地点', signFunction: '機能なし' },
+    inlet: { label: '給水口', icon: '⛲', name: '給水口', signFunction: '給水口' },
     drain: { label: '排水口', icon: '🕳️', name: '排水口', signFunction: '排水口' },
     parking: { label: '駐車場', icon: '🅿️', name: '駐車場', signFunction: '駐車場' },
     caution: { label: '注意', icon: '⚠️', name: '注意', signFunction: '事故注意' }
@@ -7245,12 +7278,12 @@ window.renderSignRegQuickScreen_ = () => {
         <div style="display:grid; grid-template-columns:1fr; gap:8px; margin-bottom:12px; max-height:46vh; overflow-y:auto;">
           <button type="button" onclick="pickSignRegQuick_('water')"
             style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #81D4FA; border-radius:10px; background:#E1F5FE; cursor:pointer;">
-            <span style="font-size:28px; line-height:1;">⛲</span>
-            <span><div style="font-weight:bold; color:#0277BD; font-size:15px;">水地点</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">名前・アイコンを自動セット</div></span>
+            <span style="font-size:28px; line-height:1;">💧</span>
+            <span><div style="font-weight:bold; color:#0277BD; font-size:15px;">給水地点</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">名前・アイコンを自動セット</div></span>
           </button>
           <button type="button" onclick="pickSignRegQuick_('inlet')"
             style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #64B5F6; border-radius:10px; background:#E3F2FD; cursor:pointer;">
-            <span style="font-size:28px; line-height:1;">💧</span>
+            <span style="font-size:28px; line-height:1;">⛲</span>
             <span><div style="font-weight:bold; color:#1565C0; font-size:15px;">給水口</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">名前・機能を自動セット</div></span>
           </button>
           <button type="button" onclick="pickSignRegQuick_('drain')"
@@ -7350,9 +7383,8 @@ window.renderSignRegDetailScreen_ = (opts) => {
               <input type="text" id="mName" class="form-input" placeholder="看板名" value="${esc(presetName)}" style="margin-bottom:8px;">
               <select id="mLoc" class="form-input" style="margin-bottom:8px;">${locOpts}</select>
               <input type="hidden" id="mFunc" value="${esc(presetFunc || '機能なし')}">
-              <div style="font-size:11px; color:#666; text-align:left; margin-bottom:4px;">アイコン（ジャンル別）</div>
-              <div style="max-height:240px;overflow-y:auto;padding:6px;border:1px solid #eee;border-radius:8px;background:#fafafa;">
-                ${renderAdminSignIconPickerHtml_({ onPick: 'selectMI' })}
+              <div style="max-height:220px;overflow-y:auto;padding:6px;border:1px solid #eee;border-radius:8px;background:#fafafa;">
+                ${renderAdminSignIconPickerHtml_({ onPick: 'selectMI', activeIcon: presetIcon })}
               </div>
               <input type="hidden" id="selIco" value="${esc(presetIcon)}">
               <div style="text-align:left; margin-top:12px;">
@@ -9588,9 +9620,9 @@ window.finishSplitEdgePick_ = (latLng) => {
         zIndex: 10020,
         clickable: false
     });
-    showSplitCountForAngle_('edge_selected', angle, `✂️ 選んだ辺（${angle}°）に平行に分割`);
+    showSplitCountForAngle_('edge_selected', angle, `✂️ 選んだ辺と平行に分ける（${angle}°）`);
     if (typeof showAdminSyncToast === 'function') {
-        showAdminSyncToast('基準辺を ' + angle + '° に合わせました。分割数を指定してください', 'ok');
+        showAdminSyncToast('選んだ辺と平行に切ります。いくつに分けるか指定してください', 'ok');
     }
 };
 
@@ -9614,24 +9646,24 @@ window.promptSplitPolygon = (axis) => {
         window.cadSplittingEdgeMode = true;
         if (map) map.setOptions({ draggableCursor: 'crosshair' });
         if (typeof showAdminSyncToast === 'function') {
-            showAdminSyncToast('基準にしたい辺（直線）をタップしてください', 'info');
+            showAdminSyncToast('平行に切りたい辺をタップしてください', 'info');
         }
         return;
     }
 
-    let label = "分割数";
-    if (axis === 'long') label = "長辺方向の分割数";
-    else if (axis === 'short') label = "短辺方向の分割数";
+    let title = '✂️ いくつに分けますか？';
+    if (axis === 'long') title = '✂️ 長いほうをいくつに分けますか？';
+    else if (axis === 'short') title = '✂️ 短いほうをいくつに分けますか？';
     else if (axis === 'cad_angle') {
         const angleVal = document.getElementById('cadAngle') ? document.getElementById('cadAngle').value : 0;
         const row = document.getElementById('splitAngleRow');
         const input = document.getElementById('splitAngleInput');
         if (row) row.style.display = 'block';
         if (input) input.value = angleVal;
-        label = `CAD角度（${angleVal}°）に平行な分割数`;
+        title = `✂️ ${angleVal}° と平行に、いくつに分けますか？`;
     }
 
-    document.getElementById('splitModalTitle').innerHTML = `✂️ ${label}を指定`;
+    document.getElementById('splitModalTitle').innerHTML = title;
     document.getElementById('splitCountModal').style.display = 'block';
 };
 
