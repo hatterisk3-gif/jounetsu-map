@@ -1134,6 +1134,17 @@ function scheduleCachedAdminLoginRetry_() {
     }, retryN === 1 ? 4000 : 10000);
 }
 
+function ensureAdminInitDataLoad_(reason) {
+    if (window._adminInitDataInFlight) return window._adminInitDataInFlight;
+    if (!localStorage.getItem('spreadsheetId')) return null;
+    try {
+        return loadInitData({ background: true, light: true, reason: reason || '' });
+    } catch (e) {
+        console.warn('ensureAdminInitDataLoad_ failed:', e);
+        return null;
+    }
+}
+
 async function executeLogin(isAuto = false, options = {}) {
     const fromCache = !!(options && options.fromCache);
     const id = document.getElementById('loginId').value;
@@ -1141,8 +1152,10 @@ async function executeLogin(isAuto = false, options = {}) {
     const btn = document.getElementById('loginBtn');
     const err = document.getElementById('loginError');
     const hasCache = !!localStorage.getItem('pMapAdminInitData');
+    let loginOk = false;
 
     // キャッシュ起動時はログイン確認を待たず、すぐ操作可能な状態にする
+    // ※ getInitData は login 完了後に開始（同時打診のコールドスタート失敗を避ける）
     if (fromCache) {
         continueCachedAdminSession_(null, 'info');
     }
@@ -1151,7 +1164,14 @@ async function executeLogin(isAuto = false, options = {}) {
     window._adminLoginBusy = true;
 
     try {
-        const res = await callGAS('login', { orgId: 'default', userId: id, password: pw }, 2, { timeoutMs: 60000 });
+        // 自動/キャッシュ起動は短め。長リトライでデータ取得が始まらないのを防ぐ
+        const loginTimeout = fromCache || isAuto ? 45000 : 60000;
+        const loginRetries = fromCache || isAuto ? 1 : 2;
+        const res = await callGAS('login', { orgId: 'default', userId: id, password: pw }, loginRetries, {
+            timeoutMs: loginTimeout,
+            timeoutStepMs: 15000,
+            softNetRetries: fromCache || isAuto ? 1 : 2
+        });
         if (res.success) {
             if (res.role !== "管理者") {
                 document.getElementById('loginScreen').style.display = 'flex';
@@ -1159,6 +1179,7 @@ async function executeLogin(isAuto = false, options = {}) {
                 if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
                 return;
             }
+            loginOk = true;
             currentUser = res.name;
             document.getElementById('loginScreen').style.display = 'none';
             if (err) err.innerText = '';
@@ -1181,7 +1202,6 @@ async function executeLogin(isAuto = false, options = {}) {
                 window.refreshAccountNameButtons();
             }
 
-            // ログイン成功後にだけ getInitData（コールドスタートを温めてから取る）
             if (fromCache) {
                 if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
                     Promise.resolve(PassionMapTerms.ensureAccepted({ userId: id })).catch(() => {});
@@ -1194,10 +1214,7 @@ async function executeLogin(isAuto = false, options = {}) {
                     try { renderInitData(JSON.parse(localStorage.getItem('pMapAdminInitData')), { interim: true }); } catch (e) {}
                 }
             }
-            // 必ず軽量取得→成功後にフル取得（同時に重いJSONを取らない）
-            if (!window._adminInitDataInFlight) {
-                loadInitData({ background: true, light: true });
-            }
+            ensureAdminInitDataLoad_('login-ok');
             startLocationWatch();
             mapInitPromise.then(() => applyPendingMapDeepLink());
             if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
@@ -1205,6 +1222,7 @@ async function executeLogin(isAuto = false, options = {}) {
             if (fromCache && hasCache) {
                 continueCachedAdminSession_('📦 キャッシュで続行中（サーバー確認を再試行します）', 'info');
                 scheduleCachedAdminLoginRetry_();
+                ensureAdminInitDataLoad_('login-denied-cache');
                 return;
             }
             document.getElementById('loginScreen').style.display = 'flex';
@@ -1216,23 +1234,16 @@ async function executeLogin(isAuto = false, options = {}) {
             const savedName = localStorage.getItem('pMapAdminName');
             if (savedName) currentUser = savedName;
             if (fromCache && hasCache) {
-                // コールドスタート失敗でも地図操作は維持し、裏で再試行
                 continueCachedAdminSession_(null, 'info');
                 scheduleCachedAdminLoginRetry_();
-                // ログインがサーバーを起こした直後に少し待ってからデータ取得
-                if (localStorage.getItem('spreadsheetId') && !window._adminInitDataInFlight) {
-                    setTimeout(() => {
-                        try { loadInitData({ background: true, light: true }); } catch (e2) {}
-                    }, 2500);
-                }
+                // 認証失敗でもデータ取得は進める（キャッシュ表示＋最新取得）
+                ensureAdminInitDataLoad_('login-fail-cache');
                 return;
             }
             startLocationWatch();
             try {
                 if (localStorage.getItem('spreadsheetId')) {
-                    setTimeout(() => {
-                        try { loadInitData({ background: true, light: true }); } catch (e2) {}
-                    }, 1500);
+                    ensureAdminInitDataLoad_('login-fail-auto');
                 } else {
                     const cached = localStorage.getItem('pMapAdminInitData');
                     if (cached) renderInitData(JSON.parse(cached));
@@ -1247,6 +1258,10 @@ async function executeLogin(isAuto = false, options = {}) {
         }
     } finally {
         window._adminLoginBusy = false;
+        // 取りこぼし防止：ログイン後に未取得なら必ず開始
+        if (!loginOk && localStorage.getItem('spreadsheetId') && !window._adminInitDataInFlight && !initDataLoadStarted) {
+            ensureAdminInitDataLoad_('login-finally');
+        }
     }
 }
 
@@ -1347,19 +1362,30 @@ function loadInitData(options) {
         if (window._adminInitDataBgRetryTimer) return;
         window._adminInitDataBgRetryTimer = setTimeout(() => {
             window._adminInitDataBgRetryTimer = null;
-            try { loadInitData({ background: true }); } catch (e2) {}
+            try { loadInitData({ background: true, light: true }); } catch (e2) {}
         }, delayMs);
     };
 
     // light: 農薬・肥料など重いマスタを省略して成功率を上げる（full 指定時のみフル）
     const useLight = options.full !== true;
-    const p = callGAS('getInitData', useLight ? { light: true } : {}, 2, { timeoutMs: 240000 }).then(data => {
+    // 軽量は少し短め。未デプロイでフル応答になっても切れるよう余裕は残す
+    const initTimeoutMs = useLight ? 120000 : 240000;
+    const initTimeoutStepMs = useLight ? 30000 : 45000;
+    const p = callGAS('getInitData', useLight ? { light: true } : {}, useLight ? 3 : 2, {
+        timeoutMs: initTimeoutMs,
+        timeoutStepMs: initTimeoutStepMs,
+        softNetRetries: useLight ? 4 : 5
+    }).then(data => {
         window._adminInitDataBgFailCount = 0;
         if (window._adminInitLoading) window._adminInitLoading.update({ label: '表示データを準備中...', detail: 'マスタと圃場を反映しています', current: 2, total: 3 });
         const incomingCount = (data && Array.isArray(data.polygons)) ? data.polygons.length : 0;
+        const serverLooksFull = !!(data && data.pdl && !data._light && (
+            (Array.isArray(data.pdl.pesticides) && data.pdl.pesticides.length)
+            || (Array.isArray(data.pdl.fertilizers) && data.pdl.fertilizers.length)
+        ));
         let skipCacheSave = false;
-        // 軽量応答でフルキャッシュを潰さない
-        if (useLight && cached) {
+        // 軽量応答でフルキャッシュを潰さない（サーバーがフルを返したときは保存してよい）
+        if (useLight && cached && !serverLooksFull) {
             try {
                 const c = JSON.parse(cached);
                 const hadHeavy = c && c.pdl && (
@@ -1442,8 +1468,8 @@ function loadInitData(options) {
         }
         schedulePendingAdminSyncFlush_();
         closeAdminInitLoadingSoft_();
-        // 軽量取得できたあと、少し間を置いてフルマスタを裏取り（起動失敗を避ける）
-        if (useLight && data && !window._adminInitDataFullScheduled) {
+        // 軽量取得できたあと、少し間を置いてフルマスタを裏取り（既にフルなら不要）
+        if (useLight && data && !serverLooksFull && !window._adminInitDataFullScheduled) {
             window._adminInitDataFullScheduled = true;
             setTimeout(() => {
                 window._adminInitDataFullScheduled = false;
@@ -1470,8 +1496,9 @@ function loadInitData(options) {
 
         window._adminInitDataBgFailCount = (Number(window._adminInitDataBgFailCount || 0) || 0) + 1;
         const failCount = window._adminInitDataBgFailCount;
-        const delayMs = Math.min(120000, 8000 * Math.pow(1.6, Math.min(failCount, 6)));
-        scheduleAdminInitRetry_(isTransient ? delayMs : Math.max(delayMs, 15000));
+        // 初回失敗はすぐ再試行（8秒待ちだと「いつまでも出ない」に見える）
+        const delayMs = Math.min(60000, (failCount === 1 ? 2000 : 4000) * Math.pow(1.5, Math.min(failCount - 1, 5)));
+        scheduleAdminInitRetry_(isTransient ? delayMs : Math.max(delayMs, 8000));
 
         if (canKeepShowing) {
             if (failCount >= 3) {
@@ -1518,19 +1545,18 @@ function renderInitData(data, opts) {
     pendingInitData = data;
     window.pendingInitDataInterim = interim;
     if (!map) {
-        // mapInitPromise が「地図なし」で解決済みでも描画できるよう、地図が出るまで再試行する
+        // 地図が出るまで諦めない（Google Maps 遅延で描画スキップすると圃場が一生出ない）
         let attempts = 0;
         const tryRender = () => {
             if (map) {
                 flushPendingInitData();
                 return;
             }
-            if (++attempts > 300) { // 最大30秒待つ
-                console.warn('地図初期化前のため圃場データの描画をスキップします');
-                if (!interim && window._adminInitLoading) { window._adminInitLoading.fail('地図の準備に失敗しました'); window._adminInitLoading = null; }
-                return;
+            attempts += 1;
+            if (attempts === 300) {
+                console.warn('地図初期化待機中（圃場データは保持して再試行します）');
             }
-            setTimeout(tryRender, 100);
+            setTimeout(tryRender, attempts > 300 ? 250 : 100);
         };
         tryRender();
         return;
@@ -9180,12 +9206,12 @@ document.addEventListener('DOMContentLoaded', () => {
             && google.maps
             && typeof google.maps.Map === 'function';
         if (!mapsReady) {
-            if (++mapInitAttempts > 100) {
-                console.warn('Google Maps API の読み込みがタイムアウトしました（描画は地図準備後に再試行します）');
-                // map なしで resolve しない（圃場描画が永久スキップされるのを防ぐ）
-                return;
+            mapInitAttempts += 1;
+            // 警告のみ出して待ちは止めない（ここで止まると圃場が永久非表示になる）
+            if (mapInitAttempts === 100 || mapInitAttempts === 300 || mapInitAttempts === 600) {
+                console.warn('Google Maps API の読み込み待機中...', mapInitAttempts);
             }
-            setTimeout(tryInitMap, 100);
+            setTimeout(tryInitMap, mapInitAttempts > 300 ? 250 : 100);
             return;
         }
         try {

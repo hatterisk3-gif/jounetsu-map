@@ -58,10 +58,10 @@
 
   var controllers = {};
   var cancelGen = {};
-  // コールドスタート時に login と getInitData を同時に打つと両方 Failed to fetch しやすい
+  // 重い読取同士の同時打診を避ける（login はここに入れない：
+  // login の長リトライがゲートを占有すると getInitData が永久に始まらず圃場が出ない）
   var heavyGate_ = Promise.resolve();
   var HEAVY_SERIAL_ACTIONS = {
-    login: true,
     getInitData: true,
     getScheduleData: true
   };
@@ -162,12 +162,16 @@
     if (NETWORK_SOFT_RETRY_ACTIONS[action]) {
       if (action === 'getInitData' || action === 'getScheduleData') softNetRetries = 5;
       else if (action === 'manageMaster') softNetRetries = 2;
+      else if (action === 'login') softNetRetries = 1; // 認証は早く諦めてデータ取得へ回す
       else softNetRetries = 3;
     }
+    if (callOptions.softNetRetries != null) softNetRetries = Number(callOptions.softNetRetries) || 0;
     var maxAttempts = Math.max(maxRetries, softNetRetries) + 1;
     var lastError = null;
     var cancelAtStart = cancelGen[action] || 0;
     var netRetryUsed = 0;
+    var timeoutStepMs = (callOptions.timeoutStepMs != null) ? Number(callOptions.timeoutStepMs) : 45000;
+    if (!(timeoutStepMs >= 0)) timeoutStepMs = 45000;
 
     for (var i = 0; i < maxAttempts; i++) {
       if ((cancelGen[action] || 0) > cancelAtStart) {
@@ -176,7 +180,7 @@
         break;
       }
       // タイムアウト時は次の試行で待ち時間を伸ばす（コールドスタート対策）
-      var timeoutMs = baseTimeoutMs + (i * 45000);
+      var timeoutMs = baseTimeoutMs + (i * timeoutStepMs);
       var controller = new AbortController();
       // 同一 action の並行呼び出しが互いの Abort を踏まないよう、要求ごとに独立管理
       var reqKey = action + '#' + Date.now() + '_' + i + '_' + Math.floor(Math.random() * 1000);
