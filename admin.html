@@ -15,7 +15,7 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
 
-  <link rel="stylesheet" href="admin.css?v=1788600000059">
+  <link rel="stylesheet" href="admin.css?v=1788600000108">
   <link rel="stylesheet" href="cad.css">
 </head>
 
@@ -34,10 +34,20 @@
       📍
   </button>
 
-  <button id="btnEquipmentManage" onclick="openEquipmentManageModal()"
-    style="position: fixed; bottom: 112px; right: 10px; width: 50px; height: 50px; background: white; color: #FB8C00; border: none; border-radius: 50%; font-weight: bold; font-size: 22px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;" title="機械管理" aria-label="機械管理">
-    🚜
+  <button id="btnAdminMaster" type="button" onclick="openMasterModal()"
+    style="position: fixed; bottom: 184px; right: 10px; width: 50px; height: 50px; background: white; color: #1565C0; border: none; border-radius: 50%; font-weight: bold; font-size: 22px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0;" title="マスタ" aria-label="マスタ">
+    ⚙️
   </button>
+
+  <div class="admin-reg-plus-wrap is-fab" id="adminRegPlusWrap">
+    <button type="button" id="btnAdminRegPlus" class="admin-reg-plus-btn" onclick="toggleAdminRegPlusMenu_(event)" title="登録" aria-label="登録">＋</button>
+    <div id="adminRegPlusMenu" class="admin-reg-plus-menu" style="display:none;" onclick="event.stopPropagation()">
+      <button type="button" onclick="pickAdminRegPlus_('draw')">✏️ 圃場を登録</button>
+      <button type="button" onclick="pickAdminRegPlus_('marker')">📍 看板を登録</button>
+      <button type="button" onclick="pickAdminRegPlus_('equipment')">🚜 機械管理</button>
+      <button type="button" onclick="pickAdminRegPlus_('batchDelete')" style="color:#c62828;">🗑️ 一括削除</button>
+    </div>
+  </div>
 
   <div id="equipmentManageModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9998; justify-content:center; align-items:center;">
     <div style="background:#f5f7fa; width:96%; max-width:1100px; height:92%; border-radius:12px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.35);">
@@ -747,21 +757,10 @@
         </div>
       </div>
     </div>
-    <div class="control-row">
-      <button id="btnViewMode" class="mode-btn active">👀 閲覧</button>
-      <div class="admin-reg-plus-wrap" id="adminRegPlusWrap">
-        <button type="button" id="btnAdminRegPlus" class="mode-btn admin-reg-plus-btn" onclick="toggleAdminRegPlusMenu_(event)" title="登録">＋ 登録</button>
-        <div id="adminRegPlusMenu" class="admin-reg-plus-menu" style="display:none;" onclick="event.stopPropagation()">
-          <button type="button" onclick="pickAdminRegPlus_('draw')">✏️ 圃場を登録</button>
-          <button type="button" onclick="pickAdminRegPlus_('marker')">📍 看板を登録</button>
-          <button type="button" onclick="pickAdminRegPlus_('batchDelete')" style="color:#c62828;">🗑️ 一括削除</button>
-        </div>
-      </div>
-      <button id="btnDrawMode" class="mode-btn admin-mode-btn-hidden" aria-hidden="true" tabindex="-1">✏️ 圃場</button>
-      <button id="btnMarkerMode" class="mode-btn admin-mode-btn-hidden" aria-hidden="true" tabindex="-1">📍 看板</button>
-      <button onclick="openMasterModal()"
-        style="background:rgba(33, 150, 243, 0.8); color:white; border-radius:5px; border:none; padding:8px 12px; font-weight:bold; font-size:13px;">⚙️
-        マスタ</button>
+    <div style="display:none;" aria-hidden="true">
+      <button id="btnViewMode" class="mode-btn active" type="button">👀 閲覧</button>
+      <button id="btnDrawMode" class="mode-btn" type="button">✏️ 圃場</button>
+      <button id="btnMarkerMode" class="mode-btn" type="button">📍 看板</button>
     </div>
     <div id="drawArea" class="action-bar" style="display:none;">
       <div id="drawStep1">
@@ -778,35 +777,50 @@
         </div>
       </div>
 
-      <div id="drawStep2" style="display:none;">
-        <div id="addressHint"
-          style="display:none; background:#222; padding:8px; border-radius:4px; margin-bottom:10px; line-height:1.4;">
+      <div id="drawStep2" style="display:none; width:min(92vw, 380px); max-height:68vh; overflow:auto; box-sizing:border-box; background:#fff; color:#333; border-radius:12px; padding:12px; text-align:left; box-shadow:0 6px 20px rgba(0,0,0,.28);">
+        <div style="font-size:15px; font-weight:bold; color:#d32f2f; margin-bottom:8px;">この形の情報を入力</div>
+        <div id="addressHint" style="display:none; background:#F1F8E9; border:1px solid #C5E1A5; border-radius:8px; padding:8px 10px; margin-bottom:10px; line-height:1.35;"></div>
+        <label class="form-label" for="fieldName">圃場名</label>
+        <input type="text" id="fieldName" class="form-input" placeholder="例：塩崎125" style="margin-bottom:8px;">
+        <div id="fieldStartNumberWrap" style="display:none;">
+          <label class="form-label" for="fieldStartNumber">開始番号</label>
+          <input type="number" id="fieldStartNumber" class="form-input" placeholder="1" value="1" min="0.1" step="0.1" style="margin-bottom:4px;">
+          <div style="font-size:11px; color:#666; margin:0 0 8px;">名前のうしろに _1、_2 と付きます</div>
         </div>
-        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-          <input type="text" id="fieldName" class="form-input" placeholder="圃場名" style="flex: 2; margin-bottom: 0;">
-          <input type="number" id="fieldStartNumber" class="form-input" placeholder="開始番号" value="1" style="flex: 1; margin-bottom: 0;" min="0.1" step="0.1">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 10px; margin-bottom:10px;">
+          <div>
+            <label class="form-label" for="fieldLocation">拠点</label>
+            <select id="fieldLocation" class="form-input" style="margin-bottom:0;">
+              <option value="">未選択</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" for="fieldCondition">条件</label>
+            <select id="fieldCondition" class="form-input" style="margin-bottom:0;">
+              <option value="">未選択</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" for="fieldSoilType">土質</label>
+            <select id="fieldSoilType" class="form-input" style="margin-bottom:0;">
+              <option value="">未選択</option>
+              <option value="粘土質">粘土質</option>
+              <option value="砂質">砂質</option>
+              <option value="壌質">壌質</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" for="fieldStatus">稼働状況</label>
+            <select id="fieldStatus" class="form-input" style="margin-bottom:0;">
+              <option value="">未選択</option>
+            </select>
+          </div>
         </div>
-        <select id="fieldLocation" class="form-input">
-          <option value="">拠点</option>
-        </select>
-        <select id="fieldCondition" class="form-input">
-          <option value="">条件</option>
-        </select>
-        <select id="fieldSoilType" class="form-input">
-          <option value="">土質</option>
-          <option value="粘土質">粘土質</option>
-          <option value="砂質">砂質</option>
-          <option value="壌質">壌質</option>
-        </select>
-        <select id="fieldStatus" class="form-input">
-          <option value="">稼働状況</option>
-        </select>
-
         <div style="display:flex; gap:8px;">
-          <button id="backToStep1Btn"
-            style="background:#666; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;">やり直す</button>
-          <button id="finalSaveBtn"
-            style="background:#d32f2f; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;">圃場登録</button>
+          <button id="backToStep1Btn" type="button"
+            style="background:#eceff1; color:#37474F; flex:1; border:1px solid #cfd8dc; border-radius:8px; font-weight:bold; padding:11px;">形を直す</button>
+          <button id="finalSaveBtn" type="button"
+            style="background:#d32f2f; color:white; flex:1.4; border:none; border-radius:8px; font-weight:bold; padding:11px;">この内容で登録</button>
         </div>
       </div>
     </div>
@@ -848,7 +862,7 @@
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=ja&v=weekly" async defer></script>
 
   <script src="api-client.js?v=1788600000090" defer></script>
-  <script src="admin.js?v=1788600000102" defer></script>
+  <script src="admin.js?v=1788600000108" defer></script>
   <script src="admin_cost.js?v=1785489000008" defer></script>
   <script src="admin_crop_work.js?v=1787570400000" defer></script>
   <script src="tracking.js?v=1788600000043" defer></script>
@@ -891,13 +905,6 @@
         <span style="min-width:0;">
           <span style="display:block; font-size:14px; font-weight:bold;">辺を選んで、その辺と平行に切る</span>
           <span style="display:block; font-size:11px; font-weight:normal; color:#555; margin-top:1px;">合わせたい辺を地図でタップ</span>
-        </span>
-      </button>
-      <button type="button" onclick="promptSplitPolygon('cad_angle')" style="display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:#fff; color:#0D47A1; border:none; border-radius:8px; padding:8px 10px; cursor:pointer;">
-        <span aria-hidden="true" style="width:36px; height:22px; flex:none; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:bold; letter-spacing:-0.5px;">N↑</span>
-        <span style="min-width:0;">
-          <span style="display:block; font-size:14px; font-weight:bold;">角度を入れて、その向きと平行に切る</span>
-          <span style="display:block; font-size:11px; font-weight:normal; color:#555; margin-top:1px;">北が0°。時計回りで指定</span>
         </span>
       </button>
       <button type="button" onclick="promptSplitPolygon('long')" style="display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:#fff; color:#AD1457; border:none; border-radius:8px; padding:8px 10px; cursor:pointer;">
@@ -945,7 +952,7 @@
         <input type="hidden" id="splitTargetAxis" value="">
       </div>
       <div style="display:flex; gap:10px;">
-        <button onclick="document.getElementById('splitCountModal').style.display='none'" style="flex:1; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">キャンセル</button>
+        <button type="button" onclick="cancelSplitCount_()" style="flex:1; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">キャンセル</button>
         <button onclick="executeSplitPolygon()" style="flex:1; background:#009688; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">分割する</button>
       </div>
     </div>

@@ -19,6 +19,31 @@ button { padding: 8px 12px; cursor: pointer; border-radius: 5px; border: none; f
 .admin-reg-plus-wrap { position: relative; display: inline-block; }
 .admin-reg-plus-btn { min-width: 72px; }
 .admin-reg-plus-btn.is-reg-active { background: rgba(211, 47, 47, 0.8); color: #fff; }
+.admin-reg-plus-wrap.is-fab {
+  position: fixed;
+  right: 10px;
+  bottom: 112px;
+  z-index: 2000;
+}
+.admin-reg-plus-wrap.is-fab .admin-reg-plus-btn {
+  min-width: 0;
+  width: 50px;
+  height: 50px;
+  padding: 0;
+  border-radius: 50%;
+  background: #fff;
+  color: #d32f2f;
+  font-size: 28px;
+  line-height: 1;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.admin-reg-plus-wrap.is-fab .admin-reg-plus-btn.is-reg-active {
+  background: #d32f2f;
+  color: #fff;
+}
 .admin-reg-plus-menu {
   display: none;
   position: absolute;
@@ -32,6 +57,13 @@ button { padding: 8px 12px; cursor: pointer; border-radius: 5px; border: none; f
   box-shadow: 0 6px 18px rgba(0,0,0,.2);
   z-index: 6000;
   padding: 6px;
+}
+.admin-reg-plus-wrap.is-fab .admin-reg-plus-menu {
+  top: auto;
+  bottom: calc(100% + 8px);
+  left: auto;
+  right: 0;
+  transform: none;
 }
 .admin-reg-plus-menu button {
   display: block;

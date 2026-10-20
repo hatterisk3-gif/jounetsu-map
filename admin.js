@@ -679,16 +679,16 @@ window.promptLineUrl = async () => {
 const iconFunctionMap = { '🚻': 'トイレ', '🚰': '洗車場', '🚿': '洗車場', '⛲': '給水口', '🕳️': '排水口', '📦': '倉庫', '🏭': 'パックセンター', '🏪': '事務所', '🏠': '事務所', '🏢': '研究所', '🚚': '残渣運搬', '🛻': '残渣運搬', '🚛': '残渣運搬', '🚜': '農機具整備', '🚁': '農機具整備', '🛠️': '車両整備', '⛽': '整備', '⚠️': '事故注意', '🚧': '事故注意', '📢': 'バードソニック', '🚫': '鳥被害', '🐦': '鳥被害', '🅿️': '駐車場', '🚗': '駐車場', '🚙': '駐車場（軽トラ）' };
 /** 看板登録・アイコン変更で共通。ジャンル見出し付きで表示する */
 const ADMIN_SIGN_ICON_GROUPS = [
-    { label: '案内・注意', icons: ['🪧', '⚠️', '🚧', '🚫', '🚩', '📢', '🔒', '📷'] },
-    { label: '水・衛生', icons: ['🚻', '🚰', '⛲', '💧', '🕳️', '🚿', '🧼', '🚮', '🗑️', '♻️'] },
-    { label: '車両・農機', icons: ['🅿️', '🚗', '🚙', '🚐', '🚚', '🛻', '🚛', '🚜', '🚁', '🚲', '⛽'] },
-    { label: '建物・場所', icons: ['🏠', '🏪', '🏢', '🏭', '📦', '🧺', '🚪', '⛺'] },
-    { label: '道具・整備', icons: ['🛠️', '🧰', '🔧', '🔨', '⛏️', '🪓', '🪚', '🔩', '🧲', '⚙️'] },
-    { label: '薬品・資材', icons: ['🧪', '🧴', '💊', '💉', '🔬', '🛢️', '🪣', '🧹', '🧽'] },
-    { label: '作物', icons: ['🌱', '🌿', '🪴', '🌾', '🌻', '🍅', '🥕', '🌽', '🍆', '🥬', '🧅', '🧄', '🍓', '🍇', '🍑'] },
-    { label: '生き物', icons: ['🐓', '🐔', '🐄', '🐖', '🐝', '🐛', '🐦'] },
-    { label: '設備', icons: ['❄️', '🧊', '🌡️', '🔥', '🧯', '💡', '🔌', '⚡', '🌀'] },
-    { label: 'その他', icons: ['🪵', '⛰️', '⚓', '⚖️', '✂️', '🔪'] }
+    { label: '案内・注意', tab: '🪧', icons: ['🪧', '⚠️', '🚧', '🚫', '🚩', '📢', '🔒', '📷'] },
+    { label: '水・衛生', tab: '💧', icons: ['🚻', '🚰', '⛲', '💧', '🕳️', '🚿', '🧼', '🚮', '🗑️', '♻️'] },
+    { label: '車両・農機', tab: '🚜', icons: ['🅿️', '🚗', '🚙', '🚐', '🚚', '🛻', '🚛', '🚜', '🚁', '🚲', '⛽'] },
+    { label: '建物・場所', tab: '🏠', icons: ['🏠', '🏪', '🏢', '🏭', '📦', '🧺', '🚪', '⛺'] },
+    { label: '道具・整備', tab: '🔧', icons: ['🛠️', '🧰', '🔧', '🔨', '⛏️', '🪓', '🪚', '🔩', '🧲', '⚙️'] },
+    { label: '薬品・資材', tab: '🧪', icons: ['🧪', '🧴', '💊', '💉', '🔬', '🛢️', '🪣', '🧹', '🧽'] },
+    { label: '作物', tab: '🌱', icons: ['🌱', '🌿', '🪴', '🌾', '🌻', '🍅', '🥕', '🌽', '🍆', '🥬', '🧅', '🧄', '🍓', '🍇', '🍑'] },
+    { label: '生き物', tab: '🐓', icons: ['🐓', '🐔', '🐄', '🐖', '🐝', '🐛', '🐦'] },
+    { label: '設備', tab: '💡', icons: ['❄️', '🧊', '🌡️', '🔥', '🧯', '💡', '🔌', '⚡', '🌀'] },
+    { label: 'その他', tab: '📌', icons: ['🪵', '⛰️', '⚓', '⚖️', '✂️', '🔪'] }
 ];
 const ADMIN_SIGN_ICONS = ADMIN_SIGN_ICON_GROUPS.reduce((list, group) => list.concat(group.icons), []);
 
@@ -704,7 +704,7 @@ function renderAdminSignIconPickerHtml_(opts) {
     }
     const tabs = ADMIN_SIGN_ICON_GROUPS.map((group, i) => {
         const on = i === activeIdx;
-        return `<button type="button" class="sign-icon-tab" data-picker="${pickerId}" data-idx="${i}" onclick="switchAdminSignIconTab_(this)" style="flex:none;white-space:nowrap;font-size:12px;font-weight:bold;padding:6px 10px;border-radius:999px;border:1px solid ${on ? '#00695C' : '#CFD8DC'};background:${on ? '#00695C' : '#fff'};color:${on ? '#fff' : '#455A64'};cursor:pointer;">${group.label}</button>`;
+        return `<button type="button" class="sign-icon-tab" data-picker="${pickerId}" data-idx="${i}" onclick="switchAdminSignIconTab_(this)" style="flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:68px;padding:7px 8px 5px;margin:0;border:none;border-bottom:3px solid ${on ? '#00695C' : 'transparent'};background:${on ? '#fff' : 'transparent'};color:${on ? '#00695C' : '#546E7A'};cursor:pointer;line-height:1.15;"><span style="font-size:18px;line-height:1;">${group.tab}</span><span style="font-size:11px;font-weight:bold;white-space:nowrap;">${group.label}</span></button>`;
     }).join('');
     const panels = ADMIN_SIGN_ICON_GROUPS.map((group, i) => {
         const cells = group.icons.map((icon) => {
@@ -714,7 +714,7 @@ function renderAdminSignIconPickerHtml_(opts) {
         return `<div class="sign-icon-panel" data-picker="${pickerId}" data-idx="${i}" style="display:${i === activeIdx ? 'grid' : 'none'};grid-template-columns:repeat(6,1fr);font-size:22px;gap:2px;">${cells}</div>`;
     }).join('');
     return `<div>
-        <div style="display:flex;flex-wrap:nowrap;gap:4px;overflow-x:auto;padding-bottom:6px;margin-bottom:4px;-webkit-overflow-scrolling:touch;">${tabs}</div>
+        <div style="display:flex;flex-wrap:nowrap;gap:0;overflow-x:auto;position:sticky;top:0;z-index:2;background:#ECEFF1;border-bottom:2px solid #CFD8DC;border-radius:8px 8px 0 0;margin-bottom:8px;-webkit-overflow-scrolling:touch;">${tabs}</div>
         ${panels}
     </div>`;
 }
@@ -725,9 +725,9 @@ window.switchAdminSignIconTab_ = (btn) => {
     const idx = btn.getAttribute('data-idx');
     document.querySelectorAll('.sign-icon-tab[data-picker="' + picker + '"]').forEach((el) => {
         const on = el.getAttribute('data-idx') === idx;
-        el.style.background = on ? '#00695C' : '#fff';
-        el.style.color = on ? '#fff' : '#455A64';
-        el.style.borderColor = on ? '#00695C' : '#CFD8DC';
+        el.style.background = on ? '#fff' : 'transparent';
+        el.style.color = on ? '#00695C' : '#546E7A';
+        el.style.borderBottomColor = on ? '#00695C' : 'transparent';
     });
     document.querySelectorAll('.sign-icon-panel[data-picker="' + picker + '"]').forEach((el) => {
         el.style.display = el.getAttribute('data-idx') === idx ? 'grid' : 'none';
@@ -1827,10 +1827,10 @@ function renderInitData(data, opts) {
     const locEl = document.getElementById('fieldLocation');
     const condEl = document.getElementById('fieldCondition');
     const statEl = document.getElementById('fieldStatus');
-    if (locEl) locEl.innerHTML = '<option value="">拠点</option>' + html(pdlLocations);
-    if (condEl) condEl.innerHTML = '<option value="">条件</option>' + html(pdlConditions);
+    if (locEl) locEl.innerHTML = '<option value="">未選択</option>' + html(pdlLocations);
+    if (condEl) condEl.innerHTML = '<option value="">未選択</option>' + html(pdlConditions);
     if (statEl) {
-        statEl.innerHTML = '<option value="">稼働状況</option>' + html(pdlStatuses) + '<option value="ADD_NEW" style="color:#1976d2;font-weight:bold;">➕ 新規項目追加...</option><option value="MANAGE_STATUS" style="color:#d32f2f;font-weight:bold;">⚙️ 項目の編集・削除...</option>';
+        statEl.innerHTML = '<option value="">未選択</option>' + html(pdlStatuses) + '<option value="ADD_NEW" style="color:#1976d2;font-weight:bold;">➕ 新規項目追加...</option><option value="MANAGE_STATUS" style="color:#d32f2f;font-weight:bold;">⚙️ 項目の編集・削除...</option>';
         statEl.setAttribute('onchange', 'handleStatusSelect(this)');
     }
 
@@ -7026,6 +7026,7 @@ function initMap() {
                 if (splitPanel) {
                     splitPanel.style.display = 'none';
                     if (document.getElementById('splitCountModal')) document.getElementById('splitCountModal').style.display = 'none';
+                    clearSplitEdgePreview_();
                 }
                 return; // 処理を終了する
             }
@@ -7053,6 +7054,7 @@ function initMap() {
                 } else {
                     splitPanel.style.display = 'none';
                     if (document.getElementById('splitCountModal')) document.getElementById('splitCountModal').style.display = 'none';
+                    clearSplitEdgePreview_();
                 }
             }
         }
@@ -7186,6 +7188,49 @@ function refreshAdminMapSize() {
     try { google.maps.event.trigger(map, 'resize'); } catch (e) {}
 }
 
+/** 推定住所から県・市と町名を除いた字・番地（例: 塩崎１２５） */
+function townAndBelowFromGeocode_(result, formatted) {
+    const comps = (result && result.address_components) || [];
+    const keep = {
+        sublocality_level_2: 1, sublocality_level_3: 1, sublocality_level_4: 1,
+        sublocality_level_5: 1, premise: 1, subpremise: 1, street_number: 1
+    };
+    const parts = [];
+    const seen = {};
+    comps.slice().reverse().forEach((c) => {
+        const types = c.types || [];
+        if (types.indexOf('sublocality_level_1') >= 0) return;
+        if (!types.some((t) => keep[t])) return;
+        const name = String(c.long_name || '').trim();
+        if (!name || seen[name]) return;
+        seen[name] = 1;
+        parts.push(name);
+    });
+    let text = parts.join('');
+    const addr = String(formatted || '').replace(/^日本、/, '').replace(/〒\d{3}-\d{4}\s?/, '').trim();
+    if (!text) {
+        const m = addr.match(/^(?:.+?[都道府県])(?:.+?郡)?(?:.+?[市区町村])(.+)$/);
+        text = m ? String(m[1] || '').trim() : '';
+    }
+    const belowTown = text.match(/^(.+?町)(.+)$/);
+    if (belowTown && belowTown[2].trim() && !/丁目$/.test(belowTown[1])) {
+        text = belowTown[2].trim();
+    }
+    const tail = addr.match(/([0-9０-９]+(?:[-－−][0-9０-９]+)*)\s*$/);
+    if (tail && text && text.indexOf(tail[1]) < 0) text += tail[1];
+    return text;
+}
+
+function applyTownAddressToFieldName_(text) {
+    const input = document.getElementById('fieldName');
+    if (!input || !text) return;
+    const cur = String(input.value || '').trim();
+    const prev = window._fieldNameFromAddress || '';
+    if (cur && cur !== prev) return;
+    input.value = text;
+    window._fieldNameFromAddress = text;
+}
+
 function fetchAddressHint(latLng) {
     const hintDiv = document.getElementById('addressHint');
     hintDiv.innerHTML = "📍 住所を取得中..."; hintDiv.style.display = "block";
@@ -7193,7 +7238,8 @@ function fetchAddressHint(latLng) {
         if (status === 'OK' && results.length > 0) {
             let targetResult = results.find(r => !r.types.includes("plus_code")) || results[0];
             let addr = targetResult.formatted_address.replace(/^日本、/, '').replace(/〒\d{3}-\d{4}\s?/, '').replace(/^[A-Z0-9\+]+\s/, '');
-            hintDiv.innerHTML = `<span style="font-size:10px;">📍 推定住所</span><br><b style="color:#4CAF50; font-size:13px;">${addr}</b>`;
+            hintDiv.innerHTML = `<div style="font-size:11px;font-weight:bold;color:#2E7D32;">推定住所</div><div style="font-size:14px;font-weight:bold;color:#1B5E20;margin-top:2px;">${addr}</div><div style="font-size:11px;color:#558B2F;margin-top:2px;">字と番地を圃場名に入れています。違えば書き換えてください。</div>`;
+            applyTownAddressToFieldName_(townAndBelowFromGeocode_(targetResult, addr));
         } else { hintDiv.innerHTML = "📍 住所取得失敗"; }
     });
 }
@@ -7383,7 +7429,7 @@ window.renderSignRegDetailScreen_ = (opts) => {
               <input type="text" id="mName" class="form-input" placeholder="看板名" value="${esc(presetName)}" style="margin-bottom:8px;">
               <select id="mLoc" class="form-input" style="margin-bottom:8px;">${locOpts}</select>
               <input type="hidden" id="mFunc" value="${esc(presetFunc || '機能なし')}">
-              <div style="max-height:220px;overflow-y:auto;padding:6px;border:1px solid #eee;border-radius:8px;background:#fafafa;">
+              <div style="max-height:280px;overflow-y:auto;padding:0 6px 6px;border:1px solid #ddd;border-radius:8px;background:#fafafa;">
                 ${renderAdminSignIconPickerHtml_({ onPick: 'selectMI', activeIcon: presetIcon })}
               </div>
               <input type="hidden" id="selIco" value="${esc(presetIcon)}">
@@ -7566,6 +7612,7 @@ function clearCustomDrawing() {
     window.gridGeneratedPaths = [];
     if (document.getElementById('splitPolygonPanel')) document.getElementById('splitPolygonPanel').style.display = 'none';
     if (document.getElementById('splitCountModal')) document.getElementById('splitCountModal').style.display = 'none';
+    clearSplitEdgePreview_();
 
     if (document.getElementById('step1SaveBtn')) document.getElementById('step1SaveBtn').disabled = true;
     if (document.getElementById('undoDrawBtn')) document.getElementById('undoDrawBtn').disabled = true;
@@ -7577,6 +7624,7 @@ function clearCustomDrawing() {
     if (document.getElementById('fieldName')) {
         document.getElementById('fieldName').value = '';
         document.getElementById('fieldName').placeholder = '圃場の名前を入力...';
+        window._fieldNameFromAddress = '';
     }
     if (document.getElementById('fieldLocation')) document.getElementById('fieldLocation').value = '';
     if (document.getElementById('fieldCondition')) document.getElementById('fieldCondition').value = '';
@@ -7708,6 +7756,8 @@ window.pickAdminRegPlus_ = (kind) => {
     } else if (kind === 'marker') {
         const btn = document.getElementById('btnMarkerMode');
         if (btn) btn.click();
+    } else if (kind === 'equipment') {
+        if (typeof window.openEquipmentManageModal === 'function') window.openEquipmentManageModal();
     } else if (kind === 'batchDelete') {
         if (typeof window.openBatchDeleteModal === 'function') window.openBatchDeleteModal();
     }
@@ -7717,16 +7767,14 @@ window.syncAdminRegPlusBtnState_ = (mode) => {
     const plus = document.getElementById('btnAdminRegPlus');
     if (!plus) return;
     plus.classList.remove('is-reg-active', 'active');
+    plus.textContent = '＋';
     if (mode === 'draw') {
         plus.classList.add('is-reg-active');
-        plus.textContent = '＋ 圃場中';
-        plus.title = '圃場登録モード中（タップで切替）';
+        plus.title = '圃場登録中';
     } else if (mode === 'marker') {
         plus.classList.add('is-reg-active');
-        plus.textContent = '＋ 看板中';
-        plus.title = '看板登録モード中（タップで切替）';
+        plus.title = '看板登録中';
     } else {
-        plus.textContent = '＋ 登録';
         plus.title = '登録';
     }
 };
@@ -7757,6 +7805,7 @@ if (undoBtn) {
                 if (splitPanel) {
                     splitPanel.style.display = 'none';
                     if (document.getElementById('splitCountModal')) document.getElementById('splitCountModal').style.display = 'none';
+                    clearSplitEdgePreview_();
                 }
             }
         } else if (customDrawingPath.length > 0) {
@@ -7822,7 +7871,7 @@ document.getElementById('step1SaveBtn').onclick = () => {
             customDrawingPath = mergedPath;
             window.isMergedFude = window.selectedFudePaths.length > 1;
             if (window.selectedFudePaths.length > 1) {
-                customAlert(`${window.selectedFudePaths.length}件の筆ポリゴンを合体しました。「次へ」で圃場情報を入力してください。`);
+                customAlert(`${window.selectedFudePaths.length}件の筆ポリゴンを合体しました。続けて圃場情報を入力してください。`);
             }
         } catch (err) {
             console.error("結合エラー:", err);
@@ -7837,7 +7886,8 @@ document.getElementById('step1SaveBtn').onclick = () => {
     document.getElementById('drawStep1').style.display = 'none';
     document.getElementById('drawStep2').style.display = 'block';
     if (document.getElementById('addressHint').innerHTML) document.getElementById('addressHint').style.display = 'block';
-    if (document.getElementById('fieldStartNumber')) document.getElementById('fieldStartNumber').style.display = 'none';
+    const startWrap = document.getElementById('fieldStartNumberWrap');
+    if (startWrap) startWrap.style.display = 'none';
     setFudeVisibility(false);
 };
 
@@ -7919,7 +7969,7 @@ window.syncFudeLoadButtonLabels_ = function () {
 window.enterShapeEditFocusMode_ = function (editId) {
     window._shapeEditFocusId = String(editId || '');
     const chromeIds = [
-        'btnCurrentLocation', 'btnEquipmentManage', 'btnClockBoard', 'adminLegendUI'
+        'btnCurrentLocation', 'adminRegPlusWrap', 'btnAdminMaster', 'btnClockBoard', 'adminLegendUI'
     ];
     chromeIds.forEach(function (id) {
         const el = document.getElementById(id);
@@ -7952,7 +8002,7 @@ window.enterShapeEditFocusMode_ = function (editId) {
 window.exitShapeEditFocusMode_ = function () {
     window._shapeEditFocusId = null;
     const chromeIds = [
-        'btnCurrentLocation', 'btnEquipmentManage', 'btnClockBoard', 'adminLegendUI'
+        'btnCurrentLocation', 'adminRegPlusWrap', 'btnAdminMaster', 'btnClockBoard', 'adminLegendUI'
     ];
     chromeIds.forEach(function (id) {
         const el = document.getElementById(id);
@@ -9667,16 +9717,30 @@ window.promptSplitPolygon = (axis) => {
     document.getElementById('splitCountModal').style.display = 'block';
 };
 
-window.cancelSplitPolygon = () => {
+function clearSplitEdgePreview_() {
     window.cadSplittingEdgeMode = false;
     window.cadPinMode = null;
     if (window._splitEdgePreview) {
         try { window._splitEdgePreview.setMap(null); } catch (e) {}
         window._splitEdgePreview = null;
     }
+    if (map && customDrawingMode === 'polygon') map.setOptions({ draggableCursor: pinCursor });
+}
+
+window.cancelSplitCount_ = () => {
+    clearSplitEdgePreview_();
+    const axis = document.getElementById('splitTargetAxis');
+    if (axis) axis.value = '';
+    const modal = document.getElementById('splitCountModal');
+    if (modal) modal.style.display = 'none';
+    const panel = document.getElementById('splitPolygonPanel');
+    if (panel) panel.style.display = 'block';
+};
+
+window.cancelSplitPolygon = () => {
+    clearSplitEdgePreview_();
     document.getElementById('splitPolygonPanel').style.display = 'none';
     document.getElementById('splitCountModal').style.display = 'none';
-    if (map && customDrawingMode === 'polygon') map.setOptions({ draggableCursor: pinCursor });
 };
 
 /** 外形の最小外接矩形の長辺方位（北0°・時計回り）。対角線ではなく辺に沿う */
@@ -9929,8 +9993,9 @@ window.executeSplitPolygon = () => {
     if (map && customDrawingMode === 'polygon') map.setOptions({ draggableCursor: pinCursor });
     document.getElementById('drawStep1').style.display = 'none';
     document.getElementById('drawStep2').style.display = 'block';
-    if (document.getElementById('fieldStartNumber')) document.getElementById('fieldStartNumber').style.display = 'block';
-    if (document.getElementById('fieldName')) document.getElementById('fieldName').placeholder = "圃場名 (自動で _1, _2 と連番が付きます)";
+    const startWrap = document.getElementById('fieldStartNumberWrap');
+    if (startWrap) startWrap.style.display = 'block';
+    if (document.getElementById('fieldName')) document.getElementById('fieldName').placeholder = "共通の名前（うしろに番号が付きます）";
 };
 
 if ('serviceWorker' in navigator) {
