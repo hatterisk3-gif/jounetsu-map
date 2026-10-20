@@ -676,7 +676,37 @@ window.promptLineUrl = async () => {
         customAlert("通信エラーが発生しました。デプロイが最新か確認してください。");
     }
 };
-const iconFunctionMap = { '🚻': 'トイレ', '🚰': '洗車場', '⛲': '洗車場', '🚿': '洗車場', '📦': '倉庫', '🏭': 'パックセンター', '🏪': '事務所', '🏢': '研究所', '🚚': '残渣運搬', '🛻': '残渣運搬', '🚜': '農機具整備', '🛠️': '車両整備', '⛽': '整備', '⚠️': '事故注意', '📢': 'バードソニック', '🚫': '鳥被害', '🅿️': '駐車場', '🚙': '駐車場（軽トラ）' };
+const iconFunctionMap = { '🚻': 'トイレ', '🚰': '洗車場', '🚿': '洗車場', '💧': '給水口', '🕳️': '排水口', '📦': '倉庫', '🏭': 'パックセンター', '🏪': '事務所', '🏠': '事務所', '🏢': '研究所', '🚚': '残渣運搬', '🛻': '残渣運搬', '🚛': '残渣運搬', '🚜': '農機具整備', '🚁': '農機具整備', '🛠️': '車両整備', '⛽': '整備', '⚠️': '事故注意', '🚧': '事故注意', '📢': 'バードソニック', '🚫': '鳥被害', '🐦': '鳥被害', '🅿️': '駐車場', '🚗': '駐車場', '🚙': '駐車場（軽トラ）' };
+/** 看板登録・アイコン変更で共通。ジャンル見出し付きで表示する */
+const ADMIN_SIGN_ICON_GROUPS = [
+    { label: '案内・注意', icons: ['🪧', '⚠️', '🚧', '🚫', '🚩', '📢', '🔒', '📷'] },
+    { label: '水・衛生', icons: ['🚻', '🚰', '⛲', '💧', '🕳️', '🚿', '🧼', '🚮', '🗑️', '♻️'] },
+    { label: '車両・農機', icons: ['🅿️', '🚗', '🚙', '🚐', '🚚', '🛻', '🚛', '🚜', '🚁', '🚲', '⛽'] },
+    { label: '建物・場所', icons: ['🏠', '🏪', '🏢', '🏭', '📦', '🧺', '🚪', '⛺'] },
+    { label: '道具・整備', icons: ['🛠️', '🧰', '🔧', '🔨', '⛏️', '🪓', '🪚', '🔩', '🧲', '⚙️'] },
+    { label: '薬品・資材', icons: ['🧪', '🧴', '💊', '💉', '🔬', '🛢️', '🪣', '🧹', '🧽'] },
+    { label: '作物', icons: ['🌱', '🌿', '🪴', '🌾', '🌻', '🍅', '🥕', '🌽', '🍆', '🥬', '🧅', '🧄', '🍓', '🍇', '🍑'] },
+    { label: '生き物', icons: ['🐓', '🐔', '🐄', '🐖', '🐝', '🐛', '🐦'] },
+    { label: '設備', icons: ['❄️', '🧊', '🌡️', '🔥', '🧯', '💡', '🔌', '⚡', '🌀'] },
+    { label: 'その他', icons: ['🪵', '⛰️', '⚓', '⚖️', '✂️', '🔪'] }
+];
+const ADMIN_SIGN_ICONS = ADMIN_SIGN_ICON_GROUPS.reduce((list, group) => list.concat(group.icons), []);
+
+function renderAdminSignIconPickerHtml_(opts) {
+    opts = opts || {};
+    const onPick = opts.onPick || 'selectMI';
+    const arg0 = opts.arg0 != null ? String(opts.arg0).replace(/\\/g, '\\\\').replace(/'/g, "\\'") : '';
+    return ADMIN_SIGN_ICON_GROUPS.map((group) => {
+        const cells = group.icons.map((icon) => {
+            const click = arg0 ? `${onPick}('${arg0}','${icon}')` : `${onPick}('${icon}')`;
+            return `<span class="ib" id="i_${icon}" onclick="${click}" style="cursor:pointer;padding:4px 0;border-radius:4px;line-height:1.1;">${icon}</span>`;
+        }).join('');
+        return `<div style="margin-bottom:8px;">
+            <div style="font-size:11px;font-weight:bold;color:#455A64;text-align:left;margin:0 0 3px;padding-bottom:2px;border-bottom:1px solid #ECEFF1;">${group.label}</div>
+            <div style="display:grid;grid-template-columns:repeat(6,1fr);font-size:22px;gap:2px;">${cells}</div>
+        </div>`;
+    }).join('');
+}
 
 const ADMIN_PENDING_SYNC_KEY = 'pMapAdminPendingSync';
 const adminSyncQueue_ = [];
@@ -2496,7 +2526,7 @@ window.renderMasterMenu = () => {
     if (titleEl) titleEl.innerHTML = '⚙️ マスタ項目設定';
 
     const masterTypes = [
-        'crop', 'cropCultSetting', 'nurseryLocation', 'cropChemPlan', 'cropWorkPlan', 'costItem', 'cropCostPlan', 'container', 'contentUnit', 'sign', 'location', 'workCategory',
+        'crop', 'cropCultSetting', 'nurseryLocation', 'cropChemPlan', 'cropWorkPlan', 'costItem', 'cropCostPlan', 'container', 'contentUnit', 'location', 'workCategory',
         'machineType', 'machineGroup', 'hitchType', 'work', 'machine', 'tool', 'material', 'pesticide', 'fertilizer'
     ];
 
@@ -6369,8 +6399,6 @@ function saveTouki(hojoId) {
 function openAttr(id) {
     const p = loadedPolygons[id];
     if (p.isMarker) {
-        let funcOptions = '<option value="機能なし">機能なし</option>';
-        pdlSignFunctions.forEach(f => { if (f && f !== "看板機能") { const selected = (p.signFunction === f) ? 'selected' : ''; funcOptions += `<option value="${f}" ${selected}>${f}</option>`; } });
         const defaultLoc = String(p.location || localStorage.getItem('passionMapUserLocation') || '').trim();
         const locOptions = `<option value="">未設定</option>` + (pdlLocations || []).map(l =>
             `<option value="${String(l).replace(/"/g, '&quot;')}" ${l === defaultLoc ? 'selected' : ''}>${l}</option>`
@@ -6382,8 +6410,6 @@ function openAttr(id) {
                <div style="font-size:14px; margin-bottom:10px;">看板情報変更</div>
                <input type="text" id="rnIn" value="${p.name}" class="form-input" style="width:100%; margin-bottom:10px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">
                <select id="rnLoc" class="form-input" style="width:100%; margin-bottom:10px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">${locOptions}</select>
-               <select id="rnFunc" class="form-input" style="width:100%; margin-bottom:10px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;" onchange="if(window.onFuncChangeEdit) window.onFuncChangeEdit()">${funcOptions}</select>
-               <button id="btnLinkSignEdit" onclick="startAdminLinkSelect('${id}')" style="display:${p.signFunction && p.signFunction.includes('給油') ? 'block' : 'none'}; width:100%; margin-bottom:15px; background:#E91E63; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">🗺️ 看板を選択 (${window.tempLinkedSigns.length}件)</button>
                <button onclick="execAttr('${id}')" style="width:100%; padding:10px; border-radius:4px; border:none; background:#d32f2f; color:white; font-weight:bold; cursor:pointer;">保存</button>
              </div>
            `);
@@ -6396,7 +6422,9 @@ function execAttr(id) {
     const p = loadedPolygons[id];
     if (!p) return;
     if (p.isMarker) {
-        const n = document.getElementById('rnIn').value, f = document.getElementById('rnFunc').value;
+        const n = document.getElementById('rnIn').value;
+        const funcEl = document.getElementById('rnFunc');
+        const f = funcEl ? funcEl.value : (p.signFunction || '機能なし');
         const locEl = document.getElementById('rnLoc');
         const loc = locEl ? locEl.value : (p.location || '');
         if (!n) return;
@@ -6423,8 +6451,7 @@ window.onFuncChangeEdit = () => { const val = document.getElementById('rnFunc').
 function openCol(id) {
     const p = loadedPolygons[id]; let h;
     if (p.isMarker) {
-        const ic = ['🪧', '📦', '🚚', '🚜', '🚗', '🚲', '🏠', '🏢', '🚻', '🚰', '🚮', '🅿️', '🚙', '🧰', '🔧', '🔨', '⛏️', '🪓', '🔪', '✂️', '🧪', '🧴', '💊', '💧', '⛽', '⚡', '❄️', '🧊', '🌡️', '🔥', '🌱', '🌿', '⛲', '🚿', '🌀', '🪚', '🧹', '🔬', '🏭', '🛻', '🏪', '⛽', '🛠️', '🏢', '⚠️', '📢', '🚫', '🧼', '🪵', '🔩', '🛢️', '⛰️', '🗑️'];
-        h = `<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:4px;font-size:24px;">${ic.map(i => `<span onclick="applyCol('${id}','${i}')" style="cursor:pointer;">${i}</span>`).join('')}</div>`;
+        h = `<div style="max-height:300px;overflow-y:auto;width:250px;padding-right:2px;">${renderAdminSignIconPickerHtml_({ onPick: 'applyCol', arg0: id })}</div>`;
     } else {
         const cl = ['#FF0000', '#FF6600', '#FFFF00', '#00FF00', '#556B2F', '#00CCFF', '#0033FF', '#9900FF', '#d32f2f'];
         h = `<div style="display:flex;flex-wrap:wrap;gap:5px;justify-content:center;">${cl.map(c => `<button style="background:${c};width:35px;height:35px;border-radius:4px;border:1px solid #ccc;" onclick="applyCol('${id}','${c}')"></button>`).join('')}</div>`;
@@ -6864,6 +6891,12 @@ function initMap() {
     // 🌟修正：読込中のブロックと、もう一度タップでの選択解除
     map.data.addListener('click', (e) => {
         if (window.isMapLoadingFude) return; // ★読込中バリア
+        if (window.cadSplittingEdgeMode && typeof window.finishSplitEdgePick_ === 'function') {
+            window.ignoreNextMapClick = true;
+            setTimeout(() => { window.ignoreNextMapClick = false; }, 200);
+            window.finishSplitEdgePick_(e.latLng);
+            return;
+        }
 
         // ★ 形状変更中の筆ポリゴン適用（複数選択→確定で合体）
         if (window.isEditingFude && editingId && document.getElementById('editShapePanel').style.display === 'block') {
@@ -7009,6 +7042,10 @@ function initMap() {
             if (typeof window.syncAdminRegPlusBtnState_ === 'function') window.syncAdminRegPlusBtnState_('view');
         }
         else if (customDrawingMode === 'polygon') {
+            if (window.cadSplittingEdgeMode && typeof window.finishSplitEdgePick_ === 'function') {
+                window.finishSplitEdgePick_(e.latLng);
+                return;
+            }
             if (document.getElementById('drawStep2') && document.getElementById('drawStep2').style.display === 'block') return;
 
             customDrawingPath.push(e.latLng);
@@ -7141,7 +7178,9 @@ window.cancelMarkerForm_ = () => {
 };
 
 window._signRegQuickPresets_ = {
-    water: { label: '水地点', icon: '🚰', name: '水地点', signFunction: '機能なし' },
+    water: { label: '水地点', icon: '⛲', name: '水地点', signFunction: '機能なし' },
+    inlet: { label: '給水口', icon: '💧', name: '給水口', signFunction: '給水口' },
+    drain: { label: '排水口', icon: '🕳️', name: '排水口', signFunction: '排水口' },
     parking: { label: '駐車場', icon: '🅿️', name: '駐車場', signFunction: '駐車場' },
     caution: { label: '注意', icon: '⚠️', name: '注意', signFunction: '事故注意' }
 };
@@ -7153,12 +7192,6 @@ function openMarkerForm(markerObj) {
         document.querySelectorAll('.ib').forEach(el => el.style.background = 'none');
         const chip = document.getElementById('i_' + i);
         if (chip) chip.style.background = '#ddd';
-        const mappedFunc = iconFunctionMap[i] || '機能なし';
-        const mFunc = document.getElementById('mFunc');
-        if (mFunc) {
-            if (Array.from(mFunc.options).some(opt => opt.value === mappedFunc)) mFunc.value = mappedFunc;
-            else mFunc.value = '機能なし';
-        }
     };
 
     const prefill = window._pendingMarkerPrefill || {};
@@ -7209,19 +7242,29 @@ window.renderSignRegQuickScreen_ = () => {
         </div>
         ${st.posLabel ? `<div style="font-size:11px; color:#888; margin-bottom:10px; text-align:center;">📍 ${esc(st.posLabel)}</div>` : ''}
         <div style="font-size:13px; font-weight:bold; color:#333; margin-bottom:8px;">よく使う種類（クイックセット）</div>
-        <div style="display:grid; grid-template-columns:1fr; gap:8px; margin-bottom:12px;">
+        <div style="display:grid; grid-template-columns:1fr; gap:8px; margin-bottom:12px; max-height:46vh; overflow-y:auto;">
           <button type="button" onclick="pickSignRegQuick_('water')"
-            style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:14px 14px; border:2px solid #81D4FA; border-radius:10px; background:#E1F5FE; cursor:pointer;">
-            <span style="font-size:28px; line-height:1;">🚰</span>
+            style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #81D4FA; border-radius:10px; background:#E1F5FE; cursor:pointer;">
+            <span style="font-size:28px; line-height:1;">⛲</span>
             <span><div style="font-weight:bold; color:#0277BD; font-size:15px;">水地点</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">名前・アイコンを自動セット</div></span>
           </button>
+          <button type="button" onclick="pickSignRegQuick_('inlet')"
+            style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #64B5F6; border-radius:10px; background:#E3F2FD; cursor:pointer;">
+            <span style="font-size:28px; line-height:1;">💧</span>
+            <span><div style="font-weight:bold; color:#1565C0; font-size:15px;">給水口</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">名前・機能を自動セット</div></span>
+          </button>
+          <button type="button" onclick="pickSignRegQuick_('drain')"
+            style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #80CBC4; border-radius:10px; background:#E0F2F1; cursor:pointer;">
+            <span style="font-size:28px; line-height:1;">🕳️</span>
+            <span><div style="font-weight:bold; color:#00695C; font-size:15px;">排水口</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">名前・機能を自動セット</div></span>
+          </button>
           <button type="button" onclick="pickSignRegQuick_('parking')"
-            style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:14px 14px; border:2px solid #90CAF9; border-radius:10px; background:#E3F2FD; cursor:pointer;">
+            style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #90CAF9; border-radius:10px; background:#E3F2FD; cursor:pointer;">
             <span style="font-size:28px; line-height:1;">🅿️</span>
             <span><div style="font-weight:bold; color:#1565C0; font-size:15px;">駐車場</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">名前・アイコンを自動セット</div></span>
           </button>
           <button type="button" onclick="pickSignRegQuick_('caution')"
-            style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:14px 14px; border:2px solid #FFCC80; border-radius:10px; background:#FFF8E1; cursor:pointer;">
+            style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #FFCC80; border-radius:10px; background:#FFF8E1; cursor:pointer;">
             <span style="font-size:28px; line-height:1;">⚠️</span>
             <span><div style="font-weight:bold; color:#E65100; font-size:15px;">注意</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">内容は任意で追記できます</div></span>
           </button>
@@ -7285,8 +7328,6 @@ window.renderSignRegDetailScreen_ = (opts) => {
     const modalBody = document.getElementById('modalBody');
     if (!modalBody) return;
 
-    const icons = ['🪧', '🚻', '🚰', '⛲', '🚿', '🌀', '⛏️', '🪚', '✂️', '🧹', '🔬', '📦', '🏭', '🚚', '🛻', '🚙', '🏪', '⛽', '🛠️', '🏢', '⚠️', '🅿️', '📢', '🚫', '🧼', '🪵', '🔩', '🛢️', '🚜', '🐓', '⛰️', '🗑️'];
-    const funcOpts = `<option value="機能なし">機能なし</option>` + (pdlSignFunctions || []).map(f => `<option value="${f}">${f}</option>`).join('');
     const defaultLoc = String(st.defaultLoc || '').trim();
     const locOpts = `<option value="">拠点を選択...</option>` + (pdlLocations || []).map(l =>
         `<option value="${String(l).replace(/"/g, '&quot;')}" ${l === defaultLoc ? 'selected' : ''}>${l}</option>`
@@ -7308,10 +7349,10 @@ window.renderSignRegDetailScreen_ = (opts) => {
               ${fromQuick ? `<div style="font-size:12px; color:#2E7D32; background:#E8F5E9; border-radius:6px; padding:8px; margin-bottom:10px; line-height:1.4;">✅ 「${esc(presetName)}」 ${presetIcon} をセットしました。必要なら修正して登録してください。</div>` : ''}
               <input type="text" id="mName" class="form-input" placeholder="看板名" value="${esc(presetName)}" style="margin-bottom:8px;">
               <select id="mLoc" class="form-input" style="margin-bottom:8px;">${locOpts}</select>
-              <select id="mFunc" class="form-input" style="margin-bottom:10px;">${funcOpts}</select>
-              <div style="font-size:11px; color:#666; text-align:left; margin-bottom:4px;">アイコン</div>
-              <div style="display:grid;grid-template-columns:repeat(6,1fr);font-size:20px;gap:2px;max-height:140px;overflow-y:auto;">
-                ${icons.map(i => `<span class="ib" id="i_${i}" onclick="selectMI('${i}')" style="cursor:pointer;padding:2px;border-radius:4px;">${i}</span>`).join('')}
+              <input type="hidden" id="mFunc" value="${esc(presetFunc || '機能なし')}">
+              <div style="font-size:11px; color:#666; text-align:left; margin-bottom:4px;">アイコン（ジャンル別）</div>
+              <div style="max-height:240px;overflow-y:auto;padding:6px;border:1px solid #eee;border-radius:8px;background:#fafafa;">
+                ${renderAdminSignIconPickerHtml_({ onPick: 'selectMI' })}
               </div>
               <input type="hidden" id="selIco" value="${esc(presetIcon)}">
               <div style="text-align:left; margin-top:12px;">
@@ -7342,20 +7383,6 @@ window.renderSignRegDetailScreen_ = (opts) => {
 
     setTimeout(() => {
         if (typeof window.selectMI === 'function') window.selectMI(presetIcon);
-        const mFunc = document.getElementById('mFunc');
-        if (mFunc) {
-            const prefer = [presetFunc, st.defaultFunc, '車両・機械管理', '農機管理'].filter(Boolean);
-            for (let i = 0; i < prefer.length; i++) {
-                if (Array.from(mFunc.options).some(opt => opt.value === prefer[i])) {
-                    mFunc.value = prefer[i];
-                    break;
-                }
-            }
-            // クイックの機能名がマスタに無い場合でも、アイコン連動後に上書き
-            if (presetFunc && Array.from(mFunc.options).some(opt => opt.value === presetFunc)) {
-                mFunc.value = presetFunc;
-            }
-        }
         const nameEl = document.getElementById('mName');
         if (nameEl) {
             if (!presetName) nameEl.focus();
@@ -7574,7 +7601,6 @@ document.getElementById('btnDrawMode').onclick = () => {
 
     customDrawingMode = 'polygon';
     clearCustomDrawing();
-    setFudeVisibility(false);
 
     // 圃場作成時は限界ズームを超えてCSS引き延ばしできるようにする
     if (typeof window.enableStretchedMapType === 'function') window.enableStretchedMapType();
@@ -7587,7 +7613,18 @@ document.getElementById('btnDrawMode').onclick = () => {
     let legendDiv = document.getElementById('adminLegendUI');
     if (legendDiv) legendDiv.style.display = 'none';
 
-    customAlert("【圃場作成モード】\n地図上をタップして手動で頂点を打つか、\n「✏️ 筆ポリから」を押して枠を取得してください。", "drawMode");
+    // 登録開始時から筆ポリゴンを表示する（「手動で描く」に切り替えたときだけ隠す）
+    const fudeBtn = document.getElementById('btnLoadFude');
+    if (fudeBtn && !window.isMapLoadingFude && !window.isFudeVisibleFlag) {
+        fudeBtn.click();
+    } else if (window.loadedFudeRegion) {
+        setFudeVisibility(true);
+        if (typeof window.refreshFudeMapData === 'function') window.refreshFudeMapData(true);
+    }
+
+    window._adminDrawManualMode = false;
+    if (typeof window.syncAdminDrawModeBtn_ === 'function') window.syncAdminDrawModeBtn_();
+    customAlert("【圃場作成モード】\n筆ポリゴンを表示しています。\n青枠をタップして選ぶか、「👆 手動」で頂点を打てます。", "drawMode");
     if (typeof window.closeAdminRegPlusMenu_ === 'function') window.closeAdminRegPlusMenu_();
     if (typeof window.syncAdminRegPlusBtnState_ === 'function') window.syncAdminRegPlusBtnState_('draw');
 };
@@ -7699,18 +7736,39 @@ if (undoBtn) {
         }
     };
 }
-// 🌟ここに追加：手動で描くボタンの処理
+window.syncAdminDrawModeBtn_ = function () {
+    const btn = document.getElementById('btnManualDraw');
+    if (!btn) return;
+    const manual = !!window._adminDrawManualMode;
+    btn.innerHTML = manual ? '✏️ 筆ポリ' : '👆 手動';
+    btn.style.background = manual ? '#673AB7' : '#00BCD4';
+    btn.title = manual ? '筆ポリゴン選択に切り替え' : '手動で頂点を打つモードに切り替え';
+};
+
+// 筆ポリ選択 ⇔ 手動描画 の切り替え
 document.getElementById('btnManualDraw').onclick = () => {
+    const toManual = !window._adminDrawManualMode;
+    window._adminDrawManualMode = toManual;
     customDrawingMode = 'polygon';
-    setFudeVisibility(false); // 邪魔な青枠をスッと隠す！
-
-    // もしすでに筆ポリゴンを選んで赤くなっていたら、一旦リセットする
-    if (window.selectedFudePaths && window.selectedFudePaths.length > 0) {
-        clearCustomDrawing();
-        customDrawingMode = 'polygon';
+    if (toManual) {
+        setFudeVisibility(false);
+        if (window.selectedFudePaths && window.selectedFudePaths.length > 0) {
+            clearCustomDrawing();
+            customDrawingMode = 'polygon';
+            window._adminDrawManualMode = true;
+        }
+        map.setOptions({ draggableCursor: pinCursor });
+    } else {
+        const fudeBtn = document.getElementById('btnLoadFude');
+        if (fudeBtn && !window.isMapLoadingFude) {
+            fudeBtn.click();
+        } else if (window.loadedFudeRegion) {
+            setFudeVisibility(true);
+            if (typeof window.refreshFudeMapData === 'function') window.refreshFudeMapData(true);
+        }
+        map.setOptions({ draggableCursor: pinCursor });
     }
-
-    map.setOptions({ draggableCursor: pinCursor });
+    window.syncAdminDrawModeBtn_();
 };
 
 // 🌟修正：微細な隙間を無視して、複数の畑を美しく1つに結合する！
@@ -7803,9 +7861,11 @@ window.setFudeVisibility = (isVisible) => {
     } else {
         map.data.setStyle({ visible: false }); // 隠す！
     }
+    if (isVisible) window._adminDrawManualMode = false;
     if (typeof window.syncFudeLoadButtonLabels_ === 'function') {
         window.syncFudeLoadButtonLabels_();
     }
+    if (typeof window.syncAdminDrawModeBtn_ === 'function') window.syncAdminDrawModeBtn_();
 };
 
 window.FUDE_BTN_IDLE = '✏️ 筆ポリから';
@@ -8565,7 +8625,8 @@ window.saveM = async () => {
     if (!n) { customAlert("看板名を入力してください"); return; }
     if (!currentMarker) { customAlert("位置が設定されていません。地図をタップしてから登録してください。"); return; }
     const ic = document.getElementById('selIco').value;
-    const funcType = document.getElementById('mFunc').value;
+    const funcEl = document.getElementById('mFunc');
+    const funcType = funcEl ? String(funcEl.value || '').trim() : '機能なし';
     const pos = currentMarker.getPosition();
     const coords = [{ lat: pos.lat(), lng: pos.lng() }];
     const locEl = document.getElementById('mLoc');
@@ -9447,19 +9508,113 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
         
+function splitPathToLngLat_(path) {
+    return (path || []).map((pt) => [
+        typeof pt.lng === 'function' ? pt.lng() : Number(pt.lng),
+        typeof pt.lat === 'function' ? pt.lat() : Number(pt.lat)
+    ]).filter((pt) => Number.isFinite(pt[0]) && Number.isFinite(pt[1]));
+}
+
+function currentSplitSourcePath_() {
+    if (window.selectedFudePaths && window.selectedFudePaths.length === 1) return window.selectedFudePaths[0];
+    if (customDrawingPath && customDrawingPath.length > 2) return customDrawingPath;
+    return null;
+}
+
+/** タップ位置から、ギザギザの短辺より長い基準辺を選ぶ */
+function pickSplitEdge_(latLng) {
+    const path = currentSplitSourcePath_();
+    const coords = splitPathToLngLat_(path);
+    if (!latLng || coords.length < 2 || typeof turf === 'undefined') return null;
+    const click = turf.point([latLng.lng(), latLng.lat()]);
+    const edges = [];
+    for (let i = 0; i < coords.length; i++) {
+        const a = coords[i];
+        const b = coords[(i + 1) % coords.length];
+        if (a[0] === b[0] && a[1] === b[1]) continue;
+        const line = turf.lineString([a, b]);
+        const distM = turf.pointToLineDistance(click, line, { units: 'meters' });
+        const lenM = turf.distance(turf.point(a), turf.point(b), { units: 'meters' });
+        let bearing = turf.bearing(turf.point(a), turf.point(b));
+        while (bearing < 0) bearing += 180;
+        while (bearing >= 180) bearing -= 180;
+        edges.push({ distM, lenM, bearing, a, b });
+    }
+    if (!edges.length) return null;
+    edges.sort((x, y) => x.distM - y.distM);
+    const nearest = edges[0];
+    const near = edges.filter((edge) => edge.distM <= nearest.distM + 12);
+    near.sort((x, y) => y.lenM - x.lenM);
+    return near[0];
+}
+
+function showSplitCountForAngle_(axis, angleDeg, titleHtml) {
+    const axisEl = document.getElementById('splitTargetAxis');
+    if (axisEl) axisEl.value = axis;
+    const cadEl = document.getElementById('cadAngle');
+    if (cadEl) cadEl.value = angleDeg;
+    const row = document.getElementById('splitAngleRow');
+    const input = document.getElementById('splitAngleInput');
+    if (row) row.style.display = 'block';
+    if (input) input.value = String(angleDeg);
+    const titleEl = document.getElementById('splitModalTitle');
+    if (titleEl) titleEl.innerHTML = titleHtml;
+    const modalEl = document.getElementById('splitCountModal');
+    if (modalEl) modalEl.style.display = 'block';
+}
+
+window.finishSplitEdgePick_ = (latLng) => {
+    const edge = pickSplitEdge_(latLng);
+    if (!edge) {
+        if (typeof showAdminSyncToast === 'function') {
+            showAdminSyncToast('先に筆ポリゴンを1つ選ぶか、図形を描いてから辺をタップしてください', 'error');
+        }
+        return;
+    }
+    window.cadSplittingEdgeMode = false;
+    window.cadPinMode = null;
+    const angle = Math.round(edge.bearing * 10) / 10;
+    if (window._splitEdgePreview) {
+        try { window._splitEdgePreview.setMap(null); } catch (e) {}
+    }
+    window._splitEdgePreview = new google.maps.Polyline({
+        path: [
+            { lng: edge.a[0], lat: edge.a[1] },
+            { lng: edge.b[0], lat: edge.b[1] }
+        ],
+        map: map,
+        strokeColor: '#FFEB3B',
+        strokeWeight: 6,
+        zIndex: 10020,
+        clickable: false
+    });
+    showSplitCountForAngle_('edge_selected', angle, `✂️ 選んだ辺（${angle}°）に平行に分割`);
+    if (typeof showAdminSyncToast === 'function') {
+        showAdminSyncToast('基準辺を ' + angle + '° に合わせました。分割数を指定してください', 'ok');
+    }
+};
+
 window.promptSplitPolygon = (axis) => {
     document.getElementById('splitPolygonPanel').style.display = 'none';
     document.getElementById('splitTargetAxis').value = axis;
+    const angleRow = document.getElementById('splitAngleRow');
+    if (angleRow && axis !== 'cad_angle') angleRow.style.display = 'none';
 
     if (axis === 'edge') {
+        if (!currentSplitSourcePath_()) {
+            document.getElementById('splitPolygonPanel').style.display = 'block';
+            if (typeof showAdminSyncToast === 'function') {
+                showAdminSyncToast('先に筆ポリゴンを1つ選ぶか、4点の図形を描いてください', 'error');
+            }
+            return;
+        }
         if (typeof window.cadSetPinMode === 'function') {
             window.cadSetPinMode('snap_line');
         }
         window.cadSplittingEdgeMode = true;
-        const msgEl = document.getElementById('cadPinModeMsg');
-        if (msgEl) {
-            msgEl.innerText = '🎯【分割の角度基準】基準にしたい圃場の直線・斜め辺をタップしてください';
-            msgEl.style.color = '#4CAF50';
+        if (map) map.setOptions({ draggableCursor: 'crosshair' });
+        if (typeof showAdminSyncToast === 'function') {
+            showAdminSyncToast('基準にしたい辺（直線）をタップしてください', 'info');
         }
         return;
     }
@@ -9469,7 +9624,11 @@ window.promptSplitPolygon = (axis) => {
     else if (axis === 'short') label = "短辺方向の分割数";
     else if (axis === 'cad_angle') {
         const angleVal = document.getElementById('cadAngle') ? document.getElementById('cadAngle').value : 0;
-        label = `CAD角度(${angleVal}°)方向の分割数`;
+        const row = document.getElementById('splitAngleRow');
+        const input = document.getElementById('splitAngleInput');
+        if (row) row.style.display = 'block';
+        if (input) input.value = angleVal;
+        label = `CAD角度（${angleVal}°）に平行な分割数`;
     }
 
     document.getElementById('splitModalTitle').innerHTML = `✂️ ${label}を指定`;
@@ -9477,9 +9636,62 @@ window.promptSplitPolygon = (axis) => {
 };
 
 window.cancelSplitPolygon = () => {
+    window.cadSplittingEdgeMode = false;
+    window.cadPinMode = null;
+    if (window._splitEdgePreview) {
+        try { window._splitEdgePreview.setMap(null); } catch (e) {}
+        window._splitEdgePreview = null;
+    }
     document.getElementById('splitPolygonPanel').style.display = 'none';
     document.getElementById('splitCountModal').style.display = 'none';
+    if (map && customDrawingMode === 'polygon') map.setOptions({ draggableCursor: pinCursor });
 };
+
+/** 外形の最小外接矩形の長辺方位（北0°・時計回り）。対角線ではなく辺に沿う */
+function longSideBearingOfRing_(ring) {
+    if (!ring || ring.length < 3 || typeof turf === 'undefined') return 0;
+    const closed = ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1];
+    const n = closed ? ring.length - 1 : ring.length;
+    if (n < 3) return 0;
+    const lat0 = ring[0][1];
+    const cosLat = Math.cos(lat0 * Math.PI / 180) || 1;
+    const M = 111320;
+    let bestArea = Infinity;
+    let bestBearing = 0;
+    let bestAlong = 0;
+    let bestAcross = 0;
+    for (let i = 0; i < n; i++) {
+        const a = ring[i];
+        const b = ring[(i + 1) % n];
+        const bearing = turf.bearing(turf.point(a), turf.point(b));
+        const rad = bearing * Math.PI / 180;
+        const sinB = Math.sin(rad);
+        const cosB = Math.cos(rad);
+        let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+        for (let k = 0; k < n; k++) {
+            const east = (ring[k][0] - a[0]) * cosLat * M;
+            const north = (ring[k][1] - a[1]) * M;
+            const along = east * sinB + north * cosB;
+            const across = east * cosB - north * sinB;
+            if (along < minU) minU = along;
+            if (along > maxU) maxU = along;
+            if (across < minV) minV = across;
+            if (across > maxV) maxV = across;
+        }
+        const spanAlong = maxU - minU;
+        const spanAcross = maxV - minV;
+        const area = spanAlong * spanAcross;
+        if (area < bestArea) {
+            bestArea = area;
+            bestBearing = bearing;
+            bestAlong = spanAlong;
+            bestAcross = spanAcross;
+        }
+    }
+    let longBearing = bestBearing;
+    if (bestAcross > bestAlong) longBearing += 90;
+    return longBearing;
+}
 
 window.executeSplitPolygon = () => {
     let count = parseInt(document.getElementById('splitCountInput').value) || 2;
@@ -9575,23 +9787,24 @@ window.executeSplitPolygon = () => {
         
         let rotAngle = 0;
         if (axis === 'edge_selected' || axis === 'cad_angle') {
+            const angleInput = document.getElementById('splitAngleInput');
+            const angleRow = document.getElementById('splitAngleRow');
             const angleEl = document.getElementById('cadAngle');
-            rotAngle = angleEl ? (parseFloat(angleEl.value) || 0) : 0;
+            let deg = 0;
+            if (angleRow && angleRow.style.display !== 'none' && angleInput && angleInput.value !== '') {
+                deg = parseFloat(angleInput.value) || 0;
+            } else if (angleEl) {
+                deg = parseFloat(angleEl.value) || 0;
+            }
+            if (angleEl) angleEl.value = deg;
+            // 既存の切り口は軸に対して直角。指定辺・CAD角度は分割線をその角度に平行にする
+            rotAngle = deg + 90;
         } else {
             let hull = turf.convex(poly);
             let hullCoords = (hull && hull.geometry) ? hull.geometry.coordinates[0] : coords;
-            let longestDist = 0;
-            // 🌟変更：筆ポリゴンのようなギザギザな辺でも「一番長い全体の向き（主軸）」を正しく計算するため、全頂点間の最大距離の角度を使用する
-            for (let i = 0; i < hullCoords.length; i++) {
-                for (let j = i + 1; j < hullCoords.length; j++) {
-                    let d = turf.distance(turf.point(hullCoords[i]), turf.point(hullCoords[j]));
-                    if (d > longestDist) {
-                        longestDist = d;
-                        rotAngle = turf.bearing(turf.point(hullCoords[i]), turf.point(hullCoords[j]));
-                    }
-                }
-            }
-            
+            // 頂点間の最長距離は対角線になりやすく、筆ポリが斜めに割れる。
+            // 外形に沿った最小外接矩形の長辺を軸にする。
+            rotAngle = longSideBearingOfRing_(hullCoords);
             if (axis === 'short') {
                 rotAngle = (rotAngle + 90) % 360;
             }
@@ -9659,6 +9872,13 @@ window.executeSplitPolygon = () => {
             }
         }
     }
+
+    if (!window.gridGeneratedPaths || !window.gridGeneratedPaths.length) {
+        if (typeof showAdminSyncToast === 'function') {
+            showAdminSyncToast('この角度では分割できませんでした。角度を少し変えてやり直してください', 'error');
+        }
+        return;
+    }
     
     if (currentPolygon) currentPolygon.setMap(null);
     if (customDrawingPolyline) customDrawingPolyline.setMap(null);
@@ -9670,6 +9890,11 @@ window.executeSplitPolygon = () => {
     
     document.getElementById('splitPolygonPanel').style.display = 'none';
     document.getElementById('splitCountModal').style.display = 'none';
+    if (window._splitEdgePreview) {
+        try { window._splitEdgePreview.setMap(null); } catch (e) {}
+        window._splitEdgePreview = null;
+    }
+    if (map && customDrawingMode === 'polygon') map.setOptions({ draggableCursor: pinCursor });
     document.getElementById('drawStep1').style.display = 'none';
     document.getElementById('drawStep2').style.display = 'block';
     if (document.getElementById('fieldStartNumber')) document.getElementById('fieldStartNumber').style.display = 'block';
