@@ -1104,6 +1104,38 @@ function restoreAdminLoginForm() {
     return !!(id && pw);
 }
 
+/** キャッシュ起動：ログイン確認を待たず操作可能な状態を維持する */
+function continueCachedAdminSession_(message, toastType) {
+    window._adminCacheSessionActive = true;
+    currentUser = currentUser || localStorage.getItem('pMapAdminName') || localStorage.getItem('passionMapUserName') || '';
+    const loginScreen = document.getElementById('loginScreen');
+    if (loginScreen) loginScreen.style.display = 'none';
+    setTimeout(refreshAdminMapSize, 50);
+    startLocationWatch();
+    schedulePendingAdminSyncFlush_();
+    if (message) showAdminSyncToast(message, toastType || 'info');
+    if (localStorage.getItem('spreadsheetId') && !window._adminInitDataInFlight) {
+        try { loadInitData({ background: true }); } catch (e) {}
+    }
+}
+
+function scheduleCachedAdminLoginRetry_() {
+    const retryN = (window._adminCacheLoginRetryCount || 0) + 1;
+    window._adminCacheLoginRetryCount = retryN;
+    if (retryN > 2 || window._adminCacheLoginRetryTimer) return;
+    window._adminCacheLoginRetryTimer = setTimeout(() => {
+        window._adminCacheLoginRetryTimer = null;
+        if (window._adminLoginBusy) return;
+        try {
+            window._adminLoginBusy = true;
+            Promise.resolve(executeLogin(true, { fromCache: true }))
+                .finally(() => { window._adminLoginBusy = false; });
+        } catch (e) {
+            window._adminLoginBusy = false;
+        }
+    }, retryN === 1 ? 4000 : 10000);
+}
+
 async function executeLogin(isAuto = false, options = {}) {
     const fromCache = !!(options && options.fromCache);
     const id = document.getElementById('loginId').value;
@@ -1112,19 +1144,15 @@ async function executeLogin(isAuto = false, options = {}) {
     const err = document.getElementById('loginError');
     const hasCache = !!localStorage.getItem('pMapAdminInitData');
 
+    // キャッシュ起動時はログイン確認を待たず、すぐ操作可能な状態にする
     if (fromCache) {
-        currentUser = currentUser || localStorage.getItem('pMapAdminName') || localStorage.getItem('passionMapUserName') || '';
-        const loginScreen = document.getElementById('loginScreen');
-        if (loginScreen) loginScreen.style.display = 'none';
-        setTimeout(refreshAdminMapSize, 50);
-        startLocationWatch();
-        schedulePendingAdminSyncFlush_();
+        continueCachedAdminSession_(null, 'info');
     }
 
     if (!isAuto && btn) { btn.innerText = "認証中..."; btn.disabled = true; }
 
     try {
-        const res = await callGAS('login', { orgId: 'default', userId: id, password: pw });
+        const res = await callGAS('login', { orgId: 'default', userId: id, password: pw }, 2, { timeoutMs: 60000 });
         if (res.success) {
             if (res.role !== "管理者") {
                 document.getElementById('loginScreen').style.display = 'flex';
@@ -1136,6 +1164,7 @@ async function executeLogin(isAuto = false, options = {}) {
             document.getElementById('loginScreen').style.display = 'none';
             if (err) err.innerText = '';
             setTimeout(refreshAdminMapSize, 50);
+            window._adminCacheLoginRetryCount = 0;
 
             localStorage.setItem('passionMapUserId', id);
             localStorage.setItem('passionMapUserPw', pw);
@@ -1153,24 +1182,30 @@ async function executeLogin(isAuto = false, options = {}) {
                 window.refreshAccountNameButtons();
             }
 
-            if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
-                await PassionMapTerms.ensureAccepted({ userId: id });
-            }
-
+            // キャッシュ起動時は利用規約確認を待たず、最新取得を優先
             if (fromCache) {
-                loadInitData({ background: true });
-            } else if (hasCache) {
-                try { renderInitData(JSON.parse(localStorage.getItem('pMapAdminInitData')), { interim: true }); } catch (e) {}
-                loadInitData({ background: true });
+                if (!window._adminInitDataInFlight) loadInitData({ background: true });
+                if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
+                    Promise.resolve(PassionMapTerms.ensureAccepted({ userId: id })).catch(() => {});
+                }
             } else {
-                loadInitData();
+                if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
+                    await PassionMapTerms.ensureAccepted({ userId: id });
+                }
+                if (hasCache) {
+                    try { renderInitData(JSON.parse(localStorage.getItem('pMapAdminInitData')), { interim: true }); } catch (e) {}
+                    loadInitData({ background: true });
+                } else {
+                    loadInitData();
+                }
             }
             startLocationWatch();
             mapInitPromise.then(() => applyPendingMapDeepLink());
             if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
         } else {
             if (fromCache && hasCache) {
-                showAdminSyncToast('⚠️ ログイン確認に失敗（キャッシュで続行）', 'error');
+                continueCachedAdminSession_('📦 キャッシュで続行中（サーバー確認を再試行します）', 'info');
+                scheduleCachedAdminLoginRetry_();
                 return;
             }
             document.getElementById('loginScreen').style.display = 'flex';
@@ -1181,12 +1216,13 @@ async function executeLogin(isAuto = false, options = {}) {
         if (isAuto || fromCache) {
             const savedName = localStorage.getItem('pMapAdminName');
             if (savedName) currentUser = savedName;
-            startLocationWatch();
             if (fromCache && hasCache) {
-                showAdminSyncToast('⚠️ 通信エラー（キャッシュで続行）', 'error');
-                schedulePendingAdminSyncFlush_();
+                // コールドスタート失敗でも地図操作は維持し、裏で再試行
+                continueCachedAdminSession_(null, 'info');
+                scheduleCachedAdminLoginRetry_();
                 return;
             }
+            startLocationWatch();
             try {
                 if (localStorage.getItem('spreadsheetId')) {
                     loadInitData({ background: hasCache });
@@ -9104,12 +9140,15 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('loginId').value = id;
         document.getElementById('loginPw').value = pw;
 
-        // 🌟自動ログイン＆キャッシュ読み込みは、ログイン情報がある場合のみ実行！🌟
-        // 地図の完了を待たずに開始する（描画側が map 待ちを吸収する）
+        // 楽観UI：キャッシュがあればログイン完了を待たず地図表示＋裏更新を並行開始
         const cachedData = localStorage.getItem('pMapAdminInitData');
         if (cachedData) {
             try { renderInitData(JSON.parse(cachedData), { interim: true }); } catch (e) {}
-            // キャッシュ即起動の案内トーストは出さない
+            continueCachedAdminSession_(null, 'info');
+            // ログイン確認と最新データ取得を並行（ログイン待ちで起動を遅らせない）
+            if (localStorage.getItem('spreadsheetId')) {
+                try { loadInitData({ background: true }); } catch (e) {}
+            }
             executeLogin(true, { fromCache: true });
         } else {
             executeLogin(true);
@@ -9118,7 +9157,6 @@ document.addEventListener('DOMContentLoaded', () => {
         mapInitPromise.then(() => {
             try { flushPendingInitData(); } catch (e) {}
             if (!initDataLoadStarted && localStorage.getItem('spreadsheetId')) {
-                // ログイン完了前の保険起動。キャッシュがあれば裏取得にして失敗トーストを出さない
                 loadInitData({ background: !!localStorage.getItem('pMapAdminInitData') });
             }
         });

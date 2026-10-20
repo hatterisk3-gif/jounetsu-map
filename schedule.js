@@ -1,14 +1,64 @@
 
       // Check login on script load
+      function hasScheduleSessionCreds_() {
+          const id = String(localStorage.getItem('passionMapUserId') || '').trim();
+          const pw = String(localStorage.getItem('passionMapUserPw') || '').trim();
+          return !!(id && pw);
+      }
+
+      function hasValidSpreadsheetId_() {
+          const sid = String(localStorage.getItem('spreadsheetId') || '').trim();
+          return !!(sid && sid !== 'undefined' && sid !== 'null');
+      }
+
+      function hasScheduleCache_() {
+          return !!localStorage.getItem('passionMapScheduleData');
+      }
+
       function checkLoginStatus() {
-          const sid = localStorage.getItem('spreadsheetId');
-          if (!sid || sid === 'undefined' || sid === 'null') {
-              // Not logged in
-              const ls = document.getElementById('loginScreen');
-              if (ls) ls.style.display = 'flex';
-              return false;
+          if (hasValidSpreadsheetId_()) return true;
+          // キャッシュ＋資格情報があれば楽観的に通す（裏でログイン確認）
+          if (hasScheduleCache_() && hasScheduleSessionCreds_()) return true;
+          const ls = document.getElementById('loginScreen');
+          if (ls) ls.style.display = 'flex';
+          return false;
+      }
+
+      /** キャッシュ起動：ログイン確認を待たず操作可能な状態を維持する */
+      function continueCachedScheduleSession_(message, toastType) {
+          window._scheduleCacheSessionActive = true;
+          const ls = document.getElementById('loginScreen');
+          if (ls) ls.style.display = 'none';
+          const id = String(localStorage.getItem('passionMapUserId') || '').trim();
+          const pw = String(localStorage.getItem('passionMapUserPw') || '').trim();
+          const idEl = document.getElementById('loginId');
+          const pwEl = document.getElementById('loginPw');
+          if (idEl && id && !idEl.value) idEl.value = id;
+          if (pwEl && pw && !pwEl.value) pwEl.value = pw;
+          if (message) {
+              if (typeof window.showRecordSyncToast === 'function') {
+                  window.showRecordSyncToast(message, toastType || 'info');
+              } else if (typeof showMapSyncToast === 'function') {
+                  showMapSyncToast(message, toastType || 'info');
+              }
           }
-          return true;
+      }
+
+      function scheduleCachedScheduleLoginRetry_() {
+          const retryN = (window._scheduleCacheLoginRetryCount || 0) + 1;
+          window._scheduleCacheLoginRetryCount = retryN;
+          if (retryN > 2 || window._scheduleCacheLoginRetryTimer) return;
+          window._scheduleCacheLoginRetryTimer = setTimeout(() => {
+              window._scheduleCacheLoginRetryTimer = null;
+              if (window._scheduleLoginBusy) return;
+              try {
+                  window._scheduleLoginBusy = true;
+                  Promise.resolve(executeLogin({ fromCache: true, isAuto: true }))
+                      .finally(() => { window._scheduleLoginBusy = false; });
+              } catch (e) {
+                  window._scheduleLoginBusy = false;
+              }
+          }, retryN === 1 ? 4000 : 10000);
       }
       
       // We need to stop loadData if not logged in.
@@ -42,45 +92,94 @@
       };
 
       
-      async function executeLogin() {
+      async function executeLogin(options) {
+          options = options || {};
+          const fromCache = !!options.fromCache;
+          const isAuto = !!options.isAuto;
           const id = document.getElementById('loginId').value;
           const pw = document.getElementById('loginPw').value;
           const btn = document.querySelector('.login-btn');
-          
-          if (btn) { 
-              btn.innerText = "通信中..."; 
-              btn.disabled = true; 
+          const hasCache = hasScheduleCache_();
+
+          if (fromCache) {
+              continueCachedScheduleSession_(null, 'info');
+          }
+
+          if (!isAuto && btn) {
+              btn.innerText = "通信中...";
+              btn.disabled = true;
           }
 
           try {
-              const result = await callGAS('login', { orgId: 'default', userId: id, password: pw });
+              const result = await callGAS(
+                  'login',
+                  { orgId: 'default', userId: id, password: pw },
+                  2,
+                  { timeoutMs: 60000 }
+              );
               if (result && result.success) {
                   document.getElementById('loginScreen').style.display = 'none';
-                  localStorage.setItem('passionMapUserId', id); 
+                  const errEl = document.getElementById('loginError');
+                  if (errEl) errEl.innerText = '';
+                  localStorage.setItem('passionMapUserId', id);
                   localStorage.setItem('passionMapUserPw', pw);
                   localStorage.setItem('passionMapUserName', result.name);
                   localStorage.setItem('passionMapUserRole', result.role || '管理者');
                   if (result.dept != null) localStorage.setItem('passionMapUserDept', result.dept || '');
                   if (result.location != null) localStorage.setItem('passionMapUserLocation', result.location || '');
                   localStorage.setItem('spreadsheetId', result.spreadsheetId);
+                  window._scheduleCacheLoginRetryCount = 0;
 
-                  if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
-                      await PassionMapTerms.ensureAccepted({ userId: id });
+                  if (typeof window.refreshAccountNameButtons === 'function') {
+                      window.refreshAccountNameButtons();
                   }
-                  
-                  // Reload or init map data
-                  location.reload();
+
+                  if (fromCache) {
+                      // キャッシュ起動時は規約確認を待たず最新取得を優先
+                      if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
+                          Promise.resolve(PassionMapTerms.ensureAccepted({ userId: id })).catch(() => {});
+                      }
+                      if (!map) {
+                          try { initMap(); } catch (e) {}
+                      } else {
+                          loadData({ silentRetry: true });
+                      }
+                  } else {
+                      if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
+                          await PassionMapTerms.ensureAccepted({ userId: id });
+                      }
+                      // リロードせずそのまま起動（楽観UI）
+                      if (!map) {
+                          try { initMap(); } catch (e) {}
+                      } else {
+                          loadData();
+                      }
+                  }
+                  if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
               } else {
+                  if (fromCache && hasCache) {
+                      continueCachedScheduleSession_('📦 キャッシュで続行中（サーバー確認を再試行します）', 'info');
+                      scheduleCachedScheduleLoginRetry_();
+                      if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
+                      return;
+                  }
                   document.getElementById('loginScreen').style.display = 'flex';
                   document.getElementById('loginError').innerText = result.message || 'ログインに失敗しました';
                   if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
               }
-          } catch(e) { 
+          } catch (e) {
+              if (fromCache && hasCache) {
+                  continueCachedScheduleSession_(null, 'info');
+                  scheduleCachedScheduleLoginRetry_();
+                  if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
+                  return;
+              }
               document.getElementById('loginScreen').style.display = 'flex';
-              document.getElementById('loginError').innerText = "通信エラー: " + e.message; 
+              document.getElementById('loginError').innerText = "通信エラー: " + e.message;
               if (btn) { btn.innerText = "ログイン"; btn.disabled = false; }
           }
       }
+      window.executeLogin = executeLogin;
 
       function executeLogout() { localStorage.clear(); location.reload(); }
       window.executeLogout = executeLogout;
@@ -1209,11 +1308,26 @@ async function fetchWeatherAndUpdateUI() {
       }
 
       function initMap() {
+        if (map) {
+          loadData({ silentRetry: !!hasScheduleCache_() });
+          return;
+        }
         if (!checkLoginStatus()) {
           if (typeof window.markScheduleInitialLoadStep === 'function') {
             window.markScheduleInitialLoadStep('ログイン確認');
             window.markScheduleInitialLoadStep('データ取得省略');
             window.markScheduleInitialLoadStep('画面準備完了');
+          }
+          return;
+        }
+        // Google Maps 未読込なら少し待って再試行
+        const mapsReady = typeof google === 'object'
+          && google.maps
+          && typeof google.maps.Map === 'function';
+        if (!mapsReady) {
+          window._scheduleMapInitAttempts = (window._scheduleMapInitAttempts || 0) + 1;
+          if (window._scheduleMapInitAttempts <= 100) {
+            setTimeout(initMap, 100);
           }
           return;
         }
@@ -1279,10 +1393,17 @@ async function fetchWeatherAndUpdateUI() {
       function loadData(options) {
         options = options || {};
         const silentRetry = !!options.silentRetry;
-        if (!checkLoginStatus()) return;
+        if (!checkLoginStatus()) return null;
+
+        // 二重取得を避ける
+        if (window._scheduleDataInFlight) return window._scheduleDataInFlight;
+
         // 起動オーバーレイはスクリプト完了で閉じる。データ取得は裏で進め、起動を塞がない
         const bootstrapStillOpen = !!(window.scheduleBootstrapLoading && !window.__scheduleBootstrapFinished);
-        const initialLoad = (bootstrapStillOpen || silentRetry)
+        const cachedStr = localStorage.getItem('passionMapScheduleData');
+        // キャッシュ表示済みならフォアグラウンドの読み込みUIを出さない
+        const useSilentUi = silentRetry || !!cachedStr;
+        const initialLoad = (bootstrapStillOpen || useSilentUi)
           ? null
           : (window.AppLoading
           ? AppLoading.start({
@@ -1293,12 +1414,12 @@ async function fetchWeatherAndUpdateUI() {
               delay: 0
             })
           : null);
-        if (!bootstrapStillOpen && !silentRetry && !initialLoad && typeof beginMapDataLoad === 'function') {
+        if (!bootstrapStillOpen && !useSilentUi && !initialLoad && typeof beginMapDataLoad === 'function') {
           beginMapDataLoad('スケジュールデータを読み込み中...');
         }
         const btn = document.querySelector('.btn-primary') || document.querySelector('.btn-reload');
         const orgTxt = btn ? btn.innerText : '';
-        if (btn && !silentRetry) {
+        if (btn && !useSilentUi) {
           btn.innerText = "通信中...";
           btn.disabled = true;
         }
@@ -1331,20 +1452,27 @@ async function fetchWeatherAndUpdateUI() {
           updateMapVisuals();
         };
 
-        const cachedStr = localStorage.getItem('passionMapScheduleData');
         if (cachedStr && !silentRetry) {
           try {
             applyScheduleData(JSON.parse(cachedStr));
             // キャッシュ即起動の案内トーストは出さない
           } catch(e) { console.error("Cache parse error", e); }
         }
+
+        // spreadsheetId がまだ無い（楽観起動中）はキャッシュ表示のみ。ログイン後に再取得
+        if (!hasValidSpreadsheetId_()) {
+          if (initialLoad) initialLoad.done();
+          else if (!useSilentUi && typeof hideMapDataLoading === 'function') hideMapDataLoading();
+          return null;
+        }
+
         if (bootstrapStillOpen && typeof window.markScheduleInitialLoadStep === 'function') {
           window.markScheduleInitialLoadStep('スケジュールデータ取得中');
         } else if (initialLoad) {
           initialLoad.update({ detail: '最新データを取得しています', current: 1, total: 3 });
         }
-  
-        callGAS('getScheduleData', {}, 0, { timeoutMs: 180000 }).then(data => {
+
+        const p = callGAS('getScheduleData', {}, 2, { timeoutMs: 180000 }).then(data => {
           window._scheduleDataBgFailCount = 0;
           if (initialLoad) {
             initialLoad.update({ detail: '地図表示を更新しています', current: 2, total: 3 });
@@ -1392,7 +1520,7 @@ async function fetchWeatherAndUpdateUI() {
             }
             if (initialLoad) {
               initialLoad.done();
-            } else if (!silentRetry && typeof hideMapDataLoading === 'function') {
+            } else if (!useSilentUi && typeof hideMapDataLoading === 'function') {
               hideMapDataLoading();
             }
             if (failCount >= 3 && window.__scheduleBootstrapFinished) {
@@ -1415,7 +1543,11 @@ async function fetchWeatherAndUpdateUI() {
             if (typeof customAlert === 'function') customAlert("スケジュールの読み込みに失敗しました。");
             else alert("スケジュールの読み込みに失敗しました。");
           }
+        }).finally(() => {
+          if (window._scheduleDataInFlight === p) window._scheduleDataInFlight = null;
         });
+        window._scheduleDataInFlight = p;
+        return p;
       }
 
       // ★追加：部署フィルターボタンを構築
@@ -6068,11 +6200,39 @@ window.getSowingNurseryFormOpts_ = () => (window._sowingNurseryState && window._
         }
       };
 
-      if (document.readyState === 'complete' || document.readyState === 'interactive') {
-        setTimeout(initMap, 1);
-      } else {
-        window.addEventListener('load', initMap);
+      function startScheduleOptimisticBoot_() {
+        const id = String(localStorage.getItem('passionMapUserId') || '').trim();
+        const pw = String(localStorage.getItem('passionMapUserPw') || '').trim();
+        const idEl = document.getElementById('loginId');
+        const pwEl = document.getElementById('loginPw');
+        if (idEl && id && !idEl.value) idEl.value = id;
+        if (pwEl && pw && !pwEl.value) pwEl.value = pw;
+
+        // キャッシュがあればログイン完了を待たず画面を開く
+        if (hasScheduleCache_() && id && pw) {
+          continueCachedScheduleSession_(null, 'info');
+        }
+
+        const startMap = () => {
+          try { initMap(); } catch (e) { console.warn('initMap failed', e); }
+        };
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+          setTimeout(startMap, 1);
+        } else {
+          window.addEventListener('load', startMap);
+        }
+
+        // ログイン確認は裏で並行（キャッシュ表示を待たせない）
+        if (id && pw) {
+          setTimeout(() => {
+            if (window._scheduleLoginBusy) return;
+            window._scheduleLoginBusy = true;
+            Promise.resolve(executeLogin({ fromCache: true, isAuto: true }))
+              .finally(() => { window._scheduleLoginBusy = false; });
+          }, 0);
+        }
       }
+      startScheduleOptimisticBoot_();
 
 if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js?v=schedule', { scope: '/schedule' });
