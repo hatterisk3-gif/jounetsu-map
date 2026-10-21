@@ -772,6 +772,7 @@ function showAdminSyncToast(msg, kind) {
     el.style.color = '#fff';
     el.textContent = msg;
     el.style.display = 'block';
+    el.onclick = () => { el.style.display = 'none'; };
     clearTimeout(window._adminSyncToastTimer);
     const stay = (arguments.length >= 3) ? Number(arguments[2]) : (kind === 'error' ? 8000 : 2800);
     if (stay > 0) {
@@ -1010,9 +1011,9 @@ function syncAdminCall_(action, payload, pendingItem) {
     if (pendingItem) rememberPendingAdminSync_(pendingItem);
     if (isWrite) holdAdminReadsForWrite_();
     const writeOpts = isWrite ? {
-        timeoutMs: action === 'savePolygonBatch' ? 55000 : (action === 'updatePolygon' ? 70000 : 40000),
-        timeoutStepMs: 0,
-        softNetRetries: 0
+        timeoutMs: action === 'savePolygonBatch' ? 50000 : 45000,
+        timeoutStepMs: 8000,
+        softNetRetries: 2
     } : null;
     return enqueueAdminSync_(() => callGAS(action, payload, isWrite ? 0 : 2, writeOpts || undefined)).then(res => {
         if (pendingItem && pendingItem.key) clearPendingAdminSync_(pendingItem.key);
@@ -1090,7 +1091,7 @@ async function syncAdminPolygonList_(polygons, tempIds) {
     const ids = Array.isArray(tempIds) ? tempIds : [];
     const total = list.length;
     const newIds = new Array(total);
-    const chunkSize = 12;
+    const chunkSize = 3;
     let saved = 0;
     for (let i = 0; i < list.length; i += chunkSize) {
         const sliceP = list.slice(i, i + chunkSize);
@@ -1167,28 +1168,11 @@ function readPendingAdminSyncList_() {
 }
 
 function callGasForPending_(action, payload) {
-    const opts = { timeoutMs: 40000, timeoutStepMs: 0, softNetRetries: 0, jumpQueue: true };
-    return new Promise((resolve, reject) => {
-        let settled = false;
-        const timer = setTimeout(() => {
-            if (settled) return;
-            settled = true;
-            try { abortCallGAS(action); } catch (e) {}
-            const err = new Error('タイムアウト');
-            err.name = 'AbortError';
-            reject(err);
-        }, 45000);
-        callGAS(action, payload, 0, opts).then((v) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            resolve(v);
-        }, (e) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            reject(e);
-        });
+    return callGAS(action, payload, 0, {
+        timeoutMs: 45000,
+        timeoutStepMs: 8000,
+        softNetRetries: 2,
+        jumpQueue: true
     });
 }
 
@@ -1220,36 +1204,7 @@ async function flushPendingAdminSyncs_() {
             takeoverAdminSyncQueue_();
             await new Promise(r => setTimeout(r, 200));
         }
-        let list = readPendingAdminSyncList_();
-        const fieldSaves = [];
-        const fieldIds = [];
-        const fieldKeys = [];
-        const rest = [];
-        list.forEach((item) => {
-            if (item.op === 'savePolygon' && item.payload && pendingSaveIsField_(item.payload)) {
-                const payload = polygonPayloadReady_(item.payload);
-                if (!payload.clientTempId && item.tempId) payload.clientTempId = item.tempId;
-                fieldSaves.push(payload);
-                fieldIds.push(item.tempId || '');
-                fieldKeys.push(item.key);
-            } else {
-                rest.push(item);
-            }
-        });
-        if (fieldSaves.length >= 2) {
-            showAdminSyncToast('☁️ 未同期 ' + fieldSaves.length + '件をまとめて送信しています…', 'info', 0);
-            fieldKeys.forEach((key) => clearPendingAdminSync_(key));
-            try {
-                const newIds = await syncAdminPolygonList_(fieldSaves, fieldIds);
-                const savedN = (newIds || []).filter(Boolean).length;
-                ok += savedN;
-                if (savedN < fieldSaves.length) failed += (fieldSaves.length - savedN);
-            } catch (e) {
-                lastErr = String((e && e.message) || e || '').replace(/\s+/g, ' ').slice(0, 60);
-                failed += fieldSaves.length;
-            }
-            list = rest;
-        }
+        const list = readPendingAdminSyncList_();
         for (let i = 0; i < list.length; i++) {
             const item = list[i];
             if (!readPendingAdminSyncList_().some(x => x && x.key === item.key)) {

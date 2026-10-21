@@ -75,6 +75,7 @@
   var controllers = {};
   var cancelGen = {};
   var writePreferCount_ = 0;
+  var laneQuietUntil_ = 0;
   // script.google.com へ同時に何本も張ると Failed to fetch になる（ブラウザの接続上限）。
   // 常に1本だけ。保存・削除は進行中の読取を切ってからこの列に入る。
   var laneTail_ = Promise.resolve();
@@ -158,6 +159,8 @@
     if (c) {
       try { c.abort(); } catch (e) {}
       delete controllers[action];
+      // 切った直後の POST は Failed to fetch になりやすい
+      laneQuietUntil_ = Date.now() + 900;
     }
   }
 
@@ -225,10 +228,11 @@
     var netRetryUsed = 0;
     var timeoutStepMs = (callOptions.timeoutStepMs != null) ? Number(callOptions.timeoutStepMs) : 45000;
     if (!(timeoutStepMs >= 0)) timeoutStepMs = 45000;
-    // 読取の直後の先頭1件だけ、接続が空くまで少し待つ。連続する保存は待たない
-    if (WRITE_PRIORITY_ACTIONS[action] && writePreferCount_ <= 1) {
-      var still = await interruptibleWait_(120, action, cancelAtStart);
-      if (!still) {
+    // 読取や前の通信を切った直後は、接続が空くまで待ってから送る
+    var quietLeft = laneQuietUntil_ - Date.now();
+    if (quietLeft > 0) {
+      var stillQuiet = await interruptibleWait_(quietLeft, action, cancelAtStart);
+      if (!stillQuiet) {
         var early = new Error('cancelled');
         early.name = 'AbortError';
         early.cancelled = true;
