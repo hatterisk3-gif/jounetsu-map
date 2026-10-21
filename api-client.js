@@ -161,8 +161,9 @@
   }
 
   async function callGAS(action, params, retries, callOptions) {
-    // 保存・削除は読取を切ってから1本の列に入れる（切った読取は再送しない）
-    if (WRITE_PRIORITY_ACTIONS[action]) {
+    callOptions = callOptions || {};
+    // 保存・削除、または画面で待っている読取は、進行中の重い取得を切ってから列に入れる
+    if (WRITE_PRIORITY_ACTIONS[action] || callOptions.jumpQueue) {
       try { abortCallGAS('getInitData'); } catch (e) {}
       try { abortCallGAS('getScheduleData'); } catch (e) {}
     }
@@ -271,7 +272,12 @@
           }
           throw new Error(failMsg);
         }
-        return json.data;
+        var data = json.data;
+        if ((action === 'getInitData' || action === 'getScheduleData') && data && Array.isArray(data.polygons)) {
+          if (data.polygons.length) reconcileDeletedPolygonIds_(data.polygons);
+          data.polygons = filterDeletedPolygons_(data.polygons);
+        }
+        return data;
       } catch (err) {
         clearTimeout(timeoutId);
         if (wasCancelled_(action, cancelAtStart) || (err && err.name === 'AbortError' && wasCancelled_(action, cancelAtStart))) {
@@ -340,7 +346,88 @@
     throw lastError;
   }
 
+  var DELETED_POLYGON_IDS_KEY = 'pMapDeletedPolygonIds';
+
+  function readDeletedPolygonIds_() {
+    try {
+      var list = JSON.parse(localStorage.getItem(DELETED_POLYGON_IDS_KEY) || '[]');
+      if (!Array.isArray(list)) return [];
+      var seen = {};
+      var out = [];
+      list.forEach(function (id) {
+        var s = String(id == null ? '' : id).trim();
+        if (!s || seen[s]) return;
+        seen[s] = 1;
+        out.push(s);
+      });
+      return out.slice(-400);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function writeDeletedPolygonIds_(ids) {
+    try {
+      if (ids && ids.length) localStorage.setItem(DELETED_POLYGON_IDS_KEY, JSON.stringify(ids));
+      else localStorage.removeItem(DELETED_POLYGON_IDS_KEY);
+    } catch (e) {}
+  }
+
+  function filterDeletedPolygons_(polygons) {
+    if (!Array.isArray(polygons)) return polygons;
+    var deleted = readDeletedPolygonIds_();
+    if (!deleted.length) return polygons;
+    var set = {};
+    deleted.forEach(function (id) { set[id] = 1; });
+    return polygons.filter(function (p) {
+      return !(p && set[String(p.id == null ? '' : p.id).trim()]);
+    });
+  }
+
+  function reconcileDeletedPolygonIds_(polygons) {
+    if (!Array.isArray(polygons)) return;
+    var present = {};
+    polygons.forEach(function (p) {
+      if (p && p.id != null) present[String(p.id).trim()] = 1;
+    });
+    var deleted = readDeletedPolygonIds_();
+    var gone = deleted.filter(function (id) { return !present[id]; });
+    if (gone.length) {
+      var drop = {};
+      gone.forEach(function (id) { drop[id] = 1; });
+      writeDeletedPolygonIds_(deleted.filter(function (id) { return !drop[id]; }));
+    }
+  }
+
+  function stripDeletedPolygonsFromCaches_() {
+    ['passionMapInitData', 'passionMapScheduleData', 'pMapAdminInitData'].forEach(function (key) {
+      try {
+        var raw = localStorage.getItem(key);
+        if (!raw) return;
+        var data = JSON.parse(raw);
+        if (!data || !Array.isArray(data.polygons)) return;
+        var filtered = filterDeletedPolygons_(data.polygons);
+        if (filtered.length === data.polygons.length) return;
+        data.polygons = filtered;
+        localStorage.setItem(key, JSON.stringify(data));
+      } catch (e) {}
+    });
+  }
+
+  function rememberDeletedPolygonIds_(ids) {
+    var set = {};
+    readDeletedPolygonIds_().forEach(function (id) { set[id] = 1; });
+    (ids || []).forEach(function (id) {
+      var s = String(id == null ? '' : id).trim();
+      if (s) set[s] = 1;
+    });
+    writeDeletedPolygonIds_(Object.keys(set).slice(-400));
+    stripDeletedPolygonsFromCaches_();
+  }
+
   global.GAS_URL = GAS_URL;
   global.callGAS = callGAS;
   global.abortCallGAS = abortCallGAS;
+  global.rememberDeletedPolygonIds_ = rememberDeletedPolygonIds_;
+  global.filterDeletedPolygons_ = filterDeletedPolygons_;
 })(typeof window !== 'undefined' ? window : this);

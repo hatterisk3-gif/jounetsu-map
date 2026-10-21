@@ -6675,6 +6675,7 @@ async function doDeletePolygons(ids) {
     persistAdminInitCache_();
     showAdminSyncToast('✅ 削除しました（同期中…）', 'ok');
     const realIds = ids.filter(id => !isAdminTempId_(id));
+    if (typeof window.rememberDeletedPolygonIds_ === 'function') window.rememberDeletedPolygonIds_(realIds);
     if (!realIds.length) return;
     const payload = realIds.length === 1
         ? { id: realIds[0], userName: currentUser }

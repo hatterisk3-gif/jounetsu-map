@@ -230,7 +230,7 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; displ
       #modal {
         display: none;
         position: fixed;
-        z-index: 12000;
+        z-index: 40000;
         top: 0; left: 0;
         width: 100%; height: 100%;
         background: rgba(0,0,0,0.6);
@@ -245,8 +245,10 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; displ
         padding: 20px;
         border-radius: 12px;
         width: 100%;
-        max-width: 400px;
+        max-width: 520px;
         max-height: 85vh;
+        height: auto;
+        overflow: auto;
         overflow-y: auto;
         box-shadow: 0 4px 20px rgba(0,0,0,0.3);
         box-sizing: border-box;
@@ -1073,6 +1075,34 @@ select.snr-input { appearance:auto; }
   background: #e3f2fd;
   color: #0d47a1;
 }
+
+.schedule-side-fabs {
+  position: fixed;
+  right: 17px;
+  bottom: calc(138px + env(safe-area-inset-bottom, 0px));
+  z-index: 3500;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+.schedule-side-fab {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  border: none;
+  background: #fff;
+  color: #E65100;
+  font-size: 22px;
+  line-height: 1;
+  padding: 0;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.schedule-side-fab-moisture { color: #1565c0; }
 
 /* ===== DUMP ツリー／ガント FAB（情熱MAP寄り） ===== */
 .dump-fab-root {

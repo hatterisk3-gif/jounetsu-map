@@ -25,7 +25,7 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="worker.css?v=1788600000013">
+  <link rel="stylesheet" href="worker.css?v=1788600000014">
   <style>
     @keyframes workerBootSpin { to { transform: rotate(360deg); } }
     @keyframes workerBootSlide { from { transform: translateX(-120%); } to { transform: translateX(320%); } }
@@ -399,9 +399,9 @@
         <input type="text" id="searchInput" placeholder="🔍 圃場・看板を検索...">
         <div id="searchSuggestions"></div>
       </div>
-      <button onclick="promptLineUrl()"
-        style="background:#9C27B0; color:white; border:none; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:11px;">📍
-        座標検索</button>
+      <div class="search-container">
+        <input type="text" id="mapSearchInput" placeholder="🌍 住所・短縮URL...">
+      </div>
       <button onclick="location.reload()"
         style="background:#fff; color:#333; border:1px solid #ccc; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">🔄
         更新</button>
@@ -507,12 +507,12 @@
   </div>
 
   <script
-    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry"></script>
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry,places&language=ja"></script>
   <script src="map-loading.js?v=1786243000000"></script>
   <script src="machine-taxonomy.js?v=1788600000012"></script>
   <script src="weather-agri.js?v=1788600000102"></script>
-  <script src="api-client.js?v=1788600000084"></script>
-  <script src="worker.js?v=1788600000177"></script>
+  <script src="api-client.js?v=1788600000111"></script>
+  <script src="worker.js?v=1788600000178"></script>
   <script src="tracking.js?v=1788600000051"></script>
   <script>
     if ('serviceWorker' in navigator) {

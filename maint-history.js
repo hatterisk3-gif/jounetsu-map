@@ -38,26 +38,44 @@
     return loc || '拠点未設定';
   }
 
+  function usableMachines_(list) {
+    return (Array.isArray(list) ? list : []).filter(m => m && m.id && !m.isTool && !m.isVehicle);
+  }
+
+  function machinesFromInitCache_() {
+    try {
+      const raw = localStorage.getItem('passionMapInitData');
+      if (!raw) return [];
+      const data = JSON.parse(raw);
+      const list = data && data.pdl && Array.isArray(data.pdl.machines) ? data.pdl.machines : [];
+      return usableMachines_(list);
+    } catch (e) {
+      return [];
+    }
+  }
+
   function getMachines_() {
     if (typeof window.getWorkerMaintMachines_ === 'function') {
-      return window.getWorkerMaintMachines_();
+      const fromWorker = usableMachines_(window.getWorkerMaintMachines_());
+      if (fromWorker.length) return fromWorker;
     }
     const list = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
       ? pdlMachines
       : (Array.isArray(window.pdlMachines) ? window.pdlMachines : []);
-    return list.filter(m => m && m.id && !m.isTool && !m.isVehicle);
+    const live = usableMachines_(list);
+    return live.length ? live : machinesFromInitCache_();
   }
 
   async function ensureMachines_() {
     let machines = getMachines_();
     if (machines.length) return machines;
-    if (typeof callGAS !== 'function') return [];
+    if (typeof callGAS !== 'function') return getMachines_();
     try {
       let res = null;
       try {
-        res = await callGAS('machine_loadAll', {});
+        res = await callGAS('machine_loadAll', {}, 1, { jumpQueue: true, timeoutMs: 60000 });
       } catch (e1) {
-        res = await callGAS('getInitData', {});
+        res = await callGAS('getInitData', {}, 1, { jumpQueue: true, timeoutMs: 90000 });
       }
       if (res && res.machines && typeof res.machines === 'object' && !Array.isArray(res.machines)) {
         machines = Object.keys(res.machines).map(k => res.machines[k]).filter(Boolean);
@@ -89,9 +107,9 @@
     try {
       let res = null;
       try {
-        res = await callGAS('machine_loadMaintenanceRecords', {});
+        res = await callGAS('machine_loadMaintenanceRecords', {}, 1, { jumpQueue: true, timeoutMs: 60000 });
       } catch (e1) {
-        res = await callGAS('machine_loadAll', {});
+        res = await callGAS('machine_loadAll', {}, 1, { jumpQueue: true, timeoutMs: 60000 });
       }
       if (res && Array.isArray(res.maintenanceRecords)) {
         serverRecords = res.maintenanceRecords.slice();
@@ -198,6 +216,12 @@
     `;
   }
 
+  function showModal_(modal) {
+    modal._ignoreBackdropCloseUntil = Date.now() + 600;
+    modal.style.zIndex = '40000';
+    modal.style.display = 'flex';
+  }
+
   async function openList_(opts) {
     const modal = document.getElementById('modal');
     const modalBody = document.getElementById('modalBody');
@@ -207,15 +231,23 @@
       return;
     }
     const force = !!(opts && opts.force);
-    modal.style.display = 'flex';
-    modalBody.innerHTML = '<div style="text-align:center; padding:24px; font-weight:bold; color:#E65100;">整備履歴を読み込み中...</div>';
+    showModal_(modal);
+    const cachedMachines = getMachines_();
+    if (cachedMachines.length && !force) {
+      renderList_(window._workerMachineMaintenanceRecords || [], cachedMachines);
+    } else {
+      modalBody.innerHTML = '<div style="text-align:center; padding:24px; font-weight:bold; color:#E65100;">整備履歴を読み込み中...</div>';
+    }
     try {
       const machines = await ensureMachines_();
       const records = await fetchRecords_(force);
-      renderList_(records, machines);
+      if (modal.style.display === 'none') return;
+      renderList_(records, machines.length ? machines : cachedMachines);
     } catch (e) {
       console.warn(e);
-      modalBody.innerHTML = `<div style="padding:20px; color:#c62828; text-align:center;">読み込みに失敗しました。<br>
+      if (modal.style.display === 'none') return;
+      const msg = (e && e.message) ? String(e.message) : '読み込みに失敗しました';
+      modalBody.innerHTML = `<div style="padding:20px; color:#c62828; text-align:center;">${esc(msg)}<br>
         <button type="button" onclick="openWorkerMachineMaintHistoryModal_({force:true})"
           style="margin-top:12px; padding:10px 16px; border:none; border-radius:8px; background:#E65100; color:#fff; font-weight:bold;">再試行</button></div>`;
     }
@@ -264,14 +296,15 @@
     `;
   }
 
-  // schedule など worker.js 未読込ページ向けに公開（worker 側の同名関数があれば上書きしない）
-  if (typeof window.closeWorkerMachineMaintHistoryModal_ !== 'function') {
+  // schedule ではこの実装を使う。worker.js が先に定義している場合は上書きしない
+  const onSchedule = /schedule\.html/i.test(String(location.pathname || '') + String(location.href || ''));
+  if (onSchedule || typeof window.closeWorkerMachineMaintHistoryModal_ !== 'function') {
     window.closeWorkerMachineMaintHistoryModal_ = closeModal_;
   }
-  if (typeof window.openWorkerMachineMaintHistoryModal_ !== 'function') {
+  if (onSchedule || typeof window.openWorkerMachineMaintHistoryModal_ !== 'function') {
     window.openWorkerMachineMaintHistoryModal_ = openList_;
   }
-  if (typeof window.openWorkerMachineMaintHistoryForMachine_ !== 'function') {
+  if (onSchedule || typeof window.openWorkerMachineMaintHistoryForMachine_ !== 'function') {
     window.openWorkerMachineMaintHistoryForMachine_ = openMachine_;
   }
 })();

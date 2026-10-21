@@ -330,75 +330,151 @@ window.plotClockInMarker = (state, doCenter) => {
           document.getElementById('customPromptCancel').onclick = () => { document.getElementById('customPromptModal').style.display = 'none'; resolve(null); };
         });
       };
-  // 🌟Worker用：座標検索ボタンを押したときの処理（短縮URLを展開して圃場を判定！）
-  window.promptLineUrl = async () => {
-          const input = await customPrompt("📍 LINE等でコピーした「短縮URL」を貼り付けてください");
-          if (!input) return;
+  function normalizeWorkerMapLinkText_(text) {
+          const s = String(text || '').trim();
+          if (!s) return '';
+          const http = s.match(/https?:\/\/\S+/i);
+          if (http) return http[0].replace(/[)\]>,.，。]+$/, '');
+          const bare = s.match(/(?:maps\.app\.goo\.gl|goo\.gl|maps\.google\.[a-z.]+|www\.google\.[a-z.]+\/maps|google\.[a-z.]+\/maps)\/\S+/i);
+          if (bare) return 'https://' + bare[0].replace(/[)\]>,.，。]+$/, '');
+          return '';
+      }
 
+      function workerMapToast_(msg, kind) {
+          if (typeof window.showRecordSyncToast === 'function') window.showRecordSyncToast(msg, kind || 'info');
+      }
+
+      async function applyWorkerMapSearchLink_(sharedText) {
+          if (!sharedText || !map) return;
           let shareLat = null, shareLng = null;
+          try {
+              sharedText = decodeURIComponent(String(sharedText).replace(/\+/g, ' '));
+              if (/%[0-9A-Fa-f]{2}/.test(sharedText)) sharedText = decodeURIComponent(sharedText);
+          } catch (e) {}
+          sharedText = String(sharedText || '').replace(/%2C/gi, ',');
 
-          // 入力の中にhttpがあれば、GASの解読プログラムに投げる！
-          if (input.indexOf('http') !== -1) {
-              const shortUrlMatch = input.match(/https?:\/\/[^\s]+/);
+          const matchURL = sharedText.match(/@(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/)
+              || sharedText.match(/[?&](?:q|query|ll|center)=(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/)
+              || sharedText.match(/[?&](?:q|query|ll|center)=(-?\d+\.\d+)%2C(-?\d+\.\d+)/i)
+              || sharedText.match(/[?&]lat=(-?\d+\.\d+)&(?:amp;)?lng=(-?\d+\.\d+)/i)
+              || sharedText.match(/place\/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/)
+              || sharedText.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+          const matchDMS = sharedText.match(/(\d+)°(\d+)'([\d.]+)"N\s*(\d+)°(\d+)'([\d.]+)"E/);
+          const matchDec = sharedText.match(/(-?\d{1,2}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/);
+
+          if (matchURL) { shareLat = parseFloat(matchURL[1]); shareLng = parseFloat(matchURL[2]); }
+          else if (matchDMS) {
+              shareLat = parseInt(matchDMS[1], 10) + parseInt(matchDMS[2], 10) / 60 + parseFloat(matchDMS[3]) / 3600;
+              shareLng = parseInt(matchDMS[4], 10) + parseInt(matchDMS[5], 10) / 60 + parseFloat(matchDMS[6]) / 3600;
+          } else if (matchDec) { shareLat = parseFloat(matchDec[1]); shareLng = parseFloat(matchDec[2]); }
+
+          if (!shareLat || !shareLng) {
+              const shortUrlMatch = sharedText.match(/https?:\/\/[^\s]+/);
               if (shortUrlMatch) {
-                  customAlert("🔍 短縮URLを解析して座標を取得しています...");
                   try {
                       const result = await callGAS('getMapCoordinates', { url: shortUrlMatch[0] });
-                      document.getElementById('customAlertModal').style.display = 'none';
-
                       if (result && result.success) {
                           shareLat = result.lat;
                           shareLng = result.lng;
-                      } else {
-                          customAlert(`📍 解析エラー\n理由: ${result.error}\n展開後: ${result.expandedUrl || "なし"}`);
-                          return; 
+                      } else if (result && !result.success && result.expandedUrl) {
+                          const placeMatch = result.expandedUrl.match(/\/maps\/place\/([^/?]+)/) || result.expandedUrl.match(/\/maps\/search\/([^/?]+)/) || result.expandedUrl.match(/\/maps\/\?q=([^&]+)/);
+                          if (placeMatch) {
+                              let addressText = decodeURIComponent(placeMatch[1]).replace(/\+/g, ' ');
+                              if (addressText.indexOf('%') !== -1) addressText = decodeURIComponent(addressText);
+                              const loc = await new Promise(resolve => {
+                                  new google.maps.Geocoder().geocode({ address: addressText }, (results, status) => {
+                                      resolve(status === 'OK' ? results[0].geometry.location : null);
+                                  });
+                              });
+                              if (loc) { shareLat = loc.lat(); shareLng = loc.lng(); }
+                          }
                       }
-                  } catch(e) {
-                      document.getElementById('customAlertModal').style.display = 'none';
-                      customAlert("通信エラーが発生しました。デプロイが最新か確認してください。");
-                      return;
-                  }
+                  } catch (e) { console.warn('短縮URLの展開に失敗', e); }
               }
           }
 
-          // 座標が見つかったらピンを刺して自動判定！
-          if (shareLat && shareLng) {
-              const sharedPos = new google.maps.LatLng(shareLat, shareLng);
-              map.setCenter(sharedPos); map.setZoom(18);
-              
-// 🌟前のピンを消してから、新しいピンを変数に記憶させる！
-if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
-              window.sharedLocationMarker = new google.maps.Marker({
-                  position: sharedPos, map: map,
-                  icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
-                  zIndex: 9999, animation: google.maps.Animation.DROP
-              });
+          if (!(shareLat && shareLng)) {
+              workerMapToast_('座標を読み取れませんでした。住所で検索するか、別のURLを試してください', 'error');
+              return;
+          }
 
-              // 🚀 Googleマップの機能で「図形（圃場）の内側か」を計算！
-              let foundHojoId = null;
-              if (google.maps.geometry && google.maps.geometry.poly) {
-                  for (let id in loadedPolygons) {
-                      const p = loadedPolygons[id];
-                      if (!p.isMarker && p.polygon && google.maps.geometry.poly.containsLocation(sharedPos, p.polygon)) {
-                          foundHojoId = id; break;
-                      }
+          const sharedPos = new google.maps.LatLng(shareLat, shareLng);
+          map.setCenter(sharedPos);
+          map.setZoom(18);
+          if (window.sharedLocationMarker) window.sharedLocationMarker.setMap(null);
+          window.sharedLocationMarker = new google.maps.Marker({
+              position: sharedPos, map: map,
+              icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#9C27B0', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 },
+              zIndex: 9999, animation: google.maps.Animation.DROP
+          });
+
+          let foundHojoId = null;
+          if (google.maps.geometry && google.maps.geometry.poly) {
+              for (let id in loadedPolygons) {
+                  const p = loadedPolygons[id];
+                  if (!p.isMarker && p.polygon && google.maps.geometry.poly.containsLocation(sharedPos, p.polygon)) {
+                      foundHojoId = id;
+                      break;
                   }
               }
-
-              if (foundHojoId) {
-                  customAlert("📍 既存の圃場が見つかりました！");
-                  // 1秒後に詳細画面（作業記録モーダル）を自動で開く
-                  setTimeout(() => { focusAndOpen(foundHojoId); }, 1000);
-              } else {
-                  if (await customConfirm("📍 ここには圃場登録がありません。\n管理者画面を開いて新しく登録しますか？")) {
-                      // 「はい」ならAdminへパラメータを付けて飛ばす！
-                      window.location.href = `/admin.html?lat=${shareLat}&lng=${shareLng}&action=draw`;
-                  }
-              }
+          }
+          if (foundHojoId) {
+              workerMapToast_('📍 この場所の圃場を開きます', 'ok');
+              setTimeout(() => { focusAndOpen(foundHojoId); }, 300);
           } else {
-              customAlert("📍 有効なURLが見つかりませんでした。");
+              workerMapToast_('📍 この場所へ移動しました', 'ok');
           }
-      };
+      }
+
+      function submitWorkerMapSearchLink_(raw) {
+          const link = normalizeWorkerMapLinkText_(raw);
+          if (!link) return false;
+          const input = document.getElementById('mapSearchInput');
+          if (input) input.value = '';
+          if (!map) {
+              workerMapToast_('地図の準備ができてからもう一度開いてください', 'error');
+              return true;
+          }
+          window._mapSearchLinkLock = true;
+          setTimeout(() => { window._mapSearchLinkLock = false; }, 1500);
+          workerMapToast_('短縮URLの場所を開いています…', 'info');
+          applyWorkerMapSearchLink_(link);
+          return true;
+      }
+
+      function setupWorkerMapSearch() {
+          const input = document.getElementById('mapSearchInput');
+          if (!input || input.dataset.mapSearchBound) return;
+          input.dataset.mapSearchBound = '1';
+          input.addEventListener('keydown', (e) => {
+              if (e.key !== 'Enter') return;
+              if (!submitWorkerMapSearchLink_(input.value)) return;
+              e.preventDefault();
+              e.stopPropagation();
+          }, true);
+          input.addEventListener('paste', (e) => {
+              const text = (e.clipboardData && e.clipboardData.getData('text')) || '';
+              if (!normalizeWorkerMapLinkText_(text)) return;
+              e.preventDefault();
+              e.stopPropagation();
+              submitWorkerMapSearchLink_(text);
+          }, true);
+          if (!map || !google.maps.places || typeof google.maps.places.SearchBox !== 'function') return;
+          const searchBox = new google.maps.places.SearchBox(input);
+          map.addListener('bounds_changed', () => { searchBox.setBounds(map.getBounds()); });
+          searchBox.addListener('places_changed', () => {
+              if (window._mapSearchLinkLock) return;
+              const places = searchBox.getPlaces();
+              if (!places || places.length == 0) return;
+              const bounds = new google.maps.LatLngBounds();
+              places.forEach(place => {
+                  if (!place.geometry || !place.geometry.location) return;
+                  if (place.geometry.viewport) bounds.union(place.geometry.viewport);
+                  else bounds.extend(place.geometry.location);
+              });
+              map.fitBounds(bounds);
+          });
+      }
 
    // 🌟 1. ログイン処理（完全版） 🌟
       function setWorkerLoginScreenVisible_(visible) {
@@ -2402,6 +2478,7 @@ window.openTyphoonModal = function() {
           }
         };
         setupSearch();
+        setupWorkerMapSearch();
       }
 
       function updateMarkersVisibility() {

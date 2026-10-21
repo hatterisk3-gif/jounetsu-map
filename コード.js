@@ -6642,7 +6642,7 @@ function deletePolygonBatchData(ids, user) {
     if (!sheet) continue;
     let data = sheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
-      if (ids.includes(data[i][0])) {
+      if (ids.some(function (want) { return String(want).trim() === String(data[i][0]).trim(); })) {
         rowsToDelete[s].push(i + 1);
         names.push(data[i][1]);
       }
@@ -6674,7 +6674,7 @@ function findSheetAndRowById(id) {
     let sheet = TENANT_SS.getSheetByName(s);
     if (!sheet) continue;
     let data = sheet.getDataRange().getValues();
-    for (let i = 1; i < data.length; i++) { if (data[i][0] === id) return { sheet, rowIndex: i + 1, rowData: data[i] }; }
+    for (let i = 1; i < data.length; i++) { if (String(data[i][0]).trim() === String(id).trim()) return { sheet, rowIndex: i + 1, rowData: data[i] }; }
   } return null;
 }
 
