@@ -1010,11 +1010,15 @@ function syncAdminCall_(action, payload, pendingItem) {
     const isWrite = action === 'savePolygon' || action === 'savePolygonBatch' || action === 'updatePolygon' || action === 'deletePolygon' || action === 'deletePolygonBatch';
     if (pendingItem) rememberPendingAdminSync_(pendingItem);
     if (isWrite) holdAdminReadsForWrite_();
-    const writeOpts = isWrite ? {
-        timeoutMs: action === 'savePolygonBatch' ? 50000 : 45000,
-        timeoutStepMs: 8000,
-        softNetRetries: 2
-    } : null;
+    const writeOpts = isWrite ? (
+        (action === 'deletePolygon' || action === 'deletePolygonBatch')
+            ? { timeoutMs: 180000, timeoutStepMs: 0, softNetRetries: 0 }
+            : {
+                timeoutMs: action === 'savePolygonBatch' ? 50000 : 45000,
+                timeoutStepMs: 8000,
+                softNetRetries: 2
+            }
+    ) : null;
     return enqueueAdminSync_(() => callGAS(action, payload, isWrite ? 0 : 2, writeOpts || undefined)).then(res => {
         if (pendingItem && pendingItem.key) clearPendingAdminSync_(pendingItem.key);
         persistAdminInitCache_();
@@ -1176,6 +1180,48 @@ function callGasForPending_(action, payload) {
     });
 }
 
+function collectPendingDeletes_(list) {
+    const ids = [];
+    const keys = [];
+    const rest = [];
+    let userName = '';
+    let failCount = 0;
+    (list || []).forEach((item) => {
+        if (!item || !item.payload) {
+            if (item) rest.push(item);
+            return;
+        }
+        if (item.op === 'deletePolygon' && item.payload.id != null && String(item.payload.id).trim()) {
+            ids.push(String(item.payload.id).trim());
+            if (item.key) keys.push(item.key);
+            if (!userName && item.payload.userName) userName = item.payload.userName;
+            failCount = Math.max(failCount, Number(item.failCount) || 0);
+            return;
+        }
+        if (item.op === 'deletePolygonBatch') {
+            const raw = item.payload.ids;
+            const arr = Array.isArray(raw) ? raw : String(raw || '').split(',');
+            arr.forEach((id) => {
+                const s = String(id == null ? '' : id).trim();
+                if (s) ids.push(s);
+            });
+            if (item.key) keys.push(item.key);
+            if (!userName && item.payload.userName) userName = item.payload.userName;
+            failCount = Math.max(failCount, Number(item.failCount) || 0);
+            return;
+        }
+        rest.push(item);
+    });
+    const seen = {};
+    const unique = [];
+    ids.forEach((id) => {
+        if (seen[id]) return;
+        seen[id] = 1;
+        unique.push(id);
+    });
+    return { ids: unique, keys: keys, rest: rest, userName: userName, failCount: failCount };
+}
+
 async function flushPendingAdminSyncs_() {
     if (window._adminPendingFlushRunning) {
         window._adminPendingFlushAgain = true;
@@ -1204,7 +1250,47 @@ async function flushPendingAdminSyncs_() {
             takeoverAdminSyncQueue_();
             await new Promise(r => setTimeout(r, 200));
         }
-        const list = readPendingAdminSyncList_();
+        const packedDeletes = collectPendingDeletes_(readPendingAdminSyncList_());
+        const list = packedDeletes.rest;
+        if (packedDeletes.ids.length) {
+            showAdminSyncToast('☁️ 削除 ' + packedDeletes.ids.length + '件をサーバーへ送っています…', 'info', 0);
+            const payload = {
+                ids: packedDeletes.ids,
+                userName: packedDeletes.userName || (typeof currentUser === 'string' ? currentUser : '') || ''
+            };
+            try {
+                await callGAS('deletePolygonBatch', payload, 0, {
+                    timeoutMs: 180000,
+                    timeoutStepMs: 0,
+                    softNetRetries: 0,
+                    jumpQueue: true
+                });
+                packedDeletes.keys.forEach((key) => clearPendingAdminSync_(key));
+                ok += packedDeletes.ids.length;
+            } catch (e) {
+                console.warn('flush pending deletes failed', e);
+                if (pendingSyncAlreadyApplied_(e)) {
+                    packedDeletes.keys.forEach((key) => clearPendingAdminSync_(key));
+                    ok += packedDeletes.ids.length;
+                } else {
+                    const nFail = packedDeletes.failCount + 1;
+                    lastErr = String((e && e.message) || e || '').replace(/\s+/g, ' ').slice(0, 60);
+                    packedDeletes.keys.forEach((key) => clearPendingAdminSync_(key));
+                    if (!pendingSyncIsTransient_(e) && nFail >= 3) {
+                        dropped += packedDeletes.ids.length;
+                    } else {
+                        rememberPendingAdminSync_({
+                            key: 'deletePolygonBatch:' + packedDeletes.ids.join(','),
+                            op: 'deletePolygonBatch',
+                            payload: payload,
+                            silent: true,
+                            failCount: nFail
+                        });
+                        failed += packedDeletes.ids.length;
+                    }
+                }
+            }
+        }
         for (let i = 0; i < list.length; i++) {
             const item = list[i];
             if (!readPendingAdminSyncList_().some(x => x && x.key === item.key)) {

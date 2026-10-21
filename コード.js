@@ -5932,16 +5932,31 @@ function saveToukiData(data, hojoId) {
 function syncToukiMapping() {
   const ss = TENANT_SS, hojoSheet = ss.getSheetByName('圃場'), toukiSheet = ss.getSheetByName('登記');
   if (!hojoSheet || !toukiSheet) return;
-  const hData = hojoSheet.getDataRange().getValues(), mapping = {};
-  for (let i = 1; i < hData.length; i++) {
-    const name = hData[i][1], tIdsStr = hData[i][11];
-    if (tIdsStr) { tIdsStr.split(',').map(s => s.trim()).forEach(id => { if (!mapping[id]) mapping[id] = []; if (!mapping[id].includes(name)) mapping[id].push(name); }); }
+  const mapping = {};
+  const hLast = hojoSheet.getLastRow();
+  if (hLast >= 2) {
+    const names = hojoSheet.getRange(2, 2, hLast - 1, 1).getValues();
+    const toukiIds = hojoSheet.getRange(2, 12, hLast - 1, 1).getValues();
+    for (let i = 0; i < names.length; i++) {
+      const name = names[i][0];
+      const tIdsStr = toukiIds[i][0];
+      if (!tIdsStr) continue;
+      String(tIdsStr).split(',').forEach(function (part) {
+        const id = String(part || '').trim();
+        if (!id) return;
+        if (!mapping[id]) mapping[id] = [];
+        if (mapping[id].indexOf(name) < 0) mapping[id].push(name);
+      });
+    }
   }
-  const tData = toukiSheet.getDataRange().getValues();
-  for (let i = 1; i < tData.length; i++) {
-    const tid = String(tData[i][0]).trim();
-    if (tid) toukiSheet.getRange(i + 1, 2).setValue(mapping[tid] ? mapping[tid].join(' , ') : '');
-  }
+  const tLast = toukiSheet.getLastRow();
+  if (tLast < 2) return;
+  const tIds = toukiSheet.getRange(2, 1, tLast - 1, 1).getValues();
+  const out = tIds.map(function (row) {
+    const tid = String(row[0] || '').trim();
+    return [tid && mapping[tid] ? mapping[tid].join(' , ') : ''];
+  });
+  if (out.length) toukiSheet.getRange(2, 2, out.length, 1).setValues(out);
 }
 
 // ==========================================
@@ -6618,6 +6633,9 @@ function deletePolygonData(id, user) {
 
 function deletePolygonBatchData(ids, user) {
   if (!checkAdminRole(user)) throw new Error("管理者権限がないため、削除できません。");
+  if (!Array.isArray(ids)) ids = String(ids || '').split(',');
+  ids = ids.map(function (id) { return String(id == null ? '' : id).trim(); }).filter(Boolean);
+  if (!ids.length) return "DELETED_BATCH";
   const ss = TENANT_SS;
   const sheets = ['圃場', '看板'];
   
