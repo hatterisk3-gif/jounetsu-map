@@ -782,6 +782,19 @@ function showAdminSyncToast(msg, kind) {
 }
 window.showAdminSyncToast = showAdminSyncToast;
 
+function takeoverAdminSyncQueue_() {
+    const queued = adminSyncQueue_.splice(0);
+    queued.forEach((item) => {
+        const err = new Error('cancelled');
+        err.name = 'AbortError';
+        err.cancelled = true;
+        item.reject(err);
+    });
+    ['savePolygon', 'savePolygonBatch', 'updatePolygon', 'deletePolygon', 'deletePolygonBatch', 'splitField'].forEach((action) => {
+        try { abortCallGAS(action); } catch (e) {}
+    });
+}
+
 function enqueueAdminSync_(task) {
     return new Promise((resolve, reject) => {
         adminSyncQueue_.push({ task, resolve, reject });
@@ -792,18 +805,23 @@ function enqueueAdminSync_(task) {
 async function drainAdminSyncQueue_() {
     if (adminSyncRunning_) return;
     adminSyncRunning_ = true;
-    while (adminSyncQueue_.length) {
-        const item = adminSyncQueue_.shift();
-        try {
-            item.resolve(await item.task());
-        } catch (e) {
-            item.reject(e);
+    window._adminSyncActive = true;
+    try {
+        while (adminSyncQueue_.length) {
+            const item = adminSyncQueue_.shift();
+            try {
+                item.resolve(await item.task());
+            } catch (e) {
+                item.reject(e);
+            }
+            if (adminSyncQueue_.length) {
+                await new Promise(r => setTimeout(r, ADMIN_SYNC_GAP_MS));
+            }
         }
-        if (adminSyncQueue_.length) {
-            await new Promise(r => setTimeout(r, ADMIN_SYNC_GAP_MS));
-        }
+    } finally {
+        adminSyncRunning_ = false;
+        window._adminSyncActive = false;
     }
-    adminSyncRunning_ = false;
 }
 
 function newAdminTempId_(prefix) {
@@ -998,7 +1016,7 @@ function syncAdminCall_(action, payload, pendingItem) {
         return res;
     }).catch(e => {
         console.warn('syncAdminCall_ failed', action, e);
-        if (!(pendingItem && pendingItem.silent)) {
+        if (!(pendingItem && pendingItem.silent) && !window._adminPendingFlushRunning) {
             showAdminSyncToast('⚠️ 保存に失敗しました（未同期として保持・自動再送します）: ' + (e.message || e), 'error');
         }
         throw e;
@@ -1127,29 +1145,76 @@ function pendingSyncIsTransient_(err) {
     return /Failed to fetch|通信に失敗|タイムアウト|一時的な通信|cancelled|Abort|NetworkError|Load failed/i.test(m);
 }
 
+function readPendingAdminSyncList_() {
+    try {
+        return (JSON.parse(localStorage.getItem(ADMIN_PENDING_SYNC_KEY) || '[]') || []).filter(item => item && item.op);
+    } catch (e) {
+        return [];
+    }
+}
+
+function callGasForPending_(action, payload) {
+    const opts = { timeoutMs: 40000, timeoutStepMs: 0, softNetRetries: 0, jumpQueue: true };
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            try { abortCallGAS(action); } catch (e) {}
+            const err = new Error('タイムアウト');
+            err.name = 'AbortError';
+            reject(err);
+        }, 45000);
+        callGAS(action, payload, 0, opts).then((v) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(v);
+        }, (e) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            reject(e);
+        });
+    });
+}
+
 async function flushPendingAdminSyncs_() {
     if (window._adminPendingFlushRunning) {
         window._adminPendingFlushAgain = true;
         return;
     }
-    let list = [];
-    try {
-        list = JSON.parse(localStorage.getItem(ADMIN_PENDING_SYNC_KEY) || '[]');
-    } catch (e) {
-        return;
-    }
-    list = (list || []).filter(item => item && item.op);
-    if (!list.length) return;
     if (!localStorage.getItem('spreadsheetId')) return;
+    if (!readPendingAdminSyncList_().length) return;
 
     window._adminPendingFlushRunning = true;
+    if (typeof window.preferGasWrites_ === 'function') window.preferGasWrites_(true);
     let ok = 0;
     let failed = 0;
     let dropped = 0;
     let lastErr = '';
-    showAdminSyncToast('☁️ 未同期 ' + list.length + '件を再送しています…', 'info', 20000);
     try {
-        for (const item of list) {
+        const initialCount = readPendingAdminSyncList_().length;
+        showAdminSyncToast('☁️ 未同期 ' + initialCount + '件を再送しています…', 'info', 0);
+        const waitUntil = Date.now() + 8000;
+        while (window._adminSyncActive && Date.now() < waitUntil) {
+            const leftNow = readPendingAdminSyncList_().length;
+            showAdminSyncToast('☁️ 保存を送信中… 残り' + leftNow + '件', 'info', 0);
+            if (!leftNow) break;
+            await new Promise(r => setTimeout(r, 500));
+        }
+        if (readPendingAdminSyncList_().length && window._adminSyncActive) {
+            takeoverAdminSyncQueue_();
+            await new Promise(r => setTimeout(r, 400));
+        }
+        let list = readPendingAdminSyncList_();
+        for (let i = 0; i < list.length; i++) {
+            const item = list[i];
+            if (!readPendingAdminSyncList_().some(x => x && x.key === item.key)) {
+                ok++;
+                continue;
+            }
+            showAdminSyncToast('☁️ 再送 ' + (i + 1) + '/' + list.length + '（残り' + (list.length - i) + '件）', 'info', 0);
             const canSend = item.payload && (
                 item.op === 'savePolygon' || item.op === 'savePolygonBatch' || item.op === 'updatePolygon'
                 || item.op === 'deletePolygon' || item.op === 'deletePolygonBatch'
@@ -1163,8 +1228,9 @@ async function flushPendingAdminSyncs_() {
             }
             try {
                 if (item.op === 'savePolygon') {
-                    if (!item.payload.clientTempId && item.tempId) item.payload.clientTempId = item.tempId;
-                    const newId = await enqueueAdminSync_(() => callGAS('savePolygon', item.payload, 1, pendingSyncWriteOpts_('savePolygon')));
+                    const payload = polygonPayloadReady_(item.payload);
+                    if (!payload.clientTempId && item.tempId) payload.clientTempId = item.tempId;
+                    const newId = await callGasForPending_('savePolygon', payload);
                     if (item.tempId && newId && loadedPolygons[item.tempId]) remapLoadedPolygonId_(item.tempId, newId);
                     clearPendingAdminSync_(item.key);
                     ok++;
@@ -1176,12 +1242,13 @@ async function flushPendingAdminSyncs_() {
                     if (saved) ok += saved;
                     if (saved < polys.length) failed += (polys.length - saved);
                 } else if (item.op === 'splitField') {
-                    const newId = await enqueueAdminSync_(() => callGAS('splitField', item.payload, 1, pendingSyncWriteOpts_('splitField')));
+                    const newId = await callGasForPending_('splitField', item.payload);
                     if (item.tempId && newId && loadedPolygons[item.tempId]) remapLoadedPolygonId_(item.tempId, newId);
                     clearPendingAdminSync_(item.key);
                     ok++;
                 } else {
-                    await enqueueAdminSync_(() => callGAS(item.op, item.payload, 1, pendingSyncWriteOpts_(item.op)));
+                    const payload = item.op === 'updatePolygon' ? polygonPayloadReady_(item.payload) : item.payload;
+                    await callGasForPending_(item.op, payload);
                     clearPendingAdminSync_(item.key);
                     ok++;
                 }
@@ -1204,18 +1271,20 @@ async function flushPendingAdminSyncs_() {
             }
         }
     } finally {
+        if (typeof window.preferGasWrites_ === 'function') window.preferGasWrites_(false);
         window._adminPendingFlushRunning = false;
     }
     persistAdminInitCache_();
-    if (ok > 0 && failed === 0) {
-        window._adminPendingFlushFailAt = 0;
-        showAdminSyncToast('☁️ 未同期 ' + ok + '件をサーバーへ反映しました', 'ok', 4000);
-    } else if (failed > 0) {
-        window._adminPendingFlushFailAt = Date.now();
-        showAdminSyncToast('⚠️ 未同期 ' + failed + '件をまだ送れません' + (lastErr ? '（' + lastErr + '）' : ''), 'error', 8000);
-    } else if (dropped > 0 && ok === 0) {
+    const left = readPendingAdminSyncList_().length;
+    if (left === 0 && dropped > 0 && ok === 0) {
         window._adminPendingFlushFailAt = 0;
         showAdminSyncToast('送れなかった下書きを整理しました', 'info', 4000);
+    } else if (left === 0) {
+        window._adminPendingFlushFailAt = 0;
+        showAdminSyncToast('☁️ 未同期の保存をサーバーへ反映しました', 'ok', 5000);
+    } else {
+        window._adminPendingFlushFailAt = Date.now();
+        showAdminSyncToast('⚠️ 未同期 ' + left + '件をまだ送れません' + (lastErr ? '（' + lastErr + '）' : ''), 'error', 8000);
     }
     if (window._adminPendingFlushAgain) {
         window._adminPendingFlushAgain = false;
@@ -7407,6 +7476,7 @@ window._signRegQuickPresets_ = {
     inlet: { label: '給水口', icon: '⛲', name: '給水口', signFunction: '給水口' },
     drain: { label: '排水口', icon: '🕳️', name: '排水口', signFunction: '排水口' },
     parking: { label: '駐車場', icon: '🅿️', name: '駐車場', signFunction: '駐車場' },
+    toilet: { label: 'トイレ', icon: '🚻', name: 'トイレ', signFunction: 'トイレ' },
     caution: { label: '注意', icon: '⚠️', name: '注意', signFunction: '事故注意' }
 };
 
@@ -7487,6 +7557,11 @@ window.renderSignRegQuickScreen_ = () => {
             style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #90CAF9; border-radius:10px; background:#E3F2FD; cursor:pointer;">
             <span style="font-size:28px; line-height:1;">🅿️</span>
             <span><div style="font-weight:bold; color:#1565C0; font-size:15px;">駐車場</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">名前・アイコンを自動セット</div></span>
+          </button>
+          <button type="button" onclick="pickSignRegQuick_('toilet')"
+            style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #CE93D8; border-radius:10px; background:#F3E5F5; cursor:pointer;">
+            <span style="font-size:28px; line-height:1;">🚻</span>
+            <span><div style="font-weight:bold; color:#6A1B9A; font-size:15px;">トイレ</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">名前・アイコンを自動セット</div></span>
           </button>
           <button type="button" onclick="pickSignRegQuick_('caution')"
             style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #FFCC80; border-radius:10px; background:#FFF8E1; cursor:pointer;">
@@ -9630,6 +9705,8 @@ window.execAdvancedSplit = async (id) => {
     try {
         document.getElementById('modal').style.display = 'none';
         infoWindow.close();
+        const newSplitPayloads = [];
+        const newSplitIds = [];
         for (let i = 0; i < finalLatLngPolygons.length; i++) {
             let coords = finalLatLngPolygons[i];
             let name = `${p.name}_${i + 1}`;
@@ -9642,15 +9719,13 @@ window.execAdvancedSplit = async (id) => {
             } else {
                 const tempId = newAdminTempId_('tmp');
                 createPolygonObject({ id: tempId, name: name, coords: coords, color: p.color, location: p.location, condition: p.condition, soilType: p.soilType || '', area: area, status: p.status, toukiId: p.toukiId, isMarker: false, linkedSigns: p.linkedSigns });
-                const payload = { name: name, coords: JSON.stringify(coords), color: p.color, userName: currentUser, location: p.location, condition: p.condition, soilType: p.soilType || '', area: area, status: p.status, toukiId: p.toukiId };
-                syncAdminCall_('savePolygon', payload, { key: 'savePolygon:' + tempId, op: 'savePolygon', tempId, payload }).then(newId => {
-                    remapLoadedPolygonId_(tempId, newId);
-                    persistAdminInitCache_();
-                }).catch(() => {});
+                newSplitPayloads.push({ name: name, coords: JSON.stringify(coords), color: p.color, userName: currentUser, location: p.location, condition: p.condition, soilType: p.soilType || '', area: area, status: p.status, toukiId: p.toukiId });
+                newSplitIds.push(tempId);
             }
         }
         persistAdminInitCache_();
-        showAdminSyncToast('✅ 分割しました（同期中…）', 'ok');
+        showAdminSyncToast('☁️ ' + (newSplitPayloads.length + 1) + '件を同期しています…', 'info', 0);
+        if (newSplitPayloads.length) syncAdminPolygonList_(newSplitPayloads, newSplitIds).catch(() => {});
     } catch (e) {
         document.getElementById('modal').style.display = 'none'; customAlert("エラーが発生しました: " + e.message);
     }

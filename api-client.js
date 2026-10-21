@@ -74,6 +74,7 @@
 
   var controllers = {};
   var cancelGen = {};
+  var writePreferCount_ = 0;
   // script.google.com へ同時に何本も張ると Failed to fetch になる（ブラウザの接続上限）。
   // 常に1本だけ。保存・削除は進行中の読取を切ってからこの列に入る。
   var laneTail_ = Promise.resolve();
@@ -160,16 +161,30 @@
     }
   }
 
-  async function callGAS(action, params, retries, callOptions) {
-    callOptions = callOptions || {};
-    // 保存・削除、または画面で待っている読取は、進行中の重い取得を切ってから列に入れる
-    if (WRITE_PRIORITY_ACTIONS[action] || callOptions.jumpQueue) {
+  function preferGasWrites_(on) {
+    writePreferCount_ += on ? 1 : -1;
+    if (writePreferCount_ < 0) writePreferCount_ = 0;
+    if (writePreferCount_ > 0) {
       try { abortCallGAS('getInitData'); } catch (e) {}
       try { abortCallGAS('getScheduleData'); } catch (e) {}
     }
-    return enqueueGasLane_(function () {
+  }
+
+  function readMustYield_(action) {
+    return writePreferCount_ > 0 && (action === 'getInitData' || action === 'getScheduleData');
+  }
+
+  async function callGAS(action, params, retries, callOptions) {
+    callOptions = callOptions || {};
+    var preferWrite = !!(WRITE_PRIORITY_ACTIONS[action] || callOptions.jumpQueue);
+    if (preferWrite) preferGasWrites_(true);
+    var run = enqueueGasLane_(function () {
       return callGASInner_(action, params, retries, callOptions);
     });
+    if (preferWrite) {
+      run = run.then(function (v) { preferGasWrites_(false); return v; }, function (e) { preferGasWrites_(false); throw e; });
+    }
+    return run;
   }
 
   async function callGASInner_(action, params, retries, callOptions) {
@@ -201,6 +216,12 @@
     var maxAttempts = Math.max(maxRetries, softNetRetries) + 1;
     var lastError = null;
     var cancelAtStart = cancelGen[action] || 0;
+    if (readMustYield_(action)) {
+      var yieldErr = new Error('cancelled');
+      yieldErr.name = 'AbortError';
+      yieldErr.cancelled = true;
+      throw yieldErr;
+    }
     var netRetryUsed = 0;
     var timeoutStepMs = (callOptions.timeoutStepMs != null) ? Number(callOptions.timeoutStepMs) : 45000;
     if (!(timeoutStepMs >= 0)) timeoutStepMs = 45000;
@@ -216,7 +237,7 @@
     }
 
     for (var i = 0; i < maxAttempts; i++) {
-      if (wasCancelled_(action, cancelAtStart)) {
+      if (readMustYield_(action) || wasCancelled_(action, cancelAtStart)) {
         lastError = new Error('cancelled');
         lastError.name = 'AbortError';
         lastError.cancelled = true;
@@ -428,6 +449,7 @@
   global.GAS_URL = GAS_URL;
   global.callGAS = callGAS;
   global.abortCallGAS = abortCallGAS;
+  global.preferGasWrites_ = preferGasWrites_;
   global.rememberDeletedPolygonIds_ = rememberDeletedPolygonIds_;
   global.filterDeletedPolygons_ = filterDeletedPolygons_;
 })(typeof window !== 'undefined' ? window : this);
