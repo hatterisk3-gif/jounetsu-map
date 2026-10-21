@@ -757,7 +757,7 @@ window.switchAdminSignIconTab_ = (btn) => {
 const ADMIN_PENDING_SYNC_KEY = 'pMapAdminPendingSync';
 const adminSyncQueue_ = [];
 let adminSyncRunning_ = false;
-const ADMIN_SYNC_GAP_MS = 350;
+const ADMIN_SYNC_GAP_MS = 40;
 
 function showAdminSyncToast(msg, kind) {
     kind = kind || 'info';
@@ -1009,8 +1009,12 @@ function syncAdminCall_(action, payload, pendingItem) {
     const isWrite = action === 'savePolygon' || action === 'savePolygonBatch' || action === 'updatePolygon' || action === 'deletePolygon' || action === 'deletePolygonBatch';
     if (pendingItem) rememberPendingAdminSync_(pendingItem);
     if (isWrite) holdAdminReadsForWrite_();
-    const writeOpts = isWrite ? { timeoutMs: action.indexOf('savePolygon') === 0 ? 120000 : 90000, timeoutStepMs: 20000, softNetRetries: 2 } : null;
-    return enqueueAdminSync_(() => callGAS(action, payload, isWrite ? 1 : 2, writeOpts || undefined)).then(res => {
+    const writeOpts = isWrite ? {
+        timeoutMs: action === 'savePolygonBatch' ? 55000 : (action === 'updatePolygon' ? 70000 : 40000),
+        timeoutStepMs: 0,
+        softNetRetries: 0
+    } : null;
+    return enqueueAdminSync_(() => callGAS(action, payload, isWrite ? 0 : 2, writeOpts || undefined)).then(res => {
         if (pendingItem && pendingItem.key) clearPendingAdminSync_(pendingItem.key);
         persistAdminInitCache_();
         return res;
@@ -1071,13 +1075,22 @@ function polygonPayloadReady_(p) {
     return out;
 }
 
-/** まとめて送ると切れやすいので、3件ずつ同期する */
+function pendingSaveIsField_(payload) {
+    try {
+        const coords = typeof payload.coords === 'string' ? JSON.parse(payload.coords) : payload.coords;
+        return Array.isArray(coords) && coords.length !== 1;
+    } catch (e) {
+        return false;
+    }
+}
+
+/** 圃場の新規保存は1回の通信にまとめる。失敗した塊だけ後から1件ずつ送る */
 async function syncAdminPolygonList_(polygons, tempIds) {
     const list = (polygons || []).map(polygonPayloadReady_);
     const ids = Array.isArray(tempIds) ? tempIds : [];
     const total = list.length;
     const newIds = new Array(total);
-    const chunkSize = 3;
+    const chunkSize = 12;
     let saved = 0;
     for (let i = 0; i < list.length; i += chunkSize) {
         const sliceP = list.slice(i, i + chunkSize);
@@ -1196,7 +1209,7 @@ async function flushPendingAdminSyncs_() {
     try {
         const initialCount = readPendingAdminSyncList_().length;
         showAdminSyncToast('☁️ 未同期 ' + initialCount + '件を再送しています…', 'info', 0);
-        const waitUntil = Date.now() + 8000;
+        const waitUntil = Date.now() + 1500;
         while (window._adminSyncActive && Date.now() < waitUntil) {
             const leftNow = readPendingAdminSyncList_().length;
             showAdminSyncToast('☁️ 保存を送信中… 残り' + leftNow + '件', 'info', 0);
@@ -1205,9 +1218,38 @@ async function flushPendingAdminSyncs_() {
         }
         if (readPendingAdminSyncList_().length && window._adminSyncActive) {
             takeoverAdminSyncQueue_();
-            await new Promise(r => setTimeout(r, 400));
+            await new Promise(r => setTimeout(r, 200));
         }
         let list = readPendingAdminSyncList_();
+        const fieldSaves = [];
+        const fieldIds = [];
+        const fieldKeys = [];
+        const rest = [];
+        list.forEach((item) => {
+            if (item.op === 'savePolygon' && item.payload && pendingSaveIsField_(item.payload)) {
+                const payload = polygonPayloadReady_(item.payload);
+                if (!payload.clientTempId && item.tempId) payload.clientTempId = item.tempId;
+                fieldSaves.push(payload);
+                fieldIds.push(item.tempId || '');
+                fieldKeys.push(item.key);
+            } else {
+                rest.push(item);
+            }
+        });
+        if (fieldSaves.length >= 2) {
+            showAdminSyncToast('☁️ 未同期 ' + fieldSaves.length + '件をまとめて送信しています…', 'info', 0);
+            fieldKeys.forEach((key) => clearPendingAdminSync_(key));
+            try {
+                const newIds = await syncAdminPolygonList_(fieldSaves, fieldIds);
+                const savedN = (newIds || []).filter(Boolean).length;
+                ok += savedN;
+                if (savedN < fieldSaves.length) failed += (fieldSaves.length - savedN);
+            } catch (e) {
+                lastErr = String((e && e.message) || e || '').replace(/\s+/g, ' ').slice(0, 60);
+                failed += fieldSaves.length;
+            }
+            list = rest;
+        }
         for (let i = 0; i < list.length; i++) {
             const item = list[i];
             if (!readPendingAdminSyncList_().some(x => x && x.key === item.key)) {
@@ -1286,9 +1328,12 @@ async function flushPendingAdminSyncs_() {
         window._adminPendingFlushFailAt = Date.now();
         showAdminSyncToast('⚠️ 未同期 ' + left + '件をまだ送れません' + (lastErr ? '（' + lastErr + '）' : ''), 'error', 8000);
     }
-    if (window._adminPendingFlushAgain) {
+    if (left > 0 || window._adminPendingFlushAgain) {
         window._adminPendingFlushAgain = false;
         schedulePendingAdminSyncFlush_();
+    } else if (window._adminInitDeferredForSync) {
+        window._adminInitDeferredForSync = false;
+        loadInitData({ background: true, light: true, afterFlush: true });
     }
 }
 
@@ -1296,7 +1341,7 @@ function schedulePendingAdminSyncFlush_() {
     if (window._adminPendingFlushTimer) return;
     const failAt = Number(window._adminPendingFlushFailAt || 0);
     const waitAfterFail = failAt ? Math.max(0, 60000 - (Date.now() - failAt)) : 0;
-    const delay = Math.max(2500, waitAfterFail);
+    const delay = failAt ? Math.max(800, waitAfterFail) : 300;
     window._adminPendingFlushTimer = setTimeout(() => {
         window._adminPendingFlushTimer = null;
         flushPendingAdminSyncs_().catch(() => {});
@@ -1718,6 +1763,15 @@ function loadInitData(options) {
             try { loadInitData({ background: true, light: true }); } catch (e2) {}
         }, delayMs);
     };
+
+    // 未同期の保存がある間は、重い再取得を後回しにして保存を先に送る
+    if (!options.afterFlush && readPendingAdminSyncList_().length) {
+        window._adminInitDeferredForSync = true;
+        try { if (typeof abortCallGAS === 'function') abortCallGAS('getInitData'); } catch (e) {}
+        schedulePendingAdminSyncFlush_();
+        closeAdminInitLoadingSoft_();
+        return null;
+    }
 
     // light: 農薬・肥料など重いマスタを省略して成功率を上げる（full 指定時のみフル）
     const useLight = options.full !== true;

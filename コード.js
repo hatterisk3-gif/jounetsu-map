@@ -6344,27 +6344,14 @@ function updatePolygon(params) {
   const id = params.id;
   const userName = params.userName || "システム";
   
-  // 圃場か看板かを探す
-  let sheet = ss.getSheetByName('圃場');
-  let data = sheet ? sheet.getDataRange().getValues() : [];
-  let isSignboard = false;
-  
-  let targetRow = -1;
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === id) { targetRow = i + 1; break; }
-  }
-  
-  if (targetRow === -1) {
-    sheet = ss.getSheetByName('看板');
-    if (!sheet) throw new Error("対象のデータが見つかりません");
-    data = sheet.getDataRange().getValues();
-    isSignboard = true;
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][0] === id) { targetRow = i + 1; break; }
-    }
-  }
-
-  if (targetRow === -1) throw new Error("対象データが見つかりません");
+  // ID列だけ見て行を決める。座標ごと全シートを読むと更新が遅くなる
+  const foundRow = findSheetAndRowById(id);
+  if (!foundRow) throw new Error("対象データが見つかりません");
+  let sheet = foundRow.sheet;
+  const isSignboard = sheet.getName() === '看板';
+  const targetRow = foundRow.rowIndex;
+  const data = [];
+  data[targetRow - 1] = foundRow.rowData;
 
   // 今の（変更前の）名前を取得（看板も圃場もB列[インデックス1]）
   const oldName = data[targetRow - 1][1];
@@ -6640,11 +6627,13 @@ function deletePolygonBatchData(ids, user) {
   for (let s of sheets) {
     let sheet = ss.getSheetByName(s);
     if (!sheet) continue;
-    let data = sheet.getDataRange().getValues();
-    for (let i = 1; i < data.length; i++) {
-      if (ids.some(function (want) { return String(want).trim() === String(data[i][0]).trim(); })) {
-        rowsToDelete[s].push(i + 1);
-        names.push(data[i][1]);
+    const last = sheet.getLastRow();
+    if (last < 2) continue;
+    const idName = sheet.getRange(2, 1, last - 1, 2).getValues();
+    for (let i = 0; i < idName.length; i++) {
+      if (ids.some(function (want) { return String(want).trim() === String(idName[i][0]).trim(); })) {
+        rowsToDelete[s].push(i + 2);
+        names.push(idName[i][1]);
       }
     }
   }
@@ -6669,13 +6658,24 @@ function deletePolygonBatchData(ids, user) {
 
 
 function findSheetAndRowById(id) {
+  const want = String(id == null ? '' : id).trim();
+  if (!want || !TENANT_SS) return null;
   const sheets = ['圃場', '看板'];
-  for (let s of sheets) {
-    let sheet = TENANT_SS.getSheetByName(s);
+  for (let s = 0; s < sheets.length; s++) {
+    const sheet = TENANT_SS.getSheetByName(sheets[s]);
     if (!sheet) continue;
-    let data = sheet.getDataRange().getValues();
-    for (let i = 1; i < data.length; i++) { if (String(data[i][0]).trim() === String(id).trim()) return { sheet, rowIndex: i + 1, rowData: data[i] }; }
-  } return null;
+    const last = sheet.getLastRow();
+    if (last < 2) continue;
+    const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+    for (let i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]).trim() !== want) continue;
+      const rowIndex = i + 2;
+      const width = Math.max(sheet.getLastColumn(), 1);
+      const rowData = sheet.getRange(rowIndex, 1, 1, width).getValues()[0];
+      return { sheet: sheet, rowIndex: rowIndex, rowData: rowData };
+    }
+  }
+  return null;
 }
 
 function getOrCreateRecordSheet(sheetName) {

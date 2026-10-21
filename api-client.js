@@ -225,9 +225,9 @@
     var netRetryUsed = 0;
     var timeoutStepMs = (callOptions.timeoutStepMs != null) ? Number(callOptions.timeoutStepMs) : 45000;
     if (!(timeoutStepMs >= 0)) timeoutStepMs = 45000;
-    // 直前の読取を切った直後は、接続が空くまで少し待つ
-    if (WRITE_PRIORITY_ACTIONS[action]) {
-      var still = await interruptibleWait_(450, action, cancelAtStart);
+    // 読取の直後の先頭1件だけ、接続が空くまで少し待つ。連続する保存は待たない
+    if (WRITE_PRIORITY_ACTIONS[action] && writePreferCount_ <= 1) {
+      var still = await interruptibleWait_(120, action, cancelAtStart);
       if (!still) {
         var early = new Error('cancelled');
         early.name = 'AbortError';
