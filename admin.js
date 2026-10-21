@@ -773,10 +773,12 @@ function showAdminSyncToast(msg, kind) {
     el.textContent = msg;
     el.style.display = 'block';
     clearTimeout(window._adminSyncToastTimer);
-    const stay = (arguments.length >= 3 && arguments[2] > 0) ? arguments[2] : (kind === 'error' ? 8000 : 2800);
-    window._adminSyncToastTimer = setTimeout(() => {
-        if (el) el.style.display = 'none';
-    }, stay);
+    const stay = (arguments.length >= 3) ? Number(arguments[2]) : (kind === 'error' ? 8000 : 2800);
+    if (stay > 0) {
+        window._adminSyncToastTimer = setTimeout(() => {
+            if (el) el.style.display = 'none';
+        }, stay);
+    }
 }
 window.showAdminSyncToast = showAdminSyncToast;
 
@@ -996,7 +998,9 @@ function syncAdminCall_(action, payload, pendingItem) {
         return res;
     }).catch(e => {
         console.warn('syncAdminCall_ failed', action, e);
-        showAdminSyncToast('⚠️ 保存に失敗しました（未同期として保持・自動再送します）: ' + (e.message || e), 'error');
+        if (!(pendingItem && pendingItem.silent)) {
+            showAdminSyncToast('⚠️ 保存に失敗しました（未同期として保持・自動再送します）: ' + (e.message || e), 'error');
+        }
         throw e;
     }).finally(() => {
         if (isWrite) releaseAdminReadsForWrite_();
@@ -1039,6 +1043,73 @@ function syncUpdatePolygon_(p, extra) {
         op: 'updatePolygon',
         payload: payload
     }).then(() => true).catch(() => false);
+}
+
+function polygonPayloadReady_(p) {
+    const out = Object.assign({}, p || {});
+    if (out.coords != null && typeof out.coords !== 'string') {
+        try { out.coords = JSON.stringify(out.coords); } catch (e) {}
+    }
+    return out;
+}
+
+/** まとめて送ると切れやすいので、3件ずつ同期する */
+async function syncAdminPolygonList_(polygons, tempIds) {
+    const list = (polygons || []).map(polygonPayloadReady_);
+    const ids = Array.isArray(tempIds) ? tempIds : [];
+    const total = list.length;
+    const newIds = new Array(total);
+    const chunkSize = 3;
+    let saved = 0;
+    for (let i = 0; i < list.length; i += chunkSize) {
+        const sliceP = list.slice(i, i + chunkSize);
+        const sliceT = ids.slice(i, i + chunkSize);
+        showAdminSyncToast('☁️ ' + total + '件を同期しています… ' + Math.min(i + sliceP.length, total) + '/' + total, 'info', 0);
+        const batchKey = sliceT.filter(Boolean).join(',') || ('batch_' + Date.now() + '_' + i);
+        const payload = { polygons: sliceP, clientBatchId: batchKey };
+        const pending = {
+            key: 'savePolygonBatch:' + batchKey,
+            op: 'savePolygonBatch',
+            tempIds: sliceT,
+            payload: payload,
+            silent: true
+        };
+        let got = null;
+        try {
+            got = await syncAdminCall_('savePolygonBatch', payload, pending);
+        } catch (e) {
+            clearPendingAdminSync_(pending.key);
+            got = [];
+            for (let j = 0; j < sliceP.length; j++) {
+                const one = polygonPayloadReady_(sliceP[j]);
+                if (sliceT[j]) one.clientTempId = sliceT[j];
+                try {
+                    const nid = await syncAdminCall_('savePolygon', one, {
+                        key: 'savePolygon:' + (sliceT[j] || ('i' + (i + j))),
+                        op: 'savePolygon',
+                        tempId: sliceT[j],
+                        payload: one,
+                        silent: true
+                    });
+                    got.push(nid);
+                } catch (e2) {
+                    got.push(null);
+                }
+            }
+        }
+        if (Array.isArray(got)) {
+            got.forEach((nid, j) => {
+                newIds[i + j] = nid || null;
+                if (nid && sliceT[j] && loadedPolygons[sliceT[j]]) remapLoadedPolygonId_(sliceT[j], nid);
+                if (nid) saved++;
+            });
+        }
+    }
+    persistAdminInitCache_();
+    if (total && saved === total) showAdminSyncToast('☁️ ' + total + '件をサーバーへ保存しました', 'ok', 4000);
+    else if (saved > 0) showAdminSyncToast('⚠️ ' + saved + '/' + total + '件だけ保存できました。残りは再送します', 'error', 8000);
+    else showAdminSyncToast('⚠️ サーバーへ保存できませんでした。通信が戻り次第、再送します', 'error', 8000);
+    return newIds;
 }
 
 function pendingSyncWriteOpts_(action) {
@@ -1098,13 +1169,12 @@ async function flushPendingAdminSyncs_() {
                     clearPendingAdminSync_(item.key);
                     ok++;
                 } else if (item.op === 'savePolygonBatch') {
-                    if (!item.payload.clientBatchId && Array.isArray(item.tempIds)) item.payload.clientBatchId = item.tempIds.join(',');
-                    const newIds = await enqueueAdminSync_(() => callGAS('savePolygonBatch', item.payload, 1, pendingSyncWriteOpts_('savePolygonBatch')));
-                    if (Array.isArray(newIds) && Array.isArray(item.tempIds)) {
-                        item.tempIds.forEach((tid, i) => { if (newIds[i] && loadedPolygons[tid]) remapLoadedPolygonId_(tid, newIds[i]); });
-                    }
+                    const polys = (item.payload && item.payload.polygons) || [];
                     clearPendingAdminSync_(item.key);
-                    ok++;
+                    const newIds = await syncAdminPolygonList_(polys, item.tempIds);
+                    const saved = (newIds || []).filter(Boolean).length;
+                    if (saved) ok += saved;
+                    if (saved < polys.length) failed += (polys.length - saved);
                 } else if (item.op === 'splitField') {
                     const newId = await enqueueAdminSync_(() => callGAS('splitField', item.payload, 1, pendingSyncWriteOpts_('splitField')));
                     if (item.tempId && newId && loadedPolygons[item.tempId]) remapLoadedPolygonId_(item.tempId, newId);
@@ -8771,14 +8841,8 @@ document.getElementById('finalSaveBtn').onclick = async () => {
             document.getElementById('modal').style.display = 'none';
             document.getElementById('btnViewMode').click();
             persistAdminInitCache_();
-            showAdminSyncToast(`✅ ${paramsList.length} 件を反映しました（同期中…）`, 'ok');
-            const payload = { polygons: paramsList };
-            syncAdminCall_('savePolygonBatch', payload, { key: 'savePolygonBatch:' + tempIds.join(','), op: 'savePolygonBatch', tempIds, payload }).then(newIds => {
-                if (!newIds || !Array.isArray(newIds)) throw new Error('サーバーから正しい応答がありませんでした');
-                tempIds.forEach((tid, i) => { if (newIds[i]) remapLoadedPolygonId_(tid, newIds[i]); });
-                persistAdminInitCache_();
-                showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
-            }).catch(() => {});
+            showAdminSyncToast('☁️ ' + paramsList.length + '件を同期しています…', 'info', 0);
+            syncAdminPolygonList_(paramsList, tempIds).catch(() => {});
         } else {
             let pathsToSave = [];
             if (window.isMergedFude || customDrawingPath.length >= 3) {
