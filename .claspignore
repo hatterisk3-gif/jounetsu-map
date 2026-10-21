@@ -21,5 +21,6 @@ admin2.js
 
 scratch/**
 *.js
+**/*.js
 !コード.js
 !scratch/tmp_fix_id.js
