@@ -2,8 +2,7 @@
 
 'use strict';
 
-// ===== dump-embed helpers (localStorage + optional GAS sync) =====
-window.DUMP_GAS_API_URL = window.DUMP_GAS_API_URL || "https://script.google.com/macros/s/AKfycbxP-ENobvgAGiVgXKgzLmKBLZn4_6KzZXwXXZAbDBqmSdLxiJOCf5whFrUv5ikUo5evvQ/exec";
+// ===== 計画ボード（ツリー／ガント）は情熱MAP本体のスプレッドシートに保存する =====
 
 if (typeof window.escapeHtmlText !== "function") {
   window.escapeHtmlText = function (text) {
@@ -29,31 +28,26 @@ if (typeof window.runInBackground !== "function") {
 }
 function runInBackground(task, opts) { return window.runInBackground(task, opts); }
 
-if (typeof window.callAPI !== "function") {
-  window.callAPI = async function (action, data, options) {
-    options = options || {};
-    data = data || {};
-    try {
-      var body = JSON.stringify(Object.assign({ action: action }, data));
-      var response = await fetch(window.DUMP_GAS_API_URL, {
-        method: "POST",
-        body: body,
-        headers: { "Content-Type": "text/plain;charset=UTF-8" }
-      });
-      var text = await response.text();
-      try {
-        return JSON.parse(text);
-      } catch (e) {
-        if (!options.silent) alert("通信エラーが発生しました");
-        return { error: true, message: "invalid_json" };
-      }
-    } catch (error) {
-      console.error("API Error:", error);
-      if (!options.silent) alert("通信エラーが発生しました");
-      return { error: true, message: String(error && error.message ? error.message : error) };
-    }
-  };
-}
+window.callAPI = async function (action, data, options) {
+  options = options || {};
+  data = data || {};
+  if (typeof window.callGAS !== "function") {
+    if (!options.silent) alert("通信エラーが発生しました");
+    return { error: true, message: "no_gas" };
+  }
+  try {
+    return await window.callGAS("planBoard", Object.assign({ boardAction: action }, data), 0, {
+      timeoutMs: 60000,
+      timeoutStepMs: 10000,
+      softNetRetries: 1,
+      jumpQueue: true
+    });
+  } catch (error) {
+    console.error("planBoard API Error:", error);
+    if (!options.silent) alert("通信エラーが発生しました");
+    return { error: true, message: String(error && error.message ? error.message : error) };
+  }
+};
 function callAPI(action, data, options) { return window.callAPI(action, data, options); }
 
 if (typeof window.callBatch !== "function") {

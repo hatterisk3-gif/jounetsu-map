@@ -6842,58 +6842,10 @@ async function actionDelete(id) {
     const p = loadedPolygons[id];
     if (!p) return;
 
-    let baseName = p.name;
-    let match = p.name.match(/^(.*)_\d+$/);
-    if (match) baseName = match[1];
-
-    let relatedIds = [];
-    for (let k in loadedPolygons) {
-        let poly = loadedPolygons[k];
-        if (poly.name === baseName || poly.name.startsWith(baseName + "_")) {
-            relatedIds.push(k);
-        }
-    }
-
-    if (relatedIds.length > 1) {
-        let checkboxHtml = relatedIds.map(rid => {
-            let pName = loadedPolygons[rid].name;
-            let checked = (rid === id) ? "checked" : "";
-            return `<label style="display:block; padding:8px 5px; border-bottom:1px solid #eee; cursor:pointer; text-align:left;">
-                <input type="checkbox" class="del-checkbox" value="${rid}" ${checked} style="transform:scale(1.2); margin-right:8px;"> ${pName}
-            </label>`;
-        }).join('');
-
-        document.getElementById('modalBody').innerHTML = `
-            <div style="padding:10px; text-align:center;">
-                <h3 style="margin-top:0; color:#333;">圃場の削除</h3>
-                <p style="font-size:14px; margin-bottom:10px;">削除する圃場にチェックを入れてください：</p>
-                <div style="max-height: 250px; overflow-y: auto; background:#f9f9f9; border:1px solid #ccc; border-radius:4px; padding:5px; margin-bottom:15px;">
-                    ${checkboxHtml}
-                </div>
-                <button id="btnExecuteDelete" style="width:100%; padding:12px; margin-bottom:10px; background:#d32f2f; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">選択した圃場を削除</button>
-                <button id="btnDelCancel" style="width:100%; padding:12px; background:#ccc; color:#333; border:none; border-radius:4px; cursor:pointer;">キャンセル</button>
-            </div>
-        `;
-        document.getElementById('modal').style.display = 'flex';
-        
-        document.getElementById('btnExecuteDelete').onclick = async () => {
-            let selected = Array.from(document.querySelectorAll('.del-checkbox:checked')).map(cb => cb.value);
-            if (selected.length === 0) {
-                customAlert("削除する圃場が選択されていません。");
-                return;
-            }
-            document.getElementById('modal').style.display = 'none';
-            if (await customConfirm(`選択した ${selected.length}件 を削除しますか？\n(復元できません)`)) {
-                await doDeletePolygons(selected);
-            }
-        };
-        document.getElementById('btnDelCancel').onclick = () => {
-            document.getElementById('modal').style.display = 'none';
-        };
-    } else {
-        if (await customConfirm("削除しますか？")) {
-            await doDeletePolygons([id]);
-        }
+    const label = p.isMarker ? '看板' : '圃場';
+    const name = String(p.name || '').trim() || label;
+    if (await customConfirm(`「${name}」を削除しますか？\n(復元できません)`)) {
+        await doDeletePolygons([id]);
     }
 }
 
@@ -7572,6 +7524,7 @@ window._signRegQuickPresets_ = {
     drain: { label: '排水口', icon: '🕳️', name: '排水口', signFunction: '排水口' },
     parking: { label: '駐車場', icon: '🅿️', name: '駐車場', signFunction: '駐車場' },
     toilet: { label: 'トイレ', icon: '🚻', name: 'トイレ', signFunction: 'トイレ' },
+    warehouse: { label: '倉庫', icon: '📦', name: '倉庫', signFunction: '倉庫' },
     caution: { label: '注意', icon: '⚠️', name: '注意', signFunction: '事故注意' }
 };
 
@@ -7657,6 +7610,11 @@ window.renderSignRegQuickScreen_ = () => {
             style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #CE93D8; border-radius:10px; background:#F3E5F5; cursor:pointer;">
             <span style="font-size:28px; line-height:1;">🚻</span>
             <span><div style="font-weight:bold; color:#6A1B9A; font-size:15px;">トイレ</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">名前・アイコンを自動セット</div></span>
+          </button>
+          <button type="button" onclick="pickSignRegQuick_('warehouse')"
+            style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #BCAAA4; border-radius:10px; background:#EFEBE9; cursor:pointer;">
+            <span style="font-size:28px; line-height:1;">📦</span>
+            <span><div style="font-weight:bold; color:#5D4037; font-size:15px;">倉庫</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">名前・アイコンを自動セット</div></span>
           </button>
           <button type="button" onclick="pickSignRegQuick_('caution')"
             style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #FFCC80; border-radius:10px; background:#FFF8E1; cursor:pointer;">

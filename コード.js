@@ -282,8 +282,105 @@ const API_ACTIONS = {
   "dayPlan_options": function (p) { return dayPlan_options(p); },
   "getOpsIndex": function (p) { return getOpsIndex(p); },
   "saveOpsRoute": function (p) { return saveOpsRoute(p); },
-  "deleteOpsRoute": function (p) { return deleteOpsRoute(p); }
+  "deleteOpsRoute": function (p) { return deleteOpsRoute(p); },
+  "planBoard": function (p) { return planBoard_(p); }
 };
+
+function ensurePlanBoardSheet_() {
+  const ss = requireTenantSs_();
+  let sheet = ss.getSheetByName('計画ボード');
+  if (!sheet) {
+    sheet = ss.insertSheet('計画ボード');
+    sheet.appendRow(['ID', 'フォルダ', 'ファイル', '分割', '内容', '更新日時']);
+    sheet.getRange(1, 1, 1, 6).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+function planBoardReadRows_(sheet) {
+  const last = sheet.getLastRow();
+  if (last < 2) return [];
+  return sheet.getRange(2, 1, last - 1, 6).getValues();
+}
+
+function planBoard_(params) {
+  params = params || {};
+  const action = String(params.boardAction || '');
+  if (action === 'batch') {
+    const ops = Array.isArray(params.ops) ? params.ops : [];
+    const results = [];
+    let ok = true;
+    for (let i = 0; i < ops.length; i++) {
+      const op = Object.assign({}, ops[i] || {});
+      const subAction = op.action;
+      delete op.action;
+      try {
+        results.push(planBoard_(Object.assign({ boardAction: subAction }, op)));
+      } catch (err) {
+        ok = false;
+        results.push({ error: true, message: String((err && err.message) || err) });
+      }
+    }
+    return { success: ok, results: results };
+  }
+  const sheet = ensurePlanBoardSheet_();
+  if (action === 'addConfigRecord') return { success: true };
+  if (action === 'getFolderFileItems') {
+    const folder = String(params.folder || '');
+    const file = String(params.file || '');
+    const rows = planBoardReadRows_(sheet);
+    const groups = {};
+    const order = [];
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][1]) !== folder || String(rows[i][2]) !== file) continue;
+      const id = String(rows[i][0] || '').trim();
+      if (!id) continue;
+      if (!groups[id]) {
+        groups[id] = { parts: [] };
+        order.push(id);
+      }
+      groups[id].parts.push({ n: Number(rows[i][3]) || 0, content: String(rows[i][4] || '') });
+    }
+    return order.map(function (id) {
+      const parts = groups[id].parts.sort(function (a, b) { return a.n - b.n; });
+      return {
+        id: id,
+        folder: folder,
+        file: file,
+        content: parts.map(function (part) { return part.content; }).join('')
+      };
+    });
+  }
+  if (action === 'deleteDataRecord') {
+    const id = String(params.id || '').trim();
+    if (!id) return { success: true };
+    const rows = planBoardReadRows_(sheet);
+    const toDelete = [];
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][0]).trim() === id) toDelete.push(i + 2);
+    }
+    toDelete.sort(function (a, b) { return b - a; });
+    toDelete.forEach(function (row) { sheet.deleteRow(row); });
+    return { success: true };
+  }
+  if (action === 'addDataRecord') {
+    const id = Utilities.getUuid();
+    const content = String(params.content == null ? '' : params.content);
+    const folder = String(params.folder || '');
+    const file = String(params.file || '');
+    const now = Utilities.formatDate(new Date(), 'JST', 'yyyy/MM/dd HH:mm:ss');
+    const size = 40000;
+    const parts = [];
+    if (!content) parts.push('');
+    for (let i = 0; i < content.length; i += size) parts.push(content.substring(i, i + size));
+    const values = parts.map(function (part, idx) {
+      return [id, folder, file, idx, part, now];
+    });
+    sheet.getRange(sheet.getLastRow() + 1, 1, values.length, 6).setValues(values);
+    return { success: true, id: id };
+  }
+  throw new Error('未知の計画ボード操作です: ' + action);
+}
 
 function doPost(e) {
   try {
