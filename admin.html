@@ -15,7 +15,7 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
 
-  <link rel="stylesheet" href="admin.css?v=1788600000108">
+  <link rel="stylesheet" href="admin.css?v=1788600000109">
   <link rel="stylesheet" href="cad.css">
 </head>
 
@@ -41,11 +41,15 @@
 
   <div class="admin-reg-plus-wrap is-fab" id="adminRegPlusWrap">
     <button type="button" id="btnAdminRegPlus" class="admin-reg-plus-btn" onclick="toggleAdminRegPlusMenu_(event)" title="登録" aria-label="登録">＋</button>
-    <div id="adminRegPlusMenu" class="admin-reg-plus-menu" style="display:none;" onclick="event.stopPropagation()">
+  </div>
+  <div id="adminRegPlusMenu" class="admin-reg-plus-menu" style="display:none;" onclick="closeAdminRegPlusMenu_()">
+    <div class="admin-reg-plus-sheet" onclick="event.stopPropagation()">
+      <div class="admin-reg-plus-title">登録メニュー</div>
       <button type="button" onclick="pickAdminRegPlus_('draw')">✏️ 圃場を登録</button>
       <button type="button" onclick="pickAdminRegPlus_('marker')">📍 看板を登録</button>
       <button type="button" onclick="pickAdminRegPlus_('equipment')">🚜 機械管理</button>
       <button type="button" onclick="pickAdminRegPlus_('batchDelete')" style="color:#c62828;">🗑️ 一括削除</button>
+      <button type="button" class="admin-reg-plus-cancel" onclick="closeAdminRegPlusMenu_()">閉じる</button>
     </div>
   </div>
 
@@ -859,7 +863,7 @@
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=ja&v=weekly" async defer></script>
 
   <script src="api-client.js?v=1788600000116" defer></script>
-  <script src="admin.js?v=1788600000119" defer></script>
+  <script src="admin.js?v=1788600000121" defer></script>
   <script src="admin_cost.js?v=1785489000008" defer></script>
   <script src="admin_crop_work.js?v=1787570400000" defer></script>
   <script src="tracking.js?v=1788600000043" defer></script>

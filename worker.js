@@ -2646,7 +2646,7 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         actions += `</div>`;
 
-        if (p.isMarker && p.signFunction && String(p.signFunction).includes('在庫')) {
+        if (p.isMarker && p.signFunction && (String(p.signFunction).includes('在庫') || String(p.signFunction).includes('倉庫'))) {
             actions += `<button onclick="openInventoryUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#8BC34A; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">📦 在庫状況・入出庫</button>`;
         }
         // ★ここを追加！：「給油機能」がある看板なら給油ボタンを表示

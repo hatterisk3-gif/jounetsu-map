@@ -6738,6 +6738,33 @@ function saveTouki(hojoId) {
     }).catch(() => {});
 }
 
+function adminSignFunctionNames_() {
+    const names = [];
+    const push = (n) => {
+        const s = String(n == null ? '' : (n.name || n)).trim();
+        if (!s || names.indexOf(s) >= 0) return;
+        names.push(s);
+    };
+    (pdlSignFunctions || []).forEach(push);
+    ['機能なし', '倉庫', '在庫', 'トイレ', '給水口', '排水口', '駐車場', '事故注意', '給油', '車両・機械管理', '道具管理'].forEach(push);
+    return names;
+}
+
+function adminSignFunctionSelectHtml_(id, selected) {
+    const cur = String(selected || '').trim() || '機能なし';
+    const names = adminSignFunctionNames_();
+    if (names.indexOf(cur) < 0) names.unshift(cur);
+    const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    return `<select id="${id}" class="form-input" style="width:100%; margin-bottom:8px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">` +
+        names.map((n) => `<option value="${esc(n)}" ${n === cur ? 'selected' : ''}>${esc(n)}</option>`).join('') +
+        `</select>`;
+}
+
+function signKeepsMaterials_(p) {
+    const f = String((p && p.signFunction) || '');
+    return f.indexOf('倉庫') >= 0 || f.indexOf('在庫') >= 0;
+}
+
 function openAttr(id) {
     const p = loadedPolygons[id];
     if (p.isMarker) {
@@ -6751,6 +6778,8 @@ function openAttr(id) {
              <div style="text-align:center; width:220px; box-sizing:border-box; padding:10px; font-family:sans-serif;">
                <div style="font-size:14px; margin-bottom:10px;">看板情報変更</div>
                <input type="text" id="rnIn" value="${p.name}" class="form-input" style="width:100%; margin-bottom:10px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">
+               <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">看板機能</div>
+               ${adminSignFunctionSelectHtml_('rnFunc', p.signFunction)}
                <select id="rnLoc" class="form-input" style="width:100%; margin-bottom:10px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">${locOptions}</select>
                <button onclick="execAttr('${id}')" style="width:100%; padding:10px; border-radius:4px; border:none; background:#d32f2f; color:white; font-weight:bold; cursor:pointer;">保存</button>
              </div>
@@ -7532,6 +7561,17 @@ function openMarkerForm(markerObj) {
     window.selectMI = (i) => {
         const sel = document.getElementById('selIco');
         if (sel) sel.value = i;
+        const mapped = iconFunctionMap[i];
+        const funcEl = document.getElementById('mFunc');
+        if (mapped && funcEl) {
+            if (!Array.from(funcEl.options || []).some((opt) => opt.value === mapped)) {
+                const opt = document.createElement('option');
+                opt.value = mapped;
+                opt.textContent = mapped;
+                funcEl.appendChild(opt);
+            }
+            funcEl.value = mapped;
+        }
         document.querySelectorAll('.ib').forEach(el => el.style.background = 'none');
         const chip = document.getElementById('i_' + i);
         if (chip) chip.style.background = '#ddd';
@@ -7701,8 +7741,9 @@ window.renderSignRegDetailScreen_ = (opts) => {
               ${st.posLabel ? `<div style="font-size:11px; color:#888; margin-bottom:8px;">📍 ${esc(st.posLabel)}</div>` : ''}
               ${fromQuick ? `<div style="font-size:12px; color:#2E7D32; background:#E8F5E9; border-radius:6px; padding:8px; margin-bottom:10px; line-height:1.4;">✅ 「${esc(presetName)}」 ${presetIcon} をセットしました。必要なら修正して登録してください。</div>` : ''}
               <input type="text" id="mName" class="form-input" placeholder="看板名" value="${esc(presetName)}" style="margin-bottom:8px;">
+              <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">看板機能</div>
+              ${adminSignFunctionSelectHtml_('mFunc', presetFunc || '機能なし')}
               <select id="mLoc" class="form-input" style="margin-bottom:8px;">${locOpts}</select>
-              <input type="hidden" id="mFunc" value="${esc(presetFunc || '機能なし')}">
               <div style="max-height:280px;overflow-y:auto;padding:0 6px 6px;border:1px solid #ddd;border-radius:8px;background:#fafafa;">
                 ${renderAdminSignIconPickerHtml_({ onPick: 'selectMI', activeIcon: presetIcon })}
               </div>
@@ -8051,7 +8092,7 @@ window.toggleAdminRegPlusMenu_ = (ev) => {
     const menu = document.getElementById('adminRegPlusMenu');
     if (!menu) return;
     const open = menu.style.display === 'none' || !menu.style.display;
-    menu.style.display = open ? 'block' : 'none';
+    menu.style.display = open ? 'flex' : 'none';
 };
 
 window.pickAdminRegPlus_ = (kind) => {
@@ -9381,12 +9422,72 @@ window.openM = (id) => {
     h += `</div>`;
 
     if (!p.isMarker) h += `<div style="display:flex;gap:4px;margin-bottom:8px;width:100%;"><button onclick="showToukiInfo('${id}')" style="background:#2196F3;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">📋登記情報</button><button onclick="openAddTouki('${id}')" style="background:#4CAF50;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">➕登記登録</button></div><div style="display:flex;gap:4px;margin-bottom:8px;width:100%;"><button onclick="startMerge('${id}')" style="background:#FF9800;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">🚜統合</button><button onclick="execDuplicate('${id}')" style="background:#9C27B0;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">✂️複製</button><button onclick="openAdvancedSplit('${id}')" style="background:#E91E63;color:white;flex:1;padding:8px 0;font-size:12px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">✂️分割</button></div>`;
+    if (p.isMarker && signKeepsMaterials_(p)) {
+        h += `<button type="button" onclick="openAdminMaterialForm_('${id}')" style="width:100%; margin-bottom:8px; background:#5D4037; color:#fff; border:none; border-radius:4px; padding:9px 0; font-size:13px; font-weight:bold; cursor:pointer;">📦 資材を登録</button>`;
+    }
     h += `<div style="display:flex;gap:4px;margin-bottom:4px;width:100%;"><button onclick="openAttr('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">情報変更</button>`;
     if (p.isMarker) h += `<button onclick="openCol('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">アイコン変更</button>`;
     h += `</div>`;
     if (!p.isMarker) h += `<div style="display:flex;gap:4px;margin-bottom:4px;width:100%;"><button onclick="openRidgeSim('${id}')" style="flex:1;background:#e3f2fd;color:#1976d2;padding:8px 0;font-size:11px;border-radius:4px;border:1px solid #90caf9;white-space:nowrap;cursor:pointer;">📏 畝立てシミュ</button><button onclick="openCADMode('${id}')" style="flex:1;background:#FF9800;color:white;padding:8px 0;font-size:11px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">🚜 農地CADを開く</button></div>`;
     h += `<div style="display:flex;gap:4px;width:100%;"><button onclick="actionEditShape('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">範囲変更</button><button onclick="actionDelete('${id}')" style="flex:1;background:#ffebee;color:red;padding:8px 0;font-size:11px;border-radius:4px;border:1px solid #f44336;white-space:nowrap;cursor:pointer;">削除</button></div></div>`;
     infoWindow.setContent(h); infoWindow.setPosition(p.isMarker ? p.marker.getPosition() : p.marker.getPosition()); infoWindow.open(map);
+};
+
+window.openAdminMaterialForm_ = (signId) => {
+    const p = loadedPolygons[signId];
+    if (!p) return;
+    const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    const modal = document.getElementById('modal');
+    const body = document.getElementById('modalBody');
+    if (!modal || !body) return;
+    try { infoWindow.close(); } catch (e) {}
+    body.innerHTML = `
+      <div style="width:min(92vw,360px);text-align:left;color:#333;padding:4px;box-sizing:border-box;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <h3 style="margin:0;color:#5D4037;font-size:18px;">📦 資材を登録</h3>
+          <span onclick="document.getElementById('modal').style.display='none'" style="cursor:pointer;font-size:24px;color:#888;line-height:1;">×</span>
+        </div>
+        <div style="font-size:12px;color:#666;margin-bottom:10px;">保管場所：${esc(p.name)}</div>
+        <label style="font-size:11px;font-weight:bold;">資材名</label>
+        <input type="text" id="admMatName" class="form-input" placeholder="例：尿素" style="margin-bottom:8px;">
+        <div style="display:flex;gap:6px;margin-bottom:8px;">
+          <div style="flex:1;"><label style="font-size:11px;font-weight:bold;">容量</label><input type="text" id="admMatSize" class="form-input" placeholder="20"></div>
+          <div style="flex:1;"><label style="font-size:11px;font-weight:bold;">容量単位</label><input type="text" id="admMatVol" class="form-input" placeholder="kg"></div>
+          <div style="flex:1;"><label style="font-size:11px;font-weight:bold;">在庫単位</label><input type="text" id="admMatUnit" class="form-input" placeholder="袋"></div>
+        </div>
+        <label style="font-size:11px;font-weight:bold;">初期数量</label>
+        <input type="number" id="admMatStock" class="form-input" placeholder="0" style="margin-bottom:12px;">
+        <button type="button" id="admMatSaveBtn" onclick="saveAdminMaterial_('${signId}')" style="width:100%;background:#5D4037;color:#fff;border:none;border-radius:6px;padding:12px;font-weight:bold;cursor:pointer;">この倉庫に登録</button>
+      </div>`;
+    modal.style.display = 'flex';
+};
+
+window.saveAdminMaterial_ = async (signId) => {
+    const p = loadedPolygons[signId];
+    const nameEl = document.getElementById('admMatName');
+    const name = nameEl ? String(nameEl.value || '').trim() : '';
+    if (!p || !name) { customAlert('資材名を入力してください'); return; }
+    const btn = document.getElementById('admMatSaveBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '登録しています…'; }
+    try {
+        const created = await callGAS('addMaterialToSign', {
+            name: name,
+            size: (document.getElementById('admMatSize') || {}).value || '',
+            volUnit: (document.getElementById('admMatVol') || {}).value || '',
+            stockUnit: (document.getElementById('admMatUnit') || {}).value || '',
+            initialStock: (document.getElementById('admMatStock') || {}).value || '',
+            photos: [],
+            signId: signId,
+            signName: p.name,
+            userName: currentUser
+        }, 0, { timeoutMs: 60000, jumpQueue: true });
+        if (created && Array.isArray(pdlMaterials)) pdlMaterials.push(created);
+        document.getElementById('modal').style.display = 'none';
+        showAdminSyncToast('☁️ 「' + name + '」を倉庫に登録しました', 'ok', 4000);
+    } catch (e) {
+        if (btn) { btn.disabled = false; btn.textContent = 'この倉庫に登録'; }
+        customAlert('資材を登録できませんでした: ' + ((e && e.message) || e));
+    }
 };
 
 window.execDuplicate = async (id) => {

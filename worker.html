@@ -107,6 +107,12 @@
     <button id="btnGpsWorkRecord" class="map-action-btn map-action-btn--plus" onclick="document.getElementById('recordTypeSelectModal').style.display='flex'" title="記録を追加" style="color: #fff; background: #4285F4;">
       ＋
     </button>
+    <button type="button" id="btnScheduleList" class="map-action-btn" onclick="openScheduleList()" title="予定一覧" style="color:#F57F17; background:#FFF9C4; border:2px solid #F57F17; font-size:22px;">
+      📅
+    </button>
+    <button type="button" id="btnActivityNotice" class="map-action-btn" onclick="openWorkerActivityNoticeModal_()" title="お知らせ" style="position:relative; color:#5E35B1; background:#EDE7F6; border:2px solid #5E35B1; font-size:22px;">
+      🔔<span id="activityNoticeBadge" style="display:none; position:absolute; top:-4px; right:-4px; background:#d32f2f; color:#fff; font-size:10px; min-width:16px; height:16px; line-height:16px; border-radius:8px; padding:0 4px; font-weight:bold; box-sizing:border-box;">0</span>
+    </button>
   </div>
 
   <!-- 📏 計測メニュー（距離 / 面積） -->
@@ -405,12 +411,6 @@
       <button onclick="location.reload()"
         style="background:#fff; color:#333; border:1px solid #ccc; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">🔄
         更新</button>
-      <button onclick="openScheduleList()"
-        style="background:#FFF9C4; color:#F57F17; border:1px solid #F57F17; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">📅
-        予定一覧</button>
-      <button type="button" id="btnActivityNotice" onclick="openWorkerActivityNoticeModal_()" title="お知らせ"
-        style="position:relative; background:#EDE7F6; color:#5E35B1; border:1px solid #5E35B1; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px; cursor:pointer;">🔔
-        お知らせ<span id="activityNoticeBadge" style="display:none; position:absolute; top:-6px; right:-6px; background:#d32f2f; color:#fff; font-size:10px; min-width:16px; height:16px; line-height:16px; border-radius:8px; padding:0 4px; font-weight:bold; box-sizing:border-box;">0</span></button>
       <div style="position:relative; display:inline-block;">
         <button type="button" onclick="toggleAccountMenu(event)"
           style="background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px; cursor:pointer; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">👤
@@ -512,7 +512,7 @@
   <script src="machine-taxonomy.js?v=1788600000012"></script>
   <script src="weather-agri.js?v=1788600000102"></script>
   <script src="api-client.js?v=1788600000111"></script>
-  <script src="worker.js?v=1788600000178"></script>
+  <script src="worker.js?v=1788600000179"></script>
   <script src="tracking.js?v=1788600000051"></script>
   <script>
     if ('serviceWorker' in navigator) {
