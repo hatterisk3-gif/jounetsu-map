@@ -33842,8 +33842,6 @@ window.bulkWorkMemoNeedsField_ = (draft) => {
   } else if (typeof window.isFieldCategory === 'function' && window.isFieldCategory(workCat)) {
     return true;
   }
-  // 「運搬準備」などは名前だけで運搬扱いになり、置き場所画面も出ていなかった
-  if (typeof window.bulkWorkMemoIsDelivery_ === 'function' && window.bulkWorkMemoIsDelivery_(draft)) return true;
   return false;
 };
 
