@@ -33818,41 +33818,45 @@ window.buildBulkWorkMemoFieldOptionsHtml_ = (selectedId) => {
   return opts.join('');
 };
 
-/** 一括入力で圃場選択を出すか（作業名登録後、圃場カテゴリの作業のみ） */
+/** 運搬先の専用画面が有効なときだけ、圃場選択の代わりにする */
+window.bulkWorkMemoFieldReplacedByAssetMove_ = (draft) => {
+  if (typeof window.bulkWorkMemoIsDelivery_ !== 'function' || !window.bulkWorkMemoIsDelivery_(draft)) return false;
+  return typeof window.isBulkAssetMoveUiEnabled_ === 'function'
+    ? !!window.isBulkAssetMoveUiEnabled_()
+    : !!window.BULK_ASSET_MOVE_UI_ENABLED;
+};
+
+/** 一括入力で圃場選択を出すか（作業名登録後） */
 window.bulkWorkMemoNeedsField_ = (draft) => {
   if (!draft || window.bulkWorkMemoIsRestDraft_(draft)) return false;
-  if (typeof window.bulkWorkMemoIsDelivery_ === 'function' && window.bulkWorkMemoIsDelivery_(draft)) return false;
-  const draftCat = String(draft.category || draft.listFilterCategory || '').trim();
+  if (window.bulkWorkMemoFieldReplacedByAssetMove_(draft)) return false;
   const wName = String(draft.workName || '').trim();
-  if (typeof window.resolveShowFieldSelect_ === 'function'
-      && !window.resolveShowFieldSelect_({ category: draftCat, workName: wName })) {
-    return false;
-  }
   if (!wName || wName.includes('休憩')) return false;
-  const cat = String(window.getBulkWorkMemoWorkCategory_(wName) || draft.category || '').trim();
-  if (typeof window.afterSaveWorkNeedsFieldPlace_ === 'function') {
-    return window.afterSaveWorkNeedsFieldPlace_(wName, draftCat || cat);
+  const workCat = String(
+    (typeof window.getBulkWorkMemoWorkCategory_ === 'function' && window.getBulkWorkMemoWorkCategory_(wName))
+    || draft.category
+    || ''
+  ).trim();
+  if (typeof window.resolveShowFieldSelect_ === 'function') {
+    if (window.resolveShowFieldSelect_({ category: workCat, workName: wName })) return true;
+  } else if (typeof window.isFieldCategory === 'function' && window.isFieldCategory(workCat)) {
+    return true;
   }
-  return typeof window.isFieldCategory === 'function' && window.isFieldCategory(draftCat || cat);
+  // 「運搬準備」などは名前だけで運搬扱いになり、置き場所画面も出ていなかった
+  if (typeof window.bulkWorkMemoIsDelivery_ === 'function' && window.bulkWorkMemoIsDelivery_(draft)) return true;
+  return false;
 };
 
 /** 一括入力：圃場欄を表示するか（カテゴリ必須 or メモから圃場ヒントあり） */
 window.bulkWorkMemoShowFieldSection_ = (draft) => {
   if (!draft || window.bulkWorkMemoIsRestDraft_(draft)) return false;
-  if (typeof window.bulkWorkMemoIsDelivery_ === 'function' && window.bulkWorkMemoIsDelivery_(draft)) return false;
+  if (window.bulkWorkMemoFieldReplacedByAssetMove_(draft)) return false;
   // メモから圃場名が拾えているときは、カテゴリ設定に関わらず圃場欄を出す
   if (window.getBulkWorkMemoPolyIds_(draft).length) return true;
   if (Array.isArray(draft.fieldHintTokens) && draft.fieldHintTokens.length) return true;
   if (Array.isArray(draft.fieldCandidates) && draft.fieldCandidates.length) return true;
   if (Array.isArray(draft.fieldTokenResults) && draft.fieldTokenResults.some(r => r && r.status !== 'matched')) return true;
-  const draftCat = String(draft.category || draft.listFilterCategory || '').trim();
-  const wName = String(draft.workName || '').trim();
-  if (typeof window.resolveShowFieldSelect_ === 'function'
-      && !window.resolveShowFieldSelect_({ category: draftCat, workName: wName })) {
-    return false;
-  }
-  if (window.bulkWorkMemoNeedsField_(draft)) return true;
-  return false;
+  return window.bulkWorkMemoNeedsField_(draft);
 };
 
 window.getBulkWorkMemoCategories_ = () => {
@@ -33970,14 +33974,16 @@ window.isBulkWorkMemoCommonCrop_ = (name) => {
   return s === 'すべて' || s === '全て' || s === '全作物' || s === '全対象';
 };
 
-/** 一括入力：作物トグル（共通と個別作物は排他的） */
+/** 一括入力：作物トグル（共通と個別作物は排他的。最後の1件は外さない） */
 window.toggleBulkWorkMemoCropNames_ = (cur, name) => {
   const n = String(name || '').trim();
   if (!n) return Array.isArray(cur) ? cur.slice() : [];
   const curList = (Array.isArray(cur) ? cur : []).map(s => String(s || '').trim()).filter(Boolean);
   const pickCommon = window.isBulkWorkMemoCommonCrop_(n);
   const pickLabel = pickCommon ? '共通' : n;
-  if (curList.indexOf(pickLabel) >= 0 || (!pickCommon && curList.indexOf(n) >= 0)) {
+  const already = curList.indexOf(pickLabel) >= 0 || (!pickCommon && curList.indexOf(n) >= 0);
+  if (already) {
+    if (curList.length <= 1) return curList.slice();
     return curList.filter(c => c !== pickLabel && c !== n);
   }
   if (pickCommon) return ['共通'];
@@ -34262,6 +34268,82 @@ window.loadBulkWorkMemoNearbyFields_ = (uid, opts) => {
   }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
 };
 
+window.bulkWorkMemoTimeToMinutes_ = (hm) => {
+  const m = String(hm || '').trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  return (Number(m[1]) * 60) + Number(m[2]);
+};
+
+/** 今の行より前の時間で、いちばん近い圃場選択 */
+window.getBulkWorkMemoEarlierFieldChoices_ = (draft) => {
+  const drafts = Array.isArray(window._bulkWorkMemoDrafts) ? window._bulkWorkMemoDrafts : [];
+  const uid = String(draft && draft._uid || '');
+  const curIdx = drafts.findIndex(d => d && String(d._uid || '') === uid);
+  const curMin = window.bulkWorkMemoTimeToMinutes_(draft && draft.startTime);
+  const earlier = [];
+  drafts.forEach((d, i) => {
+    if (!d || String(d._uid || '') === uid) return;
+    const mins = window.bulkWorkMemoTimeToMinutes_(d.startTime);
+    const isEarlier = (curMin != null && mins != null)
+      ? (mins < curMin || (mins === curMin && curIdx >= 0 && i < curIdx))
+      : (curIdx >= 0 && i < curIdx);
+    if (!isEarlier) return;
+    const ids = window.getBulkWorkMemoPolyIds_(d);
+    if (!ids.length) return;
+    earlier.push({
+      i: i,
+      mins: mins == null ? -1 : mins,
+      startTime: String(d.startTime || '').trim(),
+      endTime: String(d.endTime || '').trim(),
+      workName: String(d.workName || '').trim(),
+      ids: ids
+    });
+  });
+  if (!earlier.length) return null;
+  earlier.sort((a, b) => {
+    if (a.mins !== b.mins) return b.mins - a.mins;
+    return b.i - a.i;
+  });
+  return earlier[0];
+};
+
+window.buildBulkWorkMemoPrevFieldChoicesHtml_ = (d, uid) => {
+  const prev = window.getBulkWorkMemoEarlierFieldChoices_(d);
+  if (!prev || !prev.ids.length) return '';
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const selected = new Set(window.getBulkWorkMemoPolyIds_(d).map(String));
+  const chips = prev.ids.map(id => {
+    const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
+    const name = (p && p.name) ? p.name : id;
+    const on = selected.has(String(id));
+    const safeId = String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return `<button type="button" onclick="toggleBulkWorkMemoNearbyField_('${esc(uid)}','${safeId}')" style="background:${on ? '#1565C0' : '#fff'}; color:${on ? '#fff' : '#0D47A1'}; border:2px solid ${on ? '#0D47A1' : '#64B5F6'}; border-radius:16px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; text-align:left; line-height:1.35;">${on ? '✓ ' : ''}📍 ${esc(name)}</button>`;
+  }).join('');
+  const allOn = prev.ids.every(id => selected.has(String(id)));
+  const when = [prev.startTime, prev.endTime].filter(Boolean).join('〜');
+  const label = [when ? when : '前の行', prev.workName].filter(Boolean).join(' ');
+  const applyBtn = allOn ? '' : `<button type="button" onclick="applyBulkWorkMemoPrevFields_('${esc(uid)}')" style="background:#1565C0; color:#fff; border:none; border-radius:16px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer;">この圃場を入れる</button>`;
+  return `<div style="margin-bottom:8px; padding:10px 12px; background:#E3F2FD; border:1px solid #90CAF9; border-radius:8px;">
+    <div style="font-size:11px; font-weight:bold; color:#0D47A1; margin-bottom:6px;">前の時間（${esc(label)}）で選んだ圃場</div>
+    <div style="display:flex; flex-wrap:wrap; gap:6px;">${chips}${applyBtn}</div>
+  </div>`;
+};
+
+window.applyBulkWorkMemoPrevFields_ = (uid) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  const prev = window.getBulkWorkMemoEarlierFieldChoices_(row);
+  if (!prev || !prev.ids.length) return;
+  const cur = window.getBulkWorkMemoPolyIds_(row).map(String);
+  const next = cur.slice();
+  prev.ids.forEach(id => {
+    const sid = String(id);
+    if (next.indexOf(sid) < 0) next.push(sid);
+  });
+  window.setBulkWorkMemoPolyIds_(row, next);
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+};
+
 window.buildBulkWorkMemoFieldHtml_ = (d, uid) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const isMaint = typeof window.bulkWorkMemoIsMaintenance_ === 'function' && window.bulkWorkMemoIsMaintenance_(d);
@@ -34276,13 +34358,14 @@ window.buildBulkWorkMemoFieldHtml_ = (d, uid) => {
     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; gap:8px; flex-wrap:wrap;">
       <div style="min-width:120px; flex:1;">
         <label class="form-label" style="margin:0; color:#1B5E20; font-size:15px;">📍 ${esc(fieldTitle)}</label>
-        <div style="font-size:11px; color:#555; margin-top:4px; line-height:1.4;">複数選択可。「マップから選択」で選べます。</div>
+        <div style="font-size:11px; color:#555; margin-top:4px; line-height:1.4;">複数選択可。前の時間の圃場をタップするか、「マップから選択」で選べます。</div>
       </div>
       <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
         <button type="button" onclick="openBulkWorkMemoMapSelect_('${esc(uid)}')" style="background:#2E7D32; color:#fff; border:none; border-radius:20px; padding:8px 14px; font-weight:bold; font-size:13px; cursor:pointer; box-shadow:0 2px 4px rgba(46,125,50,0.28);">🗺️ マップから選択</button>
       </div>
     </div>
     ${hintHtml}
+    ${window.buildBulkWorkMemoPrevFieldChoicesHtml_(d, uid)}
     ${displayHtml}
     ${warnHtml}
   </div>`;
@@ -37857,11 +37940,11 @@ window.renderBulkWorkMemoDetailManageModal_ = () => {
           <button type="button" onclick="adminDeleteDetailWork('${escJs(wName)}', ${idx}, '${escJs(cropKey)}')" title="削除" style="background:#fff; color:#d32f2f; border:1px solid #ffcdd2; border-radius:6px; padding:6px 10px; font-weight:bold; font-size:12px; cursor:pointer;">🗑️ 削除</button>
         </div>`;
       }).join('')}
-        <button type="button" onclick="adminAddDetailWork('${escJs(wName)}', '${escJs(cropKey)}')" title="詳細作業を追加" style="width:32px; height:32px; background:#fff; color:#5E35B1; border:1px dashed #B39DDB; border-radius:8px; font-size:18px; font-weight:bold; cursor:pointer; line-height:1;">＋</button>
+        <button type="button" onclick="adminAddDetailWork('${escJs(wName)}', '${escJs(cropKey)}')" title="詳細作業を追加" style="width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; background:#fff; color:#5E35B1; border:1px dashed #B39DDB; border-radius:8px; font-size:22px; font-weight:normal; font-family:Arial, 'Hiragino Sans', sans-serif; cursor:pointer; line-height:1;">+</button>
       </div>`
     : `<div style="padding:14px; text-align:center; background:#fafafa; border:1px dashed #b39ddb; border-radius:8px; color:#666; font-size:13px; line-height:1.45; margin-bottom:8px;">
         まだ詳細作業がありません。
-        <div style="margin-top:10px;"><button type="button" onclick="adminAddDetailWork('${escJs(wName)}', '${escJs(cropKey)}')" title="詳細作業を追加" style="width:36px; height:36px; background:#fff; color:#5E35B1; border:1px dashed #B39DDB; border-radius:8px; font-size:20px; font-weight:bold; cursor:pointer; line-height:1;">＋</button></div>
+        <div style="margin-top:10px;"><button type="button" onclick="adminAddDetailWork('${escJs(wName)}', '${escJs(cropKey)}')" title="詳細作業を追加" style="width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; background:#fff; color:#5E35B1; border:1px dashed #B39DDB; border-radius:8px; font-size:22px; font-weight:normal; font-family:Arial, 'Hiragino Sans', sans-serif; cursor:pointer; line-height:1;">+</button></div>
       </div>`;
 
   let modal = document.getElementById('bulkDetailWorkManageModal');
@@ -40524,7 +40607,9 @@ window.pickBulkWorkMemoWorkName_ = (uid, name) => {
   if (flags.showPesticide) {
     row.usedPesticides = window.guessBulkWorkMemoPesticides_(row.rawLine) || [];
   }
-  if (typeof window.bulkWorkMemoIsDelivery_ === 'function' && window.bulkWorkMemoIsDelivery_(row)) {
+  if (typeof window.bulkWorkMemoFieldReplacedByAssetMove_ === 'function'
+      ? window.bulkWorkMemoFieldReplacedByAssetMove_(row)
+      : (typeof window.bulkWorkMemoIsDelivery_ === 'function' && window.bulkWorkMemoIsDelivery_(row))) {
     window.setBulkWorkMemoPolyIds_(row, []);
     if (!row.deliveryOrigin) row.deliveryOrigin = null;
     if (!row.deliveryDestination) row.deliveryDestination = null;

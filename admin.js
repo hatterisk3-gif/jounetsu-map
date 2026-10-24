@@ -7567,6 +7567,7 @@ window._signRegQuickPresets_ = {
     parking: { label: '駐車場', icon: '🅿️', name: '駐車場', signFunction: '機能なし' },
     toilet: { label: 'トイレ', icon: '🚻', name: 'トイレ', signFunction: '機能なし' },
     warehouse: { label: '倉庫', icon: '📦', name: '倉庫', signFunction: '倉庫' },
+    fuel: { label: '給油', icon: '⛽', name: '給油', signFunction: '給油' },
     bird: { label: '鳥被害', icon: '🐦', name: '鳥被害', signFunction: '鳥獣害設定-鳥', wildlife: '鳥' },
     deer: { label: 'シカ被害', icon: '🦌', name: 'シカ被害', signFunction: '鳥獣害設定-シカ', wildlife: 'シカ' },
     rat: { label: 'ネズミ被害', icon: '🐭', name: 'ネズミ被害', signFunction: '鳥獣害設定-ネズミ', wildlife: 'ネズミ' },
@@ -7678,6 +7679,11 @@ window.renderSignRegQuickScreen_ = () => {
             style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #BCAAA4; border-radius:10px; background:#EFEBE9; cursor:pointer;">
             <span style="font-size:28px; line-height:1;">📦</span>
             <span><div style="font-weight:bold; color:#5D4037; font-size:15px;">倉庫</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">名前・アイコンを自動セット</div></span>
+          </button>
+          <button type="button" onclick="pickSignRegQuick_('fuel')"
+            style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #F48FB1; border-radius:10px; background:#FCE4EC; cursor:pointer;">
+            <span style="font-size:28px; line-height:1;">⛽</span>
+            <span><div style="font-weight:bold; color:#AD1457; font-size:15px;">給油</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">名前・機能「給油」を自動セット</div></span>
           </button>
           <button type="button" onclick="pickSignRegQuick_('bird')"
             style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #A5D6A7; border-radius:10px; background:#E8F5E9; cursor:pointer;">
