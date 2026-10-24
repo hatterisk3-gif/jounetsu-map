@@ -330,7 +330,7 @@ window.onLocationCityChange = function(sel) {
     const prefix = (sel && sel.id && sel.id.indexOf('edit_') === 0) ? 'edit' : 'add';
     syncLocationCityCustomVisibility(prefix);
 };
-let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlPesticides = [], pdlFertilizers = [], pdlCropChemPlans = [], pdlCostItems = [], pdlCropCostPlans = [], pdlCropWorkPlans = [], pdlNurseryLocations = [], pdlCropCultSettings = [], pdlSignFunctions = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [], pdlHitchTypes = [], pdlContainers = [], pdlContainerNames = [], pdlContentUnits = [];
+let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlPesticides = [], pdlFertilizers = [], pdlCropChemPlans = [], pdlCostItems = [], pdlCropCostPlans = [], pdlCropWorkPlans = [], pdlNurseryLocations = [], pdlCropCultSettings = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [], pdlHitchTypes = [], pdlContainers = [], pdlContainerNames = [], pdlContentUnits = [];
 let mapInitPromise, resolveMapInit;
 mapInitPromise = new Promise((resolve) => { resolveMapInit = resolve; });
 
@@ -696,7 +696,7 @@ window.promptLineUrl = async () => {
         customAlert("通信エラーが発生しました。デプロイが最新か確認してください。");
     }
 };
-const iconFunctionMap = { '🚻': 'トイレ', '🚰': '洗車場', '🚿': '洗車場', '⛲': '給水口', '🕳️': '排水口', '📦': '倉庫', '🏭': 'パックセンター', '🏪': '事務所', '🏠': '事務所', '🏢': '研究所', '🚚': '残渣運搬', '🛻': '残渣運搬', '🚛': '残渣運搬', '🚜': '農機具整備', '🚁': '農機具整備', '🛠️': '車両整備', '⛽': '整備', '⚠️': '事故注意', '🚧': '事故注意', '📢': 'バードソニック', '🚫': '鳥被害', '🐦': '鳥被害', '🅿️': '駐車場', '🚗': '駐車場', '🚙': '駐車場（軽トラ）' };
+const iconFunctionMap = { '📦': '倉庫', '⛽': '給油', '🚜': '車両・機械管理', '🚁': '車両・機械管理', '🛠️': '道具管理', '🧰': '道具管理', '🪚': '道具管理', '🚫': '鳥獣害設定-鳥', '🐦': '鳥獣害設定-鳥', '🦌': '鳥獣害設定-シカ', '🐭': '鳥獣害設定-ネズミ', '🐗': '鳥獣害設定-イノシシ', '🐾': '鳥獣害設定' };
 /** 看板登録・アイコン変更で共通。ジャンル見出し付きで表示する */
 const ADMIN_SIGN_ICON_GROUPS = [
     { label: '案内・注意', tab: '🪧', icons: ['🪧', '⚠️', '🚧', '🚫', '🚩', '📢', '🔒', '📷'] },
@@ -706,7 +706,7 @@ const ADMIN_SIGN_ICON_GROUPS = [
     { label: '道具・整備', tab: '🔧', icons: ['🛠️', '🧰', '🔧', '🔨', '⛏️', '🪓', '🪚', '🔩', '🧲', '⚙️'] },
     { label: '薬品・資材', tab: '🧪', icons: ['🧪', '🧴', '💊', '💉', '🔬', '🛢️', '🪣', '🧹', '🧽'] },
     { label: '作物', tab: '🌱', icons: ['🌱', '🌿', '🪴', '🌾', '🌻', '🍅', '🥕', '🌽', '🍆', '🥬', '🧅', '🧄', '🍓', '🍇', '🍑'] },
-    { label: '生き物', tab: '🐓', icons: ['🐓', '🐔', '🐄', '🐖', '🐝', '🐛', '🐦'] },
+    { label: '生き物', tab: '🐓', icons: ['🐓', '🐔', '🐄', '🐖', '🐦', '🦌', '🐗', '🐭', '🐾', '🐝', '🐛'] },
     { label: '設備', tab: '💡', icons: ['❄️', '🧊', '🌡️', '🔥', '🧯', '💡', '🔌', '⚡', '🌀'] },
     { label: 'その他', tab: '📌', icons: ['🪵', '⛰️', '⚓', '⚖️', '✂️', '🔪'] }
 ];
@@ -724,7 +724,7 @@ function renderAdminSignIconPickerHtml_(opts) {
     }
     const tabs = ADMIN_SIGN_ICON_GROUPS.map((group, i) => {
         const on = i === activeIdx;
-        return `<button type="button" class="sign-icon-tab" data-picker="${pickerId}" data-idx="${i}" onclick="switchAdminSignIconTab_(this)" style="flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:68px;padding:7px 8px 5px;margin:0;border:none;border-bottom:3px solid ${on ? '#00695C' : 'transparent'};background:${on ? '#fff' : 'transparent'};color:${on ? '#00695C' : '#546E7A'};cursor:pointer;line-height:1.15;"><span style="font-size:18px;line-height:1;">${group.tab}</span><span style="font-size:11px;font-weight:bold;white-space:nowrap;">${group.label}</span></button>`;
+        return `<button type="button" class="sign-icon-tab" data-picker="${pickerId}" data-idx="${i}" onclick="switchAdminSignIconTab_(this)" style="flex:1 1 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:72px;padding:7px 8px 5px;margin:0;border:none;border-bottom:3px solid ${on ? '#00695C' : 'transparent'};background:${on ? '#fff' : 'transparent'};color:${on ? '#00695C' : '#546E7A'};cursor:pointer;line-height:1.15;"><span style="font-size:18px;line-height:1;">${group.tab}</span><span style="font-size:11px;font-weight:bold;white-space:nowrap;">${group.label}</span></button>`;
     }).join('');
     const panels = ADMIN_SIGN_ICON_GROUPS.map((group, i) => {
         const cells = group.icons.map((icon) => {
@@ -734,7 +734,7 @@ function renderAdminSignIconPickerHtml_(opts) {
         return `<div class="sign-icon-panel" data-picker="${pickerId}" data-idx="${i}" style="display:${i === activeIdx ? 'grid' : 'none'};grid-template-columns:repeat(6,1fr);font-size:22px;gap:2px;">${cells}</div>`;
     }).join('');
     return `<div>
-        <div style="display:flex;flex-wrap:nowrap;gap:0;overflow-x:auto;position:sticky;top:0;z-index:2;background:#ECEFF1;border-bottom:2px solid #CFD8DC;border-radius:8px 8px 0 0;margin-bottom:8px;-webkit-overflow-scrolling:touch;">${tabs}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:0;position:sticky;top:0;z-index:2;background:#ECEFF1;border-bottom:2px solid #CFD8DC;border-radius:8px 8px 0 0;margin-bottom:8px;">${tabs}</div>
         ${panels}
     </div>`;
 }
@@ -908,8 +908,6 @@ function persistAdminInitCache_() {
                 cropWorkPlans: pdlCropWorkPlans,
                 nurseryLocations: pdlNurseryLocations,
                 cropCultSettings: pdlCropCultSettings,
-                signFunctionsMaster: pdlSignFunctions,
-                signFunctions: pdlSignFunctions,
                 workCategories: pdlWorkCategories,
                 contentUnits: pdlContentUnits,
                 machineTypes: pdlMachineTypes,
@@ -1402,7 +1400,6 @@ function applyMasterServerList_(type, updatedList) {
         pdlContainers = updatedList || [];
         pdlContainerNames = [...new Set((pdlContainers || []).map(c => c.name || c))];
     } else if (type === 'contentUnit') pdlContentUnits = updatedList || [];
-    else if (type === 'sign') pdlSignFunctions = updatedList;
     else if (type === 'location') {
         pdlLocationDetails = updatedList;
         pdlLocations = (updatedList || []).map(l => l.name || l);
@@ -1454,7 +1451,6 @@ function applyOptimisticMasterChange_(type, act, value) {
         pdlContainerNames = [...new Set((v || []).map(c => c.name || c))];
     }, item => (item.name || '') + '|' + (item.crop || ''));
     else if (type === 'contentUnit') wrap(() => pdlContentUnits, v => { pdlContentUnits = v; }, nameOf);
-    else if (type === 'sign') wrap(() => pdlSignFunctions, v => { pdlSignFunctions = v; }, nameOf);
     else if (type === 'location') wrap(() => pdlLocationDetails, v => {
         pdlLocationDetails = v;
         pdlLocations = (v || []).map(l => l.name || l);
@@ -1719,7 +1715,7 @@ function openMasterFromQuery_() {
     const allowed = [
         'menu', 'crop', 'cropCultSetting', 'nurseryLocation', 'cropChemPlan',
         'cropWorkPlan', 'costItem', 'cropCostPlan', 'container', 'contentUnit',
-        'sign', 'location', 'workCategory', 'machineType', 'machineGroup', 'hitchType',
+        'location', 'workCategory', 'machineType', 'machineGroup', 'hitchType',
         'work', 'machine', 'tool', 'material', 'pesticide', 'fertilizer'
     ];
     if (!allowed.includes(masterType)) return;
@@ -2119,7 +2115,6 @@ function renderInitData(data, opts) {
         pdlCropWorkPlans = keepIfLight_(data.pdl.cropWorkPlans, pdlCropWorkPlans);
         pdlNurseryLocations = keepIfLight_(data.pdl.nurseryLocations, pdlNurseryLocations);
         pdlCropCultSettings = keepIfLight_(data.pdl.cropCultSettings, pdlCropCultSettings);
-        pdlSignFunctions = data.pdl.signFunctionsMaster || data.pdl.signFunctions || [];
         pdlWorkCategories = data.pdl.workCategories || ["圃場作業", "事務作業", "保全・整備"];
         pdlContentUnits = data.pdl.contentUnits || ['kg', 'g', '本', 'パック', '個', '束'];
         pdlMachineTypes = data.pdl.machineTypes || ["トラクター", "ドローン"];
@@ -2717,7 +2712,7 @@ window.getAdminSignOptionsHtml = (selectedId, locationFilter) => {
     return html;
 };
 
-/** 定位置看板UI（拠点連動＋未設定時の看板マスタ導線） */
+/** 定位置看板UI（拠点に紐づく看板だけ） */
 window.buildAdminMachineSignFieldHtml_ = (selectId, selectedId, location) => {
     const loc = String(location || '').trim();
     const signs = loc ? window.getAdminMachineSignsForLocation_(loc, selectedId) : [];
@@ -2730,12 +2725,11 @@ window.buildAdminMachineSignFieldHtml_ = (selectId, selectedId, location) => {
     if (loc && matchedCount > 0) {
         hint = `拠点「${esc(loc)}」の看板（車両・機械管理／農機管理）から選べます。`;
     } else if (loc && matchedCount === 0) {
-        hint = `拠点「${esc(loc)}」に紐づく看板がありません。看板マスタで機能を確認し、地図で看板を登録してください。`;
+        hint = `拠点「${esc(loc)}」に紐づく看板がありません。地図で看板を登録し、機能を「車両・機械管理」にしてください。`;
     }
     const showSetup = !!(loc && matchedCount === 0);
     const setupBtns = showSetup
         ? `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
-            <button type="button" onclick="openSignMasterFromMachineForm_()" style="flex:1; min-width:120px; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🪧 看板マスタ</button>
             <button type="button" onclick="startMarkerRegisterForMachineSign_()" style="flex:1; min-width:120px; background:#E3F2FD; color:#1565C0; border:1px solid #1565C0; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer;">📍 地図で看板登録</button>
           </div>`
         : '';
@@ -2763,21 +2757,6 @@ window.refreshAdminMachineSignOptionsFromLocation_ = (mode) => {
         nextId,
         loc
     );
-};
-
-window.openSignMasterFromMachineForm_ = () => {
-    const loc = String(
-        (document.getElementById('edit_mac_location') || {}).value
-        || (document.getElementById('add_mac_location') || {}).value
-        || ''
-    ).trim();
-    window._pendingMarkerPrefill = {
-        location: loc,
-        signFunction: '車両・機械管理'
-    };
-    window._returnToEquipmentAfterSignMaster = !!window._equipmentManageActive;
-    if (typeof window.openMasterModal === 'function') window.openMasterModal();
-    if (typeof window.openMasterDetail === 'function') window.openMasterDetail('sign');
 };
 
 window.startMarkerRegisterForMachineSign_ = () => {
@@ -2832,7 +2811,6 @@ window.getMasterTypeInfo = (type) => {
     // pdl* は script スコープの let（window には載らない）。農機のみ window.pdlMachines を使う。
     const listMap = {
         crop: { title: '🌱 作物マスタ', desc: '作物名・タグ略称・標準栽植密度の設定', list: pdlCrops || [] },
-        sign: { title: '🪧 看板機能マスタ', desc: '看板の機能分類・用途の設定', list: pdlSignFunctions || [] },
         location: { title: '🏢 拠点マスタ', desc: '拠点名・都道府県・産地データの設定', list: (pdlLocationDetails && pdlLocationDetails.length) ? pdlLocationDetails : (pdlLocations || []) },
         workCategory: { title: '📂 作業カテゴリマスタ', desc: '作業のカテゴリ区分設定', list: pdlWorkCategories || [] },
         contentUnit: { title: '📏 コンテナ内容単位マスタ', desc: '収穫記録の内容単位（kg・本など）', list: pdlContentUnits || [] },
@@ -3045,12 +3023,6 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                     </div>
                 </div>
                 <button onclick="execMaster('container', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
-            </div>`;
-        } else if (type === 'sign') {
-            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
-                <label style="font-size:12px; font-weight:bold; color:#555;">看板機能名</label>
-                <input type="text" id="add_sign_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 育苗センター">
-                <button onclick="execMaster('sign', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
         } else if (type === 'location') {
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
@@ -6348,7 +6320,6 @@ window.execMaster = async (type, act, val) => {
             const contentQty = (qtyRaw !== '' && qtyRaw != null) ? Number(qtyRaw) || 0 : '';
             value = { name, crop, contentUnit, contentQty };
         }
-        else if (type === 'sign') { const name = document.getElementById('add_sign_name').value.trim(); if (!name) { customAlert("看板機能名を入力してください"); return; } value = name; }
         else if (type === 'location') {
             const name = document.getElementById('add_location_name').value.trim();
             if (!name) { customAlert("拠点名を入力してください"); return; }
@@ -6745,19 +6716,49 @@ function adminSignFunctionNames_() {
         if (!s || names.indexOf(s) >= 0) return;
         names.push(s);
     };
-    (pdlSignFunctions || []).forEach(push);
-    ['機能なし', '倉庫', '在庫', 'トイレ', '給水口', '排水口', '駐車場', '事故注意', '給油', '車両・機械管理', '道具管理'].forEach(push);
+    ['機能なし', '倉庫', '在庫', '給油', '車両・機械管理', '道具管理', '鳥獣害設定'].forEach(push);
     return names;
 }
 
-function adminSignFunctionSelectHtml_(id, selected) {
+function adminSignFunctionHint_(func) {
+    const f = String(func || '').trim();
+    if (!f || f === '機能なし') return '名前とアイコンだけの看板です。';
+    if (f.indexOf('倉庫') >= 0 || f.indexOf('在庫') >= 0) return '資材の登録と、在庫の入出庫ができます。';
+    if (f.indexOf('給油') >= 0) return '作業者画面に「給油する」が出ます。';
+    if (f.indexOf('車両・機械管理') >= 0 || f.indexOf('農機管理') >= 0) return '車両・農機の状況を開き、機械の定位置に使えます。';
+    if (f.indexOf('道具管理') >= 0) return '作業者画面に「道具状況」が出ます。';
+    if (f.indexOf('鳥獣害設定') === 0) {
+        const species = f.slice('鳥獣害設定'.length).replace(/^[-－ー]/, '').trim();
+        return species ? `生物名「${species}」を機能に残します。` : '生物名を「鳥獣害設定-生物名」として残します。';
+    }
+    return 'この看板に保存されている機能です。';
+}
+
+function adminSignFunctionSelectHtml_(id, selected, onchange) {
     const cur = String(selected || '').trim() || '機能なし';
     const names = adminSignFunctionNames_();
     if (names.indexOf(cur) < 0) names.unshift(cur);
     const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-    return `<select id="${id}" class="form-input" style="width:100%; margin-bottom:8px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">` +
+    const oc = onchange ? ` onchange="${onchange}"` : '';
+    return `<select id="${esc(id)}" class="form-input" style="width:100%; margin-bottom:4px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;"${oc}>` +
         names.map((n) => `<option value="${esc(n)}" ${n === cur ? 'selected' : ''}>${esc(n)}</option>`).join('') +
         `</select>`;
+}
+
+function adminSignFunctionFieldHtml_(id, selected) {
+    const cur = String(selected || '').trim() || '機能なし';
+    const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    return `<div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">看板機能</div>` +
+        adminSignFunctionSelectHtml_(id, cur, 'updateAdminSignFunctionHint_(this)') +
+        `<div id="${esc(id)}Hint" style="font-size:11px; color:#666; text-align:left; line-height:1.4; margin:0 0 10px;">${esc(adminSignFunctionHint_(cur))}</div>`;
+}
+
+function updateAdminSignFunctionHint_(selectEl) {
+    if (!selectEl) return;
+    const hint = document.getElementById(String(selectEl.id || '') + 'Hint');
+    if (hint) hint.textContent = adminSignFunctionHint_(selectEl.value);
+    const linkBtn = document.getElementById('btnLinkSignEdit');
+    if (linkBtn) linkBtn.style.display = String(selectEl.value || '').indexOf('給油') >= 0 ? 'block' : 'none';
 }
 
 function signKeepsMaterials_(p) {
@@ -6775,12 +6776,14 @@ function openAttr(id) {
         if (!window.isReturningFromLinkSelect) { window.tempLinkedSigns = p.linkedSigns ? p.linkedSigns.split(',').filter(String) : []; }
         window.isReturningFromLinkSelect = false;
         infoWindow.setContent(`
-             <div style="text-align:center; width:220px; box-sizing:border-box; padding:10px; font-family:sans-serif;">
+             <div style="text-align:center; width:260px; box-sizing:border-box; padding:10px; font-family:sans-serif;">
                <div style="font-size:14px; margin-bottom:10px;">看板情報変更</div>
+               <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">看板名</div>
                <input type="text" id="rnIn" value="${p.name}" class="form-input" style="width:100%; margin-bottom:10px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">
-               <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">看板機能</div>
-               ${adminSignFunctionSelectHtml_('rnFunc', p.signFunction)}
-               <select id="rnLoc" class="form-input" style="width:100%; margin-bottom:10px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">${locOptions}</select>
+               ${adminSignFunctionFieldHtml_('rnFunc', p.signFunction)}
+               <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">拠点</div>
+               <select id="rnLoc" class="form-input" style="width:100%; margin-bottom:4px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">${locOptions}</select>
+               <div style="font-size:11px; color:#666; text-align:left; line-height:1.4; margin:0 0 10px;">この看板の所属拠点です。</div>
                <button onclick="execAttr('${id}')" style="width:100%; padding:10px; border-radius:4px; border:none; background:#d32f2f; color:white; font-weight:bold; cursor:pointer;">保存</button>
              </div>
            `);
@@ -6821,13 +6824,23 @@ window.onFuncChangeEdit = () => { const val = document.getElementById('rnFunc').
 
 function openCol(id) {
     const p = loadedPolygons[id]; let h;
+    const wide = 'min(780px, calc(100vw - 64px))';
     if (p.isMarker) {
-        h = `<div style="max-height:300px;overflow-y:auto;width:250px;padding-right:2px;">${renderAdminSignIconPickerHtml_({ onPick: 'applyCol', arg0: id, activeIcon: p.color })}</div>`;
+        h = `<div style="max-height:360px;overflow-y:auto;width:${wide};box-sizing:border-box;">${renderAdminSignIconPickerHtml_({ onPick: 'applyCol', arg0: id, activeIcon: p.color })}</div>`;
+        infoWindow.setOptions({ maxWidth: 860 });
     } else {
         const cl = ['#FF0000', '#FF6600', '#FFFF00', '#00FF00', '#556B2F', '#00CCFF', '#0033FF', '#9900FF', '#d32f2f'];
         h = `<div style="display:flex;flex-wrap:wrap;gap:5px;justify-content:center;">${cl.map(c => `<button style="background:${c};width:35px;height:35px;border-radius:4px;border:1px solid #ccc;" onclick="applyCol('${id}','${c}')"></button>`).join('')}</div>`;
+        infoWindow.setOptions({ maxWidth: 320 });
     }
-    infoWindow.setContent(`<div style="text-align:center;width:240px;color:#000;"><b>${p.isMarker ? 'アイコン' : '色'}変更</b><br><br>${h}</div>`);
+    const boxW = p.isMarker ? wide : '240px';
+    infoWindow.setContent(`<div style="text-align:center;width:${boxW};box-sizing:border-box;color:#000;"><b>${p.isMarker ? 'アイコン' : '色'}変更</b><br><br>${h}</div>`);
+    const pos = p.marker && p.marker.getPosition ? p.marker.getPosition() : null;
+    if (pos) {
+        infoWindow.close();
+        infoWindow.setPosition(pos);
+        infoWindow.open(map);
+    }
 }
 
 function applyCol(id, v) {
@@ -7549,12 +7562,17 @@ window.cancelMarkerForm_ = () => {
 
 window._signRegQuickPresets_ = {
     water: { label: '給水地点', icon: '💧', name: '給水地点', signFunction: '機能なし' },
-    inlet: { label: '給水口', icon: '⛲', name: '給水口', signFunction: '給水口' },
-    drain: { label: '排水口', icon: '🕳️', name: '排水口', signFunction: '排水口' },
-    parking: { label: '駐車場', icon: '🅿️', name: '駐車場', signFunction: '駐車場' },
-    toilet: { label: 'トイレ', icon: '🚻', name: 'トイレ', signFunction: 'トイレ' },
+    inlet: { label: '給水口', icon: '⛲', name: '給水口', signFunction: '機能なし' },
+    drain: { label: '排水口', icon: '🕳️', name: '排水口', signFunction: '機能なし' },
+    parking: { label: '駐車場', icon: '🅿️', name: '駐車場', signFunction: '機能なし' },
+    toilet: { label: 'トイレ', icon: '🚻', name: 'トイレ', signFunction: '機能なし' },
     warehouse: { label: '倉庫', icon: '📦', name: '倉庫', signFunction: '倉庫' },
-    caution: { label: '注意', icon: '⚠️', name: '注意', signFunction: '事故注意' }
+    bird: { label: '鳥被害', icon: '🐦', name: '鳥被害', signFunction: '鳥獣害設定-鳥', wildlife: '鳥' },
+    deer: { label: 'シカ被害', icon: '🦌', name: 'シカ被害', signFunction: '鳥獣害設定-シカ', wildlife: 'シカ' },
+    rat: { label: 'ネズミ被害', icon: '🐭', name: 'ネズミ被害', signFunction: '鳥獣害設定-ネズミ', wildlife: 'ネズミ' },
+    boar: { label: 'イノシシ被害', icon: '🐗', name: 'イノシシ被害', signFunction: '鳥獣害設定-イノシシ', wildlife: 'イノシシ' },
+    wildlife: { label: 'その他の鳥獣害', icon: '🐾', name: '鳥獣害', signFunction: '鳥獣害設定', wildlife: '' },
+    caution: { label: '注意', icon: '⚠️', name: '注意', signFunction: '機能なし' }
 };
 
 function openMarkerForm(markerObj) {
@@ -7563,14 +7581,19 @@ function openMarkerForm(markerObj) {
         if (sel) sel.value = i;
         const mapped = iconFunctionMap[i];
         const funcEl = document.getElementById('mFunc');
-        if (mapped && funcEl) {
-            if (!Array.from(funcEl.options || []).some((opt) => opt.value === mapped)) {
-                const opt = document.createElement('option');
-                opt.value = mapped;
-                opt.textContent = mapped;
-                funcEl.appendChild(opt);
+        const mappedOk = mapped && (String(mapped).indexOf('鳥獣害設定') === 0 || adminSignFunctionNames_().indexOf(mapped) >= 0);
+        if (mappedOk && funcEl) {
+            const cur = String(funcEl.value || '');
+            const keepSpecies = cur.indexOf('鳥獣害設定-') === 0 && String(mapped).indexOf('鳥獣害設定') === 0 && cur !== mapped;
+            if (!keepSpecies) {
+                if (!Array.from(funcEl.options || []).some((opt) => opt.value === mapped)) {
+                    const opt = document.createElement('option');
+                    opt.value = mapped;
+                    opt.textContent = mapped;
+                    funcEl.appendChild(opt);
+                }
+                funcEl.value = mapped;
             }
-            funcEl.value = mapped;
         }
         document.querySelectorAll('.ib').forEach(el => el.style.background = 'none');
         const chip = document.getElementById('i_' + i);
@@ -7656,11 +7679,42 @@ window.renderSignRegQuickScreen_ = () => {
             <span style="font-size:28px; line-height:1;">📦</span>
             <span><div style="font-weight:bold; color:#5D4037; font-size:15px;">倉庫</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">名前・アイコンを自動セット</div></span>
           </button>
+          <button type="button" onclick="pickSignRegQuick_('bird')"
+            style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #A5D6A7; border-radius:10px; background:#E8F5E9; cursor:pointer;">
+            <span style="font-size:28px; line-height:1;">🐦</span>
+            <span><div style="font-weight:bold; color:#2E7D32; font-size:15px;">鳥被害</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">生物名を看板機能に入れます</div></span>
+          </button>
+          <button type="button" onclick="pickSignRegQuick_('deer')"
+            style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #C5E1A5; border-radius:10px; background:#F1F8E9; cursor:pointer;">
+            <span style="font-size:28px; line-height:1;">🦌</span>
+            <span><div style="font-weight:bold; color:#33691E; font-size:15px;">シカ被害</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">生物名を看板機能に入れます</div></span>
+          </button>
+          <button type="button" onclick="pickSignRegQuick_('rat')"
+            style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #BCAAA4; border-radius:10px; background:#EFEBE9; cursor:pointer;">
+            <span style="font-size:28px; line-height:1;">🐭</span>
+            <span><div style="font-weight:bold; color:#4E342E; font-size:15px;">ネズミ被害</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">生物名を看板機能に入れます</div></span>
+          </button>
+          <button type="button" onclick="pickSignRegQuick_('boar')"
+            style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #FFCC80; border-radius:10px; background:#FFF3E0; cursor:pointer;">
+            <span style="font-size:28px; line-height:1;">🐗</span>
+            <span><div style="font-weight:bold; color:#E65100; font-size:15px;">イノシシ被害</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">生物名を看板機能に入れます</div></span>
+          </button>
+          <button type="button" onclick="pickSignRegQuick_('wildlife')"
+            style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #B0BEC5; border-radius:10px; background:#ECEFF1; cursor:pointer;">
+            <span style="font-size:28px; line-height:1;">🐾</span>
+            <span><div style="font-weight:bold; color:#37474F; font-size:15px;">その他の鳥獣害</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">サルなど、生物名を入力</div></span>
+          </button>
           <button type="button" onclick="pickSignRegQuick_('caution')"
             style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #FFCC80; border-radius:10px; background:#FFF8E1; cursor:pointer;">
             <span style="font-size:28px; line-height:1;">⚠️</span>
             <span><div style="font-weight:bold; color:#E65100; font-size:15px;">注意</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">内容は任意で追記できます</div></span>
           </button>
+        </div>
+        <div id="signRegWildlifeBox" style="display:none; margin-bottom:12px; padding:10px; background:#E8F5E9; border:1px solid #81C784; border-radius:8px; text-align:left;">
+          <label style="font-size:12px; font-weight:bold; color:#2E7D32; display:block; margin-bottom:4px;">生物名（看板機能：鳥獣害設定-生物名）</label>
+          <input type="text" id="signRegWildlifeName" class="form-input" placeholder="例：鳥、シカ、カラス" style="margin-bottom:8px;">
+          <button type="button" onclick="confirmSignRegWildlifeQuick_()"
+            style="width:100%; background:#2E7D32; color:#fff; border:none; border-radius:6px; padding:11px; font-weight:bold; cursor:pointer;">この生物名で次へ</button>
         </div>
         <div id="signRegCautionBox" style="display:none; margin-bottom:12px; padding:10px; background:#FFF3E0; border:1px solid #FFB74D; border-radius:8px; text-align:left;">
           <label style="font-size:12px; font-weight:bold; color:#E65100; display:block; margin-bottom:4px;">注意の内容（任意）</label>
@@ -7686,11 +7740,29 @@ window.pickSignRegQuick_ = (key) => {
     const preset = presets[key];
     if (!preset) return;
     if (key === 'caution') {
+        const wild = document.getElementById('signRegWildlifeBox');
+        if (wild) wild.style.display = 'none';
         const box = document.getElementById('signRegCautionBox');
         if (box) {
             box.style.display = 'block';
             const note = document.getElementById('signRegCautionNote');
             if (note) note.focus();
+        }
+        return;
+    }
+    if (Object.prototype.hasOwnProperty.call(preset, 'wildlife')) {
+        const caution = document.getElementById('signRegCautionBox');
+        if (caution) caution.style.display = 'none';
+        window._signRegWildlifeKey = key;
+        const box = document.getElementById('signRegWildlifeBox');
+        if (box) {
+            box.style.display = 'block';
+            const input = document.getElementById('signRegWildlifeName');
+            if (input) {
+                input.value = preset.wildlife || '';
+                input.focus();
+                input.select();
+            }
         }
         return;
     }
@@ -7702,8 +7774,28 @@ window.pickSignRegQuick_ = (key) => {
     });
 };
 
+window.confirmSignRegWildlifeQuick_ = () => {
+    const key = window._signRegWildlifeKey || 'wildlife';
+    const preset = (window._signRegQuickPresets_ || {})[key] || { name: '鳥獣害', icon: '🐾', wildlife: '' };
+    const input = document.getElementById('signRegWildlifeName');
+    const animal = input ? String(input.value || '').trim() : '';
+    const species = animal || String(preset.wildlife || '').trim();
+    if (!species) {
+        customAlert('生物名を入力してください');
+        return;
+    }
+    const same = species === String(preset.wildlife || '').trim();
+    const name = same && preset.name ? preset.name : (species + '被害');
+    window.renderSignRegDetailScreen_({
+        name: name,
+        icon: preset.icon,
+        signFunction: '鳥獣害設定-' + species,
+        fromQuick: key
+    });
+};
+
 window.confirmSignRegCautionQuick_ = () => {
-    const preset = (window._signRegQuickPresets_ || {}).caution || { name: '注意', icon: '⚠️', signFunction: '事故注意' };
+    const preset = (window._signRegQuickPresets_ || {}).caution || { name: '注意', icon: '⚠️', signFunction: '機能なし' };
     const noteEl = document.getElementById('signRegCautionNote');
     const note = noteEl ? String(noteEl.value || '').trim() : '';
     const name = note ? (`注意：${note}`) : preset.name;
@@ -7740,10 +7832,12 @@ window.renderSignRegDetailScreen_ = (opts) => {
               ${!st.skipQuick ? `<button type="button" onclick="renderSignRegQuickScreen_()" style="width:100%; background:#f5f5f5; color:#555; border:1px solid #ddd; border-radius:6px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:10px;">← クイックセットに戻る</button>` : ''}
               ${st.posLabel ? `<div style="font-size:11px; color:#888; margin-bottom:8px;">📍 ${esc(st.posLabel)}</div>` : ''}
               ${fromQuick ? `<div style="font-size:12px; color:#2E7D32; background:#E8F5E9; border-radius:6px; padding:8px; margin-bottom:10px; line-height:1.4;">✅ 「${esc(presetName)}」 ${presetIcon} をセットしました。必要なら修正して登録してください。</div>` : ''}
+              <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">看板名</div>
               <input type="text" id="mName" class="form-input" placeholder="看板名" value="${esc(presetName)}" style="margin-bottom:8px;">
-              <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">看板機能</div>
-              ${adminSignFunctionSelectHtml_('mFunc', presetFunc || '機能なし')}
-              <select id="mLoc" class="form-input" style="margin-bottom:8px;">${locOpts}</select>
+              ${adminSignFunctionFieldHtml_('mFunc', presetFunc || '機能なし')}
+              <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">拠点</div>
+              <select id="mLoc" class="form-input" style="margin-bottom:4px;">${locOpts}</select>
+              <div style="font-size:11px; color:#666; text-align:left; line-height:1.4; margin:0 0 8px;">この看板の所属拠点です。</div>
               <div style="max-height:280px;overflow-y:auto;padding:0 6px 6px;border:1px solid #ddd;border-radius:8px;background:#fafafa;">
                 ${renderAdminSignIconPickerHtml_({ onPick: 'selectMI', activeIcon: presetIcon })}
               </div>

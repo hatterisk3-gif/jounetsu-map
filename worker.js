@@ -1,7 +1,7 @@
 
       let currentUser = localStorage.getItem('passionMapUserName') || "", activePolyId = null, currentEditRecordId = null, currentRecordType = "growth", currentFilterType = "growth", existingUrlsInEdit = [];
       let pdlSignLinks = {},pdlLocations = [], pdlCrops = [], pdlStages = [], pdlWorkStatuses = [], pdlContainerNames = [], pdlContainers = [], pdlContentUnits = [], activeLots = [];
-      let pdlTools = [], pdlMaterials = [], pdlMachines = [], pdlPesticides = [], pdlWorkMaster = [], pdlSignFunctions = [], pdlPastReports = {}, pdlSymptoms = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [];
+      let pdlTools = [], pdlMaterials = [], pdlMachines = [], pdlPesticides = [], pdlWorkMaster = [], pdlPastReports = {}, pdlSymptoms = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [];
       let pdlDeliveryDestinations = [];
       let pdlNurseryLocations = [], pdlCropCultSettings = [];
       let pdlFertilizers = [];
@@ -1217,7 +1217,6 @@ window.plotClockInMarker = (state, doCenter) => {
           pdlDeliveryDestinations = data.pdl.deliveryDestinations || [];
           window.pdlDeliveryDestinations = pdlDeliveryDestinations;
           window.pdlMaintenanceContents = data.pdl.maintenanceContents || [];
-          pdlSignFunctions = data.pdl.signFunctionsMaster || [];
           pdlWorkCategories = data.pdl.workCategories || [];
           pdlMachineTypes = data.pdl.machineTypes || ["トラクター", "ドローン"];
           pdlMachineGroups = data.pdl.machineGroups || ["圃場", "出荷"];
@@ -1256,7 +1255,7 @@ window.plotClockInMarker = (state, doCenter) => {
                   if (renderGen !== _workerRenderInitGen) return;
                   const f = seenIds[fid];
                   try {
-                      const linkedSigns = window.pdlSignLinks[f.id] || ""; // ★看板マスタにセット
+                      const linkedSigns = window.pdlSignLinks[f.id] || "";
                       // ★修正：f.location や f.signFunction など、元の変数名に完全一致させました！
                       createPolygonObject(f.id, f.name, f.coords, f.color, f.photos, f.author, f.location, f.condition, f.area, f.status, f.signFunction, linkedSigns);
                       if (loadedPolygons[f.id] && !loadedPolygons[f.id].isMarker) {

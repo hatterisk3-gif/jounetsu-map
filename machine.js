@@ -618,7 +618,7 @@ function refreshMachineRegSignOptions(keepSelectedId) {
     if (setup) {
         if (loc && !matched.length) {
             setup.style.display = 'flex';
-            setup.innerHTML = `<button type="button" onclick="openAdminSignSetupFromMachine_()" style="flex:1; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🪧 看板マスタ（管理者画面）</button>`;
+            setup.innerHTML = `<button type="button" onclick="openAdminSignSetupFromMachine_()" style="flex:1; background:#E3F2FD; color:#1565C0; border:1px solid #1565C0; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:bold; cursor:pointer;">📍 管理者画面で看板登録</button>`;
         } else {
             setup.style.display = 'none';
             setup.innerHTML = '';

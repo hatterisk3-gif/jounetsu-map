@@ -1082,7 +1082,7 @@ function getInitData(opts) {
     conditions: getCol(['圃場設定マスタ', '圃場条件'], 1),
     statuses: getCol(['圃場設定マスタ', '稼働状況'], 2),
     stages: getCol(['生育記録マスタ', '栽培ステージ選択'], 2),
-    signFunctionsMaster: getCol(['看板マスタ', '看板機能マスタ', '看板機能'], 0), // ★ここを追加！看板マスタのA列を取得します
+    signFunctionsMaster: [],
     machineGroups: (function () {
       try { return getMachineGroupMasterList_(); } catch (e) { return ['圃場', '出荷']; }
     })(),
@@ -1739,9 +1739,12 @@ function renameHitchTypeInMachines_(oldName, newName) {
 }
 
 /// =========================================
-// マスタ管理（★看板マスタの処理を追加）
+// マスタ管理
 // =========================================
 function manageMasterData(masterType, manageAction, value, userName) {
+  if (masterType === 'sign') {
+    throw new Error('看板機能マスタは廃止しました。看板機能は画面の固定候補から選んでください');
+  }
   if (masterType === 'costItem') {
     return manageCostMaster_(manageAction, value, userName);
   }
@@ -1762,7 +1765,6 @@ function manageMasterData(masterType, manageAction, value, userName) {
   else if (masterType === 'tool') sheetName = '道具マスタ';
   else if (masterType === 'material') sheetName = '資材マスタ';
   else if (masterType === 'work') sheetName = '作業マスタ';
-  else if (masterType === 'sign') sheetName = '看板マスタ';
   else if (masterType === 'location') sheetName = '拠点マスタ';
   else if (masterType === 'workCategory') sheetName = '作業カテゴリマスタ';
   else if (masterType === 'department' || masterType === 'dept') sheetName = '部署マスタ';
@@ -2487,7 +2489,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'cropCultSetting') {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
-      } else if (masterType === 'location' || masterType === 'sign' || masterType === 'workCategory' || masterType === 'contentUnit' || masterType === 'machineType' || masterType === 'machineGroup' || masterType === 'hitchType') {
+      } else if (masterType === 'location' || masterType === 'workCategory' || masterType === 'contentUnit' || masterType === 'machineType' || masterType === 'machineGroup' || masterType === 'hitchType') {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'crop') {
           if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
