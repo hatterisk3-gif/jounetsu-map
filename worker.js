@@ -39484,7 +39484,7 @@ window.buildBulkWorkMemoWorkPickSectionHtml_ = (d, uid) => {
       : `<div style="font-size:11px; color:#546E7A; margin:0 0 8px;">カテゴリ　<b style="color:#37474F;">${esc(selectedCat)}</b></div>`)
     : '';
   const closeBtn = cur
-    ? `<button type="button" onclick="collapseBulkWorkMemoWorkPick_('${esc(uid)}')" style="width:100%; box-sizing:border-box; margin:8px 0 0; padding:12px; border-radius:10px; font-size:14px; font-weight:bold; cursor:pointer; border:none; background:${isMeta ? '#8E24AA' : '#E65100'}; color:#fff;">この作業名で確定</button>`
+    ? `<div style="display:flex; justify-content:flex-end; margin-top:8px;"><button type="button" onclick="collapseBulkWorkMemoWorkPick_('${esc(uid)}')" style="box-sizing:border-box; padding:10px 12px; border-radius:10px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid ${isMeta ? '#CE93D8' : '#FFCC80'}; background:#fff; color:${isMeta ? '#6A1B9A' : '#E65100'};">閉じる</button></div>`
     : '';
   const metaAddBtn = (isMeta && cur && typeof window.buildBulkWorkMemoPrepAddItemBtnHtml_ === 'function')
     ? window.buildBulkWorkMemoPrepAddItemBtnHtml_(d, uid)
@@ -40924,7 +40924,7 @@ window.pickBulkWorkMemoWorkName_ = (uid, name) => {
   }
   row.workName = workName;
   row.workMatched = window.isBulkWorkMemoWorkInMaster_(workName);
-  // チップ選択ではピッカー／一覧を閉じない（「この作業名で確定」で閉じる）
+  // チップ選択ではピッカーは開いたまま（「閉じる」で折りたたむ）。作業名を選ぶと予測チップは隠れる
   row._workPickOpen = true;
   row.isRest = workName.includes('休憩');
   if (row.isRest) {
