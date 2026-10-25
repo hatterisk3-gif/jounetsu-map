@@ -15,7 +15,7 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1786243000000"></script>
-  <link rel="stylesheet" href="schedule.css?v=1788600000058">
+  <link rel="stylesheet" href="schedule.css?v=1788600000059">
   <link rel="stylesheet" href="dump-embed/dump-tree-gantt.css?v=1788600000055">
 </head>
 
@@ -38,24 +38,7 @@
   </div>
 
   <div class="control-panel">
-    <div class="control-panel-buttons" style="display:flex; align-items:center;">
-      <div class="legend">
-        <div class="leg-item">
-          <div class="leg-color" style="background:#4CAF50;"></div>平和
-        </div>
-        <div class="leg-item">
-          <div class="leg-color" style="background:#FFEB3B;"></div>予定有
-        </div>
-        <div class="leg-item">
-          <div class="leg-color" style="background:#F44336;"></div>問題/遅延
-        </div>
-        <div class="leg-item">
-          <div class="leg-color" style="background:#FF9800;"></div>収穫中
-        </div>
-        <div class="leg-item">
-          <div class="leg-color" style="background:#777777;"></div>対象外
-        </div>
-      </div>
+      <div class="control-panel-buttons" style="display:flex; align-items:center;">
       <button id="btnTyphoon" onclick="openTyphoonModal()"
         style="display:none; margin-right:10px; background:#ffebee; color:#d32f2f; border:2px solid #d32f2f; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; align-items:center; cursor:pointer;">🌀
         台風</button>
@@ -101,6 +84,23 @@
   </div>
 
   <div id="map"></div>
+  <div class="legend">
+    <div class="leg-item">
+      <div class="leg-color" style="background:#4CAF50;"></div>平和
+    </div>
+    <div class="leg-item">
+      <div class="leg-color" style="background:#FFEB3B;"></div>予定有
+    </div>
+    <div class="leg-item">
+      <div class="leg-color" style="background:#F44336;"></div>問題/遅延
+    </div>
+    <div class="leg-item">
+      <div class="leg-color" style="background:#FF9800;"></div>収穫中
+    </div>
+    <div class="leg-item">
+      <div class="leg-color" style="background:#777777;"></div>対象外
+    </div>
+  </div>
 
   <div id="scheduleModal">
     <div class="modal-content">

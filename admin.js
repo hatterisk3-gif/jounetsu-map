@@ -7388,6 +7388,8 @@ function initMap() {
                 return;
             }
             if (document.getElementById('drawStep2') && document.getElementById('drawStep2').style.display === 'block') return;
+            // 筆ポリ選択中は、地図の余白を触っても頂点を打たない
+            if (!window._adminDrawManualMode) return;
 
             customDrawingPath.push(e.latLng);
             let dotMarker = new google.maps.Marker({
@@ -9373,11 +9375,50 @@ window.saveM = async () => {
     }
 };
 
+// 隣の筆程度のすき間までは合体可。それ以上離れた塊が残るときは合体しない
+function fudeSelectionIsDisconnected_(paths) {
+    if (!paths || paths.length < 2 || typeof turf === 'undefined') return false;
+    const polys = [];
+    paths.forEach(path => {
+        if (!path || path.length < 3) return;
+        const coords = path.map(p => [p.lng(), p.lat()]);
+        const first = coords[0];
+        const last = coords[coords.length - 1];
+        if (first[0] !== last[0] || first[1] !== last[1]) coords.push([first[0], first[1]]);
+        try { polys.push(turf.polygon([coords])); } catch (e) {}
+    });
+    if (polys.length < 2) return false;
+    let buffered = polys;
+    try {
+        buffered = polys.map(p => turf.buffer(p, 0.005, { units: 'kilometers' }));
+    } catch (e) {}
+    let unionPoly = buffered[0];
+    for (let i = 1; i < buffered.length; i++) {
+        try {
+            const next = turf.union(unionPoly, buffered[i]);
+            if (!next) return true;
+            unionPoly = next;
+        } catch (e) {
+            return true;
+        }
+    }
+    if (!unionPoly || !unionPoly.geometry) return true;
+    if (unionPoly.geometry.type !== 'MultiPolygon') return false;
+    const parts = (unionPoly.geometry.coordinates || []).filter(polyCoords => {
+        try { return turf.area(turf.polygon([polyCoords[0]])) > 1; } catch (e) { return true; }
+    });
+    return parts.length > 1;
+}
+
 // 選択中の筆ポリゴンパスを合体して LatLng 配列を返す
 function mergeFudePathsToLatLngs(paths) {
     if (!paths || paths.length === 0) return null;
     if (paths.length === 1) {
         return paths[0].map(p => new google.maps.LatLng(p.lat(), p.lng()));
+    }
+    if (fudeSelectionIsDisconnected_(paths)) {
+        customAlert('離れた位置の圃場は合体できません。近い筆だけを選ぶか、マルチモードで1件ずつ登録してください。');
+        return null;
     }
     if (typeof turf === 'undefined') {
         customAlert("図形結合ライブラリ(turf)が読み込まれていません。");

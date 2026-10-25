@@ -4047,7 +4047,6 @@ function createSignboardMarker(name, pos, icon, id) {
         const selectedSet = new Set((selectedPolyIds || []).map(String));
         for(let id in loadedPolygons) {
           const p = loadedPolygons[id];
-          const p = loadedPolygons[id];
           if (p.isMarker && p.marker) {
             if (isMapSelecting && !window.selectingSignForRefuel) {
               const on = selectedSet.has(String(id));
