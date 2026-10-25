@@ -25,7 +25,7 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="worker.css?v=1788600000015">
+  <link rel="stylesheet" href="worker.css?v=1788600000016">
   <style>
     @keyframes workerBootSpin { to { transform: rotate(360deg); } }
     @keyframes workerBootSlide { from { transform: translateX(-120%); } to { transform: translateX(320%); } }
@@ -88,20 +88,6 @@
         <button class="login-btn" id="signupBtn" onclick="submitWorkerSignup()" style="background:#2e7d32;">登録する</button>
       </div>
     </div>
-  </div>
-
-  <div id="workerTopBar" class="worker-top-bar">
-    <button id="btnWeather" class="map-action-btn" onclick="openWeatherModal()" title="天気" style="color: #ff9800;">
-      ☁️</button>
-    <button id="btnTyphoon" class="map-action-btn map-action-btn--typhoon" onclick="openTyphoonModal()" title="台風" style="display: none;">
-      🌀
-    </button>
-    <button type="button" id="btnActivityNotice" class="map-action-btn" onclick="openWorkerActivityNoticeModal_()" title="お知らせ" style="position:relative; color:#5E35B1; background:#EDE7F6; border:2px solid #5E35B1; font-size:22px;">
-      🔔<span id="activityNoticeBadge" style="display:none; position:absolute; top:-4px; right:-4px; background:#d32f2f; color:#fff; font-size:10px; min-width:16px; height:16px; line-height:16px; border-radius:8px; padding:0 4px; font-weight:bold; box-sizing:border-box;">0</span>
-    </button>
-    <button type="button" id="btnScheduleList" class="map-action-btn" onclick="openScheduleList()" title="予定" style="color:#F57F17; background:#FFF9C4; border:2px solid #F57F17; font-size:22px;">
-      📅
-    </button>
   </div>
 
   <div id="mapActionBar" class="map-action-bar">
@@ -429,6 +415,20 @@
         </div>
       </div>
     </div>
+    <div id="workerTopBar" class="worker-top-bar">
+      <button id="btnWeather" class="map-action-btn" onclick="openWeatherModal()" title="天気" style="color:#E65100; background:#FFF3E0; border:2px solid #FF9800;">
+        <span class="worker-top-chip-emoji">☁️</span><span class="worker-top-chip-label">天気</span>
+      </button>
+      <button id="btnTyphoon" class="map-action-btn map-action-btn--typhoon" onclick="openTyphoonModal()" title="台風" style="display:none;">
+        <span class="worker-top-chip-emoji">🌀</span><span class="worker-top-chip-label">台風</span>
+      </button>
+      <button type="button" id="btnActivityNotice" class="map-action-btn" onclick="openWorkerActivityNoticeModal_()" title="お知らせ" style="position:relative; color:#5E35B1; background:#EDE7F6; border:2px solid #7E57C2;">
+        <span class="worker-top-chip-emoji">🔔</span><span class="worker-top-chip-label">お知らせ</span><span id="activityNoticeBadge" style="display:none; position:absolute; top:-6px; right:-4px; background:#d32f2f; color:#fff; font-size:10px; min-width:16px; height:16px; line-height:16px; border-radius:8px; padding:0 4px; font-weight:bold; box-sizing:border-box;">0</span>
+      </button>
+      <button type="button" id="btnScheduleList" class="map-action-btn" onclick="openScheduleList()" title="予定" style="color:#E65100; background:#FFF8E1; border:2px solid #FFB300;">
+        <span class="worker-top-chip-emoji">📅</span><span class="worker-top-chip-label">予定</span>
+      </button>
+    </div>
   </div>
 
   <div id="map"></div>
@@ -513,7 +513,7 @@
   <script src="machine-taxonomy.js?v=1788600000012"></script>
   <script src="weather-agri.js?v=1788600000102"></script>
   <script src="api-client.js?v=1788600000111"></script>
-  <script src="worker.js?v=1788600000198"></script>
+  <script src="worker.js?v=1788600000199"></script>
   <script src="tracking.js?v=1788600000051"></script>
   <script>
     if ('serviceWorker' in navigator) {

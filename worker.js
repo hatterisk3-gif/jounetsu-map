@@ -1762,7 +1762,7 @@ async function fetchWeatherAndUpdateUI() {
     let tomorrowEmoji = getWeatherEmoji(tomorrowCode);
     let btnWeather = document.getElementById('btnWeather');
     if (btnWeather) {
-      btnWeather.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; line-height:1.2; margin-top:2px;"><span style="font-size:18px;">${emoji}</span><span style="font-size:10px; color:#555;">明${tomorrowEmoji}</span></div>`;
+      btnWeather.innerHTML = `<span class="worker-top-chip-emoji">${emoji}</span><span class="worker-top-chip-label">明${tomorrowEmoji}</span>`;
     }
 
     // --- 気温・日照比較ステート保持 ---

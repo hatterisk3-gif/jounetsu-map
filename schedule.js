@@ -8739,11 +8739,15 @@ window.toggleDumpFabMenu_ = function () {
 };
 
 window.ensureDumpPanels_ = function () {
+  if (document.getElementById('tree-mode') && document.getElementById('gantt-mode')) {
+    window._dumpPanelsReady = true;
+    return Promise.resolve();
+  }
   if (window._dumpPanelsReady) return Promise.resolve();
   if (window._dumpPanelsLoading) return window._dumpPanelsLoading;
   const mount = document.getElementById('dumpAppMount');
   if (!mount) return Promise.reject(new Error('dumpAppMount missing'));
-  window._dumpPanelsLoading = fetch('dump-embed/dump-panels.html?v=1788600000055')
+  window._dumpPanelsLoading = fetch('dump-embed/dump-panels.html?v=1788600000120')
     .then((res) => {
       if (!res.ok) throw new Error('dump-panels HTTP ' + res.status);
       return res.text();
@@ -8758,6 +8762,27 @@ window.ensureDumpPanels_ = function () {
       throw err;
     });
   return window._dumpPanelsLoading;
+};
+
+window.ensureDumpScript_ = function () {
+  if (typeof window.initTreeMode === 'function' && typeof window.initGanttMode === 'function') {
+    return Promise.resolve();
+  }
+  if (window._dumpScriptLoading) return window._dumpScriptLoading;
+  window._dumpScriptLoading = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'dump-embed/dump-tree-gantt.js?v=1788600000120';
+    s.onload = () => {
+      if (typeof window.initTreeMode === 'function' && typeof window.initGanttMode === 'function') resolve();
+      else reject(new Error('dump script loaded without init'));
+    };
+    s.onerror = () => reject(new Error('dump-tree-gantt.js'));
+    document.body.appendChild(s);
+  }).catch((err) => {
+    window._dumpScriptLoading = null;
+    throw err;
+  });
+  return window._dumpScriptLoading;
 };
 
 window.showDumpPanel_ = function (view) {
@@ -8788,15 +8813,20 @@ window.openDumpAppView_ = function (view) {
   if (titleIcon) titleIcon.textContent = v === 'gantt' ? '▤' : '🌳';
   if (titleText) titleText.textContent = v === 'gantt' ? 'ガント' : 'ツリー';
   window.closeDumpFabMenu_();
-  window.ensureDumpPanels_()
+  Promise.resolve()
+    .then(() => window.ensureDumpPanels_())
+    .then(() => window.ensureDumpScript_())
     .then(() => {
       if (overlay) {
         overlay.style.display = 'flex';
         overlay.classList.add('is-open');
         overlay.setAttribute('aria-hidden', 'false');
       }
-      window.showDumpPanel_(v);
-      // ツリーはレイアウト確定後に再描画
+      try {
+        window.showDumpPanel_(v);
+      } catch (e) {
+        console.error('DUMPパネル初期化失敗', e);
+      }
       if (v === 'tree' && typeof window.renderTree === 'function') {
         requestAnimationFrame(() => {
           try { window.renderTree(); } catch (e) {}
