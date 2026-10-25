@@ -22371,15 +22371,12 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.handleWorkFuelTargetChange = () => {
         const hidden = document.getElementById('wf_target');
-        const veh = document.getElementById('wf_vehicle');
-        const mac = document.getElementById('wf_machine');
-        const id = hidden
-          ? String(hidden.value || '')
-          : String((veh && veh.value) || (mac && mac.value) || '');
+        const id = hidden ? String(hidden.value || '') : '';
+        const tab = window._workFuelKind === 'machine' ? 'machine' : 'vehicle';
         const meterLabel = document.getElementById('wf_meter_label');
         const meterHint = document.getElementById('wf_meter_hint');
         const meterInput = document.getElementById('wf_meter');
-        const isVehicle = id.indexOf('veh:') === 0;
+        const isVehicle = id ? id.indexOf('veh:') === 0 : tab === 'vehicle';
         if (meterLabel) meterLabel.textContent = isVehicle ? '🚗 走行距離 (km)' : '⏱️ アワメーター (h)';
         if (meterInput) meterInput.placeholder = isVehicle ? '例: 12345' : '例: 150.5';
         let last = '';
@@ -22396,14 +22393,46 @@ function createSignboardMarker(name, pos, icon, id) {
         }
       };
 
-      window.syncWorkFuelSplitTarget_ = (kind) => {
+      window.paintWorkFuelKindTabs_ = () => {
+        const kind = window._workFuelKind === 'machine' ? 'machine' : 'vehicle';
+        const vehTab = document.getElementById('wf_tab_vehicle');
+        const macTab = document.getElementById('wf_tab_machine');
+        const vehPanel = document.getElementById('wf_panel_vehicle');
+        const macPanel = document.getElementById('wf_panel_machine');
+        const paint = (btn, on, color) => {
+          if (!btn) return;
+          btn.style.background = on ? color : '#fff';
+          btn.style.color = on ? '#fff' : color;
+          btn.style.borderColor = color;
+        };
+        paint(vehTab, kind === 'vehicle', '#00897B');
+        paint(macTab, kind === 'machine', '#1565C0');
+        if (vehPanel) vehPanel.style.display = kind === 'vehicle' ? 'block' : 'none';
+        if (macPanel) macPanel.style.display = kind === 'machine' ? 'block' : 'none';
+      };
+
+      window.setWorkFuelKindTab_ = (kind) => {
+        const next = kind === 'machine' ? 'machine' : 'vehicle';
+        window._workFuelKind = next;
         const veh = document.getElementById('wf_vehicle');
         const mac = document.getElementById('wf_machine');
-        if (kind === 'vehicle' && veh && veh.value && mac) mac.value = '';
-        if (kind === 'machine' && mac && mac.value && veh) veh.value = '';
-        const id = String((veh && veh.value) || (mac && mac.value) || '');
         const hidden = document.getElementById('wf_target');
-        if (hidden) hidden.value = id;
+        const cur = hidden ? String(hidden.value || '') : '';
+        const curIsVeh = cur.indexOf('veh:') === 0;
+        if (cur && ((next === 'vehicle' && !curIsVeh) || (next === 'machine' && curIsVeh))) {
+          if (hidden) hidden.value = '';
+          if (veh) veh.value = '';
+          if (mac) mac.value = '';
+        }
+        window.paintWorkFuelKindTabs_();
+        window.handleWorkFuelTargetChange();
+      };
+
+      window.syncWorkFuelSplitTarget_ = (kind) => {
+        const sel = document.getElementById(kind === 'machine' ? 'wf_machine' : 'wf_vehicle');
+        const hidden = document.getElementById('wf_target');
+        if (hidden) hidden.value = sel ? String(sel.value || '') : '';
+        window._workFuelKind = kind === 'machine' ? 'machine' : 'vehicle';
         window.handleWorkFuelTargetChange();
       };
 
@@ -22553,35 +22582,47 @@ function createSignboardMarker(name, pos, icon, id) {
           return;
         }
 
-        const vehKeep = String(keepTarget).indexOf('veh:') === 0 ? keepTarget : '';
-        const macKeep = vehKeep ? '' : String(keepTarget || '');
+        const fuelKind = String(keepTarget).indexOf('veh:') === 0
+          ? 'vehicle'
+          : (keepTarget ? 'machine' : (window._workFuelKind === 'machine' ? 'machine' : 'vehicle'));
+        window._workFuelKind = fuelKind;
+        const vehOn = fuelKind === 'vehicle';
         const vehOpts = (typeof window.buildFuelKindOptionsHtml_ === 'function')
-          ? window.buildFuelKindOptionsHtml_('vehicle', vehKeep)
+          ? window.buildFuelKindOptionsHtml_('vehicle', vehOn ? keepTarget : '')
           : '<option value="">選択してください</option>';
         const macOpts = (typeof window.buildFuelKindOptionsHtml_ === 'function')
-          ? window.buildFuelKindOptionsHtml_('machine', macKeep)
+          ? window.buildFuelKindOptionsHtml_('machine', vehOn ? '' : keepTarget)
           : '<option value="">選択してください</option>';
+        const tabBtn = (id, kind, label, on, color) => `<button type="button" id="${id}" onclick="setWorkFuelKindTab_('${kind}')" style="flex:1; padding:10px 8px; border-radius:8px; border:2px solid ${color}; background:${on ? color : '#fff'}; color:${on ? '#fff' : color}; font-weight:bold; font-size:14px; cursor:pointer;">${label}</button>`;
         box.innerHTML = `
           <div style="font-weight:bold; color:#C2185B; margin-bottom:8px; font-size:14px;">⛽ 給油記録</div>
-          <div style="font-size:11px; color:#880E4F; margin-bottom:10px;">車両と農機は別々に選べます。一覧に無いときは、それぞれの登録ボタンから追加できます。</div>
-          <label class="form-label">🛻 車両</label>
-          <select id="wf_vehicle" class="form-input" onchange="syncWorkFuelSplitTarget_('vehicle')">${vehOpts}</select>
-          <div style="display:flex; justify-content:flex-end; margin:-4px 0 10px;">
-            <button type="button" onclick="addFuelTargetVehicleFromWorkRecord()" style="background:#00897B; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 車両を登録</button>
+          <div style="font-size:11px; color:#880E4F; margin-bottom:8px;">先に車両か農機を選び、その中から給油したものを選んでください。</div>
+          <div style="display:flex; gap:8px; margin-bottom:10px;">
+            ${tabBtn('wf_tab_vehicle', 'vehicle', '車両', vehOn, '#00897B')}
+            ${tabBtn('wf_tab_machine', 'machine', '農機', !vehOn, '#1565C0')}
           </div>
-          <label class="form-label">🚜 農機</label>
-          <select id="wf_machine" class="form-input" onchange="syncWorkFuelSplitTarget_('machine')">${macOpts}</select>
-          <div style="display:flex; justify-content:flex-end; margin:-4px 0 10px;">
-            <button type="button" onclick="addFuelTargetMachineFromWorkRecord()" style="background:#2196F3; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 農機を登録</button>
+          <div id="wf_panel_vehicle" style="display:${vehOn ? 'block' : 'none'};">
+            <label class="form-label">給油した車両</label>
+            <select id="wf_vehicle" class="form-input" onchange="syncWorkFuelSplitTarget_('vehicle')">${vehOpts}</select>
+            <div style="display:flex; justify-content:flex-end; margin:-4px 0 10px;">
+              <button type="button" onclick="addFuelTargetVehicleFromWorkRecord()" style="background:#00897B; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 車両を登録</button>
+            </div>
+          </div>
+          <div id="wf_panel_machine" style="display:${vehOn ? 'none' : 'block'};">
+            <label class="form-label">給油した農機</label>
+            <select id="wf_machine" class="form-input" onchange="syncWorkFuelSplitTarget_('machine')">${macOpts}</select>
+            <div style="display:flex; justify-content:flex-end; margin:-4px 0 10px;">
+              <button type="button" onclick="addFuelTargetMachineFromWorkRecord()" style="background:#1565C0; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 農機を登録</button>
+            </div>
           </div>
           <input type="hidden" id="wf_target" value="${String(keepTarget || '').replace(/"/g, '&quot;')}">
           <label class="form-label">📅 給油日</label>
           <input type="date" id="wf_date" class="form-input" value="${String(keepDate).replace(/"/g, '&quot;')}">
           <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:2px;">
-            <label class="form-label" id="wf_meter_label" style="margin-bottom:0;">⏱️ アワメーター (h)</label>
+            <label class="form-label" id="wf_meter_label" style="margin-bottom:0;">${vehOn ? '🚗 走行距離 (km)' : '⏱️ アワメーター (h)'}</label>
             <span id="wf_meter_hint" style="font-size:12px; color:#888; font-weight:bold;">(前回: --)</span>
           </div>
-          <input type="number" id="wf_meter" class="form-input" placeholder="例: 150.5" value="${String(keepMeter).replace(/"/g, '&quot;')}">
+          <input type="number" id="wf_meter" class="form-input" placeholder="${vehOn ? '例: 12345' : '例: 150.5'}" value="${String(keepMeter).replace(/"/g, '&quot;')}">
         `;
         if (typeof window.handleWorkFuelTargetChange === 'function') window.handleWorkFuelTargetChange();
       };
@@ -35084,33 +35125,42 @@ window.buildBulkWorkMemoFuelHtml_ = (d, uid) => {
       textColor: '#C2185B'
     });
   }
-  const vehSelected = targetId.indexOf('veh:') === 0 ? targetId : '';
-  const macSelected = vehSelected ? '' : targetId;
+  const fuelKind = targetId.indexOf('veh:') === 0
+    ? 'vehicle'
+    : (targetId ? 'machine' : (d._fuelKind === 'machine' ? 'machine' : 'vehicle'));
+  const vehOn = fuelKind === 'vehicle';
   const vehOpts = (typeof window.buildFuelKindOptionsHtml_ === 'function')
-    ? window.buildFuelKindOptionsHtml_('vehicle', vehSelected)
+    ? window.buildFuelKindOptionsHtml_('vehicle', vehOn ? targetId : '')
     : '<option value="">選択してください</option>';
   const macOpts = (typeof window.buildFuelKindOptionsHtml_ === 'function')
-    ? window.buildFuelKindOptionsHtml_('machine', macSelected)
+    ? window.buildFuelKindOptionsHtml_('machine', vehOn ? '' : targetId)
     : '<option value="">選択してください</option>';
-  const isVehicle = targetId.indexOf('veh:') === 0;
-  const meterLabel = isVehicle ? '🚗 走行距離 (km)' : '⏱️ アワメーター (h)';
+  const meterLabel = vehOn ? '🚗 走行距離 (km)' : '⏱️ アワメーター (h)';
+  const tab = (kind, label, on, color) => `<button type="button" onclick="setBulkWorkMemoFuelKind_('${esc(uid)}','${kind}')" style="flex:1; padding:10px 8px; border-radius:8px; border:2px solid ${color}; background:${on ? color : '#fff'}; color:${on ? '#fff' : color}; font-weight:bold; font-size:14px; cursor:pointer;">${label}</button>`;
   return `<div style="margin:8px 0; padding:12px; background:#FCE4EC; border:1px solid #F48FB1; border-radius:10px;">
     <div style="font-size:12px; font-weight:bold; color:#C2185B; margin-bottom:8px;">⛽ 給油記録</div>
-    <div style="font-size:11px; color:#880E4F; margin-bottom:8px; line-height:1.4;">車両と農機は別々に選べます。一覧に無い場合は、それぞれの登録ボタンから追加できます。</div>
-    <label style="font-size:10px; color:#C2185B; font-weight:bold;">🛻 車両</label>
-    <select onchange="pickBulkWorkMemoFuelTarget_('${esc(uid)}', this.value, this.options[this.selectedIndex] ? this.options[this.selectedIndex].text : '')" style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #F48FB1; border-radius:8px; margin:4px 0 6px; font-size:13px;">${vehOpts}</select>
-    <div style="display:flex; justify-content:flex-end; margin:0 0 10px;">
-      <button type="button" onclick="addBulkWorkMemoFuelTarget_('${esc(uid)}','vehicle')" style="background:#00897B; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 車両を登録</button>
+    <div style="font-size:11px; color:#880E4F; margin-bottom:8px; line-height:1.4;">先に車両か農機を選び、その中から給油したものを選んでください。</div>
+    <div style="display:flex; gap:8px; margin-bottom:10px;">
+      ${tab('vehicle', '車両', vehOn, '#00897B')}
+      ${tab('machine', '農機', !vehOn, '#1565C0')}
     </div>
-    <label style="font-size:10px; color:#C2185B; font-weight:bold;">🚜 農機</label>
-    <select onchange="pickBulkWorkMemoFuelTarget_('${esc(uid)}', this.value, this.options[this.selectedIndex] ? this.options[this.selectedIndex].text : '')" style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #F48FB1; border-radius:8px; margin:4px 0 6px; font-size:13px;">${macOpts}</select>
-    <div style="display:flex; justify-content:flex-end; margin:0 0 10px;">
-      <button type="button" onclick="addBulkWorkMemoFuelTarget_('${esc(uid)}','machine')" style="background:#2196F3; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 農機を登録</button>
-    </div>
+    ${vehOn ? `
+      <label style="font-size:10px; color:#00695C; font-weight:bold;">給油した車両</label>
+      <select onchange="pickBulkWorkMemoFuelTarget_('${esc(uid)}', this.value, this.options[this.selectedIndex] ? this.options[this.selectedIndex].text : '')" style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #80CBC4; border-radius:8px; margin:4px 0 6px; font-size:13px;">${vehOpts}</select>
+      <div style="display:flex; justify-content:flex-end; margin:0 0 10px;">
+        <button type="button" onclick="addBulkWorkMemoFuelTarget_('${esc(uid)}','vehicle')" style="background:#00897B; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 車両を登録</button>
+      </div>
+    ` : `
+      <label style="font-size:10px; color:#1565C0; font-weight:bold;">給油した農機</label>
+      <select onchange="pickBulkWorkMemoFuelTarget_('${esc(uid)}', this.value, this.options[this.selectedIndex] ? this.options[this.selectedIndex].text : '')" style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #90CAF9; border-radius:8px; margin:4px 0 6px; font-size:13px;">${macOpts}</select>
+      <div style="display:flex; justify-content:flex-end; margin:0 0 10px;">
+        <button type="button" onclick="addBulkWorkMemoFuelTarget_('${esc(uid)}','machine')" style="background:#1565C0; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 農機を登録</button>
+      </div>
+    `}
     <label style="font-size:10px; color:#C2185B; font-weight:bold;">📅 給油日</label>
     <input type="date" value="${esc(dateVal)}" onchange="updateBulkWorkMemoFuelField_('${esc(uid)}','fuelDate', this.value)" style="width:100%; box-sizing:border-box; padding:7px; border:1px solid #F48FB1; border-radius:6px; margin:4px 0 8px;">
     <label style="font-size:10px; color:#C2185B; font-weight:bold;">${meterLabel}</label>
-    <input type="number" inputmode="decimal" value="${esc(meter)}" placeholder="${isVehicle ? '例: 12345' : '例: 150.5'}" onchange="updateBulkWorkMemoFuelField_('${esc(uid)}','fuelMeter', this.value)" style="width:100%; box-sizing:border-box; padding:7px; border:1px solid #F48FB1; border-radius:6px; margin:4px 0 10px;">
+    <input type="number" inputmode="decimal" value="${esc(meter)}" placeholder="${vehOn ? '例: 12345' : '例: 150.5'}" onchange="updateBulkWorkMemoFuelField_('${esc(uid)}','fuelMeter', this.value)" style="width:100%; box-sizing:border-box; padding:7px; border:1px solid #F48FB1; border-radius:6px; margin:4px 0 10px;">
     ${targetId ? `<div style="text-align:right;"><button type="button" onclick="collapseBulkWorkMemoFuelPick_('${esc(uid)}')" style="background:#fff; color:#C2185B; border:1px solid #F48FB1; border-radius:8px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer;">完了</button></div>` : ''}
   </div>`;
 };
@@ -35135,11 +35185,27 @@ window.collapseBulkWorkMemoFuelPick_ = (uid) => {
   window.refreshBulkWorkMemoExtras_(uid);
 };
 
+window.setBulkWorkMemoFuelKind_ = (uid, kind) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  const next = kind === 'machine' ? 'machine' : 'vehicle';
+  row._fuelKind = next;
+  const id = String(row.fuelTargetId || '');
+  const isVeh = id.indexOf('veh:') === 0;
+  if (id && ((next === 'vehicle' && !isVeh) || (next === 'machine' && isVeh))) {
+    row.fuelTargetId = '';
+    row.fuelTargetName = '';
+  }
+  row._fuelPickOpen = true;
+  window.refreshBulkWorkMemoExtras_(uid);
+};
+
 window.pickBulkWorkMemoFuelTarget_ = (uid, targetId, labelText) => {
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
   if (!row) return;
   const id = String(targetId || '').trim();
   row.fuelTargetId = id;
+  row._fuelKind = id.indexOf('veh:') === 0 ? 'vehicle' : (id ? 'machine' : (row._fuelKind || 'vehicle'));
   let name = String(labelText || '').trim().replace(/（[^）]*）\s*$/, '').trim();
   if (!name) name = window.getBulkWorkMemoFuelTargetLabel_(id);
   row.fuelTargetName = name;
