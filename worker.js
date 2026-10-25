@@ -39198,6 +39198,16 @@ window.toggleBulkWorkMemoWorkPick_ = (uid) => {
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
   if (!row) return;
   row._workPickOpen = true;
+  const metaCat = String(row.category || row.listFilterCategory || '').trim();
+  const isMeta = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(metaCat);
+  // 閉じたあとの「変更」は、作物名と同じく候補チップを全部開く
+  if (!isMeta) {
+    if (!String(row.listFilterCategory || '').trim()) {
+      const cat = String(row.category || (typeof window.getBulkWorkMemoWorkCategory_ === 'function' ? window.getBulkWorkMemoWorkCategory_(row.workName) : '') || '').trim();
+      if (cat) row.listFilterCategory = cat;
+    }
+    row._workListOpen = true;
+  }
   window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
 };
 
