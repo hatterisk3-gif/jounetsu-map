@@ -9015,7 +9015,8 @@ function createSignboardMarker(name, pos, icon, id) {
           showPesticide: /防除|除草|農薬|散布|除草剤|殺虫|殺菌/.test(n),
           showField: (typeof window.getBuiltInFieldSelectDefault_ === 'function')
             ? !!window.getBuiltInFieldSelectDefault_(c, n)
-            : true
+            : true,
+          showFuel: n === '給油' || n.indexOf('給油') >= 0
         };
       };
 
@@ -9025,7 +9026,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const formCat = String(document.getElementById('rec_work_category')?.value || '').trim();
         // 準備／片づけは「対象作業」の紐づけ専用。対象作業の詳細・機械・資材フラグは出さない
         if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(formCat)) {
-          return { showMachine: false, showMaterial: false, showPesticide: false, showField: false };
+          return { showMachine: false, showMaterial: false, showPesticide: false, showField: false, showFuel: false };
         }
         const w = (typeof window.findWorkMasterByName_ === 'function')
           ? (window.findWorkMasterByName_(mainName) || window.findWorkMasterByName_(combined))
@@ -9043,7 +9044,8 @@ function createSignboardMarker(name, pos, icon, id) {
           showMachine: isMachineryCat ? true : pick(w && w.showMachine, inferred.showMachine),
           showMaterial: pick(w && w.showMaterial, inferred.showMaterial),
           showPesticide: pick(w && w.showPesticide, inferred.showPesticide),
-          showField: pick(w && w.showField, inferred.showField)
+          showField: pick(w && w.showField, inferred.showField),
+          showFuel: pick(w && w.showFuel, inferred.showFuel)
         };
       };
 
@@ -9062,6 +9064,7 @@ function createSignboardMarker(name, pos, icon, id) {
             ${row('show_machine', !!f.showMachine, '🚜 農機マスタを出す', '使用した機械を選べます')}
             ${row('show_material', !!f.showMaterial, '📦 資材マスタを出す', '肥料・マルチなどの資材を選べます')}
             ${row('show_pesticide', !!f.showPesticide, '🧪 薬剤（農薬マスタ）を出す', '使った薬剤名を記入・選択できます')}
+            ${row('show_fuel', !!f.showFuel, '⛽ 給油マスタを出す', '給油した車両・機械を選べます。一覧に無い車両も登録できます')}
           </div>
         </div>`;
       };
@@ -9070,7 +9073,8 @@ function createSignboardMarker(name, pos, icon, id) {
         showField: !!document.getElementById(prefix + '_show_field')?.checked,
         showMachine: !!document.getElementById(prefix + '_show_machine')?.checked,
         showMaterial: !!document.getElementById(prefix + '_show_material')?.checked,
-        showPesticide: !!document.getElementById(prefix + '_show_pesticide')?.checked
+        showPesticide: !!document.getElementById(prefix + '_show_pesticide')?.checked,
+        showFuel: !!document.getElementById(prefix + '_show_fuel')?.checked
       });
 
       window.refreshFieldMachinerySectionVisibility = () => {
@@ -12813,7 +12817,7 @@ function createSignboardMarker(name, pos, icon, id) {
           document.body.appendChild(modal);
           window._workExtraFlagsTouched = (mode === 'edit');
           const bindFlagTouch = () => {
-            ['wn_edit_show_field', 'wn_edit_show_machine', 'wn_edit_show_material', 'wn_edit_show_pesticide'].forEach(id => {
+            ['wn_edit_show_field', 'wn_edit_show_machine', 'wn_edit_show_material', 'wn_edit_show_pesticide', 'wn_edit_show_fuel'].forEach(id => {
               const el = document.getElementById(id);
               if (el) el.addEventListener('change', () => { window._workExtraFlagsTouched = true; });
             });
@@ -12828,10 +12832,12 @@ function createSignboardMarker(name, pos, icon, id) {
             const m = document.getElementById('wn_edit_show_machine');
             const mat = document.getElementById('wn_edit_show_material');
             const p = document.getElementById('wn_edit_show_pesticide');
+            const fuel = document.getElementById('wn_edit_show_fuel');
             if (f) f.checked = inferred.showField !== false;
             if (m) m.checked = !!inferred.showMachine;
             if (mat) mat.checked = !!inferred.showMaterial;
             if (p) p.checked = !!inferred.showPesticide;
+            if (fuel) fuel.checked = !!inferred.showFuel;
           };
           bindFlagTouch();
           window._syncWorkNameEditorFlagDefaults_ = syncFlagDefaults;
@@ -18051,8 +18057,10 @@ function createSignboardMarker(name, pos, icon, id) {
         const pairFuel = typeof window.shouldPairFuelWithFieldMachinery_ === 'function'
           && window.shouldPairFuelWithFieldMachinery_();
         const fuelByDetail = typeof window.isFuelDetailWorkSelected_ === 'function' && window.isFuelDetailWorkSelected_();
-        // 作業名「給油」だけでは給油記録を出さない（詳細作業の給油／圃場農機×軽油のみ）
-        if (pairFuel || fuelByDetail) {
+        const fuelByMaster = typeof window.getWorkExtraUiFlags_ === 'function'
+          && !!window.getWorkExtraUiFlags_(name).showFuel;
+        // 作業名「給油」だけでは給油記録を出さない（詳細作業の給油／圃場農機×軽油／給油マスタ設定）
+        if (pairFuel || fuelByDetail || fuelByMaster) {
           defs.push({ key: 'fuel', label: '給油記録', emoji: '⛽', color: '#C2185B' });
         }
         // 整備・点検の詳細作業として給油を選んだ場合は、整備パネルも合わせて残す
@@ -18195,6 +18203,9 @@ function createSignboardMarker(name, pos, icon, id) {
         // 整備・点検などで詳細作業に給油を選んでいる場合は開く
         if (typeof window.isFuelDetailWorkSelected_ === 'function' && window.isFuelDetailWorkSelected_()) {
           window._fuelDetailWorkActive = true;
+          window.setExtraRecordOpen_('fuel', true);
+        }
+        if (typeof window.getWorkExtraUiFlags_ === 'function' && window.getWorkExtraUiFlags_(name).showFuel) {
           window.setExtraRecordOpen_('fuel', true);
         }
         // 圃場農機作業 × 軽油車両は給油をセットで開く
@@ -20106,6 +20117,7 @@ function createSignboardMarker(name, pos, icon, id) {
         const formCat = String(document.getElementById('rec_work_category')?.value || '').trim();
         if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(formCat)) return false;
         if (window.isFuelDetailWorkSelected_()) return true;
+        if (typeof window.getWorkExtraUiFlags_ === 'function' && window.getWorkExtraUiFlags_(workName).showFuel) return true;
         return typeof window.shouldPairFuelWithFieldMachinery_ === 'function'
           && window.shouldPairFuelWithFieldMachinery_();
       };
@@ -34703,6 +34715,7 @@ window.getBulkWorkMemoUiFlags_ = (draft) => {
     showTool: useAssetMoveUi ? false : (hasTools ? true : false),
     showPesticide: pick(w && w.showPesticide, inferred.showPesticide),
     showField: pick(w && w.showField, inferred.showField),
+    showFuel: pick(w && w.showFuel, inferred.showFuel),
     isPrep: false,
     isCleanup: false,
     isDelivery: !!isDelivery
@@ -34921,10 +34934,14 @@ window.getBulkWorkMemoMachineList_ = (draft) => {
   return allItems;
 };
 
-/** 一括入力：給油記録UIを出すか（詳細作業に給油があるときのみ。作業名「給油」だけでは出さない） */
+/** 一括入力：給油記録UIを出すか（給油マスタ設定、または詳細作業に給油があるとき） */
 window.bulkWorkMemoIsFuel_ = (draft) => {
   const cat = String(draft && draft.category || '').trim();
   if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat)) return false;
+  const flags = (typeof window.getBulkWorkMemoUiFlags_ === 'function')
+    ? window.getBulkWorkMemoUiFlags_(draft)
+    : null;
+  if (flags && flags.showFuel) return true;
   const details = Array.isArray(draft && draft.detailedWorks) ? draft.detailedWorks : [];
   return details.some(n => typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(n));
 };

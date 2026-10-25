@@ -5392,7 +5392,8 @@ function inferWorkRecordUiFlags_(workName, category) {
         showMaterial: /資材|肥料|マルチ|堆肥|石灰|被覆/.test(n),
         showPesticide: /防除|除草|農薬|散布|除草剤|殺虫|殺菌/.test(n),
         showField: !(isMeta || isFuel || n.includes('休憩'))
-          && (c.includes('圃場') || c.includes('整備') || c.includes('保全') || !c)
+          && (c.includes('圃場') || c.includes('整備') || c.includes('保全') || !c),
+        showFuel: isFuel
     };
 }
 
@@ -5407,7 +5408,8 @@ function resolveWorkRecordUiFlags_(work) {
         showMachine: pick(w.showMachine, inferred.showMachine),
         showMaterial: pick(w.showMaterial, inferred.showMaterial),
         showPesticide: pick(w.showPesticide, inferred.showPesticide),
-        showField: pick(w.showField, inferred.showField)
+        showField: pick(w.showField, inferred.showField),
+        showFuel: pick(w.showFuel, inferred.showFuel)
     };
 }
 
@@ -5426,6 +5428,7 @@ function buildWorkRecordUiFlagsHtml_(prefix, flags) {
             ${row('show_machine', !!f.showMachine, '🚜 農機マスタを出す', '使用した機械を選べます')}
             ${row('show_material', !!f.showMaterial, '📦 資材マスタを出す', '肥料・マルチなどの資材を選べます')}
             ${row('show_pesticide', !!f.showPesticide, '🧪 薬剤（農薬マスタ）を出す', '使った薬剤名を記入・選択できます')}
+            ${row('show_fuel', !!f.showFuel, '⛽ 給油マスタを出す', '給油した車両・機械を選べます。一覧に無い車両も登録できます')}
         </div>
     </div>`;
 }
@@ -5435,7 +5438,8 @@ function collectWorkRecordUiFlagsFromForm_(prefix) {
         showField: !!document.getElementById(prefix + '_show_field')?.checked,
         showMachine: !!document.getElementById(prefix + '_show_machine')?.checked,
         showMaterial: !!document.getElementById(prefix + '_show_material')?.checked,
-        showPesticide: !!document.getElementById(prefix + '_show_pesticide')?.checked
+        showPesticide: !!document.getElementById(prefix + '_show_pesticide')?.checked,
+        showFuel: !!document.getElementById(prefix + '_show_fuel')?.checked
     };
 }
 
@@ -5449,10 +5453,12 @@ window.syncAdminWorkUiFlagDefaults_ = (prefix) => {
     const m = document.getElementById(prefix + '_show_machine');
     const mat = document.getElementById(prefix + '_show_material');
     const p = document.getElementById(prefix + '_show_pesticide');
+    const fuel = document.getElementById(prefix + '_show_fuel');
     if (f) f.checked = inferred.showField !== false;
     if (m) m.checked = !!inferred.showMachine;
     if (mat) mat.checked = !!inferred.showMaterial;
     if (p) p.checked = !!inferred.showPesticide;
+    if (fuel) fuel.checked = !!inferred.showFuel;
 };
 
 window.openEditWorkMaster = (encodedStr) => {

@@ -1144,7 +1144,8 @@ function getInitData(opts) {
             showMachine: uiFlags.showMachine,
             showMaterial: uiFlags.showMaterial,
             showPesticide: uiFlags.showPesticide,
-            showField: uiFlags.showField
+            showField: uiFlags.showField,
+            showFuel: uiFlags.showFuel
           });
         }
         if (idxStatus >= 0 && data[i][idxStatus]) workStatuses.push(data[i][idxStatus]);
@@ -2800,7 +2801,8 @@ function mergeWorkMasterObjects_(keepObj, origObj, incoming, originalName) {
     showMachine: orWorkMasterFlag_(keepObj.showMachine, origObj && origObj.showMachine, incoming.showMachine),
     showMaterial: orWorkMasterFlag_(keepObj.showMaterial, origObj && origObj.showMaterial, incoming.showMaterial),
     showPesticide: orWorkMasterFlag_(keepObj.showPesticide, origObj && origObj.showPesticide, incoming.showPesticide),
-    showField: orWorkMasterFlag_(keepObj.showField, origObj && origObj.showField, incoming.showField)
+    showField: orWorkMasterFlag_(keepObj.showField, origObj && origObj.showField, incoming.showField),
+    showFuel: orWorkMasterFlag_(keepObj.showFuel, origObj && origObj.showFuel, incoming.showFuel)
   };
 }
 
@@ -2833,7 +2835,8 @@ function workMasterObjectFromRow_(headers, row) {
     showMachine: uiFlags.showMachine,
     showMaterial: uiFlags.showMaterial,
     showPesticide: uiFlags.showPesticide,
-    showField: uiFlags.showField
+    showField: uiFlags.showField,
+    showFuel: uiFlags.showFuel
   };
 }
 
@@ -2882,7 +2885,8 @@ const WORK_UI_FLAG_HEADERS_ = {
   showMachine: ['使用農機を出す', '農機を出す'],
   showMaterial: ['使用資材を出す', '資材を出す'],
   showPesticide: ['使用薬剤を出す', '薬剤を出す', '農薬を出す'],
-  showField: ['圃場選択を出す', '圃場を出す']
+  showField: ['圃場選択を出す', '圃場を出す'],
+  showFuel: ['給油マスタを出す', '給油を出す']
 };
 
 function findHeaderIndexByNames_(headers, names) {
@@ -2913,7 +2917,7 @@ function formatWorkUiFlagValue_(v) {
 }
 
 function readWorkMasterUiFlagsFromRow_(headers, row) {
-  const out = { showMachine: null, showMaterial: null, showPesticide: null, showField: null };
+  const out = { showMachine: null, showMaterial: null, showPesticide: null, showField: null, showFuel: null };
   Object.keys(WORK_UI_FLAG_HEADERS_).forEach(function (k) {
     const idx = findHeaderIndexByNames_(headers, WORK_UI_FLAG_HEADERS_[k]);
     out[k] = idx >= 0 ? parseWorkUiFlagValue_(row[idx]) : null;
@@ -2924,7 +2928,7 @@ function readWorkMasterUiFlagsFromRow_(headers, row) {
 /** 作業マスタ必須ヘッダーを保証（欠けていれば末尾に追加） */
 function ensureWorkMasterHeaders_(sheet, opts) {
   opts = opts || {};
-  const required = ['作業名', 'カテゴリ', '作物名', '詳細作業名', '作物別詳細作業', '類似作業名', '使用農機を出す', '使用資材を出す', '使用薬剤を出す', '圃場選択を出す'];
+  const required = ['作業名', 'カテゴリ', '作物名', '詳細作業名', '作物別詳細作業', '類似作業名', '使用農機を出す', '使用資材を出す', '使用薬剤を出す', '圃場選択を出す', '給油マスタを出す'];
   let lastCol = Math.max(sheet.getLastColumn(), 1);
   let headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
   let changed = false;
@@ -3043,7 +3047,8 @@ function readWorkMasterList_(sheet) {
       showMachine: uiFlags.showMachine,
       showMaterial: uiFlags.showMaterial,
       showPesticide: uiFlags.showPesticide,
-      showField: uiFlags.showField
+      showField: uiFlags.showField,
+      showFuel: uiFlags.showFuel
     };
   });
 }
@@ -3122,7 +3127,9 @@ function buildWorkMasterColumnMap_(value) {
     '薬剤を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showPesticide') ? formatWorkUiFlagValue_(value.showPesticide) : undefined,
     '農薬を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showPesticide') ? formatWorkUiFlagValue_(value.showPesticide) : undefined,
     '圃場選択を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showField') ? formatWorkUiFlagValue_(value.showField) : undefined,
-    '圃場を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showField') ? formatWorkUiFlagValue_(value.showField) : undefined
+    '圃場を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showField') ? formatWorkUiFlagValue_(value.showField) : undefined,
+    '給油マスタを出す': Object.prototype.hasOwnProperty.call(value || {}, 'showFuel') ? formatWorkUiFlagValue_(value.showFuel) : undefined,
+    '給油を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showFuel') ? formatWorkUiFlagValue_(value.showFuel) : undefined
   };
 }
 // ==========================================
