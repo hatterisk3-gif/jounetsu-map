@@ -1145,7 +1145,8 @@ function getInitData(opts) {
             showMaterial: uiFlags.showMaterial,
             showPesticide: uiFlags.showPesticide,
             showField: uiFlags.showField,
-            showFuel: uiFlags.showFuel
+            showFuel: uiFlags.showFuel,
+            showRidgePolygon: uiFlags.showRidgePolygon
           });
         }
         if (idxStatus >= 0 && data[i][idxStatus]) workStatuses.push(data[i][idxStatus]);
@@ -2802,7 +2803,8 @@ function mergeWorkMasterObjects_(keepObj, origObj, incoming, originalName) {
     showMaterial: orWorkMasterFlag_(keepObj.showMaterial, origObj && origObj.showMaterial, incoming.showMaterial),
     showPesticide: orWorkMasterFlag_(keepObj.showPesticide, origObj && origObj.showPesticide, incoming.showPesticide),
     showField: orWorkMasterFlag_(keepObj.showField, origObj && origObj.showField, incoming.showField),
-    showFuel: orWorkMasterFlag_(keepObj.showFuel, origObj && origObj.showFuel, incoming.showFuel)
+    showFuel: orWorkMasterFlag_(keepObj.showFuel, origObj && origObj.showFuel, incoming.showFuel),
+    showRidgePolygon: orWorkMasterFlag_(keepObj.showRidgePolygon, origObj && origObj.showRidgePolygon, incoming.showRidgePolygon)
   };
 }
 
@@ -2836,7 +2838,8 @@ function workMasterObjectFromRow_(headers, row) {
     showMaterial: uiFlags.showMaterial,
     showPesticide: uiFlags.showPesticide,
     showField: uiFlags.showField,
-    showFuel: uiFlags.showFuel
+    showFuel: uiFlags.showFuel,
+    showRidgePolygon: uiFlags.showRidgePolygon
   };
 }
 
@@ -2886,7 +2889,8 @@ const WORK_UI_FLAG_HEADERS_ = {
   showMaterial: ['使用資材を出す', '資材を出す'],
   showPesticide: ['使用薬剤を出す', '薬剤を出す', '農薬を出す'],
   showField: ['圃場選択を出す', '圃場を出す'],
-  showFuel: ['給油マスタを出す', '給油を出す']
+  showFuel: ['給油マスタを出す', '給油を出す'],
+  showRidgePolygon: ['畝ポリゴン登録を出す', '畝ポリゴンを出す']
 };
 
 function findHeaderIndexByNames_(headers, names) {
@@ -2917,7 +2921,7 @@ function formatWorkUiFlagValue_(v) {
 }
 
 function readWorkMasterUiFlagsFromRow_(headers, row) {
-  const out = { showMachine: null, showMaterial: null, showPesticide: null, showField: null, showFuel: null };
+  const out = { showMachine: null, showMaterial: null, showPesticide: null, showField: null, showFuel: null, showRidgePolygon: null };
   Object.keys(WORK_UI_FLAG_HEADERS_).forEach(function (k) {
     const idx = findHeaderIndexByNames_(headers, WORK_UI_FLAG_HEADERS_[k]);
     out[k] = idx >= 0 ? parseWorkUiFlagValue_(row[idx]) : null;
@@ -2928,7 +2932,7 @@ function readWorkMasterUiFlagsFromRow_(headers, row) {
 /** 作業マスタ必須ヘッダーを保証（欠けていれば末尾に追加） */
 function ensureWorkMasterHeaders_(sheet, opts) {
   opts = opts || {};
-  const required = ['作業名', 'カテゴリ', '作物名', '詳細作業名', '作物別詳細作業', '類似作業名', '使用農機を出す', '使用資材を出す', '使用薬剤を出す', '圃場選択を出す', '給油マスタを出す'];
+  const required = ['作業名', 'カテゴリ', '作物名', '詳細作業名', '作物別詳細作業', '類似作業名', '使用農機を出す', '使用資材を出す', '使用薬剤を出す', '圃場選択を出す', '給油マスタを出す', '畝ポリゴン登録を出す'];
   let lastCol = Math.max(sheet.getLastColumn(), 1);
   let headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
   let changed = false;
@@ -3048,7 +3052,8 @@ function readWorkMasterList_(sheet) {
       showMaterial: uiFlags.showMaterial,
       showPesticide: uiFlags.showPesticide,
       showField: uiFlags.showField,
-      showFuel: uiFlags.showFuel
+      showFuel: uiFlags.showFuel,
+      showRidgePolygon: uiFlags.showRidgePolygon
     };
   });
 }
@@ -3129,7 +3134,9 @@ function buildWorkMasterColumnMap_(value) {
     '圃場選択を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showField') ? formatWorkUiFlagValue_(value.showField) : undefined,
     '圃場を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showField') ? formatWorkUiFlagValue_(value.showField) : undefined,
     '給油マスタを出す': Object.prototype.hasOwnProperty.call(value || {}, 'showFuel') ? formatWorkUiFlagValue_(value.showFuel) : undefined,
-    '給油を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showFuel') ? formatWorkUiFlagValue_(value.showFuel) : undefined
+    '給油を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showFuel') ? formatWorkUiFlagValue_(value.showFuel) : undefined,
+    '畝ポリゴン登録を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showRidgePolygon') ? formatWorkUiFlagValue_(value.showRidgePolygon) : undefined,
+    '畝ポリゴンを出す': Object.prototype.hasOwnProperty.call(value || {}, 'showRidgePolygon') ? formatWorkUiFlagValue_(value.showRidgePolygon) : undefined
   };
 }
 // ==========================================

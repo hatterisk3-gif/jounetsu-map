@@ -1448,7 +1448,6 @@ async function fetchWeatherAndUpdateUI() {
              loadedPolygons[p.id] = { ...p };
           });
           window.loadedPolygons = loadedPolygons;
-          buildDeptFilter();
           updateMapVisuals();
         };
 
@@ -1550,26 +1549,8 @@ async function fetchWeatherAndUpdateUI() {
         return p;
       }
 
-      // ★追加：部署フィルターボタンを構築
-      function buildDeptFilter() {
-        // 存在するすべての部署を抽出
-        let depts = [...new Set(globalSchedules.map(t => t.dept))].filter(String);
-        depts.unshift('すべて'); // 先頭にすべてを追加
-
-        const bar = document.getElementById('deptFilterBar');
-        bar.innerHTML = depts.map(d => {
-            const isActive = d === currentDept ? 'active' : '';
-            return `<div class="dept-btn ${isActive}" onclick="applyDeptFilter('${d}')">${d}</div>`;
-        }).join('');
-      }
-
-      // ★追加：部署フィルターを適用
-      window.applyDeptFilter = (dept) => {
-        currentDept = dept;
-        buildDeptFilter(); // ボタンのハイライト更新
-        infoWindow.close();
-        updateMapVisuals(); // 地図の色を再計算
-      };
+      // 部署での絞り込みは撤去。地図と一覧は全部署を表示する
+      window.applyDeptFilter = () => {};
 
       /** 計画由来の作業予定が、この圃場ポリゴンに紐づくか判定 */
       function scheduleMatchesField_(t, p) {
@@ -1957,7 +1938,6 @@ async function fetchWeatherAndUpdateUI() {
               localStorage.setItem('passionMapScheduleData', JSON.stringify(cached));
             }
           } catch (e) {}
-          buildDeptFilter();
           if (typeof updateMapVisuals === 'function') updateMapVisuals();
         } catch (e) {
           alert('部署の変更に失敗しました: ' + (e.message || e));
@@ -2238,7 +2218,6 @@ async function fetchWeatherAndUpdateUI() {
             if (Array.isArray(data.departments) && data.departments.length) {
               workDeptCategories = data.departments.slice();
             }
-            buildDeptFilter();
             if (typeof updateMapVisuals === 'function') updateMapVisuals();
           }
           if (document.getElementById('scheduleModal') && document.getElementById('scheduleModal').style.display === 'flex') {
@@ -2443,7 +2422,6 @@ async function fetchWeatherAndUpdateUI() {
             if (Array.isArray(data.departments) && data.departments.length) {
               workDeptCategories = data.departments.slice();
             }
-            buildDeptFilter();
           }
           refreshScheduleListAfterMutation_();
           if (failed.length) {
@@ -2520,7 +2498,6 @@ async function fetchWeatherAndUpdateUI() {
             } else if (Array.isArray(data.workCategories) && data.workCategories.length) {
               workDeptCategories = data.workCategories.slice();
             }
-            buildDeptFilter();
             if (typeof updateMapVisuals === 'function') updateMapVisuals();
           }
           if (document.getElementById('scheduleModal') && document.getElementById('scheduleModal').style.display === 'flex') {

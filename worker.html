@@ -25,7 +25,7 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="worker.css?v=1788600000014">
+  <link rel="stylesheet" href="worker.css?v=1788600000015">
   <style>
     @keyframes workerBootSpin { to { transform: rotate(360deg); } }
     @keyframes workerBootSlide { from { transform: translateX(-120%); } to { transform: translateX(320%); } }
@@ -90,14 +90,21 @@
     </div>
   </div>
 
-  <div id="mapActionBar" class="map-action-bar">
-    <button id="btnTyphoon" class="map-action-btn map-action-btn--typhoon" onclick="openTyphoonModal()" style="display: none;">
+  <div id="workerTopBar" class="worker-top-bar">
+    <button id="btnWeather" class="map-action-btn" onclick="openWeatherModal()" title="天気" style="color: #ff9800;">
+      ☁️</button>
+    <button id="btnTyphoon" class="map-action-btn map-action-btn--typhoon" onclick="openTyphoonModal()" title="台風" style="display: none;">
       🌀
     </button>
-    <button id="btnWeather" class="map-action-btn" onclick="openWeatherModal()" style="color: #ff9800;">
-      ☁️</button>
-    <button id="btnTracking" class="map-action-btn" onclick="toggleTracking()" style="color: #4CAF50;">
-      🏃    </button>
+    <button type="button" id="btnActivityNotice" class="map-action-btn" onclick="openWorkerActivityNoticeModal_()" title="お知らせ" style="position:relative; color:#5E35B1; background:#EDE7F6; border:2px solid #5E35B1; font-size:22px;">
+      🔔<span id="activityNoticeBadge" style="display:none; position:absolute; top:-4px; right:-4px; background:#d32f2f; color:#fff; font-size:10px; min-width:16px; height:16px; line-height:16px; border-radius:8px; padding:0 4px; font-weight:bold; box-sizing:border-box;">0</span>
+    </button>
+    <button type="button" id="btnScheduleList" class="map-action-btn" onclick="openScheduleList()" title="予定" style="color:#F57F17; background:#FFF9C4; border:2px solid #F57F17; font-size:22px;">
+      📅
+    </button>
+  </div>
+
+  <div id="mapActionBar" class="map-action-bar">
     <button id="btnMeasureRidge" class="map-action-btn" onclick="toggleMeasureToolMenu()" title="計測（距離・面積）" style="color: #00838F;">
       📏
     </button>
@@ -106,12 +113,6 @@
     </button>
     <button id="btnGpsWorkRecord" class="map-action-btn map-action-btn--plus" onclick="document.getElementById('recordTypeSelectModal').style.display='flex'" title="記録を追加" style="color: #fff; background: #4285F4;">
       ＋
-    </button>
-    <button type="button" id="btnScheduleList" class="map-action-btn" onclick="openScheduleList()" title="予定一覧" style="color:#F57F17; background:#FFF9C4; border:2px solid #F57F17; font-size:22px;">
-      📅
-    </button>
-    <button type="button" id="btnActivityNotice" class="map-action-btn" onclick="openWorkerActivityNoticeModal_()" title="お知らせ" style="position:relative; color:#5E35B1; background:#EDE7F6; border:2px solid #5E35B1; font-size:22px;">
-      🔔<span id="activityNoticeBadge" style="display:none; position:absolute; top:-4px; right:-4px; background:#d32f2f; color:#fff; font-size:10px; min-width:16px; height:16px; line-height:16px; border-radius:8px; padding:0 4px; font-weight:bold; box-sizing:border-box;">0</span>
     </button>
   </div>
 
@@ -512,7 +513,7 @@
   <script src="machine-taxonomy.js?v=1788600000012"></script>
   <script src="weather-agri.js?v=1788600000102"></script>
   <script src="api-client.js?v=1788600000111"></script>
-  <script src="worker.js?v=1788600000190"></script>
+  <script src="worker.js?v=1788600000198"></script>
   <script src="tracking.js?v=1788600000051"></script>
   <script>
     if ('serviceWorker' in navigator) {

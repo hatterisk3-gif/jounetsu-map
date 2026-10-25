@@ -15,7 +15,7 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1786243000000"></script>
-  <link rel="stylesheet" href="schedule.css?v=1788600000059">
+  <link rel="stylesheet" href="schedule.css?v=1788600000061">
   <link rel="stylesheet" href="dump-embed/dump-tree-gantt.css?v=1788600000055">
 </head>
 
@@ -38,30 +38,22 @@
   </div>
 
   <div class="control-panel">
-      <div class="control-panel-buttons" style="display:flex; align-items:center;">
-      <button id="btnTyphoon" onclick="openTyphoonModal()"
-        style="display:none; margin-right:10px; background:#ffebee; color:#d32f2f; border:2px solid #d32f2f; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; align-items:center; cursor:pointer;">🌀
-        台風</button>
-      <button id="btnWeather" onclick="openWeatherModal()"
-        style="margin-right:10px; background:white; color:#ff9800; border:1px solid #ccc; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; display:flex; align-items:center; cursor:pointer;">☁️</button>
-      <button class="btn-reload" onclick="location.reload()" style="margin-right:10px;">🔄 更新</button>
-      <div style="position:relative; display:inline-block; margin-right:0;">
-        <button type="button" id="accountMenuBtn" data-account-name-btn onclick="toggleAccountMenu(event)"
-          style="background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; padding:8px 12px; border-radius:5px; font-weight:bold; font-size:14px; cursor:pointer; white-space:nowrap; max-width:180px; overflow:hidden; text-overflow:ellipsis;">👤
-          <span data-account-name>マイページ</span> ▾</button>
-        <div id="accountMenuDropdown" onclick="event.stopPropagation()"
-          style="display:none; position:absolute; right:0; top:calc(100% + 6px); min-width:160px; background:#fff; border:1px solid #cfd8dc; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,.18); z-index:6000; padding:6px;">
-          <button type="button" onclick="closeAccountMenu(); openMyPage();"
-            style="width:100%; background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">👤 マイページ</button>
-          <button type="button" id="accountMenuAdminBtn" onclick="closeAccountMenu(); openAdminFromWorker();"
-            style="display:none; width:100%; background:#E8F5E9; color:#2E7D32; border:1px solid #2E7D32; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">🗺️ 管理者画面</button>
-          <button type="button" id="accountMenuWorkerBtn" onclick="closeAccountMenu(); openWorkerFromAccount();"
-            style="display:none; width:100%; background:#FFF3E0; color:#E65100; border:1px solid #FB8C00; border-radius:6px; padding:9px 12px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:6px; text-align:left;">🚜 作業画面</button>
-          <button type="button" onclick="closeAccountMenu(); executeLogout();"
-            style="width:100%; background:#c62828; color:#fff; border:none; border-radius:6px; padding:10px 12px; font-weight:bold; font-size:13px; cursor:pointer; text-align:left;">🚪 ログアウト</button>
+    <div class="sched-top-brand" aria-hidden="true">📅 <b>予定</b></div>
+    <div class="control-panel-buttons">
+      <button id="btnTyphoon" class="sched-top-btn sched-top-btn-alert" onclick="openTyphoonModal()" style="display:none;">🌀 台風</button>
+      <button id="btnWeather" class="sched-top-btn sched-top-btn-weather" onclick="openWeatherModal()" title="天気">☁️</button>
+      <button class="btn-reload sched-top-btn" onclick="location.reload()" title="更新">🔄 更新</button>
+      <div class="sched-account-wrap">
+        <button type="button" id="accountMenuBtn" class="sched-top-btn sched-top-btn-account" data-account-name-btn onclick="toggleAccountMenu(event)">
+          👤 <span data-account-name>マイページ</span> ▾
+        </button>
+        <div id="accountMenuDropdown" onclick="event.stopPropagation()">
+          <button type="button" onclick="closeAccountMenu(); openMyPage();" class="sched-account-item sched-account-item-me">👤 マイページ</button>
+          <button type="button" id="accountMenuAdminBtn" onclick="closeAccountMenu(); openAdminFromWorker();" class="sched-account-item sched-account-item-admin" style="display:none;">🗺️ 管理者画面</button>
+          <button type="button" id="accountMenuWorkerBtn" onclick="closeAccountMenu(); openWorkerFromAccount();" class="sched-account-item sched-account-item-work" style="display:none;">🚜 作業画面</button>
+          <button type="button" onclick="closeAccountMenu(); executeLogout();" class="sched-account-item sched-account-item-out">🚪 ログアウト</button>
         </div>
       </div>
-      <!-- 軌跡表示用（下部タブのアクションシートから参照・非表示） -->
       <select id="trackingUserSelect" class="desktop-only" aria-hidden="true">
         <option value="ALL">全員</option>
       </select>
@@ -71,9 +63,6 @@
       </select>
       <input type="date" id="trackingDate" class="desktop-only" aria-hidden="true">
     </div>
-  </div>
-
-  <div id="deptFilterBar">
   </div>
 
   <div id="fieldCultivationModeBanner"
@@ -822,7 +811,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000118';
+    const cacheBust = '1788600000119';
     // 豚糞共有：台数＋短いGoogleマップURL＋座標（v1.49）
     // ※ https://maps.google.com/?q=緯度,経度
     // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）

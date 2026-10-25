@@ -443,6 +443,35 @@ body.bulk-work-memo-map-picking .map-action-bar {
 #lightbox img { max-width: 95%; max-height: 90%; border-radius: 4px; }
 .lot-section { background: #e3f2fd; border: 1px solid #90caf9; padding: 15px; border-radius: 8px; margin-bottom: 15px; display: none; }
 
+/* 天気・台風・お知らせ・予定（画面上部） */
+.worker-top-bar {
+  position: fixed;
+  top: max(10px, env(safe-area-inset-top, 0px));
+  left: 10px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.worker-top-bar .map-action-btn {
+  pointer-events: auto;
+}
+.worker-top-bar #btnWeather {
+  width: auto;
+  min-width: 50px;
+  height: auto;
+  min-height: 50px;
+  padding: 4px 8px;
+  border-radius: 25px;
+}
+.worker-top-bar.is-hidden,
+body.ridge-measuring-mode .worker-top-bar,
+body.bulk-work-memo-map-picking .worker-top-bar {
+  display: none !important;
+}
+
 /* 地図アクションボタン群（右下・縦並び） */
 .map-action-bar {
   position: fixed;

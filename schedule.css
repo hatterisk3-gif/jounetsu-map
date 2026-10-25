@@ -1,11 +1,107 @@
 html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; display: flex; flex-direction: column; overflow: hidden; background-color: #f8f9fa; }
-      .control-panel { padding: 10px; background-color: #222; border-bottom: 1px solid #444; z-index: 20; display: flex; justify-content: space-between; align-items: center; color: white; }
+      .control-panel {
+        padding: 8px 12px;
+        padding-top: calc(8px + env(safe-area-inset-top, 0px));
+        background: #1b1b1b;
+        border-bottom: 1px solid #2e2e2e;
+        z-index: 20;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        color: white;
+        min-height: 56px;
+        box-sizing: border-box;
+      }
+      .sched-top-brand {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 16px;
+        font-weight: bold;
+        letter-spacing: 0.04em;
+        flex-shrink: 0;
+      }
+      .control-panel-buttons {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        min-width: 0;
+        margin-left: auto;
+      }
+      .sched-top-btn {
+        height: 40px;
+        margin: 0;
+        padding: 0 12px;
+        border-radius: 10px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        box-sizing: border-box;
+        font-size: 13px;
+        font-weight: bold;
+        line-height: 1;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      .sched-top-btn-weather {
+        min-width: 52px;
+        background: #fff;
+        color: #e65100;
+        border: none;
+        padding: 2px 8px;
+      }
+      .sched-top-btn.btn-reload {
+        background: #2a2a2a;
+        color: #fff;
+        border: 1px solid #4a4a4a;
+      }
+      .sched-top-btn-account {
+        max-width: 190px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        background: #3a2744;
+        color: #f3e5f5;
+        border: 1px solid #8e24aa;
+      }
+      .sched-top-btn-alert {
+        background: #ffebee;
+        color: #c62828;
+        border: 1px solid #e57373;
+      }
+      .sched-account-wrap { position: relative; display: inline-flex; }
+      #accountMenuDropdown {
+        display: none;
+        position: absolute;
+        right: 0;
+        top: calc(100% + 8px);
+        min-width: 180px;
+        background: #fff;
+        border: 1px solid #e0e0e0;
+        border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.22);
+        z-index: 6000;
+        padding: 8px;
+      }
+      .sched-account-item {
+        width: 100%;
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-weight: bold;
+        font-size: 13px;
+        cursor: pointer;
+        margin-bottom: 6px;
+        text-align: left;
+      }
+      .sched-account-item:last-child { margin-bottom: 0; }
+      .sched-account-item-me { background: #f3e5f5; color: #6a1b9a; border: 1px solid #ce93d8; }
+      .sched-account-item-admin { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+      .sched-account-item-work { background: #fff3e0; color: #e65100; border: 1px solid #ffcc80; }
+      .sched-account-item-out { background: #c62828; color: #fff; border: none; }
       
       /* ★追加：部署フィルターのエリア */
-      #deptFilterBar { display: flex; overflow-x: auto; gap: 8px; padding: 8px 10px; background: #333; border-bottom: 2px solid #2196F3; white-space: nowrap; align-items: center; z-index: 10; }
-      .dept-btn { padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; border: 1px solid #777; background: #555; color: #ccc; cursor: pointer; transition: 0.2s; }
-      .dept-btn.active { background: #2196F3; color: white; border-color: #1976D2; box-shadow: 0 0 5px rgba(33, 150, 243, 0.5); }
-
       #map { flex-grow: 1; width: 100%; }
       button { padding: 10px 15px; font-size: 14px; cursor: pointer; border-radius: 5px; border: none; font-weight: bold; }
       .btn-primary { background: #2196F3; color: white; }
@@ -414,11 +510,10 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; displ
 
       /* スマホで見切れないように横スクロール対応 */
       @media screen and (max-width: 768px) {
-        .control-panel { flex-wrap: wrap; gap: 8px; padding: 10px 5px; overflow: visible; position: relative; z-index: 50; }
-        .control-panel-buttons { width: 100%; overflow-x: auto; overflow-y: visible; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
-        .control-panel-buttons::-webkit-scrollbar { height: 4px; }
-        .control-panel-buttons::-webkit-scrollbar-thumb { background: #888; border-radius: 2px; }
-        .control-panel-buttons > * { flex-shrink: 0; }
+        .control-panel { flex-wrap: nowrap; gap: 8px; padding: 8px 10px; padding-top: calc(8px + env(safe-area-inset-top, 0px)); overflow: visible; position: relative; z-index: 50; }
+        .control-panel-buttons { width: auto; overflow: visible; padding-bottom: 0; gap: 6px; }
+        .sched-top-btn { height: 38px; padding: 0 10px; font-size: 12px; }
+        .sched-top-btn-account { max-width: 42vw; }
         #accountMenuDropdown {
           position: fixed !important;
           z-index: 200000 !important;
