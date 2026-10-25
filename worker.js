@@ -2511,7 +2511,9 @@ function createSignboardMarker(name, pos, icon, id) {
                return;
              }
              if (window.selectingMachineIdForLoc) { applyMachineLocSelect(id); return; }
-             if (window.selectingSignForRefuel) { applyRefuelSignSelect(id); return; } // ★追加
+             if (window.selectingSignForRefuel) { applyRefuelSignSelect(id); return; }
+             if (window._isFieldAreaMeasuring) return;
+             if (typeof window.handleWorkMapFieldTap === 'function') window.handleWorkMapFieldTap(id);
              return;
           }
           showPolygonActionMenu_(id, e && e.latLng, e);
@@ -4045,6 +4047,16 @@ function createSignboardMarker(name, pos, icon, id) {
         const selectedSet = new Set((selectedPolyIds || []).map(String));
         for(let id in loadedPolygons) {
           const p = loadedPolygons[id];
+          const p = loadedPolygons[id];
+          if (p.isMarker && p.marker) {
+            if (isMapSelecting && !window.selectingSignForRefuel) {
+              const on = selectedSet.has(String(id));
+              p.marker.setOpacity(on ? 1 : 0.4);
+              p.marker.setZIndex(on ? 999 : 1);
+            } else if (!window.selectingSignForRefuel) {
+              p.marker.setOpacity(1);
+            }
+          }
           if(!p.isMarker && p.polygon) {
             const isU = (p.status === '未使用（返却）' || p.status === '未使用'), baseColor = isU ? '#999999' : p.color;
             if (isMapSelecting) {
@@ -4221,14 +4233,16 @@ function createSignboardMarker(name, pos, icon, id) {
           disp.classList.remove('is-empty');
           const chips = selectedPolyIds.map(id => {
             const p = loadedPolygons[id];
-            const name = (p && p.name) ? p.name : "不明な圃場";
+            const name = (p && p.name) ? p.name : (p && p.isMarker ? '不明な看板' : '不明な圃場');
             const around = typeof window.isSurroundingField_ === 'function' && window.isSurroundingField_(p);
-            const bg = around ? '#FFF3E0' : '#2E7D32';
+            const isSign = !!(p && p.isMarker);
+            const bg = around ? '#FFF3E0' : (isSign ? '#6A1B9A' : '#2E7D32');
             const fg = around ? '#E65100' : '#fff';
-            const bd = around ? '#FF9800' : '#1B5E20';
+            const bd = around ? '#FF9800' : (isSign ? '#4A148C' : '#1B5E20');
             const mark = around ? '<span style="font-size:11px; font-weight:bold; margin-left:4px;">周辺地</span>' : '';
+            const icon = isSign ? '🪧' : '📍';
             return `<span style="display:inline-flex; align-items:center; gap:6px; background:${bg}; color:${fg}; padding:8px 12px; border-radius:16px; font-size:14px; font-weight:bold; border:2px solid ${bd}; box-shadow:0 1px 3px rgba(0,0,0,0.12);">
-              📍 ${name}${mark}
+              ${icon} ${name}${mark}
               <span onclick="removeSelectedPoly('${id}')" style="cursor:pointer; font-weight:bold; color:${around ? '#c62828' : '#FFCDD2'}; margin-left:2px; font-size:16px; line-height:1;" title="対象から外す">×</span>
             </span>`;
           }).join('');
@@ -4774,13 +4788,13 @@ function createSignboardMarker(name, pos, icon, id) {
         const isBulkMapPick = !!String(window._bulkWorkMemoMapSelectUid || '').trim();
         if (countUI) {
           countUI.innerText = isBulkMapPick
-            ? `🗺️ 圃場をタップ (${n}箇所選択中)`
+            ? `🗺️ 圃場・看板をタップ (${n}箇所選択中)`
             : `🗺️ 記録する対象 (${n}箇所選択中)`;
         }
         if (hintUI) {
           hintUI.innerText = isBulkMapPick
-            ? 'タップで選択／解除。決定で確認画面に戻ります'
-            : 'CAD畝がある圃場は畝・分割単位で選べます';
+            ? '圃場も看板もタップで選択／解除。決定で確認画面に戻ります'
+            : 'CAD畝がある圃場は畝・分割単位で選べます。看板もタップできます';
         }
         if (actions) {
           actions.style.display = (!isBulkMapPick && window.workMapSelectingRidgesForFieldId) ? 'flex' : 'none';
@@ -4986,7 +5000,7 @@ function createSignboardMarker(name, pos, icon, id) {
 
       window.toggleBulkWorkMemoMapField_ = (id) => {
         const p = loadedPolygons[id];
-        if (!p || p.isMarker) return;
+        if (!p || String(id) === '__global__') return;
         const sid = String(id);
         try {
           if (typeof window.exitWorkRidgeSelectionView === 'function') window.exitWorkRidgeSelectionView(true);
@@ -5009,8 +5023,20 @@ function createSignboardMarker(name, pos, icon, id) {
           return;
         }
         const p = loadedPolygons[id];
-        if (!p || p.isMarker) return;
+        if (!p || String(id) === '__global__') return;
         const sid = String(id);
+        if (p.isMarker) {
+          selectedPolyIds = (selectedPolyIds || []).map(String);
+          if (selectedPolyIds.includes(sid)) {
+            selectedPolyIds = selectedPolyIds.filter(i => i !== sid);
+          } else {
+            selectedPolyIds.push(sid);
+          }
+          if (typeof updateMapSelectVisuals === 'function') updateMapSelectVisuals();
+          if (typeof window.updateWorkMapSelectBanner === 'function') window.updateWorkMapSelectBanner();
+          if (typeof window.updateSelectedPolysDisplay === 'function') window.updateSelectedPolysDisplay();
+          return;
+        }
 
         const ridges = window.getWorkCadRidgeShapes(p);
         if (ridges.length > 0) {
@@ -34025,9 +34051,9 @@ window.getBulkWorkMemoPolyIds_ = (d) => {
 window.setBulkWorkMemoPolyIds_ = (d, ids) => {
   if (!d) return;
   const list = (Array.isArray(ids) ? ids : [ids]).map(String).filter(id => {
-    if (!id) return false;
+    if (!id || id === '__global__') return false;
     const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
-    return p && !p.isMarker;
+    return !!p;
   });
   d.polyIds = list;
   d.polyId = list[0] || '';
@@ -34096,7 +34122,7 @@ window.buildBulkWorkMemoSelectedPolysDisplayHtml_ = (d, uid) => {
   if (!ids.length) {
     return `<div class="field-select-box is-empty" id="bulk_field_display_${esc(uid)}">
       <div style="width:100%; text-align:center; color:#E65100; font-size:14px; font-weight:bold; line-height:1.45;">🗺️ まだ圃場が選ばれていません
-        <div style="font-size:12px; font-weight:normal; color:#F57C00; margin-top:2px;">「マップから選択」で選べます${isMaint ? '（整備は機械か圃場のどちらか必須）' : ''}</div>
+        <div style="font-size:12px; font-weight:normal; color:#F57C00; margin-top:2px;">「マップから選択」で圃場と看板を選べます${isMaint ? '（整備は機械か場所のどちらか必須）' : ''}</div>
       </div>
     </div>`;
   }
@@ -34104,13 +34130,15 @@ window.buildBulkWorkMemoSelectedPolysDisplayHtml_ = (d, uid) => {
     const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
     const name = (p && p.name) ? p.name : id;
     const around = typeof window.isSurroundingField_ === 'function' && window.isSurroundingField_(p);
-    const bg = around ? '#FFF3E0' : '#2E7D32';
+    const isSign = !!(p && p.isMarker);
+    const bg = around ? '#FFF3E0' : (isSign ? '#6A1B9A' : '#2E7D32');
     const fg = around ? '#E65100' : '#fff';
-    const bd = around ? '#FF9800' : '#1B5E20';
+    const bd = around ? '#FF9800' : (isSign ? '#4A148C' : '#1B5E20');
     const mark = around ? '<span style="font-size:11px; font-weight:bold; margin-left:4px;">周辺地</span>' : '';
+    const icon = isSign ? '🪧' : '📍';
     const safeId = String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     return `<span style="display:inline-flex; align-items:center; gap:6px; background:${bg}; color:${fg}; padding:8px 12px; border-radius:16px; font-size:14px; font-weight:bold; border:2px solid ${bd}; box-shadow:0 1px 3px rgba(0,0,0,0.12);">
-      📍 ${esc(name)}${mark}
+      ${icon} ${esc(name)}${mark}
       <span onclick="removeBulkWorkMemoPoly_('${esc(uid)}','${safeId}')" style="cursor:pointer; font-weight:bold; color:${around ? '#c62828' : '#FFCDD2'}; margin-left:2px; font-size:16px; line-height:1;" title="対象から外す">×</span>
     </span>`;
   }).join('');
@@ -34207,7 +34235,7 @@ window.toggleBulkWorkMemoNearbyField_ = (uid, polyId) => {
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
   if (!row) return;
   const sid = String(polyId || '');
-  if (!sid || !loadedPolygons[sid] || loadedPolygons[sid].isMarker) return;
+  if (!sid || sid === '__global__' || !loadedPolygons[sid]) return;
   const cur = window.getBulkWorkMemoPolyIds_(row);
   const next = cur.map(String).includes(sid)
     ? cur.filter(id => String(id) !== sid)
@@ -34315,14 +34343,15 @@ window.buildBulkWorkMemoPrevFieldChoicesHtml_ = (d, uid) => {
     const name = (p && p.name) ? p.name : id;
     const on = selected.has(String(id));
     const safeId = String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    return `<button type="button" onclick="toggleBulkWorkMemoNearbyField_('${esc(uid)}','${safeId}')" style="background:${on ? '#1565C0' : '#fff'}; color:${on ? '#fff' : '#0D47A1'}; border:2px solid ${on ? '#0D47A1' : '#64B5F6'}; border-radius:16px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; text-align:left; line-height:1.35;">${on ? '✓ ' : ''}📍 ${esc(name)}</button>`;
+    const icon = (p && p.isMarker) ? '🪧' : '📍';
+    return `<button type="button" onclick="toggleBulkWorkMemoNearbyField_('${esc(uid)}','${safeId}')" style="background:${on ? '#1565C0' : '#fff'}; color:${on ? '#fff' : '#0D47A1'}; border:2px solid ${on ? '#0D47A1' : '#64B5F6'}; border-radius:16px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; text-align:left; line-height:1.35;">${on ? '✓ ' : ''}${icon} ${esc(name)}</button>`;
   }).join('');
   const allOn = prev.ids.every(id => selected.has(String(id)));
   const when = [prev.startTime, prev.endTime].filter(Boolean).join('〜');
   const label = [when ? when : '前の行', prev.workName].filter(Boolean).join(' ');
-  const applyBtn = allOn ? '' : `<button type="button" onclick="applyBulkWorkMemoPrevFields_('${esc(uid)}')" style="background:#1565C0; color:#fff; border:none; border-radius:16px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer;">この圃場を入れる</button>`;
+  const applyBtn = allOn ? '' : `<button type="button" onclick="applyBulkWorkMemoPrevFields_('${esc(uid)}')" style="background:#1565C0; color:#fff; border:none; border-radius:16px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer;">この場所を入れる</button>`;
   return `<div style="margin-bottom:8px; padding:10px 12px; background:#E3F2FD; border:1px solid #90CAF9; border-radius:8px;">
-    <div style="font-size:11px; font-weight:bold; color:#0D47A1; margin-bottom:6px;">前の時間（${esc(label)}）で選んだ圃場</div>
+    <div style="font-size:11px; font-weight:bold; color:#0D47A1; margin-bottom:6px;">前の時間（${esc(label)}）で選んだ場所</div>
     <div style="display:flex; flex-wrap:wrap; gap:6px;">${chips}${applyBtn}</div>
   </div>`;
 };
@@ -34356,7 +34385,7 @@ window.buildBulkWorkMemoFieldHtml_ = (d, uid) => {
     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; gap:8px; flex-wrap:wrap;">
       <div style="min-width:120px; flex:1;">
         <label class="form-label" style="margin:0; color:#1B5E20; font-size:15px;">📍 ${esc(fieldTitle)}</label>
-        <div style="font-size:11px; color:#555; margin-top:4px; line-height:1.4;">複数選択可。前の時間の圃場をタップするか、「マップから選択」で選べます。</div>
+        <div style="font-size:11px; color:#555; margin-top:4px; line-height:1.4;">複数選択可。前の時間の場所をタップするか、「マップから選択」で圃場と看板を選べます。</div>
       </div>
       <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
         <button type="button" onclick="openBulkWorkMemoMapSelect_('${esc(uid)}')" style="background:#2E7D32; color:#fff; border:none; border-radius:20px; padding:8px 14px; font-weight:bold; font-size:13px; cursor:pointer; box-shadow:0 2px 4px rgba(46,125,50,0.28);">🗺️ マップから選択</button>
@@ -41745,7 +41774,7 @@ window.validateBulkWorkMemoDraftsForSave_ = () => {
     if (window.bulkWorkMemoIsMaintenance_(d)) {
       const hasField = window.getBulkWorkMemoPolyIds_(d).some(id => {
         const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
-        return !!(p && !p.isMarker);
+        return !!(p && String(id) !== '__global__');
       });
       const hasMachine = (typeof window.getBulkWorkMemoMaintTargetsSelected_ === 'function')
         ? window.getBulkWorkMemoMaintTargetsSelected_(d).length > 0
@@ -42685,7 +42714,7 @@ window.validateSingleBulkWorkMemoDraft_ = (d, label) => {
   if (window.bulkWorkMemoIsMaintenance_(d)) {
     const hasField = window.getBulkWorkMemoPolyIds_(d).some(id => {
       const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
-      return !!(p && !p.isMarker);
+      return !!(p && String(id) !== '__global__');
     });
     const hasMachine = (typeof window.getBulkWorkMemoMaintTargetsSelected_ === 'function')
       ? window.getBulkWorkMemoMaintTargetsSelected_(d).length > 0
@@ -43184,7 +43213,7 @@ window.executeBulkWorkMemoRegistration_ = async () => {
       }
       let targetIds = window.getBulkWorkMemoPolyIds_(d).filter(id => {
         const p = loadedPolygons && loadedPolygons[id];
-        return p && !p.isMarker;
+        return !!(p && String(id) !== '__global__');
       });
       let nameStr = '未選択';
       if (targetIds.length) {

@@ -776,10 +776,17 @@
             style="background:#4CAF50; color:white; flex:1; border:none; border-radius:4px; font-weight:bold; padding:10px;"
             disabled>形を決定</button>
         </div>
+        <div id="drawRegModeRow" style="display:flex; gap:8px; margin-top:8px;">
+          <button id="btnDrawMergeMode" type="button" onclick="setAdminDrawRegMode_('merge')"
+            style="flex:1; background:#E65100; color:#fff; border:2px solid #E65100; border-radius:4px; font-weight:bold; padding:8px; cursor:pointer;">合体モード</button>
+          <button id="btnDrawMultiMode" type="button" onclick="setAdminDrawRegMode_('multi')"
+            style="flex:1; background:#fff; color:#455A64; border:2px solid #B0BEC5; border-radius:4px; font-weight:bold; padding:8px; cursor:pointer;">マルチモード</button>
+        </div>
+        <div id="drawRegModeHint" style="font-size:11px; color:#37474F; margin-top:4px; line-height:1.35; text-align:center;">2件以上選ぶと、合体かマルチを使えます</div>
       </div>
 
       <div id="drawStep2" style="display:none; width:min(92vw, 380px); max-height:68vh; overflow:auto; box-sizing:border-box; background:#fff; color:#333; border-radius:12px; padding:12px; text-align:left; box-shadow:0 6px 20px rgba(0,0,0,.28);">
-        <div style="font-size:15px; font-weight:bold; color:#d32f2f; margin-bottom:8px;">この形の情報を入力</div>
+        <div id="drawStep2Title" style="font-size:15px; font-weight:bold; color:#d32f2f; margin-bottom:8px;">この形の情報を入力</div>
         <div id="addressHint" style="display:none; background:#F1F8E9; border:1px solid #C5E1A5; border-radius:8px; padding:8px 10px; margin-bottom:10px; line-height:1.35;"></div>
         <label class="form-label" for="fieldName">圃場名</label>
         <input type="text" id="fieldName" class="form-input" placeholder="例：塩崎125" style="margin-bottom:8px;">
@@ -863,7 +870,7 @@
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=ja&v=weekly" async defer></script>
 
   <script src="api-client.js?v=1788600000116" defer></script>
-  <script src="admin.js?v=1788600000127" defer></script>
+  <script src="admin.js?v=1788600000128" defer></script>
   <script src="admin_cost.js?v=1785489000008" defer></script>
   <script src="admin_crop_work.js?v=1787570400000" defer></script>
   <script src="tracking.js?v=1788600000043" defer></script>
@@ -897,6 +904,13 @@
     <div style="text-align:center; font-size:15px; font-weight:bold; line-height:1.35;">✂️ この形を同じ大きさに分けますか？</div>
     <div style="text-align:center; font-size:11px; font-weight:normal; opacity:0.92; margin:2px 0 10px;">切り口の向きを選んでください</div>
     <div style="display:flex; flex-direction:column; gap:6px;">
+      <button type="button" onclick="cancelSplitPolygon()" style="display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:#ECEFF1; color:#37474F; border:none; border-radius:8px; padding:8px 10px; cursor:pointer;">
+        <span aria-hidden="true" style="width:36px; height:18px; border:2px solid currentColor; border-radius:2px; box-sizing:border-box; flex:none;"></span>
+        <span style="min-width:0;">
+          <span style="display:block; font-size:14px; font-weight:bold;">分けずに、この形のまま進む</span>
+          <span style="display:block; font-size:11px; font-weight:normal; color:#555; margin-top:1px;">分割しない</span>
+        </span>
+      </button>
       <button type="button" onclick="promptSplitPolygon('edge')" style="display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:#fff; color:#1B5E20; border:none; border-radius:8px; padding:8px 10px; cursor:pointer;">
         <span aria-hidden="true" style="position:relative; width:36px; height:22px; flex:none;">
           <span style="position:absolute; left:2px; top:3px; width:24px; height:3px; background:currentColor; border-radius:2px; transform:rotate(-24deg); transform-origin:left center;"></span>
@@ -928,13 +942,6 @@
         <span style="min-width:0;">
           <span style="display:block; font-size:14px; font-weight:bold;">短いほうを等分する</span>
           <span style="display:block; font-size:11px; font-weight:normal; color:#555; margin-top:1px;">短い辺を横切って、自動で切る</span>
-        </span>
-      </button>
-      <button type="button" onclick="cancelSplitPolygon()" style="display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:#ECEFF1; color:#37474F; border:none; border-radius:8px; padding:8px 10px; cursor:pointer;">
-        <span aria-hidden="true" style="width:36px; height:18px; border:2px solid currentColor; border-radius:2px; box-sizing:border-box; flex:none;"></span>
-        <span style="min-width:0;">
-          <span style="display:block; font-size:14px; font-weight:bold;">分けずに、この形のまま進む</span>
-          <span style="display:block; font-size:11px; font-weight:normal; color:#555; margin-top:1px;">分割しない</span>
         </span>
       </button>
     </div>

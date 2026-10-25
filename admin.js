@@ -7332,6 +7332,7 @@ function initMap() {
                     if (document.getElementById('splitCountModal')) document.getElementById('splitCountModal').style.display = 'none';
                     clearSplitEdgePreview_();
                 }
+                if (typeof window.syncAdminDrawRegModeUi_ === 'function') window.syncAdminDrawRegModeUi_();
                 return; // 処理を終了する
             }
 
@@ -7361,6 +7362,7 @@ function initMap() {
                     clearSplitEdgePreview_();
                 }
             }
+            if (typeof window.syncAdminDrawRegModeUi_ === 'function') window.syncAdminDrawRegModeUi_();
         }
     });
 
@@ -8077,6 +8079,11 @@ function clearCustomDrawing() {
     if (document.getElementById('fieldCondition')) document.getElementById('fieldCondition').value = '';
     if (document.getElementById('fieldSoilType')) document.getElementById('fieldSoilType').value = '';
     if (document.getElementById('fieldStatus')) document.getElementById('fieldStatus').value = '';
+    window._adminMultiRegQueue = null;
+    window._adminMultiRegIndex = 0;
+    const stepTitle = document.getElementById('drawStep2Title');
+    if (stepTitle) stepTitle.textContent = 'この形の情報を入力';
+    if (typeof window.syncAdminDrawRegModeUi_ === 'function') window.syncAdminDrawRegModeUi_();
 }
 
 // 🌟閲覧ボタン
@@ -8151,7 +8158,7 @@ document.getElementById('btnDrawMode').onclick = () => {
 
     window._adminDrawManualMode = false;
     if (typeof window.syncAdminDrawModeBtn_ === 'function') window.syncAdminDrawModeBtn_();
-    customAlert("【圃場作成モード】\n筆ポリゴンを表示しています。\n青枠をタップして選ぶか、「👆 手動」で頂点を打てます。", "drawMode");
+    customAlert("【圃場作成モード】\n筆ポリゴンを表示しています。\n青枠をタップして選ぶか、「👆 手動」で頂点を打てます。\n複数選んだときは、合体モードかマルチモードを選べます。", "drawMode");
     if (typeof window.closeAdminRegPlusMenu_ === 'function') window.closeAdminRegPlusMenu_();
     if (typeof window.syncAdminRegPlusBtnState_ === 'function') window.syncAdminRegPlusBtnState_('draw');
 };
@@ -8262,6 +8269,7 @@ if (undoBtn) {
             updateCustomDrawingVisuals();
             if (customDrawingPath.length < 3) document.getElementById('addressHint').style.display = 'none';
         }
+        if (typeof window.syncAdminDrawRegModeUi_ === 'function') window.syncAdminDrawRegModeUi_();
     };
 }
 window.syncAdminDrawModeBtn_ = function () {
@@ -8299,9 +8307,97 @@ document.getElementById('btnManualDraw').onclick = () => {
     window.syncAdminDrawModeBtn_();
 };
 
+window._adminDrawRegMode = 'merge';
+
+window.syncAdminDrawRegModeUi_ = () => {
+    const mode = window._adminDrawRegMode === 'multi' ? 'multi' : 'merge';
+    window._adminDrawRegMode = mode;
+    const mergeBtn = document.getElementById('btnDrawMergeMode');
+    const multiBtn = document.getElementById('btnDrawMultiMode');
+    const hint = document.getElementById('drawRegModeHint');
+    const n = (window.selectedFudePaths || []).length;
+    const paint = (btn, on, bg) => {
+        if (!btn) return;
+        btn.style.background = on ? bg : '#fff';
+        btn.style.color = on ? '#fff' : '#455A64';
+        btn.style.border = '2px solid ' + (on ? bg : '#B0BEC5');
+    };
+    paint(mergeBtn, mode === 'merge', '#E65100');
+    paint(multiBtn, mode === 'multi', '#1565C0');
+    if (!hint) return;
+    if (n < 2) hint.textContent = '2件以上選ぶと、合体かマルチを使えます';
+    else if (mode === 'multi') hint.textContent = n + '件選択中。形を決定で、1件ずつ画面の中央に出して登録します';
+    else hint.textContent = n + '件選択中。形を決定で、1つの圃場に合体します';
+};
+
+window.setAdminDrawRegMode_ = (mode) => {
+    window._adminDrawRegMode = mode === 'multi' ? 'multi' : 'merge';
+    window.syncAdminDrawRegModeUi_();
+};
+
+window.focusAdminFudePath_ = (path) => {
+    if (!map || !path || !path.length) return;
+    const bounds = new google.maps.LatLngBounds();
+    path.forEach(pt => bounds.extend(pt));
+    try {
+        map.fitBounds(bounds, { top: 230, right: 48, bottom: 56, left: 48 });
+    } catch (e) {
+        map.fitBounds(bounds);
+    }
+};
+
+window.openAdminMultiRegCurrent_ = () => {
+    const queue = window._adminMultiRegQueue || [];
+    const index = window._adminMultiRegIndex || 0;
+    const path = queue[index];
+    if (!path) return;
+    if (window.selectedFudePolygons) window.selectedFudePolygons.forEach(p => p.setVisible(false));
+    if (window.mergedPreviewPolygon) window.mergedPreviewPolygon.setMap(null);
+    window.mergedPreviewPolygon = new google.maps.Polygon({
+        map: map,
+        paths: path,
+        fillColor: '#d32f2f',
+        fillOpacity: 0.35,
+        strokeColor: '#d32f2f',
+        strokeOpacity: 1,
+        strokeWeight: 3,
+        zIndex: 9999,
+        clickable: false
+    });
+    customDrawingPath = path.slice();
+    window.isMergedFude = false;
+    window.focusAdminFudePath_(path);
+    const step1 = document.getElementById('drawStep1');
+    const step2 = document.getElementById('drawStep2');
+    if (step1) step1.style.display = 'none';
+    if (step2) step2.style.display = 'block';
+    const title = document.getElementById('drawStep2Title');
+    if (title) title.textContent = 'この形の情報を入力（' + (index + 1) + ' / ' + queue.length + '件目）';
+    const startWrap = document.getElementById('fieldStartNumberWrap');
+    if (startWrap) startWrap.style.display = 'none';
+    const nameEl = document.getElementById('fieldName');
+    if (nameEl && index > 0) {
+        nameEl.value = '';
+        window._fieldNameFromAddress = '';
+    }
+    if (typeof setFudeVisibility === 'function') setFudeVisibility(false);
+    try {
+        const bounds = new google.maps.LatLngBounds();
+        path.forEach(pt => bounds.extend(pt));
+        if (typeof fetchAddressHint === 'function') fetchAddressHint(bounds.getCenter());
+    } catch (e) {}
+};
+
 // 🌟修正：微細な隙間を無視して、複数の畑を美しく1つに結合する！
 document.getElementById('step1SaveBtn').onclick = () => {
-    if (window.selectedFudePaths && window.selectedFudePaths.length > 0) {
+    const selectedPaths = window.selectedFudePaths || [];
+    if (selectedPaths.length > 1 && window._adminDrawRegMode === 'multi') {
+        window._adminMultiRegQueue = selectedPaths.map(path => path.slice());
+        window._adminMultiRegIndex = 0;
+        window.openAdminMultiRegCurrent_();
+        return;
+    }
+    if (selectedPaths.length > 0) {
         try {
             const mergedPath = mergeFudePathsToLatLngs(window.selectedFudePaths);
             if (!mergedPath) return;
@@ -8336,10 +8432,18 @@ document.getElementById('step1SaveBtn').onclick = () => {
     const startWrap = document.getElementById('fieldStartNumberWrap');
     if (startWrap) startWrap.style.display = 'none';
     setFudeVisibility(false);
+    const stepTitle = document.getElementById('drawStep2Title');
+    if (stepTitle) stepTitle.textContent = 'この形の情報を入力';
+    window._adminMultiRegQueue = null;
+    window._adminMultiRegIndex = 0;
 };
 
 // 🌟変更：やり直すボタンを押したときに、選択状態をキープして復活させる！
 document.getElementById('backToStep1Btn').onclick = () => {
+    window._adminMultiRegQueue = null;
+    window._adminMultiRegIndex = 0;
+    const stepTitle = document.getElementById('drawStep2Title');
+    if (stepTitle) stepTitle.textContent = 'この形の情報を入力';
     document.getElementById('drawStep2').style.display = 'none';
     document.getElementById('drawStep1').style.display = 'block';
 
@@ -9087,6 +9191,35 @@ document.getElementById('finalSaveBtn').onclick = async () => {
     if (!n) { customAlert("圃場名を入力してください"); return; }
 
     try {
+        if (window._adminMultiRegQueue && window._adminMultiRegQueue.length) {
+            if (!customDrawingPath || customDrawingPath.length < 3) {
+                customAlert("形が描画されていません");
+                return;
+            }
+            const pathData = customDrawingPath.map(pt => ({ lat: pt.lat(), lng: pt.lng() }));
+            const area = Math.round(google.maps.geometry.spherical.computeArea(customDrawingPath) / 100);
+            const tempId = newAdminTempId_('tmp');
+            createPolygonObject({ id: tempId, name: n, coords: pathData, color: '#d32f2f', location: l, condition: c, soilType: soil, area, status: s, toukiId: t, isMarker: false });
+            persistAdminInitCache_();
+            const payload = { name: n, coords: JSON.stringify(pathData), color: '#d32f2f', userName: currentUser, location: l, condition: c, soilType: soil, area, status: s, toukiId: t };
+            syncAdminCall_('savePolygon', payload, { key: 'savePolygon:' + tempId, op: 'savePolygon', tempId, payload }).then(newId => {
+                remapLoadedPolygonId_(tempId, newId);
+                persistAdminInitCache_();
+            }).catch(() => {});
+            const next = (window._adminMultiRegIndex || 0) + 1;
+            if (next < window._adminMultiRegQueue.length) {
+                window._adminMultiRegIndex = next;
+                showAdminSyncToast('✅ 次は ' + (next + 1) + ' / ' + window._adminMultiRegQueue.length + '件目です', 'ok');
+                window.openAdminMultiRegCurrent_();
+                return;
+            }
+            window._adminMultiRegQueue = null;
+            window._adminMultiRegIndex = 0;
+            document.getElementById('modal').style.display = 'none';
+            document.getElementById('btnViewMode').click();
+            showAdminSyncToast('✅ 選んだ圃場を登録しました', 'ok');
+            return;
+        }
         if (window.gridGeneratedPaths && window.gridGeneratedPaths.length > 0) {
             let paramsList = [];
             let tempIds = [];
