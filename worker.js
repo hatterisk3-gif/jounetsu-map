@@ -22159,6 +22159,56 @@ function createSignboardMarker(name, pos, icon, id) {
         return html;
       };
 
+      window.buildFuelKindOptionsHtml_ = (kind, selectedId) => {
+        const keep = String(selectedId || '');
+        const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        const displayName = (item) => {
+          if (window.MachineTaxonomy && MachineTaxonomy.getDisplayName) {
+            const label = MachineTaxonomy.getDisplayName(item);
+            if (label) return label;
+          }
+          return item.plateNumber || item.vehicleNumber || item.name || item.id || '';
+        };
+        const selAttr = (id) => (keep && String(id) === String(keep)) ? ' selected' : '';
+        let html = `<option value=""${!keep ? ' selected' : ''}>選択してください</option>`;
+        if (kind === 'vehicle') {
+          const vehicles = window.pdlMobileVehicles || [];
+          html += vehicles.map(v => {
+            const oid = (typeof window.getMobileVehicleOptionId_ === 'function')
+              ? window.getMobileVehicleOptionId_(v)
+              : ('veh:' + (v.id || ''));
+            const plate = v.plateNumber || v.vehicleNumber || v.machineNumber || '';
+            const label = displayName(Object.assign({}, v, {
+              isVehicle: true,
+              plateNumber: plate,
+              vehicleNumber: v.vehicleNumber || plate,
+              name: plate || v.name || ''
+            })) || plate || v.id || '移動車両';
+            return `<option value="${esc(oid)}" data-kind="vehicle"${selAttr(oid)}>${esc(label)}</option>`;
+          }).join('');
+          if (!vehicles.length) html += '<option value="" disabled>登録済みの車両がありません</option>';
+          if (keep.indexOf('veh:') === 0 && html.indexOf(`value="${esc(keep)}"`) < 0) {
+            html += `<option value="${esc(keep)}" data-kind="vehicle" selected>${esc(keep)}</option>`;
+          }
+          return html;
+        }
+        const all = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+        const isDiesel = (m) => String((m && (m.fuel || m.fuelType)) || '').includes('軽油');
+        const machineOpt = (m) => {
+          const fuel = String(m.fuel || m.fuelType || '').trim();
+          return `<option value="${esc(m.id)}" data-kind="machine"${selAttr(m.id)}>${esc(displayName(m))}${fuel ? `（${esc(fuel)}）` : ''}</option>`;
+        };
+        const dieselMachines = all.filter(m => m && isDiesel(m));
+        const otherMachines = all.filter(m => m && !isDiesel(m));
+        if (dieselMachines.length) html += '<optgroup label="軽油">' + dieselMachines.map(machineOpt).join('') + '</optgroup>';
+        if (otherMachines.length) html += '<optgroup label="その他">' + otherMachines.map(machineOpt).join('') + '</optgroup>';
+        if (!all.length) html += '<option value="" disabled>登録済みの農機がありません</option>';
+        if (keep && keep.indexOf('veh:') !== 0 && html.indexOf(`value="${esc(keep)}"`) < 0) {
+          html += `<option value="${esc(keep)}" data-kind="machine" selected>${esc(keep)}</option>`;
+        }
+        return html;
+      };
+
       /** 給油確認チェックの定義（車両・機械ごとに表示可否を設定） */
       window.FUEL_CHECK_DEFS_ = [
         { key: 'cap', label: 'キャップ', fullLabel: '給油キャップ確認' },
@@ -22320,17 +22370,18 @@ function createSignboardMarker(name, pos, icon, id) {
       window.addFuelTargetVehicleFromWorkRecord = () => window.addFuelTargetFromWorkRecord_('vehicle');
 
       window.handleWorkFuelTargetChange = () => {
-        const sel = document.getElementById('wf_target');
+        const hidden = document.getElementById('wf_target');
+        const veh = document.getElementById('wf_vehicle');
+        const mac = document.getElementById('wf_machine');
+        const id = hidden
+          ? String(hidden.value || '')
+          : String((veh && veh.value) || (mac && mac.value) || '');
         const meterLabel = document.getElementById('wf_meter_label');
         const meterHint = document.getElementById('wf_meter_hint');
         const meterInput = document.getElementById('wf_meter');
-        if (!sel) return;
-        const opt = sel.options[sel.selectedIndex];
-        const kind = opt ? (opt.getAttribute('data-kind') || '') : '';
-        const isVehicle = kind === 'vehicle' || String(sel.value || '').indexOf('veh:') === 0;
+        const isVehicle = id.indexOf('veh:') === 0;
         if (meterLabel) meterLabel.textContent = isVehicle ? '🚗 走行距離 (km)' : '⏱️ アワメーター (h)';
         if (meterInput) meterInput.placeholder = isVehicle ? '例: 12345' : '例: 150.5';
-        const id = sel.value;
         let last = '';
         if (id && window.lastHourMeters && window.lastHourMeters[id] != null && window.lastHourMeters[id] !== '') {
           last = window.lastHourMeters[id];
@@ -22343,9 +22394,17 @@ function createSignboardMarker(name, pos, icon, id) {
             ? `(前回: <span style="color:#C2185B;">${String(last)}</span>)`
             : '(前回: 記録なし)';
         }
-        if (typeof window.refreshWorkFuelChecksUi_ === 'function') {
-          window.refreshWorkFuelChecksUi_(id);
-        }
+      };
+
+      window.syncWorkFuelSplitTarget_ = (kind) => {
+        const veh = document.getElementById('wf_vehicle');
+        const mac = document.getElementById('wf_machine');
+        if (kind === 'vehicle' && veh && veh.value && mac) mac.value = '';
+        if (kind === 'machine' && mac && mac.value && veh) veh.value = '';
+        const id = String((veh && veh.value) || (mac && mac.value) || '');
+        const hidden = document.getElementById('wf_target');
+        if (hidden) hidden.value = id;
+        window.handleWorkFuelTargetChange();
       };
 
       window.refreshWorkFuelChecksUi_ = (targetId) => {
@@ -22476,20 +22535,11 @@ function createSignboardMarker(name, pos, icon, id) {
             return `
               <div class="wf-pair-row" data-machine-id="${sid}" data-machine-name="${String(name).replace(/"/g, '&quot;')}" style="background:#fff; border:1px solid #f8bbd0; border-radius:8px; padding:10px; margin-bottom:8px;">
                 <div style="font-weight:bold; font-size:13px; margin-bottom:6px;">🚜 ${String(name).replace(/</g, '&lt;')} <span style="font-size:10px; color:#C2185B;">⛽軽油</span></div>
-                <div style="display:flex; gap:8px;">
-                  <div style="flex:1;">
-                    <label class="form-label">💧 給油量 (L)</label>
-                    <input type="number" class="form-input wf-pair-amount" placeholder="例: 20" value="${String(d.amount || '').replace(/"/g, '&quot;')}">
-                  </div>
-                  <div style="flex:1;">
-                    <div style="display:flex; justify-content:space-between; align-items:flex-end;">
-                      <label class="form-label" style="margin-bottom:0;">⏱️ アワメーター (h)</label>
-                      <span style="font-size:11px; color:#888; font-weight:bold;">${lastHtml}</span>
-                    </div>
-                    <input type="number" class="form-input wf-pair-meter" placeholder="例: 150.5" value="${String(d.meter || '').replace(/"/g, '&quot;')}">
-                  </div>
+                <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+                  <label class="form-label" style="margin-bottom:0;">⏱️ アワメーター (h)</label>
+                  <span style="font-size:11px; color:#888; font-weight:bold;">${lastHtml}</span>
                 </div>
-                ${checksHtml ? `<div style="margin-top:8px;">${checksHtml}</div>` : ''}
+                <input type="number" class="form-input wf-pair-meter" placeholder="例: 150.5" value="${String(d.meter || '').replace(/"/g, '&quot;')}">
               </div>
             `;
           }).join('');
@@ -22503,45 +22553,37 @@ function createSignboardMarker(name, pos, icon, id) {
           return;
         }
 
+        const vehKeep = String(keepTarget).indexOf('veh:') === 0 ? keepTarget : '';
+        const macKeep = vehKeep ? '' : String(keepTarget || '');
+        const vehOpts = (typeof window.buildFuelKindOptionsHtml_ === 'function')
+          ? window.buildFuelKindOptionsHtml_('vehicle', vehKeep)
+          : '<option value="">選択してください</option>';
+        const macOpts = (typeof window.buildFuelKindOptionsHtml_ === 'function')
+          ? window.buildFuelKindOptionsHtml_('machine', macKeep)
+          : '<option value="">選択してください</option>';
         box.innerHTML = `
           <div style="font-weight:bold; color:#C2185B; margin-bottom:8px; font-size:14px;">⛽ 給油記録</div>
-          <div style="font-size:11px; color:#880E4F; margin-bottom:10px;">作業記録と一緒に給油内容を残せます。燃料が「軽油」の農業機械と移動車両から選べます。</div>
-          <label class="form-label">給油する機械・車両</label>
-          <select id="wf_target" class="form-input" onchange="handleWorkFuelTargetChange()">${window.buildFuelTargetOptionsHtml_(keepTarget)}</select>
-          <div style="display:flex; justify-content:flex-end; flex-wrap:wrap; gap:6px; margin:-6px 0 8px;">
-            <button type="button" onclick="addFuelTargetMachineFromWorkRecord()" style="background:#2196F3; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 機械を登録</button>
+          <div style="font-size:11px; color:#880E4F; margin-bottom:10px;">車両と農機は別々に選べます。一覧に無いときは、それぞれの登録ボタンから追加できます。</div>
+          <label class="form-label">🛻 車両</label>
+          <select id="wf_vehicle" class="form-input" onchange="syncWorkFuelSplitTarget_('vehicle')">${vehOpts}</select>
+          <div style="display:flex; justify-content:flex-end; margin:-4px 0 10px;">
             <button type="button" onclick="addFuelTargetVehicleFromWorkRecord()" style="background:#00897B; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 車両を登録</button>
           </div>
-          <div style="display:flex; gap:10px;">
-            <div style="flex:1;">
-              <label class="form-label">📅 給油日</label>
-              <input type="date" id="wf_date" class="form-input" value="${String(keepDate).replace(/"/g, '&quot;')}">
-            </div>
-            <div style="flex:1;">
-              <label class="form-label">💧 給油量 (L)</label>
-              <input type="number" id="wf_amount" class="form-input" placeholder="例: 20" value="${String(keepAmount).replace(/"/g, '&quot;')}">
-            </div>
+          <label class="form-label">🚜 農機</label>
+          <select id="wf_machine" class="form-input" onchange="syncWorkFuelSplitTarget_('machine')">${macOpts}</select>
+          <div style="display:flex; justify-content:flex-end; margin:-4px 0 10px;">
+            <button type="button" onclick="addFuelTargetMachineFromWorkRecord()" style="background:#2196F3; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 農機を登録</button>
           </div>
+          <input type="hidden" id="wf_target" value="${String(keepTarget || '').replace(/"/g, '&quot;')}">
+          <label class="form-label">📅 給油日</label>
+          <input type="date" id="wf_date" class="form-input" value="${String(keepDate).replace(/"/g, '&quot;')}">
           <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:2px;">
             <label class="form-label" id="wf_meter_label" style="margin-bottom:0;">⏱️ アワメーター (h)</label>
             <span id="wf_meter_hint" style="font-size:12px; color:#888; font-weight:bold;">(前回: --)</span>
           </div>
           <input type="number" id="wf_meter" class="form-input" placeholder="例: 150.5" value="${String(keepMeter).replace(/"/g, '&quot;')}">
-          <div id="wf_checks_box" style="margin-top:10px; background:#fce4ec; padding:12px; border-radius:8px; border:1px solid #f8bbd0;"></div>
         `;
-        if (keepTarget) {
-          const sel = document.getElementById('wf_target');
-          if (sel && Array.from(sel.options).some(o => o.value === keepTarget)) sel.value = keepTarget;
-        }
         if (typeof window.handleWorkFuelTargetChange === 'function') window.handleWorkFuelTargetChange();
-        const applyKeep = (id, on) => {
-          const el = document.getElementById(id);
-          if (el) el.checked = !!on;
-        };
-        applyKeep('wf_chk_cap', keepCap);
-        applyKeep('wf_chk_oil', keepOil);
-        applyKeep('wf_chk_net', keepNet);
-        applyKeep('wf_chk_water', keepWater);
       };
 
       window.collectWorkFuelRecordData = () => {
@@ -22556,7 +22598,7 @@ function createSignboardMarker(name, pos, icon, id) {
           pairRows.forEach(row => {
             const targetId = String(row.getAttribute('data-machine-id') || '').trim();
             const amount = String(row.querySelector('.wf-pair-amount')?.value || '').trim();
-            if (!targetId || !amount) return;
+            if (!targetId) return;
             const name = String(row.getAttribute('data-machine-name') || '');
             const target = window.findMaintenanceTargetById_(targetId) || window.findMachineByIdOrName_(targetId);
             list.push({
@@ -22580,24 +22622,25 @@ function createSignboardMarker(name, pos, icon, id) {
           return list.length === 1 ? list[0] : list;
         }
         const targetId = document.getElementById('wf_target')?.value || '';
-        const amount = document.getElementById('wf_amount')?.value || '';
-        if (!targetId && !amount) return null;
+        if (!targetId) return null;
         const target = window.findMaintenanceTargetById_(targetId);
-        const sel = document.getElementById('wf_target');
-        const nameFromSel = sel && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex].text : '';
+        const vehSel = document.getElementById('wf_vehicle');
+        const macSel = document.getElementById('wf_machine');
+        const activeSel = targetId.indexOf('veh:') === 0 ? vehSel : macSel;
+        const nameFromSel = activeSel && activeSel.selectedIndex >= 0 ? activeSel.options[activeSel.selectedIndex].text : '';
         return {
           targetId: targetId,
           machineId: targetId.indexOf('veh:') === 0 ? targetId.slice(4) : targetId,
           machineName: (target && target.name) || nameFromSel || '',
           isVehicle: !!(target && target.isVehicle) || targetId.indexOf('veh:') === 0,
           date: date,
-          amount: amount,
+          amount: document.getElementById('wf_amount')?.value || '',
           hourMeter: document.getElementById('wf_meter')?.value || '',
           attachment: '',
-          cap: !!document.getElementById('wf_chk_cap')?.checked,
-          oil: !!document.getElementById('wf_chk_oil')?.checked,
-          net: !!document.getElementById('wf_chk_net')?.checked,
-          water: !!document.getElementById('wf_chk_water')?.checked,
+          cap: false,
+          oil: false,
+          net: false,
+          water: false,
           chainCover: false,
           rotaryClaw: false
         };
@@ -27480,12 +27523,7 @@ function createSignboardMarker(name, pos, icon, id) {
               for (let fi = 0; fi < fuelList.length; fi++) {
                 const fuelRec = fuelList[fi];
                 if (!fuelRec.targetId) {
-                  customAlert('給油記録では給油する機械・車両を選択してください。');
-                  if (btn) { btn.disabled = false; btn.innerText = isEditBtn ? "更新する" : "保存する"; }
-                  return;
-                }
-                if (!fuelRec.amount) {
-                  customAlert('給油記録では給油量を入力してください。');
+                  customAlert('給油記録では車両か農機を選択してください。');
                   if (btn) { btn.disabled = false; btn.innerText = isEditBtn ? "更新する" : "保存する"; }
                   return;
                 }
@@ -35032,13 +35070,13 @@ window.buildBulkWorkMemoFuelHtml_ = (d, uid) => {
   const meter = String(d.fuelMeter != null ? d.fuelMeter : '').trim();
   const dateVal = String(d.fuelDate || window._bulkWorkMemoDate || '').trim()
     || ((typeof window.getBulkWorkMemoTodayYmd_ === 'function') ? window.getBulkWorkMemoTodayYmd_() : '');
-  const collapsed = targetId && amount && d._fuelPickOpen !== true;
+  const collapsed = targetId && d._fuelPickOpen !== true;
   if (collapsed) {
     return window.buildBulkWorkMemoCollapsedPickHtml_({
       icon: '⛽',
-      label: '給油車両',
+      label: targetId.indexOf('veh:') === 0 ? '給油車両' : '給油農機',
       value: targetName || targetId,
-      sub: amount ? `${amount} L${meter ? ` ／ メーター ${meter}` : ''}` : '',
+      sub: meter ? `メーター ${meter}` : '',
       uid: uid,
       toggleFn: 'toggleBulkWorkMemoFuelPick_',
       borderColor: '#F48FB1',
@@ -35046,51 +35084,34 @@ window.buildBulkWorkMemoFuelHtml_ = (d, uid) => {
       textColor: '#C2185B'
     });
   }
-  const opts = (typeof window.buildFuelTargetOptionsHtml_ === 'function')
-    ? window.buildFuelTargetOptionsHtml_(targetId)
+  const vehSelected = targetId.indexOf('veh:') === 0 ? targetId : '';
+  const macSelected = vehSelected ? '' : targetId;
+  const vehOpts = (typeof window.buildFuelKindOptionsHtml_ === 'function')
+    ? window.buildFuelKindOptionsHtml_('vehicle', vehSelected)
+    : '<option value="">選択してください</option>';
+  const macOpts = (typeof window.buildFuelKindOptionsHtml_ === 'function')
+    ? window.buildFuelKindOptionsHtml_('machine', macSelected)
     : '<option value="">選択してください</option>';
   const isVehicle = targetId.indexOf('veh:') === 0;
   const meterLabel = isVehicle ? '🚗 走行距離 (km)' : '⏱️ アワメーター (h)';
-  const checkKeys = (typeof window.getFuelCheckKeysForTarget_ === 'function')
-    ? window.getFuelCheckKeysForTarget_(targetId)
-    : ['cap', 'oil', 'net', 'water'];
-  const bulkCheckLabels = {
-    cap: { field: 'fuelCap', label: 'キャップ' },
-    oil: { field: 'fuelOil', label: 'オイル' },
-    net: { field: 'fuelNet', label: '防虫網' },
-    water: { field: 'fuelWater', label: '冷却水' }
-  };
-  const bulkChecks = checkKeys.map(k => {
-    const meta = bulkCheckLabels[k];
-    if (!meta) return '';
-    const on = !!d[meta.field];
-    return `<label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" ${on ? 'checked' : ''} onchange="updateBulkWorkMemoFuelField_('${esc(uid)}','${meta.field}', this.checked)"> ${meta.label}</label>`;
-  }).filter(Boolean).join('');
   return `<div style="margin:8px 0; padding:12px; background:#FCE4EC; border:1px solid #F48FB1; border-radius:10px;">
     <div style="font-size:12px; font-weight:bold; color:#C2185B; margin-bottom:8px;">⛽ 給油記録</div>
-    <div style="font-size:11px; color:#880E4F; margin-bottom:8px; line-height:1.4;">給油する車両・機械を選び、給油量を入力してください。一覧に無い場合は下から新規登録できます。</div>
-    <label style="font-size:10px; color:#C2185B; font-weight:bold;">🚜 給油車両・機械 <span style="color:#c62828;">*</span></label>
-    <select onchange="pickBulkWorkMemoFuelTarget_('${esc(uid)}', this.value, this.options[this.selectedIndex] ? this.options[this.selectedIndex].text : '')" style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #F48FB1; border-radius:8px; margin:4px 0 6px; font-size:13px;">${opts}</select>
-    <div style="display:flex; justify-content:flex-end; flex-wrap:wrap; gap:6px; margin:0 0 10px;">
-      <button type="button" onclick="addBulkWorkMemoFuelTarget_('${esc(uid)}','machine')" style="background:#2196F3; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 機械を登録</button>
+    <div style="font-size:11px; color:#880E4F; margin-bottom:8px; line-height:1.4;">車両と農機は別々に選べます。一覧に無い場合は、それぞれの登録ボタンから追加できます。</div>
+    <label style="font-size:10px; color:#C2185B; font-weight:bold;">🛻 車両</label>
+    <select onchange="pickBulkWorkMemoFuelTarget_('${esc(uid)}', this.value, this.options[this.selectedIndex] ? this.options[this.selectedIndex].text : '')" style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #F48FB1; border-radius:8px; margin:4px 0 6px; font-size:13px;">${vehOpts}</select>
+    <div style="display:flex; justify-content:flex-end; margin:0 0 10px;">
       <button type="button" onclick="addBulkWorkMemoFuelTarget_('${esc(uid)}','vehicle')" style="background:#00897B; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 車両を登録</button>
     </div>
-    <div style="display:flex; gap:8px; margin-bottom:8px;">
-      <div style="flex:1;">
-        <label style="font-size:10px; color:#C2185B; font-weight:bold;">📅 給油日</label>
-        <input type="date" value="${esc(dateVal)}" onchange="updateBulkWorkMemoFuelField_('${esc(uid)}','fuelDate', this.value)" style="width:100%; box-sizing:border-box; padding:7px; border:1px solid #F48FB1; border-radius:6px; margin-top:4px;">
-      </div>
-      <div style="flex:1;">
-        <label style="font-size:10px; color:#C2185B; font-weight:bold;">💧 給油量 (L) <span style="color:#c62828;">*</span></label>
-        <input type="number" inputmode="decimal" value="${esc(amount)}" placeholder="例: 20" onchange="updateBulkWorkMemoFuelField_('${esc(uid)}','fuelAmount', this.value)" style="width:100%; box-sizing:border-box; padding:7px; border:1px solid #F48FB1; border-radius:6px; margin-top:4px;">
-      </div>
+    <label style="font-size:10px; color:#C2185B; font-weight:bold;">🚜 農機</label>
+    <select onchange="pickBulkWorkMemoFuelTarget_('${esc(uid)}', this.value, this.options[this.selectedIndex] ? this.options[this.selectedIndex].text : '')" style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #F48FB1; border-radius:8px; margin:4px 0 6px; font-size:13px;">${macOpts}</select>
+    <div style="display:flex; justify-content:flex-end; margin:0 0 10px;">
+      <button type="button" onclick="addBulkWorkMemoFuelTarget_('${esc(uid)}','machine')" style="background:#2196F3; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 農機を登録</button>
     </div>
+    <label style="font-size:10px; color:#C2185B; font-weight:bold;">📅 給油日</label>
+    <input type="date" value="${esc(dateVal)}" onchange="updateBulkWorkMemoFuelField_('${esc(uid)}','fuelDate', this.value)" style="width:100%; box-sizing:border-box; padding:7px; border:1px solid #F48FB1; border-radius:6px; margin:4px 0 8px;">
     <label style="font-size:10px; color:#C2185B; font-weight:bold;">${meterLabel}</label>
     <input type="number" inputmode="decimal" value="${esc(meter)}" placeholder="${isVehicle ? '例: 12345' : '例: 150.5'}" onchange="updateBulkWorkMemoFuelField_('${esc(uid)}','fuelMeter', this.value)" style="width:100%; box-sizing:border-box; padding:7px; border:1px solid #F48FB1; border-radius:6px; margin:4px 0 10px;">
-    ${bulkChecks
-      ? `<div style="display:flex; flex-wrap:wrap; gap:8px 12px; font-size:12px; color:#880E4F;">${bulkChecks}</div>`
-      : (targetId ? `<div style="font-size:11px; color:#888;">この機械・車両に設定された確認項目はありません</div>` : '')}
-    ${targetId && amount ? `<div style="margin-top:10px; text-align:right;"><button type="button" onclick="collapseBulkWorkMemoFuelPick_('${esc(uid)}')" style="background:#fff; color:#C2185B; border:1px solid #F48FB1; border-radius:8px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer;">完了</button></div>` : ''}
+    ${targetId ? `<div style="text-align:right;"><button type="button" onclick="collapseBulkWorkMemoFuelPick_('${esc(uid)}')" style="background:#fff; color:#C2185B; border:1px solid #F48FB1; border-radius:8px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer;">完了</button></div>` : ''}
   </div>`;
 };
 
@@ -35142,8 +35163,7 @@ window.updateBulkWorkMemoFuelField_ = (uid, key, value) => {
 window.collectBulkWorkMemoFuelRecord_ = (d) => {
   if (!d || !window.bulkWorkMemoIsFuel_(d)) return null;
   const targetId = String(d.fuelTargetId || '').trim();
-  const amount = String(d.fuelAmount != null ? d.fuelAmount : '').trim();
-  if (!targetId || !amount) return null;
+  if (!targetId) return null;
   const target = (typeof window.findMaintenanceTargetById_ === 'function')
     ? window.findMaintenanceTargetById_(targetId)
     : null;
@@ -35158,13 +35178,13 @@ window.collectBulkWorkMemoFuelRecord_ = (d) => {
     machineName: name,
     isVehicle: !!(target && target.isVehicle) || targetId.indexOf('veh:') === 0,
     date: date,
-    amount: amount,
+    amount: String(d.fuelAmount != null ? d.fuelAmount : '').trim(),
     hourMeter: String(d.fuelMeter != null ? d.fuelMeter : '').trim(),
     attachment: '',
-    cap: !!d.fuelCap,
-    oil: !!d.fuelOil,
-    net: !!d.fuelNet,
-    water: !!d.fuelWater,
+    cap: false,
+    oil: false,
+    net: false,
+    water: false,
     chainCover: false,
     rotaryClaw: false
   };
@@ -41778,8 +41798,8 @@ window.validateBulkWorkMemoDraftsForSave_ = () => {
       }
     }
     if (typeof window.bulkWorkMemoIsFuel_ === 'function' && window.bulkWorkMemoIsFuel_(d)) {
-      if (!String(d.fuelTargetId || '').trim() || !String(d.fuelAmount != null ? d.fuelAmount : '').trim()) {
-        if (typeof customAlert === 'function') customAlert(`${i + 1}件目：給油では給油車両と給油量を入力してください。`);
+      if (!String(d.fuelTargetId || '').trim()) {
+        if (typeof customAlert === 'function') customAlert(`${i + 1}件目：給油では車両か農機を選んでください。`);
         return null;
       }
     }
@@ -42716,9 +42736,9 @@ window.validateSingleBulkWorkMemoDraft_ = (d, label) => {
   if (typeof window.bulkWorkMemoIsFuel_ === 'function' && window.bulkWorkMemoIsFuel_(d)) {
     const fuelTarget = String(d.fuelTargetId || '').trim();
     const fuelAmount = String(d.fuelAmount != null ? d.fuelAmount : '').trim();
-    if (!fuelTarget || !fuelAmount) {
+    if (!fuelTarget) {
       if (typeof customAlert === 'function') {
-        customAlert(`${tag}：給油では給油車両と給油量を入力してください。`);
+        customAlert(`${tag}：給油では車両か農機を選んでください。`);
       }
       return false;
     }
