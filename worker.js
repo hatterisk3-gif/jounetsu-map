@@ -4005,10 +4005,9 @@ function createSignboardMarker(name, pos, icon, id) {
         p.marker.setZIndex(on ? 999 : 2);
         const icon = typeof p.marker.getIcon === 'function' ? p.marker.getIcon() : null;
         if (icon && icon.url && typeof google !== 'undefined' && google.maps) {
-          const size = on ? 44 : 26;
           p.marker.setIcon(Object.assign({}, icon, {
-            scaledSize: new google.maps.Size(size, size),
-            labelOrigin: new google.maps.Point(size / 2, size + 6)
+            scaledSize: new google.maps.Size(26, 26),
+            labelOrigin: new google.maps.Point(13, 30)
           }));
         }
         p.marker.setLabel(null);
@@ -4838,15 +4837,8 @@ function createSignboardMarker(name, pos, icon, id) {
           ? window.describeBulkWorkMemoPlaceSelection_(selectedPolyIds)
           : null;
         if (countUI) {
-          if (bulkPlace) {
-            if (!bulkPlace.total) {
-              countUI.innerText = '🗺️ 圃場か看板をタップ';
-            } else {
-              const bits = [];
-              if (bulkPlace.fields) bits.push('圃場' + bulkPlace.fields);
-              if (bulkPlace.signs) bits.push('看板' + bulkPlace.signs);
-              countUI.innerText = '選択中 ' + bits.join('・');
-            }
+          if (isBulkMapPick) {
+            countUI.innerText = '🗺️ 圃場か看板をタップ';
           } else {
             countUI.innerText = `🗺️ 記録する対象 (${n}箇所選択中)`;
           }
@@ -34601,10 +34593,6 @@ window.buildBulkWorkMemoSelectedPolysDisplayHtml_ = (d, uid) => {
       </div>
     </div>`;
   }
-  const placeInfo = window.describeBulkWorkMemoPlaceSelection_(ids);
-  const summaryBits = [];
-  if (placeInfo.fields) summaryBits.push(`圃場 ${placeInfo.fields}`);
-  if (placeInfo.signs) summaryBits.push(`<span style="color:#6A1B9A;">看板 ${placeInfo.signs}</span>`);
   const chips = ids.map(id => {
     const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
     const name = (p && p.name) ? p.name : id;
@@ -34624,9 +34612,7 @@ window.buildBulkWorkMemoSelectedPolysDisplayHtml_ = (d, uid) => {
       <span onclick="removeBulkWorkMemoPoly_('${esc(uid)}','${safeId}')" style="cursor:pointer; font-weight:bold; color:${xColor}; margin-left:2px; font-size:16px; line-height:1;" title="対象から外す">×</span>
     </span>`;
   }).join('');
-  return `<div class="field-select-box" id="bulk_field_display_${esc(uid)}">
-    <div style="width:100%; font-size:12px; color:#1B5E20; font-weight:bold;">✅ 選択中 ${summaryBits.join('・')}</div>${chips}
-  </div>`;
+  return `<div class="field-select-box" id="bulk_field_display_${esc(uid)}">${chips}</div>`;
 };
 
 window.buildBulkWorkMemoSurroundingWarningHtml_ = (d) => {
@@ -38737,16 +38723,6 @@ window.refreshBulkWorkMemoAfterMasterChange_ = (selectedName, preferUid) => {
   }
 };
 
-window.buildBulkWorkMemoWorkMasterAdminBarHtml_ = () => {
-  const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
-  if (!isAdmin) return '';
-  return `<div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:10px; padding:8px 10px; background:#fff8e1; border:1px solid #ffe0b2; border-radius:8px;">
-    <button type="button" onclick="openFieldSelectSettingsModal_()" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer;">🗺️ 圃場選択の表示</button>
-    <button type="button" onclick="adminAddWorkName()" style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 作業を追加</button>
-    <span style="font-size:11px; color:#888; line-height:1.35;">管理者：作業の追加／選択中作業の編集・削除は一覧内から</span>
-  </div>`;
-};
-
 /** カード直下の作業/カテゴリ編集バーは廃止（一覧内の選択中作業編集で代用） */
 window.buildBulkWorkMemoCardWorkAdminBarHtml_ = () => '';
 
@@ -40839,7 +40815,6 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
   window.fillAppModalHtml_(`
     <div id="bulk_work_memo_review_scroll" style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
       ${window.buildBulkWorkMemoModalHeaderHtml_('📋 一括入力の確認', `作業日 <b>${esc(ymd)}</b> ／ ${drafts.length}件。各行で<b>🚜作業／☕休憩</b>を切り替えられます。`)}
-      ${typeof window.buildBulkWorkMemoWorkMasterAdminBarHtml_ === 'function' ? window.buildBulkWorkMemoWorkMasterAdminBarHtml_() : ''}
       <div style="margin-bottom:12px;">${cards}</div>
       <div id="bulk_work_memo_time_gaps">${(() => { try { return window.buildBulkWorkMemoTimeGapsHtml_(drafts); } catch (e) { return ''; } })()}</div>
       ${Object.keys(conflictByUid).length ? `<div style="background:#ffebee; border:1px solid #ef9a9a; color:#c62828; border-radius:8px; padding:10px 12px; margin-bottom:10px; font-size:12px; line-height:1.45;">
