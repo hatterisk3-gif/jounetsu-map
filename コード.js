@@ -10083,7 +10083,27 @@ function serializeMachinePartsMap_(map) {
   return MACHINE_PARTS_MAP_PREFIX_ + JSON.stringify({ common: common, byContent: byContent });
 }
 
-function applyMachinePartsMutation_(raw, params) {
+function partNameMatchesMaintContent_(partName, contentName) {
+  var part = String(partName || '').replace(/\s+/g, '');
+  var content = String(contentName || '').replace(/\s+/g, '');
+  if (!part || !content || part === content) return false;
+  var subject = content.replace(/交換/g, '');
+  if (!subject) return false;
+  if (part.indexOf(subject) >= 0) return true;
+  if (subject.indexOf(part) >= 0 && part.length >= 2) return true;
+  return false;
+}
+
+function rehomeCommonPartToOtherContents_(map, partName, exceptContent, maintContentsRaw) {
+  splitMachinePartsList_(maintContentsRaw).forEach(function (c) {
+    if (!c || c === exceptContent) return;
+    if (!partNameMatchesMaintContent_(partName, c)) return;
+    if (!map.byContent[c]) map.byContent[c] = [];
+    if (map.byContent[c].indexOf(partName) < 0) map.byContent[c].push(partName);
+  });
+}
+
+function applyMachinePartsMutation_(raw, params, maintContentsRaw) {
   var map = parseMachinePartsMap_(raw);
   var content = String(params.contentName || params.contentKey || '').trim();
   var renameIn = function (list, oldName, newName) {
@@ -10100,25 +10120,41 @@ function applyMachinePartsMutation_(raw, params) {
       Object.keys(map.byContent).forEach(function (k) {
         map.byContent[k] = renameIn(map.byContent[k], params.oldPart, params.newPart);
       });
-    } else if (map.byContent[content]) {
-      map.byContent[content] = renameIn(map.byContent[content], params.oldPart, params.newPart);
     } else {
-      map.common = renameIn(map.common, params.oldPart, params.newPart);
+      var inThis = !!(map.byContent[content] && map.byContent[content].indexOf(params.oldPart) >= 0);
+      var inCommon = (map.common || []).indexOf(params.oldPart) >= 0;
+      if (inThis) {
+        map.byContent[content] = renameIn(map.byContent[content], params.oldPart, params.newPart);
+      }
+      if (inCommon) {
+        map.common = renameIn(map.common, params.oldPart, params.newPart);
+        if (!map.byContent[content]) map.byContent[content] = [];
+        map.byContent[content] = renameIn(map.byContent[content], params.oldPart, params.newPart);
+        if (map.byContent[content].indexOf(params.newPart) < 0) map.byContent[content].push(params.newPart);
+      }
+      if (!inThis && !inCommon) {
+        map.common = renameIn(map.common, params.oldPart, params.newPart);
+      }
     }
     return serializeMachinePartsMap_(map);
   }
   if (params.deletePart) {
+    var delName = String(params.deletePart);
     if (!content) {
-      map.common = (map.common || []).filter(function (v) { return v !== params.deletePart; });
+      map.common = (map.common || []).filter(function (v) { return v !== delName; });
       Object.keys(map.byContent).forEach(function (k) {
-        map.byContent[k] = (map.byContent[k] || []).filter(function (v) { return v !== params.deletePart; });
+        map.byContent[k] = (map.byContent[k] || []).filter(function (v) { return v !== delName; });
         if (!map.byContent[k].length) delete map.byContent[k];
       });
-    } else if (map.byContent[content]) {
-      map.byContent[content] = (map.byContent[content] || []).filter(function (v) { return v !== params.deletePart; });
-      if (!map.byContent[content].length) delete map.byContent[content];
     } else {
-      map.common = (map.common || []).filter(function (v) { return v !== params.deletePart; });
+      if (map.byContent[content]) {
+        map.byContent[content] = (map.byContent[content] || []).filter(function (v) { return v !== delName; });
+        if (!map.byContent[content].length) delete map.byContent[content];
+      }
+      if ((map.common || []).indexOf(delName) >= 0) {
+        map.common = (map.common || []).filter(function (v) { return v !== delName; });
+        rehomeCommonPartToOtherContents_(map, delName, content, maintContentsRaw);
+      }
     }
     return serializeMachinePartsMap_(map);
   }
@@ -10153,7 +10189,7 @@ function addMachinePart(params) {
     const matchCat = params.category && (rowType === String(params.category) || rowGroup === String(params.category));
     
     if (matchId || matchCat || (!params.machineId && !params.category)) {
-      const next = applyMachinePartsMutation_(data[i][partsIdx], params || {});
+      const next = applyMachinePartsMutation_(data[i][partsIdx], params || {}, data[i][NOUKI_COL.maintenanceContents - 1]);
       sheet.getRange(i+1, partsCol).setValue(next);
       updatedCount++;
     }

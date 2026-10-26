@@ -9944,16 +9944,33 @@ function createSignboardMarker(name, pos, icon, id) {
       };
 
       // --- 交換部品名（機械別）追加・編集・削除 ---
+      async function persistMachinePartsString_(machine, before) {
+        if (typeof callGAS !== 'function') return true;
+        try {
+          await callGAS('addMachinePart', {
+            machineId: machine.id,
+            fullParts: machine.parts || ''
+          });
+          return true;
+        } catch (e) {
+          machine.parts = before;
+          if (typeof window.syncMachinePartsFieldLocal_ === 'function') {
+            window.syncMachinePartsFieldLocal_(machine, before);
+          }
+          if (typeof customAlert === 'function') {
+            customAlert('保存に失敗しました: ' + (e && e.message ? e.message : e));
+          }
+          return false;
+        }
+      }
+
       window.editMachinePartMaster = async (oldName, newName, machine, contentName) => {
         if (!newName || !machine || !machine.id) return;
         const content = String(contentName != null ? contentName : (window.getSelectedMaintenanceContent_ ? window.getSelectedMaintenanceContent_() : '')).trim();
+        const before = String(machine.parts || '');
         window.renameMachineMaintOptionLocal_(machine, 'parts', oldName, newName, { content: content });
-        safeCallGAS('addMachinePart', {
-          oldPart: oldName,
-          newPart: newName,
-          machineId: machine.id,
-          contentName: content
-        });
+        const ok = await persistMachinePartsString_(machine, before);
+        if (!ok) return;
         if (typeof window.updatePartsList === 'function') window.updatePartsList();
         if (document.getElementById('maintenanceMasterManageModal')) {
           document.getElementById('maintenanceMasterManageModal').style.display = 'none';
@@ -9964,12 +9981,10 @@ function createSignboardMarker(name, pos, icon, id) {
       window.deleteMachinePartMaster = async (targetName, machine, contentName) => {
         if (!machine || !machine.id) return;
         const content = String(contentName != null ? contentName : (window.getSelectedMaintenanceContent_ ? window.getSelectedMaintenanceContent_() : '')).trim();
+        const before = String(machine.parts || '');
         window.removeMachineMaintOptionLocal_(machine, 'parts', targetName, { content: content });
-        safeCallGAS('addMachinePart', {
-          deletePart: targetName,
-          machineId: machine.id,
-          contentName: content
-        });
+        const ok = await persistMachinePartsString_(machine, before);
+        if (!ok) return;
         if (typeof window.updatePartsList === 'function') window.updatePartsList();
         if (document.getElementById('maintenanceMasterManageModal')) {
           document.getElementById('maintenanceMasterManageModal').style.display = 'none';
@@ -11312,18 +11327,35 @@ function createSignboardMarker(name, pos, icon, id) {
         }
       };
 
-      /** 整備内容名と同名の誤登録部品は除外して返す */
+      /** 部品名が、その整備内容向けか（「交換」を除いた名前の包含） */
+      window.partNameMatchesMaintContent_ = (partName, contentName) => {
+        const part = String(partName || '').replace(/\s+/g, '');
+        const content = String(contentName || '').replace(/\s+/g, '');
+        if (!part || !content || part === content) return false;
+        const subject = content.replace(/交換/g, '');
+        if (!subject) return false;
+        if (part.indexOf(subject) >= 0) return true;
+        if (subject.indexOf(part) >= 0 && part.length >= 2) return true;
+        return false;
+      };
+
+      /**
+       * 選んだ整備内容の交換部品だけ返す。
+       * 旧データの共通リストは、名前が合うものだけ出す（例: ホース交換にロータリー爪は出さない）。
+       */
       window.getMachinePartsForContent_ = (machine, contentName) => {
         const map = window.parseMachinePartsMap_(machine && machine.parts);
         const content = String(contentName || '').trim();
+        if (!content) return [];
         const contentNames = new Set(window.splitMachineMaintList_(machine && machine.maintenanceContents));
         const set = new Set();
-        (map.common || []).forEach((p) => {
-          if (p && !contentNames.has(p)) set.add(p);
+        (map.byContent[content] || []).forEach((p) => {
+          if (p && p !== content) set.add(p);
         });
-        if (content && Array.isArray(map.byContent[content])) {
-          map.byContent[content].forEach((p) => { if (p) set.add(p); });
-        }
+        (map.common || []).forEach((p) => {
+          if (!p || p === content || contentNames.has(p)) return;
+          if (window.partNameMatchesMaintContent_(p, content)) set.add(p);
+        });
         return Array.from(set);
       };
 
@@ -11478,10 +11510,19 @@ function createSignboardMarker(name, pos, icon, id) {
           Object.keys(map.byContent).forEach((k) => {
             map.byContent[k] = renameIn(map.byContent[k]);
           });
-        } else if (map.byContent[content]) {
-          map.byContent[content] = renameIn(map.byContent[content]);
         } else {
-          map.common = renameIn(map.common);
+          const inThis = Array.isArray(map.byContent[content]) && map.byContent[content].indexOf(oldName) >= 0;
+          const inCommon = (map.common || []).indexOf(oldName) >= 0;
+          if (inThis) map.byContent[content] = renameIn(map.byContent[content]);
+          if (inCommon) {
+            map.common = renameIn(map.common);
+            if (!map.byContent[content]) map.byContent[content] = [];
+            map.byContent[content] = renameIn(map.byContent[content]);
+            if (map.byContent[content].indexOf(newName) < 0) map.byContent[content].push(newName);
+          }
+          if (!inThis && !inCommon) {
+            map.common = renameIn(map.common);
+          }
         }
         window.syncMachinePartsFieldLocal_(machine, window.serializeMachinePartsMap_(map));
       };
@@ -11491,16 +11532,30 @@ function createSignboardMarker(name, pos, icon, id) {
         const content = String(contentName || '').trim();
         const name = String(partName).trim();
         const map = window.parseMachinePartsMap_(machine.parts);
+        const drop = (list) => (list || []).filter(v => v !== name);
         if (!content) {
-          map.common = (map.common || []).filter(v => v !== name);
+          map.common = drop(map.common);
           Object.keys(map.byContent).forEach((k) => {
-            map.byContent[k] = (map.byContent[k] || []).filter(v => v !== name);
+            map.byContent[k] = drop(map.byContent[k]);
+            if (!map.byContent[k].length) delete map.byContent[k];
           });
-        } else if (map.byContent[content]) {
-          map.byContent[content] = map.byContent[content].filter(v => v !== name);
-          if (!map.byContent[content].length) delete map.byContent[content];
         } else {
-          map.common = (map.common || []).filter(v => v !== name);
+          if (map.byContent[content]) {
+            map.byContent[content] = drop(map.byContent[content]);
+            if (!map.byContent[content].length) delete map.byContent[content];
+          }
+          // 旧形式の共通リストに残っていると、削除しても候補に出続ける
+          if ((map.common || []).indexOf(name) >= 0) {
+            map.common = drop(map.common);
+            window.splitMachineMaintList_(machine.maintenanceContents).forEach((c) => {
+              const key = String(c || '').trim();
+              if (!key || key === content) return;
+              if (typeof window.partNameMatchesMaintContent_ === 'function'
+                && !window.partNameMatchesMaintContent_(name, key)) return;
+              if (!map.byContent[key]) map.byContent[key] = [];
+              if (map.byContent[key].indexOf(name) < 0) map.byContent[key].push(name);
+            });
+          }
         }
         window.syncMachinePartsFieldLocal_(machine, window.serializeMachinePartsMap_(map));
       };
@@ -21642,7 +21697,11 @@ function createSignboardMarker(name, pos, icon, id) {
         const st = window._machineItemEditorState || {};
         if (kind === 'parts') {
           if (typeof window.removeMachinePartForContent_ === 'function') {
-            const tmp = { parts: st.parts || '', id: st.itemId || '' };
+            const tmp = {
+              parts: st.parts || '',
+              id: st.itemId || '',
+              maintenanceContents: st.maintenanceContents || ''
+            };
             window.removeMachinePartForContent_(tmp, contentName || '', name);
             st.parts = tmp.parts;
           }
@@ -21664,8 +21723,7 @@ function createSignboardMarker(name, pos, icon, id) {
             } else if (kind === 'parts') {
               await callGAS('addMachinePart', {
                 machineId: st.itemId,
-                deletePart: name,
-                contentName: String(contentName || '').trim()
+                fullParts: st.parts || ''
               });
             } else {
               await callGAS('addMachineMaintenanceContent', { machineId: st.itemId, deleteContent: name });

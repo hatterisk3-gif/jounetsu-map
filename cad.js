@@ -1453,22 +1453,10 @@ window.bindShapeHistoryEvents = (poly) => {
 };
 
 window.getPageLatLng = (pageX, pageY) => {
-    const wrapper = document.getElementById('cadMapWrapper');
-    if (!wrapper || !window.cadMap) return null;
-    const rect = wrapper.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const dx = pageX - cx; const dy = pageY - cy;
-
-    const theta = -(window.cadCurrentRotation || 0) * Math.PI / 180;
-    const cosT = Math.cos(theta); const sinT = Math.sin(theta);
-    const mapDx = dx * cosT - dy * sinT; const mapDy = dx * sinT + dy * cosT;
-
-    const proj = window.cadMap.getProjection();
-    if (!proj) return null;
-    const scale = Math.pow(2, window.getCadZoom());
-    const centerPt = proj.fromLatLngToPoint(window.cadMap.getCenter());
-    return proj.fromPointToLatLng(new google.maps.Point(centerPt.x + mapDx / scale, centerPt.y + mapDy / scale));
+    if (typeof window.screenPixelToLatLng !== 'function') return null;
+    const clientX = pageX - (window.scrollX || window.pageXOffset || 0);
+    const clientY = pageY - (window.scrollY || window.pageYOffset || 0);
+    return window.screenPixelToLatLng(clientX, clientY);
 };
 
 window.handleMapClick = (pageX, pageY) => {
@@ -1582,19 +1570,53 @@ window.handleMapClick = (pageX, pageY) => {
         if (targetPathCoords) {
             let coords = targetPathCoords.slice();
             if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) coords.push([...coords[0]]);
-            const pt = turf.point([latLng.lng(), latLng.lat()]);
-            
+            const wrapper = document.getElementById('cadMapWrapper');
+            const rect = wrapper ? wrapper.getBoundingClientRect() : null;
+            const clickX = rect ? (pageX - (window.scrollX || window.pageXOffset || 0) - rect.left) : null;
+            const clickY = rect ? (pageY - (window.scrollY || window.pageYOffset || 0) - rect.top) : null;
+            const distToSeg = (px, py, ax, ay, bx, by) => {
+                const dx = bx - ax;
+                const dy = by - ay;
+                const len2 = dx * dx + dy * dy;
+                let t = len2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
+                if (t < 0) t = 0;
+                else if (t > 1) t = 1;
+                return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+            };
+
             let minD = Infinity;
             let bestBearing = 0;
             let bestLine = null;
+            let bestA = null;
+            let bestB = null;
+            const pt = turf.point([latLng.lng(), latLng.lat()]);
             for (let i = 0; i < coords.length - 1; i++) {
-                let line = turf.lineString([coords[i], coords[i+1]]);
-                let d = turf.pointToLineDistance(pt, line, {units: 'meters'});
+                const a = coords[i];
+                const b = coords[i + 1];
+                let d = Infinity;
+                if (clickX != null && typeof window.latLngToScreenPixel === 'function') {
+                    const s1 = window.latLngToScreenPixel(a[1], a[0]);
+                    const s2 = window.latLngToScreenPixel(b[1], b[0]);
+                    if (s1 && s2) d = distToSeg(clickX, clickY, s1.x, s1.y, s2.x, s2.y);
+                }
+                if (!isFinite(d)) {
+                    const line = turf.lineString([a, b]);
+                    d = turf.pointToLineDistance(pt, line, { units: 'meters' });
+                }
                 if (d < minD) {
                     minD = d;
-                    bestBearing = turf.bearing(turf.point(coords[i]), turf.point(coords[i+1]));
-                    bestLine = line;
+                    bestA = a;
+                    bestB = b;
+                    bestBearing = turf.bearing(turf.point(a), turf.point(b));
+                    bestLine = turf.lineString([a, b]);
                 }
+            }
+            if (!(minD < Infinity) || (clickX != null && minD > 48)) {
+                if (msgEl) {
+                    msgEl.innerText = '外周の線の上をタップしてください。離れていると別の辺（南北の辺など）を拾います。';
+                    msgEl.style.color = '#FF9800';
+                }
+                return;
             }
             
             let angle = bestBearing;
@@ -1622,8 +1644,8 @@ window.handleMapClick = (pageX, pageY) => {
 
             if (msgEl) {
                 msgEl.innerText = window.cadSnapGridOn
-                    ? `🎯 角度 ${angle}° とグリッドをこの辺に揃えました。`
-                    : `🎯 角度をセットしました（${angle}°）。`;
+                    ? `🎯 この辺に平行（${angle}°）でグリッドも揃えました。このまま畝を生成できます。`
+                    : `🎯 この辺に平行（${angle}°）で畝を生成します。`;
                 msgEl.style.color = "#4CAF50";
             }
 
@@ -1639,6 +1661,8 @@ window.handleMapClick = (pageX, pageY) => {
                 if (msgEl) { msgEl.innerText = `✂️ 基準辺（角度: ${angle}°）を選択しました。分割数を指定してください。`; msgEl.style.color = "#4CAF50"; }
                 return;
             }
+            window.cadPinMode = null;
+            return;
         }
         window.cadPinMode = null;
         if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
@@ -6840,16 +6864,11 @@ window.cadGenerateLines = () => {
     try {
         if (!window.cadTargetId) return;
 
-        if (typeof window.getCadWidthCm === 'function' && !window.getCadWidthCm()) {
-            alert('⚠️ 基準の畝幅を選択してください（栽培プリセットの畝間から選べます）');
-            return;
-        }
-
         const angleEl = document.getElementById('cadAngle');
         const countEl = document.getElementById('cadUneCount');
 
         const angle = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
-        const uneCount = countEl && countEl.value ? parseInt(countEl.value) : 0;
+        const uneCount = countEl && countEl.value ? parseInt(countEl.value, 10) : 0;
 
         if (isNaN(uneCount) || uneCount <= 0) { alert("⚠️ 畝数を1以上で確定してください！"); return; }
 
