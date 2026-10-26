@@ -22,7 +22,7 @@ button { padding: 8px 12px; cursor: pointer; border-radius: 5px; border: none; f
 .admin-reg-plus-wrap.is-fab {
   position: fixed;
   right: 10px;
-  bottom: 112px;
+  bottom: 184px;
   z-index: 2000;
 }
 .admin-reg-plus-wrap.is-fab .admin-reg-plus-btn {

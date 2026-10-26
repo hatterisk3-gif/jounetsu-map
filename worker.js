@@ -3990,6 +3990,47 @@ function createSignboardMarker(name, pos, icon, id) {
         window._workMapSelectHighlightOverlays[fid] = overlay;
       };
 
+      /** マップ選択中の看板：選んだものは黄色ラベルで「看板」と出す */
+      window.applySignMarkerSelectStyle_ = (p, on) => {
+        if (!p || !p.marker) return;
+        const name = String(p.name || (p.labelConfig && p.labelConfig.text) || '').replace(/^看板\s+/, '');
+        const base = p.labelConfig || {
+          text: name,
+          color: '#333',
+          fontSize: '13px',
+          fontWeight: 'bold',
+          className: 'signboard-label'
+        };
+        p.marker.setOpacity(1);
+        p.marker.setZIndex(on ? 999 : 2);
+        const icon = typeof p.marker.getIcon === 'function' ? p.marker.getIcon() : null;
+        if (icon && icon.url && typeof google !== 'undefined' && google.maps) {
+          const size = on ? 44 : 26;
+          p.marker.setIcon(Object.assign({}, icon, {
+            scaledSize: new google.maps.Size(size, size),
+            labelOrigin: new google.maps.Point(size / 2, size + 6)
+          }));
+        }
+        p.marker.setLabel(null);
+        if (on) {
+          p.marker.setLabel(Object.assign({}, base, {
+            text: '看板 ' + name,
+            className: 'signboard-label selected',
+            color: '#000',
+            fontWeight: 'bold'
+          }));
+          return;
+        }
+        const z = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : 0;
+        if (z >= 17) {
+          p.marker.setLabel(Object.assign({}, base, {
+            text: name,
+            className: 'signboard-label',
+            color: '#333'
+          }));
+        }
+      };
+
       window.getWorkMapSelectFieldStyle_ = (mode, baseColor) => {
         const color = baseColor || '#8BC34A';
         if (mode === 'selected') {
@@ -4061,16 +4102,7 @@ function createSignboardMarker(name, pos, icon, id) {
           if (p.isMarker && p.marker) {
             if (!window.selectingSignForRefuel) {
               const on = isMapSelecting && selectedSet.has(String(id));
-              p.marker.setOpacity(1);
-              p.marker.setZIndex(on ? 999 : 2);
-              const icon = typeof p.marker.getIcon === 'function' ? p.marker.getIcon() : null;
-              if (icon && icon.url && google.maps) {
-                const size = on ? 36 : 26;
-                p.marker.setIcon(Object.assign({}, icon, {
-                  scaledSize: new google.maps.Size(size, size),
-                  labelOrigin: new google.maps.Point(size / 2, size + 4)
-                }));
-              }
+              window.applySignMarkerSelectStyle_(p, on);
             }
           }
           if(!p.isMarker && p.polygon) {
@@ -4802,15 +4834,29 @@ function createSignboardMarker(name, pos, icon, id) {
         let splitBtns = document.getElementById('mapSelectSplitButtons');
         const n = selectedPolyIds.length;
         const isBulkMapPick = !!String(window._bulkWorkMemoMapSelectUid || '').trim();
+        const bulkPlace = isBulkMapPick && typeof window.describeBulkWorkMemoPlaceSelection_ === 'function'
+          ? window.describeBulkWorkMemoPlaceSelection_(selectedPolyIds)
+          : null;
         if (countUI) {
-          countUI.innerText = isBulkMapPick
-            ? `🗺️ 圃場・看板をタップ (${n}箇所選択中)`
-            : `🗺️ 記録する対象 (${n}箇所選択中)`;
+          if (bulkPlace) {
+            if (!bulkPlace.total) {
+              countUI.innerText = '🗺️ 圃場か看板をタップ';
+            } else {
+              const bits = [];
+              if (bulkPlace.fields) bits.push('圃場' + bulkPlace.fields);
+              if (bulkPlace.signs) bits.push('看板' + bulkPlace.signs);
+              countUI.innerText = '選択中 ' + bits.join('・');
+            }
+          } else {
+            countUI.innerText = `🗺️ 記録する対象 (${n}箇所選択中)`;
+          }
         }
-        if (hintUI) {
-          hintUI.innerText = isBulkMapPick
-            ? '圃場も看板もタップで選択／解除。決定で確認画面に戻ります'
-            : 'CAD畝がある圃場は畝・分割単位で選べます。看板もタップできます';
+        if (hintUI && isBulkMapPick) {
+          hintUI.innerText = (bulkPlace && bulkPlace.total)
+            ? bulkPlace.labels.join('、')
+            : 'タップで選択、もう一度で解除。選んだ看板は「看板」と出ます';
+        } else if (hintUI) {
+          hintUI.innerText = 'CAD畝がある圃場は畝・分割単位で選べます。看板もタップできます';
         }
         if (actions) {
           actions.style.display = (!isBulkMapPick && window.workMapSelectingRidgesForFieldId) ? 'flex' : 'none';
@@ -4863,7 +4909,7 @@ function createSignboardMarker(name, pos, icon, id) {
           }
         }
 
-        if (hintUI) {
+        if (hintUI && !(isBulkMapPick && !focusId)) {
           if (focusId) {
             const fp = loadedPolygons[focusId];
             const sel = window.getWorkMapRidgeSel(focusId);
@@ -34527,6 +34573,22 @@ window.pickBulkWorkMemoFieldCandidate_ = (uid, polyId) => {
   window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
 };
 
+/** 選択中の場所を圃場と看板に分ける */
+window.describeBulkWorkMemoPlaceSelection_ = (ids) => {
+  let fields = 0;
+  let signs = 0;
+  const labels = [];
+  (ids || []).forEach(id => {
+    const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
+    const name = (p && p.name) ? String(p.name) : String(id || '');
+    const isSign = !!(p && p.isMarker);
+    if (isSign) signs += 1;
+    else fields += 1;
+    labels.push(isSign ? ('看板 ' + name) : name);
+  });
+  return { fields: fields, signs: signs, labels: labels, total: (ids || []).length };
+};
+
 /** 一括入力：選択中圃場チップ（作業記録の表示に合わせる） */
 window.buildBulkWorkMemoSelectedPolysDisplayHtml_ = (d, uid) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -34539,24 +34601,31 @@ window.buildBulkWorkMemoSelectedPolysDisplayHtml_ = (d, uid) => {
       </div>
     </div>`;
   }
+  const placeInfo = window.describeBulkWorkMemoPlaceSelection_(ids);
+  const summaryBits = [];
+  if (placeInfo.fields) summaryBits.push(`圃場 ${placeInfo.fields}`);
+  if (placeInfo.signs) summaryBits.push(`<span style="color:#6A1B9A;">看板 ${placeInfo.signs}</span>`);
   const chips = ids.map(id => {
     const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
     const name = (p && p.name) ? p.name : id;
     const around = typeof window.isSurroundingField_ === 'function' && window.isSurroundingField_(p);
     const isSign = !!(p && p.isMarker);
-    const bg = around ? '#FFF3E0' : (isSign ? '#6A1B9A' : '#2E7D32');
-    const fg = around ? '#E65100' : '#fff';
-    const bd = around ? '#FF9800' : (isSign ? '#4A148C' : '#1B5E20');
+    const bg = around ? '#FFF3E0' : (isSign ? '#F3E5F5' : '#2E7D32');
+    const fg = around ? '#E65100' : (isSign ? '#4A148C' : '#fff');
+    const bd = around ? '#FF9800' : (isSign ? '#6A1B9A' : '#1B5E20');
     const mark = around ? '<span style="font-size:11px; font-weight:bold; margin-left:4px;">周辺地</span>' : '';
-    const icon = isSign ? '🪧' : '📍';
+    const kind = isSign
+      ? '<span style="background:#6A1B9A; color:#fff; border-radius:8px; padding:1px 6px; font-size:10px; line-height:1.4;">看板</span>'
+      : '📍';
+    const xColor = around ? '#c62828' : (isSign ? '#6A1B9A' : '#FFCDD2');
     const safeId = String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     return `<span style="display:inline-flex; align-items:center; gap:6px; background:${bg}; color:${fg}; padding:8px 12px; border-radius:16px; font-size:14px; font-weight:bold; border:2px solid ${bd}; box-shadow:0 1px 3px rgba(0,0,0,0.12);">
-      ${icon} ${esc(name)}${mark}
-      <span onclick="removeBulkWorkMemoPoly_('${esc(uid)}','${safeId}')" style="cursor:pointer; font-weight:bold; color:${around ? '#c62828' : '#FFCDD2'}; margin-left:2px; font-size:16px; line-height:1;" title="対象から外す">×</span>
+      ${kind} ${esc(name)}${mark}
+      <span onclick="removeBulkWorkMemoPoly_('${esc(uid)}','${safeId}')" style="cursor:pointer; font-weight:bold; color:${xColor}; margin-left:2px; font-size:16px; line-height:1;" title="対象から外す">×</span>
     </span>`;
   }).join('');
   return `<div class="field-select-box" id="bulk_field_display_${esc(uid)}">
-    <div style="width:100%; font-size:12px; color:#1B5E20; font-weight:bold;">✅ 選択中 ${ids.length}件</div>${chips}
+    <div style="width:100%; font-size:12px; color:#1B5E20; font-weight:bold;">✅ 選択中 ${summaryBits.join('・')}</div>${chips}
   </div>`;
 };
 
@@ -34755,9 +34824,14 @@ window.buildBulkWorkMemoPrevFieldChoicesHtml_ = (d, uid) => {
     const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
     const name = (p && p.name) ? p.name : id;
     const on = selected.has(String(id));
+    const isSign = !!(p && p.isMarker);
     const safeId = String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const icon = (p && p.isMarker) ? '🪧' : '📍';
-    return `<button type="button" onclick="toggleBulkWorkMemoNearbyField_('${esc(uid)}','${safeId}')" style="background:${on ? '#1565C0' : '#fff'}; color:${on ? '#fff' : '#0D47A1'}; border:2px solid ${on ? '#0D47A1' : '#64B5F6'}; border-radius:16px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; text-align:left; line-height:1.35;">${on ? '✓ ' : ''}${icon} ${esc(name)}</button>`;
+    const icon = isSign ? '看板' : '📍';
+    const onBg = isSign ? '#6A1B9A' : '#1565C0';
+    const onBd = isSign ? '#4A148C' : '#0D47A1';
+    const offBd = isSign ? '#CE93D8' : '#64B5F6';
+    const offFg = isSign ? '#6A1B9A' : '#0D47A1';
+    return `<button type="button" onclick="toggleBulkWorkMemoNearbyField_('${esc(uid)}','${safeId}')" style="background:${on ? onBg : '#fff'}; color:${on ? '#fff' : offFg}; border:2px solid ${on ? onBd : offBd}; border-radius:16px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; text-align:left; line-height:1.35;">${on ? '✓ ' : ''}${icon} ${esc(name)}</button>`;
   }).join('');
   const allOn = prev.ids.every(id => selected.has(String(id)));
   const when = [prev.startTime, prev.endTime].filter(Boolean).join('〜');
