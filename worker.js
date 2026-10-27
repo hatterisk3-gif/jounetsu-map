@@ -34511,6 +34511,35 @@ window.setBulkWorkMemoPolyIds_ = (d, ids) => {
     const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
     return (p && p.name) ? p.name : '';
   }).filter(Boolean).join('、');
+  if (typeof window.syncBulkDeliveryMachineDest_ === 'function') {
+    window.syncBulkDeliveryMachineDest_(d);
+  }
+};
+
+/** 運搬の移動先。看板があれば看板、なければ最後に選んだ場所 */
+window.resolveBulkDeliveryDestPlace_ = (d) => {
+  const ids = (typeof window.getBulkWorkMemoPolyIds_ === 'function')
+    ? window.getBulkWorkMemoPolyIds_(d)
+    : [];
+  if (!ids.length || typeof loadedPolygons === 'undefined') return null;
+  let sign = null;
+  ids.forEach((id) => {
+    const p = loadedPolygons[id];
+    if (p && p.isMarker) sign = { id: String(id), name: String(p.name || '').trim() };
+  });
+  if (sign && sign.name) return sign;
+  const lastId = String(ids[ids.length - 1] || '');
+  const last = lastId ? loadedPolygons[lastId] : null;
+  if (!last || !String(last.name || '').trim()) return null;
+  return { id: lastId, name: String(last.name).trim() };
+};
+
+/** 運搬で選んだ機械の移動先を、選択中の場所に合わせる */
+window.syncBulkDeliveryMachineDest_ = (row) => {
+  if (!row || typeof window.bulkWorkMemoIsDelivery_ !== 'function' || !window.bulkWorkMemoIsDelivery_(row)) return;
+  if (typeof window.ensureBulkAssetMovesSynced_ === 'function') {
+    window.ensureBulkAssetMovesSynced_(row);
+  }
 };
 
 window.buildBulkWorkMemoFieldCandidatesHtml_ = (d, uid) => {
@@ -35379,7 +35408,8 @@ window.getBulkWorkMemoMachineList_ = (draft) => {
       currentLocName: m.currentLocName,
       currentLocId: m.currentLocId,
       signName: m.signName,
-      signId: m.signId
+      signId: m.signId,
+      photoUrl: (typeof window.getMachinePhotoUrl === 'function') ? window.getMachinePhotoUrl(m) : ''
     };
   };
   const allItems = machines.map(toItem).filter(Boolean);
@@ -35388,7 +35418,10 @@ window.getBulkWorkMemoMachineList_ = (draft) => {
   const machineNameSet = new Set(allItems.map(m => String(m.name)));
   const isMachineTarget = (x) => machineIdSet.has(String(x.id)) || machineNameSet.has(String(x.name));
   const suggested = (sug.primary || []).concat(sug.maybe || []).filter(isMachineTarget)
-    .map(x => ({ id: String(x.id), name: String(x.name) }));
+    .map(x => {
+      const hit = allItems.find(m => String(m.id) === String(x.id) || String(m.name) === String(x.name));
+      return hit || { id: String(x.id), name: String(x.name), photoUrl: '', currentLocName: '' };
+    });
   if (suggested.length) {
     const suggestedIds = new Set(suggested.map(m => String(m.id)));
     const rest = allItems.filter(m => !suggestedIds.has(String(m.id)) && !suggestedIds.has(String(m.name)));
@@ -39986,6 +40019,18 @@ window.openBulkWorkMemoDeliveryMapSelect_ = (uid, kind) => {
   }
 };
 
+window.buildBulkWorkMemoFieldWrapHtml_ = (d, uid) => {
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const showField = !!(d
+    && !(typeof window.bulkWorkMemoIsRestDraft_ === 'function' && window.bulkWorkMemoIsRestDraft_(d))
+    && typeof window.bulkWorkMemoShowFieldSection_ === 'function'
+    && window.bulkWorkMemoShowFieldSection_(d));
+  const fieldHtml = showField && typeof window.buildBulkWorkMemoFieldHtml_ === 'function'
+    ? window.buildBulkWorkMemoFieldHtml_(d, uid)
+    : '';
+  return `<div id="bulk_field_wrap_${esc(uid)}" style="display:${showField ? '' : 'none'};">${fieldHtml}</div>`;
+};
+
 window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   if (!d || (typeof window.bulkWorkMemoIsRestDraft_ === 'function' ? window.bulkWorkMemoIsRestDraft_(d) : (d.isRest || String(d.workName || '').includes('休憩')))) {
@@ -39994,6 +40039,9 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
   const hasConcurrent = Array.isArray(d.concurrentWorks) && d.concurrentWorks.length;
   let html = '';
   // 準備／片づけの対象作業モードは廃止。通常どおり詳細・機械などを出す
+  if (!d.workName) {
+    html += window.buildBulkWorkMemoFieldWrapHtml_(d, uid);
+  }
   if (d.workName) {
     const flags = window.getBulkWorkMemoUiFlags_(d);
     const details = window.getBulkWorkMemoDetailOptions_(d.workName, d, '');
@@ -40041,6 +40089,7 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
         </div>
       </div>`;
     }
+    html += window.buildBulkWorkMemoFieldWrapHtml_(d, uid);
     if (window.bulkWorkMemoIsMaintenance_(d)) {
       html += window.buildBulkWorkMemoMaintenanceTargetHtml_(d, uid);
     } else if (flags.showMachine) {
@@ -40059,18 +40108,40 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
           textColor: '#E65100'
         });
       } else {
+        const machinePhotoHtml_ = (m) => {
+          const url = String((m && m.photoUrl) || '').trim()
+            || ((typeof window.getMachinePhotoUrl === 'function') ? window.getMachinePhotoUrl(m) : '');
+          const src = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines) && !url)
+            ? ((pdlMachines.find(x => String(x.id) === String(m && m.id || '') || String(x.name) === String(m && m.name || '')) || {}))
+            : null;
+          const resolved = url || (src && typeof window.getMachinePhotoUrl === 'function' ? window.getMachinePhotoUrl(src) : '');
+          if (resolved) {
+            return `<img src="${esc(resolved)}" alt="" style="width:40px; height:40px; object-fit:cover; border-radius:8px; border:1px solid #ffcc80; flex-shrink:0;" onerror="this.style.display='none'">`;
+          }
+          return `<div style="width:40px; height:40px; border-radius:8px; background:#FFF3E0; color:#E65100; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; border:1px solid #FFE0B2;">🚜</div>`;
+        };
+        const deliveryDest = flags.isDelivery && typeof window.resolveBulkDeliveryDestPlace_ === 'function'
+          ? window.resolveBulkDeliveryDestPlace_(d)
+          : null;
         const selectedChips = used.length
           ? `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${used.map(m => {
               const safeId = String(m.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
               const safeName = String(m.name || m.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-              return `<span style="display:inline-flex; align-items:center; gap:4px; background:#FFF3E0; color:#E65100; padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; border:1px solid #FF9800;">✅ ${esc(m.name || m.id)}<span onclick="removeBulkWorkMemoMachine_('${esc(uid)}','${safeId}','${safeName}')" style="cursor:pointer; color:#c62828; font-size:14px; line-height:1;" title="外す">×</span></span>`;
+              const moveNote = (flags.isDelivery && deliveryDest && deliveryDest.name)
+                ? `<span style="display:block; font-size:10px; font-weight:normal; color:#1565C0;">→ ${esc(deliveryDest.name)} へ移動</span>`
+                : '';
+              return `<span style="display:inline-flex; align-items:center; gap:6px; background:#FFF3E0; color:#E65100; padding:4px 10px 4px 4px; border-radius:14px; font-size:12px; font-weight:bold; border:1px solid #FF9800;">${machinePhotoHtml_(m)}<span>✅ ${esc(m.name || m.id)}${moveNote}</span><span onclick="removeBulkWorkMemoMachine_('${esc(uid)}','${safeId}','${safeName}')" style="cursor:pointer; color:#c62828; font-size:14px; line-height:1;" title="外す">×</span></span>`;
             }).join('')}</div>`
-          : `<div style="font-size:11px; color:#888; margin-bottom:8px; line-height:1.35;">使った機械を複数選べます。メモに機械名があれば自動で入ります。</div>`;
+          : `<div style="font-size:11px; color:#888; margin-bottom:8px; line-height:1.35;">${flags.isDelivery ? '運んだ機械を選ぶと、上で選んだ場所へ移動した扱いになります。' : '使った機械を複数選べます。メモに機械名があれば自動で入ります。'}</div>`;
+        const deliveryHint = flags.isDelivery
+          ? `<div style="font-size:11px; color:#1565C0; margin:0 0 8px; line-height:1.4;">${deliveryDest && deliveryDest.name ? `登録すると、選んだ機械の置き場所が「${esc(deliveryDest.name)}」に更新されます。` : '先に場所（看板か圃場）を選ぶと、その場所が機械の移動先になります。'}</div>`
+          : '';
         html += `<div style="margin:8px 0;">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
             <div style="font-size:10px; color:#E65100; font-weight:bold;">🚜 使用機械（複数可）</div>
             ${used.length ? `<button type="button" onclick="collapseBulkWorkMemoMachinePick_('${esc(uid)}')" style="background:#fff; color:#E65100; border:1px solid #FFB74D; border-radius:8px; padding:4px 10px; font-size:11px; font-weight:bold; cursor:pointer;">完了</button>` : ''}
           </div>
+          ${deliveryHint}
           ${selectedChips}
           ${window.buildBulkWorkMemoMachineAddBtnHtml_(uid)}`;
         if (!machines.length) {
@@ -40088,8 +40159,10 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
             const safeName = String(m.name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const border = on ? '#FF9800' : (style === 'sug' ? '#FFB74D' : '#FFE0B2');
             const bg = on ? '#FFF3E0' : (style === 'sug' ? '#FFF8E1' : '#fff');
-            return `<label style="display:inline-flex; align-items:center; gap:4px; padding:6px 10px; border-radius:14px; font-size:12px; cursor:pointer; border:1px solid ${border}; background:${bg}; color:#E65100;">
-              <input type="checkbox" ${on ? 'checked' : ''} onchange="toggleBulkWorkMemoMachine_('${esc(uid)}','${safeId}','${safeName}', this.checked)" style="margin:0;"> ${esc(m.name)}
+            const loc = String(m.currentLocName || m.signName || '').trim();
+            const locLine = loc ? `<span style="display:block; font-size:10px; color:#888; font-weight:normal;">📍 ${esc(loc)}</span>` : '';
+            return `<label style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px 4px 4px; border-radius:14px; font-size:12px; cursor:pointer; border:1px solid ${border}; background:${bg}; color:#E65100; text-align:left;">
+              <input type="checkbox" ${on ? 'checked' : ''} onchange="toggleBulkWorkMemoMachine_('${esc(uid)}','${safeId}','${safeName}', this.checked)" style="margin:0 0 0 4px;"> ${machinePhotoHtml_(m)}<span><span>${esc(m.name)}</span>${locLine}</span>
             </label>`;
           };
           if (sugMachines.length) {
@@ -40665,8 +40738,6 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
                 : `メモ推定「${esc(d.guessedName)}」→ 作業名チップを選んでください`))
             : '合いそうな作業名を選んでください')
           : ''));
-    const showField = !isRestCard && window.bulkWorkMemoShowFieldSection_(d);
-    const fieldHtml = showField ? window.buildBulkWorkMemoFieldHtml_(d, uid) : '';
     const restBody = isRestCard ? window.buildBulkWorkMemoRestTypeHtml_(d, uid) : '';
     const kindSwitch = window.buildBulkWorkMemoKindSwitchHtml_(d, uid);
     const prevEndHint = window.getBulkWorkMemoPrevEndHint_(uid);
@@ -40687,7 +40758,6 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
         <div id="bulk_crop_pick_${esc(uid)}">${window.buildBulkWorkMemoCropPickSectionHtml_(d, uid)}</div>
         <div id="bulk_work_pick_${esc(uid)}">${window.buildBulkWorkMemoWorkPickSectionHtml_(d, uid)}</div>
         <div id="bulk_work_hint_${esc(uid)}" style="display:${hint && !d._workListOpen ? 'block' : 'none'}; font-size:11px; color:#E65100; margin:0 0 8px; line-height:1.35;">${hint}</div>
-        <div id="bulk_field_wrap_${esc(uid)}" style="display:${showField ? '' : 'none'};">${fieldHtml}</div>
         <div id="bulk_extras_${esc(uid)}">${window.buildBulkWorkMemoExtrasHtml_(d, uid)}</div>`;
     const inMetaGroup = !!(metaCtx && metaCtx.groupSize >= 1);
     const isMetaSibling = !!(inMetaGroup && metaCtx.itemIndex > 1);
@@ -41498,6 +41568,9 @@ window.toggleBulkWorkMemoMachine_ = (uid, id, name, checked) => {
     }
   }
   row._machinePickOpen = true;
+  if (typeof window.syncBulkDeliveryMachineDest_ === 'function') {
+    window.syncBulkDeliveryMachineDest_(row);
+  }
   window.refreshBulkWorkMemoExtras_(uid);
 };
 
@@ -41622,8 +41695,29 @@ window.ensureBulkAssetMovesSynced_ = (row) => {
   const isDelivery = (typeof window.bulkWorkMemoIsDelivery_ === 'function')
     && window.bulkWorkMemoIsDelivery_(row);
 
-  // 運搬：assetMoves を正とし、used* と現在地だけ合わせる
+  // 運搬：選んだ機械は選択中の場所へ移動した扱い。assetMoves を正にする
   if (isDelivery) {
+    const dest = (typeof window.resolveBulkDeliveryDestPlace_ === 'function')
+      ? window.resolveBulkDeliveryDestPlace_(row)
+      : null;
+    (Array.isArray(row.usedMachines) ? row.usedMachines : []).forEach((m) => {
+      if (!m || !(m.id || m.name)) return;
+      const id = String(m.id || '').trim();
+      const name = String(m.name || '').trim();
+      const exists = row.assetMoves.some(a => a && String(a.kind || 'machine') === 'machine'
+        && (String(a.id || '') === id || (name && String(a.name || '') === name)));
+      if (exists) return;
+      const from = window.getBulkAssetCurrentLoc_('machine', id, name);
+      row.assetMoves.push({
+        kind: 'machine',
+        id: id || name,
+        name: name || id,
+        fromId: from.id,
+        fromName: from.name,
+        toId: dest ? dest.id : '',
+        toName: dest ? dest.name : ''
+      });
+    });
     const machines = [];
     const materials = [];
     const tools = [];
@@ -41637,7 +41731,18 @@ window.ensureBulkAssetMovesSynced_ = (row) => {
       a.name = name || id;
       a.fromId = from.id;
       a.fromName = from.name;
-      if (!a.toId) { a.toId = ''; a.toName = a.toName || ''; }
+      if (kind === 'machine') {
+        if (dest && dest.id) {
+          a.toId = dest.id;
+          a.toName = dest.name || '';
+        } else {
+          a.toId = '';
+          a.toName = '';
+        }
+      } else if (!a.toId) {
+        a.toId = '';
+        a.toName = a.toName || '';
+      }
       const item = { id: a.id, name: a.name };
       if (kind === 'material') materials.push(item);
       else if (kind === 'tool') tools.push(item);
@@ -43344,14 +43449,11 @@ window.renderBulkWorkMemoManualAddModal_ = () => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const ymd = window._bulkWorkMemoDate || window.getBulkWorkMemoTodayYmd_();
   const isRest = window.bulkWorkMemoIsRestDraft_(d);
-  const showField = !isRest && window.bulkWorkMemoShowFieldSection_(d);
-  const fieldHtml = showField ? window.buildBulkWorkMemoFieldHtml_(d, uid) : '';
   const restBody = isRest ? window.buildBulkWorkMemoRestTypeHtml_(d, uid) : '';
   const kindSwitch = window.buildBulkWorkMemoKindSwitchHtml_(d, uid);
   const workCore = isRest ? '' : `
     <div id="bulk_crop_pick_${esc(uid)}">${window.buildBulkWorkMemoCropPickSectionHtml_(d, uid)}</div>
     <div id="bulk_work_pick_${esc(uid)}">${window.buildBulkWorkMemoWorkPickSectionHtml_(d, uid)}</div>
-    <div id="bulk_field_wrap_${esc(uid)}" style="display:${showField ? '' : 'none'};">${fieldHtml}</div>
     <div id="bulk_extras_${esc(uid)}">${window.buildBulkWorkMemoExtrasHtml_(d, uid)}</div>`;
   const prevEndHint = window.getBulkWorkMemoPrevEndHint_(uid);
   const prevEndBtnLabel = prevEndHint

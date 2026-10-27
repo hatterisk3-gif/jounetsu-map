@@ -25,7 +25,7 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="worker.css?v=1788600000017">
+  <link rel="stylesheet" href="worker.css?v=1788600000018">
   <style>
     @keyframes workerBootSpin { to { transform: rotate(360deg); } }
     @keyframes workerBootSlide { from { transform: translateX(-120%); } to { transform: translateX(320%); } }
@@ -395,11 +395,11 @@
       <div class="search-container">
         <input type="text" id="mapSearchInput" placeholder="🌍 住所・短縮URL...">
       </div>
-      <button onclick="location.reload()"
+      <button class="worker-reload-btn" onclick="location.reload()"
         style="background:#fff; color:#333; border:1px solid #ccc; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">🔄
         更新</button>
-      <div style="position:relative; display:inline-block;">
-        <button type="button" onclick="toggleAccountMenu(event)"
+      <div class="worker-account-wrap" style="position:relative; display:inline-block;">
+        <button type="button" class="worker-account-btn" onclick="toggleAccountMenu(event)"
           style="background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px; cursor:pointer; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">👤
           <span data-account-name>マイページ</span> ▾</button>
         <div id="accountMenuDropdown" onclick="event.stopPropagation()"
@@ -513,7 +513,7 @@
   <script src="machine-taxonomy.js?v=1788600000012"></script>
   <script src="weather-agri.js?v=1788600000102"></script>
   <script src="api-client.js?v=1788600000111"></script>
-  <script src="worker.js?v=1788600000215"></script>
+  <script src="worker.js?v=1788600000217"></script>
   <script src="tracking.js?v=1788600000051"></script>
   <script>
     if ('serviceWorker' in navigator) {

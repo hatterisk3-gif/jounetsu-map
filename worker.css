@@ -486,6 +486,65 @@ body.bulk-work-memo-map-picking .worker-top-bar {
   display: none !important;
 }
 
+/* スマホ：検索とチップを段ごとに詰め、中央寄せの空き行を出さない */
+@media (max-width: 720px) {
+  .control-panel {
+    padding: 6px 8px 4px;
+    gap: 6px;
+    align-items: stretch;
+  }
+  #mainControlRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 6px;
+    align-items: center;
+    justify-content: stretch;
+  }
+  #mainControlRow > .search-container:first-child {
+    grid-column: 1 / -1;
+  }
+  #mainControlRow .search-container {
+    min-width: 0;
+    width: 100%;
+  }
+  #searchInput,
+  #mapSearchInput {
+    width: 100%;
+    min-width: 0;
+    padding: 7px 12px;
+    font-size: 14px;
+  }
+  #mainControlRow .worker-reload-btn,
+  #mainControlRow .worker-account-btn {
+    padding: 7px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  #mainControlRow .worker-account-wrap {
+    min-width: 0;
+    max-width: 38vw;
+  }
+  #mainControlRow .worker-account-btn {
+    max-width: 100% !important;
+    width: 100%;
+  }
+  .worker-top-bar {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .worker-top-bar .map-action-btn {
+    flex: 1 1 0;
+    width: auto;
+    height: 32px;
+    min-height: 32px;
+    padding: 0 4px;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .worker-top-chip-emoji { font-size: 14px; }
+  .worker-top-chip-label { font-size: 11px; }
+}
+
 /* 地図アクションボタン群（右下・縦並び） */
 .map-action-bar {
   position: fixed;
