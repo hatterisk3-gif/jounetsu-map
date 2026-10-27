@@ -13,6 +13,8 @@ window.cadNakamichiLines = [];
 window.cadNakamichiMapPolygons = [];
 /** 中道で畝を割る半幅(m)。以前は 0.5（切れ目の幅 約1m） */
 window.CAD_NAKAMICHI_HALF_WIDTH_M = 0.2;
+/** 枕畝を圃場の辺から内側へ離す幅(m) */
+window.CAD_MAKURA_EDGE_INSET_M = 0.5;
 window.cadDrainageLines = [];
 window.cadDrainageMapPolygons = [];
 window.cadCustomShapes = [];
@@ -339,15 +341,13 @@ window.updateCadSvgOverlay = (opts) => {
 
         const wireRidgePath = (p, baseLabel) => {
             p._svgPathNode = createPathNode(window.cadGetGroupColor ? window.cadGetGroupColor(p.uneGroup) : '#8BC34A', '#558B2F');
-            p._svgPathNode.setAttribute('style', 'pointer-events: auto; cursor: pointer;');
+            p._svgPathNode.setAttribute('style', 'pointer-events: none;');
             if (!disableHover) {
                 p._svgPathNode.addEventListener('mouseover', () => p._svgPathNode.setAttribute('filter', 'url(#hover-shadow)'));
                 p._svgPathNode.addEventListener('mouseout', () => p._svgPathNode.removeAttribute('filter'));
             }
             p._svgPathNode.addEventListener('click', (e) => {
                 e.stopPropagation();
-                if (window.cadPinMode === 'makura_edge' || window.cadPinMode === 'makuraune' || window.cadPinMode === 'front_edge') return;
-                if (window.openCadEditModal && p.uneIndex) window.openCadEditModal(p.uneIndex);
             });
             pathsGroup.appendChild(p._svgPathNode);
 
@@ -1306,10 +1306,10 @@ window.saveCadStateToHistory = () => {
 };
 
 window.updateUndoRedoUI = () => {
-    const undoBtn = document.getElementById('cadUndoBtn');
-    const redoBtn = document.getElementById('cadRedoBtn');
-    if (undoBtn) undoBtn.disabled = window.cadHistoryIndex <= 0;
-    if (redoBtn) redoBtn.disabled = window.cadHistoryIndex >= window.cadHistory.length - 1;
+    const canUndo = window.cadHistoryIndex > 0;
+    const canRedo = window.cadHistoryIndex < (window.cadHistory ? window.cadHistory.length : 0) - 1;
+    document.querySelectorAll('.cad-undo-btn').forEach((btn) => { btn.disabled = !canUndo; });
+    document.querySelectorAll('.cad-redo-btn').forEach((btn) => { btn.disabled = !canRedo; });
 };
 
 window.loadCadStateFromHistory = (index) => {
@@ -1462,29 +1462,7 @@ window.handleMapClick = (pageX, pageY) => {
     const latLng = window.getPageLatLng(pageX, pageY);
     if (!latLng) return;
 
-    if (!window.cadPinMode) {
-        if (google.maps.geometry && google.maps.geometry.poly) {
-            if (window.cadCustomShapes) {
-                for (let i = window.cadCustomShapes.length - 1; i >= 0; i--) {
-                    let poly = window.cadCustomShapes[i];
-                    if (google.maps.geometry.poly.containsLocation(latLng, poly)) {
-                        window.openCadEditModal(poly.uneIndex);
-                        return;
-                    }
-                }
-            }
-            if (window.cadUnePolygons) {
-                for (let i = window.cadUnePolygons.length - 1; i >= 0; i--) {
-                    let poly = window.cadUnePolygons[i];
-                    if (google.maps.geometry.poly.containsLocation(latLng, poly)) {
-                        window.openCadEditModal(poly.uneIndex);
-                        return;
-                    }
-                }
-            }
-        }
-        return;
-    }
+    if (!window.cadPinMode) return;
 
     const msgEl = document.getElementById('cadPinModeMsg');
 
@@ -1550,7 +1528,7 @@ window.handleMapClick = (pageX, pageY) => {
             window.cadStopGpsPinPlace({ silent: true });
         }
         window.cadPinMode = null;
-        if (msgEl) { msgEl.innerText = '💡 畝を直接タップすると、十字キーで移動や変形ができます。'; msgEl.style.color = "#FF9800"; }
+        if (msgEl) { msgEl.innerText = '💡 操作を選ぶと、ここに案内が出ます。'; msgEl.style.color = "#FF9800"; }
         return;
     }
 
@@ -1665,7 +1643,7 @@ window.handleMapClick = (pageX, pageY) => {
             return;
         }
         window.cadPinMode = null;
-        if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
+        if (msgEl) { msgEl.innerText = `💡 操作を選ぶと、ここに案内が出ます。`; msgEl.style.color = "#FF9800"; }
         return;
     }
 
@@ -1685,7 +1663,7 @@ window.cadPlaceEquipmentPin = (latLng, pinType) => {
     window.cadPinMode = null;
     if (typeof window.cadSetGpsBarVisible === 'function') window.cadSetGpsBarVisible(false);
     if (msgEl) {
-            msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`;
+            msgEl.innerText = `💡 操作を選ぶと、ここに案内が出ます。`;
             msgEl.style.color = '#FF9800';
     }
     window.saveCadStateToHistory();
@@ -2000,8 +1978,9 @@ window.initCadTouchEvents = () => {
                     }
                     
                     window.cadPinMode = null;
+                    if (typeof window.cadUpdateSplitLineBtn === 'function') window.cadUpdateSplitLineBtn();
                     const msgEl = document.getElementById('cadPinModeMsg');
-                    if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
+                    if (msgEl) { msgEl.innerText = `💡 操作を選ぶと、ここに案内が出ます。`; msgEl.style.color = "#FF9800"; }
                     
                     if (window.cadUnePolygons.length > 0) window.cadGenerateLines();
                     else window.saveCadStateToHistory();
@@ -2183,10 +2162,6 @@ window.initCadTouchEvents = () => {
                 scheduleMapUpdate(null, null, true);
             }
 
-            let displayAngle = Math.round(-window.cadCurrentRotation) % 360;
-            if (displayAngle < 0) displayAngle += 360;
-            document.getElementById('cadAngle').value = displayAngle;
-
         } else if (e.touches.length === 1 && lastTouchX !== null && lastTouchY !== null) {
             const currentX = e.touches[0].pageX; const currentY = e.touches[0].pageY;
 
@@ -2257,8 +2232,9 @@ window.initCadTouchEvents = () => {
                         }
                         
                         window.cadPinMode = null;
+                    if (typeof window.cadUpdateSplitLineBtn === 'function') window.cadUpdateSplitLineBtn();
                         const msgEl = document.getElementById('cadPinModeMsg');
-                        if (msgEl) { msgEl.innerText = `💡 畝を直接タップすると、十字キーで移動や変形ができます。`; msgEl.style.color = "#FF9800"; }
+                        if (msgEl) { msgEl.innerText = `💡 操作を選ぶと、ここに案内が出ます。`; msgEl.style.color = "#FF9800"; }
                         
                         if (window.cadUnePolygons.length > 0) window.cadGenerateLines();
                         else window.saveCadStateToHistory();
@@ -2369,103 +2345,22 @@ window.openCADMode = async (id) => {
 
     window.cadClearLines(true);
     switchCadTab(1);
-    if (cadLoad) cadLoad.update({ label: '最新図面を取得中...', detail: '2/4 保存履歴を確認しています', current: 1, total: 4 });
 
-    try {
-        const history = await callGAS('getPolygonDrawingHistory', { id });
-        if (history && history.length > 0 && history[0].data) {
-            p.uneSimData = history[0].data;
-        }
-    } catch (e) {
-        console.error("CAD最新データ取得エラー:", e);
-    }
-    document.getElementById('cadTargetName').innerText = p.name;
-
+    // 🌟 1. 畝幅チップをキャッシュから即座に初期化・表示（待機0ms）
     window.cadWidthLinkedFromPlan = false;
-    if (cadLoad) cadLoad.update({ label: 'CAD設定を取得中...', detail: '3/4 畝幅マスタを読み込んでいます', current: 2, total: 4 });
-    await window.loadCadWidthOptionsFromMaster();
+    if (typeof window.initCadWidthOptionsFromCache === 'function') {
+        window.initCadWidthOptionsFromCache();
+    }
     window.setCadWidthCm(null, { updatePreview: false });
 
+    // 🌟 2. 既存の図面データ(uneSimData)があれば、即座に図面を展開して描画！（体感待機0ms）
+    let initialRendered = false;
     if (p.uneSimData) {
-        try {
-            const saved = JSON.parse(p.uneSimData);
-            const savedRenderTotal = (saved.pins || []).length + (saved.nakamichiLines || []).length +
-                (saved.customShapes || []).length + (saved.unePolygons || []).length;
-            if (cadLoad) cadLoad.update({
-                label: '保存図面を描画中...',
-                detail: `4/4 ${savedRenderTotal} 要素を復元しています`,
-                current: 3,
-                total: 4
-            });
-            document.getElementById('cadAngle').value = saved.angle !== undefined ? saved.angle : 0;
-            // 基準畝幅は計画連動時のみ自動選択。保存値では選択しない
-            document.getElementById('cadUneCount').value = saved.uneCount !== undefined ? saved.uneCount : 0;
-            
-            if (typeof window.setCadMarginCm === 'function') {
-                window.setCadMarginCm('Side', saved.marginSide !== undefined ? saved.marginSide : 150, 150);
-                window.setCadMarginCm('End', saved.marginEnd !== undefined ? saved.marginEnd : 200, 200);
-            } else {
-                const marginSideEl = document.getElementById('cadMarginSide');
-                const marginEndEl = document.getElementById('cadMarginEnd');
-                if (marginSideEl) marginSideEl.value = saved.marginSide !== undefined ? saved.marginSide : 150;
-                if (marginEndEl) marginEndEl.value = saved.marginEnd !== undefined ? saved.marginEnd : 200;
-            }
-            if (typeof window.setCadPinNumFontSize === 'function') {
-                window.setCadPinNumFontSize(saved.pinNumFontSize || 20, { refresh: false });
-            } else {
-                window.cadPinNumFontSize = saved.pinNumFontSize || 20;
-            }
+        initialRendered = window.renderCadSavedData(p.uneSimData);
+    }
 
-            if (saved.pins) {
-                saved.pins.forEach(pin => {
-                    const mk = new google.maps.Marker({
-                        position: { lat: pin.lat, lng: pin.lng }, map: window.cadMap, visible: false
-                    });
-                    mk.cadPinType = pin.type;
-                    window.cadPins.push(mk);
-                });
-            }
-
-            if (saved.nakamichiLines) {
-                window.cadNakamichiLines = saved.nakamichiLines;
-                window.cadNakamichiLines.forEach(line => window.drawNakamichiVisual(line));
-            }
-            if (window.cadFrontBaselineMarker) { window.cadFrontBaselineMarker.setMap(null); window.cadFrontBaselineMarker = null; }
-            if (saved.frontBaseline) {
-                window.cadFrontBaseline = saved.frontBaseline;
-                if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
-            }
-            if (saved.customShapes) {
-                saved.customShapes.forEach((item, idx) => {
-                    let cPath = Array.isArray(item) ? item : item.coords;
-                    let uGroup = Array.isArray(item) ? '' : (item.group || '');
-                    let gPoly = window.cadCreateRidgePolygon(cPath, { fillColor: window.cadGetGroupColor ? window.cadGetGroupColor(uGroup) : '#8BC34A' });
-                    gPoly.uneIndex = 'custom_' + idx;
-                    gPoly.uneGroup = uGroup;
-                    window.bindShapeHistoryEvents(gPoly);
-                    window.cadCustomShapes.push(gPoly);
-                });
-            }
-            if (saved.unePolygons) {
-                saved.unePolygons.forEach((item, idx) => {
-                    let uPath = Array.isArray(item) ? item : item.coords;
-                    let uGroup = Array.isArray(item) ? '' : (item.group || '');
-                    let gPoly = window.cadCreateRidgePolygon(uPath, { fillColor: window.cadGetGroupColor ? window.cadGetGroupColor(uGroup) : '#8BC34A' });
-                    gPoly.uneIndex = 'une_' + idx;
-                    gPoly.uneGroup = uGroup;
-                    window.bindShapeHistoryEvents(gPoly);
-                    window.cadUnePolygons.push(gPoly);
-                });
-            } else {
-                // 畝未生成の保存データ：畝幅未選択なら自動生成しない
-                if (window.getCadWidthCm()) cadGenerateLines();
-            }
-            window.reassignLabels();
-            switchCadTab(2);
-        } catch (e) { }
-    } else {
+    if (!initialRendered) {
         document.getElementById('cadAngle').value = 0;
-        
         if (typeof window.setCadMarginCm === 'function') {
             window.setCadMarginCm('Side', 150, 150);
             window.setCadMarginCm('End', 200, 200);
@@ -2475,23 +2370,146 @@ window.openCADMode = async (id) => {
             if (marginSideEl) marginSideEl.value = 150;
             if (marginEndEl) marginEndEl.value = 200;
         }
-        
         const countEl = document.getElementById('cadUneCount');
         if (countEl) countEl.value = 0;
     }
 
-    // 栽培計画でこの圃場が選ばれていれば、計画の畝間を基準畝幅に連動
-    await window.applyCultivationPlanWidthToCad(id);
-    if (cadLoad) cadLoad.update({ label: 'CADの準備が完了しました', detail: '4/4 図面を表示しました', current: 4, total: 4 });
+    if (cadLoad) cadLoad.update({ label: '最新データを同期中...', detail: '2/2 履歴と栽培計画を確認しています', current: 1, total: 2 });
+
+    // 🌟 3. 3大通信（履歴・畝幅マスタ最新化・栽培計画の畝間連動）を完全並列実行！
+    try {
+        const [historyRes, masterRes, planRes] = await Promise.allSettled([
+            callGAS('getPolygonDrawingHistory', { id }),
+            window.loadCadWidthOptionsFromMaster(),
+            callGAS('getCultivationRidgeParamsForField', { fieldId: id })
+        ]);
+
+        // 最新図面履歴があれば差分を反映
+        if (historyRes.status === 'fulfilled' && historyRes.value && historyRes.value.length > 0 && historyRes.value[0].data) {
+            const latestData = historyRes.value[0].data;
+            if (latestData !== p.uneSimData) {
+                p.uneSimData = latestData;
+                window.renderCadSavedData(latestData);
+            }
+        }
+
+        // 栽培計画の畝間があれば基準畝幅に自動連動
+        if (planRes.status === 'fulfilled' && planRes.value && planRes.value.rSpace) {
+            const planParams = planRes.value;
+            window.cadWidthLinkedFromPlan = true;
+            window.setCadWidthCm(planParams.rSpace);
+            const msgEl = document.getElementById('cadPinModeMsg');
+            if (msgEl) {
+                const cropBit = planParams.crop
+                    ? `（${planParams.crop}${planParams.variety ? ' / ' + planParams.variety : ''}）`
+                    : '';
+                msgEl.innerText = `📐 栽培計画の畝間 ${planParams.rSpace}cm を基準畝幅に連動しました${cropBit}`;
+                msgEl.style.color = '#4CAF50';
+            }
+        }
+    } catch (e) {
+        console.error("CAD並列同期エラー:", e);
+    }
+    document.getElementById('cadTargetName').innerText = p.name;
 
     // 起動直後の状態を履歴0番目として保存
     setTimeout(() => {
         window.cadHistory = [];
         window.cadHistoryIndex = -1;
         window.saveCadStateToHistory();
-    }, 500);
+    }, 200);
     } finally {
         if (cadLoad) cadLoad.done();
+    }
+};
+
+/** 保存図面データをパースしてCAD画面に復元 */
+window.renderCadSavedData = (savedDataStr) => {
+    if (!savedDataStr) return false;
+    try {
+        const saved = (typeof savedDataStr === 'string') ? JSON.parse(savedDataStr) : savedDataStr;
+        if (!saved || typeof saved !== 'object') return false;
+
+        document.getElementById('cadAngle').value = saved.angle !== undefined ? saved.angle : 0;
+        document.getElementById('cadUneCount').value = saved.uneCount !== undefined ? saved.uneCount : 0;
+
+        if (typeof window.setCadMarginCm === 'function') {
+            window.setCadMarginCm('Side', saved.marginSide !== undefined ? saved.marginSide : 150, 150);
+            window.setCadMarginCm('End', saved.marginEnd !== undefined ? saved.marginEnd : 200, 200);
+        } else {
+            const marginSideEl = document.getElementById('cadMarginSide');
+            const marginEndEl = document.getElementById('cadMarginEnd');
+            if (marginSideEl) marginSideEl.value = saved.marginSide !== undefined ? saved.marginSide : 150;
+            if (marginEndEl) marginEndEl.value = saved.marginEnd !== undefined ? saved.marginEnd : 200;
+        }
+        if (typeof window.setCadPinNumFontSize === 'function') {
+            window.setCadPinNumFontSize(saved.pinNumFontSize || 20, { refresh: false });
+        } else {
+            window.cadPinNumFontSize = saved.pinNumFontSize || 20;
+        }
+
+        if (window.cadPins && window.cadPins.length) {
+            window.cadPins.forEach(pin => { if (pin && pin.setMap) pin.setMap(null); });
+        }
+        window.cadPins = [];
+        if (saved.pins) {
+            saved.pins.forEach(pin => {
+                const mk = new google.maps.Marker({
+                    position: { lat: pin.lat, lng: pin.lng }, map: window.cadMap, visible: false
+                });
+                mk.cadPinType = pin.type;
+                window.cadPins.push(mk);
+            });
+        }
+
+        window.cadNakamichiLines = saved.nakamichiLines || [];
+        window.cadNakamichiLines.forEach(line => window.drawNakamichiVisual(line));
+
+        if (window.cadFrontBaselineMarker) { window.cadFrontBaselineMarker.setMap(null); window.cadFrontBaselineMarker = null; }
+        if (saved.frontBaseline) {
+            window.cadFrontBaseline = saved.frontBaseline;
+            if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
+        }
+
+        if (window.cadCustomShapes && window.cadCustomShapes.length) {
+            window.cadCustomShapes.forEach(pl => { if (pl && pl.setMap) pl.setMap(null); });
+        }
+        window.cadCustomShapes = [];
+        if (saved.customShapes) {
+            saved.customShapes.forEach((item, idx) => {
+                let cPath = Array.isArray(item) ? item : item.coords;
+                let uGroup = Array.isArray(item) ? '' : (item.group || '');
+                let gPoly = window.cadCreateRidgePolygon(cPath, { fillColor: window.cadGetGroupColor ? window.cadGetGroupColor(uGroup) : '#8BC34A' });
+                gPoly.uneIndex = 'custom_' + idx;
+                gPoly.uneGroup = uGroup;
+                window.bindShapeHistoryEvents(gPoly);
+                window.cadCustomShapes.push(gPoly);
+            });
+        }
+
+        if (window.cadUnePolygons && window.cadUnePolygons.length) {
+            window.cadUnePolygons.forEach(pl => { if (pl && pl.setMap) pl.setMap(null); });
+        }
+        window.cadUnePolygons = [];
+        if (saved.unePolygons) {
+            saved.unePolygons.forEach((item, idx) => {
+                let uPath = Array.isArray(item) ? item : item.coords;
+                let uGroup = Array.isArray(item) ? '' : (item.group || '');
+                let gPoly = window.cadCreateRidgePolygon(uPath, { fillColor: window.cadGetGroupColor ? window.cadGetGroupColor(uGroup) : '#8BC34A' });
+                gPoly.uneIndex = 'une_' + idx;
+                gPoly.uneGroup = uGroup;
+                window.bindShapeHistoryEvents(gPoly);
+                window.cadUnePolygons.push(gPoly);
+            });
+        } else {
+            if (window.getCadWidthCm()) cadGenerateLines();
+        }
+        window.reassignLabels();
+        switchCadTab(2);
+        return true;
+    } catch (e) {
+        console.error("renderCadSavedData失敗:", e);
+        return false;
     }
 };
 
@@ -2608,16 +2626,17 @@ window.setCadWidthCm = (cm, opts) => {
 window.cadOnWidthSelectChange = () => {
     const sel = document.getElementById('cadWidthSelect');
     const custom = document.getElementById('cadWidthCustom');
+    const customWrap = document.getElementById('cadWidthCustomWrap');
     if (!sel) return;
     window.cadWidthLinkedFromPlan = false;
     if (sel.value === 'custom') {
+        if (customWrap) customWrap.style.display = 'block';
         if (custom) {
-            custom.style.display = 'block';
             custom.focus();
         }
         return;
     }
-    if (custom) custom.style.display = 'none';
+    if (customWrap) customWrap.style.display = 'none';
     window.setCadWidthCm(sel.value || null);
 };
 
@@ -2626,85 +2645,140 @@ window.cadOnWidthCustomInput = () => {
     if (!custom) return;
     window.cadWidthLinkedFromPlan = false;
     const n = parseFloat(custom.value);
-    if (n > 0) window.setCadWidthCm(n, { updatePreview: true });
+    if (n > 0) {
+        window.setCadWidthCm(n, { updatePreview: true });
+    } else {
+        window.setCadWidthCm(null, { updatePreview: true });
+    }
 };
 
 window.refreshCadWidthButtons = (selectedCm) => {
     const selected = (selectedCm != null && selectedCm !== '' && parseFloat(selectedCm) > 0)
-        ? String(Math.round(parseFloat(selectedCm)))
-        : '';
+        ? Math.round(parseFloat(selectedCm))
+        : null;
     const options = (window.cadWidthOptions && window.cadWidthOptions.length)
         ? window.cadWidthOptions
         : (window.CAD_DEFAULT_RIDGE_WIDTHS_CM || [100, 120, 150, 180, 200]);
+
+    const container = document.getElementById('cadWidthChips');
+    const customWrap = document.getElementById('cadWidthCustomWrap');
+    const customInput = document.getElementById('cadWidthCustom');
     const sel = document.getElementById('cadWidthSelect');
-    const custom = document.getElementById('cadWidthCustom');
-    if (sel) {
-        const prev = sel.value;
-        sel.innerHTML = '';
-        const addOpt = (val, label) => {
-            const opt = document.createElement('option');
-            opt.value = String(val);
-            opt.textContent = label;
-            sel.appendChild(opt);
-        };
-        addOpt('', '未選択');
-        options.forEach(cm => addOpt(cm, String(cm)));
-        addOpt('custom', 'その他（手入力）');
-        const inList = selected && options.some(v => String(v) === selected);
-        if (selected && inList) {
-            sel.value = selected;
-            if (custom) custom.style.display = 'none';
-        } else if (selected) {
-            sel.value = 'custom';
-            if (custom) {
-                custom.style.display = 'block';
-                if (document.activeElement !== custom) custom.value = selected;
+
+    const isPreset = selected != null && options.some(v => v === selected);
+    const isCustom = selected != null && !isPreset;
+
+    if (container) {
+        container.innerHTML = '';
+
+        options.forEach(cm => {
+            const isSelected = (selected === cm);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'cad-width-chip' + (isSelected ? ' is-selected' : '');
+            btn.textContent = cm + 'cm';
+            btn.style.cssText = isSelected
+                ? 'background:#4CAF50; color:#fff; border:1px solid #81C784; padding:6px 14px; border-radius:999px; font-size:13px; font-weight:bold; cursor:pointer; box-shadow:0 2px 6px rgba(76,175,80,0.4); min-height:34px;'
+                : 'background:#2a2a2a; color:#ddd; border:1px solid #555; padding:6px 14px; border-radius:999px; font-size:13px; font-weight:bold; cursor:pointer; min-height:34px;';
+            btn.onclick = () => {
+                window.cadWidthLinkedFromPlan = false;
+                if (isSelected) {
+                    window.setCadWidthCm(null);
+                } else {
+                    window.setCadWidthCm(cm);
+                }
+            };
+            container.appendChild(btn);
+        });
+
+        // 「その他」チップ
+        const otherBtn = document.createElement('button');
+        otherBtn.type = 'button';
+        otherBtn.className = 'cad-width-chip' + (isCustom ? ' is-selected' : '');
+        otherBtn.textContent = isCustom ? `その他 (${selected}cm)` : 'その他';
+        otherBtn.style.cssText = isCustom
+            ? 'background:#4CAF50; color:#fff; border:1px solid #81C784; padding:6px 14px; border-radius:999px; font-size:13px; font-weight:bold; cursor:pointer; box-shadow:0 2px 6px rgba(76,175,80,0.4); min-height:34px;'
+            : 'background:#2a2a2a; color:#ddd; border:1px solid #555; padding:6px 14px; border-radius:999px; font-size:13px; font-weight:bold; cursor:pointer; min-height:34px;';
+        otherBtn.onclick = () => {
+            window.cadWidthLinkedFromPlan = false;
+            if (isCustom) {
+                window.setCadWidthCm(null);
+            } else {
+                if (customWrap) customWrap.style.display = 'block';
+                if (customInput) {
+                    customInput.focus();
+                    const val = parseFloat(customInput.value);
+                    if (val > 0) window.setCadWidthCm(val);
+                }
             }
-        } else if (prev === 'custom') {
-            sel.value = 'custom';
-            if (custom) custom.style.display = 'block';
-        } else {
-            sel.value = '';
-            if (custom) custom.style.display = 'none';
-        }
+        };
+        container.appendChild(otherBtn);
+    }
+
+    if (customWrap) {
+        customWrap.style.display = isCustom ? 'block' : 'none';
+    }
+    if (customInput && isCustom && document.activeElement !== customInput) {
+        customInput.value = selected;
+    }
+
+    if (sel) {
+        if (selected == null) sel.value = '';
+        else if (isPreset) sel.value = String(selected);
+        else sel.value = 'custom';
     }
 
     const hint = document.getElementById('cadWidthHint');
     if (hint) {
         if (selected) {
             hint.textContent = window.cadWidthLinkedFromPlan
-                ? `栽培計画の畝間と連動中（${selected}cm）`
+                ? `📐 栽培計画の畝間と連動中（${selected}cm）`
                 : `選択中: ${selected}cm`;
-            hint.style.color = window.cadWidthLinkedFromPlan ? '#4CAF50' : '#aaa';
+            hint.style.color = window.cadWidthLinkedFromPlan ? '#4CAF50' : '#AED581';
         } else {
-            hint.textContent = '未選択（栽培プリセットの畝間から選んでください）';
+            hint.textContent = '未選択（チップをタップして選択）';
             hint.style.color = '#FF9800';
         }
     }
 };
 
-/** 栽培マスタ／プリセットから畝間候補を読み込みボタン化 */
-window.loadCadWidthOptionsFromMaster = async () => {
-    const set = new Set(window.CAD_DEFAULT_RIDGE_WIDTHS_CM);
+/** 栽培マスタのキャッシュから即時に候補を抽出して初期化（待機0ms） */
+window.initCadWidthOptionsFromCache = () => {
+    const set = new Set(window.CAD_DEFAULT_RIDGE_WIDTHS_CM || [100, 120, 150, 180, 200]);
     try {
-        let data = null;
-        if (typeof callGAS === 'function') {
-            try {
-                data = await callGAS('getCultivationMaster');
-                if (data) {
-                    try { localStorage.setItem('cpMasterDataCache', JSON.stringify(data)); } catch (e) {}
-                }
-            } catch (e) {
-                console.warn('getCultivationMaster失敗、キャッシュを使用:', e);
+        const cached = localStorage.getItem('cpMasterDataCache');
+        if (cached) {
+            const data = JSON.parse(cached);
+            if (data) {
+                (data.rSpace || []).forEach(v => {
+                    const n = parseFloat(v);
+                    if (n > 0) set.add(Math.round(n));
+                });
+                const presets = data.presets || {};
+                Object.keys(presets).forEach(crop => {
+                    (presets[crop] || []).forEach(p => {
+                        const n = parseFloat(p && p.rSpace);
+                        if (n > 0) set.add(Math.round(n));
+                    });
+                });
             }
         }
-        if (!data) {
-            try {
-                const cached = localStorage.getItem('cpMasterDataCache');
-                if (cached) data = JSON.parse(cached);
-            } catch (e) {}
-        }
+    } catch (e) {}
+    window.cadWidthOptions = Array.from(set).sort((a, b) => a - b);
+    window.refreshCadWidthButtons(window.getCadWidthCm());
+};
+
+/** 栽培マスタ／プリセットから畝間候補を読み込み（キャッシュがあれば即表示＋GASで最新更新） */
+window.loadCadWidthOptionsFromMaster = async () => {
+    // まずキャッシュから即座に初期化
+    window.initCadWidthOptionsFromCache();
+
+    if (typeof callGAS !== 'function') return;
+    try {
+        const data = await callGAS('getCultivationMaster');
         if (data) {
+            try { localStorage.setItem('cpMasterDataCache', JSON.stringify(data)); } catch (e) {}
+            const set = new Set(window.CAD_DEFAULT_RIDGE_WIDTHS_CM || [100, 120, 150, 180, 200]);
             (data.rSpace || []).forEach(v => {
                 const n = parseFloat(v);
                 if (n > 0) set.add(Math.round(n));
@@ -2716,12 +2790,16 @@ window.loadCadWidthOptionsFromMaster = async () => {
                     if (n > 0) set.add(Math.round(n));
                 });
             });
+            const newOpts = Array.from(set).sort((a, b) => a - b);
+            const isChanged = newOpts.length !== window.cadWidthOptions.length || newOpts.some((v, i) => v !== window.cadWidthOptions[i]);
+            if (isChanged) {
+                window.cadWidthOptions = newOpts;
+                window.refreshCadWidthButtons(window.getCadWidthCm());
+            }
         }
     } catch (e) {
-        console.warn('畝幅候補の取得に失敗:', e);
+        console.warn('getCultivationMasterの更新取得に失敗:', e);
     }
-    window.cadWidthOptions = Array.from(set).sort((a, b) => a - b);
-    window.refreshCadWidthButtons(window.getCadWidthCm());
 };
 
 /** 地図上の畝ポリゴン1本の幅(m)を概算（畝の直交方向） */
@@ -3472,10 +3550,6 @@ window.cadAlignMapHeading = () => {
 window.cadRotateMap = (deg) => {
     window.cadCurrentRotation += deg;
     window.updateCadMapTransform();
-    let displayAngle = Math.round(-window.cadCurrentRotation) % 360;
-    if (displayAngle < 0) displayAngle += 360;
-    document.getElementById('cadAngle').value = displayAngle;
-    updateCadPreviewCount();
     if (window.cadSnapGridOn && typeof window.cadRebuildSnapGrid === 'function') {
         window.cadRebuildSnapGrid();
     }
@@ -4292,7 +4366,7 @@ window.cadClearLines = (skipHistory = false) => {
     window.cadFrontBaseline = null;
     if (typeof window.cadClearPartialPoints === 'function') window.cadClearPartialPoints(true);
     if (typeof window.cadClearQuadCorners === 'function') window.cadClearQuadCorners(true);
-    const msgEl = document.getElementById('cadPinModeMsg'); if (msgEl) msgEl.innerText = "💡 畝を直接タップすると、十字キーで移動や変形ができます。";
+    const msgEl = document.getElementById('cadPinModeMsg'); if (msgEl) msgEl.innerText = "💡 操作を選ぶと、ここに案内が出ます。";
 };
 
 /** 畝だけ消す（ピン・中道・排水・正面バーは残す） */
@@ -4377,7 +4451,36 @@ window.cadSetGpsBarVisible = (visible) => {
     if (bar) bar.style.display = visible ? '' : 'none';
 };
 
+window.cadUpdateSplitLineBtn = () => {
+    const btn = document.getElementById('cadSplitLineBtn');
+    if (!btn) return;
+    const on = window.cadPinMode === 'nakamichi';
+    btn.textContent = on ? 'キャンセル' : '分割ラインを引く';
+    btn.style.background = on ? '#4A148C' : '#9C27B0';
+};
+
+window.cadCancelSplitLineMode = () => {
+    window.cadPinMode = null;
+    window.cadNakamichiIsDrawing = false;
+    if (window.nakamichiTempLine) {
+        window.nakamichiTempLine.setMap(null);
+        window.nakamichiTempLine = null;
+    }
+    window.nakamichiTempPt = null;
+    if (typeof window.cadPaintNakamichiTempLine === 'function') window.cadPaintNakamichiTempLine();
+    window.cadUpdateSplitLineBtn();
+    const msgEl = document.getElementById('cadPinModeMsg');
+    if (msgEl) {
+        msgEl.innerText = '分割ラインをキャンセルしました。';
+        msgEl.style.color = '#FF9800';
+    }
+};
+
 window.cadSetPinMode = (type) => {
+    if (type === 'nakamichi' && window.cadPinMode === 'nakamichi') {
+        window.cadCancelSplitLineMode();
+        return;
+    }
     const isEquipPin = window.CAD_GPS_PIN_TYPES.indexOf(type) >= 0;
     // ライン系モードに切り替えたらGPS測位は止める
     if (type && !isEquipPin && window.cadGpsWatchId != null) {
@@ -4388,7 +4491,7 @@ window.cadSetPinMode = (type) => {
     const msgEl = document.getElementById('cadPinModeMsg');
     if (type === 'nakamichi') {
         window.nakamichiTempPt = null;
-        if (msgEl) { msgEl.innerText = `【中道ライン】始点となる場所をタップしてください`; msgEl.style.color = "#E91E63"; }
+        if (msgEl) { msgEl.innerText = 'ドラッグして分割ラインを引いてください。もう一度ボタンを押すとキャンセルします。'; msgEl.style.color = "#E91E63"; }
     } else if (type === 'drainage') {
         window.nakamichiTempPt = null;
         if (msgEl) { msgEl.innerText = `【排水ライン】始点となる場所をタップしてください`; msgEl.style.color = "#00BCD4"; }
@@ -4400,6 +4503,7 @@ window.cadSetPinMode = (type) => {
         window.cadGpsPinType = type;
         window.cadUpdateGpsUi({ status: `選択中: ${name} → 「GPSで置く」か地図タップ` });
     }
+    window.cadUpdateSplitLineBtn();
 };
 
 window.cadGpsPinTypeLabel = (type) => {
@@ -5203,13 +5307,14 @@ window.cadBeginFrontEdgePick = () => {
         window.cadUpdateFrontPickUi();
         const msg = document.getElementById('cadPinModeMsg');
         if (msg) {
-            msg.innerText = '💡 畝を直接タップすると、十字キーで移動や変形ができます。';
+            msg.innerText = '💡 操作を選ぶと、ここに案内が出ます。';
             msg.style.color = '#FF9800';
         }
         if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: true });
         return;
     }
     window.cadPinMode = 'front_edge';
+    if (typeof window.cadUpdateSplitLineBtn === 'function') window.cadUpdateSplitLineBtn();
     if (typeof window.cadUpdateMakuraPickUi === 'function') window.cadUpdateMakuraPickUi();
     window.cadUpdateFrontPickUi();
     if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: true });
@@ -5224,7 +5329,7 @@ window.cadClearFrontEdgePick = () => {
     window.cadUpdateFrontPickUi();
     const msg = document.getElementById('cadPinModeMsg');
     if (msg) {
-        msg.innerText = '💡 畝を直接タップすると、十字キーで移動や変形ができます。';
+        msg.innerText = '💡 操作を選ぶと、ここに案内が出ます。';
         msg.style.color = '#FF9800';
     }
     if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
@@ -5249,7 +5354,6 @@ window.cadApplyFrontEdge = (edgeIndex) => {
     angle = Math.round(angle * 10) / 10;
     const angleEl = document.getElementById('cadAngle');
     if (angleEl) angleEl.value = String(angle);
-    if (typeof window.cadAlignMapHeading === 'function') window.cadAlignMapHeading();
     if (typeof window.updateCadPreviewCount === 'function') window.updateCadPreviewCount();
     if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
     if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
@@ -5801,7 +5905,8 @@ window.cadBuildInwardEdgeStrip = (ringCoords, tPoly, edgeIndex, widthM) => {
     let seg = turf.lineString([info.a, info.b]);
     seg = window.cadExtendLineStringEnds(seg, Math.max(widthM * 0.35, 0.3));
     const mid = turf.midpoint(turf.point(info.a), turf.point(info.b));
-    const shift = turf.destination(mid, widthM / 2, inward, { units: 'meters' });
+    const insetM = (window.CAD_MAKURA_EDGE_INSET_M > 0) ? window.CAD_MAKURA_EDGE_INSET_M : 0;
+    const shift = turf.destination(mid, insetM + widthM / 2, inward, { units: 'meters' });
     const dx = shift.geometry.coordinates[0] - mid.geometry.coordinates[0];
     const dy = shift.geometry.coordinates[1] - mid.geometry.coordinates[1];
     const shifted = turf.lineString(seg.geometry.coordinates.map(c => [c[0] + dx, c[1] + dy]));
@@ -5822,10 +5927,14 @@ window.cadBuildInwardCorridor = (info, tPoly, depthM) => {
         a = cs[0];
         b = cs[cs.length - 1];
     } catch (e) {}
+    const insetM = (window.CAD_MAKURA_EDGE_INSET_M > 0) ? window.CAD_MAKURA_EDGE_INSET_M : 0;
     const depth = Math.min(40, Math.max(0.4, depthM));
-    const aIn = turf.destination(turf.point(a), depth, inward, { units: 'meters' }).geometry.coordinates;
-    const bIn = turf.destination(turf.point(b), depth, inward, { units: 'meters' }).geometry.coordinates;
-    const rect = turf.polygon([[a, b, bIn, aIn, a]]);
+    const a0 = turf.destination(turf.point(a), insetM, inward, { units: 'meters' }).geometry.coordinates;
+    const b0 = turf.destination(turf.point(b), insetM, inward, { units: 'meters' }).geometry.coordinates;
+    const inner = Math.max(0.3, depth - insetM);
+    const aIn = turf.destination(turf.point(a0), inner, inward, { units: 'meters' }).geometry.coordinates;
+    const bIn = turf.destination(turf.point(b0), inner, inward, { units: 'meters' }).geometry.coordinates;
+    const rect = turf.polygon([[a0, b0, bIn, aIn, a0]]);
     try { return turf.intersect(tPoly, rect); } catch (e) { return null; }
 };
 
@@ -5841,7 +5950,7 @@ window.cadUpdateMakuraPickUi = () => {
         } else if (n) {
             hint.textContent = `選択中 ${n} 辺。生成を押すか、辺を選ぶで追加できます。`;
         } else {
-            hint.textContent = '辺をタップして選び、生成でその辺に作ります。複数可。畝と平行な辺は端の畝に統合します。';
+            hint.textContent = '辺をタップして選び、生成でその辺の約50cm内側に作ります。複数可。畝と平行な辺は端の畝に統合します。';
         }
     }
     const pickBtn = document.getElementById('cadMakuraPickBtn');
@@ -5956,13 +6065,14 @@ window.cadBeginMakuraEdgePick = () => {
         window.cadUpdateMakuraPickUi();
         const msg = document.getElementById('cadPinModeMsg');
         if (msg) {
-            msg.innerText = '💡 畝を直接タップすると、十字キーで移動や変形ができます。';
+            msg.innerText = '💡 操作を選ぶと、ここに案内が出ます。';
             msg.style.color = '#FF9800';
         }
         if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: true });
         return;
     }
     window.cadPinMode = 'makura_edge';
+    if (typeof window.cadUpdateSplitLineBtn === 'function') window.cadUpdateSplitLineBtn();
     window.cadUpdateMakuraPickUi();
     if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: true });
 };
@@ -5975,7 +6085,7 @@ window.cadClearMakuraEdgePick = () => {
     if (wasPicking) {
         const msg = document.getElementById('cadPinModeMsg');
         if (msg) {
-            msg.innerText = '💡 畝を直接タップすると、十字キーで移動や変形ができます。';
+            msg.innerText = '💡 操作を選ぶと、ここに案内が出ます。';
             msg.style.color = '#FF9800';
         }
     }
@@ -7871,7 +7981,8 @@ function addUnePolygon(coordsArray, idx) {
 }
 
 window.cadEditOriginalPath = null;
-window.openCadEditModal = (idx) => {
+window.openCadEditModal = () => {
+    return;
     const currentIdx = document.getElementById('cadEditIndex').value;
     if (currentIdx && currentIdx !== idx) {
         if (typeof window.cadCompleteEditPoly === 'function') window.cadCompleteEditPoly();

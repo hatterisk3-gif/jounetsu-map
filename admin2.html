@@ -82,7 +82,7 @@
       </div>
 
       <div id="cadPinModeMsg" style="font-size:10px; color:#FF9800; text-align:center; margin-bottom:8px;">💡
-        畝を直接タップすると、十字キーで移動や変形ができます。</div>
+        操作を選ぶと、ここに案内が出ます。</div>
 
       <div id="cadMode1">
         <div style="display:flex; gap:5px; margin-bottom:10px;">
@@ -126,18 +126,17 @@
         <div style="margin-bottom:8px;">
           <label style="font-size:11px; color:#aaa; margin-bottom:4px; display:block;">📏 基準の畝幅(cm)</label>
           <input type="hidden" id="cadWidth" value="">
-          <select id="cadWidthSelect" onchange="cadOnWidthSelectChange()"
-            style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px; background:#fff; color:#333;">
+          <select id="cadWidthSelect" onchange="cadOnWidthSelectChange()" style="display:none;">
             <option value="">未選択</option>
-            <option value="100">100</option>
-            <option value="120">120</option>
-            <option value="150">150</option>
-            <option value="180">180</option>
-            <option value="200">200</option>
-            <option value="custom">その他（手入力）</option>
           </select>
-          <input type="number" id="cadWidthCustom" min="1" step="1" placeholder="畝幅(cm)" oninput="cadOnWidthCustomInput()"
-            style="display:none; width:100%; margin-top:4px; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;">
+          <div id="cadWidthChips" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;"></div>
+          <div id="cadWidthCustomWrap" style="display:none; margin-top:4px;">
+            <div style="display:flex; gap:6px; align-items:center;">
+              <input type="number" id="cadWidthCustom" min="1" step="1" placeholder="その他 畝幅(cm)" oninput="cadOnWidthCustomInput()"
+                style="flex:1; padding:6px 10px; border-radius:4px; border:1px solid #555; background:#222; color:#fff; box-sizing:border-box; font-size:14px;">
+              <span style="font-size:12px; color:#aaa;">cm</span>
+            </div>
+          </div>
           <div id="cadWidthHint" style="font-size:10px; color:#FF9800; margin-top:4px;">未選択（計画があれば連動）</div>
         </div>
 
@@ -211,84 +210,26 @@
             </div>
           </div>
         </details>
+        <div style="display:flex; gap:5px; margin:8px 0 4px;">
+          <button type="button" class="cad-undo-btn" onclick="cadUndoAction()" disabled
+            style="flex:1; background:#607D8B; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px;">↩️
+            戻す</button>
+          <button type="button" class="cad-redo-btn" onclick="cadRedoAction()" disabled
+            style="flex:1; background:#607D8B; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px;">↪️
+            進む</button>
+        </div>
       </div>
 
       <div id="cadMode2" style="display:none;">
         <div id="cadMakuraPanel" style="background:#2a1a12; border:1px solid #ea580c; border-radius:8px; padding:8px; margin-bottom:10px;">
           <div style="font-size:12px; color:#fdba74; font-weight:bold; margin-bottom:4px;">🛌 枕畝</div>
-          <div id="cadMakuraHint" style="font-size:10px; color:#ccc; line-height:1.35; margin-bottom:6px;">辺をタップして選び、生成でその辺に作ります。複数可。畝と平行な辺は端の畝に統合します。</div>
+          <div id="cadMakuraHint" style="font-size:10px; color:#ccc; line-height:1.35; margin-bottom:6px;">辺をタップして選び、生成でその辺の約50cm内側に作ります。複数可。畝と平行な辺は端の畝に統合します。</div>
           <div style="display:flex; gap:5px;">
             <button type="button" id="cadMakuraPickBtn" onclick="cadBeginMakuraEdgePick()" style="flex:1; background:#333; color:#fdba74; border:1px solid #ea580c; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">辺を選ぶ</button>
             <button type="button" id="cadMakuraGenBtn" onclick="cadGenerateMakuraFromSelectedEdges()" disabled style="flex:1.1; background:#ea580c; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer; opacity:0.45;">生成</button>
             <button type="button" onclick="cadClearMakuraEdgePick()" style="flex:0.7; background:#555; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">解除</button>
           </div>
         </div>
-        <!-- 🌟 選択した畝の操作（未選択時と選択時で表示切り替え） -->
-        <div id="cadUneEditEmptyMsg" style="font-size:11px; color:#8BC34A; text-align:center; padding:10px; background:#1b2e1b; border:1px solid #33691E; border-radius:6px; margin-bottom:10px;">
-          💡 畝を直接タップすると、ここで移動・回転・変形・グループ設定ができます。
-        </div>
-
-        <div id="cadUneEditSection" style="display:none; background:#222; border:1px solid #8BC34A; border-radius:8px; padding:10px; margin-bottom:10px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #444; padding-bottom:6px; margin-bottom:8px;">
-            <div style="font-weight:bold; font-size:13px; color:#8BC34A;">🛠 選択中の畝の操作</div>
-            <div style="font-size:11px; color:#CE93D8; font-weight:bold;">長さ: <span id="cadEditLengthM">—</span></div>
-          </div>
-
-          <!-- 番号・グループ設定 -->
-          <div style="margin-bottom:10px; background:#2a2a2a; padding:8px; border-radius:6px;">
-            <div style="display:flex; gap:8px; margin-bottom:5px;">
-              <div style="flex:1;">
-                <label style="font-size:10px; color:#aaa; display:block;">🔢 畝番号</label>
-                <input type="text" id="cadEditCustomLabel" placeholder="例: 1A" style="width:100%; padding:5px; border-radius:4px; border:none; font-size:13px; box-sizing:border-box;">
-              </div>
-              <div style="flex:1;">
-                <label style="font-size:10px; color:#aaa; display:block;">🏷 グループ</label>
-                <input type="text" id="cadEditUneGroup" placeholder="例: A区画" style="width:100%; padding:5px; border-radius:4px; border:none; font-size:13px; box-sizing:border-box;">
-              </div>
-            </div>
-            <div style="display:flex; justify-content:space-between; align-items:center; gap:5px;">
-              <button type="button" onclick="window.cadApplyUneDetails()" style="background:#4CAF50; color:white; border:none; border-radius:4px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer;">ラベル適用</button>
-              <button type="button" onclick="window.cadApplyGroupToAllSubsequent()" style="background:#2196F3; color:white; border:none; border-radius:4px; padding:5px 8px; font-size:10px; cursor:pointer;">この畝以降同じグループ</button>
-            </div>
-          </div>
-
-          <!-- 十字キー＆回転＆拡大縮小操作 -->
-          <div style="display:flex; justify-content:center; align-items:center; gap:12px; margin-bottom:10px; background:#1e1e1e; padding:8px; border-radius:8px;">
-            <div style="display:flex; flex-direction:column; gap:6px;">
-              <button type="button" onmousedown="window.startCadContinuousAction('rotate', -1)" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('rotate', -1); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:36px;height:36px;border-radius:50%;border:none;background:#444;color:#fff;font-size:14px;cursor:pointer;">↺</button>
-              <button type="button" onmousedown="window.startCadContinuousAction('resize', 0.9)" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('resize', 0.9); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:36px;height:36px;border-radius:50%;border:none;background:#444;color:#fff;font-size:14px;cursor:pointer;">➖</button>
-            </div>
-            <div style="display:grid; grid-template-columns: repeat(3, 36px); grid-gap: 4px;">
-              <div></div>
-              <button type="button" onmousedown="window.startCadContinuousAction('move', 'up')" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('move', 'up'); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:36px;height:36px;border-radius:6px;border:none;background:#2196F3;color:white;font-size:16px;cursor:pointer;">▲</button>
-              <div></div>
-              <button type="button" onmousedown="window.startCadContinuousAction('move', 'left')" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('move', 'left'); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:36px;height:36px;border-radius:6px;border:none;background:#2196F3;color:white;font-size:16px;cursor:pointer;">◀</button>
-              <div style="background:#333;border-radius:6px;"></div>
-              <button type="button" onmousedown="window.startCadContinuousAction('move', 'right')" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('move', 'right'); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:36px;height:36px;border-radius:6px;border:none;background:#2196F3;color:white;font-size:16px;cursor:pointer;">▶</button>
-              <div></div>
-              <button type="button" onmousedown="window.startCadContinuousAction('move', 'down')" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('move', 'down'); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:36px;height:36px;border-radius:6px;border:none;background:#2196F3;color:white;font-size:16px;cursor:pointer;">▼</button>
-              <div></div>
-            </div>
-            <div style="display:flex; flex-direction:column; gap:6px;">
-              <button type="button" onmousedown="window.startCadContinuousAction('rotate', 1)" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('rotate', 1); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:36px;height:36px;border-radius:50%;border:none;background:#444;color:#fff;font-size:14px;cursor:pointer;">↻</button>
-              <button type="button" onmousedown="window.startCadContinuousAction('resize', 1.1)" onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()" ontouchstart="window.startCadContinuousAction('resize', 1.1); event.preventDefault();" ontouchend="window.stopCadContinuousAction(); event.preventDefault();" style="width:36px;height:36px;border-radius:50%;border:none;background:#444;color:#fff;font-size:14px;cursor:pointer;">➕</button>
-            </div>
-          </div>
-
-          <div style="display:flex; gap:6px;">
-            <button type="button" onclick="window.cadDeletePoly()" style="flex:1; background:#F44336; color:white; padding:8px; border-radius:6px; font-size:12px; font-weight:bold; border:none; cursor:pointer;">🗑 削除</button>
-            <button type="button" onclick="window.cadCancelEditPoly()" style="flex:1; background:#FF9800; color:white; padding:8px; border-radius:6px; font-size:12px; font-weight:bold; border:none; cursor:pointer;">✖ キャンセル</button>
-            <button type="button" onclick="if(typeof window.cadCompleteEditPoly==='function') window.cadCompleteEditPoly(); else {document.getElementById('cadUneEditSection').style.display='none';}" style="flex:1.2; background:#4CAF50; color:white; padding:8px; border-radius:6px; font-size:12px; font-weight:bold; border:none; cursor:pointer;">✔ 決定・完了</button>
-          </div>
-        </div>
-
-        <div style="font-size:11px; color:#aaa; margin-bottom:2px;">✂️ 地形の追加</div>
-        <div style="display:flex; gap:5px; margin-bottom:10px;">
-          <button onclick="cadSetPinMode('nakamichi')"
-            style="flex:1; background:#9C27B0; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">🛤
-            中道ライン</button>
-        </div>
-
         <div style="font-size:11px; color:#aaa; margin-bottom:2px;">📐 畝の正面</div>
         <div id="cadFrontHint" style="font-size:10px; color:#ccc; line-height:1.35; margin-bottom:6px;">辺をタップすると、その辺が正面になります。</div>
         <div style="display:flex; gap:5px; margin-bottom:10px;">
@@ -296,11 +237,17 @@
           <button type="button" onclick="cadClearFrontEdgePick()" style="flex:0.7; background:#555; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">解除</button>
         </div>
 
+        <div style="font-size:11px; color:#aaa; margin-bottom:2px;">✂️ 畝の分割</div>
         <div style="display:flex; gap:5px; margin-bottom:10px;">
-          <button id="cadUndoBtn" onclick="cadUndoAction()" disabled
+          <button type="button" id="cadSplitLineBtn" onclick="cadSetPinMode('nakamichi')"
+            style="flex:1; background:#9C27B0; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">分割ラインを引く</button>
+        </div>
+
+        <div style="display:flex; gap:5px; margin-bottom:10px;">
+          <button id="cadUndoBtn" class="cad-undo-btn" onclick="cadUndoAction()" disabled
             style="flex:1; background:#607D8B; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px;">↩️
             戻す</button>
-          <button id="cadRedoBtn" onclick="cadRedoAction()" disabled
+          <button id="cadRedoBtn" class="cad-redo-btn" onclick="cadRedoAction()" disabled
             style="flex:1; background:#607D8B; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px;">↪️
             進む</button>
         </div>
@@ -335,6 +282,14 @@
               style="flex:0.7; min-width:70px; background:#616161; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:not-allowed; opacity:0.6;">取消</button>
           </div>
           <div id="cadGpsStatus" style="font-size:11px; color:#90CAF9; line-height:1.35;">「GPSで置く」を押してください</div>
+        </div>
+        <div style="display:flex; gap:5px; margin-top:4px;">
+          <button type="button" class="cad-undo-btn" onclick="cadUndoAction()" disabled
+            style="flex:1; background:#607D8B; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px;">↩️
+            戻す</button>
+          <button type="button" class="cad-redo-btn" onclick="cadRedoAction()" disabled
+            style="flex:1; background:#607D8B; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px;">↪️
+            進む</button>
         </div>
       </div>
 
@@ -718,7 +673,7 @@
   <script src="api-client.js?v=1788510000000" defer></script>
   <script src="admin2.js?v=1788600000040" defer></script>
   <script src="tracking.js?v=1787790000000" defer></script>
-  <script src="cad.js?v=1788600000234" defer></script>
+  <script src="cad.js?v=1788600000241" defer></script>
   <script type="importmap">
   {
     "imports": {
