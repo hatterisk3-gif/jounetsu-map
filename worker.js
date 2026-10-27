@@ -11495,28 +11495,70 @@ function createSignboardMarker(name, pos, icon, id) {
         window.writeMachineSymptomContentStore_(store);
       };
 
+      /** 整備内容を、症状の紐づけ記憶から外す（削除後に候補へ戻さない） */
+      window.forgetMachineSymptomContent_ = (machine, contentName) => {
+        const id = String(machine && machine.id || '').trim();
+        const name = String(contentName || '').trim();
+        if (!id || !name) return;
+        const dropBag = (bag) => {
+          if (!bag || typeof bag !== 'object') return;
+          Object.keys(bag).forEach((sym) => {
+            bag[sym] = (Array.isArray(bag[sym]) ? bag[sym] : []).filter(v => String(v || '').trim() !== name);
+            if (!bag[sym].length) delete bag[sym];
+          });
+        };
+        if (window._machineContentBySymptom && window._machineContentBySymptom[id]) {
+          dropBag(window._machineContentBySymptom[id]);
+        }
+        const store = window.readMachineSymptomContentStore_();
+        if (store[id]) {
+          dropBag(store[id]);
+          window.writeMachineSymptomContentStore_(store);
+        }
+      };
+
+      window.renameMachineSymptomContent_ = (machine, oldName, newName) => {
+        const id = String(machine && machine.id || '').trim();
+        const prev = String(oldName || '').trim();
+        const next = String(newName || '').trim();
+        if (!id || !prev || !next || prev === next) return;
+        const renameBag = (bag) => {
+          if (!bag || typeof bag !== 'object') return;
+          Object.keys(bag).forEach((sym) => {
+            const list = (Array.isArray(bag[sym]) ? bag[sym] : [])
+              .map(v => (String(v || '').trim() === prev ? next : String(v || '').trim()))
+              .filter((v, i, arr) => v && arr.indexOf(v) === i);
+            if (list.length) bag[sym] = list;
+            else delete bag[sym];
+          });
+        };
+        if (window._machineContentBySymptom && window._machineContentBySymptom[id]) {
+          renameBag(window._machineContentBySymptom[id]);
+        }
+        const store = window.readMachineSymptomContentStore_();
+        if (store[id]) {
+          renameBag(store[id]);
+          window.writeMachineSymptomContentStore_(store);
+        }
+      };
+
       /**
        * 症状で整備内容を絞る。
-       * すでに症状へ紐づいた内容は、その症状のときだけ出す。
-       * まだどの症状にも紐づいていない内容は、症状を選んだあとも候補に残す。
+       * その症状に紐づいていて、かつこの機械の整備内容に残っているものだけ出す。
+       * 症状未設定の内容（例: オイル交換）は、別の症状の候補には出さない。
        */
       window.getMachineContentsForSymptom_ = (machine, symptomName, extraCurrent) => {
         const all = window.splitMachineMaintList_(machine && machine.maintenanceContents);
+        const allSet = new Set(all);
         const symptom = String(symptomName || '').trim();
         const cur = String(extraCurrent || '').trim();
         if (!symptom) return [];
         const links = window.collectMachineSymptomContentLinks_(machine);
-        const assigned = new Set();
-        Object.keys(links).forEach((sym) => {
-          (links[sym] || []).forEach((c) => { if (c) assigned.add(c); });
-        });
         const list = [];
         (links[symptom] || []).forEach((c) => {
           const name = String(c || '').trim();
-          if (name && list.indexOf(name) < 0) list.push(name);
-        });
-        all.forEach((c) => {
-          if (!assigned.has(c) && list.indexOf(c) < 0) list.push(c);
+          if (!name || list.indexOf(name) >= 0) return;
+          if (allSet.has(name)) list.push(name);
         });
         if (cur && list.indexOf(cur) < 0) list.push(cur);
         return list;
@@ -11701,6 +11743,9 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         if (key === 'maintenanceContents') {
           window.renameMachineContentPartsKey_(machine, oldName, newName);
+          if (typeof window.renameMachineSymptomContent_ === 'function') {
+            window.renameMachineSymptomContent_(machine, oldName, newName);
+          }
         }
       };
 
@@ -11720,6 +11765,9 @@ function createSignboardMarker(name, pos, icon, id) {
         }
         if (key === 'maintenanceContents') {
           window.removeMachineContentPartsKey_(machine, name);
+          if (typeof window.forgetMachineSymptomContent_ === 'function') {
+            window.forgetMachineSymptomContent_(machine, name);
+          }
         }
       };
 
@@ -33964,6 +34012,12 @@ window.openBulkWorkMemoModal_ = () => {
       <label class="form-label" style="margin:0 0 4px;">📝 作業メモ</label>
       <textarea id="bulk_work_memo_text" class="form-input" rows="12" placeholder="${sample.replace(/"/g, '&quot;')}" oninput="if(window.applyBulkWorkMemoDateFromText_) window.applyBulkWorkMemoDateFromText_(this.value, {prefetch:false})" style="margin-bottom:12px; font-size:13px; line-height:1.45; resize:vertical;">${esc(keepMemo)}</textarea>
       <button type="button" id="bulk_work_memo_parse_btn" onclick="parseAndReviewBulkWorkMemo_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">✂️ 時間ごとに分けて確認</button>
+      <div id="bulk_work_memo_parse_progress" style="display:none; margin:-2px 0 8px; padding:8px 10px; border:1px solid #FFE0B2; background:#FFF8E1; border-radius:8px; box-sizing:border-box;">
+        <div id="bulk_work_memo_parse_progress_label" style="font-size:12px; font-weight:bold; color:#E65100; margin-bottom:6px; line-height:1.4;">読み込み中…</div>
+        <div style="height:8px; background:#FFE0B2; border-radius:999px; overflow:hidden;">
+          <div id="bulk_work_memo_parse_progress_fill" style="height:100%; width:0%; background:#FF9800; border-radius:999px; transition:width 0.25s linear;"></div>
+        </div>
+      </div>
       <button type="button" onclick="closeBulkWorkMemoModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer;">キャンセル</button>
     </div>`);
   modalEl.style.display = 'flex';
@@ -34140,6 +34194,14 @@ window.closeBulkWorkMemoModal_ = () => {
   window._bulkWorkMemoDeliverySelectUid = '';
   window._bulkWorkMemoDeliverySelectKind = '';
   window._bulkWorkMemoParsing = false;
+  if (window._bulkWorkMemoParseSafetyTimer) {
+    clearTimeout(window._bulkWorkMemoParseSafetyTimer);
+    window._bulkWorkMemoParseSafetyTimer = null;
+  }
+  if (window._bulkWorkMemoParseProgressTimer) {
+    clearInterval(window._bulkWorkMemoParseProgressTimer);
+    window._bulkWorkMemoParseProgressTimer = null;
+  }
   if (wasDeliveryMapPicking) {
     if (window._deliveryDestMapSelectMode && typeof window.cancelDeliveryDestMapSelect === 'function') {
       window.cancelDeliveryDestMapSelect();
@@ -34174,10 +34236,38 @@ window.closeBulkWorkMemoModal_ = () => {
 window.parseAndReviewBulkWorkMemo_ = () => {
   if (window._bulkWorkMemoParsing) return;
   const btn = document.getElementById('bulk_work_memo_parse_btn');
-  let safetyTimer = null;
+  const stopParseTimers_ = () => {
+    if (window._bulkWorkMemoParseSafetyTimer) {
+      clearTimeout(window._bulkWorkMemoParseSafetyTimer);
+      window._bulkWorkMemoParseSafetyTimer = null;
+    }
+    if (window._bulkWorkMemoParseProgressTimer) {
+      clearInterval(window._bulkWorkMemoParseProgressTimer);
+      window._bulkWorkMemoParseProgressTimer = null;
+    }
+  };
+  const setParseProgressRatio_ = (ratio, message) => {
+    const wrap = document.getElementById('bulk_work_memo_parse_progress');
+    const fill = document.getElementById('bulk_work_memo_parse_progress_fill');
+    const label = document.getElementById('bulk_work_memo_parse_progress_label');
+    if (!wrap || !fill || !label) return;
+    wrap.style.display = 'block';
+    wrap.style.background = '#FFF8E1';
+    wrap.style.borderColor = '#FFE0B2';
+    label.style.color = '#E65100';
+    fill.style.background = '#FF9800';
+    const pct = Math.round(Math.max(0, Math.min(1, ratio)) * 100);
+    fill.style.width = pct + '%';
+    label.textContent = message || ('読み込み中… ' + pct + '%');
+  };
+  const hideParseProgress_ = () => {
+    const wrap = document.getElementById('bulk_work_memo_parse_progress');
+    if (wrap) wrap.style.display = 'none';
+  };
   const restoreParseBtn_ = () => {
-    if (safetyTimer) clearTimeout(safetyTimer);
+    stopParseTimers_();
     window._bulkWorkMemoParsing = false;
+    hideParseProgress_();
     if (btn) {
       btn.disabled = false;
       btn.textContent = '✂️ 時間ごとに分けて確認';
@@ -34189,18 +34279,32 @@ window.parseAndReviewBulkWorkMemo_ = () => {
     window._bulkWorkMemoParsing = true;
     if (btn) {
       btn.disabled = true;
-      btn.textContent = '準備中...';
+      btn.textContent = '読み込み中...';
       btn.style.opacity = '0.72';
       btn.style.cursor = 'not-allowed';
     }
-    if (safetyTimer) clearTimeout(safetyTimer);
-    safetyTimer = setTimeout(() => {
+    const started = Date.now();
+    stopParseTimers_();
+    setParseProgressRatio_(0.04, '読み込み中…');
+    window._bulkWorkMemoParseProgressTimer = setInterval(() => {
       if (!window._bulkWorkMemoParsing) return;
-      restoreParseBtn_();
-      if (typeof customAlert === 'function') {
-        customAlert('処理に時間がかかりすぎました。通信状況を確認して、もう一度お試しください。');
-      }
-    }, 30000);
+      const elapsed = Date.now() - started;
+      const ratio = 0.92 * (1 - Math.exp(-elapsed / 14000));
+      setParseProgressRatio_(Math.max(0.04, ratio), '読み込み中…');
+    }, 200);
+  };
+  const fillThenLaunch_ = (launch) => {
+    if (window._bulkWorkMemoParseProgressTimer) {
+      clearInterval(window._bulkWorkMemoParseProgressTimer);
+      window._bulkWorkMemoParseProgressTimer = null;
+    }
+    setParseProgressRatio_(1, '読み込み完了');
+    if (window._bulkWorkMemoParseSafetyTimer) clearTimeout(window._bulkWorkMemoParseSafetyTimer);
+    window._bulkWorkMemoParseSafetyTimer = setTimeout(() => {
+      window._bulkWorkMemoParseSafetyTimer = null;
+      if (!window._bulkWorkMemoParsing) return;
+      launch();
+    }, 320);
   };
   const text = document.getElementById('bulk_work_memo_text')?.value || '';
   const dateEl = document.getElementById('bulk_work_memo_date');
@@ -34228,18 +34332,20 @@ window.parseAndReviewBulkWorkMemo_ = () => {
       window._bulkWorkMemoDate = ymd;
       window._bulkWorkMemoDrafts = drafts;
       window._bulkWorkMemoSourceText = String(text || '');
-      window._bulkWorkMemoParsing = false;
       window._bulkWorkMemoActive = true;
-      window.renderBulkWorkMemoReviewModal_();
-      if (safetyTimer) clearTimeout(safetyTimer);
-      // 整備の機械一覧用。確認画面は先に開き、車両データは裏で読み込む
-      if (typeof window.ensureMobileVehiclesLoaded_ === 'function' && !window._mobileVehiclesLoaded) {
-        window.ensureMobileVehiclesLoaded_().then(() => {
-          if (document.getElementById('bulk_work_memo_review_scroll')) {
-            window.renderBulkWorkMemoReviewModal_();
-          }
-        }).catch(() => {});
-      }
+      fillThenLaunch_(() => {
+        stopParseTimers_();
+        window._bulkWorkMemoParsing = false;
+        window.renderBulkWorkMemoReviewModal_();
+        // 整備の機械一覧用。確認画面を開いたあと、車両データは裏で読み込む
+        if (typeof window.ensureMobileVehiclesLoaded_ === 'function' && !window._mobileVehiclesLoaded) {
+          window.ensureMobileVehiclesLoaded_().then(() => {
+            if (document.getElementById('bulk_work_memo_review_scroll')) {
+              window.renderBulkWorkMemoReviewModal_();
+            }
+          }).catch(() => {});
+        }
+      });
     } catch (e) {
       console.error('parseAndReviewBulkWorkMemo_ failed', e);
       restoreParseBtn_();
