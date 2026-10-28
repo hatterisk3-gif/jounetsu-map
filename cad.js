@@ -15,6 +15,8 @@ window.cadNakamichiMapPolygons = [];
 window.CAD_NAKAMICHI_HALF_WIDTH_M = 0.2;
 /** 枕畝を圃場の辺から内側へ離す幅(m) */
 window.CAD_MAKURA_EDGE_INSET_M = 0.5;
+/** 枕畝と既存畝のあいだに空ける幅(m) */
+window.CAD_MAKURA_RIDGE_GAP_M = 0.35;
 window.cadDrainageLines = [];
 window.cadDrainageMapPolygons = [];
 window.cadCustomShapes = [];
@@ -1990,7 +1992,10 @@ window.initCadTouchEvents = () => {
         if ((window.cadPinMode === 'nakamichi' || window.cadPinMode === 'drainage') && window.cadNakamichiIsDrawing && window.nakamichiTempPt) {
             const currentLatLng = window.getPageLatLng(currentX, currentY);
             if (currentLatLng && window.nakamichiTempLine) {
-                window.nakamichiTempLine.setPath([window.nakamichiTempPt, currentLatLng]);
+                const preview = (typeof window.cadSplitLinePreviewPath === 'function')
+                    ? window.cadSplitLinePreviewPath(window.nakamichiTempPt, currentLatLng)
+                    : [window.nakamichiTempPt, currentLatLng];
+                window.nakamichiTempLine.setPath(preview);
             }
             if (typeof window.cadPaintNakamichiTempLine === 'function') window.cadPaintNakamichiTempLine();
             return;
@@ -2037,7 +2042,9 @@ window.initCadTouchEvents = () => {
             if (window.nakamichiTempPt && distPx > 10) {
                 const endLatLng = window.getPageLatLng(e.pageX, e.pageY);
                 if (endLatLng && window.nakamichiTempLine) {
-                    let path = [{ lat: window.nakamichiTempPt.lat(), lng: window.nakamichiTempPt.lng() }, { lat: endLatLng.lat(), lng: endLatLng.lng() }];
+                    let path = (window.cadPinMode === 'nakamichi' && typeof window.cadSplitLinePreviewPath === 'function')
+                        ? window.cadSplitLinePreviewPath(window.nakamichiTempPt, endLatLng)
+                        : [{ lat: window.nakamichiTempPt.lat(), lng: window.nakamichiTempPt.lng() }, { lat: endLatLng.lat(), lng: endLatLng.lng() }];
                     if (window.cadPinMode === 'drainage') {
                         window.cadDrainageLines.push(path);
                         window.drawDrainageVisual(path);
@@ -2234,7 +2241,10 @@ window.initCadTouchEvents = () => {
                 e.stopPropagation();
                 const currentLatLng = window.getPageLatLng(currentX, currentY);
                 if (currentLatLng && window.nakamichiTempLine) {
-                    window.nakamichiTempLine.setPath([window.nakamichiTempPt, currentLatLng]);
+                    const preview = (typeof window.cadSplitLinePreviewPath === 'function')
+                        ? window.cadSplitLinePreviewPath(window.nakamichiTempPt, currentLatLng)
+                        : [window.nakamichiTempPt, currentLatLng];
+                    window.nakamichiTempLine.setPath(preview);
                 }
                 if (typeof window.cadPaintNakamichiTempLine === 'function') window.cadPaintNakamichiTempLine();
                 lastTouchX = currentX; lastTouchY = currentY;
@@ -2285,7 +2295,9 @@ window.initCadTouchEvents = () => {
                 if (window.nakamichiTempPt && distPx > 10) {
                     const endLatLng = window.getPageLatLng(endX, endY);
                     if (endLatLng && window.nakamichiTempLine) {
-                        let path = [{ lat: window.nakamichiTempPt.lat(), lng: window.nakamichiTempPt.lng() }, { lat: endLatLng.lat(), lng: endLatLng.lng() }];
+                        let path = (window.cadPinMode === 'nakamichi' && typeof window.cadSplitLinePreviewPath === 'function')
+                            ? window.cadSplitLinePreviewPath(window.nakamichiTempPt, endLatLng)
+                            : [{ lat: window.nakamichiTempPt.lat(), lng: window.nakamichiTempPt.lng() }, { lat: endLatLng.lat(), lng: endLatLng.lng() }];
                         if (window.cadPinMode === 'drainage') {
                             window.cadDrainageLines.push(path);
                             window.drawDrainageVisual(path);
@@ -4549,7 +4561,7 @@ window.cadSetPinMode = (type) => {
     const msgEl = document.getElementById('cadPinModeMsg');
     if (type === 'nakamichi') {
         window.nakamichiTempPt = null;
-        if (msgEl) { msgEl.innerText = 'ドラッグして分割ラインを引いてください。もう一度ボタンを押すとキャンセルします。'; msgEl.style.color = "#E91E63"; }
+        if (msgEl) { msgEl.innerText = 'ドラッグすると畝に直角か平行へ吸着します。離すと確定します。'; msgEl.style.color = "#E91E63"; }
     } else if (type === 'drainage') {
         window.nakamichiTempPt = null;
         if (msgEl) { msgEl.innerText = `【排水ライン】始点となる場所をタップしてください`; msgEl.style.color = "#00BCD4"; }
@@ -5002,6 +5014,48 @@ window.cadPaintNakamichiTempLine = () => {
     node.style.display = 'block';
 };
 
+window.cadSnapSplitLineEnds = (startLL, endLL) => {
+    if (!startLL || !endLL || typeof turf === 'undefined' || typeof window.cadBearingDiff !== 'function') return null;
+    const sLng = typeof startLL.lng === 'function' ? startLL.lng() : Number(startLL.lng);
+    const sLat = typeof startLL.lat === 'function' ? startLL.lat() : Number(startLL.lat);
+    const eLng = typeof endLL.lng === 'function' ? endLL.lng() : Number(endLL.lng);
+    const eLat = typeof endLL.lat === 'function' ? endLL.lat() : Number(endLL.lat);
+    if (![sLng, sLat, eLng, eLat].every(isFinite)) return null;
+    const a = turf.point([sLng, sLat]);
+    const b = turf.point([eLng, eLat]);
+    const len = turf.distance(a, b, { units: 'meters' });
+    if (!(len > 0.2)) return null;
+    const freeBear = turf.bearing(a, b);
+    const angleEl = document.getElementById('cadAngle');
+    let axis = angleEl && angleEl.value !== '' ? parseFloat(angleEl.value) : 0;
+    if (!isFinite(axis)) axis = 0;
+    const align = (bearing) => {
+        const diff = window.cadBearingDiff(freeBear, bearing);
+        return Math.min(diff, Math.abs(180 - diff));
+    };
+    const snap = align(axis + 90) <= align(axis) ? axis + 90 : axis;
+    const mid = turf.midpoint(a, b);
+    const half = len / 2;
+    const p1 = turf.destination(mid, half, snap, { units: 'meters' });
+    const p2 = turf.destination(mid, half, snap + 180, { units: 'meters' });
+    return [
+        { lat: p1.geometry.coordinates[1], lng: p1.geometry.coordinates[0] },
+        { lat: p2.geometry.coordinates[1], lng: p2.geometry.coordinates[0] }
+    ];
+};
+
+window.cadSplitLinePreviewPath = (startLL, endLL) => {
+    if (window.cadPinMode === 'nakamichi') {
+        const snapped = window.cadSnapSplitLineEnds(startLL, endLL);
+        if (snapped) return snapped;
+    }
+    const read = (ll) => ({
+        lat: typeof ll.lat === 'function' ? ll.lat() : Number(ll.lat),
+        lng: typeof ll.lng === 'function' ? ll.lng() : Number(ll.lng)
+    });
+    return [read(startLL), read(endLL)];
+};
+
 window.cadCommitSplitLine = (path) => {
     if (!path || path.length < 2) return;
     const now = Date.now();
@@ -5443,8 +5497,8 @@ window.cadUpdateFrontPickUi = () => {
     const btn = document.getElementById('cadFrontPickBtn');
     if (hint) {
         hint.textContent = picking
-            ? '正面にしたい辺をタップしてください。'
-            : '辺をタップすると、その辺が正面になります。';
+            ? '正面にしたい方角の辺をタップしてください。段差があっても、同じ方角の辺をまとめて選びます。'
+            : '辺をタップすると、同じ方角の辺をまとめて正面にします。';
     }
     if (btn) {
         btn.textContent = picking ? '選択中' : '辺を選ぶ';
@@ -5480,6 +5534,7 @@ window.cadBeginFrontEdgePick = () => {
 
 window.cadClearFrontEdgePick = () => {
     window.cadFrontEdgeIndex = null;
+    window.cadFrontEdgeIndexes = [];
     window.cadFrontBaseline = null;
     if (window.cadFrontBaselineVisual) window.cadFrontBaselineVisual.setMap(null);
     if (window.cadFrontBaselineMarker) window.cadFrontBaselineMarker.setMap(null);
@@ -5494,14 +5549,59 @@ window.cadClearFrontEdgePick = () => {
     if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
 };
 
+window.cadCollectSameFacingEdges = (ring, edgeIndex) => {
+    const base = window.cadRingEdgeInfo(ring, edgeIndex);
+    if (!base) return [edgeIndex];
+    const n = window.cadRingVertexCount(ring);
+    let center = null;
+    try { center = turf.center(turf.polygon([ring])).geometry.coordinates; } catch (e) { center = null; }
+    const baseMid = turf.midpoint(turf.point(base.a), turf.point(base.b));
+    const frontBear = center ? turf.bearing(turf.point(center), baseMid) : base.bearing;
+    const indexes = [];
+    for (let i = 0; i < n; i++) {
+        const info = window.cadRingEdgeInfo(ring, i);
+        if (!info || info.len < 0.2) continue;
+        const diff = window.cadBearingDiff(info.bearing, base.bearing);
+        const parallel = Math.min(diff, Math.abs(180 - diff)) <= 22;
+        if (!parallel) continue;
+        if (center) {
+            const mid = turf.midpoint(turf.point(info.a), turf.point(info.b));
+            const side = turf.bearing(turf.point(center), mid);
+            if (window.cadBearingDiff(side, frontBear) > 75) continue;
+        }
+        indexes.push(i);
+    }
+    if (!indexes.length) indexes.push(edgeIndex);
+    return indexes;
+};
+
 window.cadApplyFrontEdge = (edgeIndex) => {
     const ring = window.cadGetFieldRingCoords();
     const info = ring ? window.cadRingEdgeInfo(ring, edgeIndex) : null;
     if (!info) return false;
+    const indexes = window.cadCollectSameFacingEdges(ring, edgeIndex);
     window.cadFrontEdgeIndex = edgeIndex;
+    window.cadFrontEdgeIndexes = indexes;
+
+    const origin = turf.point(info.a);
+    let minD = Infinity;
+    let maxD = -Infinity;
+    let minC = info.a;
+    let maxC = info.b;
+    indexes.forEach((i) => {
+        const edge = window.cadRingEdgeInfo(ring, i);
+        if (!edge) return;
+        [edge.a, edge.b].forEach((c) => {
+            const d = turf.distance(origin, turf.point(c), { units: 'meters' });
+            const b = turf.bearing(origin, turf.point(c));
+            const signed = d * Math.cos((b - info.bearing) * Math.PI / 180);
+            if (signed < minD) { minD = signed; minC = c; }
+            if (signed > maxD) { maxD = signed; maxC = c; }
+        });
+    });
     window.cadFrontBaseline = [
-        { lng: info.a[0], lat: info.a[1] },
-        { lng: info.b[0], lat: info.b[1] }
+        { lng: minC[0], lat: minC[1] },
+        { lng: maxC[0], lat: maxC[1] }
     ];
     if (window.cadFrontBaselineVisual) window.cadFrontBaselineVisual.setMap(null);
     if (window.cadFrontBaselineMarker) window.cadFrontBaselineMarker.setMap(null);
@@ -5518,7 +5618,7 @@ window.cadApplyFrontEdge = (edgeIndex) => {
 
     const msg = document.getElementById('cadPinModeMsg');
     if (msg) {
-        msg.innerText = 'この辺を畝の正面にしました。別の辺をタップすると変更できます。';
+        msg.innerText = `この方角の辺 ${indexes.length} 本をまとめて正面にしました。`;
         msg.style.color = '#FF5722';
     }
     return true;
@@ -6034,8 +6134,9 @@ window.cadApplyFeatureToGooglePoly = (gPoly, feature) => {
     return true;
 };
 
-window.cadDifferenceOthers = (piece, keepPoly) => {
+window.cadDifferenceOthers = (piece, keepPoly, gapM) => {
     if (!piece) return null;
+    const gap = (gapM > 0) ? gapM : 0.03;
     const lists = [window.cadUnePolygons, window.cadCustomShapes];
     for (let li = 0; li < lists.length && piece; li++) {
         const list = lists[li] || [];
@@ -6046,7 +6147,7 @@ window.cadDifferenceOthers = (piece, keepPoly) => {
             if (!other) continue;
             try {
                 let avoid = other;
-                try { avoid = turf.buffer(other, 0.03, { units: 'meters' }) || other; } catch (e) {}
+                try { avoid = turf.buffer(other, gap, { units: 'meters' }) || other; } catch (e) {}
                 const d = turf.difference(piece, avoid);
                 piece = d || null;
             } catch (e) {}
@@ -6148,8 +6249,8 @@ window.cadDrawMakuraEdgeOverlay = () => {
     const picking = window.cadPinMode === 'makura_edge';
     const frontPicking = window.cadPinMode === 'front_edge';
     const selected = new Set(window.cadMakuraSelectedEdges || []);
-    const frontIdx = (frontPicking && window.cadFrontEdgeIndex != null) ? window.cadFrontEdgeIndex : -1;
-    if (!picking && !frontPicking && selected.size === 0) return;
+    const frontSet = new Set(window.cadFrontEdgeIndexes || []);
+    if (!picking && !frontPicking && selected.size === 0 && frontSet.size === 0) return;
     const ring = window.cadGetFieldRingCoords();
     if (!ring || typeof window.latLngToScreenPixel !== 'function' || typeof window.cadRingVertexCount !== 'function') return;
     const n = window.cadRingVertexCount(ring);
@@ -6165,7 +6266,7 @@ window.cadDrawMakuraEdgeOverlay = () => {
         g.appendChild(line);
     };
     for (let i = 0; i < n; i++) {
-        const on = frontPicking ? (i === frontIdx) : selected.has(i);
+        const on = picking ? selected.has(i) : frontSet.has(i);
         if (!picking && !frontPicking && !on) continue;
         const info = window.cadRingEdgeInfo(ring, i);
         if (!info || info.len < 0.15) continue;
@@ -6256,7 +6357,8 @@ window.cadCreateMakuraFromEdges = (ring, tPoly, edgeIndexes, widthM) => {
     edgeIndexes.forEach((ei) => {
         const strip = window.cadBuildInwardEdgeStrip(ring, tPoly, ei, widthM);
         if (!strip) return;
-        const clipped = window.cadDifferenceOthers(strip, null);
+        const gapM = (window.CAD_MAKURA_RIDGE_GAP_M > 0) ? window.CAD_MAKURA_RIDGE_GAP_M : 0.35;
+        const clipped = window.cadDifferenceOthers(strip, null, gapM);
         if (!clipped) return;
         let flat;
         try { flat = turf.flatten(clipped); } catch (e) { flat = { features: [clipped] }; }
