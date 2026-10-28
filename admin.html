@@ -256,7 +256,7 @@
       <div id="cadMode2" style="display:none;">
         <div id="cadMakuraPanel" style="background:#2a1a12; border:1px solid #ea580c; border-radius:8px; padding:8px; margin-bottom:10px;">
           <div style="font-size:12px; color:#fdba74; font-weight:bold; margin-bottom:4px;">🛌 枕畝</div>
-          <div id="cadMakuraHint" style="font-size:10px; color:#ccc; line-height:1.35; margin-bottom:6px;">辺をタップして選び、生成でその辺の約50cm内側に作ります。複数可。畝と平行な辺は端の畝に統合します。</div>
+          <div id="cadMakuraHint" style="font-size:10px; color:#ccc; line-height:1.35; margin-bottom:6px;">辺をタップすると、同じ方角の辺をまとめて選び、その約50cm内側に作ります。畝と平行な辺は端の畝に統合します。</div>
           <div style="display:flex; gap:5px;">
             <button type="button" id="cadMakuraPickBtn" onclick="cadBeginMakuraEdgePick()" style="flex:1; background:#333; color:#fdba74; border:1px solid #ea580c; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">辺を選ぶ</button>
             <button type="button" id="cadMakuraGenBtn" onclick="cadGenerateMakuraFromSelectedEdges()" disabled style="flex:1.1; background:#ea580c; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer; opacity:0.45;">生成</button>
@@ -736,11 +736,11 @@
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=ja&v=weekly" async defer></script>
 
   <script src="api-client.js?v=1788600000116" defer></script>
-  <script src="admin.js?v=1788600000132" defer></script>
+  <script src="admin.js?v=1788600000133" defer></script>
   <script src="admin_cost.js?v=1785489000008" defer></script>
   <script src="admin_crop_work.js?v=1787570400000" defer></script>
   <script src="tracking.js?v=1788600000043" defer></script>
-  <script src="cad.js?v=1788600000247" defer></script>
+  <script src="cad.js?v=1788600000252" defer></script>
   <script type="importmap">
   {
     "imports": {
@@ -759,6 +759,16 @@
     }
   </script>
 
+  <div id="cadRegistryModal" style="display:none; position:fixed; inset:0; z-index:1000000; background:rgba(0,0,0,0.45); align-items:center; justify-content:center;">
+    <div style="background:#fff; color:#333; width:92%; max-width:420px; max-height:80vh; border-radius:12px; padding:14px; display:flex; flex-direction:column; box-shadow:0 8px 28px rgba(0,0,0,0.28);">
+      <div style="font-weight:bold; font-size:16px; margin-bottom:8px;">🚜 農業CADの登録 <span id="cadRegistryFieldName" style="font-size:13px; color:#666;"></span></div>
+      <div id="cadRegistryList" style="overflow:auto; flex:1; min-height:80px;"></div>
+      <div style="display:flex; gap:6px; margin-top:10px;">
+        <button type="button" id="cadRegistryNewBtn" style="flex:1; background:#4CAF50; color:#fff; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">＋ 新規追加</button>
+        <button type="button" onclick="document.getElementById('cadRegistryModal').style.display='none'" style="flex:0.6; background:#757575; color:#fff; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">閉じる</button>
+      </div>
+    </div>
+  </div>
   <div id="cadHistoryModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); width:90%; max-width:320px; z-index:999999;">
     <div style="background:#fff; color:#333; padding:15px; border-radius:12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-height:80vh; display:flex; flex-direction:column;">
       <h3 style="margin-top:0; border-bottom:2px solid #2196F3; padding-bottom:10px; font-size:16px; text-align:center;">📅 過去の図面を復元</h3>

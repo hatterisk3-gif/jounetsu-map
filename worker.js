@@ -7721,7 +7721,9 @@ function createSignboardMarker(name, pos, icon, id) {
         if (iframe.src && iframe.src.includes('admin.html') && window._adminCadIframeReady) {
           try {
             iframe.contentWindow.postMessage({ type: 'openCadField', fieldId: pid }, '*');
-            if (typeof iframe.contentWindow.openCADMode === 'function') {
+            if (typeof iframe.contentWindow.openCadRegistry === 'function') {
+              iframe.contentWindow.openCadRegistry(pid);
+            } else if (typeof iframe.contentWindow.openCADMode === 'function') {
               iframe.contentWindow.openCADMode(pid);
             }
           } catch(e) {

@@ -192,6 +192,7 @@ const API_ACTIONS = {
   "parseWithGemini": function (p) { return parseWithGemini(p); },
   "parseCropImageWithGemini": function (p) { return parseCropImageWithGemini(p); },
   "getPolygonDrawingHistory": function (p) { return getPolygonDrawingHistory(p); },
+  "deletePolygonDrawingHistory": function (p) { return deletePolygonDrawingHistory(p); },
   "saveUserQualifications": function (p) { return saveUserQualifications(p.userName, p.qualifications); },
   "getUserQualifications": function (p) { return getUserQualifications(p.userName); },
   "saveClothingRules": function (p) { return saveClothingRules(p.rules); },
@@ -6608,7 +6609,9 @@ function updatePolygon(params) {
           historySheet.appendRow(['圃場ID', '圃場名', '更新日時', 'データ']);
         }
         let historyDate = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm:ss");
-        historySheet.appendRow([id, newName, historyDate, params.uneSimData]);
+        if (!params.skipCadHistory) {
+          historySheet.appendRow([id, newName, historyDate, params.uneSimData]);
+        }
       } catch (e) {
         console.error("図面履歴シートの更新に失敗しました: " + e.message);
       }
@@ -10887,6 +10890,7 @@ function getPolygonDrawingHistory(params) {
         let dataVal = data[i][3];
 
         history.push({
+          row: i + 1,
           date: dateStr,
           data: dataVal ? String(dataVal) : ""
         });
@@ -10898,7 +10902,24 @@ function getPolygonDrawingHistory(params) {
     return history;
   } catch(e) {
     throw new Error("履歴取得エラー: " + e.message);
-}}
+  }
+}
+
+function deletePolygonDrawingHistory(params) {
+  const userName = params.userName || "";
+  if (!checkAdminRole(userName)) {
+    throw new Error("管理者権限がないため、図面の削除はできません。");
+  }
+  const ss = TENANT_SS;
+  const sheet = ss.getSheetByName('図面履歴');
+  if (!sheet) return true;
+  const row = parseInt(params.row, 10);
+  if (!(row > 1)) throw new Error("削除する図面が指定されていません。");
+  const idCell = String(sheet.getRange(row, 1).getValue() || "");
+  if (idCell !== String(params.id || "")) throw new Error("対象の図面が見つかりません。");
+  sheet.deleteRow(row);
+  return true;
+}
 
 // ==========================================
 // 圃場メモ（鶏糞CAD風）保存・履歴
