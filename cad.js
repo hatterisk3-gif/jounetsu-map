@@ -2357,6 +2357,9 @@ window.initCadTouchEvents = () => {
 
 window.openCADMode = async (id, opts) => {
     opts = opts || {};
+    const blank = !!opts.blank;
+    window._cadOpenSeq = (window._cadOpenSeq || 0) + 1;
+    const openSeq = window._cadOpenSeq;
     infoWindow.close();
     window.cadTargetId = id;
     const p = loadedPolygons[id];
@@ -2364,7 +2367,7 @@ window.openCADMode = async (id, opts) => {
         ? AppLoading.start({ label: 'CADを準備中...', detail: '1/4 地図を初期化しています', current: 0, total: 4, delay: 0 })
         : null;
 
-    document.getElementById('cadTargetName').innerText = p.name + " (最新の図面を読込中...)";
+    document.getElementById('cadTargetName').innerText = blank ? (p.name + " (新規)") : (p.name + " (最新の図面を読込中...)");
     document.getElementById('cadOverlay').style.display = 'flex';
     try {
 
@@ -2429,7 +2432,7 @@ window.openCADMode = async (id, opts) => {
 
     // 🌟 2. 既存の図面データ(uneSimData)があれば、即座に図面を展開して描画！（体感待機0ms）
     let initialRendered = false;
-    const savedSource = opts.blank ? null : (opts.data || (p && p.uneSimData) || null);
+    const savedSource = blank ? null : (opts.data || (p && p.uneSimData) || null);
     if (savedSource) {
         initialRendered = window.renderCadSavedData(savedSource);
     }
@@ -2454,13 +2457,14 @@ window.openCADMode = async (id, opts) => {
     // 🌟 3. 3大通信（履歴・畝幅マスタ最新化・栽培計画の畝間連動）を完全並列実行！
     try {
         const [historyRes, masterRes, planRes] = await Promise.allSettled([
-            callGAS('getPolygonDrawingHistory', { id }),
+            blank ? Promise.resolve(null) : callGAS('getPolygonDrawingHistory', { id }),
             window.loadCadWidthOptionsFromMaster(),
             callGAS('getCultivationRidgeParamsForField', { fieldId: id })
         ]);
+        if (openSeq !== window._cadOpenSeq) return;
 
-        // 最新図面履歴があれば差分を反映
-        if (historyRes.status === 'fulfilled' && historyRes.value && historyRes.value.length > 0 && historyRes.value[0].data) {
+        // 新規追加は空のまま。編集時だけ、最新図面履歴があれば差分を反映
+        if (!blank && historyRes.status === 'fulfilled' && historyRes.value && historyRes.value.length > 0 && historyRes.value[0].data) {
             const latestData = historyRes.value[0].data;
             if (latestData !== p.uneSimData) {
                 p.uneSimData = latestData;
@@ -2485,10 +2489,12 @@ window.openCADMode = async (id, opts) => {
     } catch (e) {
         console.error("CAD並列同期エラー:", e);
     }
+    if (openSeq !== window._cadOpenSeq) return;
     document.getElementById('cadTargetName').innerText = p.name;
 
     // 起動直後の状態を履歴0番目として保存
     setTimeout(() => {
+        if (openSeq !== window._cadOpenSeq) return;
         window.cadHistory = [];
         window.cadHistoryIndex = -1;
         window.saveCadStateToHistory();
@@ -7896,6 +7902,7 @@ window.cadGeneratePartialLines = () => {
             return turf.buffer(centerLine, 0.5 / 1000, { units: 'kilometers' });
         });
         let avoidPolys = [...nakamichiPolys, ...drainagePolys];
+        const obliqueSegs = window.cadCollectObliqueClearanceSegs(coords, angle, endMarginMeters);
 
         const lineLen = diagDist + 40;
         const ratio = typeof window.cadRidgeGapRatio !== 'undefined' ? (1 - window.cadRidgeGapRatio) : 0.8;
@@ -7942,6 +7949,9 @@ window.cadGeneratePartialLines = () => {
                     let c_L = turf.destination(c, w / 2, angle + 90, { units: 'meters' });
                     let c_R = turf.destination(c, w / 2, angle - 90, { units: 'meters' });
                     let ptsToCheck = [p_fwd_L, p_fwd_R, p_bwd_L, p_bwd_R, c_L, c_R];
+                    if (window.cadPointHitsObliqueSeg_(c, obliqueSegs, endMarginMeters)) return false;
+                    if (window.cadPointHitsObliqueSeg_(c_L, obliqueSegs, endMarginMeters)) return false;
+                    if (window.cadPointHitsObliqueSeg_(c_R, obliqueSegs, endMarginMeters)) return false;
                     for (let pt of ptsToCheck) {
                         if (!turf.booleanPointInPolygon(pt, tPoly)) return false;
                     }
@@ -8036,53 +8046,86 @@ window.cadGeneratePartialLines = () => {
     }
 };
 
-/** 畝の向きに対して斜めな境界の内側を、端面の余白ぶん畝が入れない帯にする。端は隣の畝まで伸ばす */
-window.cadBuildObliqueBoundaryKeepOut = (ringCoords, ridgeAngleDeg, gapM) => {
-    try {
-        if (!ringCoords || ringCoords.length < 4 || typeof turf === 'undefined') return null;
-        const gap = Number(gapM) || 0;
-        if (!(gap > 0.05)) return null;
-        const field = turf.polygon([ringCoords]);
-        const center = turf.center(field).geometry.coordinates;
-        const n = window.cadRingVertexCount(ringCoords);
-        const align = (a, b) => {
-            const diff = window.cadBearingDiff(a, b);
-            return Math.min(diff, Math.abs(180 - diff));
-        };
-        let acc = null;
-        for (let i = 0; i < n; i++) {
-            const info = window.cadRingEdgeInfo(ringCoords, i);
-            if (!info || info.len < 0.4) continue;
-            const sideLike = align(info.bearing, ridgeAngleDeg) <= 18;
-            const endLike = align(info.bearing, ridgeAngleDeg + 90) <= 18;
-            if (sideLike || endLike) continue;
-            let a = info.a;
-            let b = info.b;
-            try {
-                const ext = window.cadExtendLineStringEnds(turf.lineString([a, b]), gap);
-                const cs = ext.geometry.coordinates;
+/** 点から線分までの距離（メートル） */
+window.cadPointSegDistM_ = (lng, lat, a, b) => {
+    const midLat = ((lat + a[1] + b[1]) / 3) * Math.PI / 180;
+    const kx = 111320 * Math.cos(midLat);
+    const ky = 110540;
+    const ax = a[0] * kx, ay = a[1] * ky;
+    const bx = b[0] * kx, by = b[1] * ky;
+    const px = lng * kx, py = lat * ky;
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    let t = 0;
+    if (len2 > 1e-6) t = ((px - ax) * dx + (py - ay) * dy) / len2;
+    if (t < 0) t = 0;
+    else if (t > 1) t = 1;
+    return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+};
+
+window.cadPointHitsObliqueSeg_ = (pt, segs, gapM) => {
+    if (!segs || !segs.length || !(gapM > 0.05) || !pt) return false;
+    const c = pt.geometry && pt.geometry.coordinates ? pt.geometry.coordinates : pt;
+    if (!c || c.length < 2) return false;
+    for (let i = 0; i < segs.length; i++) {
+        if (window.cadPointSegDistM_(c[0], c[1], segs[i][0], segs[i][1]) < gapM) return true;
+    }
+    return false;
+};
+
+/**
+ * 端面の余白を、畝とほぼ平行な長い辺以外の境界へ最短距離でかける。
+ * 斜めの辺や段差では、その帯に入らないよう畝を短くする。
+ */
+window.cadCollectObliqueClearanceSegs = (ringCoords, ridgeAngleDeg, gapM) => {
+    const gap = Number(gapM) || 0;
+    if (!(gap > 0.05) || !ringCoords || typeof turf === 'undefined') return [];
+    const n = window.cadRingVertexCount(ringCoords);
+    if (n < 3) return [];
+    const align = (a, b) => {
+        const diff = window.cadBearingDiff(a, b);
+        return Math.min(diff, Math.abs(180 - diff));
+    };
+    const infos = [];
+    for (let i = 0; i < n; i++) {
+        const info = window.cadRingEdgeInfo(ringCoords, i);
+        infos.push(info && info.len > 0.05 ? info : null);
+    }
+    const segs = [];
+    const used = new Array(n).fill(false);
+    for (let i = 0; i < n; i++) {
+        if (used[i] || !infos[i]) continue;
+        let end = i;
+        used[i] = true;
+        const baseBear = infos[i].bearing;
+        let chainLen = infos[i].len;
+        for (let step = 0; step < n; step++) {
+            const nxt = (end + 1) % n;
+            if (nxt === i || used[nxt] || !infos[nxt]) break;
+            if (align(infos[nxt].bearing, baseBear) > 5) break;
+            used[nxt] = true;
+            end = nxt;
+            chainLen += infos[nxt].len;
+        }
+        const a0 = infos[i].a;
+        const b0 = infos[end].b;
+        let groupBear = baseBear;
+        try { groupBear = turf.bearing(turf.point(a0), turf.point(b0)); } catch (e) {}
+        // 畝とほぼ平行で長い辺だけ側面余白に任せる。斜め・段差・短い立ち上がりは端面余白
+        if (align(groupBear, ridgeAngleDeg) <= 6 && chainLen >= 8) continue;
+        let a = a0;
+        let b = b0;
+        try {
+            const ext = window.cadExtendLineStringEnds(turf.lineString([a, b]), gap);
+            const cs = ext.geometry.coordinates;
+            if (cs && cs.length >= 2) {
                 a = cs[0];
                 b = cs[cs.length - 1];
-            } catch (e) {}
-            const inward = window.cadInwardBearingForEdge(info, center);
-            const aIn = turf.destination(turf.point(a), gap, inward, { units: 'meters' }).geometry.coordinates;
-            const bIn = turf.destination(turf.point(b), gap, inward, { units: 'meters' }).geometry.coordinates;
-            const rect = turf.polygon([[a, b, bIn, aIn, a]]);
-            let band = null;
-            try { band = turf.intersect(field, rect); } catch (e) { band = null; }
-            if (!band) continue;
-            if (!acc) acc = band;
-            else {
-                try {
-                    const u = turf.union(acc, band);
-                    if (u) acc = u;
-                } catch (e) {}
             }
-        }
-        return acc;
-    } catch (e) {
-        return null;
+        } catch (e) {}
+        segs.push([a, b]);
     }
+    return segs;
 };
 
 window.cadGenerateLines = () => {
@@ -8177,7 +8220,7 @@ window.cadGenerateLines = () => {
         });
         
         let avoidPolys = [...nakamichiPolys, ...drainagePolys];
-        const obliqueKeepOut = window.cadBuildObliqueBoundaryKeepOut(coords, angle, endMarginMeters);
+        const obliqueSegs = window.cadCollectObliqueClearanceSegs(coords, angle, endMarginMeters);
 
         const lineLen = diagDist + 40;
         let rects = [];
@@ -8209,15 +8252,10 @@ window.cadGenerateLines = () => {
 
                 let ptsToCheck = [p_fwd_L, p_fwd_R, p_bwd_L, p_bwd_R, c_L, c_R];
 
-                if (obliqueKeepOut) {
-                    const tips = [c, c_L, c_R];
-                    for (let tip of tips) {
-                        try {
-                            if (turf.booleanPointInPolygon(tip, obliqueKeepOut)) return false;
-                        } catch (e) {}
-                    }
-                }
-                
+                if (window.cadPointHitsObliqueSeg_(c, obliqueSegs, endMarginMeters)) return false;
+                if (window.cadPointHitsObliqueSeg_(c_L, obliqueSegs, endMarginMeters)) return false;
+                if (window.cadPointHitsObliqueSeg_(c_R, obliqueSegs, endMarginMeters)) return false;
+
                 for (let pt of ptsToCheck) {
                     if (!turf.booleanPointInPolygon(pt, tPoly)) return false;
                 }
@@ -8702,6 +8740,7 @@ window.saveUneSim = async () => {
     
     try {
         await callGAS('updatePolygon', { id: p.id, name: p.name, uneSimData: simDataStr, userName: currentUser });
+        if (window._cadRegistryCache) delete window._cadRegistryCache[p.id];
         alert("💾 描画した地形とピンをすべて保存しました！");
         window.closeCADMode();
     } catch (e) {
@@ -8711,12 +8750,31 @@ window.saveUneSim = async () => {
         if (saveBtn) saveBtn.innerHTML = originalText;
     }
 };
-window.openCadRegistry = async (id) => {
+window.cadJsonFingerprint_ = (raw) => {
+    const s = raw ? String(raw) : '';
+    let h = 0;
+    const step = Math.max(1, Math.floor(s.length / 240));
+    for (let i = 0; i < s.length; i += step) h = ((h * 33) + s.charCodeAt(i)) >>> 0;
+    return s.length + ':' + h;
+};
+
+window.cadEnsureRegistryData_ = async (id, item) => {
+    if (!item) return '';
+    if (item.data) return String(item.data);
+    if (!item.row) return '';
+    const full = await callGAS('getPolygonDrawingHistoryItem', { id: id, row: item.row });
+    const data = full && full.data ? String(full.data) : '';
+    item.data = data;
+    return data;
+};
+
+window.openCadRegistry = async (id, opts) => {
     const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
     if (!p) {
         alert('圃場が見つかりません。');
         return;
     }
+    opts = opts || {};
     try { if (typeof infoWindow !== 'undefined' && infoWindow) infoWindow.close(); } catch (e) {}
     window._cadRegistryFieldId = id;
     const modal = document.getElementById('cadRegistryModal');
@@ -8728,7 +8786,6 @@ window.openCadRegistry = async (id) => {
     }
     if (nameEl) nameEl.textContent = p.name ? '（' + p.name + '）' : '';
     modal.style.display = 'flex';
-    listEl.innerHTML = '<div style="text-align:center; padding:16px; color:#666;">読み込み中...</div>';
     const newBtn = document.getElementById('cadRegistryNewBtn');
     if (newBtn) {
         newBtn.onclick = () => {
@@ -8736,24 +8793,35 @@ window.openCadRegistry = async (id) => {
             window.openCADMode(id, { blank: true });
         };
     }
+    const cache = window._cadRegistryCache && window._cadRegistryCache[id];
+    if (!opts.refresh && cache && (Date.now() - cache.at) < 60000) {
+        window.cadRenderRegistryList_(id, cache.history);
+        return;
+    }
+    window.cadRenderRegistryList_(id, [], { loading: true });
     let history = [];
     try {
-        history = await callGAS('getPolygonDrawingHistory', { id: id }) || [];
+        history = await callGAS('getPolygonDrawingHistory', { id: id, summary: true }) || [];
     } catch (e) {
         console.warn('CAD登録一覧の取得に失敗:', e);
         history = [];
     }
     if (String(window._cadRegistryFieldId) !== String(id)) return;
+    window._cadRegistryCache = window._cadRegistryCache || {};
+    window._cadRegistryCache[id] = { at: Date.now(), history: history };
     window.cadRenderRegistryList_(id, history);
 };
 
-window.cadRenderRegistryList_ = (id, history) => {
+window.cadRenderRegistryList_ = (id, history, opts) => {
     const listEl = document.getElementById('cadRegistryList');
     const p = loadedPolygons[id];
     if (!listEl || !p) return;
+    const loading = !!(opts && opts.loading);
     const current = p.uneSimData ? String(p.uneSimData) : '';
+    const currentFp = current ? window.cadJsonFingerprint_(current) : '';
     listEl.innerHTML = '';
-    const summarize = (dataStr) => {
+    const summarize = (dataStr, item) => {
+        if (item && item.ridges != null) return '畝 ' + item.ridges + '・ピン ' + (item.pins || 0);
         try {
             const o = JSON.parse(dataStr);
             const ridges = (o.unePolygons || []).length + (o.customShapes || []).length;
@@ -8763,17 +8831,25 @@ window.cadRenderRegistryList_ = (id, history) => {
             return '';
         }
     };
-    const addCard = (title, dataStr, actions) => {
+    const sameAsCurrent = (item) => {
+        if (!current || !item) return false;
+        if (item.fp) return item.fp === currentFp;
+        return String(item.data || '') === current;
+    };
+    const addCard = (title, dataStr, actions, item) => {
         const card = document.createElement('div');
         card.style.cssText = 'border:1px solid #e0e0e0; border-radius:8px; padding:10px; margin-bottom:8px; background:#fafafa;';
         const head = document.createElement('div');
         head.style.cssText = 'font-size:13px; font-weight:bold; margin-bottom:4px; color:#333;';
         head.textContent = title;
         card.appendChild(head);
-        const sub = document.createElement('div');
-        sub.style.cssText = 'font-size:11px; color:#666; margin-bottom:8px;';
-        sub.textContent = summarize(dataStr) || '図面データ';
-        card.appendChild(sub);
+        const label = summarize(dataStr, item);
+        if (label) {
+            const sub = document.createElement('div');
+            sub.style.cssText = 'font-size:11px; color:#666; margin-bottom:8px;';
+            sub.textContent = label;
+            card.appendChild(sub);
+        }
         const row = document.createElement('div');
         row.style.cssText = 'display:flex; gap:4px;';
         actions.forEach((act) => {
@@ -8781,7 +8857,14 @@ window.cadRenderRegistryList_ = (id, history) => {
             b.type = 'button';
             b.textContent = act.label;
             b.style.cssText = 'flex:1; border:none; border-radius:4px; padding:7px 4px; font-size:12px; font-weight:bold; cursor:pointer; color:#fff; background:' + act.color + ';';
-            b.onclick = act.onClick;
+            b.onclick = async () => {
+                const prev = b.textContent;
+                b.disabled = true;
+                b.textContent = '読込中';
+                try { await act.onClick(); }
+                catch (e) { alert(e && e.message ? e.message : e); }
+                finally { b.disabled = false; b.textContent = prev; }
+            };
             row.appendChild(b);
         });
         card.appendChild(row);
@@ -8792,33 +8875,57 @@ window.cadRenderRegistryList_ = (id, history) => {
         window.openCADMode(id, blank ? { blank: true } : { data: dataStr });
     };
     if (!history.length && !current) {
-        listEl.innerHTML = '<div style="text-align:center; padding:16px; color:#666;">登録された図面はまだありません。<br>新規追加から作成できます。</div>';
+        listEl.innerHTML = loading
+            ? '<div style="text-align:center; padding:16px; color:#666;">読み込み中...</div>'
+            : '<div style="text-align:center; padding:16px; color:#666;">登録された図面はまだありません。<br>新規追加から作成できます。</div>';
         return;
     }
-    const matched = history.some((item) => item && String(item.data || '') === current);
+    const matched = history.some(sameAsCurrent);
     if (current && !matched) {
         addCard('いまの図面', current, [
             { label: '編集', color: '#FF9800', onClick: () => openEditor(current, false) }
         ]);
     }
+    if (loading) {
+        const wait = document.createElement('div');
+        wait.style.cssText = 'text-align:center; padding:10px; color:#888; font-size:12px;';
+        wait.textContent = '登録を読み込み中...';
+        listEl.appendChild(wait);
+        return;
+    }
     if (!history.length) return;
     history.forEach((item) => {
-        const applied = current && String(item.data || '') === current;
+        const applied = sameAsCurrent(item);
         const title = (applied ? '適用中 ・ ' : '') + (item.date || '図面');
         const actions = [];
         if (!applied) {
             actions.push({ label: '適用', color: '#1565C0', onClick: () => window.cadApplyRegistryItem_(id, item) });
         }
-        actions.push({ label: '編集', color: '#FF9800', onClick: () => openEditor(item.data, false) });
+        actions.push({
+            label: '編集',
+            color: '#FF9800',
+            onClick: async () => {
+                const data = await window.cadEnsureRegistryData_(id, item);
+                if (!data) { alert('図面を読み込めませんでした。'); return; }
+                openEditor(data, false);
+            }
+        });
         actions.push({ label: '削除', color: '#E53935', onClick: () => window.cadDeleteRegistryItem_(id, item) });
-        addCard(title, item.data, actions);
+        addCard(title, item.data, actions, item);
     });
 };
 
 window.cadApplyRegistryItem_ = async (id, item) => {
     const p = loadedPolygons[id];
-    if (!p || !item || !item.data) return;
+    if (!p || !item) return;
     if (!confirm((item.date || 'この図面') + ' をこの圃場に適用しますか？')) return;
+    if (!item.data) {
+        item.data = await window.cadEnsureRegistryData_(id, item);
+    }
+    if (!item.data) {
+        alert('図面を読み込めませんでした。');
+        return;
+    }
     try {
         await callGAS('updatePolygon', {
             id: p.id,
@@ -8829,7 +8936,7 @@ window.cadApplyRegistryItem_ = async (id, item) => {
         });
         p.uneSimData = item.data;
         alert('この図面を適用しました。');
-        window.openCadRegistry(id);
+        window.openCadRegistry(id, { refresh: true });
     } catch (e) {
         alert('適用に失敗しました。\n' + (e && e.message ? e.message : e));
     }
@@ -8847,7 +8954,7 @@ window.cadDeleteRegistryItem_ = async (id, item) => {
             row: item.row,
             userName: (typeof currentUser !== 'undefined' ? currentUser : '')
         });
-        window.openCadRegistry(id);
+        window.openCadRegistry(id, { refresh: true });
     } catch (e) {
         alert('削除に失敗しました。\n' + (e && e.message ? e.message : e));
     }
@@ -8864,7 +8971,7 @@ window.showCadHistoryModal = async () => {
     document.getElementById('cadHistoryModal').style.display = 'block';
     
     try {
-        const history = await callGAS('getPolygonDrawingHistory', { id: window.cadTargetId });
+        const history = await callGAS('getPolygonDrawingHistory', { id: window.cadTargetId, summary: true });
         if (!history || history.length === 0) {
             if (historyLoad) historyLoad.done();
             listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#666;">保存された履歴がありません。</div>';
@@ -8877,11 +8984,16 @@ window.showCadHistoryModal = async () => {
             const btn = document.createElement('button');
             btn.style.cssText = 'width:100%; text-align:left; padding:12px; background:#f5f5f5; border:1px solid #ddd; border-radius:6px; cursor:pointer; font-size:14px; margin-bottom:5px;';
             btn.innerHTML = '🕒 ' + item.date;
-            btn.onclick = () => {
-                if (confirm(item.date + ' の状態を復元しますか？現在の未保存の編集は失われます。')) {
-                    window.loadCadHistoryData(item.data);
-                    document.getElementById('cadHistoryModal').style.display = 'none';
+            btn.onclick = async () => {
+                if (!confirm(item.date + ' の状態を復元しますか？現在の未保存の編集は失われます。')) return;
+                let data = item.data;
+                if (!data && item.row) {
+                    const full = await callGAS('getPolygonDrawingHistoryItem', { id: window.cadTargetId, row: item.row });
+                    data = full && full.data;
                 }
+                if (!data) { alert('図面を読み込めませんでした。'); return; }
+                window.loadCadHistoryData(data);
+                document.getElementById('cadHistoryModal').style.display = 'none';
             };
             historyFragment.appendChild(btn);
             if (historyLoad) historyLoad.update({ detail: `${idx + 1} / ${history.length} 件`, current: idx + 1, total: history.length });

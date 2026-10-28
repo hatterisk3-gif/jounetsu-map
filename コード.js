@@ -192,6 +192,7 @@ const API_ACTIONS = {
   "parseWithGemini": function (p) { return parseWithGemini(p); },
   "parseCropImageWithGemini": function (p) { return parseCropImageWithGemini(p); },
   "getPolygonDrawingHistory": function (p) { return getPolygonDrawingHistory(p); },
+  "getPolygonDrawingHistoryItem": function (p) { return getPolygonDrawingHistoryItem(p); },
   "deletePolygonDrawingHistory": function (p) { return deletePolygonDrawingHistory(p); },
   "saveUserQualifications": function (p) { return saveUserQualifications(p.userName, p.qualifications); },
   "getUserQualifications": function (p) { return getUserQualifications(p.userName); },
@@ -5858,37 +5859,190 @@ function previewCropWorkSchedule(params) {
   };
 }
 
+function foldCatalogText_(s) {
+  return String(s || '')
+    .replace(/[！-～]/g, function (ch) { return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0); })
+    .replace(/\u3000/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function findCatalogHeaderIndex_(headers, aliases) {
+  const norm = (headers || []).map(function (h) {
+    return foldCatalogText_(String(h || '').replace(/\s/g, ''));
+  });
+  for (let a = 0; a < aliases.length; a++) {
+    const alias = foldCatalogText_(String(aliases[a]).replace(/\s/g, ''));
+    if (!alias) continue;
+    for (let i = 0; i < norm.length; i++) {
+      if (norm[i] && (norm[i] === alias || norm[i].indexOf(alias) >= 0)) return i;
+    }
+  }
+  return -1;
+}
+
+function pesticideCatalogColumnMap_(headers) {
+  const map = {
+    name: findCatalogHeaderIndex_(headers, ['農薬の名称', '農薬名']),
+    activeIngredient: findCatalogHeaderIndex_(headers, ['有効成分']),
+    manufacturer: findCatalogHeaderIndex_(headers, ['製造メーカー', '登録を有する者の名称', '登録を有する者']),
+    cropName: findCatalogHeaderIndex_(headers, ['作物名', '適用作物']),
+    dilution: findCatalogHeaderIndex_(headers, ['希釈倍率', '希釈倍数']),
+    phiDays: findCatalogHeaderIndex_(headers, ['散布後日数']),
+    useTimingText: findCatalogHeaderIndex_(headers, ['使用時期原文', '使用時期']),
+    regNumber: findCatalogHeaderIndex_(headers, ['農薬登録番号', '登録番号'])
+  };
+  if (map.name < 0) map.name = 0;
+  if (map.activeIngredient < 0) map.activeIngredient = 1;
+  if (map.manufacturer < 0) map.manufacturer = 2;
+  if (map.cropName < 0) map.cropName = 3;
+  if (map.dilution < 0) map.dilution = 4;
+  if (map.phiDays < 0) map.phiDays = 5;
+  if (map.useTimingText < 0) map.useTimingText = 6;
+  if (map.regNumber < 0) map.regNumber = 7;
+  return map;
+}
+
+function catalogCellText_(row, idx) {
+  if (!row || idx < 0 || idx >= row.length || row[idx] == null) return '';
+  return String(row[idx]).trim();
+}
+
+/** ヒット行を連続範囲にまとめて読む（1行ずつ読むと大きいカタログで遅くなる） */
+function readSheetRowsByNumber_(sheet, rowNums, numCols) {
+  const byRow = {};
+  if (!rowNums || !rowNums.length) return byRow;
+  const sorted = rowNums.slice().sort(function (a, b) { return a - b; });
+  let start = sorted[0];
+  let prev = sorted[0];
+  const flush = function (from, to) {
+    const values = sheet.getRange(from, 1, to - from + 1, numCols).getValues();
+    for (let i = 0; i < values.length; i++) byRow[from + i] = values[i];
+  };
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] === prev + 1) {
+      prev = sorted[i];
+      continue;
+    }
+    flush(start, prev);
+    start = prev = sorted[i];
+  }
+  flush(start, prev);
+  return byRow;
+}
+
+function pesticideCatalogItemFromRow_(row, col) {
+  const phiRaw = row[col.phiDays];
+  return {
+    name: catalogCellText_(row, col.name),
+    activeIngredient: catalogCellText_(row, col.activeIngredient),
+    manufacturer: catalogCellText_(row, col.manufacturer),
+    cropName: catalogCellText_(row, col.cropName),
+    dilution: catalogCellText_(row, col.dilution),
+    phiDays: (phiRaw === '' || phiRaw == null) ? '' : phiRaw,
+    useTimingText: catalogCellText_(row, col.useTimingText),
+    regNumber: catalogCellText_(row, col.regNumber),
+    volume: '',
+    note: ''
+  };
+}
+
+function pesticideCatalogRowMatches_(item, q, crop) {
+  if (!item || !item.name) return false;
+  if (q) {
+    const hay = [
+      item.name,
+      item.activeIngredient,
+      item.regNumber,
+      item.manufacturer
+    ].map(foldCatalogText_).join('\n');
+    if (hay.indexOf(q) < 0) return false;
+  }
+  if (crop && foldCatalogText_(item.cropName).indexOf(crop) < 0) return false;
+  return true;
+}
+
 function searchPesticideCatalog(params) {
-  const q = String((params && params.q) || '').trim().toLowerCase();
-  const crop = String((params && params.crop) || '').trim().toLowerCase();
+  const qRaw = String((params && params.q) || '').trim();
+  const cropRaw = String((params && params.crop) || '').trim();
+  const q = foldCatalogText_(qRaw);
+  const crop = foldCatalogText_(cropRaw);
   const limit = Math.min(100, Math.max(1, parseInt((params && params.limit) || 50, 10) || 50));
   if (!q && !crop) {
     throw new Error('農薬名または作物名のキーワードを入力してください');
   }
   const sheet = ensurePesticideCatalogSheet_();
   const last = sheet.getLastRow();
+  const totalCatalog = Math.max(0, last - 1);
   if (last <= 1) {
-    return { success: true, count: 0, totalCatalog: 0, items: [] };
+    return {
+      success: true,
+      count: 0,
+      totalCatalog: 0,
+      items: [],
+      message: '農薬カタログが空です。上の「公式CSVをカタログへ取込」で登録基本部と登録適用部を取り込んでから検索してください。'
+    };
   }
-  const data = sheet.getRange(2, 1, last - 1, PESTICIDE_CATALOG_HEADERS_.length).getValues();
+  const colCount = Math.min(40, Math.max(sheet.getLastColumn(), PESTICIDE_CATALOG_HEADERS_.length));
+  const headers = sheet.getRange(1, 1, 1, colCount).getValues()[0];
+  const col = pesticideCatalogColumnMap_(headers);
+  const needle = qRaw || cropRaw;
   const items = [];
-  for (let i = 0; i < data.length; i++) {
-    const item = readPesticideCatalogRow_(data[i]);
-    if (!item.name) continue;
-    if (q && String(item.name).toLowerCase().indexOf(q) < 0
-        && String(item.activeIngredient).toLowerCase().indexOf(q) < 0
-        && String(item.regNumber).toLowerCase().indexOf(q) < 0
-        && String(item.manufacturer).toLowerCase().indexOf(q) < 0) continue;
-    if (crop && String(item.cropName).toLowerCase().indexOf(crop) < 0) continue;
-    items.push(item);
+  const seen = {};
+  const pending = [];
+  let truncated = false;
+
+  const flushPending = function () {
+    if (!pending.length || items.length >= limit) {
+      pending.length = 0;
+      return;
+    }
+    const batch = pending.splice(0, pending.length);
+    const byRow = readSheetRowsByNumber_(sheet, batch, colCount);
+    for (let i = 0; i < batch.length; i++) {
+      const row = byRow[batch[i]];
+      if (!row) continue;
+      const item = pesticideCatalogItemFromRow_(row, col);
+      if (!pesticideCatalogRowMatches_(item, q, crop)) continue;
+      items.push(item);
+      if (items.length >= limit) {
+        truncated = true;
+        break;
+      }
+    }
+  };
+
+  // 全行を読み込むと公式カタログ（数万行）で時間切れになる。該当セルだけ探す。
+  const finder = sheet.getRange(2, 1, last - 1, colCount)
+    .createTextFinder(needle)
+    .matchCase(false)
+    .matchEntireCell(false);
+  let guard = 0;
+  let cell = finder.findNext();
+  while (cell && items.length < limit && guard < 4000) {
+    guard++;
+    const rowNum = cell.getRow();
+    if (!seen[rowNum]) {
+      seen[rowNum] = true;
+      pending.push(rowNum);
+      if (pending.length >= 40) flushPending();
+    }
     if (items.length >= limit) break;
+    cell = finder.findNext();
   }
+  flushPending();
+  if (cell && items.length >= limit) truncated = true;
+
+  const keyword = qRaw || cropRaw;
   return {
     success: true,
     count: items.length,
-    totalCatalog: Math.max(0, last - 1),
+    totalCatalog: totalCatalog,
     items: items,
-    truncated: items.length >= limit
+    truncated: truncated || items.length >= limit,
+    message: items.length
+      ? ''
+      : ('「' + keyword + '」はカタログ ' + totalCatalog + ' 件の中に見つかりませんでした。農薬名を短くするか、作物名だけにして再検索してください。')
   };
 }
 
@@ -10864,45 +11018,81 @@ function testAuth() {
 // ==========================================
 // 過去の図面履歴の取得
 // ==========================================
+function cadHistoryDateStr_(dateVal) {
+  if (dateVal instanceof Date) {
+    return Utilities.formatDate(dateVal, "JST", "yyyy/MM/dd HH:mm:ss");
+  }
+  return String(dateVal || "");
+}
+
+function cadHistoryFingerprint_(raw) {
+  var s = raw ? String(raw) : "";
+  var h = 0;
+  var step = Math.max(1, Math.floor(s.length / 240));
+  for (var i = 0; i < s.length; i += step) {
+    h = ((h * 33) + s.charCodeAt(i)) >>> 0;
+  }
+  return s.length + ":" + h;
+}
+
 function getPolygonDrawingHistory(params) {
   try {
     const ss = TENANT_SS;
     const sheet = ss.getSheetByName('図面履歴');
     if (!sheet) return [];
 
-    const data = sheet.getDataRange().getValues();
-    if (data.length <= 1) return []; // データがない場合
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return [];
 
-    const history = [];
     const targetId = String(params.id || "");
-
-    // 後ろから検索して最新の20件だけ取得する
-    for (let i = data.length - 1; i >= 1; i--) {
-      if (String(data[i][0]) === targetId) {
-        let dateVal = data[i][2];
-        let dateStr = "";
-        if (dateVal instanceof Date) {
-          dateStr = Utilities.formatDate(dateVal, "JST", "yyyy/MM/dd HH:mm:ss");
-        } else {
-          dateStr = String(dateVal || "");
-        }
-
-        let dataVal = data[i][3];
-
-        history.push({
-          row: i + 1,
-          date: dateStr,
-          data: dataVal ? String(dataVal) : ""
-        });
-
-        if (history.length >= 20) break;
+    const summaryOnly = params.summary === true || params.summary === "true" || params.summary === 1;
+    // 図面JSON（D列）は読まず、IDと日時だけ走査する
+    const head = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
+    const hits = [];
+    for (let i = head.length - 1; i >= 0; i--) {
+      if (String(head[i][0]) === targetId) {
+        hits.push(i);
+        if (hits.length >= 20) break;
       }
     }
+    if (!hits.length) return [];
 
+    const history = [];
+    for (let h = 0; h < hits.length; h++) {
+      const i = hits[h];
+      const row = i + 2;
+      const dateStr = cadHistoryDateStr_(head[i][2]);
+      const item = { row: row, date: dateStr };
+      if (summaryOnly) {
+        const raw = sheet.getRange(row, 4).getValue();
+        item.fp = cadHistoryFingerprint_(raw);
+      } else {
+        const dataVal = sheet.getRange(row, 4).getValue();
+        item.data = dataVal ? String(dataVal) : "";
+      }
+      history.push(item);
+    }
     return history;
   } catch(e) {
     throw new Error("履歴取得エラー: " + e.message);
   }
+}
+
+function getPolygonDrawingHistoryItem(params) {
+  const ss = TENANT_SS;
+  const sheet = ss.getSheetByName('図面履歴');
+  if (!sheet) return null;
+  const row = parseInt(params.row, 10);
+  if (!(row > 1)) throw new Error("図面が指定されていません。");
+  const idCell = String(sheet.getRange(row, 1).getValue() || "");
+  if (idCell !== String(params.id || "")) throw new Error("対象の図面が見つかりません。");
+  const dateVal = sheet.getRange(row, 3).getValue();
+  const dataVal = sheet.getRange(row, 4).getValue();
+  return {
+    row: row,
+    date: cadHistoryDateStr_(dateVal),
+    data: dataVal ? String(dataVal) : ""
+  };
 }
 
 function deletePolygonDrawingHistory(params) {

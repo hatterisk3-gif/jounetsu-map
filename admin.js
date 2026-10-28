@@ -3162,6 +3162,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <button onclick="execMaster('pesticide', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">手入力で追加</button>
             </div>
             </div>
+            </div>
             <div id="pesticidePanel_search" style="display:none; background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
             <h4 style="margin-top:0; margin-bottom:10px; color:#2e7d32; font-size:15px; border-bottom:2px solid #66bb6a; padding-bottom:5px;">🔍 カタログ検索・登録</h4>
             <div style="background:#e3f2fd; border:1px solid #90caf9; border-radius:8px; padding:12px;">
@@ -3188,6 +3189,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 </div>
                 <button type="button" onclick="searchPesticideCatalogUi()" style="width:100%; background:#2e7d32; color:#fff; border:none; border-radius:4px; padding:10px; font-weight:bold; cursor:pointer; margin-bottom:8px;">検索</button>
                 <div id="pestCatalogSearchResult" style="font-size:12px; color:#666;"></div>
+            </div>
             </div>`;
         } else if (type === 'fertilizer') {
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
@@ -3221,6 +3223,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <button onclick="execMaster('fertilizer', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">手入力で追加</button>
             </div>
             </div>
+            </div>
             <div id="fertilizerPanel_search" style="display:none; background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
             <h4 style="margin-top:0; margin-bottom:10px; color:#2e7d32; font-size:15px; border-bottom:2px solid #66bb6a; padding-bottom:5px;">🔍 カタログ検索・登録</h4>
             <div style="background:#e3f2fd; border:1px solid #90caf9; border-radius:8px; padding:12px;">
@@ -3245,6 +3248,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 </div>
                 <button type="button" onclick="searchFertilizerCatalogUi()" style="width:100%; background:#2e7d32; color:#fff; border:none; border-radius:4px; padding:10px; font-weight:bold; cursor:pointer; margin-bottom:8px;">検索</button>
                 <div id="fertCatalogSearchResult" style="font-size:12px; color:#666;"></div>
+            </div>
             </div>`;
         } else if (type === 'work') {
             window._adminWorkExtraFlagsTouched = false;
@@ -3314,7 +3318,8 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             </div>`;
         }
 
-        formHtml += `</div></div>`;
+        // 農薬・肥料は新規パネルと検索パネルを兄弟にして、タブ切替で閉じている
+        if (type !== 'pesticide' && type !== 'fertilizer') formHtml += `</div></div>`;
     }
 
     // データ一覧テーブルの生成
@@ -4113,7 +4118,8 @@ window.ccpSearchPestCatalog = async function() {
         if (searchLoad) searchLoad.done();
         window._ccpPestCatalogHits = (res && res.items) || [];
         if (!window._ccpPestCatalogHits.length) {
-            area.innerHTML = '<div style="color:#888;">該当なし。カタログ未取込か、キーワードを変えてください。</div>';
+            const msg = (res && res.message) || '該当なし。カタログ未取込か、キーワードを変えてください。';
+            area.innerHTML = '<div style="color:#888; line-height:1.45;">' + window.ccpEscape_(msg) + '</div>';
             return;
         }
         const note = (res.truncated ? '（上位のみ）' : '') +
@@ -5083,7 +5089,8 @@ window.searchPesticideCatalogUi = async function() {
         if (searchLoad) searchLoad.done();
         window._pestCatalogHits = (res && res.items) || [];
         if (!window._pestCatalogHits.length) {
-            area.innerHTML = '<div style="color:#888;">該当なし。カタログ未取込か、キーワードを変えてください。</div>';
+            const msg = (res && res.message) || '該当なし。カタログ未取込か、キーワードを変えてください。';
+            area.innerHTML = '<div style="color:#888; line-height:1.45;">' + String(msg).replace(/</g, '&lt;') + '</div>';
             return;
         }
         const note = (res.truncated ? '（上位のみ表示）' : '') +
