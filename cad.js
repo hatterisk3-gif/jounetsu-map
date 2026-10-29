@@ -5539,6 +5539,10 @@ window.cadBeginFrontEdgePick = () => {
         if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: true });
         return;
     }
+    if (window.cadPinMode === 'makura_edge' || window.cadPinMode === 'makuraune') {
+        window.cadPinMode = null;
+        if (typeof window.cadUpdateMakuraPickUi === 'function') window.cadUpdateMakuraPickUi();
+    }
     window.cadPinMode = 'front_edge';
     if (typeof window.cadUpdateSplitLineBtn === 'function') window.cadUpdateSplitLineBtn();
     if (typeof window.cadUpdateMakuraPickUi === 'function') window.cadUpdateMakuraPickUi();
@@ -6280,17 +6284,29 @@ window.cadDrawMakuraEdgeOverlay = () => {
         g.appendChild(line);
     };
     for (let i = 0; i < n; i++) {
-        const on = picking ? selected.has(i) : frontSet.has(i);
-        if (!picking && !frontPicking && !on) continue;
         const info = window.cadRingEdgeInfo(ring, i);
         if (!info || info.len < 0.15) continue;
         const a = window.latLngToScreenPixel(info.a[1], info.a[0]);
         const b = window.latLngToScreenPixel(info.b[1], info.b[0]);
-        if (on) {
-            addLine(a.x, a.y, b.x, b.y, '#ffffff', 12);
-            addLine(a.x, a.y, b.x, b.y, frontPicking ? '#FF5722' : '#FF6F00', 7);
+        const makuraOn = selected.has(i);
+        const frontOn = frontSet.has(i);
+        if (picking) {
+            if (makuraOn) {
+                addLine(a.x, a.y, b.x, b.y, '#ffffff', 12);
+                addLine(a.x, a.y, b.x, b.y, '#FF6F00', 7);
+            } else {
+                addLine(a.x, a.y, b.x, b.y, '#FFCC80', 5);
+            }
+        } else if (frontPicking) {
+            if (frontOn) {
+                addLine(a.x, a.y, b.x, b.y, '#ffffff', 12);
+                addLine(a.x, a.y, b.x, b.y, '#FF5722', 7);
+            } else {
+                addLine(a.x, a.y, b.x, b.y, '#FFAB91', 5);
+            }
         } else {
-            addLine(a.x, a.y, b.x, b.y, '#FFCC80', 5);
+            if (makuraOn) addLine(a.x, a.y, b.x, b.y, '#FF6F00', 6);
+            if (frontOn) addLine(a.x, a.y, b.x, b.y, '#FF5722', 4);
         }
     }
 };
@@ -6352,6 +6368,10 @@ window.cadBeginMakuraEdgePick = () => {
         }
         if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: true });
         return;
+    }
+    if (window.cadPinMode === 'front_edge') {
+        window.cadPinMode = null;
+        if (typeof window.cadUpdateFrontPickUi === 'function') window.cadUpdateFrontPickUi();
     }
     window.cadPinMode = 'makura_edge';
     if (typeof window.cadUpdateSplitLineBtn === 'function') window.cadUpdateSplitLineBtn();
@@ -6586,9 +6606,42 @@ window.cadPlaceMakuraFeatures = (features) => {
     return added;
 };
 
+window.cadCollectObliqueMakuraEdges_ = (ring, selected) => {
+    const angle = (typeof window.cadGetRidgeAxisBearing === 'function') ? window.cadGetRidgeAxisBearing() : 0;
+    const n = window.cadRingVertexCount(ring);
+    const chosen = new Set(selected || []);
+    const ridges = window.cadListMainRidgeEntries();
+    const align = (a, b) => {
+        const diff = window.cadBearingDiff(a, b);
+        return Math.min(diff, Math.abs(180 - diff));
+    };
+    const extra = [];
+    for (let i = 0; i < n; i++) {
+        if (chosen.has(i)) continue;
+        const info = window.cadRingEdgeInfo(ring, i);
+        if (!info || info.len < 0.4) continue;
+        const toAxis = align(info.bearing, angle);
+        const toEnd = align(info.bearing, angle + 90);
+        if (toAxis <= 18 || toEnd <= 15) continue;
+        let near = false;
+        for (let r = 0; r < ridges.length && !near; r++) {
+            const pts = ridges[r].poly && ridges[r].poly.geometry && ridges[r].poly.geometry.coordinates && ridges[r].poly.geometry.coordinates[0];
+            if (!pts) continue;
+            for (let p = 0; p < pts.length; p++) {
+                const m = window.cadPointSegmentMetrics(pts[p], info.a, info.b);
+                const over = m.t < 0 ? -m.t : (m.t > 1 ? m.t - 1 : 0);
+                const dist = Math.hypot(m.perp, over * info.len);
+                if (dist < 2.8) { near = true; break; }
+            }
+        }
+        if (near) extra.push(i);
+    }
+    return extra;
+};
+
 window.cadGenerateMakuraFromSelectedEdges = () => {
-    const selected = Array.from(new Set(window.cadMakuraSelectedEdges || []));
-    if (!selected.length) {
+    const picked = Array.from(new Set(window.cadMakuraSelectedEdges || []));
+    if (!picked.length) {
         alert('先に辺を選んでください。');
         return;
     }
@@ -6601,6 +6654,7 @@ window.cadGenerateMakuraFromSelectedEdges = () => {
         alert('圃場が開かれていません。');
         return;
     }
+    const selected = Array.from(new Set(picked.concat(window.cadCollectObliqueMakuraEdges_(ring, picked))));
     let tPoly = null;
     try { tPoly = turf.polygon([ring]); } catch (e) { tPoly = null; }
     if (!tPoly) {

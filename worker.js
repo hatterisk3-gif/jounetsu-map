@@ -2646,11 +2646,11 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         if (!Array.isArray(p.photos)) p.photos = [];
         const navBtn = `<button onclick="executeNavigation('${id}')" style="width:100%; padding:8px; margin-bottom:6px; border:none; border-radius:4px; background:#4285F4; color:white; font-weight:bold; font-size:13px; box-sizing:border-box;">🚗 ナビ開始</button>`;
         
-        const workCount = p.photos.filter(ph => ph.type === 'work').length;
-        const growthCount = p.photos.filter(ph => ph.type === 'growth' || (!ph.type && !p.isMarker)).length;
+        const workCount = p.photos.filter(ph => ph && ((ph.type === 'work') || (ph.data && ph.data.workName))).length;
+        const growthCount = p.photos.filter(ph => ph && (ph.type === 'growth' || (!ph.type && !p.isMarker))).length;
 
         const growthText = p.isMarker ? '現地写真' : '生育記録';
-        const workText = p.isMarker ? '作業登録' : '作業記録';
+        const workText = p.isMarker ? '作業登録' : '作業記録履歴';
         const growthIcon = p.isMarker ? '📷' : '🌱';
         const workIcon = '🚜';
 
@@ -2668,7 +2668,10 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         if (!hideGrowth) {
             actions += `<button onclick="actionManagePhotos('${id}', 'growth')" style="${btnBase} background:#4CAF50;">${growthIcon} ${growthText} (${growthCount})</button>`;
         }
-        if (hasWork && !hideWork) {
+        if (!p.isMarker) {
+            actions += `<button onclick="directOpenForm('${id}', 'growth')" style="${btnBase} background:#2E7D32;">📷 写真を追加</button>`;
+            actions += `<button onclick="actionManagePhotos('${id}', 'work')" style="${btnBase} background:#FF9800;">🚜 作業記録履歴 (${workCount})</button>`;
+        } else if (hasWork && !hideWork) {
             actions += `<button onclick="openFieldWorkRecordSelect('${id}')" style="${btnBase} background:#FF9800;">${workIcon} ${workText} (${workCount})</button>`;
         }
         actions += `</div>`;
@@ -3043,7 +3046,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           return;
         }
         currentRecordType = currentFilterType;
-        let formTitle = p.isMarker ? (currentRecordType === 'work' ? "🚜 看板 作業記録" : "📷 看板 現地写真") : (currentRecordType === 'work' ? "🚜 作業記録" : "🌱 圃場 生育記録");
+        let formTitle = p.isMarker ? (currentRecordType === 'work' ? "🚜 看板 作業記録" : "📷 看板 現地写真") : (currentRecordType === 'work' ? "🚜 作業記録履歴" : "🌱 圃場 生育記録");
         document.getElementById('rightPanelTitle').innerText = `${p.name} - ${formTitle}`;
         let h = '';
         
@@ -24040,8 +24043,6 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         } else if (currentRecordType === 'work') {
            // 看板起点でも圃場を追加選択できる
            targetSection = buildFieldTargetSection({ hidden: true, title: '圃場を選択', hint: '必要ならマップから追加できます（任意・複数可）', mapLabel: '🗺️ マップから選択' });
-        } else if (!p.isMarker) {
-           targetSection = buildFieldTargetSection({ hidden: false, title: '記録する圃場', hint: '複数選択できます', mapLabel: '＋ 追加' });
         }
         const fieldRegisteredWorksSection = (currentRecordType === 'work')
           ? '<div id="field_registered_works_section" style="display:none; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:10px; padding:12px; margin-bottom:12px;"></div>'
@@ -24392,7 +24393,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         } else {
           let crops = '<option value="">選択してください</option>' + pdlCrops.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
           let stages = '<option value="">選択してください</option>' + pdlStages.map(s => `<option value="${s}">${s}</option>`).join('');
-          html = `${targetSection}<label class="form-label">🌱 作物名</label><div style="display:flex; gap:5px; margin-bottom:15px;"><select id="rec_crop" class="form-input" style="margin-bottom:0; flex-grow:1;" onchange="handleCropSelection()">${crops}</select><button onclick="addNewCrop()" style="background:#2196F3; color:white; border:none; border-radius:4px; padding:0 15px; font-weight:bold; font-size:18px;">＋</button></div><div style="background:#e8f4fd; padding:10px; border-radius:8px; border:1px solid #bbdefb; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;"><span style="font-size:12px; color:#555; font-weight:bold;">📍 この圃場(${p.area}a)の推定栽植本数:</span><span id="disp_plant_density" style="font-size:16px; font-weight:bold; color:#1a73e8;">-- 本</span></div>${timeUI}<label class="form-label">✅ 作業・状態チェック</label><div class="form-grid"><label class="checkbox-label"><input type="checkbox" id="rec_mowing"> 草刈り</label><label class="checkbox-label"><input type="checkbox" id="rec_weeding"> 草抜き</label><label class="checkbox-label"><input type="checkbox" id="rec_drainage"> 排水</label><label class="checkbox-label"><input type="checkbox" id="rec_bug"> 虫食い有</label><label class="checkbox-label"><input type="checkbox" id="rec_disease"> 病気有</label><label class="checkbox-label"><input type="checkbox" id="rec_flower"> 花芽有</label></div><div class="form-grid"><div><label class="form-label">📅 収穫見込</label><input type="date" id="rec_harvest" class="form-input"></div><div><label class="form-label">💯 残存率(%)</label><input type="number" id="rec_survival" class="form-input" placeholder="80"></div><div><label class="form-label">📏 葉長(cm)</label><input type="number" id="rec_leaf" class="form-input" placeholder="15"></div><div><label class="form-label">🍎 収穫ｻｲｽﾞ(cm)</label><input type="number" id="rec_harvest_size" class="form-input" placeholder="10"></div><div><label class="form-label">📦 収穫可能量</label><input type="number" id="rec_harvest_amount" class="form-input" placeholder="100"></div><div><label class="form-label">🧪 土壌pH</label><input type="number" step="0.1" id="rec_ph" class="form-input" placeholder="6.5"></div></div><label class="form-label">📊 栽培ステージ</label><select id="rec_field_status" class="form-input" style="padding: 10px;">${stages}</select><label class="form-label">📝 気づいたこと</label><textarea id="rec_notes" class="form-input" rows="3" placeholder="コメントを入力..."></textarea>${exPhotos}${photoUI}`;
+          html = `<label class="form-label">🌱 作物名</label><div style="display:flex; gap:5px; margin-bottom:15px;"><select id="rec_crop" class="form-input" style="margin-bottom:0; flex-grow:1;" onchange="handleCropSelection()">${crops}</select><button onclick="addNewCrop()" style="background:#2196F3; color:white; border:none; border-radius:4px; padding:0 15px; font-weight:bold; font-size:18px;">＋</button></div><div style="background:#e8f4fd; padding:10px; border-radius:8px; border:1px solid #bbdefb; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;"><span style="font-size:12px; color:#555; font-weight:bold;">📍 この圃場(${p.area}a)の推定栽植本数:</span><span id="disp_plant_density" style="font-size:16px; font-weight:bold; color:#1a73e8;">-- 本</span></div>${timeUI}<label class="form-label">✅ 作業・状態チェック</label><div class="form-grid"><label class="checkbox-label"><input type="checkbox" id="rec_mowing"> 草刈り</label><label class="checkbox-label"><input type="checkbox" id="rec_weeding"> 草抜き</label><label class="checkbox-label"><input type="checkbox" id="rec_drainage"> 排水</label><label class="checkbox-label"><input type="checkbox" id="rec_bug"> 虫食い有</label><label class="checkbox-label"><input type="checkbox" id="rec_disease"> 病気有</label><label class="checkbox-label"><input type="checkbox" id="rec_flower"> 花芽有</label></div><div class="form-grid"><div><label class="form-label">📅 収穫見込</label><input type="date" id="rec_harvest" class="form-input"></div><div><label class="form-label">💯 残存率(%)</label><input type="number" id="rec_survival" class="form-input" placeholder="80"></div><div><label class="form-label">📏 葉長(cm)</label><input type="number" id="rec_leaf" class="form-input" placeholder="15"></div><div><label class="form-label">🍎 収穫ｻｲｽﾞ(cm)</label><input type="number" id="rec_harvest_size" class="form-input" placeholder="10"></div><div><label class="form-label">📦 収穫可能量</label><input type="number" id="rec_harvest_amount" class="form-input" placeholder="100"></div><div><label class="form-label">🧪 土壌pH</label><input type="number" step="0.1" id="rec_ph" class="form-input" placeholder="6.5"></div></div><label class="form-label">📊 栽培ステージ</label><select id="rec_field_status" class="form-input" style="padding: 10px;">${stages}</select><label class="form-label">📝 気づいたこと</label><textarea id="rec_notes" class="form-input" rows="3" placeholder="コメントを入力..."></textarea>${exPhotos}${photoUI}`;
         }
 
         let tempLoadBtn = '';
