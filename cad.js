@@ -6439,6 +6439,9 @@ window.cadBuildStraightMakuraStrip_ = (ring, tPoly, edgeIndexes, widthM) => {
         });
     });
     if (!(maxS - minS > 0.3)) return null;
+    const endExtend = Math.max(0.5, widthM * 0.65);
+    minS -= endExtend;
+    maxS += endExtend;
     const inset = (window.CAD_MAKURA_EDGE_INSET_M > 0) ? window.CAD_MAKURA_EDGE_INSET_M : 0.5;
     const gap = (window.CAD_MAKURA_RIDGE_GAP_M > 0) ? window.CAD_MAKURA_RIDGE_GAP_M : 0.35;
     let innerDist = inset + widthM;
@@ -6514,16 +6517,53 @@ window.cadCreateMakuraFromEdges = (ring, tPoly, edgeIndexes, widthM) => {
         });
     });
     if (features.length <= 1) return features;
-    let united = features[0];
-    for (let i = 1; i < features.length; i++) {
-        try {
-            const u = turf.union(united, features[i]);
-            if (u) united = u;
-        } catch (e) {}
+    return window.cadJoinNearbyMakura_(features);
+};
+
+window.cadJoinNearbyMakura_ = (features) => {
+    let items = (features || []).filter((f) => f && window.cadFeatureArea(f) >= 0.4);
+    if (items.length <= 1) return items;
+    const bridge = 0.4;
+    let guard = 0;
+    let changed = true;
+    while (changed && guard++ < 16) {
+        changed = false;
+        for (let i = 0; i < items.length && !changed; i++) {
+            for (let j = i + 1; j < items.length; j++) {
+                let near = false;
+                let grownA = null;
+                let grownB = null;
+                try {
+                    grownA = turf.buffer(items[i], bridge, { units: 'meters' });
+                    grownB = turf.buffer(items[j], bridge, { units: 'meters' });
+                    near = !!(grownA && grownB && turf.booleanIntersects(grownA, grownB));
+                } catch (e) { near = false; }
+                if (!near || !grownA || !grownB) continue;
+                try {
+                    const u = turf.union(grownA, grownB);
+                    if (!u) continue;
+                    let back = u;
+                    try {
+                        const shrunk = turf.buffer(u, -bridge * 0.72, { units: 'meters' });
+                        const polyCount = (f) => {
+                            if (!f || !f.geometry) return 0;
+                            if (f.geometry.type === 'Polygon') return 1;
+                            if (f.geometry.type === 'MultiPolygon') return (f.geometry.coordinates || []).length;
+                            return 0;
+                        };
+                        if (shrunk && polyCount(shrunk) === 1 && window.cadFeatureArea(shrunk) > 0.4) back = shrunk;
+                    } catch (e) {}
+                    const one = window.cadCoalesceToPolygon(back);
+                    if (!one || window.cadFeatureArea(one) < 0.4) continue;
+                    items.splice(j, 1);
+                    items[i] = one;
+                    changed = true;
+                    break;
+                } catch (e) {}
+            }
+        }
     }
-    let flatU;
-    try { flatU = turf.flatten(united); } catch (e) { flatU = { features: [united] }; }
-    return (flatU.features || []).map((f) => window.cadCoalesceToPolygon(f)).filter((f) => f && window.cadFeatureArea(f) >= 0.4);
+    return items;
 };
 
 window.cadMergeParallelEdgesIntoEndRidges = (ring, tPoly, edgeIndexes, widthM) => {
@@ -8252,8 +8292,8 @@ window.cadCollectSideClearanceSegs_ = (ringCoords, ridgeAngleDeg) => {
 };
 
 /**
- * 端面の余白を、畝とほぼ平行な長い辺以外の境界へ最短距離でかける。
- * 斜めの辺や段差では、その帯に入らないよう畝を短くする。
+ * 端面の余白は、畝の上下（長手の端と、そこを斜めに切る境界）にかける。
+ * 畝と平行な左右の辺は側面なので、ここでは扱わない。
  */
 window.cadCollectObliqueClearanceSegs = (ringCoords, ridgeAngleDeg, gapM) => {
     const gap = Number(gapM) || 0;
@@ -8276,37 +8316,19 @@ window.cadCollectObliqueClearanceSegs = (ringCoords, ridgeAngleDeg, gapM) => {
         let end = i;
         used[i] = true;
         const baseBear = infos[i].bearing;
-        let chainLen = infos[i].len;
         for (let step = 0; step < n; step++) {
             const nxt = (end + 1) % n;
             if (nxt === i || used[nxt] || !infos[nxt]) break;
             if (align(infos[nxt].bearing, baseBear) > 5) break;
             used[nxt] = true;
             end = nxt;
-            chainLen += infos[nxt].len;
         }
         const a0 = infos[i].a;
         const b0 = infos[end].b;
         let groupBear = baseBear;
         try { groupBear = turf.bearing(turf.point(a0), turf.point(b0)); } catch (e) {}
-        const parallelLong = align(groupBear, ridgeAngleDeg) <= 6 && chainLen >= 8;
-        if (parallelLong) {
-            const neighbor = (from, dir) => {
-                for (let k = 1; k < n; k++) {
-                    const j = (from + dir * k + n) % n;
-                    if (infos[j]) return infos[j];
-                }
-                return null;
-            };
-            const touchesBend = (info) => {
-                if (!info) return false;
-                const toAxis = align(info.bearing, ridgeAngleDeg);
-                const toEnd = align(info.bearing, ridgeAngleDeg + 90);
-                return toAxis > 6 && toEnd > 12;
-            };
-            // 斜めの先で直線に戻った辺も、端面の余白ぶん畝を入れない
-            if (!touchesBend(neighbor(i, -1)) && !touchesBend(neighbor(end, 1))) continue;
-        }
+        // 畝の長手と平行な辺は左右の側面
+        if (align(groupBear, ridgeAngleDeg) <= 12) continue;
         let a = a0;
         let b = b0;
         try {
