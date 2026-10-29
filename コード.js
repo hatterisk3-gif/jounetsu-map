@@ -6152,6 +6152,42 @@ function searchPesticideCatalog(params) {
   };
 }
 
+function extractUsageCountText_(item) {
+  const direct = String(item && item.usageCount || '').trim();
+  if (direct) return direct;
+  const src = [item && item.useTimingText, item && item.usageMethod, item && item.note].join(' ');
+  const matched = src.match(/本剤の使用回数は?\s*([0-9０-９]+回(?:以内)?)/)
+    || src.match(/使用回数[は:：]?\s*([0-9０-９]+回(?:以内)?)/)
+    || src.match(/([0-9０-９]+回以内)/);
+  return matched ? String(matched[1]).trim() : '';
+}
+
+/** 農薬名の列だけを探す。全列・全行は読まない。 */
+function findRowsInCatalogColumn_(sheet, colIndex, needle, entireCell, cap) {
+  const last = sheet.getLastRow();
+  const text = String(needle || '').trim();
+  if (last < 2 || !text || colIndex < 0) return [];
+  const finder = sheet.getRange(2, colIndex + 1, last - 1, 1)
+    .createTextFinder(text)
+    .matchCase(true)
+    .matchEntireCell(!!entireCell);
+  const rows = [];
+  const seen = {};
+  let guard = 0;
+  const limit = Math.max(20, cap || 300);
+  let cell = finder.findNext();
+  while (cell && rows.length < limit && guard < 4000) {
+    guard++;
+    const r = cell.getRow();
+    if (!seen[r]) {
+      seen[r] = true;
+      rows.push(r);
+    }
+    cell = finder.findNext();
+  }
+  return rows;
+}
+
 /** 農薬名（と登録番号）に一致する適用行をまとめて返す。名前は部分一致ではなく、選んだ剤そのもの。 */
 function getPesticideApplicationTable(params) {
   const nameRaw = String((params && params.name) || '').trim();
@@ -6160,6 +6196,11 @@ function getPesticideApplicationTable(params) {
   const nameKey = foldCatalogText_(nameRaw);
   const regKey = foldCatalogText_(regRaw);
   const limit = Math.min(400, Math.max(1, parseInt((params && params.limit) || 300, 10) || 300));
+  const cacheKey = 'pestApp:' + nameKey + ':' + regKey + ':' + limit;
+  try {
+    const cached = CacheService.getScriptCache().get(cacheKey);
+    if (cached) return JSON.parse(cached);
+  } catch (e) {}
   const sheet = ensurePesticideCatalogSheet_();
   const last = sheet.getLastRow();
   const totalCatalog = Math.max(0, last - 1);
@@ -6173,21 +6214,16 @@ function getPesticideApplicationTable(params) {
       message: '農薬カタログが空です。管理者画面の農薬マスタから公式CSVを取り込んでください。'
     };
   }
+  const ctx = pesticideCatalogSheetCtx_(sheet);
   const items = [];
   const seen = {};
   let truncated = false;
-  const takeRow = function (row, col) {
-    const item = pesticideCatalogItemFromRow_(row, col);
-    const mapped = foldCatalogText_(item.name);
-    let named = mapped === nameKey;
-    if (!named) {
-      for (let i = 0; i < row.length; i++) {
-        if (foldCatalogText_(row[i]) === nameKey) { named = true; break; }
-      }
-    }
-    if (!named) return false;
-    if (regKey && foldCatalogText_(item.regNumber) !== regKey) return false;
+  const takeRow = function (row, requireReg) {
+    const item = pesticideCatalogItemFromRow_(row, ctx.col);
+    if (foldCatalogText_(item.name) !== nameKey) return false;
+    if (requireReg && regKey && foldCatalogText_(item.regNumber) !== regKey) return false;
     if (!item.name) item.name = nameRaw;
+    item.usageCount = extractUsageCountText_(item);
     const dedupe = [
       item.cropName, item.targetPest, item.dilution, item.usageAmount,
       item.useTimingText, item.usageCount, item.usageMethod
@@ -6197,26 +6233,21 @@ function getPesticideApplicationTable(params) {
     items.push(item);
     return items.length >= limit;
   };
-  const ctx = pesticideCatalogSheetCtx_(sheet);
-  const rowNums = findPesticideCatalogRowNums_(sheet, nameRaw, limit);
-  if (rowNums.length) {
-    const byRow = readSheetRowsByNumber_(sheet, rowNums, ctx.colCount);
-    for (let i = 0; i < rowNums.length; i++) {
-      const row = byRow[rowNums[i]];
-      if (!row) continue;
-      if (takeRow(row, ctx.col)) {
-        truncated = true;
-        break;
+  const rowNums = findRowsInCatalogColumn_(sheet, ctx.col.name, nameRaw, true, limit);
+  const looseNums = rowNums.length ? rowNums : findRowsInCatalogColumn_(sheet, ctx.col.name, nameRaw, false, limit);
+  if (looseNums.length) {
+    const byRow = readSheetRowsByNumber_(sheet, looseNums, ctx.colCount);
+    const ordered = looseNums.map(function (n) { return byRow[n]; }).filter(Boolean);
+    let full = false;
+    for (let i = 0; i < ordered.length; i++) {
+      if (takeRow(ordered[i], true)) { full = true; break; }
+    }
+    if (!items.length) {
+      seenClear: for (let i = 0; i < ordered.length; i++) {
+        if (takeRow(ordered[i], false)) { full = true; break seenClear; }
       }
     }
-  }
-  if (!items.length) {
-    eachPesticideCatalogRow_(sheet, function (row, col) {
-      if (takeRow(row, col)) {
-        truncated = true;
-        return false;
-      }
-    });
+    truncated = full;
   }
   items.sort(function (a, b) {
     const cropCmp = String(a.cropName || '').localeCompare(String(b.cropName || ''), 'ja');
@@ -6224,7 +6255,8 @@ function getPesticideApplicationTable(params) {
     return String(a.targetPest || '').localeCompare(String(b.targetPest || ''), 'ja');
   });
   const head = items[0] || {};
-  return {
+  const usageCountAvailable = items.some(function (it) { return String(it.usageCount || '').trim(); });
+  const result = {
     success: true,
     name: nameRaw,
     activeIngredient: head.activeIngredient || '',
@@ -6233,9 +6265,15 @@ function getPesticideApplicationTable(params) {
     count: items.length,
     totalCatalog: totalCatalog,
     truncated: truncated,
+    usageCountAvailable: usageCountAvailable,
     items: items,
     message: items.length ? '' : ('「' + nameRaw + '」の適用表はカタログにありません。')
   };
+  try {
+    const packed = JSON.stringify(result);
+    if (packed.length < 90000) CacheService.getScriptCache().put(cacheKey, packed, 1800);
+  } catch (e) {}
+  return result;
 }
 
 /** ロット記録シートに内容単位・内容個数・内容内訳ヘッダーを確保 */

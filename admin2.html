@@ -83,6 +83,13 @@
 
       <div id="cadPinModeMsg" style="font-size:10px; color:#FF9800; text-align:center; margin-bottom:8px;">💡
         操作を選ぶと、ここに案内が出ます。</div>
+      <div id="cadRidgeSelectBar" style="display:none; margin-bottom:8px; background:#3e2723; border:1px solid #FFB74D; border-radius:6px; padding:8px;">
+        <div id="cadRidgeSelectLabel" style="font-size:12px; color:#FFE0B2; font-weight:bold; margin-bottom:6px;">選択中</div>
+        <div style="display:flex; gap:6px;">
+          <button type="button" onclick="cadDeleteSelectedRidge()" style="flex:1; background:#E53935; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">削除する</button>
+          <button type="button" onclick="cadClearRidgeSelection()" style="flex:0.7; background:#555; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">解除</button>
+        </div>
+      </div>
 
       <div id="cadMode1">
         <div style="display:flex; gap:5px; margin-bottom:10px;">
@@ -673,7 +680,7 @@
   <script src="api-client.js?v=1788510000000" defer></script>
   <script src="admin2.js?v=1788600000040" defer></script>
   <script src="tracking.js?v=1787790000000" defer></script>
-  <script src="cad.js?v=1788600000257" defer></script>
+  <script src="cad.js?v=1788600000260" defer></script>
   <script type="importmap">
   {
     "imports": {

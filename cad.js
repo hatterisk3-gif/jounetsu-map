@@ -391,8 +391,9 @@ window.updateCadSvgOverlay = (opts) => {
                 e.stopPropagation();
                 e.preventDefault();
                 if (window.cadPinMode) return;
-                if (p.uneIndex && typeof window.cadDeleteRidgeByTap === 'function') window.cadDeleteRidgeByTap(p.uneIndex);
+                if (p.uneIndex && typeof window.cadSelectRidgeByTap === 'function') window.cadSelectRidgeByTap(p.uneIndex);
             });
+            if (typeof window.cadApplyRidgeSelectionStyle_ === 'function') window.cadApplyRidgeSelectionStyle_(p);
             pathsGroup.appendChild(p._svgPathNode);
 
             let textNode = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -1128,6 +1129,8 @@ window.updateCadSvgOverlay = (opts) => {
 
     // SVG再構築で消えるため、GPS測位中ならプレビューを描き直す
     if (typeof window.cadDrawMakuraEdgeOverlay === 'function') window.cadDrawMakuraEdgeOverlay();
+
+    if (typeof window.cadRefreshRidgeSelectionUi_ === 'function') window.cadRefreshRidgeSelectionUi_();
 
     if (window.cadGpsWatchId != null && window.cadGpsLastPos && typeof window.cadDrawGpsPreviewOnSvg === 'function') {
         window.cadDrawGpsPreviewOnSvg(
@@ -6371,17 +6374,106 @@ window.cadClearMakuraEdgePick = () => {
     if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: true });
 };
 
+window.cadMetersAlongBearing_ = (originLngLat, coord, bearingDeg) => {
+    const lat0 = originLngLat[1] * Math.PI / 180;
+    const kx = 111320 * Math.cos(lat0);
+    const ky = 110540;
+    const dx = (coord[0] - originLngLat[0]) * kx;
+    const dy = (coord[1] - originLngLat[1]) * ky;
+    const rad = bearingDeg * Math.PI / 180;
+    return dx * Math.sin(rad) + dy * Math.cos(rad);
+};
+
+window.cadDestinationMeters_ = (originLngLat, meters, bearingDeg) => {
+    const m = Number(meters) || 0;
+    if (Math.abs(m) < 1e-4) return [originLngLat[0], originLngLat[1]];
+    const b = m >= 0 ? bearingDeg : (bearingDeg + 180);
+    return turf.destination(turf.point(originLngLat), Math.abs(m), b, { units: 'meters' }).geometry.coordinates;
+};
+
+/** 同じ側・ほぼ同じ方角の辺を1本にまとめ、枕の下辺が直線になる帯を作る */
+window.cadBuildStraightMakuraStrip_ = (ring, tPoly, edgeIndexes, widthM) => {
+    const infos = edgeIndexes.map((ei) => window.cadRingEdgeInfo(ring, ei)).filter((info) => info && info.len >= 0.15);
+    if (!infos.length || typeof turf === 'undefined') return null;
+    const center = turf.center(tPoly).geometry.coordinates;
+    const inward = window.cadInwardBearingForEdge(infos[0], center);
+    const along = infos[0].bearing;
+    const origin = infos[0].a;
+    let minS = Infinity;
+    let maxS = -Infinity;
+    infos.forEach((info) => {
+        [info.a, info.b].forEach((c) => {
+            const s = window.cadMetersAlongBearing_(origin, c, along);
+            if (s < minS) minS = s;
+            if (s > maxS) maxS = s;
+        });
+    });
+    if (!(maxS - minS > 0.3)) return null;
+    const inset = (window.CAD_MAKURA_EDGE_INSET_M > 0) ? window.CAD_MAKURA_EDGE_INSET_M : 0.5;
+    const gap = (window.CAD_MAKURA_RIDGE_GAP_M > 0) ? window.CAD_MAKURA_RIDGE_GAP_M : 0.35;
+    let innerDist = inset + widthM;
+    const ridges = window.cadListMainRidgeEntries();
+    let nearest = Infinity;
+    ridges.forEach((r) => {
+        const pts = r.poly && r.poly.geometry && r.poly.geometry.coordinates && r.poly.geometry.coordinates[0];
+        if (!pts) return;
+        pts.forEach((c) => {
+            const s = window.cadMetersAlongBearing_(origin, c, along);
+            if (s < minS - 0.4 || s > maxS + 0.4) return;
+            const d = window.cadMetersAlongBearing_(origin, c, inward);
+            if (d > inset - 0.2 && d < nearest) nearest = d;
+        });
+    });
+    if (nearest < Infinity) {
+        const limit = nearest - gap;
+        if (limit < innerDist) innerDist = limit;
+    }
+    if (innerDist < inset + 0.2) return null;
+    const a = window.cadDestinationMeters_(origin, minS, along);
+    const b = window.cadDestinationMeters_(origin, maxS, along);
+    const aOut = window.cadDestinationMeters_(a, inset, inward);
+    const bOut = window.cadDestinationMeters_(b, inset, inward);
+    const aIn = window.cadDestinationMeters_(a, innerDist, inward);
+    const bIn = window.cadDestinationMeters_(b, innerDist, inward);
+    let rect = null;
+    try { rect = turf.polygon([[aOut, bOut, bIn, aIn, aOut]]); } catch (e) { return null; }
+    try {
+        const clipped = turf.intersect(tPoly, rect);
+        return clipped || null;
+    } catch (e) {
+        return rect;
+    }
+};
+
 window.cadCreateMakuraFromEdges = (ring, tPoly, edgeIndexes, widthM) => {
     if (!edgeIndexes.length) return [];
+    const center = turf.center(tPoly).geometry.coordinates;
+    const items = edgeIndexes.map((ei) => {
+        const info = window.cadRingEdgeInfo(ring, ei);
+        if (!info) return null;
+        return { ei: ei, info: info, inward: window.cadInwardBearingForEdge(info, center) };
+    }).filter(Boolean);
+    const used = {};
+    const align = (a, b) => {
+        const diff = window.cadBearingDiff(a, b);
+        return Math.min(diff, Math.abs(180 - diff));
+    };
     const features = [];
-    edgeIndexes.forEach((ei) => {
-        const strip = window.cadBuildInwardEdgeStrip(ring, tPoly, ei, widthM);
+    items.forEach((start) => {
+        if (used[start.ei]) return;
+        const group = [start.ei];
+        used[start.ei] = true;
+        items.forEach((other) => {
+            if (used[other.ei]) return;
+            if (align(start.info.bearing, other.info.bearing) > 12) return;
+            if (window.cadBearingDiff(start.inward, other.inward) > 35) return;
+            used[other.ei] = true;
+            group.push(other.ei);
+        });
+        const strip = window.cadBuildStraightMakuraStrip_(ring, tPoly, group, widthM);
         if (!strip) return;
-        const gapM = (window.CAD_MAKURA_RIDGE_GAP_M > 0) ? window.CAD_MAKURA_RIDGE_GAP_M : 0.35;
-        const clipped = window.cadDifferenceOthers(strip, null, gapM);
-        if (!clipped) return;
         let flat;
-        try { flat = turf.flatten(clipped); } catch (e) { flat = { features: [clipped] }; }
+        try { flat = turf.flatten(strip); } catch (e) { flat = { features: [strip] }; }
         (flat.features || []).forEach((feature) => {
             const one = window.cadCoalesceToPolygon(feature);
             if (!one || window.cadFeatureArea(one) < 0.4) return;
@@ -6398,7 +6490,7 @@ window.cadCreateMakuraFromEdges = (ring, tPoly, edgeIndexes, widthM) => {
     }
     let flatU;
     try { flatU = turf.flatten(united); } catch (e) { flatU = { features: [united] }; }
-    return (flatU.features || []).map(f => window.cadCoalesceToPolygon(f)).filter(f => f && window.cadFeatureArea(f) >= 0.4);
+    return (flatU.features || []).map((f) => window.cadCoalesceToPolygon(f)).filter((f) => f && window.cadFeatureArea(f) >= 0.4);
 };
 
 window.cadMergeParallelEdgesIntoEndRidges = (ring, tPoly, edgeIndexes, widthM) => {
@@ -8239,71 +8331,72 @@ window.cadGenerateLines = () => {
         const obliqueSegs = window.cadCollectObliqueClearanceSegs(coords, angle, endMarginMeters);
 
         const lineLen = diagDist + 40;
-        let rects = [];
+        const ridgeRatio = typeof window.cadRidgeGapRatio !== 'undefined' ? (1 - window.cadRidgeGapRatio) : 0.8;
+        const buildRidgeRects = (extraInset) => {
+            const avail = Math.max(uneCount * 0.2, availableWidth - 2 * extraInset);
+            const widthM = avail / uneCount;
+            const start = -maxNegDist + sideMarginMeters + extraInset + widthM / 2;
+            const out = [];
+            let produced = 0;
+            for (let i = 0; i < uneCount; i++) {
+                let offset = start + i * widthM;
+                let direction = offset >= 0 ? growDirection : growDirection + 180;
+                let absOffset = Math.abs(offset);
+                let oPt = turf.destination(baseOrigin, absOffset, direction, { units: 'meters' });
 
-        for (let i = 0; i < uneCount; i++) {
-            let offset = startOffset + i * actualWidthM;
-            let direction = offset >= 0 ? growDirection : growDirection + 180;
-            let absOffset = Math.abs(offset);
-            let oPt = turf.destination(baseOrigin, absOffset, direction, { units: 'meters' });
+                let pt1 = turf.destination(oPt, lineLen / 2, angle, { units: 'meters' });
+                let w = widthM * ridgeRatio;
 
-            let pt1 = turf.destination(oPt, lineLen / 2, angle, { units: 'meters' });
-            let ratio = typeof window.cadRidgeGapRatio !== 'undefined' ? (1 - window.cadRidgeGapRatio) : 0.8;
-            let w = actualWidthM * ratio;
-            
-            let checkValid = (dist) => {
-                let c = turf.destination(pt1, dist, angle + 180, {units: 'meters'});
-                // 側面余白は配置オフセット側で既に確保済み。
-                // ここへ足すと畝端が過剰に短くなり、外枠〜畝の間が空きすぎるため畝幅のみで判定する。
-                let wCheck = w;
-                let c_fwd = turf.destination(c, endMarginMeters, angle + 180, {units: 'meters'});
-                let c_bwd = turf.destination(c, endMarginMeters, angle, {units: 'meters'});
-                
-                let p_fwd_L = turf.destination(c_fwd, wCheck / 2, angle + 90, {units: 'meters'});
-                let p_fwd_R = turf.destination(c_fwd, wCheck / 2, angle - 90, {units: 'meters'});
-                let p_bwd_L = turf.destination(c_bwd, wCheck / 2, angle + 90, {units: 'meters'});
-                let p_bwd_R = turf.destination(c_bwd, wCheck / 2, angle - 90, {units: 'meters'});
-                let c_L = turf.destination(c, wCheck / 2, angle + 90, {units: 'meters'});
-                let c_R = turf.destination(c, wCheck / 2, angle - 90, {units: 'meters'});
+                let checkValid = (dist) => {
+                    let c = turf.destination(pt1, dist, angle + 180, {units: 'meters'});
+                    let wCheck = w;
+                    let c_fwd = turf.destination(c, endMarginMeters, angle + 180, {units: 'meters'});
+                    let c_bwd = turf.destination(c, endMarginMeters, angle, {units: 'meters'});
 
-                let ptsToCheck = [p_fwd_L, p_fwd_R, p_bwd_L, p_bwd_R, c_L, c_R];
+                    let p_fwd_L = turf.destination(c_fwd, wCheck / 2, angle + 90, {units: 'meters'});
+                    let p_fwd_R = turf.destination(c_fwd, wCheck / 2, angle - 90, {units: 'meters'});
+                    let p_bwd_L = turf.destination(c_bwd, wCheck / 2, angle + 90, {units: 'meters'});
+                    let p_bwd_R = turf.destination(c_bwd, wCheck / 2, angle - 90, {units: 'meters'});
+                    let c_L = turf.destination(c, wCheck / 2, angle + 90, {units: 'meters'});
+                    let c_R = turf.destination(c, wCheck / 2, angle - 90, {units: 'meters'});
 
-                if (window.cadPointHitsObliqueSeg_(c, obliqueSegs, endMarginMeters)) return false;
-                if (window.cadPointHitsObliqueSeg_(c_L, obliqueSegs, endMarginMeters)) return false;
-                if (window.cadPointHitsObliqueSeg_(c_R, obliqueSegs, endMarginMeters)) return false;
+                    let ptsToCheck = [p_fwd_L, p_fwd_R, p_bwd_L, p_bwd_R, c_L, c_R];
 
-                for (let pt of ptsToCheck) {
-                    if (!turf.booleanPointInPolygon(pt, tPoly)) return false;
-                }
-                
-                if (avoidPolys.length > 0) {
-                    for (let av of avoidPolys) {
-                        for (let pt of ptsToCheck) {
-                            if (turf.booleanPointInPolygon(pt, av)) return false;
+                    if (window.cadPointHitsObliqueSeg_(c, obliqueSegs, endMarginMeters)) return false;
+                    if (window.cadPointHitsObliqueSeg_(c_L, obliqueSegs, endMarginMeters)) return false;
+                    if (window.cadPointHitsObliqueSeg_(c_R, obliqueSegs, endMarginMeters)) return false;
+
+                    for (let pt of ptsToCheck) {
+                        if (!turf.booleanPointInPolygon(pt, tPoly)) return false;
+                    }
+
+                    if (avoidPolys.length > 0) {
+                        for (let av of avoidPolys) {
+                            for (let pt of ptsToCheck) {
+                                if (turf.booleanPointInPolygon(pt, av)) return false;
+                            }
                         }
                     }
-                }
-                return true;
-            };
+                    return true;
+                };
 
-            let stepMeters = 0.5;
-            let validSegments = [];
-            let currentSegment = null;
-            
-            for (let d = 0; d <= lineLen; d += stepMeters) {
-                let isValid = checkValid(d);
-                if (isValid) {
-                    if (!currentSegment) {
-                        let fine_d = d;
-                        while (fine_d - 0.1 >= d - stepMeters && checkValid(fine_d - 0.1)) {
-                            fine_d -= 0.1;
+                let stepMeters = 0.5;
+                let validSegments = [];
+                let currentSegment = null;
+
+                for (let d = 0; d <= lineLen; d += stepMeters) {
+                    let isValid = checkValid(d);
+                    if (isValid) {
+                        if (!currentSegment) {
+                            let fine_d = d;
+                            while (fine_d - 0.1 >= d - stepMeters && checkValid(fine_d - 0.1)) {
+                                fine_d -= 0.1;
+                            }
+                            currentSegment = { start: fine_d, end: d };
+                        } else {
+                            currentSegment.end = d;
                         }
-                        currentSegment = { start: fine_d, end: d };
-                    } else {
-                        currentSegment.end = d;
-                    }
-                } else {
-                    if (currentSegment) {
+                    } else if (currentSegment) {
                         let fine_d = currentSegment.end;
                         while (fine_d + 0.1 <= d && checkValid(fine_d + 0.1)) {
                             fine_d += 0.1;
@@ -8313,30 +8406,48 @@ window.cadGenerateLines = () => {
                         currentSegment = null;
                     }
                 }
-            }
-            if (currentSegment) {
-                let fine_d = currentSegment.end;
-                while (fine_d + 0.1 <= lineLen && checkValid(fine_d + 0.1)) {
-                    fine_d += 0.1;
+                if (currentSegment) {
+                    let fine_d = currentSegment.end;
+                    while (fine_d + 0.1 <= lineLen && checkValid(fine_d + 0.1)) {
+                        fine_d += 0.1;
+                    }
+                    currentSegment.end = fine_d;
+                    if (currentSegment.end - currentSegment.start >= 1.0) validSegments.push(currentSegment);
                 }
-                currentSegment.end = fine_d;
-                if (currentSegment.end - currentSegment.start >= 1.0) {
-                    validSegments.push(currentSegment);
+
+                if (validSegments.length) produced++;
+                validSegments.forEach(seg => {
+                    let sPt = turf.destination(pt1, seg.start, angle + 180, {units: 'meters'});
+                    let ePt = turf.destination(pt1, seg.end, angle + 180, {units: 'meters'});
+                    let p1c = turf.destination(sPt, w / 2, angle + 90, {units: 'meters'}).geometry.coordinates;
+                    let p2c = turf.destination(sPt, w / 2, angle - 90, {units: 'meters'}).geometry.coordinates;
+                    let p3c = turf.destination(ePt, w / 2, angle - 90, {units: 'meters'}).geometry.coordinates;
+                    let p4c = turf.destination(ePt, w / 2, angle + 90, {units: 'meters'}).geometry.coordinates;
+                    out.push(turf.polygon([[p1c, p2c, p3c, p4c, p1c]]));
+                });
+            }
+            return { rects: out, produced: produced };
+        };
+
+        let packed = buildRidgeRects(0);
+        if (packed.produced < uneCount && availableWidth > 1) {
+            let lo = 0;
+            let hi = Math.max(0.05, availableWidth * 0.45);
+            let best = packed;
+            for (let iter = 0; iter < 8; iter++) {
+                const mid = (lo + hi) / 2;
+                const trial = buildRidgeRects(mid);
+                if (trial.produced >= uneCount) {
+                    best = trial;
+                    hi = mid;
+                } else {
+                    if (trial.produced > best.produced) best = trial;
+                    lo = mid;
                 }
             }
-            
-            validSegments.forEach(seg => {
-                let sPt = turf.destination(pt1, seg.start, angle + 180, {units: 'meters'});
-                let ePt = turf.destination(pt1, seg.end, angle + 180, {units: 'meters'});
-                
-                let p1 = turf.destination(sPt, w / 2, angle + 90, {units: 'meters'}).geometry.coordinates;
-                let p2 = turf.destination(sPt, w / 2, angle - 90, {units: 'meters'}).geometry.coordinates;
-                let p3 = turf.destination(ePt, w / 2, angle - 90, {units: 'meters'}).geometry.coordinates;
-                let p4 = turf.destination(ePt, w / 2, angle + 90, {units: 'meters'}).geometry.coordinates;
-                
-                rects.push(turf.polygon([[p1, p2, p3, p4, p1]]));
-            });
+            packed = best;
         }
+        let rects = packed.rects;
 
         let successCount = 0;
         let polyIndex = 1;
@@ -8618,29 +8729,97 @@ window.cadResizePoly = (scaleFactor, isContinuous = false) => {
     if (!isContinuous) window.saveCadStateToHistory();
 };
 
-window.cadDeleteRidgeByTap = (uneIndex) => {
-    if (window.cadPinMode || !uneIndex) return;
+window.cadSelectedRidgeId = null;
+
+window.cadFindRidgeByIndex_ = (uneIndex) => {
     const lists = [window.cadUnePolygons, window.cadCustomShapes];
-    let found = null;
-    let list = null;
-    let at = -1;
     for (let li = 0; li < lists.length; li++) {
         const arr = lists[li];
         if (!arr) continue;
-        const i = arr.findIndex((p) => p && p.uneIndex === uneIndex);
-        if (i >= 0) { found = arr[i]; list = arr; at = i; break; }
+        const at = arr.findIndex((p) => p && p.uneIndex === uneIndex);
+        if (at >= 0) return { found: arr[at], list: arr, at: at };
     }
-    if (!found || !list) return;
-    const title = found._displayLabel || found.customLabel || '';
-    const group = found.uneGroup && found.uneGroup !== 'default' ? found.uneGroup : '';
-    const name = [title, group].filter(Boolean).join(' ');
-    if (!confirm((name || 'この畝') + 'を削除しますか？')) return;
-    try { found.setMap(null); } catch (e) {}
-    list.splice(at, 1);
+    return null;
+};
+
+window.cadRidgeSelectName_ = (poly) => {
+    if (!poly) return '畝';
+    const title = poly._displayLabel || poly.customLabel || '';
+    const group = poly.uneGroup && poly.uneGroup !== 'default' ? poly.uneGroup : '';
+    return [title, group].filter(Boolean).join(' ') || '畝';
+};
+
+window.cadApplyRidgeSelectionStyle_ = (poly) => {
+    const node = poly && poly._svgPathNode;
+    if (!node) return;
+    const on = !!(window.cadSelectedRidgeId && poly.uneIndex === window.cadSelectedRidgeId);
+    node.setAttribute('stroke', on ? '#FFEB3B' : '#558B2F');
+    node.setAttribute('stroke-width', on ? '5' : '2');
+};
+
+window.cadRefreshRidgeSelectionUi_ = () => {
+    const bar = document.getElementById('cadRidgeSelectBar');
+    const label = document.getElementById('cadRidgeSelectLabel');
+    const hit = window.cadSelectedRidgeId ? window.cadFindRidgeByIndex_(window.cadSelectedRidgeId) : null;
+    if (!hit || !hit.found) {
+        window.cadSelectedRidgeId = null;
+        if (bar) bar.style.display = 'none';
+        return;
+    }
+    if (bar) bar.style.display = 'block';
+    if (label) label.textContent = '選択中: ' + window.cadRidgeSelectName_(hit.found);
+};
+
+window.cadPaintRidgeSelection_ = () => {
+    const all = [...(window.cadUnePolygons || []), ...(window.cadCustomShapes || [])];
+    all.forEach((p) => window.cadApplyRidgeSelectionStyle_(p));
+};
+
+window.cadSelectRidgeByTap = (uneIndex) => {
+    if (window.cadPinMode || !uneIndex) return;
+    if (window.cadSelectedRidgeId === uneIndex) {
+        window.cadClearRidgeSelection();
+        return;
+    }
+    const hit = window.cadFindRidgeByIndex_(uneIndex);
+    if (!hit) return;
+    window.cadSelectedRidgeId = uneIndex;
+    window.cadRefreshRidgeSelectionUi_();
+    window.cadPaintRidgeSelection_();
+    const msg = document.getElementById('cadPinModeMsg');
+    if (msg) {
+        msg.innerText = '選択中です。削除するを押すと消えます。';
+        msg.style.color = '#FFB74D';
+    }
+};
+
+window.cadClearRidgeSelection = () => {
+    window.cadSelectedRidgeId = null;
+    window.cadRefreshRidgeSelectionUi_();
+    window.cadPaintRidgeSelection_();
+};
+
+window.cadDeleteSelectedRidge = () => {
+    const id = window.cadSelectedRidgeId;
+    if (!id) return;
+    const hit = window.cadFindRidgeByIndex_(id);
+    if (!hit || !hit.found) {
+        window.cadClearRidgeSelection();
+        return;
+    }
+    try { hit.found.setMap(null); } catch (e) {}
+    hit.list.splice(hit.at, 1);
+    window.cadSelectedRidgeId = null;
+    window.cadRefreshRidgeSelectionUi_();
     if (typeof window.reassignLabels === 'function') window.reassignLabels();
     window.cadSvgNeedsRebuild = true;
     if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
     if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+    const msg = document.getElementById('cadPinModeMsg');
+    if (msg) {
+        msg.innerText = '畝を削除しました。戻すで元に戻せます。';
+        msg.style.color = '#FFB74D';
+    }
 };
 
 window.cadDeletePoly = () => {

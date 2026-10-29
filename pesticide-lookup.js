@@ -107,6 +107,7 @@
       ['usageCount', '使用回数'],
       ['usageMethod', '使用方法']
     ].filter(function (col) {
+      if (col[0] === 'usageCount') return true;
       if (col[0] === 'phi') return rows.some(function (r) { return phiLabel(r.phiDays); });
       return rows.some(function (r) { return String(r[col[0]] || '').trim(); });
     });
@@ -162,6 +163,7 @@
       if (res && res.manufacturer) bits.push(res.manufacturer);
       if (res && res.regNumber) bits.push('登録 ' + res.regNumber);
       bits.push((res && res.count ? res.count : tableRows.length) + ' 行' + ((res && res.truncated) ? '（上位のみ）' : ''));
+      if (res && res.usageCountAvailable === false) bits.push('使用回数は、公式CSVを取り直すと入ります');
       if (meta) meta.textContent = bits.join(' ／ ') + '。使用前に製品ラベルを確認してください。';
       if (!tableRows.length) {
         if (wrap) wrap.innerHTML = '<div class="pest-lookup-empty">' + esc((res && res.message) || '適用表がありません。') + '</div>';
