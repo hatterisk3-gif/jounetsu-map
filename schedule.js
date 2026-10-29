@@ -1357,13 +1357,19 @@ async function fetchWeatherAndUpdateUI() {
         google.maps.event.addListener(map, 'click', () => infoWindow.close());
 
         map.addListener('zoom_changed', () => { 
-          const z = map.getZoom(); 
+          const z = map.getZoom();
+          if (typeof window.syncLocationPinGlowScale_ === 'function') window.syncLocationPinGlowScale_(map);
           for(let id in loadedPolygons) { 
             const p = loadedPolygons[id]; 
-            if(p.isMarker) { 
-              p.marker.setVisible(z >= 15); 
-              if(z < 17) p.marker.setLabel(null); 
-              else if(p.labelConfig) p.marker.setLabel(p.labelConfig); 
+            if(p.isMarker && p.marker) {
+              if (typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction)) {
+                if (typeof window.refreshLocationPinMarker_ === 'function') window.refreshLocationPinMarker_(p.marker, p.name, z);
+                else p.marker.setVisible(true);
+              } else {
+                p.marker.setVisible(z >= 15); 
+                if(z < 17) p.marker.setLabel(null); 
+                else if(p.labelConfig) p.marker.setLabel(p.labelConfig);
+              }
             } else if(p.marker) {
               // 土壌水分表示中は % ラベルを常時見せる
               p.marker.setVisible(window._soilMoistureOverlayOn ? true : (z >= 14)); 
@@ -1625,7 +1631,31 @@ async function fetchWeatherAndUpdateUI() {
 
           // --- 描画処理 ---
           if (!p.coords || p.coords.length === 0) continue;
-          if (p.isMarker) {
+          if (p.isMarker && typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction)) {
+            const zNow = map.getZoom();
+            const lblConf = (typeof window.locationPinLabelConfig_ === 'function')
+              ? window.locationPinLabelConfig_(p.name, zNow)
+              : { text: p.name, color: '#3E2723', fontSize: '13px', fontWeight: 'bold', className: 'location-pin-label' };
+            const icon = (typeof window.locationPinMarkerIcon_ === 'function') ? window.locationPinMarkerIcon_(zNow) : null;
+            if (!p.marker) {
+              p.marker = new google.maps.Marker({
+                position: new google.maps.LatLng(p.coords[0].lat, p.coords[0].lng),
+                map: map,
+                visible: true,
+                zIndex: 1200,
+                label: lblConf,
+                icon: icon || undefined
+              });
+              if (typeof window.attachLocationPinGlow_ === 'function') window.attachLocationPinGlow_(p.marker);
+              google.maps.event.addListener(p.marker, 'click', (e) => showPopup(p, e.latLng));
+            } else {
+              if (typeof window.refreshLocationPinMarker_ === 'function') window.refreshLocationPinMarker_(p.marker, p.name, zNow);
+              else { p.marker.setVisible(true); p.marker.setLabel(lblConf); if (icon) p.marker.setIcon(icon); }
+              if (!p.marker._locationGlow && typeof window.attachLocationPinGlow_ === 'function') window.attachLocationPinGlow_(p.marker);
+            }
+            p.labelConfig = lblConf;
+            if (typeof window.syncLocationPinGlowScale_ === 'function') window.syncLocationPinGlowScale_(map);
+          } else if (p.isMarker) {
             const strokeCol = hasProblem ? '#FFEB3B' : 'white';
             const strokeWid = hasProblem ? '4' : '2';
             const opacity = isActiveForDept ? 1 : 0.4;
@@ -1727,7 +1757,12 @@ async function fetchWeatherAndUpdateUI() {
                   </div>`;
         }).join('');
 
-        let funcHtml = p.isMarker ? `<div style="font-size:11px; color:#555; margin-bottom:5px;">機能: <b>${p.signFunction || '一般看板'}</b></div>` : '';
+        let funcHtml = '';
+        if (p.isMarker && typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction)) {
+          funcHtml = `<div style="font-size:11px; color:#F57F17; margin-bottom:5px; font-weight:bold;">拠点</div>`;
+        } else if (p.isMarker) {
+          funcHtml = `<div style="font-size:11px; color:#555; margin-bottom:5px;">機能: <b>${p.signFunction || '一般看板'}</b></div>`;
+        }
 
         // 圃場の場合のみ「衛星写真で確認」ボタンを追加
         let satBtn = '';

@@ -16,6 +16,7 @@
   <script src="terms.js?v=1786456000000"></script>
 
   <link rel="stylesheet" href="admin.css?v=1788600000110">
+  <link rel="stylesheet" href="location-pin.css?v=1788600000301">
   <link rel="stylesheet" href="cad.css">
 </head>
 
@@ -47,6 +48,7 @@
       <div class="admin-reg-plus-title">登録メニュー</div>
       <button type="button" onclick="pickAdminRegPlus_('draw')">✏️ 圃場を登録</button>
       <button type="button" onclick="pickAdminRegPlus_('marker')">📍 看板を登録</button>
+      <button type="button" onclick="pickAdminRegPlus_('location')">🏢 拠点を登録</button>
       <button type="button" onclick="pickAdminRegPlus_('equipment')">🚜 機械管理</button>
       <button type="button" onclick="pickAdminRegPlus_('batchDelete')" style="color:#c62828;">🗑️ 一括削除</button>
       <button type="button" class="admin-reg-plus-cancel" onclick="closeAdminRegPlusMenu_()">閉じる</button>
@@ -605,7 +607,7 @@
   <div class="control-panel">
     <div class="control-row">
       <div class="search-container">
-        <input type="text" id="searchInput" class="search-input" placeholder="🔍 圃場・看板...">
+        <input type="text" id="searchInput" class="search-input" placeholder="🔍 圃場・看板・拠点...">
         <div id="searchSuggestions"></div>
       </div>
       <div class="search-container">
@@ -743,7 +745,8 @@
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=ja&v=weekly" async defer></script>
 
   <script src="api-client.js?v=1788600000116" defer></script>
-  <script src="admin.js?v=1788600000135" defer></script>
+  <script src="location-pin.js?v=1788600000301" defer></script>
+  <script src="admin.js?v=1788600000301" defer></script>
   <script src="admin_cost.js?v=1785489000008" defer></script>
   <script src="admin_crop_work.js?v=1787570400000" defer></script>
   <script src="tracking.js?v=1788600000043" defer></script>

@@ -16,6 +16,7 @@
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1786243000000"></script>
   <link rel="stylesheet" href="schedule.css?v=1788600000121">
+  <link rel="stylesheet" href="location-pin.css?v=1788600000301">
   <link rel="stylesheet" href="dump-embed/dump-tree-gantt.css?v=1788600000055">
 </head>
 
@@ -941,7 +942,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000122';
+    const cacheBust = '1788600000301';
     // 豚糞共有：台数＋短いGoogleマップURL＋座標（v1.49）
     // ※ https://maps.google.com/?q=緯度,経度
     // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）
@@ -1060,6 +1061,7 @@
         markBootstrapFileLoaded('cultivation_modal.html');
       })
       .then(() => appendScript('weather-agri.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('weather-agri.js')))
+      .then(() => appendScript('location-pin.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('location-pin.js')))
       .then(() => appendScript('schedule.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('schedule.js')))
       .then(() => appendScript('dump-embed/dump-tree-gantt.js?v=' + cacheBust).catch(function () {}))
       .then(() => appendScript('day-planner.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('day-planner.js')))

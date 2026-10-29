@@ -1,0 +1,44 @@
+:root { --location-pin-scale: 1; }
+
+.location-pin-glow {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 0;
+  transform: translate(-50%, -50%) scale(var(--location-pin-scale, 1));
+  transform-origin: center center;
+}
+
+.location-pin-ring {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 78px;
+  height: 78px;
+  margin-left: -39px;
+  margin-top: -39px;
+  border-radius: 50%;
+  background: rgba(255, 235, 59, 0.32);
+  box-shadow: 0 0 16px 8px rgba(255, 235, 59, 0.95), 0 0 34px 16px rgba(255, 193, 7, 0.55);
+  animation: locationPinPulse 1.7s ease-out infinite;
+}
+
+.location-pin-ring.delay { animation-delay: 0.85s; }
+
+@keyframes locationPinPulse {
+  0% { transform: scale(0.32); opacity: 0.95; }
+  70% { opacity: 0.4; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+
+.location-pin-label {
+  background: #FFEB3B !important;
+  color: #3E2723 !important;
+  border: 2px solid #F57F17 !important;
+  padding: 3px 8px !important;
+  border-radius: 8px !important;
+  font-weight: bold !important;
+  box-shadow: 0 0 12px 3px rgba(255, 235, 59, 0.95);
+  white-space: nowrap;
+}

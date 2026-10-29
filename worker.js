@@ -1459,10 +1459,14 @@ window.plotClockInMarker = (state, doCenter) => {
           return;
         }
         if (safeCoords.length === 1) {
-          const marker = createSignboardMarker(name, new google.maps.LatLng(safeCoords[0].lat, safeCoords[0].lng), color, id);
+          const marker = createSignboardMarker(name, new google.maps.LatLng(safeCoords[0].lat, safeCoords[0].lng), color, id, signFunc);
           if (!window._workerFieldOverlays) window._workerFieldOverlays = [];
           window._workerFieldOverlays.push(marker);
-          loadedPolygons[id] = { id, marker, name, color, photos: photos || [], author, isMarker: true, location: loc || '', labelConfig: { text: name, color: '#333', fontSize: '13px', fontWeight: 'bold', className: 'signboard-label' }, signFunction: signFunc || '一般看板', linkedSigns: linkedSigns || "" };
+          const isLocPin = typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(signFunc);
+          const labelConfig = isLocPin && typeof window.locationPinLabelConfig_ === 'function'
+            ? window.locationPinLabelConfig_(name, map.getZoom())
+            : { text: name, color: '#333', fontSize: '13px', fontWeight: 'bold', className: 'signboard-label' };
+          loadedPolygons[id] = { id, marker, name, color, photos: photos || [], author, isMarker: true, location: loc || '', labelConfig: labelConfig, signFunction: signFunc || '一般看板', linkedSigns: linkedSigns || "" };
         } else {
           const isUnused = (status === '未使用（返却）' || status === '未使用');
           let currentCrop = getCurrentCrop(photos);
@@ -2488,21 +2492,36 @@ window.openTyphoonModal = function() {
 
       function updateMarkersVisibility() {
         const zoom = map.getZoom(), far = 15, close = 17;
+        if (typeof window.syncLocationPinGlowScale_ === 'function') window.syncLocationPinGlowScale_(map);
         for (let id in loadedPolygons) {
           const p = loadedPolygons[id]; if (!p.marker) continue;
           if (p.isMarker) {
-            p.marker.setVisible(zoom >= far);
-            if (!isMapSelecting) {
-              if (zoom < close) p.marker.setLabel(null); else if (p.labelConfig) p.marker.setLabel(p.labelConfig);
+            if (typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction)) {
+              if (typeof window.refreshLocationPinMarker_ === 'function') window.refreshLocationPinMarker_(p.marker, p.name, zoom);
+              else p.marker.setVisible(true);
+            } else {
+              p.marker.setVisible(zoom >= far);
+              if (!isMapSelecting) {
+                if (zoom < close) p.marker.setLabel(null); else if (p.labelConfig) p.marker.setLabel(p.labelConfig);
+              }
             }
           } else p.marker.setVisible(zoom >= 16); // ← ★ここの「14」を変更
         }
       }
 
-function createSignboardMarker(name, pos, icon, id) {
+function createSignboardMarker(name, pos, icon, id, signFunc) {
+        const isLocPin = typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(signFunc);
         if (String(name || '').indexOf('排水口') >= 0 && (!icon || icon === '🕳️')) icon = '🚩';
-        const zoom = map.getZoom(), config = { text: name, color: '#333', fontSize: '13px', fontWeight: 'bold', className: 'signboard-label' };
-        const marker = new google.maps.Marker({ position: pos, map: map, visible: zoom >= 15, label: zoom >= 17 ? config : null, icon: { url: `data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="20">${icon}</text></svg>`, scaledSize: new google.maps.Size(26,26), labelOrigin: new google.maps.Point(13,30) } });
+        const zoom = map.getZoom();
+        const config = isLocPin && typeof window.locationPinLabelConfig_ === 'function'
+          ? window.locationPinLabelConfig_(name, zoom)
+          : { text: name, color: '#333', fontSize: '13px', fontWeight: 'bold', className: 'signboard-label' };
+        const iconOpt = isLocPin && typeof window.locationPinMarkerIcon_ === 'function'
+          ? window.locationPinMarkerIcon_(zoom)
+          : { url: `data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="20">${icon}</text></svg>`, scaledSize: new google.maps.Size(26,26), labelOrigin: new google.maps.Point(13,30) };
+        const marker = new google.maps.Marker({ position: pos, map: map, visible: isLocPin ? true : zoom >= 15, zIndex: isLocPin ? 1200 : undefined, label: (isLocPin || zoom >= 17) ? config : null, icon: iconOpt });
+        if (isLocPin && typeof window.attachLocationPinGlow_ === 'function') window.attachLocationPinGlow_(marker);
+        if (isLocPin && typeof window.syncLocationPinGlowScale_ === 'function') window.syncLocationPinGlowScale_(map);
         google.maps.event.addListener(marker, 'click', (e) => { 
           if (window._isRidgeMeasuring && typeof window.handleRidgeMeasureMapClick === 'function') {
             window.handleRidgeMeasureMapClick(e);
