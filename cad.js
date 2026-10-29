@@ -562,8 +562,8 @@ window.updateCadSvgOverlay = (opts) => {
     let handleStateId = '';
     const editEl = document.getElementById('cadEditIndex');
     const editingId = editEl ? editEl.value : '';
-    // 編集中の畝だけハンドル（全畝ハンドルは100本超で激重）
-    handleStateId = 'edit:' + (editingId || '') + '|';
+    const selectedRidgeId = window.cadSelectedRidgeId || '';
+    handleStateId = 'edit:' + (editingId || '') + '|sel:' + selectedRidgeId + '|';
     if (editingId) {
         const allForHandle = [...(window.cadUnePolygons || []), ...(window.cadCustomShapes || [])];
         const ep = allForHandle.find(p => p && p.uneIndex === editingId);
@@ -571,7 +571,7 @@ window.updateCadSvgOverlay = (opts) => {
     }
 
     let handlesGroup = svg.querySelector('#cadSvgHandles');
-    if (!light && handlesGroup && svg._lastHandleStateId !== handleStateId) {
+    if (!light && handlesGroup && !window.cadRidgeEndDragging && svg._lastHandleStateId !== handleStateId) {
         svg._lastHandleStateId = handleStateId;
         handlesGroup.innerHTML = '';
         
@@ -700,6 +700,11 @@ window.updateCadSvgOverlay = (opts) => {
             const ep = allForHandle.find(p => p && p.uneIndex === editingId);
             if (ep) createHandlesForPoly(ep);
         }
+        if (selectedRidgeId && typeof window.cadAttachRidgeEndHandles_ === 'function') {
+            const allForEnd = [...(window.cadUnePolygons || []), ...(window.cadCustomShapes || [])];
+            const sp = allForEnd.find(p => p && p.uneIndex === selectedRidgeId);
+            if (sp) window.cadAttachRidgeEndHandles_(sp, handlesGroup);
+        }
         createHandlesForNakamichiLines();
     }
     
@@ -823,6 +828,11 @@ window.updateCadSvgOverlay = (opts) => {
         const allForHandlePos = [...(window.cadUnePolygons || []), ...(window.cadCustomShapes || [])];
         const ep = allForHandlePos.find(p => p && p.uneIndex === editingId);
         if (ep) updateHandlesPosition(ep);
+    }
+    if (window.cadSelectedRidgeId && typeof window.cadPositionRidgeEndHandles_ === 'function') {
+        const allForEndPos = [...(window.cadUnePolygons || []), ...(window.cadCustomShapes || [])];
+        const sp = allForEndPos.find(p => p && p.uneIndex === window.cadSelectedRidgeId);
+        if (sp) window.cadPositionRidgeEndHandles_(sp);
     }
     if (window.cadNakamichiMapPolygons) {
         window.cadNakamichiMapPolygons.forEach(p => updateHandlesPosition(p));
@@ -6487,6 +6497,9 @@ window.cadCreateMakuraFromEdges = (ring, tPoly, edgeIndexes, widthM) => {
             if (used[other.ei]) return;
             if (align(start.info.bearing, other.info.bearing) > 12) return;
             if (window.cadBearingDiff(start.inward, other.inward) > 35) return;
+            const mid = turf.midpoint(turf.point(other.info.a), turf.point(other.info.b)).geometry.coordinates;
+            const off = window.cadMetersAlongBearing_(start.info.a, mid, start.info.bearing + 90);
+            if (Math.abs(off) > 0.75) return;
             used[other.ei] = true;
             group.push(other.ei);
         });
@@ -6654,7 +6667,8 @@ window.cadGenerateMakuraFromSelectedEdges = () => {
         alert('圃場が開かれていません。');
         return;
     }
-    const selected = Array.from(new Set(picked.concat(window.cadCollectObliqueMakuraEdges_(ring, picked))));
+    const frontIds = Array.isArray(window.cadFrontEdgeIndexes) ? window.cadFrontEdgeIndexes : [];
+    const selected = Array.from(new Set(picked.concat(frontIds).concat(window.cadCollectObliqueMakuraEdges_(ring, picked))));
     let tPoly = null;
     try { tPoly = turf.polygon([ring]); } catch (e) { tPoly = null; }
     if (!tPoly) {
@@ -8219,6 +8233,24 @@ window.cadPointHitsObliqueSeg_ = (pt, segs, gapM) => {
     return false;
 };
 
+/** 畝とほぼ平行な境界。側面の余白は、この辺から畝の横までの距離 */
+window.cadCollectSideClearanceSegs_ = (ringCoords, ridgeAngleDeg) => {
+    if (!ringCoords || typeof turf === 'undefined') return [];
+    const n = window.cadRingVertexCount(ringCoords);
+    const align = (a, b) => {
+        const diff = window.cadBearingDiff(a, b);
+        return Math.min(diff, Math.abs(180 - diff));
+    };
+    const segs = [];
+    for (let i = 0; i < n; i++) {
+        const info = window.cadRingEdgeInfo(ringCoords, i);
+        if (!info || info.len < 2.5) continue;
+        if (align(info.bearing, ridgeAngleDeg) > 12) continue;
+        segs.push([info.a, info.b]);
+    }
+    return segs;
+};
+
 /**
  * 端面の余白を、畝とほぼ平行な長い辺以外の境界へ最短距離でかける。
  * 斜めの辺や段差では、その帯に入らないよう畝を短くする。
@@ -8383,6 +8415,7 @@ window.cadGenerateLines = () => {
         
         let avoidPolys = [...nakamichiPolys, ...drainagePolys];
         const obliqueSegs = window.cadCollectObliqueClearanceSegs(coords, angle, endMarginMeters);
+        const sideSegs = window.cadCollectSideClearanceSegs_(coords, angle);
 
         const lineLen = diagDist + 40;
         const ridgeRatio = typeof window.cadRidgeGapRatio !== 'undefined' ? (1 - window.cadRidgeGapRatio) : 0.8;
@@ -8419,6 +8452,10 @@ window.cadGenerateLines = () => {
                     if (window.cadPointHitsObliqueSeg_(c, obliqueSegs, endMarginMeters)) return false;
                     if (window.cadPointHitsObliqueSeg_(c_L, obliqueSegs, endMarginMeters)) return false;
                     if (window.cadPointHitsObliqueSeg_(c_R, obliqueSegs, endMarginMeters)) return false;
+                    if (sideMarginMeters > 0.05) {
+                        if (window.cadPointHitsObliqueSeg_(c_L, sideSegs, sideMarginMeters)) return false;
+                        if (window.cadPointHitsObliqueSeg_(c_R, sideSegs, sideMarginMeters)) return false;
+                    }
 
                     for (let pt of ptsToCheck) {
                         if (!turf.booleanPointInPolygon(pt, tPoly)) return false;
@@ -8797,6 +8834,146 @@ window.cadFindRidgeByIndex_ = (uneIndex) => {
     return null;
 };
 
+window.cadRidgeEndCaps_ = (poly) => {
+    if (!poly || !poly.getPath || typeof turf === 'undefined') return null;
+    const path = poly.getPath();
+    const n = path.getLength();
+    if (n < 4) return null;
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+        const p = path.getAt(i);
+        pts.push({ lat: p.lat(), lng: p.lng(), i: i });
+    }
+    let bestLen = -1;
+    let bestI = 0;
+    for (let i = 0; i < n; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % n];
+        const len = turf.distance(turf.point([a.lng, a.lat]), turf.point([b.lng, b.lat]), { units: 'meters' });
+        if (len > bestLen) { bestLen = len; bestI = i; }
+    }
+    const a = pts[bestI];
+    const b = pts[(bestI + 1) % n];
+    const origin = [a.lng, a.lat];
+    const bearing = turf.bearing(turf.point(origin), turf.point([b.lng, b.lat]));
+    let minS = Infinity;
+    let maxS = -Infinity;
+    const scored = pts.map((p) => {
+        const s = window.cadMetersAlongBearing_(origin, [p.lng, p.lat], bearing);
+        if (s < minS) minS = s;
+        if (s > maxS) maxS = s;
+        return { i: p.i, lat: p.lat, lng: p.lng, s: s };
+    });
+    if (!(maxS - minS > 0.2)) return null;
+    const eps = Math.max(0.15, (maxS - minS) * 0.08);
+    const pack = (list) => {
+        let lat = 0;
+        let lng = 0;
+        list.forEach((p) => { lat += p.lat; lng += p.lng; });
+        return {
+            lat: lat / list.length,
+            lng: lng / list.length,
+            idxs: list.map((p) => p.i)
+        };
+    };
+    const startPts = scored.filter((p) => p.s <= minS + eps);
+    const endPts = scored.filter((p) => p.s >= maxS - eps);
+    if (startPts.length < 1 || endPts.length < 1) return null;
+    return { bearing: bearing, caps: [pack(startPts), pack(endPts)] };
+};
+
+window.cadAttachRidgeEndHandles_ = (poly, handlesGroup) => {
+    const caps = window.cadRidgeEndCaps_(poly);
+    if (!caps || !handlesGroup) return;
+    poly._svgEndHandles = [];
+    caps.caps.forEach((cap, capIndex) => {
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('r', '11');
+        circle.setAttribute('fill', '#FFEB3B');
+        circle.setAttribute('stroke', '#F57F17');
+        circle.setAttribute('stroke-width', '3');
+        circle.setAttribute('style', 'cursor: grab; pointer-events: auto;');
+        let dragging = false;
+        const onMove = (ev) => {
+            if (!dragging) return;
+            if (ev.cancelable) ev.preventDefault();
+            const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
+            const clientY = ev.touches ? ev.touches[0].clientY : ev.clientY;
+            const ll = window.screenPixelToLatLng(clientX, clientY);
+            if (!ll || !window.cadStretchRidgeEnd_) return;
+            window.cadStretchRidgeEnd_(poly, capIndex, ll.lng(), ll.lat());
+            if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: true });
+        };
+        const onEnd = () => {
+            if (!dragging) return;
+            dragging = false;
+            window.cadRidgeEndDragging = false;
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onEnd);
+            window.removeEventListener('touchmove', onMove);
+            window.removeEventListener('touchend', onEnd);
+            if (typeof window.reassignLabels === 'function') window.reassignLabels();
+            if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+            if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: true });
+        };
+        const onStart = (e) => {
+            dragging = true;
+            window.cadRidgeEndDragging = true;
+            e.stopPropagation();
+            e.preventDefault();
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onEnd);
+            window.addEventListener('touchmove', onMove, { passive: false });
+            window.addEventListener('touchend', onEnd);
+        };
+        circle.addEventListener('mousedown', onStart);
+        circle.addEventListener('touchstart', onStart, { passive: false });
+        handlesGroup.appendChild(circle);
+        poly._svgEndHandles.push(circle);
+    });
+    window.cadPositionRidgeEndHandles_(poly);
+};
+
+window.cadPositionRidgeEndHandles_ = (poly) => {
+    if (!poly || !poly._svgEndHandles || poly._svgEndHandles.length < 2) return;
+    const caps = window.cadRidgeEndCaps_(poly);
+    if (!caps) return;
+    caps.caps.forEach((cap, i) => {
+        const circle = poly._svgEndHandles[i];
+        if (!circle || typeof window.latLngToScreenPixel !== 'function') return;
+        const screenPt = window.latLngToScreenPixel(cap.lat, cap.lng);
+        circle.setAttribute('cx', screenPt.x);
+        circle.setAttribute('cy', screenPt.y);
+    });
+};
+
+window.cadStretchRidgeEnd_ = (poly, capIndex, lng, lat) => {
+    const caps = window.cadRidgeEndCaps_(poly);
+    if (!caps) return;
+    const cap = caps.caps[capIndex];
+    const anchor = caps.caps[1 - capIndex];
+    if (!cap || !anchor) return;
+    const anchorLL = [anchor.lng, anchor.lat];
+    let next = window.cadMetersAlongBearing_(anchorLL, [lng, lat], caps.bearing);
+    const cur = window.cadMetersAlongBearing_(anchorLL, [cap.lng, cap.lat], caps.bearing);
+    const sign = cur >= 0 ? 1 : -1;
+    if (Math.abs(next) < 0.4) next = sign * 0.4;
+    if ((sign > 0 && next < 0.4) || (sign < 0 && next > -0.4)) next = sign * 0.4;
+    const delta = next - cur;
+    if (Math.abs(delta) < 0.01) return;
+    const path = poly.getPath();
+    window.cadSuppressPathEvents = true;
+    try {
+        cap.idxs.forEach((idx) => {
+            const pt = path.getAt(idx);
+            const moved = window.cadDestinationMeters_([pt.lng(), pt.lat()], delta, caps.bearing);
+            path.setAt(idx, new google.maps.LatLng(moved[1], moved[0]));
+        });
+    } finally {
+        window.cadSuppressPathEvents = false;
+    }
+};
+
 window.cadRidgeSelectName_ = (poly) => {
     if (!poly) return '畝';
     const title = poly._displayLabel || poly.customLabel || '';
@@ -8841,9 +9018,10 @@ window.cadSelectRidgeByTap = (uneIndex) => {
     window.cadSelectedRidgeId = uneIndex;
     window.cadRefreshRidgeSelectionUi_();
     window.cadPaintRidgeSelection_();
+    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
     const msg = document.getElementById('cadPinModeMsg');
     if (msg) {
-        msg.innerText = '選択中です。削除するを押すと消えます。';
+        msg.innerText = '選択中です。上下の丸を引っ張ると長さを変えられます。';
         msg.style.color = '#FFB74D';
     }
 };
@@ -8852,6 +9030,7 @@ window.cadClearRidgeSelection = () => {
     window.cadSelectedRidgeId = null;
     window.cadRefreshRidgeSelectionUi_();
     window.cadPaintRidgeSelection_();
+    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
 };
 
 window.cadDeleteSelectedRidge = () => {
