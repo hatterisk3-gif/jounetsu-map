@@ -7044,6 +7044,7 @@ function startMerge(id) { isMergeMode = true; mergeBaseId = id; infoWindow.close
 async function execMerge(bId, tId) { if (bId === tId) return; if (!await customConfirm("マスタと履歴を統合しますか？")) { cancelMerge(); return; } const bP = loadedPolygons[bId], tP = loadedPolygons[tId]; if (tP.toukiId) bP.toukiId = bP.toukiId ? [...new Set((bP.toukiId + "," + tP.toukiId).split(","))].join(",") : tP.toukiId; tP.polygon.setMap(null); tP.marker.setMap(null); delete loadedPolygons[tId]; cancelMerge(); persistAdminInitCache_(); showAdminSyncToast('✅ 統合しました（同期中…）', 'ok'); const payload = { baseId: bId, targetId: tId, userName: currentUser }; syncAdminCall_('mergeFields', payload, { key: 'mergeFields:' + bId + ':' + tId, op: 'mergeFields', payload }).then(() => showAdminSyncToast('☁️ サーバーへ保存完了', 'ok')).catch(() => {}); }
 
 function createSignboardMarker(name, pos, icon, idOrRef) {
+    if (String(name || '').indexOf('排水口') >= 0 && (!icon || icon === '🕳️')) icon = '🚩';
     const getId = () => (idOrRef && typeof idOrRef === 'object' && 'id' in idOrRef) ? idOrRef.id : idOrRef;
     const zoom = map.getZoom(), config = { text: name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' };
     const marker = new google.maps.Marker({ position: pos, map: map, visible: zoom >= 15, label: zoom >= 17 ? config : null, icon: { url: `data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="20">${icon}</text></svg>`, scaledSize: new google.maps.Size(26, 26), labelOrigin: new google.maps.Point(13, 30) } });
@@ -7693,7 +7694,8 @@ window.cancelMarkerForm_ = () => {
 window._signRegQuickPresets_ = {
     water: { label: '給水地点', icon: '💧', name: '給水地点', signFunction: '機能なし' },
     inlet: { label: '給水口', icon: '⛲', name: '給水口', signFunction: '機能なし' },
-    drain: { label: '排水口', icon: '🕳️', name: '排水口', signFunction: '機能なし' },
+    drain: { label: '排水口', icon: '🚩', name: '排水口', signFunction: '機能なし' },
+    sw: { label: 'スイッチ', icon: '🔌', name: 'スイッチ', signFunction: '機能なし' },
     parking: { label: '駐車場', icon: '🅿️', name: '駐車場', signFunction: '機能なし' },
     toilet: { label: 'トイレ', icon: '🚻', name: 'トイレ', signFunction: '機能なし' },
     warehouse: { label: '倉庫', icon: '📦', name: '倉庫', signFunction: '倉庫' },
@@ -7792,8 +7794,13 @@ window.renderSignRegQuickScreen_ = () => {
           </button>
           <button type="button" onclick="pickSignRegQuick_('drain')"
             style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #80CBC4; border-radius:10px; background:#E0F2F1; cursor:pointer;">
-            <span style="font-size:28px; line-height:1;">🕳️</span>
+            <span style="font-size:28px; line-height:1;">🚩</span>
             <span><div style="font-weight:bold; color:#00695C; font-size:15px;">排水口</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">名前・機能を自動セット</div></span>
+          </button>
+          <button type="button" onclick="pickSignRegQuick_('sw')"
+            style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #FFE082; border-radius:10px; background:#FFF8E1; cursor:pointer;">
+            <span style="font-size:28px; line-height:1;">🔌</span>
+            <span><div style="font-weight:bold; color:#F57F17; font-size:15px;">スイッチ</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">名前・アイコンを自動セット</div></span>
           </button>
           <button type="button" onclick="pickSignRegQuick_('parking')"
             style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #90CAF9; border-radius:10px; background:#E3F2FD; cursor:pointer;">
@@ -9779,7 +9786,7 @@ window.shareFieldUrl = function(id, fieldName) {
 
 window.openM = (id) => {
     const p = loadedPolygons[id], isU = (p.status === '未使用（返却）' || p.status === '未使用');
-    const titleHtml = p.isMarker ? `<div style="font-size:28px; line-height:1; margin-bottom:5px;">${p.color}</div><b>${p.name}</b>` : `<b>${p.name}</b>`;
+    const titleHtml = p.isMarker ? `<div style="font-size:28px; line-height:1; margin-bottom:5px;">${(String(p.name || '').indexOf('排水口') >= 0 && (!p.color || p.color === '🕳️')) ? '🚩' : p.color}</div><b>${p.name}</b>` : `<b>${p.name}</b>`;
 
     let ridgeStr = ''; if (!p.isMarker && p.ridgeDir && p.ridgeWidth) { const ridges = calcRidges(p.coords, p.ridgeDir, p.ridgeWidth); ridgeStr = `<br><span style="color:#2196F3; font-weight:bold;">📏 約${ridges}畝 (${p.ridgeDir} / ${p.ridgeWidth}cm)</span>`; }
 
@@ -9828,7 +9835,7 @@ window.openM = (id) => {
     h += `<div style="display:flex;gap:4px;margin-bottom:4px;width:100%;"><button onclick="openAttr('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">情報変更</button>`;
     if (p.isMarker) h += `<button onclick="openCol('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">アイコン変更</button>`;
     h += `</div>`;
-    if (!p.isMarker) h += `<div style="display:flex;gap:4px;margin-bottom:4px;width:100%;"><button onclick="openRidgeSim('${id}')" style="flex:1;background:#e3f2fd;color:#1976d2;padding:8px 0;font-size:11px;border-radius:4px;border:1px solid #90caf9;white-space:nowrap;cursor:pointer;">📏 畝立てシミュ</button><button onclick="openCadRegistry('${id}')" style="flex:1;background:#FF9800;color:white;padding:8px 0;font-size:11px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">🚜 農地CADを開く</button></div>`;
+    if (!p.isMarker) h += `<div style="margin-bottom:4px;width:100%;"><button onclick="openCadRegistry('${id}')" style="width:100%;background:#FF9800;color:white;padding:8px 0;font-size:11px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">🚜 農地CADを開く</button></div>`;
     h += `<div style="display:flex;gap:4px;width:100%;"><button onclick="actionEditShape('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">範囲変更</button><button onclick="actionDelete('${id}')" style="flex:1;background:#ffebee;color:red;padding:8px 0;font-size:11px;border-radius:4px;border:1px solid #f44336;white-space:nowrap;cursor:pointer;">削除</button></div></div>`;
     infoWindow.setContent(h); infoWindow.setPosition(p.isMarker ? p.marker.getPosition() : p.marker.getPosition()); infoWindow.open(map);
 };

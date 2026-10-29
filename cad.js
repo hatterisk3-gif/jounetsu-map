@@ -867,11 +867,11 @@ window.updateCadSvgOverlay = (opts) => {
                 let numStr = '';
                 if (mk.cadPinType === 'water_in') {
                     waterInCount++;
-                    iconStr = '💧';
+                    iconStr = '🚰';
                     numStr = String(waterInCount);
                 } else if (mk.cadPinType === 'water_out') {
                     waterOutCount++;
-                    iconStr = '🕳️';
+                    iconStr = '🚩';
                     numStr = String(waterOutCount);
                 } else if (mk.cadPinType === 'parking_truck') {
                     iconStr = '🅿️';
@@ -1809,7 +1809,7 @@ window.initCadTouchEvents = () => {
             }
 
             // 設備ピン（💧, 🕳️, 🅿️, 🚜など）はドラッグできるようにする
-            if (currEl.innerText && (currEl.innerText.includes('💧') || currEl.innerText.includes('🕳️') || currEl.innerText.includes('🅿️') || currEl.innerText.includes('🚜') || currEl.innerText.includes('🛻'))) {
+            if (currEl.innerText && (currEl.innerText.includes('🚰') || currEl.innerText.includes('💧') || currEl.innerText.includes('🚩') || currEl.innerText.includes('🕳️') || currEl.innerText.includes('🅿️') || currEl.innerText.includes('🚜') || currEl.innerText.includes('🛻'))) {
                 return true;
             }
             currEl = currEl.parentElement;
@@ -4582,7 +4582,7 @@ window.cadSetPinMode = (type) => {
     } else if (type === 'snap_line') {
         if (msgEl) { msgEl.innerText = `【角度合わせ】基準にしたい外周の直線をタップしてください`; msgEl.style.color = "#4CAF50"; }
     } else if (isEquipPin) {
-        const name = type === 'water_in' ? '💧 吸水ピン' : type === 'water_out' ? '🕳️ 排水ピン' : type === 'parking_truck' ? '🅿️ 駐車場' : '🚜 機械侵入口';
+        const name = type === 'water_in' ? '🚰 給水ピン' : type === 'water_out' ? '🚩 排水ピン' : type === 'parking_truck' ? '🅿️ 駐車場' : '🚜 機械侵入口';
         if (msgEl) { msgEl.innerText = `【${name}】配置場所をタップ！（または下のGPSで置く）`; msgEl.style.color = "#03A9F4"; }
         window.cadGpsPinType = type;
         window.cadUpdateGpsUi({ status: `選択中: ${name} → 「GPSで置く」か地図タップ` });
@@ -4591,8 +4591,8 @@ window.cadSetPinMode = (type) => {
 };
 
 window.cadGpsPinTypeLabel = (type) => {
-    if (type === 'water_in') return '💧 吸水';
-    if (type === 'water_out') return '🕳️ 排水';
+    if (type === 'water_in') return '🚰 給水';
+    if (type === 'water_out') return '🚩 排水';
     if (type === 'parking_truck') return '🅿️ 駐車場';
     if (type === 'machine_entry') return '🚜 侵入口';
     return type || '';
@@ -5470,14 +5470,14 @@ window.cadReapplyAllNakamichiSplits = () => {
 /** 全ての排水口ピンから枕分割用の中道を一括自動生成 */
 window.cadGenerateDrainageLinesFromPins = () => {
     if (!window.cadPins || !window.cadPins.length) {
-        if (typeof customAlert === 'function') customAlert('排水口ピン（🕳️）が配置されていません。');
-        else alert('排水口ピン（🕳️）が配置されていません。');
+        if (typeof customAlert === 'function') customAlert('排水口ピン（🚩）が配置されていません。');
+        else alert('排水口ピン（🚩）が配置されていません。');
         return;
     }
     const waterOutPins = window.cadPins.filter(mk => mk.cadPinType === 'water_out');
     if (!waterOutPins.length) {
-        if (typeof customAlert === 'function') customAlert('排水口ピン（🕳️）が見つかりません。まず「排水ピン」を配置してください。');
-        else alert('排水口ピン（🕳️）が見つかりません。まず「排水ピン」を配置してください。');
+        if (typeof customAlert === 'function') customAlert('排水口ピン（🚩）が見つかりません。まず「排水ピン」を配置してください。');
+        else alert('排水口ピン（🚩）が見つかりません。まず「排水ピン」を配置してください。');
         return;
     }
     let count = 0;
