@@ -8380,6 +8380,7 @@ window.cadGenerateLines = () => {
                     return true;
                 };
 
+                const minRidgeLen = 3;
                 let stepMeters = 0.5;
                 let validSegments = [];
                 let currentSegment = null;
@@ -8402,7 +8403,7 @@ window.cadGenerateLines = () => {
                             fine_d += 0.1;
                         }
                         currentSegment.end = fine_d;
-                        if (currentSegment.end - currentSegment.start >= 1.0) validSegments.push(currentSegment);
+                        if (currentSegment.end - currentSegment.start >= minRidgeLen) validSegments.push(currentSegment);
                         currentSegment = null;
                     }
                 }
@@ -8412,7 +8413,7 @@ window.cadGenerateLines = () => {
                         fine_d += 0.1;
                     }
                     currentSegment.end = fine_d;
-                    if (currentSegment.end - currentSegment.start >= 1.0) validSegments.push(currentSegment);
+                    if (currentSegment.end - currentSegment.start >= minRidgeLen) validSegments.push(currentSegment);
                 }
 
                 if (validSegments.length) produced++;
