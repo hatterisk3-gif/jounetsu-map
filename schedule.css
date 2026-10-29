@@ -1204,6 +1204,118 @@ select.snr-input { appearance:auto; }
   cursor: pointer;
 }
 .schedule-side-fab-moisture { color: #1565c0; }
+.schedule-side-fab-pest {
+  width: 56px;
+  height: 56px;
+  flex-direction: column;
+  gap: 1px;
+  color: #1b5e20;
+  line-height: 1;
+  padding: 0;
+}
+.schedule-side-fab-pest-icon { font-size: 18px; line-height: 1; }
+.schedule-side-fab-pest-label { font-size: 10px; font-weight: 800; letter-spacing: 0.02em; }
+
+.pest-lookup-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10060;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.pest-lookup-sheet {
+  width: min(720px, 100%);
+  max-height: min(88vh, 860px);
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+.pest-lookup-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid #c8e6c9;
+  background: #e8f5e9;
+}
+.pest-lookup-title { flex: 1; font-weight: 800; color: #1b5e20; font-size: 16px; min-width: 0; }
+.pest-lookup-back,
+.pest-lookup-close {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #a5d6a7;
+  background: #fff;
+  color: #1b5e20;
+  font-size: 18px;
+  font-weight: 800;
+  padding: 0;
+  cursor: pointer;
+}
+.pest-lookup-body {
+  padding: 12px;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+.pest-lookup-hint { font-size: 12px; color: #555; line-height: 1.45; margin-bottom: 8px; }
+.pest-lookup-searchrow { display: flex; gap: 8px; margin-bottom: 10px; }
+.pest-lookup-input {
+  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #a5d6a7;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 16px;
+  margin: 0 0 8px;
+}
+.pest-lookup-searchrow .pest-lookup-input { margin: 0; }
+.pest-lookup-go {
+  background: #2e7d32;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.pest-lookup-result { display: flex; flex-direction: column; gap: 8px; }
+.pest-lookup-hit {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 1px solid #c8e6c9;
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+.pest-lookup-hit strong { display: block; color: #1b5e20; font-size: 15px; }
+.pest-lookup-hit span { display: block; margin-top: 3px; color: #666; font-size: 12px; font-weight: normal; }
+.pest-lookup-meta { font-size: 12px; color: #333; line-height: 1.45; margin-bottom: 8px; }
+.pest-lookup-table-wrap { overflow: auto; border: 1px solid #c8e6c9; border-radius: 8px; }
+.pest-lookup-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 520px; }
+.pest-lookup-table th {
+  position: sticky;
+  top: 0;
+  background: #e8f5e9;
+  color: #1b5e20;
+  text-align: left;
+  padding: 8px;
+  border-bottom: 1px solid #a5d6a7;
+}
+.pest-lookup-table td { padding: 8px; border-bottom: 1px solid #eee; vertical-align: top; }
+.pest-lookup-empty { color: #888; font-size: 13px; line-height: 1.45; padding: 8px 2px; }
+@media (min-width: 760px) {
+  .pest-lookup-modal { align-items: center; }
+  .pest-lookup-sheet { border-radius: 16px; max-height: min(86vh, 860px); }
+}
 
 /* ===== DUMP ツリー／ガント FAB（情熱MAP寄り） ===== */
 .dump-fab-root {

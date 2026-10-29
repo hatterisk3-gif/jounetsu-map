@@ -15,7 +15,7 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1786243000000"></script>
-  <link rel="stylesheet" href="schedule.css?v=1788600000062">
+  <link rel="stylesheet" href="schedule.css?v=1788600000121">
   <link rel="stylesheet" href="dump-embed/dump-tree-gantt.css?v=1788600000055">
 </head>
 
@@ -556,6 +556,33 @@
 
   <div class="schedule-side-fabs">
     <button id="btnSoilMoisture" type="button" class="schedule-side-fab schedule-side-fab-moisture" onclick="toggleSoilMoistureMapOverlay()" title="推定土壌水分を地図表示" aria-label="土壌水分">💧</button>
+    <button id="btnPesticideLookup" type="button" class="schedule-side-fab schedule-side-fab-pest" onclick="openPesticideLookup_()" title="農薬を検索して適用表を見る" aria-label="農薬">
+      <span class="schedule-side-fab-pest-icon">🧪</span>
+      <span class="schedule-side-fab-pest-label">農薬</span>
+    </button>
+  </div>
+
+  <div id="pesticideLookupModal" class="pest-lookup-modal" style="display:none;" onclick="if(event.target===this) closePesticideLookup_()">
+    <div class="pest-lookup-sheet" onclick="event.stopPropagation()">
+      <div class="pest-lookup-head">
+        <button type="button" id="pestLookupBack" class="pest-lookup-back" style="display:none;" onclick="showPesticideLookupSearch_()">←</button>
+        <div class="pest-lookup-title" id="pestLookupTitle">🧪 農薬検索</div>
+        <button type="button" class="pest-lookup-close" onclick="closePesticideLookup_()" aria-label="閉じる">×</button>
+      </div>
+      <div id="pestLookupSearchPane" class="pest-lookup-body">
+        <div class="pest-lookup-hint">農薬名・成分・登録番号・メーカーの一部でもヒットします。名前を押すと適用表を開きます。</div>
+        <div class="pest-lookup-searchrow">
+          <input type="search" id="pestLookupQ" class="pest-lookup-input" placeholder="例: ダコ、マンゼブ" enterkeyhint="search" onkeydown="if(event.key==='Enter'){ event.preventDefault(); searchPesticideLookup_(); }">
+          <button type="button" class="pest-lookup-go" onclick="searchPesticideLookup_()">検索</button>
+        </div>
+        <div id="pestLookupResult" class="pest-lookup-result"></div>
+      </div>
+      <div id="pestLookupTablePane" class="pest-lookup-body" style="display:none;">
+        <div id="pestLookupTableMeta" class="pest-lookup-meta"></div>
+        <input type="search" id="pestLookupCropFilter" class="pest-lookup-input" placeholder="この表を作物名・適用で絞る" oninput="filterPesticideApplicationTable_()">
+        <div id="pestLookupTableWrap" class="pest-lookup-table-wrap"></div>
+      </div>
+    </div>
   </div>
 
   <!-- DUMP ツリー／ガント起動（右丸＋） -->
@@ -1021,6 +1048,7 @@
     }
 
     appendScript('api-client.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('api-client.js'))
+      .then(() => appendScript('pesticide-lookup.js?v=' + cacheBust).catch(function () {}))
       .then(() => appendScript('maint-history.js?v=' + cacheBust).catch(function () {}))
       .then(() => fetch('cultivation_modal.html?v=' + cacheBust))
       .then(res => {

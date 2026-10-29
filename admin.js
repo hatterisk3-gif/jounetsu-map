@@ -5013,13 +5013,18 @@ window.buildPesticideItemsFromFamicFiles_ = async function(baseFile, applyFiles,
             volume: '',
             manufacturer: base.manufacturer || '',
             cropName: window.findCsvCol_(r, ['作物名', '適用作物']),
-            dilution: window.findCsvCol_(r, ['希釈倍数', '希釈倍率', '使用量']),
+            targetPest: window.findCsvCol_(r, ['適用病害虫名', '適用病害虫', '適用雑草名']),
+            dilution: window.findCsvCol_(r, ['希釈倍数', '希釈倍率']),
+            usageAmount: window.findCsvCol_(r, ['使用量']),
+            usageCount: window.findCsvCol_(r, ['本剤の使用回数', '使用回数']),
+            usageMethod: window.findCsvCol_(r, ['使用方法']),
             phiDays: window.extractPhiDaysFromTiming_(useTimingText),
             useTimingText: useTimingText,
             regNumber: reg || '',
             note: ''
         };
-        const key = (item.regNumber || item.name) + '\t' + item.cropName + '\t' + item.dilution;
+        if (!item.dilution && item.usageAmount) item.dilution = item.usageAmount;
+        const key = [item.regNumber || item.name, item.cropName, item.targetPest, item.dilution, item.useTimingText].join('\t');
         if (seen[key]) continue;
         seen[key] = true;
         joined.push(item);
