@@ -8445,8 +8445,7 @@ window.cadGenerateLines = () => {
             const avail = Math.max(uneCount * 0.2, availableWidth - 2 * extraInset);
             const widthM = avail / uneCount;
             const start = -maxNegDist + sideMarginMeters + extraInset + widthM / 2;
-            const out = [];
-            let produced = 0;
+            const pieces = [];
             for (let i = 0; i < uneCount; i++) {
                 let offset = start + i * widthM;
                 let direction = offset >= 0 ? growDirection : growDirection + 180;
@@ -8529,18 +8528,63 @@ window.cadGenerateLines = () => {
                     if (currentSegment.end - currentSegment.start >= minRidgeLen) validSegments.push(currentSegment);
                 }
 
-                if (validSegments.length) produced++;
-                validSegments.forEach(seg => {
-                    let sPt = turf.destination(pt1, seg.start, angle + 180, {units: 'meters'});
-                    let ePt = turf.destination(pt1, seg.end, angle + 180, {units: 'meters'});
-                    let p1c = turf.destination(sPt, w / 2, angle + 90, {units: 'meters'}).geometry.coordinates;
-                    let p2c = turf.destination(sPt, w / 2, angle - 90, {units: 'meters'}).geometry.coordinates;
-                    let p3c = turf.destination(ePt, w / 2, angle - 90, {units: 'meters'}).geometry.coordinates;
-                    let p4c = turf.destination(ePt, w / 2, angle + 90, {units: 'meters'}).geometry.coordinates;
-                    out.push(turf.polygon([[p1c, p2c, p3c, p4c, p1c]]));
-                });
+                if (validSegments.length > 1) {
+                    validSegments.sort((a, b) => a.start - b.start);
+                    const spanStart = validSegments[0].start;
+                    const spanEnd = validSegments[validSegments.length - 1].end;
+                    let covered = 0;
+                    validSegments.forEach((s) => { covered += s.end - s.start; });
+                    const gap = (spanEnd - spanStart) - covered;
+                    if (gap <= 15) {
+                        validSegments = [{ start: spanStart, end: spanEnd }];
+                    } else {
+                        validSegments.sort((a, b) => (b.end - b.start) - (a.end - a.start));
+                        validSegments = [validSegments[0]];
+                    }
+                }
+                if (!validSegments.length) continue;
+                const seg = validSegments[0];
+                const segLen = seg.end - seg.start;
+                let sPt = turf.destination(pt1, seg.start, angle + 180, {units: 'meters'});
+                let ePt = turf.destination(pt1, seg.end, angle + 180, {units: 'meters'});
+                let p1c = turf.destination(sPt, w / 2, angle + 90, {units: 'meters'}).geometry.coordinates;
+                let p2c = turf.destination(sPt, w / 2, angle - 90, {units: 'meters'}).geometry.coordinates;
+                let p3c = turf.destination(ePt, w / 2, angle - 90, {units: 'meters'}).geometry.coordinates;
+                let p4c = turf.destination(ePt, w / 2, angle + 90, {units: 'meters'}).geometry.coordinates;
+                pieces.push({ i: i, len: segLen, poly: turf.polygon([[p1c, p2c, p3c, p4c, p1c]]) });
             }
-            return { rects: out, produced: produced };
+            let maxLen = 0;
+            pieces.forEach((p) => { if (p.len > maxLen) maxLen = p.len; });
+            const keepMin = maxLen >= 12 ? Math.max(5, maxLen * 0.25) : minRidgeLen;
+            const longs = [];
+            const shorts = [];
+            pieces.forEach((p) => {
+                if (maxLen >= 12 && p.len + 0.05 < keepMin) shorts.push(p);
+                else longs.push(p);
+            });
+            const bridge = Math.max(0.2, widthM * (1 - ridgeRatio) * 0.5 + 0.08);
+            shorts.forEach((short) => {
+                let host = null;
+                let hostDist = Infinity;
+                longs.forEach((L) => {
+                    const d = Math.abs(L.i - short.i);
+                    if (d < hostDist) { hostDist = d; host = L; }
+                });
+                if (!host || hostDist > 2) {
+                    longs.push(short);
+                    return;
+                }
+                try {
+                    const grown = turf.buffer(short.poly, bridge, { units: 'meters' }) || short.poly;
+                    const u = turf.union(host.poly, grown);
+                    const one = u ? window.cadCoalesceToPolygon(u) : null;
+                    if (one) host.poly = one;
+                    else longs.push(short);
+                } catch (e) {
+                    longs.push(short);
+                }
+            });
+            return { rects: longs.map((p) => p.poly), produced: pieces.length };
         };
 
         let packed = buildRidgeRects(0);
