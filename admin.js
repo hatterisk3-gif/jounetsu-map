@@ -3180,6 +3180,12 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <input type="file" id="famicApplyCsv" accept=".csv,text/csv" multiple style="width:100%; margin-bottom:8px; font-size:12px;">
                 <button type="button" id="pestCatalogUploadBtn" onclick="uploadPesticideCatalogFromCsv()" style="width:100%; background:#1565c0; color:#fff; border:none; border-radius:4px; padding:10px; font-weight:bold; cursor:pointer; margin-bottom:6px;">カタログを更新（全置換・裏で実行）</button>
                 <div id="pestCatalogUploadStatus" style="font-size:11px; color:#666;"></div>
+                <div id="pestCatalogUploadBar" style="display:none;margin-top:8px;">
+                  <div style="height:10px;background:#e3f2fd;border-radius:99px;overflow:hidden;">
+                    <div id="pestCatalogUploadBarFill" style="height:100%;width:0;background:#1565c0;"></div>
+                  </div>
+                  <div id="pestCatalogUploadBarLabel" style="font-size:11px;color:#1565c0;margin-top:3px;font-weight:bold;">0%</div>
+                </div>
             </div>
             <div style="margin-top:12px; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px; padding:12px;">
                 <div style="font-weight:bold; color:#2e7d32; margin-bottom:6px; font-size:14px;">② カタログから検索してマスタ登録</div>
@@ -3239,6 +3245,12 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <input type="file" id="fertCsvFile" accept=".csv,text/csv" style="width:100%; margin-bottom:8px; font-size:12px;">
                 <button type="button" id="fertCatalogUploadBtn" onclick="uploadFertilizerCatalogFromCsv()" style="width:100%; background:#1565c0; color:#fff; border:none; border-radius:4px; padding:10px; font-weight:bold; cursor:pointer; margin-bottom:6px;">カタログを更新（全置換・裏で実行）</button>
                 <div id="fertCatalogUploadStatus" style="font-size:11px; color:#666;"></div>
+                <div id="fertCatalogUploadBar" style="display:none;margin-top:8px;">
+                  <div style="height:10px;background:#e3f2fd;border-radius:99px;overflow:hidden;">
+                    <div id="fertCatalogUploadBarFill" style="height:100%;width:0;background:#1565c0;"></div>
+                  </div>
+                  <div id="fertCatalogUploadBarLabel" style="font-size:11px;color:#1565c0;margin-top:3px;font-weight:bold;">0%</div>
+                </div>
             </div>
             <div style="margin-top:12px; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px; padding:12px;">
                 <div style="font-weight:bold; color:#2e7d32; margin-bottom:6px; font-size:14px;">② カタログから検索してマスタ登録</div>
@@ -4735,9 +4747,17 @@ window.renderCatalogJobDock_ = function() {
         if (!j || (j.state === 'idle' && !j.running)) return '';
         const color = j.state === 'error' ? '#c62828' : (j.state === 'done' ? '#2e7d32' : '#1565c0');
         const mark = j.state === 'error' ? '✗' : (j.state === 'done' ? '✓' : '…');
+        const pct = Math.max(0, Math.min(100, Math.round((Number(j.ratio) || 0) * 100)));
+        const bar = (j.state === 'running' || j.state === 'done')
+          ? `<div style="margin-top:6px;height:10px;background:#e3f2fd;border-radius:99px;overflow:hidden;">
+               <div style="height:100%;width:${pct}%;background:${color};"></div>
+             </div>
+             <div style="font-size:11px;color:${color};margin-top:2px;font-weight:bold;">${pct}%</div>`
+          : '';
         return `<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #e3f2fd;">
           <div style="font-weight:bold;color:${color};">${mark} ${labels[k]}</div>
           <div style="color:#555;margin-top:2px;">${String(j.text || '').replace(/</g, '&lt;')}</div>
+          ${bar}
         </div>`;
     }).join('');
     const canDismiss = kinds.every(k => {
@@ -4764,16 +4784,41 @@ window.dismissCatalogJobDock_ = function() {
     window.renderCatalogJobDock_();
 };
 
-window.setCatalogJobProgress_ = function(kind, text, state) {
+window.paintCatalogUploadBar_ = function(kind, ratio, state) {
+    const prefix = kind === 'pesticide' ? 'pest' : 'fert';
+    const box = document.getElementById(prefix + 'CatalogUploadBar');
+    const fill = document.getElementById(prefix + 'CatalogUploadBarFill');
+    const label = document.getElementById(prefix + 'CatalogUploadBarLabel');
+    if (!box || !fill) return;
+    if (!state || state === 'idle') {
+        box.style.display = 'none';
+        return;
+    }
+    const pct = Math.max(0, Math.min(100, Math.round((Number(ratio) || 0) * 100)));
+    const color = state === 'error' ? '#c62828' : (state === 'done' ? '#2e7d32' : '#1565c0');
+    box.style.display = 'block';
+    fill.style.width = pct + '%';
+    fill.style.background = color;
+    if (label) {
+        label.style.color = color;
+        label.textContent = pct + '%';
+    }
+};
+
+window.setCatalogJobProgress_ = function(kind, text, state, ratio) {
     const job = window._catalogJobs[kind];
     if (!job) return;
     job.text = text || '';
     job.state = state || (job.running ? 'running' : job.state);
-    job.running = state === 'running';
+    job.running = job.state === 'running';
+    if (typeof ratio === 'number' && isFinite(ratio)) job.ratio = Math.max(0, Math.min(1, ratio));
+    if (job.state === 'done') job.ratio = 1;
+    if (job.state === 'running' && job.ratio == null) job.ratio = 0;
     window.ensureCatalogJobDock_();
     const statusId = kind === 'pesticide' ? 'pestCatalogUploadStatus' : 'fertCatalogUploadStatus';
     const statusEl = document.getElementById(statusId);
     if (statusEl) statusEl.textContent = text || '';
+    window.paintCatalogUploadBar_(kind, job.ratio, job.state);
     window.syncCatalogUploadButtons_();
 };
 
@@ -4794,19 +4839,29 @@ window.syncCatalogUploadButtons_ = function() {
     }
 };
 
-window.uploadCatalogChunks_ = async function(actionName, rows, onProgress) {
-    const CHUNK = 250;
+window.uploadCatalogChunks_ = async function(actionName, rows, onProgress, opts) {
+    opts = opts || {};
+    const CHUNK = opts.chunkSize || 250;
+    const ratioBase = opts.ratioBase || 0;
+    const ratioSpan = opts.ratioSpan == null ? 1 : opts.ratioSpan;
     let lastRes = null;
+    let nextRow = 2;
     for (let i = 0; i < rows.length; i += CHUNK) {
         const chunk = rows.slice(i, i + CHUNK);
-        const msg = 'アップロード中... ' + Math.min(i + chunk.length, rows.length).toLocaleString() + ' / ' + rows.length.toLocaleString();
-        if (typeof onProgress === 'function') onProgress(msg);
+        const done = Math.min(i + chunk.length, rows.length);
+        const msg = '書き込み中... ' + done.toLocaleString() + ' / ' + rows.length.toLocaleString();
+        const ratio = ratioBase + ratioSpan * (rows.length ? done / rows.length : 1);
+        if (typeof onProgress === 'function') onProgress(msg, ratio);
         else if (onProgress && onProgress.textContent !== undefined) onProgress.textContent = msg;
         lastRes = await callGAS(actionName, {
             rows: chunk,
             clearFirst: i === 0,
+            startRow: nextRow,
+            flush: done >= rows.length,
             userName: currentUser
         });
+        if (lastRes && lastRes.nextRow) nextRow = lastRes.nextRow;
+        else nextRow += chunk.length;
         await window.yieldToUi_();
     }
     return lastRes;
@@ -4883,9 +4938,9 @@ window.uploadFertilizerCatalogFromCsv = async function() {
                 customAlert('有効な行がありません。\n\n読み取った列名:\n' + headers + '\n\n・ZIPは解凍してCSVを選んでください\n・公式の「登録データCSV」を選んでいるか確認してください');
                 return;
             }
-            const res = await window.uploadCatalogChunks_('importFertilizerCatalogChunk', items, (msg) => {
-                window.setCatalogJobProgress_('fertilizer', msg, 'running');
-            });
+            const res = await window.uploadCatalogChunks_('importFertilizerCatalogChunk', items, (msg, ratio) => {
+                window.setCatalogJobProgress_('fertilizer', msg, 'running', ratio);
+            }, { ratioBase: 0.15, ratioSpan: 0.85 });
             const count = ((res && res.count) || items.length).toLocaleString();
             window.setCatalogJobProgress_('fertilizer', '完了: ' + count + ' 件', 'done');
             await refreshFertilizerCatalogStats();
@@ -4964,60 +5019,105 @@ window.addSelectedFertilizerFromCatalog = async function() {
     }
 };
 
+window.bindCsvColumns_ = function(sample, fieldAliases) {
+    const keys = Object.keys(sample || {}).filter(k => k && String(k).charAt(0) !== '_');
+    const norm = keys.map(k => ({ k: k, n: String(k).replace(/\s/g, '') }));
+    const out = {};
+    Object.keys(fieldAliases || {}).forEach(field => {
+        const aliases = fieldAliases[field] || [];
+        let found = '';
+        for (let a = 0; a < aliases.length && !found; a++) {
+            const alias = aliases[a];
+            const aliasN = String(alias).replace(/\s/g, '');
+            for (let i = 0; i < norm.length; i++) {
+                if (norm[i].k === alias || (aliasN && norm[i].n.indexOf(aliasN) >= 0)) {
+                    found = norm[i].k;
+                    break;
+                }
+            }
+        }
+        out[field] = found;
+    });
+    return out;
+};
+
+window.csvCol_ = function(row, map, field) {
+    const key = map && map[field];
+    return key ? String(row[key] == null ? '' : row[key]).trim() : '';
+};
+
 window.buildPesticideItemsFromFamicFiles_ = async function(baseFile, applyFiles, onProgress) {
-    const report = (msg) => { if (typeof onProgress === 'function') onProgress(msg); };
-    report('基本部CSV読込中...');
+    const report = (msg, ratio) => { if (typeof onProgress === 'function') onProgress(msg, ratio); };
+    report('基本部CSV読込中...', 0.02);
     await window.yieldToUi_();
     const baseText = await window.readFileAsTextSmart_(baseFile);
     await window.yieldToUi_();
-    report('基本部解析中...');
+    report('基本部解析中...', 0.06);
     const baseRows = window.parseCsvTextFlexible_(baseText);
+    const baseCols = window.bindCsvColumns_(baseRows[0], {
+        reg: ['登録番号', '農薬登録番号'],
+        name: ['農薬の名称', '農薬名'],
+        activeIngredient: ['有効成分'],
+        manufacturer: ['登録を有する者の名称', '登録を有する者', '製造メーカー', '会社名']
+    });
     const baseMap = {};
     for (let i = 0; i < baseRows.length; i++) {
         const r = baseRows[i];
-        const reg = window.findCsvCol_(r, ['登録番号', '農薬登録番号']);
+        const reg = window.csvCol_(r, baseCols, 'reg');
         if (!reg) continue;
         baseMap[reg] = {
             regNumber: reg,
-            name: window.findCsvCol_(r, ['農薬の名称', '農薬名', '名称']),
-            activeIngredient: window.findCsvCol_(r, ['有効成分']),
-            manufacturer: window.findCsvCol_(r, ['登録を有する者の名称', '登録を有する者', '製造メーカー', '会社名'])
+            name: window.csvCol_(r, baseCols, 'name'),
+            activeIngredient: window.csvCol_(r, baseCols, 'activeIngredient'),
+            manufacturer: window.csvCol_(r, baseCols, 'manufacturer')
         };
-        if (i > 0 && i % 3000 === 0) {
-            report('基本部突合準備... ' + i.toLocaleString() + ' / ' + baseRows.length.toLocaleString());
+        if (i > 0 && i % 8000 === 0) {
+            report('基本部突合準備... ' + i.toLocaleString() + ' / ' + baseRows.length.toLocaleString(), 0.06 + 0.06 * (i / baseRows.length));
             await window.yieldToUi_();
         }
     }
     let applyRows = [];
     for (let i = 0; i < applyFiles.length; i++) {
-        report('適用部CSV読込中... (' + (i + 1) + '/' + applyFiles.length + ')');
+        report('適用部CSV読込中... (' + (i + 1) + '/' + applyFiles.length + ')', 0.12 + 0.06 * ((i + 1) / applyFiles.length));
         await window.yieldToUi_();
         const t = await window.readFileAsTextSmart_(applyFiles[i]);
         await window.yieldToUi_();
         applyRows = applyRows.concat(window.parseCsvTextFlexible_(t));
         await window.yieldToUi_();
     }
-    report('適用部突合中... ' + applyRows.length.toLocaleString() + ' 行');
+    report('適用部突合中... ' + applyRows.length.toLocaleString() + ' 行', 0.2);
+    const applyCols = window.bindCsvColumns_(applyRows[0], {
+        reg: ['登録番号', '農薬登録番号'],
+        name: ['農薬の名称', '農薬名'],
+        cropName: ['作物名', '適用作物'],
+        targetPest: ['適用病害虫名', '適用病害虫', '適用雑草名'],
+        dilution: ['希釈倍数', '希釈倍率'],
+        usageAmount: ['使用量'],
+        usageCount: ['本剤の使用回数', '使用回数'],
+        usageMethod: ['使用方法'],
+        useTimingText: ['使用時期']
+    });
     const seen = {};
     const joined = [];
+    const totalApply = applyRows.length || 1;
     for (let i = 0; i < applyRows.length; i++) {
         const r = applyRows[i];
-        const reg = window.findCsvCol_(r, ['登録番号', '農薬登録番号']);
+        const reg = window.csvCol_(r, applyCols, 'reg');
         const base = baseMap[reg] || {};
-        const name = base.name || window.findCsvCol_(r, ['農薬の名称', '農薬名']);
+        const name = base.name || window.csvCol_(r, applyCols, 'name');
         if (!name) continue;
-        const useTimingText = window.findCsvCol_(r, ['使用時期']);
+        const useTimingText = window.csvCol_(r, applyCols, 'useTimingText');
         const item = {
             name: name,
             activeIngredient: base.activeIngredient || '',
             volume: '',
             manufacturer: base.manufacturer || '',
-            cropName: window.findCsvCol_(r, ['作物名', '適用作物']),
-            targetPest: window.findCsvCol_(r, ['適用病害虫名', '適用病害虫', '適用雑草名']),
-            dilution: window.findCsvCol_(r, ['希釈倍数', '希釈倍率']),
-            usageAmount: window.findCsvCol_(r, ['使用量']),
-            usageCount: window.findCsvCol_(r, ['本剤の使用回数', '使用回数']),
-            usageMethod: window.findCsvCol_(r, ['使用方法']),
+            cropName: window.csvCol_(r, applyCols, 'cropName'),
+            targetPest: window.csvCol_(r, applyCols, 'targetPest'),
+            dilution: window.csvCol_(r, applyCols, 'dilution'),
+            usageAmount: window.csvCol_(r, applyCols, 'usageAmount'),
+            usageCount: window.csvCol_(r, applyCols, 'usageCount'),
+            usageMethod: window.csvCol_(r, applyCols, 'usageMethod'),
             phiDays: window.extractPhiDaysFromTiming_(useTimingText),
             useTimingText: useTimingText,
             regNumber: reg || '',
@@ -5028,11 +5128,12 @@ window.buildPesticideItemsFromFamicFiles_ = async function(baseFile, applyFiles,
         if (seen[key]) continue;
         seen[key] = true;
         joined.push(item);
-        if (i > 0 && i % 3000 === 0) {
-            report('適用部突合中... ' + i.toLocaleString() + ' / ' + applyRows.length.toLocaleString());
+        if (i > 0 && i % 8000 === 0) {
+            report('適用部突合中... ' + i.toLocaleString() + ' / ' + applyRows.length.toLocaleString(), 0.2 + 0.15 * (i / totalApply));
             await window.yieldToUi_();
         }
     }
+    report('書き込みの準備完了... ' + joined.length.toLocaleString() + ' 件', 0.35);
     return joined;
 };
 
@@ -5054,19 +5155,20 @@ window.uploadPesticideCatalogFromCsv = async function() {
     if (!await customConfirm('農薬カタログをこのCSVで全置換しますか？\n（農薬マスタ本体は消えません）\n裏で実行するので、開始後は肥料カタログ更新や他の操作ができます。')) return;
     const baseFile = baseInput.files[0];
     const applyFiles = Array.from(applyInput.files);
-    window.setCatalogJobProgress_('pesticide', 'CSV読込・突合中...', 'running');
+    if (window._catalogJobs.pesticide) window._catalogJobs.pesticide.ratio = 0;
+    window.setCatalogJobProgress_('pesticide', 'CSV読込・突合中...', 'running', 0);
     (async () => {
         try {
-            const items = await window.buildPesticideItemsFromFamicFiles_(baseFile, applyFiles, (msg) => {
-                window.setCatalogJobProgress_('pesticide', msg, 'running');
+            const items = await window.buildPesticideItemsFromFamicFiles_(baseFile, applyFiles, (msg, ratio) => {
+                window.setCatalogJobProgress_('pesticide', msg, 'running', ratio);
             });
             if (!items.length) {
                 window.setCatalogJobProgress_('pesticide', '有効な行がありません', 'error');
                 return;
             }
-            const res = await window.uploadCatalogChunks_('importPesticideCatalogChunk', items, (msg) => {
-                window.setCatalogJobProgress_('pesticide', msg, 'running');
-            });
+            const res = await window.uploadCatalogChunks_('importPesticideCatalogChunk', items, (msg, ratio) => {
+                window.setCatalogJobProgress_('pesticide', msg, 'running', ratio);
+            }, { chunkSize: 1500, ratioBase: 0.35, ratioSpan: 0.65 });
             const count = ((res && res.count) || items.length).toLocaleString();
             window.setCatalogJobProgress_('pesticide', '完了: ' + count + ' 件', 'done');
             await refreshPesticideCatalogStats();
