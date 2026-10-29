@@ -5870,11 +5870,54 @@ function previewCropWorkSchedule(params) {
 }
 
 function foldCatalogText_(s) {
-  return String(s || '')
-    .replace(/[！-～]/g, function (ch) { return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0); })
-    .replace(/\u3000/g, ' ')
-    .trim()
-    .toLowerCase();
+  let t = String(s || '').replace(/\u3000/g, ' ');
+  // 全角英数と半角カナをそろえる。ダコニール と ﾀﾞｺﾆｰﾙ を同じ文字として扱う。
+  try { if (t.normalize) t = t.normalize('NFKC'); } catch (e) {}
+  return t.replace(/[！-～]/g, function (ch) {
+    return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+  }).trim().toLowerCase();
+}
+
+function catalogRowHasText_(row, q) {
+  if (!q) return true;
+  for (let i = 0; i < row.length; i++) {
+    if (foldCatalogText_(row[i]).indexOf(q) >= 0) return true;
+  }
+  return false;
+}
+
+/** キーワードを含むセルのうち、いちばん短いものを農薬名の候補にする */
+function shortestCatalogHit_(row, q) {
+  let best = '';
+  for (let i = 0; i < row.length; i++) {
+    const t = String(row[i] == null ? '' : row[i]).trim();
+    if (!t || t.length > 80) continue;
+    if (foldCatalogText_(t).indexOf(q) < 0) continue;
+    if (!best || t.length < best.length) best = t;
+  }
+  return best;
+}
+
+/**
+ * カタログを塊で読む。
+ * シートの「大文字小文字を区別しない検索」は日本語にヒットしないため使わない。
+ * visitor が false を返したら中断。
+ */
+function eachPesticideCatalogRow_(sheet, visitor) {
+  const last = sheet.getLastRow();
+  if (last < 2) return last;
+  const colCount = Math.min(40, Math.max(sheet.getLastColumn(), PESTICIDE_CATALOG_HEADERS_.length));
+  const headers = sheet.getRange(1, 1, 1, colCount).getValues()[0];
+  const col = pesticideCatalogColumnMap_(headers);
+  const chunk = 2500;
+  for (let start = 2; start <= last; start += chunk) {
+    const n = Math.min(chunk, last - start + 1);
+    const values = sheet.getRange(start, 1, n, colCount).getValues();
+    for (let i = 0; i < values.length; i++) {
+      if (visitor(values[i], col) === false) return last;
+    }
+  }
+  return last;
 }
 
 function findCatalogHeaderIndex_(headers, aliases) {
@@ -5980,6 +6023,72 @@ function pesticideCatalogRowMatches_(item, q, crop) {
   return true;
 }
 
+function pesticideCatalogSheetCtx_(sheet) {
+  const last = sheet.getLastRow();
+  const colCount = Math.min(20, Math.max(sheet.getLastColumn(), PESTICIDE_CATALOG_HEADERS_.length));
+  const headers = last >= 1 ? sheet.getRange(1, 1, 1, colCount).getValues()[0] : [];
+  return { last: last, colCount: colCount, col: pesticideCatalogColumnMap_(headers) };
+}
+
+/**
+ * 日本語を含む語は大文字小文字を区別する検索にする。
+ * 区別しない検索は速くても、日本語が一切ヒットしない。
+ */
+function textFinderMatchCaseFor_(needle) {
+  return /[^\u0000-\u007F]/.test(String(needle || ''));
+}
+
+function findPesticideCatalogRowNums_(sheet, needle, rowCap) {
+  const last = sheet.getLastRow();
+  const text = String(needle || '').trim();
+  if (last < 2 || !text) return [];
+  const colCount = Math.min(20, Math.max(sheet.getLastColumn(), PESTICIDE_CATALOG_HEADERS_.length));
+  const cap = Math.max(20, rowCap || 400);
+  const finder = sheet.getRange(2, 1, last - 1, colCount)
+    .createTextFinder(text)
+    .matchCase(textFinderMatchCaseFor_(text))
+    .matchEntireCell(false);
+  const rows = [];
+  const seen = {};
+  let guard = 0;
+  let cell = finder.findNext();
+  while (cell && rows.length < cap && guard < 6000) {
+    guard++;
+    const r = cell.getRow();
+    if (!seen[r]) {
+      seen[r] = true;
+      rows.push(r);
+    }
+    cell = finder.findNext();
+  }
+  return rows;
+}
+
+function pushPesticideSearchHit_(items, seenNames, row, col, q, crop, groupByName, limit) {
+  if (q && !catalogRowHasText_(row, q)) return false;
+  if (crop && foldCatalogText_(catalogCellText_(row, col.cropName)).indexOf(crop) < 0 && !catalogRowHasText_(row, crop)) return false;
+  const item = pesticideCatalogItemFromRow_(row, col);
+  if (q && foldCatalogText_(item.name).indexOf(q) < 0) {
+    const hit = shortestCatalogHit_(row, q);
+    if (hit) item.name = hit;
+  }
+  if (!item.name) return false;
+  if (groupByName) {
+    const key = foldCatalogText_(item.name) + '\t' + foldCatalogText_(item.regNumber);
+    if (seenNames[key]) return false;
+    seenNames[key] = true;
+    items.push({
+      name: item.name,
+      activeIngredient: item.activeIngredient,
+      manufacturer: item.manufacturer,
+      regNumber: item.regNumber
+    });
+  } else {
+    items.push(item);
+  }
+  return items.length >= limit;
+}
+
 function searchPesticideCatalog(params) {
   const qRaw = String((params && params.q) || '').trim();
   const cropRaw = String((params && params.crop) || '').trim();
@@ -6002,68 +6111,33 @@ function searchPesticideCatalog(params) {
       message: '農薬カタログが空です。管理者画面の農薬マスタから公式CSVを取り込んでから検索してください。'
     };
   }
-  const colCount = Math.min(40, Math.max(sheet.getLastColumn(), PESTICIDE_CATALOG_HEADERS_.length));
-  const headers = sheet.getRange(1, 1, 1, colCount).getValues()[0];
-  const col = pesticideCatalogColumnMap_(headers);
-  const needle = qRaw || cropRaw;
+  const ctx = pesticideCatalogSheetCtx_(sheet);
   const items = [];
-  const seen = {};
   const seenNames = {};
-  const pending = [];
   let truncated = false;
-
-  const flushPending = function () {
-    if (!pending.length || items.length >= limit) {
-      pending.length = 0;
-      return;
-    }
-    const batch = pending.splice(0, pending.length);
-    const byRow = readSheetRowsByNumber_(sheet, batch, colCount);
-    for (let i = 0; i < batch.length; i++) {
-      const row = byRow[batch[i]];
+  const needle = qRaw || cropRaw;
+  const rowNums = findPesticideCatalogRowNums_(sheet, needle, Math.max(limit * 12, 120));
+  if (rowNums.length) {
+    const byRow = readSheetRowsByNumber_(sheet, rowNums, ctx.colCount);
+    for (let i = 0; i < rowNums.length; i++) {
+      const row = byRow[rowNums[i]];
       if (!row) continue;
-      const item = pesticideCatalogItemFromRow_(row, col);
-      if (!pesticideCatalogRowMatches_(item, q, crop)) continue;
-      if (groupByName) {
-        const key = foldCatalogText_(item.name) + '\t' + foldCatalogText_(item.regNumber);
-        if (seenNames[key]) continue;
-        seenNames[key] = true;
-        items.push({
-          name: item.name,
-          activeIngredient: item.activeIngredient,
-          manufacturer: item.manufacturer,
-          regNumber: item.regNumber
-        });
-      } else {
-        items.push(item);
-      }
-      if (items.length >= limit) {
+      if (pushPesticideSearchHit_(items, seenNames, row, ctx.col, q, crop, groupByName, limit)) {
         truncated = true;
         break;
       }
     }
-  };
-
-  // 全行を読み込むと公式カタログ（数万行）で時間切れになる。該当セルだけ探す。
-  const finder = sheet.getRange(2, 1, last - 1, colCount)
-    .createTextFinder(needle)
-    .matchCase(false)
-    .matchEntireCell(false);
-  let guard = 0;
-  let cell = finder.findNext();
-  while (cell && items.length < limit && guard < 4000) {
-    guard++;
-    const rowNum = cell.getRow();
-    if (!seen[rowNum]) {
-      seen[rowNum] = true;
-      pending.push(rowNum);
-      if (pending.length >= 40) flushPending();
-    }
-    if (items.length >= limit) break;
-    cell = finder.findNext();
+    if (rowNums.length >= Math.max(limit * 12, 120) && items.length >= limit) truncated = true;
   }
-  flushPending();
-  if (cell && items.length >= limit) truncated = true;
+  // 半角カナなど、シート検索の表記と違うときだけ全件を見る
+  if (!items.length) {
+    eachPesticideCatalogRow_(sheet, function (row, col) {
+      if (pushPesticideSearchHit_(items, seenNames, row, col, q, crop, groupByName, limit)) {
+        truncated = true;
+        return false;
+      }
+    });
+  }
 
   const keyword = qRaw || cropRaw;
   return {
@@ -6099,64 +6173,51 @@ function getPesticideApplicationTable(params) {
       message: '農薬カタログが空です。管理者画面の農薬マスタから公式CSVを取り込んでください。'
     };
   }
-  const colCount = Math.min(40, Math.max(sheet.getLastColumn(), PESTICIDE_CATALOG_HEADERS_.length));
-  const headers = sheet.getRange(1, 1, 1, colCount).getValues()[0];
-  const col = pesticideCatalogColumnMap_(headers);
   const items = [];
   const seen = {};
-  const seenRows = {};
-  const pending = [];
   let truncated = false;
-  const flushPending = function () {
-    if (!pending.length || items.length >= limit) {
-      pending.length = 0;
-      return;
+  const takeRow = function (row, col) {
+    const item = pesticideCatalogItemFromRow_(row, col);
+    const mapped = foldCatalogText_(item.name);
+    let named = mapped === nameKey;
+    if (!named) {
+      for (let i = 0; i < row.length; i++) {
+        if (foldCatalogText_(row[i]) === nameKey) { named = true; break; }
+      }
     }
-    const batch = pending.splice(0, pending.length);
-    const byRow = readSheetRowsByNumber_(sheet, batch, colCount);
-    for (let i = 0; i < batch.length; i++) {
-      const row = byRow[batch[i]];
+    if (!named) return false;
+    if (regKey && foldCatalogText_(item.regNumber) !== regKey) return false;
+    if (!item.name) item.name = nameRaw;
+    const dedupe = [
+      item.cropName, item.targetPest, item.dilution, item.usageAmount,
+      item.useTimingText, item.usageCount, item.usageMethod
+    ].map(foldCatalogText_).join('\t');
+    if (seen[dedupe]) return false;
+    seen[dedupe] = true;
+    items.push(item);
+    return items.length >= limit;
+  };
+  const ctx = pesticideCatalogSheetCtx_(sheet);
+  const rowNums = findPesticideCatalogRowNums_(sheet, nameRaw, limit);
+  if (rowNums.length) {
+    const byRow = readSheetRowsByNumber_(sheet, rowNums, ctx.colCount);
+    for (let i = 0; i < rowNums.length; i++) {
+      const row = byRow[rowNums[i]];
       if (!row) continue;
-      const item = pesticideCatalogItemFromRow_(row, col);
-      if (foldCatalogText_(item.name) !== nameKey) continue;
-      if (regKey && foldCatalogText_(item.regNumber) !== regKey) continue;
-      const dedupe = [
-        item.cropName,
-        item.targetPest,
-        item.dilution,
-        item.usageAmount,
-        item.useTimingText,
-        item.usageCount,
-        item.usageMethod
-      ].map(foldCatalogText_).join('\t');
-      if (seen[dedupe]) continue;
-      seen[dedupe] = true;
-      items.push(item);
-      if (items.length >= limit) {
+      if (takeRow(row, ctx.col)) {
         truncated = true;
         break;
       }
     }
-  };
-  const finder = sheet.getRange(2, 1, last - 1, colCount)
-    .createTextFinder(nameRaw)
-    .matchCase(false)
-    .matchEntireCell(false);
-  let guard = 0;
-  let cell = finder.findNext();
-  while (cell && items.length < limit && guard < 6000) {
-    guard++;
-    const rowNum = cell.getRow();
-    if (!seenRows[rowNum]) {
-      seenRows[rowNum] = true;
-      pending.push(rowNum);
-      if (pending.length >= 40) flushPending();
-    }
-    if (items.length >= limit) break;
-    cell = finder.findNext();
   }
-  flushPending();
-  if (cell && items.length >= limit) truncated = true;
+  if (!items.length) {
+    eachPesticideCatalogRow_(sheet, function (row, col) {
+      if (takeRow(row, col)) {
+        truncated = true;
+        return false;
+      }
+    });
+  }
   items.sort(function (a, b) {
     const cropCmp = String(a.cropName || '').localeCompare(String(b.cropName || ''), 'ja');
     if (cropCmp) return cropCmp;

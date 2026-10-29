@@ -8111,8 +8111,24 @@ window.cadCollectObliqueClearanceSegs = (ringCoords, ridgeAngleDeg, gapM) => {
         const b0 = infos[end].b;
         let groupBear = baseBear;
         try { groupBear = turf.bearing(turf.point(a0), turf.point(b0)); } catch (e) {}
-        // 畝とほぼ平行で長い辺だけ側面余白に任せる。斜め・段差・短い立ち上がりは端面余白
-        if (align(groupBear, ridgeAngleDeg) <= 6 && chainLen >= 8) continue;
+        const parallelLong = align(groupBear, ridgeAngleDeg) <= 6 && chainLen >= 8;
+        if (parallelLong) {
+            const neighbor = (from, dir) => {
+                for (let k = 1; k < n; k++) {
+                    const j = (from + dir * k + n) % n;
+                    if (infos[j]) return infos[j];
+                }
+                return null;
+            };
+            const touchesBend = (info) => {
+                if (!info) return false;
+                const toAxis = align(info.bearing, ridgeAngleDeg);
+                const toEnd = align(info.bearing, ridgeAngleDeg + 90);
+                return toAxis > 6 && toEnd > 12;
+            };
+            // 斜めの先で直線に戻った辺も、端面の余白ぶん畝を入れない
+            if (!touchesBend(neighbor(i, -1)) && !touchesBend(neighbor(end, 1))) continue;
+        }
         let a = a0;
         let b = b0;
         try {
