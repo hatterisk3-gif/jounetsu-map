@@ -126,23 +126,61 @@
       var j = i + 1;
       while (j < rows.length && (String(rows[j].cropName || '').trim() || '作物未設定') === crop) j++;
       html += '<section class="pest-app-group"><h3 class="pest-app-crop">' + esc(crop) + '<span>' + (j - i) + '</span></h3>';
+      var buckets = [];
+      var bucketAt = {};
       for (var k = i; k < j; k++) {
         var r = rows[k];
+        var sig = [
+          String(r.dilution || '').trim(),
+          String(r.usageAmount || '').trim(),
+          String(r.usageCount || '').trim(),
+          phiLabel(r.phiDays)
+        ].join('\t');
+        if (bucketAt[sig] == null) {
+          bucketAt[sig] = buckets.length;
+          buckets.push({
+            dilution: r.dilution,
+            usageAmount: r.usageAmount,
+            usageCount: r.usageCount,
+            phi: phiLabel(r.phiDays),
+            pests: [],
+            timings: [],
+            methods: []
+          });
+        }
+        var bucket = buckets[bucketAt[sig]];
         var pest = String(r.targetPest || '').trim();
         var timing = String(r.useTimingText || '').trim();
         var method = String(r.usageMethod || '').trim();
-        html += '<article class="pest-app-card">';
-        html += '<div class="pest-app-pest">' + esc(pest || '適用の記載なし') + '</div>';
-        html += '<div class="pest-app-chips">' +
-          appChip_('希釈', r.dilution) +
-          appChip_('使用量', r.usageAmount) +
-          appChip_('回数', r.usageCount) +
-          appChip_('前日数', phiLabel(r.phiDays)) +
-          '</div>';
-        if (timing) html += '<div class="pest-app-timing">' + esc(timing) + '</div>';
-        if (method) html += '<div class="pest-app-method">' + esc(method) + '</div>';
-        html += '</article>';
+        if (pest && bucket.pests.indexOf(pest) < 0) bucket.pests.push(pest);
+        if (timing && bucket.timings.indexOf(timing) < 0) bucket.timings.push(timing);
+        if (method && bucket.methods.indexOf(method) < 0) bucket.methods.push(method);
       }
+      buckets.forEach(function (bucket) {
+        html += '<article class="pest-app-card">';
+        html += '<div class="pest-app-pests">';
+        if (!bucket.pests.length) {
+          html += '<span class="pest-app-pest-chip">適用の記載なし</span>';
+        } else {
+          bucket.pests.forEach(function (name) {
+            html += '<span class="pest-app-pest-chip">' + esc(name) + '</span>';
+          });
+        }
+        html += '</div>';
+        html += '<div class="pest-app-chips">' +
+          appChip_('希釈', bucket.dilution) +
+          appChip_('使用量', bucket.usageAmount) +
+          appChip_('回数', bucket.usageCount) +
+          appChip_('前日数', bucket.phi) +
+          '</div>';
+        bucket.timings.forEach(function (text) {
+          html += '<div class="pest-app-timing">' + esc(text) + '</div>';
+        });
+        bucket.methods.forEach(function (text) {
+          html += '<div class="pest-app-method">' + esc(text) + '</div>';
+        });
+        html += '</article>';
+      });
       html += '</section>';
       i = j;
     }

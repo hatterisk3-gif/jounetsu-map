@@ -6764,14 +6764,23 @@ window.cadGenerateMakuraFromSelectedEdges = () => {
         alert('圃場が開かれていません。');
         return;
     }
-    const frontIds = Array.isArray(window.cadFrontEdgeIndexes) ? window.cadFrontEdgeIndexes : [];
-    const selected = Array.from(new Set(picked.concat(frontIds).concat(window.cadCollectObliqueMakuraEdges_(ring, picked))));
     let tPoly = null;
     try { tPoly = turf.polygon([ring]); } catch (e) { tPoly = null; }
     if (!tPoly) {
         alert('圃場の形を読み取れませんでした。');
         return;
     }
+    const center = turf.center(tPoly).geometry.coordinates;
+    const pickedInfo = window.cadRingEdgeInfo(ring, picked[0]);
+    const pickedInward = pickedInfo ? window.cadInwardBearingForEdge(pickedInfo, center) : null;
+    const sameSide = (ei) => {
+        if (!pickedInward) return false;
+        const info = window.cadRingEdgeInfo(ring, ei);
+        if (!info) return false;
+        return window.cadBearingDiff(window.cadInwardBearingForEdge(info, center), pickedInward) <= 50;
+    };
+    const frontIds = (Array.isArray(window.cadFrontEdgeIndexes) ? window.cadFrontEdgeIndexes : []).filter(sameSide);
+    const selected = Array.from(new Set(picked.concat(frontIds)));
     let widthM = null;
     const measured = (window.cadListMainRidgeEntries() || []).map((r) => {
         return (typeof window.estimateCadUneWidthMeters === 'function') ? window.estimateCadUneWidthMeters(r.gPoly) : 0;

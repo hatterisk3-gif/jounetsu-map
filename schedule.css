@@ -1388,7 +1388,17 @@ select.snr-input { appearance:auto; }
   border-radius: 12px;
   padding: 10px 12px;
 }
-.pest-app-pest { font-size: 14px; font-weight: 800; color: #1b5e20; line-height: 1.35; }
+.pest-app-pests { display: flex; flex-wrap: wrap; gap: 6px; }
+.pest-app-pest-chip {
+  background: #fff;
+  color: #1b5e20;
+  border: 1px solid #81c784;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.3;
+}
 .pest-app-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .pest-app-chip {
   display: inline-flex;
