@@ -106,6 +106,38 @@
     return String(v);
   }
 
+  /** 数値の前日数と、「収穫前日まで」「収穫30日前まで」を同じチップ文言にする */
+  function phiDisplay_(phiDays, timing) {
+    var fromNum = phiLabel(phiDays);
+    if (fromNum) return fromNum;
+    var t = String(timing || '').replace(/\s/g, '');
+    var numbered = t.match(/収穫(\d+)日前/);
+    if (numbered) return '収穫' + numbered[1] + '日前';
+    if (t.indexOf('収穫前日') >= 0) return '収穫前日まで';
+    var days = t.match(/(\d+)日前/);
+    if (days) return days[1] + '日前';
+    return '';
+  }
+
+  function timingWithoutPhi_(timing) {
+    return String(timing || '')
+      .replace(/収穫\s*\d+\s*日前\s*まで/g, '')
+      .replace(/収穫\s*\d+\s*日前/g, '')
+      .replace(/収穫\s*前日\s*まで/g, '')
+      .replace(/収穫\s*前日/g, '')
+      .replace(/^[\s、,，]+|[\s、,，]+$/g, '')
+      .trim();
+  }
+
+  function methodBadge_(name) {
+    var text = String(name || '').trim();
+    if (!text) return '';
+    var kind = 'is-other';
+    if (text.indexOf('常温煙霧') >= 0) kind = 'is-fog';
+    else if (text.indexOf('散布') >= 0) kind = 'is-spray';
+    return '<div class="pest-app-method-badge ' + kind + '">' + esc(text) + '</div>';
+  }
+
   function appChip_(label, value) {
     var text = String(value || '').trim();
     if (!text) return '';
@@ -130,11 +162,15 @@
       var bucketAt = {};
       for (var k = i; k < j; k++) {
         var r = rows[k];
+        var timing = String(r.useTimingText || '').trim();
+        var method = String(r.usageMethod || '').trim();
+        var phi = phiDisplay_(r.phiDays, timing);
         var sig = [
           String(r.dilution || '').trim(),
           String(r.usageAmount || '').trim(),
           String(r.usageCount || '').trim(),
-          phiLabel(r.phiDays)
+          phi,
+          method
         ].join('\t');
         if (bucketAt[sig] == null) {
           bucketAt[sig] = buckets.length;
@@ -142,19 +178,17 @@
             dilution: r.dilution,
             usageAmount: r.usageAmount,
             usageCount: r.usageCount,
-            phi: phiLabel(r.phiDays),
+            phi: phi,
+            method: method,
             pests: [],
-            timings: [],
-            methods: []
+            timings: []
           });
         }
         var bucket = buckets[bucketAt[sig]];
         var pest = String(r.targetPest || '').trim();
-        var timing = String(r.useTimingText || '').trim();
-        var method = String(r.usageMethod || '').trim();
+        var rest = timingWithoutPhi_(timing);
         if (pest && bucket.pests.indexOf(pest) < 0) bucket.pests.push(pest);
-        if (timing && bucket.timings.indexOf(timing) < 0) bucket.timings.push(timing);
-        if (method && bucket.methods.indexOf(method) < 0) bucket.methods.push(method);
+        if (rest && bucket.timings.indexOf(rest) < 0) bucket.timings.push(rest);
       }
       buckets.forEach(function (bucket) {
         html += '<article class="pest-app-card">';
@@ -167,6 +201,7 @@
           });
         }
         html += '</div>';
+        html += methodBadge_(bucket.method);
         html += '<div class="pest-app-chips">' +
           appChip_('希釈', bucket.dilution) +
           appChip_('使用量', bucket.usageAmount) +
@@ -175,9 +210,6 @@
           '</div>';
         bucket.timings.forEach(function (text) {
           html += '<div class="pest-app-timing">' + esc(text) + '</div>';
-        });
-        bucket.methods.forEach(function (text) {
-          html += '<div class="pest-app-method">' + esc(text) + '</div>';
         });
         html += '</article>';
       });

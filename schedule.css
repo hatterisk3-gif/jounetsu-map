@@ -1413,13 +1413,37 @@ select.snr-input { appearance:auto; }
   line-height: 1.3;
 }
 .pest-app-chip b { color: #558b2f; font-size: 10px; font-weight: 800; }
+.pest-app-method-badge {
+  display: inline-flex;
+  align-items: center;
+  margin: 8px 0 2px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.pest-app-method-badge.is-spray {
+  background: #e8f5e9;
+  color: #1b5e20;
+  border: 2px solid #2e7d32;
+}
+.pest-app-method-badge.is-fog {
+  background: #fff3e0;
+  color: #e65100;
+  border: 2px solid #ef6c00;
+}
+.pest-app-method-badge.is-other {
+  background: #e3f2fd;
+  color: #0d47a1;
+  border: 2px solid #1565c0;
+}
 .pest-app-timing {
   margin-top: 8px;
   font-size: 13px;
   line-height: 1.45;
   color: #333;
 }
-.pest-app-method { margin-top: 4px; font-size: 12px; line-height: 1.4; color: #666; }
 .pest-lookup-empty { color: #888; font-size: 13px; line-height: 1.45; padding: 8px 2px; }
 @media (min-width: 760px) {
   .pest-lookup-modal { align-items: center; }

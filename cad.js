@@ -897,14 +897,14 @@ window.updateCadSvgOverlay = (opts) => {
                 let iconSpan = document.createElement('span');
                 iconSpan.className = 'cad-pin-icon';
                 iconSpan.textContent = iconStr;
-                iconSpan.style.cssText = 'display:block; line-height:1;';
+                iconSpan.style.cssText = 'display:block; line-height:1; font-size:13px;';
                 div.appendChild(iconSpan);
 
                 if (nameStr) {
                     let nameSpan = document.createElement('span');
                     nameSpan.className = 'cad-pin-name';
                     nameSpan.textContent = nameStr;
-                    nameSpan.style.cssText = 'position:absolute; left:50%; top:100%; transform:translate(-50%, 1px); font-size:11px; font-weight:bold; color:#111; white-space:nowrap; line-height:1.1; pointer-events:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
+                    nameSpan.style.cssText = 'position:absolute; left:50%; top:100%; transform:translate(-50%, 2px); font-size:16px; font-weight:bold; color:#111; white-space:nowrap; line-height:1.1; pointer-events:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
                     div.appendChild(nameSpan);
                 }
 
@@ -917,7 +917,7 @@ window.updateCadSvgOverlay = (opts) => {
                 }
                 
                 div.className = 'cad-equip-pin';
-                div.style.cssText = 'font-size:18px; text-align:center; transform:translate(-50%, -50%) rotate(var(--label-rot)); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:move; user-select:none; touch-action:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
+                div.style.cssText = 'font-size:13px; text-align:center; transform:translate(-50%, -50%) rotate(var(--label-rot)); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:move; user-select:none; touch-action:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
                 wrap.appendChild(div);
 
                 let delBtn = document.createElement('button');
@@ -1100,12 +1100,12 @@ window.updateCadSvgOverlay = (opts) => {
             if (!fo) {
                 frontBarGroup.innerHTML = ''; // 古い線とハンドルをクリア
                 fo = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
-                fo.setAttribute('width', '100');
-                fo.setAttribute('height', '40');
+                fo.setAttribute('width', '120');
+                fo.setAttribute('height', '48');
                 fo.setAttribute('style', 'overflow:visible; pointer-events:none;');
                 let div = document.createElement('div');
                 div.className = 'front-bar-label';
-                div.style.cssText = 'color:#ffffff; background:#FF5722; padding:4px 8px; border-radius:4px; font-size:14px; font-weight:bold; text-align:center; white-space:nowrap; transform:translate(-50%, -50%); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.5);';
+                div.style.cssText = 'color:#ffffff; background:#FF5722; padding:6px 12px; border-radius:4px; font-size:17px; font-weight:bold; text-align:center; white-space:nowrap; transform:translate(-50%, -50%); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.5);';
                 div.innerText = '畝の正面';
                 fo.appendChild(div);
                 frontBarGroup.appendChild(fo);
@@ -1143,8 +1143,8 @@ window.updateCadSvgOverlay = (opts) => {
                 }, {passive: false});
             }
             let pt = window.latLngToScreenPixel(pLat, pLng);
-            fo.setAttribute('x', pt.x - 50);
-            fo.setAttribute('y', pt.y - 20);
+            fo.setAttribute('x', pt.x - 60);
+            fo.setAttribute('y', pt.y - 24);
         } else {
             frontBarGroup.innerHTML = '';
         }
@@ -3251,19 +3251,42 @@ window.cadPreviewRidgeNumberSplit = () => {
         el.innerHTML = '<div style="color:#ef9a9a;">' + (built.message || '分割できません') + '</div>';
         return;
     }
-    const fmt = window.formatCadUneGroupDisplayName || ((x) => x);
-    const chips = [];
-    if (built.endStart > 0) chips.push('空き ' + built.endStart + '本');
-    built.groups.forEach((g, idx) => {
-        if (idx > 0) chips.push('1本空け');
-        chips.push(fmt(g.name) + '・' + g.count + '本');
-    });
-    if (built.endFinish > 0) chips.push('空き ' + built.endFinish + '本');
-    const dirLabel = built.direction === 'reverse' ? '反対側から' : '1番側から';
+    const dirLabel = built.direction === 'reverse' ? '反対側が左' : '1番側が左';
+    const groupColor = (name) => {
+        const m = String(name || '').match(/(\d+)/);
+        const n = m ? parseInt(m[1], 10) : 1;
+        const palette = ['#6A1B9A', '#7B1FA2', '#8E24AA', '#5E35B1', '#4527A0'];
+        return palette[(n - 1) % palette.length];
+    };
+    const cells = (built.plan || []).map((item) => {
+        let bg = '#6A1B9A';
+        let fg = '#fff';
+        let mark = '';
+        let tip = '畝' + (item.origLabel || '');
+        if (item.role === 'end') {
+            bg = '#546E7A';
+            mark = '空';
+            tip += ' 植えない';
+        } else if (item.role === 'gap') {
+            bg = '#FFE082';
+            fg = '#4E342E';
+            mark = '間';
+            tip += ' 番号のあいだ';
+        } else {
+            const m = String(item.group || '').match(/(\d+)/);
+            mark = m ? m[1] : '';
+            bg = groupColor(item.group);
+            tip += ' ' + mark + '番のまとまり';
+        }
+        return '<span title="' + tip + '" style="width:26px; height:32px; border-radius:4px; background:' + bg + '; color:' + fg + '; font-size:11px; font-weight:bold; display:flex; align-items:center; justify-content:center;">' + mark + '</span>';
+    }).join('');
     el.innerHTML =
-        '<div style="color:#ce93d8; font-weight:bold; margin-bottom:6px;">' + built.total + '本を' + dirLabel + '分けます</div>' +
-        '<div style="display:flex; flex-wrap:wrap; gap:4px;">' +
-        chips.map((c) => '<span style="background:#3a2a44; color:#f3e5f5; border-radius:999px; padding:3px 8px; font-size:11px;">' + c + '</span>').join('') +
+        '<div style="color:#ce93d8; font-weight:bold; margin-bottom:4px;">' + dirLabel + 'です。1マスが畝1本です。</div>' +
+        '<div style="display:flex; flex-wrap:wrap; gap:3px; margin-bottom:8px;">' + cells + '</div>' +
+        '<div style="display:flex; flex-wrap:wrap; gap:8px; font-size:11px; color:#ddd;">' +
+        '<span><b style="color:#546E7A;">空</b> 植えない端</span>' +
+        '<span><b style="color:#CE93D8;">1</b> その番号のまとまり</span>' +
+        '<span><b style="color:#FFE082;">間</b> 番号のあいだの1本</span>' +
         '</div>';
 };
 
