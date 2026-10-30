@@ -241,6 +241,7 @@
         <div id="cadFrontHint" style="font-size:10px; color:#ccc; line-height:1.35; margin-bottom:6px;">辺をタップすると、同じ方角の辺をまとめて正面にします。</div>
         <div style="display:flex; gap:5px; margin-bottom:10px;">
           <button type="button" id="cadFrontPickBtn" onclick="cadBeginFrontEdgePick()" style="flex:1; background:#333; color:#FFCC80; border:1px solid #ea580c; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">辺を選ぶ</button>
+          <button type="button" id="cadFrontConfirmBtn" onclick="cadConfirmFrontEdge()" disabled style="flex:0.8; background:#E65100; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer; opacity:0.45;">確定</button>
           <button type="button" onclick="cadClearFrontEdgePick()" style="flex:0.7; background:#555; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">解除</button>
         </div>
 
@@ -301,81 +302,52 @@
       </div>
 
       <div id="cadMode4" style="display:none;">
-        <div style="font-size:12px; color:#ddd; margin-bottom:8px; line-height:1.45;">
-          生成畝を「〇畝おき」に分けます。<br>
-          ・分割の間は <b>1畝空け</b>ます<br>
-          ・条件の悪い端は <b>空き畝（端）</b>としてまとめて残せます<br>
-          ・番号の開始向きで、どちら側から分割1番を付けるか選べます
+        <div style="font-size:12px; color:#e1bee7; line-height:1.45; margin-bottom:10px;">並んだ畝を本数ごとに区切ります。区切りのあいだは1本空けます。</div>
+        <div style="font-size:11px; color:#aaa; margin-bottom:4px;">番号を付ける向き</div>
+        <div style="display:flex; gap:6px; margin-bottom:10px;">
+          <label style="flex:1; display:flex; align-items:center; justify-content:center; gap:4px; background:#7B1FA2; border:1px solid #CE93D8; border-radius:8px; padding:10px 6px; font-size:12px; color:#fff; font-weight:bold; cursor:pointer;">
+            <input type="radio" name="cadSplitDirection" value="normal" checked onchange="cadPreviewRidgeNumberSplit()"> 1番側から
+          </label>
+          <label style="flex:1; display:flex; align-items:center; justify-content:center; gap:4px; background:#333; border:1px solid #666; border-radius:8px; padding:10px 6px; font-size:12px; color:#fff; font-weight:bold; cursor:pointer;">
+            <input type="radio" name="cadSplitDirection" value="reverse" onchange="cadPreviewRidgeNumberSplit()"> 反対側から
+          </label>
         </div>
-        <div style="margin-bottom:10px;">
-          <label style="font-size:11px; color:#aaa; margin-bottom:4px; display:block;">🧭 番号の開始向き</label>
-          <div style="display:flex; gap:6px;">
-            <label style="flex:1; display:flex; align-items:center; justify-content:center; gap:4px; background:#333; border:1px solid #666; border-radius:4px; padding:8px 4px; font-size:11px; color:#eee; cursor:pointer;">
-              <input type="radio" name="cadSplitDirection" value="normal" checked onchange="cadPreviewRidgeNumberSplit()"> 生成順（1番側から）
-            </label>
-            <label style="flex:1; display:flex; align-items:center; justify-content:center; gap:4px; background:#333; border:1px solid #666; border-radius:4px; padding:8px 4px; font-size:11px; color:#eee; cursor:pointer;">
-              <input type="radio" name="cadSplitDirection" value="reverse" onchange="cadPreviewRidgeNumberSplit()"> 逆向き（最終畝側から）
-            </label>
+        <div style="background:#2a2030; border:1px solid #6A1B9A; border-radius:8px; padding:10px; margin-bottom:10px;">
+          <div style="font-size:12px; font-weight:bold; color:#CE93D8; margin-bottom:6px;">何本ずつまとめるか</div>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button type="button" onclick="cadStepSplitField('cadSplitEveryN', -1)" style="width:40px; height:40px; border:none; border-radius:8px; background:#4A148C; color:#fff; font-size:20px; font-weight:bold; cursor:pointer;">−</button>
+            <input type="number" id="cadSplitEveryN" value="5" min="1" step="1" oninput="cadPreviewRidgeNumberSplit()"
+              style="flex:1; padding:8px; border-radius:8px; border:none; box-sizing:border-box; font-size:20px; font-weight:bold; text-align:center;">
+            <button type="button" onclick="cadStepSplitField('cadSplitEveryN', 1)" style="width:40px; height:40px; border:none; border-radius:8px; background:#4A148C; color:#fff; font-size:20px; font-weight:bold; cursor:pointer;">＋</button>
           </div>
         </div>
         <div style="display:flex; gap:8px; margin-bottom:10px;">
-          <div style="flex:1;">
-            <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🚧 開始側の空き畝（本）</label>
-            <input type="number" id="cadSplitEndStart" value="1" min="0" step="1" oninput="cadPreviewRidgeNumberSplit()"
-              style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box; font-size:15px; font-weight:bold;"
-              title="番号開始側で植えない畝の本数">
-          </div>
-          <div style="flex:1;">
-            <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🚧 終了側の空き畝（本）</label>
-            <input type="number" id="cadSplitEndFinish" value="1" min="0" step="1" oninput="cadPreviewRidgeNumberSplit()"
-              style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box; font-size:15px; font-weight:bold;"
-              title="反対側で植えない畝の本数">
-          </div>
-        </div>
-        <div style="display:flex; gap:10px; align-items:flex-end; margin-bottom:10px;">
-          <div style="flex:1;">
-            <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">📦 何畝おきに分割するか</label>
-            <input type="number" id="cadSplitEveryN" value="5" min="1" step="1" oninput="cadPreviewRidgeNumberSplit()"
-              style="width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box; font-size:16px; font-weight:bold;">
-          </div>
-          <button type="button" onclick="cadApplyRidgeNumberSplit()"
-            style="flex:1.4; background:#7B1FA2; color:#fff; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer;">🔢 分割して番号付け</button>
-        </div>
-        <div id="cadSplitPreview" style="background:#2a2a2a; border:1px solid #555; border-radius:6px; padding:8px; font-size:11px; color:#bbb; line-height:1.5; margin-bottom:10px; min-height:40px;">
-          畝を生成すると、ここに分割プレビューが表示されます。
-        </div>
-
-        <div style="border:1px solid #6A1B9A; border-radius:6px; padding:8px; margin-bottom:10px; background:#2a1a33;">
-          <div style="font-size:11px; color:#CE93D8; font-weight:bold; margin-bottom:4px;">📡 GPS位置で分割 / 畝の有無で分割</div>
-          <div style="font-size:10px; color:#aaa; margin-bottom:6px; line-height:1.35;">
-            現場のGPS位置で「ここより手前／奥」を分けたり、畝がある塊と空いている間で自動分割できます。
-          </div>
-          <div style="display:flex; gap:5px; margin-bottom:6px; flex-wrap:wrap;">
-            <button type="button" id="cadSplitGpsStartBtn" onclick="cadStartSplitGps()"
-              style="flex:1; min-width:110px; background:#6A1B9A; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px;">GPSで分割位置</button>
-            <button type="button" onclick="cadApplyPresenceBasedSplit()"
-              style="flex:1; min-width:110px; background:#00897B; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px;">畝のある塊で分割</button>
-          </div>
-          <div id="cadSplitGpsBar" style="display:none; background:#311B92; border:1px solid #7E57C2; border-radius:6px; padding:8px; margin-bottom:6px;">
-            <div id="cadSplitGpsStatus" style="font-size:11px; color:#E1BEE7; line-height:1.35; margin-bottom:6px;">GPS測位中…</div>
-            <div style="display:flex; gap:5px; flex-wrap:wrap;">
-              <button type="button" id="cadSplitGpsConfirmBtn" onclick="cadConfirmSplitGpsCut()" disabled
-                style="flex:1; min-width:90px; background:#455A64; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:not-allowed; opacity:0.6;">ここに分割点</button>
-              <button type="button" onclick="cadCancelSplitGps()"
-                style="flex:0.7; min-width:70px; background:#616161; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px;">取消</button>
+          <div style="flex:1; background:#2a2a2a; border:1px solid #555; border-radius:8px; padding:8px;">
+            <div style="font-size:11px; color:#aaa; margin-bottom:6px;">開始側で植えない本数</div>
+            <div style="display:flex; gap:4px; align-items:center;">
+              <button type="button" onclick="cadStepSplitField('cadSplitEndStart', -1)" style="width:32px; height:32px; border:none; border-radius:6px; background:#444; color:#fff; font-weight:bold; cursor:pointer;">−</button>
+              <input type="number" id="cadSplitEndStart" value="1" min="0" step="1" oninput="cadPreviewRidgeNumberSplit()"
+                style="flex:1; padding:6px; border-radius:6px; border:none; box-sizing:border-box; font-size:16px; font-weight:bold; text-align:center;">
+              <button type="button" onclick="cadStepSplitField('cadSplitEndStart', 1)" style="width:32px; height:32px; border:none; border-radius:6px; background:#444; color:#fff; font-weight:bold; cursor:pointer;">＋</button>
             </div>
           </div>
-          <div id="cadSplitGpsCutsStatus" style="font-size:10px; color:#ce93d8; margin-bottom:6px; line-height:1.35;">分割点: なし</div>
-          <div style="display:flex; gap:5px; flex-wrap:wrap;">
-            <button type="button" onclick="cadApplyGpsSplitCuts()"
-              style="flex:1; min-width:110px; background:#7B1FA2; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px;">GPS分割点で番号付け</button>
-            <button type="button" onclick="cadClearGpsSplitCuts()"
-              style="flex:0.9; min-width:90px; background:#546E7A; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px;">分割点クリア</button>
+          <div style="flex:1; background:#2a2a2a; border:1px solid #555; border-radius:8px; padding:8px;">
+            <div style="font-size:11px; color:#aaa; margin-bottom:6px;">終了側で植えない本数</div>
+            <div style="display:flex; gap:4px; align-items:center;">
+              <button type="button" onclick="cadStepSplitField('cadSplitEndFinish', -1)" style="width:32px; height:32px; border:none; border-radius:6px; background:#444; color:#fff; font-weight:bold; cursor:pointer;">−</button>
+              <input type="number" id="cadSplitEndFinish" value="1" min="0" step="1" oninput="cadPreviewRidgeNumberSplit()"
+                style="flex:1; padding:6px; border-radius:6px; border:none; box-sizing:border-box; font-size:16px; font-weight:bold; text-align:center;">
+              <button type="button" onclick="cadStepSplitField('cadSplitEndFinish', 1)" style="width:32px; height:32px; border:none; border-radius:6px; background:#444; color:#fff; font-weight:bold; cursor:pointer;">＋</button>
+            </div>
           </div>
         </div>
-
+        <div id="cadSplitPreview" style="background:#24182c; border:1px solid #6A1B9A; border-radius:8px; padding:10px; font-size:12px; color:#eee; line-height:1.5; margin-bottom:10px; min-height:52px;">
+          畝を生成すると、分け方がここに出ます。
+        </div>
+        <button type="button" onclick="cadApplyRidgeNumberSplit()"
+          style="width:100%; background:#7B1FA2; color:#fff; border:none; padding:12px; border-radius:8px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:8px;">この分け方で番号を付ける</button>
         <button type="button" onclick="cadClearRidgeNumberSplit()"
-          style="width:100%; background:#607D8B; color:#fff; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">↩ 分割番号をクリア（通常番号に戻す）</button>
+          style="width:100%; background:#455A64; color:#fff; border:none; padding:10px; border-radius:8px; font-weight:bold; font-size:12px; cursor:pointer;">番号を元に戻す</button>
       </div>
 
       <div id="cadMode5" style="display:none;">
@@ -680,7 +652,7 @@
   <script src="api-client.js?v=1788510000000" defer></script>
   <script src="admin2.js?v=1788600000040" defer></script>
   <script src="tracking.js?v=1787790000000" defer></script>
-  <script src="cad.js?v=1788600000275" defer></script>
+  <script src="cad.js?v=1788600000280" defer></script>
   <script type="importmap">
   {
     "imports": {

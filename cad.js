@@ -875,18 +875,23 @@ window.updateCadSvgOverlay = (opts) => {
                 let div = document.createElement('div');
                 let iconStr = '';
                 let numStr = '';
+                let nameStr = '';
                 if (mk.cadPinType === 'water_in') {
                     waterInCount++;
                     iconStr = '🚰';
                     numStr = String(waterInCount);
+                    nameStr = '給水';
                 } else if (mk.cadPinType === 'water_out') {
                     waterOutCount++;
                     iconStr = '🚩';
                     numStr = String(waterOutCount);
+                    nameStr = '排水';
                 } else if (mk.cadPinType === 'parking_truck') {
                     iconStr = '🅿️';
+                    nameStr = '駐車場';
                 } else {
                     iconStr = '🚜';
+                    nameStr = '侵入口';
                 }
                 
                 let iconSpan = document.createElement('span');
@@ -894,6 +899,14 @@ window.updateCadSvgOverlay = (opts) => {
                 iconSpan.textContent = iconStr;
                 iconSpan.style.cssText = 'display:block; line-height:1;';
                 div.appendChild(iconSpan);
+
+                if (nameStr) {
+                    let nameSpan = document.createElement('span');
+                    nameSpan.className = 'cad-pin-name';
+                    nameSpan.textContent = nameStr;
+                    nameSpan.style.cssText = 'position:absolute; left:50%; top:100%; transform:translate(-50%, 1px); font-size:11px; font-weight:bold; color:#111; white-space:nowrap; line-height:1.1; pointer-events:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
+                    div.appendChild(nameSpan);
+                }
 
                 if (numStr) {
                     let numSpan = document.createElement('span');
@@ -904,7 +917,7 @@ window.updateCadSvgOverlay = (opts) => {
                 }
                 
                 div.className = 'cad-equip-pin';
-                div.style.cssText = 'font-size:24px; text-align:center; transform:translate(-50%, -50%) rotate(var(--label-rot)); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:move; user-select:none; touch-action:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
+                div.style.cssText = 'font-size:18px; text-align:center; transform:translate(-50%, -50%) rotate(var(--label-rot)); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:move; user-select:none; touch-action:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
                 wrap.appendChild(div);
 
                 let delBtn = document.createElement('button');
@@ -3212,26 +3225,46 @@ window.cadBuildRidgeNumberSplitPlan = (everyNOrOpts) => {
     };
 };
 
+window.cadStepSplitField = (id, delta) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const min = parseInt(el.min, 10);
+    const cur = parseInt(el.value, 10) || 0;
+    const next = Math.max(Number.isFinite(min) ? min : 0, cur + delta);
+    el.value = String(next);
+    if (typeof window.cadPreviewRidgeNumberSplit === 'function') window.cadPreviewRidgeNumberSplit();
+};
+
 window.cadPreviewRidgeNumberSplit = () => {
     const el = document.getElementById('cadSplitPreview');
+    document.querySelectorAll('input[name="cadSplitDirection"]').forEach((inp) => {
+        const label = inp.closest ? inp.closest('label') : null;
+        if (!label) return;
+        const on = !!inp.checked;
+        label.style.background = on ? '#7B1FA2' : '#333';
+        label.style.borderColor = on ? '#CE93D8' : '#666';
+        label.style.color = '#fff';
+    });
     if (!el) return;
     const built = window.cadBuildRidgeNumberSplitPlan(window.cadReadRidgeNumberSplitOptions());
     if (!built.ok) {
-        el.innerHTML = '<span style="color:#ef9a9a;">' + (built.message || '分割できません') + '</span>';
+        el.innerHTML = '<div style="color:#ef9a9a;">' + (built.message || '分割できません') + '</div>';
         return;
     }
     const fmt = window.formatCadUneGroupDisplayName || ((x) => x);
-    const lines = built.groups.map((g) => {
-        return `・${fmt(g.name)}: 元畝番号 ${g.labels.join(', ')}（${g.count}畝）`;
+    const chips = [];
+    if (built.endStart > 0) chips.push('空き ' + built.endStart + '本');
+    built.groups.forEach((g, idx) => {
+        if (idx > 0) chips.push('1本空け');
+        chips.push(fmt(g.name) + '・' + g.count + '本');
     });
-    const lastN = built.groups.length;
-    const dirLabel = built.direction === 'reverse' ? '逆向き（最終畝側から）' : '生成順（1番側から）';
+    if (built.endFinish > 0) chips.push('空き ' + built.endFinish + '本');
+    const dirLabel = built.direction === 'reverse' ? '反対側から' : '1番側から';
     el.innerHTML =
-        '<div style="color:#ce93d8;margin-bottom:4px;">' + built.message + '</div>' +
-        '<div>向き: ' + dirLabel + '</div>' +
-        '<div>端（空き）: 開始側 ' + built.endStart + '本（/1番）… 終了側 ' + built.endFinish + '本（' + lastN + '番/）</div>' +
-        '<div>空け: 隣り合う分割番号（例 1番/2番）</div>' +
-        lines.map((l) => '<div>' + l + '</div>').join('');
+        '<div style="color:#ce93d8; font-weight:bold; margin-bottom:6px;">' + built.total + '本を' + dirLabel + '分けます</div>' +
+        '<div style="display:flex; flex-wrap:wrap; gap:4px;">' +
+        chips.map((c) => '<span style="background:#3a2a44; color:#f3e5f5; border-radius:999px; padding:3px 8px; font-size:11px;">' + c + '</span>').join('') +
+        '</div>';
 };
 
 window.cadApplyRidgeNumberSplit = () => {
@@ -5517,12 +5550,14 @@ window.cadFrontEdgeIndex = null;
 
 window.cadUpdateFrontPickUi = () => {
     const picking = window.cadPinMode === 'front_edge';
+    const chosen = (window.cadFrontEdgeIndexes && window.cadFrontEdgeIndexes.length) || 0;
     const hint = document.getElementById('cadFrontHint');
     const btn = document.getElementById('cadFrontPickBtn');
+    const confirmBtn = document.getElementById('cadFrontConfirmBtn');
     if (hint) {
         hint.textContent = picking
-            ? '正面にしたい方角の辺をタップしてください。段差があっても、同じ方角の辺をまとめて選びます。'
-            : '辺をタップすると、同じ方角の辺をまとめて正面にします。';
+            ? '辺をタップして正面を選び、よければ確定を押してください。確定するまで、別の辺をタップすると選び直します。'
+            : (chosen ? '正面を確定しました。変えるときは「辺を選ぶ」からやり直します。' : '辺をタップすると、同じ方角の辺をまとめて正面にします。');
     }
     if (btn) {
         btn.textContent = picking ? '選択中' : '辺を選ぶ';
@@ -5530,11 +5565,31 @@ window.cadUpdateFrontPickUi = () => {
         btn.style.color = picking ? '#fff' : '#FFCC80';
         btn.style.border = picking ? 'none' : '1px solid #ea580c';
     }
+    if (confirmBtn) {
+        confirmBtn.disabled = !chosen;
+        confirmBtn.style.opacity = chosen ? '1' : '0.45';
+    }
     const msg = document.getElementById('cadPinModeMsg');
     if (msg && picking) {
-        msg.innerText = '畝の正面：辺をタップしてください';
+        msg.innerText = chosen ? '畝の正面：この辺でよければ確定を押してください' : '畝の正面：辺をタップしてください';
         msg.style.color = '#FF5722';
     }
+};
+
+window.cadConfirmFrontEdge = () => {
+    if (!window.cadFrontEdgeIndexes || !window.cadFrontEdgeIndexes.length) {
+        alert('先に辺をタップしてください。');
+        return;
+    }
+    if (window.cadPinMode === 'front_edge') window.cadPinMode = null;
+    window.cadUpdateFrontPickUi();
+    const msg = document.getElementById('cadPinModeMsg');
+    if (msg) {
+        msg.innerText = '畝の正面を確定しました。別の辺を触っても変わりません。';
+        msg.style.color = '#FF5722';
+    }
+    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: true });
+    if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
 };
 
 window.cadBeginFrontEdgePick = () => {
@@ -5641,12 +5696,13 @@ window.cadApplyFrontEdge = (edgeIndex) => {
     const angleEl = document.getElementById('cadAngle');
     if (angleEl) angleEl.value = String(angle);
     if (typeof window.updateCadPreviewCount === 'function') window.updateCadPreviewCount();
+    if (typeof window.cadUpdateFrontPickUi === 'function') window.cadUpdateFrontPickUi();
     if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
     if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
 
     const msg = document.getElementById('cadPinModeMsg');
     if (msg) {
-        msg.innerText = `この方角の辺 ${indexes.length} 本をまとめて正面にしました。`;
+        msg.innerText = `この方角の辺 ${indexes.length} 本を選びました。よければ確定を押してください。`;
         msg.style.color = '#FF5722';
     }
     return true;
