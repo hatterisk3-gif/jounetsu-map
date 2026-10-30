@@ -1347,33 +1347,73 @@ select.snr-input { appearance:auto; }
   position: sticky;
   top: 0;
   z-index: 4;
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
   margin: -12px -12px 8px;
   padding: 12px 12px 8px;
   background: #fff;
-  -webkit-overflow-scrolling: touch;
 }
-.pest-app-crop-pick {
-  flex: 0 0 auto;
-  width: auto;
+.pest-app-crop-lead {
+  font-size: 14px;
+  font-weight: 800;
+  color: #1b5e20;
+}
+.pest-app-crop-current {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin: 0;
-  padding: 8px 14px;
+  padding: 12px 14px;
+  border: 2px solid #1b5e20;
+  background: #1b5e20;
+  color: #fff;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 800;
+  text-align: left;
+  line-height: 1.3;
+}
+.pest-app-crop-current small {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+.pest-app-crop-list { display: flex; flex-direction: column; gap: 6px; }
+.pest-app-crop-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px;
+  text-align: left;
   border: 1px solid #a5d6a7;
   background: #f1f8e9;
   color: #1b5e20;
-  border-radius: 999px;
-  font-size: 14px;
+  border-radius: 10px;
+  font-size: 16px;
   font-weight: 800;
-  white-space: nowrap;
-  line-height: 1.2;
+  line-height: 1.3;
 }
-.pest-app-crop-pick.is-on {
+.pest-app-crop-row small {
+  flex: 0 0 auto;
+  min-width: 22px;
+  text-align: center;
+  background: rgba(27, 94, 32, 0.12);
+  border-radius: 999px;
+  font-size: 12px;
+  padding: 2px 7px;
+}
+.pest-app-crop-row.is-on {
   background: #1b5e20;
   color: #fff;
   border-color: #1b5e20;
 }
+.pest-app-crop-row.is-on small { background: rgba(255, 255, 255, 0.2); }
 .pest-lookup-table-wrap { display: flex; flex-direction: column; gap: 10px; }
 .pest-app-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .pest-app-facts span {

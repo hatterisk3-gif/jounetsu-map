@@ -6,6 +6,7 @@
   var hits = [];
   var tableRows = [];
   var selectedCrop = '';
+  var cropListOpen = true;
 
   function esc(s) {
     return String(s == null ? '' : s)
@@ -161,20 +162,37 @@
     return crops;
   }
 
-  function paintCropBar_(crops) {
+  function cropCountMap_() {
+    var map = {};
+    tableRows.forEach(function (row) {
+      var name = cropNameOf_(row);
+      map[name] = (map[name] || 0) + 1;
+    });
+    return map;
+  }
+
+  function paintCropBar_() {
     var bar = document.getElementById('pestLookupCropBar');
     if (!bar) return;
-    window._pestCropNames = crops;
-    bar.innerHTML = crops.map(function (name, idx) {
-      var on = name === selectedCrop ? ' is-on' : '';
-      return '<button type="button" class="pest-app-crop-pick' + on + '" onclick="selectPesticideCrop_(' + idx + ')">' + esc(name) + '</button>';
-    }).join('');
-    var onBtn = bar.querySelector('.is-on');
-    if (!onBtn) return;
-    var left = onBtn.offsetLeft - 8;
-    if (left < bar.scrollLeft || left + onBtn.offsetWidth > bar.scrollLeft + bar.clientWidth) {
-      bar.scrollLeft = Math.max(0, left);
+    if (cropListOpen && !selectedCrop) {
+      bar.innerHTML = '<div class="pest-app-crop-lead">作物を選んでください</div>';
+      return;
     }
+    var label = cropListOpen ? '閉じる' : '変更';
+    bar.innerHTML =
+      '<button type="button" class="pest-app-crop-current' + (cropListOpen ? ' is-open' : '') + '" onclick="togglePesticideCropList_()">' +
+      '<span>' + esc(selectedCrop) + '</span><small>' + label + '</small></button>';
+  }
+
+  function cropListHtml_(crops) {
+    var counts = cropCountMap_();
+    window._pestCropNames = crops;
+    if (!crops.length) return '<div class="pest-lookup-empty">該当する作物がありません。</div>';
+    return '<div class="pest-app-crop-list">' + crops.map(function (name, idx) {
+      var on = name === selectedCrop ? ' is-on' : '';
+      return '<button type="button" class="pest-app-crop-row' + on + '" onclick="selectPesticideCrop_(' + idx + ')">' +
+        '<span>' + esc(name) + '</span><small>' + (counts[name] || 0) + '</small></button>';
+    }).join('') + '</div>';
   }
 
   function cardsHtml_(rows) {
@@ -239,30 +257,65 @@
     return html;
   }
 
+  function rowMatchesQuery_(row, q) {
+    return [row.cropName, row.targetPest, row.useTimingText, row.dilution, row.usageAmount, row.usageCount, row.usageMethod].join('\n').toLowerCase().indexOf(q) >= 0;
+  }
+
+  function cropsMatching_(q) {
+    var crops = collectCrops_(tableRows);
+    if (!q) return crops;
+    return crops.filter(function (name) {
+      if (name.toLowerCase().indexOf(q) >= 0) return true;
+      return tableRows.some(function (row) {
+        return cropNameOf_(row) === name && rowMatchesQuery_(row, q);
+      });
+    });
+  }
+
   function renderApplicationTable() {
     var wrap = document.getElementById('pestLookupTableWrap');
+    var filter = document.getElementById('pestLookupCropFilter');
     if (!wrap) return;
-    var q = String((document.getElementById('pestLookupCropFilter') || {}).value || '').trim().toLowerCase();
-    var pool = tableRows;
-    if (q) {
-      pool = tableRows.filter(function (r) {
-        return [r.cropName, r.targetPest, r.useTimingText, r.dilution, r.usageAmount, r.usageCount, r.usageMethod].join('\n').toLowerCase().indexOf(q) >= 0;
-      });
+    var q = String((filter || {}).value || '').trim().toLowerCase();
+    var allCrops = collectCrops_(tableRows);
+    if (selectedCrop && allCrops.indexOf(selectedCrop) < 0) selectedCrop = '';
+    if (allCrops.length === 1) {
+      selectedCrop = allCrops[0];
+      cropListOpen = false;
     }
-    var crops = collectCrops_(pool);
-    if (crops.indexOf(selectedCrop) < 0) selectedCrop = crops[0] || '';
-    paintCropBar_(crops);
-    if (!selectedCrop) {
-      wrap.innerHTML = '<div class="pest-lookup-empty">この条件の適用行はありません。</div>';
+    if (filter) filter.placeholder = cropListOpen ? '作物名で探す' : 'この作物の適用・希釈で絞る';
+    paintCropBar_();
+    if (cropListOpen) {
+      wrap.innerHTML = cropListHtml_(cropsMatching_(q));
       return;
     }
-    wrap.innerHTML = cardsHtml_(pool.filter(function (r) { return cropNameOf_(r) === selectedCrop; }));
+    if (!selectedCrop) {
+      wrap.innerHTML = '<div class="pest-lookup-empty">作物を選ぶと、その適用だけ表示します。</div>';
+      return;
+    }
+    var shown = tableRows.filter(function (row) { return cropNameOf_(row) === selectedCrop; });
+    if (q) shown = shown.filter(function (row) { return rowMatchesQuery_(row, q); });
+    wrap.innerHTML = cardsHtml_(shown);
   }
 
   window.selectPesticideCrop_ = function (index) {
     var names = window._pestCropNames || [];
-    if (!names[index] || names[index] === selectedCrop) return;
+    if (!names[index]) return;
     selectedCrop = names[index];
+    cropListOpen = false;
+    var filter = document.getElementById('pestLookupCropFilter');
+    if (filter) filter.value = '';
+    renderApplicationTable();
+    var pane = document.getElementById('pestLookupTablePane');
+    if (pane) pane.scrollTop = 0;
+  };
+
+  window.togglePesticideCropList_ = function () {
+    cropListOpen = !cropListOpen;
+    if (cropListOpen) {
+      var filter = document.getElementById('pestLookupCropFilter');
+      if (filter) filter.value = '';
+    }
     renderApplicationTable();
     var pane = document.getElementById('pestLookupTablePane');
     if (pane) pane.scrollTop = 0;
@@ -290,6 +343,7 @@
     if (wrap) wrap.innerHTML = '';
     tableRows = [];
     selectedCrop = '';
+    cropListOpen = true;
     setPestLookupLoading_(true, '適用表を読み込み中...');
     try {
       var res = await callGAS('getPesticideApplicationTable', {

@@ -6326,7 +6326,7 @@ window.cadUpdateMakuraPickUi = () => {
         } else if (n) {
             hint.textContent = `選択中 ${n} 辺。生成を押すか、辺を選ぶで追加できます。`;
         } else {
-            hint.textContent = '辺をタップすると、同じ方角の辺をまとめて選び、その約50cm内側に作ります。畝と平行な辺は端の畝に統合します。';
+            hint.textContent = '辺をタップすると、同じ方角の辺をまとめて選び、その約50cm内側に作ります。畝とはくっつけません。';
         }
     }
     const pickBtn = document.getElementById('cadMakuraPickBtn');
@@ -6605,8 +6605,47 @@ window.cadCreateMakuraFromEdges = (ring, tPoly, edgeIndexes, widthM) => {
             features.push(one);
         });
     });
-    if (features.length <= 1) return features;
-    return window.cadJoinNearbyMakura_(features, tPoly);
+    if (features.length > 1) features = window.cadJoinNearbyMakura_(features, tPoly);
+    return window.cadSeparateMakuraFromRidges_(features);
+};
+
+/** 枕畝が畝に重なる部分を削り、隙間を残す */
+window.cadSeparateMakuraFromRidges_ = (features) => {
+    const gap = (window.CAD_MAKURA_RIDGE_GAP_M > 0) ? window.CAD_MAKURA_RIDGE_GAP_M : 0.35;
+    const out = [];
+    const hits = (a, b) => {
+        try {
+            if (typeof turf.booleanIntersects === 'function') return turf.booleanIntersects(a, b);
+            return !!turf.intersect(a, b);
+        } catch (e) {
+            return false;
+        }
+    };
+    (features || []).forEach((feature) => {
+        let piece = feature;
+        const lists = [window.cadUnePolygons, window.cadCustomShapes];
+        for (let li = 0; li < lists.length && piece; li++) {
+            const list = lists[li] || [];
+            for (let i = 0; i < list.length && piece; i++) {
+                const other = window.cadGooglePolyToTurf(list[i]);
+                if (!other || !hits(piece, other)) continue;
+                let avoid = other;
+                try { avoid = turf.buffer(other, gap, { units: 'meters' }) || other; } catch (e) {}
+                try {
+                    const d = turf.difference(piece, avoid);
+                    if (d) piece = d;
+                } catch (e) {}
+            }
+        }
+        if (!piece) return;
+        let flat;
+        try { flat = turf.flatten(piece); } catch (e) { flat = { features: [piece] }; }
+        (flat.features || []).forEach((f) => {
+            const one = window.cadCoalesceToPolygon(f);
+            if (one && window.cadFeatureArea(one) >= 0.4) out.push(one);
+        });
+    });
+    return out;
 };
 
 window.cadMakuraAxisBox_ = (feature) => {
@@ -6887,36 +6926,16 @@ window.cadGenerateMakuraFromSelectedEdges = () => {
     }
     if (!widthM || widthM <= 0) widthM = 1.5;
 
-    const parallel = [];
-    const across = [];
-    selected.forEach((ei) => {
-        const info = window.cadRingEdgeInfo(ring, ei);
-        if (!info) return;
-        if (window.cadEdgeIsParallelToRidges(info.bearing)) parallel.push(ei);
-        else across.push(ei);
-    });
-
-    let merged = 0;
-    let makuraEdges = across.slice();
-    try {
-        const mergeResult = window.cadMergeParallelEdgesIntoEndRidges(ring, tPoly, parallel, widthM);
-        merged = mergeResult.merged || 0;
-        makuraEdges = makuraEdges.concat(mergeResult.leftover || []);
-    } catch (e) {
-        console.warn('端の畝への統合に失敗:', e);
-        makuraEdges = makuraEdges.concat(parallel);
-    }
-
     let features = [];
     try {
-        features = window.cadCreateMakuraFromEdges(ring, tPoly, makuraEdges, widthM);
+        features = window.cadCreateMakuraFromEdges(ring, tPoly, selected, widthM);
     } catch (e) {
         console.warn('枕畝の生成に失敗:', e);
         features = [];
     }
     const added = window.cadPlaceMakuraFeatures(features);
 
-    if (!merged && !added) {
+    if (!added) {
         alert('選んだ辺には枕畝を置く空きがありません。');
         return;
     }
@@ -6931,10 +6950,7 @@ window.cadGenerateMakuraFromSelectedEdges = () => {
 
     const msg = document.getElementById('cadPinModeMsg');
     if (msg) {
-        const parts = [];
-        if (added) parts.push(`枕畝を ${added} 本`);
-        if (merged) parts.push(`端の畝 ${merged} 本に統合`);
-        msg.innerText = parts.join('、') + 'しました';
+        msg.innerText = `枕畝を ${added} 本つくりました`;
         msg.style.color = '#ea580c';
     }
 };

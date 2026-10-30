@@ -230,7 +230,7 @@
       <div id="cadMode2" style="display:none;">
         <div id="cadMakuraPanel" style="background:#2a1a12; border:1px solid #ea580c; border-radius:8px; padding:8px; margin-bottom:10px;">
           <div style="font-size:12px; color:#fdba74; font-weight:bold; margin-bottom:4px;">🛌 枕畝</div>
-          <div id="cadMakuraHint" style="font-size:10px; color:#ccc; line-height:1.35; margin-bottom:6px;">辺をタップすると、同じ方角の辺をまとめて選び、その約50cm内側に作ります。畝と平行な辺は端の畝に統合します。</div>
+          <div id="cadMakuraHint" style="font-size:10px; color:#ccc; line-height:1.35; margin-bottom:6px;">辺をタップすると、同じ方角の辺をまとめて選び、その約50cm内側に作ります。畝とはくっつけません。</div>
           <div style="display:flex; gap:5px;">
             <button type="button" id="cadMakuraPickBtn" onclick="cadBeginMakuraEdgePick()" style="flex:1; background:#333; color:#fdba74; border:1px solid #ea580c; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">辺を選ぶ</button>
             <button type="button" id="cadMakuraGenBtn" onclick="cadGenerateMakuraFromSelectedEdges()" disabled style="flex:1.1; background:#ea580c; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer; opacity:0.45;">生成</button>
@@ -652,7 +652,7 @@
   <script src="api-client.js?v=1788510000000" defer></script>
   <script src="admin2.js?v=1788600000040" defer></script>
   <script src="tracking.js?v=1787790000000" defer></script>
-  <script src="cad.js?v=1788600000286" defer></script>
+  <script src="cad.js?v=1788600000287" defer></script>
   <script type="importmap">
   {
     "imports": {
