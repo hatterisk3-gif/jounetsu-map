@@ -3259,14 +3259,16 @@ window.cadPreviewRidgeNumberSplit = () => {
         el.innerHTML = '<div style="color:#ef9a9a;">' + (built.message || '分割できません') + '</div>';
         return;
     }
-    const dirLabel = built.direction === 'reverse' ? '反対側が左' : '1番側が左';
+    const reverseView = built.direction === 'reverse';
+    const dirLabel = reverseView ? '1番側が左、番号は右から' : '1番側が左';
     const groupColor = (name) => {
         const m = String(name || '').match(/(\d+)/);
         const n = m ? parseInt(m[1], 10) : 1;
         const palette = ['#6A1B9A', '#7B1FA2', '#8E24AA', '#5E35B1', '#4527A0'];
         return palette[(n - 1) % palette.length];
     };
-    const cells = (built.plan || []).map((item) => {
+    const viewPlan = reverseView ? (built.plan || []).slice().reverse() : (built.plan || []);
+    const cells = viewPlan.map((item) => {
         let bg = '#6A1B9A';
         let fg = '#fff';
         let mark = '';
