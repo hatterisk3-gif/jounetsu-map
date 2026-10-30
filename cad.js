@@ -6511,7 +6511,7 @@ window.cadDestinationMeters_ = (originLngLat, meters, bearingDeg) => {
 };
 
 /** 同じ側・ほぼ同じ方角の辺を1本にまとめ、枕の下辺が直線になる帯を作る */
-window.cadBuildStraightMakuraStrip_ = (ring, tPoly, edgeIndexes, widthM) => {
+window.cadBuildStraightMakuraStrip_ = (ring, tPoly, edgeIndexes, widthM, opts) => {
     const infos = edgeIndexes.map((ei) => window.cadRingEdgeInfo(ring, ei)).filter((info) => info && info.len >= 0.15);
     if (!infos.length || typeof turf === 'undefined') return null;
     const center = turf.center(tPoly).geometry.coordinates;
@@ -6534,23 +6534,25 @@ window.cadBuildStraightMakuraStrip_ = (ring, tPoly, edgeIndexes, widthM) => {
     const inset = (window.CAD_MAKURA_EDGE_INSET_M > 0) ? window.CAD_MAKURA_EDGE_INSET_M : 0.5;
     const gap = (window.CAD_MAKURA_RIDGE_GAP_M > 0) ? window.CAD_MAKURA_RIDGE_GAP_M : 0.35;
     let innerDist = inset + widthM;
-    const ridges = window.cadListMainRidgeEntries();
-    let nearest = Infinity;
-    ridges.forEach((r) => {
-        const pts = r.poly && r.poly.geometry && r.poly.geometry.coordinates && r.poly.geometry.coordinates[0];
-        if (!pts) return;
-        pts.forEach((c) => {
-            const s = window.cadMetersAlongBearing_(origin, c, along);
-            if (s < minS - 0.4 || s > maxS + 0.4) return;
-            const d = window.cadMetersAlongBearing_(origin, c, inward);
-            if (d > inset - 0.2 && d < nearest) nearest = d;
+    if (!opts || !opts.keepFull) {
+        const ridges = window.cadListMainRidgeEntries();
+        let nearest = Infinity;
+        ridges.forEach((r) => {
+            const pts = r.poly && r.poly.geometry && r.poly.geometry.coordinates && r.poly.geometry.coordinates[0];
+            if (!pts) return;
+            pts.forEach((c) => {
+                const s = window.cadMetersAlongBearing_(origin, c, along);
+                if (s < minS - 0.4 || s > maxS + 0.4) return;
+                const d = window.cadMetersAlongBearing_(origin, c, inward);
+                if (d > inset - 0.2 && d < nearest) nearest = d;
+            });
         });
-    });
-    if (nearest < Infinity) {
-        const limit = nearest - gap;
-        if (limit < innerDist) innerDist = limit;
+        if (nearest < Infinity) {
+            const limit = nearest - gap;
+            if (limit < innerDist) innerDist = limit;
+        }
+        if (innerDist < inset + 0.2) return null;
     }
-    if (innerDist < inset + 0.2) return null;
     const a = window.cadDestinationMeters_(origin, minS, along);
     const b = window.cadDestinationMeters_(origin, maxS, along);
     const aOut = window.cadDestinationMeters_(a, inset, inward);
@@ -6567,7 +6569,7 @@ window.cadBuildStraightMakuraStrip_ = (ring, tPoly, edgeIndexes, widthM) => {
     }
 };
 
-window.cadCreateMakuraFromEdges = (ring, tPoly, edgeIndexes, widthM) => {
+window.cadCreateMakuraFromEdges = (ring, tPoly, edgeIndexes, widthM, opts) => {
     if (!edgeIndexes.length) return [];
     const center = turf.center(tPoly).geometry.coordinates;
     const items = edgeIndexes.map((ei) => {
@@ -6595,7 +6597,7 @@ window.cadCreateMakuraFromEdges = (ring, tPoly, edgeIndexes, widthM) => {
             used[other.ei] = true;
             group.push(other.ei);
         });
-        const strip = window.cadBuildStraightMakuraStrip_(ring, tPoly, group, widthM);
+        const strip = window.cadBuildStraightMakuraStrip_(ring, tPoly, group, widthM, opts);
         if (!strip) return;
         let flat;
         try { flat = turf.flatten(strip); } catch (e) { flat = { features: [strip] }; }
@@ -6606,7 +6608,46 @@ window.cadCreateMakuraFromEdges = (ring, tPoly, edgeIndexes, widthM) => {
         });
     });
     if (features.length > 1) features = window.cadJoinNearbyMakura_(features, tPoly);
+    if (opts && opts.keepFull) return features;
     return window.cadSeparateMakuraFromRidges_(features);
+};
+
+/** 枕畝に当たる畝の端を、枕の手前まで短くする */
+window.cadShortenRidgesClearOfMakura_ = (makuraFeatures) => {
+    const gap = (window.CAD_MAKURA_RIDGE_GAP_M > 0) ? window.CAD_MAKURA_RIDGE_GAP_M : 0.35;
+    const zones = [];
+    (makuraFeatures || []).forEach((f) => {
+        const one = window.cadCoalesceToPolygon(f);
+        if (!one) return;
+        let zone = one;
+        try { zone = turf.buffer(one, gap, { units: 'meters' }) || one; } catch (e) {}
+        zones.push(zone);
+    });
+    if (!zones.length) return 0;
+    const hits = (a, b) => {
+        try {
+            if (typeof turf.booleanIntersects === 'function') return turf.booleanIntersects(a, b);
+            return !!turf.intersect(a, b);
+        } catch (e) {
+            return false;
+        }
+    };
+    let shortened = 0;
+    window.cadListMainRidgeEntries().forEach((r) => {
+        let piece = r.poly;
+        let touched = false;
+        zones.forEach((zone) => {
+            if (!piece || !hits(piece, zone)) return;
+            touched = true;
+            try {
+                const d = turf.difference(piece, zone);
+                piece = d ? window.cadCoalesceToPolygon(d) : null;
+            } catch (e) {}
+        });
+        if (!touched || !piece || window.cadFeatureArea(piece) < 0.2) return;
+        if (window.cadApplyFeatureToGooglePoly(r.gPoly, piece)) shortened++;
+    });
+    return shortened;
 };
 
 /** 枕畝が畝に重なる部分を削り、隙間を残す */
@@ -6927,11 +6968,21 @@ window.cadGenerateMakuraFromSelectedEdges = () => {
     if (!widthM || widthM <= 0) widthM = 1.5;
 
     let features = [];
+    let shortened = 0;
     try {
         features = window.cadCreateMakuraFromEdges(ring, tPoly, selected, widthM);
     } catch (e) {
         console.warn('枕畝の生成に失敗:', e);
         features = [];
+    }
+    if (!features.length) {
+        try {
+            features = window.cadCreateMakuraFromEdges(ring, tPoly, selected, widthM, { keepFull: true });
+        } catch (e) {
+            console.warn('枕畝の再生成に失敗:', e);
+            features = [];
+        }
+        if (features.length) shortened = window.cadShortenRidgesClearOfMakura_(features);
     }
     const added = window.cadPlaceMakuraFeatures(features);
 
@@ -6950,7 +7001,9 @@ window.cadGenerateMakuraFromSelectedEdges = () => {
 
     const msg = document.getElementById('cadPinModeMsg');
     if (msg) {
-        msg.innerText = `枕畝を ${added} 本つくりました`;
+        msg.innerText = shortened
+            ? `枕畝を ${added} 本つくり、当たる畝を ${shortened} 本短くしました`
+            : `枕畝を ${added} 本つくりました`;
         msg.style.color = '#ea580c';
     }
 };

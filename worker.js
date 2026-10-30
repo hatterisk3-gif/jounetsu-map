@@ -2645,59 +2645,57 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         if (!p) return;
         const isU = (p.status === '未使用（返却）' || p.status === '未使用');
         if (!Array.isArray(p.photos)) p.photos = [];
-        const navBtn = `<button onclick="executeNavigation('${id}')" style="width:100%; padding:8px; margin-bottom:6px; border:none; border-radius:4px; background:#4285F4; color:white; font-weight:bold; font-size:13px; box-sizing:border-box;">🚗 ナビ開始</button>`;
         
         const workCount = p.photos.filter(ph => ph && ((ph.type === 'work') || (ph.data && ph.data.workName))).length;
         const growthCount = p.photos.filter(ph => ph && (ph.type === 'growth' || (!ph.type && !p.isMarker))).length;
 
-        const growthText = p.isMarker ? '現地写真' : '生育記録';
-        const workText = p.isMarker ? '作業登録' : '作業記録履歴';
-        const growthIcon = p.isMarker ? '📷' : '🌱';
-        const workIcon = '🚜';
-
-        let availableWorks = pdlWorkMaster || [];
-        const hasWork = !p.isMarker || availableWorks.length > 0;
-
-        let actions = `<div style="display:flex; flex-direction:column; gap:6px; width:100%; margin-bottom:6px;">`;
-        // worker2.html のみ圃場の生育記録ボタンを非表示（worker.html では表示）
         const isWorker2 = /worker2\.html/i.test(location.pathname) || /worker2\.html/i.test(location.href);
-        const hideGrowth = isWorker2 && !p.isMarker;
-        // worker.html の圃場タップ一覧からは作業記録を外す（右下📝から開く）
-        const hideWork = !isWorker2 && !p.isMarker;
-        const btnBase = 'width:100%; padding:10px 0; border-radius:4px; border:none; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box; white-space:nowrap;';
 
-        if (!hideGrowth) {
-            actions += `<button onclick="actionManagePhotos('${id}', 'growth')" style="${btnBase} background:#4CAF50;">${growthIcon} ${growthText} (${growthCount})</button>`;
-        }
-        if (!p.isMarker) {
-            actions += `<button onclick="directOpenForm('${id}', 'growth')" style="${btnBase} background:#2E7D32;">📷 写真を追加</button>`;
-            actions += `<button onclick="actionManagePhotos('${id}', 'work')" style="${btnBase} background:#FF9800;">🚜 作業記録履歴 (${workCount})</button>`;
-        } else if (hasWork && !hideWork) {
-            actions += `<button onclick="openFieldWorkRecordSelect('${id}')" style="${btnBase} background:#FF9800;">${workIcon} ${workText} (${workCount})</button>`;
-        }
-        actions += `</div>`;
+        let bodyHtml = '';
 
-        if (p.isMarker && p.signFunction && (String(p.signFunction).includes('在庫') || String(p.signFunction).includes('倉庫'))) {
-            actions += `<button onclick="openInventoryUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#8BC34A; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">📦 在庫状況・入出庫</button>`;
-        }
-        // ★ここを追加！：「給油機能」がある看板なら給油ボタンを表示
-        if (p.isMarker && p.signFunction && String(p.signFunction).includes('給油')) {
-            actions += `<button onclick="openRefuelUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#E91E63; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">⛽ 給油する</button>`;
-        }
-// ★名称変更：「車両・機械管理機能」がある看板ならボタンを表示
-        if (p.isMarker && p.signFunction && String(p.signFunction).includes('車両・機械管理')) {
-            actions += `<button onclick="openMachineStatusUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#1976D2; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">🚜 車両・農機状況</button>`;
-        }
-        if (p.isMarker && p.signFunction && String(p.signFunction).includes('道具管理')) {
-            actions += `<button onclick="openToolManagementUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#00BCD4; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">🪚 道具状況</button>`;
-        }
-        // worker.html の圃場：肥料量計算
-        if (!isWorker2 && !p.isMarker) {
-            actions += `<button onclick="openFertilizerCalcModal('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#6D4C41; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">🧪 ここにまく肥料の量を計算</button>`;
-        }
-        actions += `<button onclick="directOpenReportForm('${id}')" style="width:100%; padding:8px 0; border-radius:4px; border:none; background:#d32f2f; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box;">⚠️ 問題を報告する</button>`;
+        if (!p.isMarker && !isWorker2) {
+            // 圃場の場合：2列×3行のグリッド配置
+            const btnGrid = 'width:100%; padding:9px 2px; border-radius:4px; border:none; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box; white-space:nowrap; display:flex; align-items:center; justify-content:center;';
+            bodyHtml = `
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; width:100%; margin-top:2px;">
+              <button onclick="executeNavigation('${id}')" style="${btnGrid} background:#4285F4;">🚗 ナビ開始</button>
+              <button onclick="actionManagePhotos('${id}', 'growth')" style="${btnGrid} background:#4CAF50;">🌱 生育記録 (${growthCount})</button>
+              <button onclick="directOpenForm('${id}', 'growth')" style="${btnGrid} background:#2E7D32;">📷 写真追加</button>
+              <button onclick="actionManagePhotos('${id}', 'work')" style="${btnGrid} background:#FF9800;">🚜 作業記録履歴 (${workCount})</button>
+              <button onclick="openFertilizerCalcModal('${id}')" style="${btnGrid} background:#6D4C41;">🧪 肥料量計算</button>
+              <button onclick="directOpenReportForm('${id}')" style="${btnGrid} background:#d32f2f;">⚠️ 問題を報告</button>
+            </div>`;
+        } else {
+            // 看板マーカーまたは worker2 の場合
+            const navBtn = `<button onclick="executeNavigation('${id}')" style="width:100%; padding:8px; margin-bottom:6px; border:none; border-radius:4px; background:#4285F4; color:white; font-weight:bold; font-size:13px; box-sizing:border-box;">🚗 ナビ開始</button>`;
+            let actions = `<div style="display:flex; flex-direction:column; gap:6px; width:100%; margin-bottom:6px;">`;
+            const btnBase = 'width:100%; padding:10px 0; border-radius:4px; border:none; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box; white-space:nowrap;';
 
-        const content = `<div style="text-align:center; width:220px; max-width:100%; box-sizing:border-box; padding:2px; font-family:sans-serif;"><b>${p.name}</b><br><div style="font-size:11px; color:#555; margin-bottom:6px;">${!p.isMarker?(isU?'<span style="background:#999;color:white;padding:2px 4px;border-radius:2px;font-size:10px;">未使用</span> ':'')+(p.location||'-')+' / '+(p.condition||'-')+(p.soilType?' / '+p.soilType:'')+' / '+p.area+'a':(p.signFunction ? `[${p.signFunction}]` : '')}</div>${navBtn}${actions}</div>`;
+            actions += `<button onclick="actionManagePhotos('${id}', 'growth')" style="${btnBase} background:#4CAF50;">📷 現地写真 (${growthCount})</button>`;
+            let availableWorks = pdlWorkMaster || [];
+            if (availableWorks.length > 0) {
+                actions += `<button onclick="openFieldWorkRecordSelect('${id}')" style="${btnBase} background:#FF9800;">🚜 作業登録 (${workCount})</button>`;
+            }
+            actions += `</div>`;
+
+            if (p.isMarker && p.signFunction && (String(p.signFunction).includes('在庫') || String(p.signFunction).includes('倉庫'))) {
+                actions += `<button onclick="openInventoryUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#8BC34A; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">📦 在庫状況・入出庫</button>`;
+            }
+            if (p.isMarker && p.signFunction && String(p.signFunction).includes('給油')) {
+                actions += `<button onclick="openRefuelUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#E91E63; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">⛽ 給油する</button>`;
+            }
+            if (p.isMarker && p.signFunction && String(p.signFunction).includes('車両・機械管理')) {
+                actions += `<button onclick="openMachineStatusUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#1976D2; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">🚜 車両・農機状況</button>`;
+            }
+            if (p.isMarker && p.signFunction && String(p.signFunction).includes('道具管理')) {
+                actions += `<button onclick="openToolManagementUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#00BCD4; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">🪚 道具状況</button>`;
+            }
+            actions += `<button onclick="directOpenReportForm('${id}')" style="width:100%; padding:8px 0; border-radius:4px; border:none; background:#d32f2f; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box;">⚠️ 問題を報告</button>`;
+            bodyHtml = `${navBtn}${actions}`;
+        }
+
+        const boxWidth = (!p.isMarker && !isWorker2) ? '260px' : '220px';
+        const content = `<div style="text-align:center; width:${boxWidth}; max-width:92vw; box-sizing:border-box; padding:2px; font-family:sans-serif;"><b>${p.name}</b><br><div style="font-size:11px; color:#555; margin-bottom:6px;">${!p.isMarker?(isU?'<span style="background:#999;color:white;padding:2px 4px;border-radius:2px;font-size:10px;">未使用</span> ':'')+(p.location||'-')+' / '+(p.condition||'-')+(p.soilType?' / '+p.soilType:'')+' / '+p.area+'a':(p.signFunction ? `[${p.signFunction}]` : '')}</div>${bodyHtml}</div>`;
         infoWindow.setContent(content);
       };
 
