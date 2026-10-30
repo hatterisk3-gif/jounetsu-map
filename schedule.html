@@ -15,7 +15,7 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1786243000000"></script>
-  <link rel="stylesheet" href="schedule.css?v=1788600000121">
+  <link rel="stylesheet" href="schedule.css?v=1788600000303">
   <link rel="stylesheet" href="location-pin.css?v=1788600000301">
   <link rel="stylesheet" href="dump-embed/dump-tree-gantt.css?v=1788600000055">
 </head>
@@ -556,7 +556,10 @@
   </div>
 
   <div class="schedule-side-fabs">
-    <button id="btnSoilMoisture" type="button" class="schedule-side-fab schedule-side-fab-moisture" onclick="toggleSoilMoistureMapOverlay()" title="推定土壌水分を地図表示" aria-label="土壌水分">💧</button>
+    <button id="btnSoilMoisture" type="button" class="schedule-side-fab schedule-side-fab-moisture" onclick="toggleSoilMoistureMapOverlay()" title="推定土壌水分を地図表示" aria-label="水分率">
+      <span class="schedule-side-fab-moisture-icon">💧</span>
+      <span class="schedule-side-fab-moisture-label">水分率</span>
+    </button>
     <button id="btnPesticideLookup" type="button" class="schedule-side-fab schedule-side-fab-pest" onclick="openPesticideLookup_()" title="農薬を検索して適用表を見る" aria-label="農薬">
       <span class="schedule-side-fab-pest-icon">🧪</span>
       <span class="schedule-side-fab-pest-label">農薬</span>
@@ -569,6 +572,10 @@
         <button type="button" id="pestLookupBack" class="pest-lookup-back" style="display:none;" onclick="showPesticideLookupSearch_()">←</button>
         <div class="pest-lookup-title" id="pestLookupTitle">🧪 農薬検索</div>
         <button type="button" class="pest-lookup-close" onclick="closePesticideLookup_()" aria-label="閉じる">×</button>
+      </div>
+      <div id="pestLookupLoading" class="pest-lookup-loading" aria-hidden="true">
+        <div id="pestLookupLoadingLabel" class="pest-lookup-loading-label">読み込み中...</div>
+        <div class="pest-lookup-loading-track"><div class="pest-lookup-loading-fill"></div></div>
       </div>
       <div id="pestLookupSearchPane" class="pest-lookup-body">
         <div class="pest-lookup-hint">農薬名・成分・登録番号・メーカーの一部でもヒットします。名前を押すと適用表を開きます。</div>
@@ -942,7 +949,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000301';
+    const cacheBust = '1788600000305';
     // 豚糞共有：台数＋短いGoogleマップURL＋座標（v1.49）
     // ※ https://maps.google.com/?q=緯度,経度
     // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）

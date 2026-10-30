@@ -8400,7 +8400,8 @@ window.cadCollectObliqueClearanceSegs = (ringCoords, ridgeAngleDeg, gapM) => {
         let a = a0;
         let b = b0;
         try {
-            const ext = window.cadExtendLineStringEnds(turf.lineString([a, b]), gap);
+            // 角を少しだけ覆う。端面余白ぶん延ばすと、角の先の畝まで同じ線で止まってしまう
+            const ext = window.cadExtendLineStringEnds(turf.lineString([a, b]), 0.25);
             const cs = ext.geometry.coordinates;
             if (cs && cs.length >= 2) {
                 a = cs[0];

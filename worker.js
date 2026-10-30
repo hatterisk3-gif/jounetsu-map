@@ -1780,6 +1780,33 @@ async function fetchWeatherAndUpdateUI() {
 
     let html = `<div style="padding: 10px;">`;
     html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">現在の天気: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}℃)</div>`;
+
+    // --- 🕒 今後の天気 (1時間ごと) ---
+    let now = new Date();
+    let currentHourStr = now.getFullYear() + "-" + String(now.getMonth()+1).padStart(2, '0') + "-" + String(now.getDate()).padStart(2, '0') + "T" + String(now.getHours()).padStart(2, '0') + ":00";
+    let startIndex = data.hourly ? data.hourly.time.indexOf(currentHourStr) : -1;
+    if (startIndex === -1) startIndex = 0;
+    
+    if (data.hourly) {
+      html += `<div style="margin-bottom:15px;">`;
+      html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">🕒 今後の天気 (1時間ごと)</div>`;
+      html += `<div style="display:flex; overflow-x:auto; padding-bottom:5px; gap:10px;">`;
+      for(let i = startIndex; i < startIndex + 12 && i < data.hourly.time.length; i++) {
+          let t = new Date(data.hourly.time[i]);
+          let hStr = t.getHours() + "時";
+          let hCode = data.hourly.weathercode[i];
+          let hTemp = Math.round(data.hourly.temperature_2m[i] * 10) / 10;
+          let hPrecip = data.hourly.precipitation[i];
+          let hEmoji = getWeatherEmoji(hCode);
+          html += `<div style="min-width:50px; text-align:center; background:#f9f9f9; padding:5px; border-radius:5px; border:1px solid #eee;">
+                     <div style="font-size:12px; color:#666;">${hStr}</div>
+                     <div style="font-size:18px; margin:3px 0;">${hEmoji}</div>
+                     <div style="font-size:13px; font-weight:bold;">${hTemp}℃</div>
+                     <div style="font-size:11px; color:#2196F3;">${hPrecip}mm</div>
+                   </div>`;
+      }
+      html += `</div></div>`;
+    }
     
     // --- 🌡️ 昨日との温度差計算・表示パネル ---
     if (todayIndex > 0 && data.daily && data.daily.temperature_2m_max) {
@@ -1827,32 +1854,6 @@ async function fetchWeatherAndUpdateUI() {
     </div>`;
 
     html += `<div id="contentForecast">`;
-    let now = new Date();
-    let currentHourStr = now.getFullYear() + "-" + String(now.getMonth()+1).padStart(2, '0') + "-" + String(now.getDate()).padStart(2, '0') + "T" + String(now.getHours()).padStart(2, '0') + ":00";
-    let startIndex = data.hourly ? data.hourly.time.indexOf(currentHourStr) : -1;
-    if (startIndex === -1) startIndex = 0;
-    
-    if (data.hourly) {
-      html += `<div style="margin-bottom:15px;">`;
-      html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">🕒 今後の天気 (1時間ごと)</div>`;
-      html += `<div style="display:flex; overflow-x:auto; padding-bottom:5px; gap:10px;">`;
-      for(let i = startIndex; i < startIndex + 12 && i < data.hourly.time.length; i++) {
-          let t = new Date(data.hourly.time[i]);
-          let hStr = t.getHours() + "時";
-          let hCode = data.hourly.weathercode[i];
-          let hTemp = Math.round(data.hourly.temperature_2m[i] * 10) / 10;
-          let hPrecip = data.hourly.precipitation[i];
-          let hEmoji = getWeatherEmoji(hCode);
-          html += `<div style="min-width:50px; text-align:center; background:#f9f9f9; padding:5px; border-radius:5px; border:1px solid #eee;">
-                     <div style="font-size:12px; color:#666;">${hStr}</div>
-                     <div style="font-size:18px; margin:3px 0;">${hEmoji}</div>
-                     <div style="font-size:13px; font-weight:bold;">${hTemp}℃</div>
-                     <div style="font-size:11px; color:#2196F3;">${hPrecip}mm</div>
-                   </div>`;
-      }
-      html += `</div></div>`;
-    }
-
     html += `<div style="margin-bottom:15px; text-align:center;">`;
     html += `<button onclick="openRadarModal(${lat}, ${lng})" style="width:100%; max-width:300px; padding:12px; background:#2196F3; color:white; border:none; border-radius:6px; font-weight:bold; font-size:16px; cursor:pointer; box-shadow:0 2px 5px rgba(0,0,0,0.2);">🌧️ 雨雲レーダーを大画面で見る</button>`;
     html += `</div>`;

@@ -18,6 +18,19 @@
     if (el) el.style.display = on ? '' : 'none';
   }
 
+  function setPestLookupLoading_(on, label) {
+    var box = document.getElementById('pestLookupLoading');
+    var text = document.getElementById('pestLookupLoadingLabel');
+    if (box) {
+      if (on) box.classList.add('is-on');
+      else box.classList.remove('is-on');
+      box.setAttribute('aria-hidden', on ? 'false' : 'true');
+    }
+    if (text && on) text.textContent = label || '読み込み中...';
+    var btn = document.querySelector('#pesticideLookupModal .pest-lookup-go');
+    if (btn) btn.disabled = !!on;
+  }
+
   window.openPesticideLookup_ = function () {
     var modal = document.getElementById('pesticideLookupModal');
     if (!modal) return;
@@ -53,6 +66,7 @@
       return;
     }
     area.innerHTML = '<div class="pest-lookup-empty">検索中...</div>';
+    setPestLookupLoading_(true, '農薬を検索中...');
     try {
       var res = await callGAS('searchPesticideCatalog', { q: q, groupByName: true, limit: 40 });
       var rawHits = (res && res.items) || [];
@@ -80,6 +94,8 @@
         }).join('');
     } catch (e) {
       area.innerHTML = '<div class="pest-lookup-empty">' + esc(e && e.message ? e.message : e) + '</div>';
+    } finally {
+      setPestLookupLoading_(false);
     }
   };
 
@@ -90,6 +106,12 @@
     return String(v);
   }
 
+  function appChip_(label, value) {
+    var text = String(value || '').trim();
+    if (!text) return '';
+    return '<span class="pest-app-chip"><b>' + esc(label) + '</b>' + esc(text) + '</span>';
+  }
+
   function renderApplicationTable(rows) {
     var wrap = document.getElementById('pestLookupTableWrap');
     if (!wrap) return;
@@ -97,32 +119,34 @@
       wrap.innerHTML = '<div class="pest-lookup-empty">この条件の適用行はありません。</div>';
       return;
     }
-    var cols = [
-      ['cropName', '作物'],
-      ['targetPest', '適用'],
-      ['dilution', '希釈'],
-      ['usageAmount', '使用量'],
-      ['useTimingText', '使用時期'],
-      ['phi', '前日数'],
-      ['usageCount', '使用回数'],
-      ['usageMethod', '使用方法']
-    ].filter(function (col) {
-      if (col[0] === 'usageCount') return true;
-      if (col[0] === 'phi') return rows.some(function (r) { return phiLabel(r.phiDays); });
-      return rows.some(function (r) { return String(r[col[0]] || '').trim(); });
-    });
-    if (!cols.length) cols = [['cropName', '作物'], ['dilution', '希釈'], ['useTimingText', '使用時期']];
-    wrap.innerHTML =
-      '<table class="pest-lookup-table"><thead><tr>' +
-      cols.map(function (c) { return '<th>' + esc(c[1]) + '</th>'; }).join('') +
-      '</tr></thead><tbody>' +
-      rows.map(function (r) {
-        return '<tr>' + cols.map(function (c) {
-          var val = c[0] === 'phi' ? phiLabel(r.phiDays) : r[c[0]];
-          return '<td>' + esc(val || '—') + '</td>';
-        }).join('') + '</tr>';
-      }).join('') +
-      '</tbody></table>';
+    var html = '<div class="pest-app-count">表示 ' + rows.length + ' 件</div>';
+    var i = 0;
+    while (i < rows.length) {
+      var crop = String(rows[i].cropName || '').trim() || '作物未設定';
+      var j = i + 1;
+      while (j < rows.length && (String(rows[j].cropName || '').trim() || '作物未設定') === crop) j++;
+      html += '<section class="pest-app-group"><h3 class="pest-app-crop">' + esc(crop) + '<span>' + (j - i) + '</span></h3>';
+      for (var k = i; k < j; k++) {
+        var r = rows[k];
+        var pest = String(r.targetPest || '').trim();
+        var timing = String(r.useTimingText || '').trim();
+        var method = String(r.usageMethod || '').trim();
+        html += '<article class="pest-app-card">';
+        html += '<div class="pest-app-pest">' + esc(pest || '適用の記載なし') + '</div>';
+        html += '<div class="pest-app-chips">' +
+          appChip_('希釈', r.dilution) +
+          appChip_('使用量', r.usageAmount) +
+          appChip_('回数', r.usageCount) +
+          appChip_('前日数', phiLabel(r.phiDays)) +
+          '</div>';
+        if (timing) html += '<div class="pest-app-timing">' + esc(timing) + '</div>';
+        if (method) html += '<div class="pest-app-method">' + esc(method) + '</div>';
+        html += '</article>';
+      }
+      html += '</section>';
+      i = j;
+    }
+    wrap.innerHTML = html;
   }
 
   window.filterPesticideApplicationTable_ = function () {
@@ -132,7 +156,7 @@
       return;
     }
     renderApplicationTable(tableRows.filter(function (r) {
-      return [r.cropName, r.targetPest, r.useTimingText, r.dilution].join('\n').toLowerCase().indexOf(q) >= 0;
+      return [r.cropName, r.targetPest, r.useTimingText, r.dilution, r.usageAmount, r.usageCount].join('\n').toLowerCase().indexOf(q) >= 0;
     }));
   };
 
@@ -151,6 +175,7 @@
     if (meta) meta.textContent = '適用表を読み込み中...';
     if (wrap) wrap.innerHTML = '';
     tableRows = [];
+    setPestLookupLoading_(true, '適用表を読み込み中...');
     try {
       var res = await callGAS('getPesticideApplicationTable', {
         name: hit.name,
@@ -158,13 +183,16 @@
         limit: 300
       });
       tableRows = (res && res.items) || [];
-      var bits = [];
-      if (res && res.activeIngredient) bits.push('成分: ' + res.activeIngredient);
-      if (res && res.manufacturer) bits.push(res.manufacturer);
-      if (res && res.regNumber) bits.push('登録 ' + res.regNumber);
-      bits.push((res && res.count ? res.count : tableRows.length) + ' 行' + ((res && res.truncated) ? '（上位のみ）' : ''));
-      if (res && res.usageCountAvailable === false) bits.push('使用回数は、公式CSVを取り直すと入ります');
-      if (meta) meta.textContent = bits.join(' ／ ') + '。使用前に製品ラベルを確認してください。';
+      if (meta) {
+        var facts = [];
+        if (res && res.activeIngredient) facts.push('<span>成分 ' + esc(res.activeIngredient) + '</span>');
+        if (res && res.manufacturer) facts.push('<span>' + esc(res.manufacturer) + '</span>');
+        if (res && res.regNumber) facts.push('<span>登録 ' + esc(res.regNumber) + '</span>');
+        var note = '使用前に製品ラベルを確認してください。';
+        if (res && res.truncated) note = '上位のみ表示しています。' + note;
+        if (res && res.usageCountAvailable === false) note = '使用回数は、公式CSVを取り直すと入ります。' + note;
+        meta.innerHTML = '<div class="pest-app-facts">' + facts.join('') + '</div><div class="pest-app-note">' + esc(note) + '</div>';
+      }
       if (!tableRows.length) {
         if (wrap) wrap.innerHTML = '<div class="pest-lookup-empty">' + esc((res && res.message) || '適用表がありません。') + '</div>';
         return;
@@ -173,6 +201,8 @@
     } catch (e) {
       if (meta) meta.textContent = '';
       if (wrap) wrap.innerHTML = '<div class="pest-lookup-empty">' + esc(e && e.message ? e.message : e) + '</div>';
+    } finally {
+      setPestLookupLoading_(false);
     }
   };
 })();

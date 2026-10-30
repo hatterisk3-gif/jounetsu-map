@@ -1203,7 +1203,17 @@ select.snr-input { appearance:auto; }
   justify-content: center;
   cursor: pointer;
 }
-.schedule-side-fab-moisture { color: #1565c0; }
+.schedule-side-fab-moisture {
+  width: 56px;
+  height: 56px;
+  flex-direction: column;
+  gap: 1px;
+  color: #1565c0;
+  line-height: 1;
+  padding: 0;
+}
+.schedule-side-fab-moisture-icon { font-size: 18px; line-height: 1; }
+.schedule-side-fab-moisture-label { font-size: 9.5px; font-weight: 800; letter-spacing: -0.02em; }
 .schedule-side-fab-pest {
   width: 56px;
   height: 56px;
@@ -1242,6 +1252,36 @@ select.snr-input { appearance:auto; }
   padding: 12px 12px 10px;
   border-bottom: 1px solid #c8e6c9;
   background: #e8f5e9;
+}
+.pest-lookup-loading {
+  display: none;
+  padding: 8px 12px 10px;
+  background: #e8f5e9;
+  border-bottom: 1px solid #c8e6c9;
+}
+.pest-lookup-loading.is-on { display: block; }
+.pest-lookup-loading-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: #1b5e20;
+  margin-bottom: 6px;
+}
+.pest-lookup-loading-track {
+  height: 8px;
+  background: #c8e6c9;
+  border-radius: 99px;
+  overflow: hidden;
+}
+.pest-lookup-loading-fill {
+  height: 100%;
+  width: 38%;
+  border-radius: 99px;
+  background: #2e7d32;
+  animation: pestLookupBar 1.05s ease-in-out infinite;
+}
+@keyframes pestLookupBar {
+  0% { transform: translateX(-130%); }
+  100% { transform: translateX(340%); }
 }
 .pest-lookup-title { flex: 1; font-weight: 800; color: #1b5e20; font-size: 16px; min-width: 0; }
 .pest-lookup-back,
@@ -1299,18 +1339,77 @@ select.snr-input { appearance:auto; }
 .pest-lookup-hit strong { display: block; color: #1b5e20; font-size: 15px; }
 .pest-lookup-hit span { display: block; margin-top: 3px; color: #666; font-size: 12px; font-weight: normal; }
 .pest-lookup-meta { font-size: 12px; color: #333; line-height: 1.45; margin-bottom: 8px; }
-.pest-lookup-table-wrap { overflow: auto; border: 1px solid #c8e6c9; border-radius: 8px; }
-.pest-lookup-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 520px; }
-.pest-lookup-table th {
+#pestLookupTablePane .pest-lookup-input {
   position: sticky;
   top: 0;
+  z-index: 3;
+  background: #fff;
+  margin-bottom: 8px;
+}
+.pest-lookup-table-wrap { display: flex; flex-direction: column; gap: 10px; }
+.pest-app-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.pest-app-facts span {
   background: #e8f5e9;
   color: #1b5e20;
-  text-align: left;
-  padding: 8px;
-  border-bottom: 1px solid #a5d6a7;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
 }
-.pest-lookup-table td { padding: 8px; border-bottom: 1px solid #eee; vertical-align: top; }
+.pest-app-note { font-size: 11px; color: #777; line-height: 1.4; }
+.pest-app-count { font-size: 12px; font-weight: 800; color: #2e7d32; }
+.pest-app-group { display: flex; flex-direction: column; gap: 8px; }
+.pest-app-crop {
+  position: sticky;
+  top: 48px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  background: #1b5e20;
+  color: #fff;
+  border-radius: 10px;
+  font-size: 14px;
+}
+.pest-app-crop span {
+  min-width: 22px;
+  text-align: center;
+  background: rgba(255,255,255,0.18);
+  border-radius: 999px;
+  font-size: 12px;
+  padding: 1px 7px;
+}
+.pest-app-card {
+  background: #fff;
+  border: 1px solid #c8e6c9;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.pest-app-pest { font-size: 14px; font-weight: 800; color: #1b5e20; line-height: 1.35; }
+.pest-app-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.pest-app-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  background: #f1f8e9;
+  border: 1px solid #dcedc8;
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #333;
+  line-height: 1.3;
+}
+.pest-app-chip b { color: #558b2f; font-size: 10px; font-weight: 800; }
+.pest-app-timing {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #333;
+}
+.pest-app-method { margin-top: 4px; font-size: 12px; line-height: 1.4; color: #666; }
 .pest-lookup-empty { color: #888; font-size: 13px; line-height: 1.45; padding: 8px 2px; }
 @media (min-width: 760px) {
   .pest-lookup-modal { align-items: center; }
