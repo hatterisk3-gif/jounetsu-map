@@ -5,6 +5,7 @@
 (function () {
   var hits = [];
   var tableRows = [];
+  var selectedCrop = '';
 
   function esc(s) {
     return String(s == null ? '' : s)
@@ -144,90 +145,131 @@
     return '<span class="pest-app-chip"><b>' + esc(label) + '</b>' + esc(text) + '</span>';
   }
 
-  function renderApplicationTable(rows) {
+  function cropNameOf_(row) {
+    return String(row && row.cropName || '').trim() || '作物未設定';
+  }
+
+  function collectCrops_(rows) {
+    var crops = [];
+    var seen = {};
+    rows.forEach(function (row) {
+      var name = cropNameOf_(row);
+      if (seen[name]) return;
+      seen[name] = true;
+      crops.push(name);
+    });
+    return crops;
+  }
+
+  function paintCropBar_(crops) {
+    var bar = document.getElementById('pestLookupCropBar');
+    if (!bar) return;
+    window._pestCropNames = crops;
+    bar.innerHTML = crops.map(function (name, idx) {
+      var on = name === selectedCrop ? ' is-on' : '';
+      return '<button type="button" class="pest-app-crop-pick' + on + '" onclick="selectPesticideCrop_(' + idx + ')">' + esc(name) + '</button>';
+    }).join('');
+    var onBtn = bar.querySelector('.is-on');
+    if (!onBtn) return;
+    var left = onBtn.offsetLeft - 8;
+    if (left < bar.scrollLeft || left + onBtn.offsetWidth > bar.scrollLeft + bar.clientWidth) {
+      bar.scrollLeft = Math.max(0, left);
+    }
+  }
+
+  function cardsHtml_(rows) {
+    if (!rows.length) return '<div class="pest-lookup-empty">この条件の適用行はありません。</div>';
+    var html = '<div class="pest-app-count">' + esc(selectedCrop) + '　' + rows.length + ' 件</div>';
+    var buckets = [];
+    var bucketAt = {};
+    rows.forEach(function (r) {
+      var timing = String(r.useTimingText || '').trim();
+      var method = String(r.usageMethod || '').trim();
+      var phi = phiDisplay_(r.phiDays, timing);
+      var sig = [
+        String(r.dilution || '').trim(),
+        String(r.usageAmount || '').trim(),
+        String(r.usageCount || '').trim(),
+        phi,
+        method
+      ].join('\t');
+      if (bucketAt[sig] == null) {
+        bucketAt[sig] = buckets.length;
+        buckets.push({
+          dilution: r.dilution,
+          usageAmount: r.usageAmount,
+          usageCount: r.usageCount,
+          phi: phi,
+          method: method,
+          pests: [],
+          timings: []
+        });
+      }
+      var bucket = buckets[bucketAt[sig]];
+      var pest = String(r.targetPest || '').trim();
+      var rest = timingWithoutPhi_(timing);
+      if (pest && bucket.pests.indexOf(pest) < 0) bucket.pests.push(pest);
+      if (rest && bucket.timings.indexOf(rest) < 0) bucket.timings.push(rest);
+    });
+    html += '<section class="pest-app-group">';
+    buckets.forEach(function (bucket) {
+      html += '<article class="pest-app-card">';
+      html += methodBadge_(bucket.method);
+      html += '<div class="pest-app-pests">';
+      if (!bucket.pests.length) {
+        html += '<span class="pest-app-pest-chip">適用の記載なし</span>';
+      } else {
+        bucket.pests.forEach(function (name) {
+          html += '<span class="pest-app-pest-chip">' + esc(name) + '</span>';
+        });
+      }
+      html += '</div>';
+      html += '<div class="pest-app-chips">' +
+        appChip_('希釈', bucket.dilution) +
+        appChip_('使用量', bucket.usageAmount) +
+        appChip_('回数', bucket.usageCount) +
+        appChip_('前日数', bucket.phi) +
+        '</div>';
+      bucket.timings.forEach(function (text) {
+        html += '<div class="pest-app-timing">' + esc(text) + '</div>';
+      });
+      html += '</article>';
+    });
+    html += '</section>';
+    return html;
+  }
+
+  function renderApplicationTable() {
     var wrap = document.getElementById('pestLookupTableWrap');
     if (!wrap) return;
-    if (!rows.length) {
+    var q = String((document.getElementById('pestLookupCropFilter') || {}).value || '').trim().toLowerCase();
+    var pool = tableRows;
+    if (q) {
+      pool = tableRows.filter(function (r) {
+        return [r.cropName, r.targetPest, r.useTimingText, r.dilution, r.usageAmount, r.usageCount, r.usageMethod].join('\n').toLowerCase().indexOf(q) >= 0;
+      });
+    }
+    var crops = collectCrops_(pool);
+    if (crops.indexOf(selectedCrop) < 0) selectedCrop = crops[0] || '';
+    paintCropBar_(crops);
+    if (!selectedCrop) {
       wrap.innerHTML = '<div class="pest-lookup-empty">この条件の適用行はありません。</div>';
       return;
     }
-    var html = '<div class="pest-app-count">表示 ' + rows.length + ' 件</div>';
-    var i = 0;
-    while (i < rows.length) {
-      var crop = String(rows[i].cropName || '').trim() || '作物未設定';
-      var j = i + 1;
-      while (j < rows.length && (String(rows[j].cropName || '').trim() || '作物未設定') === crop) j++;
-      html += '<section class="pest-app-group"><h3 class="pest-app-crop">' + esc(crop) + '<span>' + (j - i) + '</span></h3>';
-      var buckets = [];
-      var bucketAt = {};
-      for (var k = i; k < j; k++) {
-        var r = rows[k];
-        var timing = String(r.useTimingText || '').trim();
-        var method = String(r.usageMethod || '').trim();
-        var phi = phiDisplay_(r.phiDays, timing);
-        var sig = [
-          String(r.dilution || '').trim(),
-          String(r.usageAmount || '').trim(),
-          String(r.usageCount || '').trim(),
-          phi,
-          method
-        ].join('\t');
-        if (bucketAt[sig] == null) {
-          bucketAt[sig] = buckets.length;
-          buckets.push({
-            dilution: r.dilution,
-            usageAmount: r.usageAmount,
-            usageCount: r.usageCount,
-            phi: phi,
-            method: method,
-            pests: [],
-            timings: []
-          });
-        }
-        var bucket = buckets[bucketAt[sig]];
-        var pest = String(r.targetPest || '').trim();
-        var rest = timingWithoutPhi_(timing);
-        if (pest && bucket.pests.indexOf(pest) < 0) bucket.pests.push(pest);
-        if (rest && bucket.timings.indexOf(rest) < 0) bucket.timings.push(rest);
-      }
-      buckets.forEach(function (bucket) {
-        html += '<article class="pest-app-card">';
-        html += '<div class="pest-app-pests">';
-        if (!bucket.pests.length) {
-          html += '<span class="pest-app-pest-chip">適用の記載なし</span>';
-        } else {
-          bucket.pests.forEach(function (name) {
-            html += '<span class="pest-app-pest-chip">' + esc(name) + '</span>';
-          });
-        }
-        html += '</div>';
-        html += methodBadge_(bucket.method);
-        html += '<div class="pest-app-chips">' +
-          appChip_('希釈', bucket.dilution) +
-          appChip_('使用量', bucket.usageAmount) +
-          appChip_('回数', bucket.usageCount) +
-          appChip_('前日数', bucket.phi) +
-          '</div>';
-        bucket.timings.forEach(function (text) {
-          html += '<div class="pest-app-timing">' + esc(text) + '</div>';
-        });
-        html += '</article>';
-      });
-      html += '</section>';
-      i = j;
-    }
-    wrap.innerHTML = html;
+    wrap.innerHTML = cardsHtml_(pool.filter(function (r) { return cropNameOf_(r) === selectedCrop; }));
   }
 
+  window.selectPesticideCrop_ = function (index) {
+    var names = window._pestCropNames || [];
+    if (!names[index] || names[index] === selectedCrop) return;
+    selectedCrop = names[index];
+    renderApplicationTable();
+    var pane = document.getElementById('pestLookupTablePane');
+    if (pane) pane.scrollTop = 0;
+  };
+
   window.filterPesticideApplicationTable_ = function () {
-    var q = String((document.getElementById('pestLookupCropFilter') || {}).value || '').trim().toLowerCase();
-    if (!q) {
-      renderApplicationTable(tableRows);
-      return;
-    }
-    renderApplicationTable(tableRows.filter(function (r) {
-      return [r.cropName, r.targetPest, r.useTimingText, r.dilution, r.usageAmount, r.usageCount].join('\n').toLowerCase().indexOf(q) >= 0;
-    }));
+    renderApplicationTable();
   };
 
   window.openPesticideApplication_ = async function (idx) {
@@ -241,10 +283,13 @@
     var meta = document.getElementById('pestLookupTableMeta');
     var wrap = document.getElementById('pestLookupTableWrap');
     var filter = document.getElementById('pestLookupCropFilter');
+    var cropBar = document.getElementById('pestLookupCropBar');
     if (filter) filter.value = '';
+    if (cropBar) cropBar.innerHTML = '';
     if (meta) meta.textContent = '適用表を読み込み中...';
     if (wrap) wrap.innerHTML = '';
     tableRows = [];
+    selectedCrop = '';
     setPestLookupLoading_(true, '適用表を読み込み中...');
     try {
       var res = await callGAS('getPesticideApplicationTable', {
@@ -267,7 +312,7 @@
         if (wrap) wrap.innerHTML = '<div class="pest-lookup-empty">' + esc((res && res.message) || '適用表がありません。') + '</div>';
         return;
       }
-      renderApplicationTable(tableRows);
+      renderApplicationTable();
     } catch (e) {
       if (meta) meta.textContent = '';
       if (wrap) wrap.innerHTML = '<div class="pest-lookup-empty">' + esc(e && e.message ? e.message : e) + '</div>';

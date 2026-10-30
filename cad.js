@@ -8746,38 +8746,8 @@ window.cadGenerateLines = () => {
                 });
             }
             pieces.forEach(rebuild);
-            let maxLen = 0;
-            pieces.forEach((p) => { if (p.len > maxLen) maxLen = p.len; });
-            const keepMin = maxLen >= 12 ? Math.max(5, maxLen * 0.25) : minRidgeLen;
-            const longs = [];
-            const shorts = [];
-            pieces.forEach((p) => {
-                if (maxLen >= 12 && p.len + 0.05 < keepMin) shorts.push(p);
-                else longs.push(p);
-            });
-            const bridge = Math.max(0.2, widthM * (1 - ridgeRatio) * 0.5 + 0.08);
-            shorts.forEach((short) => {
-                let host = null;
-                let hostDist = Infinity;
-                longs.forEach((L) => {
-                    const d = Math.abs(L.i - short.i);
-                    if (d < hostDist) { hostDist = d; host = L; }
-                });
-                if (!host || hostDist > 2) {
-                    longs.push(short);
-                    return;
-                }
-                try {
-                    const grown = turf.buffer(short.poly, bridge, { units: 'meters' }) || short.poly;
-                    const u = turf.union(host.poly, grown);
-                    const one = u ? window.cadCoalesceToPolygon(u) : null;
-                    if (one) host.poly = one;
-                    else longs.push(short);
-                } catch (e) {
-                    longs.push(short);
-                }
-            });
-            return { rects: longs.map((p) => p.poly), produced: pieces.length };
+            // 短い畝を隣の畝へ合体させると、段差のところで幅がつながった形になる
+            return { rects: pieces.map((p) => p.poly), produced: pieces.length };
         };
 
         let packed = buildRidgeRects(0);
