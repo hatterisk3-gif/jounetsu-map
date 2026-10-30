@@ -6517,49 +6517,106 @@ window.cadCreateMakuraFromEdges = (ring, tPoly, edgeIndexes, widthM) => {
         });
     });
     if (features.length <= 1) return features;
-    return window.cadJoinNearbyMakura_(features);
+    return window.cadJoinNearbyMakura_(features, tPoly);
 };
 
-window.cadJoinNearbyMakura_ = (features) => {
-    let items = (features || []).filter((f) => f && window.cadFeatureArea(f) >= 0.4);
+window.cadMakuraAxisBox_ = (feature) => {
+    const ring = feature && feature.geometry && feature.geometry.coordinates && feature.geometry.coordinates[0];
+    if (!ring || ring.length < 4 || typeof turf === 'undefined') return null;
+    let best = 0;
+    let bi = 0;
+    for (let i = 0; i < ring.length - 1; i++) {
+        const len = turf.distance(turf.point(ring[i]), turf.point(ring[i + 1]), { units: 'meters' });
+        if (len > best) { best = len; bi = i; }
+    }
+    const origin = ring[bi];
+    const bearing = turf.bearing(turf.point(ring[bi]), turf.point(ring[bi + 1]));
+    const perp = bearing + 90;
+    let minS = Infinity;
+    let maxS = -Infinity;
+    let minP = Infinity;
+    let maxP = -Infinity;
+    ring.forEach((c) => {
+        const s = window.cadMetersAlongBearing_(origin, c, bearing);
+        const p = window.cadMetersAlongBearing_(origin, c, perp);
+        if (s < minS) minS = s;
+        if (s > maxS) maxS = s;
+        if (p < minP) minP = p;
+        if (p > maxP) maxP = p;
+    });
+    return { origin: origin, bearing: bearing, perp: perp, minS: minS, maxS: maxS, minP: minP, maxP: maxP, len: maxS - minS };
+};
+
+window.cadMakuraRectFromBox_ = (box) => {
+    const corner = (s, p) => {
+        const along = window.cadDestinationMeters_(box.origin, s, box.bearing);
+        return window.cadDestinationMeters_(along, p, box.perp);
+    };
+    const a = corner(box.minS, box.minP);
+    const b = corner(box.maxS, box.minP);
+    const c = corner(box.maxS, box.maxP);
+    const d = corner(box.minS, box.maxP);
+    try { return turf.polygon([[a, b, c, d, a]]); } catch (e) { return null; }
+};
+
+window.cadJoinNearbyMakura_ = (features, tPoly) => {
+    let items = (features || []).map((f) => window.cadCoalesceToPolygon(f)).filter((f) => f && window.cadFeatureArea(f) >= 0.4);
     if (items.length <= 1) return items;
-    const bridge = 0.4;
+    const nearEnough = (a, b) => {
+        const ra = a.geometry.coordinates[0];
+        const rb = b.geometry.coordinates[0];
+        let best = Infinity;
+        for (let i = 0; i < ra.length; i++) {
+            for (let j = 0; j < rb.length; j++) {
+                const d = turf.distance(turf.point(ra[i]), turf.point(rb[j]), { units: 'meters' });
+                if (d < best) best = d;
+                if (best < 1.2) return true;
+            }
+        }
+        return best < 2.5;
+    };
     let guard = 0;
     let changed = true;
-    while (changed && guard++ < 16) {
+    while (changed && guard++ < 12) {
         changed = false;
         for (let i = 0; i < items.length && !changed; i++) {
             for (let j = i + 1; j < items.length; j++) {
-                let near = false;
-                let grownA = null;
-                let grownB = null;
-                try {
-                    grownA = turf.buffer(items[i], bridge, { units: 'meters' });
-                    grownB = turf.buffer(items[j], bridge, { units: 'meters' });
-                    near = !!(grownA && grownB && turf.booleanIntersects(grownA, grownB));
-                } catch (e) { near = false; }
-                if (!near || !grownA || !grownB) continue;
-                try {
-                    const u = turf.union(grownA, grownB);
-                    if (!u) continue;
-                    let back = u;
-                    try {
-                        const shrunk = turf.buffer(u, -bridge * 0.72, { units: 'meters' });
-                        const polyCount = (f) => {
-                            if (!f || !f.geometry) return 0;
-                            if (f.geometry.type === 'Polygon') return 1;
-                            if (f.geometry.type === 'MultiPolygon') return (f.geometry.coordinates || []).length;
-                            return 0;
-                        };
-                        if (shrunk && polyCount(shrunk) === 1 && window.cadFeatureArea(shrunk) > 0.4) back = shrunk;
-                    } catch (e) {}
-                    const one = window.cadCoalesceToPolygon(back);
-                    if (!one || window.cadFeatureArea(one) < 0.4) continue;
-                    items.splice(j, 1);
-                    items[i] = one;
-                    changed = true;
-                    break;
-                } catch (e) {}
+                if (!nearEnough(items[i], items[j])) continue;
+                const boxI = window.cadMakuraAxisBox_(items[i]);
+                const boxJ = window.cadMakuraAxisBox_(items[j]);
+                if (!boxI || !boxJ) continue;
+                const longBox = boxI.len >= boxJ.len ? boxI : boxJ;
+                const shortFeat = boxI.len >= boxJ.len ? items[j] : items[i];
+                const ring = shortFeat.geometry.coordinates[0];
+                let minS = longBox.minS;
+                let maxS = longBox.maxS;
+                ring.forEach((c) => {
+                    const s = window.cadMetersAlongBearing_(longBox.origin, c, longBox.bearing);
+                    if (s < minS) minS = s;
+                    if (s > maxS) maxS = s;
+                });
+                const rect = window.cadMakuraRectFromBox_({
+                    origin: longBox.origin,
+                    bearing: longBox.bearing,
+                    perp: longBox.perp,
+                    minS: minS,
+                    maxS: maxS,
+                    minP: longBox.minP,
+                    maxP: longBox.maxP
+                });
+                if (!rect) continue;
+                let clipped = rect;
+                if (tPoly) {
+                    try { clipped = turf.intersect(tPoly, rect) || rect; } catch (e) { clipped = rect; }
+                }
+                const one = window.cadCoalesceToPolygon(clipped);
+                if (!one || window.cadFeatureArea(one) < 0.4) continue;
+                const keep = boxI.len >= boxJ.len ? i : j;
+                const drop = keep === i ? j : i;
+                items.splice(drop, 1);
+                items[keep > drop ? keep - 1 : keep] = one;
+                changed = true;
+                break;
             }
         }
     }
@@ -6716,8 +6773,16 @@ window.cadGenerateMakuraFromSelectedEdges = () => {
         return;
     }
     let widthM = null;
-    const widthCm = typeof window.getCadWidthCm === 'function' ? window.getCadWidthCm() : null;
-    if (widthCm > 0) widthM = widthCm / 100;
+    const measured = (window.cadListMainRidgeEntries() || []).map((r) => {
+        return (typeof window.estimateCadUneWidthMeters === 'function') ? window.estimateCadUneWidthMeters(r.gPoly) : 0;
+    }).filter((w) => w > 0.05);
+    if (measured.length) {
+        widthM = measured.reduce((a, b) => a + b, 0) / measured.length;
+    }
+    if (!widthM) {
+        const widthCm = typeof window.getCadWidthCm === 'function' ? window.getCadWidthCm() : null;
+        if (widthCm > 0) widthM = widthCm / 100;
+    }
     if (!widthM) {
         widthM = (typeof window.getCadReferenceRidgeWidthMeters === 'function')
             ? window.getCadReferenceRidgeWidthMeters() : 1.5;
@@ -8316,19 +8381,22 @@ window.cadCollectObliqueClearanceSegs = (ringCoords, ridgeAngleDeg, gapM) => {
         let end = i;
         used[i] = true;
         const baseBear = infos[i].bearing;
+        let chainLen = infos[i].len;
         for (let step = 0; step < n; step++) {
             const nxt = (end + 1) % n;
             if (nxt === i || used[nxt] || !infos[nxt]) break;
             if (align(infos[nxt].bearing, baseBear) > 5) break;
             used[nxt] = true;
             end = nxt;
+            chainLen += infos[nxt].len;
         }
         const a0 = infos[i].a;
         const b0 = infos[end].b;
         let groupBear = baseBear;
         try { groupBear = turf.bearing(turf.point(a0), turf.point(b0)); } catch (e) {}
-        // 畝の長手と平行な辺は左右の側面
+        // 畝の長手と平行な辺は左右の側面。短い凹みは端面余白でよけない
         if (align(groupBear, ridgeAngleDeg) <= 12) continue;
+        if (chainLen < 4) continue;
         let a = a0;
         let b = b0;
         try {
@@ -8551,8 +8619,34 @@ window.cadGenerateLines = () => {
                 let p2c = turf.destination(sPt, w / 2, angle - 90, {units: 'meters'}).geometry.coordinates;
                 let p3c = turf.destination(ePt, w / 2, angle - 90, {units: 'meters'}).geometry.coordinates;
                 let p4c = turf.destination(ePt, w / 2, angle + 90, {units: 'meters'}).geometry.coordinates;
-                pieces.push({ i: i, len: segLen, poly: turf.polygon([[p1c, p2c, p3c, p4c, p1c]]) });
+                pieces.push({ i: i, len: segLen, start: seg.start, end: seg.end, pt1: pt1, w: w, poly: turf.polygon([[p1c, p2c, p3c, p4c, p1c]]) });
             }
+            const rebuild = (p) => {
+                const sPt = turf.destination(p.pt1, p.start, angle + 180, { units: 'meters' });
+                const ePt = turf.destination(p.pt1, p.end, angle + 180, { units: 'meters' });
+                const p1c = turf.destination(sPt, p.w / 2, angle + 90, { units: 'meters' }).geometry.coordinates;
+                const p2c = turf.destination(sPt, p.w / 2, angle - 90, { units: 'meters' }).geometry.coordinates;
+                const p3c = turf.destination(ePt, p.w / 2, angle - 90, { units: 'meters' }).geometry.coordinates;
+                const p4c = turf.destination(ePt, p.w / 2, angle + 90, { units: 'meters' }).geometry.coordinates;
+                p.len = p.end - p.start;
+                p.poly = turf.polygon([[p1c, p2c, p3c, p4c, p1c]]);
+            };
+            pieces.sort((a, b) => a.i - b.i);
+            for (let pass = 0; pass < 2; pass++) {
+                pieces.forEach((p, k) => {
+                    const ns = [pieces[k - 1], pieces[k + 1]].filter(Boolean);
+                    if (!ns.length) return;
+                    if (ns.length === 2 && Math.abs(ns[0].start - ns[1].start) > 0.5) return;
+                    const outward = Math.min.apply(null, ns.map((n) => n.start));
+                    const delta = p.start - outward;
+                    if (delta > 0.12 && delta <= 2) p.start = outward;
+                    if (ns.length === 2 && Math.abs(ns[0].end - ns[1].end) > 0.5) return;
+                    const outwardEnd = Math.max.apply(null, ns.map((n) => n.end));
+                    const deltaEnd = outwardEnd - p.end;
+                    if (deltaEnd > 0.12 && deltaEnd <= 2) p.end = outwardEnd;
+                });
+            }
+            pieces.forEach(rebuild);
             let maxLen = 0;
             pieces.forEach((p) => { if (p.len > maxLen) maxLen = p.len; });
             const keepMin = maxLen >= 12 ? Math.max(5, maxLen * 0.25) : minRidgeLen;
