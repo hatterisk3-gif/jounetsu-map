@@ -7,7 +7,7 @@ window.cadUnePolygons = [];
 window.cadPins = [];
 window.cadPinMode = null;
 window.cadMakuraSelectedEdges = [];
-window.cadPinNumFontSize = 20; // 給水・排水アイコン上の番号サイズ(px)
+window.cadPinNumFontSize = 24; // 給水・排水アイコン上の番号サイズ(px)
 window.cadUneLabels = [];
 window.cadNakamichiLines = [];
 window.cadNakamichiMapPolygons = [];
@@ -845,9 +845,9 @@ window.updateCadSvgOverlay = (opts) => {
             const t = mk.cadPinType || '';
             if (!pos) return t;
             return t + ':' + pos.lat().toFixed(6) + ',' + pos.lng().toFixed(6);
-        }).join('|') + '_n' + (window.cadPinNumFontSize || 20);
+        }).join('|') + '_n' + (window.cadPinNumFontSize || 24);
     } else {
-        pinsStateId = 'none_n' + (window.cadPinNumFontSize || 20);
+        pinsStateId = 'none_n' + (window.cadPinNumFontSize || 24);
     }
     let pinsGroup = svg ? svg.querySelector('#cadSvgPins') : null;
     // ドラッグ中はDOM再生成しない（毎回0,0に一瞬飛ぶ不具合を防ぐ）
@@ -856,9 +856,13 @@ window.updateCadSvgOverlay = (opts) => {
         pinsGroup.innerHTML = '';
         
         if (window.cadPins) {
-            let waterInCount = 0;
-            let waterOutCount = 0;
-            const numFontPx = Math.max(8, Math.min(48, parseFloat(window.cadPinNumFontSize) || 20));
+            const typeTotals = {};
+            window.cadPins.forEach((mk) => {
+                const t = mk.cadPinType || 'machine_entry';
+                typeTotals[t] = (typeTotals[t] || 0) + 1;
+            });
+            const typeSeq = {};
+            const numFontPx = Math.max(8, Math.min(48, parseFloat(window.cadPinNumFontSize) || 24));
             window.cadPins.forEach((mk, idx) => {
                 // foreignObject 外の要素はクリックが届かないため、削除ボタンを必ず枠内に置く
                 const foW = 120;
@@ -876,35 +880,35 @@ window.updateCadSvgOverlay = (opts) => {
                 let iconStr = '';
                 let numStr = '';
                 let nameStr = '';
-                if (mk.cadPinType === 'water_in') {
-                    waterInCount++;
+                const pinType = mk.cadPinType || 'machine_entry';
+                typeSeq[pinType] = (typeSeq[pinType] || 0) + 1;
+                const showNum = (typeTotals[pinType] || 0) > 1;
+                if (pinType === 'water_in') {
                     iconStr = '🚰';
-                    numStr = String(waterInCount);
                     nameStr = '給水';
-                } else if (mk.cadPinType === 'water_out') {
-                    waterOutCount++;
+                } else if (pinType === 'water_out') {
                     iconStr = '🚩';
-                    numStr = String(waterOutCount);
                     nameStr = '排水';
-                } else if (mk.cadPinType === 'parking_truck') {
+                } else if (pinType === 'parking_truck') {
                     iconStr = '🅿️';
                     nameStr = '駐車場';
                 } else {
                     iconStr = '🚜';
                     nameStr = '侵入口';
                 }
+                if (showNum) numStr = String(typeSeq[pinType]);
                 
                 let iconSpan = document.createElement('span');
                 iconSpan.className = 'cad-pin-icon';
                 iconSpan.textContent = iconStr;
-                iconSpan.style.cssText = 'display:block; line-height:1; font-size:13px;';
+                iconSpan.style.cssText = 'display:block; line-height:1; font-size:22px;';
                 div.appendChild(iconSpan);
 
                 if (nameStr) {
                     let nameSpan = document.createElement('span');
                     nameSpan.className = 'cad-pin-name';
                     nameSpan.textContent = nameStr;
-                    nameSpan.style.cssText = 'position:absolute; left:50%; top:100%; transform:translate(-50%, 2px); font-size:16px; font-weight:bold; color:#111; white-space:nowrap; line-height:1.1; pointer-events:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
+                    nameSpan.style.cssText = 'position:absolute; left:50%; top:100%; transform:translate(-50%, 2px); font-size:20px; font-weight:bold; color:#111; white-space:nowrap; line-height:1.1; pointer-events:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
                     div.appendChild(nameSpan);
                 }
 
@@ -917,7 +921,7 @@ window.updateCadSvgOverlay = (opts) => {
                 }
                 
                 div.className = 'cad-equip-pin';
-                div.style.cssText = 'font-size:13px; text-align:center; transform:translate(-50%, -50%) rotate(var(--label-rot)); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:move; user-select:none; touch-action:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
+                div.style.cssText = 'font-size:22px; text-align:center; transform:translate(-50%, -50%) rotate(var(--label-rot)); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:move; user-select:none; touch-action:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
                 wrap.appendChild(div);
 
                 let delBtn = document.createElement('button');
@@ -1391,7 +1395,7 @@ window.saveCadStateToHistory = () => {
         unePolygons: unePolygonsData,
         frontBaseline: window.cadFrontBaseline ? JSON.parse(JSON.stringify(window.cadFrontBaseline)) : null,
         ridgeGapRatio: window.cadRidgeGapRatio,
-        pinNumFontSize: window.cadPinNumFontSize || 20
+        pinNumFontSize: window.cadPinNumFontSize || 24
     };
 
     const stateStr = JSON.stringify(state);
@@ -1436,9 +1440,11 @@ window.loadCadStateFromHistory = (index) => {
         if (document.getElementById('cadMarginEnd')) document.getElementById('cadMarginEnd').value = state.marginEnd || 0;
     }
     if (typeof window.setCadPinNumFontSize === 'function') {
-        window.setCadPinNumFontSize(state.pinNumFontSize || 20, { refresh: false });
+        const pinNum = state.pinNumFontSize || 24;
+        window.setCadPinNumFontSize(pinNum === 20 ? 24 : pinNum, { refresh: false });
     } else {
-        window.cadPinNumFontSize = state.pinNumFontSize || 20;
+        const pinNum = state.pinNumFontSize || 24;
+        window.cadPinNumFontSize = pinNum === 20 ? 24 : pinNum;
     }
 
     if (state.pins) {
@@ -2550,9 +2556,11 @@ window.renderCadSavedData = (savedDataStr) => {
             if (marginEndEl) marginEndEl.value = saved.marginEnd !== undefined ? saved.marginEnd : 200;
         }
         if (typeof window.setCadPinNumFontSize === 'function') {
-            window.setCadPinNumFontSize(saved.pinNumFontSize || 20, { refresh: false });
+            const pinNum = saved.pinNumFontSize || 24;
+            window.setCadPinNumFontSize(pinNum === 20 ? 24 : pinNum, { refresh: false });
         } else {
-            window.cadPinNumFontSize = saved.pinNumFontSize || 20;
+            const pinNum = saved.pinNumFontSize || 24;
+            window.cadPinNumFontSize = pinNum === 20 ? 24 : pinNum;
         }
 
         if (window.cadPins && window.cadPins.length) {
@@ -5026,7 +5034,7 @@ window.cadStartPurposeGpsWatch = (purpose, waitingMsg) => {
 /** 給水・排水アイコン上の番号サイズを変更 */
 window.setCadPinNumFontSize = (px, opts) => {
     opts = opts || {};
-    const n = Math.max(8, Math.min(48, Math.round(parseFloat(px) || 20)));
+    const n = Math.max(8, Math.min(48, Math.round(parseFloat(px) || 24)));
     window.cadPinNumFontSize = n;
     const label = document.getElementById('cadPinNumSizeLabel');
     if (label) label.textContent = n + 'px';
@@ -5038,7 +5046,7 @@ window.setCadPinNumFontSize = (px, opts) => {
 };
 
 window.cadAdjustPinNumSize = (delta) => {
-    const cur = parseFloat(window.cadPinNumFontSize) || 20;
+    const cur = parseFloat(window.cadPinNumFontSize) || 24;
     window.setCadPinNumFontSize(cur + (parseFloat(delta) || 0));
 };
 
@@ -9408,7 +9416,7 @@ window.saveUneSim = async () => {
         customShapes: customShapesData,
         unePolygons: unePolygonsData,
         frontBaseline: window.cadFrontBaseline || null,
-        pinNumFontSize: window.cadPinNumFontSize || 20
+        pinNumFontSize: window.cadPinNumFontSize || 24
     });
 
     p.uneSimData = simDataStr;
