@@ -1338,6 +1338,36 @@ select.snr-input { appearance:auto; }
 }
 .pest-lookup-hit strong { display: block; color: #1b5e20; font-size: 15px; }
 .pest-lookup-hit span { display: block; margin-top: 3px; color: #666; font-size: 12px; font-weight: normal; }
+.pest-lookup-hit-row { display: flex; align-items: stretch; gap: 6px; }
+.pest-lookup-hit-row .pest-lookup-hit { flex: 1; min-width: 0; }
+.pest-fav-star {
+  flex: 0 0 auto;
+  width: 44px;
+  min-height: 44px;
+  border: 1px solid #ffe082;
+  background: #fffde7;
+  color: #bdbdbd;
+  border-radius: 10px;
+  font-size: 22px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.12s ease, color 0.12s ease;
+}
+.pest-fav-star.is-on { color: #f9a825; background: #fff8e1; border-color: #f9a825; }
+.pest-fav-star:active { transform: scale(0.88); }
+.pest-lookup-head .pest-fav-star { width: 36px; min-height: 36px; height: 36px; font-size: 20px; border-radius: 8px; }
+.pest-lookup-favbtn {
+  background: #fff8e1;
+  color: #e65100;
+  border: 1px solid #f9a825;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pest-fav-head { font-size: 13px; font-weight: 800; color: #e65100; margin: 2px 0 2px; }
 .pest-lookup-meta { font-size: 12px; color: #333; line-height: 1.45; margin-bottom: 8px; }
 #pestLookupTablePane .pest-lookup-input {
   background: #fff;

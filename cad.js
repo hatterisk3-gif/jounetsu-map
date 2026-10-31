@@ -6146,11 +6146,21 @@ window.cadEdgeIsParallelToRidges = (bearing) => {
     return aligned <= 32;
 };
 
-window.cadInwardBearingForEdge = (info, fieldCenterCoord) => {
+window.cadInwardBearingForEdge = (info, fieldCenterCoord, tPoly) => {
     const mid = turf.midpoint(turf.point(info.a), turf.point(info.b));
-    const toCenter = turf.bearing(mid, turf.point(fieldCenterCoord));
     const left = window.cadNormBearing(info.bearing + 90);
     const right = window.cadNormBearing(info.bearing - 90);
+    if (tPoly) {
+        try {
+            const pL = turf.destination(mid, 0.45, left, { units: 'meters' });
+            const pR = turf.destination(mid, 0.45, right, { units: 'meters' });
+            const inL = turf.booleanPointInPolygon(pL, tPoly);
+            const inR = turf.booleanPointInPolygon(pR, tPoly);
+            if (inL && !inR) return left;
+            if (inR && !inL) return right;
+        } catch (e) {}
+    }
+    const toCenter = turf.bearing(mid, turf.point(fieldCenterCoord));
     return (window.cadBearingDiff(left, toCenter) <= window.cadBearingDiff(right, toCenter)) ? left : right;
 };
 
@@ -6277,7 +6287,7 @@ window.cadBuildInwardEdgeStrip = (ringCoords, tPoly, edgeIndex, widthM) => {
     const info = window.cadRingEdgeInfo(ringCoords, edgeIndex);
     if (!info || info.len < 0.15) return null;
     const center = turf.center(tPoly).geometry.coordinates;
-    const inward = window.cadInwardBearingForEdge(info, center);
+    const inward = window.cadInwardBearingForEdge(info, center, tPoly);
     let seg = turf.lineString([info.a, info.b]);
     seg = window.cadExtendLineStringEnds(seg, Math.max(widthM * 0.35, 0.3));
     const mid = turf.midpoint(turf.point(info.a), turf.point(info.b));
@@ -6294,7 +6304,7 @@ window.cadBuildInwardEdgeStrip = (ringCoords, tPoly, edgeIndex, widthM) => {
 
 window.cadBuildInwardCorridor = (info, tPoly, depthM) => {
     const center = turf.center(tPoly).geometry.coordinates;
-    const inward = window.cadInwardBearingForEdge(info, center);
+    const inward = window.cadInwardBearingForEdge(info, center, tPoly);
     let a = info.a;
     let b = info.b;
     try {
@@ -6515,7 +6525,7 @@ window.cadBuildStraightMakuraStrip_ = (ring, tPoly, edgeIndexes, widthM, opts) =
     const infos = edgeIndexes.map((ei) => window.cadRingEdgeInfo(ring, ei)).filter((info) => info && info.len >= 0.15);
     if (!infos.length || typeof turf === 'undefined') return null;
     const center = turf.center(tPoly).geometry.coordinates;
-    const inward = window.cadInwardBearingForEdge(infos[0], center);
+    const inward = window.cadInwardBearingForEdge(infos[0], center, tPoly);
     const along = infos[0].bearing;
     const origin = infos[0].a;
     let minS = Infinity;
@@ -6575,7 +6585,7 @@ window.cadCreateMakuraFromEdges = (ring, tPoly, edgeIndexes, widthM, opts) => {
     const items = edgeIndexes.map((ei) => {
         const info = window.cadRingEdgeInfo(ring, ei);
         if (!info) return null;
-        return { ei: ei, info: info, inward: window.cadInwardBearingForEdge(info, center) };
+        return { ei: ei, info: info, inward: window.cadInwardBearingForEdge(info, center, tPoly) };
     }).filter(Boolean);
     const used = {};
     const align = (a, b) => {
@@ -6918,6 +6928,38 @@ window.cadCollectObliqueMakuraEdges_ = (ring, selected) => {
     return extra;
 };
 
+/** 曲線の辺は、直線の帯ではなく辺ごとに内側へ枕を置く */
+window.cadBuildFollowingMakuraStrips_ = (ring, tPoly, edgeIndexes, widthM) => {
+    const parts = [];
+    (edgeIndexes || []).forEach((ei) => {
+        let strip = null;
+        try { strip = window.cadBuildInwardEdgeStrip(ring, tPoly, ei, widthM); } catch (e) { strip = null; }
+        if (!strip) return;
+        let flat;
+        try { flat = turf.flatten(strip); } catch (e) { flat = { features: [strip] }; }
+        (flat.features || []).forEach((feature) => {
+            const one = window.cadCoalesceToPolygon(feature);
+            if (one && window.cadFeatureArea(one) >= 0.05) parts.push(one);
+        });
+    });
+    if (!parts.length) return [];
+    let acc = parts[0];
+    for (let i = 1; i < parts.length; i++) {
+        try {
+            const u = turf.union(acc, parts[i]);
+            if (u) acc = u;
+        } catch (e) {}
+    }
+    let flat;
+    try { flat = turf.flatten(acc); } catch (e) { flat = { features: [acc] }; }
+    const out = [];
+    (flat.features || []).forEach((feature) => {
+        const one = window.cadCoalesceToPolygon(feature);
+        if (one && window.cadFeatureArea(one) >= 0.4) out.push(one);
+    });
+    return out;
+};
+
 window.cadGenerateMakuraFromSelectedEdges = () => {
     const picked = Array.from(new Set(window.cadMakuraSelectedEdges || []));
     if (!picked.length) {
@@ -6941,12 +6983,12 @@ window.cadGenerateMakuraFromSelectedEdges = () => {
     }
     const center = turf.center(tPoly).geometry.coordinates;
     const pickedInfo = window.cadRingEdgeInfo(ring, picked[0]);
-    const pickedInward = pickedInfo ? window.cadInwardBearingForEdge(pickedInfo, center) : null;
+    const pickedInward = pickedInfo ? window.cadInwardBearingForEdge(pickedInfo, center, tPoly) : null;
     const sameSide = (ei) => {
         if (!pickedInward) return false;
         const info = window.cadRingEdgeInfo(ring, ei);
         if (!info) return false;
-        return window.cadBearingDiff(window.cadInwardBearingForEdge(info, center), pickedInward) <= 50;
+        return window.cadBearingDiff(window.cadInwardBearingForEdge(info, center, tPoly), pickedInward) <= 50;
     };
     const frontIds = (Array.isArray(window.cadFrontEdgeIndexes) ? window.cadFrontEdgeIndexes : []).filter(sameSide);
     const selected = Array.from(new Set(picked.concat(frontIds)));
@@ -6977,10 +7019,18 @@ window.cadGenerateMakuraFromSelectedEdges = () => {
     }
     if (!features.length) {
         try {
-            features = window.cadCreateMakuraFromEdges(ring, tPoly, selected, widthM, { keepFull: true });
+            features = window.cadBuildFollowingMakuraStrips_(ring, tPoly, selected, widthM);
         } catch (e) {
-            console.warn('枕畝の再生成に失敗:', e);
+            console.warn('曲線に沿った枕畝の生成に失敗:', e);
             features = [];
+        }
+        if (!features.length) {
+            try {
+                features = window.cadCreateMakuraFromEdges(ring, tPoly, selected, widthM, { keepFull: true });
+            } catch (e) {
+                console.warn('枕畝の再生成に失敗:', e);
+                features = [];
+            }
         }
         if (features.length) shortened = window.cadShortenRidgesClearOfMakura_(features);
     }
