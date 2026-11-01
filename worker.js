@@ -4012,28 +4012,57 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         window._workMapSelectHighlightOverlays[fid] = overlay;
       };
 
-      /** マップ選択中の看板：選んだものは黄色ラベルで「看板」と出す */
+      /** マップ選択中の看板：選んだものはオレンジ強調アイコン＆黄色ラベルで「看板」と出す */
       window.applySignMarkerSelectStyle_ = (p, on) => {
         if (!p || !p.marker) return;
         const name = String(p.name || (p.labelConfig && p.labelConfig.text) || '').replace(/^看板\s+/, '');
+        const isLocPin = typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction);
         const base = p.labelConfig || {
           text: name,
           color: '#333',
           fontSize: '13px',
           fontWeight: 'bold',
-          className: 'signboard-label'
+          className: isLocPin ? 'location-pin-label' : 'signboard-label'
         };
-        p.marker.setOpacity(1);
-        p.marker.setZIndex(on ? 999 : 2);
-        const icon = typeof p.marker.getIcon === 'function' ? p.marker.getIcon() : null;
-        if (icon && icon.url && typeof google !== 'undefined' && google.maps) {
-          p.marker.setIcon(Object.assign({}, icon, {
-            scaledSize: new google.maps.Size(26, 26),
-            labelOrigin: new google.maps.Point(13, 30)
-          }));
+
+        let signIcon = p.color || '🪧';
+        if ((String(name || '').indexOf('排水口') >= 0 || String(name || '').indexOf('水落口') >= 0) && (!signIcon || signIcon === '🕳️')) {
+          signIcon = '🚩';
         }
-        p.marker.setLabel(null);
+
+        p.marker.setOpacity(1);
+        p.marker.setZIndex(on ? 9999 : (isLocPin ? 1200 : 2));
+
         if (on) {
+          // 🌟 選択中：看板アイコンをオレンジ色＆光彩リング付きで強調
+          if (isLocPin) {
+            const z = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : 16;
+            const px = (typeof window.iconPxForZoom_ === 'function' ? window.iconPxForZoom_(z) : 48) + 12;
+            const locSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">' +
+              '<circle cx="32" cy="32" r="31" fill="#FF9800" fill-opacity="0.4" stroke="#E65100" stroke-width="2"/>' +
+              '<circle cx="32" cy="32" r="18" fill="#FFEB3B" stroke="#E65100" stroke-width="4"/>' +
+              '<circle cx="32" cy="32" r="7" fill="#FFF3E0"/>' +
+              '</svg>';
+            p.marker.setIcon({
+              url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(locSvg),
+              scaledSize: new google.maps.Size(px, px),
+              anchor: new google.maps.Point(px / 2, px / 2),
+              labelOrigin: new google.maps.Point(px / 2, px + 8)
+            });
+          } else {
+            const highlightSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">' +
+              '<circle cx="20" cy="20" r="18.5" fill="#FF9800" fill-opacity="0.38" stroke="#F57C00" stroke-width="1.5"/>' +
+              '<circle cx="20" cy="20" r="14.5" fill="#FFF3E0" stroke="#E65100" stroke-width="2.5"/>' +
+              '<text x="20" y="21" dominant-baseline="central" text-anchor="middle" font-size="20">' + signIcon + '</text>' +
+              '</svg>';
+            p.marker.setIcon({
+              url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(highlightSvg),
+              scaledSize: new google.maps.Size(40, 40),
+              anchor: new google.maps.Point(20, 20),
+              labelOrigin: new google.maps.Point(20, 44)
+            });
+          }
+
           p.marker.setLabel(Object.assign({}, base, {
             text: '看板 ' + name,
             className: 'signboard-label selected',
@@ -4042,13 +4071,30 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           }));
           return;
         }
+
+        // 通常（非選択時）に戻す
+        if (isLocPin && typeof window.locationPinMarkerIcon_ === 'function') {
+          const z = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : 16;
+          p.marker.setIcon(window.locationPinMarkerIcon_(z));
+        } else {
+          const normalSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="20">' + signIcon + '</text></svg>';
+          p.marker.setIcon({
+            url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(normalSvg),
+            scaledSize: new google.maps.Size(26, 26),
+            anchor: new google.maps.Point(13, 13),
+            labelOrigin: new google.maps.Point(13, 30)
+          });
+        }
+
         const z = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : 0;
-        if (z >= 17) {
+        if (isLocPin || z >= 17) {
           p.marker.setLabel(Object.assign({}, base, {
             text: name,
-            className: 'signboard-label',
+            className: isLocPin ? 'location-pin-label' : 'signboard-label',
             color: '#333'
           }));
+        } else {
+          p.marker.setLabel(null);
         }
       };
 

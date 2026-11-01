@@ -391,7 +391,7 @@ window.updateCadSvgOverlay = (opts) => {
                 e.stopPropagation();
                 e.preventDefault();
                 if (window.cadPinMode) return;
-                if (p.uneIndex && typeof window.cadSelectRidgeByTap === 'function') window.cadSelectRidgeByTap(p.uneIndex);
+                if (p.uneIndex && typeof window.cadSelectRidgeByTap === 'function') window.cadSelectRidgeByTap(p.uneIndex, e);
             });
             if (typeof window.cadApplyRidgeSelectionStyle_ === 'function') window.cadApplyRidgeSelectionStyle_(p);
             pathsGroup.appendChild(p._svgPathNode);
@@ -2629,6 +2629,7 @@ window.renderCadSavedData = (savedDataStr) => {
 };
 
 window.closeCADMode = () => {
+    if (typeof window.cadClearRidgeSelection === 'function') window.cadClearRidgeSelection();
     if (typeof window.cadClearMakuraEdgePick === 'function') window.cadClearMakuraEdgePick();
     if (typeof window.cadStopGpsPinPlace === 'function') window.cadStopGpsPinPlace({ silent: true });
     document.getElementById('cadOverlay').style.display = 'none';
@@ -6928,21 +6929,103 @@ window.cadCollectObliqueMakuraEdges_ = (ring, selected) => {
     return extra;
 };
 
-/** 枕の角の凸凹を、半径ぶんの曲線にならす */
+/** 角の頂点を円弧に置き換える。膨らませず、尖りだけを削る */
+window.cadFilletRingCorners_ = (ringLngLat, radiusM) => {
+    let pts = (ringLngLat || []).slice();
+    if (pts.length > 1) {
+        const f = pts[0];
+        const l = pts[pts.length - 1];
+        if (f && l && f[0] === l[0] && f[1] === l[1]) pts = pts.slice(0, -1);
+    }
+    const n = pts.length;
+    if (n < 4) return null;
+    const lat0 = pts[0][1] * Math.PI / 180;
+    const kx = 111320 * Math.cos(lat0);
+    const ky = 110540;
+    const origin = pts[0];
+    const toXY = (c) => [(c[0] - origin[0]) * kx, (c[1] - origin[1]) * ky];
+    const toLL = (p) => [origin[0] + p[0] / kx, origin[1] + p[1] / ky];
+    const xy = pts.map(toXY);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+        const a = xy[(i - 1 + n) % n];
+        const b = xy[i];
+        const c = xy[(i + 1) % n];
+        const bax = b[0] - a[0];
+        const bay = b[1] - a[1];
+        const cbx = c[0] - b[0];
+        const cby = c[1] - b[1];
+        const lab = Math.hypot(bax, bay);
+        const lcb = Math.hypot(cbx, cby);
+        if (lab < 0.2 || lcb < 0.2) { out.push(b); continue; }
+        const u = [(a[0] - b[0]) / lab, (a[1] - b[1]) / lab];
+        const v = [(c[0] - b[0]) / lcb, (c[1] - b[1]) / lcb];
+        const dot = Math.max(-1, Math.min(1, u[0] * v[0] + u[1] * v[1]));
+        const phi = Math.acos(dot);
+        const deflect = Math.PI - phi;
+        if (deflect < 14 * Math.PI / 180) { out.push(b); continue; }
+        const turn = bax * cby - bay * cbx;
+        if (Math.abs(turn) < 1e-6) { out.push(b); continue; }
+        let T = radiusM * Math.tan(deflect / 2);
+        const maxT = Math.min(lab, lcb) * 0.42;
+        if (T > maxT) T = maxT;
+        if (!(T > 0.2)) { out.push(b); continue; }
+        const Ruse = T / Math.tan(deflect / 2);
+        const p1 = [b[0] + u[0] * T, b[1] + u[1] * T];
+        const p2 = [b[0] + v[0] * T, b[1] + v[1] * T];
+        const left = [-bay / lab, bax / lab];
+        let normal = turn > 0 ? left : [-left[0], -left[1]];
+        let center = [p1[0] + normal[0] * Ruse, p1[1] + normal[1] * Ruse];
+        if (Math.hypot(center[0] - b[0], center[1] - b[1]) < Ruse * 1.02) {
+            normal = [-normal[0], -normal[1]];
+            center = [p1[0] + normal[0] * Ruse, p1[1] + normal[1] * Ruse];
+        }
+        const a1 = Math.atan2(p1[1] - center[1], p1[0] - center[0]);
+        const a2 = Math.atan2(p2[1] - center[1], p2[0] - center[0]);
+        let sweep = a2 - a1;
+        while (sweep > Math.PI) sweep -= 2 * Math.PI;
+        while (sweep < -Math.PI) sweep += 2 * Math.PI;
+        const steps = Math.max(5, Math.round(Math.abs(sweep) / (Math.PI / 10)));
+        out.push(p1);
+        for (let s = 1; s < steps; s++) {
+            const ang = a1 + sweep * (s / steps);
+            out.push([center[0] + Math.cos(ang) * Ruse, center[1] + Math.sin(ang) * Ruse]);
+        }
+        out.push(p2);
+    }
+    return out.map(toLL);
+};
+
+/** 枕の角を、幅を増やさずに曲線でつなぐ */
 window.cadSmoothMakuraCorners_ = (feature, radiusM) => {
     const one = window.cadCoalesceToPolygon(feature);
-    if (!one) return feature;
-    const r = Math.max(1.2, Math.min(4, Number(radiusM) || 2.4));
-    let grown = null;
-    try { grown = turf.buffer(one, r, { units: 'meters', steps: 16 }); } catch (e) { return one; }
-    if (!grown) return one;
-    let shrunk = null;
-    try { shrunk = turf.buffer(grown, -r, { units: 'meters', steps: 16 }); } catch (e) { return one; }
-    const out = shrunk ? window.cadCoalesceToPolygon(shrunk) : null;
+    if (!one || !one.geometry || !one.geometry.coordinates) return feature;
+    const ring = one.geometry.coordinates[0];
+    if (!ring || ring.length < 4) return one;
+    const r = Math.max(3, Math.min(7, Number(radiusM) || 5));
+    let filleted = null;
+    try { filleted = window.cadFilletRingCorners_(ring, r); } catch (e) { return one; }
+    if (!filleted || filleted.length < 4) return one;
+    const closed = filleted.slice();
+    const f = closed[0];
+    const l = closed[closed.length - 1];
+    if (!l || f[0] !== l[0] || f[1] !== l[1]) closed.push([f[0], f[1]]);
+    let poly = null;
+    try { poly = turf.polygon([closed]); } catch (e) { return one; }
+    try {
+        if (typeof turf.unkinkPolygon === 'function') {
+            const k = turf.unkinkPolygon(poly);
+            const feats = k && k.features ? k.features : [];
+            if (feats.length) {
+                poly = feats.reduce((best, cur) => ((turf.area(cur) || 0) > (turf.area(best) || 0) ? cur : best));
+            }
+        }
+    } catch (e) {}
+    const out = window.cadCoalesceToPolygon(poly);
     if (!out) return one;
     const before = window.cadFeatureArea(one);
     const after = window.cadFeatureArea(out);
-    if (after < before * 0.55) return one;
+    if (after < before * 0.72 || after > before * 1.08) return one;
     return out;
 };
 
@@ -7052,7 +7135,7 @@ window.cadGenerateMakuraFromSelectedEdges = () => {
         }
         if (features.length) shortened = window.cadShortenRidgesClearOfMakura_(features);
     }
-    const smoothR = Math.min(4, Math.max(2.2, widthM * 1.6));
+    const smoothR = Math.min(6.5, Math.max(4, widthM * 2.8));
     features = (features || []).map((feature) => {
         let smooth = feature;
         try { smooth = window.cadSmoothMakuraCorners_(feature, smoothR) || feature; } catch (e) { smooth = feature; }
@@ -9367,17 +9450,135 @@ window.cadApplyRidgeSelectionStyle_ = (poly) => {
     node.setAttribute('stroke-width', on ? '5' : '2');
 };
 
+window.cadEnsureRidgePopup_ = () => {
+    let popup = document.getElementById('cadRidgePopup');
+    if (popup) return popup;
+    const wrapper = document.getElementById('cadMapWrapper');
+    if (!wrapper) return null;
+
+    popup = document.createElement('div');
+    popup.id = 'cadRidgePopup';
+    popup.style.cssText = 'position:absolute; display:none; z-index:1050; background:rgba(30, 20, 15, 0.95); border:1.5px solid #FFB74D; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,0.5); padding:8px 12px; color:#fff; pointer-events:auto; transform:translate(-50%, -100%); margin-top:-12px; white-space:nowrap; user-select:none; backdrop-filter:blur(4px); font-family:sans-serif;';
+
+    popup.innerHTML = `
+        <div id="cadRidgePopupArrowDown" style="position:absolute; bottom:-7px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:7px solid transparent; border-right:7px solid transparent; border-top:7px solid #FFB74D;"></div>
+        <div id="cadRidgePopupArrowDownInner" style="position:absolute; bottom:-5.5px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:6px solid rgba(30,20,15,0.95);"></div>
+        <div id="cadRidgePopupArrowUp" style="display:none; position:absolute; top:-7px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:7px solid transparent; border-right:7px solid transparent; border-bottom:7px solid #FFB74D;"></div>
+        <div id="cadRidgePopupArrowUpInner" style="display:none; position:absolute; top:-5.5px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-bottom:6px solid rgba(30,20,15,0.95);"></div>
+        <div id="cadRidgePopupLabel" style="font-size:12px; color:#FFE0B2; font-weight:bold; margin-bottom:6px; text-align:center;">選択中</div>
+        <div style="display:flex; gap:6px; align-items:center;">
+            <button type="button" onclick="cadDeleteSelectedRidge()" style="background:#E53935; color:#fff; border:none; padding:6px 12px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.3); display:inline-flex; align-items:center; gap:3px;">
+                🗑️ 削除する
+            </button>
+            <button type="button" onclick="cadClearRidgeSelection()" style="background:#616161; color:#fff; border:none; padding:6px 10px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.3);">
+                ✖ 解除
+            </button>
+        </div>
+    `;
+
+    const stopEvents = ['click', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'dblclick'];
+    stopEvents.forEach(evt => {
+        popup.addEventListener(evt, (e) => e.stopPropagation());
+    });
+
+    wrapper.appendChild(popup);
+    return popup;
+};
+
+window.cadGetPolyCenterLatLng_ = (poly) => {
+    if (!poly) return null;
+    if (typeof poly.getPath === 'function') {
+        const path = poly.getPath();
+        if (path && path.getLength && path.getLength() > 0) {
+            const bounds = new google.maps.LatLngBounds();
+            for (let i = 0; i < path.getLength(); i++) {
+                bounds.extend(path.getAt(i));
+            }
+            return bounds.getCenter();
+        }
+    }
+    return null;
+};
+
+window.cadUpdateRidgePopupPosition_ = () => {
+    const popup = window.cadEnsureRidgePopup_();
+    if (!popup) return;
+    if (!window.cadSelectedRidgeId || !window.cadSelectedRidgeAnchorLatLng) {
+        popup.style.display = 'none';
+        return;
+    }
+    const wrapper = document.getElementById('cadMapWrapper');
+    if (!wrapper || typeof window.latLngToScreenPixel !== 'function') {
+        popup.style.display = 'none';
+        return;
+    }
+    const anchor = window.cadSelectedRidgeAnchorLatLng;
+    const lat = typeof anchor.lat === 'function' ? anchor.lat() : anchor.lat;
+    const lng = typeof anchor.lng === 'function' ? anchor.lng() : anchor.lng;
+    const pt = window.latLngToScreenPixel(lat, lng);
+    if (!pt) {
+        popup.style.display = 'none';
+        return;
+    }
+
+    const wWidth = wrapper.offsetWidth;
+    const wHeight = wrapper.offsetHeight;
+
+    if (pt.x < -80 || pt.x > wWidth + 80 || pt.y < -80 || pt.y > wHeight + 80) {
+        popup.style.display = 'none';
+        return;
+    }
+
+    const clampedX = Math.max(75, Math.min(wWidth - 75, pt.x));
+
+    const arrowDown = document.getElementById('cadRidgePopupArrowDown');
+    const arrowDownInner = document.getElementById('cadRidgePopupArrowDownInner');
+    const arrowUp = document.getElementById('cadRidgePopupArrowUp');
+    const arrowUpInner = document.getElementById('cadRidgePopupArrowUpInner');
+
+    if (pt.y < 80) {
+        popup.style.transform = 'translate(-50%, 0)';
+        popup.style.marginTop = '14px';
+        if (arrowDown) arrowDown.style.display = 'none';
+        if (arrowDownInner) arrowDownInner.style.display = 'none';
+        if (arrowUp) arrowUp.style.display = 'block';
+        if (arrowUpInner) arrowUpInner.style.display = 'block';
+    } else {
+        popup.style.transform = 'translate(-50%, -100%)';
+        popup.style.marginTop = '-12px';
+        if (arrowDown) arrowDown.style.display = 'block';
+        if (arrowDownInner) arrowDownInner.style.display = 'block';
+        if (arrowUp) arrowUp.style.display = 'none';
+        if (arrowUpInner) arrowUpInner.style.display = 'none';
+    }
+
+    popup.style.left = clampedX + 'px';
+    popup.style.top = pt.y + 'px';
+    popup.style.display = 'block';
+};
+
 window.cadRefreshRidgeSelectionUi_ = () => {
     const bar = document.getElementById('cadRidgeSelectBar');
     const label = document.getElementById('cadRidgeSelectLabel');
+    const popup = window.cadEnsureRidgePopup_();
+    const popupLabel = document.getElementById('cadRidgePopupLabel');
     const hit = window.cadSelectedRidgeId ? window.cadFindRidgeByIndex_(window.cadSelectedRidgeId) : null;
     if (!hit || !hit.found) {
         window.cadSelectedRidgeId = null;
+        window.cadSelectedRidgeAnchorLatLng = null;
         if (bar) bar.style.display = 'none';
+        if (popup) popup.style.display = 'none';
         return;
     }
-    if (bar) bar.style.display = 'block';
-    if (label) label.textContent = '選択中: ' + window.cadRidgeSelectName_(hit.found);
+    const titleText = '選択中: ' + window.cadRidgeSelectName_(hit.found);
+    if (bar) bar.style.display = 'none'; // タブ内は非表示にし、押した畝の上のポップアップに集約
+    if (label) label.textContent = titleText;
+    if (popupLabel) popupLabel.textContent = titleText;
+
+    if (!window.cadSelectedRidgeAnchorLatLng) {
+        window.cadSelectedRidgeAnchorLatLng = window.cadGetPolyCenterLatLng_(hit.found);
+    }
+    window.cadUpdateRidgePopupPosition_();
 };
 
 window.cadPaintRidgeSelection_ = () => {
@@ -9385,7 +9586,7 @@ window.cadPaintRidgeSelection_ = () => {
     all.forEach((p) => window.cadApplyRidgeSelectionStyle_(p));
 };
 
-window.cadSelectRidgeByTap = (uneIndex) => {
+window.cadSelectRidgeByTap = (uneIndex, clickEvent) => {
     if (window.cadPinMode || !uneIndex) return;
     if (window.cadSelectedRidgeId === uneIndex) {
         window.cadClearRidgeSelection();
@@ -9394,6 +9595,27 @@ window.cadSelectRidgeByTap = (uneIndex) => {
     const hit = window.cadFindRidgeByIndex_(uneIndex);
     if (!hit) return;
     window.cadSelectedRidgeId = uneIndex;
+
+    // タップ位置の緯度経度を計算してアンカーにする
+    let anchorLatLng = null;
+    if (clickEvent) {
+        const wrapper = document.getElementById('cadMapWrapper');
+        if (wrapper && typeof window.screenPixelToLatLng === 'function') {
+            const rect = wrapper.getBoundingClientRect();
+            const clientX = clickEvent.touches ? clickEvent.touches[0].clientX : clickEvent.clientX;
+            const clientY = clickEvent.touches ? clickEvent.touches[0].clientY : clickEvent.clientY;
+            if (clientX != null && clientY != null) {
+                const localX = clientX - rect.left;
+                const localY = clientY - rect.top;
+                anchorLatLng = window.screenPixelToLatLng(localX, localY);
+            }
+        }
+    }
+    if (!anchorLatLng && hit.found) {
+        anchorLatLng = window.cadGetPolyCenterLatLng_(hit.found);
+    }
+    window.cadSelectedRidgeAnchorLatLng = anchorLatLng;
+
     window.cadRefreshRidgeSelectionUi_();
     window.cadPaintRidgeSelection_();
     if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
@@ -9406,6 +9628,7 @@ window.cadSelectRidgeByTap = (uneIndex) => {
 
 window.cadClearRidgeSelection = () => {
     window.cadSelectedRidgeId = null;
+    window.cadSelectedRidgeAnchorLatLng = null;
     window.cadRefreshRidgeSelectionUi_();
     window.cadPaintRidgeSelection_();
     if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
@@ -9422,6 +9645,7 @@ window.cadDeleteSelectedRidge = () => {
     try { hit.found.setMap(null); } catch (e) {}
     hit.list.splice(hit.at, 1);
     window.cadSelectedRidgeId = null;
+    window.cadSelectedRidgeAnchorLatLng = null;
     window.cadRefreshRidgeSelectionUi_();
     if (typeof window.reassignLabels === 'function') window.reassignLabels();
     window.cadSvgNeedsRebuild = true;
