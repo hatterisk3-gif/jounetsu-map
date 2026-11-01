@@ -664,7 +664,6 @@ async function fetchWeatherAndUpdateUI() {
     window.weatherSunshineState.lng = lng;
 
     let html = `<div style="padding: 10px;">`;
-    html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">現在の天気: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}℃)</div>`;
 
     // --- 🕒 今後の天気 (1時間ごと) ---
     let now = new Date();
@@ -692,6 +691,8 @@ async function fetchWeatherAndUpdateUI() {
       }
       html += `</div></div>`;
     }
+
+    html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">現在の天気: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}℃)</div>`;
     
     // --- 🌡️ 昨日との温度差計算・表示パネル ---
     if (todayIndex > 0 && data.daily && data.daily.temperature_2m_max) {

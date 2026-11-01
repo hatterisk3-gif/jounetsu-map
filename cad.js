@@ -7061,6 +7061,153 @@ window.cadBuildFollowingMakuraStrips_ = (ring, tPoly, edgeIndexes, widthM) => {
     return out;
 };
 
+/** 選んだ辺が途中で曲がっているか */
+window.cadSelectionHasBend_ = (ring, edgeIndexes) => {
+    const set = new Set(edgeIndexes || []);
+    const n = window.cadRingVertexCount(ring);
+    for (let i = 0; i < n; i++) {
+        if (!set.has(i)) continue;
+        const j = (i + 1) % n;
+        if (!set.has(j)) continue;
+        const a = window.cadRingEdgeInfo(ring, i);
+        const b = window.cadRingEdgeInfo(ring, j);
+        if (!a || !b) continue;
+        const diff = window.cadBearingDiff(a.bearing, b.bearing);
+        const align = Math.min(diff, Math.abs(180 - diff));
+        if (align > 10) return true;
+    }
+    return false;
+};
+
+/** 曲がった辺に、幅が一定の円弧で枕を置く */
+window.cadBuildRoundJoinedMakura_ = (ring, tPoly, edgeIndexes, widthM) => {
+    const indexes = (edgeIndexes || []).filter((ei) => window.cadRingEdgeInfo(ring, ei));
+    if (!indexes.length || typeof turf === 'undefined') return [];
+    const centerLL = turf.center(tPoly).geometry.coordinates;
+    const inset = (window.CAD_MAKURA_EDGE_INSET_M > 0) ? window.CAD_MAKURA_EDGE_INSET_M : 0.5;
+    const outerD = inset;
+    const innerD = inset + Math.max(0.3, widthM);
+    const nRing = window.cadRingVertexCount(ring);
+    const set = new Set(indexes);
+    const used = {};
+    const chains = [];
+    indexes.slice().sort((a, b) => a - b).forEach((start) => {
+        if (used[start]) return;
+        let s = start;
+        for (let guard = 0; guard < nRing; guard++) {
+            const prev = (s - 1 + nRing) % nRing;
+            if (!set.has(prev) || used[prev]) break;
+            s = prev;
+        }
+        const chain = [];
+        let i = s;
+        for (let guard = 0; guard < nRing; guard++) {
+            if (!set.has(i) || used[i]) break;
+            used[i] = true;
+            chain.push(i);
+            i = (i + 1) % nRing;
+        }
+        if (chain.length) chains.push(chain);
+    });
+    const out = [];
+    chains.forEach((chain) => {
+        const infos = chain.map((ei) => window.cadRingEdgeInfo(ring, ei)).filter(Boolean);
+        if (!infos.length) return;
+        const lat0 = infos[0].a[1] * Math.PI / 180;
+        const kx = 111320 * Math.cos(lat0);
+        const ky = 110540;
+        const origin = infos[0].a;
+        const toXY = (c) => [(c[0] - origin[0]) * kx, (c[1] - origin[1]) * ky];
+        const toLL = (p) => [origin[0] + p[0] / kx, origin[1] + p[1] / ky];
+        const verts = [toXY(infos[0].a)];
+        const normals = [];
+        infos.forEach((info) => {
+            const inward = window.cadInwardBearingForEdge(info, centerLL, tPoly);
+            const tip = window.cadDestinationMeters_(info.a, 1, inward);
+            const tipXY = toXY(tip);
+            const base = toXY(info.a);
+            const nx = tipXY[0] - base[0];
+            const ny = tipXY[1] - base[1];
+            const len = Math.hypot(nx, ny) || 1;
+            normals.push([nx / len, ny / len]);
+            verts.push(toXY(info.b));
+        });
+        const extendEnd = (from, to, dist) => {
+            const dx = to[0] - from[0];
+            const dy = to[1] - from[1];
+            const len = Math.hypot(dx, dy) || 1;
+            return [to[0] + dx / len * dist, to[1] + dy / len * dist];
+        };
+        verts[0] = extendEnd(verts[1], verts[0], 0.3);
+        const lastI = verts.length - 1;
+        verts[lastI] = extendEnd(verts[lastI - 1], verts[lastI], 0.3);
+        const inside = (xy) => {
+            try { return turf.booleanPointInPolygon(turf.point(toLL(xy)), tPoly); } catch (e) { return false; }
+        };
+        const offsetAt = (dist) => {
+            const pts = [];
+            const addPt = (p) => {
+                const prev = pts[pts.length - 1];
+                if (prev && Math.hypot(prev[0] - p[0], prev[1] - p[1]) < 0.02) return;
+                pts.push(p);
+            };
+            const at = (vertex, normal) => [vertex[0] + normal[0] * dist, vertex[1] + normal[1] * dist];
+            addPt(at(verts[0], normals[0]));
+            for (let i = 1; i < verts.length - 1; i++) {
+                const nA = normals[i - 1];
+                const nB = normals[i];
+                const dot = Math.max(-1, Math.min(1, nA[0] * nB[0] + nA[1] * nB[1]));
+                if (dot > 0.985) {
+                    const ax = nA[0] + nB[0];
+                    const ay = nA[1] + nB[1];
+                    const al = Math.hypot(ax, ay) || 1;
+                    addPt([verts[i][0] + ax / al * dist, verts[i][1] + ay / al * dist]);
+                    continue;
+                }
+                addPt(at(verts[i], nA));
+                const a1 = Math.atan2(nA[1], nA[0]);
+                const a2 = Math.atan2(nB[1], nB[0]);
+                let short = a2 - a1;
+                while (short > Math.PI) short -= 2 * Math.PI;
+                while (short < -Math.PI) short += 2 * Math.PI;
+                const alt = short >= 0 ? short - 2 * Math.PI : short + 2 * Math.PI;
+                const mid = (sw) => {
+                    const ang = a1 + sw / 2;
+                    return [verts[i][0] + Math.cos(ang) * dist, verts[i][1] + Math.sin(ang) * dist];
+                };
+                let sweep = short;
+                if (!inside(mid(short)) && inside(mid(alt))) sweep = alt;
+                const steps = Math.max(4, Math.round(Math.abs(sweep) / (Math.PI / 14)));
+                for (let s = 1; s <= steps; s++) {
+                    const ang = a1 + sweep * (s / steps);
+                    addPt([verts[i][0] + Math.cos(ang) * dist, verts[i][1] + Math.sin(ang) * dist]);
+                }
+            }
+            addPt(at(verts[verts.length - 1], normals[normals.length - 1]));
+            return pts;
+        };
+        const outer = offsetAt(outerD);
+        const inner = offsetAt(innerD);
+        if (outer.length < 2 || inner.length < 2) return;
+        const ringLL = outer.concat(inner.slice().reverse()).map(toLL);
+        ringLL.push([ringLL[0][0], ringLL[0][1]]);
+        let poly = null;
+        try { poly = turf.polygon([ringLL]); } catch (e) { return; }
+        let clipped = poly;
+        try {
+            const hit = turf.intersect(tPoly, poly);
+            if (hit) clipped = hit;
+        } catch (e) {}
+        let flat;
+        try { flat = turf.flatten(clipped); } catch (e) { flat = { features: [clipped] }; }
+        (flat.features || []).forEach((feature) => {
+            const one = window.cadCoalesceToPolygon(feature);
+            if (one && window.cadFeatureArea(one) >= 0.4) out.push(one);
+        });
+    });
+    return out;
+};
+
 window.cadGenerateMakuraFromSelectedEdges = () => {
     const picked = Array.from(new Set(window.cadMakuraSelectedEdges || []));
     if (!picked.length) {
@@ -7112,11 +7259,27 @@ window.cadGenerateMakuraFromSelectedEdges = () => {
 
     let features = [];
     let shortened = 0;
+    let roundFeatures = [];
+    if (window.cadSelectionHasBend_(ring, selected)) {
+        try { roundFeatures = window.cadBuildRoundJoinedMakura_(ring, tPoly, selected, widthM) || []; } catch (e) { roundFeatures = []; }
+    }
+    if (roundFeatures.length) {
+        const separated = window.cadSeparateMakuraFromRidges_(roundFeatures);
+        const areaOf = (list) => (list || []).reduce((sum, f) => sum + window.cadFeatureArea(f), 0);
+        if (separated.length && areaOf(separated) > areaOf(roundFeatures) * 0.86) {
+            features = separated;
+        } else {
+            shortened = window.cadShortenRidgesClearOfMakura_(roundFeatures);
+            features = roundFeatures;
+        }
+    }
+    if (!features.length) {
     try {
         features = window.cadCreateMakuraFromEdges(ring, tPoly, selected, widthM);
     } catch (e) {
         console.warn('枕畝の生成に失敗:', e);
         features = [];
+    }
     }
     if (!features.length) {
         try {
@@ -7135,18 +7298,6 @@ window.cadGenerateMakuraFromSelectedEdges = () => {
         }
         if (features.length) shortened = window.cadShortenRidgesClearOfMakura_(features);
     }
-    const smoothR = Math.min(6.5, Math.max(4, widthM * 2.8));
-    features = (features || []).map((feature) => {
-        let smooth = feature;
-        try { smooth = window.cadSmoothMakuraCorners_(feature, smoothR) || feature; } catch (e) { smooth = feature; }
-        if (!tPoly || !smooth) return smooth;
-        try {
-            const clipped = turf.intersect(tPoly, smooth);
-            const one = clipped ? window.cadCoalesceToPolygon(clipped) : null;
-            if (one && window.cadFeatureArea(one) >= 0.4) return one;
-        } catch (e) {}
-        return smooth;
-    }).filter(Boolean);
     const added = window.cadPlaceMakuraFeatures(features);
 
     if (!added) {

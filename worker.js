@@ -1779,7 +1779,6 @@ async function fetchWeatherAndUpdateUI() {
     window.weatherSunshineState.lng = lng;
 
     let html = `<div style="padding: 10px;">`;
-    html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">現在の天気: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}℃)</div>`;
 
     // --- 🕒 今後の天気 (1時間ごと) ---
     let now = new Date();
@@ -1807,6 +1806,8 @@ async function fetchWeatherAndUpdateUI() {
       }
       html += `</div></div>`;
     }
+
+    html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">現在の天気: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}℃)</div>`;
     
     // --- 🌡️ 昨日との温度差計算・表示パネル ---
     if (todayIndex > 0 && data.daily && data.daily.temperature_2m_max) {
@@ -2519,7 +2520,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           : { text: name, color: '#333', fontSize: '13px', fontWeight: 'bold', className: 'signboard-label' };
         const iconOpt = isLocPin && typeof window.locationPinMarkerIcon_ === 'function'
           ? window.locationPinMarkerIcon_(zoom)
-          : { url: `data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="20">${icon}</text></svg>`, scaledSize: new google.maps.Size(26,26), labelOrigin: new google.maps.Point(13,30) };
+          : { url: `data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="13" y="20" text-anchor="middle" font-size="20">${icon}</text></svg>`, scaledSize: new google.maps.Size(26,26), anchor: new google.maps.Point(13, 13), labelOrigin: new google.maps.Point(13,30) };
         const marker = new google.maps.Marker({ position: pos, map: map, visible: isLocPin ? true : zoom >= 15, zIndex: isLocPin ? 1200 : undefined, label: (isLocPin || zoom >= 17) ? config : null, icon: iconOpt });
         if (isLocPin && typeof window.attachLocationPinGlow_ === 'function') window.attachLocationPinGlow_(marker);
         if (isLocPin && typeof window.syncLocationPinGlowScale_ === 'function') window.syncLocationPinGlowScale_(map);
@@ -4053,7 +4054,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
             const highlightSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">' +
               '<circle cx="20" cy="20" r="18.5" fill="#FF9800" fill-opacity="0.38" stroke="#F57C00" stroke-width="1.5"/>' +
               '<circle cx="20" cy="20" r="14.5" fill="#FFF3E0" stroke="#E65100" stroke-width="2.5"/>' +
-              '<text x="20" y="21" dominant-baseline="central" text-anchor="middle" font-size="20">' + signIcon + '</text>' +
+              '<text x="20" y="27" text-anchor="middle" font-size="20">' + signIcon + '</text>' +
               '</svg>';
             p.marker.setIcon({
               url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(highlightSvg),
@@ -4077,7 +4078,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           const z = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : 16;
           p.marker.setIcon(window.locationPinMarkerIcon_(z));
         } else {
-          const normalSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="20">' + signIcon + '</text></svg>';
+          const normalSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="13" y="20" text-anchor="middle" font-size="20">' + signIcon + '</text></svg>';
           p.marker.setIcon({
             url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(normalSvg),
             scaledSize: new google.maps.Size(26, 26),
