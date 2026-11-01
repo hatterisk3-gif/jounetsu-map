@@ -2512,7 +2512,7 @@ window.openTyphoonModal = function() {
 
 function createSignboardMarker(name, pos, icon, id, signFunc) {
         const isLocPin = typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(signFunc);
-        if (String(name || '').indexOf('排水口') >= 0 && (!icon || icon === '🕳️')) icon = '🚩';
+        if ((String(name || '').indexOf('排水口') >= 0 || String(name || '').indexOf('水落口') >= 0) && (!icon || icon === '🕳️')) icon = '🚩';
         const zoom = map.getZoom();
         const config = isLocPin && typeof window.locationPinLabelConfig_ === 'function'
           ? window.locationPinLabelConfig_(name, zoom)
@@ -11495,7 +11495,37 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
             push(row.symptom, row.content);
           });
         });
+        // 整備履歴（MachineMaintenance）。作業記録に残っていない組み合わせもここにある
+        const machineName = String((machine && (machine.name || machine.type)) || '').replace(/\s+/g, '');
+        (Array.isArray(window._workerMachineMaintenanceRecords) ? window._workerMachineMaintenanceRecords : []).forEach((r) => {
+          if (!r) return;
+          const mid = String(r.machineId || '').trim();
+          if (id && mid && mid !== id) return;
+          if (id && !mid && machineName) {
+            const commentName = String(r.comment || '').replace(/\s+/g, '');
+            if (commentName.indexOf(machineName) < 0) return;
+          }
+          let sym = '';
+          const comment = String(r.comment || '');
+          const sm = comment.match(/症状[:：]\s*([^/／\n]+)/);
+          if (sm && sm[1]) sym = String(sm[1]).trim();
+          const content = String(r.material || '').trim();
+          push(sym, content);
+        });
         return out;
+      };
+
+      /** 症状と整備内容が同じ対象か（例: 燃料ホース裂け ⇔ 燃料ホース交換） */
+      window.maintContentMatchesSymptom_ = (contentName, symptomName) => {
+        const strip = (s) => String(s || '').replace(/\s+/g, '')
+          .replace(/交換|修理|点検|清掃|調整|補充|裂け|割れ|ひび|破損|不良|漏れ|もれ|切れ/g, '');
+        const content = strip(contentName);
+        const symptom = strip(symptomName);
+        if (!content || !symptom || content.length < 2 || symptom.length < 2) return false;
+        if (content === symptom) return true;
+        if (symptom.indexOf(content) >= 0) return true;
+        if (content.indexOf(symptom) >= 0) return true;
+        return false;
       };
 
       /** 選んだ整備内容を、そのときの症状に紐づける */
@@ -11568,23 +11598,33 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
 
       /**
        * 症状で整備内容を絞る。
-       * その症状に紐づいていて、かつこの機械の整備内容に残っているものだけ出す。
-       * 症状未設定の内容（例: オイル交換）は、別の症状の候補には出さない。
+       * 1) その症状で過去に使った整備内容
+       * 2) この機械に登録済みで、症状名と対象が一致するもの（燃料ホース裂け → 燃料ホース交換）
+       * 別対象（例: オイル交換）は出さない。
        */
       window.getMachineContentsForSymptom_ = (machine, symptomName, extraCurrent) => {
         const all = window.splitMachineMaintList_(machine && machine.maintenanceContents);
-        const allSet = new Set(all);
         const symptom = String(symptomName || '').trim();
         const cur = String(extraCurrent || '').trim();
         if (!symptom) return [];
         const links = window.collectMachineSymptomContentLinks_(machine);
         const list = [];
-        (links[symptom] || []).forEach((c) => {
-          const name = String(c || '').trim();
-          if (!name || list.indexOf(name) >= 0) return;
-          if (allSet.has(name)) list.push(name);
+        const add = (name) => {
+          const n = String(name || '').trim();
+          if (!n || list.indexOf(n) >= 0) return;
+          list.push(n);
+        };
+        (links[symptom] || []).forEach(add);
+        // 表記ゆれ（空白）でも過去の組み合わせを拾う
+        Object.keys(links).forEach((key) => {
+          if (String(key || '').replace(/\s+/g, '') !== symptom.replace(/\s+/g, '')) return;
+          (links[key] || []).forEach(add);
         });
-        if (cur && list.indexOf(cur) < 0) list.push(cur);
+        all.forEach((name) => {
+          if (typeof window.maintContentMatchesSymptom_ === 'function'
+            && window.maintContentMatchesSymptom_(name, symptom)) add(name);
+        });
+        if (cur) add(cur);
         return list;
       };
 

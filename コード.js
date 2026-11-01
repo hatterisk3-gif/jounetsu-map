@@ -4389,7 +4389,11 @@ function importPesticideCatalogChunk(params) {
     const last = sheet.getLastRow();
     // 行削除は数万件で極端に遅い。中身を消して上から書き直す。
     if (last > 1) sheet.getRange(2, 1, last - 1, cols).clearContent();
-    try { CacheService.getScriptCache().remove('pestNameIdxStamp'); } catch (e) {}
+    try {
+      const cache = CacheService.getScriptCache();
+      cache.remove('pestNameIdxStamp');
+      cache.remove('pestAppSpanStamp');
+    } catch (e) {}
   }
   const values = [];
   rows.forEach(raw => {
@@ -6096,12 +6100,145 @@ function pesticideCatalogCache_() {
   try { return CacheService.getScriptCache(); } catch (e) { return null; }
 }
 
+function pesticideCatalogStamp_(sheet) {
+  const catalogLast = sheet.getLastRow();
+  const probe = catalogLast >= 2 ? String(sheet.getRange(2, 1).getValue() || '') : '';
+  return catalogLast + '|' + probe;
+}
+
+function shortCacheKey_(text) {
+  try {
+    const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, String(text), Utilities.Charset.UTF_8);
+    return bytes.map(function (b) {
+      const v = b < 0 ? b + 256 : b;
+      return (v < 16 ? '0' : '') + v.toString(16);
+    }).join('');
+  } catch (e) {
+    return String(text).replace(/\s+/g, '').slice(0, 80);
+  }
+}
+
+function cachePutChunked_(cache, prefix, stamp, value) {
+  if (!cache) return;
+  try {
+    const json = JSON.stringify(value);
+    const size = 80000;
+    const put = {};
+    put[prefix + 'Stamp'] = stamp;
+    let n = 0;
+    for (let i = 0; i < json.length && n < 20; i += size) {
+      put[prefix + n] = json.substring(i, i + size);
+      n++;
+    }
+    put[prefix + 'N'] = String(n);
+    cache.putAll(put, 21600);
+  } catch (e) {}
+}
+
+function cacheGetChunked_(cache, prefix, stamp) {
+  if (!cache || cache.get(prefix + 'Stamp') !== stamp) return null;
+  const n = Number(cache.get(prefix + 'N') || 0);
+  if (!(n > 0)) return null;
+  const keys = [];
+  for (let i = 0; i < n; i++) keys.push(prefix + i);
+  const got = cache.getAll(keys);
+  let json = '';
+  for (let i = 0; i < n; i++) {
+    if (!got[keys[i]]) return null;
+    json += got[keys[i]];
+  }
+  try { return JSON.parse(json); } catch (e) { return null; }
+}
+
+/** 同じ農薬が連続している区間だけ覚える。適用表は全行検索をしない。 */
+function buildPesticideAppSpans_(nameValues, regValues) {
+  const runs = [];
+  let prevName = '';
+  let prevReg = '';
+  let start = 0;
+  let count = 0;
+  const flush = function () {
+    if (!count || !prevName) return;
+    runs.push([prevName, prevReg, start, count]);
+  };
+  for (let i = 0; i < nameValues.length; i++) {
+    const name = String((nameValues[i] && nameValues[i][0]) || '').trim();
+    const reg = regValues[i] ? String(regValues[i][0] || '').trim() : '';
+    if (count && name === prevName && reg === prevReg) {
+      count++;
+      continue;
+    }
+    flush();
+    prevName = name;
+    prevReg = reg;
+    start = i + 2;
+    count = name ? 1 : 0;
+  }
+  flush();
+  return runs;
+}
+
+function loadPesticideAppSpans_(sheet, stamp) {
+  const catalogLast = sheet.getLastRow();
+  if (catalogLast < 2) return [];
+  const keyStamp = stamp || pesticideCatalogStamp_(sheet);
+  const cache = pesticideCatalogCache_();
+  const cached = cacheGetChunked_(cache, 'pestAppSpan', keyStamp);
+  if (cached) return cached;
+  const numRows = catalogLast - 1;
+  const names = sheet.getRange(2, 1, numRows, 1).getValues();
+  let regs = [];
+  if (sheet.getLastColumn() >= 8) {
+    regs = sheet.getRange(2, 8, numRows, 1).getValues();
+  }
+  const runs = buildPesticideAppSpans_(names, regs);
+  cachePutChunked_(cache, 'pestAppSpan', keyStamp, runs);
+  return runs;
+}
+
+function spansForPesticide_(runs, nameKey, regKey) {
+  const exact = [];
+  const byName = [];
+  for (let i = 0; i < runs.length; i++) {
+    const run = runs[i];
+    if (foldCatalogText_(run[0]) !== nameKey) continue;
+    byName.push(run);
+    if (!regKey || foldCatalogText_(run[1]) === regKey) exact.push(run);
+  }
+  if (exact.length) return { runs: exact, exact: true };
+  return { runs: byName, exact: false };
+}
+
+function readPesticideSpanRows_(sheet, runs, numCols) {
+  if (!runs || !runs.length) return [];
+  const ordered = runs.slice().sort(function (a, b) { return a[2] - b[2]; });
+  let min = ordered[0][2];
+  let max = ordered[0][2] + ordered[0][3] - 1;
+  let summed = 0;
+  for (let i = 0; i < ordered.length; i++) {
+    const s = ordered[i][2];
+    const e = s + ordered[i][3] - 1;
+    if (s < min) min = s;
+    if (e > max) max = e;
+    summed += ordered[i][3];
+  }
+  const span = max - min + 1;
+  if (span <= Math.min(5000, Math.max(summed + 80, summed * 3))) {
+    return sheet.getRange(min, 1, span, numCols).getValues();
+  }
+  const rows = [];
+  for (let i = 0; i < ordered.length; i++) {
+    const part = sheet.getRange(ordered[i][2], 1, ordered[i][3], numCols).getValues();
+    for (let r = 0; r < part.length; r++) rows.push(part[r]);
+  }
+  return rows;
+}
+
 /** 農薬名は適用行の数だけ重複している。名前単位の一覧をキャッシュして検索を短くする。 */
 function loadPesticideNameIndex_(sheet) {
   const catalogLast = sheet.getLastRow();
   if (catalogLast < 2) return [];
-  const probe = String(sheet.getRange(2, 1).getValue() || '');
-  const stamp = catalogLast + '|' + probe;
+  const stamp = pesticideCatalogStamp_(sheet);
   const cache = pesticideCatalogCache_();
   if (cache && cache.get('pestNameIdxStamp') === stamp) {
     const n = Number(cache.get('pestNameIdxN') || 0);
@@ -6154,6 +6291,7 @@ function loadPesticideNameIndex_(sheet) {
       }
       put.pestNameIdxN = String(n);
       cache.putAll(put, 21600);
+      cachePutChunked_(cache, 'pestAppSpan', stamp, buildPesticideAppSpans_(names, regs));
     } catch (e) {}
   }
   return list;
@@ -6282,14 +6420,15 @@ function getPesticideApplicationTable(params) {
   const nameKey = foldCatalogText_(nameRaw);
   const regKey = foldCatalogText_(regRaw);
   const limit = Math.min(400, Math.max(1, parseInt((params && params.limit) || 300, 10) || 300));
-  const cacheKey = 'pestApp:' + nameKey + ':' + regKey + ':' + limit;
+  const sheet = TENANT_SS.getSheetByName('農薬カタログ') || ensurePesticideCatalogSheet_();
+  const last = sheet.getLastRow();
+  const totalCatalog = Math.max(0, last - 1);
+  const stamp = pesticideCatalogStamp_(sheet);
+  const cacheKey = 'pestAppR:' + shortCacheKey_(nameKey + '\n' + regKey + '\n' + limit + '\n' + stamp);
   try {
     const cached = CacheService.getScriptCache().get(cacheKey);
     if (cached) return JSON.parse(cached);
   } catch (e) {}
-  const sheet = ensurePesticideCatalogSheet_();
-  const last = sheet.getLastRow();
-  const totalCatalog = Math.max(0, last - 1);
   if (last <= 1) {
     return {
       success: true,
@@ -6319,19 +6458,12 @@ function getPesticideApplicationTable(params) {
     items.push(item);
     return items.length >= limit;
   };
-  const rowNums = findRowsInCatalogColumn_(sheet, ctx.col.name, nameRaw, true, limit);
-  const looseNums = rowNums.length ? rowNums : findRowsInCatalogColumn_(sheet, ctx.col.name, nameRaw, false, limit);
-  if (looseNums.length) {
-    const byRow = readSheetRowsByNumber_(sheet, looseNums, ctx.colCount);
-    const ordered = looseNums.map(function (n) { return byRow[n]; }).filter(Boolean);
+  const picked = spansForPesticide_(loadPesticideAppSpans_(sheet, stamp), nameKey, regKey);
+  if (picked.runs.length) {
+    const block = readPesticideSpanRows_(sheet, picked.runs, ctx.colCount);
     let full = false;
-    for (let i = 0; i < ordered.length; i++) {
-      if (takeRow(ordered[i], true)) { full = true; break; }
-    }
-    if (!items.length) {
-      seenClear: for (let i = 0; i < ordered.length; i++) {
-        if (takeRow(ordered[i], false)) { full = true; break seenClear; }
-      }
+    for (let i = 0; i < block.length; i++) {
+      if (takeRow(block[i], picked.exact && !!regKey)) { full = true; break; }
     }
     truncated = full;
   }
@@ -6357,7 +6489,7 @@ function getPesticideApplicationTable(params) {
   };
   try {
     const packed = JSON.stringify(result);
-    if (packed.length < 90000) CacheService.getScriptCache().put(cacheKey, packed, 1800);
+    if (packed.length < 90000) CacheService.getScriptCache().put(cacheKey, packed, 21600);
   } catch (e) {}
   return result;
 }

@@ -7138,7 +7138,7 @@ function bindAdminMarkerClick_(marker, getId) {
 }
 
 function createSignboardMarker(name, pos, icon, idOrRef) {
-    if (String(name || '').indexOf('排水口') >= 0 && (!icon || icon === '🕳️')) icon = '🚩';
+    if ((String(name || '').indexOf('排水口') >= 0 || String(name || '').indexOf('水落口') >= 0) && (!icon || icon === '🕳️')) icon = '🚩';
     const getId = () => (idOrRef && typeof idOrRef === 'object' && 'id' in idOrRef) ? idOrRef.id : idOrRef;
     const zoom = map.getZoom(), config = { text: name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' };
     const marker = new google.maps.Marker({ position: pos, map: map, visible: zoom >= 15, label: zoom >= 17 ? config : null, icon: { url: `data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="20">${icon}</text></svg>`, scaledSize: new google.maps.Size(26, 26), labelOrigin: new google.maps.Point(13, 30) } });
@@ -7809,7 +7809,7 @@ window.cancelMarkerForm_ = () => {
 window._signRegQuickPresets_ = {
     water: { label: '給水地点', icon: '💧', name: '給水地点', signFunction: '機能なし' },
     inlet: { label: '給水口', icon: '⛲', name: '給水口', signFunction: '機能なし' },
-    drain: { label: '排水口', icon: '🚩', name: '排水口', signFunction: '機能なし' },
+    drain: { label: '排水口/水落口', icon: '🚩', name: '排水口/水落口', signFunction: '機能なし' },
     sw: { label: 'スイッチ', icon: '🔌', name: 'スイッチ', signFunction: '機能なし' },
     parking: { label: '駐車場', icon: '🅿️', name: '駐車場', signFunction: '機能なし' },
     toilet: { label: 'トイレ', icon: '🚻', name: 'トイレ', signFunction: '機能なし' },
@@ -7910,7 +7910,7 @@ window.renderSignRegQuickScreen_ = () => {
           <button type="button" onclick="pickSignRegQuick_('drain')"
             style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #80CBC4; border-radius:10px; background:#E0F2F1; cursor:pointer;">
             <span style="font-size:28px; line-height:1;">🚩</span>
-            <span><div style="font-weight:bold; color:#00695C; font-size:15px;">排水口</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">名前・機能を自動セット</div></span>
+            <span><div style="font-weight:bold; color:#00695C; font-size:15px;">排水口/水落口</div><div style="font-size:11px; color:#546E7A; margin-top:2px;">名前・機能を自動セット</div></span>
           </button>
           <button type="button" onclick="pickSignRegQuick_('sw')"
             style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border:2px solid #FFE082; border-radius:10px; background:#FFF8E1; cursor:pointer;">
@@ -10058,7 +10058,7 @@ window.openM = (id) => {
     const titleHtml = p.isMarker
         ? (locPin
             ? `<div style="font-size:22px; line-height:1; margin-bottom:4px;">🏢</div><b>${p.name}</b><div style="font-size:11px; color:#F57F17; font-weight:bold; margin-top:2px;">拠点</div>`
-            : `<div style="font-size:28px; line-height:1; margin-bottom:5px;">${(String(p.name || '').indexOf('排水口') >= 0 && (!p.color || p.color === '🕳️')) ? '🚩' : p.color}</div><b>${p.name}</b>`)
+            : `<div style="font-size:28px; line-height:1; margin-bottom:5px;">${((String(p.name || '').indexOf('排水口') >= 0 || String(p.name || '').indexOf('水落口') >= 0) && (!p.color || p.color === '🕳️')) ? '🚩' : p.color}</div><b>${p.name}</b>`)
         : `<b>${p.name}</b>`;
 
     let ridgeStr = ''; if (!p.isMarker && p.ridgeDir && p.ridgeWidth) { const ridges = calcRidges(p.coords, p.ridgeDir, p.ridgeWidth); ridgeStr = `<br><span style="color:#2196F3; font-weight:bold;">📏 約${ridges}畝 (${p.ridgeDir} / ${p.ridgeWidth}cm)</span>`; }

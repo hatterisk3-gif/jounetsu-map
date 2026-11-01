@@ -38,6 +38,7 @@
     getTokyoMarketDaily: 45000,
     importTokyoMarketDaily: 45000,
     searchPesticideCatalog: 90000,
+    getPesticideApplicationTable: 60000,
     searchFertilizerCatalog: 90000,
     importPesticideCatalogChunk: 120000,
     importFertilizerCatalogChunk: 120000

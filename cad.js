@@ -885,10 +885,10 @@ window.updateCadSvgOverlay = (opts) => {
                 const showNum = (typeTotals[pinType] || 0) > 1;
                 if (pinType === 'water_in') {
                     iconStr = '🚰';
-                    nameStr = '給水';
+                    nameStr = '給水口';
                 } else if (pinType === 'water_out') {
                     iconStr = '🚩';
-                    nameStr = '排水';
+                    nameStr = '排水口/水落口';
                 } else if (pinType === 'parking_truck') {
                     iconStr = '🅿️';
                     nameStr = '駐車場';
@@ -1433,7 +1433,7 @@ window.loadCadStateFromHistory = (index) => {
     }
     document.getElementById('cadUneCount').value = state.uneCount || 0;
     if (typeof window.setCadMarginCm === 'function') {
-        window.setCadMarginCm('Side', state.marginSide, 150);
+        window.setCadMarginCm('Side', state.marginSide, 50);
         window.setCadMarginCm('End', state.marginEnd, 200);
     } else {
         if (document.getElementById('cadMarginSide')) document.getElementById('cadMarginSide').value = state.marginSide || 0;
@@ -1757,7 +1757,7 @@ window.handleMapClick = (pageX, pageY) => {
     window.cadPlaceEquipmentPin(latLng, window.cadPinMode);
 };
 
-/** 設備ピン（吸水・排水・侵入口・駐車場）を座標に設置 */
+/** 設備ピン（給水口・排水口/水落口・侵入口・駐車場）を座標に設置 */
 window.cadPlaceEquipmentPin = (latLng, pinType) => {
     if (!window.cadMap || !latLng || !pinType) return false;
     const msgEl = document.getElementById('cadPinModeMsg');
@@ -2472,12 +2472,12 @@ window.openCADMode = async (id, opts) => {
     if (!initialRendered) {
         document.getElementById('cadAngle').value = 0;
         if (typeof window.setCadMarginCm === 'function') {
-            window.setCadMarginCm('Side', 150, 150);
+            window.setCadMarginCm('Side', 50, 50);
             window.setCadMarginCm('End', 200, 200);
         } else {
             const marginSideEl = document.getElementById('cadMarginSide');
             const marginEndEl = document.getElementById('cadMarginEnd');
-            if (marginSideEl) marginSideEl.value = 150;
+            if (marginSideEl) marginSideEl.value = 50;
             if (marginEndEl) marginEndEl.value = 200;
         }
         const countEl = document.getElementById('cadUneCount');
@@ -2547,12 +2547,12 @@ window.renderCadSavedData = (savedDataStr) => {
         document.getElementById('cadUneCount').value = saved.uneCount !== undefined ? saved.uneCount : 0;
 
         if (typeof window.setCadMarginCm === 'function') {
-            window.setCadMarginCm('Side', saved.marginSide !== undefined ? saved.marginSide : 150, 150);
+            window.setCadMarginCm('Side', saved.marginSide !== undefined ? saved.marginSide : 50, 50);
             window.setCadMarginCm('End', saved.marginEnd !== undefined ? saved.marginEnd : 200, 200);
         } else {
             const marginSideEl = document.getElementById('cadMarginSide');
             const marginEndEl = document.getElementById('cadMarginEnd');
-            if (marginSideEl) marginSideEl.value = saved.marginSide !== undefined ? saved.marginSide : 150;
+            if (marginSideEl) marginSideEl.value = saved.marginSide !== undefined ? saved.marginSide : 50;
             if (marginEndEl) marginEndEl.value = saved.marginEnd !== undefined ? saved.marginEnd : 200;
         }
         if (typeof window.setCadPinNumFontSize === 'function') {
@@ -2690,7 +2690,7 @@ window.setCadMarginCm = (suffix, cm, fallback) => {
     const sel = document.getElementById('cadMargin' + suffix + 'Select');
     const inp = document.getElementById('cadMargin' + suffix);
     if (!inp) return;
-    const fb = (fallback != null && Number.isFinite(Number(fallback))) ? Number(fallback) : 150;
+    const fb = (fallback != null && Number.isFinite(Number(fallback))) ? Number(fallback) : (suffix === 'Side' ? 50 : 150);
     const n = parseFloat(cm);
     const val = Number.isFinite(n) ? n : fb;
     inp.value = String(val);
@@ -4658,7 +4658,7 @@ window.cadSetPinMode = (type) => {
     } else if (type === 'snap_line') {
         if (msgEl) { msgEl.innerText = `【角度合わせ】基準にしたい外周の直線をタップしてください`; msgEl.style.color = "#4CAF50"; }
     } else if (isEquipPin) {
-        const name = type === 'water_in' ? '🚰 給水ピン' : type === 'water_out' ? '🚩 排水ピン' : type === 'parking_truck' ? '🅿️ 駐車場' : '🚜 機械侵入口';
+        const name = type === 'water_in' ? '🚰 給水口ピン' : type === 'water_out' ? '🚩 排水口/水落口ピン' : type === 'parking_truck' ? '🅿️ 駐車場' : '🚜 機械侵入口';
         if (msgEl) { msgEl.innerText = `【${name}】配置場所をタップ！（または下のGPSで置く）`; msgEl.style.color = "#03A9F4"; }
         window.cadGpsPinType = type;
         window.cadUpdateGpsUi({ status: `選択中: ${name} → 「GPSで置く」か地図タップ` });
@@ -4667,8 +4667,8 @@ window.cadSetPinMode = (type) => {
 };
 
 window.cadGpsPinTypeLabel = (type) => {
-    if (type === 'water_in') return '🚰 給水';
-    if (type === 'water_out') return '🚩 排水';
+    if (type === 'water_in') return '🚰 給水口';
+    if (type === 'water_out') return '🚩 排水口/水落口';
     if (type === 'parking_truck') return '🅿️ 駐車場';
     if (type === 'machine_entry') return '🚜 侵入口';
     return type || '';
@@ -4893,7 +4893,7 @@ window.cadStartGpsPinPlace = () => {
         : (window.CAD_GPS_PIN_TYPES.indexOf(window.cadGpsPinType) >= 0 ? window.cadGpsPinType : null);
 
     if (!type) {
-        alert('先に「吸水」「排水」「侵入口」「駐車場」のいずれかを選んでください。');
+        alert('先に「給水口」「排水口/水落口」「侵入口」「駐車場」のいずれかを選んでください。');
         window.cadUpdateGpsUi({ status: 'ピン種別を選んでから「GPSで置く」を押してください', statusColor: '#EF9A9A' });
         return;
     }
@@ -4955,7 +4955,7 @@ window.cadConfirmGpsPinPlace = () => {
     }
     const type = window.cadGpsPinType || window.cadPinMode;
     if (window.CAD_GPS_PIN_TYPES.indexOf(type) < 0) {
-        alert('ピン種別が不明です。吸水・排水などを選んでからやり直してください。');
+        alert('ピン種別が不明です。給水口・排水口/水落口などを選んでからやり直してください。');
         return;
     }
     const acc = Math.round(window.cadGpsLastPos.accuracy || 999);
@@ -6928,6 +6928,24 @@ window.cadCollectObliqueMakuraEdges_ = (ring, selected) => {
     return extra;
 };
 
+/** 枕の角の凸凹を、半径ぶんの曲線にならす */
+window.cadSmoothMakuraCorners_ = (feature, radiusM) => {
+    const one = window.cadCoalesceToPolygon(feature);
+    if (!one) return feature;
+    const r = Math.max(1.2, Math.min(4, Number(radiusM) || 2.4));
+    let grown = null;
+    try { grown = turf.buffer(one, r, { units: 'meters', steps: 16 }); } catch (e) { return one; }
+    if (!grown) return one;
+    let shrunk = null;
+    try { shrunk = turf.buffer(grown, -r, { units: 'meters', steps: 16 }); } catch (e) { return one; }
+    const out = shrunk ? window.cadCoalesceToPolygon(shrunk) : null;
+    if (!out) return one;
+    const before = window.cadFeatureArea(one);
+    const after = window.cadFeatureArea(out);
+    if (after < before * 0.55) return one;
+    return out;
+};
+
 /** 曲線の辺は、直線の帯ではなく辺ごとに内側へ枕を置く */
 window.cadBuildFollowingMakuraStrips_ = (ring, tPoly, edgeIndexes, widthM) => {
     const parts = [];
@@ -7034,6 +7052,18 @@ window.cadGenerateMakuraFromSelectedEdges = () => {
         }
         if (features.length) shortened = window.cadShortenRidgesClearOfMakura_(features);
     }
+    const smoothR = Math.min(4, Math.max(2.2, widthM * 1.6));
+    features = (features || []).map((feature) => {
+        let smooth = feature;
+        try { smooth = window.cadSmoothMakuraCorners_(feature, smoothR) || feature; } catch (e) { smooth = feature; }
+        if (!tPoly || !smooth) return smooth;
+        try {
+            const clipped = turf.intersect(tPoly, smooth);
+            const one = clipped ? window.cadCoalesceToPolygon(clipped) : null;
+            if (one && window.cadFeatureArea(one) >= 0.4) return one;
+        } catch (e) {}
+        return smooth;
+    }).filter(Boolean);
     const added = window.cadPlaceMakuraFeatures(features);
 
     if (!added) {
