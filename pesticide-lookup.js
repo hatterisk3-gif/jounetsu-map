@@ -36,6 +36,7 @@
   var FAV_KEY = 'pesticide_lookup_favorites_v1';
   var currentPesticide = null;
   var showingFavList = false;
+  var favPestToken_ = 0;
 
   // 適用表のブラウザキャッシュ（メモリ ＋ sessionStorage）
   var appTableCache_ = {};
@@ -239,7 +240,7 @@
     }
   };
 
-  function renderHitsList_(items, isFavView, note) {
+  function renderHitsList_(items, isFavView, note, matchLines) {
     var area = document.getElementById('pestLookupResult');
     if (!area) return;
     hits = items;
@@ -254,11 +255,14 @@
     }
     var headHtml = '';
     if (isFavView) {
-      headHtml = '<div class="pest-fav-head">⭐ お気に入り農薬 (' + items.length + ' 件)</div>';
+      headHtml = note
+        ? '<div class="pest-fav-head">「' + esc(note) + '」に該当するお気に入り (' + items.length + ')</div>'
+        : '<div class="pest-fav-head">⭐ お気に入り農薬 (' + items.length + ' 件)</div>';
     } else if (note) {
       headHtml = '<div class="pest-lookup-empty" style="color:#1b5e20;font-weight:800;padding:4px 0 8px;">' + items.length + ' 件 ' + esc(note) + '</div>';
     }
     area.innerHTML = headHtml + items.map(function (it, idx) {
+      var match = matchLines && matchLines[idx];
       var sub = [it.activeIngredient, it.manufacturer, it.regNumber].filter(Boolean).join(' ／ ');
       var on = isFavorite_(it);
       var starChar = on ? '★' : '☆';
@@ -266,6 +270,7 @@
       return '<div class="pest-lookup-hit-row">' +
         '<button type="button" class="pest-lookup-hit" onclick="openPesticideApplication_(' + idx + ')">' +
           '<strong>' + esc(it.name) + '</strong>' +
+          (match ? '<span class="pest-fav-match">' + esc(match) + '</span>' : '') +
           (sub ? '<span>' + esc(sub) + '</span>' : '') +
         '</button>' +
         '<button type="button" class="' + starClass + '" data-pest-idx="' + idx + '" onclick="toggleHitFav_(' + idx + ', this)" aria-label="お気に入り">' + starChar + '</button>' +
@@ -273,10 +278,102 @@
     }).join('');
   }
 
+  function normPest_(value) {
+    return String(value || '').replace(/\s/g, '').replace(/\u3000/g, '').toLowerCase();
+  }
+
+  function setFavPestRow_(on) {
+    var row = document.getElementById('pestFavPestRow');
+    if (row) row.style.display = on ? '' : 'none';
+  }
+
+  function pestHitsForFav_(fav, q) {
+    var data = getCachedAppTable_(fav.name, fav.regNumber);
+    if (!data || !data.items) return null;
+    var hitsFound = [];
+    var seen = {};
+    data.items.forEach(function (row) {
+      var pest = String(row.targetPest || '').trim();
+      if (!pest || normPest_(pest).indexOf(q) < 0) return;
+      var crop = String(row.cropName || '').trim() || '作物未設定';
+      var key = crop + '\t' + pest;
+      if (seen[key]) return;
+      seen[key] = true;
+      hitsFound.push(crop + '・' + pest);
+    });
+    return hitsFound;
+  }
+
+  function summarizePestHits_(list) {
+    if (!list.length) return '';
+    var shown = list.slice(0, 3);
+    var text = shown.join(' ／ ');
+    if (list.length > shown.length) text += ' ほか' + (list.length - shown.length);
+    return text;
+  }
+
+  function paintFavoritePestFilter_() {
+    var area = document.getElementById('pestLookupResult');
+    var qRaw = String((document.getElementById('pestFavPestQ') || {}).value || '').trim();
+    var q = normPest_(qRaw);
+    var favs = getFavorites_();
+    if (!q) {
+      renderHitsList_(favs, true);
+      return [];
+    }
+    var matched = [];
+    var notes = [];
+    var missing = [];
+    favs.forEach(function (it) {
+      if (!it || !it.name) return;
+      var found = pestHitsForFav_(it, q);
+      if (found == null) {
+        missing.push(it);
+        return;
+      }
+      if (!found.length) return;
+      matched.push(it);
+      notes.push(summarizePestHits_(found));
+    });
+    if (!matched.length) {
+      hits = [];
+      if (area) {
+        area.innerHTML = '<div class="pest-lookup-empty">' +
+          (missing.length
+            ? 'お気に入りの適用表を確認しています...'
+            : 'お気に入りの中に「' + esc(qRaw) + '」の適用がある農薬はありません。') +
+          '</div>';
+      }
+      return missing;
+    }
+    renderHitsList_(matched, true, qRaw, notes);
+    return missing;
+  }
+
+  window.filterFavoritesByPest_ = function () {
+    if (!showingFavList) return;
+    var token = ++favPestToken_;
+    var missing = paintFavoritePestFilter_();
+    if (!missing.length) {
+      setPestLookupLoading_(false);
+      return;
+    }
+    setPestLookupLoading_(true, 'お気に入りの適用を確認中...');
+    (async function () {
+      for (var i = 0; i < missing.length; i++) {
+        if (token !== favPestToken_ || !showingFavList) break;
+        try { await fetchAppTableData_(missing[i].name, missing[i].regNumber); } catch (e) {}
+        if (token !== favPestToken_ || !showingFavList) break;
+        paintFavoritePestFilter_();
+      }
+      if (token === favPestToken_) setPestLookupLoading_(false);
+    })();
+  };
+
   window.showPesticideFavorites_ = function () {
     showingFavList = true;
-    var favs = getFavorites_();
-    renderHitsList_(favs, true);
+    setFavPestRow_(true);
+    filterFavoritesByPest_();
     setTimeout(prefetchFavorites_, 60);
   };
 
@@ -293,6 +390,20 @@
   window.closePesticideLookup_ = function () {
     var modal = document.getElementById('pesticideLookupModal');
     if (modal) modal.style.display = 'none';
+  };
+
+  window.backPesticideLookup_ = function () {
+    var pane = document.getElementById('pestLookupTablePane');
+    var onTable = pane && pane.style.display !== 'none';
+    if (onTable && !cropListOpen && collectCrops_(tableRows).length > 1) {
+      cropListOpen = true;
+      var filter = document.getElementById('pestLookupCropFilter');
+      if (filter) filter.value = '';
+      renderApplicationTable();
+      pane.scrollTop = 0;
+      return;
+    }
+    window.showPesticideLookupSearch_();
   };
 
   window.showPesticideLookupSearch_ = function () {
@@ -319,12 +430,15 @@
         }
       }
     } else {
+      setFavPestRow_(false);
       refreshHitStarButtons_();
     }
   };
 
   window.searchPesticideLookup_ = async function () {
     showingFavList = false;
+    favPestToken_++;
+    setFavPestRow_(false);
     var area = document.getElementById('pestLookupResult');
     var q = String((document.getElementById('pestLookupQ') || {}).value || '').trim();
     if (!area) return;
@@ -412,6 +526,28 @@
     var text = String(value || '').trim();
     if (!text) return '';
     return '<span class="pest-app-chip"><b>' + esc(label) + '</b>' + esc(text) + '</span>';
+  }
+
+  function foldDose_(value) {
+    return String(value || '')
+      .replace(/\u3000/g, '')
+      .replace(/\s/g, '')
+      .replace(/[０-９]/g, function (ch) { return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0); })
+      .replace(/[～〜~]/g, '～')
+      .toLowerCase();
+  }
+
+  /** 希釈倍数と使用量が同じ文言なら、チップは一つにする。 */
+  function doseChips_(dilution, usageAmount) {
+    var dilutionText = String(dilution || '').trim();
+    var amountText = String(usageAmount || '').trim();
+    if (dilutionText && amountText && foldDose_(dilutionText) === foldDose_(amountText)) {
+      if (dilutionText.indexOf('倍') < 0 && /[lLｋｋgｇ]|キロ|リットル/.test(dilutionText)) {
+        return appChip_('使用量', dilutionText);
+      }
+      return appChip_('希釈', dilutionText);
+    }
+    return appChip_('希釈', dilutionText) + appChip_('使用量', amountText);
   }
 
   function cropNameOf_(row) {
@@ -511,8 +647,7 @@
       }
       html += '</div>';
       html += '<div class="pest-app-chips">' +
-        appChip_('希釈', bucket.dilution) +
-        appChip_('使用量', bucket.usageAmount) +
+        doseChips_(bucket.dilution, bucket.usageAmount) +
         appChip_('回数', bucket.usageCount) +
         appChip_('前日数', bucket.phi) +
         '</div>';

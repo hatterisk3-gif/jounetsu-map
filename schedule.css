@@ -1368,6 +1368,9 @@ select.snr-input { appearance:auto; }
   white-space: nowrap;
 }
 .pest-fav-head { font-size: 13px; font-weight: 800; color: #e65100; margin: 2px 0 2px; }
+.pest-fav-pestrow { margin: 0 0 8px; }
+.pest-fav-pestlabel { display: block; font-size: 12px; font-weight: 800; color: #e65100; margin-bottom: 4px; }
+.pest-fav-match { display: block; margin-top: 3px; color: #1b5e20; font-size: 12px; font-weight: 700; line-height: 1.4; }
 .pest-lookup-meta { font-size: 12px; color: #333; line-height: 1.45; margin-bottom: 8px; }
 #pestLookupTablePane .pest-lookup-input {
   background: #fff;
