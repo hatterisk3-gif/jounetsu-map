@@ -7141,7 +7141,8 @@ function createSignboardMarker(name, pos, icon, idOrRef) {
     if ((String(name || '').indexOf('排水口') >= 0 || String(name || '').indexOf('水落口') >= 0) && (!icon || icon === '🕳️')) icon = '🚩';
     const getId = () => (idOrRef && typeof idOrRef === 'object' && 'id' in idOrRef) ? idOrRef.id : idOrRef;
     const zoom = map.getZoom(), config = { text: name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' };
-    const marker = new google.maps.Marker({ position: pos, map: map, visible: zoom >= 15, label: zoom >= 17 ? config : null, icon: { url: `data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="20">${icon}</text></svg>`, scaledSize: new google.maps.Size(26, 26), labelOrigin: new google.maps.Point(13, 30) } });
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="20">${icon || '🪧'}</text></svg>`;
+    const marker = new google.maps.Marker({ position: pos, map: map, visible: zoom >= 15, label: zoom >= 17 ? config : null, icon: { url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg), scaledSize: new google.maps.Size(26, 26), labelOrigin: new google.maps.Point(13, 30) } });
     bindAdminMarkerClick_(marker, getId);
     return marker;
 }
@@ -9646,16 +9647,10 @@ window.saveLocationPin_ = async () => {
     persistAdminInitCache_();
     showAdminSyncToast(already ? '✅ 地図に拠点ピンを置きました（同期中…）' : '✅ 拠点を追加しました（同期中…）', 'ok');
 
+    // 地図ピン本体はマスタ登録の成否と切り離して必ず保存する
+    // （以前はマスタ失敗時に savePolygon まで届かず、再読み込みで消えていた）
+    let pinSaved = false;
     try {
-        if (!already) {
-            const masterPayload = { masterType: 'location', manageAction: 'add', value: locValue, userName: currentUser };
-            const list = await syncAdminCall_('manageMaster', masterPayload, {
-                key: 'manageMaster:location:add:' + name,
-                op: 'manageMaster',
-                payload: masterPayload
-            });
-            if (Array.isArray(list)) applyMasterServerList_('location', list);
-        }
         const payload = {
             name: name,
             coords: JSON.stringify(coords),
@@ -9670,11 +9665,42 @@ window.saveLocationPin_ = async () => {
             tempId: tempId,
             payload: payload
         });
-        remapLoadedPolygonId_(tempId, id);
+        if (id) {
+            remapLoadedPolygonId_(tempId, id);
+            pinSaved = true;
+        }
         persistAdminInitCache_();
-        showAdminSyncToast('☁️ 拠点を保存しました', 'ok');
     } catch (e) {
-        showAdminSyncToast('⚠️ 保存に失敗しました: ' + (e.message || e), 'error');
+        console.warn('location pin savePolygon failed', e);
+        showAdminSyncToast('⚠️ 拠点ピンの保存に失敗しました（未同期として保持・自動再送します）: ' + (e.message || e), 'error');
+    }
+
+    if (!already) {
+        try {
+            const masterPayload = { masterType: 'location', manageAction: 'add', value: locValue, userName: currentUser };
+            const list = await syncAdminCall_('manageMaster', masterPayload, {
+                key: 'manageMaster:location:add:' + name,
+                op: 'manageMaster',
+                payload: masterPayload
+            });
+            if (Array.isArray(list)) applyMasterServerList_('location', list);
+            persistAdminInitCache_();
+        } catch (e) {
+            const msg = String((e && e.message) || e || '');
+            // 既にマスタにある名前なら選択肢側は問題ないので続行
+            if (/既に登録|すでに登録|already/i.test(msg)) {
+                if (!(pdlLocations || []).some(l => String(l) === name)) {
+                    applyOptimisticMasterChange_('location', 'add', locValue);
+                }
+            } else {
+                console.warn('location master add failed', e);
+                showAdminSyncToast('⚠️ 拠点マスタへの追加に失敗しました: ' + msg, 'error');
+            }
+        }
+    }
+
+    if (pinSaved) {
+        showAdminSyncToast('☁️ 拠点を保存しました', 'ok');
     }
 };
 

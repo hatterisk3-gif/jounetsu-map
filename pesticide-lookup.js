@@ -279,7 +279,11 @@
   }
 
   function normPest_(value) {
-    return String(value || '').replace(/\s/g, '').replace(/\u3000/g, '').toLowerCase();
+    var text = String(value || '').replace(/\u3000/g, ' ');
+    try { if (text.normalize) text = text.normalize('NFKC'); } catch (e) {}
+    return text.replace(/[！-～]/g, function (ch) {
+      return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+    }).replace(/\s/g, '').toLowerCase();
   }
 
   function setFavPestRow_(on) {

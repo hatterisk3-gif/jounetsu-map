@@ -6788,7 +6788,17 @@ function getSavedPolygons(options) {
             if (!slimForInit) return raw;
             const s = (raw == null) ? '' : String(raw);
             // 畝CADの巨大JSONは初期表示では省略（必要時に再取得）
-            if (s.length > 1500) return '';
+            // ただし件数だけ残し、一括入力などで「未登録」と誤表示しない
+            if (s.length > 1500) {
+              try {
+                const obj = JSON.parse(s);
+                let count = parseInt(obj && obj.uneCount, 10) || 0;
+                if (!count && obj && Array.isArray(obj.unePolygons)) count = obj.unePolygons.length;
+                if (!count && Array.isArray(obj)) count = obj.length;
+                if (count > 0) return JSON.stringify({ uneCount: count, _slim: true });
+              } catch (e) {}
+              return '';
+            }
             return raw;
           })(),
           water_status: data[i][16] || 'stopped',
@@ -6862,7 +6872,16 @@ function getSavedPolygons(options) {
             const raw = data[i][10];
             if (!slimForInit) return raw;
             const s = (raw == null) ? '' : String(raw);
-            if (s.length > 1500) return '';
+            if (s.length > 1500) {
+              try {
+                const obj = JSON.parse(s);
+                let count = parseInt(obj && obj.uneCount, 10) || 0;
+                if (!count && obj && Array.isArray(obj.unePolygons)) count = obj.unePolygons.length;
+                if (!count && Array.isArray(obj)) count = obj.length;
+                if (count > 0) return JSON.stringify({ uneCount: count, _slim: true });
+              } catch (e) {}
+              return '';
+            }
             return raw;
           })()
         });
@@ -7209,12 +7228,20 @@ function updatePolygon(params) {
         let historySheet = ss.getSheetByName('図面履歴');
         if (!historySheet) {
           historySheet = ss.insertSheet('図面履歴');
-          historySheet.appendRow(['圃場ID', '圃場名', '更新日時', 'データ', '図面名']);
+          historySheet.appendRow(['圃場ID', '圃場名', '更新日時', 'データ', '図面名', '指紋']);
         }
         if (!historySheet.getRange(1, 5).getValue()) historySheet.getRange(1, 5).setValue('図面名');
+        if (!historySheet.getRange(1, 6).getValue()) historySheet.getRange(1, 6).setValue('指紋');
         let historyDate = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm:ss");
         if (!params.skipCadHistory) {
-          historySheet.appendRow([id, newName, historyDate, params.uneSimData, params.drawingName || '']);
+          historySheet.appendRow([
+            id,
+            newName,
+            historyDate,
+            params.uneSimData,
+            params.drawingName || '',
+            cadHistoryFingerprint_(params.uneSimData)
+          ]);
         }
       } catch (e) {
         console.error("図面履歴シートの更新に失敗しました: " + e.message);
@@ -11496,8 +11523,9 @@ function getPolygonDrawingHistory(params) {
 
     const targetId = String(params.id || "");
     const summaryOnly = params.summary === true || params.summary === "true" || params.summary === 1;
-    // 図面JSON（D列）は読まず、IDと日時だけ走査する
-    const head = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
+    // 一覧は図面JSON（D列）を読まない。A〜Fを一括取得する
+    const colCount = Math.max(6, sheet.getLastColumn());
+    const head = sheet.getRange(2, 1, lastRow - 1, Math.min(colCount, 6)).getValues();
     const hits = [];
     for (let i = head.length - 1; i >= 0; i--) {
       if (String(head[i][0]) === targetId) {
@@ -11512,13 +11540,16 @@ function getPolygonDrawingHistory(params) {
       const i = hits[h];
       const row = i + 2;
       const dateStr = cadHistoryDateStr_(head[i][2]);
-      const item = { row: row, date: dateStr, name: String(sheet.getRange(row, 5).getValue() || "") };
-      if (summaryOnly) {
-        const raw = sheet.getRange(row, 4).getValue();
-        item.fp = cadHistoryFingerprint_(raw);
-      } else {
+      const item = {
+        row: row,
+        date: dateStr,
+        name: String(head[i][4] || ""),
+        fp: String(head[i][5] || "")
+      };
+      if (!summaryOnly) {
         const dataVal = sheet.getRange(row, 4).getValue();
         item.data = dataVal ? String(dataVal) : "";
+        if (!item.fp && item.data) item.fp = cadHistoryFingerprint_(item.data);
       }
       history.push(item);
     }

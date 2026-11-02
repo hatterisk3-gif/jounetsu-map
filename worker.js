@@ -4647,9 +4647,55 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
       window.getCadUneCount = (poly) => {
         if (!poly || poly.isMarker || !poly.uneSimData) return 0;
         try {
-          const savedCad = JSON.parse(poly.uneSimData);
-          return parseInt(savedCad.uneCount, 10) || 0;
+          const savedCad = (typeof poly.uneSimData === 'string')
+            ? JSON.parse(poly.uneSimData)
+            : poly.uneSimData;
+          const n = parseInt(savedCad && savedCad.uneCount, 10) || 0;
+          if (n > 0) return n;
+          if (savedCad && Array.isArray(savedCad.unePolygons)) return savedCad.unePolygons.length || 0;
+          if (Array.isArray(savedCad)) return savedCad.length || 0;
+          return 0;
         } catch (e) { return 0; }
+      };
+
+      /** 初期読込で省略された畝CAD件数を、図面履歴から補完する */
+      window.hydrateCadUneCountFromHistory_ = async (polyId) => {
+        const id = String(polyId || '').trim();
+        if (!id || typeof loadedPolygons === 'undefined' || !loadedPolygons[id]) return 0;
+        const poly = loadedPolygons[id];
+        if (poly.isMarker) return 0;
+        const current = (typeof window.getCadUneCount === 'function') ? (window.getCadUneCount(poly) || 0) : 0;
+        if (current > 0) return current;
+        if (poly._cadUneHydrating) return current;
+        poly._cadUneHydrating = true;
+        try {
+          if (typeof callGAS !== 'function') return current;
+          const hist = await callGAS('getPolygonDrawingHistory', { id: id });
+          const raw = hist && hist[0] && hist[0].data;
+          if (!raw) return current;
+          let count = 0;
+          try {
+            const obj = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+            count = parseInt(obj && obj.uneCount, 10) || 0;
+            if (!count && obj && Array.isArray(obj.unePolygons)) count = obj.unePolygons.length;
+            if (!count && Array.isArray(obj)) count = obj.length;
+          } catch (e) { count = 0; }
+          if (count > 0) {
+            // 巨大データは件数スタブだけ残す（フルデータはCADを開いたときに取得）
+            const rawStr = String(raw);
+            if (rawStr.length > 1500) {
+              poly.uneSimData = JSON.stringify({ uneCount: count, _slim: true });
+            } else {
+              poly.uneSimData = raw;
+            }
+          }
+          return count;
+        } catch (e) {
+          console.warn('hydrateCadUneCountFromHistory_', id, e);
+          return current;
+        } finally {
+          poly._cadUneHydrating = false;
+        }
       };
 
       // ===== 農業CAD分割データ（作業記録連携） =====
@@ -7139,18 +7185,32 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           const poly = loadedPolygons[pid];
           const uneCount = (typeof window.getCadUneCount === 'function') ? (window.getCadUneCount(poly) || 0) : 0;
           const safePid = String(pid).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-          const countLabel = uneCount > 0 ? `${uneCount}畝` : '未登録';
-          const countColor = uneCount > 0 ? '#00695c' : '#c62828';
+          const countLabel = uneCount > 0 ? `${uneCount}畝` : '確認中…';
+          const countColor = uneCount > 0 ? '#00695c' : '#888';
+          const btnLabel = uneCount > 0 ? '確認・編集' : '登録';
+          if (uneCount <= 0 && typeof window.hydrateCadUneCountFromHistory_ === 'function') {
+            window.hydrateCadUneCountFromHistory_(pid).then((n) => {
+              const countEl = document.querySelector(`[data-ridge-count="${CSS && CSS.escape ? CSS.escape(pid) : pid}"]`);
+              const btnEl = document.querySelector(`[data-ridge-btn="${CSS && CSS.escape ? CSS.escape(pid) : pid}"]`);
+              if (n > 0) {
+                if (countEl) { countEl.textContent = `CAD畝数: ${n}畝`; countEl.style.color = '#00695c'; }
+                if (btnEl) btnEl.textContent = '確認・編集';
+              } else {
+                if (countEl) { countEl.textContent = 'CAD畝数: 未登録'; countEl.style.color = '#c62828'; }
+                if (btnEl) btnEl.textContent = '登録';
+              }
+            }).catch(() => {});
+          }
           return `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; background:#fff; border:1px solid #80deea; border-radius:8px; padding:8px 10px; margin-top:8px;">
             <div style="min-width:0;">
               <div style="font-weight:bold; color:#00695c; font-size:13px;">${esc(poly.name || pid)}</div>
-              <div style="font-size:11px; color:${countColor};">CAD畝数: ${countLabel}</div>
+              <div data-ridge-count="${esc(pid)}" style="font-size:11px; color:${countColor};">CAD畝数: ${countLabel}</div>
             </div>
-            <button type="button" onclick="openAdminCadForField('${safePid}')" style="flex-shrink:0; background:#FF9800; color:#fff; border:none; padding:8px 10px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer;">登録</button>
+            <button type="button" data-ridge-btn="${esc(pid)}" onclick="openAdminCadForField('${safePid}')" style="flex-shrink:0; background:#FF9800; color:#fff; border:none; padding:8px 10px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer;">${btnLabel}</button>
           </div>`;
         }).join('');
         box.innerHTML = `<label class="form-label" style="color:#00695c; margin-bottom:4px;">🛤️ 畝ポリゴン登録</label>
-          <div style="font-size:11px; color:#666; margin-bottom:2px;">選んだ圃場の畝ポリゴンを農業CADで登録します。</div>
+          <div style="font-size:11px; color:#666; margin-bottom:2px;">選んだ圃場の畝ポリゴンを農業CADで登録・確認します。</div>
           ${rows}`;
       };
 
@@ -35685,10 +35745,33 @@ window.buildBulkWorkMemoRidgePolygonHtml_ = (d, uid) => {
     const poly = loadedPolygons[pid];
     const uneCount = (typeof window.getCadUneCount === 'function') ? (window.getCadUneCount(poly) || 0) : 0;
     const safePid = String(pid).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const countLabel = uneCount > 0 ? `${uneCount}畝` : '未登録';
+    const countLabel = uneCount > 0 ? `${uneCount}畝` : '確認中…';
+    const btnLabel = uneCount > 0 ? '確認・編集' : '登録';
+    // 件数0のときは履歴から補完して再描画
+    if (uneCount <= 0 && typeof window.hydrateCadUneCountFromHistory_ === 'function') {
+      window.hydrateCadUneCountFromHistory_(pid).then((n) => {
+        if (!(n > 0)) {
+          const el = document.querySelector(`[data-bulk-ridge-count="${esc(pid)}"]`);
+          if (el) {
+            el.textContent = '未登録';
+            el.style.color = '#c62828';
+          }
+          const btn = document.querySelector(`[data-bulk-ridge-btn="${esc(pid)}"]`);
+          if (btn) btn.textContent = '登録';
+          return;
+        }
+        const el = document.querySelector(`[data-bulk-ridge-count="${esc(pid)}"]`);
+        if (el) {
+          el.textContent = `${n}畝`;
+          el.style.color = '#00695C';
+        }
+        const btn = document.querySelector(`[data-bulk-ridge-btn="${esc(pid)}"]`);
+        if (btn) btn.textContent = '確認・編集';
+      }).catch(() => {});
+    }
     return `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:8px;">
-      <div style="min-width:0; font-size:12px; color:#00695C;"><b>${esc(poly.name || pid)}</b> <span style="color:${uneCount > 0 ? '#00695C' : '#c62828'};">${countLabel}</span></div>
-      <button type="button" onclick="openAdminCadForField('${safePid}')" style="flex-shrink:0; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">登録</button>
+      <div style="min-width:0; font-size:12px; color:#00695C;"><b>${esc(poly.name || pid)}</b> <span data-bulk-ridge-count="${esc(pid)}" style="color:${uneCount > 0 ? '#00695C' : '#888'};">${countLabel}</span></div>
+      <button type="button" data-bulk-ridge-btn="${esc(pid)}" onclick="openAdminCadForField('${safePid}')" style="flex-shrink:0; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">${btnLabel}</button>
     </div>`;
   }).join('');
   return `<div style="margin:8px 0; background:#E0F7FA; border:2px solid #80DEEA; border-radius:10px; padding:10px;">

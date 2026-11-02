@@ -1747,9 +1747,12 @@ window.handleMapClick = (pageX, pageY) => {
                 return;
             }
             window.cadPinMode = null;
+            if (typeof window.cadUpdateSnapLineBtn_ === 'function') window.cadUpdateSnapLineBtn_();
+            if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: true });
             return;
         }
         window.cadPinMode = null;
+        if (typeof window.cadUpdateSnapLineBtn_ === 'function') window.cadUpdateSnapLineBtn_();
         if (msgEl) { msgEl.innerText = `💡 操作を選ぶと、ここに案内が出ます。`; msgEl.style.color = "#FF9800"; }
         return;
     }
@@ -2400,6 +2403,7 @@ window.openCADMode = async (id, opts) => {
         : null;
 
     if (blank) window.cadDrawingName = '';
+    if (typeof window.cadCloseRegistryModal_ === 'function') window.cadCloseRegistryModal_();
     document.getElementById('cadTargetName').innerText = blank ? (p.name + " (新規)") : (p.name + " (最新の図面を読込中...)");
     document.getElementById('cadOverlay').style.display = 'flex';
     try {
@@ -4691,9 +4695,30 @@ window.cadCancelSplitLineMode = () => {
     }
 };
 
+window.cadUpdateSnapLineBtn_ = () => {
+    const btn = document.querySelector('button[onclick="cadSetPinMode(\'snap_line\')"]');
+    if (!btn) return;
+    const on = window.cadPinMode === 'snap_line';
+    btn.style.background = on ? '#2E7D32' : '#333';
+    btn.style.color = on ? '#fff' : '#4CAF50';
+    btn.style.border = on ? 'none' : '1px solid #4CAF50';
+    btn.textContent = on ? '🎯 辺を選択中…' : '🎯 選んだ線に合わせる';
+};
+
 window.cadSetPinMode = (type) => {
     if (type === 'nakamichi' && window.cadPinMode === 'nakamichi') {
         window.cadCancelSplitLineMode();
+        return;
+    }
+    if (type === 'snap_line' && window.cadPinMode === 'snap_line') {
+        window.cadPinMode = null;
+        window.cadUpdateSnapLineBtn_();
+        const msgEl = document.getElementById('cadPinModeMsg');
+        if (msgEl) {
+            msgEl.innerText = '💡 操作を選ぶと、ここに案内が出ます。';
+            msgEl.style.color = '#FF9800';
+        }
+        if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: true });
         return;
     }
     const isEquipPin = window.CAD_GPS_PIN_TYPES.indexOf(type) >= 0;
@@ -4711,13 +4736,15 @@ window.cadSetPinMode = (type) => {
         window.nakamichiTempPt = null;
         if (msgEl) { msgEl.innerText = `【排水ライン】始点となる場所をタップしてください`; msgEl.style.color = "#00BCD4"; }
     } else if (type === 'snap_line') {
-        if (msgEl) { msgEl.innerText = `【角度合わせ】基準にしたい外周の直線をタップしてください`; msgEl.style.color = "#4CAF50"; }
+        if (msgEl) { msgEl.innerText = `【角度合わせ】緑の辺をタップしてください`; msgEl.style.color = "#4CAF50"; }
+        if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: true });
     } else if (isEquipPin) {
         const name = type === 'water_in' ? '🚰 給水口ピン' : type === 'water_out' ? '🚩 排水口/水落口ピン' : type === 'parking_truck' ? '🅿️ 駐車場' : '🚜 機械侵入口';
         if (msgEl) { msgEl.innerText = `【${name}】配置場所をタップ！（または下のGPSで置く）`; msgEl.style.color = "#03A9F4"; }
         window.cadGpsPinType = type;
         window.cadUpdateGpsUi({ status: `選択中: ${name} → 「GPSで置く」か地図タップ` });
     }
+    window.cadUpdateSnapLineBtn_();
     window.cadUpdateSplitLineBtn();
 };
 
@@ -6430,9 +6457,10 @@ window.cadDrawMakuraEdgeOverlay = () => {
     while (g.firstChild) g.removeChild(g.firstChild);
     const picking = window.cadPinMode === 'makura_edge';
     const frontPicking = window.cadPinMode === 'front_edge';
+    const snapPicking = window.cadPinMode === 'snap_line';
     const selected = new Set(window.cadMakuraSelectedEdges || []);
     const frontSet = new Set(window.cadFrontEdgeIndexes || []);
-    if (!picking && !frontPicking && selected.size === 0 && frontSet.size === 0) return;
+    if (!picking && !frontPicking && !snapPicking && selected.size === 0 && frontSet.size === 0) return;
     const ring = window.cadGetFieldRingCoords();
     if (!ring || typeof window.latLngToScreenPixel !== 'function' || typeof window.cadRingVertexCount !== 'function') return;
     const n = window.cadRingVertexCount(ring);
@@ -6468,6 +6496,9 @@ window.cadDrawMakuraEdgeOverlay = () => {
             } else {
                 addLine(a.x, a.y, b.x, b.y, '#FFAB91', 5);
             }
+        } else if (snapPicking) {
+            addLine(a.x, a.y, b.x, b.y, '#ffffff', 11);
+            addLine(a.x, a.y, b.x, b.y, '#43A047', 6);
         } else {
             if (makuraOn) addLine(a.x, a.y, b.x, b.y, '#FF6F00', 6);
             if (frontOn) addLine(a.x, a.y, b.x, b.y, '#FF5722', 4);
@@ -10008,6 +10039,13 @@ window.cadEnsureRegistryData_ = async (id, item) => {
     return data;
 };
 
+window.cadCloseRegistryModal_ = () => {
+    window._cadRegistrySeq = (window._cadRegistrySeq || 0) + 1;
+    window._cadRegistryOpen = false;
+    const modal = document.getElementById('cadRegistryModal');
+    if (modal) modal.style.display = 'none';
+};
+
 window.openCadRegistry = async (id, opts) => {
     const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
     if (!p) {
@@ -10017,6 +10055,9 @@ window.openCadRegistry = async (id, opts) => {
     opts = opts || {};
     try { if (typeof infoWindow !== 'undefined' && infoWindow) infoWindow.close(); } catch (e) {}
     window._cadRegistryFieldId = id;
+    window._cadRegistrySeq = (window._cadRegistrySeq || 0) + 1;
+    const seq = window._cadRegistrySeq;
+    window._cadRegistryOpen = true;
     const modal = document.getElementById('cadRegistryModal');
     const listEl = document.getElementById('cadRegistryList');
     const nameEl = document.getElementById('cadRegistryFieldName');
@@ -10029,13 +10070,15 @@ window.openCadRegistry = async (id, opts) => {
     const newBtn = document.getElementById('cadRegistryNewBtn');
     if (newBtn) {
         newBtn.onclick = () => {
-            modal.style.display = 'none';
+            window.cadCloseRegistryModal_();
             window.openCADMode(id, { blank: true });
         };
     }
     const cache = window._cadRegistryCache && window._cadRegistryCache[id];
     if (!opts.refresh && cache && (Date.now() - cache.at) < 60000) {
-        window.cadRenderRegistryList_(id, cache.history);
+        if (seq === window._cadRegistrySeq && window._cadRegistryOpen) {
+            window.cadRenderRegistryList_(id, cache.history);
+        }
         return;
     }
     window.cadRenderRegistryList_(id, [], { loading: true });
@@ -10046,7 +10089,9 @@ window.openCadRegistry = async (id, opts) => {
         console.warn('CAD登録一覧の取得に失敗:', e);
         history = [];
     }
+    if (seq !== window._cadRegistrySeq || !window._cadRegistryOpen) return;
     if (String(window._cadRegistryFieldId) !== String(id)) return;
+    if (!modal || modal.style.display === 'none') return;
     window._cadRegistryCache = window._cadRegistryCache || {};
     window._cadRegistryCache[id] = { at: Date.now(), history: history };
     window.cadRenderRegistryList_(id, history);
@@ -10124,7 +10169,11 @@ window.cadRenderRegistryList_ = (id, history, opts) => {
         listEl.appendChild(card);
     };
     const openEditor = (dataStr, blank) => {
-        document.getElementById('cadRegistryModal').style.display = 'none';
+        if (typeof window.cadCloseRegistryModal_ === 'function') window.cadCloseRegistryModal_();
+        else {
+            const m = document.getElementById('cadRegistryModal');
+            if (m) m.style.display = 'none';
+        }
         window.openCADMode(id, blank ? { blank: true } : { data: dataStr });
     };
     if (!history.length && !current) {
