@@ -2399,6 +2399,7 @@ window.openCADMode = async (id, opts) => {
         ? AppLoading.start({ label: 'CADを準備中...', detail: '1/4 地図を初期化しています', current: 0, total: 4, delay: 0 })
         : null;
 
+    if (blank) window.cadDrawingName = '';
     document.getElementById('cadTargetName').innerText = blank ? (p.name + " (新規)") : (p.name + " (最新の図面を読込中...)");
     document.getElementById('cadOverlay').style.display = 'flex';
     try {
@@ -2562,6 +2563,7 @@ window.renderCadSavedData = (savedDataStr) => {
             const pinNum = saved.pinNumFontSize || 24;
             window.cadPinNumFontSize = pinNum === 20 ? 24 : pinNum;
         }
+        window.cadDrawingName = saved.drawingName ? String(saved.drawingName) : '';
 
         if (window.cadPins && window.cadPins.length) {
             window.cadPins.forEach(pin => { if (pin && pin.setMap) pin.setMap(null); });
@@ -4576,6 +4578,58 @@ window.cadUserClearRidgesOnly = () => {
     }
     if (confirm('畝だけクリアしますか？\n（吸水・排水などのピン、中道・排水ラインは残ります）')) {
         window.cadClearRidgesOnly();
+    }
+};
+
+/** 枕畝以外の畝を消す */
+window.cadClearRidgesKeepMakura = (skipHistory = false) => {
+    const isMakura = (pl) => pl && String(pl.uneGroup || '') === '枕';
+    const drop = (list) => {
+        const keep = [];
+        (list || []).forEach((pl) => {
+            if (isMakura(pl)) keep.push(pl);
+            else if (pl && pl.setMap) pl.setMap(null);
+        });
+        return keep;
+    };
+    window.cadUnePolygons = drop(window.cadUnePolygons);
+    window.cadCustomShapes = drop(window.cadCustomShapes);
+    window.cadPaintedCellSet = new Set();
+    window.cadPaintedCells = {};
+    if (window.cadSnapGridOn) {
+        if (typeof window.cadRebuildSnapGrid === 'function') window.cadRebuildSnapGrid();
+        if (typeof window.cadRefreshCellFillsSvg_ === 'function') window.cadRefreshCellFillsSvg_();
+    } else if (window.cadGridLines) {
+        window.cadGridLines.forEach(l => l.setMap(null));
+        window.cadGridLines = [];
+    }
+    if (window.cadSelectedRidgeId) {
+        const still = window.cadUnePolygons.concat(window.cadCustomShapes).some((pl) => pl && pl.uneIndex === window.cadSelectedRidgeId);
+        if (!still) window.cadSelectedRidgeId = null;
+    }
+    const countEl = document.getElementById('cadUneCount');
+    if (countEl) countEl.value = String(window.cadUnePolygons.length);
+    if (typeof window.reassignLabels === 'function') window.reassignLabels();
+    const msgEl = document.getElementById('cadPinModeMsg');
+    if (msgEl) {
+        msgEl.innerText = '枕を残して畝を消しました';
+        msgEl.style.color = '#E65100';
+    }
+    if (!skipHistory && typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+    if (typeof window.cadRefreshRidgeSelectionUi_ === 'function') window.cadRefreshRidgeSelectionUi_();
+    if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
+};
+
+window.cadUserClearRidgesKeepMakura = () => {
+    const isMakura = (pl) => pl && String(pl.uneGroup || '') === '枕';
+    const ridgeCount = (window.cadUnePolygons || []).filter((pl) => !isMakura(pl)).length
+        + (window.cadCustomShapes || []).filter((pl) => !isMakura(pl)).length;
+    if (!ridgeCount) {
+        alert('消す畝がありません。');
+        return;
+    }
+    if (confirm('枕は残して、畝だけ消しますか？\n（ピン・中道・排水も残ります）')) {
+        window.cadClearRidgesKeepMakura();
     }
 };
 
@@ -9893,6 +9947,9 @@ window.reassignLabels = () => {
 window.saveUneSim = async () => {
     if (!window.cadTargetId) return;
     const p = loadedPolygons[window.cadTargetId];
+    const named = prompt('この図面の名前', window.cadDrawingName || '');
+    if (named === null) return;
+    window.cadDrawingName = String(named).trim();
     let pins = window.cadPins.map(mk => ({ type: mk.cadPinType, lat: mk.getPosition().lat(), lng: mk.getPosition().lng() }));
     let customShapesData = window.cadCustomShapes.map(poly => ({ coords: window.cadPolyToSavedCoords(poly), group: poly.uneGroup || '', customLabel: poly.customLabel || '' }));
     let unePolygonsData = window.cadUnePolygons.map(poly => ({ coords: window.cadPolyToSavedCoords(poly), group: poly.uneGroup || '', customLabel: poly.customLabel || '' }));
@@ -9912,7 +9969,8 @@ window.saveUneSim = async () => {
         customShapes: customShapesData,
         unePolygons: unePolygonsData,
         frontBaseline: window.cadFrontBaseline || null,
-        pinNumFontSize: window.cadPinNumFontSize || 24
+        pinNumFontSize: window.cadPinNumFontSize || 24,
+        drawingName: window.cadDrawingName || ''
     });
 
     p.uneSimData = simDataStr;
@@ -9921,7 +9979,7 @@ window.saveUneSim = async () => {
     if (saveBtn) saveBtn.innerHTML = '⏳ 保存中...';
     
     try {
-        await callGAS('updatePolygon', { id: p.id, name: p.name, uneSimData: simDataStr, userName: currentUser });
+        await callGAS('updatePolygon', { id: p.id, name: p.name, uneSimData: simDataStr, drawingName: window.cadDrawingName || '', userName: currentUser });
         if (window._cadRegistryCache) delete window._cadRegistryCache[p.id];
         alert("💾 描画した地形とピンをすべて保存しました！");
         window.closeCADMode();
@@ -10018,6 +10076,16 @@ window.cadRenderRegistryList_ = (id, history, opts) => {
         if (item.fp) return item.fp === currentFp;
         return String(item.data || '') === current;
     };
+    const drawingLabel = (item, dataStr) => {
+        if (item && item.name) return String(item.name);
+        if (!dataStr) return '';
+        try {
+            const o = JSON.parse(dataStr);
+            return o && o.drawingName ? String(o.drawingName) : '';
+        } catch (e) {
+            return '';
+        }
+    };
     const addCard = (title, dataStr, actions, item) => {
         const card = document.createElement('div');
         card.style.cssText = 'border:1px solid #e0e0e0; border-radius:8px; padding:10px; margin-bottom:8px; background:#fafafa;';
@@ -10025,11 +10093,14 @@ window.cadRenderRegistryList_ = (id, history, opts) => {
         head.style.cssText = 'font-size:13px; font-weight:bold; margin-bottom:4px; color:#333;';
         head.textContent = title;
         card.appendChild(head);
+        const bits = [];
+        if (item && item.date && title.indexOf(item.date) < 0) bits.push(item.date);
         const label = summarize(dataStr, item);
-        if (label) {
+        if (label) bits.push(label);
+        if (bits.length) {
             const sub = document.createElement('div');
             sub.style.cssText = 'font-size:11px; color:#666; margin-bottom:8px;';
-            sub.textContent = label;
+            sub.textContent = bits.join(' ・ ');
             card.appendChild(sub);
         }
         const row = document.createElement('div');
@@ -10064,7 +10135,8 @@ window.cadRenderRegistryList_ = (id, history, opts) => {
     }
     const matched = history.some(sameAsCurrent);
     if (current && !matched) {
-        addCard('いまの図面', current, [
+        const currentName = drawingLabel(null, current);
+        addCard(currentName || 'いまの図面', current, [
             { label: '編集', color: '#FF9800', onClick: () => openEditor(current, false) }
         ]);
     }
@@ -10078,10 +10150,14 @@ window.cadRenderRegistryList_ = (id, history, opts) => {
     if (!history.length) return;
     history.forEach((item) => {
         const applied = sameAsCurrent(item);
-        const title = (applied ? '適用中 ・ ' : '') + (item.date || '図面');
+        const named = drawingLabel(item, item.data);
+        const title = (applied ? '適用中 ・ ' : '') + (named || item.date || '図面');
         const actions = [];
         if (!applied) {
             actions.push({ label: '適用', color: '#1565C0', onClick: () => window.cadApplyRegistryItem_(id, item) });
+        }
+        if (item.row) {
+            actions.push({ label: '名前', color: '#6A1B9A', onClick: () => window.cadRenameRegistryItem_(id, item) });
         }
         actions.push({
             label: '編集',
@@ -10100,7 +10176,8 @@ window.cadRenderRegistryList_ = (id, history, opts) => {
 window.cadApplyRegistryItem_ = async (id, item) => {
     const p = loadedPolygons[id];
     if (!p || !item) return;
-    if (!confirm((item.date || 'この図面') + ' をこの圃場に適用しますか？')) return;
+    const label = item.name || item.date || 'この図面';
+    if (!confirm(label + ' をこの圃場に適用しますか？')) return;
     if (!item.data) {
         item.data = await window.cadEnsureRegistryData_(id, item);
     }
@@ -10129,7 +10206,7 @@ window.cadDeleteRegistryItem_ = async (id, item) => {
         alert('この図面は削除できません。');
         return;
     }
-    if (!confirm((item.date || 'この図面') + ' を削除しますか？')) return;
+    if (!confirm((item.name || item.date || 'この図面') + ' を削除しますか？')) return;
     try {
         await callGAS('deletePolygonDrawingHistory', {
             id: id,
@@ -10139,6 +10216,29 @@ window.cadDeleteRegistryItem_ = async (id, item) => {
         window.openCadRegistry(id, { refresh: true });
     } catch (e) {
         alert('削除に失敗しました。\n' + (e && e.message ? e.message : e));
+    }
+};
+
+window.cadRenameRegistryItem_ = async (id, item) => {
+    if (!item || !item.row) {
+        alert('この図面の名前は変更できません。');
+        return;
+    }
+    const next = prompt('図面の名前', item.name || '');
+    if (next === null) return;
+    const name = String(next).trim();
+    try {
+        await callGAS('renamePolygonDrawingHistory', {
+            id: id,
+            row: item.row,
+            name: name,
+            userName: (typeof currentUser !== 'undefined' ? currentUser : '')
+        });
+        item.name = name;
+        if (window._cadRegistryCache && window._cadRegistryCache[id]) delete window._cadRegistryCache[id];
+        window.openCadRegistry(id, { refresh: true });
+    } catch (e) {
+        alert('名前の保存に失敗しました。\n' + (e && e.message ? e.message : e));
     }
 };
 
@@ -10165,9 +10265,10 @@ window.showCadHistoryModal = async () => {
         history.forEach((item, idx) => {
             const btn = document.createElement('button');
             btn.style.cssText = 'width:100%; text-align:left; padding:12px; background:#f5f5f5; border:1px solid #ddd; border-radius:6px; cursor:pointer; font-size:14px; margin-bottom:5px;';
-            btn.innerHTML = '🕒 ' + item.date;
+            btn.innerHTML = '🕒 ' + (item.name ? item.name + '（' + item.date + '）' : item.date);
             btn.onclick = async () => {
-                if (!confirm(item.date + ' の状態を復元しますか？現在の未保存の編集は失われます。')) return;
+                const label = item.name || item.date;
+                if (!confirm(label + ' の状態を復元しますか？現在の未保存の編集は失われます。')) return;
                 let data = item.data;
                 if (!data && item.row) {
                     const full = await callGAS('getPolygonDrawingHistoryItem', { id: window.cadTargetId, row: item.row });

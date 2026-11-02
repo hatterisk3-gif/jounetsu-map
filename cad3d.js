@@ -22,10 +22,17 @@ let resizeObserver = null;
 function latLngToLocal(lat, lng, originLat, originLng) {
     const mPerDegLat = 111320;
     const mPerDegLng = 111320 * Math.cos((originLat * Math.PI) / 180);
-    return {
-        x: (lng - originLng) * mPerDegLng,
-        z: -(lat - originLat) * mPerDegLat
-    };
+    const east = (lng - originLng) * mPerDegLng;
+    const north = (lat - originLat) * mPerDegLat;
+    // 2DのCAD画面と同じ向き。画面右が +X、画面上が +Z
+    const theta = ((window.cadCurrentRotation || 0) * Math.PI) / 180;
+    const cosT = Math.cos(theta);
+    const sinT = Math.sin(theta);
+    const south = -north;
+    const screenX = east * cosT - south * sinT;
+    const screenYdown = east * sinT + south * cosT;
+    // 押し出し後の rotateX で Z が反転するので、画面下をいったん +Z にしておく
+    return { x: screenX, z: screenYdown };
 }
 
 function ringFromCoords(coords, originLat, originLng) {
@@ -277,7 +284,8 @@ function buildSceneContent() {
     box.getCenter(center);
     const maxDim = Math.max(size.x, size.z, 1);
     const dist = maxDim * 1.35;
-    camera.position.set(center.x + dist * 0.55, Math.max(visualH * 2, dist * 0.55), center.z + dist * 0.75);
+    // 2D画面の下側を手前にする。北側から見ると枕が反対側に回り、左右も反転して見える
+    camera.position.set(center.x + dist * 0.2, Math.max(visualH * 2, dist * 0.55), center.z - dist * 0.9);
     controls.target.copy(center);
     controls.update();
 

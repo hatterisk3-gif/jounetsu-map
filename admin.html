@@ -387,6 +387,10 @@
             style="flex:1; min-width:100px; background:#FF9800; color:white; border:none; padding:14px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);"
             title="生成畝・自由畝だけ消します。ピンや中道は残ります">🌾
             畝だけ消す</button>
+          <button onclick="cadUserClearRidgesKeepMakura()"
+            style="flex:1; min-width:120px; background:#E65100; color:white; border:none; padding:14px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);"
+            title="枕畝は残して、それ以外の畝を消します">🛏️
+            枕を残して畝を消す</button>
           <button onclick="cadUserClearLines()"
             style="flex:1; min-width:90px; background:#f44336; color:white; border:none; padding:14px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);"
             title="畝・ピン・中道など全部消します">🗑️
@@ -715,7 +719,7 @@
   <script src="admin_cost.js?v=1785489000008" defer></script>
   <script src="admin_crop_work.js?v=1787570400000" defer></script>
   <script src="tracking.js?v=1788600000043" defer></script>
-  <script src="cad.js?v=1788600000294" defer></script>
+  <script src="cad.js?v=1788600000296" defer></script>
   <script type="importmap">
   {
     "imports": {
@@ -724,7 +728,7 @@
     }
   }
   </script>
-  <script type="module" src="cad3d.js?v=1785300000002"></script>
+  <script type="module" src="cad3d.js?v=1788600000297"></script>
   <script>
     // モジュール読込前の保険
     if (typeof window.openCad3DPreview !== 'function') {

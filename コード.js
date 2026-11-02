@@ -195,6 +195,7 @@ const API_ACTIONS = {
   "getPolygonDrawingHistory": function (p) { return getPolygonDrawingHistory(p); },
   "getPolygonDrawingHistoryItem": function (p) { return getPolygonDrawingHistoryItem(p); },
   "deletePolygonDrawingHistory": function (p) { return deletePolygonDrawingHistory(p); },
+  "renamePolygonDrawingHistory": function (p) { return renamePolygonDrawingHistory(p); },
   "saveUserQualifications": function (p) { return saveUserQualifications(p.userName, p.qualifications); },
   "getUserQualifications": function (p) { return getUserQualifications(p.userName); },
   "saveClothingRules": function (p) { return saveClothingRules(p.rules); },
@@ -7208,11 +7209,12 @@ function updatePolygon(params) {
         let historySheet = ss.getSheetByName('図面履歴');
         if (!historySheet) {
           historySheet = ss.insertSheet('図面履歴');
-          historySheet.appendRow(['圃場ID', '圃場名', '更新日時', 'データ']);
+          historySheet.appendRow(['圃場ID', '圃場名', '更新日時', 'データ', '図面名']);
         }
+        if (!historySheet.getRange(1, 5).getValue()) historySheet.getRange(1, 5).setValue('図面名');
         let historyDate = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm:ss");
         if (!params.skipCadHistory) {
-          historySheet.appendRow([id, newName, historyDate, params.uneSimData]);
+          historySheet.appendRow([id, newName, historyDate, params.uneSimData, params.drawingName || '']);
         }
       } catch (e) {
         console.error("図面履歴シートの更新に失敗しました: " + e.message);
@@ -11510,7 +11512,7 @@ function getPolygonDrawingHistory(params) {
       const i = hits[h];
       const row = i + 2;
       const dateStr = cadHistoryDateStr_(head[i][2]);
-      const item = { row: row, date: dateStr };
+      const item = { row: row, date: dateStr, name: String(sheet.getRange(row, 5).getValue() || "") };
       if (summaryOnly) {
         const raw = sheet.getRange(row, 4).getValue();
         item.fp = cadHistoryFingerprint_(raw);
@@ -11536,11 +11538,30 @@ function getPolygonDrawingHistoryItem(params) {
   if (idCell !== String(params.id || "")) throw new Error("対象の図面が見つかりません。");
   const dateVal = sheet.getRange(row, 3).getValue();
   const dataVal = sheet.getRange(row, 4).getValue();
+  const nameVal = sheet.getRange(row, 5).getValue();
   return {
     row: row,
     date: cadHistoryDateStr_(dateVal),
+    name: nameVal ? String(nameVal) : "",
     data: dataVal ? String(dataVal) : ""
   };
+}
+
+function renamePolygonDrawingHistory(params) {
+  const userName = params.userName || "";
+  if (!checkAdminRole(userName)) {
+    throw new Error("管理者権限がないため、図面名の変更はできません。");
+  }
+  const ss = TENANT_SS;
+  const sheet = ss.getSheetByName('図面履歴');
+  if (!sheet) throw new Error("図面履歴がありません。");
+  const row = parseInt(params.row, 10);
+  if (!(row > 1)) throw new Error("図面が指定されていません。");
+  const idCell = String(sheet.getRange(row, 1).getValue() || "");
+  if (idCell !== String(params.id || "")) throw new Error("対象の図面が見つかりません。");
+  if (!sheet.getRange(1, 5).getValue()) sheet.getRange(1, 5).setValue('図面名');
+  sheet.getRange(row, 5).setValue(String(params.name || "").trim());
+  return true;
 }
 
 function deletePolygonDrawingHistory(params) {
