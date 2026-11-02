@@ -9248,13 +9248,17 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         return null;
       };
 
+      // 再開発中: 作業記録の資材・薬剤ルートを一時停止（管理者マスタ本体は残す）
+      window.WORK_UI_MATERIAL_PESTICIDE_ENABLED_ = false;
+
       window.inferWorkRecordUiFlags_ = (workName, category) => {
         const n = String(workName || '').trim();
         const c = String(category || '').trim();
+        const matPestOn = !!window.WORK_UI_MATERIAL_PESTICIDE_ENABLED_;
         return {
           showMachine: c.includes('農機'),
-          showMaterial: /資材|肥料|マルチ|堆肥|石灰|被覆/.test(n),
-          showPesticide: /防除|除草|農薬|散布|除草剤|殺虫|殺菌/.test(n),
+          showMaterial: matPestOn && /資材|肥料|マルチ|堆肥|石灰|被覆/.test(n),
+          showPesticide: matPestOn && /防除|除草|農薬|散布|除草剤|殺虫|殺菌/.test(n),
           showField: (typeof window.getBuiltInFieldSelectDefault_ === 'function')
             ? !!window.getBuiltInFieldSelectDefault_(c, n)
             : true,
@@ -9282,11 +9286,12 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           const parsed = window.parseWorkUiFlagValue_(saved);
           return parsed == null ? fallback : parsed;
         };
+        const matPestOn = !!window.WORK_UI_MATERIAL_PESTICIDE_ENABLED_;
         return {
           // 圃場農機作業カテゴリでは作業マスタの個別フラグに関わらず農機を出す
           showMachine: isMachineryCat ? true : pick(w && w.showMachine, inferred.showMachine),
-          showMaterial: pick(w && w.showMaterial, inferred.showMaterial),
-          showPesticide: pick(w && w.showPesticide, inferred.showPesticide),
+          showMaterial: matPestOn ? pick(w && w.showMaterial, inferred.showMaterial) : false,
+          showPesticide: matPestOn ? pick(w && w.showPesticide, inferred.showPesticide) : false,
           showField: pick(w && w.showField, inferred.showField),
           showFuel: pick(w && w.showFuel, inferred.showFuel),
           showRidgePolygon: pick(w && w.showRidgePolygon, inferred.showRidgePolygon)
@@ -9302,26 +9307,40 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           </label>`;
         return `<div style="margin:4px 0 10px; background:#F1F8E9; border:1px solid #C5E1A5; border-radius:8px; padding:10px;">
           <div style="font-size:12px; font-weight:bold; color:#33691E; margin-bottom:4px;">記録画面に出す項目</div>
-          <div style="font-size:11px; color:#558B2F; margin-bottom:8px; line-height:1.4;">作業記録で、チェックした項目の選択欄を出します。防除・除草は薬剤が自動でオンになります。カテゴリ横断の設定は「圃場選択の表示設定」からも変えられます。</div>
+          <div style="font-size:11px; color:#558B2F; margin-bottom:8px; line-height:1.4;">作業記録で、チェックした項目の選択欄を出します。資材・薬剤の記録ルートは再開発中のため一時停止しています。カテゴリ横断の設定は「圃場選択の表示設定」からも変えられます。</div>
           <div style="display:flex; flex-direction:column; gap:6px;">
             ${row('show_field', f.showField !== false, '🗺️ 圃場選択を出す', 'マップから圃場を選べます')}
             ${row('show_machine', !!f.showMachine, '🚜 農機マスタを出す', '使用した機械を選べます')}
-            ${row('show_material', !!f.showMaterial, '📦 資材マスタを出す', '肥料・マルチなどの資材を選べます')}
-            ${row('show_pesticide', !!f.showPesticide, '🧪 薬剤（農薬マスタ）を出す', '使った薬剤名を記入・選択できます')}
             ${row('show_fuel', !!f.showFuel, '⛽ 給油マスタを出す', '給油した車両・機械を選べます。一覧に無い車両も登録できます')}
             ${row('show_ridge_polygon', !!f.showRidgePolygon, '🛤️ 畝ポリゴン登録を出す', '選んだ圃場の畝ポリゴンを農業CADで登録できます')}
           </div>
         </div>`;
       };
 
-      window.collectWorkRecordUiFlagsFromForm_ = (prefix) => ({
-        showField: !!document.getElementById(prefix + '_show_field')?.checked,
-        showMachine: !!document.getElementById(prefix + '_show_machine')?.checked,
-        showMaterial: !!document.getElementById(prefix + '_show_material')?.checked,
-        showPesticide: !!document.getElementById(prefix + '_show_pesticide')?.checked,
-        showFuel: !!document.getElementById(prefix + '_show_fuel')?.checked,
-        showRidgePolygon: !!document.getElementById(prefix + '_show_ridge_polygon')?.checked
-      });
+      window.collectWorkRecordUiFlagsFromForm_ = (prefix) => {
+        const readOr = (suffix, fallback) => {
+          const el = document.getElementById(prefix + '_' + suffix);
+          if (!el) return fallback;
+          return !!el.checked;
+        };
+        const name = String(document.getElementById(prefix + '_name')?.value || '').trim();
+        const category = String(document.getElementById(prefix + '_category')?.value || '').trim();
+        let baseline = {};
+        if (typeof window.getWorkExtraUiFlags_ === 'function' && name) {
+          baseline = window.getWorkExtraUiFlags_(name) || {};
+        } else if (typeof window.inferWorkRecordUiFlags_ === 'function') {
+          baseline = window.inferWorkRecordUiFlags_(name, category) || {};
+        }
+        const matPestOn = !!window.WORK_UI_MATERIAL_PESTICIDE_ENABLED_;
+        return {
+          showField: readOr('show_field', baseline.showField !== false),
+          showMachine: readOr('show_machine', !!baseline.showMachine),
+          showMaterial: matPestOn ? readOr('show_material', !!baseline.showMaterial) : false,
+          showPesticide: matPestOn ? readOr('show_pesticide', !!baseline.showPesticide) : false,
+          showFuel: readOr('show_fuel', !!baseline.showFuel),
+          showRidgePolygon: readOr('show_ridge_polygon', !!baseline.showRidgePolygon)
+        };
+      };
 
       window.refreshFieldMachinerySectionVisibility = () => {
         const section = document.getElementById('field_machinery_section');
@@ -13364,7 +13383,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           document.body.appendChild(modal);
           window._workExtraFlagsTouched = (mode === 'edit');
           const bindFlagTouch = () => {
-            ['wn_edit_show_field', 'wn_edit_show_machine', 'wn_edit_show_material', 'wn_edit_show_pesticide', 'wn_edit_show_fuel', 'wn_edit_show_ridge_polygon'].forEach(id => {
+            ['wn_edit_show_field', 'wn_edit_show_machine', 'wn_edit_show_fuel', 'wn_edit_show_ridge_polygon'].forEach(id => {
               const el = document.getElementById(id);
               if (el) el.addEventListener('change', () => { window._workExtraFlagsTouched = true; });
             });
@@ -13377,14 +13396,10 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
             );
             const f = document.getElementById('wn_edit_show_field');
             const m = document.getElementById('wn_edit_show_machine');
-            const mat = document.getElementById('wn_edit_show_material');
-            const p = document.getElementById('wn_edit_show_pesticide');
             const fuel = document.getElementById('wn_edit_show_fuel');
             const ridge = document.getElementById('wn_edit_show_ridge_polygon');
             if (f) f.checked = inferred.showField !== false;
             if (m) m.checked = !!inferred.showMachine;
-            if (mat) mat.checked = !!inferred.showMaterial;
-            if (p) p.checked = !!inferred.showPesticide;
             if (fuel) fuel.checked = !!inferred.showFuel;
             if (ridge) ridge.checked = !!inferred.showRidgePolygon;
           };
@@ -23371,9 +23386,11 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
             });
          };
          
-         const matchMats = flags.showMaterial
+         const matchMats = (!window.WORK_UI_MATERIAL_PESTICIDE_ENABLED_)
+            ? []
+            : (flags.showMaterial
             ? (Array.isArray(pdlMaterials) ? pdlMaterials.slice() : [])
-            : pdlMaterials.filter(m => isMatch(m.workCategory));
+            : pdlMaterials.filter(m => isMatch(m.workCategory)));
          let matchMachines = (pullShownAbove)
             ? []
             : (isPullWork || isMachineryCat
@@ -35475,11 +35492,12 @@ window.getBulkWorkMemoUiFlags_ = (draft) => {
   const useAssetMoveUi = !!isDelivery && (typeof window.isBulkAssetMoveUiEnabled_ === 'function'
     ? window.isBulkAssetMoveUiEnabled_()
     : !!window.BULK_ASSET_MOVE_UI_ENABLED);
+  const matPestOn = !!window.WORK_UI_MATERIAL_PESTICIDE_ENABLED_;
   return {
     showMachine: useAssetMoveUi ? false : (isMachineryCat ? true : pick(w && w.showMachine, inferred.showMachine)),
-    showMaterial: useAssetMoveUi ? false : (hasMats ? true : pick(w && w.showMaterial, inferred.showMaterial)),
+    showMaterial: (!matPestOn || useAssetMoveUi) ? false : (hasMats ? true : pick(w && w.showMaterial, inferred.showMaterial)),
     showTool: useAssetMoveUi ? false : (hasTools ? true : false),
-    showPesticide: pick(w && w.showPesticide, inferred.showPesticide),
+    showPesticide: matPestOn ? pick(w && w.showPesticide, inferred.showPesticide) : false,
     showField: pick(w && w.showField, inferred.showField),
     showFuel: pick(w && w.showFuel, inferred.showFuel),
     showRidgePolygon: pick(w && w.showRidgePolygon, inferred.showRidgePolygon),

@@ -6708,7 +6708,7 @@ window.cadCreateMakuraFromEdges = (ring, tPoly, edgeIndexes, widthM, opts) => {
     return window.cadSeparateMakuraFromRidges_(features);
 };
 
-/** 枕畝に当たる畝の端を、枕の手前まで短くする */
+/** 枕畝に当たる畝の端を、枕の手前まで短くする（枕の形を優先） */
 window.cadShortenRidgesClearOfMakura_ = (makuraFeatures) => {
     const gap = (window.CAD_MAKURA_RIDGE_GAP_M > 0) ? window.CAD_MAKURA_RIDGE_GAP_M : 0.35;
     const zones = [];
@@ -6728,20 +6728,80 @@ window.cadShortenRidgesClearOfMakura_ = (makuraFeatures) => {
             return false;
         }
     };
+    const cleanCutAlongAxis_ = (gPoly, zone) => {
+        const caps = typeof window.cadRidgeEndCaps_ === 'function' ? window.cadRidgeEndCaps_(gPoly) : null;
+        if (!caps || !caps.caps || caps.caps.length < 2) return null;
+        const bearing = caps.bearing;
+        const c0 = caps.caps[0];
+        const c1 = caps.caps[1];
+        const origin = [c0.lng, c0.lat];
+        const s0 = 0;
+        const s1 = window.cadMetersAlongBearing_(origin, [c1.lng, c1.lat], bearing);
+        const sign = s1 >= 0 ? 1 : -1;
+        const sampleHit = (s) => {
+            const p = window.cadDestinationMeters_(origin, s, bearing);
+            try { return turf.booleanPointInPolygon(turf.point(p), zone); } catch (e) { return false; }
+        };
+        const end0Hit = sampleHit(s0);
+        const end1Hit = sampleHit(s1);
+        if (!end0Hit && !end1Hit) return null;
+        // 枕に食い込んでいる側の端を、当たらなくなるまで縮める
+        let lo = Math.min(s0, s1);
+        let hi = Math.max(s0, s1);
+        const cutFromHigh = end1Hit && (!end0Hit || Math.abs(s1) >= Math.abs(s0));
+        if (cutFromHigh) {
+            let L = lo;
+            let H = hi;
+            for (let i = 0; i < 14; i++) {
+                const mid = (L + H) / 2;
+                if (sampleHit(mid)) H = mid;
+                else L = mid;
+            }
+            hi = L; // 当たっていない側まで残す
+        } else {
+            let L = lo;
+            let H = hi;
+            for (let i = 0; i < 14; i++) {
+                const mid = (L + H) / 2;
+                if (sampleHit(mid)) L = mid;
+                else H = mid;
+            }
+            lo = H;
+        }
+        if (Math.abs(hi - lo) < 0.4) return null;
+        const w = typeof window.estimateCadUneWidthMeters === 'function'
+            ? window.estimateCadUneWidthMeters(gPoly)
+            : 0;
+        const half = Math.max(0.15, (w || 1.2) / 2);
+        const a = window.cadDestinationMeters_(origin, lo, bearing);
+        const b = window.cadDestinationMeters_(origin, hi, bearing);
+        const p1 = window.cadDestinationMeters_(a, half, bearing + 90);
+        const p2 = window.cadDestinationMeters_(a, half, bearing - 90);
+        const p3 = window.cadDestinationMeters_(b, half, bearing - 90);
+        const p4 = window.cadDestinationMeters_(b, half, bearing + 90);
+        try { return turf.polygon([[p1, p2, p3, p4, p1]]); } catch (e) { return null; }
+    };
     let shortened = 0;
     window.cadListMainRidgeEntries().forEach((r) => {
         let piece = r.poly;
         let touched = false;
+        let preferred = null;
         zones.forEach((zone) => {
             if (!piece || !hits(piece, zone)) return;
             touched = true;
+            const axial = cleanCutAlongAxis_(r.gPoly, zone);
+            if (axial && (!preferred || window.cadFeatureArea(axial) > window.cadFeatureArea(preferred))) {
+                preferred = axial;
+            }
             try {
                 const d = turf.difference(piece, zone);
                 piece = d ? window.cadCoalesceToPolygon(d) : null;
             } catch (e) {}
         });
-        if (!touched || !piece || window.cadFeatureArea(piece) < 0.2) return;
-        if (window.cadApplyFeatureToGooglePoly(r.gPoly, piece)) shortened++;
+        if (!touched) return;
+        const next = preferred || piece;
+        if (!next || window.cadFeatureArea(next) < 0.2) return;
+        if (window.cadApplyFeatureToGooglePoly(r.gPoly, next)) shortened++;
     });
     return shortened;
 };
@@ -7344,27 +7404,17 @@ window.cadGenerateMakuraFromSelectedEdges = () => {
 
     let features = [];
     let shortened = 0;
-    let roundFeatures = [];
+    // 枕の形を優先する。畝に合わせて枕を削らず、あとで畝側を短くする
     if (window.cadSelectionHasBend_(ring, selected)) {
-        try { roundFeatures = window.cadBuildRoundJoinedMakura_(ring, tPoly, selected, widthM) || []; } catch (e) { roundFeatures = []; }
-    }
-    if (roundFeatures.length) {
-        const separated = window.cadSeparateMakuraFromRidges_(roundFeatures);
-        const areaOf = (list) => (list || []).reduce((sum, f) => sum + window.cadFeatureArea(f), 0);
-        if (separated.length && areaOf(separated) > areaOf(roundFeatures) * 0.86) {
-            features = separated;
-        } else {
-            shortened = window.cadShortenRidgesClearOfMakura_(roundFeatures);
-            features = roundFeatures;
-        }
+        try { features = window.cadBuildRoundJoinedMakura_(ring, tPoly, selected, widthM) || []; } catch (e) { features = []; }
     }
     if (!features.length) {
-    try {
-        features = window.cadCreateMakuraFromEdges(ring, tPoly, selected, widthM);
-    } catch (e) {
-        console.warn('枕畝の生成に失敗:', e);
-        features = [];
-    }
+        try {
+            features = window.cadCreateMakuraFromEdges(ring, tPoly, selected, widthM, { keepFull: true });
+        } catch (e) {
+            console.warn('枕畝の生成に失敗:', e);
+            features = [];
+        }
     }
     if (!features.length) {
         try {
@@ -7373,15 +7423,9 @@ window.cadGenerateMakuraFromSelectedEdges = () => {
             console.warn('曲線に沿った枕畝の生成に失敗:', e);
             features = [];
         }
-        if (!features.length) {
-            try {
-                features = window.cadCreateMakuraFromEdges(ring, tPoly, selected, widthM, { keepFull: true });
-            } catch (e) {
-                console.warn('枕畝の再生成に失敗:', e);
-                features = [];
-            }
-        }
-        if (features.length) shortened = window.cadShortenRidgesClearOfMakura_(features);
+    }
+    if (features.length) {
+        shortened = window.cadShortenRidgesClearOfMakura_(features) || 0;
     }
     const added = window.cadPlaceMakuraFeatures(features);
 
