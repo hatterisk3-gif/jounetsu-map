@@ -11591,7 +11591,26 @@ function renamePolygonDrawingHistory(params) {
   const idCell = String(sheet.getRange(row, 1).getValue() || "");
   if (idCell !== String(params.id || "")) throw new Error("対象の図面が見つかりません。");
   if (!sheet.getRange(1, 5).getValue()) sheet.getRange(1, 5).setValue('図面名');
-  sheet.getRange(row, 5).setValue(String(params.name || "").trim());
+  const newName = String(params.name || "").trim();
+  sheet.getRange(row, 5).setValue(newName);
+
+  // D列のJSONデータ内の drawingName / drawingCrops も同期更新
+  try {
+    const dataCell = sheet.getRange(row, 4);
+    const dataVal = dataCell.getValue();
+    if (dataVal) {
+      let simObj = JSON.parse(String(dataVal));
+      if (simObj && typeof simObj === 'object') {
+        simObj.drawingName = params.drawingName !== undefined ? String(params.drawingName).trim() : newName;
+        if (params.drawingCrops !== undefined) {
+          simObj.drawingCrops = Array.isArray(params.drawingCrops) ? params.drawingCrops : [];
+        }
+        dataCell.setValue(JSON.stringify(simObj));
+      }
+    }
+  } catch (e) {
+    console.warn("図面JSONの更新をスキップ: " + e.message);
+  }
   return true;
 }
 

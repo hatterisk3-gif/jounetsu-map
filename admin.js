@@ -359,6 +359,8 @@ function parseMapDeepLinkFromSearch(search) {
     const fieldIdParam = urlParams.get('fieldId');
     const idParam = urlParams.get('id');
     const targetFieldId = fieldIdParam || (!shouldOpenCad && idParam ? idParam : null);
+    const fromBulkMemoRaw = urlParams.get('fromBulkMemo');
+    const fromBulkMemo = !!(fromBulkMemoRaw && (fromBulkMemoRaw === '1' || fromBulkMemoRaw === 'true'));
     return {
         lat: isNaN(lat) ? null : lat,
         lng: isNaN(lng) ? null : lng,
@@ -366,6 +368,7 @@ function parseMapDeepLinkFromSearch(search) {
         fieldId: targetFieldId,
         openCad: !!shouldOpenCad,
         cadFieldId: targetFieldId,
+        fromBulkMemo: fromBulkMemo,
         action: urlParams.get('action'),
         startDraw: urlParams.get('startDraw') || urlParams.get('mode'),
         sharedText: [urlParams.get('title'), urlParams.get('text'), urlParams.get('url')].filter(Boolean).join(' ')
@@ -376,8 +379,29 @@ let pendingMapDeepLink = null;
 try {
     if (typeof window !== 'undefined' && window.location && window.location.search) {
         pendingMapDeepLink = parseMapDeepLinkFromSearch(window.location.search);
+        if (pendingMapDeepLink && pendingMapDeepLink.fromBulkMemo) {
+            window._cadOpenedFromBulkMemo = true;
+        }
     }
 } catch (e) { pendingMapDeepLink = null; }
+
+if (!window._openCadFieldMsgBound_) {
+    window._openCadFieldMsgBound_ = true;
+    window.addEventListener('message', (ev) => {
+        const data = ev && ev.data;
+        if (!data || data.type !== 'openCadField') return;
+        if (Object.prototype.hasOwnProperty.call(data, 'fromBulkMemo')) {
+            window._cadOpenedFromBulkMemo = !!data.fromBulkMemo;
+        }
+        const fieldId = data.fieldId;
+        if (!fieldId) return;
+        if (typeof window.openCadRegistry === 'function') {
+            window.openCadRegistry(fieldId, { fromBulkMemo: !!window._cadOpenedFromBulkMemo });
+        } else if (typeof window.openCADMode === 'function') {
+            window.openCADMode(fieldId);
+        }
+    });
+}
 
 let mapDeepLinkUrlCleared = false;
 let deepLinkFieldHandled = false;
@@ -563,9 +587,10 @@ function applyPendingMapDeepLink() {
 
     if (link.openCad && link.cadFieldId) {
         const cadFieldId = link.cadFieldId;
+        window._cadOpenedFromBulkMemo = !!link.fromBulkMemo;
         const tryOpenCad = (attempt) => {
             if (loadedPolygons[cadFieldId] && typeof window.openCADMode === 'function') {
-                window.openCadRegistry(cadFieldId);
+                window.openCadRegistry(cadFieldId, { fromBulkMemo: !!link.fromBulkMemo });
                 return;
             }
             if (attempt < 80) setTimeout(() => tryOpenCad(attempt + 1), 200);

@@ -2402,7 +2402,10 @@ window.openCADMode = async (id, opts) => {
         ? AppLoading.start({ label: 'CADを準備中...', detail: '1/4 地図を初期化しています', current: 0, total: 4, delay: 0 })
         : null;
 
-    if (blank) window.cadDrawingName = '';
+    if (blank) {
+        window.cadDrawingName = '';
+        window.cadDrawingCrops = [];
+    }
     if (typeof window.cadCloseRegistryModal_ === 'function') window.cadCloseRegistryModal_();
     document.getElementById('cadTargetName').innerText = blank ? (p.name + " (新規)") : (p.name + " (最新の図面を読込中...)");
     document.getElementById('cadOverlay').style.display = 'flex';
@@ -2526,8 +2529,11 @@ window.openCADMode = async (id, opts) => {
     } catch (e) {
         console.error("CAD並列同期エラー:", e);
     }
-    if (openSeq !== window._cadOpenSeq) return;
-    document.getElementById('cadTargetName').innerText = p.name;
+    if (typeof window.cadUpdateTargetNameHeader_ === 'function') {
+        window.cadUpdateTargetNameHeader_();
+    } else {
+        document.getElementById('cadTargetName').innerText = p.name;
+    }
 
     // 起動直後の状態を履歴0番目として保存
     setTimeout(() => {
@@ -2568,6 +2574,19 @@ window.renderCadSavedData = (savedDataStr) => {
             window.cadPinNumFontSize = pinNum === 20 ? 24 : pinNum;
         }
         window.cadDrawingName = saved.drawingName ? String(saved.drawingName) : '';
+        window.cadDrawingCrops = Array.isArray(saved.drawingCrops)
+            ? saved.drawingCrops.map(c => String(c).trim()).filter(Boolean)
+            : (saved.drawingCrop ? [String(saved.drawingCrop).trim()].filter(Boolean) : []);
+        if (!window.cadDrawingCrops.length && window.cadDrawingName && typeof window.cadParseDrawingNameAndCrops_ === 'function') {
+            const parsed = window.cadParseDrawingNameAndCrops_(window.cadDrawingName);
+            if (parsed.crops.length) {
+                window.cadDrawingName = parsed.name;
+                window.cadDrawingCrops = parsed.crops;
+            }
+        }
+        if (typeof window.cadUpdateTargetNameHeader_ === 'function') {
+            window.cadUpdateTargetNameHeader_();
+        }
 
         if (window.cadPins && window.cadPins.length) {
             window.cadPins.forEach(pin => { if (pin && pin.setMap) pin.setMap(null); });
@@ -10013,83 +10032,228 @@ window.reassignLabels = () => {
     if (typeof window.cadDetachAllRidgesFromMap === 'function') window.cadDetachAllRidgesFromMap();
 };
 
-/** 図面名を作物マスタから選ぶ */
-window.cadPickDrawingCropName_ = (currentName) => {
-    return new Promise((resolve) => {
-        const crops = (typeof pdlCrops !== 'undefined' && Array.isArray(pdlCrops))
-            ? pdlCrops.map((c) => String((c && c.name) || '').trim()).filter(Boolean)
-            : [];
-        if (!crops.length) {
-            alert('作物マスタに登録がありません。先に作物を登録してください。');
-            resolve(null);
-            return;
+/** 図面名と作物をパースするヘルパー */
+window.cadParseDrawingNameAndCrops_ = (rawName) => {
+    const s = String(rawName || '').trim();
+    if (!s) return { name: '', crops: [] };
+    // パターン1: "名前 (作物1・作物2)" や "名前 [作物1, 作物2]"
+    const match = s.match(/^(.*?)\s*[\(\[]([^\)\]]+)[\)\]]$/);
+    if (match) {
+        const name = match[1].trim();
+        const cropsStr = match[2].trim();
+        const crops = cropsStr.split(/[・,、\/\s]+/).map(c => c.trim()).filter(Boolean);
+        return { name: name, crops: crops };
+    }
+    // パターン2: 単一作物が作物マスタにあるかチェック
+    if (typeof pdlCrops !== 'undefined' && Array.isArray(pdlCrops)) {
+        const isMaster = pdlCrops.some(c => c && c.name === s);
+        if (isMaster) {
+            return { name: s, crops: [s] };
         }
-        const cur = String(currentName || '').trim();
-        let picked = crops.indexOf(cur) >= 0 ? cur : '';
+    }
+    return { name: s, crops: [] };
+};
+
+/** CADヘッダーに対象圃場名・図面名・作物を反映 */
+window.cadUpdateTargetNameHeader_ = () => {
+    const el = document.getElementById('cadTargetName');
+    if (!el || !window.cadTargetId) return;
+    const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[window.cadTargetId] : null;
+    if (!p) return;
+    let label = p.name || '';
+    const parts = [];
+    if (window.cadDrawingName) parts.push(window.cadDrawingName);
+    if (window.cadDrawingCrops && window.cadDrawingCrops.length) {
+        parts.push(window.cadDrawingCrops.join('・'));
+    }
+    if (parts.length) {
+        label += ' [' + parts.join(' / ') + ']';
+    }
+    el.innerText = label;
+};
+
+/** 図面名（任意）と対象作物（複数選択）を設定するモーダル */
+window.cadPickDrawingMeta_ = (opts) => {
+    return new Promise((resolve) => {
+        let initName = '';
+        let initCrops = [];
+        if (typeof opts === 'string') {
+            initName = opts;
+        } else if (opts && typeof opts === 'object') {
+            initName = opts.name || '';
+            initCrops = Array.isArray(opts.crops) ? [...opts.crops] : [];
+        }
+
+        const masterCrops = (typeof pdlCrops !== 'undefined' && Array.isArray(pdlCrops))
+            ? pdlCrops.map(c => String((c && c.name) || '').trim()).filter(Boolean)
+            : [];
+
+        const selectedSet = new Set(initCrops.map(c => String(c).trim()).filter(Boolean));
+
         const overlay = document.createElement('div');
-        overlay.style.cssText = 'position:fixed; inset:0; z-index:1000002; background:rgba(0,0,0,0.45); display:flex; align-items:center; justify-content:center;';
+        overlay.style.cssText = 'position:fixed; inset:0; z-index:1000002; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; backdrop-filter:blur(2px);';
+        
         const panel = document.createElement('div');
-        panel.style.cssText = 'background:#fff; color:#333; width:92%; max-width:380px; max-height:78vh; border-radius:12px; padding:14px; display:flex; flex-direction:column; box-shadow:0 8px 28px rgba(0,0,0,0.28);';
-        panel.innerHTML = '<div style="font-weight:bold; font-size:15px; margin-bottom:6px;">🌱 図面の作物を選ぶ</div>'
-            + '<div style="font-size:12px; color:#666; margin-bottom:10px;">作物マスタの登録から選びます。</div>';
-        const list = document.createElement('div');
-        list.style.cssText = 'overflow:auto; flex:1; min-height:80px; display:flex; flex-wrap:wrap; gap:8px; padding:4px 0 10px;';
-        const paint = () => {
-            list.innerHTML = '';
-            crops.forEach((name) => {
-                const on = picked === name;
+        panel.style.cssText = 'background:#fff; color:#333; width:92%; max-width:440px; max-height:86vh; border-radius:14px; padding:18px; display:flex; flex-direction:column; box-shadow:0 10px 30px rgba(0,0,0,0.3); font-family:-apple-system,BlinkMacSystemFont,sans-serif; box-sizing:border-box;';
+
+        panel.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding-bottom:10px; margin-bottom:12px;">
+                <div style="font-weight:bold; font-size:16px; color:#1b5e20; display:flex; align-items:center; gap:6px;">
+                    <span>📐</span> 図面名・作物の登録
+                </div>
+                <button type="button" id="cadMetaCloseX" style="background:none; border:none; font-size:20px; color:#999; cursor:pointer; line-height:1; padding:0 4px;">✕</button>
+            </div>
+            <div style="overflow-y:auto; flex:1; padding-right:2px; display:flex; flex-direction:column; gap:14px;">
+                <div>
+                    <label style="display:block; font-size:13px; font-weight:bold; color:#37474f; margin-bottom:6px;">
+                        📝 図面名 <span style="font-size:11px; font-weight:normal; color:#78909c;">(任意)</span>
+                    </label>
+                    <input type="text" id="cadMetaDrawingNameInput"
+                        placeholder="例: 2026年春作、標準、全面 など"
+                        style="width:100%; box-sizing:border-box; padding:10px 12px; font-size:14px; border:1px solid #cfd8dc; border-radius:8px; outline:none;"
+                    />
+                </div>
+                <div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <label style="font-size:13px; font-weight:bold; color:#37474f; display:flex; align-items:center; gap:4px;">
+                            <span>🌱</span> 対象作物 <span style="font-size:11px; font-weight:normal; color:#78909c;">(複数選択可)</span>
+                        </label>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <span id="cadMetaSelectedCount" style="font-size:11px; color:#2e7d32; font-weight:bold;">0件選択中</span>
+                            <button type="button" id="cadMetaClearCropsBtn" style="background:none; border:none; color:#d32f2f; font-size:11px; cursor:pointer; text-decoration:underline; padding:0;">選択解除</button>
+                        </div>
+                    </div>
+                    ${masterCrops.length > 8 ? `
+                    <input type="text" id="cadMetaCropFilterInput" placeholder="🔍 作物を絞り込み..."
+                        style="width:100%; box-sizing:border-box; padding:6px 10px; font-size:12px; border:1px solid #e0e0e0; border-radius:6px; margin-bottom:8px; outline:none;"
+                    />` : ''}
+                    <div id="cadMetaCropsContainer" style="max-height:200px; overflow-y:auto; display:flex; flex-wrap:wrap; gap:6px; padding:6px; border:1px solid #eceff1; border-radius:8px; background:#f9fbe7/0.2; background-color:#fafafa;">
+                    </div>
+                </div>
+            </div>
+            <div style="display:flex; gap:10px; margin-top:14px; border-top:1px solid #eee; padding-top:12px;">
+                <button type="button" id="cadMetaCancelBtn" style="flex:1; background:#eceff1; color:#455a64; border:none; padding:12px; border-radius:8px; font-weight:bold; font-size:14px; cursor:pointer;">
+                    キャンセル
+                </button>
+                <button type="button" id="cadMetaOkBtn" style="flex:1.5; background:#2e7d32; color:#fff; border:none; padding:12px; border-radius:8px; font-weight:bold; font-size:14px; cursor:pointer; box-shadow:0 2px 6px rgba(46,125,50,0.3);">
+                    ✓ この内容で登録
+                </button>
+            </div>
+        `;
+
+        overlay.appendChild(panel);
+        document.body.appendChild(overlay);
+
+        const nameInput = panel.querySelector('#cadMetaDrawingNameInput');
+        if (nameInput) nameInput.value = initName;
+
+        const countEl = panel.querySelector('#cadMetaSelectedCount');
+        const clearBtn = panel.querySelector('#cadMetaClearCropsBtn');
+        const filterInput = panel.querySelector('#cadMetaCropFilterInput');
+        const cropsBox = panel.querySelector('#cadMetaCropsContainer');
+        const closeX = panel.querySelector('#cadMetaCloseX');
+        const cancelBtn = panel.querySelector('#cadMetaCancelBtn');
+        const okBtn = panel.querySelector('#cadMetaOkBtn');
+
+        const updateCount = () => {
+            if (countEl) countEl.textContent = `${selectedSet.size}件選択中`;
+        };
+
+        const renderCrops = () => {
+            if (!cropsBox) return;
+            cropsBox.innerHTML = '';
+            const filter = filterInput ? filterInput.value.trim().toLowerCase() : '';
+            const filtered = masterCrops.filter(name => !filter || name.toLowerCase().includes(filter));
+            if (!filtered.length) {
+                cropsBox.innerHTML = '<div style="font-size:12px; color:#888; padding:8px; width:100%; text-align:center;">該当する作物がありません</div>';
+                updateCount();
+                return;
+            }
+            filtered.forEach(name => {
+                const on = selectedSet.has(name);
                 const btn = document.createElement('button');
                 btn.type = 'button';
                 const icon = (typeof window.getCropIconEmoji_ === 'function')
                     ? window.getCropIconEmoji_(name)
                     : '🌱';
                 btn.textContent = (on ? '✓ ' : '') + icon + ' ' + name;
-                btn.style.cssText = 'border-radius:16px; padding:8px 12px; font-size:13px; cursor:pointer; font-weight:'
+                btn.style.cssText = 'border-radius:16px; padding:6px 12px; font-size:13px; cursor:pointer; transition:all 0.15s; font-weight:'
                     + (on ? 'bold' : 'normal') + '; background:' + (on ? '#e8f5e9' : '#fff')
-                    + '; color:' + (on ? '#2e7d32' : '#333') + '; border:1px solid ' + (on ? '#81c784' : '#ccc') + ';';
-                btn.onclick = () => { picked = name; paint(); };
-                list.appendChild(btn);
+                    + '; color:' + (on ? '#2e7d32' : '#333') + '; border:' + (on ? '2px solid #2e7d32' : '1px solid #ccc') + ';';
+                btn.onclick = () => {
+                    if (selectedSet.has(name)) selectedSet.delete(name);
+                    else selectedSet.add(name);
+                    renderCrops();
+                };
+                cropsBox.appendChild(btn);
             });
+            updateCount();
         };
-        paint();
-        panel.appendChild(list);
-        const row = document.createElement('div');
-        row.style.cssText = 'display:flex; gap:8px; margin-top:4px;';
-        const cancel = document.createElement('button');
-        cancel.type = 'button';
-        cancel.textContent = 'キャンセル';
-        cancel.style.cssText = 'flex:1; background:#757575; color:#fff; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;';
-        const ok = document.createElement('button');
-        ok.type = 'button';
-        ok.textContent = 'この作物で登録';
-        ok.style.cssText = 'flex:1.4; background:#2E7D32; color:#fff; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;';
-        const finish = (value) => {
+
+        renderCrops();
+
+        if (filterInput) {
+            filterInput.addEventListener('input', renderCrops);
+        }
+        if (clearBtn) {
+            clearBtn.onclick = () => {
+                selectedSet.clear();
+                renderCrops();
+            };
+        }
+
+        const finish = (val) => {
             if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-            resolve(value);
+            resolve(val);
         };
-        cancel.onclick = () => finish(null);
-        ok.onclick = () => {
-            if (!picked) {
-                alert('作物を選んでください。');
-                return;
-            }
-            finish(picked);
-        };
+
+        if (closeX) closeX.onclick = () => finish(null);
+        if (cancelBtn) cancelBtn.onclick = () => finish(null);
         overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(null); });
-        row.appendChild(cancel);
-        row.appendChild(ok);
-        panel.appendChild(row);
-        overlay.appendChild(panel);
-        document.body.appendChild(overlay);
+
+        if (okBtn) {
+            okBtn.onclick = () => {
+                const enteredName = nameInput ? nameInput.value.trim() : '';
+                const cropsArr = Array.from(selectedSet);
+                if (!enteredName && !cropsArr.length) {
+                    if (!confirm('図面名も作物も指定されていません。このまま登録しますか？')) {
+                        return;
+                    }
+                }
+                finish({
+                    name: enteredName,
+                    crops: cropsArr
+                });
+            };
+        }
+
+        setTimeout(() => {
+            if (nameInput) nameInput.focus();
+        }, 80);
     });
+};
+
+/** 旧cadPickDrawingCropName_への後方互換ラッパー */
+window.cadPickDrawingCropName_ = async (currentName) => {
+    const res = await window.cadPickDrawingMeta_({ name: currentName, crops: [] });
+    if (!res) return null;
+    return res.name || (res.crops && res.crops.join('・')) || '';
 };
 
 window.saveUneSim = async () => {
     if (!window.cadTargetId) return;
     const p = loadedPolygons[window.cadTargetId];
-    const named = await window.cadPickDrawingCropName_(window.cadDrawingName || '');
-    if (named === null) return;
-    window.cadDrawingName = String(named).trim();
+
+    // 図面名・複数作物の登録ダイアログを開く
+    const meta = await window.cadPickDrawingMeta_({
+        name: window.cadDrawingName || '',
+        crops: window.cadDrawingCrops || []
+    });
+    if (meta === null) return;
+
+    window.cadDrawingName = String(meta.name || '').trim();
+    window.cadDrawingCrops = Array.isArray(meta.crops) ? meta.crops : [];
+
     let pins = window.cadPins.map(mk => ({ type: mk.cadPinType, lat: mk.getPosition().lat(), lng: mk.getPosition().lng() }));
     let customShapesData = window.cadCustomShapes.map(poly => ({ coords: window.cadPolyToSavedCoords(poly), group: poly.uneGroup || '', customLabel: poly.customLabel || '' }));
     let unePolygonsData = window.cadUnePolygons.map(poly => ({ coords: window.cadPolyToSavedCoords(poly), group: poly.uneGroup || '', customLabel: poly.customLabel || '' }));
@@ -10110,7 +10274,8 @@ window.saveUneSim = async () => {
         unePolygons: unePolygonsData,
         frontBaseline: window.cadFrontBaseline || null,
         pinNumFontSize: window.cadPinNumFontSize || 24,
-        drawingName: window.cadDrawingName || ''
+        drawingName: window.cadDrawingName || '',
+        drawingCrops: window.cadDrawingCrops || []
     });
 
     p.uneSimData = simDataStr;
@@ -10119,9 +10284,38 @@ window.saveUneSim = async () => {
     if (saveBtn) saveBtn.innerHTML = '⏳ 保存中...';
     
     try {
-        await callGAS('updatePolygon', { id: p.id, name: p.name, uneSimData: simDataStr, drawingName: window.cadDrawingName || '', userName: currentUser });
+        // 図面履歴用のラベル（図面名＋作物、または作物一覧、または図面名）
+        const historyDrawingName = window.cadDrawingName
+            ? (window.cadDrawingName + (window.cadDrawingCrops.length ? ' (' + window.cadDrawingCrops.join('・') + ')' : ''))
+            : (window.cadDrawingCrops.join('・') || '');
+
+        await callGAS('updatePolygon', {
+            id: p.id,
+            name: p.name,
+            uneSimData: simDataStr,
+            drawingName: historyDrawingName,
+            drawingCrops: window.cadDrawingCrops || [],
+            userName: currentUser
+        });
         if (window._cadRegistryCache) delete window._cadRegistryCache[p.id];
-        alert("💾 描画した地形とピンをすべて保存しました！");
+        if (typeof window.cadUpdateTargetNameHeader_ === 'function') {
+            window.cadUpdateTargetNameHeader_();
+        }
+        const fromBulkMemo = !!window._cadOpenedFromBulkMemo;
+        if (fromBulkMemo) {
+            try {
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({
+                        type: 'cadSavedReturnToBulk',
+                        fieldId: p.id,
+                        fieldName: p.name || ''
+                    }, '*');
+                }
+            } catch (eMsg) {}
+            alert('💾 保存しました。一括入力へ戻る案内を出しています。');
+        } else {
+            alert('💾 描画した地形とピンをすべて保存しました！');
+        }
         window.closeCADMode();
     } catch (e) {
         console.error(e);
@@ -10148,11 +10342,38 @@ window.cadEnsureRegistryData_ = async (id, item) => {
     return data;
 };
 
+window.cadIsCadOverlayOpen_ = () => {
+    const cadEl = document.getElementById('cadOverlay');
+    if (!cadEl) return false;
+    try {
+        return window.getComputedStyle(cadEl).display !== 'none';
+    } catch (e) {
+        return cadEl.style.display === 'flex' || cadEl.style.display === 'block';
+    }
+};
+
 window.cadCloseRegistryModal_ = () => {
     window._cadRegistrySeq = (window._cadRegistrySeq || 0) + 1;
     window._cadRegistryOpen = false;
+    window._cadRegistryFieldId = null;
     const modal = document.getElementById('cadRegistryModal');
-    if (modal) modal.style.display = 'none';
+    if (modal) {
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+    }
+    const listEl = document.getElementById('cadRegistryList');
+    if (listEl) listEl.innerHTML = '';
+};
+
+window.cadCanApplyRegistryResult_ = (seq, id) => {
+    if (seq !== window._cadRegistrySeq) return false;
+    if (!window._cadRegistryOpen) return false;
+    if (String(window._cadRegistryFieldId) !== String(id)) return false;
+    if (window.cadIsCadOverlayOpen_()) return false;
+    const modal = document.getElementById('cadRegistryModal');
+    if (!modal) return false;
+    if (modal.style.display === 'none') return false;
+    return true;
 };
 
 window.openCadRegistry = async (id, opts) => {
@@ -10162,7 +10383,15 @@ window.openCadRegistry = async (id, opts) => {
         return;
     }
     opts = opts || {};
+    // 一括入力から開いた場合のみ戻り案内用フラグを立てる（Admin直開きは落とす）
+    if (Object.prototype.hasOwnProperty.call(opts, 'fromBulkMemo')) {
+        window._cadOpenedFromBulkMemo = !!opts.fromBulkMemo;
+    } else if (!opts.refresh) {
+        window._cadOpenedFromBulkMemo = false;
+    }
     try { if (typeof infoWindow !== 'undefined' && infoWindow) infoWindow.close(); } catch (e) {}
+    // CAD編集中に一覧の遅延結果で上書きしない
+    if (!opts.refresh && window.cadIsCadOverlayOpen_()) return;
     window._cadRegistryFieldId = id;
     window._cadRegistrySeq = (window._cadRegistrySeq || 0) + 1;
     const seq = window._cadRegistrySeq;
@@ -10176,6 +10405,7 @@ window.openCadRegistry = async (id, opts) => {
     }
     if (nameEl) nameEl.textContent = p.name ? '（' + p.name + '）' : '';
     modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden', 'false');
     const newBtn = document.getElementById('cadRegistryNewBtn');
     if (newBtn) {
         newBtn.onclick = () => {
@@ -10185,7 +10415,7 @@ window.openCadRegistry = async (id, opts) => {
     }
     const cache = window._cadRegistryCache && window._cadRegistryCache[id];
     if (!opts.refresh && cache && (Date.now() - cache.at) < 60000) {
-        if (seq === window._cadRegistrySeq && window._cadRegistryOpen) {
+        if (window.cadCanApplyRegistryResult_(seq, id)) {
             window.cadRenderRegistryList_(id, cache.history);
         }
         return;
@@ -10198,15 +10428,19 @@ window.openCadRegistry = async (id, opts) => {
         console.warn('CAD登録一覧の取得に失敗:', e);
         history = [];
     }
-    if (seq !== window._cadRegistrySeq || !window._cadRegistryOpen) return;
-    if (String(window._cadRegistryFieldId) !== String(id)) return;
-    if (!modal || modal.style.display === 'none') return;
+    if (!window.cadCanApplyRegistryResult_(seq, id)) {
+        const m = document.getElementById('cadRegistryModal');
+        if (m && window.cadIsCadOverlayOpen_()) m.style.display = 'none';
+        return;
+    }
     window._cadRegistryCache = window._cadRegistryCache || {};
     window._cadRegistryCache[id] = { at: Date.now(), history: history };
     window.cadRenderRegistryList_(id, history);
 };
 
 window.cadRenderRegistryList_ = (id, history, opts) => {
+    if (!window._cadRegistryOpen || window.cadIsCadOverlayOpen_()) return;
+    if (String(window._cadRegistryFieldId) !== String(id)) return;
     const listEl = document.getElementById('cadRegistryList');
     const p = loadedPolygons[id];
     if (!listEl || !p) return;
@@ -10230,25 +10464,60 @@ window.cadRenderRegistryList_ = (id, history, opts) => {
         if (item.fp) return item.fp === currentFp;
         return String(item.data || '') === current;
     };
-    const drawingLabel = (item, dataStr) => {
-        if (item && item.name) return String(item.name);
-        if (!dataStr) return '';
-        try {
-            const o = JSON.parse(dataStr);
-            return o && o.drawingName ? String(o.drawingName) : '';
-        } catch (e) {
-            return '';
+    const parseDrawingInfo = (item, dataStr) => {
+        let name = item && item.name ? String(item.name).trim() : '';
+        let crops = [];
+        let parsed = null;
+        if (dataStr) {
+            try { parsed = JSON.parse(dataStr); } catch (e) {}
         }
+        if (parsed) {
+            if (parsed.drawingName) name = String(parsed.drawingName).trim();
+            if (Array.isArray(parsed.drawingCrops)) {
+                crops = parsed.drawingCrops.map(c => String(c).trim()).filter(Boolean);
+            } else if (parsed.drawingCrop) {
+                crops = [String(parsed.drawingCrop).trim()].filter(Boolean);
+            }
+        }
+        if (!crops.length && name && typeof window.cadParseDrawingNameAndCrops_ === 'function') {
+            const p = window.cadParseDrawingNameAndCrops_(name);
+            if (p.crops.length) {
+                name = p.name;
+                crops = p.crops;
+            }
+        }
+        return { name: name, crops: crops };
     };
-    const addCard = (title, dataStr, actions, item) => {
+
+    const addCard = (info, dataStr, actions, item, isApplied) => {
         const card = document.createElement('div');
         card.style.cssText = 'border:1px solid #e0e0e0; border-radius:8px; padding:10px; margin-bottom:8px; background:#fafafa;';
         const head = document.createElement('div');
-        head.style.cssText = 'font-size:13px; font-weight:bold; margin-bottom:4px; color:#333;';
-        head.textContent = title;
+        head.style.cssText = 'font-size:13px; font-weight:bold; margin-bottom:6px; color:#333; display:flex; flex-wrap:wrap; align-items:center; gap:6px;';
+
+        if (isApplied) {
+            const badge = document.createElement('span');
+            badge.style.cssText = 'background:#2e7d32; color:#fff; font-size:11px; padding:2px 7px; border-radius:4px; font-weight:bold;';
+            badge.textContent = '適用中';
+            head.appendChild(badge);
+        }
+
+        const titleSpan = document.createElement('span');
+        titleSpan.textContent = info.name || (item && item.date) || '図面';
+        head.appendChild(titleSpan);
+
+        if (info.crops && info.crops.length) {
+            info.crops.forEach(cropName => {
+                const cBadge = document.createElement('span');
+                cBadge.style.cssText = 'display:inline-flex; align-items:center; gap:2px; background:#e8f5e9; color:#2e7d32; border:1px solid #c8e6c9; border-radius:10px; padding:1px 7px; font-size:11px; font-weight:normal;';
+                cBadge.textContent = '🌱 ' + cropName;
+                head.appendChild(cBadge);
+            });
+        }
         card.appendChild(head);
+
         const bits = [];
-        if (item && item.date && title.indexOf(item.date) < 0) bits.push(item.date);
+        if (item && item.date && (!info.name || info.name.indexOf(item.date) < 0)) bits.push(item.date);
         const label = summarize(dataStr, item);
         if (label) bits.push(label);
         if (bits.length) {
@@ -10277,6 +10546,7 @@ window.cadRenderRegistryList_ = (id, history, opts) => {
         card.appendChild(row);
         listEl.appendChild(card);
     };
+
     const openEditor = (dataStr, blank) => {
         if (typeof window.cadCloseRegistryModal_ === 'function') window.cadCloseRegistryModal_();
         else {
@@ -10285,6 +10555,7 @@ window.cadRenderRegistryList_ = (id, history, opts) => {
         }
         window.openCADMode(id, blank ? { blank: true } : { data: dataStr });
     };
+
     if (!history.length && !current) {
         listEl.innerHTML = loading
             ? '<div style="text-align:center; padding:16px; color:#666;">読み込み中...</div>'
@@ -10293,10 +10564,11 @@ window.cadRenderRegistryList_ = (id, history, opts) => {
     }
     const matched = history.some(sameAsCurrent);
     if (current && !matched) {
-        const currentName = drawingLabel(null, current);
-        addCard(currentName || 'いまの図面', current, [
+        const currentInfo = parseDrawingInfo(null, current);
+        if (!currentInfo.name) currentInfo.name = 'いまの図面';
+        addCard(currentInfo, current, [
             { label: '編集', color: '#FF9800', onClick: () => openEditor(current, false) }
-        ]);
+        ], null, true);
     }
     if (loading) {
         const wait = document.createElement('div');
@@ -10308,14 +10580,13 @@ window.cadRenderRegistryList_ = (id, history, opts) => {
     if (!history.length) return;
     history.forEach((item) => {
         const applied = sameAsCurrent(item);
-        const named = drawingLabel(item, item.data);
-        const title = (applied ? '適用中 ・ ' : '') + (named || item.date || '図面');
+        const info = parseDrawingInfo(item, item.data);
         const actions = [];
         if (!applied) {
             actions.push({ label: '適用', color: '#1565C0', onClick: () => window.cadApplyRegistryItem_(id, item) });
         }
         if (item.row) {
-            actions.push({ label: '作物', color: '#6A1B9A', onClick: () => window.cadRenameRegistryItem_(id, item) });
+            actions.push({ label: '名前・作物', color: '#6A1B9A', onClick: () => window.cadRenameRegistryItem_(id, item) });
         }
         actions.push({
             label: '編集',
@@ -10327,7 +10598,7 @@ window.cadRenderRegistryList_ = (id, history, opts) => {
             }
         });
         actions.push({ label: '削除', color: '#E53935', onClick: () => window.cadDeleteRegistryItem_(id, item) });
-        addCard(title, item.data, actions, item);
+        addCard(info, item.data, actions, item, applied);
     });
 };
 
@@ -10379,24 +10650,61 @@ window.cadDeleteRegistryItem_ = async (id, item) => {
 
 window.cadRenameRegistryItem_ = async (id, item) => {
     if (!item || !item.row) {
-        alert('この図面の作物は変更できません。');
+        alert('この図面の情報（名前・作物）は変更できません。');
         return;
     }
-    const next = await window.cadPickDrawingCropName_(item.name || '');
+
+    let dataStr = item.data;
+    if (!dataStr && item.row) {
+        dataStr = await window.cadEnsureRegistryData_(id, item);
+    }
+
+    let curName = item.name || '';
+    let curCrops = [];
+    if (dataStr) {
+        try {
+            const parsed = JSON.parse(dataStr);
+            if (parsed) {
+                if (parsed.drawingName) curName = parsed.drawingName;
+                if (Array.isArray(parsed.drawingCrops)) curCrops = parsed.drawingCrops;
+                else if (parsed.drawingCrop) curCrops = [parsed.drawingCrop];
+            }
+        } catch (e) {}
+    }
+    if (!curCrops.length && curName && typeof window.cadParseDrawingNameAndCrops_ === 'function') {
+        const p = window.cadParseDrawingNameAndCrops_(curName);
+        if (p.crops.length) {
+            curName = p.name;
+            curCrops = p.crops;
+        }
+    }
+
+    const next = await window.cadPickDrawingMeta_({
+        name: curName,
+        crops: curCrops
+    });
     if (next === null) return;
-    const name = String(next).trim();
+
+    const newName = String(next.name || '').trim();
+    const newCrops = Array.isArray(next.crops) ? next.crops : [];
+    const historyDrawingName = newName
+        ? (newName + (newCrops.length ? ' (' + newCrops.join('・') + ')' : ''))
+        : (newCrops.join('・') || '');
+
     try {
         await callGAS('renamePolygonDrawingHistory', {
             id: id,
             row: item.row,
-            name: name,
+            name: historyDrawingName,
+            drawingName: newName,
+            drawingCrops: newCrops,
             userName: (typeof currentUser !== 'undefined' ? currentUser : '')
         });
-        item.name = name;
+        item.name = historyDrawingName;
         if (window._cadRegistryCache && window._cadRegistryCache[id]) delete window._cadRegistryCache[id];
         window.openCadRegistry(id, { refresh: true });
     } catch (e) {
-        alert('作物の保存に失敗しました。\n' + (e && e.message ? e.message : e));
+        alert('図面情報の変更に失敗しました。\n' + (e && e.message ? e.message : e));
     }
 };
 
