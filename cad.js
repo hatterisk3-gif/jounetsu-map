@@ -6708,18 +6708,22 @@ window.cadCreateMakuraFromEdges = (ring, tPoly, edgeIndexes, widthM, opts) => {
     return window.cadSeparateMakuraFromRidges_(features);
 };
 
-/** 枕畝に当たる畝の端を、枕の手前まで短くする（枕の形を優先） */
+/** 枕畝に当たる畝の端を、長手に直角の四角で切って短くする（枕の形を優先） */
 window.cadShortenRidgesClearOfMakura_ = (makuraFeatures) => {
     const gap = (window.CAD_MAKURA_RIDGE_GAP_M > 0) ? window.CAD_MAKURA_RIDGE_GAP_M : 0.35;
-    const zones = [];
+    let zone = null;
     (makuraFeatures || []).forEach((f) => {
         const one = window.cadCoalesceToPolygon(f);
         if (!one) return;
-        let zone = one;
-        try { zone = turf.buffer(one, gap, { units: 'meters' }) || one; } catch (e) {}
-        zones.push(zone);
+        let grown = one;
+        try { grown = turf.buffer(one, gap, { units: 'meters' }) || one; } catch (e) {}
+        if (!zone) { zone = grown; return; }
+        try {
+            const u = turf.union(zone, grown);
+            if (u) zone = window.cadCoalesceToPolygon(u) || zone;
+        } catch (e) {}
     });
-    if (!zones.length) return 0;
+    if (!zone) return 0;
     const hits = (a, b) => {
         try {
             if (typeof turf.booleanIntersects === 'function') return turf.booleanIntersects(a, b);
@@ -6728,7 +6732,11 @@ window.cadShortenRidgesClearOfMakura_ = (makuraFeatures) => {
             return false;
         }
     };
-    const cleanCutAlongAxis_ = (gPoly, zone) => {
+    const inZone = (lngLat) => {
+        try { return turf.booleanPointInPolygon(turf.point(lngLat), zone); } catch (e) { return false; }
+    };
+    /** 畝幅いっぱいで当たるかを見て、直角の四角に切り直す */
+    const squareCutClearOfZone_ = (gPoly) => {
         const caps = typeof window.cadRidgeEndCaps_ === 'function' ? window.cadRidgeEndCaps_(gPoly) : null;
         if (!caps || !caps.caps || caps.caps.length < 2) return null;
         const bearing = caps.bearing;
@@ -6737,31 +6745,36 @@ window.cadShortenRidgesClearOfMakura_ = (makuraFeatures) => {
         const origin = [c0.lng, c0.lat];
         const s0 = 0;
         const s1 = window.cadMetersAlongBearing_(origin, [c1.lng, c1.lat], bearing);
-        const sign = s1 >= 0 ? 1 : -1;
+        const w = typeof window.estimateCadUneWidthMeters === 'function'
+            ? window.estimateCadUneWidthMeters(gPoly)
+            : 0;
+        const half = Math.max(0.15, (w || 1.2) / 2);
+        // 中心だけでなく左右端も見る。斜めの枕でも端が四角で当たるまで縮める
         const sampleHit = (s) => {
-            const p = window.cadDestinationMeters_(origin, s, bearing);
-            try { return turf.booleanPointInPolygon(turf.point(p), zone); } catch (e) { return false; }
+            const mid = window.cadDestinationMeters_(origin, s, bearing);
+            const left = window.cadDestinationMeters_(mid, half, bearing + 90);
+            const right = window.cadDestinationMeters_(mid, half, bearing - 90);
+            return inZone(mid) || inZone(left) || inZone(right);
         };
-        const end0Hit = sampleHit(s0);
-        const end1Hit = sampleHit(s1);
-        if (!end0Hit && !end1Hit) return null;
-        // 枕に食い込んでいる側の端を、当たらなくなるまで縮める
         let lo = Math.min(s0, s1);
         let hi = Math.max(s0, s1);
-        const cutFromHigh = end1Hit && (!end0Hit || Math.abs(s1) >= Math.abs(s0));
-        if (cutFromHigh) {
+        const highHit = sampleHit(hi);
+        const lowHit = sampleHit(lo);
+        if (!highHit && !lowHit) return null;
+        if (highHit) {
             let L = lo;
             let H = hi;
-            for (let i = 0; i < 14; i++) {
+            for (let i = 0; i < 18; i++) {
                 const mid = (L + H) / 2;
                 if (sampleHit(mid)) H = mid;
                 else L = mid;
             }
-            hi = L; // 当たっていない側まで残す
-        } else {
+            hi = L;
+        }
+        if (lowHit) {
             let L = lo;
             let H = hi;
-            for (let i = 0; i < 14; i++) {
+            for (let i = 0; i < 18; i++) {
                 const mid = (L + H) / 2;
                 if (sampleHit(mid)) L = mid;
                 else H = mid;
@@ -6769,10 +6782,6 @@ window.cadShortenRidgesClearOfMakura_ = (makuraFeatures) => {
             lo = H;
         }
         if (Math.abs(hi - lo) < 0.4) return null;
-        const w = typeof window.estimateCadUneWidthMeters === 'function'
-            ? window.estimateCadUneWidthMeters(gPoly)
-            : 0;
-        const half = Math.max(0.15, (w || 1.2) / 2);
         const a = window.cadDestinationMeters_(origin, lo, bearing);
         const b = window.cadDestinationMeters_(origin, hi, bearing);
         const p1 = window.cadDestinationMeters_(a, half, bearing + 90);
@@ -6783,23 +6792,8 @@ window.cadShortenRidgesClearOfMakura_ = (makuraFeatures) => {
     };
     let shortened = 0;
     window.cadListMainRidgeEntries().forEach((r) => {
-        let piece = r.poly;
-        let touched = false;
-        let preferred = null;
-        zones.forEach((zone) => {
-            if (!piece || !hits(piece, zone)) return;
-            touched = true;
-            const axial = cleanCutAlongAxis_(r.gPoly, zone);
-            if (axial && (!preferred || window.cadFeatureArea(axial) > window.cadFeatureArea(preferred))) {
-                preferred = axial;
-            }
-            try {
-                const d = turf.difference(piece, zone);
-                piece = d ? window.cadCoalesceToPolygon(d) : null;
-            } catch (e) {}
-        });
-        if (!touched) return;
-        const next = preferred || piece;
+        if (!r.poly || !hits(r.poly, zone)) return;
+        const next = squareCutClearOfZone_(r.gPoly);
         if (!next || window.cadFeatureArea(next) < 0.2) return;
         if (window.cadApplyFeatureToGooglePoly(r.gPoly, next)) shortened++;
     });
@@ -10019,10 +10013,81 @@ window.reassignLabels = () => {
     if (typeof window.cadDetachAllRidgesFromMap === 'function') window.cadDetachAllRidgesFromMap();
 };
 
+/** 図面名を作物マスタから選ぶ */
+window.cadPickDrawingCropName_ = (currentName) => {
+    return new Promise((resolve) => {
+        const crops = (typeof pdlCrops !== 'undefined' && Array.isArray(pdlCrops))
+            ? pdlCrops.map((c) => String((c && c.name) || '').trim()).filter(Boolean)
+            : [];
+        if (!crops.length) {
+            alert('作物マスタに登録がありません。先に作物を登録してください。');
+            resolve(null);
+            return;
+        }
+        const cur = String(currentName || '').trim();
+        let picked = crops.indexOf(cur) >= 0 ? cur : '';
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed; inset:0; z-index:1000002; background:rgba(0,0,0,0.45); display:flex; align-items:center; justify-content:center;';
+        const panel = document.createElement('div');
+        panel.style.cssText = 'background:#fff; color:#333; width:92%; max-width:380px; max-height:78vh; border-radius:12px; padding:14px; display:flex; flex-direction:column; box-shadow:0 8px 28px rgba(0,0,0,0.28);';
+        panel.innerHTML = '<div style="font-weight:bold; font-size:15px; margin-bottom:6px;">🌱 図面の作物を選ぶ</div>'
+            + '<div style="font-size:12px; color:#666; margin-bottom:10px;">作物マスタの登録から選びます。</div>';
+        const list = document.createElement('div');
+        list.style.cssText = 'overflow:auto; flex:1; min-height:80px; display:flex; flex-wrap:wrap; gap:8px; padding:4px 0 10px;';
+        const paint = () => {
+            list.innerHTML = '';
+            crops.forEach((name) => {
+                const on = picked === name;
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                const icon = (typeof window.getCropIconEmoji_ === 'function')
+                    ? window.getCropIconEmoji_(name)
+                    : '🌱';
+                btn.textContent = (on ? '✓ ' : '') + icon + ' ' + name;
+                btn.style.cssText = 'border-radius:16px; padding:8px 12px; font-size:13px; cursor:pointer; font-weight:'
+                    + (on ? 'bold' : 'normal') + '; background:' + (on ? '#e8f5e9' : '#fff')
+                    + '; color:' + (on ? '#2e7d32' : '#333') + '; border:1px solid ' + (on ? '#81c784' : '#ccc') + ';';
+                btn.onclick = () => { picked = name; paint(); };
+                list.appendChild(btn);
+            });
+        };
+        paint();
+        panel.appendChild(list);
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; gap:8px; margin-top:4px;';
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.textContent = 'キャンセル';
+        cancel.style.cssText = 'flex:1; background:#757575; color:#fff; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;';
+        const ok = document.createElement('button');
+        ok.type = 'button';
+        ok.textContent = 'この作物で登録';
+        ok.style.cssText = 'flex:1.4; background:#2E7D32; color:#fff; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;';
+        const finish = (value) => {
+            if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+            resolve(value);
+        };
+        cancel.onclick = () => finish(null);
+        ok.onclick = () => {
+            if (!picked) {
+                alert('作物を選んでください。');
+                return;
+            }
+            finish(picked);
+        };
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(null); });
+        row.appendChild(cancel);
+        row.appendChild(ok);
+        panel.appendChild(row);
+        overlay.appendChild(panel);
+        document.body.appendChild(overlay);
+    });
+};
+
 window.saveUneSim = async () => {
     if (!window.cadTargetId) return;
     const p = loadedPolygons[window.cadTargetId];
-    const named = prompt('この図面の名前', window.cadDrawingName || '');
+    const named = await window.cadPickDrawingCropName_(window.cadDrawingName || '');
     if (named === null) return;
     window.cadDrawingName = String(named).trim();
     let pins = window.cadPins.map(mk => ({ type: mk.cadPinType, lat: mk.getPosition().lat(), lng: mk.getPosition().lng() }));
@@ -10250,7 +10315,7 @@ window.cadRenderRegistryList_ = (id, history, opts) => {
             actions.push({ label: '適用', color: '#1565C0', onClick: () => window.cadApplyRegistryItem_(id, item) });
         }
         if (item.row) {
-            actions.push({ label: '名前', color: '#6A1B9A', onClick: () => window.cadRenameRegistryItem_(id, item) });
+            actions.push({ label: '作物', color: '#6A1B9A', onClick: () => window.cadRenameRegistryItem_(id, item) });
         }
         actions.push({
             label: '編集',
@@ -10314,10 +10379,10 @@ window.cadDeleteRegistryItem_ = async (id, item) => {
 
 window.cadRenameRegistryItem_ = async (id, item) => {
     if (!item || !item.row) {
-        alert('この図面の名前は変更できません。');
+        alert('この図面の作物は変更できません。');
         return;
     }
-    const next = prompt('図面の名前', item.name || '');
+    const next = await window.cadPickDrawingCropName_(item.name || '');
     if (next === null) return;
     const name = String(next).trim();
     try {
@@ -10331,7 +10396,7 @@ window.cadRenameRegistryItem_ = async (id, item) => {
         if (window._cadRegistryCache && window._cadRegistryCache[id]) delete window._cadRegistryCache[id];
         window.openCadRegistry(id, { refresh: true });
     } catch (e) {
-        alert('名前の保存に失敗しました。\n' + (e && e.message ? e.message : e));
+        alert('作物の保存に失敗しました。\n' + (e && e.message ? e.message : e));
     }
 };
 

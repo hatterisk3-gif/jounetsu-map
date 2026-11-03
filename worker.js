@@ -2649,6 +2649,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         
         const workCount = p.photos.filter(ph => ph && ((ph.type === 'work') || (ph.data && ph.data.workName))).length;
         const growthCount = p.photos.filter(ph => ph && (ph.type === 'growth' || (!ph.type && !p.isMarker))).length;
+        const photoCount = p.photos.filter(ph => ph && ((ph.urls && ph.urls.length > 0) || ph.url)).length;
 
         const isWorker2 = /worker2\.html/i.test(location.pathname) || /worker2\.html/i.test(location.href);
 
@@ -2661,7 +2662,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; width:100%; margin-top:2px;">
               <button onclick="executeNavigation('${id}')" style="${btnGrid} background:#4285F4;">🚗 ナビ開始</button>
               <button onclick="actionManagePhotos('${id}', 'growth')" style="${btnGrid} background:#4CAF50;">🌱 生育記録 (${growthCount})</button>
-              <button onclick="directOpenForm('${id}', 'growth')" style="${btnGrid} background:#2E7D32;">📷 写真追加</button>
+              <button onclick="openFieldPhotosList('${id}')" style="${btnGrid} background:#2E7D32;">📷 写真追加 (${photoCount})</button>
               <button onclick="actionManagePhotos('${id}', 'work')" style="${btnGrid} background:#FF9800;">🚜 作業記録履歴 (${workCount})</button>
               <button onclick="openFertilizerCalcModal('${id}')" style="${btnGrid} background:#6D4C41;">🧪 肥料量計算</button>
               <button onclick="directOpenReportForm('${id}')" style="${btnGrid} background:#d32f2f;">⚠️ 問題を報告</button>
@@ -3038,6 +3039,424 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         renderHistoryList();
       };
       window.directOpenForm = (id, type) => { activePolyId = id; currentEditRecordId = null; currentRecordType = type; renderRecordForm(); document.getElementById('rightPanel').classList.add('open'); };
+
+      // ══════════════════════════════════════════════════════════════
+      // 📷 圃場写真一覧・写真＆メモ登録機能
+      // ══════════════════════════════════════════════════════════════
+      window.fieldPhotoPendingFiles = [];
+
+      function escapeHtmlFieldPhoto_(str) {
+        if (!str) return '';
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      }
+
+      window.openFieldPhotosList = (id) => {
+        if (!id || !loadedPolygons[id]) {
+          customAlert("圃場が見つかりません。");
+          return;
+        }
+        activePolyId = id;
+        window.fieldPhotoPendingFiles = [];
+        window.renderFieldPhotosTable(id);
+        const panel = document.getElementById('rightPanel');
+        if (panel) panel.classList.add('open');
+      };
+
+      window.renderFieldPhotosTable = (id) => {
+        const polyId = id || activePolyId;
+        const p = loadedPolygons[polyId];
+        if (!p) {
+          if (typeof closeRightPanel === 'function') closeRightPanel();
+          return;
+        }
+        activePolyId = polyId;
+        const titleEl = document.getElementById('rightPanelTitle');
+        if (titleEl) titleEl.innerText = `${p.name} - 📷 写真一覧`;
+
+        if (!Array.isArray(p.photos)) p.photos = [];
+
+        const photoRecords = p.photos.filter(item => {
+          return item && ((item.urls && item.urls.length > 0) || item.url);
+        });
+
+        photoRecords.sort((a, b) => {
+          const da = new Date((a.date || '').replace(/\//g, '-') + 'T' + (a.time || '00:00') + ':00');
+          const db = new Date((b.date || '').replace(/\//g, '-') + 'T' + (b.time || '00:00') + ':00');
+          return db - da;
+        });
+
+        let bodyHtml = `
+          <div style="margin-bottom:14px;">
+            <button type="button" onclick="renderFieldPhotoAddForm('${polyId}')" style="width:100%; padding:13px 16px; background:linear-gradient(135deg, #2E7D32 0%, #43A047 100%); color:white; border:none; border-radius:8px; font-weight:bold; font-size:15px; cursor:pointer; box-shadow:0 3px 6px rgba(46,125,50,0.3); display:flex; align-items:center; justify-content:center; gap:8px;">
+              <span style="font-size:18px;">➕</span> 写真とメモを追加する
+            </button>
+          </div>
+        `;
+
+        if (photoRecords.length === 0) {
+          bodyHtml += `
+            <div style="background:white; border-radius:8px; border:1px dashed #A5D6A7; padding:40px 16px; text-align:center; color:#555; box-shadow:0 1px 4px rgba(0,0,0,0.05);">
+              <div style="font-size:42px; margin-bottom:10px;">📷</div>
+              <div style="font-weight:bold; font-size:15px; color:#2E7D32; margin-bottom:6px;">登録された写真はまだありません</div>
+              <div style="font-size:12px; color:#777; line-height:1.6; margin-bottom:16px;">
+                上の「写真とメモを追加する」ボタンから、<br>この圃場の写真とメモを登録してください。
+              </div>
+            </div>
+          `;
+        } else {
+          let rowsHtml = '';
+          photoRecords.forEach((item, idx) => {
+            const isOwner = (item.author === currentUser || currentUser === 'システム');
+            const urls = (item.urls && item.urls.length) ? item.urls : (item.url ? [item.url] : []);
+            const firstThumb = urls[0] || '';
+            const fullUrl = firstThumb.replace('sz=w800', 'sz=w1600');
+
+            let memo = (item.data && (item.data.notes || item.data.memo || item.data.comment)) || '';
+            if (!memo && item.data && item.data.workName) {
+              memo = `作業: ${item.data.workName}`;
+            } else if (!memo && item.data && item.data.crop) {
+              memo = `作物: ${item.data.crop}`;
+            }
+
+            const isWork = (item.type === 'work') || (item.data && item.data.workName);
+            const badgeType = isWork
+              ? `<span style="display:inline-block; font-size:10px; background:#FFF3E0; color:#E65100; padding:1px 5px; border-radius:3px; margin-top:2px;">🚜 作業</span>`
+              : `<span style="display:inline-block; font-size:10px; background:#E8F5E9; color:#2E7D32; padding:1px 5px; border-radius:3px; margin-top:2px;">🌱 写真</span>`;
+
+            let thumbsHtml = '';
+            if (urls.length === 1) {
+              thumbsHtml = `
+                <div style="position:relative; width:64px; height:64px; margin:0 auto; cursor:pointer;" onclick="openLightbox('${fullUrl}')" title="クリックで拡大">
+                  <img src="${firstThumb}" style="width:64px; height:64px; object-fit:cover; border-radius:6px; border:1px solid #ccc; display:block;" onerror="this.src='icon.png'">
+                  <span style="position:absolute; bottom:2px; right:2px; background:rgba(0,0,0,0.6); color:white; font-size:9px; padding:1px 3px; border-radius:3px;">🔍</span>
+                </div>
+              `;
+            } else {
+              thumbsHtml = `<div style="display:flex; flex-wrap:wrap; gap:3px; max-width:85px; justify-content:center;">`;
+              urls.forEach((u, uIdx) => {
+                const fU = u.replace('sz=w800', 'sz=w1600');
+                const size = urls.length > 2 ? '36px' : '40px';
+                thumbsHtml += `
+                  <div style="cursor:pointer;" onclick="openLightbox('${fU}')" title="写真 ${uIdx + 1} (クリックで拡大)">
+                    <img src="${u}" style="width:${size}; height:${size}; object-fit:cover; border-radius:4px; border:1px solid #ccc; display:block;" onerror="this.src='icon.png'">
+                  </div>
+                `;
+              });
+              thumbsHtml += `</div>`;
+            }
+
+            const rowBg = idx % 2 === 0 ? '#ffffff' : '#fafafa';
+            const safeRecId = String(item.id || '').replace(/'/g, "\\'");
+
+            rowsHtml += `
+              <tr style="background:${rowBg}; border-bottom:1px solid #eee;">
+                <td style="padding:8px 6px; text-align:center; vertical-align:middle;">
+                  ${thumbsHtml}
+                </td>
+                <td style="padding:8px 6px; vertical-align:middle; line-height:1.4;">
+                  <div style="font-weight:bold; color:#333; font-size:12px;">📅 ${item.date || '-'}</div>
+                  <div style="color:#666; font-size:11px;">⏰ ${item.time || ''}</div>
+                  <div style="color:#555; font-size:11px; margin-top:2px;">👤 ${item.author || '-'}</div>
+                  <div>${badgeType}</div>
+                </td>
+                <td style="padding:8px 8px; vertical-align:middle; line-height:1.4;">
+                  ${memo ? `<div style="white-space:pre-wrap; word-break:break-word; color:#222; font-size:13px;">${escapeHtmlFieldPhoto_(memo)}</div>` : `<span style="color:#aaa; font-style:italic; font-size:11px;">(メモなし)</span>`}
+                </td>
+                <td style="padding:8px 4px; text-align:center; vertical-align:middle;">
+                  ${isOwner ? `
+                    <button type="button" onclick="deleteFieldPhotoRecord('${safeRecId}', '${polyId}')" style="background:#FFEBEE; color:#D32F2F; border:1px solid #FFCDD2; border-radius:4px; padding:5px 8px; font-size:12px; cursor:pointer;" title="削除">
+                      🗑️
+                    </button>
+                  ` : `<span style="color:#ccc;">-</span>`}
+                </td>
+              </tr>
+            `;
+          });
+
+          bodyHtml += `
+            <div style="background:white; border-radius:8px; border:1px solid #C8E6C9; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+              <div style="padding:8px 12px; background:#E8F5E9; border-bottom:1px solid #C8E6C9; display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-weight:bold; color:#1B5E20; font-size:13px;">📸 登録写真一覧 (${photoRecords.length}件)</span>
+                <span style="font-size:11px; color:#555;">タップで拡大表示</span>
+              </div>
+              <div style="overflow-x:auto;">
+                <table style="width:100%; border-collapse:collapse; min-width:320px;">
+                  <thead>
+                    <tr style="background:#F1F8E9; color:#2E7D32; border-bottom:2px solid #C8E6C9; font-size:12px;">
+                      <th style="padding:8px 6px; width:75px; text-align:center;">写真</th>
+                      <th style="padding:8px 6px; width:100px; text-align:left;">日時/撮影者</th>
+                      <th style="padding:8px 8px; text-align:left;">メモ・気付き</th>
+                      <th style="padding:8px 4px; width:45px; text-align:center;">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${rowsHtml}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          `;
+        }
+
+        const contentEl = document.getElementById('rightPanelContent');
+        if (contentEl) contentEl.innerHTML = `<div style="padding:14px; background:#f4f6f8; min-height:100%; box-sizing:border-box;">${bodyHtml}</div>`;
+
+        const footerEl = document.getElementById('rightPanelFooter');
+        if (footerEl) {
+          footerEl.innerHTML = `
+            <div style="display:flex; gap:10px;">
+              <button type="button" onclick="renderFieldPhotoAddForm('${polyId}')" style="background:#2E7D32; color:white; flex:1; padding:14px; border-radius:8px; border:none; font-weight:bold; cursor:pointer; font-size:15px; box-shadow:0 2px 5px rgba(46,125,50,0.3);">
+                📷 写真を追加する
+              </button>
+              <button type="button" onclick="closeRightPanel()" style="background:#eee; color:#333; padding:14px 18px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:14px;">
+                閉じる
+              </button>
+            </div>
+          `;
+        }
+      };
+
+      window.renderFieldPhotoAddForm = (id) => {
+        const polyId = id || activePolyId;
+        const p = loadedPolygons[polyId];
+        if (!p) {
+          if (typeof closeRightPanel === 'function') closeRightPanel();
+          return;
+        }
+        activePolyId = polyId;
+        window.fieldPhotoPendingFiles = [];
+
+        const titleEl = document.getElementById('rightPanelTitle');
+        if (titleEl) titleEl.innerText = `${p.name} - 📷 写真の追加`;
+
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+        const html = `
+          <div style="background:white; padding:16px; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+            <div style="background:#E8F5E9; border-radius:6px; padding:10px 12px; margin-bottom:14px; color:#1B5E20; font-size:13px; font-weight:bold; border:1px solid #C8E6C9;">
+              📍 登録対象: ${p.name}
+            </div>
+
+            <!-- 写真選択ボタン -->
+            <label class="form-label" style="margin-top:0; color:#2E7D32; font-size:14px; font-weight:bold;">
+              📷 写真を選択 / 撮影 <span style="color:#d32f2f; font-size:11px;">(必須)</span>
+            </label>
+            <div style="display:flex; gap:10px; margin-bottom:10px;">
+              <label style="flex:1; background:#4CAF50; color:white; text-align:center; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.15); display:flex; align-items:center; justify-content:center; gap:6px;">
+                📸 カメラ
+                <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="handleFieldPhotoInput(this)">
+              </label>
+              <label style="flex:1; background:#2196F3; color:white; text-align:center; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.15); display:flex; align-items:center; justify-content:center; gap:6px;">
+                🖼️ フォルダ
+                <input type="file" accept="image/*" multiple style="display:none;" onchange="handleFieldPhotoInput(this)">
+              </label>
+            </div>
+
+            <!-- プレビュー表示 -->
+            <div id="field_photos_preview_box" style="display:flex; gap:10px; overflow-x:auto; padding:8px; min-height:45px; margin-bottom:16px; border:2px dashed #C8E6C9; border-radius:6px; background:#FAFAFA; align-items:center;">
+              <span style="color:#999; font-size:12px; width:100%; text-align:center;">ここに撮影または選択した写真が表示されます</span>
+            </div>
+
+            <!-- メモ入力欄 -->
+            <label class="form-label" style="color:#333; font-size:14px; font-weight:bold;">
+              📝 メモ・気付き <span style="color:#888; font-size:11px; font-weight:normal;">(任意)</span>
+            </label>
+            <textarea id="field_photo_memo_input" rows="4" class="form-input" placeholder="写真についてのメモや生育の様子、状況などを入力..." style="width:100%; box-sizing:border-box; padding:10px; border:1px solid #ccc; border-radius:6px; font-size:13px; margin-bottom:16px; line-height:1.5; resize:vertical;"></textarea>
+
+            <!-- 日時と記録者 -->
+            <div style="background:#f9f9f9; padding:12px; border-radius:6px; border:1px solid #eee; margin-bottom:8px;">
+              <div style="display:flex; gap:10px; margin-bottom:10px;">
+                <div style="flex:1;">
+                  <label class="form-label" style="font-size:11px; margin-bottom:3px; color:#555;">📅 撮影日</label>
+                  <input type="date" id="field_photo_date_input" class="form-input" value="${todayStr}" style="margin-bottom:0; font-size:13px; padding:8px;">
+                </div>
+                <div style="flex:1;">
+                  <label class="form-label" style="font-size:11px; margin-bottom:3px; color:#555;">⏰ 撮影時刻</label>
+                  <input type="text" id="field_photo_time_input" class="form-input app-time-input" readonly value="${currentTimeStr}" onclick="openAppTimePicker('field_photo_time_input', '撮影時刻')" style="margin-bottom:0; text-align:center; font-size:14px; font-weight:bold; padding:8px;">
+                </div>
+              </div>
+              <div style="font-size:12px; color:#666;">
+                👤 記録者: <b>${currentUser}</b>
+              </div>
+            </div>
+          </div>
+        `;
+
+        const contentEl = document.getElementById('rightPanelContent');
+        if (contentEl) contentEl.innerHTML = `<div style="padding:14px; background:#f4f6f8; min-height:100%; box-sizing:border-box;">${html}</div>`;
+
+        const footerEl = document.getElementById('rightPanelFooter');
+        if (footerEl) {
+          footerEl.innerHTML = `
+            <div style="display:flex; gap:10px;">
+              <button id="submitFieldPhotoBtn" type="button" onclick="submitFieldPhotoRecord('${polyId}')" style="background:#2E7D32; color:white; flex:1; padding:14px; border-radius:8px; border:none; font-weight:bold; cursor:pointer; font-size:16px; box-shadow:0 3px 6px rgba(46,125,50,0.3);">
+                💾 写真とメモを保存する
+              </button>
+              <button type="button" onclick="renderFieldPhotosTable('${polyId}')" style="background:#eee; color:#333; padding:14px 18px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:14px;">
+                一覧に戻る
+              </button>
+            </div>
+          `;
+        }
+      };
+
+      window.handleFieldPhotoInput = (input) => {
+        if (!input.files || input.files.length === 0) return;
+        for (let f of input.files) {
+          window.fieldPhotoPendingFiles.push(f);
+        }
+        input.value = "";
+        renderFieldPhotoPreviews();
+      };
+
+      window.renderFieldPhotoPreviews = () => {
+        const box = document.getElementById('field_photos_preview_box');
+        if (!box) return;
+        if (!window.fieldPhotoPendingFiles || window.fieldPhotoPendingFiles.length === 0) {
+          box.innerHTML = `<span style="color:#999; font-size:12px; width:100%; text-align:center;">ここに撮影または選択した写真が表示されます</span>`;
+          return;
+        }
+        let html = '';
+        window.fieldPhotoPendingFiles.forEach((file, idx) => {
+          const url = URL.createObjectURL(file);
+          html += `
+            <div style="position:relative; flex-shrink:0;">
+              <img src="${url}" style="width:75px; height:75px; object-fit:cover; border-radius:6px; border:1px solid #bbb; display:block;">
+              <div onclick="removeFieldPhotoPreview(${idx})" style="position:absolute; top:-7px; right:-7px; background:#F44336; color:white; width:22px; height:22px; text-align:center; line-height:22px; border-radius:50%; cursor:pointer; font-weight:bold; font-size:13px; box-shadow:0 2px 4px rgba(0,0,0,0.3);">
+                ×
+              </div>
+            </div>
+          `;
+        });
+        box.innerHTML = html;
+      };
+
+      window.removeFieldPhotoPreview = (idx) => {
+        if (!window.fieldPhotoPendingFiles) return;
+        window.fieldPhotoPendingFiles.splice(idx, 1);
+        renderFieldPhotoPreviews();
+      };
+
+      window.submitFieldPhotoRecord = async (id) => {
+        const polyId = id || activePolyId;
+        const p = loadedPolygons[polyId];
+        if (!p) {
+          customAlert("圃場情報が見つかりません。");
+          return;
+        }
+
+        if (!window.fieldPhotoPendingFiles || window.fieldPhotoPendingFiles.length === 0) {
+          customAlert("写真を選択または撮影してください。");
+          return;
+        }
+
+        const btn = document.getElementById('submitFieldPhotoBtn');
+        if (btn) {
+          btn.disabled = true;
+          btn.innerText = "写真を保存中...";
+        }
+
+        if (typeof window.showRecordSyncToast === 'function') {
+          window.showRecordSyncToast("⏳ 写真を保存中です...", "info");
+        }
+
+        try {
+          const memo = document.getElementById('field_photo_memo_input')?.value.trim() || '';
+          const dateVal = document.getElementById('field_photo_date_input')?.value || '';
+          const timeVal = document.getElementById('field_photo_time_input')?.value || '';
+
+          const recordData = {
+            notes: memo,
+            photoDate: dateVal,
+            photoTime: timeVal,
+            isPhotoOnly: true
+          };
+
+          const photosPayload = [];
+          for (let i = 0; i < window.fieldPhotoPendingFiles.length; i++) {
+            const f = window.fieldPhotoPendingFiles[i];
+            const b64 = await resizeImg(f);
+            photosPayload.push({
+              filename: f.name || ('photo_' + i + '.jpg'),
+              base64: b64
+            });
+          }
+
+          const updatedItems = await callGAS('saveRecord', {
+            id: polyId,
+            name: p.name,
+            author: currentUser,
+            recordType: 'growth',
+            data: recordData,
+            photos: photosPayload
+          });
+
+          if (Array.isArray(updatedItems)) {
+            loadedPolygons[polyId].photos = updatedItems;
+          } else {
+            if (typeof window.refreshPolygonPhotos === 'function') {
+              try { await window.refreshPolygonPhotos(polyId); } catch (e) {}
+            }
+          }
+
+          if (typeof window.showRecordSyncToast === 'function') {
+            window.showRecordSyncToast("📸 写真とメモを保存しました！", "ok");
+          }
+
+          window.fieldPhotoPendingFiles = [];
+          renderFieldPhotosTable(polyId);
+
+          if (typeof openMainMenu === 'function') {
+            try { openMainMenu(polyId); } catch (e) {}
+          }
+
+        } catch (e) {
+          console.error("submitFieldPhotoRecord error:", e);
+          customAlert("写真の保存に失敗しました: " + (e.message || e));
+          if (btn) {
+            btn.disabled = false;
+            btn.innerText = "💾 写真とメモを保存する";
+          }
+        }
+      };
+
+      window.deleteFieldPhotoRecord = async (recordId, polyId) => {
+        const pid = polyId || activePolyId;
+        if (!await customConfirm("本当にこの写真記録を削除しますか？\n※復元できません")) return;
+
+        if (typeof window.showRecordSyncToast === 'function') {
+          window.showRecordSyncToast("⏳ 写真を削除中です...", "info");
+        }
+
+        try {
+          const updatedPhotos = await callGAS('deleteRecordItem', {
+            id: pid,
+            recordId: recordId,
+            userName: currentUser
+          });
+
+          if (Array.isArray(updatedPhotos)) {
+            loadedPolygons[pid].photos = updatedPhotos;
+          } else if (loadedPolygons[pid] && loadedPolygons[pid].photos) {
+            loadedPolygons[pid].photos = loadedPolygons[pid].photos.filter(x => x.id !== recordId);
+          }
+
+          if (typeof window.showRecordSyncToast === 'function') {
+            window.showRecordSyncToast("写真を削除しました", "ok");
+          }
+          renderFieldPhotosTable(pid);
+
+          if (typeof openMainMenu === 'function') {
+            try { openMainMenu(pid); } catch (e) {}
+          }
+        } catch (e) {
+          console.error("deleteFieldPhotoRecord error:", e);
+          customAlert("写真の削除に失敗しました: " + (e.message || e));
+          renderFieldPhotosTable(pid);
+        }
+      };
 
       window.renderHistoryList = () => {
         const p = loadedPolygons[activePolyId];
