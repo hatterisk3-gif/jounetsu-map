@@ -426,6 +426,9 @@
       <button type="button" id="btnActivityNotice" class="map-action-btn" onclick="openWorkerActivityNoticeModal_()" title="お知らせ" style="position:relative; color:#5E35B1; background:#EDE7F6; border:2px solid #7E57C2;">
         <span class="worker-top-chip-emoji">🔔</span><span class="worker-top-chip-label">お知らせ</span><span id="activityNoticeBadge" style="display:none; position:absolute; top:-6px; right:-4px; background:#d32f2f; color:#fff; font-size:10px; min-width:16px; height:16px; line-height:16px; border-radius:8px; padding:0 4px; font-weight:bold; box-sizing:border-box;">0</span>
       </button>
+      <button type="button" id="btnReleaseNotes" class="map-action-btn" onclick="openReleaseNotesModal_()" title="更新情報" style="position:relative; color:#00695C; background:#E0F2F1; border:2px solid #26A69A;">
+        <span class="worker-top-chip-emoji">🆕</span><span class="worker-top-chip-label">更新情報</span><span data-release-notes-badge style="display:none; position:absolute; top:-6px; right:-4px; background:#d32f2f; color:#fff; font-size:10px; min-width:16px; height:16px; line-height:16px; border-radius:8px; padding:0 4px; font-weight:bold; box-sizing:border-box;">0</span>
+      </button>
       <button type="button" id="btnScheduleList" class="map-action-btn" onclick="openScheduleList()" title="予定" style="color:#E65100; background:#FFF8E1; border:2px solid #FFB300;">
         <span class="worker-top-chip-emoji">📅</span><span class="worker-top-chip-label">予定</span>
       </button>
@@ -515,8 +518,9 @@
   <script src="weather-agri.js?v=1788600000102"></script>
   <script src="api-client.js?v=1788600000111"></script>
   <script src="location-pin.js?v=1788600000301"></script>
-  <script src="worker.js?v=1788600000310"></script>
-  <script src="tracking.js?v=1788600000051"></script>
+  <script src="worker.js?v=1788600000320"></script>
+  <script src="release-notes.js?v=1788600000320"></script>
+  <script src="tracking.js?v=1788600000320"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js?v=worker2', { scope: '/worker.html' }).catch(function () {});

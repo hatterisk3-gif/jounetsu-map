@@ -31,6 +31,11 @@
     </div>
   </div>
 
+  <button type="button" id="btnReleaseNotes" onclick="openReleaseNotesModal_()" title="更新情報"
+    style="position:fixed; top:12px; right:12px; z-index:2000; color:#00695C; background:#E0F2F1; border:2px solid #26A69A; border-radius:20px; padding:8px 12px; font-weight:bold; font-size:12px; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.18);">
+    🆕 更新情報<span data-release-notes-badge style="display:none; position:absolute; top:-6px; right:-6px; background:#d32f2f; color:#fff; font-size:10px; min-width:16px; height:16px; line-height:16px; border-radius:8px; padding:0 4px; font-weight:bold; box-sizing:border-box;">0</span>
+  </button>
+
   <button id="btnCurrentLocation" style="position: fixed; bottom: 40px; right: 10px; width: 50px; height: 50px; background: white; color: #4285F4; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;" title="現在地" aria-label="現在地">
       📍
   </button>
@@ -715,7 +720,8 @@
   <script src="admin.js?v=1788600000311" defer></script>
   <script src="admin_cost.js?v=1785489000008" defer></script>
   <script src="admin_crop_work.js?v=1787570400000" defer></script>
-  <script src="tracking.js?v=1788600000043" defer></script>
+  <script src="release-notes.js?v=1788600000320" defer></script>
+  <script src="tracking.js?v=1788600000320" defer></script>
   <script src="cad.js?v=1788600000303" defer></script>
   <script type="importmap">
   {

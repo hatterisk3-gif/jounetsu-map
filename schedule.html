@@ -43,6 +43,9 @@
     <div class="control-panel-buttons">
       <button id="btnTyphoon" class="sched-top-btn sched-top-btn-alert" onclick="openTyphoonModal()" style="display:none;">🌀 台風</button>
       <button id="btnWeather" class="sched-top-btn sched-top-btn-weather" onclick="openWeatherModal()" title="天気">☁️</button>
+      <button type="button" id="btnReleaseNotes" class="sched-top-btn" onclick="openReleaseNotesModal_()" title="更新情報" style="position:relative; color:#00695C; background:#E0F2F1; border:1px solid #26A69A; font-weight:bold;">
+        🆕 更新情報<span data-release-notes-badge style="display:none; position:absolute; top:-6px; right:-6px; background:#d32f2f; color:#fff; font-size:10px; min-width:16px; height:16px; line-height:16px; border-radius:8px; padding:0 4px; font-weight:bold; box-sizing:border-box;">0</span>
+      </button>
       <button class="btn-reload sched-top-btn" onclick="location.reload()" title="更新">🔄 更新</button>
       <div class="sched-account-wrap">
         <button type="button" id="accountMenuBtn" class="sched-top-btn sched-top-btn-account" data-account-name-btn onclick="toggleAccountMenu(event)">
@@ -956,7 +959,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000319';
+    const cacheBust = '1788600000320';
     // 豚糞共有：台数＋短いGoogleマップURL＋座標（v1.49）
     // ※ https://maps.google.com/?q=緯度,経度
     // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）
@@ -1081,6 +1084,7 @@
       .then(() => appendScript('day-planner.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('day-planner.js')))
       .then(() => appendScript('attendance-calendar.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('attendance-calendar.js')))
       .then(() => appendScript('market.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('market.js')))
+      .then(() => appendScript('release-notes.js?v=' + cacheBust).catch(function () {}))
       .then(() => appendScript('tracking.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('tracking.js')))
       .then(() => appendScript('machine-taxonomy.js?v=' + cacheBust).catch(function () {}))
       .then(() => appendScript('maint-history.js?v=' + cacheBust).catch(function () {}))

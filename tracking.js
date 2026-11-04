@@ -3885,6 +3885,166 @@
     if (modal) modal.remove();
   };
 
+  // ==========================================
+  // 更新情報（デプロイ時コミットメッセージ）
+  // ==========================================
+  const RELEASE_NOTES_SEEN_KEY = 'passionMapReleaseNotesSeenId';
+
+  function getReleaseNotesList_() {
+    const list = Array.isArray(window.PASSION_MAP_RELEASES) ? window.PASSION_MAP_RELEASES : [];
+    return list.filter(function (x) { return x && x.id; }).slice(0, 20);
+  }
+
+  function getLatestReleaseNoteId_() {
+    const list = getReleaseNotesList_();
+    return list.length ? String(list[0].id) : '';
+  }
+
+  function getReleaseNotesSeenId_() {
+    try {
+      return String(localStorage.getItem(RELEASE_NOTES_SEEN_KEY) || '');
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function markReleaseNotesSeen_() {
+    const latest = getLatestReleaseNoteId_();
+    if (!latest) return;
+    try { localStorage.setItem(RELEASE_NOTES_SEEN_KEY, latest); } catch (e) {}
+    refreshReleaseNotesBadge_();
+  }
+
+  function hasUnreadReleaseNotes_() {
+    const latest = getLatestReleaseNoteId_();
+    if (!latest) return false;
+    const seen = getReleaseNotesSeenId_();
+    if (!seen) return true;
+    const latestNum = Number(latest);
+    const seenNum = Number(seen);
+    if (!isNaN(latestNum) && !isNaN(seenNum)) return latestNum > seenNum;
+    return latest !== seen;
+  }
+
+  function formatReleaseNoteMessage_(msg) {
+    return String(msg || '').replace(/^Manual:\s*/i, '').trim();
+  }
+
+  function formatReleaseNoteDate_(dateStr) {
+    const s = String(dateStr || '').trim();
+    const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (!m) return s;
+    return m[1] + '/' + Number(m[2]) + '/' + Number(m[3]);
+  }
+
+  function escapeReleaseHtml_(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function ensureReleaseNotesModalShell_() {
+    let modal = document.getElementById('passionMapReleaseNotesModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'passionMapReleaseNotesModal';
+    modal.style.cssText = 'display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.55);z-index:5200;justify-content:center;align-items:center;padding:16px;box-sizing:border-box;';
+    modal.addEventListener('click', function (ev) {
+      if (ev.target === modal) window.closeReleaseNotesModal_();
+    });
+    document.body.appendChild(modal);
+    return modal;
+  }
+
+  window.refreshReleaseNotesBadge_ = function () {
+    const unread = hasUnreadReleaseNotes_();
+    const badges = document.querySelectorAll('[data-release-notes-badge]');
+    badges.forEach(function (badge) {
+      if (unread) {
+        badge.style.display = 'inline-block';
+        badge.textContent = '1';
+      } else {
+        badge.style.display = 'none';
+        badge.textContent = '';
+      }
+    });
+    return unread;
+  };
+
+  window.openReleaseNotesModal_ = function () {
+    markReleaseNotesSeen_();
+    const list = getReleaseNotesList_();
+    const rows = list.length
+      ? list.map(function (entry) {
+          const dateLabel = formatReleaseNoteDate_(entry.date);
+          const msg = formatReleaseNoteMessage_(entry.message);
+          return (
+            '<div style="border:1px solid #B2DFDB; border-radius:10px; padding:12px; margin-bottom:10px; background:#F1FAF9;">' +
+              '<div style="font-size:11px; color:#00897B; font-weight:bold; margin-bottom:4px;">' +
+                escapeReleaseHtml_(dateLabel || '日付不明') +
+              '</div>' +
+              '<div style="font-size:13px; font-weight:bold; color:#004D40; line-height:1.45;">' +
+                escapeReleaseHtml_(msg || '（内容なし）') +
+              '</div>' +
+            '</div>'
+          );
+        }).join('')
+      : '<div style="padding:20px 12px; text-align:center; color:#888; font-size:13px;">まだ更新情報はありません。</div>';
+
+    const bodyHtml =
+      '<div style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">' +
+        '<div style="font-size:17px; font-weight:bold; color:#00695C; margin-bottom:6px;">更新情報</div>' +
+        '<div style="font-size:12px; color:#666; margin-bottom:14px; line-height:1.4;">最近のデプロイ内容です。コミットメッセージをそのまま表示しています。</div>' +
+        '<div style="margin-bottom:12px;">' + rows + '</div>' +
+        '<button type="button" onclick="closeReleaseNotesModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>' +
+      '</div>';
+
+    const appModal = document.getElementById('modal');
+    if (appModal && typeof window.fillAppModalHtml_ === 'function') {
+      window.fillAppModalHtml_(bodyHtml);
+      appModal.style.display = 'flex';
+      window._bulkWorkMemoActive = true;
+      if (typeof window.setBulkWorkMemoModalClass_ === 'function') {
+        window.setBulkWorkMemoModalClass_('open');
+      }
+      try { appModal.onclick = function (ev) { if (ev.target === appModal) window.closeReleaseNotesModal_(); }; } catch (e) {}
+      return;
+    }
+
+    const shell = ensureReleaseNotesModalShell_();
+    shell.innerHTML = bodyHtml;
+    shell.style.display = 'flex';
+  };
+
+  window.closeReleaseNotesModal_ = function () {
+    const shell = document.getElementById('passionMapReleaseNotesModal');
+    if (shell) shell.style.display = 'none';
+    try {
+      if (typeof window.closeBulkWorkMemoModal_ === 'function') {
+        const modal = document.getElementById('modal');
+        if (modal && modal.style.display !== 'none') {
+          window.closeBulkWorkMemoModal_();
+          return;
+        }
+      }
+    } catch (e) {}
+    try {
+      const modal = document.getElementById('modal');
+      if (modal) modal.style.display = 'none';
+    } catch (e2) {}
+  };
+
+  function bootReleaseNotesUi_() {
+    try { window.refreshReleaseNotesBadge_(); } catch (e) {}
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootReleaseNotesUi_);
+  } else {
+    setTimeout(bootReleaseNotesUi_, 0);
+  }
+
   try {
     if (typeof window.hydrateLunchAndRestFromCache_ === 'function') {
       window.hydrateLunchAndRestFromCache_();
