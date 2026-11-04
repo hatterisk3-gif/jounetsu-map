@@ -6795,7 +6795,10 @@ function getSavedPolygons(options) {
                 let count = parseInt(obj && obj.uneCount, 10) || 0;
                 if (!count && obj && Array.isArray(obj.unePolygons)) count = obj.unePolygons.length;
                 if (!count && Array.isArray(obj)) count = obj.length;
-                if (count > 0) return JSON.stringify({ uneCount: count, _slim: true });
+                const fp = (typeof cadHistoryFingerprint_ === 'function') ? cadHistoryFingerprint_(s) : '';
+                if (count > 0 || (obj && Array.isArray(obj.pins) && obj.pins.length > 0)) {
+                  return JSON.stringify({ uneCount: count, fp: fp, _slim: true });
+                }
               } catch (e) {}
               return '';
             }
@@ -6878,7 +6881,10 @@ function getSavedPolygons(options) {
                 let count = parseInt(obj && obj.uneCount, 10) || 0;
                 if (!count && obj && Array.isArray(obj.unePolygons)) count = obj.unePolygons.length;
                 if (!count && Array.isArray(obj)) count = obj.length;
-                if (count > 0) return JSON.stringify({ uneCount: count, _slim: true });
+                const fp = (typeof cadHistoryFingerprint_ === 'function') ? cadHistoryFingerprint_(s) : '';
+                if (count > 0 || (obj && Array.isArray(obj.pins) && obj.pins.length > 0)) {
+                  return JSON.stringify({ uneCount: count, fp: fp, _slim: true });
+                }
               } catch (e) {}
               return '';
             }
@@ -7182,9 +7188,6 @@ function updatePolygon(params) {
     if (params.ridgeDir !== undefined) sheet.getRange(targetRow, 14).setValue(params.ridgeDir); // N列(あれば)
     if (params.ridgeWidth !== undefined) sheet.getRange(targetRow, 15).setValue(params.ridgeWidth); // O列(あれば)
     if (params.uneSimData !== undefined) {
-      if (!checkAdminRole(userName)) {
-        throw new Error("管理者権限がないため、CAD（給水口）データの更新はできません。");
-      }
       sheet.getRange(targetRow, 16).setValue(params.uneSimData); // P列(畝データ)
       
       // 畝シートにも保存
@@ -11515,14 +11518,42 @@ function cadHistoryFingerprint_(raw) {
 function getPolygonDrawingHistory(params) {
   try {
     const ss = TENANT_SS;
-    const sheet = ss.getSheetByName('図面履歴');
-    if (!sheet) return [];
-
-    const lastRow = sheet.getLastRow();
-    if (lastRow <= 1) return [];
-
     const targetId = String(params.id || "");
     const summaryOnly = params.summary === true || params.summary === "true" || params.summary === 1;
+
+    const fallbackFromPolygonSheet_ = function() {
+      const checkSheet = function(shName, colIdx) {
+        const sh = ss.getSheetByName(shName);
+        if (!sh) return null;
+        const lr = sh.getLastRow();
+        if (lr <= 1) return null;
+        const ids = sh.getRange(2, 1, lr - 1, 1).getValues();
+        for (let r = 0; r < ids.length; r++) {
+          if (String(ids[r][0]) === targetId) {
+            const raw = sh.getRange(r + 2, colIdx).getValue();
+            const s = raw ? String(raw).trim() : "";
+            if (s && s !== "[]") {
+              return [{
+                row: 0,
+                date: "保存済みの図面",
+                name: "いまの図面",
+                fp: cadHistoryFingerprint_(s),
+                data: s
+              }];
+            }
+          }
+        }
+        return null;
+      };
+      return checkSheet('圃場', 16) || checkSheet('看板', 11) || [];
+    };
+
+    const sheet = ss.getSheetByName('図面履歴');
+    if (!sheet) return fallbackFromPolygonSheet_();
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return fallbackFromPolygonSheet_();
+
     // 一覧は図面JSON（D列）を読まない。A〜Fを一括取得する
     const colCount = Math.max(6, sheet.getLastColumn());
     const head = sheet.getRange(2, 1, lastRow - 1, Math.min(colCount, 6)).getValues();
@@ -11533,7 +11564,7 @@ function getPolygonDrawingHistory(params) {
         if (hits.length >= 20) break;
       }
     }
-    if (!hits.length) return [];
+    if (!hits.length) return fallbackFromPolygonSheet_();
 
     const history = [];
     for (let h = 0; h < hits.length; h++) {
@@ -11579,10 +11610,6 @@ function getPolygonDrawingHistoryItem(params) {
 }
 
 function renamePolygonDrawingHistory(params) {
-  const userName = params.userName || "";
-  if (!checkAdminRole(userName)) {
-    throw new Error("管理者権限がないため、図面名の変更はできません。");
-  }
   const ss = TENANT_SS;
   const sheet = ss.getSheetByName('図面履歴');
   if (!sheet) throw new Error("図面履歴がありません。");
@@ -11615,10 +11642,6 @@ function renamePolygonDrawingHistory(params) {
 }
 
 function deletePolygonDrawingHistory(params) {
-  const userName = params.userName || "";
-  if (!checkAdminRole(userName)) {
-    throw new Error("管理者権限がないため、図面の削除はできません。");
-  }
   const ss = TENANT_SS;
   const sheet = ss.getSheetByName('図面履歴');
   if (!sheet) return true;

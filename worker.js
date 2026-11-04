@@ -2762,48 +2762,56 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         let bodyHtml = '';
 
         if (!p.isMarker && !isWorker2) {
-            // 圃場の場合：2列×3行のグリッド配置
-            const btnGrid = 'width:100%; padding:9px 2px; border-radius:4px; border:none; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box; white-space:nowrap; display:flex; align-items:center; justify-content:center;';
+            // 圃場の場合：2列×3行のグリッド配置（端末サイズに応じてCSSで自動調整）
             bodyHtml = `
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; width:100%; margin-top:2px;">
-              <button onclick="executeNavigation('${id}')" style="${btnGrid} background:#4285F4;">🚗 ナビ開始</button>
-              <button onclick="actionManagePhotos('${id}', 'growth')" style="${btnGrid} background:#4CAF50;">🌱 生育記録 (${growthCount})</button>
-              <button onclick="openFieldPhotosList('${id}')" style="${btnGrid} background:#2E7D32;">📷 写真追加 (${photoCount})</button>
-              <button onclick="actionManagePhotos('${id}', 'work')" style="${btnGrid} background:#FF9800;">🚜 作業記録履歴 (${workCount})</button>
-              <button onclick="openFertilizerCalcModal('${id}')" style="${btnGrid} background:#6D4C41;">🧪 肥料量計算</button>
-              <button onclick="directOpenReportForm('${id}')" style="${btnGrid} background:#d32f2f;">⚠️ 問題を報告</button>
+            <div class="field-infowindow-grid">
+              <button type="button" class="field-infowindow-btn" onclick="executeNavigation('${id}')" style="background:#4285F4;">🚗 ナビ開始</button>
+              <button type="button" class="field-infowindow-btn" onclick="actionManagePhotos('${id}', 'growth')" style="background:#4CAF50;">🌱 生育記録 (${growthCount})</button>
+              <button type="button" class="field-infowindow-btn" onclick="openFieldPhotosList('${id}')" style="background:#2E7D32;">📷 写真追加 (${photoCount})</button>
+              <button type="button" class="field-infowindow-btn" onclick="actionManagePhotos('${id}', 'work')" style="background:#FF9800;">🚜 作業記録履歴 (${workCount})</button>
+              <button type="button" class="field-infowindow-btn" onclick="openFertilizerCalcModal('${id}')" style="background:#6D4C41;">🧪 肥料量計算</button>
+              <button type="button" class="field-infowindow-btn" onclick="directOpenReportForm('${id}')" style="background:#d32f2f;">⚠️ 問題を報告</button>
             </div>`;
         } else {
             // 看板マーカーまたは worker2 の場合
-            const navBtn = `<button onclick="executeNavigation('${id}')" style="width:100%; padding:8px; margin-bottom:6px; border:none; border-radius:4px; background:#4285F4; color:white; font-weight:bold; font-size:13px; box-sizing:border-box;">🚗 ナビ開始</button>`;
-            let actions = `<div style="display:flex; flex-direction:column; gap:6px; width:100%; margin-bottom:6px;">`;
-            const btnBase = 'width:100%; padding:10px 0; border-radius:4px; border:none; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box; white-space:nowrap;';
-
-            actions += `<button onclick="actionManagePhotos('${id}', 'growth')" style="${btnBase} background:#4CAF50;">📷 現地写真 (${growthCount})</button>`;
+            const navBtn = `<button type="button" onclick="executeNavigation('${id}')" class="field-infowindow-btn-single" style="margin-bottom:6px; background:#4285F4;">🚗 ナビ開始</button>`;
+            let actions = `<div class="field-infowindow-actions-list">`;
+            actions += `<button type="button" onclick="actionManagePhotos('${id}', 'growth')" class="field-infowindow-btn-single" style="background:#4CAF50;">📷 現地写真 (${growthCount})</button>`;
             let availableWorks = pdlWorkMaster || [];
             if (availableWorks.length > 0) {
-                actions += `<button onclick="openFieldWorkRecordSelect('${id}')" style="${btnBase} background:#FF9800;">🚜 作業登録 (${workCount})</button>`;
+                actions += `<button type="button" onclick="openFieldWorkRecordSelect('${id}')" class="field-infowindow-btn-single" style="background:#FF9800;">🚜 作業登録 (${workCount})</button>`;
             }
             actions += `</div>`;
 
             if (p.isMarker && p.signFunction && (String(p.signFunction).includes('在庫') || String(p.signFunction).includes('倉庫'))) {
-                actions += `<button onclick="openInventoryUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#8BC34A; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">📦 在庫状況・入出庫</button>`;
+                actions += `<button type="button" onclick="openInventoryUI('${id}')" class="field-infowindow-btn-single" style="margin-bottom:6px; background:#8BC34A;">📦 在庫状況・入出庫</button>`;
             }
             if (p.isMarker && p.signFunction && String(p.signFunction).includes('給油')) {
-                actions += `<button onclick="openRefuelUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#E91E63; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">⛽ 給油する</button>`;
+                actions += `<button type="button" onclick="openRefuelUI('${id}')" class="field-infowindow-btn-single" style="margin-bottom:6px; background:#E91E63;">⛽ 給油する</button>`;
             }
             if (p.isMarker && p.signFunction && String(p.signFunction).includes('車両・機械管理')) {
-                actions += `<button onclick="openMachineStatusUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#1976D2; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">🚜 車両・農機状況</button>`;
+                actions += `<button type="button" onclick="openMachineStatusUI('${id}')" class="field-infowindow-btn-single" style="margin-bottom:6px; background:#1976D2;">🚜 車両・農機状況</button>`;
             }
             if (p.isMarker && p.signFunction && String(p.signFunction).includes('道具管理')) {
-                actions += `<button onclick="openToolManagementUI('${id}')" style="width:100%; padding:8px 0; margin-bottom:6px; border-radius:4px; border:none; background:#00BCD4; color:white; font-weight:bold; font-size:13px; cursor:pointer; box-sizing:border-box;">🪚 道具状況</button>`;
+                actions += `<button type="button" onclick="openToolManagementUI('${id}')" class="field-infowindow-btn-single" style="margin-bottom:6px; background:#00BCD4;">🪚 道具状況</button>`;
             }
-            actions += `<button onclick="directOpenReportForm('${id}')" style="width:100%; padding:8px 0; border-radius:4px; border:none; background:#d32f2f; color:white; font-weight:bold; font-size:12px; cursor:pointer; box-sizing:border-box;">⚠️ 問題を報告</button>`;
+            actions += `<button type="button" onclick="directOpenReportForm('${id}')" class="field-infowindow-btn-single" style="background:#d32f2f;">⚠️ 問題を報告</button>`;
             bodyHtml = `${navBtn}${actions}`;
         }
 
-        const boxWidth = (!p.isMarker && !isWorker2) ? '260px' : '220px';
-        const content = `<div style="text-align:center; width:${boxWidth}; max-width:92vw; box-sizing:border-box; padding:2px; font-family:sans-serif;"><b>${p.name}</b><br><div style="font-size:11px; color:#555; margin-bottom:6px;">${!p.isMarker?(isU?'<span style="background:#999;color:white;padding:2px 4px;border-radius:2px;font-size:10px;">未使用</span> ':'')+(p.location||'-')+' / '+(p.condition||'-')+(p.soilType?' / '+p.soilType:'')+' / '+p.area+'a':(p.signFunction ? `[${p.signFunction}]` : '')}</div>${bodyHtml}</div>`;
+        const typeClass = (!p.isMarker && !isWorker2) ? 'field-type' : 'marker-type';
+        const subInfo = !p.isMarker
+          ? (isU ? '<span style="background:#999;color:white;padding:2px 4px;border-radius:2px;font-size:10px;">未使用</span> ' : '') + (p.location || '-') + ' / ' + (p.condition || '-') + (p.soilType ? ' / ' + p.soilType : '') + ' / ' + p.area + 'a'
+          : (p.signFunction ? `[${p.signFunction}]` : '');
+
+        const content = `
+          <div class="field-infowindow-container ${typeClass}">
+            <div class="field-infowindow-header">
+              <b class="field-infowindow-title">${p.name}</b>
+              <div class="field-infowindow-sub">${subInfo}</div>
+            </div>
+            ${bodyHtml}
+          </div>`;
         infoWindow.setContent(content);
       };
 

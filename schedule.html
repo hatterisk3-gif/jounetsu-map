@@ -16,8 +16,17 @@
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1786243000000"></script>
   <link rel="stylesheet" href="schedule.css?v=1788600000318">
+  <link rel="stylesheet" href="cad.css?v=1788600000326">
   <link rel="stylesheet" href="location-pin.css?v=1788600000301">
   <link rel="stylesheet" href="dump-embed/dump-tree-gantt.css?v=1788600000055">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
 </head>
 
 <body>
@@ -41,21 +50,30 @@
   <div class="control-panel">
     <div class="sched-top-brand" aria-hidden="true">📅 <b>予定</b></div>
     <div class="control-panel-buttons">
-      <button id="btnTyphoon" class="sched-top-btn sched-top-btn-alert" onclick="openTyphoonModal()" style="display:none;">🌀 台風</button>
-      <button id="btnWeather" class="sched-top-btn sched-top-btn-weather" onclick="openWeatherModal()" title="天気">☁️</button>
-      <button type="button" id="btnReleaseNotes" class="sched-top-btn" onclick="openReleaseNotesModal_()" title="更新情報" style="position:relative; color:#00695C; background:#E0F2F1; border:1px solid #26A69A; font-weight:bold;">
-        🆕 更新情報<span data-release-notes-badge style="display:none; position:absolute; top:-6px; right:-6px; background:#d32f2f; color:#fff; font-size:10px; min-width:16px; height:16px; line-height:16px; border-radius:8px; padding:0 4px; font-weight:bold; box-sizing:border-box;">0</span>
+      <button id="btnTyphoon" class="sched-top-btn sched-top-btn-alert" onclick="openTyphoonModal()"
+        style="display:none;">🌀 台風</button>
+      <button id="btnWeather" class="sched-top-btn sched-top-btn-weather" onclick="openWeatherModal()"
+        title="天気">☁️</button>
+      <button type="button" id="btnReleaseNotes" class="sched-top-btn" onclick="openReleaseNotesModal_()" title="更新情報"
+        style="position:relative; color:#00695C; background:#E0F2F1; border:1px solid #26A69A; font-weight:bold;">
+        🆕 更新情報<span data-release-notes-badge
+          style="display:none; position:absolute; top:-6px; right:-6px; background:#d32f2f; color:#fff; font-size:10px; min-width:16px; height:16px; line-height:16px; border-radius:8px; padding:0 4px; font-weight:bold; box-sizing:border-box;">0</span>
       </button>
       <button class="btn-reload sched-top-btn" onclick="location.reload()" title="更新">🔄 更新</button>
       <div class="sched-account-wrap">
-        <button type="button" id="accountMenuBtn" class="sched-top-btn sched-top-btn-account" data-account-name-btn onclick="toggleAccountMenu(event)">
+        <button type="button" id="accountMenuBtn" class="sched-top-btn sched-top-btn-account" data-account-name-btn
+          onclick="toggleAccountMenu(event)">
           👤 <span data-account-name>マイページ</span> ▾
         </button>
         <div id="accountMenuDropdown" onclick="event.stopPropagation()">
-          <button type="button" onclick="closeAccountMenu(); openMyPage();" class="sched-account-item sched-account-item-me">👤 マイページ</button>
-          <button type="button" id="accountMenuAdminBtn" onclick="closeAccountMenu(); openAdminFromWorker();" class="sched-account-item sched-account-item-admin" style="display:none;">🗺️ 管理者画面</button>
-          <button type="button" id="accountMenuWorkerBtn" onclick="closeAccountMenu(); openWorkerFromAccount();" class="sched-account-item sched-account-item-work" style="display:none;">🚜 作業画面</button>
-          <button type="button" onclick="closeAccountMenu(); executeLogout();" class="sched-account-item sched-account-item-out">🚪 ログアウト</button>
+          <button type="button" onclick="closeAccountMenu(); openMyPage();"
+            class="sched-account-item sched-account-item-me">👤 マイページ</button>
+          <button type="button" id="accountMenuAdminBtn" onclick="closeAccountMenu(); openAdminFromWorker();"
+            class="sched-account-item sched-account-item-admin" style="display:none;">🗺️ 管理者画面</button>
+          <button type="button" id="accountMenuWorkerBtn" onclick="closeAccountMenu(); openWorkerFromAccount();"
+            class="sched-account-item sched-account-item-work" style="display:none;">🚜 作業画面</button>
+          <button type="button" onclick="closeAccountMenu(); executeLogout();"
+            class="sched-account-item sched-account-item-out">🚪 ログアウト</button>
         </div>
       </div>
       <select id="trackingUserSelect" class="desktop-only" aria-hidden="true">
@@ -100,17 +118,24 @@
       <div class="modal-header schedule-modal-header">
         <span class="schedule-modal-title">📋 <span id="tableDeptName">すべて</span>の作業一覧</span>
         <div class="schedule-modal-actions">
-          <button type="button" onclick="openWorkDeptSettingsModal()" title="作業ごとの担当部署を設定" class="schedule-header-btn schedule-header-btn-ghost">🏢 部署</button>
-          <button type="button" id="scheduleHeaderAddBtn" onclick="onScheduleHeaderAddClick_()" class="schedule-header-btn schedule-header-btn-add">＋作業</button>
+          <button type="button" onclick="openWorkDeptSettingsModal()" title="作業ごとの担当部署を設定"
+            class="schedule-header-btn schedule-header-btn-ghost">🏢 部署</button>
+          <button type="button" id="scheduleHeaderAddBtn" onclick="onScheduleHeaderAddClick_()"
+            class="schedule-header-btn schedule-header-btn-add">＋作業</button>
           <span class="schedule-modal-close" onclick="closeScheduleModal()" role="button" aria-label="閉じる">×</span>
         </div>
       </div>
       <div id="scheduleModalTabs" class="schedule-modal-tabs">
-        <button type="button" id="schedTabTasks" class="sched-view-tab active" onclick="switchScheduleView('tasks')">📋 作業一覧</button>
-        <button type="button" id="schedTabGantt" class="sched-view-tab" onclick="switchScheduleView('gantt')">📊 ガント</button>
-        <button type="button" id="schedTabHarvest" class="sched-view-tab" onclick="switchScheduleView('harvest')">🍅 収穫中</button>
-        <button type="button" id="schedTabField" class="sched-view-tab" onclick="switchScheduleView('field')">🌾 圃場進捗</button>
-        <button type="button" id="schedTabTag" class="sched-view-tab" onclick="switchScheduleView('tag')">🏷️ TAG進捗</button>
+        <button type="button" id="schedTabTasks" class="sched-view-tab active" onclick="switchScheduleView('tasks')">📋
+          作業一覧</button>
+        <button type="button" id="schedTabGantt" class="sched-view-tab" onclick="switchScheduleView('gantt')">📊
+          ガント</button>
+        <button type="button" id="schedTabHarvest" class="sched-view-tab" onclick="switchScheduleView('harvest')">🍅
+          収穫中</button>
+        <button type="button" id="schedTabField" class="sched-view-tab" onclick="switchScheduleView('field')">🌾
+          圃場進捗</button>
+        <button type="button" id="schedTabTag" class="sched-view-tab" onclick="switchScheduleView('tag')">🏷️
+          TAG進捗</button>
       </div>
       <div class="modal-body">
         <div id="scheduleViewTasks">
@@ -118,22 +143,28 @@
             <label class="sched-check-label">
               <input type="checkbox" id="schedSelectAll" onchange="toggleSchedSelectAll_(this.checked)"> すべて選択
             </label>
-            <button type="button" id="schedBulkCompleteBtn" onclick="bulkCompleteSelectedSchedules_()" disabled class="sched-bulk-complete-btn">✅ 選択をまとめて完了 (<span id="schedSelectedCount">0</span>)</button>
+            <button type="button" id="schedBulkCompleteBtn" onclick="bulkCompleteSelectedSchedules_()" disabled
+              class="sched-bulk-complete-btn">✅ 選択をまとめて完了 (<span id="schedSelectedCount">0</span>)</button>
             <span id="schedWorkNameFilterChip" class="sched-filter-chip">
               作業名: <span id="schedWorkNameFilterChipText"></span>
-              <button type="button" onclick="clearScheduleWorkNameFilter_()" title="絞り込み解除" class="sched-filter-chip-clear">×</button>
+              <button type="button" onclick="clearScheduleWorkNameFilter_()" title="絞り込み解除"
+                class="sched-filter-chip-clear">×</button>
             </span>
             <span id="schedDeptFilterChip" class="sched-filter-chip">
               部署: <span id="schedDeptFilterChipText"></span>
-              <button type="button" onclick="clearScheduleDeptFilter_()" title="絞り込み解除" class="sched-filter-chip-clear">×</button>
+              <button type="button" onclick="clearScheduleDeptFilter_()" title="絞り込み解除"
+                class="sched-filter-chip-clear">×</button>
             </span>
             <span class="sched-bulk-sep"></span>
-            <button type="button" id="schedFilterAll" class="sched-list-filter active" onclick="setScheduleListFilter_('all')">すべて</button>
-            <button type="button" id="schedFilterFieldWork" class="sched-list-filter" onclick="setScheduleListFilter_('fieldWork')">🌱 畑の品目作業</button>
+            <button type="button" id="schedFilterAll" class="sched-list-filter active"
+              onclick="setScheduleListFilter_('all')">すべて</button>
+            <button type="button" id="schedFilterFieldWork" class="sched-list-filter"
+              onclick="setScheduleListFilter_('fieldWork')">🌱 畑の品目作業</button>
             <span class="sched-bulk-sep"></span>
             <label class="sched-sort-label">
               並び替え
-              <select id="schedSortSelect" class="form-input sched-sort-select" onchange="setScheduleSortFromSelect_(this.value)">
+              <select id="schedSortSelect" class="form-input sched-sort-select"
+                onchange="setScheduleSortFromSelect_(this.value)">
                 <option value="status:asc">ステータス（進行中優先）</option>
                 <option value="deadline:asc">期限日が近い順</option>
                 <option value="deadline:desc">期限日が遠い順</option>
@@ -149,36 +180,48 @@
             <span id="schedSyncStatus" class="sched-sync-status" style="display:none;" aria-live="polite"></span>
           </div>
           <div class="schedule-table-wrap">
-          <table id="scheduleTable">
-            <thead>
-              <tr>
-                <th class="sched-check-col"><input type="checkbox" id="schedSelectAllHead" title="すべて選択" onchange="toggleSchedSelectAll_(this.checked)"></th>
-                <th class="sched-sortable" data-sort-key="status" onclick="toggleScheduleSort_('status')" title="クリックで並び替え">ステータス<span class="sched-sort-ind" data-for="status"></span></th>
-                <th class="sched-sortable sched-workname-filter-th" data-sort-key="workName" onclick="openScheduleWorkNameFilter_(event)" title="クリックで作業名で絞り込み">作業名<span class="sched-sort-ind" data-for="workName"></span></th>
-                <th class="sched-sortable sched-dept-filter-th" data-sort-key="dept" onclick="openScheduleDeptFilter_(event)" title="クリックで部署で絞り込み">部署<span class="sched-sort-ind" data-for="dept"></span></th>
-                <th class="sched-sortable" data-sort-key="cropName" onclick="toggleScheduleSort_('cropName')" title="クリックで並び替え">作物・品種・TAG<span class="sched-sort-ind" data-for="cropName"></span></th>
-                <th class="sched-sortable" data-sort-key="fieldName" onclick="toggleScheduleSort_('fieldName')" title="クリックで並び替え">圃場/看板名<span class="sched-sort-ind" data-for="fieldName"></span></th>
-                <th class="sched-sortable" data-sort-key="schedDate" onclick="toggleScheduleSort_('schedDate')" title="クリックで並び替え">予定日<span class="sched-sort-ind" data-for="schedDate"></span></th>
-                <th class="sched-sortable" data-sort-key="deadline" onclick="toggleScheduleSort_('deadline')" title="クリックで並び替え">期限日<span class="sched-sort-ind" data-for="deadline"></span></th>
-                <th>枚数・期間</th>
-                <th style="width:108px;">操作</th>
-              </tr>
-            </thead>
-            <tbody id="scheduleTableBody">
-            </tbody>
-          </table>
+            <table id="scheduleTable">
+              <thead>
+                <tr>
+                  <th class="sched-check-col"><input type="checkbox" id="schedSelectAllHead" title="すべて選択"
+                      onchange="toggleSchedSelectAll_(this.checked)"></th>
+                  <th class="sched-sortable" data-sort-key="status" onclick="toggleScheduleSort_('status')"
+                    title="クリックで並び替え">ステータス<span class="sched-sort-ind" data-for="status"></span></th>
+                  <th class="sched-sortable sched-workname-filter-th" data-sort-key="workName"
+                    onclick="openScheduleWorkNameFilter_(event)" title="クリックで作業名で絞り込み">作業名<span class="sched-sort-ind"
+                      data-for="workName"></span></th>
+                  <th class="sched-sortable sched-dept-filter-th" data-sort-key="dept"
+                    onclick="openScheduleDeptFilter_(event)" title="クリックで部署で絞り込み">部署<span class="sched-sort-ind"
+                      data-for="dept"></span></th>
+                  <th class="sched-sortable" data-sort-key="cropName" onclick="toggleScheduleSort_('cropName')"
+                    title="クリックで並び替え">作物・品種・TAG<span class="sched-sort-ind" data-for="cropName"></span></th>
+                  <th class="sched-sortable" data-sort-key="fieldName" onclick="toggleScheduleSort_('fieldName')"
+                    title="クリックで並び替え">圃場/看板名<span class="sched-sort-ind" data-for="fieldName"></span></th>
+                  <th class="sched-sortable" data-sort-key="schedDate" onclick="toggleScheduleSort_('schedDate')"
+                    title="クリックで並び替え">予定日<span class="sched-sort-ind" data-for="schedDate"></span></th>
+                  <th class="sched-sortable" data-sort-key="deadline" onclick="toggleScheduleSort_('deadline')"
+                    title="クリックで並び替え">期限日<span class="sched-sort-ind" data-for="deadline"></span></th>
+                  <th>枚数・期間</th>
+                  <th style="width:108px;">操作</th>
+                </tr>
+              </thead>
+              <tbody id="scheduleTableBody">
+              </tbody>
+            </table>
           </div>
         </div>
         <div id="scheduleViewGantt" style="display:none;">
           <div class="gantt-toolbar">
             <div class="gantt-nav">
               <button type="button" class="gantt-nav-btn" onclick="shiftGanttWindow_(-5)">◀ 5日</button>
-              <button type="button" class="gantt-nav-btn gantt-nav-today" onclick="resetGanttWindowToToday_()">今日</button>
+              <button type="button" class="gantt-nav-btn gantt-nav-today"
+                onclick="resetGanttWindowToToday_()">今日</button>
               <button type="button" class="gantt-nav-btn" onclick="shiftGanttWindow_(5)">5日 ▶</button>
             </div>
             <div class="gantt-toolbar-title" id="ganttWindowLabel"></div>
             <button type="button" class="gantt-add-btn" onclick="openGanttAddModal()">＋ 新規追加</button>
-            <label class="gantt-show-done"><input type="checkbox" checked onchange="toggleGanttShowCompleted_(this.checked)"> 完了も表示</label>
+            <label class="gantt-show-done"><input type="checkbox" checked
+                onchange="toggleGanttShowCompleted_(this.checked)"> 完了も表示</label>
           </div>
           <div class="gantt-hint">表示は基準日の前後5日です。灰＋✓＝完了、黄＝実行中、青＝予定中。空きマスをクリックして追加できます。</div>
           <div id="ganttChartRoot" class="gantt-root"></div>
@@ -187,7 +230,8 @@
           <div id="harvestListHint" style="font-size:12px;color:#555;margin-bottom:10px;line-height:1.5;">
             作業記録で「収穫」が未完了の圃場を一覧表示します。栽培計画の収穫期間が終盤〜過ぎているもの、または収穫開始から日数が長いものを「そろそろ終わり」とします。
           </div>
-          <div style="font-weight:bold;color:#e65100;margin:4px 0 6px;font-size:13px;">⏰ そろそろ終わりそう（<span id="harvestAlmostCount">0</span>）</div>
+          <div style="font-weight:bold;color:#e65100;margin:4px 0 6px;font-size:13px;">⏰ そろそろ終わりそう（<span
+              id="harvestAlmostCount">0</span>）</div>
           <table id="harvestAlmostTable" class="progress-summary-table" style="margin-bottom:16px;">
             <thead>
               <tr>
@@ -202,7 +246,8 @@
             </thead>
             <tbody id="harvestAlmostTableBody"></tbody>
           </table>
-          <div style="font-weight:bold;color:#ef6c00;margin:4px 0 6px;font-size:13px;">🍅 収穫中の畑（<span id="harvestAllCount">0</span>）</div>
+          <div style="font-weight:bold;color:#ef6c00;margin:4px 0 6px;font-size:13px;">🍅 収穫中の畑（<span
+              id="harvestAllCount">0</span>）</div>
           <table id="harvestAllTable" class="progress-summary-table">
             <thead>
               <tr>
@@ -219,7 +264,8 @@
           </table>
         </div>
         <div id="scheduleViewFieldProgress" style="display:none;">
-          <div id="fieldProgressHint" style="font-size:12px;color:#555;margin-bottom:8px;">実行済み栽培計画について、品目別作業設定の順序で圃場ごとの進捗を表示します。</div>
+          <div id="fieldProgressHint" style="font-size:12px;color:#555;margin-bottom:8px;">
+            実行済み栽培計画について、品目別作業設定の順序で圃場ごとの進捗を表示します。</div>
           <table id="fieldProgressTable" class="progress-summary-table">
             <thead>
               <tr>
@@ -236,7 +282,8 @@
           </table>
         </div>
         <div id="scheduleViewTagProgress" style="display:none;">
-          <div id="tagProgressHint" style="font-size:12px;color:#555;margin-bottom:8px;">実行済み栽培計画について、TAGごとに計画上の作業進捗を表示します。</div>
+          <div id="tagProgressHint" style="font-size:12px;color:#555;margin-bottom:8px;">
+            実行済み栽培計画について、TAGごとに計画上の作業進捗を表示します。</div>
           <table id="tagProgressTable" class="progress-summary-table">
             <thead>
               <tr>
@@ -264,16 +311,21 @@
       </div>
       <div class="modal-body">
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
-          <button type="button" class="work-dept-tab-btn" data-tab="works" onclick="switchWorkDeptSettingsTab_('works')" style="background:#455a64;color:#fff;border:none;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:bold;cursor:pointer;">作業の担当部署</button>
-          <button type="button" class="work-dept-tab-btn" data-tab="depts" onclick="switchWorkDeptSettingsTab_('depts')" style="background:#eee;color:#333;border:1px solid #ccc;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:bold;cursor:pointer;">部署マスタ</button>
-          <button type="button" class="work-dept-tab-btn" data-tab="users" onclick="switchWorkDeptSettingsTab_('users')" style="background:#eee;color:#333;border:1px solid #ccc;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:bold;cursor:pointer;">ユーザー紐づけ</button>
+          <button type="button" class="work-dept-tab-btn" data-tab="works" onclick="switchWorkDeptSettingsTab_('works')"
+            style="background:#455a64;color:#fff;border:none;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:bold;cursor:pointer;">作業の担当部署</button>
+          <button type="button" class="work-dept-tab-btn" data-tab="depts" onclick="switchWorkDeptSettingsTab_('depts')"
+            style="background:#eee;color:#333;border:1px solid #ccc;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:bold;cursor:pointer;">部署マスタ</button>
+          <button type="button" class="work-dept-tab-btn" data-tab="users" onclick="switchWorkDeptSettingsTab_('users')"
+            style="background:#eee;color:#333;border:1px solid #ccc;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:bold;cursor:pointer;">ユーザー紐づけ</button>
         </div>
 
         <div id="workDeptTabWorks">
           <div style="font-size:12px;color:#555;margin-bottom:10px;line-height:1.5;">
             作業名ごとに<strong>担当部署</strong>を設定します（作業カテゴリとは別です）。保存すると<strong>作業マスタ</strong>と<strong>未完了の作業予定</strong>に反映されます。
           </div>
-          <input type="text" id="workDeptSettingsFilter" placeholder="作業名で絞り込み..." oninput="filterWorkDeptSettingsRows_()" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ccc;border-radius:6px;margin-bottom:10px;font-size:13px;">
+          <input type="text" id="workDeptSettingsFilter" placeholder="作業名で絞り込み..."
+            oninput="filterWorkDeptSettingsRows_()"
+            style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ccc;border-radius:6px;margin-bottom:10px;font-size:13px;">
           <div style="overflow:auto;max-height:48vh;">
             <table id="workDeptSettingsTable" class="progress-summary-table">
               <thead>
@@ -284,13 +336,17 @@
                 </tr>
               </thead>
               <tbody id="workDeptSettingsTableBody">
-                <tr><td colspan="3" style="text-align:center;padding:20px;color:#888;">読み込み中...</td></tr>
+                <tr>
+                  <td colspan="3" style="text-align:center;padding:20px;color:#888;">読み込み中...</td>
+                </tr>
               </tbody>
             </table>
           </div>
           <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
-            <button type="button" onclick="closeWorkDeptSettingsModal()" style="background:#eee;color:#333;border:1px solid #ccc;border-radius:6px;padding:10px 16px;font-weight:bold;cursor:pointer;">キャンセル</button>
-            <button type="button" id="workDeptSettingsSaveBtn" onclick="saveWorkDeptSettings_()" style="background:#455a64;color:#fff;border:none;border-radius:6px;padding:10px 18px;font-weight:bold;cursor:pointer;">保存する</button>
+            <button type="button" onclick="closeWorkDeptSettingsModal()"
+              style="background:#eee;color:#333;border:1px solid #ccc;border-radius:6px;padding:10px 16px;font-weight:bold;cursor:pointer;">キャンセル</button>
+            <button type="button" id="workDeptSettingsSaveBtn" onclick="saveWorkDeptSettings_()"
+              style="background:#455a64;color:#fff;border:none;border-radius:6px;padding:10px 18px;font-weight:bold;cursor:pointer;">保存する</button>
           </div>
         </div>
 
@@ -299,13 +355,19 @@
             組織の<strong>部署名</strong>を登録します。ここで追加した部署を、作業の担当部署やユーザーの所属に選べます。
           </div>
           <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-            <input type="text" id="newDepartmentNameInput" placeholder="新しい部署名" style="flex:1;min-width:160px;box-sizing:border-box;padding:8px 10px;border:1px solid #ccc;border-radius:6px;font-size:13px;">
-            <button type="button" onclick="addDepartmentToDraft_()" style="background:#2e7d32;color:#fff;border:none;border-radius:6px;padding:8px 14px;font-weight:bold;cursor:pointer;">追加</button>
+            <input type="text" id="newDepartmentNameInput" placeholder="新しい部署名"
+              style="flex:1;min-width:160px;box-sizing:border-box;padding:8px 10px;border:1px solid #ccc;border-radius:6px;font-size:13px;">
+            <button type="button" onclick="addDepartmentToDraft_()"
+              style="background:#2e7d32;color:#fff;border:none;border-radius:6px;padding:8px 14px;font-weight:bold;cursor:pointer;">追加</button>
           </div>
-          <div id="departmentMasterList" style="overflow:auto;max-height:48vh;border:1px solid #e0e0e0;border-radius:8px;padding:8px;background:#fafafa;"></div>
+          <div id="departmentMasterList"
+            style="overflow:auto;max-height:48vh;border:1px solid #e0e0e0;border-radius:8px;padding:8px;background:#fafafa;">
+          </div>
           <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
-            <button type="button" onclick="closeWorkDeptSettingsModal()" style="background:#eee;color:#333;border:1px solid #ccc;border-radius:6px;padding:10px 16px;font-weight:bold;cursor:pointer;">閉じる</button>
-            <button type="button" id="departmentMasterSaveBtn" onclick="saveDepartmentMaster_()" style="background:#455a64;color:#fff;border:none;border-radius:6px;padding:10px 18px;font-weight:bold;cursor:pointer;">部署マスタを保存</button>
+            <button type="button" onclick="closeWorkDeptSettingsModal()"
+              style="background:#eee;color:#333;border:1px solid #ccc;border-radius:6px;padding:10px 16px;font-weight:bold;cursor:pointer;">閉じる</button>
+            <button type="button" id="departmentMasterSaveBtn" onclick="saveDepartmentMaster_()"
+              style="background:#455a64;color:#fff;border:none;border-radius:6px;padding:10px 18px;font-weight:bold;cursor:pointer;">部署マスタを保存</button>
           </div>
         </div>
 
@@ -313,19 +375,26 @@
           <div style="font-size:12px;color:#555;margin-bottom:10px;line-height:1.5;">
             ユーザーと<strong>所属部署</strong>を紐づけます。名簿の「部署」列に保存されます。
           </div>
-          <div id="userDeptLinkList" style="overflow:auto;max-height:48vh;border:1px solid #e0e0e0;border-radius:8px;padding:8px;background:#fafafa;"></div>
+          <div id="userDeptLinkList"
+            style="overflow:auto;max-height:48vh;border:1px solid #e0e0e0;border-radius:8px;padding:8px;background:#fafafa;">
+          </div>
           <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
-            <button type="button" onclick="closeWorkDeptSettingsModal()" style="background:#eee;color:#333;border:1px solid #ccc;border-radius:6px;padding:10px 16px;font-weight:bold;cursor:pointer;">閉じる</button>
-            <button type="button" id="userDeptLinkSaveBtn" onclick="saveUserDeptLinks_()" style="background:#455a64;color:#fff;border:none;border-radius:6px;padding:10px 18px;font-weight:bold;cursor:pointer;">ユーザー部署を保存</button>
+            <button type="button" onclick="closeWorkDeptSettingsModal()"
+              style="background:#eee;color:#333;border:1px solid #ccc;border-radius:6px;padding:10px 16px;font-weight:bold;cursor:pointer;">閉じる</button>
+            <button type="button" id="userDeptLinkSaveBtn" onclick="saveUserDeptLinks_()"
+              style="background:#455a64;color:#fff;border:none;border-radius:6px;padding:10px 18px;font-weight:bold;cursor:pointer;">ユーザー部署を保存</button>
           </div>
         </div>
       </div>
     </div>
   </div>
 
-  <div id="addWorkModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10030; align-items:center; justify-content:center;">
-    <div style="background:#fff; width:min(420px,94vw); border-radius:10px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,.25);">
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#2e7d32; color:#fff;">
+  <div id="addWorkModal"
+    style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10030; align-items:center; justify-content:center;">
+    <div
+      style="background:#fff; width:min(420px,94vw); border-radius:10px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,.25);">
+      <div
+        style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#2e7d32; color:#fff;">
         <span id="addWorkModalTitle" style="font-weight:bold;">＋ 作業を追加</span>
         <span style="cursor:pointer; font-size:22px;" onclick="closeAddWorkModal()">×</span>
       </div>
@@ -333,58 +402,72 @@
         <input type="hidden" name="addWorkKind" id="addWorkKind" value="internal">
         <div style="margin-bottom:8px;">
           <label style="font-size:11px;color:#555;">🚜 作業名 <span style="color:red;">*</span></label>
-          <input type="text" id="addWorkName" placeholder="例: 防除、除草、定植" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+          <input type="text" id="addWorkName" placeholder="例: 防除、除草、定植"
+            style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
         </div>
         <div id="addWorkVendorWrap" style="display:none;margin-bottom:8px;">
           <label style="font-size:11px;color:#555;">🏢 依頼先</label>
-          <input type="text" id="addWorkVendor" placeholder="例: ○○農園、○○業者" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+          <input type="text" id="addWorkVendor" placeholder="例: ○○農園、○○業者"
+            style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
         </div>
         <div style="margin-bottom:8px;">
           <label style="font-size:11px;color:#555;">📍 圃場名</label>
-          <select id="addWorkField" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+          <select id="addWorkField"
+            style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
             <option value="">圃場を選択 (任意)</option>
           </select>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:8px;">
           <div style="flex:1;">
             <label style="font-size:11px;color:#555;">🌱 作物名</label>
-            <input type="text" id="addWorkCrop" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+            <input type="text" id="addWorkCrop"
+              style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
           </div>
           <div style="flex:1;">
             <label style="font-size:11px;color:#555;" id="addWorkPersonLabel">👤 担当者</label>
-            <input type="text" id="addWorkPerson" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+            <input type="text" id="addWorkPerson"
+              style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
           </div>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:8px;">
           <div style="flex:1;">
             <label style="font-size:11px;color:#555;">📅 予定日</label>
-            <input type="date" id="addWorkSchedDate" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+            <input type="date" id="addWorkSchedDate"
+              style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
           </div>
           <div style="flex:1;">
             <label style="font-size:11px;color:#555;">⏳ 期限日</label>
-            <input type="date" id="addWorkDeadline" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+            <input type="date" id="addWorkDeadline"
+              style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
           </div>
         </div>
         <div style="margin-bottom:12px;">
           <label style="font-size:11px;color:#555;">📝 枚数・時間 / 備考</label>
-          <input type="text" id="addWorkHours" placeholder="例: 2h, 10枚" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+          <input type="text" id="addWorkHours" placeholder="例: 2h, 10枚"
+            style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
         </div>
-        <button type="button" id="addWorkSubmitBtn" onclick="submitAddWorkFromModal()" style="width:100%;background:#2e7d32;color:#fff;border:none;padding:12px;border-radius:6px;font-weight:bold;font-size:14px;cursor:pointer;">登録する</button>
+        <button type="button" id="addWorkSubmitBtn" onclick="submitAddWorkFromModal()"
+          style="width:100%;background:#2e7d32;color:#fff;border:none;padding:12px;border-radius:6px;font-weight:bold;font-size:14px;cursor:pointer;">登録する</button>
         <div id="addWorkResult" style="margin-top:8px;font-size:12px;font-weight:bold;"></div>
       </div>
     </div>
   </div>
 
-  <div id="ganttAddModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10035; align-items:center; justify-content:center;">
-    <div style="background:#fff; width:min(440px,94vw); max-height:90vh; border-radius:10px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,.25); display:flex; flex-direction:column;">
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#1565c0; color:#fff;">
+  <div id="ganttAddModal"
+    style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10035; align-items:center; justify-content:center;">
+    <div
+      style="background:#fff; width:min(440px,94vw); max-height:90vh; border-radius:10px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,.25); display:flex; flex-direction:column;">
+      <div
+        style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#1565c0; color:#fff;">
         <span style="font-weight:bold;" id="ganttAddModalTitle">＋ ガントに作業を追加</span>
         <span style="cursor:pointer; font-size:22px;" onclick="closeGanttAddModal()">×</span>
       </div>
       <div style="padding:14px 16px; overflow:auto; flex:1;">
         <div class="gantt-add-type-tabs" role="tablist">
-          <button type="button" id="ganttAddTypeMaster" class="gantt-add-type-tab active" onclick="setGanttAddType_('master')">📋 マスタから選ぶ</button>
-          <button type="button" id="ganttAddTypeFree" class="gantt-add-type-tab" onclick="setGanttAddType_('free')">✏️ フリー入力</button>
+          <button type="button" id="ganttAddTypeMaster" class="gantt-add-type-tab active"
+            onclick="setGanttAddType_('master')">📋 マスタから選ぶ</button>
+          <button type="button" id="ganttAddTypeFree" class="gantt-add-type-tab" onclick="setGanttAddType_('free')">✏️
+            フリー入力</button>
         </div>
 
         <div id="ganttAddMasterFields">
@@ -398,16 +481,22 @@
 
         <div id="ganttAddFreeFields" style="display:none;">
           <div style="margin-bottom:10px;">
-            <label style="font-size:12px;font-weight:bold;color:#e65100;display:block;margin-bottom:4px;">作業名（任意）</label>
-            <input type="text" id="ganttAddFreeWork" placeholder="例：圃場点検・片付け　空欄可" style="width:100%;padding:9px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;font-size:14px;">
+            <label
+              style="font-size:12px;font-weight:bold;color:#e65100;display:block;margin-bottom:4px;">作業名（任意）</label>
+            <input type="text" id="ganttAddFreeWork" placeholder="例：圃場点検・片付け　空欄可"
+              style="width:100%;padding:9px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;font-size:14px;">
           </div>
           <div style="margin-bottom:10px;">
-            <label style="font-size:12px;font-weight:bold;color:#2e7d32;display:block;margin-bottom:4px;">作物名（任意）</label>
-            <input type="text" id="ganttAddFreeCrop" placeholder="例：トマト　空欄可" style="width:100%;padding:9px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;font-size:14px;">
+            <label
+              style="font-size:12px;font-weight:bold;color:#2e7d32;display:block;margin-bottom:4px;">作物名（任意）</label>
+            <input type="text" id="ganttAddFreeCrop" placeholder="例：トマト　空欄可"
+              style="width:100%;padding:9px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;font-size:14px;">
           </div>
           <div style="margin-bottom:4px;">
-            <label style="font-size:12px;font-weight:bold;color:#1565c0;display:block;margin-bottom:4px;">カテゴリ（任意）</label>
-            <select id="ganttAddFreeCategory" style="width:100%;padding:9px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;font-size:14px;">
+            <label
+              style="font-size:12px;font-weight:bold;color:#1565c0;display:block;margin-bottom:4px;">カテゴリ（任意）</label>
+            <select id="ganttAddFreeCategory"
+              style="width:100%;padding:9px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;font-size:14px;">
               <option value="">未指定</option>
             </select>
           </div>
@@ -417,71 +506,104 @@
         <div style="display:flex; gap:8px; margin-top:12px;">
           <div style="flex:1;">
             <label style="font-size:11px;color:#555;">予定日</label>
-            <input type="date" id="ganttAddStart" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+            <input type="date" id="ganttAddStart"
+              style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
           </div>
           <div style="flex:1;">
             <label style="font-size:11px;color:#555;">期限日（任意）</label>
-            <input type="date" id="ganttAddEnd" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
+            <input type="date" id="ganttAddEnd"
+              style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
           </div>
         </div>
         <div style="margin-top:8px;">
           <label style="font-size:11px;color:#555;">圃場（任意）</label>
-          <select id="ganttAddField" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;"></select>
+          <select id="ganttAddField"
+            style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;"></select>
         </div>
-        <button type="button" id="ganttAddSubmitBtn" onclick="submitGanttAddWork_()" style="width:100%;margin-top:14px;background:#1565c0;color:#fff;border:none;padding:12px;border-radius:6px;font-weight:bold;font-size:14px;cursor:pointer;">登録する</button>
+        <button type="button" id="ganttAddSubmitBtn" onclick="submitGanttAddWork_()"
+          style="width:100%;margin-top:14px;background:#1565c0;color:#fff;border:none;padding:12px;border-radius:6px;font-weight:bold;font-size:14px;cursor:pointer;">登録する</button>
         <div id="ganttAddResult" style="margin-top:8px;font-size:12px;font-weight:bold;"></div>
       </div>
     </div>
   </div>
 
-  <div id="sowingProgressModal" class="sowing-progress-modal" style="display:none; position:fixed; inset:0; background:#fff; z-index:10020;">
-    <div class="sowing-progress-panel" style="background:#fff; width:100%; height:100%; border-radius:0; display:flex; flex-direction:column; overflow:hidden;">
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#6a1b9a; color:#fff; flex-shrink:0; gap:8px;">
+  <div id="sowingProgressModal" class="sowing-progress-modal"
+    style="display:none; position:fixed; inset:0; background:#fff; z-index:10020;">
+    <div class="sowing-progress-panel"
+      style="background:#fff; width:100%; height:100%; border-radius:0; display:flex; flex-direction:column; overflow:hidden;">
+      <div
+        style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#6a1b9a; color:#fff; flex-shrink:0; gap:8px;">
         <span style="font-weight:bold; font-size:16px;">🌱 播種・育苗</span>
         <div style="display:flex; align-items:center; gap:8px;">
-          <button type="button" onclick="openSowingNurseryAddForm_()" style="background:#fff; color:#6a1b9a; border:none; border-radius:6px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋ 新規追加</button>
-          <span style="cursor:pointer; font-size:24px; line-height:1; padding:0 4px;" onclick="closeSowingProgressModal_()" title="閉じる">×</span>
+          <button type="button" onclick="openSowingNurseryAddForm_()"
+            style="background:#fff; color:#6a1b9a; border:none; border-radius:6px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋
+            新規追加</button>
+          <span style="cursor:pointer; font-size:24px; line-height:1; padding:0 4px;"
+            onclick="closeSowingProgressModal_()" title="閉じる">×</span>
         </div>
       </div>
-      <div style="display:flex; gap:0; border-bottom:1px solid #e1bee7; background:#faf5fc; flex-shrink:0;" id="sowingNurseryTabs">
-        <button type="button" id="sowingNurseryTabRecords" onclick="switchSowingNurseryTab_('records')" style="flex:1; border:none; background:transparent; padding:10px 8px; font-weight:bold; font-size:13px; cursor:pointer; color:#6a1b9a; border-bottom:3px solid #6a1b9a;">育苗記録</button>
-        <button type="button" id="sowingNurseryTabProgress" onclick="switchSowingNurseryTab_('progress')" style="flex:1; border:none; background:transparent; padding:10px 8px; font-weight:bold; font-size:13px; cursor:pointer; color:#888; border-bottom:3px solid transparent;">播種進捗</button>
+      <div style="display:flex; gap:0; border-bottom:1px solid #e1bee7; background:#faf5fc; flex-shrink:0;"
+        id="sowingNurseryTabs">
+        <button type="button" id="sowingNurseryTabRecords" onclick="switchSowingNurseryTab_('records')"
+          style="flex:1; border:none; background:transparent; padding:10px 8px; font-weight:bold; font-size:13px; cursor:pointer; color:#6a1b9a; border-bottom:3px solid #6a1b9a;">育苗記録</button>
+        <button type="button" id="sowingNurseryTabProgress" onclick="switchSowingNurseryTab_('progress')"
+          style="flex:1; border:none; background:transparent; padding:10px 8px; font-weight:bold; font-size:13px; cursor:pointer; color:#888; border-bottom:3px solid transparent;">播種進捗</button>
       </div>
       <div style="padding:12px 16px; overflow:auto; flex:1; -webkit-overflow-scrolling:touch;" id="sowingProgressBody">
       </div>
     </div>
   </div>
 
-  <div id="snrMapPickBanner" style="display:none; position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(106,27,154,0.96); color:white; padding:15px; border-radius:12px; z-index:10050; align-items:center; gap:10px; width:90%; max-width:400px; box-shadow:0 4px 15px rgba(0,0,0,0.35); flex-direction:column; justify-content:center; font-weight:bold; font-size:14px; text-align:center;">
+  <div id="snrMapPickBanner"
+    style="display:none; position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(106,27,154,0.96); color:white; padding:15px; border-radius:12px; z-index:10050; align-items:center; gap:10px; width:90%; max-width:400px; box-shadow:0 4px 15px rgba(0,0,0,0.35); flex-direction:column; justify-content:center; font-weight:bold; font-size:14px; text-align:center;">
     <div id="snrMapPickTitle" style="font-size:16px; margin-bottom:4px;">🗺️ 区画を地図から選択</div>
-    <div id="snrMapPickCatLabel" style="font-size:12px; color:#e1bee7; font-weight:normal; margin-bottom:4px;">場所カテゴリ: -</div>
-    <div id="snrMapPickHint" style="font-size:11px; color:#f3e5f5; font-weight:normal; margin-bottom:6px;">設定済みの圃場を1つタップして選択</div>
-    <div id="snrMapPickSelectedList" style="font-size:11px; max-height:60px; overflow-y:auto; width:100%; text-align:left; background:rgba(255,255,255,0.12); padding:6px; border-radius:4px; margin-bottom:8px; box-sizing:border-box; word-break:break-all; font-weight:normal;">選択中: なし</div>
-    <button type="button" id="snrMapPickSaveCenterBtn" onclick="saveSnrLocCatMapCenter_()" style="width:100%; background:#fff; color:#6a1b9a; border:none; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:8px;">📍 今の地図位置を初期位置に保存</button>
+    <div id="snrMapPickCatLabel" style="font-size:12px; color:#e1bee7; font-weight:normal; margin-bottom:4px;">場所カテゴリ: -
+    </div>
+    <div id="snrMapPickHint" style="font-size:11px; color:#f3e5f5; font-weight:normal; margin-bottom:6px;">
+      設定済みの圃場を1つタップして選択</div>
+    <div id="snrMapPickSelectedList"
+      style="font-size:11px; max-height:60px; overflow-y:auto; width:100%; text-align:left; background:rgba(255,255,255,0.12); padding:6px; border-radius:4px; margin-bottom:8px; box-sizing:border-box; word-break:break-all; font-weight:normal;">
+      選択中: なし</div>
+    <button type="button" id="snrMapPickSaveCenterBtn" onclick="saveSnrLocCatMapCenter_()"
+      style="width:100%; background:#fff; color:#6a1b9a; border:none; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer; margin-bottom:8px;">📍
+      今の地図位置を初期位置に保存</button>
     <div style="display:flex; gap:10px; width:100%;">
-      <button type="button" id="snrMapPickConfirmBtn" onclick="confirmSnrPlotMapPick_()" style="flex:1; background:#4CAF50; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer;">この区画を使う</button>
-      <button type="button" onclick="cancelSnrPlotMapPick_()" style="flex:1; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer;">キャンセル</button>
+      <button type="button" id="snrMapPickConfirmBtn" onclick="confirmSnrPlotMapPick_()"
+        style="flex:1; background:#4CAF50; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer;">この区画を使う</button>
+      <button type="button" onclick="cancelSnrPlotMapPick_()"
+        style="flex:1; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer;">キャンセル</button>
     </div>
     <div id="snrMapPickMsg" style="font-size:11px; font-weight:bold; margin-top:6px; min-height:14px;"></div>
   </div>
 
-  <div id="sowingNurseryAddModal" class="sowing-nursery-add-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10040; align-items:center; justify-content:center; padding:12px; box-sizing:border-box;" onclick="if(event.target===this)cancelSowingNurseryAddForm_()">
-    <div class="snr-add-modal-panel" style="background:#fff; width:min(720px,96vw); max-height:92vh; border-radius:10px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 28px rgba(0,0,0,.35);" onclick="event.stopPropagation()">
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#6a1b9a; color:#fff; flex-shrink:0;">
+  <div id="sowingNurseryAddModal" class="sowing-nursery-add-modal"
+    style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10040; align-items:center; justify-content:center; padding:12px; box-sizing:border-box;"
+    onclick="if(event.target===this)cancelSowingNurseryAddForm_()">
+    <div class="snr-add-modal-panel"
+      style="background:#fff; width:min(720px,96vw); max-height:92vh; border-radius:10px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 28px rgba(0,0,0,.35);"
+      onclick="event.stopPropagation()">
+      <div
+        style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#6a1b9a; color:#fff; flex-shrink:0;">
         <span style="font-weight:bold; font-size:15px;">＋ 育苗記録を新規追加</span>
-        <span style="cursor:pointer; font-size:24px; line-height:1;" onclick="cancelSowingNurseryAddForm_()" title="閉じる">×</span>
+        <span style="cursor:pointer; font-size:24px; line-height:1;" onclick="cancelSowingNurseryAddForm_()"
+          title="閉じる">×</span>
       </div>
-      <div id="sowingNurseryAddModalBody" class="snr-add-modal-body" style="padding:12px 16px; overflow:auto; flex:1; background:#faf5fc; -webkit-overflow-scrolling:touch;">
+      <div id="sowingNurseryAddModalBody" class="snr-add-modal-body"
+        style="padding:12px 16px; overflow:auto; flex:1; background:#faf5fc; -webkit-overflow-scrolling:touch;">
       </div>
     </div>
   </div>
 
   <!-- 📊 作業分析（人の働き可視化） -->
-  <div id="workRecordAnalysisModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10020; align-items:center; justify-content:center;">
-    <div style="background:#fff; width:min(980px,96vw); max-height:92vh; border-radius:10px; display:flex; flex-direction:column; overflow:hidden;">
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:linear-gradient(135deg,#0D47A1,#1565C0); color:#fff;">
+  <div id="workRecordAnalysisModal"
+    style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10020; align-items:center; justify-content:center;">
+    <div
+      style="background:#fff; width:min(980px,96vw); max-height:92vh; border-radius:10px; display:flex; flex-direction:column; overflow:hidden;">
+      <div
+        style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:linear-gradient(135deg,#0D47A1,#1565C0); color:#fff;">
         <span style="font-weight:bold; font-size:16px;">📊 作業分析</span>
-        <span style="cursor:pointer; font-size:24px; line-height:1;" onclick="document.getElementById('workRecordAnalysisModal').style.display='none'">×</span>
+        <span style="cursor:pointer; font-size:24px; line-height:1;"
+          onclick="document.getElementById('workRecordAnalysisModal').style.display='none'">×</span>
       </div>
       <div style="padding:12px 16px; overflow:auto; flex:1;" id="workRecordAnalysisBody">
       </div>
@@ -489,11 +611,15 @@
   </div>
 
   <!-- 🌳 スキルツリー ＆ 免許・資格 モーダル -->
-  <div id="skillTreeModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
-    <div style="background: #fff; color: #333; border-radius: 12px; width: 92%; max-width: 520px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); max-height: 85vh; display: flex; flex-direction: column; overflow: hidden;">
-      <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #2e7d32; color: white; font-weight: bold;">
+  <div id="skillTreeModal"
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
+    <div
+      style="background: #fff; color: #333; border-radius: 12px; width: 92%; max-width: 520px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); max-height: 85vh; display: flex; flex-direction: column; overflow: hidden;">
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #2e7d32; color: white; font-weight: bold;">
         <h3 style="margin: 0; font-size: 16px;">🌳 スキルツリー ＆ 免許・資格</h3>
-        <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #ccc;" onclick="document.getElementById('skillTreeModal').style.display='none'">×</span>
+        <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #ccc;"
+          onclick="document.getElementById('skillTreeModal').style.display='none'">×</span>
       </div>
       <div id="skillTreeContent" style="overflow-y: auto; flex: 1;">
         <div style="text-align:center; padding:20px;">読み込み中...</div>
@@ -554,50 +680,62 @@
   <div id="cultivationModalContainer"></div>
 
   <!-- マイページ等の汎用モーダル -->
-  <div id="modal" onclick="if(event.target===this && !(this._ignoreBackdropCloseUntil && Date.now()<this._ignoreBackdropCloseUntil)) this.style.display='none'">
+  <div id="modal"
+    onclick="if(event.target===this && !(this._ignoreBackdropCloseUntil && Date.now()<this._ignoreBackdropCloseUntil)) this.style.display='none'">
     <div class="modal-content" id="modalBody" onclick="event.stopPropagation()"></div>
   </div>
 
   <div class="schedule-side-fabs">
-    <button id="btnSoilMoisture" type="button" class="schedule-side-fab schedule-side-fab-moisture" onclick="toggleSoilMoistureMapOverlay()" title="推定土壌水分を地図表示" aria-label="水分率">
+    <button id="btnSoilMoisture" type="button" class="schedule-side-fab schedule-side-fab-moisture"
+      onclick="toggleSoilMoistureMapOverlay()" title="推定土壌水分を地図表示" aria-label="水分率">
       <span class="schedule-side-fab-moisture-icon">💧</span>
       <span class="schedule-side-fab-moisture-label">水分率</span>
     </button>
-    <button id="btnPesticideLookup" type="button" class="schedule-side-fab schedule-side-fab-pest" onclick="openPesticideLookup_()" title="農薬を検索して適用表を見る" aria-label="農薬">
+    <button id="btnPesticideLookup" type="button" class="schedule-side-fab schedule-side-fab-pest"
+      onclick="openPesticideLookup_()" title="農薬を検索して適用表を見る" aria-label="農薬">
       <span class="schedule-side-fab-pest-icon">🧪</span>
       <span class="schedule-side-fab-pest-label">農薬</span>
     </button>
   </div>
 
-  <div id="pesticideLookupModal" class="pest-lookup-modal" style="display:none;" onclick="if(event.target===this) closePesticideLookup_()">
+  <div id="pesticideLookupModal" class="pest-lookup-modal" style="display:none;"
+    onclick="if(event.target===this) closePesticideLookup_()">
     <div class="pest-lookup-sheet" onclick="event.stopPropagation()">
       <div class="pest-lookup-head">
-        <button type="button" id="pestLookupBack" class="pest-lookup-back" style="display:none;" onclick="backPesticideLookup_()">←</button>
+        <button type="button" id="pestLookupBack" class="pest-lookup-back" style="display:none;"
+          onclick="backPesticideLookup_()">←</button>
         <div class="pest-lookup-title" id="pestLookupTitle">🧪 農薬検索</div>
-        <button type="button" id="pestLookupFavBtn" class="pest-fav-star" style="display:none;" onclick="toggleCurrentPesticideFav_()" aria-label="お気に入り登録">★</button>
+        <button type="button" id="pestLookupFavBtn" class="pest-fav-star" style="display:none;"
+          onclick="toggleCurrentPesticideFav_()" aria-label="お気に入り登録">★</button>
         <button type="button" class="pest-lookup-close" onclick="closePesticideLookup_()" aria-label="閉じる">×</button>
       </div>
       <div id="pestLookupLoading" class="pest-lookup-loading" aria-hidden="true">
         <div id="pestLookupLoadingLabel" class="pest-lookup-loading-label">読み込み中...</div>
-        <div class="pest-lookup-loading-track"><div class="pest-lookup-loading-fill"></div></div>
+        <div class="pest-lookup-loading-track">
+          <div class="pest-lookup-loading-fill"></div>
+        </div>
       </div>
       <div id="pestLookupSearchPane" class="pest-lookup-body">
         <div class="pest-lookup-hint">農薬名・成分・登録番号・メーカーの一部でもヒットします。名前を押すと適用表を開きます。</div>
         <div class="pest-lookup-searchrow">
-          <input type="search" id="pestLookupQ" class="pest-lookup-input" placeholder="例: ダコ、マンゼブ" enterkeyhint="search" onkeydown="if(event.key==='Enter'){ event.preventDefault(); searchPesticideLookup_(); }">
+          <input type="search" id="pestLookupQ" class="pest-lookup-input" placeholder="例: ダコ、マンゼブ" enterkeyhint="search"
+            onkeydown="if(event.key==='Enter'){ event.preventDefault(); searchPesticideLookup_(); }">
           <button type="button" class="pest-lookup-go" onclick="searchPesticideLookup_()">検索</button>
-          <button type="button" id="pestLookupFavListBtn" class="pest-lookup-favbtn" onclick="showPesticideFavorites_()">⭐ お気に入り</button>
+          <button type="button" id="pestLookupFavListBtn" class="pest-lookup-favbtn"
+            onclick="showPesticideFavorites_()">⭐ お気に入り</button>
         </div>
         <div id="pestFavPestRow" class="pest-fav-pestrow" style="display:none;">
           <label class="pest-fav-pestlabel" for="pestFavPestQ">お気に入りから、対象病害虫で探す</label>
-          <input type="search" id="pestFavPestQ" class="pest-lookup-input" placeholder="例: うどんこ病、ハダニ" enterkeyhint="search" oninput="filterFavoritesByPest_()">
+          <input type="search" id="pestFavPestQ" class="pest-lookup-input" placeholder="例: うどんこ病、ハダニ"
+            enterkeyhint="search" oninput="filterFavoritesByPest_()">
         </div>
         <div id="pestLookupResult" class="pest-lookup-result"></div>
       </div>
       <div id="pestLookupTablePane" class="pest-lookup-body" style="display:none;">
         <div id="pestLookupCropBar" class="pest-app-crop-bar"></div>
         <div id="pestLookupTableMeta" class="pest-lookup-meta"></div>
-        <input type="search" id="pestLookupCropFilter" class="pest-lookup-input" placeholder="作物名で探す" oninput="filterPesticideApplicationTable_()">
+        <input type="search" id="pestLookupCropFilter" class="pest-lookup-input" placeholder="作物名で探す"
+          oninput="filterPesticideApplicationTable_()">
         <div id="pestLookupTableWrap" class="pest-lookup-table-wrap"></div>
       </div>
     </div>
@@ -621,7 +759,8 @@
         </span>
       </button>
     </div>
-    <button type="button" id="dumpFabBtn" class="dump-fab-btn" onclick="toggleDumpFabMenu_()" aria-label="DUMPツールを開く" aria-expanded="false" title="DUMP ツリー／ガント">＋</button>
+    <button type="button" id="dumpFabBtn" class="dump-fab-btn" onclick="toggleDumpFabMenu_()" aria-label="DUMPツールを開く"
+      aria-expanded="false" title="DUMP ツリー／ガント">＋</button>
   </div>
   <div id="dumpAppOverlay" class="dump-app-overlay" style="display:none;" aria-hidden="true">
     <div class="dump-app-shell">
@@ -672,18 +811,27 @@
             <div class="tree-bars">
               <div class="tree-bar-row">
                 <div class="tree-toolbar">
-                  <select id="tree-palette-select" onchange="treeSwitchPalette(this.value)" title="パレット切替" aria-label="パレット切替"></select>
-                  <button type="button" onclick="treeAddPalette()" class="tree-tool-icon" title="パレットを新規保存" aria-label="パレット新規">＋</button>
-                  <button type="button" onclick="treeRenamePalette()" class="tree-tool-icon" title="パレット名を変更" aria-label="パレット名変更">✎</button>
+                  <select id="tree-palette-select" onchange="treeSwitchPalette(this.value)" title="パレット切替"
+                    aria-label="パレット切替"></select>
+                  <button type="button" onclick="treeAddPalette()" class="tree-tool-icon" title="パレットを新規保存"
+                    aria-label="パレット新規">＋</button>
+                  <button type="button" onclick="treeRenamePalette()" class="tree-tool-icon" title="パレット名を変更"
+                    aria-label="パレット名変更">✎</button>
                   <span class="w-px" aria-hidden="true" style="width:1px;height:20px;background:#c8e6c9;"></span>
-                  <button type="button" id="tree-undo-btn" onclick="treeUndo()" class="tree-tool-icon" title="元に戻す" aria-label="元に戻す">↶</button>
-                  <button type="button" id="tree-redo-btn" onclick="treeRedo()" class="tree-tool-icon" title="次に進む" aria-label="次に進む">↷</button>
+                  <button type="button" id="tree-undo-btn" onclick="treeUndo()" class="tree-tool-icon" title="元に戻す"
+                    aria-label="元に戻す">↶</button>
+                  <button type="button" id="tree-redo-btn" onclick="treeRedo()" class="tree-tool-icon" title="次に進む"
+                    aria-label="次に進む">↷</button>
                   <span class="w-px" aria-hidden="true" style="width:1px;height:20px;background:#c8e6c9;"></span>
-                  <button type="button" id="tree-link-style-btn" onclick="treeToggleLinkStyle()" class="tree-tool-icon" title="接続の形" aria-label="接続の形">→</button>
-                  <button type="button" onclick="treeToggleAccent()" class="tree-tool-icon" title="色強調" aria-label="色強調">◆</button>
-                  <button type="button" onclick="treeDeleteSelection()" class="tree-tool-icon" title="削除" aria-label="削除">🗑</button>
+                  <button type="button" id="tree-link-style-btn" onclick="treeToggleLinkStyle()" class="tree-tool-icon"
+                    title="接続の形" aria-label="接続の形">→</button>
+                  <button type="button" onclick="treeToggleAccent()" class="tree-tool-icon" title="色強調"
+                    aria-label="色強調">◆</button>
+                  <button type="button" onclick="treeDeleteSelection()" class="tree-tool-icon" title="削除"
+                    aria-label="削除">🗑</button>
                   <span class="w-px" aria-hidden="true" style="width:1px;height:20px;background:#c8e6c9;"></span>
-                  <button type="button" id="tree-memo-btn" onclick="toggleTreeMemoDrawer()" class="tree-tool-icon" title="メモから挿入" aria-label="メモ">メモ</button>
+                  <button type="button" id="tree-memo-btn" onclick="toggleTreeMemoDrawer()" class="tree-tool-icon"
+                    title="メモから挿入" aria-label="メモ">メモ</button>
                 </div>
               </div>
             </div>
@@ -722,12 +870,14 @@
             <div id="tree-memo-drawer-head">
               <h3>メモ</h3>
               <span id="tree-memo-count">0件</span>
-              <button type="button" id="tree-memo-close-btn" onclick="closeTreeMemoDrawer()" aria-label="閉じる" title="閉じる">✕</button>
+              <button type="button" id="tree-memo-close-btn" onclick="closeTreeMemoDrawer()" aria-label="閉じる"
+                title="閉じる">✕</button>
             </div>
             <div id="tree-memo-list"></div>
           </aside>
           <div id="tree-edit-modal" class="hidden" onclick="if(event.target===this)closeTreeEditModal()">
-            <div style="background:#fff;border:1px solid #a5d6a7;width:100%;max-width:22rem;border-radius:1.25rem;padding:1.25rem;box-shadow:0 8px 28px rgba(27,94,32,0.2);">
+            <div
+              style="background:#fff;border:1px solid #a5d6a7;width:100%;max-width:22rem;border-radius:1.25rem;padding:1.25rem;box-shadow:0 8px 28px rgba(27,94,32,0.2);">
               <h3 style="color:#1b5e20;font-weight:900;font-size:1rem;margin:0 0 0.75rem;">ノード名を編集</h3>
               <input type="text" id="tree-edit-input" maxlength="40" class="dump-pm-input" placeholder="名前を入力">
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-top:1rem;">
@@ -781,79 +931,339 @@
     </button>
     <button type="button" onclick="openMyPage()">
       <div style="font-size:20px;">👤</div>
-      <div style="font-weight:bold; max-width:72px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" data-account-name>マイページ</div>
+      <div style="font-weight:bold; max-width:72px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+        data-account-name>マイページ</div>
     </button>
   </div>
 
   <!-- 明日の予定（Googleカレンダー風） -->
-  <div id="dayPlannerModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10025; align-items:center; justify-content:center;">
-    <div style="background:#fff; width:min(520px,96vw); height:min(92vh,820px); border-radius:12px; display:flex; flex-direction:column; overflow:hidden;">
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 12px; background:linear-gradient(135deg,#1565c0,#42a5f5); color:#fff;">
+  <div id="dayPlannerModal"
+    style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10025; align-items:center; justify-content:center;">
+    <div
+      style="background:#fff; width:min(520px,96vw); height:min(92vh,820px); border-radius:12px; display:flex; flex-direction:column; overflow:hidden;">
+      <div
+        style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 12px; background:linear-gradient(135deg,#1565c0,#42a5f5); color:#fff;">
         <span style="font-weight:bold; font-size:16px;">⏰ 自分の予定</span>
         <div style="display:flex; align-items:center; gap:8px;">
-          <button type="button" onclick="closeDayPlanner(); if(typeof openAttendanceCalendar==='function') openAttendanceCalendar();"
-            style="background:rgba(255,255,255,.18); color:#fff; border:1px solid rgba(255,255,255,.45); border-radius:6px; padding:6px 10px; font-weight:bold; font-size:12px; cursor:pointer;">🗓️ 出勤カレンダー</button>
+          <button type="button"
+            onclick="closeDayPlanner(); if(typeof openAttendanceCalendar==='function') openAttendanceCalendar();"
+            style="background:rgba(255,255,255,.18); color:#fff; border:1px solid rgba(255,255,255,.45); border-radius:6px; padding:6px 10px; font-weight:bold; font-size:12px; cursor:pointer;">🗓️
+            出勤カレンダー</button>
           <span style="cursor:pointer; font-size:24px; line-height:1;" onclick="closeDayPlanner()">×</span>
         </div>
       </div>
       <div style="padding:10px 12px; border-bottom:1px solid #e3f2fd;">
         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
-          <button type="button" onclick="dpShiftDate(-1)" style="background:#e3f2fd; color:#1565c0; border:none; border-radius:6px; padding:7px 10px; font-weight:bold; cursor:pointer;">◀</button>
-          <input type="date" id="dpDate" onchange="dpGotoDate(this.value)" style="padding:7px 8px; border:1px solid #90caf9; border-radius:6px; font-weight:bold;">
-          <button type="button" onclick="dpShiftDate(1)" style="background:#e3f2fd; color:#1565c0; border:none; border-radius:6px; padding:7px 10px; font-weight:bold; cursor:pointer;">▶</button>
-          <button type="button" onclick="dpGotoDate()" style="background:#1565c0; color:#fff; border:none; border-radius:6px; padding:7px 10px; font-weight:bold; cursor:pointer;">明日</button>
-          <div style="font-size:11px; color:#546e7a; flex:1; min-width:140px;">今日以降の日付を選べます。空いている時間をドラッグしてブロックを作れます。</div>
+          <button type="button" onclick="dpShiftDate(-1)"
+            style="background:#e3f2fd; color:#1565c0; border:none; border-radius:6px; padding:7px 10px; font-weight:bold; cursor:pointer;">◀</button>
+          <input type="date" id="dpDate" onchange="dpGotoDate(this.value)"
+            style="padding:7px 8px; border:1px solid #90caf9; border-radius:6px; font-weight:bold;">
+          <button type="button" onclick="dpShiftDate(1)"
+            style="background:#e3f2fd; color:#1565c0; border:none; border-radius:6px; padding:7px 10px; font-weight:bold; cursor:pointer;">▶</button>
+          <button type="button" onclick="dpGotoDate()"
+            style="background:#1565c0; color:#fff; border:none; border-radius:6px; padding:7px 10px; font-weight:bold; cursor:pointer;">明日</button>
+          <div style="font-size:11px; color:#546e7a; flex:1; min-width:140px;">今日以降の日付を選べます。空いている時間をドラッグしてブロックを作れます。
+          </div>
         </div>
         <div id="dpDateChips" class="dp-chips"></div>
         <div id="dpAttendBar" style="margin-top:8px;"></div>
       </div>
       <div id="dpGrid" style="flex:1; overflow:auto; position:relative; background:#fafafa;"></div>
-      <div id="dpEditor" style="display:none; border-top:1px solid #e0e0e0; padding:12px; max-height:48%; overflow:auto; background:#fff;"></div>
+      <div id="dpEditor"
+        style="display:none; border-top:1px solid #e0e0e0; padding:12px; max-height:48%; overflow:auto; background:#fff;">
+      </div>
     </div>
   </div>
   <style>
-    .dp-canvas { position: relative; margin-left: 52px; background: repeating-linear-gradient(to bottom, #e3f2fd 0, #e3f2fd 1px, transparent 1px, transparent 42px); }
-    .dp-hours { position: absolute; left: -52px; top: 0; bottom: 0; width: 52px; }
-    .dp-hour { position: absolute; left: 0; width: 48px; font-size: 11px; color: #90a4ae; text-align: right; transform: translateY(-7px); }
-    .dp-lane { position: absolute; left: 4px; right: 8px; top: 0; bottom: 0; }
-    .dp-block { position: absolute; left: 0; right: 0; background: #bbdefb; border: 1px solid #1e88e5; border-left: 5px solid #1565c0; border-radius: 8px; padding: 4px 8px; overflow: hidden; cursor: grab; box-shadow: 0 2px 6px rgba(21,101,192,.18); z-index: 2; }
-    .dp-block.approved { background: #c8e6c9; border-color: #43a047; border-left-color: #2e7d32; }
-    .dp-block.draft { background: rgba(33,150,243,.25); border-style: dashed; }
-    .dp-block-title { font-weight: 800; font-size: 13px; color: #0d47a1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .dp-block.approved .dp-block-title { color: #1b5e20; }
-    .dp-block-meta, .dp-block-est { font-size: 11px; color: #455a64; }
-    .dp-resize { position: absolute; left: 0; right: 0; bottom: 0; height: 10px; cursor: ns-resize; }
-    .dp-del { position: absolute; top: 2px; right: 4px; background: transparent; border: 0; color: #c62828; font-size: 16px; font-weight: 800; cursor: pointer; }
-    .dp-ed-title { font-weight: 800; color: #1565c0; margin-bottom: 8px; }
-    #dpEditor label { display: block; font-size: 11px; font-weight: 700; color: #546e7a; margin: 8px 0 3px; }
-    #dpEditor input, #dpEditor select { width: 100%; padding: 8px; border: 1px solid #cfd8dc; border-radius: 6px; box-sizing: border-box; }
-    .dp-ed-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .dp-est { background: #fff8e1; border: 1px solid #ffe082; border-radius: 8px; padding: 8px 10px; margin: 10px 0; font-size: 13px; color: #e65100; }
-    .dp-ed-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-    .dp-btn { border: 0; border-radius: 8px; padding: 10px 12px; font-weight: 800; cursor: pointer; background: #eceff1; color: #37474f; }
-    .dp-btn.ok { background: #2e7d32; color: #fff; }
-    .dp-btn.ghost { background: #fff; border: 1px solid #ccc; }
-    .dp-chips { display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; -webkit-overflow-scrolling:touch; }
-    .dp-chip { flex:0 0 auto; background:#fff; color:#1565c0; border:1px solid #90caf9; border-radius:16px; padding:6px 10px; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap; }
-    .dp-chip.off { background:#eceff1; color:#546e7a; border-color:#b0bec5; }
-    .dp-chip.leave { background:#fff3e0; color:#e65100; border-color:#ffcc80; }
-    .dp-chip.on { background:#1565c0; color:#fff; border-color:#1565c0; }
-    .dp-attend-bar { background:#e8f5e9; border:1px solid #a5d6a7; color:#1b5e20; border-radius:8px; padding:8px 10px; font-size:12px; font-weight:700; }
-    .dp-attend-bar.off { background:#eceff1; border-color:#b0bec5; color:#455a64; }
-    .dp-attend-bar.leave { background:#e3f2fd; border-color:#90caf9; color:#1565c0; }
-    .dp-sched-list { max-height: 150px; overflow: auto; border: 1px solid #bbdefb; border-radius: 8px; background: #f7fbff; padding: 4px; margin-bottom: 4px; }
-    .dp-sched-item { display: block; width: 100%; text-align: left; background: #fff; border: 1px solid #e3f2fd; border-radius: 6px; padding: 7px 8px; margin-bottom: 4px; cursor: pointer; }
-    .dp-sched-item.same-day { border-color: #42a5f5; background: #e3f2fd; }
-    .dp-sched-item.picked { border-color: #1565c0; background: #bbdefb; }
-    .dp-sched-name { display: block; font-weight: 800; font-size: 13px; color: #0d47a1; }
-    .dp-sched-name em { font-style: normal; background: #1565c0; color: #fff; font-size: 10px; border-radius: 8px; padding: 1px 6px; margin-left: 4px; }
-    .dp-sched-meta { display: block; font-size: 11px; color: #607d8b; margin-top: 2px; }
+    .dp-canvas {
+      position: relative;
+      margin-left: 52px;
+      background: repeating-linear-gradient(to bottom, #e3f2fd 0, #e3f2fd 1px, transparent 1px, transparent 42px);
+    }
+
+    .dp-hours {
+      position: absolute;
+      left: -52px;
+      top: 0;
+      bottom: 0;
+      width: 52px;
+    }
+
+    .dp-hour {
+      position: absolute;
+      left: 0;
+      width: 48px;
+      font-size: 11px;
+      color: #90a4ae;
+      text-align: right;
+      transform: translateY(-7px);
+    }
+
+    .dp-lane {
+      position: absolute;
+      left: 4px;
+      right: 8px;
+      top: 0;
+      bottom: 0;
+    }
+
+    .dp-block {
+      position: absolute;
+      left: 0;
+      right: 0;
+      background: #bbdefb;
+      border: 1px solid #1e88e5;
+      border-left: 5px solid #1565c0;
+      border-radius: 8px;
+      padding: 4px 8px;
+      overflow: hidden;
+      cursor: grab;
+      box-shadow: 0 2px 6px rgba(21, 101, 192, .18);
+      z-index: 2;
+    }
+
+    .dp-block.approved {
+      background: #c8e6c9;
+      border-color: #43a047;
+      border-left-color: #2e7d32;
+    }
+
+    .dp-block.draft {
+      background: rgba(33, 150, 243, .25);
+      border-style: dashed;
+    }
+
+    .dp-block-title {
+      font-weight: 800;
+      font-size: 13px;
+      color: #0d47a1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .dp-block.approved .dp-block-title {
+      color: #1b5e20;
+    }
+
+    .dp-block-meta,
+    .dp-block-est {
+      font-size: 11px;
+      color: #455a64;
+    }
+
+    .dp-resize {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 10px;
+      cursor: ns-resize;
+    }
+
+    .dp-del {
+      position: absolute;
+      top: 2px;
+      right: 4px;
+      background: transparent;
+      border: 0;
+      color: #c62828;
+      font-size: 16px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .dp-ed-title {
+      font-weight: 800;
+      color: #1565c0;
+      margin-bottom: 8px;
+    }
+
+    #dpEditor label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      color: #546e7a;
+      margin: 8px 0 3px;
+    }
+
+    #dpEditor input,
+    #dpEditor select {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #cfd8dc;
+      border-radius: 6px;
+      box-sizing: border-box;
+    }
+
+    .dp-ed-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .dp-est {
+      background: #fff8e1;
+      border: 1px solid #ffe082;
+      border-radius: 8px;
+      padding: 8px 10px;
+      margin: 10px 0;
+      font-size: 13px;
+      color: #e65100;
+    }
+
+    .dp-ed-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .dp-btn {
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-weight: 800;
+      cursor: pointer;
+      background: #eceff1;
+      color: #37474f;
+    }
+
+    .dp-btn.ok {
+      background: #2e7d32;
+      color: #fff;
+    }
+
+    .dp-btn.ghost {
+      background: #fff;
+      border: 1px solid #ccc;
+    }
+
+    .dp-chips {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .dp-chip {
+      flex: 0 0 auto;
+      background: #fff;
+      color: #1565c0;
+      border: 1px solid #90caf9;
+      border-radius: 16px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .dp-chip.off {
+      background: #eceff1;
+      color: #546e7a;
+      border-color: #b0bec5;
+    }
+
+    .dp-chip.leave {
+      background: #fff3e0;
+      color: #e65100;
+      border-color: #ffcc80;
+    }
+
+    .dp-chip.on {
+      background: #1565c0;
+      color: #fff;
+      border-color: #1565c0;
+    }
+
+    .dp-attend-bar {
+      background: #e8f5e9;
+      border: 1px solid #a5d6a7;
+      color: #1b5e20;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .dp-attend-bar.off {
+      background: #eceff1;
+      border-color: #b0bec5;
+      color: #455a64;
+    }
+
+    .dp-attend-bar.leave {
+      background: #e3f2fd;
+      border-color: #90caf9;
+      color: #1565c0;
+    }
+
+    .dp-sched-list {
+      max-height: 150px;
+      overflow: auto;
+      border: 1px solid #bbdefb;
+      border-radius: 8px;
+      background: #f7fbff;
+      padding: 4px;
+      margin-bottom: 4px;
+    }
+
+    .dp-sched-item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: #fff;
+      border: 1px solid #e3f2fd;
+      border-radius: 6px;
+      padding: 7px 8px;
+      margin-bottom: 4px;
+      cursor: pointer;
+    }
+
+    .dp-sched-item.same-day {
+      border-color: #42a5f5;
+      background: #e3f2fd;
+    }
+
+    .dp-sched-item.picked {
+      border-color: #1565c0;
+      background: #bbdefb;
+    }
+
+    .dp-sched-name {
+      display: block;
+      font-weight: 800;
+      font-size: 13px;
+      color: #0d47a1;
+    }
+
+    .dp-sched-name em {
+      font-style: normal;
+      background: #1565c0;
+      color: #fff;
+      font-size: 10px;
+      border-radius: 8px;
+      padding: 1px 6px;
+      margin-left: 4px;
+    }
+
+    .dp-sched-meta {
+      display: block;
+      font-size: 11px;
+      color: #607d8b;
+      margin-top: 2px;
+    }
   </style>
 
   <!-- 出勤カレンダー -->
-  <div id="attendanceCalendarModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10020; align-items:center; justify-content:center;">
-    <div style="background:#fff; width:min(720px,96vw); max-height:92vh; border-radius:10px; display:flex; flex-direction:column; overflow:hidden;">
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:linear-gradient(135deg,#1B5E20,#2E7D32); color:#fff;">
+  <div id="attendanceCalendarModal"
+    style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10020; align-items:center; justify-content:center;">
+    <div
+      style="background:#fff; width:min(720px,96vw); max-height:92vh; border-radius:10px; display:flex; flex-direction:column; overflow:hidden;">
+      <div
+        style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:linear-gradient(135deg,#1B5E20,#2E7D32); color:#fff;">
         <span style="font-weight:bold; font-size:16px;">🗓️ 出勤カレンダー</span>
         <span style="cursor:pointer; font-size:24px; line-height:1;" onclick="closeAttendanceCalendar()">×</span>
       </div>
@@ -900,8 +1310,10 @@
       <div style="padding: 15px; font-weight: bold; border-bottom: 1px solid #eee; text-align: center; color: #333;">
         🏃‍♂️ 移動軌跡表示設定</div>
       <div style="padding: 15px; box-sizing: border-box;">
-        <label style="font-size:12px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">👤 対象ユーザー選択</label>
-        <select id="trackingUserSelectMobile" style="width:100%; max-width:100%; box-sizing:border-box; padding: 10px; font-size:15px; border:1px solid #ccc; border-radius:5px; margin-bottom:10px; font-weight:bold; color:#1b5e20;">
+        <label style="font-size:12px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">👤
+          対象ユーザー選択</label>
+        <select id="trackingUserSelectMobile"
+          style="width:100%; max-width:100%; box-sizing:border-box; padding: 10px; font-size:15px; border:1px solid #ccc; border-radius:5px; margin-bottom:10px; font-weight:bold; color:#1b5e20;">
           <option value="ALL">👥 全員の軌跡を表示</option>
         </select>
 
@@ -913,7 +1325,8 @@
         </select>
 
         <label style="font-size:12px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">📅 日付</label>
-        <input type="date" id="trackingDateMobile" style="width:100%; max-width:100%; min-width:0; box-sizing:border-box; padding: 10px; font-size:15px; border:1px solid #ccc; border-radius:5px; display:block;">
+        <input type="date" id="trackingDateMobile"
+          style="width:100%; max-width:100%; min-width:0; box-sizing:border-box; padding: 10px; font-size:15px; border:1px solid #ccc; border-radius:5px; display:block;">
       </div>
       <button
         onclick="document.getElementById('trackingMode').value = document.getElementById('trackingModeMobile').value; document.getElementById('trackingDate').value = document.getElementById('trackingDateMobile').value; if(document.getElementById('trackingUserSelect')) document.getElementById('trackingUserSelect').value = document.getElementById('trackingUserSelectMobile').value; loadTrackingData(); document.getElementById('mobileTrackingMenu').style.display='none'">🏃‍♂️
@@ -935,8 +1348,8 @@
         if (!bag || typeof bag !== 'object') return;
         Object.keys(bag).forEach(function (id) {
           const p = bag[id];
-          try { if (p && p.polygon) p.polygon.setMap(null); } catch (e) {}
-          try { if (p && p.marker) p.marker.setMap(null); } catch (e) {}
+          try { if (p && p.polygon) p.polygon.setMap(null); } catch (e) { }
+          try { if (p && p.marker) p.marker.setMap(null); } catch (e) { }
         });
       }
       try {
@@ -949,35 +1362,36 @@
             current = next || {};
           }
         });
-      } catch (e) {}
+      } catch (e) { }
     })();
   </script>
   <script src="https://unpkg.com/deck.gl@^8.8.0/dist.min.js"></script>
   <script src="https://unpkg.com/@deck.gl/geo-layers@^8.8.0/dist.min.js"></script>
   <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
 
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000325';
+    const cacheBust = '1788600000326';
     // 豚糞共有：台数＋短いGoogleマップURL＋座標（v1.49）
     // ※ https://maps.google.com/?q=緯度,経度
     // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）
     const bootstrapFiles = [
-      'api-client.js', 'cultivation_modal.html', 'weather-agri.js', 'schedule.js', 'day-planner.js',
+      'api-client.js', 'cultivation_modal.html', 'weather-agri.js', 'schedule.js', 'cad.js', 'day-planner.js',
       'attendance-calendar.js', 'market.js', 'tracking.js',
       'variety_maker_catalog.js', 'cultivation.js', 'cost_calc.js', 'crop_work.js'
     ];
     const bootstrapTotalSteps = bootstrapFiles.length;
     const bootstrapLoading = window.AppLoading
       ? AppLoading.start({
-          label: '予定確認アプリを読み込み中...',
-          detail: '0 / ' + bootstrapTotalSteps + ' 工程',
-          current: 0,
-          total: bootstrapTotalSteps,
-          delay: 0,
-          lockMap: false
-        })
+        label: '予定確認アプリを読み込み中...',
+        detail: '0 / ' + bootstrapTotalSteps + ' 工程',
+        current: 0,
+        total: bootstrapTotalSteps,
+        delay: 0,
+        lockMap: false
+      })
       : null;
     let loadedBootstrapFiles = 0;
     let bootstrapFinished = false;
@@ -991,10 +1405,10 @@
       bootstrapFinished = true;
       window.__scheduleBootstrapFinished = true;
       if (typeof window.installPigManureShareOverride_ === 'function') {
-        try { window.installPigManureShareOverride_(); } catch (e) {}
+        try { window.installPigManureShareOverride_(); } catch (e) { }
       }
       if (typeof window.installAccountMenuOverflowFix_ === 'function') {
-        try { window.installAccountMenuOverflowFix_(); } catch (e) {}
+        try { window.installAccountMenuOverflowFix_(); } catch (e) { }
       }
       if (bootstrapLoading) {
         bootstrapLoading.update({
@@ -1006,8 +1420,8 @@
       }
       const params = new URLSearchParams(window.location.search);
       if (!cultivationRegistrationOpened
-          && params.get('register') === 'cultivation'
-          && typeof window.openCultivationPlanModal === 'function') {
+        && params.get('register') === 'cultivation'
+        && typeof window.openCultivationPlanModal === 'function') {
         cultivationRegistrationOpened = true;
         requestAnimationFrame(() => requestAnimationFrame(() => window.openCultivationPlanModal()));
       }
@@ -1027,7 +1441,7 @@
     }
 
     // データ取得中の表示更新のみ（起動ブロックには使わない）
-    window.markScheduleInitialLoadStep = function(name) {
+    window.markScheduleInitialLoadStep = function (name) {
       if (bootstrapFinished) return;
       if (bootstrapLoading) {
         bootstrapLoading.update({
@@ -1037,7 +1451,7 @@
         });
       }
     };
-    window.failScheduleInitialLoad = function(message) {
+    window.failScheduleInitialLoad = function (message) {
       if (!bootstrapFinished) {
         bootstrapFinished = true;
         window.__scheduleBootstrapFinished = true;
@@ -1066,8 +1480,8 @@
     }
 
     appendScript('api-client.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('api-client.js'))
-      .then(() => appendScript('pesticide-lookup.js?v=' + cacheBust).catch(function () {}))
-      .then(() => appendScript('maint-history.js?v=' + cacheBust).catch(function () {}))
+      .then(() => appendScript('pesticide-lookup.js?v=' + cacheBust).catch(function () { }))
+      .then(() => appendScript('maint-history.js?v=' + cacheBust).catch(function () { }))
       .then(() => fetch('cultivation_modal.html?v=' + cacheBust))
       .then(res => {
         if (!res.ok) throw new Error('cultivation_modal.html HTTP ' + res.status);
@@ -1078,16 +1492,17 @@
         markBootstrapFileLoaded('cultivation_modal.html');
       })
       .then(() => appendScript('weather-agri.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('weather-agri.js')))
-      .then(() => appendScript('location-pin.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('location-pin.js')))
+      .then(() => appendScript('location-pin.js?v=' + cacheBust).catch(function () { }))
       .then(() => appendScript('schedule.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('schedule.js')))
-      .then(() => appendScript('dump-embed/dump-tree-gantt.js?v=' + cacheBust).catch(function () {}))
+      .then(() => appendScript('cad.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('cad.js')))
+      .then(() => appendScript('dump-embed/dump-tree-gantt.js?v=' + cacheBust).catch(function () { }))
       .then(() => appendScript('day-planner.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('day-planner.js')))
       .then(() => appendScript('attendance-calendar.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('attendance-calendar.js')))
       .then(() => appendScript('market.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('market.js')))
-      .then(() => appendScript('release-notes.js?v=' + cacheBust).catch(function () {}))
+      .then(() => appendScript('release-notes.js?v=' + cacheBust).catch(function () { }))
       .then(() => appendScript('tracking.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('tracking.js')))
-      .then(() => appendScript('machine-taxonomy.js?v=' + cacheBust).catch(function () {}))
-      .then(() => appendScript('maint-history.js?v=' + cacheBust).catch(function () {}))
+      .then(() => appendScript('machine-taxonomy.js?v=' + cacheBust).catch(function () { }))
+      .then(() => appendScript('maint-history.js?v=' + cacheBust).catch(function () { }))
       .then(() => appendScript('variety_maker_catalog.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('variety_maker_catalog.js')))
       .then(() => appendScript('cultivation.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('cultivation.js')))
       .then(() => appendScript('cost_calc.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('cost_calc.js')))
@@ -1098,6 +1513,7 @@
         window.failScheduleInitialLoad('アプリの読み込みに失敗しました');
       });
   </script>
+  <script type="module" src="cad3d.js?v=1788600000326"></script>
 
   <!-- Radar Modal -->
   <div id="radarModal"
@@ -1113,24 +1529,551 @@
     </div>
   </div>
 
-  <!-- 農地CAD（admin.html iframe） -->
-  <div id="adminCadModal" onclick="if(event.target===this)closeAdminCadModal()"
-    style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.78); z-index:16000; justify-content:center; align-items:center;">
-    <div style="width:96%; height:94%; background:#fff; border-radius:10px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 8px 30px rgba(0,0,0,0.45);">
-      <div style="padding:10px 14px; background:#1b2430; color:#fff; border-bottom:1px solid #334155; display:flex; justify-content:space-between; align-items:center; gap:8px;">
-        <div style="display:flex; align-items:center; gap:8px; font-weight:bold; font-size:15px; color:#FFB74D; min-width:0; overflow:hidden;">
-          <span style="white-space:nowrap;">🚜 農地CAD</span>
-          <span id="adminCadFieldTitle" style="font-size:13px; font-weight:normal; color:#E0E0E0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></span>
+  <!-- 農地CAD（ネイティブ統合） -->
+  <div id="cadOverlay">
+    <div id="cadHeader">
+      <div style="font-weight:bold; font-size:16px;">🚜 農業CAD <span id="cadTargetName"
+          style="font-size:12px; color:#aaa; margin-left:10px;"></span></div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button type="button" onclick="openCad3DPreview()"
+          style="background:#1565C0; color:#fff; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; font-size:13px; cursor:pointer;">🧊
+          3D</button>
+        <button onclick="closeCADMode()"
+          style="background:#f44336; color:#fff; border:none; padding:8px 15px; border-radius:4px; font-weight:bold; font-size:14px; cursor:pointer;">閉じる</button>
+      </div>
+    </div>
+
+    <div id="cadMapWrapper">
+      <div id="cadMap"></div>
+      <svg id="cadSvgOverlay"
+        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10;"></svg>
+      <div
+        style="position: absolute; right: 15px; top: 70px; display: flex; flex-direction: column; gap: 8px; z-index: 1000;">
+        <button onclick="cadZoomIn()"
+          style="width: 44px; height: 44px; border-radius: 50%; background: rgba(0, 0, 0, 0.7); color: white; border: 1px solid rgba(255, 255, 255, 0.3); font-size: 24px; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); outline: none;">＋</button>
+        <button onclick="cadZoomOut()"
+          style="width: 44px; height: 44px; border-radius: 50%; background: rgba(0, 0, 0, 0.7); color: white; border: 1px solid rgba(255, 255, 255, 0.3); font-size: 24px; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); outline: none;">－</button>
+      </div>
+    </div>
+
+    <div class="cad-panel"
+      style="padding: 8px 12px; max-height: 45vh; overflow-y: auto; padding-bottom: calc(15px + env(safe-area-inset-bottom));">
+      <div style="display:flex; gap:0; margin-bottom:8px; border-bottom:2px solid #555;">
+        <div id="cadTab1" onclick="switchCadTab(1)"
+          style="flex:1; text-align:center; padding:6px 1px; cursor:pointer; font-weight:bold; background:#FF9800; color:#fff; border-radius:6px 0 0 0; font-size:10px;">
+          ① 生成</div>
+        <div id="cadTab2" onclick="switchCadTab(2)"
+          style="flex:1; text-align:center; padding:6px 1px; cursor:pointer; font-weight:bold; background:#222; color:#aaa; font-size:10px;">
+          ② 編集</div>
+        <div id="cadTab3" onclick="switchCadTab(3)"
+          style="flex:1; text-align:center; padding:6px 1px; cursor:pointer; font-weight:bold; background:#222; color:#aaa; font-size:10px;">
+          ③ ピン設置</div>
+        <div id="cadTab4" onclick="switchCadTab(4)"
+          style="flex:1; text-align:center; padding:6px 1px; cursor:pointer; font-weight:bold; background:#222; color:#aaa; font-size:10px;">
+          ④ 畝番号</div>
+        <div id="cadTab5" onclick="switchCadTab(5)"
+          style="flex:1; text-align:center; padding:6px 1px; cursor:pointer; font-weight:bold; background:#222; color:#aaa; border-radius:0 6px 0 0; font-size:10px;">
+          ⑤ 保存</div>
+      </div>
+
+      <div id="cadPinModeMsg" style="font-size:10px; color:#FF9800; text-align:center; margin-bottom:8px;">💡
+        操作を選ぶと、ここに案内が出ます。</div>
+
+      <div id="cadMode1">
+        <div style="display:flex; gap:5px; margin-bottom:10px;">
+          <button onclick="cadSetPinMode('snap_line')"
+            style="flex:1; background:#333; color:#4CAF50; border:1px solid #4CAF50; padding:6px; border-radius:4px; font-size:10px; font-weight:bold;">🎯
+            選んだ線に合わせる</button>
         </div>
-        <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
-          <button type="button" onclick="openCadInNewTabFromSchedule()"
-            title="ブラウザの別タブで開く"
-            style="background:#263238; color:#81D4FA; border:1px solid #455A64; padding:6px 10px; border-radius:5px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">↗ 別タブ</button>
-          <button type="button" onclick="closeAdminCadModal()"
-            style="background:#f44336; color:#fff; border:none; padding:6px 14px; border-radius:5px; font-weight:bold; font-size:13px; cursor:pointer; white-space:nowrap;">閉じる</button>
+        <div style="display:flex; gap:10px; margin-bottom:8px; align-items:flex-end;">
+          <div style="flex:1; display:none;">
+            <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🧭 方角(度)</label>
+            <input type="number" step="0.1" id="cadAngle" value="0" oninput="updateCadPreviewCount()"
+              style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;">
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🚫 側面の余白(cm)</label>
+            <select id="cadMarginSideSelect" onchange="cadOnMarginSelectChange('Side')"
+              style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;">
+              <option value="50" selected>50</option>
+              <option value="100">100</option>
+              <option value="150">150</option>
+              <option value="200">200</option>
+              <option value="custom">その他（手入力）</option>
+            </select>
+            <input type="number" id="cadMarginSide" value="50" oninput="updateCadPreviewCount()"
+              style="display:none; width:100%; margin-top:4px; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;">
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:11px; color:#aaa; margin-bottom:2px; display:block;">🚫 端面の余白(cm)</label>
+            <select id="cadMarginEndSelect" onchange="cadOnMarginSelectChange('End')"
+              style="width:100%; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;">
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="150">150</option>
+              <option value="200" selected>200</option>
+              <option value="custom">その他（手入力）</option>
+            </select>
+            <input type="number" id="cadMarginEnd" value="200" oninput="updateCadPreviewCount()"
+              style="display:none; width:100%; margin-top:4px; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:14px;">
+          </div>
+        </div>
+        <div style="margin-bottom:8px;">
+          <label style="font-size:11px; color:#aaa; margin-bottom:4px; display:block;">📏 基準の畝幅(cm)</label>
+          <input type="hidden" id="cadWidth" value="">
+          <select id="cadWidthSelect" onchange="cadOnWidthSelectChange()" style="display:none;">
+            <option value="">未選択</option>
+          </select>
+          <div id="cadWidthChips" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;"></div>
+          <div id="cadWidthCustomWrap" style="display:none; margin-top:4px;">
+            <div style="display:flex; gap:6px; align-items:center;">
+              <input type="number" id="cadWidthCustom" min="1" step="1" placeholder="その他 畝幅(cm)"
+                oninput="cadOnWidthCustomInput()"
+                style="flex:1; padding:6px 10px; border-radius:4px; border:1px solid #555; background:#222; color:#fff; box-sizing:border-box; font-size:14px;">
+              <span style="font-size:12px; color:#aaa;">cm</span>
+            </div>
+          </div>
+          <div id="cadWidthHint" style="font-size:10px; color:#FF9800; margin-top:4px;">未選択（計画があれば連動）</div>
+        </div>
+
+        <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+          <div
+            style="background:#333; flex:1; padding:6px; border-radius:4px; text-align:center; border:1px solid #555; display:flex; justify-content:center; align-items:center; gap:8px;">
+            <span style="font-size:11px; color:#aaa;">確定畝数:</span>
+            <input type="number" id="cadUneCount" value="0"
+              style="width:50px; font-size:16px; font-weight:bold; color:#8BC34A; background:transparent; border:none; text-align:center;">
+          </div>
+          <button onclick="cadGenerateLines()"
+            style="flex:1.5; background:#4CAF50; color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; font-size:13px;">🚜
+            畝を生成</button>
+        </div>
+
+        <details
+          style="border:1px solid #555; border-radius:6px; margin-bottom:8px; background:#2a2a2a; overflow:hidden;">
+          <summary
+            style="font-size:11px; color:#AED581; font-weight:bold; padding:8px; cursor:pointer; list-style:none; display:flex; align-items:center; gap:6px;">
+            <span style="opacity:0.8;">▸</span> 自由畝の追加
+          </summary>
+          <div style="padding:0 8px 8px;">
+            <div style="font-size:10px; color:#888; margin-bottom:6px; line-height:1.35;">タップ／GPSで配置。移動・変形できます。</div>
+            <div style="border:1px solid #444; border-radius:6px; padding:7px; margin-bottom:6px; background:#242424;">
+              <div style="display:flex; gap:5px; align-items:center; margin-bottom:4px;">
+                <button type="button" id="cadSnapGridToggleBtn" onclick="cadToggleSnapGrid()"
+                  style="flex:1.1; background:#333; color:#ccc; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">グリッド
+                  OFF</button>
+                <span style="font-size:10px; color:#aaa; white-space:nowrap;">間隔</span>
+                <input type="number" id="cadSnapGridCm" value="150" min="20" max="2000" step="10"
+                  onchange="cadOnSnapGridCmChange()" oninput="cadOnSnapGridCmChange()"
+                  style="width:58px; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:13px; font-weight:bold; text-align:center;"
+                  title="セル間隔(cm)">
+                <span style="font-size:10px; color:#aaa;">cm</span>
+              </div>
+              <div style="display:flex; gap:4px; margin-bottom:4px; align-items:center;">
+                <span style="font-size:10px; color:#81D4FA;">セル幅:</span>
+                <button type="button" onclick="cadSetSnapGridCm(50)"
+                  style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">50cm</button>
+                <button type="button" onclick="cadSetSnapGridCm(100)"
+                  style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">1m</button>
+                <button type="button" onclick="cadSetSnapGridCm(150)"
+                  style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">1.5m</button>
+                <button type="button" onclick="cadSetSnapGridCm(200)"
+                  style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">2m</button>
+              </div>
+              <div id="cadCellPaintBar" style="display:none; gap:5px; margin-bottom:4px;">
+                <button type="button" id="cadCellPaintBtn"
+                  onclick="cadSetCellEraseMode(false); cadAddCustomShape('rect');"
+                  style="flex:1; background:#558B2F; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">🖌
+                  セル塗り</button>
+                <button type="button" id="cadCellEraseBtn"
+                  onclick="cadSetCellEraseMode(true); if(!window.cadPinMode) window.cadPinMode='custom_rect';"
+                  style="flex:1; background:#333; color:#ccc; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">🧹
+                  消しゴム</button>
+              </div>
+              <div id="cadSnapGridHint" style="font-size:10px; color:#81D4FA; line-height:1.35;">
+                OFF時は自由配置。ONにするとセルを塗るように畝を置けます</div>
+            </div>
+            <div style="display:flex; gap:5px; margin-bottom:5px;">
+              <button onclick="cadAddCustomShape('rect')"
+                style="flex:1; background:#8BC34A; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">⬛
+                四角畝</button>
+              <button onclick="cadAddCustomShape('circle')"
+                style="flex:1; background:#8BC34A; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">⚫
+                丸畝</button>
+              <button type="button" onclick="cadToggleGpsMenu('cadGpsSubCustom')"
+                style="flex:1.2; background:#1565C0; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">📡
+                GPS配置 ▾</button>
+            </div>
+            <div id="cadGpsSubCustom"
+              style="display:none; background:#1e2846; padding:6px; border-radius:4px; margin-bottom:5px;">
+              <div style="display:flex; gap:5px;">
+                <button type="button" onclick="cadStartCustomShapeGps('rect')"
+                  style="flex:1; background:#1565C0; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">📡
+                  GPSで四角畝</button>
+                <button type="button" onclick="cadStartCustomShapeGps('circle')"
+                  style="flex:1; background:#1565C0; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">📡
+                  GPSで丸畝</button>
+              </div>
+            </div>
+            <div id="cadCustomGpsBar"
+              style="display:none; background:#1a237e; border:1px solid #3949ab; border-radius:6px; padding:8px; margin-bottom:6px;">
+              <div id="cadCustomGpsStatus" style="font-size:11px; color:#90CAF9; line-height:1.35; margin-bottom:6px;">
+                GPS測位中…</div>
+              <div style="display:flex; gap:5px;">
+                <button type="button" id="cadCustomGpsConfirmBtn" onclick="cadConfirmCustomShapeGps()" disabled
+                  style="flex:1; background:#455A64; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:not-allowed; opacity:0.6;">ここに置く</button>
+                <button type="button" onclick="cadStopGpsPinPlace()"
+                  style="flex:0.7; background:#616161; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">取消</button>
+              </div>
+            </div>
+          </div>
+        </details>
+        <div style="display:flex; gap:5px; margin:8px 0 4px;">
+          <button type="button" class="cad-undo-btn" onclick="cadUndoAction()" disabled
+            style="flex:1; background:#607D8B; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px;">↩️
+            戻す</button>
+          <button type="button" class="cad-redo-btn" onclick="cadRedoAction()" disabled
+            style="flex:1; background:#607D8B; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px;">↪️
+            進む</button>
+        </div>
+        <button type="button" onclick="cadGoNextTab(1)"
+          style="width:100%; margin-top:6px; background:#2196F3; color:#fff; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer;">次へ：②
+          編集 →</button>
+      </div>
+
+      <div id="cadMode2" style="display:none;">
+        <div id="cadMakuraPanel"
+          style="background:#2a1a12; border:1px solid #ea580c; border-radius:8px; padding:8px; margin-bottom:10px;">
+          <div style="font-size:12px; color:#fdba74; font-weight:bold; margin-bottom:4px;">🛌 枕畝</div>
+          <div id="cadMakuraHint" style="font-size:10px; color:#ccc; line-height:1.35; margin-bottom:6px;">
+            辺をタップすると、同じ方角の辺をまとめて選び、その約50cm内側に作ります。畝とはくっつけません。</div>
+          <div style="display:flex; gap:5px;">
+            <button type="button" id="cadMakuraPickBtn" onclick="cadBeginMakuraEdgePick()"
+              style="flex:1; background:#333; color:#fdba74; border:1px solid #ea580c; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">辺を選ぶ</button>
+            <button type="button" id="cadMakuraGenBtn" onclick="cadGenerateMakuraFromSelectedEdges()" disabled
+              style="flex:1.1; background:#ea580c; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer; opacity:0.45;">生成</button>
+            <button type="button" onclick="cadClearMakuraEdgePick()"
+              style="flex:0.7; background:#555; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">解除</button>
+          </div>
+        </div>
+        <div style="font-size:11px; color:#aaa; margin-bottom:2px;">📐 畝の正面</div>
+        <div id="cadFrontHint" style="font-size:10px; color:#ccc; line-height:1.35; margin-bottom:6px;">
+          辺をタップすると、同じ方角の辺をまとめて正面にします。</div>
+        <div style="display:flex; gap:5px; margin-bottom:10px;">
+          <button type="button" id="cadFrontPickBtn" onclick="cadBeginFrontEdgePick()"
+            style="flex:1; background:#333; color:#FFCC80; border:1px solid #ea580c; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">辺を選ぶ</button>
+          <button type="button" id="cadFrontConfirmBtn" onclick="cadConfirmFrontEdge()" disabled
+            style="flex:0.8; background:#E65100; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer; opacity:0.45;">確定</button>
+          <button type="button" onclick="cadClearFrontEdgePick()"
+            style="flex:0.7; background:#555; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">解除</button>
+        </div>
+
+        <div style="font-size:11px; color:#aaa; margin-bottom:2px;">✂️ 畝の分割</div>
+        <div style="display:flex; gap:5px; margin-bottom:10px;">
+          <button type="button" id="cadSplitLineBtn" onclick="cadSetPinMode('nakamichi')"
+            style="flex:1; background:#9C27B0; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">分割ラインを引く</button>
+        </div>
+
+        <div style="display:flex; gap:5px; margin-bottom:10px;">
+          <button id="cadUndoBtn" class="cad-undo-btn" onclick="cadUndoAction()" disabled
+            style="flex:1; background:#607D8B; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px;">↩️
+            戻す</button>
+          <button id="cadRedoBtn" class="cad-redo-btn" onclick="cadRedoAction()" disabled
+            style="flex:1; background:#607D8B; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px;">↪️
+            進む</button>
+        </div>
+        <button type="button" onclick="cadGoNextTab(2)"
+          style="width:100%; margin-top:2px; background:#0277BD; color:#fff; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer;">次へ：③
+          ピン設置 →</button>
+      </div>
+
+      <div id="cadMode3" style="display:none;">
+        <div style="font-size:11px; color:#aaa; margin-bottom:6px; line-height:1.4;">地図をタップして、給水口・排水口/水落口・侵入口・駐車場を置きます。
+        </div>
+        <div style="display:flex; gap:4px; margin-bottom:6px;">
+          <button onclick="cadSetPinMode('water_in')"
+            style="flex:1; background:#03A9F4; color:white; border:none; padding:8px 2px; border-radius:4px; font-weight:bold; font-size:11px; white-space:nowrap;">🚰
+            給水口</button>
+          <button onclick="cadSetPinMode('water_out')"
+            style="flex:1.25; background:#8D6E63; color:white; border:none; padding:8px 2px; border-radius:4px; font-weight:bold; font-size:11px; white-space:nowrap;">🚩
+            排水口/水落口</button>
+          <button onclick="cadSetPinMode('machine_entry')"
+            style="flex:1; background:#FF5722; color:white; border:none; padding:8px 2px; border-radius:4px; font-weight:bold; font-size:11px; white-space:nowrap;">🚜
+            侵入口</button>
+          <button onclick="cadSetPinMode('parking_truck')"
+            style="flex:1; background:#607D8B; color:white; border:none; padding:8px 2px; border-radius:4px; font-weight:bold; font-size:11px; white-space:nowrap;">🅿️
+            駐車場</button>
+        </div>
+        <button type="button" onclick="cadToggleGpsMenu('cadGpsBar')"
+          style="width:100%; background:#1565C0; color:#fff; border:none; padding:8px; border-radius:4px; font-size:12px; font-weight:bold; margin-bottom:8px; cursor:pointer;">📡
+          GPSでピンを置く... ▾</button>
+        <div id="cadGpsBar"
+          style="display:none; background:#1a237e; border:1px solid #3949ab; border-radius:6px; padding:8px; margin-bottom:10px;">
+          <div style="font-size:11px; color:#9fa8da; margin-bottom:6px;">📡 GPSで正確に置く</div>
+          <div style="display:flex; gap:5px; margin-bottom:6px; flex-wrap:wrap;">
+            <button type="button" id="cadGpsStartBtn" onclick="cadStartGpsPinPlace()"
+              style="flex:1; min-width:90px; background:#1565C0; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">GPSで置く</button>
+            <button type="button" id="cadGpsConfirmBtn" onclick="cadConfirmGpsPinPlace()" disabled
+              style="flex:1; min-width:90px; background:#455A64; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:not-allowed; opacity:0.6;">ここに置く</button>
+            <button type="button" id="cadGpsCancelBtn" onclick="cadStopGpsPinPlace()" disabled
+              style="flex:0.7; min-width:70px; background:#616161; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:not-allowed; opacity:0.6;">取消</button>
+          </div>
+          <div id="cadGpsStatus" style="font-size:11px; color:#90CAF9; line-height:1.35;">「GPSで置く」を押してください</div>
+        </div>
+        <div style="display:flex; gap:5px; margin-top:4px;">
+          <button type="button" class="cad-undo-btn" onclick="cadUndoAction()" disabled
+            style="flex:1; background:#607D8B; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px;">↩️
+            戻す</button>
+          <button type="button" class="cad-redo-btn" onclick="cadRedoAction()" disabled
+            style="flex:1; background:#607D8B; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:12px;">↪️
+            進む</button>
+        </div>
+        <button type="button" onclick="cadGoNextTab(3)"
+          style="width:100%; margin-top:8px; background:#7B1FA2; color:#fff; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer;">次へ：④
+          畝番号 →</button>
+      </div>
+
+      <div id="cadMode4" style="display:none;">
+        <div style="font-size:12px; color:#e1bee7; line-height:1.45; margin-bottom:10px;">
+          並んだ畝を本数ごとに区切ります。区切りのあいだは1本空けます。</div>
+        <div style="font-size:11px; color:#aaa; margin-bottom:4px;">番号を付ける向き</div>
+        <div style="display:flex; gap:6px; margin-bottom:10px;">
+          <label
+            style="flex:1; display:flex; align-items:center; justify-content:center; gap:4px; background:#7B1FA2; border:1px solid #CE93D8; border-radius:8px; padding:10px 6px; font-size:12px; color:#fff; font-weight:bold; cursor:pointer;">
+            <input type="radio" name="cadSplitDirection" value="normal" checked onchange="cadPreviewRidgeNumberSplit()">
+            1番側から
+          </label>
+          <label
+            style="flex:1; display:flex; align-items:center; justify-content:center; gap:4px; background:#333; border:1px solid #666; border-radius:8px; padding:10px 6px; font-size:12px; color:#fff; font-weight:bold; cursor:pointer;">
+            <input type="radio" name="cadSplitDirection" value="reverse" onchange="cadPreviewRidgeNumberSplit()"> 反対側から
+          </label>
+        </div>
+        <div style="background:#2a2030; border:1px solid #6A1B9A; border-radius:8px; padding:10px; margin-bottom:10px;">
+          <div style="font-size:12px; font-weight:bold; color:#CE93D8; margin-bottom:6px;">何本ずつまとめるか</div>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button type="button" onclick="cadStepSplitField('cadSplitEveryN', -1)"
+              style="width:40px; height:40px; border:none; border-radius:8px; background:#4A148C; color:#fff; font-size:20px; font-weight:bold; cursor:pointer;">−</button>
+            <input type="number" id="cadSplitEveryN" value="5" min="1" step="1" oninput="cadPreviewRidgeNumberSplit()"
+              style="flex:1; padding:8px; border-radius:8px; border:none; box-sizing:border-box; font-size:20px; font-weight:bold; text-align:center;">
+            <button type="button" onclick="cadStepSplitField('cadSplitEveryN', 1)"
+              style="width:40px; height:40px; border:none; border-radius:8px; background:#4A148C; color:#fff; font-size:20px; font-weight:bold; cursor:pointer;">＋</button>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; margin-bottom:10px;">
+          <div style="flex:1; background:#2a2a2a; border:1px solid #555; border-radius:8px; padding:8px;">
+            <div style="font-size:11px; color:#aaa; margin-bottom:6px;">開始側で植えない本数</div>
+            <div style="display:flex; gap:4px; align-items:center;">
+              <button type="button" onclick="cadStepSplitField('cadSplitEndStart', -1)"
+                style="width:32px; height:32px; border:none; border-radius:6px; background:#444; color:#fff; font-weight:bold; cursor:pointer;">−</button>
+              <input type="number" id="cadSplitEndStart" value="1" min="0" step="1"
+                oninput="cadPreviewRidgeNumberSplit()"
+                style="flex:1; padding:6px; border-radius:6px; border:none; box-sizing:border-box; font-size:16px; font-weight:bold; text-align:center;">
+              <button type="button" onclick="cadStepSplitField('cadSplitEndStart', 1)"
+                style="width:32px; height:32px; border:none; border-radius:6px; background:#444; color:#fff; font-weight:bold; cursor:pointer;">＋</button>
+            </div>
+          </div>
+          <div style="flex:1; background:#2a2a2a; border:1px solid #555; border-radius:8px; padding:8px;">
+            <div style="font-size:11px; color:#aaa; margin-bottom:6px;">終了側で植えない本数</div>
+            <div style="display:flex; gap:4px; align-items:center;">
+              <button type="button" onclick="cadStepSplitField('cadSplitEndFinish', -1)"
+                style="width:32px; height:32px; border:none; border-radius:6px; background:#444; color:#fff; font-weight:bold; cursor:pointer;">−</button>
+              <input type="number" id="cadSplitEndFinish" value="1" min="0" step="1"
+                oninput="cadPreviewRidgeNumberSplit()"
+                style="flex:1; padding:6px; border-radius:6px; border:none; box-sizing:border-box; font-size:16px; font-weight:bold; text-align:center;">
+              <button type="button" onclick="cadStepSplitField('cadSplitEndFinish', 1)"
+                style="width:32px; height:32px; border:none; border-radius:6px; background:#444; color:#fff; font-weight:bold; cursor:pointer;">＋</button>
+            </div>
+          </div>
+        </div>
+        <div id="cadSplitPreview"
+          style="background:#24182c; border:1px solid #6A1B9A; border-radius:8px; padding:10px; font-size:12px; color:#eee; line-height:1.5; margin-bottom:10px; min-height:52px;">
+          畝を生成すると、分け方がここに出ます。
+        </div>
+        <button type="button" onclick="cadApplyRidgeNumberSplit()"
+          style="width:100%; background:#7B1FA2; color:#fff; border:none; padding:12px; border-radius:8px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:8px;">この分け方で番号を付ける</button>
+        <button type="button" onclick="cadClearRidgeNumberSplit()"
+          style="width:100%; background:#455A64; color:#fff; border:none; padding:10px; border-radius:8px; font-weight:bold; font-size:12px; cursor:pointer;">番号を元に戻す</button>
+        <button type="button" onclick="cadGoNextTab(4)"
+          style="width:100%; margin-top:10px; background:#4CAF50; color:#fff; border:none; padding:12px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer;">次へ：⑤
+          保存 →</button>
+      </div>
+
+      <div id="cadMode5" style="display:none;">
+        <div style="display:flex; gap:8px; width:100%; margin-top:5px; flex-wrap:wrap;">
+          <button onclick="saveUneSim()"
+            style="flex:2; min-width:140px; background:#2196F3; color:white; border:none; padding:14px; border-radius:6px; font-weight:bold; font-size:15px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);">💾
+            描画図面を保存</button>
+          <button onclick="cadUserClearRidgesOnly()"
+            style="flex:1; min-width:100px; background:#FF9800; color:white; border:none; padding:14px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);"
+            title="生成畝・自由畝だけ消します。ピンや中道は残ります">🌾
+            畝だけ消す</button>
+          <button onclick="cadUserClearRidgesKeepMakura()"
+            style="flex:1; min-width:120px; background:#E65100; color:white; border:none; padding:14px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);"
+            title="枕畝は残して、それ以外の畝を消します">🛏️
+            枕を残して畝を消す</button>
+          <button onclick="cadUserClearLines()"
+            style="flex:1; min-width:90px; background:#f44336; color:white; border:none; padding:14px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);"
+            title="畝・ピン・中道など全部消します">🗑️
+            全部クリア</button>
         </div>
       </div>
-      <iframe id="adminCadIframe" src="" style="flex:1; border:none; background:#fff;" allow="geolocation"></iframe>
+    </div>
+  </div>
+
+  <div id="cad3dOverlay" style="display:none;">
+    <div id="cad3dHeader">
+      <div style="font-weight:bold; font-size:15px;">🧊 3Dプレビュー <span id="cad3dHint"
+          style="font-size:11px; color:#90CAF9; font-weight:normal; margin-left:8px;"></span></div>
+      <button type="button" onclick="closeCad3DPreview()"
+        style="background:#f44336; color:#fff; border:none; padding:8px 14px; border-radius:4px; font-weight:bold; cursor:pointer;">閉じる</button>
+    </div>
+    <div id="cad3dCanvasHost"></div>
+    <div id="cad3dToolbar">
+      <div class="cad3d-row">
+        <label>畝の高さ <span id="cad3dRidgeHeightVal">20</span>cm</label>
+        <input type="range" id="cad3dRidgeHeight" min="0.05" max="0.5" step="0.01" value="0.2"
+          oninput="document.getElementById('cad3dRidgeHeightVal').textContent=Math.round(this.value*100); refreshCad3DPreview();">
+      </div>
+      <div class="cad3d-row">
+        <label>高さの見やすさ ×<span id="cad3dHeightScaleVal">5</span></label>
+        <input type="range" id="cad3dHeightScale" min="1" max="12" step="1" value="5"
+          oninput="document.getElementById('cad3dHeightScaleVal').textContent=this.value; refreshCad3DPreview();">
+      </div>
+      <div class="cad3d-row">
+        <button type="button" onclick="resetCad3DCamera()"
+          style="background:#455A64; color:#fff; border:none; padding:8px 12px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">視点リセット</button>
+        <span style="font-size:11px; color:#90A4AE;">ドラッグで回転 / ピンチ・ホイールでズーム</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="cadEditPolyModal"
+    style="display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%); width:90%; max-width:300px; z-index:1000002;">
+    <div
+      style="background:#fff; color:#333; padding:15px; border-radius:12px; text-align:center; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+      <h3 style="margin-top:0; border-bottom:2px solid #8BC34A; padding-bottom:10px; font-size:16px;">🛠 ポリゴンの操作</h3>
+      <input type="hidden" id="cadEditIndex">
+      <div style="font-size:13px; margin-bottom:10px; color:#33691E; font-weight:bold;">畝の長さ: <span
+          id="cadEditLengthM">—</span></div>
+      <div style="font-size:12px; margin-bottom:15px; color:#666;">十字キーやボタンで移動・変形ができます</div>
+
+      <div style="margin-bottom:15px; background:#f9f9f9; padding:10px; border-radius:8px;">
+        <label style="font-size:12px; font-weight:bold; color:#555;">🏷 畝グループ (任意)</label>
+        <div style="display:flex; gap:10px; margin-bottom:5px;">
+          <div style="flex:1;">
+            <label style="font-size:12px; font-weight:bold; color:#555;">🔢 畝番号</label>
+            <input type="text" id="cadEditCustomLabel" placeholder="例: 1A"
+              style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px; font-size:14px; box-sizing:border-box;">
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:12px; font-weight:bold; color:#555;">🏷 グループ</label>
+            <input type="text" id="cadEditUneGroup" placeholder="例: A区画"
+              style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px; font-size:14px; box-sizing:border-box;">
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <button onclick="window.cadApplyUneDetails()"
+            style="background:#4CAF50; color:white; border:none; border-radius:4px; padding:6px 12px; font-weight:bold;">適用</button>
+        </div>
+        <div style="margin-top:5px; text-align:left;">
+          <button onclick="window.cadApplyGroupToAllSubsequent()"
+            style="background:#2196F3; color:white; border:none; border-radius:4px; padding:4px 8px; font-size:10px; cursor:pointer;">この畝以降をすべて同じグループにする</button>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:center; align-items:center; gap:15px; margin-bottom:20px;">
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <button onmousedown="window.startCadContinuousAction('rotate', -1)"
+            onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()"
+            ontouchstart="window.startCadContinuousAction('rotate', -1); event.preventDefault();"
+            ontouchend="window.stopCadContinuousAction(); event.preventDefault();"
+            style="width:40px;height:40px;border-radius:50%;border:none;background:#e0e0e0;font-size:16px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">↺</button>
+          <button onmousedown="window.startCadContinuousAction('resize', 0.9)"
+            onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()"
+            ontouchstart="window.startCadContinuousAction('resize', 0.9); event.preventDefault();"
+            ontouchend="window.stopCadContinuousAction(); event.preventDefault();"
+            style="width:40px;height:40px;border-radius:50%;border:none;background:#e0e0e0;font-size:16px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">➖</button>
+        </div>
+        <div style="display:grid; grid-template-columns: repeat(3, 40px); grid-gap: 5px;">
+          <div></div>
+          <button onmousedown="window.startCadContinuousAction('move', 'up')"
+            onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()"
+            ontouchstart="window.startCadContinuousAction('move', 'up'); event.preventDefault();"
+            ontouchend="window.stopCadContinuousAction(); event.preventDefault();"
+            style="width:40px;height:40px;border-radius:8px;border:none;background:#2196F3;color:white;font-size:18px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">▲</button>
+          <div></div>
+          <button onmousedown="window.startCadContinuousAction('move', 'left')"
+            onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()"
+            ontouchstart="window.startCadContinuousAction('move', 'left'); event.preventDefault();"
+            ontouchend="window.stopCadContinuousAction(); event.preventDefault();"
+            style="width:40px;height:40px;border-radius:8px;border:none;background:#2196F3;color:white;font-size:18px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">◀</button>
+          <div style="background:#e3f2fd;border-radius:8px;"></div>
+          <button onmousedown="window.startCadContinuousAction('move', 'right')"
+            onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()"
+            ontouchstart="window.startCadContinuousAction('move', 'right'); event.preventDefault();"
+            ontouchend="window.stopCadContinuousAction(); event.preventDefault();"
+            style="width:40px;height:40px;border-radius:8px;border:none;background:#2196F3;color:white;font-size:18px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">▶</button>
+          <div></div>
+          <button onmousedown="window.startCadContinuousAction('move', 'down')"
+            onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()"
+            ontouchstart="window.startCadContinuousAction('move', 'down'); event.preventDefault();"
+            ontouchend="window.stopCadContinuousAction(); event.preventDefault();"
+            style="width:40px;height:40px;border-radius:8px;border:none;background:#2196F3;color:white;font-size:18px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">▼</button>
+          <div></div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <button onmousedown="window.startCadContinuousAction('rotate', 1)"
+            onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()"
+            ontouchstart="window.startCadContinuousAction('rotate', 1); event.preventDefault();"
+            ontouchend="window.stopCadContinuousAction(); event.preventDefault();"
+            style="width:40px;height:40px;border-radius:50%;border:none;background:#e0e0e0;font-size:16px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">↻</button>
+          <button onmousedown="window.startCadContinuousAction('resize', 1.1)"
+            onmouseup="window.stopCadContinuousAction()" onmouseleave="window.stopCadContinuousAction()"
+            ontouchstart="window.startCadContinuousAction('resize', 1.1); event.preventDefault();"
+            ontouchend="window.stopCadContinuousAction(); event.preventDefault();"
+            style="width:40px;height:40px;border-radius:50%;border:none;background:#e0e0e0;font-size:16px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">➕</button>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:10px;">
+        <button onclick="window.cadDeletePoly()"
+          style="flex:1; background:#F44336; color:white; padding:12px; border-radius:8px; font-size:14px; font-weight:bold; border:none; cursor:pointer;">🗑
+          削除</button>
+        <button onclick="window.cadCancelEditPoly()"
+          style="flex:1; background:#FF9800; color:white; padding:12px; border-radius:8px; font-size:14px; font-weight:bold; border:none; cursor:pointer;">✖
+          キャンセル</button>
+        <button
+          onclick="if(typeof window.cadCompleteEditPoly==='function') window.cadCompleteEditPoly(); else {document.getElementById('cadEditPolyModal').style.display='none'; document.getElementById('cadEditIndex').value='';}"
+          style="flex:1; background:#ccc; color:#333; padding:12px; border-radius:8px; font-size:14px; font-weight:bold; border:none; cursor:pointer;">完了</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="cadRegistryModal"
+    style="display:none; position:fixed; inset:0; z-index:1000000; background:rgba(0,0,0,0.45); align-items:center; justify-content:center;">
+    <div
+      style="background:#fff; color:#333; width:92%; max-width:420px; max-height:80vh; border-radius:12px; padding:14px; display:flex; flex-direction:column; box-shadow:0 8px 28px rgba(0,0,0,0.28);">
+      <div style="font-weight:bold; font-size:16px; margin-bottom:8px;">🚜 農業CADの登録 <span id="cadRegistryFieldName"
+          style="font-size:13px; color:#666;"></span></div>
+      <div id="cadRegistryList" style="overflow:auto; flex:1; min-height:80px;"></div>
+      <div style="display:flex; gap:6px; margin-top:10px;">
+        <button type="button" id="cadRegistryNewBtn"
+          style="flex:1; background:#4CAF50; color:#fff; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">＋
+          新規追加</button>
+        <button type="button" onclick="cadCloseRegistryModal_()"
+          style="flex:0.6; background:#757575; color:#fff; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">閉じる</button>
+      </div>
+    </div>
+  </div>
+  <div id="cadHistoryModal"
+    style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); width:90%; max-width:320px; z-index:1000002;">
+    <div
+      style="background:#fff; color:#333; padding:15px; border-radius:12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-height:80vh; display:flex; flex-direction:column;">
+      <h3
+        style="margin-top:0; border-bottom:2px solid #2196F3; padding-bottom:10px; font-size:16px; text-align:center;">
+        📅 過去の図面を復元</h3>
+      <div id="cadHistoryList" style="flex:1; overflow-y:auto; margin-bottom:15px;"></div>
+      <button onclick="document.getElementById('cadHistoryModal').style.display='none'"
+        style="width:100%; background:#f44336; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer;">閉じる</button>
     </div>
   </div>
 
@@ -1147,10 +2090,12 @@
             style="background:#2E7D32; color:#fff; border:1px solid #A5D6A7; padding:6px 10px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">現状確認</button>
           <button type="button" id="fieldSatTab_growth" onclick="setFieldSatTab('growth')"
             style="background:#333; color:#fff; border:1px solid #666; padding:6px 10px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">生育チェック</button>
-          <span style="cursor: pointer; font-size: 28px; line-height: 1; padding-left:4px;" onclick="closeFieldSatModal()">×</span>
+          <span style="cursor: pointer; font-size: 28px; line-height: 1; padding-left:4px;"
+            onclick="closeFieldSatModal()">×</span>
         </div>
       </div>
-      <div style="padding:8px 12px; background:#1B3A1E; color:#C8E6C9; font-size:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+      <div
+        style="padding:8px 12px; background:#1B3A1E; color:#C8E6C9; font-size:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
         <label style="font-weight:bold; white-space:nowrap;">圃場:</label>
         <select id="fieldSatFieldSelect" onchange="onFieldSatFieldChange()"
           style="flex:1; min-width:140px; max-width:280px; padding:6px 8px; border-radius:4px; border:1px solid #66BB6A; background:#0d1f0f; color:#E8F5E9; font-weight:bold; font-size:13px;"></select>
@@ -1169,9 +2114,11 @@
 
       <!-- 生育チェックタブ -->
       <div id="fieldSatPanel_growth" style="flex:1; display:none; flex-direction:column; min-height:0;">
-        <div style="padding:8px 12px; background:#263238; color:#B0BEC5; font-size:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <div
+          style="padding:8px 12px; background:#263238; color:#B0BEC5; font-size:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
           <button type="button" onclick="searchFieldSatScenes()"
-            style="background:#00897B; color:#fff; border:none; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">🔍 画像を検索</button>
+            style="background:#00897B; color:#fff; border:none; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">🔍
+            画像を検索</button>
           <label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
             <input type="radio" name="fieldSatView" value="visual" checked onchange="setFieldSatViewMode('visual')"> 真色
           </label>
@@ -1184,24 +2131,39 @@
           <span id="fieldSatGrowthStatus" style="flex:1; min-width:120px; color:#80CBC4;"></span>
         </div>
         <div style="display:flex; flex:1; min-height:0; flex-wrap:wrap;">
-          <div style="width:140px; max-width:40%; background:#1a1a1a; overflow-y:auto; border-right:1px solid #333; flex-shrink:0;">
-            <div style="padding:6px 8px; color:#81C784; font-size:11px; font-weight:bold; border-bottom:1px solid #333;">観測日（雲少なめ）</div>
+          <div
+            style="width:140px; max-width:40%; background:#1a1a1a; overflow-y:auto; border-right:1px solid #333; flex-shrink:0;">
+            <div
+              style="padding:6px 8px; color:#81C784; font-size:11px; font-weight:bold; border-bottom:1px solid #333;">
+              観測日（雲少なめ）</div>
             <div id="fieldSatSceneList" style="padding:4px;"></div>
           </div>
-          <div style="flex:1; min-width:200px; display:flex; flex-direction:column; background:#000; position:relative;">
+          <div
+            style="flex:1; min-width:200px; display:flex; flex-direction:column; background:#000; position:relative;">
             <div id="fieldSatImageRow" style="flex:1; display:flex; gap:4px; padding:4px; min-height:0;">
-              <div class="field-sat-img-pane" style="flex:1; position:relative; background:#111; border-radius:4px; overflow:hidden;">
-                <div id="fieldSatImgLabelA" style="position:absolute; top:6px; left:6px; z-index:3; background:rgba(0,0,0,0.65); color:#C8E6C9; font-size:11px; padding:3px 6px; border-radius:3px;">日付A</div>
+              <div class="field-sat-img-pane"
+                style="flex:1; position:relative; background:#111; border-radius:4px; overflow:hidden;">
+                <div id="fieldSatImgLabelA"
+                  style="position:absolute; top:6px; left:6px; z-index:3; background:rgba(0,0,0,0.65); color:#C8E6C9; font-size:11px; padding:3px 6px; border-radius:3px;">
+                  日付A</div>
                 <div id="fieldSatGrowthMapA" style="width:100%; height:100%; min-height:220px;"></div>
-                <div id="fieldSatImgPlaceholderA" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#666; font-size:13px; padding:16px; text-align:center; background:#111; z-index:2;">圃場を選び「画像を検索」</div>
+                <div id="fieldSatImgPlaceholderA"
+                  style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#666; font-size:13px; padding:16px; text-align:center; background:#111; z-index:2;">
+                  圃場を選び「画像を検索」</div>
               </div>
-              <div id="fieldSatPaneB" class="field-sat-img-pane" style="flex:1; position:relative; background:#111; border-radius:4px; overflow:hidden; display:none;">
-                <div id="fieldSatImgLabelB" style="position:absolute; top:6px; left:6px; z-index:3; background:rgba(0,0,0,0.65); color:#FFE082; font-size:11px; padding:3px 6px; border-radius:3px;">日付B</div>
+              <div id="fieldSatPaneB" class="field-sat-img-pane"
+                style="flex:1; position:relative; background:#111; border-radius:4px; overflow:hidden; display:none;">
+                <div id="fieldSatImgLabelB"
+                  style="position:absolute; top:6px; left:6px; z-index:3; background:rgba(0,0,0,0.65); color:#FFE082; font-size:11px; padding:3px 6px; border-radius:3px;">
+                  日付B</div>
                 <div id="fieldSatGrowthMapB" style="width:100%; height:100%; min-height:220px;"></div>
-                <div id="fieldSatImgPlaceholderB" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#666; font-size:13px; padding:16px; text-align:center; background:#111; z-index:2;">比較する日付を選択</div>
+                <div id="fieldSatImgPlaceholderB"
+                  style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#666; font-size:13px; padding:16px; text-align:center; background:#111; z-index:2;">
+                  比較する日付を選択</div>
               </div>
             </div>
-            <div id="fieldSatNdviLegend" style="display:none; padding:6px 12px; background:#1a1a1a; color:#aaa; font-size:10px; text-align:center;">
+            <div id="fieldSatNdviLegend"
+              style="display:none; padding:6px 12px; background:#1a1a1a; color:#aaa; font-size:10px; text-align:center;">
               NDVI: 茶〜黄＝裸地・弱い植生　／　緑が濃い＝生育が旺盛　（無料衛星の上限は約10m）
             </div>
           </div>
@@ -1218,7 +2180,8 @@
     style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 2000000; justify-content: center; align-items: center;">
     <div
       style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 80%; max-width: 300px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
-      <div id="customAlertMessage" style="margin-bottom: 20px; font-size: 15px; font-weight: bold; line-height: 1.5; white-space: pre-wrap;">
+      <div id="customAlertMessage"
+        style="margin-bottom: 20px; font-size: 15px; font-weight: bold; line-height: 1.5; white-space: pre-wrap;">
       </div>
       <button id="customAlertOk"
         style="width: 100%; background: #2196F3; color: #fff; padding: 12px; border-radius: 4px; border: none; font-weight: bold; cursor: pointer;">OK</button>
@@ -1235,7 +2198,7 @@
         if (!p) return null;
         let areaA = parseFloat(p.area) || 0;
         if ((!areaA || areaA <= 0) && p.coords && p.coords.length > 2
-            && window.google && google.maps && google.maps.geometry && google.maps.geometry.spherical) {
+          && window.google && google.maps && google.maps.geometry && google.maps.geometry.spherical) {
           try {
             const latLngs = p.coords.map(function (pt) {
               return new google.maps.LatLng(
@@ -1244,7 +2207,7 @@
               );
             });
             areaA = Math.round(google.maps.geometry.spherical.computeArea(latLngs) / 100 * 10) / 10;
-          } catch (e) {}
+          } catch (e) { }
         }
         const trucks = areaA > 0 ? Math.max(1, Math.ceil(areaA / 10)) : 0;
         const areaLabel = areaA > 0 ? (Math.round(areaA * 10) / 10) + 'a' : '面積未設定';

@@ -11495,12 +11495,18 @@ function getCpStep2Missing_() {
     return missing;
 }
 
+function getCpStep3PendingVariety_() {
+    const variety = String(getCpVal('cpVariety') || '').trim();
+    if (!variety || variety === 'custom') return '';
+    const already = Array.isArray(cpPlans) && cpPlans.some(p => p && String(p.variety || '').trim() === variety);
+    return already ? '' : variety;
+}
+
 function getCpStep3Missing_() {
     const hasPlan = Array.isArray(cpPlans) && cpPlans.some(p => p && String(p.variety || '').trim());
     if (hasPlan) return [];
-    const variety = String(getCpVal('cpVariety') || '').trim();
-    if (variety && variety !== 'custom') return [];
-    return ['品種を選択するか、作型を行に追加'];
+    if (getCpStep3PendingVariety_()) return [];
+    return ['品種を選択'];
 }
 
 function setCpNextBtnState_(btn, hintEl, ready, waitingMsg, readyMsg) {
@@ -11539,14 +11545,20 @@ function refreshCpStepNextButtons() {
     );
 
     const hasPlan = Array.isArray(cpPlans) && cpPlans.some(p => p && String(p.variety || '').trim());
-    const variety = String(getCpVal('cpVariety') || '').trim();
-    const step3Ready = hasPlan || (!!variety && variety !== 'custom');
+    const pendingVariety = getCpStep3PendingVariety_();
+    const step3Ready = hasPlan || !!pendingVariety;
+    const nextBtn = document.getElementById('cpStep3NextBtn');
+    if (nextBtn) {
+        nextBtn.textContent = pendingVariety
+            ? '追加してカレンダーへ'
+            : '次へ (作型カレンダーへ)';
+    }
     setCpNextBtnState_(
-        document.getElementById('cpStep3NextBtn'),
+        nextBtn,
         document.getElementById('cpStep3ReadyHint'),
         step3Ready,
-        hasPlan ? '' : (variety ? '作型を行に追加すると進めます' : '品種を選んでください'),
-        hasPlan ? '追加完了 → カレンダーへ' : '品種選択済み → 追加して進む'
+        step3Ready ? '' : '品種を選んでください',
+        pendingVariety ? '品種選択済み → 追加して進む' : '追加完了 → カレンダーへ'
     );
 }
 window.refreshCpStepNextButtons = refreshCpStepNextButtons;
@@ -11573,25 +11585,29 @@ function nextCpStep(step) {
 }
 window.nextCpStep = nextCpStep;
 
-/** 品種登録完了後: 初期設定を閉じて作型カレンダーへ */
+/** 品種登録完了後: 必要なら作型を追加し、初期設定を閉じて作型カレンダーへ */
 function finishCpInitialSettings() {
+    const pendingVariety = getCpStep3PendingVariety_();
     const hasPlan = Array.isArray(cpPlans) && cpPlans.some(p => p && String(p.variety || '').trim());
-    if (!hasPlan) {
-        const variety = String(getCpVal('cpVariety') || '').trim();
-        if (variety && variety !== 'custom') {
-            if (typeof addCpPlanRow === 'function') {
-                const ok = addCpPlanRow();
-                if (!ok) {
-                    refreshCpStepNextButtons();
-                    return;
-                }
+
+    // 未登録の選択品種があれば追加（addCpPlanRow 側でカレンダーへ閉じる）
+    if (pendingVariety) {
+        if (typeof addCpPlanRow === 'function') {
+            const ok = addCpPlanRow();
+            if (!ok) {
+                refreshCpStepNextButtons();
+                return;
             }
-        } else {
-            alert('品種を選択するか、「＋ 作型を行に追加」で登録してから進んでください。');
-            refreshCpStepNextButtons();
-            return;
         }
+        return;
     }
+
+    if (!hasPlan) {
+        alert('品種を選択してから進んでください。');
+        refreshCpStepNextButtons();
+        return;
+    }
+
     if (typeof setCpInitialSettingsOpen === 'function') {
         setCpInitialSettingsOpen(false);
     } else {
@@ -12240,7 +12256,7 @@ function applyRegisteredCroptypeToPlan(sourceIndex) {
     if (typeof syncCpVarietyMetaFields === 'function') syncCpVarietyMetaFields();
     if (typeof openCpStep === 'function') openCpStep(3);
 
-    alert(`「${item.crop} / ${item.variety}」を栽培計画にセットしました。\nステップ3で「品種マスタから作型を読込」から作型を選んで追加できます。`);
+    alert(`「${item.crop} / ${item.variety}」を栽培計画にセットしました。\nステップ3で品種を確認し、「追加してカレンダーへ」で進めます。`);
 }
 
 function applyCroptypePeriodsToPaintGrid(item) {

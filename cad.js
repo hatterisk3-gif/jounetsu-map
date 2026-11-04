@@ -64,11 +64,11 @@ window.cadDetachRidgeFromMap = (poly) => {
     const editEl = document.getElementById('cadEditIndex');
     const editingId = editEl ? editEl.value : '';
     if (editingId && poly.uneIndex === editingId) return;
-    try { poly.setEditable(false); } catch (e) {}
+    try { poly.setEditable(false); } catch (e) { }
     try {
         poly.setOptions({ fillOpacity: 0, strokeOpacity: 0, clickable: false });
         poly.setMap(null);
-    } catch (e) {}
+    } catch (e) { }
 };
 
 window.cadDetachAllRidgesFromMap = () => {
@@ -86,7 +86,7 @@ window.cadAttachRidgeForEdit = (poly) => {
             strokeWeight: 2,
             clickable: true
         });
-    } catch (e) {}
+    } catch (e) { }
 };
 
 window.cadCreateRidgePolygon = (paths, opt) => {
@@ -140,7 +140,7 @@ window.cadPolyToSavedCoords = (poly) => {
             if (rings.length > 1) return rings;
             if (rings.length === 1) return rings[0];
         }
-    } catch (e) {}
+    } catch (e) { }
     return readRing(poly && poly.getPath && poly.getPath());
 };
 
@@ -149,12 +149,12 @@ window.cadCreateLabelSlot = () => ({
     _pos: null,
     getPosition: function () { return this._pos; },
     setPosition: function (p) { this._pos = p; },
-    setLabel: function () {},
-    setMap: function () {}
+    setLabel: function () { },
+    setMap: function () { }
 });
 
 // 🌟 ラベル位置更新（Turf交差は重いので無効化。SVGが中心計算する）
-window.updateCadLabelPositionsThrottled = () => {};
+window.updateCadLabelPositionsThrottled = () => { };
 
 window.getCadZoom = () => {
     if (window.cadVirtualZoom === undefined || window.cadVirtualZoom === null) {
@@ -265,40 +265,40 @@ window.updateCadMapTransform = () => {
 };
 
 window.latLngToScreenPixel = (lat, lng) => {
-    if (!window.cadMap) return {x: 0, y: 0};
+    if (!window.cadMap) return { x: 0, y: 0 };
     const proj = window.cadMap.getProjection();
-    if (!proj) return {x: 0, y: 0};
-    
+    if (!proj) return { x: 0, y: 0 };
+
     const worldPoint = proj.fromLatLngToPoint(new google.maps.LatLng(lat, lng));
     const centerWorldPoint = proj.fromLatLngToPoint(window.cadMap.getCenter());
-    
+
     const dxWorld = worldPoint.x - centerWorldPoint.x;
     let dyWorld = worldPoint.y - centerWorldPoint.y;
-    
+
     const realZoom = window.cadMap.getZoom();
     const scaleToRealZoom = Math.pow(2, realZoom);
-    
+
     let dxMap = dxWorld * scaleToRealZoom;
     let dyMap = dyWorld * scaleToRealZoom;
-    
+
     let apparentScale = window.cadCurrentScale || 1.0;
     let dxScaled = dxMap * apparentScale;
     let dyScaled = dyMap * apparentScale;
-    
+
     const theta = (window.cadCurrentRotation || 0) * Math.PI / 180;
     const cosT = Math.cos(theta);
     const sinT = Math.sin(theta);
-    
+
     let dxRotated = dxScaled * cosT - dyScaled * sinT;
     let dyRotated = dxScaled * sinT + dyScaled * cosT;
-    
+
     const wrapper = document.getElementById('cadMapWrapper');
     const offsetX = (window.cadMapOffsetX || 0) + (window.cadDragDx || 0);
     const offsetY = (window.cadMapOffsetY || 0) + (window.cadDragDy || 0);
-    
+
     const cx = wrapper.offsetWidth / 2 + offsetX;
     const cy = wrapper.offsetHeight / 2 + offsetY;
-    
+
     return { x: cx + dxRotated, y: cy + dyRotated };
 };
 
@@ -352,21 +352,21 @@ window.updateCadSvgOverlay = (opts) => {
     const ridgeCount = window.cadGetRidgeCount();
     const disableHover = ridgeCount >= (window.CAD_PERF.disableHoverAt || 60);
     const hideLength = ridgeCount >= (window.CAD_PERF.hideLengthAt || 45);
-    
-    let currentPolysLength = (window.cadUnePolygons ? window.cadUnePolygons.length : 0) + 
-                             (window.cadCustomShapes ? window.cadCustomShapes.length : 0) + 
-                             (window.cadNakamichiMapPolygons ? window.cadNakamichiMapPolygons.length : 0) +
-                             (window.cadDrainageMapPolygons ? window.cadDrainageMapPolygons.length : 0);
-                             
+
+    let currentPolysLength = (window.cadUnePolygons ? window.cadUnePolygons.length : 0) +
+        (window.cadCustomShapes ? window.cadCustomShapes.length : 0) +
+        (window.cadNakamichiMapPolygons ? window.cadNakamichiMapPolygons.length : 0) +
+        (window.cadDrainageMapPolygons ? window.cadDrainageMapPolygons.length : 0);
+
     if (window.cadSvgNeedsRebuild || !svg.querySelector('#cadSvgPaths') || svg._lastPolysLength !== currentPolysLength) {
         svg._lastPolysLength = currentPolysLength;
         let html = '<defs><filter id="hover-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000" flood-opacity="0.5"/></filter></defs>' +
-                   '<g id="cadSvgGrid"></g><g id="cadSvgCellFills" style="pointer-events:none;"></g><g id="cadSvgCellHover" style="pointer-events:none;"></g><g id="cadSvgPaths"></g><g id="cadSvgMakuraEdges" style="pointer-events:none;"></g><g id="cadSvgTexts"></g><g id="cadSvgHandles"></g><g id="cadSvgDrawOverlay" style="pointer-events:none;"></g><g id="cadSvgPins"></g><g id="front-bar" style="filter: url(#hover-shadow);"></g>';
+            '<g id="cadSvgGrid"></g><g id="cadSvgCellFills" style="pointer-events:none;"></g><g id="cadSvgCellHover" style="pointer-events:none;"></g><g id="cadSvgPaths"></g><g id="cadSvgMakuraEdges" style="pointer-events:none;"></g><g id="cadSvgTexts"></g><g id="cadSvgHandles"></g><g id="cadSvgDrawOverlay" style="pointer-events:none;"></g><g id="cadSvgPins"></g><g id="front-bar" style="filter: url(#hover-shadow);"></g>';
         svg.innerHTML = html;
         let gridGroup = svg.querySelector('#cadSvgGrid');
         let pathsGroup = svg.querySelector('#cadSvgPaths');
         let textsGroup = svg.querySelector('#cadSvgTexts');
-        
+
         const createPathNode = (fillColor, strokeColor, isLine = false) => {
             let pathNode = document.createElementNS('http://www.w3.org/2000/svg', 'path');
             pathNode.setAttribute('fill', isLine ? 'none' : fillColor);
@@ -419,7 +419,7 @@ window.updateCadSvgOverlay = (opts) => {
             p._svgTextNode = textNode;
             textsGroup.appendChild(textNode);
         };
-        
+
         if (window.cadTargetPolygon) {
             window.cadTargetPolygon._svgPathNode = createPathNode('#D7CCC8', '#8BC34A');
             window.cadTargetPolygon._svgPathNode.setAttribute('fill-opacity', '0.4');
@@ -427,13 +427,13 @@ window.updateCadSvgOverlay = (opts) => {
             window.cadTargetPolygon._svgPathNode.setAttribute('stroke-width', '3');
             pathsGroup.appendChild(window.cadTargetPolygon._svgPathNode);
         }
-        
+
         if (window.cadUnePolygons) {
             window.cadUnePolygons.forEach((p, idx) => {
                 try {
                     let baseIdx = p._displayLabel ? p._displayLabel : (p.customLabel ? p.customLabel : String(idx + 1));
                     wireRidgePath(p, baseIdx);
-                } catch (e) {}
+                } catch (e) { }
             });
         }
         if (window.cadCustomShapes) {
@@ -442,7 +442,7 @@ window.updateCadSvgOverlay = (opts) => {
                 try {
                     let baseIdxStr = p._displayLabel ? p._displayLabel : (p.customLabel ? p.customLabel : String(baseIdx + idx + 1));
                     wireRidgePath(p, baseIdxStr);
-                } catch (e) {}
+                } catch (e) { }
             });
         }
         if (window.cadNakamichiMapPolygons) {
@@ -520,14 +520,14 @@ window.updateCadSvgOverlay = (opts) => {
                             startCoords.push({ lat: pt.lat(), lng: pt.lng() });
                         }
                     }
-                    window.addEventListener('touchmove', onLineMove, {passive: false});
+                    window.addEventListener('touchmove', onLineMove, { passive: false });
                     window.addEventListener('touchend', onLineEnd);
-                }, {passive: false});
+                }, { passive: false });
 
                 pathsGroup.appendChild(p._svgPathNode);
             });
         }
-        
+
         if (window.cadDrainageMapPolygons) {
             window.cadDrainageMapPolygons.forEach(p => {
                 p._svgPathNode = createPathNode('none', '#00BCD4', true);
@@ -558,7 +558,7 @@ window.updateCadSvgOverlay = (opts) => {
         svg._lastHandleStateId = null;
         svg._lastPinsStateId = null;
     }
-    
+
     let handleStateId = '';
     const editEl = document.getElementById('cadEditIndex');
     const editingId = editEl ? editEl.value : '';
@@ -574,7 +574,7 @@ window.updateCadSvgOverlay = (opts) => {
     if (!light && handlesGroup && !window.cadRidgeEndDragging && svg._lastHandleStateId !== handleStateId) {
         svg._lastHandleStateId = handleStateId;
         handlesGroup.innerHTML = '';
-        
+
         const createHandlesForPoly = (poly) => {
             let path = poly.getPath();
             if (!path) return;
@@ -586,9 +586,9 @@ window.updateCadSvgOverlay = (opts) => {
                 circle.setAttribute('stroke', '#558B2F');
                 circle.setAttribute('stroke-width', '2');
                 circle.setAttribute('style', 'cursor: pointer; pointer-events: auto;');
-                
+
                 let isDraggingHandle = false;
-                
+
                 const onMove = (ev) => {
                     if (ev.cancelable) ev.preventDefault();
                     if (!isDraggingHandle) return;
@@ -600,7 +600,7 @@ window.updateCadSvgOverlay = (opts) => {
                         window.updateCadSvgOverlay({ light: true });
                     }
                 };
-                
+
                 const onEnd = () => {
                     if (!isDraggingHandle) return;
                     isDraggingHandle = false;
@@ -612,19 +612,19 @@ window.updateCadSvgOverlay = (opts) => {
                     if (typeof window.reassignLabels === 'function') window.reassignLabels();
                     if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
                 };
-                
+
                 circle.addEventListener('mousedown', (e) => {
                     isDraggingHandle = true; e.stopPropagation();
                     window.addEventListener('mousemove', onMove);
                     window.addEventListener('mouseup', onEnd);
                 });
-                
+
                 circle.addEventListener('touchstart', (e) => {
                     isDraggingHandle = true; e.stopPropagation();
-                    window.addEventListener('touchmove', onMove, {passive: false});
+                    window.addEventListener('touchmove', onMove, { passive: false });
                     window.addEventListener('touchend', onEnd);
-                }, {passive: false});
-                
+                }, { passive: false });
+
                 handlesGroup.appendChild(circle);
                 poly._svgHandlesNodes.push(circle);
             }
@@ -685,9 +685,9 @@ window.updateCadSvgOverlay = (opts) => {
 
                     circle.addEventListener('touchstart', (e) => {
                         isDraggingHandle = true; e.stopPropagation();
-                        window.addEventListener('touchmove', onMove, {passive: false});
+                        window.addEventListener('touchmove', onMove, { passive: false });
                         window.addEventListener('touchend', onEnd);
-                    }, {passive: false});
+                    }, { passive: false });
 
                     handlesGroup.appendChild(circle);
                     polyLine._svgHandlesNodes.push(circle);
@@ -707,7 +707,7 @@ window.updateCadSvgOverlay = (opts) => {
         }
         createHandlesForNakamichiLines();
     }
-    
+
     const updatePathD = (poly, isLine = false) => {
         const svgNum = (n) => (Number.isFinite(n) ? String(Math.round(n * 10) / 10) : null);
         const appendRing = (path, close) => {
@@ -741,13 +741,13 @@ window.updateCadSvgOverlay = (opts) => {
                 for (let r = 0; r < n; r++) d += appendRing(paths.getAt(r), true);
                 if (d) return d;
             }
-        } catch (e) {}
+        } catch (e) { }
         try { return appendRing(poly.getPath && poly.getPath(), true); } catch (e) { return ''; }
     };
 
     const paintPolyPath = (poly, isLine) => {
         if (!poly || !poly._svgPathNode) return;
-        try { poly._svgPathNode.setAttribute('d', updatePathD(poly, !!isLine)); } catch (e) {}
+        try { poly._svgPathNode.setAttribute('d', updatePathD(poly, !!isLine)); } catch (e) { }
     };
 
     const quickCenterLatLng = (poly) => {
@@ -807,9 +807,9 @@ window.updateCadSvgOverlay = (opts) => {
     if (window.cadDrainageMapPolygons) {
         window.cadDrainageMapPolygons.forEach(p => paintPolyPath(p, true));
     }
-    
+
     if (typeof window.cadPaintNakamichiTempLine === 'function') window.cadPaintNakamichiTempLine();
-    
+
     const updateHandlesPosition = (poly) => {
         if (poly && poly._svgHandlesNodes) {
             let path = poly.getPath();
@@ -854,7 +854,7 @@ window.updateCadSvgOverlay = (opts) => {
     if (pinsGroup && svg._lastPinsStateId !== pinsStateId && !window.cadPinDragging) {
         svg._lastPinsStateId = pinsStateId;
         pinsGroup.innerHTML = '';
-        
+
         if (window.cadPins) {
             const typeTotals = {};
             window.cadPins.forEach((mk) => {
@@ -871,7 +871,7 @@ window.updateCadSvgOverlay = (opts) => {
                 fo.setAttribute('width', String(foW));
                 fo.setAttribute('height', String(foH));
                 fo.setAttribute('style', 'overflow:visible; pointer-events:auto;');
-                
+
                 let wrap = document.createElement('div');
                 wrap.className = 'cad-equip-pin-wrap';
                 wrap.style.cssText = `position:relative; width:100%; height:100%; pointer-events:auto;`;
@@ -897,7 +897,7 @@ window.updateCadSvgOverlay = (opts) => {
                     nameStr = '侵入口';
                 }
                 if (showNum) numStr = String(typeSeq[pinType]);
-                
+
                 let iconSpan = document.createElement('span');
                 iconSpan.className = 'cad-pin-icon';
                 iconSpan.textContent = iconStr;
@@ -919,7 +919,7 @@ window.updateCadSvgOverlay = (opts) => {
                     numSpan.style.cssText = `position:absolute; left:50%; top:0; transform:translate(-50%, -110%); font-size:${numFontPx}px; font-weight:bold; color:#111; line-height:1; pointer-events:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;`;
                     div.appendChild(numSpan);
                 }
-                
+
                 div.className = 'cad-equip-pin';
                 div.style.cssText = 'font-size:22px; text-align:center; transform:translate(-50%, -50%) rotate(var(--label-rot)); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:move; user-select:none; touch-action:none; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;';
                 wrap.appendChild(div);
@@ -934,7 +934,7 @@ window.updateCadSvgOverlay = (opts) => {
                 delBtn.style.cssText = 'position:absolute; top:4px; right:4px; width:36px; height:36px; background:#f44336; color:white; font-size:18px; line-height:1; text-align:center; border-radius:50%; cursor:pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.5); display:none; border: 2px solid white; padding:0; z-index:5; pointer-events:auto;';
                 wrap.appendChild(delBtn);
                 fo.appendChild(wrap);
-                
+
                 let isDraggingPin = false;
                 let dragDistance = 0;
                 let dragStartX = 0;
@@ -972,7 +972,7 @@ window.updateCadSvgOverlay = (opts) => {
                         syncPinFoPosition(newLatLng);
                     }
                 };
-                
+
                 const onEnd = () => {
                     if (!isDraggingPin) return;
                     isDraggingPin = false;
@@ -981,10 +981,10 @@ window.updateCadSvgOverlay = (opts) => {
                     window.removeEventListener('mouseup', onEnd);
                     window.removeEventListener('touchmove', onMove);
                     window.removeEventListener('touchend', onEnd);
-                    
+
                     if (dragDistance < 10) {
                         let allDelBtns = document.querySelectorAll('.cad-pin-del-btn');
-                        allDelBtns.forEach(btn => { if(btn !== delBtn) btn.style.display = 'none'; });
+                        allDelBtns.forEach(btn => { if (btn !== delBtn) btn.style.display = 'none'; });
                         delBtn.style.display = delBtn.style.display === 'none' ? 'block' : 'none';
                     } else {
                         // 位置確定後に状態IDを更新（次回の通常再描画で同期）
@@ -992,13 +992,13 @@ window.updateCadSvgOverlay = (opts) => {
                         if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
                     }
                 };
-                
+
                 div.addEventListener('mousedown', (e) => {
                     if (e.button != null && e.button !== 0) return;
                     if (isDeleteTarget(e.target)) return;
                     isDraggingPin = true;
                     window.cadPinDragging = true;
-                    dragDistance = 0; 
+                    dragDistance = 0;
                     dragStartX = e.clientX;
                     dragStartY = e.clientY;
                     e.preventDefault();
@@ -1006,7 +1006,7 @@ window.updateCadSvgOverlay = (opts) => {
                     window.addEventListener('mousemove', onMove);
                     window.addEventListener('mouseup', onEnd);
                 });
-                
+
                 div.addEventListener('touchstart', (e) => {
                     if (isDeleteTarget(e.target)) return;
                     isDraggingPin = true;
@@ -1016,12 +1016,12 @@ window.updateCadSvgOverlay = (opts) => {
                     dragStartY = e.touches[0].clientY;
                     e.preventDefault();
                     e.stopPropagation();
-                    window.addEventListener('touchmove', onMove, {passive: false});
+                    window.addEventListener('touchmove', onMove, { passive: false });
                     window.addEventListener('touchend', onEnd);
-                }, {passive: false});
+                }, { passive: false });
 
                 const removePinNow = () => {
-                    try { if (mk.setMap) mk.setMap(null); } catch (err) {}
+                    try { if (mk.setMap) mk.setMap(null); } catch (err) { }
                     window.cadPins = (window.cadPins || []).filter(p => p !== mk);
                     mk._svgFoNode = null;
                     if (svg) svg._lastPinsStateId = null;
@@ -1052,15 +1052,15 @@ window.updateCadSvgOverlay = (opts) => {
 
                 delBtn.addEventListener('click', onDelete);
                 delBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
-                delBtn.addEventListener('touchstart', (e) => { e.stopPropagation(); e.preventDefault(); }, {passive: false});
-                delBtn.addEventListener('touchend', onDelete, {passive: false});
-                
+                delBtn.addEventListener('touchstart', (e) => { e.stopPropagation(); e.preventDefault(); }, { passive: false });
+                delBtn.addEventListener('touchend', onDelete, { passive: false });
+
                 pinsGroup.appendChild(fo);
                 mk._svgFoNode = fo;
             });
         }
     }
-    
+
     if (window.cadPins) {
         let currentZoom = window.getCadZoom();
         let pinScale = Math.max(0.5, Math.pow(2, currentZoom - 20));
@@ -1077,7 +1077,7 @@ window.updateCadSvgOverlay = (opts) => {
                     mk._svgFoNode.setAttribute('height', foSize);
                     mk._svgFoNode.setAttribute('x', screenPt.x - (foSize / 2));
                     mk._svgFoNode.setAttribute('y', screenPt.y - (foSize / 2));
-                    
+
                     let div = mk._svgFoNode.querySelector('.cad-equip-pin');
                     if (div) {
                         div.style.fontSize = scaledFontSize + 'px';
@@ -1122,7 +1122,7 @@ window.updateCadSvgOverlay = (opts) => {
                     let cy = ev.touches ? ev.touches[0].clientY : ev.clientY;
                     let newLatLng = window.screenPixelToLatLng(cx, cy);
                     if (newLatLng) {
-                        window.cadFrontBaseline = {lat: newLatLng.lat(), lng: newLatLng.lng()};
+                        window.cadFrontBaseline = { lat: newLatLng.lat(), lng: newLatLng.lng() };
                         window.updateCadSvgOverlay();
                     }
                 };
@@ -1142,9 +1142,9 @@ window.updateCadSvgOverlay = (opts) => {
                 });
                 div.addEventListener('touchstart', (e) => {
                     isDragging = true; e.stopPropagation();
-                    window.addEventListener('touchmove', onMove, {passive: false});
+                    window.addEventListener('touchmove', onMove, { passive: false });
                     window.addEventListener('touchend', onEnd);
-                }, {passive: false});
+                }, { passive: false });
             }
             let pt = window.latLngToScreenPixel(pLat, pLng);
             fo.setAttribute('x', pt.x - 60);
@@ -1461,7 +1461,7 @@ window.loadCadStateFromHistory = (index) => {
         window.cadNakamichiLines = state.nakamichiLines || [];
         window.cadNakamichiLines.forEach(line => window.drawNakamichiVisual(line));
     }
-    
+
     if (state.drainageLines) {
         window.cadDrainageLines = state.drainageLines || [];
         window.cadDrainageLines.forEach(line => window.drawDrainageVisual(line));
@@ -1537,8 +1537,8 @@ window.updateSingleLabelPosition = (poly) => {
 };
 
 window.bindShapeHistoryEvents = (poly) => {
-    google.maps.event.addListener(poly, 'drag', () => { window.updateSingleLabelPosition(poly); if(window.updateCadSvgOverlay) window.updateCadSvgOverlay(); });
-    google.maps.event.addListener(poly, 'dragend', () => { window.reassignLabels(); window.saveCadStateToHistory(); if(window.updateCadSvgOverlay) window.updateCadSvgOverlay(); });
+    google.maps.event.addListener(poly, 'drag', () => { window.updateSingleLabelPosition(poly); if (window.updateCadSvgOverlay) window.updateCadSvgOverlay(); });
+    google.maps.event.addListener(poly, 'dragend', () => { window.reassignLabels(); window.saveCadStateToHistory(); if (window.updateCadSvgOverlay) window.updateCadSvgOverlay(); });
 
     let editTimeout = null;
     ['set_at', 'insert_at', 'remove_at'].forEach(eventName => {
@@ -1546,7 +1546,7 @@ window.bindShapeHistoryEvents = (poly) => {
             // 一括変形中は頂点イベントを無視（100畝調整時のフリーズ防止）
             if (window.cadSuppressPathEvents) return;
             window.updateSingleLabelPosition(poly); // 変形時にもリアルタイム追従
-            if(window.updateCadSvgOverlay) window.updateCadSvgOverlay();
+            if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
             clearTimeout(editTimeout);
             editTimeout = setTimeout(() => {
                 window.reassignLabels();
@@ -1703,7 +1703,7 @@ window.handleMapClick = (pageX, pageY) => {
                 }
                 return;
             }
-            
+
             let angle = bestBearing;
             while (angle < 0) angle += 360;
             while (angle >= 180) angle -= 180; // keep it 0-180 for standard ridge direction
@@ -1719,8 +1719,8 @@ window.handleMapClick = (pageX, pageY) => {
                     };
                     window.cadSnapGridAlignBearing = bestBearing;
                 }
-            } catch (e) {}
-            
+            } catch (e) { }
+
             const angleEl = document.getElementById('cadAngle');
             if (angleEl) angleEl.value = angle;
             if (typeof window.cadAlignMapHeading === 'function') window.cadAlignMapHeading(); // 地図＋グリッド再生成
@@ -1773,8 +1773,8 @@ window.cadPlaceEquipmentPin = (latLng, pinType) => {
     window.cadPinMode = null;
     if (typeof window.cadSetGpsBarVisible === 'function') window.cadSetGpsBarVisible(false);
     if (msgEl) {
-            msgEl.innerText = `💡 操作を選ぶと、ここに案内が出ます。`;
-            msgEl.style.color = '#FF9800';
+        msgEl.innerText = `💡 操作を選ぶと、ここに案内が出ます。`;
+        msgEl.style.color = '#FF9800';
     }
     window.saveCadStateToHistory();
     return true;
@@ -2173,7 +2173,7 @@ window.initCadTouchEvents = () => {
             lastTouchX = e.touches[0].pageX; lastTouchY = e.touches[0].pageY;
             startPageX = e.touches[0].pageX; startPageY = e.touches[0].pageY;
             isDragging = false;
-            
+
             if (window.cadPinMode === 'nakamichi' || window.cadPinMode === 'drainage') {
                 ignoreDrag = true;
                 window.cadNakamichiIsDrawing = true;
@@ -2390,12 +2390,22 @@ window.initCadTouchEvents = () => {
     window.cadTouchAdded = true;
 };
 
+/** スリム化されたuneSimDataスタブ({_slim:true})か判定するヘルパー */
+window.cadParseSlimStub_ = (raw) => {
+    if (!raw) return null;
+    try {
+        const obj = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+        if (obj && typeof obj === 'object' && obj._slim) return obj;
+    } catch (e) { }
+    return null;
+};
+
 window.openCADMode = async (id, opts) => {
     opts = opts || {};
     const blank = !!opts.blank;
     window._cadOpenSeq = (window._cadOpenSeq || 0) + 1;
     const openSeq = window._cadOpenSeq;
-    infoWindow.close();
+    try { if (typeof infoWindow !== 'undefined' && infoWindow) infoWindow.close(); else if (window.infoWindow) window.infoWindow.close(); } catch (e) { }
     window.cadTargetId = id;
     const p = loadedPolygons[id];
     const cadLoad = (window.AppLoading && AppLoading.start)
@@ -2411,137 +2421,141 @@ window.openCADMode = async (id, opts) => {
     document.getElementById('cadOverlay').style.display = 'flex';
     try {
 
-    window.cadCurrentRotation = 0;
-    window.cadCurrentScale = BASE_SCALE;
-    window.cadTransformDiv = null;
-    window.cadVirtualZoom = null;
-    window.updateCadMapTransform();
+        window.cadCurrentRotation = 0;
+        window.cadCurrentScale = BASE_SCALE;
+        window.cadTransformDiv = null;
+        window.cadVirtualZoom = null;
+        window.updateCadMapTransform();
 
-    window.initCadTouchEvents();
+        window.initCadTouchEvents();
 
-    if (!window.cadMap) {
-        window.cadMap = new google.maps.Map(document.getElementById('cadMap'), {
-            center: { lat: 33.91, lng: 134.66 }, zoom: 20, maxZoom: 45,
-            mapTypeId: 'satellite', tilt: 0, heading: 0,
-            mapId: 'DEMO_MAP_ID', gestureHandling: 'none', disableDefaultUI: true, zoomControl: true, isFractionalZoomEnabled: true
-        });
-        
-        // 🌟 修正：衛星写真マップタイプのmaxZoomを上書きし、ネイティブで45までズームできるようにする
-        // これにより、CSSのscaleによる引き伸ばし（ギザギザ・ぼやけ化）を防ぎ、ポリゴンの解像度を保つ
-        google.maps.event.addListenerOnce(window.cadMap, 'idle', () => {
-            const satType = window.cadMap.mapTypes.get('satellite');
-            if (satType) satType.maxZoom = 45;
-            const hybType = window.cadMap.mapTypes.get('hybrid');
-            if (hybType) hybType.maxZoom = 45;
-        });
+        if (!window.cadMap) {
+            window.cadMap = new google.maps.Map(document.getElementById('cadMap'), {
+                center: { lat: 33.91, lng: 134.66 }, zoom: 20, maxZoom: 45,
+                mapTypeId: 'satellite', tilt: 0, heading: 0,
+                mapId: 'DEMO_MAP_ID', gestureHandling: 'none', disableDefaultUI: true, zoomControl: true, isFractionalZoomEnabled: true
+            });
 
-        window.cadMap.addListener('center_changed', () => {
-            if (typeof window.updateCadLabelPositionsThrottled === 'function') window.updateCadLabelPositionsThrottled();
+            // 🌟 修正：衛星写真マップタイプのmaxZoomを上書きし、ネイティブで45までズームできるようにする
+            // これにより、CSSのscaleによる引き伸ばし（ギザギザ・ぼやけ化）を防ぎ、ポリゴンの解像度を保つ
+            google.maps.event.addListenerOnce(window.cadMap, 'idle', () => {
+                const satType = window.cadMap.mapTypes.get('satellite');
+                if (satType) satType.maxZoom = 45;
+                const hybType = window.cadMap.mapTypes.get('hybrid');
+                if (hybType) hybType.maxZoom = 45;
+            });
+
+            window.cadMap.addListener('center_changed', () => {
+                if (typeof window.updateCadLabelPositionsThrottled === 'function') window.updateCadLabelPositionsThrottled();
+            });
+            window.cadMap.addListener('zoom_changed', () => {
+                let realZoom = window.cadMap.getZoom();
+                let timeSinceLastSet = Date.now() - (window.cadLastSetZoomTime || 0);
+                if (!window.cadIsSettingZoom && timeSinceLastSet > 300) {
+                    window.cadVirtualZoom = realZoom;
+                }
+                window.updateCadMapTransform();
+            });
+        }
+
+        if (window.cadTargetPolygon) window.cadTargetPolygon.setMap(null);
+        const path = p.coords.map(pt => new google.maps.LatLng(pt.lat, pt.lng));
+
+        window.cadTargetPolygon = new google.maps.Polygon({
+            paths: path, fillColor: '#D7CCC8', fillOpacity: 0.01, strokeColor: '#8BC34A', strokeOpacity: 0.01, strokeWeight: Math.max(0.5, 3), map: window.cadMap, clickable: false
         });
-        window.cadMap.addListener('zoom_changed', () => {
-            let realZoom = window.cadMap.getZoom();
-            let timeSinceLastSet = Date.now() - (window.cadLastSetZoomTime || 0);
-            if (!window.cadIsSettingZoom && timeSinceLastSet > 300) {
-                window.cadVirtualZoom = realZoom;
+        window.cadSvgNeedsRebuild = true;
+
+        const b = new google.maps.LatLngBounds();
+        path.forEach(pt => b.extend(pt));
+        window.cadMap.fitBounds(b);
+
+        window.cadClearLines(true);
+        switchCadTab(1);
+
+        // 🌟 1. 畝幅チップをキャッシュから即座に初期化・表示（待機0ms）
+        window.cadWidthLinkedFromPlan = false;
+        if (typeof window.initCadWidthOptionsFromCache === 'function') {
+            window.initCadWidthOptionsFromCache();
+        }
+        window.setCadWidthCm(null, { updatePreview: false });
+
+        // 🌟 2. 既存の図面データ(uneSimData)があれば、即座に図面を展開して描画！（体感待機0ms）
+        let initialRendered = false;
+        const rawSource = blank ? null : (opts.data || (p && p.uneSimData) || null);
+        const savedSource = (rawSource && !window.cadParseSlimStub_(rawSource)) ? rawSource : null;
+        if (savedSource) {
+            initialRendered = window.renderCadSavedData(savedSource);
+        }
+
+        if (!initialRendered) {
+            document.getElementById('cadAngle').value = 0;
+            if (typeof window.setCadMarginCm === 'function') {
+                window.setCadMarginCm('Side', 50, 50);
+                window.setCadMarginCm('End', 200, 200);
+            } else {
+                const marginSideEl = document.getElementById('cadMarginSide');
+                const marginEndEl = document.getElementById('cadMarginEnd');
+                if (marginSideEl) marginSideEl.value = 50;
+                if (marginEndEl) marginEndEl.value = 200;
             }
-            window.updateCadMapTransform();
-        });
-    }
+            const countEl = document.getElementById('cadUneCount');
+            if (countEl) countEl.value = 0;
+        }
 
-    if (window.cadTargetPolygon) window.cadTargetPolygon.setMap(null);
-    const path = p.coords.map(pt => new google.maps.LatLng(pt.lat, pt.lng));
+        if (cadLoad) cadLoad.update({ label: '最新データを同期中...', detail: '2/2 履歴と栽培計画を確認しています', current: 1, total: 2 });
 
-    window.cadTargetPolygon = new google.maps.Polygon({
-        paths: path, fillColor: '#D7CCC8', fillOpacity: 0.01, strokeColor: '#8BC34A', strokeOpacity: 0.01, strokeWeight: Math.max(0.5, 3), map: window.cadMap, clickable: false
-    });
-    window.cadSvgNeedsRebuild = true;
+        // 🌟 3. 3大通信（履歴・畝幅マスタ最新化・栽培計画の畝間連動）を完全並列実行！
+        try {
+            const [historyRes, masterRes, planRes] = await Promise.allSettled([
+                blank ? Promise.resolve(null) : callGAS('getPolygonDrawingHistory', { id }),
+                window.loadCadWidthOptionsFromMaster(),
+                callGAS('getCultivationRidgeParamsForField', { fieldId: id })
+            ]);
+            if (openSeq !== window._cadOpenSeq) return;
 
-    const b = new google.maps.LatLngBounds();
-    path.forEach(pt => b.extend(pt));
-    window.cadMap.fitBounds(b);
+            // 新規追加は空のまま。編集時だけ、最新図面履歴があれば差分を反映（opts.data指定時は指定データを優先）
+            if (!blank && !opts.data && historyRes.status === 'fulfilled' && historyRes.value && historyRes.value.length > 0 && historyRes.value[0].data) {
+                const latestData = historyRes.value[0].data;
+                if (latestData !== p.uneSimData) {
+                    p.uneSimData = latestData;
+                    if (typeof window.onCadDataSaved === 'function') {
+                        try { window.onCadDataSaved(id, latestData); } catch (eSync) { }
+                    }
+                    window.renderCadSavedData(latestData);
+                }
+            }
 
-    window.cadClearLines(true);
-    switchCadTab(1);
-
-    // 🌟 1. 畝幅チップをキャッシュから即座に初期化・表示（待機0ms）
-    window.cadWidthLinkedFromPlan = false;
-    if (typeof window.initCadWidthOptionsFromCache === 'function') {
-        window.initCadWidthOptionsFromCache();
-    }
-    window.setCadWidthCm(null, { updatePreview: false });
-
-    // 🌟 2. 既存の図面データ(uneSimData)があれば、即座に図面を展開して描画！（体感待機0ms）
-    let initialRendered = false;
-    const savedSource = blank ? null : (opts.data || (p && p.uneSimData) || null);
-    if (savedSource) {
-        initialRendered = window.renderCadSavedData(savedSource);
-    }
-
-    if (!initialRendered) {
-        document.getElementById('cadAngle').value = 0;
-        if (typeof window.setCadMarginCm === 'function') {
-            window.setCadMarginCm('Side', 50, 50);
-            window.setCadMarginCm('End', 200, 200);
+            // 栽培計画の畝間があれば基準畝幅に自動連動
+            if (planRes.status === 'fulfilled' && planRes.value && planRes.value.rSpace) {
+                const planParams = planRes.value;
+                window.cadWidthLinkedFromPlan = true;
+                window.setCadWidthCm(planParams.rSpace);
+                const msgEl = document.getElementById('cadPinModeMsg');
+                if (msgEl) {
+                    const cropBit = planParams.crop
+                        ? `（${planParams.crop}${planParams.variety ? ' / ' + planParams.variety : ''}）`
+                        : '';
+                    msgEl.innerText = `📐 栽培計画の畝間 ${planParams.rSpace}cm を基準畝幅に連動しました${cropBit}`;
+                    msgEl.style.color = '#4CAF50';
+                }
+            }
+        } catch (e) {
+            console.error("CAD並列同期エラー:", e);
+        }
+        if (typeof window.cadUpdateTargetNameHeader_ === 'function') {
+            window.cadUpdateTargetNameHeader_();
         } else {
-            const marginSideEl = document.getElementById('cadMarginSide');
-            const marginEndEl = document.getElementById('cadMarginEnd');
-            if (marginSideEl) marginSideEl.value = 50;
-            if (marginEndEl) marginEndEl.value = 200;
-        }
-        const countEl = document.getElementById('cadUneCount');
-        if (countEl) countEl.value = 0;
-    }
-
-    if (cadLoad) cadLoad.update({ label: '最新データを同期中...', detail: '2/2 履歴と栽培計画を確認しています', current: 1, total: 2 });
-
-    // 🌟 3. 3大通信（履歴・畝幅マスタ最新化・栽培計画の畝間連動）を完全並列実行！
-    try {
-        const [historyRes, masterRes, planRes] = await Promise.allSettled([
-            blank ? Promise.resolve(null) : callGAS('getPolygonDrawingHistory', { id }),
-            window.loadCadWidthOptionsFromMaster(),
-            callGAS('getCultivationRidgeParamsForField', { fieldId: id })
-        ]);
-        if (openSeq !== window._cadOpenSeq) return;
-
-        // 新規追加は空のまま。編集時だけ、最新図面履歴があれば差分を反映
-        if (!blank && historyRes.status === 'fulfilled' && historyRes.value && historyRes.value.length > 0 && historyRes.value[0].data) {
-            const latestData = historyRes.value[0].data;
-            if (latestData !== p.uneSimData) {
-                p.uneSimData = latestData;
-                window.renderCadSavedData(latestData);
-            }
+            document.getElementById('cadTargetName').innerText = p.name;
         }
 
-        // 栽培計画の畝間があれば基準畝幅に自動連動
-        if (planRes.status === 'fulfilled' && planRes.value && planRes.value.rSpace) {
-            const planParams = planRes.value;
-            window.cadWidthLinkedFromPlan = true;
-            window.setCadWidthCm(planParams.rSpace);
-            const msgEl = document.getElementById('cadPinModeMsg');
-            if (msgEl) {
-                const cropBit = planParams.crop
-                    ? `（${planParams.crop}${planParams.variety ? ' / ' + planParams.variety : ''}）`
-                    : '';
-                msgEl.innerText = `📐 栽培計画の畝間 ${planParams.rSpace}cm を基準畝幅に連動しました${cropBit}`;
-                msgEl.style.color = '#4CAF50';
-            }
-        }
-    } catch (e) {
-        console.error("CAD並列同期エラー:", e);
-    }
-    if (typeof window.cadUpdateTargetNameHeader_ === 'function') {
-        window.cadUpdateTargetNameHeader_();
-    } else {
-        document.getElementById('cadTargetName').innerText = p.name;
-    }
-
-    // 起動直後の状態を履歴0番目として保存
-    setTimeout(() => {
-        if (openSeq !== window._cadOpenSeq) return;
-        window.cadHistory = [];
-        window.cadHistoryIndex = -1;
-        window.saveCadStateToHistory();
-    }, 200);
+        // 起動直後の状態を履歴0番目として保存
+        setTimeout(() => {
+            if (openSeq !== window._cadOpenSeq) return;
+            window.cadHistory = [];
+            window.cadHistoryIndex = -1;
+            window.saveCadStateToHistory();
+        }, 200);
     } finally {
         if (cadLoad) cadLoad.done();
     }
@@ -2552,7 +2566,7 @@ window.renderCadSavedData = (savedDataStr) => {
     if (!savedDataStr) return false;
     try {
         const saved = (typeof savedDataStr === 'string') ? JSON.parse(savedDataStr) : savedDataStr;
-        if (!saved || typeof saved !== 'object') return false;
+        if (!saved || typeof saved !== 'object' || saved._slim) return false;
 
         document.getElementById('cadAngle').value = saved.angle !== undefined ? saved.angle : 0;
         document.getElementById('cadUneCount').value = saved.uneCount !== undefined ? saved.uneCount : 0;
@@ -2703,7 +2717,7 @@ window.cadOnMarginSelectChange = (suffix) => {
     if (!sel || !inp) return;
     if (sel.value === 'custom') {
         inp.style.display = 'block';
-        try { inp.focus(); } catch (e) {}
+        try { inp.focus(); } catch (e) { }
     } else {
         inp.style.display = 'none';
         inp.value = sel.value;
@@ -2904,7 +2918,7 @@ window.initCadWidthOptionsFromCache = () => {
                 });
             }
         }
-    } catch (e) {}
+    } catch (e) { }
     window.cadWidthOptions = Array.from(set).sort((a, b) => a - b);
     window.refreshCadWidthButtons(window.getCadWidthCm());
 };
@@ -2918,7 +2932,7 @@ window.loadCadWidthOptionsFromMaster = async () => {
     try {
         const data = await callGAS('getCultivationMaster');
         if (data) {
-            try { localStorage.setItem('cpMasterDataCache', JSON.stringify(data)); } catch (e) {}
+            try { localStorage.setItem('cpMasterDataCache', JSON.stringify(data)); } catch (e) { }
             const set = new Set(window.CAD_DEFAULT_RIDGE_WIDTHS_CM || [100, 120, 150, 180, 200]);
             (data.rSpace || []).forEach(v => {
                 const n = parseFloat(v);
@@ -2984,7 +2998,7 @@ window.estimateCadUneWidthMeters = (gPoly) => {
                     if (!(w > 0.15 && w < 8) || w > wArea * 1.35) w = wArea;
                 }
             }
-        } catch (e2) {}
+        } catch (e2) { }
         return (w > 0.05 && w < 8) ? w : 0;
     } catch (e) {
         return 0;
@@ -3391,7 +3405,7 @@ window.cadApplyRidgeNumberSplit = () => {
                         : '#8BC34A'
                 });
             }
-        } catch (e) {}
+        } catch (e) { }
     });
 
     if (typeof window.reassignLabels === 'function') window.reassignLabels();
@@ -3427,7 +3441,7 @@ window.cadClearRidgeNumberSplit = () => {
                             : '#8BC34A'
                     });
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
     });
     if (typeof window.reassignLabels === 'function') window.reassignLabels();
@@ -3527,7 +3541,7 @@ window.cadApplyGroupPlanToRidges = (planItems, successMsg) => {
                         : '#8BC34A'
                 });
             }
-        } catch (e) {}
+        } catch (e) { }
     });
     if (typeof window.reassignLabels === 'function') window.reassignLabels();
     window.cadSvgNeedsRebuild = true;
@@ -3662,7 +3676,7 @@ window.cadStartSplitGps = () => {
         return;
     }
     if (typeof switchCadTab === 'function') {
-        try { switchCadTab(4); } catch (e) {}
+        try { switchCadTab(4); } catch (e) { }
     }
     window.cadStartPurposeGpsWatch('split_cut', '分割位置のGPS測位中… 畝の境目に立って「ここに分割点」');
 };
@@ -3831,11 +3845,11 @@ window.cadGetNearestEdgeAngle = (latLng) => {
     let minD = Infinity;
     let bestBearing = 0;
     for (let i = 0; i < coords.length - 1; i++) {
-        let line = turf.lineString([coords[i], coords[i+1]]);
+        let line = turf.lineString([coords[i], coords[i + 1]]);
         let d = turf.pointToLineDistance(pt, line, { units: 'meters' });
         if (d < minD) {
             minD = d;
-            bestBearing = turf.bearing(turf.point(coords[i]), turf.point(coords[i+1]));
+            bestBearing = turf.bearing(turf.point(coords[i]), turf.point(coords[i + 1]));
         }
     }
 
@@ -3861,7 +3875,7 @@ window.cadGetSnapGridSizeM = () => {
 window.cadClearSnapGridLines_ = () => {
     if (window.cadGridLines) {
         window.cadGridLines.forEach(l => {
-            try { l.setMap(null); } catch (e) {}
+            try { l.setMap(null); } catch (e) { }
         });
     }
     window.cadGridLines = [];
@@ -3916,7 +3930,7 @@ window.cadResolveSnapGridOrigin_ = (centerPt, angle, cell, fieldCoords) => {
                 alignLng = np.geometry.coordinates[0];
                 alignLat = np.geometry.coordinates[1];
                 alignBearing = bestB;
-            } catch (e) {}
+            } catch (e) { }
         }
     }
 
@@ -4364,7 +4378,7 @@ window.cadSyncMergedCellRidges_ = (opts) => {
     const kept = [];
     (window.cadCustomShapes || []).forEach((poly) => {
         if (poly && poly._cadFromCellPaint) {
-            try { poly.setMap(null); } catch (e) {}
+            try { poly.setMap(null); } catch (e) { }
         } else if (poly) {
             kept.push(poly);
         }
@@ -4408,7 +4422,7 @@ window.cadSyncMergedCellRidges_ = (opts) => {
                 } else {
                     cellPolys.push(turf.polygon([window.cadGetGridCellRing_(iu, iv, frame)]));
                 }
-            } catch (e) {}
+            } catch (e) { }
         });
         if (!cellPolys.length) return;
 
@@ -4417,7 +4431,7 @@ window.cadSyncMergedCellRidges_ = (opts) => {
             try {
                 const u = turf.union(merged, cellPolys[i]);
                 if (u) merged = u;
-            } catch (e) {}
+            } catch (e) { }
         }
 
         let finalPoly = null;
@@ -4494,7 +4508,7 @@ window.cadPaintGridCell = (iu, iv, opts) => {
         if (!turf.booleanPointInPolygon(turf.point([mid.lng, mid.lat]), turf.polygon([fieldCoords]))) {
             return 'outside';
         }
-    } catch (e) {}
+    } catch (e) { }
 
     if (erase) {
         if (!window.cadPaintedCellSet.has(key)) return null;
@@ -4547,7 +4561,7 @@ window.updateCadPreviewCount = () => {
     const angle = parseFloat(document.getElementById('cadAngle').value) || 0;
     const marginSideEl = document.getElementById('cadMarginSide');
     const sideMarginMeters = marginSideEl && marginSideEl.value ? parseFloat(marginSideEl.value) / 100 : 0;
-    
+
     const p = loadedPolygons[window.cadTargetId];
     if (!widthCm || widthCm <= 0 || !p || !p.coords) return;
 
@@ -5301,7 +5315,7 @@ window.cadCommitSplitLine = (path) => {
     window.cadNakamichiLines.push(path);
     if (typeof window.drawNakamichiVisual === 'function') window.drawNakamichiVisual(path);
     try { window.cadSplitExistingRidgesByLine_(path); } catch (e) { console.warn('畝の分割に失敗:', e); }
-    try { if (typeof window.cadSplitMakuraByNakamichi === 'function') window.cadSplitMakuraByNakamichi(path); } catch (e) {}
+    try { if (typeof window.cadSplitMakuraByNakamichi === 'function') window.cadSplitMakuraByNakamichi(path); } catch (e) { }
     if (typeof window.cadUpdateSplitLineBtn === 'function') window.cadUpdateSplitLineBtn();
     if (typeof window.reassignLabels === 'function') window.reassignLabels();
     if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
@@ -5338,7 +5352,7 @@ window.cadSplitExistingRidgesByLine_ = (path) => {
             let diff = null;
             try { diff = turf.difference(src, cut); } catch (e) { diff = null; }
             if (!diff) {
-                try { gPoly.setMap(null); } catch (e) {}
+                try { gPoly.setMap(null); } catch (e) { }
                 return;
             }
             const before = window.cadFeatureArea(src);
@@ -5351,7 +5365,7 @@ window.cadSplitExistingRidgesByLine_ = (path) => {
             try { flat = turf.flatten(diff); } catch (e) { flat = { features: [diff] }; }
             const feats = (flat.features || []).filter((f) => f && window.cadFeatureArea(f) > 0.25);
             if (!feats.length) {
-                try { gPoly.setMap(null); } catch (e) {}
+                try { gPoly.setMap(null); } catch (e) { }
                 return;
             }
             if (feats.length === 1) {
@@ -5363,7 +5377,7 @@ window.cadSplitExistingRidgesByLine_ = (path) => {
                 next.push(gPoly);
                 return;
             }
-            try { gPoly.setMap(null); } catch (e) {}
+            try { gPoly.setMap(null); } catch (e) { }
             feats.forEach((feature, i) => {
                 const one = window.cadCoalesceToPolygon(feature);
                 if (!one || !one.geometry || one.geometry.type !== 'Polygon') return;
@@ -5627,7 +5641,7 @@ window.cadSplitMakuraByNakamichi = (path) => {
     });
 
     toRemove.forEach(poly => {
-        try { poly.setMap(null); } catch (e) {}
+        try { poly.setMap(null); } catch (e) { }
     });
     window.cadCustomShapes = kept;
 
@@ -5658,7 +5672,7 @@ window.cadReapplyAllNakamichiSplits = () => {
     // 既存の枕ポリゴンを地図・配列から削除
     const nonMakura = (window.cadCustomShapes || []).filter(p => p && p.uneGroup !== '枕');
     const oldMakura = (window.cadCustomShapes || []).filter(p => p && p.uneGroup === '枕');
-    oldMakura.forEach(p => { try { p.setMap(null); } catch (e) {} });
+    oldMakura.forEach(p => { try { p.setMap(null); } catch (e) { } });
 
     // 基底枕ポリゴンを復元して再配置
     const restoredMakura = [];
@@ -5923,11 +5937,11 @@ window.cadSetFrontBar = (position) => {
     const minLng = bbox[0], minLat = bbox[1], maxLng = bbox[2], maxLat = bbox[3];
 
     let pt;
-    switch(position) {
-        case 'top':    pt = {lat: maxLat, lng: (minLng + maxLng) / 2}; break;
-        case 'bottom': pt = {lat: minLat, lng: (minLng + maxLng) / 2}; break;
-        case 'left':   pt = {lat: (minLat + maxLat) / 2, lng: minLng}; break;
-        case 'right':  pt = {lat: (minLat + maxLat) / 2, lng: maxLng}; break;
+    switch (position) {
+        case 'top': pt = { lat: maxLat, lng: (minLng + maxLng) / 2 }; break;
+        case 'bottom': pt = { lat: minLat, lng: (minLng + maxLng) / 2 }; break;
+        case 'left': pt = { lat: (minLat + maxLat) / 2, lng: minLng }; break;
+        case 'right': pt = { lat: (minLat + maxLat) / 2, lng: maxLng }; break;
     }
 
     let path = pt;
@@ -5959,7 +5973,7 @@ window.cadAddCustomShape = (type) => {
     }
     window.cadPinMode = mode;
     window.cadCustomShapeGpsType = (type === 'circle') ? 'circle' : 'rect';
-    
+
     // 🌟 自由畝追加時はグリッドを自動的にONにしてセル格子を表示！
     if (!window.cadSnapGridOn) {
         window.cadToggleSnapGrid(true);
@@ -6001,7 +6015,7 @@ window.cadStartCustomShapeGps = (type) => {
         msgEl.style.color = '#1565C0';
     }
     if (typeof switchCadTab === 'function') {
-        try { switchCadTab(1); } catch (e) {}
+        try { switchCadTab(1); } catch (e) { }
     }
 };
 
@@ -6079,7 +6093,7 @@ window.cadExecuteAddCustomShape = (latLng, type, opts) => {
                 : '圃場の内側をタップしてください。');
             return;
         }
-    } catch (e) {}
+    } catch (e) { }
 
     const widthM = window.getCadReferenceRidgeWidthMeters() || 1.5;
     const angleEl = document.getElementById('cadAngle');
@@ -6090,7 +6104,7 @@ window.cadExecuteAddCustomShape = (latLng, type, opts) => {
         if (typeof window.cadGetNearestEdgeAngle === 'function') {
             autoAngle = window.cadGetNearestEdgeAngle(latLng);
         }
-    } catch (e) {}
+    } catch (e) { }
 
     let angle = 0;
     if (autoAngle !== null && !isNaN(autoAngle)) {
@@ -6152,7 +6166,7 @@ window.cadExecuteAddCustomShape = (latLng, type, opts) => {
         if (!finalPoly) break;
         try {
             finalPoly = turf.difference(finalPoly, av);
-        } catch (e) {}
+        } catch (e) { }
     }
     if (!finalPoly) {
         alert('既存の畝と重なっているため置けません。別の位置をタップしてください。');
@@ -6272,7 +6286,7 @@ window.cadGetRidgeAxisBearing = () => {
                     bestLen = len;
                     bestBearing = turf.bearing(pa, pb);
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
         if (bestBearing != null && bestLen > 0.5) return bestBearing;
     }
@@ -6301,7 +6315,7 @@ window.cadInwardBearingForEdge = (info, fieldCenterCoord, tPoly) => {
             const inR = turf.booleanPointInPolygon(pR, tPoly);
             if (inL && !inR) return left;
             if (inR && !inL) return right;
-        } catch (e) {}
+        } catch (e) { }
     }
     const toCenter = turf.bearing(mid, turf.point(fieldCenterCoord));
     return (window.cadBearingDiff(left, toCenter) <= window.cadBearingDiff(right, toCenter)) ? left : right;
@@ -6337,16 +6351,16 @@ window.cadCoalesceToPolygon = (feature) => {
             try {
                 const n = turf.union(united, grown[i]);
                 if (n) united = n;
-            } catch (e) {}
+            } catch (e) { }
         }
         if (united && united.geometry && united.geometry.type === 'Polygon') {
             try {
                 const back = turf.buffer(united, -0.12, { units: 'meters' });
                 if (back && back.geometry && back.geometry.type === 'Polygon') return back;
-            } catch (e) {}
+            } catch (e) { }
             return united;
         }
-    } catch (e) {}
+    } catch (e) { }
     let best = feats[0];
     let bestA = -1;
     feats.forEach(f => {
@@ -6392,7 +6406,7 @@ window.cadApplyFeatureToGooglePoly = (gPoly, feature) => {
             if (old && google.maps.event && google.maps.event.clearInstanceListeners) {
                 google.maps.event.clearInstanceListeners(old);
             }
-        } catch (e) {}
+        } catch (e) { }
         gPoly.setPath(path);
     } catch (e) {
         console.warn('枕畝の形状反映に失敗:', e);
@@ -6400,7 +6414,7 @@ window.cadApplyFeatureToGooglePoly = (gPoly, feature) => {
     } finally {
         window.cadSuppressPathEvents = false;
     }
-    try { window.cadRebindPolyPathHistory(gPoly); } catch (e) {}
+    try { window.cadRebindPolyPathHistory(gPoly); } catch (e) { }
     return true;
 };
 
@@ -6417,10 +6431,10 @@ window.cadDifferenceOthers = (piece, keepPoly, gapM) => {
             if (!other) continue;
             try {
                 let avoid = other;
-                try { avoid = turf.buffer(other, gap, { units: 'meters' }) || other; } catch (e) {}
+                try { avoid = turf.buffer(other, gap, { units: 'meters' }) || other; } catch (e) { }
                 const d = turf.difference(piece, avoid);
                 piece = d || null;
-            } catch (e) {}
+            } catch (e) { }
         }
     }
     return piece;
@@ -6455,7 +6469,7 @@ window.cadBuildInwardCorridor = (info, tPoly, depthM) => {
         const cs = ext.geometry.coordinates;
         a = cs[0];
         b = cs[cs.length - 1];
-    } catch (e) {}
+    } catch (e) { }
     const insetM = (window.CAD_MAKURA_EDGE_INSET_M > 0) ? window.CAD_MAKURA_EDGE_INSET_M : 0;
     const depth = Math.min(40, Math.max(0.4, depthM));
     const a0 = turf.destination(turf.point(a), insetM, inward, { units: 'meters' }).geometry.coordinates;
@@ -6777,12 +6791,12 @@ window.cadShortenRidgesClearOfMakura_ = (makuraFeatures) => {
         const one = window.cadCoalesceToPolygon(f);
         if (!one) return;
         let grown = one;
-        try { grown = turf.buffer(one, gap, { units: 'meters' }) || one; } catch (e) {}
+        try { grown = turf.buffer(one, gap, { units: 'meters' }) || one; } catch (e) { }
         if (!zone) { zone = grown; return; }
         try {
             const u = turf.union(zone, grown);
             if (u) zone = window.cadCoalesceToPolygon(u) || zone;
-        } catch (e) {}
+        } catch (e) { }
     });
     if (!zone) return 0;
     const hits = (a, b) => {
@@ -6882,11 +6896,11 @@ window.cadSeparateMakuraFromRidges_ = (features) => {
                 const other = window.cadGooglePolyToTurf(list[i]);
                 if (!other || !hits(piece, other)) continue;
                 let avoid = other;
-                try { avoid = turf.buffer(other, gap, { units: 'meters' }) || other; } catch (e) {}
+                try { avoid = turf.buffer(other, gap, { units: 'meters' }) || other; } catch (e) { }
                 try {
                     const d = turf.difference(piece, avoid);
                     if (d) piece = d;
-                } catch (e) {}
+                } catch (e) { }
             }
         }
         if (!piece) return;
@@ -7048,7 +7062,7 @@ window.cadMergeParallelEdgesIntoEndRidges = (ring, tPoly, edgeIndexes, widthM) =
                 try {
                     const u = turf.union(piece, p);
                     if (u) piece = u;
-                } catch (e) {}
+                } catch (e) { }
             }
         });
         piece = window.cadDifferenceOthers(piece, group.entry.gPoly);
@@ -7060,11 +7074,11 @@ window.cadMergeParallelEdgesIntoEndRidges = (ring, tPoly, edgeIndexes, widthM) =
         try {
             const u = turf.union(acc, piece);
             if (u) acc = u;
-        } catch (e) {}
+        } catch (e) { }
         try {
             const clipped = turf.intersect(tPoly, acc);
             if (clipped) acc = clipped;
-        } catch (e) {}
+        } catch (e) { }
         const before = window.cadFeatureArea(group.entry.poly);
         const one = window.cadCoalesceToPolygon(acc);
         const after = window.cadFeatureArea(one);
@@ -7220,7 +7234,7 @@ window.cadSmoothMakuraCorners_ = (feature, radiusM) => {
                 poly = feats.reduce((best, cur) => ((turf.area(cur) || 0) > (turf.area(best) || 0) ? cur : best));
             }
         }
-    } catch (e) {}
+    } catch (e) { }
     const out = window.cadCoalesceToPolygon(poly);
     if (!out) return one;
     const before = window.cadFeatureArea(one);
@@ -7249,7 +7263,7 @@ window.cadBuildFollowingMakuraStrips_ = (ring, tPoly, edgeIndexes, widthM) => {
         try {
             const u = turf.union(acc, parts[i]);
             if (u) acc = u;
-        } catch (e) {}
+        } catch (e) { }
     }
     let flat;
     try { flat = turf.flatten(acc); } catch (e) { flat = { features: [acc] }; }
@@ -7397,7 +7411,7 @@ window.cadBuildRoundJoinedMakura_ = (ring, tPoly, edgeIndexes, widthM) => {
         try {
             const hit = turf.intersect(tPoly, poly);
             if (hit) clipped = hit;
-        } catch (e) {}
+        } catch (e) { }
         let flat;
         try { flat = turf.flatten(clipped); } catch (e) { flat = { features: [clipped] }; }
         (flat.features || []).forEach((feature) => {
@@ -7848,7 +7862,7 @@ window.cadUnionMakuraFeaturesNearChain = (flattened, centerPt, edgeChain, maxEdg
             try {
                 const u = turf.union(united, grown[i]);
                 if (u) united = u;
-            } catch (eU) {}
+            } catch (eU) { }
         }
         if (united && united.geometry && united.geometry.type === 'MultiPolygon') {
             try {
@@ -7953,7 +7967,7 @@ window.cadExecuteAddMakura = (latLng) => {
                             try {
                                 const u = turf.union(unionStrip, clipped);
                                 if (u) unionStrip = u;
-                            } catch (eU) {}
+                            } catch (eU) { }
                         }
                     });
                 }
@@ -8038,7 +8052,7 @@ window.cadExecuteAddMakura = (latLng) => {
     try {
         const clippedChosen = turf.intersect(tPoly, chosenFeature);
         if (clippedChosen) chosenFeature = clippedChosen;
-    } catch (eClip) {}
+    } catch (eClip) { }
 
     let coordinates = chosenFeature.geometry.coordinates;
     if (!coordinates || coordinates.length === 0) {
@@ -8054,7 +8068,7 @@ window.cadExecuteAddMakura = (latLng) => {
                 chosenFeature = remerged;
                 coordinates = chosenFeature.geometry.coordinates;
             }
-        } catch (eRemerge) {}
+        } catch (eRemerge) { }
     }
     if (chosenFeature.geometry.type === 'MultiPolygon') {
         let bestRingSet = null;
@@ -8063,7 +8077,7 @@ window.cadExecuteAddMakura = (latLng) => {
             try {
                 const a = turf.area(turf.polygon(polyCoords));
                 if (a > bestArea) { bestArea = a; bestRingSet = polyCoords; }
-            } catch (e) {}
+            } catch (e) { }
         });
         coordinates = bestRingSet || coordinates[0];
     }
@@ -8270,7 +8284,7 @@ window.cadStartPartialGps = (which) => {
     );
     if (!ok) return;
     if (typeof switchCadTab === 'function') {
-        try { switchCadTab(1); } catch (e) {}
+        try { switchCadTab(1); } catch (e) { }
     }
 };
 
@@ -8476,7 +8490,7 @@ window.cadSetQuadCorner = (idx, latLng, opts) => {
                         : '圃場の内側をタップしてください。');
                     return;
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
     }
 
@@ -8524,7 +8538,7 @@ window.cadStartQuadGps = () => {
     if (!ok) return;
     window.cadUpdateQuadUi_();
     if (typeof switchCadTab === 'function') {
-        try { switchCadTab(1); } catch (e) {}
+        try { switchCadTab(1); } catch (e) { }
     }
 };
 
@@ -8545,7 +8559,7 @@ window.cadConfirmQuadGps = () => {
 window.cadClearQuadCorners = (silent) => {
     window.cadQuadCorners = [null, null, null, null];
     (window.cadQuadMarkers || []).forEach((m, i) => {
-        if (m) { try { m.setMap(null); } catch (e) {} }
+        if (m) { try { m.setMap(null); } catch (e) { } }
         if (window.cadQuadMarkers) window.cadQuadMarkers[i] = null;
     });
     if (window.cadQuadPreviewPoly) {
@@ -8659,7 +8673,7 @@ window.cadGenerateQuadStripLines = () => {
             const bearing = turf.bearing(turf.point(ridgeBearingFrom), turf.point(ridgeBearingTo));
             const angleEl = document.getElementById('cadAngle');
             if (angleEl) angleEl.value = String(Math.round(((bearing % 360) + 360) % 360));
-        } catch (e) {}
+        } catch (e) { }
 
         const gapRatio = typeof window.cadRidgeGapRatio !== 'undefined' ? window.cadRidgeGapRatio : 0.2;
         const fill = Math.max(0.5, Math.min(1, 1 - gapRatio));
@@ -8733,7 +8747,7 @@ window.cadGenerateQuadStripLines = () => {
             }
             const mode1El = document.getElementById('cadMode1');
             if (mode1El && mode1El.style.display === 'block') {
-                try { switchCadTab(2); } catch (e) {}
+                try { switchCadTab(2); } catch (e) { }
             }
         }
     } catch (err) {
@@ -9047,7 +9061,7 @@ window.cadCollectObliqueClearanceSegs = (ringCoords, ridgeAngleDeg, gapM) => {
         const a0 = infos[i].a;
         const b0 = infos[end].b;
         let groupBear = baseBear;
-        try { groupBear = turf.bearing(turf.point(a0), turf.point(b0)); } catch (e) {}
+        try { groupBear = turf.bearing(turf.point(a0), turf.point(b0)); } catch (e) { }
         // 畝の長手と平行な辺は左右の側面。短い凹みは端面余白でよけない
         if (align(groupBear, ridgeAngleDeg) <= 12) continue;
         if (chainLen < 4) continue;
@@ -9061,7 +9075,7 @@ window.cadCollectObliqueClearanceSegs = (ringCoords, ridgeAngleDeg, gapM) => {
                 a = cs[0];
                 b = cs[cs.length - 1];
             }
-        } catch (e) {}
+        } catch (e) { }
         segs.push([a, b]);
     }
     return segs;
@@ -9110,7 +9124,7 @@ window.cadGenerateLines = () => {
                 let pLat = typeof window.cadFrontBaseline.lat === 'function' ? window.cadFrontBaseline.lat() : parseFloat(window.cadFrontBaseline.lat);
                 baseOrigin = turf.point([pLng, pLat]);
             }
-            
+
             let centerBearing = turf.bearing(baseOrigin, centerTurf);
             let diffPlus = (centerBearing - (angle + 90)) * Math.PI / 180;
             let diffMinus = (centerBearing - (angle - 90)) * Math.PI / 180;
@@ -9118,9 +9132,9 @@ window.cadGenerateLines = () => {
         }
 
         tPoly.geometry.coordinates[0].forEach(coord => {
-            const pt = turf.point(coord); 
+            const pt = turf.point(coord);
             const dist = turf.distance(baseOrigin, pt, { units: 'meters' });
-            const bearing = turf.bearing(baseOrigin, pt); 
+            const bearing = turf.bearing(baseOrigin, pt);
             const angleDiff = (bearing - growDirection) * Math.PI / 180;
             const projDist = dist * Math.cos(angleDiff);
             if (projDist > maxPosDist) maxPosDist = projDist;
@@ -9157,7 +9171,7 @@ window.cadGenerateLines = () => {
             const centerLine = turf.lineString([[p1lng, p1lat], [p2lng, p2lat]]);
             return turf.buffer(centerLine, 0.5 / 1000, { units: 'kilometers' });
         });
-        
+
         let avoidPolys = [...nakamichiPolys, ...drainagePolys];
         const obliqueSegs = window.cadCollectObliqueClearanceSegs(coords, angle, endMarginMeters);
         const sideSegs = window.cadCollectSideClearanceSegs_(coords, angle);
@@ -9179,17 +9193,17 @@ window.cadGenerateLines = () => {
                 let w = widthM * ridgeRatio;
 
                 let checkValid = (dist) => {
-                    let c = turf.destination(pt1, dist, angle + 180, {units: 'meters'});
+                    let c = turf.destination(pt1, dist, angle + 180, { units: 'meters' });
                     let wCheck = w;
-                    let c_fwd = turf.destination(c, endMarginMeters, angle + 180, {units: 'meters'});
-                    let c_bwd = turf.destination(c, endMarginMeters, angle, {units: 'meters'});
+                    let c_fwd = turf.destination(c, endMarginMeters, angle + 180, { units: 'meters' });
+                    let c_bwd = turf.destination(c, endMarginMeters, angle, { units: 'meters' });
 
-                    let p_fwd_L = turf.destination(c_fwd, wCheck / 2, angle + 90, {units: 'meters'});
-                    let p_fwd_R = turf.destination(c_fwd, wCheck / 2, angle - 90, {units: 'meters'});
-                    let p_bwd_L = turf.destination(c_bwd, wCheck / 2, angle + 90, {units: 'meters'});
-                    let p_bwd_R = turf.destination(c_bwd, wCheck / 2, angle - 90, {units: 'meters'});
-                    let c_L = turf.destination(c, wCheck / 2, angle + 90, {units: 'meters'});
-                    let c_R = turf.destination(c, wCheck / 2, angle - 90, {units: 'meters'});
+                    let p_fwd_L = turf.destination(c_fwd, wCheck / 2, angle + 90, { units: 'meters' });
+                    let p_fwd_R = turf.destination(c_fwd, wCheck / 2, angle - 90, { units: 'meters' });
+                    let p_bwd_L = turf.destination(c_bwd, wCheck / 2, angle + 90, { units: 'meters' });
+                    let p_bwd_R = turf.destination(c_bwd, wCheck / 2, angle - 90, { units: 'meters' });
+                    let c_L = turf.destination(c, wCheck / 2, angle + 90, { units: 'meters' });
+                    let c_R = turf.destination(c, wCheck / 2, angle - 90, { units: 'meters' });
 
                     let ptsToCheck = [p_fwd_L, p_fwd_R, p_bwd_L, p_bwd_R, c_L, c_R];
 
@@ -9268,12 +9282,12 @@ window.cadGenerateLines = () => {
                 if (!validSegments.length) continue;
                 const seg = validSegments[0];
                 const segLen = seg.end - seg.start;
-                let sPt = turf.destination(pt1, seg.start, angle + 180, {units: 'meters'});
-                let ePt = turf.destination(pt1, seg.end, angle + 180, {units: 'meters'});
-                let p1c = turf.destination(sPt, w / 2, angle + 90, {units: 'meters'}).geometry.coordinates;
-                let p2c = turf.destination(sPt, w / 2, angle - 90, {units: 'meters'}).geometry.coordinates;
-                let p3c = turf.destination(ePt, w / 2, angle - 90, {units: 'meters'}).geometry.coordinates;
-                let p4c = turf.destination(ePt, w / 2, angle + 90, {units: 'meters'}).geometry.coordinates;
+                let sPt = turf.destination(pt1, seg.start, angle + 180, { units: 'meters' });
+                let ePt = turf.destination(pt1, seg.end, angle + 180, { units: 'meters' });
+                let p1c = turf.destination(sPt, w / 2, angle + 90, { units: 'meters' }).geometry.coordinates;
+                let p2c = turf.destination(sPt, w / 2, angle - 90, { units: 'meters' }).geometry.coordinates;
+                let p3c = turf.destination(ePt, w / 2, angle - 90, { units: 'meters' }).geometry.coordinates;
+                let p4c = turf.destination(ePt, w / 2, angle + 90, { units: 'meters' }).geometry.coordinates;
                 pieces.push({ i: i, len: segLen, start: seg.start, end: seg.end, pt1: pt1, w: w, poly: turf.polygon([[p1c, p2c, p3c, p4c, p1c]]) });
             }
             const rebuild = (p) => {
@@ -9369,7 +9383,7 @@ window.openCadEditModal = () => {
     }
 
     document.getElementById('cadEditIndex').value = idx;
-    
+
     const isCustom = idx.startsWith('custom_');
     const polyList = isCustom ? window.cadCustomShapes : window.cadUnePolygons;
     const poly = polyList.find(p => p.uneIndex === idx);
@@ -9396,10 +9410,10 @@ window.openCadEditModal = () => {
         window.cadSvgNeedsRebuild = true;
         if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: false });
     }
-    
+
     // 🌟 自動的に下部の「② 編集」タブへ切り替え・展開
     if (typeof window.switchCadTab === 'function') {
-        try { window.switchCadTab(2); } catch (e) {}
+        try { window.switchCadTab(2); } catch (e) { }
     }
     const editSec = document.getElementById('cadUneEditSection');
     if (editSec) editSec.style.display = 'block';
@@ -9545,7 +9559,7 @@ window.cadRotatePoly = (deg, isContinuous = false) => {
 
     let rotatedPoly = turf.transformRotate(tPoly, deg);
     let newCoords = rotatedPoly.geometry.coordinates[0].map(c => new google.maps.LatLng(c[1], c[0]));
-    newCoords.pop(); 
+    newCoords.pop();
     for (let i = 0; i < path.getLength(); i++) path.setAt(i, newCoords[i]);
     window.updateSinglePolyLabel(idx);
     if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
@@ -9599,7 +9613,7 @@ window.cadResizePoly = (scaleFactor, isContinuous = false) => {
         let nLat = centerLat + (pt.lat() - centerLat) * scaleFactor;
         newCoords.push(new google.maps.LatLng(nLat, nLng));
     }
-    
+
     for (let i = 0; i < path.getLength(); i++) path.setAt(i, newCoords[i]);
     window.updateSinglePolyLabel(idx);
     if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
@@ -9966,7 +9980,7 @@ window.cadDeleteSelectedRidge = () => {
         window.cadClearRidgeSelection();
         return;
     }
-    try { hit.found.setMap(null); } catch (e) {}
+    try { hit.found.setMap(null); } catch (e) { }
     hit.list.splice(hit.at, 1);
     window.cadSelectedRidgeId = null;
     window.cadSelectedRidgeAnchorLatLng = null;
@@ -10007,7 +10021,7 @@ window.reassignLabels = () => {
     if (window.cadUneLabels && window.cadUneLabels.length) {
         window.cadUneLabels.forEach(lbl => {
             if (lbl && typeof lbl.setMap === 'function' && lbl.getMap) {
-                try { lbl.setMap(null); } catch (e) {}
+                try { lbl.setMap(null); } catch (e) { }
             }
         });
     }
@@ -10063,6 +10077,91 @@ window.reassignLabels = () => {
     if (typeof window.cadDetachAllRidgesFromMap === 'function') window.cadDetachAllRidgesFromMap();
 };
 
+/** CAD共通: 現在のログインユーザー名を安全に取得（admin.html / schedule.html 両対応） */
+window.getCadCurrentUserName_ = () => {
+    if (typeof currentUser !== 'undefined' && currentUser) return currentUser;
+    if (window.currentUser) return window.currentUser;
+    try {
+        return localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+    } catch (e) {
+        return '';
+    }
+};
+
+/** CAD共通: 作物マスタ一覧を取得（admin.html の pdlCrops / schedule.html の getAllKnownCrops・cpMasterData 両対応） */
+window.cadGetAvailableCropsList_ = () => {
+    const set = new Set();
+    if (typeof pdlCrops !== 'undefined' && Array.isArray(pdlCrops)) {
+        pdlCrops.forEach(c => {
+            const n = String((c && c.name) || c || '').trim();
+            if (n) set.add(n);
+        });
+    }
+    if (typeof window.getAllKnownCrops === 'function') {
+        try {
+            const arr = window.getAllKnownCrops();
+            if (Array.isArray(arr)) {
+                arr.forEach(c => {
+                    const n = String((c && c.name) || c || '').trim();
+                    if (n) set.add(n);
+                });
+            }
+        } catch (e) { }
+    }
+    if (typeof cpMasterData !== 'undefined' && cpMasterData && Array.isArray(cpMasterData.crops)) {
+        cpMasterData.crops.forEach(c => {
+            const n = String((c && c.name) || c || '').trim();
+            if (n) set.add(n);
+        });
+    }
+    if (set.size === 0) {
+        try {
+            const cached = localStorage.getItem('cpMasterDataCache');
+            if (cached) {
+                const parsed = JSON.parse(cached);
+                if (parsed && Array.isArray(parsed.crops)) {
+                    parsed.crops.forEach(c => {
+                        const n = String((c && c.name) || c || '').trim();
+                        if (n) set.add(n);
+                    });
+                }
+            }
+        } catch (e) { }
+    }
+    if (set.size === 0 && window._ganttMasters && Array.isArray(window._ganttMasters.crops)) {
+        window._ganttMasters.crops.forEach(c => {
+            const n = String((c && c.name) || c || '').trim();
+            if (n) set.add(n);
+        });
+    }
+    return Array.from(set);
+};
+
+if (typeof window.getCropIconEmoji_ !== 'function') {
+    window.getCropIconEmoji_ = (cropName) => {
+        const s = String(cropName || '');
+        if (/さつまいも|甘藷|紅はるか|鳴門金時|シルクスイート/.test(s)) return '🍠';
+        if (/じゃがいも|馬鈴薯/.test(s)) return '🥔';
+        if (/にんじん|人参/.test(s)) return '🥕';
+        if (/たまねぎ|玉ねぎ|玉葱/.test(s)) return '🧅';
+        if (/にんにく|大蒜/.test(s)) return '🧄';
+        if (/トマト|ミニトマト/.test(s)) return '🍅';
+        if (/なす|茄子/.test(s)) return '🍆';
+        if (/きゅうり|胡瓜/.test(s)) return '🥒';
+        if (/とうもろこし|コーン/.test(s)) return '🌽';
+        if (/ピーマン|パプリカ|ししとう|唐辛子/.test(s)) return '🫑';
+        if (/ブロッコリー|カリフラワー|キャベツ|白菜|レタス|ほうれん草|小松菜|水菜|春菊|ねぎ|ネギ|大根|かぶ|蕪/.test(s)) return '🥬';
+        if (/いちご|苺/.test(s)) return '🍓';
+        if (/スイカ|西瓜/.test(s)) return '🍉';
+        if (/メロン/.test(s)) return '🍈';
+        if (/かぼちゃ|南瓜/.test(s)) return '🎃';
+        if (/枝豆|大豆|そら豆|インゲン|えんどう/.test(s)) return '🫛';
+        if (/稲|米|水稲/.test(s)) return '🌾';
+        if (/れんこん|蓮根/.test(s)) return '🪷';
+        return '🌱';
+    };
+}
+
 /** 図面名と作物をパースするヘルパー */
 window.cadParseDrawingNameAndCrops_ = (rawName) => {
     const s = String(rawName || '').trim();
@@ -10076,11 +10175,9 @@ window.cadParseDrawingNameAndCrops_ = (rawName) => {
         return { name: name, crops: crops };
     }
     // パターン2: 単一作物が作物マスタにあるかチェック
-    if (typeof pdlCrops !== 'undefined' && Array.isArray(pdlCrops)) {
-        const isMaster = pdlCrops.some(c => c && c.name === s);
-        if (isMaster) {
-            return { name: s, crops: [s] };
-        }
+    const knownCrops = window.cadGetAvailableCropsList_();
+    if (knownCrops.includes(s)) {
+        return { name: s, crops: [s] };
     }
     return { name: s, crops: [] };
 };
@@ -10115,15 +10212,17 @@ window.cadPickDrawingMeta_ = (opts) => {
             initCrops = Array.isArray(opts.crops) ? [...opts.crops] : [];
         }
 
-        const masterCrops = (typeof pdlCrops !== 'undefined' && Array.isArray(pdlCrops))
-            ? pdlCrops.map(c => String((c && c.name) || '').trim()).filter(Boolean)
-            : [];
+        const masterCrops = window.cadGetAvailableCropsList_();
 
         const selectedSet = new Set(initCrops.map(c => String(c).trim()).filter(Boolean));
+        // 既に選択されている作物がマスタ一覧にない場合も選択肢に含める
+        selectedSet.forEach(c => {
+            if (c && !masterCrops.includes(c)) masterCrops.push(c);
+        });
 
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed; inset:0; z-index:1000002; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; backdrop-filter:blur(2px);';
-        
+
         const panel = document.createElement('div');
         panel.style.cssText = 'background:#fff; color:#333; width:92%; max-width:440px; max-height:86vh; border-radius:14px; padding:18px; display:flex; flex-direction:column; box-shadow:0 10px 30px rgba(0,0,0,0.3); font-family:-apple-system,BlinkMacSystemFont,sans-serif; box-sizing:border-box;';
 
@@ -10310,10 +10409,13 @@ window.saveUneSim = async () => {
     });
 
     p.uneSimData = simDataStr;
+    if (typeof window.onCadDataSaved === 'function') {
+        try { window.onCadDataSaved(p.id, simDataStr); } catch (eSync) { }
+    }
     const saveBtn = document.querySelector('button[onclick="saveUneSim()"]');
     const originalText = saveBtn ? saveBtn.innerHTML : '';
     if (saveBtn) saveBtn.innerHTML = '⏳ 保存中...';
-    
+
     try {
         // 図面履歴用のラベル（図面名＋作物、または作物一覧、または図面名）
         const historyDrawingName = window.cadDrawingName
@@ -10326,7 +10428,7 @@ window.saveUneSim = async () => {
             uneSimData: simDataStr,
             drawingName: historyDrawingName,
             drawingCrops: window.cadDrawingCrops || [],
-            userName: currentUser
+            userName: window.getCadCurrentUserName_()
         });
         if (window._cadRegistryCache) delete window._cadRegistryCache[p.id];
         if (typeof window.cadUpdateTargetNameHeader_ === 'function') {
@@ -10335,7 +10437,9 @@ window.saveUneSim = async () => {
         const fromBulkMemo = !!window._cadOpenedFromBulkMemo;
         if (fromBulkMemo) {
             try {
-                if (window.parent && window.parent !== window) {
+                if (typeof window.handleCadSavedReturnToBulk_ === 'function') {
+                    window.handleCadSavedReturnToBulk_(p.id, p.name || '');
+                } else if (window.parent && window.parent !== window) {
                     window.parent.postMessage({
                         type: 'cadSavedReturnToBulk',
                         fromBulkMemo: true,
@@ -10343,13 +10447,13 @@ window.saveUneSim = async () => {
                         fieldName: p.name || ''
                     }, '*');
                 }
-            } catch (eMsg) {}
+            } catch (eMsg) { }
             // 親画面の「一括入力の続きへ」案内を優先（ネイティブalertで塞がない）
             try {
                 if (typeof window.showAdminSyncToast === 'function') {
                     window.showAdminSyncToast('💾 保存しました。一括入力へ戻る案内を確認してください', 'ok');
                 }
-            } catch (eToast) {}
+            } catch (eToast) { }
         } else {
             alert('💾 描画した地形とピンをすべて保存しました！');
         }
@@ -10441,7 +10545,7 @@ window.openCadRegistry = async (id, opts) => {
     } else if (!opts.refresh) {
         window._cadOpenedFromBulkMemo = false;
     }
-    try { if (typeof infoWindow !== 'undefined' && infoWindow) infoWindow.close(); } catch (e) {}
+    try { if (typeof infoWindow !== 'undefined' && infoWindow) infoWindow.close(); else if (window.infoWindow) window.infoWindow.close(); } catch (e) { }
     // CAD編集中に一覧の遅延結果で上書きしない
     if (!opts.refresh && window.cadIsCadOverlayOpen_()) return;
     window._cadRegistryFieldId = id;
@@ -10497,8 +10601,11 @@ window.cadRenderRegistryList_ = (id, history, opts) => {
     const p = loadedPolygons[id];
     if (!listEl || !p) return;
     const loading = !!(opts && opts.loading);
-    const current = p.uneSimData ? String(p.uneSimData) : '';
-    const currentFp = current ? window.cadJsonFingerprint_(current) : '';
+    const slimStub = window.cadParseSlimStub_(p.uneSimData);
+    const current = (!slimStub && p.uneSimData) ? String(p.uneSimData) : '';
+    const currentFp = slimStub
+        ? (slimStub.fp || '')
+        : (current ? window.cadJsonFingerprint_(current) : '');
     listEl.innerHTML = '';
     const summarize = (dataStr, item) => {
         if (item && item.ridges != null) return '畝 ' + item.ridges + '・ピン ' + (item.pins || 0);
@@ -10511,8 +10618,11 @@ window.cadRenderRegistryList_ = (id, history, opts) => {
             return '';
         }
     };
-    const sameAsCurrent = (item) => {
-        if (!current || !item) return false;
+    const sameAsCurrent = (item, idx) => {
+        if (!item) return false;
+        if (currentFp && item.fp) return item.fp === currentFp;
+        if (slimStub && !currentFp) return idx === 0;
+        if (!current) return false;
         if (item.fp) return item.fp === currentFp;
         return String(item.data || '') === current;
     };
@@ -10521,7 +10631,7 @@ window.cadRenderRegistryList_ = (id, history, opts) => {
         let crops = [];
         let parsed = null;
         if (dataStr) {
-            try { parsed = JSON.parse(dataStr); } catch (e) {}
+            try { parsed = JSON.parse(dataStr); } catch (e) { }
         }
         if (parsed) {
             if (parsed.drawingName) name = String(parsed.drawingName).trim();
@@ -10608,13 +10718,13 @@ window.cadRenderRegistryList_ = (id, history, opts) => {
         window.openCADMode(id, blank ? { blank: true } : { data: dataStr });
     };
 
-    if (!history.length && !current) {
+    if (!history.length && !current && !slimStub) {
         listEl.innerHTML = loading
             ? '<div style="text-align:center; padding:16px; color:#666;">読み込み中...</div>'
             : '<div style="text-align:center; padding:16px; color:#666;">登録された図面はまだありません。<br>新規追加から作成できます。</div>';
         return;
     }
-    const matched = history.some(sameAsCurrent);
+    const matched = history.some((item, idx) => sameAsCurrent(item, idx));
     if (current && !matched) {
         const currentInfo = parseDrawingInfo(null, current);
         if (!currentInfo.name) currentInfo.name = 'いまの図面';
@@ -10630,8 +10740,8 @@ window.cadRenderRegistryList_ = (id, history, opts) => {
         return;
     }
     if (!history.length) return;
-    history.forEach((item) => {
-        const applied = sameAsCurrent(item);
+    history.forEach((item, idx) => {
+        const applied = sameAsCurrent(item, idx);
         const info = parseDrawingInfo(item, item.data);
         const actions = [];
         if (!applied) {
@@ -10671,13 +10781,18 @@ window.cadApplyRegistryItem_ = async (id, item) => {
             id: p.id,
             name: p.name,
             uneSimData: item.data,
-            userName: (typeof currentUser !== 'undefined' ? currentUser : ''),
+            userName: window.getCadCurrentUserName_(),
             skipCadHistory: true
         });
         p.uneSimData = item.data;
+        if (typeof window.onCadDataSaved === 'function') {
+            try { window.onCadDataSaved(p.id, item.data); } catch (eSync) { }
+        }
         if (window._cadOpenedFromBulkMemo) {
             try {
-                if (window.parent && window.parent !== window) {
+                if (typeof window.handleCadSavedReturnToBulk_ === 'function') {
+                    window.handleCadSavedReturnToBulk_(p.id, p.name || '');
+                } else if (window.parent && window.parent !== window) {
                     window.parent.postMessage({
                         type: 'cadSavedReturnToBulk',
                         fromBulkMemo: true,
@@ -10685,12 +10800,12 @@ window.cadApplyRegistryItem_ = async (id, item) => {
                         fieldName: p.name || ''
                     }, '*');
                 }
-            } catch (eMsg) {}
+            } catch (eMsg) { }
             try {
                 if (typeof window.showAdminSyncToast === 'function') {
                     window.showAdminSyncToast('図面を適用しました。一括入力へ戻る案内を確認してください', 'ok');
                 }
-            } catch (eToast) {}
+            } catch (eToast) { }
         } else {
             alert('この図面を適用しました。');
         }
@@ -10710,7 +10825,7 @@ window.cadDeleteRegistryItem_ = async (id, item) => {
         await callGAS('deletePolygonDrawingHistory', {
             id: id,
             row: item.row,
-            userName: (typeof currentUser !== 'undefined' ? currentUser : '')
+            userName: window.getCadCurrentUserName_()
         });
         window.openCadRegistry(id, { refresh: true });
     } catch (e) {
@@ -10739,7 +10854,7 @@ window.cadRenameRegistryItem_ = async (id, item) => {
                 if (Array.isArray(parsed.drawingCrops)) curCrops = parsed.drawingCrops;
                 else if (parsed.drawingCrop) curCrops = [parsed.drawingCrop];
             }
-        } catch (e) {}
+        } catch (e) { }
     }
     if (!curCrops.length && curName && typeof window.cadParseDrawingNameAndCrops_ === 'function') {
         const p = window.cadParseDrawingNameAndCrops_(curName);
@@ -10768,7 +10883,7 @@ window.cadRenameRegistryItem_ = async (id, item) => {
             name: historyDrawingName,
             drawingName: newName,
             drawingCrops: newCrops,
-            userName: (typeof currentUser !== 'undefined' ? currentUser : '')
+            userName: window.getCadCurrentUserName_()
         });
         item.name = historyDrawingName;
         if (window._cadRegistryCache && window._cadRegistryCache[id]) delete window._cadRegistryCache[id];
@@ -10787,7 +10902,7 @@ window.showCadHistoryModal = async () => {
         : null;
     if (!historyLoad) listEl.innerHTML = '<div style="text-align:center; padding:20px;">読み込み中...</div>';
     document.getElementById('cadHistoryModal').style.display = 'block';
-    
+
     try {
         const history = await callGAS('getPolygonDrawingHistory', { id: window.cadTargetId, summary: true });
         if (!history || history.length === 0) {
@@ -10795,7 +10910,7 @@ window.showCadHistoryModal = async () => {
             listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#666;">保存された履歴がありません。</div>';
             return;
         }
-        
+
         if (historyLoad) historyLoad.update({ label: 'CAD履歴を表示中...', detail: `0 / ${history.length} 件`, current: 0, total: history.length });
         const historyFragment = document.createDocumentFragment();
         history.forEach((item, idx) => {
@@ -10820,7 +10935,7 @@ window.showCadHistoryModal = async () => {
         if (historyLoad) historyLoad.done();
         listEl.innerHTML = '';
         listEl.appendChild(historyFragment);
-    } catch(e) {
+    } catch (e) {
         console.error("CAD History Error:", e);
         if (historyLoad) historyLoad.done();
         listEl.innerHTML = `<div style="text-align:center; padding:20px; color:red;">エラーが発生しました。<br>${e.message}</div>`;
@@ -10870,7 +10985,7 @@ window.cadApplyUneDetails = () => {
         poly.uneGroup = group;
         if (customLabel) poly.customLabel = customLabel;
         else delete poly.customLabel;
-        
+
         poly.setOptions({ fillColor: window.cadGetGroupColor(group) });
         if (typeof window.reassignLabels === 'function') window.reassignLabels();
         window.cadSvgNeedsRebuild = true;
