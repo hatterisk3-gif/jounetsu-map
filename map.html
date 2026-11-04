@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -16,9 +17,10 @@
 
     <link rel="stylesheet" href="map.css">
 </head>
+
 <body>
     <!-- プロポータルに戻る×ボタン -->
-        <div id="loginScreen">
+    <div id="loginScreen">
         <div class="login-box">
             <h2 style="color:#4CAF50;">情熱MAP (v1.21)</h2>
             <div id="loginError" style="color:red; margin-bottom:10px;"></div>
@@ -40,21 +42,32 @@
                 <input type="text" id="searchInput" placeholder="🔍 圃場名を検索...">
                 <div id="searchSuggestions"></div>
             </div>
-            <label style="display:flex; align-items:center; gap:4px; background:#fff; border:1px solid #795548; border-radius:6px; padding:4px 8px; font-size:12px; font-weight:bold; color:#5D4037;">
+            <label
+                style="display:flex; align-items:center; gap:4px; background:#fff; border:1px solid #795548; border-radius:6px; padding:4px 8px; font-size:12px; font-weight:bold; color:#5D4037;">
                 カテゴリ
                 <select id="prodCategorySelect" onchange="onProdCategorySelectChange()"
                     style="border:none; font-size:13px; font-weight:bold; color:#333; background:transparent; max-width:140px;"></select>
             </label>
-            <button id="btnEditProdCategories" onclick="openProdCategoryEditModal()" class="ctrl-btn" style="display:none; background:#5D4037; color:white; border:none;">✏️ カテゴリ編集</button>
-            <button onclick="refreshMapData()" class="ctrl-btn" style="background:#fff; color:#333; border:1px solid #ccc;">🔄 更新</button>
-            <button id="btnWeather" onclick="openWeatherModal()" class="ctrl-btn" style="background:#fff; color:#ff9800; border:1px solid #ff9800;">☁️ 天気</button>
-            <button id="btnSoilMoisture" onclick="toggleSoilMoistureMapOverlay()" class="ctrl-btn" style="background:#fff; color:#1565c0; border:1px solid #1565c0;">🌱 水分</button>
-            <button id="btnTyphoon" onclick="openTyphoonModal()" class="ctrl-btn" style="display:none; background:#ffebee; color:#d32f2f; border:1px solid #d32f2f;">🌀 台風</button>
-            <button onclick="openTransplantSettingModal()" class="ctrl-btn" style="background:#E8F5E9; color:#2E7D32; border:1px solid #66BB6A; font-weight:bold;">🌱 定植設定</button>
-            <button onclick="openContactModal()" class="ctrl-btn" style="background:#E8F5E9; color:#388E3C; border:1px solid #388E3C;">📞 連絡先</button>
-            <button id="btnResetAllManure" onclick="resetAllManureStatus()" class="ctrl-btn" style="display:none; background:#880E4F; color:white; border:none;">🔄 全リセット</button>
-            <button id="btnOpenAdminField" onclick="openAdminFieldModal()" class="ctrl-btn" style="display:none; background:#212121; color:#4CAF50; border:1px solid #4CAF50;">✏️ 圃場</button>
-            <button onclick="executeLogout()" class="ctrl-btn" style="background:#F44336; color:white; border:none;">ログアウト</button>
+            <button id="btnEditProdCategories" onclick="openProdCategoryEditModal()" class="ctrl-btn"
+                style="display:none; background:#5D4037; color:white; border:none;">✏️ カテゴリ編集</button>
+            <button onclick="refreshMapData()" class="ctrl-btn"
+                style="background:#fff; color:#333; border:1px solid #ccc;">🔄 更新</button>
+            <button id="btnWeather" onclick="openWeatherModal()" class="ctrl-btn"
+                style="background:#fff; color:#ff9800; border:1px solid #ff9800;">☁️ 天気</button>
+            <button id="btnSoilMoisture" onclick="toggleSoilMoistureMapOverlay()" class="ctrl-btn"
+                style="background:#fff; color:#1565c0; border:1px solid #1565c0;">🌱 水分</button>
+            <button id="btnTyphoon" onclick="openTyphoonModal()" class="ctrl-btn"
+                style="display:none; background:#ffebee; color:#d32f2f; border:1px solid #d32f2f;">🌀 台風</button>
+            <button onclick="openTransplantSettingModal()" class="ctrl-btn"
+                style="background:#E8F5E9; color:#2E7D32; border:1px solid #66BB6A; font-weight:bold;">🌱 定植設定</button>
+            <button onclick="openContactModal()" class="ctrl-btn"
+                style="background:#E8F5E9; color:#388E3C; border:1px solid #388E3C;">📞 連絡先</button>
+            <button id="btnResetAllManure" onclick="resetAllManureStatus()" class="ctrl-btn"
+                style="display:none; background:#880E4F; color:white; border:none;">🔄 全リセット</button>
+            <button id="btnOpenAdminField" onclick="openAdminFieldModal()" class="ctrl-btn"
+                style="display:none; background:#212121; color:#4CAF50; border:1px solid #4CAF50;">✏️ 圃場</button>
+            <button onclick="executeLogout()" class="ctrl-btn"
+                style="background:#F44336; color:white; border:none;">ログアウト</button>
         </div>
         <!-- The filter checkboxes will be a popup now -->
     </div>
@@ -66,13 +79,20 @@
     </button>
 
     <!-- 絞り込みメニュー (ポップアップ) -->
-    <div id="filterMenu" style="display:none; position: fixed; top: 190px; right: 10px; background: rgba(255,255,255,0.95); border-radius: 8px; padding: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 2000; flex-direction: column; gap: 10px;">
-        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="request" checked onchange="applyFilter()"> 赤(依頼中)</label>
-        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="accepted" checked onchange="applyFilter()"> 橙(予定)</label>
-        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="inprogress" checked onchange="applyFilter()"> 黄(途中)</label>
-        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="completed" checked onchange="applyFilter()"> 緑(完了)</label>
-        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="none" checked onchange="applyFilter()"> 青(未着手)</label>
-        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="canceled" checked onchange="applyFilter()"> 白(中止)</label>
+    <div id="filterMenu"
+        style="display:none; position: fixed; top: 190px; right: 10px; background: rgba(255,255,255,0.95); border-radius: 8px; padding: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 2000; flex-direction: column; gap: 10px;">
+        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="request"
+                checked onchange="applyFilter()"> 赤(依頼中)</label>
+        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="accepted"
+                checked onchange="applyFilter()"> 橙(予定)</label>
+        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="inprogress"
+                checked onchange="applyFilter()"> 黄(途中)</label>
+        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="completed"
+                checked onchange="applyFilter()"> 緑(完了)</label>
+        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="none" checked
+                onchange="applyFilter()"> 青(未着手)</label>
+        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="canceled"
+                checked onchange="applyFilter()"> 白(中止)</label>
     </div>
 
 
@@ -81,14 +101,16 @@
     <!-- 管理者：圃場追加モーダル（admin.html を iframe 表示） -->
     <div id="adminFieldModal"
         style="display:none; position: fixed; inset:0; background: rgba(0,0,0,0.7); z-index:15000; justify-content:center; align-items:center;">
-      <div style="width:95%; height:90%; background:#fff; border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
-        <div style="padding:10px 12px; background:#f5f5f5; border-bottom:1px solid #ddd; display:flex; justify-content:space-between; align-items:center;">
-          <div style="font-weight:bold; color:#4CAF50;">✏️ 圃場追加（管理者）</div>
-          <button type="button" onclick="closeAdminFieldModal()"
-            style="background:#f44336; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer;">閉じる</button>
+        <div
+            style="width:95%; height:90%; background:#fff; border-radius:12px; overflow:hidden; display:flex; flex-direction:column;">
+            <div
+                style="padding:10px 12px; background:#f5f5f5; border-bottom:1px solid #ddd; display:flex; justify-content:space-between; align-items:center;">
+                <div style="font-weight:bold; color:#4CAF50;">✏️ 圃場追加（管理者）</div>
+                <button type="button" onclick="closeAdminFieldModal()"
+                    style="background:#f44336; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer;">閉じる</button>
+            </div>
+            <iframe id="adminFieldIframe" src="" style="flex:1; border:none; background:#fff;"></iframe>
         </div>
-        <iframe id="adminFieldIframe" src="" style="flex:1; border:none; background:#fff;"></iframe>
-      </div>
     </div>
 
     <!-- 汎用モーダル -->
@@ -97,25 +119,31 @@
     </div>
 
     <!-- 🌳 スキルツリー ＆ 免許・資格 モーダル -->
-    <div id="skillTreeModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
-      <div style="background: #fff; color: #333; border-radius: 12px; width: 92%; max-width: 520px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); max-height: 85vh; display: flex; flex-direction: column; overflow: hidden;">
-        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #2e7d32; color: white; font-weight: bold;">
-          <h3 style="margin: 0; font-size: 16px;">🌳 スキルツリー ＆ 免許・資格</h3>
-          <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #ccc;" onclick="document.getElementById('skillTreeModal').style.display='none'">×</span>
+    <div id="skillTreeModal"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
+        <div
+            style="background: #fff; color: #333; border-radius: 12px; width: 92%; max-width: 520px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); max-height: 85vh; display: flex; flex-direction: column; overflow: hidden;">
+            <div
+                style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #2e7d32; color: white; font-weight: bold;">
+                <h3 style="margin: 0; font-size: 16px;">🌳 スキルツリー ＆ 免許・資格</h3>
+                <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #ccc;"
+                    onclick="document.getElementById('skillTreeModal').style.display='none'">×</span>
+            </div>
+            <div id="skillTreeContent" style="overflow-y: auto; flex: 1;">
+                <div style="text-align:center; padding:20px;">読み込み中...</div>
+            </div>
         </div>
-        <div id="skillTreeContent" style="overflow-y: auto; flex: 1;">
-          <div style="text-align:center; padding:20px;">読み込み中...</div>
-        </div>
-      </div>
     </div>
 
     <!-- 天気モーダル -->
     <div id="weatherModal"
         style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
-        <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
+        <div
+            style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                 <h3 style="margin: 0; color: #2196F3;">⛅ 週間天気予報</h3>
-                <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="document.getElementById('weatherModal').style.display='none'">×</span>
+                <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;"
+                    onclick="document.getElementById('weatherModal').style.display='none'">×</span>
             </div>
             <div id="weatherContent" style="overflow-y: auto; flex: 1;">
                 <div style="text-align:center; padding:20px;">読み込み中...</div>
@@ -126,10 +154,12 @@
     <!-- 台風モーダル -->
     <div id="typhoonModal"
         style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
-        <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
+        <div
+            style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                 <h3 style="margin: 0; color: #d32f2f;">🌀 台風情報</h3>
-                <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="document.getElementById('typhoonModal').style.display='none'">×</span>
+                <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;"
+                    onclick="document.getElementById('typhoonModal').style.display='none'">×</span>
             </div>
             <div id="typhoonContent" style="overflow-y: auto; flex: 1;">
                 <div style="text-align:center; padding:20px;">読み込み中...</div>
@@ -140,32 +170,48 @@
     <!-- 散布ルート設定モーダル -->
     <div id="sprayRouteModal"
         style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
-        <div style="background: #fff; color: #333; padding: 20px; border-radius: 10px; width: 90%; max-width: 500px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-height: 85vh; display: flex; flex-direction: column; box-sizing: border-box;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid #FF9800; padding-bottom: 8px;">
+        <div
+            style="background: #fff; color: #333; padding: 20px; border-radius: 10px; width: 90%; max-width: 500px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-height: 85vh; display: flex; flex-direction: column; box-sizing: border-box;">
+            <div
+                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid #FF9800; padding-bottom: 8px;">
                 <h3 id="sprayRouteModalTitle" style="margin: 0; color: #E65100; font-size: 18px;">🚜 ルート設定</h3>
-                <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="closeSprayRouteModal()">×</span>
+                <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;"
+                    onclick="closeSprayRouteModal()">×</span>
             </div>
             <div id="sprayRouteModalContent" style="overflow-y: auto; flex: 1;">
                 <div style="display: flex; flex-direction: column; gap: 12px;">
-                    <div style="background:#EFEBE9; border:1px solid #D7CCC8; border-radius:6px; padding:8px 10px; font-size:13px; color:#5D4037;">
+                    <div
+                        style="background:#EFEBE9; border:1px solid #D7CCC8; border-radius:6px; padding:8px 10px; font-size:13px; color:#5D4037;">
                         表示中カテゴリ: <b id="sprayRouteCategoryLabel">—</b>
                         <div style="font-size:11px; color:#795548; margin-top:4px;">上の「カテゴリ」切替で、ルート対象の作業を変えられます。</div>
                     </div>
                     <div>
-                        <label style="font-size: 13px; font-weight: bold; color: #444; margin-bottom: 4px; display: block;">🚜 台数 (台)</label>
-                        <input type="number" id="sprayTruckCount" min="1" max="20" value="1" oninput="updateSprayRouteCapacityDisplay()" style="width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; box-sizing: border-box;">
+                        <label
+                            style="font-size: 13px; font-weight: bold; color: #444; margin-bottom: 4px; display: block;">🚜
+                            台数 (台)</label>
+                        <input type="number" id="sprayTruckCount" min="1" max="20" value="1"
+                            oninput="updateSprayRouteCapacityDisplay()"
+                            style="width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; box-sizing: border-box;">
                     </div>
                     <div>
-                        <label style="font-size: 13px; font-weight: bold; color: #444; margin-bottom: 4px; display: block;">📦 1台あたりの可能面積 (a / 台)</label>
-                        <input type="number" id="sprayCapacityPerTruck" min="1" value="20" oninput="updateSprayRouteCapacityDisplay()" style="width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; box-sizing: border-box;">
+                        <label
+                            style="font-size: 13px; font-weight: bold; color: #444; margin-bottom: 4px; display: block;">📦
+                            1台あたりの可能面積 (a / 台)</label>
+                        <input type="number" id="sprayCapacityPerTruck" min="1" value="20"
+                            oninput="updateSprayRouteCapacityDisplay()"
+                            style="width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; box-sizing: border-box;">
                     </div>
-                    <div style="background: #FFF8E1; border: 1px solid #FFE082; border-radius: 6px; padding: 10px; font-size: 13px; color: #795548;">
-                        💡 最大許容面積: <b id="sprayMaxCapacityDisp" style="color: #E65100; font-size: 16px;">20 a</b> (<span id="sprayMaxSqmDisp">2,000</span> ㎡)
+                    <div
+                        style="background: #FFF8E1; border: 1px solid #FFE082; border-radius: 6px; padding: 10px; font-size: 13px; color: #795548;">
+                        💡 最大許容面積: <b id="sprayMaxCapacityDisp" style="color: #E65100; font-size: 16px;">20 a</b> (<span
+                            id="sprayMaxSqmDisp">2,000</span> ㎡)
                     </div>
                     <div style="display: flex; gap: 8px;">
-                        <button type="button" onclick="calculateSprayRoute()" style="flex: 1; background: #FF9800; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">ルートを算出する</button>
+                        <button type="button" onclick="calculateSprayRoute()"
+                            style="flex: 1; background: #FF9800; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">ルートを算出する</button>
                     </div>
-                    <div id="sprayRouteResultArea" style="display: none; border-top: 1px solid #eee; margin-top: 5px;"></div>
+                    <div id="sprayRouteResultArea" style="display: none; border-top: 1px solid #eee; margin-top: 5px;">
+                    </div>
                 </div>
             </div>
         </div>
@@ -174,10 +220,13 @@
     <!-- 設定ルート表モーダル -->
     <div id="todayRouteTableModal"
         style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
-        <div style="background: #fff; color: #333; padding: 20px; border-radius: 10px; width: 92%; max-width: 650px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-height: 88vh; display: flex; flex-direction: column; box-sizing: border-box;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid #4CAF50; padding-bottom: 8px;">
+        <div
+            style="background: #fff; color: #333; padding: 20px; border-radius: 10px; width: 92%; max-width: 650px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-height: 88vh; display: flex; flex-direction: column; box-sizing: border-box;">
+            <div
+                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid #4CAF50; padding-bottom: 8px;">
                 <h3 id="todayRouteTableTitle" style="margin: 0; color: #1B5E20; font-size: 18px;">🗺️ 設定ルート表</h3>
-                <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="document.getElementById('todayRouteTableModal').style.display='none'">×</span>
+                <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;"
+                    onclick="document.getElementById('todayRouteTableModal').style.display='none'">×</span>
             </div>
             <div id="todayRouteTableContent" style="overflow-y: auto; flex: 1;">
                 <div style="text-align:center; padding:20px; color:#888;">読み込み中...</div>
@@ -188,19 +237,25 @@
     <!-- 定植設定モーダル -->
     <div id="transplantSettingModal"
         style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:10000; justify-content:center; align-items:center;">
-        <div style="background:#fff; color:#333; padding:20px; border-radius:10px; width:94%; max-width:780px; box-shadow:0 4px 20px rgba(0,0,0,0.3); max-height:88vh; display:flex; flex-direction:column; box-sizing:border-box;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:2px solid #66BB6A; padding-bottom:8px;">
+        <div
+            style="background:#fff; color:#333; padding:20px; border-radius:10px; width:94%; max-width:780px; box-shadow:0 4px 20px rgba(0,0,0,0.3); max-height:88vh; display:flex; flex-direction:column; box-sizing:border-box;">
+            <div
+                style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:2px solid #66BB6A; padding-bottom:8px;">
                 <h3 style="margin:0; color:#2E7D32; font-size:18px;">🌱 定植設定</h3>
-                <span style="cursor:pointer; font-size:24px; line-height:1; color:#999;" onclick="closeTransplantSettingModal()">×</span>
+                <span style="cursor:pointer; font-size:24px; line-height:1; color:#999;"
+                    onclick="closeTransplantSettingModal()">×</span>
             </div>
             <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
-                <button type="button" onclick="loadVisibleFieldsForTransplantSetting()" style="background:#4CAF50; color:#fff; border:none; padding:10px 14px; border-radius:6px; font-weight:bold; cursor:pointer;">表示中の圃場を全て表示</button>
-                <button type="button" onclick="saveTransplantSettings()" style="background:#FF9800; color:#fff; border:none; padding:10px 14px; border-radius:6px; font-weight:bold; cursor:pointer;">登録を完了する</button>
+                <button type="button" onclick="loadVisibleFieldsForTransplantSetting()"
+                    style="background:#4CAF50; color:#fff; border:none; padding:10px 14px; border-radius:6px; font-weight:bold; cursor:pointer;">表示中の圃場を全て表示</button>
+                <button type="button" onclick="saveTransplantSettings()"
+                    style="background:#FF9800; color:#fff; border:none; padding:10px 14px; border-radius:6px; font-weight:bold; cursor:pointer;">登録を完了する</button>
             </div>
             <div style="font-size:12px; color:#666; margin-bottom:10px;">
                 表示中の圃場ごとに定植旬を設定します。堆肥散布が完了以外の場合、登録時に自動で堆肥散布の依頼中へ変更し、期限日は定植旬に合わせて設定します。
             </div>
-            <div id="transplantSettingTableArea" style="overflow:auto; flex:1; border:1px solid #e0e0e0; border-radius:8px; background:#fafafa; padding:8px;">
+            <div id="transplantSettingTableArea"
+                style="overflow:auto; flex:1; border:1px solid #e0e0e0; border-radius:8px; background:#fafafa; padding:8px;">
                 <div style="text-align:center; padding:24px; color:#888;">「表示中の圃場を全て表示」を押してください</div>
             </div>
         </div>
@@ -209,10 +264,13 @@
     <!-- 生産管理カテゴリ編集モーダル -->
     <div id="prodCategoryEditModal"
         style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:11000; justify-content:center; align-items:center;">
-        <div style="background:#fff; color:#333; padding:20px; border-radius:10px; width:94%; max-width:560px; box-shadow:0 4px 20px rgba(0,0,0,0.3); max-height:88vh; display:flex; flex-direction:column; box-sizing:border-box;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:2px solid #5D4037; padding-bottom:8px;">
+        <div
+            style="background:#fff; color:#333; padding:20px; border-radius:10px; width:94%; max-width:560px; box-shadow:0 4px 20px rgba(0,0,0,0.3); max-height:88vh; display:flex; flex-direction:column; box-sizing:border-box;">
+            <div
+                style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:2px solid #5D4037; padding-bottom:8px;">
                 <h3 style="margin:0; color:#5D4037; font-size:18px;">✏️ 生産管理カテゴリ編集</h3>
-                <span style="cursor:pointer; font-size:24px; line-height:1; color:#999;" onclick="closeProdCategoryEditModal()">×</span>
+                <span style="cursor:pointer; font-size:24px; line-height:1; color:#999;"
+                    onclick="closeProdCategoryEditModal()">×</span>
             </div>
             <div style="font-size:12px; color:#666; margin-bottom:10px; line-height:1.4;">
                 名前の変更・追加・削除と、<b>工程順（▲▼）</b>の並べ替えができます。この順番がガントチャートの並びになります。<br>
@@ -220,9 +278,13 @@
             </div>
             <div id="prodCategoryEditList" style="overflow:auto; flex:1; margin-bottom:12px;"></div>
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <button type="button" onclick="addProdCategoryDraft()" style="flex:1; background:#795548; color:#fff; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">＋ 追加</button>
-                <button type="button" onclick="saveProdCategoryEdits()" style="flex:1.4; background:#4CAF50; color:#fff; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">保存</button>
-                <button type="button" onclick="closeProdCategoryEditModal()" style="flex:0.8; background:#9e9e9e; color:#fff; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">閉じる</button>
+                <button type="button" onclick="addProdCategoryDraft()"
+                    style="flex:1; background:#795548; color:#fff; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">＋
+                    追加</button>
+                <button type="button" onclick="saveProdCategoryEdits()"
+                    style="flex:1.4; background:#4CAF50; color:#fff; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">保存</button>
+                <button type="button" onclick="closeProdCategoryEditModal()"
+                    style="flex:0.8; background:#9e9e9e; color:#fff; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">閉じる</button>
             </div>
         </div>
     </div>
@@ -230,13 +292,17 @@
     <!-- 工程順ガント -->
     <div id="prodGanttModal"
         style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:10000; justify-content:center; align-items:center;">
-        <div style="background:#fff; color:#333; padding:16px; border-radius:10px; width:96%; max-width:920px; box-shadow:0 4px 20px rgba(0,0,0,0.3); max-height:90vh; display:flex; flex-direction:column; box-sizing:border-box;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:2px solid #8D6E63; padding-bottom:8px;">
+        <div
+            style="background:#fff; color:#333; padding:16px; border-radius:10px; width:96%; max-width:920px; box-shadow:0 4px 20px rgba(0,0,0,0.3); max-height:90vh; display:flex; flex-direction:column; box-sizing:border-box;">
+            <div
+                style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:2px solid #8D6E63; padding-bottom:8px;">
                 <h3 style="margin:0; color:#5D4037; font-size:17px;">📊 工程順ガント</h3>
-                <span style="cursor:pointer; font-size:24px; line-height:1; color:#999;" onclick="closeProdGanttModal()">×</span>
+                <span style="cursor:pointer; font-size:24px; line-height:1; color:#999;"
+                    onclick="closeProdGanttModal()">×</span>
             </div>
             <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
-                <button type="button" onclick="renderProdGanttChart()" style="background:#8D6E63; color:#fff; border:none; padding:8px 12px; border-radius:6px; font-weight:bold; cursor:pointer;">再描画</button>
+                <button type="button" onclick="renderProdGanttChart()"
+                    style="background:#8D6E63; color:#fff; border:none; padding:8px 12px; border-radius:6px; font-weight:bold; cursor:pointer;">再描画</button>
             </div>
             <div id="prodGanttChartArea" style="overflow:auto; flex:1;">読み込み中...</div>
         </div>
@@ -268,14 +334,16 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
     <script src="map-loading.js?v=1786243000000"></script>
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry"></script>
-    <script src="weather-agri.js?v=1788600000102"></script>
+    <script
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry"></script>
+    <script src="weather-agri.js?v=1788600000103"></script>
     <script src="api-client.js?v=1788600000111"></script>
     <script src="map.js?v=1788600000044"></script>
     <script>
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js?v=map', { scope: '/' });
-      }
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js?v=map', { scope: '/' });
+        }
     </script>
 </body>
+
 </html>

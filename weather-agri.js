@@ -227,18 +227,18 @@
     // DOM挿入後に定植候補を非同期取得
     if (insights.rainWithin2Days) {
       setTimeout(() => {
-        try { refreshWeatherPriorityPanel_(); } catch (e) {}
+        try { refreshWeatherPriorityPanel_(); } catch (e) { }
       }, 40);
     }
     setTimeout(() => {
-      try { refreshMonthlyClimatePanel_(); } catch (e) {}
+      try { refreshMonthlyClimatePanel_(); } catch (e) { }
     }, 60);
 
     return `
       <div style="background:linear-gradient(180deg,#e8f5e9 0%,#e3f2fd 100%);border:1px solid #90caf9;border-radius:10px;padding:12px;margin-bottom:12px;font-size:12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
           <span style="font-weight:bold;color:#1565c0;font-size:13px;">🌱 農業天気ダッシュボード</span>
-          <button type="button" onclick="toggleSoilMoistureMapOverlay()" style="border:1px solid #1565c0;background:#fff;color:#1565c0;border-radius:999px;padding:4px 10px;font-size:11px;font-weight:bold;cursor:pointer;">地図に水分表示</button>
+          <button type="button" onclick="activateMoistureMapFromWeather(this)" style="border:1px solid #1976d2;background:linear-gradient(180deg,#ffffff,#e3f2fd);color:#0d47a1;border-radius:999px;padding:5px 12px;font-size:11px;font-weight:bold;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.1);display:inline-flex;align-items:center;gap:4px;">💧 地図に水分表示 ➔</button>
         </div>
 
         ${priorityBox}
@@ -450,7 +450,7 @@
         const c = global.map.getCenter();
         return { lat: c.lat(), lng: c.lng() };
       }
-    } catch (e) {}
+    } catch (e) { }
     if (global.lastWeatherFetchPos && global.lastWeatherFetchPos.lat != null) {
       return { lat: Number(global.lastWeatherFetchPos.lat), lng: Number(global.lastWeatherFetchPos.lng) };
     }
@@ -855,7 +855,15 @@
       'padding:2px 7px!important;border-radius:999px!important;',
       'border:1px solid rgba(255,255,255,.55)!important;',
       'font-size:12px!important;font-weight:800!important;letter-spacing:.02em;',
-      'white-space:nowrap!important;box-shadow:0 2px 6px rgba(0,0,0,.35);',
+      'white-space:nowrap!important;box-shadow:0 2px 6px rgba(0,0,0,.35);}',
+      '.weather-modal-closing{opacity:0!important;transition:opacity .22s ease-out!important;pointer-events:none!important;}',
+      '.weather-modal-closing>div{transform:scale(.95) translateY(10px)!important;transition:transform .22s cubic-bezier(.4,0,.2,1)!important;}',
+      '@keyframes soilMoistureSwitchFlash{0%{opacity:0}30%{opacity:1}100%{opacity:0}}',
+      '.soil-moisture-switch-overlay{position:fixed;inset:0;z-index:9999;pointer-events:none;background:radial-gradient(circle at center,rgba(3,169,244,.22) 0%,rgba(0,150,136,.18) 55%,rgba(13,71,161,.12) 100%);animation:soilMoistureSwitchFlash .45s ease-out forwards;}',
+      '@keyframes soilMoistureLegendSlideIn{from{opacity:0;transform:translateY(20px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}',
+      '.soil-moisture-legend-enter{animation:soilMoistureLegendSlideIn .32s cubic-bezier(.16,1,.3,1) forwards;}',
+      '@keyframes soilMoistureBannerPop{0%{opacity:0;transform:translate(-50%,-18px) scale(.94)}14%{opacity:1;transform:translate(-50%,0) scale(1)}84%{opacity:1;transform:translate(-50%,0) scale(1)}100%{opacity:0;transform:translate(-50%,-12px) scale(.96)}}',
+      '.soil-moisture-mode-banner{position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:10001;background:linear-gradient(135deg,#0d47a1 0%,#00897b 100%);color:#fff;padding:8px 20px;border-radius:999px;box-shadow:0 4px 20px rgba(0,0,0,.35),0 0 0 1px rgba(255,255,255,.3);font-size:13px;font-weight:bold;letter-spacing:.02em;display:flex;align-items:center;gap:8px;pointer-events:none;animation:soilMoistureBannerPop 2.8s cubic-bezier(.16,1,.3,1) forwards;',
       '}'
     ].join('');
     document.head.appendChild(style);
@@ -880,7 +888,7 @@
       'font-size:11px',
       'line-height:1.35',
       'max-width:min(280px, calc(100vw - 24px))',
-      'pointer-events:none',
+      'pointer-events:auto',
       'box-sizing:border-box'
     ].join(';');
     document.body.appendChild(el);
@@ -906,12 +914,15 @@
       </div>`
     ).join('');
     el.innerHTML = `
-      <div style="font-weight:800;font-size:12px;margin-bottom:6px;color:#80cbc4;">🌱 推定土壌水分（土質補正あり）</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;"><div style="font-weight:800;font-size:12px;color:#80cbc4;">🌱 推定土壌水分</div><div style="display:flex;gap:4px;"><button type="button" onclick="event.stopPropagation();if(typeof openWeatherModal==='function')openWeatherModal();" style="border:none;background:#1976d2;color:#fff;border-radius:4px;padding:3px 8px;font-size:10px;font-weight:bold;cursor:pointer;" title="天気予報を開く">☁️ 天気</button><button type="button" onclick="event.stopPropagation();clearSoilMoistureColors();if(typeof showMapSyncToast==='function')showMapSyncToast('水分表示を解除しました','info');" style="border:none;background:#546e7a;color:#fff;border-radius:4px;padding:3px 8px;font-size:10px;font-weight:bold;cursor:pointer;" title="水分表示を解除">✕ 解除</button></div></div>
       <div style="display:flex;gap:3px;margin-bottom:6px;">${bar}</div>
       <div style="color:#e0f7fa;font-size:10px;">地域基準 ${regional}% ／ 圃場ごとに土質・潅水で補正</div>
       <div style="margin-top:4px;color:#b0bec5;font-size:10px;">粘土＝保水↑　砂＝乾きやすい　壌＝標準　数字＝推定%</div>
     `;
+    el.classList.remove('soil-moisture-legend-enter');
     el.style.display = 'block';
+    void el.offsetWidth;
+    el.classList.add('soil-moisture-legend-enter');
   }
 
   function hideSoilMoistureLegend_() {
@@ -938,7 +949,7 @@
       fontWeight: 'bold',
       className: 'soil-moisture-label'
     });
-    try { marker.setVisible(true); } catch (e) {}
+    try { marker.setVisible(true); } catch (e) { }
   }
 
   function restoreSoilMoistureLabel_(meta) {
@@ -946,7 +957,7 @@
     if (!marker || !marker._soilMoistureLabelBackupDone) return;
     try {
       marker.setLabel(marker._soilMoistureLabelBackup || null);
-    } catch (e) {}
+    } catch (e) { }
     delete marker._soilMoistureLabelBackup;
     delete marker._soilMoistureLabelBackupDone;
   }
@@ -1070,7 +1081,105 @@
     }
   }
 
+  function isWeatherModalVisible_() {
+    const modal = document.getElementById('weatherModal');
+    if (!modal) return false;
+    return modal.style.display !== 'none' &&
+      (modal.offsetWidth > 0 || (modal.style.display && modal.style.display !== 'none'));
+  }
+
+  function closeWeatherModal(animate) {
+    const modal = document.getElementById('weatherModal');
+    if (!modal || !isWeatherModalVisible_()) return false;
+    ensureSoilMoistureLabelStyle_();
+    if (animate === false) {
+      modal.style.display = 'none';
+      modal.classList.remove('weather-modal-closing');
+      return true;
+    }
+    modal.classList.add('weather-modal-closing');
+    setTimeout(() => {
+      modal.style.display = 'none';
+      modal.classList.remove('weather-modal-closing');
+    }, 220);
+    return true;
+  }
+
+  function triggerMoistureSwitchEffect_(bannerText) {
+    ensureSoilMoistureLabelStyle_();
+    try {
+      const overlay = document.createElement('div');
+      overlay.className = 'soil-moisture-switch-overlay';
+      document.body.appendChild(overlay);
+      setTimeout(() => {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      }, 480);
+
+      if (bannerText) {
+        const prev = document.getElementById('soilMoistureModeBanner');
+        if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+        const banner = document.createElement('div');
+        banner.id = 'soilMoistureModeBanner';
+        banner.className = 'soil-moisture-mode-banner';
+        banner.innerHTML = '<span>💧</span><span>' + bannerText + '</span>';
+        document.body.appendChild(banner);
+        setTimeout(() => {
+          if (banner.parentNode) banner.parentNode.removeChild(banner);
+        }, 2800);
+      }
+    } catch (e) { }
+  }
+
+  async function activateMoistureMapFromWeather(btnEl) {
+    let origHtml = '';
+    if (btnEl) {
+      origHtml = btnEl.innerHTML;
+      btnEl.innerHTML = '🔄 画面切り替え中...';
+      btnEl.style.opacity = '0.75';
+      btnEl.disabled = true;
+    }
+
+    closeWeatherModal(true);
+    triggerMoistureSwitchEffect_('🌱 土壌水分マップ画面に切り替えました');
+
+    if (!global._soilMoistureOverlayOn) {
+      const insights = await ensureAgriInsightsWithFetch_();
+      if (!insights) {
+        showMoistureToast_('天気データを取得できませんでした。電波を確認して再度お試しください', 'error');
+        if (btnEl) {
+          btnEl.innerHTML = origHtml;
+          btnEl.style.opacity = '';
+          btnEl.disabled = false;
+        }
+        return;
+      }
+      if (applySoilMoistureColors()) {
+        showMoistureToast_('土壌水分を表示（圃場タップで条件・土質を変更できます）', 'ok');
+      } else {
+        showMoistureToast_('表示できる圃場がありません', 'error');
+      }
+    } else {
+      applySoilMoistureColors();
+      showMoistureToast_('土壌水分を表示（圃場タップで条件・土質を変更できます）', 'ok');
+    }
+
+    if (btnEl) {
+      btnEl.innerHTML = origHtml;
+      btnEl.style.opacity = '';
+      btnEl.disabled = false;
+    }
+  }
+
   async function toggleSoilMoistureMapOverlay() {
+    const wasModalOpen = closeWeatherModal(true);
+    if (wasModalOpen) {
+      triggerMoistureSwitchEffect_('🌱 土壌水分マップ画面に切り替えました');
+      if (global._soilMoistureOverlayOn) {
+        applySoilMoistureColors();
+        showMoistureToast_('土壌水分を表示（圃場タップで条件・土質を変更できます）', 'ok');
+        return;
+      }
+    }
     if (global._soilMoistureOverlayOn) {
       clearSoilMoistureColors();
       showMoistureToast_('水分表示を解除しました', 'info');
@@ -1170,7 +1279,7 @@
         const b = new google.maps.LatLngBounds();
         meta.polygon.getPath().forEach(pt => b.extend(pt));
         pos = b.getCenter();
-      } catch (e) {}
+      } catch (e) { }
     }
     if (!pos && meta.marker && typeof meta.marker.getPosition === 'function') {
       pos = meta.marker.getPosition();
@@ -1202,7 +1311,7 @@
     return true;
   }
 
-  global.saveSoilMoistureFieldAttrs_ = async function(fieldId) {
+  global.saveSoilMoistureFieldAttrs_ = async function (fieldId) {
     const meta = findSoilMoistureFieldMeta_(fieldId);
     if (!meta) {
       showMoistureToast_('圃場が見つかりません', 'error');
@@ -1255,7 +1364,7 @@
             }
           }
         }
-      } catch (e) {}
+      } catch (e) { }
 
       if (iw && typeof iw.close === 'function') iw.close();
       if (global._soilMoistureOverlayOn) applySoilMoistureColors();
@@ -1272,6 +1381,8 @@
   global.refreshWeatherPriorityPanel_ = refreshWeatherPriorityPanel_;
   global.refreshMonthlyClimatePanel_ = refreshMonthlyClimatePanel_;
   global.toggleSoilMoistureMapOverlay = toggleSoilMoistureMapOverlay;
+  global.activateMoistureMapFromWeather = activateMoistureMapFromWeather;
+  global.closeWeatherModal = closeWeatherModal;
   global.applySoilMoistureColors = applySoilMoistureColors;
   global.clearSoilMoistureColors = clearSoilMoistureColors;
   global.estimateSoilMoistureLabel = moistureLabel;

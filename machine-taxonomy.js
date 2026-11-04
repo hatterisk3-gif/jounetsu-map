@@ -61,7 +61,7 @@
   function getMainCategoryOptions(kind) {
     return (kind === 'vehicle' ? VEHICLE_MAIN_CATS : MACHINE_MAIN_CATS).slice();
   }
-
+  0
   function looksLikeVehicle_(item) {
     if (!item) return false;
     if (item._kind === 'vehicle' || item.isVehicle) return true;
@@ -129,12 +129,12 @@
       if (typeof global.pdlMachines !== 'undefined' && Array.isArray(global.pdlMachines)) {
         return global.pdlMachines;
       }
-    } catch (e) {}
+    } catch (e) { }
     try {
       if (typeof window !== 'undefined' && Array.isArray(window.pdlMachines)) {
         return window.pdlMachines;
       }
-    } catch (e) {}
+    } catch (e) { }
     return [];
   }
 

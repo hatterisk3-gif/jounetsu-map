@@ -33,10 +33,10 @@
     resetAllManureStatus: 60000,
     // Apps Script のコールドスタートで 20〜40 秒かかることがある
     login: 60000,
-    getOsakaMarketDaily: 45000,
-    importOsakaMarketDaily: 45000,
-    getTokyoMarketDaily: 45000,
-    importTokyoMarketDaily: 45000,
+    getOsakaMarketDaily: 90000,
+    importOsakaMarketDaily: 90000,
+    getTokyoMarketDaily: 90000,
+    importTokyoMarketDaily: 90000,
     searchPesticideCatalog: 90000,
     getPesticideApplicationTable: 60000,
     searchFertilizerCatalog: 90000,
@@ -67,7 +67,11 @@
     savePolygonBatch: true,
     updatePolygon: true,
     deletePolygon: true,
-    deletePolygonBatch: true
+    deletePolygonBatch: true,
+    getOsakaMarketDaily: true,
+    importOsakaMarketDaily: true,
+    getTokyoMarketDaily: true,
+    importTokyoMarketDaily: true
   };
   var WRITE_PRIORITY_ACTIONS = {
     savePolygon: true,

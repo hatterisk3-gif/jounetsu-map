@@ -385,6 +385,73 @@ try {
     }
 } catch (e) { pendingMapDeepLink = null; }
 
+window._adminLoginConfirmed = false;
+window._pendingCadOpenAfterLogin_ = null;
+
+window.isAdminAuthenticatedForCad_ = () => {
+    if (window._adminLoginConfirmed) return true;
+    try {
+        const role = localStorage.getItem('passionMapUserRole') || '';
+        const adminId = localStorage.getItem('pMapAdminId') || '';
+        const adminName = localStorage.getItem('pMapAdminName') || '';
+        // キャッシュ起動中でも、管理者として保存済みの場合のみ許可
+        if (window._adminCacheSessionActive && role === '管理者' && adminId && adminName) {
+            return true;
+        }
+    } catch (e) {}
+    return false;
+};
+
+window.showAdminLoginForCad_ = (msg) => {
+    try {
+        const loginScreen = document.getElementById('loginScreen');
+        if (loginScreen) loginScreen.style.display = 'flex';
+        const err = document.getElementById('loginError');
+        if (err) err.innerText = msg || '⛔ 畝CADを開くには管理者ログインが必要です';
+        // 作業員資格情報が入っていても、管理者PWを優先してフォームを戻す
+        if (typeof restoreAdminLoginForm === 'function') restoreAdminLoginForm();
+    } catch (e) {}
+};
+
+window.queueCadOpenAfterAdminLogin_ = (fieldId, fromBulkMemo) => {
+    window._pendingCadOpenAfterLogin_ = {
+        fieldId: String(fieldId || ''),
+        fromBulkMemo: !!fromBulkMemo
+    };
+    window.showAdminLoginForCad_('⛔ 畝CADを開くには管理者としてログインしてください');
+};
+
+window.flushPendingCadOpenAfterLogin_ = () => {
+    const pending = window._pendingCadOpenAfterLogin_;
+    if (!pending || !pending.fieldId) return;
+    if (!window.isAdminAuthenticatedForCad_()) return;
+    window._pendingCadOpenAfterLogin_ = null;
+    window._cadOpenedFromBulkMemo = !!pending.fromBulkMemo;
+    const openNow = () => {
+        if (typeof window.openCadRegistry === 'function') {
+            window.openCadRegistry(pending.fieldId, { fromBulkMemo: !!pending.fromBulkMemo });
+        } else if (typeof window.openCADMode === 'function') {
+            window.openCADMode(pending.fieldId);
+        }
+    };
+    // 圃場データ到着待ち
+    const tryOpen = (attempt) => {
+        if (typeof loadedPolygons !== 'undefined' && loadedPolygons[pending.fieldId]) {
+            openNow();
+            return;
+        }
+        if (attempt < 80) setTimeout(() => tryOpen(attempt + 1), 200);
+        else openNow();
+    };
+    tryOpen(0);
+};
+
+window.requireAdminLoginForCad_ = (fieldId, fromBulkMemo) => {
+    if (window.isAdminAuthenticatedForCad_()) return true;
+    window.queueCadOpenAfterAdminLogin_(fieldId, fromBulkMemo);
+    return false;
+};
+
 if (!window._openCadFieldMsgBound_) {
     window._openCadFieldMsgBound_ = true;
     window.addEventListener('message', (ev) => {
@@ -395,6 +462,7 @@ if (!window._openCadFieldMsgBound_) {
         }
         const fieldId = data.fieldId;
         if (!fieldId) return;
+        if (!window.requireAdminLoginForCad_(fieldId, !!window._cadOpenedFromBulkMemo)) return;
         if (typeof window.openCadRegistry === 'function') {
             window.openCadRegistry(fieldId, { fromBulkMemo: !!window._cadOpenedFromBulkMemo });
         } else if (typeof window.openCADMode === 'function') {
@@ -588,14 +656,21 @@ function applyPendingMapDeepLink() {
     if (link.openCad && link.cadFieldId) {
         const cadFieldId = link.cadFieldId;
         window._cadOpenedFromBulkMemo = !!link.fromBulkMemo;
-        const tryOpenCad = (attempt) => {
-            if (loadedPolygons[cadFieldId] && typeof window.openCADMode === 'function') {
-                window.openCadRegistry(cadFieldId, { fromBulkMemo: !!link.fromBulkMemo });
-                return;
-            }
-            if (attempt < 80) setTimeout(() => tryOpenCad(attempt + 1), 200);
-        };
-        tryOpenCad(0);
+        if (window.requireAdminLoginForCad_(cadFieldId, !!link.fromBulkMemo)) {
+            const tryOpenCad = (attempt) => {
+                if (loadedPolygons[cadFieldId] && typeof window.openCadRegistry === 'function') {
+                    window.openCadRegistry(cadFieldId, { fromBulkMemo: !!link.fromBulkMemo });
+                    return;
+                }
+                if (loadedPolygons[cadFieldId] && typeof window.openCADMode === 'function') {
+                    window.openCADMode(cadFieldId);
+                    return;
+                }
+                if (attempt < 80) setTimeout(() => tryOpenCad(attempt + 1), 200);
+            };
+            tryOpenCad(0);
+        }
+        // 未ログイン時は queueCadOpenAfterAdminLogin_ 済み。ログイン後に開く
     }
 
     if (hasCoords) {
@@ -1629,12 +1704,19 @@ async function executeLogin(isAuto = false, options = {}) {
         });
         if (res.success) {
             if (res.role !== "管理者") {
+                window._adminLoginConfirmed = false;
+                window._adminCacheSessionActive = false;
                 document.getElementById('loginScreen').style.display = 'flex';
                 if (err) err.innerText = "⛔ 管理者権限がありません";
                 if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
+                try {
+                    if (typeof window.cadCloseRegistryModal_ === 'function') window.cadCloseRegistryModal_();
+                    if (typeof window.closeCADMode === 'function') window.closeCADMode();
+                } catch (eClose) {}
                 return;
             }
             loginOk = true;
+            window._adminLoginConfirmed = true;
             currentUser = res.name;
             document.getElementById('loginScreen').style.display = 'none';
             if (err) err.innerText = '';
@@ -1671,7 +1753,15 @@ async function executeLogin(isAuto = false, options = {}) {
             }
             ensureAdminInitDataLoad_('login-ok');
             startLocationWatch();
-            mapInitPromise.then(() => applyPendingMapDeepLink());
+            mapInitPromise.then(() => {
+                applyPendingMapDeepLink();
+                if (typeof window.flushPendingCadOpenAfterLogin_ === 'function') {
+                    window.flushPendingCadOpenAfterLogin_();
+                }
+            });
+            if (typeof window.flushPendingCadOpenAfterLogin_ === 'function') {
+                window.flushPendingCadOpenAfterLogin_();
+            }
             if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
         } else {
             if (fromCache && hasCache) {
@@ -10721,11 +10811,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ログイン処理やキャッシュ読み込みは即座に実行（地図の初期化を待たない）
     const orgId = localStorage.getItem('passionMapOrgId') || localStorage.getItem('pMapAdminOrgId');
-    const id = localStorage.getItem('passionMapUserId');
-    const pw = localStorage.getItem('passionMapUserPw');
+    const role = localStorage.getItem('passionMapUserRole') || '';
+    const adminId = localStorage.getItem('pMapAdminId') || '';
+    const adminPw = localStorage.getItem('pMapAdminPw') || '';
+    const id = adminId || localStorage.getItem('passionMapUserId');
+    const pw = adminPw || localStorage.getItem('passionMapUserPw');
     const savedName = localStorage.getItem('pMapAdminName');
+    const isAdminRole = role === '管理者';
+    const hasAdminCreds = !!(adminId && adminPw);
 
-    if (orgId && id && pw) {
+    // 作業員ログイン情報だけでは Admin を開けない（管理者資格 or 管理者ロールが必要）
+    if (orgId && id && pw && (isAdminRole || hasAdminCreds)) {
         const loginScreen = document.getElementById('loginScreen');
         if (loginScreen) loginScreen.style.display = 'none';
         setTimeout(refreshAdminMapSize, 50);
@@ -10760,8 +10856,24 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     } else {
-        // ログイン情報がない場合は手動ログインを待機
-        console.log("ログイン情報がないため、手動ログインを待機します");
+        // 管理者未ログイン：ログイン画面を出し、CAD自動オープンはログイン後に回す
+        console.log("管理者ログインが必要なため、手動ログインを待機します");
+        try {
+            if (typeof restoreAdminLoginForm === 'function') restoreAdminLoginForm();
+            else {
+                if (document.getElementById('loginId') && id) document.getElementById('loginId').value = id;
+                if (document.getElementById('loginPw') && pw) document.getElementById('loginPw').value = pw;
+            }
+        } catch (ePrefill) {}
+        const loginScreen = document.getElementById('loginScreen');
+        if (loginScreen) loginScreen.style.display = 'flex';
+        // openCad ディープリンクはログイン後に flush
+        if (pendingMapDeepLink && pendingMapDeepLink.openCad && pendingMapDeepLink.cadFieldId) {
+            window.queueCadOpenAfterAdminLogin_(
+                pendingMapDeepLink.cadFieldId,
+                !!pendingMapDeepLink.fromBulkMemo
+            );
+        }
     }
 });
 

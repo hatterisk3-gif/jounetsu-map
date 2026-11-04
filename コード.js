@@ -17318,17 +17318,25 @@ function osakaMarketCsvUrl_(ymd, ym, ichiba, syurui) {
 
 function fetchOsakaMarketCsvText_(ymd, ym, ichiba, syurui) {
   const url = osakaMarketCsvUrl_(ymd, ym, ichiba, syurui);
-  const res = UrlFetchApp.fetch(url, {
-    muteHttpExceptions: true,
-    followRedirects: true,
-    headers: {
-      'User-Agent': 'Mozilla/5.0',
-      'Referer': 'https://www.shijou.city.osaka.jp/sikyo/nippou/syurui.html'
-    }
-  });
+  let res;
+  try {
+    res = UrlFetchApp.fetch(url, {
+      muteHttpExceptions: true,
+      followRedirects: true,
+      // 公式サイト障害時に長待ちしない
+      headers: {
+        'User-Agent': 'Mozilla/5.0',
+        'Referer': 'https://www.shijou.city.osaka.jp/sikyo/nippou/syurui.html'
+      }
+    });
+  } catch (e) {
+    return { ok: false, code: 0, url: url, text: '', siteDown: true, error: String(e) };
+  }
   const code = res.getResponseCode();
   if (code !== 200) {
-    return { ok: false, code: code, url: url, text: '' };
+    // 5xx / 403 はサイト側障害・遮断の可能性が高い
+    const siteDown = code >= 500 || code === 403 || code === 429;
+    return { ok: false, code: code, url: url, text: '', siteDown: siteDown };
   }
   const bytes = res.getContent();
   let text = '';
@@ -17354,11 +17362,21 @@ function findLatestOsakaMarketCsv_(ichiba, syurui, maxLookback) {
   const lookback = Math.max(1, Math.min(Number(maxLookback) || 14, 31));
   const base = new Date();
   base.setHours(12, 0, 0, 0);
+  let siteDownStreak = 0;
   for (let i = 0; i < lookback; i++) {
     const d = new Date(base.getTime());
     d.setDate(base.getDate() - i);
     const parts = osakaMarketYmdParts_(d);
     const fetched = fetchOsakaMarketCsvText_(parts.ymd, parts.ym, ichiba, syurui);
+    if (fetched && fetched.siteDown) {
+      siteDownStreak += 1;
+      // 公式サイトが落ちているときは日付を遡っても無駄なので打ち切る
+      if (siteDownStreak >= 2) {
+        return null;
+      }
+      continue;
+    }
+    siteDownStreak = 0;
     if (fetched.ok) {
       return { parts: parts, fetched: fetched };
     }
@@ -17537,9 +17555,13 @@ function getOsakaMarketDaily(params) {
   if (!hit) {
     const fallback = readOsakaMarketSheet_(wantDate || '', market);
     if (fallback) {
-      return Object.assign({ success: true, source: 'sheet-fallback', warning: '最新の公開CSVが見つからないため、保存済みデータを表示しています。' }, fallback);
+      return Object.assign({
+        success: true,
+        source: 'sheet-fallback',
+        warning: '大阪市公式サイトから最新CSVを取得できないため、保存済みデータを表示しています。'
+      }, fallback);
     }
-    throw new Error('大阪市中央卸売市場の日報CSVを取得できませんでした（休場または未公開の可能性があります）');
+    throw new Error('大阪市中央卸売市場の日報を取得できません（公式サイト障害または休場の可能性）。東京タブは利用できる場合があります。');
   }
 
   const parsed = parseOsakaSyuruiCsv_(hit.fetched.text);
@@ -17719,17 +17741,23 @@ function tokyoMarketCsvUrl_(ymd, ym, csvId) {
 
 function fetchTokyoMarketCsvText_(ymd, ym, csvId) {
   const url = tokyoMarketCsvUrl_(ymd, ym, csvId);
-  const res = UrlFetchApp.fetch(url, {
-    muteHttpExceptions: true,
-    followRedirects: true,
-    headers: {
-      'User-Agent': 'Mozilla/5.0',
-      'Referer': TOKYO_NIPPO_BASE_
-    }
-  });
+  let res;
+  try {
+    res = UrlFetchApp.fetch(url, {
+      muteHttpExceptions: true,
+      followRedirects: true,
+      headers: {
+        'User-Agent': 'Mozilla/5.0',
+        'Referer': TOKYO_NIPPO_BASE_
+      }
+    });
+  } catch (e) {
+    return { ok: false, code: 0, url: url, text: '', siteDown: true, error: String(e) };
+  }
   const code = res.getResponseCode();
   if (code !== 200) {
-    return { ok: false, code: code, url: url, text: '' };
+    const siteDown = code >= 500 || code === 403 || code === 429;
+    return { ok: false, code: code, url: url, text: '', siteDown: siteDown };
   }
   const bytes = res.getContent();
   let text = '';
@@ -17749,17 +17777,37 @@ function fetchTokyoMarketCsvText_(ymd, ym, csvId) {
 }
 
 function findLatestTokyoMarketCsv_(maxLookback) {
-  const lookback = Math.max(1, Math.min(Number(maxLookback) || 14, 31));
+  const lookback = Math.max(1, Math.min(Number(maxLookback) || 21, 40));
   const base = new Date();
   base.setHours(12, 0, 0, 0);
+  let siteDownStreak = 0;
   for (let i = 0; i < lookback; i++) {
     const d = new Date(base.getTime());
     d.setDate(base.getDate() - i);
+    // 土日は休場が多いので後回し（まずは平日を優先）
+    const dow = d.getDay();
+    if (dow === 0 || dow === 6) continue;
     const parts = osakaMarketYmdParts_(d);
     const fetched = fetchTokyoMarketCsvText_(parts.ymd, parts.ym, TOKYO_OTA_CSV_ID_);
+    if (fetched && fetched.siteDown) {
+      siteDownStreak += 1;
+      if (siteDownStreak >= 3) return null;
+      continue;
+    }
+    siteDownStreak = 0;
     if (fetched.ok) {
       return { parts: parts, fetched: fetched };
     }
+  }
+  // 平日で見つからなければ土日も含めて再走査
+  for (let i = 0; i < lookback; i++) {
+    const d = new Date(base.getTime());
+    d.setDate(base.getDate() - i);
+    const dow = d.getDay();
+    if (dow !== 0 && dow !== 6) continue;
+    const parts = osakaMarketYmdParts_(d);
+    const fetched = fetchTokyoMarketCsvText_(parts.ymd, parts.ym, TOKYO_OTA_CSV_ID_);
+    if (fetched && fetched.ok) return { parts: parts, fetched: fetched };
   }
   return null;
 }

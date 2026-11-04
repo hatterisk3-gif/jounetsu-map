@@ -2957,23 +2957,53 @@ window.estimateCadUneWidthMeters = (gPoly) => {
         const center = turf.centroid(poly);
         const angleEl = document.getElementById('cadAngle');
         const angle = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
-        // 通常畝の幅方向 = angle + 90
-        const widthBearing = angle + 90;
-        let minP = Infinity;
-        let maxP = -Infinity;
-        coords.forEach(c => {
-            const pt = turf.point(c);
-            const dist = turf.distance(center, pt, { units: 'meters' });
-            const bearing = turf.bearing(center, pt);
-            const proj = dist * Math.cos((bearing - widthBearing) * Math.PI / 180);
-            if (proj < minP) minP = proj;
-            if (proj > maxP) maxP = proj;
-        });
-        const w = Math.abs(maxP - minP);
-        return (w > 0.05 && w < 20) ? w : 0;
+        const spanOnBearing = (bearingDeg) => {
+            let minP = Infinity;
+            let maxP = -Infinity;
+            coords.forEach((c) => {
+                const pt = turf.point(c);
+                const dist = turf.distance(center, pt, { units: 'meters' });
+                const bearing = turf.bearing(center, pt);
+                const proj = dist * Math.cos((bearing - bearingDeg) * Math.PI / 180);
+                if (proj < minP) minP = proj;
+                if (proj > maxP) maxP = proj;
+            });
+            return Math.abs(maxP - minP);
+        };
+        // 畝の左右幅は、長手／直角の両方向のうち短い方
+        const along = spanOnBearing(angle);
+        const across = spanOnBearing(angle + 90);
+        let w = Math.min(along, across);
+        // 頂点投影が崩れる場合は 面積÷長手 で左右幅を出す
+        try {
+            const area = turf.area(poly);
+            const len = Math.max(along, across);
+            if (area > 0 && len > 0.5) {
+                const wArea = area / len;
+                if (wArea > 0.15 && wArea < 8) {
+                    if (!(w > 0.15 && w < 8) || w > wArea * 1.35) w = wArea;
+                }
+            }
+        } catch (e2) {}
+        return (w > 0.05 && w < 8) ? w : 0;
     } catch (e) {
         return 0;
     }
+};
+
+/** 枕畝に使う幅。描画済み畝の左右幅に合わせる */
+window.cadGetMakuraWidthMeters_ = () => {
+    const ridgeRatio = typeof window.cadRidgeGapRatio !== 'undefined' ? (1 - window.cadRidgeGapRatio) : 0.8;
+    const measured = (window.cadListMainRidgeEntries() || []).map((r) => {
+        return (typeof window.estimateCadUneWidthMeters === 'function') ? window.estimateCadUneWidthMeters(r.gPoly) : 0;
+    }).filter((w) => w > 0.15 && w < 5).sort((a, b) => a - b);
+    if (measured.length) {
+        const mid = measured[Math.floor(measured.length / 2)];
+        return Math.max(0.3, Math.min(3.5, mid));
+    }
+    const widthCm = typeof window.getCadWidthCm === 'function' ? window.getCadWidthCm() : null;
+    if (widthCm > 0) return Math.max(0.3, Math.min(3.5, (widthCm / 100) * ridgeRatio));
+    return 1.2;
 };
 
 /** 畝ポリゴンの長さ(m)を概算（長辺方向。CAD角度に沿った投影の長い方） */
@@ -3070,17 +3100,21 @@ window.applyCadUneSvgLabelText = (textNode, poly, baseIdx) => {
 
 /**
  * 枕畝などに使う「地図上の畝と同じ幅(m)」を返す。
- * 優先: 描画済み畝の平均幅 → 基準畝幅(cadWidth)
+ * 優先: 描画済み畝の左右幅 → 基準畝幅(cadWidth)×畝実幅比
  */
 window.getCadReferenceRidgeWidthMeters = () => {
+    if (typeof window.cadGetMakuraWidthMeters_ === 'function') {
+        return window.cadGetMakuraWidthMeters_();
+    }
     const uneList = (window.cadUnePolygons || []).filter(p => p && p.getPath);
-    const widths = uneList.map(p => window.estimateCadUneWidthMeters(p)).filter(w => w > 0);
+    const widths = uneList.map(p => window.estimateCadUneWidthMeters(p)).filter(w => w > 0.15 && w < 5).sort((a, b) => a - b);
     if (widths.length) {
-        return widths.reduce((a, b) => a + b, 0) / widths.length;
+        return widths[Math.floor(widths.length / 2)];
     }
     const cm = typeof window.getCadWidthCm === 'function' ? window.getCadWidthCm() : null;
-    if (cm) return cm / 100;
-    return 1.5;
+    const ridgeRatio = typeof window.cadRidgeGapRatio !== 'undefined' ? (1 - window.cadRidgeGapRatio) : 0.8;
+    if (cm) return (cm / 100) * ridgeRatio;
+    return 1.2;
 };
 
 window.switchCadTab = (tab) => {
@@ -3097,6 +3131,14 @@ window.switchCadTab = (tab) => {
     if (tab === 4 && typeof window.cadPreviewRidgeNumberSplit === 'function') {
         window.cadPreviewRidgeNumberSplit();
     }
+    const panel = document.querySelector('#cadOverlay .cad-panel');
+    if (panel) panel.scrollTop = 0;
+};
+
+/** 現在タブの次へ進む（①→②→…→⑤） */
+window.cadGoNextTab = (fromTab) => {
+    const n = Math.max(1, Math.min(4, Number(fromTab) || 1));
+    window.switchCadTab(n + 1);
 };
 
 /** 生成畝の配列順をそのまま畝並びとして使う（枕畝は除外） */
@@ -7398,22 +7440,9 @@ window.cadGenerateMakuraFromSelectedEdges = () => {
     };
     const frontIds = (Array.isArray(window.cadFrontEdgeIndexes) ? window.cadFrontEdgeIndexes : []).filter(sameSide);
     const selected = Array.from(new Set(picked.concat(frontIds)));
-    let widthM = null;
-    const measured = (window.cadListMainRidgeEntries() || []).map((r) => {
-        return (typeof window.estimateCadUneWidthMeters === 'function') ? window.estimateCadUneWidthMeters(r.gPoly) : 0;
-    }).filter((w) => w > 0.05);
-    if (measured.length) {
-        widthM = measured.reduce((a, b) => a + b, 0) / measured.length;
-    }
-    if (!widthM) {
-        const widthCm = typeof window.getCadWidthCm === 'function' ? window.getCadWidthCm() : null;
-        if (widthCm > 0) widthM = widthCm / 100;
-    }
-    if (!widthM) {
-        widthM = (typeof window.getCadReferenceRidgeWidthMeters === 'function')
-            ? window.getCadReferenceRidgeWidthMeters() : 1.5;
-    }
-    if (!widthM || widthM <= 0) widthM = 1.5;
+    const widthM = (typeof window.cadGetMakuraWidthMeters_ === 'function')
+        ? window.cadGetMakuraWidthMeters_()
+        : 1.2;
 
     let features = [];
     let shortened = 0;
@@ -7851,9 +7880,11 @@ window.cadExecuteAddMakura = (latLng) => {
     const angleEl = document.getElementById('cadAngle');
     const angle = angleEl && angleEl.value ? parseFloat(angleEl.value) : 0;
 
-    // 枕畝の太さ = 地図上の畝幅（なければ基準畝幅）
-    let actualWidthM = window.getCadReferenceRidgeWidthMeters();
-    if (!actualWidthM || actualWidthM <= 0) actualWidthM = 1.5;
+    // 枕畝の太さ = 下の薄い畝の左右幅に合わせる
+    let actualWidthM = (typeof window.cadGetMakuraWidthMeters_ === 'function')
+        ? window.cadGetMakuraWidthMeters_()
+        : (window.getCadReferenceRidgeWidthMeters() || 1.2);
+    if (!actualWidthM || actualWidthM <= 0) actualWidthM = 1.2;
 
     const p = loadedPolygons[window.cadTargetId];
     if (!p || !p.coords || p.coords.length < 3) return;
@@ -10307,12 +10338,18 @@ window.saveUneSim = async () => {
                 if (window.parent && window.parent !== window) {
                     window.parent.postMessage({
                         type: 'cadSavedReturnToBulk',
+                        fromBulkMemo: true,
                         fieldId: p.id,
                         fieldName: p.name || ''
                     }, '*');
                 }
             } catch (eMsg) {}
-            alert('💾 保存しました。一括入力へ戻る案内を出しています。');
+            // 親画面の「一括入力の続きへ」案内を優先（ネイティブalertで塞がない）
+            try {
+                if (typeof window.showAdminSyncToast === 'function') {
+                    window.showAdminSyncToast('💾 保存しました。一括入力へ戻る案内を確認してください', 'ok');
+                }
+            } catch (eToast) {}
         } else {
             alert('💾 描画した地形とピンをすべて保存しました！');
         }
@@ -10377,12 +10414,27 @@ window.cadCanApplyRegistryResult_ = (seq, id) => {
 };
 
 window.openCadRegistry = async (id, opts) => {
+    opts = opts || {};
+    // Admin未ログイン時はCADを開かず、ログイン後に再開する
+    if (typeof window.isAdminAuthenticatedForCad_ === 'function'
+        && !window.isAdminAuthenticatedForCad_()) {
+        const fromBulk = Object.prototype.hasOwnProperty.call(opts, 'fromBulkMemo')
+            ? !!opts.fromBulkMemo
+            : !!window._cadOpenedFromBulkMemo;
+        if (typeof window.requireAdminLoginForCad_ === 'function') {
+            window.requireAdminLoginForCad_(id, fromBulk);
+        } else if (typeof window.showAdminLoginForCad_ === 'function') {
+            window.showAdminLoginForCad_('⛔ 畝CADを開くには管理者ログインが必要です');
+        } else {
+            alert('⛔ 畝CADを開くには管理者ログインが必要です');
+        }
+        return;
+    }
     const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[id] : null;
     if (!p) {
         alert('圃場が見つかりません。');
         return;
     }
-    opts = opts || {};
     // 一括入力から開いた場合のみ戻り案内用フラグを立てる（Admin直開きは落とす）
     if (Object.prototype.hasOwnProperty.call(opts, 'fromBulkMemo')) {
         window._cadOpenedFromBulkMemo = !!opts.fromBulkMemo;
@@ -10623,7 +10675,25 @@ window.cadApplyRegistryItem_ = async (id, item) => {
             skipCadHistory: true
         });
         p.uneSimData = item.data;
-        alert('この図面を適用しました。');
+        if (window._cadOpenedFromBulkMemo) {
+            try {
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({
+                        type: 'cadSavedReturnToBulk',
+                        fromBulkMemo: true,
+                        fieldId: p.id,
+                        fieldName: p.name || ''
+                    }, '*');
+                }
+            } catch (eMsg) {}
+            try {
+                if (typeof window.showAdminSyncToast === 'function') {
+                    window.showAdminSyncToast('図面を適用しました。一括入力へ戻る案内を確認してください', 'ok');
+                }
+            } catch (eToast) {}
+        } else {
+            alert('この図面を適用しました。');
+        }
         window.openCadRegistry(id, { refresh: true });
     } catch (e) {
         alert('適用に失敗しました。\n' + (e && e.message ? e.message : e));

@@ -959,7 +959,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000320';
+    const cacheBust = '1788600000325';
     // 豚糞共有：台数＋短いGoogleマップURL＋座標（v1.49）
     // ※ https://maps.google.com/?q=緯度,経度
     // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）
@@ -1110,6 +1110,27 @@
         <span style="cursor: pointer; font-size: 28px; line-height: 1;" onclick="closeRadarModal()">×</span>
       </div>
       <div id="radarContent" style="flex: 1; position: relative; -webkit-overflow-scrolling: touch;"></div>
+    </div>
+  </div>
+
+  <!-- 農地CAD（admin.html iframe） -->
+  <div id="adminCadModal" onclick="if(event.target===this)closeAdminCadModal()"
+    style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.78); z-index:16000; justify-content:center; align-items:center;">
+    <div style="width:96%; height:94%; background:#fff; border-radius:10px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 8px 30px rgba(0,0,0,0.45);">
+      <div style="padding:10px 14px; background:#1b2430; color:#fff; border-bottom:1px solid #334155; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <div style="display:flex; align-items:center; gap:8px; font-weight:bold; font-size:15px; color:#FFB74D; min-width:0; overflow:hidden;">
+          <span style="white-space:nowrap;">🚜 農地CAD</span>
+          <span id="adminCadFieldTitle" style="font-size:13px; font-weight:normal; color:#E0E0E0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+          <button type="button" onclick="openCadInNewTabFromSchedule()"
+            title="ブラウザの別タブで開く"
+            style="background:#263238; color:#81D4FA; border:1px solid #455A64; padding:6px 10px; border-radius:5px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">↗ 別タブ</button>
+          <button type="button" onclick="closeAdminCadModal()"
+            style="background:#f44336; color:#fff; border:none; padding:6px 14px; border-radius:5px; font-weight:bold; font-size:13px; cursor:pointer; white-space:nowrap;">閉じる</button>
+        </div>
+      </div>
+      <iframe id="adminCadIframe" src="" style="flex:1; border:none; background:#fff;" allow="geolocation"></iframe>
     </div>
   </div>
 

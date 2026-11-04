@@ -68,212 +68,248 @@
               <!-- ステップ1: 基本設定 -->
               <div id="cpStep1" class="cp-step-panel cp-step-panel--1" role="tabpanel" aria-labelledby="cpStepTab1" hidden>
                 <div class="cp-step-body">
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; align-items: start;">
-            <div style="width: 100%;">
-              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">年度</label>
-              <select id="cpYear" onchange="updateCpDefaultPlanName(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 100%; box-sizing: border-box;">
-                  <option value="2024">2024</option>
-                  <option value="2025">2025</option>
-                  <option value="2026" selected>2026</option>
-                  <option value="2027">2027</option>
-                  <option value="2028">2028</option>
-              </select>
-            </div>
-            <div style="width: 100%;">
-              <div style="display:flex; align-items:center; justify-content:space-between; gap:4px; margin-bottom:2px;">
-                <label style="font-size: 11px; font-weight: bold; color: #555;">拠点</label>
-                <button type="button" onclick="openCpBasicMasterManager('location')" title="拠点の追加・編集・削除" style="padding:2px 8px; font-size:10px; font-weight:bold; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">管理</button>
-              </div>
-              <div style="display: flex; gap: 4px; width: 100%;">
-                <select id="cpLocation" onchange="checkCustomInput(this, 'cpLocation_custom'); onCpLocationChange()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
-                  <option value="">選択...</option>
-                </select>
-                <input type="text" id="cpLocation_custom" placeholder="手入力" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
-              </div>
-              <div style="font-size:10px; color:#888; margin-top:2px;">※1つの計画＝1拠点。別拠点は保存後に拠点を切り替えて新たに計画します。産地の割当は「管理」から編集できます。</div>
-              <div style="display:flex; align-items:center; gap:4px; margin-top:4px;">
-                <label style="font-size:10px; color:#888; white-space:nowrap;">タグ略称</label>
-                <input type="text" id="cpLocationTagAbbr" maxlength="10" placeholder="例: 徳阿" title="拠点のタグ略称" style="flex:1; min-width:0; padding:3px 6px; border:1px solid #ccc; border-radius:4px; font-size:11px;">
-                <button type="button" onclick="saveCpLocationTagAbbreviation()" style="flex-shrink:0; padding:3px 8px; font-size:10px; font-weight:bold; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">保存</button>
-              </div>
-            </div>
-            <div style="width: 100%;">
-              <div style="display:flex; align-items:center; justify-content:space-between; gap:4px; margin-bottom:2px;">
-                <label style="font-size: 11px; font-weight: bold; color: #555;">作物</label>
-                <button type="button" onclick="openCpBasicMasterManager('crop')" title="作物の追加・編集・削除" style="padding:2px 8px; font-size:10px; font-weight:bold; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">管理</button>
-              </div>
-              <div style="display: flex; gap: 4px; width: 100%;">
-                <select id="cpCrop" onchange="checkCustomInput(this, 'cpCrop_custom'); updateVarietyList(); calcCp(); checkCroptypeDB(); onCpCropChangedForCost(); scheduleRefreshCpWorkSchedulePanel(); updateCpDefaultPlanName(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
-                <input type="text" id="cpCrop_custom" placeholder="手入力" onchange="updateVarietyList(); onCpCropChangedForCost(); scheduleRefreshCpWorkSchedulePanel(); updateCpDefaultPlanName(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()" oninput="calcCp(); checkCroptypeDB(); updateCpDefaultPlanName()" onblur="onCpCropChangedForCost(); scheduleRefreshCpWorkSchedulePanel(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
-              </div>
-              <div style="display:flex; align-items:center; gap:4px; margin-top:4px;">
-                <label style="font-size:10px; color:#888; white-space:nowrap;">タグ略称</label>
-                <input type="text" id="cpCropTagAbbr" maxlength="10" placeholder="例: キャ" title="作物のタグ略称" style="flex:1; min-width:0; padding:3px 6px; border:1px solid #ccc; border-radius:4px; font-size:11px;">
-                <button type="button" onclick="saveCpCropTagAbbreviation()" style="flex-shrink:0; padding:3px 8px; font-size:10px; font-weight:bold; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">保存</button>
-              </div>
-              <div id="cpTagAbbrSaveStatus" style="font-size:11px; font-weight:bold; margin-top:4px; min-height:14px;"></div>
-              <div style="margin-top:8px; padding:8px; background:#f5f5f5; border:1px solid #e0e0e0; border-radius:6px;">
-                <label style="font-size:11px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">外部スプレッドシート連携</label>
-                <input type="text" id="cpExternalSheetUrl" placeholder="スプレッドシートURL" title="作型シート（作物名＝タブ名）のURL"
-                  style="width:100%; box-sizing:border-box; padding:4px 6px; border:1px solid #ccc; border-radius:4px; font-size:11px; margin-bottom:6px;">
-                <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                  <button type="button" onclick="importCpFromExternalSheet()" title="シートから品種・播種枚数・作型カレンダーを読み込み"
-                    style="flex:1; min-width:100px; padding:5px 8px; font-size:11px; font-weight:bold; border:1px solid #81C784; background:#E8F5E9; color:#2E7D32; border-radius:4px; cursor:pointer;">↓ インポート</button>
-                  <button type="button" onclick="exportCpToExternalSheet()" title="画面上の計画をシートへ書き出し"
-                    style="flex:1; min-width:100px; padding:5px 8px; font-size:11px; font-weight:bold; border:1px solid #64B5F6; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">↑ エクスポート</button>
-                </div>
-                <div id="cpExternalSheetStatus" style="font-size:10px; color:#666; margin-top:4px; min-height:14px; line-height:1.4;"></div>
-              </div>
-            </div>
-            <div style="width: 100%;">
-              <div style="display:flex; align-items:center; justify-content:space-between; gap:4px; margin-bottom:2px;">
-                <label style="font-size: 11px; font-weight: bold; color: #555;">産地（絞り込み）</label>
-                <button type="button" onclick="openCpBasicMasterManager('climate')" title="産地の追加・編集・削除" style="padding:2px 8px; font-size:10px; font-weight:bold; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">管理</button>
-              </div>
-              <select id="cpClimate" onchange="updateVarietyList(); checkCroptypeDB(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 100%; box-sizing: border-box;">
-                  <option value="">拠点の全産地</option>
-                  <option value="暖地">暖地</option>
-                  <option value="温暖地">温暖地</option>
-                  <option value="一般地">一般地</option>
-                  <option value="高冷地">高冷地</option>
-              </select>
-              <div id="cpLocationClimateHint" style="font-size:10px; color:#2e7d32; margin-top:2px; min-height:14px;"></div>
-            </div>
-            <div style="width: 100%;">
-              <div style="display:flex; align-items:center; justify-content:space-between; gap:4px; margin-bottom:2px;">
-                <label style="font-size: 11px; font-weight: bold; color: #555;">圃場条件</label>
-                <button type="button" onclick="openCpBasicMasterManager('condition')" title="圃場条件の追加・編集・削除" style="padding:2px 8px; font-size:10px; font-weight:bold; border:1px solid #90CAF9; background:#E3F2FD; color:#1565C0; border-radius:4px; cursor:pointer;">管理</button>
-              </div>
-              <select id="cpFieldCondition" onchange="checkCroptypeDB(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 100%; box-sizing: border-box;">
-                  <option value="露地">露地</option>
-                  <option value="ハウス">ハウス</option>
-              </select>
-            </div>
-            <div style="width: 100%;">
-              <label style="font-size: 11px; font-weight: bold; color: #555; display:block; margin-bottom:2px;">本作／試作</label>
-              <div role="radiogroup" aria-label="本作または試作" class="cp-plan-type-group" title="計画名の末尾に本作／試作が付きます">
-                <label class="cp-plan-type-btn">
-                  <input type="radio" name="cpPlanType" value="本作" checked onchange="onCpPlanTypeChange()">
-                  <span>本作</span>
-                </label>
-                <label class="cp-plan-type-btn">
-                  <input type="radio" name="cpPlanType" value="試作" onchange="onCpPlanTypeChange()">
-                  <span>試作</span>
-                </label>
-              </div>
-            </div>
-          </div>
-          <div style="text-align: center; margin-top: 10px; padding: 8px; background: #e8f5e9; border-radius: 6px; border: 1px dashed #4CAF50;">
-            <p style="font-size: 11px; color: #2e7d32; margin: 0 0 5px 0; font-weight: bold;">※ 過去の計画を呼び出したい場合はこちら</p>
-            <div style="display:flex; flex-wrap:wrap; gap:8px; justify-content:center;">
-              <button type="button" onclick="showPlanListModal({ mode: 'load' })" style="padding: 8px 16px; background: #4CAF50; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">📂 計画一覧から選んで読み込む</button>
-              <button type="button" onclick="openOverallPlanReviewModal()" style="padding: 8px 16px; background: #fff; color: #1B5E20; border: 1px solid #81C784; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;">📊 全体計画の確認</button>
-            </div>
-          </div>
-          <div style="text-align: right; margin-top: 8px;">
-            <button type="button" onclick="nextCpStep(2)" style="padding: 6px 16px; background: #4CAF50; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">次へ (栽培パラメーター)</button>
-          </div>
+                  <div class="cp-primary-grid">
+                    <div class="cp-field">
+                      <label class="cp-field-label" for="cpYear">年度</label>
+                      <select id="cpYear" class="cp-control" onchange="updateCpDefaultPlanName(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()">
+                        <option value="2024">2024</option>
+                        <option value="2025">2025</option>
+                        <option value="2026" selected>2026</option>
+                        <option value="2027">2027</option>
+                        <option value="2028">2028</option>
+                      </select>
+                    </div>
+                    <div class="cp-field">
+                      <div class="cp-field-label-row">
+                        <label class="cp-field-label" for="cpLocation">拠点</label>
+                        <button type="button" class="cp-btn-manage" onclick="openCpBasicMasterManager('location')" title="拠点の追加・編集・削除">管理</button>
+                      </div>
+                      <div class="cp-field-row">
+                        <select id="cpLocation" class="cp-control" onchange="checkCustomInput(this, 'cpLocation_custom'); onCpLocationChange(); if (typeof refreshCpStepNextButtons==='function') refreshCpStepNextButtons()" title="1計画＝1拠点。別拠点は保存後に切り替えて新規計画。産地割当は管理から編集">
+                          <option value="">選択...</option>
+                        </select>
+                        <input type="text" id="cpLocation_custom" class="cp-control" placeholder="手入力" oninput="if (typeof refreshCpStepNextButtons==='function') refreshCpStepNextButtons()" style="display:none;">
+                      </div>
+                    </div>
+                    <div class="cp-field">
+                      <div class="cp-field-label-row">
+                        <label class="cp-field-label" for="cpCrop">作物</label>
+                        <button type="button" class="cp-btn-manage" onclick="openCpBasicMasterManager('crop')" title="作物の追加・編集・削除">管理</button>
+                      </div>
+                      <div class="cp-field-row">
+                        <select id="cpCrop" class="cp-control" onchange="checkCustomInput(this, 'cpCrop_custom'); updateVarietyList(); calcCp(); checkCroptypeDB(); onCpCropChangedForCost(); scheduleRefreshCpWorkSchedulePanel(); updateCpDefaultPlanName(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar(); if (typeof refreshCpStepNextButtons==='function') refreshCpStepNextButtons()"></select>
+                        <input type="text" id="cpCrop_custom" class="cp-control" placeholder="手入力" onchange="updateVarietyList(); onCpCropChangedForCost(); scheduleRefreshCpWorkSchedulePanel(); updateCpDefaultPlanName(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar(); if (typeof refreshCpStepNextButtons==='function') refreshCpStepNextButtons()" oninput="calcCp(); checkCroptypeDB(); updateCpDefaultPlanName(); if (typeof refreshCpStepNextButtons==='function') refreshCpStepNextButtons()" onblur="onCpCropChangedForCost(); scheduleRefreshCpWorkSchedulePanel(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()" style="display:none;">
+                      </div>
+                    </div>
+                    <div class="cp-field">
+                      <div class="cp-field-label-row">
+                        <label class="cp-field-label" for="cpClimate">産地（絞り込み）</label>
+                        <button type="button" class="cp-btn-manage" onclick="openCpBasicMasterManager('climate')" title="産地の追加・編集・削除">管理</button>
+                      </div>
+                      <select id="cpClimate" class="cp-control" onchange="updateVarietyList(); checkCroptypeDB(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()">
+                        <option value="">拠点の全産地</option>
+                        <option value="暖地">暖地</option>
+                        <option value="温暖地">温暖地</option>
+                        <option value="一般地">一般地</option>
+                        <option value="高冷地">高冷地</option>
+                      </select>
+                      <div id="cpLocationClimateHint" class="cp-field-hint cp-field-hint--ok"></div>
+                    </div>
+                    <div class="cp-field">
+                      <div class="cp-field-label-row">
+                        <label class="cp-field-label" for="cpFieldCondition">圃場条件</label>
+                        <button type="button" class="cp-btn-manage" onclick="openCpBasicMasterManager('condition')" title="圃場条件の追加・編集・削除">管理</button>
+                      </div>
+                      <select id="cpFieldCondition" class="cp-control" onchange="checkCroptypeDB(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()">
+                        <option value="露地">露地</option>
+                        <option value="ハウス">ハウス</option>
+                      </select>
+                    </div>
+                    <div class="cp-field">
+                      <span class="cp-field-label">本作／試作</span>
+                      <div role="radiogroup" aria-label="本作または試作" class="cp-plan-type-group" title="計画名の末尾に本作／試作が付きます">
+                        <label class="cp-plan-type-btn">
+                          <input type="radio" name="cpPlanType" value="本作" checked onchange="onCpPlanTypeChange()">
+                          <span>本作</span>
+                        </label>
+                        <label class="cp-plan-type-btn">
+                          <input type="radio" name="cpPlanType" value="試作" onchange="onCpPlanTypeChange()">
+                          <span>試作</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div id="cpAdvancedSettings" class="cp-advanced">
+                    <button type="button" id="cpAdvancedToggle" class="cp-advanced-toggle" aria-expanded="false" aria-controls="cpAdvancedBody" onclick="toggleCpAdvancedSettings()">
+                      <span class="cp-advanced-toggle-label">詳細・連携</span>
+                      <span class="cp-advanced-toggle-hint">タグ略称・シート連携・計画読込</span>
+                      <span class="cp-advanced-chevron" aria-hidden="true">▾</span>
+                    </button>
+                    <div id="cpAdvancedBody" class="cp-advanced-body" hidden>
+                      <div class="cp-advanced-section">
+                        <div class="cp-advanced-section-title">タグ略称</div>
+                        <div class="cp-advanced-grid">
+                          <div class="cp-field">
+                            <label class="cp-field-label" for="cpLocationTagAbbr">拠点</label>
+                            <div class="cp-field-row">
+                              <input type="text" id="cpLocationTagAbbr" class="cp-control" maxlength="10" placeholder="例: 徳阿" title="拠点のタグ略称">
+                              <button type="button" class="cp-btn-manage" onclick="saveCpLocationTagAbbreviation()">保存</button>
+                            </div>
+                          </div>
+                          <div class="cp-field">
+                            <label class="cp-field-label" for="cpCropTagAbbr">作物</label>
+                            <div class="cp-field-row">
+                              <input type="text" id="cpCropTagAbbr" class="cp-control" maxlength="10" placeholder="例: キャ" title="作物のタグ略称">
+                              <button type="button" class="cp-btn-manage" onclick="saveCpCropTagAbbreviation()">保存</button>
+                            </div>
+                            <div id="cpTagAbbrSaveStatus" class="cp-field-hint"></div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="cp-advanced-section">
+                        <div class="cp-advanced-section-title">外部スプレッドシート連携</div>
+                        <input type="text" id="cpExternalSheetUrl" class="cp-control" placeholder="スプレッドシートURL" title="作型シート（作物名＝タブ名）のURL">
+                        <div class="cp-field-row cp-field-row--gap">
+                          <button type="button" class="cp-btn-secondary cp-btn-secondary--green" onclick="importCpFromExternalSheet()" title="シートから品種・播種枚数・作型カレンダーを読み込み">↓ インポート</button>
+                          <button type="button" class="cp-btn-secondary" onclick="exportCpToExternalSheet()" title="画面上の計画をシートへ書き出し">↑ エクスポート</button>
+                        </div>
+                        <div id="cpExternalSheetStatus" class="cp-field-hint"></div>
+                      </div>
+                      <div class="cp-advanced-section">
+                        <div class="cp-advanced-section-title">計画の読込・確認</div>
+                        <div class="cp-field-row cp-field-row--gap">
+                          <button type="button" class="cp-btn-secondary cp-btn-secondary--green" onclick="showPlanListModal({ mode: 'load' })">📂 計画一覧から読み込む</button>
+                          <button type="button" class="cp-btn-secondary" onclick="openOverallPlanReviewModal()">📊 全体計画の確認</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="cp-step-actions">
+                    <span id="cpStep1ReadyHint" class="cp-step-ready-hint"></span>
+                    <button type="button" id="cpStep1NextBtn" class="cp-btn-primary cp-btn-primary--green" onclick="nextCpStep(2)">次へ (栽培パラメーター)</button>
+                  </div>
                 </div>
               </div>
 
               <!-- ステップ2: 栽培パラメーター設定 -->
               <div id="cpStep2" class="cp-step-panel cp-step-panel--2" role="tabpanel" aria-labelledby="cpStepTab2" hidden>
                 <div class="cp-step-body">
-          <div style="margin-top: 0; display: flex; gap: 8px; align-items: center; padding: 8px 10px; background: #e3f2fd; border-radius: 6px; border: 1px solid #bbdefb; overflow-x: auto;">
-            <label style="font-size: 11px; font-weight: bold; color: #1976D2; white-space: nowrap; margin-bottom: 0;">栽培設定:</label>
-            <select id="cpPreset" onchange="loadCultivationPreset(this.value)" style="padding: 4px; border: 1px solid #1976D2; border-radius: 4px; font-size: 12px; flex: 1; min-width: 80px;">
-              <option value="">選択...</option>
-            </select>
-            <button id="btnSavePreset" onclick="openCpPresetSaveModal()" style="padding: 4px 8px; background: #2196F3; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; white-space: nowrap;">設定を保存</button>
-            <button id="btnRenamePreset" onclick="renameCultivationPresetUI()" style="padding: 4px 8px; background: #FF9800; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; white-space: nowrap; display: none;">名前変更</button>
-            <button id="btnDeletePreset" onclick="deleteCultivationPresetUI()" style="padding: 4px 8px; background: #F44336; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; white-space: nowrap; display: none;">削除</button>
-            <div id="varietyFileLinkArea" style="font-size: 11px; white-space: nowrap; margin-left: 4px;"></div>
-          </div>
-          <div style="font-size:10px; color:#1565c0; margin:0 0 6px 2px;">※共通（全拠点）と拠点限定の両方を登録できます。穴数・畝間などを変えると、下の品種カードにも反映されます（面積モードは枚数を再計算）。</div>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; align-items: start; padding-top: 10px; margin-top: 5px; border-top: 1px dashed #eee;">
-            <div style="width: 100%;">
-              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">穴数</label>
-              <div style="display: flex; gap: 4px; width: 100%;">
-                <select id="cpTrayHoles" onchange="checkCustomInput(this, 'cpTrayHoles_custom'); calcCp()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
-                <input type="number" id="cpTrayHoles_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
-              </div>
-            </div>
-            <div style="width: 100%;">
-              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">条数</label>
-              <div style="display: flex; gap: 4px; width: 100%;">
-                <select id="cpRows" onchange="checkCustomInput(this, 'cpRows_custom'); calcCp()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
-                <input type="number" id="cpRows_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
-              </div>
-            </div>
-            <div style="width: 100%;">
-              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">株間(cm)</label>
-              <div style="display: flex; gap: 4px; width: 100%;">
-                <select id="cpPlantSpacing" onchange="checkCustomInput(this, 'cpPlantSpacing_custom'); calcCp()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
-                <input type="number" id="cpPlantSpacing_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
-              </div>
-            </div>
-            <div style="width: 100%;">
-              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">畝間(cm)</label>
-              <div style="display: flex; gap: 4px; width: 100%;">
-                <select id="cpRidgeSpacing" onchange="checkCustomInput(this, 'cpRidgeSpacing_custom'); calcCp()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
-                <input type="number" id="cpRidgeSpacing_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
-              </div>
-            </div>
-            <div style="width: 100%;">
-              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">1苗収量</label>
-              <div style="display: flex; gap: 4px; width: 100%;">
-                <select id="cpYieldPerPlant" onchange="checkCustomInput(this, 'cpYieldPerPlant_custom'); calcCp()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
-                <input type="number" id="cpYieldPerPlant_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
-              </div>
-            </div>
-            <div style="width: 100%;">
-              <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">1P入数</label>
-              <div style="display: flex; gap: 4px; width: 100%;">
-                <select id="cpItemsPerPack" onchange="checkCustomInput(this, 'cpItemsPerPack_custom'); calcCp()" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
-                <input type="number" id="cpItemsPerPack_custom" placeholder="手入力" oninput="calcCp()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;">
-              </div>
-            </div>
-          </div>
-          <div style="text-align: right; margin-top: 8px;">
-            <button type="button" onclick="nextCpStep(3)" style="padding: 6px 16px; background: #2196F3; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">次へ (品種登録)</button>
-          </div>
+                  <div class="cp-param-preset">
+                    <label class="cp-field-label cp-param-preset-label" for="cpPreset">設定の呼び出し</label>
+                    <div class="cp-field-row cp-field-row--gap">
+                      <select id="cpPreset" class="cp-control" onchange="loadCultivationPreset(this.value)">
+                        <option value="">選択...</option>
+                      </select>
+                      <button type="button" id="btnSavePreset" class="cp-btn-secondary" onclick="openCpPresetSaveModal()">設定を保存</button>
+                      <button type="button" id="btnRenamePreset" class="cp-btn-manage" onclick="renameCultivationPresetUI()" style="display:none;">名前変更</button>
+                      <button type="button" id="btnDeletePreset" class="cp-btn-manage cp-btn-manage--danger" onclick="deleteCultivationPresetUI()" style="display:none;">削除</button>
+                      <div id="varietyFileLinkArea" class="cp-param-file-link"></div>
+                    </div>
+                    <div class="cp-field-hint">共通／拠点限定の両方を登録可。変更は下の品種カードにも反映されます。</div>
+                  </div>
+
+                  <div class="cp-param-group">
+                    <div class="cp-param-group-title">植え付け</div>
+                    <div class="cp-primary-grid">
+                      <div class="cp-field">
+                        <label class="cp-field-label" for="cpTrayHoles">穴数</label>
+                        <div class="cp-field-row">
+                          <select id="cpTrayHoles" class="cp-control" onchange="checkCustomInput(this, 'cpTrayHoles_custom'); calcCp()"></select>
+                          <input type="number" id="cpTrayHoles_custom" class="cp-control" placeholder="手入力" oninput="calcCp()" style="display:none;">
+                        </div>
+                      </div>
+                      <div class="cp-field">
+                        <label class="cp-field-label" for="cpRows">条数</label>
+                        <div class="cp-field-row">
+                          <select id="cpRows" class="cp-control" onchange="checkCustomInput(this, 'cpRows_custom'); calcCp()"></select>
+                          <input type="number" id="cpRows_custom" class="cp-control" placeholder="手入力" oninput="calcCp()" style="display:none;">
+                        </div>
+                      </div>
+                      <div class="cp-field">
+                        <label class="cp-field-label" for="cpPlantSpacing">株間(cm)</label>
+                        <div class="cp-field-row">
+                          <select id="cpPlantSpacing" class="cp-control" onchange="checkCustomInput(this, 'cpPlantSpacing_custom'); calcCp()"></select>
+                          <input type="number" id="cpPlantSpacing_custom" class="cp-control" placeholder="手入力" oninput="calcCp()" style="display:none;">
+                        </div>
+                      </div>
+                      <div class="cp-field">
+                        <label class="cp-field-label" for="cpRidgeSpacing">畝間(cm)</label>
+                        <div class="cp-field-row">
+                          <select id="cpRidgeSpacing" class="cp-control" onchange="checkCustomInput(this, 'cpRidgeSpacing_custom'); calcCp()"></select>
+                          <input type="number" id="cpRidgeSpacing_custom" class="cp-control" placeholder="手入力" oninput="calcCp()" style="display:none;">
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="cp-param-group">
+                    <div class="cp-param-group-title">収量</div>
+                    <div class="cp-primary-grid">
+                      <div class="cp-field">
+                        <label class="cp-field-label" for="cpYieldPerPlant">1苗収量</label>
+                        <div class="cp-field-row">
+                          <select id="cpYieldPerPlant" class="cp-control" onchange="checkCustomInput(this, 'cpYieldPerPlant_custom'); calcCp()"></select>
+                          <input type="number" id="cpYieldPerPlant_custom" class="cp-control" placeholder="手入力" oninput="calcCp()" style="display:none;">
+                        </div>
+                      </div>
+                      <div class="cp-field">
+                        <label class="cp-field-label" for="cpItemsPerPack">1P入数</label>
+                        <div class="cp-field-row">
+                          <select id="cpItemsPerPack" class="cp-control" onchange="checkCustomInput(this, 'cpItemsPerPack_custom'); calcCp()"></select>
+                          <input type="number" id="cpItemsPerPack_custom" class="cp-control" placeholder="手入力" oninput="calcCp()" style="display:none;">
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="cp-step-actions">
+                    <button type="button" class="cp-btn-secondary cp-btn-secondary--muted" onclick="nextCpStep(1)">← 戻る</button>
+                    <span id="cpStep2ReadyHint" class="cp-step-ready-hint"></span>
+                    <button type="button" id="cpStep2NextBtn" class="cp-btn-primary" onclick="nextCpStep(3)">次へ (品種登録)</button>
+                  </div>
                 </div>
               </div>
 
               <!-- ステップ3: 品種登録 -->
               <div id="cpStep3" class="cp-step-panel cp-step-panel--3" role="tabpanel" aria-labelledby="cpStepTab3" hidden>
                 <div class="cp-step-body">
-            <div style="display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: flex-end; margin-bottom: 12px;">
-              <div style="width: 100%; min-width: 0;">
-                <label style="font-size: 11px; font-weight: bold; color: #555; display: block; margin-bottom: 2px;">品種</label>
-                <div style="display: flex; gap: 4px; width: 100%; flex-wrap: wrap; align-items: flex-start;">
-                  <select id="cpVariety" onchange="checkCustomInput(this, 'cpVariety_custom'); calcCp(); checkCroptypeDB(); syncCpVarietyMetaFields()" style="display:none; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; flex: 1; min-width: 0;"></select>
-                  <input type="text" id="cpVariety_custom" placeholder="手入力" oninput="calcCp(); checkCroptypeDB(); syncCpVarietyMetaFields()" style="display:none;">
-                  <button type="button" onclick="searchCroptypeWeb()" title="作型をWEB検索" style="padding: 4px; background: #fff; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 12px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; margin-left: auto;">🌐</button>
-                </div>
-                <div id="cpVarietyMetaHint" style="margin-top:6px; font-size:10px; color:#888;">バッジを選ぶか「＋ 新規追加」で品種・メーカー・粒数を登録できます。</div>
-              </div>
-              <div style="display: flex; align-items: flex-end;">
-                <button type="button" onclick="openCroptypePickModal()" style="padding: 6px 12px; background: #FF9800; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">🔄 品種マスタから作型を読込</button>
-              </div>
-            </div>
+                  <div class="cp-variety-layout">
+                    <div class="cp-field cp-variety-main">
+                      <div class="cp-field-label-row">
+                        <label class="cp-field-label" for="cpVariety">品種</label>
+                        <button type="button" class="cp-btn-icon" onclick="searchCroptypeWeb()" title="作型をWEB検索">🌐</button>
+                      </div>
+                      <div class="cp-field-row">
+                        <select id="cpVariety" class="cp-control" onchange="checkCustomInput(this, 'cpVariety_custom'); calcCp(); checkCroptypeDB(); syncCpVarietyMetaFields(); if (typeof refreshCpStepNextButtons==='function') refreshCpStepNextButtons()" style="display:none;"></select>
+                        <input type="text" id="cpVariety_custom" class="cp-control" placeholder="手入力" oninput="calcCp(); checkCroptypeDB(); syncCpVarietyMetaFields(); if (typeof refreshCpStepNextButtons==='function') refreshCpStepNextButtons()" style="display:none;">
+                      </div>
+                      <div id="cpVarietyMetaHint" class="cp-field-hint">バッジを選ぶか新規追加で品種を登録できます。</div>
+                    </div>
+                    <div class="cp-variety-actions">
+                      <button type="button" class="cp-btn-primary" onclick="addCpPlanRow()">＋ 作型を行に追加</button>
+                      <button type="button" class="cp-btn-secondary" onclick="openCroptypePickModal()">🔄 品種マスタから作型を読込</button>
+                    </div>
+                  </div>
+                  <div class="cp-step-actions">
+                    <button type="button" class="cp-btn-secondary cp-btn-secondary--muted" onclick="nextCpStep(2)">← 戻る</button>
+                    <span id="cpStep3ReadyHint" class="cp-step-ready-hint"></span>
+                    <button type="button" id="cpStep3NextBtn" class="cp-btn-primary cp-btn-primary--green" onclick="finishCpInitialSettings()">次へ (作型カレンダーへ)</button>
+                  </div>
 
-            <!-- 互換用（非表示）: 歩留・育苗成功率は計画カード詳細で設定。初期値保持用 -->
-            <div style="display:none;">
-              <select id="cpYieldRate"></select>
-              <select id="cpSeedlingSuccess"></select>
-            </div>
+                  <!-- 互換用（非表示）: 歩留・育苗成功率は計画カード詳細で設定。初期値保持用 -->
+                  <div style="display:none;">
+                    <select id="cpYieldRate"></select>
+                    <select id="cpSeedlingSuccess"></select>
+                  </div>
 
-            <!-- 互換用（非表示）: 旧メーカー・粒数欄 -->
-            <div id="cpVarietyMetaPanel" style="display:none;">
-              <input type="text" id="cpVarietyMaker" list="cpVarietyMakerList">
-              <datalist id="cpVarietyMakerList"></datalist>
-              <input type="hidden" id="cpVarietyGrainCount" value="">
-            </div>
-            
-            <div style="display: flex; justify-content: flex-end; margin-top: 10px;">
-              <button type="button" onclick="addCpPlanRow()" style="padding: 6px 12px; background: #2196F3; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">＋ 作型を行に追加</button>
-            </div>
+                  <!-- 互換用（非表示）: 旧メーカー・粒数欄 -->
+                  <div id="cpVarietyMetaPanel" style="display:none;">
+                    <input type="text" id="cpVarietyMaker" list="cpVarietyMakerList">
+                    <datalist id="cpVarietyMakerList"></datalist>
+                    <input type="hidden" id="cpVarietyGrainCount" value="">
+                  </div>
                 </div>
               </div>
             </div>
@@ -398,6 +434,276 @@
             position: absolute;
             opacity: 0;
             pointer-events: none;
+          }
+          .cp-primary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px 12px;
+            align-items: start;
+          }
+          .cp-field { width: 100%; min-width: 0; }
+          .cp-field-label {
+            display: block;
+            font-size: 11px;
+            font-weight: bold;
+            color: #555;
+            margin-bottom: 3px;
+            line-height: 1.2;
+          }
+          .cp-field-label-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 4px;
+            margin-bottom: 3px;
+          }
+          .cp-field-label-row .cp-field-label { margin-bottom: 0; }
+          .cp-field-row {
+            display: flex;
+            gap: 4px;
+            width: 100%;
+            align-items: center;
+            min-width: 0;
+          }
+          .cp-field-row--gap { gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+          .cp-control {
+            padding: 5px 6px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 12px;
+            box-sizing: border-box;
+            width: 100%;
+            min-width: 0;
+            flex: 1;
+            background: #fff;
+          }
+          .cp-field-hint {
+            font-size: 10px;
+            color: #888;
+            margin-top: 4px;
+            min-height: 0;
+            line-height: 1.35;
+          }
+          .cp-field-hint--ok { color: #2e7d32; min-height: 14px; }
+          .cp-btn-manage {
+            flex-shrink: 0;
+            padding: 2px 7px;
+            font-size: 10px;
+            font-weight: bold;
+            border: 1px solid #90CAF9;
+            background: #E3F2FD;
+            color: #1565C0;
+            border-radius: 4px;
+            cursor: pointer;
+            line-height: 1.3;
+          }
+          .cp-btn-manage--danger {
+            border-color: #ef9a9a;
+            background: #ffebee;
+            color: #c62828;
+          }
+          .cp-btn-primary {
+            padding: 7px 14px;
+            background: #2196F3;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            box-shadow: 0 1px 3px rgba(33, 150, 243, 0.25);
+            white-space: nowrap;
+          }
+          .cp-btn-primary--green {
+            background: #4CAF50;
+            box-shadow: 0 1px 3px rgba(76, 175, 80, 0.25);
+          }
+          .cp-btn-secondary {
+            flex: 1;
+            min-width: 120px;
+            padding: 6px 10px;
+            font-size: 11px;
+            font-weight: bold;
+            border: 1px solid #90CAF9;
+            background: #fff;
+            color: #1565C0;
+            border-radius: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+          }
+          .cp-btn-secondary--green {
+            border-color: #81C784;
+            color: #2E7D32;
+            background: #fff;
+          }
+          .cp-btn-icon {
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            background: #fff;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+          }
+          .cp-step-actions {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(0,0,0,0.06);
+          }
+          .cp-step-actions .cp-btn-secondary--muted {
+            margin-right: auto;
+            flex: 0 0 auto;
+            min-width: 0;
+          }
+          .cp-btn-secondary--muted {
+            border-color: #cfd8dc;
+            color: #607d8b;
+            background: #fff;
+          }
+          .cp-step-ready-hint {
+            font-size: 10px;
+            color: #78909c;
+            line-height: 1.3;
+            max-width: 16em;
+            text-align: right;
+          }
+          .cp-step-ready-hint.is-ready {
+            color: #2e7d32;
+            font-weight: bold;
+          }
+          .cp-btn-primary.is-waiting,
+          .cp-btn-primary:disabled {
+            opacity: 0.55;
+            box-shadow: none;
+            cursor: not-allowed;
+          }
+          .cp-btn-primary.is-ready-pulse {
+            animation: cpNextReadyPulse 1.2s ease 1;
+          }
+          @keyframes cpNextReadyPulse {
+            0% { transform: scale(1); }
+            40% { transform: scale(1.04); }
+            100% { transform: scale(1); }
+          }
+          .cp-advanced {
+            margin-top: 10px;
+            border: 1px solid rgba(0,0,0,0.1);
+            border-radius: 6px;
+            background: rgba(255,255,255,0.55);
+            overflow: hidden;
+          }
+          .cp-advanced.is-open {
+            background: rgba(255,255,255,0.75);
+          }
+          .cp-advanced-toggle {
+            width: 100%;
+            margin: 0;
+            padding: 8px 10px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            text-align: left;
+            font: inherit;
+            color: #455a64;
+          }
+          .cp-advanced-toggle:hover { background: rgba(0,0,0,0.03); }
+          .cp-advanced-toggle-label {
+            font-size: 12px;
+            font-weight: bold;
+            color: #37474f;
+          }
+          .cp-advanced-toggle-hint {
+            font-size: 10px;
+            color: #78909c;
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+          .cp-advanced-chevron {
+            font-size: 10px;
+            color: #78909c;
+            transition: transform 0.2s ease;
+            flex-shrink: 0;
+          }
+          .cp-advanced.is-open .cp-advanced-chevron { transform: rotate(180deg); }
+          .cp-advanced-body {
+            padding: 0 10px 10px;
+            border-top: 1px solid rgba(0,0,0,0.06);
+          }
+          .cp-advanced-section { margin-top: 10px; }
+          .cp-advanced-section:first-child { margin-top: 8px; }
+          .cp-advanced-section-title {
+            font-size: 11px;
+            font-weight: bold;
+            color: #607d8b;
+            margin-bottom: 6px;
+          }
+          .cp-advanced-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 8px 12px;
+          }
+          .cp-param-preset {
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #eee;
+          }
+          .cp-param-preset-label { margin-bottom: 4px; }
+          .cp-param-file-link {
+            font-size: 11px;
+            white-space: nowrap;
+            flex-shrink: 0;
+          }
+          .cp-param-group { margin-top: 10px; }
+          .cp-param-group-title {
+            font-size: 11px;
+            font-weight: bold;
+            color: #616161;
+            margin-bottom: 6px;
+            letter-spacing: 0.02em;
+          }
+          .cp-variety-layout {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 12px;
+            align-items: start;
+          }
+          .cp-variety-main { min-width: 0; }
+          .cp-variety-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            align-items: stretch;
+            min-width: 180px;
+          }
+          .cp-variety-actions .cp-btn-primary,
+          .cp-variety-actions .cp-btn-secondary {
+            width: 100%;
+            flex: none;
+            min-width: 0;
+            text-align: center;
+          }
+          @media (max-width: 720px) {
+            .cp-variety-layout {
+              grid-template-columns: 1fr;
+            }
+            .cp-variety-actions { min-width: 0; }
+            .cp-advanced-toggle-hint { display: none; }
           }
           .cp-steps { margin-bottom: 8px; }
           .cp-steps.is-collapsed {

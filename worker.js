@@ -2056,6 +2056,19 @@ window.openTyphoonModal = function() {
             // Native scaling enabled by NOT overriding satType.maxZoom
         });
 
+        window.isRecordFormActive_ = () => {
+          const panel = document.getElementById('rightPanel');
+          if (!panel || !panel.classList.contains('open')) return false;
+          return !!(
+            document.getElementById('rec_work_date') ||
+            document.getElementById('submitBtn') ||
+            document.getElementById('rec_work_name') ||
+            document.getElementById('workNameSelect') ||
+            document.querySelector('#rightPanelContent .form-input') ||
+            document.querySelector('#rightPanelContent .rec-zone')
+          );
+        };
+
         infoWindow = new google.maps.InfoWindow();
         google.maps.event.addListener(map, 'click', (e) => {
           if (window._keepFieldInfoWindow_) return;
@@ -2072,6 +2085,9 @@ window.openTyphoonModal = function() {
             return;
           }
           if(isMapSelecting) return;
+          if (typeof window.isRecordFormActive_ === 'function' && window.isRecordFormActive_()) {
+            return;
+          }
           infoWindow.close();
           closeRightPanel();
           if (typeof closePersonalSchedule === 'function') closePersonalSchedule();
@@ -2628,6 +2644,9 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
              if (typeof window.handleWorkMapFieldTap === 'function') window.handleWorkMapFieldTap(id);
              return;
           }
+          if (typeof window.isRecordFormActive_ === 'function' && window.isRecordFormActive_()) {
+            return;
+          }
           showPolygonActionMenu_(id, e && e.latLng, e);
         });
         return marker;
@@ -2684,6 +2703,9 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
             } else { selectedPolyIds.push(id); }
             updateMapSelectVisuals();
           }
+          return;
+        }
+        if (typeof window.isRecordFormActive_ === 'function' && window.isRecordFormActive_()) {
           return;
         }
         showPolygonActionMenu_(id, e && e.latLng, e);
@@ -8313,6 +8335,24 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         || document.getElementById('bulk_work_memo_manual_add_scroll')
         || document.getElementById('bulk_work_memo_confirm_scroll'));
 
+      window.syncAdminCadModalBulkChrome_ = (fromBulk) => {
+        const title = document.getElementById('adminCadModalTitle');
+        const backBtn = document.getElementById('adminCadReturnToBulkBtn');
+        const closeBtn = document.getElementById('adminCadCloseBtn');
+        if (title) {
+          title.textContent = fromBulk
+            ? '🚜 農業CAD（一括入力から開いています）'
+            : '🚜 農業CAD（吸水ピン設定）';
+        }
+        if (backBtn) backBtn.style.display = fromBulk ? '' : 'none';
+        if (closeBtn) {
+          closeBtn.textContent = '閉じる';
+          closeBtn.onclick = fromBulk
+            ? (() => { window.returnToBulkWorkMemoFromCad_(); })
+            : (() => { window.closeAdminCadModal(); });
+        }
+      };
+
       window.dismissCadReturnToBulkBanner_ = () => {
         const el = document.getElementById('cadReturnToBulkBanner');
         if (el && el.parentNode) el.parentNode.removeChild(el);
@@ -8320,10 +8360,23 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
 
       window.returnToBulkWorkMemoFromCad_ = async () => {
         window.dismissCadReturnToBulkBanner_();
-        if (typeof window.closeAdminCadModal === 'function') {
-          await window.closeAdminCadModal();
-        }
-        // 一括入力の確認画面が残っていればそこにフォーカス
+        window._adminCadSavedFromBulkPending_ = false;
+        const modal = document.getElementById('adminCadModal');
+        if (modal) modal.style.display = 'none';
+        window.syncAdminCadModalBulkChrome_(false);
+        window._adminCadOpenedFromBulk_ = false;
+        try {
+          if (typeof loadInitData === 'function') await loadInitData();
+        } catch (e) {}
+        setTimeout(() => {
+          if (typeof window.refreshIrrigationValveUI === 'function') window.refreshIrrigationValveUI();
+          if (typeof window.refreshRidgeProgressUI === 'function') window.refreshRidgeProgressUI();
+          (window._bulkWorkMemoDrafts || []).forEach((d) => {
+            if (d && d._uid && typeof window.refreshBulkWorkMemoExtras_ === 'function') {
+              window.refreshBulkWorkMemoExtras_(d._uid);
+            }
+          });
+        }, 80);
         const scrollEl = document.getElementById('bulk_work_memo_review_scroll')
           || document.getElementById('bulk_work_memo_manual_add_scroll')
           || document.getElementById('bulk_work_memo_confirm_scroll');
@@ -8336,13 +8389,16 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
       };
 
       window.showReturnToBulkAfterCadSave_ = (payload) => {
+        if (payload && payload.fromBulkMemo) window._adminCadOpenedFromBulk_ = true;
         if (!window._adminCadOpenedFromBulk_) return;
+        window._adminCadSavedFromBulkPending_ = true;
+        window.syncAdminCadModalBulkChrome_(true);
         window.dismissCadReturnToBulkBanner_();
         const fieldName = String((payload && payload.fieldName) || '').trim();
         const titleBit = fieldName ? `「${fieldName}」の` : '';
         const banner = document.createElement('div');
         banner.id = 'cadReturnToBulkBanner';
-        banner.style.cssText = 'position:fixed; inset:0; z-index:17000; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; padding:16px; box-sizing:border-box;';
+        banner.style.cssText = 'position:fixed; inset:0; z-index:20000; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; padding:16px; box-sizing:border-box;';
         banner.innerHTML = `<div style="background:#fff; width:100%; max-width:360px; border-radius:12px; padding:18px; box-shadow:0 10px 28px rgba(0,0,0,0.3);">
           <div style="font-size:16px; font-weight:bold; color:#00695C; margin-bottom:8px;">🛤️ 畝CADを保存しました</div>
           <div style="font-size:13px; color:#444; line-height:1.5; margin-bottom:14px;">${titleBit}畝ポリゴン登録が完了しました。<br>一括入力の続きに戻れます。</div>
@@ -8361,6 +8417,18 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         });
       }
 
+      window.hasAdminLoginForCad_ = () => {
+        try {
+          const role = localStorage.getItem('passionMapUserRole') || '';
+          const adminId = localStorage.getItem('pMapAdminId') || '';
+          const adminPw = localStorage.getItem('pMapAdminPw') || '';
+          // 管理者ロール、または Admin に保存済みの資格情報がある場合のみ「ログイン済み」とみなす
+          if (role === '管理者') return true;
+          if (adminId && adminPw) return true;
+        } catch (e) {}
+        return false;
+      };
+
       window.openAdminCadForField = (polyId) => {
         const pid = String(polyId || '');
         const poly = loadedPolygons[pid];
@@ -8375,12 +8443,22 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           if (typeof customAlert === 'function') customAlert('農業CAD画面の準備ができていません。ページを再読み込みしてください。');
           return;
         }
+        // 管理者未ログインでも iframe は開くが、Admin側でログイン必須（CADはログイン後）
+        if (!window.hasAdminLoginForCad_()) {
+          const msg = '畝CAD登録には管理者ログインが必要です。\nAdmin画面で管理者としてログインしてください。';
+          if (typeof customAlert === 'function') customAlert(msg);
+          else alert(msg);
+        }
         window._adminCadTargetFieldId = pid;
         const fromBulk = (typeof window.isBulkWorkMemoUiOpen_ === 'function')
           ? window.isBulkWorkMemoUiOpen_()
           : !!(window._bulkWorkMemoActive);
         window._adminCadOpenedFromBulk_ = !!fromBulk;
+        window._adminCadSavedFromBulkPending_ = false;
         window.dismissCadReturnToBulkBanner_();
+        if (typeof window.syncAdminCadModalBulkChrome_ === 'function') {
+          window.syncAdminCadModalBulkChrome_(!!fromBulk);
+        }
 
         // ⚡ ボタンを押した瞬間に0ミリ秒でモーダルを表示
         modal.style.display = 'flex';
@@ -8439,8 +8517,21 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
       };
 
       window.closeAdminCadModal = async () => {
+        if (window._adminCadOpenedFromBulk_ && window._adminCadSavedFromBulkPending_
+            && typeof window.showReturnToBulkAfterCadSave_ === 'function'
+            && !document.getElementById('cadReturnToBulkBanner')) {
+          window.showReturnToBulkAfterCadSave_({
+            fromBulkMemo: true,
+            fieldName: ''
+          });
+          return;
+        }
         window.dismissCadReturnToBulkBanner_();
         window._adminCadOpenedFromBulk_ = false;
+        window._adminCadSavedFromBulkPending_ = false;
+        if (typeof window.syncAdminCadModalBulkChrome_ === 'function') {
+          window.syncAdminCadModalBulkChrome_(false);
+        }
         const modal = document.getElementById('adminCadModal');
         if (modal) modal.style.display = 'none';
         // ⚡ 全リロード破棄(iframe.src = '')を行わず非表示のみで状態維持し次回を瞬時化！
@@ -21294,8 +21385,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         if (/オイル|グリス(?:アップ)?|エレメント|フィルター/.test(t)) return true;
         if (/爪交換|ロータリー爪|(?:ロータリー)?\s*爪\s*交換/.test(t)) return true;
         if (/部品交換|ベルト交換|タイヤ交換|パッド交換|バッテリー交換|プラグ交換/.test(t)) return true;
-        // 馬力表記（「23馬力」「28 馬力」）＝農機の呼び名・整備メモで頻出
-        if (/\d+\s*馬力|馬力/.test(t)) return true;
+        // ※「23馬力」等は農機の呼び名でも使うため、整備UI出し分けには使わない（候補照合側で扱う）
         // 「○○交換」（2文字以上＋交換）。給油・品種入替などは別判定に任せる
         if (/[一-龥ぁ-んァ-ヶーA-Za-z0-9]{2,}\s*交換/.test(t)) return true;
         return false;
@@ -34506,7 +34596,7 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
 /**
  * 「13時まで 休憩、14時15分まで システム開発」のように
  * 「〇時まで／〇時で」が続く行を、終了時刻ごとの句に分ける。
- * 「8時から12時まで」のような範囲は1件のまま。
+ * 「8時から12時まで」「6時ー6時10分まで」のような範囲は1件のまま。
  * @returns {string[]}
  */
 window.splitBulkWorkMemoUntilClauses_ = (line) => {
@@ -34522,7 +34612,8 @@ window.splitBulkWorkMemoUntilClauses_ = (line) => {
   const isRangeJoin = (prev, cur) => {
     if (!prev || !cur) return false;
     const between = norm.slice(prev.index + prev.length, cur.index);
-    return /^[\s〜～\-~]*$/.test(between) || /^\s*から\s*$/.test(between);
+    // 「6時ー6時10分まで」「8時〜12時」など。長音「ー」も範囲つなぎとして扱う
+    return /^[\s〜～\-–—―−ｰー~･・]*$/.test(between) || /^\s*から\s*$/.test(between);
   };
   const endMarkers = [];
   times.forEach((t, i) => {
@@ -35210,16 +35301,16 @@ window.bulkWorkMemoNeedsField_ = (draft) => {
   return false;
 };
 
-/** 一括入力：圃場欄を表示するか（カテゴリ必須 or メモから圃場ヒントあり） */
+/** 一括入力：圃場欄を表示するか（作業マスタ／表示設定を優先） */
 window.bulkWorkMemoShowFieldSection_ = (draft) => {
   if (!draft || window.bulkWorkMemoIsRestDraft_(draft)) return false;
   if (window.bulkWorkMemoFieldReplacedByAssetMove_(draft)) return false;
-  // メモから圃場名が拾えているときは、カテゴリ設定に関わらず圃場欄を出す
+  // 作業マスタ「圃場選択を出す」やカテゴリ表示設定がONなら出す
+  if (window.bulkWorkMemoNeedsField_(draft)) return true;
+  // マスタOFFでも、すでに選ばれている圃場があるときだけ確認・修正用に出す
+  // （メモの（）内や候補ヒントだけでは、マスタ設定を上書きしない）
   if (window.getBulkWorkMemoPolyIds_(draft).length) return true;
-  if (Array.isArray(draft.fieldHintTokens) && draft.fieldHintTokens.length) return true;
-  if (Array.isArray(draft.fieldCandidates) && draft.fieldCandidates.length) return true;
-  if (Array.isArray(draft.fieldTokenResults) && draft.fieldTokenResults.some(r => r && r.status !== 'matched')) return true;
-  return window.bulkWorkMemoNeedsField_(draft);
+  return false;
 };
 
 window.getBulkWorkMemoCategories_ = () => {
@@ -36661,6 +36752,8 @@ window.bulkWorkMemoIsMaintenance_ = (draft) => {
   if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat)) return false;
   if (wName && typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wName)) return false;
   if (wName && typeof window.isMachinePullWorkName === 'function' && window.isMachinePullWorkName(wName)) return false;
+  // 移動・運搬は農機名（馬力呼び）が出ても整備UIにしない
+  if (/移動|運搬|配送|納品/.test(wName) || /移動|運搬/.test(cat)) return false;
   const looksLikeMaint = (s) => (typeof window.looksLikeMaintenanceText_ === 'function'
     ? window.looksLikeMaintenanceText_(s)
     : (() => {
@@ -36671,6 +36764,8 @@ window.bulkWorkMemoIsMaintenance_ = (draft) => {
   if (cat === '保全/整備' || cat.includes('整備') || cat.includes('保全')) return true;
   const details = Array.isArray(draft && draft.detailedWorks) ? draft.detailedWorks : [];
   if (details.some(looksLikeMaint)) return true;
+  // 作業名が整備系でないのに確定している場合、メモの馬力呼びなどだけで整備UIを出さない
+  if (wName && !looksLikeMaint(wName)) return false;
   if (rawLine && looksLikeMaint(rawLine)) return true;
   if (matchText && looksLikeMaint(matchText)) return true;
   return false;
@@ -47765,6 +47860,16 @@ window.clearWorkTimeTrack_ = function() {
   if (bar) bar.remove();
 };
 
+/** 軌跡表示から作業記録マネージャーへ戻る */
+window.backFromWorkTimeTrack_ = function() {
+  const source = window._workTimeTrackReturnSource || 'all';
+  window.clearWorkTimeTrack_();
+  window._workTimeTrackReturnSource = null;
+  if (typeof window.openMyPageWorkDateSelectPopup_ === 'function') {
+    try { window.openMyPageWorkDateSelectPopup_(source, { silent: true }); } catch (e) {}
+  }
+};
+
 window.showWorkTimeTrack_ = async function(ymd, startHm, endHm) {
   const y = String(ymd || '').trim();
   const startMin = (typeof window.bulkWorkMemoHmToMin_ === 'function')
@@ -47782,6 +47887,27 @@ window.showWorkTimeTrack_ = async function(ymd, startHm, endHm) {
     return;
   }
 
+  // 作業記録マネージャーから開いた場合、「戻る」で復帰できるようにする
+  window._workTimeTrackReturnSource = null;
+  try {
+    const mgrModal = document.getElementById('myPageWorkDateSelectModal');
+    if (mgrModal && mgrModal.style.display === 'flex') {
+      const st = (typeof window.getMyPageWorkDateSelectState_ === 'function')
+        ? window.getMyPageWorkDateSelectState_()
+        : null;
+      window._workTimeTrackReturnSource = (st && st.source) ? st.source : 'all';
+    }
+  } catch (e) {}
+
+  const reopenWorkManagerIfNeeded = () => {
+    const source = window._workTimeTrackReturnSource;
+    if (!source) return;
+    window._workTimeTrackReturnSource = null;
+    if (typeof window.openMyPageWorkDateSelectPopup_ === 'function') {
+      try { window.openMyPageWorkDateSelectPopup_(source, { silent: true }); } catch (e) {}
+    }
+  };
+
   if (typeof window.closeMyWorkHistoryDetail === 'function') window.closeMyWorkHistoryDetail();
   if (typeof window.closeMyPageWorkDateSelectPopup_ === 'function') window.closeMyPageWorkDateSelectPopup_();
   if (typeof window.closeAppModal === 'function') window.closeAppModal();
@@ -47789,10 +47915,11 @@ window.showWorkTimeTrack_ = async function(ymd, startHm, endHm) {
   if (panel && panel.classList.contains('open')) panel.classList.remove('open');
 
   window.clearWorkTimeTrack_();
+  const canReturn = !!window._workTimeTrackReturnSource;
   const bar = document.createElement('div');
   bar.id = 'workTimeTrackBar';
   bar.style.cssText = 'position:fixed; z-index:12000; left:12px; right:12px; bottom:16px; background:#fff; border:1px solid #90CAF9; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,0.25); padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px;';
-  bar.innerHTML = `<div style="font-size:13px; font-weight:bold; color:#1565C0; line-height:1.4;">🗺️ ${String(startHm)}〜${String(endHm)} の軌跡を読み込み中...</div><button type="button" onclick="clearWorkTimeTrack_()" style="background:#f5f5f5; color:#555; border:1px solid #ccc; border-radius:8px; padding:8px 12px; font-weight:bold; cursor:pointer; flex-shrink:0;">閉じる</button>`;
+  bar.innerHTML = `<div style="font-size:13px; font-weight:bold; color:#1565C0; line-height:1.4;">🗺️ ${String(startHm)}〜${String(endHm)} の軌跡を読み込み中...</div><button type="button" onclick="${canReturn ? 'backFromWorkTimeTrack_()' : 'clearWorkTimeTrack_()'}" style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:8px 12px; font-weight:bold; cursor:pointer; flex-shrink:0;">${canReturn ? '← 戻る' : '閉じる'}</button>`;
   document.body.appendChild(bar);
 
   const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
@@ -47817,14 +47944,42 @@ window.showWorkTimeTrack_ = async function(ymd, startHm, endHm) {
       return { lat: lat, lng: lng, ms: t.getTime() };
     }).filter(Boolean).sort((a, b) => a.ms - b.ms);
 
-    if (points.length < 2) {
-      const label = bar.querySelector('div');
-      if (label) label.textContent = `🗺️ ${startHm}〜${endHm} の移動記録が足りません（${points.length}地点）`;
-      if (typeof customAlert === 'function') customAlert('この時間の移動地点が2つ未満のため、線を引けません。');
+    // 0地点: 地図バナーは出さず、作業記録マネージャーへ戻して案内
+    if (points.length === 0) {
+      window.clearWorkTimeTrack_();
+      reopenWorkManagerIfNeeded();
+      if (typeof customAlert === 'function') {
+        customAlert(`${startHm}〜${endHm} の移動記録がありません（0地点）。`);
+      }
       return;
     }
 
     const path = points.map(p => ({ lat: p.lat, lng: p.lng }));
+    const makeDot = (p, fillColor) => new google.maps.Marker({
+      position: { lat: p.lat, lng: p.lng },
+      map: map,
+      zIndex: 8001,
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 7,
+        fillColor: fillColor,
+        fillOpacity: 1,
+        strokeColor: '#fff',
+        strokeWeight: 2
+      }
+    });
+
+    const label = bar.querySelector('div');
+
+    // 1地点でも点を表示（「線を引けません」アラートは出さない）
+    if (points.length === 1) {
+      window._workTimeTrackMarkers = [makeDot(points[0], '#2E7D32')];
+      map.setCenter({ lat: points[0].lat, lng: points[0].lng });
+      if (typeof map.getZoom === 'function' && map.getZoom() < 16) map.setZoom(16);
+      if (label) label.textContent = `🗺️ ${startHm}〜${endHm} の地点（1地点）`;
+      return;
+    }
+
     window._workTimeTrackLine = new google.maps.Polyline({
       path: path,
       map: map,
@@ -47833,28 +47988,17 @@ window.showWorkTimeTrack_ = async function(ymd, startHm, endHm) {
       strokeWeight: 5,
       zIndex: 8000
     });
-    const ends = [points[0], points[points.length - 1]];
-    window._workTimeTrackMarkers = ends.map((p, i) => new google.maps.Marker({
-      position: { lat: p.lat, lng: p.lng },
-      map: map,
-      zIndex: 8001,
-      icon: {
-        path: google.maps.SymbolPath.CIRCLE,
-        scale: 7,
-        fillColor: i === 0 ? '#2E7D32' : '#C62828',
-        fillOpacity: 1,
-        strokeColor: '#fff',
-        strokeWeight: 2
-      }
-    }));
+    window._workTimeTrackMarkers = [
+      makeDot(points[0], '#2E7D32'),
+      makeDot(points[points.length - 1], '#C62828')
+    ];
     const bounds = new google.maps.LatLngBounds();
     path.forEach(p => bounds.extend(p));
     map.fitBounds(bounds);
-    const label = bar.querySelector('div');
     if (label) label.textContent = `🗺️ ${startHm}〜${endHm} の軌跡（${points.length}地点）`;
   } catch (e) {
-    const label = bar.querySelector('div');
-    if (label) label.textContent = '軌跡の取得に失敗しました';
+    window.clearWorkTimeTrack_();
+    reopenWorkManagerIfNeeded();
     if (typeof customAlert === 'function') customAlert(e.message || '軌跡の取得に失敗しました。');
   }
 };

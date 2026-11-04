@@ -1766,12 +1766,19 @@ async function fetchWeatherAndUpdateUI() {
           funcHtml = `<div style="font-size:11px; color:#555; margin-bottom:5px;">機能: <b>${p.signFunction || '一般看板'}</b></div>`;
         }
 
-        // 圃場の場合のみ「衛星写真で確認」ボタンを追加
+        // 圃場の場合のみ農地CAD・衛星写真等のボタンを追加
+        let cadBtn = '';
         let satBtn = '';
         let cpBtn = '';
         let manureBtn = '';
         if (!p.isMarker && p.coords && p.coords.length >= 3) {
-          satBtn = `<div style="margin-top:8px; text-align:center;">
+          cadBtn = `<div style="margin-top:8px; text-align:center;">
+            <button type="button" onclick="openCadRegistry('${p.id}')"
+              style="width:100%; padding:8px; background:#FF9800; color:white;
+              border:none; border-radius:6px; font-weight:bold; font-size:13px;
+              cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.3);">🚜 農地CADを開く</button>
+          </div>`;
+          satBtn = `<div style="margin-top:6px; text-align:center;">
             <button onclick="openFieldSatForField('${p.id}')"
               style="width:100%; padding:8px; background:#1B5E20; color:white;
               border:none; border-radius:6px; font-weight:bold; font-size:13px;
@@ -1799,6 +1806,7 @@ async function fetchWeatherAndUpdateUI() {
                    <div style="background:#f9f9f9; padding:5px; border-radius:4px; max-height:180px; overflow-y:auto;">
                      ${tasksHtml}
                    </div>
+                   ${cadBtn}
                    ${manureBtn}
                    ${cpBtn}
                    ${satBtn}
@@ -1807,6 +1815,92 @@ async function fetchWeatherAndUpdateUI() {
         infoWindow.setPosition(latLng);
         infoWindow.open(map);
       }
+
+      window.openCadRegistry = function(polyId) {
+        const pid = String(polyId || '');
+        const poly = (typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons[pid] : null;
+        if (!poly || poly.isMarker) {
+          if (typeof customAlert === 'function') customAlert('対象の圃場が見つかりません。');
+          else alert('対象の圃場が見つかりません。');
+          return;
+        }
+        const modal = document.getElementById('adminCadModal');
+        const iframe = document.getElementById('adminCadIframe');
+        if (!modal || !iframe) {
+          if (typeof customAlert === 'function') customAlert('農地CAD画面の準備ができていません。ページを再読み込みしてください。');
+          else alert('農地CAD画面の準備ができていません。');
+          return;
+        }
+
+        window._adminCadTargetFieldId = pid;
+        const titleEl = document.getElementById('adminCadFieldTitle');
+        if (titleEl) {
+          titleEl.textContent = poly.name ? `（${poly.name}）` : '';
+        }
+
+        modal.style.display = 'flex';
+
+        const params = new URLSearchParams({
+          openCad: '1',
+          fieldId: pid
+        });
+
+        try {
+          if (poly.coords && poly.coords.length) {
+            let latSum = 0, lngSum = 0, n = 0;
+            poly.coords.forEach(c => {
+              const la = (typeof c.lat === 'function') ? c.lat() : parseFloat(c.lat);
+              const ln = (typeof c.lng === 'function') ? c.lng() : parseFloat(c.lng);
+              if (!isNaN(la) && !isNaN(ln)) {
+                latSum += la; lngSum += ln; n++;
+              }
+            });
+            if (n > 0) {
+              params.set('lat', String(latSum / n));
+              params.set('lng', String(lngSum / n));
+              params.set('zoom', '18');
+            }
+          }
+        } catch (e) {}
+
+        const targetUrl = `admin.html?${params.toString()}`;
+        window._adminCadLastUrl = targetUrl;
+
+        // ⚡ 既に iframe に admin.html が読み込まれている場合は再リロードせず postMessage で瞬時切替！
+        if (iframe.src && iframe.src.includes('admin.html') && window._adminCadIframeReady) {
+          try {
+            iframe.contentWindow.postMessage({ type: 'openCadField', fieldId: pid }, '*');
+            if (typeof iframe.contentWindow.openCadRegistry === 'function') {
+              iframe.contentWindow.openCadRegistry(pid);
+            } else if (typeof iframe.contentWindow.openCADMode === 'function') {
+              iframe.contentWindow.openCADMode(pid);
+            }
+          } catch(e) {
+            iframe.src = targetUrl;
+          }
+        } else {
+          iframe.src = targetUrl;
+          window._adminCadIframeReady = true;
+        }
+      };
+      window.openAdminCadForField = window.openCadRegistry;
+
+      window.openCadInNewTabFromSchedule = function() {
+        const url = window._adminCadLastUrl || `admin.html?openCad=1${window._adminCadTargetFieldId ? '&fieldId=' + encodeURIComponent(window._adminCadTargetFieldId) : ''}`;
+        window.open(url, '_blank');
+      };
+
+      window.closeAdminCadModal = async function() {
+        const modal = document.getElementById('adminCadModal');
+        if (modal) modal.style.display = 'none';
+        try {
+          if (typeof loadData === 'function') {
+            loadData({ silentRetry: true });
+          }
+        } catch (e) {
+          console.warn('CAD閉じ後の再読込失敗:', e);
+        }
+      };
 
       window.sharePigManureRequestFromSchedule = function(fieldId) {
         const p = loadedPolygons[fieldId];

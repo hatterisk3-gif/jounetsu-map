@@ -1,168 +1,205 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>情熱MAP 水管理 [現場用] v1.26</title>
-    <link rel="apple-touch-icon" href="icon.png">
-    <link rel="icon" href="icon.png">
-    <link rel="manifest" href="manifest.json">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>情熱MAP 水管理 [現場用] v1.26</title>
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="icon" href="icon.png">
+  <link rel="manifest" href="manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-    <script src="exit-guard.js?v=1786240000001"></script>
+  <script src="exit-guard.js?v=1786240000001"></script>
 
-    <link rel="stylesheet" href="water.css">
+  <link rel="stylesheet" href="water.css">
 </head>
+
 <body>
-    <!-- プロポータルに戻る×ボタン -->
-        <div id="loginScreen">
-        <div class="login-box">
-            <h2 style="color:#0288D1;">情熱MAP 水管理 (v1.25)</h2>
-            <div id="loginError" style="color:red; margin-bottom:10px;"></div>
-            <input type="text" id="loginId" class="login-input" placeholder="スタッフID">
-            <input type="password" id="loginPw" class="login-input" placeholder="パスワード">
-            <button class="login-btn" onclick="executeLogin()">ログイン</button>
-        </div>
+  <!-- プロポータルに戻る×ボタン -->
+  <div id="loginScreen">
+    <div class="login-box">
+      <h2 style="color:#0288D1;">情熱MAP 水管理 (v1.25)</h2>
+      <div id="loginError" style="color:red; margin-bottom:10px;"></div>
+      <input type="text" id="loginId" class="login-input" placeholder="スタッフID">
+      <input type="password" id="loginPw" class="login-input" placeholder="パスワード">
+      <button class="login-btn" onclick="executeLogin()">ログイン</button>
     </div>
+  </div>
 
-    <!-- GPS Button -->
-    <button id="btnCurrentLocation" onclick="moveToCurrentLocation()"
-        style="position: fixed; bottom: 20px; right: 10px; width: 50px; height: 50px; background: white; color: #4285F4; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;">
-        📍
-    </button>
+  <!-- GPS Button -->
+  <button id="btnCurrentLocation" onclick="moveToCurrentLocation()"
+    style="position: fixed; bottom: 20px; right: 10px; width: 50px; height: 50px; background: white; color: #4285F4; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;">
+    📍
+  </button>
 
-    <div class="control-panel">
-        <div class="control-row">
-            <button onclick="location.reload()" class="ctrl-btn" style="background:#fff; color:#333; border:1px solid #ccc;">🔄 更新</button>
-            <button onclick="openHistoryModal()" class="ctrl-btn" style="background:#E3F2FD; color:#1A73E8; border:1px solid #1A73E8;">📋 登録履歴</button>
-            <button id="btnWeather" onclick="openWeatherModal()" class="ctrl-btn" style="background:#fff; color:#ff9800; border:1px solid #ff9800;">☁️ 天気</button>
-            <button id="btnSoilMoisture" onclick="toggleSoilMoistureMapOverlay()" class="ctrl-btn" style="background:#fff; color:#1565c0; border:1px solid #1565c0;">🌱 水分</button>
-            <button id="btnTyphoon" onclick="openTyphoonModal()" class="ctrl-btn" style="display:none; background:#ffebee; color:#d32f2f; border:1px solid #d32f2f;">🌀 台風</button>
-            <button onclick="openContactModal()" class="ctrl-btn" style="background:#E8F5E9; color:#388E3C; border:1px solid #388E3C;">📞 連絡先</button>
-            <button onclick="openMyPage()" class="ctrl-btn" style="background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2;">👤 マイページ</button>
-            <button onclick="executeLogout()" class="ctrl-btn" style="background:#F44336; color:white; border:none;">ログアウト</button>
-        </div>
-        <!-- The filter checkboxes will be a popup now -->
+  <div class="control-panel">
+    <div class="control-row">
+      <button onclick="location.reload()" class="ctrl-btn"
+        style="background:#fff; color:#333; border:1px solid #ccc;">🔄 更新</button>
+      <button onclick="openHistoryModal()" class="ctrl-btn"
+        style="background:#E3F2FD; color:#1A73E8; border:1px solid #1A73E8;">📋 登録履歴</button>
+      <button id="btnWeather" onclick="openWeatherModal()" class="ctrl-btn"
+        style="background:#fff; color:#ff9800; border:1px solid #ff9800;">☁️ 天気</button>
+      <button id="btnSoilMoisture" onclick="toggleSoilMoistureMapOverlay()" class="ctrl-btn"
+        style="background:#fff; color:#1565c0; border:1px solid #1565c0;">🌱 水分</button>
+      <button id="btnTyphoon" onclick="openTyphoonModal()" class="ctrl-btn"
+        style="display:none; background:#ffebee; color:#d32f2f; border:1px solid #d32f2f;">🌀 台風</button>
+      <button onclick="openContactModal()" class="ctrl-btn"
+        style="background:#E8F5E9; color:#388E3C; border:1px solid #388E3C;">📞 連絡先</button>
+      <button onclick="openMyPage()" class="ctrl-btn"
+        style="background:#F3E5F5; color:#7B1FA2; border:1px solid #7B1FA2;">👤 マイページ</button>
+      <button onclick="executeLogout()" class="ctrl-btn"
+        style="background:#F44336; color:white; border:none;">ログアウト</button>
     </div>
+    <!-- The filter checkboxes will be a popup now -->
+  </div>
 
-    <!-- 絞り込みトグルボタン -->
-    <button id="btnFilterToggle" onclick="toggleFilterMenu()"
-        style="position: fixed; top: 140px; right: 10px; padding: 10px 15px; background: #fff; color: #333; border: 1px solid #ccc; border-radius: 6px; font-weight: bold; font-size: 14px; box-shadow: 0 2px 5px rgba(0,0,0,0.3); z-index: 2000; cursor: pointer; pointer-events: auto;">
-        🔍 絞り込み
-    </button>
+  <!-- 絞り込みトグルボタン -->
+  <button id="btnFilterToggle" onclick="toggleFilterMenu()"
+    style="position: fixed; top: 140px; right: 10px; padding: 10px 15px; background: #fff; color: #333; border: 1px solid #ccc; border-radius: 6px; font-weight: bold; font-size: 14px; box-shadow: 0 2px 5px rgba(0,0,0,0.3); z-index: 2000; cursor: pointer; pointer-events: auto;">
+    🔍 絞り込み
+  </button>
 
-    <!-- 絞り込みメニュー (ポップアップ) -->
-    <div id="filterMenu" style="display:none; position: fixed; top: 190px; right: 10px; background: rgba(255,255,255,0.95); border-radius: 8px; padding: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 2000; flex-direction: column; gap: 10px;">
-        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="supplying" checked onchange="applyFilter()"> 💧 青(給水中)</label>
-        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="stopped" checked onchange="applyFilter()"> 🚫 赤(止水中)</label>
-        <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="none" checked onchange="applyFilter()"> ⬜ 灰(未設定)</label>
-    </div>
+  <!-- 絞り込みメニュー (ポップアップ) -->
+  <div id="filterMenu"
+    style="display:none; position: fixed; top: 190px; right: 10px; background: rgba(255,255,255,0.95); border-radius: 8px; padding: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 2000; flex-direction: column; gap: 10px;">
+    <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="supplying" checked
+        onchange="applyFilter()"> 💧 青(給水中)</label>
+    <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="stopped" checked
+        onchange="applyFilter()"> 🚫 赤(止水中)</label>
+    <label style="font-size:14px; font-weight:bold;"><input type="checkbox" class="filter-cb" value="none" checked
+        onchange="applyFilter()"> ⬜ 灰(未設定)</label>
+  </div>
 
 
-    <div id="map"></div>
+  <div id="map"></div>
 
-    <!-- 汎用モーダル -->
-    <div id="modal">
-        <div class="modal-content" id="modalBody"></div>
-    </div>
+  <!-- 汎用モーダル -->
+  <div id="modal">
+    <div class="modal-content" id="modalBody"></div>
+  </div>
 
-    <!-- 簡易版農業CAD（給水口確認・登録） -->
-    <div id="waterCadOverlay">
-      <div id="waterCadHeader">
-        <div style="min-width:0;">
-          <div style="font-weight:bold; font-size:15px;">💧 簡易CAD（給水口）</div>
-          <div id="waterCadTargetName" style="font-size:12px; opacity:0.85; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
-        </div>
-        <button type="button" class="water-cad-btn" style="background:#f44336; color:#fff;" onclick="closeWaterCadSimple()">閉じる</button>
+  <!-- 簡易版農業CAD（給水口確認・登録） -->
+  <div id="waterCadOverlay">
+    <div id="waterCadHeader">
+      <div style="min-width:0;">
+        <div style="font-weight:bold; font-size:15px;">💧 簡易CAD（給水口）</div>
+        <div id="waterCadTargetName"
+          style="font-size:12px; opacity:0.85; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
       </div>
-      <div id="waterCadMapWrap">
-        <div id="waterCadMap"></div>
+      <button type="button" class="water-cad-btn" style="background:#f44336; color:#fff;"
+        onclick="closeWaterCadSimple()">閉じる</button>
+    </div>
+    <div id="waterCadMapWrap">
+      <div id="waterCadMap"></div>
+    </div>
+    <div id="waterCadPanel">
+      <div id="waterCadHint" style="font-size:12px; color:#90CAF9; margin-bottom:4px;"></div>
+      <div id="waterCadEditTools" style="display:none;">
+        <div class="water-cad-btn-row">
+          <button type="button" id="btnWaterCadAdd" class="water-cad-btn" style="background:#0288D1; color:#fff;"
+            onclick="toggleWaterCadAddMode()">＋ 給水口を追加</button>
+          <button type="button" class="water-cad-btn" style="background:#E65100; color:#fff;"
+            onclick="clearWaterCadPinsConfirm()">全削除</button>
+        </div>
+        <div id="waterCadGpsBar"
+          style="background:#0D47A1; border:1px solid #1976D2; border-radius:6px; padding:8px; margin:8px 0;">
+          <div style="font-size:11px; color:#BBDEFB; margin-bottom:6px;">📡 GPSで給水口を置く</div>
+          <div class="water-cad-btn-row" style="margin-bottom:6px;">
+            <button type="button" id="btnWaterCadGpsStart" class="water-cad-btn" style="background:#1565C0; color:#fff;"
+              onclick="waterStartGpsPinPlace()">GPSで置く</button>
+            <button type="button" id="btnWaterCadGpsConfirm" class="water-cad-btn"
+              style="background:#455A64; color:#fff; opacity:0.6;" onclick="waterConfirmGpsPinPlace()"
+              disabled>ここに置く</button>
+            <button type="button" id="btnWaterCadGpsCancel" class="water-cad-btn"
+              style="background:#616161; color:#fff; opacity:0.6;" onclick="waterStopGpsPinPlace()" disabled>取消</button>
+          </div>
+          <div id="waterCadGpsStatus" style="font-size:11px; color:#90CAF9; line-height:1.35;">現場で「GPSで置く」→精度を確認→「ここに置く」
+          </div>
+        </div>
+        <div class="water-cad-btn-row">
+          <button type="button" id="btnWaterCadSave" class="water-cad-btn" style="background:#2E7D32; color:#fff;"
+            onclick="saveWaterCadPins()">💾 保存</button>
+          <button type="button" class="water-cad-btn" style="background:#616161; color:#fff;"
+            onclick="closeWaterCadSimple()">キャンセル</button>
+        </div>
+        <div style="font-size:11px; color:#aaa; margin-top:6px;">ピンをタップすると削除できます。追加モード中は地図タップで配置します。</div>
       </div>
-      <div id="waterCadPanel">
-        <div id="waterCadHint" style="font-size:12px; color:#90CAF9; margin-bottom:4px;"></div>
-        <div id="waterCadEditTools" style="display:none;">
-          <div class="water-cad-btn-row">
-            <button type="button" id="btnWaterCadAdd" class="water-cad-btn" style="background:#0288D1; color:#fff;" onclick="toggleWaterCadAddMode()">＋ 給水口を追加</button>
-            <button type="button" class="water-cad-btn" style="background:#E65100; color:#fff;" onclick="clearWaterCadPinsConfirm()">全削除</button>
-          </div>
-          <div id="waterCadGpsBar" style="background:#0D47A1; border:1px solid #1976D2; border-radius:6px; padding:8px; margin:8px 0;">
-            <div style="font-size:11px; color:#BBDEFB; margin-bottom:6px;">📡 GPSで給水口を置く</div>
-            <div class="water-cad-btn-row" style="margin-bottom:6px;">
-              <button type="button" id="btnWaterCadGpsStart" class="water-cad-btn" style="background:#1565C0; color:#fff;" onclick="waterStartGpsPinPlace()">GPSで置く</button>
-              <button type="button" id="btnWaterCadGpsConfirm" class="water-cad-btn" style="background:#455A64; color:#fff; opacity:0.6;" onclick="waterConfirmGpsPinPlace()" disabled>ここに置く</button>
-              <button type="button" id="btnWaterCadGpsCancel" class="water-cad-btn" style="background:#616161; color:#fff; opacity:0.6;" onclick="waterStopGpsPinPlace()" disabled>取消</button>
-            </div>
-            <div id="waterCadGpsStatus" style="font-size:11px; color:#90CAF9; line-height:1.35;">現場で「GPSで置く」→精度を確認→「ここに置く」</div>
-          </div>
-          <div class="water-cad-btn-row">
-            <button type="button" id="btnWaterCadSave" class="water-cad-btn" style="background:#2E7D32; color:#fff;" onclick="saveWaterCadPins()">💾 保存</button>
-            <button type="button" class="water-cad-btn" style="background:#616161; color:#fff;" onclick="closeWaterCadSimple()">キャンセル</button>
-          </div>
-          <div style="font-size:11px; color:#aaa; margin-top:6px;">ピンをタップすると削除できます。追加モード中は地図タップで配置します。</div>
-        </div>
-        <div id="waterCadViewTools">
-          <div class="water-cad-btn-row">
-            <button type="button" id="btnWaterCadOpenEdit" class="water-cad-btn" style="background:#FF9800; color:#fff; display:none;" onclick="enterWaterCadEditMode()">✏️ 給水口を編集</button>
-            <button type="button" class="water-cad-btn" style="background:#616161; color:#fff;" onclick="closeWaterCadSimple()">閉じる</button>
-          </div>
+      <div id="waterCadViewTools">
+        <div class="water-cad-btn-row">
+          <button type="button" id="btnWaterCadOpenEdit" class="water-cad-btn"
+            style="background:#FF9800; color:#fff; display:none;" onclick="enterWaterCadEditMode()">✏️ 給水口を編集</button>
+          <button type="button" class="water-cad-btn" style="background:#616161; color:#fff;"
+            onclick="closeWaterCadSimple()">閉じる</button>
         </div>
       </div>
     </div>
+  </div>
 
-    <!-- 🌳 スキルツリー ＆ 免許・資格 モーダル -->
-    <div id="skillTreeModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
-      <div style="background: #fff; color: #333; border-radius: 12px; width: 92%; max-width: 520px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); max-height: 85vh; display: flex; flex-direction: column; overflow: hidden;">
-        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #2e7d32; color: white; font-weight: bold;">
-          <h3 style="margin: 0; font-size: 16px;">🌳 スキルツリー ＆ 免許・資格</h3>
-          <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #ccc;" onclick="document.getElementById('skillTreeModal').style.display='none'">×</span>
-        </div>
-        <div id="skillTreeContent" style="overflow-y: auto; flex: 1;">
-          <div style="text-align:center; padding:20px;">読み込み中...</div>
-        </div>
+  <!-- 🌳 スキルツリー ＆ 免許・資格 モーダル -->
+  <div id="skillTreeModal"
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center;">
+    <div
+      style="background: #fff; color: #333; border-radius: 12px; width: 92%; max-width: 520px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); max-height: 85vh; display: flex; flex-direction: column; overflow: hidden;">
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #2e7d32; color: white; font-weight: bold;">
+        <h3 style="margin: 0; font-size: 16px;">🌳 スキルツリー ＆ 免許・資格</h3>
+        <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #ccc;"
+          onclick="document.getElementById('skillTreeModal').style.display='none'">×</span>
+      </div>
+      <div id="skillTreeContent" style="overflow-y: auto; flex: 1;">
+        <div style="text-align:center; padding:20px;">読み込み中...</div>
       </div>
     </div>
+  </div>
 
-    <!-- 天気モーダル -->
-    <div id="weatherModal"
-        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
-        <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <h3 style="margin: 0; color: #2196F3;">⛅ 週間天気予報</h3>
-                <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="document.getElementById('weatherModal').style.display='none'">×</span>
-            </div>
-            <div id="weatherContent" style="overflow-y: auto; flex: 1;">
-                <div style="text-align:center; padding:20px;">読み込み中...</div>
-            </div>
-        </div>
+  <!-- 天気モーダル -->
+  <div id="weatherModal"
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+    <div
+      style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <h3 style="margin: 0; color: #2196F3;">⛅ 週間天気予報</h3>
+        <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;"
+          onclick="document.getElementById('weatherModal').style.display='none'">×</span>
+      </div>
+      <div id="weatherContent" style="overflow-y: auto; flex: 1;">
+        <div style="text-align:center; padding:20px;">読み込み中...</div>
+      </div>
     </div>
+  </div>
 
-    <!-- 台風モーダル -->
-    <div id="typhoonModal"
-        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
-        <div style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <h3 style="margin: 0; color: #d32f2f;">🌀 台風情報</h3>
-                <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;" onclick="document.getElementById('typhoonModal').style.display='none'">×</span>
-            </div>
-            <div id="typhoonContent" style="overflow-y: auto; flex: 1;">
-                <div style="text-align:center; padding:20px;">読み込み中...</div>
-            </div>
-        </div>
+  <!-- 台風モーダル -->
+  <div id="typhoonModal"
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
+    <div
+      style="background: #fff; color: #333; padding: 20px; border-radius: 8px; width: 85%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 80vh; display: flex; flex-direction: column;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <h3 style="margin: 0; color: #d32f2f;">🌀 台風情報</h3>
+        <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;"
+          onclick="document.getElementById('typhoonModal').style.display='none'">×</span>
+      </div>
+      <div id="typhoonContent" style="overflow-y: auto; flex: 1;">
+        <div style="text-align:center; padding:20px;">読み込み中...</div>
+      </div>
     </div>
+  </div>
 
-    <script src="map-loading.js?v=1786243000000"></script>
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry"></script>
-    <script src="weather-agri.js?v=1788600000102"></script>
-    <script src="api-client.js?v=1788600000111"></script>
-    <script src="water.js?v=1788600000042"></script>
-    <script src="tracking.js?v=1787790000000"></script>
-    <script>
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js?v=water', { scope: '/' });
-      }
-    </script>
+  <script src="map-loading.js?v=1786243000000"></script>
+  <script
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=geometry"></script>
+  <script src="weather-agri.js?v=1788600000103"></script>
+  <script src="api-client.js?v=1788600000111"></script>
+  <script src="water.js?v=1788600000042"></script>
+  <script src="tracking.js?v=1787790000000"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js?v=water', { scope: '/' });
+    }
+  </script>
 
 
   <button id="btnTracking" onclick="toggleTracking()"
@@ -170,4 +207,5 @@
     🏃‍♂️
   </button>
 </body>
+
 </html>

@@ -34,6 +34,36 @@
   let _active = 'tokyo';
   const _cache = { tokyo: null, osaka: null };
   const _loading = { tokyo: false, osaka: false };
+  /** 選択中の品目名（空 = すべて） */
+  const _selectedItems = { tokyo: new Set(), osaka: new Set() };
+  const CHIP_PREF_KEY = 'passionMapMarketItemChips';
+  /** よく見る品目を先頭に出す */
+  const PRIORITY_ITEMS = [
+    'キャベツ', 'だいこん', 'にんじん', 'はくさい', 'レタス', 'ねぎ',
+    'きゅうり', 'トマト', 'なす', 'ピーマン', 'ほうれん草', 'ほうれんそう',
+    'こまつな', 'ブロッコリー', 'かぼちゃ', 'じゃがいも', 'たまねぎ', 'ばれいしょ'
+  ];
+
+  function loadChipPrefs_() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(CHIP_PREF_KEY) || '{}');
+      ['tokyo', 'osaka'].forEach(function (k) {
+        const list = Array.isArray(raw[k]) ? raw[k] : [];
+        _selectedItems[k] = new Set(list.map(function (s) { return String(s || '').trim(); }).filter(Boolean));
+      });
+    } catch (e) {}
+  }
+
+  function saveChipPrefs_() {
+    try {
+      localStorage.setItem(CHIP_PREF_KEY, JSON.stringify({
+        tokyo: Array.from(_selectedItems.tokyo),
+        osaka: Array.from(_selectedItems.osaka)
+      }));
+    } catch (e) {}
+  }
+
+  loadChipPrefs_();
 
   function esc_(s) {
     return String(s == null ? '' : s)
@@ -99,7 +129,14 @@
       '      style="color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">更新</button>',
       '  </div>',
       '  <div id="marketActiveComment" style="font-size:11px;color:#546E7A;margin-bottom:8px;line-height:1.4;display:none;"></div>',
-      '  <input id="marketActiveFilter" type="search" placeholder="品目で絞り込み（例: キャベツ）"',
+      '  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">',
+      '    <div style="font-size:11px;font-weight:800;color:#607D8B;">品目チップ</div>',
+      '    <button type="button" id="marketChipClear"',
+      '      style="border:none;background:transparent;color:#90A4AE;font-size:11px;font-weight:700;cursor:pointer;padding:2px 4px;">すべて表示</button>',
+      '  </div>',
+      '  <div id="marketItemChips"',
+      '    style="display:flex;flex-wrap:wrap;gap:6px;max-height:7.5rem;overflow:auto;margin-bottom:8px;padding:2px 0;"></div>',
+      '  <input id="marketActiveFilter" type="search" placeholder="品目・産地でさらに絞り込み"',
       '    style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ccc;border-radius:6px;font-size:13px;margin-bottom:8px;" />',
       '  <div id="marketActiveStatus" style="font-size:12px;color:#546E7A;margin-bottom:6px;"></div>',
       '  <div style="max-height:min(48vh,400px);overflow:auto;border:1px solid #e0e0e0;border-radius:6px;background:#fff;">',
@@ -132,6 +169,16 @@
         renderActiveTable_();
       });
     }
+    const clearBtn = document.getElementById('marketChipClear');
+    if (clearBtn && !clearBtn.dataset.bound) {
+      clearBtn.dataset.bound = '1';
+      clearBtn.onclick = function () {
+        _selectedItems[_active] = new Set();
+        saveChipPrefs_();
+        renderItemChips_();
+        renderActiveTable_();
+      };
+    }
     const refreshBtn = document.getElementById('marketActiveRefresh');
     if (refreshBtn && !refreshBtn.dataset.bound) {
       refreshBtn.dataset.bound = '1';
@@ -147,6 +194,79 @@
 
     applyActiveChrome_();
     return root;
+  }
+
+  function uniqueItemNames_(items) {
+    const map = new Map();
+    (items || []).forEach(function (it) {
+      const name = String((it && it.name) || '').trim();
+      if (!name) return;
+      const qty = Number(it.qtyKg);
+      const prev = map.get(name);
+      if (!prev) {
+        map.set(name, { name: name, qtyKg: isFinite(qty) ? qty : 0 });
+      } else if (isFinite(qty)) {
+        prev.qtyKg = Math.max(prev.qtyKg, qty);
+      }
+    });
+    const list = Array.from(map.values());
+    list.sort(function (a, b) {
+      const ai = PRIORITY_ITEMS.indexOf(a.name);
+      const bi = PRIORITY_ITEMS.indexOf(b.name);
+      const ap = ai >= 0 ? ai : 999;
+      const bp = bi >= 0 ? bi : 999;
+      if (ap !== bp) return ap - bp;
+      return (b.qtyKg - a.qtyKg) || a.name.localeCompare(b.name, 'ja');
+    });
+    return list.map(function (x) { return x.name; });
+  }
+
+  function toggleItemChip_(name) {
+    const set = _selectedItems[_active];
+    const key = String(name || '').trim();
+    if (!key) return;
+    if (set.has(key)) set.delete(key);
+    else set.add(key);
+    saveChipPrefs_();
+    renderItemChips_();
+    renderActiveTable_();
+  }
+
+  function renderItemChips_() {
+    const wrap = document.getElementById('marketItemChips');
+    if (!wrap) return;
+    const conf = MARKETS[_active];
+    const data = _cache[_active];
+    const names = uniqueItemNames_(data && data.items);
+    const selected = _selectedItems[_active] || new Set();
+
+    if (!names.length) {
+      wrap.innerHTML = '<span style="font-size:11px;color:#90A4AE;padding:4px 2px;">品目データ読み込み後にチップが表示されます</span>';
+      return;
+    }
+
+    const color = (conf && conf.color) || '#e65100';
+    const border = (conf && conf.border) || '#ffcc80';
+    wrap.innerHTML = names.map(function (name) {
+      const on = selected.has(name);
+      return [
+        '<button type="button" class="market-item-chip" data-item="' + esc_(name) + '"',
+        '  aria-pressed="' + (on ? 'true' : 'false') + '"',
+        '  style="border:1px solid ' + (on ? color : border) + ';',
+        '    background:' + (on ? color : '#fff') + ';',
+        '    color:' + (on ? '#fff' : '#455A64') + ';',
+        '    border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800;',
+        '    cursor:pointer;line-height:1.2;white-space:nowrap;">',
+        esc_(name),
+        '</button>'
+      ].join('');
+    }).join('');
+
+    wrap.querySelectorAll('.market-item-chip').forEach(function (btn) {
+      btn.onclick = function () {
+        toggleItemChip_(btn.getAttribute('data-item'));
+      };
+    });
   }
 
   function applyActiveChrome_() {
@@ -189,6 +309,7 @@
     if (!MARKETS[key]) return;
     _active = key;
     applyActiveChrome_();
+    renderItemChips_();
     renderActiveTable_();
     loadMarket_(key, false);
   }
@@ -222,8 +343,11 @@
     if (!data || !Array.isArray(data.items)) {
       tbody.innerHTML = '<tr><td colspan="6" style="padding:16px;text-align:center;color:#90A4AE;">データなし</td></tr>';
       if (meta) meta.textContent = '未読込';
+      renderItemChips_();
       return;
     }
+
+    renderItemChips_();
 
     if (meta) {
       const src = data.source === 'csv' ? 'CSV取込'
@@ -234,12 +358,21 @@
         + (src ? '（' + src + '）' : '');
     }
 
+    const selected = _selectedItems[_active] || new Set();
     const q = String((document.getElementById('marketActiveFilter') || {}).value || '')
       .trim().toLowerCase();
-    const items = !q ? data.items : data.items.filter(function (it) {
-      return String(it.name || '').toLowerCase().indexOf(q) >= 0
-        || String(it.origin || '').toLowerCase().indexOf(q) >= 0;
-    });
+    let items = data.items;
+    if (selected.size) {
+      items = items.filter(function (it) {
+        return selected.has(String(it.name || '').trim());
+      });
+    }
+    if (q) {
+      items = items.filter(function (it) {
+        return String(it.name || '').toLowerCase().indexOf(q) >= 0
+          || String(it.origin || '').toLowerCase().indexOf(q) >= 0;
+      });
+    }
 
     if (!items.length) {
       tbody.innerHTML = '<tr><td colspan="6" style="padding:16px;text-align:center;color:#90A4AE;">該当する品目がありません</td></tr>';
@@ -287,21 +420,39 @@
       const data = await callMarketGas_(refresh ? conf.importAction : conf.getAction, params);
       _cache[key] = data || null;
       if (key === _active) {
+        renderItemChips_();
         renderActiveTable_();
         if (data && data.warning) setStatus_(data.warning, false);
         else {
-          const n = data && data.count != null ? data.count : ((data && data.items) || []).length;
-          setStatus_(n + '品目を表示しています');
+          const selected = _selectedItems[key] || new Set();
+          const total = data && data.count != null ? data.count : ((data && data.items) || []).length;
+          if (selected.size) {
+            setStatus_(selected.size + '品目を選択中（全' + total + '品目）');
+          } else {
+            setStatus_(total + '品目を表示しています');
+          }
         }
       }
     } catch (err) {
       console.warn(key + ' market load failed', err);
       if (key === _active) {
-        setStatus_(String((err && err.message) || err || '取得に失敗しました'), true);
+        let msg = String((err && err.message) || err || '取得に失敗しました');
+        msg = msg.replace(/^Error:\s*/i, '').replace(/^Exception:\s*/i, '');
+        if (/大阪/.test(msg) || key === 'osaka') {
+          if (/障害|503|取得できません|Failed to fetch|タイムアウト|Aborted|timeout/i.test(msg)) {
+            msg = '大阪市公式日報サイトに接続できません（障害またはメンテナンスの可能性）。保存データが無い場合は東京タブをご利用ください。';
+          }
+        } else if (key === 'tokyo' && /取得できません|Failed to fetch|タイムアウト|Aborted|timeout/i.test(msg)) {
+          msg = '東京都日報の取得に失敗しました。通信が混み合っているか、当日分が未公開の可能性があります。「更新」で再試行してください。';
+        }
+        setStatus_(msg, true);
         if (!_cache[key]) {
           const tbody = document.getElementById('marketActiveTbody');
           if (tbody) {
-            tbody.innerHTML = '<tr><td colspan="6" style="padding:16px;text-align:center;color:#c62828;">取得に失敗しました。下の公式サイトから確認できます。</td></tr>';
+            const help = key === 'osaka'
+              ? '大阪市公式サイト障害の可能性があります。東京・大田タブをお試しください。'
+              : '取得に失敗しました。「更新」で再試行するか、しばらくしてから開いてください。';
+            tbody.innerHTML = '<tr><td colspan="6" style="padding:16px;text-align:center;color:#c62828;">' + help + '</td></tr>';
           }
         }
       }
@@ -333,10 +484,8 @@
       applyActiveChrome_();
       modal.style.display = 'flex';
       renderActiveTable_();
+      // 既定は東京。大阪公式サイト障害時に先読みでタイムアウトしないよう、開いたタブだけ読む
       loadMarket_(_active, false);
-      // 非表示側も裏で先読み
-      const other = _active === 'tokyo' ? 'osaka' : 'tokyo';
-      setTimeout(function () { loadMarket_(other, false); }, 400);
     },
 
     close() {
