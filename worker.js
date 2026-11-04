@@ -2316,6 +2316,64 @@ window.openTyphoonModal = function() {
           window.addRidgeMeasurePoint(lat, lng);
         };
 
+        /** メジャー計測の始点・終点用ピン（地図上で見失いにくい大きめSVG） */
+        window.buildRidgeMeasurePinIcon_ = (kind) => {
+          const isStart = kind === 'start';
+          const fill = isStart ? '#1B5E20' : '#B71C1C';
+          const accent = isStart ? '#69F0AE' : '#FF8A80';
+          const title = isStart ? '始' : '終';
+          const svg =
+            `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="72" viewBox="0 0 56 72">` +
+            `<defs><filter id="s" x="-20%" y="-10%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.45"/></filter></defs>` +
+            `<g filter="url(#s)">` +
+            `<path d="M28 2C15.3 2 5 12.3 5 25c0 16.8 18.2 37.4 21.5 41.1a2.1 2.1 0 0 0 3 0C32.8 62.4 51 41.8 51 25 51 12.3 40.7 2 28 2z" fill="${fill}" stroke="#fff" stroke-width="3"/>` +
+            `<circle cx="28" cy="25" r="14" fill="#fff"/>` +
+            `<circle cx="28" cy="25" r="12" fill="${accent}"/>` +
+            `<text x="28" y="30" text-anchor="middle" font-size="16" font-weight="700" font-family="sans-serif" fill="#111">${title}</text>` +
+            `</g></svg>`;
+          return {
+            url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+            scaledSize: new google.maps.Size(56, 72),
+            anchor: new google.maps.Point(28, 70),
+            labelOrigin: new google.maps.Point(28, -4)
+          };
+        };
+
+        window.addRidgeMeasureEndpointMarkers_ = (latLng, isStart) => {
+          const labelText = isStart ? '起点' : '終点';
+          const labelColor = isStart ? '#1B5E20' : '#B71C1C';
+          const pin = new google.maps.Marker({
+            position: latLng,
+            map: map,
+            icon: window.buildRidgeMeasurePinIcon_(isStart ? 'start' : 'end'),
+            title: labelText,
+            zIndex: 15020,
+            optimized: false
+          });
+          // ピンの上に「起点」「終点」文字を重ねて、色だけでも区別できるようにする
+          const caption = new google.maps.Marker({
+            position: latLng,
+            map: map,
+            label: {
+              text: labelText,
+              color: labelColor,
+              fontSize: '13px',
+              fontWeight: 'bold',
+              className: 'ridge-measure-endpoint-label'
+            },
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 0,
+              labelOrigin: new google.maps.Point(0, -38)
+            },
+            clickable: false,
+            zIndex: 15021,
+            optimized: false
+          });
+          window._ridgeMeasureOverlays.push(pin, caption);
+          return pin;
+        };
+
         window.addRidgeMeasurePoint = (lat, lng) => {
           if (!map || typeof google === 'undefined' || !google.maps) return;
           if (!window._ridgeMeasurePoints) window._ridgeMeasurePoints = [];
@@ -2331,19 +2389,7 @@ window.openTyphoonModal = function() {
           const idx = window._ridgeMeasurePoints.length;
           const isStart = idx === 1;
 
-          const iconText = isStart ? '🚩' : '🎯';
-          const labelText = isStart ? '起点' : '終点';
-          const markerColor = isStart ? '#2E7D32' : '#D32F2F';
-
-          const marker = new google.maps.Marker({
-            position: latLng,
-            map: map,
-            label: { text: `${iconText} ${labelText}`, color: '#fff', fontSize: '11px', fontWeight: 'bold' },
-            icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: markerColor, fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2 },
-            zIndex: 15000
-          });
-
-          window._ridgeMeasureOverlays.push(marker);
+          window.addRidgeMeasureEndpointMarkers_(latLng, isStart);
 
           const hintEl = document.getElementById('ridgeMeasureHint');
 
@@ -2353,15 +2399,35 @@ window.openTyphoonModal = function() {
             const p1 = window._ridgeMeasurePoints[0];
             const p2 = window._ridgeMeasurePoints[1];
 
+            // 白い下敷き線＋緑の計測線で、圃場色の上でも線を見失いにくくする
+            const underlay = new google.maps.Polyline({
+              path: [p1.latLng, p2.latLng],
+              map: map,
+              strokeColor: '#FFFFFF',
+              strokeOpacity: 0.95,
+              strokeWeight: 10,
+              zIndex: 14998
+            });
             const polyline = new google.maps.Polyline({
               path: [p1.latLng, p2.latLng],
               map: map,
-              strokeColor: '#00E676',
-              strokeOpacity: 0.95,
+              strokeColor: '#00C853',
+              strokeOpacity: 1,
               strokeWeight: 5,
-              zIndex: 14999
+              zIndex: 14999,
+              icons: [{
+                icon: {
+                  path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                  scale: 3,
+                  strokeColor: '#FFFFFF',
+                  strokeWeight: 1,
+                  fillColor: '#00C853',
+                  fillOpacity: 1
+                },
+                offset: '100%'
+              }]
             });
-            window._ridgeMeasureOverlays.push(polyline);
+            window._ridgeMeasureOverlays.push(underlay, polyline);
 
             let distMeters = 0;
             if (google.maps.geometry && google.maps.geometry.spherical) {
@@ -2378,14 +2444,32 @@ window.openTyphoonModal = function() {
             const midLng = (p1.lng + p2.lng) / 2;
             const midLatLng = new google.maps.LatLng(midLat, midLng);
 
+            const midBg = new google.maps.Marker({
+              position: midLatLng,
+              map: map,
+              icon: {
+                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
+                  `<svg xmlns="http://www.w3.org/2000/svg" width="150" height="36" viewBox="0 0 150 36">` +
+                  `<rect x="2" y="2" width="146" height="32" rx="10" fill="#E8F5E9" stroke="#1B5E20" stroke-width="2"/>` +
+                  `</svg>`
+                ),
+                scaledSize: new google.maps.Size(150, 36),
+                anchor: new google.maps.Point(75, 18)
+              },
+              clickable: false,
+              zIndex: 15000,
+              optimized: false
+            });
             const midLabelMarker = new google.maps.Marker({
               position: midLatLng,
               map: map,
-              label: { text: `📏 ${mVal}m (${kenVal}間)`, color: '#004D40', fontSize: '13px', fontWeight: 'bold' },
+              label: { text: `${mVal}m（${kenVal}間）`, color: '#1B5E20', fontSize: '13px', fontWeight: 'bold' },
               icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
-              zIndex: 15001
+              clickable: false,
+              zIndex: 15001,
+              optimized: false
             });
-            window._ridgeMeasureOverlays.push(midLabelMarker);
+            window._ridgeMeasureOverlays.push(midBg, midLabelMarker);
 
             const resultBox = document.getElementById('ridgeMeasureResultBox');
             const valEl = document.getElementById('ridgeMeasureValue');
