@@ -27,7 +27,7 @@ function refreshChoiceButtons(selectId) {
         wrap = document.createElement('div');
         wrap.id = selectId + '_btns';
         wrap.className = 'cp-choice-btns';
-        wrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;align-items:center;width:100%;';
+        wrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:center;width:100%;';
 
         const parent = sel.parentNode;
         if (parent && (parent.style.display === 'flex' || getComputedStyle(parent).display === 'flex')) {
@@ -73,35 +73,35 @@ function refreshChoiceButtons(selectId) {
         const hasGrain = !canManageVariety || hasRegisteredGrainCount_(varietyMeta && varietyMeta.grainCount);
 
         if (isCpVarietyAdd) {
-            btn.style.cssText = 'padding:5px 10px;border:1px dashed #FFB74D;border-radius:4px;background:#FFF3E0;color:#E65100;cursor:pointer;font-size:12px;font-weight:bold;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;';
+            btn.style.cssText = 'padding:6px 12px;border:1.5px dashed #FFB74D;border-radius:6px;background:#FFF3E0;color:#E65100;cursor:pointer;font-size:12.5px;font-weight:bold;line-height:1.25;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;';
         } else if (isActive) {
-            btn.style.cssText = `padding:5px ${showSideActions ? '6' : '10'}px 5px 10px;border:1px solid ${accentDark};border-radius:4px;background:${accent};color:#fff;cursor:pointer;font-size:12px;font-weight:bold;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`;
+            btn.style.cssText = `padding:6px ${showSideActions ? '8' : '12'}px 6px 12px;border:1.5px solid ${accentDark};border-radius:6px;background:${accent};color:#fff;cursor:pointer;font-size:12.5px;font-weight:bold;line-height:1.25;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;box-shadow:0 2px 4px rgba(0,0,0,0.14);`;
         } else if (!hasMaker) {
-            btn.style.cssText = `padding:5px ${showSideActions ? '6' : '10'}px 5px 10px;border:1px solid #ef9a9a;border-radius:4px;background:#fff8f8;color:#c62828;cursor:pointer;font-size:12px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`;
+            btn.style.cssText = `padding:6px ${showSideActions ? '8' : '12'}px 6px 12px;border:1px solid #ef9a9a;border-radius:6px;background:#fff8f8;color:#c62828;cursor:pointer;font-size:12.5px;line-height:1.25;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`;
         } else if (!hasGrain) {
-            btn.style.cssText = `padding:5px ${showSideActions ? '6' : '10'}px 5px 10px;border:1px solid #ce93d8;border-radius:4px;background:#faf5ff;color:#6a1b9a;cursor:pointer;font-size:12px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`;
+            btn.style.cssText = `padding:6px ${showSideActions ? '8' : '12'}px 6px 12px;border:1px solid #ce93d8;border-radius:6px;background:#faf5ff;color:#6a1b9a;cursor:pointer;font-size:12.5px;line-height:1.25;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`;
         } else {
-            btn.style.cssText = `padding:5px ${showSideActions ? '6' : '10'}px 5px 10px;border:1px solid #ccc;border-radius:4px;background:${isCustom ? '#f5f5f5' : '#fff'};color:#333;cursor:pointer;font-size:12px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`;
+            btn.style.cssText = `padding:6px ${showSideActions ? '8' : '12'}px 6px 12px;border:1px solid #cfd8dc;border-radius:6px;background:${isCustom ? '#f5f5f5' : '#fff'};color:#333;cursor:pointer;font-size:12.5px;line-height:1.25;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`;
         }
         if (canManageVariety && !isCpVarietyAdd) {
             const tips = [];
             if (hasMaker) tips.push('メーカー: ' + String(varietyMeta.maker));
             else tips.push('メーカー未登録（✎で登録）');
-        if (hasGrain) {
-            const gl = formatGrainTypeLabel(varietyMeta && varietyMeta.grainCount);
-            if (gl) tips.push('粒数: ' + gl);
-        } else {
-            tips.push('粒数未登録（✎で登録）');
-        }
-        const drIds = parseDiseaseResistanceList(varietyMeta && varietyMeta.diseaseResistance);
-        if (drIds.length) {
-            const drNames = drIds.map(id => {
-                const item = findDiseaseResistanceById_(id);
-                return item ? (item.icon + ' ' + item.name) : id;
-            }).join(' ');
-            tips.push('耐病性: ' + drNames);
-        }
-        btn.title = tips.join(' ／ ');
+            if (hasGrain) {
+                const gl = formatGrainTypeLabel(varietyMeta && varietyMeta.grainCount);
+                if (gl) tips.push('粒数: ' + gl);
+            } else {
+                tips.push('粒数未登録（✎で登録）');
+            }
+            const drIds = parseDiseaseResistanceList(varietyMeta && varietyMeta.diseaseResistance);
+            if (drIds.length) {
+                const drNames = drIds.map(id => {
+                    const item = findDiseaseResistanceById_(id);
+                    return item ? (item.icon + ' ' + item.name) : id;
+                }).join(' ');
+                tips.push('耐病性: ' + drNames);
+            }
+            btn.title = tips.join(' ／ ');
         }
 
         const label = document.createElement('span');
@@ -124,7 +124,7 @@ function refreshChoiceButtons(selectId) {
             edit.style.cssText = isActive
                 ? 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:rgba(0,0,0,0.18);font-size:11px;font-weight:bold;line-height:1;'
                 : 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#eee;color:#666;font-size:11px;font-weight:bold;line-height:1;';
-            edit.onclick = function(e) {
+            edit.onclick = function (e) {
                 e.preventDefault();
                 e.stopPropagation();
                 openVarietyMetaDialog({ mode: 'edit', target: 'cp', variety: opt.value });
@@ -138,7 +138,7 @@ function refreshChoiceButtons(selectId) {
             del.style.cssText = isActive
                 ? 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:rgba(0,0,0,0.18);font-size:12px;font-weight:bold;line-height:1;'
                 : 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#eee;color:#888;font-size:12px;font-weight:bold;line-height:1;';
-            del.onclick = function(e) {
+            del.onclick = function (e) {
                 e.preventDefault();
                 e.stopPropagation();
                 removeVarietyFromChoices(opt.value);
@@ -154,7 +154,7 @@ function refreshChoiceButtons(selectId) {
             del.style.cssText = isActive
                 ? 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:rgba(0,0,0,0.18);font-size:12px;font-weight:bold;line-height:1;'
                 : 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#eee;color:#888;font-size:12px;font-weight:bold;line-height:1;';
-            del.onclick = function(e) {
+            del.onclick = function (e) {
                 e.preventDefault();
                 e.stopPropagation();
                 const name = opt.value;
@@ -168,17 +168,17 @@ function refreshChoiceButtons(selectId) {
             btn.appendChild(del);
         }
 
-        btn.onmouseenter = function() {
+        btn.onmouseenter = function () {
             if (!isActive && !isCpVarietyAdd) {
                 btn.style.borderColor = !hasMaker ? '#e53935' : (!hasGrain ? '#8e24aa' : accent);
             }
         };
-        btn.onmouseleave = function() {
+        btn.onmouseleave = function () {
             if (!isActive && !isCpVarietyAdd) {
                 btn.style.borderColor = !hasMaker ? '#ef9a9a' : (!hasGrain ? '#ce93d8' : '#ccc');
             }
         };
-        btn.onclick = function() {
+        btn.onclick = function () {
             if (isCpVarietyAdd) {
                 openVarietyMetaDialog({ mode: 'add', target: 'cp' });
                 return;
@@ -230,7 +230,7 @@ function getCpVal(id, isNumber = false) {
     const sel = document.getElementById(id);
     if (!sel) return isNumber ? 0 : '';
     let val = sel.value;
-    if(val === 'custom') {
+    if (val === 'custom') {
         const cInp = document.getElementById(id + '_custom');
         val = cInp ? cInp.value : '';
     }
@@ -240,7 +240,7 @@ function getCpVal(id, isNumber = false) {
 function checkCustomInput(selectEl, customInputId) {
     const customInput = document.getElementById(customInputId);
     if (!customInput) return;
-    if(selectEl.value === 'custom') {
+    if (selectEl.value === 'custom') {
         customInput.style.display = 'block';
         customInput.focus();
     } else {
@@ -251,29 +251,29 @@ function checkCustomInput(selectEl, customInputId) {
 
 function populateSelect(id, arr, defaultOptions = []) {
     const sel = document.getElementById(id);
-    if(!sel) return;
-    
+    if (!sel) return;
+
     // 現在の選択値を保存
     const currentVal = sel.value;
-    
+
     // Merge master array with defaults, remove duplicates
     let merged = [...defaultOptions];
-    if(arr && arr.length > 0) {
-        arr.forEach(a => { if(a !== '' && !merged.includes(a)) merged.push(a); });
+    if (arr && arr.length > 0) {
+        arr.forEach(a => { if (a !== '' && !merged.includes(a)) merged.push(a); });
     }
-    
+
     // Sort if numeric
-    if(merged.length > 0 && typeof merged[0] === 'number') {
-        merged.sort((a,b) => a - b);
+    if (merged.length > 0 && typeof merged[0] === 'number') {
+        merged.sort((a, b) => a - b);
     }
-    
+
     let html = '<option value="">選択...</option>';
     merged.forEach(v => {
         html += `<option value="${v}">${v}</option>`;
     });
     html += '<option value="custom">その他(手入力)</option>';
     sel.innerHTML = html;
-    
+
     // 選択値を復元
     if (currentVal !== '') {
         const exists = Array.from(sel.options).some(opt => opt.value == currentVal);
@@ -435,7 +435,7 @@ function registerVarietyCandidateLocal(crop, variety, climates, tasks) {
 
     try {
         localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
-    } catch (e) {}
+    } catch (e) { }
 }
 
 /**
@@ -515,7 +515,7 @@ function removeCropFromChoices(cropName) {
         delete cpMasterData.crops[crop];
         try {
             localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
-        } catch (e) {}
+        } catch (e) { }
     }
 
     const wasSelected = getCpVal('cpCrop') === crop;
@@ -584,7 +584,7 @@ async function removeVarietyFromChoices(varietyName) {
     }
     try {
         localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
-    } catch (e) {}
+    } catch (e) { }
 
     try {
         if (typeof callGAS === 'function') {
@@ -664,7 +664,7 @@ async function renameVarietyFromChoices(oldName) {
     }
     try {
         localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
-    } catch (e) {}
+    } catch (e) { }
 
     // サーバー側のマスタ／作型DBも更新
     try {
@@ -916,7 +916,7 @@ function renderGrainTypeButtons(wrapId, hiddenId, opts) {
         const n = (meta.options[tag] || []).length;
         btn.textContent = (selectedType ? '✓ ' : '') + (n ? `${tag}（${n}）` : tag);
         btn.title = viewing ? `${tag}の粒数を編集中` : `${tag}の粒数リストを開く`;
-        btn.onclick = function() {
+        btn.onclick = function () {
             wrap.dataset.grainViewType = tag;
             renderGrainTypeButtons(wrapId, hiddenId, opts);
         };
@@ -949,7 +949,7 @@ function renderGrainTypeButtons(wrapId, hiddenId, opts) {
                 ? `display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border:1px solid ${accentDark};border-radius:14px;background:${accent};color:#fff;cursor:pointer;font-size:11px;font-weight:bold;`
                 : 'display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border:1px solid #ccc;border-radius:14px;background:#fff;color:#333;cursor:pointer;font-size:11px;';
             chip.textContent = Number(num).toLocaleString('ja-JP') + '粒';
-            chip.onclick = function() {
+            chip.onclick = function () {
                 meta = parseGrainMeta(hidden.value);
                 if (selected) {
                     meta.type = '';
@@ -968,7 +968,7 @@ function renderGrainTypeButtons(wrapId, hiddenId, opts) {
             del.style.cssText = selected
                 ? 'margin-left:2px; opacity:0.9; font-weight:bold;'
                 : 'margin-left:2px; color:#999; font-weight:bold;';
-            del.onclick = function(e) {
+            del.onclick = function (e) {
                 e.preventDefault();
                 e.stopPropagation();
                 meta = parseGrainMeta(hidden.value);
@@ -999,7 +999,7 @@ function renderGrainTypeButtons(wrapId, hiddenId, opts) {
     addBtn.type = 'button';
     addBtn.textContent = '追加';
     addBtn.style.cssText = `flex-shrink:0; padding:6px 12px; border:none; border-radius:4px; background:${accent}; color:#fff; font-size:12px; font-weight:bold; cursor:pointer;`;
-    const doAdd = function() {
+    const doAdd = function () {
         const n = Math.round(Number(inp.value));
         if (!Number.isFinite(n) || n <= 0) {
             alert('粒数は1以上の整数で入力してください。');
@@ -1016,7 +1016,7 @@ function renderGrainTypeButtons(wrapId, hiddenId, opts) {
         if (typeof opts.onChange === 'function') opts.onChange(hidden.value);
     };
     addBtn.onclick = doAdd;
-    inp.onkeydown = function(e) {
+    inp.onkeydown = function (e) {
         if (e.key === 'Enter') {
             e.preventDefault();
             doAdd();
@@ -1095,7 +1095,7 @@ function refreshCpVarietyMakerDatalist() {
     const makers = new Set();
     try {
         loadMakerMaster().forEach(m => { if (m) makers.add(String(m)); });
-    } catch (e) {}
+    } catch (e) { }
     if (cpMasterData && Array.isArray(cpMasterData.croptypesDB)) {
         cpMasterData.croptypesDB.forEach(db => {
             if (db && db.maker) makers.add(String(db.maker).trim());
@@ -1322,7 +1322,7 @@ function fillVmdMakerDatalist(selectedValue) {
         ? String(selectedValue || '').trim()
         : String(select.value || '').trim();
     const makers = new Set();
-    try { loadMakerMaster().forEach(m => { if (m) makers.add(String(m).trim()); }); } catch (e) {}
+    try { loadMakerMaster().forEach(m => { if (m) makers.add(String(m).trim()); }); } catch (e) { }
     // 登録済み品種にだけ残っているメーカーも、その品種の編集中は選択値として表示する
     if (selected) makers.add(selected);
 
@@ -1465,7 +1465,7 @@ function openVarietyMetaDialog(opts) {
     }
 
     dlg.style.display = 'flex';
-    setTimeout(() => { try { vEl.focus(); } catch (e) {} }, 50);
+    setTimeout(() => { try { vEl.focus(); } catch (e) { } }, 50);
 }
 
 function closeVarietyMetaDialog() {
@@ -1601,7 +1601,7 @@ async function confirmVarietyMetaDialog() {
                 if (!customMap[crop].includes(variety)) customMap[crop].push(variety);
                 saveCustomVarietiesMap(customMap);
             }
-            try { localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData)); } catch (e) {}
+            try { localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData)); } catch (e) { }
             enqueueVarietyMetaServerSync_({
                 action: 'renameCultivationVariety',
                 crop: crop,
@@ -1686,7 +1686,7 @@ async function confirmVarietyMetaDialog() {
                     maker, grainCount, diseaseResistance, harvestSeason: ''
                 });
             }
-            try { localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData)); } catch (e) {}
+            try { localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData)); } catch (e) { }
             enqueueVarietyMetaServerSync_({
                 action: 'updateVarietyMeta',
                 crop: crop,
@@ -1793,7 +1793,7 @@ async function saveCpVarietyMeta(opts) {
     }
     try {
         localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
-    } catch (e) {}
+    } catch (e) { }
 
     // 選択肢に追加して選択状態を維持（サーバー待ちしない）
     const vSel = document.getElementById('cpVariety');
@@ -1929,7 +1929,7 @@ function rememberCustomCrop(crop) {
 }
 
 function applyCultivationMasterData() {
-    if(cpMasterData && cpMasterData.crops) {
+    if (cpMasterData && cpMasterData.crops) {
         populateSelect('cpLocation', cpMasterData.locations || [], []);
         const customCrops = getCustomCropsList();
         const allCrops = Array.from(new Set([...Object.keys(cpMasterData.crops), ...customCrops]))
@@ -1945,10 +1945,10 @@ function applyCultivationMasterData() {
         populateSelect('cpYieldPerPlant', cpMasterData.yieldPerSeedling || [], [1]);
         populateSelect('cpItemsPerPack', cpMasterData.itemsPerPack || [], [1]);
         populateCpFieldConditionSelect();
-        
+
         if (document.getElementById('cpYieldRate') && !getCpVal('cpYieldRate')) setCpVal('cpYieldRate', 0.9);
         if (document.getElementById('cpSeedlingSuccess') && !getCpVal('cpSeedlingSuccess')) setCpVal('cpSeedlingSuccess', 1.0);
-        
+
         updateVarietyList();
         calcCp();
         // 拠点が既に選ばれていれば産地を同期
@@ -2265,7 +2265,7 @@ function getCpMasterUserName_() {
 
 function normalizeCpTagAbbr_(s) {
     let t = String(s || '').trim();
-    try { t = t.normalize('NFKC'); } catch (e) {}
+    try { t = t.normalize('NFKC'); } catch (e) { }
     return t.toLowerCase();
 }
 
@@ -2313,7 +2313,7 @@ function showCpTagAbbrSaveResult(ok, message) {
 function persistCpMasterDataCache() {
     try {
         if (cpMasterData) localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
-    } catch (e) {}
+    } catch (e) { }
 }
 
 async function saveCpLocationTagAbbreviation() {
@@ -2654,7 +2654,7 @@ async function refreshCpMasterAfterBasicEdit_() {
             applyCultivationMasterData();
             return;
         }
-    } catch (e) {}
+    } catch (e) { }
     applyCultivationMasterData();
 }
 
@@ -2754,7 +2754,7 @@ async function submitCpBasicMasterAdd() {
                     custom.push(name);
                     localStorage.setItem('customCrops', JSON.stringify(custom));
                 }
-            } catch (e) {}
+            } catch (e) { }
             await refreshCpMasterAfterBasicEdit_();
         } else if (kind === 'climate') {
             const list = await callGAS('addClimateMaster', { climateName: name });
@@ -2823,7 +2823,7 @@ async function editCpBasicMasterItem(oldName) {
                 let custom = getCustomCropsList().map(c => c === name0 ? trimmed : c);
                 if (custom.indexOf(trimmed) < 0) custom.push(trimmed);
                 localStorage.setItem('customCrops', JSON.stringify(custom));
-            } catch (e) {}
+            } catch (e) { }
             if (getCpVal('cpCrop') === name0) setChoiceValue('cpCrop', trimmed, false);
             await refreshCpMasterAfterBasicEdit_();
         } else if (kind === 'climate') {
@@ -2869,9 +2869,9 @@ async function deleteCpBasicMasterItem(name) {
             try {
                 const custom = getCustomCropsList().filter(c => c !== target);
                 localStorage.setItem('customCrops', JSON.stringify(custom));
-            } catch (e) {}
+            } catch (e) { }
             if (typeof removeCropFromChoices === 'function') {
-                try { removeCropFromChoices(target); } catch (e) {}
+                try { removeCropFromChoices(target); } catch (e) { }
             }
             if (getCpVal('cpCrop') === target) setChoiceValue('cpCrop', '', false);
             await refreshCpMasterAfterBasicEdit_();
@@ -2918,16 +2918,16 @@ async function fetchCultivationMaster() {
                         cpMasterData = cachedData;
                         applyCultivationMasterData();
                     }
-                } catch(e) {}
+                } catch (e) { }
             }
 
             const data = await callGAS('getCultivationMaster');
-            if(data && data.crops) {
+            if (data && data.crops) {
                 cpMasterData = data;
                 localStorage.setItem('cpMasterDataCache', JSON.stringify(data));
                 applyCultivationMasterData();
             }
-        } catch(e) {
+        } catch (e) {
             if (e && (e.name === 'AbortError' || String(e.message || '') === 'cancelled')) return;
             console.error("マスタ取得エラー", e);
         }
@@ -3724,7 +3724,7 @@ function updatePresetList(crop) {
 function setCpVal(id, value) {
     const sel = document.getElementById(id);
     if (!sel) return;
-    
+
     if (value === '' || value === 0 || value === null) {
         sel.value = '';
         const cInp = document.getElementById(id + '_custom');
@@ -3752,7 +3752,7 @@ function setCpVal(id, value) {
     if (CHOICE_BUTTON_SELECT_IDS.includes(id)) refreshChoiceButtons(id);
 }
 
-window.openCpPresetSaveModal = function() {
+window.openCpPresetSaveModal = function () {
     const crop = getCpVal('cpCrop');
     const location = getCpVal('cpLocation');
     if (!crop) {
@@ -3798,12 +3798,12 @@ window.openCpPresetSaveModal = function() {
     }, 50);
 };
 
-window.closeCpPresetSaveModal = function() {
+window.closeCpPresetSaveModal = function () {
     const modal = document.getElementById('cpPresetSaveModal');
     if (modal) modal.style.display = 'none';
 };
 
-window.confirmCpPresetSave = async function() {
+window.confirmCpPresetSave = async function () {
     const crop = getCpVal('cpCrop');
     const location = getCpVal('cpLocation');
     if (!crop) {
@@ -4064,25 +4064,25 @@ function calcCp() {
     const yieldRate = readCpParamNumber('cpYieldRate', 0.9);
     const yieldPerPlant = readCpParamNumber('cpYieldPerPlant', 1);
     const itemsPerPack = readCpParamNumber('cpItemsPerPack', 1);
-    
+
     if (areaA > 0 && pSpace > 0 && rSpace > 0 && rows > 0) {
         const areaM2 = areaA * 100;
         const areaPerPlant = (rSpace / rows) * pSpace;
         const totalPlants = Math.floor(areaM2 / areaPerPlant);
-        
+
         cpCurrentCalc.trays = Math.ceil(totalPlants / holes);
         cpCurrentCalc.yield = Math.floor((totalPlants * yieldRate * yieldPerPlant) / itemsPerPack);
-        
+
         const traysEl = document.getElementById('cpCalcTrays');
         const yieldEl = document.getElementById('cpCalcYield');
-        if(traysEl) traysEl.innerText = cpCurrentCalc.trays.toLocaleString();
-        if(yieldEl) yieldEl.innerText = cpCurrentCalc.yield.toLocaleString();
+        if (traysEl) traysEl.innerText = cpCurrentCalc.trays.toLocaleString();
+        if (yieldEl) yieldEl.innerText = cpCurrentCalc.yield.toLocaleString();
     } else {
         cpCurrentCalc = { trays: 0, yield: 0 };
         const traysEl = document.getElementById('cpCalcTrays');
         const yieldEl = document.getElementById('cpCalcYield');
-        if(traysEl) traysEl.innerText = '0';
-        if(yieldEl) yieldEl.innerText = '0';
+        if (traysEl) traysEl.innerText = '0';
+        if (yieldEl) yieldEl.innerText = '0';
     }
     // 既存カードへパラメーターを同期（面積モードなら枚数も再計算）
     syncCpParamsToExistingPlans();
@@ -4115,7 +4115,7 @@ let cpPlans = [];
 // ===== 半旬列ハイライト機能 =====
 window.cpHighlightedCols = window.cpHighlightedCols || new Set();
 
-window.toggleCpColumnHighlight = function(colIdx) {
+window.toggleCpColumnHighlight = function (colIdx) {
     if (window.cpHighlightedCols.has(colIdx)) {
         window.cpHighlightedCols.delete(colIdx);
     } else {
@@ -4124,7 +4124,7 @@ window.toggleCpColumnHighlight = function(colIdx) {
     window.applyCpColumnHighlights();
 };
 
-window.toggleCpMonthHighlight = function(mIdx) {
+window.toggleCpMonthHighlight = function (mIdx) {
     const startCol = mIdx * 6;
     const endCol = startCol + 6;
     let allSelected = true;
@@ -4144,16 +4144,16 @@ window.toggleCpMonthHighlight = function(mIdx) {
     window.applyCpColumnHighlights();
 };
 
-window.clearCpColumnHighlights = function() {
+window.clearCpColumnHighlights = function () {
     window.cpHighlightedCols.clear();
     window.applyCpColumnHighlights();
 };
 
-window.applyCpColumnHighlights = function() {
+window.applyCpColumnHighlights = function () {
     const table = document.getElementById('cpTable');
     if (!table) return;
 
-    const months = [1,2,3,4,5,6,7,8,9,10,11,12,1,2,3,4,5,6];
+    const months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
     months.forEach((m, mIdx) => {
         const mTh = table.querySelector(`th[data-month-idx="${mIdx}"]`);
         if (!mTh) return;
@@ -4222,14 +4222,14 @@ window.applyCpColumnHighlights = function() {
 function renderCultivationPlanTable() {
     const table = document.getElementById('cpTable');
     if (!table) return;
-    
+
     // 左パネルをクリア
     const leftBody = document.getElementById('cpLeftBody');
     if (leftBody) leftBody.innerHTML = '';
     if (typeof ensureCpAddVarietyBtn === 'function') ensureCpAddVarietyBtn();
-    
-    const months = [1,2,3,4,5,6,7,8,9,10,11,12,1,2,3,4,5,6];
-    
+
+    const months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
+
     let tHTML = '<thead><tr>';
     months.forEach((m, idx) => {
         let label = m + '月';
@@ -4239,7 +4239,7 @@ function renderCultivationPlanTable() {
         tHTML += `<th colspan="6" data-month-idx="${idx}" onclick="toggleCpMonthHighlight(${idx})" title="${label} 全6半旬をまとめて選択/解除" style="border: 1px solid #ddd; background: ${bg}; padding: 4px; min-width:150px; cursor:pointer; user-select:none;">${label}</th>`;
     });
     tHTML += '</tr><tr>';
-    
+
     const periods = ['上前', '上後', '中前', '中後', '下前', '下後'];
     let globalColIdx = 0;
     months.forEach((m) => {
@@ -4250,10 +4250,10 @@ function renderCultivationPlanTable() {
         }
     });
     tHTML += '</tr></thead><tbody id="cpTableBody"></tbody>';
-    
+
     table.innerHTML = tHTML;
     cpPlans = [];
-    
+
     // テーブルヘッダーの高さに左パネルヘッダーを同期＋縦スクロール時の固定
     setTimeout(() => {
         syncLeftHeaderHeight();
@@ -4363,7 +4363,7 @@ function withPreservedCpPanelScroll(fn) {
 
 let cpSyncRowHeightsTimer = null;
 function syncAllRowHeights() {
-    withPreservedCpPanelScroll(function() {
+    withPreservedCpPanelScroll(function () {
         cpPlans.forEach(plan => {
             const leftWrap = document.getElementById('cpLeftCardWrap_' + plan.id);
             const leftCard = document.getElementById('cpLeftCard_' + plan.id);
@@ -4456,7 +4456,7 @@ function setupCpPlanPanelScrollSync() {
     if (leftPanel.dataset.scrollSyncBound === '1') return;
 
     let syncing = false;
-    const syncTop = function(source, target) {
+    const syncTop = function (source, target) {
         if (syncing) return;
         // 高さ合わせ中に相手側へ書くと、操作中の位置が飛ぶ
         if (window._cpPanelHeightSyncing) return;
@@ -4468,16 +4468,16 @@ function setupCpPlanPanelScrollSync() {
         if (Math.abs(target.scrollTop - next) > 0.5) {
             target.scrollTop = next;
         }
-        requestAnimationFrame(function() { syncing = false; });
+        requestAnimationFrame(function () { syncing = false; });
     };
-    leftPanel.addEventListener('scroll', function() {
+    leftPanel.addEventListener('scroll', function () {
         syncTop(leftPanel, rightPanel);
     }, { passive: true });
-    rightPanel.addEventListener('scroll', function() {
+    rightPanel.addEventListener('scroll', function () {
         syncTop(rightPanel, leftPanel);
     }, { passive: true });
     // スクロール開始時点で復元をキャンセル（scroll 発火前の高さ同期に負けない）
-    ['wheel', 'touchstart', 'pointerdown'].forEach(function(evt) {
+    ['wheel', 'touchstart', 'pointerdown'].forEach(function (evt) {
         leftPanel.addEventListener(evt, markCpPanelUserScrolling_, { passive: true });
         rightPanel.addEventListener(evt, markCpPanelUserScrolling_, { passive: true });
     });
@@ -4497,7 +4497,7 @@ function scrollCpPanelsToPlan_(planId, options) {
     // 直後の高さ同期が位置を戻さないよう、しばらく保護（保留中の restore も無効化）
     invalidateCpScrollPreserve_(900);
 
-    const align = function() {
+    const align = function () {
         try {
             const panelRect = leftPanel.getBoundingClientRect();
             const elRect = leftEl.getBoundingClientRect();
@@ -4505,7 +4505,7 @@ function scrollCpPanelsToPlan_(planId, options) {
             const nextTop = Math.max(0, leftPanel.scrollTop + delta);
             leftPanel.scrollTop = nextTop;
             if (rightPanel) rightPanel.scrollTop = nextTop;
-        } catch (e) {}
+        } catch (e) { }
     };
     requestAnimationFrame(() => {
         align();
@@ -4538,15 +4538,15 @@ function searchCroptypeWeb() {
     const crop = getCpVal('cpCrop');
     const variety = getCpVal('cpVariety');
     const climate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';
-    
+
     if (!crop || !variety) {
         alert("作物と品種を選択してから検索してください。");
         return;
     }
-    
+
     let query = `${crop} ${variety} 作型`;
     if (climate) query += ` ${climate}`;
-    
+
     const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
     window.open(url, '_blank');
 }
@@ -4833,11 +4833,11 @@ function checkCroptypeDB() {
     const variety = getCpVal('cpVariety');
     const climate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';
     const locationClimates = getLocationClimates(getCpVal('cpLocation'));
-    
+
     pendingCroptypeData = null;
-    
+
     if (!crop || !variety) return;
-    
+
     if (cpMasterData && cpMasterData.croptypesDB) {
         const candidates = cpMasterData.croptypesDB.filter(db =>
             db.crop === crop &&
@@ -4858,7 +4858,7 @@ function checkCroptypeDB() {
         } else {
             found = candidates[0] || null;
         }
-        
+
         if (found) {
             pendingCroptypeData = found;
         }
@@ -4893,7 +4893,7 @@ function addCpPlanRow(options) {
     registerVarietyCandidateLocal(crop, variety, climatesForCandidate, croptypeData || {
         sowing: [], planting: [], harvesting: [], fileUrl: ''
     });
-    
+
     // Read new global parameters
     const holes = getCpVal('cpTrayHoles', true) || 128;
     const rows = getCpVal('cpRows', true) || 1;
@@ -4911,7 +4911,7 @@ function addCpPlanRow(options) {
         yieldPerSeedling: yieldPerPlant,
         itemsPerPack: itemsPerPack
     });
-    
+
     const plan = {
         id: 'plan_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
         location: location,
@@ -4933,7 +4933,7 @@ function addCpPlanRow(options) {
         yield: 0,
         inputMode: 'area'
     };
-    
+
     if (croptypeData) {
         plan.sowing = croptypeData.sowing ? [...croptypeData.sowing] : [];
         plan.planting = croptypeData.planting ? [...croptypeData.planting] : [];
@@ -4972,7 +4972,7 @@ function addCpPlanRow(options) {
     // ステップ3の品種候補を即更新（選択中の品種は維持）
     updateVarietyList();
     setChoiceValue('cpVariety', variety, true);
-    
+
     // UI改善: 作型を追加後、ペイント領域を広くするために初期設定を格納
     if (typeof setCpInitialSettingsOpen === 'function') setCpInitialSettingsOpen(false);
     else if (typeof openCpStep === 'function') openCpStep(0);
@@ -5149,7 +5149,7 @@ function openCpQuickVarietyPicker(anchorEl) {
     closeBtn.title = '閉じる';
     closeBtn.setAttribute('aria-label', '品種選択を閉じる');
     closeBtn.style.cssText = 'flex-shrink:0; width:20px; height:20px; padding:0; border:none; background:transparent; color:#546E7A; font-size:16px; font-weight:bold; line-height:1; cursor:pointer; border-radius:4px;';
-    closeBtn.onclick = function(e) {
+    closeBtn.onclick = function (e) {
         e.preventDefault();
         e.stopPropagation();
         closeCpQuickVarietyPopover();
@@ -5163,7 +5163,7 @@ function openCpQuickVarietyPicker(anchorEl) {
     addNewBtn.type = 'button';
     addNewBtn.textContent = '＋ 新規追加';
     addNewBtn.style.cssText = 'display:block; width:100%; text-align:left; padding:8px; margin:0 0 6px; border:1px dashed #FFB74D; background:#FFF3E0; color:#E65100; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;';
-    addNewBtn.onclick = function() {
+    addNewBtn.onclick = function () {
         closeCpQuickVarietyPopover();
         openVarietyMetaDialog({ mode: 'add', target: 'cp', crop: crop, addCardAfter: true });
     };
@@ -5200,7 +5200,7 @@ function openCpQuickVarietyPicker(anchorEl) {
                 : (!hasGrain
                     ? 'display:block; width:100%; text-align:left; padding:6px 8px; margin:0 0 3px; border:1px solid #ce93d8; background:#faf5ff; color:#6a1b9a; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;'
                     : 'display:block; width:100%; text-align:left; padding:6px 8px; margin:0 0 3px; border:1px solid #bbdefb; background:#e3f2fd; color:#0d47a1; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;');
-            b.onclick = function() { addVarietyCardFromPick(v); };
+            b.onclick = function () { addVarietyCardFromPick(v); };
             pop.appendChild(b);
         });
     }
@@ -5225,7 +5225,7 @@ function openCpQuickVarietyPicker(anchorEl) {
                     const tMax = Math.max(0, rightPanel.scrollHeight - rightPanel.clientHeight);
                     rightPanel.scrollTop = sMax > 0 ? tMax : 0;
                 }
-            } catch (e) {}
+            } catch (e) { }
         });
     }
     setTimeout(() => {
@@ -5280,17 +5280,17 @@ function renderCpPlanRow(plan, options) {
     const tbody = document.getElementById('cpTableBody');
     const leftBody = document.getElementById('cpLeftBody');
     if (!tbody || !leftBody) return;
-    
+
     // fieldIdsの初期化
     plan.fieldIds = plan.fieldIds || [];
-    
+
     // --- 左パネル: 品種カード（作物・品種。枚数・面積はペイントマスで入力） ---
     let fileLinkHtml = '';
     if (plan.fileUrl) {
         let urls = plan.fileUrl.split(',');
         fileLinkHtml = urls.map(u => `<a href="${u.trim()}" target="_blank" style="font-size:10px; color:#1976d2; text-decoration:none;">📁</a>`).join(' ');
     }
-    
+
     let card = document.createElement('div');
     card.id = 'cpLeftCard_' + plan.id;
     const qtyWord = (plan.holes === 1) ? '株' : '枚';
@@ -5350,10 +5350,10 @@ function renderCpPlanRow(plan, options) {
     leftBody.appendChild(wrap);
 
     // --- 右パネル: ペイントセル行 ---
-    const months = [1,2,3,4,5,6,7,8,9,10,11,12,1,2,3,4,5,6];
+    const months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
     let tr = document.createElement('tr');
     tr.dataset.planId = plan.id;
-    
+
     months.forEach((m, idx) => {
         for (let i = 0; i < 6; i++) {
             let td = document.createElement('td');
@@ -5368,10 +5368,10 @@ function renderCpPlanRow(plan, options) {
             // タッチではスワイプをスクロールに使い、短いタップだけをペイントにする。
             td.style.touchAction = 'pan-x pan-y';
             bindCpCellPaintEvents(td, plan.id);
-            
+
             let div = document.createElement('div');
             div.style.cssText = 'width: 100%; height: 32px; transition: 0.1s; box-sizing:border-box; text-align:center; overflow:hidden; pointer-events: none; display:flex; align-items:center; justify-content:center;';
-            
+
             // 既存タスクがある場合はセルに色を塗る
             let taskType = '';
             if (plan.tasks) {
@@ -5394,14 +5394,14 @@ function renderCpPlanRow(plan, options) {
                     }
                 }
             }
-            
+
             td.appendChild(div);
             tr.appendChild(td);
         }
     });
-    
+
     tbody.appendChild(tr);
-    
+
     if (!opts.deferPostRender) {
         // 通常の1行追加時のみ即時反映。一括読込時は全行描画後に1回だけ行う。
         applyCpColumnHighlights();
@@ -5694,7 +5694,7 @@ function sortCpPlansByTask(taskType, options) {
         try {
             const synced = collectCurrentCpPlansFromDom();
             if (Array.isArray(synced) && synced.length) cpPlans = synced;
-        } catch (e) {}
+        } catch (e) { }
     }
 
     const before = cpPlans.map(p => p.id).join(',');
@@ -5770,7 +5770,7 @@ function groupCpPlansByVariety(options) {
         try {
             const synced = collectCurrentCpPlansFromDom();
             if (Array.isArray(synced) && synced.length) cpPlans = synced;
-        } catch (e) {}
+        } catch (e) { }
     }
 
     const before = cpPlans.map(p => p.id).join(',');
@@ -6326,25 +6326,25 @@ function openCpPaintBlockQtyEditor(td, planId) {
     pop.style.cssText = 'position:fixed; z-index:10060; background:#fff; border:1px solid ' + headerBd + '; border-radius:12px; box-shadow:0 10px 28px rgba(0,0,0,0.22); width:min(300px, calc(100vw - 24px)); box-sizing:border-box; font-family:sans-serif; overflow:hidden;';
     pop.innerHTML =
         '<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 12px; background:' + headerBg + '; border-bottom:1px solid ' + headerBd + ';">' +
-          '<div style="font-size:13px; font-weight:bold; color:' + headerFg + ';">' + title + '</div>' +
-          '<button type="button" id="cpPaintQtyCloseX" title="閉じる" style="width:28px; height:28px; border:none; background:transparent; color:#888; font-size:20px; line-height:1; cursor:pointer; border-radius:6px;">×</button>' +
+        '<div style="font-size:13px; font-weight:bold; color:' + headerFg + ';">' + title + '</div>' +
+        '<button type="button" id="cpPaintQtyCloseX" title="閉じる" style="width:28px; height:28px; border:none; background:transparent; color:#888; font-size:20px; line-height:1; cursor:pointer; border-radius:6px;">×</button>' +
         '</div>' +
         '<div style="padding:12px;">' +
-          '<label style="display:block; font-size:11px; font-weight:bold; color:#666; margin-bottom:4px;">リストから選択</label>' +
-          '<select id="cpPaintQtySelect" style="width:100%; height:34px; padding:4px 8px; border:1px solid #ccc; border-radius:8px; font-size:15px; box-sizing:border-box; background:#fff;">' +
-            buildCpPaintQtySelectOptionsHtml_(kind, current) +
-          '</select>' +
-          '<label style="display:block; font-size:11px; font-weight:bold; color:#666; margin:10px 0 4px;">手入力</label>' +
-          '<div style="display:flex; align-items:center; gap:6px;">' +
-            '<input type="number" id="cpPaintQtyInput" min="0" step="' + (isTrays ? '1' : '0.1') + '" value="' + current + '" inputmode="decimal" style="flex:1; min-width:0; height:34px; padding:4px 8px; border:1px solid #90CAF9; border-radius:8px; font-size:16px; box-sizing:border-box;">' +
-            '<span style="flex-shrink:0; font-size:12px; font-weight:bold; color:#555;">' + (isTrays ? unit : 'a') + '</span>' +
-          '</div>' +
-          '<div id="cpPaintQtyFollow" style="font-size:11px; color:#2e7d32; margin-top:8px; min-height:16px; line-height:1.4;"></div>' +
-          '<div style="display:flex; gap:8px; margin-top:12px;">' +
-            '<button type="button" id="cpPaintQtyCancel" style="flex:1; height:36px; border:1px solid #ccc; background:#fff; color:#555; border-radius:8px; font-size:13px; font-weight:bold; cursor:pointer;">閉じる</button>' +
-            '<button type="button" id="cpPaintQtyOk" style="flex:1.4; height:36px; border:none; background:' + accent + '; color:#fff; border-radius:8px; font-size:13px; font-weight:bold; cursor:pointer;">反映する</button>' +
-          '</div>' +
-          '<button type="button" id="cpPaintQtyErase" style="width:100%; margin-top:8px; height:34px; border:1px solid #EF9A9A; background:#FFEBEE; color:#C62828; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer;">このマスを消す</button>' +
+        '<label style="display:block; font-size:11px; font-weight:bold; color:#666; margin-bottom:4px;">リストから選択</label>' +
+        '<select id="cpPaintQtySelect" style="width:100%; height:34px; padding:4px 8px; border:1px solid #ccc; border-radius:8px; font-size:15px; box-sizing:border-box; background:#fff;">' +
+        buildCpPaintQtySelectOptionsHtml_(kind, current) +
+        '</select>' +
+        '<label style="display:block; font-size:11px; font-weight:bold; color:#666; margin:10px 0 4px;">手入力</label>' +
+        '<div style="display:flex; align-items:center; gap:6px;">' +
+        '<input type="number" id="cpPaintQtyInput" min="0" step="' + (isTrays ? '1' : '0.1') + '" value="' + current + '" inputmode="decimal" style="flex:1; min-width:0; height:34px; padding:4px 8px; border:1px solid #90CAF9; border-radius:8px; font-size:16px; box-sizing:border-box;">' +
+        '<span style="flex-shrink:0; font-size:12px; font-weight:bold; color:#555;">' + (isTrays ? unit : 'a') + '</span>' +
+        '</div>' +
+        '<div id="cpPaintQtyFollow" style="font-size:11px; color:#2e7d32; margin-top:8px; min-height:16px; line-height:1.4;"></div>' +
+        '<div style="display:flex; gap:8px; margin-top:12px;">' +
+        '<button type="button" id="cpPaintQtyCancel" style="flex:1; height:36px; border:1px solid #ccc; background:#fff; color:#555; border-radius:8px; font-size:13px; font-weight:bold; cursor:pointer;">閉じる</button>' +
+        '<button type="button" id="cpPaintQtyOk" style="flex:1.4; height:36px; border:none; background:' + accent + '; color:#fff; border-radius:8px; font-size:13px; font-weight:bold; cursor:pointer;">反映する</button>' +
+        '</div>' +
+        '<button type="button" id="cpPaintQtyErase" style="width:100%; margin-top:8px; height:34px; border:1px solid #EF9A9A; background:#FFEBEE; color:#C62828; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer;">このマスを消す</button>' +
         '</div>';
 
     document.body.appendChild(pop);
@@ -6361,42 +6361,42 @@ function openCpPaintBlockQtyEditor(td, planId) {
     const inputEl = document.getElementById('cpPaintQtyInput');
     const selectEl = document.getElementById('cpPaintQtySelect');
     const followEl = document.getElementById('cpPaintQtyFollow');
-    const refreshPreview = function() {
+    const refreshPreview = function () {
         updateCpPaintQtyPreview_(plan, kind, inputEl, followEl);
     };
     refreshPreview();
     if (selectEl) {
-        selectEl.addEventListener('change', function() {
+        selectEl.addEventListener('change', function () {
             if (!selectEl.value) return;
             if (inputEl) inputEl.value = selectEl.value;
             refreshPreview();
         });
     }
     if (inputEl) {
-        inputEl.addEventListener('input', function() {
+        inputEl.addEventListener('input', function () {
             syncCpPaintQtySelectToInput_(selectEl, inputEl, decimals);
             refreshPreview();
         });
-        inputEl.addEventListener('keydown', function(e) {
+        inputEl.addEventListener('keydown', function (e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 if (applyCpPaintBlockQty_(planId, kind, inputEl.value)) closeCpPaintQtyEditor();
             }
         });
-        setTimeout(function() {
-            try { inputEl.focus(); inputEl.select(); } catch (err) {}
+        setTimeout(function () {
+            try { inputEl.focus(); inputEl.select(); } catch (err) { }
         }, 30);
     }
     const okBtn = document.getElementById('cpPaintQtyOk');
     const cancelBtn = document.getElementById('cpPaintQtyCancel');
     const closeX = document.getElementById('cpPaintQtyCloseX');
     const eraseBtn = document.getElementById('cpPaintQtyErase');
-    if (okBtn) okBtn.onclick = function() {
+    if (okBtn) okBtn.onclick = function () {
         if (applyCpPaintBlockQty_(planId, kind, inputEl && inputEl.value)) closeCpPaintQtyEditor();
     };
-    if (cancelBtn) cancelBtn.onclick = function() { closeCpPaintQtyEditor(); };
-    if (closeX) closeX.onclick = function() { closeCpPaintQtyEditor(); };
-    if (eraseBtn) eraseBtn.onclick = function() {
+    if (cancelBtn) cancelBtn.onclick = function () { closeCpPaintQtyEditor(); };
+    if (closeX) closeX.onclick = function () { closeCpPaintQtyEditor(); };
+    if (eraseBtn) eraseBtn.onclick = function () {
         const cellKey = { monthIndex: td.dataset.monthIndex, period: td.dataset.period };
         const last = cpSemiAutoLastPaint[planId];
         clearCpCellPaint(td);
@@ -6408,13 +6408,13 @@ function openCpPaintBlockQtyEditor(td, planId) {
         closeCpPaintQtyEditor();
     };
 
-    const onDoc = function(e) {
+    const onDoc = function (e) {
         if (pop.contains(e.target)) return;
         if (selectEl && (e.target === selectEl || document.activeElement === selectEl)) return;
         closeCpPaintQtyEditor();
     };
     window._cpPaintQtyDocClose = onDoc;
-    setTimeout(function() {
+    setTimeout(function () {
         document.addEventListener('pointerdown', onDoc, true);
     }, 0);
     document.addEventListener('keydown', onCpPaintQtyEditorKeydown_, true);
@@ -6424,19 +6424,19 @@ window.openCpPaintBlockQtyEditor = openCpPaintBlockQtyEditor;
 function startCpPaintQtyHold_(td, planId, drag) {
     if (!drag || !canEditCpPaintBlockQty_(td)) return;
     clearCpPaintQtyHoldTimer_(drag);
-    drag.qtyHoldTimer = setTimeout(function() {
+    drag.qtyHoldTimer = setTimeout(function () {
         if (!cpPaintDrag || cpPaintDrag !== drag) return;
         drag.qtyHoldTimer = 0;
         drag.qtyEdit = true;
         drag.touchTap = false;
         drag.dragged = true;
-        try { if (navigator.vibrate) navigator.vibrate(12); } catch (err) {}
+        try { if (navigator.vibrate) navigator.vibrate(12); } catch (err) { }
         openCpPaintBlockQtyEditor(td, planId);
     }, CP_PAINT_QTY_HOLD_MS);
 }
 
 function bindCpCellPaintEvents(td, planId) {
-    td.onpointerdown = function(e) {
+    td.onpointerdown = function (e) {
         if (e.button != null && e.button !== 0) return;
         const startCol = parseInt(td.dataset.colIdx, 10);
         const eraseHarvest = isCpHarvestEraseDragStart_(td);
@@ -6463,7 +6463,7 @@ function bindCpCellPaintEvents(td, planId) {
         }
         // スクロールとの競合を抑えつつドラッグ塗りを開始
         e.preventDefault();
-        try { td.setPointerCapture(e.pointerId); } catch (err) {}
+        try { td.setPointerCapture(e.pointerId); } catch (err) { }
         const resolved = resolveCpPaintToolForPlan(planId);
         const singlePoint = eraseHarvest ? false : isCpSinglePointPaintTool_(resolved.tool);
         cpPaintDrag = {
@@ -6486,7 +6486,7 @@ function bindCpCellPaintEvents(td, planId) {
         if (!eraseHarvest) startCpPaintQtyHold_(td, planId, cpPaintDrag);
     };
 
-    td.onpointermove = function(e) {
+    td.onpointermove = function (e) {
         if (!cpPaintDrag || String(cpPaintDrag.planId) !== String(planId)) return;
         if (cpPaintDrag.pointerId != null && e.pointerId !== cpPaintDrag.pointerId) return;
         if (cpPaintDrag.qtyEdit) return;
@@ -6500,7 +6500,7 @@ function bindCpCellPaintEvents(td, planId) {
                 if (cpPaintDrag.eraseHarvest) {
                     cpPaintDrag.touchTap = false;
                     cpPaintDrag.dragged = false;
-                    try { td.setPointerCapture(e.pointerId); } catch (err) {}
+                    try { td.setPointerCapture(e.pointerId); } catch (err) { }
                 } else {
                     cpPaintDrag = null;
                 }
@@ -6527,8 +6527,8 @@ function bindCpCellPaintEvents(td, planId) {
         if (isNaN(col)) return;
 
         const applyRange = cpPaintDrag.eraseHarvest
-            ? function(fromCol, toCol) { eraseCpCellRange(planId, fromCol, toCol, 'harvesting'); }
-            : function(fromCol, toCol) { paintCpCellRange(planId, fromCol, toCol, cpPaintDrag.tool); };
+            ? function (fromCol, toCol) { eraseCpCellRange(planId, fromCol, toCol, 'harvesting'); }
+            : function (fromCol, toCol) { paintCpCellRange(planId, fromCol, toCol, cpPaintDrag.tool); };
 
         if (!cpPaintDrag.dragged) {
             if (col === cpPaintDrag.startCol) return;
@@ -6551,7 +6551,7 @@ function bindCpCellPaintEvents(td, planId) {
         if (typeof updateCpCellsText === 'function') updateCpCellsText(planId);
     };
 
-    const endDrag = function(e) {
+    const endDrag = function (e) {
         if (!cpPaintDrag || String(cpPaintDrag.planId) !== String(planId)) return;
         if (cpPaintDrag.pointerId != null && e.pointerId !== cpPaintDrag.pointerId) return;
         const drag = cpPaintDrag;
@@ -6562,7 +6562,7 @@ function bindCpCellPaintEvents(td, planId) {
             toggleCpCell(drag.startTd, planId);
             return;
         }
-        try { td.releasePointerCapture(e.pointerId); } catch (err) {}
+        try { td.releasePointerCapture(e.pointerId); } catch (err) { }
 
         if (!drag.dragged || drag.singlePoint) {
             // クリックのみ、または播種・定植 → 1点トグル
@@ -6594,13 +6594,13 @@ function bindCpCellPaintEvents(td, planId) {
     };
 
     td.onpointerup = endDrag;
-    td.onpointercancel = function(e) {
+    td.onpointercancel = function (e) {
         if (!cpPaintDrag || String(cpPaintDrag.planId) !== String(planId)) return;
         if (cpPaintDrag.pointerId != null && e.pointerId !== cpPaintDrag.pointerId) return;
         clearCpPaintQtyHoldTimer_(cpPaintDrag);
         cpPaintDrag = null;
     };
-    td.oncontextmenu = function(e) {
+    td.oncontextmenu = function (e) {
         if (!canEditCpPaintBlockQty_(td)) return;
         e.preventDefault();
         e.stopPropagation();
@@ -6612,7 +6612,7 @@ window.bindCpCellPaintEvents = bindCpCellPaintEvents;
 function toggleCpCell(td, planId) {
     const selected = document.querySelector('input[name="cpTool"]:checked').value;
     let tool = selected;
-    
+
     if (selected === 'semiauto') {
         cpSemiAutoActivePlanId = planId;
         const step = cpSemiAutoSteps[planId] || 0;
@@ -6672,7 +6672,7 @@ function toggleCpCell(td, planId) {
         openCpPaintBlockQtyEditor(td, planId);
         return;
     }
-    
+
     applyPaintTool(td, tool, planId);
     syncCpSemiAutoStepForPlan(planId);
     updateCpCellsText(planId);
@@ -6681,13 +6681,13 @@ function toggleCpCell(td, planId) {
 }
 
 function updateCpCellsText(planId, forceRatioRebuild) {
-    withPreservedCpPanelScroll(function() {
+    withPreservedCpPanelScroll(function () {
         const plansToUpdate = planId ? cpPlans.filter(p => p.id === planId) : cpPlans;
-        
+
         plansToUpdate.forEach(plan => {
             const tr = document.querySelector(`#cpTableBody tr[data-plan-id="${plan.id}"]`);
             if (!tr) return;
-            
+
             const sowingCells = tr.querySelectorAll('td[data-task="sowing"]');
             sowingCells.forEach(td => {
                 const div = td.querySelector('div');
@@ -6700,7 +6700,7 @@ function updateCpCellsText(planId, forceRatioRebuild) {
                     : '';
                 td.title = 'クリック／長押しで' + (plan.holes === 1 ? '株数' : '枚数') + 'を変更（定植面積も追随）';
             });
-            
+
             const plantingCells = tr.querySelectorAll('td[data-task="planting"]');
             plantingCells.forEach(td => {
                 const div = td.querySelector('div');
@@ -6713,7 +6713,7 @@ function updateCpCellsText(planId, forceRatioRebuild) {
                     : '';
                 td.title = 'クリック／長押しで面積を変更（播種枚数も追随）';
             });
-            
+
             const harvestCells = tr.querySelectorAll('td[data-task="harvesting"]');
             const harvestCount = harvestCells.length;
 
@@ -6732,7 +6732,7 @@ function updateCpCellsText(planId, forceRatioRebuild) {
                     periodCountEl.title = '';
                 }
             }
-            
+
             const ratioContainer = document.getElementById(`ratios_${plan.id}`);
             if (ratioContainer) {
                 let ratios = plan.harvestRatios || [];
@@ -6756,7 +6756,7 @@ function updateCpCellsText(planId, forceRatioRebuild) {
                             let maxForThis = (i === 0) ? 1 : round1(1 - usedBefore);
                             let val = (ratios[i] !== undefined && ratios[i] !== null && ratios[i] !== 0) ? ratios[i] : '';
                             if (val !== '' && Number(val) > maxForThis) val = maxForThis > 0 ? maxForThis : '';
-                            html += `<select onchange="updatePlanRatio('${plan.id}', ${i}, this.value)" style="width: 42px; height: 18px; padding: 0 1px; font-size: 11px; border: 1px solid #ccc; border-radius: 3px;" title="枠${i+1}">${buildDecimalSelectOptions(maxForThis, val, true)}</select>`;
+                            html += `<select onchange="updatePlanRatio('${plan.id}', ${i}, this.value)" style="width: 42px; height: 18px; padding: 0 1px; font-size: 11px; border: 1px solid #ccc; border-radius: 3px;" title="枠${i + 1}">${buildDecimalSelectOptions(maxForThis, val, true)}</select>`;
                         }
                     }
                     ratioContainer.innerHTML = html;
@@ -6775,7 +6775,7 @@ function updateCpCellsText(planId, forceRatioRebuild) {
             }
 
             let ratios = plan.harvestRatios || [];
-            
+
             harvestCells.forEach((td, index) => {
                 const div = td.querySelector('div');
                 if (!div) return;
@@ -6802,7 +6802,7 @@ function updateCpCellsText(planId, forceRatioRebuild) {
             });
         });
     });
-    
+
     // 一括読込中は各行ごとの全体再計算を避け、最後に1回だけ実行する。
     if (!window.cpBulkPlanLoadInProgress) {
         if (typeof assignCpPlanTags === 'function') assignCpPlanTags();
@@ -8078,7 +8078,7 @@ function getCachedSavedPlanList_() {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) return parsed;
         if (parsed && Array.isArray(parsed.list)) return parsed.list;
-    } catch (e) {}
+    } catch (e) { }
     return null;
 }
 
@@ -8088,7 +8088,7 @@ function setCachedSavedPlanList_(list) {
             savedAt: Date.now(),
             list: Array.isArray(list) ? list : []
         }));
-    } catch (e) {}
+    } catch (e) { }
 }
 
 /** epoch が一致するときだけ一覧キャッシュを更新（古い裏同期の書き戻し防止） */
@@ -8137,7 +8137,7 @@ function getPendingPlanSaves_() {
 function setPendingPlanSaves_(arr) {
     try {
         localStorage.setItem(CP_PENDING_PLAN_SAVES_KEY, JSON.stringify(Array.isArray(arr) ? arr : []));
-    } catch (e) {}
+    } catch (e) { }
 }
 
 function queuePendingPlanSave_(entry) {
@@ -8252,7 +8252,7 @@ function schedulePendingCultivationPlanFlush_() {
             return;
         }
         setTimeout(() => {
-            try { flushPendingCultivationPlanSaves_(); } catch (e) {}
+            try { flushPendingCultivationPlanSaves_(); } catch (e) { }
         }, 1200);
     };
     setTimeout(tryFlush, 2500);
@@ -8560,7 +8560,7 @@ async function saveCultivationPlan(options) {
 
         const year = getCpVal('cpYear', true) || new Date().getFullYear();
         const crop = getCpVal('cpCrop');
-        
+
         if (!crop) {
             if (opts.auto) return false;
             alert("作物が選択されていません。基本設定から作物を選択してください。");
@@ -8580,7 +8580,7 @@ async function saveCultivationPlan(options) {
 
         // 同じ計画名が既にある場合は上書き / 新規（本作2…）を選択
         let wasOverwrite = cpLoadedPlanKey === buildCpPlanSaveKey(year, crop, planName);
-        const previousPlanName = (function() {
+        const previousPlanName = (function () {
             if (!cpLoadedPlanKey) return '';
             const parts = String(cpLoadedPlanKey).split('\t');
             return parts.length >= 3 ? String(parts[2] || '').trim() : '';
@@ -8637,35 +8637,35 @@ async function saveCultivationPlan(options) {
         const payloadPlans = collectCurrentCpPlansFromDom()
             .filter(plan => String(plan.variety || '').trim())
             .map(plan => {
-            const isExecuted = plan.status === 'executed';
-            return {
-                year: year,
-                planName: planName,
-                planType: planType,
-                location: plan.location || getCpVal('cpLocation') || '',
-                fieldCondition: plan.fieldCondition || getCpVal('cpFieldCondition') || '露地',
-                crop: plan.crop,
-                variety: plan.variety,
-                areaA: plan.areaA,
-                holes: plan.holes,
-                rows: plan.rows,
-                pSpace: plan.pSpace,
-                rSpace: plan.rSpace,
-                yieldRate: plan.yieldRate,
-                seedlingSuccess: plan.seedlingSuccess,
-                harvestRatios: plan.harvestRatios || [],
-                yieldPerPlant: plan.yieldPerPlant,
-                itemsPerPack: plan.itemsPerPack,
-                trays: plan.trays,
-                yield: plan.yield,
-                tasks: plan.tasks,
-                fieldIds: plan.fieldIds || [],
-                tag: isExecuted ? (plan.tag || '') : '',
-                id: plan.id,
-                status: isExecuted ? 'executed' : 'planned',
-                executedAt: isExecuted ? (plan.executedAt || '') : undefined
-            };
-        });
+                const isExecuted = plan.status === 'executed';
+                return {
+                    year: year,
+                    planName: planName,
+                    planType: planType,
+                    location: plan.location || getCpVal('cpLocation') || '',
+                    fieldCondition: plan.fieldCondition || getCpVal('cpFieldCondition') || '露地',
+                    crop: plan.crop,
+                    variety: plan.variety,
+                    areaA: plan.areaA,
+                    holes: plan.holes,
+                    rows: plan.rows,
+                    pSpace: plan.pSpace,
+                    rSpace: plan.rSpace,
+                    yieldRate: plan.yieldRate,
+                    seedlingSuccess: plan.seedlingSuccess,
+                    harvestRatios: plan.harvestRatios || [],
+                    yieldPerPlant: plan.yieldPerPlant,
+                    itemsPerPack: plan.itemsPerPack,
+                    trays: plan.trays,
+                    yield: plan.yield,
+                    tasks: plan.tasks,
+                    fieldIds: plan.fieldIds || [],
+                    tag: isExecuted ? (plan.tag || '') : '',
+                    id: plan.id,
+                    status: isExecuted ? 'executed' : 'planned',
+                    executedAt: isExecuted ? (plan.executedAt || '') : undefined
+                };
+            });
         const hadExecutedPlans = payloadPlans.some(p => p.status === 'executed');
         if (opts.auto && hadExecutedPlans) {
             cpProductionSyncState = { status: 'executed', at: '', error: '' };
@@ -8925,15 +8925,15 @@ async function saveCultivationPlan(options) {
             cpCropHarvestSummaryCache = null;
             if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
             if (typeof updateMapVisuals === 'function') {
-                try { updateMapVisuals(); } catch (e) {}
+                try { updateMapVisuals(); } catch (e) { }
             }
         }
         if (typeof updateCpDraftStatusUI === 'function') updateCpDraftStatusUI();
         if (typeof updateCpSaveButtonLabel === 'function') updateCpSaveButtonLabel();
 
         return true;
-        
-    } catch(e) {
+
+    } catch (e) {
         console.error("栽培計画保存エラー:", e);
         if (opts.auto) {
             cpProductionSyncState = { status: 'offline', at: '', error: String(e && e.message ? e.message : e) };
@@ -8959,7 +8959,7 @@ async function saveCultivationPlan(options) {
                         queuedAt: Date.now()
                     });
                 }
-            } catch (qErr) {}
+            } catch (qErr) { }
             if (typeof updateCpDraftStatusUI === 'function') updateCpDraftStatusUI();
             return false;
         }
@@ -9069,7 +9069,7 @@ function renderSavedPlanListHtml_(list, isLoadMode) {
     let html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
     list.forEach(item => {
         const dateStr = item.lastUpdated
-            ? new Date(item.lastUpdated).toLocaleString('ja-JP', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' })
+            ? new Date(item.lastUpdated).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
             : '';
         const planned = (typeof item.plannedCount === 'number') ? item.plannedCount : item.count;
         const executed = item.executedCount || 0;
@@ -9667,14 +9667,14 @@ function getNurseryTraysPerBed_() {
         const raw = localStorage.getItem(CP_NURSERY_TRAYS_PER_BED_KEY);
         const n = Number(raw);
         if (!isNaN(n) && n > 0) return n;
-    } catch (e) {}
+    } catch (e) { }
     return CP_NURSERY_TRAYS_PER_BED_DEFAULT;
 }
 
 function setNurseryTraysPerBed_(value) {
     const n = Number(value);
     const next = (!isNaN(n) && n > 0) ? n : CP_NURSERY_TRAYS_PER_BED_DEFAULT;
-    try { localStorage.setItem(CP_NURSERY_TRAYS_PER_BED_KEY, String(next)); } catch (e) {}
+    try { localStorage.setItem(CP_NURSERY_TRAYS_PER_BED_KEY, String(next)); } catch (e) { }
     return next;
 }
 
@@ -10276,7 +10276,7 @@ function showCpTagConfirmModal(year, crop, plans, planIds, planType, planName) {
         modal = document.createElement('div');
         modal.id = 'cpTagConfirmModal';
         modal.style.cssText = 'display:none; position:fixed; inset:0; z-index:12050; background:rgba(0,0,0,.6); align-items:center; justify-content:center; padding:14px; box-sizing:border-box;';
-        modal.addEventListener('click', function(e) {
+        modal.addEventListener('click', function (e) {
             if (e.target === modal) closeCpTagConfirmModal();
         });
         document.body.appendChild(modal);
@@ -10297,18 +10297,18 @@ function showCpTagConfirmModal(year, crop, plans, planIds, planType, planName) {
     }).join('');
     const procureLines = buildCpProcurePreviewLines_(plans);
     const procureHtml = procureLines.length
-      ? ('<div style="margin-bottom:12px; border:1px solid #ffe0b2; border-radius:7px; overflow:hidden; background:#fff8e1;">' +
-         '<div style="padding:8px 10px; font-size:12px; font-weight:bold; color:#e65100;">📦 調達（播種の前）</div>' +
-         procureLines.map(line => (
-           '<div style="padding:7px 10px; border-top:1px solid #ffe0b2; font-size:12px; color:#5d4037; line-height:1.45;">' +
-           '<b>' + esc(line.crop) + '</b> ／ ' + esc(line.variety) +
-           '<div style="font-size:11px; color:#6d4c41; margin-top:2px;">規格 ' + esc(line.spec) +
-           ' ／ 必要 ' + esc(line.seedsLabel) +
-           ' → <b style="color:#e65100;">' + esc(line.packsLabel) + '</b></div>' +
-           '</div>'
-         )).join('') +
-         '</div>')
-      : '';
+        ? ('<div style="margin-bottom:12px; border:1px solid #ffe0b2; border-radius:7px; overflow:hidden; background:#fff8e1;">' +
+            '<div style="padding:8px 10px; font-size:12px; font-weight:bold; color:#e65100;">📦 調達（播種の前）</div>' +
+            procureLines.map(line => (
+                '<div style="padding:7px 10px; border-top:1px solid #ffe0b2; font-size:12px; color:#5d4037; line-height:1.45;">' +
+                '<b>' + esc(line.crop) + '</b> ／ ' + esc(line.variety) +
+                '<div style="font-size:11px; color:#6d4c41; margin-top:2px;">規格 ' + esc(line.spec) +
+                ' ／ 必要 ' + esc(line.seedsLabel) +
+                ' → <b style="color:#e65100;">' + esc(line.packsLabel) + '</b></div>' +
+                '</div>'
+            )).join('') +
+            '</div>')
+        : '';
 
     const nameLabel = String(planName || '').trim();
     cpPendingTagExecution = {
@@ -10592,7 +10592,7 @@ window.updateCpUndoRedoUI = updateCpUndoRedoUI;
 
 if (!window._cpEditHistoryKeyBound) {
     window._cpEditHistoryKeyBound = true;
-    document.addEventListener('keydown', function(e) {
+    document.addEventListener('keydown', function (e) {
         const modal = document.getElementById('cultivationPlanModal');
         if (!modal) return;
         const display = modal.style.display || '';
@@ -10788,14 +10788,14 @@ function runCpProductionAutosave_(opts) {
 function bindCpDraftAutosaveGuards_() {
     if (window._cpDraftAutosaveGuardsBound) return;
     window._cpDraftAutosaveGuardsBound = true;
-    try { localStorage.removeItem('jmap_cp_plan_draft'); } catch (e) {}
-    document.addEventListener('visibilitychange', function() {
+    try { localStorage.removeItem('jmap_cp_plan_draft'); } catch (e) { }
+    document.addEventListener('visibilitychange', function () {
         if (document.visibilityState === 'hidden') flushCpDraftAutosave_();
     });
-    window.addEventListener('pagehide', function() {
+    window.addEventListener('pagehide', function () {
         flushCpDraftAutosave_();
     });
-    document.addEventListener('input', function(e) {
+    document.addEventListener('input', function (e) {
         const modal = document.getElementById('cultivationPlanModal');
         if (!modal || !isCpPlanModalOpen_()) return;
         if (!e.target || !modal.contains(e.target)) return;
@@ -10937,12 +10937,12 @@ function updateCpFieldAttachBanner() {
     if (typeof refreshCpHeaderContextBar === 'function') refreshCpHeaderContextBar();
 }
 
-window.clearCpPendingFieldAttach = function() {
+window.clearCpPendingFieldAttach = function () {
     window.cpPendingFieldAttach = null;
     updateCpFieldAttachBanner();
 };
 
-window.setCpPendingFieldAttach = function(attach) {
+window.setCpPendingFieldAttach = function (attach) {
     window.cpPendingFieldAttach = attach || null;
     updateCpFieldAttachBanner();
 };
@@ -10959,7 +10959,7 @@ function applyCpPendingFieldAttach(plan) {
     return true;
 }
 
-window.closeCultivationPlanModal = function() {
+window.closeCultivationPlanModal = function () {
     flushCpDraftAutosave_({ allowWhenClosed: true });
     const modal = document.getElementById('cultivationPlanModal');
     if (modal) modal.style.display = 'none';
@@ -10987,7 +10987,7 @@ function openCultivationPlanModal(options) {
     if (typeof refreshCpStepNextButtons === 'function') refreshCpStepNextButtons();
     renderCultivationPlanTable();
     populateDefaultCpSelects();
-    
+
     // 既存の行をクリア
     const tbody = document.getElementById('cpTableBody');
     if (tbody) tbody.innerHTML = '';
@@ -11010,7 +11010,7 @@ function openCultivationPlanModal(options) {
     updateCpDefaultPlanName();
     updateCpSaveButtonLabel();
     if (typeof resetCpEditHistory === 'function') resetCpEditHistory();
-    
+
     // デフォルトを半自動に合わせ、ヒント表示を更新
     const semiRadio = document.querySelector('input[name="cpTool"][value="semiauto"]');
     if (semiRadio) semiRadio.checked = true;
@@ -11027,7 +11027,7 @@ function openCultivationPlanModal(options) {
     } else {
         updateCpFieldAttachBanner();
     }
-    
+
     const applyOpenedPlanUi_ = () => {
         if (opts.location) {
             setChoiceValue('cpLocation', opts.location, true);
@@ -11054,7 +11054,7 @@ function openCultivationPlanModal(options) {
             cpDraftAutosavePaused = false;
         });
     }
-    
+
     // 左右パネルの縦スクロール同期（二重登録を避ける共通関数）
     setupCpPlanPanelScrollSync();
     ensureCpRightScrollSpacer_();
@@ -11062,7 +11062,7 @@ function openCultivationPlanModal(options) {
 }
 
 /** 圃場（または畝）を起点に栽培計画を開く（農業CAD設定の畝連動対応） */
-window.openCultivationPlanFromField = function(p, attachOpts) {
+window.openCultivationPlanFromField = function (p, attachOpts) {
     if (!p || p.isMarker) {
         if (typeof customAlert === 'function') customAlert('圃場を選択してください。');
         else alert('圃場を選択してください。');
@@ -11086,7 +11086,7 @@ window.openCultivationPlanFromField = function(p, attachOpts) {
             if (rawData && Array.isArray(rawData.unePolygons)) {
                 ridges = rawData.unePolygons;
             }
-        } catch (e) {}
+        } catch (e) { }
     }
 
     // CAD畝が存在し、かつ明示的にスキップされていない場合は選択肢ダイアログを表示
@@ -11131,9 +11131,9 @@ function showRidgeSelectionModalForCultivation(p, ridges) {
     modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:99999; display:flex; justify-content:center; align-items:center; padding:15px; box-sizing:border-box; font-family:sans-serif;';
 
     let ridgeButtonsHtml = ridges.map((r, idx) => {
-        const uLabel = (r.une && r.une.customLabel) ? r.une.customLabel : ((r.une && r.une.group) ? `${r.une.group}-${idx+1}` : `畝${idx+1}`);
+        const uLabel = (r.une && r.une.customLabel) ? r.une.customLabel : ((r.une && r.une.group) ? `${r.une.group}-${idx + 1}` : `畝${idx + 1}`);
         const selId = `${p.id}#une#${r.index != null ? r.index : idx}`;
-        
+
         let ridgeArea = 0;
         if (r.coords && typeof computeCoordsAreaAres === 'function') {
             ridgeArea = computeCoordsAreaAres(r.coords);
@@ -11238,7 +11238,7 @@ function loadCultivationPreset(presetKey) {
         if (fileArea) {
             if (p.fileUrl) {
                 let urls = p.fileUrl.split(',');
-                fileArea.innerHTML = urls.map((u, i) => `<a href="${u.trim()}" target="_blank" style="color: #E91E63; text-decoration: none; font-weight: bold; margin-right: 4px;">📄 資料${urls.length > 1 ? i+1 : ''}を確認</a>`).join('');
+                fileArea.innerHTML = urls.map((u, i) => `<a href="${u.trim()}" target="_blank" style="color: #E91E63; text-decoration: none; font-weight: bold; margin-right: 4px;">📄 資料${urls.length > 1 ? i + 1 : ''}を確認</a>`).join('');
             } else {
                 fileArea.innerHTML = '';
             }
@@ -11257,12 +11257,12 @@ function openVarietyRegistrationModal() {
         alert("作物を選択してください。");
         return;
     }
-    
+
     const variety = getCpVal('cpVariety');
-    
+
     document.getElementById('vrCrop').value = crop;
     document.getElementById('vrVariety').value = variety || '';
-    
+
     // 現在のUIパラメータをプレビュー
     const params = [
         `穴数: ${getCpVal('cpTrayHoles', true) || '-'}`,
@@ -11274,7 +11274,7 @@ function openVarietyRegistrationModal() {
         `1P入り数: ${getCpVal('cpItemsPerPack', true) || '-'}`
     ];
     document.getElementById('vrParamsPreview').innerText = params.join(' / ');
-    
+
     document.getElementById('vrFile').value = '';
     document.getElementById('varietyRegistrationModal').style.display = 'flex';
 }
@@ -11286,22 +11286,22 @@ function closeVarietyRegistrationModal() {
 async function saveVarietyData() {
     const crop = document.getElementById('vrCrop').value;
     const variety = document.getElementById('vrVariety').value;
-    
+
     if (!variety) {
         alert("品種名(設定名)を入力してください。");
         return;
     }
-    
+
     const fileInput = document.getElementById('vrFile');
     const file = fileInput.files[0];
-    
+
     const btn = document.getElementById('btnSaveVarietyModal');
     const originalText = btn ? btn.innerHTML : '保存する';
     if (btn) {
         btn.innerHTML = '保存中...';
         btn.disabled = true;
     }
-    
+
     const params = {
         location: getCpVal('cpLocation') || '',
         crop: crop,
@@ -11313,12 +11313,12 @@ async function saveVarietyData() {
         yieldPerSeedling: getCpVal('cpYieldPerPlant', true) || '',
         itemsPerPack: getCpVal('cpItemsPerPack', true) || ''
     };
-    
+
     try {
         if (file) {
             // Read file as Base64
             const reader = new FileReader();
-            reader.onload = async function(e) {
+            reader.onload = async function (e) {
                 params.fileData = e.target.result;
                 params.fileName = file.name;
                 params.fileType = file.type;
@@ -11339,16 +11339,16 @@ async function sendVarietyToGAS(params, btn, originalText) {
     try {
         const res = await callGAS('saveVarietyWithFile', params);
         alert(res.message);
-        
+
         // Reload master data to get the new preset & url
         cpMasterData = await callGAS('getCultivationMaster');
         localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
-        
+
         // Update the select box
         populateDefaultCpSelects();
-        
+
         closeVarietyRegistrationModal();
-    } catch(e) {
+    } catch (e) {
         alert("保存エラー: " + e.message);
     } finally {
         btn.innerHTML = originalText;
@@ -11364,22 +11364,38 @@ function syncCpInitialSettingsForExistingCards_() {
     }
 }
 
-/** 初期設定（ステップ1〜3タブ）の展開／格納 */
+/** 初期設定（ステップ1〜3画面）とカレンダー画面の段階的切り替え */
 function setCpInitialSettingsOpen(open, options) {
     const opts = options || {};
     const row = document.getElementById('cpStepsRow');
+    const calStage = document.getElementById('cpCalendarStage');
     const btn = document.getElementById('cpInitialSettingsBtn');
+    const labelEl = document.getElementById('cpInitialSettingsBtnLabel');
+    const chevEl = document.getElementById('cpInitialSettingsBtnChevron');
     const willOpen = !!open;
     if (row) row.classList.toggle('is-collapsed', !willOpen);
+    if (calStage) calStage.classList.toggle('is-hidden', willOpen);
     if (btn) {
         btn.classList.toggle('is-open', willOpen);
         btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
     }
+    if (labelEl) {
+        labelEl.textContent = willOpen ? '📅 カレンダー画面へ' : '⚙ 初期設定に戻る';
+    }
+    if (chevEl) {
+        chevEl.textContent = willOpen ? '▸' : '◂';
+    }
     if (!willOpen) {
-        // 格納時はパネルも閉じる（ペイント領域を広く）
+        // カレンダー画面へ遷移時はパネルを閉じ、カレンダーの高さ・スクロールを再計測
         if (opts.keepPanels !== true) {
             openCpStep(0, { skipExpand: true });
         }
+        setTimeout(() => {
+            if (typeof syncLeftHeaderHeight === 'function') syncLeftHeaderHeight();
+            if (typeof syncAllRowHeights === 'function') syncAllRowHeights();
+            if (typeof ensureCpRightScrollSpacer_ === 'function') ensureCpRightScrollSpacer_();
+            if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
+        }, 30);
     } else if (opts.openStep != null) {
         openCpStep(opts.openStep, { skipExpand: true });
     } else if (opts.openDefaultStep) {
@@ -11411,7 +11427,7 @@ function setCpAdvancedSettingsOpen(open) {
     if (wrap) wrap.classList.toggle('is-open', willOpen);
     if (body) body.hidden = !willOpen;
     if (btn) btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
-    try { localStorage.setItem(CP_ADVANCED_SETTINGS_KEY, willOpen ? '1' : '0'); } catch (e) {}
+    try { localStorage.setItem(CP_ADVANCED_SETTINGS_KEY, willOpen ? '1' : '0'); } catch (e) { }
 }
 
 function toggleCpAdvancedSettings() {
@@ -11423,7 +11439,7 @@ window.toggleCpAdvancedSettings = toggleCpAdvancedSettings;
 
 function initCpAdvancedSettings_() {
     let saved = false;
-    try { saved = localStorage.getItem(CP_ADVANCED_SETTINGS_KEY) === '1'; } catch (e) {}
+    try { saved = localStorage.getItem(CP_ADVANCED_SETTINGS_KEY) === '1'; } catch (e) { }
     setCpAdvancedSettingsOpen(saved);
 }
 
@@ -11525,8 +11541,16 @@ function setCpNextBtnState_(btn, hintEl, ready, waitingMsg, readyMsg) {
     }
 }
 
+function setCpStepTabStatus_(stepNum, ready) {
+    const el = document.getElementById('cpStepTab' + stepNum + 'Status');
+    if (!el) return;
+    el.textContent = ready ? '✓ 入力済' : '未完了';
+    el.style.color = ready ? '#2E7D32' : '#90A4AE';
+}
+
 function refreshCpStepNextButtons() {
     const m1 = getCpStep1Missing_();
+    setCpStepTabStatus_(1, m1.length === 0);
     setCpNextBtnState_(
         document.getElementById('cpStep1NextBtn'),
         document.getElementById('cpStep1ReadyHint'),
@@ -11536,6 +11560,7 @@ function refreshCpStepNextButtons() {
     );
 
     const m2 = getCpStep2Missing_();
+    setCpStepTabStatus_(2, m2.length === 0);
     setCpNextBtnState_(
         document.getElementById('cpStep2NextBtn'),
         document.getElementById('cpStep2ReadyHint'),
@@ -11547,11 +11572,18 @@ function refreshCpStepNextButtons() {
     const hasPlan = Array.isArray(cpPlans) && cpPlans.some(p => p && String(p.variety || '').trim());
     const pendingVariety = getCpStep3PendingVariety_();
     const step3Ready = hasPlan || !!pendingVariety;
+    setCpStepTabStatus_(3, step3Ready);
+
+    const jump1 = document.getElementById('cpStep1JumpCalBtn');
+    const jump2 = document.getElementById('cpStep2JumpCalBtn');
+    if (jump1) jump1.style.display = hasPlan ? 'inline-block' : 'none';
+    if (jump2) jump2.style.display = hasPlan ? 'inline-block' : 'none';
+
     const nextBtn = document.getElementById('cpStep3NextBtn');
     if (nextBtn) {
         nextBtn.textContent = pendingVariety
-            ? '追加してカレンダーへ'
-            : '次へ (作型カレンダーへ)';
+            ? '追加してカレンダーへ ▸'
+            : '次へ (作型カレンダーへ) ▸';
     }
     setCpNextBtnState_(
         nextBtn,
@@ -11620,18 +11652,16 @@ function finishCpInitialSettings() {
 }
 window.finishCpInitialSettings = finishCpInitialSettings;
 
-/** タブ初期化（同じタブ再クリックで閉じる） */
+/** タブ初期化（設定画面ではクリックしたステップへ切り替え） */
 function initCpStepsAccordion() {
     for (let i = 1; i <= 3; i++) {
         const tab = document.getElementById('cpStepTab' + i);
         if (!tab || tab._cpStepBound) continue;
         tab._cpStepBound = true;
-        tab.addEventListener('click', function(e) {
+        tab.addEventListener('click', function (e) {
             // onclick="openCpStep(n)" と二重になる場合はこちらを優先
             e.preventDefault();
-            const cur = document.getElementById('cpStep' + i);
-            if (cur && cur.classList.contains('is-open')) openCpStep(0);
-            else openCpStep(i);
+            openCpStep(i);
         });
         // inline onclick を外して二重発火を防ぐ
         tab.removeAttribute('onclick');
@@ -11696,7 +11726,7 @@ function initCpBottomDock() {
         const tab = document.getElementById(tabId);
         if (!tab || tab._cpBottomBound) return;
         tab._cpBottomBound = true;
-        tab.addEventListener('click', function(e) {
+        tab.addEventListener('click', function (e) {
             e.preventDefault();
             const panel = document.getElementById('cpBottomPanel' + id.charAt(0).toUpperCase() + id.slice(1));
             if (panel && panel.classList.contains('is-open')) openCpBottomTab('');
@@ -11724,7 +11754,7 @@ function toggleCultivationMenu() {
     }
 }
 
-document.addEventListener('click', function(e) {
+document.addEventListener('click', function (e) {
     const menu = document.getElementById('cultivationMenu');
     const btn = document.querySelector('button[onclick="toggleCultivationMenu()"]');
     if (menu && btn && !menu.contains(e.target) && !btn.contains(e.target)) {
@@ -11747,12 +11777,12 @@ function openCroptypeRegistrationModal() {
     }
     allCrops = allCrops.filter(c => c && !isCropHidden(c) && !DEFAULT_CP_CROPS.includes(c));
     populateSelect('crCrop', allCrops, getVisibleDefaultCrops());
-    
+
     const currentCrop = getCpVal('cpCrop');
     if (currentCrop) {
         setChoiceValue('crCrop', currentCrop, false);
     }
-    
+
     document.getElementById('croptypeRegistrationModal').style.display = 'flex';
     crSemiAutoStep = 0;
     const semiRadio = document.querySelector('input[name="crTool"][value="semiauto"]');
@@ -12038,7 +12068,7 @@ function renderRegCtTagChips() {
             btn.style.cssText = on
                 ? 'padding:4px 10px; border:none; border-radius:14px; background:#E65100; color:#fff; font-size:11px; font-weight:bold; cursor:pointer;'
                 : 'padding:4px 10px; border:1px solid #FFB74D; border-radius:14px; background:#fff; color:#E65100; font-size:11px; cursor:pointer;';
-            btn.onclick = function() { toggleRegCtSearchTag(tag); };
+            btn.onclick = function () { toggleRegCtSearchTag(tag); };
             wrap.appendChild(btn);
         });
     }
@@ -12352,7 +12382,7 @@ async function deleteRegisteredCroptype(sourceIndex) {
         cpMasterData.croptypesDB.splice(sourceIndex, 1);
         try {
             localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
-        } catch (e) {}
+        } catch (e) { }
         renderRegisteredCroptypeList();
         if (typeof updateVarietyList === 'function') updateVarietyList();
         alert('削除しました。');
@@ -12366,10 +12396,10 @@ function renderCroptypePaintGrid() {
     const table = document.getElementById('crTable');
     if (!table) return;
     table.innerHTML = '';
-    
-    const months = [1,2,3,4,5,6,7,8,9,10,11,12,1,2,3,4,5,6];
+
+    const months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
     const periods = ['上前', '上後', '中前', '中後', '下前', '下後'];
-    
+
     let headerTr1 = document.createElement('tr');
     months.forEach((m, idx) => {
         let label = m + '月';
@@ -12383,7 +12413,7 @@ function renderCroptypePaintGrid() {
         headerTr1.appendChild(th);
     });
     table.appendChild(headerTr1);
-    
+
     let headerTr2 = document.createElement('tr');
     months.forEach(() => {
         for (let p of periods) {
@@ -12394,7 +12424,7 @@ function renderCroptypePaintGrid() {
         }
     });
     table.appendChild(headerTr2);
-    
+
     let tr = document.createElement('tr');
     let cellIndex = 0;
     months.forEach(() => {
@@ -12403,8 +12433,8 @@ function renderCroptypePaintGrid() {
             td.dataset.monthIndex = cellIndex;
             td.dataset.task = '';
             td.style.cssText = 'padding: 0; border: 1px dashed #ccc; cursor: pointer; min-width: 25px;';
-            td.onclick = function() { toggleCrCell(this); };
-            
+            td.onclick = function () { toggleCrCell(this); };
+
             let div = document.createElement('div');
             div.style.cssText = 'width: 100%; height: 35px; transition: 0.1s; box-sizing:border-box; pointer-events: none;';
             td.appendChild(div);
@@ -12417,7 +12447,7 @@ function renderCroptypePaintGrid() {
 
 function toggleCrCell(td) {
     const selected = document.querySelector('input[name="crTool"]:checked').value;
-    
+
     if (selected === 'semiauto') {
         const tool = getSemiAutoTool(crSemiAutoStep);
         const div = td.querySelector('div');
@@ -12458,10 +12488,10 @@ function toggleCrCell(td) {
         updateCrSemiAutoHint();
         return;
     }
-    
+
     const tool = selected;
     const div = td.querySelector('div');
-    
+
     if (tool === 'eraser') {
         td.dataset.task = '';
         div.style.backgroundColor = '';
@@ -12670,7 +12700,7 @@ function renderCrVarietyBadges() {
         edit.style.cssText = isOn
             ? 'opacity:0.9;font-weight:bold;padding-left:2px;'
             : 'opacity:0.45;font-weight:bold;padding-left:2px;color:#888;';
-        edit.onclick = function(e) {
+        edit.onclick = function (e) {
             e.preventDefault();
             e.stopPropagation();
             openVarietyMetaDialog({ mode: 'edit', target: 'cr', variety: tag });
@@ -12683,7 +12713,7 @@ function renderCrVarietyBadges() {
         del.style.cssText = isOn
             ? 'opacity:0.9;font-weight:bold;padding-left:2px;'
             : 'opacity:0.45;font-weight:bold;padding-left:2px;color:#888;';
-        del.onclick = function(e) {
+        del.onclick = function (e) {
             e.preventDefault();
             e.stopPropagation();
             // 作型登録画面ではローカル候補から外す（確認付き）
@@ -12697,7 +12727,7 @@ function renderCrVarietyBadges() {
         };
         btn.appendChild(del);
 
-        btn.onclick = function(e) {
+        btn.onclick = function (e) {
             if (e.target === del || e.target === edit) return;
             setCrVariety(isOn ? '' : tag);
         };
@@ -12785,7 +12815,7 @@ function renderCharacteristicButtons() {
                 : 'display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid #ccc;border-radius:4px;background:#fff;color:#333;cursor:pointer;font-size:11px;line-height:1.2;';
             const label = document.createElement('span');
             label.textContent = tag;
-            label.onclick = function(e) {
+            label.onclick = function (e) {
                 e.stopPropagation();
                 toggleCharacteristicTag(tag);
             };
@@ -12796,9 +12826,9 @@ function renderCharacteristicButtons() {
             del.style.cssText = isOn
                 ? 'opacity:0.85;font-weight:bold;padding-left:2px;'
                 : 'opacity:0.45;font-weight:bold;padding-left:2px;color:#888;';
-            del.onclick = function(e) { deleteCharacteristicTag(tag, e); };
+            del.onclick = function (e) { deleteCharacteristicTag(tag, e); };
             btn.appendChild(del);
-            btn.onclick = function(e) {
+            btn.onclick = function (e) {
                 if (e.target === del) return;
                 toggleCharacteristicTag(tag);
             };
@@ -12839,7 +12869,7 @@ function loadDiseaseResistanceMaster() {
                 icon: String(item.icon || '🛡️')
             }));
         }
-    } catch (e) {}
+    } catch (e) { }
     saveDiseaseResistanceMaster(DEFAULT_DISEASE_RESISTANCES.slice());
     return DEFAULT_DISEASE_RESISTANCES.slice();
 }
@@ -12952,7 +12982,7 @@ function renderVmdDiseaseResistanceBtns() {
         const label = document.createElement('span');
         label.textContent = item.name;
         btn.appendChild(label);
-        btn.onclick = function() { toggleVmdDiseaseResistance(item.id); };
+        btn.onclick = function () { toggleVmdDiseaseResistance(item.id); };
         wrap.appendChild(btn);
     });
 }
@@ -13031,7 +13061,7 @@ function loadMakerMaster() {
     try {
         const raw = JSON.parse(localStorage.getItem(MAKER_STORAGE_KEY) || 'null');
         if (Array.isArray(raw)) return raw;
-    } catch (e) {}
+    } catch (e) { }
     // 初回は代表メーカーを入れておく
     saveMakerMaster(DEFAULT_MAKERS.slice());
     return DEFAULT_MAKERS.slice();
@@ -13130,9 +13160,9 @@ function renderMakerButtons() {
         del.style.cssText = isOn
             ? 'opacity:0.85;font-weight:bold;padding-left:2px;'
             : 'opacity:0.45;font-weight:bold;padding-left:2px;color:#888;';
-        del.onclick = function(e) { deleteMakerTag(tag, e); };
+        del.onclick = function (e) { deleteMakerTag(tag, e); };
         btn.appendChild(del);
-        btn.onclick = function(e) {
+        btn.onclick = function (e) {
             if (e.target === del) return;
             selectMakerTag(tag);
         };
@@ -13159,23 +13189,23 @@ function addCroptypeToList() {
     }
     if (maker) registerMaker(maker);
     registerCropGrainCandidates(crop, grainCount);
-    
+
     const tr = document.querySelector('#crTable tr:last-child');
     const tds = tr.querySelectorAll('td[data-month-index]');
-    
+
     let sowing = [];
     let planting = [];
     let harvesting = [];
-    
+
     tds.forEach((td, idx) => {
         if (td.dataset.task === 'sowing') sowing.push(idx);
         if (td.dataset.task === 'planting') planting.push(idx);
         if (td.dataset.task === 'harvesting') harvesting.push(idx);
     });
-    
+
     const fileInput = document.getElementById('crFile');
     const files = fileInput && fileInput.files ? Array.from(fileInput.files) : [];
-    
+
     const payload = {
         crop: crop,
         variety: variety,
@@ -13190,12 +13220,12 @@ function addCroptypeToList() {
         harvesting: harvesting,
         files: []
     };
-    
+
     if (files.length > 0) {
         const filePromises = files.map(file => {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
-                reader.onload = function(e) {
+                reader.onload = function (e) {
                     const dataUrl = e.target.result;
                     const base64Data = dataUrl.split(',')[1];
                     resolve({
@@ -13209,7 +13239,7 @@ function addCroptypeToList() {
                 reader.readAsDataURL(file);
             });
         });
-        
+
         Promise.all(filePromises).then(fileDataArray => {
             // Append previously edited files if any
             if (window._crEditingFiles && window._crEditingFiles.length > 0) {
@@ -13251,7 +13281,7 @@ function resetCrInputArea() {
         { accent: '#FF9800', accentDark: '#EF6C00' });
     setSelectedCharacteristics('');
     setSelectedMaker('');
-    
+
     const tr = document.querySelector('#crTable tr:last-child');
     if (tr) {
         const tds = tr.querySelectorAll('td[data-month-index]');
@@ -13271,7 +13301,7 @@ function removeCroptypeFromList(index) {
 function editPendingCroptype(index) {
     const item = crPendingCroptypes[index];
     if (!item) return;
-    
+
     // Set UI values
     if (item.variety) setCrVariety(item.variety);
     else setCrVariety('');
@@ -13283,7 +13313,7 @@ function editPendingCroptype(index) {
     setSelectedCharacteristics(item.characteristics || '');
     setSelectedMaker(item.maker || '');
     setGrainTypeValue('crGrainCount', 'crGrainCountBtns', item.grainCount || '', { accent: '#FF9800', accentDark: '#EF6C00' });
-    
+
     // Files are hard to re-attach to the file input (security limits). 
     // We can store them globally and re-attach when saving, but for simplicity we keep them if we just edit the UI?
     // Wait, if we splice, we lose files. So we must put them back in the new payload.
@@ -13297,7 +13327,7 @@ function editPendingCroptype(index) {
             const div = td.querySelector('div');
             if (div) div.style.backgroundColor = '';
         });
-        
+
         if (item.sowing) {
             item.sowing.forEach(idx => {
                 let td = table.querySelector(`td[data-month-index="${idx}"]`);
@@ -13326,13 +13356,13 @@ function editPendingCroptype(index) {
             });
         }
     }
-    
+
     // We can't re-populate <input type="file">. 
     // If the user clicks "リストに追加" again, it creates a new item with no files, 
     // UNLESS we temporarily hold the files from the edited item.
     // Let's store edited files globally.
     window._crEditingFiles = item.files || [];
-    
+
     // Remove from pending list
     crPendingCroptypes.splice(index, 1);
     renderCrPendingList();
@@ -13342,14 +13372,14 @@ function renderCrPendingList() {
     const listDiv = document.getElementById('crPendingList');
     const countSpan = document.getElementById('crPendingCount');
     if (!listDiv || !countSpan) return;
-    
+
     countSpan.innerText = crPendingCroptypes.length;
-    
+
     if (crPendingCroptypes.length === 0) {
         listDiv.innerHTML = '<div style="color: #999; font-size: 12px; text-align: center; padding: 10px;">追加された作型がここに表示されます</div>';
         return;
     }
-    
+
     listDiv.innerHTML = '';
     crPendingCroptypes.forEach((item, index) => {
         const div = document.createElement('div');
@@ -13372,7 +13402,7 @@ function renderCrPendingList() {
             ? ` <span style="font-size:10px; color:#6a1b9a; background:#f3e5f5; padding:2px 4px; border-radius:2px; margin-left: 4px;">🔢 ${formatGrainTypeLabel(item.grainCount)}</span>`
             : ` <span style="font-size:10px; color:#6a1b9a; background:#f3e5f5; padding:2px 6px; border-radius:2px; font-weight:bold; border:1px solid #ce93d8; margin-left: 4px;">⚠ 粒数未登録</span>`;
         let charText = item.characteristics ? ` <span style="font-size:10px; color:#e65100; background:#fff3e0; padding:2px 4px; border-radius:2px; margin-left: 4px;">🏷️ ${item.characteristics}</span>` : '';
-        
+
         // Build mini calendar
         let calendarHtml = '<div style="margin-top: 6px; overflow-x: auto;"><table style="border-collapse: collapse; font-size: 9px; min-width: 100%; text-align: center;">';
         calendarHtml += '<tr>';
@@ -13380,17 +13410,17 @@ function renderCrPendingList() {
             calendarHtml += `<th colspan="6" style="border: 1px solid #eee; background: #f5f5f5; padding: 1px;">${m}月</th>`;
         }
         calendarHtml += '</tr><tr>';
-        
+
         for (let i = 0; i < 72; i++) {
             let bgColor = 'transparent';
             if (item.sowing && item.sowing.includes(i)) bgColor = '#8D6E63';
             else if (item.planting && item.planting.includes(i)) bgColor = '#4CAF50';
             else if (item.harvesting && item.harvesting.includes(i)) bgColor = '#FF9800';
-            
+
             calendarHtml += `<td style="border: 1px solid #eee; padding: 0; min-width: 4px; height: 8px;"><div style="width:100%; height:100%; background-color:${bgColor};"></div></td>`;
         }
         calendarHtml += '</tr></table></div>';
-        
+
         div.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                 <div style="font-size: 13px; font-weight: bold; color: #333;">
@@ -13412,34 +13442,34 @@ async function saveCroptypeData() {
         alert('リストに登録する作型がありません。まずは「リストに追加」してください。');
         return;
     }
-    
+
     const crop = document.getElementById('crCrop').value;
     const climate = document.getElementById('crClimate').value;
-    
+
     if (!crop || !climate) {
         alert('上部の「作物」と「産地」を選択してください。');
         return;
     }
-    
+
     // 共通項目を全てのリストアイテムに適用
     crPendingCroptypes.forEach(item => {
         item.crop = crop;
         item.climate = climate;
     });
-    
+
     const btn = document.getElementById('btnSaveCroptype');
     const originalText = btn.innerHTML;
     btn.innerHTML = '保存中...';
     btn.disabled = true;
-    
+
     try {
         // 全てのアイテムを順番に保存する
         for (let i = 0; i < crPendingCroptypes.length; i++) {
             const item = crPendingCroptypes[i];
-            btn.innerHTML = `保存中 (${i+1}/${crPendingCroptypes.length})...`;
+            btn.innerHTML = `保存中 (${i + 1}/${crPendingCroptypes.length})...`;
             await callGAS('saveCroptypeWithFile', item);
         }
-        
+
         // 全て保存できたらマスタデータを再読み込み（栽培計画ステップ3の候補にも反映）
         btn.innerHTML = 'マスター更新中...';
         for (const item of crPendingCroptypes) {
@@ -13454,16 +13484,16 @@ async function saveCroptypeData() {
         cpMasterData = await callGAS('getCultivationMaster');
         localStorage.setItem('cpMasterDataCache', JSON.stringify(cpMasterData));
         applyCultivationMasterData();
-        
+
         crPendingCroptypes = [];
         renderCrPendingList();
-        
+
         btn.innerHTML = originalText;
         btn.disabled = false;
-        
+
         alert('全ての作型が登録されました！\n作物「' + crop + '」・産地「' + climate + '」の候補として、栽培計画の「3. 品種登録」に表示されます。\n品種マスタ（栽培計画マスタ）にも追加済みです。');
         closeCroptypeRegistrationModal();
-    } catch(e) {
+    } catch (e) {
         console.error(e);
         alert('保存中にエラーが発生しました: ' + e.message);
         btn.innerHTML = originalText;
@@ -13482,7 +13512,7 @@ function updateVarietyCardFieldsDisplay(planId) {
     // selected area
     let selectedArea = 0;
     let selectedNames = [];
-    
+
     if (plan.fieldIds && Array.isArray(plan.fieldIds)) {
         plan.fieldIds.forEach(id => {
             if (typeof window.resolveFieldSelectionInfo === 'function') {
@@ -13521,7 +13551,7 @@ function updateVarietyCardFieldsDisplay(planId) {
     if (namesEl) {
         namesEl.innerText = selectedNames.length > 0 ? selectedNames.join(', ') : '未選択';
     }
-    
+
     if (!window.cpBulkPlanLoadInProgress) {
         setTimeout(() => { if (typeof syncAllRowHeights === 'function') syncAllRowHeights(); }, 50);
         if (typeof refreshCpHeaderContextBar === 'function') refreshCpHeaderContextBar();
@@ -13598,7 +13628,7 @@ async function ensureCultivationMasterForPlanLoad_(opts) {
         || !!(cpMasterData && cpMasterData.crops);
     if (hasCache) {
         if (!opts.deferRefresh && typeof fetchCultivationMaster === 'function') {
-            Promise.resolve().then(() => fetchCultivationMaster()).catch(() => {});
+            Promise.resolve().then(() => fetchCultivationMaster()).catch(() => { });
         }
         return;
     }
@@ -13695,13 +13725,13 @@ async function loadHistoryPlans(yearOverride, cropOverride, planTypeOverride, pl
     const planName = (planNameOverride != null && String(planNameOverride).trim() !== '')
         ? String(planNameOverride).trim()
         : '';
-    
+
     if (!crop) {
         alert("作物を選択してください。");
         finishCpLoadProgress(false, '作物が未選択です');
         return;
     }
-    
+
     // 既存の行をクリア
     const tbody = document.getElementById('cpTableBody');
     if (tbody) tbody.innerHTML = '';
@@ -13810,7 +13840,7 @@ async function loadHistoryPlans(yearOverride, cropOverride, planTypeOverride, pl
                     form: collectCpFormState(),
                     plans: collectCurrentCpPlansFromDom()
                 });
-            } catch (e) {}
+            } catch (e) { }
             cpProductionSyncState = cpHasExecutedPlans_(plans)
                 ? { status: 'executed', at: '', error: '' }
                 : { status: 'saved', at: new Date().toISOString(), error: '' };
@@ -13820,14 +13850,14 @@ async function loadHistoryPlans(yearOverride, cropOverride, planTypeOverride, pl
             try {
                 syncLeftHeaderHeight();
                 syncAllRowHeights();
-            } catch (e) {}
+            } catch (e) { }
             window.cpBulkPlanLoadInProgress = false;
             if (typeof refreshCpPlanLeftSummary === 'function') refreshCpPlanLeftSummary();
             if (typeof refreshCpHeaderContextBar === 'function') refreshCpHeaderContextBar();
             if (typeof syncCpInitialSettingsForExistingCards_ === 'function') syncCpInitialSettingsForExistingCards_();
             finishCpLoadProgress(true, `${plans.length}件の計画（${resolvedName}）を読み込みました`);
             if (typeof fetchCultivationMaster === 'function') {
-                Promise.resolve().then(() => fetchCultivationMaster()).catch(() => {});
+                Promise.resolve().then(() => fetchCultivationMaster()).catch(() => { });
             }
             // 読み込み直後の自動レイアウトがスクロールを奪わないよう保護
             invalidateCpScrollPreserve_(2500);
@@ -13856,7 +13886,7 @@ async function loadHistoryPlans(yearOverride, cropOverride, planTypeOverride, pl
                     if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
                     await waitForCpPlanLayoutReady();
                     invalidateCpScrollPreserve_(2000);
-                } catch (e) {}
+                } catch (e) { }
             });
         } else {
             finishCpLoadProgress(false, '保存済みの計画が見つかりませんでした');
@@ -13915,7 +13945,7 @@ async function deleteSavedCultivationGroup(year, crop, planType, planName) {
         }
         // 端末キャッシュから即除外（保存後の裏同期で復活させない）
         removeCachedSavedPlanSummary_(y, c, n);
-        try { removePendingPlanSave_(buildCpPlanSaveKey(y, c, n)); } catch (e) {}
+        try { removePendingPlanSave_(buildCpPlanSaveKey(y, c, n)); } catch (e) { }
         if (cpLoadedPlanKey === buildCpPlanSaveKey(y, c, n)) cpLoadedPlanKey = null;
         cpCropHarvestSummaryCache = null;
         alert(res.message || '削除しました');
@@ -13948,9 +13978,9 @@ async function selectHistoryPlan(year, crop, planType, planName) {
     // キャッシュ優先でマスタを用意（サーバー待ちで塞がない）
     try {
         await ensureCultivationMasterForPlanLoad_({ deferRefresh: true });
-    } catch (e) {}
+    } catch (e) { }
     setCpLoadProgress(10, '年度・作物をセットしています...', 20);
-    
+
     // Set Year
     const yearSelect = document.getElementById('cpYear');
     if (yearSelect) {
@@ -13966,7 +13996,7 @@ async function selectHistoryPlan(year, crop, planType, planName) {
         }
         setChoiceValue('cpYear', year, false);
     }
-    
+
     // Set Crop（手入力だった作物も選択肢へ記憶）
     if (crop) rememberCustomCrop(crop);
     const cropSelect = document.getElementById('cpCrop');
@@ -13991,7 +14021,7 @@ async function selectHistoryPlan(year, crop, planType, planName) {
             if (custom) custom.style.display = 'none';
         }
     }
-    
+
     // 品種リスト等の重い更新は読込後に回す（読込自体を優先）
     const resolvedType = String(planType || '').trim().indexOf('試作') === 0 ? '試作' : '本作';
     const resolvedName = String(planName || '').trim();
@@ -14005,7 +14035,7 @@ async function selectHistoryPlan(year, crop, planType, planName) {
             if (typeof checkCroptypeDB === 'function') checkCroptypeDB();
             if (typeof onCpCropChangedForCost === 'function') onCpCropChangedForCost();
             if (typeof scheduleRefreshCpWorkSchedulePanel === 'function') scheduleRefreshCpWorkSchedulePanel();
-        } catch (e) {}
+        } catch (e) { }
     });
 }
 window.selectHistoryPlan = selectHistoryPlan;
@@ -14016,7 +14046,7 @@ function compressFileForAI(file, maxSide = 1600, quality = 0.72) {
     return new Promise((resolve, reject) => {
         if (!file.type || !file.type.startsWith('image/')) {
             const reader = new FileReader();
-            reader.onload = function(e) {
+            reader.onload = function (e) {
                 const dataUrl = e.target.result;
                 resolve({
                     base64Data: dataUrl.split(',')[1],
@@ -14032,7 +14062,7 @@ function compressFileForAI(file, maxSide = 1600, quality = 0.72) {
 
         const img = new Image();
         const url = URL.createObjectURL(file);
-        img.onload = function() {
+        img.onload = function () {
             URL.revokeObjectURL(url);
             let w = img.naturalWidth || img.width;
             let h = img.naturalHeight || img.height;
@@ -14052,7 +14082,7 @@ function compressFileForAI(file, maxSide = 1600, quality = 0.72) {
                 fileType: 'image/jpeg'
             });
         };
-        img.onerror = function() {
+        img.onerror = function () {
             URL.revokeObjectURL(url);
             reject(new Error('画像の読み込みに失敗しました: ' + file.name));
         };
@@ -14064,12 +14094,12 @@ async function executeAICropExtraction() {
     const fileInput = document.getElementById('crFile');
     const climateSelect = document.getElementById('crClimate');
     const loadingDiv = document.getElementById('crAILoading');
-    
+
     if (!fileInput.files || fileInput.files.length === 0) {
         alert("関連資料（画像やPDF）を選択してください。");
         return;
     }
-    
+
     const climate = climateSelect.value || '一般地';
     const allFiles = Array.from(fileInput.files);
     const MAX_AI_FILES = 3;
@@ -14077,12 +14107,12 @@ async function executeAICropExtraction() {
     if (allFiles.length > MAX_AI_FILES) {
         alert(`トークン節約のため、先頭${MAX_AI_FILES}ファイルのみAI解析します（選択: ${allFiles.length}件）。`);
     }
-    
+
     loadingDiv.style.display = 'block';
-    
+
     try {
         const fileDataArray = await Promise.all(files.map(f => compressFileForAI(f)));
-        
+
         try {
             const res = await callGAS('parseCropImageWithGemini', {
                 files: fileDataArray,
@@ -14106,22 +14136,22 @@ async function executeAICropExtraction() {
 
 function applyAICropExtractionResult(data) {
     if (!data) return;
-    
+
     const mapPeriodToIndex = (month, period) => {
         let mIdx = parseInt(month);
         if (isNaN(mIdx) || mIdx < 1 || mIdx > 12) return -1;
-        let baseMonthIndex = mIdx - 1; 
-        
+        let baseMonthIndex = mIdx - 1;
+
         let pOffset = 0; // 上前
         if (period && period.includes('中')) pOffset = 2; // 中前
         else if (period && period.includes('下')) pOffset = 4; // 下前
-        
+
         return baseMonthIndex * 6 + pOffset;
     };
 
     const table = document.getElementById('crTable');
     if (!table) return;
-    
+
     // reset all
     const allTds = table.querySelectorAll('td[data-month-index]');
     allTds.forEach(td => {
@@ -14129,7 +14159,7 @@ function applyAICropExtractionResult(data) {
         const div = td.querySelector('div');
         if (div) div.style.background = 'transparent';
     });
-    
+
     // Auto-fill crop, climate, variety if present
     if (data.crop) {
         let crCrop = document.getElementById('crCrop');
@@ -14150,7 +14180,7 @@ function applyAICropExtractionResult(data) {
             setChoiceValue('crCrop', data.crop, false);
         }
     }
-    
+
     if (data.climate) {
         let crClimate = document.getElementById('crClimate');
         if (crClimate) {
@@ -14162,11 +14192,11 @@ function applyAICropExtractionResult(data) {
             }
         }
     }
-    
+
     if (data.variety) {
         setCrVariety(data.variety);
     }
-    
+
     if (data.characteristics) {
         const crop = document.getElementById('crCrop') ? document.getElementById('crCrop').value : '';
         const tags = parseCharacteristicsList(data.characteristics);
@@ -14177,7 +14207,7 @@ function applyAICropExtractionResult(data) {
     } else {
         renderCharacteristicButtons();
     }
-    
+
     if (data.maker) {
         setSelectedMaker(data.maker);
     } else {
@@ -14186,12 +14216,12 @@ function applyAICropExtractionResult(data) {
     if (data.grainCount !== undefined && data.grainCount !== null) {
         setGrainTypeValue('crGrainCount', 'crGrainCountBtns', data.grainCount, { accent: '#FF9800', accentDark: '#EF6C00' });
     }
-    
+
     // Process multiple types if available
     if (data.types && Array.isArray(data.types) && data.types.length > 0) {
         const fileInput = document.getElementById('crFile');
         const files = fileInput && fileInput.files ? Array.from(fileInput.files) : [];
-        
+
         const processPayloads = (fileDataArray) => {
             data.types.forEach(t => {
                 let maxLen = 1;
@@ -14203,7 +14233,7 @@ function applyAICropExtractionResult(data) {
                     let s_arr = [];
                     let p_arr = [];
                     let h_arr = [];
-                    
+
                     if (t.sowing && Array.isArray(t.sowing) && t.sowing[idx]) {
                         let item = t.sowing[idx];
                         let startIdx = mapPeriodToIndex(item.start_month, item.start_period);
@@ -14245,7 +14275,7 @@ function applyAICropExtractionResult(data) {
                             }
                         }
                     }
-                    
+
                     const payload = {
                         crop: document.getElementById('crCrop') ? document.getElementById('crCrop').value : '',
                         variety: getCrVariety() || (document.getElementById('crVariety') ? document.getElementById('crVariety').value : ''),
@@ -14266,12 +14296,12 @@ function applyAICropExtractionResult(data) {
             renderCrPendingList();
             alert(`AIによる自動入力が完了し、作型をリストに追加しました。不要な作型は「削除」してください。`);
         };
-        
+
         if (files.length > 0) {
             const filePromises = files.map(file => {
                 return new Promise((resolve, reject) => {
                     const reader = new FileReader();
-                    reader.onload = function(e) {
+                    reader.onload = function (e) {
                         const dataUrl = e.target.result;
                         const base64Data = dataUrl.split(',')[1];
                         resolve({
@@ -14322,7 +14352,7 @@ function applyAICropExtractionResult(data) {
                 }
             });
         }
-        
+
         // Apply planting
         if (data.planting && Array.isArray(data.planting)) {
             data.planting.forEach(item => {
@@ -14349,17 +14379,17 @@ function applyAICropExtractionResult(data) {
                 }
             });
         }
-        
+
         // Apply harvesting
         if (data.harvesting && Array.isArray(data.harvesting)) {
             data.harvesting.forEach(item => {
                 let startIdx = mapPeriodToIndex(item.start_month, item.start_period);
                 let endIdx = mapPeriodToIndex(item.end_month, item.end_period);
-                
+
                 if (endIdx < startIdx && endIdx !== -1) {
                     endIdx += 12 * 6; // next year
                 }
-                
+
                 if (startIdx >= 0 && endIdx >= startIdx) {
                     for (let i = startIdx; i <= endIdx + 1; i++) { // Include upper bound + 1 to cover "後" half of the period
                         let td = table.querySelector(`td[data-month-index="${i}"]`);
@@ -14371,7 +14401,7 @@ function applyAICropExtractionResult(data) {
                 }
             });
         }
-        
+
         alert("AIによる自動入力が完了しました。はみ出た箇所や不足箇所を微調整してください。");
     }
 }
@@ -14395,7 +14425,7 @@ function getCpExternalSheetUrl_() {
     const urlEl = document.getElementById('cpExternalSheetUrl');
     const url = (urlEl && urlEl.value.trim()) || CP_EXT_SHEET_DEFAULT_URL;
     if (urlEl) urlEl.value = url;
-    try { localStorage.setItem(CP_EXT_SHEET_URL_KEY, url); } catch (e) {}
+    try { localStorage.setItem(CP_EXT_SHEET_URL_KEY, url); } catch (e) { }
     return url;
 }
 

@@ -37,6 +37,7 @@ const API_ACTIONS = {
   "listUsersForAdmin": function (p) { return listUsersForAdmin(p); },
   "updateUserRole": function (p) { return updateUserRole(p); },
   "getInitData": function (p) { return getInitData(p || {}); },
+  "getMapDelta": function (p) { return getMapDelta(p || {}); },
   "getDeliveryDestinations": function (p) { return getDeliveryDestinations(); },
   "saveDeliveryDestination": function (p) { return saveDeliveryDestination(p); },
   "deleteDeliveryDestination": function (p) { return deleteDeliveryDestination(p); },
@@ -1401,6 +1402,184 @@ pdl.materials = [];
   };
 
 } // ← これが getInitData を閉じる } です
+
+/** 地図差分同期（看板＋圃場）。getInitData より軽量 */
+function parseMapDeltaSinceMs_(since) {
+  if (since == null || since === '') return null;
+  if (typeof since === 'number' && isFinite(since)) return since;
+  const s = String(since).trim();
+  if (!s) return null;
+  const iso = Date.parse(s);
+  if (!isNaN(iso)) return iso;
+  const m = s.match(/(\d{4})[\/\-年](\d{1,2})[\/\-月](\d{1,2})[日\sT]*(\d{1,2})?[:時]?(\d{1,2})?/);
+  if (m) {
+    const y = parseInt(m[1], 10);
+    const mo = parseInt(m[2], 10) - 1;
+    const d = parseInt(m[3], 10);
+    const hh = parseInt(m[4] || '0', 10);
+    const mm = parseInt(m[5] || '0', 10);
+    return new Date(y, mo, d, hh, mm, 0).getTime();
+  }
+  return null;
+}
+
+function formatMapDeltaRegisteredAt_(val) {
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    return Utilities.formatDate(val, 'JST', 'yyyy/MM/dd HH:mm:ss');
+  }
+  return String(val || '').trim();
+}
+
+function mapDeltaCoordsKey_(coords) {
+  try { return JSON.stringify(coords || []); } catch (e) { return ''; }
+}
+
+function mapDeltaSlimUneSim_(raw) {
+  const s = (raw == null) ? '' : String(raw);
+  if (!s) return '';
+  if (s.length <= 1500) return s;
+  try {
+    const obj = JSON.parse(s);
+    let count = parseInt(obj && obj.uneCount, 10) || 0;
+    if (!count && obj && Array.isArray(obj.unePolygons)) count = obj.unePolygons.length;
+    if (!count && Array.isArray(obj)) count = obj.length;
+    const fp = (typeof cadHistoryFingerprint_ === 'function') ? cadHistoryFingerprint_(s) : '';
+    if (count > 0 || (obj && Array.isArray(obj.pins) && obj.pins.length > 0)) {
+      return JSON.stringify({ uneCount: count, fp: fp, _slim: true });
+    }
+  } catch (e) {}
+  return '';
+}
+
+function mapDeltaSignFingerprint_(row) {
+  return [
+    String(row.name || ''),
+    String(row.color || ''),
+    String(row.location || ''),
+    String(row.signFunction || ''),
+    mapDeltaCoordsKey_(row.coords)
+  ].join('\u0001');
+}
+
+function mapDeltaFieldFingerprint_(row) {
+  return [
+    String(row.name || ''),
+    String(row.location || ''),
+    String(row.condition || ''),
+    String(row.area || ''),
+    String(row.status || ''),
+    String(row.soilType || ''),
+    String(row.water_status || ''),
+    String(row.drainage_status || ''),
+    String(row.uneSimData || ''),
+    mapDeltaCoordsKey_(row.coords)
+  ].join('\u0001');
+}
+
+/** 看板シートを軽量読み込み（写真・畝CADなし） */
+function readSignboardMapDeltaItems_() {
+  const ss = TENANT_SS;
+  const sheet = ss.getSheetByName('看板');
+  if (!sheet) return [];
+  let signLocCol = -1;
+  try { signLocCol = findSignLocationColumnIndex_(sheet); } catch (e) { signLocCol = -1; }
+  const data = sheet.getDataRange().getValues();
+  const items = [];
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    let coords = [];
+    try { coords = JSON.parse(data[i][2] || '[]'); } catch (e) { continue; }
+    if (!Array.isArray(coords) || !coords.length) continue;
+    const item = {
+      id: String(data[i][0]),
+      name: data[i][1] || '',
+      coords: coords,
+      color: data[i][3] || '',
+      author: data[i][5] || '',
+      location: signLocCol >= 0 ? (String(data[i][signLocCol] || '').trim() || '') : '',
+      signFunction: data[i][7] || '一般看板',
+      registeredAt: formatMapDeltaRegisteredAt_(data[i][4]),
+      isMarker: true
+    };
+    item.fp = mapDeltaSignFingerprint_(item);
+    items.push(item);
+  }
+  return items;
+}
+
+/** 圃場シートを軽量読み込み（写真なし・畝CADは件数のみ） */
+function readFieldMapDeltaItems_() {
+  const ss = TENANT_SS;
+  const sheet = ss.getSheetByName('圃場');
+  if (!sheet) return [];
+  const data = sheet.getDataRange().getValues();
+  const items = [];
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    let coords = [];
+    try { coords = JSON.parse(data[i][5] || '[]'); } catch (e) { continue; }
+    if (!Array.isArray(coords) || coords.length < 2) continue; // 1点は看板扱い
+    const item = {
+      id: String(data[i][0]),
+      name: data[i][1] || '',
+      location: data[i][2] || '',
+      condition: data[i][3] || '',
+      area: data[i][4] || 0,
+      coords: coords,
+      color: '',
+      author: data[i][8] || '',
+      status: data[i][10] || '',
+      toukiId: data[i][11] || '',
+      uneSimData: mapDeltaSlimUneSim_(data[i][15]),
+      water_status: data[i][16] || 'stopped',
+      drainage_status: data[i][19] || '',
+      soilType: data[i][20] || '',
+      registeredAt: formatMapDeltaRegisteredAt_(data[i][7]),
+      isMarker: false
+    };
+    item.fp = mapDeltaFieldFingerprint_(item);
+    items.push(item);
+  }
+  return items;
+}
+
+/**
+ * 地図差分 API
+ * @param {{ since?: string|number, kinds?: string[] }} params
+ * kinds 未指定時は sign + field
+ */
+function getMapDelta(params) {
+  params = params || {};
+  requireTenantSs_();
+  const kinds = Array.isArray(params.kinds) && params.kinds.length
+    ? params.kinds.map(function (k) { return String(k || '').trim(); }).filter(Boolean)
+    : ['sign', 'field'];
+  const wantSign = kinds.indexOf('sign') >= 0 || kinds.indexOf('all') >= 0;
+  const wantField = kinds.indexOf('field') >= 0 || kinds.indexOf('all') >= 0;
+  const serverTime = new Date().toISOString();
+  const out = {
+    serverTime: serverTime,
+    signs: null,
+    fields: null,
+    since: params.since || null
+  };
+  if (wantSign) {
+    const items = readSignboardMapDeltaItems_();
+    out.signs = {
+      allIds: items.map(function (it) { return it.id; }),
+      items: items
+    };
+  }
+  if (wantField) {
+    const items = readFieldMapDeltaItems_();
+    out.fields = {
+      allIds: items.map(function (it) { return it.id; }),
+      items: items
+    };
+  }
+  return out;
+}
+
 
 function getDeliveryDestinations() {
   try {

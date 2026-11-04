@@ -433,7 +433,12 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   border-radius: 10px !important;
 }
 body.bulk-work-memo-map-picking .map-action-bar {
-  bottom: calc(118px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--bulk-map-select-bar-h, 160px) + 12px) !important;
+  z-index: 10060 !important;
+}
+body.bulk-work-memo-map-picking #workerLegendUI {
+  bottom: calc(var(--bulk-map-select-bar-h, 160px) + 12px) !important;
+  z-index: 10060 !important;
 }
 
 /* 作業記録の時刻入力（カスタムピッカー起動） */

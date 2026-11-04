@@ -23,7 +23,7 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="worker.css?v=1788600000019">
+  <link rel="stylesheet" href="worker.css?v=1788600000020">
   <link rel="stylesheet" href="location-pin.css?v=1788600000301">
   <style>
     @keyframes workerBootSpin {
@@ -101,7 +101,8 @@
     #recordSyncBanner {
       display: none;
       position: fixed;
-      top: 14px;
+      /* 検索・更新・アカウント／天気チップの下に置き、上段ボタンと被らないようにする */
+      top: max(112px, calc(env(safe-area-inset-top, 0px) + 104px));
       left: 50%;
       transform: translateX(-50%);
       z-index: 250000;
@@ -435,6 +436,12 @@
                 <button type="button" onclick="exitWorkRidgeSelectionView()"
                   style="flex:1; min-width:120px; background:#607D8B; color:#fff; border:none; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">畝選択を閉じめE/button>
             </div>
+            <div id="mapSelectRegActions" style="display:flex; width:100%; gap:8px; margin-bottom:4px;">
+              <button type="button" onclick="window.startWorkerMapSelectAddField_()"
+                style="flex:1; background:#FF9800; color:#fff; border:none; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; box-shadow:0 2px 6px rgba(0,0,0,0.25);">✏️ 圃場を登録</button>
+              <button type="button" onclick="window.startWorkerMapSelectAddSign_()"
+                style="flex:1; background:#9C27B0; color:#fff; border:none; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; box-shadow:0 2px 6px rgba(0,0,0,0.25);">📍 看板を登録</button>
+            </div>
             <button onclick="applyMapSelect()"
               style="flex:1; background:#4CAF50; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">決定すめE/button>
               <button onclick="cancelMapSelect()"
@@ -620,10 +627,11 @@
             <script src="machine-taxonomy.js?v=1788600000011"></script>
             <script src="weather-agri.js?v=1788600000103"></script>
             <script src="api-client.js?v=1788600000076"></script>
+            <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js" defer></script>
             <script src="location-pin.js?v=1788600000301"></script>
-            <script src="worker.js?v=1788600000323"></script>
-            <script src="release-notes.js?v=1788600000320"></script>
-            <script src="tracking.js?v=1788600000320"></script>
+            <script src="worker.js?v=1788600000324"></script>
+            <script src="release-notes.js?v=1788600000324"></script>
+            <script src="tracking.js?v=1788600000323"></script>
             <script>
               if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.register('/sw.js?v=worker3', { scope: '/worker2.html' }).catch(function () { });

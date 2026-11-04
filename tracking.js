@@ -3915,15 +3915,29 @@
     refreshReleaseNotesBadge_();
   }
 
+  function isReleaseNoteEntryUnread_(entry, index, seenId) {
+    if (!entry || !entry.id) return false;
+    const s = String(seenId != null ? seenId : getReleaseNotesSeenId_()).trim();
+    if (!s) return index === 0;
+    const entryNum = Number(entry.id);
+    const seenNum = Number(s);
+    if (!isNaN(entryNum) && !isNaN(seenNum)) return entryNum > seenNum;
+    return index === 0 && String(entry.id) !== s;
+  }
+
+  function getUnreadReleaseNotesCount_(seenId) {
+    const list = getReleaseNotesList_();
+    if (!list.length) return 0;
+    const s = seenId != null ? seenId : getReleaseNotesSeenId_();
+    let count = 0;
+    list.forEach(function (entry, idx) {
+      if (isReleaseNoteEntryUnread_(entry, idx, s)) count++;
+    });
+    return count;
+  }
+
   function hasUnreadReleaseNotes_() {
-    const latest = getLatestReleaseNoteId_();
-    if (!latest) return false;
-    const seen = getReleaseNotesSeenId_();
-    if (!seen) return true;
-    const latestNum = Number(latest);
-    const seenNum = Number(seen);
-    if (!isNaN(latestNum) && !isNaN(seenNum)) return latestNum > seenNum;
-    return latest !== seen;
+    return getUnreadReleaseNotesCount_() > 0;
   }
 
   function formatReleaseNoteMessage_(msg) {
@@ -3944,6 +3958,64 @@
       .replace(/"/g, '&quot;');
   }
 
+  const RELEASE_NOTE_CATEGORY_STYLES_ = {
+    '畝CAD・図面': { icon: '📐', bg: '#EDE7F6', color: '#4527A0', border: '#B39DDB' },
+    '栽培計画': { icon: '🌱', bg: '#E8F5E9', color: '#1B5E20', border: '#A5D6A7' },
+    'マップ・圃場': { icon: '🗺️', bg: '#E0F2F1', color: '#004D40', border: '#80CBC4' },
+    '看板・ピン': { icon: '📍', bg: '#E3F2FD', color: '#0D47A1', border: '#90CAF9' },
+    '作業画面': { icon: '📝', bg: '#FFF3E0', color: '#E65100', border: '#FFCC80' },
+    'スケジュール': { icon: '📅', bg: '#FFF8E1', color: '#E65100', border: '#FFE082' },
+    '出退勤・休憩': { icon: '⏰', bg: '#FBE9E7', color: '#BF360C', border: '#FFAB91' },
+    '農薬・資材': { icon: '🧪', bg: '#FCE4EC', color: '#880E4F', border: '#F48FB1' },
+    '市況・原価': { icon: '📈', bg: '#E8EAF6', color: '#1A237E', border: '#9FA8DA' },
+    '機械・車両': { icon: '🚜', bg: '#EFEBE9', color: '#3E2723', border: '#BCAAA4' },
+    '天気・環境': { icon: '⛅', bg: '#E1F5FE', color: '#01579B', border: '#81D4FA' },
+    'お知らせ・システム': { icon: '🔔', bg: '#ECEFF1', color: '#37474F', border: '#B0BEC5' }
+  };
+
+  const RELEASE_NOTE_INFER_RULES_ = [
+    { tag: '畝CAD・図面', re: /CAD|図面|枕畝|畝番号|畝件数|3D|スナップ/i },
+    { tag: '栽培計画', re: /栽培計画|播種|定植|育苗|作型/i },
+    { tag: 'スケジュール', re: /スケジュール|予定|カレンダー|日次/i },
+    { tag: '出退勤・休憩', re: /出退勤|出勤|退勤|休憩|昼休憩|休暇/i },
+    { tag: '農薬・資材', re: /農薬|資材|肥料|希釈|病害虫|散布/i },
+    { tag: '市況・原価', re: /市況|原価|相場|コスト/i },
+    { tag: '機械・車両', re: /機械|農機|車両|給油|整備|アワメーター/i },
+    { tag: '看板・ピン', re: /看板/i },
+    { tag: 'マップ・圃場', re: /圃場|メジャー|計測|地図|マップ|衛星|NDVI|写真一覧/i },
+    { tag: '作業画面', re: /作業|一括入力|記録|収穫|ロット/i },
+    { tag: '天気・環境', re: /天気|気象|雨雲|レーダー|風向/i },
+    { tag: 'お知らせ・システム', re: /お知らせ|更新情報|ボタン|UI|ログイン|通知/i }
+  ];
+
+  function getReleaseNoteTags_(entry) {
+    if (entry && Array.isArray(entry.tags) && entry.tags.length > 0) {
+      return entry.tags.map(function (t) { return String(t || '').trim(); }).filter(Boolean);
+    }
+    const msg = formatReleaseNoteMessage_(entry && entry.message);
+    const matched = [];
+    RELEASE_NOTE_INFER_RULES_.forEach(function (rule) {
+      if (rule.re.test(msg) && matched.indexOf(rule.tag) === -1) {
+        matched.push(rule.tag);
+      }
+    });
+    return matched.length ? matched.slice(0, 4) : ['お知らせ・システム'];
+  }
+
+  function renderReleaseNoteTagBadgesHtml_(entry) {
+    const tags = getReleaseNoteTags_(entry);
+    return tags.map(function (tag) {
+      const st = RELEASE_NOTE_CATEGORY_STYLES_[tag] || { icon: '🏷️', bg: '#ECEFF1', color: '#37474F', border: '#CFD8DC' };
+      return (
+        '<span style="display:inline-flex; align-items:center; gap:3px; font-size:11px; font-weight:bold; ' +
+        'padding:2px 8px; border-radius:999px; background:' + st.bg + '; color:' + st.color + '; border:1px solid ' + st.border + '; line-height:1.35;">' +
+          '<span>' + st.icon + '</span>' +
+          '<span>' + escapeReleaseHtml_(tag) + '</span>' +
+        '</span>'
+      );
+    }).join('');
+  }
+
   function ensureReleaseNotesModalShell_() {
     let modal = document.getElementById('passionMapReleaseNotesModal');
     if (modal) return modal;
@@ -3958,12 +4030,13 @@
   }
 
   window.refreshReleaseNotesBadge_ = function () {
-    const unread = hasUnreadReleaseNotes_();
+    const unreadCount = getUnreadReleaseNotesCount_();
+    const unread = unreadCount > 0;
     const badges = document.querySelectorAll('[data-release-notes-badge]');
     badges.forEach(function (badge) {
       if (unread) {
         badge.style.display = 'inline-block';
-        badge.textContent = '1';
+        badge.textContent = String(unreadCount);
       } else {
         badge.style.display = 'none';
         badge.textContent = '';
@@ -3973,18 +4046,35 @@
   };
 
   window.openReleaseNotesModal_ = function () {
+    const prevSeenId = getReleaseNotesSeenId_();
     markReleaseNotesSeen_();
     const list = getReleaseNotesList_();
     const rows = list.length
-      ? list.map(function (entry) {
+      ? list.map(function (entry, idx) {
           const dateLabel = formatReleaseNoteDate_(entry.date);
           const msg = formatReleaseNoteMessage_(entry.message);
+          const isUnread = isReleaseNoteEntryUnread_(entry, idx, prevSeenId);
+          const tagBadgesHtml = renderReleaseNoteTagBadgesHtml_(entry);
+          const newBadgeHtml = isUnread
+            ? '<span style="display:inline-flex; align-items:center; background:linear-gradient(135deg,#FF5252,#D32F2F); color:#fff; font-size:10px; font-weight:800; padding:2px 7px; border-radius:999px; letter-spacing:0.5px; box-shadow:0 1px 3px rgba(211,47,47,0.35);">NEW</span>'
+            : '';
+          const cardStyle = isUnread
+            ? 'border:1.5px solid #FF8A65; border-radius:10px; padding:12px; margin-bottom:10px; background:#FFFDF9; box-shadow:0 2px 8px rgba(229,57,53,0.08);'
+            : 'border:1px solid #B2DFDB; border-radius:10px; padding:12px; margin-bottom:10px; background:#F1FAF9;';
           return (
-            '<div style="border:1px solid #B2DFDB; border-radius:10px; padding:12px; margin-bottom:10px; background:#F1FAF9;">' +
-              '<div style="font-size:11px; color:#00897B; font-weight:bold; margin-bottom:4px;">' +
-                escapeReleaseHtml_(dateLabel || '日付不明') +
+            '<div style="' + cardStyle + '">' +
+              '<div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px; margin-bottom:6px;">' +
+                '<div style="display:flex; align-items:center; gap:6px;">' +
+                  '<span style="font-size:11px; color:#00897B; font-weight:bold;">' +
+                    escapeReleaseHtml_(dateLabel || '日付不明') +
+                  '</span>' +
+                  newBadgeHtml +
+                '</div>' +
+                '<div style="display:flex; align-items:center; flex-wrap:wrap; gap:4px;">' +
+                  tagBadgesHtml +
+                '</div>' +
               '</div>' +
-              '<div style="font-size:13px; font-weight:bold; color:#004D40; line-height:1.45;">' +
+              '<div style="font-size:13px; font-weight:bold; color:#004D40; line-height:1.5;">' +
                 escapeReleaseHtml_(msg || '（内容なし）') +
               '</div>' +
             '</div>'
@@ -3993,9 +4083,9 @@
       : '<div style="padding:20px 12px; text-align:center; color:#888; font-size:13px;">まだ更新情報はありません。</div>';
 
     const bodyHtml =
-      '<div style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">' +
-        '<div style="font-size:17px; font-weight:bold; color:#00695C; margin-bottom:6px;">更新情報</div>' +
-        '<div style="font-size:12px; color:#666; margin-bottom:14px; line-height:1.4;">最近のデプロイ内容です。コミットメッセージをそのまま表示しています。</div>' +
+      '<div style="background:#fff; width:100%; max-width:460px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">' +
+        '<div style="font-size:17px; font-weight:bold; color:#00695C; margin-bottom:6px;">📣 更新情報</div>' +
+        '<div style="font-size:12px; color:#666; margin-bottom:14px; line-height:1.4;">最近の機能アップデート内容です。新しく追加された項目には <span style="display:inline-block; background:#D32F2F; color:#fff; font-size:10px; font-weight:bold; padding:1px 5px; border-radius:999px;">NEW</span> が表示されます。</div>' +
         '<div style="margin-bottom:12px;">' + rows + '</div>' +
         '<button type="button" onclick="closeReleaseNotesModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>' +
       '</div>';
