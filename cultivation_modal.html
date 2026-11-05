@@ -1,3 +1,71 @@
+<!-- 栽培計画モード選択モーダル（シンプルモード／通常モード） -->
+<div id="cpModeSelectModal"
+  style="display:none; position:fixed; inset:0; z-index:11000; background:rgba(0,0,0,0.68); align-items:center; justify-content:center; padding:16px; box-sizing:border-box;">
+  <div style="background:#fff; border-radius:14px; width:min(94vw, 600px); max-height:92vh; overflow-y:auto; box-shadow:0 12px 40px rgba(0,0,0,0.3); display:flex; flex-direction:column; box-sizing:border-box; animation:cpStepPanelIn 0.2s ease forwards;">
+    
+    <!-- モーダルヘッダー -->
+    <div style="padding:18px 22px 14px; border-bottom:1px solid #ECEFF1; display:flex; justify-content:space-between; align-items:center;">
+      <div>
+        <h3 style="margin:0; font-size:18px; color:#2E7D32; display:flex; align-items:center; gap:8px;">
+          🌱 <span>栽培計画の作成</span>
+        </h3>
+        <p style="margin:4px 0 0; font-size:12px; color:#607D8B;">計画の作成方法（モード）を選択してください</p>
+      </div>
+      <span style="cursor:pointer; font-size:26px; line-height:1; color:#9E9E9E; padding:0 4px;" onclick="closeCpModeSelectModal()">×</span>
+    </div>
+
+    <!-- モーダルボディ: 2枚の選択カード -->
+    <div style="padding:22px; display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+      
+      <!-- カード1: ⚡ シンプルモード（おすすめ） -->
+      <div onclick="selectCultivationMode('simple')" class="cp-mode-choice-card cp-mode-choice-card--simple"
+        style="border:2px solid #BA68C8; background:linear-gradient(180deg, #FAF5FB 0%, #FFFFFF 100%); border-radius:12px; padding:20px 16px; cursor:pointer; display:flex; flex-direction:column; justify-content:space-between; transition:all 0.2s ease; box-shadow:0 4px 14px rgba(142,36,170,0.12); position:relative;">
+        <div style="position:absolute; top:-10px; right:12px; background:linear-gradient(135deg, #8E24AA 0%, #AB47BC 100%); color:#fff; font-size:10px; font-weight:bold; padding:2px 8px; border-radius:999px; letter-spacing:0.04em; box-shadow:0 2px 6px rgba(142,36,170,0.35);">
+          ✨ おすすめ
+        </div>
+        <div>
+          <div style="font-size:34px; margin-bottom:8px; line-height:1;">⚡</div>
+          <div style="font-size:16px; font-weight:bold; color:#4A148C; margin-bottom:4px;">シンプルモード</div>
+          <div style="font-size:11px; font-weight:bold; color:#8E24AA; margin-bottom:10px;">目標から理想作型を自動逆算</div>
+          <div style="font-size:11px; color:#555; line-height:1.55;">
+            作物名・月別目標売上・上限面積・作業時間を入力するだけで、<b>最適な作型組み合わせと栽培規模を自動提案</b>します。
+          </div>
+        </div>
+        <button type="button" class="cp-btn-primary" style="margin-top:16px; width:100%; padding:10px; background:linear-gradient(135deg, #8E24AA 0%, #6A1B9A 100%); border:none; font-size:13px; font-weight:bold; border-radius:8px; box-shadow:0 2px 6px rgba(142,36,170,0.3); pointer-events:none;">
+          ⚡ シンプルモードで作成
+        </button>
+      </div>
+
+      <!-- カード2: 📋 通常モード -->
+      <div onclick="selectCultivationMode('normal')" class="cp-mode-choice-card cp-mode-choice-card--normal"
+        style="border:2px solid #CFD8DC; background:#FFFFFF; border-radius:12px; padding:20px 16px; cursor:pointer; display:flex; flex-direction:column; justify-content:space-between; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+        <div>
+          <div style="font-size:34px; margin-bottom:8px; line-height:1;">📋</div>
+          <div style="font-size:16px; font-weight:bold; color:#2E7D32; margin-bottom:4px;">通常モード</div>
+          <div style="font-size:11px; font-weight:bold; color:#43A047; margin-bottom:10px;">ステップ順に手動設定</div>
+          <div style="font-size:11px; color:#555; line-height:1.55;">
+            年度・拠点・作物・栽培パラメータ・品種をステップ順に設定し、<b>作型カレンダーで詳細な栽培計画</b>を作成します。
+          </div>
+        </div>
+        <button type="button" class="cp-btn-secondary" style="margin-top:16px; width:100%; padding:10px; font-size:13px; font-weight:bold; border-radius:8px; border-color:#81C784; color:#2E7D32; background:#F1F8E9; pointer-events:none;">
+          📋 通常モードで作成
+        </button>
+      </div>
+
+    </div>
+
+    <!-- モーダルフッター: 既存計画読込リンク -->
+    <div style="padding:12px 22px 16px; background:#F8FAFC; border-top:1px solid #ECEFF1; border-radius:0 0 14px 14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+      <span style="font-size:11px; color:#78909C;">すでに保存した計画がある場合:</span>
+      <button type="button" id="btnStep1SwitchSimple" class="cp-btn-secondary" style="border-color:#ba68c8; color:#6a1b9a;" onclick="openCpStep('simple')" title="シンプルモード（目標から逆算）へ切り替え">⚡ シンプルモード</button>
+                    <button type="button" class="cp-btn-secondary cp-btn-secondary--green" onclick="closeCpModeSelectModal(); showPlanListModal({ mode: 'load' });" style="font-size:11px; padding:5px 12px;">
+        📂 保存済み計画を読み込む
+      </button>
+    </div>
+
+  </div>
+</div>
+
 <div id="cultivationPlanModal"
   style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center;">
   <div id="cpLoadProgressOverlay"
@@ -63,15 +131,6 @@
     <!-- ステップ1〜3: 段階的な設定画面（完了後カレンダー画面へ遷移） -->
     <div id="cpStepsRow" class="cp-steps">
       <div class="cp-step-tabs" role="tablist" aria-label="栽培計画の設定ステップ">
-        <button type="button" role="tab" id="cpStepTabSimple" class="cp-step-tab cp-step-tab--simple" aria-selected="false"
-          aria-controls="cpStepSimple" data-step="simple" onclick="openCpStep('simple')">
-          <div class="cp-step-tab-head">
-            <span class="cp-step-tab-badge" style="background:#8E24AA; color:#fff;">✨ おすすめ</span>
-            <span id="cpStepTabSimpleStatus" class="cp-step-tab-status"></span>
-          </div>
-          <span class="cp-step-tab-title" style="color:#6A1B9A;">⚡ シンプルモード</span>
-          <span class="cp-step-tab-sub">目標売上・上限面積・作業時間から逆算</span>
-        </button>
         <button type="button" role="tab" id="cpStepTab1" class="cp-step-tab cp-step-tab--1" aria-selected="false"
           aria-controls="cpStep1" data-step="1" onclick="openCpStep(1)">
           <div class="cp-step-tab-head">
@@ -301,13 +360,6 @@
           <div id="cpStep1" class="cp-step-panel cp-step-panel--1" role="tabpanel" aria-labelledby="cpStepTab1" hidden>
             <div class="cp-step-body">
               <div class="cp-step-container">
-                <div style="background: linear-gradient(135deg, #f3e5f5 0%, #ede7f6 100%); border: 1.5px solid #ce93d8; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
-                  <div>
-                    <div style="font-weight: bold; color: #4a148c; font-size: 13px;">💡 目標売上や上限面積・労働時間から自動で計画を立てたい方へ</div>
-                    <div style="font-size: 11px; color: #6a1b9a;">シンプルモードなら、条件を入力するだけで理想の作型スケジュールと栽培規模を自動逆算して提示します。</div>
-                  </div>
-                  <button type="button" class="cp-btn-primary" style="background: #8e24aa; border-color: #6a1b9a; white-space: nowrap; font-size: 12px; padding: 6px 14px; flex-shrink: 0;" onclick="openCpStep('simple')">⚡ シンプルモードを開く</button>
-                </div>
                 <div class="cp-section-header-bar">
                   <div class="cp-section-header-text">
                     <span class="cp-section-header-title">📋 計画の基本項目を設定</span>
@@ -1403,7 +1455,7 @@
 
       .cp-step-tabs {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 8px;
         flex-shrink: 0;
         padding-bottom: 8px;
@@ -1878,6 +1930,24 @@
           transition: none;
         }
       }
+    
+      .cp-mode-choice-card:hover {
+        transform: translateY(-2px);
+      }
+      .cp-mode-choice-card--simple:hover {
+        border-color: #8E24AA !important;
+        box-shadow: 0 6px 20px rgba(142,36,170,0.22) !important;
+      }
+      .cp-mode-choice-card--normal:hover {
+        border-color: #43A047 !important;
+        box-shadow: 0 6px 20px rgba(67,160,71,0.22) !important;
+      }
+      @media (max-width: 600px) {
+        #cpModeSelectModal .cp-mode-choice-card {
+          grid-template-columns: 1fr !important;
+        }
+      }
+    
     </style>
 
     <div id="cpCalendarStage" class="cp-calendar-stage is-hidden">

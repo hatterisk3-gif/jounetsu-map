@@ -11422,6 +11422,15 @@ if (!window._cpModalPopstateBound) {
  */
 function openCultivationPlanModal(options) {
     const opts = options || {};
+
+    // モード未指定の場合はモード選択モーダル（シンプルモード／通常モード）を表示
+    if (!opts.skipModeChoice && !opts.mode && !opts.skipMasterFetch) {
+        if (typeof openCpModeSelectModal === 'function') {
+            openCpModeSelectModal(opts);
+            return;
+        }
+    }
+
     const modal = document.getElementById('cultivationPlanModal');
     if (!modal) {
         alert('栽培計画画面の読み込み中です。数秒待ってから再度お試しください。');
@@ -11496,6 +11505,13 @@ function openCultivationPlanModal(options) {
         if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
         if (typeof onCpCropChangedForCost === 'function') onCpCropChangedForCost();
         if (typeof scheduleRefreshCpWorkSchedulePanel === 'function') scheduleRefreshCpWorkSchedulePanel();
+
+        // 指定モードに応じたステップを開く
+        if (opts.mode === 'simple') {
+            openCpStep('simple');
+        } else if (opts.mode === 'normal') {
+            openCpStep(1);
+        }
     };
     if (opts.skipMasterFetch) {
         applyCachedCultivationMasterIfAny_();
@@ -16122,3 +16138,40 @@ function applyCpSimpleResultToPlan() {
     }
 }
 window.applyCpSimpleResultToPlan = applyCpSimpleResultToPlan;
+
+
+
+// =============================================================================
+// 🧭 栽培計画 モード選択モーダル（シンプルモード／通常モード）制御
+// =============================================================================
+window._pendingCpOpenOptions = null;
+
+function openCpModeSelectModal(options) {
+    window._pendingCpOpenOptions = options ? Object.assign({}, options) : {};
+    const modal = document.getElementById('cpModeSelectModal');
+    if (modal) {
+        modal.style.display = 'flex';
+    } else {
+        // モーダルDOMが存在しない場合はフォールバック
+        openCultivationPlanModal(Object.assign({}, window._pendingCpOpenOptions, { skipModeChoice: true }));
+    }
+}
+window.openCpModeSelectModal = openCpModeSelectModal;
+
+function closeCpModeSelectModal() {
+    const modal = document.getElementById('cpModeSelectModal');
+    if (modal) modal.style.display = 'none';
+}
+window.closeCpModeSelectModal = closeCpModeSelectModal;
+
+function selectCultivationMode(mode) {
+    closeCpModeSelectModal();
+    const opts = Object.assign({}, window._pendingCpOpenOptions || {}, {
+        mode: mode,
+        skipModeChoice: true
+    });
+    window._pendingCpOpenOptions = null;
+    openCultivationPlanModal(opts);
+}
+window.selectCultivationMode = selectCultivationMode;
+
