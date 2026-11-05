@@ -1156,29 +1156,24 @@ async function saveVehicleRegistration() {
         photo: existing ? (existing.photo || '') : '',
         status: existing ? (existing.status || '使用可能') : '使用可能',
         lat: existing ? (existing.lat || '') : '',
-        lng: existing ? (existing.lng || '') : ''
+        lng: existing ? (existing.lng || '') : '',
+        location: existing ? (existing.location || '') : '',
+        signName: existing ? (existing.signName || '') : '',
+        signId: existing ? (existing.signId || '') : '',
+        currentLocName: existing ? (existing.currentLocName || '') : '',
+        currentLocId: existing ? (existing.currentLocId || '') : '',
+        symptoms: existing ? (existing.symptoms || '') : '',
+        parts: existing ? (existing.parts || '') : '',
+        maintenanceContents: existing ? (existing.maintenanceContents || '') : ''
     };
 
     showToast("保存中...");
     try {
         const result = await callGAS('vehicle_saveVehicle', v);
         vehicles[v.id] = {
-            id: v.id,
-            plateNumber: v.plateNumber,
-            photo: (result && result.photo) || v.photo || '',
-            mileage: v.mileage,
-            driveType: v.driveType,
-            mainCategory: v.mainCategory,
-            group: v.mainCategory,
-            vehicleType: v.vehicleType,
-            type: v.vehicleType,
-            vehicleNumber: v.vehicleNumber,
-            machineNumber: v.vehicleNumber,
-            model: v.model,
-            registrationDate: v.registrationDate,
-            status: v.status,
-            lat: v.lat || null,
-            lng: v.lng || null
+            ...(existing || {}),
+            ...v,
+            photo: (result && result.photo) || v.photo || ''
         };
         pendingVehiclePhotoBase64 = "";
         closeModal('modalVehicleRegister');

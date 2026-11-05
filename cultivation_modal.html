@@ -40,8 +40,7 @@
             <span id="cpDraftStatus" class="cp-header-save-status"></span>
           </div>
         </div>
-        <button type="button" id="btnCpSavePlan" onclick="saveCultivationPlan()"
-          title="本番へすぐ同期します。未実行の計画は編集のたびに自動保存されます"
+        <button type="button" id="btnCpSavePlan" onclick="saveCultivationPlan()" title="栽培計画を保存します（保存ボタンを押すまで保存されません）"
           style="flex-shrink:0; padding:6px 14px; background:#FF9800; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:12px; font-weight:bold; box-shadow:0 1px 4px rgba(255,152,0,0.35); white-space:nowrap;">計画を保存</button>
         <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999; flex-shrink: 0;"
           onclick="closeCultivationPlanModal()">×</span>
@@ -119,14 +118,16 @@
                         <label class="cp-field-label" for="cpYear">📅 年度 <span class="cp-req-badge">必須</span></label>
                       </div>
                       <div class="cp-field-input-area">
-                        <select id="cpYear" class="cp-control"
-                          onchange="updateCpDefaultPlanName(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()">
-                          <option value="2024">2024</option>
-                          <option value="2025">2025</option>
-                          <option value="2026" selected>2026</option>
-                          <option value="2027">2027</option>
-                          <option value="2028">2028</option>
-                        </select>
+                        <div class="cp-field-row">
+                          <select id="cpYear" class="cp-control"
+                            onchange="updateCpDefaultPlanName(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()">
+                            <option value="2024">2024</option>
+                            <option value="2025">2025</option>
+                            <option value="2026" selected>2026</option>
+                            <option value="2027">2027</option>
+                            <option value="2028">2028</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
 
@@ -200,14 +201,16 @@
                           title="産地の追加・編集・削除">⚙ 産地管理</button>
                       </div>
                       <div class="cp-field-input-area">
-                        <select id="cpClimate" class="cp-control"
-                          onchange="updateVarietyList(); checkCroptypeDB(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()">
-                          <option value="">拠点の全産地</option>
-                          <option value="暖地">暖地</option>
-                          <option value="温暖地">温暖地</option>
-                          <option value="一般地">一般地</option>
-                          <option value="高冷地">高冷地</option>
-                        </select>
+                        <div class="cp-field-row">
+                          <select id="cpClimate" class="cp-control"
+                            onchange="updateVarietyList(); checkCroptypeDB(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()">
+                            <option value="">拠点の全産地</option>
+                            <option value="暖地">暖地</option>
+                            <option value="温暖地">温暖地</option>
+                            <option value="一般地">一般地</option>
+                            <option value="高冷地">高冷地</option>
+                          </select>
+                        </div>
                         <div id="cpLocationClimateHint" class="cp-field-hint cp-field-hint--ok"></div>
                       </div>
                     </div>
@@ -219,11 +222,13 @@
                           title="圃場条件の追加・編集・削除">⚙ 条件管理</button>
                       </div>
                       <div class="cp-field-input-area">
-                        <select id="cpFieldCondition" class="cp-control"
-                          onchange="checkCroptypeDB(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()">
-                          <option value="露地">露地</option>
-                          <option value="ハウス">ハウス</option>
-                        </select>
+                        <div class="cp-field-row">
+                          <select id="cpFieldCondition" class="cp-control"
+                            onchange="checkCroptypeDB(); if (typeof refreshCpHeaderContextBar==='function') refreshCpHeaderContextBar()">
+                            <option value="露地">露地</option>
+                            <option value="ハウス">ハウス</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -799,7 +804,10 @@
         flex: 1;
         display: flex;
         flex-direction: column;
+        flex-wrap: nowrap;
         justify-content: center;
+        min-width: 0;
+        width: 100%;
       }
 
       .cp-field-row {
@@ -840,6 +848,10 @@
         margin-top: 6px;
         min-height: 0;
         line-height: 1.4;
+        width: 100%;
+        box-sizing: border-box;
+        word-break: break-word;
+        overflow-wrap: anywhere;
       }
 
       .cp-field-hint--ok {

@@ -1110,7 +1110,8 @@ window.plotClockInMarker = (state, doCenter) => {
           String(f.color || ''),
           String(f.location || ''),
           String(f.signFunction || ''),
-          coordsKey
+          coordsKey,
+          String(f.parentSignId || '')
         ].join('\u0001');
       };
 
@@ -1193,6 +1194,7 @@ window.plotClockInMarker = (state, doCenter) => {
               author: it.author,
               location: it.location || '',
               signFunction: it.signFunction || '一般看板',
+              parentSignId: it.parentSignId || '',
               photos: Array.isArray(prev.photos) ? prev.photos : []
             });
           };
@@ -1305,7 +1307,10 @@ window.plotClockInMarker = (state, doCenter) => {
                 linkedSigns
               );
             }
-            if (loadedPolygons[id]) loadedPolygons[id]._mapDeltaFp = fp;
+            if (loadedPolygons[id]) {
+              loadedPolygons[id]._mapDeltaFp = fp;
+              loadedPolygons[id].parentSignId = String(f.parentSignId || '').trim();
+            }
             if (wasThere) updated += 1;
             else added += 1;
           } catch (eApply) {
@@ -1327,11 +1332,13 @@ window.plotClockInMarker = (state, doCenter) => {
               color: p.color,
               location: p.location,
               signFunction: p.signFunction,
-              coords: coords
+              coords: coords,
+              parentSignId: p.parentSignId || ''
             });
           } catch (eFp) {}
         });
 
+        try { if (window.SignGroup) window.SignGroup.refresh(); } catch (eSg) {}
         return { added, updated, removed, changed: !!(added || updated || removed) };
       };
 
@@ -1703,6 +1710,9 @@ window.plotClockInMarker = (state, doCenter) => {
                       const linkedSigns = window.pdlSignLinks[f.id] || "";
                       // ★修正：f.location や f.signFunction など、元の変数名に完全一致させました！
                       createPolygonObject(f.id, f.name, f.coords, f.color, f.photos, f.author, f.location, f.condition, f.area, f.status, f.signFunction, linkedSigns);
+                      if (loadedPolygons[f.id] && loadedPolygons[f.id].isMarker) {
+                          loadedPolygons[f.id].parentSignId = String(f.parentSignId || '').trim();
+                      }
                       if (loadedPolygons[f.id] && !loadedPolygons[f.id].isMarker) {
                           loadedPolygons[f.id].uneSimData = f.uneSimData || '';
                           loadedPolygons[f.id].water_status = f.water_status || 'stopped';
@@ -1715,6 +1725,7 @@ window.plotClockInMarker = (state, doCenter) => {
               });
               if (renderGen === _workerRenderInitGen) {
                   try { updateWorkerLegend(); } catch (eLeg) {}
+                  try { if (window.SignGroup) window.SignGroup.refresh(); } catch (eSg) {}
               }
           }
           if (renderGen !== _workerRenderInitGen) return;
@@ -1896,6 +1907,7 @@ window.plotClockInMarker = (state, doCenter) => {
             id, name, color, photos: photos || [], author,
             isMarker: true, location: loc, condition: cond, area, status,
             signFunction: signFunc || '一般看板', linkedSigns: linkedSigns || "",
+            parentSignId: (existing && existing.parentSignId) || '',
             coords: safeCoords, soilType: ''
           };
           return;
@@ -1908,7 +1920,7 @@ window.plotClockInMarker = (state, doCenter) => {
           const labelConfig = isLocPin && typeof window.locationPinLabelConfig_ === 'function'
             ? window.locationPinLabelConfig_(name, map.getZoom())
             : { text: name, color: '#333', fontSize: '13px', fontWeight: 'bold', className: 'signboard-label' };
-          loadedPolygons[id] = { id, marker, name, color, photos: photos || [], author, isMarker: true, location: loc || '', labelConfig: labelConfig, signFunction: signFunc || '一般看板', linkedSigns: linkedSigns || "" };
+          loadedPolygons[id] = { id, marker, name, color, photos: photos || [], author, isMarker: true, location: loc || '', labelConfig: labelConfig, signFunction: signFunc || '一般看板', linkedSigns: linkedSigns || "", parentSignId: (existing && existing.parentSignId) || '' };
         } else {
           const isUnused = (status === '未使用（返却）' || status === '未使用');
           let currentCrop = getCurrentCrop(photos);
@@ -1932,6 +1944,8 @@ window.plotClockInMarker = (state, doCenter) => {
           });
           loadedPolygons[id] = { id, polygon, marker, name, location: loc, condition: cond, area, color, photos: photos || [], author, status, isMarker: false, coords: safeCoords, soilType: '' };
         }
+        window.loadedPolygons = loadedPolygons;
+        if (typeof window.applyMapLayerFilter_ === 'function') window.applyMapLayerFilter_();
       }
 
 // ====== 天気予報関連 ======
@@ -2530,6 +2544,9 @@ window.openTyphoonModal = function() {
             window.handleDeliveryOriginMapEmptyTap(e.latLng);
             return;
           }
+          if (window.SignGroup && window.SignGroup.getExpandedParentId()) {
+            window.SignGroup.collapse(map, loadedPolygons, updateMarkersVisibility);
+          }
           if(isMapSelecting) return;
           if (typeof window.isRecordFormActive_ === 'function' && window.isRecordFormActive_()) {
             return;
@@ -3119,11 +3136,16 @@ window.openTyphoonModal = function() {
         };
         setupSearch();
         setupWorkerMapSearch();
+        window.map = map;
+        window.loadedPolygons = loadedPolygons;
+        if (typeof window.initMapLayerFilter_ === 'function') window.initMapLayerFilter_(map);
       }
 
       function updateMarkersVisibility() {
         const zoom = map.getZoom(), far = 15, close = 17;
         if (typeof window.syncLocationPinGlowScale_ === 'function') window.syncLocationPinGlowScale_(map);
+        const hasSignGroup = !!(window.SignGroup && typeof window.SignGroup.isChildSign === 'function');
+        const expandedPid = hasSignGroup ? window.SignGroup.getExpandedParentId() : null;
         for (let id in loadedPolygons) {
           const p = loadedPolygons[id]; if (!p.marker) continue;
           if (p.isMarker) {
@@ -3131,14 +3153,48 @@ window.openTyphoonModal = function() {
               if (typeof window.refreshLocationPinMarker_ === 'function') window.refreshLocationPinMarker_(p.marker, p.name, zoom);
               else p.marker.setVisible(true);
             } else {
-              p.marker.setVisible(zoom >= far);
-              if (!isMapSelecting) {
-                if (zoom < close) p.marker.setLabel(null); else if (p.labelConfig) p.marker.setLabel(p.labelConfig);
+              const isChild = hasSignGroup && window.SignGroup.isChildSign(p);
+              const isParent = hasSignGroup && window.SignGroup.isParentSign(p);
+              const isExpandedChild = hasSignGroup && window.SignGroup.isChildOfExpanded(p);
+
+              if (isChild) {
+                // 束ねられた小看板：大看板が展開されている時のみ表示（またはマップ選択中でこの小看板自身が選択されている時）
+                const isSelected = isMapSelecting && Array.isArray(selectedPolyIds) && selectedPolyIds.includes(String(id));
+                const showChild = (isExpandedChild || isSelected) && (zoom >= far);
+                p.marker.setVisible(showChild);
+                if (showChild) {
+                  p.marker.setZIndex(isSelected ? 9999 : 850);
+                  if (!isMapSelecting) {
+                    p.marker.setIcon(window.SignGroup.buildSignMarkerIcon(p, { isExpandedChild: true }));
+                    p.marker.setLabel(window.SignGroup.buildSignLabelConfig(p, { isExpandedChild: true }));
+                  }
+                }
+              } else if (isParent) {
+                // 大看板：アイコンを少し大きくし、バッジを付ける
+                p.marker.setVisible(zoom >= far);
+                p.marker.setZIndex(900);
+                if (!isMapSelecting) {
+                  const isExp = String(id) === String(expandedPid);
+                  p.marker.setIcon(window.SignGroup.buildSignMarkerIcon(p, { isParent: true, isExpandedParent: isExp }));
+                  if (zoom < close && !isExp) {
+                    p.marker.setLabel(null);
+                  } else {
+                    p.marker.setLabel(window.SignGroup.buildSignLabelConfig(p, { isParent: true, isExpandedParent: isExp }));
+                  }
+                }
+              } else {
+                p.marker.setVisible(zoom >= far);
+                if (!isMapSelecting) {
+                  p.marker.setIcon(window.SignGroup ? window.SignGroup.buildSignMarkerIcon(p) : p.marker.getIcon());
+                  if (zoom < close) p.marker.setLabel(null); else if (p.labelConfig) p.marker.setLabel(p.labelConfig);
+                }
               }
             }
           } else p.marker.setVisible(zoom >= 16); // ← ★ここの「14」を変更
         }
+        if (typeof window.applyMapLayerFilter_ === 'function') window.applyMapLayerFilter_();
       }
+      window.updateMarkersVisibility = updateMarkersVisibility;
 
 function createSignboardMarker(name, pos, icon, id, signFunc) {
         const isLocPin = typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(signFunc);
@@ -3180,6 +3236,38 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           if (typeof window.isRecordFormActive_ === 'function' && window.isRecordFormActive_()) {
             return;
           }
+
+          // 🪧 大看板・小看板の展開 & 2段階タップ制御
+          const sid = String(id);
+          const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[sid] : null;
+          if (window.SignGroup && p && p.isMarker && !(typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction))) {
+            const isParent = window.SignGroup.isParentSign(p);
+            const isChild = window.SignGroup.isChildSign(p);
+            const expandedId = window.SignGroup.getExpandedParentId();
+
+            if (isParent) {
+              if (expandedId !== sid) {
+                // 1回目のタップ：小看板を展開する（ほかの看板とは分けて目立つ表示に）
+                window.SignGroup.expand(sid, map, loadedPolygons, updateMarkersVisibility);
+                if (infoWindow) infoWindow.close();
+                return;
+              } else {
+                // 2回目のタップ：大看板の設定・メニューを開く
+                showPolygonActionMenu_(id, e && e.latLng, e);
+                return;
+              }
+            } else if (isChild) {
+              // 展開中の小看板をタップ：設定・メニューを開く
+              showPolygonActionMenu_(id, e && e.latLng, e);
+              return;
+            } else {
+              // 単独の通常看板：展開中の大看板があれば閉じる
+              if (expandedId) {
+                window.SignGroup.collapse(map, loadedPolygons, updateMarkersVisibility);
+              }
+            }
+          }
+
           showPolygonActionMenu_(id, e && e.latLng, e);
         });
         return marker;
@@ -3241,6 +3329,9 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
             updateMapSelectVisuals();
           }
           return;
+        }
+        if (!isMapSelecting && window.SignGroup && window.SignGroup.getExpandedParentId()) {
+          window.SignGroup.collapse(map, loadedPolygons, updateMarkersVisibility);
         }
         if (typeof window.isRecordFormActive_ === 'function' && window.isRecordFormActive_()) {
           return;
@@ -3337,6 +3428,17 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         }
 
         const typeClass = (!p.isMarker && !isWorker2) ? 'field-type' : 'marker-type';
+        let signGroupBadge = '';
+        if (p.isMarker && window.SignGroup) {
+          if (window.SignGroup.isParentSign(p)) {
+            const children = window.SignGroup.getChildren(p.id);
+            signGroupBadge = `<div style="margin-top:4px; font-size:11px; color:#4A148C; background:#EDE7F6; padding:3px 8px; border-radius:12px; display:inline-block; font-weight:bold;">🪧 大看板（小看板 ${children.length}件を束ねています）</div>`;
+          } else if (window.SignGroup.isChildSign(p)) {
+            const parentPoly = loadedPolygons[window.SignGroup.getParentId(p)];
+            const parentName = parentPoly ? parentPoly.name : '大看板';
+            signGroupBadge = `<div style="margin-top:4px; font-size:11px; color:#E65100; background:#FFF3E0; padding:3px 8px; border-radius:12px; display:inline-block; font-weight:bold;">↳ 小看板（親: ${parentName}）</div>`;
+          }
+        }
         const subInfo = !p.isMarker
           ? (isU ? '<span style="background:#999;color:white;padding:2px 4px;border-radius:2px;font-size:10px;">未使用</span> ' : '') + (p.location || '-') + ' / ' + (p.condition || '-') + (p.soilType ? ' / ' + p.soilType : '') + ' / ' + p.area + 'a'
           : (p.signFunction ? `[${p.signFunction}]` : '');
@@ -3346,6 +3448,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
             <div class="field-infowindow-header">
               <b class="field-infowindow-title">${p.name}</b>
               <div class="field-infowindow-sub">${subInfo}</div>
+              ${signGroupBadge}
             </div>
             ${bodyHtml}
           </div>`;
@@ -5091,6 +5194,12 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         if (!p || !p.marker) return;
         const name = String(p.name || (p.labelConfig && p.labelConfig.text) || '').replace(/^看板\s+/, '');
         const isLocPin = typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction);
+        const hasSignGroup = !!(window.SignGroup && typeof window.SignGroup.isParentSign === 'function');
+        const isParent = hasSignGroup && window.SignGroup.isParentSign(p);
+        const isChild = hasSignGroup && window.SignGroup.isChildSign(p);
+        const isExpParent = hasSignGroup && window.SignGroup.isExpandedParent(p.id);
+        const isExpChild = hasSignGroup && window.SignGroup.isChildOfExpanded(p);
+
         const base = p.labelConfig || {
           text: name,
           color: '#333',
@@ -5105,7 +5214,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         }
 
         p.marker.setOpacity(1);
-        p.marker.setZIndex(on ? 9999 : (isLocPin ? 1200 : 2));
+        p.marker.setZIndex(on ? 9999 : (isParent ? 900 : (isLocPin ? 1200 : 2)));
 
         if (on) {
           // 🌟 選択中：看板アイコンをオレンジ色＆光彩リング付きで強調
@@ -5123,20 +5232,43 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
               anchor: new google.maps.Point(px / 2, px / 2),
               labelOrigin: new google.maps.Point(px / 2, px + 8)
             });
-          } else {
-            const highlightSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">' +
-              '<circle cx="20" cy="20" r="18.5" fill="#FF9800" fill-opacity="0.38" stroke="#F57C00" stroke-width="1.5"/>' +
-              '<circle cx="20" cy="20" r="14.5" fill="#FFF3E0" stroke="#E65100" stroke-width="2.5"/>' +
-              '<text x="20" y="27" text-anchor="middle" font-size="20">' + signIcon + '</text>' +
-              '</svg>';
-            p.marker.setIcon({
-              url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(highlightSvg),
-              scaledSize: new google.maps.Size(40, 40),
-              anchor: new google.maps.Point(20, 20),
-              labelOrigin: new google.maps.Point(20, 44)
-            });
+            p.marker.setLabel(Object.assign({}, base, {
+              text: '拠点 ' + name,
+              className: 'location-pin-label selected',
+              color: '#000',
+              fontWeight: 'bold'
+            }));
+            return;
           }
 
+          if (hasSignGroup) {
+            p.marker.setIcon(window.SignGroup.buildSignMarkerIcon(p, {
+              isSelected: true,
+              isParent: isParent,
+              isExpandedParent: isExpParent,
+              isExpandedChild: isExpChild || isChild
+            }));
+            const prefix = isParent ? '🪧 大看板 ' : (isChild ? '↳ 小看板 ' : '看板 ');
+            p.marker.setLabel({
+              text: prefix + name,
+              className: 'signboard-label selected' + (isParent ? ' sign-parent-label' : (isChild ? ' sign-child-expanded' : '')),
+              color: '#000',
+              fontWeight: 'bold'
+            });
+            return;
+          }
+
+          const highlightSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">' +
+            '<circle cx="20" cy="20" r="18.5" fill="#FF9800" fill-opacity="0.38" stroke="#F57C00" stroke-width="1.5"/>' +
+            '<circle cx="20" cy="20" r="14.5" fill="#FFF3E0" stroke="#E65100" stroke-width="2.5"/>' +
+            '<text x="20" y="27" text-anchor="middle" font-size="20">' + signIcon + '</text>' +
+            '</svg>';
+          p.marker.setIcon({
+            url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(highlightSvg),
+            scaledSize: new google.maps.Size(40, 40),
+            anchor: new google.maps.Point(20, 20),
+            labelOrigin: new google.maps.Point(20, 44)
+          });
           p.marker.setLabel(Object.assign({}, base, {
             text: '看板 ' + name,
             className: 'signboard-label selected',
@@ -5150,21 +5282,51 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         if (isLocPin && typeof window.locationPinMarkerIcon_ === 'function') {
           const z = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : 16;
           p.marker.setIcon(window.locationPinMarkerIcon_(z));
-        } else {
-          const normalSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="13" y="20" text-anchor="middle" font-size="20">' + signIcon + '</text></svg>';
-          p.marker.setIcon({
-            url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(normalSvg),
-            scaledSize: new google.maps.Size(26, 26),
-            anchor: new google.maps.Point(13, 13),
-            labelOrigin: new google.maps.Point(13, 30)
-          });
+          const zNow = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : 0;
+          if (zNow >= 15) {
+            p.marker.setLabel(Object.assign({}, base, {
+              text: name,
+              className: 'location-pin-label',
+              color: '#333'
+            }));
+          } else {
+            p.marker.setLabel(null);
+          }
+          return;
         }
 
+        if (hasSignGroup) {
+          p.marker.setIcon(window.SignGroup.buildSignMarkerIcon(p, {
+            isParent: isParent,
+            isExpandedParent: isExpParent,
+            isExpandedChild: isExpChild
+          }));
+          const z = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : 0;
+          if (isParent || isExpChild || z >= 17) {
+            p.marker.setLabel(window.SignGroup.buildSignLabelConfig(p, {
+              isParent: isParent,
+              isExpandedParent: isExpParent,
+              isExpandedChild: isExpChild
+            }));
+          } else {
+            p.marker.setLabel(null);
+          }
+          return;
+        }
+
+        const normalSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="13" y="20" text-anchor="middle" font-size="20">' + signIcon + '</text></svg>';
+        p.marker.setIcon({
+          url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(normalSvg),
+          scaledSize: new google.maps.Size(26, 26),
+          anchor: new google.maps.Point(13, 13),
+          labelOrigin: new google.maps.Point(13, 30)
+        });
+
         const z = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : 0;
-        if (isLocPin || z >= 17) {
+        if (z >= 17) {
           p.marker.setLabel(Object.assign({}, base, {
             text: name,
-            className: isLocPin ? 'location-pin-label' : 'signboard-label',
+            className: 'signboard-label',
             color: '#333'
           }));
         } else {
@@ -5425,13 +5587,25 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
             const name = (p && p.name) ? p.name : (p && p.isMarker ? '不明な看板' : '不明な圃場');
             const around = typeof window.isSurroundingField_ === 'function' && window.isSurroundingField_(p);
             const isSign = !!(p && p.isMarker);
-            const bg = around ? '#FFF3E0' : (isSign ? '#6A1B9A' : '#2E7D32');
+            const hasSignGroup = !!(window.SignGroup && typeof window.SignGroup.isParentSign === 'function');
+            const isParent = isSign && hasSignGroup && window.SignGroup.isParentSign(p);
+            const isChild = isSign && hasSignGroup && window.SignGroup.isChildSign(p);
+            const parentPoly = isChild ? loadedPolygons[window.SignGroup.getParentId(p)] : null;
+            const parentName = parentPoly ? parentPoly.name : '';
+
+            const bg = around ? '#FFF3E0' : (isParent ? '#4A148C' : (isChild ? '#E65100' : (isSign ? '#6A1B9A' : '#2E7D32')));
             const fg = around ? '#E65100' : '#fff';
-            const bd = around ? '#FF9800' : (isSign ? '#4A148C' : '#1B5E20');
+            const bd = around ? '#FF9800' : (isParent ? '#7B1FA2' : (isChild ? '#FF9800' : (isSign ? '#4A148C' : '#1B5E20')));
             const mark = around ? '<span style="font-size:11px; font-weight:bold; margin-left:4px;">周辺地</span>' : '';
-            const icon = isSign ? '🪧' : '📍';
+            let icon = isSign ? '🪧' : '📍';
+            let labelText = name;
+            if (isParent) {
+              labelText = `[大看板] ${name}`;
+            } else if (isChild) {
+              labelText = parentName ? `${parentName} ▸ ${name}` : `↳ ${name}`;
+            }
             return `<span style="display:inline-flex; align-items:center; gap:6px; background:${bg}; color:${fg}; padding:8px 12px; border-radius:16px; font-size:14px; font-weight:bold; border:2px solid ${bd}; box-shadow:0 1px 3px rgba(0,0,0,0.12);">
-              ${icon} ${name}${mark}
+              ${icon} ${labelText}${mark}
               <span onclick="removeSelectedPoly('${id}')" style="cursor:pointer; font-weight:bold; color:${around ? '#c62828' : '#FFCDD2'}; margin-left:2px; font-size:16px; line-height:1;" title="対象から外す">×</span>
             </span>`;
           }).join('');
@@ -6259,6 +6433,31 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           if (typeof window.exitWorkRidgeSelectionView === 'function') window.exitWorkRidgeSelectionView(true);
         } catch (e) {}
         selectedPolyIds = (selectedPolyIds || []).map(String);
+
+        if (window.SignGroup && p.isMarker && !(typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction))) {
+          const isParent = window.SignGroup.isParentSign(p);
+          const isChild = window.SignGroup.isChildSign(p);
+          const expId = window.SignGroup.getExpandedParentId();
+          if (isParent) {
+            if (expId !== sid) {
+              window.SignGroup.expand(sid, map, loadedPolygons, updateMarkersVisibility);
+              if (!selectedPolyIds.includes(sid)) selectedPolyIds.push(sid);
+            } else {
+              if (selectedPolyIds.includes(sid)) selectedPolyIds = selectedPolyIds.filter(i => i !== sid);
+              else selectedPolyIds.push(sid);
+            }
+            if (typeof updateMapSelectVisuals === 'function') updateMapSelectVisuals();
+            if (typeof window.updateWorkMapSelectBanner === 'function') window.updateWorkMapSelectBanner();
+            return;
+          } else if (isChild) {
+            if (selectedPolyIds.includes(sid)) selectedPolyIds = selectedPolyIds.filter(i => i !== sid);
+            else selectedPolyIds.push(sid);
+            if (typeof updateMapSelectVisuals === 'function') updateMapSelectVisuals();
+            if (typeof window.updateWorkMapSelectBanner === 'function') window.updateWorkMapSelectBanner();
+            return;
+          }
+        }
+
         if (selectedPolyIds.includes(sid)) {
           selectedPolyIds = selectedPolyIds.filter(i => i !== sid);
         } else {
@@ -6280,6 +6479,46 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         const sid = String(id);
         if (p.isMarker) {
           selectedPolyIds = (selectedPolyIds || []).map(String);
+
+          // 🪧 大看板・小看板の選択制御
+          if (window.SignGroup && !(typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction))) {
+            const isParent = window.SignGroup.isParentSign(p);
+            const isChild = window.SignGroup.isChildSign(p);
+            const expId = window.SignGroup.getExpandedParentId();
+
+            if (isParent) {
+              if (expId !== sid) {
+                // 大看板が未展開の場合：小看板を展開し、大看板も選択に追加する
+                window.SignGroup.expand(sid, map, loadedPolygons, updateMarkersVisibility);
+                if (!selectedPolyIds.includes(sid)) {
+                  selectedPolyIds.push(sid);
+                }
+              } else {
+                // 展開済みの大看板を再タップ：大看板の選択トグル
+                if (selectedPolyIds.includes(sid)) {
+                  selectedPolyIds = selectedPolyIds.filter(i => i !== sid);
+                } else {
+                  selectedPolyIds.push(sid);
+                }
+              }
+              if (typeof updateMapSelectVisuals === 'function') updateMapSelectVisuals();
+              if (typeof window.updateWorkMapSelectBanner === 'function') window.updateWorkMapSelectBanner();
+              if (typeof window.updateSelectedPolysDisplay === 'function') window.updateSelectedPolysDisplay();
+              return;
+            } else if (isChild) {
+              // 小看板をタップ：小看板の選択トグル
+              if (selectedPolyIds.includes(sid)) {
+                selectedPolyIds = selectedPolyIds.filter(i => i !== sid);
+              } else {
+                selectedPolyIds.push(sid);
+              }
+              if (typeof updateMapSelectVisuals === 'function') updateMapSelectVisuals();
+              if (typeof window.updateWorkMapSelectBanner === 'function') window.updateWorkMapSelectBanner();
+              if (typeof window.updateSelectedPolysDisplay === 'function') window.updateSelectedPolysDisplay();
+              return;
+            }
+          }
+
           if (selectedPolyIds.includes(sid)) {
             selectedPolyIds = selectedPolyIds.filter(i => i !== sid);
           } else {
@@ -8118,9 +8357,8 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
 
         // 圃場カテゴリは作業名未選択でも圃場選択を出す（DOM上は作業名の直後）
         const isFieldCat = window.isFieldCategory(cat) || cat === 'すべて';
-        const isMaint = (typeof window.isMaintenanceRelatedWork === 'function' && window.isMaintenanceRelatedWork(wName))
-          || wName.includes('修理') || wName.includes('点検') || wName.includes('整備')
-          || cat.includes('整備') || cat.includes('保全');
+        // 整備UIフラグ連動（カテゴリ保全/整備だけでは「圃場任意」にしない）
+        const isMaint = (typeof window.isMaintenanceRelatedWork === 'function' && window.isMaintenanceRelatedWork(wName));
 
         const show = true;
         box.style.display = 'block';
@@ -10494,7 +10732,11 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
             ? !!window.getBuiltInFieldSelectDefault_(c, n)
             : true,
           showFuel: n === '給油' || n.indexOf('給油') >= 0,
-          showRidgePolygon: n.indexOf('畝立') >= 0
+          showRidgePolygon: n.indexOf('畝立') >= 0,
+          // カテゴリ「保全/整備」だけでは出さない。作業名が整備系のときだけ推定ON
+          showMaintenance: (typeof window.looksLikeMaintenanceText_ === 'function')
+            ? !!window.looksLikeMaintenanceText_(n)
+            : /整備|修理|点検|清掃|保全|交換/.test(n)
         };
       };
 
@@ -10504,7 +10746,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         const formCat = String(document.getElementById('rec_work_category')?.value || '').trim();
         // 準備／片づけは「対象作業」の紐づけ専用。対象作業の詳細・機械・資材フラグは出さない
         if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(formCat)) {
-          return { showMachine: false, showMaterial: false, showPesticide: false, showField: false, showFuel: false, showRidgePolygon: false };
+          return { showMachine: false, showMaterial: false, showPesticide: false, showField: false, showFuel: false, showRidgePolygon: false, showMaintenance: false };
         }
         const w = (typeof window.findWorkMasterByName_ === 'function')
           ? (window.findWorkMasterByName_(mainName) || window.findWorkMasterByName_(combined))
@@ -10525,7 +10767,8 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           showPesticide: matPestOn ? pick(w && w.showPesticide, inferred.showPesticide) : false,
           showField: pick(w && w.showField, inferred.showField),
           showFuel: pick(w && w.showFuel, inferred.showFuel),
-          showRidgePolygon: pick(w && w.showRidgePolygon, inferred.showRidgePolygon)
+          showRidgePolygon: pick(w && w.showRidgePolygon, inferred.showRidgePolygon),
+          showMaintenance: pick(w && w.showMaintenance, inferred.showMaintenance)
         };
       };
 
@@ -10544,6 +10787,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
             ${row('show_machine', !!f.showMachine, '🚜 農機マスタを出す', '使用した機械を選べます')}
             ${row('show_fuel', !!f.showFuel, '⛽ 給油マスタを出す', '給油した車両・機械を選べます。一覧に無い車両も登録できます')}
             ${row('show_ridge_polygon', !!f.showRidgePolygon, '🛤️ 畝ポリゴン登録を出す', '選んだ圃場の畝ポリゴンを農業CADで登録できます')}
+            ${row('show_maintenance', !!f.showMaintenance, '🔧 整備UIを出す', '整備対象・症状・整備内容の入力欄を出します（カテゴリ保全/整備だけでは出ません）')}
           </div>
         </div>`;
       };
@@ -10569,7 +10813,8 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           showMaterial: matPestOn ? readOr('show_material', !!baseline.showMaterial) : false,
           showPesticide: matPestOn ? readOr('show_pesticide', !!baseline.showPesticide) : false,
           showFuel: readOr('show_fuel', !!baseline.showFuel),
-          showRidgePolygon: readOr('show_ridge_polygon', !!baseline.showRidgePolygon)
+          showRidgePolygon: readOr('show_ridge_polygon', !!baseline.showRidgePolygon),
+          showMaintenance: readOr('show_maintenance', !!baseline.showMaintenance)
         };
       };
 
@@ -11271,12 +11516,12 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         });
       };
 
-      // --- 整備内容（機械別）追加・編集・削除 ---
+      // --- 整備内容（機械・車両別）追加・編集・削除 ---
       window.addNewMaintenanceContentMaster = async (machine) => {
         const target = machine || window.requireEditableMaintenanceMachine_();
         if (!target) return;
-        if (target.isTool || target.isVehicle) {
-          if (typeof customAlert === 'function') customAlert('農機を選んでから整備内容を追加してください。');
+        if (target.isTool) {
+          if (typeof customAlert === 'function') customAlert('農機または車両を選んでから整備内容を追加してください。');
           return;
         }
         const symptomNow = String(document.getElementById('m_symptom')?.value || '').trim();
@@ -11284,7 +11529,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           if (typeof customAlert === 'function') customAlert('先に症状を選んでください。整備内容はその症状に紐づけて登録します。');
           return;
         }
-        const inputName = await customPrompt('この機械に追加する「整備内容」 (例: 定期点検・清掃):', '');
+        const inputName = await customPrompt('この機械・車両に追加する「整備内容」 (例: 定期点検・清掃):', '');
         if (!inputName || !String(inputName).trim()) return;
         const name = String(inputName).trim();
         try {
@@ -11414,8 +11659,8 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
       window.addNewMachinePart = async (machine) => {
         const target = machine || window.requireEditableMaintenanceMachine_();
         if (!target) return;
-        if (target.isTool || target.isVehicle) {
-          if (typeof customAlert === 'function') customAlert('農機を選んでから部品を追加してください。');
+        if (target.isTool) {
+          if (typeof customAlert === 'function') customAlert('農機または車両を選んでから部品を追加してください。');
           return;
         }
         const content = (typeof window.getSelectedMaintenanceContent_ === 'function')
@@ -12740,9 +12985,15 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
       window.syncMachinePartsFieldLocal_ = (machine, rawParts) => {
         if (!machine) return;
         machine.parts = String(rawParts == null ? '' : rawParts);
-        if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines) && machine.id) {
-          const idx = pdlMachines.findIndex(m => m && String(m.id) === String(machine.id));
+        const rawId = String(machine.id || '').trim();
+        if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines) && rawId) {
+          const idx = pdlMachines.findIndex(m => m && String(m.id) === rawId);
           if (idx >= 0) pdlMachines[idx].parts = machine.parts;
+        }
+        if (Array.isArray(window.pdlMobileVehicles) && rawId) {
+          const vid = rawId.replace(/^veh:/, '');
+          const vIdx = window.pdlMobileVehicles.findIndex(v => v && (String(v.id) === vid || String(v.id) === rawId));
+          if (vIdx >= 0) window.pdlMobileVehicles[vIdx].parts = machine.parts;
         }
       };
 
@@ -13119,11 +13370,11 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
       window.requireEditableMaintenanceMachine_ = () => {
         const machine = window.getSelectedMaintenanceMachine_();
         if (!machine || !machine.id) {
-          if (typeof customAlert === 'function') customAlert('先に対象の機械を選んでください。');
+          if (typeof customAlert === 'function') customAlert('先に対象の機械・車両を選んでください。');
           return null;
         }
-        if (machine.isVehicle) {
-          if (typeof customAlert === 'function') customAlert('車両には整備候補を登録できません。農機を選んでください。');
+        if (machine.isTool) {
+          if (typeof customAlert === 'function') customAlert('道具には整備候補を登録できません。農機または車両を選んでください。');
           return null;
         }
         return machine;
@@ -13131,6 +13382,20 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
 
       window.getSelectedMaintenanceContent_ = () => {
         return String(document.getElementById('m_content')?.value || '').trim();
+      };
+
+      window.syncMaintTargetFieldLocal_ = (machine, key, val) => {
+        if (!machine || !key) return;
+        const rawId = String(machine.id || '').trim();
+        if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines) && rawId) {
+          const idx = pdlMachines.findIndex(m => m && String(m.id) === rawId);
+          if (idx >= 0) pdlMachines[idx][key] = val;
+        }
+        if (Array.isArray(window.pdlMobileVehicles) && rawId) {
+          const vid = rawId.replace(/^veh:/, '');
+          const vIdx = window.pdlMobileVehicles.findIndex(v => v && (String(v.id) === vid || String(v.id) === rawId));
+          if (vIdx >= 0) window.pdlMobileVehicles[vIdx][key] = val;
+        }
       };
 
       window.appendMachineMaintOptionLocal_ = (machine, kind, name, opts) => {
@@ -13143,10 +13408,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         const list = window.splitMachineMaintList_(machine[key]);
         if (!list.includes(name)) list.push(name);
         machine[key] = window.joinMachineMaintList_(list);
-        if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines) && machine.id) {
-          const idx = pdlMachines.findIndex(m => m && String(m.id) === String(machine.id));
-          if (idx >= 0) pdlMachines[idx][key] = machine[key];
-        }
+        window.syncMaintTargetFieldLocal_(machine, key, machine[key]);
       };
 
       window.renameMachineMaintOptionLocal_ = (machine, kind, oldName, newName, opts) => {
@@ -13158,10 +13420,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         const key = window.getMachineMaintFieldKey_(kind);
         const list = window.splitMachineMaintList_(machine[key]).map(v => (v === oldName ? newName : v));
         machine[key] = window.joinMachineMaintList_(list);
-        if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines) && machine.id) {
-          const idx = pdlMachines.findIndex(m => m && String(m.id) === String(machine.id));
-          if (idx >= 0) pdlMachines[idx][key] = machine[key];
-        }
+        window.syncMaintTargetFieldLocal_(machine, key, machine[key]);
         if (key === 'maintenanceContents') {
           window.renameMachineContentPartsKey_(machine, oldName, newName);
           if (typeof window.renameMachineSymptomContent_ === 'function') {
@@ -13180,10 +13439,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         machine[key] = window.joinMachineMaintList_(
           window.splitMachineMaintList_(machine[key]).filter(v => v !== name)
         );
-        if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines) && machine.id) {
-          const idx = pdlMachines.findIndex(m => m && String(m.id) === String(machine.id));
-          if (idx >= 0) pdlMachines[idx][key] = machine[key];
-        }
+        window.syncMaintTargetFieldLocal_(machine, key, machine[key]);
         if (key === 'maintenanceContents') {
           window.removeMachineContentPartsKey_(machine, name);
           if (typeof window.forgetMachineSymptomContent_ === 'function') {
@@ -14629,10 +14885,12 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
             const m = document.getElementById('wn_edit_show_machine');
             const fuel = document.getElementById('wn_edit_show_fuel');
             const ridge = document.getElementById('wn_edit_show_ridge_polygon');
+            const maint = document.getElementById('wn_edit_show_maintenance');
             if (f) f.checked = inferred.showField !== false;
             if (m) m.checked = !!inferred.showMachine;
             if (fuel) fuel.checked = !!inferred.showFuel;
             if (ridge) ridge.checked = !!inferred.showRidgePolygon;
+            if (maint) maint.checked = !!inferred.showMaintenance;
           };
           bindFlagTouch();
           window._syncWorkNameEditorFlagDefaults_ = syncFlagDefaults;
@@ -22034,19 +22292,20 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         // 給油は整備パネルではなく給油パネルへ
         if (typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(name)) return false;
         if (typeof window.isMachinePullWorkName === 'function' && window.isMachinePullWorkName(name)) return false;
+        // 記録画面に出す項目「整備UI」で判定（カテゴリ保全/整備だけでは出さない）
+        if (typeof window.getWorkExtraUiFlags_ === 'function') {
+          const flags = window.getWorkExtraUiFlags_(name);
+          if (flags && flags.showMaintenance) return true;
+        }
         const detailNames = Array.from(document.querySelectorAll('input[name="detail_work_ids"]:checked'))
           .map(cb => String(cb.value || '').trim())
           .filter(Boolean);
-
         const looksLikeMaint = (s) => (typeof window.looksLikeMaintenanceText_ === 'function'
           ? window.looksLikeMaintenanceText_(s)
           : (() => {
             const t = String(s || '');
             return t.includes('整備') || t.includes('修理') || t.includes('点検') || t.includes('清掃') || t.includes('保全');
           })());
-
-        if (looksLikeMaint(name)) return true;
-        if (cat === '保全/整備' || cat.includes('整備')) return true;
         if (detailNames.some(looksLikeMaint)) return true;
         return false;
       };
@@ -22656,7 +22915,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         modal = document.createElement('div');
         modal.id = 'machineItemEditorModal';
         modal.setAttribute('data-multi', '1');
-        modal.style.cssText = 'display:none; position:fixed; inset:0; background:rgba(0,0,0,0.62); z-index:26000; justify-content:center; align-items:center; padding:12px; box-sizing:border-box;';
+        modal.style.cssText = 'display:none; position:fixed; inset:0; background:rgba(0,0,0,0.62); z-index:45000; justify-content:center; align-items:center; padding:12px; box-sizing:border-box;';
         modal.innerHTML = `
           <div style="width:100%; max-width:440px; max-height:92vh; background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 12px 32px rgba(0,0,0,0.35); display:flex; flex-direction:column;">
             <div style="background:#1976D2; color:#fff; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
@@ -22756,6 +23015,29 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
                   </select>
                 </div>
               </div>
+              <div id="mie_loc_sign_section" style="background:#E8F5E9; border:1px solid #A5D6A7; border-radius:10px; padding:10px; margin-bottom:12px; display:flex; flex-direction:column; gap:8px;">
+                <div style="font-size:13px; font-weight:bold; color:#2E7D32;">📍 拠点・看板（置き場所）</div>
+                <div style="display:flex; gap:8px;">
+                  <div style="flex:1;">
+                    <label style="display:block; font-size:11px; font-weight:bold; color:#1B5E20; margin-bottom:3px;">📍 拠点</label>
+                    <select id="mie_location" class="form-input" onchange="onMachineItemEditorLocationChange_(this.value)" style="width:100%; box-sizing:border-box; margin-bottom:0; font-size:12px;">
+                      <option value="">拠点を選択...</option>
+                    </select>
+                  </div>
+                  <div style="flex:1;">
+                    <label style="display:block; font-size:11px; font-weight:bold; color:#1B5E20; margin-bottom:3px;">🪧 定位置看板</label>
+                    <select id="mie_sign" class="form-input" onchange="onMachineItemEditorSignChange_(this.value)" style="width:100%; box-sizing:border-box; margin-bottom:0; font-size:12px;">
+                      <option value="">看板未設定</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label style="display:block; font-size:11px; font-weight:bold; color:#1B5E20; margin-bottom:3px;">📍 現在の看板（移動・貸出中の場合）</label>
+                  <select id="mie_current_sign" class="form-input" style="width:100%; box-sizing:border-box; margin-bottom:0; font-size:12px;">
+                    <option value="">定位置と同じ</option>
+                  </select>
+                </div>
+              </div>
               <div id="mie_fuel_checks_section" style="background:#FCE4EC; border:1px solid #F48FB1; border-radius:10px; padding:10px; margin-bottom:12px;">
                 <div style="font-size:13px; font-weight:bold; color:#C2185B; margin-bottom:4px;">⛽ 給油時の確認項目</div>
                 <div style="font-size:11px; color:#880E4F; line-height:1.4; margin-bottom:8px;">この機械・車両の給油記録で出す項目を選びます。すべてONのままなら従来どおり全項目が表示されます。</div>
@@ -22767,8 +23049,8 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
                 </div>
               </div>
               <div id="mie_maint_options_section" style="display:none; background:#FFF3E0; border:1px solid #FFCC80; border-radius:10px; padding:10px; margin-bottom:12px;">
-                <div style="font-size:13px; font-weight:bold; color:#E65100; margin-bottom:4px;">🔧 この機械の整備候補</div>
-                <div style="font-size:11px; color:#BF360C; line-height:1.4; margin-bottom:8px;">症状・整備内容は機械ごと。交換部品は整備内容ごとに登録し、記録時は選んだ整備内容で絞り込みます。</div>
+                <div style="font-size:13px; font-weight:bold; color:#E65100; margin-bottom:4px;">🔧 この機械・車両の整備候補</div>
+                <div style="font-size:11px; color:#BF360C; line-height:1.4; margin-bottom:8px;">症状・整備内容は機械・車両ごと。交換部品は整備内容ごとに登録し、記録時は選んだ整備内容で絞り込みます。</div>
                 <div style="margin-bottom:8px;">
                   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                     <span style="font-size:12px; font-weight:bold; color:#E65100;">症状</span>
@@ -22861,6 +23143,74 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         window.renderMachineItemEditorPreview();
       };
 
+      window.getMachineEditorAllSignboards_ = () => {
+        const byId = new Map();
+        try {
+          const polys = (typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons : (window.loadedPolygons || {});
+          Object.keys(polys).forEach((pid) => {
+            if (pid === '__global__') return;
+            const p = polys[pid];
+            if (!p || !p.isMarker) return;
+            byId.set(String(pid), {
+              id: String(pid),
+              name: String(p.name || pid).trim(),
+              location: String(p.location || '').trim()
+            });
+          });
+        } catch (e) {}
+        // 農機・車両に紐づいているが loadedPolygons に無い看板も補完
+        const addFromItem = (it) => {
+          if (!it) return;
+          if (it.signId && !byId.has(String(it.signId))) {
+            byId.set(String(it.signId), { id: String(it.signId), name: String(it.signName || it.signId).trim(), location: String(it.location || '').trim() });
+          }
+          if (it.currentLocId && !byId.has(String(it.currentLocId))) {
+            byId.set(String(it.currentLocId), { id: String(it.currentLocId), name: String(it.currentLocName || it.currentLocId).trim(), location: String(it.location || '').trim() });
+          }
+        };
+        ((typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : []).forEach(addFromItem);
+        (Array.isArray(window.pdlMobileVehicles) ? window.pdlMobileVehicles : []).forEach(addFromItem);
+        return Array.from(byId.values()).sort((a, b) => String(a.name).localeCompare(String(b.name), 'ja'));
+      };
+
+      window.onMachineItemEditorLocationChange_ = (locVal) => {
+        const signSel = document.getElementById('mie_sign');
+        const curSignSel = document.getElementById('mie_current_sign');
+        const allSigns = window.getMachineEditorAllSignboards_();
+        const loc = String(locVal || '').trim();
+        const populateSignSel = (sel, emptyLabel) => {
+          if (!sel) return;
+          const keep = String(sel.value || '');
+          const matched = loc ? allSigns.filter(s => !s.location || s.location === loc) : allSigns;
+          const others = loc ? allSigns.filter(s => s.location && s.location !== loc) : [];
+          let html = `<option value="">${emptyLabel}</option>`;
+          if (matched.length) {
+            html += matched.map(s => {
+              const locTag = (!loc && s.location) ? ` [${s.location}]` : '';
+              return `<option value="${s.id.replace(/"/g, '&quot;')}">${(s.name + locTag).replace(/</g, '&lt;')}</option>`;
+            }).join('');
+          }
+          if (others.length) {
+            html += `<optgroup label="他の拠点の看板">` + others.map(s => {
+              return `<option value="${s.id.replace(/"/g, '&quot;')}">${(s.name + (s.location ? ` [${s.location}]` : '')).replace(/</g, '&lt;')}</option>`;
+            }).join('') + `</optgroup>`;
+          }
+          sel.innerHTML = html;
+          if (keep && Array.from(sel.options).some(o => o.value === keep)) sel.value = keep;
+        };
+        populateSignSel(signSel, '看板未設定');
+        populateSignSel(curSignSel, '定位置と同じ');
+      };
+
+      window.onMachineItemEditorSignChange_ = (signIdVal) => {
+        const locSel = document.getElementById('mie_location');
+        if (!locSel || locSel.value) return;
+        const sign = window.getMachineEditorAllSignboards_().find(s => s.id === String(signIdVal || ''));
+        if (sign && sign.location && Array.from(locSel.options).some(o => o.value === sign.location)) {
+          locSel.value = sign.location;
+        }
+      };
+
       window.refreshMachineItemEditorSelectOptions_ = () => {
         const typeSel = document.getElementById('mie_type');
         if (typeSel) {
@@ -22900,6 +23250,26 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           ).join('');
           if (keep && Array.from(hitchSel.options).some(o => o.value === keep)) hitchSel.value = keep;
         }
+        const locSel = document.getElementById('mie_location');
+        if (locSel) {
+          const keep = String(locSel.value || '');
+          const locSet = new Set((typeof pdlLocations !== 'undefined' && Array.isArray(pdlLocations)) ? pdlLocations.map(x => String(x || '').trim()).filter(Boolean) : []);
+          ((typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : []).forEach(m => {
+            if (m && m.location) locSet.add(String(m.location).trim());
+          });
+          (Array.isArray(window.pdlMobileVehicles) ? window.pdlMobileVehicles : []).forEach(v => {
+            if (v && v.location) locSet.add(String(v.location).trim());
+          });
+          window.getMachineEditorAllSignboards_().forEach(s => {
+            if (s.location) locSet.add(s.location);
+          });
+          const locs = Array.from(locSet).sort((a, b) => String(a).localeCompare(String(b), 'ja'));
+          locSel.innerHTML = '<option value="">拠点を選択...</option>' + locs.map(l =>
+            `<option value="${String(l).replace(/"/g, '&quot;')}">${String(l).replace(/</g, '&lt;')}</option>`
+          ).join('');
+          if (keep && Array.from(locSel.options).some(o => o.value === keep)) locSel.value = keep;
+        }
+        window.onMachineItemEditorLocationChange_(locSel ? locSel.value : '');
       };
 
       window.getMachineItemEditorDisplayLabel_ = (fields) => {
@@ -23031,9 +23401,22 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
 
       window.readMachineItemEditorFormFields_ = (kind) => {
         kind = kind === 'vehicle' ? 'vehicle' : 'machine';
+        const st = window._machineItemEditorState || {};
         const fuelChecks = (typeof window.readMachineItemEditorFuelChecks_ === 'function')
           ? window.readMachineItemEditorFuelChecks_()
           : '';
+        const location = String((document.getElementById('mie_location') || {}).value || '').trim();
+        const signId = String((document.getElementById('mie_sign') || {}).value || '').trim();
+        const allSigns = (typeof window.getMachineEditorAllSignboards_ === 'function')
+          ? window.getMachineEditorAllSignboards_()
+          : [];
+        const baseSignObj = signId ? allSigns.find(s => s.id === signId) : null;
+        const signName = baseSignObj ? baseSignObj.name : '';
+        const curSignIdRaw = String((document.getElementById('mie_current_sign') || {}).value || '').trim();
+        const currentLocId = curSignIdRaw || signId;
+        const curSignObj = currentLocId ? allSigns.find(s => s.id === currentLocId) : null;
+        const currentLocName = curSignObj ? curSignObj.name : signName;
+
         if (kind === 'vehicle') {
           const mainCategory = (document.getElementById('mie_vehicle_main') || {}).value || '自動車';
           const vehicleType = (document.getElementById('mie_vehicle_type') || {}).value || '';
@@ -23053,7 +23436,15 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
             model: model,
             driveType: mainCategory === '作業機' ? '作業車両' : '移動車両',
             status: status,
-            fuelChecks: fuelChecks
+            fuelChecks: fuelChecks,
+            location: location,
+            signId: signId,
+            signName: signName,
+            currentLocId: currentLocId,
+            currentLocName: currentLocName,
+            symptoms: st.symptoms || '',
+            maintenanceContents: st.maintenanceContents || '',
+            parts: st.parts || ''
           };
         }
         const group = (document.getElementById('mie_group') || {}).value || '圃場';
@@ -23084,7 +23475,15 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           model: model,
           hitch: (document.getElementById('mie_hitch') || {}).value || '',
           status: (document.getElementById('mie_status') || {}).value || '',
-          fuelChecks: fuelChecks
+          fuelChecks: fuelChecks,
+          location: location,
+          signId: signId,
+          signName: signName,
+          currentLocId: currentLocId,
+          currentLocName: currentLocName,
+          symptoms: st.symptoms || '',
+          maintenanceContents: st.maintenanceContents || '',
+          parts: st.parts || ''
         };
       };
 
@@ -23119,8 +23518,14 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         window.clearMachineItemEditorInputFields_();
         st.photoBase64 = '';
         st.clearPhoto = false;
+        st.symptoms = '';
+        st.maintenanceContents = '';
+        st.parts = '';
         window.renderMachineItemEditorPreview();
         window.renderMachineItemEditorQueue();
+        if (typeof window.refreshMachineItemEditorMaintLists_ === 'function') {
+          window.refreshMachineItemEditorMaintLists_();
+        }
         const focusEl = kind === 'vehicle'
           ? document.getElementById('mie_vehicle_number')
           : document.getElementById('mie_type');
@@ -23195,10 +23600,6 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
 
       window.addMachineItemEditorMaintOption_ = async (kind) => {
         const st = window._machineItemEditorState || {};
-        if (st.kind === 'vehicle') {
-          if (typeof customAlert === 'function') customAlert('車両には整備候補を登録できません。');
-          return;
-        }
         const labels = {
           symptoms: '症状',
           maintenanceContents: '整備内容',
@@ -23226,10 +23627,11 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
             }
           }
         }
+        const targetLabel = st.kind === 'vehicle' ? 'この車両' : 'この機械';
         const nameRaw = await customPrompt(
           kind === 'parts'
             ? `「${contentName}」に追加する「${label}」:`
-            : `この機械に追加する「${label}」:`
+            : `${targetLabel}に追加する「${label}」:`
         );
         if (!nameRaw || !String(nameRaw).trim()) return;
         const name = String(nameRaw).trim();
@@ -23264,20 +23666,20 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         window.refreshMachineItemEditorMaintLists_();
         // 編集中でIDがある場合はすぐサーバーへも反映
         if (st.mode === 'edit' && st.itemId) {
+          const apiTargetId = st.kind === 'vehicle'
+            ? ('veh:' + String(st.itemId).replace(/^veh:/, ''))
+            : String(st.itemId);
           try {
             if (kind === 'symptoms') {
-              await callGAS('addMachineSymptom', { machineId: st.itemId, newSymptom: name });
+              await callGAS('addMachineSymptom', { machineId: apiTargetId, newSymptom: name });
             } else if (kind === 'parts') {
-              await callGAS('addMachinePart', { machineId: st.itemId, newPart: name, contentName: contentName });
+              await callGAS('addMachinePart', { machineId: apiTargetId, newPart: name, contentName: contentName });
             } else {
-              await callGAS('addMachineMaintenanceContent', { machineId: st.itemId, newContent: name });
+              await callGAS('addMachineMaintenanceContent', { machineId: apiTargetId, newContent: name });
             }
-            if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) {
-              const m = pdlMachines.find(x => String(x.id) === String(st.itemId));
-              if (m) {
-                if (kind === 'parts') m.parts = st.parts;
-                else m[window.getMachineMaintFieldKey_(kind)] = st[window.getMachineMaintFieldKey_(kind)];
-              }
+            const fieldKey = kind === 'parts' ? 'parts' : window.getMachineMaintFieldKey_(kind);
+            if (typeof window.syncMaintTargetFieldLocal_ === 'function') {
+              window.syncMaintTargetFieldLocal_({ id: apiTargetId }, fieldKey, st[fieldKey]);
             }
             if (typeof window.updatePartsList === 'function') window.updatePartsList();
           } catch (e) {
@@ -23310,26 +23712,25 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         }
         window.refreshMachineItemEditorMaintLists_();
         if (st.mode === 'edit' && st.itemId) {
+          const apiTargetId = st.kind === 'vehicle'
+            ? ('veh:' + String(st.itemId).replace(/^veh:/, ''))
+            : String(st.itemId);
           try {
             if (kind === 'symptoms') {
-              await callGAS('addMachineSymptom', { machineId: st.itemId, deleteSymptom: name });
+              await callGAS('addMachineSymptom', { machineId: apiTargetId, deleteSymptom: name });
             } else if (kind === 'parts') {
               await callGAS('addMachinePart', {
-                machineId: st.itemId,
+                machineId: apiTargetId,
                 fullParts: st.parts || ''
               });
             } else {
-              await callGAS('addMachineMaintenanceContent', { machineId: st.itemId, deleteContent: name });
+              await callGAS('addMachineMaintenanceContent', { machineId: apiTargetId, deleteContent: name });
             }
-            if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) {
-              const m = pdlMachines.find(x => String(x.id) === String(st.itemId));
-              if (m) {
-                if (kind === 'parts') m.parts = st.parts;
-                else {
-                  const key = window.getMachineMaintFieldKey_(kind);
-                  m[key] = st[key];
-                  if (key === 'maintenanceContents') m.parts = st.parts;
-                }
+            const fieldKey = kind === 'parts' ? 'parts' : window.getMachineMaintFieldKey_(kind);
+            if (typeof window.syncMaintTargetFieldLocal_ === 'function') {
+              window.syncMaintTargetFieldLocal_({ id: apiTargetId }, fieldKey, st[fieldKey]);
+              if (fieldKey === 'maintenanceContents') {
+                window.syncMaintTargetFieldLocal_({ id: apiTargetId }, 'parts', st.parts);
               }
             }
             if (typeof window.updatePartsList === 'function') window.updatePartsList();
@@ -23343,7 +23744,8 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         const st = window._machineItemEditorState || {};
         const sec = document.getElementById('mie_maint_options_section');
         if (!sec) return;
-        const show = st.kind !== 'vehicle' && (st.mode === 'edit' || !!st.itemId);
+        // 農機・車両どちらも新規追加・編集時に整備候補を登録可能にする
+        const show = (st.kind === 'machine' || st.kind === 'vehicle');
         sec.style.display = show ? 'block' : 'none';
         if (show) window.refreshMachineItemEditorMaintLists_();
       };
@@ -23449,6 +23851,28 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           }
           if (document.getElementById('mie_vehicle_model')) document.getElementById('mie_vehicle_model').value = item.model || '';
           if (document.getElementById('mie_status')) document.getElementById('mie_status').value = item.status || '使用可能';
+          const locSel = document.getElementById('mie_location');
+          if (locSel) {
+            const locVal = String(item.location || '').trim();
+            if (locVal && !Array.from(locSel.options).some(o => o.value === locVal)) {
+              locSel.insertAdjacentHTML('beforeend', `<option value="${locVal.replace(/"/g, '&quot;')}">${locVal.replace(/</g, '&lt;')}</option>`);
+            }
+            locSel.value = locVal;
+            if (typeof window.onMachineItemEditorLocationChange_ === 'function') {
+              window.onMachineItemEditorLocationChange_(locVal);
+            }
+          }
+          const signSel = document.getElementById('mie_sign');
+          if (signSel) {
+            const sId = String(item.signId || '').trim();
+            signSel.value = sId;
+          }
+          const curSignSel = document.getElementById('mie_current_sign');
+          if (curSignSel) {
+            const cId = String(item.currentLocId || '').trim();
+            const sId = String(item.signId || '').trim();
+            curSignSel.value = (cId && cId !== sId) ? cId : '';
+          }
           if (typeof window.setMachineItemEditorFuelChecksUi_ === 'function') {
             let fuelSpec = item.fuelChecks;
             if (fuelSpec == null && typeof window.getFuelChecksSpecForTarget_ === 'function') {
@@ -23461,8 +23885,16 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
             }
             window.setMachineItemEditorFuelChecksUi_(fuelSpec);
           }
-        } else if (typeof window.setMachineItemEditorFuelChecksUi_ === 'function') {
-          window.setMachineItemEditorFuelChecksUi_('');
+        } else {
+          if (document.getElementById('mie_location')) document.getElementById('mie_location').value = opts.defaultLocation || '';
+          if (typeof window.onMachineItemEditorLocationChange_ === 'function') {
+            window.onMachineItemEditorLocationChange_(opts.defaultLocation || '');
+          }
+          if (document.getElementById('mie_sign')) document.getElementById('mie_sign').value = opts.defaultSignId || '';
+          if (document.getElementById('mie_current_sign')) document.getElementById('mie_current_sign').value = '';
+          if (typeof window.setMachineItemEditorFuelChecksUi_ === 'function') {
+            window.setMachineItemEditorFuelChecksUi_('');
+          }
         }
 
         const isAdmin = typeof window.isWorkerAdmin === 'function' ? window.isWorkerAdmin() : true;
@@ -23519,8 +23951,9 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
 
       window.onMachineItemEditorSelectExisting = (val) => {
         val = String(val || '');
+        const prevAfterSave = (window._machineItemEditorState && window._machineItemEditorState.afterSave) || null;
         if (!val) {
-          window.openMachineItemEditorModal({ mode: 'add', kind: 'machine' });
+          window.openMachineItemEditorModal({ mode: 'add', kind: 'machine', afterSave: prevAfterSave });
           return;
         }
         if (val.indexOf('mac_') === 0) {
@@ -23528,14 +23961,14 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
           const m = macs.find(x => String(x.id) === id);
           if (m) {
-            window.openMachineItemEditorModal({ mode: 'edit', kind: 'machine', item: m });
+            window.openMachineItemEditorModal({ mode: 'edit', kind: 'machine', item: m, afterSave: prevAfterSave });
           }
         } else if (val.indexOf('veh_') === 0) {
           const id = val.replace('veh_', '');
           const vehs = (typeof pdlMobileVehicles !== 'undefined' && Array.isArray(pdlMobileVehicles)) ? pdlMobileVehicles : [];
           const v = vehs.find(x => String(x.id) === id || String(x.id) === ('veh:' + id));
           if (v) {
-            window.openMachineItemEditorModal({ mode: 'edit', kind: 'vehicle', item: v });
+            window.openMachineItemEditorModal({ mode: 'edit', kind: 'vehicle', item: v, afterSave: prevAfterSave });
           }
         }
       };
@@ -23545,6 +23978,15 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
         const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '管理者';
         const kind = entry.kind === 'vehicle' ? 'vehicle' : 'machine';
         const photoBase64 = entry.photoBase64 || '';
+        const location = entry.location != null ? String(entry.location).trim() : '';
+        const signId = entry.signId != null ? String(entry.signId).trim() : '';
+        const signName = entry.signName != null ? String(entry.signName).trim() : '';
+        const currentLocId = entry.currentLocId != null ? String(entry.currentLocId).trim() : signId;
+        const currentLocName = entry.currentLocName != null ? String(entry.currentLocName).trim() : signName;
+        const symptoms = entry.symptoms != null ? entry.symptoms : (st.symptoms || '');
+        const maintenanceContents = entry.maintenanceContents != null ? entry.maintenanceContents : (st.maintenanceContents || '');
+        const parts = entry.parts != null ? entry.parts : (st.parts || '');
+
         if (kind === 'vehicle') {
           const rawId = (entry.mode === 'edit' && entry.itemId)
             ? String(entry.itemId).replace(/^veh:/, '')
@@ -23567,7 +24009,15 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
             model: model,
             driveType: driveType,
             status: status,
-            fuelChecks: entry.fuelChecks != null ? entry.fuelChecks : ''
+            fuelChecks: entry.fuelChecks != null ? entry.fuelChecks : '',
+            location: location,
+            signId: signId,
+            signName: signName,
+            currentLocId: currentLocId,
+            currentLocName: currentLocName,
+            symptoms: symptoms,
+            maintenanceContents: maintenanceContents,
+            parts: parts
           };
           if (photoBase64) {
             payload.photoBase64 = photoBase64;
@@ -23581,7 +24031,10 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
             id: rawId, plateNumber: plateNumber, driveType: driveType, status: status, photo: photoUrl,
             mainCategory: mainCategory, group: mainCategory, vehicleType: vehicleType, type: vehicleType,
             vehicleNumber: plateNumber, machineNumber: plateNumber, model: model,
-            fuelChecks: payload.fuelChecks || ''
+            fuelChecks: payload.fuelChecks || '',
+            location: location, signId: signId, signName: signName,
+            currentLocId: currentLocId, currentLocName: currentLocName,
+            symptoms: symptoms, maintenanceContents: maintenanceContents, parts: parts
           };
           const idx = window.pdlMobileVehicles.findIndex(v => String(v.id) === String(rawId));
           if (idx >= 0) window.pdlMobileVehicles[idx] = Object.assign({}, window.pdlMobileVehicles[idx], rec);
@@ -23616,9 +24069,14 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           machineNumber: machineNumber,
           type: type,
           hitch: hitch,
-          symptoms: entry.symptoms != null ? entry.symptoms : (st.symptoms || ''),
-          maintenanceContents: entry.maintenanceContents != null ? entry.maintenanceContents : (st.maintenanceContents || ''),
-          parts: entry.parts != null ? entry.parts : (st.parts || ''),
+          location: location,
+          signId: signId,
+          signName: signName,
+          currentLocId: currentLocId,
+          currentLocName: currentLocName,
+          symptoms: symptoms,
+          maintenanceContents: maintenanceContents,
+          parts: parts,
           fuelChecks: entry.fuelChecks != null ? entry.fuelChecks : ''
         };
         if (photoBase64) {
@@ -23634,7 +24092,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           newMachine = (res && res.machine) ? res.machine : Object.assign({}, payload, { id: entry.itemId, photo: photoBase64 || (payload.clearPhoto ? '' : (entry.existingPhoto || '')) });
         } else {
           const res = await safeCallGAS('addMachineToSign', payload);
-          newMachine = (res && res.id) ? res : { id: 'MAC_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), name: name, workCategory: payload.workCategory, group: group, fuel: fuel, model: model, type: type, hitch: hitch, status: '使用可能', photo: photoBase64 || '' };
+          newMachine = (res && res.id) ? res : { id: 'MAC_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), name: name, workCategory: payload.workCategory, group: group, fuel: fuel, model: model, type: type, hitch: hitch, location: location, signId: signId, signName: signName, currentLocId: currentLocId, currentLocName: currentLocName, status: '使用可能', photo: photoBase64 || '' };
         }
         if (typeof pdlMachines === 'undefined' || !Array.isArray(pdlMachines)) window.pdlMachines = [];
         const existingIdx = pdlMachines.findIndex(m => String(m.id) === String(newMachine.id) || m.name === name);
@@ -23646,6 +24104,11 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
           type: type,
           machineNumber: machineNumber,
           hitch: hitch,
+          location: location,
+          signId: signId,
+          signName: signName,
+          currentLocId: currentLocId,
+          currentLocName: currentLocName,
           symptoms: payload.symptoms || '',
           maintenanceContents: payload.maintenanceContents || '',
           parts: payload.parts || '',
@@ -29435,10 +29898,13 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
                const inputSymptom = document.getElementById('m_symptom')?.value?.trim() || "";
                data.maintenanceSymptom = inputSymptom; 
                
-               if (toolObj && !toolObj.isVehicle && !toolObj.isTool && inputSymptom) {
+               if (toolObj && !toolObj.isTool && inputSymptom) {
                    const currentSymp = toolObj.symptoms ? toolObj.symptoms.split(/[,、]/).map(s => s.trim()) : [];
                    if (!currentSymp.includes(inputSymptom)) {
                        toolObj.symptoms = toolObj.symptoms ? toolObj.symptoms + "," + inputSymptom : inputSymptom;
+                       if (typeof window.syncMaintTargetFieldLocal_ === 'function') {
+                           window.syncMaintTargetFieldLocal_(toolObj, 'symptoms', toolObj.symptoms);
+                       }
                        sideEffects.push({ action: 'addMachineSymptom', params: { machineId: tId, newSymptom: inputSymptom } });
                    }
                }
@@ -29578,12 +30044,18 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
             .filter(id => loadedPolygons[id] && !loadedPolygons[id].isMarker)
             .map(id => loadedPolygons[id].name)
             .filter(Boolean);
-          let nameStr = fieldNames.join(', ');
+          let nameStr = '';
+          if (window.SignGroup && typeof window.SignGroup.formatRecordPlaceLabel === 'function') {
+            nameStr = window.SignGroup.formatRecordPlaceLabel(selectedPolyIds, loadedPolygons);
+          }
           if (!nameStr) {
-            nameStr = selectedPolyIds
-              .map(i => loadedPolygons[i] ? loadedPolygons[i].name : '')
-              .filter(Boolean)
-              .join(', ') || '未選択';
+            nameStr = fieldNames.join(', ');
+            if (!nameStr) {
+              nameStr = selectedPolyIds
+                .map(i => loadedPolygons[i] ? loadedPolygons[i].name : '')
+                .filter(Boolean)
+                .join(', ') || '未選択';
+            }
           }
           data.multiFieldNames = fieldNames.join(', ');
           data.placeLabel = nameStr;
@@ -31289,7 +31761,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
             setTimeout(() => { try { window.refreshClockOutNudgeUI_(); } catch (e) {} }, 40);
           }
       }
-      window.openLightbox = (u) => { document.getElementById('lightbox-img').src = u.replace('sz=w800','sz=w1600'); document.getElementById('lightbox').style.display = 'flex'; };
+      window.openLightbox = (u) => { const lb = document.getElementById('lightbox'); document.getElementById('lightbox-img').src = String(u || '').replace('sz=w800','sz=w1600'); if (lb) { lb.style.zIndex = '50000'; lb.style.display = 'flex'; } };
       // ==========================================
       // 農機の片づけ場所をマップから選ぶ機能
       // ==========================================
@@ -35289,21 +35761,9 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
   }
   if (!work.isRest && window.bulkWorkMemoIsMaintenance_(row) && typeof window.setBulkWorkMemoMaintTargets_ === 'function') {
     row.usedMachines = [];
-    const sugMaint = (typeof window.suggestBulkWorkMemoMaintenanceTargets_ === 'function')
-      ? window.suggestBulkWorkMemoMaintenanceTargets_(row.rawLine)
-      : { primary: [] };
-    const primaryMaint = (sugMaint && Array.isArray(sugMaint.primary)) ? sugMaint.primary : [];
-    if (primaryMaint.length) {
-      window.setBulkWorkMemoMaintTargets_(row, primaryMaint.map(item => ({
-        id: String(item.id || '').trim(),
-        name: String(item.name || '').trim(),
-        kind: String(item.kind || 'machine').trim() || 'machine'
-      })).filter(t => t.id || t.name));
-      row._maintPickOpen = false;
-    } else {
-      window.setBulkWorkMemoMaintTargets_(row, []);
-      row._maintPickOpen = true;
-    }
+    // 候補表示のみ（自動選択しない）。UI側の suggest でハイライトする
+    window.setBulkWorkMemoMaintTargets_(row, []);
+    row._maintPickOpen = true;
     if (typeof window.guessBulkWorkMemoMaintenanceFields_ === 'function') {
       window.guessBulkWorkMemoMaintenanceFields_(row);
     }
@@ -36670,6 +37130,13 @@ window.openWorkerSignRegModal_ = () => {
     locList.map(l => `<option value="${String(l).replace(/"/g, '&quot;')}">${String(l).replace(/</g, '&lt;')}</option>`)
   ).join('');
 
+  const candidateParents = (window.SignGroup && typeof window.SignGroup.getCandidateParents === 'function')
+    ? window.SignGroup.getCandidateParents('', loadedPolygons)
+    : [];
+  const parentOpts = ['<option value="">なし（単独・大看板）</option>'].concat(
+    candidateParents.map(cp => `<option value="${String(cp.id).replace(/"/g, '&quot;')}">${String(cp.name).replace(/</g, '&lt;')}</option>`)
+  ).join('');
+
   modalBody.innerHTML = `
     <div id="workerSignQuickScreen">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
@@ -36722,6 +37189,8 @@ window.openWorkerSignRegModal_ = () => {
         <option value="location_pin">📍 位置ピン（常時表示ラベル）</option>
       </select>
       <select id="worker_new_sign_loc" class="form-select" style="margin-bottom:8px;">${locOpts}</select>
+      <label style="font-size:12px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">束ねる大看板（親看板）:</label>
+      <select id="worker_new_sign_parent" class="form-select" style="margin-bottom:8px;">${parentOpts}</select>
       <div style="margin:8px 0;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
           <label style="font-size:12px; font-weight:bold; color:#555;">アイコンを選択:</label>
@@ -36749,23 +37218,24 @@ window.openWorkerSignRegModal_ = () => {
 
 window.quickRegisterWorkerSign_ = (presetName, presetIcon, presetSignFunc) => {
   window._workerSignSelectedIcon = presetIcon;
-  window.executeSaveWorkerSignboard_(presetName, '', presetIcon, [], presetSignFunc || '');
+  window.executeSaveWorkerSignboard_(presetName, '', presetIcon, [], presetSignFunc || '', '');
 };
 
 window.saveWorkerNewSignboard_ = () => {
   const name = (document.getElementById('worker_new_sign_name')?.value || '').trim();
   const loc = document.getElementById('worker_new_sign_loc')?.value || '';
   const signFunc = document.getElementById('worker_new_sign_func')?.value || '';
+  const parentSignId = document.getElementById('worker_new_sign_parent')?.value || '';
   const fileInput = document.getElementById('worker_new_sign_photo');
   const files = fileInput && fileInput.files ? Array.from(fileInput.files) : [];
   if (!name) {
     if (typeof customAlert === 'function') customAlert('看板名を入力してください');
     return;
   }
-  window.executeSaveWorkerSignboard_(name, loc, window._workerSignSelectedIcon || '🚩', files, signFunc);
+  window.executeSaveWorkerSignboard_(name, loc, window._workerSignSelectedIcon || '🚩', files, signFunc, parentSignId);
 };
 
-window.executeSaveWorkerSignboard_ = async (name, loc, icon, files, signFunc) => {
+window.executeSaveWorkerSignboard_ = async (name, loc, icon, files, signFunc, parentSignId) => {
   if (!window._workerTempMarker) {
     if (typeof customAlert === 'function') customAlert('看板の位置が選択されていません');
     return;
@@ -36791,6 +37261,9 @@ window.executeSaveWorkerSignboard_ = async (name, loc, icon, files, signFunc) =>
   const author = currentUser || localStorage.getItem('passionMapUserName') || '';
 
   createPolygonObject(tempId, finalName, [pos], icon, [], author, loc, '', 0, '稼働中', sf, []);
+  if (loadedPolygons[tempId]) {
+    loadedPolygons[tempId].parentSignId = String(parentSignId || '').trim();
+  }
 
   window.cancelWorkerMapSelectReg_({ returnToMapSelect: true });
   window.selectNewlyRegisteredMapItem_(tempId);
@@ -36805,13 +37278,18 @@ window.executeSaveWorkerSignboard_ = async (name, loc, icon, files, signFunc) =>
       condition: '',
       area: 0,
       status: '稼働中',
-      signFunction: sf
+      signFunction: sf,
+      parentSignId: String(parentSignId || '').trim()
     };
     const res = await callGAS('savePolygon', payload);
     const realId = (res && res.id) ? String(res.id) : tempId;
     if (res && res.id) {
       window.remapWorkerTempPolygonId_(tempId, realId);
+      if (loadedPolygons[realId]) {
+        loadedPolygons[realId].parentSignId = String(parentSignId || '').trim();
+      }
     }
+    if (window.SignGroup) window.SignGroup.refreshMarkers();
     if (files && files.length > 0 && typeof compressImage === 'function') {
       const fileDataArray = await Promise.all(files.map(f => compressImage(f)));
       const recordRes = await callGAS('saveRecord', {
@@ -37546,17 +38024,28 @@ window.buildBulkWorkMemoSelectedPolysDisplayHtml_ = (d, uid) => {
     const name = (p && p.name) ? p.name : id;
     const around = typeof window.isSurroundingField_ === 'function' && window.isSurroundingField_(p);
     const isSign = !!(p && p.isMarker);
-    const bg = around ? '#FFF3E0' : (isSign ? '#F3E5F5' : '#2E7D32');
-    const fg = around ? '#E65100' : (isSign ? '#4A148C' : '#fff');
-    const bd = around ? '#FF9800' : (isSign ? '#6A1B9A' : '#1B5E20');
+    const hasSignGroup = !!(window.SignGroup && typeof window.SignGroup.isParentSign === 'function');
+    const isParent = isSign && hasSignGroup && window.SignGroup.isParentSign(p);
+    const isChild = isSign && hasSignGroup && window.SignGroup.isChildSign(p);
+    const parentPoly = isChild ? loadedPolygons[window.SignGroup.getParentId(p)] : null;
+    const parentName = parentPoly ? parentPoly.name : '';
+
+    const bg = around ? '#FFF3E0' : (isParent ? '#EDE7F6' : (isChild ? '#FFF3E0' : (isSign ? '#F3E5F5' : '#2E7D32')));
+    const fg = around ? '#E65100' : (isParent ? '#4A148C' : (isChild ? '#E65100' : (isSign ? '#4A148C' : '#fff')));
+    const bd = around ? '#FF9800' : (isParent ? '#7B1FA2' : (isChild ? '#FF9800' : (isSign ? '#6A1B9A' : '#1B5E20')));
     const mark = around ? '<span style="font-size:11px; font-weight:bold; margin-left:4px;">周辺地</span>' : '';
-    const kind = isSign
-      ? '<span style="background:#6A1B9A; color:#fff; border-radius:8px; padding:1px 6px; font-size:10px; line-height:1.4;">看板</span>'
-      : '📍';
-    const xColor = around ? '#c62828' : (isSign ? '#6A1B9A' : '#FFCDD2');
+    const kind = isParent
+      ? '<span style="background:#4A148C; color:#fff; border-radius:8px; padding:1px 6px; font-size:10px; line-height:1.4;">大看板</span>'
+      : (isChild
+        ? '<span style="background:#E65100; color:#fff; border-radius:8px; padding:1px 6px; font-size:10px; line-height:1.4;">小看板</span>'
+        : (isSign
+          ? '<span style="background:#6A1B9A; color:#fff; border-radius:8px; padding:1px 6px; font-size:10px; line-height:1.4;">看板</span>'
+          : '📍'));
+    const displayName = isChild && parentName ? `${parentName} ▸ ${name}` : name;
+    const xColor = around ? '#c62828' : (isParent ? '#4A148C' : (isChild ? '#E65100' : (isSign ? '#6A1B9A' : '#FFCDD2')));
     const safeId = String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     return `<span style="display:inline-flex; align-items:center; gap:6px; background:${bg}; color:${fg}; padding:8px 12px; border-radius:16px; font-size:14px; font-weight:bold; border:2px solid ${bd}; box-shadow:0 1px 3px rgba(0,0,0,0.12);">
-      ${kind} ${esc(name)}${mark}
+      ${kind} ${esc(displayName)}${mark}
       <span onclick="removeBulkWorkMemoPoly_('${esc(uid)}','${safeId}')" style="cursor:pointer; font-weight:bold; color:${xColor}; margin-left:2px; font-size:16px; line-height:1;" title="対象から外す">×</span>
     </span>`;
   }).join('');
@@ -38128,6 +38617,7 @@ window.getBulkWorkMemoUiFlags_ = (draft) => {
     showField: pick(w && w.showField, inferred.showField),
     showFuel: pick(w && w.showFuel, inferred.showFuel),
     showRidgePolygon: pick(w && w.showRidgePolygon, inferred.showRidgePolygon),
+    showMaintenance: pick(w && w.showMaintenance, inferred.showMaintenance),
     isPrep: false,
     isCleanup: false,
     isDelivery: !!isDelivery
@@ -38684,7 +39174,6 @@ window.bulkWorkMemoIsMaintenance_ = (draft) => {
   const wName = String(draft && draft.workName || '').trim();
   const rawLine = String(draft && draft.rawLine || '').trim();
   const matchText = String(draft && draft._workMatchText || '').trim();
-  // 作業名が空でも、メモ本文に整備系ワードがあれば点検整備UIを出す
   if (!wName && !rawLine && !matchText) return false;
   const cat = String(draft && draft.category || (wName ? window.getBulkWorkMemoWorkCategory_(wName) : '') || '').trim();
   // 準備／片づけでは対象作業が整備系でも整備UIは出さない
@@ -38693,20 +39182,21 @@ window.bulkWorkMemoIsMaintenance_ = (draft) => {
   if (wName && typeof window.isMachinePullWorkName === 'function' && window.isMachinePullWorkName(wName)) return false;
   // 移動・運搬は農機名（馬力呼び）が出ても整備UIにしない
   if (/移動|運搬|配送|納品/.test(wName) || /移動|運搬/.test(cat)) return false;
+  // 記録画面に出す項目「整備UI」で判定（カテゴリ保全/整備だけでは出さない）
+  const flags = (typeof window.getBulkWorkMemoUiFlags_ === 'function')
+    ? window.getBulkWorkMemoUiFlags_(draft || {})
+    : null;
+  if (flags && flags.showMaintenance) return true;
   const looksLikeMaint = (s) => (typeof window.looksLikeMaintenanceText_ === 'function'
     ? window.looksLikeMaintenanceText_(s)
     : (() => {
       const t = String(s || '');
       return t.includes('整備') || t.includes('修理') || t.includes('点検') || t.includes('清掃') || t.includes('保全');
     })());
-  if (wName && looksLikeMaint(wName)) return true;
-  if (cat === '保全/整備' || cat.includes('整備') || cat.includes('保全')) return true;
   const details = Array.isArray(draft && draft.detailedWorks) ? draft.detailedWorks : [];
   if (details.some(looksLikeMaint)) return true;
-  // 作業名が整備系でないのに確定している場合、メモの馬力呼びなどだけで整備UIを出さない
-  if (wName && !looksLikeMaint(wName)) return false;
-  if (rawLine && looksLikeMaint(rawLine)) return true;
-  if (matchText && looksLikeMaint(matchText)) return true;
+  // 作業名未確定でメモ本文だけ整備系のとき（マスタフラグがまだ無い）
+  if (!wName && ((rawLine && looksLikeMaint(rawLine)) || (matchText && looksLikeMaint(matchText)))) return true;
   return false;
 };
 
@@ -39218,13 +39708,13 @@ window.getBulkWorkMemoMaintFocusMachine_ = (draft) => {
   const id = window.getBulkWorkMemoMaintFocusId_(draft);
   if (!id) return window.getBulkWorkMemoMaintenanceMachine_(draft);
   const machine = window.resolveBulkWorkMemoMaintMachine_(id);
-  if (machine && (machine.isTool || machine.isVehicle || machine.kind === 'tool' || machine.kind === 'vehicle')) {
+  if (machine && (machine.isTool || machine.kind === 'tool')) {
     return null;
   }
   const focusTarget = ((typeof window.getBulkWorkMemoMaintTargetsSelected_ === 'function')
     ? window.getBulkWorkMemoMaintTargetsSelected_(draft)
     : []).find(t => String(t.id) === id);
-  if (focusTarget && (focusTarget.kind === 'tool' || focusTarget.kind === 'vehicle')) return null;
+  if (focusTarget && focusTarget.kind === 'tool') return null;
   return machine;
 };
 
@@ -39272,7 +39762,7 @@ window.guessBulkWorkMemoMaintenanceFields_ = (draft) => {
     if (!id) return;
     const detail = window.getBulkWorkMemoMaintDetail_(draft, id);
     const machine = window.resolveBulkWorkMemoMaintMachine_(id);
-    const canMachine = machine && !machine.isTool && !machine.isVehicle;
+    const canMachine = machine && !machine.isTool;
     const pickFromList = (kind, key) => {
       if (String(detail[key] || '').trim()) return;
       const opts = (canMachine && window.getMachineMaintenanceOptions_)
@@ -39472,7 +39962,7 @@ window.buildBulkWorkMemoMaintenanceTargetHtml_ = (d, uid) => {
     return true;
   }).filter(item => !primarySug.some(p => String(p.id) === String(item.id)));
   const sugHtml = primarySug.length
-    ? `<div style="font-size:10px; color:#E65100; font-weight:bold; margin:6px 0 4px;">メモから合いそうな機械・道具</div>
+    ? `<div style="font-size:10px; color:#E65100; font-weight:bold; margin:6px 0 4px;">候補（メモから合いそうな機械・道具・タップで選択）</div>
        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(128px, 1fr)); gap:8px; margin-bottom:8px;">${primarySug.map(item => chip(item, 'sug')).join('')}</div>`
     : '';
   const maybeHtml = maybeSug.length
@@ -39496,7 +39986,7 @@ window.buildBulkWorkMemoMaintenanceTargetHtml_ = (d, uid) => {
   const focusMachine = (typeof window.getBulkWorkMemoMaintFocusMachine_ === 'function')
     ? window.getBulkWorkMemoMaintFocusMachine_(d)
     : null;
-  const canAddMaint = !!(focusMachine && !focusMachine.isTool && !focusMachine.isVehicle);
+  const canAddMaint = !!(focusMachine && !focusMachine.isTool);
   const focusDetail = (typeof window.getBulkWorkMemoMaintDetail_ === 'function' && focusTarget)
     ? window.getBulkWorkMemoMaintDetail_(d, focusTarget.id)
     : {
@@ -39506,7 +39996,7 @@ window.buildBulkWorkMemoMaintenanceTargetHtml_ = (d, uid) => {
     };
   const focusTabs = selected.length
     ? `<div style="margin-bottom:8px;">
-        <div style="font-size:10px; font-weight:bold; color:#E65100; margin-bottom:6px;">① 整備内容を入力する機械（1台ずつ）</div>
+        <div style="font-size:10px; font-weight:bold; color:#E65100; margin-bottom:6px;">① 整備内容を入力する機械・車両（1台ずつ）</div>
         <div style="display:flex; flex-wrap:wrap; gap:6px;">${selected.map(t => {
           const on = String(t.id) === String(focusId);
           const safeId = String(t.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -39521,7 +40011,7 @@ window.buildBulkWorkMemoMaintenanceTargetHtml_ = (d, uid) => {
     : '';
   const focusHint = (!selected.length || canAddMaint)
     ? ''
-    : `<div style="font-size:11px; color:#666; background:#fff; border:1px solid #FFE0B2; border-radius:8px; padding:8px; line-height:1.4; margin-bottom:4px;">車両・道具は症状・整備内容・部品の候補登録対象外です。農機を選んでください。</div>`;
+    : `<div style="font-size:11px; color:#666; background:#fff; border:1px solid #FFE0B2; border-radius:8px; padding:8px; line-height:1.4; margin-bottom:4px;">道具は症状・整備内容・部品の候補登録対象外です。農機または車両を選んでください。</div>`;
   const detailsHtml = selected.length
     ? (canAddMaint
       ? `${focusTabs}${focusHint}
@@ -39566,7 +40056,7 @@ window.buildBulkWorkMemoMaintenanceTargetHtml_ = (d, uid) => {
         const onFocus = String(t.id) === String(focusId);
         return `<span style="display:inline-flex; align-items:center; gap:4px; background:${onFocus ? '#E65100' : '#FFE0B2'}; color:${onFocus ? '#fff' : '#E65100'}; padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; border:1px solid #FF9800; cursor:pointer;" onclick="focusBulkWorkMemoMaintTarget_('${esc(uid)}','${safeId}')" title="この機械の整備内容を入力">✅ ${esc(t.name || t.id)}<span onclick="event.stopPropagation(); editBulkWorkMemoMaintTarget_('${esc(uid)}','${safeId}')" style="cursor:pointer; color:${onFocus ? '#FFE0B2' : '#EF6C00'}; font-size:13px; line-height:1; margin-left:2px;" title="編集">✏️</span><span onclick="event.stopPropagation(); pickBulkWorkMemoMaintenanceTarget_('${esc(uid)}','${safeId}','${safeName}','${safeKind}')" style="cursor:pointer; color:${onFocus ? '#FFCDD2' : '#c62828'}; font-size:14px; line-height:1;" title="外す">×</span></span>`;
       }).join('')}</div>`
-    : `<div style="margin-bottom:8px; font-size:11px; color:#666; background:#fff; padding:8px; border-radius:6px; line-height:1.35;">修理・点検した機械・道具・車両を複数選べます（圃場か機械のどちらかは必須）。1台ずつ選んで症状・整備内容・部品を登録できます。</div>`;
+    : `<div style="margin-bottom:8px; font-size:11px; color:#666; background:#fff; padding:8px; border-radius:6px; line-height:1.35;">候補をタップして整備対象を選んでください（自動では選ばれません）。圃場か機械のどちらかは必須です。</div>`;
   return `<div id="bulk_maint_${esc(uid)}" class="bulk-maint-target-box" data-bulk-uid="${esc(uid)}" style="margin:8px 0; background:#FFF3E0; border:2px solid #FFB74D; border-radius:10px; padding:10px;">
     <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
       <div style="font-size:11px; font-weight:bold; color:#E65100;">🔧 整備対象（複数可）</div>
@@ -39647,12 +40137,12 @@ window.updateBulkWorkMemoMaintenanceCustom_ = async (uid, field, value) => {
   } else {
     row[String(field).trim()] = next;
   }
-  // 未登録の直接入力は、フォーカス中の農機マスタへその場で追加（次回から候補表示）
+  // 未登録の直接入力は、フォーカス中の農機・車両マスタへその場で追加（次回から候補表示）
   if (next && focusId) {
     const machine = (typeof window.resolveBulkWorkMemoMaintMachine_ === 'function')
       ? window.resolveBulkWorkMemoMaintMachine_(focusId)
       : null;
-    if (machine && !machine.isTool && !machine.isVehicle) {
+    if (machine && !machine.isTool) {
       const kind = field === 'maintenanceSymptom' ? 'symptoms'
         : field === 'maintenanceContent' ? 'maintenanceContents'
         : field === 'maintenanceParts' ? 'parts' : '';
@@ -39699,7 +40189,7 @@ window.addBulkWorkMemoMaintOption_ = async (uid, kind) => {
     ? window.getBulkWorkMemoMaintFocusMachine_(row)
     : null;
   if (!machine || !machine.id) {
-    if (typeof customAlert === 'function') customAlert('先に農機を選んでください（車両・道具には候補登録できません）。');
+    if (typeof customAlert === 'function') customAlert('先に農機または車両を選んでください（道具には候補登録できません）。');
     return;
   }
   const focusId = String(machine.id);
@@ -39717,8 +40207,8 @@ window.addBulkWorkMemoMaintOption_ = async (uid, kind) => {
     return;
   }
   const prompts = {
-    symptoms: 'この機械に追加する「症状」名 (例: ベルトゆるみ):',
-    maintenanceContents: 'この機械に追加する「整備内容」 (例: 定期点検・清掃):',
+    symptoms: 'この機械・車両に追加する「症状」名 (例: ベルトゆるみ):',
+    maintenanceContents: 'この機械・車両に追加する「整備内容」 (例: 定期点検・清掃):',
     parts: `「${contentName}」に追加する交換部品名:`
   };
   const detailKey = kind === 'symptoms' ? 'symptom'
@@ -39773,7 +40263,7 @@ window.addBulkWorkMemoMaintOption_ = async (uid, kind) => {
       if (kind === 'parts') {
         customAlert(`✅ 「${contentName}」に部品「${name}」を登録しました。`);
       } else {
-        customAlert(`✅ 「${label || 'この機械'}」に「${name}」を登録しました。次回から候補に出ます。`);
+        customAlert(`✅ 「${label || 'この機械・車両'}」に「${name}」を登録しました。次回から候補に出ます。`);
       }
     }
   } catch (e) {
@@ -39788,8 +40278,8 @@ window.manageBulkWorkMemoMaintOption_ = (uid, kind) => {
   const machine = (typeof window.getBulkWorkMemoMaintFocusMachine_ === 'function')
     ? window.getBulkWorkMemoMaintFocusMachine_(row)
     : null;
-  if (!machine || !machine.id || machine.isTool || machine.isVehicle) {
-    if (typeof customAlert === 'function') customAlert('先に農機を選んでください（車両・道具には候補登録できません）。');
+  if (!machine || !machine.id || machine.isTool) {
+    if (typeof customAlert === 'function') customAlert('先に農機または車両を選んでください（道具には候補登録できません）。');
     return;
   }
   if (typeof window.showMaintenanceMasterManageModal !== 'function') {
@@ -39997,7 +40487,7 @@ window.buildBulkWorkMemoMaintenanceMasterSideEffects_ = (d, queued) => {
   const selected = (typeof window.getBulkWorkMemoMaintTargetsSelected_ === 'function')
     ? window.getBulkWorkMemoMaintTargetsSelected_(d)
     : [];
-  const machines = selected.filter(t => (t.kind || 'machine') === 'machine').map(t => {
+  const machines = selected.filter(t => (t.kind || 'machine') !== 'tool').map(t => {
     const machine = (typeof window.resolveBulkWorkMemoMaintMachine_ === 'function')
       ? window.resolveBulkWorkMemoMaintMachine_(t.id)
       : ((typeof window.findMaintenanceTargetById_ === 'function')
@@ -40005,7 +40495,7 @@ window.buildBulkWorkMemoMaintenanceMasterSideEffects_ = (d, queued) => {
         : ((typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
           ? pdlMachines.find(m => m && String(m.id) === String(t.id)) || null
           : null));
-    if (!machine || machine.isTool || machine.isVehicle) return null;
+    if (!machine || machine.isTool) return null;
     return { id: String(t.id), machine };
   }).filter(Boolean);
 
@@ -40100,13 +40590,13 @@ window.buildMachineMaintenanceHistorySideEffectsFromWorkData_ = (data, queued) =
   const isMachineTarget = (t) => {
     if (!t || !t.id) return false;
     const kind = String(t.kind || data.maintenanceTargetKind || 'machine').trim();
-    if (kind === 'vehicle' || kind === 'tool') return false;
+    if (kind === 'tool' || String(t.id).indexOf('tool_') === 0) return false;
     const obj = (typeof window.findMaintenanceTargetById_ === 'function')
       ? window.findMaintenanceTargetById_(t.id)
       : ((typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
         ? pdlMachines.find(m => m && String(m.id) === String(t.id))
         : null);
-    if (obj && (obj.isVehicle || obj.isTool)) return false;
+    if (obj && obj.isTool) return false;
     return true;
   };
 
@@ -40334,8 +40824,44 @@ window.isWorkerMaintHistoryCacheFresh_ = () => {
 
 window.getWorkerMaintMachines_ = () => {
   return (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
-    ? pdlMachines.filter(m => m && m.id && !m.isTool && !m.isVehicle)
+    ? pdlMachines.filter(m => m && m.id && !m.isTool && !m.isVehicle).map(m => Object.assign({}, m, {
+        _maintKind: 'machine',
+        isVehicle: false
+      }))
     : [];
+};
+
+window.getWorkerMaintVehicles_ = () => {
+  const list = Array.isArray(window.pdlMobileVehicles) ? window.pdlMobileVehicles : [];
+  return list.filter(v => v && v.id).map((v) => {
+    const rawId = String(v.id || '').replace(/^veh:/, '');
+    const plate = String(v.plateNumber || v.vehicleNumber || v.machineNumber || v.name || '').trim();
+    return Object.assign({}, v, {
+      id: 'veh:' + rawId,
+      _rawVehId: rawId,
+      _maintKind: 'vehicle',
+      isVehicle: true,
+      isTool: false,
+      name: plate || rawId || '車両',
+      plateNumber: plate,
+      vehicleNumber: v.vehicleNumber || plate,
+      machineNumber: v.machineNumber || plate,
+      type: v.type || v.vehicleType || '',
+      vehicleType: v.vehicleType || v.type || ''
+    });
+  });
+};
+
+window.getWorkerMaintAllEquipments_ = () => {
+  return window.getWorkerMaintMachines_().concat(window.getWorkerMaintVehicles_());
+};
+
+window.findWorkerMaintEquipmentById_ = (rawId) => {
+  const id = String(rawId || '').trim();
+  if (!id) return null;
+  const all = window.getWorkerMaintAllEquipments_();
+  const stripped = id.replace(/^veh:/, '');
+  return all.find(m => m && (String(m.id) === id || (m._maintKind === 'vehicle' && String(m._rawVehId) === stripped))) || null;
 };
 
 window.labelWorkerMaintMachine_ = (m) => {
@@ -40346,10 +40872,47 @@ window.labelWorkerMaintMachine_ = (m) => {
   return m.name || m.id;
 };
 
+window.resolveWorkerMaintLocAndSign_ = (m) => {
+  if (!m) {
+    return {
+      hub: '拠点未設定',
+      signGroup: '看板未設定',
+      baseSignId: '',
+      baseSignName: '',
+      curSignId: '',
+      curSignName: '',
+      isMoved: false
+    };
+  }
+  const polys = (typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons : (window.loadedPolygons || {});
+  const baseSignId = String(m.signId || '').trim();
+  const basePoly = (baseSignId && polys[baseSignId]) ? polys[baseSignId] : null;
+  const baseSignName = String(m.signName || (basePoly && basePoly.name) || '').trim();
+
+  const curSignId = String(m.currentLocId || baseSignId || '').trim();
+  const curPoly = (curSignId && polys[curSignId]) ? polys[curSignId] : null;
+  const curSignName = String(m.currentLocName || (curPoly && curPoly.name) || baseSignName || '').trim();
+
+  let hub = String(m.location || '').trim();
+  if (!hub && curPoly && curPoly.location) hub = String(curPoly.location).trim();
+  if (!hub && basePoly && basePoly.location) hub = String(basePoly.location).trim();
+  if (!hub) hub = '拠点未設定';
+
+  const signGroup = curSignName || baseSignName || '看板未設定';
+  const isMoved = !!(baseSignName && curSignName && baseSignName !== curSignName);
+  return {
+    hub: hub,
+    signGroup: signGroup,
+    baseSignId: baseSignId,
+    baseSignName: baseSignName,
+    curSignId: curSignId,
+    curSignName: curSignName,
+    isMoved: isMoved
+  };
+};
+
 window.hubOfWorkerMaintMachine_ = (m) => {
-  // 置き場所（現在地看板）ではなく、農機マスタの「拠点名」でグルーピング
-  const loc = String((m && m.location) || '').trim();
-  return loc || '拠点未設定';
+  return window.resolveWorkerMaintLocAndSign_(m).hub;
 };
 
 /** 整備履歴を軽量APIで取得（キャッシュあり）。force で再取得 */
@@ -40387,11 +40950,79 @@ window.fetchWorkerMachineMaintenanceRecords_ = async (opts) => {
   return { records: merged, fromCache: false, serverRecords: serverRecords };
 };
 
-window.renderWorkerMachineMaintHistoryList_ = (merged) => {
+window.setWorkerMaintHistKindTab_ = (kind) => {
+  window._maintHistKindTab = kind || 'machine';
+  window._maintHistSignFilter = 'all';
+  window.renderWorkerMachineMaintHistoryList_(window._workerMachineMaintenanceRecords || []);
+};
+
+window.setWorkerMaintHistHubFilter_ = (hub) => {
+  window._maintHistHubFilter = hub || 'all';
+  window._maintHistSignFilter = 'all';
+  window.renderWorkerMachineMaintHistoryList_(window._workerMachineMaintenanceRecords || []);
+};
+
+window.setWorkerMaintHistSignFilter_ = (sign) => {
+  window._maintHistSignFilter = sign || 'all';
+  window.renderWorkerMachineMaintHistoryList_(window._workerMachineMaintenanceRecords || []);
+};
+
+window.onWorkerMaintHistSearchInput_ = (val) => {
+  window._maintHistSearchQuery = String(val || '');
+  window.renderWorkerMachineMaintHistoryList_(window._workerMachineMaintenanceRecords || [], { preserveSearchFocus: true });
+};
+
+window.openMaintHistAddEquipment_ = async (kind) => {
+  const targetKind = kind === 'vehicle' ? 'vehicle' : 'machine';
+  if (targetKind === 'vehicle' && typeof window.ensureMobileVehiclesLoaded_ === 'function') {
+    await window.ensureMobileVehiclesLoaded_();
+  }
+  const activeHub = (window._maintHistHubFilter && window._maintHistHubFilter !== 'all' && window._maintHistHubFilter !== '拠点未設定')
+    ? window._maintHistHubFilter
+    : '';
+  if (typeof window.openMachineItemEditorModal === 'function') {
+    window.openMachineItemEditorModal({
+      mode: 'add',
+      kind: targetKind,
+      defaultLocation: activeHub,
+      afterSave: () => {
+        window._maintHistKindTab = targetKind;
+        window.openWorkerMachineMaintHistoryModal_({ force: false });
+      }
+    });
+  }
+};
+
+window.countEquipmentMaintCandidates_ = (m) => {
+  if (!m) return { symptoms: 0, contents: 0, parts: 0, total: 0 };
+  const split = (typeof window.splitMachineMaintList_ === 'function')
+    ? window.splitMachineMaintList_
+    : (s => String(s || '').split(/[,、]/).map(x => x.trim()).filter(Boolean));
+  const sym = split(m.symptoms).length;
+  const cnt = split(m.maintenanceContents).length;
+  let prt = 0;
+  if (typeof window.parseMachinePartsMap_ === 'function') {
+    const map = window.parseMachinePartsMap_(m.parts);
+    const pSet = new Set(map.common || []);
+    Object.keys(map.byContent || {}).forEach(k => (map.byContent[k] || []).forEach(p => pSet.add(p)));
+    prt = pSet.size;
+  } else {
+    prt = split(m.parts).length;
+  }
+  return { symptoms: sym, contents: cnt, parts: prt, total: sym + cnt + prt };
+};
+
+window.renderWorkerMachineMaintHistoryList_ = (merged, renderOpts) => {
   const modalBody = document.getElementById('modalBody');
   if (!modalBody) return;
   const esc = window._escMaintHistHtml_;
-  const machines = window.getWorkerMaintMachines_();
+  const allMachines = window.getWorkerMaintMachines_();
+  const allVehicles = window.getWorkerMaintVehicles_();
+  const kindTab = window._maintHistKindTab || 'machine';
+  const targetEquipments = kindTab === 'vehicle'
+    ? allVehicles
+    : (kindTab === 'all' ? allMachines.concat(allVehicles) : allMachines);
+
   const byMachine = new Map();
   (merged || []).forEach((r) => {
     const id = String((r && r.machineId) || '').trim();
@@ -40400,94 +41031,302 @@ window.renderWorkerMachineMaintHistoryList_ = (merged) => {
     byMachine.get(id).push(r);
   });
 
-  const rows = machines.map((m) => {
-    const recs = byMachine.get(String(m.id)) || [];
-    recs.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-    return { m, count: recs.length, latest: recs[0] || null, hub: window.hubOfWorkerMaintMachine_(m) };
+  const getRecsForEquip = (m) => {
+    const id = String(m.id || '');
+    const list = (byMachine.get(id) || []).slice();
+    if (m._maintKind === 'vehicle' && m._rawVehId && id !== m._rawVehId) {
+      const rawList = byMachine.get(String(m._rawVehId)) || [];
+      rawList.forEach(r => {
+        if (!list.includes(r)) list.push(r);
+      });
+    }
+    list.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    return list;
+  };
+
+  const allRows = targetEquipments.map((m) => {
+    const recs = getRecsForEquip(m);
+    const locInfo = window.resolveWorkerMaintLocAndSign_(m);
+    const candCounts = window.countEquipmentMaintCandidates_(m);
+    return {
+      m,
+      recs,
+      count: recs.length,
+      latest: recs[0] || null,
+      hub: locInfo.hub,
+      signGroup: locInfo.signGroup,
+      locInfo,
+      candCounts
+    };
   });
 
-  // 拠点順 → 履歴件数多い順 → 名前
-  const hubs = [...new Set(rows.map(r => r.hub))];
-  hubs.sort((a, b) => {
+  // 拠点一覧（フィルタ用）
+  const allHubs = [...new Set(allRows.map(r => r.hub))].sort((a, b) => {
     if (a === '拠点未設定') return 1;
     if (b === '拠点未設定') return -1;
     return String(a).localeCompare(String(b), 'ja');
   });
-  const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
+  let hubFilter = window._maintHistHubFilter || 'all';
+  if (hubFilter !== 'all' && !allHubs.includes(hubFilter)) {
+    hubFilter = 'all';
+    window._maintHistHubFilter = 'all';
+  }
 
-  const sections = hubs.map((hub) => {
-    const items = rows.filter(r => r.hub === hub).sort((a, b) => {
-      if (b.count !== a.count) return b.count - a.count;
-      return String(window.labelWorkerMaintMachine_(a.m))
-        .localeCompare(String(window.labelWorkerMaintMachine_(b.m)), 'ja');
+  const rowsAfterHub = hubFilter === 'all'
+    ? allRows
+    : allRows.filter(r => r.hub === hubFilter);
+
+  // 看板一覧（選択中の拠点内で絞る）
+  const allSignsInHub = [...new Set(rowsAfterHub.map(r => r.signGroup))].sort((a, b) => {
+    if (a === '看板未設定') return 1;
+    if (b === '看板未設定') return -1;
+    return String(a).localeCompare(String(b), 'ja');
+  });
+  let signFilter = window._maintHistSignFilter || 'all';
+  if (signFilter !== 'all' && !allSignsInHub.includes(signFilter)) {
+    signFilter = 'all';
+    window._maintHistSignFilter = 'all';
+  }
+
+  const rowsAfterSign = signFilter === 'all'
+    ? rowsAfterHub
+    : rowsAfterHub.filter(r => r.signGroup === signFilter);
+
+  // 検索フィルタ
+  const qRaw = String(window._maintHistSearchQuery || '').trim();
+  const qLower = qRaw.toLowerCase();
+  const filteredRows = !qLower
+    ? rowsAfterSign
+    : rowsAfterSign.filter((r) => {
+        const m = r.m;
+        const hay = [
+          window.labelWorkerMaintMachine_(m),
+          m.name, m.type, m.vehicleType, m.model, m.machineNumber, m.plateNumber, m.group,
+          r.hub, r.signGroup, r.locInfo.baseSignName, r.locInfo.curSignName,
+          m.symptoms, m.maintenanceContents, m.parts,
+          r.latest ? (r.latest.material + ' ' + r.latest.replaceParts + ' ' + r.latest.comment) : ''
+        ].join(' ').toLowerCase();
+        return hay.indexOf(qLower) >= 0;
+      });
+
+  const visibleHubs = [...new Set(filteredRows.map(r => r.hub))].sort((a, b) => {
+    if (a === '拠点未設定') return 1;
+    if (b === '拠点未設定') return -1;
+    return String(a).localeCompare(String(b), 'ja');
+  });
+
+  const sections = visibleHubs.map((hub) => {
+    const hubItems = filteredRows.filter(r => r.hub === hub);
+    const hubRecordCount = hubItems.reduce((s, x) => s + x.count, 0);
+    const hubSigns = [...new Set(hubItems.map(r => r.signGroup))].sort((a, b) => {
+      if (a === '看板未設定') return 1;
+      if (b === '看板未設定') return -1;
+      return String(a).localeCompare(String(b), 'ja');
     });
-    const hubCount = items.reduce((s, x) => s + x.count, 0);
-    const cards = items.map(({ m, count, latest }) => {
-      const safeId = String(m.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-      const machinePhoto = (typeof window.getMachinePhotoUrl === 'function')
-        ? window.getMachinePhotoUrl(m)
-        : '';
-      const latestPhotos = latest ? window.normalizeMaintHistoryPhotos_(latest).slice(0, 2) : [];
-      const thumb = machinePhoto || latestPhotos[0] || '';
-      const thumbHtml = thumb
-        ? `<img src="${esc(thumb)}" alt="" loading="lazy" style="width:56px; height:56px; object-fit:cover; border-radius:8px; border:1px solid #FFE0B2; background:#fff; flex-shrink:0;">`
-        : `<div style="width:56px; height:56px; border-radius:8px; background:#FFF3E0; border:1px dashed #FFCC80; display:flex; align-items:center; justify-content:center; color:#FF9800; font-size:22px; flex-shrink:0;">🔧</div>`;
-      const latestLine = latest
-        ? `<div style="font-size:11px; color:#666; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">直近: ${esc(latest.date || '')} ${esc(latest.material || '')}</div>`
-        : `<div style="font-size:11px; color:#aaa; margin-top:3px;">整備履歴なし</div>`;
-      const miniPhotos = latestPhotos.length
-        ? `<div style="display:flex; gap:4px; margin-top:6px;">${latestPhotos.map((u) => {
-          const open = (typeof window.openLightbox === 'function')
-            ? `event.stopPropagation(); openLightbox('${String(u).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}');`
-            : '';
-          return `<img src="${esc(u)}" alt="" loading="lazy" onclick="${open}" style="width:36px; height:36px; object-fit:cover; border-radius:4px; border:1px solid #eee;">`;
-        }).join('')}</div>`
-        : '';
-      const adminBtn = isAdmin
-        ? `<button type="button" onclick="event.stopPropagation(); openWorkerMaintMachineEdit_('${safeId}')"
-            style="flex-shrink:0; margin-top:2px; padding:8px 10px; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; font-size:11px; font-weight:bold; cursor:pointer;">✏️ 設定</button>`
-        : '';
-      return `<div style="display:flex; gap:8px; align-items:stretch; margin-bottom:8px;">
-        <button type="button" onclick="openWorkerMachineMaintHistoryForMachine_('${safeId}')"
-          style="flex:1; text-align:left; padding:10px 12px; border:1px solid #FFE0B2; border-radius:10px; background:${count ? '#FFF8E1' : '#fafafa'}; cursor:pointer; display:flex; gap:10px; align-items:flex-start; box-sizing:border-box;">
-          ${thumbHtml}
-          <div style="flex:1; min-width:0;">
-            <div style="font-weight:bold; color:#E65100; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(window.labelWorkerMaintMachine_(m))}</div>
-            <div style="font-size:11px; color:#888; margin-top:2px;">整備履歴 ${count} 件</div>
-            ${latestLine}
-            ${miniPhotos}
+
+    const signSubsections = hubSigns.map((signName) => {
+      const signItems = hubItems.filter(r => r.signGroup === signName).sort((a, b) => {
+        if (b.count !== a.count) return b.count - a.count;
+        return String(window.labelWorkerMaintMachine_(a.m))
+          .localeCompare(String(window.labelWorkerMaintMachine_(b.m)), 'ja');
+      });
+      const signRecCount = signItems.reduce((s, x) => s + x.count, 0);
+      const isUnsetSign = signName === '看板未設定';
+
+      const cards = signItems.map(({ m, count, latest, locInfo, candCounts }) => {
+        const safeId = String(m.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const isVeh = m._maintKind === 'vehicle' || !!m.isVehicle;
+        const toThumb = (u) => (typeof window.toDriveThumbUrl === 'function' ? window.toDriveThumbUrl(u) : String(u || '').trim());
+        const machinePhotos = [m.photo, m.photo2, m.photoUrl]
+          .concat(Array.isArray(m.photos) ? m.photos.map(p => (typeof p === 'string' ? p : (p && (p.url || p.base64)) || '')) : [])
+          .map(toThumb)
+          .filter((u, idx, arr) => u && arr.indexOf(u) === idx);
+        const machinePhoto = machinePhotos[0] || ((typeof window.getMachinePhotoUrl === 'function') ? window.getMachinePhotoUrl(m) : '');
+        const latestPhotos = latest ? window.normalizeMaintHistoryPhotos_(latest).slice(0, 2) : [];
+        const thumb = machinePhoto || latestPhotos[0] || '';
+        const safeThumbJs = String(thumb).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const thumbOpen = (thumb && typeof window.openLightbox === 'function')
+          ? `event.stopPropagation(); openLightbox('${safeThumbJs}');`
+          : '';
+        const fallbackIcon = isVeh ? '🛻' : '🚜';
+        const thumbHtml = thumb
+          ? `<img src="${esc(thumb)}" alt="" loading="lazy" onclick="${thumbOpen}" title="タップで写真を拡大" style="width:58px; height:58px; object-fit:cover; border-radius:8px; border:1px solid ${isVeh ? '#90CAF9' : '#FFE0B2'}; background:#fff; flex-shrink:0; cursor:zoom-in;">`
+          : `<div style="width:58px; height:58px; border-radius:8px; background:${isVeh ? '#E3F2FD' : '#FFF3E0'}; border:1px dashed ${isVeh ? '#90CAF9' : '#FFCC80'}; display:flex; align-items:center; justify-content:center; color:${isVeh ? '#1565C0' : '#FF9800'}; font-size:24px; flex-shrink:0;">${fallbackIcon}</div>`;
+
+        const kindBadge = isVeh
+          ? `<span style="display:inline-flex; align-items:center; gap:2px; padding:2px 6px; border-radius:6px; background:#E3F2FD; color:#0D47A1; border:1px solid #90CAF9; font-size:10px; font-weight:bold;">🛻 車両${m.group ? '・' + esc(m.group) : ''}</span>`
+          : `<span style="display:inline-flex; align-items:center; gap:2px; padding:2px 6px; border-radius:6px; background:#FFF3E0; color:#E65100; border:1px solid #FFCC80; font-size:10px; font-weight:bold;">🚜 農機${m.group ? '・' + esc(m.group) : ''}</span>`;
+
+        const hubBadge = `<span style="display:inline-flex; align-items:center; gap:2px; padding:2px 6px; border-radius:6px; background:${locInfo.hub === '拠点未設定' ? '#f5f5f5' : '#FBE9E7'}; color:${locInfo.hub === '拠点未設定' ? '#777' : '#BF360C'}; border:1px solid ${locInfo.hub === '拠点未設定' ? '#ddd' : '#FFAB91'}; font-size:10px; font-weight:bold;">📍 ${esc(locInfo.hub)}</span>`;
+
+        const signBadge = locInfo.isMoved
+          ? `<span style="display:inline-flex; align-items:center; gap:2px; padding:2px 6px; border-radius:6px; background:#FFEBEE; color:#C62828; border:1px solid #EF9A9A; font-size:10px; font-weight:bold;">⚠️ 現在:${esc(locInfo.curSignName)} (定位置:${esc(locInfo.baseSignName)})</span>`
+          : `<span style="display:inline-flex; align-items:center; gap:2px; padding:2px 6px; border-radius:6px; background:${isUnsetSign ? '#f5f5f5' : '#E0F2F1'}; color:${isUnsetSign ? '#777' : '#00695C'}; border:1px solid ${isUnsetSign ? '#ddd' : '#80CBC4'}; font-size:10px; font-weight:bold;">🪧 ${esc(locInfo.signGroup)}</span>`;
+
+        const histBadge = `<span style="display:inline-flex; align-items:center; padding:2px 7px; border-radius:10px; background:${count ? '#E65100' : '#eee'}; color:${count ? '#fff' : '#666'}; font-size:10px; font-weight:bold;">履歴 ${count}件</span>`;
+
+        const candBadge = candCounts.total > 0
+          ? `<span style="display:inline-flex; align-items:center; padding:2px 6px; border-radius:10px; background:#E8F5E9; color:#2E7D32; border:1px solid #A5D6A7; font-size:10px; font-weight:bold;">候補: 症${candCounts.symptoms}/内${candCounts.contents}/部${candCounts.parts}</span>`
+          : `<span style="display:inline-flex; align-items:center; padding:2px 6px; border-radius:10px; background:#fafafa; color:#999; border:1px solid #e0e0e0; font-size:10px;">整備候補未登録</span>`;
+
+        const latestLine = latest
+          ? `<div style="font-size:11px; color:#444; margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">🕒 直近: <b>${esc(latest.date || '')}</b> ${esc(latest.material || '')}${latest.replaceParts ? ' / 部品:' + esc(latest.replaceParts) : ''}</div>`
+          : `<div style="font-size:11px; color:#aaa; margin-top:4px;">整備履歴なし（タップして詳細・候補確認）</div>`;
+
+        const extraPhotos = machinePhotos.slice(1).concat(latestPhotos)
+          .filter((u, idx, arr) => u && u !== thumb && arr.indexOf(u) === idx)
+          .slice(0, 3);
+        const miniPhotos = extraPhotos.length
+          ? `<div style="display:flex; gap:4px; margin-top:6px;">${extraPhotos.map((u) => {
+            const open = (typeof window.openLightbox === 'function')
+              ? `event.stopPropagation(); openLightbox('${String(u).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}');`
+              : '';
+            return `<img src="${esc(u)}" alt="" loading="lazy" onclick="${open}" style="width:34px; height:34px; object-fit:cover; border-radius:4px; border:1px solid #eee; cursor:zoom-in;">`;
+          }).join('')}</div>`
+          : '';
+
+        const editBtn = `<button type="button" onclick="event.stopPropagation(); openWorkerMaintMachineEdit_('${safeId}')"
+            title="拠点・看板・整備候補・写真を設定"
+            style="flex-shrink:0; align-self:center; padding:8px 10px; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; font-size:11px; font-weight:bold; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:2px;">
+            <span>✏️ 設定</span>
+            <span style="font-size:9px; font-weight:normal; color:#1976D2;">候補/場所</span>
+          </button>`;
+
+        return `<div style="display:flex; gap:6px; align-items:stretch; margin-bottom:8px;">
+          <button type="button" onclick="openWorkerMachineMaintHistoryForMachine_('${safeId}')"
+            style="flex:1; min-width:0; text-align:left; padding:10px; border:1px solid ${count ? (isVeh ? '#90CAF9' : '#FFB74D') : '#e0e0e0'}; border-radius:10px; background:${count ? (isVeh ? '#F5FAFF' : '#FFFDF7') : '#ffffff'}; cursor:pointer; display:flex; gap:10px; align-items:flex-start; box-sizing:border-box; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+            ${thumbHtml}
+            <div style="flex:1; min-width:0;">
+              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:4px;">
+                ${kindBadge}
+                ${hubBadge}
+                ${signBadge}
+              </div>
+              <div style="font-weight:bold; color:${isVeh ? '#0D47A1' : '#BF360C'}; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(window.labelWorkerMaintMachine_(m))}</div>
+              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:4px;">
+                ${histBadge}
+                ${candBadge}
+              </div>
+              ${latestLine}
+              ${miniPhotos}
+            </div>
+          </button>
+          ${editBtn}
+        </div>`;
+      }).join('');
+
+      return `<div style="margin:0 0 10px 4px; padding:8px 8px 4px 10px; background:${isUnsetSign ? '#FAFAFA' : '#F4FBF9'}; border-left:4px solid ${isUnsetSign ? '#BDBDBD' : '#00897B'}; border-radius:0 8px 8px 0;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span style="display:inline-block; padding:2px 8px; border-radius:12px; background:${isUnsetSign ? '#E0E0E0' : '#00796B'}; color:${isUnsetSign ? '#555' : '#fff'}; font-size:11px; font-weight:bold;">🪧 ${esc(signName)}</span>
           </div>
-        </button>
-        ${adminBtn}
+          <div style="font-size:11px; color:#555; font-weight:bold;">${signItems.length}台 ／ 履歴 ${signRecCount}件</div>
+        </div>
+        ${cards}
       </div>`;
     }).join('');
-    return `<div style="margin-bottom:14px;">
-      <div style="display:flex; justify-content:space-between; align-items:baseline; margin:0 0 8px; padding:6px 8px; background:#FFF3E0; border-radius:8px; border-left:4px solid #E65100;">
-        <div style="font-weight:bold; color:#BF360C; font-size:13px;">📍 ${esc(hub)}</div>
-        <div style="font-size:11px; color:#888;">${items.length}台 / 履歴 ${hubCount}件</div>
-      </div>
-      ${cards || '<div style="color:#999; font-size:12px; padding:4px 8px;">農機なし</div>'}
-    </div>`;
-    }).join('');
 
-  const listHtml = rows.length === 0
-    ? '<p style="color:#666; text-align:center; padding:16px;">登録されている農機がありません。</p>'
+    return `<div style="margin-bottom:16px; border:1px solid #FFCC80; border-radius:12px; background:#fff; overflow:hidden; box-shadow:0 2px 6px rgba(0,0,0,0.05);">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:linear-gradient(90deg, #E65100 0%, #FB8C00 100%); color:#fff;">
+        <div style="display:flex; align-items:center; gap:6px; font-weight:bold; font-size:14px;">
+          <span>📍 ${esc(hub)}</span>
+          <span style="font-size:11px; background:rgba(255,255,255,0.22); padding:1px 7px; border-radius:10px;">🪧 ${hubSigns.length}看板</span>
+        </div>
+        <div style="font-size:11px; font-weight:bold; background:rgba(0,0,0,0.18); padding:2px 8px; border-radius:10px;">${hubItems.length}台 / 履歴 ${hubRecordCount}件</div>
+      </div>
+      <div style="padding:10px 8px 4px;">
+        ${signSubsections}
+      </div>
+    </div>`;
+  }).join('');
+
+  // タブUI（農機 / 車両 / すべて）
+  const kindTabBtn = (key, icon, label, cnt, activeColor, activeBg) => {
+    const on = kindTab === key;
+    return `<button type="button" onclick="setWorkerMaintHistKindTab_('${key}')"
+      style="flex:1; padding:8px 6px; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? activeColor : '#ddd'}; background:${on ? activeBg : '#f5f5f5'}; color:${on ? activeColor : '#666'}; display:flex; align-items:center; justify-content:center; gap:4px;">
+      <span>${icon} ${label}</span>
+      <span style="font-size:11px; padding:1px 6px; border-radius:10px; background:${on ? activeColor : '#e0e0e0'}; color:${on ? '#fff' : '#555'};">${cnt}</span>
+    </button>`;
+  };
+
+  // 拠点フィルタチップ
+  const hubChipsHtml = `<div style="display:flex; gap:5px; overflow-x:auto; padding-bottom:4px; -webkit-overflow-scrolling:touch;">
+    ${[{ key: 'all', label: 'すべての拠点', count: allRows.length }].concat(
+      allHubs.map(h => ({ key: h, label: '📍 ' + h, count: allRows.filter(r => r.hub === h).length }))
+    ).map(chip => {
+      const on = hubFilter === chip.key;
+      const safeKey = String(chip.key).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      return `<button type="button" onclick="setWorkerMaintHistHubFilter_('${safeKey}')"
+        style="flex-shrink:0; padding:5px 10px; border-radius:14px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${on ? '#E65100' : '#FFCC80'}; background:${on ? '#E65100' : '#FFF8E1'}; color:${on ? '#fff' : '#BF360C'};">
+        ${esc(chip.label)} (${chip.count})
+      </button>`;
+    }).join('')}
+  </div>`;
+
+  // 看板フィルタチップ
+  const signChipsHtml = `<div style="display:flex; gap:5px; overflow-x:auto; padding-bottom:4px; margin-top:4px; -webkit-overflow-scrolling:touch;">
+    ${[{ key: 'all', label: 'すべての看板', count: rowsAfterHub.length }].concat(
+      allSignsInHub.map(s => ({ key: s, label: '🪧 ' + s, count: rowsAfterHub.filter(r => r.signGroup === s).length }))
+    ).map(chip => {
+      const on = signFilter === chip.key;
+      const safeKey = String(chip.key).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      return `<button type="button" onclick="setWorkerMaintHistSignFilter_('${safeKey}')"
+        style="flex-shrink:0; padding:4px 9px; border-radius:14px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${on ? '#00695C' : '#80CBC4'}; background:${on ? '#00796B' : '#E0F2F1'}; color:${on ? '#fff' : '#00695C'};">
+        ${esc(chip.label)} (${chip.count})
+      </button>`;
+    }).join('')}
+  </div>`;
+
+  const emptyLabel = kindTab === 'vehicle' ? '車両' : (kindTab === 'all' ? '農機・車両' : '農機');
+  const listHtml = filteredRows.length === 0
+    ? `<div style="color:#666; text-align:center; padding:24px 12px; background:#fafafa; border:1px dashed #ccc; border-radius:10px;">
+        <div style="font-size:13px; font-weight:bold; margin-bottom:8px;">表示できる${emptyLabel}がありません</div>
+        <div style="font-size:11px; color:#888; margin-bottom:12px;">上の「＋ ${kindTab === 'vehicle' ? '車両' : '農機'}を追加」から新規登録するか、絞り込み条件を解除してください。</div>
+      </div>`
     : sections;
 
   modalBody.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #E65100; padding-bottom:8px; margin-bottom:12px;">
-      <h3 style="margin:0; color:#E65100; font-size:17px;">🔧 整備履歴（拠点別）</h3>
+    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #E65100; padding-bottom:8px; margin-bottom:10px;">
+      <h3 style="margin:0; color:#E65100; font-size:17px;">🔧 整備履歴（拠点・看板別）</h3>
       <span onclick="closeWorkerMachineMaintHistoryModal_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
     </div>
-    <p style="font-size:12px; color:#666; margin:0 0 12px; line-height:1.45;">農機マスタの拠点名ごとに表示しています。${isAdmin ? '管理者は「✏️ 設定」からマスタを編集できます。' : '写真タップで拡大できます。'}</p>
-    <div style="max-height:62vh; overflow-y:auto; -webkit-overflow-scrolling:touch;">${listHtml}</div>
-    <div style="display:flex; gap:8px; margin-top:12px;">
+    <div style="display:flex; gap:6px; margin-bottom:8px;">
+      ${kindTabBtn('machine', '🚜', '農機', allMachines.length, '#E65100', '#FFF3E0')}
+      ${kindTabBtn('vehicle', '🛻', '車両', allVehicles.length, '#1565C0', '#E3F2FD')}
+      ${kindTabBtn('all', '📋', 'すべて', allMachines.length + allVehicles.length, '#2E7D32', '#E8F5E9')}
+    </div>
+    <div style="display:flex; gap:6px; margin-bottom:10px;">
+      <button type="button" onclick="openMaintHistAddEquipment_('machine')"
+        style="flex:1; padding:7px 8px; background:#FFF3E0; color:#E65100; border:1px solid #FFB74D; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 🚜 農機を追加</button>
+      <button type="button" onclick="openMaintHistAddEquipment_('vehicle')"
+        style="flex:1; padding:7px 8px; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 🛻 車両を追加</button>
+    </div>
+    <div style="background:#FAFAFA; border:1px solid #E0E0E0; border-radius:10px; padding:8px; margin-bottom:10px;">
+      ${hubChipsHtml}
+      ${signChipsHtml}
+      <div style="margin-top:6px;">
+        <input type="search" id="maint_hist_search_input" value="${esc(qRaw)}" placeholder="🔍 名前・番号・ナンバー・型式・看板・整備内容で検索..."
+          oninput="onWorkerMaintHistSearchInput_(this.value)"
+          style="width:100%; box-sizing:border-box; padding:6px 10px; border:1px solid #ccc; border-radius:8px; font-size:12px; background:#fff;">
+      </div>
+    </div>
+    <div id="maint_hist_list_scroll" style="max-height:54vh; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-right:2px;">${listHtml}</div>
+    <div style="display:flex; gap:8px; margin-top:10px;">
       <button type="button" onclick="openWorkerMachineMaintHistoryModal_({force:true})"
-        style="flex:1; padding:12px; background:#FFF3E0; color:#E65100; border:1px solid #FFB74D; border-radius:8px; font-weight:bold; cursor:pointer;">🔄 再読込</button>
-    <button type="button" onclick="closeWorkerMachineMaintHistoryModal_()"
-        style="flex:1; padding:12px; background:#ccc; color:#333; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">閉じる</button>
+        style="flex:1; padding:11px; background:#FFF3E0; color:#E65100; border:1px solid #FFB74D; border-radius:8px; font-weight:bold; cursor:pointer;">🔄 再読込</button>
+      <button type="button" onclick="closeWorkerMachineMaintHistoryModal_()"
+        style="flex:1; padding:11px; background:#ccc; color:#333; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">閉じる</button>
     </div>
   `;
+
+  if (renderOpts && renderOpts.preserveSearchFocus) {
+    const inp = document.getElementById('maint_hist_search_input');
+    if (inp) {
+      inp.focus();
+      try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (e) {}
+    }
+  }
 };
 
 window.openWorkerMachineMaintHistoryModal_ = async (opts) => {
@@ -40498,7 +41337,17 @@ window.openWorkerMachineMaintHistoryModal_ = async (opts) => {
     return;
   }
   const force = !!(opts && opts.force);
+  if (opts && opts.kindTab) window._maintHistKindTab = opts.kindTab;
   modal.style.display = 'flex';
+
+  if (typeof window.ensureMobileVehiclesLoaded_ === 'function') {
+    if (force) window._mobileVehiclesLoaded = false;
+    window.ensureMobileVehiclesLoaded_().then(() => {
+      if (modal.style.display === 'flex' && document.getElementById('maint_hist_list_scroll')) {
+        window.renderWorkerMachineMaintHistoryList_(window._workerMachineMaintenanceRecords || []);
+      }
+    }).catch(() => {});
+  }
 
   // キャッシュがあれば即表示して待ちをなくす
   const hasCache = Array.isArray(window._workerMachineMaintenanceRecords)
@@ -40529,7 +41378,7 @@ window.openWorkerMachineMaintHistoryModal_ = async (opts) => {
             : (window._workerMachineMaintenanceRecords || []).concat(fromWorks);
           window._workerMachineMaintenanceRecords = merged;
           const body = document.getElementById('modalBody');
-          if (body && modal.style.display === 'flex' && String(body.innerHTML || '').indexOf('整備履歴（拠点別）') >= 0) {
+          if (body && modal.style.display === 'flex' && document.getElementById('maint_hist_list_scroll')) {
             window.renderWorkerMachineMaintHistoryList_(merged);
           }
         }
@@ -40581,16 +41430,33 @@ window.backfillMissingMachineMaintenanceRecords_ = async (serverRecords, candida
   }
 };
 
-window.openWorkerMaintMachineEdit_ = (machineId) => {
-  if (typeof window.isWorkerAdmin === 'function' && !window.isWorkerAdmin()) {
-    if (typeof customAlert === 'function') customAlert('管理者権限が必要です。');
+window.openWorkerMaintMachineEdit_ = async (machineId, opts) => {
+  const id = String(machineId || '').trim();
+  if (!id) return;
+  if (id.indexOf('veh:') === 0 && typeof window.ensureMobileVehiclesLoaded_ === 'function') {
+    await window.ensureMobileVehiclesLoaded_();
+  }
+  const equip = window.findWorkerMaintEquipmentById_(id);
+  const isVeh = (equip && (equip._maintKind === 'vehicle' || equip.isVehicle)) || id.indexOf('veh:') === 0;
+  const returnToDetail = !!(opts && opts.returnToDetail);
+  if (typeof window.openMachineItemEditorModal === 'function' && equip) {
+    window.openMachineItemEditorModal({
+      mode: 'edit',
+      kind: isVeh ? 'vehicle' : 'machine',
+      item: equip,
+      afterSave: () => {
+        if (returnToDetail) {
+          window.openWorkerMachineMaintHistoryForMachine_(id);
+        } else {
+          window.openWorkerMachineMaintHistoryModal_({ force: false });
+        }
+      }
+    });
     return;
   }
-  if (typeof window.openEditMachineModal !== 'function') {
-    if (typeof customAlert === 'function') customAlert('農機編集画面の準備ができていません。');
-    return;
+  if (typeof window.openEditMachineModal === 'function' && !isVeh) {
+    window.openEditMachineModal(id, '', { returnTo: 'maintHistory' });
   }
-  window.openEditMachineModal(machineId, '', { returnTo: 'maintHistory' });
 };
 
 window.openWorkerMachineMaintHistoryForMachine_ = async (machineId) => {
@@ -40598,59 +41464,110 @@ window.openWorkerMachineMaintHistoryForMachine_ = async (machineId) => {
   if (!modalBody) return;
   const esc = window._escMaintHistHtml_;
   const id = String(machineId || '').trim();
-  const machine = window.getWorkerMaintMachines_().find(m => m && String(m.id) === id) || null;
+  if (id.indexOf('veh:') === 0 && typeof window.ensureMobileVehiclesLoaded_ === 'function') {
+    await window.ensureMobileVehiclesLoaded_();
+  }
+  const machine = window.findWorkerMaintEquipmentById_(id);
+  const isVeh = (machine && (machine._maintKind === 'vehicle' || machine.isVehicle)) || id.indexOf('veh:') === 0;
+  const rawVehId = id.replace(/^veh:/, '');
   const label = window.labelWorkerMaintMachine_(machine) || id;
-  const hub = window.hubOfWorkerMaintMachine_(machine);
-  const machinePhoto = (typeof window.getMachinePhotoUrl === 'function')
-    ? window.getMachinePhotoUrl(machine)
-    : '';
-  const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
+  const locInfo = window.resolveWorkerMaintLocAndSign_(machine);
+  const toThumb = (u) => (typeof window.toDriveThumbUrl === 'function' ? window.toDriveThumbUrl(u) : String(u || '').trim());
+  const machinePhotos = machine
+    ? [machine.photo, machine.photo2, machine.photoUrl]
+        .concat(Array.isArray(machine.photos) ? machine.photos.map(p => (typeof p === 'string' ? p : (p && (p.url || p.base64)) || '')) : [])
+        .map(toThumb)
+        .filter((u, idx, arr) => u && arr.indexOf(u) === idx)
+    : [];
+
+  const splitList = (typeof window.splitMachineMaintList_ === 'function')
+    ? window.splitMachineMaintList_
+    : (s => String(s || '').split(/[,、]/).map(x => x.trim()).filter(Boolean));
+  const symptomsList = machine ? splitList(machine.symptoms) : [];
+  const contentsList = machine ? splitList(machine.maintenanceContents) : [];
+  const partsList = [];
+  if (machine) {
+    if (typeof window.parseMachinePartsMap_ === 'function') {
+      const map = window.parseMachinePartsMap_(machine.parts);
+      (map.common || []).forEach(p => partsList.push(p));
+      Object.keys(map.byContent || {}).forEach(c => {
+        (map.byContent[c] || []).forEach(p => partsList.push(`${p} (${c})`));
+      });
+    } else {
+      splitList(machine.parts).forEach(p => partsList.push(p));
+    }
+  }
 
   // キャッシュがあれば即描画（再通信しない）
   const paint = (records) => {
-    const list = (records || []).filter(r => String(r.machineId) === id)
-      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-    const headerPhoto = machinePhoto
-      ? `<img src="${esc(machinePhoto)}" alt="" style="width:64px; height:64px; object-fit:cover; border-radius:8px; border:1px solid #FFE0B2; margin-right:10px;">`
+    const list = (records || []).filter((r) => {
+      const rMid = String((r && r.machineId) || '').trim();
+      if (rMid === id) return true;
+      if (isVeh && rawVehId && rMid === rawVehId) return true;
+      return false;
+    }).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+
+    const headerPhoto = machinePhotos.length
+      ? `<div style="display:flex; gap:6px; margin-right:10px; flex-shrink:0;">${machinePhotos.map((u) => {
+          const safeU = String(u).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const open = (typeof window.openLightbox === 'function') ? `openLightbox('${safeU}')` : '';
+          return `<img src="${esc(u)}" alt="" onclick="${open}" title="タップで写真を拡大" style="width:64px; height:64px; object-fit:cover; border-radius:8px; border:1px solid #FFE0B2; cursor:zoom-in;">`;
+        }).join('')}</div>`
       : '';
-    const adminEditBtn = isAdmin
-      ? `<button type="button" onclick="openWorkerMaintMachineEdit_('${String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"
-          style="margin-top:8px; padding:8px 12px; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer;">✏️ 農機マスタを設定</button>`
-      : '';
+    const safeIdJs = String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const editBtn = `<button type="button" onclick="openWorkerMaintMachineEdit_('${safeIdJs}', { returnToDetail: true })"
+          style="margin-top:6px; padding:7px 12px; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer;">✏️ 拠点・看板・整備候補を設定</button>`;
+
+    const candidatesHtml = `<div style="background:#FFF8E1; border:1px solid #FFE0B2; border-radius:8px; padding:8px 10px; margin-bottom:10px; font-size:11px;">
+      <div style="font-weight:bold; color:#E65100; margin-bottom:4px;">🔧 登録済みの整備候補（作業記録時にワンタップ選択）</div>
+      <div style="color:#444; line-height:1.5;">
+        <div><b>症状:</b> ${symptomsList.length ? esc(symptomsList.join(' / ')) : '<span style="color:#999;">未登録</span>'}</div>
+        <div><b>整備内容:</b> ${contentsList.length ? esc(contentsList.join(' / ')) : '<span style="color:#999;">未登録</span>'}</div>
+        <div><b>交換部品:</b> ${partsList.length ? esc(partsList.join(' / ')) : '<span style="color:#999;">未登録</span>'}</div>
+      </div>
+    </div>`;
+
     const historyHtml = list.length === 0
-    ? '<p style="color:#666; text-align:center; padding:20px;">整備履歴はありません。</p>'
+      ? '<p style="color:#666; text-align:center; padding:20px;">整備履歴はありません。</p>'
       : list.map((r) => `
           <div style="border-bottom:1px solid #eee; padding:12px 0;">
-          <div style="font-size:12px; color:#888;">${esc(r.date)}</div>
-          <div style="font-weight:bold; color:#333; margin-top:2px;">資材・内容: ${esc(r.material || '-')}</div>
-          <div style="font-size:13px; margin-top:2px;">部品: ${esc(r.replaceParts || '-')}</div>
-          <div style="font-size:13px; margin-top:4px; color:#555;">${esc(r.comment || '')}</div>
+            <div style="font-size:12px; color:#888; font-weight:bold;">📅 ${esc(r.date)}</div>
+            <div style="font-weight:bold; color:#333; margin-top:2px;">資材・整備内容: ${esc(r.material || '-')}</div>
+            <div style="font-size:13px; margin-top:2px;">交換部品: ${esc(r.replaceParts || '-')}</div>
+            <div style="font-size:13px; margin-top:4px; color:#555;">${esc(r.comment || '')}</div>
             ${(typeof window.buildMaintHistoryPhotosHtml_ === 'function') ? window.buildMaintHistoryPhotosHtml_(r, { size: 88 }) : ''}
-        </div>
-      `).join('');
-  modalBody.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #E65100; padding-bottom:8px; margin-bottom:10px;">
-      <h3 style="margin:0; color:#E65100; font-size:16px;">📋 整備履歴</h3>
-      <span onclick="closeWorkerMachineMaintHistoryModal_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
-    </div>
-      <div style="display:flex; align-items:flex-start; margin:0 0 12px;">
+          </div>
+        `).join('');
+
+    modalBody.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #E65100; padding-bottom:8px; margin-bottom:10px;">
+        <h3 style="margin:0; color:#E65100; font-size:16px;">📋 整備履歴・詳細</h3>
+        <span onclick="closeWorkerMachineMaintHistoryModal_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
+      </div>
+      <div style="display:flex; align-items:flex-start; margin:0 0 10px;">
         ${headerPhoto}
-        <div style="min-width:0;">
-          <div style="font-size:14px; font-weight:bold; color:#333;">${esc(label)}</div>
-          <div style="font-size:12px; color:#888; margin-top:2px;">📍 拠点: ${esc(hub)} ／ ${list.length}件</div>
-          ${adminEditBtn}
+        <div style="min-width:0; flex:1;">
+          <div style="display:flex; gap:5px; flex-wrap:wrap; margin-bottom:4px;">
+            <span style="padding:2px 6px; border-radius:6px; background:${isVeh ? '#E3F2FD' : '#FFF3E0'}; color:${isVeh ? '#0D47A1' : '#E65100'}; font-size:10px; font-weight:bold;">${isVeh ? '🛻 車両' : '🚜 農機'}</span>
+            <span style="padding:2px 6px; border-radius:6px; background:#FBE9E7; color:#BF360C; font-size:10px; font-weight:bold;">📍 ${esc(locInfo.hub)}</span>
+            <span style="padding:2px 6px; border-radius:6px; background:#E0F2F1; color:#00695C; font-size:10px; font-weight:bold;">🪧 ${esc(locInfo.signGroup)}</span>
+          </div>
+          <div style="font-size:15px; font-weight:bold; color:#333;">${esc(label)}</div>
+          <div style="font-size:12px; color:#666; margin-top:2px;">履歴 ${list.length}件${locInfo.isMoved ? ` ／ ⚠️ 定位置: ${esc(locInfo.baseSignName)}` : ''}</div>
+          ${editBtn}
         </div>
       </div>
-      <div style="max-height:50vh; overflow-y:auto; border:1px solid #eee; border-radius:8px; padding:10px; margin-bottom:12px;">
-      ${historyHtml}
-    </div>
-    <div style="display:flex; gap:8px;">
-      <button type="button" onclick="openWorkerMachineMaintHistoryModal_()"
-          style="flex:1; padding:12px; background:#FFF3E0; color:#E65100; border:1px solid #FFB74D; border-radius:8px; font-weight:bold; cursor:pointer;">← 拠点一覧</button>
-      <button type="button" onclick="closeWorkerMachineMaintHistoryModal_()"
-        style="flex:1; padding:12px; background:#ccc; color:#333; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">閉じる</button>
-    </div>
-  `;
+      ${candidatesHtml}
+      <div style="max-height:44vh; overflow-y:auto; border:1px solid #eee; border-radius:8px; padding:10px; margin-bottom:12px;">
+        ${historyHtml}
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button type="button" onclick="openWorkerMachineMaintHistoryModal_()"
+          style="flex:1; padding:12px; background:#FFF3E0; color:#E65100; border:1px solid #FFB74D; border-radius:8px; font-weight:bold; cursor:pointer;">← 一覧へ戻る</button>
+        <button type="button" onclick="closeWorkerMachineMaintHistoryModal_()"
+          style="flex:1; padding:12px; background:#ccc; color:#333; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">閉じる</button>
+      </div>
+    `;
   };
 
   if (window.isWorkerMaintHistoryCacheFresh_()) {
@@ -44167,37 +45084,16 @@ window.pickBulkWorkMemoWorkName_ = (uid, name) => {
   if (window.bulkWorkMemoIsMaintenance_(row)) {
     row.usedMachines = [];
     row._machinePickOpen = true;
-    const sugMaint = (typeof window.suggestBulkWorkMemoMaintenanceTargets_ === 'function')
-      ? window.suggestBulkWorkMemoMaintenanceTargets_(row.rawLine)
-      : { primary: [] };
-    const primaryMaint = (sugMaint && Array.isArray(sugMaint.primary)) ? sugMaint.primary : [];
-    if (primaryMaint.length && typeof window.setBulkWorkMemoMaintTargets_ === 'function') {
-      window.setBulkWorkMemoMaintTargets_(row, primaryMaint.map(item => ({
-        id: String(item.id || '').trim(),
-        name: String(item.name || '').trim(),
-        kind: String(item.kind || 'machine').trim() || 'machine'
-      })).filter(t => t.id || t.name));
-      row._maintPickOpen = false;
+    // 候補表示のみ（自動選択しない）
+    if (typeof window.setBulkWorkMemoMaintTargets_ === 'function') {
+      window.setBulkWorkMemoMaintTargets_(row, []);
     } else {
-      const guessedMaint = window.guessBulkWorkMemoMaintenanceTarget_(row.rawLine);
-      if (guessedMaint && typeof window.setBulkWorkMemoMaintTargets_ === 'function') {
-        window.setBulkWorkMemoMaintTargets_(row, [{
-          id: guessedMaint.id,
-          name: guessedMaint.name,
-          kind: guessedMaint.kind || 'machine'
-        }]);
-        row._maintPickOpen = false;
-      } else if (typeof window.setBulkWorkMemoMaintTargets_ === 'function') {
-        window.setBulkWorkMemoMaintTargets_(row, []);
-        row._maintPickOpen = true;
-      } else {
-        row.maintenanceToolId = '';
-        row.maintenanceTool = '';
-        row.maintenanceTargetKind = '';
-        row.maintenanceTargets = [];
-        row._maintPickOpen = true;
-      }
+      row.maintenanceToolId = '';
+      row.maintenanceTool = '';
+      row.maintenanceTargetKind = '';
+      row.maintenanceTargets = [];
     }
+    row._maintPickOpen = true;
     window.guessBulkWorkMemoMaintenanceFields_(row);
   } else {
     if (typeof window.setBulkWorkMemoMaintTargets_ === 'function') {
@@ -46929,7 +47825,11 @@ window.executeBulkWorkMemoRegistration_ = async () => {
       });
       let nameStr = '未選択';
       if (targetIds.length) {
-        nameStr = targetIds.map(id => (loadedPolygons[id] && loadedPolygons[id].name) || id).filter(Boolean).join(', ') || '未選択';
+        if (window.SignGroup && typeof window.SignGroup.formatRecordPlaceLabel === 'function') {
+          nameStr = window.SignGroup.formatRecordPlaceLabel(targetIds, loadedPolygons) || '未選択';
+        } else {
+          nameStr = targetIds.map(id => (loadedPolygons[id] && loadedPolygons[id].name) || id).filter(Boolean).join(', ') || '未選択';
+        }
         data.multiFieldNames = nameStr;
         data.placeLabel = nameStr;
       }

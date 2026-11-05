@@ -1,7 +1,8 @@
 
 let currentUser = "", loadedPolygons = {}, editingId = null, originalCoordsForEdit = [], pdlLocations = [], pdlLocationDetails = [], pdlConditions = [], pdlStatuses = [], toukiList = [], map, drawingManager, infoWindow, currentPolygon = null, currentMarker = null, isMergeMode = false, mergeBaseId = null, userLocationMarker = null, isBatchDeleteMode = false, selectedForDelete = [];
+window.loadedPolygons = loadedPolygons;
 
-const JP_PREFECTURES = ['北海道','青森県','岩手県','宮城県','秋田県','山形県','福島県','茨城県','栃木県','群馬県','埼玉県','千葉県','東京都','神奈川県','新潟県','富山県','石川県','福井県','山梨県','長野県','岐阜県','静岡県','愛知県','三重県','滋賀県','京都府','大阪府','兵庫県','奈良県','和歌山県','鳥取県','島根県','岡山県','広島県','山口県','徳島県','香川県','愛媛県','高知県','福岡県','佐賀県','長崎県','熊本県','大分県','宮崎県','鹿児島県','沖縄県'];
+const JP_PREFECTURES = ['北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県', '茨城県', '栃木県', '群馬県', '埼玉県', '千葉県', '東京都', '神奈川県', '新潟県', '富山県', '石川県', '福井県', '山梨県', '長野県', '岐阜県', '静岡県', '愛知県', '三重県', '滋賀県', '京都府', '大阪府', '兵庫県', '奈良県', '和歌山県', '鳥取県', '島根県', '岡山県', '広島県', '山口県', '徳島県', '香川県', '愛媛県', '高知県', '福岡県', '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県'];
 const CP_CLIMATE_OPTIONS = ['暖地', '温暖地', '一般地', '高冷地'];
 const JP_CITIES_CACHE_KEY = 'jmap_jp_cities_by_pref_v1';
 const JP_CITIES_API_URL = 'https://geolonia.github.io/japanese-addresses/api/ja.json';
@@ -9,110 +10,110 @@ let jpCitiesByPref = null;
 let jpCitiesLoadPromise = null;
 
 window.CROP_ICON_PRESETS_ = [
-  '🌱', '🥬', '🥦', '🥒', '🍅', '🌶️', '🥕', '🧅', '🧄', '🥔',
-  '🍆', '🌽', '🫘', '🫛', '🍄', '🍓', '🍇', '🍉', '🍑', '🍎',
-  '🍊', '🍋', '🥝', '🍍', '🥑', '🌿', '🍃', '🌾', '🌻', '🌷',
-  '🌸', '🪴', '🌳', '☘️', '🍀', '🎋', '💮', '🫐', '🍈', '🥜'
+    '🌱', '🥬', '🥦', '🥒', '🍅', '🌶️', '🥕', '🧅', '🧄', '🥔',
+    '🍆', '🌽', '🫘', '🫛', '🍄', '🍓', '🍇', '🍉', '🍑', '🍎',
+    '🍊', '🍋', '🥝', '🍍', '🥑', '🌿', '🍃', '🌾', '🌻', '🌷',
+    '🌸', '🪴', '🌳', '☘️', '🍀', '🎋', '💮', '🫐', '🍈', '🥜'
 ];
 
 window.CROP_ICON_NAME_RULES_ = [
-  [/トマト|とまと|tomato/i, '🍅'],
-  [/きゅうり|キュウリ|胡瓜/i, '🥒'],
-  [/なす|ナス|茄子/i, '🍆'],
-  [/ピーマン|ししとう|唐辛子|とうがらし|パプリカ/i, '🌶️'],
-  [/キャベツ|レタス|白菜|はくさい|ほうれん草|ホウレン|小松菜|こまつな|チンゲン|水菜|みずな|春菊/i, '🥬'],
-  [/ブロッコリ|カリフラワー/i, '🥦'],
-  [/にんじん|ニンジン|人参/i, '🥕'],
-  [/たまねぎ|タマネギ|玉ねぎ|ねぎ|ネギ/i, '🧅'],
-  [/にんにく|ニンニク/i, '🧄'],
-  [/じゃがいも|ジャガイモ|馬鈴薯|さつまいも|サツマイモ|里芋|さといも/i, '🥔'],
-  [/とうもろこし|トウモロコシ|コーン/i, '🌽'],
-  [/えだまめ|枝豆|大豆|いんげん|豆/i, '🫘'],
-  [/いちご|イチゴ|苺/i, '🍓'],
-  [/ぶどう|ブドウ|葡萄/i, '🍇'],
-  [/すいか|スイカ|西瓜/i, '🍉'],
-  [/メロン/i, '🍈'],
-  [/もも|モモ|桃/i, '🍑'],
-  [/りんご|リンゴ|林檎/i, '🍎'],
-  [/みかん|ミカン|柑橘|オレンジ|ゆず|レモン/i, '🍊'],
-  [/キウイ/i, '🥝'],
-  [/アボカド/i, '🥑'],
-  [/きのこ|シイタケ|しいたけ|マッシュルーム/i, '🍄'],
-  [/米|稲|いね|もみ/i, '🌾'],
-  [/花|バラ|菊|きく/i, '🌸']
+    [/トマト|とまと|tomato/i, '🍅'],
+    [/きゅうり|キュウリ|胡瓜/i, '🥒'],
+    [/なす|ナス|茄子/i, '🍆'],
+    [/ピーマン|ししとう|唐辛子|とうがらし|パプリカ/i, '🌶️'],
+    [/キャベツ|レタス|白菜|はくさい|ほうれん草|ホウレン|小松菜|こまつな|チンゲン|水菜|みずな|春菊/i, '🥬'],
+    [/ブロッコリ|カリフラワー/i, '🥦'],
+    [/にんじん|ニンジン|人参/i, '🥕'],
+    [/たまねぎ|タマネギ|玉ねぎ|ねぎ|ネギ/i, '🧅'],
+    [/にんにく|ニンニク/i, '🧄'],
+    [/じゃがいも|ジャガイモ|馬鈴薯|さつまいも|サツマイモ|里芋|さといも/i, '🥔'],
+    [/とうもろこし|トウモロコシ|コーン/i, '🌽'],
+    [/えだまめ|枝豆|大豆|いんげん|豆/i, '🫘'],
+    [/いちご|イチゴ|苺/i, '🍓'],
+    [/ぶどう|ブドウ|葡萄/i, '🍇'],
+    [/すいか|スイカ|西瓜/i, '🍉'],
+    [/メロン/i, '🍈'],
+    [/もも|モモ|桃/i, '🍑'],
+    [/りんご|リンゴ|林檎/i, '🍎'],
+    [/みかん|ミカン|柑橘|オレンジ|ゆず|レモン/i, '🍊'],
+    [/キウイ/i, '🥝'],
+    [/アボカド/i, '🥑'],
+    [/きのこ|シイタケ|しいたけ|マッシュルーム/i, '🍄'],
+    [/米|稲|いね|もみ/i, '🌾'],
+    [/花|バラ|菊|きく/i, '🌸']
 ];
 
 window.guessCropIconFromName_ = (cropName) => {
-  const n = String(cropName || '').trim();
-  if (!n || n === '共通' || n === '__common__') return '🌿';
-  const rules = Array.isArray(window.CROP_ICON_NAME_RULES_) ? window.CROP_ICON_NAME_RULES_ : [];
-  for (let i = 0; i < rules.length; i++) {
-    if (rules[i][0].test(n)) return rules[i][1];
-  }
-  return '🌱';
+    const n = String(cropName || '').trim();
+    if (!n || n === '共通' || n === '__common__') return '🌿';
+    const rules = Array.isArray(window.CROP_ICON_NAME_RULES_) ? window.CROP_ICON_NAME_RULES_ : [];
+    for (let i = 0; i < rules.length; i++) {
+        if (rules[i][0].test(n)) return rules[i][1];
+    }
+    return '🌱';
 };
 
 window.suggestCropIconsFromName_ = (cropName) => {
-  const n = String(cropName || '').trim();
-  const out = [];
-  const seen = new Set();
-  const push = (ic) => {
-    const icon = String(ic || '').trim();
-    if (!icon || seen.has(icon)) return;
-    seen.add(icon);
-    out.push(icon);
-  };
-  if (!n || n === '共通' || n === '__common__') {
+    const n = String(cropName || '').trim();
+    const out = [];
+    const seen = new Set();
+    const push = (ic) => {
+        const icon = String(ic || '').trim();
+        if (!icon || seen.has(icon)) return;
+        seen.add(icon);
+        out.push(icon);
+    };
+    if (!n || n === '共通' || n === '__common__') {
+        push('🌿');
+        return out;
+    }
+    (window.CROP_ICON_NAME_RULES_ || []).forEach(rule => {
+        if (rule[0].test(n)) push(rule[1]);
+    });
+    push('🌱');
+    push('🥬');
     push('🌿');
-    return out;
-  }
-  (window.CROP_ICON_NAME_RULES_ || []).forEach(rule => {
-    if (rule[0].test(n)) push(rule[1]);
-  });
-  push('🌱');
-  push('🥬');
-  push('🌿');
-  return out.slice(0, 8);
+    return out.slice(0, 8);
 };
 
 window.getCropIconEmoji_ = (cropName) => {
-  const n = String(cropName || '').trim();
-  if (!n || n === '共通' || n === '__common__') return '🌿';
-  const hit = (typeof pdlCrops !== 'undefined' && Array.isArray(pdlCrops))
-    ? pdlCrops.find(c => c && String(c.name || '').trim() === n)
-    : null;
-  const stored = hit ? String(hit.icon || '').trim() : '';
-  if (stored) return stored;
-  return window.guessCropIconFromName_(n);
+    const n = String(cropName || '').trim();
+    if (!n || n === '共通' || n === '__common__') return '🌿';
+    const hit = (typeof pdlCrops !== 'undefined' && Array.isArray(pdlCrops))
+        ? pdlCrops.find(c => c && String(c.name || '').trim() === n)
+        : null;
+    const stored = hit ? String(hit.icon || '').trim() : '';
+    if (stored) return stored;
+    return window.guessCropIconFromName_(n);
 };
 
 window.cropIconBtnStyle_ = (opts) => {
-  const o = opts || {};
-  const size = o.size || 42;
-  const fontSize = o.fontSize || 22;
-  const border = o.border || '#E0E0E0';
-  const bg = o.bg || '#fff';
-  return `width:${size}px; height:${size}px; border-radius:10px; border:2px solid ${border}; background:${bg}; padding:0; margin:0; box-sizing:border-box; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; line-height:1; font-size:${fontSize}px; font-family:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;`;
+    const o = opts || {};
+    const size = o.size || 42;
+    const fontSize = o.fontSize || 22;
+    const border = o.border || '#E0E0E0';
+    const bg = o.bg || '#fff';
+    return `width:${size}px; height:${size}px; border-radius:10px; border:2px solid ${border}; background:${bg}; padding:0; margin:0; box-sizing:border-box; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; line-height:1; font-size:${fontSize}px; font-family:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;`;
 };
 window.cropIconBtnInnerHtml_ = (icon) =>
-  `<span style="display:block; line-height:1; transform:translateY(-0.5px); pointer-events:none;">${icon}</span>`;
+    `<span style="display:block; line-height:1; transform:translateY(-0.5px); pointer-events:none;">${icon}</span>`;
 
 window.buildCropIconPickerHtml_ = (inputId, selectedIcon) => {
-  const id = String(inputId || 'crop_icon').trim() || 'crop_icon';
-  const cur = String(selectedIcon || '🌱').trim() || '🌱';
-  const presets = Array.isArray(window.CROP_ICON_PRESETS_) ? window.CROP_ICON_PRESETS_ : ['🌱'];
-  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  const btns = presets.map(ic => {
-    const on = ic === cur;
-    const safe = String(ic).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const style = window.cropIconBtnStyle_({
-      size: 40, fontSize: 20,
-      border: on ? '#2E7D32' : '#E0E0E0',
-      bg: on ? '#E8F5E9' : '#fff'
-    });
-    return `<button type="button" onclick="window.pickCropIconInput_('${esc(id)}','${safe}', true)" style="${style}">${window.cropIconBtnInnerHtml_(ic)}</button>`;
-  }).join('');
-  return `<input type="hidden" id="${esc(id)}" value="${esc(cur)}" data-manual="0">
+    const id = String(inputId || 'crop_icon').trim() || 'crop_icon';
+    const cur = String(selectedIcon || '🌱').trim() || '🌱';
+    const presets = Array.isArray(window.CROP_ICON_PRESETS_) ? window.CROP_ICON_PRESETS_ : ['🌱'];
+    const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    const btns = presets.map(ic => {
+        const on = ic === cur;
+        const safe = String(ic).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const style = window.cropIconBtnStyle_({
+            size: 40, fontSize: 20,
+            border: on ? '#2E7D32' : '#E0E0E0',
+            bg: on ? '#E8F5E9' : '#fff'
+        });
+        return `<button type="button" onclick="window.pickCropIconInput_('${esc(id)}','${safe}', true)" style="${style}">${window.cropIconBtnInnerHtml_(ic)}</button>`;
+    }).join('');
+    return `<input type="hidden" id="${esc(id)}" value="${esc(cur)}" data-manual="0">
     <div style="font-size:12px; color:#555; margin-bottom:4px;">選択中: <span id="${esc(id)}_preview" style="font-size:20px; line-height:1; vertical-align:middle;">${cur}</span></div>
     <div id="${esc(id)}_suggest" style="margin-bottom:8px;"></div>
     <div style="font-size:11px; color:#888; margin-bottom:4px;">すべて</div>
@@ -120,68 +121,68 @@ window.buildCropIconPickerHtml_ = (inputId, selectedIcon) => {
 };
 
 window.pickCropIconInput_ = (inputId, icon, manual) => {
-  const id = String(inputId || '').trim();
-  const ic = String(icon || '🌱').trim() || '🌱';
-  const input = document.getElementById(id);
-  const preview = document.getElementById(id + '_preview');
-  const grid = document.getElementById(id + '_grid');
-  const suggest = document.getElementById(id + '_suggest');
-  if (input) {
-    input.value = ic;
-    if (manual) input.setAttribute('data-manual', '1');
-  }
-  if (preview) preview.textContent = ic;
-  const paint = (box) => {
-    if (!box) return;
-    box.querySelectorAll('button').forEach(btn => {
-      const on = String(btn.getAttribute('data-icon') || btn.textContent || '').trim() === ic;
-      btn.style.border = on ? '2px solid #2E7D32' : '2px solid #E0E0E0';
-      btn.style.background = on ? '#E8F5E9' : '#fff';
-    });
-  };
-  paint(grid);
-  paint(suggest);
+    const id = String(inputId || '').trim();
+    const ic = String(icon || '🌱').trim() || '🌱';
+    const input = document.getElementById(id);
+    const preview = document.getElementById(id + '_preview');
+    const grid = document.getElementById(id + '_grid');
+    const suggest = document.getElementById(id + '_suggest');
+    if (input) {
+        input.value = ic;
+        if (manual) input.setAttribute('data-manual', '1');
+    }
+    if (preview) preview.textContent = ic;
+    const paint = (box) => {
+        if (!box) return;
+        box.querySelectorAll('button').forEach(btn => {
+            const on = String(btn.getAttribute('data-icon') || btn.textContent || '').trim() === ic;
+            btn.style.border = on ? '2px solid #2E7D32' : '2px solid #E0E0E0';
+            btn.style.background = on ? '#E8F5E9' : '#fff';
+        });
+    };
+    paint(grid);
+    paint(suggest);
 };
 
 window.refreshCropIconSuggestions_ = (inputId, cropName) => {
-  const id = String(inputId || '').trim();
-  const suggestBox = document.getElementById(id + '_suggest');
-  const input = document.getElementById(id);
-  if (!suggestBox) return;
-  const suggestions = window.suggestCropIconsFromName_(cropName);
-  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  const cur = String((input && input.value) || '').trim() || '🌱';
-  const manual = input && input.getAttribute('data-manual') === '1';
-  if (!String(cropName || '').trim()) {
-    suggestBox.innerHTML = '<div style="font-size:11px; color:#888;">作物名を入れると候補が出ます</div>';
-    return;
-  }
-  suggestBox.innerHTML = `<div style="font-size:11px; font-weight:bold; color:#2E7D32; margin-bottom:4px;">名前からの候補</div>
+    const id = String(inputId || '').trim();
+    const suggestBox = document.getElementById(id + '_suggest');
+    const input = document.getElementById(id);
+    if (!suggestBox) return;
+    const suggestions = window.suggestCropIconsFromName_(cropName);
+    const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    const cur = String((input && input.value) || '').trim() || '🌱';
+    const manual = input && input.getAttribute('data-manual') === '1';
+    if (!String(cropName || '').trim()) {
+        suggestBox.innerHTML = '<div style="font-size:11px; color:#888;">作物名を入れると候補が出ます</div>';
+        return;
+    }
+    suggestBox.innerHTML = `<div style="font-size:11px; font-weight:bold; color:#2E7D32; margin-bottom:4px;">名前からの候補</div>
     <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">${suggestions.map(ic => {
-      const on = ic === cur;
-      const safe = String(ic).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-      const style = window.cropIconBtnStyle_({
-        size: 44, fontSize: 22,
-        border: on ? '#2E7D32' : '#A5D6A7',
-        bg: on ? '#E8F5E9' : '#F1F8E9'
-      });
-      return `<button type="button" data-icon="${esc(ic)}" onclick="window.pickCropIconInput_('${esc(id)}','${safe}', true)" style="${style}">${window.cropIconBtnInnerHtml_(ic)}</button>`;
+        const on = ic === cur;
+        const safe = String(ic).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const style = window.cropIconBtnStyle_({
+            size: 44, fontSize: 22,
+            border: on ? '#2E7D32' : '#A5D6A7',
+            bg: on ? '#E8F5E9' : '#F1F8E9'
+        });
+        return `<button type="button" data-icon="${esc(ic)}" onclick="window.pickCropIconInput_('${esc(id)}','${safe}', true)" style="${style}">${window.cropIconBtnInnerHtml_(ic)}</button>`;
     }).join('')}</div>`;
-  if (!manual && suggestions[0]) window.pickCropIconInput_(id, suggestions[0], false);
+    if (!manual && suggestions[0]) window.pickCropIconInput_(id, suggestions[0], false);
 };
 
 window.bindCropNameToIconSuggestions_ = (nameInputId, iconInputId) => {
-  const nameEl = document.getElementById(nameInputId);
-  if (!nameEl) return;
-  const run = () => window.refreshCropIconSuggestions_(iconInputId, nameEl.value);
-  nameEl.addEventListener('input', run);
-  run();
+    const nameEl = document.getElementById(nameInputId);
+    if (!nameEl) return;
+    const run = () => window.refreshCropIconSuggestions_(iconInputId, nameEl.value);
+    nameEl.addEventListener('input', run);
+    run();
 };
 
 /** 県から産地の初期候補を返す（手動変更可） */
 function suggestClimateFromPrefecture(pref) {
-    const warm = ['沖縄県','鹿児島県','宮崎県','熊本県','長崎県','佐賀県','福岡県','大分県','高知県','愛媛県','香川県','徳島県','山口県','広島県','岡山県','和歌山県','三重県','静岡県','愛知県','千葉県','神奈川県','東京都','大阪府','兵庫県','京都府','滋賀県','奈良県'];
-    const cool = ['北海道','青森県','岩手県','秋田県','山形県','福島県','長野県','新潟県','富山県','石川県','福井県','山梨県','群馬県','栃木県'];
+    const warm = ['沖縄県', '鹿児島県', '宮崎県', '熊本県', '長崎県', '佐賀県', '福岡県', '大分県', '高知県', '愛媛県', '香川県', '徳島県', '山口県', '広島県', '岡山県', '和歌山県', '三重県', '静岡県', '愛知県', '千葉県', '神奈川県', '東京都', '大阪府', '兵庫県', '京都府', '滋賀県', '奈良県'];
+    const cool = ['北海道', '青森県', '岩手県', '秋田県', '山形県', '福島県', '長野県', '新潟県', '富山県', '石川県', '福井県', '山梨県', '群馬県', '栃木県'];
     if (cool.includes(pref)) return '高冷地';
     if (warm.includes(pref)) return '暖地';
     if (pref) return '一般地';
@@ -245,7 +246,7 @@ function ensureJpCitiesLoaded() {
             jpCitiesByPref = JSON.parse(cached);
             return Promise.resolve(jpCitiesByPref);
         }
-    } catch (e) {}
+    } catch (e) { }
 
     jpCitiesLoadPromise = fetch(JP_CITIES_API_URL)
         .then(res => {
@@ -254,7 +255,7 @@ function ensureJpCitiesLoaded() {
         })
         .then(data => {
             jpCitiesByPref = data || {};
-            try { localStorage.setItem(JP_CITIES_CACHE_KEY, JSON.stringify(jpCitiesByPref)); } catch (e) {}
+            try { localStorage.setItem(JP_CITIES_CACHE_KEY, JSON.stringify(jpCitiesByPref)); } catch (e) { }
             return jpCitiesByPref;
         })
         .catch(err => {
@@ -317,7 +318,7 @@ function locationFormPrefix_(sel) {
     return id.indexOf('edit_') === 0 ? 'edit' : 'add';
 }
 
-window.onLocationPrefChange = function(sel) {
+window.onLocationPrefChange = function (sel) {
     const prefix = locationFormPrefix_(sel);
     const currentClimates = getSelectedLocationClimates(prefix);
     if (currentClimates.length === 0) {
@@ -333,7 +334,7 @@ window.onLocationPrefChange = function(sel) {
     });
 };
 
-window.onLocationCityChange = function(sel) {
+window.onLocationCityChange = function (sel) {
     const prefix = locationFormPrefix_(sel);
     syncLocationCityCustomVisibility(prefix);
 };
@@ -398,7 +399,7 @@ window.isAdminAuthenticatedForCad_ = () => {
         if (window._adminCacheSessionActive && role === '管理者' && adminId && adminName) {
             return true;
         }
-    } catch (e) {}
+    } catch (e) { }
     return false;
 };
 
@@ -410,7 +411,7 @@ window.showAdminLoginForCad_ = (msg) => {
         if (err) err.innerText = msg || '⛔ 畝CADを開くには管理者ログインが必要です';
         // 作業員資格情報が入っていても、管理者PWを優先してフォームを戻す
         if (typeof restoreAdminLoginForm === 'function') restoreAdminLoginForm();
-    } catch (e) {}
+    } catch (e) { }
 };
 
 window.queueCadOpenAfterAdminLogin_ = (fieldId, fromBulkMemo) => {
@@ -477,7 +478,7 @@ let deepLinkFieldHandled = false;
 function clearMapDeepLinkFromUrl() {
     if (mapDeepLinkUrlCleared) return;
     mapDeepLinkUrlCleared = true;
-    try { window.history.replaceState(null, null, window.location.pathname); } catch (e) {}
+    try { window.history.replaceState(null, null, window.location.pathname); } catch (e) { }
 }
 
 function buildFieldShareUrl(id, centerLat, centerLng) {
@@ -548,7 +549,7 @@ async function applySharedTextMapDeepLink(sharedText, opts) {
     try {
         sharedText = decodeURIComponent(String(sharedText).replace(/\+/g, ' '));
         if (/%[0-9A-Fa-f]{2}/.test(sharedText)) sharedText = decodeURIComponent(sharedText);
-    } catch (e) {}
+    } catch (e) { }
     sharedText = String(sharedText || '').replace(/%2C/gi, ',');
 
     const matchURL = sharedText.match(/@(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/)
@@ -899,7 +900,7 @@ function takeoverAdminSyncQueue_() {
         item.reject(err);
     });
     ['savePolygon', 'savePolygonBatch', 'updatePolygon', 'deletePolygon', 'deletePolygonBatch', 'splitField'].forEach((action) => {
-        try { abortCallGAS(action); } catch (e) {}
+        try { abortCallGAS(action); } catch (e) { }
     });
 }
 
@@ -950,7 +951,7 @@ function serializeAdminPolygon_(obj) {
             const pos = obj.marker.getPosition();
             coords = [{ lat: pos.lat(), lng: pos.lng() }];
         }
-    } catch (e) {}
+    } catch (e) { }
     if (typeof coords === 'string') {
         try { coords = JSON.parse(coords); } catch (e) { return null; }
     }
@@ -969,6 +970,7 @@ function serializeAdminPolygon_(obj) {
         isMarker: !!obj.isMarker,
         signFunction: obj.signFunction || '',
         linkedSigns: obj.linkedSigns || '',
+        parentSignId: obj.parentSignId || '',
         ridgeDir: obj.ridgeDir || '',
         ridgeWidth: obj.ridgeWidth || '',
         uneSimData: obj.uneSimData || '',
@@ -1056,7 +1058,7 @@ function remapLoadedPolygonId_(oldId, newId) {
     if (obj._pendingUpdate) {
         const extra = obj._pendingUpdate;
         obj._pendingUpdate = null;
-        setTimeout(() => { syncUpdatePolygon_(obj, extra).catch(() => {}); }, 0);
+        setTimeout(() => { syncUpdatePolygon_(obj, extra).catch(() => { }); }, 0);
     }
     return obj;
 }
@@ -1084,7 +1086,7 @@ function clearPendingAdminSync_(key) {
         const next = list.filter(x => x && x.key !== key);
         if (next.length) localStorage.setItem(ADMIN_PENDING_SYNC_KEY, JSON.stringify(next));
         else localStorage.removeItem(ADMIN_PENDING_SYNC_KEY);
-    } catch (e) {}
+    } catch (e) { }
 }
 
 function holdAdminReadsForWrite_() {
@@ -1157,6 +1159,7 @@ function syncUpdatePolygon_(p, extra) {
         if (payload.signFunction == null) payload.signFunction = p.signFunction;
         if (payload.location == null) payload.location = p.location || '';
         if (payload.condition == null) payload.condition = p.linkedSigns || '';
+        if (payload.parentSignId == null) payload.parentSignId = p.parentSignId || '';
     } else {
         if (payload.location == null) payload.location = p.location;
         if (payload.condition == null) payload.condition = p.condition;
@@ -1180,7 +1183,7 @@ function syncUpdatePolygon_(p, extra) {
 function polygonPayloadReady_(p) {
     const out = Object.assign({}, p || {});
     if (out.coords != null && typeof out.coords !== 'string') {
-        try { out.coords = JSON.stringify(out.coords); } catch (e) {}
+        try { out.coords = JSON.stringify(out.coords); } catch (e) { }
     }
     return out;
 }
@@ -1490,7 +1493,7 @@ function schedulePendingAdminSyncFlush_() {
     const delay = failAt ? Math.max(800, waitAfterFail) : 300;
     window._adminPendingFlushTimer = setTimeout(() => {
         window._adminPendingFlushTimer = null;
-        flushPendingAdminSyncs_().catch(() => {});
+        flushPendingAdminSyncs_().catch(() => { });
     }, delay);
 }
 
@@ -1712,7 +1715,7 @@ async function executeLogin(isAuto = false, options = {}) {
                 try {
                     if (typeof window.cadCloseRegistryModal_ === 'function') window.cadCloseRegistryModal_();
                     if (typeof window.closeCADMode === 'function') window.closeCADMode();
-                } catch (eClose) {}
+                } catch (eClose) { }
                 return;
             }
             loginOk = true;
@@ -1741,14 +1744,14 @@ async function executeLogin(isAuto = false, options = {}) {
 
             if (fromCache) {
                 if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
-                    Promise.resolve(PassionMapTerms.ensureAccepted({ userId: id })).catch(() => {});
+                    Promise.resolve(PassionMapTerms.ensureAccepted({ userId: id })).catch(() => { });
                 }
             } else {
                 if (window.PassionMapTerms && typeof PassionMapTerms.ensureAccepted === 'function') {
                     await PassionMapTerms.ensureAccepted({ userId: id });
                 }
                 if (hasCache) {
-                    try { renderInitData(JSON.parse(localStorage.getItem('pMapAdminInitData')), { interim: true }); } catch (e) {}
+                    try { renderInitData(JSON.parse(localStorage.getItem('pMapAdminInitData')), { interim: true }); } catch (e) { }
                 }
             }
             ensureAdminInitDataLoad_('login-ok');
@@ -1869,7 +1872,7 @@ function loadInitData(options) {
         if (!window._adminInitDataBgRetryTimer) {
             window._adminInitDataBgRetryTimer = setTimeout(() => {
                 window._adminInitDataBgRetryTimer = null;
-                try { loadInitData({ background: true, light: true }); } catch (e2) {}
+                try { loadInitData({ background: true, light: true }); } catch (e2) { }
             }, 6000);
         }
         return null;
@@ -1881,7 +1884,7 @@ function loadInitData(options) {
     }
 
     if (window._adminInitLoading) {
-        try { window._adminInitLoading.done(); } catch (e) {}
+        try { window._adminInitLoading.done(); } catch (e) { }
         window._adminInitLoading = null;
     }
     if (!background) {
@@ -1899,11 +1902,11 @@ function loadInitData(options) {
             : null;
         if (bootCache) {
             if (window._adminInitLoading) window._adminInitLoading.update({ label: '保存データを読み込み中...', detail: '地図を先に表示します', current: 1, total: 3 });
-            try { renderInitData(bootCache, { interim: true }); } catch (e) {}
+            try { renderInitData(bootCache, { interim: true }); } catch (e) { }
         }
         if (window._adminInitLoading) window._adminInitLoading.update({ label: '最新データを取得中...', detail: 'サーバーに接続しています', current: 1, total: 3 });
     } else if (bootCache && !hasPolygons) {
-        try { renderInitData(bootCache, { interim: true }); } catch (e) {}
+        try { renderInitData(bootCache, { interim: true }); } catch (e) { }
     } else if (!bootCache && !hasPolygons && typeof showAdminSyncToast === 'function') {
         // 初回などでキャッシュが無いときも、画面を塞がず控えめに案内
         showAdminSyncToast('☁️ 圃場データを取得しています…', 'info');
@@ -1911,7 +1914,7 @@ function loadInitData(options) {
 
     const closeAdminInitLoadingSoft_ = () => {
         if (!window._adminInitLoading) return;
-        try { window._adminInitLoading.done(); } catch (e) {}
+        try { window._adminInitLoading.done(); } catch (e) { }
         window._adminInitLoading = null;
     };
 
@@ -1919,14 +1922,14 @@ function loadInitData(options) {
         if (window._adminInitDataBgRetryTimer) return;
         window._adminInitDataBgRetryTimer = setTimeout(() => {
             window._adminInitDataBgRetryTimer = null;
-            try { loadInitData({ background: true, light: true }); } catch (e2) {}
+            try { loadInitData({ background: true, light: true }); } catch (e2) { }
         }, delayMs);
     };
 
     // 未同期の保存がある間は、重い再取得を後回しにして保存を先に送る
     if (!options.afterFlush && readPendingAdminSyncList_().length) {
         window._adminInitDeferredForSync = true;
-        try { if (typeof abortCallGAS === 'function') abortCallGAS('getInitData'); } catch (e) {}
+        try { if (typeof abortCallGAS === 'function') abortCallGAS('getInitData'); } catch (e) { }
         schedulePendingAdminSyncFlush_();
         closeAdminInitLoadingSoft_();
         return null;
@@ -1959,13 +1962,13 @@ function loadInitData(options) {
                     || (Array.isArray(c.pdl.fertilizers) && c.pdl.fertilizers.length)
                 );
                 if (hadHeavy) skipCacheSave = true;
-            } catch (e) {}
+            } catch (e) { }
         }
         if (incomingCount === 0 && cached) {
             try {
                 const c = JSON.parse(cached);
                 if (c && Array.isArray(c.polygons) && c.polygons.length > 0) skipCacheSave = true;
-            } catch (e) {}
+            } catch (e) { }
         }
         // 軽量応答でメモリ上の重いマスタが空にならないよう、既存キャッシュから補完
         if (useLight && cached && data && data.pdl) {
@@ -1993,7 +1996,7 @@ function loadInitData(options) {
                     && Array.isArray(c.activeLots) && c.activeLots.length) {
                     data.activeLots = c.activeLots;
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
         const skipRedraw = background && (editingId || customDrawingMode || (window.isEditingFude && window.selectedFudePaths && window.selectedFudePaths.length));
         if (!skipCacheSave && !skipRedraw) {
@@ -2016,9 +2019,9 @@ function loadInitData(options) {
             const fallback = bootCache || readAdminBootInitData_();
             if (fallback && countInitPolygons_(fallback) > 0) {
                 if (Object.keys(loadedPolygons || {}).length === 0) {
-                    try { renderInitData(fallback, { interim: false }); } catch (e) {}
+                    try { renderInitData(fallback, { interim: false }); } catch (e) { }
                 } else {
-                    try { renderInitData(Object.assign({}, data, { polygons: fallback.polygons }), { interim: false, mastersOnly: true }); } catch (e) {}
+                    try { renderInitData(Object.assign({}, data, { polygons: fallback.polygons }), { interim: false, mastersOnly: true }); } catch (e) { }
                 }
                 closeAdminInitLoadingSoft_();
                 if (!window._adminEmptyInitRetried) {
@@ -2028,7 +2031,7 @@ function loadInitData(options) {
                 return;
             }
             if (Object.keys(loadedPolygons || {}).length > 0) {
-                try { renderInitData(data, { interim: false, mastersOnly: true }); } catch (e) {}
+                try { renderInitData(data, { interim: false, mastersOnly: true }); } catch (e) { }
                 closeAdminInitLoadingSoft_();
                 if (!window._adminEmptyInitRetried) {
                     window._adminEmptyInitRetried = true;
@@ -2050,7 +2053,7 @@ function loadInitData(options) {
                     }
                     return;
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
         renderInitData(data, { interim: false });
         if (background) showAdminSyncToast('☁️ 読み込み完了しました（最新に更新）', 'ok');
@@ -2070,7 +2073,7 @@ function loadInitData(options) {
                 window._adminInitDataFullScheduled = true;
                 setTimeout(() => {
                     if (window._adminInitDataInFlight || window._adminSyncWriteHold) return;
-                    try { loadInitData({ background: true, full: true, quiet: true }); } catch (e3) {}
+                    try { loadInitData({ background: true, full: true, quiet: true }); } catch (e3) { }
                 }, 120000);
             }
         }
@@ -2079,8 +2082,8 @@ function loadInitData(options) {
         const detail = (e && e.message) ? String(e.message).replace(/\s+/g, ' ').slice(0, 80) : '';
         const errMsg = String((e && e.message) || '');
         const isTransient = /Failed to fetch|通信に失敗|タイムアウト|一時的な通信|cancelled|Abort|NetworkError|Load failed/i.test(errMsg)
-          || (e && e.name === 'AbortError')
-          || (e && e.name === 'TypeError');
+            || (e && e.name === 'AbortError')
+            || (e && e.name === 'TypeError');
         const canKeepShowing = !!(cached || Object.keys(loadedPolygons || {}).length > 0 || pendingInitData);
 
         // 通信系の失敗では絶対に fail() オーバーレイを出さない（地図を塞がない）
@@ -2089,7 +2092,7 @@ function loadInitData(options) {
         if (Object.keys(loadedPolygons || {}).length === 0) {
             const fallback = bootCache || readAdminBootInitData_();
             if (fallback) {
-                try { renderInitData(fallback, { interim: false }); } catch (err) {}
+                try { renderInitData(fallback, { interim: false }); } catch (err) { }
             }
         }
 
@@ -2102,7 +2105,7 @@ function loadInitData(options) {
             if (!window._adminInitDataBgRetryTimer) {
                 window._adminInitDataBgRetryTimer = setTimeout(() => {
                     window._adminInitDataBgRetryTimer = null;
-                    try { loadInitData({ background: true, light: true }); } catch (e2) {}
+                    try { loadInitData({ background: true, light: true }); } catch (e2) { }
                 }, 8000);
             }
             return;
@@ -2287,6 +2290,7 @@ function renderInitData(data, opts) {
         if (loadedPolygons[id].marker) loadedPolygons[id].marker.setMap(null);
     }
     loadedPolygons = {};
+    window.loadedPolygons = loadedPolygons;
 
     window.pdlSignLinks = data.pdl.signLinks || {};
     // 🌟修正：スマホが固まらないように「50個ずつゆっくり」読み込む処理（チャンク処理）
@@ -2317,7 +2321,7 @@ function renderInitData(data, opts) {
                 // 全部の描画が終わったら検索機能をセット
                 (pendingLocals || []).forEach(p => {
                     if (p && p.id && !loadedPolygons[p.id]) {
-                        try { createPolygonObject(p); } catch (e) {}
+                        try { createPolygonObject(p); } catch (e) { }
                     }
                 });
                 updateAdminLegend();
@@ -2354,7 +2358,7 @@ function updateAdminLegend() {
 
 window.openMasterModal = () => {
     if (typeof window.closeEquipmentManageModal === 'function') {
-        try { window.closeEquipmentManageModal({ keepMaster: true }); } catch (e) {}
+        try { window.closeEquipmentManageModal({ keepMaster: true }); } catch (e) { }
     }
     window._equipmentManageActive = false;
     ensureJpCitiesLoaded();
@@ -2443,7 +2447,7 @@ window.setAdminVehicleList_ = (arr) => {
 window.adminVehicleDisplayName_ = (v) => {
     if (!v) return '';
     if (window.MachineTaxonomy && MachineTaxonomy.getDisplayName) {
-        try { return MachineTaxonomy.getDisplayName(Object.assign({}, v, { isVehicle: true })) || ''; } catch (e) {}
+        try { return MachineTaxonomy.getDisplayName(Object.assign({}, v, { isVehicle: true })) || ''; } catch (e) { }
     }
     const type = String(v.vehicleType || v.type || '').trim();
     const plate = String(v.plateNumber || '').trim();
@@ -3027,7 +3031,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
     const inEquipment = !!window._equipmentManageActive && (type === 'machine' || type === 'tool');
     const btnBack = document.getElementById('btnMasterBack');
     if (btnBack) btnBack.style.display = inEquipment ? 'none' : 'inline-block';
-    
+
     const info = getMasterTypeInfo(type);
     const titleEl = document.getElementById('masterModalTitle');
     if (titleEl && !inEquipment) titleEl.innerHTML = `${info.title} の設定`;
@@ -3076,11 +3080,11 @@ window.openMasterDetail = (type, customEditHtml = null) => {
         formHtml = `<div${catalogNewPanelAttr} class="master-form-panel" style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; flex:1; min-height:0; display:flex; flex-direction:column; box-sizing:border-box; margin-bottom:0;">
             <h4 style="margin-top:0; margin-bottom:10px; color:#4CAF50; font-size:15px; border-bottom:2px solid #4CAF50; padding-bottom:5px; flex-shrink:0;">➕ 新規登録</h4>
             <div style="flex:1; min-height:0; overflow-y:auto;">`;
-        
+
         if (type === 'crop') {
             const iconPicker = (typeof window.buildCropIconPickerHtml_ === 'function')
-              ? window.buildCropIconPickerHtml_('add_crop_icon', '🌱')
-              : `<input type="hidden" id="add_crop_icon" value="🌱"><div style="font-size:12px; color:#888;">🌱（既定）</div>`;
+                ? window.buildCropIconPickerHtml_('add_crop_icon', '🌱')
+                : `<input type="hidden" id="add_crop_icon" value="🌱"><div style="font-size:12px; color:#888;">🌱（既定）</div>`;
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
                 <label style="font-size:12px; font-weight:bold; color:#555;">作物名</label>
                 <input type="text" id="add_crop_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: キャベツ" oninput="if(window.refreshCropIconSuggestions_) window.refreshCropIconSuggestions_('add_crop_icon', this.value)">
@@ -3093,9 +3097,9 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <button onclick="execMaster('crop', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
             setTimeout(() => {
-              if (typeof window.refreshCropIconSuggestions_ === 'function') {
-                window.refreshCropIconSuggestions_('add_crop_icon', document.getElementById('add_crop_name')?.value || '');
-              }
+                if (typeof window.refreshCropIconSuggestions_ === 'function') {
+                    window.refreshCropIconSuggestions_('add_crop_icon', document.getElementById('add_crop_name')?.value || '');
+                }
             }, 0);
         } else if (type === 'cropCultSetting') {
             const cropOpts = (pdlCrops || []).map(c => `<option value="${String(c.name || '').replace(/"/g, '&quot;')}">${c.name}</option>`).join('');
@@ -3211,14 +3215,14 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <button onclick="execMaster('tool', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
         } else if (type === 'costItem') {
-            const catOpts = ['種','資材','機械','燃料','労務','農薬','肥料','その他'].map(c => '<option value="'+c+'">'+c+'</option>').join('');
+            const catOpts = ['種', '資材', '機械', '燃料', '労務', '農薬', '肥料', 'その他'].map(c => '<option value="' + c + '">' + c + '</option>').join('');
             const baseOpts = [
-              ['fixed','固定（回数・式）'],
-              ['area_a','面積aあたり'],
-              ['tray','トレーあたり'],
-              ['plant','本あたり'],
-              ['yield_pack','出荷単位あたり']
-            ].map(x => '<option value="'+x[0]+'">'+x[1]+'</option>').join('');
+                ['fixed', '固定（回数・式）'],
+                ['area_a', '面積aあたり'],
+                ['tray', 'トレーあたり'],
+                ['plant', '本あたり'],
+                ['yield_pack', '出荷単位あたり']
+            ].map(x => '<option value="' + x[0] + '">' + x[1] + '</option>').join('');
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
                 <label style="font-size:12px; font-weight:bold; color:#555;">品目名 *</label>
                 <input type="text" id="add_cost_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: コート種子A / トラクター借上">
@@ -3499,8 +3503,8 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                     ? `<span style="font-size:11px; color:#c2185b; margin-left:6px;">タグ:${v.tagAbbreviation}</span>`
                     : '';
                 const icon = (typeof window.getCropIconEmoji_ === 'function')
-                  ? window.getCropIconEmoji_(v.name)
-                  : (String(v.icon || '').trim() || '🌱');
+                    ? window.getCropIconEmoji_(v.name)
+                    : (String(v.icon || '').trim() || '🌱');
                 subInfo = `<span style="margin-right:4px;">${icon}</span><span style="color:#666;">(${v.density || 0}本/10a)</span>${tagLabel}`;
             }
             if (type === 'cropCultSetting') subInfo = `<span style="font-size:11px; color:#1565c0; margin-left:6px;">穴数: ${v.sowingHoles != null && v.sowingHoles !== '' ? v.sowingHoles : '-'}</span>`;
@@ -3535,7 +3539,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 if (bits.length) subInfo = `<div style="font-size:11px; color:#bf360c; margin-top:3px;">${bits.join(' ／ ')}</div>`;
             }
             if (type === 'tool' || type === 'material') subInfo = `<span style="font-size:11px; background:#e0e0e0; padding:2px 6px; border-radius:4px; margin-left:6px;">${v.workCategory || v.workTypes || '汎用'}</span>`;
-            if (type === 'material' && v.unit) subInfo += ` <span style="font-size:11px; color:#1a73e8; margin-left:4px;">単位:${v.unit} (容量:${v.size||'-'})</span>`;
+            if (type === 'material' && v.unit) subInfo += ` <span style="font-size:11px; color:#1a73e8; margin-left:4px;">単位:${v.unit} (容量:${v.size || '-'})</span>`;
             if (type === 'pesticide') {
                 const bits = [];
                 if (v.cropName) bits.push('🌱 ' + v.cropName);
@@ -3577,8 +3581,8 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                     : 0;
                 if (v.machineNumber && sameCount > 1) {
                     const numLabel = (window.MachineTaxonomy && typeof MachineTaxonomy.formatMachineNumberLabel === 'function')
-                      ? MachineTaxonomy.formatMachineNumberLabel(v.machineNumber)
-                      : String(v.machineNumber);
+                        ? MachineTaxonomy.formatMachineNumberLabel(v.machineNumber)
+                        : String(v.machineNumber);
                     bits.push(numLabel);
                 }
                 if (v.type) bits.push(v.type);
@@ -3649,7 +3653,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
 
     const catalogTabbedLayout = !!catalogMasterType && !customEditHtml;
     const containerHtml = catalogTabbedLayout
-      ? `<div style="height:100%; display:flex; flex-direction:column; min-height:0;">
+        ? `<div style="height:100%; display:flex; flex-direction:column; min-height:0;">
           <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-bottom:14px; flex-shrink:0;">
             <button type="button" id="${catalogMasterType}Tab_new" onclick="switchCatalogMasterTab('${catalogMasterType}','new')" style="border:1px solid #aed581; border-radius:8px; padding:11px 6px; background:#f1f8e9; color:#33691e; font-weight:bold; cursor:pointer;">➕ 新規登録</button>
             <button type="button" id="${catalogMasterType}Tab_search" onclick="switchCatalogMasterTab('${catalogMasterType}','search')" style="border:1px solid #aed581; border-radius:8px; padding:11px 6px; background:#f1f8e9; color:#33691e; font-weight:bold; cursor:pointer;">🔍 カタログ検索</button>
@@ -3660,7 +3664,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             ${listHtml}
           </div>
         </div>`
-      : `<div style="display:flex; gap:20px; min-height:100%; height:100%; align-items:stretch; flex-wrap:wrap; box-sizing:border-box;">
+        : `<div style="display:flex; gap:20px; min-height:100%; height:100%; align-items:stretch; flex-wrap:wrap; box-sizing:border-box;">
           <div style="flex:1; min-width:320px; max-width:420px; display:flex; flex-direction:column; min-height:0;">
             ${formHtml}
           </div>
@@ -3851,11 +3855,11 @@ window.openEditCropMaster = (encoded) => {
     const density = v.density != null ? v.density : 0;
     const safeTagAbbreviation = String(v.tagAbbreviation || '').replace(/"/g, '&quot;');
     const curIcon = String(v.icon || '').trim()
-      || ((typeof window.getCropIconEmoji_ === 'function') ? window.getCropIconEmoji_(v.name) : '🌱')
-      || '🌱';
+        || ((typeof window.getCropIconEmoji_ === 'function') ? window.getCropIconEmoji_(v.name) : '🌱')
+        || '🌱';
     const iconPicker = (typeof window.buildCropIconPickerHtml_ === 'function')
-      ? window.buildCropIconPickerHtml_('edit_crop_icon', curIcon)
-      : `<input type="hidden" id="edit_crop_icon" value="${String(curIcon).replace(/"/g, '&quot;')}">`;
+        ? window.buildCropIconPickerHtml_('edit_crop_icon', curIcon)
+        : `<input type="hidden" id="edit_crop_icon" value="${String(curIcon).replace(/"/g, '&quot;')}">`;
     const editHtml = `
         <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
             <h4 style="margin-top:0; color:#2e7d32; font-size:15px; border-bottom:2px solid #4CAF50; padding-bottom:5px;">✏️ 作物マスタの編集</h4>
@@ -3878,11 +3882,11 @@ window.openEditCropMaster = (encoded) => {
     `;
     openMasterDetail('crop', editHtml);
     setTimeout(() => {
-      const iconEl = document.getElementById('edit_crop_icon');
-      if (iconEl) iconEl.setAttribute('data-manual', '1');
-      if (typeof window.refreshCropIconSuggestions_ === 'function') {
-        window.refreshCropIconSuggestions_('edit_crop_icon', document.getElementById('edit_crop_name')?.value || '');
-      }
+        const iconEl = document.getElementById('edit_crop_icon');
+        if (iconEl) iconEl.setAttribute('data-manual', '1');
+        if (typeof window.refreshCropIconSuggestions_ === 'function') {
+            window.refreshCropIconSuggestions_('edit_crop_icon', document.getElementById('edit_crop_name')?.value || '');
+        }
     }, 0);
 };
 
@@ -3966,7 +3970,7 @@ window.openEditFertilizerMaster = (encoded) => {
 // ===== FAMIC 農薬CSV取込 =====
 window._famicPreviewRows = [];
 
-window.parseCsvTextFlexible_ = function(text) {
+window.parseCsvTextFlexible_ = function (text) {
     const raw = String(text || '').replace(/^\uFEFF/, '');
     const lines = raw.split(/\r\n|\n|\r/).filter(l => l.length);
     if (!lines.length) return [];
@@ -4011,7 +4015,7 @@ window.parseCsvTextFlexible_ = function(text) {
     return rows;
 };
 
-window.findCsvCol_ = function(row, aliases) {
+window.findCsvCol_ = function (row, aliases) {
     if (!row) return '';
     const keys = Object.keys(row);
     for (let a = 0; a < aliases.length; a++) {
@@ -4037,7 +4041,7 @@ window.findCsvCol_ = function(row, aliases) {
     return '';
 };
 
-window.extractPhiDaysFromTiming_ = function(text) {
+window.extractPhiDaysFromTiming_ = function (text) {
     const s = String(text || '');
     const m = s.match(/(\d+)\s*日\s*前/);
     if (m) return parseInt(m[1], 10);
@@ -4054,20 +4058,20 @@ window._ccpState = {
     paintEntryId: null
 };
 
-window.ccpFlatLabel_ = function(flat) {
+window.ccpFlatLabel_ = function (flat) {
     const f = parseInt(flat, 10) || 0;
     const m = Math.floor(f / 6) + 1;
     return m + window.CCP_PERIODS[f % 6];
 };
 
-window.ccpEscape_ = function(s) {
+window.ccpEscape_ = function (s) {
     return String(s == null ? '' : s)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/"/g, '&quot;');
 };
 
-window.buildCropChemPlanUiHtml_ = function() {
+window.buildCropChemPlanUiHtml_ = function () {
     const cropOpts = (pdlCrops || []).map(c => {
         const n = String(c.name || '');
         return `<option value="${window.ccpEscape_(n)}">${window.ccpEscape_(n)}</option>`;
@@ -4175,7 +4179,7 @@ window.buildCropChemPlanUiHtml_ = function() {
     </div>`;
 };
 
-window.initCropChemPlanUi_ = function() {
+window.initCropChemPlanUi_ = function () {
     window._ccpState = { cropName: '', entries: [], dirty: false, selectedFlat: null, paintEntryId: null };
     window._ccpPestCatalogHits = [];
     window._ccpFertCatalogHits = [];
@@ -4191,7 +4195,7 @@ window.initCropChemPlanUi_ = function() {
     }
 };
 
-window.ccpRebuildProductOptionCaches_ = function() {
+window.ccpRebuildProductOptionCaches_ = function () {
     const pestCache = document.getElementById('ccpPestOptionsCache');
     const fertCache = document.getElementById('ccpFertOptionsCache');
     if (pestCache) {
@@ -4209,7 +4213,7 @@ window.ccpRebuildProductOptionCaches_ = function() {
     window.ccpSyncAddProductOptions();
 };
 
-window.ccpSetCatalogTab = function(kind) {
+window.ccpSetCatalogTab = function (kind) {
     const pestBox = document.getElementById('ccpCatPestBox');
     const fertBox = document.getElementById('ccpCatFertBox');
     const tabP = document.getElementById('ccpCatTabPest');
@@ -4231,7 +4235,7 @@ window.ccpSetCatalogTab = function(kind) {
     if (area) area.innerHTML = '';
 };
 
-window.ccpSearchPestCatalog = async function() {
+window.ccpSearchPestCatalog = async function () {
     const area = document.getElementById('ccpCatalogSearchResult');
     if (!area) return;
     let q = (document.getElementById('ccpCatPestQ')?.value || '').trim();
@@ -4277,7 +4281,7 @@ window.ccpSearchPestCatalog = async function() {
     }
 };
 
-window.ccpSearchFertCatalog = async function() {
+window.ccpSearchFertCatalog = async function () {
     const area = document.getElementById('ccpCatalogSearchResult');
     if (!area) return;
     const q = (document.getElementById('ccpCatFertQ')?.value || '').trim();
@@ -4318,7 +4322,7 @@ window.ccpSearchFertCatalog = async function() {
     }
 };
 
-window.ccpPushEntriesFromProducts_ = function(kind, products) {
+window.ccpPushEntriesFromProducts_ = function (kind, products) {
     if (!window._ccpState.cropName) {
         customAlert('半旬にも追加する場合は、先に品目を選択してください');
         return;
@@ -4347,7 +4351,7 @@ window.ccpPushEntriesFromProducts_ = function(kind, products) {
     window.ccpRenderCellPanel_();
 };
 
-window.ccpRegisterSelectedPestFromCatalog = async function(alsoAddToPlan) {
+window.ccpRegisterSelectedPestFromCatalog = async function (alsoAddToPlan) {
     const checks = Array.from(document.querySelectorAll('.ccpPestCatHit'));
     const rows = [];
     checks.forEach(cb => {
@@ -4397,7 +4401,7 @@ window.ccpRegisterSelectedPestFromCatalog = async function(alsoAddToPlan) {
     }
 };
 
-window.ccpRegisterSelectedFertFromCatalog = async function(alsoAddToPlan) {
+window.ccpRegisterSelectedFertFromCatalog = async function (alsoAddToPlan) {
     const checks = Array.from(document.querySelectorAll('.ccpFertCatHit'));
     const rows = [];
     checks.forEach(cb => {
@@ -4445,7 +4449,7 @@ window.ccpRegisterSelectedFertFromCatalog = async function(alsoAddToPlan) {
     }
 };
 
-window.ccpSyncAddProductOptions = function() {
+window.ccpSyncAddProductOptions = function () {
     const kind = document.getElementById('ccpAddKind')?.value || 'pesticide';
     const dest = document.getElementById('ccpAddProduct');
     const src = document.getElementById(kind === 'fertilizer' ? 'ccpFertOptionsCache' : 'ccpPestOptionsCache');
@@ -4453,7 +4457,7 @@ window.ccpSyncAddProductOptions = function() {
     dest.innerHTML = '<option value="">選択...</option>' + src.innerHTML;
 };
 
-window.ccpRenderConfiguredList_ = function() {
+window.ccpRenderConfiguredList_ = function () {
     const el = document.getElementById('ccpConfiguredList');
     if (!el) return;
     const plans = pdlCropChemPlans || [];
@@ -4467,13 +4471,13 @@ window.ccpRenderConfiguredList_ = function() {
     }).join('');
 };
 
-window.ccpSelectCrop = function(name) {
+window.ccpSelectCrop = function (name) {
     const sel = document.getElementById('ccpCropSelect');
     if (sel) sel.value = name;
     window.ccpOnCropChange();
 };
 
-window.ccpOnCropChange = async function() {
+window.ccpOnCropChange = async function () {
     const cropName = (document.getElementById('ccpCropSelect')?.value || '').trim();
     const status = document.getElementById('ccpStatus');
     if (window._ccpState.dirty && window._ccpState.cropName && window._ccpState.cropName !== cropName) {
@@ -4511,11 +4515,11 @@ window.ccpOnCropChange = async function() {
     window.ccpRenderCellPanel_();
 };
 
-window.ccpEntriesForFlat_ = function(flat) {
+window.ccpEntriesForFlat_ = function (flat) {
     return (window._ccpState.entries || []).filter(en => (en.flats || []).indexOf(flat) >= 0);
 };
 
-window.ccpRenderGrid_ = function() {
+window.ccpRenderGrid_ = function () {
     const row = document.getElementById('ccpGridRow');
     if (!row) return;
     let html = '';
@@ -4546,7 +4550,7 @@ window.ccpRenderGrid_ = function() {
     row.innerHTML = html;
 };
 
-window.ccpRenderEntryList_ = function() {
+window.ccpRenderEntryList_ = function () {
     const el = document.getElementById('ccpEntryList');
     if (!el) return;
     const entries = window._ccpState.entries || [];
@@ -4573,7 +4577,7 @@ window.ccpRenderEntryList_ = function() {
     }).join('');
 };
 
-window.ccpRenderCellPanel_ = function() {
+window.ccpRenderCellPanel_ = function () {
     const el = document.getElementById('ccpCellPanel');
     if (!el) return;
     const flat = window._ccpState.selectedFlat;
@@ -4595,7 +4599,7 @@ window.ccpRenderCellPanel_ = function() {
     el.innerHTML = `<div style="font-weight:bold;color:#1565c0;margin-bottom:8px;">${window.ccpFlatLabel_(flat)} の設定</div>${list}`;
 };
 
-window.ccpOnCellClick = function(flat) {
+window.ccpOnCellClick = function (flat) {
     const paintId = window._ccpState.paintEntryId;
     if (paintId) {
         const en = (window._ccpState.entries || []).find(x => x.id === paintId);
@@ -4614,12 +4618,12 @@ window.ccpOnCellClick = function(flat) {
     window.ccpRenderCellPanel_();
 };
 
-window.ccpSetPaintEntry = function(id) {
+window.ccpSetPaintEntry = function (id) {
     window._ccpState.paintEntryId = (window._ccpState.paintEntryId === id) ? null : id;
     window.ccpRenderEntryList_();
 };
 
-window.ccpAddProductToSelection = function() {
+window.ccpAddProductToSelection = function () {
     if (!window._ccpState.cropName) {
         customAlert('先に品目を選択してください');
         return;
@@ -4659,7 +4663,7 @@ window.ccpAddProductToSelection = function() {
     window.ccpRenderCellPanel_();
 };
 
-window.ccpRemoveFromFlat = function(id, flat) {
+window.ccpRemoveFromFlat = function (id, flat) {
     const en = (window._ccpState.entries || []).find(x => x.id === id);
     if (!en) return;
     en.flats = (en.flats || []).filter(f => f !== flat);
@@ -4672,7 +4676,7 @@ window.ccpRemoveFromFlat = function(id, flat) {
     window.ccpRenderCellPanel_();
 };
 
-window.ccpRemoveEntry = async function(id) {
+window.ccpRemoveEntry = async function (id) {
     if (!await customConfirm('このエントリを削除しますか？')) return;
     window._ccpState.entries = (window._ccpState.entries || []).filter(x => x.id !== id);
     if (window._ccpState.paintEntryId === id) window._ccpState.paintEntryId = null;
@@ -4682,7 +4686,7 @@ window.ccpRemoveEntry = async function(id) {
     window.ccpRenderCellPanel_();
 };
 
-window.ccpSavePlan = async function() {
+window.ccpSavePlan = async function () {
     const cropName = window._ccpState.cropName;
     if (!cropName) {
         customAlert('品目を選択してください');
@@ -4712,7 +4716,7 @@ window.ccpSavePlan = async function() {
     }
 };
 
-window.ccpDeletePlan = async function() {
+window.ccpDeletePlan = async function () {
     const cropName = window._ccpState.cropName;
     if (!cropName) {
         customAlert('品目を選択してください');
@@ -4736,7 +4740,7 @@ window.ccpDeletePlan = async function() {
     }
 };
 
-window.scoreCsvDecodedText_ = function(text) {
+window.scoreCsvDecodedText_ = function (text) {
     const raw = String(text || '');
     const head = raw.slice(0, 4000);
     const firstLine = (raw.split(/\r\n|\n|\r/)[0] || '');
@@ -4757,7 +4761,7 @@ window.scoreCsvDecodedText_ = function(text) {
     return score;
 };
 
-window.readFileAsTextSmart_ = function(file) {
+window.readFileAsTextSmart_ = function (file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onerror = () => reject(new Error('ファイル読込に失敗しました'));
@@ -4790,7 +4794,7 @@ window.readFileAsTextSmart_ = function(file) {
     });
 };
 
-window.refreshFertilizerCatalogStats = async function() {
+window.refreshFertilizerCatalogStats = async function () {
     const el = document.getElementById('fertCatalogStats');
     if (!el) return;
     try {
@@ -4801,7 +4805,7 @@ window.refreshFertilizerCatalogStats = async function() {
     }
 };
 
-window.refreshPesticideCatalogStats = async function() {
+window.refreshPesticideCatalogStats = async function () {
     const el = document.getElementById('pestCatalogStats');
     if (!el) return;
     try {
@@ -4818,11 +4822,11 @@ window._catalogJobs = {
     fertilizer: { running: false, state: 'idle', text: '' }
 };
 
-window.yieldToUi_ = function() {
+window.yieldToUi_ = function () {
     return new Promise(resolve => setTimeout(resolve, 0));
 };
 
-window.ensureCatalogJobDock_ = function() {
+window.ensureCatalogJobDock_ = function () {
     let dock = document.getElementById('catalogJobDock');
     if (!dock) {
         dock = document.createElement('div');
@@ -4849,7 +4853,7 @@ window.ensureCatalogJobDock_ = function() {
     return dock;
 };
 
-window.renderCatalogJobDock_ = function() {
+window.renderCatalogJobDock_ = function () {
     const dock = document.getElementById('catalogJobDock');
     if (!dock) return;
     const jobs = window._catalogJobs;
@@ -4871,11 +4875,11 @@ window.renderCatalogJobDock_ = function() {
         const mark = j.state === 'error' ? '✗' : (j.state === 'done' ? '✓' : '…');
         const pct = Math.max(0, Math.min(100, Math.round((Number(j.ratio) || 0) * 100)));
         const bar = (j.state === 'running' || j.state === 'done')
-          ? `<div style="margin-top:6px;height:10px;background:#e3f2fd;border-radius:99px;overflow:hidden;">
+            ? `<div style="margin-top:6px;height:10px;background:#e3f2fd;border-radius:99px;overflow:hidden;">
                <div style="height:100%;width:${pct}%;background:${color};"></div>
              </div>
              <div style="font-size:11px;color:${color};margin-top:2px;font-weight:bold;">${pct}%</div>`
-          : '';
+            : '';
         return `<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #e3f2fd;">
           <div style="font-weight:bold;color:${color};">${mark} ${labels[k]}</div>
           <div style="color:#555;margin-top:2px;">${String(j.text || '').replace(/</g, '&lt;')}</div>
@@ -4895,7 +4899,7 @@ window.renderCatalogJobDock_ = function() {
         `<div style="font-size:11px;color:#666;">農薬と肥料は同時に更新できます。画面を閉じず他の作業を続けてください。</div>`;
 };
 
-window.dismissCatalogJobDock_ = function() {
+window.dismissCatalogJobDock_ = function () {
     ['pesticide', 'fertilizer'].forEach(k => {
         const j = window._catalogJobs[k];
         if (j && !j.running) {
@@ -4906,7 +4910,7 @@ window.dismissCatalogJobDock_ = function() {
     window.renderCatalogJobDock_();
 };
 
-window.paintCatalogUploadBar_ = function(kind, ratio, state) {
+window.paintCatalogUploadBar_ = function (kind, ratio, state) {
     const prefix = kind === 'pesticide' ? 'pest' : 'fert';
     const box = document.getElementById(prefix + 'CatalogUploadBar');
     const fill = document.getElementById(prefix + 'CatalogUploadBarFill');
@@ -4927,7 +4931,7 @@ window.paintCatalogUploadBar_ = function(kind, ratio, state) {
     }
 };
 
-window.setCatalogJobProgress_ = function(kind, text, state, ratio) {
+window.setCatalogJobProgress_ = function (kind, text, state, ratio) {
     const job = window._catalogJobs[kind];
     if (!job) return;
     job.text = text || '';
@@ -4944,7 +4948,7 @@ window.setCatalogJobProgress_ = function(kind, text, state, ratio) {
     window.syncCatalogUploadButtons_();
 };
 
-window.syncCatalogUploadButtons_ = function() {
+window.syncCatalogUploadButtons_ = function () {
     const pestBtn = document.getElementById('pestCatalogUploadBtn');
     if (pestBtn) {
         const run = !!(window._catalogJobs.pesticide && window._catalogJobs.pesticide.running);
@@ -4961,7 +4965,7 @@ window.syncCatalogUploadButtons_ = function() {
     }
 };
 
-window.uploadCatalogChunks_ = async function(actionName, rows, onProgress, opts) {
+window.uploadCatalogChunks_ = async function (actionName, rows, onProgress, opts) {
     opts = opts || {};
     const CHUNK = opts.chunkSize || 250;
     const ratioBase = opts.ratioBase || 0;
@@ -4989,7 +4993,7 @@ window.uploadCatalogChunks_ = async function(actionName, rows, onProgress, opts)
     return lastRes;
 };
 
-window.buildFertilizerItemsFromCsvRows_ = function(csvRows) {
+window.buildFertilizerItemsFromCsvRows_ = function (csvRows) {
     const mapped = [];
     const seen = {};
     (csvRows || []).forEach(r => {
@@ -5027,7 +5031,7 @@ window.buildFertilizerItemsFromCsvRows_ = function(csvRows) {
     return mapped;
 };
 
-window.uploadFertilizerCatalogFromCsv = async function() {
+window.uploadFertilizerCatalogFromCsv = async function () {
     if (window._catalogJobs.fertilizer && window._catalogJobs.fertilizer.running) {
         customAlert('肥料カタログの更新が既に進行中です。右下の進捗を確認してください。');
         return;
@@ -5074,7 +5078,7 @@ window.uploadFertilizerCatalogFromCsv = async function() {
 
 window._fertCatalogHits = [];
 
-window.searchFertilizerCatalogUi = async function() {
+window.searchFertilizerCatalogUi = async function () {
     const area = document.getElementById('fertCatalogSearchResult');
     if (!area) return;
     const q = (document.getElementById('fertCatSearchQ')?.value || '').trim();
@@ -5114,7 +5118,7 @@ window.searchFertilizerCatalogUi = async function() {
     }
 };
 
-window.addSelectedFertilizerFromCatalog = async function() {
+window.addSelectedFertilizerFromCatalog = async function () {
     const checks = Array.from(document.querySelectorAll('.fertCatHitCheck'));
     const rows = [];
     checks.forEach(cb => {
@@ -5141,7 +5145,7 @@ window.addSelectedFertilizerFromCatalog = async function() {
     }
 };
 
-window.bindCsvColumns_ = function(sample, fieldAliases) {
+window.bindCsvColumns_ = function (sample, fieldAliases) {
     const keys = Object.keys(sample || {}).filter(k => k && String(k).charAt(0) !== '_');
     const norm = keys.map(k => ({ k: k, n: String(k).replace(/\s/g, '') }));
     const out = {};
@@ -5163,12 +5167,12 @@ window.bindCsvColumns_ = function(sample, fieldAliases) {
     return out;
 };
 
-window.csvCol_ = function(row, map, field) {
+window.csvCol_ = function (row, map, field) {
     const key = map && map[field];
     return key ? String(row[key] == null ? '' : row[key]).trim() : '';
 };
 
-window.buildPesticideItemsFromFamicFiles_ = async function(baseFile, applyFiles, onProgress) {
+window.buildPesticideItemsFromFamicFiles_ = async function (baseFile, applyFiles, onProgress) {
     const report = (msg, ratio) => { if (typeof onProgress === 'function') onProgress(msg, ratio); };
     report('基本部CSV読込中...', 0.02);
     await window.yieldToUi_();
@@ -5259,7 +5263,7 @@ window.buildPesticideItemsFromFamicFiles_ = async function(baseFile, applyFiles,
     return joined;
 };
 
-window.uploadPesticideCatalogFromCsv = async function() {
+window.uploadPesticideCatalogFromCsv = async function () {
     if (window._catalogJobs.pesticide && window._catalogJobs.pesticide.running) {
         customAlert('農薬カタログの更新が既に進行中です。右下の進捗を確認してください。');
         return;
@@ -5302,7 +5306,7 @@ window.uploadPesticideCatalogFromCsv = async function() {
 
 window._pestCatalogHits = [];
 
-window.searchPesticideCatalogUi = async function() {
+window.searchPesticideCatalogUi = async function () {
     const area = document.getElementById('pestCatalogSearchResult');
     if (!area) return;
     const q = (document.getElementById('pestCatSearchQ')?.value || '').trim();
@@ -5342,7 +5346,7 @@ window.searchPesticideCatalogUi = async function() {
     }
 };
 
-window.addSelectedPesticideFromCatalog = async function() {
+window.addSelectedPesticideFromCatalog = async function () {
     const checks = Array.from(document.querySelectorAll('.pestCatHitCheck'));
     const rows = [];
     checks.forEach(cb => {
@@ -5632,7 +5636,7 @@ function inferWorkRecordUiFlags_(workName, category) {
         showMaterial: matPestOn && /資材|肥料|マルチ|堆肥|石灰|被覆/.test(n),
         showPesticide: matPestOn && /防除|除草|農薬|散布|除草剤|殺虫|殺菌/.test(n),
         showField: !(isMeta || isFuel || n.includes('休憩'))
-          && (c.includes('圃場') || c.includes('整備') || c.includes('保全') || !c),
+            && (c.includes('圃場') || c.includes('整備') || c.includes('保全') || !c),
         showFuel: isFuel,
         showRidgePolygon: n.indexOf('畝立') >= 0
     };
@@ -5723,7 +5727,7 @@ window.openEditWorkMaster = (encodedStr) => {
     try {
         const v = typeof encodedStr === 'string' ? JSON.parse(decodeURIComponent(encodedStr)) : encodedStr;
         window.openWorkMasterEditModal(v);
-    } catch(e) {
+    } catch (e) {
         console.error('openEditWorkMaster error:', e);
     }
 };
@@ -5801,8 +5805,8 @@ window.closeWorkMasterEditModal = () => {
 
 window.openEditWorkMasterLegacy = (encodedStr) => {
     const v = JSON.parse(decodeURIComponent(encodedStr));
-    const catOpts = pdlWorkCategories.map(c => `<option value="${c}" ${c===v.category?'selected':''}>${c}</option>`).join('');
-    
+    const catOpts = pdlWorkCategories.map(c => `<option value="${c}" ${c === v.category ? 'selected' : ''}>${c}</option>`).join('');
+
     let selectedCrops = [];
     if (v.crops && Array.isArray(v.crops) && v.crops.length) {
         selectedCrops = v.crops;
@@ -6095,8 +6099,8 @@ window.buildAdminMachineDisplayName_ = (typeName, number, model, fallback, group
         numPart = '';
     } else if (numPart) {
         numPart = (window.MachineTaxonomy && typeof MachineTaxonomy.formatMachineNumberLabel === 'function')
-          ? MachineTaxonomy.formatMachineNumberLabel(numPart)
-          : numPart.replace(/^no\.?/i, '');
+            ? MachineTaxonomy.formatMachineNumberLabel(numPart)
+            : numPart.replace(/^no\.?/i, '');
     }
     const parts = [typePart, modelPart, numPart].filter(Boolean);
     return parts.length ? parts.join(' ') : String(fallback || '').trim();
@@ -6873,8 +6877,8 @@ window.execMaster = async (type, act, val) => {
             const delName = parsed ? (parsed.name || '') : val;
             const delCrop = parsed ? (parsed.crop || '') : '';
             const msg = delCrop
-              ? `コンテナ「${delName}」×品目「${delCrop}」を削除しますか？`
-              : `削除しますか？`;
+                ? `コンテナ「${delName}」×品目「${delCrop}」を削除しますか？`
+                : `削除しますか？`;
             if (!await customConfirm(msg)) return;
             value = { name: delName, crop: delCrop };
         } else {
@@ -6883,7 +6887,7 @@ window.execMaster = async (type, act, val) => {
         }
     }
     applyOptimisticMasterChange_(type, act, value);
-    if (type === 'work') { try { closeWorkMasterEditModal(); } catch(e){} }
+    if (type === 'work') { try { closeWorkMasterEditModal(); } catch (e) { } }
     if (act === 'edit' && type === 'machineType' && value && value.originalName && value.newData) {
         const o = String(value.originalName).trim();
         const n = String(value.newData.name || '').trim();
@@ -6928,7 +6932,7 @@ window.execMaster = async (type, act, val) => {
             renderMasterSection();
         }
         showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
-    }).catch(() => {});
+    }).catch(() => { });
 };
 
 function showToukiInfo(id) {
@@ -6970,7 +6974,7 @@ function saveTouki(hojoId) {
         if (p && realId && p.toukiId) p.toukiId = String(p.toukiId).split(',').map(x => x.trim() === tempToukiId ? realId : x).join(',');
         persistAdminInitCache_();
         showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
-    }).catch(() => {});
+    }).catch(() => { });
 }
 
 function adminSignFunctionNames_() {
@@ -7047,6 +7051,13 @@ function openAttr(id) {
         const locOptions = `<option value="">未設定</option>` + (pdlLocations || []).map(l =>
             `<option value="${String(l).replace(/"/g, '&quot;')}" ${l === defaultLoc ? 'selected' : ''}>${l}</option>`
         ).join('');
+        const candidateParents = (window.SignGroup && typeof window.SignGroup.getCandidateParents === 'function')
+            ? window.SignGroup.getCandidateParents(id, loadedPolygons)
+            : [];
+        const currentParentId = String(p.parentSignId || '').trim();
+        const parentOptions = `<option value="">なし（単独・大看板）</option>` + candidateParents.map(cp =>
+            `<option value="${String(cp.id).replace(/"/g, '&quot;')}" ${cp.id === currentParentId ? 'selected' : ''}>${String(cp.name).replace(/</g, '&lt;')}</option>`
+        ).join('');
         if (!window.isReturningFromLinkSelect) { window.tempLinkedSigns = p.linkedSigns ? p.linkedSigns.split(',').filter(String) : []; }
         window.isReturningFromLinkSelect = false;
         infoWindow.setContent(`
@@ -7057,12 +7068,15 @@ function openAttr(id) {
                ${adminSignFunctionFieldHtml_('rnFunc', p.signFunction)}
                <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">拠点</div>
                <select id="rnLoc" class="form-input" style="width:100%; margin-bottom:4px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">${locOptions}</select>
-               <div style="font-size:11px; color:#666; text-align:left; line-height:1.4; margin:0 0 10px;">この看板の所属拠点です。</div>
+               <div style="font-size:11px; color:#666; text-align:left; line-height:1.4; margin:0 0 8px;">この看板の所属拠点です。</div>
+               <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">親看板（大看板に束ねる）</div>
+               <select id="rnParentSign" class="form-input" style="width:100%; margin-bottom:4px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">${parentOptions}</select>
+               <div style="font-size:11px; color:#666; text-align:left; line-height:1.4; margin:0 0 10px;">大看板を選ぶと、その大看板に束ねられた小看板になります。</div>
                <button onclick="execAttr('${id}')" style="width:100%; padding:10px; border-radius:4px; border:none; background:#d32f2f; color:white; font-weight:bold; cursor:pointer;">保存</button>
              </div>
            `);
     } else {
-        infoWindow.setContent(`<div style="width:240px;max-width:100%;box-sizing:border-box;text-align:left;color:#333;padding:4px;"><b>圃場情報変更</b><br><label class="form-label">名前</label><input type="text" id="edN" value="${p.name}" class="form-input"><label class="form-label">拠点</label><select id="edL" class="form-input"><option value="">未設定</option>${pdlLocations.map(l => `<option value="${l}" ${l === p.location ? 'selected' : ''}>${l}</option>`).join('')}</select><label class="form-label">条件</label><select id="edC" class="form-input"><option value="">未設定</option>${pdlConditions.map(c => `<option value="${c}" ${c === p.condition ? 'selected' : ''}>${c}</option>`).join('')}</select><label class="form-label">土質</label><select id="edSoil" class="form-input"><option value="">未設定</option>${(['粘土質','砂質','壌質']).map(s => `<option value="${s}" ${s === (p.soilType || '') ? 'selected' : ''}>${s}</option>`).join('')}</select><div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;"><label class="form-label" style="margin:0;">稼働状況</label><button type="button" onclick="openFieldStatusManager()" style="background:none;border:none;color:#1976d2;font-size:11px;cursor:pointer;padding:0;font-weight:bold;">⚙️ 管理</button></div><select id="edS" class="form-input" onchange="handleStatusSelect(this)"><option value="">未設定</option>${pdlStatuses.map(s => `<option value="${s}" ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}<option value="ADD_NEW" style="color:#1976d2;font-weight:bold;">➕ 新規項目追加...</option><option value="MANAGE_STATUS" style="color:#d32f2f;font-weight:bold;">⚙️ 項目の編集・削除...</option></select><button onclick="execAttr('${id}')" style="background:#d32f2f;color:white;width:100%;padding:10px;border-radius:4px;font-weight:bold;border:none;margin-top:10px;">情報を更新</button></div>`);
+        infoWindow.setContent(`<div style="width:240px;max-width:100%;box-sizing:border-box;text-align:left;color:#333;padding:4px;"><b>圃場情報変更</b><br><label class="form-label">名前</label><input type="text" id="edN" value="${p.name}" class="form-input"><label class="form-label">拠点</label><select id="edL" class="form-input"><option value="">未設定</option>${pdlLocations.map(l => `<option value="${l}" ${l === p.location ? 'selected' : ''}>${l}</option>`).join('')}</select><label class="form-label">条件</label><select id="edC" class="form-input"><option value="">未設定</option>${pdlConditions.map(c => `<option value="${c}" ${c === p.condition ? 'selected' : ''}>${c}</option>`).join('')}</select><label class="form-label">土質</label><select id="edSoil" class="form-input"><option value="">未設定</option>${(['粘土質', '砂質', '壌質']).map(s => `<option value="${s}" ${s === (p.soilType || '') ? 'selected' : ''}>${s}</option>`).join('')}</select><div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;"><label class="form-label" style="margin:0;">稼働状況</label><button type="button" onclick="openFieldStatusManager()" style="background:none;border:none;color:#1976d2;font-size:11px;cursor:pointer;padding:0;font-weight:bold;">⚙️ 管理</button></div><select id="edS" class="form-input" onchange="handleStatusSelect(this)"><option value="">未設定</option>${pdlStatuses.map(s => `<option value="${s}" ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}<option value="ADD_NEW" style="color:#1976d2;font-weight:bold;">➕ 新規項目追加...</option><option value="MANAGE_STATUS" style="color:#d32f2f;font-weight:bold;">⚙️ 項目の編集・削除...</option></select><button onclick="execAttr('${id}')" style="background:#d32f2f;color:white;width:100%;padding:10px;border-radius:4px;font-weight:bold;border:none;margin-top:10px;">情報を更新</button></div>`);
     }
 }
 
@@ -7084,7 +7098,7 @@ function execAttr(id) {
             syncAdminCall_('manageMaster', masterPayload, { key: 'manageMaster:location:edit:' + Date.now(), op: 'manageMaster', payload: masterPayload }).then(list => {
                 if (Array.isArray(list)) applyMasterServerList_('location', list);
                 persistAdminInitCache_();
-            }).catch(() => {});
+            }).catch(() => { });
         }
         const pos = p.marker.getPosition();
         p.name = n;
@@ -7106,11 +7120,14 @@ function execAttr(id) {
         const f = funcEl ? funcEl.value : (p.signFunction || '機能なし');
         const locEl = document.getElementById('rnLoc');
         const loc = locEl ? locEl.value : (p.location || '');
+        const parentEl = document.getElementById('rnParentSign');
+        const parentSignId = parentEl ? String(parentEl.value || '').trim() : (p.parentSignId || '');
         if (!n) return;
-        p.name = n; p.signFunction = f; p.location = loc; p.labelConfig.text = n;
+        p.name = n; p.signFunction = f; p.location = loc; p.parentSignId = parentSignId; p.labelConfig.text = n;
         p.linkedSigns = window.tempLinkedSigns ? window.tempLinkedSigns.join(',') : "";
         p.marker.setMap(null); p.marker = createSignboardMarker(n, p.marker.getPosition(), p.color, p._adminIdRef || id);
         infoWindow.close();
+        if (window.SignGroup) window.SignGroup.refreshMarkers();
         showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
         syncUpdatePolygon_(p).then(ok => { if (ok) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok'); });
     } else {
@@ -7166,7 +7183,7 @@ function actionEditShape(id) {
     infoWindow.close();
     editingId = id;
     loadedPolygons[id].polygon ? loadedPolygons[id].polygon.setEditable(true) : loadedPolygons[id].marker.setDraggable(true);
-    
+
     if (loadedPolygons[id].polygon) {
         originalCoordsForEdit = loadedPolygons[id].polygon.getPath().getArray().map(p => ({ lat: p.lat(), lng: p.lng() }));
         if (document.getElementById('editLoadFudeBtn')) document.getElementById('editLoadFudeBtn').style.display = 'inline-block';
@@ -7178,7 +7195,7 @@ function actionEditShape(id) {
         originalCoordsForEdit = [loadedPolygons[id].marker.getPosition()];
         if (document.getElementById('editLoadFudeBtn')) document.getElementById('editLoadFudeBtn').style.display = 'none';
     }
-    
+
     document.getElementById('editShapePanel').style.display = 'block';
     if (typeof window.enterShapeEditFocusMode_ === 'function') {
         window.enterShapeEditFocusMode_(id);
@@ -7209,7 +7226,15 @@ async function doDeletePolygons(ids) {
         if (loadedPolygons[id].polygon) loadedPolygons[id].polygon.setMap(null);
         if (loadedPolygons[id].marker) loadedPolygons[id].marker.setMap(null);
         delete loadedPolygons[id];
+        for (const cid in loadedPolygons) {
+            if (loadedPolygons[cid] && String(loadedPolygons[cid].parentSignId || '').trim() === String(id)) {
+                loadedPolygons[cid].parentSignId = '';
+            }
+        }
     });
+    if (window.SignGroup) {
+        window.SignGroup.collapse(map, loadedPolygons);
+    }
     persistAdminInitCache_();
     showAdminSyncToast('✅ 削除しました（同期中…）', 'ok');
     const realIds = ids.filter(id => !isAdminTempId_(id));
@@ -7221,11 +7246,11 @@ async function doDeletePolygons(ids) {
     const op = realIds.length === 1 ? 'deletePolygon' : 'deletePolygonBatch';
     syncAdminCall_(op, payload, { key: op + ':' + realIds.join(','), op, payload }).then(() => {
         showAdminSyncToast('☁️ サーバーへ削除完了', 'ok');
-    }).catch(() => {});
+    }).catch(() => { });
 }
 function cancelMerge() { isMergeMode = false; mergeBaseId = null; document.getElementById('mergeModePanel').style.display = 'none'; }
 function startMerge(id) { isMergeMode = true; mergeBaseId = id; infoWindow.close(); document.getElementById('mergeModePanel').style.display = 'block'; customAlert("統合する別の圃場をクリックしてください。"); }
-async function execMerge(bId, tId) { if (bId === tId) return; if (!await customConfirm("マスタと履歴を統合しますか？")) { cancelMerge(); return; } const bP = loadedPolygons[bId], tP = loadedPolygons[tId]; if (tP.toukiId) bP.toukiId = bP.toukiId ? [...new Set((bP.toukiId + "," + tP.toukiId).split(","))].join(",") : tP.toukiId; tP.polygon.setMap(null); tP.marker.setMap(null); delete loadedPolygons[tId]; cancelMerge(); persistAdminInitCache_(); showAdminSyncToast('✅ 統合しました（同期中…）', 'ok'); const payload = { baseId: bId, targetId: tId, userName: currentUser }; syncAdminCall_('mergeFields', payload, { key: 'mergeFields:' + bId + ':' + tId, op: 'mergeFields', payload }).then(() => showAdminSyncToast('☁️ サーバーへ保存完了', 'ok')).catch(() => {}); }
+async function execMerge(bId, tId) { if (bId === tId) return; if (!await customConfirm("マスタと履歴を統合しますか？")) { cancelMerge(); return; } const bP = loadedPolygons[bId], tP = loadedPolygons[tId]; if (tP.toukiId) bP.toukiId = bP.toukiId ? [...new Set((bP.toukiId + "," + tP.toukiId).split(","))].join(",") : tP.toukiId; tP.polygon.setMap(null); tP.marker.setMap(null); delete loadedPolygons[tId]; cancelMerge(); persistAdminInitCache_(); showAdminSyncToast('✅ 統合しました（同期中…）', 'ok'); const payload = { baseId: bId, targetId: tId, userName: currentUser }; syncAdminCall_('mergeFields', payload, { key: 'mergeFields:' + bId + ':' + tId, op: 'mergeFields', payload }).then(() => showAdminSyncToast('☁️ サーバーへ保存完了', 'ok')).catch(() => { }); }
 
 function isAdminLocationPin_(p) {
     if (!p) return false;
@@ -7264,6 +7289,42 @@ function bindAdminMarkerClick_(marker, getId) {
             updateAdminMapVisuals(); return;
         }
         if (editingId) return;
+
+        // 🪧 大看板・小看板の展開 & 2段階タップ制御
+        const sid = String(id);
+        const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[sid] : null;
+        if (window.SignGroup && p && p.isMarker && !isAdminLocationPin_(p)) {
+            const isParent = window.SignGroup.isParentSign(p);
+            const isChild = window.SignGroup.isChildSign(p);
+            const expId = window.SignGroup.getExpandedParentId();
+
+            if (isParent) {
+                if (expId !== sid) {
+                    // 1回目のタップ：小看板を展開する
+                    window.SignGroup.expand(sid, map, loadedPolygons, () => {
+                        google.maps.event.trigger(map, 'zoom_changed');
+                    });
+                    if (infoWindow) infoWindow.close();
+                    return;
+                } else {
+                    // 2回目のタップ：大看板のメニューを開く
+                    openM(id);
+                    return;
+                }
+            } else if (isChild) {
+                // 展開された小看板をタップ：小看板のメニューを開く
+                openM(id);
+                return;
+            } else {
+                // 単独の看板：展開中の大看板があれば閉じる
+                if (expId) {
+                    window.SignGroup.collapse(map, loadedPolygons, () => {
+                        google.maps.event.trigger(map, 'zoom_changed');
+                    });
+                }
+            }
+        }
+
         openM(id);
     });
 }
@@ -7272,8 +7333,11 @@ function createSignboardMarker(name, pos, icon, idOrRef) {
     if ((String(name || '').indexOf('排水口') >= 0 || String(name || '').indexOf('水落口') >= 0) && (!icon || icon === '🕳️')) icon = '🚩';
     const getId = () => (idOrRef && typeof idOrRef === 'object' && 'id' in idOrRef) ? idOrRef.id : idOrRef;
     const zoom = map.getZoom(), config = { text: name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' };
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="20">${icon || '🪧'}</text></svg>`;
-    const marker = new google.maps.Marker({ position: pos, map: map, visible: zoom >= 15, label: zoom >= 17 ? config : null, icon: { url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg), scaledSize: new google.maps.Size(26, 26), labelOrigin: new google.maps.Point(13, 30) } });
+    const polyObj = (typeof loadedPolygons !== 'undefined' && loadedPolygons[getId()]) ? loadedPolygons[getId()] : { name: name, color: icon, id: getId() };
+    const iconOpt = (window.SignGroup && typeof window.SignGroup.buildSignMarkerIcon === 'function')
+        ? window.SignGroup.buildSignMarkerIcon(polyObj)
+        : { url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="20">${icon || '🪧'}</text></svg>`), scaledSize: new google.maps.Size(26, 26), labelOrigin: new google.maps.Point(13, 30) };
+    const marker = new google.maps.Marker({ position: pos, map: map, visible: zoom >= 15, label: zoom >= 17 ? config : null, icon: iconOpt });
     bindAdminMarkerClick_(marker, getId);
     return marker;
 }
@@ -7320,7 +7384,7 @@ function createPolygonObject(p) {
         const labelConfig = locPin
             ? ((typeof window.locationPinLabelConfig_ === 'function') ? window.locationPinLabelConfig_(p.name, map.getZoom()) : { text: p.name, color: '#3E2723', fontSize: '13px', fontWeight: 'bold', className: 'location-pin-label' })
             : { text: p.name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' };
-        loadedPolygons[p.id] = { ...p, marker: m, labelConfig: labelConfig, signFunction: p.signFunction, linkedSigns: p.linkedSigns || "", _adminIdRef: idRef };
+        loadedPolygons[p.id] = { ...p, marker: m, labelConfig: labelConfig, signFunction: p.signFunction, linkedSigns: p.linkedSigns || "", parentSignId: p.parentSignId || "", _adminIdRef: idRef };
     } else {
         const isU = (p.status === '未使用（返却）' || p.status === '未使用'), dC = getAdminColor(p.status);
         const poly = new google.maps.Polygon({ paths: p.coords, map, fillColor: dC, fillOpacity: isU ? 0.5 : 0.3, strokeColor: dC, strokeOpacity: 1, strokeWeight: 3 });
@@ -7347,6 +7411,8 @@ function createPolygonObject(p) {
         });
         loadedPolygons[p.id] = { ...p, polygon: poly, marker: m, _adminIdRef: idRef };
     }
+    window.loadedPolygons = loadedPolygons;
+    if (typeof window.applyMapLayerFilter_ === 'function') window.applyMapLayerFilter_();
 }
 function createLabelMarker(n, c, col, a) {
     const b = new google.maps.LatLngBounds();
@@ -7435,18 +7501,18 @@ function initMap() {
         zoomLevel = deepLinkForInit.zoom || 18;
     } else {
         const shared = (typeof window.readSharedMapView_ === 'function')
-          ? window.readSharedMapView_({ lat: 33.91, lng: 134.66, zoom: 15 })
-          : null;
+            ? window.readSharedMapView_({ lat: 33.91, lng: 134.66, zoom: 15 })
+            : null;
         if (shared && shared.lat != null && shared.lng != null) {
-          centerPos = { lat: shared.lat, lng: shared.lng };
-          zoomLevel = shared.zoom || 15;
+            centerPos = { lat: shared.lat, lng: shared.lng };
+            zoomLevel = shared.zoom || 15;
         } else {
-          let savedLat = localStorage.getItem('pMapAdminLastLat');
-          let savedLng = localStorage.getItem('pMapAdminLastLng');
-          let savedZoom = localStorage.getItem('pMapAdminLastZoom');
-          let parsedLat = parseFloat(savedLat), parsedLng = parseFloat(savedLng);
-          if (!isNaN(parsedLat) && !isNaN(parsedLng)) centerPos = { lat: parsedLat, lng: parsedLng };
-          if (savedZoom) zoomLevel = parseInt(savedZoom);
+            let savedLat = localStorage.getItem('pMapAdminLastLat');
+            let savedLng = localStorage.getItem('pMapAdminLastLng');
+            let savedZoom = localStorage.getItem('pMapAdminLastZoom');
+            let parsedLat = parseFloat(savedLat), parsedLng = parseFloat(savedLng);
+            if (!isNaN(parsedLat) && !isNaN(parsedLng)) centerPos = { lat: parsedLat, lng: parsedLng };
+            if (savedZoom) zoomLevel = parseInt(savedZoom);
         }
     }
 
@@ -7470,7 +7536,7 @@ function initMap() {
             } else {
                 // Fallback manual Mercator projection just in case
                 this.projection = {
-                    fromLatLngToPoint: function(latLng, opt_point) {
+                    fromLatLngToPoint: function (latLng, opt_point) {
                         let point = opt_point || new google.maps.Point(0, 0);
                         let origin = new google.maps.Point(128, 128);
                         point.x = origin.x + latLng.lng() * (256 / 360);
@@ -7478,7 +7544,7 @@ function initMap() {
                         point.y = origin.y + 0.5 * Math.log((1 + siny) / (1 - siny)) * -(256 / (2 * Math.PI));
                         return point;
                     },
-                    fromPointToLatLng: function(point) {
+                    fromPointToLatLng: function (point) {
                         let origin = new google.maps.Point(128, 128);
                         let lng = (point.x - origin.x) / (256 / 360);
                         let latRadians = (point.y - origin.y) / -(256 / (2 * Math.PI));
@@ -7511,7 +7577,7 @@ function initMap() {
             let img = ownerDocument.createElement('img');
             img.src = `https://mt1.google.com/vt/lyrs=y&x=${x}&y=${y}&z=${z}`;
             img.style.position = 'absolute';
-            
+
             if (scale > 1) {
                 img.style.width = (256 * scale) + 'px';
                 img.style.height = (256 * scale) + 'px';
@@ -7529,11 +7595,11 @@ function initMap() {
                 img.style.left = '0px';
                 img.style.top = '0px';
             }
-            
+
             div.appendChild(img);
             return div;
         }
-        releaseTile(tile) {}
+        releaseTile(tile) { }
     }
 
     // Dummy map options to register MapType before instantiation? No, we can just instantiate Map directly if we use mapTypes.set inside a registry. But MapTypeRegistry is on the map instance!
@@ -7559,12 +7625,12 @@ function initMap() {
         map.setOptions({ maxZoom: 30 });
     } catch (e) {
         console.warn('StretchedMapType 登録スキップ:', e);
-        try { map.setMapTypeId('hybrid'); } catch (e2) {}
+        try { map.setMapTypeId('hybrid'); } catch (e2) { }
     }
 
     // コンテナサイズが後から確定する場合に備えリサイズを通知
     setTimeout(() => {
-        try { google.maps.event.trigger(map, 'resize'); } catch (e) {}
+        try { google.maps.event.trigger(map, 'resize'); } catch (e) { }
     }, 0);
 
     infoWindow = new google.maps.InfoWindow();
@@ -7773,12 +7839,20 @@ function initMap() {
             updateCustomDrawingVisuals();
 
             if (customDrawingPath.length === 3) fetchAddressHint(e.latLng);
+        } else {
+            if (window.SignGroup && window.SignGroup.getExpandedParentId()) {
+                window.SignGroup.collapse(map, loadedPolygons, () => {
+                    google.maps.event.trigger(map, 'zoom_changed');
+                });
+            }
         }
     });
 
     map.addListener('zoom_changed', () => {
         const z = map.getZoom();
         if (typeof window.syncLocationPinGlowScale_ === 'function') window.syncLocationPinGlowScale_(map);
+        const hasSignGroup = !!(window.SignGroup && typeof window.SignGroup.isChildSign === 'function');
+        const expandedPid = hasSignGroup ? window.SignGroup.getExpandedParentId() : null;
         for (let id in loadedPolygons) {
             const p = loadedPolygons[id];
             if (!p.marker) continue;
@@ -7787,15 +7861,39 @@ function initMap() {
                     if (typeof window.refreshLocationPinMarker_ === 'function') window.refreshLocationPinMarker_(p.marker, p.name, z);
                     else p.marker.setVisible(true);
                 } else {
-                    p.marker.setVisible(z >= 17);
-                    // 🌟修正：圃場モード中はズームしても文字を出さない！
-                    if (z < 17 || customDrawingMode === 'polygon') p.marker.setLabel(null);
-                    else if (p.labelConfig) p.marker.setLabel(p.labelConfig);
+                    const isChild = hasSignGroup && window.SignGroup.isChildSign(p);
+                    const isParent = hasSignGroup && window.SignGroup.isParentSign(p);
+                    const isExpChild = hasSignGroup && window.SignGroup.isChildOfExpanded(p);
+
+                    if (isChild) {
+                        p.marker.setVisible(isExpChild && z >= 15);
+                        if (isExpChild) {
+                            p.marker.setZIndex(850);
+                            p.marker.setIcon(window.SignGroup.buildSignMarkerIcon(p, { isExpandedChild: true }));
+                            p.marker.setLabel(customDrawingMode === 'polygon' ? null : window.SignGroup.buildSignLabelConfig(p, { isExpandedChild: true }));
+                        }
+                    } else if (isParent) {
+                        p.marker.setVisible(z >= 15);
+                        p.marker.setZIndex(900);
+                        const isExp = String(id) === String(expandedPid);
+                        p.marker.setIcon(window.SignGroup.buildSignMarkerIcon(p, { isParent: true, isExpandedParent: isExp }));
+                        if ((z < 17 && !isExp) || customDrawingMode === 'polygon') {
+                            p.marker.setLabel(null);
+                        } else {
+                            p.marker.setLabel(window.SignGroup.buildSignLabelConfig(p, { isParent: true, isExpandedParent: isExp }));
+                        }
+                    } else {
+                        p.marker.setVisible(z >= 17);
+                        // 🌟修正：圃場モード中はズームしても文字を出さない！
+                        if (z < 17 || customDrawingMode === 'polygon') p.marker.setLabel(null);
+                        else if (p.labelConfig) p.marker.setLabel(p.labelConfig);
+                    }
                 }
             } else {
                 p.marker.setVisible(z >= 14);
             }
         }
+        if (typeof window.applyMapLayerFilter_ === 'function') window.applyMapLayerFilter_();
     });
 
 
@@ -7804,11 +7902,11 @@ function initMap() {
     map.addListener('idle', () => {
         let center = map.getCenter();
         if (typeof window.saveSharedMapView_ === 'function') {
-          window.saveSharedMapView_(map);
+            window.saveSharedMapView_(map);
         } else {
-          localStorage.setItem('pMapAdminLastLat', center.lat());
-          localStorage.setItem('pMapAdminLastLng', center.lng());
-          localStorage.setItem('pMapAdminLastZoom', map.getZoom());
+            localStorage.setItem('pMapAdminLastLat', center.lat());
+            localStorage.setItem('pMapAdminLastLng', center.lng());
+            localStorage.setItem('pMapAdminLastZoom', map.getZoom());
         }
 
         if (typeof autoSwitchFudeRegion === 'function') {
@@ -7855,19 +7953,22 @@ function initMap() {
     if (Object.keys(loadedPolygons || {}).length === 0) {
         const boot = readAdminBootInitData_();
         if (boot) {
-            try { renderInitData(boot, { interim: true }); } catch (e) {}
+            try { renderInitData(boot, { interim: true }); } catch (e) { }
         }
     }
     // spreadsheetId があればログイン完了を待たず最新取得（Schedule と同じ）
     if (localStorage.getItem('spreadsheetId') && !window._adminInitDataInFlight) {
-        try { ensureAdminInitDataLoad_('map-ready'); } catch (e) {}
+        try { ensureAdminInitDataLoad_('map-ready'); } catch (e) { }
     }
+    window.map = map;
+    window.loadedPolygons = loadedPolygons;
+    if (typeof window.initMapLayerFilter_ === 'function') window.initMapLayerFilter_(map);
 }
 window.initMap = initMap;
 
 function refreshAdminMapSize() {
     if (!map || typeof google === 'undefined' || !google.maps || !google.maps.event) return;
-    try { google.maps.event.trigger(map, 'resize'); } catch (e) {}
+    try { google.maps.event.trigger(map, 'resize'); } catch (e) { }
 }
 
 /** 推定住所から県・市と町名を除いた字・番地（例: 塩崎１２５） */
@@ -7927,7 +8028,7 @@ function fetchAddressHint(latLng) {
 }
 
 window.cancelMarkerForm_ = () => {
-    try { if (infoWindow) infoWindow.close(); } catch (e) {}
+    try { if (infoWindow) infoWindow.close(); } catch (e) { }
     if (currentMarker) {
         currentMarker.setMap(null);
         currentMarker = null;
@@ -8001,7 +8102,7 @@ function openMarkerForm(markerObj) {
     window._pendingSignRegPhotos = [];
     window._pendingMarkerPrefill = null;
 
-    try { if (infoWindow) infoWindow.close(); } catch (e) {}
+    try { if (infoWindow) infoWindow.close(); } catch (e) { }
     const modal = document.getElementById('modal');
     if (!modal || !document.getElementById('modalBody')) {
         customAlert('登録画面を開けませんでした。ページを再読み込みしてください。');
@@ -8207,6 +8308,12 @@ window.renderSignRegDetailScreen_ = (opts) => {
     const locOpts = `<option value="">拠点を選択...</option>` + (pdlLocations || []).map(l =>
         `<option value="${String(l).replace(/"/g, '&quot;')}" ${l === defaultLoc ? 'selected' : ''}>${l}</option>`
     ).join('');
+    const candidateParents = (window.SignGroup && typeof window.SignGroup.getCandidateParents === 'function')
+        ? window.SignGroup.getCandidateParents('', loadedPolygons)
+        : [];
+    const parentOpts = `<option value="">なし（単独・大看板）</option>` + candidateParents.map(cp =>
+        `<option value="${String(cp.id).replace(/"/g, '&quot;')}">${String(cp.name).replace(/</g, '&lt;')}</option>`
+    ).join('');
     const presetName = opts.name != null ? String(opts.name) : '';
     const presetIcon = opts.icon || '🪧';
     const presetFunc = opts.signFunction || st.defaultFunc || '';
@@ -8228,6 +8335,9 @@ window.renderSignRegDetailScreen_ = (opts) => {
               <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">拠点</div>
               <select id="mLoc" class="form-input" style="margin-bottom:4px;">${locOpts}</select>
               <div style="font-size:11px; color:#666; text-align:left; line-height:1.4; margin:0 0 8px;">この看板の所属拠点です。</div>
+              <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">親看板（大看板に束ねる）</div>
+              <select id="mParentSign" class="form-input" style="margin-bottom:4px;">${parentOpts}</select>
+              <div style="font-size:11px; color:#666; text-align:left; line-height:1.4; margin:0 0 8px;">大看板を選ぶと、その大看板に束ねられた小看板になります。</div>
               <div style="max-height:280px;overflow-y:auto;padding:0 6px 6px;border:1px solid #ddd;border-radius:8px;background:#fafafa;">
                 ${renderAdminSignIconPickerHtml_({ onPick: 'selectMI', activeIcon: presetIcon })}
               </div>
@@ -8412,7 +8522,7 @@ function updateCustomDrawingVisuals() {
         customDrawingPath.forEach(pt => bounds.extend(pt));
         customDrawingLabelMarker = new google.maps.Marker({ position: bounds.getCenter(), map: map, icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }, label: { text: `約 ${area} a`, color: 'white', fontSize: '14px', fontWeight: 'bold', className: 'polygon-label' }, zIndex: 10001, clickable: false });
     }
-    
+
     // Show splitPolygonPanel when exactly 4 points are drawn
     let splitPanel = document.getElementById('splitPolygonPanel');
     if (splitPanel) {
@@ -8437,8 +8547,8 @@ function clearCustomDrawing() {
 
     if (window.mergedPreviewPolygon) { window.mergedPreviewPolygon.setMap(null); window.mergedPreviewPolygon = null; }
     window.isMergedFude = false;
-    
-    if (window.gridDrawTempMarkers) { window.gridDrawTempMarkers.forEach(m => { if(m) m.setMap(null); }); window.gridDrawTempMarkers = []; }
+
+    if (window.gridDrawTempMarkers) { window.gridDrawTempMarkers.forEach(m => { if (m) m.setMap(null); }); window.gridDrawTempMarkers = []; }
     if (window.gridDrawTempLine) { window.gridDrawTempLine.setMap(null); window.gridDrawTempLine = null; }
     window.gridGeneratedPaths = [];
     if (document.getElementById('splitPolygonPanel')) document.getElementById('splitPolygonPanel').style.display = 'none';
@@ -8476,14 +8586,14 @@ document.getElementById('btnViewMode').onclick = () => {
     document.getElementById('drawArea').style.display = 'none';
     customDrawingMode = null;
     clearCustomDrawing();
-    
+
     if (window.gridDrawTempMarkers) {
-        window.gridDrawTempMarkers.forEach(m => { if(m) m.setMap(null); });
+        window.gridDrawTempMarkers.forEach(m => { if (m) m.setMap(null); });
         window.gridDrawTempMarkers = [];
     }
     if (window.gridDrawTempLine) { window.gridDrawTempLine.setMap(null); window.gridDrawTempLine = null; }
     window.gridGeneratedPaths = [];
-    
+
     setFudeVisibility(false);
     map.setOptions({ draggable: true, draggableCursor: null });
 
@@ -8496,7 +8606,7 @@ document.getElementById('btnViewMode').onclick = () => {
 };
 
 // 衛星タイルのCSS引き延ばし（ネイティブズーム超え）を有効化
-window.enableStretchedMapType = function() {
+window.enableStretchedMapType = function () {
     if (!map || !google || !google.maps) return false;
     try {
         if (!map.mapTypes.get('hybrid_stretched')) return false;
@@ -8592,7 +8702,7 @@ window.closeAdminRegPlusMenu_ = () => {
 
 window.toggleAdminRegPlusMenu_ = (ev) => {
     if (ev) {
-        try { ev.preventDefault(); ev.stopPropagation(); } catch (e) {}
+        try { ev.preventDefault(); ev.stopPropagation(); } catch (e) { }
     }
     const menu = document.getElementById('adminRegPlusMenu');
     if (!menu) return;
@@ -8788,7 +8898,7 @@ window.openAdminMultiRegCurrent_ = () => {
         const bounds = new google.maps.LatLngBounds();
         path.forEach(pt => bounds.extend(pt));
         if (typeof fetchAddressHint === 'function') fetchAddressHint(bounds.getCenter());
-    } catch (e) {}
+    } catch (e) { }
 };
 
 // 🌟修正：微細な隙間を無視して、複数の畑を美しく1つに結合する！
@@ -8871,7 +8981,7 @@ document.getElementById('backToStep1Btn').onclick = () => {
     // ★追加：分割シミュレーション（緑ポリゴン）をクリアする（手動・筆ポリ共通）
     window.gridGeneratedPaths = [];
     if (window.gridDrawTempMarkers) {
-        window.gridDrawTempMarkers.forEach(m => { if(m) m.setMap(null); });
+        window.gridDrawTempMarkers.forEach(m => { if (m) m.setMap(null); });
         window.gridDrawTempMarkers = [];
     }
     if (window.gridDrawTempLine) {
@@ -8945,10 +9055,10 @@ window.enterShapeEditFocusMode_ = function (editId) {
         if (!p) continue;
         const keep = String(id) === window._shapeEditFocusId;
         if (p.polygon) {
-            try { p.polygon.setMap(keep ? map : null); } catch (e) {}
+            try { p.polygon.setMap(keep ? map : null); } catch (e) { }
         }
         if (p.marker) {
-            try { p.marker.setMap(keep ? map : null); } catch (e) {}
+            try { p.marker.setMap(keep ? map : null); } catch (e) { }
         }
     }
 };
@@ -8975,14 +9085,14 @@ window.exitShapeEditFocusMode_ = function () {
         const p = loadedPolygons[id];
         if (!p) continue;
         if (p.polygon) {
-            try { p.polygon.setMap(map); } catch (e) {}
+            try { p.polygon.setMap(map); } catch (e) { }
         }
         if (p.marker) {
-            try { p.marker.setMap(map); } catch (e) {}
+            try { p.marker.setMap(map); } catch (e) { }
         }
     }
     if (typeof window.updateMarkerLabels === 'function') {
-        try { window.updateMarkerLabels(); } catch (e) {}
+        try { window.updateMarkerLabels(); } catch (e) { }
     }
 };
 
@@ -9361,8 +9471,8 @@ window.resolvePrefectureFromMap = () => {
  * onProgress(done, total)
  */
 window.fetchFudeFilesParallel = async (regionData, options = {}) => {
-    const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
-    const onFirstReady = typeof options.onFirstReady === 'function' ? options.onFirstReady : () => {};
+    const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => { };
+    const onFirstReady = typeof options.onFirstReady === 'function' ? options.onFirstReady : () => { };
     const files = (regionData && regionData.files) ? regionData.files.slice() : [];
     if (!files.length) return { loaded: 0, total: 0 };
 
@@ -9612,7 +9722,7 @@ document.getElementById('finalSaveBtn').onclick = async () => {
             syncAdminCall_('savePolygon', payload, { key: 'savePolygon:' + tempId, op: 'savePolygon', tempId, payload }).then(newId => {
                 remapLoadedPolygonId_(tempId, newId);
                 persistAdminInitCache_();
-            }).catch(() => {});
+            }).catch(() => { });
             const next = (window._adminMultiRegIndex || 0) + 1;
             if (next < window._adminMultiRegQueue.length) {
                 window._adminMultiRegIndex = next;
@@ -9651,7 +9761,7 @@ document.getElementById('finalSaveBtn').onclick = async () => {
             document.getElementById('btnViewMode').click();
             persistAdminInitCache_();
             showAdminSyncToast('☁️ ' + paramsList.length + '件を同期しています…', 'info', 0);
-            syncAdminPolygonList_(paramsList, tempIds).catch(() => {});
+            syncAdminPolygonList_(paramsList, tempIds).catch(() => { });
         } else {
             let pathsToSave = [];
             if (window.isMergedFude || customDrawingPath.length >= 3) {
@@ -9674,7 +9784,7 @@ document.getElementById('finalSaveBtn').onclick = async () => {
                 remapLoadedPolygonId_(tempId, newId);
                 persistAdminInitCache_();
                 showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
-            }).catch(() => {});
+            }).catch(() => { });
         }
     } catch (e) {
         document.getElementById('modal').style.display = 'none';
@@ -9692,7 +9802,7 @@ window.openLocationPinForm_ = (markerObj) => {
         customAlert('登録画面を開けませんでした。ページを再読み込みしてください。');
         return;
     }
-    try { if (infoWindow) infoWindow.close(); } catch (e) {}
+    try { if (infoWindow) infoWindow.close(); } catch (e) { }
     modalBody.innerHTML = `
       <div style="width:min(92vw,380px);max-width:100%;box-sizing:border-box;padding:4px;text-align:left;color:#000;max-height:78vh;overflow-y:auto;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
@@ -9758,7 +9868,7 @@ window.saveLocationPin_ = async () => {
     const btn = document.getElementById('btnSaveLocationPin');
     if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
 
-    try { if (infoWindow) infoWindow.close(); } catch (e) {}
+    try { if (infoWindow) infoWindow.close(); } catch (e) { }
     const modal = document.getElementById('modal');
     if (modal) modal.style.display = 'none';
     if (currentMarker) { currentMarker.setMap(null); currentMarker = null; }
@@ -9847,6 +9957,8 @@ window.saveM = async () => {
     const coords = [{ lat: pos.lat(), lng: pos.lng() }];
     const locEl = document.getElementById('mLoc');
     const loc = locEl ? String(locEl.value || '').trim() : '';
+    const parentEl = document.getElementById('mParentSign');
+    const parentSignId = parentEl ? String(parentEl.value || '').trim() : '';
     const photos = Array.isArray(window._pendingSignRegPhotos) ? window._pendingSignRegPhotos.slice() : [];
     const tempId = newAdminTempId_('tmp');
     const btn = document.getElementById('btnSaveSignMarker');
@@ -9865,10 +9977,10 @@ window.saveM = async () => {
             urls: photos.map(p => p.base64).filter(Boolean),
             data: { notes: '看板登録時' },
             _pendingSync: true
-          }]
+        }]
         : [];
 
-    try { if (infoWindow) infoWindow.close(); } catch (e) {}
+    try { if (infoWindow) infoWindow.close(); } catch (e) { }
     const modal = document.getElementById('modal');
     if (modal) modal.style.display = 'none';
     if (currentMarker) { currentMarker.setMap(null); currentMarker = null; }
@@ -9881,6 +9993,7 @@ window.saveM = async () => {
         color: ic,
         location: loc,
         signFunction: funcType,
+        parentSignId: parentSignId,
         isMarker: true,
         photos: localPhotos
     });
@@ -9894,6 +10007,7 @@ window.saveM = async () => {
         color: ic,
         location: loc,
         signFunction: funcType,
+        parentSignId: parentSignId,
         userName: currentUser
     };
     try {
@@ -9904,6 +10018,10 @@ window.saveM = async () => {
             payload
         });
         remapLoadedPolygonId_(tempId, id);
+        if (id && loadedPolygons[id]) {
+            loadedPolygons[id].parentSignId = parentSignId;
+        }
+        if (window.SignGroup) window.SignGroup.refreshMarkers();
         if (photos.length && id) {
             try {
                 const updated = await callGAS('saveRecord', {
@@ -9943,13 +10061,13 @@ function fudeSelectionIsDisconnected_(paths) {
         const first = coords[0];
         const last = coords[coords.length - 1];
         if (first[0] !== last[0] || first[1] !== last[1]) coords.push([first[0], first[1]]);
-        try { polys.push(turf.polygon([coords])); } catch (e) {}
+        try { polys.push(turf.polygon([coords])); } catch (e) { }
     });
     if (polys.length < 2) return false;
     let buffered = polys;
     try {
         buffered = polys.map(p => turf.buffer(p, 0.005, { units: 'kilometers' }));
-    } catch (e) {}
+    } catch (e) { }
     let unionPoly = buffered[0];
     for (let i = 1; i < buffered.length; i++) {
         try {
@@ -10166,7 +10284,7 @@ document.getElementById('cancelShapeBtn').onclick = () => {
 
 window.executeNavigation = (id) => { const p = loadedPolygons[id]; let lat, lng; if (p.isMarker) { lat = p.marker.getPosition().lat(); lng = p.marker.getPosition().lng(); } else { const b = new google.maps.LatLngBounds(); p.polygon.getPath().forEach(pt => b.extend(pt)); lat = b.getCenter().lat(); lng = b.getCenter().lng(); } window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`, '_blank'); };
 
-window.copyFieldUrl = function(id) {
+window.copyFieldUrl = function (id) {
     const input = document.getElementById('fieldShareUrl_' + id);
     if (!input) return;
     const url = input.value;
@@ -10188,7 +10306,7 @@ window.copyFieldUrl = function(id) {
     }
 };
 
-window.shareFieldUrl = function(id, fieldName) {
+window.shareFieldUrl = function (id, fieldName) {
     const input = document.getElementById('fieldShareUrl_' + id);
     if (!input) return;
     const url = input.value;
@@ -10245,7 +10363,24 @@ window.openM = (id) => {
     const fieldUrl = buildFieldShareUrl(id, centerLat, centerLng);
     const safeName = String(p.name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
 
-    let h = `<div style="text-align:center;width:240px;max-width:100%;box-sizing:border-box;padding:4px;color:#333;font-family:sans-serif;">${titleHtml}<br><div style="font-size:11px; color:#555; margin-bottom:8px;">${!p.isMarker ? (isU ? '<span style="background:#999;color:white;padding:2px 4px;font-size:11px;border-radius:4px;">未使用</span> ' : '') + (p.location || '-') + ' / ' + (p.condition || '-') + (p.soilType ? ' / ' + p.soilType : '') + ' / ' + p.area + 'a' + ridgeStr + '<hr style="margin:6px 0;">' : ''}</div>`;
+    let signGroupInfo = '';
+    if (p.isMarker && !locPin && window.SignGroup) {
+        if (window.SignGroup.isParentSign(p)) {
+            const children = window.SignGroup.getChildren(p.id);
+            signGroupInfo = `<div style="background:#EDE7F6; color:#4A148C; border:1px solid #D1C4E9; border-radius:6px; padding:6px; margin-bottom:8px; font-size:11px; text-align:left;">
+                <b>🪧 大看板</b>（小看板 ${children.length}件を束ねています）
+                <div style="font-size:10px; color:#6A1B9A; margin-top:2px;">${children.map(c => c.name || c.id).join('、') || 'なし'}</div>
+            </div>`;
+        } else if (window.SignGroup.isChildSign(p)) {
+            const parentPoly = loadedPolygons[window.SignGroup.getParentId(p)];
+            const parentName = parentPoly ? parentPoly.name : '大看板';
+            signGroupInfo = `<div style="background:#FFF3E0; color:#E65100; border:1px solid #FFE0B2; border-radius:6px; padding:6px; margin-bottom:8px; font-size:11px; text-align:left;">
+                <b>↳ 小看板</b>（親看板: ${parentName} に束ねられています）
+            </div>`;
+        }
+    }
+
+    let h = `<div style="text-align:center;width:240px;max-width:100%;box-sizing:border-box;padding:4px;color:#333;font-family:sans-serif;">${titleHtml}<br>${signGroupInfo}<div style="font-size:11px; color:#555; margin-bottom:8px;">${!p.isMarker ? (isU ? '<span style="background:#999;color:white;padding:2px 4px;font-size:11px;border-radius:4px;">未使用</span> ' : '') + (p.location || '-') + ' / ' + (p.condition || '-') + (p.soilType ? ' / ' + p.soilType : '') + ' / ' + p.area + 'a' + ridgeStr + '<hr style="margin:6px 0;">' : ''}</div>`;
 
     h += `<div style="background:#f8f9fa; border:1px solid #e0e0e0; border-radius:6px; padding:6px; margin-bottom:8px; text-align:left;">`;
     h += `<div style="font-size:11px; font-weight:bold; color:#1565C0; margin-bottom:4px;">🔗 圃場URL</div>`;
@@ -10282,7 +10417,7 @@ window.openAdminMaterialForm_ = (signId) => {
     const modal = document.getElementById('modal');
     const body = document.getElementById('modalBody');
     if (!modal || !body) return;
-    try { infoWindow.close(); } catch (e) {}
+    try { infoWindow.close(); } catch (e) { }
     body.innerHTML = `
       <div style="width:min(92vw,360px);text-align:left;color:#333;padding:4px;box-sizing:border-box;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -10354,7 +10489,7 @@ window.execDuplicate = async (id) => {
         remapLoadedPolygonId_(tempId, newId);
         persistAdminInitCache_();
         showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
-    }).catch(() => {});
+    }).catch(() => { });
 };
 
 window.startAdminLinkSelect = (targetId) => {
@@ -10372,7 +10507,7 @@ window.startAdminLinkSelect = (targetId) => {
         }
         // 起動中の getInitData と二重に打たない
         if (window._adminInitDataInFlight) {
-            Promise.resolve(window._adminInitDataInFlight).then(() => updateAdminMapVisuals()).catch(() => {});
+            Promise.resolve(window._adminInitDataInFlight).then(() => updateAdminMapVisuals()).catch(() => { });
             return;
         }
         loadInitData({ background: true, full: true });
@@ -10745,7 +10880,7 @@ window.execAdvancedSplit = async (id) => {
         }
         persistAdminInitCache_();
         showAdminSyncToast('☁️ ' + (newSplitPayloads.length + 1) + '件を同期しています…', 'info', 0);
-        if (newSplitPayloads.length) syncAdminPolygonList_(newSplitPayloads, newSplitIds).catch(() => {});
+        if (newSplitPayloads.length) syncAdminPolygonList_(newSplitPayloads, newSplitIds).catch(() => { });
     } catch (e) {
         document.getElementById('modal').style.display = 'none'; customAlert("エラーが発生しました: " + e.message);
     }
@@ -10778,7 +10913,7 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             sessionStorage.removeItem('passionMapPendingSignLocation');
         }
-    } catch (e) {}
+    } catch (e) { }
     let mapInitAttempts = 0;
     function tryInitMap() {
         const mapsReady = typeof google === 'object'
@@ -10834,11 +10969,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // Worker/Schedule と同じ：キャッシュ即描画＋地図準備と並行して取得。ログインは裏で確認
         const bootData = readAdminBootInitData_();
         if (bootData && countInitPolygons_(bootData) > 0) {
-            try { renderInitData(bootData, { interim: true }); } catch (e) {}
+            try { renderInitData(bootData, { interim: true }); } catch (e) { }
             continueCachedAdminSession_(null, 'info');
             executeLogin(true, { fromCache: true });
         } else if (bootData) {
-            try { renderInitData(bootData, { interim: true }); } catch (e) {}
+            try { renderInitData(bootData, { interim: true }); } catch (e) { }
             continueCachedAdminSession_(null, 'info');
             if (localStorage.getItem('spreadsheetId')) ensureAdminInitDataLoad_('boot-thin-cache');
             executeLogin(true, { fromCache: true });
@@ -10850,7 +10985,7 @@ document.addEventListener('DOMContentLoaded', () => {
             executeLogin(true);
         }
         mapInitPromise.then(() => {
-            try { flushPendingInitData(); } catch (e) {}
+            try { flushPendingInitData(); } catch (e) { }
             if (!initDataLoadStarted && localStorage.getItem('spreadsheetId')) {
                 ensureAdminInitDataLoad_('map-promise');
             }
@@ -10864,7 +10999,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (document.getElementById('loginId') && id) document.getElementById('loginId').value = id;
                 if (document.getElementById('loginPw') && pw) document.getElementById('loginPw').value = pw;
             }
-        } catch (ePrefill) {}
+        } catch (ePrefill) { }
         const loginScreen = document.getElementById('loginScreen');
         if (loginScreen) loginScreen.style.display = 'flex';
         // openCad ディープリンクはログイン後に flush
@@ -10878,7 +11013,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
-        
+
 function splitPathToLngLat_(path) {
     return (path || []).map((pt) => [
         typeof pt.lng === 'function' ? pt.lng() : Number(pt.lng),
@@ -10946,7 +11081,7 @@ window.finishSplitEdgePick_ = (latLng) => {
     window.cadPinMode = null;
     const angle = Math.round(edge.bearing * 10) / 10;
     if (window._splitEdgePreview) {
-        try { window._splitEdgePreview.setMap(null); } catch (e) {}
+        try { window._splitEdgePreview.setMap(null); } catch (e) { }
     }
     window._splitEdgePreview = new google.maps.Polyline({
         path: [
@@ -11010,7 +11145,7 @@ function clearSplitEdgePreview_() {
     window.cadSplittingEdgeMode = false;
     window.cadPinMode = null;
     if (window._splitEdgePreview) {
-        try { window._splitEdgePreview.setMap(null); } catch (e) {}
+        try { window._splitEdgePreview.setMap(null); } catch (e) { }
         window._splitEdgePreview = null;
     }
     if (map && customDrawingMode === 'polygon') map.setOptions({ draggableCursor: pinCursor });
@@ -11082,45 +11217,45 @@ window.executeSplitPolygon = () => {
     let count = parseInt(document.getElementById('splitCountInput').value) || 2;
     let axis = document.getElementById('splitTargetAxis').value;
     if (count < 2) count = 2;
-    
+
     let pathToSplit = null;
     let isFude = false;
-    
+
     if (window.selectedFudePaths && window.selectedFudePaths.length === 1) {
         pathToSplit = window.selectedFudePaths[0];
         isFude = true;
     } else if (customDrawingPath && customDrawingPath.length > 2) {
         pathToSplit = customDrawingPath;
     }
-    
+
     if (!pathToSplit) return;
-    
+
     if (!isFude && pathToSplit.length === 4 && (axis === 'long' || axis === 'short')) {
         let p1 = pathToSplit[0];
         let p2 = pathToSplit[1];
         let p3 = pathToSplit[2];
         let p4 = pathToSplit[3];
-        
+
         let t1 = turf.point([p1.lng(), p1.lat()]);
         let t2 = turf.point([p2.lng(), p2.lat()]);
         let t3 = turf.point([p3.lng(), p3.lat()]);
         let t4 = turf.point([p4.lng(), p4.lat()]);
-        
-        let d12 = turf.distance(t1, t2, {units: 'kilometers'});
-        let d23 = turf.distance(t2, t3, {units: 'kilometers'});
-        let d34 = turf.distance(t3, t4, {units: 'kilometers'});
-        let d41 = turf.distance(t4, t1, {units: 'kilometers'});
-        
+
+        let d12 = turf.distance(t1, t2, { units: 'kilometers' });
+        let d23 = turf.distance(t2, t3, { units: 'kilometers' });
+        let d34 = turf.distance(t3, t4, { units: 'kilometers' });
+        let d41 = turf.distance(t4, t1, { units: 'kilometers' });
+
         let avgA = (d12 + d34) / 2;
         let avgB = (d23 + d41) / 2;
-        
+
         let splitA = false;
         if (axis === 'long') {
             splitA = avgA > avgB;
         } else {
             splitA = avgA <= avgB;
         }
-        
+
         let line1Start, line1End, line2Start, line2End;
         if (splitA) {
             line1Start = t1; line1End = t2;
@@ -11129,47 +11264,47 @@ window.executeSplitPolygon = () => {
             line1Start = t2; line1End = t3;
             line2Start = t1; line2End = t4;
         }
-        
+
         let bearing1 = turf.bearing(line1Start, line1End);
-        let dist1 = turf.distance(line1Start, line1End, {units: 'kilometers'});
-        
+        let dist1 = turf.distance(line1Start, line1End, { units: 'kilometers' });
+
         let bearing2 = turf.bearing(line2Start, line2End);
-        let dist2 = turf.distance(line2Start, line2End, {units: 'kilometers'});
-        
+        let dist2 = turf.distance(line2Start, line2End, { units: 'kilometers' });
+
         window.gridGeneratedPaths = [];
         if (!window.gridDrawTempMarkers) window.gridDrawTempMarkers = [];
-        
+
         for (let i = 0; i < count; i++) {
             let f1 = i / count;
             let f2 = (i + 1) / count;
-            
-            let c1 = turf.destination(line1Start, dist1 * f1, bearing1, {units: 'kilometers'});
-            let c2 = turf.destination(line1Start, dist1 * f2, bearing1, {units: 'kilometers'});
-            
-            let c4 = turf.destination(line2Start, dist2 * f1, bearing2, {units: 'kilometers'});
-            let c3 = turf.destination(line2Start, dist2 * f2, bearing2, {units: 'kilometers'});
-            
+
+            let c1 = turf.destination(line1Start, dist1 * f1, bearing1, { units: 'kilometers' });
+            let c2 = turf.destination(line1Start, dist1 * f2, bearing1, { units: 'kilometers' });
+
+            let c4 = turf.destination(line2Start, dist2 * f1, bearing2, { units: 'kilometers' });
+            let c3 = turf.destination(line2Start, dist2 * f2, bearing2, { units: 'kilometers' });
+
             let pathData = [
-                {lng: c1.geometry.coordinates[0], lat: c1.geometry.coordinates[1]},
-                {lng: c2.geometry.coordinates[0], lat: c2.geometry.coordinates[1]},
-                {lng: c3.geometry.coordinates[0], lat: c3.geometry.coordinates[1]},
-                {lng: c4.geometry.coordinates[0], lat: c4.geometry.coordinates[1]}
+                { lng: c1.geometry.coordinates[0], lat: c1.geometry.coordinates[1] },
+                { lng: c2.geometry.coordinates[0], lat: c2.geometry.coordinates[1] },
+                { lng: c3.geometry.coordinates[0], lat: c3.geometry.coordinates[1] },
+                { lng: c4.geometry.coordinates[0], lat: c4.geometry.coordinates[1] }
             ];
-            
+
             window.gridGeneratedPaths.push(pathData);
-            
-            let gPoly = new google.maps.Polygon({ 
+
+            let gPoly = new google.maps.Polygon({
                 paths: pathData, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: 2, map: map, clickable: false
             });
             window.gridDrawTempMarkers.push(gPoly);
         }
     } else {
         let coords = pathToSplit.map(p => [p.lng(), (typeof p.lat === 'function') ? p.lat() : p.lat]);
-        if (coords[0][0] !== coords[coords.length-1][0] || coords[0][1] !== coords[coords.length-1][1]) {
+        if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
             coords.push([...coords[0]]);
         }
         let poly = turf.polygon([coords]);
-        
+
         let rotAngle = 0;
         if (axis === 'edge_selected' || axis === 'cad_angle') {
             const angleInput = document.getElementById('splitAngleInput');
@@ -11194,7 +11329,7 @@ window.executeSplitPolygon = () => {
                 rotAngle = (rotAngle + 90) % 360;
             }
         }
-        
+
         // Convert bearing to mathematical angle
         let mathAngle = 90 - rotAngle;
         let rad = mathAngle * Math.PI / 180;
@@ -11202,28 +11337,28 @@ window.executeSplitPolygon = () => {
         let cLng = centerPt[0], cLat = centerPt[1];
         let cosLat = Math.cos(cLat * Math.PI / 180);
         let LAT_TO_METER = 111320;
-        
+
         let minX = Infinity, maxX = -Infinity;
         let localCoords = coords.map(pt => {
             let dx = (pt[0] - cLng) * cosLat * LAT_TO_METER;
             let dy = (pt[1] - cLat) * LAT_TO_METER;
             let rx = dx * Math.cos(-rad) - dy * Math.sin(-rad);
             let ry = dx * Math.sin(-rad) + dy * Math.cos(-rad);
-            
+
             if (rx < minX) minX = rx;
             if (rx > maxX) maxX = rx;
             return [rx, ry];
         });
-        
+
         window.gridGeneratedPaths = [];
         if (!window.gridDrawTempMarkers) window.gridDrawTempMarkers = [];
-        
+
         let sliceWidth = (maxX - minX) / count;
-        
+
         for (let i = 0; i < count; i++) {
             let startX = minX + i * sliceWidth;
             let endX = startX + sliceWidth;
-            
+
             let slicePolyLocal = turf.polygon([[
                 [startX, -9999999],
                 [endX, -9999999],
@@ -11231,13 +11366,13 @@ window.executeSplitPolygon = () => {
                 [startX, 9999999],
                 [startX, -9999999]
             ]]);
-            
+
             let localPoly = turf.polygon([localCoords]);
             let intersected = turf.intersect(localPoly, slicePolyLocal);
-            
+
             if (intersected && (intersected.geometry.type === 'Polygon' || intersected.geometry.type === 'MultiPolygon')) {
                 let polys = intersected.geometry.type === 'Polygon' ? [intersected.geometry.coordinates] : intersected.geometry.coordinates;
-                
+
                 polys.forEach(pCoords => {
                     let pathData = pCoords[0].map(pt => {
                         let rx = pt[0], ry = pt[1];
@@ -11245,11 +11380,11 @@ window.executeSplitPolygon = () => {
                         let dy = rx * Math.sin(rad) + ry * Math.cos(rad);
                         let lat = cLat + (dy / LAT_TO_METER);
                         let lng = cLng + (dx / (cosLat * LAT_TO_METER));
-                        return {lat: lat, lng: lng};
+                        return { lat: lat, lng: lng };
                     });
-                    
+
                     window.gridGeneratedPaths.push(pathData);
-                    let gPoly = new google.maps.Polygon({ 
+                    let gPoly = new google.maps.Polygon({
                         paths: pathData, fillColor: '#8BC34A', fillOpacity: 0.4, strokeColor: '#558B2F', strokeOpacity: 0.8, strokeWeight: 2, map: map, clickable: false
                     });
                     window.gridDrawTempMarkers.push(gPoly);
@@ -11264,7 +11399,7 @@ window.executeSplitPolygon = () => {
         }
         return;
     }
-    
+
     if (currentPolygon) currentPolygon.setMap(null);
     if (customDrawingPolyline) customDrawingPolyline.setMap(null);
     if (customDrawingLabelMarker) customDrawingLabelMarker.setMap(null);
@@ -11272,11 +11407,11 @@ window.executeSplitPolygon = () => {
     if (window.selectedFudePolygons) {
         window.selectedFudePolygons.forEach(p => p.setVisible(false));
     }
-    
+
     document.getElementById('splitPolygonPanel').style.display = 'none';
     document.getElementById('splitCountModal').style.display = 'none';
     if (window._splitEdgePreview) {
-        try { window._splitEdgePreview.setMap(null); } catch (e) {}
+        try { window._splitEdgePreview.setMap(null); } catch (e) { }
         window._splitEdgePreview = null;
     }
     if (map && customDrawingMode === 'polygon') map.setOptions({ draggableCursor: pinCursor });
@@ -11292,7 +11427,7 @@ if ('serviceWorker' in navigator) {
 }
 
 // ====== マイページ ======
-window.openMyPage = function() {
+window.openMyPage = function () {
     const staffId = localStorage.getItem('passionMapUserId') || '';
     const userName = localStorage.getItem('passionMapUserName') || currentUser || '';
     const userRole = localStorage.getItem('passionMapUserRole') || '管理者';
@@ -11348,14 +11483,14 @@ window.openMyPage = function() {
     if (isAdmin) loadUserRoleManageList();
 };
 
-window.setUserRoleManageMsg = function(text, ok) {
+window.setUserRoleManageMsg = function (text, ok) {
     const el = document.getElementById('userRoleManageMsg');
     if (!el) return;
     el.textContent = text || '';
     el.style.color = ok ? '#2e7d32' : '#c62828';
 };
 
-window.loadUserRoleManageList = async function() {
+window.loadUserRoleManageList = async function () {
     const listEl = document.getElementById('userRoleManageList');
     if (!listEl) return;
     const adminUserId = localStorage.getItem('passionMapUserId') || localStorage.getItem('pMapAdminId') || '';
@@ -11432,7 +11567,7 @@ window.loadUserRoleManageList = async function() {
         }).join('');
         window._userRoleManageUsers = users;
         listEl.querySelectorAll('.user-role-change-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
+            btn.addEventListener('click', function () {
                 const idx = parseInt(this.getAttribute('data-idx'), 10);
                 const user = (window._userRoleManageUsers || [])[idx];
                 if (!user) return;
@@ -11441,7 +11576,7 @@ window.loadUserRoleManageList = async function() {
             });
         });
         listEl.querySelectorAll('.user-dept-change-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
+            btn.addEventListener('click', function () {
                 const idx = parseInt(this.getAttribute('data-idx'), 10);
                 const user = (window._userRoleManageUsers || [])[idx];
                 if (!user) return;
@@ -11450,7 +11585,7 @@ window.loadUserRoleManageList = async function() {
             });
         });
         listEl.querySelectorAll('.user-location-change-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
+            btn.addEventListener('click', function () {
                 const idx = parseInt(this.getAttribute('data-idx'), 10);
                 const user = (window._userRoleManageUsers || [])[idx];
                 if (!user) return;
@@ -11463,7 +11598,7 @@ window.loadUserRoleManageList = async function() {
     }
 };
 
-window.changeUserLocationFromAdmin = async function(targetUserId, selectedLocation) {
+window.changeUserLocationFromAdmin = async function (targetUserId, selectedLocation) {
     const newLocation = String(selectedLocation || '').trim();
     const adminUserId = localStorage.getItem('passionMapUserId') || localStorage.getItem('pMapAdminId') || '';
     const adminPassword = localStorage.getItem('passionMapUserPw') || localStorage.getItem('pMapAdminPw') || '';
@@ -11493,7 +11628,7 @@ window.changeUserLocationFromAdmin = async function(targetUserId, selectedLocati
     }
 };
 
-window.changeUserDeptFromAdmin = async function(targetUserId, selectedDept) {
+window.changeUserDeptFromAdmin = async function (targetUserId, selectedDept) {
     const newDept = String(selectedDept || '未設定').trim() || '未設定';
     const adminUserId = localStorage.getItem('passionMapUserId') || localStorage.getItem('pMapAdminId') || '';
     const adminPassword = localStorage.getItem('passionMapUserPw') || localStorage.getItem('pMapAdminPw') || '';
@@ -11522,7 +11657,7 @@ window.changeUserDeptFromAdmin = async function(targetUserId, selectedDept) {
     }
 };
 
-window.changeUserRoleFromAdmin = async function(targetUserId, selectedRole) {
+window.changeUserRoleFromAdmin = async function (targetUserId, selectedRole) {
     const newRole = selectedRole || '作業員';
     const adminUserId = localStorage.getItem('passionMapUserId') || localStorage.getItem('pMapAdminId') || '';
     const adminPassword = localStorage.getItem('passionMapUserPw') || localStorage.getItem('pMapAdminPw') || '';
@@ -11554,7 +11689,7 @@ window.changeUserRoleFromAdmin = async function(targetUserId, selectedRole) {
 };
 
 
-window.doChangeId = async function() {
+window.doChangeId = async function () {
     const newId = document.getElementById('myNewId').value;
     const currentPw = document.getElementById('myPwForIdChange').value;
     const resultDiv = document.getElementById('changeIdResult');
@@ -11562,7 +11697,7 @@ window.doChangeId = async function() {
     const staffId = localStorage.getItem('passionMapUserId') || (typeof currentStaffId !== 'undefined' ? currentStaffId : '');
 
     if (!newId || !currentPw) { resultDiv.innerText = '❌ すべての項目を入力してください'; resultDiv.style.color = 'red'; return; }
-    
+
     btn.disabled = true; btn.innerText = '変更中...';
     try {
         const res = await callGAS('changeId', { userId: staffId, password: currentPw, newId: newId });
@@ -11583,7 +11718,7 @@ window.doChangeId = async function() {
     }
 };
 
-window.doChangePassword = async function() {
+window.doChangePassword = async function () {
     const current = document.getElementById('myCurrentPw').value;
     const newPw = document.getElementById('myNewPw').value;
     const confirmPw = document.getElementById('myNewPwConfirm').value;
@@ -11622,7 +11757,7 @@ window.openBatchDeleteModal = () => {
     isBatchDeleteMode = true;
     selectedForDelete = [];
     document.getElementById('batchDeleteCount').innerText = '0';
-    if(infoWindow) infoWindow.close();
+    if (infoWindow) infoWindow.close();
     document.getElementById('batchDeleteModePanel').style.display = 'block';
     customAlert("削除したい圃場や看板を地図上でタップして選択してください。");
 };
@@ -11658,8 +11793,8 @@ window.execBatchDelete = async () => {
 
 window.refreshAllStatusSelects = (selectedVal) => {
     const listHtml = pdlStatuses.map(s => `<option value="${s}">${s}</option>`).join('');
-    const optionsWithSpecial = (emptyLabel) => 
-        `<option value="">${emptyLabel}</option>` + listHtml + 
+    const optionsWithSpecial = (emptyLabel) =>
+        `<option value="">${emptyLabel}</option>` + listHtml +
         `<option value="ADD_NEW" style="color:#1976d2;font-weight:bold;">➕ 新規項目追加...</option>` +
         `<option value="MANAGE_STATUS" style="color:#d32f2f;font-weight:bold;">⚙️ 項目の編集・削除...</option>`;
 
@@ -11759,7 +11894,7 @@ window.adminAddNewFieldStatusItem = async () => {
         await callGAS('addFieldStatus', { statusName: newVal });
         persistAdminInitCache_();
         showAdminSyncToast('☁️ 稼働状況を保存しました', 'ok');
-    } catch(e) {
+    } catch (e) {
         customAlert("稼働状況の保存に失敗しました");
     }
 };
@@ -11790,7 +11925,7 @@ window.adminEditFieldStatusItem = async (oldVal) => {
 
     try {
         await callGAS('editFieldStatus', { oldStatusName: oldVal, newStatusName: newVal });
-    } catch(e) {
+    } catch (e) {
         customAlert("稼働状況の編集保存に失敗しました");
     }
 };
@@ -11804,7 +11939,7 @@ window.adminDeleteFieldStatusItem = async (targetVal) => {
 
     try {
         await callGAS('deleteFieldStatus', { statusName: targetVal });
-    } catch(e) {
+    } catch (e) {
         customAlert("稼働状況の削除に失敗しました");
     }
 };
@@ -11820,42 +11955,42 @@ window.handleStatusSelect = async (sel) => {
 };
 
 
-      // トラッキング（移動履歴）用
-      let trackingWatchId = null;
-      let lastTrackingTime = 0;
+// トラッキング（移動履歴）用
+let trackingWatchId = null;
+let lastTrackingTime = 0;
 
-      // window.toggleTracking は tracking.js の共通モジュールを使用
-      if (!window.toggleTracking) {
-        window.toggleTracking = () => {
-          if (typeof window.showClockModal === 'function') {
-            const dt = { date: new Date().toISOString().split('T')[0], time: new Date().toTimeString().slice(0,5) };
+// window.toggleTracking は tracking.js の共通モジュールを使用
+if (!window.toggleTracking) {
+    window.toggleTracking = () => {
+        if (typeof window.showClockModal === 'function') {
+            const dt = { date: new Date().toISOString().split('T')[0], time: new Date().toTimeString().slice(0, 5) };
             let html = `<h3 style="margin-top:0; color:#4CAF50;">🏃‍♂️ 出勤処理</h3>`;
             html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤日</label>`;
             html += `<input type="date" id="clockInDate" class="form-input" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px;" value="${dt.date}">`;
             html += `<label class="form-label" style="display:block; margin-bottom:5px;">出勤時間</label>`;
             html += `<input type="text" id="clockInTime" class="form-input app-time-input" readonly inputmode="none" style="width:100%; box-sizing:border-box; padding:10px; font-size:16px; margin-bottom:10px; background:#fff; cursor:pointer;" value="${dt.time}" onclick="if(window.openAppTimePicker) openAppTimePicker('clockInTime', '出勤時間')">`;
             if (typeof buildClockInAdjustmentButtonsHtml === 'function') {
-              html += buildClockInAdjustmentButtonsHtml('clockInTime');
+                html += buildClockInAdjustmentButtonsHtml('clockInTime');
             } else {
-              const btnP = 'background:#f1f8e9;color:#2e7d32;border:1px solid #a5d6a7;border-radius:6px;padding:8px 4px;font-weight:bold;font-size:12px;cursor:pointer;text-align:center;';
-              const btnN = 'background:#fff3e0;color:#e65100;border:1px solid #ffcc80;border-radius:6px;padding:8px 4px;font-weight:bold;font-size:12px;cursor:pointer;text-align:center;';
-              html += '<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:6px;margin:0 0 10px;">';
-              html += '<button type="button" onclick="if(window.adjustClockInTime) adjustClockInTime(\'clockInTime\', 60)" style="' + btnP + '">+1時間</button>';
-              html += '<button type="button" onclick="if(window.adjustClockInTime) adjustClockInTime(\'clockInTime\', 30)" style="' + btnP + '">+30分</button>';
-              html += '<button type="button" onclick="if(window.adjustClockInTime) adjustClockInTime(\'clockInTime\', 15)" style="' + btnP + '">+15分</button>';
-              html += '<button type="button" onclick="if(window.adjustClockInTime) adjustClockInTime(\'clockInTime\', -60)" style="' + btnN + '">-1時間</button>';
-              html += '<button type="button" onclick="if(window.adjustClockInTime) adjustClockInTime(\'clockInTime\', -30)" style="' + btnN + '">-30分</button>';
-              html += '<button type="button" onclick="if(window.adjustClockInTime) adjustClockInTime(\'clockInTime\', -15)" style="' + btnN + '">-15分</button>';
-              html += '</div>';
+                const btnP = 'background:#f1f8e9;color:#2e7d32;border:1px solid #a5d6a7;border-radius:6px;padding:8px 4px;font-weight:bold;font-size:12px;cursor:pointer;text-align:center;';
+                const btnN = 'background:#fff3e0;color:#e65100;border:1px solid #ffcc80;border-radius:6px;padding:8px 4px;font-weight:bold;font-size:12px;cursor:pointer;text-align:center;';
+                html += '<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:6px;margin:0 0 10px;">';
+                html += '<button type="button" onclick="if(window.adjustClockInTime) adjustClockInTime(\'clockInTime\', 60)" style="' + btnP + '">+1時間</button>';
+                html += '<button type="button" onclick="if(window.adjustClockInTime) adjustClockInTime(\'clockInTime\', 30)" style="' + btnP + '">+30分</button>';
+                html += '<button type="button" onclick="if(window.adjustClockInTime) adjustClockInTime(\'clockInTime\', 15)" style="' + btnP + '">+15分</button>';
+                html += '<button type="button" onclick="if(window.adjustClockInTime) adjustClockInTime(\'clockInTime\', -60)" style="' + btnN + '">-1時間</button>';
+                html += '<button type="button" onclick="if(window.adjustClockInTime) adjustClockInTime(\'clockInTime\', -30)" style="' + btnN + '">-30分</button>';
+                html += '<button type="button" onclick="if(window.adjustClockInTime) adjustClockInTime(\'clockInTime\', -15)" style="' + btnN + '">-15分</button>';
+                html += '</div>';
             }
             html += `<div style="display:flex; gap:10px;">`;
             html += `  <button onclick="confirmClockIn()" style="background:#4CAF50; color:white; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">出勤する</button>`;
             html += `  <button onclick="if(window.hideClockModal) window.hideClockModal(); else document.getElementById('modal').style.display='none'" style="background:#ccc; color:#333; flex:1; padding:12px; border-radius:4px; border:none; font-weight:bold; cursor:pointer;">キャンセル</button>`;
             html += `</div>`;
             window.showClockModal(html);
-          }
-        };
-      }
+        }
+    };
+}
 
 window.plotClockInMarker = (state, doCenter) => {
     if (window.clockInMarker) window.clockInMarker.setMap(null);
@@ -11892,11 +12027,11 @@ window.plotClockInMarker = (state, doCenter) => {
 window.passionWatchId = null;
 window.passionLastTime = 0;
 
-window.syncTrackingUI = function() {
+window.syncTrackingUI = function () {
     const clockInStr = localStorage.getItem('passionMapClockIn');
     const clockInTodayStr = localStorage.getItem('passionMapClockInToday');
     const btn = document.getElementById('btnTracking');
-    
+
     let isCurrentlyClockedIn = false;
     let clockInState = null;
 
@@ -11906,7 +12041,7 @@ window.syncTrackingUI = function() {
             if (clockInState.active) {
                 isCurrentlyClockedIn = true;
             }
-        } catch(e) {}
+        } catch (e) { }
     }
 
     if (isCurrentlyClockedIn) {
@@ -11933,7 +12068,7 @@ window.syncTrackingUI = function() {
                         }).catch(e => console.warn(e));
                     }
                 }
-            }, (err) => {}, { enableHighAccuracy: true });
+            }, (err) => { }, { enableHighAccuracy: true });
         }
     } else {
         if (btn) {
@@ -11945,7 +12080,7 @@ window.syncTrackingUI = function() {
             navigator.geolocation.clearWatch(window.passionWatchId);
             window.passionWatchId = null;
         }
-        
+
         let showTodayPin = false;
         if (clockInTodayStr) {
             try {
@@ -11957,9 +12092,9 @@ window.syncTrackingUI = function() {
                         window.plotClockInMarker(todayState, false);
                     }
                 }
-            } catch(e) {}
+            } catch (e) { }
         }
-        
+
         if (!showTodayPin && window.clockInMarker) {
             window.clockInMarker.setMap(null);
             window.clockInMarker = null;
@@ -11979,7 +12114,7 @@ window.addEventListener('storage', (e) => {
 
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
-        if(typeof window.syncTrackingUI === 'function') {
+        if (typeof window.syncTrackingUI === 'function') {
             window.syncTrackingUI();
         }
         if (typeof window.refreshClockBoardBadge === 'function') {
@@ -12078,7 +12213,7 @@ window.refreshClockBoardBadge = async function () {
             requesterName: req.requesterName
         }, 0);
         if (data && data.success !== false) window.updateClockBoardBadge(data);
-    } catch (e) {}
+    } catch (e) { }
 };
 
 window.renderClockBoard = function () {

@@ -4084,8 +4084,8 @@
 
     const bodyHtml =
       '<div style="background:#fff; width:100%; max-width:460px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">' +
-        '<div style="font-size:17px; font-weight:bold; color:#00695C; margin-bottom:6px;">📣 更新情報</div>' +
-        '<div style="font-size:12px; color:#666; margin-bottom:14px; line-height:1.4;">最近の機能アップデート内容です。新しく追加された項目には <span style="display:inline-block; background:#D32F2F; color:#fff; font-size:10px; font-weight:bold; padding:1px 5px; border-radius:999px;">NEW</span> が表示されます。</div>' +
+        '<div style="font-size:17px; font-weight:bold; color:#00695C; margin-bottom:12px;">📣 更新情報</div>' +
+
         '<div style="margin-bottom:12px;">' + rows + '</div>' +
         '<button type="button" onclick="closeReleaseNotesModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>' +
       '</div>';

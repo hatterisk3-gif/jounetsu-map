@@ -1349,7 +1349,16 @@ function initMap() {
     zoomLevel = savedZoom ? parseInt(savedZoom) : zoomLevel;
   }
 
-  map = new google.maps.Map(document.getElementById('map'), { center: centerPos, zoom: zoomLevel, maxZoom: 30, mapTypeId: 'hybrid', gestureHandling: 'greedy', disableDefaultUI: true, zoomControl: false });
+  map = new google.maps.Map(document.getElementById('map'), {
+    center: centerPos,
+    zoom: zoomLevel,
+    maxZoom: 30,
+    mapTypeId: 'hybrid',
+    gestureHandling: 'greedy',
+    disableDefaultUI: true,
+    zoomControl: false,
+    styles: [{ featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] }]
+  });
   window.map = map;
 
   google.maps.event.addListenerOnce(map, 'idle', () => {
@@ -1358,11 +1367,20 @@ function initMap() {
 
   infoWindow = new google.maps.InfoWindow();
   window.infoWindow = infoWindow;
-  google.maps.event.addListener(map, 'click', () => infoWindow.close());
+  google.maps.event.addListener(map, 'click', () => {
+    infoWindow.close();
+    if (window.SignGroup && window.SignGroup.getExpandedParentId()) {
+      window.SignGroup.collapse(map, loadedPolygons, () => {
+        google.maps.event.trigger(map, 'zoom_changed');
+      });
+    }
+  });
 
   map.addListener('zoom_changed', () => {
     const z = map.getZoom();
     if (typeof window.syncLocationPinGlowScale_ === 'function') window.syncLocationPinGlowScale_(map);
+    const hasSignGroup = !!(window.SignGroup && typeof window.SignGroup.isChildSign === 'function');
+    const expandedPid = hasSignGroup ? window.SignGroup.getExpandedParentId() : null;
     for (let id in loadedPolygons) {
       const p = loadedPolygons[id];
       if (p.isMarker && p.marker) {
@@ -1370,9 +1388,32 @@ function initMap() {
           if (typeof window.refreshLocationPinMarker_ === 'function') window.refreshLocationPinMarker_(p.marker, p.name, z);
           else p.marker.setVisible(true);
         } else {
-          p.marker.setVisible(z >= 15);
-          if (z < 17) p.marker.setLabel(null);
-          else if (p.labelConfig) p.marker.setLabel(p.labelConfig);
+          const isChild = hasSignGroup && window.SignGroup.isChildSign(p);
+          const isParent = hasSignGroup && window.SignGroup.isParentSign(p);
+          const isExpChild = hasSignGroup && window.SignGroup.isChildOfExpanded(p);
+
+          if (isChild) {
+            p.marker.setVisible(isExpChild && z >= 15);
+            if (isExpChild) {
+              p.marker.setZIndex(850);
+              p.marker.setIcon(window.SignGroup.buildSignMarkerIcon(p, { isExpandedChild: true }));
+              p.marker.setLabel(window.SignGroup.buildSignLabelConfig(p, { isExpandedChild: true }));
+            }
+          } else if (isParent) {
+            p.marker.setVisible(z >= 15);
+            p.marker.setZIndex(900);
+            const isExp = String(id) === String(expandedPid);
+            p.marker.setIcon(window.SignGroup.buildSignMarkerIcon(p, { isParent: true, isExpandedParent: isExp }));
+            if (z < 17 && !isExp) {
+              p.marker.setLabel(null);
+            } else {
+              p.marker.setLabel(window.SignGroup.buildSignLabelConfig(p, { isParent: true, isExpandedParent: isExp }));
+            }
+          } else {
+            p.marker.setVisible(z >= 15);
+            if (z < 17) p.marker.setLabel(null);
+            else if (p.labelConfig) p.marker.setLabel(p.labelConfig);
+          }
         }
       } else if (p.marker) {
         // 土壌水分表示中は % ラベルを常時見せる
@@ -1382,6 +1423,7 @@ function initMap() {
     if (window._soilMoistureOverlayOn && typeof window.applySoilMoistureColors === 'function') {
       window.applySoilMoistureColors();
     }
+    if (typeof window.applyMapLayerFilter_ === 'function') window.applyMapLayerFilter_();
   });
 
   map.addListener('idle', () => {
@@ -1396,6 +1438,9 @@ function initMap() {
   });
 
   fetchTyphoonInfo(); // 起動時に台風情報を取得
+
+  window.loadedPolygons = loadedPolygons;
+  if (typeof window.initMapLayerFilter_ === 'function') window.initMapLayerFilter_(map);
 
   loadData();
 }
@@ -1673,7 +1718,28 @@ function updateMapVisuals() {
           visible: map.getZoom() >= 15, label: map.getZoom() >= 17 ? lblConf : null,
           icon: { url: iconUrl, scaledSize: new google.maps.Size(40, 40), anchor: new google.maps.Point(20, 20), labelOrigin: new google.maps.Point(20, 45) }
         });
-        google.maps.event.addListener(p.marker, 'click', (e) => showPopup(p, e.latLng));
+        google.maps.event.addListener(p.marker, 'click', (e) => {
+          if (window.SignGroup && !(typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction))) {
+            const sid = String(p.id);
+            const isParent = window.SignGroup.isParentSign(p);
+            const isChild = window.SignGroup.isChildSign(p);
+            const expId = window.SignGroup.getExpandedParentId();
+            if (isParent) {
+              if (expId !== sid) {
+                window.SignGroup.expand(sid, map, loadedPolygons, () => {
+                  google.maps.event.trigger(map, 'zoom_changed');
+                });
+                if (infoWindow) infoWindow.close();
+                return;
+              }
+            } else if (!isChild && expId) {
+              window.SignGroup.collapse(map, loadedPolygons, () => {
+                google.maps.event.trigger(map, 'zoom_changed');
+              });
+            }
+          }
+          showPopup(p, e.latLng);
+        });
       } else {
         p.marker.setIcon({ url: iconUrl, scaledSize: new google.maps.Size(40, 40), anchor: new google.maps.Point(20, 20), labelOrigin: new google.maps.Point(20, 45) });
         p.marker.setLabel(map.getZoom() >= 17 ? lblConf : null);
@@ -1691,6 +1757,11 @@ function updateMapVisuals() {
         const bounds = new google.maps.LatLngBounds(); p.coords.forEach(pt => bounds.extend(pt));
         p.marker = new google.maps.Marker({ position: bounds.getCenter(), map, visible: map.getZoom() >= 14, clickable: false, label: { text: labelText, color: markerColor, fontSize: '13px', fontWeight: 'bold', className: 'polygon-label' }, icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 } });
         google.maps.event.addListener(p.polygon, 'click', (e) => {
+          if (window.SignGroup && window.SignGroup.getExpandedParentId()) {
+            window.SignGroup.collapse(map, loadedPolygons, () => {
+              google.maps.event.trigger(map, 'zoom_changed');
+            });
+          }
           if (window.isFieldCultivationMode) {
             handleFieldCultivationClick(p);
           } else if (window.isMapSelectingField) {
@@ -1718,6 +1789,8 @@ function updateMapVisuals() {
   if (window._soilMoistureOverlayOn && typeof window.applySoilMoistureColors === 'function') {
     window.applySoilMoistureColors();
   }
+  window.loadedPolygons = loadedPolygons;
+  if (typeof window.applyMapLayerFilter_ === 'function') window.applyMapLayerFilter_();
 }
 
 function showPopup(p, latLng) {
@@ -5549,6 +5622,33 @@ window.deleteSnrDirection_ = async () => {
     if (btn) { btn.disabled = false; btn.textContent = '削除'; }
   }
 };
+/** 育苗記録などの待ち画面（追加中／更新中） */
+window.showSowingNurseryBusyOverlay_ = (label, opts) => {
+  opts = opts || {};
+  let el = document.getElementById('sowingNurseryBusyOverlay');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'sowingNurseryBusyOverlay';
+    document.body.appendChild(el);
+  }
+  const text = String(label || '追加中です…');
+  const accent = String(opts.accent || '#6a1b9a');
+  const ring = String(opts.ring || '#e1bee7');
+  const sub = String(opts.sub || '育苗記録を保存しています');
+  el.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:14000; display:flex; justify-content:center; align-items:center; padding:16px; box-sizing:border-box;';
+  el.innerHTML = `<div style="background:#fff; color:#333; width:100%; max-width:320px; border-radius:12px; padding:28px 24px; text-align:center; box-shadow:0 10px 28px rgba(0,0,0,0.28);">
+      <div style="width:36px; height:36px; margin:0 auto 14px; border:3px solid ${ring}; border-top-color:${accent}; border-radius:50%; animation:snrBusySpin 0.8s linear infinite;"></div>
+      <div style="font-size:17px; font-weight:bold; color:${accent}; letter-spacing:0.02em;">${text}</div>
+      <div style="font-size:12px; color:#888; margin-top:8px; line-height:1.4;">${sub}</div>
+    </div>
+    <style>@keyframes snrBusySpin{to{transform:rotate(360deg)}}</style>`;
+  return el;
+};
+window.hideSowingNurseryBusyOverlay_ = () => {
+  const el = document.getElementById('sowingNurseryBusyOverlay');
+  if (el) el.remove();
+};
+
 window.submitSowingNurseryRecord_ = async () => {
   const st = window._sowingNurseryState;
   if (st.formBusy) return;
@@ -5577,8 +5677,20 @@ window.submitSowingNurseryRecord_ = async () => {
     return;
   }
   st.formBusy = true;
-  if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
-  if (msg) { msg.style.color = '#6a1b9a'; msg.textContent = '保存しています...'; }
+  if (btn) { btn.disabled = true; btn.textContent = '追加中…'; }
+  if (msg) { msg.style.color = '#6a1b9a'; msg.textContent = '追加中です…'; }
+  const busyStartedAt = Date.now();
+  window.showSowingNurseryBusyOverlay_('追加中です…', {
+    accent: '#6a1b9a',
+    ring: '#e1bee7',
+    sub: '育苗記録を保存しています'
+  });
+  const endBusy_ = async () => {
+    const minMs = 450;
+    const elapsed = Date.now() - busyStartedAt;
+    if (elapsed < minMs) await new Promise(r => setTimeout(r, minMs - elapsed));
+    window.hideSowingNurseryBusyOverlay_();
+  };
   try {
     const userName = localStorage.getItem('passionMapUserName') || 'ユーザー';
     await callGAS('saveSowingRecord', {
@@ -5601,8 +5713,11 @@ window.submitSowingNurseryRecord_ = async () => {
     const year = st.year || String(new Date().getFullYear());
     await window.refreshSowingNurseryData_(year);
     window.renderSowingNurseryBody_();
-    if (typeof customAlert === 'function') customAlert('育苗記録を登録しました');
+    await endBusy_();
+    if (typeof customAlert === 'function') customAlert('追加を完了しました');
+    else alert('追加を完了しました');
   } catch (e) {
+    await endBusy_();
     if (msg) { msg.style.color = '#c62828'; msg.textContent = '登録失敗: ' + (e.message || e); }
     if (btn) { btn.disabled = false; btn.textContent = '登録する'; }
   } finally {

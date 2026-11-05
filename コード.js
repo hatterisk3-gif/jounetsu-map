@@ -497,7 +497,7 @@ function parseCropImageWithGemini(params) {
 
   // トークン節約: 指示は短く、スキーマは最小限
   const prompt =
-`作型表画像から播種/定植/収穫を抽出。産地=${params.climate || '一般地'}（画像に産地があれば優先）。
+    `作型表画像から播種/定植/収穫を抽出。産地=${params.climate || '一般地'}（画像に産地があれば優先）。
 ルール:
 - ずらし巻き・複数期間は type を分割。各 type の sowing/planting は最大1期間。
 - 月=1-12, period="上"|"中"|"下"。期間は start_*/end_*。
@@ -667,11 +667,11 @@ function checkLogin(orgId, userId, password) {
   let deptCol = -1;
   try {
     deptCol = ensureMeiboDeptColumn_().col;
-  } catch (e) {}
+  } catch (e) { }
   let locationCol = -1;
   try {
     locationCol = ensureMeiboLocationColumn_().col;
-  } catch (e) {}
+  } catch (e) { }
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(userId) && String(data[i][1]) === String(password)) {
@@ -734,13 +734,13 @@ function createMeiboUser_(ss, opts) {
     try {
       const locInfo = ensureMeiboLocationColumn_();
       locInfo.sheet.getRange(newRow, locInfo.col + 1).setValue(location);
-    } catch (e) {}
+    } catch (e) { }
   }
   if (email) {
     try {
       const mailInfo = ensureMeiboGmailColumn_();
       mailInfo.sheet.getRange(newRow, mailInfo.gmailCol + 1).setValue(email);
-    } catch (e) {}
+    } catch (e) { }
   }
 
   return {
@@ -763,7 +763,7 @@ function getSignupOptions(params) {
   }
   let locations = [];
   try {
-    locations = readLocationMasterDetails_().map(function(l) {
+    locations = readLocationMasterDetails_().map(function (l) {
       return String((l && l.name) || '').trim();
     }).filter(Boolean);
   } catch (e) {
@@ -813,7 +813,7 @@ function signupUser(params) {
 
   try {
     writeLog(created.userName, "サインアップ", "システム", "自己登録: " + created.userId + " / 拠点:" + location + " / メール:" + email);
-  } catch (e) {}
+  } catch (e) { }
 
   return {
     success: true,
@@ -874,7 +874,7 @@ function adminAddUser(params) {
 
   try {
     writeLog(adminName, "ユーザー追加", created.userId, "役割:" + created.role + " / 名前:" + created.userName);
-  } catch (e) {}
+  } catch (e) { }
 
   return {
     success: true,
@@ -934,12 +934,12 @@ function listUsersForAdmin(params) {
   try {
     const info = ensureMeiboDeptColumn_();
     deptCol = info.col;
-  } catch (e) {}
+  } catch (e) { }
   let locationCol = -1;
   try {
     const locInfo = ensureMeiboLocationColumn_();
     locationCol = locInfo.col;
-  } catch (e) {}
+  } catch (e) { }
   for (let i = 1; i < admin.data.length; i++) {
     const uid = String(admin.data[i][0] || '').trim();
     if (!uid) continue;
@@ -951,17 +951,17 @@ function listUsersForAdmin(params) {
       location: locationCol >= 0 ? (String(admin.data[i][locationCol] || '').trim() || '') : ''
     });
   }
-  users.sort(function(a, b) {
+  users.sort(function (a, b) {
     const ra = a.role === '管理者' ? 0 : 1;
     const rb = b.role === '管理者' ? 0 : 1;
     if (ra !== rb) return ra - rb;
     return String(a.userName || a.userId).localeCompare(String(b.userName || b.userId), 'ja');
   });
   let departments = ['運営', '未設定'];
-  try { departments = getDeptList_(); } catch (e) {}
+  try { departments = getDeptList_(); } catch (e) { }
   let locations = [];
   try {
-    locations = readLocationMasterDetails_().map(function(l) { return String((l && l.name) || '').trim(); }).filter(Boolean);
+    locations = readLocationMasterDetails_().map(function (l) { return String((l && l.name) || '').trim(); }).filter(Boolean);
   } catch (e) { locations = []; }
   return { success: true, users: users, departments: departments, locations: locations };
 }
@@ -1010,7 +1010,7 @@ function updateUserRole(params) {
   admin.sheet.getRange(targetRow, 4).setValue(newRole);
   try {
     writeLog(admin.userName, "権限変更", targetUserId, targetName + ": " + currentRole + " → " + newRole);
-  } catch (e) {}
+  } catch (e) { }
 
   return {
     success: true,
@@ -1055,7 +1055,7 @@ function getInitData(opts) {
   // light: 起動時の Failed to fetch 対策。重いマスタを後回しにして応答を軽くする
   const light = !!(opts.light || opts.slim);
   const ss = TENANT_SS;
-  
+
   const getCol = (sheetNames, colIndex) => {
     for (let name of sheetNames) {
       const sh = ss.getSheetByName(name);
@@ -1102,25 +1102,25 @@ function getInitData(opts) {
       try { return getHitchTypeMasterList_(); } catch (e) { return DEFAULT_HITCH_TYPES.slice(); }
     })()
   };
-  
+
   let workMaster = [];
   let workStatuses = [];
   let containerNames = [];
-  let maintenanceContents = []; 
-  
+  let maintenanceContents = [];
+
   const workSheet = ss.getSheetByName('作業マスタ');
   if (workSheet) {
-    try { ensureWorkMasterHeaders_(workSheet, { skipFlush: true }); } catch (e) {}
+    try { ensureWorkMasterHeaders_(workSheet, { skipFlush: true }); } catch (e) { }
     const data = workSheet.getDataRange().getValues();
     if (data.length > 0) {
-      const headers = data[0].map(h => String(h).trim()); 
-      
+      const headers = data[0].map(h => String(h).trim());
+
       const idxName = headers.indexOf('作業名');
       const idxCrop = findWorkCropColumnIndex_(headers);
       const idxDetail = findWorkDetailColumnIndex_(headers);
       const idxStatus = headers.indexOf('進捗状況');
       const idxContainer = headers.indexOf('コンテナ名');
-      const idxMaintenance = headers.indexOf('整備内容'); 
+      const idxMaintenance = headers.indexOf('整備内容');
       // 実シートの列名は「担当部署」。過去互換でカテゴリ系ヘッダーも許容する
       const idxCategory = findWorkCategoryColumnIndex_(headers);
 
@@ -1139,8 +1139,8 @@ function getInitData(opts) {
           }
 
           const uiFlags = readWorkMasterUiFlagsFromRow_(headers, data[i]);
-          workMaster.push({ 
-            category: cat, 
+          workMaster.push({
+            category: cat,
             name: wName,
             cropName: cropStr,
             crops: cropStr ? cropStr.split(/[,、]/).map(s => String(s).trim()).filter(Boolean) : [],
@@ -1151,16 +1151,17 @@ function getInitData(opts) {
             showPesticide: uiFlags.showPesticide,
             showField: uiFlags.showField,
             showFuel: uiFlags.showFuel,
-            showRidgePolygon: uiFlags.showRidgePolygon
+            showRidgePolygon: uiFlags.showRidgePolygon,
+            showMaintenance: uiFlags.showMaintenance
           });
         }
         if (idxStatus >= 0 && data[i][idxStatus]) workStatuses.push(data[i][idxStatus]);
         if (idxContainer >= 0 && data[i][idxContainer]) containerNames.push(data[i][idxContainer]);
-        if (idxMaintenance >= 0 && data[i][idxMaintenance]) maintenanceContents.push(String(data[i][idxMaintenance]).trim()); 
+        if (idxMaintenance >= 0 && data[i][idxMaintenance]) maintenanceContents.push(String(data[i][idxMaintenance]).trim());
       }
     }
   }
-  
+
   pdl.workMaster = workMaster;
   pdl.signFunctions = [];
   pdl.workStatuses = [...new Set(workStatuses)].filter(String);
@@ -1185,7 +1186,7 @@ function getInitData(opts) {
   } catch (e) {
     console.warn('整備内容マスタ読み込みスキップ:', e);
   }
-  pdl.maintenanceContents = [...new Set(maintenanceContents)].filter(String); 
+  pdl.maintenanceContents = [...new Set(maintenanceContents)].filter(String);
 
   try {
     pdl.crops = readMergedCropMasterList_();
@@ -1193,15 +1194,15 @@ function getInitData(opts) {
     console.warn('作物マスタ読み込みスキップ:', cropErr);
     pdl.crops = [];
   }
-pdl.signLinks = {};
+  pdl.signLinks = {};
   const signSh = ss.getSheetByName('看板');
-  if(signSh) {
-     const sd = signSh.getDataRange().getValues();
-     for(let i=1; i<sd.length; i++) {
-        if(sd[i][0]) pdl.signLinks[sd[i][0]] = String(sd[i][8] || ""); // I列(インデックス8)
-     }
+  if (signSh) {
+    const sd = signSh.getDataRange().getValues();
+    for (let i = 1; i < sd.length; i++) {
+      if (sd[i][0]) pdl.signLinks[sd[i][0]] = String(sd[i][8] || ""); // I列(インデックス8)
+    }
   }
-// 農機マスタの読み込み（機械管理と統一フィールド）
+  // 農機マスタの読み込み（機械管理と統一フィールド）
   // ※列拡張エラーで getInitData 全体を落とさない
   pdl.machines = [];
   try {
@@ -1223,27 +1224,27 @@ pdl.signLinks = {};
 
   // ★注意：この下にあった pdl.symptoms = []; と、作業記録マスタから
   // 症状を取得する for文 のブロックはもう使わないので、削除してください！
-  
 
-pdl.materials = [];
+
+  pdl.materials = [];
   const mSh = ss.getSheetByName('資材マスタ');
-  if(mSh) {
-     const md = mSh.getDataRange().getValues();
-     for(let i=1; i<md.length; i++) { 
-       if(md[i][1]) {
-         pdl.materials.push({
-           id: md[i][0], 
-           name: md[i][1], 
-           workCategory: String(md[i][2] || ""), 
-           size: md[i][3] || "",
-           volUnit: md[i][4] || "",    // E列: 容量単位
-           stockUnit: md[i][5] || "",  // F列: 在庫単位
-           signName: md[i][8] || "",   // I列: 場所看板名
-           signId: md[i][9] || "",     // J列: 場所看板id
-           stock: md[i][10] || 0       // K列: 在庫状況 ★L列(11)からK列(10)に変更
-         }); 
-       }
-     }
+  if (mSh) {
+    const md = mSh.getDataRange().getValues();
+    for (let i = 1; i < md.length; i++) {
+      if (md[i][1]) {
+        pdl.materials.push({
+          id: md[i][0],
+          name: md[i][1],
+          workCategory: String(md[i][2] || ""),
+          size: md[i][3] || "",
+          volUnit: md[i][4] || "",    // E列: 容量単位
+          stockUnit: md[i][5] || "",  // F列: 在庫単位
+          signName: md[i][8] || "",   // I列: 場所看板名
+          signId: md[i][9] || "",     // J列: 場所看板id
+          stock: md[i][10] || 0       // K列: 在庫状況 ★L列(11)からK列(10)に変更
+        });
+      }
+    }
   }
 
   // 🌟道具マスタの読み込み🌟
@@ -1348,23 +1349,23 @@ pdl.materials = [];
     const lotSheet = ss.getSheetByName('ロット記録');
     if (lotSheet) {
       const data = lotSheet.getDataRange().getValues();
-      if(data.length > 0){
-         const head = data[0].map(String);
-         const locIdx = head.indexOf('拠点') >= 0 ? head.indexOf('拠点') : 9;
-         const unitIdx = head.indexOf('内容単位');
-         const qtyIdx = head.indexOf('内容個数');
-         for (let i = 1; i < data.length; i++) {
-           if (data[i][8] !== '完了' && data[i][8] !== '出荷済' && data[i][0]) {
-             activeLots.push({
-               lotId: data[i][0],
-               containerType: data[i][5],
-               remain: data[i][7],
-               location: data[i][locIdx] || '未設定',
-               contentUnit: unitIdx >= 0 ? (data[i][unitIdx] || '') : (data[i][10] || ''),
-               contentQty: qtyIdx >= 0 ? (data[i][qtyIdx] != null ? data[i][qtyIdx] : '') : (data[i][11] != null ? data[i][11] : '')
-             });
-           }
-         }
+      if (data.length > 0) {
+        const head = data[0].map(String);
+        const locIdx = head.indexOf('拠点') >= 0 ? head.indexOf('拠点') : 9;
+        const unitIdx = head.indexOf('内容単位');
+        const qtyIdx = head.indexOf('内容個数');
+        for (let i = 1; i < data.length; i++) {
+          if (data[i][8] !== '完了' && data[i][8] !== '出荷済' && data[i][0]) {
+            activeLots.push({
+              lotId: data[i][0],
+              containerType: data[i][5],
+              remain: data[i][7],
+              location: data[i][locIdx] || '未設定',
+              contentUnit: unitIdx >= 0 ? (data[i][unitIdx] || '') : (data[i][10] || ''),
+              contentQty: qtyIdx >= 0 ? (data[i][qtyIdx] != null ? data[i][qtyIdx] : '') : (data[i][11] != null ? data[i][11] : '')
+            });
+          }
+        }
       }
     }
   }
@@ -1447,7 +1448,7 @@ function mapDeltaSlimUneSim_(raw) {
     if (count > 0 || (obj && Array.isArray(obj.pins) && obj.pins.length > 0)) {
       return JSON.stringify({ uneCount: count, fp: fp, _slim: true });
     }
-  } catch (e) {}
+  } catch (e) { }
   return '';
 }
 
@@ -1457,7 +1458,8 @@ function mapDeltaSignFingerprint_(row) {
     String(row.color || ''),
     String(row.location || ''),
     String(row.signFunction || ''),
-    mapDeltaCoordsKey_(row.coords)
+    mapDeltaCoordsKey_(row.coords),
+    String(row.parentSignId || '')
   ].join('\u0001');
 }
 
@@ -1483,6 +1485,8 @@ function readSignboardMapDeltaItems_() {
   if (!sheet) return [];
   let signLocCol = -1;
   try { signLocCol = findSignLocationColumnIndex_(sheet); } catch (e) { signLocCol = -1; }
+  let signParentCol = -1;
+  try { signParentCol = findSignParentColumnIndex_(sheet); } catch (e) { signParentCol = -1; }
   const data = sheet.getDataRange().getValues();
   const items = [];
   for (let i = 1; i < data.length; i++) {
@@ -1498,6 +1502,7 @@ function readSignboardMapDeltaItems_() {
       author: data[i][5] || '',
       location: signLocCol >= 0 ? (String(data[i][signLocCol] || '').trim() || '') : '',
       signFunction: data[i][7] || '一般看板',
+      parentSignId: signParentCol >= 0 ? String(data[i][signParentCol] || '').trim() : '',
       registeredAt: formatMapDeltaRegisteredAt_(data[i][4]),
       isMarker: true
     };
@@ -1628,7 +1633,7 @@ function deleteDeliveryDestination(params) {
   props.setProperty('DELIVERY_DESTINATIONS_JSON', JSON.stringify(list));
   return { success: true, list: list };
 }
-  
+
 
 
 
@@ -1945,7 +1950,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
       throw new Error('コンテナマスタの変更は管理者のみ可能です');
     }
   }
-  
+
   if (masterType === 'crop') sheetName = '作物マスタ';
   else if (masterType === 'tool') sheetName = '道具マスタ';
   else if (masterType === 'material') sheetName = '資材マスタ';
@@ -1962,39 +1967,39 @@ function manageMasterData(masterType, manageAction, value, userName) {
   else if (masterType === 'fertilizer') sheetName = '肥料マスタ';
   else if (masterType === 'nurseryLocation') sheetName = '育苗場所マスタ';
   else if (masterType === 'cropCultSetting') sheetName = '作物栽培設定マスタ';
-  
+
   let sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
-      if (masterType === 'workCategory') {
-          sheet = ss.insertSheet(sheetName);
-          sheet.appendRow(["カテゴリ名"]);
-      } else if (masterType === 'department' || masterType === 'dept') {
-          sheet = ensureDeptMasterSheet_();
-      } else if (masterType === 'contentUnit') {
-          sheet = ensureContentUnitMasterSheet_();
-      } else if (masterType === 'crop') {
-          sheet = ensureCropMasterSheet_();
-      } else if (masterType === 'container') {
-          sheet = ensureContainerMasterSheet_();
-      } else if (masterType === 'machineType') {
-          sheet = ensureMachineTypeMasterSheet_();
-      } else if (masterType === 'machineGroup') {
-          sheet = ensureMachineGroupMasterSheet_();
-      } else if (masterType === 'hitchType') {
-          sheet = ensureHitchTypeMasterSheet_();
-      } else if (masterType === 'location') {
-          sheet = ensureLocationMasterSheet_();
-      } else if (masterType === 'pesticide') {
-          sheet = ensurePesticideMasterSheet_();
-      } else if (masterType === 'fertilizer') {
-          sheet = ensureFertilizerMasterSheet_();
-      } else if (masterType === 'nurseryLocation') {
-          sheet = ensureNurseryLocationSheet_();
-      } else if (masterType === 'cropCultSetting') {
-          sheet = ensureCropCultSettingSheet_();
-      } else {
-          throw new Error(`${sheetName}が見つかりません`);
-      }
+    if (masterType === 'workCategory') {
+      sheet = ss.insertSheet(sheetName);
+      sheet.appendRow(["カテゴリ名"]);
+    } else if (masterType === 'department' || masterType === 'dept') {
+      sheet = ensureDeptMasterSheet_();
+    } else if (masterType === 'contentUnit') {
+      sheet = ensureContentUnitMasterSheet_();
+    } else if (masterType === 'crop') {
+      sheet = ensureCropMasterSheet_();
+    } else if (masterType === 'container') {
+      sheet = ensureContainerMasterSheet_();
+    } else if (masterType === 'machineType') {
+      sheet = ensureMachineTypeMasterSheet_();
+    } else if (masterType === 'machineGroup') {
+      sheet = ensureMachineGroupMasterSheet_();
+    } else if (masterType === 'hitchType') {
+      sheet = ensureHitchTypeMasterSheet_();
+    } else if (masterType === 'location') {
+      sheet = ensureLocationMasterSheet_();
+    } else if (masterType === 'pesticide') {
+      sheet = ensurePesticideMasterSheet_();
+    } else if (masterType === 'fertilizer') {
+      sheet = ensureFertilizerMasterSheet_();
+    } else if (masterType === 'nurseryLocation') {
+      sheet = ensureNurseryLocationSheet_();
+    } else if (masterType === 'cropCultSetting') {
+      sheet = ensureCropCultSettingSheet_();
+    } else {
+      throw new Error(`${sheetName}が見つかりません`);
+    }
   }
 
   if (masterType === 'crop') {
@@ -2033,9 +2038,9 @@ function manageMasterData(masterType, manageAction, value, userName) {
 
   // 作業マスタの追加/編集/統合/削除/存在確認は専用高速パス（全件返却・flush・重複読込を避ける）
   if (masterType === 'work'
-      && (manageAction === 'add' || manageAction === 'edit'
-          || manageAction === 'merge' || manageAction === 'delete'
-          || manageAction === 'exists')) {
+    && (manageAction === 'add' || manageAction === 'edit'
+      || manageAction === 'merge' || manageAction === 'delete'
+      || manageAction === 'exists')) {
     return mutateWorkMasterFast_(sheet, manageAction, value, userName);
   }
 
@@ -2068,10 +2073,10 @@ function manageMasterData(masterType, manageAction, value, userName) {
       sheet.appendRow([cropName, density, '', tagAbbreviation, icon]);
       syncCropNameInSeikuMaster_('', cropName, density); // 新規を生育記録マスタにも反映
     } else if (masterType === 'tool') {
-      const newId = "TOOL-" + Utilities.getUuid().substring(0,6);
+      const newId = "TOOL-" + Utilities.getUuid().substring(0, 6);
       sheet.appendRow([newId, value.name, "", value.workCategory, "", "", "", "", "", "所有", userName]);
     } else if (masterType === 'material') {
-      const newId = "MAT-" + Utilities.getUuid().substring(0,6);
+      const newId = "MAT-" + Utilities.getUuid().substring(0, 6);
       sheet.appendRow([newId, value.name, value.workCategory, value.size, value.unit, "", "", "", "", "", "", userName]);
     } else if (masterType === 'work') {
       const workHeaders = ensureWorkMasterHeaders_(sheet);
@@ -2143,7 +2148,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
       // 一括: plots:[{name,direction}] または names:['区画1','区画2']
       let plotItems = [];
       if (Array.isArray(loc.plots) && loc.plots.length) {
-        plotItems = loc.plots.map(function(p) {
+        plotItems = loc.plots.map(function (p) {
           if (typeof p === 'string') return { name: String(p || '').trim(), direction: commonDir, note: commonNote, polyId: polyId };
           return {
             name: String((p && (p.name || p.plotName)) || '').trim(),
@@ -2151,11 +2156,11 @@ function manageMasterData(masterType, manageAction, value, userName) {
             note: String((p && p.note) || commonNote).trim(),
             polyId: String((p && p.polyId) || polyId || '').trim()
           };
-        }).filter(function(p) { return !!p.name; });
+        }).filter(function (p) { return !!p.name; });
       } else if (Array.isArray(loc.names) && loc.names.length) {
-        plotItems = loc.names.map(function(n) {
+        plotItems = loc.names.map(function (n) {
           return { name: String(n || '').trim(), direction: commonDir, note: commonNote };
-        }).filter(function(p) { return !!p.name; });
+        }).filter(function (p) { return !!p.name; });
       } else {
         const name = String(loc.name || '').trim();
         if (name) plotItems = [{ name: name, direction: commonDir, note: commonNote }];
@@ -2165,7 +2170,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
       const mapLng = (loc.mapLng === '' || loc.mapLng == null) ? '' : loc.mapLng;
       const mapZoom = (loc.mapZoom === '' || loc.mapZoom == null) ? '' : loc.mapZoom;
       const addedNames = [];
-      plotItems.forEach(function(p) {
+      plotItems.forEach(function (p) {
         const newId = 'NUR-' + Utilities.getUuid().substring(0, 8);
         const rowPolyId = String(p.polyId || polyId || '').trim();
         sheet.appendRow([newId, p.name, rowPolyId, polyName, p.direction || '', p.note || '', locationName, mapLat, mapLng, mapZoom]);
@@ -2186,7 +2191,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
     if (masterType !== 'location' && masterType !== 'container' && masterType !== 'pesticide' && masterType !== 'fertilizer' && masterType !== 'nurseryLocation' && masterType !== 'cropCultSetting') {
       writeLog(userName, "マスタ追加", (value && value.name) || value, `対象: ${sheetName}`);
     }
-  } 
+  }
   else if (manageAction === 'edit') {
     const data = sheet.getDataRange().getValues();
     if (masterType === 'work') {
@@ -2582,12 +2587,12 @@ function manageMasterData(masterType, manageAction, value, userName) {
       }
       if (!found) throw new Error('対象の道具が見つかりません');
     }
-  } 
+  }
   else if (manageAction === 'delete') {
     const data = sheet.getDataRange().getValues();
     const targetVal = value.id || value.name || value;
     const targetCrop = (typeof value === 'object' && value) ? String(value.crop || '').trim() : '';
-    
+
     let keyIdx = masterType === 'work' ? headers.indexOf('作業名') : 0;
     let deleted = false;
 
@@ -2615,11 +2620,11 @@ function manageMasterData(masterType, manageAction, value, userName) {
       const plotName = String(val.plotName || val.name || '').trim();
       const direction = String(val.direction || '').trim();
       const plotNames = Array.isArray(val.plotNames)
-        ? val.plotNames.map(function(n) { return String(n || '').trim(); }).filter(Boolean)
+        ? val.plotNames.map(function (n) { return String(n || '').trim(); }).filter(Boolean)
         : [];
       const plotNameSet = {};
       if (plotNames.length) {
-        plotNames.forEach(function(n) { plotNameSet[n] = true; });
+        plotNames.forEach(function (n) { plotNameSet[n] = true; });
       } else if (plotName) {
         plotNameSet[plotName] = true;
       }
@@ -2648,7 +2653,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
         if (match) rowsToDelete.push(i + 1);
       }
       if (!rowsToDelete.length) throw new Error('削除対象の育苗場所が見つかりません');
-      rowsToDelete.sort(function(a, b) { return b - a; }).forEach(function(rowNum) {
+      rowsToDelete.sort(function (a, b) { return b - a; }).forEach(function (rowNum) {
         sheet.deleteRow(rowNum);
       });
       deleted = true;
@@ -2665,21 +2670,21 @@ function manageMasterData(masterType, manageAction, value, userName) {
     } else if (masterType !== 'work') for (let i = 1; i < data.length; i++) {
       let match = false;
       if (masterType === 'container') {
-          const rowName = String(data[i][0] || '').trim();
-          const rowCrop = String(data[i][1] || '').trim();
-          if (rowName === String(targetVal || '').trim() && (!targetCrop || rowCrop === targetCrop)) match = true;
+        const rowName = String(data[i][0] || '').trim();
+        const rowCrop = String(data[i][1] || '').trim();
+        if (rowName === String(targetVal || '').trim() && (!targetCrop || rowCrop === targetCrop)) match = true;
       } else if (masterType === 'pesticide') {
-          if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
+        if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'fertilizer') {
-          if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
+        if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'cropCultSetting') {
-          if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
+        if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'location' || masterType === 'workCategory' || masterType === 'contentUnit' || masterType === 'machineType' || masterType === 'machineGroup' || masterType === 'hitchType') {
-          if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
+        if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'crop') {
-          if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
+        if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else {
-          if (data[i][0] === targetVal || data[i][1] === targetVal) match = true;
+        if (data[i][0] === targetVal || data[i][1] === targetVal) match = true;
       }
 
       if (match) {
@@ -2740,7 +2745,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
   } else if (masterType === 'material') {
     return newData.slice(1).filter(r => r[1]).map(r => ({ id: r[0], name: r[1], workCategory: r[2] || "", unit: r[4] || "" }));
   } else {
-    return newData.slice(1).map(r=>r[0]).filter(String);
+    return newData.slice(1).map(r => r[0]).filter(String);
   }
 }
 
@@ -2872,7 +2877,7 @@ function mutateWorkMasterFast_(sheet, manageAction, value, userName) {
 
     throw new Error('未知の作業マスタ操作です: ' + manageAction);
   } finally {
-    try { lock.releaseLock(); } catch (eUnlock) {}
+    try { lock.releaseLock(); } catch (eUnlock) { }
   }
 }
 
@@ -2987,7 +2992,8 @@ function mergeWorkMasterObjects_(keepObj, origObj, incoming, originalName) {
     showPesticide: orWorkMasterFlag_(keepObj.showPesticide, origObj && origObj.showPesticide, incoming.showPesticide),
     showField: orWorkMasterFlag_(keepObj.showField, origObj && origObj.showField, incoming.showField),
     showFuel: orWorkMasterFlag_(keepObj.showFuel, origObj && origObj.showFuel, incoming.showFuel),
-    showRidgePolygon: orWorkMasterFlag_(keepObj.showRidgePolygon, origObj && origObj.showRidgePolygon, incoming.showRidgePolygon)
+    showRidgePolygon: orWorkMasterFlag_(keepObj.showRidgePolygon, origObj && origObj.showRidgePolygon, incoming.showRidgePolygon),
+    showMaintenance: orWorkMasterFlag_(keepObj.showMaintenance, origObj && origObj.showMaintenance, incoming.showMaintenance)
   };
 }
 
@@ -3022,7 +3028,8 @@ function workMasterObjectFromRow_(headers, row) {
     showPesticide: uiFlags.showPesticide,
     showField: uiFlags.showField,
     showFuel: uiFlags.showFuel,
-    showRidgePolygon: uiFlags.showRidgePolygon
+    showRidgePolygon: uiFlags.showRidgePolygon,
+    showMaintenance: uiFlags.showMaintenance
   };
 }
 
@@ -3073,7 +3080,8 @@ const WORK_UI_FLAG_HEADERS_ = {
   showPesticide: ['使用薬剤を出す', '薬剤を出す', '農薬を出す'],
   showField: ['圃場選択を出す', '圃場を出す'],
   showFuel: ['給油マスタを出す', '給油を出す'],
-  showRidgePolygon: ['畝ポリゴン登録を出す', '畝ポリゴンを出す']
+  showRidgePolygon: ['畝ポリゴン登録を出す', '畝ポリゴンを出す'],
+  showMaintenance: ['整備UIを出す', '整備・修理を出す', '整備を出す']
 };
 
 function findHeaderIndexByNames_(headers, names) {
@@ -3104,7 +3112,7 @@ function formatWorkUiFlagValue_(v) {
 }
 
 function readWorkMasterUiFlagsFromRow_(headers, row) {
-  const out = { showMachine: null, showMaterial: null, showPesticide: null, showField: null, showFuel: null, showRidgePolygon: null };
+  const out = { showMachine: null, showMaterial: null, showPesticide: null, showField: null, showFuel: null, showRidgePolygon: null, showMaintenance: null };
   Object.keys(WORK_UI_FLAG_HEADERS_).forEach(function (k) {
     const idx = findHeaderIndexByNames_(headers, WORK_UI_FLAG_HEADERS_[k]);
     out[k] = idx >= 0 ? parseWorkUiFlagValue_(row[idx]) : null;
@@ -3115,7 +3123,7 @@ function readWorkMasterUiFlagsFromRow_(headers, row) {
 /** 作業マスタ必須ヘッダーを保証（欠けていれば末尾に追加） */
 function ensureWorkMasterHeaders_(sheet, opts) {
   opts = opts || {};
-  const required = ['作業名', 'カテゴリ', '作物名', '詳細作業名', '作物別詳細作業', '類似作業名', '使用農機を出す', '使用資材を出す', '使用薬剤を出す', '圃場選択を出す', '給油マスタを出す', '畝ポリゴン登録を出す'];
+  const required = ['作業名', 'カテゴリ', '作物名', '詳細作業名', '作物別詳細作業', '類似作業名', '使用農機を出す', '使用資材を出す', '使用薬剤を出す', '圃場選択を出す', '給油マスタを出す', '畝ポリゴン登録を出す', '整備UIを出す'];
   let lastCol = Math.max(sheet.getLastColumn(), 1);
   let headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
   let changed = false;
@@ -3217,7 +3225,7 @@ function readWorkMasterList_(sheet) {
     if (idxCropDetails >= 0 && r[idxCropDetails]) {
       try {
         cropDetails = JSON.parse(r[idxCropDetails]);
-      } catch(e) {
+      } catch (e) {
         cropDetails = null;
       }
     }
@@ -3236,7 +3244,8 @@ function readWorkMasterList_(sheet) {
       showPesticide: uiFlags.showPesticide,
       showField: uiFlags.showField,
       showFuel: uiFlags.showFuel,
-      showRidgePolygon: uiFlags.showRidgePolygon
+      showRidgePolygon: uiFlags.showRidgePolygon,
+      showMaintenance: uiFlags.showMaintenance
     };
   });
 }
@@ -3319,7 +3328,10 @@ function buildWorkMasterColumnMap_(value) {
     '給油マスタを出す': Object.prototype.hasOwnProperty.call(value || {}, 'showFuel') ? formatWorkUiFlagValue_(value.showFuel) : undefined,
     '給油を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showFuel') ? formatWorkUiFlagValue_(value.showFuel) : undefined,
     '畝ポリゴン登録を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showRidgePolygon') ? formatWorkUiFlagValue_(value.showRidgePolygon) : undefined,
-    '畝ポリゴンを出す': Object.prototype.hasOwnProperty.call(value || {}, 'showRidgePolygon') ? formatWorkUiFlagValue_(value.showRidgePolygon) : undefined
+    '畝ポリゴンを出す': Object.prototype.hasOwnProperty.call(value || {}, 'showRidgePolygon') ? formatWorkUiFlagValue_(value.showRidgePolygon) : undefined,
+    '整備UIを出す': Object.prototype.hasOwnProperty.call(value || {}, 'showMaintenance') ? formatWorkUiFlagValue_(value.showMaintenance) : undefined,
+    '整備・修理を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showMaintenance') ? formatWorkUiFlagValue_(value.showMaintenance) : undefined,
+    '整備を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showMaintenance') ? formatWorkUiFlagValue_(value.showMaintenance) : undefined
   };
 }
 // ==========================================
@@ -3328,13 +3340,13 @@ function buildWorkMasterColumnMap_(value) {
 function saveReportData(polyId, nameStr, author, reportText, photosBase64) {
   let urls = [];
   if (photosBase64 && photosBase64.length > 0) {
-    const folders = DriveApp.getFoldersByName("圃場写真"); 
+    const folders = DriveApp.getFoldersByName("圃場写真");
     const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("圃場写真");
     for (let i = 0; i < photosBase64.length; i++) {
       const s = photosBase64[i].base64.split(',');
-      const type = s[0].split(';')[0].replace('data:','');
+      const type = s[0].split(';')[0].replace('data:', '');
       const file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(s[1]), type, photosBase64[i].filename));
-      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); 
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
       urls.push("https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w800");
     }
   }
@@ -3345,7 +3357,7 @@ function saveReportData(polyId, nameStr, author, reportText, photosBase64) {
 
   const today = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
   const workName = "⚠️問題対応: " + reportText;
-  
+
   // A:作業名, B:担当部署(運営), C:作物名(空), D:圃場名, E:予定日, F:期限日, G:時間(空), H:適合者, I:完了日(空), J:写真URL, K:場所ID
   schedSheet.appendRow([workName, "運営", "", nameStr, today, today, "", author, "", urls.join(" , "), polyId]);
 
@@ -3366,7 +3378,7 @@ function addFieldStatusToMaster(statusName) {
     }
   }
   let emptyRow = 2;
-  while (emptyRow <= data.length && (data[emptyRow-1] && data[emptyRow-1][2])) emptyRow++;
+  while (emptyRow <= data.length && (data[emptyRow - 1] && data[emptyRow - 1][2])) emptyRow++;
   sheet.getRange(emptyRow, 3).setValue(name);
   return name;
 }
@@ -3518,7 +3530,7 @@ function getClimateMasterList_() {
         if (n && list.indexOf(n) < 0) list.push(n);
       });
     });
-  } catch (e) {}
+  } catch (e) { }
   return list;
 }
 
@@ -3699,7 +3711,7 @@ function readCropTagAbbreviationMap_() {
 
 function normalizeTagAbbreviation_(s) {
   let t = String(s || '').trim();
-  try { t = t.normalize('NFKC'); } catch (e) {}
+  try { t = t.normalize('NFKC'); } catch (e) { }
   return t.toLowerCase();
 }
 
@@ -3740,7 +3752,7 @@ function readMergedCropMasterList_() {
   let cropSheetTagMap = {};
   try {
     cropSheetTagMap = readCropTagAbbreviationMap_();
-  } catch (e) {}
+  } catch (e) { }
   for (let sheetName of ['作物マスタ', '生育記録マスタ']) {
     const sh = ss.getSheetByName(sheetName);
     if (!sh) continue;
@@ -3816,7 +3828,7 @@ function getContentUnitMasterList_(containersOpt) {
       const u = String((c && c.contentUnit) || '').trim();
       if (u) list.push(u);
     });
-  } catch (e2) {}
+  } catch (e2) { }
   list = Array.from(new Set(list));
   if (!list.length) list = ['kg', 'g', '本', 'パック', '個', '束'];
   return list;
@@ -4484,8 +4496,8 @@ function searchFertilizerCatalog(params) {
     const item = readFertilizerCatalogRow_(data[i]);
     if (!item.name) continue;
     if (q && String(item.name).toLowerCase().indexOf(q) < 0
-        && String(item.fertilizerType).toLowerCase().indexOf(q) < 0
-        && String(item.regNumber).toLowerCase().indexOf(q) < 0) continue;
+      && String(item.fertilizerType).toLowerCase().indexOf(q) < 0
+      && String(item.regNumber).toLowerCase().indexOf(q) < 0) continue;
     if (maker && String(item.manufacturer).toLowerCase().indexOf(maker) < 0) continue;
     items.push(item);
     if (items.length >= limit) break;
@@ -4573,7 +4585,7 @@ function importPesticideCatalogChunk(params) {
       const cache = CacheService.getScriptCache();
       cache.remove('pestNameIdxStamp');
       cache.remove('pestAppSpanStamp');
-    } catch (e) {}
+    } catch (e) { }
   }
   const values = [];
   rows.forEach(raw => {
@@ -5093,14 +5105,14 @@ function calcCropCost(params) {
   const masterMap = {};
   masterList.forEach(m => { masterMap[m.id] = m; });
 
-  const scaleOf = function(base) {
+  const scaleOf = function (base) {
     if (base === 'area_a') return areaA;
     if (base === 'tray') return trays;
     if (base === 'plant') return plants;
     if (base === 'yield_pack') return yieldPack;
     return 1;
   };
-  const baseLabel = function(base) {
+  const baseLabel = function (base) {
     if (base === 'area_a') return 'aあたり';
     if (base === 'tray') return 'トレーあたり';
     if (base === 'plant') return '本あたり';
@@ -5152,12 +5164,12 @@ function calcCropCost(params) {
     sellPricePerPack: (plan.sellPricePerPack === '' || plan.sellPricePerPack == null)
       ? ''
       : Number(plan.sellPricePerPack),
-    totalRevenue: (function() {
+    totalRevenue: (function () {
       const sp = Number(plan.sellPricePerPack);
       if (!yieldPack || isNaN(sp) || sp === '') return null;
       return Math.round(yieldPack * sp);
     })(),
-    profit: (function() {
+    profit: (function () {
       const sp = Number(plan.sellPricePerPack);
       if (!yieldPack || isNaN(sp) || plan.sellPricePerPack === '' || plan.sellPricePerPack == null) return null;
       return Math.round(yieldPack * sp - total);
@@ -5197,7 +5209,7 @@ function normalizeCropWorkTrigger_(raw) {
 }
 
 function cropWorkNeedsWeather_(entries) {
-  return (entries || []).some(function(e) {
+  return (entries || []).some(function (e) {
     const t = normalizeCropWorkTrigger_(e);
     if (t === 'gdd' || t === 'sun' || t === 'rain') return true;
     const cancelMm = Number(e && e.rainCancelMm);
@@ -5273,7 +5285,7 @@ function resolveFarmLatLng_(fieldIds, latHint, lngHint) {
   try {
     const polygons = getSavedPolygons() || [];
     const idSet = {};
-    (fieldIds || []).forEach(function(id) {
+    (fieldIds || []).forEach(function (id) {
       const s = String(id || '').trim();
       if (!s) return;
       idSet[s] = true;
@@ -5310,7 +5322,7 @@ function resolveFarmLatLng_(fieldIds, latHint, lngHint) {
       const c = centroidOf_(p);
       if (c) return c;
     }
-  } catch (e) {}
+  } catch (e) { }
   if (hintOk) return { lat: hintLat, lng: hintLng };
   return { lat: DEFAULT_FARM_LATLNG_.lat, lng: DEFAULT_FARM_LATLNG_.lng };
 }
@@ -5347,7 +5359,7 @@ function parseOpenMeteoDailyTemps_(json) {
 function fetchOpenMeteoWeatherMaps_(lat, lng, ranges) {
   const out = [];
   if (!ranges || !ranges.length) return out;
-  const reqs = ranges.map(function(r) {
+  const reqs = ranges.map(function (r) {
     const base = r.archive
       ? 'https://archive-api.open-meteo.com/v1/archive'
       : 'https://api.open-meteo.com/v1/forecast';
@@ -5373,7 +5385,7 @@ function fetchOpenMeteoWeatherMaps_(lat, lng, ranges) {
       if (resps[i].getResponseCode() === 200) {
         item.map = parseOpenMeteoDailyWeather_(JSON.parse(resps[i].getContentText()));
       }
-    } catch (e2) {}
+    } catch (e2) { }
     out.push(item);
   }
   return out;
@@ -5412,8 +5424,8 @@ function buildCropWorkWeatherRanges_(plantYmd, horizonYmd, todayYmd) {
 
 function mergeOpenMeteoWeatherMaps_(fetchResults) {
   const weather = {};
-  (fetchResults || []).forEach(function(item) {
-    Object.keys(item.map || {}).forEach(function(ymd) {
+  (fetchResults || []).forEach(function (item) {
+    Object.keys(item.map || {}).forEach(function (ymd) {
       const key = item.kind === 'clim' ? ymdShiftYear_(ymd, 1) : ymd;
       const src = item.kind;
       const row = item.map[ymd] || {};
@@ -5444,13 +5456,13 @@ function loadCropWorkWeatherSeries_(lat, lng, plantDate) {
   try {
     const cached = CacheService.getScriptCache().get(cacheKey);
     if (cached) return JSON.parse(cached);
-  } catch (e) {}
+  } catch (e) { }
 
   const ranges = buildCropWorkWeatherRanges_(plantYmd, horizonYmd, todayYmd);
   const weather = mergeOpenMeteoWeatherMaps_(fetchOpenMeteoWeatherMaps_(lat, lng, ranges));
   try {
     CacheService.getScriptCache().put(cacheKey, JSON.stringify(weather), 21600);
-  } catch (e) {}
+  } catch (e) { }
   return weather;
 }
 
@@ -5815,7 +5827,7 @@ function normalizeCropWorkPlanPayload_(cropName, entries, userName) {
       note: String(raw.note || '').trim()
     });
   });
-  normalized.sort(function(a, b) {
+  normalized.sort(function (a, b) {
     const wa = resolveCropWorkWindow_(a, new Date(2000, 0, 1), { skipWeather: true });
     const wb = resolveCropWorkWindow_(b, new Date(2000, 0, 1), { skipWeather: true });
     return wa.start - wb.start || a.workName.localeCompare(b.workName, 'ja');
@@ -5997,11 +6009,11 @@ function previewCropWorkSchedule(params) {
   const loc = resolveFarmLatLng_(params && params.fieldIds, params && params.lat, params && params.lng);
   const needsWeather = cropWorkNeedsWeather_(entries);
   const plantForWeather = plantingCells.length
-    ? (function() {
-        const parts = plantingCells.map(c => cpCellToDateParts(year, c));
-        parts.sort((a, b) => a.start - b.start);
-        return parts[0].start;
-      })()
+    ? (function () {
+      const parts = plantingCells.map(c => cpCellToDateParts(year, c));
+      parts.sort((a, b) => a.start - b.start);
+      return parts[0].start;
+    })()
     : new Date();
   let weather = null;
   if (needsWeather) {
@@ -6059,7 +6071,7 @@ function previewCropWorkSchedule(params) {
 function foldCatalogText_(s) {
   let t = String(s || '').replace(/\u3000/g, ' ');
   // 全角英数と半角カナをそろえる。ダコニール と ﾀﾞｺﾆｰﾙ を同じ文字として扱う。
-  try { if (t.normalize) t = t.normalize('NFKC'); } catch (e) {}
+  try { if (t.normalize) t = t.normalize('NFKC'); } catch (e) { }
   return t.replace(/[！-～]/g, function (ch) {
     return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
   }).trim().toLowerCase();
@@ -6312,7 +6324,7 @@ function cachePutChunked_(cache, prefix, stamp, value) {
     }
     put[prefix + 'N'] = String(n);
     cache.putAll(put, 21600);
-  } catch (e) {}
+  } catch (e) { }
 }
 
 function cacheGetChunked_(cache, prefix, stamp) {
@@ -6433,7 +6445,7 @@ function loadPesticideNameIndex_(sheet) {
         json += got[keys[i]];
       }
       if (ok) {
-        try { return JSON.parse(json); } catch (e) {}
+        try { return JSON.parse(json); } catch (e) { }
       }
     }
   }
@@ -6472,7 +6484,7 @@ function loadPesticideNameIndex_(sheet) {
       put.pestNameIdxN = String(n);
       cache.putAll(put, 21600);
       cachePutChunked_(cache, 'pestAppSpan', stamp, buildPesticideAppSpans_(names, regs));
-    } catch (e) {}
+    } catch (e) { }
   }
   return list;
 }
@@ -6608,7 +6620,7 @@ function getPesticideApplicationTable(params) {
   try {
     const cached = CacheService.getScriptCache().get(cacheKey);
     if (cached) return JSON.parse(cached);
-  } catch (e) {}
+  } catch (e) { }
   if (last <= 1) {
     return {
       success: true,
@@ -6670,7 +6682,7 @@ function getPesticideApplicationTable(params) {
   try {
     const packed = JSON.stringify(result);
     if (packed.length < 90000) CacheService.getScriptCache().put(cacheKey, packed, 21600);
-  } catch (e) {}
+  } catch (e) { }
   return result;
 }
 
@@ -6812,7 +6824,7 @@ function getToukiDetails(idsStr) {
 
 function saveToukiData(data, hojoId) {
   const sheet = TENANT_SS.getSheetByName('登記');
-  const id = "T-" + Utilities.formatDate(new Date(), "GMT", "mmss") + Math.floor(Math.random()*100);
+  const id = "T-" + Utilities.formatDate(new Date(), "GMT", "mmss") + Math.floor(Math.random() * 100);
   sheet.appendRow([id, "", data.address, data.area, data.owner, data.type]);
   if (hojoId) {
     const found = findSheetAndRowById(hojoId);
@@ -6864,7 +6876,7 @@ function ensureFieldSoilTypeHeader_(sheet) {
   try {
     const header = String(sheet.getRange(1, 21).getValue() || '').trim();
     if (!header) sheet.getRange(1, 21).setValue('土質');
-  } catch (e) {}
+  } catch (e) { }
 }
 
 /** 初期読込用に圃場履歴を間引く（通信失敗・タイムアウト対策） */
@@ -6930,7 +6942,7 @@ function getSavedPolygons(options) {
   const opts = options || {};
   const slimForInit = !!opts.slimForInit;
   const photoLimit = (typeof opts.photoLimit === 'number') ? opts.photoLimit : 40;
-  
+
   // 圃場シート
   const fieldSheet = ss.getSheetByName('圃場');
   if (fieldSheet) {
@@ -6939,7 +6951,7 @@ function getSavedPolygons(options) {
       if (!data[i][0]) continue;
       try {
         let photos = [];
-        try { if (data[i][9]) photos = JSON.parse(data[i][9]); } catch(e){}
+        try { if (data[i][9]) photos = JSON.parse(data[i][9]); } catch (e) { }
         if (slimForInit) photos = trimPolygonPhotosForInit_(photos, photoLimit);
         let coords = [];
         try { coords = JSON.parse(data[i][5] || "[]"); } catch (e) {
@@ -6947,7 +6959,7 @@ function getSavedPolygons(options) {
           continue;
         }
         if (!Array.isArray(coords)) coords = [];
-        
+
         result.push({
           id: data[i][0],
           name: data[i][1],
@@ -6978,7 +6990,7 @@ function getSavedPolygons(options) {
                 if (count > 0 || (obj && Array.isArray(obj.pins) && obj.pins.length > 0)) {
                   return JSON.stringify({ uneCount: count, fp: fp, _slim: true });
                 }
-              } catch (e) {}
+              } catch (e) { }
               return '';
             }
             return raw;
@@ -6988,9 +7000,9 @@ function getSavedPolygons(options) {
           soilType: data[i][20] || '' // U列: 土質（粘土質・砂質・壌質）
         });
         let manureData = {};
-        try { if (data[i][17]) manureData = JSON.parse(data[i][17]); } catch(e){}
+        try { if (data[i][17]) manureData = JSON.parse(data[i][17]); } catch (e) { }
         manureData = migrateManureDataObject_(manureData);
-        
+
         result[result.length - 1].manure_status = manureData.manure_status || 'none';
         result[result.length - 1].manure_deadline = manureData.manure_deadline || '';
         result[result.length - 1].manure_scheduled_date = manureData.manure_scheduled_date || '';
@@ -7013,7 +7025,7 @@ function getSavedPolygons(options) {
       }
     }
   }
-  
+
   // 看板シート
   const signSheet = ss.getSheetByName('看板');
   if (signSheet) {
@@ -7024,6 +7036,8 @@ function getSavedPolygons(options) {
         ? findSignLocationColumnIndex_(signSheet)
         : ensureSignLocationColumn_(signSheet);
     } catch (e) { signLocCol = -1; }
+    let signParentCol = -1;
+    try { signParentCol = findSignParentColumnIndex_(signSheet); } catch (e) { signParentCol = -1; }
     const data = signSheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       if (!data[i][0]) continue;
@@ -7032,7 +7046,7 @@ function getSavedPolygons(options) {
         try {
           if (data[i][9] && data[i][9] !== "[]") photos = JSON.parse(data[i][9]);
           else if (data[i][6] && data[i][6] !== "[]") photos = JSON.parse(data[i][6]);
-        } catch(e){}
+        } catch (e) { }
         if (slimForInit) photos = trimPolygonPhotosForInit_(photos, photoLimit);
         let coords = [];
         try { coords = JSON.parse(data[i][2] || "[]"); } catch (e) {
@@ -7040,7 +7054,7 @@ function getSavedPolygons(options) {
           continue;
         }
         if (!Array.isArray(coords)) coords = [];
-        
+
         result.push({
           id: data[i][0],
           name: data[i][1],
@@ -7049,6 +7063,7 @@ function getSavedPolygons(options) {
           author: data[i][5],
           location: signLocCol >= 0 ? (String(data[i][signLocCol] || '').trim() || '') : '',
           signFunction: data[i][7] || "一般看板", // ★ここが超重要！H列（看板機能）をアプリに送る！
+          parentSignId: signParentCol >= 0 ? String(data[i][signParentCol] || '').trim() : '',
           photos: photos,
           uneSimData: (function () {
             const raw = data[i][10];
@@ -7064,7 +7079,7 @@ function getSavedPolygons(options) {
                 if (count > 0 || (obj && Array.isArray(obj.pins) && obj.pins.length > 0)) {
                   return JSON.stringify({ uneCount: count, fp: fp, _slim: true });
                 }
-              } catch (e) {}
+              } catch (e) { }
               return '';
             }
             return raw;
@@ -7075,7 +7090,7 @@ function getSavedPolygons(options) {
       }
     }
   }
-  
+
   return result;
 }
 // ==========================================
@@ -7085,15 +7100,15 @@ function savePolygonsBatch(paramsList) {
   const ss = TENANT_SS;
   const sheet = ss.getSheetByName('圃場');
   const now = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm");
-  
+
   let rowsToAppend = [];
   let insertedIds = [];
-  
+
   for (let i = 0; i < paramsList.length; i++) {
     const params = paramsList[i];
     const newId = Utilities.getUuid();
     insertedIds.push(newId);
-    
+
     rowsToAppend.push([
       newId,
       params.name || "",         // B列: 圃場の名前
@@ -7113,11 +7128,11 @@ function savePolygonsBatch(paramsList) {
     ]);
   }
   ensureFieldSoilTypeHeader_(sheet);
-  
+
   if (rowsToAppend.length > 0) {
     sheet.getRange(sheet.getLastRow() + 1, 1, rowsToAppend.length, rowsToAppend[0].length).setValues(rowsToAppend);
   }
-  
+
   return insertedIds;
 }
 
@@ -7142,7 +7157,7 @@ function rememberSavedPolygonClientTemp_(tempId, newId) {
   if (!key || !newId) return;
   try {
     CacheService.getScriptCache().put(key, String(newId), 21600);
-  } catch (e) {}
+  } catch (e) { }
 }
 
 function savePolygon(params) {
@@ -7160,10 +7175,10 @@ function savePolygon(params) {
   const sheetName = isMarker ? '看板' : '圃場';
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) throw new Error('「' + sheetName + '」シートが見つかりません');
-  
+
   const newId = Utilities.getUuid();
   const now = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm");
-  
+
   if (isMarker) {
     // 【看板シートの列構成】
     // A:ID, B:名前, C:座標, D:色/アイコン, E:登録日時, F:登録者, G:空白, H:看板機能, J:履歴, K:畝シミュレーションデータ, L〜:所属拠点
@@ -7175,7 +7190,7 @@ function savePolygon(params) {
       params.color || "",
       now,
       params.userName || "",
-      "", 
+      "",
       params.signFunction || "機能なし",
       "", // I列
       "[]", // J列
@@ -7183,6 +7198,12 @@ function savePolygon(params) {
     ];
     while (row.length <= locCol) row.push("");
     row[locCol] = params.location || "";
+    const newParentId = String(params.parentSignId || '').trim();
+    if (newParentId) {
+      const parentCol = ensureSignParentColumn_(sheet);
+      while (row.length <= parentCol) row.push("");
+      row[parentCol] = newParentId;
+    }
     sheet.appendRow(row);
   } else {
     // 【圃場シートの列構成（画像に合わせて完全に修正）】
@@ -7212,7 +7233,7 @@ function savePolygon(params) {
       params.soilType || ""      // U列: 土質（粘土質・砂質・壌質）
     ]);
   }
-  
+
   writeLog(params.userName, "図形登録", params.name, `対象: ${sheetName}`);
   rememberSavedPolygonClientTemp_(params && params.clientTempId, newId);
   return newId;
@@ -7226,15 +7247,15 @@ function savePolygonBatch(params) {
     try {
       const hit = CacheService.getScriptCache().get(batchKey);
       if (hit) return JSON.parse(hit);
-    } catch (e) {}
+    } catch (e) { }
   }
   const sheet = ss.getSheetByName('圃場');
   if (!sheet) throw new Error('「圃場」シートが見つかりません');
   const now = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm");
   const newIds = [];
-  
+
   if (!params.polygons || params.polygons.length === 0) return [];
-  
+
   ensureFieldSoilTypeHeader_(sheet);
   const rows = params.polygons.map(p => {
     const newId = Utilities.getUuid();
@@ -7260,14 +7281,14 @@ function savePolygonBatch(params) {
       p.soilType || ""
     ];
   });
-  
+
   if (rows.length > 0) {
     sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
   }
-  
+
   writeLog(params.polygons[0].userName, "図形登録(一括)", `${params.polygons.length}件の圃場`, `対象: 圃場`);
   if (batchKey) {
-    try { CacheService.getScriptCache().put(batchKey, JSON.stringify(newIds), 21600); } catch (e) {}
+    try { CacheService.getScriptCache().put(batchKey, JSON.stringify(newIds), 21600); } catch (e) { }
   }
   return newIds;
 }
@@ -7279,7 +7300,7 @@ function updatePolygon(params) {
   const ss = TENANT_SS;
   const id = params.id;
   const userName = params.userName || "システム";
-  
+
   // ID列だけ見て行を決める。座標ごと全シートを読むと更新が遅くなる
   const foundRow = findSheetAndRowById(id);
   if (!foundRow) throw new Error("対象データが見つかりません");
@@ -7291,27 +7312,27 @@ function updatePolygon(params) {
 
   // 今の（変更前の）名前を取得（看板も圃場もB列[インデックス1]）
   const oldName = data[targetRow - 1][1];
-  
+
   // 更新する項目があれば上書き、なければ元のまま
   const newName = params.name !== undefined ? params.name : oldName;
-  const coords = params.coords !== undefined ? params.coords : data[targetRow-1][isSignboard ? 2 : 5]; 
-  const color = params.color !== undefined ? params.color : data[targetRow-1][isSignboard ? 3 : 6];
+  const coords = params.coords !== undefined ? params.coords : data[targetRow - 1][isSignboard ? 2 : 5];
+  const color = params.color !== undefined ? params.color : data[targetRow - 1][isSignboard ? 3 : 6];
 
   let newPhotos = [];
   const historyCol = 10; // どちらもJ列(インデックス9)が履歴
 
   if (data[targetRow - 1][historyCol - 1]) {
-    try { newPhotos = JSON.parse(data[targetRow - 1][historyCol - 1]); } catch(e) { newPhotos = []; }
+    try { newPhotos = JSON.parse(data[targetRow - 1][historyCol - 1]); } catch (e) { newPhotos = []; }
   }
 
   // 名前が変更された場合、その事実を履歴に自動保存
   if (params.name !== undefined && oldName !== newName) {
     const dateStr = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
     const timeStr = Utilities.formatDate(new Date(), "JST", "HH:mm");
-    
+
     const historyRecord = {
       id: Utilities.getUuid(),
-      type: "work", 
+      type: "work",
       date: dateStr,
       time: timeStr,
       author: "システム自動記録",
@@ -7338,6 +7359,15 @@ function updatePolygon(params) {
       const locCol = ensureSignLocationColumn_(sheet);
       sheet.getRange(targetRow, locCol + 1).setValue(params.location || '');
     }
+    if (params.parentSignId !== undefined) {
+      // 大看板・小看板：自分自身は親にしない
+      let parentId = String(params.parentSignId || '').trim();
+      if (parentId === String(id)) parentId = '';
+      const parentCol = (parentId || findSignParentColumnIndex_(sheet) >= 0)
+        ? ensureSignParentColumn_(sheet)
+        : -1;
+      if (parentCol >= 0) sheet.getRange(targetRow, parentCol + 1).setValue(parentId);
+    }
     sheet.getRange(targetRow, historyCol).setValue(JSON.stringify(newPhotos));
   } else {
     // 【圃場】 画像に合わせて修正！
@@ -7363,12 +7393,12 @@ function updatePolygon(params) {
       } catch (e) { /* そのまま保存 */ }
       sheet.getRange(targetRow, 18).setValue(md); // R列: 生産管理ステータス
     }
-    
+
     if (params.ridgeDir !== undefined) sheet.getRange(targetRow, 14).setValue(params.ridgeDir); // N列(あれば)
     if (params.ridgeWidth !== undefined) sheet.getRange(targetRow, 15).setValue(params.ridgeWidth); // O列(あれば)
     if (params.uneSimData !== undefined) {
       sheet.getRange(targetRow, 16).setValue(params.uneSimData); // P列(畝データ)
-      
+
       // 畝シートにも保存
       try {
         let uneSheet = ss.getSheetByName('畝');
@@ -7376,19 +7406,19 @@ function updatePolygon(params) {
           uneSheet = ss.insertSheet('畝');
           uneSheet.appendRow(['圃場ID', '圃場名', '畝番号', '更新日時']);
         }
-        
+
         let uneData = uneSheet.getDataRange().getValues();
         let newUneData = [];
         let header = uneData.length > 0 ? uneData[0] : ['圃場ID', '圃場名', '畝番号', '更新日時'];
         newUneData.push(header);
-        
+
         // 既存の同じ圃場IDの畝データを除外
         for (let i = 1; i < uneData.length; i++) {
           if (uneData[i][0] !== id) {
             newUneData.push(uneData[i]);
           }
         }
-        
+
         let simDataObj = JSON.parse(params.uneSimData);
         if (simDataObj.unePolygons && simDataObj.unePolygons.length > 0) {
           let timestamp = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm:ss");
@@ -7396,7 +7426,7 @@ function updatePolygon(params) {
             newUneData.push([id, newName, i + 1, timestamp]);
           }
         }
-        
+
         uneSheet.clearContents();
         if (newUneData.length > 0) {
           uneSheet.getRange(1, 1, newUneData.length, newUneData[0].length).setValues(newUneData);
@@ -7404,7 +7434,7 @@ function updatePolygon(params) {
       } catch (e) {
         console.error("畝シートの更新に失敗しました: " + e.message);
       }
-      
+
       // 図面履歴シートにも保存
       try {
         let historySheet = ss.getSheetByName('図面履歴');
@@ -7429,7 +7459,7 @@ function updatePolygon(params) {
         console.error("図面履歴シートの更新に失敗しました: " + e.message);
       }
     }
-    
+
 
     sheet.getRange(targetRow, historyCol).setValue(JSON.stringify(newPhotos)); // J列: 履歴
   }
@@ -7446,7 +7476,7 @@ function splitField(params) {
   const data = sheet.getDataRange().getValues();
   let targetRowData = null;
   let targetRowIdx = -1;
-  
+
   // 対象の圃場を探す
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === params.id) {
@@ -7455,15 +7485,15 @@ function splitField(params) {
       break;
     }
   }
-  
+
   if (!targetRowData) throw new Error("分割元の圃場が見つかりません");
-  
+
   const newId = Utilities.getUuid();
   const now = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm");
-  
+
   // ★アプリ側から送られた新しい名前(newName)があれば使用、なければ「_分割」
   const finalName = params.newName ? params.newName : (targetRowData[1] + "_分割");
-  
+
   // 新しく追加するデータの配列を作成
   ensureFieldSoilTypeHeader_(sheet);
   const newRowData = [
@@ -7489,11 +7519,11 @@ function splitField(params) {
     targetRowData[19] || "",      // T: 排水溝
     targetRowData[20] || ""       // U: 土質
   ];
-  
+
   // 元の圃場の「上」に新しい行を挿入してデータをセット
   sheet.insertRowBefore(targetRowIdx);
   sheet.getRange(targetRowIdx, 1, 1, newRowData.length).setValues([newRowData]);
-  
+
   writeLog(params.userName, "圃場分割", targetRowData[1] + " -> " + finalName, "対象: 圃場");
   return newId;
 }
@@ -7511,53 +7541,53 @@ function mergeFields(baseId, targetId, userName) {
   const ss = TENANT_SS;
   const sheet = ss.getSheetByName('圃場');
   const data = sheet.getDataRange().getValues();
-  
+
   let baseRowIdx = -1;
   let targetRowIdx = -1;
   let baseData = null;
   let targetData = null;
-  
+
   // 統合元と統合先の圃場を探す
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === baseId) { baseRowIdx = i + 1; baseData = data[i]; }     // ★修正ポイント
     if (data[i][0] === targetId) { targetRowIdx = i + 1; targetData = data[i]; } // ★修正ポイント
   }
-  
+
   if (baseRowIdx === -1 || targetRowIdx === -1) throw new Error("統合する圃場が見つかりません");
-  
+
   // 登記IDを結合
   let baseTouki = baseData[11] ? String(baseData[11]).split(',') : [];
   let targetTouki = targetData[11] ? String(targetData[11]).split(',') : [];
   let mergedTouki = [...new Set([...baseTouki, ...targetTouki])].filter(String).join(',');
-  
+
   // 履歴(写真など)を結合
   let baseHistory = [];
   let targetHistory = [];
-  try { if (baseData[9]) baseHistory = JSON.parse(baseData[9]); } catch(e){}
-  try { if (targetData[9]) targetHistory = JSON.parse(targetData[9]); } catch(e){}
+  try { if (baseData[9]) baseHistory = JSON.parse(baseData[9]); } catch (e) { }
+  try { if (targetData[9]) targetHistory = JSON.parse(targetData[9]); } catch (e) { }
   let mergedHistory = baseHistory.concat(targetHistory);
-  
+
   // ベースとなる圃場を更新
   sheet.getRange(baseRowIdx, 10).setValue(JSON.stringify(mergedHistory)); // J列: 履歴
   sheet.getRange(baseRowIdx, 12).setValue(mergedTouki); // L列: 登記ID
-  
+
   // 吸収された圃場を削除
   sheet.deleteRow(targetRowIdx);
-  
+
   writeLog(userName, "圃場統合", `${targetData[1]} を ${baseData[1]} に統合`, "対象: 圃場");
   return true;
 }
 
-function deletePolygonData(id, user) { 
-  if (!checkAdminRole(user)) throw new Error("管理者権限がないため、削除できません。"); 
-  const found = findSheetAndRowById(id); 
+function deletePolygonData(id, user) {
+  if (!checkAdminRole(user)) throw new Error("管理者権限がないため、削除できません。");
+  const found = findSheetAndRowById(id);
   if (!found) return "ALREADY_DELETED";
   const name = found.rowData[1];
-  const isHojo = found.sheet.getName() === '圃場'; 
-  found.sheet.deleteRow(found.rowIndex); 
-  if(isHojo) syncToukiMapping(); 
+  const isHojo = found.sheet.getName() === '圃場';
+  found.sheet.deleteRow(found.rowIndex);
+  if (isHojo) syncToukiMapping();
   writeLog(user, "図形削除", name, `システムID: ${id}`);
-  return "DELETED"; 
+  return "DELETED";
 }
 
 function deletePolygonBatchData(ids, user) {
@@ -7567,10 +7597,10 @@ function deletePolygonBatchData(ids, user) {
   if (!ids.length) return "DELETED_BATCH";
   const ss = TENANT_SS;
   const sheets = ['圃場', '看板'];
-  
+
   let rowsToDelete = { '圃場': [], '看板': [] };
   let names = [];
-  
+
   for (let s of sheets) {
     let sheet = ss.getSheetByName(s);
     if (!sheet) continue;
@@ -7586,7 +7616,7 @@ function deletePolygonBatchData(ids, user) {
   }
 
   let hasHojoDeleted = false;
-  
+
   for (let s of sheets) {
     let sheet = ss.getSheetByName(s);
     if (!sheet) continue;
@@ -7596,7 +7626,7 @@ function deletePolygonBatchData(ids, user) {
       if (s === '圃場') hasHojoDeleted = true;
     }
   }
-  
+
   if (hasHojoDeleted) syncToukiMapping();
   writeLog(user, "図形削除(一括)", names.join(", "), `システムID: ${ids.length}件`);
   return "DELETED_BATCH";
@@ -7629,7 +7659,7 @@ function getOrCreateRecordSheet(sheetName) {
   const ss = TENANT_SS; let sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
-    if (sheetName === '看板記録') { sheet.appendRow(["日時", "圃場名", "登録者", "写真URL", "システムID"]); } 
+    if (sheetName === '看板記録') { sheet.appendRow(["日時", "圃場名", "登録者", "写真URL", "システムID"]); }
     else if (sheetName === '作業記録') { sheet.appendRow(["記録時間", "圃場名", "記録者", "作業日", "作業名", "作物名", "開始時間", "終了時間", "人数", "合計時間", "進捗状況", "写真URL", "システムID", "今回作業畝", "次回開始畝", "作業時間（分）", "休憩時間（分）", "実作業時間（分）"]); }
     else if (sheetName === 'ロット記録') { sheet.appendRow(["ロットID", "生成日時", "生成者", "作物名", "圃場名", "コンテナ種類", "初期コンテナ数", "残コンテナ数", "ステータス", "拠点", "内容単位", "内容個数", "内容内訳"]); }
     else { sheet.appendRow(["日時", "圃場名", "登録者", "作物名", "開始時間", "終了時間", "草刈り", "草抜き", "排水", "虫食い", "病気", "収穫見込み日", "残存率(%)", "葉長(cm)", "収穫サイズ(cm)", "収穫可能量(個/本)", "栽培ステージ", "土壌PH", "花芽", "気づいたこと", "写真URL", "システムID"]); }
@@ -7690,18 +7720,18 @@ function saveRecord(idStr, nameStr, author, recordType, recordData, photosBase64
     if (!firstFound) throw new Error("対象なし");
     parentType = firstFound.sheet.getName();
   }
-  const recordId = Utilities.getUuid(); 
+  const recordId = Utilities.getUuid();
   let urls = [];
   if (photosBase64.length) {
-    const folders = DriveApp.getFoldersByName("圃場写真"); 
+    const folders = DriveApp.getFoldersByName("圃場写真");
     const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("圃場写真");
     for (let i = 0; i < photosBase64.length; i++) {
-      const s = photosBase64[i].base64.split(','), type = s[0].split(';')[0].replace('data:',''), file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(s[1]), type, photosBase64[i].filename));
+      const s = photosBase64[i].base64.split(','), type = s[0].split(';')[0].replace('data:', ''), file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(s[1]), type, photosBase64[i].filename));
       file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); urls.push("https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w800");
     }
   }
   const today = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd"), time = Utilities.formatDate(new Date(), "JST", "HH:mm");
-  
+
   // ====================================================
   // ★開始条件(D列)と終了条件(E列)をマスタから取得
   // ====================================================
@@ -7714,15 +7744,15 @@ function saveRecord(idStr, nameStr, author, recordType, recordData, photosBase64
   if (recordType === 'work' && recordData) {
     const lotSheet = getOrCreateRecordSheet('ロット記録');
     if (recordData.lotAction === 'generate' && recordData.lotId) {
-      lotSheet.appendRow([recordData.lotId, today+" "+time, author, recordData.crop, nameStr, recordData.containerType || "", recordData.lotContainers, recordData.lotContainers, "使用中"]);
+      lotSheet.appendRow([recordData.lotId, today + " " + time, author, recordData.crop, nameStr, recordData.containerType || "", recordData.lotContainers, recordData.lotContainers, "使用中"]);
       writeLog(author, "ロット生成", recordData.lotId, `種類: ${recordData.containerType}, 初期コンテナ: ${recordData.lotContainers}`);
     } else if (recordData.lotAction === 'use' && recordData.selectedLots) {
       const targetLots = recordData.selectedLots.split(',');
       const lData = lotSheet.getDataRange().getValues();
       for (let i = 1; i < lData.length; i++) {
         if (targetLots.includes(String(lData[i][0]))) {
-          lotSheet.getRange(i+1, 8).setValue(recordData.lotRemain); 
-          lotSheet.getRange(i+1, 9).setValue(recordData.lotStatus); 
+          lotSheet.getRange(i + 1, 8).setValue(recordData.lotRemain);
+          lotSheet.getRange(i + 1, 9).setValue(recordData.lotStatus);
         }
       }
       writeLog(author, "ロット使用", recordData.selectedLots, `ステータス: ${recordData.lotStatus}, 残: ${recordData.lotRemain}`);
@@ -7734,7 +7764,7 @@ function saveRecord(idStr, nameStr, author, recordType, recordData, photosBase64
   if (recordType === 'work') {
     const minCols = ensureWorkRecordMinutesColumns_(rs);
     const mins = computeWorkRecordMinutes_(recordData || {});
-    const row = [today+" "+time, nameStr, author, recordData.workDate||"", recordData.workName||"", recordData.crop||"", recordData.startTime||"", recordData.endTime||"", recordData.workerCount||"1", recordData.totalTime||"", recordData.progressStatus||"", urls.join(", "), recordId, recordData.workedRidges||"", recordData.nextRidge||""];
+    const row = [today + " " + time, nameStr, author, recordData.workDate || "", recordData.workName || "", recordData.crop || "", recordData.startTime || "", recordData.endTime || "", recordData.workerCount || "1", recordData.totalTime || "", recordData.progressStatus || "", urls.join(", "), recordId, recordData.workedRidges || "", recordData.nextRidge || ""];
     const maxCol = Math.max(minCols.work, minCols.rest, minCols.actual);
     while (row.length < maxCol) row.push('');
     row[minCols.work - 1] = mins.work;
@@ -7742,45 +7772,45 @@ function saveRecord(idStr, nameStr, author, recordType, recordData, photosBase64
     row[minCols.actual - 1] = mins.actual;
     rs.appendRow(row);
     if (Number(mins.rest) > 0) {
-      try { syncAttendanceRestRows_(author, recordData.workDate); } catch (eRest) {}
+      try { syncAttendanceRestRows_(author, recordData.workDate); } catch (eRest) { }
     }
   }
-    else if (parentType === '看板') rs.appendRow([today+" "+time, nameStr, author, urls.join(", "), recordId]);
-    else rs.appendRow([today+" "+time, nameStr, author, recordData.crop||"", recordData.startTime||"", recordData.endTime||"", recordData.mowing?"済":"", recordData.weeding?"済":"", recordData.drainage?"済":"", recordData.bug?"有":"", recordData.disease?"有":"", recordData.harvestDate||"", recordData.survivalRate||"", recordData.leafLength||"", recordData.harvestSize||"", recordData.harvestAmount||"", recordData.fieldStatus||"", recordData.ph||"", recordData.flower?"有":"", recordData.notes||"", urls.join(", "), recordId]);
-    
+  else if (parentType === '看板') rs.appendRow([today + " " + time, nameStr, author, urls.join(", "), recordId]);
+  else rs.appendRow([today + " " + time, nameStr, author, recordData.crop || "", recordData.startTime || "", recordData.endTime || "", recordData.mowing ? "済" : "", recordData.weeding ? "済" : "", recordData.drainage ? "済" : "", recordData.bug ? "有" : "", recordData.disease ? "有" : "", recordData.harvestDate || "", recordData.survivalRate || "", recordData.leafLength || "", recordData.harvestSize || "", recordData.harvestAmount || "", recordData.fieldStatus || "", recordData.ph || "", recordData.flower ? "有" : "", recordData.notes || "", urls.join(", "), recordId]);
+
   writeLog(author, "記録一括追加", nameStr, `タイプ: ${rsName}`);
 
   let firstEx = [];
-  
+
   for (let i = 0; i < ids.length; i++) {
     const found = lookupParent_(ids[i]);
     if (!found) continue;
     const isHojo = found.sheet.getName() === '圃場';
     const pc = 10;
-    let ex = []; if (found.rowData[pc-1]) { try { ex = JSON.parse(found.rowData[pc-1]); } catch(e) {} }
-    if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch(e) {} }
-    ex.push({ id: recordId, type: recordType || 'growth', date: today, time, author, urls, data: recordData }); 
+    let ex = []; if (found.rowData[pc - 1]) { try { ex = JSON.parse(found.rowData[pc - 1]); } catch (e) { } }
+    if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch (e) { } }
+    ex.push({ id: recordId, type: recordType || 'growth', date: today, time, author, urls, data: recordData });
     found.sheet.getRange(found.rowIndex, pc).setValue(JSON.stringify(ex));
     found.rowData[pc - 1] = JSON.stringify(ex);
-    
+
     // ====================================================
     // ★色(G列)の自動更新のみ行う（K列は稼働状況としてそのまま残す！）
     // ====================================================
     if (isHojo && recordType === 'work' && recordData && recordData.workName) {
       const wName = recordData.workName;
       let autoColor = null;
-      
+
       const isResetWork = resetKeywords.some(keyword => wName.includes(keyword));
       const isStartWork = startKeywords.some(keyword => wName.includes(keyword));
-      
+
       if (isResetWork) {
         autoColor = '#9E9E9E'; // 灰色（未使用）
-      } 
+      }
       else if (isStartWork) {
         if (recordData.crop) {
           const cropColor = getOrCreateCropColor(recordData.crop);
           const currentColor = found.rowData[6]; // 現在の色 (G列:7番目)
-          
+
           // 既に作物が植わっている（灰色や赤色ではなく、新しい作物色と違う）場合は混植
           if (currentColor && currentColor !== '#9E9E9E' && currentColor !== '#FF0000' && currentColor !== cropColor) {
             autoColor = '#9C27B0'; // 混植用の専用カラー（紫）
@@ -7804,7 +7834,7 @@ function saveRecord(idStr, nameStr, author, recordType, recordData, photosBase64
   if (isWorkOnlyNoPoly) {
     return [{ id: recordId, type: recordType || 'work', date: today, time: time, author: author, urls: urls, data: recordData }];
   }
-  
+
   return firstEx;
 }
 
@@ -7828,45 +7858,45 @@ function saveRecordBatch(params) {
 
 function updateRecordItem(polyId, recordId, recordType, newData, newPhotosBase64, keptUrls, user) {
   const found = findSheetAndRowById(polyId); if (!found) throw new Error("対象なし");
-  const pType = found.sheet.getName(), pc = 10; let ex = []; if (found.rowData[pc-1]) { try { ex = JSON.parse(found.rowData[pc-1]); } catch(e) {} } if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch(e) {} }
+  const pType = found.sheet.getName(), pc = 10; let ex = []; if (found.rowData[pc - 1]) { try { ex = JSON.parse(found.rowData[pc - 1]); } catch (e) { } } if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch (e) { } }
   let tgt = ex.find(item => item.id === recordId || item.url === recordId); if (!tgt) throw new Error("記録が見つかりません");
   let newUrls = [];
   if (newPhotosBase64 && newPhotosBase64.length > 0) {
     const folders = DriveApp.getFoldersByName("圃場写真"); const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("圃場写真");
     for (let i = 0; i < newPhotosBase64.length; i++) {
-      const s = newPhotosBase64[i].base64.split(','), type = s[0].split(';')[0].replace('data:',''), file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(s[1]), type, newPhotosBase64[i].filename));
+      const s = newPhotosBase64[i].base64.split(','), type = s[0].split(';')[0].replace('data:', ''), file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(s[1]), type, newPhotosBase64[i].filename));
       file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); newUrls.push("https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w800");
     }
   }
   tgt.urls = (keptUrls || []).concat(newUrls); tgt.data = newData; tgt.type = recordType || 'growth'; delete tgt.url;
   found.sheet.getRange(found.rowIndex, pc).setValue(JSON.stringify(ex));
-  
+
   const rsName = recordType === 'work' ? '作業記録' : (pType === '看板' ? '看板記録' : '生育記録');
   const rs = TENANT_SS.getSheetByName(rsName);
   if (rs) {
     const d = rs.getDataRange().getValues();
     for (let i = 1; i < d.length; i++) {
-          if (recordType === 'work') {
-          if (String(d[i][12] || '') === String(recordId)) { 
-            const r = i + 1;
-            const oldAuthor = d[i][2];
-            const oldYmd = formatWorkDateYmd_(d[i][3]);
-            rs.getRange(r, 4).setValue(newData.workDate||""); rs.getRange(r, 5).setValue(newData.workName||""); rs.getRange(r, 6).setValue(newData.crop||""); rs.getRange(r, 7).setValue(newData.startTime||""); rs.getRange(r, 8).setValue(newData.endTime||""); rs.getRange(r, 9).setValue(newData.workerCount||"1"); rs.getRange(r, 10).setValue(newData.totalTime||""); rs.getRange(r, 11).setValue(newData.progressStatus||""); rs.getRange(r, 12).setValue(tgt.urls.join(" , ")); rs.getRange(r, 14).setValue(newData.workedRidges||""); rs.getRange(r, 15).setValue(newData.nextRidge||"");
-            writeWorkRecordMinutes_(rs, r, newData);
-            syncAttendanceRestRowsForDays_([[oldAuthor, oldYmd], [oldAuthor, newData.workDate]]);
-            break;
-          }
+      if (recordType === 'work') {
+        if (String(d[i][12] || '') === String(recordId)) {
+          const r = i + 1;
+          const oldAuthor = d[i][2];
+          const oldYmd = formatWorkDateYmd_(d[i][3]);
+          rs.getRange(r, 4).setValue(newData.workDate || ""); rs.getRange(r, 5).setValue(newData.workName || ""); rs.getRange(r, 6).setValue(newData.crop || ""); rs.getRange(r, 7).setValue(newData.startTime || ""); rs.getRange(r, 8).setValue(newData.endTime || ""); rs.getRange(r, 9).setValue(newData.workerCount || "1"); rs.getRange(r, 10).setValue(newData.totalTime || ""); rs.getRange(r, 11).setValue(newData.progressStatus || ""); rs.getRange(r, 12).setValue(tgt.urls.join(" , ")); rs.getRange(r, 14).setValue(newData.workedRidges || ""); rs.getRange(r, 15).setValue(newData.nextRidge || "");
+          writeWorkRecordMinutes_(rs, r, newData);
+          syncAttendanceRestRowsForDays_([[oldAuthor, oldYmd], [oldAuthor, newData.workDate]]);
+          break;
+        }
       } else if (pType === '看板') {
-          if (d[i][4] === recordId) { rs.getRange(i + 1, 4).setValue(tgt.urls.join(" , ")); break; }
-      } else { 
-          if (d[i][21] === recordId) { 
-            const r = i + 1;
-            rs.getRange(r, 4).setValue(newData.crop||""); rs.getRange(r, 5).setValue(newData.startTime||""); rs.getRange(r, 6).setValue(newData.endTime||"");
-            rs.getRange(r, 7).setValue(newData.mowing?"済":""); rs.getRange(r, 8).setValue(newData.weeding?"済":""); rs.getRange(r, 9).setValue(newData.drainage?"済":""); rs.getRange(r, 10).setValue(newData.bug?"有":""); rs.getRange(r, 11).setValue(newData.disease?"有":""); rs.getRange(r, 12).setValue(newData.harvestDate||""); rs.getRange(r, 13).setValue(newData.survivalRate||""); rs.getRange(r, 14).setValue(newData.leafLength||""); rs.getRange(r, 15).setValue(newData.harvestSize||""); rs.getRange(r, 16).setValue(newData.harvestAmount||""); rs.getRange(r, 17).setValue(newData.fieldStatus||""); rs.getRange(r, 18).setValue(newData.ph||""); rs.getRange(r, 19).setValue(newData.flower?"有":""); rs.getRange(r, 20).setValue(newData.notes||""); rs.getRange(r, 21).setValue(tgt.urls.join(" , ")); break;
-          }
+        if (d[i][4] === recordId) { rs.getRange(i + 1, 4).setValue(tgt.urls.join(" , ")); break; }
+      } else {
+        if (d[i][21] === recordId) {
+          const r = i + 1;
+          rs.getRange(r, 4).setValue(newData.crop || ""); rs.getRange(r, 5).setValue(newData.startTime || ""); rs.getRange(r, 6).setValue(newData.endTime || "");
+          rs.getRange(r, 7).setValue(newData.mowing ? "済" : ""); rs.getRange(r, 8).setValue(newData.weeding ? "済" : ""); rs.getRange(r, 9).setValue(newData.drainage ? "済" : ""); rs.getRange(r, 10).setValue(newData.bug ? "有" : ""); rs.getRange(r, 11).setValue(newData.disease ? "有" : ""); rs.getRange(r, 12).setValue(newData.harvestDate || ""); rs.getRange(r, 13).setValue(newData.survivalRate || ""); rs.getRange(r, 14).setValue(newData.leafLength || ""); rs.getRange(r, 15).setValue(newData.harvestSize || ""); rs.getRange(r, 16).setValue(newData.harvestAmount || ""); rs.getRange(r, 17).setValue(newData.fieldStatus || ""); rs.getRange(r, 18).setValue(newData.ph || ""); rs.getRange(r, 19).setValue(newData.flower ? "有" : ""); rs.getRange(r, 20).setValue(newData.notes || ""); rs.getRange(r, 21).setValue(tgt.urls.join(" , ")); break;
+        }
       }
     }
-  } 
+  }
   writeLog(user, "記録編集", found.rowData[1], `対象ID: ${recordId}`);
   return ex;
 }
@@ -8092,8 +8122,8 @@ function deleteRecordItem(polyId, recordId, user) {
     const pType = found.sheet.getName();
     const pc = 10;
     let ex = [];
-    if (found.rowData[pc - 1]) { try { ex = JSON.parse(found.rowData[pc - 1]); } catch (e) {} }
-    if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch (e) {} }
+    if (found.rowData[pc - 1]) { try { ex = JSON.parse(found.rowData[pc - 1]); } catch (e) { } }
+    if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch (e) { } }
 
     const deleted = ex.find(item => item && (item.id === recordId || item.url === recordId));
     const updated = ex.filter(item => item && item.id !== recordId && item.url !== recordId);
@@ -8152,11 +8182,11 @@ function deleteRecordItem(polyId, recordId, user) {
           if (m1) fid = m1[1];
           else if (m2) fid = m2[1];
           if (fid) {
-            try { DriveApp.getFileById(fid).setTrashed(true); } catch (e2) {}
+            try { DriveApp.getFileById(fid).setTrashed(true); } catch (e2) { }
           }
         });
       }
-    } catch (e) {}
+    } catch (e) { }
 
     // 作業削除後は開始時間ヒントも捨てる（空シート＋古い Script Cache が残らないように）
     try {
@@ -8165,7 +8195,7 @@ function deleteRecordItem(polyId, recordId, user) {
         const uname = String(user || (deleted && deleted.author) || '').replace(/\s+/g, '');
         if (ymd && uname) clearWorkRecordTimeHint_(uname, ymd);
       }
-    } catch (ce) {}
+    } catch (ce) { }
 
     writeLog(user, "記録削除", found.rowData[1], `対象ID: ${recordId}` + (listDeleted ? ' / 一覧シート削除済' : ' / 一覧シート該当なし'));
     return updated;
@@ -8275,7 +8305,7 @@ function deleteWorkRecordById(params) {
         );
         if (String(values[i][12] || '').trim() !== rid && !rowMatch) continue;
         const urlRaw = String(values[i][11] || '');
-        urlRaw.split(/[,\s]+/).forEach(function(u) {
+        urlRaw.split(/[,\s]+/).forEach(function (u) {
           const s = String(u || '').trim();
           if (s) deletedUrls[s] = true;
         });
@@ -8286,7 +8316,7 @@ function deleteWorkRecordById(params) {
       }
     }
 
-    ['圃場', '看板'].forEach(function(sheetName) {
+    ['圃場', '看板'].forEach(function (sheetName) {
       const sheet = TENANT_SS.getSheetByName(sheetName);
       if (!sheet || sheet.getLastRow() < 2) return;
       const values = sheet.getDataRange().getValues();
@@ -8298,7 +8328,7 @@ function deleteWorkRecordById(params) {
           else if (values[i][6]) records = JSON.parse(values[i][6]);
         } catch (e) { records = []; }
         if (!Array.isArray(records) || !records.length) continue;
-        const kept = records.filter(function(item) {
+        const kept = records.filter(function (item) {
           if (!item) return true;
           const itemId = String(item.id || item.url || '').trim();
           const dataMatch = params.workDate && workRecordDataMatches_(
@@ -8312,7 +8342,7 @@ function deleteWorkRecordById(params) {
           );
           if (itemId !== rid && !dataMatch) return true;
           if (Array.isArray(item.urls)) {
-            item.urls.forEach(function(u) { if (u) deletedUrls[String(u)] = true; });
+            item.urls.forEach(function (u) { if (u) deletedUrls[String(u)] = true; });
           }
           embeddedDeleted += 1;
           return false;
@@ -8327,19 +8357,19 @@ function deleteWorkRecordById(params) {
       throw new Error('削除対象の記録が見つかりません');
     }
 
-    Object.keys(deletedUrls).forEach(function(url) {
+    Object.keys(deletedUrls).forEach(function (url) {
       const m1 = url.match(/[?&]id=([^&]+)/);
       const m2 = url.match(/\/d\/([^/]+)/);
       const fileId = m1 ? m1[1] : (m2 ? m2[1] : '');
       if (!fileId) return;
-      try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e2) {}
+      try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e2) { }
     });
 
     try {
       const ymd = formatWorkDateYmd_(params.workDate);
       const uname = String(userName || params.author || '').replace(/\s+/g, '');
       if (ymd && uname) clearWorkRecordTimeHint_(uname, ymd);
-    } catch (ce) {}
+    } catch (ce) { }
 
     writeLog(userName, '作業記録削除', rid, '一覧:' + (sheetDeleted ? 'Y' : 'N') + ' 埋込:' + embeddedDeleted);
     return { success: true, recordId: rid, sheetDeleted: sheetDeleted, embeddedDeleted: embeddedDeleted };
@@ -8399,7 +8429,7 @@ function cancelClockInAndDeleteTodayWorkRecords(params) {
     const parentSheets = ['圃場', '看板'];
 
     // 同じ記録が複数圃場へ入っている場合も、全コピーから削除する。
-    parentSheets.forEach(function(sheetName) {
+    parentSheets.forEach(function (sheetName) {
       const sheet = TENANT_SS.getSheetByName(sheetName);
       if (!sheet || sheet.getLastRow() < 2) return;
       const values = sheet.getDataRange().getValues();
@@ -8414,7 +8444,7 @@ function cancelClockInAndDeleteTodayWorkRecords(params) {
         if (!Array.isArray(records) || !records.length) continue;
 
         let changed = false;
-        const kept = records.filter(function(item, itemIndex) {
+        const kept = records.filter(function (item, itemIndex) {
           if (!item) return true;
           const recordId = String(item.id || item.url || '').trim();
           const itemType = String(item.type || '').trim();
@@ -8431,7 +8461,7 @@ function cancelClockInAndDeleteTodayWorkRecords(params) {
           deletedKeys[uniqueKey] = true;
           if (recordId) recordIds[recordId] = true;
           if (Array.isArray(item.urls)) {
-            item.urls.forEach(function(url) { if (url) deletedUrls[String(url)] = true; });
+            item.urls.forEach(function (url) { if (url) deletedUrls[String(url)] = true; });
           }
           return false;
         });
@@ -8449,12 +8479,12 @@ function cancelClockInAndDeleteTodayWorkRecords(params) {
     if (workRowsToDelete.length) syncAttendanceRestRowsForDays_([[userName, targetYmd]]);
 
     // 添付写真も既存の個別削除と同様にゴミ箱へ移す。
-    Object.keys(deletedUrls).forEach(function(url) {
+    Object.keys(deletedUrls).forEach(function (url) {
       const m1 = url.match(/[?&]id=([^&]+)/);
       const m2 = url.match(/\/d\/([^/]+)/);
       const fileId = m1 ? m1[1] : (m2 ? m2[1] : '');
       if (!fileId) return;
-      try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e) {}
+      try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e) { }
     });
 
     // 作業記録削除が完了してから出勤取消を記録する。
@@ -8467,7 +8497,7 @@ function cancelClockInAndDeleteTodayWorkRecords(params) {
     });
 
     const deletedCount = Math.max(workRowsToDelete.length, Object.keys(deletedKeys).length);
-    try { clearWorkRecordTimeHint_(normUser, targetYmd); } catch (ce) {}
+    try { clearWorkRecordTimeHint_(normUser, targetYmd); } catch (ce) { }
     writeLog(userName, '誤出勤取消', targetYmd, '当日作業記録削除: ' + deletedCount + '件');
     return {
       success: true,
@@ -8496,9 +8526,9 @@ function findWorkDeptColumnIndex_(headers) {
 /** 作業マスタに「担当部署」列を保証 */
 function ensureWorkMasterDeptColumn_(sheet) {
   if (!sheet) return -1;
-  try { ensureWorkMasterHeaders_(sheet); } catch (e) {}
+  try { ensureWorkMasterHeaders_(sheet); } catch (e) { }
   let lastCol = Math.max(sheet.getLastColumn(), 1);
-  let headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+  let headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) {
     return String(h || '').trim();
   });
   let idxDept = findWorkDeptColumnIndex_(headers);
@@ -8515,7 +8545,7 @@ function getWorkCategoryList_() {
   let list = [];
   if (sheet && sheet.getLastRow() > 1) {
     const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
-    data.forEach(function(r) {
+    data.forEach(function (r) {
       const n = String(r[0] || '').trim();
       if (n) list.push(n);
     });
@@ -8545,12 +8575,12 @@ function getDeptList_() {
   if (lastRow > 1) {
     // Sheet.getRange(row, column, numRows, numColumns)
     const data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-    data.forEach(function(r) {
+    data.forEach(function (r) {
       const n = String(r[0] || '').trim();
       if (n && list.indexOf(n) < 0) list.push(n);
     });
   }
-  ['運営', '未設定'].forEach(function(x) {
+  ['運営', '未設定'].forEach(function (x) {
     if (list.indexOf(x) < 0) list.push(x);
   });
   return list;
@@ -8562,7 +8592,7 @@ function saveDepartmentMaster(params) {
   const userName = String(p.userName || '').trim() || 'システム';
   let names = [];
   if (Array.isArray(p.departments)) {
-    names = p.departments.map(function(d) { return String(d || '').trim(); }).filter(Boolean);
+    names = p.departments.map(function (d) { return String(d || '').trim(); }).filter(Boolean);
   } else if (p.department) {
     names = getDeptList_().slice();
     const add = String(p.department || '').trim();
@@ -8570,7 +8600,7 @@ function saveDepartmentMaster(params) {
   }
   const uniq = [];
   const seen = {};
-  names.forEach(function(n) {
+  names.forEach(function (n) {
     if (n === '未設定') return;
     if (seen[n]) return;
     seen[n] = true;
@@ -8581,10 +8611,10 @@ function saveDepartmentMaster(params) {
   // Sheet.getRange の第3引数は最終行ではなく行数
   if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, 1).clearContent();
   if (uniq.length) {
-    const values = uniq.map(function(n) { return [n]; });
+    const values = uniq.map(function (n) { return [n]; });
     sheet.getRange(2, 1, values.length, 1).setValues(values);
   }
-  try { writeLog(userName, '部署マスタ保存', '部署マスタ', uniq.join(', ')); } catch (e) {}
+  try { writeLog(userName, '部署マスタ保存', '部署マスタ', uniq.join(', ')); } catch (e) { }
   return { success: true, departments: getDeptList_() };
 }
 
@@ -8594,7 +8624,7 @@ function ensureMeiboDeptColumn_() {
   const sheet = ss.getSheetByName('名簿');
   if (!sheet) throw new Error('名簿シートが見つかりません');
   const lastCol = Math.max(sheet.getLastColumn(), 1);
-  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) {
     return String(h || '').trim();
   });
   let col = -1;
@@ -8623,9 +8653,9 @@ function ensureMeiboLocationColumn_() {
   const sheet = ss.getSheetByName('名簿');
   if (!sheet) throw new Error('名簿シートが見つかりません');
   // 部署列を先に確保してから拠点列を追加する
-  try { ensureMeiboDeptColumn_(); } catch (e) {}
+  try { ensureMeiboDeptColumn_(); } catch (e) { }
   const lastCol = Math.max(sheet.getLastColumn(), 1);
-  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) {
     return String(h || '').trim();
   });
   let col = -1;
@@ -8649,7 +8679,7 @@ function ensureMeiboLocationColumn_() {
 function findSignLocationColumnIndex_(sheet) {
   if (!sheet) return -1;
   const lastCol = Math.max(sheet.getLastColumn(), 1);
-  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) {
     return String(h || '').trim();
   });
   for (let c = 0; c < headers.length; c++) {
@@ -8659,12 +8689,38 @@ function findSignLocationColumnIndex_(sheet) {
   return -1;
 }
 
+/** 看板の「親看板ID」列（大看板・小看板の束ね）を探すだけ（無ければ -1） */
+function findSignParentColumnIndex_(sheet) {
+  if (!sheet) return -1;
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) {
+    return String(h || '').trim();
+  });
+  for (let c = 0; c < headers.length; c++) {
+    if (headers[c] === '親看板ID' || headers[c] === '大看板ID') return c;
+  }
+  return -1;
+}
+
+/** 親看板ID列を確保（0-based）。所属拠点列と重ならないよう末尾へ追加 */
+function ensureSignParentColumn_(sheet) {
+  if (!sheet) throw new Error('看板シートが見つかりません');
+  let col = findSignParentColumnIndex_(sheet);
+  if (col >= 0) return col;
+  // 拠点列が未作成なら先に作る（L列優先の取り合いを避ける）
+  try { ensureSignLocationColumn_(sheet); } catch (e) { }
+  col = Math.max(sheet.getLastColumn(), 12);
+  sheet.getRange(1, col + 1).setValue('親看板ID');
+  SpreadsheetApp.flush();
+  return col;
+}
+
 function ensureSignLocationColumn_(sheet) {
   if (!sheet) throw new Error('看板シートが見つかりません');
   let col = findSignLocationColumnIndex_(sheet);
   if (col >= 0) return col;
   const lastCol = Math.max(sheet.getLastColumn(), 1);
-  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) {
     return String(h || '').trim();
   });
   // L列(12)を優先。埋まっていれば末尾に追加
@@ -8695,7 +8751,7 @@ function updateUserDepts(params) {
   const info = ensureMeiboDeptColumn_();
   const data = info.sheet.getDataRange().getValues();
   let updated = 0;
-  updates.forEach(function(u) {
+  updates.forEach(function (u) {
     const uid = String((u && u.userId) || '').trim();
     const dept = String((u && u.dept) || '').trim();
     if (!uid) return;
@@ -8706,7 +8762,7 @@ function updateUserDepts(params) {
       updated++;
       try {
         writeLog(userName, 'ユーザー部署設定', uid, String(data[i][2] || uid) + ': ' + (dept || '未設定'));
-      } catch (e) {}
+      } catch (e) { }
       break;
     }
   });
@@ -8723,7 +8779,7 @@ function updateUserLocations(params) {
   const info = ensureMeiboLocationColumn_();
   const data = info.sheet.getDataRange().getValues();
   let updated = 0;
-  updates.forEach(function(u) {
+  updates.forEach(function (u) {
     const uid = String((u && u.userId) || '').trim();
     const location = String((u && u.location) || '').trim();
     if (!uid) return;
@@ -8734,7 +8790,7 @@ function updateUserLocations(params) {
       updated++;
       try {
         writeLog(userName, 'ユーザー所属拠点設定', uid, String(data[i][2] || uid) + ': ' + (location || '未設定'));
-      } catch (e) {}
+      } catch (e) { }
       break;
     }
   });
@@ -8749,7 +8805,7 @@ function buildWorkDeptMapFromMaster_() {
   if (!workMasterSheet || workMasterSheet.getLastRow() <= 1) return map;
   const idxDept = ensureWorkMasterDeptColumn_(workMasterSheet);
   const wData = workMasterSheet.getDataRange().getValues();
-  const headers = wData[0].map(function(h) { return String(h || '').trim(); });
+  const headers = wData[0].map(function (h) { return String(h || '').trim(); });
   const idxName = headers.indexOf('作業名');
   for (let i = 1; i < wData.length; i++) {
     const name = idxName >= 0 ? String(wData[i][idxName] || '').trim() : String(wData[i][0] || '').trim();
@@ -8793,7 +8849,7 @@ function getWorkDeptSettings(params) {
     try {
       const idxDept = ensureWorkMasterDeptColumn_(workSheet);
       const wData = workSheet.getDataRange().getValues();
-      const headers = wData[0].map(function(h) { return String(h || '').trim(); });
+      const headers = wData[0].map(function (h) { return String(h || '').trim(); });
       const idxName = headers.indexOf('作業名');
       for (let i = 1; i < wData.length; i++) {
         const name = idxName >= 0 ? String(wData[i][idxName] || '').trim() : String(wData[i][0] || '').trim();
@@ -8808,13 +8864,13 @@ function getWorkDeptSettings(params) {
           inMaster: true
         });
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   const schedSheet = ss.getSheetByName('作業予定');
   if (schedSheet && schedSheet.getLastRow() > 1) {
     const sData = schedSheet.getRange(2, 1, schedSheet.getLastRow(), 11).getValues();
-    sData.forEach(function(row) {
+    sData.forEach(function (row) {
       if (row[8]) return;
       const name = String(row[0] || '').trim();
       if (!name) return;
@@ -8830,7 +8886,7 @@ function getWorkDeptSettings(params) {
     });
   }
 
-  rows.sort(function(a, b) {
+  rows.sort(function (a, b) {
     return String(a.workName).localeCompare(String(b.workName), 'ja');
   });
 
@@ -8848,10 +8904,10 @@ function getWorkDeptSettings(params) {
         dept: readMeiboUserDept_(mData[i], meiboInfo.col) || '未設定'
       });
     }
-    users.sort(function(a, b) {
+    users.sort(function (a, b) {
       return String(a.userName || a.userId).localeCompare(String(b.userName || b.userId), 'ja');
     });
-  } catch (e) {}
+  } catch (e) { }
 
   return {
     success: true,
@@ -8877,26 +8933,26 @@ function updateWorkDeptSettings(params) {
   try {
     const existing = getDeptList_();
     const toAdd = [];
-    updates.forEach(function(u) {
+    updates.forEach(function (u) {
       const d = String(u.dept || '').trim();
       if (!d || d === '未設定') return;
       if (existing.indexOf(d) < 0 && toAdd.indexOf(d) < 0) toAdd.push(d);
     });
     if (toAdd.length) {
       saveDepartmentMaster({
-        departments: existing.filter(function(x) { return x !== '未設定'; }).concat(toAdd),
+        departments: existing.filter(function (x) { return x !== '未設定'; }).concat(toAdd),
         userName: userName
       });
     }
-  } catch (e) {}
+  } catch (e) { }
 
   const workSheet = ss.getSheetByName('作業マスタ');
   if (workSheet) {
     const idxDept = ensureWorkMasterDeptColumn_(workSheet);
     const wData = workSheet.getDataRange().getValues();
-    const headers = wData[0].map(function(h) { return String(h || '').trim(); });
+    const headers = wData[0].map(function (h) { return String(h || '').trim(); });
     const idxName = headers.indexOf('作業名');
-    updates.forEach(function(u) {
+    updates.forEach(function (u) {
       const workName = String(u.workName || '').trim();
       const dept = String(u.dept || '').trim();
       if (!workName || !dept) return;
@@ -8927,7 +8983,7 @@ function updateWorkDeptSettings(params) {
     const schedSheet = ss.getSheetByName('作業予定');
     if (schedSheet && schedSheet.getLastRow() > 1) {
       const sData = schedSheet.getRange(2, 1, schedSheet.getLastRow(), 11).getValues();
-      updates.forEach(function(u) {
+      updates.forEach(function (u) {
         const workName = String(u.workName || '').trim();
         const dept = String(u.dept || '').trim();
         if (!workName || !dept) return;
@@ -8980,7 +9036,7 @@ function formatWorkDateMmDd_(val) {
     if (m) return String(parseInt(m[1], 10)) + '/' + String(parseInt(m[2], 10));
     const d = new Date(s);
     if (!isNaN(d.getTime())) return Utilities.formatDate(d, 'JST', 'MM/dd');
-  } catch (e) {}
+  } catch (e) { }
   return String(val);
 }
 
@@ -8994,7 +9050,7 @@ function formatWorkDateYmd_(val) {
     if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
     const d = new Date(s);
     if (!isNaN(d.getTime())) return Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
-  } catch (e) {}
+  } catch (e) { }
   return '';
 }
 
@@ -9004,7 +9060,7 @@ function buildFieldNameToPolyIdMap_() {
   const map = {};
   const ss = TENANT_SS;
   if (!ss) return map;
-  ['圃場', '看板'].forEach(function(sheetName) {
+  ['圃場', '看板'].forEach(function (sheetName) {
     const sh = ss.getSheetByName(sheetName);
     if (!sh) return;
     const lastRow = sh.getLastRow();
@@ -9022,7 +9078,7 @@ function buildFieldNameToPolyIdMap_() {
 
 function getScheduleData() {
   const ss = TENANT_SS;
-  const today = new Date(); today.setHours(0,0,0,0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
   globalCpPlanLookup_ = null;
 
   // 1. 作業マスタから「作業名 -> 担当部署」の辞書を作成
@@ -9032,7 +9088,7 @@ function getScheduleData() {
   let fieldNameToPolyId = {};
   try {
     fieldNameToPolyId = buildFieldNameToPolyIdMap_();
-  } catch (e) {}
+  } catch (e) { }
 
   // 2. 作業実績から収穫中・完了・途中を抽出
   const workSheet = ss.getSheetByName('作業記録');
@@ -9087,16 +9143,16 @@ function getScheduleData() {
         });
       }
       if (workName && String(workName).includes('収穫') && progress !== '完了') {
-        if(!harvestingFields[primaryField || fieldName]) harvestingFields[primaryField || fieldName] = [];
+        if (!harvestingFields[primaryField || fieldName]) harvestingFields[primaryField || fieldName] = [];
         const fKey = primaryField || fieldName;
-        if(!harvestingFields[fKey].includes(dept)) harvestingFields[fKey].push(dept);
+        if (!harvestingFields[fKey].includes(dept)) harvestingFields[fKey].push(dept);
       }
     }
   }
 
   // 途中のうち、同キーで後から完了が入っていないものだけ予定へ
   const midWorks = [];
-  midWorkCandidates.forEach(function(mw) {
+  midWorkCandidates.forEach(function (mw) {
     const doneDate = completedWorks[mw.key];
     if (doneDate) {
       const midMs = mw.workDate ? new Date(mw.workDate).getTime() : 0;
@@ -9142,24 +9198,24 @@ function getScheduleData() {
           }
         }
         // 判定した部署をシート(B列=2)に書き込むよう予約
-        scheduleUpdates.push({row: i + 1, col: 2, val: dept});
+        scheduleUpdates.push({ row: i + 1, col: 2, val: dept });
       }
 
       const key = `${fieldName}_${workName}_${cropName}`;
       if (!compDate && completedWorks[key]) {
         compDate = completedWorks[key];
-        scheduleUpdates.push({row: i + 1, col: 9, val: compDate}); // I列=9
+        scheduleUpdates.push({ row: i + 1, col: 9, val: compDate }); // I列=9
       }
 
       if (fieldName || workName) {
         let schedDateStr = '-';
         let deadlineStr = '-';
-        try { if (schedDateRaw) schedDateStr = Utilities.formatDate(new Date(schedDateRaw), "JST", "MM/dd"); } catch (eSd) {}
-        try { if (deadlineRaw) deadlineStr = Utilities.formatDate(new Date(deadlineRaw), "JST", "MM/dd"); } catch (eDl) {}
+        try { if (schedDateRaw) schedDateStr = Utilities.formatDate(new Date(schedDateRaw), "JST", "MM/dd"); } catch (eSd) { }
+        try { if (deadlineRaw) deadlineStr = Utilities.formatDate(new Date(deadlineRaw), "JST", "MM/dd"); } catch (eDl) { }
         let isOverdue = false;
         if (!compDate && deadlineRaw) {
           const dlDate = new Date(deadlineRaw);
-          dlDate.setHours(0,0,0,0);
+          dlDate.setHours(0, 0, 0, 0);
           if (dlDate < today) isOverdue = true;
         }
         const scheduleKey = buildWorkScheduleKey_(workName, fieldName, cropName, schedDateRaw, deadlineRaw);
@@ -9195,13 +9251,13 @@ function getScheduleData() {
           } else if (parsedPlace.kind === 'work') {
             periodLabel = String(hours || '');
           } else if (parsedPlace.kind === 'sow') {
-            try { periodLabel = plan ? formatCpPeriodLabel(plan.year, (plan.tasks && plan.tasks.sowing) || []) : ''; } catch (e2) {}
+            try { periodLabel = plan ? formatCpPeriodLabel(plan.year, (plan.tasks && plan.tasks.sowing) || []) : ''; } catch (e2) { }
           }
         }
         let placeFieldIds = [];
         const pipeIdx = placeIdRaw.indexOf('|');
         if (pipeIdx >= 0) {
-          placeFieldIds = placeIdRaw.slice(pipeIdx + 1).split(',').map(function(x) {
+          placeFieldIds = placeIdRaw.slice(pipeIdx + 1).split(',').map(function (x) {
             return String(x || '').trim();
           }).filter(Boolean);
         }
@@ -9250,7 +9306,7 @@ function getScheduleData() {
   }
 
   // 途中作業を予定一覧へ追加
-  midWorks.forEach(function(mw) {
+  midWorks.forEach(function (mw) {
     activeSchedules.push({
       workName: mw.workName,
       dept: mw.dept,
@@ -9295,7 +9351,7 @@ function getScheduleData() {
     polygons = [];
   }
   polygons.forEach(p => {
-    p.harvestingDepts = harvestingFields[p.name] || []; 
+    p.harvestingDepts = harvestingFields[p.name] || [];
   });
 
   return { polygons, activeSchedules, completedSchedules, midWorks: midWorks, workCategories: getWorkCategoryList_(), departments: getDeptList_() };
@@ -9316,9 +9372,9 @@ function delegateCompleteWork(params) {
   if (!found) throw new Error('対象の圃場が見つかりません');
   const pc = 10;
   let ex = [];
-  if (found.rowData[pc - 1]) { try { ex = JSON.parse(found.rowData[pc - 1]); } catch (e) {} }
-  if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch (e) {} }
-  const tgt = ex.find(function(item) { return item && (item.id === recordId || item.url === recordId); });
+  if (found.rowData[pc - 1]) { try { ex = JSON.parse(found.rowData[pc - 1]); } catch (e) { } }
+  if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch (e) { } }
+  const tgt = ex.find(function (item) { return item && (item.id === recordId || item.url === recordId); });
   if (!tgt) throw new Error('対象の作業記録が見つかりません');
   if (!tgt.data || typeof tgt.data !== 'object') tgt.data = {};
 
@@ -9378,9 +9434,9 @@ function deleteWorkSchedule(params) {
         break;
       }
       if (!wantKey && wantName
-          && String(row[0] || '').trim() === wantName
-          && String(row[3] || '').trim() === wantField
-          && String(row[2] || '').trim() === wantCrop) {
+        && String(row[0] || '').trim() === wantName
+        && String(row[3] || '').trim() === wantField
+        && String(row[2] || '').trim() === wantCrop) {
         targetRow = i + 1;
         break;
       }
@@ -9438,9 +9494,9 @@ function completeWorkSchedule(params) {
         break;
       }
       if (!wantKey && wantName
-          && String(row[0] || '').trim() === wantName
-          && String(row[3] || '').trim() === wantField
-          && String(row[2] || '').trim() === wantCrop) {
+        && String(row[0] || '').trim() === wantName
+        && String(row[3] || '').trim() === wantField
+        && String(row[2] || '').trim() === wantCrop) {
         targetRow = i + 1;
         break;
       }
@@ -9467,22 +9523,22 @@ function completeWorkSchedule(params) {
     extra[placeId] = true;
     try {
       ensureSowingAfterCompletedProcure_(schedSheet.getDataRange().getValues(), extra);
-    } catch (eSow) {}
+    } catch (eSow) { }
   } else if (parseCpPlaceKind_(placeId).kind === 'sow' || workName === '播種') {
     const extra = {};
     extra[placeId] = true;
     try {
       ensurePlantingAfterCompletedSowing_(schedSheet.getDataRange().getValues(), extra);
-    } catch (ePlant) {}
+    } catch (ePlant) { }
     try {
       ensureSowingRecordAfterScheduleComplete_(rowData, userName, today);
-    } catch (eSowRec) {}
+    } catch (eSowRec) { }
   } else if (parseCpPlaceKind_(placeId).kind === 'plant' || workName === '定植') {
     const extra = {};
     extra[placeId] = true;
     try {
       ensureFieldWorksAfterCompletedPlanting_(schedSheet.getDataRange().getValues(), extra);
-    } catch (eWork) {}
+    } catch (eWork) { }
   }
 
   writeLog(userName, '作業予定完了', fieldName || workName, `作業名: ${workName}, 行: ${targetRow}`);
@@ -9498,7 +9554,7 @@ function bulkCompleteWorkSchedule(params) {
 
   const completed = [];
   const failed = [];
-  items.forEach(function(item) {
+  items.forEach(function (item) {
     try {
       const res = completeWorkSchedule(Object.assign({}, item, { userName: userName }));
       completed.push({
@@ -9537,9 +9593,9 @@ function undoDelegateCompleteWork_(params) {
   if (!found) throw new Error('対象の圃場が見つかりません');
   const pc = 10;
   let ex = [];
-  if (found.rowData[pc - 1]) { try { ex = JSON.parse(found.rowData[pc - 1]); } catch (e) {} }
-  if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch (e) {} }
-  const tgt = ex.find(function(item) { return item && (item.id === recordId || item.url === recordId); });
+  if (found.rowData[pc - 1]) { try { ex = JSON.parse(found.rowData[pc - 1]); } catch (e) { } }
+  if (ex.length === 0 && found.rowData[6]) { try { ex = JSON.parse(found.rowData[6]); } catch (e) { } }
+  const tgt = ex.find(function (item) { return item && (item.id === recordId || item.url === recordId); });
   if (!tgt) throw new Error('対象の作業記録が見つかりません');
   if (!tgt.data || typeof tgt.data !== 'object') tgt.data = {};
 
@@ -9547,7 +9603,7 @@ function undoDelegateCompleteWork_(params) {
   if (tgt.data.comment) {
     tgt.data.comment = String(tgt.data.comment)
       .split('\n')
-      .filter(function(line) { return String(line).indexOf('【委任完了】') < 0; })
+      .filter(function (line) { return String(line).indexOf('【委任完了】') < 0; })
       .join('\n');
   }
 
@@ -9602,9 +9658,9 @@ function undoCompleteWorkSchedule(params) {
         break;
       }
       if (!wantKey && wantName
-          && String(row[0] || '').trim() === wantName
-          && String(row[3] || '').trim() === wantField
-          && String(row[2] || '').trim() === wantCrop) {
+        && String(row[0] || '').trim() === wantName
+        && String(row[3] || '').trim() === wantField
+        && String(row[2] || '').trim() === wantCrop) {
         targetRow = i + 1;
         break;
       }
@@ -9627,7 +9683,7 @@ function undoCompleteWorkSchedule(params) {
   if (parseCpPlaceKind_(placeId).kind === 'sow' || workName === '播種') {
     try {
       removeSowingRecordAfterScheduleUndo_(rowData);
-    } catch (eSowUndo) {}
+    } catch (eSowUndo) { }
   }
   writeLog(userName, '作業完了取消', fieldName || workName, `作業名: ${workName}, 行: ${targetRow}`);
   return { success: true, workName: workName, fieldName: fieldName, sheetRow: targetRow };
@@ -9642,7 +9698,7 @@ function bulkUndoCompleteWorkSchedule(params) {
 
   const undone = [];
   const failed = [];
-  items.forEach(function(item) {
+  items.forEach(function (item) {
     try {
       const res = undoCompleteWorkSchedule(Object.assign({}, item, { userName: userName }));
       undone.push({
@@ -9686,11 +9742,11 @@ function addWorkSchedule(params) {
   }
   let schedDateStr = '';
   if (params.schedDate) {
-    try { schedDateStr = Utilities.formatDate(new Date(params.schedDate), "Asia/Tokyo", "yyyy/MM/dd"); } catch(e) { schedDateStr = String(params.schedDate); }
+    try { schedDateStr = Utilities.formatDate(new Date(params.schedDate), "Asia/Tokyo", "yyyy/MM/dd"); } catch (e) { schedDateStr = String(params.schedDate); }
   }
   let deadlineStr = '';
   if (params.deadline) {
-    try { deadlineStr = Utilities.formatDate(new Date(params.deadline), "Asia/Tokyo", "yyyy/MM/dd"); } catch(e) { deadlineStr = String(params.deadline); }
+    try { deadlineStr = Utilities.formatDate(new Date(params.deadline), "Asia/Tokyo", "yyyy/MM/dd"); } catch (e) { deadlineStr = String(params.deadline); }
   }
   const hours = String(params.hours || '').trim();
   const person = String(params.person || params.userName || '').trim();
@@ -9771,10 +9827,10 @@ function getScheduleGanttMasters() {
     const workSheet = TENANT_SS.getSheetByName('作業マスタ');
     if (workSheet) {
       const list = readWorkMasterList_(workSheet);
-      (list || []).forEach(function(w) {
+      (list || []).forEach(function (w) {
         if (!w || !w.name) return;
         if (w.category) catSet[w.category] = true;
-        (w.crops || []).forEach(function(c) {
+        (w.crops || []).forEach(function (c) {
           if (c) cropSet[c] = true;
         });
         works.push({
@@ -9785,20 +9841,20 @@ function getScheduleGanttMasters() {
         });
       });
     }
-  } catch (e) {}
+  } catch (e) { }
   try {
     const crops = readMergedCropMasterList_();
-    (crops || []).forEach(function(c) {
+    (crops || []).forEach(function (c) {
       if (c && c.name) cropSet[c.name] = true;
     });
-  } catch (e2) {}
+  } catch (e2) { }
   let categories = Object.keys(catSet);
   if (!categories.length) {
     categories = ['栽培', '生産', '出荷/配送', '育苗', '研修/調整', '管理/事務', '研究/開発', '保全/整備'];
   } else {
-    categories.sort(function(a, b) { return a.localeCompare(b, 'ja'); });
+    categories.sort(function (a, b) { return a.localeCompare(b, 'ja'); });
   }
-  const cropNames = Object.keys(cropSet).sort(function(a, b) { return a.localeCompare(b, 'ja'); });
+  const cropNames = Object.keys(cropSet).sort(function (a, b) { return a.localeCompare(b, 'ja'); });
   return { categories: categories, crops: cropNames, works: works };
 }
 
@@ -9815,7 +9871,7 @@ function ensureOutsourceWorkSheet_() {
   } else {
     const needCols = Math.max(sheet.getLastColumn(), OUTSOURCE_WORK_HEADERS_.length);
     const headers = sheet.getRange(1, 1, 1, needCols).getValues()[0].map(h => String(h || '').trim());
-    OUTSOURCE_WORK_HEADERS_.forEach(function(h, idx) {
+    OUTSOURCE_WORK_HEADERS_.forEach(function (h, idx) {
       if (!headers[idx]) sheet.getRange(1, idx + 1).setValue(h);
     });
   }
@@ -9831,7 +9887,7 @@ function formatOutsourceDateCell_(raw) {
   try {
     const d = new Date(raw);
     if (!isNaN(d.getTime())) return Utilities.formatDate(d, 'Asia/Tokyo', 'MM/dd');
-  } catch (e) {}
+  } catch (e) { }
   return String(raw);
 }
 
@@ -9845,10 +9901,10 @@ function getOutsourceWorkData() {
 
   const fieldNameToPolyId = {};
   try {
-    (getSavedPolygons() || []).forEach(function(p) {
+    (getSavedPolygons() || []).forEach(function (p) {
       if (p && p.name && p.id) fieldNameToPolyId[String(p.name)] = p.id;
     });
-  } catch (e) {}
+  } catch (e) { }
 
   const data = sheet.getRange(2, 1, last - 1, OUTSOURCE_WORK_HEADERS_.length).getValues();
   const items = [];
@@ -9936,9 +9992,9 @@ function completeOutsourceWork(params) {
       const key = buildOutsourceWorkKey_(data[i][0], data[i][3], data[i][2], data[i][4], data[i][5]);
       if (wantKey && key === wantKey) { targetRow = i + 1; break; }
       if (!wantKey && wantName
-          && String(data[i][0] || '').trim() === wantName
-          && String(data[i][3] || '').trim() === wantField
-          && String(data[i][2] || '').trim() === wantCrop) {
+        && String(data[i][0] || '').trim() === wantName
+        && String(data[i][3] || '').trim() === wantField
+        && String(data[i][2] || '').trim() === wantCrop) {
         targetRow = i + 1;
         break;
       }
@@ -9972,9 +10028,9 @@ function deleteOutsourceWork(params) {
       const key = buildOutsourceWorkKey_(data[i][0], data[i][3], data[i][2], data[i][4], data[i][5]);
       if (wantKey && key === wantKey) { targetRow = i + 1; break; }
       if (!wantKey && wantName
-          && String(data[i][0] || '').trim() === wantName
-          && String(data[i][3] || '').trim() === wantField
-          && String(data[i][2] || '').trim() === wantCrop) {
+        && String(data[i][0] || '').trim() === wantName
+        && String(data[i][3] || '').trim() === wantField
+        && String(data[i][2] || '').trim() === wantCrop) {
         targetRow = i + 1;
         break;
       }
@@ -10068,11 +10124,11 @@ function saveGlobalHarvest(params) {
             harvestedFields.push(primaryField);
           }
         }
-      } catch (e) {}
+      } catch (e) { }
     }
   }
   const uniqueHarvested = [];
-  harvestedFields.forEach(function(f) {
+  harvestedFields.forEach(function (f) {
     if (uniqueHarvested.indexOf(f) < 0) uniqueHarvested.push(f);
   });
 
@@ -10080,7 +10136,7 @@ function saveGlobalHarvest(params) {
   let fieldNamesStr = String(params.fieldName || params.fields || '').trim();
   // 旧形式の複数畑カンマ連結は拒否（トレーサビリティのため）
   if (fieldNamesStr && (fieldNamesStr.indexOf(' , ') >= 0 || fieldNamesStr.indexOf(',') >= 0)) {
-    const parts = fieldNamesStr.split(/\s*,\s*/).map(function(s) { return s.trim(); }).filter(Boolean);
+    const parts = fieldNamesStr.split(/\s*,\s*/).map(function (s) { return s.trim(); }).filter(Boolean);
     if (parts.length > 1) {
       throw new Error('1ロットにつき畑は1つだけ指定してください（複数畑は分けてロット作成）');
     }
@@ -10120,7 +10176,7 @@ function saveGlobalHarvest(params) {
   // コンテナごとの内容個数配列（あれば合計・代表値を算出）
   let qtyList = [];
   if (Array.isArray(params.contentQtys) && params.contentQtys.length > 0) {
-    qtyList = params.contentQtys.map(function(v) {
+    qtyList = params.contentQtys.map(function (v) {
       const n = Number(v);
       return (isFinite(n) && n >= 0) ? n : 0;
     });
@@ -10128,8 +10184,8 @@ function saveGlobalHarvest(params) {
   const mode = String(params.contentMode || (qtyList.length ? 'individual' : 'uniform')).trim() || 'uniform';
 
   if (qtyList.length > 0) {
-    const total = qtyList.reduce(function(s, n) { return s + n; }, 0);
-    const allSame = qtyList.every(function(n) { return n === qtyList[0]; });
+    const total = qtyList.reduce(function (s, n) { return s + n; }, 0);
+    const allSame = qtyList.every(function (n) { return n === qtyList[0]; });
     contentQty = allSame ? qtyList[0] : (Math.round((total / qtyList.length) * 1000) / 1000);
     contentDetail = JSON.stringify({
       mode: mode,
@@ -10177,7 +10233,7 @@ function saveGlobalHarvest(params) {
   ]);
 
   const totalForLog = qtyList.length
-    ? qtyList.reduce(function(s, n) { return s + n; }, 0)
+    ? qtyList.reduce(function (s, n) { return s + n; }, 0)
     : ((Number(params.count) || 0) * (Number(contentQty) || 0));
   writeLog(params.author, "ロット生成(1畑×1日)", lotId, `拠点: ${params.location}, 日付: ${targetDateStr}, 作物: ${params.crop}, 畑: ${fieldNamesStr}, 内容: ${contentQty}${contentUnit}, 合計: ${totalForLog}`);
   return {
@@ -10212,10 +10268,10 @@ function markHarvestQtyLotResolved(params) {
     const pc = 10;
     let ex = [];
     if (found.rowData[pc - 1]) {
-      try { ex = JSON.parse(found.rowData[pc - 1]); } catch (e) {}
+      try { ex = JSON.parse(found.rowData[pc - 1]); } catch (e) { }
     }
     if (ex.length === 0 && found.rowData[6]) {
-      try { ex = JSON.parse(found.rowData[6]); } catch (e) {}
+      try { ex = JSON.parse(found.rowData[6]); } catch (e) { }
     }
     const tgt = ex.find(function (row) {
       return row && (row.id === recordId || row.url === recordId);
@@ -10306,7 +10362,7 @@ function getLotList(params) {
           if (parsed.total != null && parsed.total !== '') contentTotal = parsed.total;
         }
       }
-    } catch (e) {}
+    } catch (e) { }
 
     lots.push({
       rowIndex: i + 1,
@@ -10430,27 +10486,27 @@ function ssGetLotSheet_() {
 function saveGlobalShipping(params) {
   const ss = TENANT_SS;
   const today = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm");
-  
+
   // ① 選択されたロットを「出荷済（残0）」に更新する
   const lotSheet = ss.getSheetByName('ロット記録');
-  if(lotSheet && params.selectedLots && params.selectedLots.length > 0) {
+  if (lotSheet && params.selectedLots && params.selectedLots.length > 0) {
     const lData = lotSheet.getDataRange().getValues();
-    for(let i=1; i<lData.length; i++) {
+    for (let i = 1; i < lData.length; i++) {
       if (params.selectedLots.includes(String(lData[i][0]))) {
-         lotSheet.getRange(i+1, 8).setValue(0); // 残コンテナ0
-         lotSheet.getRange(i+1, 9).setValue("出荷済"); // ステータス
+        lotSheet.getRange(i + 1, 8).setValue(0); // 残コンテナ0
+        lotSheet.getRange(i + 1, 9).setValue("出荷済"); // ステータス
       }
     }
   }
-  
+
   // ② 「出荷記録」シートに履歴を残す
   const shipSheet = getOrCreateRecordSheet('出荷記録');
-  const header = shipSheet.getRange(1,1,1,5).getValues()[0];
-  if(header[0] !== "日時") { // ヘッダーがなければ作る
-     shipSheet.getRange("A1:E1").setValues([["日時", "担当者", "出荷先", "対象ロット", "メモ"]]).setFontWeight("bold").setBackground("#e0e0e0");
+  const header = shipSheet.getRange(1, 1, 1, 5).getValues()[0];
+  if (header[0] !== "日時") { // ヘッダーがなければ作る
+    shipSheet.getRange("A1:E1").setValues([["日時", "担当者", "出荷先", "対象ロット", "メモ"]]).setFontWeight("bold").setBackground("#e0e0e0");
   }
   shipSheet.appendRow([today, params.author, params.destination || "", params.selectedLots.join(" , "), params.notes || ""]);
-  
+
   writeLog(params.author, "出荷記録", params.selectedLots.join(","), `出荷先: ${params.destination}`);
   return true;
 }
@@ -10461,18 +10517,18 @@ function saveGlobalShipping(params) {
 // ==========================================
 function updateInventory(params) {
   const ss = TENANT_SS;
-  
+
   // 1. 在庫記録シートへの追記
   let invSheet = ss.getSheetByName('在庫記録');
   if (!invSheet) {
     invSheet = ss.insertSheet('在庫記録');
     invSheet.appendRow(['日時', 'ユーザー', '資材ID', '資材名', '変動量', '処理', '看板ID', '看板名']);
   }
-  
+
   const now = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm:ss");
   const diff = parseInt(params.amount);
   const actionType = diff >= 0 ? "入庫" : "出庫";
-  
+
   invSheet.appendRow([
     now,
     params.userName,
@@ -10483,12 +10539,12 @@ function updateInventory(params) {
     params.signId,
     params.signName
   ]);
-  
+
   // 2. 資材マスタの現在庫(K列)を更新
   const matSheet = ss.getSheetByName('資材マスタ');
   const data = matSheet.getDataRange().getValues();
   let currentStock = 0;
-  
+
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === params.materialId) {
       // ★修正：K列（インデックス10）から現在の在庫を取得して計算
@@ -10497,7 +10553,7 @@ function updateInventory(params) {
       break;
     }
   }
-  
+
   writeLog(params.userName, `在庫${actionType}`, `${params.materialName} (${Math.abs(diff)})`, `対象: ${params.signName}`);
   return currentStock;
 }
@@ -10507,9 +10563,9 @@ function updateInventory(params) {
 function addMaterialToSign(params) {
   const ss = TENANT_SS;
   const sheet = ss.getSheetByName('資材マスタ');
-  const newId = 'MAT-' + Utilities.getUuid().substring(0,8);
+  const newId = 'MAT-' + Utilities.getUuid().substring(0, 8);
   const now = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm:ss");
-  
+
   // 写真をGoogleドライブに保存する内部関数
   function saveImage(photoObj) {
     if (!photoObj || !photoObj.base64) return "";
@@ -10521,15 +10577,15 @@ function addMaterialToSign(params) {
       const folders = DriveApp.getFoldersByName("情熱MAP_資材写真");
       const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("情熱MAP_資材写真");
       return folder.createFile(blob).getUrl();
-    } catch(e) { return ""; }
+    } catch (e) { return ""; }
   }
 
   // 2枚までの写真を保存
   const photo1Url = params.photos && params.photos.length > 0 ? saveImage(params.photos[0]) : "";
   const photo2Url = params.photos && params.photos.length > 1 ? saveImage(params.photos[1]) : "";
-  
+
   const initStock = parseInt(params.initialStock) || 0;
-  
+
   // 資材マスタの列に合わせて登録
   // A:ID, B:資材名, C:作業分類, D:容量/サイズ, E:容量単位, F:在庫単位, G:写真, H:写真2, I:場所看板名, J:場所看板id, K:在庫状況, L:登録者
   sheet.appendRow([
@@ -10558,17 +10614,17 @@ function addMaterialToSign(params) {
   }
 
   writeLog(params.userName, "資材新規登録", params.name, `対象看板: ${params.signName}`);
-  
+
   return {
-     id: newId, 
-     name: params.name, 
-     workCategory: "", 
-     size: params.size,
-     volUnit: params.volUnit,
-     stockUnit: params.stockUnit,
-     signName: params.signName,
-     signId: params.signId,
-     stock: initStock
+    id: newId,
+    name: params.name,
+    workCategory: "",
+    size: params.size,
+    volUnit: params.volUnit,
+    stockUnit: params.stockUnit,
+    signName: params.signName,
+    signId: params.signId,
+    stock: initStock
   };
 }
 // ==========================================
@@ -10578,10 +10634,10 @@ function getInventoryHistory(params) {
   const ss = TENANT_SS;
   const invSheet = ss.getSheetByName('在庫記録');
   if (!invSheet) return [];
-  
+
   const data = invSheet.getDataRange().getDisplayValues();
   let history = [];
-  
+
   for (let i = data.length - 1; i > 0; i--) {
     if (data[i][2] === params.materialId) {
       history.push({
@@ -10594,7 +10650,7 @@ function getInventoryHistory(params) {
     }
   }
   return history
-  ;
+    ;
 }
 // ==========================================
 // 在庫の再計算と履歴の編集・削除
@@ -10603,7 +10659,7 @@ function recalcStock(materialId) {
   const ss = TENANT_SS;
   const invSheet = ss.getSheetByName('在庫記録');
   let newStock = 0;
-  
+
   if (invSheet) {
     const data = invSheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
@@ -10615,7 +10671,7 @@ function recalcStock(materialId) {
       }
     }
   }
-  
+
   const matSheet = ss.getSheetByName('資材マスタ');
   if (matSheet) {
     const mData = matSheet.getDataRange().getValues();
@@ -10639,15 +10695,15 @@ function deleteInventoryHistory(params) {
 function editInventoryHistory(params) {
   const ss = TENANT_SS;
   const invSheet = ss.getSheetByName('在庫記録');
-  
+
   // 🌟F列(6列目): 操作内容（入庫・出庫など）を上書きする
   if (params.newAction) {
     invSheet.getRange(params.rowIndex, 6).setValue(params.newAction);
   }
 
   // 🌟E列(5列目): 数量(変動量)を上書きする
-  invSheet.getRange(params.rowIndex, 5).setValue(Math.abs(params.newAmount)); 
-  
+  invSheet.getRange(params.rowIndex, 5).setValue(Math.abs(params.newAmount));
+
   return recalcStock(params.materialId); // 再計算して新しい在庫を返す
 }
 // ==========================================
@@ -10656,17 +10712,17 @@ function editInventoryHistory(params) {
 function updateMachineLocations(params) {
   const ss = TENANT_SS;
   const macSh = ss.getSheetByName('農機マスタ');
-  if(!macSh) return false;
-  
+  if (!macSh) return false;
+
   const data = macSh.getDataRange().getValues();
   const updates = params.updates || [];
-  
+
   updates.forEach(upd => {
-    for(let i = 1; i < data.length; i++) {
-      if(data[i][0] === upd.id) {
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0] === upd.id) {
         // ★定位置(G列H列)は残し、M列(13列目)・N列(14列目)に現在地を記録する！
-        macSh.getRange(i + 1, 13).setValue(upd.signName); 
-        macSh.getRange(i + 1, 14).setValue(upd.signId);   
+        macSh.getRange(i + 1, 13).setValue(upd.signName);
+        macSh.getRange(i + 1, 14).setValue(upd.signId);
         break;
       }
     }
@@ -10743,7 +10799,7 @@ function saveNoukiMachinePhoto_(photoObj) {
 
 function addMachineToSign(params) {
   const sheet = ensureNoukiMasterSheet();
-  const newId = 'MAC-' + Utilities.getUuid().substring(0,8);
+  const newId = 'MAC-' + Utilities.getUuid().substring(0, 8);
 
   let photo1Url = params.photo || "";
   let photo2Url = params.photo2 || "";
@@ -10765,7 +10821,7 @@ function addMachineToSign(params) {
   const signName = params.signName || "";
   const signId = params.signId || "";
   const fuel = params.fuel || params.fuelType || "";
-  
+
   // A–V スリム22列
   const row = buildNoukiMachineRow({
     id: newId,
@@ -10802,7 +10858,7 @@ function addMachineToSign(params) {
   const displayName = buildNoukiDisplayName_(params.type || '', params.model || params.modelType || '', params.machineNumber || params.serialNo || '', null, params.model2 || '')
     || params.name || newId;
   writeLog(params.userName, "農機新規登録", displayName, `定位置: ${signName}`);
-  
+
   return finalizeNoukiMachineDisplay_(parseNoukiMachineRow(row), sheet);
 }
 // ==========================================
@@ -10811,16 +10867,16 @@ function addMachineToSign(params) {
 function editMaterial(params) {
   const ss = TENANT_SS;
   const sheet = ss.getSheetByName('資材マスタ');
-  if(!sheet) throw new Error("資材マスタシートがありません");
-  
+  if (!sheet) throw new Error("資材マスタシートがありません");
+
   const data = sheet.getDataRange().getValues();
-  for(let i=1; i<data.length; i++) {
-    if(data[i][0] === params.id) {
-      sheet.getRange(i+1, 2).setValue(params.name);         // B列: 資材名
-      sheet.getRange(i+1, 3).setValue(params.workCategory); // ★これがあるか確認: C列(作業分類)
-      sheet.getRange(i+1, 4).setValue(params.size);         // D列: 容量・サイズ
-      sheet.getRange(i+1, 5).setValue(params.volUnit);      // E列: 容量単位
-      sheet.getRange(i+1, 6).setValue(params.stockUnit);    // F列: 在庫単位
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === params.id) {
+      sheet.getRange(i + 1, 2).setValue(params.name);         // B列: 資材名
+      sheet.getRange(i + 1, 3).setValue(params.workCategory); // ★これがあるか確認: C列(作業分類)
+      sheet.getRange(i + 1, 4).setValue(params.size);         // D列: 容量・サイズ
+      sheet.getRange(i + 1, 5).setValue(params.volUnit);      // E列: 容量単位
+      sheet.getRange(i + 1, 6).setValue(params.stockUnit);    // F列: 在庫単位
       return true;
     }
   }
@@ -10991,22 +11047,22 @@ function applyMachinePartsMutation_(raw, params, maintContentsRaw) {
 function addMachinePart(params) {
   const ss = TENANT_SS;
   const sheet = ss.getSheetByName('農機マスタ');
-  if(!sheet) throw new Error("農機マスタシートがありません");
-  
+  if (!sheet) throw new Error("農機マスタシートがありません");
+
   const data = sheet.getDataRange().getValues();
   const partsCol = NOUKI_COL.parts; // P列
   const partsIdx = partsCol - 1;
   let updatedCount = 0;
-  for(let i=1; i<data.length; i++) {
+  for (let i = 1; i < data.length; i++) {
     const rowId = String(data[i][0] || "");
     const rowType = String(data[i][NOUKI_COL.type - 1] || "");
     const rowGroup = String(data[i][NOUKI_COL.group - 1] || "");
     const matchId = params.machineId && rowId === String(params.machineId);
     const matchCat = params.category && (rowType === String(params.category) || rowGroup === String(params.category));
-    
+
     if (matchId || matchCat || (!params.machineId && !params.category)) {
       const next = applyMachinePartsMutation_(data[i][partsIdx], params || {}, data[i][NOUKI_COL.maintenanceContents - 1]);
-      sheet.getRange(i+1, partsCol).setValue(next);
+      sheet.getRange(i + 1, partsCol).setValue(next);
       updatedCount++;
     }
   }
@@ -11018,40 +11074,40 @@ function addMachinePart(params) {
 function addMachineSymptom(params) {
   const ss = TENANT_SS;
   const sheet = ss.getSheetByName('農機マスタ');
-  if(!sheet) throw new Error("農機マスタシートがありません");
-  
+  if (!sheet) throw new Error("農機マスタシートがありません");
+
   const data = sheet.getDataRange().getValues();
   const symCol = NOUKI_COL.symptoms; // O列
   const symIdx = symCol - 1;
   let updatedCount = 0;
-  for(let i=1; i<data.length; i++) {
+  for (let i = 1; i < data.length; i++) {
     const rowId = String(data[i][0] || "");
     const rowType = String(data[i][NOUKI_COL.type - 1] || "");
     const rowGroup = String(data[i][NOUKI_COL.group - 1] || "");
     const matchId = params.machineId && rowId === String(params.machineId);
     const matchCat = params.category && (rowType === String(params.category) || rowGroup === String(params.category));
-    
+
     if (matchId || matchCat || (!params.machineId && !params.category)) {
       if (params.fullSymptoms != null) {
-        sheet.getRange(i+1, symCol).setValue(String(params.fullSymptoms || ""));
+        sheet.getRange(i + 1, symCol).setValue(String(params.fullSymptoms || ""));
         updatedCount++;
       } else if (params.oldSymptom && params.newSymptom) {
         let symps = String(data[i][symIdx] || "").split(/[,、]/).map(s => s.trim()).filter(Boolean);
         const idx = symps.indexOf(params.oldSymptom);
         if (idx !== -1) {
           symps[idx] = params.newSymptom;
-          sheet.getRange(i+1, symCol).setValue(symps.join(','));
+          sheet.getRange(i + 1, symCol).setValue(symps.join(','));
           updatedCount++;
         }
       } else if (params.deleteSymptom) {
         let symps = String(data[i][symIdx] || "").split(/[,、]/).map(s => s.trim()).filter(s => s && s !== params.deleteSymptom);
-        sheet.getRange(i+1, symCol).setValue(symps.join(','));
+        sheet.getRange(i + 1, symCol).setValue(symps.join(','));
         updatedCount++;
       } else if (params.newSymptom) {
         let symps = String(data[i][symIdx] || "").split(/[,、]/).map(s => s.trim()).filter(Boolean);
         if (!symps.includes(params.newSymptom)) {
           symps.push(params.newSymptom);
-          sheet.getRange(i+1, symCol).setValue(symps.join(','));
+          sheet.getRange(i + 1, symCol).setValue(symps.join(','));
           updatedCount++;
         }
       }
@@ -11105,12 +11161,12 @@ function addMachineMaintenanceContent(params) {
 function saveRefuelRecord(p) {
   const ss = TENANT_SS;
   let sheet = ss.getSheetByName('給油記録');
-  if(!sheet) { // もしシートがなければ自動作成
+  if (!sheet) { // もしシートがなければ自動作成
     sheet = ss.insertSheet('給油記録');
     // ★L列のヘッダーを「爪の状態」に変更しました
-    sheet.appendRow(['車両ID','車両名','給油日','給油量(L)','アワメーター(h)','使うアタッチメント選択','給油キャップ','エンジンオイル','防虫網','冷却水','チェーンケースカバー','爪の状態','登録者']);
+    sheet.appendRow(['車両ID', '車両名', '給油日', '給油量(L)', 'アワメーター(h)', '使うアタッチメント選択', '給油キャップ', 'エンジンオイル', '防虫網', '冷却水', 'チェーンケースカバー', '爪の状態', '登録者']);
   }
-  
+
   sheet.appendRow([
     p.machineId,
     p.machineName,
@@ -11131,11 +11187,11 @@ function saveRefuelRecord(p) {
 function getRefuelHistory() {
   const ss = TENANT_SS;
   const sh = ss.getSheetByName('給油記録');
-  if(!sh) return [];
+  if (!sh) return [];
   const data = sh.getDataRange().getValues();
   let history = [];
-  for(let i=1; i<data.length; i++) {
-    if(data[i][0]) {
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0]) {
       let dStr = data[i][2];
       if (dStr instanceof Date) dStr = Utilities.formatDate(dStr, "JST", "yyyy/MM/dd");
       history.push({
@@ -11156,15 +11212,15 @@ function getMachineLastHourMeters() {
   const ss = TENANT_SS;
   const sh = ss.getSheetByName('給油記録');
   let res = {};
-  if(!sh) return res;
-  
+  if (!sh) return res;
+
   const data = sh.getDataRange().getValues();
   // 上から下へループするため、同じ車両があれば一番下（最新）の記録で上書きされます
-  for(let i=1; i<data.length; i++) {
+  for (let i = 1; i < data.length; i++) {
     const mId = data[i][0];   // A列: 車両ID
     const hm = data[i][4];    // E列: アワメーター
     if (mId && hm !== "") {
-      res[mId] = hm; 
+      res[mId] = hm;
     }
   }
   return res;
@@ -11176,13 +11232,13 @@ function getMachineLastHourMeters() {
 function saveCroptypeWithFile(params) {
   try {
     let fileUrls = [];
-    
+
     // Process files array if exists
     if (params.files && Array.isArray(params.files) && params.files.length > 0) {
       const folderName = "情熱MAP品種情報";
       let folders = DriveApp.getFoldersByName(folderName);
       let folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
-      
+
       params.files.forEach(f => {
         if (f.base64Data && f.fileName) {
           let byteString = Utilities.base64Decode(f.base64Data);
@@ -11198,18 +11254,18 @@ function saveCroptypeWithFile(params) {
       let type = splitBase[0].split(';')[0].replace('data:', '');
       let byteString = Utilities.base64Decode(splitBase[1]);
       let blob = Utilities.newBlob(byteString, type, params.fileName);
-      
+
       const folderName = "情熱MAP品種情報";
       let folders = DriveApp.getFoldersByName(folderName);
       let folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
-      
+
       const file = folder.createFile(blob);
       file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
       fileUrls.push(file.getUrl());
     }
-    
+
     let fileUrl = fileUrls.join(',');
-    
+
     // Save to 作型DB
     const ss = TENANT_SS;
     let sheet = ss.getSheetByName('作型DB');
@@ -11217,23 +11273,23 @@ function saveCroptypeWithFile(params) {
       sheet = ss.insertSheet('作型DB');
       sheet.appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', 'ファイルURL', '特性', 'メーカー', '粒数']);
     }
-    
+
     const headers = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0];
-    
+
     let fileUrlColIndex = headers.indexOf('ファイルURL') + 1;
     if (fileUrlColIndex === 0) {
       fileUrlColIndex = headers.length + 1;
       sheet.getRange(1, fileUrlColIndex).setValue('ファイルURL');
       headers.push('ファイルURL');
     }
-    
+
     let charColIndex = headers.indexOf('特性') + 1;
     if (charColIndex === 0) {
       charColIndex = headers.length + 1;
       sheet.getRange(1, charColIndex).setValue('特性');
       headers.push('特性');
     }
-    
+
     let makerColIndex = headers.indexOf('メーカー') + 1;
     if (makerColIndex === 0) {
       makerColIndex = headers.length + 1;
@@ -11247,22 +11303,22 @@ function saveCroptypeWithFile(params) {
       sheet.getRange(1, grainColIndex).setValue('粒数');
       headers.push('粒数');
     }
-    
+
     let harvestSeasonColIndex = headers.indexOf('とる時期') + 1;
     if (harvestSeasonColIndex === 0) {
       harvestSeasonColIndex = headers.length + 1;
       sheet.getRange(1, harvestSeasonColIndex).setValue('とる時期');
       headers.push('とる時期');
     }
-    
+
     const data = sheet.getDataRange().getValues();
     let updated = false;
     for (let i = 1; i < data.length; i++) {
-      if (String(data[i][0]).trim() === String(params.crop).trim() && 
-          String(data[i][1]).trim() === String(params.variety).trim() && 
-          String(data[i][2] || '').trim() === String(params.season || '').trim() && 
-          String(data[i][3] || '').trim() === String(params.climate || '').trim()) {
-        
+      if (String(data[i][0]).trim() === String(params.crop).trim() &&
+        String(data[i][1]).trim() === String(params.variety).trim() &&
+        String(data[i][2] || '').trim() === String(params.season || '').trim() &&
+        String(data[i][3] || '').trim() === String(params.climate || '').trim()) {
+
         sheet.getRange(i + 1, 5).setValue(JSON.stringify(params.sowing || []));
         sheet.getRange(i + 1, 6).setValue(JSON.stringify(params.planting || []));
         sheet.getRange(i + 1, 7).setValue(JSON.stringify(params.harvesting || []));
@@ -11285,7 +11341,7 @@ function saveCroptypeWithFile(params) {
         break;
       }
     }
-    
+
     if (!updated) {
       let newRow = new Array(headers.length).fill('');
       newRow[0] = params.crop;
@@ -11302,9 +11358,9 @@ function saveCroptypeWithFile(params) {
       newRow[harvestSeasonColIndex - 1] = params.harvestSeason || '';
       sheet.appendRow(newRow);
     }
-    
+
     return { success: true, message: "作型を保存しました", url: fileUrl };
-  } catch(e) {
+  } catch (e) {
     return { success: false, message: e.message };
   }
 }
@@ -11314,12 +11370,12 @@ function saveCroptypeWithFile(params) {
 function updateSignLink(params) {
   const ss = TENANT_SS;
   const sh = ss.getSheetByName('看板');
-  if(!sh) return false;
+  if (!sh) return false;
   const data = sh.getDataRange().getValues();
   const numColumns = sh.getDataRange().getNumColumns();
-  for(let i=1; i<data.length; i++) {
-    if(data[i][0] === params.id) {
-      if(numColumns >= 9) sh.getRange(i+1, 9).setValue(params.linkedSigns); // I列は9番目
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === params.id) {
+      if (numColumns >= 9) sh.getRange(i + 1, 9).setValue(params.linkedSigns); // I列は9番目
       return true;
     }
   }
@@ -11332,16 +11388,16 @@ function addToolToMaster(params) {
   const ss = TENANT_SS;
   const sheet = ss.getSheetByName('道具マスタ');
   if (!sheet) throw new Error("「道具マスタ」シートが見つかりません。");
-  
+
   // かぶらない一意のIDを作成
-  const id = "TL-" + Utilities.formatDate(new Date(), "GMT", "MMddHHmmss") + Math.floor(Math.random()*1000);
-  
+  const id = "TL-" + Utilities.formatDate(new Date(), "GMT", "MMddHHmmss") + Math.floor(Math.random() * 1000);
+
   // 写真の保存処理
   let photoUrl = "";
   if (params.photoBase64) {
     const folders = DriveApp.getFoldersByName("道具写真");
     const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("道具写真");
-    
+
     const parts = params.photoBase64.split(',');
     const type = parts[0].split(';')[0].replace('data:', '');
     const blob = Utilities.newBlob(Utilities.base64Decode(parts[1]), type, params.photoFilename || "photo.jpg");
@@ -11349,10 +11405,10 @@ function addToolToMaster(params) {
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     photoUrl = "https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w800";
   }
-  
+
   const status = '使用可'; // 新規登録時は「使用可」にする
   const dateStr = params.date || Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd");
-  
+
   // 道具マスタの列構成に合わせて書き込み（A:ID, B:日付, C:資材名, D:登録番号, E:使う作業, F:写真, G:稼働状況, H:場所看板名, I:場所看板id）
   sheet.appendRow([
     id,
@@ -11365,10 +11421,10 @@ function addToolToMaster(params) {
     params.signName || "",
     params.signId || ""
   ]);
-  
+
   // システムの操作ログに記録
   writeLog(params.userName, "道具登録", params.name, `対象: ${params.signName}`);
-  
+
   // 登録完了後、アプリ側（index.html）に最新データを返す
   return {
     id: id,
@@ -11389,7 +11445,7 @@ function updateToolStatus(params) {
   const ss = TENANT_SS;
   const masterSheet = ss.getSheetByName('道具マスタ');
   const logSheet = ss.getSheetByName('道具記録');
-  
+
   if (!masterSheet) throw new Error("「道具マスタ」シートがありません。");
 
   const data = masterSheet.getDataRange().getValues();
@@ -11413,7 +11469,7 @@ function updateToolStatus(params) {
   // 3. 「道具記録」シートに履歴をガッツリ追記する
   if (logSheet && toolData) {
     const dateStr = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd HH:mm");
-    
+
     // E列（使う作業）の欄に、誰が何をしたかの操作ログを入れる
     const actionLog = `【${params.newStatus}】へ変更 (操作者: ${params.userName})`;
 
@@ -11469,20 +11525,20 @@ function getToolUsageHistory(params) {
 function editToolInMaster(params) {
   const sheet = TENANT_SS.getSheetByName('道具マスタ');
   if (!sheet) throw new Error("「道具マスタ」シートが見つかりません。");
-  
+
   const data = sheet.getDataRange().getValues();
   let targetRowIndex = -1;
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]) === params.toolId) { targetRowIndex = i + 1; break; }
   }
   if (targetRowIndex === -1) throw new Error("指定された道具が見つかりません。");
-  
+
   // B列(2):日付, C列(3):資材名, D列(4):登録番号, E列(5):使う作業 を上書き
   sheet.getRange(targetRowIndex, 2).setValue(params.date);
   sheet.getRange(targetRowIndex, 3).setValue(params.name);
   sheet.getRange(targetRowIndex, 4).setValue(params.regNumber);
   sheet.getRange(targetRowIndex, 5).setValue(params.works);
-  
+
   writeLog(params.userName, "道具編集", params.name, `番号: ${params.regNumber}`);
   return true;
 }
@@ -11493,7 +11549,7 @@ function editToolInMaster(params) {
 function deleteToolFromMaster(params) {
   const sheet = TENANT_SS.getSheetByName('道具マスタ');
   if (!sheet) throw new Error("「道具マスタ」シートが見つかりません。");
-  
+
   const data = sheet.getDataRange().getValues();
   let targetRowIndex = -1;
   let toolName = "";
@@ -11501,11 +11557,11 @@ function deleteToolFromMaster(params) {
     if (String(data[i][0]) === params.toolId) {
       targetRowIndex = i + 1;
       toolName = data[i][2]; // ログ用に名前を取得
-      break; 
+      break;
     }
   }
   if (targetRowIndex === -1) throw new Error("指定された道具が見つかりません。");
-  
+
   sheet.deleteRow(targetRowIndex); // 行ごと削除
   writeLog(params.userName, "道具削除", toolName, "マスタから削除");
   return true;
@@ -11591,7 +11647,7 @@ function deleteMachineFromMaster(params) {
     if (String(data[i][0]) === params.machineId) { targetRowIndex = i + 1; break; }
   }
   if (targetRowIndex === -1) throw new Error("指定された農機が見つかりません。");
-  
+
   sheet.deleteRow(targetRowIndex); // 行ごと削除
   return true;
 }
@@ -11602,29 +11658,29 @@ function getMapCoordinates(params) {
   var url = params.url;
   var maxRedirects = 10;
   var loopCount = 0;
-  
+
   try {
     // リダイレクトを追跡
     while (loopCount < maxRedirects) {
       var response = UrlFetchApp.fetch(url, { followRedirects: false, muteHttpExceptions: true });
       var headers = response.getHeaders();
       var responseCode = response.getResponseCode();
-      
+
       if (responseCode >= 300 && responseCode < 400 && (headers['Location'] || headers['location'])) {
         var nextUrl = headers['Location'] || headers['location'];
         if (nextUrl.startsWith('/')) { nextUrl = "https://www.google.com" + nextUrl; }
         url = nextUrl;
         loopCount++;
       } else {
-        break; 
+        break;
       }
     }
-    
+
     // 展開された最終的なURLから座標を探す（%2C エンコードも許容）
     function extractLatLngFromUrl_(u) {
       if (!u) return null;
       var decoded = String(u);
-      try { decoded = decodeURIComponent(decoded); } catch (e) {}
+      try { decoded = decodeURIComponent(decoded); } catch (e) { }
       decoded = decoded.replace(/%2C/gi, ',');
       var patterns = [
         /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/,
@@ -11640,7 +11696,7 @@ function getMapCoordinates(params) {
     }
 
     var found = extractLatLngFromUrl_(url);
-    
+
     // URLに無ければ最終ページHTMLからも探す（短縮・暗号化リンク対策）
     if (!found) {
       try {
@@ -11648,7 +11704,7 @@ function getMapCoordinates(params) {
         var finalUrl = htmlRes.getHeaders()['Location'] || url;
         try {
           // UrlFetchApp は最終URLを直接返さないことがあるので getAllHeaders 等は使わず本文を見る
-        } catch (e0) {}
+        } catch (e0) { }
         found = extractLatLngFromUrl_(htmlRes.getHeaders()['Location'] || '') || extractLatLngFromUrl_(url);
         if (!found) {
           var body = String(htmlRes.getContentText() || '').slice(0, 200000);
@@ -11657,7 +11713,7 @@ function getMapCoordinates(params) {
             || body.match(/\[null,null,(-?\d+\.\d+),(-?\d+\.\d+)\]/);
           if (bm) found = { lat: parseFloat(bm[1]), lng: parseFloat(bm[2]) };
         }
-      } catch (eHtml) {}
+      } catch (eHtml) { }
     }
 
     if (found && !isNaN(found.lat) && !isNaN(found.lng)) {
@@ -11665,7 +11721,7 @@ function getMapCoordinates(params) {
     } else {
       return { success: false, error: "展開後のURLから座標が見つかりませんでした。", expandedUrl: url };
     }
-    
+
   } catch (e) {
     return { success: false, error: "通信エラー: " + e.message };
   }
@@ -11700,8 +11756,8 @@ function getPolygonDrawingHistory(params) {
     const targetId = String(params.id || "");
     const summaryOnly = params.summary === true || params.summary === "true" || params.summary === 1;
 
-    const fallbackFromPolygonSheet_ = function() {
-      const checkSheet = function(shName, colIdx) {
+    const fallbackFromPolygonSheet_ = function () {
+      const checkSheet = function (shName, colIdx) {
         const sh = ss.getSheetByName(shName);
         if (!sh) return null;
         const lr = sh.getLastRow();
@@ -11764,7 +11820,7 @@ function getPolygonDrawingHistory(params) {
       history.push(item);
     }
     return history;
-  } catch(e) {
+  } catch (e) {
     throw new Error("履歴取得エラー: " + e.message);
   }
 }
@@ -11848,7 +11904,7 @@ function ensureFieldMemoColumnHeader_(sheet) {
   try {
     const header = sheet.getRange(1, 19).getValue();
     if (!header) sheet.getRange(1, 19).setValue('圃場メモ');
-  } catch (e) {}
+  } catch (e) { }
 }
 
 function saveFieldMemo(params) {
@@ -12009,7 +12065,7 @@ function moveLunchBreakRecordDate_(params) {
           });
         }
       }
-    } catch (eAtt) {}
+    } catch (eAtt) { }
 
     // 互換: 旧 F/G 列に残った昼休憩は、新日付の昼休憩行へ移す
     try {
@@ -12037,7 +12093,7 @@ function moveLunchBreakRecordDate_(params) {
           attendanceLunchUpdated += 2;
         }
       }
-    } catch (eAttLegacy) {}
+    } catch (eAttLegacy) { }
 
     // トラッキング: 種類「昼休憩(HH:MM-HH:MM)」の日時を新日付へ
     let trackingUpdated = 0;
@@ -12139,7 +12195,7 @@ function deleteLunchBreakRecord_(params) {
           attendanceCleared += found.rows.length;
         }
       }
-    } catch (eRows) {}
+    } catch (eRows) { }
     try {
       const att = TENANT_SS.getSheetByName('出退勤');
       if (att && att.getLastRow() > 1) {
@@ -12158,7 +12214,7 @@ function deleteLunchBreakRecord_(params) {
           attendanceCleared++;
         }
       }
-    } catch (eAtt) {}
+    } catch (eAtt) { }
 
     writeLog(String(params.userName || userName), '昼休憩削除', ymd,
       (startPad || '') + '〜' + (endPad || '') + ' / sheet=' + lunchSheetDeleted + ' / att=' + attendanceCleared);
@@ -12202,7 +12258,7 @@ function deleteBulkWorkMemoBatch_(params) {
       const dName = String((data && data.workName) || '').trim();
       const authorKey = String(author || (data && data.author) || '').replace(/\s+/g, '');
       if (authorKey && userKey && authorKey !== userKey
-          && userKey.indexOf(authorKey) < 0 && authorKey.indexOf(userKey) < 0) {
+        && userKey.indexOf(authorKey) < 0 && authorKey.indexOf(userKey) < 0) {
         return false;
       }
       for (let i = 0; i < items.length; i++) {
@@ -12228,9 +12284,9 @@ function deleteBulkWorkMemoBatch_(params) {
         const rowAuthor = String(values[i][2] || '').trim();
         const rowAuthorKey = rowAuthor.replace(/\s+/g, '');
         if (rowAuthorKey && userKey
-            && rowAuthorKey !== userKey
-            && userKey.indexOf(rowAuthorKey) < 0
-            && rowAuthorKey.indexOf(userKey) < 0) {
+          && rowAuthorKey !== userKey
+          && userKey.indexOf(rowAuthorKey) < 0
+          && rowAuthorKey.indexOf(userKey) < 0) {
           continue;
         }
         // 作業記録シートに bulkBatchId 列はないため、items の日付・時刻・作業名で消す
@@ -12272,9 +12328,9 @@ function deleteBulkWorkMemoBatch_(params) {
           const author = item.author || data.author || '';
           const authorKey = String(author || '').replace(/\s+/g, '');
           if (authorKey && userKey
-              && authorKey !== userKey
-              && userKey.indexOf(authorKey) < 0
-              && authorKey.indexOf(userKey) < 0) {
+            && authorKey !== userKey
+            && userKey.indexOf(authorKey) < 0
+            && authorKey.indexOf(userKey) < 0) {
             return true;
           }
           let hit = false;
@@ -12315,7 +12371,7 @@ function deleteBulkWorkMemoBatch_(params) {
           endTime: li.endTime || li.end || ''
         });
         if (res) lunchDeleted += (Number(res.lunchSheetDeleted) || 0) + (Number(res.attendanceCleared) || 0);
-      } catch (eLunch) {}
+      } catch (eLunch) { }
     });
 
     writeLog(userName, '一括入力バッチ削除', ymd || batchId,
@@ -12375,9 +12431,9 @@ function deleteAttendanceForDate_(params) {
           trackDeleted++;
         }
       }
-    } catch (te) {}
+    } catch (te) { }
     writeLog(String(params.userName || userName), '出退勤削除', ymd, 'deleted=' + deleted + ' track=' + trackDeleted);
-    try { clearWorkRecordTimeHint_(userName, ymd); } catch (ce) {}
+    try { clearWorkRecordTimeHint_(userName, ymd); } catch (ce) { }
     return { success: true, deleted: deleted, trackDeleted: trackDeleted, workDate: ymd };
   } catch (e) {
     throw new Error('出退勤削除エラー: ' + e.message);
@@ -12637,7 +12693,7 @@ function syncAttendanceRestRowsForDays_(pairs) {
     const key = u.replace(/\s+/g, '') + '|' + ymd;
     if (seen[key]) return;
     seen[key] = true;
-    try { syncAttendanceRestRows_(u, ymd); } catch (e) {}
+    try { syncAttendanceRestRows_(u, ymd); } catch (e) { }
   });
 }
 
@@ -12682,7 +12738,7 @@ function clearLegacyLunchForDate_(userName, ymd) {
         att.getRange(i + 2, 6, 1, 2).setValues([['', '']]);
       }
     }
-  } catch (e) {}
+  } catch (e) { }
   try {
     const sheet = TENANT_SS.getSheetByName('昼休憩記録');
     if (sheet && sheet.getLastRow() > 1) {
@@ -12695,7 +12751,7 @@ function clearLegacyLunchForDate_(userName, ymd) {
       }
       deleteSheetRowsDesc_(sheet, rows);
     }
-  } catch (e) {}
+  } catch (e) { }
 }
 
 /**
@@ -12744,7 +12800,7 @@ function ensureAttendanceSheet_() {
     sheet.appendRow(headers);
     try {
       sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#e0e0e0');
-    } catch (e) {}
+    } catch (e) { }
     return sheet;
   }
   try {
@@ -12761,7 +12817,7 @@ function ensureAttendanceSheet_() {
       }
     }
     if (changed) sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#e0e0e0');
-  } catch (e) {}
+  } catch (e) { }
   return sheet;
 }
 
@@ -12837,7 +12893,7 @@ function applyClockOutLunchExtras_(userName, dateYmd, extras) {
     } else if (extras.noLunch) {
       writeAttendanceLunchRows_(userName, dateYmd, '', '', true);
     }
-  } catch (e) {}
+  } catch (e) { }
 }
 
 /**
@@ -12873,7 +12929,7 @@ function upsertAttendancePunchRow_(sheet, dateYmd, userName, type, timeHm, extra
     sheet.getRange(targetRow, 1, 1, 7).setValues([rowVals]);
     const toDelete = dupRows.slice(0, -1).sort(function (a, b) { return b - a; });
     for (let j = 0; j < toDelete.length; j++) {
-      try { sheet.deleteRow(toDelete[j]); } catch (e) {}
+      try { sheet.deleteRow(toDelete[j]); } catch (e) { }
     }
     result = { success: true, updated: true, row: targetRow, dateYmd: dateYmd, timeHm: timeHm, type: type };
   } else {
@@ -12918,7 +12974,7 @@ function attendanceCellToHm_(val) {
     if (Object.prototype.toString.call(val) === '[object Date]' && !isNaN(val.getTime())) {
       return Utilities.formatDate(val, 'JST', 'HH:mm');
     }
-  } catch (e) {}
+  } catch (e) { }
   if (typeof val === 'number' && isFinite(val)) {
     // Sheets の時刻シリアル（日の小数）
     if (val >= 0 && val < 1.5) {
@@ -12940,16 +12996,16 @@ function attendanceCellToHm_(val) {
 function migrateAttendanceFromTracking_() {
   const props = PropertiesService.getScriptProperties();
   let ssId = 'default';
-  try { ssId = String(TENANT_SS.getId() || 'default'); } catch (e) {}
+  try { ssId = String(TENANT_SS.getId() || 'default'); } catch (e) { }
   const flagKey = 'attendanceMigrated_v1_' + ssId;
   try {
     if (props.getProperty(flagKey) === '1') return { migrated: false, skipped: true };
-  } catch (e) {}
+  } catch (e) { }
 
   const ss = TENANT_SS;
   const track = ss.getSheetByName('トラッキング');
   if (!track || track.getLastRow() <= 1) {
-    try { props.setProperty(flagKey, '1'); } catch (e) {}
+    try { props.setProperty(flagKey, '1'); } catch (e) { }
     return { migrated: false, empty: true };
   }
 
@@ -12989,7 +13045,7 @@ function migrateAttendanceFromTracking_() {
     const startWrite = att.getLastRow() + 1;
     att.getRange(startWrite, 1, startWrite + rows.length - 1, 7).setValues(rows);
   }
-  try { props.setProperty(flagKey, '1'); } catch (e) {}
+  try { props.setProperty(flagKey, '1'); } catch (e) { }
   return { migrated: true, count: rows.length };
 }
 
@@ -13002,7 +13058,7 @@ function migrateAttendanceFromTracking_() {
 function migrateBreakStorageToAttendance_() {
   const props = PropertiesService.getScriptProperties();
   let ssId = 'default';
-  try { ssId = String(TENANT_SS.getId() || 'default'); } catch (e) {}
+  try { ssId = String(TENANT_SS.getId() || 'default'); } catch (e) { }
   const flagKey = 'attendanceBreakMigrated_v1_' + ssId;
   if (props.getProperty(flagKey) === '1') return { migrated: false, skipped: true };
 
@@ -13151,9 +13207,9 @@ function runBreakStorageMigration_() {
  */
 function loadAttendanceEvents_(opts) {
   opts = opts || {};
-  try { migrateAttendanceFromTracking_(); } catch (e) {}
+  try { migrateAttendanceFromTracking_(); } catch (e) { }
 
-  try { migrateBreakStorageToAttendance_(); } catch (e) {}
+  try { migrateBreakStorageToAttendance_(); } catch (e) { }
 
   const filterUser = String(opts.userName || '').replace(/\s+/g, '');
   const events = [];
@@ -13263,7 +13319,7 @@ function loadLunchHintForUserDate_(userName, dateYmd) {
         }
       }
     }
-  } catch (e) {}
+  } catch (e) { }
 
   // 3) 互換: 昼休憩記録シート
   const sheet = TENANT_SS.getSheetByName('昼休憩記録');
@@ -13288,8 +13344,8 @@ function loadLunchHintForUserDate_(userName, dateYmd) {
 /** 出退勤の保存（同日同人の出勤/退勤は上書き。退勤時の昼休憩は昼休憩行へ） */
 function saveAttendanceData_(params) {
   try {
-    try { migrateAttendanceFromTracking_(); } catch (e) {}
-    try { migrateBreakStorageToAttendance_(); } catch (e) {}
+    try { migrateAttendanceFromTracking_(); } catch (e) { }
+    try { migrateBreakStorageToAttendance_(); } catch (e) { }
     const userName = String((params && (params.userName || params.user)) || '').trim();
     const type = String((params && params.type) || '').trim();
     if (!userName) throw new Error('ユーザー名がありません');
@@ -13372,7 +13428,7 @@ function saveTrackingData(params) {
               workDate: params.dateYmd || params.workDate || Utilities.formatDate(new Date(params.time || Date.now()), 'JST', 'yyyy-MM-dd'),
               noLunch: true
             });
-          } catch (e) {}
+          } catch (e) { }
         }
         return 'saved_lunch_none';
       }
@@ -13385,7 +13441,7 @@ function saveTrackingData(params) {
             startTime: m[1],
             endTime: m[2]
           });
-        } catch (e) {}
+        } catch (e) { }
       }
       return 'skipped_lunch_use_lunch_sheet';
     }
@@ -13693,7 +13749,7 @@ function getWorkRecordTimeHints(params) {
           result.clockInTime = '';
         }
       }
-    } catch (e) {}
+    } catch (e) { }
 
     // 2) 作業記録シートから指定日・本人の最遅終了時間
     const sheet = TENANT_SS.getSheetByName('作業記録');
@@ -13702,7 +13758,7 @@ function getWorkRecordTimeHints(params) {
       try {
         const hintEmpty = readWorkRecordTimeHint_(userName, dateYmd);
         if (hintEmpty) clearWorkRecordTimeHint_(userName, dateYmd);
-      } catch (ce0) {}
+      } catch (ce0) { }
       return result;
     }
 
@@ -13760,7 +13816,7 @@ function getWorkRecordTimeHints(params) {
       }
     }
 
-    restBreaks.sort(function(a, b) {
+    restBreaks.sort(function (a, b) {
       return String(a.start || '').localeCompare(String(b.start || ''));
     });
     const hint = readWorkRecordTimeHint_(userName, dateYmd);
@@ -13836,7 +13892,7 @@ function getWorkRecordAnalysis(params) {
     emptyHour.push({ name: ('0' + h).slice(-2), hour: h, count: 0, minutes: 0 });
   }
   const weekdayNames = ['日', '月', '火', '水', '木', '金', '土'];
-  const emptyWeekday = weekdayNames.map(function(n, i) {
+  const emptyWeekday = weekdayNames.map(function (n, i) {
     return { name: n, weekday: i, count: 0, minutes: 0 };
   });
 
@@ -13964,7 +14020,7 @@ function getWorkRecordAnalysis(params) {
         byWeekday[wd].count += 1;
         byWeekday[wd].minutes += mins;
       }
-    } catch (eWd) {}
+    } catch (eWd) { }
 
     if (includeRecords) {
       records.push({
@@ -13992,7 +14048,7 @@ function getWorkRecordAnalysis(params) {
   const avgMinutesPerRecord = count ? Math.round(totalMinutes / count) : 0;
 
   // byPerson に稼働日数・1日平均を付与
-  const personList = sortDesc(byPerson).map(function(p) {
+  const personList = sortDesc(byPerson).map(function (p) {
     const days = byPersonDays[p.name] ? Object.keys(byPersonDays[p.name]).length : 0;
     return {
       name: p.name,
@@ -14027,8 +14083,8 @@ function getWorkRecordAnalysis(params) {
     byField: sortDesc(byField),
     byCrop: sortDesc(byCrop),
     byDay: byDayArr,
-    byHour: Object.keys(byHour).sort(function(a, b) { return Number(a) - Number(b); }).map(function(k) { return byHour[k]; }),
-    byWeekday: [0, 1, 2, 3, 4, 5, 6].map(function(k) { return byWeekday[k]; }),
+    byHour: Object.keys(byHour).sort(function (a, b) { return Number(a) - Number(b); }).map(function (k) { return byHour[k]; }),
+    byWeekday: [0, 1, 2, 3, 4, 5, 6].map(function (k) { return byWeekday[k]; }),
     authors: Object.keys(authorSet).sort((a, b) => a.localeCompare(b, 'ja')),
     workNames: Object.keys(workNameSet).sort((a, b) => a.localeCompare(b, 'ja')),
     records: records
@@ -14326,7 +14382,7 @@ function ensureClockConfirmSheet_() {
   if (!sheet) {
     sheet = ss.insertSheet('退勤確認');
     sheet.getRange(1, 1, 1, 7).setValues([['日付', '対象ユーザー', '出勤', '退勤', 'メモ', '確認者', '確認日時']]);
-    try { sheet.getRange(1, 1, 1, 7).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) {}
+    try { sheet.getRange(1, 1, 1, 7).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) { }
   }
   return sheet;
 }
@@ -14883,7 +14939,7 @@ function upsertCultivationProcureSchedule_(year, plans) {
   const grainCache = {};
   const groups = {};
   const targetPlanIds = {};
-  plans.forEach(function(plan) {
+  plans.forEach(function (plan) {
     if (!plan || !plan.id) return;
     targetPlanIds[String(plan.id)] = true;
     const sowing = (plan.tasks && plan.tasks.sowing) ? plan.tasks.sowing : [];
@@ -14914,15 +14970,15 @@ function upsertCultivationProcureSchedule_(year, plans) {
     g.seeds += seeds;
     if (g.planIds.indexOf(String(plan.id)) < 0) g.planIds.push(String(plan.id));
     if (plan.tag && g.tags.indexOf(plan.tag) < 0) g.tags.push(plan.tag);
-    const parts = sowing.map(function(c) { return cpCellToDateParts(year, c); });
-    parts.sort(function(a, b) { return a.start - b.start; });
+    const parts = sowing.map(function (c) { return cpCellToDateParts(year, c); });
+    parts.sort(function (a, b) { return a.start - b.start; });
     if (parts.length && (!g.sowingStart || parts[0].start < g.sowingStart)) {
       g.sowingStart = parts[0].start;
     }
   });
 
   const groupKeys = Object.keys(groups);
-  groupKeys.forEach(function(k) {
+  groupKeys.forEach(function (k) {
     const g = groups[k];
     g.packs = g.specCount > 0 ? Math.ceil(g.seeds / g.specCount) : 0;
     g.planIds.sort();
@@ -14951,7 +15007,7 @@ function upsertCultivationProcureSchedule_(year, plans) {
     }
   }
 
-  groupKeys.forEach(function(k) {
+  groupKeys.forEach(function (k) {
     const g = groups[k];
     if (!g.sowingStart) return;
     const deadline = g.sowingStart;
@@ -15025,7 +15081,7 @@ function upsertCultivationPlantingSchedule_(year, plans) {
     schedSheet.appendRow(['作業名', '担当部署', '作物名', '圃場名', '予定日', '期限日', '時間', '適合者', '完了日', '写真URL', '場所ID']);
   }
   const targetIds = {};
-  plans.forEach(function(p) { targetIds['cp:plant:' + p.id] = true; });
+  plans.forEach(function (p) { targetIds['cp:plant:' + p.id] = true; });
   const preserved = {};
   if (schedSheet.getLastRow() > 1) {
     const sData = schedSheet.getRange(2, 1, schedSheet.getLastRow(), 11).getValues();
@@ -15040,19 +15096,19 @@ function upsertCultivationPlantingSchedule_(year, plans) {
       result.deleted++;
     }
   }
-  plans.forEach(function(plan) {
+  plans.forEach(function (plan) {
     const planting = (plan.tasks && plan.tasks.planting) ? plan.tasks.planting : [];
     const sowing = (plan.tasks && plan.tasks.sowing) ? plan.tasks.sowing : [];
     let startDate;
     let endDate;
     if (planting.length) {
-      const parts = planting.map(function(c) { return cpCellToDateParts(year, c); });
-      parts.sort(function(a, b) { return a.start - b.start; });
+      const parts = planting.map(function (c) { return cpCellToDateParts(year, c); });
+      parts.sort(function (a, b) { return a.start - b.start; });
       startDate = parts[0].start;
       endDate = parts[parts.length - 1].end;
     } else if (sowing.length) {
-      const parts = sowing.map(function(c) { return cpCellToDateParts(year, c); });
-      parts.sort(function(a, b) { return a.start - b.start; });
+      const parts = sowing.map(function (c) { return cpCellToDateParts(year, c); });
+      parts.sort(function (a, b) { return a.start - b.start; });
       startDate = parts[parts.length - 1].end;
       endDate = new Date(startDate.getTime());
       endDate.setDate(endDate.getDate() + 14);
@@ -15090,18 +15146,18 @@ function upsertCultivationPlantingSchedule_(year, plans) {
 
 function collectExistingCpPlantingPlanIds_(sData) {
   const ids = {};
-  (sData || []).forEach(function(row) {
+  (sData || []).forEach(function (row) {
     if (String(row[0] || '').trim() !== '定植') return;
     const parsed = parseCpPlaceKind_(row[10]);
     if (parsed.kind !== 'plant') return;
-    parsed.planIds.forEach(function(id) { ids[id] = true; });
+    parsed.planIds.forEach(function (id) { ids[id] = true; });
   });
   return ids;
 }
 
 function collectExistingCpWorkMarkers_(sData) {
   const ids = {};
-  (sData || []).forEach(function(row) {
+  (sData || []).forEach(function (row) {
     const parsed = parseCpPlaceKind_(row[10]);
     if (parsed.kind === 'work' && parsed.marker) ids[parsed.marker] = true;
   });
@@ -15113,14 +15169,14 @@ function ensurePlantingAfterCompletedSowing_(sData, extraCompletedPlaceIds) {
   const existingPlant = collectExistingCpPlantingPlanIds_(sData);
   const lookup = buildCultivationPlanLookupById_();
   const byYear = {};
-  (sData || []).forEach(function(row) {
+  (sData || []).forEach(function (row) {
     if (String(row[0] || '').trim() !== '播種') return;
     const placeId = String(row[10] || '');
     const parsed = parseCpPlaceKind_(placeId);
     if (parsed.kind !== 'sow') return;
     const done = !!(row[8] || extraCompletedPlaceIds[placeId]);
     if (!done) return;
-    parsed.planIds.forEach(function(id) {
+    parsed.planIds.forEach(function (id) {
       if (existingPlant[id]) return;
       const plan = lookup[id];
       if (!plan) return;
@@ -15131,7 +15187,7 @@ function ensurePlantingAfterCompletedSowing_(sData, extraCompletedPlaceIds) {
       existingPlant[id] = true;
     });
   });
-  Object.keys(byYear).forEach(function(year) {
+  Object.keys(byYear).forEach(function (year) {
     upsertCultivationPlantingSchedule_(year, byYear[year]);
   });
 }
@@ -15143,7 +15199,7 @@ function parseSheetDateLoose_(v) {
     const s = String(v).trim().replace(/\//g, '-');
     const d = new Date(s);
     if (!isNaN(d.getTime())) return d;
-  } catch (e) {}
+  } catch (e) { }
   return null;
 }
 
@@ -15164,7 +15220,7 @@ function enqueueCropWorksForPlan_(plan, plantDate) {
   const existing = {};
   if (schedSheet.getLastRow() > 1) {
     const sData = schedSheet.getRange(2, 11, schedSheet.getLastRow() - 1, 1).getValues();
-    sData.forEach(function(r) {
+    sData.forEach(function (r) {
       const parsed = parseCpPlaceKind_(r[0]);
       if (parsed.kind === 'work' && parsed.marker) existing[parsed.marker] = true;
     });
@@ -15179,7 +15235,7 @@ function enqueueCropWorksForPlan_(plan, plantDate) {
     try { weather = loadCropWorkWeatherSeries_(loc.lat, loc.lng, plant); } catch (e) { weather = {}; }
   }
   const geo = { lat: loc.lat, lng: loc.lng, weather: weather };
-  entries.forEach(function(entry) {
+  entries.forEach(function (entry) {
     const marker = 'cp:work:' + plan.id + '::' + entry.id;
     if (existing[marker]) return;
     const win = resolveCropWorkWindow_(entry, plant, geo);
@@ -15208,14 +15264,14 @@ function ensureFieldWorksAfterCompletedPlanting_(sData, extraCompletedPlaceIds) 
   extraCompletedPlaceIds = extraCompletedPlaceIds || {};
   const lookup = buildCultivationPlanLookupById_();
   const donePlans = {};
-  (sData || []).forEach(function(row) {
+  (sData || []).forEach(function (row) {
     if (String(row[0] || '').trim() !== '定植') return;
     const placeId = String(row[10] || '');
     const parsed = parseCpPlaceKind_(placeId);
     if (parsed.kind !== 'plant') return;
     const doneVal = row[8] || extraCompletedPlaceIds[placeId];
     if (!doneVal) return;
-    parsed.planIds.forEach(function(id) {
+    parsed.planIds.forEach(function (id) {
       if (donePlans[id]) return;
       const plan = lookup[id];
       if (!plan) return;
@@ -15229,7 +15285,7 @@ function ensureFieldWorksAfterCompletedPlanting_(sData, extraCompletedPlaceIds) 
 
 function collectExistingCpSowingPlanIds_(sData) {
   const ids = {};
-  (sData || []).forEach(function(row) {
+  (sData || []).forEach(function (row) {
     if (String(row[0] || '').trim() !== '播種') return;
     const placeId = String(row[10] || '');
     if (placeId.indexOf('cp:procure:') === 0) return;
@@ -15248,13 +15304,13 @@ function ensureSowingAfterCompletedProcure_(sData, extraCompletedPlaceIds) {
   const existingSowing = collectExistingCpSowingPlanIds_(sData);
   const lookup = buildCultivationPlanLookupById_();
   const byYear = {};
-  (sData || []).forEach(function(row) {
+  (sData || []).forEach(function (row) {
     if (String(row[0] || '').trim() !== '調達') return;
     const placeId = String(row[10] || '');
     if (placeId.indexOf('cp:procure:') !== 0) return;
     const done = !!(row[8] || extraCompletedPlaceIds[placeId]);
     if (!done) return;
-    parseCpProcurePlanIds_(placeId).forEach(function(id) {
+    parseCpProcurePlanIds_(placeId).forEach(function (id) {
       if (existingSowing[id]) return;
       const plan = lookup[id];
       if (!plan) return;
@@ -15265,14 +15321,14 @@ function ensureSowingAfterCompletedProcure_(sData, extraCompletedPlaceIds) {
       existingSowing[id] = true;
     });
   });
-  Object.keys(byYear).forEach(function(year) {
+  Object.keys(byYear).forEach(function (year) {
     upsertCultivationSowingSchedule_(year, byYear[year]);
   });
 }
 
 /** 対象計画の行だけ差し替える（シート全体の作り直しを避ける） */
 function replaceCultivationPlanSheetRows_(sheet, matchingIndices, newRows) {
-  const idxs = (matchingIndices || []).slice().sort(function(a, b) { return a - b; });
+  const idxs = (matchingIndices || []).slice().sort(function (a, b) { return a - b; });
   const rows = newRows || [];
   const matchCount = idxs.length;
   const newCount = rows.length;
@@ -15307,8 +15363,8 @@ function replaceCultivationPlanSheetRows_(sheet, matchingIndices, newRows) {
     const extra = rows.slice(matchCount);
     sheet.getRange(sheet.getLastRow() + 1, 1, extra.length, 6).setValues(extra);
   } else if (newCount < matchCount) {
-    const toDelete = idxs.slice(newCount).map(function(i) { return i + 2; }).sort(function(a, b) { return b - a; });
-    toDelete.forEach(function(r) { sheet.deleteRow(r); });
+    const toDelete = idxs.slice(newCount).map(function (i) { return i + 2; }).sort(function (a, b) { return b - a; });
+    toDelete.forEach(function (r) { sheet.deleteRow(r); });
   }
 }
 
@@ -15329,8 +15385,8 @@ function saveCultivationPlans(year, crop, planDataArray, planType, planName, opt
       } else {
         const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
         if (headers.length < 3 || headers[1] !== '年度' || headers[2] !== 'ID') {
-           sheet.clear();
-           sheet.appendRow(['タイムスタンプ', '年度', 'ID', '作物', '品種', '計画データ(JSON)']);
+          sheet.clear();
+          sheet.appendRow(['タイムスタンプ', '年度', 'ID', '作物', '品種', '計画データ(JSON)']);
         }
       }
     }
@@ -15344,7 +15400,7 @@ function saveCultivationPlans(year, crop, planDataArray, planType, planName, opt
     const matchNames = {};
     matchNames[targetName] = true;
     if (previousName) matchNames[previousName] = true;
-    
+
     // 対象は「年度＋作物＋計画名」。本作2・試作などは別名として共存する。
     const existingCount = Math.max(0, sheet.getLastRow() - 1);
     const existingRows = existingCount > 0
@@ -15353,7 +15409,7 @@ function saveCultivationPlans(year, crop, planDataArray, planType, planName, opt
     const previousById = {};
     const matchingIndices = [];
     let hadExecutedPrev = false;
-    existingRows.forEach(function(row, i) {
+    existingRows.forEach(function (row, i) {
       if (!(String(row[1]) === String(year) && String(row[3]) === String(crop))) return;
       const planData = parseCultivationPlanJson_(row[5]);
       if (!planData) return;
@@ -15394,20 +15450,20 @@ function saveCultivationPlans(year, crop, planDataArray, planType, planName, opt
     const timestamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
     let hasExecuted = false;
     plans.forEach(plan => {
-       plan.planType = targetType;
-       plan.planName = targetName;
-       const prev = previousById[String(plan.id)];
-       const wasExecuted = !!(prev && prev.status === 'executed');
-       if (wasExecuted && !opts.unexecutedOnly) {
-         plan.status = 'executed';
-         plan.executedAt = prev.executedAt || plan.executedAt || timestamp;
-         if (!plan.tag && prev.tag) plan.tag = prev.tag;
-         hasExecuted = true;
-       } else {
-         plan.status = 'planned';
-         delete plan.executedAt;
-         plan.tag = '';
-       }
+      plan.planType = targetType;
+      plan.planName = targetName;
+      const prev = previousById[String(plan.id)];
+      const wasExecuted = !!(prev && prev.status === 'executed');
+      if (wasExecuted && !opts.unexecutedOnly) {
+        plan.status = 'executed';
+        plan.executedAt = prev.executedAt || plan.executedAt || timestamp;
+        if (!plan.tag && prev.tag) plan.tag = prev.tag;
+        hasExecuted = true;
+      } else {
+        plan.status = 'planned';
+        delete plan.executedAt;
+        plan.tag = '';
+      }
     });
 
     let scheduleSync = { updated: 0, created: 0, deleted: 0 };
@@ -15422,14 +15478,14 @@ function saveCultivationPlans(year, crop, planDataArray, planType, planName, opt
             schedSheet.getRange(2, 1, schedSheet.getLastRow() - 1, 11).getValues()
           );
         }
-      } catch (eSowIds) {}
+      } catch (eSowIds) { }
       const toSow = executedPlans.filter(p => sowingIds[String(p.id)]);
       const toProcure = executedPlans.filter(p => !sowingIds[String(p.id)]);
       if (toSow.length) scheduleSync = upsertCultivationSowingSchedule_(year, toSow);
       if (toProcure.length) upsertCultivationProcureSchedule_(year, toProcure);
     }
 
-    const newRows = plans.map(function(plan) {
+    const newRows = plans.map(function (plan) {
       return [
         timestamp,
         year,
@@ -15450,8 +15506,8 @@ function saveCultivationPlans(year, crop, planDataArray, planType, planName, opt
       status: 'success',
       message: hasExecuted
         ? (scheduleTouched
-            ? '実行済み栽培計画を保存し、作業予定の播種日程も更新しました'
-            : '実行済み栽培計画を保存しました')
+          ? '実行済み栽培計画を保存し、作業予定の播種日程も更新しました'
+          : '実行済み栽培計画を保存しました')
         : '栽培計画を未実行計画として保存しました',
       planType: targetType,
       planName: targetName,
@@ -15464,10 +15520,10 @@ function saveCultivationPlans(year, crop, planDataArray, planType, planName, opt
         executedAt: p.executedAt || ''
       }))
     };
-  } catch(e) {
+  } catch (e) {
     throw new Error("栽培計画保存エラー: " + e.message);
   } finally {
-    try { lock.releaseLock(); } catch (lockErr) {}
+    try { lock.releaseLock(); } catch (lockErr) { }
   }
 }
 
@@ -15543,7 +15599,7 @@ function getCultivationPlans(year, crop, planType, planName) {
       results.push(planData);
     }
     return results;
-  } catch(e) {
+  } catch (e) {
     throw new Error("栽培計画取得エラー: " + e.message);
   }
 }
@@ -15569,7 +15625,7 @@ function cpPlanTaskRange_(planData, key) {
   else if (planData && Array.isArray(planData[key])) arr = planData[key];
   let min = -1;
   let max = -1;
-  (arr || []).forEach(function(h) {
+  (arr || []).forEach(function (h) {
     const f = cpPlanTaskFlat_(h);
     if (f < 0) return;
     if (min < 0 || f < min) min = f;
@@ -15592,93 +15648,93 @@ function getSavedCultivationPlanList() {
     const map = {};
 
     for (let i = 0; i < data.length; i++) {
-       const row = data[i];
-       const year = String(row[1]);
-       const crop = String(row[3]);
-       if (!year || !crop) continue;
+      const row = data[i];
+      const year = String(row[1]);
+      const crop = String(row[3]);
+      if (!year || !crop) continue;
 
-       let status = 'planned';
-       let trays = 0;
-       let holes = 0;
-       let areaA = 0;
-       let planId = String(row[2] || '');
-       let vName = String(row[4] || '').trim();
-       let planName = '';
-       let planType = '本作';
-       let location = '';
-       const planData = parseCultivationPlanJson_(row[5]);
-       if (planData) {
-         if (planData.status === 'executed') status = 'executed';
-         trays = Number(planData.trays) || 0;
-         holes = Number(planData.holes) || 0;
-         areaA = Number(planData.areaA) || 0;
-         if (planData.id) planId = String(planData.id);
-         if (!vName && planData.variety) vName = String(planData.variety || '').trim();
-         if (planData.planName) planName = String(planData.planName || '').trim();
-         planType = resolveCultivationPlanType_(planData);
-         location = String(planData.location || '').trim();
-       }
-       if (!vName) vName = '(品種未設定)';
-       if (!planName) planName = resolveCultivationPlanName_(year, crop, planData || {}, planType, '');
+      let status = 'planned';
+      let trays = 0;
+      let holes = 0;
+      let areaA = 0;
+      let planId = String(row[2] || '');
+      let vName = String(row[4] || '').trim();
+      let planName = '';
+      let planType = '本作';
+      let location = '';
+      const planData = parseCultivationPlanJson_(row[5]);
+      if (planData) {
+        if (planData.status === 'executed') status = 'executed';
+        trays = Number(planData.trays) || 0;
+        holes = Number(planData.holes) || 0;
+        areaA = Number(planData.areaA) || 0;
+        if (planData.id) planId = String(planData.id);
+        if (!vName && planData.variety) vName = String(planData.variety || '').trim();
+        if (planData.planName) planName = String(planData.planName || '').trim();
+        planType = resolveCultivationPlanType_(planData);
+        location = String(planData.location || '').trim();
+      }
+      if (!vName) vName = '(品種未設定)';
+      if (!planName) planName = resolveCultivationPlanName_(year, crop, planData || {}, planType, '');
 
-       const seedCount = (holes === 1) ? trays : (trays * (holes > 0 ? holes : 0));
+      const seedCount = (holes === 1) ? trays : (trays * (holes > 0 ? holes : 0));
 
-       const key = year + '_' + crop + '_' + planName;
-       if (!map[key]) {
-           map[key] = {
-             year: year,
-             crop: crop,
-             planType: planType,
-             planName: planName,
-             location: '',
-             locations: [],
-             count: 0,
-             plannedCount: 0,
-             executedCount: 0,
-             lastUpdated: row[0],
-             plans: [],
-             seedTotal: 0,
-             seedPlannedTotal: 0
-           };
-       }
-       map[key].count++;
-       if (status === 'executed') map[key].executedCount++;
-       else map[key].plannedCount++;
-       if (location) {
-         if (map[key].locations.indexOf(location) === -1) {
-           map[key].locations.push(location);
-         }
-         map[key].location = map[key].locations.length === 1
-           ? map[key].locations[0]
-           : map[key].locations.join('・');
-       }
-       if (new Date(row[0]) > new Date(map[key].lastUpdated)) {
-           map[key].lastUpdated = row[0];
-           if (planName) map[key].planName = planName;
-       }
-       const sowR = cpPlanTaskRange_(planData, 'sowing');
-       const plantR = cpPlanTaskRange_(planData, 'planting');
-       map[key].plans.push({
-         id: planId,
-         variety: vName,
-         maker: '',
-         grainCount: '',
-         trays: trays,
-         holes: holes,
-         areaA: areaA,
-         seedCount: seedCount,
-         status: status,
-         planType: planType,
-         planName: planName,
-         location: location,
-         tag: planData && planData.tag ? String(planData.tag || '').trim() : '',
-         sowFrom: sowR.min,
-         sowTo: sowR.max,
-         plantFrom: plantR.min,
-         plantTo: plantR.max
-       });
-       map[key].seedTotal += seedCount;
-       if (status !== 'executed') map[key].seedPlannedTotal += seedCount;
+      const key = year + '_' + crop + '_' + planName;
+      if (!map[key]) {
+        map[key] = {
+          year: year,
+          crop: crop,
+          planType: planType,
+          planName: planName,
+          location: '',
+          locations: [],
+          count: 0,
+          plannedCount: 0,
+          executedCount: 0,
+          lastUpdated: row[0],
+          plans: [],
+          seedTotal: 0,
+          seedPlannedTotal: 0
+        };
+      }
+      map[key].count++;
+      if (status === 'executed') map[key].executedCount++;
+      else map[key].plannedCount++;
+      if (location) {
+        if (map[key].locations.indexOf(location) === -1) {
+          map[key].locations.push(location);
+        }
+        map[key].location = map[key].locations.length === 1
+          ? map[key].locations[0]
+          : map[key].locations.join('・');
+      }
+      if (new Date(row[0]) > new Date(map[key].lastUpdated)) {
+        map[key].lastUpdated = row[0];
+        if (planName) map[key].planName = planName;
+      }
+      const sowR = cpPlanTaskRange_(planData, 'sowing');
+      const plantR = cpPlanTaskRange_(planData, 'planting');
+      map[key].plans.push({
+        id: planId,
+        variety: vName,
+        maker: '',
+        grainCount: '',
+        trays: trays,
+        holes: holes,
+        areaA: areaA,
+        seedCount: seedCount,
+        status: status,
+        planType: planType,
+        planName: planName,
+        location: location,
+        tag: planData && planData.tag ? String(planData.tag || '').trim() : '',
+        sowFrom: sowR.min,
+        sowTo: sowR.max,
+        plantFrom: plantR.min,
+        plantTo: plantR.max
+      });
+      map[key].seedTotal += seedCount;
+      if (status !== 'executed') map[key].seedPlannedTotal += seedCount;
     }
 
     return Object.values(map).sort((a, b) => {
@@ -15688,7 +15744,7 @@ function getSavedCultivationPlanList() {
       if (c) return c;
       return String(a.planName || '').localeCompare(String(b.planName || ''), 'ja');
     });
-  } catch(e) {
+  } catch (e) {
     throw new Error("栽培計画リスト取得エラー: " + e.message);
   }
 }
@@ -15734,7 +15790,7 @@ function farmBoardFmtDate_(v) {
     if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime())) {
       return Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy-MM-dd');
     }
-  } catch (e) {}
+  } catch (e) { }
   return String(v).trim();
 }
 
@@ -15760,8 +15816,8 @@ function getFarmBoardData() {
 
   const plans = getSavedCultivationPlanList() || [];
   const planById = {};
-  plans.forEach(function(g) {
-    (g.plans || []).forEach(function(p) {
+  plans.forEach(function (g) {
+    (g.plans || []).forEach(function (p) {
       if (!p || !p.id) return;
       planById[String(p.id)] = {
         year: g.year || '',
@@ -15774,7 +15830,7 @@ function getFarmBoardData() {
   });
 
   const polygonsRaw = getSavedPolygons() || [];
-  const fields = polygonsRaw.map(function(p) {
+  const fields = polygonsRaw.map(function (p) {
     return {
       id: p.id || '',
       name: p.name || '',
@@ -15787,7 +15843,7 @@ function getFarmBoardData() {
   });
 
   let prodCategories = [];
-  try { prodCategories = getProdMgmtCategories() || []; } catch (e) {}
+  try { prodCategories = getProdMgmtCategories() || []; } catch (e) { }
 
   const completedWorks = {};
   const workSheet = ss.getSheetByName('作業記録');
@@ -15811,9 +15867,9 @@ function getFarmBoardData() {
   const sheet = ss.getSheetByName('作業予定');
   if (sheet && sheet.getLastRow() >= 2) {
     const data = sheet.getDataRange().getValues();
-    const headers = data[0].map(function(h) { return String(h).trim(); });
+    const headers = data[0].map(function (h) { return String(h).trim(); });
     const idx = {};
-    headers.forEach(function(h, i) { idx[h] = i; });
+    headers.forEach(function (h, i) { idx[h] = i; });
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
       const workName = String(farmBoardCol_(idx, row, ['作業名'], 0) || '');
@@ -15837,7 +15893,7 @@ function getFarmBoardData() {
       let year = '';
       let planNames = [];
       let tags = [];
-      planIds.forEach(function(id) {
+      planIds.forEach(function (id) {
         const hit = planById[id];
         if (!hit) return;
         if (hit.year && !year) year = hit.year;
@@ -15877,7 +15933,7 @@ function completeFarmBoardTasks(params) {
   const kind = String(params.kind || '');
   const wantComplete = params.completed !== false && params.completed !== 'false';
   const idSet = {};
-  (params.planIds || []).forEach(function(id) {
+  (params.planIds || []).forEach(function (id) {
     const s = String(id || '').trim();
     if (s) idSet[s] = true;
   });
@@ -16111,10 +16167,10 @@ function getCultivationPlanChartSummary(params) {
     const statusFilter = params.status || 'both';
     const locationFilter = String(params.location || '').trim();
     const excludeKeys = Array.isArray(params.excludePlanKeys)
-      ? params.excludePlanKeys.map(function(k) { return String(k || '').trim(); }).filter(Boolean)
+      ? params.excludePlanKeys.map(function (k) { return String(k || '').trim(); }).filter(Boolean)
       : [];
     const excludeSet = {};
-    excludeKeys.forEach(function(k) { excludeSet[k] = true; });
+    excludeKeys.forEach(function (k) { excludeSet[k] = true; });
     const PERIODS = 108;
     const ss = TENANT_SS;
     if (!ss) return { success: false, message: 'スプレッドシート未設定' };
@@ -16144,11 +16200,11 @@ function getCultivationPlanChartSummary(params) {
       if (!locationFilter) return true;
       const locs = groupLocs[gKey] || {};
       if (locs[locationFilter]) return true;
-      return Object.keys(locs).some(function(l) { return l.indexOf(locationFilter) >= 0; });
+      return Object.keys(locs).some(function (l) { return l.indexOf(locationFilter) >= 0; });
     }
 
     const cropMap = {};
-    parsedRows.forEach(function(row) {
+    parsedRows.forEach(function (row) {
       if (excludeSet[row.gKey]) return;
       const plan = row.planData;
       const type = resolveCultivationPlanType_(plan);
@@ -16187,9 +16243,9 @@ function getCultivationPlanChartSummary(params) {
       }
     });
 
-    const crops = Object.keys(cropMap).sort(function(a, b) {
+    const crops = Object.keys(cropMap).sort(function (a, b) {
       return String(a).localeCompare(String(b), 'ja');
-    }).map(function(k) {
+    }).map(function (k) {
       const row = cropMap[k];
       let harvestTotal = 0;
       let plantingTotal = 0;
@@ -16262,7 +16318,7 @@ function getCultivationHarvestSummary(year) {
       }
     }
 
-    const crops = Object.keys(cropMap).sort().map(function(k) {
+    const crops = Object.keys(cropMap).sort().map(function (k) {
       const row = cropMap[k];
       let plannedTotal = 0;
       let executedTotal = 0;
@@ -16315,7 +16371,7 @@ function getCultivationRidgeParamsForField(fieldId) {
       }
       if (!plan || !Array.isArray(plan.fieldIds) || plan.fieldIds.length === 0) continue;
 
-      const matched = plan.fieldIds.some(function(fid) {
+      const matched = plan.fieldIds.some(function (fid) {
         const s = String(fid || '');
         if (!s) return false;
         if (s === target || s === parentId) return true;
@@ -16408,7 +16464,7 @@ function resolveCpFieldDisplayName_(fieldId) {
           if (une && une.customLabel) uneLabel = String(une.customLabel);
           else if (une && une.group) uneLabel = String(une.group) + '-' + (uneIndex + 1);
         }
-      } catch (e) {}
+      } catch (e) { }
       return name + '(' + uneLabel + ')';
     }
   }
@@ -16706,7 +16762,7 @@ function ensureSowingRecordAfterScheduleComplete_(rowData, userName, completedAt
   if (!recordId) return null;
 
   const existing = readSowingRecordList_();
-  if (existing.some(function(r) { return String(r.recordId || '') === recordId; })) {
+  if (existing.some(function (r) { return String(r.recordId || '') === recordId; })) {
     return recordId;
   }
 
@@ -16759,14 +16815,14 @@ function removeSowingRecordAfterScheduleUndo_(rowData) {
 /** 作業予定データから完了済み播種の計画ID別実績枚数を集計 */
 function buildCompletedSowTraysByPlanIdFromData_(sData, planLookup) {
   const map = {};
-  (sData || []).forEach(function(row) {
+  (sData || []).forEach(function (row) {
     if (!String(row[8] || '').trim()) return;
     const placeId = String(row[10] || '');
     const workName = String(row[0] || '').trim();
     const parsed = parseCpPlaceKind_(placeId);
     if (parsed.kind !== 'sow' && workName !== '播種') return;
     const planIds = (parsed.planIds && parsed.planIds.length) ? parsed.planIds : [];
-    planIds.forEach(function(pid) {
+    planIds.forEach(function (pid) {
       const plan = planLookup[pid];
       const trays = parseScheduleSowingTrays_(row[6], plan);
       map[pid] = (map[pid] || 0) + trays;
@@ -16816,7 +16872,7 @@ function buildCultivationPlanLookupById_() {
         if (!plan.year) plan.year = r[1];
         map[String(plan.id)] = plan;
       }
-    } catch (e) {}
+    } catch (e) { }
   });
   return map;
 }
@@ -16859,7 +16915,7 @@ function lookupCultivationByTag(params) {
         if (!foundAny) foundAny = candidate;
         if (plan.status === 'executed' && !foundAnyExecuted) foundAnyExecuted = candidate;
       }
-    } catch (e) {}
+    } catch (e) { }
   }
   return {
     success: true,
@@ -16883,28 +16939,28 @@ function buildCpScheduleProgressState_(sData) {
     }
     return state[k];
   }
-  (sData || []).forEach(function(row) {
+  (sData || []).forEach(function (row) {
     const placeId = String(row[10] || '');
     if (!placeId) return;
     const parsed = parseCpPlaceKind_(placeId);
     const done = !!(row[8]);
     if (parsed.kind === 'procure') {
-      parseCpProcurePlanIds_(placeId).forEach(function(pid) {
+      parseCpProcurePlanIds_(placeId).forEach(function (pid) {
         const st = ensure(pid);
         if (done) st.procureDone = true;
       });
     } else if (parsed.kind === 'sow') {
-      parsed.planIds.forEach(function(pid) {
+      parsed.planIds.forEach(function (pid) {
         const st = ensure(pid);
         if (done) st.sowDone = true;
       });
     } else if (parsed.kind === 'plant') {
-      parsed.planIds.forEach(function(pid) {
+      parsed.planIds.forEach(function (pid) {
         const st = ensure(pid);
         if (done) st.plantDone = true;
       });
     } else if (parsed.kind === 'work') {
-      parsed.planIds.forEach(function(pid) {
+      parsed.planIds.forEach(function (pid) {
         const st = ensure(pid);
         const eid = String(parsed.entryId || '');
         if (!eid) return;
@@ -16930,7 +16986,7 @@ function computePlanCropWorkProgress_(plan, state, entries) {
   const entriesSorted = entries || [];
   const totalWorks = entriesSorted.length;
   let completedWorks = 0;
-  entriesSorted.forEach(function(e) {
+  entriesSorted.forEach(function (e) {
     if (st.worksDone[String(e.id)]) completedWorks++;
   });
 
@@ -17019,7 +17075,7 @@ function getCropWorkProgressSummary(params) {
     return cropEntriesCache[c];
   }
 
-  const plans = Object.keys(planLookup).map(function(k) { return planLookup[k]; }).filter(function(p) {
+  const plans = Object.keys(planLookup).map(function (k) { return planLookup[k]; }).filter(function (p) {
     if (!p || p.status !== 'executed') return false;
     if (yearFilter && String(p.year) !== yearFilter) return false;
     return true;
@@ -17028,7 +17084,7 @@ function getCropWorkProgressSummary(params) {
   const byField = [];
   const byTag = [];
 
-  plans.forEach(function(plan) {
+  plans.forEach(function (plan) {
     const entries = entriesForCrop(plan.crop);
     const prog = computePlanCropWorkProgress_(plan, state, entries);
     const fieldIds = (plan.fieldIds && plan.fieldIds.length) ? plan.fieldIds : [''];
@@ -17050,7 +17106,7 @@ function getCropWorkProgressSummary(params) {
         : prog.statusLabel
     };
     byTag.push(base);
-    fieldIds.forEach(function(fid) {
+    fieldIds.forEach(function (fid) {
       byField.push({
         planId: base.planId,
         year: base.year,
@@ -17070,11 +17126,11 @@ function getCropWorkProgressSummary(params) {
     });
   });
 
-  byField.sort(function(a, b) {
+  byField.sort(function (a, b) {
     return String(a.fieldName).localeCompare(String(b.fieldName), 'ja')
       || String(a.tag).localeCompare(String(b.tag), 'ja');
   });
-  byTag.sort(function(a, b) {
+  byTag.sort(function (a, b) {
     return String(a.tag).localeCompare(String(b.tag), 'ja')
       || String(a.crop).localeCompare(String(b.crop), 'ja');
   });
@@ -17116,10 +17172,10 @@ function getHarvestingFieldsSummary(params) {
   const workDeptMap = buildWorkDeptMapFromMaster_();
   const fieldNameToPolyId = {};
   try {
-    getSavedPolygons().forEach(function(p) {
+    getSavedPolygons().forEach(function (p) {
       if (p && p.name && p.id) fieldNameToPolyId[String(p.name)] = p.id;
     });
-  } catch (e) {}
+  } catch (e) { }
 
   // field|crop → 集計
   const groups = {};
@@ -17192,19 +17248,19 @@ function getHarvestingFieldsSummary(params) {
   // 実行済み計画の収穫窓（圃場名×作物で参照）
   const planLookup = buildCultivationPlanLookupById_();
   const planWindows = [];
-  Object.keys(planLookup).forEach(function(k) {
+  Object.keys(planLookup).forEach(function (k) {
     const plan = planLookup[k];
     if (!plan || plan.status !== 'executed') return;
     const harvestCells = (plan.tasks && Array.isArray(plan.tasks.harvesting)) ? plan.tasks.harvesting : [];
     if (!harvestCells.length) return;
     let windowStart = null;
     let windowEnd = null;
-    harvestCells.forEach(function(cell) {
+    harvestCells.forEach(function (cell) {
       try {
         const parts = cpCellToDateParts(plan.year, cell);
         if (!windowStart || parts.start < windowStart) windowStart = parts.start;
         if (!windowEnd || parts.end > windowEnd) windowEnd = parts.end;
-      } catch (e) {}
+      } catch (e) { }
     });
     if (!windowStart || !windowEnd) return;
     const start0 = new Date(windowStart.getFullYear(), windowStart.getMonth(), windowStart.getDate());
@@ -17235,9 +17291,9 @@ function getHarvestingFieldsSummary(params) {
     const base = normalizeFieldNameForMatch_(fieldName);
     const crop = String(cropName || '').trim();
     let best = null;
-    planWindows.forEach(function(pw) {
+    planWindows.forEach(function (pw) {
       if (crop && pw.crop && pw.crop !== crop) return;
-      const hit = pw.baseNames.some(function(bn) {
+      const hit = pw.baseNames.some(function (bn) {
         return bn === base || bn === fieldName || String(fieldName).indexOf(bn) === 0;
       }) || (pw.displayNames.indexOf(fieldName) >= 0);
       if (!hit) return;
@@ -17254,7 +17310,7 @@ function getHarvestingFieldsSummary(params) {
   }
 
   const harvesting = [];
-  Object.keys(groups).forEach(function(key) {
+  Object.keys(groups).forEach(function (key) {
     const g = groups[key];
     if (!g.incompleteCount) return;
     // 最終の未完了より後（同日含む）に完了があるなら収穫中ではない
@@ -17322,7 +17378,7 @@ function getHarvestingFieldsSummary(params) {
     });
   });
 
-  harvesting.sort(function(a, b) {
+  harvesting.sort(function (a, b) {
     if (!!b.almostDone !== !!a.almostDone) return a.almostDone ? -1 : 1;
     const da = (a.daysToEnd != null) ? a.daysToEnd : 9999;
     const db = (b.daysToEnd != null) ? b.daysToEnd : 9999;
@@ -17331,7 +17387,7 @@ function getHarvestingFieldsSummary(params) {
       || String(a.cropName).localeCompare(String(b.cropName), 'ja');
   });
 
-  const almostDoneList = harvesting.filter(function(r) { return !!r.almostDone; });
+  const almostDoneList = harvesting.filter(function (r) { return !!r.almostDone; });
 
   return {
     success: true,
@@ -17777,7 +17833,7 @@ function getOsakaMarketDaily(params) {
       JSON.stringify({ date: parsed.date, count: (parsed.items || []).length }),
       21600
     );
-  } catch (e) {}
+  } catch (e) { }
 
   return {
     success: true,
@@ -18239,7 +18295,7 @@ function getWeatherPlantingPriorities(params) {
   const state = buildCpScheduleProgressState_(sData);
   const items = [];
 
-  Object.keys(planLookup).forEach(function(k) {
+  Object.keys(planLookup).forEach(function (k) {
     const plan = planLookup[k];
     if (!plan || plan.status !== 'executed') return;
 
@@ -18254,12 +18310,12 @@ function getWeatherPlantingPriorities(params) {
 
     let windowStart = null;
     let windowEnd = null;
-    plantingCells.forEach(function(cell) {
+    plantingCells.forEach(function (cell) {
       try {
         const parts = cpCellToDateParts(plan.year, cell);
         if (!windowStart || parts.start < windowStart) windowStart = parts.start;
         if (!windowEnd || parts.end > windowEnd) windowEnd = parts.end;
-      } catch (e) {}
+      } catch (e) { }
     });
     if (!windowStart || !windowEnd) return;
 
@@ -18284,7 +18340,7 @@ function getWeatherPlantingPriorities(params) {
     });
   });
 
-  items.sort(function(a, b) {
+  items.sort(function (a, b) {
     return String(a.plantingStart || '').localeCompare(String(b.plantingStart || ''))
       || String(a.crop || '').localeCompare(String(b.crop || ''), 'ja');
   });
@@ -18424,7 +18480,7 @@ function getCurrentSowingPlanOptionsFromContext_(ctx, params) {
 
   const traysByPlanId = {};
   const traysByTag = {};
-  records.forEach(function(r) {
+  records.forEach(function (r) {
     const trays = Number(r.trays) || 0;
     const pid = String(r.planId || '').trim();
     if (pid) traysByPlanId[pid] = (traysByPlanId[pid] || 0) + trays;
@@ -18434,7 +18490,7 @@ function getCurrentSowingPlanOptionsFromContext_(ctx, params) {
   });
 
   const items = [];
-  Object.keys(planLookup).forEach(function(k) {
+  Object.keys(planLookup).forEach(function (k) {
     const plan = planLookup[k];
     if (!plan || plan.status !== 'executed') return;
     if (yearFilter && String(plan.year) !== yearFilter) return;
@@ -18445,12 +18501,12 @@ function getCurrentSowingPlanOptionsFromContext_(ctx, params) {
 
     let windowStart = null;
     let windowEnd = null;
-    sowingCells.forEach(function(cell) {
+    sowingCells.forEach(function (cell) {
       try {
         const parts = cpCellToDateParts(plan.year, cell);
         if (!windowStart || parts.start < windowStart) windowStart = parts.start;
         if (!windowEnd || parts.end > windowEnd) windowEnd = parts.end;
-      } catch (e) {}
+      } catch (e) { }
     });
     if (!windowStart || !windowEnd) return;
     const start0 = new Date(windowStart.getFullYear(), windowStart.getMonth(), windowStart.getDate());
@@ -18522,7 +18578,7 @@ function getCurrentSowingPlanOptionsFromContext_(ctx, params) {
     });
   });
 
-  items.sort(function(a, b) {
+  items.sort(function (a, b) {
     const phaseOrder = { in: 0, soon: 1, after: 2 };
     const pa = phaseOrder[a.phase] != null ? phaseOrder[a.phase] : 9;
     const pb = phaseOrder[b.phase] != null ? phaseOrder[b.phase] : 9;
@@ -18580,14 +18636,14 @@ function buildSowingNurseryFormOptionsPayload_(planRes, params) {
   const cropCultSettings = readCropCultSettingList_();
 
   const catMap = {};
-  nurseryLocations.forEach(function(n) {
+  nurseryLocations.forEach(function (n) {
     const cat = String(n.polyName || '').trim() || '未分類';
     if (!catMap[cat]) catMap[cat] = [];
     catMap[cat].push(n);
   });
-  const locationCategories = Object.keys(catMap).sort(function(a, b) {
+  const locationCategories = Object.keys(catMap).sort(function (a, b) {
     return String(a).localeCompare(String(b), 'ja');
-  }).map(function(cat) {
+  }).map(function (cat) {
     const rows = catMap[cat] || [];
     const plotMap = {};
     const directions = [];
@@ -18596,7 +18652,7 @@ function buildSowingNurseryFormOptionsPayload_(planRes, params) {
     let mapLat = '';
     let mapLng = '';
     let mapZoom = '';
-    rows.forEach(function(n) {
+    rows.forEach(function (n) {
       if (!locationName && String(n.locationName || '').trim()) {
         locationName = String(n.locationName || '').trim();
       }
@@ -18622,30 +18678,30 @@ function buildSowingNurseryFormOptionsPayload_(planRes, params) {
       if (!plotMap[pname].id && n.id) plotMap[pname].id = n.id;
       if (!plotMap[pname].polyId && n.polyId) plotMap[pname].polyId = String(n.polyId || '').trim();
     });
-    const plots = Object.keys(plotMap).sort(function(a, b) {
+    const plots = Object.keys(plotMap).sort(function (a, b) {
       return String(a).localeCompare(String(b), 'ja');
-    }).map(function(k) { return plotMap[k]; });
-    directions.sort(function(a, b) { return String(a).localeCompare(String(b), 'ja'); });
+    }).map(function (k) { return plotMap[k]; });
+    directions.sort(function (a, b) { return String(a).localeCompare(String(b), 'ja'); });
     return { name: cat, plots: plots, directions: directions, locationName: locationName, mapLat: mapLat, mapLng: mapLng, mapZoom: mapZoom };
   });
 
   const cropSet = {};
-  items.forEach(function(it) {
+  items.forEach(function (it) {
     const c = String(it.crop || '').trim();
     if (c) cropSet[c] = true;
   });
-  cropCultSettings.forEach(function(s) {
+  cropCultSettings.forEach(function (s) {
     const c = String(s.cropName || '').trim();
     if (c) cropSet[c] = true;
   });
   // 予定にない作物も播種できるよう、作物マスタも候補に含める
   try {
-    readMergedCropMasterList_().forEach(function(c) {
+    readMergedCropMasterList_().forEach(function (c) {
       const n = String((c && c.name) || c || '').trim();
       if (n) cropSet[n] = true;
     });
-  } catch (eCrop) {}
-  const crops = Object.keys(cropSet).sort(function(a, b) {
+  } catch (eCrop) { }
+  const crops = Object.keys(cropSet).sort(function (a, b) {
     return String(a).localeCompare(String(b), 'ja');
   });
 
@@ -18657,26 +18713,26 @@ function buildSowingNurseryFormOptionsPayload_(planRes, params) {
     crops: crops,
     locationCategories: locationCategories,
     nurseryLocations: nurseryLocations,
-    locations: (function() {
+    locations: (function () {
       try {
-        return readLocationMasterDetails_().map(function(l) {
+        return readLocationMasterDetails_().map(function (l) {
           return { name: String(l.name || '').trim() };
-        }).filter(function(l) { return !!l.name; });
+        }).filter(function (l) { return !!l.name; });
       } catch (eLoc) { return []; }
     })(),
-    holesOptions: (function() {
+    holesOptions: (function () {
       var holesOptions = [72, 128, 200, 288];
       try {
         var master = getCultivationMaster();
         if (master && Array.isArray(master.holes)) {
-          master.holes.forEach(function(h) {
+          master.holes.forEach(function (h) {
             var n = Number(h);
             if (!isFinite(n) || n < 0) return;
             if (holesOptions.indexOf(n) < 0) holesOptions.push(n);
           });
-          holesOptions.sort(function(a, b) { return a - b; });
+          holesOptions.sort(function (a, b) { return a - b; });
         }
-      } catch (eHoles) {}
+      } catch (eHoles) { }
       return holesOptions;
     })(),
     cropCultSettings: cropCultSettings
@@ -18735,7 +18791,7 @@ function manageCultivationListOption(params) {
     for (let i = data.length - 1; i >= 1; i--) {
       if (String(data[i][col]) === String(n)) {
         const row = data[i];
-        const other = [0, 1, 3, 4, 5, 6, 7, 8, 9].some(function(ci) {
+        const other = [0, 1, 3, 4, 5, 6, 7, 8, 9].some(function (ci) {
           return row[ci] !== '' && row[ci] != null;
         });
         if (!other) sheet.deleteRow(i + 1);
@@ -18751,14 +18807,14 @@ function manageCultivationListOption(params) {
   try {
     const master = getCultivationMaster();
     if (master && Array.isArray(master.holes)) {
-      master.holes.forEach(function(h) {
+      master.holes.forEach(function (h) {
         const n = Number(h);
         if (!isFinite(n) || n < 0) return;
         if (holesOptions.indexOf(n) < 0) holesOptions.push(n);
       });
-      holesOptions.sort(function(a, b) { return a - b; });
+      holesOptions.sort(function (a, b) { return a - b; });
     }
-  } catch (e2) {}
+  } catch (e2) { }
   return { success: true, holesOptions: holesOptions };
 }
 
@@ -18826,7 +18882,7 @@ function previewCultivationPlanTags(params) {
     }
 
     assignCultivationPlanTags_(plans, { year: year });
-    const tagOrder = function(tag) {
+    const tagOrder = function (tag) {
       const m = String(tag || '').match(/(\d+)$/);
       return m ? parseInt(m[1], 10) : 9999;
     };
@@ -18939,15 +18995,15 @@ function getCultivationMaster() {
       const headers = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
       let needsHeaderUpdate = false;
       if (headers.length < 9 || headers[8] !== '1苗当たり収量') {
-          sheet.getRange(1, 9).setValue('1苗当たり収量');
+        sheet.getRange(1, 9).setValue('1苗当たり収量');
       }
       if (headers.length < 10 || headers[9] !== '1P当たり入り数') {
-          sheet.getRange(1, 10).setValue('1P当たり入り数');
+        sheet.getRange(1, 10).setValue('1P当たり入り数');
       }
     }
     const data = sheet.getDataRange().getValues();
     let master = {
-      crops: {}, 
+      crops: {},
       holes: [],
       rows: [],
       pSpace: [],
@@ -18959,7 +19015,7 @@ function getCultivationMaster() {
       itemsPerPack: [], // 1P当たり入り数
       presets: {} // プリセット情報
     };
-    
+
     // 圃場情報の取得
     const polySheet = ss.getSheetByName('圃場');
     if (polySheet) {
@@ -18968,19 +19024,19 @@ function getCultivationMaster() {
         for (let i = 1; i < polyData.length; i++) {
           let r = polyData[i];
           if (r[0]) {
-             // A:ID, B:圃場の名前, E:圃場面積
-             master.fields.push({
-               id: String(r[0]),
-               name: String(r[1]),
-               area: Number(r[4]) || 0,
-               condition: String(r[3] || ''),
-               soilType: String(r[20] || '')
-             });
+            // A:ID, B:圃場の名前, E:圃場面積
+            master.fields.push({
+              id: String(r[0]),
+              name: String(r[1]),
+              area: Number(r[4]) || 0,
+              condition: String(r[3] || ''),
+              soilType: String(r[20] || '')
+            });
           }
         }
       }
     }
-    
+
     // 拠点マスタから拠点リストを取得して返す（栽培計画モーダル用）
     const locationDetails = readLocationMasterDetails_();
     master.locations = locationDetails.map(l => l.name);
@@ -18996,7 +19052,7 @@ function getCultivationMaster() {
     } catch (e) {
       master.climates = ['暖地', '温暖地', '一般地', '高冷地'];
     }
-    
+
     // データがない場合はマスタの反映処理をスキップしますが、プリセット取得処理には進みます
     for (let i = 1; i < data.length; i++) {
       let r = data[i];
@@ -19015,7 +19071,7 @@ function getCultivationMaster() {
       if (r[8] !== undefined && r[8] !== '' && !master.yieldPerSeedling.includes(r[8])) master.yieldPerSeedling.push(r[8]);
       if (r[9] !== undefined && r[9] !== '' && !master.itemsPerPack.includes(r[9])) master.itemsPerPack.push(r[9]);
     }
-    
+
     // 作型DBの取得
     master.croptypesDB = [];
     const croptypeSheet = ss.getSheetByName('作型DB');
@@ -19062,11 +19118,11 @@ function getCultivationMaster() {
               fieldConditions: fieldConditions,
               fieldCondition: fieldConditions.length ? fieldConditions.join(',') : ''
             });
-          } catch(e) { console.log('JSON parse error in croptypesDB', e); }
+          } catch (e) { console.log('JSON parse error in croptypesDB', e); }
         }
       }
     }
-    
+
     // プリセット情報の取得
     const presetSheet = ensurePresetSheetHeaders_(ss);
     const presetData = presetSheet.getDataRange().getValues();
@@ -19081,7 +19137,7 @@ function getCultivationMaster() {
     const yieldCol = presetHeaders.indexOf('1苗当たり収量');
     const packCol = presetHeaders.indexOf('1P当たり入り数');
     const urlCol = presetHeaders.indexOf('ファイルURL');
-    
+
     for (let i = 1; i < presetData.length; i++) {
       let r = presetData[i];
       let loc = locCol !== -1 ? String(r[locCol] || '').trim() : '';
@@ -19125,7 +19181,7 @@ function getCultivationMaster() {
     }
 
     return master;
-  } catch(e) {
+  } catch (e) {
     return { error: e.message };
   }
 }
@@ -19168,41 +19224,41 @@ function appendCultivationMaster(newData) {
     let isItemsPerPackExist = !hasVal(itemsPerPack);
 
     for (let i = 1; i < data.length; i++) {
-        let r = data[i];
-        if (String(r[0] || '').trim() === crop && String(r[1] || '').trim() === variety) {
-          isCropVarietyExist = true;
-        }
-        if (hasVal(holes) && String(r[2]) === String(holes)) isHolesExist = true;
-        if (hasVal(rows) && String(r[3]) === String(rows)) isRowsExist = true;
-        if (hasVal(pSpace) && String(r[4]) === String(pSpace)) isPSpaceExist = true;
-        if (hasVal(rSpace) && String(r[5]) === String(rSpace)) isRSpaceExist = true;
-        if (hasVal(yieldPerSeedling) && String(r[8]) === String(yieldPerSeedling)) isYieldPerSeedlingExist = true;
-        if (hasVal(itemsPerPack) && String(r[9]) === String(itemsPerPack)) isItemsPerPackExist = true;
+      let r = data[i];
+      if (String(r[0] || '').trim() === crop && String(r[1] || '').trim() === variety) {
+        isCropVarietyExist = true;
+      }
+      if (hasVal(holes) && String(r[2]) === String(holes)) isHolesExist = true;
+      if (hasVal(rows) && String(r[3]) === String(rows)) isRowsExist = true;
+      if (hasVal(pSpace) && String(r[4]) === String(pSpace)) isPSpaceExist = true;
+      if (hasVal(rSpace) && String(r[5]) === String(rSpace)) isRSpaceExist = true;
+      if (hasVal(yieldPerSeedling) && String(r[8]) === String(yieldPerSeedling)) isYieldPerSeedlingExist = true;
+      if (hasVal(itemsPerPack) && String(r[9]) === String(itemsPerPack)) isItemsPerPackExist = true;
     }
 
     // 全てが存在する場合は何もしない
     if (isCropVarietyExist && isHolesExist && isRowsExist && isPSpaceExist && isRSpaceExist && isYieldPerSeedlingExist && isItemsPerPackExist) {
-        return { success: true, message: "既に存在します", added: false };
+      return { success: true, message: "既に存在します", added: false };
     }
 
     // 一つでも新しいものがあれば、新しい行として追加（各列は存在しない場合のみ書き込む）
     // 通常マスタシートは列ごとに独立した選択肢として読み込まれるため、1行にまとめて追加しても問題ありません
     sheet.appendRow([
-        !isCropVarietyExist ? crop : '',
-        !isCropVarietyExist ? variety : '',
-        !isHolesExist && hasVal(holes) ? holes : '',
-        !isRowsExist && hasVal(rows) ? rows : '',
-        !isPSpaceExist && hasVal(pSpace) ? pSpace : '',
-        !isRSpaceExist && hasVal(rSpace) ? rSpace : '',
-        '', // 収穫係数
-        '', // 定植面積
-        !isYieldPerSeedlingExist && hasVal(yieldPerSeedling) ? yieldPerSeedling : '',
-        !isItemsPerPackExist && hasVal(itemsPerPack) ? itemsPerPack : ''
+      !isCropVarietyExist ? crop : '',
+      !isCropVarietyExist ? variety : '',
+      !isHolesExist && hasVal(holes) ? holes : '',
+      !isRowsExist && hasVal(rows) ? rows : '',
+      !isPSpaceExist && hasVal(pSpace) ? pSpace : '',
+      !isRSpaceExist && hasVal(rSpace) ? rSpace : '',
+      '', // 収穫係数
+      '', // 定植面積
+      !isYieldPerSeedlingExist && hasVal(yieldPerSeedling) ? yieldPerSeedling : '',
+      !isItemsPerPackExist && hasVal(itemsPerPack) ? itemsPerPack : ''
     ]);
     SpreadsheetApp.flush();
 
     return { success: true, added: !isCropVarietyExist, crop: crop, variety: variety };
-  } catch(e) {
+  } catch (e) {
     return { success: false, error: e.message };
   }
 }
@@ -19212,12 +19268,12 @@ function saveCroptypeDBBatch(params) {
   try {
     const croptypes = params.croptypes;
     if (!croptypes || croptypes.length === 0) return { success: true };
-    
+
     for (let c of croptypes) {
-        saveCroptypeDB(c);
+      saveCroptypeDB(c);
     }
     return { success: true, message: "作型DBを一括更新しました" };
-  } catch(e) {
+  } catch (e) {
     return { success: false, message: e.message };
   }
 }
@@ -19245,7 +19301,7 @@ function normalizeCroptypeScheduleKey_(arr) {
       }
     }
   });
-  out.sort(function(a, b) { return a - b; });
+  out.sort(function (a, b) { return a - b; });
   return JSON.stringify(out);
 }
 
@@ -19256,30 +19312,30 @@ function parseCroptypeHistoryCsv_(val) {
     try {
       const arr = JSON.parse(s);
       if (Array.isArray(arr)) {
-        return arr.map(function(v) { return String(v == null ? '' : v).trim(); }).filter(Boolean);
+        return arr.map(function (v) { return String(v == null ? '' : v).trim(); }).filter(Boolean);
       }
-    } catch (e) {}
+    } catch (e) { }
   }
-  return s.split(/[,、／/|]/).map(function(v) { return v.trim(); }).filter(Boolean);
+  return s.split(/[,、／/|]/).map(function (v) { return v.trim(); }).filter(Boolean);
 }
 
 function mergeCroptypeHistoryCsv_(existing, add) {
   const set = {};
-  parseCroptypeHistoryCsv_(existing).forEach(function(v) { set[v] = true; });
-  parseCroptypeHistoryCsv_(add).forEach(function(v) { set[v] = true; });
+  parseCroptypeHistoryCsv_(existing).forEach(function (v) { set[v] = true; });
+  parseCroptypeHistoryCsv_(add).forEach(function (v) { set[v] = true; });
   const arr = Object.keys(set);
-  const allYear = arr.every(function(v) { return /^\d{4}$/.test(v); });
-  if (allYear) arr.sort(function(a, b) { return Number(a) - Number(b); });
-  else arr.sort(function(a, b) { return a.localeCompare(b, 'ja'); });
+  const allYear = arr.every(function (v) { return /^\d{4}$/.test(v); });
+  if (allYear) arr.sort(function (a, b) { return Number(a) - Number(b); });
+  else arr.sort(function (a, b) { return a.localeCompare(b, 'ja'); });
   return arr.join(',');
 }
 
 function ensureCroptypeSheetHeaders_(sheet) {
   const rawHeaders = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0];
-  const headers = rawHeaders.map(function(h) { return h ? String(h).trim() : ''; });
+  const headers = rawHeaders.map(function (h) { return h ? String(h).trim() : ''; });
   const needed = ['特性(タグ)', 'メーカー', '粒数', '耐病性', '年度', '拠点', '圃場条件'];
   let changed = false;
-  needed.forEach(function(name) {
+  needed.forEach(function (name) {
     if (headers.indexOf(name) === -1) {
       sheet.getRange(1, headers.length + 1).setValue(name);
       headers.push(name);
@@ -19300,7 +19356,7 @@ function saveCroptypeDB(params) {
       sheet.appendRow(['作物', '品種', 'まき時期', '産地', '播種', '定植', '収穫', '特性(タグ)', 'メーカー', '粒数', '年度', '拠点', '圃場条件']);
     }
     const headers = ensureCroptypeSheetHeaders_(sheet);
-    
+
     const data = sheet.getDataRange().getValues();
     const tagsColIndex = headers.indexOf('特性(タグ)') + 1; // 1-based index
     const makerColIndex = headers.indexOf('メーカー') + 1;
@@ -19319,7 +19375,7 @@ function saveCroptypeDB(params) {
     const yearVal = String(params.year == null ? '' : params.year).trim();
     const locationVal = String(params.location == null ? '' : params.location).trim();
     const fieldCondVal = String(params.fieldCondition == null ? '' : params.fieldCondition).trim();
-    
+
     let updated = false;
     let matchRow = -1;
 
@@ -19341,9 +19397,9 @@ function saveCroptypeDB(params) {
     if (matchRow < 0) {
       for (let i = 1; i < data.length; i++) {
         if (String(data[i][0] || '').trim() === crop &&
-            String(data[i][1] || '').trim() === variety &&
-            String(data[i][2] || '').trim() === season &&
-            String(data[i][3] || '').trim() === climate) {
+          String(data[i][1] || '').trim() === variety &&
+          String(data[i][2] || '').trim() === season &&
+          String(data[i][3] || '').trim() === climate) {
           matchRow = i;
           break;
         }
@@ -19378,7 +19434,7 @@ function saveCroptypeDB(params) {
       }
       updated = true;
     }
-    
+
     if (!updated) {
       let newRow = [
         params.crop,
@@ -19425,9 +19481,9 @@ function saveCroptypeDB(params) {
         yieldPerSeedling: '',
         itemsPerPack: ''
       });
-    } catch (e) {}
+    } catch (e) { }
     return { success: true, message: "作型DBを更新しました" };
-  } catch(e) {
+  } catch (e) {
     return { success: false, message: e.message };
   }
 }
@@ -19479,7 +19535,7 @@ function deleteCultivationPreset(presetData) {
       }
     }
     return { success: false, message: '対象のプリセットが見つかりませんでした' };
-  } catch(e) {
+  } catch (e) {
     return { success: false, message: e.toString() };
   }
 }
@@ -19511,7 +19567,7 @@ function renameCultivationPreset(presetData) {
       }
     }
     return { success: false, message: '対象のプリセットが見つかりませんでした' };
-  } catch(e) {
+  } catch (e) {
     return { success: false, message: e.toString() };
   }
 }
@@ -19561,7 +19617,7 @@ function renameCultivationVariety(params) {
         const data = croptypeSheet.getRange(2, 1, lastRow, croptypeSheet.getLastColumn()).getValues();
         for (let i = 0; i < data.length; i++) {
           if (String(data[i][cropCol] || '').trim() === crop
-              && String(data[i][varietyCol] || '').trim() === oldName) {
+            && String(data[i][varietyCol] || '').trim() === oldName) {
             croptypeSheet.getRange(i + 2, varietyCol + 1).setValue(newName);
             updatedCroptype++;
           }
@@ -19580,14 +19636,14 @@ function renameCultivationVariety(params) {
         if (cropCol !== -1 && nameCol !== -1) {
           for (let i = 1; i < data.length; i++) {
             if (String(data[i][cropCol] || '').trim() === crop
-                && String(data[i][nameCol] || '').trim() === oldName) {
+              && String(data[i][nameCol] || '').trim() === oldName) {
               presetSheet.getRange(i + 1, nameCol + 1).setValue(newName);
               updatedPreset++;
             }
           }
         }
       }
-    } catch (e) {}
+    } catch (e) { }
 
     // 保存済み栽培計画: 品種列 ＋ JSON内の variety
     try {
@@ -19623,7 +19679,7 @@ function renameCultivationVariety(params) {
           planSheet.getRange(2, 1, data.length, 6).setValues(data);
         }
       }
-    } catch (e) {}
+    } catch (e) { }
 
     return {
       success: true,
@@ -19719,7 +19775,7 @@ function updateVarietyMeta(params) {
         yieldPerSeedling: '',
         itemsPerPack: ''
       });
-    } catch (e) {}
+    } catch (e) { }
 
     SpreadsheetApp.flush();
     return { success: true, message: '品種情報を保存しました', updated: updated };
@@ -19960,7 +20016,7 @@ function saveVarietyWithFile(params) {
 
     // 穴数・条数などはプリセットシートからマスタ読込時に反映する。
     // プリセット名を品種マスタへ追記しない（品種候補と混ざるため）。
-    
+
     return { success: true, message: "栽培設定とファイルを保存しました", fileUrl: fileUrl };
   } catch (e) {
     return { success: false, message: e.message };
@@ -19977,7 +20033,7 @@ function changeId(userId, password, newId) {
   const sheet = ss.getSheetByName('名簿');
   if (!sheet) return { success: false, message: "名簿シートが見つかりません" };
   const data = sheet.getDataRange().getValues();
-  
+
   // Check if newId already exists
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(newId)) {
@@ -20136,12 +20192,12 @@ function finalizeNoukiMachineDisplay_(machine, sheet) {
 function applyNoukiDisplayNamesByModelCount_(machines) {
   const list = Array.isArray(machines) ? machines : [];
   const counts = {};
-  list.forEach(function(m) {
+  list.forEach(function (m) {
     if (!m) return;
     const key = noukiSameModelKey_(m.group || m.mainCategory, m.type, m.model || m.modelType, m.model2);
     counts[key] = (counts[key] || 0) + 1;
   });
-  list.forEach(function(m) {
+  list.forEach(function (m) {
     if (!m) return;
     const key = noukiSameModelKey_(m.group || m.mainCategory, m.type, m.model || m.modelType, m.model2);
     const displayName = buildNoukiDisplayName_(m.type, m.model || m.modelType, m.machineNumber || m.serialNo, counts[key] || 1, m.model2);
@@ -20155,19 +20211,19 @@ function ensureNoukiMasterSheet() {
   if (!sheet) {
     sheet = TENANT_SS.insertSheet('農機マスタ');
     sheet.getRange(1, 1, 1, NOUKI_EXT_HEADERS.length).setValues([NOUKI_EXT_HEADERS]);
-    try { sheet.getRange(1, 1, 1, NOUKI_EXT_HEADERS.length).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) {}
+    try { sheet.getRange(1, 1, 1, NOUKI_EXT_HEADERS.length).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) { }
     return sheet;
   }
   const needed = NOUKI_EXT_HEADERS.length;
   let lastCol = 1;
   try { lastCol = Math.max(sheet.getLastColumn(), 1); } catch (e) { lastCol = 1; }
   let headerB = '';
-  try { headerB = String(sheet.getRange(1, 2).getValue() || '').trim(); } catch (e) {}
+  try { headerB = String(sheet.getRange(1, 2).getValue() || '').trim(); } catch (e) { }
   if (headerB === '農機名' || headerB === '') {
     try {
       sheet.getRange(1, 1, 1, needed).setValues([NOUKI_EXT_HEADERS]);
       sheet.getRange(1, 1, 1, needed).setFontWeight('bold').setBackground('#e0e0e0');
-    } catch (e) {}
+    } catch (e) { }
     return sheet;
   }
   for (let c = 1; c <= needed; c++) {
@@ -20176,7 +20232,7 @@ function ensureNoukiMasterSheet() {
       if (c <= lastCol) current = String(sheet.getRange(1, c).getValue() || '').trim();
     } catch (e) { current = ''; }
     if (!current) {
-      try { sheet.getRange(1, c).setValue(NOUKI_EXT_HEADERS[c - 1]); } catch (e) {}
+      try { sheet.getRange(1, c).setValue(NOUKI_EXT_HEADERS[c - 1]); } catch (e) { }
     }
   }
   return sheet;
@@ -20311,7 +20367,7 @@ function migrateMachineMasterToNouki() {
     const name = String(oldData[i][1] || "").trim();
     if (!name) continue;
     let settings = [];
-    try { settings = JSON.parse(oldData[i][12] || '[]'); } catch (e) {}
+    try { settings = JSON.parse(oldData[i][12] || '[]'); } catch (e) { }
     const model = String(oldData[i][6] || "").trim();
     const machineNumber = String(oldData[i][8] || "").trim();
     const type = String(oldData[i][7] || "").trim() || name;
@@ -20356,7 +20412,7 @@ function ensureMachineMaintenanceSheet_() {
     } else if (String(existing[6] || '') !== 'photos') {
       sheet.getRange(1, 7).setValue('photos');
     }
-  } catch (e) {}
+  } catch (e) { }
   return sheet;
 }
 
@@ -20374,7 +20430,7 @@ function parseMachineMaintenancePhotos_(raw) {
         return '';
       }).filter(Boolean);
     }
-  } catch (e) {}
+  } catch (e) { }
   // カンマ区切りURL
   if (s.indexOf('http') === 0) {
     return s.split(/[\n,]/).map(function (x) { return String(x || '').trim(); }).filter(Boolean);
@@ -20424,7 +20480,7 @@ function machine_loadAll() {
     const m = parseNoukiMachineRow(mData[i]);
     if (m.id) machines[m.id] = m;
   }
-  applyNoukiDisplayNamesByModelCount_(Object.keys(machines).map(function(id) { return machines[id]; }));
+  applyNoukiDisplayNamesByModelCount_(Object.keys(machines).map(function (id) { return machines[id]; }));
 
   const maintRes = machine_loadMaintenanceRecords_();
   const maintenanceRecords = (maintRes && maintRes.maintenanceRecords) ? maintRes.maintenanceRecords : [];
@@ -20485,7 +20541,7 @@ function machine_saveMachine(p) {
       const file = folder.createFile(blob);
       file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
       merged.photo = "https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w1000";
-    } catch (e) {}
+    } catch (e) { }
   }
 
   const rowData = buildNoukiMachineRow(merged);
@@ -20624,16 +20680,14 @@ function machine_saveFuel(p) {
 // 移動車両（軽トラ）管理
 // ==========================================
 function ensureVehicleMasterSheet() {
-  const headers = ['id', 'plateNumber', 'photo', 'mileage', 'driveType', 'registrationDate', 'status', 'lat', 'lng', 'mainCategory', 'vehicleType', 'vehicleNumber', 'model', 'fuelChecks'];
+  const headers = ['id', 'plateNumber', 'photo', 'mileage', 'driveType', 'registrationDate', 'status', 'lat', 'lng', 'mainCategory', 'vehicleType', 'vehicleNumber', 'model', 'fuelChecks', 'location', 'signName', 'signId', 'currentLocName', 'currentLocId'];
   const sheet = getOrCreateSheet('VehicleMaster', headers);
   const lastCol = Math.max(sheet.getLastColumn(), headers.length);
   const existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   if (String(existing[0] || '') !== 'id' || String(existing[7] || '') !== 'lat' || String(existing[8] || '') !== 'lng') {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  } else if (lastCol < headers.length) {
+  } else if (lastCol < headers.length || String(existing[14] || '') !== 'location') {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  } else if (String(existing[13] || '') !== 'fuelChecks') {
-    try { sheet.getRange(1, 14).setValue('fuelChecks'); } catch (e) {}
   }
   return sheet;
 }
@@ -20646,6 +20700,8 @@ function parseVehicleRow_(row) {
     if (driveType === '作業車両' || driveType === '作業機') mainCategory = '作業機';
     else if (driveType === '移動車両' || driveType === '自動車' || driveType === '2WD' || driveType === '4WD') mainCategory = '自動車';
   }
+  const signName = String(row[15] || '').trim();
+  const signId = String(row[16] || '').trim();
   return {
     id: row[0],
     plateNumber: row[1],
@@ -20663,7 +20719,12 @@ function parseVehicleRow_(row) {
     vehicleNumber: String(row[11] || '').trim(),
     machineNumber: String(row[11] || '').trim(),
     model: String(row[12] || '').trim(),
-    fuelChecks: String(row[13] || '').trim()
+    fuelChecks: String(row[13] || '').trim(),
+    location: String(row[14] || '').trim(),
+    signName: signName,
+    signId: signId,
+    currentLocName: String(row[17] || signName || '').trim(),
+    currentLocId: String(row[18] || signId || '').trim()
   };
 }
 
@@ -20687,6 +20748,11 @@ function vehicle_saveVehicle(p) {
   let existingLng = '';
   let existingStatus = '使用可能';
   let existingFuelChecks = '';
+  let existingLocation = '';
+  let existingSignName = '';
+  let existingSignId = '';
+  let existingCurLocName = '';
+  let existingCurLocId = '';
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === p.id) {
       rowIdx = i + 1;
@@ -20695,6 +20761,11 @@ function vehicle_saveVehicle(p) {
       existingLat = data[i][7] || '';
       existingLng = data[i][8] || '';
       existingFuelChecks = (data[i][13] != null) ? String(data[i][13]) : '';
+      existingLocation = (data[i][14] != null) ? String(data[i][14]) : '';
+      existingSignName = (data[i][15] != null) ? String(data[i][15]) : '';
+      existingSignId = (data[i][16] != null) ? String(data[i][16]) : '';
+      existingCurLocName = (data[i][17] != null) ? String(data[i][17]) : '';
+      existingCurLocId = (data[i][18] != null) ? String(data[i][18]) : '';
       break;
     }
   }
@@ -20726,6 +20797,8 @@ function vehicle_saveVehicle(p) {
     else if (mainCategory === '自動車') driveType = '移動車両';
   }
 
+  const signNameVal = (p.signName != null) ? String(p.signName).trim() : existingSignName;
+  const signIdVal = (p.signId != null) ? String(p.signId).trim() : existingSignId;
   const rowData = [
     p.id,
     p.plateNumber || '',
@@ -20740,7 +20813,12 @@ function vehicle_saveVehicle(p) {
     vehicleType,
     vehicleNumber,
     model,
-    (p.fuelChecks != null) ? p.fuelChecks : existingFuelChecks
+    (p.fuelChecks != null) ? p.fuelChecks : existingFuelChecks,
+    (p.location != null) ? String(p.location).trim() : existingLocation,
+    signNameVal,
+    signIdVal,
+    (p.currentLocName != null) ? String(p.currentLocName).trim() : (existingCurLocName || signNameVal),
+    (p.currentLocId != null) ? String(p.currentLocId).trim() : (existingCurLocId || signIdVal)
   ];
 
   if (rowIdx !== -1) {
@@ -20799,10 +20877,10 @@ function resetAllManureStatus(userName) {
   for (let i = 1; i < data.length; i++) {
     if (!data[i][0]) continue;
     let existing = {};
-    try { if (data[i][17]) existing = JSON.parse(data[i][17]); } catch (e) {}
+    try { if (data[i][17]) existing = JSON.parse(data[i][17]); } catch (e) { }
     existing = migrateManureDataObject_(existing);
     const catStatuses = {};
-    (cats || []).forEach(function(c) {
+    (cats || []).forEach(function (c) {
       if (!c || !c.id) return;
       catStatuses[c.id] = emptyProdCatStatus_();
     });
@@ -20898,12 +20976,12 @@ function ensureProdMgmtCategorySheet_() {
     sheet.appendRow(['ID', '名前', '並び順']);
     sheet.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#e0e0e0');
     const defaults = getDefaultProdMgmtCategories_();
-    defaults.forEach(function(c) {
+    defaults.forEach(function (c) {
       sheet.appendRow([c.id, c.name, c.order]);
     });
   } else if (sheet.getLastRow() <= 1) {
     const defaults = getDefaultProdMgmtCategories_();
-    defaults.forEach(function(c) {
+    defaults.forEach(function (c) {
       sheet.appendRow([c.id, c.name, c.order]);
     });
   }
@@ -20925,7 +21003,7 @@ function getProdMgmtCategories() {
       order: isNaN(order) ? i : order
     });
   }
-  list.sort(function(a, b) { return a.order - b.order; });
+  list.sort(function (a, b) { return a.order - b.order; });
   if (!list.length) return getDefaultProdMgmtCategories_();
   return list;
 }
@@ -20938,7 +21016,7 @@ function saveProdMgmtCategories(categories, userName) {
   const sheet = ensureProdMgmtCategorySheet_();
   const rows = [['ID', '名前', '並び順']];
   const seen = {};
-  categories.forEach(function(c, idx) {
+  categories.forEach(function (c, idx) {
     if (!c) return;
     const id = String(c.id || '').trim();
     const name = String(c.name || '').trim();
@@ -21104,7 +21182,7 @@ function formatPersonalScheduleDateYmd_(val) {
     if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
     const d = new Date(s);
     if (!isNaN(d.getTime())) return Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
-  } catch (e) {}
+  } catch (e) { }
   return '';
 }
 
@@ -21129,7 +21207,7 @@ function ensurePersonalScheduleSheet_() {
     return sheet;
   }
   const lastCol = Math.max(sheet.getLastColumn(), 1);
-  const existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) { return String(h || '').trim(); });
+  const existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h || '').trim(); });
   for (let i = 0; i < headers.length; i++) {
     if (existing[i] !== headers[i]) {
       sheet.getRange(1, i + 1).setValue(headers[i]);
@@ -21163,7 +21241,7 @@ function getPersonalSchedule(params) {
     if (item.category === '留意事項') notes.push(item);
     else priority.push(item);
   }
-  const byOrder = function(a, b) {
+  const byOrder = function (a, b) {
     const ao = Number(a.sortOrder);
     const bo = Number(b.sortOrder);
     if (ao !== bo) return ao - bo;
@@ -21294,7 +21372,7 @@ function collectScheduleTaskUsersMap_() {
       const userName = String(data[i][11] || userId || '').trim();
       if (!userName && !userId) continue;
       if (!map[key]) map[key] = [];
-      const exists = map[key].some(function(u) { return u.userId === userId; });
+      const exists = map[key].some(function (u) { return u.userId === userId; });
       if (!exists) {
         map[key].push({
           userId: userId,
@@ -21303,7 +21381,7 @@ function collectScheduleTaskUsersMap_() {
         });
       }
     }
-  } catch (e) {}
+  } catch (e) { }
   return map;
 }
 
@@ -21359,7 +21437,7 @@ function parseCalendarIdsValue_(raw) {
         return arr.map(function (v) { return String(v || '').trim(); }).filter(Boolean);
       }
     }
-  } catch (e) {}
+  } catch (e) { }
   return s.split(/[,，\n]/).map(function (v) { return String(v || '').trim(); }).filter(Boolean);
 }
 
@@ -21423,7 +21501,7 @@ function listGoogleCalendars(params) {
         const primary = CalendarApp.getCalendarById(gmail);
         if (primary) calendars = [primary];
       }
-    } catch (e2) {}
+    } catch (e2) { }
   }
 
   const list = [];
@@ -21435,7 +21513,7 @@ function listGoogleCalendars(params) {
         name: cal.getName() || cal.getId(),
         isOwned: !!(cal.isOwnedByMe && cal.isOwnedByMe())
       });
-    } catch (e3) {}
+    } catch (e3) { }
   });
   list.sort(function (a, b) {
     return String(a.name).localeCompare(String(b.name), 'ja');
@@ -21488,7 +21566,7 @@ function getScriptAuthorizationInfo(params) {
     const needsAuth = (status === ScriptApp.AuthorizationStatus.REQUIRED)
       || (statusStr.indexOf('NOT_REQUIRED') < 0 && !!url);
     let effectiveUser = '';
-    try { effectiveUser = Session.getEffectiveUser().getEmail() || ''; } catch (e1) {}
+    try { effectiveUser = Session.getEffectiveUser().getEmail() || ''; } catch (e1) { }
     return {
       success: true,
       status: statusStr,
@@ -21564,7 +21642,7 @@ function getTodayGoogleCalendarEvents(params) {
       try {
         const primary = CalendarApp.getCalendarById(gmail);
         if (primary) calendars = [primary];
-      } catch (e2) {}
+      } catch (e2) { }
     }
 
     if (!calendars || !calendars.length) {
@@ -21606,12 +21684,12 @@ function getTodayGoogleCalendarEvents(params) {
 
     const allEvents = [];
     const seenMap = {};
-    calendars.forEach(function(cal) {
+    calendars.forEach(function (cal) {
       try {
         if (cal.isHidden && cal.isHidden()) return;
         const calName = cal.getName() || 'カレンダー';
         const evs = cal.getEvents(start, endExclusive);
-        evs.forEach(function(ev) {
+        evs.forEach(function (ev) {
           const idKey = (ev.getId ? ev.getId() : '') || (ev.getTitle() + '_' + ev.getStartTime().getTime());
           if (seenMap[idKey]) return;
           seenMap[idKey] = true;
@@ -21638,10 +21716,10 @@ function getTodayGoogleCalendarEvents(params) {
             description: String(ev.getDescription() || '').substring(0, 200)
           });
         });
-      } catch (eEv) {}
+      } catch (eEv) { }
     });
 
-    allEvents.sort(function(a, b) {
+    allEvents.sort(function (a, b) {
       return (a.startMs || 0) - (b.startMs || 0);
     });
 
@@ -21713,7 +21791,7 @@ function getUserQualifications(userName) {
       if (String(data[i][0]).trim() === String(userName).trim()) {
         const rawJson = data[i][1];
         let parsed = [];
-        try { parsed = JSON.parse(rawJson); } catch (e) {}
+        try { parsed = JSON.parse(rawJson); } catch (e) { }
         return { success: true, qualifications: parsed };
       }
     }
@@ -21754,7 +21832,7 @@ function getClothingRules() {
     const data = sheet.getDataRange().getValues();
     if (data.length > 1 && data[1][0]) {
       let parsed = null;
-      try { parsed = JSON.parse(data[1][0]); } catch (e) {}
+      try { parsed = JSON.parse(data[1][0]); } catch (e) { }
       return { success: true, rules: parsed };
     }
     return { success: true, rules: null };
@@ -21816,14 +21894,14 @@ function getUserTodayAssignedSchedules(userName) {
     const todayStr = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
     const uName = String(userName).trim().toLowerCase();
 
-    const assigned = res.activeSchedules.filter(function(item) {
+    const assigned = res.activeSchedules.filter(function (item) {
       const personStr = String(item.person || '').toLowerCase();
       const isAssignedPerson = personStr.includes(uName);
-      
+
       // 個人タスクシートの紐付け（taskUsersMap）も確認
       let isTaskUser = false;
       if (item.taskUsers && Array.isArray(item.taskUsers)) {
-        isTaskUser = item.taskUsers.some(function(u) {
+        isTaskUser = item.taskUsers.some(function (u) {
           return String(u.userName || u.userId || '').toLowerCase().includes(uName);
         });
       }
@@ -21861,20 +21939,20 @@ function parseManualWorkLink_(raw) {
     try {
       const o = JSON.parse(s);
       const workNames = Array.isArray(o.workNames)
-        ? o.workNames.map(function(x) { return String(x || '').trim(); }).filter(Boolean)
-        : String(o.workNames || '').split(',').map(function(x) { return x.trim(); }).filter(Boolean);
+        ? o.workNames.map(function (x) { return String(x || '').trim(); }).filter(Boolean)
+        : String(o.workNames || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean);
       const crops = Array.isArray(o.crops)
-        ? o.crops.map(function(x) { return String(x || '').trim(); }).filter(Boolean)
-        : String(o.crops || o.crop || '').split(/[,、]/).map(function(x) { return x.trim(); }).filter(Boolean);
+        ? o.crops.map(function (x) { return String(x || '').trim(); }).filter(Boolean)
+        : String(o.crops || o.crop || '').split(/[,、]/).map(function (x) { return x.trim(); }).filter(Boolean);
       return {
         workNames: workNames,
         category: String(o.category || '').trim(),
         crops: crops
       };
-    } catch (e) {}
+    } catch (e) { }
   }
   return {
-    workNames: s.split(',').map(function(x) { return x.trim(); }).filter(Boolean),
+    workNames: s.split(',').map(function (x) { return x.trim(); }).filter(Boolean),
     category: '',
     crops: []
   };
@@ -21895,8 +21973,8 @@ function saveManualData(manual) {
     }
 
     const crops = Array.isArray(manual.crops)
-      ? manual.crops.map(function(x) { return String(x || '').trim(); }).filter(Boolean)
-      : String(manual.crop || '').split(/[,、]/).map(function(x) { return x.trim(); }).filter(Boolean);
+      ? manual.crops.map(function (x) { return String(x || '').trim(); }).filter(Boolean)
+      : String(manual.crop || '').split(/[,、]/).map(function (x) { return x.trim(); }).filter(Boolean);
     const linkJson = JSON.stringify({
       workNames: Array.isArray(manual.workNames) ? manual.workNames : (manual.workNames ? [manual.workNames] : []),
       category: manual.category || '',
@@ -21919,7 +21997,7 @@ function saveManualData(manual) {
       sheet.appendRow(rowVals);
     }
     return { success: true, id: manual.id };
-  } catch(e) {
+  } catch (e) {
     return { success: false, message: e.message };
   }
 }
@@ -21934,8 +22012,8 @@ function getManualList() {
       const row = data[i];
       if (!row[0]) continue;
       let steps = [], photos = [];
-      try { steps = JSON.parse(row[4] || '[]'); } catch(e) {}
-      try { photos = JSON.parse(row[5] || '[]'); } catch(e) {}
+      try { steps = JSON.parse(row[4] || '[]'); } catch (e) { }
+      try { photos = JSON.parse(row[5] || '[]'); } catch (e) { }
 
       const link = parseManualWorkLink_(row[2]);
       manuals.push({
@@ -21952,7 +22030,7 @@ function getManualList() {
     }
 
     return { success: true, manuals: manuals };
-  } catch(e) {
+  } catch (e) {
     return { success: false, manuals: [], message: e.message };
   }
 }
@@ -21968,7 +22046,7 @@ function deleteManualData(manualId) {
       }
     }
     return { success: true };
-  } catch(e) {
+  } catch (e) {
     return { success: false, message: e.message };
   }
 }
@@ -22789,12 +22867,14 @@ function updateStaffHireDate(params) {
   const leaveRows = loadLeaveRows_(updated.userId, updated.userName);
   const paid = buildPaidLeaveSummary_(updated, leaveRows, new Date());
   writeLog(requester.userName || requesterId, '入社日更新', updated.userName, updated.hireDateYmd || '(クリア)');
-  return { success: true, message: '入社日を更新しました', paidLeave: paid, user: {
-    userId: updated.userId,
-    userName: updated.userName,
-    hireDateYmd: updated.hireDateYmd,
-    paidLeaveOverride: updated.paidLeaveOverride
-  }};
+  return {
+    success: true, message: '入社日を更新しました', paidLeave: paid, user: {
+      userId: updated.userId,
+      userName: updated.userName,
+      hireDateYmd: updated.hireDateYmd,
+      paidLeaveOverride: updated.paidLeaveOverride
+    }
+  };
 }
 
 function getAttendanceStaffList(params) {
@@ -22908,7 +22988,7 @@ function quotationSave_(params) {
       if (saved) attachments = attachments.concat([saved]);
     }
     let subtotal = 0;
-    const normalizedLines = lines.map(function(line, idx) {
+    const normalizedLines = lines.map(function (line, idx) {
       const qty = Math.max(0, Number(line.qty) || 0);
       const unitPrice = Math.max(0, Number(line.unitPrice) || 0);
       const amount = qty * unitPrice;
@@ -22921,7 +23001,7 @@ function quotationSave_(params) {
         qty: qty, unit: String(line.unit || '').trim(), unitPrice: unitPrice,
         amount: amount, note: String(line.note || '').trim()
       };
-    }).filter(function(line) { return line.name; });
+    }).filter(function (line) { return line.name; });
     if (!normalizedLines.length) throw new Error('品名を選択または入力してください');
     const taxRate = Math.max(0, Number(quote.taxRate) || 0);
     const tax = Math.floor(subtotal * taxRate / 100);
@@ -22946,9 +23026,9 @@ function quotationSave_(params) {
       if (String(lineData[i][1]) === id) sheets.lineSheet.deleteRow(i + 1);
     }
     if (normalizedLines.length) {
-      const lineValues = normalizedLines.map(function(line) {
+      const lineValues = normalizedLines.map(function (line) {
         return [line.id, id, line.rowNo, line.category, line.masterId, line.machineId,
-          line.name, line.spec, line.qty, line.unit, line.unitPrice, line.amount, line.note];
+        line.name, line.spec, line.qty, line.unit, line.unitPrice, line.amount, line.note];
       });
       sheets.lineSheet.getRange(sheets.lineSheet.getLastRow() + 1, 1, lineValues.length, QUOTATION_LINE_HEADERS_.length).setValues(lineValues);
     }
@@ -22983,7 +23063,7 @@ function quotationList_(params) {
     const status = String(row[7] || '');
     if (status === 'archived' && !(params && params.includeArchived)) continue;
     let attachments = [];
-    try { attachments = JSON.parse(String(row[12] || '[]')); } catch (e) {}
+    try { attachments = JSON.parse(String(row[12] || '[]')); } catch (e) { }
     const id = String(row[0] || '');
     items.push({
       id: id, documentType: String(row[1] || ''), quoteNo: String(row[2] || ''),
@@ -23025,14 +23105,14 @@ function ensureOpsIndexSheet_() {
   if (!sheet) {
     sheet = ss.insertSheet('操作索引');
     sheet.getRange(1, 1, 1, OPS_INDEX_HEADERS.length).setValues([OPS_INDEX_HEADERS]);
-    try { sheet.getRange(1, 1, 1, OPS_INDEX_HEADERS.length).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) {}
+    try { sheet.getRange(1, 1, 1, OPS_INDEX_HEADERS.length).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) { }
     return sheet;
   }
   const lastCol = Math.max(sheet.getLastColumn(), 1);
   const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
   for (let i = 0; i < OPS_INDEX_HEADERS.length; i++) {
     if (headers[i] !== OPS_INDEX_HEADERS[i]) {
-      try { sheet.getRange(1, i + 1).setValue(OPS_INDEX_HEADERS[i]); } catch (e) {}
+      try { sheet.getRange(1, i + 1).setValue(OPS_INDEX_HEADERS[i]); } catch (e) { }
     }
   }
   return sheet;
@@ -23104,7 +23184,7 @@ function getOpsIndex(params) {
   const works = [];
   const workSheet = ss.getSheetByName('作業マスタ');
   if (workSheet) {
-    try { ensureWorkMasterHeaders_(workSheet); } catch (e) {}
+    try { ensureWorkMasterHeaders_(workSheet); } catch (e) { }
     const data = workSheet.getDataRange().getValues();
     if (data.length > 0) {
       const headers = data[0].map(h => String(h).trim());
@@ -23225,7 +23305,7 @@ function ideaBoard_ensureSheets_() {
   if (!board) {
     board = ss.insertSheet('アイデアボード');
     board.getRange(1, 1, 1, headers.length).setValues([headers]);
-    try { board.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) {}
+    try { board.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) { }
   } else {
     const lastCol = Math.max(board.getLastColumn(), 1);
     const existing = board.getRange(1, 1, 1, Math.max(lastCol, headers.length)).getValues()[0];
@@ -23238,7 +23318,7 @@ function ideaBoard_ensureSheets_() {
     cats = ss.insertSheet('アイデアカテゴリ');
     cats.getRange(1, 1).setValue('カテゴリ名');
     ideaBoard_defaultCategories_().forEach(function (c) { cats.appendRow([c]); });
-    try { cats.getRange(1, 1).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) {}
+    try { cats.getRange(1, 1).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) { }
   }
   return { board: board, cats: cats };
 }
@@ -23429,7 +23509,7 @@ function dayPlan_ensureSheet_() {
   if (!sheet) {
     sheet = ss.insertSheet('日次予定');
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    try { sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) {}
+    try { sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#e0e0e0'); } catch (e) { }
     return sheet;
   }
   const lastCol = Math.max(sheet.getLastColumn(), 1);
@@ -23502,7 +23582,7 @@ function collectDayPlanBookings_() {
       if (fieldName) push(byWorkField, item.workName + '||' + fieldName);
       push(byWork, item.workName);
     }
-  } catch (e) {}
+  } catch (e) { }
   return { byKey: byKey, byWorkField: byWorkField, byWork: byWork };
 }
 
@@ -23537,7 +23617,7 @@ function resolveWorkScheduleStatus_(t) {
 }
 
 function applyWorkScheduleStatus_(schedules) {
-  (schedules || []).forEach(function(t) {
+  (schedules || []).forEach(function (t) {
     const st = resolveWorkScheduleStatus_(t);
     t.workStatus = st.code;
     t.workStatusLabel = st.label;
@@ -23655,7 +23735,7 @@ function dayPlan_syncPersonal_(item) {
       deadline: item.date,
       scheduleKey: key
     });
-  } catch (e) {}
+  } catch (e) { }
 }
 
 function dayPlan_save(params) {
@@ -23799,7 +23879,7 @@ function cpExtNormalizeHex_(color) {
   if (c === '#ffffff' || c === '#fff' || c === 'white') return '';
   var rgb = c.match(/^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
   if (rgb) {
-    return '#' + [rgb[1], rgb[2], rgb[3]].map(function(x) {
+    return '#' + [rgb[1], rgb[2], rgb[3]].map(function (x) {
       var h = parseInt(x, 10).toString(16);
       return h.length === 1 ? '0' + h : h;
     }).join('');
@@ -23977,7 +24057,7 @@ function cpExtWritePlansToSheet_(sheet, plans) {
     sheet.getRange(row, CP_EXT_COL_TRAYS).setValue(trays > 0 ? trays : '');
 
     var tasks = plan.tasks || {};
-    ['sowing', 'planting', 'harvesting'].forEach(function(kind) {
+    ['sowing', 'planting', 'harvesting'].forEach(function (kind) {
       var list = tasks[kind] || plan[kind] || [];
       for (var ti = 0; ti < list.length; ti++) {
         var flat = cpHarvestFlatIndex_(list[ti]);
@@ -24003,7 +24083,7 @@ function importCultivationPlanFromExternalSheet(params) {
     var ss = cpExtOpenSpreadsheet_(params.spreadsheetUrl || params.spreadsheetId);
     var sheet = ss.getSheetByName(crop);
     if (!sheet) {
-      var names = ss.getSheets().map(function(s) { return s.getName(); });
+      var names = ss.getSheets().map(function (s) { return s.getName(); });
       return {
         success: false,
         message: 'シート「' + crop + '」が見つかりません。利用可能なタブ: ' + names.slice(0, 10).join('、')
@@ -24051,7 +24131,7 @@ function exportCultivationPlanToExternalSheet(params) {
 
     try {
       sheet.getRange(1, 1).setValue(crop);
-    } catch (e1) {}
+    } catch (e1) { }
 
     cpExtWritePlansToSheet_(sheet, plans);
     SpreadsheetApp.flush();

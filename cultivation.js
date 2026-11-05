@@ -30,7 +30,9 @@ function refreshChoiceButtons(selectId) {
         wrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:center;width:100%;';
 
         const parent = sel.parentNode;
-        if (parent && (parent.style.display === 'flex' || getComputedStyle(parent).display === 'flex')) {
+        const parentStyle = parent ? getComputedStyle(parent) : null;
+        const isRowFlex = parent && (parent.style.display === 'flex' || (parentStyle && parentStyle.display === 'flex')) && (!parentStyle || parentStyle.flexDirection !== 'column');
+        if (isRowFlex) {
             parent.style.flexWrap = 'wrap';
             wrap.style.flex = '1 1 100%';
         }
@@ -41,7 +43,7 @@ function refreshChoiceButtons(selectId) {
             custom.style.width = '100%';
             custom.style.marginTop = '4px';
             custom.style.boxSizing = 'border-box';
-            custom.style.flex = '1 1 100%';
+            if (isRowFlex) custom.style.flex = '1 1 100%';
             wrap.insertAdjacentElement('afterend', custom);
         }
     }
@@ -9390,10 +9392,12 @@ function summarizeOverallCultivationPlans_(list, opts) {
             row.seedSum += seed;
             row.lineCount += 1;
             const vName = String(p.variety || '').trim() || '(品種未設定)';
-            if (!row.varieties[vName]) row.varieties[vName] = { variety: vName, traySum: 0, plantSum: 0, areaSum: 0 };
+            if (!row.varieties[vName]) row.varieties[vName] = { variety: vName, traySum: 0, plantSum: 0, areaSum: 0, seedSum: 0, lineCount: 0 };
             if (holes === 1) row.varieties[vName].plantSum += trays;
             else row.varieties[vName].traySum += trays;
             row.varieties[vName].areaSum += areaA;
+            row.varieties[vName].seedSum += seed;
+            row.varieties[vName].lineCount += 1;
         });
         if (used) groupCount += 1;
     });
@@ -9694,9 +9698,9 @@ function switchOverallPlanTab_(key) {
     tabs.forEach(t => {
         const on = _cpOverallActiveTab === t.key;
         if (t.btn) {
-            t.btn.style.background = on ? '#2E7D32' : '#fff';
-            t.btn.style.color = on ? '#fff' : '#1B5E20';
-            t.btn.style.borderColor = on ? '#81C784' : '#A5D6A7';
+            t.btn.style.background = '';
+            t.btn.style.color = '';
+            t.btn.style.borderColor = '';
             t.btn.classList.toggle('is-active', on);
         }
         if (t.panel) t.panel.hidden = !on;
@@ -9896,8 +9900,8 @@ async function refreshOverallPlanChart_() {
             document.getElementById('cpOverallChartLegend'),
             series,
             {
-                barHeight: 100,
-                barWidth: 22,
+                barHeight: 160,
+                barWidth: 26,
                 showValues: false,
                 unit: unitSuffix,
                 valueDecimals: metric === 'planting' ? 1 : 0,
@@ -9913,8 +9917,34 @@ async function refreshOverallPlanChart_() {
                     ? (Math.round(result.total * 10) / 10)
                     : Math.round(result.total);
                 totalEl.textContent = `合計 ${rounded.toLocaleString()}${unitSuffix}`;
+                totalEl.style.display = 'inline-block';
             } else {
                 totalEl.textContent = '';
+                totalEl.style.display = 'none';
+            }
+        }
+        const breakdownEl = document.getElementById('cpOverallChartCropBreakdown');
+        if (breakdownEl) {
+            if (series.length && result.total > 0) {
+                const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const items = series.map(s => {
+                    const sum = s.values.reduce((a, b) => a + (Number(b) || 0), 0);
+                    return { name: s.name, color: s.color, sum: sum };
+                }).sort((a, b) => b.sum - a.sum);
+                breakdownEl.innerHTML = '<div style="font-size:11px; font-weight:bold; color:#475569; margin-bottom:6px;">📌 作物別の期間合計（上位順）</div>' +
+                    '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:6px;">' +
+                    items.map(it => {
+                        const valTxt = (metric === 'planting' ? (Math.round(it.sum * 10) / 10) : Math.round(it.sum)).toLocaleString('ja-JP') + unitSuffix;
+                        const share = Math.round((it.sum / result.total) * 1000) / 10;
+                        return '<div style="display:flex; justify-content:space-between; align-items:center; gap:6px; background:#F8FAFC; border:1px solid #E2E8F0; border-radius:6px; padding:6px 10px; font-size:12px;">' +
+                            '<span style="display:inline-flex; align-items:center; gap:6px; font-weight:bold; color:#1E293B; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' +
+                            '<span style="width:10px; height:10px; border-radius:3px; background:' + it.color + '; flex-shrink:0;"></span>' +
+                            esc(it.name) + '</span>' +
+                            '<span style="white-space:nowrap; font-weight:bold; color:#0F172A; font-variant-numeric:tabular-nums;">' + valTxt +
+                            ' <small style="color:#64748B; font-weight:normal;">(' + share + '%)</small></span></div>';
+                    }).join('') + '</div>';
+            } else {
+                breakdownEl.innerHTML = '';
             }
         }
         syncCpHarvestScroll('cpOverallChartBars', 'cpOverallChartAxis', null);
@@ -9926,9 +9956,10 @@ async function refreshOverallPlanChart_() {
 window.setCpOverallChartMetric_ = setCpOverallChartMetric_;
 window.refreshOverallPlanChart_ = refreshOverallPlanChart_;
 
-function onNurseryTraysPerBedChange_() {
+function onNurseryTraysPerBedChange_(presetVal) {
     const el = document.getElementById('cpNurseryTraysPerBed');
-    const next = setNurseryTraysPerBed_(el ? el.value : CP_NURSERY_TRAYS_PER_BED_DEFAULT);
+    const rawVal = presetVal != null ? presetVal : (el ? el.value : CP_NURSERY_TRAYS_PER_BED_DEFAULT);
+    const next = setNurseryTraysPerBed_(rawVal);
     if (el) el.value = String(next);
     paintOverallNurseryPanel_(_cpOverallLastSummary, _cpOverallLastTimeline);
 }
@@ -9963,31 +9994,52 @@ function renderOverallNurseryBedsHtml_(summary, timeline) {
     const calc = calcNurseryBedsNeeded_(peakTrays, perBed);
     const peakLabel = peakTrays > 0 ? nurseryMonthLabel_(tl.peakMonthIndex || 0, tl.year) : '';
 
-    let html = '<div style="background:#F1F8E9; border:1px solid #C5E1A5; border-radius:8px; padding:10px 12px; margin-bottom:10px;">' +
+    const presets = [300, 400, 500, 600, 1000];
+    const presetBtns = presets.map(p => {
+        const active = Number(perBed) === p;
+        return '<button type="button" onclick="onNurseryTraysPerBedChange_(' + p + ')" style="padding:4px 9px; border-radius:6px; border:1px solid ' +
+            (active ? '#2E7D32' : '#CBD5E1') + '; background:' + (active ? '#2E7D32' : '#fff') + '; color:' + (active ? '#fff' : '#334155') +
+            '; font-size:11px; font-weight:bold; cursor:pointer;">' + p + '枚</button>';
+    }).join('');
+
+    let html = '<div style="background:#fff; border:1px solid #C5E1A5; border-left:4px solid #558B2F; border-radius:10px; padding:10px 14px; margin-bottom:12px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; box-shadow:0 1px 3px rgba(0,0,0,0.03);">' +
         '<div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">' +
-        '<label style="font-size:12px; font-weight:bold; color:#33691E;">1区画あたり' +
-        '<input type="number" id="cpNurseryTraysPerBed" min="1" step="1" value="' + esc(perBed) + '" onchange="onNurseryTraysPerBedChange_()" style="width:80px; margin:0 6px; padding:5px 6px; border:1px solid #AED581; border-radius:6px; font-size:14px; font-weight:bold; text-align:right;">枚で1区画</label>' +
-        '<span style="font-size:11px; color:#689F38;">初期値 500枚</span>' +
-        '</div></div>';
-
-    html += '<div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">' +
-        '<div style="background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px; padding:10px 12px;">' +
-        '<div style="font-size:11px; color:#2E7D32; font-weight:bold;">ピーク時の必要苗床</div>' +
-        '<div style="font-size:26px; font-weight:bold; color:#1B5E20; line-height:1.15; margin-top:4px;">' + calc.beds.toLocaleString('ja-JP') + '<span style="font-size:14px;"> 区画</span></div>' +
-        (peakLabel ? '<div style="font-size:11px; color:#558B2F; margin-top:4px;">' + esc(peakLabel) + 'が最大</div>' : '') +
+        '<label style="font-size:13px; font-weight:bold; color:#33691E; display:inline-flex; align-items:center;">🪴 1区画あたりの収容枚数：' +
+        '<input type="number" id="cpNurseryTraysPerBed" min="1" step="1" value="' + esc(perBed) + '" onchange="onNurseryTraysPerBedChange_()" style="width:84px; margin:0 6px; padding:5px 8px; border:1px solid #81C784; border-radius:6px; font-size:14px; font-weight:bold; text-align:right; color:#1B5E20;">枚 / 区画</label>' +
+        '<div style="display:inline-flex; gap:4px; align-items:center; flex-wrap:wrap;"><span style="font-size:11px; color:#64748B;">クイック切替:</span>' + presetBtns + '</div>' +
         '</div>' +
-        '<div style="background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; padding:10px 12px;">' +
-        '<div style="font-size:11px; color:#F57F17; font-weight:bold;">ピーク時の苗床枚数</div>' +
-        '<div style="font-size:22px; font-weight:bold; color:#E65100; line-height:1.2; margin-top:4px;">' + calc.trays.toLocaleString('ja-JP') + '枚</div>' +
-        '</div></div>';
-
-    html += '<div style="font-size:11px; color:#555; line-height:1.55; margin-bottom:10px;">' +
-        '播種の最初の半旬から定植の最後の半旬まで苗床に置きます（定植期も含める）。定植の翌半旬から差し引きます。各月は、その月の中でいちばん多い半旬の枚数です。' +
+        '<div style="font-size:11px; color:#64748B;">※播種開始〜定植終了の半旬まで苗床を使用するものとして集計</div>' +
         '</div>';
 
+    let remainSub = '対象データなし';
+    if (calc.beds > 0) {
+        if (calc.lastFill < calc.perBed) {
+            remainSub = '最終区画 ' + calc.lastFill.toLocaleString('ja-JP') + ' / ' + calc.perBed.toLocaleString('ja-JP') + '枚（あと ' + calc.remainToNext.toLocaleString('ja-JP') + '枚 余裕）';
+        } else {
+            remainSub = '全 ' + calc.beds.toLocaleString('ja-JP') + ' 区画ちょうど満杯';
+        }
+    }
+
+    html += '<div class="cp-overall-kpi-grid">' +
+        '<div class="cp-overall-kpi-card" style="border:1px solid #A5D6A7; border-left:4px solid #2E7D32; background:#F1F8E9;">' +
+        '<div style="font-size:11px; color:#2E7D32; font-weight:bold;">🏠 ピーク時の必要苗床</div>' +
+        '<div style="display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-top:4px;">' +
+        '<div style="font-size:26px; font-weight:bold; color:#1B5E20; line-height:1.15; font-variant-numeric:tabular-nums;">' + calc.beds.toLocaleString('ja-JP') + '<span style="font-size:13px; margin-left:3px;">区画</span></div>' +
+        (peakLabel ? '<span style="font-size:11px; font-weight:bold; background:#2E7D32; color:#fff; padding:2px 8px; border-radius:99px;">最大: ' + esc(peakLabel) + '</span>' : '') +
+        '</div></div>' +
+        '<div class="cp-overall-kpi-card" style="border:1px solid #FFE082; border-left:4px solid #F57F17; background:#FFFDE7;">' +
+        '<div style="font-size:11px; color:#E65100; font-weight:bold;">🪴 ピーク時の苗床枚数</div>' +
+        '<div style="font-size:24px; font-weight:bold; color:#BF360C; line-height:1.2; margin-top:4px; font-variant-numeric:tabular-nums;">' + calc.trays.toLocaleString('ja-JP') + '<span style="font-size:13px; margin-left:3px;">枚</span></div>' +
+        '<div style="font-size:11px; color:#795548; margin-top:3px;">' + calc.trays.toLocaleString('ja-JP') + '枚 ÷ ' + calc.perBed.toLocaleString('ja-JP') + '枚 ＝ ' + calc.beds.toLocaleString('ja-JP') + '区画</div>' +
+        '</div>' +
+        '<div class="cp-overall-kpi-card" style="border:1px solid #CBD5E1; border-left:4px solid #475569; background:#fff;">' +
+        '<div style="font-size:11px; color:#475569; font-weight:bold;">📦 区画の空き・収まり状況</div>' +
+        '<div style="font-size:14px; font-weight:bold; color:#1E293B; line-height:1.35; margin-top:6px;">' + remainSub + '</div>' +
+        '</div></div>';
+
     if (timedTrays <= 0 && unsetTrays <= 0) {
-        html += '<div style="text-align:center; color:#666; font-size:13px; padding:18px 8px;">この条件では播種枚数がありません。' +
-            (plantSum > 0 ? '<br><span style="font-size:11px; color:#888;">株数（' + plantSum.toLocaleString('ja-JP') + '株）は苗床枚数に含めていません。</span>' : '') +
+        html += '<div style="background:#fff; border:1px dashed #CBD5E1; border-radius:10px; text-align:center; color:#64748B; font-size:13px; padding:28px 12px;">この条件では播種枚数がありません。' +
+            (plantSum > 0 ? '<br><span style="font-size:11px; color:#888;">※穴数1の株数（' + plantSum.toLocaleString('ja-JP') + '株）は苗床枚数に含めていません。</span>' : '') +
             '</div>';
         return html;
     }
@@ -9996,82 +10048,90 @@ function renderOverallNurseryBedsHtml_(summary, timeline) {
     const activeMonths = months.filter(m => (Number(m.trays) || 0) > 0);
     if (activeMonths.length) {
         const maxMonthTrays = activeMonths.reduce((n, m) => Math.max(n, Number(m.trays) || 0), 0) || 1;
-        html += '<div style="font-size:11px; font-weight:bold; color:#33691E; margin-bottom:6px;">月別の苗床必要数</div>';
-        html += '<div style="display:flex; flex-direction:column; gap:6px; margin-bottom:12px;">';
+        html += '<div style="background:#fff; border:1px solid #CBD5E1; border-radius:10px; padding:12px 14px; margin-bottom:14px; box-shadow:0 1px 3px rgba(0,0,0,0.03);">';
+        html += '<div style="font-size:13px; font-weight:bold; color:#1B5E20; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">' +
+            '<span>📅 月別の苗床必要数（各月の最大半旬）</span>' +
+            '<span style="font-size:11px; font-weight:normal; color:#64748B;">対象 ' + activeMonths.length + ' ヶ月</span></div>';
+        html += '<div style="display:flex; flex-direction:column; gap:8px;">';
         activeMonths.forEach(m => {
             const trays = Number(m.trays) || 0;
             const beds = calcNurseryBedsNeeded_(trays, perBed);
             const pct = Math.max(4, Math.round((trays / maxMonthTrays) * 100));
             const isPeak = (m.monthIndex === tl.peakMonthIndex) && trays === peakTrays;
-            const cropBits = Object.keys(m.crops || {}).sort((a, b) => (m.crops[b] || 0) - (m.crops[a] || 0))
-                .map(name => esc(name) + ' ' + Number(m.crops[name] || 0).toLocaleString('ja-JP') + '枚')
-                .join(' ／ ');
-            html += '<div style="background:' + (isPeak ? '#E8F5E9' : '#fff') + '; border:1px solid ' + (isPeak ? '#81C784' : '#e0e0e0') + '; border-radius:8px; padding:8px 10px;">' +
-                '<div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; align-items:baseline;">' +
-                '<b style="font-size:13px; color:#333;">' + esc(nurseryMonthLabel_(m.monthIndex, tl.year)) +
-                (isPeak ? ' <span style="font-size:10px; background:#2E7D32; color:#fff; border-radius:8px; padding:1px 6px;">ピーク</span>' : '') +
-                '</b>' +
-                '<span style="font-size:12px; font-weight:bold; color:#1B5E20; white-space:nowrap;">' +
-                beds.beds.toLocaleString('ja-JP') + '区画 ／ ' + trays.toLocaleString('ja-JP') + '枚</span></div>' +
-                '<div style="height:6px; background:#eee; border-radius:99px; margin-top:6px; overflow:hidden;">' +
+            const cropChips = Object.keys(m.crops || {}).sort((a, b) => (m.crops[b] || 0) - (m.crops[a] || 0))
+                .map(name => '<span style="display:inline-flex; align-items:center; gap:4px; background:' + (isPeak ? '#fff' : '#F1F5F9') + '; border:1px solid ' + (isPeak ? '#A5D6A7' : '#E2E8F0') + '; border-radius:6px; padding:2px 7px; font-size:11px; color:#334155;"><b>' + esc(name) + '</b> ' + Number(m.crops[name] || 0).toLocaleString('ja-JP') + '枚</span>')
+                .join('');
+            html += '<div style="background:' + (isPeak ? '#F1F8E9' : '#FAFDFC') + '; border:1px solid ' + (isPeak ? '#66BB6A' : '#E2E8F0') + '; border-left:4px solid ' + (isPeak ? '#2E7D32' : '#94A3B8') + '; border-radius:8px; padding:9px 12px;">' +
+                '<div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; align-items:center;">' +
+                '<div style="display:flex; align-items:center; gap:6px;">' +
+                '<b style="font-size:13px; color:#0F172A;">' + esc(nurseryMonthLabel_(m.monthIndex, tl.year)) + '</b>' +
+                (isPeak ? '<span style="font-size:10px; font-weight:bold; background:#2E7D32; color:#fff; border-radius:99px; padding:2px 8px;">★ ピーク月</span>' : '') +
+                '</div>' +
+                '<div style="display:flex; align-items:center; gap:6px; font-variant-numeric:tabular-nums;">' +
+                '<span style="font-size:12px; font-weight:bold; background:#E8F5E9; color:#1B5E20; border:1px solid #A5D6A7; padding:2px 8px; border-radius:6px;">' + beds.beds.toLocaleString('ja-JP') + ' 区画</span>' +
+                '<span style="font-size:12px; font-weight:bold; color:#334155;">' + trays.toLocaleString('ja-JP') + ' 枚</span>' +
+                '</div></div>' +
+                '<div style="height:7px; background:#E2E8F0; border-radius:99px; margin-top:7px; overflow:hidden;">' +
                 '<div style="width:' + pct + '%; height:100%; background:' + (isPeak ? '#2E7D32' : '#66BB6A') + '; border-radius:99px;"></div></div>' +
-                (cropBits ? '<div style="font-size:11px; color:#666; margin-top:5px;">' + cropBits + '</div>' : '') +
+                (cropChips ? '<div style="display:flex; flex-wrap:wrap; gap:5px; margin-top:7px;">' + cropChips + '</div>' : '') +
                 '</div>';
         });
-        html += '</div>';
+        html += '</div></div>';
     }
-
-    html += '<div style="font-size:12px; color:#555; margin-bottom:10px; line-height:1.5;">' +
-        'ピーク ' + calc.trays.toLocaleString('ja-JP') + '枚 ÷ ' + calc.perBed.toLocaleString('ja-JP') + '枚 ＝ <b>' + calc.beds.toLocaleString('ja-JP') + '区画</b>';
-    if (calc.beds > 0 && calc.lastFill < calc.perBed) {
-        html += '（最終区画 ' + calc.lastFill.toLocaleString('ja-JP') + ' / ' + calc.perBed.toLocaleString('ja-JP') + '枚。あと ' + calc.remainToNext.toLocaleString('ja-JP') + '枚で次の区画）';
-    } else if (calc.beds > 0) {
-        html += '（各区画ちょうど満杯）';
-    }
-    html += '</div>';
 
     if (peakTrays > 0) {
-        html += '<div style="font-size:11px; font-weight:bold; color:#33691E; margin-bottom:6px;">ピーク時の区画の埋まり方</div>';
-        html += '<div style="display:flex; flex-direction:column; gap:6px; margin-bottom:12px;">';
+        html += '<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:12px;">';
+
+        // 左列: 区画の埋まり方（コンパクトグリッド）
+        html += '<div style="background:#fff; border:1px solid #CBD5E1; border-radius:10px; padding:12px 14px; box-shadow:0 1px 3px rgba(0,0,0,0.03);">' +
+            '<div style="font-size:13px; font-weight:bold; color:#1B5E20; margin-bottom:8px;">🏠 ピーク時の区画の埋まり方</div>' +
+            '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(135px, 1fr)); gap:8px;">';
         const maxShow = 12;
         const showBeds = Math.min(calc.beds, maxShow);
         for (let i = 0; i < showBeds; i++) {
             const fill = (i === calc.beds - 1) ? calc.lastFill : calc.perBed;
             const pct = Math.max(4, Math.round((fill / calc.perBed) * 100));
-            html += '<div style="background:#fafafa; border:1px solid #DCEDC8; border-radius:8px; padding:7px 8px;">' +
-                '<div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">' +
-                '<b style="color:#33691E;">区画 ' + (i + 1) + '</b>' +
-                '<span style="color:#555;">' + fill.toLocaleString('ja-JP') + ' / ' + calc.perBed.toLocaleString('ja-JP') + '枚</span></div>' +
-                '<div style="height:8px; background:#eee; border-radius:99px; overflow:hidden;">' +
-                '<div style="width:' + pct + '%; height:100%; background:' + (fill >= calc.perBed ? '#2E7D32' : '#7CB342') + '; border-radius:99px;"></div></div></div>';
+            const isFull = fill >= calc.perBed;
+            html += '<div style="background:' + (isFull ? '#F1F8E9' : '#FFFDE7') + '; border:1px solid ' + (isFull ? '#C5E1A5' : '#FFE082') + '; border-radius:8px; padding:8px 10px;">' +
+                '<div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; margin-bottom:5px;">' +
+                '<b style="color:#1B5E20;">区画 ' + (i + 1) + '</b>' +
+                '<span style="color:#475569; font-weight:bold; font-variant-numeric:tabular-nums;">' + pct + '%</span></div>' +
+                '<div style="height:7px; background:#E2E8F0; border-radius:99px; overflow:hidden; margin-bottom:4px;">' +
+                '<div style="width:' + pct + '%; height:100%; background:' + (isFull ? '#2E7D32' : '#F59E0B') + '; border-radius:99px;"></div></div>' +
+                '<div style="font-size:11px; color:#334155; text-align:right; font-variant-numeric:tabular-nums;">' + fill.toLocaleString('ja-JP') + ' / ' + calc.perBed.toLocaleString('ja-JP') + '枚</div>' +
+                '</div>';
         }
+        html += '</div>';
         if (calc.beds > maxShow) {
-            html += '<div style="font-size:11px; color:#666; text-align:center;">ほか ' + (calc.beds - maxShow).toLocaleString('ja-JP') + ' 区画（満杯）</div>';
+            html += '<div style="font-size:11px; color:#64748B; text-align:center; margin-top:8px;">＋ ほか ' + (calc.beds - maxShow).toLocaleString('ja-JP') + ' 区画（すべて満杯）</div>';
         }
         html += '</div>';
 
+        // 右列: ピーク月の作物内訳
         const peakCropRows = Object.keys(tl.peakCrops || {}).map(name => ({ crop: name, traySum: tl.peakCrops[name] }))
             .sort((a, b) => (b.traySum || 0) - (a.traySum || 0));
         if (peakCropRows.length) {
             const maxTrays = peakCropRows.reduce((n, c) => Math.max(n, Number(c.traySum) || 0), 0) || 1;
-            html += '<div style="font-size:11px; font-weight:bold; color:#33691E; margin-bottom:6px;">ピーク月の作物内訳</div>';
-            html += '<div style="display:flex; flex-direction:column; gap:6px;">';
+            html += '<div style="background:#fff; border:1px solid #CBD5E1; border-radius:10px; padding:12px 14px; box-shadow:0 1px 3px rgba(0,0,0,0.03);">' +
+                '<div style="font-size:13px; font-weight:bold; color:#1B5E20; margin-bottom:8px;">🌾 ピーク月の作物別内訳</div>' +
+                '<div style="display:flex; flex-direction:column; gap:7px;">';
             peakCropRows.forEach(c => {
                 const trays = Number(c.traySum) || 0;
                 const beds = trays / calc.perBed;
                 const ownBeds = Math.ceil(trays / calc.perBed);
                 const pct = Math.max(4, Math.round((trays / maxTrays) * 100));
-                html += '<div style="background:#fff; border:1px solid #e0e0e0; border-radius:8px; padding:8px 10px;">' +
-                    '<div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">' +
-                    '<b style="font-size:13px; color:#333;">' + esc(c.crop) + '</b>' +
-                    '<span style="font-size:12px; font-weight:bold; color:#1B5E20; white-space:nowrap;">' + trays.toLocaleString('ja-JP') + '枚 ／ ' +
+                html += '<div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:8px 10px;">' +
+                    '<div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; align-items:center;">' +
+                    '<b style="font-size:13px; color:#0F172A;">' + esc(c.crop) + '</b>' +
+                    '<span style="font-size:12px; font-weight:bold; color:#1B5E20; white-space:nowrap; font-variant-numeric:tabular-nums;">' + trays.toLocaleString('ja-JP') + '枚 ／ ' +
                     beds.toLocaleString('ja-JP', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '区画分' +
-                    (ownBeds > 1 ? '（単独なら' + ownBeds + '区画）' : '') + '</span></div>' +
-                    '<div style="height:6px; background:#eee; border-radius:99px; margin-top:6px; overflow:hidden;">' +
+                    (ownBeds > 1 ? ' <small style="color:#64748B; font-weight:normal;">(単独' + ownBeds + '区画)</small>' : '') + '</span></div>' +
+                    '<div style="height:6px; background:#E2E8F0; border-radius:99px; margin-top:6px; overflow:hidden;">' +
                     '<div style="width:' + pct + '%; height:100%; background:#66BB6A; border-radius:99px;"></div></div></div>';
             });
-            html += '</div>';
+            html += '</div></div>';
         }
+        html += '</div>';
     }
 
     const notes = [];
@@ -10089,55 +10149,108 @@ function renderOverallNurseryBedsHtml_(summary, timeline) {
         notes.push('穴数1の株数（' + plantSum.toLocaleString('ja-JP') + '株）は苗床の枚数換算から除外しています。');
     }
     if (notes.length) {
-        html += '<div style="font-size:11px; color:#666; margin-top:10px; line-height:1.55;">' + notes.map(n => '・' + n).join('<br>') + '</div>';
+        html += '<div style="font-size:11px; color:#475569; background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; padding:8px 12px; margin-top:12px; line-height:1.55;">' + notes.map(n => '💡 ' + n).join('<br>') + '</div>';
     }
     return html;
 }
+
+function toggleAllOverallCropDetails_(openState) {
+    document.querySelectorAll('#cpOverallPanelSummary details.cp-overall-crop-card').forEach(d => {
+        d.open = !!openState;
+    });
+}
+window.toggleAllOverallCropDetails_ = toggleAllOverallCropDetails_;
 
 function renderOverallPlanReviewHtml_(summary) {
     const esc = (s) => String(s == null ? '' : s)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const qty = formatOverallPlanQtyLabel_(summary.total.traySum, summary.total.plantSum);
     const area = formatOverallPlanAreaLabel_(summary.total.areaSum);
+    const totalArea = Number(summary.total.areaSum) || 0;
     const maxArea = summary.crops.reduce((m, c) => Math.max(m, c.areaSum), 0) || 1;
     if (!summary.crops.length) {
-        return '<div style="text-align:center; color:#666; font-size:13px; padding:28px 12px;">この条件の保存済み計画はありません。<br>作物ごとの計画を保存すると、ここに合算されます。</div>';
+        return '<div style="background:#fff; border:1px dashed #CBD5E1; border-radius:10px; text-align:center; color:#64748B; font-size:13px; padding:36px 16px;">この条件の保存済み計画はありません。<br>作物ごとの計画を保存すると、ここに合算されます。</div>';
     }
-    let html = '<div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">' +
-        '<div style="background:#E3F2FD; border:1px solid #90CAF9; border-radius:8px; padding:10px 12px;">' +
-        '<div style="font-size:11px; color:#1565C0; font-weight:bold;">播種枚数（全作物）</div>' +
-        '<div style="font-size:22px; font-weight:bold; color:#0D47A1; line-height:1.2; margin-top:4px;">' + esc(qty) + '</div>' +
-        '</div>' +
-        '<div style="background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px; padding:10px 12px;">' +
-        '<div style="font-size:11px; color:#2E7D32; font-weight:bold;">定植面積（全作物）</div>' +
-        '<div style="font-size:22px; font-weight:bold; color:#1B5E20; line-height:1.2; margin-top:4px;">' + esc(area.text) + '</div>' +
-        (area.ha ? '<div style="font-size:11px; color:#558B2F; margin-top:2px;">' + esc(area.ha) + '</div>' : '') +
+    const accentColors = ['#2E7D32', '#1565C0', '#EF6C00', '#6A1B9A', '#00838F', '#C62828', '#4E342E', '#283593'];
+
+    let html = '<div class="cp-overall-kpi-grid">' +
+        '<div class="cp-overall-kpi-card" style="border:1px solid #A5D6A7; border-left:4px solid #2E7D32; background:#F1F8E9;">' +
+        '<div style="font-size:11px; color:#2E7D32; font-weight:bold;">🌱 定植面積合計（全作物）</div>' +
+        '<div style="display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-top:4px;">' +
+        '<div style="font-size:24px; font-weight:bold; color:#1B5E20; line-height:1.2; font-variant-numeric:tabular-nums;">' + esc(area.text) + '</div>' +
+        (area.ha ? '<span style="font-size:12px; font-weight:bold; color:#1B5E20; background:#C8E6C9; padding:2px 8px; border-radius:99px;">約 ' + esc(area.ha) + '</span>' : '') +
         '</div></div>' +
-        '<div style="font-size:11px; color:#666; margin-bottom:8px;">作物 ' + summary.crops.length + ' ／ 作型 ' + summary.total.lineCount +
-        (summary.total.seedSum ? ' ／ 種 ' + Number(summary.total.seedSum).toLocaleString('ja-JP') + '粒' : '') + '</div>';
-    html += '<div style="display:flex; flex-direction:column; gap:6px;">';
+        '<div class="cp-overall-kpi-card" style="border:1px solid #90CAF9; border-left:4px solid #1565C0; background:#E3F2FD;">' +
+        '<div style="font-size:11px; color:#1565C0; font-weight:bold;">🪴 播種枚数・株数合計（全作物）</div>' +
+        '<div style="font-size:24px; font-weight:bold; color:#0D47A1; line-height:1.2; margin-top:4px; font-variant-numeric:tabular-nums;">' + esc(qty) + '</div>' +
+        '</div>' +
+        '<div class="cp-overall-kpi-card" style="border:1px solid #CBD5E1; border-left:4px solid #475569; background:#fff;">' +
+        '<div style="font-size:11px; color:#475569; font-weight:bold;">🌾 対象作物・作型・種子合計</div>' +
+        '<div style="font-size:18px; font-weight:bold; color:#0F172A; line-height:1.25; margin-top:4px;">' + summary.crops.length + ' <span style="font-size:12px; font-weight:normal; color:#475569;">作物</span> ／ ' + summary.total.lineCount + ' <span style="font-size:12px; font-weight:normal; color:#475569;">作型</span></div>' +
+        (summary.total.seedSum ? '<div style="font-size:11px; color:#64748B; margin-top:3px;">必要種子合計: <b>' + Number(summary.total.seedSum).toLocaleString('ja-JP') + '粒</b></div>' : '') +
+        '</div></div>';
+
+    html += '<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">' +
+        '<div style="font-size:13px; font-weight:bold; color:#1E293B;">📋 作物別・品種別の内訳 <span style="font-size:11px; font-weight:normal; color:#64748B;">（クリックで品種一覧を開閉）</span></div>' +
+        '<div style="display:inline-flex; gap:6px;">' +
+        '<button type="button" onclick="toggleAllOverallCropDetails_(true)" style="padding:4px 10px; font-size:11px; font-weight:bold; color:#1B5E20; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:6px; cursor:pointer;">すべて開く</button>' +
+        '<button type="button" onclick="toggleAllOverallCropDetails_(false)" style="padding:4px 10px; font-size:11px; font-weight:bold; color:#475569; background:#fff; border:1px solid #CBD5E1; border-radius:6px; cursor:pointer;">すべて閉じる</button>' +
+        '</div></div>';
+
+    html += '<div style="display:flex; flex-direction:column; gap:8px;">';
     summary.crops.forEach((c, idx) => {
         const pct = Math.max(4, Math.round((c.areaSum / maxArea) * 100));
+        const sharePct = totalArea > 0 ? (Math.round((c.areaSum / totalArea) * 1000) / 10) : 0;
         const cQty = formatOverallPlanQtyLabel_(c.traySum, c.plantSum);
         const cArea = formatOverallPlanAreaLabel_(c.areaSum);
+        const accent = accentColors[idx % accentColors.length];
         const vars = Object.values(c.varieties || {}).sort((a, b) => b.areaSum - a.areaSum);
-        const varHtml = vars.map(v => {
+        const cropArea = Number(c.areaSum) || 0;
+
+        const varRowsHtml = vars.map(v => {
             const vQty = formatOverallPlanQtyLabel_(v.traySum, v.plantSum);
             const vArea = formatOverallPlanAreaLabel_(v.areaSum);
-            return '<div style="display:flex; justify-content:space-between; gap:8px; font-size:11px; color:#555; padding:2px 0;">' +
-                '<span>' + esc(v.variety) + '</span>' +
-                '<span style="white-space:nowrap;">' + esc(vQty) + ' ／ ' + esc(vArea.text) + '</span></div>';
+            const vShare = cropArea > 0 ? Math.round((v.areaSum / cropArea) * 100) : 0;
+            const vSeeds = v.seedSum > 0 ? Number(v.seedSum).toLocaleString('ja-JP') + '粒' : '-';
+            return '<tr>' +
+                '<td style="font-weight:bold; color:#0F172A;">' + esc(v.variety) + '</td>' +
+                '<td style="text-align:center; color:#64748B; width:64px;">' + (v.lineCount || 1) + '作型</td>' +
+                '<td style="text-align:right; font-weight:bold; color:#1565C0;">' + esc(vQty) + '</td>' +
+                '<td style="text-align:right; color:#64748B;">' + esc(vSeeds) + '</td>' +
+                '<td style="text-align:right; font-weight:bold; color:#1B5E20; min-width:120px;">' +
+                '<div>' + esc(vArea.text) + (cropArea > 0 ? ' <small style="color:#64748B; font-weight:normal;">(' + vShare + '%)</small>' : '') + '</div>' +
+                '</td></tr>';
         }).join('');
-        html += '<details style="background:#fafafa; border:1px solid #e0e0e0; border-radius:8px; padding:8px 10px;"' + (idx < 3 ? ' open' : '') + '>' +
-            '<summary style="cursor:pointer; list-style:none; display:block;">' +
-            '<div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap;">' +
-            '<b style="font-size:14px; color:#333;">' + esc(c.crop) + (c.live ? ' <span style="font-size:10px; background:#E3F2FD; color:#1565C0; border-radius:8px; padding:1px 6px;">編集中</span>' : '') + '</b>' +
-            '<span style="font-size:12px; font-weight:bold; color:#1B5E20; white-space:nowrap;">' + esc(cQty) + ' ／ ' + esc(cArea.text) + '</span>' +
+
+        html += '<details class="cp-overall-crop-card" style="border-left:4px solid ' + accent + ';"' + (idx < 3 ? ' open' : '') + '>' +
+            '<summary>' +
+            '<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">' +
+            '<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">' +
+            '<span class="cp-overall-chevron">▶</span>' +
+            '<b style="font-size:15px; color:#0F172A;">' + esc(c.crop) + '</b>' +
+            '<span style="font-size:11px; color:#475569; background:#F1F5F9; border:1px solid #CBD5E1; border-radius:99px; padding:1px 8px; font-weight:bold;">' + vars.length + '品種・' + c.lineCount + '作型</span>' +
+            (sharePct > 0 ? '<span style="font-size:11px; color:#2E7D32; background:#E8F5E9; border-radius:99px; padding:1px 8px; font-weight:bold;">面積比 ' + sharePct + '%</span>' : '') +
+            (c.live ? '<span style="font-size:10px; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:99px; padding:1px 8px; font-weight:bold;">✏️ 編集中を含む</span>' : '') +
             '</div>' +
-            '<div style="height:6px; background:#eee; border-radius:99px; margin-top:6px; overflow:hidden;">' +
-            '<div style="width:' + pct + '%; height:100%; background:#66BB6A; border-radius:99px;"></div></div>' +
+            '<div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-variant-numeric:tabular-nums;">' +
+            '<span style="font-size:12px; font-weight:bold; color:#0D47A1; background:#E3F2FD; border:1px solid #BBDEFB; padding:3px 9px; border-radius:6px;">🪴 ' + esc(cQty) + '</span>' +
+            '<span style="font-size:12px; font-weight:bold; color:#1B5E20; background:#E8F5E9; border:1px solid #C8E6C9; padding:3px 9px; border-radius:6px;">🌱 ' + esc(cArea.text) + (cArea.ha ? ' <small style="font-weight:normal;">(' + esc(cArea.ha) + ')</small>' : '') + '</span>' +
+            '</div>' +
+            '</div>' +
+            '<div style="height:6px; background:#E2E8F0; border-radius:99px; margin-top:8px; overflow:hidden;">' +
+            '<div style="width:' + pct + '%; height:100%; background:' + accent + '; border-radius:99px;"></div></div>' +
             '</summary>' +
-            '<div style="margin-top:8px; padding-top:6px; border-top:1px dashed #ddd;">' + varHtml + '</div>' +
+            '<div style="overflow-x:auto;">' +
+            '<table class="cp-overall-var-table">' +
+            '<thead><tr>' +
+            '<th>品種名</th>' +
+            '<th style="text-align:center;">作型</th>' +
+            '<th style="text-align:right;">播種枚数・株数</th>' +
+            '<th style="text-align:right;">種子数</th>' +
+            '<th style="text-align:right;">定植面積（作物内比）</th>' +
+            '</tr></thead>' +
+            '<tbody>' + varRowsHtml + '</tbody>' +
+            '</table></div>' +
             '</details>';
     });
     html += '</div>';
@@ -10680,33 +10793,27 @@ function updateCpDraftStatusUI() {
     const statusEl = document.getElementById('cpDraftStatus');
     if (!statusEl) return;
 
-    const executed = typeof cpHasExecutedPlans_ === 'function' && cpHasExecutedPlans_();
     const sync = cpProductionSyncState || { status: 'idle' };
     statusEl.style.fontWeight = '';
-    if (executed || sync.status === 'executed') {
-        statusEl.style.color = '#e65100';
-        statusEl.textContent = '実行済みの作型があるため自動保存しません。「計画を保存」で更新してください。';
-        return;
-    }
     if (sync.status === 'saving') {
         statusEl.style.color = '#1565c0';
-        statusEl.textContent = '本番へ同期中…';
+        statusEl.textContent = '保存中…';
         return;
     }
-    if (sync.status === 'offline') {
-        statusEl.style.color = '#c62828';
-        statusEl.textContent = 'オフラインです。接続後に本番へ送ります' + (sync.error ? '（' + sync.error + '）' : '');
+    if (sync.status === 'dirty') {
+        statusEl.style.color = '#e65100';
+        statusEl.textContent = '未保存の変更があります（「計画を保存」で保存）';
         return;
     }
     if (sync.status === 'saved' && sync.at) {
         const when = formatCpDraftSavedAt(sync.at);
         statusEl.style.color = '#2e7d32';
-        statusEl.textContent = '本番へ自動保存済み' + (when ? '（' + when + '）' : '');
+        statusEl.textContent = '保存済み' + (when ? '（' + when + '）' : '');
         return;
     }
 
     statusEl.style.color = '#607D8B';
-    statusEl.textContent = '未実行の計画は、編集すると本番へ自動保存されます。';
+    statusEl.textContent = '「計画を保存」を押すまで保存されません';
 }
 
 function cpDraftHasContent_(form, plans) {
@@ -10732,21 +10839,22 @@ let cpDraftAutosaveTimer = null;
 let cpDraftAutosavePaused = false;
 
 function scheduleCpDraftAutosave_(delayMs) {
+    // 自動保存は無効化: 明示的に「計画を保存」を押したときのみ保存する
+    clearTimeout(cpDraftAutosaveTimer);
+    cpDraftAutosaveTimer = null;
     if (cpDraftAutosavePaused) return;
     if (!isCpPlanModalOpen_()) return;
     if (cpEditHistoryNavigating || window.cpBulkPlanLoadInProgress) return;
-    clearTimeout(cpDraftAutosaveTimer);
-    cpDraftAutosaveTimer = setTimeout(() => {
-        cpDraftAutosaveTimer = null;
-        runCpProductionAutosave_();
-    }, delayMs != null ? delayMs : 1500);
+    if (cpProductionSyncState && cpProductionSyncState.status !== 'saving') {
+        cpProductionSyncState = { status: 'dirty', at: '', error: '' };
+        updateCpDraftStatusUI();
+    }
 }
 
 function flushCpDraftAutosave_(opts) {
-    opts = opts || {};
+    // 自動保存は無効化
     clearTimeout(cpDraftAutosaveTimer);
     cpDraftAutosaveTimer = null;
-    runCpProductionAutosave_({ allowWhenClosed: !!opts.allowWhenClosed });
 }
 
 function cpHasExecutedPlans_(plans) {
@@ -10757,49 +10865,19 @@ function cpHasExecutedPlans_(plans) {
 }
 
 function runCpProductionAutosave_(opts) {
-    opts = opts || {};
-    if (cpDraftAutosavePaused) return;
-    if (!opts.allowWhenClosed && !isCpPlanModalOpen_()) return;
-    if (cpEditHistoryNavigating || window.cpBulkPlanLoadInProgress) return;
-    if (cpHasExecutedPlans_()) {
-        cpProductionSyncState = { status: 'executed', at: '', error: '' };
-        updateCpDraftStatusUI();
-        return;
-    }
-    const crop = typeof getCpVal === 'function' ? String(getCpVal('cpCrop') || '').trim() : '';
-    const location = typeof getCpVal === 'function' ? String(getCpVal('cpLocation') || '').trim() : '';
-    if (!crop || !location) return;
-    const form = collectCpFormState();
-    const plans = collectCurrentCpPlansFromDom();
-    if (!cpDraftHasContent_(form, plans)) return;
-    if (!(plans || []).some(p => p && String(p.variety || '').trim())) return;
-    let sig = '';
-    try {
-        sig = JSON.stringify({ form: form, plans: plans });
-    } catch (e) {
-        return;
-    }
-    if (sig && sig === cpLastProductionSig) return;
-    if (typeof saveCultivationPlan === 'function') {
-        saveCultivationPlan({ auto: true });
-    }
+    // 自動保存は無効化（手動保存のみ）
+    return;
 }
 
 function bindCpDraftAutosaveGuards_() {
     if (window._cpDraftAutosaveGuardsBound) return;
     window._cpDraftAutosaveGuardsBound = true;
     try { localStorage.removeItem('jmap_cp_plan_draft'); } catch (e) { }
-    document.addEventListener('visibilitychange', function () {
-        if (document.visibilityState === 'hidden') flushCpDraftAutosave_();
-    });
-    window.addEventListener('pagehide', function () {
-        flushCpDraftAutosave_();
-    });
     document.addEventListener('input', function (e) {
         const modal = document.getElementById('cultivationPlanModal');
         if (!modal || !isCpPlanModalOpen_()) return;
         if (!e.target || !modal.contains(e.target)) return;
-        scheduleCpDraftAutosave_(2000);
+        scheduleCpDraftAutosave_(0);
     }, true);
 }
 bindCpDraftAutosaveGuards_();
@@ -10959,13 +11037,102 @@ function applyCpPendingFieldAttach(plan) {
     return true;
 }
 
-window.closeCultivationPlanModal = function () {
-    flushCpDraftAutosave_({ allowWhenClosed: true });
-    const modal = document.getElementById('cultivationPlanModal');
-    if (modal) modal.style.display = 'none';
-    window.cpPendingFieldAttach = null;
-    updateCpFieldAttachBanner();
+function hasActiveCpPlanInput_() {
+    const hasVarieties = Array.isArray(cpPlans) && cpPlans.some(p => p && String(p.variety || '').trim());
+    if (hasVarieties) return true;
+    const loc = String(getCpVal('cpLocation') || '').trim();
+    const crop = String(getCpVal('cpCrop') || '').trim();
+    return !!(loc || crop);
+}
+
+function showCpLeaveWarningModal_(options) {
+    const opts = options || {};
+    const onProceed = typeof opts.onProceed === 'function' ? opts.onProceed : function () {};
+    const existing = document.getElementById('cpLeaveWarningModal');
+    if (existing) existing.remove();
+
+    const hasVarieties = Array.isArray(cpPlans) && cpPlans.some(p => p && String(p.variety || '').trim());
+    const canSave = hasVarieties && !!(String(getCpVal('cpLocation') || '').trim() && String(getCpVal('cpCrop') || '').trim());
+
+    const overlay = document.createElement('div');
+    overlay.id = 'cpLeaveWarningModal';
+    overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.62); z-index:13000; display:flex; align-items:center; justify-content:center; padding:16px; box-sizing:border-box; font-family:sans-serif;';
+
+    overlay.innerHTML = `
+      <div style="background:#fff; border-radius:12px; width:100%; max-width:420px; padding:20px; box-shadow:0 10px 30px rgba(0,0,0,0.35); box-sizing:border-box;">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid #ECEFF1;">
+          <span style="font-size:20px; line-height:1;">⚠️</span>
+          <h3 style="margin:0; font-size:16px; font-weight:bold; color:#D84315;">他の画面へ移動しますか？</h3>
+        </div>
+        <div style="font-size:13px; color:#37474F; line-height:1.6; margin-bottom:16px;">
+          ${opts.message || '現在、栽培計画を作成・編集中です。<br>「計画を保存」を押さずに移動すると、変更内容は保存されません。'}
+        </div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          ${canSave ? `<button type="button" id="cpLeaveWarnSaveBtn" style="width:100%; padding:10px 14px; background:#FF9800; color:#fff; border:none; border-radius:6px; font-size:13px; font-weight:bold; cursor:pointer; box-shadow:0 2px 5px rgba(255,152,0,0.3);">💾 計画を保存して移動する</button>` : ''}
+          <button type="button" id="cpLeaveWarnProceedBtn" style="width:100%; padding:9px 14px; background:#ECEFF1; color:#37474F; border:1px solid #CFD8DC; border-radius:6px; font-size:13px; font-weight:bold; cursor:pointer;">保存せずに移動する</button>
+          <button type="button" id="cpLeaveWarnCancelBtn" style="width:100%; padding:10px 14px; background:#2E7D32; color:#fff; border:none; border-radius:6px; font-size:13px; font-weight:bold; cursor:pointer;">編集を続ける（移動しない）</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const cancelBtn = document.getElementById('cpLeaveWarnCancelBtn');
+    const proceedBtn = document.getElementById('cpLeaveWarnProceedBtn');
+    const saveBtn = document.getElementById('cpLeaveWarnSaveBtn');
+
+    if (cancelBtn) {
+        cancelBtn.onclick = function () {
+            overlay.remove();
+        };
+    }
+    if (proceedBtn) {
+        proceedBtn.onclick = function () {
+            overlay.remove();
+            onProceed();
+        };
+    }
+    if (saveBtn) {
+        saveBtn.onclick = async function () {
+            saveBtn.disabled = true;
+            saveBtn.textContent = '保存中...';
+            const ok = await saveCultivationPlan({ keepOpen: true });
+            overlay.remove();
+            if (ok) onProceed();
+        };
+    }
+}
+
+window.closeCultivationPlanModal = function (options) {
+    const opts = options || {};
+    const doClose_ = function () {
+        // 自動保存は無効化（明示的に保存ボタンを押したときのみ保存）
+        const modal = document.getElementById('cultivationPlanModal');
+        if (modal) modal.style.display = 'none';
+        window.cpPendingFieldAttach = null;
+        updateCpFieldAttachBanner();
+    };
+    if (opts.force === true) {
+        doClose_();
+        return;
+    }
+    showCpLeaveWarningModal_({
+        onProceed: doClose_
+    });
 };
+
+if (!window._cpModalPopstateBound) {
+    window._cpModalPopstateBound = true;
+    window.addEventListener('popstate', function () {
+        if (!isCpPlanModalOpen_()) return;
+        try {
+            history.pushState({ cpModalGuard: true }, '');
+        } catch (e) {}
+        if (!document.getElementById('cpLeaveWarningModal')) {
+            window.closeCultivationPlanModal();
+        }
+    });
+}
 
 /**
  * options:
@@ -10981,6 +11148,11 @@ function openCultivationPlanModal(options) {
         return;
     }
     modal.style.display = 'flex';
+    try {
+        if (!history.state || !history.state.cpModalGuard) {
+            history.pushState({ cpModalGuard: true }, '');
+        }
+    } catch (e) {}
     if (typeof initCpStepsAccordion === 'function') initCpStepsAccordion();
     if (typeof initCpAdvancedSettings_ === 'function') initCpAdvancedSettings_();
     if (typeof initCpExternalSheetUrl_ === 'function') initCpExternalSheetUrl_();
@@ -11525,7 +11697,7 @@ function getCpStep3Missing_() {
     return ['品種を選択'];
 }
 
-function setCpNextBtnState_(btn, hintEl, ready, waitingMsg, readyMsg) {
+function setCpNextBtnState_(btn, hintEl, ready, waitingMsg) {
     if (btn) {
         const wasWaiting = btn.classList.contains('is-waiting');
         btn.classList.toggle('is-waiting', !ready);
@@ -11536,8 +11708,10 @@ function setCpNextBtnState_(btn, hintEl, ready, waitingMsg, readyMsg) {
         }
     }
     if (hintEl) {
-        hintEl.textContent = ready ? (readyMsg || '入力完了 → 次へ') : (waitingMsg || '');
-        hintEl.classList.toggle('is-ready', !!ready);
+        const msg = ready ? '' : (waitingMsg || '');
+        hintEl.textContent = msg;
+        hintEl.style.display = msg ? '' : 'none';
+        hintEl.classList.toggle('is-ready', false);
     }
 }
 
