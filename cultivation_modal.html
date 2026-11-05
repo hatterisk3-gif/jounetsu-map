@@ -63,6 +63,15 @@
     <!-- ステップ1〜3: 段階的な設定画面（完了後カレンダー画面へ遷移） -->
     <div id="cpStepsRow" class="cp-steps">
       <div class="cp-step-tabs" role="tablist" aria-label="栽培計画の設定ステップ">
+        <button type="button" role="tab" id="cpStepTabSimple" class="cp-step-tab cp-step-tab--simple" aria-selected="false"
+          aria-controls="cpStepSimple" data-step="simple" onclick="openCpStep('simple')">
+          <div class="cp-step-tab-head">
+            <span class="cp-step-tab-badge" style="background:#8E24AA; color:#fff;">✨ おすすめ</span>
+            <span id="cpStepTabSimpleStatus" class="cp-step-tab-status"></span>
+          </div>
+          <span class="cp-step-tab-title" style="color:#6A1B9A;">⚡ シンプルモード</span>
+          <span class="cp-step-tab-sub">目標売上・上限面積・作業時間から逆算</span>
+        </button>
         <button type="button" role="tab" id="cpStepTab1" class="cp-step-tab cp-step-tab--1" aria-selected="false"
           aria-controls="cpStep1" data-step="1" onclick="openCpStep(1)">
           <div class="cp-step-tab-head">
@@ -94,9 +103,211 @@
       <div id="cpStepPanels" class="cp-step-panels">
         <div class="cp-step-panels-clip">
           <!-- ステップ1: 基本設定 -->
+          <!-- シンプルモード: 目標・上限から理想作型を自動逆算 -->
+          <div id="cpStepSimple" class="cp-step-panel cp-step-panel--simple" role="tabpanel" aria-labelledby="cpStepTabSimple" hidden>
+            <div class="cp-step-body">
+              <div class="cp-step-container" style="max-width: 1200px; margin: 0 auto;">
+                <!-- ヘッダーバー -->
+                <div class="cp-section-header-bar" style="background: linear-gradient(135deg, #f3e5f5 0%, #ede7f6 100%); border-left: 4px solid #8e24aa; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px;">
+                  <div class="cp-section-header-text">
+                    <span class="cp-section-header-title" style="color: #4a148c; font-size: 16px; font-weight: bold;">⚡ シンプルモード（目標売上・上限制約から理想作型を自動逆算）</span>
+                    <span class="cp-section-header-desc" style="color: #6a1b9a;">作物名・月別目標売上・上限面積・上限作業時間を入力すると、最適な作型組み合わせと栽培規模を自動逆算して提示します。</span>
+                  </div>
+                  <div class="cp-section-header-actions" style="display:flex; gap:8px;">
+                    <button type="button" class="cp-btn-secondary" onclick="resetCpSimpleModeForm()" style="background:#fff; border-color:#ba68c8; color:#6a1b9a; font-size:12px;">🔄 入力をリセット</button>
+                    <button type="button" class="cp-btn-secondary cp-btn-secondary--green" onclick="openCpStep(1)" style="font-size:12px;">📋 通常設定へ</button>
+                  </div>
+                </div>
+
+                <div class="cp-simple-layout" style="display: grid; grid-template-columns: minmax(360px, 1fr) minmax(420px, 1.25fr); gap: 16px; align-items: start;">
+                  <!-- 左カラム: 条件入力フォーム -->
+                  <div class="cp-simple-form-col" style="display: flex; flex-direction: column; gap: 12px;">
+                    <!-- 1. 作物名選択 -->
+                    <div class="cp-field cp-field-card" style="border-top: 3px solid #8e24aa; background:#fff; border-radius:8px; padding:12px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+                      <div class="cp-field-label-row">
+                        <label class="cp-field-label" for="cpSimpleCrop" style="font-weight:bold; color:#4a148c; font-size:13px;">🌱 1. 作物名を選択 <span class="cp-req-badge" style="background:#e91e63; color:#fff; font-size:10px; padding:1px 5px; border-radius:3px;">必須</span></label>
+                      </div>
+                      <div class="cp-field-input-area" style="margin-top:6px;">
+                        <div class="cp-field-row" style="display:flex; gap:8px;">
+                          <select id="cpSimpleCrop" class="cp-control" style="flex:1; height:34px; font-size:13px; font-weight:bold;" onchange="onCpSimpleCropChanged(this.value)">
+                            <option value="">作物名を選択してください</option>
+                          </select>
+                          <input type="text" id="cpSimpleCropCustom" class="cp-control" placeholder="手入力" style="display:none; flex:1; height:34px;" oninput="onCpSimpleCropCustomInput(this.value)">
+                        </div>
+                        <div id="cpSimpleCropHint" class="cp-field-hint" style="color:#666; font-size:11px; margin-top:4px;">作物を選択すると、標準単価や収量・作型候補が自動読み込みされます。</div>
+                      </div>
+                    </div>
+
+                    <!-- 2. 目標売上の設定（月ごと） -->
+                    <div class="cp-field cp-field-card" style="border-top: 3px solid #ff9800; background:#fff; border-radius:8px; padding:12px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+                      <div class="cp-field-label-row" style="display:flex; justify-content:space-between; align-items:center;">
+                        <label class="cp-field-label" style="font-weight:bold; color:#e65100; font-size:13px;">💰 2. 目標売上の設定（月ごと） <span class="cp-req-badge" style="background:#e91e63; color:#fff; font-size:10px; padding:1px 5px; border-radius:3px;">必須</span></label>
+                        <span id="cpSimpleAnnualTargetDisplay" style="font-size:12px; font-weight:bold; color:#e65100; background:#fff3e0; padding:3px 10px; border-radius:12px; border:1px solid #ffe082;">年間合計: 0 万円</span>
+                      </div>
+                      <div class="cp-field-input-area" style="margin-top:8px;">
+                        <!-- クイック一括配分ツールバー -->
+                        <div style="background:#fff8e1; border:1px solid #ffe082; border-radius:6px; padding:8px 10px; margin-bottom:10px; display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:12px;">
+                          <span style="color:#795548; font-weight:bold;">クイック一括配分:</span>
+                          <div style="display:inline-flex; align-items:center; gap:4px;">
+                            <input type="number" id="cpSimpleAnnualInput" placeholder="年間目標" min="0" step="10" style="width:80px; height:26px; padding:2px 6px; border:1px solid #ffa726; border-radius:4px; font-size:12px; text-align:right;">
+                            <span style="font-size:11px;">万円</span>
+                          </div>
+                          <button type="button" class="cp-btn-secondary" style="padding:3px 8px; font-size:11px; background:#fff;" onclick="applyCpSimpleSalesDistribution('even')">⚖️ 全月均等</button>
+                          <button type="button" class="cp-btn-secondary" style="padding:3px 8px; font-size:11px; background:#fff;" onclick="applyCpSimpleSalesDistribution('season')">🍂 旬・収穫期重点</button>
+                          <button type="button" class="cp-btn-secondary" style="padding:3px 8px; font-size:11px; color:#c62828; background:#fff;" onclick="applyCpSimpleSalesDistribution('clear')">クリア</button>
+                        </div>
+
+                        <!-- 12ヶ月の月別売上入力グリッド -->
+                        <div id="cpSimpleMonthsGrid" class="cp-simple-months-grid" style="display:grid; grid-template-columns: repeat(4, 1fr); gap:6px;">
+                          <!-- JSで1月〜12月の月別入力ボックスを生成 -->
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 3. 上限面積設定 ＆ 4. 上限作業時間設定 -->
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                      <!-- 3. 上限面積設定 -->
+                      <div class="cp-field cp-field-card" style="border-top: 3px solid #2e7d32; background:#fff; border-radius:8px; padding:12px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+                        <div class="cp-field-label-row">
+                          <label class="cp-field-label" for="cpSimpleMaxArea" style="font-weight:bold; color:#1b5e20; font-size:13px;">🚜 3. 上限面積 (a) <span class="cp-req-badge" style="background:#e91e63; color:#fff; font-size:10px; padding:1px 5px; border-radius:3px;">必須</span></label>
+                        </div>
+                        <div class="cp-field-input-area" style="margin-top:6px;">
+                          <div style="display:flex; align-items:center; gap:4px;">
+                            <input type="number" id="cpSimpleMaxArea" class="cp-control" value="100" min="1" step="1" style="font-size:14px; font-weight:bold; height:32px;" oninput="onCpSimpleParamChange()">
+                            <span style="font-size:12px; font-weight:bold; color:#555;">a</span>
+                          </div>
+                          <!-- クイックチップ -->
+                          <div style="display:flex; gap:4px; margin-top:6px; flex-wrap:wrap;">
+                            <button type="button" class="cp-chip-btn" onclick="setCpSimpleMaxArea(30)">30a</button>
+                            <button type="button" class="cp-chip-btn" onclick="setCpSimpleMaxArea(50)">50a</button>
+                            <button type="button" class="cp-chip-btn" onclick="setCpSimpleMaxArea(100)">100a</button>
+                            <button type="button" class="cp-chip-btn" onclick="setCpSimpleMaxArea(200)">200a</button>
+                            <button type="button" class="cp-chip-btn" onclick="setCpSimpleMaxArea(300)">300a</button>
+                          </div>
+                          <div style="font-size:10px; color:#777; margin-top:4px;">同時栽培可能な最大圃場面積</div>
+                        </div>
+                      </div>
+
+                      <!-- 4. 上限作業時間設定 -->
+                      <div class="cp-field cp-field-card" style="border-top: 3px solid #1565c0; background:#fff; border-radius:8px; padding:12px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+                        <div class="cp-field-label-row">
+                          <label class="cp-field-label" for="cpSimpleMaxWorkHours" style="font-weight:bold; color:#0d47a1; font-size:13px;">⏱️ 4. 上限作業時間 <span class="cp-req-badge" style="background:#e91e63; color:#fff; font-size:10px; padding:1px 5px; border-radius:3px;">必須</span></label>
+                        </div>
+                        <div class="cp-field-input-area" style="margin-top:6px;">
+                          <div style="display:flex; align-items:center; gap:4px;">
+                            <input type="number" id="cpSimpleMaxWorkHours" class="cp-control" value="160" min="10" step="10" style="font-size:14px; font-weight:bold; height:32px;" oninput="onCpSimpleParamChange()">
+                            <span style="font-size:12px; font-weight:bold; color:#555;">h/月</span>
+                          </div>
+                          <!-- 作業人数アシスト -->
+                          <div style="display:flex; align-items:center; gap:4px; margin-top:6px; font-size:11px; color:#555;">
+                            <span>人数:</span>
+                            <select id="cpSimpleStaffCount" style="height:22px; font-size:11px; border:1px solid #ccc; border-radius:3px;" onchange="onCpSimpleStaffCountChanged(this.value)">
+                              <option value="0.5">0.5人 (80h)</option>
+                              <option value="1" selected>1人 (160h)</option>
+                              <option value="2">2人 (320h)</option>
+                              <option value="3">3人 (480h)</option>
+                              <option value="5">5人 (800h)</option>
+                            </select>
+                          </div>
+                          <div style="font-size:10px; color:#777; margin-top:4px;">月間の作業可能労働時間</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 5. 基準パラメータ（単価・収量・工数、アコーディオン） -->
+                    <details class="cp-field-card" style="padding:8px 12px; border:1px solid #e0e0e0; border-radius:8px; background:#fff;">
+                      <summary style="font-size:12px; font-weight:bold; color:#555; cursor:pointer; user-select:none;">⚙️ 基準単価・収量・作業工数の微調整（自動補完中）</summary>
+                      <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin-top:10px;">
+                        <div>
+                          <label style="font-size:11px; color:#555; font-weight:bold;">想定出荷単価</label>
+                          <div style="display:flex; align-items:center; gap:2px; margin-top:2px;">
+                            <input type="number" id="cpSimplePrice" class="cp-control" value="150" min="1" step="5" style="height:28px; font-size:12px;" oninput="onCpSimpleParamChange()">
+                            <span style="font-size:11px;">円</span>
+                          </div>
+                        </div>
+                        <div>
+                          <label style="font-size:11px; color:#555; font-weight:bold;">10a標準収量</label>
+                          <div style="display:flex; align-items:center; gap:2px; margin-top:2px;">
+                            <input type="number" id="cpSimpleYieldPer10a" class="cp-control" value="3000" min="10" step="50" style="height:28px; font-size:12px;" oninput="onCpSimpleParamChange()">
+                            <span style="font-size:11px;">個/pk</span>
+                          </div>
+                        </div>
+                        <div>
+                          <label style="font-size:11px; color:#555; font-weight:bold;">10a作業工数</label>
+                          <div style="display:flex; align-items:center; gap:2px; margin-top:2px;">
+                            <input type="number" id="cpSimpleHoursPer10a" class="cp-control" value="70" min="5" step="5" style="height:28px; font-size:12px;" oninput="onCpSimpleParamChange()">
+                            <span style="font-size:11px;">h</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div style="font-size:10px; color:#888; margin-top:6px;">※作物選択時に自動設定されます。必要に応じて調整してください。</div>
+                    </details>
+
+                    <!-- シミュレーション実行ボタン -->
+                    <button type="button" id="btnRunCpSimpleSim" onclick="runCpSimpleSimulation()"
+                      style="margin-top:4px; padding:12px; background:linear-gradient(135deg, #8e24aa 0%, #6a1b9a 100%); color:#fff; border:none; border-radius:8px; font-size:15px; font-weight:bold; cursor:pointer; box-shadow:0 3px 10px rgba(142,36,170,0.3); display:flex; align-items:center; justify-content:center; gap:8px;">
+                      <span>✨ 理想の作型と数値をシミュレーション</span>
+                    </button>
+                  </div>
+
+                  <!-- 右カラム: 理想の作型と数値結果 -->
+                  <div class="cp-simple-result-col" id="cpSimpleResultCol" style="display:flex; flex-direction:column; gap:12px;">
+                    <!-- 初期プレースホルダー -->
+                    <div id="cpSimpleResultPlaceholder" style="background:#fafafa; border:2px dashed #d1c4e9; border-radius:10px; padding:40px 20px; text-align:center; color:#7e57c2; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:360px; box-sizing:border-box;">
+                      <div style="font-size:46px; margin-bottom:12px;">🌱 ✨</div>
+                      <div style="font-size:16px; font-weight:bold; margin-bottom:6px; color:#4a148c;">条件を入力してシミュレーション</div>
+                      <div style="font-size:12px; color:#666; max-width:320px; line-height:1.6;">
+                        作物名、月ごとの目標売上、上限面積、上限作業時間を設定して「シミュレーション」を押すと、理想の作型スケジュールと各月の数値予測が表示されます。
+                      </div>
+                    </div>
+
+                    <!-- 計算結果コンテナ（初期は非表示） -->
+                    <div id="cpSimpleResultContainer" style="display:none; flex-direction:column; gap:12px;">
+                      <!-- KPIサマリーカード -->
+                      <div id="cpSimpleKpiRow" style="display:grid; grid-template-columns: repeat(4, 1fr); gap:8px;"></div>
+
+                      <!-- 診断・アドバイスメッセージ -->
+                      <div id="cpSimpleAdviceBox" style="background:#f3e5f5; border:1px solid #ce93d8; border-radius:8px; padding:10px 14px; font-size:12px; line-height:1.5;"></div>
+
+                      <!-- 理想の作型一覧 -->
+                      <div style="background:#fff; border:1px solid #e0e0e0; border-radius:8px; padding:12px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                          <div style="font-size:13px; font-weight:bold; color:#4a148c;">🌱 理想の推奨作型スケジュール</div>
+                          <span id="cpSimpleCroptypeCountBadge" style="font-size:11px; background:#ede7f6; color:#6a1b9a; padding:2px 8px; border-radius:999px; font-weight:bold;">0 作型</span>
+                        </div>
+                        <div id="cpSimpleCroptypesList" style="display:flex; flex-direction:column; gap:8px;"></div>
+                      </div>
+
+                      <!-- 月別シミュレーション分析テーブル＆バー -->
+                      <div style="background:#fff; border:1px solid #e0e0e0; border-radius:8px; padding:12px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+                        <div style="font-size:13px; font-weight:bold; color:#333; margin-bottom:8px;">📊 月別シミュレーション（売上・面積・作業時間）</div>
+                        <div id="cpSimpleMonthlyAnalysis" style="overflow-x:auto;"></div>
+                      </div>
+
+                      <!-- 反映アクションボタン -->
+                      <div style="display:flex; gap:10px; margin-top:4px;">
+                        <button type="button" id="btnApplyCpSimpleToPlan" onclick="applyCpSimpleResultToPlan()" class="cp-btn-primary"
+                          style="flex:1; padding:12px; background:linear-gradient(135deg, #43a047 0%, #2e7d32 100%); color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:bold; cursor:pointer; box-shadow:0 3px 10px rgba(46,125,50,0.3); display:flex; align-items:center; justify-content:center; gap:8px;">
+                          <span>🚀 この理想作型で計画を作成・カレンダーへ反映</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div id="cpStep1" class="cp-step-panel cp-step-panel--1" role="tabpanel" aria-labelledby="cpStepTab1" hidden>
             <div class="cp-step-body">
               <div class="cp-step-container">
+                <div style="background: linear-gradient(135deg, #f3e5f5 0%, #ede7f6 100%); border: 1.5px solid #ce93d8; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                  <div>
+                    <div style="font-weight: bold; color: #4a148c; font-size: 13px;">💡 目標売上や上限面積・労働時間から自動で計画を立てたい方へ</div>
+                    <div style="font-size: 11px; color: #6a1b9a;">シンプルモードなら、条件を入力するだけで理想の作型スケジュールと栽培規模を自動逆算して提示します。</div>
+                  </div>
+                  <button type="button" class="cp-btn-primary" style="background: #8e24aa; border-color: #6a1b9a; white-space: nowrap; font-size: 12px; padding: 6px 14px; flex-shrink: 0;" onclick="openCpStep('simple')">⚡ シンプルモードを開く</button>
+                </div>
                 <div class="cp-section-header-bar">
                   <div class="cp-section-header-text">
                     <span class="cp-section-header-title">📋 計画の基本項目を設定</span>
@@ -1192,11 +1403,44 @@
 
       .cp-step-tabs {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 8px;
         flex-shrink: 0;
         padding-bottom: 8px;
         border-bottom: 2px solid #ECEFF1;
+      }
+
+      @media (max-width: 900px) {
+        .cp-step-tabs {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      .cp-step-tab--simple.is-active {
+        background: #F3E5F5;
+        border-color: #8E24AA;
+        color: #4A148C;
+        box-shadow: 0 2px 8px rgba(142, 36, 170, 0.22);
+      }
+
+      .cp-step-tab--simple.is-active .cp-step-tab-badge {
+        background: #8E24AA;
+        color: #fff;
+      }
+
+      .cp-chip-btn {
+        background: #fff;
+        border: 1px solid #CFD8DC;
+        border-radius: 999px;
+        padding: 2px 8px;
+        font-size: 11px;
+        color: #455A64;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .cp-chip-btn:hover {
+        background: #ECEFF1;
+        border-color: #B0BEC5;
       }
 
       .cp-step-tab {

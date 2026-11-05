@@ -1338,7 +1338,7 @@ window.applyMapDeltaSigns_ = (delta) => {
     } catch (eFp) { }
   });
 
-  try { if (window.SignGroup) window.SignGroup.refreshMarkers(); } catch (eSg) {}
+  try { if (window.SignGroup) window.SignGroup.refreshMarkers(); } catch (eSg) { }
   return { added, updated, removed, changed: !!(added || updated || removed) };
 };
 
@@ -1725,7 +1725,7 @@ function renderInitData(data) {
     });
     if (renderGen === _workerRenderInitGen) {
       try { updateWorkerLegend(); } catch (eLeg) { }
-      try { if (window.SignGroup) window.SignGroup.refreshMarkers(); } catch (eSg) {}
+      try { if (window.SignGroup) window.SignGroup.refreshMarkers(); } catch (eSg) { }
     }
   }
   if (renderGen !== _workerRenderInitGen) return;
@@ -2525,6 +2525,7 @@ function initMap() {
 
   infoWindow = new google.maps.InfoWindow();
   google.maps.event.addListener(map, 'click', (e) => {
+    if (window.isWorkerSignGroupMapSelecting) return;
     if (window._keepFieldInfoWindow_) return;
     if (window._workerMapRegMode && typeof window.handleWorkerMapRegMapClick_ === 'function') {
       window.handleWorkerMapRegMapClick_(e);
@@ -3205,6 +3206,12 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
   if (isLocPin && typeof window.attachLocationPinGlow_ === 'function') window.attachLocationPinGlow_(marker);
   if (isLocPin && typeof window.syncLocationPinGlowScale_ === 'function') window.syncLocationPinGlowScale_(map);
   google.maps.event.addListener(marker, 'click', (e) => {
+    if (window.isWorkerSignGroupMapSelecting) {
+      if (typeof window.handleWorkerSignGroupMarkerClick_ === 'function') {
+        window.handleWorkerSignGroupMarkerClick_(id);
+      }
+      return;
+    }
     if (window._workerMapRegMode && typeof window.handleWorkerMapRegMapClick_ === 'function') {
       window.handleWorkerMapRegMapClick_(e);
       return;
@@ -3286,6 +3293,7 @@ window.stopMapEvent_ = (e) => {
 /** 圃場ポリゴン／ラベルタップ（マップ選択中は選択、通常時は作業・生育メニュー） */
 function handleFieldPolygonClick_(id, e) {
   if (typeof window.stopMapEvent_ === 'function') window.stopMapEvent_(e);
+  if (window.isWorkerSignGroupMapSelecting) return;
   if (window._workerMapRegMode && typeof window.handleWorkerMapRegMapClick_ === 'function') {
     window.handleWorkerMapRegMapClick_(e);
     return;
@@ -3411,7 +3419,15 @@ window.openMainMenu = (id) => {
       actions += `<button type="button" onclick="openToolManagementUI('${id}')" class="field-infowindow-btn-single" style="margin-bottom:6px; background:#00BCD4;">🪚 道具状況</button>`;
     }
     if (p.isMarker && !(typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction))) {
-      actions += `<button type="button" onclick="window.openWorkerSignGroupSettings_('${id}')" class="field-infowindow-btn-single" style="margin-bottom:6px; background:#6A1B9A;">🪧 大・小看板の設定</button>`;
+      if (window.SignGroup && window.SignGroup.isParentSign(p)) {
+        const childCount = window.SignGroup.getChildren(p.id, loadedPolygons).length;
+        actions += `<button type="button" onclick="window.startWorkerSignGroupMapSelect('${id}')" class="field-infowindow-btn-single" style="margin-bottom:6px; background:#6A1B9A;">🗺️ 束ねる小看板を地図から編集 (${childCount}件)</button>`;
+      } else if (window.SignGroup && window.SignGroup.isChildSign(p)) {
+        actions += `<button type="button" onclick="window.removeWorkerSignFromGroup_('${id}')" class="field-infowindow-btn-single" style="margin-bottom:6px; background:#E65100;">❌ 大看板への束ねを解除する</button>`;
+      } else {
+        actions += `<button type="button" onclick="window.startWorkerSignGroupMapSelect('${id}')" class="field-infowindow-btn-single" style="margin-bottom:6px; background:#6A1B9A;">🪧 大看板にして小看板を地図から束ねる</button>`;
+      }
+      actions += `<button type="button" onclick="window.openWorkerSignGroupSettings_('${id}')" class="field-infowindow-btn-single" style="margin-bottom:6px; background:#7E57C2;">⚙️ 大・小看板の詳細設定</button>`;
     }
     actions += `<button type="button" onclick="directOpenReportForm('${id}')" class="field-infowindow-btn-single" style="background:#d32f2f;">⚠️ 問題を報告</button>`;
     bodyHtml = `${navBtn}${actions}`;
@@ -37035,28 +37051,13 @@ window.openWorkerSignGroupSettings_ = (id) => {
   const currentParentId = String(p.parentSignId || '').trim();
   const parentPoly = currentParentId ? loadedPolygons[currentParentId] : null;
   const isParentNow = !!(window.SignGroup && window.SignGroup.isParentSign(p));
-  const candidates = (window.SignGroup && typeof window.SignGroup.getCandidateChildren === 'function')
-    ? window.SignGroup.getCandidateChildren(id, loadedPolygons)
-    : [];
-  const selectedSet = {};
-  if (window.SignGroup) {
-    window.SignGroup.getChildren(id).forEach(ch => { selectedSet[String(ch.id)] = true; });
-  }
-  const childChecks = candidates.length
-    ? candidates.map(c => {
-      const checked = selectedSet[String(c.id)] ? ' checked' : '';
-      return `<label style="display:flex; align-items:center; gap:8px; padding:8px 6px; border-bottom:1px solid #f0f0f0; font-size:13px; cursor:pointer;">
-        <input type="checkbox" class="worker_sign_child_cb" value="${esc(c.id)}"${checked} style="width:18px; height:18px;">
-        <span>${esc(c.name)}</span>
-      </label>`;
-    }).join('')
-    : `<div style="padding:10px; color:#888; font-size:12px;">選べる看板がまだありません。先に他の看板を登録してください。</div>`;
+  const childCount = (window.SignGroup ? window.SignGroup.getChildren(id, loadedPolygons).length : 0);
 
   const childNote = currentParentId
     ? `<div style="background:#FFF3E0; color:#E65100; border-radius:8px; padding:8px; margin-bottom:10px; font-size:12px; line-height:1.4;">いまは「${esc(parentPoly ? parentPoly.name : currentParentId)}」の小看板です。大看板に切り替えると、その束ねから外れます。</div>`
     : '';
 
-  try { if (infoWindow) infoWindow.close(); } catch (e) {}
+  try { if (infoWindow) infoWindow.close(); } catch (e) { }
   const modal = document.getElementById('modal');
   const modalBody = document.getElementById('modalBody');
   if (!modal || !modalBody) {
@@ -37077,9 +37078,11 @@ window.openWorkerSignGroupSettings_ = (id) => {
         <span style="font-weight:bold; color:#4A148C; font-size:14px;">この看板を大看板にする</span>
       </label>
       <div id="worker_sign_children_box" style="display:${isParentNow ? 'block' : 'none'}; margin-bottom:12px;">
-        <div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:6px;">束ねる小看板を選択</div>
-        <div style="max-height:220px; overflow-y:auto; border:1px solid #ddd; border-radius:8px; background:#fafafa;">${childChecks}</div>
-        <div style="font-size:11px; color:#666; margin-top:6px; line-height:1.4;">選んだ小看板は普段ひかえめに非表示。大看板をタップすると展開されます。</div>
+        <button type="button" onclick="window.startWorkerSignGroupMapSelect('${safeId}')" style="width:100%; background:#6A1B9A; color:#fff; border:none; padding:12px; border-radius:8px; font-weight:bold; font-size:14px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow:0 2px 4px rgba(0,0,0,0.15);">
+          <span>🗺️ 地図から小看板を束ねる</span>
+          <span style="background:rgba(255,255,255,0.25); border-radius:12px; padding:2px 8px; font-size:12px;">${childCount}件</span>
+        </button>
+        <div style="font-size:11px; color:#666; margin-top:6px; line-height:1.4;">地図上の看板を直接タップして、束ねる小看板を選べます。</div>
       </div>
       <button type="button" onclick="window.saveWorkerSignGroupSettings_('${safeId}')" style="width:100%; background:#6A1B9A; color:#fff; border:none; padding:12px; border-radius:8px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">💾 保存する</button>
       <button type="button" onclick="document.getElementById('modal').style.display='none'" style="width:100%; background:#e0e0e0; color:#333; border:none; padding:10px; border-radius:8px; font-weight:bold; cursor:pointer;">キャンセル</button>
@@ -37119,8 +37122,11 @@ window.saveWorkerSignGroupSettings_ = async (id) => {
   const p = loadedPolygons[id];
   if (!p || !p.isMarker) return;
   const asParent = !!(document.getElementById('worker_sign_role_parent') || {}).checked;
+  const cbEls = document.querySelectorAll('.worker_sign_child_cb');
   const selectedIds = asParent
-    ? Array.from(document.querySelectorAll('.worker_sign_child_cb:checked')).map(el => String(el.value || '').trim()).filter(Boolean)
+    ? (cbEls.length > 0
+      ? Array.from(document.querySelectorAll('.worker_sign_child_cb:checked')).map(el => String(el.value || '').trim()).filter(Boolean)
+      : (window.SignGroup ? window.SignGroup.getChildren(id, loadedPolygons).map(c => String(c.id)) : []))
     : [];
   const prevSnapshot = {};
   Object.keys(loadedPolygons || {}).forEach((sid) => {
@@ -37132,7 +37138,7 @@ window.saveWorkerSignGroupSettings_ = async (id) => {
   try {
     const modal = document.getElementById('modal');
     if (modal) modal.style.display = 'none';
-  } catch (e) {}
+  } catch (e) { }
   if (window.SignGroup) {
     window.SignGroup.collapse(map, loadedPolygons, updateMarkersVisibility);
   }
@@ -37164,6 +37170,314 @@ window.saveWorkerSignGroupSettings_ = async (id) => {
     });
     if (window.SignGroup) window.SignGroup.refreshMarkers();
     if (typeof customAlert === 'function') customAlert('保存に失敗しました: ' + (err.message || err));
+  }
+};
+
+// ========================================================
+// 🪧 大看板・小看板 地図選択モード（Worker）
+// ========================================================
+window.isWorkerSignGroupMapSelecting = false;
+window.workerSignGroupTargetId = null;
+window.tempWorkerSignGroupChildren = [];
+
+window.startWorkerSignGroupMapSelect = (targetId) => {
+  const tid = String(targetId || '').trim();
+  const p = loadedPolygons[tid];
+  if (!p || !p.isMarker) return;
+  if (typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction)) {
+    if (typeof customAlert === 'function') customAlert('位置ピンは大・小看板の対象外です');
+    return;
+  }
+
+  try { if (infoWindow) infoWindow.close(); } catch (e) { }
+  try {
+    const modal = document.getElementById('modal');
+    if (modal) modal.style.display = 'none';
+  } catch (e) { }
+
+  window.workerSignGroupTargetId = tid;
+  window.isWorkerSignGroupMapSelecting = true;
+
+  window.tempWorkerSignGroupChildren = [];
+  if (window.SignGroup) {
+    window.tempWorkerSignGroupChildren = window.SignGroup.getChildren(tid, loadedPolygons).map(c => String(c.id));
+  }
+
+  let ui = document.getElementById('workerSignGroupMapSelectUI');
+  if (!ui) {
+    ui = document.createElement('div');
+    ui.id = 'workerSignGroupMapSelectUI';
+    ui.style.cssText = 'display:none; position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(26,20,35,0.92); color:white; padding:16px 20px; border-radius:14px; z-index:9999; align-items:center; gap:10px; width:92%; max-width:440px; box-shadow:0 6px 24px rgba(0,0,0,0.45); flex-direction:column; box-sizing:border-box; backdrop-filter:blur(6px); border:1px solid rgba(186,104,200,0.5);';
+    document.body.appendChild(ui);
+  }
+
+  const parentName = String(p.name || '大看板');
+  ui.innerHTML = `
+    <div style="width:100%; text-align:center;">
+      <div style="font-weight:bold; font-size:15px; color:#E1BEE7; margin-bottom:4px; display:flex; align-items:center; justify-content:center; gap:6px;">
+        <span>🪧</span>
+        <span>大看板「${parentName.replace(/</g, '&lt;')}」に束ねる小看板を選択</span>
+      </div>
+      <div id="workerSignGroupMapSelectCount" style="font-size:12px; color:#FFE082; margin-bottom:10px;">
+        地図上の看板をタップして選択 / 解除（${window.tempWorkerSignGroupChildren.length}件 選択中）
+      </div>
+    </div>
+    <div style="display:flex; gap:10px; width:100%;">
+      <button type="button" onclick="window.applyWorkerSignGroupMapSelect()" style="flex:1; background:#4CAF50; color:white; border:none; padding:10px 14px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,0.3);">✅ 決定して保存</button>
+      <button type="button" onclick="window.cancelWorkerSignGroupMapSelect()" style="flex:1; background:#616161; color:white; border:none; padding:10px 14px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer;">キャンセル</button>
+    </div>
+  `;
+  ui.style.display = 'flex';
+
+  window.updateWorkerSignGroupMapVisuals();
+};
+
+window.updateWorkerSignGroupMapVisuals = () => {
+  if (!window.isWorkerSignGroupMapSelecting || !window.workerSignGroupTargetId) return;
+  const parentId = String(window.workerSignGroupTargetId);
+  const parentPoly = loadedPolygons[parentId];
+  const selectedSet = new Set((window.tempWorkerSignGroupChildren || []).map(String));
+
+  const countEl = document.getElementById('workerSignGroupMapSelectCount');
+  if (countEl) {
+    countEl.textContent = `地図上の看板をタップして選択 / 解除（${selectedSet.size}件 選択中）`;
+  }
+
+  for (const id in loadedPolygons) {
+    const p = loadedPolygons[id];
+    if (!p) continue;
+    const sid = String(id);
+
+    if (p.isMarker && p.marker) {
+      const isLoc = typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction);
+      if (isLoc) {
+        p.marker.setOpacity(0.3);
+        p.marker.setVisible(true);
+      } else if (sid === parentId) {
+        p.marker.setOpacity(1.0);
+        p.marker.setVisible(true);
+        try { p.marker.setZIndex(1500); } catch (e) { }
+      } else {
+        p.marker.setVisible(true);
+        if (selectedSet.has(sid)) {
+          p.marker.setOpacity(1.0);
+          try { p.marker.setZIndex(1400); } catch (e) { }
+        } else {
+          p.marker.setOpacity(0.7);
+          try { p.marker.setZIndex(1000); } catch (e) { }
+        }
+      }
+    } else if (p.polygon) {
+      p.polygon.setOptions({ fillOpacity: 0.1, strokeOpacity: 0.25 });
+    }
+  }
+
+  if (window.SignGroup && parentPoly) {
+    const selectedChildren = Array.from(selectedSet).map(cid => loadedPolygons[cid]).filter(Boolean);
+    window.SignGroup.drawConnectorLines(map, parentPoly, selectedChildren);
+  }
+};
+
+window.handleWorkerSignGroupMarkerClick_ = async (id) => {
+  if (!window.isWorkerSignGroupMapSelecting || !window.workerSignGroupTargetId) return;
+  const sid = String(id || '').trim();
+  const parentId = String(window.workerSignGroupTargetId);
+  const p = loadedPolygons[sid];
+  if (!p || !p.isMarker) return;
+
+  if (sid === parentId) {
+    if (typeof customAlert === 'function') {
+      customAlert('これは現在選択中の「大看板」です。\n束ねたい周りの看板をタップして選んでください。');
+    }
+    return;
+  }
+
+  if (typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction)) {
+    if (typeof customAlert === 'function') customAlert('位置ピンは大・小看板の対象外です。');
+    return;
+  }
+
+  if (window.SignGroup && window.SignGroup.isParentSign(p) && !window.tempWorkerSignGroupChildren.includes(sid)) {
+    const ch = window.SignGroup.getChildren(sid, loadedPolygons);
+    if (ch.length > 0) {
+      const ok = (typeof customConfirm === 'function')
+        ? await customConfirm(`「${p.name}」は現在別の大看板です。\nこの大看板の小看板にすると、元の子看板(${ch.length}件)は束ねから外れます。よろしいですか？`)
+        : confirm(`「${p.name}」は現在別の大看板です。\nこの大看板の小看板にすると、元の子看板(${ch.length}件)は束ねから外れます。よろしいですか？`);
+      if (!ok) return;
+    }
+  }
+
+  const idx = window.tempWorkerSignGroupChildren.indexOf(sid);
+  if (idx >= 0) {
+    window.tempWorkerSignGroupChildren.splice(idx, 1);
+  } else {
+    window.tempWorkerSignGroupChildren.push(sid);
+  }
+
+  window.updateWorkerSignGroupMapVisuals();
+};
+
+window.applyWorkerSignGroupMapSelect = async () => {
+  if (!window.isWorkerSignGroupMapSelecting || !window.workerSignGroupTargetId) return;
+  const targetId = String(window.workerSignGroupTargetId);
+  const selectedIds = (window.tempWorkerSignGroupChildren || []).slice();
+
+  window.isWorkerSignGroupMapSelecting = false;
+  window.workerSignGroupTargetId = null;
+  window.tempWorkerSignGroupChildren = [];
+
+  const ui = document.getElementById('workerSignGroupMapSelectUI');
+  if (ui) ui.style.display = 'none';
+
+  if (window.SignGroup) {
+    window.SignGroup.clearConnectorLines();
+  }
+
+  const changedIds = (typeof window.applySignGroupChildrenLocally_ === 'function')
+    ? window.applySignGroupChildrenLocally_(targetId, selectedIds)
+    : [];
+
+  const allAffectedIds = Array.from(new Set([targetId].concat(changedIds)));
+  allAffectedIds.forEach(sid => {
+    const sp = loadedPolygons[sid];
+    if (sp && sp.isMarker && sp.marker) {
+      const pos = sp.marker.getPosition();
+      sp.marker.setMap(null);
+      sp.marker = createSignboardMarker(sp.name, pos, sp.color, sid, sp.signFunction);
+    }
+  });
+
+  restoreWorkerMapVisuals_();
+
+  if (typeof window.showRecordSyncToast === 'function') {
+    window.showRecordSyncToast(`✅ 大看板に${selectedIds.length}件の小看板を束ねました（同期中…）`, 'ok');
+  }
+
+  const userName = currentUser || localStorage.getItem('passionMapUserName') || '';
+  try {
+    for (const sid of allAffectedIds) {
+      const sp = loadedPolygons[sid];
+      if (!sp) continue;
+      await callGAS('updatePolygon', {
+        id: String(sid),
+        name: sp.name,
+        userName: userName,
+        parentSignId: String(sp.parentSignId || ''),
+        signFunction: sp.signFunction || '',
+        location: sp.location || '',
+        color: sp.color || ''
+      });
+    }
+    if (typeof window.showRecordSyncToast === 'function') {
+      window.showRecordSyncToast('☁️ サーバーへ保存完了', 'ok');
+    }
+  } catch (e) {
+    console.warn('Sync failed', e);
+  }
+};
+
+window.cancelWorkerSignGroupMapSelect = () => {
+  window.isWorkerSignGroupMapSelecting = false;
+  window.workerSignGroupTargetId = null;
+  window.tempWorkerSignGroupChildren = [];
+
+  const ui = document.getElementById('workerSignGroupMapSelectUI');
+  if (ui) ui.style.display = 'none';
+
+  if (window.SignGroup) {
+    window.SignGroup.clearConnectorLines();
+  }
+
+  restoreWorkerMapVisuals_();
+};
+
+function restoreWorkerMapVisuals_() {
+  const z = map.getZoom();
+  for (const id in loadedPolygons) {
+    const p = loadedPolygons[id];
+    if (!p) continue;
+    if (p.isMarker && p.marker) {
+      p.marker.setOpacity(1.0);
+      const isLoc = typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction);
+      if (isLoc) {
+        if (typeof window.refreshLocationPinMarker_ === 'function') {
+          window.refreshLocationPinMarker_(p.marker, p.name, z);
+        } else {
+          p.marker.setVisible(true);
+        }
+      } else {
+        const isChild = !!(window.SignGroup && window.SignGroup.isChildSign(p));
+        const expId = window.SignGroup ? window.SignGroup.getExpandedParentId() : null;
+        const parentId = window.SignGroup ? window.SignGroup.getParentId(p) : '';
+        if (isChild && (!expId || expId !== parentId)) {
+          p.marker.setVisible(false);
+        } else {
+          p.marker.setVisible(z >= 15);
+        }
+      }
+    } else if (p.polygon) {
+      const isUnused = (p.status === '未使用（返却）' || p.status === '未使用');
+      p.polygon.setOptions({ fillOpacity: isUnused ? 0.5 : 0.3, strokeOpacity: 1 });
+    }
+  }
+  if (typeof updateMarkersVisibility === 'function') {
+    updateMarkersVisibility();
+  }
+}
+
+window.removeWorkerSignFromGroup_ = async (id) => {
+  const sid = String(id || '').trim();
+  const p = loadedPolygons[sid];
+  if (!p || !p.isMarker) return;
+  const prevParentId = String(p.parentSignId || '').trim();
+  if (!prevParentId) return;
+
+  try { if (infoWindow) infoWindow.close(); } catch (e) { }
+  p.parentSignId = '';
+
+  const pos = p.marker.getPosition();
+  p.marker.setMap(null);
+  p.marker = createSignboardMarker(p.name, pos, p.color, sid, p.signFunction);
+
+  if (prevParentId && loadedPolygons[prevParentId]) {
+    const pp = loadedPolygons[prevParentId];
+    if (pp.marker) {
+      const ppos = pp.marker.getPosition();
+      pp.marker.setMap(null);
+      pp.marker = createSignboardMarker(pp.name, ppos, pp.color, prevParentId, pp.signFunction);
+    }
+  }
+
+  if (window.SignGroup) {
+    window.SignGroup.collapse(map, loadedPolygons, updateMarkersVisibility);
+  }
+
+  if (typeof window.showRecordSyncToast === 'function') {
+    window.showRecordSyncToast('✅ 大看板への束ねを解除しました（同期中…）', 'ok');
+  }
+
+  const userName = currentUser || localStorage.getItem('passionMapUserName') || '';
+  const syncIds = [sid];
+  if (prevParentId) syncIds.push(prevParentId);
+  try {
+    for (const s of syncIds) {
+      const sp = loadedPolygons[s];
+      if (!sp) continue;
+      await callGAS('updatePolygon', {
+        id: String(s),
+        name: sp.name,
+        userName: userName,
+        parentSignId: String(sp.parentSignId || ''),
+        signFunction: sp.signFunction || '',
+        location: sp.location || '',
+        color: sp.color || ''
+      });
+    }
+    if (typeof window.showRecordSyncToast === 'function') {
+      window.showRecordSyncToast('☁️ サーバーへ保存完了', 'ok');
+    }
+  } catch (e) {
+    console.warn('Sync failed', e);
   }
 };
 

@@ -7054,22 +7054,7 @@ function openAttr(id) {
         const currentParentId = String(p.parentSignId || '').trim();
         const parentPoly = currentParentId ? loadedPolygons[currentParentId] : null;
         const isParentNow = !!(window.SignGroup && window.SignGroup.isParentSign(p));
-        const candidates = (window.SignGroup && typeof window.SignGroup.getCandidateChildren === 'function')
-            ? window.SignGroup.getCandidateChildren(id, loadedPolygons)
-            : [];
-        const selectedSet = {};
-        if (window.SignGroup) {
-            window.SignGroup.getChildren(id).forEach(ch => { selectedSet[String(ch.id)] = true; });
-        }
-        const childChecks = candidates.length
-            ? candidates.map(c => {
-                const checked = selectedSet[String(c.id)] ? ' checked' : '';
-                return `<label style="display:flex;align-items:center;gap:6px;padding:5px 2px;border-bottom:1px solid #f0f0f0;font-size:11px;cursor:pointer;text-align:left;">
-                  <input type="checkbox" class="admin_sign_child_cb" value="${String(c.id).replace(/"/g, '&quot;')}"${checked} style="width:15px;height:15px;">
-                  <span>${String(c.name || '').replace(/</g, '&lt;')}</span>
-                </label>`;
-            }).join('')
-            : `<div style="padding:6px;color:#888;font-size:11px;text-align:left;">選べる看板がありません</div>`;
+        const childCount = (window.SignGroup ? window.SignGroup.getChildren(id, loadedPolygons).length : 0);
         const childNote = currentParentId
             ? `<div style="background:#FFF3E0;color:#E65100;border-radius:6px;padding:6px;margin-bottom:8px;font-size:10px;text-align:left;line-height:1.4;">いまは「${String(parentPoly ? parentPoly.name : currentParentId).replace(/</g, '&lt;')}」の小看板です。大看板にすると外れます。</div>`
             : '';
@@ -7090,10 +7075,13 @@ function openAttr(id) {
                  <span style="font-size:12px;font-weight:bold;color:#4A148C;">この看板を大看板にする</span>
                </label>
                <div id="rnChildrenBox" style="display:${isParentNow ? 'block' : 'none'};margin-bottom:8px;">
-                 <div style="font-size:11px;font-weight:bold;color:#555;text-align:left;margin-bottom:4px;">束ねる小看板</div>
-                 <div style="max-height:120px;overflow-y:auto;border:1px solid #ddd;border-radius:6px;background:#fafafa;padding:2px 6px;">${childChecks}</div>
+                 <button type="button" onclick="startAdminSignGroupMapSelect('${id}')" style="width:100%;background:#6A1B9A;color:white;border:none;border-radius:6px;padding:9px;font-weight:bold;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 1px 3px rgba(0,0,0,0.15);">
+                   <span>🗺️ 地図から小看板を束ねる</span>
+                   <span style="background:rgba(255,255,255,0.25);border-radius:10px;padding:1px 6px;font-size:11px;">${childCount}件</span>
+                 </button>
+                 <div style="font-size:10px;color:#666;text-align:left;line-height:1.3;margin-top:4px;">タップすると地図上で束ねる小看板を選択できます。</div>
                </div>
-               <div style="font-size:10px; color:#666; text-align:left; line-height:1.4; margin:0 0 10px;">基本は単独。大看板にしたら小看板を選びます。</div>
+               <div style="font-size:10px; color:#666; text-align:left; line-height:1.4; margin:0 0 10px;">基本は単独。大看板にしたら小看板を地図から選びます。</div>
                <button onclick="execAttr('${id}')" style="width:100%; padding:10px; border-radius:4px; border:none; background:#d32f2f; color:white; font-weight:bold; cursor:pointer;">保存</button>
              </div>
            `);
@@ -7143,8 +7131,11 @@ function execAttr(id) {
         const locEl = document.getElementById('rnLoc');
         const loc = locEl ? locEl.value : (p.location || '');
         const asParent = !!(document.getElementById('rnAsParent') || {}).checked;
+        const cbEls = document.querySelectorAll('.admin_sign_child_cb');
         const selectedChildIds = asParent
-            ? Array.from(document.querySelectorAll('.admin_sign_child_cb:checked')).map(el => String(el.value || '').trim()).filter(Boolean)
+            ? (cbEls.length > 0
+                ? Array.from(document.querySelectorAll('.admin_sign_child_cb:checked')).map(el => String(el.value || '').trim()).filter(Boolean)
+                : (window.SignGroup ? window.SignGroup.getChildren(id, loadedPolygons).map(c => String(c.id)) : []))
             : [];
         if (!n) return;
         p.name = n; p.signFunction = f; p.location = loc; p.labelConfig.text = n;
@@ -7213,6 +7204,283 @@ window.applyAdminSignGroupChildren_ = (parentId, selectedIds) => {
         }
     });
     return changed;
+};
+
+// ========================================================
+// 🪧 大看板・小看板 地図選択モード（Admin）
+// ========================================================
+window.isAdminSignGroupMapSelecting = false;
+window.adminSignGroupTargetId = null;
+window.tempSignGroupChildren = [];
+
+window.startAdminSignGroupMapSelect = (targetId) => {
+    const tid = String(targetId || '').trim();
+    const p = loadedPolygons[tid];
+    if (!p || !p.isMarker) return;
+    if (typeof isAdminLocationPin_ === 'function' && isAdminLocationPin_(p)) {
+        if (typeof customAlert === 'function') customAlert('位置ピンは大・小看板の対象外です');
+        return;
+    }
+
+    window.adminSignGroupTargetId = tid;
+    window.isAdminSignGroupMapSelecting = true;
+    if (infoWindow) infoWindow.close();
+
+    // 初期選択：現在この親に属している小看板
+    window.tempSignGroupChildren = [];
+    if (window.SignGroup) {
+        window.tempSignGroupChildren = window.SignGroup.getChildren(tid, loadedPolygons).map(c => String(c.id));
+    }
+
+    let ui = document.getElementById('adminSignGroupMapSelectUI');
+    if (!ui) {
+        ui = document.createElement('div');
+        ui.id = 'adminSignGroupMapSelectUI';
+        ui.style.cssText = 'display:none; position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(26,20,35,0.92); color:white; padding:16px 20px; border-radius:14px; z-index:9999; align-items:center; gap:10px; width:92%; max-width:440px; box-shadow:0 6px 24px rgba(0,0,0,0.45); flex-direction:column; box-sizing:border-box; backdrop-filter:blur(6px); border:1px solid rgba(186,104,200,0.5);';
+        document.body.appendChild(ui);
+    }
+
+    const parentName = String(p.name || '大看板');
+    ui.innerHTML = `
+        <div style="width:100%; text-align:center;">
+            <div style="font-weight:bold; font-size:15px; color:#E1BEE7; margin-bottom:4px; display:flex; align-items:center; justify-content:center; gap:6px;">
+                <span>🪧</span>
+                <span>大看板「${parentName.replace(/</g, '&lt;')}」に束ねる小看板を選択</span>
+            </div>
+            <div id="adminSignGroupMapSelectCount" style="font-size:12px; color:#FFE082; margin-bottom:10px;">
+                地図上の看板をタップして選択 / 解除（${window.tempSignGroupChildren.length}件 選択中）
+            </div>
+        </div>
+        <div style="display:flex; gap:10px; width:100%;">
+            <button type="button" onclick="applyAdminSignGroupMapSelect()" style="flex:1; background:#4CAF50; color:white; border:none; padding:10px 14px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,0.3);">✅ 決定して保存</button>
+            <button type="button" onclick="cancelAdminSignGroupMapSelect()" style="flex:1; background:#616161; color:white; border:none; padding:10px 14px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer;">キャンセル</button>
+        </div>
+    `;
+    ui.style.display = 'flex';
+
+    updateAdminSignGroupMapVisuals();
+};
+
+window.updateAdminSignGroupMapVisuals = () => {
+    if (!window.isAdminSignGroupMapSelecting || !window.adminSignGroupTargetId) return;
+    const parentId = String(window.adminSignGroupTargetId);
+    const parentPoly = loadedPolygons[parentId];
+    const selectedSet = new Set((window.tempSignGroupChildren || []).map(String));
+
+    const countEl = document.getElementById('adminSignGroupMapSelectCount');
+    if (countEl) {
+        countEl.textContent = `地図上の看板をタップして選択 / 解除（${selectedSet.size}件 選択中）`;
+    }
+
+    const z = map.getZoom();
+    for (const id in loadedPolygons) {
+        const p = loadedPolygons[id];
+        if (!p) continue;
+        const sid = String(id);
+
+        if (p.isMarker && p.marker) {
+            const isLoc = typeof isAdminLocationPin_ === 'function' && isAdminLocationPin_(p);
+            if (isLoc) {
+                p.marker.setOpacity(0.3);
+                p.marker.setVisible(true);
+            } else if (sid === parentId) {
+                p.marker.setOpacity(1.0);
+                p.marker.setVisible(true);
+                try { p.marker.setZIndex(1500); } catch (e) { }
+            } else {
+                p.marker.setVisible(true);
+                if (selectedSet.has(sid)) {
+                    p.marker.setOpacity(1.0);
+                    try { p.marker.setZIndex(1400); } catch (e) { }
+                } else {
+                    p.marker.setOpacity(0.7);
+                    try { p.marker.setZIndex(1000); } catch (e) { }
+                }
+            }
+        } else if (p.polygon) {
+            p.polygon.setOptions({ fillOpacity: 0.1, strokeOpacity: 0.25 });
+        }
+    }
+
+    if (window.SignGroup && parentPoly) {
+        const selectedChildren = Array.from(selectedSet).map(cid => loadedPolygons[cid]).filter(Boolean);
+        window.SignGroup.drawConnectorLines(map, parentPoly, selectedChildren);
+    }
+};
+
+window.handleAdminSignGroupMarkerClick_ = async (id) => {
+    if (!window.isAdminSignGroupMapSelecting || !window.adminSignGroupTargetId) return;
+    const sid = String(id || '').trim();
+    const parentId = String(window.adminSignGroupTargetId);
+    const p = loadedPolygons[sid];
+    if (!p || !p.isMarker) return;
+
+    if (sid === parentId) {
+        if (typeof customAlert === 'function') {
+            customAlert('これは現在選択中の「大看板」です。\n束ねたい周りの看板をタップして選んでください。');
+        }
+        return;
+    }
+
+    if (typeof isAdminLocationPin_ === 'function' && isAdminLocationPin_(p)) {
+        if (typeof customAlert === 'function') customAlert('位置ピンは大・小看板の対象外です。');
+        return;
+    }
+
+    if (window.SignGroup && window.SignGroup.isParentSign(p) && !window.tempSignGroupChildren.includes(sid)) {
+        const ch = window.SignGroup.getChildren(sid, loadedPolygons);
+        if (ch.length > 0) {
+            const ok = await customConfirm(`「${p.name}」は現在別の大看板です。\nこの大看板の小看板にすると、元の子看板(${ch.length}件)は束ねから外れます。よろしいですか？`);
+            if (!ok) return;
+        }
+    }
+
+    const idx = window.tempSignGroupChildren.indexOf(sid);
+    if (idx >= 0) {
+        window.tempSignGroupChildren.splice(idx, 1);
+    } else {
+        window.tempSignGroupChildren.push(sid);
+    }
+
+    updateAdminSignGroupMapVisuals();
+};
+
+window.applyAdminSignGroupMapSelect = async () => {
+    if (!window.isAdminSignGroupMapSelecting || !window.adminSignGroupTargetId) return;
+    const targetId = String(window.adminSignGroupTargetId);
+    const selectedIds = (window.tempSignGroupChildren || []).slice();
+
+    window.isAdminSignGroupMapSelecting = false;
+    window.adminSignGroupTargetId = null;
+    window.tempSignGroupChildren = [];
+
+    const ui = document.getElementById('adminSignGroupMapSelectUI');
+    if (ui) ui.style.display = 'none';
+
+    if (window.SignGroup) {
+        window.SignGroup.clearConnectorLines();
+    }
+
+    const changedIds = (typeof window.applyAdminSignGroupChildren_ === 'function')
+        ? window.applyAdminSignGroupChildren_(targetId, selectedIds)
+        : [];
+
+    const allAffectedIds = Array.from(new Set([targetId].concat(changedIds)));
+    allAffectedIds.forEach(sid => {
+        const sp = loadedPolygons[sid];
+        if (sp && sp.isMarker && sp.marker) {
+            const pos = sp.marker.getPosition();
+            sp.marker.setMap(null);
+            sp.marker = createSignboardMarker(sp.name, pos, sp.color, sp._adminIdRef || sid);
+        }
+    });
+
+    restoreAdminMapVisuals_();
+
+    persistAdminInitCache_();
+    showAdminSyncToast(`✅ 大看板に${selectedIds.length}件の小看板を束ねました（同期中…）`, 'ok');
+
+    Promise.all(allAffectedIds.map(sid => {
+        const sp = loadedPolygons[sid];
+        return sp ? syncUpdatePolygon_(sp) : Promise.resolve(false);
+    })).then(results => {
+        if (results.some(Boolean)) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+    });
+};
+
+window.cancelAdminSignGroupMapSelect = () => {
+    window.isAdminSignGroupMapSelecting = false;
+    window.adminSignGroupTargetId = null;
+    window.tempSignGroupChildren = [];
+
+    const ui = document.getElementById('adminSignGroupMapSelectUI');
+    if (ui) ui.style.display = 'none';
+
+    if (window.SignGroup) {
+        window.SignGroup.clearConnectorLines();
+    }
+
+    restoreAdminMapVisuals_();
+};
+
+function restoreAdminMapVisuals_() {
+    const z = map.getZoom();
+    for (const id in loadedPolygons) {
+        const p = loadedPolygons[id];
+        if (!p) continue;
+        if (p.isMarker && p.marker) {
+            p.marker.setOpacity(1.0);
+            if (typeof isAdminLocationPin_ === 'function' && isAdminLocationPin_(p)) {
+                if (typeof window.refreshLocationPinMarker_ === 'function') {
+                    window.refreshLocationPinMarker_(p.marker, p.name, z);
+                } else {
+                    p.marker.setVisible(true);
+                    if (p.labelConfig) p.marker.setLabel(p.labelConfig);
+                }
+            } else {
+                const isChild = !!(window.SignGroup && window.SignGroup.isChildSign(p));
+                const expId = window.SignGroup ? window.SignGroup.getExpandedParentId() : null;
+                const parentId = window.SignGroup ? window.SignGroup.getParentId(p) : '';
+                if (isChild && (!expId || expId !== parentId)) {
+                    p.marker.setVisible(false);
+                } else {
+                    p.marker.setVisible(z >= 15);
+                }
+                if (p.labelConfig) {
+                    p.marker.setLabel(null);
+                    if (z >= 17) p.marker.setLabel(p.labelConfig);
+                }
+            }
+        } else if (p.polygon) {
+            const isU = (p.status === '未使用（返却）' || p.status === '未使用');
+            p.polygon.setOptions({ fillOpacity: isU ? 0.5 : 0.3, strokeOpacity: 1 });
+        }
+    }
+    if (window.SignGroup) {
+        window.SignGroup.refreshMarkers(loadedPolygons);
+    }
+}
+
+window.removeAdminSignFromGroup_ = async (id) => {
+    const sid = String(id || '').trim();
+    const p = loadedPolygons[sid];
+    if (!p || !p.isMarker) return;
+    const prevParentId = String(p.parentSignId || '').trim();
+    if (!prevParentId) return;
+
+    if (infoWindow) infoWindow.close();
+    p.parentSignId = '';
+
+    const pos = p.marker.getPosition();
+    p.marker.setMap(null);
+    p.marker = createSignboardMarker(p.name, pos, p.color, p._adminIdRef || sid);
+
+    if (prevParentId && loadedPolygons[prevParentId]) {
+        const pp = loadedPolygons[prevParentId];
+        if (pp.marker) {
+            const ppos = pp.marker.getPosition();
+            pp.marker.setMap(null);
+            pp.marker = createSignboardMarker(pp.name, ppos, pp.color, pp._adminIdRef || prevParentId);
+        }
+    }
+
+    if (window.SignGroup) {
+        window.SignGroup.collapse(map, loadedPolygons, () => {
+            google.maps.event.trigger(map, 'zoom_changed');
+        });
+    }
+
+    persistAdminInitCache_();
+    showAdminSyncToast('✅ 大看板への束ねを解除しました（同期中…）', 'ok');
+
+    const syncIds = [sid];
+    if (prevParentId) syncIds.push(prevParentId);
+    Promise.all(syncIds.map(s => {
+        const sp = loadedPolygons[s];
+        return sp ? syncUpdatePolygon_(sp) : Promise.resolve(false);
+    })).then(results => {
+        if (results.some(Boolean)) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+    });
 };
 
 function openCol(id) {
@@ -7343,6 +7611,12 @@ function bindAdminMarkerClick_(marker, getId) {
     google.maps.event.addListener(marker, 'click', (e) => {
         const id = getId();
         if (customDrawingMode) { google.maps.event.trigger(map, 'click', e); return; }
+        if (window.isAdminSignGroupMapSelecting) {
+            if (typeof window.handleAdminSignGroupMarkerClick_ === 'function') {
+                window.handleAdminSignGroupMarkerClick_(id);
+            }
+            return;
+        }
         if (isBatchDeleteMode) {
             let idx = selectedForDelete.indexOf(id);
             if (idx === -1) {
@@ -7477,6 +7751,7 @@ function createPolygonObject(p) {
                 return;
             }
             if (editingId) return;
+            if (window.isAdminSignGroupMapSelecting) return;
             if (isMergeMode) { execMerge(mergeBaseId, id); return; }
             openM(id);
         });
@@ -7707,7 +7982,15 @@ function initMap() {
     }, 0);
 
     infoWindow = new google.maps.InfoWindow();
-    google.maps.event.addListener(map, 'click', () => infoWindow.close());
+    google.maps.event.addListener(map, 'click', () => {
+        if (window.isAdminSignGroupMapSelecting) return;
+        if (window.SignGroup && window.SignGroup.getExpandedParentId()) {
+            window.SignGroup.collapse(map, loadedPolygons, () => {
+                try { google.maps.event.trigger(map, 'zoom_changed'); } catch (e) { }
+            });
+        }
+        infoWindow.close();
+    });
 
     map.data.setStyle({
         fillColor: '#2196F3',
@@ -10434,16 +10717,22 @@ window.openM = (id) => {
     let signGroupInfo = '';
     if (p.isMarker && !locPin && window.SignGroup) {
         if (window.SignGroup.isParentSign(p)) {
-            const children = window.SignGroup.getChildren(p.id);
+            const children = window.SignGroup.getChildren(p.id, loadedPolygons);
             signGroupInfo = `<div style="background:#EDE7F6; color:#4A148C; border:1px solid #D1C4E9; border-radius:6px; padding:6px; margin-bottom:8px; font-size:11px; text-align:left;">
                 <b>🪧 大看板</b>（小看板 ${children.length}件を束ねています）
                 <div style="font-size:10px; color:#6A1B9A; margin-top:2px;">${children.map(c => c.name || c.id).join('、') || 'なし'}</div>
+                <button type="button" onclick="startAdminSignGroupMapSelect('${id}')" style="width:100%; margin-top:6px; background:#6A1B9A; color:white; border:none; border-radius:4px; padding:6px 0; font-size:11px; font-weight:bold; cursor:pointer;">🗺️ 束ねる小看板を地図から編集 (${children.length}件)</button>
             </div>`;
         } else if (window.SignGroup.isChildSign(p)) {
             const parentPoly = loadedPolygons[window.SignGroup.getParentId(p)];
             const parentName = parentPoly ? parentPoly.name : '大看板';
             signGroupInfo = `<div style="background:#FFF3E0; color:#E65100; border:1px solid #FFE0B2; border-radius:6px; padding:6px; margin-bottom:8px; font-size:11px; text-align:left;">
                 <b>↳ 小看板</b>（親看板: ${parentName} に束ねられています）
+                <button type="button" onclick="removeAdminSignFromGroup_('${id}')" style="width:100%; margin-top:6px; background:#E65100; color:white; border:none; border-radius:4px; padding:6px 0; font-size:11px; font-weight:bold; cursor:pointer;">❌ 大看板への束ねを解除する</button>
+            </div>`;
+        } else {
+            signGroupInfo = `<div style="margin-bottom:8px;">
+                <button type="button" onclick="startAdminSignGroupMapSelect('${id}')" style="width:100%; background:#F3E5F5; color:#4A148C; border:1px solid #BA68C8; border-radius:6px; padding:7px 0; font-size:11px; font-weight:bold; cursor:pointer;">🪧 大看板にして小看板を地図から束ねる</button>
             </div>`;
         }
     }

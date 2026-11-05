@@ -14759,3 +14759,1019 @@ async function exportCpToExternalSheet() {
 window.importCpFromExternalSheet = importCpFromExternalSheet;
 window.exportCpToExternalSheet = exportCpToExternalSheet;
 
+
+
+
+// =============================================================================
+// 🌱 栽培計画 シンプルモード（目標売上・上限面積・上限作業時間からの理想作型AIシミュレーション）
+// =============================================================================
+
+/** 主要野菜の基準ベンチマーク（単価・10a標準収量・10a標準作業工数・栽培パラメータ） */
+const CROP_DEFAULT_BENCHMARKS = {
+    'キャベツ': { price: 160, yieldPer10a: 3200, hoursPer10a: 65, holes: 128, rows: 2, pSpace: 35, rSpace: 65, yieldPerPlant: 1, itemsPerPack: 1 },
+    'ブロッコリー': { price: 180, yieldPer10a: 2800, hoursPer10a: 75, holes: 128, rows: 2, pSpace: 35, rSpace: 65, yieldPerPlant: 1, itemsPerPack: 1 },
+    'ネギ': { price: 200, yieldPer10a: 2600, hoursPer10a: 90, holes: 200, rows: 1, pSpace: 5, rSpace: 90, yieldPerPlant: 1, itemsPerPack: 3 },
+    'レタス': { price: 150, yieldPer10a: 3500, hoursPer10a: 70, holes: 128, rows: 2, pSpace: 30, rSpace: 60, yieldPerPlant: 1, itemsPerPack: 1 },
+    'トマト': { price: 280, yieldPer10a: 5000, hoursPer10a: 200, holes: 72, rows: 1, pSpace: 45, rSpace: 120, yieldPerPlant: 25, itemsPerPack: 4 },
+    'ミニトマト': { price: 220, yieldPer10a: 4500, hoursPer10a: 220, holes: 72, rows: 1, pSpace: 45, rSpace: 120, yieldPerPlant: 150, itemsPerPack: 15 },
+    'キュウリ': { price: 180, yieldPer10a: 4800, hoursPer10a: 180, holes: 72, rows: 1, pSpace: 50, rSpace: 120, yieldPerPlant: 30, itemsPerPack: 3 },
+    'ナス': { price: 220, yieldPer10a: 4200, hoursPer10a: 160, holes: 72, rows: 1, pSpace: 60, rSpace: 150, yieldPerPlant: 40, itemsPerPack: 3 },
+    'トウモロコシ': { price: 160, yieldPer10a: 2500, hoursPer10a: 50, holes: 128, rows: 2, pSpace: 30, rSpace: 75, yieldPerPlant: 1, itemsPerPack: 1 },
+    'ニンジン': { price: 140, yieldPer10a: 3500, hoursPer10a: 60, holes: 200, rows: 3, pSpace: 12, rSpace: 60, yieldPerPlant: 1, itemsPerPack: 3 },
+    'ダイコン': { price: 140, yieldPer10a: 2600, hoursPer10a: 55, holes: 128, rows: 2, pSpace: 25, rSpace: 60, yieldPerPlant: 1, itemsPerPack: 1 },
+    'ジャガイモ': { price: 160, yieldPer10a: 2400, hoursPer10a: 50, holes: 72, rows: 1, pSpace: 30, rSpace: 75, yieldPerPlant: 8, itemsPerPack: 5 },
+    'サツマイモ': { price: 180, yieldPer10a: 2200, hoursPer10a: 55, holes: 72, rows: 1, pSpace: 30, rSpace: 80, yieldPerPlant: 5, itemsPerPack: 3 },
+    'タマネギ': { price: 130, yieldPer10a: 4000, hoursPer10a: 65, holes: 288, rows: 4, pSpace: 12, rSpace: 120, yieldPerPlant: 1, itemsPerPack: 3 },
+    'ホウレンソウ': { price: 150, yieldPer10a: 3000, hoursPer10a: 80, holes: 200, rows: 4, pSpace: 8, rSpace: 120, yieldPerPlant: 1, itemsPerPack: 5 },
+    'コマツナ': { price: 130, yieldPer10a: 3200, hoursPer10a: 75, holes: 200, rows: 4, pSpace: 8, rSpace: 120, yieldPerPlant: 1, itemsPerPack: 5 },
+    'ハクサイ': { price: 180, yieldPer10a: 2000, hoursPer10a: 60, holes: 128, rows: 2, pSpace: 40, rSpace: 65, yieldPerPlant: 1, itemsPerPack: 1 },
+    'ピーマン': { price: 170, yieldPer10a: 3800, hoursPer10a: 150, holes: 72, rows: 1, pSpace: 50, rSpace: 120, yieldPerPlant: 60, itemsPerPack: 5 },
+    'エダマメ': { price: 200, yieldPer10a: 2000, hoursPer10a: 65, holes: 128, rows: 2, pSpace: 25, rSpace: 60, yieldPerPlant: 1, itemsPerPack: 1 }
+};
+
+/** 主要作物の内蔵デフォルト作型ライブラリ（播種・定植・収穫の半旬インデックス: 0=1月上前, 5=1月下後 ... 71=12月下後） */
+const CROP_DEFAULT_CROPTYPES = {
+    'キャベツ': [
+        {
+            name: '春まき初夏どり',
+            season: '春作',
+            variety: '初恋',
+            sowing: [7, 8],          // 2月中旬〜下旬
+            planting: [15, 16],      // 3月下旬〜4月上旬
+            harvesting: [30, 31, 32, 33, 34], // 6月上旬〜6月下旬
+            months: [5, 6]           // 6月, 7月
+        },
+        {
+            name: '夏まき年内どり（秋作）',
+            season: '秋作',
+            variety: '彩音',
+            sowing: [37, 38],        // 7月上旬〜中旬
+            planting: [43, 44],      // 8月上旬〜中旬
+            harvesting: [57, 58, 59, 60, 61], // 10月下旬〜11月下旬
+            months: [9, 10, 11]      // 10月, 11月, 12月
+        },
+        {
+            name: '夏秋まき冬春どり（越冬作）',
+            season: '冬作',
+            variety: '冬藍',
+            sowing: [46, 47],        // 8月下旬〜9月上旬
+            planting: [53, 54],      // 9月下旬〜10月上旬
+            harvesting: [66, 67, 68, 69, 70, 71, 0, 1, 2, 3], // 12月〜翌2月
+            months: [11, 0, 1]       // 12月, 1月, 2月
+        }
+    ],
+    'ブロッコリー': [
+        {
+            name: '初夏どり作型',
+            season: '春作',
+            variety: 'おはよう',
+            sowing: [7, 8],
+            planting: [14, 15],
+            harvesting: [28, 29, 30, 31],
+            months: [4, 5]
+        },
+        {
+            name: '秋どり作型',
+            season: '秋作',
+            variety: 'ピクセル',
+            sowing: [38, 39],
+            planting: [44, 45],
+            harvesting: [58, 59, 60, 61],
+            months: [9, 10]
+        },
+        {
+            name: '冬どり作型',
+            season: '冬作',
+            variety: 'グランドーム',
+            sowing: [45, 46],
+            planting: [51, 52],
+            harvesting: [65, 66, 67, 68, 69, 70],
+            months: [10, 11, 0]
+        }
+    ],
+    'ネギ': [
+        {
+            name: '夏秋どり（春植え）',
+            season: '夏秋作',
+            variety: '夏扇4号',
+            sowing: [6, 7],
+            planting: [20, 21],
+            harvesting: [42, 43, 44, 45, 46, 47, 48, 49],
+            months: [6, 7, 8]
+        },
+        {
+            name: '秋冬・越冬どり（初夏植え）',
+            season: '秋冬作',
+            variety: 'ホワイトスター',
+            sowing: [14, 15],
+            planting: [32, 33],
+            harvesting: [58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69],
+            months: [9, 10, 11, 0]
+        }
+    ],
+    'レタス': [
+        {
+            name: '春どり作型',
+            season: '春作',
+            variety: 'サリナス',
+            sowing: [4, 5],
+            planting: [13, 14],
+            harvesting: [24, 25, 26, 27],
+            months: [3, 4]
+        },
+        {
+            name: '初夏どり作型',
+            season: '初夏作',
+            variety: 'シスコ',
+            sowing: [12, 13],
+            planting: [20, 21],
+            harvesting: [30, 31, 32, 33],
+            months: [5, 6]
+        },
+        {
+            name: '秋どり作型',
+            season: '秋作',
+            variety: 'オリンピア',
+            sowing: [43, 44],
+            planting: [49, 50],
+            harvesting: [58, 59, 60, 61],
+            months: [9, 10]
+        },
+        {
+            name: '冬どり作型',
+            season: '冬作',
+            variety: 'エクシード',
+            sowing: [52, 53],
+            planting: [58, 59],
+            harvesting: [68, 69, 70, 71, 0, 1],
+            months: [11, 0]
+        }
+    ],
+    'トマト': [
+        {
+            name: '夏秋どり作型（露地・雨よけ）',
+            season: '夏秋作',
+            variety: '桃太郎ホープ',
+            sowing: [10, 11],
+            planting: [22, 23],
+            harvesting: [38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53],
+            months: [6, 7, 8, 9]
+        }
+    ],
+    'キュウリ': [
+        {
+            name: '春夏どり作型',
+            season: '春夏作',
+            variety: '夏すずみ',
+            sowing: [15, 16],
+            planting: [23, 24],
+            harvesting: [33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43],
+            months: [5, 6, 7]
+        },
+        {
+            name: '秋どり作型',
+            season: '秋作',
+            variety: 'よしなり',
+            sowing: [37, 38],
+            planting: [43, 44],
+            harvesting: [50, 51, 52, 53, 54, 55, 56, 57],
+            months: [8, 9]
+        }
+    ],
+    'トウモロコシ': [
+        {
+            name: '初夏どり作型',
+            season: '初夏作',
+            variety: 'ゴールドラッシュ',
+            sowing: [14, 15],
+            planting: [20, 21],
+            harvesting: [34, 35, 36, 37],
+            months: [5, 6]
+        },
+        {
+            name: '夏どり作型',
+            season: '夏作',
+            variety: '味来',
+            sowing: [24, 25],
+            planting: [29, 30],
+            harvesting: [41, 42, 43, 44],
+            months: [6, 7]
+        }
+    ],
+    'タマネギ': [
+        {
+            name: '秋まき初夏どり（標準作型）',
+            season: '秋作',
+            variety: 'ターザン',
+            sowing: [49, 50],
+            planting: [61, 62],
+            harvesting: [28, 29, 30, 31, 32, 33],
+            months: [4, 5]
+        }
+    ],
+    'ハクサイ': [
+        {
+            name: '秋どり作型',
+            season: '秋作',
+            variety: 'きらぼし65',
+            sowing: [43, 44],
+            planting: [49, 50],
+            harvesting: [61, 62, 63, 64],
+            months: [10, 11]
+        },
+        {
+            name: '冬どり作型',
+            season: '冬作',
+            variety: '黄ごころ85',
+            sowing: [46, 47],
+            planting: [52, 53],
+            harvesting: [67, 68, 69, 70, 71, 0],
+            months: [11, 0]
+        }
+    ]
+};
+
+let _cpSimpleModeInitialized = false;
+window._cpSimpleSimResult = null;
+
+/** シンプルモードUIの初期化 */
+function initCpSimpleMode() {
+    buildCpSimpleCropSelect_();
+    buildCpSimpleMonthsGrid_();
+
+    // 圃場が選択されていれば上限面積に自動反映
+    const attach = window.cpPendingFieldAttach;
+    if (attach && attach.areaA > 0) {
+        const areaInp = document.getElementById('cpSimpleMaxArea');
+        if (areaInp && (!areaInp.value || Number(areaInp.value) === 100)) {
+            areaInp.value = Math.round(Number(attach.areaA) * 10) / 10;
+        }
+    }
+
+    // 基本設定の作物が既に選ばれていれば反映
+    const currentCrop = (typeof getCpVal === 'function') ? getCpVal('cpCrop') : '';
+    if (currentCrop) {
+        const sel = document.getElementById('cpSimpleCrop');
+        if (sel) {
+            sel.value = currentCrop;
+            onCpSimpleCropChanged(currentCrop);
+        }
+    } else {
+        // 未選択ならデフォルト「キャベツ」
+        const sel = document.getElementById('cpSimpleCrop');
+        if (sel && !sel.value) {
+            sel.value = 'キャベツ';
+            onCpSimpleCropChanged('キャベツ');
+        }
+    }
+
+    // 目標売上が空なら、例として年間600万円（月50万）をセットしてすぐにシミュレーションできる状態にする
+    const anyFilled = checkAnyCpSimpleMonthFilled_();
+    if (!anyFilled) {
+        const annInp = document.getElementById('cpSimpleAnnualInput');
+        if (annInp) annInp.value = '600';
+        applyCpSimpleSalesDistribution('season');
+    }
+
+    _cpSimpleModeInitialized = true;
+}
+window.initCpSimpleMode = initCpSimpleMode;
+
+/** 作物セレクトリストの構築 */
+function buildCpSimpleCropSelect_() {
+    const sel = document.getElementById('cpSimpleCrop');
+    if (!sel || sel.options.length > 2) return;
+
+    const set = new Set();
+    // 1. cpMasterData から取得
+    if (typeof cpMasterData !== 'undefined' && cpMasterData && cpMasterData.crops) {
+        Object.keys(cpMasterData.crops).forEach(c => { if (c) set.add(String(c).trim()); });
+    }
+    // 2. 内蔵ベンチマークから取得
+    Object.keys(CROP_DEFAULT_BENCHMARKS).forEach(c => set.add(c));
+
+    const list = Array.from(set).sort((a, b) => a.localeCompare(b, 'ja'));
+    let html = '<option value="">作物名を選択してください</option>';
+    list.forEach(c => {
+        html += '<option value="' + escCpSimple(c) + '">' + escCpSimple(c) + '</option>';
+    });
+    html += '<option value="custom">＋ 手入力（その他）</option>';
+    sel.innerHTML = html;
+}
+
+/** 12ヶ月グリッドの構築 */
+function buildCpSimpleMonthsGrid_() {
+    const grid = document.getElementById('cpSimpleMonthsGrid');
+    if (!grid || grid.children.length > 0) return;
+
+    let html = '';
+    for (let m = 0; m < 12; m++) {
+        const monthNum = m + 1;
+        html += '<div style="background:#fafafa; border:1px solid #e0e0e0; border-radius:6px; padding:6px 8px; display:flex; flex-direction:column; gap:2px;">';
+        html += '  <div style="font-size:11px; font-weight:bold; color:#555;">' + monthNum + '月</div>';
+        html += '  <div style="display:flex; align-items:center; gap:2px;">';
+        html += '    <input type="number" min="0" step="10" class="cp-simple-month-input" data-month="' + m + '" placeholder="0" oninput="onCpSimpleMonthTargetChange()" style="width:100%; height:26px; padding:2px 4px; font-size:12px; font-weight:bold; text-align:right; border:1px solid #ccc; border-radius:4px;">';
+        html += '    <span style="font-size:10px; color:#888;">万</span>';
+        html += '  </div>';
+        html += '</div>';
+    }
+    grid.innerHTML = html;
+}
+
+function checkAnyCpSimpleMonthFilled_() {
+    const inputs = document.querySelectorAll('.cp-simple-month-input');
+    for (let i = 0; i < inputs.length; i++) {
+        if (Number(inputs[i].value) > 0) return true;
+    }
+    return false;
+}
+
+function escCpSimple(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+/** 作物選択時のハンドラ */
+function onCpSimpleCropChanged(cropVal) {
+    const customInp = document.getElementById('cpSimpleCropCustom');
+    const hintEl = document.getElementById('cpSimpleCropHint');
+    const isCustom = cropVal === 'custom';
+    if (customInp) customInp.style.display = isCustom ? 'block' : 'none';
+
+    const actualCrop = isCustom ? (customInp ? customInp.value : '') : cropVal;
+    if (!actualCrop) return;
+
+    // ベンチマーク値の自動補完
+    const bm = CROP_DEFAULT_BENCHMARKS[actualCrop] || {
+        price: 150,
+        yieldPer10a: 2500,
+        hoursPer10a: 70
+    };
+
+    const priceInp = document.getElementById('cpSimplePrice');
+    const yieldInp = document.getElementById('cpSimpleYieldPer10a');
+    const hoursInp = document.getElementById('cpSimpleHoursPer10a');
+
+    if (priceInp) priceInp.value = bm.price;
+    if (yieldInp) yieldInp.value = bm.yieldPer10a;
+    if (hoursInp) hoursInp.value = bm.hoursPer10a;
+
+    // 作型マスタの有無チェック
+    const dbTypes = getCpMasterCroptypesFor_(actualCrop);
+    const defaultTypes = CROP_DEFAULT_CROPTYPES[actualCrop] || [];
+
+    if (hintEl) {
+        if (dbTypes.length) {
+            hintEl.innerHTML = '✨ 登録済み作型マスタから <b>' + dbTypes.length + '作型</b> を検出しました（優先使用）';
+            hintEl.style.color = '#2e7d32';
+        } else if (defaultTypes.length) {
+            hintEl.innerHTML = '💡 内蔵作型ライブラリから <b>' + defaultTypes.length + '作型</b>（春作・秋作など）を利用可能です';
+            hintEl.style.color = '#1565c0';
+        } else {
+            hintEl.innerHTML = '標準作型パターン（春・夏秋）を自動生成してシミュレーションします';
+            hintEl.style.color = '#795548';
+        }
+    }
+
+    onCpSimpleParamChange();
+}
+window.onCpSimpleCropChanged = onCpSimpleCropChanged;
+
+function onCpSimpleCropCustomInput(val) {
+    onCpSimpleCropChanged('custom');
+}
+window.onCpSimpleCropCustomInput = onCpSimpleCropCustomInput;
+
+/** 月別目標売上変更時の合計更新 */
+function onCpSimpleMonthTargetChange() {
+    let total = 0;
+    document.querySelectorAll('.cp-simple-month-input').forEach(inp => {
+        const v = parseFloat(inp.value);
+        if (isFinite(v) && v > 0) total += v;
+    });
+
+    const disp = document.getElementById('cpSimpleAnnualTargetDisplay');
+    if (disp) {
+        disp.textContent = '年間合計: ' + Math.round(total).toLocaleString() + ' 万円';
+    }
+    const annInp = document.getElementById('cpSimpleAnnualInput');
+    if (annInp && total > 0) {
+        annInp.value = Math.round(total);
+    }
+}
+window.onCpSimpleMonthTargetChange = onCpSimpleMonthTargetChange;
+
+/** クイック配分ボタン */
+function applyCpSimpleSalesDistribution(mode) {
+    const crop = getCpSimpleSelectedCrop_();
+    const annInp = document.getElementById('cpSimpleAnnualInput');
+    let annual = parseFloat(annInp ? annInp.value : 0) || 0;
+    if (annual <= 0 && mode !== 'clear') {
+        annual = 600; // デフォルト600万
+        if (annInp) annInp.value = annual;
+    }
+
+    const inputs = document.querySelectorAll('.cp-simple-month-input');
+    if (mode === 'clear') {
+        inputs.forEach(inp => { inp.value = ''; });
+        onCpSimpleMonthTargetChange();
+        return;
+    }
+
+    if (mode === 'even') {
+        const each = Math.round((annual / 12) * 10) / 10;
+        inputs.forEach(inp => { inp.value = each > 0 ? each : ''; });
+        onCpSimpleMonthTargetChange();
+        return;
+    }
+
+    if (mode === 'season') {
+        // 作物の収穫適期にウェイトを配分
+        const weights = new Array(12).fill(1);
+        const types = getCpMasterCroptypesFor_(crop).concat(CROP_DEFAULT_CROPTYPES[crop] || []);
+        if (types.length) {
+            types.forEach(t => {
+                const ms = t.months || [];
+                ms.forEach(m => {
+                    const idx = (Number(m) % 12 + 12) % 12;
+                    weights[idx] += 4; // 収穫期に高い重み
+                });
+            });
+        } else {
+            // 一般的旬: 5〜7月、10〜12月に重み
+            [4, 5, 6, 9, 10, 11].forEach(m => { weights[m] += 3; });
+        }
+
+        const totalW = weights.reduce((a, b) => a + b, 0);
+        inputs.forEach((inp, idx) => {
+            const w = weights[idx];
+            const allocated = Math.round((annual * (w / totalW)) * 10) / 10;
+            inp.value = allocated > 0 ? allocated : '';
+        });
+        onCpSimpleMonthTargetChange();
+    }
+}
+window.applyCpSimpleSalesDistribution = applyCpSimpleSalesDistribution;
+
+function setCpSimpleMaxArea(a) {
+    const inp = document.getElementById('cpSimpleMaxArea');
+    if (inp) {
+        inp.value = a;
+        onCpSimpleParamChange();
+    }
+}
+window.setCpSimpleMaxArea = setCpSimpleMaxArea;
+
+function onCpSimpleStaffCountChanged(staff) {
+    const s = parseFloat(staff) || 1;
+    const hours = Math.round(s * 160);
+    const inp = document.getElementById('cpSimpleMaxWorkHours');
+    if (inp) {
+        inp.value = hours;
+        onCpSimpleParamChange();
+    }
+}
+window.onCpSimpleStaffCountChanged = onCpSimpleStaffCountChanged;
+
+function onCpSimpleParamChange() {
+    // 既存シミュレーション結果があれば更新を促す
+    if (window._cpSimpleSimResult) {
+        const btn = document.getElementById('btnRunCpSimpleSim');
+        if (btn) btn.style.transform = 'scale(1.02)';
+    }
+}
+window.onCpSimpleParamChange = onCpSimpleParamChange;
+
+function resetCpSimpleModeForm() {
+    if (!confirm('シンプルモードの入力をリセットしますか？')) return;
+    const sel = document.getElementById('cpSimpleCrop');
+    if (sel) sel.value = 'キャベツ';
+    onCpSimpleCropChanged('キャベツ');
+    const annInp = document.getElementById('cpSimpleAnnualInput');
+    if (annInp) annInp.value = '600';
+    applyCpSimpleSalesDistribution('season');
+    setCpSimpleMaxArea(100);
+    const staffSel = document.getElementById('cpSimpleStaffCount');
+    if (staffSel) staffSel.value = '1';
+    onCpSimpleStaffCountChanged('1');
+    const resContainer = document.getElementById('cpSimpleResultContainer');
+    const placeholder = document.getElementById('cpSimpleResultPlaceholder');
+    if (resContainer) resContainer.style.display = 'none';
+    if (placeholder) placeholder.style.display = 'flex';
+    window._cpSimpleSimResult = null;
+}
+window.resetCpSimpleModeForm = resetCpSimpleModeForm;
+
+function getCpSimpleSelectedCrop_() {
+    const sel = document.getElementById('cpSimpleCrop');
+    if (!sel) return 'キャベツ';
+    if (sel.value === 'custom') {
+        const inp = document.getElementById('cpSimpleCropCustom');
+        return (inp && inp.value.trim()) ? inp.value.trim() : '主要野菜';
+    }
+    return sel.value || 'キャベツ';
+}
+
+function getCpMasterCroptypesFor_(crop) {
+    if (!crop || typeof cpMasterData === 'undefined' || !cpMasterData || !Array.isArray(cpMasterData.croptypesDB)) {
+        return [];
+    }
+    const c = String(crop).trim();
+    return cpMasterData.croptypesDB.filter(db => db && String(db.crop || '').trim() === c);
+}
+
+/**
+ * =============================================================================
+ * 🚀 中核シミュレーション処理（理想作型・数値を導出）
+ * =============================================================================
+ */
+function runCpSimpleSimulation() {
+    const crop = getCpSimpleSelectedCrop_();
+    if (!crop) {
+        alert('作物名を選択してください。');
+        return;
+    }
+
+    // 1. 入力値の取得
+    const maxArea = parseFloat((document.getElementById('cpSimpleMaxArea') || {}).value) || 100;
+    const maxWorkHours = parseFloat((document.getElementById('cpSimpleMaxWorkHours') || {}).value) || 160;
+    const price = parseFloat((document.getElementById('cpSimplePrice') || {}).value) || 150;
+    const yieldPer10a = parseFloat((document.getElementById('cpSimpleYieldPer10a') || {}).value) || 2500;
+    const hoursPer10a = parseFloat((document.getElementById('cpSimpleHoursPer10a') || {}).value) || 70;
+
+    // 月別目標売上（円）
+    const monthlyTargets = [];
+    let annualTargetSum = 0;
+    document.querySelectorAll('.cp-simple-month-input').forEach(inp => {
+        const m = parseInt(inp.getAttribute('data-month'), 10);
+        const valMan = parseFloat(inp.value) || 0;
+        const valYen = Math.round(valMan * 10000);
+        monthlyTargets[m] = valYen;
+        annualTargetSum += valYen;
+    });
+
+    if (annualTargetSum <= 0) {
+        alert('月ごとの目標売上を入力してください（「一括配分」ボタンを使うと素早く入力できます）。');
+        return;
+    }
+
+    // 2. 作型候補の収集
+    let croptypeCandidates = [];
+    const dbTypes = getCpMasterCroptypesFor_(crop);
+    if (dbTypes.length) {
+        croptypeCandidates = dbTypes.map((t, idx) => {
+            const hCells = t.harvesting || [];
+            const pCells = t.planting || [];
+            const sCells = t.sowing || [];
+            const months = [];
+            hCells.forEach(cell => {
+                const flat = (typeof cell === 'object') ? (cell.flatIndex != null ? cell.flatIndex : (cell.monthIndex * 6 + cell.periodIndex)) : Number(cell);
+                const m = Math.floor(flat / 6) % 12;
+                if (!months.includes(m)) months.push(m);
+            });
+            return {
+                name: (t.variety ? t.variety + '（' + (t.season || 'マスタ作型') + '）' : (t.season || '作型' + (idx + 1))),
+                variety: t.variety || (crop + (idx + 1)),
+                season: t.season || '',
+                sowing: sCells,
+                planting: pCells,
+                harvesting: hCells,
+                months: months.length ? months : [5, 6]
+            };
+        });
+    } else if (CROP_DEFAULT_CROPTYPES[crop] && CROP_DEFAULT_CROPTYPES[crop].length) {
+        croptypeCandidates = JSON.parse(JSON.stringify(CROP_DEFAULT_CROPTYPES[crop]));
+    } else {
+        // フォールバック作型
+        croptypeCandidates = [
+            {
+                name: crop + '（春まき初夏どり）',
+                variety: crop + '・春品種',
+                season: '春作',
+                sowing: [7, 8],
+                planting: [15, 16],
+                harvesting: [30, 31, 32, 33, 34],
+                months: [5, 6]
+            },
+            {
+                name: crop + '（夏まき秋冬どり）',
+                variety: crop + '・秋品種',
+                season: '秋作',
+                sowing: [40, 41],
+                planting: [47, 48],
+                harvesting: [60, 61, 62, 63, 64],
+                months: [10, 11]
+            }
+        ];
+    }
+
+    // 3. 各作型の収穫月と目標売上を照合し、必要収量・面積を逆算
+    const yieldPer1a = Math.max(1, yieldPer10a / 10);
+
+    const plannedCroptypes = [];
+    const monthlyForecastSales = new Array(12).fill(0);
+    const monthlyOccArea = new Array(12).fill(0);
+    const monthlyWorkHours = new Array(12).fill(0);
+
+    croptypeCandidates.forEach((cand, idx) => {
+        const ms = cand.months || [];
+        if (!ms.length) return;
+
+        // この作型が担当する月別目標売上
+        let coveredTargetSales = 0;
+        ms.forEach(m => {
+            coveredTargetSales += (monthlyTargets[m] || 0);
+        });
+
+        // 目標売上があれば作型を採用
+        let targetForThis = coveredTargetSales;
+        if (targetForThis <= 0 && annualTargetSum > 0 && croptypeCandidates.length === 1) {
+            targetForThis = annualTargetSum;
+        }
+
+        const requiredYield = Math.max(0, Math.round(targetForThis / price));
+        const requiredAreaA = Math.max(0.1, Math.round((requiredYield / yieldPer1a) * 10) / 10);
+        const forecastSales = Math.round(requiredYield * price);
+
+        // トレイ枚数
+        const bm = CROP_DEFAULT_BENCHMARKS[crop] || { holes: 128 };
+        const holes = bm.holes || 128;
+        const trays = Math.max(1, Math.round((requiredYield / holes) * 1.15));
+
+        // 月ごとの収穫・売上配分
+        ms.forEach(m => {
+            const share = coveredTargetSales > 0 ? ((monthlyTargets[m] || 0) / coveredTargetSales) : (1 / ms.length);
+            monthlyForecastSales[m] += forecastSales * share;
+        });
+
+        // 圃場占有期間（定植月〜収穫終了月）
+        const pCells = cand.planting || [];
+        const hCells = cand.harvesting || [];
+        let plantMonth = 3; // デフォルト4月
+        let harvestEndMonth = 6; // デフォルト7月
+
+        if (pCells.length) {
+            const f = (typeof pCells[0] === 'object') ? pCells[0].flatIndex : Number(pCells[0]);
+            plantMonth = Math.floor(f / 6) % 12;
+        }
+        if (hCells.length) {
+            const f = (typeof hCells[hCells.length - 1] === 'object') ? hCells[hCells.length - 1].flatIndex : Number(hCells[hCells.length - 1]);
+            harvestEndMonth = Math.floor(f / 6) % 12;
+        }
+
+        // 圃場占有面積の加算
+        let curM = plantMonth;
+        for (let step = 0; step < 12; step++) {
+            monthlyOccArea[curM] += requiredAreaA;
+            if (curM === harvestEndMonth) break;
+            curM = (curM + 1) % 12;
+        }
+
+        // 作業工数の月別配分（播種10%、定植25%、管理25%、収穫40%）
+        const totalWorkHours = (requiredAreaA / 10) * hoursPer10a;
+        // 播種月
+        let sowMonth = (plantMonth - 1 + 12) % 12;
+        if (cand.sowing && cand.sowing.length) {
+            const f = (typeof cand.sowing[0] === 'object') ? cand.sowing[0].flatIndex : Number(cand.sowing[0]);
+            sowMonth = Math.floor(f / 6) % 12;
+        }
+        monthlyWorkHours[sowMonth] += totalWorkHours * 0.10;
+        monthlyWorkHours[plantMonth] += totalWorkHours * 0.25;
+
+        // 管理工数（占有月に均等配分）
+        let occMonthsCount = 0;
+        curM = plantMonth;
+        for (let step = 0; step < 12; step++) {
+            occMonthsCount++;
+            if (curM === harvestEndMonth) break;
+            curM = (curM + 1) % 12;
+        }
+        if (occMonthsCount > 0) {
+            const mgmtPerM = (totalWorkHours * 0.25) / occMonthsCount;
+            curM = plantMonth;
+            for (let step = 0; step < occMonthsCount; step++) {
+                monthlyWorkHours[curM] += mgmtPerM;
+                curM = (curM + 1) % 12;
+            }
+        }
+
+        // 収穫工数（収穫月に均等配分）
+        if (ms.length > 0) {
+            const harvPerM = (totalWorkHours * 0.40) / ms.length;
+            ms.forEach(m => {
+                monthlyWorkHours[m] += harvPerM;
+            });
+        }
+
+        plannedCroptypes.push({
+            name: cand.name,
+            variety: cand.variety || (crop + ' ' + (cand.season || '')),
+            season: cand.season || '',
+            areaA: requiredAreaA,
+            trays: trays,
+            yield: requiredYield,
+            forecastSales: forecastSales,
+            coveredTargetSales: coveredTargetSales,
+            sowing: cand.sowing,
+            planting: cand.planting,
+            harvesting: cand.harvesting,
+            months: ms,
+            plantMonth: plantMonth,
+            harvestEndMonth: harvestEndMonth
+        });
+    });
+
+    // 4. ピーク値と制約チェック
+    let peakOccArea = 0;
+    let peakWorkHours = 0;
+    let totalForecastSales = 0;
+
+    for (let m = 0; m < 12; m++) {
+        monthlyOccArea[m] = Math.round(monthlyOccArea[m] * 10) / 10;
+        monthlyWorkHours[m] = Math.round(monthlyWorkHours[m] * 10) / 10;
+        monthlyForecastSales[m] = Math.round(monthlyForecastSales[m]);
+        if (monthlyOccArea[m] > peakOccArea) peakOccArea = monthlyOccArea[m];
+        if (monthlyWorkHours[m] > peakWorkHours) peakWorkHours = monthlyWorkHours[m];
+        totalForecastSales += monthlyForecastSales[m];
+    }
+
+    const areaOverMonths = [];
+    const workOverMonths = [];
+    for (let m = 0; m < 12; m++) {
+        if (monthlyOccArea[m] > maxArea) areaOverMonths.push(m + 1);
+        if (monthlyWorkHours[m] > maxWorkHours) workOverMonths.push(m + 1);
+    }
+
+    const simResult = {
+        crop: crop,
+        maxArea: maxArea,
+        maxWorkHours: maxWorkHours,
+        price: price,
+        yieldPer10a: yieldPer10a,
+        hoursPer10a: hoursPer10a,
+        annualTargetSum: annualTargetSum,
+        totalForecastSales: totalForecastSales,
+        salesAchieveRate: Math.round((totalForecastSales / Math.max(1, annualTargetSum)) * 100),
+        peakOccArea: peakOccArea,
+        areaUsageRate: Math.round((peakOccArea / Math.max(0.1, maxArea)) * 100),
+        peakWorkHours: peakWorkHours,
+        workLoadRate: Math.round((peakWorkHours / Math.max(1, maxWorkHours)) * 100),
+        areaOverMonths: areaOverMonths,
+        workOverMonths: workOverMonths,
+        monthlyTargets: monthlyTargets,
+        monthlyForecastSales: monthlyForecastSales,
+        monthlyOccArea: monthlyOccArea,
+        monthlyWorkHours: monthlyWorkHours,
+        plannedCroptypes: plannedCroptypes
+    };
+
+    window._cpSimpleSimResult = simResult;
+
+    // 5. 結果UIのレンダリング
+    renderCpSimpleResult_(simResult);
+}
+window.runCpSimpleSimulation = runCpSimpleSimulation;
+
+/** シミュレーション結果の描画 */
+function renderCpSimpleResult_(res) {
+    const placeholder = document.getElementById('cpSimpleResultPlaceholder');
+    const container = document.getElementById('cpSimpleResultContainer');
+    if (placeholder) placeholder.style.display = 'none';
+    if (container) container.style.display = 'flex';
+
+    // 1. KPIサマリーカード
+    const kpiRow = document.getElementById('cpSimpleKpiRow');
+    if (kpiRow) {
+        const salesColor = res.salesAchieveRate >= 95 ? '#2e7d32' : '#e65100';
+        const areaColor = res.areaOverMonths.length ? '#c62828' : (res.areaUsageRate > 80 ? '#e65100' : '#2e7d32');
+        const workColor = res.workOverMonths.length ? '#c62828' : (res.workLoadRate > 80 ? '#e65100' : '#2e7d32');
+
+        kpiRow.innerHTML = '' +
+            '<div style="background:#fff; border:1px solid #e0e0e0; border-radius:8px; padding:10px; text-align:center; box-shadow:0 1px 2px rgba(0,0,0,0.04);">' +
+            '  <div style="font-size:11px; color:#666; font-weight:bold;">💰 見込売上</div>' +
+            '  <div style="font-size:18px; font-weight:bold; color:' + salesColor + '; margin:4px 0;">' + Math.round(res.totalForecastSales / 10000).toLocaleString() + '<span style="font-size:11px;">万円</span></div>' +
+            '  <div style="font-size:10px; color:#888;">達成率 <b>' + res.salesAchieveRate + '%</b></div>' +
+            '</div>' +
+            '<div style="background:#fff; border:1px solid #e0e0e0; border-radius:8px; padding:10px; text-align:center; box-shadow:0 1px 2px rgba(0,0,0,0.04);">' +
+            '  <div style="font-size:11px; color:#666; font-weight:bold;">🚜 ピーク面積</div>' +
+            '  <div style="font-size:18px; font-weight:bold; color:' + areaColor + '; margin:4px 0;">' + res.peakOccArea + '<span style="font-size:11px;">a</span></div>' +
+            '  <div style="font-size:10px; color:#888;">上限 ' + res.maxArea + 'a (' + res.areaUsageRate + '%)</div>' +
+            '</div>' +
+            '<div style="background:#fff; border:1px solid #e0e0e0; border-radius:8px; padding:10px; text-align:center; box-shadow:0 1px 2px rgba(0,0,0,0.04);">' +
+            '  <div style="font-size:11px; color:#666; font-weight:bold;">⏱️ ピーク作業時間</div>' +
+            '  <div style="font-size:18px; font-weight:bold; color:' + workColor + '; margin:4px 0;">' + res.peakWorkHours + '<span style="font-size:11px;">h</span></div>' +
+            '  <div style="font-size:10px; color:#888;">上限 ' + res.maxWorkHours + 'h (' + res.workLoadRate + '%)</div>' +
+            '</div>' +
+            '<div style="background:#fff; border:1px solid #e0e0e0; border-radius:8px; padding:10px; text-align:center; box-shadow:0 1px 2px rgba(0,0,0,0.04);">' +
+            '  <div style="font-size:11px; color:#666; font-weight:bold;">🌱 推奨作型</div>' +
+            '  <div style="font-size:18px; font-weight:bold; color:#6a1b9a; margin:4px 0;">' + res.plannedCroptypes.length + '<span style="font-size:11px;">作型</span></div>' +
+            '  <div style="font-size:10px; color:#888;">年間輪作・リレー</div>' +
+            '</div>';
+    }
+
+    // 2. 診断・アドバイスメッセージ
+    const adviceBox = document.getElementById('cpSimpleAdviceBox');
+    if (adviceBox) {
+        let alerts = [];
+        let okPoints = [];
+
+        if (res.areaOverMonths.length) {
+            alerts.push('⚠️ <b>圃場面積の超過:</b> ' + res.areaOverMonths.join('月・') + '月に上限面積（' + res.maxArea + 'a）を超過します（最大 ' + res.peakOccArea + 'a 必要）。');
+        } else {
+            okPoints.push('✅ <b>圃場面積:</b> 全月で上限（' + res.maxArea + 'a）以内に収まっています（最大 ' + res.peakOccArea + 'a）。');
+        }
+
+        if (res.workOverMonths.length) {
+            alerts.push('⚠️ <b>労働時間の超過:</b> ' + res.workOverMonths.join('月・') + '月に月間作業時間（' + res.maxWorkHours + 'h）を超過します（最大 ' + res.peakWorkHours + 'h）。定植時期の分散や臨時雇用の検討をおすすめします。');
+        } else {
+            okPoints.push('✅ <b>作業時間:</b> 全月で上限（' + res.maxWorkHours + 'h）以内に収まっています（ピーク ' + res.peakWorkHours + 'h）。');
+        }
+
+        if (res.salesAchieveRate >= 90) {
+            okPoints.push('🎯 <b>売上目標:</b> 年間目標に対して ' + res.salesAchieveRate + '% 達成可能な理想的な作型バランスです！');
+        }
+
+        let bg = alerts.length ? '#fff3e0' : '#e8f5e9';
+        let border = alerts.length ? '#ffe082' : '#c8e6c9';
+        let color = alerts.length ? '#bf360c' : '#1b5e20';
+
+        adviceBox.style.background = bg;
+        adviceBox.style.borderColor = border;
+        adviceBox.style.color = color;
+        adviceBox.innerHTML = '' +
+            '<div style="font-weight:bold; font-size:13px; margin-bottom:4px;">💡 営農診断 ＆ ボトルネック分析</div>' +
+            '<div style="display:flex; flex-direction:column; gap:3px;">' +
+            okPoints.map(p => '<div>' + p + '</div>').join('') +
+            alerts.map(a => '<div style="color:#c62828;">' + a + '</div>').join('') +
+            '</div>';
+    }
+
+    // 3. 理想の作型一覧
+    const listEl = document.getElementById('cpSimpleCroptypesList');
+    const badgeEl = document.getElementById('cpSimpleCroptypeCountBadge');
+    if (badgeEl) badgeEl.textContent = res.plannedCroptypes.length + ' 作型';
+
+    if (listEl) {
+        let html = '';
+        res.plannedCroptypes.forEach((type, idx) => {
+            const harvestMonthsLabel = type.months.map(m => (m + 1) + '月').join('〜');
+            html += '' +
+              '<div style="background:#fafafa; border:1px solid #e0e0e0; border-radius:8px; padding:10px 12px; display:flex; flex-direction:column; gap:6px;">' +
+              '  <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:6px;">' +
+              '    <div style="display:flex; align-items:center; gap:6px;">' +
+              '      <span style="background:#8e24aa; color:#fff; font-size:11px; font-weight:bold; padding:1px 6px; border-radius:4px;">作型 ' + (idx + 1) + '</span>' +
+              '      <span style="font-size:13px; font-weight:bold; color:#333;">' + escCpSimple(type.name) + '</span>' +
+              '      <span style="font-size:11px; color:#666;">（品種: <b>' + escCpSimple(type.variety) + '</b>）</span>' +
+              '    </div>' +
+              '    <div style="font-size:12px; font-weight:bold; color:#e65100;">' +
+              '      見込売上 ' + Math.round(type.forecastSales / 10000).toLocaleString() + ' 万円' +
+              '    </div>' +
+              '  </div>' +
+              '  <div style="display:flex; align-items:center; gap:12px; font-size:11px; color:#555; flex-wrap:wrap; background:#fff; padding:6px 10px; border-radius:6px; border:1px solid #f0f0f0;">' +
+              '    <span>🚜 作付面積: <b style="color:#2e7d32; font-size:13px;">' + type.areaA + ' a</b></span>' +
+              '    <span>📦 トレイ数: <b>' + type.trays + ' 枚</b></span>' +
+              '    <span>🥬 予想収量: <b>' + type.yield.toLocaleString() + '</b> 個/pk</span>' +
+              '    <span>📅 収穫時期: <b style="color:#e65100;">' + harvestMonthsLabel + '</b></span>' +
+              '  </div>' +
+              '</div>';
+        });
+        listEl.innerHTML = html;
+    }
+
+    // 4. 月別シミュレーション分析テーブル
+    const analysisEl = document.getElementById('cpSimpleMonthlyAnalysis');
+    if (analysisEl) {
+        let table = '' +
+          '<table style="width:100%; border-collapse:collapse; font-size:11px; text-align:center;">' +
+          '  <thead>' +
+          '    <tr style="background:#f5f5f5; color:#555; border-bottom:1px solid #ddd;">' +
+          '      <th style="padding:6px 4px; text-align:left;">項目</th>' +
+          Array.from({length:12}, (_, i) => '<th style="padding:6px 2px;">' + (i + 1) + '月</th>').join('') +
+          '    </tr>' +
+          '  </thead>' +
+          '  <tbody>' +
+          '    <tr style="border-bottom:1px solid #eee;">' +
+          '      <td style="padding:6px 4px; text-align:left; font-weight:bold; color:#e65100; white-space:nowrap;">売上(万)</td>' +
+          res.monthlyForecastSales.map((s, m) => {
+              const val = Math.round(s / 10000);
+              return '<td style="padding:6px 2px; color:' + (val > 0 ? '#e65100' : '#aaa') + ';">' + (val > 0 ? val : '-') + '</td>';
+          }).join('') +
+          '    </tr>' +
+          '    <tr style="border-bottom:1px solid #eee;">' +
+          '      <td style="padding:6px 4px; text-align:left; font-weight:bold; color:#2e7d32; white-space:nowrap;">面積(a)</td>' +
+          res.monthlyOccArea.map(a => {
+              const isOver = a > res.maxArea;
+              return '<td style="padding:6px 2px; font-weight:' + (isOver ? 'bold' : 'normal') + '; color:' + (isOver ? '#c62828' : (a > 0 ? '#2e7d32' : '#aaa')) + ';">' + (a > 0 ? a : '-') + '</td>';
+          }).join('') +
+          '    </tr>' +
+          '    <tr>' +
+          '      <td style="padding:6px 4px; text-align:left; font-weight:bold; color:#1565c0; white-space:nowrap;">労働(h)</td>' +
+          res.monthlyWorkHours.map(w => {
+              const isOver = w > res.maxWorkHours;
+              return '<td style="padding:6px 2px; font-weight:' + (isOver ? 'bold' : 'normal') + '; color:' + (isOver ? '#c62828' : (w > 0 ? '#1565c0' : '#aaa')) + ';">' + (w > 0 ? Math.round(w) : '-') + '</td>';
+          }).join('') +
+          '    </tr>' +
+          '  </tbody>' +
+          '</table>';
+        analysisEl.innerHTML = table;
+    }
+}
+
+/**
+ * =============================================================================
+ * 🚀 シミュレーション結果を計画・カレンダーへ一括反映
+ * =============================================================================
+ */
+function applyCpSimpleResultToPlan() {
+    const res = window._cpSimpleSimResult;
+    if (!res || !Array.isArray(res.plannedCroptypes) || !res.plannedCroptypes.length) {
+        alert('シミュレーション結果がありません。先にシミュレーションを実行してください。');
+        return;
+    }
+
+    if (cpPlans && cpPlans.length > 0 && cpPlans.some(p => p && p.variety && !p.isBlankStarter)) {
+        if (!confirm('現在のカレンダー上の計画行をクリアして、シンプルモードの理想作型（' + res.plannedCroptypes.length + '件）で上書きしますか？')) {
+            return;
+        }
+    }
+
+    // テーブルのクリア
+    const tbody = document.getElementById('cpTableBody');
+    if (tbody) tbody.innerHTML = '';
+    const leftBody = document.getElementById('cpLeftBody');
+    if (leftBody) leftBody.innerHTML = '';
+    cpPlans = [];
+
+    // 作物名の同期
+    if (typeof setChoiceValue === 'function') {
+        setChoiceValue('cpCrop', res.crop, true);
+    }
+    const cropInput = document.getElementById('cpCrop');
+    if (cropInput) cropInput.value = res.crop;
+
+    // 計画名の自動設定
+    const year = (typeof getCpVal === 'function' ? getCpVal('cpYear') : '') || new Date().getFullYear();
+    const planNameInp = document.getElementById('cpPlanName');
+    if (planNameInp) {
+        planNameInp.value = res.crop + ' 理想作型計画 ' + year;
+    }
+
+    // ベンチマーク値の取得
+    const bm = CROP_DEFAULT_BENCHMARKS[res.crop] || {
+        holes: 128, rows: 2, pSpace: 35, rSpace: 65, yieldPerPlant: 1, itemsPerPack: 1
+    };
+
+    // 各作型の追加
+    res.plannedCroptypes.forEach((type, idx) => {
+        const planId = 'plan_' + Date.now() + '_' + idx + '_' + Math.floor(Math.random() * 1000);
+        const plan = {
+            id: planId,
+            location: (typeof getCpVal === 'function' ? getCpVal('cpLocation') : '') || '本社',
+            crop: res.crop,
+            variety: type.variety,
+            fieldCondition: (typeof getCpVal === 'function' ? getCpVal('cpFieldCondition') : '') || '露地',
+            holes: bm.holes || 128,
+            rows: bm.rows || 2,
+            pSpace: bm.pSpace || 35,
+            rSpace: bm.rSpace || 65,
+            yieldPerPlant: bm.yieldPerPlant || 1,
+            itemsPerPack: bm.itemsPerPack || 1,
+            areaA: type.areaA,
+            yieldRate: 0.9,
+            seedlingSuccess: 0.9,
+            harvestRatios: [],
+            trays: type.trays,
+            yield: type.yield,
+            inputMode: 'area',
+            sowing: Array.isArray(type.sowing) ? type.sowing.slice() : [],
+            planting: Array.isArray(type.planting) ? type.planting.slice() : [],
+            harvesting: Array.isArray(type.harvesting) ? type.harvesting.slice() : [],
+            fileUrl: ''
+        };
+
+        cpPlans.push(plan);
+        if (typeof renderPlanLeftCard === 'function') renderPlanLeftCard(plan);
+        if (typeof renderPlanRow === 'function') renderPlanRow(plan);
+    });
+
+    // カレンダー画面へ切り替え
+    openCpStep(0); // ステップパネルを閉じる
+    if (typeof setCpInitialSettingsOpen === 'function') {
+        setCpInitialSettingsOpen(false); // カレンダーを最大化
+    }
+
+    if (typeof calcCpTotal === 'function') calcCpTotal();
+    if (typeof refreshCpHarvestChart === 'function') refreshCpHarvestChart();
+    if (typeof refreshCpHeaderContextBar === 'function') refreshCpHeaderContextBar();
+
+    const toastMsg = '🎉 理想作型（' + res.plannedCroptypes.length + '件）を計画カレンダーへ反映しました！\n半旬カレンダーで播種・定植・収穫の微調整や保存が可能です。';
+    if (typeof customAlert === 'function') {
+        customAlert(toastMsg);
+    } else {
+        alert(toastMsg);
+    }
+}
+window.applyCpSimpleResultToPlan = applyCpSimpleResultToPlan;
