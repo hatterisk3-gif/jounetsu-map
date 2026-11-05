@@ -54,149 +54,374 @@ function refreshChoiceButtons(selectId) {
     const current = sel.value;
     wrap.innerHTML = '';
 
-    Array.from(sel.options).forEach(opt => {
-        if (opt.value === '') return;
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.dataset.value = opt.value;
-        const isActive = String(current) === String(opt.value);
-        const isCustom = opt.value === 'custom';
-        const isCpVarietyAdd = (selectId === 'cpVariety' && isCustom);
-        const canDeleteCrop = (selectId === 'cpCrop' || selectId === 'crCrop') && !isCustom;
-        const canManageVariety = (selectId === 'cpVariety') && !isCustom;
-        const showSideActions = canDeleteCrop || canManageVariety;
-        const cropForMeta = (selectId === 'cpVariety')
-            ? (typeof getCpVal === 'function' ? getCpVal('cpCrop') : '')
-            : '';
-        const varietyMeta = (canManageVariety && cropForMeta && typeof lookupVarietyMeta === 'function')
-            ? lookupVarietyMeta(cropForMeta, opt.value)
-            : null;
-        const hasMaker = !canManageVariety || !!(varietyMeta && String(varietyMeta.maker || '').trim());
-        const hasGrain = !canManageVariety || hasRegisteredGrainCount_(varietyMeta && varietyMeta.grainCount);
+    if (selectId === 'cpVariety') {
+        wrap.style.display = 'flex';
+        wrap.style.flexDirection = 'column';
+        wrap.style.gap = '8px';
+        wrap.style.alignItems = 'stretch';
+        wrap.style.width = '100%';
 
-        if (isCpVarietyAdd) {
-            btn.style.cssText = 'padding:6px 12px;border:1.5px dashed #FFB74D;border-radius:6px;background:#FFF3E0;color:#E65100;cursor:pointer;font-size:12.5px;font-weight:bold;line-height:1.25;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;';
-        } else if (isActive) {
-            btn.style.cssText = `padding:6px ${showSideActions ? '8' : '12'}px 6px 12px;border:1.5px solid ${accentDark};border-radius:6px;background:${accent};color:#fff;cursor:pointer;font-size:12.5px;font-weight:bold;line-height:1.25;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;box-shadow:0 2px 4px rgba(0,0,0,0.14);`;
-        } else if (!hasMaker) {
-            btn.style.cssText = `padding:6px ${showSideActions ? '8' : '12'}px 6px 12px;border:1px solid #ef9a9a;border-radius:6px;background:#fff8f8;color:#c62828;cursor:pointer;font-size:12.5px;line-height:1.25;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`;
-        } else if (!hasGrain) {
-            btn.style.cssText = `padding:6px ${showSideActions ? '8' : '12'}px 6px 12px;border:1px solid #ce93d8;border-radius:6px;background:#faf5ff;color:#6a1b9a;cursor:pointer;font-size:12.5px;line-height:1.25;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`;
-        } else {
-            btn.style.cssText = `padding:6px ${showSideActions ? '8' : '12'}px 6px 12px;border:1px solid #cfd8dc;border-radius:6px;background:${isCustom ? '#f5f5f5' : '#fff'};color:#333;cursor:pointer;font-size:12.5px;line-height:1.25;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`;
-        }
-        if (canManageVariety && !isCpVarietyAdd) {
-            const tips = [];
-            if (hasMaker) tips.push('メーカー: ' + String(varietyMeta.maker));
-            else tips.push('メーカー未登録（✎で登録）');
-            if (hasGrain) {
-                const gl = formatGrainTypeLabel(varietyMeta && varietyMeta.grainCount);
-                if (gl) tips.push('粒数: ' + gl);
+        const groups = new Map();
+        let addBtn = null;
+        let totalCount = 0;
+
+        Array.from(sel.options).forEach(opt => {
+            if (opt.value === '') return;
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.dataset.value = opt.value;
+            const isActive = String(current) === String(opt.value);
+            const isCustom = opt.value === 'custom';
+            const isCpVarietyAdd = isCustom;
+            const canManageVariety = !isCustom;
+            const showSideActions = canManageVariety;
+            const cropForMeta = typeof getCpVal === 'function' ? getCpVal('cpCrop') : '';
+            const varietyMeta = (canManageVariety && cropForMeta && typeof lookupVarietyMeta === 'function')
+                ? lookupVarietyMeta(cropForMeta, opt.value)
+                : null;
+            const hasMaker = !canManageVariety || !!(varietyMeta && String(varietyMeta.maker || '').trim());
+            const hasGrain = !canManageVariety || hasRegisteredGrainCount_(varietyMeta && varietyMeta.grainCount);
+
+            if (isCpVarietyAdd) {
+                btn.style.cssText = 'padding:6px 12px;border:1.5px dashed #FFB74D;border-radius:6px;background:#FFF3E0;color:#E65100;cursor:pointer;font-size:12.5px;font-weight:bold;line-height:1.25;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;';
+            } else if (isActive) {
+                btn.style.cssText = `padding:6px ${showSideActions ? '8' : '12'}px 6px 12px;border:1.5px solid ${accentDark};border-radius:6px;background:${accent};color:#fff;cursor:pointer;font-size:12.5px;font-weight:bold;line-height:1.25;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;box-shadow:0 2px 4px rgba(0,0,0,0.14);`;
+            } else if (!hasMaker) {
+                btn.style.cssText = `padding:6px ${showSideActions ? '8' : '12'}px 6px 12px;border:1px solid #ef9a9a;border-radius:6px;background:#fff8f8;color:#c62828;cursor:pointer;font-size:12.5px;line-height:1.25;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`;
+            } else if (!hasGrain) {
+                btn.style.cssText = `padding:6px ${showSideActions ? '8' : '12'}px 6px 12px;border:1px solid #ce93d8;border-radius:6px;background:#faf5ff;color:#6a1b9a;cursor:pointer;font-size:12.5px;line-height:1.25;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`;
             } else {
-                tips.push('粒数未登録（✎で登録）');
+                btn.style.cssText = `padding:6px ${showSideActions ? '8' : '12'}px 6px 12px;border:1px solid #cfd8dc;border-radius:6px;background:#fff;color:#333;cursor:pointer;font-size:12.5px;line-height:1.25;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`;
             }
-            const drIds = parseDiseaseResistanceList(varietyMeta && varietyMeta.diseaseResistance);
-            if (drIds.length) {
-                const drNames = drIds.map(id => {
-                    const item = findDiseaseResistanceById_(id);
-                    return item ? (item.icon + ' ' + item.name) : id;
-                }).join(' ');
-                tips.push('耐病性: ' + drNames);
+
+            if (canManageVariety && !isCpVarietyAdd) {
+                const tips = [];
+                if (hasMaker) tips.push('メーカー: ' + String(varietyMeta.maker));
+                else tips.push('メーカー未登録（✎で登録）');
+                if (hasGrain) {
+                    const gl = formatGrainTypeLabel(varietyMeta && varietyMeta.grainCount);
+                    if (gl) tips.push('粒数: ' + gl);
+                } else {
+                    tips.push('粒数未登録（✎で登録）');
+                }
+                const drIds = parseDiseaseResistanceList(varietyMeta && varietyMeta.diseaseResistance);
+                if (drIds.length) {
+                    const drNames = drIds.map(id => {
+                        const item = findDiseaseResistanceById_(id);
+                        return item ? (item.icon + ' ' + item.name) : id;
+                    }).join(' ');
+                    tips.push('耐病性: ' + drNames);
+                }
+                btn.title = tips.join(' ／ ');
             }
-            btn.title = tips.join(' ／ ');
-        }
 
-        const label = document.createElement('span');
-        // 品種バッジは品種名のみ。その他は「＋ 新規追加」
-        label.textContent = isCpVarietyAdd ? '＋ 新規追加' : (opt.textContent || opt.value);
-        btn.appendChild(label);
+            const label = document.createElement('span');
+            label.textContent = isCpVarietyAdd ? '＋ 新規追加' : (opt.textContent || opt.value);
+            btn.appendChild(label);
 
-        if (canManageVariety && !hasMaker) {
-            appendVarietyMissingWarn_(btn, isActive, 'メーカー未登録', '!', '#ef5350');
-        }
-        if (canManageVariety && !hasGrain) {
-            appendVarietyMissingWarn_(btn, isActive, '粒数未登録', '粒', '#8e24aa');
-        }
+            if (canManageVariety && !hasMaker) {
+                appendVarietyMissingWarn_(btn, isActive, 'メーカー未登録', '!', '#ef5350');
+            }
+            if (canManageVariety && !hasGrain) {
+                appendVarietyMissingWarn_(btn, isActive, '粒数未登録', '粒', '#8e24aa');
+            }
 
-        if (canManageVariety) {
-            const edit = document.createElement('span');
-            edit.textContent = '✎';
-            edit.title = '品種・メーカー・粒数・耐病性を編集';
-            edit.setAttribute('aria-label', '品種・メーカー・粒数・耐病性を編集');
-            edit.style.cssText = isActive
-                ? 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:rgba(0,0,0,0.18);font-size:11px;font-weight:bold;line-height:1;'
-                : 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#eee;color:#666;font-size:11px;font-weight:bold;line-height:1;';
-            edit.onclick = function (e) {
-                e.preventDefault();
-                e.stopPropagation();
-                openVarietyMetaDialog({ mode: 'edit', target: 'cp', variety: opt.value });
-            };
-            btn.appendChild(edit);
+            if (canManageVariety) {
+                const edit = document.createElement('span');
+                edit.textContent = '✎';
+                edit.title = '品種・メーカー・粒数・耐病性を編集';
+                edit.setAttribute('aria-label', '品種・メーカー・粒数・耐病性を編集');
+                edit.style.cssText = isActive
+                    ? 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:rgba(0,0,0,0.18);font-size:11px;font-weight:bold;line-height:1;'
+                    : 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#eee;color:#666;font-size:11px;font-weight:bold;line-height:1;';
+                edit.onclick = function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openVarietyMetaDialog({ mode: 'edit', target: 'cp', variety: opt.value });
+                };
+                btn.appendChild(edit);
 
-            const del = document.createElement('span');
-            del.textContent = '×';
-            del.title = '一覧から削除';
-            del.setAttribute('aria-label', '一覧から削除');
-            del.style.cssText = isActive
-                ? 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:rgba(0,0,0,0.18);font-size:12px;font-weight:bold;line-height:1;'
-                : 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#eee;color:#888;font-size:12px;font-weight:bold;line-height:1;';
-            del.onclick = function (e) {
-                e.preventDefault();
-                e.stopPropagation();
-                removeVarietyFromChoices(opt.value);
-            };
-            btn.appendChild(del);
-        }
+                const del = document.createElement('span');
+                del.textContent = '×';
+                del.title = '一覧から削除';
+                del.setAttribute('aria-label', '一覧から削除');
+                del.style.cssText = isActive
+                    ? 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:rgba(0,0,0,0.18);font-size:12px;font-weight:bold;line-height:1;'
+                    : 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#eee;color:#888;font-size:12px;font-weight:bold;line-height:1;';
+                del.onclick = function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    removeVarietyFromChoices(opt.value);
+                };
+                btn.appendChild(del);
+            }
 
-        if (canDeleteCrop) {
-            const del = document.createElement('span');
-            del.textContent = '×';
-            del.title = '一覧から削除';
-            del.setAttribute('aria-label', '一覧から削除');
-            del.style.cssText = isActive
-                ? 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:rgba(0,0,0,0.18);font-size:12px;font-weight:bold;line-height:1;'
-                : 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#eee;color:#888;font-size:12px;font-weight:bold;line-height:1;';
-            del.onclick = function (e) {
-                e.preventDefault();
-                e.stopPropagation();
-                const name = opt.value;
-                if (!confirm(`作物「${name}」を一覧から削除しますか？`)) return;
-                removeCropFromChoices(name);
-                if (selectId === 'crCrop') {
-                    refreshCropSelectOptions(getCpVal('cpCrop'));
-                    refreshChoiceButtons('crCrop');
+            btn.onmouseenter = function () {
+                if (!isActive && !isCpVarietyAdd) {
+                    btn.style.borderColor = !hasMaker ? '#e53935' : (!hasGrain ? '#8e24aa' : accent);
                 }
             };
-            btn.appendChild(del);
-        }
+            btn.onmouseleave = function () {
+                if (!isActive && !isCpVarietyAdd) {
+                    btn.style.borderColor = !hasMaker ? '#ef9a9a' : (!hasGrain ? '#ce93d8' : '#ccc');
+                }
+            };
+            btn.onclick = function () {
+                if (isCpVarietyAdd) {
+                    openVarietyMetaDialog({ mode: 'add', target: 'cp' });
+                    return;
+                }
+                sel.value = opt.value;
+                const customInp = document.getElementById(selectId + '_custom');
+                if (customInp) customInp.style.display = 'none';
+                sel.dispatchEvent(new Event('change', { bubbles: true }));
+                refreshChoiceButtons(selectId);
+                if (CP_PARAM_SYNC_SELECT_IDS.indexOf(selectId) >= 0 && typeof syncCpParamsToExistingPlans === 'function') {
+                    syncCpParamsToExistingPlans();
+                }
+            };
 
-        btn.onmouseenter = function () {
-            if (!isActive && !isCpVarietyAdd) {
-                btn.style.borderColor = !hasMaker ? '#e53935' : (!hasGrain ? '#8e24aa' : accent);
-            }
-        };
-        btn.onmouseleave = function () {
-            if (!isActive && !isCpVarietyAdd) {
-                btn.style.borderColor = !hasMaker ? '#ef9a9a' : (!hasGrain ? '#ce93d8' : '#ccc');
-            }
-        };
-        btn.onclick = function () {
             if (isCpVarietyAdd) {
-                openVarietyMetaDialog({ mode: 'add', target: 'cp' });
-                return;
+                addBtn = btn;
+            } else {
+                totalCount++;
+                const maker = (varietyMeta && String(varietyMeta.maker || '').trim()) || '';
+                const groupKey = maker || '__unregistered__';
+                if (!groups.has(groupKey)) {
+                    groups.set(groupKey, {
+                        key: groupKey,
+                        displayName: maker || 'メーカー未設定',
+                        isUnregistered: !maker,
+                        items: []
+                    });
+                }
+                groups.get(groupKey).items.push({ opt, btn, isActive, varietyName: opt.value });
             }
-            sel.value = opt.value;
-            const customInp = document.getElementById(selectId + '_custom');
-            if (customInp) customInp.style.display = 'none';
-            sel.dispatchEvent(new Event('change', { bubbles: true }));
-            refreshChoiceButtons(selectId);
-            // 栽培パラメーターバッジ変更時は品種カードへ即反映
-            if (CP_PARAM_SYNC_SELECT_IDS.indexOf(selectId) >= 0 && typeof syncCpParamsToExistingPlans === 'function') {
-                syncCpParamsToExistingPlans();
+        });
+
+        if (totalCount === 0) {
+            const emptyBox = document.createElement('div');
+            emptyBox.style.cssText = 'width:100%; padding:14px; background:#fff8e1; border:1px dashed #ffb74d; border-radius:8px; text-align:center; box-sizing:border-box;';
+            const msg = document.createElement('div');
+            msg.style.cssText = 'font-size:12px; color:#b78103; font-weight:bold; margin-bottom:8px;';
+            msg.textContent = '品種がまだ登録されていません。「＋ 新規追加」から品種・メーカー・粒数を登録してください。';
+            emptyBox.appendChild(msg);
+            if (addBtn) emptyBox.appendChild(addBtn);
+            wrap.appendChild(emptyBox);
+        } else {
+            const registeredKeys = Array.from(groups.keys())
+                .filter(k => k !== '__unregistered__')
+                .sort((a, b) => a.localeCompare(b, 'ja'));
+            const orderedKeys = groups.has('__unregistered__')
+                ? registeredKeys.concat(['__unregistered__'])
+                : registeredKeys;
+
+            let activeMakerKey = null;
+            orderedKeys.forEach(k => {
+                if (groups.get(k).items.some(it => it.isActive)) {
+                    activeMakerKey = k;
+                }
+            });
+
+            if (typeof window._cpVarietyMakerFilter === 'undefined') {
+                window._cpVarietyMakerFilter = 'all';
             }
-        };
-        wrap.appendChild(btn);
-    });
+            if (window._cpVarietyMakerFilter !== 'all' && !groups.has(window._cpVarietyMakerFilter)) {
+                window._cpVarietyMakerFilter = 'all';
+            }
+            const currentFilter = window._cpVarietyMakerFilter;
+
+            const topBar = document.createElement('div');
+            topBar.className = 'cp-variety-filter-bar';
+            topBar.style.cssText = 'display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px; width:100%; padding-bottom:6px; border-bottom:1px solid #e2e8e0; box-sizing:border-box;';
+
+            const filterChips = document.createElement('div');
+            filterChips.style.cssText = 'display:flex; flex-wrap:wrap; align-items:center; gap:5px; flex:1 1 auto;';
+
+            const filterLabel = document.createElement('span');
+            filterLabel.style.cssText = 'font-size:11px; font-weight:bold; color:#455a64; display:inline-flex; align-items:center; gap:3px; margin-right:2px;';
+            filterLabel.innerHTML = '<span>🏢</span>メーカー別:';
+            filterChips.appendChild(filterLabel);
+
+            const createChip = (key, label, count, isUnreg, isCurrentActiveMaker) => {
+                const chip = document.createElement('button');
+                chip.type = 'button';
+                chip.className = 'cp-variety-maker-chip';
+                chip.dataset.makerKey = key;
+                const isSelected = (currentFilter === key);
+
+                let baseStyle = 'padding:3px 9px; border-radius:12px; font-size:11px; cursor:pointer; display:inline-flex; align-items:center; gap:4px; line-height:1.3; transition:all 0.15s ease;';
+                if (isSelected) {
+                    chip.style.cssText = baseStyle + 'background:#2e7d32; color:#fff; border:1px solid #1b5e20; font-weight:bold; box-shadow:0 1px 3px rgba(0,0,0,0.18);';
+                } else if (isUnreg) {
+                    chip.style.cssText = baseStyle + 'background:#fff8f8; color:#c62828; border:1px solid #ffcdd2; font-weight:normal;';
+                } else {
+                    chip.style.cssText = baseStyle + 'background:#f1f8e9; color:#2e7d32; border:1px solid #c8e6c9; font-weight:normal;';
+                }
+
+                let text = label + ` (${count})`;
+                if (isCurrentActiveMaker && key !== 'all') {
+                    text += ' ●';
+                    chip.title = '現在選択中の品種が含まれています';
+                }
+                chip.textContent = text;
+
+                chip.onclick = function (e) {
+                    e.preventDefault();
+                    window._cpVarietyMakerFilter = key;
+                    refreshChoiceButtons('cpVariety');
+                };
+                return chip;
+            };
+
+            filterChips.appendChild(createChip('all', 'すべて', totalCount, false, false));
+            orderedKeys.forEach(k => {
+                const g = groups.get(k);
+                filterChips.appendChild(createChip(k, g.displayName, g.items.length, g.isUnregistered, (k === activeMakerKey)));
+            });
+            topBar.appendChild(filterChips);
+
+            if (addBtn) {
+                topBar.appendChild(addBtn);
+            }
+            wrap.appendChild(topBar);
+
+            orderedKeys.forEach(k => {
+                const g = groups.get(k);
+                const isUnreg = g.isUnregistered;
+                const isVisible = (currentFilter === 'all' || currentFilter === k);
+
+                const sec = document.createElement('div');
+                sec.className = 'cp-variety-maker-section';
+                sec.dataset.makerKey = k;
+                sec.style.cssText = (isUnreg
+                    ? 'width:100%; box-sizing:border-box; background:#fffbfb; border:1px solid #ffcdd2; border-radius:8px; padding:8px 10px;'
+                    : 'width:100%; box-sizing:border-box; background:#fafbf8; border:1px solid #dce4da; border-radius:8px; padding:8px 10px;'
+                ) + (isVisible ? '' : 'display:none;');
+
+                const secHead = document.createElement('div');
+                secHead.style.cssText = 'display:flex; align-items:center; justify-content:space-between; margin-bottom:7px; padding-bottom:5px; border-bottom:1px solid ' + (isUnreg ? '#ffebee' : '#eaf0e8') + ';';
+
+                const left = document.createElement('div');
+                left.style.cssText = 'display:flex; align-items:center; gap:6px;';
+
+                const titleSpan = document.createElement('span');
+                titleSpan.style.cssText = isUnreg
+                    ? 'font-size:12px; font-weight:bold; color:#c62828; display:inline-flex; align-items:center; gap:4px;'
+                    : 'font-size:12px; font-weight:bold; color:#2e7d32; display:inline-flex; align-items:center; gap:4px;';
+                titleSpan.innerHTML = isUnreg
+                    ? '<span style="font-size:13px;">⚠️</span> メーカー未設定'
+                    : '<span style="font-size:13px;">🏢</span> ' + escapeCpHtmlAttr(g.displayName);
+                left.appendChild(titleSpan);
+
+                const countBadge = document.createElement('span');
+                countBadge.style.cssText = isUnreg
+                    ? 'font-size:10px; color:#c62828; background:#ffebee; border:1px solid #ffcdd2; padding:1px 6px; border-radius:10px; font-weight:bold;'
+                    : 'font-size:10px; color:#2e7d32; background:#e8f5e9; border:1px solid #c8e6c9; padding:1px 6px; border-radius:10px; font-weight:bold;';
+                countBadge.textContent = g.items.length + '品種';
+                left.appendChild(countBadge);
+
+                const hasActive = g.items.some(it => it.isActive);
+                if (hasActive) {
+                    const activeBadge = document.createElement('span');
+                    activeBadge.style.cssText = 'font-size:9.5px; color:#fff; background:#4CAF50; padding:1px 6px; border-radius:8px; font-weight:bold; letter-spacing:0.3px;';
+                    activeBadge.textContent = '選択中';
+                    left.appendChild(activeBadge);
+                }
+                secHead.appendChild(left);
+
+                if (isUnreg) {
+                    const hint = document.createElement('span');
+                    hint.style.cssText = 'font-size:10.5px; color:#d32f2f;';
+                    hint.textContent = '✎でメーカーを登録できます';
+                    secHead.appendChild(hint);
+                }
+
+                sec.appendChild(secHead);
+
+                const btnsRow = document.createElement('div');
+                btnsRow.style.cssText = 'display:flex; flex-wrap:wrap; gap:6px; align-items:center;';
+                g.items.forEach(it => {
+                    btnsRow.appendChild(it.btn);
+                });
+                sec.appendChild(btnsRow);
+
+                wrap.appendChild(sec);
+            });
+        }
+    } else {
+        wrap.style.display = 'flex';
+        wrap.style.flexDirection = 'row';
+        wrap.style.flexWrap = 'wrap';
+        wrap.style.gap = '6px';
+        wrap.style.alignItems = 'center';
+        wrap.style.width = '100%';
+
+        Array.from(sel.options).forEach(opt => {
+            if (opt.value === '') return;
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.dataset.value = opt.value;
+            const isActive = String(current) === String(opt.value);
+            const isCustom = opt.value === 'custom';
+            const canDeleteCrop = (selectId === 'cpCrop' || selectId === 'crCrop') && !isCustom;
+            const showSideActions = canDeleteCrop;
+
+            if (isActive) {
+                btn.style.cssText = `padding:6px ${showSideActions ? '8' : '12'}px 6px 12px;border:1.5px solid ${accentDark};border-radius:6px;background:${accent};color:#fff;cursor:pointer;font-size:12.5px;font-weight:bold;line-height:1.25;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;box-shadow:0 2px 4px rgba(0,0,0,0.14);`;
+            } else {
+                btn.style.cssText = `padding:6px ${showSideActions ? '8' : '12'}px 6px 12px;border:1px solid #cfd8dc;border-radius:6px;background:${isCustom ? '#f5f5f5' : '#fff'};color:#333;cursor:pointer;font-size:12.5px;line-height:1.25;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;`;
+            }
+
+            const label = document.createElement('span');
+            label.textContent = opt.textContent || opt.value;
+            btn.appendChild(label);
+
+            if (canDeleteCrop) {
+                const del = document.createElement('span');
+                del.textContent = '×';
+                del.title = '一覧から削除';
+                del.setAttribute('aria-label', '一覧から削除');
+                del.style.cssText = isActive
+                    ? 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:rgba(0,0,0,0.18);font-size:12px;font-weight:bold;line-height:1;'
+                    : 'display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#eee;color:#888;font-size:12px;font-weight:bold;line-height:1;';
+                del.onclick = function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const name = opt.value;
+                    if (!confirm(`作物「${name}」を一覧から削除しますか？`)) return;
+                    removeCropFromChoices(name);
+                    if (selectId === 'crCrop') {
+                        refreshCropSelectOptions(getCpVal('cpCrop'));
+                        refreshChoiceButtons('crCrop');
+                    }
+                };
+                btn.appendChild(del);
+            }
+
+            btn.onmouseenter = function () {
+                if (!isActive) {
+                    btn.style.borderColor = accent;
+                }
+            };
+            btn.onmouseleave = function () {
+                if (!isActive) {
+                    btn.style.borderColor = '#ccc';
+                }
+            };
+            btn.onclick = function () {
+                sel.value = opt.value;
+                const customInp = document.getElementById(selectId + '_custom');
+                if (customInp) customInp.style.display = 'none';
+                sel.dispatchEvent(new Event('change', { bubbles: true }));
+                refreshChoiceButtons(selectId);
+                if (CP_PARAM_SYNC_SELECT_IDS.indexOf(selectId) >= 0 && typeof syncCpParamsToExistingPlans === 'function') {
+                    syncCpParamsToExistingPlans();
+                }
+            };
+            wrap.appendChild(btn);
+        });
+    }
 
     if (typeof refreshCpStepNextButtons === 'function') refreshCpStepNextButtons();
 
@@ -1066,23 +1291,40 @@ function lookupVarietyMeta(crop, variety) {
     const c = String(crop || '').trim();
     const v = String(variety || '').trim();
     const result = { maker: '', grainCount: '', grainMeta: emptyGrainMeta(), diseaseResistance: '' };
-    if (!c || !v || !cpMasterData || !Array.isArray(cpMasterData.croptypesDB)) return result;
-    const climate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';
-    const matches = cpMasterData.croptypesDB.filter(db =>
-        db && String(db.crop || '').trim() === c && String(db.variety || '').trim() === v
-    );
-    if (!matches.length) return result;
-    let found = null;
-    if (climate) {
-        found = matches.find(db => String(db.climate || '').trim() === climate) || matches[0];
-    } else {
-        found = matches.find(db => db.maker || db.grainCount || db.diseaseResistance) || matches[0];
+    if (!c || !v) return result;
+    if (cpMasterData && Array.isArray(cpMasterData.croptypesDB)) {
+        const climate = document.getElementById('cpClimate') ? document.getElementById('cpClimate').value : '';
+        const matches = cpMasterData.croptypesDB.filter(db =>
+            db && String(db.crop || '').trim() === c && String(db.variety || '').trim() === v
+        );
+        if (matches.length) {
+            let found = null;
+            if (climate) {
+                found = matches.find(db => String(db.climate || '').trim() === climate) || matches[0];
+            } else {
+                found = matches.find(db => db.maker || db.grainCount || db.diseaseResistance) || matches[0];
+            }
+            if (found) {
+                result.maker = String(found.maker || '').trim();
+                result.grainMeta = parseGrainMeta(found.grainCount || '');
+                result.grainCount = serializeGrainMeta(result.grainMeta);
+                result.diseaseResistance = String(found.diseaseResistance || '').trim();
+            }
+        }
     }
-    if (found) {
-        result.maker = String(found.maker || '').trim();
-        result.grainMeta = parseGrainMeta(found.grainCount || '');
-        result.grainCount = serializeGrainMeta(result.grainMeta);
-        result.diseaseResistance = String(found.diseaseResistance || '').trim();
+    // Fallback: もしメーカー未設定なら品種メーカー辞典（カタログ/学習値）から探す
+    if (!result.maker && typeof searchVarietyMakerCandidates_ === 'function') {
+        try {
+            const cands = searchVarietyMakerCandidates_(c, v);
+            const exact = cands && cands.find(cand => cand && cand.exact);
+            if (exact && exact.maker) {
+                result.maker = String(exact.maker).trim();
+                if (!result.grainCount && exact.grainCount) {
+                    result.grainMeta = parseGrainMeta(exact.grainCount || '');
+                    result.grainCount = serializeGrainMeta(result.grainMeta);
+                }
+            }
+        } catch (e) { }
     }
     return result;
 }
@@ -5177,33 +5419,71 @@ function openCpQuickVarietyPicker(anchorEl) {
         empty.textContent = '登録済み品種がありません。上の「＋ 新規追加」から追加できます。';
         pop.appendChild(empty);
     } else {
+        const groups = new Map();
         opts.forEach(v => {
-            const b = document.createElement('button');
-            b.type = 'button';
             const meta = (typeof lookupVarietyMeta === 'function') ? lookupVarietyMeta(crop, v) : null;
-            const hasMaker = !!(meta && String(meta.maker || '').trim());
-            const hasGrain = hasRegisteredGrainCount_(meta && meta.grainCount);
-            let mark = v;
-            if (!hasMaker) mark += ' ⚠';
-            if (!hasGrain) mark += ' 粒';
-            b.textContent = mark;
-            const tips = [];
-            if (hasMaker) tips.push('メーカー: ' + String(meta.maker));
-            else tips.push('メーカー未登録（追加後に✎で登録できます）');
-            if (hasGrain) {
-                const gl = formatGrainTypeLabel(meta && meta.grainCount);
-                if (gl) tips.push('粒数: ' + gl);
-            } else {
-                tips.push('粒数未登録（追加後に✎で登録できます）');
+            const maker = (meta && String(meta.maker || '').trim()) || '';
+            const groupKey = maker || '__unregistered__';
+            if (!groups.has(groupKey)) {
+                groups.set(groupKey, {
+                    key: groupKey,
+                    displayName: maker || 'メーカー未設定',
+                    isUnregistered: !maker,
+                    items: []
+                });
             }
-            b.title = tips.join(' ／ ');
-            b.style.cssText = !hasMaker
-                ? 'display:block; width:100%; text-align:left; padding:6px 8px; margin:0 0 3px; border:1px solid #ef9a9a; background:#fff8f8; color:#c62828; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;'
-                : (!hasGrain
-                    ? 'display:block; width:100%; text-align:left; padding:6px 8px; margin:0 0 3px; border:1px solid #ce93d8; background:#faf5ff; color:#6a1b9a; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;'
-                    : 'display:block; width:100%; text-align:left; padding:6px 8px; margin:0 0 3px; border:1px solid #bbdefb; background:#e3f2fd; color:#0d47a1; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;');
-            b.onclick = function () { addVarietyCardFromPick(v); };
-            pop.appendChild(b);
+            groups.get(groupKey).items.push({ variety: v, meta: meta });
+        });
+
+        const registeredKeys = Array.from(groups.keys())
+            .filter(k => k !== '__unregistered__')
+            .sort((a, b) => a.localeCompare(b, 'ja'));
+        const orderedKeys = groups.has('__unregistered__')
+            ? registeredKeys.concat(['__unregistered__'])
+            : registeredKeys;
+
+        orderedKeys.forEach(k => {
+            const g = groups.get(k);
+            const isUnreg = g.isUnregistered;
+            const sec = document.createElement('div');
+            sec.style.cssText = 'margin-bottom:6px;';
+
+            const header = document.createElement('div');
+            header.style.cssText = 'font-size:11px; font-weight:bold; color:' + (isUnreg ? '#c62828' : '#1565C0') + '; margin:6px 0 3px; padding:2px 6px; background:' + (isUnreg ? '#ffebee' : '#e3f2fd') + '; border-radius:4px; display:flex; justify-content:space-between; align-items:center;';
+            header.innerHTML = `<span>${isUnreg ? '⚠️' : '🏢'} ${escapeCpHtmlAttr(g.displayName)}</span><span style="font-size:10px; font-weight:normal; opacity:0.85;">(${g.items.length}品種)</span>`;
+            sec.appendChild(header);
+
+            g.items.forEach(it => {
+                const v = it.variety;
+                const meta = it.meta;
+                const b = document.createElement('button');
+                b.type = 'button';
+                const hasMaker = !!(meta && String(meta.maker || '').trim());
+                const hasGrain = hasRegisteredGrainCount_(meta && meta.grainCount);
+                let mark = v;
+                if (!hasMaker) mark += ' ⚠';
+                if (!hasGrain) mark += ' 粒';
+                b.textContent = mark;
+                const tips = [];
+                if (hasMaker) tips.push('メーカー: ' + String(meta.maker));
+                else tips.push('メーカー未登録（追加後に✎で登録できます）');
+                if (hasGrain) {
+                    const gl = formatGrainTypeLabel(meta && meta.grainCount);
+                    if (gl) tips.push('粒数: ' + gl);
+                } else {
+                    tips.push('粒数未登録（追加後に✎で登録できます）');
+                }
+                b.title = tips.join(' ／ ');
+                b.style.cssText = !hasMaker
+                    ? 'display:block; width:100%; text-align:left; padding:6px 8px; margin:0 0 3px; border:1px solid #ef9a9a; background:#fff8f8; color:#c62828; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;'
+                    : (!hasGrain
+                        ? 'display:block; width:100%; text-align:left; padding:6px 8px; margin:0 0 3px; border:1px solid #ce93d8; background:#faf5ff; color:#6a1b9a; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;'
+                        : 'display:block; width:100%; text-align:left; padding:6px 8px; margin:0 0 3px; border:1px solid #bbdefb; background:#e3f2fd; color:#0d47a1; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;');
+                b.onclick = function () { addVarietyCardFromPick(v); };
+                sec.appendChild(b);
+            });
+
+            pop.appendChild(sec);
         });
     }
     const leftBody = document.getElementById('cpLeftBody');
@@ -11615,31 +11895,57 @@ function initCpAdvancedSettings_() {
     setCpAdvancedSettingsOpen(saved);
 }
 
-/** ステップを開く（0で全閉じ）。同じタブ再クリックで閉じる */
+/** ステップを開く（0で全閉じ、'simple'でシンプルモード）。同じタブ再クリックで閉じる */
 function openCpStep(step, options) {
     const opts = options || {};
-    const n = Number(step) || 0;
+    const isSimple = (step === 'simple');
+    const n = isSimple ? 'simple' : (Number(step) || 0);
     const panelsWrap = document.getElementById('cpStepPanels');
     let anyOpen = false;
 
     // ステップを開くときは初期設定バーを自動展開
-    if (n > 0 && !opts.skipExpand) {
+    if ((isSimple || (typeof n === 'number' && n > 0)) && !opts.skipExpand) {
         setCpInitialSettingsOpen(true, { keepPanels: true });
     }
     // 全閉じのときは初期設定バーも格納（明示指定時のみ）
-    if (n === 0 && opts.collapseBar) {
+    if (!isSimple && n === 0 && opts.collapseBar) {
         setCpInitialSettingsOpen(false, { keepPanels: true });
     }
 
+    // シンプルモードパネルとタブの切り替え
+    const simplePanel = document.getElementById('cpStepSimple');
+    const simpleTab = document.getElementById('cpStepTabSimple');
+    if (simplePanel) {
+        simplePanel.classList.toggle('is-open', isSimple);
+        simplePanel.hidden = !isSimple;
+        if (isSimple) simplePanel.style.display = 'flex';
+        else simplePanel.style.display = 'none';
+    }
+    if (simpleTab) {
+        simpleTab.classList.toggle('is-active', isSimple);
+        simpleTab.setAttribute('aria-selected', isSimple ? 'true' : 'false');
+    }
+    if (isSimple) {
+        anyOpen = true;
+        try {
+            if (typeof initCpSimpleMode === 'function') initCpSimpleMode();
+        } catch (e) {
+            console.error('initCpSimpleMode error:', e);
+        }
+    }
+
+    // 通常ステップ1〜3の切り替え
     for (let i = 1; i <= 3; i++) {
         const panel = document.getElementById('cpStep' + i);
         const tab = document.getElementById('cpStepTab' + i);
-        const on = i === n;
+        const on = !isSimple && (i === n);
         if (on) anyOpen = true;
         if (panel) {
             panel.classList.toggle('is-open', on);
             panel.hidden = !on;
             panel.open = on; // 旧details互換
+            if (on) panel.style.display = 'flex';
+            else panel.style.display = 'none';
         }
         if (tab) {
             tab.classList.toggle('is-active', on);
@@ -11649,10 +11955,10 @@ function openCpStep(step, options) {
     if (panelsWrap) panelsWrap.classList.toggle('has-open', anyOpen);
 
     if (anyOpen) {
-        const panel = document.getElementById('cpStep' + n);
-        if (panel) {
+        const targetPanel = isSimple ? simplePanel : document.getElementById('cpStep' + n);
+        if (targetPanel) {
             setTimeout(() => {
-                panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                targetPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }, 40);
         }
     }
@@ -12833,79 +13139,120 @@ function renderCrVarietyBadges() {
         return;
     }
 
+    wrap.style.display = 'flex';
+    wrap.style.flexDirection = 'column';
+    wrap.style.gap = '6px';
+
+    const groups = new Map();
     opts.forEach(tag => {
-        const isOn = selected === tag;
         const meta = (typeof lookupVarietyMeta === 'function') ? lookupVarietyMeta(crop, tag) : null;
-        const hasMaker = !!(meta && String(meta.maker || '').trim());
-        const hasGrain = hasRegisteredGrainCount_(meta && meta.grainCount);
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        const tips = [];
-        if (hasMaker) tips.push('メーカー: ' + String(meta.maker));
-        else tips.push('メーカー未登録（✎で登録）');
-        if (hasGrain) {
-            const gl = formatGrainTypeLabel(meta && meta.grainCount);
-            if (gl) tips.push('粒数: ' + gl);
-        } else {
-            tips.push('粒数未登録（✎で登録）');
+        const maker = (meta && String(meta.maker || '').trim()) || '';
+        const groupKey = maker || '__unregistered__';
+        if (!groups.has(groupKey)) {
+            groups.set(groupKey, {
+                key: groupKey,
+                displayName: maker || 'メーカー未設定',
+                isUnregistered: !maker,
+                items: []
+            });
         }
-        btn.title = tips.join(' ／ ');
-        btn.style.cssText = isOn
-            ? 'display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid #EF6C00;border-radius:4px;background:#FF9800;color:#fff;cursor:pointer;font-size:11px;font-weight:bold;line-height:1.2;'
-            : (!hasMaker
-                ? 'display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid #ef9a9a;border-radius:4px;background:#fff8f8;color:#c62828;cursor:pointer;font-size:11px;line-height:1.2;'
-                : (!hasGrain
-                    ? 'display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid #ce93d8;border-radius:4px;background:#faf5ff;color:#6a1b9a;cursor:pointer;font-size:11px;line-height:1.2;'
-                    : 'display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid #ccc;border-radius:4px;background:#fff;color:#333;cursor:pointer;font-size:11px;line-height:1.2;'));
-        const label = document.createElement('span');
-        label.textContent = tag;
-        btn.appendChild(label);
+        groups.get(groupKey).items.push({ tag, meta });
+    });
 
-        if (!hasMaker) {
-            appendVarietyMissingWarn_(btn, isOn, 'メーカー未登録', '!', '#ef5350');
-        }
-        if (!hasGrain) {
-            appendVarietyMissingWarn_(btn, isOn, '粒数未登録', '粒', '#8e24aa');
-        }
+    const registeredKeys = Array.from(groups.keys()).filter(k => k !== '__unregistered__').sort((a, b) => a.localeCompare(b, 'ja'));
+    const orderedKeys = groups.has('__unregistered__') ? registeredKeys.concat(['__unregistered__']) : registeredKeys;
 
-        const edit = document.createElement('span');
-        edit.textContent = '✎';
-        edit.title = '品種・メーカー・粒数を編集';
-        edit.style.cssText = isOn
-            ? 'opacity:0.9;font-weight:bold;padding-left:2px;'
-            : 'opacity:0.45;font-weight:bold;padding-left:2px;color:#888;';
-        edit.onclick = function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            openVarietyMetaDialog({ mode: 'edit', target: 'cr', variety: tag });
-        };
-        btn.appendChild(edit);
+    orderedKeys.forEach(k => {
+        const g = groups.get(k);
+        const isUnreg = g.isUnregistered;
+        const sec = document.createElement('div');
+        sec.style.cssText = 'margin-bottom:4px;';
 
-        const del = document.createElement('span');
-        del.textContent = '×';
-        del.title = '一覧から削除';
-        del.style.cssText = isOn
-            ? 'opacity:0.9;font-weight:bold;padding-left:2px;'
-            : 'opacity:0.45;font-weight:bold;padding-left:2px;color:#888;';
-        del.onclick = function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            // 作型登録画面ではローカル候補から外す（確認付き）
-            if (!confirm(`品種「${tag}」を一覧から削除しますか？`)) return;
-            forgetCustomVariety(crop, tag);
-            if (cpMasterData && cpMasterData.crops && Array.isArray(cpMasterData.crops[crop])) {
-                cpMasterData.crops[crop] = cpMasterData.crops[crop].filter(v => String(v) !== tag);
+        const head = document.createElement('div');
+        head.style.cssText = 'font-size:10.5px; font-weight:bold; color:' + (isUnreg ? '#c62828' : '#e65100') + '; margin-bottom:3px; display:flex; align-items:center; gap:4px;';
+        head.innerHTML = `<span>${isUnreg ? '⚠️' : '🏢'}</span> <span>${escapeCpHtmlAttr(g.displayName)}</span> <span style="font-size:9.5px; font-weight:normal; opacity:0.8;">(${g.items.length})</span>`;
+        sec.appendChild(head);
+
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; flex-wrap:wrap; gap:4px; align-items:center;';
+
+        g.items.forEach(it => {
+            const tag = it.tag;
+            const meta = it.meta;
+            const isOn = selected === tag;
+            const hasMaker = !!(meta && String(meta.maker || '').trim());
+            const hasGrain = hasRegisteredGrainCount_(meta && meta.grainCount);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            const tips = [];
+            if (hasMaker) tips.push('メーカー: ' + String(meta.maker));
+            else tips.push('メーカー未登録（✎で登録）');
+            if (hasGrain) {
+                const gl = formatGrainTypeLabel(meta && meta.grainCount);
+                if (gl) tips.push('粒数: ' + gl);
+            } else {
+                tips.push('粒数未登録（✎で登録）');
             }
-            if (getCrVariety() === tag) setCrVariety('');
-            else renderCrVarietyBadges();
-        };
-        btn.appendChild(del);
+            btn.title = tips.join(' ／ ');
+            btn.style.cssText = isOn
+                ? 'display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid #EF6C00;border-radius:4px;background:#FF9800;color:#fff;cursor:pointer;font-size:11px;font-weight:bold;line-height:1.2;'
+                : (!hasMaker
+                    ? 'display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid #ef9a9a;border-radius:4px;background:#fff8f8;color:#c62828;cursor:pointer;font-size:11px;line-height:1.2;'
+                    : (!hasGrain
+                        ? 'display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid #ce93d8;border-radius:4px;background:#faf5ff;color:#6a1b9a;cursor:pointer;font-size:11px;line-height:1.2;'
+                        : 'display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid #ccc;border-radius:4px;background:#fff;color:#333;cursor:pointer;font-size:11px;line-height:1.2;'));
+            const label = document.createElement('span');
+            label.textContent = tag;
+            btn.appendChild(label);
 
-        btn.onclick = function (e) {
-            if (e.target === del || e.target === edit) return;
-            setCrVariety(isOn ? '' : tag);
-        };
-        wrap.appendChild(btn);
+            if (!hasMaker) {
+                appendVarietyMissingWarn_(btn, isOn, 'メーカー未登録', '!', '#ef5350');
+            }
+            if (!hasGrain) {
+                appendVarietyMissingWarn_(btn, isOn, '粒数未登録', '粒', '#8e24aa');
+            }
+
+            const edit = document.createElement('span');
+            edit.textContent = '✎';
+            edit.title = '品種・メーカー・粒数を編集';
+            edit.style.cssText = isOn
+                ? 'opacity:0.9;font-weight:bold;padding-left:2px;'
+                : 'opacity:0.45;font-weight:bold;padding-left:2px;color:#888;';
+            edit.onclick = function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                openVarietyMetaDialog({ mode: 'edit', target: 'cr', variety: tag });
+            };
+            btn.appendChild(edit);
+
+            const del = document.createElement('span');
+            del.textContent = '×';
+            del.title = '一覧から削除';
+            del.style.cssText = isOn
+                ? 'opacity:0.9;font-weight:bold;padding-left:2px;'
+                : 'opacity:0.45;font-weight:bold;padding-left:2px;color:#888;';
+            del.onclick = function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!confirm(`品種「${tag}」を一覧から削除しますか？`)) return;
+                forgetCustomVariety(crop, tag);
+                if (cpMasterData && cpMasterData.crops && Array.isArray(cpMasterData.crops[crop])) {
+                    cpMasterData.crops[crop] = cpMasterData.crops[crop].filter(v => String(v) !== tag);
+                }
+                if (getCrVariety() === tag) setCrVariety('');
+                else renderCrVarietyBadges();
+            };
+            btn.appendChild(del);
+
+            btn.onclick = function (e) {
+                if (e.target === del || e.target === edit) return;
+                setCrVariety(isOn ? '' : tag);
+            };
+            row.appendChild(btn);
+        });
+
+        sec.appendChild(row);
+        wrap.appendChild(sec);
     });
 }
 
