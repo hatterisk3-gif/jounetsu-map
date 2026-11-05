@@ -201,6 +201,27 @@
       return list;
     },
 
+    /** 大看板に束ねられる候補（他の親の小看板・別の大看板は除外） */
+    getCandidateChildren: function (parentId, optPolys) {
+      var polys = SignGroup.getPolys(optPolys);
+      var pid = parentId ? String(parentId).trim() : '';
+      var list = [];
+      for (var id in polys) {
+        var p = polys[id];
+        if (!p || !p.isMarker) continue;
+        if (pid && String(p.id) === pid) continue;
+        if (typeof global.isLocationPinSign_ === 'function' && global.isLocationPinSign_(p.signFunction)) continue;
+        var existingParent = SignGroup.getParentId(p, polys);
+        if (existingParent && existingParent !== pid) continue;
+        if (SignGroup.isParentSign(p, polys)) continue;
+        list.push({ id: String(p.id), name: String(p.name || '看板 ' + p.id) });
+      }
+      list.sort(function (a, b) {
+        return String(a.name).localeCompare(String(b.name), 'ja');
+      });
+      return list;
+    },
+
     getExpandedParentId: function () {
       return SignGroup.expandedParentId;
     },
@@ -312,8 +333,11 @@
       if (typeof global.updateMarkersVisibility === 'function') {
         global.updateMarkersVisibility();
       }
-      if (typeof global.updateAdminMapVisuals === 'function') {
+      // 管理画面の updateAdminMapVisuals は「看板リンク選択中」専用（非選択時は薄くしてしまう）
+      if (global.isAdminMapSelecting && typeof global.updateAdminMapVisuals === 'function') {
         global.updateAdminMapVisuals();
+      } else if (typeof google !== 'undefined' && google.maps && global.map) {
+        try { google.maps.event.trigger(global.map, 'zoom_changed'); } catch (eZoom) {}
       }
       if (typeof global.updateMapVisuals === 'function') {
         global.updateMapVisuals();

@@ -7051,17 +7051,32 @@ function openAttr(id) {
         const locOptions = `<option value="">未設定</option>` + (pdlLocations || []).map(l =>
             `<option value="${String(l).replace(/"/g, '&quot;')}" ${l === defaultLoc ? 'selected' : ''}>${l}</option>`
         ).join('');
-        const candidateParents = (window.SignGroup && typeof window.SignGroup.getCandidateParents === 'function')
-            ? window.SignGroup.getCandidateParents(id, loadedPolygons)
-            : [];
         const currentParentId = String(p.parentSignId || '').trim();
-        const parentOptions = `<option value="">なし（単独・大看板）</option>` + candidateParents.map(cp =>
-            `<option value="${String(cp.id).replace(/"/g, '&quot;')}" ${cp.id === currentParentId ? 'selected' : ''}>${String(cp.name).replace(/</g, '&lt;')}</option>`
-        ).join('');
+        const parentPoly = currentParentId ? loadedPolygons[currentParentId] : null;
+        const isParentNow = !!(window.SignGroup && window.SignGroup.isParentSign(p));
+        const candidates = (window.SignGroup && typeof window.SignGroup.getCandidateChildren === 'function')
+            ? window.SignGroup.getCandidateChildren(id, loadedPolygons)
+            : [];
+        const selectedSet = {};
+        if (window.SignGroup) {
+            window.SignGroup.getChildren(id).forEach(ch => { selectedSet[String(ch.id)] = true; });
+        }
+        const childChecks = candidates.length
+            ? candidates.map(c => {
+                const checked = selectedSet[String(c.id)] ? ' checked' : '';
+                return `<label style="display:flex;align-items:center;gap:6px;padding:5px 2px;border-bottom:1px solid #f0f0f0;font-size:11px;cursor:pointer;text-align:left;">
+                  <input type="checkbox" class="admin_sign_child_cb" value="${String(c.id).replace(/"/g, '&quot;')}"${checked} style="width:15px;height:15px;">
+                  <span>${String(c.name || '').replace(/</g, '&lt;')}</span>
+                </label>`;
+            }).join('')
+            : `<div style="padding:6px;color:#888;font-size:11px;text-align:left;">選べる看板がありません</div>`;
+        const childNote = currentParentId
+            ? `<div style="background:#FFF3E0;color:#E65100;border-radius:6px;padding:6px;margin-bottom:8px;font-size:10px;text-align:left;line-height:1.4;">いまは「${String(parentPoly ? parentPoly.name : currentParentId).replace(/</g, '&lt;')}」の小看板です。大看板にすると外れます。</div>`
+            : '';
         if (!window.isReturningFromLinkSelect) { window.tempLinkedSigns = p.linkedSigns ? p.linkedSigns.split(',').filter(String) : []; }
         window.isReturningFromLinkSelect = false;
         infoWindow.setContent(`
-             <div style="text-align:center; width:260px; box-sizing:border-box; padding:10px; font-family:sans-serif;">
+             <div style="text-align:center; width:280px; box-sizing:border-box; padding:10px; font-family:sans-serif;">
                <div style="font-size:14px; margin-bottom:10px;">看板情報変更</div>
                <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">看板名</div>
                <input type="text" id="rnIn" value="${p.name}" class="form-input" style="width:100%; margin-bottom:10px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">
@@ -7069,9 +7084,16 @@ function openAttr(id) {
                <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">拠点</div>
                <select id="rnLoc" class="form-input" style="width:100%; margin-bottom:4px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">${locOptions}</select>
                <div style="font-size:11px; color:#666; text-align:left; line-height:1.4; margin:0 0 8px;">この看板の所属拠点です。</div>
-               <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">親看板（大看板に束ねる）</div>
-               <select id="rnParentSign" class="form-input" style="width:100%; margin-bottom:4px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">${parentOptions}</select>
-               <div style="font-size:11px; color:#666; text-align:left; line-height:1.4; margin:0 0 10px;">大看板を選ぶと、その大看板に束ねられた小看板になります。</div>
+               ${childNote}
+               <label style="display:flex;align-items:center;gap:8px;background:#EDE7F6;border:1px solid #7E57C2;border-radius:8px;padding:8px;margin-bottom:6px;cursor:pointer;text-align:left;">
+                 <input type="checkbox" id="rnAsParent" ${isParentNow ? 'checked' : ''} onchange="window.toggleAdminSignGroupRoleUI_()" style="width:16px;height:16px;">
+                 <span style="font-size:12px;font-weight:bold;color:#4A148C;">この看板を大看板にする</span>
+               </label>
+               <div id="rnChildrenBox" style="display:${isParentNow ? 'block' : 'none'};margin-bottom:8px;">
+                 <div style="font-size:11px;font-weight:bold;color:#555;text-align:left;margin-bottom:4px;">束ねる小看板</div>
+                 <div style="max-height:120px;overflow-y:auto;border:1px solid #ddd;border-radius:6px;background:#fafafa;padding:2px 6px;">${childChecks}</div>
+               </div>
+               <div style="font-size:10px; color:#666; text-align:left; line-height:1.4; margin:0 0 10px;">基本は単独。大看板にしたら小看板を選びます。</div>
                <button onclick="execAttr('${id}')" style="width:100%; padding:10px; border-radius:4px; border:none; background:#d32f2f; color:white; font-weight:bold; cursor:pointer;">保存</button>
              </div>
            `);
@@ -7120,16 +7142,30 @@ function execAttr(id) {
         const f = funcEl ? funcEl.value : (p.signFunction || '機能なし');
         const locEl = document.getElementById('rnLoc');
         const loc = locEl ? locEl.value : (p.location || '');
-        const parentEl = document.getElementById('rnParentSign');
-        const parentSignId = parentEl ? String(parentEl.value || '').trim() : (p.parentSignId || '');
+        const asParent = !!(document.getElementById('rnAsParent') || {}).checked;
+        const selectedChildIds = asParent
+            ? Array.from(document.querySelectorAll('.admin_sign_child_cb:checked')).map(el => String(el.value || '').trim()).filter(Boolean)
+            : [];
         if (!n) return;
-        p.name = n; p.signFunction = f; p.location = loc; p.parentSignId = parentSignId; p.labelConfig.text = n;
+        p.name = n; p.signFunction = f; p.location = loc; p.labelConfig.text = n;
         p.linkedSigns = window.tempLinkedSigns ? window.tempLinkedSigns.join(',') : "";
-        p.marker.setMap(null); p.marker = createSignboardMarker(n, p.marker.getPosition(), p.color, p._adminIdRef || id);
+        const changedIds = (typeof window.applyAdminSignGroupChildren_ === 'function')
+            ? window.applyAdminSignGroupChildren_(id, selectedChildIds)
+            : [];
+        const savedPos = p.marker.getPosition();
+        p.marker.setMap(null); p.marker = createSignboardMarker(n, savedPos, p.color, p._adminIdRef || id);
+        try { p.marker.setOpacity(1.0); } catch (eOp) { }
         infoWindow.close();
         if (window.SignGroup) window.SignGroup.refreshMarkers();
+        else { try { google.maps.event.trigger(map, 'zoom_changed'); } catch (eZ) { } }
         showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
-        syncUpdatePolygon_(p).then(ok => { if (ok) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok'); });
+        const syncIds = Array.from(new Set([String(id)].concat(changedIds || [])));
+        Promise.all(syncIds.map(sid => {
+            const sp = loadedPolygons[sid];
+            return sp ? syncUpdatePolygon_(sp) : Promise.resolve(false);
+        })).then(results => {
+            if (results.some(Boolean)) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+        });
     } else {
         const n = document.getElementById('edN').value, l = document.getElementById('edL').value, c = document.getElementById('edC').value, soil = (document.getElementById('edSoil') || {}).value || '', s = document.getElementById('edS').value, t = p.toukiId;
         if (!n) return; p.name = n; p.location = l; p.condition = c; p.soilType = soil; p.status = s; p.toukiId = t;
@@ -7143,6 +7179,41 @@ function execAttr(id) {
 }
 
 window.onFuncChangeEdit = () => { const val = document.getElementById('rnFunc').value; document.getElementById('btnLinkSignEdit').style.display = val.includes('給油') ? 'block' : 'none'; };
+
+window.toggleAdminSignGroupRoleUI_ = () => {
+    const parentOn = !!(document.getElementById('rnAsParent') || {}).checked;
+    const box = document.getElementById('rnChildrenBox');
+    if (box) box.style.display = parentOn ? 'block' : 'none';
+};
+
+/** 大看板の子一覧をローカルへ反映（変更されたID配列を返す） */
+window.applyAdminSignGroupChildren_ = (parentId, selectedIds) => {
+    const pid = String(parentId || '').trim();
+    const selected = new Set((selectedIds || []).map(String));
+    const changed = [];
+    const parent = loadedPolygons[pid];
+    if (parent && parent.isMarker && String(parent.parentSignId || '').trim()) {
+        parent.parentSignId = '';
+        changed.push(pid);
+    }
+    Object.keys(loadedPolygons || {}).forEach((id) => {
+        const p = loadedPolygons[id];
+        if (!p || !p.isMarker) return;
+        const sid = String(id);
+        if (sid === pid) return;
+        const prev = String(p.parentSignId || '').trim();
+        if (selected.has(sid)) {
+            if (prev !== pid) {
+                p.parentSignId = pid;
+                changed.push(sid);
+            }
+        } else if (prev === pid) {
+            p.parentSignId = '';
+            changed.push(sid);
+        }
+    });
+    return changed;
+};
 
 function openCol(id) {
     const p = loadedPolygons[id]; let h;
@@ -7885,8 +7956,9 @@ function initMap() {
                             p.marker.setLabel(window.SignGroup.buildSignLabelConfig(p, { isParent: true, isExpandedParent: isExp }));
                         }
                     } else {
-                        p.marker.setVisible(z >= 17);
-                        // 🌟修正：圃場モード中はズームしても文字を出さない！
+                        p.marker.setVisible(z >= 15);
+                        try { p.marker.setOpacity(1.0); } catch (eOp2) { }
+                        // ラベルは近接ズーム時のみ（圃場描画モード中は出さない）
                         if (z < 17 || customDrawingMode === 'polygon') p.marker.setLabel(null);
                         else if (p.labelConfig) p.marker.setLabel(p.labelConfig);
                     }
@@ -8310,12 +8382,6 @@ window.renderSignRegDetailScreen_ = (opts) => {
     const locOpts = `<option value="">拠点を選択...</option>` + (pdlLocations || []).map(l =>
         `<option value="${String(l).replace(/"/g, '&quot;')}" ${l === defaultLoc ? 'selected' : ''}>${l}</option>`
     ).join('');
-    const candidateParents = (window.SignGroup && typeof window.SignGroup.getCandidateParents === 'function')
-        ? window.SignGroup.getCandidateParents('', loadedPolygons)
-        : [];
-    const parentOpts = `<option value="">なし（単独・大看板）</option>` + candidateParents.map(cp =>
-        `<option value="${String(cp.id).replace(/"/g, '&quot;')}">${String(cp.name).replace(/</g, '&lt;')}</option>`
-    ).join('');
     const presetName = opts.name != null ? String(opts.name) : '';
     const presetIcon = opts.icon || '🪧';
     const presetFunc = opts.signFunction || st.defaultFunc || '';
@@ -8337,9 +8403,7 @@ window.renderSignRegDetailScreen_ = (opts) => {
               <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">拠点</div>
               <select id="mLoc" class="form-input" style="margin-bottom:4px;">${locOpts}</select>
               <div style="font-size:11px; color:#666; text-align:left; line-height:1.4; margin:0 0 8px;">この看板の所属拠点です。</div>
-              <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">親看板（大看板に束ねる）</div>
-              <select id="mParentSign" class="form-input" style="margin-bottom:4px;">${parentOpts}</select>
-              <div style="font-size:11px; color:#666; text-align:left; line-height:1.4; margin:0 0 8px;">大看板を選ぶと、その大看板に束ねられた小看板になります。</div>
+              <div style="font-size:11px; color:#666; background:#F3E5F5; border-radius:6px; padding:8px; text-align:left; line-height:1.4; margin:0 0 8px;">登録後、「情報・大小看板」から大看板にして小看板を選べます。</div>
               <div style="max-height:280px;overflow-y:auto;padding:0 6px 6px;border:1px solid #ddd;border-radius:8px;background:#fafafa;">
                 ${renderAdminSignIconPickerHtml_({ onPick: 'selectMI', activeIcon: presetIcon })}
               </div>
@@ -9962,8 +10026,7 @@ window.saveM = async () => {
     const coords = [{ lat: pos.lat(), lng: pos.lng() }];
     const locEl = document.getElementById('mLoc');
     const loc = locEl ? String(locEl.value || '').trim() : '';
-    const parentEl = document.getElementById('mParentSign');
-    const parentSignId = parentEl ? String(parentEl.value || '').trim() : '';
+    const parentSignId = '';
     const photos = Array.isArray(window._pendingSignRegPhotos) ? window._pendingSignRegPhotos.slice() : [];
     const tempId = newAdminTempId_('tmp');
     const btn = document.getElementById('btnSaveSignMarker');
@@ -10563,8 +10626,24 @@ window.cancelAdminMapSelect = () => {
 };
 
 window.updateAdminMapVisuals = () => {
-    const count = window.tempLinkedSigns.length, btn = document.getElementById('btnLinkSignEdit'), countUI = document.getElementById('adminMapSelectCount');
+    const count = (window.tempLinkedSigns || []).length, btn = document.getElementById('btnLinkSignEdit'), countUI = document.getElementById('adminMapSelectCount');
     if (btn) btn.innerText = `🗺️ 看板を選択 (${count}件)`; if (countUI) countUI.innerText = `🗺️ 対象の看板 (${count}件選択中)`;
+
+    // リンク選択モード以外では薄くしない（保存後の refresh で透明になる不具合防止）
+    if (!window.isAdminMapSelecting) {
+        for (let id in loadedPolygons) {
+            const p = loadedPolygons[id];
+            if (p && p.isMarker && p.marker) {
+                try { p.marker.setOpacity(1.0); } catch (eOp) { }
+            } else if (p && p.polygon) {
+                const isU = (p.status === '未使用（返却）' || p.status === '未使用');
+                p.polygon.setOptions({ fillOpacity: isU ? 0.5 : 0.3, strokeOpacity: 1 });
+            }
+        }
+        try { google.maps.event.trigger(map, 'zoom_changed'); } catch (eZ) { }
+        return;
+    }
+
     const validSignIds = [];
     (window.pdlMachines || []).forEach(m => { if (m.fuel && m.fuel.includes('軽油')) { if (m.signId) validSignIds.push(String(m.signId).trim().toLowerCase()); if (m.currentLocId) validSignIds.push(String(m.currentLocId).trim().toLowerCase()); } });
     for (let id in loadedPolygons) {

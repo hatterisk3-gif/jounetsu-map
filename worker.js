@@ -36845,13 +36845,6 @@ window.openWorkerSignRegModal_ = () => {
   const locOpts = ['<option value="">-- 拠点を選択 (任意) --</option>'].concat(
     locList.map(l => `<option value="${String(l).replace(/"/g, '&quot;')}">${String(l).replace(/</g, '&lt;')}</option>`)
   ).join('');
-  const candidateParents = (window.SignGroup && typeof window.SignGroup.getCandidateParents === 'function')
-    ? window.SignGroup.getCandidateParents('', loadedPolygons)
-    : [];
-  const parentOpts = ['<option value="">なし（単独・大看板）</option>'].concat(
-    candidateParents.map(cp => `<option value="${String(cp.id).replace(/"/g, '&quot;')}">${String(cp.name).replace(/</g, '&lt;')}</option>`)
-  ).join('');
-
   modalBody.innerHTML = `
     <div id="workerSignQuickScreen">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
@@ -36904,9 +36897,7 @@ window.openWorkerSignRegModal_ = () => {
         <option value="location_pin">📍 位置ピン（常時表示ラベル）</option>
       </select>
       <select id="worker_new_sign_loc" class="form-select" style="margin-bottom:8px;">${locOpts}</select>
-      <label style="font-size:12px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">束ねる大看板（親看板）:</label>
-      <select id="worker_new_sign_parent" class="form-select" style="margin-bottom:4px;">${parentOpts}</select>
-      <div style="font-size:11px; color:#666; margin:0 0 8px; line-height:1.4;">大看板を選ぶと小看板として束ねられます。単独のままなら大看板候補になります。</div>
+      <div style="font-size:11px; color:#666; background:#F3E5F5; border-radius:8px; padding:8px; margin:0 0 8px; line-height:1.4;">登録後に「大・小看板の設定」から大看板にして、束ねる小看板を選べます。</div>
       <div style="margin:8px 0;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
           <label style="font-size:12px; font-weight:bold; color:#555;">アイコンを選択:</label>
@@ -36941,17 +36932,16 @@ window.saveWorkerNewSignboard_ = () => {
   const name = (document.getElementById('worker_new_sign_name')?.value || '').trim();
   const loc = document.getElementById('worker_new_sign_loc')?.value || '';
   const signFunc = document.getElementById('worker_new_sign_func')?.value || '';
-  const parentSignId = document.getElementById('worker_new_sign_parent')?.value || '';
   const fileInput = document.getElementById('worker_new_sign_photo');
   const files = fileInput && fileInput.files ? Array.from(fileInput.files) : [];
   if (!name) {
     if (typeof customAlert === 'function') customAlert('看板名を入力してください');
     return;
   }
-  window.executeSaveWorkerSignboard_(name, loc, window._workerSignSelectedIcon || '🚩', files, signFunc, parentSignId);
+  window.executeSaveWorkerSignboard_(name, loc, window._workerSignSelectedIcon || '🚩', files, signFunc);
 };
 
-window.executeSaveWorkerSignboard_ = async (name, loc, icon, files, signFunc, parentSignId) => {
+window.executeSaveWorkerSignboard_ = async (name, loc, icon, files, signFunc) => {
   if (!window._workerTempMarker) {
     if (typeof customAlert === 'function') customAlert('看板の位置が選択されていません');
     return;
@@ -36973,12 +36963,11 @@ window.executeSaveWorkerSignboard_ = async (name, loc, icon, files, signFunc, pa
     }
   }
   const sf = signFunc !== undefined ? String(signFunc || '').trim() : '';
-  const parentId = String(parentSignId || '').trim();
   const tempId = 'temp_sign_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
   const author = currentUser || localStorage.getItem('passionMapUserName') || '';
 
   createPolygonObject(tempId, finalName, [pos], icon, [], author, loc, '', 0, '稼働中', sf, []);
-  if (loadedPolygons[tempId]) loadedPolygons[tempId].parentSignId = parentId;
+  if (loadedPolygons[tempId]) loadedPolygons[tempId].parentSignId = '';
 
   window.cancelWorkerMapSelectReg_({ returnToMapSelect: true });
   window.selectNewlyRegisteredMapItem_(tempId);
@@ -36994,13 +36983,13 @@ window.executeSaveWorkerSignboard_ = async (name, loc, icon, files, signFunc, pa
       area: 0,
       status: '稼働中',
       signFunction: sf,
-      parentSignId: parentId
+      parentSignId: ''
     };
     const res = await callGAS('savePolygon', payload);
     const realId = (res && res.id) ? String(res.id) : tempId;
     if (res && res.id) {
       window.remapWorkerTempPolygonId_(tempId, realId);
-      if (loadedPolygons[realId]) loadedPolygons[realId].parentSignId = parentId;
+      if (loadedPolygons[realId]) loadedPolygons[realId].parentSignId = '';
     }
     if (window.SignGroup) window.SignGroup.refreshMarkers();
     if (files && files.length > 0 && typeof compressImage === 'function') {
@@ -37027,7 +37016,13 @@ window.executeSaveWorkerSignboard_ = async (name, loc, icon, files, signFunc, pa
   }
 };
 
-/** 既存看板の大・小看板設定（親看板の紐づけ） */
+window.toggleWorkerSignGroupRoleUI_ = () => {
+  const parentOn = !!(document.getElementById('worker_sign_role_parent') || {}).checked;
+  const box = document.getElementById('worker_sign_children_box');
+  if (box) box.style.display = parentOn ? 'block' : 'none';
+};
+
+/** 既存看板の大・小看板設定：大看板にする → 小看板を選ぶ */
 window.openWorkerSignGroupSettings_ = (id) => {
   const p = loadedPolygons[id];
   if (!p || !p.isMarker) return;
@@ -37036,18 +37031,29 @@ window.openWorkerSignGroupSettings_ = (id) => {
     return;
   }
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  const candidateParents = (window.SignGroup && typeof window.SignGroup.getCandidateParents === 'function')
-    ? window.SignGroup.getCandidateParents(id, loadedPolygons)
-    : [];
+  const safeId = String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const currentParentId = String(p.parentSignId || '').trim();
-  const parentOpts = ['<option value="">なし（単独・大看板）</option>'].concat(
-    candidateParents.map(cp => `<option value="${esc(cp.id)}" ${String(cp.id) === currentParentId ? 'selected' : ''}>${esc(cp.name)}</option>`)
-  ).join('');
-  const children = (window.SignGroup && typeof window.SignGroup.getChildren === 'function')
-    ? window.SignGroup.getChildren(id)
+  const parentPoly = currentParentId ? loadedPolygons[currentParentId] : null;
+  const isParentNow = !!(window.SignGroup && window.SignGroup.isParentSign(p));
+  const candidates = (window.SignGroup && typeof window.SignGroup.getCandidateChildren === 'function')
+    ? window.SignGroup.getCandidateChildren(id, loadedPolygons)
     : [];
-  const childNote = children.length
-    ? `<div style="background:#EDE7F6; color:#4A148C; border-radius:8px; padding:8px; margin-bottom:10px; font-size:12px; line-height:1.4;">この看板はすでに大看板です（小看板 ${children.length}件）。親を設定すると小看板側に移ります。</div>`
+  const selectedSet = {};
+  if (window.SignGroup) {
+    window.SignGroup.getChildren(id).forEach(ch => { selectedSet[String(ch.id)] = true; });
+  }
+  const childChecks = candidates.length
+    ? candidates.map(c => {
+      const checked = selectedSet[String(c.id)] ? ' checked' : '';
+      return `<label style="display:flex; align-items:center; gap:8px; padding:8px 6px; border-bottom:1px solid #f0f0f0; font-size:13px; cursor:pointer;">
+        <input type="checkbox" class="worker_sign_child_cb" value="${esc(c.id)}"${checked} style="width:18px; height:18px;">
+        <span>${esc(c.name)}</span>
+      </label>`;
+    }).join('')
+    : `<div style="padding:10px; color:#888; font-size:12px;">選べる看板がまだありません。先に他の看板を登録してください。</div>`;
+
+  const childNote = currentParentId
+    ? `<div style="background:#FFF3E0; color:#E65100; border-radius:8px; padding:8px; margin-bottom:10px; font-size:12px; line-height:1.4;">いまは「${esc(parentPoly ? parentPoly.name : currentParentId)}」の小看板です。大看板に切り替えると、その束ねから外れます。</div>`
     : '';
 
   try { if (infoWindow) infoWindow.close(); } catch (e) {}
@@ -37058,62 +37064,104 @@ window.openWorkerSignGroupSettings_ = (id) => {
     return;
   }
   modalBody.innerHTML = `
-    <div style="width:min(92vw,360px); box-sizing:border-box; padding:4px; color:#333;">
+    <div style="width:min(92vw,380px); box-sizing:border-box; padding:4px; color:#333;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
         <h3 style="margin:0; color:#6A1B9A; font-size:17px;">🪧 大・小看板の設定</h3>
         <button type="button" onclick="document.getElementById('modal').style.display='none'" style="background:#f5f5f5; border:1px solid #ccc; border-radius:50%; width:30px; height:30px; font-size:16px; font-weight:bold; cursor:pointer;">×</button>
       </div>
       <div style="font-size:13px; font-weight:bold; margin-bottom:8px;">対象: ${esc(p.name)}</div>
       ${childNote}
-      <label style="font-size:12px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">束ねる大看板（親看板）</label>
-      <select id="worker_sign_group_parent" class="form-select" style="margin-bottom:6px;">${parentOpts}</select>
-      <div style="font-size:11px; color:#666; line-height:1.45; margin-bottom:12px;">
-        親を選ぶとこの看板は小看板になり、普段は地図に出ません。大看板をタップすると展開されます。<br>
-        「なし」のままだと単独看板（他の小看板を束ねれば大看板）です。
+      <div style="font-size:12px; color:#555; line-height:1.45; margin-bottom:10px;">看板は基本そのまま。大看板にしたいときだけ設定し、束ねる小看板を選びます。</div>
+      <label style="display:flex; align-items:center; gap:10px; background:#EDE7F6; border:2px solid #7E57C2; border-radius:10px; padding:10px 12px; margin-bottom:10px; cursor:pointer;">
+        <input type="checkbox" id="worker_sign_role_parent" ${isParentNow ? 'checked' : ''} onchange="window.toggleWorkerSignGroupRoleUI_()" style="width:18px; height:18px;">
+        <span style="font-weight:bold; color:#4A148C; font-size:14px;">この看板を大看板にする</span>
+      </label>
+      <div id="worker_sign_children_box" style="display:${isParentNow ? 'block' : 'none'}; margin-bottom:12px;">
+        <div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:6px;">束ねる小看板を選択</div>
+        <div style="max-height:220px; overflow-y:auto; border:1px solid #ddd; border-radius:8px; background:#fafafa;">${childChecks}</div>
+        <div style="font-size:11px; color:#666; margin-top:6px; line-height:1.4;">選んだ小看板は普段ひかえめに非表示。大看板をタップすると展開されます。</div>
       </div>
-      <button type="button" onclick="window.saveWorkerSignGroupSettings_('${String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')" style="width:100%; background:#6A1B9A; color:#fff; border:none; padding:12px; border-radius:8px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">💾 保存する</button>
+      <button type="button" onclick="window.saveWorkerSignGroupSettings_('${safeId}')" style="width:100%; background:#6A1B9A; color:#fff; border:none; padding:12px; border-radius:8px; font-weight:bold; font-size:15px; cursor:pointer; margin-bottom:8px;">💾 保存する</button>
       <button type="button" onclick="document.getElementById('modal').style.display='none'" style="width:100%; background:#e0e0e0; color:#333; border:none; padding:10px; border-radius:8px; font-weight:bold; cursor:pointer;">キャンセル</button>
     </div>`;
   modal.style.display = 'flex';
 };
 
+window.applySignGroupChildrenLocally_ = (parentId, selectedIds) => {
+  const pid = String(parentId || '').trim();
+  const selected = new Set((selectedIds || []).map(String));
+  const changed = [];
+  const parent = loadedPolygons[pid];
+  if (parent && parent.isMarker && String(parent.parentSignId || '').trim()) {
+    parent.parentSignId = '';
+    changed.push(pid);
+  }
+  Object.keys(loadedPolygons || {}).forEach((id) => {
+    const p = loadedPolygons[id];
+    if (!p || !p.isMarker) return;
+    const sid = String(id);
+    if (sid === pid) return;
+    const prev = String(p.parentSignId || '').trim();
+    if (selected.has(sid)) {
+      if (prev !== pid) {
+        p.parentSignId = pid;
+        changed.push(sid);
+      }
+    } else if (prev === pid) {
+      p.parentSignId = '';
+      changed.push(sid);
+    }
+  });
+  return changed;
+};
+
 window.saveWorkerSignGroupSettings_ = async (id) => {
   const p = loadedPolygons[id];
   if (!p || !p.isMarker) return;
-  const parentEl = document.getElementById('worker_sign_group_parent');
-  let parentSignId = parentEl ? String(parentEl.value || '').trim() : '';
-  if (parentSignId === String(id)) parentSignId = '';
-  const prev = String(p.parentSignId || '').trim();
-  p.parentSignId = parentSignId;
+  const asParent = !!(document.getElementById('worker_sign_role_parent') || {}).checked;
+  const selectedIds = asParent
+    ? Array.from(document.querySelectorAll('.worker_sign_child_cb:checked')).map(el => String(el.value || '').trim()).filter(Boolean)
+    : [];
+  const prevSnapshot = {};
+  Object.keys(loadedPolygons || {}).forEach((sid) => {
+    const sp = loadedPolygons[sid];
+    if (sp && sp.isMarker) prevSnapshot[sid] = String(sp.parentSignId || '').trim();
+  });
+
+  const changedIds = window.applySignGroupChildrenLocally_(id, selectedIds);
   try {
     const modal = document.getElementById('modal');
     if (modal) modal.style.display = 'none';
   } catch (e) {}
   if (window.SignGroup) {
-    if (window.SignGroup.isExpandedParent(id) || window.SignGroup.isExpandedParent(prev)) {
-      window.SignGroup.collapse(map, loadedPolygons, updateMarkersVisibility);
-    } else {
-      window.SignGroup.refreshMarkers();
-    }
+    window.SignGroup.collapse(map, loadedPolygons, updateMarkersVisibility);
   }
+
+  const userName = currentUser || localStorage.getItem('passionMapUserName') || '';
   try {
-    await callGAS('updatePolygon', {
-      id: String(id),
-      name: p.name,
-      userName: currentUser || localStorage.getItem('passionMapUserName') || '',
-      parentSignId: parentSignId,
-      signFunction: p.signFunction || '',
-      location: p.location || '',
-      color: p.color || '',
-      coords: p.marker && typeof p.marker.getPosition === 'function'
-        ? JSON.stringify([{ lat: p.marker.getPosition().lat(), lng: p.marker.getPosition().lng() }])
-        : undefined
-    });
+    for (const sid of changedIds) {
+      const sp = loadedPolygons[sid];
+      if (!sp) continue;
+      await callGAS('updatePolygon', {
+        id: String(sid),
+        name: sp.name,
+        userName: userName,
+        parentSignId: String(sp.parentSignId || ''),
+        signFunction: sp.signFunction || '',
+        location: sp.location || '',
+        color: sp.color || ''
+      });
+    }
     if (typeof window.showRecordSyncToast === 'function') {
-      window.showRecordSyncToast(parentSignId ? '↳ 小看板として束ねました' : '🪧 単独／大看板として保存しました', 'ok');
+      const msg = asParent
+        ? (selectedIds.length ? `🪧 大看板に設定（小看板 ${selectedIds.length}件）` : '🪧 大看板に設定（小看板未選択）')
+        : '看板を単独表示に戻しました';
+      window.showRecordSyncToast(msg, 'ok');
     }
   } catch (err) {
-    p.parentSignId = prev;
+    Object.keys(prevSnapshot).forEach((sid) => {
+      if (loadedPolygons[sid]) loadedPolygons[sid].parentSignId = prevSnapshot[sid];
+    });
     if (window.SignGroup) window.SignGroup.refreshMarkers();
     if (typeof customAlert === 'function') customAlert('保存に失敗しました: ' + (err.message || err));
   }
