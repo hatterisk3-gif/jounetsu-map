@@ -7616,12 +7616,14 @@ function initMap() {
         rotateControl: false,
         cameraControl: false,
         zoomControl: false,
-        styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }]
+        // 店舗表示は map-filter.js 側で制御（ここでの固定非表示はしない）
+        // また styles は raster 地図でのみ有効
+        renderingType: (google.maps.RenderingType && google.maps.RenderingType.RASTER) || 'RASTER'
     });
 
     try {
+        // 引き延ばしタイルは登録描画時のみ使用。通常閲覧は hybrid のままにし Google 店舗を出せる状態を保つ
         map.mapTypes.set('hybrid_stretched', new StretchedMapType());
-        map.setMapTypeId('hybrid_stretched');
         map.setOptions({ maxZoom: 30 });
     } catch (e) {
         console.warn('StretchedMapType 登録スキップ:', e);
@@ -8596,6 +8598,9 @@ document.getElementById('btnViewMode').onclick = () => {
 
     setFudeVisibility(false);
     map.setOptions({ draggable: true, draggableCursor: null });
+    // 閲覧に戻ったら標準 hybrid に戻し、店舗フィルターを再適用
+    try { map.setMapTypeId('hybrid'); } catch (e) { /* ignore */ }
+    if (typeof window.refreshMapLayerFilter_ === 'function') window.refreshMapLayerFilter_();
 
     let legendDiv = document.getElementById('adminLegendUI');
     if (legendDiv) legendDiv.style.display = 'block';
@@ -10404,7 +10409,7 @@ window.openM = (id) => {
         h += `<div style="display:flex;gap:4px;margin-bottom:4px;width:100%;"><button onclick="openAttr('${id}')" style="flex:1;background:#FFF8E1;padding:8px 0;font-size:11px;border-radius:4px;color:#E65100;border:1px solid #FFB74D;white-space:nowrap;cursor:pointer;font-weight:bold;">拠点名を変更</button></div>`;
         h += `<div style="display:flex;gap:4px;width:100%;"><button onclick="actionEditShape('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">位置を移動</button><button onclick="actionDelete('${id}')" style="flex:1;background:#ffebee;color:red;padding:8px 0;font-size:11px;border-radius:4px;border:1px solid #f44336;white-space:nowrap;cursor:pointer;">削除</button></div></div>`;
     } else {
-        h += `<div style="display:flex;gap:4px;margin-bottom:4px;width:100%;"><button onclick="openAttr('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">情報変更</button><button onclick="openCol('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">アイコン変更</button></div>`;
+        h += `<div style="display:flex;gap:4px;margin-bottom:4px;width:100%;"><button onclick="openAttr('${id}')" style="flex:1;background:#EDE7F6;padding:8px 0;font-size:11px;border-radius:4px;color:#4A148C;border:1px solid #7E57C2;white-space:nowrap;cursor:pointer;font-weight:bold;">情報・大小看板</button><button onclick="openCol('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">アイコン変更</button></div>`;
         h += `<div style="display:flex;gap:4px;width:100%;"><button onclick="actionEditShape('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">範囲変更</button><button onclick="actionDelete('${id}')" style="flex:1;background:#ffebee;color:red;padding:8px 0;font-size:11px;border-radius:4px;border:1px solid #f44336;white-space:nowrap;cursor:pointer;">削除</button></div></div>`;
     }
     infoWindow.setContent(h); infoWindow.setPosition(p.isMarker ? p.marker.getPosition() : p.marker.getPosition()); infoWindow.open(map);

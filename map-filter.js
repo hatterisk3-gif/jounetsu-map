@@ -63,36 +63,74 @@
     return state[key] !== false;
   }
 
+  function isPoiManagedStyleRule_(s) {
+    if (!s || !s.featureType) return false;
+    var ft = String(s.featureType);
+    if (ft === 'poi' || ft.indexOf('poi.') === 0) return true;
+    if (ft === 'transit' && String(s.elementType || '') === 'labels.icon') return true;
+    return false;
+  }
+
+  function stylesWithoutPoiRules_(styles) {
+    if (!Array.isArray(styles)) return [];
+    return styles.filter(function (s) { return !isPoiManagedStyleRule_(s); });
+  }
+
   function captureBaselineStyles_(map) {
     if (!map || baselineStyles !== null) return;
     try {
       var opts = map.get('styles');
-      baselineStyles = Array.isArray(opts) ? opts.slice() : (opts || []);
+      var raw = Array.isArray(opts) ? opts.slice() : (opts || []);
+      // 店舗表示は本フィルターで制御するため、初期の poi 非表示指定は baseline から除外する
+      baselineStyles = stylesWithoutPoiRules_(raw);
     } catch (e) {
       baselineStyles = [];
     }
   }
 
+  function googlePoiOnStyles_() {
+    return stylesWithoutPoiRules_(baselineStyles || []);
+  }
+
   function googlePoiOffStyles_() {
-    return [
+    return stylesWithoutPoiRules_(baselineStyles || []).concat([
       { featureType: 'poi', stylers: [{ visibility: 'off' }] },
       { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
       { featureType: 'transit', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] }
-    ];
+    ]);
+  }
+
+  function ensureStyleableMapType_() {
+    if (!mapRef || typeof mapRef.getMapTypeId !== 'function') return;
+    // 登録描画中の引き延ばしタイルは維持（店舗フィルターより優先）
+    if (global.customDrawingMode) return;
+    try {
+      var id = String(mapRef.getMapTypeId() || '');
+      // カスタム衛星タイルには Google 店舗オーバーレイが載らないため標準 hybrid に戻す
+      if (id === 'hybrid_stretched' || id.indexOf('stretched') >= 0) {
+        mapRef.setMapTypeId('hybrid');
+        lastPoiApplied = null; // 地図種別変更後に styles を必ず再適用
+      }
+    } catch (e) { /* ignore */ }
   }
 
   function applyGooglePoiStyles_() {
     if (!mapRef || typeof mapRef.setOptions !== 'function') return;
     captureBaselineStyles_(mapRef);
+    ensureStyleableMapType_();
     var on = isLayerOn_('googlePoi');
     if (lastPoiApplied === on) return;
     lastPoiApplied = on;
+    var styles = on ? googlePoiOnStyles_() : googlePoiOffStyles_();
     try {
-      mapRef.setOptions({
-        styles: on ? (baselineStyles || []) : googlePoiOffStyles_(),
-        clickableIcons: on
-      });
-    } catch (e) { /* ignore */ }
+      // 端末によっては同一参照の差し替えが無視されるため、一度空にしてから適用
+      mapRef.setOptions({ styles: [], clickableIcons: on });
+      mapRef.setOptions({ styles: styles, clickableIcons: !!on });
+    } catch (e) {
+      try {
+        mapRef.setOptions({ styles: styles, clickableIcons: !!on });
+      } catch (e2) { /* ignore */ }
+    }
   }
 
   function setOverlayVisible_(overlay, visible) {

@@ -1357,7 +1357,8 @@ function initMap() {
     gestureHandling: 'greedy',
     disableDefaultUI: true,
     zoomControl: false,
-    styles: [{ featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] }]
+    // 店舗表示は map-filter.js 側で制御（ここでの固定非表示はしない）
+    renderingType: (google.maps.RenderingType && google.maps.RenderingType.RASTER) || 'RASTER'
   });
   window.map = map;
 

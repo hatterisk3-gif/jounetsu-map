@@ -106,6 +106,19 @@
     return info.hub || '拠点未設定';
   }
 
+  function isHubPin_(polyOrFunc) {
+    if (typeof window.isWorkerMaintHubPin_ === 'function') {
+      return !!window.isWorkerMaintHubPin_(polyOrFunc);
+    }
+    const func = (polyOrFunc && typeof polyOrFunc === 'object')
+      ? polyOrFunc.signFunction
+      : polyOrFunc;
+    if (typeof window.isLocationPinSign_ === 'function') {
+      return !!window.isLocationPinSign_(func);
+    }
+    return String(func || '').trim() === '拠点';
+  }
+
   function resolveLocAndSign_(m) {
     if (!m) {
       return {
@@ -121,26 +134,38 @@
     const polys = (typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons : (window.loadedPolygons || {});
     const baseSignId = String(m.signId || '').trim();
     const basePoly = (baseSignId && polys[baseSignId]) ? polys[baseSignId] : null;
+    const baseIsHubPin = isHubPin_(basePoly);
     const baseSignName = String(m.signName || (basePoly && basePoly.name) || '').trim();
 
     const curSignId = String(m.currentLocId || baseSignId || '').trim();
     const curPoly = (curSignId && polys[curSignId]) ? polys[curSignId] : null;
+    const curIsHubPin = isHubPin_(curPoly);
     const curSignName = String(m.currentLocName || (curPoly && curPoly.name) || baseSignName || '').trim();
 
+    // 拠点 = 徳島阿南などの拠点📍（看板名ではない）
     let hub = String(m.location || '').trim();
+    if (!hub && curIsHubPin) hub = String((curPoly && curPoly.name) || curSignName || '').trim();
+    if (!hub && baseIsHubPin) hub = String((basePoly && basePoly.name) || baseSignName || '').trim();
     if (!hub && curPoly && curPoly.location) hub = String(curPoly.location).trim();
     if (!hub && basePoly && basePoly.location) hub = String(basePoly.location).trim();
     if (!hub) hub = '拠点未設定';
 
-    const signGroup = curSignName || baseSignName || '看板未設定';
-    const isMoved = !!(baseSignName && curSignName && baseSignName !== curSignName);
+    // 拠点📍ピンは看板グループに入れない
+    const signGroup = (!curIsHubPin && curSignName)
+      ? curSignName
+      : ((!baseIsHubPin && baseSignName) ? baseSignName : '看板未設定');
+    const isMoved = !!(
+      baseSignName && curSignName
+      && baseSignName !== curSignName
+      && !(baseIsHubPin && curIsHubPin && baseSignName === curSignName)
+    );
     return {
       hub: hub,
       signGroup: signGroup,
       baseSignId: baseSignId,
-      baseSignName: baseSignName,
+      baseSignName: baseIsHubPin ? '' : baseSignName,
       curSignId: curSignId,
-      curSignName: curSignName,
+      curSignName: curIsHubPin ? '' : curSignName,
       isMoved: isMoved
     };
   }

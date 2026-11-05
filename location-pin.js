@@ -323,6 +323,11 @@
       }
     },
 
+    // 互換エイリアス（古い呼び出し側が SignGroup.refresh を使う場合）
+    refresh: function (optPolys) {
+      return SignGroup.refreshMarkers(optPolys);
+    },
+
     buildSignMarkerIcon: function (p, opts) {
       opts = opts || {};
       var isParent = opts.isParent !== undefined ? opts.isParent : SignGroup.isParentSign(p, opts.polys);
