@@ -15372,11 +15372,13 @@ const CROP_DEFAULT_CROPTYPES = {
 let _cpSimpleModeInitialized = false;
 window._cpSimpleSimResult = null;
 window._cpSimpleCropResults = {};
+let _cpSimpleSelectedCrops = ['キャベツ'];
 
 /** シンプルモードUIの初期化 */
 function initCpSimpleMode() {
     buildCpSimpleCropSelect_();
     buildCpSimpleMonthsGrid_();
+    if (typeof onCpSimpleWorkTimeChanged === 'function') onCpSimpleWorkTimeChanged();
     populateCpSimpleYearAndLocation_();
 
     // 圃場が選択されていれば上限面積に自動反映
@@ -15391,19 +15393,14 @@ function initCpSimpleMode() {
     // 基本設定の作物が既に選ばれていれば反映
     const currentCrop = (typeof getCpVal === 'function') ? getCpVal('cpCrop') : '';
     if (currentCrop) {
-        const sel = document.getElementById('cpSimpleCrop');
-        if (sel) {
-            sel.value = currentCrop;
-            onCpSimpleCropChanged(currentCrop);
-        }
+        _cpSimpleSelectedCrops = [currentCrop];
     } else {
-        // 未選択ならデフォルト「キャベツ」
-        const sel = document.getElementById('cpSimpleCrop');
-        if (sel && !sel.value) {
-            sel.value = 'キャベツ';
-            onCpSimpleCropChanged('キャベツ');
+        if (!_cpSimpleSelectedCrops || !_cpSimpleSelectedCrops.length) {
+            _cpSimpleSelectedCrops = ['キャベツ'];
         }
     }
+    renderCpSimpleSelectedCropsUI();
+    onCpSimpleSelectedCropsChanged();
 
     // 目標売上が空なら、例として年間600万円（月50万）をセットしてすぐにシミュレーションできる状態にする
     const anyFilled = checkAnyCpSimpleMonthFilled_();
@@ -15463,8 +15460,92 @@ function populateCpSimpleYearAndLocation_() {
             syncCpSimpleLocationToMain(locations[0]);
         }
     }
+
+    // 3. 地域（気候区分）の初期化・同期
+    const mainClimate = (typeof getCpVal === 'function' ? getCpVal('cpClimate') : '') || '';
+    if (mainClimate) {
+        setCpSimpleClimate(mainClimate);
+    } else {
+        const curLoc = (simpleLocSel && simpleLocSel.value) ? simpleLocSel.value : mainLoc;
+        const locClimates = (typeof getLocationClimates === 'function') ? getLocationClimates(curLoc) : [];
+        if (locClimates && locClimates.length) {
+            setCpSimpleClimate(locClimates[0]);
+        } else {
+            setCpSimpleClimate('中間地');
+        }
+    }
 }
 window.populateCpSimpleYearAndLocation_ = populateCpSimpleYearAndLocation_;
+
+const CP_CLIMATE_DESCRIPTIONS = {
+    '中間地': '🌱 関東・東海・近畿・瀬戸内等の標準作型（春・秋・冬）',
+    '暖地': '☀️ 九州・四国・太平洋沿岸等。春の早植え・越冬長期収穫が可能',
+    '冷涼地': '🏔️ 東北・長野・高冷地等。夏の冷涼を活かした夏秋どり中心（冬期露地なし）',
+    '寒冷地': '❄️ 北海道・積雪地等。春まき夏秋集中型（冬期作付けなし）'
+};
+
+function getCpSimpleClimate() {
+    const sel = document.getElementById('cpSimpleClimate');
+    const val = (sel ? sel.value : '') || '中間地';
+    if (val.includes('暖地') || val.includes('温暖地')) return '暖地';
+    if (val.includes('冷涼地') || val.includes('高冷地')) return '冷涼地';
+    if (val.includes('寒冷地')) return '寒冷地';
+    return '中間地';
+}
+window.getCpSimpleClimate = getCpSimpleClimate;
+
+function setCpSimpleClimate(climate) {
+    const raw = String(climate || '中間地').trim();
+    let norm = '中間地';
+    if (raw.includes('暖地') || raw.includes('温暖地')) norm = '暖地';
+    else if (raw.includes('冷涼地') || raw.includes('高冷地')) norm = '冷涼地';
+    else if (raw.includes('寒冷地')) norm = '寒冷地';
+
+    const sel = document.getElementById('cpSimpleClimate');
+    if (sel) {
+        sel.value = norm;
+    }
+
+    // チップボタンのアクティブ更新
+    ['中間地', '暖地', '冷涼地', '寒冷地'].forEach(c => {
+        const btn = document.getElementById('btnCpSimpleClimate_' + c);
+        if (btn) {
+            const isMatch = (c === norm);
+            btn.style.background = isMatch ? '#0284c7' : '#fff';
+            btn.style.color = isMatch ? '#fff' : '#0369a1';
+            btn.style.borderColor = isMatch ? '#0284c7' : '#cbd5e1';
+            btn.style.fontWeight = isMatch ? 'bold' : 'normal';
+        }
+    });
+
+    // 地域説明テキストの更新
+    const descEl = document.getElementById('cpSimpleClimateDesc');
+    if (descEl) {
+        descEl.textContent = CP_CLIMATE_DESCRIPTIONS[norm] || CP_CLIMATE_DESCRIPTIONS['中間地'];
+    }
+
+    // 通常モードの cpClimate と同期
+    if (typeof setChoiceValue === 'function') {
+        setChoiceValue('cpClimate', norm, true);
+    }
+    const mainClimateSel = document.getElementById('cpClimate');
+    if (mainClimateSel && mainClimateSel.value !== norm) {
+        mainClimateSel.value = norm;
+    }
+    if (typeof refreshCpHeaderContextBar === 'function') refreshCpHeaderContextBar();
+
+    onCpSimpleSelectedCropsChanged();
+}
+window.setCpSimpleClimate = setCpSimpleClimate;
+
+function onCpSimpleClimateChanged(val) {
+    setCpSimpleClimate(val);
+    // 既存シミュレーション結果があれば、地域に応じた作型で自動再計算
+    if (window._cpSimpleCropResults && Object.keys(window._cpSimpleCropResults).length > 0) {
+        runCpSimpleSimulation();
+    }
+}
+window.onCpSimpleClimateChanged = onCpSimpleClimateChanged;
 
 function syncCpSimpleYearToMain(val) {
     if (typeof setChoiceValue === 'function') {
@@ -15488,26 +15569,247 @@ function syncCpSimpleLocationToMain(val) {
 }
 window.syncCpSimpleLocationToMain = syncCpSimpleLocationToMain;
 
-/** 作物セレクトリストの構築 */
-function buildCpSimpleCropSelect_() {
-    const sel = document.getElementById('cpSimpleCrop');
-    if (!sel || sel.options.length > 2) return;
+/** 選択中の品目リスト取得 */
+function getCpSimpleSelectedCrops() {
+    if (!Array.isArray(_cpSimpleSelectedCrops)) _cpSimpleSelectedCrops = [];
+    return _cpSimpleSelectedCrops.map(c => String(c).trim()).filter(Boolean);
+}
+window.getCpSimpleSelectedCrops = getCpSimpleSelectedCrops;
 
-    const set = new Set();
-    // 1. cpMasterData から取得
-    if (typeof cpMasterData !== 'undefined' && cpMasterData && cpMasterData.crops) {
-        Object.keys(cpMasterData.crops).forEach(c => { if (c) set.add(String(c).trim()); });
+/** 品目を追加 */
+function addCpSimpleCrop(crop) {
+    if (!crop) return;
+    const c = String(crop).trim();
+    if (!c) return;
+    if (!Array.isArray(_cpSimpleSelectedCrops)) _cpSimpleSelectedCrops = [];
+    if (!_cpSimpleSelectedCrops.includes(c)) {
+        _cpSimpleSelectedCrops.push(c);
     }
-    // 2. 内蔵ベンチマークから取得
-    Object.keys(CROP_DEFAULT_BENCHMARKS).forEach(c => set.add(c));
+    renderCpSimpleSelectedCropsUI();
+    onCpSimpleSelectedCropsChanged();
+}
+window.addCpSimpleCrop = addCpSimpleCrop;
 
-    const list = Array.from(set).sort((a, b) => a.localeCompare(b, 'ja'));
-    let html = '<option value="">作物名を選択してください</option>';
-    list.forEach(c => {
-        html += '<option value="' + escCpSimple(c) + '">' + escCpSimple(c) + '</option>';
-    });
-    html += '<option value="custom">＋ 手入力（その他）</option>';
-    sel.innerHTML = html;
+/** 品目を解除 */
+function removeCpSimpleCrop(crop) {
+    const c = String(crop).trim();
+    if (!Array.isArray(_cpSimpleSelectedCrops)) _cpSimpleSelectedCrops = [];
+    _cpSimpleSelectedCrops = _cpSimpleSelectedCrops.filter(item => item !== c);
+    renderCpSimpleSelectedCropsUI();
+    // もし右側のシミュレーション結果にこの作物があれば除外して再描画
+    if (window._cpSimpleCropResults && window._cpSimpleCropResults[c]) {
+        delete window._cpSimpleCropResults[c];
+        refreshCpSimpleResultsView();
+    }
+    onCpSimpleSelectedCropsChanged();
+}
+window.removeCpSimpleCrop = removeCpSimpleCrop;
+
+/** 品目の選択/解除トグル */
+function toggleCpSimpleCrop(crop) {
+    const c = String(crop).trim();
+    if (!Array.isArray(_cpSimpleSelectedCrops)) _cpSimpleSelectedCrops = [];
+    if (_cpSimpleSelectedCrops.includes(c)) {
+        removeCpSimpleCrop(c);
+    } else {
+        addCpSimpleCrop(c);
+    }
+}
+window.toggleCpSimpleCrop = toggleCpSimpleCrop;
+
+/** 全品目を解除 */
+function clearAllCpSimpleSelectedCrops() {
+    _cpSimpleSelectedCrops = [];
+    renderCpSimpleSelectedCropsUI();
+    if (window._cpSimpleCropResults) {
+        window._cpSimpleCropResults = {};
+        refreshCpSimpleResultsView();
+    }
+    onCpSimpleSelectedCropsChanged();
+}
+window.clearAllCpSimpleSelectedCrops = clearAllCpSimpleSelectedCrops;
+
+/** 選択中品目UIの描画 */
+function renderCpSimpleSelectedCropsUI() {
+    const area = document.getElementById('cpSimpleSelectedCropsArea');
+    const countBadge = document.getElementById('cpSimpleSelectedCropCount');
+    const crops = getCpSimpleSelectedCrops();
+
+    if (countBadge) {
+        countBadge.textContent = crops.length + '品目選択中';
+        countBadge.style.background = crops.length ? '#f3e5f5' : '#ffebee';
+        countBadge.style.color = crops.length ? '#7b1fa2' : '#c62828';
+        countBadge.style.borderColor = crops.length ? '#ce93d8' : '#ef9a9a';
+    }
+
+    if (area) {
+        if (!crops.length) {
+            area.innerHTML = '<span style="font-size:12px; color:#999; font-style:italic;">品目が選択されていません。下のクイックチップまたは一覧から選択してください。</span>';
+        } else {
+            let html = '';
+            crops.forEach(c => {
+                const icon = (typeof getCpCropIcon === 'function') ? getCpCropIcon(c) : '🌱';
+                html += `
+                  <span style="display:inline-flex; align-items:center; gap:4px; background:#fff; border:1px solid #ba68c8; color:#4a148c; padding:3px 8px; border-radius:16px; font-size:12px; font-weight:bold; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+                    <span>${icon}</span>
+                    <span>${escCpSimple(c)}</span>
+                    <button type="button" onclick="removeCpSimpleCrop('${escCpSimple(c)}')" style="background:none; border:none; color:#c62828; cursor:pointer; font-size:13px; line-height:1; padding:0 2px; margin-left:2px; font-weight:bold;" title="${escCpSimple(c)}を解除">✕</button>
+                  </span>
+                `;
+            });
+            area.innerHTML = html;
+        }
+    }
+
+    // クイックチップのボタンスタイル更新
+    const quickContainer = document.getElementById('cpSimpleQuickCropChips');
+    if (quickContainer) {
+        quickContainer.querySelectorAll('button[data-crop]').forEach(btn => {
+            const cropName = btn.getAttribute('data-crop');
+            const isSelected = crops.includes(cropName);
+            if (isSelected) {
+                btn.style.background = '#8e24aa';
+                btn.style.color = '#fff';
+                btn.style.borderColor = '#6a1b9a';
+                btn.style.fontWeight = 'bold';
+            } else {
+                btn.style.background = '#fff';
+                btn.style.color = '#444';
+                btn.style.borderColor = '#ddd';
+                btn.style.fontWeight = 'normal';
+            }
+        });
+    }
+
+    // 互換用 hidden select
+    const sel = document.getElementById('cpSimpleCrop');
+    if (sel) {
+        sel.value = crops.length ? crops[0] : '';
+    }
+}
+window.renderCpSimpleSelectedCropsUI = renderCpSimpleSelectedCropsUI;
+
+/** 作物選択変更時のパラメータ自動更新・ヒント表示 */
+function onCpSimpleSelectedCropsChanged() {
+    const crops = getCpSimpleSelectedCrops();
+    const hintEl = document.getElementById('cpSimpleCropHint');
+
+    if (!crops.length) {
+        if (hintEl) {
+            hintEl.innerHTML = '品目を1つ以上選択してください。';
+            hintEl.style.color = '#c62828';
+        }
+        onCpSimpleParamChange();
+        return;
+    }
+
+    const climate = (typeof getCpSimpleClimate === 'function') ? getCpSimpleClimate() : '中間地';
+
+    if (crops.length === 1) {
+        const crop = crops[0];
+        const bm = CROP_DEFAULT_BENCHMARKS[crop] || { price: 150, yieldPer10a: 2500, hoursPer10a: 70 };
+        const priceInp = document.getElementById('cpSimplePrice');
+        const yieldInp = document.getElementById('cpSimpleYieldPer10a');
+        const hoursInp = document.getElementById('cpSimpleHoursPer10a');
+        if (priceInp) priceInp.value = bm.price;
+        if (yieldInp) yieldInp.value = bm.yieldPer10a;
+        if (hoursInp) hoursInp.value = bm.hoursPer10a;
+
+        const dbTypes = getCpMasterCroptypesFor_(crop, climate);
+        const defaultTypes = (typeof adaptCroptypesForClimate_ === 'function')
+            ? adaptCroptypesForClimate_(CROP_DEFAULT_CROPTYPES[crop] || [], crop, climate)
+            : (CROP_DEFAULT_CROPTYPES[crop] || []);
+
+        if (hintEl) {
+            if (dbTypes.length) {
+                hintEl.innerHTML = `✨ <b>${escCpSimple(crop)}</b>（地域: <b>${climate}</b>）: 登録済み作型マスタから <b>${dbTypes.length}作型</b> を検出しました（優先使用）`;
+                hintEl.style.color = '#2e7d32';
+            } else if (defaultTypes.length) {
+                hintEl.innerHTML = `💡 <b>${escCpSimple(crop)}</b>（地域: <b>${climate}</b>）: 内蔵作型ライブラリから <b>${defaultTypes.length}作型</b>（${climate}向け）を利用可能です`;
+                hintEl.style.color = '#1565c0';
+            } else {
+                hintEl.innerHTML = `<b>${escCpSimple(crop)}</b>（地域: <b>${climate}</b>）: ${climate}向けの標準作型パターンを自動生成してシミュレーションします`;
+                hintEl.style.color = '#795548';
+            }
+        }
+    } else {
+        if (hintEl) {
+            hintEl.innerHTML = `✨ <b>${crops.length}品目</b>（${crops.map(escCpSimple).join('・')}）× 地域【<b>${climate}</b>】。各品目の${climate}収穫期に合わせて売上・面積・作業時間をリレー配分します。`;
+            hintEl.style.color = '#4a148c';
+        }
+    }
+
+    onCpSimpleParamChange();
+}
+window.onCpSimpleSelectedCropsChanged = onCpSimpleSelectedCropsChanged;
+
+/** ドロップダウンセレクトから品目を追加 */
+function onCpSimpleCropSelectAdd(val) {
+    if (!val) return;
+    if (val === 'custom') {
+        const wrap = document.getElementById('cpSimpleCropCustomWrap');
+        if (wrap) wrap.style.display = 'flex';
+        const inp = document.getElementById('cpSimpleCropCustom');
+        if (inp) inp.focus();
+        return;
+    }
+    addCpSimpleCrop(val);
+    const sel = document.getElementById('cpSimpleCropSelectAdd');
+    if (sel) sel.value = '';
+}
+window.onCpSimpleCropSelectAdd = onCpSimpleCropSelectAdd;
+
+/** 手入力品目の追加 */
+function addCpSimpleCropCustom() {
+    const inp = document.getElementById('cpSimpleCropCustom');
+    const val = (inp && inp.value) ? inp.value.trim() : '';
+    if (val) {
+        addCpSimpleCrop(val);
+        inp.value = '';
+        const wrap = document.getElementById('cpSimpleCropCustomWrap');
+        if (wrap) wrap.style.display = 'none';
+        const sel = document.getElementById('cpSimpleCropSelectAdd');
+        if (sel) sel.value = '';
+    }
+}
+window.addCpSimpleCropCustom = addCpSimpleCropCustom;
+
+/** 作物選択UIの構築（クイックチップ ＋ 追加ドロップダウン） */
+function buildCpSimpleCropSelect_() {
+    // 1. 主要野菜クイックチップ
+    const quickContainer = document.getElementById('cpSimpleQuickCropChips');
+    if (quickContainer && !quickContainer.children.length) {
+        const QUICK_CROPS = [
+            'キャベツ', 'ブロッコリー', 'ネギ', 'レタス', 'トマト', 'キュウリ',
+            'ナス', 'トウモロコシ', 'ダイコン', 'ニンジン', 'ピーマン', 'エダマメ', 'ホウレンソウ'
+        ];
+        let chipsHtml = '';
+        QUICK_CROPS.forEach(crop => {
+            const icon = (typeof getCpCropIcon === 'function') ? getCpCropIcon(crop) : '🌱';
+            chipsHtml += `<button type="button" data-crop="${escCpSimple(crop)}" class="cp-chip-btn" onclick="toggleCpSimpleCrop('${escCpSimple(crop)}')" style="display:inline-flex; align-items:center; gap:3px; padding:3px 8px; font-size:11px; border-radius:14px; cursor:pointer;"><span>${icon}</span><span>${escCpSimple(crop)}</span></button>`;
+        });
+        quickContainer.innerHTML = chipsHtml;
+    }
+
+    // 2. ドロップダウンセレクトの構築
+    const addSel = document.getElementById('cpSimpleCropSelectAdd');
+    if (addSel && addSel.options.length <= 1) {
+        const set = new Set();
+        if (typeof cpMasterData !== 'undefined' && cpMasterData && cpMasterData.crops) {
+            Object.keys(cpMasterData.crops).forEach(c => { if (c) set.add(String(c).trim()); });
+        }
+        Object.keys(CROP_DEFAULT_BENCHMARKS).forEach(c => set.add(c));
+
+        const list = Array.from(set).sort((a, b) => a.localeCompare(b, 'ja'));
+        let html = '<option value="">＋ その他の品目を一覧から追加...</option>';
+        list.forEach(c => {
+            html += `<option value="${escCpSimple(c)}">${escCpSimple(c)}</option>`;
+        });
+        html += '<option value="custom">＋ 手入力（その他）</option>';
+        addSel.innerHTML = html;
+    }
+
+    renderCpSimpleSelectedCropsUI();
 }
 
 /** 12ヶ月グリッドの構築 */
@@ -15545,54 +15847,17 @@ function escCpSimple(s) {
         .replace(/"/g, '&quot;');
 }
 
-/** 作物選択時のハンドラ */
+/** 互換用: 単一作物の変更ハンドラ */
 function onCpSimpleCropChanged(cropVal) {
-    const customInp = document.getElementById('cpSimpleCropCustom');
-    const hintEl = document.getElementById('cpSimpleCropHint');
-    const isCustom = cropVal === 'custom';
-    if (customInp) customInp.style.display = isCustom ? 'block' : 'none';
-
-    const actualCrop = isCustom ? (customInp ? customInp.value : '') : cropVal;
-    if (!actualCrop) return;
-
-    // ベンチマーク値の自動補完
-    const bm = CROP_DEFAULT_BENCHMARKS[actualCrop] || {
-        price: 150,
-        yieldPer10a: 2500,
-        hoursPer10a: 70
-    };
-
-    const priceInp = document.getElementById('cpSimplePrice');
-    const yieldInp = document.getElementById('cpSimpleYieldPer10a');
-    const hoursInp = document.getElementById('cpSimpleHoursPer10a');
-
-    if (priceInp) priceInp.value = bm.price;
-    if (yieldInp) yieldInp.value = bm.yieldPer10a;
-    if (hoursInp) hoursInp.value = bm.hoursPer10a;
-
-    // 作型マスタの有無チェック
-    const dbTypes = getCpMasterCroptypesFor_(actualCrop);
-    const defaultTypes = CROP_DEFAULT_CROPTYPES[actualCrop] || [];
-
-    if (hintEl) {
-        if (dbTypes.length) {
-            hintEl.innerHTML = '✨ 登録済み作型マスタから <b>' + dbTypes.length + '作型</b> を検出しました（優先使用）';
-            hintEl.style.color = '#2e7d32';
-        } else if (defaultTypes.length) {
-            hintEl.innerHTML = '💡 内蔵作型ライブラリから <b>' + defaultTypes.length + '作型</b>（春作・秋作など）を利用可能です';
-            hintEl.style.color = '#1565c0';
-        } else {
-            hintEl.innerHTML = '標準作型パターン（春・夏秋）を自動生成してシミュレーションします';
-            hintEl.style.color = '#795548';
-        }
-    }
-
-    onCpSimpleParamChange();
+    if (!cropVal) return;
+    _cpSimpleSelectedCrops = [cropVal];
+    renderCpSimpleSelectedCropsUI();
+    onCpSimpleSelectedCropsChanged();
 }
 window.onCpSimpleCropChanged = onCpSimpleCropChanged;
 
 function onCpSimpleCropCustomInput(val) {
-    onCpSimpleCropChanged('custom');
+    if (val) addCpSimpleCrop(val);
 }
 window.onCpSimpleCropCustomInput = onCpSimpleCropCustomInput;
 
@@ -15640,20 +15905,51 @@ function applyCpSimpleSalesDistribution(mode) {
     }
 
     if (mode === 'season') {
-        // 作物の収穫適期にウェイトを配分
+        // 選択中の全作物の収穫適期（選択された地域に応じた適期）にウェイトを配分
+        const crops = getCpSimpleSelectedCrops();
+        const climate = (typeof getCpSimpleClimate === 'function') ? getCpSimpleClimate() : '中間地';
         const weights = new Array(12).fill(1);
-        const types = getCpMasterCroptypesFor_(crop).concat(CROP_DEFAULT_CROPTYPES[crop] || []);
-        if (types.length) {
-            types.forEach(t => {
-                const ms = t.months || [];
-                ms.forEach(m => {
-                    const idx = (Number(m) % 12 + 12) % 12;
-                    weights[idx] += 4; // 収穫期に高い重み
-                });
+        if (crops.length) {
+            crops.forEach(crop => {
+                const masterTypes = getCpMasterCroptypesFor_(crop, climate);
+                let types = [];
+                if (masterTypes.length) {
+                    types = masterTypes.map(t => {
+                        const hCells = t.harvesting || [];
+                        const months = [];
+                        hCells.forEach(cell => {
+                            const flat = (typeof cell === 'object') ? (cell.flatIndex != null ? cell.flatIndex : (cell.monthIndex * 6 + cell.periodIndex)) : Number(cell);
+                            const m = Math.floor(flat / 6) % 12;
+                            if (!months.includes(m)) months.push(m);
+                        });
+                        return { months: months };
+                    });
+                } else {
+                    const rawTypes = CROP_DEFAULT_CROPTYPES[crop] || [];
+                    types = adaptCroptypesForClimate_(rawTypes, crop, climate);
+                }
+
+                if (types.length) {
+                    types.forEach(t => {
+                        const ms = t.months || [];
+                        ms.forEach(m => {
+                            const idx = (Number(m) % 12 + 12) % 12;
+                            weights[idx] += 4; // 収穫期に高い重み
+                        });
+                    });
+                }
             });
-        } else {
-            // 一般的旬: 5〜7月、10〜12月に重み
-            [4, 5, 6, 9, 10, 11].forEach(m => { weights[m] += 3; });
+        }
+        // もしどの作型にもマッチしなかった場合のフォールバック（地域別）
+        const maxW = Math.max(...weights);
+        if (maxW === 1) {
+            if (climate === '暖地') {
+                [3, 4, 5, 10, 11, 0, 1].forEach(m => { weights[m] += 3; });
+            } else if (climate === '冷涼地' || climate === '寒冷地') {
+                [6, 7, 8, 9].forEach(m => { weights[m] += 4; });
+            } else {
+                [4, 5, 6, 9, 10, 11].forEach(m => { weights[m] += 3; });
+            }
         }
 
         const totalW = weights.reduce((a, b) => a + b, 0);
@@ -15676,14 +15972,38 @@ function setCpSimpleMaxArea(a) {
 }
 window.setCpSimpleMaxArea = setCpSimpleMaxArea;
 
-function onCpSimpleStaffCountChanged(staff) {
-    const s = parseFloat(staff) || 1;
-    const hours = Math.round(s * 160);
-    const inp = document.getElementById('cpSimpleMaxWorkHours');
-    if (inp) {
-        inp.value = hours;
-        onCpSimpleParamChange();
+/** 1日あたり作業時間 × 月稼働日数 × 人数 から月間上限作業時間を算出 */
+function getCpSimpleWorkTimeInputs_() {
+    const daily = parseFloat((document.getElementById('cpSimpleDailyHours') || {}).value) || 8;
+    const days = parseFloat((document.getElementById('cpSimpleWorkDays') || {}).value) || 20;
+    const staff = parseFloat((document.getElementById('cpSimpleStaffCount') || {}).value) || 1;
+    return { daily: daily, days: days, staff: staff, monthly: Math.round(daily * days * staff * 10) / 10 };
+}
+
+function onCpSimpleWorkTimeChanged() {
+    const w = getCpSimpleWorkTimeInputs_();
+    const hidden = document.getElementById('cpSimpleMaxWorkHours');
+    if (hidden) hidden.value = w.monthly;
+    const hint = document.getElementById('cpSimpleMonthlyHoursHint');
+    if (hint) {
+        hint.textContent = '→ 月間上限 ' + w.monthly.toLocaleString() + 'h（' + w.daily + 'h × ' + w.days + '日 × ' + w.staff + '人）';
     }
+    onCpSimpleParamChange();
+}
+window.onCpSimpleWorkTimeChanged = onCpSimpleWorkTimeChanged;
+
+function setCpSimpleDailyHours(h) {
+    const inp = document.getElementById('cpSimpleDailyHours');
+    if (inp) inp.value = h;
+    onCpSimpleWorkTimeChanged();
+}
+window.setCpSimpleDailyHours = setCpSimpleDailyHours;
+
+/** 互換用: 人数のみ変更 */
+function onCpSimpleStaffCountChanged(staff) {
+    const inp = document.getElementById('cpSimpleStaffCount');
+    if (inp) inp.value = parseFloat(staff) || 1;
+    onCpSimpleWorkTimeChanged();
 }
 window.onCpSimpleStaffCountChanged = onCpSimpleStaffCountChanged;
 
@@ -15698,15 +16018,18 @@ window.onCpSimpleParamChange = onCpSimpleParamChange;
 
 function resetCpSimpleModeForm() {
     if (!confirm('シンプルモードの入力をリセットしますか？')) return;
-    const sel = document.getElementById('cpSimpleCrop');
-    if (sel) sel.value = 'キャベツ';
-    onCpSimpleCropChanged('キャベツ');
+    _cpSimpleSelectedCrops = ['キャベツ'];
+    renderCpSimpleSelectedCropsUI();
+    setCpSimpleClimate('中間地');
+    onCpSimpleSelectedCropsChanged();
     const annInp = document.getElementById('cpSimpleAnnualInput');
     if (annInp) annInp.value = '600';
     applyCpSimpleSalesDistribution('season');
     setCpSimpleMaxArea(100);
-    const staffSel = document.getElementById('cpSimpleStaffCount');
-    if (staffSel) staffSel.value = '1';
+    const dailyInp = document.getElementById('cpSimpleDailyHours');
+    if (dailyInp) dailyInp.value = '8';
+    const daysInp = document.getElementById('cpSimpleWorkDays');
+    if (daysInp) daysInp.value = '20';
     onCpSimpleStaffCountChanged('1');
     const resContainer = document.getElementById('cpSimpleResultContainer');
     const placeholder = document.getElementById('cpSimpleResultPlaceholder');
@@ -15718,41 +16041,134 @@ function resetCpSimpleModeForm() {
 window.resetCpSimpleModeForm = resetCpSimpleModeForm;
 
 function getCpSimpleSelectedCrop_() {
-    const sel = document.getElementById('cpSimpleCrop');
-    if (!sel) return 'キャベツ';
-    if (sel.value === 'custom') {
-        const inp = document.getElementById('cpSimpleCropCustom');
-        return (inp && inp.value.trim()) ? inp.value.trim() : '主要野菜';
-    }
-    return sel.value || 'キャベツ';
+    const crops = getCpSimpleSelectedCrops();
+    return crops.length ? crops[0] : 'キャベツ';
 }
 
-function getCpMasterCroptypesFor_(crop) {
+/** 登録済みマスタから、作物名および地域（気候帯）に合致する作型を取得 */
+function getCpMasterCroptypesFor_(crop, climate) {
     if (!crop || typeof cpMasterData === 'undefined' || !cpMasterData || !Array.isArray(cpMasterData.croptypesDB)) {
         return [];
     }
     const c = String(crop).trim();
-    return cpMasterData.croptypesDB.filter(db => db && String(db.crop || '').trim() === c);
+    const clm = climate ? String(climate).trim() : '';
+
+    if (clm) {
+        const matched = cpMasterData.croptypesDB.filter(db => {
+            if (!db || String(db.crop || '').trim() !== c) return false;
+            const dbClm = String(db.climate || '').trim();
+            return dbClm && (dbClm === clm || dbClm.includes(clm) || clm.includes(dbClm));
+        });
+        if (matched.length > 0) return matched;
+    }
+
+    return cpMasterData.croptypesDB.filter(db => {
+        if (!db || String(db.crop || '').trim() !== c) return false;
+        const dbClm = String(db.climate || '').trim();
+        return !dbClm || dbClm === '全産地' || dbClm === '共通' || dbClm === '中間地';
+    });
+}
+
+/** セル配列から収穫月（0〜11）の重複なし配列を導出 */
+function recalcMonthsFromCells_(cells) {
+    const months = [];
+    (cells || []).forEach(cell => {
+        const flat = (typeof cell === 'object') ? (cell.flatIndex != null ? cell.flatIndex : (cell.monthIndex * 6 + cell.periodIndex)) : Number(cell);
+        const m = Math.floor(flat / 6) % 12;
+        if (!months.includes(m)) months.push(m);
+    });
+    return months.sort((a, b) => a - b);
+}
+
+/** 地域（気候区分）に応じた作型シフト・調整 */
+function adaptCroptypesForClimate_(croptypes, crop, climate) {
+    if (!Array.isArray(croptypes) || !croptypes.length) return [];
+    if (!climate || climate === '中間地') {
+        return JSON.parse(JSON.stringify(croptypes));
+    }
+
+    const res = [];
+    croptypes.forEach((cand, idx) => {
+        const copy = JSON.parse(JSON.stringify(cand));
+        const originalName = copy.name || (crop + '作型' + (idx + 1));
+        const originalSeason = copy.season || '';
+
+        if (climate === '暖地') {
+            // ☀️ 暖地: 春作は半月〜1ヶ月（3半旬）前倒し、秋冬作は冬〜早春まで収穫期間を延長
+            const isSpring = originalSeason.includes('春') || (copy.months && copy.months.some(m => [3, 4, 5, 6].includes(m)));
+            const isAutumnWinter = originalSeason.includes('秋') || originalSeason.includes('冬') || (copy.months && copy.months.some(m => [9, 10, 11, 0, 1].includes(m)));
+
+            if (isSpring) {
+                copy.sowing = (copy.sowing || []).map(i => (i - 3 + 72) % 72);
+                copy.planting = (copy.planting || []).map(i => (i - 3 + 72) % 72);
+                copy.harvesting = (copy.harvesting || []).map(i => (i - 3 + 72) % 72);
+                copy.months = recalcMonthsFromCells_(copy.harvesting);
+                copy.name = originalName.replace(/（.*）/, '') + '（暖地・早春まき）';
+            } else if (isAutumnWinter) {
+                const maxHarv = Math.max(...(copy.harvesting || [60]));
+                const ext = [];
+                for (let h = 1; h <= 6; h++) ext.push((maxHarv + h) % 72);
+                copy.harvesting = Array.from(new Set((copy.harvesting || []).concat(ext))).sort((a, b) => a - b);
+                copy.months = recalcMonthsFromCells_(copy.harvesting);
+                copy.name = originalName.replace(/（.*）/, '') + '（暖地・冬春長期どり）';
+            } else {
+                copy.name = originalName + '（暖地）';
+            }
+            res.push(copy);
+        } else if (climate === '冷涼地') {
+            // 🏔️ 冷涼地（高冷地）: 冬作（12〜3月収穫）は露地不可のため除外。春作は遅霜回避で1ヶ月（6半旬）遅らせて夏秋どりへシフト
+            const isPureWinter = (copy.months || []).length > 0 && (copy.months || []).every(m => [11, 0, 1, 2].includes(m));
+            if (isPureWinter) {
+                // 冬作の代わりに夏秋どり作型を生成
+                copy.sowing = [24, 25]; // 5月上旬
+                copy.planting = [30, 31]; // 6月上旬
+                copy.harvesting = [45, 46, 47, 48, 49]; // 8月中旬〜9月上旬
+                copy.months = recalcMonthsFromCells_(copy.harvesting);
+                copy.name = crop + '（高冷地・夏秋どり）';
+                copy.season = '夏秋作';
+            } else {
+                copy.sowing = (copy.sowing || []).map(i => (i + 6) % 72);
+                copy.planting = (copy.planting || []).map(i => (i + 6) % 72);
+                copy.harvesting = (copy.harvesting || []).map(i => (i + 6) % 72);
+                copy.months = recalcMonthsFromCells_(copy.harvesting);
+                copy.name = originalName.replace(/（.*）/, '') + '（冷涼地・夏秋）';
+            }
+            res.push(copy);
+        } else if (climate === '寒冷地') {
+            // ❄️ 寒冷地: 4〜5月播種、7〜9月収穫の集中作型
+            const isWinter = (copy.months || []).some(m => [11, 0, 1, 2, 3].includes(m));
+            if (!isWinter) {
+                copy.sowing = (copy.sowing || []).map(i => (i + 8) % 72);
+                copy.planting = (copy.planting || []).map(i => (i + 8) % 72);
+                copy.harvesting = (copy.harvesting || []).map(i => (i + 8) % 72);
+                copy.months = recalcMonthsFromCells_(copy.harvesting);
+                copy.name = originalName.replace(/（.*）/, '') + '（寒冷地作型）';
+                res.push(copy);
+            }
+        }
+    });
+
+    return res.length ? res : JSON.parse(JSON.stringify(croptypes));
 }
 
 /**
  * =============================================================================
- * 🚀 中核シミュレーション処理（理想作型・数値を導出）
+ * 🚀 中核シミュレーション処理（地域・複数品目対応・理想作型と数値を導出）
  * =============================================================================
  */
 function runCpSimpleSimulation() {
-    const crop = getCpSimpleSelectedCrop_();
-    if (!crop) {
-        alert('作物名を選択してください。');
+    const crops = getCpSimpleSelectedCrops();
+    if (!crops || !crops.length) {
+        alert('作物名を選択してください（複数選択可）。');
         return;
     }
 
+    const climate = (typeof getCpSimpleClimate === 'function') ? getCpSimpleClimate() : '中間地';
+
     // 1. 入力値の取得
     const maxArea = parseFloat((document.getElementById('cpSimpleMaxArea') || {}).value) || 100;
-    const maxWorkHours = parseFloat((document.getElementById('cpSimpleMaxWorkHours') || {}).value) || 160;
-    const price = parseFloat((document.getElementById('cpSimplePrice') || {}).value) || 150;
-    const yieldPer10a = parseFloat((document.getElementById('cpSimpleYieldPer10a') || {}).value) || 2500;
-    const hoursPer10a = parseFloat((document.getElementById('cpSimpleHoursPer10a') || {}).value) || 70;
+    const workTime = getCpSimpleWorkTimeInputs_();
+    const maxWorkHours = workTime.monthly || 160;
 
     // 月別目標売上（円）
     const monthlyTargets = [];
@@ -15770,222 +16186,258 @@ function runCpSimpleSimulation() {
         return;
     }
 
-    // 2. 作型候補の収集
-    let croptypeCandidates = [];
-    const dbTypes = getCpMasterCroptypesFor_(crop);
-    if (dbTypes.length) {
-        croptypeCandidates = dbTypes.map((t, idx) => {
-            const hCells = t.harvesting || [];
-            const pCells = t.planting || [];
-            const sCells = t.sowing || [];
-            const months = [];
-            hCells.forEach(cell => {
-                const flat = (typeof cell === 'object') ? (cell.flatIndex != null ? cell.flatIndex : (cell.monthIndex * 6 + cell.periodIndex)) : Number(cell);
-                const m = Math.floor(flat / 6) % 12;
-                if (!months.includes(m)) months.push(m);
+    // ★重要: 選んだ品目だけを右側に表示するため、結果オブジェクトを初期化
+    window._cpSimpleCropResults = {};
+
+    // 2. 各作物の地域別作型候補を収集
+    const cropCandidateMap = {};
+    crops.forEach(crop => {
+        let croptypeCandidates = [];
+        const dbTypes = getCpMasterCroptypesFor_(crop, climate);
+        if (dbTypes.length) {
+            croptypeCandidates = dbTypes.map((t, idx) => {
+                const hCells = t.harvesting || [];
+                const pCells = t.planting || [];
+                const sCells = t.sowing || [];
+                const months = recalcMonthsFromCells_(hCells);
+                const clmTag = t.climate ? `【${t.climate}】` : '';
+                return {
+                    name: (t.variety ? t.variety + clmTag + '（' + (t.season || 'マスタ作型') + '）' : (t.season || '作型' + (idx + 1))),
+                    variety: t.variety || (crop + (idx + 1)),
+                    season: t.season || '',
+                    sowing: sCells,
+                    planting: pCells,
+                    harvesting: hCells,
+                    months: months.length ? months : [5, 6]
+                };
             });
-            return {
-                name: (t.variety ? t.variety + '（' + (t.season || 'マスタ作型') + '）' : (t.season || '作型' + (idx + 1))),
-                variety: t.variety || (crop + (idx + 1)),
-                season: t.season || '',
-                sowing: sCells,
-                planting: pCells,
-                harvesting: hCells,
-                months: months.length ? months : [5, 6]
-            };
-        });
-    } else if (CROP_DEFAULT_CROPTYPES[crop] && CROP_DEFAULT_CROPTYPES[crop].length) {
-        croptypeCandidates = JSON.parse(JSON.stringify(CROP_DEFAULT_CROPTYPES[crop]));
-    } else {
-        // フォールバック作型
-        croptypeCandidates = [
-            {
-                name: crop + '（春まき初夏どり）',
-                variety: crop + '・春品種',
-                season: '春作',
-                sowing: [7, 8],
-                planting: [15, 16],
-                harvesting: [30, 31, 32, 33, 34],
-                months: [5, 6]
-            },
-            {
-                name: crop + '（夏まき秋冬どり）',
-                variety: crop + '・秋品種',
-                season: '秋作',
-                sowing: [40, 41],
-                planting: [47, 48],
-                harvesting: [60, 61, 62, 63, 64],
-                months: [10, 11]
-            }
-        ];
-    }
-
-    // 3. 各作型の収穫月と目標売上を照合し、必要収量・面積を逆算
-    const yieldPer1a = Math.max(1, yieldPer10a / 10);
-
-    const plannedCroptypes = [];
-    const monthlyForecastSales = new Array(12).fill(0);
-    const monthlyOccArea = new Array(12).fill(0);
-    const monthlyWorkHours = new Array(12).fill(0);
-
-    croptypeCandidates.forEach((cand, idx) => {
-        const ms = cand.months || [];
-        if (!ms.length) return;
-
-        // この作型が担当する月別目標売上
-        let coveredTargetSales = 0;
-        ms.forEach(m => {
-            coveredTargetSales += (monthlyTargets[m] || 0);
-        });
-
-        // 目標売上があれば作型を採用
-        let targetForThis = coveredTargetSales;
-        if (targetForThis <= 0 && annualTargetSum > 0 && croptypeCandidates.length === 1) {
-            targetForThis = annualTargetSum;
+        } else if (CROP_DEFAULT_CROPTYPES[crop] && CROP_DEFAULT_CROPTYPES[crop].length) {
+            croptypeCandidates = adaptCroptypesForClimate_(CROP_DEFAULT_CROPTYPES[crop], crop, climate);
+        } else {
+            // フォールバック作型（地域適応）
+            const baseFallback = [
+                {
+                    name: crop + '（春まき初夏どり）',
+                    variety: crop + '・春品種',
+                    season: '春作',
+                    sowing: [7, 8],
+                    planting: [15, 16],
+                    harvesting: [30, 31, 32, 33, 34],
+                    months: [5, 6]
+                },
+                {
+                    name: crop + '（夏まき秋冬どり）',
+                    variety: crop + '・秋品種',
+                    season: '秋作',
+                    sowing: [40, 41],
+                    planting: [47, 48],
+                    harvesting: [60, 61, 62, 63, 64],
+                    months: [10, 11]
+                }
+            ];
+            croptypeCandidates = adaptCroptypesForClimate_(baseFallback, crop, climate);
         }
-
-        const requiredYield = Math.max(0, Math.round(targetForThis / price));
-        const requiredAreaA = Math.max(0.1, Math.round((requiredYield / yieldPer1a) * 10) / 10);
-        const forecastSales = Math.round(requiredYield * price);
-
-        // トレイ枚数
-        const bm = CROP_DEFAULT_BENCHMARKS[crop] || { holes: 128 };
-        const holes = bm.holes || 128;
-        const trays = Math.max(1, Math.round((requiredYield / holes) * 1.15));
-
-        // 月ごとの収穫・売上配分
-        ms.forEach(m => {
-            const share = coveredTargetSales > 0 ? ((monthlyTargets[m] || 0) / coveredTargetSales) : (1 / ms.length);
-            monthlyForecastSales[m] += forecastSales * share;
-        });
-
-        // 圃場占有期間（定植月〜収穫終了月）
-        const pCells = cand.planting || [];
-        const hCells = cand.harvesting || [];
-        let plantMonth = 3; // デフォルト4月
-        let harvestEndMonth = 6; // デフォルト7月
-
-        if (pCells.length) {
-            const f = (typeof pCells[0] === 'object') ? pCells[0].flatIndex : Number(pCells[0]);
-            plantMonth = Math.floor(f / 6) % 12;
-        }
-        if (hCells.length) {
-            const f = (typeof hCells[hCells.length - 1] === 'object') ? hCells[hCells.length - 1].flatIndex : Number(hCells[hCells.length - 1]);
-            harvestEndMonth = Math.floor(f / 6) % 12;
-        }
-
-        // 圃場占有面積の加算
-        let curM = plantMonth;
-        for (let step = 0; step < 12; step++) {
-            monthlyOccArea[curM] += requiredAreaA;
-            if (curM === harvestEndMonth) break;
-            curM = (curM + 1) % 12;
-        }
-
-        // 作業工数の月別配分（播種10%、定植25%、管理25%、収穫40%）
-        const totalWorkHours = (requiredAreaA / 10) * hoursPer10a;
-        // 播種月
-        let sowMonth = (plantMonth - 1 + 12) % 12;
-        if (cand.sowing && cand.sowing.length) {
-            const f = (typeof cand.sowing[0] === 'object') ? cand.sowing[0].flatIndex : Number(cand.sowing[0]);
-            sowMonth = Math.floor(f / 6) % 12;
-        }
-        monthlyWorkHours[sowMonth] += totalWorkHours * 0.10;
-        monthlyWorkHours[plantMonth] += totalWorkHours * 0.25;
-
-        // 管理工数（占有月に均等配分）
-        let occMonthsCount = 0;
-        curM = plantMonth;
-        for (let step = 0; step < 12; step++) {
-            occMonthsCount++;
-            if (curM === harvestEndMonth) break;
-            curM = (curM + 1) % 12;
-        }
-        if (occMonthsCount > 0) {
-            const mgmtPerM = (totalWorkHours * 0.25) / occMonthsCount;
-            curM = plantMonth;
-            for (let step = 0; step < occMonthsCount; step++) {
-                monthlyWorkHours[curM] += mgmtPerM;
-                curM = (curM + 1) % 12;
-            }
-        }
-
-        // 収穫工数（収穫月に均等配分）
-        if (ms.length > 0) {
-            const harvPerM = (totalWorkHours * 0.40) / ms.length;
-            ms.forEach(m => {
-                monthlyWorkHours[m] += harvPerM;
-            });
-        }
-
-        plannedCroptypes.push({
-            name: cand.name,
-            variety: cand.variety || (crop + ' ' + (cand.season || '')),
-            season: cand.season || '',
-            areaA: requiredAreaA,
-            trays: trays,
-            yield: requiredYield,
-            forecastSales: forecastSales,
-            coveredTargetSales: coveredTargetSales,
-            sowing: cand.sowing,
-            planting: cand.planting,
-            harvesting: cand.harvesting,
-            months: ms,
-            plantMonth: plantMonth,
-            harvestEndMonth: harvestEndMonth
-        });
+        cropCandidateMap[crop] = croptypeCandidates;
     });
 
-    // 4. ピーク値と制約チェック
-    let peakOccArea = 0;
-    let peakWorkHours = 0;
-    let totalForecastSales = 0;
+    // 3. 各月ごとに、その月を収穫可能な選択作物のセットを判定し、月別目標売上をリレー分担
+    const monthlyCropTargets = {};
+    crops.forEach(c => { monthlyCropTargets[c] = new Array(12).fill(0); });
 
     for (let m = 0; m < 12; m++) {
-        monthlyOccArea[m] = Math.round(monthlyOccArea[m] * 10) / 10;
-        monthlyWorkHours[m] = Math.round(monthlyWorkHours[m] * 10) / 10;
-        monthlyForecastSales[m] = Math.round(monthlyForecastSales[m]);
-        if (monthlyOccArea[m] > peakOccArea) peakOccArea = monthlyOccArea[m];
-        if (monthlyWorkHours[m] > peakWorkHours) peakWorkHours = monthlyWorkHours[m];
-        totalForecastSales += monthlyForecastSales[m];
+        const targetForM = monthlyTargets[m] || 0;
+        if (targetForM <= 0) continue;
+
+        // この月 m に収穫できる作物を判定
+        const availableCropsForMonth = [];
+        crops.forEach(c => {
+            const cands = cropCandidateMap[c] || [];
+            const canHarvest = cands.some(cand => (cand.months || []).includes(m));
+            if (canHarvest) availableCropsForMonth.push(c);
+        });
+
+        if (availableCropsForMonth.length > 0) {
+            // 収穫可能な作物たちで等分配分
+            const share = targetForM / availableCropsForMonth.length;
+            availableCropsForMonth.forEach(c => {
+                monthlyCropTargets[c][m] += share;
+            });
+        } else {
+            // どの作物もこの月が適期でない場合: 全選択作物で等分
+            const share = targetForM / crops.length;
+            crops.forEach(c => {
+                monthlyCropTargets[c][m] += share;
+            });
+        }
     }
 
-    const areaOverMonths = [];
-    const workOverMonths = [];
-    for (let m = 0; m < 12; m++) {
-        if (monthlyOccArea[m] > maxArea) areaOverMonths.push(m + 1);
-        if (monthlyWorkHours[m] > maxWorkHours) workOverMonths.push(m + 1);
-    }
+    // 4. 各作物ごとにシミュレーション計算を実行
+    crops.forEach(crop => {
+        const croptypeCandidates = cropCandidateMap[crop] || [];
+        const cropMonthlyTargets = monthlyCropTargets[crop] || new Array(12).fill(0);
+        const cropAnnualTarget = cropMonthlyTargets.reduce((a, b) => a + b, 0);
 
-    const simResult = {
-        crop: crop,
-        maxArea: maxArea,
-        maxWorkHours: maxWorkHours,
-        price: price,
-        yieldPer10a: yieldPer10a,
-        hoursPer10a: hoursPer10a,
-        annualTargetSum: annualTargetSum,
-        totalForecastSales: totalForecastSales,
-        salesAchieveRate: Math.round((totalForecastSales / Math.max(1, annualTargetSum)) * 100),
-        peakOccArea: peakOccArea,
-        areaUsageRate: Math.round((peakOccArea / Math.max(0.1, maxArea)) * 100),
-        peakWorkHours: peakWorkHours,
-        workLoadRate: Math.round((peakWorkHours / Math.max(1, maxWorkHours)) * 100),
-        areaOverMonths: areaOverMonths,
-        workOverMonths: workOverMonths,
-        monthlyTargets: monthlyTargets,
-        monthlyForecastSales: monthlyForecastSales,
-        monthlyOccArea: monthlyOccArea,
-        monthlyWorkHours: monthlyWorkHours,
-        plannedCroptypes: plannedCroptypes
-    };
+        // ベンチマーク
+        const bm = CROP_DEFAULT_BENCHMARKS[crop] || { price: 150, yieldPer10a: 2500, hoursPer10a: 70, holes: 128 };
+        // 1品目選択で手動調整値があれば優先、複数品目の場合は標準ベンチマーク値
+        let price = bm.price || 150;
+        let yieldPer10a = bm.yieldPer10a || 2500;
+        let hoursPer10a = bm.hoursPer10a || 70;
 
-    window._cpSimpleSimResult = simResult;
-    window._cpSimpleCropResults = window._cpSimpleCropResults || {};
-    window._cpSimpleCropResults[crop] = simResult;
+        if (crops.length === 1) {
+            const pInp = parseFloat((document.getElementById('cpSimplePrice') || {}).value);
+            const yInp = parseFloat((document.getElementById('cpSimpleYieldPer10a') || {}).value);
+            const hInp = parseFloat((document.getElementById('cpSimpleHoursPer10a') || {}).value);
+            if (pInp > 0) price = pInp;
+            if (yInp > 0) yieldPer10a = yInp;
+            if (hInp > 0) hoursPer10a = hInp;
+        }
 
-    // 5. 結果UIのレンダリング（作物別まとめ・作物別カレンダー・品種折りたたみ）
-    refreshCpSimpleResultsView(crop);
+        const yieldPer1a = Math.max(1, yieldPer10a / 10);
+        const plannedCroptypes = [];
+        const monthlyForecastSales = new Array(12).fill(0);
+        const monthlyOccArea = new Array(12).fill(0);
+        const monthlyWorkHours = new Array(12).fill(0);
+
+        croptypeCandidates.forEach(cand => {
+            const ms = cand.months || [];
+            if (!ms.length) return;
+
+            let coveredTargetSales = 0;
+            ms.forEach(m => {
+                coveredTargetSales += (cropMonthlyTargets[m] || 0);
+            });
+
+            let targetForThis = coveredTargetSales;
+            if (targetForThis <= 0 && cropAnnualTarget > 0 && croptypeCandidates.length === 1) {
+                targetForThis = cropAnnualTarget;
+            }
+
+            const requiredYield = Math.max(0, Math.round(targetForThis / price));
+            const requiredAreaA = Math.max(0.1, Math.round((requiredYield / yieldPer1a) * 10) / 10);
+            const forecastSales = Math.round(requiredYield * price);
+
+            const holes = bm.holes || 128;
+            const trays = Math.max(1, Math.round((requiredYield / holes) * 1.15));
+
+            ms.forEach(m => {
+                const share = coveredTargetSales > 0 ? ((cropMonthlyTargets[m] || 0) / coveredTargetSales) : (1 / ms.length);
+                monthlyForecastSales[m] += forecastSales * share;
+            });
+
+            // 占有月
+            const pCells = cand.planting || [];
+            const hCells = cand.harvesting || [];
+            let plantMonth = 3;
+            let harvestEndMonth = 6;
+            if (pCells.length) {
+                const f = (typeof pCells[0] === 'object') ? pCells[0].flatIndex : Number(pCells[0]);
+                plantMonth = Math.floor(f / 6) % 12;
+            }
+            if (hCells.length) {
+                const f = (typeof hCells[hCells.length - 1] === 'object') ? hCells[hCells.length - 1].flatIndex : Number(hCells[hCells.length - 1]);
+                harvestEndMonth = Math.floor(f / 6) % 12;
+            }
+
+            let curM = plantMonth;
+            for (let step = 0; step < 12; step++) {
+                monthlyOccArea[curM] += requiredAreaA;
+                if (curM === harvestEndMonth) break;
+                curM = (curM + 1) % 12;
+            }
+
+            // 作業工数
+            const totalWorkHours = (requiredAreaA / 10) * hoursPer10a;
+            let sowMonth = (plantMonth - 1 + 12) % 12;
+            if (cand.sowing && cand.sowing.length) {
+                const f = (typeof cand.sowing[0] === 'object') ? cand.sowing[0].flatIndex : Number(cand.sowing[0]);
+                sowMonth = Math.floor(f / 6) % 12;
+            }
+            monthlyWorkHours[sowMonth] += totalWorkHours * 0.10;
+            monthlyWorkHours[plantMonth] += totalWorkHours * 0.25;
+
+            let occMonthsCount = 0;
+            curM = plantMonth;
+            for (let step = 0; step < 12; step++) {
+                occMonthsCount++;
+                if (curM === harvestEndMonth) break;
+                curM = (curM + 1) % 12;
+            }
+            if (occMonthsCount > 0) {
+                const mgmtPerM = (totalWorkHours * 0.25) / occMonthsCount;
+                curM = plantMonth;
+                for (let step = 0; step < occMonthsCount; step++) {
+                    monthlyWorkHours[curM] += mgmtPerM;
+                    curM = (curM + 1) % 12;
+                }
+            }
+
+            if (ms.length > 0) {
+                const harvPerM = (totalWorkHours * 0.40) / ms.length;
+                ms.forEach(m => {
+                    monthlyWorkHours[m] += harvPerM;
+                });
+            }
+
+            plannedCroptypes.push({
+                crop: crop,
+                name: cand.name,
+                variety: cand.variety || (crop + ' ' + (cand.season || '')),
+                season: cand.season || '',
+                areaA: requiredAreaA,
+                trays: trays,
+                yield: requiredYield,
+                forecastSales: forecastSales,
+                coveredTargetSales: coveredTargetSales,
+                sowing: cand.sowing,
+                planting: cand.planting,
+                harvesting: cand.harvesting,
+                months: ms,
+                plantMonth: plantMonth,
+                harvestEndMonth: harvestEndMonth
+            });
+        });
+
+        let peakOccArea = 0;
+        let peakWorkHours = 0;
+        let totalForecastSales = 0;
+        for (let m = 0; m < 12; m++) {
+            monthlyOccArea[m] = Math.round(monthlyOccArea[m] * 10) / 10;
+            monthlyWorkHours[m] = Math.round(monthlyWorkHours[m] * 10) / 10;
+            monthlyForecastSales[m] = Math.round(monthlyForecastSales[m]);
+            if (monthlyOccArea[m] > peakOccArea) peakOccArea = monthlyOccArea[m];
+            if (monthlyWorkHours[m] > peakWorkHours) peakWorkHours = monthlyWorkHours[m];
+            totalForecastSales += monthlyForecastSales[m];
+        }
+
+        const simResult = {
+            crop: crop,
+            climate: climate,
+            maxArea: maxArea,
+            maxWorkHours: maxWorkHours,
+            dailyWorkHours: workTime.daily,
+            workDaysPerMonth: workTime.days,
+            staffCount: workTime.staff,
+            price: price,
+            yieldPer10a: yieldPer10a,
+            hoursPer10a: hoursPer10a,
+            annualTargetSum: cropAnnualTarget,
+            totalForecastSales: totalForecastSales,
+            salesAchieveRate: Math.round((totalForecastSales / Math.max(1, cropAnnualTarget)) * 100),
+            peakOccArea: peakOccArea,
+            peakWorkHours: peakWorkHours,
+            monthlyTargets: cropMonthlyTargets,
+            monthlyForecastSales: monthlyForecastSales,
+            monthlyOccArea: monthlyOccArea,
+            monthlyWorkHours: monthlyWorkHours,
+            plannedCroptypes: plannedCroptypes
+        };
+
+        window._cpSimpleCropResults[crop] = simResult;
+    });
+
+    // 5. 結果UIの更新（選択された全作物だけが表示される！）
+    refreshCpSimpleResultsView();
 }
 window.runCpSimpleSimulation = runCpSimpleSimulation;
 
@@ -16092,11 +16544,18 @@ function toggleCpSimpleCropCard(cropKey) {
 }
 window.toggleCpSimpleCropCard = toggleCpSimpleCropCard;
 
-/** 作物単体のシミュレーション結果削除 */
+/** 作物単体のシミュレーション結果削除（左側の選択リストとも同期） */
 function removeCpSimpleCropResult(crop) {
     if (!crop || !window._cpSimpleCropResults) return;
     if (!confirm(`「${crop}」のシミュレーション結果を削除しますか？`)) return;
     delete window._cpSimpleCropResults[crop];
+    // 左側の選択中リストからも解除して同期
+    const c = String(crop).trim();
+    if (Array.isArray(_cpSimpleSelectedCrops)) {
+        _cpSimpleSelectedCrops = _cpSimpleSelectedCrops.filter(item => item !== c);
+        renderCpSimpleSelectedCropsUI();
+        onCpSimpleSelectedCropsChanged();
+    }
     refreshCpSimpleResultsView();
 }
 window.removeCpSimpleCropResult = removeCpSimpleCropResult;
@@ -16152,29 +16611,40 @@ function renderCpSimpleCropCardHtml_(crop, cropRes, isLastSimulated) {
         `;
     });
 
+    const uniqueVarieties = Array.from(new Set(types.map(t => escCpSimple(t.variety)).filter(Boolean)));
+    let varietySummaryText = '';
+    if (uniqueVarieties.length <= 4) {
+        varietySummaryText = uniqueVarieties.join('、');
+    } else {
+        varietySummaryText = uniqueVarieties.slice(0, 4).join('、') + ` など他${uniqueVarieties.length - 4}品種`;
+    }
+    const fullVarietiesTooltip = uniqueVarieties.join('、');
+
     return `
       <div class="cp-simple-crop-card" id="cpSimpleCropCard_${cropKey}" style="background:#fff; border:1px solid #cbd5e1; border-radius:10px; box-shadow:0 2px 6px rgba(0,0,0,0.04); overflow:hidden;">
         <!-- 作物ヘッダー（クリックで作物を押してカレンダー・詳細を開閉） -->
-        <div class="cp-simple-crop-header" onclick="toggleCpSimpleCropCard('${cropKey}')" style="padding:12px 14px; background:linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%); border-bottom:1px solid #e2e8f0; cursor:pointer; display:flex; justify-content:space-between; align-items:center; user-select:none;" title="クリックで作物別カレンダーを展開/折りたたみ">
-          <div style="display:flex; align-items:center; gap:10px;">
-            <span style="font-size:22px;">${cropIcon}</span>
-            <div>
+        <div class="cp-simple-crop-header" onclick="toggleCpSimpleCropCard('${cropKey}')" style="padding:12px 14px; background:linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%); border-bottom:1px solid #e2e8f0; cursor:pointer; display:flex; justify-content:space-between; align-items:center; user-select:none; gap:12px;" title="クリックで作物別カレンダーを展開/折りたたみ">
+          <!-- 左側: アイコン ＆ 作物名 ＆ 推奨品種概要（長い場合は省略表示して右側を圧迫しない） -->
+          <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:0; overflow:hidden;">
+            <span style="font-size:22px; flex-shrink:0;">${cropIcon}</span>
+            <div style="flex:1; min-width:0; overflow:hidden;">
               <div style="display:flex; align-items:center; gap:8px;">
-                <span style="font-size:15px; font-weight:bold; color:#166534;">${escCpSimple(crop)}</span>
-                <span style="font-size:11px; font-weight:bold; background:#dcfce7; color:#15803d; border:1px solid #86efac; padding:1px 8px; border-radius:12px;">${types.length} 作型</span>
+                <span style="font-size:15px; font-weight:bold; color:#166534; white-space:nowrap;">${escCpSimple(crop)}</span>
+                <span style="font-size:11px; font-weight:bold; background:#dcfce7; color:#15803d; border:1px solid #86efac; padding:1px 8px; border-radius:12px; white-space:nowrap;">${types.length} 作型</span>
               </div>
-              <div style="font-size:11px; color:#64748b; margin-top:2px;">
-                推奨品種: <b>${types.map(t => escCpSimple(t.variety)).join('、')}</b>
+              <div style="font-size:11px; color:#64748b; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="推奨品種: ${fullVarietiesTooltip}">
+                推奨品種: <b>${varietySummaryText}</b>
               </div>
             </div>
           </div>
-          <div style="display:flex; align-items:center; gap:12px;">
-            <div style="text-align:right;">
-              <div style="font-size:13px; font-weight:bold; color:#e65100;">売上 ${Math.round(totalSales / 10000).toLocaleString()} 万円</div>
-              <div style="font-size:11px; color:#64748b;">ピーク面積: <b>${peakArea} a</b></div>
+          <!-- 右側: 売上 ＆ 面積 ＆ 操作ボタン（flex-shrink:0 で絶対に押しつぶされない） -->
+          <div style="display:flex; align-items:center; gap:12px; flex-shrink:0; white-space:nowrap; margin-left:8px;">
+            <div style="text-align:right; white-space:nowrap;">
+              <div style="font-size:13px; font-weight:bold; color:#e65100; white-space:nowrap;">売上 ${Math.round(totalSales / 10000).toLocaleString()} 万円</div>
+              <div style="font-size:11px; color:#64748b; white-space:nowrap;">ピーク面積: <b style="color:#1b5e20;">${peakArea} a</b></div>
             </div>
-            <button type="button" onclick="event.stopPropagation(); removeCpSimpleCropResult('${escCpSimple(crop)}')" title="この作物を削除" style="background:none; border:none; cursor:pointer; color:#94a3b8; font-size:14px; padding:4px 6px; border-radius:4px;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#94a3b8'">🗑️</button>
-            <span class="cp-simple-crop-arrow" id="cpSimpleCropArrow_${cropKey}" style="font-size:13px; color:#64748b; font-weight:bold;">▼</span>
+            <button type="button" onclick="event.stopPropagation(); removeCpSimpleCropResult('${escCpSimple(crop)}')" title="この作物を削除" style="background:none; border:none; cursor:pointer; color:#94a3b8; font-size:14px; padding:4px 6px; border-radius:4px; flex-shrink:0;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#94a3b8'">🗑️</button>
+            <span class="cp-simple-crop-arrow" id="cpSimpleCropArrow_${cropKey}" style="font-size:13px; color:#64748b; font-weight:bold; flex-shrink:0;">▼</span>
           </div>
         </div>
 
@@ -16198,14 +16668,14 @@ function renderCpSimpleCropCardHtml_(crop, cropRes, isLastSimulated) {
 
           <!-- 2. 品種折りたたみ（初期状態は閉じられている！） -->
           <details class="cp-simple-crop-varieties-details" style="border:1px solid #cbd5e1; border-radius:8px; background:#f8fafc; overflow:hidden;">
-            <summary style="padding:9px 12px; cursor:pointer; font-size:12px; font-weight:bold; color:#475569; display:flex; justify-content:space-between; align-items:center; background:#f1f5f9; user-select:none;">
-              <div style="display:flex; align-items:center; gap:6px;">
+            <summary style="padding:9px 12px; cursor:pointer; font-size:12px; font-weight:bold; color:#475569; display:flex; justify-content:space-between; align-items:center; background:#f1f5f9; user-select:none; gap:10px;">
+              <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
                 <span>🏷️</span>
-                <span>推奨品種・作型詳細（${types.length}品種）</span>
+                <span>推奨品種・作型詳細（${types.length}作型）</span>
                 <span style="font-size:10px; background:#e2e8f0; color:#475569; padding:1px 6px; border-radius:10px;">クリックして展開</span>
               </div>
-              <div style="font-size:11px; color:#64748b; font-weight:normal;">
-                推奨品種: <span style="font-weight:bold; color:#1e293b;">${types.map(t => escCpSimple(t.variety)).join('、')}</span>
+              <div style="font-size:11px; color:#64748b; font-weight:normal; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:60%;" title="推奨品種: ${fullVarietiesTooltip}">
+                推奨品種: <span style="font-weight:bold; color:#1e293b;">${varietySummaryText}</span>
               </div>
             </summary>
             <div style="padding:10px; display:flex; flex-direction:column; gap:8px; background:#fff; border-top:1px solid #e2e8f0;">
@@ -16284,9 +16754,19 @@ function refreshCpSimpleResultsView(lastSimulatedCrop) {
     const areaUsageRate = Math.round((peakOccArea / Math.max(0.1, maxAreaLimit)) * 100);
     const workLoadRate = Math.round((peakWorkHours / Math.max(1, maxWorkHoursLimit)) * 100);
 
+    // 日別換算（1日あたり作業時間 = 月間時間 ÷ 月稼働日数）
+    const wtIn = (typeof getCpSimpleWorkTimeInputs_ === 'function') ? getCpSimpleWorkTimeInputs_() : { days: 20 };
+    const workDaysPerMonth = wtIn.days > 0 ? wtIn.days : 20;
+    const toDaily_ = (h) => Math.round((h / workDaysPerMonth) * 10) / 10;
+    const dailyLimit = toDaily_(maxWorkHoursLimit);
+    const peakDaily = toDaily_(peakWorkHours);
+
+    const currentClimate = (typeof getCpSimpleClimate === 'function') ? getCpSimpleClimate() : '中間地';
+
     // 合算オブジェクトを互換性のため _cpSimpleSimResult に保存
     window._cpSimpleSimResult = {
         crop: cropKeys.length === 1 ? cropKeys[0] : (cropKeys.join('・')),
+        climate: currentClimate,
         maxArea: maxAreaLimit,
         maxWorkHours: maxWorkHoursLimit,
         annualTargetSum: annualTargetSum,
@@ -16323,14 +16803,14 @@ function refreshCpSimpleResultsView(lastSimulatedCrop) {
             '  <div style="font-size:10px; color:#888;">上限 ' + maxAreaLimit + 'a (' + areaUsageRate + '%)</div>' +
             '</div>' +
             '<div style="background:#fff; border:1px solid #e0e0e0; border-radius:8px; padding:10px; text-align:center; box-shadow:0 1px 2px rgba(0,0,0,0.04);">' +
-            '  <div style="font-size:11px; color:#666; font-weight:bold;">⏱️ 合計ピーク労働</div>' +
-            '  <div style="font-size:18px; font-weight:bold; color:' + workColor + '; margin:4px 0;">' + peakWorkHours + '<span style="font-size:11px;">h</span></div>' +
-            '  <div style="font-size:10px; color:#888;">上限 ' + maxWorkHoursLimit + 'h (' + workLoadRate + '%)</div>' +
+            '  <div style="font-size:11px; color:#666; font-weight:bold;">⏱️ ピーク作業時間/日</div>' +
+            '  <div style="font-size:18px; font-weight:bold; color:' + workColor + '; margin:4px 0;">' + peakDaily + '<span style="font-size:11px;">h/日</span></div>' +
+            '  <div style="font-size:10px; color:#888;">上限 ' + dailyLimit + 'h/日 (' + workLoadRate + '%)<br>月間 ' + peakWorkHours + 'h / ' + maxWorkHoursLimit + 'h</div>' +
             '</div>' +
             '<div style="background:#fff; border:1px solid #e0e0e0; border-radius:8px; padding:10px; text-align:center; box-shadow:0 1px 2px rgba(0,0,0,0.04);">' +
-            '  <div style="font-size:11px; color:#666; font-weight:bold;">🌱 登録作物 / 作型</div>' +
-            '  <div style="font-size:18px; font-weight:bold; color:#6a1b9a; margin:4px 0;">' + cropKeys.length + '<span style="font-size:11px;">作物 / </span>' + allPlannedCroptypes.length + '<span style="font-size:11px;">作型</span></div>' +
-            '  <div style="font-size:10px; color:#888;">年間輪作・リレー</div>' +
+            '  <div style="font-size:11px; color:#666; font-weight:bold;">🌏 地域 / 作型</div>' +
+            '  <div style="font-size:16px; font-weight:bold; color:#0369a1; margin:4px 0;">' + escCpSimple(currentClimate) + ' <span style="font-size:11px; color:#6a1b9a;">(' + allPlannedCroptypes.length + '作型)</span></div>' +
+            '  <div style="font-size:10px; color:#888;">' + cropKeys.length + '品目リレー栽培</div>' +
             '</div>';
     }
 
@@ -16340,6 +16820,8 @@ function refreshCpSimpleResultsView(lastSimulatedCrop) {
         let alerts = [];
         let okPoints = [];
 
+        okPoints.push('🌏 <b>地域基準:</b> 【' + escCpSimple(currentClimate) + '】の気候特性（' + (CP_CLIMATE_DESCRIPTIONS[currentClimate] || '') + '）に合わせて作型・作業適期をシミュレーションしています。');
+
         if (areaOverMonths.length) {
             alerts.push('⚠️ <b>圃場面積の超過:</b> ' + areaOverMonths.join('月・') + '月に上限面積（' + maxAreaLimit + 'a）を超過します（最大 ' + peakOccArea + 'a 必要）。');
         } else {
@@ -16347,9 +16829,9 @@ function refreshCpSimpleResultsView(lastSimulatedCrop) {
         }
 
         if (workOverMonths.length) {
-            alerts.push('⚠️ <b>労働時間の超過:</b> ' + workOverMonths.join('月・') + '月に月間作業時間（' + maxWorkHoursLimit + 'h）を超過します（最大 ' + peakWorkHours + 'h）。定植時期の分散や臨時雇用の検討をおすすめします。');
+            alerts.push('⚠️ <b>労働時間の超過:</b> ' + workOverMonths.join('月・') + '月に上限（1日 ' + dailyLimit + 'h）を超過します（ピーク 1日 ' + peakDaily + 'h）。定植時期の分散や臨時雇用の検討をおすすめします。');
         } else {
-            okPoints.push('✅ <b>作業時間:</b> 全月で上限（' + maxWorkHoursLimit + 'h）以内に収まっています（ピーク ' + peakWorkHours + 'h）。');
+            okPoints.push('✅ <b>作業時間:</b> 全月で上限（1日 ' + dailyLimit + 'h）以内に収まっています（ピーク 1日 ' + peakDaily + 'h）。');
         }
 
         if (salesAchieveRate >= 90) {
@@ -16421,6 +16903,14 @@ function refreshCpSimpleResultsView(lastSimulatedCrop) {
               return '<td style="padding:6px 2px; font-weight:' + (isOver ? 'bold' : 'normal') + '; color:' + (isOver ? '#c62828' : (w > 0 ? '#1565c0' : '#aaa')) + ';">' + (w > 0 ? Math.round(w) : '-') + '</td>';
           }).join('') +
           '    </tr>' +
+          '    <tr style="border-top:1px solid #eee;">' +
+          '      <td style="padding:6px 4px; text-align:left; font-weight:bold; color:#0d47a1; white-space:nowrap;">1日(h)</td>' +
+          monthlyWorkHours.map(w => {
+              const d = toDaily_(w);
+              const isOver = dailyLimit > 0 && d > dailyLimit;
+              return '<td style="padding:6px 2px; font-weight:' + (isOver ? 'bold' : 'normal') + '; color:' + (isOver ? '#c62828' : (d > 0 ? '#0d47a1' : '#aaa')) + ';">' + (d > 0 ? d : '-') + '</td>';
+          }).join('') +
+          '    </tr>' +
           '  </tbody>' +
           '</table>';
         analysisEl.innerHTML = table;
@@ -16429,8 +16919,7 @@ function refreshCpSimpleResultsView(lastSimulatedCrop) {
     // 6. 反映ボタンのラベル更新
     const applyBtn = document.getElementById('btnApplyCpSimpleToPlan');
     if (applyBtn) {
-        const cropText = cropKeys.length > 1 ? `${cropKeys.length}作物の理想作型（計${allPlannedCroptypes.length}件）` : `理想作型（${allPlannedCroptypes.length}件）`;
-        applyBtn.innerHTML = `<span>🚀 この${cropText}で計画を作成・カレンダーへ反映</span>`;
+        applyBtn.innerHTML = `<span>📅 カレンダーへ反映して微調整 <small style="font-size:11px; font-weight:normal; opacity:0.85;">(${allPlannedCroptypes.length}作型)</small></span>`;
     }
 }
 window.refreshCpSimpleResultsView = refreshCpSimpleResultsView;
@@ -16462,12 +16951,15 @@ function applyCpSimpleResultToPlan(options) {
     if (leftBody) leftBody.innerHTML = '';
     cpPlans = [];
 
-    // 作物名の同期
+    // 作物名・地域の同期
     if (typeof setChoiceValue === 'function') {
         setChoiceValue('cpCrop', res.crop, true);
+        if (res.climate) setChoiceValue('cpClimate', res.climate, true);
     }
     const cropInput = document.getElementById('cpCrop');
     if (cropInput) cropInput.value = res.crop;
+    const climateInput = document.getElementById('cpClimate');
+    if (climateInput && res.climate) climateInput.value = res.climate;
 
     // 計画名・年度・拠点の設定
     const year = opts.yearOverride || (typeof getCpVal === 'function' ? getCpVal('cpYear') : '') || new Date().getFullYear();

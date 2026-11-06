@@ -3205,6 +3205,10 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
   if (isLocPin && typeof window.attachLocationPinGlow_ === 'function') window.attachLocationPinGlow_(marker);
   if (isLocPin && typeof window.syncLocationPinGlowScale_ === 'function') window.syncLocationPinGlowScale_(map);
   google.maps.event.addListener(marker, 'click', (e) => {
+    if (typeof window.stopMapEvent_ === 'function') window.stopMapEvent_(e);
+    window._keepFieldInfoWindow_ = true;
+    setTimeout(() => { window._keepFieldInfoWindow_ = false; }, 350);
+
     if (window._workerMapRegMode && typeof window.handleWorkerMapRegMapClick_ === 'function') {
       window.handleWorkerMapRegMapClick_(e);
       return;
@@ -3232,7 +3236,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
       return;
     }
 
-    // 🪧 大看板・小看板の展開 & 2段階タップ制御
+    // 🪧 大看板・小看板の展開 & タップ制御
     const sid = String(id);
     const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[sid] : null;
     if (window.SignGroup && p && p.isMarker && !(typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction))) {
@@ -3241,13 +3245,11 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
       const expandedId = window.SignGroup.getExpandedParentId();
 
       if (isParent) {
+        // 小看板を展開（未展開なら展開）
         if (expandedId !== sid) {
-          // 1回目のタップ：小看板を展開する
           window.SignGroup.expand(sid, map, loadedPolygons, updateMarkersVisibility);
-          if (infoWindow) infoWindow.close();
-          return;
         }
-        // 2回目のタップ：大看板の設定・メニューを開く
+        // 1回目のタップでも必ず大看板のメニューを開く！
         showPolygonActionMenu_(id, e && e.latLng, e);
         return;
       } else if (isChild) {
@@ -3351,9 +3353,13 @@ window.showPolygonActionMenu_ = (id, latLng, e) => {
   }
   window._keepFieldInfoWindow_ = true;
   openMainMenu(id);
-  if (pos) infoWindow.setPosition(pos);
-  infoWindow.open(map);
-  setTimeout(() => { window._keepFieldInfoWindow_ = false; }, 120);
+  if (p.isMarker && p.marker) {
+    infoWindow.open(map, p.marker);
+  } else {
+    if (pos) infoWindow.setPosition(pos);
+    infoWindow.open(map);
+  }
+  setTimeout(() => { window._keepFieldInfoWindow_ = false; }, 350);
 };
 window.openFieldWorkRecordSelect = (id) => {
   // AIオート作業記録は撤去。通常の作業記録を直接開く
@@ -3412,6 +3418,28 @@ window.openMainMenu = (id) => {
       actions += `<button type="button" onclick="openToolManagementUI('${id}')" class="field-infowindow-btn-single" style="margin-bottom:6px; background:#00BCD4;">🪚 道具状況</button>`;
     }
     actions += `<button type="button" onclick="directOpenReportForm('${id}')" class="field-infowindow-btn-single" style="background:#d32f2f;">⚠️ 問題を報告</button>`;
+    if (isParentSign) {
+      const children = (window.SignGroup && typeof window.SignGroup.getChildren === 'function')
+        ? window.SignGroup.getChildren(p.id)
+        : [];
+      if (children.length > 0) {
+        actions += `<div style="margin-top:8px; border-top:1px dashed #CE93D8; padding-top:6px; text-align:left;">
+          <div style="font-size:11px; font-weight:bold; color:#4A148C; margin-bottom:5px;">
+            🪧 束ねられた看板 (${children.length}件):
+          </div>
+          <div style="display:flex; flex-direction:column; gap:4px; max-height:160px; overflow-y:auto;">
+            ${children.map(ch => {
+              const chIcon = ch.color || '🪧';
+              const chFunc = ch.signFunction ? `[${ch.signFunction}]` : '';
+              return `<button type="button" onclick="focusAndOpen('${ch.id}')" style="width:100%; background:#F3E5F5; color:#4A148C; border:1px solid #BA68C8; border-radius:6px; padding:6px 8px; font-size:12px; font-weight:bold; cursor:pointer; text-align:left; display:flex; justify-content:space-between; align-items:center; box-sizing:border-box;">
+                <span>${chIcon} ${ch.name || '看板'}</span>
+                <span style="font-size:10px; color:#7B1FA2;">${chFunc} ❯</span>
+              </button>`;
+            }).join('')}
+          </div>
+        </div>`;
+      }
+    }
     bodyHtml = `${navBtn}${actions}`;
   }
 
@@ -3759,9 +3787,29 @@ function setupSearch() {
 
 function focusAndOpen(id) {
   closeRightPanel();
-  const p = loadedPolygons[id]; let center;
-  if (p.isMarker) center = p.marker.getPosition(); else { const b = new google.maps.LatLngBounds(); p.polygon.getPath().forEach(pt => b.extend(pt)); center = b.getCenter(); }
-  map.setZoom(18); map.panTo(center); setTimeout(() => { showPolygonActionMenu_(id, center); }, 500);
+  const p = loadedPolygons[id];
+  if (!p) return;
+  let center;
+  if (p.isMarker && p.marker) {
+    center = p.marker.getPosition();
+    if (window.SignGroup && typeof window.SignGroup.isChildSign === 'function' && window.SignGroup.isChildSign(p)) {
+      const pid = window.SignGroup.getParentId(p);
+      if (pid && window.SignGroup.getExpandedParentId() !== pid) {
+        window.SignGroup.expand(pid, map, loadedPolygons, updateMarkersVisibility);
+      }
+    }
+  } else if (p.polygon && p.polygon.getPath) {
+    const b = new google.maps.LatLngBounds();
+    p.polygon.getPath().forEach(pt => b.extend(pt));
+    center = b.getCenter();
+  }
+  if (center) {
+    map.setZoom(18);
+    map.panTo(center);
+    setTimeout(() => { showPolygonActionMenu_(id, center); }, 400);
+  } else {
+    showPolygonActionMenu_(id);
+  }
 }
 
 window.focusAndOpenByName = (name) => {

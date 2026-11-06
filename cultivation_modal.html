@@ -181,12 +181,12 @@
                 <div class="cp-simple-layout" style="display: grid; grid-template-columns: minmax(360px, 1fr) minmax(420px, 1.25fr); gap: 16px; align-items: start;">
                   <!-- 左カラム: 条件入力フォーム -->
                   <div class="cp-simple-form-col" style="display: flex; flex-direction: column; gap: 12px;">
-                    <!-- 0. 計画年度 ＆ 拠点選択 -->
+                    <!-- 0. 計画年度 ＆ 拠点 ＆ 地域（作型区分） -->
                     <div class="cp-field cp-field-card" style="border-top: 3px solid #0284c7; background:#fff; border-radius:8px; padding:10px 12px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
-                      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                      <div style="display:grid; grid-template-columns: 1fr 1fr 1.15fr; gap:8px; align-items:start;">
                         <div>
                           <label class="cp-field-label" for="cpSimpleYear" style="font-weight:bold; color:#0369a1; font-size:12px; display:block; margin-bottom:4px;">📅 計画年度 <span class="cp-req-badge" style="background:#e91e63; color:#fff; font-size:9px; padding:1px 4px; border-radius:3px;">必須</span></label>
-                          <select id="cpSimpleYear" class="cp-control" style="width:100%; height:32px; font-size:13px; font-weight:bold;" onchange="syncCpSimpleYearToMain(this.value)">
+                          <select id="cpSimpleYear" class="cp-control" style="width:100%; height:32px; font-size:12px; font-weight:bold;" onchange="syncCpSimpleYearToMain(this.value)">
                             <option value="2024">2024年</option>
                             <option value="2025">2025年</option>
                             <option value="2026" selected>2026年</option>
@@ -196,26 +196,73 @@
                         </div>
                         <div>
                           <label class="cp-field-label" for="cpSimpleLocation" style="font-weight:bold; color:#0369a1; font-size:12px; display:block; margin-bottom:4px;">📍 対象拠点 <span class="cp-req-badge" style="background:#e91e63; color:#fff; font-size:9px; padding:1px 4px; border-radius:3px;">必須</span></label>
-                          <select id="cpSimpleLocation" class="cp-control" style="width:100%; height:32px; font-size:13px; font-weight:bold;" onchange="syncCpSimpleLocationToMain(this.value)">
-                            <option value="">拠点を選択してください</option>
+                          <select id="cpSimpleLocation" class="cp-control" style="width:100%; height:32px; font-size:12px; font-weight:bold;" onchange="syncCpSimpleLocationToMain(this.value)">
+                            <option value="">拠点を選択</option>
                           </select>
                         </div>
+                        <div>
+                          <label class="cp-field-label" for="cpSimpleClimate" style="font-weight:bold; color:#0369a1; font-size:12px; display:block; margin-bottom:4px;">🌏 地域（作型基準） <span class="cp-req-badge" style="background:#e91e63; color:#fff; font-size:9px; padding:1px 4px; border-radius:3px;">必須</span></label>
+                          <select id="cpSimpleClimate" class="cp-control" style="width:100%; height:32px; font-size:12px; font-weight:bold;" onchange="onCpSimpleClimateChanged(this.value)">
+                            <option value="中間地" selected>中間地（一般地）</option>
+                            <option value="暖地">暖地（温暖地）</option>
+                            <option value="冷涼地">冷涼地（高冷地）</option>
+                            <option value="寒冷地">寒冷地（北海道等）</option>
+                          </select>
+                        </div>
+                      </div>
+                      <!-- 地域クイック選択チップ ＆ 地域説明ヒント -->
+                      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; padding-top:6px; border-top:1px dashed #e2e8f0; flex-wrap:wrap; gap:6px;">
+                        <div style="display:flex; gap:4px; align-items:center; flex-wrap:wrap;">
+                          <span style="font-size:11px; color:#555; font-weight:bold;">地域選択:</span>
+                          <button type="button" class="cp-chip-btn" id="btnCpSimpleClimate_中間地" onclick="setCpSimpleClimate('中間地')">中間地</button>
+                          <button type="button" class="cp-chip-btn" id="btnCpSimpleClimate_暖地" onclick="setCpSimpleClimate('暖地')">暖地</button>
+                          <button type="button" class="cp-chip-btn" id="btnCpSimpleClimate_冷涼地" onclick="setCpSimpleClimate('冷涼地')">冷涼地</button>
+                          <button type="button" class="cp-chip-btn" id="btnCpSimpleClimate_寒冷地" onclick="setCpSimpleClimate('寒冷地')">寒冷地</button>
+                        </div>
+                        <div id="cpSimpleClimateDesc" style="font-size:11px; color:#0369a1; font-weight:bold;">🌱 関東・東海・近畿・瀬戸内等の標準作型</div>
                       </div>
                     </div>
 
-                    <!-- 1. 作物名選択 -->
+                    <!-- 1. 作物名を選択（複数品目選択対応） -->
                     <div class="cp-field cp-field-card" style="border-top: 3px solid #8e24aa; background:#fff; border-radius:8px; padding:12px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
-                      <div class="cp-field-label-row">
-                        <label class="cp-field-label" for="cpSimpleCrop" style="font-weight:bold; color:#4a148c; font-size:13px;">🌱 1. 作物名を選択 <span class="cp-req-badge" style="background:#e91e63; color:#fff; font-size:10px; padding:1px 5px; border-radius:3px;">必須</span></label>
-                      </div>
-                      <div class="cp-field-input-area" style="margin-top:6px;">
-                        <div class="cp-field-row" style="display:flex; gap:8px;">
-                          <select id="cpSimpleCrop" class="cp-control" style="flex:1; height:34px; font-size:13px; font-weight:bold;" onchange="onCpSimpleCropChanged(this.value)">
-                            <option value="">作物名を選択してください</option>
-                          </select>
-                          <input type="text" id="cpSimpleCropCustom" class="cp-control" placeholder="手入力" style="display:none; flex:1; height:34px;" oninput="onCpSimpleCropCustomInput(this.value)">
+                      <div class="cp-field-label-row" style="display:flex; justify-content:space-between; align-items:center;">
+                        <label class="cp-field-label" style="font-weight:bold; color:#4a148c; font-size:13px;">🌱 1. 作物名を選択（複数選択可） <span class="cp-req-badge" style="background:#e91e63; color:#fff; font-size:10px; padding:1px 5px; border-radius:3px;">必須</span></label>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                          <span id="cpSimpleSelectedCropCount" style="font-size:11px; font-weight:bold; color:#7b1fa2; background:#f3e5f5; padding:2px 8px; border-radius:12px; border:1px solid #ce93d8;">1品目選択中</span>
+                          <button type="button" onclick="clearAllCpSimpleSelectedCrops()" style="background:none; border:none; font-size:11px; color:#c62828; cursor:pointer; padding:0 2px; text-decoration:underline;">全解除</button>
                         </div>
-                        <div id="cpSimpleCropHint" class="cp-field-hint" style="color:#666; font-size:11px; margin-top:4px;">作物を選択すると、標準単価や収量・作型候補が自動読み込みされます。</div>
+                      </div>
+                      <div class="cp-field-input-area" style="margin-top:8px; display:flex; flex-direction:column; gap:8px;">
+                        <!-- 選択中の品目タグ一覧 -->
+                        <div id="cpSimpleSelectedCropsArea" style="display:flex; flex-wrap:wrap; gap:6px; min-height:34px; padding:6px 8px; background:#faf5ff; border:1px solid #e9d5ff; border-radius:6px; align-items:center; box-sizing:border-box;">
+                          <!-- JSで選択中タグ [🥬 キャベツ ✕] を動的生成 -->
+                        </div>
+
+                        <!-- よく選ばれる主要品目クイックチップ -->
+                        <div>
+                          <div style="font-size:11px; font-weight:bold; color:#6b21a8; margin-bottom:4px; display:flex; align-items:center; gap:4px;">
+                            <span>⚡ よく選ばれる品目（タップで追加 / 解除）:</span>
+                          </div>
+                          <div id="cpSimpleQuickCropChips" style="display:flex; flex-wrap:wrap; gap:4px;">
+                            <!-- JSで主要野菜チップを生成 -->
+                          </div>
+                        </div>
+
+                        <!-- ドロップダウンから追加 ＆ 手入力 -->
+                        <div style="display:flex; gap:6px; align-items:center;">
+                          <select id="cpSimpleCropSelectAdd" class="cp-control" style="flex:1; height:32px; font-size:12px;" onchange="onCpSimpleCropSelectAdd(this.value)">
+                            <option value="">＋ その他の品目を一覧から追加...</option>
+                          </select>
+                          <div id="cpSimpleCropCustomWrap" style="display:none; display:flex; gap:4px; flex:1;">
+                            <input type="text" id="cpSimpleCropCustom" class="cp-control" placeholder="品目名を入力" style="height:32px; font-size:12px;" onkeydown="if(event.key==='Enter'){addCpSimpleCropCustom();event.preventDefault();}">
+                            <button type="button" class="cp-btn-secondary" onclick="addCpSimpleCropCustom()" style="height:32px; padding:0 10px; font-size:11px; white-space:nowrap; background:#8e24aa; color:#fff; border:none; border-radius:4px; cursor:pointer;">追加</button>
+                          </div>
+                        </div>
+
+                        <!-- 互換用hidden/select -->
+                        <select id="cpSimpleCrop" style="display:none;"></select>
+
+                        <div id="cpSimpleCropHint" class="cp-field-hint" style="color:#666; font-size:11px;">複数品目を選ぶと、各品目の収穫期に合わせて売上・面積・作業時間をリレー配分してシミュレーションします。</div>
                       </div>
                     </div>
 
@@ -272,25 +319,32 @@
                       <!-- 4. 上限作業時間設定 -->
                       <div class="cp-field cp-field-card" style="border-top: 3px solid #1565c0; background:#fff; border-radius:8px; padding:12px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
                         <div class="cp-field-label-row">
-                          <label class="cp-field-label" for="cpSimpleMaxWorkHours" style="font-weight:bold; color:#0d47a1; font-size:13px;">⏱️ 4. 上限作業時間 <span class="cp-req-badge" style="background:#e91e63; color:#fff; font-size:10px; padding:1px 5px; border-radius:3px;">必須</span></label>
+                          <label class="cp-field-label" for="cpSimpleDailyHours" style="font-weight:bold; color:#0d47a1; font-size:13px;">⏱️ 4. 上限作業時間 <span class="cp-req-badge" style="background:#e91e63; color:#fff; font-size:10px; padding:1px 5px; border-radius:3px;">必須</span></label>
                         </div>
                         <div class="cp-field-input-area" style="margin-top:6px;">
+                          <!-- 1日あたりの作業時間 -->
                           <div style="display:flex; align-items:center; gap:4px;">
-                            <input type="number" id="cpSimpleMaxWorkHours" class="cp-control" value="160" min="10" step="10" style="font-size:14px; font-weight:bold; height:32px;" oninput="onCpSimpleParamChange()">
-                            <span style="font-size:12px; font-weight:bold; color:#555;">h/月</span>
+                            <input type="number" id="cpSimpleDailyHours" class="cp-control" value="8" min="0.5" max="24" step="0.5" style="font-size:14px; font-weight:bold; height:32px;" oninput="onCpSimpleWorkTimeChanged()">
+                            <span style="font-size:12px; font-weight:bold; color:#555; white-space:nowrap;">h/日</span>
                           </div>
-                          <!-- 作業人数アシスト -->
-                          <div style="display:flex; align-items:center; gap:4px; margin-top:6px; font-size:11px; color:#555;">
-                            <span>人数:</span>
-                            <select id="cpSimpleStaffCount" style="height:22px; font-size:11px; border:1px solid #ccc; border-radius:3px;" onchange="onCpSimpleStaffCountChanged(this.value)">
-                              <option value="0.5">0.5人 (80h)</option>
-                              <option value="1" selected>1人 (160h)</option>
-                              <option value="2">2人 (320h)</option>
-                              <option value="3">3人 (480h)</option>
-                              <option value="5">5人 (800h)</option>
-                            </select>
+                          <div style="display:flex; gap:4px; margin-top:6px; flex-wrap:wrap;">
+                            <button type="button" class="cp-chip-btn" onclick="setCpSimpleDailyHours(4)">4h</button>
+                            <button type="button" class="cp-chip-btn" onclick="setCpSimpleDailyHours(6)">6h</button>
+                            <button type="button" class="cp-chip-btn" onclick="setCpSimpleDailyHours(8)">8h</button>
+                            <button type="button" class="cp-chip-btn" onclick="setCpSimpleDailyHours(10)">10h</button>
                           </div>
-                          <div style="font-size:10px; color:#777; margin-top:4px;">月間の作業可能労働時間</div>
+                          <!-- 稼働日数・人数 -->
+                          <div style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:11px; color:#555; flex-wrap:wrap;">
+                            <label style="display:inline-flex; align-items:center; gap:2px;">稼働
+                              <input type="number" id="cpSimpleWorkDays" value="20" min="1" max="31" step="1" style="width:44px; height:22px; font-size:11px; border:1px solid #ccc; border-radius:3px; text-align:right;" oninput="onCpSimpleWorkTimeChanged()">日/月
+                            </label>
+                            <label style="display:inline-flex; align-items:center; gap:2px;">人数
+                              <input type="number" id="cpSimpleStaffCount" value="1" min="0.5" step="0.5" style="width:44px; height:22px; font-size:11px; border:1px solid #ccc; border-radius:3px; text-align:right;" oninput="onCpSimpleWorkTimeChanged()">人
+                            </label>
+                          </div>
+                          <!-- 換算結果（シミュレーションは月間値で計算） -->
+                          <input type="hidden" id="cpSimpleMaxWorkHours" value="160">
+                          <div id="cpSimpleMonthlyHoursHint" style="font-size:11px; color:#0d47a1; background:#e3f2fd; border-radius:4px; padding:3px 6px; margin-top:6px;">→ 月間上限 160h（8h × 20日 × 1人）</div>
                         </div>
                       </div>
                     </div>
@@ -384,17 +438,17 @@
                           </div>
                         </div>
 
-                        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:10px; width:100%; box-sizing:border-box;">
                           <!-- メインボタン: 保存確認モーダルを開いて確定保存 -->
                           <button type="button" id="btnSaveCpSimplePlanDirect" onclick="openCpSimpleSaveConfirmModal()"
-                            style="flex:1.4; min-width:240px; padding:12px 16px; background:linear-gradient(135deg, #16a34a 0%, #15803d 100%); color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:bold; cursor:pointer; box-shadow:0 3px 10px rgba(22,163,74,0.3); display:flex; align-items:center; justify-content:center; gap:8px; transition:transform 0.1s;">
+                            style="padding:12px 14px; background:linear-gradient(135deg, #16a34a 0%, #15803d 100%); color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:bold; cursor:pointer; box-shadow:0 3px 10px rgba(22,163,74,0.3); display:flex; align-items:center; justify-content:center; gap:6px; white-space:normal; line-height:1.35; text-align:center; transition:transform 0.1s;">
                             <span>💾 この内容で栽培計画を作成して保存</span>
                           </button>
                           
                           <!-- セカンダリボタン: カレンダーで手動編集してから保存 -->
                           <button type="button" id="btnApplyCpSimpleToPlan" onclick="applyCpSimpleResultToPlan({ autoOpenCalendar: true })" class="cp-btn-secondary"
-                            style="flex:1; min-width:180px; padding:12px 14px; background:#fff; border:1px solid #86efac; color:#166534; border-radius:8px; font-size:13px; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
-                            <span>📅 カレンダーで微調整する</span>
+                            style="padding:12px 14px; background:#fff; border:1px solid #86efac; color:#166534; border-radius:8px; font-size:13px; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; white-space:normal; line-height:1.35; text-align:center;">
+                            <span>📅 カレンダーへ反映して微調整</span>
                           </button>
                         </div>
                       </div>
