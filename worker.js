@@ -3398,16 +3398,17 @@ window.openMainMenu = (id) => {
     }
     actions += `</div>`;
 
-    if (p.isMarker && p.signFunction && (String(p.signFunction).includes('在庫') || String(p.signFunction).includes('倉庫'))) {
+    const isParentSign = !!(window.SignGroup && window.SignGroup.isParentSign(p));
+    if (!isParentSign && p.isMarker && p.signFunction && (String(p.signFunction).includes('在庫') || String(p.signFunction).includes('倉庫'))) {
       actions += `<button type="button" onclick="openInventoryUI('${id}')" class="field-infowindow-btn-single" style="margin-bottom:6px; background:#8BC34A;">📦 在庫状況・入出庫</button>`;
     }
-    if (p.isMarker && p.signFunction && String(p.signFunction).includes('給油')) {
+    if (!isParentSign && p.isMarker && p.signFunction && String(p.signFunction).includes('給油')) {
       actions += `<button type="button" onclick="openRefuelUI('${id}')" class="field-infowindow-btn-single" style="margin-bottom:6px; background:#E91E63;">⛽ 給油する</button>`;
     }
-    if (p.isMarker && p.signFunction && String(p.signFunction).includes('車両・機械管理')) {
+    if (!isParentSign && p.isMarker && p.signFunction && String(p.signFunction).includes('車両・機械管理')) {
       actions += `<button type="button" onclick="openMachineStatusUI('${id}')" class="field-infowindow-btn-single" style="margin-bottom:6px; background:#1976D2;">🚜 車両・農機状況</button>`;
     }
-    if (p.isMarker && p.signFunction && String(p.signFunction).includes('道具管理')) {
+    if (!isParentSign && p.isMarker && p.signFunction && String(p.signFunction).includes('道具管理')) {
       actions += `<button type="button" onclick="openToolManagementUI('${id}')" class="field-infowindow-btn-single" style="margin-bottom:6px; background:#00BCD4;">🪚 道具状況</button>`;
     }
     actions += `<button type="button" onclick="directOpenReportForm('${id}')" class="field-infowindow-btn-single" style="background:#d32f2f;">⚠️ 問題を報告</button>`;
@@ -3428,7 +3429,7 @@ window.openMainMenu = (id) => {
   }
   const subInfo = !p.isMarker
     ? (isU ? '<span style="background:#999;color:white;padding:2px 4px;border-radius:2px;font-size:10px;">未使用</span> ' : '') + (p.location || '-') + ' / ' + (p.condition || '-') + (p.soilType ? ' / ' + p.soilType : '') + ' / ' + p.area + 'a'
-    : (p.signFunction ? `[${p.signFunction}]` : '');
+    : ((p.signFunction && !isParentSign && p.signFunction !== '機能なし') ? `[${p.signFunction}]` : '');
 
   const content = `
           <div class="field-infowindow-container ${typeClass}">

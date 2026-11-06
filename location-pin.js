@@ -181,6 +181,8 @@
 
     isParentSign: function (p, optPolys) {
       if (!p || !p.id) return false;
+      if (p.isParentSign === true || p.isParent === true) return true;
+      if (String(p.signFunction || '').trim() === '大看板') return true;
       var polys = SignGroup.getPolys(optPolys);
       var children = SignGroup.getChildren(p.id, polys);
       return children.length > 0;

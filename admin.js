@@ -7030,6 +7030,7 @@ function updateAdminSignFunctionHint_(selectEl) {
 }
 
 function signKeepsMaterials_(p) {
+    if (window.SignGroup && window.SignGroup.isParentSign(p)) return false;
     const f = String((p && p.signFunction) || '');
     return f.indexOf('倉庫') >= 0 || f.indexOf('在庫') >= 0;
 }
@@ -7065,26 +7066,33 @@ function openAttr(id) {
                <div style="font-size:14px; margin-bottom:10px;">看板情報変更</div>
                <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">看板名</div>
                <input type="text" id="rnIn" value="${p.name}" class="form-input" style="width:100%; margin-bottom:10px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">
-               ${adminSignFunctionFieldHtml_('rnFunc', p.signFunction)}
+               <div id="rnFuncBox" style="${isParentNow ? 'opacity:0.65;' : ''}">
+                 ${adminSignFunctionFieldHtml_('rnFunc', isParentNow ? '機能なし' : p.signFunction)}
+                 <div id="rnFuncParentNote" style="display:${isParentNow ? 'block' : 'none'}; font-size:10px; color:#7E57C2; font-weight:bold; margin-top:-6px; margin-bottom:8px; text-align:left;">※大看板（親看板）は目印のため看板機能は無効になります</div>
+               </div>
                <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">拠点</div>
                <select id="rnLoc" class="form-input" style="width:100%; margin-bottom:4px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">${locOptions}</select>
                <div style="font-size:11px; color:#666; text-align:left; line-height:1.4; margin:0 0 8px;">この看板の所属拠点です。</div>
                ${childNote}
-               <label style="display:flex;align-items:center;gap:8px;background:#EDE7F6;border:1px solid #7E57C2;border-radius:8px;padding:8px;margin-bottom:6px;cursor:pointer;text-align:left;">
-                 <input type="checkbox" id="rnAsParent" ${isParentNow ? 'checked' : ''} onchange="window.toggleAdminSignGroupRoleUI_()" style="width:16px;height:16px;">
-                 <span style="font-size:12px;font-weight:bold;color:#4A148C;">この看板を大看板にする</span>
-               </label>
-               <div id="rnChildrenBox" style="display:${isParentNow ? 'block' : 'none'};margin-bottom:8px;">
+               ${isParentNow ? `
+               <div style="background:#EDE7F6;border:1px solid #7E57C2;border-radius:8px;padding:8px;margin-bottom:8px;text-align:left;">
+                 <div style="font-size:12px;font-weight:bold;color:#4A148C;margin-bottom:6px;">🪧 大看板（親看板・目印）</div>
                  <button type="button" onclick="startAdminSignGroupMapSelect('${id}')" style="width:100%;background:#6A1B9A;color:white;border:none;border-radius:6px;padding:9px;font-weight:bold;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 1px 3px rgba(0,0,0,0.15);">
                    <span>🗺️ 地図から小看板を束ねる</span>
                    <span style="background:rgba(255,255,255,0.25);border-radius:10px;padding:1px 6px;font-size:11px;">${childCount}件</span>
                  </button>
                  <div style="font-size:10px;color:#666;text-align:left;line-height:1.3;margin-top:4px;">タップすると地図上で束ねる小看板を選択できます。</div>
                </div>
-               <div style="font-size:10px; color:#666; text-align:left; line-height:1.4; margin:0 0 10px;">基本は単独。大看板にしたら小看板を地図から選びます。</div>
+               ` : ''}
                <button onclick="execAttr('${id}')" style="width:100%; padding:10px; border-radius:4px; border:none; background:#d32f2f; color:white; font-weight:bold; cursor:pointer;">保存</button>
              </div>
            `);
+        if (isParentNow) {
+            setTimeout(() => {
+                const funcEl = document.getElementById('rnFunc');
+                if (funcEl) { funcEl.disabled = true; funcEl.value = '機能なし'; }
+            }, 0);
+        }
     } else {
         infoWindow.setContent(`<div style="width:240px;max-width:100%;box-sizing:border-box;text-align:left;color:#333;padding:4px;"><b>圃場情報変更</b><br><label class="form-label">名前</label><input type="text" id="edN" value="${p.name}" class="form-input"><label class="form-label">拠点</label><select id="edL" class="form-input"><option value="">未設定</option>${pdlLocations.map(l => `<option value="${l}" ${l === p.location ? 'selected' : ''}>${l}</option>`).join('')}</select><label class="form-label">条件</label><select id="edC" class="form-input"><option value="">未設定</option>${pdlConditions.map(c => `<option value="${c}" ${c === p.condition ? 'selected' : ''}>${c}</option>`).join('')}</select><label class="form-label">土質</label><select id="edSoil" class="form-input"><option value="">未設定</option>${(['粘土質', '砂質', '壌質']).map(s => `<option value="${s}" ${s === (p.soilType || '') ? 'selected' : ''}>${s}</option>`).join('')}</select><div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;"><label class="form-label" style="margin:0;">稼働状況</label><button type="button" onclick="openFieldStatusManager()" style="background:none;border:none;color:#1976d2;font-size:11px;cursor:pointer;padding:0;font-weight:bold;">⚙️ 管理</button></div><select id="edS" class="form-input" onchange="handleStatusSelect(this)"><option value="">未設定</option>${pdlStatuses.map(s => `<option value="${s}" ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}<option value="ADD_NEW" style="color:#1976d2;font-weight:bold;">➕ 新規項目追加...</option><option value="MANAGE_STATUS" style="color:#d32f2f;font-weight:bold;">⚙️ 項目の編集・削除...</option></select><button onclick="execAttr('${id}')" style="background:#d32f2f;color:white;width:100%;padding:10px;border-radius:4px;font-weight:bold;border:none;margin-top:10px;">情報を更新</button></div>`);
     }
@@ -7130,7 +7138,7 @@ function execAttr(id) {
         const f = funcEl ? funcEl.value : (p.signFunction || '機能なし');
         const locEl = document.getElementById('rnLoc');
         const loc = locEl ? locEl.value : (p.location || '');
-        const asParent = !!(document.getElementById('rnAsParent') || {}).checked;
+        const asParent = !!(window.SignGroup && window.SignGroup.isParentSign(p));
         const cbEls = document.querySelectorAll('.admin_sign_child_cb');
         const selectedChildIds = asParent
             ? (cbEls.length > 0
@@ -7138,7 +7146,9 @@ function execAttr(id) {
                 : (window.SignGroup ? window.SignGroup.getChildren(id, loadedPolygons).map(c => String(c.id)) : []))
             : [];
         if (!n) return;
-        p.name = n; p.signFunction = f; p.location = loc; p.labelConfig.text = n;
+        // 大看板（親看板）にする場合は看板機能を無効（機能なし）にする（ただの目印のため）
+        const finalFunc = asParent ? '機能なし' : f;
+        p.name = n; p.signFunction = finalFunc; p.location = loc; p.labelConfig.text = n;
         p.linkedSigns = window.tempLinkedSigns ? window.tempLinkedSigns.join(',') : "";
         const changedIds = (typeof window.applyAdminSignGroupChildren_ === 'function')
             ? window.applyAdminSignGroupChildren_(id, selectedChildIds)
@@ -7175,6 +7185,31 @@ window.toggleAdminSignGroupRoleUI_ = () => {
     const parentOn = !!(document.getElementById('rnAsParent') || {}).checked;
     const box = document.getElementById('rnChildrenBox');
     if (box) box.style.display = parentOn ? 'block' : 'none';
+    const funcEl = document.getElementById('rnFunc');
+    const funcBox = document.getElementById('rnFuncBox');
+    const note = document.getElementById('rnFuncParentNote');
+    if (funcEl) {
+        if (parentOn) {
+            if (!funcEl.dataset.prevFunc) funcEl.dataset.prevFunc = funcEl.value;
+            funcEl.value = '機能なし';
+            funcEl.disabled = true;
+            if (funcBox) funcBox.style.opacity = '0.65';
+            if (note) note.style.display = 'block';
+            const hint = document.getElementById('rnFuncHint');
+            if (hint) hint.textContent = '大看板（親看板）は目印のため看板機能は無効です';
+            const linkBtn = document.getElementById('btnLinkSignEdit');
+            if (linkBtn) linkBtn.style.display = 'none';
+        } else {
+            funcEl.disabled = false;
+            if (funcBox) funcBox.style.opacity = '1.0';
+            if (note) note.style.display = 'none';
+            if (funcEl.dataset.prevFunc) {
+                funcEl.value = funcEl.dataset.prevFunc;
+                funcEl.dataset.prevFunc = '';
+            }
+            updateAdminSignFunctionHint_(funcEl);
+        }
+    }
 };
 
 /** 大看板の子一覧をローカルへ反映（変更されたID配列を返す） */
@@ -7183,9 +7218,18 @@ window.applyAdminSignGroupChildren_ = (parentId, selectedIds) => {
     const selected = new Set((selectedIds || []).map(String));
     const changed = [];
     const parent = loadedPolygons[pid];
-    if (parent && parent.isMarker && String(parent.parentSignId || '').trim()) {
-        parent.parentSignId = '';
-        changed.push(pid);
+    if (parent && parent.isMarker) {
+        let parentChanged = false;
+        if (String(parent.parentSignId || '').trim()) {
+            parent.parentSignId = '';
+            parentChanged = true;
+        }
+        // 子看板から親看板にする場合、または大看板（親看板）として子看板を束ねる場合、看板機能は無効（機能なし）にする（ただの目印のため）
+        if (selected.size > 0 && String(parent.signFunction || '機能なし') !== '機能なし') {
+            parent.signFunction = '機能なし';
+            parentChanged = true;
+        }
+        if (parentChanged) changed.push(pid);
     }
     Object.keys(loadedPolygons || {}).forEach((id) => {
         const p = loadedPolygons[id];
@@ -8392,6 +8436,7 @@ window.cancelMarkerForm_ = () => {
     }
     window._pendingSignRegPhotos = [];
     window._signRegState = null;
+    window._targetSignKind = null;
     const modal = document.getElementById('modal');
     if (modal) modal.style.display = 'none';
 };
@@ -8466,12 +8511,156 @@ function openMarkerForm(markerObj) {
         return;
     }
     modal.style.display = 'flex';
-    if (window._signRegState.skipQuick) {
-        window.renderSignRegDetailScreen_({});
+
+    const preKind = window._targetSignKind || (window._signRegState.skipQuick ? 'child' : null);
+    window._targetSignKind = null;
+
+    if (preKind === 'parent') {
+        window._signRegState.signKind = 'parent';
+        window.renderSignRegParentScreen_({});
+    } else if (preKind === 'child') {
+        window._signRegState.signKind = 'child';
+        if (window._signRegState.skipQuick) {
+            window.renderSignRegDetailScreen_({});
+        } else {
+            window.renderSignRegQuickScreen_();
+        }
+    } else {
+        // まず小看板か大看板かを選択する画面を表示
+        window.renderSignRegKindChoiceScreen_();
+    }
+}
+
+window.chooseSignRegKind_ = (kind) => {
+    if (!window._signRegState) window._signRegState = {};
+    window._signRegState.signKind = kind;
+    if (kind === 'parent') {
+        window.renderSignRegParentScreen_({});
     } else {
         window.renderSignRegQuickScreen_();
     }
-}
+};
+
+window.renderSignRegKindChoiceScreen_ = () => {
+    const st = window._signRegState || {};
+    const modalBody = document.getElementById('modalBody');
+    if (!modalBody) return;
+    const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    modalBody.innerHTML = `
+      <div style="width:min(92vw,380px);max-width:100%;box-sizing:border-box;padding:6px;color:#000;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <h3 style="margin:0; color:#d32f2f; font-size:18px;">🪧 看板作成</h3>
+          <span onclick="cancelMarkerForm_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
+        </div>
+        ${st.posLabel ? `<div style="font-size:11px; color:#888; margin-bottom:12px; text-align:center;">📍 ${esc(st.posLabel)}</div>` : ''}
+        <div style="font-size:13px; font-weight:bold; color:#444; margin-bottom:12px; text-align:left;">作成する看板の種類を選択してください</div>
+
+        <!-- 小看板ボタン -->
+        <button type="button" onclick="chooseSignRegKind_('child')"
+          style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:14px; margin-bottom:12px; border:2px solid #81C784; border-radius:10px; background:#F1F8E9; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.06); transition:background 0.15s;">
+          <span style="font-size:32px; line-height:1;">🏷️</span>
+          <div style="flex:1;">
+            <div style="font-size:16px; font-weight:bold; color:#2E7D32;">小看板（通常看板）</div>
+            <div style="font-size:11px; color:#558B2F; margin-top:3px; line-height:1.4;">給水口・排水口・倉庫・給油・道具・注意など、現場の個別設備やピンを登録します。</div>
+          </div>
+        </button>
+
+        <!-- 大看板ボタン -->
+        <button type="button" onclick="chooseSignRegKind_('parent')"
+          style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:14px; margin-bottom:16px; border:2px solid #BA68C8; border-radius:10px; background:#EDE7F6; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.06); transition:background 0.15s;">
+          <span style="font-size:32px; line-height:1;">🪧</span>
+          <div style="flex:1;">
+            <div style="font-size:16px; font-weight:bold; color:#4A148C;">大看板（親看板・目印）</div>
+            <div style="font-size:11px; color:#6A1B9A; margin-top:3px; line-height:1.4;">周辺の小看板をグループとして束ねる目印看板です。高倍率ズームで小看板が展開されます。</div>
+          </div>
+        </button>
+
+        <button type="button" onclick="cancelMarkerForm_()"
+          style="width:100%; background:#eee; color:#666; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">キャンセル</button>
+      </div>
+    `;
+};
+
+window.renderSignRegParentScreen_ = (opts) => {
+    opts = opts || {};
+    const st = window._signRegState || {};
+    const modalBody = document.getElementById('modalBody');
+    if (!modalBody) return;
+
+    const defaultLoc = String(st.defaultLoc || '').trim();
+    const locOpts = `<option value="">拠点を選択...</option>` + (pdlLocations || []).map(l =>
+        `<option value="${String(l).replace(/"/g, '&quot;')}" ${l === defaultLoc ? 'selected' : ''}>${l}</option>`
+    ).join('');
+    const presetName = opts.name != null ? String(opts.name) : '';
+    const presetIcon = opts.icon || '🪧';
+    const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+
+    modalBody.innerHTML = `
+      <div style="width:min(92vw,360px);max-width:100%;box-sizing:border-box;padding:4px;text-align:center;color:#000;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <h3 style="margin:0; color:#6A1B9A; font-size:18px;">🪧 大看板（目印）の登録</h3>
+          <span onclick="cancelMarkerForm_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
+        </div>
+        <button type="button" onclick="renderSignRegKindChoiceScreen_()"
+          style="width:100%; background:#f5f5f5; color:#555; border:1px solid #ddd; border-radius:6px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:10px;">
+          ← 種類選択（小看板 / 大看板）に戻る
+        </button>
+        ${st.posLabel ? `<div style="font-size:11px; color:#888; margin-bottom:8px;">📍 ${esc(st.posLabel)}</div>` : ''}
+
+        <div style="font-size:11px; color:#4A148C; background:#EDE7F6; border:1px solid #D1C4E9; border-radius:8px; padding:8px 10px; margin-bottom:10px; text-align:left; line-height:1.4;">
+          <b>※ 大看板（親看板）</b><br>
+          エリアの目印となる看板です（看板機能は無効になります）。登録後、周辺の小看板を地図から束ねることができます。
+        </div>
+
+        <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">大看板名 <span style="color:#d32f2f;">*</span></div>
+        <input type="text" id="mName" class="form-input" placeholder="例：第1農場、資材置場エリア、北側ハウス群" value="${esc(presetName)}" style="margin-bottom:8px;">
+
+        <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">所属拠点</div>
+        <select id="mLoc" class="form-input" style="margin-bottom:4px;">${locOpts}</select>
+        <div style="font-size:11px; color:#666; text-align:left; line-height:1.4; margin:0 0 10px;">この大看板の所属拠点です。</div>
+
+        <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">アイコン選択</div>
+        <div style="max-height:240px;overflow-y:auto;padding:0 6px 6px;border:1px solid #ddd;border-radius:8px;background:#fafafa;margin-bottom:8px;">
+          ${renderAdminSignIconPickerHtml_({ onPick: 'selectMI', activeIcon: presetIcon })}
+        </div>
+        <input type="hidden" id="selIco" value="${esc(presetIcon)}">
+        <input type="hidden" id="mFunc" value="大看板">
+
+        <div style="text-align:left; margin-top:10px;">
+          <div style="font-size:11px; color:#666; margin-bottom:4px; font-weight:bold;">📷 写真（任意・複数可）</div>
+          <div id="mPhotoPreview" style="min-height:64px; background:#f5f5f5; border:1px dashed #bbb; border-radius:8px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; justify-content:center; overflow:hidden; padding:6px; margin-bottom:6px;">
+            <div style="color:#888; font-size:12px;">写真未選択</div>
+          </div>
+          <input type="file" id="mPhotoInput" accept="image/*" multiple capture="environment" onchange="previewSignRegPhotos_(this)" style="width:100%; font-size:12px; margin-bottom:6px;">
+          <button type="button" onclick="clearSignRegPhotos_()" style="width:100%; background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px; font-size:12px; cursor:pointer;">写真をクリア</button>
+        </div>
+
+        <div style="display:flex; gap:8px; margin-top:14px;">
+          <button type="button" id="btnSaveSignMarker" onclick="saveM()" style="background:#6A1B9A;color:white;flex:2;padding:12px;border-radius:6px;border:none;font-weight:bold;font-size:14px;cursor:pointer;box-shadow:0 2px 4px rgba(0,0,0,0.15);">🪧 大看板として登録</button>
+          <button type="button" onclick="cancelMarkerForm_()" style="background:#ccc;color:#333;flex:1;padding:12px;border-radius:6px;border:none;font-weight:bold;cursor:pointer;">キャンセル</button>
+        </div>
+      </div>
+    `;
+
+    if (Array.isArray(window._pendingSignRegPhotos) && window._pendingSignRegPhotos.length) {
+        const preview = document.getElementById('mPhotoPreview');
+        const out = window._pendingSignRegPhotos;
+        if (preview) {
+            preview.innerHTML = out.map((p) =>
+                `<img src="${p.base64}" alt="preview" style="width:64px; height:64px; object-fit:cover; border-radius:6px; border:1px solid #ccc;">`
+            ).join('') + `<div style="width:100%; font-size:11px; color:#666; text-align:center;">${out.length}枚選択中</div>`;
+        }
+    }
+
+    setTimeout(() => {
+        if (typeof window.selectMI === 'function') window.selectMI(presetIcon);
+        const nameEl = document.getElementById('mName');
+        if (nameEl) {
+            if (!presetName) nameEl.focus();
+            else nameEl.select();
+        }
+    }, 10);
+};
 
 window.renderSignRegQuickScreen_ = () => {
     const st = window._signRegState || {};
@@ -8480,11 +8669,15 @@ window.renderSignRegQuickScreen_ = () => {
     const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
     modalBody.innerHTML = `
       <div style="width:min(92vw,380px);max-width:100%;box-sizing:border-box;padding:4px;color:#000;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-          <h3 style="margin:0; color:#d32f2f; font-size:18px;">🪧 看板登録</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <h3 style="margin:0; color:#2E7D32; font-size:18px;">🏷️ 小看板の登録</h3>
           <span onclick="cancelMarkerForm_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
         </div>
-        ${st.posLabel ? `<div style="font-size:11px; color:#888; margin-bottom:10px; text-align:center;">📍 ${esc(st.posLabel)}</div>` : ''}
+        <button type="button" onclick="renderSignRegKindChoiceScreen_()"
+          style="width:100%; background:#f5f5f5; color:#555; border:1px solid #ddd; border-radius:6px; padding:7px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:8px;">
+          ← 種類選択（小看板 / 大看板）に戻る
+        </button>
+        ${st.posLabel ? `<div style="font-size:11px; color:#888; margin-bottom:8px; text-align:center;">📍 ${esc(st.posLabel)}</div>` : ''}
         <div style="font-size:13px; font-weight:bold; color:#333; margin-bottom:8px;">よく使う種類（クイックセット）</div>
         <div style="display:grid; grid-template-columns:1fr; gap:8px; margin-bottom:12px; max-height:46vh; overflow-y:auto;">
           <button type="button" onclick="pickSignRegQuick_('water')"
@@ -8677,7 +8870,7 @@ window.renderSignRegDetailScreen_ = (opts) => {
                 <h3 style="margin:0; color:#d32f2f; font-size:18px;">🪧 ${fromQuick ? '内容確認・登録' : '詳細登録'}</h3>
                 <span onclick="cancelMarkerForm_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
               </div>
-              ${!st.skipQuick ? `<button type="button" onclick="renderSignRegQuickScreen_()" style="width:100%; background:#f5f5f5; color:#555; border:1px solid #ddd; border-radius:6px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:10px;">← クイックセットに戻る</button>` : ''}
+              ${!st.skipQuick ? `<button type="button" onclick="renderSignRegQuickScreen_()" style="width:100%; background:#f5f5f5; color:#555; border:1px solid #ddd; border-radius:6px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:10px;">← クイックセットに戻る</button>` : `<button type="button" onclick="renderSignRegKindChoiceScreen_()" style="width:100%; background:#f5f5f5; color:#555; border:1px solid #ddd; border-radius:6px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:10px;">← 種類選択（小看板 / 大看板）に戻る</button>`}
               ${st.posLabel ? `<div style="font-size:11px; color:#888; margin-bottom:8px;">📍 ${esc(st.posLabel)}</div>` : ''}
               ${fromQuick ? `<div style="font-size:12px; color:#2E7D32; background:#E8F5E9; border-radius:6px; padding:8px; margin-bottom:10px; line-height:1.4;">✅ 「${esc(presetName)}」 ${presetIcon} をセットしました。必要なら修正して登録してください。</div>` : ''}
               <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">看板名</div>
@@ -8685,8 +8878,7 @@ window.renderSignRegDetailScreen_ = (opts) => {
               ${adminSignFunctionFieldHtml_('mFunc', presetFunc || '機能なし')}
               <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">拠点</div>
               <select id="mLoc" class="form-input" style="margin-bottom:4px;">${locOpts}</select>
-              <div style="font-size:11px; color:#666; text-align:left; line-height:1.4; margin:0 0 8px;">この看板の所属拠点です。</div>
-              <div style="font-size:11px; color:#666; background:#F3E5F5; border-radius:6px; padding:8px; text-align:left; line-height:1.4; margin:0 0 8px;">登録後、「情報・大小看板」から大看板にして小看板を選べます。</div>
+              <div style="font-size:11px; color:#666; text-align:left; line-height:1.4; margin:0 0 10px;">この看板の所属拠点です。</div>
               <div style="max-height:280px;overflow-y:auto;padding:0 6px 6px;border:1px solid #ddd;border-radius:8px;background:#fafafa;">
                 ${renderAdminSignIconPickerHtml_({ onPick: 'selectMI', activeIcon: presetIcon })}
               </div>
@@ -9013,6 +9205,7 @@ document.getElementById('btnMarkerMode').onclick = () => {
     document.getElementById('btnMarkerMode').classList.add('active');
     document.getElementById('drawArea').style.display = 'none';
 
+    window._targetSignKind = null;
     customDrawingMode = 'marker';
     clearCustomDrawing();
     setFudeVisibility(false);
@@ -9026,7 +9219,37 @@ document.getElementById('btnMarkerMode').onclick = () => {
     if (legendDiv) legendDiv.style.display = 'none';
 
     // 登録操作のたびに案内を出す（「今後表示しない」で消えないようにする）
-    customAlert("【看板作成モード】\n地図上の看板を置きたい場所を1回タップしてください。\nタップ後に登録ポップアップが開きます。");
+    customAlert("【看板作成モード】\n地図上の看板を置きたい場所を1回タップしてください。\nタップ後に【小看板】か【大看板】を選んで登録できます。");
+    if (typeof window.closeAdminRegPlusMenu_ === 'function') window.closeAdminRegPlusMenu_();
+    if (typeof window.syncAdminRegPlusBtnState_ === 'function') window.syncAdminRegPlusBtnState_('marker');
+};
+
+window.startMarkerKindMode_ = (kind) => {
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    const btnMarker = document.getElementById('btnMarkerMode');
+    if (btnMarker) btnMarker.classList.add('active');
+    const drawArea = document.getElementById('drawArea');
+    if (drawArea) drawArea.style.display = 'none';
+
+    window._targetSignKind = kind || null;
+    customDrawingMode = 'marker';
+    clearCustomDrawing();
+    setFudeVisibility(false);
+
+    map.setOptions({ draggable: true, draggableCursor: pinCursor });
+    if (typeof preloadFudeData === 'function') preloadFudeData();
+    if (typeof updateMarkerLabels === 'function') updateMarkerLabels();
+
+    let legendDiv = document.getElementById('adminLegendUI');
+    if (legendDiv) legendDiv.style.display = 'none';
+
+    if (kind === 'parent') {
+        customAlert("【大看板作成モード】\n地図上の大看板（親看板・目印）を置きたい場所を1回タップしてください。\n登録後に周辺の小看板を束ねることができます。");
+    } else if (kind === 'child') {
+        customAlert("【小看板作成モード】\n地図上の小看板を置きたい場所を1回タップしてください。\nタップ後に登録ポップアップが開きます。");
+    } else {
+        customAlert("【看板作成モード】\n地図上の看板を置きたい場所を1回タップしてください。\nタップ後に【小看板】か【大看板】を選んで登録できます。");
+    }
     if (typeof window.closeAdminRegPlusMenu_ === 'function') window.closeAdminRegPlusMenu_();
     if (typeof window.syncAdminRegPlusBtnState_ === 'function') window.syncAdminRegPlusBtnState_('marker');
 };
@@ -9067,6 +9290,18 @@ window.pickAdminRegPlus_ = (kind) => {
     if (kind === 'draw') {
         const btn = document.getElementById('btnDrawMode');
         if (btn) btn.click();
+    } else if (kind === 'marker_parent') {
+        if (typeof window.startMarkerKindMode_ === 'function') window.startMarkerKindMode_('parent');
+        else {
+            const btn = document.getElementById('btnMarkerMode');
+            if (btn) btn.click();
+        }
+    } else if (kind === 'marker_child') {
+        if (typeof window.startMarkerKindMode_ === 'function') window.startMarkerKindMode_('child');
+        else {
+            const btn = document.getElementById('btnMarkerMode');
+            if (btn) btn.click();
+        }
     } else if (kind === 'marker') {
         const btn = document.getElementById('btnMarkerMode');
         if (btn) btn.click();
@@ -10298,13 +10533,14 @@ window.saveLocationPin_ = async () => {
 };
 
 window.saveM = async () => {
+    const isParent = !!(window._signRegState && window._signRegState.signKind === 'parent');
     const nameEl = document.getElementById('mName');
     const n = nameEl ? String(nameEl.value || '').trim() : '';
-    if (!n) { customAlert("看板名を入力してください"); return; }
+    if (!n) { customAlert(isParent ? "大看板名を入力してください" : "看板名を入力してください"); return; }
     if (!currentMarker) { customAlert("位置が設定されていません。地図をタップしてから登録してください。"); return; }
-    const ic = document.getElementById('selIco').value;
+    const ic = (document.getElementById('selIco') || {}).value || (isParent ? '🪧' : '📍');
     const funcEl = document.getElementById('mFunc');
-    const funcType = funcEl ? String(funcEl.value || '').trim() : '機能なし';
+    const funcType = isParent ? '大看板' : (funcEl ? String(funcEl.value || '').trim() : '機能なし');
     const pos = currentMarker.getPosition();
     const coords = [{ lat: pos.lat(), lng: pos.lng() }];
     const locEl = document.getElementById('mLoc');
@@ -10326,7 +10562,7 @@ window.saveM = async () => {
             time: hm,
             author: currentUser || '',
             urls: photos.map(p => p.base64).filter(Boolean),
-            data: { notes: '看板登録時' },
+            data: { notes: isParent ? '大看板登録時' : '看板登録時' },
             _pendingSync: true
         }]
         : [];
@@ -10346,6 +10582,8 @@ window.saveM = async () => {
         signFunction: funcType,
         parentSignId: parentSignId,
         isMarker: true,
+        isParentSign: isParent,
+        isParent: isParent,
         photos: localPhotos
     });
     document.getElementById('btnViewMode').click();
@@ -10371,6 +10609,11 @@ window.saveM = async () => {
         remapLoadedPolygonId_(tempId, id);
         if (id && loadedPolygons[id]) {
             loadedPolygons[id].parentSignId = parentSignId;
+            if (isParent) {
+                loadedPolygons[id].isParentSign = true;
+                loadedPolygons[id].isParent = true;
+                loadedPolygons[id].signFunction = '大看板';
+            }
         }
         if (window.SignGroup) window.SignGroup.refreshMarkers();
         if (photos.length && id) {
@@ -10380,7 +10623,7 @@ window.saveM = async () => {
                     name: n,
                     author: currentUser,
                     recordType: 'growth',
-                    data: { notes: '看板登録時' },
+                    data: { notes: isParent ? '大看板登録時' : '看板登録時' },
                     photos: photos
                 });
                 if (loadedPolygons[id] && Array.isArray(updated)) {
@@ -10397,6 +10640,16 @@ window.saveM = async () => {
             showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
         }
         persistAdminInitCache_();
+
+        // 大看板を登録した場合、続けて小看板の紐付け選択を促す
+        if (isParent && id) {
+            setTimeout(async () => {
+                const ok = await customConfirm(`🪧 大看板「${n}」を登録しました！\n\n続けて、この大看板に束ねる小看板を地図から選びますか？`);
+                if (ok && typeof window.startAdminSignGroupMapSelect === 'function') {
+                    window.startAdminSignGroupMapSelect(id);
+                }
+            }, 300);
+        }
     } catch (e) {
         showAdminSyncToast('⚠️ 保存に失敗しました: ' + (e.message || e), 'error');
     }
@@ -10731,9 +10984,8 @@ window.openM = (id) => {
                 <button type="button" onclick="removeAdminSignFromGroup_('${id}')" style="width:100%; margin-top:6px; background:#E65100; color:white; border:none; border-radius:4px; padding:6px 0; font-size:11px; font-weight:bold; cursor:pointer;">❌ 大看板への束ねを解除する</button>
             </div>`;
         } else {
-            signGroupInfo = `<div style="margin-bottom:8px;">
-                <button type="button" onclick="startAdminSignGroupMapSelect('${id}')" style="width:100%; background:#F3E5F5; color:#4A148C; border:1px solid #BA68C8; border-radius:6px; padding:7px 0; font-size:11px; font-weight:bold; cursor:pointer;">🪧 大看板にして小看板を地図から束ねる</button>
-            </div>`;
+            // 通常の小看板（小看板から大看板への変更は行わない）
+            signGroupInfo = '';
         }
     }
 

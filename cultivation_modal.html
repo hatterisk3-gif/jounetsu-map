@@ -25,7 +25,7 @@
         </div>
         <div>
           <div style="font-size:34px; margin-bottom:8px; line-height:1;">⚡</div>
-          <div style="font-size:16px; font-weight:bold; color:#4A148C; margin-bottom:4px;">シンプルモード</div>
+          <div style="font-size:16px; font-weight:bold; color:#4A148C; margin-bottom:4px;">クイック（シンプル）モード</div>
           <div style="font-size:11px; font-weight:bold; color:#8E24AA; margin-bottom:10px;">目標から理想作型を自動逆算</div>
           <div style="font-size:11px; color:#555; line-height:1.55;">
             作物名・月別目標売上・上限面積・作業時間を入力するだけで、<b>最適な作型組み合わせと栽培規模を自動提案</b>します。
@@ -169,7 +169,7 @@
                 <!-- ヘッダーバー -->
                 <div class="cp-section-header-bar" style="background: linear-gradient(135deg, #f3e5f5 0%, #ede7f6 100%); border-left: 4px solid #8e24aa; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px;">
                   <div class="cp-section-header-text">
-                    <span class="cp-section-header-title" style="color: #4a148c; font-size: 16px; font-weight: bold;">⚡ シンプルモード（目標売上・上限制約から理想作型を自動逆算）</span>
+                    <span class="cp-section-header-title" style="color: #4a148c; font-size: 16px; font-weight: bold;">⚡ クイック（シンプル）モード（目標売上・上限制約から理想作型を自動逆算）</span>
                     <span class="cp-section-header-desc" style="color: #6a1b9a;">作物名・月別目標売上・上限面積・上限作業時間を入力すると、最適な作型組み合わせと栽培規模を自動逆算して提示します。</span>
                   </div>
                   <div class="cp-section-header-actions" style="display:flex; gap:8px;">
@@ -181,6 +181,28 @@
                 <div class="cp-simple-layout" style="display: grid; grid-template-columns: minmax(360px, 1fr) minmax(420px, 1.25fr); gap: 16px; align-items: start;">
                   <!-- 左カラム: 条件入力フォーム -->
                   <div class="cp-simple-form-col" style="display: flex; flex-direction: column; gap: 12px;">
+                    <!-- 0. 計画年度 ＆ 拠点選択 -->
+                    <div class="cp-field cp-field-card" style="border-top: 3px solid #0284c7; background:#fff; border-radius:8px; padding:10px 12px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+                      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                        <div>
+                          <label class="cp-field-label" for="cpSimpleYear" style="font-weight:bold; color:#0369a1; font-size:12px; display:block; margin-bottom:4px;">📅 計画年度 <span class="cp-req-badge" style="background:#e91e63; color:#fff; font-size:9px; padding:1px 4px; border-radius:3px;">必須</span></label>
+                          <select id="cpSimpleYear" class="cp-control" style="width:100%; height:32px; font-size:13px; font-weight:bold;" onchange="syncCpSimpleYearToMain(this.value)">
+                            <option value="2024">2024年</option>
+                            <option value="2025">2025年</option>
+                            <option value="2026" selected>2026年</option>
+                            <option value="2027">2027年</option>
+                            <option value="2028">2028年</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label class="cp-field-label" for="cpSimpleLocation" style="font-weight:bold; color:#0369a1; font-size:12px; display:block; margin-bottom:4px;">📍 対象拠点 <span class="cp-req-badge" style="background:#e91e63; color:#fff; font-size:9px; padding:1px 4px; border-radius:3px;">必須</span></label>
+                          <select id="cpSimpleLocation" class="cp-control" style="width:100%; height:32px; font-size:13px; font-weight:bold;" onchange="syncCpSimpleLocationToMain(this.value)">
+                            <option value="">拠点を選択してください</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
                     <!-- 1. 作物名選択 -->
                     <div class="cp-field cp-field-card" style="border-top: 3px solid #8e24aa; background:#fff; border-radius:8px; padding:12px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
                       <div class="cp-field-label-row">
@@ -305,7 +327,7 @@
                     <!-- シミュレーション実行ボタン -->
                     <button type="button" id="btnRunCpSimpleSim" onclick="runCpSimpleSimulation()"
                       style="margin-top:4px; padding:12px; background:linear-gradient(135deg, #8e24aa 0%, #6a1b9a 100%); color:#fff; border:none; border-radius:8px; font-size:15px; font-weight:bold; cursor:pointer; box-shadow:0 3px 10px rgba(142,36,170,0.3); display:flex; align-items:center; justify-content:center; gap:8px;">
-                      <span>✨ 理想の作型と数値をシミュレーション</span>
+                      <span>✨ 作物別カレンダーと数値をシミュレーション</span>
                     </button>
                   </div>
 
@@ -313,10 +335,10 @@
                   <div class="cp-simple-result-col" id="cpSimpleResultCol" style="display:flex; flex-direction:column; gap:12px;">
                     <!-- 初期プレースホルダー -->
                     <div id="cpSimpleResultPlaceholder" style="background:#fafafa; border:2px dashed #d1c4e9; border-radius:10px; padding:40px 20px; text-align:center; color:#7e57c2; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:360px; box-sizing:border-box;">
-                      <div style="font-size:46px; margin-bottom:12px;">🌱 ✨</div>
+                      <div style="font-size:46px; margin-bottom:12px;">🌱 📅</div>
                       <div style="font-size:16px; font-weight:bold; margin-bottom:6px; color:#4a148c;">条件を入力してシミュレーション</div>
-                      <div style="font-size:12px; color:#666; max-width:320px; line-height:1.6;">
-                        作物名、月ごとの目標売上、上限面積、上限作業時間を設定して「シミュレーション」を押すと、理想の作型スケジュールと各月の数値予測が表示されます。
+                      <div style="font-size:12px; color:#666; max-width:340px; line-height:1.6;">
+                        作物名、月ごとの目標売上、上限面積、上限作業時間を設定して「シミュレーション」を押すと、作物別の年間カレンダーと推奨品種が表示されます。
                       </div>
                     </div>
 
@@ -328,13 +350,19 @@
                       <!-- 診断・アドバイスメッセージ -->
                       <div id="cpSimpleAdviceBox" style="background:#f3e5f5; border:1px solid #ce93d8; border-radius:8px; padding:10px 14px; font-size:12px; line-height:1.5;"></div>
 
-                      <!-- 理想の作型一覧 -->
+                      <!-- 作物別カレンダー＆推奨品種一覧 -->
                       <div style="background:#fff; border:1px solid #e0e0e0; border-radius:8px; padding:12px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                          <div style="font-size:13px; font-weight:bold; color:#4a148c;">🌱 理想の推奨作型スケジュール</div>
-                          <span id="cpSimpleCroptypeCountBadge" style="font-size:11px; background:#ede7f6; color:#6a1b9a; padding:2px 8px; border-radius:999px; font-weight:bold;">0 作型</span>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:6px;">
+                          <div style="display:flex; align-items:center; gap:8px;">
+                            <div style="font-size:14px; font-weight:bold; color:#4a148c;">🌱 作物別カレンダー ＆ 推奨品種</div>
+                            <span id="cpSimpleCropCountBadge" style="font-size:11px; background:#e8f5e9; color:#2e7d32; padding:2px 8px; border-radius:999px; font-weight:bold; border:1px solid #c8e6c9;">0 作物</span>
+                          </div>
+                          <div style="display:flex; align-items:center; gap:6px;">
+                            <span id="cpSimpleCroptypeCountBadge" style="font-size:11px; background:#ede7f6; color:#6a1b9a; padding:2px 8px; border-radius:999px; font-weight:bold;">0 作型</span>
+                            <button type="button" class="cp-btn-secondary" onclick="clearAllCpSimpleCropResults()" style="font-size:11px; padding:2px 8px; color:#c62828;" title="全作物のシミュレーション結果をクリア">クリア</button>
+                          </div>
                         </div>
-                        <div id="cpSimpleCroptypesList" style="display:flex; flex-direction:column; gap:8px;"></div>
+                        <div id="cpSimpleCroptypesList" style="display:flex; flex-direction:column; gap:12px;"></div>
                       </div>
 
                       <!-- 月別シミュレーション分析テーブル＆バー -->
@@ -343,12 +371,32 @@
                         <div id="cpSimpleMonthlyAnalysis" style="overflow-x:auto;"></div>
                       </div>
 
-                      <!-- 反映アクションボタン -->
-                      <div style="display:flex; gap:10px; margin-top:4px;">
-                        <button type="button" id="btnApplyCpSimpleToPlan" onclick="applyCpSimpleResultToPlan()" class="cp-btn-primary"
-                          style="flex:1; padding:12px; background:linear-gradient(135deg, #43a047 0%, #2e7d32 100%); color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:bold; cursor:pointer; box-shadow:0 3px 10px rgba(46,125,50,0.3); display:flex; align-items:center; justify-content:center; gap:8px;">
-                          <span>🚀 この理想作型で計画を作成・カレンダーへ反映</span>
-                        </button>
+                      <!-- 反映＆保存 アクションバー -->
+                      <div style="background:#f0fdf4; border:1px solid #86efac; border-radius:10px; padding:14px; margin-top:6px; display:flex; flex-direction:column; gap:10px; box-shadow:0 2px 8px rgba(34,197,94,0.12);">
+                        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+                          <div>
+                            <div style="font-size:14px; font-weight:bold; color:#166534; display:flex; align-items:center; gap:6px;">
+                              <span>💾</span> <span>シミュレーション結果から栽培計画を作成・保存</span>
+                            </div>
+                            <div style="font-size:11px; color:#475569; margin-top:2px;">
+                              この理想作型で正式な栽培計画を作成し、クラウドへ安全に保存します（いつでも計画一覧から開けます）。
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                          <!-- メインボタン: 保存確認モーダルを開いて確定保存 -->
+                          <button type="button" id="btnSaveCpSimplePlanDirect" onclick="openCpSimpleSaveConfirmModal()"
+                            style="flex:1.4; min-width:240px; padding:12px 16px; background:linear-gradient(135deg, #16a34a 0%, #15803d 100%); color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:bold; cursor:pointer; box-shadow:0 3px 10px rgba(22,163,74,0.3); display:flex; align-items:center; justify-content:center; gap:8px; transition:transform 0.1s;">
+                            <span>💾 この内容で栽培計画を作成して保存</span>
+                          </button>
+                          
+                          <!-- セカンダリボタン: カレンダーで手動編集してから保存 -->
+                          <button type="button" id="btnApplyCpSimpleToPlan" onclick="applyCpSimpleResultToPlan({ autoOpenCalendar: true })" class="cp-btn-secondary"
+                            style="flex:1; min-width:180px; padding:12px 14px; background:#fff; border:1px solid #86efac; color:#166534; border-radius:8px; font-size:13px; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
+                            <span>📅 カレンダーで微調整する</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1951,6 +1999,17 @@
     </style>
 
     <div id="cpCalendarStage" class="cp-calendar-stage is-hidden">
+      <!-- クイックシミュレーション反映後の保存案内バナー -->
+      <div id="cpSimpleFromSimBanner" style="display:none; margin-bottom:8px; padding:10px 14px; background:linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%); border:1px solid #86efac; border-radius:8px; font-size:12px; color:#166534; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; box-shadow:0 1px 4px rgba(22,163,74,0.1);">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:16px;">✨</span>
+          <span id="cpSimpleFromSimBannerText" style="font-weight:bold;">クイックシミュレーションから作型を反映しました。半旬カレンダーの微調整が終わったら保存してください。</span>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button type="button" onclick="saveCultivationPlan()" class="cp-btn-primary" style="padding:6px 14px; font-size:12px; background:#16a34a; font-weight:bold; border-radius:6px; box-shadow:0 2px 4px rgba(22,163,74,0.25);">💾 今すぐ計画を保存</button>
+          <button type="button" onclick="document.getElementById('cpSimpleFromSimBanner').style.display='none'" style="background:none; border:none; color:#15803d; font-size:16px; cursor:pointer; padding:0 4px;" title="閉じる">×</button>
+        </div>
+      </div>
       <div
         style="margin-bottom: 6px; padding: 6px 10px; background: #fafafa; border-radius: 4px; border: 1px solid #ddd; display: flex; gap: 12px; align-items: center; overflow-x: auto; white-space: nowrap; flex-shrink: 0;">
         <input type="radio" name="cpTool" value="semiauto" checked hidden aria-hidden="true">
@@ -2969,6 +3028,62 @@
         style="flex:1; padding:10px 14px; background:#FFF3E0; color:#E65100; border:1px solid #FFB74D; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold;">シミュレーション</button>
       <button type="button" id="cpHtpApproveBtn" onclick="approveCpHarvestTargetPlan()" disabled
         style="flex:1; padding:10px 14px; background:#E65100; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold;">承認して反映</button>
+    </div>
+  </div>
+</div>
+
+<!-- クイック保存確認モーダル -->
+<div id="cpSimpleSaveModal" style="display:none; position:fixed; inset:0; z-index:12500; background:rgba(0,0,0,0.65); align-items:center; justify-content:center; padding:16px; box-sizing:border-box;">
+  <div style="background:#fff; border-radius:12px; width:min(94vw, 540px); max-height:90vh; overflow-y:auto; box-shadow:0 12px 36px rgba(0,0,0,0.3); display:flex; flex-direction:column; padding:22px; box-sizing:border-box;">
+    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:12px; margin-bottom:16px;">
+      <div style="font-size:17px; font-weight:bold; color:#166534; display:flex; align-items:center; gap:8px;">
+        <span>💾</span> <span>栽培計画の確定 ＆ クラウド保存</span>
+      </div>
+      <span style="cursor:pointer; font-size:24px; color:#94a3b8; line-height:1;" onclick="closeCpSimpleSaveModal()">×</span>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:14px; font-size:13px;">
+      <div>
+        <label style="font-weight:bold; color:#1e293b; display:block; margin-bottom:4px;">栽培計画名 <span style="color:#e11d48;">*</span></label>
+        <input type="text" id="cpSimpleSavePlanName" class="cp-control" style="width:100%; height:36px; font-size:13px; font-weight:bold; padding:4px 10px; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box;" placeholder="例: キャベツ 理想作型計画 2026">
+        <div style="font-size:11px; color:#64748b; margin-top:3px;">保存済み計画一覧で表示される名前です。</div>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+        <div>
+          <label style="font-weight:bold; color:#1e293b; display:block; margin-bottom:4px;">計画年度 <span style="color:#e11d48;">*</span></label>
+          <select id="cpSimpleSaveYear" class="cp-control" style="width:100%; height:36px; font-size:13px; font-weight:bold; padding:4px 8px; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box;">
+            <option value="2024">2024年</option>
+            <option value="2025">2025年</option>
+            <option value="2026" selected>2026年</option>
+            <option value="2027">2027年</option>
+            <option value="2028">2028年</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-weight:bold; color:#1e293b; display:block; margin-bottom:4px;">対象拠点 <span style="color:#e11d48;">*</span></label>
+          <select id="cpSimpleSaveLocation" class="cp-control" style="width:100%; height:36px; font-size:13px; font-weight:bold; padding:4px 8px; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box;">
+            <option value="">拠点を選択してください</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 保存対象の概要プレビュー -->
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px; display:flex; flex-direction:column; gap:6px;">
+        <div style="font-weight:bold; color:#1e293b; font-size:12px; display:flex; align-items:center; gap:6px;">
+          <span>📋</span> <span>登録される作型と数値の概要</span>
+        </div>
+        <div id="cpSimpleSaveSummaryText" style="font-size:12px; color:#475569; line-height:1.6;">
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-top:20px; border-top:1px solid #e2e8f0; padding-top:14px;">
+      <button type="button" class="cp-btn-secondary" onclick="closeCpSimpleSaveModal()" style="padding:9px 16px; font-size:13px;">キャンセル</button>
+      <button type="button" id="btnConfirmCpSimpleSave" onclick="executeCpSimpleDirectSave()" class="cp-btn-primary"
+        style="padding:10px 22px; background:linear-gradient(135deg, #16a34a 0%, #15803d 100%); font-weight:bold; font-size:14px; border:none; border-radius:6px; cursor:pointer; box-shadow:0 2px 6px rgba(22,163,74,0.3); display:flex; align-items:center; gap:6px;">
+        <span>💾 計画を保存して完了</span>
+      </button>
     </div>
   </div>
 </div>
