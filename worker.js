@@ -1539,12 +1539,18 @@ window.updateInitDataCacheWithLocalRecords_ = () => {
     if (!raw) return;
     const cache = JSON.parse(raw);
     if (!cache || !cache.polygons) return;
+    const filterDel = (arr) => (Array.isArray(arr) ? arr : []).filter(ph =>
+      ph && !(typeof window.isWorkRecordDeleted_ === 'function' && window.isWorkRecordDeleted_(ph))
+    );
     cache.polygons.forEach(p => {
+      if (!p) return;
       if (loadedPolygons && loadedPolygons[p.id]) {
-        p.photos = loadedPolygons[p.id].photos || [];
+        p.photos = filterDel(loadedPolygons[p.id].photos);
         p.condition = loadedPolygons[p.id].condition || p.condition;
         p.soilType = loadedPolygons[p.id].soilType || p.soilType;
         p.status = loadedPolygons[p.id].status || p.status;
+      } else if (Array.isArray(p.photos)) {
+        p.photos = filterDel(p.photos);
       }
     });
     if (loadedPolygons && loadedPolygons['__global__']) {
@@ -1553,7 +1559,7 @@ window.updateInitDataCacheWithLocalRecords_ = () => {
         g = { id: '__global__', name: '共通・全体', isMarker: true, coords: [], photos: [] };
         cache.polygons.push(g);
       }
-      g.photos = loadedPolygons['__global__'].photos || [];
+      g.photos = filterDel(loadedPolygons['__global__'].photos);
     }
     if (typeof window.savePassionMapInitCache_ === 'function') {
       window.savePassionMapInitCache_(cache);
@@ -1570,9 +1576,10 @@ window.snapshotPendingLocalRecordsBeforeInit_ = () => {
   for (let pid in loadedPolygons) {
     const p = loadedPolygons[pid];
     if (!p || !Array.isArray(p.photos)) continue;
-    const locals = p.photos.filter(ph => ph && (
-      ph._pendingSync || ph._syncFailed || String(ph.id || '').indexOf('local_') === 0
-    ));
+    const locals = p.photos.filter(ph => ph
+      && !(typeof window.isWorkRecordDeleted_ === 'function' && window.isWorkRecordDeleted_(ph))
+      && (ph._pendingSync || ph._syncFailed || String(ph.id || '').indexOf('local_') === 0)
+    );
     if (locals.length) pending[pid] = locals.map(ph => Object.assign({}, ph));
   }
   return pending;
@@ -1591,6 +1598,8 @@ window.restorePendingLocalRecordsAfterInit_ = (pendingMap) => {
     }
     if (!Array.isArray(loadedPolygons[pid].photos)) loadedPolygons[pid].photos = [];
     locals.forEach((localPh) => {
+      if (!localPh) return;
+      if (typeof window.isWorkRecordDeleted_ === 'function' && window.isWorkRecordDeleted_(localPh)) return;
       const recId = localPh.id;
       const fp = (typeof window.workRecordFingerprintKey_ === 'function')
         ? window.workRecordFingerprintKey_(localPh)
@@ -45808,10 +45817,10 @@ window.clearConflictingBulkExistingRecords_ = async (ymd, conflicts) => {
   } catch (e2) { }
 
   const toDelete = [];
-  const pushDel = (recordId, polyId) => {
+  const pushDel = (recordId, polyId, recObj) => {
     const rid = String(recordId || '').trim();
     if (!rid || toDelete.some(t => t.recordId === rid)) return;
-    toDelete.push({ recordId: rid, polyId: String(polyId || '__global__') });
+    toDelete.push({ recordId: rid, polyId: String(polyId || '__global__'), rec: recObj || null });
   };
   try {
     if (typeof window.collectRestBreakRecordsForDate === 'function') {
@@ -45820,7 +45829,7 @@ window.clearConflictingBulkExistingRecords_ = async (ymd, conflicts) => {
         const hit = spans.some(sp =>
           String(row.start || '') === sp.start && String(row.end || '') === sp.end
         );
-        if (hit && row.id) pushDel(row.id, row.polyId || '__global__');
+        if (hit && row.id) pushDel(row.id, row.polyId || '__global__', row);
       });
     }
   } catch (e3) { }
@@ -45837,7 +45846,7 @@ window.clearConflictingBulkExistingRecords_ = async (ymd, conflicts) => {
             || (sp.workName.includes('休憩') && String(rec.data.workName || '').includes('休憩')))
         );
         if (!hit) return;
-        pushDel(rec.id || rec.recordId || (rec.data && rec.data.recordId), rec.polyId || '__global__');
+        pushDel(rec.id || rec.recordId || (rec.data && rec.data.recordId), rec.polyId || '__global__', rec);
       });
     }
   } catch (e4) { }
@@ -45861,17 +45870,41 @@ window.clearConflictingBulkExistingRecords_ = async (ymd, conflicts) => {
               || (sp.workName.includes('休憩') && String(ph.data.workName || '').includes('休憩')))
           );
           if (!hit) return;
-          pushDel(ph.id || ph.data.recordId, pid);
+          pushDel(ph.id || ph.data.recordId, pid, ph);
         });
       });
     }
   } catch (e5) { }
 
+  // 端末上のキャッシュ・tombstone も即座に消去
+  spans.forEach(sp => {
+    const synthRec = {
+      id: '',
+      author: user,
+      recordYmd: dateYmd,
+      date: dateYmd,
+      data: {
+        workDate: dateYmd,
+        startTime: sp.start,
+        endTime: sp.end,
+        workName: sp.workName
+      }
+    };
+    if (typeof window.markWorkRecordDeleted_ === 'function') {
+      window.markWorkRecordDeleted_('', synthRec);
+    }
+  });
+  toDelete.forEach(t => {
+    if (typeof window.removeWorkRecordLocally_ === 'function') {
+      try { window.removeWorkRecordLocally_(t.recordId, t.polyId, t.rec); } catch (eLoc) { }
+    }
+  });
+
   for (let i = 0; i < toDelete.length; i++) {
     const t = toDelete[i];
     try {
       if (typeof window.deleteRecordFromMyPageSilent_ === 'function') {
-        const ok = await window.deleteRecordFromMyPageSilent_(t.polyId, t.recordId);
+        const ok = await window.deleteRecordFromMyPageSilent_(t.polyId, t.recordId, { rec: t.rec });
         if (ok) deleted++;
       }
     } catch (eDel) { }
@@ -45894,6 +45927,9 @@ window.clearConflictingBulkExistingRecords_ = async (ymd, conflicts) => {
     } catch (eBatch) {
       console.warn('既存記録のサーバー削除', eBatch);
     }
+  }
+  if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
+    try { window.updateInitDataCacheWithLocalRecords_(); } catch (eCache) { }
   }
   return { deleted };
 };
@@ -48891,7 +48927,12 @@ window.editRecordFromMyPage = function (polyId, recordId) {
 window.findMyWorkRecordForDelete_ = function (recordId) {
   recordId = String(recordId || '').trim();
   if (!recordId) return null;
-  const matchId = (ph) => ph && (ph.id === recordId || ph.url === recordId || (ph.data && ph.data.recordId === recordId));
+  const matchId = (ph) => ph && (
+    String(ph.id || '') === recordId
+    || String(ph.url || '') === recordId
+    || String(ph.recordId || '') === recordId
+    || String((ph.data && ph.data.recordId) || '') === recordId
+  );
   if (typeof loadedPolygons !== 'undefined' && loadedPolygons) {
     for (const pid in loadedPolygons) {
       const p = loadedPolygons[pid];
@@ -48921,12 +48962,40 @@ window.findMyWorkRecordForDelete_ = function (recordId) {
       };
     }
   }
-  if (Array.isArray(window._myPageRecentWorkRecordsCache)) {
-    const cached = window._myPageRecentWorkRecordsCache.find(r =>
-      r && (r.id === recordId || (r.data && r.data.recordId === recordId))
-    );
-    if (cached) return cached;
+  const searchLists = [
+    window._myPageWorkDateSelect && window._myPageWorkDateSelect.records,
+    window._myPageAllWorkRecordsCache,
+    window._myPageRecentWorkRecordsCache,
+    window.myWorkRecords
+  ];
+  for (let i = 0; i < searchLists.length; i++) {
+    const arr = searchLists[i];
+    if (!Array.isArray(arr)) continue;
+    const found = arr.find(matchId);
+    if (found) return found;
   }
+  try {
+    const raw = localStorage.getItem('passionMapInitData');
+    if (raw) {
+      const cache = JSON.parse(raw);
+      if (cache && Array.isArray(cache.polygons)) {
+        for (let i = 0; i < cache.polygons.length; i++) {
+          const p = cache.polygons[i];
+          if (!p || !Array.isArray(p.photos)) continue;
+          const ph = p.photos.find(matchId);
+          if (ph) {
+            return {
+              ...ph,
+              polyId: p.id || '__global__',
+              polyName: p.name || '',
+              isMarker: p.isMarker,
+              recordYmd: window.normalizeDateStr(ph.data && ph.data.workDate) || window.normalizeDateStr(ph.date)
+            };
+          }
+        }
+      }
+    }
+  } catch (e) { }
   return null;
 };
 
@@ -48953,14 +49022,47 @@ window.saveDeletedWorkRecordTombstones_ = function (store) {
   } catch (e) { }
 };
 
+window.workRecordFingerprintVariants_ = function (rec) {
+  const out = [];
+  if (!rec) return out;
+  const fp = (typeof window.workRecordFingerprintKey_ === 'function')
+    ? window.workRecordFingerprintKey_(rec)
+    : '';
+  if (fp) out.push(fp);
+  const d = rec.data || rec;
+  const normDate = (typeof window.normalizeDateStr === 'function')
+    ? window.normalizeDateStr
+    : (s => String(s || '').replace(/\//g, '-').slice(0, 10));
+  const normHm = (typeof window.normalizeTimeHm === 'function')
+    ? window.normalizeTimeHm
+    : (s => String(s || '').trim());
+  const ymd = normDate(d.workDate || rec.date || rec.recordYmd) || '';
+  const wName = String(d.workName || '').trim();
+  const start = normHm(d.startTime) || normHm(rec.time) || '';
+  const end = normHm(d.endTime) || '';
+  if (ymd && (wName || start)) {
+    const noAuthorFp = [ymd, '', wName, start, end].join('|');
+    if (out.indexOf(noAuthorFp) < 0) out.push(noAuthorFp);
+    const curUser = String(localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '').replace(/\s+/g, '');
+    if (curUser) {
+      const userFp = [ymd, curUser, wName, start, end].join('|');
+      if (out.indexOf(userFp) < 0) out.push(userFp);
+    }
+  }
+  return out;
+};
+
 window.markWorkRecordDeleted_ = function (recordId, rec) {
   const store = window.loadDeletedWorkRecordTombstones_();
   const id = String(recordId || (rec && rec.id) || '').trim();
   if (id && store.ids.indexOf(id) < 0) store.ids.push(id);
-  const fp = (typeof window.workRecordFingerprintKey_ === 'function')
-    ? window.workRecordFingerprintKey_(rec || { id: id, data: (rec && rec.data) || {} })
-    : '';
-  if (fp && store.fps.indexOf(fp) < 0) store.fps.push(fp);
+  const targetObj = rec || { id: id, data: (rec && rec.data) || {} };
+  const fps = (typeof window.workRecordFingerprintVariants_ === 'function')
+    ? window.workRecordFingerprintVariants_(targetObj)
+    : [];
+  fps.forEach(fp => {
+    if (fp && store.fps.indexOf(fp) < 0) store.fps.push(fp);
+  });
   window.saveDeletedWorkRecordTombstones_(store);
 };
 
@@ -48969,10 +49071,11 @@ window.unmarkWorkRecordDeleted_ = function (recordId, rec) {
   const store = window.loadDeletedWorkRecordTombstones_();
   const id = String(recordId || (rec && rec.id) || '').trim();
   if (id) store.ids = (store.ids || []).filter((x) => String(x) !== id);
-  const fp = (typeof window.workRecordFingerprintKey_ === 'function')
-    ? window.workRecordFingerprintKey_(rec || { id: id, data: (rec && rec.data) || {} })
-    : '';
-  if (fp) store.fps = (store.fps || []).filter((x) => String(x) !== fp);
+  const targetObj = rec || { id: id, data: (rec && rec.data) || {} };
+  const fps = new Set((typeof window.workRecordFingerprintVariants_ === 'function')
+    ? window.workRecordFingerprintVariants_(targetObj)
+    : []);
+  if (fps.size) store.fps = (store.fps || []).filter((x) => !fps.has(String(x)));
   window.saveDeletedWorkRecordTombstones_(store);
 };
 
@@ -48981,10 +49084,10 @@ window.isWorkRecordDeleted_ = function (rec) {
   const store = window.loadDeletedWorkRecordTombstones_();
   const id = String(rec.id || (rec.data && rec.data.recordId) || '').trim();
   if (id && store.ids.indexOf(id) >= 0) return true;
-  const fp = (typeof window.workRecordFingerprintKey_ === 'function')
-    ? window.workRecordFingerprintKey_(rec)
-    : '';
-  return !!(fp && store.fps.indexOf(fp) >= 0);
+  const fps = (typeof window.workRecordFingerprintVariants_ === 'function')
+    ? window.workRecordFingerprintVariants_(rec)
+    : [];
+  return fps.some(fp => fp && store.fps.indexOf(fp) >= 0);
 };
 
 window.cloneWorkRecordSnapshot_ = function (rec) {
@@ -49116,13 +49219,33 @@ window.restoreWorkRecordLocally_ = function (snapshot) {
 
 window.removeWorkRecordLocally_ = function (recordId, polyId, rec) {
   recordId = String(recordId || '').trim();
-  if (!recordId) return;
-  const matchId = (ph) => ph && (ph.id === recordId || ph.url === recordId || (ph.data && ph.data.recordId === recordId));
-  const matchRec = (r) => r && (
-    String(r.id || '') === recordId
-    || String(r.recordId || '') === recordId
-    || String((r.data && r.data.recordId) || '') === recordId
-  );
+  if (!recordId && !rec) return;
+  // ★配列から消す前に削除対象オブジェクトと指紋を確保する
+  const tombRec = rec || window.findMyWorkRecordForDelete_(recordId);
+  const targetFps = new Set((typeof window.workRecordFingerprintVariants_ === 'function' && tombRec)
+    ? window.workRecordFingerprintVariants_(tombRec)
+    : []);
+
+  const matchIdOrFp = (item) => {
+    if (!item) return false;
+    if (recordId && (
+      String(item.id || '') === recordId
+      || String(item.url || '') === recordId
+      || String(item.recordId || '') === recordId
+      || String((item.data && item.data.recordId) || '') === recordId
+    )) {
+      return true;
+    }
+    if (targetFps.size && typeof window.workRecordFingerprintVariants_ === 'function') {
+      const itemFps = window.workRecordFingerprintVariants_(item);
+      if (itemFps.some(fp => targetFps.has(fp))) return true;
+    }
+    return false;
+  };
+
+  if (typeof window.markWorkRecordDeleted_ === 'function') {
+    window.markWorkRecordDeleted_(recordId, tombRec || rec);
+  }
 
   if (typeof loadedPolygons !== 'undefined' && loadedPolygons) {
     const targets = new Set();
@@ -49131,33 +49254,34 @@ window.removeWorkRecordLocally_ = function (recordId, polyId, rec) {
     targets.forEach(pid => {
       const p = loadedPolygons[pid];
       if (!p || !Array.isArray(p.photos)) return;
-      p.photos = p.photos.filter(ph => !matchId(ph));
+      p.photos = p.photos.filter(ph => !matchIdOrFp(ph));
     });
   }
   if (Array.isArray(window._recordSyncQueue)) {
-    window._recordSyncQueue = window._recordSyncQueue.filter(job => job && job.localId !== recordId);
+    window._recordSyncQueue = window._recordSyncQueue.filter(job => {
+      if (!job) return false;
+      if (recordId && job.localId === recordId) return false;
+      if (job.data && matchIdOrFp({ id: job.localId, data: job.data, author: job.userName })) return false;
+      return true;
+    });
   }
-  if (typeof window.removePersistedRecordSyncJob_ === 'function') {
+  if (typeof window.removePersistedRecordSyncJob_ === 'function' && recordId) {
     window.removePersistedRecordSyncJob_(recordId);
   }
   if (window.myWorkRecords && Array.isArray(window.myWorkRecords)) {
-    window.myWorkRecords = window.myWorkRecords.filter(r => !matchRec(r));
+    window.myWorkRecords = window.myWorkRecords.filter(r => !matchIdOrFp(r));
   }
   if (Array.isArray(window._myPageRecentWorkRecordsCache)) {
-    window._myPageRecentWorkRecordsCache = window._myPageRecentWorkRecordsCache.filter(r => !matchRec(r));
+    window._myPageRecentWorkRecordsCache = window._myPageRecentWorkRecordsCache.filter(r => !matchIdOrFp(r));
   }
   if (Array.isArray(window._myPageAllWorkRecordsCache)) {
-    window._myPageAllWorkRecordsCache = window._myPageAllWorkRecordsCache.filter(r => !matchRec(r));
+    window._myPageAllWorkRecordsCache = window._myPageAllWorkRecordsCache.filter(r => !matchIdOrFp(r));
   }
   if (window._myPageWorkDateSelect && Array.isArray(window._myPageWorkDateSelect.records)) {
-    window._myPageWorkDateSelect.records = window._myPageWorkDateSelect.records.filter(r => !matchRec(r));
-    if (window._myPageWorkDateSelect.selected && window._myPageWorkDateSelect.selected.delete) {
+    window._myPageWorkDateSelect.records = window._myPageWorkDateSelect.records.filter(r => !matchIdOrFp(r));
+    if (window._myPageWorkDateSelect.selected && window._myPageWorkDateSelect.selected.delete && recordId) {
       window._myPageWorkDateSelect.selected.delete(recordId);
     }
-  }
-  const tombRec = rec || window.findMyWorkRecordForDelete_(recordId);
-  if (typeof window.markWorkRecordDeleted_ === 'function') {
-    window.markWorkRecordDeleted_(recordId, tombRec || rec);
   }
   // 休憩キャッシュからも外す（一括入力の時間重複判定に残らないように）
   try {
@@ -49175,7 +49299,7 @@ window.removeWorkRecordLocally_ = function (recordId, polyId, rec) {
         const rests = window.getCachedRestBreaks(ymd) || [];
         const stay = rests.filter(r => {
           if (!r) return false;
-          if (r.id && String(r.id) === recordId) return false;
+          if (recordId && r.id && String(r.id) === recordId) return false;
           if (start && end
             && String(r.start || '') === start
             && String(r.end || '') === end
@@ -49286,7 +49410,8 @@ window.deleteRecordFromMyPage = async function (polyId, recordId) {
   if (typeof showLoader === 'function') showLoader("削除中...");
 
   try {
-    const deleted = await window.deleteRecordFromMyPageSilent_(polyId, recordId);
+    const rec = window.findMyWorkRecordForDelete_(recordId);
+    const deleted = await window.deleteRecordFromMyPageSilent_(polyId, recordId, { rec: rec });
     if (deleted) {
       if (typeof customAlert === 'function') customAlert("記録を削除しました");
       else if (typeof alertMsg === 'function') alertMsg("記録を削除しました");
@@ -49315,32 +49440,44 @@ window.deleteRecordFromMyPageSilent_ = async function (polyId, recordId, opts) {
   const rec = opts.rec || window.findMyWorkRecordForDelete_(recordId);
   const d = (rec && rec.data) ? rec.data : (opts.data || {});
   const isLocalOnly = recordId.indexOf('local_') === 0;
-  const pendingOnly = isLocalOnly || (Array.isArray(window._recordSyncQueue)
-    && window._recordSyncQueue.some(job => job && job.localId === recordId));
+  const inQueue = Array.isArray(window._recordSyncQueue)
+    && window._recordSyncQueue.some(job => job && job.localId === recordId);
   let deleted = false;
   const maxTries = Math.max(1, Math.min(5, Number(opts.retries) || 3));
   const skipLocalRemove = !!opts.skipLocalRemove;
 
-  if (pendingOnly) {
+  if (inQueue) {
+    window._recordSyncQueue = window._recordSyncQueue.filter(job => job && job.localId !== recordId);
+    if (typeof window.removePersistedRecordSyncJob_ === 'function') {
+      window.removePersistedRecordSyncJob_(recordId);
+    }
     deleted = true;
-  } else {
-    // 必ず deleteWorkRecordById で作業記録シートも消す。
-    // 以前は deleteRecordItem 成功だけで打ち切っており、並列削除の競合でシート行が残ることがあった。
-    const deleteParams = {
-      recordId: recordId,
-      userName: currentUser,
-      workDate: d.workDate || (rec && (rec.recordYmd || rec.date)) || opts.workDate || '',
-      startTime: d.startTime || (rec && rec.time) || opts.startTime || '',
-      endTime: d.endTime || opts.endTime || '',
-      workName: d.workName || opts.workName || '',
-      author: (rec && rec.author) || currentUser || localStorage.getItem('passionMapUserName') || ''
-    };
+  }
 
+  const deleteParams = {
+    recordId: recordId,
+    userName: currentUser || localStorage.getItem('passionMapUserName') || '',
+    workDate: d.workDate || (rec && (rec.recordYmd || rec.date)) || opts.workDate || '',
+    startTime: d.startTime || (rec && rec.time) || opts.startTime || '',
+    endTime: d.endTime || opts.endTime || '',
+    workName: d.workName || opts.workName || '',
+    author: (rec && rec.author) || currentUser || localStorage.getItem('passionMapUserName') || ''
+  };
+
+  const hasMatchDetails = !!(deleteParams.workDate && (deleteParams.startTime || deleteParams.endTime || deleteParams.workName));
+  if (!inQueue && (!isLocalOnly || hasMatchDetails)) {
+    // 必ず deleteWorkRecordById で作業記録シートも消す。
     for (let attempt = 1; attempt <= maxTries && !deleted; attempt++) {
       try {
         const res = await callGAS('deleteWorkRecordById', deleteParams);
         deleted = !!(res && res.success);
       } catch (e0) {
+        const errMsg = String((e0 && e0.message) || e0 || '');
+        if (errMsg.indexOf('削除対象の記録') >= 0) {
+          // サーバー上には既に存在しない記録（端末のみ残存）は削除成功とみなす
+          deleted = true;
+          break;
+        }
         console.warn('deleteRecordFromMyPageSilent_ deleteWorkRecordById try' + attempt + ':', e0);
         deleted = false;
       }
@@ -49368,6 +49505,11 @@ window.deleteRecordFromMyPageSilent_ = async function (polyId, recordId, opts) {
             deleted = true;
           }
         } catch (e1) {
+          const errMsg1 = String((e1 && e1.message) || e1 || '');
+          if (errMsg1.indexOf('見つかりません') >= 0) {
+            deleted = true;
+            break;
+          }
           console.warn('deleteRecordFromMyPageSilent_ deleteRecordItem try' + attempt + ':', e1);
         }
         if (!deleted && attempt < maxTries) {
@@ -49380,24 +49522,26 @@ window.deleteRecordFromMyPageSilent_ = async function (polyId, recordId, opts) {
         !(ph && (ph.id === recordId || ph.url === recordId || (ph.data && ph.data.recordId === recordId)))
       );
     }
+  } else if (isLocalOnly) {
+    deleted = true;
+  }
 
-    // 成功時のみ端末の古い ends / サーバー Script Cache ヒントを捨てる
-    if (deleted) {
-      try {
-        const ymd = (typeof window.normalizeDateStr === 'function')
-          ? window.normalizeDateStr(deleteParams.workDate)
-          : String(deleteParams.workDate || '').slice(0, 10);
-        if (ymd && typeof window.clearDayWorkTimeHintsLocally_ === 'function') {
-          window.clearDayWorkTimeHintsLocally_(ymd);
-        }
-        if (ymd && typeof callGAS === 'function' && currentUser) {
-          callGAS('clearWorkRecordTimeHint', {
-            userName: currentUser,
-            dateYmd: ymd
-          }).catch(() => { });
-        }
-      } catch (eHint) { }
-    }
+  // 成功時のみ端末の古い ends / サーバー Script Cache ヒントを捨てる
+  if (deleted) {
+    try {
+      const ymd = (typeof window.normalizeDateStr === 'function')
+        ? window.normalizeDateStr(deleteParams.workDate)
+        : String(deleteParams.workDate || '').slice(0, 10);
+      if (ymd && typeof window.clearDayWorkTimeHintsLocally_ === 'function') {
+        window.clearDayWorkTimeHintsLocally_(ymd);
+      }
+      if (ymd && typeof callGAS === 'function' && currentUser) {
+        callGAS('clearWorkRecordTimeHint', {
+          userName: currentUser,
+          dateYmd: ymd
+        }).catch(() => { });
+      }
+    } catch (eHint) { }
   }
 
   // 失敗時は画面を消さない（シートに残ったまま tombstone だけ付く事故を防ぐ）
@@ -49455,6 +49599,7 @@ window.restoreGlobalWorkRecordsAfterInit_ = function (prevPhotos) {
   const seenFp = new Set();
   const pushUnique = (ph) => {
     if (!ph) return;
+    if (typeof window.isWorkRecordDeleted_ === 'function' && window.isWorkRecordDeleted_(ph)) return;
     const recId = String(ph.id || (ph.data && ph.data.recordId) || '').trim();
     const fp = (typeof window.workRecordFingerprintKey_ === 'function')
       ? window.workRecordFingerprintKey_(ph)
@@ -51592,7 +51737,65 @@ window.collectMyWorkRecordsForYmd_ = (ymd) => {
   return Array.from(byId.values());
 };
 
-/** マイページ：その日の出退勤を削除（推定表示なら残作業も消す） */
+/** 指定日の全作業記録を端末＋サーバーから収集 */
+window.fetchAllMyWorkRecordsForYmd_ = async (ymd) => {
+  const dateYmd = (typeof window.normalizeDateStr === 'function')
+    ? (window.normalizeDateStr(ymd) || String(ymd || '').slice(0, 10))
+    : String(ymd || '').slice(0, 10);
+  if (!dateYmd) return [];
+
+  let records = (typeof window.collectMyWorkRecordsForYmd_ === 'function')
+    ? window.collectMyWorkRecordsForYmd_(dateYmd)
+    : [];
+
+  const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '';
+  if (userName && typeof callGAS === 'function') {
+    try {
+      const analysis = await callGAS('getWorkRecordAnalysis', {
+        fromYmd: dateYmd,
+        toYmd: dateYmd,
+        author: userName,
+        includeRecords: true
+      });
+      if (analysis && Array.isArray(analysis.records)) {
+        if (typeof window.mergeMyWorkRecordsWithAnalysis_ === 'function') {
+          records = window.mergeMyWorkRecordsWithAnalysis_(records, analysis.records, new Set([dateYmd]));
+        } else {
+          const byId = new Map();
+          records.forEach(r => {
+            const id = String((r && (r.id || (r.data && r.data.recordId))) || '').trim();
+            if (id) byId.set(id, r);
+          });
+          analysis.records.forEach(r => {
+            const id = String(r.recordId || '').trim();
+            if (id && !byId.has(id)) {
+              byId.set(id, {
+                id: id,
+                type: 'work',
+                date: dateYmd,
+                time: r.startTime || '',
+                author: r.author || userName,
+                data: {
+                  recordId: id,
+                  workDate: dateYmd,
+                  startTime: r.startTime || '',
+                  endTime: r.endTime || '',
+                  workName: r.workName || ''
+                }
+              });
+            }
+          });
+          records = Array.from(byId.values());
+        }
+      }
+    } catch (e) {
+      console.warn('fetchAllMyWorkRecordsForYmd_ server fetch error:', e);
+    }
+  }
+  return records;
+};
+
+/** マイページ：その日の出退勤を削除（その日の作業記録も確認の上で一緒に削除） */
 window.deleteMyAttendanceDay_ = async function (ymd, fromWorkEstimate) {
   const dateYmd = (typeof window.normalizeDateStr === 'function')
     ? (window.normalizeDateStr(ymd) || String(ymd || '').slice(0, 10))
@@ -51601,18 +51804,36 @@ window.deleteMyAttendanceDay_ = async function (ymd, fromWorkEstimate) {
   const label = (typeof formatAttendanceDateLabel === 'function')
     ? formatAttendanceDateLabel(dateYmd)
     : dateYmd;
-  const leftover = (typeof window.collectMyWorkRecordsForYmd_ === 'function')
-    ? window.collectMyWorkRecordsForYmd_(dateYmd)
-    : [];
-  const est = fromWorkEstimate === true || fromWorkEstimate === 'true'
-    || leftover.length > 0;
-  const confirmMsg = est
-    ? `${label} の出退勤を削除します。\nこの日に残っている作業記録（${leftover.length}件）も一緒に消します。\n※復元できません`
-    : `${label} の出勤・退勤を削除しますか？\n※復元できません`;
+
+  // 1. 端末＋サーバーから対象日の作業記録を収集
+  if (typeof showLoader === 'function') showLoader('記録確認中...');
+  let leftover = [];
+  try {
+    if (typeof window.fetchAllMyWorkRecordsForYmd_ === 'function') {
+      leftover = await window.fetchAllMyWorkRecordsForYmd_(dateYmd);
+    } else if (typeof window.collectMyWorkRecordsForYmd_ === 'function') {
+      leftover = window.collectMyWorkRecordsForYmd_(dateYmd);
+    }
+  } catch (e) {
+    if (typeof window.collectMyWorkRecordsForYmd_ === 'function') {
+      leftover = window.collectMyWorkRecordsForYmd_(dateYmd);
+    }
+  } finally {
+    if (typeof hideLoader === 'function') hideLoader();
+  }
+
+  // 2. 確認ダイアログの表示
+  const count = leftover.length;
+  const confirmMsg = count > 0
+    ? `${label} の出退勤時間を削除しますか？\n\n【確認】\nこの日の作業記録（${count}件）も一緒にすべて削除されます。\n※削除したデータは復元できません。`
+    : `${label} の出退勤時間を削除しますか？\n※この日の作業記録はありません。\n※削除したデータは復元できません。`;
+
   const ok = (typeof customConfirm === 'function')
     ? await customConfirm(confirmMsg)
     : confirm(confirmMsg);
   if (!ok) return;
+
+  // 3. 削除実行
   if (typeof showLoader === 'function') showLoader('削除中...');
   let workDeleted = 0;
   let workFailed = 0;
@@ -51627,32 +51848,48 @@ window.deleteMyAttendanceDay_ = async function (ymd, fromWorkEstimate) {
     if (leftover.length) {
       for (let i = 0; i < leftover.length; i++) {
         const rec = leftover[i];
-        const rid = String((rec && rec.id) || '').trim();
+        const rid = String((rec && (rec.id || (rec.data && rec.data.recordId))) || '').trim();
         const polyId = String((rec && rec.polyId) || '__global__');
         if (!rid) continue;
         try {
           const okDel = (typeof window.deleteRecordFromMyPageSilent_ === 'function')
             ? await window.deleteRecordFromMyPageSilent_(polyId, rid, { rec: rec, retries: 3 })
             : false;
-          if (okDel) workDeleted++;
-          else workFailed++;
+          if (okDel) {
+            workDeleted++;
+            if (typeof window.removeWorkRecordLocally_ === 'function') {
+              try { window.removeWorkRecordLocally_(rid, polyId, rec); } catch (eLoc) { }
+            }
+          } else {
+            workFailed++;
+          }
         } catch (e) {
           workFailed++;
         }
       }
-      if (typeof window.refreshMyPageListsLocally_ === 'function') {
-        try { window.refreshMyPageListsLocally_(); } catch (e) { }
-      }
     }
 
+    if (typeof window.clearDayWorkTimeHintsLocally_ === 'function') {
+      try { window.clearDayWorkTimeHintsLocally_(dateYmd); } catch (e) { }
+    }
+
+    // 出退勤一覧を再読み込み
     if (typeof window.loadMyAttendance === 'function') {
       try { await window.loadMyAttendance(); } catch (e) { }
     }
-    let msg = res ? `${label} の出退勤を削除しました` : `${label} の出退勤表示を外しました`;
-    if (workDeleted || leftover.length) {
+
+    // 作業記録一覧等の再読み込み
+    if (typeof window.refreshMyPageAfterWorkRecordDelete_ === 'function') {
+      try { window.refreshMyPageAfterWorkRecordDelete_(); } catch (e) { }
+    } else if (typeof window.refreshMyPageListsLocally_ === 'function') {
+      try { window.refreshMyPageListsLocally_(); } catch (e) { }
+    }
+
+    let msg = res ? `${label} の出退勤時間を削除しました` : `${label} の出退勤表示を外しました`;
+    if (workDeleted || count) {
       msg += workFailed
-        ? ` ／ 作業 ${workDeleted}件削除（失敗 ${workFailed}件）`
-        : ` ／ 作業 ${workDeleted || leftover.length}件も削除`;
+        ? ` ／ 作業記録 ${workDeleted}件削除（失敗 ${workFailed}件）`
+        : ` ／ 作業記録 ${workDeleted || count}件も削除しました`;
     }
     if (typeof window.showRecordSyncToast === 'function') window.showRecordSyncToast(msg, workFailed ? 'warn' : 'ok');
     else if (typeof customAlert === 'function') customAlert(msg);
@@ -51927,9 +52164,6 @@ window.openMyPage = function () {
                 <div style="color:#888; font-size:13px;">読み込み中...</div>
             </div>
         </div>
-
-        <button type="button" onclick="openBulkWorkMemoHistoryModal_()"
-          style="width:100%; background:#fff; color:#1565C0; border:1px solid #90CAF9; padding:11px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:15px;">📜 一括入力履歴（日付のまとめ直し）</button>
         
         <h4 style="color:#2e7d32; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
             <span>📋 直近2週間の作業記録 (<span id="myRecentWorkRecordsCount">${myRecentRecords.length}</span>件)</span>

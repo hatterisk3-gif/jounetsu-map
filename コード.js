@@ -8280,8 +8280,9 @@ function deleteWorkRecordById(params) {
     const found = findWorkRecordIdByMatch_(params);
     if (found) rid = found;
   }
-  if (!rid || rid.indexOf('local_') === 0) {
-    throw new Error('削除対象の記録IDが見つかりません');
+  const hasMatchKeys = !!(params.workDate && (params.startTime || params.endTime || params.workName));
+  if ((!rid || rid.indexOf('local_') === 0) && !hasMatchKeys) {
+    return { success: true, recordId: rid, sheetDeleted: false, embeddedDeleted: 0, alreadyGone: true };
   }
 
   const lock = LockService.getScriptLock();
@@ -8290,6 +8291,7 @@ function deleteWorkRecordById(params) {
     let sheetDeleted = false;
     let embeddedDeleted = 0;
     const deletedUrls = {};
+    const restSyncDays = [];
 
     const workSheet = TENANT_SS.getSheetByName('作業記録');
     if (workSheet && workSheet.getLastRow() >= 2) {
@@ -8303,16 +8305,20 @@ function deleteWorkRecordById(params) {
           normWorkRecordTimeHm_(params.endTime),
           String(params.workName || '').trim()
         );
-        if (String(values[i][12] || '').trim() !== rid && !rowMatch) continue;
+        const rowRid = String(values[i][12] || '').trim();
+        const idMatches = !!(rid && rid.indexOf('local_') !== 0 && rid.indexOf('sheet_') !== 0 && rowRid === rid);
+        if (!idMatches && !rowMatch) continue;
         const urlRaw = String(values[i][11] || '');
         urlRaw.split(/[,\s]+/).forEach(function (u) {
           const s = String(u || '').trim();
           if (s) deletedUrls[s] = true;
         });
+        restSyncDays.push([values[i][2], values[i][3]]);
         workSheet.deleteRow(i + 1);
         sheetDeleted = true;
-        syncAttendanceRestRowsForDays_([[values[i][2], values[i][3]]]);
-        break;
+      }
+      if (restSyncDays.length) {
+        try { syncAttendanceRestRowsForDays_(restSyncDays); } catch (eRest) { }
       }
     }
 
@@ -8340,7 +8346,8 @@ function deleteWorkRecordById(params) {
             String(params.workName || '').trim(),
             item.author || ''
           );
-          if (itemId !== rid && !dataMatch) return true;
+          const idMatches = !!(rid && rid !== itemId ? false : (rid && itemId === rid));
+          if (!idMatches && !dataMatch) return true;
           if (Array.isArray(item.urls)) {
             item.urls.forEach(function (u) { if (u) deletedUrls[String(u)] = true; });
           }
@@ -8354,7 +8361,7 @@ function deleteWorkRecordById(params) {
     });
 
     if (!sheetDeleted && embeddedDeleted === 0) {
-      throw new Error('削除対象の記録が見つかりません');
+      return { success: true, recordId: rid, sheetDeleted: false, embeddedDeleted: 0, alreadyGone: true };
     }
 
     Object.keys(deletedUrls).forEach(function (url) {
