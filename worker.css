@@ -442,13 +442,14 @@ body.bulk-work-memo-map-picking #workerLegendUI {
 }
 body.bulk-work-memo-map-picking #workerMapSelectPlusWrap {
   bottom: calc(var(--bulk-map-select-bar-h, 160px) + 74px) !important;
+  right: 10px !important;
   z-index: 10060 !important;
 }
 
 /* マップ選択中の右「＋」登録ボタン＆メニュー（admin.html の＋ボタンと同デザイン） */
 #workerMapSelectPlusWrap {
   position: fixed;
-  right: 15px;
+  right: 10px;
   bottom: 82px;
   z-index: 10060;
 }
