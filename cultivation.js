@@ -11882,13 +11882,23 @@ function setCpInitialSettingsOpen(open, options) {
     } else if (opts.openStep != null) {
         openCpStep(opts.openStep, { skipExpand: true });
     } else if (opts.openDefaultStep) {
-        // 展開時に開いているパネルがなければステップ1を開く
+        // 展開時に開いているパネルがなければ前回のモード（クイックモードならsimple、通常ならステップ1）を開く
         let anyOpen = false;
+        const sp = document.getElementById('cpStepSimple');
+        if (sp && sp.classList.contains('is-open')) {
+            anyOpen = true;
+        }
         for (let i = 1; i <= 3; i++) {
             const p = document.getElementById('cpStep' + i);
             if (p && p.classList.contains('is-open')) { anyOpen = true; break; }
         }
-        if (!anyOpen) openCpStep(1, { skipExpand: true });
+        if (!anyOpen) {
+            if (window._cpLastActiveMode === 'simple') {
+                openCpStep('simple', { skipExpand: true });
+            } else {
+                openCpStep(1, { skipExpand: true });
+            }
+        }
     }
 }
 window.setCpInitialSettingsOpen = setCpInitialSettingsOpen;
@@ -11933,6 +11943,23 @@ function openCpStep(step, options) {
     const n = isSimple ? 'simple' : (Number(step) || 0);
     const panelsWrap = document.getElementById('cpStepPanels');
     let anyOpen = false;
+
+    if (isSimple) {
+        window._cpLastActiveMode = 'simple';
+    } else if (typeof n === 'number' && n > 0) {
+        window._cpLastActiveMode = 'normal';
+    }
+
+    // クイックモード時は STEP 1〜3 タブバー（.cp-step-tabs）を非表示にする
+    const stepsRow = document.getElementById('cpStepsRow');
+    if (stepsRow) {
+        const hideStepTabs = isSimple || (n === 0 && window._cpLastActiveMode === 'simple');
+        stepsRow.classList.toggle('is-simple-mode', hideStepTabs);
+        const tabsBar = stepsRow.querySelector('.cp-step-tabs');
+        if (tabsBar) {
+            tabsBar.style.display = hideStepTabs ? 'none' : '';
+        }
+    }
 
     // ステップを開くときは初期設定バーを自動展開
     if ((isSimple || (typeof n === 'number' && n > 0)) && !opts.skipExpand) {
@@ -15650,10 +15677,10 @@ function renderCpSimpleSelectedCropsUI() {
             crops.forEach(c => {
                 const icon = (typeof getCpCropIcon === 'function') ? getCpCropIcon(c) : '🌱';
                 html += `
-                  <span style="display:inline-flex; align-items:center; gap:4px; background:#fff; border:1px solid #ba68c8; color:#4a148c; padding:3px 8px; border-radius:16px; font-size:12px; font-weight:bold; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+                  <span style="display:inline-flex; align-items:center; gap:5px; background:#fff; border:1.5px solid #ba68c8; color:#4a148c; padding:5px 10px; border-radius:999px; font-size:13px; font-weight:bold; box-shadow:0 1px 3px rgba(142,36,170,0.08);">
                     <span>${icon}</span>
                     <span>${escCpSimple(c)}</span>
-                    <button type="button" onclick="removeCpSimpleCrop('${escCpSimple(c)}')" style="background:none; border:none; color:#c62828; cursor:pointer; font-size:13px; line-height:1; padding:0 2px; margin-left:2px; font-weight:bold;" title="${escCpSimple(c)}を解除">✕</button>
+                    <button type="button" onclick="removeCpSimpleCrop('${escCpSimple(c)}')" style="background:#fdf2f8; border:none; border-radius:999px; width:20px; height:20px; display:inline-flex; align-items:center; justify-content:center; color:#c62828; cursor:pointer; font-size:12px; line-height:1; padding:0; margin-left:2px; font-weight:bold;" title="${escCpSimple(c)}を解除">✕</button>
                   </span>
                 `;
             });
@@ -15672,11 +15699,13 @@ function renderCpSimpleSelectedCropsUI() {
                 btn.style.color = '#fff';
                 btn.style.borderColor = '#6a1b9a';
                 btn.style.fontWeight = 'bold';
+                btn.style.boxShadow = '0 2px 6px rgba(142,36,170,0.28)';
             } else {
                 btn.style.background = '#fff';
-                btn.style.color = '#444';
-                btn.style.borderColor = '#ddd';
-                btn.style.fontWeight = 'normal';
+                btn.style.color = '#334155';
+                btn.style.borderColor = '#cbd5e1';
+                btn.style.fontWeight = 'bold';
+                btn.style.boxShadow = 'none';
             }
         });
     }
@@ -15776,7 +15805,7 @@ window.addCpSimpleCropCustom = addCpSimpleCropCustom;
 
 /** 作物選択UIの構築（クイックチップ ＋ 追加ドロップダウン） */
 function buildCpSimpleCropSelect_() {
-    // 1. 主要野菜クイックチップ
+    // 1. 主要野菜クイックチップ（スマホでも押しやすい大きめピルボタン）
     const quickContainer = document.getElementById('cpSimpleQuickCropChips');
     if (quickContainer && !quickContainer.children.length) {
         const QUICK_CROPS = [
@@ -15786,7 +15815,7 @@ function buildCpSimpleCropSelect_() {
         let chipsHtml = '';
         QUICK_CROPS.forEach(crop => {
             const icon = (typeof getCpCropIcon === 'function') ? getCpCropIcon(crop) : '🌱';
-            chipsHtml += `<button type="button" data-crop="${escCpSimple(crop)}" class="cp-chip-btn" onclick="toggleCpSimpleCrop('${escCpSimple(crop)}')" style="display:inline-flex; align-items:center; gap:3px; padding:3px 8px; font-size:11px; border-radius:14px; cursor:pointer;"><span>${icon}</span><span>${escCpSimple(crop)}</span></button>`;
+            chipsHtml += `<button type="button" data-crop="${escCpSimple(crop)}" class="cp-chip-btn" onclick="toggleCpSimpleCrop('${escCpSimple(crop)}')" style="display:inline-flex; align-items:center; gap:4px; min-height:36px; padding:6px 12px; font-size:13px; font-weight:bold; border-radius:999px; cursor:pointer; touch-action:manipulation;"><span>${icon}</span><span>${escCpSimple(crop)}</span></button>`;
         });
         quickContainer.innerHTML = chipsHtml;
     }
@@ -15812,7 +15841,7 @@ function buildCpSimpleCropSelect_() {
     renderCpSimpleSelectedCropsUI();
 }
 
-/** 12ヶ月グリッドの構築 */
+/** 12ヶ月グリッドの構築（スマホでもタップ・入力しやすいサイズ） */
 function buildCpSimpleMonthsGrid_() {
     const grid = document.getElementById('cpSimpleMonthsGrid');
     if (!grid || grid.children.length > 0) return;
@@ -15820,11 +15849,11 @@ function buildCpSimpleMonthsGrid_() {
     let html = '';
     for (let m = 0; m < 12; m++) {
         const monthNum = m + 1;
-        html += '<div style="background:#fafafa; border:1px solid #e0e0e0; border-radius:6px; padding:6px 8px; display:flex; flex-direction:column; gap:2px;">';
-        html += '  <div style="font-size:11px; font-weight:bold; color:#555;">' + monthNum + '月</div>';
-        html += '  <div style="display:flex; align-items:center; gap:2px;">';
-        html += '    <input type="number" min="0" step="10" class="cp-simple-month-input" data-month="' + m + '" placeholder="0" oninput="onCpSimpleMonthTargetChange()" style="width:100%; height:26px; padding:2px 4px; font-size:12px; font-weight:bold; text-align:right; border:1px solid #ccc; border-radius:4px;">';
-        html += '    <span style="font-size:10px; color:#888;">万</span>';
+        html += '<div style="background:#fafafa; border:1px solid #e2e8f0; border-radius:8px; padding:6px 8px; display:flex; flex-direction:column; gap:3px;">';
+        html += '  <div style="font-size:11px; font-weight:bold; color:#475569;">' + monthNum + '月</div>';
+        html += '  <div style="display:flex; align-items:center; gap:3px;">';
+        html += '    <input type="number" min="0" step="10" inputmode="decimal" onfocus="this.select()" class="cp-simple-month-input" data-month="' + m + '" placeholder="0" oninput="onCpSimpleMonthTargetChange()" style="width:100%; height:34px; padding:2px 6px; font-size:14px; font-weight:bold; text-align:right; border:1px solid #cbd5e1; border-radius:6px; background:#fff; box-sizing:border-box;">';
+        html += '    <span style="font-size:11px; color:#64748b; font-weight:bold;">万</span>';
         html += '  </div>';
         html += '</div>';
     }
@@ -15963,6 +15992,25 @@ function applyCpSimpleSalesDistribution(mode) {
 }
 window.applyCpSimpleSalesDistribution = applyCpSimpleSalesDistribution;
 
+/** 年間目標売上のステッパー（±万円） */
+function stepCpSimpleAnnualTarget(deltaMan) {
+    const annInp = document.getElementById('cpSimpleAnnualInput');
+    if (!annInp) return;
+    const cur = parseFloat(annInp.value) || 0;
+    const next = Math.max(50, Math.round((cur + deltaMan) / 50) * 50);
+    annInp.value = next;
+    applyCpSimpleSalesDistribution('season');
+}
+window.stepCpSimpleAnnualTarget = stepCpSimpleAnnualTarget;
+
+/** 年間目標売上のワンタップ・プリセット設定 */
+function setCpSimpleAnnualPreset(manVal) {
+    const annInp = document.getElementById('cpSimpleAnnualInput');
+    if (annInp) annInp.value = manVal;
+    applyCpSimpleSalesDistribution('season');
+}
+window.setCpSimpleAnnualPreset = setCpSimpleAnnualPreset;
+
 function setCpSimpleMaxArea(a) {
     const inp = document.getElementById('cpSimpleMaxArea');
     if (inp) {
@@ -15971,6 +16019,17 @@ function setCpSimpleMaxArea(a) {
     }
 }
 window.setCpSimpleMaxArea = setCpSimpleMaxArea;
+
+/** 上限面積のステッパー（±a） */
+function stepCpSimpleMaxArea(deltaA) {
+    const inp = document.getElementById('cpSimpleMaxArea');
+    if (!inp) return;
+    const cur = parseFloat(inp.value) || 100;
+    const next = Math.max(5, Math.round(cur + deltaA));
+    inp.value = next;
+    onCpSimpleParamChange();
+}
+window.stepCpSimpleMaxArea = stepCpSimpleMaxArea;
 
 /** 1日あたり作業時間 × 月稼働日数 × 人数 から月間上限作業時間を算出 */
 function getCpSimpleWorkTimeInputs_() {
@@ -15998,6 +16057,42 @@ function setCpSimpleDailyHours(h) {
     onCpSimpleWorkTimeChanged();
 }
 window.setCpSimpleDailyHours = setCpSimpleDailyHours;
+
+/** 1日あたり作業時間のステッパー（±h） */
+function stepCpSimpleDailyHours(deltaH) {
+    const inp = document.getElementById('cpSimpleDailyHours');
+    if (!inp) return;
+    const cur = parseFloat(inp.value) || 8;
+    const next = Math.min(24, Math.max(1, Math.round((cur + deltaH) * 2) / 2));
+    inp.value = next;
+    onCpSimpleWorkTimeChanged();
+}
+window.stepCpSimpleDailyHours = stepCpSimpleDailyHours;
+
+/** 月稼働日数のステッパー（±日） */
+function stepCpSimpleWorkDays(deltaDays) {
+    const inp = document.getElementById('cpSimpleWorkDays');
+    if (!inp) return;
+    const cur = parseInt(inp.value, 10) || 20;
+    const next = Math.min(31, Math.max(1, cur + deltaDays));
+    inp.value = next;
+    onCpSimpleWorkTimeChanged();
+}
+window.stepCpSimpleWorkDays = stepCpSimpleWorkDays;
+
+/** 作業人数のステッパー（±人） */
+function stepCpSimpleStaffCount(deltaStaff) {
+    const inp = document.getElementById('cpSimpleStaffCount');
+    if (!inp) return;
+    const cur = parseFloat(inp.value) || 1;
+    let next;
+    if (cur <= 1 && deltaStaff < 0) next = 0.5;
+    else if (cur === 0.5 && deltaStaff > 0) next = 1;
+    else next = Math.max(0.5, Math.round((cur + deltaStaff) * 2) / 2);
+    inp.value = next;
+    onCpSimpleWorkTimeChanged();
+}
+window.stepCpSimpleStaffCount = stepCpSimpleStaffCount;
 
 /** 互換用: 人数のみ変更 */
 function onCpSimpleStaffCountChanged(staff) {
@@ -16547,6 +16642,16 @@ function runCpSimpleSimulation() {
 
     // 7. 結果UIの更新（選択された全作物だけが表示される！）
     refreshCpSimpleResultsView();
+
+    // スマホ・タブレット（1カラム表示時）はシミュレーション結果領域へスムーズスクロール
+    if (typeof window !== 'undefined' && window.innerWidth <= 920) {
+        const resCol = document.getElementById('cpSimpleResultCol');
+        if (resCol) {
+            setTimeout(() => {
+                resCol.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 60);
+        }
+    }
 }
 window.runCpSimpleSimulation = runCpSimpleSimulation;
 
