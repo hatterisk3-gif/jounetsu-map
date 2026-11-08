@@ -440,6 +440,92 @@ body.bulk-work-memo-map-picking #workerLegendUI {
   bottom: calc(var(--bulk-map-select-bar-h, 160px) + 12px) !important;
   z-index: 10060 !important;
 }
+body.bulk-work-memo-map-picking #workerMapSelectPlusWrap {
+  bottom: calc(var(--bulk-map-select-bar-h, 160px) + 74px) !important;
+  z-index: 10060 !important;
+}
+
+/* マップ選択中の右「＋」登録ボタン＆メニュー（admin.html の＋ボタンと同デザイン） */
+#workerMapSelectPlusWrap {
+  position: fixed;
+  right: 15px;
+  bottom: 82px;
+  z-index: 10060;
+}
+#workerMapSelectPlusWrap .admin-reg-plus-btn {
+  width: 50px;
+  height: 50px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  color: #d32f2f;
+  font-size: 28px;
+  font-weight: bold;
+  line-height: 1;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+#workerMapSelectPlusMenu.admin-reg-plus-menu {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 25000;
+  background: rgba(0,0,0,0.45);
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  box-sizing: border-box;
+}
+#workerMapSelectPlusMenu .admin-reg-plus-sheet {
+  width: min(420px, 100%);
+  background: #fff;
+  border-radius: 16px;
+  padding: 16px 16px 12px;
+  box-shadow: 0 12px 36px rgba(0,0,0,0.28);
+  box-sizing: border-box;
+}
+#workerMapSelectPlusMenu .admin-reg-plus-title {
+  color: #333;
+  font-size: 16px;
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 12px;
+}
+#workerMapSelectPlusMenu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  padding: 16px 16px;
+  font-size: 16px;
+  font-weight: bold;
+  margin-bottom: 8px;
+  cursor: pointer;
+  min-height: 54px;
+  box-sizing: border-box;
+}
+#workerMapSelectPlusMenu button.admin-reg-plus-cancel {
+  text-align: center;
+  background: #eee;
+  color: #555;
+  border-color: #ddd;
+  margin-bottom: 0;
+  margin-top: 4px;
+}
+#workerMapSelectPlusMenu button:hover {
+  filter: brightness(0.97);
+  background: #fff3e0;
+}
+#workerMapSelectPlusMenu button.admin-reg-plus-cancel:hover {
+  background: #e0e0e0;
+}
 
 /* 作業記録の時刻入力（カスタムピッカー起動） */
 .app-time-input { background: #fff; cursor: pointer; caret-color: transparent; text-align: center; font-weight: bold; letter-spacing: 0.05em; }

@@ -362,6 +362,8 @@ function parseMapDeepLinkFromSearch(search) {
     const targetFieldId = fieldIdParam || (!shouldOpenCad && idParam ? idParam : null);
     const fromBulkMemoRaw = urlParams.get('fromBulkMemo');
     const fromBulkMemo = !!(fromBulkMemoRaw && (fromBulkMemoRaw === '1' || fromBulkMemoRaw === 'true'));
+    const fromWorkerMapSelectRaw = urlParams.get('fromWorkerMapSelect');
+    const fromWorkerMapSelect = !!(fromWorkerMapSelectRaw && (fromWorkerMapSelectRaw === '1' || fromWorkerMapSelectRaw === 'true'));
     return {
         lat: isNaN(lat) ? null : lat,
         lng: isNaN(lng) ? null : lng,
@@ -370,8 +372,9 @@ function parseMapDeepLinkFromSearch(search) {
         openCad: !!shouldOpenCad,
         cadFieldId: targetFieldId,
         fromBulkMemo: fromBulkMemo,
+        fromWorkerMapSelect: fromWorkerMapSelect,
         action: urlParams.get('action'),
-        startDraw: urlParams.get('startDraw') || urlParams.get('mode'),
+        startDraw: urlParams.get('startDraw') || urlParams.get('mode') || urlParams.get('regMode'),
         sharedText: [urlParams.get('title'), urlParams.get('text'), urlParams.get('url')].filter(Boolean).join(' ')
     };
 }
@@ -382,6 +385,9 @@ try {
         pendingMapDeepLink = parseMapDeepLinkFromSearch(window.location.search);
         if (pendingMapDeepLink && pendingMapDeepLink.fromBulkMemo) {
             window._cadOpenedFromBulkMemo = true;
+        }
+        if (pendingMapDeepLink && pendingMapDeepLink.fromWorkerMapSelect) {
+            window._openedFromWorkerMapSelect = true;
         }
     }
 } catch (e) { pendingMapDeepLink = null; }
@@ -457,7 +463,15 @@ if (!window._openCadFieldMsgBound_) {
     window._openCadFieldMsgBound_ = true;
     window.addEventListener('message', (ev) => {
         const data = ev && ev.data;
-        if (!data || data.type !== 'openCadField') return;
+        if (!data) return;
+        if (data.type === 'openAdminRegMode') {
+            window._openedFromWorkerMapSelect = !!data.fromWorkerMapSelect;
+            if (typeof window.openAdminRegModeFromWorker_ === 'function') {
+                window.openAdminRegModeFromWorker_(data);
+            }
+            return;
+        }
+        if (data.type !== 'openCadField') return;
         if (Object.prototype.hasOwnProperty.call(data, 'fromBulkMemo')) {
             window._cadOpenedFromBulkMemo = !!data.fromBulkMemo;
         }
@@ -471,6 +485,35 @@ if (!window._openCadFieldMsgBound_) {
         }
     });
 }
+
+window.openAdminRegModeFromWorker_ = (opts) => {
+    opts = opts || {};
+    try {
+        const cadOv = document.getElementById('cadOverlay');
+        if (cadOv && cadOv.style.display !== 'none') {
+            if (typeof window.closeCADMode === 'function') window.closeCADMode();
+            else cadOv.style.display = 'none';
+        }
+    } catch (e) { }
+    try {
+        const m = document.getElementById('modal');
+        if (m) m.style.display = 'none';
+    } catch (e) { }
+    const lat = parseFloat(opts.lat);
+    const lng = parseFloat(opts.lng);
+    const zoom = parseInt(opts.zoom, 10) || 18;
+    if (map && !isNaN(lat) && !isNaN(lng)) {
+        map.setCenter({ lat, lng });
+        map.setZoom(zoom);
+    }
+    const raw = String(opts.regMode || opts.startDraw || 'draw').trim();
+    const mode = (raw === '1' || raw === 'true') ? 'draw' : raw;
+    setTimeout(() => {
+        if (typeof window.pickAdminRegPlus_ === 'function') {
+            window.pickAdminRegPlus_(mode);
+        }
+    }, 250);
+};
 
 let mapDeepLinkUrlCleared = false;
 let deepLinkFieldHandled = false;
@@ -642,10 +685,31 @@ function applyPendingMapDeepLink() {
     const hasCoords = link.lat != null && link.lng != null;
     const hasField = !!link.fieldId;
     const hasShared = !!link.sharedText;
-    const shouldAutoStartDraw = link.startDraw && (link.startDraw === '1' || link.startDraw === 'true' || link.startDraw === 'draw');
-    if (!hasCoords && !hasField && !hasShared && !link.openCad && !shouldAutoStartDraw) return;
+    const rawStartMode = String(link.startDraw || '').trim();
+    const shouldAutoStartDraw = rawStartMode && (rawStartMode === '1' || rawStartMode === 'true' || rawStartMode === 'draw');
+    const shouldAutoStartOtherReg = rawStartMode && ['marker', 'marker_child', 'marker_parent', 'location'].includes(rawStartMode);
+    if (!hasCoords && !hasField && !hasShared && !link.openCad && !shouldAutoStartDraw && !shouldAutoStartOtherReg) return;
 
     clearMapDeepLinkFromUrl();
+
+    if (link.fromWorkerMapSelect && (shouldAutoStartDraw || shouldAutoStartOtherReg)) {
+        window._openedFromWorkerMapSelect = true;
+        window.openAdminRegModeFromWorker_({
+            regMode: shouldAutoStartDraw ? 'draw' : rawStartMode,
+            lat: link.lat,
+            lng: link.lng,
+            zoom: link.zoom
+        });
+        return;
+    }
+
+    if (shouldAutoStartOtherReg) {
+        if (hasCoords) flyMapToDeepLinkPosition(link.lat, link.lng, link.zoom, false);
+        setTimeout(() => {
+            if (typeof window.pickAdminRegPlus_ === 'function') window.pickAdminRegPlus_(rawStartMode);
+        }, 300);
+        return;
+    }
 
     if (shouldAutoStartDraw && link.action !== 'draw') {
         setTimeout(() => {
@@ -1059,6 +1123,15 @@ function remapLoadedPolygonId_(oldId, newId) {
         const extra = obj._pendingUpdate;
         obj._pendingUpdate = null;
         setTimeout(() => { syncUpdatePolygon_(obj, extra).catch(() => { }); }, 0);
+    }
+    if (window.parent && window.parent !== window) {
+        try {
+            window.parent.postMessage({
+                type: 'workerMapSelectPolygonIdRemapped',
+                oldId: String(oldId),
+                newId: String(newId)
+            }, '*');
+        } catch (e) { }
     }
     return obj;
 }
@@ -7803,6 +7876,31 @@ function createPolygonObject(p) {
     }
     window.loadedPolygons = loadedPolygons;
     if (typeof window.applyMapLayerFilter_ === 'function') window.applyMapLayerFilter_();
+    if (window._openedFromWorkerMapSelect && window.parent && window.parent !== window && String(p.id || '').indexOf('tmp_') === 0) {
+        try {
+            const plainCoords = (p.coords || []).map(pt => ({
+                lat: typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat),
+                lng: typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng)
+            }));
+            window.parent.postMessage({
+                type: 'workerMapSelectPolygonSaved',
+                item: {
+                    id: String(p.id),
+                    name: p.name || '',
+                    coords: plainCoords,
+                    color: p.color || (p.isMarker ? '🚩' : '#FF9800'),
+                    location: p.location || '',
+                    condition: p.condition || '',
+                    soilType: p.soilType || '',
+                    area: p.area || 0,
+                    status: p.status || '稼働中',
+                    signFunction: p.signFunction || '',
+                    parentSignId: p.parentSignId || '',
+                    isMarker: !!p.isMarker
+                }
+            }, '*');
+        } catch (e) { }
+    }
 }
 function createLabelMarker(n, c, col, a) {
     const b = new google.maps.LatLngBounds();

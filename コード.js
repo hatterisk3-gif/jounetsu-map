@@ -2,6 +2,9 @@
  * 情熱MAP 統合API (管理者・作業員 共通)
  */
 const MASTER_SPREADSHEET_ID = "1Kfg5JzNE8pZVQuyuHExz1Q00vzd75MmWrtKLLHUG89c"; // マスター・スプレッドシートのID
+const DEFAULT_GOOGLE_CLIENT_ID = "897816769504-n26f6sodn6bvoupptvn0jnqb3b3513li.apps.googleusercontent.com"; // Google OAuth クライアントID（未設定時はスクリプトプロパティ GOOGLE_CLIENT_ID を参照）
+const DEFAULT_LINE_CHANNEL_ID = "2012460474"; // LINEログイン チャネルID（未設定時はスクリプトプロパティ LINE_CHANNEL_ID を参照）
+const DEFAULT_LINE_CHANNEL_SECRET = "3a924fc342e0d6100a67be3c9241aecb"; // LINEログイン チャネルシークレット（未設定時はスクリプトプロパティ LINE_CHANNEL_SECRET を参照）
 let TENANT_SS = null;
 
 function jsonOut_(obj) {
@@ -33,6 +36,10 @@ const API_ACTIONS = {
   "login": function (p) { return checkLogin(p.orgId, p.userId, p.password); },
   "signup": function (p) { return signupUser(p); },
   "getSignupOptions": function (p) { return getSignupOptions(p); },
+  "googleAuth": function (p) { return googleAuth(p); },
+  "setGoogleClientId": function (p) { return setGoogleClientId(p); },
+  "lineAuth": function (p) { return lineAuth(p); },
+  "setLineChannelConfig": function (p) { return setLineChannelConfig(p); },
   "adminAddUser": function (p) { return adminAddUser(p); },
   "listUsersForAdmin": function (p) { return listUsersForAdmin(p); },
   "updateUserRole": function (p) { return updateUserRole(p); },
@@ -698,6 +705,8 @@ function createMeiboUser_(ss, opts) {
   const userName = String((opts && opts.userName) || '').trim();
   const location = String((opts && opts.location) || '').trim();
   const email = String((opts && opts.email) || '').trim();
+  const googleUid = String((opts && opts.googleUid) || '').trim();
+  const lineUid = String((opts && opts.lineUid) || '').trim();
   let role = String((opts && opts.role) || '作業員').trim() || '作業員';
   if (role !== '管理者' && role !== '作業員') role = '作業員';
 
@@ -742,10 +751,23 @@ function createMeiboUser_(ss, opts) {
       mailInfo.sheet.getRange(newRow, mailInfo.gmailCol + 1).setValue(email);
     } catch (e) { }
   }
+  if (googleUid) {
+    try {
+      const gInfo = ensureMeiboGoogleUidColumn_();
+      gInfo.sheet.getRange(newRow, gInfo.col + 1).setValue(googleUid);
+    } catch (e) { }
+  }
+  if (lineUid) {
+    try {
+      const lInfo = ensureMeiboLineUidColumn_();
+      lInfo.sheet.getRange(newRow, lInfo.col + 1).setValue(lineUid);
+    } catch (e) { }
+  }
 
   return {
     success: true,
     userId: userId,
+    password: password,
     userName: userName,
     role: role,
     location: location,
@@ -753,13 +775,539 @@ function createMeiboUser_(ss, opts) {
   };
 }
 
+function getGoogleClientId_() {
+  try {
+    const prop = PropertiesService.getScriptProperties().getProperty('GOOGLE_CLIENT_ID');
+    if (prop && String(prop).trim()) return String(prop).trim();
+  } catch (e) { }
+  return String(DEFAULT_GOOGLE_CLIENT_ID || '').trim();
+}
+
+function setGoogleClientId(params) {
+  const p = params || {};
+  const clientId = String(p.clientId || '').trim();
+  if (!clientId || clientId.indexOf('.apps.googleusercontent.com') < 0) {
+    return { success: false, message: '有効な Google OAuth クライアントID（.apps.googleusercontent.com）を入力してください' };
+  }
+  PropertiesService.getScriptProperties().setProperty('GOOGLE_CLIENT_ID', clientId);
+  return { success: true, googleClientId: clientId };
+}
+
+function ensureMeiboGoogleUidColumn_() {
+  const sheet = requireTenantSs_().getSheetByName('名簿');
+  if (!sheet) throw new Error('名簿シートが見つかりません');
+  const lastCol = Math.max(sheet.getLastColumn(), 5);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  let col = -1;
+  for (let c = 0; c < headers.length; c++) {
+    const h = String(headers[c] || '').trim();
+    if (h === 'Google_UID' || h === 'GoogleUID' || h === 'GoogleID') {
+      col = c;
+      break;
+    }
+  }
+  if (col < 0) {
+    col = Math.max(sheet.getLastColumn(), 1);
+    sheet.getRange(1, col + 1).setValue('Google_UID');
+    SpreadsheetApp.flush();
+  }
+  return { sheet: sheet, col: col };
+}
+
+function verifyGoogleToken_(params) {
+  const p = params || {};
+  const accessToken = String(p.accessToken || p.googleAccessToken || '').trim();
+  const idToken = String(p.idToken || p.credential || '').trim();
+
+  if (accessToken) {
+    const res = UrlFetchApp.fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      method: 'get',
+      headers: { Authorization: 'Bearer ' + accessToken },
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() !== 200) {
+      throw new Error('Google認証トークンの検証に失敗しました（再度Googleログインをお試しください）');
+    }
+    const info = JSON.parse(res.getContentText() || '{}');
+    const email = String(info.email || '').trim().toLowerCase();
+    const sub = String(info.sub || '').trim();
+    if (!email || !sub) {
+      throw new Error('Googleアカウント情報（メールアドレス）を取得できませんでした');
+    }
+    return {
+      sub: sub,
+      email: email,
+      name: String(info.name || info.given_name || email.split('@')[0] || '').trim(),
+      picture: String(info.picture || '').trim()
+    };
+  }
+
+  if (idToken) {
+    const res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken), {
+      method: 'get',
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() !== 200) {
+      throw new Error('Google IDトークンの検証に失敗しました');
+    }
+    const info = JSON.parse(res.getContentText() || '{}');
+    const expectedAud = getGoogleClientId_();
+    if (expectedAud && info.aud && String(info.aud).trim() !== expectedAud) {
+      throw new Error('GoogleクライアントIDが一致しません');
+    }
+    const email = String(info.email || '').trim().toLowerCase();
+    const sub = String(info.sub || '').trim();
+    if (!email || !sub) {
+      throw new Error('Googleアカウント情報（メールアドレス）を取得できませんでした');
+    }
+    return {
+      sub: sub,
+      email: email,
+      name: String(info.name || info.given_name || email.split('@')[0] || '').trim(),
+      picture: String(info.picture || '').trim()
+    };
+  }
+
+  throw new Error('Google認証情報が見つかりません');
+}
+
+/** Googleアカウントでのログイン／新規登録判定 */
+function googleAuth(params) {
+  const p = params || {};
+  let spreadsheetId;
+  try {
+    spreadsheetId = openTenantByOrgId_(p.orgId || 'default');
+  } catch (e) {
+    return { success: false, message: e.message || String(e) };
+  }
+
+  let profile;
+  try {
+    profile = verifyGoogleToken_(p);
+  } catch (e) {
+    return { success: false, message: e.message || String(e) };
+  }
+
+  const sheet = TENANT_SS.getSheetByName('名簿');
+  if (!sheet) return { success: false, message: '名簿シートが見つかりません' };
+
+  let gmailCol = -1;
+  try { gmailCol = ensureMeiboGmailColumn_().gmailCol; } catch (e) { }
+  let googleUidCol = -1;
+  try { googleUidCol = ensureMeiboGoogleUidColumn_().col; } catch (e) { }
+  let deptCol = -1;
+  try { deptCol = ensureMeiboDeptColumn_().col; } catch (e) { }
+  let locationCol = -1;
+  try { locationCol = ensureMeiboLocationColumn_().col; } catch (e) { }
+
+  const data = sheet.getDataRange().getValues();
+  let matchedRowIdx = -1;
+  for (let i = 1; i < data.length; i++) {
+    const rowUid = googleUidCol >= 0 ? String(data[i][googleUidCol] || '').trim() : '';
+    const rowEmail = gmailCol >= 0 ? String(data[i][gmailCol] || '').trim().toLowerCase() : '';
+    if ((profile.sub && rowUid === profile.sub) || (profile.email && rowEmail === profile.email)) {
+      matchedRowIdx = i;
+      break;
+    }
+  }
+
+  // 既存ユーザーが見つかった場合はそのままログイン成立
+  if (matchedRowIdx >= 1) {
+    const row = data[matchedRowIdx];
+    const rowNumber = matchedRowIdx + 1;
+    const userId = String(row[0] || '').trim();
+    let password = String(row[1] || '');
+    const userName = String(row[2] || userId).trim();
+    const role = String(row[3] || '作業員').trim() || '作業員';
+    const dept = deptCol >= 0 ? String(row[deptCol] || '').trim() : '';
+    const location = locationCol >= 0 ? String(row[locationCol] || '').trim() : '';
+
+    // パスワード列が空の場合は自動発行して保存（他画面のセッション引き継ぎ用）
+    if (!password) {
+      password = 'g_' + Utilities.getUuid().replace(/-/g, '').slice(0, 10);
+      try { sheet.getRange(rowNumber, 2).setValue(password); } catch (e) { }
+    }
+    if (googleUidCol >= 0 && !String(row[googleUidCol] || '').trim() && profile.sub) {
+      try { sheet.getRange(rowNumber, googleUidCol + 1).setValue(profile.sub); } catch (e) { }
+    }
+    if (gmailCol >= 0 && !String(row[gmailCol] || '').trim() && profile.email) {
+      try { sheet.getRange(rowNumber, gmailCol + 1).setValue(profile.email); } catch (e) { }
+    }
+
+    writeLog(userName, 'Googleログイン', 'システム', 'Google連携ログイン成功 (' + profile.email + ')');
+    return {
+      success: true,
+      status: 'logged_in',
+      userId: userId,
+      password: password,
+      name: userName,
+      role: role,
+      dept: dept,
+      location: location,
+      email: profile.email,
+      spreadsheetId: spreadsheetId
+    };
+  }
+
+  // 未登録ユーザー：拠点が既に指定されていればその場で新規登録も完了する
+  const location = String(p.location || '').trim();
+  if (location) {
+    const baseName = String(p.userName || profile.name || profile.email.split('@')[0] || 'user').trim();
+    let candidateId = baseName;
+    const existingIds = {};
+    for (let i = 1; i < data.length; i++) {
+      existingIds[String(data[i][0] || '').trim()] = true;
+    }
+    if (existingIds[candidateId] && !p.userName) {
+      let seq = 2;
+      while (existingIds[baseName + seq]) seq++;
+      candidateId = baseName + seq;
+    }
+    let password = String(p.password || '');
+    if (!password) {
+      password = 'g_' + Utilities.getUuid().replace(/-/g, '').slice(0, 10);
+    }
+    const created = createMeiboUser_(TENANT_SS, {
+      userId: candidateId,
+      password: password,
+      userName: baseName,
+      role: '作業員',
+      location: location,
+      email: profile.email,
+      googleUid: profile.sub
+    });
+    if (!created.success) {
+      return {
+        success: false,
+        status: 'needs_signup',
+        message: created.message,
+        googleProfile: profile
+      };
+    }
+    try {
+      writeLog(created.userName, 'Googleサインアップ', 'システム', 'Google連携登録: ' + created.userId + ' / 拠点:' + location + ' / メール:' + profile.email);
+    } catch (e) { }
+    return {
+      success: true,
+      status: 'registered',
+      message: 'Googleアカウントで新規登録しました',
+      userId: created.userId,
+      password: created.password,
+      name: created.userName,
+      role: '作業員',
+      location: location,
+      email: profile.email,
+      spreadsheetId: spreadsheetId
+    };
+  }
+
+  // 拠点未選択の場合はフロントの新規登録フォームへ引き継ぐ
+  let locations = [];
+  try {
+    locations = readLocationMasterDetails_().map(function (l) {
+      return String((l && l.name) || '').trim();
+    }).filter(Boolean);
+  } catch (e) { }
+
+  return {
+    success: true,
+    status: 'needs_signup',
+    message: 'Googleアカウントを確認しました。拠点名を選択して登録を完了してください。',
+    googleProfile: profile,
+    locations: locations
+  };
+}
+
+function getLineConfig_() {
+  let channelId = String(DEFAULT_LINE_CHANNEL_ID || '').trim();
+  let channelSecret = String(DEFAULT_LINE_CHANNEL_SECRET || '').trim();
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const pId = props.getProperty('LINE_CHANNEL_ID');
+    const pSec = props.getProperty('LINE_CHANNEL_SECRET');
+    if (pId && String(pId).trim()) channelId = String(pId).trim();
+    if (pSec && String(pSec).trim()) channelSecret = String(pSec).trim();
+  } catch (e) { }
+  return { channelId: channelId, channelSecret: channelSecret };
+}
+
+function setLineChannelConfig(params) {
+  const p = params || {};
+  const channelId = String(p.channelId || '').trim();
+  const channelSecret = String(p.channelSecret || '').trim();
+  if (!channelId || !/^\d{6,20}$/.test(channelId)) {
+    return { success: false, message: '有効な LINEログイン チャネルID（数字）を入力してください' };
+  }
+  if (!channelSecret || channelSecret.length < 16) {
+    return { success: false, message: '有効な LINEログイン チャネルシークレットを入力してください' };
+  }
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty('LINE_CHANNEL_ID', channelId);
+  props.setProperty('LINE_CHANNEL_SECRET', channelSecret);
+  return { success: true, lineChannelId: channelId };
+}
+
+function ensureMeiboLineUidColumn_() {
+  const sheet = requireTenantSs_().getSheetByName('名簿');
+  if (!sheet) throw new Error('名簿シートが見つかりません');
+  const lastCol = Math.max(sheet.getLastColumn(), 5);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  let col = -1;
+  for (let c = 0; c < headers.length; c++) {
+    const h = String(headers[c] || '').trim();
+    if (h === 'LINE_UID' || h === 'LineUID' || h === 'LINE_ID') {
+      col = c;
+      break;
+    }
+  }
+  if (col < 0) {
+    col = Math.max(sheet.getLastColumn(), 1);
+    sheet.getRange(1, col + 1).setValue('LINE_UID');
+    SpreadsheetApp.flush();
+  }
+  return { sheet: sheet, col: col };
+}
+
+function verifyLineAuth_(params) {
+  const p = params || {};
+  let accessToken = String(p.lineAccessToken || p.accessToken || '').trim();
+  const code = String(p.code || '').trim();
+  const redirectUri = String(p.redirectUri || '').trim();
+
+  if (code) {
+    const cfg = getLineConfig_();
+    if (!cfg.channelId || !cfg.channelSecret) {
+      throw new Error('LINEログインのチャネルID・シークレットが未設定です');
+    }
+    const tokenRes = UrlFetchApp.fetch('https://api.line.me/oauth2/v2.1/token', {
+      method: 'post',
+      contentType: 'application/x-www-form-urlencoded',
+      payload:
+        'grant_type=authorization_code' +
+        '&code=' + encodeURIComponent(code) +
+        '&redirect_uri=' + encodeURIComponent(redirectUri) +
+        '&client_id=' + encodeURIComponent(cfg.channelId) +
+        '&client_secret=' + encodeURIComponent(cfg.channelSecret),
+      muteHttpExceptions: true
+    });
+    if (tokenRes.getResponseCode() !== 200) {
+      let errDetail = '';
+      try {
+        const errJson = JSON.parse(tokenRes.getContentText() || '{}');
+        errDetail = errJson.error_description || errJson.error || '';
+      } catch (e) { }
+      throw new Error('LINE認証コードの交換に失敗しました' + (errDetail ? ' (' + errDetail + ')' : ''));
+    }
+    const tokenJson = JSON.parse(tokenRes.getContentText() || '{}');
+    accessToken = String(tokenJson.access_token || '').trim();
+  }
+
+  if (!accessToken) {
+    throw new Error('LINE認証トークンが見つかりません');
+  }
+
+  const profRes = UrlFetchApp.fetch('https://api.line.me/v2/profile', {
+    method: 'get',
+    headers: { Authorization: 'Bearer ' + accessToken },
+    muteHttpExceptions: true
+  });
+  if (profRes.getResponseCode() !== 200) {
+    throw new Error('LINEプロフィールの取得に失敗しました（再度LINEログインをお試しください）');
+  }
+  const prof = JSON.parse(profRes.getContentText() || '{}');
+  const lineUid = String(prof.userId || '').trim();
+  if (!lineUid) {
+    throw new Error('LINEユーザーIDを取得できませんでした');
+  }
+  return {
+    lineUid: lineUid,
+    name: String(prof.displayName || 'LINEユーザー').trim(),
+    picture: String(prof.pictureUrl || '').trim(),
+    accessToken: accessToken
+  };
+}
+
+/** LINEアカウントでのログイン／新規登録／既存アカウント紐付け判定 */
+function lineAuth(params) {
+  const p = params || {};
+  let spreadsheetId;
+  try {
+    spreadsheetId = openTenantByOrgId_(p.orgId || 'default');
+  } catch (e) {
+    return { success: false, message: e.message || String(e) };
+  }
+
+  let profile;
+  try {
+    profile = verifyLineAuth_(p);
+  } catch (e) {
+    return { success: false, message: e.message || String(e) };
+  }
+
+  const sheet = TENANT_SS.getSheetByName('名簿');
+  if (!sheet) return { success: false, message: '名簿シートが見つかりません' };
+
+  let lineUidCol = -1;
+  try { lineUidCol = ensureMeiboLineUidColumn_().col; } catch (e) { }
+  let deptCol = -1;
+  try { deptCol = ensureMeiboDeptColumn_().col; } catch (e) { }
+  let locationCol = -1;
+  try { locationCol = ensureMeiboLocationColumn_().col; } catch (e) { }
+
+  const data = sheet.getDataRange().getValues();
+
+  // ログイン済みユーザーが自分のアカウントにLINEを紐付ける場合
+  const linkUserId = String(p.linkUserId || '').trim();
+  const linkPassword = String(p.linkPassword || '');
+  if (linkUserId && linkPassword) {
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === linkUserId && String(data[i][1]) === linkPassword) {
+        if (lineUidCol >= 0) {
+          sheet.getRange(i + 1, lineUidCol + 1).setValue(profile.lineUid);
+        }
+        writeLog(data[i][2] || linkUserId, 'LINE連携', 'システム', '既存アカウントへLINE連携 (' + profile.name + ')');
+        return {
+          success: true,
+          status: 'linked',
+          message: 'LINEアカウント（' + profile.name + '）を連携しました',
+          userId: linkUserId,
+          password: linkPassword,
+          name: String(data[i][2] || linkUserId).trim(),
+          role: String(data[i][3] || '作業員').trim() || '作業員',
+          dept: deptCol >= 0 ? String(data[i][deptCol] || '').trim() : '',
+          location: locationCol >= 0 ? String(data[i][locationCol] || '').trim() : '',
+          spreadsheetId: spreadsheetId
+        };
+      }
+    }
+  }
+
+  let matchedRowIdx = -1;
+  for (let i = 1; i < data.length; i++) {
+    const rowLineUid = lineUidCol >= 0 ? String(data[i][lineUidCol] || '').trim() : '';
+    if (profile.lineUid && rowLineUid === profile.lineUid) {
+      matchedRowIdx = i;
+      break;
+    }
+  }
+
+  // 既存ユーザーが見つかった場合はそのままログイン成立
+  if (matchedRowIdx >= 1) {
+    const row = data[matchedRowIdx];
+    const rowNumber = matchedRowIdx + 1;
+    const userId = String(row[0] || '').trim();
+    let password = String(row[1] || '');
+    const userName = String(row[2] || userId).trim();
+    const role = String(row[3] || '作業員').trim() || '作業員';
+    const dept = deptCol >= 0 ? String(row[deptCol] || '').trim() : '';
+    const location = locationCol >= 0 ? String(row[locationCol] || '').trim() : '';
+
+    if (!password) {
+      password = 'l_' + Utilities.getUuid().replace(/-/g, '').slice(0, 10);
+      try { sheet.getRange(rowNumber, 2).setValue(password); } catch (e) { }
+    }
+
+    writeLog(userName, 'LINEログイン', 'システム', 'LINE連携ログイン成功 (' + profile.name + ')');
+    return {
+      success: true,
+      status: 'logged_in',
+      userId: userId,
+      password: password,
+      name: userName,
+      role: role,
+      dept: dept,
+      location: location,
+      spreadsheetId: spreadsheetId
+    };
+  }
+
+  // 未登録ユーザー：拠点が既に指定されていればその場で新規登録も完了する
+  const location = String(p.location || '').trim();
+  if (location) {
+    const baseName = String(p.userName || profile.name || 'user').trim();
+    let candidateId = baseName;
+    const existingIds = {};
+    for (let i = 1; i < data.length; i++) {
+      existingIds[String(data[i][0] || '').trim()] = true;
+    }
+    if (existingIds[candidateId] && !p.userName) {
+      let seq = 2;
+      while (existingIds[baseName + seq]) seq++;
+      candidateId = baseName + seq;
+    }
+    let password = String(p.password || '');
+    if (!password) {
+      password = 'l_' + Utilities.getUuid().replace(/-/g, '').slice(0, 10);
+    }
+    const created = createMeiboUser_(TENANT_SS, {
+      userId: candidateId,
+      password: password,
+      userName: baseName,
+      role: '作業員',
+      location: location,
+      email: String(p.email || '').trim(),
+      lineUid: profile.lineUid
+    });
+    if (!created.success) {
+      return {
+        success: false,
+        status: 'needs_signup',
+        message: created.message,
+        lineProfile: profile,
+        lineAccessToken: profile.accessToken
+      };
+    }
+    try {
+      writeLog(created.userName, 'LINEサインアップ', 'システム', 'LINE連携登録: ' + created.userId + ' / 拠点:' + location);
+    } catch (e) { }
+    return {
+      success: true,
+      status: 'registered',
+      message: 'LINEアカウントで新規登録しました',
+      userId: created.userId,
+      password: created.password,
+      name: created.userName,
+      role: '作業員',
+      location: location,
+      spreadsheetId: spreadsheetId
+    };
+  }
+
+  let locations = [];
+  try {
+    locations = readLocationMasterDetails_().map(function (l) {
+      return String((l && l.name) || '').trim();
+    }).filter(Boolean);
+  } catch (e) { }
+
+  return {
+    success: true,
+    status: 'needs_signup',
+    message: 'LINEアカウントを確認しました。拠点名を選択して登録を完了してください。',
+    lineProfile: {
+      lineUid: profile.lineUid,
+      name: profile.name,
+      picture: profile.picture
+    },
+    lineAccessToken: profile.accessToken,
+    locations: locations
+  };
+}
+
 /** 新規登録画面用：拠点一覧（未ログイン可） */
 function getSignupOptions(params) {
   const p = params || {};
+  const lineCfg = getLineConfig_();
   try {
     openTenantByOrgId_(p.orgId || 'default');
   } catch (e) {
-    return { success: false, message: e.message || String(e), locations: [] };
+    return {
+      success: false,
+      message: e.message || String(e),
+      locations: [],
+      googleClientId: getGoogleClientId_(),
+      lineChannelId: lineCfg.channelId
+    };
   }
   let locations = [];
   try {
@@ -769,7 +1317,12 @@ function getSignupOptions(params) {
   } catch (e) {
     locations = [];
   }
-  return { success: true, locations: locations };
+  return {
+    success: true,
+    locations: locations,
+    googleClientId: getGoogleClientId_(),
+    lineChannelId: lineCfg.channelId
+  };
 }
 
 /** 自己登録（役割は作業員固定） */
@@ -782,11 +1335,37 @@ function signupUser(params) {
     return { success: false, message: e.message || String(e) };
   }
 
-  const userNameRaw = String(p.userName || p.userId || '').trim();
-  const userId = String(p.userId || p.userName || '').trim();
-  const password = String(p.password || '');
+  let googleProfile = null;
+  if (p.googleAccessToken || p.googleIdToken) {
+    try {
+      googleProfile = verifyGoogleToken_({
+        accessToken: p.googleAccessToken,
+        idToken: p.googleIdToken
+      });
+    } catch (e) {
+      return { success: false, message: e.message || String(e) };
+    }
+  }
+
+  let lineProfile = null;
+  if (p.lineAccessToken) {
+    try {
+      lineProfile = verifyLineAuth_({
+        lineAccessToken: p.lineAccessToken
+      });
+    } catch (e) {
+      return { success: false, message: e.message || String(e) };
+    }
+  }
+
+  const userNameRaw = String(p.userName || p.userId || (googleProfile && googleProfile.name) || (lineProfile && lineProfile.name) || '').trim();
+  const userId = String(p.userId || p.userName || userNameRaw || '').trim();
+  let password = String(p.password || '');
+  if (!password && (googleProfile || lineProfile)) {
+    password = (lineProfile ? 'l_' : 'g_') + Utilities.getUuid().replace(/-/g, '').slice(0, 10);
+  }
   const location = String(p.location || '').trim();
-  const email = String(p.email || '').trim();
+  const email = String((googleProfile && googleProfile.email) || p.email || '').trim();
 
   if (!userId || !password) {
     return { success: false, message: 'ユーザー名とパスワードを入力してください' };
@@ -794,10 +1373,10 @@ function signupUser(params) {
   if (!location) {
     return { success: false, message: '拠点名を選択してください' };
   }
-  if (!email) {
+  if (!lineProfile && !email) {
     return { success: false, message: 'メールアドレスを入力してください' };
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return { success: false, message: 'メールアドレスの形式が正しくありません' };
   }
 
@@ -807,12 +1386,15 @@ function signupUser(params) {
     userName: userNameRaw || userId,
     role: '作業員',
     location: location,
-    email: email
+    email: email,
+    googleUid: googleProfile ? googleProfile.sub : '',
+    lineUid: lineProfile ? lineProfile.lineUid : ''
   });
   if (!created.success) return created;
 
   try {
-    writeLog(created.userName, "サインアップ", "システム", "自己登録: " + created.userId + " / 拠点:" + location + " / メール:" + email);
+    const authTag = googleProfile ? "Google連携登録: " : (lineProfile ? "LINE連携登録: " : "自己登録: ");
+    writeLog(created.userName, "サインアップ", "システム", authTag + created.userId + " / 拠点:" + location + (email ? " / メール:" + email : ""));
   } catch (e) { }
 
   return {
@@ -821,6 +1403,7 @@ function signupUser(params) {
     name: created.userName,
     role: '作業員',
     userId: created.userId,
+    password: password,
     location: location,
     email: email,
     spreadsheetId: spreadsheetId

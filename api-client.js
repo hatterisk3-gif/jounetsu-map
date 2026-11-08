@@ -8,7 +8,11 @@
   var ACTIONS_WITHOUT_SHEET = {
     login: true,
     signup: true,
-    getSignupOptions: true
+    getSignupOptions: true,
+    googleAuth: true,
+    setGoogleClientId: true,
+    lineAuth: true,
+    setLineChannelConfig: true
   };
 
   var HEAVY_TIMEOUT_MS = {
@@ -33,6 +37,8 @@
     resetAllManureStatus: 60000,
     // Apps Script のコールドスタートで 20〜40 秒かかることがある
     login: 60000,
+    googleAuth: 60000,
+    lineAuth: 60000,
     getOsakaMarketDaily: 90000,
     importOsakaMarketDaily: 90000,
     getTokyoMarketDaily: 90000,
@@ -458,6 +464,236 @@
     writeDeletedPolygonIds_(Object.keys(set).slice(-400));
     stripDeletedPolygonsFromCaches_();
   }
+
+  var DEFAULT_GOOGLE_CLIENT_ID = '897816769504-n26f6sodn6bvoupptvn0jnqb3b3513li.apps.googleusercontent.com';
+  var gsiLoadPromise_ = null;
+  function ensureGoogleGsiScript_() {
+    if (typeof window !== 'undefined' && window.google && window.google.accounts && window.google.accounts.oauth2) {
+      return Promise.resolve();
+    }
+    if (gsiLoadPromise_) return gsiLoadPromise_;
+    gsiLoadPromise_ = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.async = true;
+      s.defer = true;
+      s.onload = function () { resolve(); };
+      s.onerror = function () {
+        gsiLoadPromise_ = null;
+        reject(new Error('Google認証ライブラリの読み込みに失敗しました'));
+      };
+      document.head.appendChild(s);
+    });
+    return gsiLoadPromise_;
+  }
+
+  async function resolveGoogleClientId_(allowPromptSetup) {
+    var cid = String(global.PASSION_MAP_GOOGLE_CLIENT_ID || DEFAULT_GOOGLE_CLIENT_ID || '').trim();
+    if (!cid) {
+      try { cid = String(localStorage.getItem('passionMapGoogleClientId') || '').trim(); } catch (e) {}
+    }
+    if (cid) return cid;
+    try {
+      var res = await callGAS('getSignupOptions', { orgId: 'default' });
+      if (res && res.googleClientId) {
+        cid = String(res.googleClientId).trim();
+        if (cid) {
+          try { localStorage.setItem('passionMapGoogleClientId', cid); } catch (e) {}
+          return cid;
+        }
+      }
+    } catch (e) {}
+
+    if (!allowPromptSetup) return '';
+    var input = window.prompt(
+      '【初回設定】Google OAuth クライアントID（xxxx.apps.googleusercontent.com）を入力してください。\n※Google Cloud Console で発行したウェブ用クライアントIDを貼り付けるとサーバーに保存されます:',
+      ''
+    );
+    var trimmed = String(input || '').trim();
+    if (!trimmed) return '';
+    if (trimmed.indexOf('.apps.googleusercontent.com') < 0) {
+      throw new Error('クライアントIDは「.apps.googleusercontent.com」で終わる文字列を入力してください');
+    }
+    var saved = await callGAS('setGoogleClientId', { orgId: 'default', clientId: trimmed });
+    if (!saved || !saved.success) {
+      throw new Error((saved && saved.message) || 'クライアントIDの保存に失敗しました');
+    }
+    try { localStorage.setItem('passionMapGoogleClientId', trimmed); } catch (e) {}
+    return trimmed;
+  }
+
+  async function requestGoogleAccessToken_() {
+    var clientId = await resolveGoogleClientId_(true);
+    if (!clientId) {
+      throw new Error('Google OAuth クライアントIDが未設定です');
+    }
+    await ensureGoogleGsiScript_();
+    return new Promise(function (resolve, reject) {
+      try {
+        var tokenClient = window.google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: 'openid email profile',
+          callback: function (resp) {
+            if (!resp || resp.error) {
+              reject(new Error((resp && (resp.error_description || resp.error)) || 'Google認証がキャンセルされました'));
+              return;
+            }
+            if (!resp.access_token) {
+              reject(new Error('Googleアクセストークンを取得できませんでした'));
+              return;
+            }
+            resolve(resp.access_token);
+          },
+          error_callback: function (err) {
+            if (err && err.type === 'popup_closed') {
+              reject(new Error('Googleログイン画面が閉じられました'));
+              return;
+            }
+            reject(new Error((err && err.message) || 'Google認証ポップアップを開けませんでした'));
+          }
+        });
+        tokenClient.requestAccessToken({ prompt: 'select_account' });
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
+  global.PassionMapGoogleAuth = {
+    ensureGsiScript: ensureGoogleGsiScript_,
+    getClientId: resolveGoogleClientId_,
+    requestAccessToken: requestGoogleAccessToken_
+  };
+
+  var DEFAULT_LINE_CHANNEL_ID = '2012460474';
+  async function resolveLineChannelId_(allowPromptSetup) {
+    var cid = String(global.PASSION_MAP_LINE_CHANNEL_ID || DEFAULT_LINE_CHANNEL_ID || '').trim();
+    if (!cid) {
+      try { cid = String(localStorage.getItem('passionMapLineChannelId') || '').trim(); } catch (e) {}
+    }
+    if (cid) return cid;
+    try {
+      var res = await callGAS('getSignupOptions', { orgId: 'default' });
+      if (res && res.lineChannelId) {
+        cid = String(res.lineChannelId).trim();
+        if (cid) {
+          try { localStorage.setItem('passionMapLineChannelId', cid); } catch (e) {}
+          return cid;
+        }
+      }
+    } catch (e) {}
+
+    if (!allowPromptSetup) return '';
+    var inputId = window.prompt(
+      '【初回設定 1/2】LINEログイン チャネルID（数字）を入力してください。\n※LINE Developers コンソールで作成した「LINEログイン」チャネルのチャネルIDを入力:',
+      ''
+    );
+    var trimmedId = String(inputId || '').trim();
+    if (!trimmedId) return '';
+    if (!/^\d{6,20}$/.test(trimmedId)) {
+      throw new Error('LINEチャネルIDは数字のみで入力してください');
+    }
+    var inputSecret = window.prompt(
+      '【初回設定 2/2】LINEログイン チャネルシークレット（英数字）を入力してください:',
+      ''
+    );
+    var trimmedSecret = String(inputSecret || '').trim();
+    if (!trimmedSecret) return '';
+    var saved = await callGAS('setLineChannelConfig', {
+      orgId: 'default',
+      channelId: trimmedId,
+      channelSecret: trimmedSecret
+    });
+    if (!saved || !saved.success) {
+      throw new Error((saved && saved.message) || 'LINEチャネル設定の保存に失敗しました');
+    }
+    try { localStorage.setItem('passionMapLineChannelId', trimmedId); } catch (e) {}
+    return trimmedId;
+  }
+
+  function getCleanRedirectUri_() {
+    return window.location.origin + window.location.pathname;
+  }
+
+  async function startLineRedirect_(opts) {
+    var o = opts || {};
+    var channelId = await resolveLineChannelId_(true);
+    if (!channelId) {
+      throw new Error('LINEログイン チャネルIDが未設定です');
+    }
+    var redirectUri = getCleanRedirectUri_();
+    var state = 'pm_line_' + Math.random().toString(36).slice(2) + '_' + Date.now().toString(36);
+    try {
+      sessionStorage.setItem('passionMapLineAuthPending', JSON.stringify({
+        state: state,
+        redirectUri: redirectUri,
+        fromMode: o.fromMode || 'login',
+        location: o.location || '',
+        userName: o.userName || '',
+        linkUserId: o.linkUserId || '',
+        linkPassword: o.linkPassword || ''
+      }));
+    } catch (e) {}
+    var authUrl =
+      'https://access.line.me/oauth2/v2.1/authorize' +
+      '?response_type=code' +
+      '&client_id=' + encodeURIComponent(channelId) +
+      '&redirect_uri=' + encodeURIComponent(redirectUri) +
+      '&state=' + encodeURIComponent(state) +
+      '&scope=profile%20openid';
+    window.location.href = authUrl;
+  }
+
+  function consumeLineRedirectCallback_() {
+    if (typeof window === 'undefined' || !window.location || !window.location.search) return null;
+    var params = new URLSearchParams(window.location.search);
+    var code = params.get('code');
+    var state = params.get('state');
+    var err = params.get('error');
+    var errDesc = params.get('error_description');
+    if (!code && !err) return null;
+    if (state && state.indexOf('pm_line_') !== 0) return null;
+
+    var pending = null;
+    try {
+      var raw = sessionStorage.getItem('passionMapLineAuthPending');
+      if (raw) pending = JSON.parse(raw);
+      sessionStorage.removeItem('passionMapLineAuthPending');
+    } catch (e) {}
+
+    try {
+      params.delete('code');
+      params.delete('state');
+      params.delete('error');
+      params.delete('error_description');
+      params.delete('friendship_status_changed');
+      var qs = params.toString();
+      var cleanUrl = window.location.pathname + (qs ? '?' + qs : '') + (window.location.hash || '');
+      window.history.replaceState({}, document.title, cleanUrl);
+    } catch (e) {}
+
+    if (err) {
+      return { error: errDesc || err || 'LINE認証がキャンセルされました', pending: pending };
+    }
+    if (pending && pending.state && state && pending.state !== state) {
+      return { error: 'LINE認証のstate検証に失敗しました。もう一度お試しください。', pending: pending };
+    }
+    return {
+      code: code,
+      redirectUri: (pending && pending.redirectUri) || getCleanRedirectUri_(),
+      fromMode: (pending && pending.fromMode) || 'login',
+      location: (pending && pending.location) || '',
+      userName: (pending && pending.userName) || '',
+      linkUserId: (pending && pending.linkUserId) || '',
+      linkPassword: (pending && pending.linkPassword) || ''
+    };
+  }
+
+  global.PassionMapLineAuth = {
+    getChannelId: resolveLineChannelId_,
+    startRedirect: startLineRedirect_,
+    consumeCallback: consumeLineRedirectCallback_
+  };
 
   global.GAS_URL = GAS_URL;
   global.callGAS = callGAS;

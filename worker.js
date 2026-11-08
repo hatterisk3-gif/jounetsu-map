@@ -697,12 +697,33 @@ window.switchWorkerAuthTab = function (mode) {
   }
 };
 
-async function loadWorkerSignupLocations_() {
+let _workerGoogleAccessToken = '';
+let _workerLineAccessToken = '';
+
+async function loadWorkerSignupLocations_(prefetchedLocations) {
   const sel = document.getElementById('signupLocation');
-  if (!sel || sel.getAttribute('data-loaded') === '1') return;
+  if (!sel) return;
+  if (Array.isArray(prefetchedLocations) && prefetchedLocations.length) {
+    let html = '<option value="">拠点を選択...</option>';
+    prefetchedLocations.forEach(function (l) {
+      const v = String(l || '').trim();
+      if (!v) return;
+      html += '<option value="' + v.replace(/"/g, '&quot;') + '">' + v.replace(/</g, '&lt;') + '</option>';
+    });
+    sel.innerHTML = html;
+    sel.setAttribute('data-loaded', '1');
+    return;
+  }
+  if (sel.getAttribute('data-loaded') === '1') return;
   sel.innerHTML = '<option value="">読み込み中...</option>';
   try {
     const res = await callGAS('getSignupOptions', { orgId: 'default' });
+    if (res && res.googleClientId) {
+      try { localStorage.setItem('passionMapGoogleClientId', String(res.googleClientId).trim()); } catch (e) { }
+    }
+    if (res && res.lineChannelId) {
+      try { localStorage.setItem('passionMapLineChannelId', String(res.lineChannelId).trim()); } catch (e) { }
+    }
     const locs = (res && Array.isArray(res.locations)) ? res.locations : [];
     let html = '<option value="">拠点を選択...</option>';
     locs.forEach(function (l) {
@@ -718,6 +739,249 @@ async function loadWorkerSignupLocations_() {
   }
 }
 
+window.startWorkerGoogleAuth = async function (fromMode) {
+  const err = document.getElementById('loginError');
+  const btnLogin = document.getElementById('workerGoogleLoginBtn');
+  const btnSignup = document.getElementById('workerGoogleSignupBtn');
+  if (err) {
+    err.style.color = 'red';
+    err.innerText = '';
+  }
+  if (!window.PassionMapGoogleAuth) {
+    if (err) err.innerText = 'Google認証モジュールが読み込まれていません';
+    return;
+  }
+  if (btnLogin) btnLogin.disabled = true;
+  if (btnSignup) btnSignup.disabled = true;
+  try {
+    const accessToken = await window.PassionMapGoogleAuth.requestAccessToken();
+    if (err) {
+      err.style.color = '#2e7d32';
+      err.innerText = 'Googleアカウントを照合しています...';
+    }
+    const locVal = (fromMode === 'signup' && document.getElementById('signupLocation'))
+      ? String(document.getElementById('signupLocation').value || '').trim()
+      : '';
+    const userNameVal = (fromMode === 'signup' && document.getElementById('signupUserName'))
+      ? String(document.getElementById('signupUserName').value || '').trim()
+      : '';
+    const pwVal = (fromMode === 'signup' && document.getElementById('signupPassword'))
+      ? String(document.getElementById('signupPassword').value || '')
+      : '';
+
+    const res = await callGAS('googleAuth', {
+      orgId: 'default',
+      accessToken: accessToken,
+      location: locVal,
+      userName: userNameVal,
+      password: pwVal
+    });
+
+    if (res && res.status === 'needs_signup' && res.googleProfile) {
+      _workerGoogleAccessToken = accessToken;
+      _workerLineAccessToken = '';
+      window.switchWorkerAuthTab('signup');
+      if (Array.isArray(res.locations) && res.locations.length) {
+        loadWorkerSignupLocations_(res.locations);
+      } else {
+        loadWorkerSignupLocations_();
+      }
+      const nameEl = document.getElementById('signupUserName');
+      const emailEl = document.getElementById('signupEmail');
+      const emailLabel = document.getElementById('workerSignupEmailLabel');
+      const pwWrap = document.getElementById('workerSignupPasswordWrap');
+      const banner = document.getElementById('workerSignupGoogleBanner');
+      const gBtnText = document.getElementById('workerGoogleSignupBtnText');
+      if (nameEl && !nameEl.value.trim() && res.googleProfile.name) {
+        nameEl.value = res.googleProfile.name;
+      }
+      if (emailEl && res.googleProfile.email) {
+        emailEl.value = res.googleProfile.email;
+        emailEl.readOnly = true;
+        emailEl.style.background = '#f1f8e9';
+      }
+      if (emailLabel) emailLabel.textContent = 'メールアドレス';
+      if (pwWrap) pwWrap.style.display = 'none';
+      if (banner) {
+        banner.style.display = 'block';
+        banner.innerHTML = '✅ Google連携済み: <strong>' + String(res.googleProfile.email || '').replace(/</g, '&lt;') + '</strong><br><span style="font-size:11px;">パスワード入力は不要です。拠点名を選んで「登録する」を押してください。</span>';
+      }
+      if (gBtnText) gBtnText.textContent = '別のGoogleアカウントを選び直す';
+      if (err) {
+        if (res.success === false && res.message) {
+          err.style.color = 'red';
+          err.innerText = res.message;
+        } else {
+          err.style.color = '#2e7d32';
+          err.innerText = 'あと「拠点名」を選択して「登録する」を押してください';
+        }
+      }
+      const locEl = document.getElementById('signupLocation');
+      if (locEl) setTimeout(function () { locEl.focus(); }, 60);
+      return;
+    }
+
+    if (!res || !res.success) {
+      if (err) {
+        err.style.color = 'red';
+        err.innerText = (res && res.message) || 'Google認証に失敗しました';
+      }
+      return;
+    }
+
+    const loginId = document.getElementById('loginId');
+    const loginPw = document.getElementById('loginPw');
+    if (loginId) loginId.value = res.userId || res.name || '';
+    if (loginPw) loginPw.value = res.password || '';
+    if (res.location != null) localStorage.setItem('passionMapUserLocation', res.location || locVal || '');
+    window.switchWorkerAuthTab('login');
+    await executeLogin(false);
+  } catch (e) {
+    if (err) {
+      err.style.color = 'red';
+      err.innerText = e.message || String(e);
+    }
+  } finally {
+    if (btnLogin) btnLogin.disabled = false;
+    if (btnSignup) btnSignup.disabled = false;
+  }
+};
+
+window.startWorkerLineAuth = async function (fromMode) {
+  const err = document.getElementById('loginError');
+  if (err) {
+    err.style.color = 'red';
+    err.innerText = '';
+  }
+  if (!window.PassionMapLineAuth) {
+    if (err) err.innerText = 'LINE認証モジュールが読み込まれていません';
+    return;
+  }
+  try {
+    const locVal = (fromMode === 'signup' && document.getElementById('signupLocation'))
+      ? String(document.getElementById('signupLocation').value || '').trim()
+      : '';
+    const userNameVal = (fromMode === 'signup' && document.getElementById('signupUserName'))
+      ? String(document.getElementById('signupUserName').value || '').trim()
+      : '';
+    await window.PassionMapLineAuth.startRedirect({
+      fromMode: fromMode,
+      location: locVal,
+      userName: userNameVal
+    });
+  } catch (e) {
+    if (err) {
+      err.style.color = 'red';
+      err.innerText = e.message || String(e);
+    }
+  }
+};
+
+async function handleWorkerLineCallback_() {
+  if (!window.PassionMapLineAuth) return;
+  const cb = window.PassionMapLineAuth.consumeCallback();
+  if (!cb) return;
+  const err = document.getElementById('loginError');
+  const overlayEl = document.getElementById('mapDataLoadingOverlay');
+  if (overlayEl) {
+    overlayEl.classList.remove('is-visible', 'is-nonblocking', 'worker-boot-loading');
+    overlayEl.style.display = 'none';
+    overlayEl.style.pointerEvents = 'none';
+  }
+  setWorkerLoginScreenVisible_(true);
+  window.switchWorkerAuthTab(cb.fromMode === 'signup' ? 'signup' : 'login');
+
+  if (cb.error) {
+    if (err) {
+      err.style.color = 'red';
+      err.innerText = cb.error;
+    }
+    return;
+  }
+  if (err) {
+    err.style.color = '#2e7d32';
+    err.innerText = 'LINEアカウントを照合しています...';
+  }
+  try {
+    const res = await callGAS('lineAuth', {
+      orgId: 'default',
+      code: cb.code,
+      redirectUri: cb.redirectUri,
+      location: cb.location || '',
+      userName: cb.userName || ''
+    });
+
+    if (res && res.status === 'needs_signup' && res.lineProfile) {
+      _workerLineAccessToken = res.lineAccessToken || '';
+      _workerGoogleAccessToken = '';
+      window.switchWorkerAuthTab('signup');
+      if (Array.isArray(res.locations) && res.locations.length) {
+        loadWorkerSignupLocations_(res.locations);
+      } else {
+        loadWorkerSignupLocations_();
+      }
+      const nameEl = document.getElementById('signupUserName');
+      const emailEl = document.getElementById('signupEmail');
+      const emailLabel = document.getElementById('workerSignupEmailLabel');
+      const pwWrap = document.getElementById('workerSignupPasswordWrap');
+      const banner = document.getElementById('workerSignupGoogleBanner');
+      const lBtnText = document.getElementById('workerLineSignupBtnText');
+      if (nameEl && !nameEl.value.trim() && res.lineProfile.name) {
+        nameEl.value = res.lineProfile.name;
+      }
+      if (emailEl) {
+        emailEl.readOnly = false;
+        emailEl.style.background = '#fff';
+        emailEl.placeholder = '任意（空欄でも登録可）';
+      }
+      if (emailLabel) emailLabel.textContent = 'メールアドレス（任意）';
+      if (pwWrap) pwWrap.style.display = 'none';
+      if (banner) {
+        banner.style.display = 'block';
+        banner.innerHTML = '✅ LINE連携済み: <strong>' + String(res.lineProfile.name || '').replace(/</g, '&lt;') + '</strong><br><span style="font-size:11px;">パスワード・メール入力は不要です。拠点名を選んで「登録する」を押してください。</span>';
+      }
+      if (lBtnText) lBtnText.textContent = '別のLINEアカウントを選び直す';
+      if (err) {
+        if (res.success === false && res.message) {
+          err.style.color = 'red';
+          err.innerText = res.message;
+        } else {
+          err.style.color = '#2e7d32';
+          err.innerText = 'あと「拠点名」を選択して「登録する」を押してください';
+        }
+      }
+      const locEl = document.getElementById('signupLocation');
+      if (locEl) setTimeout(function () { locEl.focus(); }, 60);
+      return;
+    }
+
+    if (!res || !res.success) {
+      if (err) {
+        err.style.color = 'red';
+        err.innerText = (res && res.message) || 'LINE認証に失敗しました';
+      }
+      return;
+    }
+
+    const loginId = document.getElementById('loginId');
+    const loginPw = document.getElementById('loginPw');
+    if (loginId) loginId.value = res.userId || res.name || '';
+    if (loginPw) loginPw.value = res.password || '';
+    if (res.location != null) localStorage.setItem('passionMapUserLocation', res.location || cb.location || '');
+    window.switchWorkerAuthTab('login');
+    await executeLogin(false);
+  } catch (e) {
+    if (err) {
+      err.style.color = 'red';
+      err.innerText = e.message || String(e);
+    }
+  }
+}
+
+setTimeout(function () {
+  handleWorkerLineCallback_();
+}, 120);
+
 window.submitWorkerSignup = async function () {
   const err = document.getElementById('loginError');
   const btn = document.getElementById('signupBtn');
@@ -725,12 +989,24 @@ window.submitWorkerSignup = async function () {
   const password = String((document.getElementById('signupPassword') || {}).value || '');
   const location = String((document.getElementById('signupLocation') || {}).value || '').trim();
   const email = String((document.getElementById('signupEmail') || {}).value || '').trim();
+  const isGoogleLinked = !!_workerGoogleAccessToken;
+  const isLineLinked = !!_workerLineAccessToken;
+  const isOAuthLinked = isGoogleLinked || isLineLinked;
 
-  if (!userName || !password) {
-    if (err) err.innerText = 'ユーザー名とパスワードを入力してください';
+  if (!userName) {
+    if (err) err.innerText = 'ユーザー名を入力してください';
     return;
   }
-  if (password.length < 4) {
+  if (!isOAuthLinked) {
+    if (!password) {
+      if (err) err.innerText = 'パスワードを入力してください';
+      return;
+    }
+    if (password.length < 4) {
+      if (err) err.innerText = 'パスワードは4文字以上で入力してください';
+      return;
+    }
+  } else if (password && password.length < 4) {
     if (err) err.innerText = 'パスワードは4文字以上で入力してください';
     return;
   }
@@ -738,11 +1014,11 @@ window.submitWorkerSignup = async function () {
     if (err) err.innerText = '拠点名を選択してください';
     return;
   }
-  if (!email) {
+  if (!isLineLinked && !email) {
     if (err) err.innerText = 'メールアドレスを入力してください';
     return;
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     if (err) err.innerText = 'メールアドレスの形式が正しくありません';
     return;
   }
@@ -756,16 +1032,21 @@ window.submitWorkerSignup = async function () {
       userName: userName,
       password: password,
       location: location,
-      email: email
+      email: email,
+      googleAccessToken: _workerGoogleAccessToken || '',
+      lineAccessToken: _workerLineAccessToken || ''
     });
     if (!res || !res.success) {
       if (err) err.innerText = (res && res.message) || '登録に失敗しました';
       return;
     }
+    const savedPw = res.password || password;
+    _workerGoogleAccessToken = '';
+    _workerLineAccessToken = '';
     const loginId = document.getElementById('loginId');
     const loginPw = document.getElementById('loginPw');
     if (loginId) loginId.value = userName;
-    if (loginPw) loginPw.value = password;
+    if (loginPw) loginPw.value = savedPw;
     if (res.location != null) localStorage.setItem('passionMapUserLocation', res.location || location);
     if (err) {
       err.style.color = '#2e7d32';
@@ -5055,9 +5336,6 @@ window.renderPendingPhotos = () => {
 window.removePendingPhoto = (idx) => { pendingFiles.splice(idx, 1); renderPendingPhotos(); };
 
 window.setMapSelectingMode_ = (isSelecting) => {
-  if (!isSelecting && window._workerMapRegMode && typeof window.cancelWorkerMapSelectReg_ === 'function') {
-    try { window.cancelWorkerMapSelectReg_({ returnToMapSelect: false }); } catch (e) { }
-  }
   isMapSelecting = !!isSelecting;
   const bar = document.getElementById('mapActionBar');
   const topBar = document.getElementById('workerTopBar');
@@ -5066,6 +5344,9 @@ window.setMapSelectingMode_ = (isSelecting) => {
     else bar.classList.remove('map-selecting-mode');
   }
   if (topBar) topBar.classList.toggle('is-hidden', !!isSelecting);
+  if (typeof window.syncWorkerMapSelectPlusBtn_ === 'function') {
+    window.syncWorkerMapSelectPlusBtn_(!!isSelecting);
+  }
 };
 
 window.openMapSelect = () => {
@@ -6115,12 +6396,7 @@ window.onWorkRidgeChipClick = (pid, value, btnEl) => {
   }
 };
 
-window.getMapSelectRegActionsHtml_ = () => {
-  return '<div id="mapSelectRegActions" style="display:flex; width:100%; gap:8px; margin-bottom:4px;">' +
-    '<button type="button" onclick="window.startWorkerMapSelectAddField_()" style="flex:1; background:#FF9800; color:#fff; border:none; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; box-shadow:0 2px 6px rgba(0,0,0,0.25);">✏️ 圃場を登録</button>' +
-    '<button type="button" onclick="window.startWorkerMapSelectAddSign_()" style="flex:1; background:#9C27B0; color:#fff; border:none; padding:8px 10px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; box-shadow:0 2px 6px rgba(0,0,0,0.25);">📍 看板を登録</button>' +
-    '</div>';
-};
+window.getMapSelectRegActionsHtml_ = () => '';
 
 window.getDefaultMapSelectUIHtml = () => {
   return '' +
@@ -6131,7 +6407,6 @@ window.getDefaultMapSelectUIHtml = () => {
     '<button type="button" onclick="selectWholeFieldInWorkMap()" style="flex:1; min-width:120px; background:#FF9800; color:#fff; border:none; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">圃場全体を選択</button>' +
     '<button type="button" onclick="exitWorkRidgeSelectionView()" style="flex:1; min-width:120px; background:#607D8B; color:#fff; border:none; padding:8px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">畝選択を閉じる</button>' +
     '</div>' +
-    window.getMapSelectRegActionsHtml_() +
     '<button onclick="applyMapSelect()" style="flex:1; background:#4CAF50; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">決定する</button>' +
     '<button onclick="cancelMapSelect()" style="flex:1; background:#666; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; font-size:14px;">キャンセル</button>';
 };
@@ -11424,7 +11699,11 @@ window.addNewSymptomMaster = async (machine) => {
     await callGAS('addMachineSymptom', { machineId: target.id, newSymptom: name });
     window.appendMachineMaintOptionLocal_(target, 'symptoms', name);
     const sel = document.getElementById('m_symptom');
-    if (sel) sel.value = name;
+    if (sel) {
+      const curList = sel.value ? sel.value.split(/[,、]/).map(s => s.trim()).filter(Boolean) : [];
+      if (!curList.includes(name)) curList.push(name);
+      sel.value = curList.join('、');
+    }
     if (typeof window.updatePartsList === 'function') window.updatePartsList();
     if (typeof window.refreshMachineItemEditorMaintLists_ === 'function') window.refreshMachineItemEditorMaintLists_();
     if (typeof customAlert === 'function') customAlert(`✅ 「${target.name || ''}」に症状「${name}」を追加しました`);
@@ -11530,7 +11809,11 @@ window.addNewMaintenanceContentMaster = async (machine) => {
       window.rememberMachineSymptomContent_(target, symptom, name);
     }
     const sel = document.getElementById('m_content');
-    if (sel) sel.value = name;
+    if (sel) {
+      const curList = sel.value ? sel.value.split(/[,、]/).map(s => s.trim()).filter(Boolean) : [];
+      if (!curList.includes(name)) curList.push(name);
+      sel.value = curList.join('、');
+    }
     if (typeof window.updatePartsList === 'function') window.updatePartsList();
     if (typeof window.refreshMachineItemEditorMaintLists_ === 'function') window.refreshMachineItemEditorMaintLists_();
     if (typeof customAlert === 'function') customAlert(`✅ 「${target.name || ''}」に整備内容「${name}」を追加しました`);
@@ -11660,7 +11943,9 @@ window.addNewMachinePart = async (machine) => {
     if (typeof customAlert === 'function') customAlert('先に整備内容を選んでください。交換部品はその整備内容ごとに登録します。');
     return;
   }
-  const n = await customPrompt(`「${content}」に追加する交換部品名:`);
+  const contentList = content.split(/[,、]/).map(s => s.trim()).filter(Boolean);
+  const promptLabel = contentList.length > 1 ? contentList.join('・') : contentList[0];
+  const n = await customPrompt(`「${promptLabel}」に追加する交換部品名:`);
   if (!n || !String(n).trim()) return;
   const name = String(n).trim();
   const known = window.getMachineMaintenanceOptions_(target, 'parts', '', { content: content });
@@ -11669,13 +11954,19 @@ window.addNewMachinePart = async (machine) => {
     return;
   }
   try {
-    await callGAS('addMachinePart', { machineId: target.id, newPart: name, contentName: content });
-    window.appendMachineMaintOptionLocal_(target, 'parts', name, { content: content });
+    for (const cName of contentList) {
+      await callGAS('addMachinePart', { machineId: target.id, newPart: name, contentName: cName });
+      window.appendMachinePartForContent_(target, cName, name);
+    }
     const partsEl = document.getElementById('m_parts');
-    if (partsEl) partsEl.value = name;
+    if (partsEl) {
+      const curList = partsEl.value ? partsEl.value.split(/[,、]/).map(s => s.trim()).filter(Boolean) : [];
+      if (!curList.includes(name)) curList.push(name);
+      partsEl.value = curList.join('、');
+    }
     if (typeof window.updatePartsList === 'function') window.updatePartsList();
     if (typeof window.refreshMachineItemEditorMaintLists_ === 'function') window.refreshMachineItemEditorMaintLists_();
-    if (typeof customAlert === 'function') customAlert(`✅ 「${content}」に部品「${name}」を追加しました`);
+    if (typeof customAlert === 'function') customAlert(`✅ 「${promptLabel}」に部品「${name}」を追加しました`);
   } catch (e) {
     if (typeof customAlert === 'function') customAlert('失敗しました: ' + e.message);
   }
@@ -12995,20 +13286,24 @@ window.partNameMatchesMaintContent_ = (partName, contentName) => {
 
 /**
  * 選んだ整備内容の交換部品だけ返す。
+ * 整備内容が複数（カンマ・読点・配列）の場合はすべて集約して重複排除。
  * 旧データの共通リストは、名前が合うものだけ出す（例: ホース交換にロータリー爪は出さない）。
  */
 window.getMachinePartsForContent_ = (machine, contentName) => {
   const map = window.parseMachinePartsMap_(machine && machine.parts);
-  const content = String(contentName || '').trim();
-  if (!content) return [];
+  const contents = (Array.isArray(contentName) ? contentName : String(contentName || '').split(/[,、]/))
+    .map(s => String(s || '').trim()).filter(Boolean);
+  if (!contents.length) return [];
   const contentNames = new Set(window.splitMachineMaintList_(machine && machine.maintenanceContents));
   const set = new Set();
-  (map.byContent[content] || []).forEach((p) => {
-    if (p && p !== content) set.add(p);
-  });
-  (map.common || []).forEach((p) => {
-    if (!p || p === content || contentNames.has(p)) return;
-    if (window.partNameMatchesMaintContent_(p, content)) set.add(p);
+  contents.forEach((content) => {
+    (map.byContent[content] || []).forEach((p) => {
+      if (p && p !== content) set.add(p);
+    });
+    (map.common || []).forEach((p) => {
+      if (!p || p === content || contentNames.has(p)) return;
+      if (window.partNameMatchesMaintContent_(p, content)) set.add(p);
+    });
   });
   return Array.from(set);
 };
@@ -13120,23 +13415,33 @@ window.maintContentMatchesSymptom_ = (contentName, symptomName) => {
   return false;
 };
 
-/** 選んだ整備内容を、そのときの症状に紐づける */
+/** 選んだ整備内容を、そのときの症状に紐づける（カンマ・読点・配列の複数対応） */
 window.rememberMachineSymptomContent_ = (machine, symptom, content) => {
   const id = String(machine && machine.id || '').trim();
-  const s = String(symptom || '').trim();
-  const c = String(content || '').trim();
-  if (!id || !s || !c) return;
+  if (!id) return;
+  const symptoms = (Array.isArray(symptom) ? symptom : String(symptom || '').split(/[,、]/))
+    .map(s => String(s || '').trim()).filter(Boolean);
+  const contents = (Array.isArray(content) ? content : String(content || '').split(/[,、]/))
+    .map(c => String(c || '').trim()).filter(Boolean);
+  if (!symptoms.length || !contents.length) return;
+
   window._machineContentBySymptom = window._machineContentBySymptom || {};
   const bag = window._machineContentBySymptom[id] || {};
-  const list = Array.isArray(bag[s]) ? bag[s].slice() : [];
-  if (list.indexOf(c) < 0) list.push(c);
-  bag[s] = list;
-  window._machineContentBySymptom[id] = bag;
   const store = window.readMachineSymptomContentStore_();
   const saved = (store[id] && typeof store[id] === 'object') ? store[id] : {};
-  const savedList = Array.isArray(saved[s]) ? saved[s].slice() : [];
-  if (savedList.indexOf(c) < 0) savedList.push(c);
-  saved[s] = savedList;
+
+  symptoms.forEach((s) => {
+    const list = Array.isArray(bag[s]) ? bag[s].slice() : [];
+    const savedList = Array.isArray(saved[s]) ? saved[s].slice() : [];
+    contents.forEach((c) => {
+      if (list.indexOf(c) < 0) list.push(c);
+      if (savedList.indexOf(c) < 0) savedList.push(c);
+    });
+    bag[s] = list;
+    saved[s] = savedList;
+  });
+
+  window._machineContentBySymptom[id] = bag;
   store[id] = saved;
   window.writeMachineSymptomContentStore_(store);
 };
@@ -13190,15 +13495,16 @@ window.renameMachineSymptomContent_ = (machine, oldName, newName) => {
 
 /**
  * 症状で整備内容を絞る。
+ * 症状が複数（カンマ・読点・配列）の場合はすべて集約して重複排除。
  * 1) その症状で過去に使った整備内容
  * 2) この機械に登録済みで、症状名と対象が一致するもの（燃料ホース裂け → 燃料ホース交換）
  * 別対象（例: オイル交換）は出さない。
  */
 window.getMachineContentsForSymptom_ = (machine, symptomName, extraCurrent) => {
   const all = window.splitMachineMaintList_(machine && machine.maintenanceContents);
-  const symptom = String(symptomName || '').trim();
-  const cur = String(extraCurrent || '').trim();
-  if (!symptom) return [];
+  const symptoms = (Array.isArray(symptomName) ? symptomName : String(symptomName || '').split(/[,、]/))
+    .map(s => String(s || '').trim()).filter(Boolean);
+  if (!symptoms.length) return [];
   const links = window.collectMachineSymptomContentLinks_(machine);
   const list = [];
   const add = (name) => {
@@ -13206,17 +13512,23 @@ window.getMachineContentsForSymptom_ = (machine, symptomName, extraCurrent) => {
     if (!n || list.indexOf(n) >= 0) return;
     list.push(n);
   };
-  (links[symptom] || []).forEach(add);
-  // 表記ゆれ（空白）でも過去の組み合わせを拾う
-  Object.keys(links).forEach((key) => {
-    if (String(key || '').replace(/\s+/g, '') !== symptom.replace(/\s+/g, '')) return;
-    (links[key] || []).forEach(add);
+  symptoms.forEach((symptom) => {
+    (links[symptom] || []).forEach(add);
+    // 表記ゆれ（空白）でも過去の組み合わせを拾う
+    Object.keys(links).forEach((key) => {
+      if (String(key || '').replace(/\s+/g, '') !== symptom.replace(/\s+/g, '')) return;
+      (links[key] || []).forEach(add);
+    });
+    all.forEach((name) => {
+      if (typeof window.maintContentMatchesSymptom_ === 'function'
+        && window.maintContentMatchesSymptom_(name, symptom)) add(name);
+    });
   });
-  all.forEach((name) => {
-    if (typeof window.maintContentMatchesSymptom_ === 'function'
-      && window.maintContentMatchesSymptom_(name, symptom)) add(name);
-  });
-  if (cur) add(cur);
+  if (extraCurrent) {
+    const extras = (Array.isArray(extraCurrent) ? extraCurrent : String(extraCurrent).split(/[,、]/))
+      .map(s => String(s || '').trim()).filter(Boolean);
+    extras.forEach(add);
+  }
   return list;
 };
 
@@ -13326,7 +13638,7 @@ window.getMachineMaintenanceOptions_ = (machine, kind, extraCurrent, opts) => {
   const set = new Set();
   if (kind === 'parts' || kind === 'part') {
     const content = (opts && opts.content != null)
-      ? String(opts.content || '').trim()
+      ? opts.content
       : '';
     window.getMachinePartsForContent_(machine, content).forEach(v => set.add(v));
   } else {
@@ -13335,8 +13647,11 @@ window.getMachineMaintenanceOptions_ = (machine, kind, extraCurrent, opts) => {
       window.splitMachineMaintList_(machine[key]).forEach(v => set.add(v));
     }
   }
-  const cur = String(extraCurrent || '').trim();
-  if (cur) set.add(cur);
+  if (extraCurrent) {
+    const curList = (Array.isArray(extraCurrent) ? extraCurrent : String(extraCurrent).split(/[,、]/))
+      .map(s => String(s || '').trim()).filter(Boolean);
+    curList.forEach(v => set.add(v));
+  }
   return Array.from(set);
 };
 
@@ -13432,15 +13747,22 @@ window.updatePartsList = () => {
     ? window.getSelectedMaintenanceMachine_()
     : null;
 
+  const filterKeep = (valStr, validList) => {
+    const arr = (valStr ? String(valStr).split(/[,、]/) : []).map(s => s.trim()).filter(Boolean);
+    const kept = arr.filter(v => validList.indexOf(v) >= 0);
+    return kept.join('、');
+  };
+
   const fill = (hiddenId, chipsId, kind, tone, opts) => {
     const prevVal = document.getElementById(hiddenId)?.value || '';
     const list = window.getMachineMaintenanceOptions_(machine, kind, '', opts || {});
     const el = document.getElementById(hiddenId);
-    const keep = (prevVal && list.indexOf(prevVal) >= 0) ? prevVal : '';
+    const keep = filterKeep(prevVal, list);
     if (el) el.value = keep;
     window.renderMaintValueChips_(chipsId, hiddenId, list, {
       tone: tone,
       emptyLabel: '未選択',
+      multiple: true,
       emptyMessage: (!list.length && !keep) ? ((opts && opts.emptyMessage) || '候補がありません') : ''
     });
   };
@@ -13453,11 +13775,12 @@ window.updatePartsList = () => {
     : [];
   const contentEl = document.getElementById('m_content');
   const prevContent = contentEl ? String(contentEl.value || '') : '';
-  const keepContent = (prevContent && contentList.indexOf(prevContent) >= 0) ? prevContent : '';
+  const keepContent = filterKeep(prevContent, contentList);
   if (contentEl) contentEl.value = keepContent;
   window.renderMaintValueChips_('m_content_chips', 'm_content', contentList, {
     tone: 'green',
     emptyLabel: '未選択',
+    multiple: true,
     emptyMessage: !machine
       ? '先に対象機械を選んでください'
       : (!selectedSymptom
@@ -13478,6 +13801,7 @@ window.updatePartsList = () => {
     window.renderMaintValueChips_('m_parts_chips', 'm_parts', [], {
       tone: 'blue',
       emptyLabel: '未選択',
+      multiple: true,
       emptyMessage: partsHint
     });
   } else {
@@ -22399,9 +22723,13 @@ window.renderMaintValueChips_ = (containerId, hiddenId, items, opts) => {
   const list = Array.isArray(items) ? items : [];
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const escJs = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const isMulti = opts.multiple === true || (hiddenId === 'm_symptom' || hiddenId === 'm_content' || hiddenId === 'm_parts');
+  const selectedSet = new Set(
+    selected ? selected.split(/[,、]/).map(s => s.trim()).filter(Boolean) : []
+  );
   let html = '';
   if (opts.allowEmpty !== false) {
-    const on = !selected;
+    const on = selectedSet.size === 0;
     html += `<button type="button" class="m-value-chip" data-value="" onclick="${onClickFn}('${escJs(hiddenId)}','')" style="${window.maintChipBtnStyle_(on, tone)} border-radius:16px; padding:6px 10px; font-size:12px; cursor:pointer;">${esc(emptyLabel)}</button>`;
   }
   if (!list.length && opts.emptyMessage) {
@@ -22411,15 +22739,35 @@ window.renderMaintValueChips_ = (containerId, hiddenId, items, opts) => {
     const value = (item && typeof item === 'object') ? String(item.value ?? '') : String(item ?? '');
     const label = (item && typeof item === 'object') ? String(item.label ?? item.value ?? '') : String(item ?? '');
     if (!value && !(item && item.allowBlank)) return;
-    const on = selected === value;
-    html += `<button type="button" class="m-value-chip" data-value="${esc(value)}" onclick="${onClickFn}('${escJs(hiddenId)}','${escJs(value)}')" style="${window.maintChipBtnStyle_(on, tone)} border-radius:16px; padding:6px 10px; font-size:12px; cursor:pointer; text-align:left; line-height:1.3;">${esc(label)}</button>`;
+    const on = isMulti ? selectedSet.has(value) : (selected === value);
+    const prefix = (isMulti && on) ? '✓ ' : '';
+    html += `<button type="button" class="m-value-chip" data-value="${esc(value)}" onclick="${onClickFn}('${escJs(hiddenId)}','${escJs(value)}')" style="${window.maintChipBtnStyle_(on, tone)} border-radius:16px; padding:6px 10px; font-size:12px; cursor:pointer; text-align:left; line-height:1.3;">${prefix}${esc(label)}</button>`;
   });
   wrap.innerHTML = html;
 };
 
 window.selectMaintValueChip_ = (hiddenId, value) => {
   const hidden = document.getElementById(hiddenId);
-  if (hidden) hidden.value = value == null ? '' : String(value);
+  const isMultiField = (hiddenId === 'm_symptom' || hiddenId === 'm_content' || hiddenId === 'm_parts');
+  let isToggledOn = false;
+  if (isMultiField) {
+    if (!value) {
+      if (hidden) hidden.value = '';
+    } else {
+      const cur = hidden ? hidden.value : '';
+      const list = cur ? cur.split(/[,、]/).map(s => s.trim()).filter(Boolean) : [];
+      const idx = list.indexOf(value);
+      if (idx >= 0) {
+        list.splice(idx, 1);
+      } else {
+        list.push(value);
+        isToggledOn = true;
+      }
+      if (hidden) hidden.value = list.join('、');
+    }
+  } else {
+    if (hidden) hidden.value = value == null ? '' : String(value);
+  }
   if (hiddenId === 'm_tool') {
     if (typeof window.populateMaintenanceMachineSelect === 'function') {
       window.populateMaintenanceMachineSelect(hidden ? hidden.value : '');
@@ -22429,12 +22777,14 @@ window.selectMaintValueChip_ = (hiddenId, value) => {
     if (typeof window.updateMaintenanceTargetPhotoPreview === 'function') window.updateMaintenanceTargetPhotoPreview();
     return;
   }
-  if (hiddenId === 'm_content' && value && typeof window.rememberMachineSymptomContent_ === 'function') {
+  if (hiddenId === 'm_content' && isToggledOn && value && typeof window.rememberMachineSymptomContent_ === 'function') {
     const machine = (typeof window.getSelectedMaintenanceMachine_ === 'function')
       ? window.getSelectedMaintenanceMachine_()
       : null;
     const symptom = String(document.getElementById('m_symptom')?.value || '').trim();
-    window.rememberMachineSymptomContent_(machine, symptom, value);
+    if (symptom) {
+      window.rememberMachineSymptomContent_(machine, symptom, value);
+    }
   }
   if (typeof window.updatePartsList === 'function') window.updatePartsList();
 };
@@ -29672,11 +30022,15 @@ async function submitRecord() {
         data.maintenanceSymptom = inputSymptom;
 
         if (toolObj && !toolObj.isVehicle && !toolObj.isTool && inputSymptom) {
+          const symptoms = inputSymptom.split(/[,、]/).map(s => s.trim()).filter(Boolean);
           const currentSymp = toolObj.symptoms ? toolObj.symptoms.split(/[,、]/).map(s => s.trim()) : [];
-          if (!currentSymp.includes(inputSymptom)) {
-            toolObj.symptoms = toolObj.symptoms ? toolObj.symptoms + "," + inputSymptom : inputSymptom;
-            sideEffects.push({ action: 'addMachineSymptom', params: { machineId: tId, newSymptom: inputSymptom } });
-          }
+          symptoms.forEach(sym => {
+            if (!currentSymp.includes(sym)) {
+              toolObj.symptoms = toolObj.symptoms ? toolObj.symptoms + "," + sym : sym;
+              currentSymp.push(sym);
+              sideEffects.push({ action: 'addMachineSymptom', params: { machineId: tId, newSymptom: sym } });
+            }
+          });
         }
 
         data.maintenanceContent = document.getElementById('m_content')?.value || "";
@@ -35908,15 +36262,12 @@ window.setBulkWorkMemoModalClass_ = (mode) => {
 
 window.syncBulkWorkMemoMapSelectOffset_ = () => {
   const mapUi = document.getElementById('mapSelectUI');
-  const regBar = document.getElementById('workerMapRegBar');
-  const isRegBarVisible = !!(regBar && regBar.style.display !== 'none');
   const isPicking = document.body.classList.contains('bulk-work-memo-map-picking')
     || !!(mapUi && mapUi.classList.contains('bulk-work-memo-map-select') && mapUi.style.display !== 'none');
-  const activeBottomBar = isRegBarVisible
-    ? regBar
-    : ((isPicking && mapUi && mapUi.style.display !== 'none') ? mapUi : null);
+  const activeBottomBar = (isPicking && mapUi && mapUi.style.display !== 'none') ? mapUi : null;
   const legendDiv = document.getElementById('workerLegendUI');
   const actionBar = document.getElementById('mapActionBar');
+  const plusWrap = document.getElementById('workerMapSelectPlusWrap');
   if (!activeBottomBar) {
     document.body.style.removeProperty('--bulk-map-select-bar-h');
     if (legendDiv) {
@@ -35927,12 +36278,17 @@ window.syncBulkWorkMemoMapSelectOffset_ = () => {
       actionBar.style.bottom = '';
       actionBar.style.zIndex = '';
     }
+    if (plusWrap) {
+      plusWrap.style.bottom = '82px';
+      plusWrap.style.zIndex = '10060';
+    }
     return;
   }
   const rect = activeBottomBar.getBoundingClientRect ? activeBottomBar.getBoundingClientRect() : null;
   const barH = Math.max(84, Math.ceil((rect && rect.height) ? rect.height : (activeBottomBar.offsetHeight || 160)));
   document.body.style.setProperty('--bulk-map-select-bar-h', barH + 'px');
   const offsetBottom = (barH + 12) + 'px';
+  const plusBottom = (barH + 74) + 'px';
   if (legendDiv) {
     legendDiv.style.bottom = offsetBottom;
     legendDiv.style.zIndex = '10060';
@@ -35941,10 +36297,14 @@ window.syncBulkWorkMemoMapSelectOffset_ = () => {
     actionBar.style.bottom = offsetBottom;
     actionBar.style.zIndex = '10060';
   }
+  if (plusWrap) {
+    plusWrap.style.bottom = plusBottom;
+    plusWrap.style.zIndex = '10060';
+  }
   if (!window._bulkMapSelectUiResizeObs && typeof ResizeObserver !== 'undefined' && mapUi) {
     try {
       window._bulkMapSelectUiResizeObs = new ResizeObserver(() => {
-        if (document.body.classList.contains('bulk-work-memo-map-picking') || document.getElementById('workerMapRegBar')) {
+        if (document.body.classList.contains('bulk-work-memo-map-picking')) {
           window.syncBulkWorkMemoMapSelectOffset_();
         }
       });
@@ -35954,727 +36314,66 @@ window.syncBulkWorkMemoMapSelectOffset_ = () => {
 };
 
 // ==========================================
-// 🗺️ マップ選択画面（#mapSelectUI）内の圃場・看板新規登録（admin.html の「＋」ボタン相当）
+// 🗺️ マップ選択画面の右「＋」登録ボタン＆メニュー（admin.html の「＋」ボタンと同仕様で Admin.html を開く）
 // ==========================================
-window._workerMapRegMode = null; // 'polygon' | 'marker' | null
-window._workerDrawMethod = 'fude'; // 'fude' | 'manual'
-window._workerDrawingPoints = [];
-window._workerDrawingMarkers = [];
-window._workerDrawingPoly = null;
-window._workerTempMarker = null;
-window._workerFudeLoadedPref = null;
-window._workerIsFudeLoading = false;
-window._workerSelectedFudeList = [];
-window._workerIsMultiFudeMode = false;
-window._workerMultiFudeQueue = [];
-window._workerMultiCreatedIds = [];
-window._workerFudeIdleListener = null;
-window._workerFudeClickListener = null;
-window._workerSignSelectedIcon = '🚩';
-window._workerSignSelectedIconCat = 'all';
-
-window.WORKER_FUDE_R2_BASE_URL = 'https://pub-bce70bc57bcf4e08b7a2394defbcc51a.r2.dev';
-window.WORKER_FUDE_FILES = {
-  '北海道': 'hokkaido_fude.json', '青森県': 'aomori_fude.json', '岩手県': 'iwate_fude.json',
-  '宮城県': 'miyagi_fude.json', '秋田県': 'akita_fude.json', '山形県': 'yamagata_fude.json',
-  '福島県': 'fukushima_fude.json', '茨城県': 'ibaraki_fude.json', '栃木県': 'tochigi_fude.json',
-  '群馬県': 'gunma_fude.json', '埼玉県': 'saitama_fude.json', '千葉県': 'chiba_fude.json',
-  '東京都': 'tokyo_fude.json', '神奈川県': 'kanagawa_fude.json', '新潟県': 'niigata_fude.json',
-  '富山県': 'toyama_fude.json', '石川県': 'ishikawa_fude.json', '福井県': 'fukui_fude.json',
-  '山梨県': 'yamanashi_fude.json', '長野県': 'nagano_fude.json', '岐阜県': 'gifu_fude.json',
-  '静岡県': 'shizuoka_fude.json', '愛知県': 'aichi_fude.json', '三重県': 'mie_fude.json',
-  '滋賀県': 'shiga_fude.json', '京都府': 'kyoto_fude.json', '大阪府': 'osaka_fude.json',
-  '兵庫県': 'hyogo_fude.json', '奈良県': 'nara_fude.json', '和歌山県': 'wakayama_fude.json',
-  '鳥取県': 'tottori_fude.json', '島根県': 'shimane_fude.json', '岡山県': 'okayama_fude.json',
-  '広島県': 'hiroshima_fude.json', '山口県': 'yamaguchi_fude.json', '徳島県': 'tokushima_fude.json',
-  '香川県': 'kagawa_fude.json', '愛媛県': 'ehime_fude.json', '高知県': 'kochi_fude.json',
-  '福岡県': 'fukuoka_fude.json', '佐賀県': 'saga_fude.json', '長崎県': 'nagasaki_fude.json',
-  '熊本県': 'kumamoto_fude.json', '大分県': 'oita_fude.json', '宮崎県': 'miyazaki_fude.json',
-  '鹿児島県': 'kagoshima_fude.json', '沖縄県': 'okinawa_fude.json'
-};
-
-window.WORKER_SIGN_ICON_GROUPS = [
-  { id: 'pin', label: '📍 ピン・旗', icons: ['🚩', '📍', '📌', '🏳️', '🏴', '🎯', '🪧', '🏷️', '🔖', '🗺️'] },
-  { id: 'warn', label: '⚠️ 注意・規制', icons: ['⚠️', '🚨', '⛔', '🚫', '❗', '❓', '🛑', '🚧', '⚡', '🔥', '💥', '☣️'] },
-  { id: 'water', label: '💧 水利・潅水', icons: ['💧', '🚰', '🚿', '🪣', '🌊', '⛲', '🛟', '🧊', '🌧️', '☔'] },
-  { id: 'facility', label: '🏠 施設・インフラ', icons: ['🏠', '🏚️', '🏭', '🏢', '⛺', '🅿️', '🚻', '🗑️', '🔌', '💡', '🔋', '⛽', '📡', '🚪', '🔑', '🪜', '🧱'] },
-  { id: 'machine', label: '🚜 農機・工具', icons: ['🚜', '🚚', '🛻', '🚗', '🚲', '🛞', '🔧', '🔨', '🪛', '🪚', '⛏️', '🛠️', '⚙️', '⛓️', '🧰', '🧲', '✂️', '🪣'] },
-  { id: 'agri', label: '🌱 農作業・資材', icons: ['🌱', '🌿', '🌾', '🥬', '🥦', '🍅', '🍆', '🥒', '🌽', '🥕', '🥔', '🍓', '🍎', '🍊', '🍇', '🍉', '🌻', '🌷', '🌳', '🍂', '🍀', '🧪', '💊', '📦', '🧺', '🛒'] },
-  { id: 'pest', label: '🐗 獣害・病害虫', icons: ['🐗', '🦌', '🐒', '🐦‍⬛', '🐀', '🦝', '🦊', '🐻', '🐍', '🐛', '🦗', '🪲', '🐝', '🐜', '🕷️', '🐌', '🕸️', '🪤', '🐾'] },
-  { id: 'check', label: '✅ 状態・番号', icons: ['✅', '⭕', '❌', '⭐', '🌟', '✨', '💚', '💛', '🧡', '❤️', '💙', '💜', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟', '🆗', '🆕', '🆙'] }
-];
-
-window.ensureWorkerMapRegContainers_ = () => {
-  let bar = document.getElementById('workerMapRegBar');
-  if (!bar) {
-    bar = document.createElement('div');
-    bar.id = 'workerMapRegBar';
-    bar.style.cssText = 'display:none; position:fixed; bottom:max(12px, env(safe-area-inset-bottom, 0px)); left:50%; transform:translateX(-50%); background:rgba(20,24,28,0.94); color:#fff; padding:12px 14px; border-radius:14px; z-index:10055; width:min(440px, 94vw); box-sizing:border-box; box-shadow:0 8px 28px rgba(0,0,0,0.45); flex-direction:column; gap:8px;';
-    document.body.appendChild(bar);
-    if (typeof ResizeObserver !== 'undefined') {
-      try {
-        const ro = new ResizeObserver(() => {
-          if (typeof window.syncBulkWorkMemoMapSelectOffset_ === 'function') {
-            window.syncBulkWorkMemoMapSelectOffset_();
-          }
-        });
-        ro.observe(bar);
-      } catch (e) { }
-    }
+window.ensureWorkerMapSelectPlusElements_ = () => {
+  let wrap = document.getElementById('workerMapSelectPlusWrap');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'workerMapSelectPlusWrap';
+    wrap.className = 'admin-reg-plus-wrap is-fab';
+    wrap.style.display = 'none';
+    wrap.innerHTML = '<button type="button" id="btnWorkerMapSelectPlus" class="admin-reg-plus-btn" onclick="window.toggleWorkerMapSelectPlusMenu_(event)" title="登録" aria-label="登録">＋</button>';
+    document.body.appendChild(wrap);
   }
-  let modal = document.getElementById('workerMapRegModal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'workerMapRegModal';
-    modal.style.cssText = 'display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:25000; justify-content:center; align-items:center; padding:14px; box-sizing:border-box;';
-    modal.innerHTML = '<div id="workerMapRegModalBody" style="background:#fff; color:#333; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; -webkit-overflow-scrolling:touch; border-radius:14px; padding:18px; box-sizing:border-box; box-shadow:0 10px 32px rgba(0,0,0,0.4);" onclick="event.stopPropagation()"></div>';
-    document.body.appendChild(modal);
-  }
-  return { bar, modal, modalBody: document.getElementById('workerMapRegModalBody') };
-};
-
-window.clearWorkerDrawingDraft_ = () => {
-  if (window._workerDrawingPoly) {
-    try { window._workerDrawingPoly.setMap(null); } catch (e) { }
-    window._workerDrawingPoly = null;
-  }
-  (window._workerDrawingMarkers || []).forEach(m => {
-    try { m.setMap(null); } catch (e) { }
-  });
-  window._workerDrawingMarkers = [];
-  window._workerDrawingPoints = [];
-  (window._workerSelectedFudeList || []).forEach(item => {
-    if (item && item.feature && map && map.data) {
-      try {
-        map.data.overrideStyle(item.feature, {
-          fillColor: '#2196F3',
-          strokeColor: '#1976D2',
-          strokeWeight: 1,
-          fillOpacity: 0.2
-        });
-      } catch (e) { }
-    }
-  });
-  window._workerSelectedFudeList = [];
-  window._workerMultiFudeQueue = [];
-  if (window._workerTempMarker) {
-    try { window._workerTempMarker.setMap(null); } catch (e) { }
-    window._workerTempMarker = null;
-  }
-};
-
-window.hideWorkerFudePolygons_ = () => {
-  if (map && map.data) {
-    try { map.data.setStyle({ visible: false }); } catch (e) { }
-  }
-};
-
-window.ensureWorkerFudeListeners_ = () => {
-  if (!map || !map.data) return;
-  if (!window._workerFudeIdleListener) {
-    window._workerFudeIdleListener = map.addListener('idle', () => {
-      if (window._workerMapRegMode === 'polygon' && window._workerDrawMethod === 'fude') {
-        window.checkAndLoadWorkerFudeByLocation_();
-      } else {
-        window.hideWorkerFudePolygons_();
-      }
-    });
-  }
-  if (!window._workerFudeClickListener) {
-    window._workerFudeClickListener = map.data.addListener('click', (event) => {
-      if (window._workerMapRegMode !== 'polygon' || window._workerDrawMethod !== 'fude') return;
-      const geom = event.feature.getGeometry();
-      if (!geom || geom.getType() !== 'Polygon') return;
-      const existingIndex = (window._workerSelectedFudeList || []).findIndex(item => item.feature === event.feature);
-      if (existingIndex > -1) {
-        map.data.overrideStyle(event.feature, {
-          fillColor: '#2196F3',
-          strokeColor: '#1976D2',
-          strokeWeight: 1,
-          fillOpacity: 0.2
-        });
-        window._workerSelectedFudeList.splice(existingIndex, 1);
-      } else {
-        const array = geom.getAt(0).getArray();
-        window._workerSelectedFudeList.push({ feature: event.feature, path: array });
-        map.data.overrideStyle(event.feature, {
-          fillColor: '#FF9800',
-          strokeColor: '#F57C00',
-          strokeWeight: 3,
-          fillOpacity: 0.5
-        });
-      }
-      window.rebuildWorkerMergedFudePolygon_();
-    });
-  }
-};
-
-window.checkAndLoadWorkerFudeByLocation_ = () => {
-  if (!map || !map.data) return;
-  if (map.getZoom() < 15) {
-    window.hideWorkerFudePolygons_();
-    const statusEl = document.getElementById('workerFudeLoadStatus');
-    if (statusEl) statusEl.innerText = '🔍 さらにズームすると筆ポリゴン（青い枠）が表示されます';
-    return;
-  }
-  if (window._workerFudeLoadedPref) {
-    map.data.setStyle({
-      fillColor: '#2196F3',
-      strokeColor: '#1976D2',
-      strokeWeight: 1,
-      fillOpacity: 0.2,
-      visible: true,
-      clickable: true
-    });
-  }
-  if (window._workerIsFudeLoading) return;
-  const center = map.getCenter();
-  const geocoder = new google.maps.Geocoder();
-  geocoder.geocode({ location: center }, (results, status) => {
-    if (status === 'OK' && results && results[0]) {
-      let prefName = null;
-      for (const comp of results[0].address_components) {
-        if (comp.types.includes('administrative_area_level_1')) {
-          prefName = comp.long_name;
-          break;
-        }
-      }
-      if (prefName && window.WORKER_FUDE_FILES[prefName]) {
-        if (window._workerFudeLoadedPref !== prefName) {
-          window.loadWorkerFudeGeoJsonFromR2_(prefName, window.WORKER_FUDE_FILES[prefName]);
-        }
-      }
-    }
-  });
-};
-
-window.loadWorkerFudeGeoJsonFromR2_ = async (prefName, fileName) => {
-  if (!map || !map.data) return;
-  window._workerIsFudeLoading = true;
-  const statusEl = document.getElementById('workerFudeLoadStatus');
-  if (statusEl) statusEl.innerText = `⏳ ${prefName}の筆ポリゴンを読み込み中...`;
-  try {
-    const res = await fetch(`${window.WORKER_FUDE_R2_BASE_URL}/${fileName}`);
-    if (!res.ok) throw new Error('R2 fetch error');
-    const geojson = await res.json();
-    map.data.forEach(feature => map.data.remove(feature));
-    map.data.addGeoJson(geojson);
-    window._workerFudeLoadedPref = prefName;
-    if (window._workerMapRegMode === 'polygon' && window._workerDrawMethod === 'fude' && map.getZoom() >= 15) {
-      map.data.setStyle({
-        fillColor: '#2196F3',
-        strokeColor: '#1976D2',
-        strokeWeight: 1,
-        fillOpacity: 0.2,
-        visible: true,
-        clickable: true
-      });
-    }
-    if (statusEl) statusEl.innerText = '✨ 青い枠をタップして選択（複数タップで合体・もう一度タップで解除）';
-  } catch (err) {
-    console.warn('筆ポリゴン読込失敗:', err);
-    if (statusEl) statusEl.innerText = '⚠️ 筆ポリゴンの読込に失敗しました（手動モードで作成できます）';
-  } finally {
-    window._workerIsFudeLoading = false;
-  }
-};
-
-window.mergeWorkerFudePathsToLatLngs_ = (pathList) => {
-  const lists = (pathList || []).filter(p => p && p.length >= 3);
-  if (lists.length === 0) return [];
-  if (lists.length === 1) return lists[0].slice();
-  if (typeof turf === 'undefined') return lists.flat();
-  const toRing = (latLngArray) => {
-    const coords = latLngArray.map(pt => [
-      typeof pt.lng === 'function' ? pt.lng() : pt.lng,
-      typeof pt.lat === 'function' ? pt.lat() : pt.lat
-    ]);
-    if (coords.length > 0) {
-      const f = coords[0], l = coords[coords.length - 1];
-      if (f[0] !== l[0] || f[1] !== l[1]) coords.push([f[0], f[1]]);
-    }
-    return coords;
-  };
-  const ringToLatLngs = (ring) => {
-    if (!ring || ring.length < 3) return [];
-    const last = ring.length - 1;
-    const closed = (ring[0][0] === ring[last][0] && ring[0][1] === ring[last][1]);
-    const pts = closed ? ring.slice(0, last) : ring;
-    return pts.map(c => new google.maps.LatLng(c[1], c[0]));
-  };
-  const pickOuterRing = (feat) => {
-    const g = feat && feat.geometry;
-    if (!g) return null;
-    if (g.type === 'Polygon') return g.coordinates[0];
-    if (g.type === 'MultiPolygon') {
-      let best = null, bestArea = -1;
-      g.coordinates.forEach(polyCoords => {
-        try {
-          const a = turf.area(turf.polygon(polyCoords));
-          if (a > bestArea) { bestArea = a; best = polyCoords[0]; }
-        } catch (e) { }
-      });
-      return best || g.coordinates[0][0];
-    }
-    return null;
-  };
-  try {
-    const polys = lists.map(p => {
-      let poly = turf.polygon([toRing(p)]);
-      try { poly = turf.cleanCoords(poly); } catch (e) { }
-      try {
-        const unk = turf.unkinkPolygon(poly);
-        if (unk && unk.features && unk.features.length > 0) {
-          let bestF = unk.features[0], bestA = -1;
-          unk.features.forEach(f => {
-            const a = turf.area(f);
-            if (a > bestA) { bestA = a; bestF = f; }
-          });
-          poly = bestF;
-        }
-      } catch (e) { }
-      return poly;
-    });
-    let merged = polys[0];
-    for (let i = 1; i < polys.length; i++) {
-      try {
-        const u = turf.union(merged, polys[i]);
-        if (u) merged = u;
-      } catch (e) {
-        try {
-          const b1 = turf.buffer(merged, 0.0001, { units: 'kilometers' });
-          const b2 = turf.buffer(polys[i], 0.0001, { units: 'kilometers' });
-          const u2 = turf.union(b1, b2);
-          if (u2) merged = u2;
-        } catch (e2) { }
-      }
-    }
-    if (merged && merged.geometry && merged.geometry.type === 'MultiPolygon') {
-      try {
-        const closed = turf.buffer(
-          turf.buffer(merged, 0.003, { units: 'kilometers' }),
-          -0.003,
-          { units: 'kilometers' }
-        );
-        if (closed && closed.geometry) merged = closed;
-      } catch (e) { }
-    }
-    const outer = pickOuterRing(merged);
-    const result = ringToLatLngs(outer);
-    if (result.length >= 3) return result;
-  } catch (err) {
-    console.warn('筆ポリゴン合体エラー:', err);
-  }
-  return lists.flat();
-};
-
-window.rebuildWorkerMergedFudePolygon_ = () => {
-  if (window._workerDrawingPoly) {
-    try { window._workerDrawingPoly.setMap(null); } catch (e) { }
-    window._workerDrawingPoly = null;
-  }
-  window._workerDrawingPoints = [];
-  if (!window._workerSelectedFudeList || window._workerSelectedFudeList.length === 0) return;
-  if (window._workerIsMultiFudeMode) {
-    const lastPath = window._workerSelectedFudeList[window._workerSelectedFudeList.length - 1].path;
-    window._workerDrawingPoints = lastPath.slice();
-    return;
-  }
-  window._workerDrawingPoints = window.mergeWorkerFudePathsToLatLngs_(
-    window._workerSelectedFudeList.map(item => item.path)
-  );
-  window._workerDrawingPoly = new google.maps.Polygon({
-    paths: window._workerDrawingPoints,
-    strokeColor: '#4CAF50',
-    strokeWeight: 3,
-    fillColor: '#4CAF50',
-    fillOpacity: 0.4,
-    map: map,
-    clickable: false
-  });
-};
-
-window.toggleWorkerFudeMultiMode_ = () => {
-  window._workerIsMultiFudeMode = !window._workerIsMultiFudeMode;
-  const btn = document.getElementById('btnWorkerFudeMultiToggle');
-  if (btn) {
-    if (window._workerIsMultiFudeMode) {
-      btn.style.background = '#9C27B0';
-      btn.innerHTML = '🗂️ マルチモード (別々の畑として連続登録)';
-    } else {
-      btn.style.background = '#FF9800';
-      btn.innerHTML = '🔗 合体モード (1つの畑にする)';
-    }
-  }
-  window.rebuildWorkerMergedFudePolygon_();
-};
-
-window.switchWorkerDrawMethod_ = (method) => {
-  window._workerDrawMethod = method === 'manual' ? 'manual' : 'fude';
-  window.clearWorkerDrawingDraft_();
-  const btnManual = document.getElementById('btnWorkerMethodManual');
-  const btnFude = document.getElementById('btnWorkerMethodFude');
-  const multiWrap = document.getElementById('workerFudeMultiWrap');
-  const statusEl = document.getElementById('workerFudeLoadStatus');
-  if (window._workerDrawMethod === 'fude') {
-    if (btnFude) { btnFude.style.background = '#FF9800'; btnFude.style.color = '#fff'; }
-    if (btnManual) { btnManual.style.background = 'transparent'; btnManual.style.color = '#ccc'; }
-    if (multiWrap) multiWrap.style.display = 'block';
-    if (statusEl) statusEl.innerText = '✨ 青い枠をタップして選択（複数タップで合体・もう一度タップで解除）';
-    window.ensureWorkerFudeListeners_();
-    window.checkAndLoadWorkerFudeByLocation_();
-  } else {
-    if (btnManual) { btnManual.style.background = '#4CAF50'; btnManual.style.color = '#fff'; }
-    if (btnFude) { btnFude.style.background = 'transparent'; btnFude.style.color = '#ccc'; }
-    if (multiWrap) multiWrap.style.display = 'none';
-    if (statusEl) statusEl.innerText = '👆 マップをタップして頂点を3点以上打ってください';
-    window.hideWorkerFudePolygons_();
-  }
-  if (typeof window.syncBulkWorkMemoMapSelectOffset_ === 'function') {
-    window.syncBulkWorkMemoMapSelectOffset_();
-  }
-};
-
-window.undoWorkerDrawing_ = () => {
-  if (window._workerDrawMethod === 'fude') {
-    if (window._workerSelectedFudeList && window._workerSelectedFudeList.length > 0) {
-      const lastItem = window._workerSelectedFudeList.pop();
-      if (lastItem && lastItem.feature && map && map.data) {
-        try {
-          map.data.overrideStyle(lastItem.feature, {
-            fillColor: '#2196F3',
-            strokeColor: '#1976D2',
-            strokeWeight: 1,
-            fillOpacity: 0.2
-          });
-        } catch (e) { }
-      }
-      window.rebuildWorkerMergedFudePolygon_();
-    }
-  } else {
-    if (window._workerDrawingPoints && window._workerDrawingPoints.length > 0) {
-      window._workerDrawingPoints.pop();
-      const m = (window._workerDrawingMarkers || []).pop();
-      if (m) {
-        try { m.setMap(null); } catch (e) { }
-      }
-      if (window._workerDrawingPoly) {
-        window._workerDrawingPoly.setPath(window._workerDrawingPoints);
-      }
-    }
-  }
-};
-
-window.startWorkerMapSelectAddField_ = () => {
-  if (!isMapSelecting) return;
-  try {
-    if (typeof window.exitWorkRidgeSelectionView === 'function') window.exitWorkRidgeSelectionView(true);
-  } catch (e) { }
-  window.clearWorkerDrawingDraft_();
-  window._workerMapRegMode = 'polygon';
-  window._workerDrawMethod = 'fude';
-  window._workerIsMultiFudeMode = false;
-  window._workerMultiFudeQueue = [];
-  window._workerMultiCreatedIds = [];
-  const selectUI = document.getElementById('mapSelectUI');
-  if (selectUI) selectUI.style.display = 'none';
-  const { bar, modal } = window.ensureWorkerMapRegContainers_();
-  if (modal) modal.style.display = 'none';
-  if (bar) {
-    bar.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-        <div style="font-weight:bold; font-size:14px; color:#FFB74D;">✏️ 圃場を新規登録</div>
-        <button type="button" onclick="window.cancelWorkerMapSelectReg_()" style="background:#555; color:#fff; border:none; padding:5px 10px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer;">← 選択に戻る</button>
-      </div>
-      <div id="workerFudeLoadStatus" style="font-size:11px; color:#b2dfdb; text-align:center;">✨ 青い枠をタップして選択（複数タップで合体）</div>
-      <div id="workerFudeMultiWrap" style="width:100%;">
-        <button type="button" id="btnWorkerFudeMultiToggle" onclick="window.toggleWorkerFudeMultiMode_()" style="width:100%; background:#FF9800; color:#fff; border:none; padding:7px 10px; border-radius:8px; font-weight:bold; font-size:12px; cursor:pointer;">🔗 合体モード (1つの畑にする)</button>
-      </div>
-      <div style="display:flex; align-items:center; gap:6px; width:100%;">
-        <div style="display:flex; background:#333; border-radius:8px; padding:3px; gap:2px; flex-shrink:0;">
-          <button type="button" id="btnWorkerMethodManual" onclick="window.switchWorkerDrawMethod_('manual')" style="background:transparent; color:#ccc; border:none; padding:6px 9px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">👆 手動</button>
-          <button type="button" id="btnWorkerMethodFude" onclick="window.switchWorkerDrawMethod_('fude')" style="background:#FF9800; color:#fff; border:none; padding:6px 9px; border-radius:6px; font-weight:bold; font-size:12px; cursor:pointer;">✏️ 筆ポリ</button>
-        </div>
-        <button type="button" onclick="window.undoWorkerDrawing_()" style="background:#555; color:#fff; border:none; padding:8px 10px; border-radius:8px; font-weight:bold; font-size:12px; cursor:pointer; flex-shrink:0;">↩️ 戻す</button>
-        <button type="button" onclick="window.goToWorkerDrawStep2_()" style="flex:1; background:#4CAF50; color:#fff; border:none; padding:8px 12px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer;">形を決定</button>
+  let menu = document.getElementById('workerMapSelectPlusMenu');
+  if (!menu) {
+    menu = document.createElement('div');
+    menu.id = 'workerMapSelectPlusMenu';
+    menu.className = 'admin-reg-plus-menu';
+    menu.style.display = 'none';
+    menu.onclick = () => window.closeWorkerMapSelectPlusMenu_();
+    menu.innerHTML = `
+      <div class="admin-reg-plus-sheet" onclick="event.stopPropagation()">
+        <div class="admin-reg-plus-title">登録メニュー</div>
+        <button type="button" onclick="window.openAdminRegFromWorkerMapSelect_('draw')">✏️ 圃場を登録</button>
+        <button type="button" onclick="window.openAdminRegFromWorkerMapSelect_('marker_child')">🏷️ 小看板を登録</button>
+        <button type="button" onclick="window.openAdminRegFromWorkerMapSelect_('marker_parent')">🪧 大看板を登録</button>
+        <button type="button" onclick="window.openAdminRegFromWorkerMapSelect_('location')">🏢 拠点を登録</button>
+        <button type="button" class="admin-reg-plus-cancel" onclick="window.closeWorkerMapSelectPlusMenu_()">閉じる</button>
       </div>
     `;
-    bar.style.display = 'flex';
+    document.body.appendChild(menu);
   }
-  window.switchWorkerDrawMethod_('fude');
-  if (typeof window.syncBulkWorkMemoMapSelectOffset_ === 'function') {
-    window.syncBulkWorkMemoMapSelectOffset_();
-  }
+  return { wrap, menu };
 };
 
-window.startWorkerMapSelectAddSign_ = () => {
-  if (!isMapSelecting) return;
-  try {
-    if (typeof window.exitWorkRidgeSelectionView === 'function') window.exitWorkRidgeSelectionView(true);
-  } catch (e) { }
-  window.clearWorkerDrawingDraft_();
-  window.hideWorkerFudePolygons_();
-  window._workerMapRegMode = 'marker';
-  const selectUI = document.getElementById('mapSelectUI');
-  if (selectUI) selectUI.style.display = 'none';
-  const { bar, modal } = window.ensureWorkerMapRegContainers_();
-  if (modal) modal.style.display = 'none';
-  if (bar) {
-    bar.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-        <div style="font-weight:bold; font-size:13px; color:#CE93D8;">📍 看板を立てる場所をマップ上でタップしてください</div>
-        <button type="button" onclick="window.cancelWorkerMapSelectReg_()" style="background:#555; color:#fff; border:none; padding:7px 12px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; flex-shrink:0;">← 選択に戻る</button>
-      </div>
-    `;
-    bar.style.display = 'flex';
+window.syncWorkerMapSelectPlusBtn_ = (isSelecting) => {
+  const { wrap, menu } = window.ensureWorkerMapSelectPlusElements_();
+  if (wrap) {
+    wrap.style.display = isSelecting ? 'block' : 'none';
+  }
+  if (!isSelecting && menu) {
+    menu.style.display = 'none';
   }
   if (typeof window.syncBulkWorkMemoMapSelectOffset_ === 'function') {
     window.syncBulkWorkMemoMapSelectOffset_();
   }
 };
 
-window.cancelWorkerMapSelectReg_ = (opts) => {
-  opts = opts || {};
-  const returnToMapSelect = opts.returnToMapSelect !== false;
-  window.clearWorkerDrawingDraft_();
-  window.hideWorkerFudePolygons_();
-  window._workerMapRegMode = null;
-  window._workerMultiFudeQueue = [];
-  window._workerMultiCreatedIds = [];
-  const bar = document.getElementById('workerMapRegBar');
-  if (bar) bar.style.display = 'none';
-  const modal = document.getElementById('workerMapRegModal');
-  if (modal) modal.style.display = 'none';
-  if (returnToMapSelect && isMapSelecting) {
-    const selectUI = document.getElementById('mapSelectUI');
-    if (selectUI) selectUI.style.display = 'flex';
+window.toggleWorkerMapSelectPlusMenu_ = (ev) => {
+  if (ev) {
+    try { ev.preventDefault(); ev.stopPropagation(); } catch (e) { }
   }
-  if (typeof window.syncBulkWorkMemoMapSelectOffset_ === 'function') {
-    window.syncBulkWorkMemoMapSelectOffset_();
-  }
+  const { menu } = window.ensureWorkerMapSelectPlusElements_();
+  if (!menu) return;
+  const open = menu.style.display === 'none' || !menu.style.display;
+  menu.style.display = open ? 'flex' : 'none';
 };
 
-window.handleWorkerMapRegMapClick_ = (e) => {
-  if (!e || !e.latLng) return;
-  if (window._workerMapRegMode === 'polygon') {
-    if (window._workerDrawMethod !== 'manual') return;
-    window._workerDrawingPoints.push(e.latLng);
-    const m = new google.maps.Marker({
-      position: e.latLng,
-      map: map,
-      icon: {
-        path: google.maps.SymbolPath.CIRCLE,
-        scale: 5,
-        fillColor: '#fff',
-        fillOpacity: 1,
-        strokeWeight: 2,
-        strokeColor: '#4CAF50'
-      }
-    });
-    window._workerDrawingMarkers.push(m);
-    if (!window._workerDrawingPoly) {
-      window._workerDrawingPoly = new google.maps.Polygon({
-        paths: window._workerDrawingPoints,
-        strokeColor: '#4CAF50',
-        strokeWeight: 3,
-        fillColor: '#4CAF50',
-        fillOpacity: 0.4,
-        map: map,
-        clickable: false
-      });
-    } else {
-      window._workerDrawingPoly.setPath(window._workerDrawingPoints);
-    }
-    return;
-  }
-  if (window._workerMapRegMode === 'marker') {
-    if (window._workerTempMarker) {
-      try { window._workerTempMarker.setMap(null); } catch (err) { }
-    }
-    window._workerTempMarker = new google.maps.Marker({ position: e.latLng, map: map });
-    window.openWorkerSignRegModal_();
-  }
-};
-
-window.applyWorkerEstAddrToFieldName_ = () => {
-  const addrEl = document.getElementById('worker_new_poly_est_addr');
-  const nameEl = document.getElementById('worker_new_poly_name');
-  if (!addrEl || !nameEl) return;
-  const addr = (addrEl.dataset.addr || '').trim();
-  if (addr) nameEl.value = addr;
-};
-
-window.updateWorkerEstimatedAddress_ = (coords) => {
-  const addrEl = document.getElementById('worker_new_poly_est_addr');
-  if (!addrEl) return;
-  if (!coords || coords.length === 0) {
-    addrEl.textContent = '取得できませんでした';
-    addrEl.dataset.addr = '';
-    return;
-  }
-  addrEl.textContent = '取得中...';
-  addrEl.dataset.addr = '';
-  let latSum = 0, lngSum = 0;
-  coords.forEach(pt => {
-    latSum += (typeof pt.lat === 'function') ? pt.lat() : pt.lat;
-    lngSum += (typeof pt.lng === 'function') ? pt.lng() : pt.lng;
-  });
-  const center = { lat: latSum / coords.length, lng: lngSum / coords.length };
-  const geocoder = new google.maps.Geocoder();
-  geocoder.geocode({ location: center }, (results, status) => {
-    if (status === 'OK' && results && results.length > 0) {
-      let best = results[0];
-      for (const r of results) {
-        if (r.types && (r.types.includes('street_address') || r.types.includes('premise') || r.types.includes('sublocality'))) {
-          best = r;
-          break;
-        }
-      }
-      let formatted = (best.formatted_address || '')
-        .replace(/^日本、/, '')
-        .replace(/^\s*〒?\d{3}-?\d{4}\s*/, '')
-        .trim();
-      addrEl.textContent = formatted || '住所情報なし';
-      addrEl.dataset.addr = formatted;
-      const nameEl = document.getElementById('worker_new_poly_name');
-      if (nameEl && !nameEl.value.trim() && formatted) {
-        nameEl.value = formatted;
-      }
-    } else {
-      addrEl.textContent = '取得できませんでした';
-      addrEl.dataset.addr = '';
-    }
-  });
-};
-
-window.openWorkerFieldStep2Modal_ = () => {
-  const { bar, modal, modalBody } = window.ensureWorkerMapRegContainers_();
-  if (bar) bar.style.display = 'none';
-  if (!modal || !modalBody) return;
-  const locList = Array.isArray(pdlLocations) ? pdlLocations : [];
-  const condList = Array.isArray(window.pdlConditions) ? window.pdlConditions : [];
-  const statusList = (Array.isArray(window.pdlStatuses) && window.pdlStatuses.length)
-    ? window.pdlStatuses
-    : ['稼働中', '休耕地', '返却済'];
-  const locOpts = ['<option value="">-- 拠点を選択 --</option>'].concat(
-    locList.map(l => `<option value="${String(l).replace(/"/g, '&quot;')}">${String(l).replace(/</g, '&lt;')}</option>`)
-  ).join('');
-  const condOpts = ['<option value="">-- 条件を選択 --</option>'].concat(
-    condList.map(c => `<option value="${String(c).replace(/"/g, '&quot;')}">${String(c).replace(/</g, '&lt;')}</option>`)
-  ).join('');
-  const statusOpts = statusList.map(s => {
-    const sel = String(s) === '稼働中' ? 'selected' : '';
-    return `<option value="${String(s).replace(/"/g, '&quot;')}" ${sel}>${String(s).replace(/</g, '&lt;')}</option>`;
-  }).join('');
-  const queueTotal = window._workerIsMultiFudeMode && window._workerSelectedFudeList
-    ? window._workerSelectedFudeList.length
-    : 0;
-  const currentIdx = queueTotal > 0 ? (queueTotal - (window._workerMultiFudeQueue ? window._workerMultiFudeQueue.length : 0)) : 0;
-  const headerTitle = queueTotal > 1
-    ? `✏️ 圃場情報の入力 (${currentIdx} / ${queueTotal} 件目)`
-    : '✏️ 圃場情報の入力';
-
-  modalBody.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-      <h3 style="margin:0; font-size:17px; color:#E65100;">${headerTitle}</h3>
-      <button type="button" onclick="window.cancelWorkerMapSelectReg_()" style="background:#f5f5f5; border:1px solid #ccc; border-radius:50%; width:30px; height:30px; font-size:16px; font-weight:bold; cursor:pointer;">×</button>
-    </div>
-    <div style="background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px; padding:8px 10px; margin-bottom:10px; font-size:12px; color:#1B5E20; display:flex; align-items:center; justify-content:space-between; gap:8px;">
-      <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">📍 推定住所: <b id="worker_new_poly_est_addr">取得中...</b></div>
-      <button type="button" onclick="window.applyWorkerEstAddrToFieldName_()" style="background:#4CAF50; color:#fff; border:none; border-radius:4px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer; flex-shrink:0;">📋 圃場名に反映</button>
-    </div>
-    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">圃場名 <span style="color:#d32f2f;">*</span></label>
-    <input type="text" id="worker_new_poly_name" class="form-input" placeholder="圃場名 (例: 第1圃場)" style="margin-bottom:10px;">
-    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">拠点 (エリア)</label>
-    <select id="worker_new_poly_loc" class="form-select" style="margin-bottom:10px;">${locOpts}</select>
-    <div style="display:flex; gap:8px; margin-bottom:10px;">
-      <div style="flex:1;">
-        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">条件</label>
-        <select id="worker_new_poly_cond" class="form-select" style="margin-bottom:0;">${condOpts}</select>
-      </div>
-      <div style="flex:1;">
-        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">土質</label>
-        <select id="worker_new_poly_soil" class="form-select" style="margin-bottom:0;">
-          <option value="">-- 土質（任意） --</option>
-          <option value="粘土質">粘土質</option>
-          <option value="砂質">砂質</option>
-          <option value="壌土（黒ボク等）">壌土（黒ボク等）</option>
-          <option value="礫質（石が多い）">礫質（石が多い）</option>
-          <option value="泥炭・黒泥">泥炭・黒泥</option>
-          <option value="その他">その他</option>
-        </select>
-      </div>
-    </div>
-    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">稼働状況</label>
-    <select id="worker_new_poly_status" class="form-select" style="margin-bottom:14px;">${statusOpts}</select>
-    <div style="display:flex; flex-direction:column; gap:8px;">
-      <button type="button" id="workerSaveNewPolyBtn" onclick="window.saveWorkerNewPolygon_()" style="width:100%; background:#4CAF50; color:#fff; border:none; padding:12px; border-radius:8px; font-weight:bold; font-size:15px; cursor:pointer;">💾 保存して選択</button>
-      <div style="display:flex; gap:8px;">
-        <button type="button" onclick="window.backToWorkerDrawStep1_()" style="flex:1; background:#757575; color:#fff; border:none; padding:10px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer;">← 形の作成に戻る</button>
-        <button type="button" onclick="window.cancelWorkerMapSelectReg_()" style="flex:1; background:#e0e0e0; color:#333; border:none; padding:10px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer;">キャンセル</button>
-      </div>
-    </div>
-  `;
-  modal.style.display = 'flex';
-  window.updateWorkerEstimatedAddress_(window._workerDrawingPoints);
-  if (typeof window.syncBulkWorkMemoMapSelectOffset_ === 'function') {
-    window.syncBulkWorkMemoMapSelectOffset_();
-  }
-};
-
-window.prepareNextWorkerMultiFude_ = () => {
-  if (window._workerDrawingPoly) {
-    try { window._workerDrawingPoly.setMap(null); } catch (e) { }
-    window._workerDrawingPoly = null;
-  }
-  const currentItem = window._workerMultiFudeQueue.shift();
-  if (!currentItem) return;
-  window._workerDrawingPoints = currentItem.path.slice();
-  window._workerDrawingPoly = new google.maps.Polygon({
-    paths: window._workerDrawingPoints,
-    strokeColor: '#FFEB3B',
-    strokeWeight: 5,
-    fillColor: '#FFEB3B',
-    fillOpacity: 0.6,
-    map: map,
-    clickable: false
-  });
-  const bounds = new google.maps.LatLngBounds();
-  window._workerDrawingPoints.forEach(pt => bounds.extend(pt));
-  map.panTo(bounds.getCenter());
-  window.openWorkerFieldStep2Modal_();
-};
-
-window.goToWorkerDrawStep2_ = () => {
-  if (window._workerDrawMethod === 'fude' && window._workerIsMultiFudeMode) {
-    if (!window._workerSelectedFudeList || window._workerSelectedFudeList.length === 0) {
-      if (typeof customAlert === 'function') customAlert('青い枠（筆ポリゴン）を1つ以上タップして選択してください');
-      return;
-    }
-    window._workerMultiFudeQueue = [...window._workerSelectedFudeList];
-    window._workerMultiCreatedIds = [];
-    window.prepareNextWorkerMultiFude_();
-    return;
-  }
-  if (!window._workerDrawingPoints || window._workerDrawingPoints.length < 3) {
-    if (typeof customAlert === 'function') {
-      customAlert(window._workerDrawMethod === 'fude'
-        ? '青い枠（筆ポリゴン）をタップして選択してください'
-        : 'マップをタップして頂点を3点以上打ってください');
-    }
-    return;
-  }
-  window.openWorkerFieldStep2Modal_();
-};
-
-window.backToWorkerDrawStep1_ = () => {
-  const modal = document.getElementById('workerMapRegModal');
-  if (modal) modal.style.display = 'none';
-  const bar = document.getElementById('workerMapRegBar');
-  if (bar) bar.style.display = 'flex';
-  if (typeof window.syncBulkWorkMemoMapSelectOffset_ === 'function') {
-    window.syncBulkWorkMemoMapSelectOffset_();
-  }
+window.closeWorkerMapSelectPlusMenu_ = () => {
+  const menu = document.getElementById('workerMapSelectPlusMenu');
+  if (menu) menu.style.display = 'none';
 };
 
 window.remapWorkerTempPolygonId_ = (tempId, realId) => {
@@ -36748,328 +36447,150 @@ window.selectNewlyRegisteredMapItem_ = (newId) => {
   if (typeof window.updateSelectedPolysDisplay === 'function') window.updateSelectedPolysDisplay();
 };
 
-window.saveWorkerNewPolygon_ = () => {
-  const name = (document.getElementById('worker_new_poly_name')?.value || '').trim();
-  const loc = document.getElementById('worker_new_poly_loc')?.value || '';
-  const cond = document.getElementById('worker_new_poly_cond')?.value || '';
-  const soil = document.getElementById('worker_new_poly_soil')?.value || '';
-  const status = document.getElementById('worker_new_poly_status')?.value || '稼働中';
-  if (!name) {
-    if (typeof customAlert === 'function') customAlert('圃場名を入力してください');
+window.openAdminRegFromWorkerMapSelect_ = (kind) => {
+  window.closeWorkerMapSelectPlusMenu_();
+  const mode = String(kind || 'draw').trim() || 'draw';
+  const modal = document.getElementById('adminCadModal');
+  const iframe = document.getElementById('adminCadIframe');
+  const center = (map && typeof map.getCenter === 'function') ? map.getCenter() : null;
+  const lat = center && typeof center.lat === 'function' ? center.lat() : null;
+  const lng = center && typeof center.lng === 'function' ? center.lng() : null;
+  const zoom = (map && typeof map.getZoom === 'function') ? Math.max(map.getZoom() || 18, 17) : 18;
+
+  const params = new URLSearchParams({
+    startDraw: mode,
+    fromWorkerMapSelect: '1'
+  });
+  if (lat != null && !isNaN(lat)) params.set('lat', String(lat));
+  if (lng != null && !isNaN(lng)) params.set('lng', String(lng));
+  if (zoom != null && !isNaN(zoom)) params.set('zoom', String(zoom));
+  const targetUrl = `admin.html?${params.toString()}`;
+
+  if (!modal || !iframe) {
+    window.location.href = targetUrl;
     return;
   }
-  const coords = (window._workerDrawingPoints || []).map(pt => ({
-    lat: typeof pt.lat === 'function' ? pt.lat() : pt.lat,
-    lng: typeof pt.lng === 'function' ? pt.lng() : pt.lng
-  }));
-  if (coords.length < 3) {
-    if (typeof customAlert === 'function') customAlert('頂点が3点以上必要です');
-    return;
-  }
-  const pathLatLngs = coords.map(c => new google.maps.LatLng(c.lat, c.lng));
-  const area = Math.round(google.maps.geometry.spherical.computeArea(pathLatLngs) / 100 * 10) / 10;
-  const tempId = 'temp_field_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-  const author = currentUser || localStorage.getItem('passionMapUserName') || '';
 
-  createPolygonObject(tempId, name, coords, '#FF9800', [], author, loc, cond, area, status, '', []);
-  if (loadedPolygons[tempId]) {
-    loadedPolygons[tempId].soilType = soil;
-  }
-  window._workerMultiCreatedIds.push(tempId);
-
-  const payload = {
-    name: name,
-    coords: JSON.stringify(coords),
-    color: '#FF9800',
-    userName: author,
-    location: loc,
-    condition: cond,
-    soilType: soil,
-    area: area,
-    status: status
+  window._adminOpenedFromWorkerMapSelect_ = true;
+  const titleEl = document.getElementById('adminCadModalTitle');
+  const backBtn = document.getElementById('adminCadReturnToBulkBtn');
+  const closeBtn = document.getElementById('adminCadCloseBtn');
+  const titleMap = {
+    draw: '✏️ 圃場を登録（Admin）',
+    marker_child: '🏷️ 小看板を登録（Admin）',
+    marker_parent: '🪧 大看板を登録（Admin）',
+    marker: '📍 看板を登録（Admin）',
+    location: '🏢 拠点を登録（Admin）'
   };
-  callGAS('savePolygon', payload).then(res => {
-    if (res && res.id) {
-      window.remapWorkerTempPolygonId_(tempId, res.id);
-    }
-    if (typeof window.showRecordSyncToast === 'function') {
-      window.showRecordSyncToast(`✅ 圃場「${name}」を登録しました`, 'ok');
-    }
-  }).catch(err => {
-    console.error('savePolygon error:', err);
-    if (typeof customAlert === 'function') customAlert('圃場の保存に失敗しました: ' + (err.message || err));
-  });
-
-  if (window._workerDrawMethod === 'fude' && window._workerIsMultiFudeMode && window._workerMultiFudeQueue.length > 0) {
-    window.prepareNextWorkerMultiFude_();
-    return;
+  if (titleEl) titleEl.textContent = titleMap[mode] || '✏️ 圃場・看板を登録（Admin）';
+  if (backBtn) {
+    backBtn.style.display = '';
+    backBtn.textContent = '← 選択画面に戻る';
+    backBtn.onclick = () => window.returnToWorkerMapSelectFromAdmin_();
+  }
+  if (closeBtn) {
+    closeBtn.textContent = '閉じる';
+    closeBtn.onclick = () => window.returnToWorkerMapSelectFromAdmin_();
   }
 
-  const createdIds = (window._workerMultiCreatedIds || []).slice();
-  window.cancelWorkerMapSelectReg_({ returnToMapSelect: true });
-  createdIds.forEach(cid => window.selectNewlyRegisteredMapItem_(cid));
-};
-
-window.renderWorkerSignIconPicker_ = (filterCat) => {
-  if (filterCat !== undefined) window._workerSignSelectedIconCat = filterCat;
-  const cat = window._workerSignSelectedIconCat || 'all';
-  const tabsEl = document.getElementById('worker_sign_icon_cat_tabs');
-  const container = document.getElementById('worker_sign_icon_buttons');
-  const previewEl = document.getElementById('worker_sign_selected_icon_preview');
-  if (previewEl) previewEl.textContent = window._workerSignSelectedIcon || '🚩';
-  if (!container) return;
-
-  if (tabsEl) {
-    const allTab = [{ id: 'all', label: '🌟 すべて' }].concat(window.WORKER_SIGN_ICON_GROUPS);
-    tabsEl.innerHTML = allTab.map(g => {
-      const active = g.id === cat;
-      return `<button type="button" onclick="window.renderWorkerSignIconPicker_('${g.id}')" style="padding:4px 9px; font-size:11px; font-weight:bold; border-radius:999px; cursor:pointer; border:1px solid ${active ? '#9C27B0' : '#ccc'}; background:${active ? '#9C27B0' : '#fff'}; color:${active ? '#fff' : '#444'};">${g.label}</button>`;
-    }).join('');
-  }
-
-  const groups = cat === 'all'
-    ? window.WORKER_SIGN_ICON_GROUPS
-    : window.WORKER_SIGN_ICON_GROUPS.filter(g => g.id === cat);
-
-  let html = '';
-  groups.forEach(g => {
-    if (cat === 'all') {
-      html += `<div style="width:100%; font-size:11px; font-weight:bold; color:#666; margin:4px 0 2px; padding-left:2px;">${g.label}</div>`;
-    }
-    g.icons.forEach(ic => {
-      const isSel = ic === window._workerSignSelectedIcon;
-      const safeIc = String(ic).replace(/'/g, "\\'");
-      html += `<button type="button" onclick="window.selectWorkerSignIcon_('${safeIc}')" style="font-size:20px; width:38px; height:38px; padding:0; display:inline-flex; align-items:center; justify-content:center; border:${isSel ? '2px solid #9C27B0' : '1px solid #ddd'}; background:${isSel ? '#F3E5F5' : '#fff'}; border-radius:8px; cursor:pointer; box-shadow:${isSel ? '0 0 0 2px rgba(156,39,176,0.2)' : 'none'};">${ic}</button>`;
-    });
-  });
-  container.innerHTML = html;
-};
-
-window.selectWorkerSignIcon_ = (ic) => {
-  window._workerSignSelectedIcon = ic;
-  window.renderWorkerSignIconPicker_();
-};
-
-window.onWorkerSignFuncChange_ = (val) => {
-  if (val === 'irrigation_valve') {
-    window.selectWorkerSignIcon_('🚰');
-  } else if (val === 'water_source') {
-    window.selectWorkerSignIcon_('💧');
-  } else if (val === 'fuel_spot') {
-    window.selectWorkerSignIcon_('⛽');
-  } else if (val === 'location_pin') {
-    window.selectWorkerSignIcon_('📍');
-  }
-};
-
-window.showWorkerSignDetailScreen_ = () => {
-  const q = document.getElementById('workerSignQuickScreen');
-  const d = document.getElementById('workerSignDetailScreen');
-  if (q) q.style.display = 'none';
-  if (d) d.style.display = 'block';
-};
-
-window.showWorkerSignQuickScreen_ = () => {
-  const q = document.getElementById('workerSignQuickScreen');
-  const d = document.getElementById('workerSignDetailScreen');
-  if (d) d.style.display = 'none';
-  if (q) q.style.display = 'block';
-};
-
-window.repickWorkerSignPosition_ = () => {
-  if (window._workerTempMarker) {
-    try { window._workerTempMarker.setMap(null); } catch (e) { }
-    window._workerTempMarker = null;
-  }
-  const modal = document.getElementById('workerMapRegModal');
-  if (modal) modal.style.display = 'none';
-  const bar = document.getElementById('workerMapRegBar');
-  if (bar) bar.style.display = 'flex';
-  if (typeof window.syncBulkWorkMemoMapSelectOffset_ === 'function') {
-    window.syncBulkWorkMemoMapSelectOffset_();
-  }
-};
-
-window.openWorkerSignRegModal_ = () => {
-  const { bar, modal, modalBody } = window.ensureWorkerMapRegContainers_();
-  if (bar) bar.style.display = 'none';
-  if (!modal || !modalBody) return;
-  window._workerSignSelectedIcon = '🚩';
-  window._workerSignSelectedIconCat = 'all';
-  const locList = Array.isArray(pdlLocations) ? pdlLocations : [];
-  const locOpts = ['<option value="">-- 拠点を選択 (任意) --</option>'].concat(
-    locList.map(l => `<option value="${String(l).replace(/"/g, '&quot;')}">${String(l).replace(/</g, '&lt;')}</option>`)
-  ).join('');
-  modalBody.innerHTML = `
-    <div id="workerSignQuickScreen">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-        <h3 style="margin:0; color:#9C27B0; font-size:17px;">📍 看板の登録</h3>
-        <button type="button" onclick="window.cancelWorkerMapSelectReg_()" style="background:#f5f5f5; border:1px solid #ccc; border-radius:50%; width:30px; height:30px; font-size:16px; font-weight:bold; cursor:pointer;">×</button>
-      </div>
-      <p style="font-size:12px; color:#666; margin:0 0 10px 0;">よく使う看板はタップだけで即登録＆選択できます</p>
-
-      <div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:5px;">🔧 設備・ポイント</div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">
-        <button type="button" onclick="window.quickRegisterWorkerSign_('給水地点', '💧', 'water_source')" style="background:#E1F5FE; color:#01579B; border:2px solid #0288D1; padding:10px 8px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px;">💧 給水地点</button>
-        <button type="button" onclick="window.quickRegisterWorkerSign_('給水口', '🚰', 'irrigation_valve')" style="background:#E3F2FD; color:#0D47A1; border:2px solid #2196F3; padding:10px 8px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px;">🚰 給水口</button>
-        <button type="button" onclick="window.quickRegisterWorkerSign_('排水口', '🚩', '')" style="background:#E0F7FA; color:#006064; border:2px solid #00BCD4; padding:10px 8px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px;">🚩 排水口/水落口</button>
-        <button type="button" onclick="window.quickRegisterWorkerSign_('スイッチ', '🔘', '')" style="background:#FFF3E0; color:#E65100; border:2px solid #FF9800; padding:10px 8px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px;">🔘 スイッチ</button>
-        <button type="button" onclick="window.quickRegisterWorkerSign_('駐車場', '🅿️', '')" style="background:#E8EAF6; color:#1A237E; border:2px solid #3F51B5; padding:10px 8px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px;">🅿️ 駐車場</button>
-        <button type="button" onclick="window.quickRegisterWorkerSign_('トイレ', '🚻', '')" style="background:#FCE4EC; color:#880E4F; border:2px solid #E91E63; padding:10px 8px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px;">🚻 トイレ</button>
-        <button type="button" onclick="window.quickRegisterWorkerSign_('倉庫', '🏠', '')" style="background:#EFEBE9; color:#3E2723; border:2px solid #795548; padding:10px 8px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px;">🏠 倉庫</button>
-        <button type="button" onclick="window.quickRegisterWorkerSign_('給油', '⛽', 'fuel_spot')" style="background:#FFF8E1; color:#BF360C; border:2px solid #FF6F00; padding:10px 8px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px;">⛽ 給油</button>
-      </div>
-
-      <div style="font-size:12px; font-weight:bold; color:#d32f2f; margin-bottom:5px;">🐗 鳥獣害・注意</div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px;">
-        <button type="button" onclick="window.quickRegisterWorkerSign_('鳥被害', '🐦‍⬛', '')" style="background:#FFEBEE; color:#B71C1C; border:2px solid #EF5350; padding:10px 8px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px;">🐦‍⬛ 鳥被害</button>
-        <button type="button" onclick="window.quickRegisterWorkerSign_('シカ被害', '🦌', '')" style="background:#FFEBEE; color:#B71C1C; border:2px solid #EF5350; padding:10px 8px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px;">🦌 シカ被害</button>
-        <button type="button" onclick="window.quickRegisterWorkerSign_('ネズミ被害', '🐀', '')" style="background:#FFEBEE; color:#B71C1C; border:2px solid #EF5350; padding:10px 8px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px;">🐀 ネズミ被害</button>
-        <button type="button" onclick="window.quickRegisterWorkerSign_('イノシシ被害', '🐗', '')" style="background:#FFEBEE; color:#B71C1C; border:2px solid #EF5350; padding:10px 8px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px;">🐗 イノシシ被害</button>
-        <button type="button" onclick="window.quickRegisterWorkerSign_('その他の鳥獣害', '🐾', '')" style="background:#FFEBEE; color:#B71C1C; border:2px solid #EF5350; padding:10px 8px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px;">🐾 その他の鳥獣害</button>
-        <button type="button" onclick="window.quickRegisterWorkerSign_('注意', '⚠️', '')" style="background:#FFFDE7; color:#F57F17; border:2px solid #FBC02D; padding:10px 8px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px;">⚠️ 注意</button>
-      </div>
-
-      <button type="button" onclick="window.showWorkerSignDetailScreen_()" style="width:100%; background:#9C27B0; color:#fff; border:none; padding:12px; border-radius:8px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:8px;">⚙️ 詳細を設定して登録（名前・写真・アイコン変更）</button>
-      <div style="display:flex; gap:8px;">
-        <button type="button" onclick="window.repickWorkerSignPosition_()" style="flex:1; background:#757575; color:#fff; border:none; padding:10px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer;">📍 位置を選び直す</button>
-        <button type="button" onclick="window.cancelWorkerMapSelectReg_()" style="flex:1; background:#e0e0e0; color:#333; border:none; padding:10px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer;">キャンセル</button>
-      </div>
-    </div>
-
-    <div id="workerSignDetailScreen" style="display:none;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-        <h3 style="margin:0; color:#9C27B0; font-size:17px;">📍 看板の詳細登録</h3>
-        <button type="button" onclick="window.cancelWorkerMapSelectReg_()" style="background:#f5f5f5; border:1px solid #ccc; border-radius:50%; width:30px; height:30px; font-size:16px; font-weight:bold; cursor:pointer;">×</button>
-      </div>
-      <input type="text" id="worker_new_sign_name" class="form-input" placeholder="看板名 (例: 給水栓、危険箇所)" style="margin-bottom:8px;">
-      <label style="font-size:12px; font-weight:bold; color:#555; display:block; margin-bottom:4px;">看板機能 (特殊タイプ):</label>
-      <select id="worker_new_sign_func" class="form-select" style="margin-bottom:8px;" onchange="window.onWorkerSignFuncChange_(this.value)">
-        <option value="">標準（情報・写真のみ）</option>
-        <option value="irrigation_valve">🚰 吸水ゲート（バルブ開閉記録）</option>
-        <option value="water_source">💧 給水地点（農薬希釈水・タンク給水）</option>
-        <option value="fuel_spot">⛽ 給油スポット（携行缶・タンク給油）</option>
-        <option value="location_pin">📍 位置ピン（常時表示ラベル）</option>
-      </select>
-      <select id="worker_new_sign_loc" class="form-select" style="margin-bottom:8px;">${locOpts}</select>
-      <div style="font-size:11px; color:#666; background:#F3E5F5; border-radius:8px; padding:8px; margin:0 0 8px; line-height:1.4;">登録後に「大・小看板の設定」から大看板にして、束ねる小看板を選べます。</div>
-      <div style="margin:8px 0;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-          <label style="font-size:12px; font-weight:bold; color:#555;">アイコンを選択:</label>
-          <span style="font-size:12px; color:#666;">選択中: <strong id="worker_sign_selected_icon_preview" style="font-size:20px;">🚩</strong></span>
-        </div>
-        <div id="worker_sign_icon_cat_tabs" style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:6px;"></div>
-        <div id="worker_sign_icon_buttons" style="display:flex; gap:6px; flex-wrap:wrap; max-height:150px; overflow-y:auto; padding:6px; background:#fafafa; border:1px solid #e0e0e0; border-radius:8px;"></div>
-      </div>
-      <div style="margin:10px 0; text-align:left; background:#f9f9f9; padding:10px; border-radius:6px; border:1px solid #ddd;">
-        <label style="font-size:12px; font-weight:bold; color:#555; display:block; margin-bottom:5px;">📷 写真を追加 (任意):</label>
-        <input type="file" id="worker_new_sign_photo" accept="image/*" multiple style="width:100%; font-size:13px;">
-      </div>
-      <div style="display:flex; flex-direction:column; gap:8px; margin-top:10px;">
-        <button type="button" id="workerSaveNewSignBtn" onclick="window.saveWorkerNewSignboard_()" style="width:100%; background:#9C27B0; color:#fff; border:none; padding:12px; border-radius:8px; font-weight:bold; font-size:15px; cursor:pointer;">💾 保存して選択</button>
-        <button type="button" onclick="window.showWorkerSignQuickScreen_()" style="width:100%; background:#757575; color:#fff; border:none; padding:10px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer;">⬅️ クイック選択に戻る</button>
-      </div>
-    </div>
-  `;
   modal.style.display = 'flex';
-  window.renderWorkerSignIconPicker_('all');
-  if (typeof window.syncBulkWorkMemoMapSelectOffset_ === 'function') {
-    window.syncBulkWorkMemoMapSelectOffset_();
-  }
-};
 
-window.quickRegisterWorkerSign_ = (presetName, presetIcon, presetSignFunc) => {
-  window._workerSignSelectedIcon = presetIcon;
-  window.executeSaveWorkerSignboard_(presetName, '', presetIcon, [], presetSignFunc || '');
-};
-
-window.saveWorkerNewSignboard_ = () => {
-  const name = (document.getElementById('worker_new_sign_name')?.value || '').trim();
-  const loc = document.getElementById('worker_new_sign_loc')?.value || '';
-  const signFunc = document.getElementById('worker_new_sign_func')?.value || '';
-  const fileInput = document.getElementById('worker_new_sign_photo');
-  const files = fileInput && fileInput.files ? Array.from(fileInput.files) : [];
-  if (!name) {
-    if (typeof customAlert === 'function') customAlert('看板名を入力してください');
-    return;
-  }
-  window.executeSaveWorkerSignboard_(name, loc, window._workerSignSelectedIcon || '🚩', files, signFunc);
-};
-
-window.executeSaveWorkerSignboard_ = async (name, loc, icon, files, signFunc) => {
-  if (!window._workerTempMarker) {
-    if (typeof customAlert === 'function') customAlert('看板の位置が選択されていません');
-    return;
-  }
-  const posObj = window._workerTempMarker.getPosition();
-  const pos = {
-    lat: typeof posObj.lat === 'function' ? posObj.lat() : posObj.lat,
-    lng: typeof posObj.lng === 'function' ? posObj.lng() : posObj.lng
-  };
-  let finalName = String(name || '').trim();
-  if (files && files.length === 0) {
-    const existingNames = Object.values(loadedPolygons || {})
-      .filter(p => p && p.isMarker && p.name)
-      .map(p => p.name);
-    if (existingNames.includes(finalName)) {
-      let counter = 2;
-      while (existingNames.includes(`${finalName}${counter}`)) counter++;
-      finalName = `${finalName}${counter}`;
+  if (iframe.src && iframe.src.includes('admin.html') && window._adminCadIframeReady) {
+    try {
+      try { iframe.contentWindow._openedFromWorkerMapSelect = true; } catch (e0) { }
+      iframe.contentWindow.postMessage({
+        type: 'openAdminRegMode',
+        regMode: mode,
+        lat: lat,
+        lng: lng,
+        zoom: zoom,
+        fromWorkerMapSelect: true
+      }, '*');
+      if (typeof iframe.contentWindow.openAdminRegModeFromWorker_ === 'function') {
+        iframe.contentWindow.openAdminRegModeFromWorker_({
+          regMode: mode,
+          lat: lat,
+          lng: lng,
+          zoom: zoom
+        });
+      }
+    } catch (e) {
+      iframe.src = targetUrl;
     }
+  } else {
+    iframe.src = targetUrl;
+    window._adminCadIframeReady = true;
   }
-  const sf = signFunc !== undefined ? String(signFunc || '').trim() : '';
-  const tempId = 'temp_sign_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-  const author = currentUser || localStorage.getItem('passionMapUserName') || '';
+};
 
-  createPolygonObject(tempId, finalName, [pos], icon, [], author, loc, '', 0, '稼働中', sf, []);
-  if (loadedPolygons[tempId]) loadedPolygons[tempId].parentSignId = '';
-
-  window.cancelWorkerMapSelectReg_({ returnToMapSelect: true });
-  window.selectNewlyRegisteredMapItem_(tempId);
-
+window.returnToWorkerMapSelectFromAdmin_ = async () => {
+  window._adminOpenedFromWorkerMapSelect_ = false;
+  const modal = document.getElementById('adminCadModal');
+  if (modal) modal.style.display = 'none';
+  const backBtn = document.getElementById('adminCadReturnToBulkBtn');
+  if (backBtn) {
+    backBtn.textContent = '← 一括入力に戻る';
+    backBtn.onclick = () => window.returnToBulkWorkMemoFromCad_();
+  }
+  if (typeof window.syncAdminCadModalBulkChrome_ === 'function') {
+    window.syncAdminCadModalBulkChrome_(false);
+  }
   try {
-    const payload = {
-      name: finalName,
-      coords: JSON.stringify([pos]),
-      color: icon,
-      userName: author,
-      location: loc,
-      condition: '',
-      area: 0,
-      status: '稼働中',
-      signFunction: sf,
-      parentSignId: ''
-    };
-    const res = await callGAS('savePolygon', payload);
-    const realId = (res && res.id) ? String(res.id) : tempId;
-    if (res && res.id) {
-      window.remapWorkerTempPolygonId_(tempId, realId);
-      if (loadedPolygons[realId]) loadedPolygons[realId].parentSignId = '';
+    if (typeof window.fetchAndApplyMapDelta_ === 'function') {
+      await window.fetchAndApplyMapDelta_({ silent: true, kinds: ['sign', 'field'] });
     }
-    if (window.SignGroup) window.SignGroup.refreshMarkers();
-    if (files && files.length > 0 && typeof compressImage === 'function') {
-      const fileDataArray = await Promise.all(files.map(f => compressImage(f)));
-      const recordRes = await callGAS('saveRecord', {
-        polyIds: [realId],
-        polyNames: finalName,
-        recordType: 'signboard',
-        userName: author,
-        recordData: { comment: '看板登録時の初期写真' },
-        files: fileDataArray
-      });
-      if (recordRes && recordRes.item && loadedPolygons[realId]) {
-        if (!Array.isArray(loadedPolygons[realId].photos)) loadedPolygons[realId].photos = [];
-        loadedPolygons[realId].photos.unshift(recordRes.item);
+  } catch (e) { }
+  if (typeof updateMapSelectVisuals === 'function') updateMapSelectVisuals();
+  if (typeof window.updateWorkMapSelectBanner === 'function') window.updateWorkMapSelectBanner();
+  if (typeof window.updateSelectedPolysDisplay === 'function') window.updateSelectedPolysDisplay();
+};
+
+if (!window._workerMapSelectAdminMsgBound_) {
+  window._workerMapSelectAdminMsgBound_ = true;
+  window.addEventListener('message', (ev) => {
+    const data = ev && ev.data;
+    if (!data) return;
+    if (data.type === 'workerMapSelectPolygonSaved' && data.item) {
+      const it = data.item;
+      const author = currentUser || localStorage.getItem('passionMapUserName') || '';
+      if (it.id && Array.isArray(it.coords) && it.coords.length > 0) {
+        if (!loadedPolygons[it.id]) {
+          createPolygonObject(
+            it.id,
+            it.name || '',
+            it.coords,
+            it.color || (it.isMarker ? '🚩' : '#FF9800'),
+            [],
+            author,
+            it.location || '',
+            it.condition || '',
+            it.area || 0,
+            it.status || '稼働中',
+            it.signFunction || '',
+            []
+          );
+          if (loadedPolygons[it.id]) {
+            if (it.isMarker) loadedPolygons[it.id].parentSignId = String(it.parentSignId || '').trim();
+            else loadedPolygons[it.id].soilType = it.soilType || '';
+          }
+          if (window.SignGroup) {
+            try { window.SignGroup.refreshMarkers(); } catch (eSg) { }
+          }
+        }
+        if (isMapSelecting) {
+          window.selectNewlyRegisteredMapItem_(it.id);
+        }
+      }
+      return;
+    }
+    if (data.type === 'workerMapSelectPolygonIdRemapped' && data.oldId && data.newId) {
+      window.remapWorkerTempPolygonId_(data.oldId, data.newId);
+      if (window.SignGroup) {
+        try { window.SignGroup.refreshMarkers(); } catch (eSg) { }
       }
     }
-    if (typeof window.showRecordSyncToast === 'function') {
-      window.showRecordSyncToast(`📍 看板「${finalName}」を登録しました`, 'ok');
-    }
-  } catch (err) {
-    console.error('executeSaveWorkerSignboard_ error:', err);
-    if (typeof customAlert === 'function') customAlert('看板の保存に失敗しました: ' + (err.message || err));
-  }
-};
+  });
+}
 
 window.applyBulkWorkMemoMapSelectLayout_ = () => {
   const modalEl = document.getElementById('modal');
@@ -39609,6 +39130,7 @@ window.guessBulkWorkMemoMaintenanceFields_ = (draft) => {
 window.buildBulkWorkMemoMaintenanceFieldChipsHtml_ = (uid, field, label, options, cur, tone, opts) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const selected = String(cur || '').trim();
+  const selectedSet = new Set(selected ? selected.split(/[,、]/).map(s => s.trim()).filter(Boolean) : []);
   const colors = {
     orange: { on: '#E65100', off: '#FFF3E0', border: '#FFB74D', offBorder: '#FFE0B2' },
     green: { on: '#2E7D32', off: '#E8F5E9', border: '#66BB6A', offBorder: '#C8E6C9' },
@@ -39617,10 +39139,10 @@ window.buildBulkWorkMemoMaintenanceFieldChipsHtml_ = (uid, field, label, options
   const c = colors[tone] || colors.orange;
   const canAdd = !!(opts && opts.canAdd);
   const chips = (options || []).slice(0, 16).map(val => {
-    const on = val === selected;
+    const on = selectedSet.has(val);
     const safe = String(val).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const safeField = String(field).replace(/'/g, "\\'");
-    return `<button type="button" onclick="pickBulkWorkMemoMaintenanceField_('${esc(uid)}','${safeField}','${safe}')" style="padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? c.on : c.offBorder}; background:${on ? c.on : c.off}; color:${on ? '#fff' : c.on};">${esc(val)}</button>`;
+    return `<button type="button" onclick="pickBulkWorkMemoMaintenanceField_('${esc(uid)}','${safeField}','${safe}')" style="padding:6px 10px; border-radius:14px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? c.on : c.offBorder}; background:${on ? c.on : c.off}; color:${on ? '#fff' : c.on};">${on ? '✓ ' : ''}${esc(val)}</button>`;
   }).join('');
   const addKind = field === 'maintenanceSymptom' ? 'symptoms'
     : field === 'maintenanceContent' ? 'maintenanceContents'
@@ -39843,7 +39365,16 @@ window.pickBulkWorkMemoMaintenanceField_ = (uid, field, value) => {
       : key === 'maintenanceParts' ? 'parts' : '';
   if (focusId && detailKey && typeof window.getBulkWorkMemoMaintDetail_ === 'function') {
     const cur = window.getBulkWorkMemoMaintDetail_(row, focusId)[detailKey] || '';
-    const nextVal = (String(cur).trim() === next) ? '' : next;
+    const curList = String(cur).split(/[,、]/).map(s => s.trim()).filter(Boolean);
+    const idx = curList.indexOf(next);
+    let isToggledOn = false;
+    if (idx >= 0) {
+      curList.splice(idx, 1);
+    } else if (next) {
+      curList.push(next);
+      isToggledOn = true;
+    }
+    const nextVal = curList.join('、');
     window.setBulkWorkMemoMaintDetailField_(row, focusId, detailKey, nextVal);
     const machine = (typeof window.resolveBulkWorkMemoMaintMachine_ === 'function')
       ? window.resolveBulkWorkMemoMaintMachine_(focusId)
@@ -39853,30 +39384,43 @@ window.pickBulkWorkMemoMaintenanceField_ = (uid, field, value) => {
       const contentOpts = (nextVal && machine && window.getMachineContentsForSymptom_)
         ? (window.getMachineContentsForSymptom_(machine, nextVal, '') || [])
         : [];
-      if (detail.content && contentOpts.indexOf(detail.content) < 0) {
-        window.setBulkWorkMemoMaintDetailField_(row, focusId, 'content', '');
-        window.setBulkWorkMemoMaintDetailField_(row, focusId, 'parts', '');
+      const curContents = String(detail.content || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+      const validContents = curContents.filter(c => contentOpts.indexOf(c) >= 0);
+      if (validContents.length !== curContents.length) {
+        window.setBulkWorkMemoMaintDetailField_(row, focusId, 'content', validContents.join('、'));
+        const partsOpts = (validContents.length && machine && window.getMachineMaintenanceOptions_)
+          ? (window.getMachineMaintenanceOptions_(machine, 'parts', '', { content: validContents.join('、') }) || [])
+          : [];
+        const curParts = String(detail.parts || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+        const validParts = curParts.filter(p => partsOpts.indexOf(p) >= 0);
+        window.setBulkWorkMemoMaintDetailField_(row, focusId, 'parts', validParts.join('、'));
       }
     }
     if (detailKey === 'content') {
       const detail = window.getBulkWorkMemoMaintDetail_(row, focusId);
-      if (nextVal && machine && typeof window.rememberMachineSymptomContent_ === 'function') {
-        window.rememberMachineSymptomContent_(machine, detail.symptom, nextVal);
+      if (isToggledOn && next && machine && typeof window.rememberMachineSymptomContent_ === 'function') {
+        const symptoms = String(detail.symptom || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+        symptoms.forEach(s => window.rememberMachineSymptomContent_(machine, s, next));
       }
-      const partsCur = String(detail.parts || '').trim();
+      const partsCur = String(detail.parts || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
       if (!nextVal) {
-        if (partsCur) window.setBulkWorkMemoMaintDetailField_(row, focusId, 'parts', '');
-      } else if (partsCur) {
+        if (partsCur.length) window.setBulkWorkMemoMaintDetailField_(row, focusId, 'parts', '');
+      } else if (partsCur.length) {
         const opts = (machine && window.getMachineMaintenanceOptions_)
           ? (window.getMachineMaintenanceOptions_(machine, 'parts', '', { content: nextVal }) || [])
           : [];
-        if (opts.indexOf(partsCur) < 0) {
-          window.setBulkWorkMemoMaintDetailField_(row, focusId, 'parts', '');
+        const validParts = partsCur.filter(p => opts.indexOf(p) >= 0);
+        if (validParts.length !== partsCur.length) {
+          window.setBulkWorkMemoMaintDetailField_(row, focusId, 'parts', validParts.join('、'));
         }
       }
     }
   } else {
-    row[key] = (String(row[key] || '').trim() === next) ? '' : next;
+    const curList = String(row[key] || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+    const idx = curList.indexOf(next);
+    if (idx >= 0) curList.splice(idx, 1);
+    else if (next) curList.push(next);
+    row[key] = curList.join('、');
   }
   window.refreshBulkWorkMemoExtras_(uid);
 };
@@ -39954,18 +39498,20 @@ window.addBulkWorkMemoMaintOption_ = async (uid, kind) => {
     ? window.getBulkWorkMemoMaintDetail_(row, focusId)
     : {};
   const contentName = String(focusDetail.content || '').trim();
+  const contentList = contentName.split(/[,、]/).map(s => s.trim()).filter(Boolean);
   if (kind === 'maintenanceContents' && !String(focusDetail.symptom || '').trim()) {
     if (typeof customAlert === 'function') customAlert('先に症状を選んでください。整備内容はその症状に紐づけて登録します。');
     return;
   }
-  if (kind === 'parts' && !contentName) {
+  if (kind === 'parts' && !contentList.length) {
     if (typeof customAlert === 'function') customAlert('先に整備内容を選んでください。交換部品はその整備内容ごとに登録します。');
     return;
   }
+  const promptLabel = contentList.length > 1 ? contentList.join('・') : (contentList[0] || '');
   const prompts = {
     symptoms: 'この機械に追加する「症状」名 (例: ベルトゆるみ):',
     maintenanceContents: 'この機械に追加する「整備内容」 (例: 定期点検・清掃):',
-    parts: `「${contentName}」に追加する交換部品名:`
+    parts: `「${promptLabel}」に追加する交換部品名:`
   };
   const detailKey = kind === 'symptoms' ? 'symptom'
     : kind === 'maintenanceContents' ? 'content'
@@ -39987,8 +39533,13 @@ window.addBulkWorkMemoMaintOption_ = async (uid, kind) => {
   const known = (typeof window.getMachineMaintenanceOptions_ === 'function')
     ? (window.getMachineMaintenanceOptions_(machine, kind, '', kind === 'parts' ? { content: contentName } : {}) || [])
     : [];
+  const appendToSelection = (targetVal) => {
+    const curVal = String(focusDetail[detailKey] || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+    if (!curVal.includes(targetVal)) curVal.push(targetVal);
+    window.setBulkWorkMemoMaintDetailField_(row, focusId, detailKey, curVal.join('、'));
+  };
   if (known.includes(name)) {
-    window.setBulkWorkMemoMaintDetailField_(row, focusId, detailKey, name);
+    appendToSelection(name);
     if (kind === 'maintenanceContents' && typeof window.rememberMachineSymptomContent_ === 'function') {
       window.rememberMachineSymptomContent_(machine, focusDetail.symptom, name);
     }
@@ -40002,22 +39553,28 @@ window.addBulkWorkMemoMaintOption_ = async (uid, kind) => {
     } else if (kind === 'maintenanceContents') {
       await callGAS('addMachineMaintenanceContent', { machineId: machine.id, newContent: name });
     } else if (kind === 'parts') {
-      await callGAS('addMachinePart', { machineId: machine.id, newPart: name, contentName: contentName });
+      for (const cName of contentList) {
+        await callGAS('addMachinePart', { machineId: machine.id, newPart: name, contentName: cName });
+      }
     }
     if (typeof window.appendMachineMaintOptionLocal_ === 'function') {
-      window.appendMachineMaintOptionLocal_(machine, kind, name, kind === 'parts' ? { content: contentName } : undefined);
+      if (kind === 'parts') {
+        contentList.forEach(cName => window.appendMachineMaintOptionLocal_(machine, kind, name, { content: cName }));
+      } else {
+        window.appendMachineMaintOptionLocal_(machine, kind, name);
+      }
     }
     if (kind === 'maintenanceContents' && typeof window.rememberMachineSymptomContent_ === 'function') {
       window.rememberMachineSymptomContent_(machine, focusDetail.symptom, name);
     }
-    window.setBulkWorkMemoMaintDetailField_(row, focusId, detailKey, name);
+    appendToSelection(name);
     window.refreshBulkWorkMemoExtras_(uid);
     const label = (typeof window.buildEquipmentDisplayLabel_ === 'function')
       ? window.buildEquipmentDisplayLabel_(machine)
       : (machine.name || '');
     if (typeof customAlert === 'function') {
       if (kind === 'parts') {
-        customAlert(`✅ 「${contentName}」に部品「${name}」を登録しました。`);
+        customAlert(`✅ 「${promptLabel}」に部品「${name}」を登録しました。`);
       } else {
         customAlert(`✅ 「${label || 'この機械'}」に「${name}」を登録しました。次回から候補に出ます。`);
       }
@@ -40048,14 +39605,16 @@ window.manageBulkWorkMemoMaintOption_ = (uid, kind) => {
     ? window.getBulkWorkMemoMaintDetail_(row, focusId)
     : {};
   const contentName = String(focusDetail.content || '').trim();
-  if (kind === 'parts' && !contentName) {
+  const contentList = contentName.split(/[,、]/).map(s => s.trim()).filter(Boolean);
+  if (kind === 'parts' && !contentList.length) {
     if (typeof customAlert === 'function') customAlert('先に整備内容を選んでください。交換部品はその整備内容ごとに管理します。');
     return;
   }
+  const promptLabel = contentList.length > 1 ? contentList.join('・') : (contentList[0] || '');
   const titles = {
     symptoms: `症状（${machine.name || 'この機械'}）`,
     maintenanceContents: `整備内容（${machine.name || 'この機械'}）`,
-    parts: `交換部品（${contentName}）`
+    parts: `交換部品（${promptLabel}）`
   };
   const detailKey = kind === 'symptoms' ? 'symptom'
     : kind === 'maintenanceContents' ? 'content'
@@ -40079,16 +39638,20 @@ window.manageBulkWorkMemoMaintOption_ = (uid, kind) => {
     const cur = (typeof window.getBulkWorkMemoMaintDetail_ === 'function')
       ? window.getBulkWorkMemoMaintDetail_(row, focusId)
       : {};
-    if (String(cur[detailKey] || '').trim() === String(removedName || '').trim()) {
-      window.setBulkWorkMemoMaintDetailField_(row, focusId, detailKey, '');
+    const curList = String(cur[detailKey] || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+    const filtered = curList.filter(s => s !== String(removedName || '').trim());
+    if (filtered.length !== curList.length) {
+      window.setBulkWorkMemoMaintDetailField_(row, focusId, detailKey, filtered.join('、'));
     }
   };
   const renameIfSelected = (oldName, newName) => {
     const cur = (typeof window.getBulkWorkMemoMaintDetail_ === 'function')
       ? window.getBulkWorkMemoMaintDetail_(row, focusId)
       : {};
-    if (String(cur[detailKey] || '').trim() === String(oldName || '').trim()) {
-      window.setBulkWorkMemoMaintDetailField_(row, focusId, detailKey, newName);
+    const curList = String(cur[detailKey] || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+    const replaced = curList.map(s => (s === String(oldName || '').trim() ? newName : s));
+    if (replaced.some((s, idx) => s !== curList[idx])) {
+      window.setBulkWorkMemoMaintDetailField_(row, focusId, detailKey, replaced.join('、'));
     }
   };
   window.showMaintenanceMasterManageModal({
@@ -40104,7 +39667,9 @@ window.manageBulkWorkMemoMaintOption_ = (uid, kind) => {
       } else if (kind === 'maintenanceContents' && typeof window.editMaintenanceContentMaster === 'function') {
         await window.editMaintenanceContentMaster(oldName, next, machine);
       } else if (kind === 'parts' && typeof window.editMachinePartMaster === 'function') {
-        await window.editMachinePartMaster(oldName, next, machine, contentName);
+        for (const cName of contentList) {
+          await window.editMachinePartMaster(oldName, next, machine, cName);
+        }
       } else {
         return;
       }
@@ -40113,7 +39678,7 @@ window.manageBulkWorkMemoMaintOption_ = (uid, kind) => {
     },
     onDelete: async (targetName) => {
       const msg = kind === 'parts'
-        ? `${deleteLabel}「${targetName}」を「${contentName}」から削除しますか？`
+        ? `${deleteLabel}「${targetName}」を「${promptLabel}」から削除しますか？`
         : `${deleteLabel}「${targetName}」をこの機械から削除しますか？`;
       if (!(await customConfirm(msg))) return;
       if (kind === 'symptoms' && typeof window.deleteSymptomMaster === 'function') {
@@ -40121,7 +39686,9 @@ window.manageBulkWorkMemoMaintOption_ = (uid, kind) => {
       } else if (kind === 'maintenanceContents' && typeof window.deleteMaintenanceContentMaster === 'function') {
         await window.deleteMaintenanceContentMaster(targetName, machine);
       } else if (kind === 'parts' && typeof window.deleteMachinePartMaster === 'function') {
-        await window.deleteMachinePartMaster(targetName, machine, contentName);
+        for (const cName of contentList) {
+          await window.deleteMachinePartMaster(targetName, machine, cName);
+        }
       } else {
         return;
       }
@@ -44561,6 +44128,11 @@ window.pickBulkWorkMemoCropName_ = (uid, name) => {
     if (typeof window.autoAdvanceBulkWorkMemoSuggestCategory_ === 'function') {
       window.autoAdvanceBulkWorkMemoSuggestCategory_(row);
     }
+    if (!metaKeep) {
+      const hasSug = (Array.isArray(row.workCandidates) && row.workCandidates.length > 0)
+        || (Array.isArray(row.workMaybeCandidates) && row.workMaybeCandidates.length > 0);
+      if (!hasSug) row._workListOpen = true;
+    }
   }
   window.refreshBulkWorkMemoCropPickOrReview_(uid);
 };
@@ -46147,14 +45719,70 @@ window.buildBulkWorkMemoTimeGapsHtml_ = (drafts) => {
     return `<div style="padding:10px 12px; border:1px dashed #FFB74D; border-radius:8px; margin-bottom:8px; background:#fff;">
       <div style="font-size:13px; font-weight:bold; color:#E65100;">⏱ ${esc(g.startHm)}〜${esc(g.endHm)} <span style="font-size:11px; font-weight:normal; color:#888;">（${esc(window.formatBulkWorkMemoGapMins_(g.gapMins))}）</span></div>
       <div style="font-size:11px; color:#666; margin:4px 0 8px; line-height:1.35;">「${esc(g.afterLabel)}」の後 〜 「${esc(g.beforeLabel)}」の前が未登録です</div>
-      <div style="display:flex; flex-wrap:wrap; gap:6px;">${lunchBtn}<button type="button" onclick="insertBulkWorkMemoGapRest_('${safeKey}','休憩')" style="padding:7px 11px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid #CE93D8; background:#F3E5F5; color:#6A1B9A;">☕ 休憩</button></div>
+      <div style="display:flex; flex-wrap:wrap; gap:6px;"><button type="button" onclick="insertBulkWorkMemoGapWork_('${safeKey}')" style="padding:7px 11px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid #90CAF9; background:#E3F2FD; color:#1565C0;">🚜 作業記録</button>${lunchBtn}<button type="button" onclick="insertBulkWorkMemoGapRest_('${safeKey}','休憩')" style="padding:7px 11px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid #CE93D8; background:#F3E5F5; color:#6A1B9A;">☕ 休憩</button></div>
     </div>`;
   }).join('');
   return `<div style="background:#FFF8E1; border:2px solid #FFB74D; border-radius:10px; padding:12px; margin-bottom:12px;">
     <div style="font-size:12px; font-weight:bold; color:#E65100; margin-bottom:8px;">📭 未登録の時間帯（${gaps.length}か所）</div>
-    <div style="font-size:11px; color:#666; line-height:1.35; margin-bottom:8px;">作業と作業の間に空白があります。必要なら休憩・昼休憩として追加できます（なくても保存できます）。</div>
+    <div style="font-size:11px; color:#666; line-height:1.35; margin-bottom:8px;">作業と作業の間に空白があります。必要なら作業記録や休憩・昼休憩として追加できます（なくても保存できます）。</div>
     ${rows}
   </div>`;
+};
+
+window.insertBulkWorkMemoGapWork_ = (gapKey) => {
+  const gaps = window._bulkWorkMemoGaps || [];
+  const gap = gaps.find(g => g && g.gapKey === gapKey);
+  if (!gap) return;
+  const base = (typeof window.createEmptyBulkWorkMemoDraft_ === 'function')
+    ? window.createEmptyBulkWorkMemoDraft_()
+    : {};
+  delete base._manualAdd;
+  const row = Object.assign(base, {
+    recordKind: 'work',
+    isRest: false,
+    workName: '',
+    workMatched: false,
+    guessedName: '',
+    workCandidates: [],
+    workMaybeCandidates: [],
+    category: '',
+    cropName: '',
+    cropNames: [],
+    startTime: gap.startHm,
+    endTime: gap.endHm,
+    rawLine: `${gap.startHm}〜${gap.endHm}（空白時間から追加）`,
+    polyId: '',
+    polyIds: [],
+    polyName: '',
+    prepTargetWork: '',
+    prepTargetWorks: [],
+    prepTargetCategory: '',
+    prepListFilterCategory: '',
+    detailedWorks: [],
+    concurrentWorks: [],
+    usedMachines: [],
+    usedPesticides: [],
+    included: true,
+    comment: '',
+    _cropPickOpen: true,
+    _workPickOpen: true,
+    _workListOpen: true,
+    _uid: 'bm_gap_work_' + Date.now() + '_' + Math.floor(Math.random() * 1000)
+  });
+  const drafts = window._bulkWorkMemoDrafts || [];
+  const insertAfterIdx = drafts.findIndex(d => d && d._uid === gap.afterDraftUid);
+  if (insertAfterIdx >= 0) drafts.splice(insertAfterIdx + 1, 0, row);
+  else drafts.push(row);
+  const scrollEl = document.getElementById('bulk_work_memo_review_scroll');
+  const gapsEl = document.getElementById('bulk_work_memo_time_gaps');
+  const anchorOffset = (scrollEl && gapsEl)
+    ? (gapsEl.getBoundingClientRect().top - scrollEl.getBoundingClientRect().top)
+    : null;
+  window.renderBulkWorkMemoReviewModal_({
+    keepScroll: true,
+    anchorId: 'bulk_work_memo_time_gaps',
+    anchorOffset: anchorOffset
+  });
 };
 
 window.insertBulkWorkMemoGapRest_ = (gapKey, restName) => {
@@ -46886,7 +46514,7 @@ window.renderBulkWorkMemoConfirmModal_ = () => {
       : `<div style="font-size:11px; color:#888; margin-top:8px;">出勤連動できる開始時間がありません。</div>`);
   const gapsOnConfirm = window.detectBulkWorkMemoTimeGaps_(drafts);
   const gapHint = gapsOnConfirm.length
-    ? `<div style="font-size:11px; color:#E65100; margin-top:8px; line-height:1.35;">📭 未登録の時間帯が ${gapsOnConfirm.length} か所あります。戻って休憩を追加するか、このまま登録できます。</div>`
+    ? `<div style="font-size:11px; color:#E65100; margin-top:8px; line-height:1.35;">📭 未登録の時間帯が ${gapsOnConfirm.length} か所あります。戻って作業や休憩を追加するか、このまま登録できます。</div>`
     : '';
   window.fillAppModalHtml_(`
     <div id="bulk_work_memo_confirm_scroll" style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
