@@ -338,7 +338,7 @@ window.onLocationCityChange = function (sel) {
     const prefix = locationFormPrefix_(sel);
     syncLocationCityCustomVisibility(prefix);
 };
-let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlPesticides = [], pdlFertilizers = [], pdlCropChemPlans = [], pdlCostItems = [], pdlCropCostPlans = [], pdlCropWorkPlans = [], pdlNurseryLocations = [], pdlCropCultSettings = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [], pdlHitchTypes = [], pdlContainers = [], pdlContainerNames = [], pdlContentUnits = [];
+let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlPesticides = [], pdlFertilizers = [], pdlCropChemPlans = [], pdlCostItems = [], pdlCropCostPlans = [], pdlCropWorkPlans = [], pdlNurseryLocations = [], pdlCropCultSettings = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [], pdlHitchTypes = [], pdlContainers = [], pdlContainerNames = [], pdlContentUnits = [], pdlInspections = [];
 let mapInitPromise, resolveMapInit;
 mapInitPromise = new Promise((resolve) => { resolveMapInit = resolve; });
 
@@ -1081,6 +1081,7 @@ function persistAdminInitCache_() {
                 cropWorkPlans: pdlCropWorkPlans,
                 nurseryLocations: pdlNurseryLocations,
                 cropCultSettings: pdlCropCultSettings,
+                inspections: pdlInspections,
                 workCategories: pdlWorkCategories,
                 contentUnits: pdlContentUnits,
                 machineTypes: pdlMachineTypes,
@@ -1598,6 +1599,7 @@ function applyMasterServerList_(type, updatedList) {
     else if (type === 'machineType') pdlMachineTypes = updatedList;
     else if (type === 'machineGroup' || type === 'machineCategory') pdlMachineGroups = updatedList;
     else if (type === 'hitchType') pdlHitchTypes = updatedList;
+    else if (type === 'inspection') pdlInspections = updatedList || [];
 }
 
 function applyOptimisticMasterChange_(type, act, value) {
@@ -1650,6 +1652,7 @@ function applyOptimisticMasterChange_(type, act, value) {
     else if (type === 'machineType') wrap(() => pdlMachineTypes, v => { pdlMachineTypes = v; }, nameOf);
     else if (type === 'machineGroup' || type === 'machineCategory') wrap(() => pdlMachineGroups, v => { pdlMachineGroups = v; }, nameOf);
     else if (type === 'hitchType') wrap(() => pdlHitchTypes, v => { pdlHitchTypes = v; }, nameOf);
+    else if (type === 'inspection') wrap(() => pdlInspections, v => { pdlInspections = v; }, item => item.id || (item.machineType + '|' + item.inspectionCategory + '|' + (item.item || item.name)));
 }
 
 function saveAdminCredentials(id, pw, name) {
@@ -1908,6 +1911,39 @@ function startLocationWatch() {
 function openMasterFromQuery_() {
     if (window._adminMasterQueryHandled) return;
     const params = new URLSearchParams(window.location.search);
+    const editMachineId = String(params.get('editMachine') || '').trim();
+    if (editMachineId) {
+        if (editMachineId.indexOf('veh:') === 0) {
+            const rawVehId = editMachineId.replace(/^veh:/, '');
+            window._adminMasterQueryHandled = true;
+            setTimeout(async () => {
+                if (typeof openEquipmentManageModal === 'function') openEquipmentManageModal('vehicle');
+                if (typeof ensureAdminVehiclesLoaded_ === 'function') await ensureAdminVehiclesLoaded_();
+                const vList = typeof getAdminVehicleList_ === 'function' ? getAdminVehicleList_() : [];
+                const foundVeh = vList.find(v => v && String(v.id) === rawVehId);
+                if (foundVeh && typeof renderEquipmentVehiclePanel_ === 'function') {
+                    renderEquipmentVehiclePanel_(foundVeh);
+                }
+            }, 0);
+            return;
+        }
+        const macList = Array.isArray(window.pdlMachines) ? window.pdlMachines : [];
+        const foundMac = macList.find(m => m && String(m.id) === editMachineId);
+        if (foundMac) {
+            window._adminMasterQueryHandled = true;
+            setTimeout(() => {
+                if (typeof openEquipmentManageModal === 'function') {
+                    openEquipmentManageModal('machine');
+                } else {
+                    openMasterModal();
+                }
+                if (typeof openEditMachineMaster === 'function') {
+                    openEditMachineMaster(encodeURIComponent(JSON.stringify(foundMac)));
+                }
+            }, 0);
+            return;
+        }
+    }
     const masterType = params.get('master');
     if (!masterType) return;
     const allowed = [
@@ -2313,6 +2349,7 @@ function renderInitData(data, opts) {
         pdlCropWorkPlans = keepIfLight_(data.pdl.cropWorkPlans, pdlCropWorkPlans);
         pdlNurseryLocations = keepIfLight_(data.pdl.nurseryLocations, pdlNurseryLocations);
         pdlCropCultSettings = keepIfLight_(data.pdl.cropCultSettings, pdlCropCultSettings);
+        pdlInspections = keepIfLight_(data.pdl.inspections, pdlInspections);
         pdlWorkCategories = data.pdl.workCategories || ["圃場作業", "事務作業", "保全・整備"];
         pdlContentUnits = data.pdl.contentUnits || ['kg', 'g', '本', 'パック', '個', '束'];
         pdlMachineTypes = data.pdl.machineTypes || ["トラクター", "ドローン"];
@@ -2472,22 +2509,23 @@ window.closeEquipmentManageModal = (opts) => {
     const body = document.getElementById('equipmentManageBody');
     if (body) body.innerHTML = '';
     if (!(opts && opts.keepMaster)) {
-        if (currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool') {
+        if (currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool' || currentActiveMasterType === 'inspection') {
             currentActiveMasterType = null;
         }
     }
 };
 
 window.switchEquipmentManageTab = (tab) => {
-    const next = (tab === 'vehicle' || tab === 'tool') ? tab : 'machine';
+    const next = (tab === 'vehicle' || tab === 'tool' || tab === 'inspection') ? tab : 'machine';
     window._equipmentManageTab = next;
     window._equipmentManageActive = true;
     const styles = {
         machine: { on: '#43A047', bg: '#e8f5e9', fg: '#2e7d32' },
         vehicle: { on: '#FB8C00', bg: '#fff3e0', fg: '#e65100' },
-        tool: { on: '#5C6BC0', bg: '#e8eaf6', fg: '#3949ab' }
+        tool: { on: '#5C6BC0', bg: '#e8eaf6', fg: '#3949ab' },
+        inspection: { on: '#00897B', bg: '#e0f2f1', fg: '#00695c' }
     };
-    ['machine', 'vehicle', 'tool'].forEach(t => {
+    ['machine', 'vehicle', 'tool', 'inspection'].forEach(t => {
         const btn = document.getElementById('equipmentTab_' + t);
         if (!btn) return;
         const active = t === next;
@@ -2501,7 +2539,7 @@ window.switchEquipmentManageTab = (tab) => {
         renderEquipmentVehiclePanel_();
         return;
     }
-    openMasterDetail(next === 'tool' ? 'tool' : 'machine');
+    openMasterDetail(next);
 };
 
 window.getAdminVehicleList_ = () => {
@@ -3028,7 +3066,8 @@ window.getMasterTypeInfo = (type) => {
         cropWorkPlan: { title: '🛠️ 品目別作業設定', desc: '日数・半旬・積算温度/日射/降水＋降水キャンセル', list: pdlCropWorkPlans || [] },
         nurseryLocation: { title: '🪴 育苗場所マスタ', desc: '育苗区画（圃場）と方向の登録', list: pdlNurseryLocations || [] },
         cropCultSetting: { title: '📐 作物栽培設定マスタ', desc: '品目ごとの播種穴数など栽培デフォルト', list: pdlCropCultSettings || [] },
-        container: { title: '🧺 コンテナマスタ', desc: 'コンテナ種類×品目ごとの内容単位・内容個数（共通なし）', list: pdlContainers || [] }
+        container: { title: '🧺 コンテナマスタ', desc: 'コンテナ種類×品目ごとの内容単位・内容個数（共通なし）', list: pdlContainers || [] },
+        inspection: { title: '📋 点検マスタ', desc: '機械カテゴリごとの点検カテゴリ・点検項目の設定', list: pdlInspections || [] }
     };
     return listMap[type] || { title: type, desc: '', list: [] };
 };
@@ -3046,7 +3085,7 @@ window.renderMasterMenu = () => {
 
     const masterTypes = [
         'crop', 'cropCultSetting', 'nurseryLocation', 'cropChemPlan', 'cropWorkPlan', 'costItem', 'cropCostPlan', 'container', 'contentUnit', 'location', 'workCategory',
-        'machineType', 'machineGroup', 'hitchType', 'work', 'machine', 'tool', 'material', 'pesticide', 'fertilizer'
+        'machineType', 'machineGroup', 'hitchType', 'inspection', 'work', 'machine', 'tool', 'material', 'pesticide', 'fertilizer'
     ];
 
     let html = `
@@ -3101,7 +3140,7 @@ window.switchPesticideMasterTab = tab => switchCatalogMasterTab('pesticide', tab
 
 window.openMasterDetail = (type, customEditHtml = null) => {
     currentActiveMasterType = type;
-    const inEquipment = !!window._equipmentManageActive && (type === 'machine' || type === 'tool');
+    const inEquipment = !!window._equipmentManageActive && (type === 'machine' || type === 'tool' || type === 'inspection');
     const btnBack = document.getElementById('btnMasterBack');
     if (btnBack) btnBack.style.display = inEquipment ? 'none' : 'inline-block';
 
@@ -3276,6 +3315,31 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <input type="text" id="add_hitchType_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: オートヒッチ Aタイプ">
                 <div style="font-size:11px; color:#666;">トラクターと作業機に同じ規格を設定すると、作業記録で連結候補として提案されます。</div>
                 <button onclick="execMaster('hitchType', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
+            </div>`;
+        } else if (type === 'inspection') {
+            const macTypeOpts = (pdlMachineTypes || []).map(t => `<option value="${String(t).replace(/"/g, '&quot;')}">${t}</option>`).join('');
+            const existingCats = [...new Set((pdlInspections || []).map(i => i.inspectionCategory).filter(Boolean))];
+            const catDatalist = existingCats.map(c => `<option value="${String(c).replace(/"/g, '&quot;')}">`).join('');
+            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size:12px; font-weight:bold; color:#555;">機械カテゴリ <span style="color:red;">*</span></label>
+                <select id="add_insp_mac_type" class="form-input" style="margin-bottom:0; padding:8px;">
+                    <option value="">機械カテゴリを選択...</option>
+                    ${macTypeOpts}
+                </select>
+                <label style="font-size:12px; font-weight:bold; color:#555;">点検カテゴリ <span style="color:red;">*</span></label>
+                <input type="text" id="add_insp_category" list="insp_cat_options" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: エンジン部、走行部、作業部、電装・安全">
+                <datalist id="insp_cat_options">${catDatalist}</datalist>
+                <label style="font-size:12px; font-weight:bold; color:#555;">点検項目 <span style="color:red;">*</span></label>
+                <input type="text" id="add_insp_item" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: オイル量・汚れ、冷却水量、ベルト張り">
+                <div style="display:flex; gap:10px;">
+                    <div style="flex:1;">
+                        <label style="font-size:12px; font-weight:bold; color:#555;">並び順</label>
+                        <input type="number" id="add_insp_sort" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="0" min="0">
+                    </div>
+                </div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">点検基準・備考</label>
+                <input type="text" id="add_insp_note" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 上限と下限の間、ヒビ割れなきこと">
+                <button onclick="execMaster('inspection', 'add')" style="background:#00897B; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
         } else if (type === 'tool') {
             const wOpts = '<option value="">+ 関連作業を選ぶ...</option>' + pdlWorkMaster.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
@@ -3556,7 +3620,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
         listHtml += `<tr><td colspan="2" style="padding:20px; text-align:center; color:#888;">登録されたデータはありません</td></tr>`;
     } else {
         list.forEach(v => {
-            let dispName = (type === 'cropCultSetting') ? (v.cropName || v.name || v) : (v.name || v);
+            let dispName = (type === 'cropCultSetting') ? (v.cropName || v.name || v) : (type === 'inspection' ? (v.item || v.name || v) : (v.name || v));
             if (type === 'machine' && typeof window.buildAdminMachineDisplayName_ === 'function') {
                 dispName = window.buildAdminMachineDisplayName_(
                     v.type,
@@ -3568,7 +3632,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                     v.model2
                 ) || dispName;
             }
-            const deleteVal = (type === 'cropCultSetting') ? (v.cropName || v.name || v) : (v.id || v.name || v);
+            const deleteVal = (type === 'cropCultSetting') ? (v.cropName || v.name || v) : (type === 'inspection' ? (v.id || v.item) : (v.id || v.name || v));
             let subInfo = "";
 
             if (type === 'crop') {
@@ -3603,6 +3667,11 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                     : '';
                 if (bits.length) subInfo = `<span style="font-size:11px; color:#1565c0; margin-left:6px;">${bits.join(' / ')}</span>${tagLabel}`;
                 else subInfo = tagLabel;
+            }
+            if (type === 'inspection') {
+                const sortLabel = (v.sortOrder != null && v.sortOrder !== 0) ? `<span style="font-size:10px; color:#888; margin-left:4px;">(順: ${v.sortOrder})</span>` : '';
+                const noteLabel = v.note ? `<div style="font-size:11px; color:#666; margin-top:2px;">基準: ${v.note}</div>` : '';
+                subInfo = `<span style="font-size:11px; background:#e0f2f1; color:#00695c; padding:2px 6px; border-radius:4px; font-weight:bold; margin-left:6px;">🚜 ${v.machineType || ''}</span> <span style="font-size:11px; background:#ede7f6; color:#512da8; padding:2px 6px; border-radius:4px; margin-left:4px;">📁 ${v.inspectionCategory || ''}</span>${sortLabel}${noteLabel}`;
             }
             if (type === 'costItem') {
                 const bits = [];
@@ -3707,6 +3776,8 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 actionBtns = `<button onclick="openEditFertilizerMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else if (type === 'costItem') {
                 actionBtns = `<button onclick="openEditCostItemMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
+            } else if (type === 'inspection') {
+                actionBtns = `<button onclick="openEditInspectionMaster('${safeV}')" style="background:#e0f2f1; color:#00695c; border:1px solid #80cbc4; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else {
                 actionBtns = `<button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             }
@@ -3961,6 +4032,43 @@ window.openEditCropMaster = (encoded) => {
             window.refreshCropIconSuggestions_('edit_crop_icon', document.getElementById('edit_crop_name')?.value || '');
         }
     }, 0);
+};
+
+window.openEditInspectionMaster = (encoded) => {
+    const v = JSON.parse(decodeURIComponent(encoded || '%7B%7D'));
+    const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;');
+    const macTypeOpts = (pdlMachineTypes || []).map(t => {
+        const sel = String(t) === String(v.machineType || '') ? 'selected' : '';
+        return `<option value="${esc(t)}" ${sel}>${t}</option>`;
+    }).join('');
+    const existingCats = [...new Set((pdlInspections || []).map(i => i.inspectionCategory).filter(Boolean))];
+    const catDatalist = existingCats.map(c => `<option value="${esc(c)}">`).join('');
+    const editHtml = `
+        <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
+            <h4 style="margin-top:0; color:#00897B; font-size:15px; border-bottom:2px solid #00897B; padding-bottom:5px;">✏️ 点検項目の編集</h4>
+            <input type="hidden" id="edit_insp_id" value="${esc(v.id)}">
+            <label class="form-label">機械カテゴリ <span style="color:red;">*</span></label>
+            <select id="edit_insp_mac_type" class="form-input" style="margin-bottom:8px; padding:8px;">${macTypeOpts}</select>
+            <label class="form-label">点検カテゴリ <span style="color:red;">*</span></label>
+            <input type="text" id="edit_insp_category" list="edit_insp_cat_list" class="form-input" style="margin-bottom:8px; padding:8px;" value="${esc(v.inspectionCategory)}">
+            <datalist id="edit_insp_cat_list">${catDatalist}</datalist>
+            <label class="form-label">点検項目 <span style="color:red;">*</span></label>
+            <input type="text" id="edit_insp_item" class="form-input" style="margin-bottom:8px; padding:8px;" value="${esc(v.item)}">
+            <div style="display:flex; gap:10px;">
+                <div style="flex:1;">
+                    <label class="form-label">並び順</label>
+                    <input type="number" id="edit_insp_sort" class="form-input" style="margin-bottom:8px; padding:8px;" value="${v.sortOrder != null ? v.sortOrder : 0}">
+                </div>
+            </div>
+            <label class="form-label">点検基準・備考</label>
+            <input type="text" id="edit_insp_note" class="form-input" style="margin-bottom:8px; padding:8px;" value="${esc(v.note)}">
+            <div style="display:flex; gap:10px; margin-top:15px;">
+                <button onclick="execMaster('inspection', 'edit')" style="flex:1; background:#00897B; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">更新する</button>
+                <button onclick="openMasterDetail('inspection')" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">キャンセル</button>
+            </div>
+        </div>
+    `;
+    openMasterDetail('inspection', editHtml);
 };
 
 window.openEditPesticideMaster = (encoded) => {
@@ -6679,6 +6787,24 @@ window.execMaster = async (type, act, val) => {
         else if (type === 'machineType') { const name = document.getElementById('add_machineType_name').value.trim(); if (!name) { customAlert("カテゴリ名を入力してください"); return; } if ((pdlMachineTypes || []).includes(name)) { customAlert("既に登録されています"); return; } value = name; }
         else if (type === 'machineGroup') { const name = document.getElementById('add_machineGroup_name').value.trim(); if (!name) { customAlert("グループ名を入力してください"); return; } if ((pdlMachineGroups || []).includes(name)) { customAlert("既に登録されています"); return; } value = name; }
         else if (type === 'hitchType') { const name = document.getElementById('add_hitchType_name').value.trim(); if (!name) { customAlert("ヒッチ規格名を入力してください"); return; } if ((pdlHitchTypes || []).includes(name)) { customAlert("既に登録されています"); return; } value = name; }
+        else if (type === 'inspection') {
+            const macType = (document.getElementById('add_insp_mac_type')?.value || '').trim();
+            if (!macType) { customAlert("機械カテゴリを選択してください"); return; }
+            const cat = (document.getElementById('add_insp_category')?.value || '').trim();
+            if (!cat) { customAlert("点検カテゴリを入力してください"); return; }
+            const item = (document.getElementById('add_insp_item')?.value || '').trim();
+            if (!item) { customAlert("点検項目を入力してください"); return; }
+            const sortVal = document.getElementById('add_insp_sort')?.value;
+            const sortOrder = (sortVal !== '' && sortVal != null) ? Number(sortVal) || 0 : 0;
+            const note = (document.getElementById('add_insp_note')?.value || '').trim();
+            value = {
+                machineType: macType,
+                inspectionCategory: cat,
+                item: item,
+                sortOrder: sortOrder,
+                note: note
+            };
+        }
         else if (type === 'tool') { const name = document.getElementById('add_tool_name').value.trim(); if (!name) { customAlert("道具名を入力してください"); return; } value = { name: name, workCategory: document.getElementById('add_tool_cat').value.trim() }; }
         else if (type === 'costItem') {
             const name = (document.getElementById('add_cost_name')?.value || '').trim();
@@ -6940,6 +7066,28 @@ window.execMaster = async (type, act, val) => {
                     base: document.getElementById('edit_cost_base')?.value || 'fixed',
                     defaultQty: document.getElementById('edit_cost_qty')?.value,
                     note: document.getElementById('edit_cost_note')?.value || ''
+                }
+            };
+        } else if (type === 'inspection') {
+            const id = document.getElementById('edit_insp_id')?.value || '';
+            if (!id) { customAlert('編集対象IDがありません'); return; }
+            const macType = (document.getElementById('edit_insp_mac_type')?.value || '').trim();
+            if (!macType) { customAlert("機械カテゴリを選択してください"); return; }
+            const cat = (document.getElementById('edit_insp_category')?.value || '').trim();
+            if (!cat) { customAlert("点検カテゴリを入力してください"); return; }
+            const item = (document.getElementById('edit_insp_item')?.value || '').trim();
+            if (!item) { customAlert("点検項目を入力してください"); return; }
+            const sortVal = document.getElementById('edit_insp_sort')?.value;
+            const sortOrder = (sortVal !== '' && sortVal != null) ? Number(sortVal) || 0 : 0;
+            const note = (document.getElementById('edit_insp_note')?.value || '').trim();
+            value = {
+                id: id,
+                newData: {
+                    machineType: macType,
+                    inspectionCategory: cat,
+                    item: item,
+                    sortOrder: sortOrder,
+                    note: note
                 }
             };
         }

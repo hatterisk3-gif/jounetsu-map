@@ -15,7 +15,7 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1786243000000"></script>
-  <link rel="stylesheet" href="schedule.css?v=1788600000319">
+  <link rel="stylesheet" href="schedule.css?v=1788600000357">
   <link rel="stylesheet" href="cad.css?v=1788600000326">
   <link rel="stylesheet" href="location-pin.css?v=1788600000301">
   <link rel="stylesheet" href="map-filter.css?v=1788600000330">
@@ -691,11 +691,50 @@
       <span class="schedule-side-fab-moisture-icon">💧</span>
       <span class="schedule-side-fab-moisture-label">水分率</span>
     </button>
+    <button id="btnFertilizerLookup" type="button" class="schedule-side-fab schedule-side-fab-fert"
+      onclick="openFertilizerLookup_()" title="肥料を検索して成分・詳細を見る" aria-label="肥料">
+      <span class="schedule-side-fab-fert-icon">🌿</span>
+      <span class="schedule-side-fab-fert-label">肥料</span>
+    </button>
     <button id="btnPesticideLookup" type="button" class="schedule-side-fab schedule-side-fab-pest"
       onclick="openPesticideLookup_()" title="農薬を検索して適用表を見る" aria-label="農薬">
       <span class="schedule-side-fab-pest-icon">🧪</span>
       <span class="schedule-side-fab-pest-label">農薬</span>
     </button>
+  </div>
+
+  <div id="fertilizerLookupModal" class="fert-lookup-modal" style="display:none;"
+    onclick="if(event.target===this) closeFertilizerLookup_()">
+    <div class="fert-lookup-sheet" onclick="event.stopPropagation()">
+      <div class="fert-lookup-head">
+        <button type="button" id="fertLookupBack" class="fert-lookup-back" style="display:none;"
+          onclick="backFertilizerLookup_()">←</button>
+        <div class="fert-lookup-title" id="fertLookupTitle">🌿 肥料検索</div>
+        <button type="button" id="fertLookupFavBtn" class="pest-fav-star" style="display:none;"
+          onclick="toggleCurrentFertilizerFav_()" aria-label="お気に入り登録">★</button>
+        <button type="button" class="fert-lookup-close" onclick="closeFertilizerLookup_()" aria-label="閉じる">×</button>
+      </div>
+      <div id="fertLookupLoading" class="fert-lookup-loading" aria-hidden="true">
+        <div id="fertLookupLoadingLabel" class="fert-lookup-loading-label">読み込み中...</div>
+        <div class="fert-lookup-loading-track">
+          <div class="fert-lookup-loading-fill"></div>
+        </div>
+      </div>
+      <div id="fertLookupSearchPane" class="fert-lookup-body">
+        <div class="fert-lookup-hint">肥料名・種類・成分・登録番号・メーカーの一部でもヒットします。名前を押すと詳細を表示します。</div>
+        <div class="fert-lookup-searchrow">
+          <input type="search" id="fertLookupQ" class="fert-lookup-input" placeholder="例: 化成、高度、8-8-8、苦土" enterkeyhint="search"
+            onkeydown="if(event.key==='Enter'){ event.preventDefault(); searchFertilizerLookup_(); }">
+          <button type="button" class="fert-lookup-go" onclick="searchFertilizerLookup_()">検索</button>
+          <button type="button" id="fertLookupFavListBtn" class="fert-lookup-favbtn"
+            onclick="showFertilizerFavorites_()">⭐ お気に入り</button>
+        </div>
+        <div id="fertLookupResult" class="fert-lookup-result"></div>
+      </div>
+      <div id="fertLookupDetailPane" class="fert-lookup-body" style="display:none;">
+        <div id="fertLookupDetailWrap"></div>
+      </div>
+    </div>
   </div>
 
   <div id="pesticideLookupModal" class="pest-lookup-modal" style="display:none;"
@@ -1223,7 +1262,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000354';
+    const cacheBust = '1788600000358';
     // 豚糞共有：台数＋短いGoogleマップURL＋座標（v1.49）
     // ※ https://maps.google.com/?q=緯度,経度
     // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）
@@ -1330,6 +1369,7 @@
     }
 
     appendScript('api-client.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('api-client.js'))
+      .then(() => appendScript('fertilizer-lookup.js?v=' + cacheBust).catch(function () { }))
       .then(() => appendScript('pesticide-lookup.js?v=' + cacheBust).catch(function () { }))
       .then(() => appendScript('maint-history.js?v=' + cacheBust).catch(function () { }))
       .then(() => fetch('cultivation_modal.html?v=' + cacheBust))

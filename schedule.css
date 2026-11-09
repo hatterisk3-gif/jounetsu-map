@@ -1216,6 +1216,17 @@ select.snr-input { appearance:auto; }
 }
 .schedule-side-fab-moisture-icon { font-size: 18px; line-height: 1; }
 .schedule-side-fab-moisture-label { font-size: 9.5px; font-weight: 800; letter-spacing: -0.02em; }
+.schedule-side-fab-fert {
+  width: 56px;
+  height: 56px;
+  flex-direction: column;
+  gap: 1px;
+  color: #33691e;
+  line-height: 1;
+  padding: 0;
+}
+.schedule-side-fab-fert-icon { font-size: 18px; line-height: 1; }
+.schedule-side-fab-fert-label { font-size: 10px; font-weight: 800; letter-spacing: 0.02em; }
 .schedule-side-fab-pest {
   width: 56px;
   height: 56px;
@@ -1551,6 +1562,225 @@ select.snr-input { appearance:auto; }
 @media (min-width: 760px) {
   .pest-lookup-modal { align-items: center; }
   .pest-lookup-sheet { border-radius: 16px; max-height: min(86vh, 860px); }
+}
+
+.fert-lookup-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10060;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.fert-lookup-sheet {
+  width: min(720px, 100%);
+  max-height: min(88vh, 860px);
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+.fert-lookup-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid #dcedc8;
+  background: #f1f8e9;
+}
+.fert-lookup-loading {
+  display: none;
+  padding: 8px 12px 10px;
+  background: #f1f8e9;
+  border-bottom: 1px solid #dcedc8;
+}
+.fert-lookup-loading.is-on { display: block; }
+.fert-lookup-loading-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: #33691e;
+  margin-bottom: 6px;
+}
+.fert-lookup-loading-track {
+  height: 8px;
+  background: #dcedc8;
+  border-radius: 99px;
+  overflow: hidden;
+}
+.fert-lookup-loading-fill {
+  height: 100%;
+  width: 38%;
+  border-radius: 99px;
+  background: #558b2f;
+  animation: pestLookupBar 1.05s ease-in-out infinite;
+}
+.fert-lookup-title { flex: 1; font-weight: 800; color: #2e7d32; font-size: 16px; min-width: 0; }
+.fert-lookup-back,
+.fert-lookup-close {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #aed581;
+  background: #fff;
+  color: #33691e;
+  font-size: 18px;
+  font-weight: 800;
+  padding: 0;
+  cursor: pointer;
+}
+.fert-lookup-body {
+  padding: 12px;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+.fert-lookup-hint { font-size: 12px; color: #555; line-height: 1.45; margin-bottom: 8px; }
+.fert-lookup-searchrow { display: flex; gap: 8px; margin-bottom: 10px; }
+.fert-lookup-input {
+  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #aed581;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 16px;
+  margin: 0 0 8px;
+}
+.fert-lookup-searchrow .fert-lookup-input { margin: 0; }
+.fert-lookup-go {
+  background: #33691e;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.fert-lookup-result { display: flex; flex-direction: column; gap: 8px; }
+.fert-lookup-hit {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 1px solid #dcedc8;
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.fert-lookup-hit:hover, .fert-lookup-hit:active {
+  background: #f9fbe7;
+  border-color: #aed581;
+}
+.fert-lookup-hit strong { display: block; color: #2e7d32; font-size: 15px; }
+.fert-lookup-hit span { display: block; margin-top: 3px; color: #666; font-size: 12px; font-weight: normal; }
+.fert-lookup-hit-row { display: flex; align-items: stretch; gap: 6px; }
+.fert-lookup-hit-row .fert-lookup-hit { flex: 1; min-width: 0; }
+.fert-lookup-head .pest-fav-star { width: 36px; min-height: 36px; height: 36px; font-size: 20px; border-radius: 8px; }
+.fert-lookup-favbtn {
+  background: #fff8e1;
+  color: #e65100;
+  border: 1px solid #f9a825;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.fert-lookup-empty { color: #888; font-size: 13px; line-height: 1.45; padding: 8px 2px; }
+
+/* 肥料固有: NPK チップ・詳細表示 */
+.fert-npk-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.fert-npk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 6px;
+  line-height: 1.3;
+}
+.fert-npk-badge.n { background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9; }
+.fert-npk-badge.p { background: #fff3e0; color: #e65100; border: 1px solid #ffcc80; }
+.fert-npk-badge.k { background: #f3e5f5; color: #6a1b9a; border: 1px solid #ce93d8; }
+.fert-tag-type { background: #f1f8e9; color: #33691e; border: 1px solid #c5e1a5; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; }
+.fert-tag-master { background: #e8f5e9; color: #1b5e20; border: 1px solid #81c784; font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 6px; }
+
+.fert-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 10px 0;
+}
+.fert-detail-box {
+  border-radius: 8px;
+  padding: 8px 6px;
+  text-align: center;
+}
+.fert-detail-box.n { background: #e3f2fd; border: 1px solid #90caf9; }
+.fert-detail-box.p { background: #fff3e0; border: 1px solid #ffcc80; }
+.fert-detail-box.k { background: #f3e5f5; border: 1px solid #ce93d8; }
+.fert-detail-box-label {
+  font-size: 11px;
+  font-weight: 800;
+  margin-bottom: 2px;
+}
+.fert-detail-box.n .fert-detail-box-label { color: #1565c0; }
+.fert-detail-box.p .fert-detail-box-label { color: #e65100; }
+.fert-detail-box.k .fert-detail-box-label { color: #6a1b9a; }
+.fert-detail-box-val {
+  font-size: 18px;
+  font-weight: 800;
+  color: #222;
+}
+.fert-detail-section {
+  background: #fff;
+  border: 1px solid #dcedc8;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+.fert-detail-sec-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: #33691e;
+  border-bottom: 1px dashed #dcedc8;
+  padding-bottom: 4px;
+  margin-bottom: 8px;
+}
+.fert-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  font-size: 13px;
+  line-height: 1.4;
+  margin-bottom: 6px;
+}
+.fert-detail-row:last-child { margin-bottom: 0; }
+.fert-detail-lbl {
+  color: #777;
+  font-size: 12px;
+  min-width: 80px;
+}
+.fert-detail-val {
+  color: #222;
+  font-weight: 700;
+  text-align: right;
+  word-break: break-all;
+}
+
+@media (min-width: 760px) {
+  .fert-lookup-modal { align-items: center; }
+  .fert-lookup-sheet { border-radius: 16px; max-height: min(86vh, 860px); }
 }
 
 /* ===== DUMP ツリー／ガント FAB（情熱MAP寄り） ===== */

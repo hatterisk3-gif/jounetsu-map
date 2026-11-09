@@ -74,7 +74,7 @@
           ×</button>
       </div>
       <div id="equipmentManageTabs"
-        style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:0; background:#fff; border-bottom:1px solid #e0e0e0; flex-shrink:0;">
+        style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; background:#fff; border-bottom:1px solid #e0e0e0; flex-shrink:0;">
         <button type="button" id="equipmentTab_machine" onclick="switchEquipmentManageTab('machine')"
           style="border:none; border-bottom:3px solid #43A047; background:#e8f5e9; color:#2e7d32; padding:12px 8px; font-weight:bold; font-size:14px; cursor:pointer;">🚜
           機械</button>
@@ -84,6 +84,9 @@
         <button type="button" id="equipmentTab_tool" onclick="switchEquipmentManageTab('tool')"
           style="border:none; border-bottom:3px solid transparent; background:#fff; color:#666; padding:12px 8px; font-weight:bold; font-size:14px; cursor:pointer;">🔧
           道具</button>
+        <button type="button" id="equipmentTab_inspection" onclick="switchEquipmentManageTab('inspection')"
+          style="border:none; border-bottom:3px solid transparent; background:#fff; color:#666; padding:12px 8px; font-weight:bold; font-size:14px; cursor:pointer;">📋
+          点検項目</button>
       </div>
       <div id="equipmentManageBody" style="flex:1; min-height:0; overflow:auto; padding:16px; box-sizing:border-box;">
       </div>
@@ -867,10 +870,10 @@
   <script src="api-client.js?v=1788600000116" defer></script>
   <script src="location-pin.js?v=1788600000301" defer></script>
   <script src="map-filter.js?v=1788600000330" defer></script>
-  <script src="admin.js?v=1788600000331" defer></script>
+  <script src="admin.js?v=1788600000332" defer></script>
   <script src="admin_cost.js?v=1785489000008" defer></script>
   <script src="admin_crop_work.js?v=1787570400000" defer></script>
-  <script src="release-notes.js?v=1788600000342" defer></script>
+  <script src="release-notes.js?v=1788600000343" defer></script>
   <script src="tracking.js?v=1788600000324" defer></script>
   <script src="cad.js?v=1788600000306" defer></script>
   <script type="importmap">

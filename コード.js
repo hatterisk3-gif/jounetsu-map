@@ -243,6 +243,8 @@ const API_ACTIONS = {
   "machine_saveMaintenance": function (p) { return machine_saveMaintenance(p); },
   "machine_saveMaintenanceSetting": function (p) { return machine_saveMaintenanceSetting(p); },
   "machine_saveFuel": function (p) { return machine_saveFuel(p); },
+  "machine_saveInspection": function (p) { return machine_saveInspection(p); },
+  "machine_loadInspectionRecords": function (p) { return machine_loadInspectionRecords(p); },
   "vehicle_loadAll": function (p) { return vehicle_loadAll(); },
   "vehicle_saveVehicle": function (p) { return vehicle_saveVehicle(p); },
   "vehicle_deleteVehicle": function (p) { return vehicle_deleteVehicle(p); },
@@ -1863,6 +1865,12 @@ function getInitData(opts) {
     pdl.cropCultSettings = [];
     pdl.pastReports = {};
     pdl.deliveryDestinations = [];
+    pdl.inspections = [];
+    try {
+      pdl.inspections = readInspectionMasterList_();
+    } catch (insErr) {
+      pdl.inspections = [];
+    }
   } else {
     try {
       pdl.pesticides = readPesticideMasterList_();
@@ -1903,6 +1911,11 @@ function getInitData(opts) {
       pdl.cropCultSettings = readCropCultSettingList_();
     } catch (ccsErr) {
       pdl.cropCultSettings = [];
+    }
+    try {
+      pdl.inspections = readInspectionMasterList_();
+    } catch (insErr) {
+      pdl.inspections = [];
     }
     let pastReports = {};
     const schedSheet = ss.getSheetByName('作業予定');
@@ -1961,6 +1974,9 @@ function getInitData(opts) {
     console.warn('圃場読込スキップ:', polyErr);
     polygons = [];
   }
+  try {
+    resolveNoukiMachinesHubLocation_(pdl.machines, polygons, pdl.locations);
+  } catch (locErr) { }
   let prodCategories = [];
   try {
     prodCategories = getProdMgmtCategories();
@@ -2550,6 +2566,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
   else if (masterType === 'fertilizer') sheetName = '肥料マスタ';
   else if (masterType === 'nurseryLocation') sheetName = '育苗場所マスタ';
   else if (masterType === 'cropCultSetting') sheetName = '作物栽培設定マスタ';
+  else if (masterType === 'inspection') sheetName = '点検マスタ';
 
   let sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
@@ -2580,6 +2597,8 @@ function manageMasterData(masterType, manageAction, value, userName) {
       sheet = ensureNurseryLocationSheet_();
     } else if (masterType === 'cropCultSetting') {
       sheet = ensureCropCultSettingSheet_();
+    } else if (masterType === 'inspection') {
+      sheet = ensureInspectionMasterSheet_();
     } else {
       throw new Error(`${sheetName}が見つかりません`);
     }
@@ -2617,6 +2636,9 @@ function manageMasterData(masterType, manageAction, value, userName) {
   }
   if (masterType === 'cropCultSetting') {
     sheet = ensureCropCultSettingSheet_();
+  }
+  if (masterType === 'inspection') {
+    sheet = ensureInspectionMasterSheet_();
   }
 
   // 作業マスタの追加/編集/統合/削除/存在確認は専用高速パス（全件返却・flush・重複読込を避ける）
@@ -2768,10 +2790,26 @@ function manageMasterData(masterType, manageAction, value, userName) {
       if (existing.some(x => x.cropName === cropName)) throw new Error('作物「' + cropName + '」の栽培設定は既にあります');
       sheet.appendRow([cropName, (row.sowingHoles === '' || row.sowingHoles == null) ? '' : row.sowingHoles, String(row.note || '').trim()]);
       writeLog(userName, "マスタ追加", cropName, `対象: ${sheetName}`);
+    } else if (masterType === 'inspection') {
+      const itemData = value || {};
+      const macType = String(itemData.machineType || '').trim();
+      const inspCat = String(itemData.inspectionCategory || itemData.category || '一般').trim();
+      const itemName = String(itemData.item || itemData.name || '').trim();
+      if (!macType) throw new Error('機械カテゴリを選択してください');
+      if (!itemName) throw new Error('点検項目名を入力してください');
+      const id = String(itemData.id || ('insp_' + Date.now() + '_' + Math.floor(Math.random() * 1000)));
+      const sortOrder = (itemData.sortOrder !== '' && itemData.sortOrder != null) ? Number(itemData.sortOrder) || 0 : 0;
+      const note = String(itemData.note || '').trim();
+      const existing = readInspectionMasterList_();
+      if (existing.some(x => x.machineType === macType && x.inspectionCategory === inspCat && x.item === itemName)) {
+        throw new Error(`機械「${macType}」の点検項目「${itemName}」は既に登録されています`);
+      }
+      sheet.appendRow([id, macType, inspCat, itemName, sortOrder, note]);
+      writeLog(userName, "マスタ追加", `${macType} - ${itemName}`, `対象: ${sheetName}`);
     } else {
       sheet.appendRow([value]);
     }
-    if (masterType !== 'location' && masterType !== 'container' && masterType !== 'pesticide' && masterType !== 'fertilizer' && masterType !== 'nurseryLocation' && masterType !== 'cropCultSetting') {
+    if (masterType !== 'location' && masterType !== 'container' && masterType !== 'pesticide' && masterType !== 'fertilizer' && masterType !== 'nurseryLocation' && masterType !== 'cropCultSetting' && masterType !== 'inspection') {
       writeLog(userName, "マスタ追加", (value && value.name) || value, `対象: ${sheetName}`);
     }
   }
@@ -3169,6 +3207,28 @@ function manageMasterData(masterType, manageAction, value, userName) {
         break;
       }
       if (!found) throw new Error('対象の道具が見つかりません');
+    } else if (masterType === 'inspection') {
+      const id = String((value && (value.id || value.originalId)) || '').trim();
+      const nd = (value && value.newData) || value || {};
+      const macType = String(nd.machineType || '').trim();
+      const inspCat = String(nd.inspectionCategory || nd.category || '一般').trim();
+      const itemName = String(nd.item || nd.name || '').trim();
+      if (!macType) throw new Error('機械カテゴリを選択してください');
+      if (!itemName) throw new Error('点検項目名を入力してください');
+      const sortOrder = (nd.sortOrder !== '' && nd.sortOrder != null) ? Number(nd.sortOrder) || 0 : 0;
+      const note = String(nd.note || '').trim();
+      const latest = sheet.getDataRange().getValues();
+      let found = false;
+      for (let i = 1; i < latest.length; i++) {
+        const rowId = String(latest[i][0] || '').trim();
+        if (id && rowId === id) {
+          sheet.getRange(i + 1, 1, 1, 6).setValues([[id, macType, inspCat, itemName, sortOrder, note]]);
+          found = true;
+          break;
+        }
+      }
+      if (!found) throw new Error('対象の点検項目が見つかりません');
+      writeLog(userName, "マスタ編集", `${macType} - ${itemName}`, `対象: ${sheetName}`);
     }
   }
   else if (manageAction === 'delete') {
@@ -3260,6 +3320,8 @@ function manageMasterData(masterType, manageAction, value, userName) {
         if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'fertilizer') {
         if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
+      } else if (masterType === 'inspection') {
+        if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'cropCultSetting') {
         if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'location' || masterType === 'workCategory' || masterType === 'contentUnit' || masterType === 'machineType' || masterType === 'machineGroup' || masterType === 'hitchType') {
@@ -3316,6 +3378,9 @@ function manageMasterData(masterType, manageAction, value, userName) {
   }
   if (masterType === 'cropCultSetting') {
     return readCropCultSettingList_();
+  }
+  if (masterType === 'inspection') {
+    return readInspectionMasterList_();
   }
   if (masterType === 'work') {
     // list/get など参照のみ
@@ -7674,7 +7739,63 @@ function getSavedPolygons(options) {
     }
   }
 
+  // 看板に拠点が未設定の場合は、拠点ピン・親看板・最寄りの拠点ピン／圃場から拠点名を補完する
+  try {
+    fillMissingSignLocationsFromPolygons_(result);
+  } catch (fillErr) { }
+
   return result;
+}
+
+function fillMissingSignLocationsFromPolygons_(polygons) {
+  if (!Array.isArray(polygons) || !polygons.length) return;
+  const byId = {};
+  const hubRefs = [];
+  const fieldRefs = [];
+
+  polygons.forEach(function (p) {
+    if (!p || !p.id) return;
+    byId[String(p.id)] = p;
+    const isHubPin = String(p.signFunction || '').trim() === '拠点';
+    if (isHubPin && !String(p.location || '').trim() && p.name) {
+      p.location = String(p.name).trim();
+    }
+    const loc = String(p.location || '').trim();
+    const c0 = Array.isArray(p.coords) && p.coords[0];
+    if (loc && c0 && isFinite(Number(c0.lat)) && isFinite(Number(c0.lng))) {
+      const pt = { hub: loc, lat: Number(c0.lat), lng: Number(c0.lng) };
+      if (isHubPin) hubRefs.push(pt);
+      else fieldRefs.push(pt);
+    }
+  });
+
+  polygons.forEach(function (p) {
+    if (!p || String(p.location || '').trim()) return;
+    if (p.parentSignId && byId[String(p.parentSignId)]) {
+      const parentLoc = String(byId[String(p.parentSignId)].location || '').trim();
+      if (parentLoc) {
+        p.location = parentLoc;
+        return;
+      }
+    }
+    const c0 = Array.isArray(p.coords) && p.coords[0];
+    if (!c0 || !isFinite(Number(c0.lat)) || !isFinite(Number(c0.lng))) return;
+    const lat = Number(c0.lat);
+    const lng = Number(c0.lng);
+    const refs = hubRefs.length ? hubRefs : fieldRefs;
+    let bestHub = '';
+    let bestDist = Infinity;
+    for (let i = 0; i < refs.length; i++) {
+      const dLat = lat - refs[i].lat;
+      const dLng = lng - refs[i].lng;
+      const d2 = dLat * dLat + dLng * dLng;
+      if (d2 < bestDist) {
+        bestDist = d2;
+        bestHub = refs[i].hub;
+      }
+    }
+    if (bestHub) p.location = bestHub;
+  });
 }
 // ==========================================
 // 圃場・看板の新規保存
@@ -12213,6 +12334,8 @@ function editMachineInMaster(params) {
     status: params.status != null ? params.status : existing.status,
     signId: params.signId != null ? params.signId : existing.signId,
     signName: params.signName != null ? params.signName : existing.signName,
+    currentLocId: params.currentLocId != null ? params.currentLocId : existing.currentLocId,
+    currentLocName: params.currentLocName != null ? params.currentLocName : existing.currentLocName,
     hitch: params.hitch != null ? params.hitch : existing.hitch,
     parts: params.parts != null ? params.parts : existing.parts,
     symptoms: params.symptoms != null ? params.symptoms : existing.symptoms,
@@ -17321,6 +17444,129 @@ function appendSowingRecordFromWork_(recordData, author, recordId) {
   ]);
 }
 
+// ===== 点検マスタ / 点検記録 =====
+const INSPECTION_MASTER_HEADERS_ = ['id', 'machineType', 'inspectionCategory', 'item', 'sortOrder', 'note'];
+const INSPECTION_RECORD_HEADERS_ = ['id', 'date', 'inspector', 'machineId', 'machineName', 'machineType', 'hourMeter', 'summary', 'abnormalCount', 'maintCount', 'detailsJson', 'comment', 'createdAt'];
+
+function ensureInspectionMasterSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('点検マスタ');
+  if (!sheet) {
+    sheet = ss.insertSheet('点検マスタ');
+    sheet.appendRow(INSPECTION_MASTER_HEADERS_.slice());
+    sheet.getRange(1, 1, 1, INSPECTION_MASTER_HEADERS_.length).setFontWeight('bold');
+  } else {
+    const needCols = Math.max(sheet.getLastColumn(), INSPECTION_MASTER_HEADERS_.length);
+    const headers = sheet.getRange(1, 1, 1, needCols).getValues()[0].map(h => String(h || '').trim());
+    INSPECTION_MASTER_HEADERS_.forEach((h, idx) => {
+      if (!headers[idx]) sheet.getRange(1, idx + 1).setValue(h);
+    });
+  }
+  return sheet;
+}
+
+function readInspectionMasterList_() {
+  const sheet = ensureInspectionMasterSheet_();
+  const last = sheet.getLastRow();
+  if (last < 2) return [];
+  const values = sheet.getRange(2, 1, last - 1, INSPECTION_MASTER_HEADERS_.length).getValues();
+  return values.map(r => ({
+    id: String(r[0] || '').trim(),
+    machineType: String(r[1] || '').trim(),
+    inspectionCategory: String(r[2] || '').trim(),
+    item: String(r[3] || '').trim(),
+    sortOrder: (r[4] === '' || r[4] == null) ? 0 : (Number(r[4]) || 0),
+    note: String(r[5] || '').trim()
+  })).filter(x => x.machineType && x.item);
+}
+
+function ensureInspectionRecordSheet_() {
+  const ss = TENANT_SS;
+  let sheet = ss.getSheetByName('MachineInspection') || ss.getSheetByName('点検記録');
+  if (!sheet) {
+    sheet = ss.insertSheet('MachineInspection');
+    sheet.appendRow(INSPECTION_RECORD_HEADERS_.slice());
+    sheet.getRange(1, 1, 1, INSPECTION_RECORD_HEADERS_.length).setFontWeight('bold');
+  } else {
+    const needCols = Math.max(sheet.getLastColumn(), INSPECTION_RECORD_HEADERS_.length);
+    const headers = sheet.getRange(1, 1, 1, needCols).getValues()[0].map(h => String(h || '').trim());
+    INSPECTION_RECORD_HEADERS_.forEach((h, idx) => {
+      if (!headers[idx]) sheet.getRange(1, idx + 1).setValue(h);
+    });
+  }
+  return sheet;
+}
+
+function machine_saveInspection(p) {
+  p = p || {};
+  const sheet = ensureInspectionRecordSheet_();
+  const id = String(p.id || ('insprec_' + Date.now() + '_' + Math.floor(Math.random() * 1000)));
+  const tz = Session.getScriptTimeZone() || 'Asia/Tokyo';
+  const nowStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss');
+  const dateStr = String(p.date || Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd')).slice(0, 10);
+  const inspector = String(p.inspector || '').trim();
+  const machineId = String(p.machineId || '').trim();
+  const machineName = String(p.machineName || '').trim();
+  const machineType = String(p.machineType || '').trim();
+  const hourMeter = (p.hourMeter !== '' && p.hourMeter != null) ? p.hourMeter : '';
+  const summary = String(p.summary || '').trim();
+  const abnormalCount = Number(p.abnormalCount) || 0;
+  const maintCount = Number(p.maintCount) || 0;
+  let detailsJson = '';
+  if (typeof p.details === 'string') {
+    detailsJson = p.details;
+  } else if (p.details && typeof p.details === 'object') {
+    detailsJson = JSON.stringify(p.details);
+  }
+  const comment = String(p.comment || '').trim();
+
+  sheet.appendRow([
+    id, dateStr, inspector, machineId, machineName, machineType,
+    hourMeter, summary, abnormalCount, maintCount, detailsJson, comment, nowStr
+  ]);
+
+  return { success: true, id: id };
+}
+
+function machine_loadInspectionRecords(p) {
+  p = p || {};
+  const sheet = ensureInspectionRecordSheet_();
+  const last = sheet.getLastRow();
+  if (last < 2) return { success: true, records: [] };
+  const count = Math.min(Number(p.limit) || 100, last - 1);
+  const startRow = Math.max(2, last - count + 1);
+  const numRows = last - startRow + 1;
+  const values = sheet.getRange(startRow, 1, numRows, INSPECTION_RECORD_HEADERS_.length).getValues();
+  const records = [];
+  const tz = Session.getScriptTimeZone() || 'Asia/Tokyo';
+  for (let i = values.length - 1; i >= 0; i--) {
+    const r = values[i];
+    if (!r[0]) continue;
+    let dVal = r[1];
+    if (dVal instanceof Date) dVal = Utilities.formatDate(dVal, tz, 'yyyy-MM-dd');
+    let details = [];
+    try {
+      if (r[10]) details = JSON.parse(r[10]);
+    } catch (e) { }
+    records.push({
+      id: String(r[0] || '').trim(),
+      date: String(dVal || '').slice(0, 10),
+      inspector: String(r[2] || '').trim(),
+      machineId: String(r[3] || '').trim(),
+      machineName: String(r[4] || '').trim(),
+      machineType: String(r[5] || '').trim(),
+      hourMeter: r[6],
+      summary: String(r[7] || '').trim(),
+      abnormalCount: Number(r[8]) || 0,
+      maintCount: Number(r[9]) || 0,
+      details: details,
+      comment: String(r[11] || '').trim(),
+      createdAt: String(r[12] || '').trim()
+    });
+  }
+  return { success: true, records: records };
+}
+
 /** 作業予定の「枚数・時間」または計画から播種枚数（粒）を取る */
 function parseScheduleSowingTrays_(hoursCell, plan) {
   const qty = farmBoardParseQty_(hoursCell);
@@ -20663,7 +20909,7 @@ function getOrCreateSheet(sheetName, headers) {
 const NOUKI_EXT_HEADERS = [
   'ID', '機種', '型式', '機械番号', '機械グループ', '作業分類', '燃料', 'ヒッチ規格',
   '写真', '写真2', '場所看板名', '場所看板id', '現在地', '現在地ID',
-  '症状名', '部品名', '整備内容候補', '稼働状況', '登録者', '購入年月日', '対応農機ID', '型式2'
+  '症状名', '部品名', '整備内容候補', '稼働状況', '登録者', '購入年月日', '対応農機ID', '型式2', '拠点'
 ];
 
 /** 1-based 列番号（新レイアウト） */
@@ -20689,7 +20935,8 @@ const NOUKI_COL = {
   userName: 19,
   purchaseDate: 20,
   targetMachineIds: 21,
-  model2: 22
+  model2: 22,
+  location: 23
 };
 
 function joinNoukiModels_(model, model2) {
@@ -20850,6 +21097,7 @@ function parseNoukiMachineRow(row) {
   const purchaseDate = String(row[19] || '').trim();
   const targetMachineIds = String(row[20] || '').trim();
   const model2 = String(row[21] || '').trim();
+  const hubLocation = String(row[22] || '').trim();
   const displayName = buildNoukiDisplayName_(type, model, machineNumber, null, model2);
   return {
     id: String(row[0] || '').trim(),
@@ -20877,7 +21125,7 @@ function parseNoukiMachineRow(row) {
     purchaseDate: purchaseDate,
     targetMachineIds: targetMachineIds,
     category: group || workCategory,
-    location: signName,
+    location: hubLocation,
     lat: null,
     lng: null,
     maintenanceSettings: [],
@@ -20894,8 +21142,10 @@ function buildNoukiMachineRow(m) {
   const model2 = m.model2 != null ? String(m.model2) : '';
   const machineNumber = m.machineNumber != null ? String(m.machineNumber) : String(m.serialNo || '');
   const group = String(m.group || m.mainCategory || '').trim();
-  const signName = String(m.signName || m.location || '').trim();
+  const signName = String(m.signName || '').trim();
   const signId = String(m.signId || '').trim();
+  const rawLoc = String(m.location || '').trim();
+  const hubLocation = (rawLoc && rawLoc === signName && signId) ? '' : rawLoc;
   const currentLocName = m.currentLocName != null && String(m.currentLocName).trim()
     ? String(m.currentLocName).trim()
     : signName;
@@ -20924,8 +21174,53 @@ function buildNoukiMachineRow(m) {
     m.userName || '',
     m.purchaseDate || '',
     m.targetMachineIds || '',
-    model2
+    model2,
+    hubLocation
   ];
+}
+
+/** 農機の拠点(location)が未設定または看板名になっている場合に、看板・拠点ピンから本来の拠点名を補完する */
+function resolveNoukiMachinesHubLocation_(machinesList, optPolygons, optLocations) {
+  const list = Array.isArray(machinesList)
+    ? machinesList
+    : (machinesList && typeof machinesList === 'object' ? Object.keys(machinesList).map(function (k) { return machinesList[k]; }) : []);
+  if (!list.length) return;
+  let polygons = Array.isArray(optPolygons) ? optPolygons : null;
+  if (!polygons) {
+    try { polygons = getSavedPolygons({ slimForInit: true, photoLimit: 0 }); } catch (e) { polygons = []; }
+  }
+  const knownHubs = {};
+  (Array.isArray(optLocations) ? optLocations : []).forEach(function (n) {
+    const s = String(n || '').trim();
+    if (s) knownHubs[s] = true;
+  });
+  const byId = {};
+  const byName = {};
+  (polygons || []).forEach(function (p) {
+    if (!p) return;
+    if (p.id) byId[String(p.id)] = p;
+    if (p.name && !byName[String(p.name).trim()]) byName[String(p.name).trim()] = p;
+    if (String(p.signFunction || '').trim() === '拠点' && p.name) {
+      knownHubs[String(p.name).trim()] = true;
+    }
+    if (p.location && String(p.location).trim()) {
+      knownHubs[String(p.location).trim()] = true;
+    }
+  });
+
+  list.forEach(function (m) {
+    if (!m) return;
+    const rawLoc = String(m.location || '').trim();
+    if (rawLoc && knownHubs[rawLoc]) return;
+    const basePoly = (m.signId && byId[String(m.signId)]) || (m.signName && byName[String(m.signName).trim()]) || null;
+    const curPoly = (m.currentLocId && byId[String(m.currentLocId)]) || (m.currentLocName && byName[String(m.currentLocName).trim()]) || null;
+    let hub = '';
+    if (basePoly && String(basePoly.location || '').trim()) hub = String(basePoly.location).trim();
+    else if (curPoly && String(curPoly.location || '').trim()) hub = String(curPoly.location).trim();
+    else if (m.signName && knownHubs[String(m.signName).trim()]) hub = String(m.signName).trim();
+    else if (m.currentLocName && knownHubs[String(m.currentLocName).trim()]) hub = String(m.currentLocName).trim();
+    if (hub) m.location = hub;
+  });
 }
 
 function findNoukiMachineRowIndex(sheet, machineId) {
@@ -21071,6 +21366,9 @@ function machine_loadAll() {
     if (m.id) machines[m.id] = m;
   }
   applyNoukiDisplayNamesByModelCount_(Object.keys(machines).map(function (id) { return machines[id]; }));
+  try {
+    resolveNoukiMachinesHubLocation_(machines);
+  } catch (locErr) { }
 
   const maintRes = machine_loadMaintenanceRecords_();
   const maintenanceRecords = (maintRes && maintRes.maintenanceRecords) ? maintRes.maintenanceRecords : [];

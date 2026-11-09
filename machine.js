@@ -272,7 +272,28 @@ async function loadAllData() {
 
 function openRegistrationFromQuery_() {
     if (window._machineRegistrationQueryHandled) return;
-    const registerType = new URLSearchParams(window.location.search).get('register');
+    const params = new URLSearchParams(window.location.search);
+    const targetId = String(params.get('id') || params.get('editMachine') || '').trim();
+    if (targetId) {
+        const rawVehId = targetId.replace(/^veh:/, '');
+        if ((targetId.indexOf('veh:') === 0 || (vehicles && vehicles[rawVehId])) && vehicles && vehicles[rawVehId]) {
+            window._machineRegistrationQueryHandled = true;
+            setTimeout(() => {
+                currentVehicleId = rawVehId;
+                openVehicleRegisterModal(rawVehId);
+            }, 100);
+            return;
+        }
+        if (machines && machines[targetId]) {
+            window._machineRegistrationQueryHandled = true;
+            setTimeout(() => {
+                currentMachineId = targetId;
+                openMachineRegisterModal(targetId);
+            }, 100);
+            return;
+        }
+    }
+    const registerType = params.get('register');
     if (registerType !== 'machine' && registerType !== 'vehicle') return;
     window._machineRegistrationQueryHandled = true;
     setTimeout(() => {
