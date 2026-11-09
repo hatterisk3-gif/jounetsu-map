@@ -1,12 +1,15 @@
 /**
  * 予定画面右下の肥料ボタン。
  * カタログおよび自社マスタを検索し、肥料名を押すと成分・詳細を表示する。
+ * （高速インデックス検索・並行読み込み・ブラウザキャッシュ対応）
  */
 (function () {
   var hits = [];
   var currentFertilizer = null;
   var showingFavList = false;
   var masterFertilizers_ = null;
+  var masterLoadingPromise_ = null;
+  var queryCache_ = {}; // ブラウザ内検索結果キャッシュ
   var FAV_KEY = 'fertilizer_lookup_favorites_v1';
 
   function esc(s) {
@@ -129,23 +132,29 @@
     });
   }
 
-  async function loadMasterFertilizers_() {
-    if (masterFertilizers_ !== null) return masterFertilizers_;
+  // 自社マスタ読み込み（先行並行ロード＆インメモリ保持）
+  function loadMasterFertilizers_() {
+    if (masterFertilizers_ !== null) return Promise.resolve(masterFertilizers_);
     if (window.pdlFertilizers && Array.isArray(window.pdlFertilizers) && window.pdlFertilizers.length) {
       masterFertilizers_ = window.pdlFertilizers;
-      return masterFertilizers_;
+      return Promise.resolve(masterFertilizers_);
     }
+    if (masterLoadingPromise_) return masterLoadingPromise_;
     if (typeof callGAS === 'function') {
-      try {
-        var res = await callGAS('loadMaster', { masterType: 'fertilizer' });
-        if (Array.isArray(res)) {
-          masterFertilizers_ = res;
-          return masterFertilizers_;
-        }
-      } catch (e) {}
+      masterLoadingPromise_ = callGAS('loadMaster', { masterType: 'fertilizer' }).then(function (res) {
+        if (Array.isArray(res)) masterFertilizers_ = res;
+        else masterFertilizers_ = [];
+        masterLoadingPromise_ = null;
+        return masterFertilizers_;
+      }).catch(function () {
+        masterFertilizers_ = [];
+        masterLoadingPromise_ = null;
+        return masterFertilizers_;
+      });
+      return masterLoadingPromise_;
     }
     masterFertilizers_ = [];
-    return masterFertilizers_;
+    return Promise.resolve(masterFertilizers_);
   }
 
   function npkBadgesHtml_(item) {
@@ -205,6 +214,8 @@
     if (!modal) return;
     modal.style.display = 'flex';
     window.showFertilizerLookupSearch_();
+    // モーダルを開いた瞬間にマスタを事前取得
+    setTimeout(loadMasterFertilizers_, 10);
     var input = document.getElementById('fertLookupQ');
     if (input) setTimeout(function () { input.focus(); }, 40);
   };
@@ -254,16 +265,37 @@
       showFertilizerFavorites_();
       return;
     }
+
+    var qLower = q.toLowerCase();
+
+    // 1. メモリキャッシュにあれば即座（0ms）に描画
+    if (queryCache_[qLower]) {
+      var cachedEntry = queryCache_[qLower];
+      renderHitsList_(cachedEntry.hits, false, cachedEntry.note);
+      return;
+    }
+
     if (typeof callGAS !== 'function') {
       area.innerHTML = '<div class="fert-lookup-empty">通信の準備ができていません。少し待ってから再度検索してください。</div>';
       return;
     }
+
     area.innerHTML = '<div class="fert-lookup-empty">検索中...</div>';
     setFertLookupLoading_(true, '肥料を検索中...');
+
     try {
-      // 1. 自社マスタ検索
-      var masters = await loadMasterFertilizers_();
-      var qLower = q.toLowerCase();
+      // 2. 自社マスタとカタログ検索を並行（Promise.all）で実行！
+      var masterPromise = loadMasterFertilizers_();
+      var catPromise = callGAS('searchFertilizerCatalog', { q: q, limit: 50 }).catch(function (catErr) {
+        console.warn('肥料カタログ検索エラー:', catErr);
+        return null;
+      });
+
+      var results = await Promise.all([masterPromise, catPromise]);
+      var masters = results[0] || [];
+      var res = results[1];
+
+      // 自社マスタからフィルタ
       var masterHits = (masters || []).filter(function (m) {
         if (!m || !m.name) return false;
         return String(m.name).toLowerCase().indexOf(qLower) >= 0 ||
@@ -275,16 +307,8 @@
         return Object.assign({}, m, { isMaster: true });
       });
 
-      // 2. カタログ検索
-      var catHits = [];
-      var totalCatalog = 0;
-      try {
-        var res = await callGAS('searchFertilizerCatalog', { q: q, limit: 50 });
-        catHits = (res && res.items) || [];
-        totalCatalog = Number(res && res.totalCatalog || 0);
-      } catch (catErr) {
-        console.warn('肥料カタログ検索エラー:', catErr);
-      }
+      var catHits = (res && res.items) || [];
+      var totalCatalog = Number(res && res.totalCatalog || 0);
 
       // 3. マージ & 重複排除
       var seen = {};
@@ -318,6 +342,9 @@
       }
 
       var note = 'ヒット: ' + merged.length + ' 件' + (totalCatalog > 0 ? ' ／ カタログ ' + totalCatalog.toLocaleString() + ' 件' : '');
+      // クエリキャッシュに保存
+      queryCache_[qLower] = { hits: merged, note: note };
+
       renderHitsList_(merged, false, note);
     } catch (e) {
       area.innerHTML = '<div class="fert-lookup-empty">' + esc(e && e.message ? e.message : e) + '</div>';
@@ -421,4 +448,9 @@
     updateDetailFavBtn_();
     updateFavListBtnCount_();
   };
+
+  // アイドル時に裏で自社マスタを先読み
+  setTimeout(function () {
+    try { loadMasterFertilizers_(); } catch (e) {}
+  }, 1200);
 })();

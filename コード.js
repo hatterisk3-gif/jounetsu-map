@@ -5126,37 +5126,119 @@ function getFertilizerCatalogStats(params) {
   return { success: true, count: count };
 }
 
+function fertilizerCatalogStamp_(sheet) {
+  const catalogLast = sheet.getLastRow();
+  const probe = catalogLast >= 2 ? String(sheet.getRange(2, 1).getValue() || '') : '';
+  return catalogLast + '|' + probe;
+}
+
 function searchFertilizerCatalog(params) {
-  const q = String((params && params.q) || '').trim().toLowerCase();
-  const maker = String((params && params.maker) || '').trim().toLowerCase();
+  const qRaw = String((params && params.q) || '').trim();
+  const q = qRaw.toLowerCase();
+  const makerRaw = String((params && params.maker) || '').trim();
+  const maker = makerRaw.toLowerCase();
   const limit = Math.min(100, Math.max(1, parseInt((params && params.limit) || 50, 10) || 50));
   if (!q && !maker) {
     throw new Error('肥料名またはメーカーのキーワードを入力してください');
   }
+
   const sheet = ensureFertilizerCatalogSheet_();
   const last = sheet.getLastRow();
+  const totalCatalog = Math.max(0, last - 1);
   if (last <= 1) {
     return { success: true, count: 0, totalCatalog: 0, items: [] };
   }
-  const data = sheet.getRange(2, 1, last - 1, FERTILIZER_CATALOG_HEADERS_.length).getValues();
-  const items = [];
-  for (let i = 0; i < data.length; i++) {
-    const item = readFertilizerCatalogRow_(data[i]);
-    if (!item.name) continue;
-    if (q && String(item.name).toLowerCase().indexOf(q) < 0
-      && String(item.fertilizerType).toLowerCase().indexOf(q) < 0
-      && String(item.regNumber).toLowerCase().indexOf(q) < 0) continue;
-    if (maker && String(item.manufacturer).toLowerCase().indexOf(maker) < 0) continue;
-    items.push(item);
-    if (items.length >= limit) break;
+
+  // CacheService による検索結果の高速キャッシュ
+  const cache = pesticideCatalogCache_();
+  const stamp = fertilizerCatalogStamp_(sheet);
+  const cacheKey = 'fertCatSearch_' + shortCacheKey_(q + '\t' + maker + '\t' + limit);
+  if (cache) {
+    try {
+      const cached = cacheGetChunked_(cache, cacheKey, stamp);
+      if (cached && Array.isArray(cached.items)) {
+        return cached;
+      }
+    } catch (ce) {}
   }
-  return {
+
+  const items = [];
+  let truncated = false;
+
+  // 200行以下の小型カタログは一括getValues()
+  if (totalCatalog <= 200) {
+    const data = sheet.getRange(2, 1, totalCatalog, FERTILIZER_CATALOG_HEADERS_.length).getValues();
+    for (let i = 0; i < data.length; i++) {
+      const item = readFertilizerCatalogRow_(data[i]);
+      if (!item.name) continue;
+      if (q && String(item.name).toLowerCase().indexOf(q) < 0
+        && String(item.fertilizerType).toLowerCase().indexOf(q) < 0
+        && String(item.regNumber).toLowerCase().indexOf(q) < 0
+        && String(item.components).toLowerCase().indexOf(q) < 0) continue;
+      if (maker && String(item.manufacturer).toLowerCase().indexOf(maker) < 0) continue;
+      items.push(item);
+      if (items.length >= limit) {
+        truncated = true;
+        break;
+      }
+    }
+  } else {
+    // 200行超の大規模カタログは TextFinder で高速インデックス検索
+    const searchTarget = qRaw || makerRaw;
+    const searchRange = sheet.getRange(2, 1, totalCatalog, FERTILIZER_CATALOG_HEADERS_.length);
+    const finder = searchRange.createTextFinder(searchTarget).matchCase(false);
+    const rowNums = [];
+    const seenRows = {};
+    let cell = finder.findNext();
+    let guard = 0;
+    const fetchCap = Math.max(limit * 2, 60);
+
+    while (cell && rowNums.length < fetchCap && guard < 3000) {
+      guard++;
+      const r = cell.getRow();
+      if (!seenRows[r]) {
+        seenRows[r] = true;
+        rowNums.push(r);
+      }
+      cell = finder.findNext();
+    }
+
+    if (rowNums.length) {
+      const byRow = readSheetRowsByNumber_(sheet, rowNums, FERTILIZER_CATALOG_HEADERS_.length);
+      for (let i = 0; i < rowNums.length; i++) {
+        const rowData = byRow[rowNums[i]];
+        if (!rowData) continue;
+        const item = readFertilizerCatalogRow_(rowData);
+        if (!item.name) continue;
+        if (q && String(item.name).toLowerCase().indexOf(q) < 0
+          && String(item.fertilizerType).toLowerCase().indexOf(q) < 0
+          && String(item.regNumber).toLowerCase().indexOf(q) < 0
+          && String(item.components).toLowerCase().indexOf(q) < 0) continue;
+        if (maker && String(item.manufacturer).toLowerCase().indexOf(maker) < 0) continue;
+        items.push(item);
+        if (items.length >= limit) {
+          truncated = true;
+          break;
+        }
+      }
+    }
+  }
+
+  const result = {
     success: true,
     count: items.length,
-    totalCatalog: Math.max(0, last - 1),
+    totalCatalog: totalCatalog,
     items: items,
-    truncated: items.length >= limit
+    truncated: truncated || items.length >= limit
   };
+
+  if (cache) {
+    try {
+      cachePutChunked_(cache, cacheKey, stamp, result);
+    } catch (pe) {}
+  }
+
+  return result;
 }
 
 // ========== 農薬カタログ ==========
