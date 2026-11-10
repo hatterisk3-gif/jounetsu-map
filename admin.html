@@ -224,20 +224,18 @@
           </summary>
           <div style="padding:0 8px 8px;">
             <div style="font-size:10px; color:#888; margin-bottom:6px; line-height:1.35;">タップ／GPSで配置。移動・変形できます。</div>
-            <div style="border:1px solid #444; border-radius:6px; padding:7px; margin-bottom:6px; background:#242424;">
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+            <!-- 📐 グリッド設定枠 -->
+            <div style="border:1px solid #444; border-radius:6px; padding:7px; margin-bottom:8px; background:#242424;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                 <span style="font-size:11px; color:#AED581; font-weight:bold;">📐 グリッド設定</span>
                 <span id="cadGridSizeInfo" style="font-size:10px; color:#81D4FA; font-weight:bold;"></span>
               </div>
-              <div style="display:flex; gap:5px; align-items:center; margin-bottom:5px;">
-                <button type="button" id="cadSnapGridToggleBtn" onclick="cadToggleSnapGrid()"
-                  style="flex:1.1; background:#333; color:#ccc; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">グリッド
-                  OFF</button>
+              <div style="display:flex; gap:6px; align-items:center;">
                 <div style="display:flex; align-items:center; gap:2px;">
                   <span style="font-size:10px; color:#aaa;">縦</span>
                   <input type="number" id="cadSnapGridRows" value="10" min="1" max="100" step="1"
                     onchange="cadOnSnapGridSizeChange()" oninput="cadOnSnapGridSizeChange()"
-                    style="width:40px; padding:6px 2px; border-radius:4px; border:none; box-sizing:border-box; font-size:12px; font-weight:bold; text-align:center;"
+                    style="width:38px; padding:6px 2px; border-radius:4px; border:none; box-sizing:border-box; font-size:12px; font-weight:bold; text-align:center;"
                     title="縦のマス数">
                   <span style="font-size:10px; color:#aaa;">マス</span>
                 </div>
@@ -246,23 +244,16 @@
                   <span style="font-size:10px; color:#aaa;">横</span>
                   <input type="number" id="cadSnapGridCols" value="10" min="1" max="100" step="1"
                     onchange="cadOnSnapGridSizeChange()" oninput="cadOnSnapGridSizeChange()"
-                    style="width:40px; padding:6px 2px; border-radius:4px; border:none; box-sizing:border-box; font-size:12px; font-weight:bold; text-align:center;"
+                    style="width:38px; padding:6px 2px; border-radius:4px; border:none; box-sizing:border-box; font-size:12px; font-weight:bold; text-align:center;"
                     title="横のマス数">
                   <span style="font-size:10px; color:#aaa;">マス</span>
                 </div>
+                <button type="button" id="cadSnapGridToggleBtn" onclick="cadToggleSnapGrid()"
+                  style="flex:1; background:#333; color:#ccc; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">
+                  グリッド OFF
+                </button>
               </div>
-              <div style="display:flex; gap:4px; margin-bottom:4px; align-items:center;">
-                <span style="font-size:10px; color:#81D4FA;">目安:</span>
-                <button type="button" onclick="cadSetSnapGridPreset(5, 5)"
-                  style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">5×5</button>
-                <button type="button" onclick="cadSetSnapGridPreset(10, 10)"
-                  style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">10×10</button>
-                <button type="button" onclick="cadSetSnapGridPreset(15, 15)"
-                  style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">15×15</button>
-                <button type="button" onclick="cadSetSnapGridPreset(20, 20)"
-                  style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">20×20</button>
-              </div>
-              <div id="cadCellPaintBar" style="display:none; gap:5px; margin-bottom:4px;">
+              <div id="cadCellPaintBar" style="display:none; gap:5px; margin-top:6px; margin-bottom:4px;">
                 <button type="button" id="cadCellPaintBtn"
                   onclick="cadSetCellEraseMode(false); cadAddCustomShape('rect');"
                   style="flex:1; background:#558B2F; color:#fff; border:none; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">🖌
@@ -272,40 +263,52 @@
                   style="flex:1; background:#333; color:#ccc; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">🧹
                   消しゴム</button>
               </div>
-              <div id="cadSnapGridHint" style="font-size:10px; color:#81D4FA; line-height:1.35;">
-                OFF時は自由配置。ONにするとセルを塗るように畝を置けます</div>
+              <div id="cadSnapGridHint" style="font-size:10px; color:#81D4FA; line-height:1.35; margin-top:4px;">
+                OFF時は自由配置。ONで圃場を縦〇マス×横〇マスに等分割</div>
             </div>
-            <div style="display:flex; gap:5px; margin-bottom:5px;">
-              <button onclick="cadAddCustomShape('rect')"
-                style="flex:1; background:#8BC34A; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">⬛
-                四角畝</button>
-              <button onclick="cadAddCustomShape('circle')"
-                style="flex:1; background:#8BC34A; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">⚫
-                丸畝</button>
-              <button type="button" onclick="cadToggleGpsMenu('cadGpsSubCustom')"
-                style="flex:1.2; background:#1565C0; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">📡
-                GPS配置 ▾</button>
-            </div>
-            <div id="cadGpsSubCustom"
-              style="display:none; background:#1e2846; padding:6px; border-radius:4px; margin-bottom:5px;">
-              <div style="display:flex; gap:5px;">
-                <button type="button" onclick="cadStartCustomShapeGps('rect')"
-                  style="flex:1; background:#1565C0; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">📡
-                  GPSで四角畝</button>
-                <button type="button" onclick="cadStartCustomShapeGps('circle')"
-                  style="flex:1; background:#1565C0; color:white; border:none; padding:6px; border-radius:4px; font-weight:bold; font-size:11px;">📡
-                  GPSで丸畝</button>
+
+            <!-- 自由畝（形状選択・GPS配置）枠 -->
+            <div style="border:1px solid #444; border-radius:6px; padding:7px; margin-bottom:6px; background:#242424;">
+              <div style="font-size:11px; color:#AED581; font-weight:bold; margin-bottom:6px;">自由畝の追加</div>
+              <div style="display:flex; gap:5px; margin-bottom:6px;">
+                <button type="button" id="cadCustomRectBtn" class="cad-custom-rect-btn" onclick="cadToggleCustomShape('rect')"
+                  style="flex:1; background:#333; color:#8BC34A; border:1px solid #8BC34A; padding:7px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer; transition:all 0.15s;">
+                  ⬛ 四角畝
+                </button>
+                <button type="button" id="cadCustomCircleBtn" class="cad-custom-circle-btn" onclick="cadToggleCustomShape('circle')"
+                  style="flex:1; background:#333; color:#8BC34A; border:1px solid #8BC34A; padding:7px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer; transition:all 0.15s;">
+                  ⚫ 丸畝
+                </button>
               </div>
-            </div>
-            <div id="cadCustomGpsBar"
-              style="display:none; background:#1a237e; border:1px solid #3949ab; border-radius:6px; padding:8px; margin-bottom:6px;">
-              <div id="cadCustomGpsStatus" style="font-size:11px; color:#90CAF9; line-height:1.35; margin-bottom:6px;">
-                GPS測位中…</div>
-              <div style="display:flex; gap:5px;">
-                <button type="button" id="cadCustomGpsConfirmBtn" onclick="cadConfirmCustomShapeGps()" disabled
-                  style="flex:1; background:#455A64; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:not-allowed; opacity:0.6;">ここに置く</button>
-                <button type="button" onclick="cadStopGpsPinPlace()"
-                  style="flex:0.7; background:#616161; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">取消</button>
+              <div style="border-top:1px dashed #444; padding-top:6px;">
+                <button type="button" onclick="cadToggleGpsMenu('cadGpsSubCustom')"
+                  style="width:100%; background:#1565C0; color:white; border:none; padding:7px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">
+                  📡 GPS配置 ▾
+                </button>
+                <div id="cadGpsSubCustom"
+                  style="display:none; background:#1e2846; padding:6px; border-radius:4px; margin-top:5px;">
+                  <div style="display:flex; gap:5px;">
+                    <button type="button" onclick="cadStartCustomShapeGps('rect')"
+                      style="flex:1; background:#1976D2; color:white; border:none; padding:7px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">
+                      📡 GPSで四角畝
+                    </button>
+                    <button type="button" onclick="cadStartCustomShapeGps('circle')"
+                      style="flex:1; background:#1976D2; color:white; border:none; padding:7px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">
+                      📡 GPSで丸畝
+                    </button>
+                  </div>
+                </div>
+                <div id="cadCustomGpsBar"
+                  style="display:none; background:#1a237e; border:1px solid #3949ab; border-radius:6px; padding:8px; margin-top:6px;">
+                  <div id="cadCustomGpsStatus" style="font-size:11px; color:#90CAF9; line-height:1.35; margin-bottom:6px;">
+                    GPS測位中…</div>
+                  <div style="display:flex; gap:5px;">
+                    <button type="button" id="cadCustomGpsConfirmBtn" onclick="cadConfirmCustomShapeGps()" disabled
+                      style="flex:1; background:#455A64; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:not-allowed; opacity:0.6;">ここに置く</button>
+                    <button type="button" onclick="cadStopGpsPinPlace()"
+                      style="flex:0.7; background:#616161; color:#fff; border:none; padding:8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">取消</button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -891,7 +894,7 @@
   <script src="admin.js?v=1788600000362" defer></script>
   <script src="admin_cost.js?v=1785489000008" defer></script>
   <script src="admin_crop_work.js?v=1787570400000" defer></script>
-  <script src="release-notes.js?v=1788600000346" defer></script>
+  <script src="release-notes.js?v=1788600000347" defer></script>
   <script src="tracking.js?v=1788600000324" defer></script>
   <script src="cad.js?v=1788600000306" defer></script>
   <script type="importmap">

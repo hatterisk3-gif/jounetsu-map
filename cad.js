@@ -1635,6 +1635,7 @@ window.handleMapClick = (pageX, pageY) => {
             window.cadStopGpsPinPlace({ silent: true });
         }
         window.cadPinMode = null;
+        if (typeof window.cadUpdateCustomShapeBtns_ === 'function') window.cadUpdateCustomShapeBtns_();
         if (msgEl) { msgEl.innerText = '💡 操作を選ぶと、ここに案内が出ます。'; msgEl.style.color = "#FF9800"; }
         return;
     }
@@ -4822,6 +4823,7 @@ window.cadSetPinMode = (type) => {
     }
     window.cadUpdateSnapLineBtn_();
     window.cadUpdateSplitLineBtn();
+    if (typeof window.cadUpdateCustomShapeBtns_ === 'function') window.cadUpdateCustomShapeBtns_();
 };
 
 window.cadGpsPinTypeLabel = (type) => {
@@ -5966,6 +5968,61 @@ window.cadSetSnapGridCm = (cm) => {
     }
 };
 
+window.cadUpdateCustomShapeBtns_ = () => {
+    const rectBtns = document.querySelectorAll('.cad-custom-rect-btn, #cadCustomRectBtn');
+    const circleBtns = document.querySelectorAll('.cad-custom-circle-btn, #cadCustomCircleBtn');
+    const isRect = window.cadPinMode === 'custom_rect';
+    const isCircle = window.cadPinMode === 'custom_circle';
+
+    rectBtns.forEach(btn => {
+        if (isRect) {
+            btn.style.background = '#2E7D32';
+            btn.style.color = '#fff';
+            btn.style.border = '2px solid #81C784';
+            btn.style.boxShadow = '0 0 6px rgba(76,175,80,0.6)';
+            btn.innerHTML = '⬛ 四角畝 <span style="font-size:10px; font-weight:normal; opacity:0.9;">(選択中)</span>';
+        } else {
+            btn.style.background = '#333';
+            btn.style.color = '#8BC34A';
+            btn.style.border = '1px solid #8BC34A';
+            btn.style.boxShadow = 'none';
+            btn.innerHTML = '⬛ 四角畝';
+        }
+    });
+
+    circleBtns.forEach(btn => {
+        if (isCircle) {
+            btn.style.background = '#2E7D32';
+            btn.style.color = '#fff';
+            btn.style.border = '2px solid #81C784';
+            btn.style.boxShadow = '0 0 6px rgba(76,175,80,0.6)';
+            btn.innerHTML = '⚫ 丸畝 <span style="font-size:10px; font-weight:normal; opacity:0.9;">(選択中)</span>';
+        } else {
+            btn.style.background = '#333';
+            btn.style.color = '#8BC34A';
+            btn.style.border = '1px solid #8BC34A';
+            btn.style.boxShadow = 'none';
+            btn.innerHTML = '⚫ 丸畝';
+        }
+    });
+};
+
+window.cadToggleCustomShape = (type) => {
+    const targetMode = (type === 'circle') ? 'custom_circle' : 'custom_rect';
+    if (window.cadPinMode === targetMode) {
+        window.cadPinMode = null;
+        if (window.cadGpsWatchId != null) window.cadStopGpsPinPlace({ silent: true });
+        window.cadUpdateCustomShapeBtns_();
+        const msgEl = document.getElementById('cadPinModeMsg');
+        if (msgEl) {
+            msgEl.innerText = '💡 操作を選ぶと、ここに案内が出ます。';
+            msgEl.style.color = '#FF9800';
+        }
+        return;
+    }
+    window.cadAddCustomShape(type);
+};
+
 window.cadAddCustomShape = (type) => {
     const mode = (type === 'circle') ? 'custom_circle' : 'custom_rect';
     // GPS測位中なら止めてタップ配置へ
@@ -5983,12 +6040,13 @@ window.cadAddCustomShape = (type) => {
         window.cadRebuildSnapGrid();
         window.cadUpdateSnapGridUi_();
     }
+    window.cadUpdateCustomShapeBtns_();
     const msgEl = document.getElementById('cadPinModeMsg');
     if (msgEl) {
         if (window.cadSnapGridOn) {
             msgEl.innerText = mode === 'custom_rect'
-                ? '【セル塗り・四角】枠をタップ／ドラッグで塗ります（消しゴム切替可）'
-                : '【セル塗り・丸】枠をタップ／ドラッグで丸畝を塗ります';
+                ? '【四角畝・選択中】枠内をタップして配置（もう一度ボタンを押すと解除）'
+                : '【丸畝・選択中】枠内をタップして配置（もう一度ボタンを押すと解除）';
         } else {
             msgEl.innerText = mode === 'custom_rect'
                 ? '【四角畝】配置したい場所をタップ（または「GPSで四角畝」）'
