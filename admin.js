@@ -5247,7 +5247,7 @@ window.uploadFertilizerCatalogFromCsv = async function () {
             }
             const res = await window.uploadCatalogChunks_('importFertilizerCatalogChunk', items, (msg, ratio) => {
                 window.setCatalogJobProgress_('fertilizer', msg, 'running', ratio);
-            }, { ratioBase: 0.15, ratioSpan: 0.85 });
+            }, { chunkSize: 1500, ratioBase: 0.15, ratioSpan: 0.85 });
             const count = ((res && res.count) || items.length).toLocaleString();
             window.setCatalogJobProgress_('fertilizer', '完了: ' + count + ' 件', 'done');
             await refreshFertilizerCatalogStats();

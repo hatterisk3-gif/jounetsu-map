@@ -5095,15 +5095,21 @@ function importFertilizerCatalogChunk(params) {
   if (!Array.isArray(rows) || !rows.length) {
     throw new Error('取り込む行がありません');
   }
-  if (rows.length > 400) {
-    throw new Error('1回あたり400件までにしてください');
+  if (rows.length > 2000) {
+    throw new Error('1回あたり2000件までにしてください');
   }
   const sheet = ensureFertilizerCatalogSheet_();
   const cols = FERTILIZER_CATALOG_HEADERS_.length;
   if (params && params.clearFirst) {
     const last = sheet.getLastRow();
-    // getRange(row, column, numRows, numColumns) ※第3引数は行数
-    if (last > 1) sheet.deleteRows(2, last - 1);
+    // 行削除(deleteRows)は数万件で極端に遅いため、clearContentで瞬時にクリア
+    if (last > 1) sheet.getRange(2, 1, last - 1, cols).clearContent();
+    try {
+      const cache = pesticideCatalogCache_();
+      if (cache) {
+        cache.remove('fertCatSearchStamp');
+      }
+    } catch (e) {}
   }
   const values = [];
   rows.forEach(raw => {
@@ -5111,12 +5117,14 @@ function importFertilizerCatalogChunk(params) {
     if (!item.name) return;
     values.push(fertilizerCatalogRowValues_(item));
   });
+  let start = parseInt(params && params.startRow, 10);
+  if (!start || start < 2) start = Math.max(2, sheet.getLastRow() + 1);
   if (values.length) {
-    const start = Math.max(2, sheet.getLastRow() + 1);
     sheet.getRange(start, 1, values.length, cols).setValues(values);
   }
-  SpreadsheetApp.flush();
-  return getFertilizerCatalogStats(params);
+  if (params && params.flush) SpreadsheetApp.flush();
+  const nextRow = start + values.length;
+  return { success: true, count: Math.max(0, nextRow - 2), nextRow: nextRow };
 }
 
 function getFertilizerCatalogStats(params) {

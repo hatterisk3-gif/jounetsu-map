@@ -18990,8 +18990,8 @@ window.buildBulkConcurrentWorksHtml_ = (d, uid) => {
   const buildWorkChipHtml_ = (excludeNames) => {
     const ex = new Set((excludeNames || []).map(n => String(n || '').trim()).filter(Boolean));
     let names = (workNames || []).filter(name => !ex.has(String(name || '').trim()));
-    // 選択中の作業が絞り込み結果に無い場合でも押下表示できるよう先頭へ残す
-    if (curWork && names.indexOf(curWork) < 0) names = [curWork].concat(names);
+    // 選択中の作業が絞り込み結果に無い場合でも押下表示できるよう先頭へ残す（もしかして枠に表示中のものは重複させない）
+    if (curWork && !ex.has(curWork) && names.indexOf(curWork) < 0) names = [curWork].concat(names);
     return names.map(name => {
       const on = name === curWork;
       const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -19066,32 +19066,9 @@ window.buildBulkConcurrentWorksHtml_ = (d, uid) => {
             </div>`;
   })();
 
-  // ⑥確定後にメイン作業分を表示（先にメインを選ばせない）
-  let mainMinsHtml = '';
-  if (list.length) {
-    mainMinsHtml = `
-          <div style="padding:10px 12px; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px; margin-bottom:8px;">
-            <div style="font-size:12px; font-weight:bold; color:#2E7D32; line-height:1.45;">
-              メイン作業（${esc(mainWorkLabel)}）は <span style="font-size:18px;">${mainMinsVal != null ? mainMinsVal : '—'}</span> 分となります
-            </div>
-            <div style="font-size:10px; color:#666; margin-top:4px; line-height:1.35;">
-              時間帯 ${slotMins || '—'}分 − 同時作業 ${allocatedCw}分
-            </div>
-          </div>`;
-  } else if (panelOpen && draftPreviewMins > 0 && slotMins > 0) {
-    mainMinsHtml = `
-          <div style="padding:8px 10px; background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; margin-bottom:8px;">
-            <div style="font-size:11px; color:#E65100; line-height:1.4;">
-              この同時作業を追加すると、メイン作業（${esc(mainWorkLabel)}）は <b>${mainAfterDraft}分</b> になります
-              <span style="color:#888;">（時間帯${slotMins} − 同時${draftPreviewMins}）</span>
-            </div>
-          </div>`;
-  }
-
-  const allocSummary = list.length ? `
-          <div style="font-size:11px; margin-bottom:8px; padding:6px 8px; border-radius:8px; line-height:1.4; background:${allocOver ? '#FFEBEE' : (allocOk ? '#E8F5E9' : '#FFF8E1')}; color:${allocOver ? '#C62828' : (allocOk ? '#2E7D32' : '#E65100')}; border:1px solid ${allocOver ? '#EF9A9A' : (allocOk ? '#A5D6A7' : '#FFCC80')};">
-            時間帯 ${slotMins || '—'}分 ＝ メイン ${mainMinsVal != null ? mainMinsVal : '—'}分 ＋ 同時 ${allocatedCw}分
-            ${allocOk ? ' ✓' : (allocOver ? ' ※同時作業が時間帯を超えています' : '')}
+  const allocOverWarning = allocOver ? `
+          <div style="font-size:11px; margin-bottom:8px; padding:6px 8px; border-radius:8px; line-height:1.4; background:#FFEBEE; color:#C62828; border:1px solid #EF9A9A;">
+            ※同時作業の合計（${allocatedCw}分）が時間帯（${slotMins}分）を超えています
           </div>` : '';
 
   // メモ内容からの作業予測（追加パネルを開いたときだけ表示）
@@ -19220,10 +19197,10 @@ window.buildBulkConcurrentWorksHtml_ = (d, uid) => {
               </div>`;
       }
     }
-    // もしかしてに出した項目は下の一覧から除外（ただし選択中の作業名は残して押下表示を維持）
+    // もしかしてに出した項目は下の一覧から除外（もしかして枠内で選択表示されるため下の一覧では重複表示しない）
     if (suggestCatNames.length) catHtml = buildCatChipHtml_(suggestCatNames);
     if (suggestWorkNames.length) {
-      workHtml = buildWorkChipHtml_(suggestWorkNames.filter(n => String(n || '').trim() !== curWork));
+      workHtml = buildWorkChipHtml_(suggestWorkNames);
     }
   }
 
@@ -19249,29 +19226,14 @@ window.buildBulkConcurrentWorksHtml_ = (d, uid) => {
     const autoBadge = entry._fromMemo
       ? `<span style="font-size:9px; font-weight:bold; color:#fff; background:#7E57C2; padding:1px 6px; border-radius:8px; margin-left:4px;">メモから</span>`
       : '';
-    const rowEqualOn = entry.minutesMode === 'equal';
-    const rowMins = entry.minutes != null ? Number(entry.minutes) : null;
-    const rowMinsHtml = durOpts.fixed.map(n => {
-      const on = !rowEqualOn && rowMins === n;
-      return `<button type="button" onclick="setBulkConcurrentMinutes_('${esc(uid)}','${safeId}',${n})" style="padding:4px 8px; border-radius:12px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${on ? '#00838F' : '#B2EBF2'}; background:${on ? '#E0F7FA' : '#fff'}; color:#006064;">${n}分</button>`;
-    }).join('')
-      + `<button type="button" onclick="setBulkConcurrentMinutes_('${esc(uid)}','${safeId}','equal')" style="padding:4px 8px; border-radius:12px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${rowEqualOn ? '#6A1B9A' : '#CE93D8'}; background:${rowEqualOn ? '#F3E5F5' : '#fff'}; color:#6A1B9A;">均等</button>`
-      + `<span style="display:inline-flex; align-items:center; gap:3px;">
-                <input type="number" id="bulk_cw_min_${esc(uid)}_${esc(safeId)}" min="1" max="${slotMins || 999}" step="1" placeholder="分"
-                  value="${rowMins != null && !rowEqualOn && durOpts.fixed.indexOf(rowMins) < 0 ? rowMins : ''}"
-                  style="width:56px; padding:4px 6px; border:1px solid #80CBC4; border-radius:8px; font-size:11px; box-sizing:border-box;"
-                  onkeydown="if(event.key==='Enter'){event.preventDefault();setBulkConcurrentMinutesCustom_('${esc(uid)}','${safeId}');}">
-                <button type="button" onclick="setBulkConcurrentMinutesCustom_('${esc(uid)}','${safeId}')" style="padding:4px 7px; border-radius:8px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid #00838F; background:#E0F7FA; color:#006064;">指定</button>
-              </span>`;
     return `<div style="padding:8px 10px; background:#fff; border:1px solid ${hasName ? '#D1C4E9' : '#CE93D8'}; border-radius:8px; margin-bottom:6px;">
-            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
               <div style="font-size:12px; color:#4527A0; line-height:1.4; min-width:0; flex:1;">
                 <span style="font-size:10px; font-weight:bold; color:#6A1B9A; margin-right:4px;">同時に行った作業${idx + 1}</span>
                 ${esc(window.formatConcurrentWorkSummary_(entry))}${autoBadge}
               </div>
-              <button type="button" onclick="removeBulkConcurrentWork_('${esc(uid)}','${safeId}')" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; width:26px; height:26px; flex-shrink:0; cursor:pointer;">×</button>
+              <button type="button" onclick="removeBulkConcurrentWork_('${esc(uid)}','${safeId}')" title="削除" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; width:26px; height:26px; flex-shrink:0; cursor:pointer;">×</button>
             </div>
-            <div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; align-items:center;">${rowMinsHtml}</div>
             ${needPick}
           </div>`;
   }).join('');
@@ -19381,14 +19343,16 @@ window.buildBulkConcurrentWorksHtml_ = (d, uid) => {
             <button type="button" onclick="confirmBulkConcurrentDraft_('${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:10px 12px; border:none; border-radius:8px; background:#7E57C2; color:#fff; font-size:13px; font-weight:bold; cursor:pointer;">追加</button>
           </div>` : '';
 
+  const addBtnHtml = `
+          <div style="margin-top:6px;">
+            <button type="button" onclick="toggleBulkConcurrentPanel_('${esc(uid)}')" style="width:100%; box-sizing:border-box; background:${panelOpen ? '#CE93D8' : '#EDE7F6'}; color:#5E35B1; border:1px solid #D1C4E9; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer;">${panelOpen ? '▲ 閉じる' : '＋ 同時に行った作業を追加する'}</button>
+          </div>`;
+
   return `<div id="bulk_concurrent_${esc(uid)}" style="margin:8px 0; background:#F3E5F5; border:1px solid #CE93D8; border-radius:10px; padding:10px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
-            <div style="font-size:10px; font-weight:bold; color:#6A1B9A;">🔀 同時に行った作業</div>
-            <button type="button" onclick="toggleBulkConcurrentPanel_('${esc(uid)}')" style="background:${panelOpen ? '#CE93D8' : '#EDE7F6'}; color:#5E35B1; border:1px solid #D1C4E9; border-radius:6px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">${panelOpen ? '▲ 閉じる' : '同時に行った作業を追加する'}</button>
-          </div>
-          ${allocSummary}
-          ${mainMinsHtml}
+          <div style="font-size:11px; font-weight:bold; color:#6A1B9A; margin-bottom:6px;">🔀 同時に行った作業</div>
+          ${allocOverWarning}
           ${rows || ''}
+          ${addBtnHtml}
           ${panelHtml}
         </div>`;
 };
