@@ -86,9 +86,12 @@
 
       <div id="cadMode1">
         <div style="display:flex; gap:5px; margin-bottom:10px;">
-          <button onclick="cadSetPinMode('snap_line')"
-            style="flex:1; background:#333; color:#4CAF50; border:1px solid #4CAF50; padding:6px; border-radius:4px; font-size:10px; font-weight:bold;">🎯
+          <button type="button" onclick="cadSetPinMode('snap_line')"
+            style="flex:2; background:#333; color:#4CAF50; border:1px solid #4CAF50; padding:6px; border-radius:4px; font-size:10px; font-weight:bold;">🎯
             選んだ線に合わせる</button>
+          <button type="button" onclick="cadFlipDirection()" title="地図と畝の向きを180度反転します"
+            style="flex:1; background:#333; color:#FF9800; border:1px solid #FF9800; padding:6px; border-radius:4px; font-size:10px; font-weight:bold;">🔄
+            180°反転</button>
         </div>
         <div style="display:flex; gap:10px; margin-bottom:8px; align-items:flex-end;">
           <div style="flex:1; display:none;">
@@ -159,21 +162,37 @@
           <div style="padding:0 8px 8px;">
             <div style="font-size:10px; color:#888; margin-bottom:6px; line-height:1.35;">タップ／GPSで配置。移動・変形できます。</div>
             <div style="border:1px solid #444; border-radius:6px; padding:7px; margin-bottom:6px; background:#242424;">
-              <div style="display:flex; gap:5px; align-items:center; margin-bottom:4px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                <span style="font-size:11px; color:#AED581; font-weight:bold;">📐 グリッド設定</span>
+                <span id="cadGridSizeInfo" style="font-size:10px; color:#81D4FA; font-weight:bold;"></span>
+              </div>
+              <div style="display:flex; gap:5px; align-items:center; margin-bottom:5px;">
                 <button type="button" id="cadSnapGridToggleBtn" onclick="cadToggleSnapGrid()"
-                  style="flex:1.1; background:#333; color:#ccc; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">グリッド OFF</button>
-                <span style="font-size:10px; color:#aaa; white-space:nowrap;">間隔</span>
-                <input type="number" id="cadSnapGridCm" value="150" min="20" max="2000" step="10"
-                  onchange="cadOnSnapGridCmChange()" oninput="cadOnSnapGridCmChange()"
-                  style="width:58px; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:13px; font-weight:bold; text-align:center;" title="セル間隔(cm)">
-                <span style="font-size:10px; color:#aaa;">cm</span>
+                  style="flex:1.1; background:#333; color:#ccc; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">グリッド OFF</button>
+                <div style="display:flex; align-items:center; gap:2px;">
+                  <span style="font-size:10px; color:#aaa;">縦</span>
+                  <input type="number" id="cadSnapGridRows" value="10" min="1" max="100" step="1"
+                    onchange="cadOnSnapGridSizeChange()" oninput="cadOnSnapGridSizeChange()"
+                    style="width:40px; padding:6px 2px; border-radius:4px; border:none; box-sizing:border-box; font-size:12px; font-weight:bold; text-align:center;"
+                    title="縦のマス数">
+                  <span style="font-size:10px; color:#aaa;">マス</span>
+                </div>
+                <span style="color:#666; font-size:11px;">×</span>
+                <div style="display:flex; align-items:center; gap:2px;">
+                  <span style="font-size:10px; color:#aaa;">横</span>
+                  <input type="number" id="cadSnapGridCols" value="10" min="1" max="100" step="1"
+                    onchange="cadOnSnapGridSizeChange()" oninput="cadOnSnapGridSizeChange()"
+                    style="width:40px; padding:6px 2px; border-radius:4px; border:none; box-sizing:border-box; font-size:12px; font-weight:bold; text-align:center;"
+                    title="横のマス数">
+                  <span style="font-size:10px; color:#aaa;">マス</span>
+                </div>
               </div>
               <div style="display:flex; gap:4px; margin-bottom:4px; align-items:center;">
-                <span style="font-size:10px; color:#81D4FA;">セル幅:</span>
-                <button type="button" onclick="cadSetSnapGridCm(50)" style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">50cm</button>
-                <button type="button" onclick="cadSetSnapGridCm(100)" style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">1m</button>
-                <button type="button" onclick="cadSetSnapGridCm(150)" style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">1.5m</button>
-                <button type="button" onclick="cadSetSnapGridCm(200)" style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">2m</button>
+                <span style="font-size:10px; color:#81D4FA;">目安:</span>
+                <button type="button" onclick="cadSetSnapGridPreset(5, 5)" style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">5×5</button>
+                <button type="button" onclick="cadSetSnapGridPreset(10, 10)" style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">10×10</button>
+                <button type="button" onclick="cadSetSnapGridPreset(15, 15)" style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">15×15</button>
+                <button type="button" onclick="cadSetSnapGridPreset(20, 20)" style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">20×20</button>
               </div>
               <div id="cadCellPaintBar" style="display:none; gap:5px; margin-bottom:4px;">
                 <button type="button" id="cadCellPaintBtn" onclick="cadSetCellEraseMode(false); cadAddCustomShape('rect');"

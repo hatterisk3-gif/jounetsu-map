@@ -5140,13 +5140,32 @@ function fertilizerCatalogStamp_(sheet) {
   return catalogLast + '|' + probe;
 }
 
+function hiraToKata_(s) {
+  return String(s || '').replace(/[\u3041-\u3096]/g, function (ch) {
+    return String.fromCharCode(ch.charCodeAt(0) + 0x60);
+  });
+}
+
+function kataToHira_(s) {
+  return String(s || '').replace(/[\u30a1-\u30f6]/g, function (ch) {
+    return String.fromCharCode(ch.charCodeAt(0) - 0x60);
+  });
+}
+
+function isNumberOnlyQuery_(q) {
+  const clean = String(q || '').replace(/\s+/g, '').replace(/[０-９]/g, function (ch) {
+    return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+  });
+  return /^\d{3,}$/.test(clean);
+}
+
 function searchFertilizerCatalog(params) {
   const qRaw = String((params && params.q) || '').trim();
-  const q = qRaw.toLowerCase();
+  const qNorm = foldCatalogText_(qRaw);
   const makerRaw = String((params && params.maker) || '').trim();
-  const maker = makerRaw.toLowerCase();
+  const maker = foldCatalogText_(makerRaw);
   const limit = Math.min(100, Math.max(1, parseInt((params && params.limit) || 50, 10) || 50));
-  if (!q && !maker) {
+  if (!qNorm && !maker) {
     throw new Error('肥料名またはメーカーのキーワードを入力してください');
   }
 
@@ -5157,10 +5176,13 @@ function searchFertilizerCatalog(params) {
     return { success: true, count: 0, totalCatalog: 0, items: [] };
   }
 
+  // 3桁以上の番号のみか判定（例: 12345, ００１など）
+  const isNumberOnly = isNumberOnlyQuery_(qRaw);
+
   // CacheService による検索結果の高速キャッシュ
   const cache = pesticideCatalogCache_();
   const stamp = fertilizerCatalogStamp_(sheet);
-  const cacheKey = 'fertCatSearch_' + shortCacheKey_(q + '\t' + maker + '\t' + limit);
+  const cacheKey = 'fertCatSearch_' + shortCacheKey_(qNorm + '\t' + isNumberOnly + '\t' + maker + '\t' + limit);
   if (cache) {
     try {
       const cached = cacheGetChunked_(cache, cacheKey, stamp);
@@ -5170,7 +5192,59 @@ function searchFertilizerCatalog(params) {
     } catch (ce) {}
   }
 
-  const items = [];
+  const words = qNorm.split(/\s+/).filter(Boolean);
+  const wordsVariants = words.map(function (w) {
+    return {
+      raw: w,
+      kata: hiraToKata_(w),
+      hira: kataToHira_(w)
+    };
+  });
+
+  // アイテムが条件にマッチするか判定するヘルパー
+  // 返り値: 2 (資材名完全/部分マッチ), 1 (その他項目マッチ), 0 (不一致)
+  function testItemMatch(item) {
+    if (maker && foldCatalogText_(item.manufacturer).indexOf(maker) < 0) return 0;
+    if (!wordsVariants.length) return 2;
+
+    if (isNumberOnly) {
+      // 3桁以上の番号のみ: 登録番号（および数字部分）で検索
+      const cleanNum = qNorm.replace(/[^\d]/g, '');
+      const regNorm = foldCatalogText_(item.regNumber);
+      const regDigits = regNorm.replace(/[^\d]/g, '');
+      if (regNorm.indexOf(qNorm) >= 0 || (cleanNum && regDigits.indexOf(cleanNum) >= 0)) {
+        return 2;
+      }
+      return 0;
+    }
+
+    // 基本は資材名（肥料名）で探す
+    const nameNorm = foldCatalogText_(item.name);
+    let nameAllMatch = true;
+    for (let i = 0; i < wordsVariants.length; i++) {
+      const v = wordsVariants[i];
+      if (nameNorm.indexOf(v.raw) < 0 && nameNorm.indexOf(v.kata) < 0 && nameNorm.indexOf(v.hira) < 0) {
+        nameAllMatch = false;
+        break;
+      }
+    }
+    if (nameAllMatch) return 2;
+
+    // 肥料名に全単語が含まれなくても、種類・成分・メーカーを含めた全体でマッチすれば幅広く拾う
+    const allNorm = [nameNorm, foldCatalogText_(item.fertilizerType), foldCatalogText_(item.manufacturer), foldCatalogText_(item.components)].join(' ');
+    let allMatch = true;
+    for (let i = 0; i < wordsVariants.length; i++) {
+      const v = wordsVariants[i];
+      if (allNorm.indexOf(v.raw) < 0 && allNorm.indexOf(v.kata) < 0 && allNorm.indexOf(v.hira) < 0) {
+        allMatch = false;
+        break;
+      }
+    }
+    return allMatch ? 1 : 0;
+  }
+
+  const primaryItems = [];
+  const secondaryItems = [];
   let truncated = false;
 
   // 200行以下の小型カタログは一括getValues()
@@ -5179,36 +5253,58 @@ function searchFertilizerCatalog(params) {
     for (let i = 0; i < data.length; i++) {
       const item = readFertilizerCatalogRow_(data[i]);
       if (!item.name) continue;
-      if (q && String(item.name).toLowerCase().indexOf(q) < 0
-        && String(item.fertilizerType).toLowerCase().indexOf(q) < 0
-        && String(item.regNumber).toLowerCase().indexOf(q) < 0
-        && String(item.components).toLowerCase().indexOf(q) < 0) continue;
-      if (maker && String(item.manufacturer).toLowerCase().indexOf(maker) < 0) continue;
-      items.push(item);
-      if (items.length >= limit) {
+      const match = testItemMatch(item);
+      if (match === 2) primaryItems.push(item);
+      else if (match === 1) secondaryItems.push(item);
+      if (primaryItems.length >= limit) {
         truncated = true;
         break;
       }
     }
   } else {
     // 200行超の大規模カタログは TextFinder で高速インデックス検索
-    const searchTarget = qRaw || makerRaw;
-    const searchRange = sheet.getRange(2, 1, totalCatalog, FERTILIZER_CATALOG_HEADERS_.length);
-    const finder = searchRange.createTextFinder(searchTarget).matchCase(false);
     const rowNums = [];
     const seenRows = {};
-    let cell = finder.findNext();
-    let guard = 0;
-    const fetchCap = Math.max(limit * 2, 60);
+    const fetchCap = Math.max(limit * 3, 100);
 
-    while (cell && rowNums.length < fetchCap && guard < 3000) {
-      guard++;
-      const r = cell.getRow();
-      if (!seenRows[r]) {
-        seenRows[r] = true;
-        rowNums.push(r);
+    function collectFromFinder(finder) {
+      if (!finder) return;
+      let cell = finder.findNext();
+      let guard = 0;
+      while (cell && rowNums.length < fetchCap && guard < 3000) {
+        guard++;
+        const r = cell.getRow();
+        if (!seenRows[r]) {
+          seenRows[r] = true;
+          rowNums.push(r);
+        }
+        cell = finder.findNext();
       }
-      cell = finder.findNext();
+    }
+
+    if (isNumberOnly) {
+      // 3桁以上の番号のみ: 登録番号列（列8）を対象に検索
+      const cleanNum = qNorm.replace(/[^\d]/g, '') || qNorm;
+      const regRange = sheet.getRange(2, 8, totalCatalog, 1);
+      collectFromFinder(regRange.createTextFinder(cleanNum).matchCase(false));
+    } else {
+      // 通常: 基本は資材名（肥料名、列1）を対象に探す
+      const nameRange = sheet.getRange(2, 1, totalCatalog, 1);
+      const firstWord = wordsVariants[0];
+      if (firstWord) {
+        collectFromFinder(nameRange.createTextFinder(firstWord.raw).matchCase(false));
+        if (firstWord.kata && firstWord.kata !== firstWord.raw) {
+          collectFromFinder(nameRange.createTextFinder(firstWord.kata).matchCase(false));
+        }
+        if (firstWord.hira && firstWord.hira !== firstWord.raw) {
+          collectFromFinder(nameRange.createTextFinder(firstWord.hira).matchCase(false));
+        }
+      }
+      // もし資材名列でのヒットが少ない場合、全列から追加で探して幅広く拾う
+      if (rowNums.length < limit && firstWord) {
+        const fullRange = sheet.getRange(2, 1, totalCatalog, FERTILIZER_CATALOG_HEADERS_.length);
+        collectFromFinder(fullRange.createTextFinder(firstWord.raw).matchCase(false));
+      }
     }
 
     if (rowNums.length) {
@@ -5218,13 +5314,10 @@ function searchFertilizerCatalog(params) {
         if (!rowData) continue;
         const item = readFertilizerCatalogRow_(rowData);
         if (!item.name) continue;
-        if (q && String(item.name).toLowerCase().indexOf(q) < 0
-          && String(item.fertilizerType).toLowerCase().indexOf(q) < 0
-          && String(item.regNumber).toLowerCase().indexOf(q) < 0
-          && String(item.components).toLowerCase().indexOf(q) < 0) continue;
-        if (maker && String(item.manufacturer).toLowerCase().indexOf(maker) < 0) continue;
-        items.push(item);
-        if (items.length >= limit) {
+        const match = testItemMatch(item);
+        if (match === 2) primaryItems.push(item);
+        else if (match === 1) secondaryItems.push(item);
+        if (primaryItems.length >= limit) {
           truncated = true;
           break;
         }
@@ -5232,12 +5325,21 @@ function searchFertilizerCatalog(params) {
     }
   }
 
+  // 資材名マッチ（または登録番号マッチ）を優先し、残りの枠にセカンドマッチを追加
+  const finalItems = primaryItems.slice(0, limit);
+  if (finalItems.length < limit) {
+    for (let j = 0; j < secondaryItems.length && finalItems.length < limit; j++) {
+      finalItems.push(secondaryItems[j]);
+    }
+  }
+
   const result = {
     success: true,
-    count: items.length,
+    count: finalItems.length,
     totalCatalog: totalCatalog,
-    items: items,
-    truncated: truncated || items.length >= limit
+    items: finalItems,
+    searchMode: isNumberOnly ? 'number' : 'name',
+    truncated: truncated || finalItems.length >= limit
   };
 
   if (cache) {

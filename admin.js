@@ -5179,30 +5179,76 @@ window.buildFertilizerItemsFromCsvRows_ = function (csvRows) {
     const seen = {};
     (csvRows || []).forEach(r => {
         const name = window.findCsvCol_(r, [
-            '肥料名称', '肥料名', '銘柄名', '銘柄', 'FertilizerName', '名称'
+            '肥料名称', '肥料名', '銘柄名', '銘柄', '肥料の名称', 'FertilizerName', '名称'
         ]);
         const manufacturer = window.findCsvCol_(r, [
-            '肥料業者名称', '肥料業者名', '業者名称', '業者名', '会社名', '製造メーカー', 'メーカー', 'SupplierName'
+            '生産業者の氏名又は名称', '生産業者氏名又は名称', '生産業者名', '生産業者',
+            '輸入業者の氏名又は名称', '輸入業者氏名又は名称', '輸入業者名', '輸入業者',
+            '届出業者の氏名又は名称', '届出業者氏名又は名称', '届出業者名', '届出業者',
+            '氏名又は名称', '肥料業者名称', '肥料業者名', '業者名称', '業者名', '会社名', '製造メーカー', 'メーカー', 'SupplierName'
         ]);
         const fertilizerType = window.findCsvCol_(r, [
-            '肥料種類名称', '肥料種類名', '肥料種類', '種類名称', '種類', 'FertilizerTypeName'
+            '肥料の種類', '肥料種類名称', '肥料種類名', '種類名称', 'FertilizerTypeName', '肥料種類', '種類'
         ]);
         const regNumber = window.findCsvCol_(r, [
-            '登録番号', 'RegistrationNumberForReport', 'RegistrationNumber', '登録No'
+            '登録番号', '肥料登録番号', 'RegistrationNumberForReport', 'RegistrationNumber', '登録No'
         ]);
-        // 検索画面の成分略号列（TN/TP/TK）にも対応
-        const nitrogen = window.findCsvCol_(r, ['窒素全量', '窒素全量(%)', '窒素', 'TN', '保証窒素']);
-        const phosphate = window.findCsvCol_(r, ['りん酸全量', 'リン酸全量', 'りん酸全量(%)', 'りん酸', 'リン酸', 'TP']);
-        const potash = window.findCsvCol_(r, ['加里全量', 'カリ全量', '加里全量(%)', '加里', 'カリ', 'TK']);
+
+        // 窒素 (N): 全量 → アンモニア性 → 硝酸性
+        let nitrogen = window.findCsvCol_(r, ['窒素全量', '窒素全量(%)', '窒素', 'TN', '保証窒素']);
+        if (!nitrogen) nitrogen = window.findCsvCol_(r, ['アンモニア性窒素', 'アンモニア性窒素(%)', 'AN']);
+        if (!nitrogen) nitrogen = window.findCsvCol_(r, ['硝酸性窒素', '硝酸性窒素(%)', 'NN']);
+
+        // りん酸 (P): 全量 → 水溶性 → く溶性 → 可溶性
+        let phosphate = window.findCsvCol_(r, ['りん酸全量', 'リン酸全量', 'りん酸全量(%)', 'リン酸全量(%)', 'りん酸', 'リン酸', 'TP']);
+        if (!phosphate) phosphate = window.findCsvCol_(r, ['水溶性りん酸', '水溶性リン酸', '水溶性りん酸(%)', 'WP', 'IWP']);
+        if (!phosphate) phosphate = window.findCsvCol_(r, ['く溶性りん酸', 'く溶性リン酸', 'く溶性りん酸(%)', 'CP']);
+        if (!phosphate) phosphate = window.findCsvCol_(r, ['可溶性りん酸', '可溶性リン酸', 'SP']);
+
+        // 加里 (K): 全量 → 水溶性 → く溶性
+        let potash = window.findCsvCol_(r, ['加里全量', 'カリ全量', '加里全量(%)', 'カリ全量(%)', '加里', 'カリ', 'TK']);
+        if (!potash) potash = window.findCsvCol_(r, ['水溶性加里', '水溶性カリ', '水溶性加里(%)', '水溶性カリ(%)', 'WK']);
+        if (!potash) potash = window.findCsvCol_(r, ['く溶性加里', 'く溶性カリ', 'く溶性加里(%)', 'CK']);
+
+        // 微量要素・原料・副成分
         const extras = [];
-        [['苦土', 'SMG'], ['石灰', 'SCa'], ['ほう素', 'CB'], ['マンガン', 'SMN'], ['けい酸', 'SSI']].forEach(pair => {
-            const val = window.findCsvCol_(r, pair);
-            if (val) extras.push(pair[0] + val);
+        const rawMaterials = window.findCsvCol_(r, ['原料の種類', '原料', '主原料']);
+        if (rawMaterials) extras.push('原料: ' + rawMaterials);
+
+        const colorMat = window.findCsvCol_(r, ['材料の種類', '着色材', '着色剤']);
+        if (colorMat) extras.push('着色材: ' + colorMat);
+
+        const elementDefs = [
+            ['苦土', ['苦土', 'SMG', 'CMG', 'WMG', '水溶性苦土', 'く溶性苦土']],
+            ['石灰', ['石灰', 'SCa', 'アルカリ分', 'アルカリ']],
+            ['ほう素', ['ほう素', 'ホウ素', 'CB', 'WB', '水溶性ほう素']],
+            ['マンガン', ['マンガン', 'SMN', 'WMN', '水溶性マンガン']],
+            ['けい酸', ['けい酸', 'ケイ酸', 'SSI']],
+            ['鉄', ['鉄', 'SFe', 'WFe']],
+            ['亜鉛', ['亜鉛', 'SZn', 'WZn']],
+            ['銅', ['銅', 'SCu', 'WCu']],
+            ['モリブデン', ['モリブデン', 'SMo']]
+        ];
+        elementDefs.forEach(def => {
+            const val = window.findCsvCol_(r, def[1]);
+            if (val) extras.push(def[0] + ': ' + val);
         });
+
+        // 正味重量・荷姿
+        const weight = window.findCsvCol_(r, ['正味重量', '重量', '容量', '正味容量', '荷姿']);
+
         if (!name) return;
         const item = {
-            name, fertilizerType, nitrogen, phosphate, potash,
-            components: extras.join('・'), volume: '', manufacturer, regNumber, note: ''
+            name,
+            fertilizerType: fertilizerType || '',
+            nitrogen: nitrogen || '',
+            phosphate: phosphate || '',
+            potash: potash || '',
+            components: extras.join(' ／ '),
+            volume: weight || '',
+            manufacturer: manufacturer || '',
+            regNumber: regNumber || '',
+            note: ''
         };
         const key = (regNumber || name) + '\t' + (manufacturer || '');
         if (seen[key]) return;

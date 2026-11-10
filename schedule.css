@@ -1778,6 +1778,47 @@ select.snr-input { appearance:auto; }
   word-break: break-all;
 }
 
+.fert-web-search-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  background: #1b5e20;
+  color: #fff !important;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 800;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+.fert-web-search-btn:active {
+  transform: scale(0.98);
+}
+.fert-reg-search-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  background: #f1f8e9;
+  color: #2e7d32 !important;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 700;
+  border: 1px solid #aed581;
+  border-radius: 10px;
+  transition: background-color 0.15s ease;
+}
+.fert-reg-search-btn:active {
+  background: #e8f5e9;
+}
+
 @media (min-width: 760px) {
   .fert-lookup-modal { align-items: center; }
   .fert-lookup-sheet { border-radius: 16px; max-height: min(86vh, 860px); }

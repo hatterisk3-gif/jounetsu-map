@@ -1,7 +1,7 @@
 /**
  * 予定画面右下の肥料ボタン。
  * カタログおよび自社マスタを検索し、肥料名を押すと成分・詳細を表示する。
- * （高速インデックス検索・並行読み込み・ブラウザキャッシュ対応）
+ * （資材名主軸・3桁以上数字で番号検索自動切替・表記揺れ吸収・高速検索対応）
  */
 (function () {
   var hits = [];
@@ -9,7 +9,7 @@
   var showingFavList = false;
   var masterFertilizers_ = null;
   var masterLoadingPromise_ = null;
-  var queryCache_ = {}; // ブラウザ内検索結果キャッシュ
+  var queryCache_ = {};
   var FAV_KEY = 'fertilizer_lookup_favorites_v1';
 
   function esc(s) {
@@ -132,7 +132,34 @@
     });
   }
 
-  // 自社マスタ読み込み（先行並行ロード＆インメモリ保持）
+  // 表記揺れ正規化ヘルパー
+  function foldSearchText_(s) {
+    var t = String(s || '').replace(/\u3000/g, ' ');
+    try { if (t.normalize) t = t.normalize('NFKC'); } catch (e) {}
+    return t.replace(/[！-～]/g, function (ch) {
+      return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+    }).trim().toLowerCase();
+  }
+
+  function hiraToKata_(s) {
+    return String(s || '').replace(/[\u3041-\u3096]/g, function (ch) {
+      return String.fromCharCode(ch.charCodeAt(0) + 0x60);
+    });
+  }
+
+  function kataToHira_(s) {
+    return String(s || '').replace(/[\u30a1-\u30f6]/g, function (ch) {
+      return String.fromCharCode(ch.charCodeAt(0) - 0x60);
+    });
+  }
+
+  function isNumberOnlyQuery_(q) {
+    var clean = String(q || '').replace(/\s+/g, '').replace(/[０-９]/g, function (ch) {
+      return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+    });
+    return /^\d{3,}$/.test(clean);
+  }
+
   function loadMasterFertilizers_() {
     if (masterFertilizers_ !== null) return Promise.resolve(masterFertilizers_);
     if (window.pdlFertilizers && Array.isArray(window.pdlFertilizers) && window.pdlFertilizers.length) {
@@ -168,9 +195,9 @@
     var n = String(item.nitrogen || '').trim();
     var p = String(item.phosphate || '').trim();
     var k = String(item.potash || '').trim();
-    if (n) badges.push('<span class="fert-npk-badge n">N: ' + esc(n) + (n.indexOf('%') < 0 && !isNaN(n) ? '%' : '') + '</span>');
-    if (p) badges.push('<span class="fert-npk-badge p">P: ' + esc(p) + (p.indexOf('%') < 0 && !isNaN(p) ? '%' : '') + '</span>');
-    if (k) badges.push('<span class="fert-npk-badge k">K: ' + esc(k) + (k.indexOf('%') < 0 && !isNaN(k) ? '%' : '') + '</span>');
+    if (n && n !== '-') badges.push('<span class="fert-npk-badge n">N: ' + esc(n) + (n.indexOf('%') < 0 && !isNaN(n) ? '%' : '') + '</span>');
+    if (p && p !== '-') badges.push('<span class="fert-npk-badge p">P: ' + esc(p) + (p.indexOf('%') < 0 && !isNaN(p) ? '%' : '') + '</span>');
+    if (k && k !== '-') badges.push('<span class="fert-npk-badge k">K: ' + esc(k) + (k.indexOf('%') < 0 && !isNaN(k) ? '%' : '') + '</span>');
     if (!badges.length) return '';
     return '<div class="fert-npk-row">' + badges.join('') + '</div>';
   }
@@ -214,7 +241,6 @@
     if (!modal) return;
     modal.style.display = 'flex';
     window.showFertilizerLookupSearch_();
-    // モーダルを開いた瞬間にマスタを事前取得
     setTimeout(loadMasterFertilizers_, 10);
     var input = document.getElementById('fertLookupQ');
     if (input) setTimeout(function () { input.focus(); }, 40);
@@ -248,7 +274,7 @@
       } else {
         var area = document.getElementById('fertLookupResult');
         if (area && !hits.length) {
-          area.innerHTML = '<div class="fert-lookup-empty">肥料名や種類、成分、メーカー名を入力して「検索」、または「⭐ お気に入り」を押してください。</div>';
+          area.innerHTML = '<div class="fert-lookup-empty">資材名の一部を入力して「検索」、または「⭐ お気に入り」を押してください。<br><small style="color:#888;">※3桁以上の番号（例: 12345）を入力すると登録番号検索になります。</small></div>';
         }
       }
     } else {
@@ -259,18 +285,20 @@
   window.searchFertilizerLookup_ = async function () {
     showingFavList = false;
     var area = document.getElementById('fertLookupResult');
-    var q = String((document.getElementById('fertLookupQ') || {}).value || '').trim();
+    var qRaw = String((document.getElementById('fertLookupQ') || {}).value || '').trim();
     if (!area) return;
-    if (!q) {
+    if (!qRaw) {
       showFertilizerFavorites_();
       return;
     }
 
-    var qLower = q.toLowerCase();
+    var isNumberOnly = isNumberOnlyQuery_(qRaw);
+    var qNorm = foldSearchText_(qRaw);
+    var cacheKey = qNorm + '___' + (isNumberOnly ? 'num' : 'name');
 
     // 1. メモリキャッシュにあれば即座（0ms）に描画
-    if (queryCache_[qLower]) {
-      var cachedEntry = queryCache_[qLower];
+    if (queryCache_[cacheKey]) {
+      var cachedEntry = queryCache_[cacheKey];
       renderHitsList_(cachedEntry.hits, false, cachedEntry.note);
       return;
     }
@@ -280,13 +308,23 @@
       return;
     }
 
-    area.innerHTML = '<div class="fert-lookup-empty">検索中...</div>';
-    setFertLookupLoading_(true, '肥料を検索中...');
+    var loadingMsg = isNumberOnly ? '登録番号で検索中 (' + qRaw + ')...' : '資材名を検索中 (' + qRaw + ')...';
+    area.innerHTML = '<div class="fert-lookup-empty">' + esc(loadingMsg) + '</div>';
+    setFertLookupLoading_(true, loadingMsg);
 
     try {
+      var words = qNorm.split(/\s+/).filter(Boolean);
+      var wordsVariants = words.map(function (w) {
+        return {
+          raw: w,
+          kata: hiraToKata_(w),
+          hira: kataToHira_(w)
+        };
+      });
+
       // 2. 自社マスタとカタログ検索を並行（Promise.all）で実行！
       var masterPromise = loadMasterFertilizers_();
-      var catPromise = callGAS('searchFertilizerCatalog', { q: q, limit: 50 }).catch(function (catErr) {
+      var catPromise = callGAS('searchFertilizerCatalog', { q: qRaw, limit: 50 }).catch(function (catErr) {
         console.warn('肥料カタログ検索エラー:', catErr);
         return null;
       });
@@ -295,14 +333,39 @@
       var masters = results[0] || [];
       var res = results[1];
 
-      // 自社マスタからフィルタ
+      // 自社マスタのフィルタ
       var masterHits = (masters || []).filter(function (m) {
         if (!m || !m.name) return false;
-        return String(m.name).toLowerCase().indexOf(qLower) >= 0 ||
-          String(m.fertilizerType || '').toLowerCase().indexOf(qLower) >= 0 ||
-          String(m.manufacturer || '').toLowerCase().indexOf(qLower) >= 0 ||
-          String(m.regNumber || '').toLowerCase().indexOf(qLower) >= 0 ||
-          String(m.components || '').toLowerCase().indexOf(qLower) >= 0;
+        if (isNumberOnly) {
+          // 3桁以上の番号のみ: 登録番号・IDで検索
+          var cleanNum = qNorm.replace(/[^\d]/g, '');
+          var reg = foldSearchText_(m.regNumber || '');
+          var regDigits = reg.replace(/[^\d]/g, '');
+          var idDigits = foldSearchText_(m.id || '').replace(/[^\d]/g, '');
+          return reg.indexOf(qNorm) >= 0 || (cleanNum && (regDigits.indexOf(cleanNum) >= 0 || idDigits.indexOf(cleanNum) >= 0));
+        }
+
+        // 通常: 基本は資材名（肥料名）で探す
+        var nameNorm = foldSearchText_(m.name);
+        var nameMatch = true;
+        for (var i = 0; i < wordsVariants.length; i++) {
+          var v = wordsVariants[i];
+          if (nameNorm.indexOf(v.raw) < 0 && nameNorm.indexOf(v.kata) < 0 && nameNorm.indexOf(v.hira) < 0) {
+            nameMatch = false;
+            break;
+          }
+        }
+        if (nameMatch) return true;
+
+        // 幅広く拾う（種類やメーカー）
+        var allText = [nameNorm, foldSearchText_(m.fertilizerType), foldSearchText_(m.manufacturer), foldSearchText_(m.components)].join(' ');
+        for (var j = 0; j < wordsVariants.length; j++) {
+          var w = wordsVariants[j];
+          if (allText.indexOf(w.raw) < 0 && allText.indexOf(w.kata) < 0 && allText.indexOf(w.hira) < 0) {
+            return false;
+          }
+        }
+        return true;
       }).map(function (m) {
         return Object.assign({}, m, { isMaster: true });
       });
@@ -337,13 +400,17 @@
       });
 
       if (!merged.length) {
-        area.innerHTML = '<div class="fert-lookup-empty">該当する肥料がありません。別のキーワードをお試しください。</div>';
+        var emptyMsg = isNumberOnly
+          ? '登録番号「' + qRaw + '」に該当する肥料がありません。'
+          : '資材名「' + qRaw + '」に該当する肥料がありません。別のキーワードをお試しください。';
+        area.innerHTML = '<div class="fert-lookup-empty">' + esc(emptyMsg) + '</div>';
         return;
       }
 
-      var note = 'ヒット: ' + merged.length + ' 件' + (totalCatalog > 0 ? ' ／ カタログ ' + totalCatalog.toLocaleString() + ' 件' : '');
+      var modeLabel = isNumberOnly ? '登録番号検索' : '資材名検索';
+      var note = '【' + modeLabel + '】ヒット: ' + merged.length + ' 件' + (totalCatalog > 0 ? ' ／ カタログ ' + totalCatalog.toLocaleString() + ' 件' : '');
       // クエリキャッシュに保存
-      queryCache_[qLower] = { hits: merged, note: note };
+      queryCache_[cacheKey] = { hits: merged, note: note };
 
       renderHitsList_(merged, false, note);
     } catch (e) {
@@ -423,6 +490,23 @@
         '</div>';
     }
 
+    // 🌐 Web検索リンク（ネット上の希釈倍率・施用目安・製品情報を即座に照会）
+    var searchKeywords = [hit.name, hit.manufacturer, '肥料'].filter(Boolean).join(' ');
+    var googleUrl = 'https://www.google.com/search?q=' + encodeURIComponent(searchKeywords);
+
+    html += '<div style="margin-top:14px; display:flex; flex-direction:column; gap:8px;">' +
+      '<a href="' + esc(googleUrl) + '" target="_blank" rel="noopener" class="fert-web-search-btn">' +
+      '<span>🌐</span><span>Googleで「' + esc(hit.name) + '」の希釈倍率・製品情報を探す</span>' +
+      '</a>';
+
+    if (hit.regNumber) {
+      var regSearchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(hit.regNumber + ' 肥料');
+      html += '<a href="' + esc(regSearchUrl) + '" target="_blank" rel="noopener" class="fert-reg-search-btn">' +
+        '<span>📋</span><span>登録番号「' + esc(hit.regNumber) + '」の公的情報を調べる</span>' +
+        '</a>';
+    }
+    html += '</div>';
+
     detailWrap.innerHTML = html;
     var pane = document.getElementById('fertLookupDetailPane');
     if (pane) pane.scrollTop = 0;
@@ -449,7 +533,6 @@
     updateFavListBtnCount_();
   };
 
-  // アイドル時に裏で自社マスタを先読み
   setTimeout(function () {
     try { loadMasterFertilizers_(); } catch (e) {}
   }, 1200);

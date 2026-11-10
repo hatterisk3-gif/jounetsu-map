@@ -999,6 +999,13 @@
     if (typeof window.refreshClockOutNudgeUI_ === 'function') {
       try { window.refreshClockOutNudgeUI_(); } catch (e) {}
     }
+    try {
+      if (isLocallyClockedIn()) {
+        startMovementTracking_();
+      } else {
+        stopMovementTracking_();
+      }
+    } catch (eTrack) {}
   }
   window.getTrackingMode = getTrackingMode;
   window.loadLunchBreak = loadLunchBreak;
@@ -1488,7 +1495,102 @@
     return window.applyClockInTimeChange({ silent: true, force: true });
   }
 
+  // 📍 移動軌跡トラッキング（出勤中の定期位置送信）
+  let _movementWatchId = null;
+  let _lastMovementTime = 0;
+  let _lastMovementLat = null;
+  let _lastMovementLng = null;
+  const MOVEMENT_MIN_INTERVAL_MS = 30000; // 最短送信間隔: 30秒
+  const MOVEMENT_MIN_DISTANCE_M = 10;     // 最低移動距離: 10m
+
+  function calcDistanceM_(lat1, lng1, lat2, lng2) {
+    const R = 6378137;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  function startMovementTracking_() {
+    if (_movementWatchId !== null) return;
+    if (!navigator.geolocation) return;
+    if (!isLocallyClockedIn()) return;
+
+    const user = getCurrentUserName();
+    if (!user) return;
+
+    try {
+      _movementWatchId = navigator.geolocation.watchPosition(
+        function (pos) {
+          if (!isLocallyClockedIn()) {
+            stopMovementTracking_();
+            return;
+          }
+          const now = Date.now();
+          if (now - _lastMovementTime < MOVEMENT_MIN_INTERVAL_MS) return;
+
+          const coords = pos.coords;
+          const lat = coords.latitude;
+          const lng = coords.longitude;
+          const accuracy = coords.accuracy;
+
+          if (accuracy && accuracy > 100) return;
+          if (!lat || !lng || lat < 20.0 || lat > 46.0 || lng < 122.0 || lng > 154.0) return;
+
+          if (_lastMovementLat !== null && _lastMovementLng !== null) {
+            const dist = calcDistanceM_(_lastMovementLat, _lastMovementLng, lat, lng);
+            if (dist < MOVEMENT_MIN_DISTANCE_M && (now - _lastMovementTime < 300000)) {
+              return;
+            }
+          }
+
+          _lastMovementTime = now;
+          _lastMovementLat = lat;
+          _lastMovementLng = lng;
+
+          const u = getCurrentUserName();
+          if (u && typeof callGAS === "function") {
+            callGAS("saveTrackingData", {
+              userName: u,
+              lat: lat,
+              lng: lng,
+              type: "移動",
+              time: now
+            }).catch(function (e) {
+              console.warn("移動トラッキング送信エラー:", e);
+            });
+          }
+        },
+        function (err) {
+          console.warn("移動トラッキング位置測位エラー:", err);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 20000,
+          maximumAge: 10000
+        }
+      );
+    } catch (e) {
+      console.warn("startMovementTracking_ 失敗:", e);
+    }
+  }
+
+  function stopMovementTracking_() {
+    if (_movementWatchId !== null) {
+      try {
+        navigator.geolocation.clearWatch(_movementWatchId);
+      } catch (e) {}
+      _movementWatchId = null;
+    }
+    _lastMovementLat = null;
+    _lastMovementLng = null;
+  }
+
   function clearWatchers() {
+    stopMovementTracking_();
     if (window.passionWatchId !== null && window.passionWatchId !== undefined) {
       navigator.geolocation.clearWatch(window.passionWatchId);
       window.passionWatchId = null;
@@ -2968,6 +3070,7 @@
     localStorage.setItem('passionMapClockInToday', JSON.stringify(clockInTodayState));
     if (typeof window.syncTrackingUI === 'function') window.syncTrackingUI();
     if (typeof window.refreshTrackingModeUI === 'function') refreshTrackingModeUI();
+    try { startMovementTracking_(); } catch (eTrack) {}
 
     const user = getCurrentUserName();
     let gasSent = false;

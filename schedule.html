@@ -15,7 +15,7 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1786243000000"></script>
-  <link rel="stylesheet" href="schedule.css?v=1788600000357">
+  <link rel="stylesheet" href="schedule.css?v=1788600000362">
   <link rel="stylesheet" href="cad.css?v=1788600000326">
   <link rel="stylesheet" href="location-pin.css?v=1788600000301">
   <link rel="stylesheet" href="map-filter.css?v=1788600000330">
@@ -54,6 +54,10 @@
         style="display:none;">🌀 台風</button>
       <button id="btnWeather" class="sched-top-btn sched-top-btn-weather" onclick="openWeatherModal()"
         title="天気">☁️</button>
+      <button type="button" id="btnAttendanceTop" class="sched-top-btn" onclick="openAttendanceCalendar()" title="出勤暦"
+        style="color:#1565C0; background:#E3F2FD; border:1px solid #90CAF9; font-weight:bold;">
+        🗓️ 出勤暦
+      </button>
       <button type="button" id="btnReleaseNotes" class="sched-top-btn" onclick="openReleaseNotesModal_()" title="更新情報"
         style="position:relative; color:#00695C; background:#E0F2F1; border:1px solid #26A69A; font-weight:bold;">
         🆕 更新情報<span data-release-notes-badge
@@ -721,9 +725,9 @@
         </div>
       </div>
       <div id="fertLookupSearchPane" class="fert-lookup-body">
-        <div class="fert-lookup-hint">肥料名・種類・成分・登録番号・メーカーの一部でもヒットします。名前を押すと詳細を表示します。</div>
+        <div class="fert-lookup-hint">資材名（肥料名）で部分一致検索できます。3桁以上の番号を入力すると登録番号検索になります。</div>
         <div class="fert-lookup-searchrow">
-          <input type="search" id="fertLookupQ" class="fert-lookup-input" placeholder="例: 化成、高度、8-8-8、苦土" enterkeyhint="search"
+          <input type="search" id="fertLookupQ" class="fert-lookup-input" placeholder="例: マイガーデン、化成、または番号(12345)" enterkeyhint="search"
             onkeydown="if(event.key==='Enter'){ event.preventDefault(); searchFertilizerLookup_(); }">
           <button type="button" class="fert-lookup-go" onclick="searchFertilizerLookup_()">検索</button>
           <button type="button" id="fertLookupFavListBtn" class="fert-lookup-favbtn"
@@ -806,22 +810,9 @@
       <div style="font-size:20px;">🏃‍♂️</div>
       <div style="font-weight:bold;">軌跡表示</div>
     </button>
-    <button type="button" onclick="openDayPlanner()">
-      <div style="font-size:20px;">⏰</div>
-      <div style="font-weight:bold;">時間予定</div>
-    </button>
-    <button type="button" onclick="openAttendanceCalendar()">
-      <div style="font-size:20px;">🗓️</div>
-      <div style="font-weight:bold;">出勤暦</div>
-    </button>
     <button type="button" id="btnMachineMaintHistory" onclick="openWorkerMachineMaintHistoryModal_()" title="機械の整備履歴">
       <div style="font-size:20px;">🔧</div>
       <div style="font-weight:bold;">整備</div>
-    </button>
-    <button type="button" onclick="openMyPage()">
-      <div style="font-size:20px;">👤</div>
-      <div style="font-weight:bold; max-width:72px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
-        data-account-name>マイページ</div>
     </button>
   </div>
 
@@ -1262,7 +1253,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000360';
+    const cacheBust = '1788600000363';
     // 豚糞共有：台数＋短いGoogleマップURL＋座標（v1.49）
     // ※ https://maps.google.com/?q=緯度,経度
     // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）
@@ -1471,9 +1462,12 @@
 
       <div id="cadMode1">
         <div style="display:flex; gap:5px; margin-bottom:10px;">
-          <button onclick="cadSetPinMode('snap_line')"
-            style="flex:1; background:#333; color:#4CAF50; border:1px solid #4CAF50; padding:6px; border-radius:4px; font-size:10px; font-weight:bold;">🎯
+          <button type="button" onclick="cadSetPinMode('snap_line')"
+            style="flex:2; background:#333; color:#4CAF50; border:1px solid #4CAF50; padding:6px; border-radius:4px; font-size:10px; font-weight:bold;">🎯
             選んだ線に合わせる</button>
+          <button type="button" onclick="cadFlipDirection()" title="地図と畝の向きを180度反転します"
+            style="flex:1; background:#333; color:#FF9800; border:1px solid #FF9800; padding:6px; border-radius:4px; font-size:10px; font-weight:bold;">🔄
+            180°反転</button>
         </div>
         <div style="display:flex; gap:10px; margin-bottom:8px; align-items:flex-end;">
           <div style="flex:1; display:none;">
@@ -1547,27 +1541,42 @@
           <div style="padding:0 8px 8px;">
             <div style="font-size:10px; color:#888; margin-bottom:6px; line-height:1.35;">タップ／GPSで配置。移動・変形できます。</div>
             <div style="border:1px solid #444; border-radius:6px; padding:7px; margin-bottom:6px; background:#242424;">
-              <div style="display:flex; gap:5px; align-items:center; margin-bottom:4px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                <span style="font-size:11px; color:#AED581; font-weight:bold;">📐 グリッド設定</span>
+                <span id="cadGridSizeInfo" style="font-size:10px; color:#81D4FA; font-weight:bold;"></span>
+              </div>
+              <div style="display:flex; gap:5px; align-items:center; margin-bottom:5px;">
                 <button type="button" id="cadSnapGridToggleBtn" onclick="cadToggleSnapGrid()"
-                  style="flex:1.1; background:#333; color:#ccc; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold;">グリッド
+                  style="flex:1.1; background:#333; color:#ccc; border:1px solid #666; padding:7px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">グリッド
                   OFF</button>
-                <span style="font-size:10px; color:#aaa; white-space:nowrap;">間隔</span>
-                <input type="number" id="cadSnapGridCm" value="150" min="20" max="2000" step="10"
-                  onchange="cadOnSnapGridCmChange()" oninput="cadOnSnapGridCmChange()"
-                  style="width:58px; padding:6px; border-radius:4px; border:none; box-sizing:border-box; font-size:13px; font-weight:bold; text-align:center;"
-                  title="セル間隔(cm)">
-                <span style="font-size:10px; color:#aaa;">cm</span>
+                <div style="display:flex; align-items:center; gap:2px;">
+                  <span style="font-size:10px; color:#aaa;">縦</span>
+                  <input type="number" id="cadSnapGridRows" value="10" min="1" max="100" step="1"
+                    onchange="cadOnSnapGridSizeChange()" oninput="cadOnSnapGridSizeChange()"
+                    style="width:40px; padding:6px 2px; border-radius:4px; border:none; box-sizing:border-box; font-size:12px; font-weight:bold; text-align:center;"
+                    title="縦のマス数">
+                  <span style="font-size:10px; color:#aaa;">マス</span>
+                </div>
+                <span style="color:#666; font-size:11px;">×</span>
+                <div style="display:flex; align-items:center; gap:2px;">
+                  <span style="font-size:10px; color:#aaa;">横</span>
+                  <input type="number" id="cadSnapGridCols" value="10" min="1" max="100" step="1"
+                    onchange="cadOnSnapGridSizeChange()" oninput="cadOnSnapGridSizeChange()"
+                    style="width:40px; padding:6px 2px; border-radius:4px; border:none; box-sizing:border-box; font-size:12px; font-weight:bold; text-align:center;"
+                    title="横のマス数">
+                  <span style="font-size:10px; color:#aaa;">マス</span>
+                </div>
               </div>
               <div style="display:flex; gap:4px; margin-bottom:4px; align-items:center;">
-                <span style="font-size:10px; color:#81D4FA;">セル幅:</span>
-                <button type="button" onclick="cadSetSnapGridCm(50)"
-                  style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">50cm</button>
-                <button type="button" onclick="cadSetSnapGridCm(100)"
-                  style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">1m</button>
-                <button type="button" onclick="cadSetSnapGridCm(150)"
-                  style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">1.5m</button>
-                <button type="button" onclick="cadSetSnapGridCm(200)"
-                  style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">2m</button>
+                <span style="font-size:10px; color:#81D4FA;">目安:</span>
+                <button type="button" onclick="cadSetSnapGridPreset(5, 5)"
+                  style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">5×5</button>
+                <button type="button" onclick="cadSetSnapGridPreset(10, 10)"
+                  style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">10×10</button>
+                <button type="button" onclick="cadSetSnapGridPreset(15, 15)"
+                  style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">15×15</button>
+                <button type="button" onclick="cadSetSnapGridPreset(20, 20)"
+                  style="flex:1; background:#37474F; color:#81D4FA; border:1px solid #455A64; padding:3px; border-radius:3px; font-size:10px; cursor:pointer;">20×20</button>
               </div>
               <div id="cadCellPaintBar" style="display:none; gap:5px; margin-bottom:4px;">
                 <button type="button" id="cadCellPaintBtn"
