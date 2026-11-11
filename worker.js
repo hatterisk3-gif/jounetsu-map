@@ -18486,7 +18486,11 @@ window.confirmConcurrentWorkModal_ = () => {
     } else if (document.getElementById('bulk_work_memo_confirm_scroll')) {
       window.renderBulkWorkMemoConfirmModal_();
     } else if (typeof window.renderBulkWorkMemoReviewModal_ === 'function') {
-      window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+      window.renderBulkWorkMemoReviewModal_({
+        scrollUid: uid,
+        anchorId: 'bulk_concurrent_' + uid,
+        anchorOffset: 75
+      });
     }
     return;
   }
@@ -18678,7 +18682,8 @@ window.syncBulkConcurrentEqualMinutes_ = (d) => {
   });
 };
 
-window.rerenderBulkConcurrentCard_ = (uid) => {
+window.rerenderBulkConcurrentCard_ = (uid, opts) => {
+  opts = opts || {};
   if (document.getElementById('concurrentWorkModal') && typeof window.renderConcurrentWorkModal_ === 'function') {
     window.renderConcurrentWorkModal_();
   }
@@ -18689,6 +18694,26 @@ window.rerenderBulkConcurrentCard_ = (uid) => {
       || document.getElementById('bulk_work_memo_manual_add_scroll');
     const prevScroll = scrollEl ? scrollEl.scrollTop : null;
     extrasEl.innerHTML = window.buildBulkWorkMemoExtrasHtml_(row, uid);
+    if (opts.scrollToConcurrent) {
+      const applyScrollToConcurrent = () => {
+        const scEl = document.getElementById('bulk_work_memo_review_scroll')
+          || document.getElementById('bulk_work_memo_manual_add_scroll');
+        const targetEl = document.getElementById('bulk_concurrent_' + uid);
+        if (scEl && targetEl) {
+          const scRect = scEl.getBoundingClientRect();
+          const targetRect = targetEl.getBoundingClientRect();
+          const targetTopInContainer = targetRect.top - scRect.top + scEl.scrollTop;
+          scEl.scrollTop = Math.max(0, targetTopInContainer - 75);
+        }
+      };
+      try {
+        applyScrollToConcurrent();
+        requestAnimationFrame(() => {
+          applyScrollToConcurrent();
+        });
+      } catch (e) { }
+      return;
+    }
     if (scrollEl && prevScroll != null) {
       scrollEl.scrollTop = prevScroll;
       try {
@@ -18704,7 +18729,15 @@ window.rerenderBulkConcurrentCard_ = (uid) => {
   } else if (document.getElementById('bulk_work_memo_confirm_scroll')) {
     window.renderBulkWorkMemoConfirmModal_();
   } else if (typeof window.renderBulkWorkMemoReviewModal_ === 'function') {
-    window.renderBulkWorkMemoReviewModal_({ keepScroll: true, scrollUid: uid });
+    if (opts.scrollToConcurrent) {
+      window.renderBulkWorkMemoReviewModal_({
+        anchorId: 'bulk_concurrent_' + uid,
+        anchorOffset: 75,
+        scrollUid: uid
+      });
+    } else {
+      window.renderBulkWorkMemoReviewModal_({ keepScroll: true, scrollUid: uid });
+    }
   }
 };
 
@@ -18721,7 +18754,7 @@ window.toggleBulkConcurrentPanel_ = (uid) => {
       return;
     }
   }
-  window.rerenderBulkConcurrentCard_(uid);
+  window.rerenderBulkConcurrentCard_(uid, row._concurrentPanelOpen ? {} : { scrollToConcurrent: true });
 };
 
 window.pickBulkConcurrentDraftCrop_ = (uid, name) => {
@@ -19000,7 +19033,7 @@ window.confirmBulkConcurrentDraft_ = (uid) => {
   window.clearBulkConcurrentDraft_(row);
   // 登録後は新規追加枠をアコーディオンで閉じる（再追加はボタンから開く）
   row._concurrentPanelOpen = false;
-  window.rerenderBulkConcurrentCard_(uid);
+  window.rerenderBulkConcurrentCard_(uid, { scrollToConcurrent: true });
 };
 
 window.buildBulkConcurrentWorksHtml_ = (d, uid) => {

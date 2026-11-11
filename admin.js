@@ -2480,7 +2480,7 @@ window.openMasterModal = () => {
 window.getMasterSectionsTargetEl_ = () => {
     const equip = !!window._equipmentManageActive;
     const tab = window._equipmentManageTab;
-    if (equip && (tab === 'machine' || tab === 'tool' || currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool')) {
+    if (equip && (tab === 'machine' || tab === 'tool' || tab === 'inspection' || currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool' || currentActiveMasterType === 'inspection')) {
         const el = document.getElementById('equipmentManageBody');
         if (el) return el;
     }
@@ -3317,7 +3317,12 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <button onclick="execMaster('hitchType', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
         } else if (type === 'inspection') {
-            const macTypeOpts = (pdlMachineTypes || []).map(t => `<option value="${String(t).replace(/"/g, '&quot;')}">${t}</option>`).join('');
+            const allTypes = [...new Set([
+                ...(pdlMachineTypes || []),
+                ...((window.pdlMachines || []).map(m => m.type).filter(Boolean)),
+                'トラクター', 'コンバイン', '田植機', '定植機', '管理機', '草刈機', '動噴', '散布機', 'ドローン', '軽トラ', '軽バン', 'トラック'
+            ])];
+            const macTypeOpts = allTypes.map(t => `<option value="${String(t).replace(/"/g, '&quot;')}">${t}</option>`).join('');
             const existingCats = [...new Set((pdlInspections || []).map(i => i.inspectionCategory).filter(Boolean))];
             const catDatalist = existingCats.map(c => `<option value="${String(c).replace(/"/g, '&quot;')}">`).join('');
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
@@ -3858,9 +3863,9 @@ window.renderMasterSection = () => {
             if (typeof window.renderEquipmentVehiclePanel_ === 'function') window.renderEquipmentVehiclePanel_();
             return;
         }
-        const type = (currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool')
+        const type = (currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool' || currentActiveMasterType === 'inspection')
             ? currentActiveMasterType
-            : (tab === 'tool' ? 'tool' : 'machine');
+            : (tab === 'tool' || tab === 'inspection' ? tab : 'machine');
         openMasterDetail(type);
         return;
     }
@@ -4037,7 +4042,13 @@ window.openEditCropMaster = (encoded) => {
 window.openEditInspectionMaster = (encoded) => {
     const v = JSON.parse(decodeURIComponent(encoded || '%7B%7D'));
     const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;');
-    const macTypeOpts = (pdlMachineTypes || []).map(t => {
+    const allTypes = [...new Set([
+        ...(pdlMachineTypes || []),
+        ...((window.pdlMachines || []).map(m => m.type).filter(Boolean)),
+        v.machineType || '',
+        'トラクター', 'コンバイン', '田植機', '定植機', '管理機', '草刈機', '動噴', '散布機', 'ドローン', '軽トラ', '軽バン', 'トラック'
+    ])].filter(Boolean);
+    const macTypeOpts = allTypes.map(t => {
         const sel = String(t) === String(v.machineType || '') ? 'selected' : '';
         return `<option value="${esc(t)}" ${sel}>${t}</option>`;
     }).join('');
@@ -6843,7 +6854,9 @@ window.execMaster = async (type, act, val) => {
             const sortVal = document.getElementById('add_insp_sort')?.value;
             const sortOrder = (sortVal !== '' && sortVal != null) ? Number(sortVal) || 0 : 0;
             const note = (document.getElementById('add_insp_note')?.value || '').trim();
+            const id = 'insp_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
             value = {
+                id: id,
                 machineType: macType,
                 inspectionCategory: cat,
                 item: item,

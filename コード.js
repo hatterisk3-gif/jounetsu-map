@@ -3321,7 +3321,8 @@ function manageMasterData(masterType, manageAction, value, userName) {
       } else if (masterType === 'fertilizer') {
         if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'inspection') {
-        if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
+        const tv = String(targetVal || '').trim();
+        if (String(data[i][0] || '').trim() === tv || String(data[i][3] || '').trim() === tv) match = true;
       } else if (masterType === 'cropCultSetting') {
         if (String(data[i][0] || '').trim() === String(targetVal || '').trim()) match = true;
       } else if (masterType === 'location' || masterType === 'workCategory' || masterType === 'contentUnit' || masterType === 'machineType' || masterType === 'machineGroup' || masterType === 'hitchType') {

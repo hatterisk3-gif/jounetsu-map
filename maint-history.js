@@ -233,6 +233,18 @@
     return { byId, byName, knownHubs, nonHubSignNames, hubRefs, fieldRefs };
   }
 
+  let _locCtxCache = null;
+  let _locCtxCacheTime = 0;
+  function getCachedLocContext_(force) {
+    const now = Date.now();
+    if (!force && _locCtxCache && (now - _locCtxCacheTime < 60000)) {
+      return _locCtxCache;
+    }
+    _locCtxCache = buildLocContext_();
+    _locCtxCacheTime = now;
+    return _locCtxCache;
+  }
+
   function nearestHubFromLatLng_(pt, ctx) {
     if (!pt || !isFinite(pt.lat) || !isFinite(pt.lng) || !ctx) return '';
     const refs = (ctx.hubRefs && ctx.hubRefs.length) ? ctx.hubRefs : (ctx.fieldRefs || []);
@@ -294,7 +306,7 @@
         isAtBase: false
       };
     }
-    const ctx = optCtx || buildLocContext_();
+    const ctx = optCtx || getCachedLocContext_();
     const baseSignId = String(m.signId || '').trim();
     const rawBaseSignName = String(m.signName || '').trim();
     const basePoly = (baseSignId && ctx.byId[baseSignId])
@@ -582,18 +594,86 @@
     if (el) el.style.display = 'none';
   }
 
-  function renderList_(merged, machines, vehicles) {
+  let _activeMaintState = {
+    merged: [],
+    machines: [],
+    vehicles: [],
+    searchTimer: null
+  };
+
+  // 高速フィルター切り替え（DOM全体を壊さずリストとチップのみ更新）
+  function refreshMaintListFast_() {
+    if (!document.getElementById('maintHistListArea')) {
+      renderList_(_activeMaintState.merged, _activeMaintState.machines, _activeMaintState.vehicles, false);
+      return;
+    }
+    renderList_(_activeMaintState.merged, _activeMaintState.machines, _activeMaintState.vehicles, true);
+  }
+
+  window._maintHistSelectKindTab_ = function (key) {
+    window._maintHistKindTab = key;
+    window._maintHistSignFilter = 'all';
+    window._maintHistCurLocFilter = 'all';
+    refreshMaintListFast_();
+  };
+
+  window._maintHistSelectHub_ = function (hubKey) {
+    window._maintHistHubFilter = hubKey;
+    window._maintHistSignFilter = 'all';
+    window._maintHistCurLocFilter = 'all';
+    refreshMaintListFast_();
+  };
+
+  window._maintHistSelectSign_ = function (signKey) {
+    window._maintHistSignFilter = signKey;
+    window._maintHistCurLocFilter = 'all';
+    refreshMaintListFast_();
+  };
+
+  window._maintHistSelectCurLoc_ = function (curLocKey) {
+    window._maintHistCurLocFilter = curLocKey;
+    refreshMaintListFast_();
+  };
+
+  window._maintHistOnSearchInput_ = function (val) {
+    window._maintHistSearchQuery = val;
+    const clearBtn = document.getElementById('maintHistSearchClearBtn');
+    if (clearBtn) clearBtn.style.display = val ? 'flex' : 'none';
+    if (_activeMaintState.searchTimer) clearTimeout(_activeMaintState.searchTimer);
+    _activeMaintState.searchTimer = setTimeout(() => {
+      refreshMaintListFast_();
+    }, 120);
+  };
+
+  window._maintHistClearSearch_ = function () {
+    window._maintHistSearchQuery = '';
+    const input = document.getElementById('maintHistSearchInput');
+    if (input) {
+      input.value = '';
+      input.focus();
+    }
+    const clearBtn = document.getElementById('maintHistSearchClearBtn');
+    if (clearBtn) clearBtn.style.display = 'none';
+    refreshMaintListFast_();
+  };
+
+  function renderList_(merged, machines, vehicles, isFilterOnly) {
     const modalBody = document.getElementById('modalBody');
     if (!modalBody) return;
-    const allMachines = machines || getMachines_();
-    const allVehicles = vehicles || getVehicles_();
+
+    _activeMaintState.merged = merged || _activeMaintState.merged || [];
+    _activeMaintState.machines = machines || _activeMaintState.machines || getMachines_();
+    _activeMaintState.vehicles = vehicles || _activeMaintState.vehicles || getVehicles_();
+
+    const allMachines = _activeMaintState.machines;
+    const allVehicles = _activeMaintState.vehicles;
     const kindTab = window._maintHistKindTab || 'machine';
     const targetEquipments = kindTab === 'vehicle'
       ? allVehicles
       : (kindTab === 'all' ? allMachines.concat(allVehicles) : allMachines);
 
     const byMachine = new Map();
-    (merged || []).forEach((r) => {
+    (_activeMaintState.merged || []).forEach((r) => {
       const id = String((r && r.machineId) || '').trim();
       if (!id) return;
       if (!byMachine.has(id)) byMachine.set(id, []);
@@ -613,7 +693,7 @@
       return list;
     };
 
-    const locCtx = buildLocContext_();
+    const locCtx = getCachedLocContext_();
     const allRows = targetEquipments.map((m) => {
       const recs = getRecsForEquip(m);
       const locInfo = resolveLocAndSign_(m, locCtx);
@@ -707,10 +787,6 @@
       return String(a).localeCompare(String(b), 'ja');
     });
 
-    const isAdmin = typeof window.isWorkerAdmin === 'function'
-      && window.isWorkerAdmin()
-      && typeof window.openWorkerMaintMachineEdit_ === 'function';
-
     const sections = visibleHubs.map((hub) => {
       const hubItems = filteredRows.filter(r => r.hub === hub);
       const hubRecordCount = hubItems.reduce((s, x) => s + x.count, 0);
@@ -737,8 +813,8 @@
           const safeThumbJs = String(thumb).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
           const fallbackIcon = isVeh ? '🛻' : '🚜';
           const thumbHtml = thumb
-            ? `<img src="${esc(thumb)}" alt="${esc(labelMachine_(m))}" loading="lazy" onclick="event.stopPropagation(); openLightbox('${safeThumbJs}')" title="タップで写真を拡大" style="width:56px; height:56px; object-fit:cover; border-radius:8px; border:1px solid ${isVeh ? '#90CAF9' : '#FFE0B2'}; background:#fff; flex-shrink:0; cursor:zoom-in;">`
-            : `<div style="width:56px; height:56px; border-radius:8px; background:${isVeh ? '#E3F2FD' : '#FFF3E0'}; border:1px dashed ${isVeh ? '#90CAF9' : '#FFCC80'}; display:flex; align-items:center; justify-content:center; color:${isVeh ? '#1565C0' : '#FF9800'}; font-size:24px; flex-shrink:0;">${fallbackIcon}</div>`;
+            ? `<img src="${esc(thumb)}" alt="${esc(labelMachine_(m))}" loading="lazy" onclick="event.stopPropagation(); openLightbox('${safeThumbJs}')" title="タップで写真を拡大" style="width:58px; height:58px; object-fit:cover; border-radius:8px; border:1px solid ${isVeh ? '#90CAF9' : '#FFE0B2'}; background:#fff; flex-shrink:0; cursor:zoom-in;">`
+            : `<div style="width:58px; height:58px; border-radius:8px; background:${isVeh ? '#E3F2FD' : '#FFF3E0'}; border:1px dashed ${isVeh ? '#90CAF9' : '#FFCC80'}; display:flex; align-items:center; justify-content:center; color:${isVeh ? '#1565C0' : '#FF9800'}; font-size:24px; flex-shrink:0;">${fallbackIcon}</div>`;
 
           const kindBadge = isVeh
             ? `<span style="padding:2px 6px; border-radius:6px; background:#E3F2FD; color:#0D47A1; border:1px solid #90CAF9; font-size:10px; font-weight:bold;">🛻 車両</span>`
@@ -752,25 +828,26 @@
                 : `<span style="padding:2px 6px; border-radius:6px; background:#f5f5f5; color:#777; border:1px solid #ddd; font-size:10px; font-weight:bold;">📌 現在地:${esc(locInfo.curLocGroup)}</span>`);
 
           const latestLine = latest
-            ? `<div style="font-size:11px; color:#666; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">直近: ${esc(latest.date || '')} ${esc(latest.material || '')}</div>`
-            : `<div style="font-size:11px; color:#aaa; margin-top:3px;">整備履歴なし</div>`;
+            ? `<div style="font-size:11px; color:#555; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">直近: ${esc(latest.date || '')} ${esc(latest.material || '')}</div>`
+            : `<div style="font-size:11px; color:#999; margin-top:3px;">整備履歴なし</div>`;
           const extraPhotos = machinePhotos.slice(1).concat(latestPhotos)
             .filter((u, idx, arr) => u && u !== thumb && arr.indexOf(u) === idx)
             .slice(0, 3);
           const miniPhotos = extraPhotos.length
             ? `<div style="display:flex; gap:4px; margin-top:6px;">${extraPhotos.map((u) => {
               const safeU = String(u).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-              return `<img src="${esc(u)}" alt="" loading="lazy" onclick="event.stopPropagation(); openLightbox('${safeU}')" style="width:36px; height:36px; object-fit:cover; border-radius:4px; border:1px solid #eee; cursor:zoom-in;">`;
+              return `<img src="${esc(u)}" alt="" loading="lazy" onclick="event.stopPropagation(); openLightbox('${safeU}')" style="width:34px; height:34px; object-fit:cover; border-radius:4px; border:1px solid #eee; cursor:zoom-in;">`;
             }).join('')}</div>`
             : '';
-          const masterBtn = `<button type="button" onclick="event.stopPropagation(); openMaintMachineMasterModal_('${safeId}', 'list')"
-            style="flex-shrink:0; align-self:center; padding:8px 10px; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; font-size:11px; font-weight:bold; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; min-width:58px;" title="この機械のマスタを開く">
-            <span style="font-size:14px; line-height:1;">${isVeh ? '🛻' : '🚜'}</span>
-            <span>マスタ</span>
-          </button>`;
-          return `<div style="display:flex; gap:6px; align-items:stretch; margin-bottom:8px;">
-            <button type="button" onclick="openWorkerMachineMaintHistoryForMachine_('${safeId}')"
-              style="flex:1; min-width:0; text-align:left; padding:10px 12px; border:1px solid ${count ? (isVeh ? '#90CAF9' : '#FFE0B2') : '#e0e0e0'}; border-radius:10px; background:${count ? (isVeh ? '#F5FAFF' : '#FFFDF7') : '#ffffff'}; cursor:pointer; display:flex; gap:10px; align-items:flex-start; box-sizing:border-box;">
+
+          const cardBorderColor = count ? (isVeh ? '#90CAF9' : '#FFE0B2') : '#E0E0E0';
+          const cardBg = count ? (isVeh ? '#FAFCFF' : '#FFFEFA') : '#FFFFFF';
+          const titleColor = isVeh ? '#0D47A1' : '#E65100';
+
+          return `<div class="maint-item-card" onclick="openWorkerMachineMaintHistoryForMachine_('${safeId}')"
+            style="display:flex; flex-direction:column; background:${cardBg}; border:1px solid ${cardBorderColor}; border-radius:12px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.05); overflow:hidden; cursor:pointer; box-sizing:border-box;">
+            <!-- 上段: 写真・バッジ・機械名（タップで整備履歴へ） -->
+            <div style="display:flex; gap:10px; align-items:flex-start; padding:10px 12px;">
               ${thumbHtml}
               <div style="flex:1; min-width:0;">
                 <div style="display:flex; align-items:center; gap:4px; flex-wrap:wrap; margin-bottom:4px;">
@@ -779,12 +856,26 @@
                   ${baseBadge}
                   ${curBadge}
                 </div>
-                <div style="font-weight:bold; color:${isVeh ? '#0D47A1' : '#E65100'}; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(labelMachine_(m))}</div>
-                <div style="font-size:11px; color:#888; margin-top:2px;">整備履歴 ${count} 件</div>
-                ${latestLine}${miniPhotos}
+                <div style="font-weight:bold; color:${titleColor}; font-size:15px; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(labelMachine_(m))}</div>
+                ${latestLine}
+                ${miniPhotos}
               </div>
-            </button>
-            ${masterBtn}
+              <div style="flex-shrink:0; align-self:center; color:#bbb; font-size:20px; font-weight:bold; padding-left:4px;" title="タップで整備履歴を開く">›</div>
+            </div>
+            <!-- 下段フッター: 整備履歴件数案内 ＆ 調和したマスタボタン -->
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 12px; background:${isVeh ? '#EDF5FD' : '#FFF9EE'}; border-top:1px solid ${isVeh ? '#E3F2FD' : '#FFECC7'}; gap:8px;">
+              <div style="display:flex; align-items:center; gap:5px; font-size:12px; min-width:0;">
+                <span style="font-weight:bold; color:${count ? (isVeh ? '#1565C0' : '#E65100') : '#888'}; white-space:nowrap;">
+                  📋 整備履歴 <b>${count}</b> 件
+                </span>
+                <span style="font-size:11px; color:#888; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">（タップで履歴・記録）</span>
+              </div>
+              <button type="button" onclick="event.stopPropagation(); openMaintMachineMasterModal_('${safeId}', 'list')"
+                style="flex-shrink:0; padding:4px 10px; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:4px; box-shadow:0 1px 2px rgba(0,0,0,0.04);"
+                title="この機械のマスタ（詳細・編集）を開く">
+                <span>⚙️ マスタ</span>
+              </button>
+            </div>
           </div>`;
         }).join('');
 
@@ -810,8 +901,8 @@
 
     const kindTabBtn = (key, icon, label, cnt, activeColor, activeBg) => {
       const on = kindTab === key;
-      return `<button type="button" onclick="window._maintHistKindTab='${key}'; window._maintHistSignFilter='all'; window._maintHistCurLocFilter='all'; window.openWorkerMachineMaintHistoryModal_();"
-        style="flex:1; padding:8px 6px; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? activeColor : '#ddd'}; background:${on ? activeBg : '#f5f5f5'}; color:${on ? activeColor : '#666'}; display:flex; align-items:center; justify-content:center; gap:4px;">
+      return `<button type="button" onclick="window._maintHistSelectKindTab_('${key}')"
+        style="flex:1; padding:8px 6px; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer; border:2px solid ${on ? activeColor : '#ddd'}; background:${on ? activeBg : '#f5f5f5'}; color:${on ? activeColor : '#666'}; display:flex; align-items:center; justify-content:center; gap:4px; transition:all 0.15s;">
         <span>${icon} ${label}</span>
         <span style="font-size:11px; padding:1px 6px; border-radius:10px; background:${on ? activeColor : '#e0e0e0'}; color:${on ? '#fff' : '#555'};">${cnt}</span>
       </button>`;
@@ -824,8 +915,8 @@
       ).map(chip => {
         const on = hubFilter === chip.key;
         const safeKey = String(chip.key).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        return `<button type="button" onclick="window._maintHistHubFilter='${safeKey}'; window._maintHistSignFilter='all'; window._maintHistCurLocFilter='all'; window.openWorkerMachineMaintHistoryModal_();"
-          style="flex-shrink:0; padding:5px 10px; border-radius:14px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${on ? '#E65100' : '#FFCC80'}; background:${on ? '#E65100' : '#FFF8E1'}; color:${on ? '#fff' : '#BF360C'};">
+        return `<button type="button" onclick="window._maintHistSelectHub_('${safeKey}')"
+          style="flex-shrink:0; padding:5px 10px; border-radius:14px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${on ? '#E65100' : '#FFCC80'}; background:${on ? '#E65100' : '#FFF8E1'}; color:${on ? '#fff' : '#BF360C'}; transition:all 0.15s;">
           ${esc(chip.label)} (${chip.count})
         </button>`;
       }).join('')}
@@ -838,8 +929,8 @@
       ).map(chip => {
         const on = signFilter === chip.key;
         const safeKey = String(chip.key).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        return `<button type="button" onclick="window._maintHistSignFilter='${safeKey}'; window._maintHistCurLocFilter='all'; window.openWorkerMachineMaintHistoryModal_();"
-          style="flex-shrink:0; padding:4px 9px; border-radius:14px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${on ? '#00695C' : '#80CBC4'}; background:${on ? '#00796B' : '#E0F2F1'}; color:${on ? '#fff' : '#00695C'};">
+        return `<button type="button" onclick="window._maintHistSelectSign_('${safeKey}')"
+          style="flex-shrink:0; padding:4px 9px; border-radius:14px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${on ? '#00695C' : '#80CBC4'}; background:${on ? '#00796B' : '#E0F2F1'}; color:${on ? '#fff' : '#00695C'}; transition:all 0.15s;">
           ${esc(chip.label)} (${chip.count})
         </button>`;
       }).join('')}
@@ -862,43 +953,66 @@
         const inactiveBg = isMovedChip ? '#FFEBEE' : '#E8F5E9';
         const inactiveColor = isMovedChip ? '#C62828' : '#2E7D32';
         const borderCol = on ? activeBg : (isMovedChip ? '#EF9A9A' : '#A5D6A7');
-        return `<button type="button" onclick="window._maintHistCurLocFilter='${safeKey}'; window.openWorkerMachineMaintHistoryModal_();"
-          style="flex-shrink:0; padding:4px 9px; border-radius:14px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${borderCol}; background:${on ? activeBg : inactiveBg}; color:${on ? '#fff' : inactiveColor};">
+        return `<button type="button" onclick="window._maintHistSelectCurLoc_('${safeKey}')"
+          style="flex-shrink:0; padding:4px 9px; border-radius:14px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${borderCol}; background:${on ? activeBg : inactiveBg}; color:${on ? '#fff' : inactiveColor}; transition:all 0.15s;">
           ${esc(chip.label)} (${chip.count})
         </button>`;
       }).join('')}
     </div>`;
 
     const listHtml = filteredRows.length === 0
-      ? '<p style="color:#666; text-align:center; padding:16px;">該当する農機・車両がありません。</p>'
+      ? '<p style="color:#666; text-align:center; padding:24px; background:#fff; border-radius:8px; border:1px dashed #ccc;">該当する農機・車両がありません。</p>'
       : sections;
+
+    // 高速差分更新（DOM全体を再構築せず、チップ部とリスト部のみ書き換え）
+    if (isFilterOnly && document.getElementById('maintHistListArea') && document.getElementById('maintHistChipsArea')) {
+      const tabsArea = document.getElementById('maintHistKindTabsArea');
+      if (tabsArea) {
+        tabsArea.innerHTML = `
+          ${kindTabBtn('machine', '🚜', '農機', allMachines.length, '#E65100', '#FFF3E0')}
+          ${kindTabBtn('vehicle', '🛻', '車両', allVehicles.length, '#1565C0', '#E3F2FD')}
+          ${kindTabBtn('all', '📋', 'すべて', allMachines.length + allVehicles.length, '#2E7D32', '#E8F5E9')}
+        `;
+      }
+      document.getElementById('maintHistChipsArea').innerHTML = `
+        ${hubChipsHtml}
+        ${signChipsHtml}
+        ${curLocChipsHtml}
+      `;
+      document.getElementById('maintHistListArea').innerHTML = listHtml;
+      return;
+    }
 
     modalBody.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #E65100; padding-bottom:8px; margin-bottom:10px;">
         <h3 style="margin:0; color:#E65100; font-size:16px;">🔧 整備履歴（拠点名・設置看板場所・現在の置き場所）</h3>
-        <span onclick="closeWorkerMachineMaintHistoryModal_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
+        <span onclick="closeWorkerMachineMaintHistoryModal_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;" title="閉じる">×</span>
       </div>
-      <div style="display:flex; gap:6px; margin-bottom:8px;">
+      <div id="maintHistKindTabsArea" style="display:flex; gap:6px; margin-bottom:8px;">
         ${kindTabBtn('machine', '🚜', '農機', allMachines.length, '#E65100', '#FFF3E0')}
         ${kindTabBtn('vehicle', '🛻', '車両', allVehicles.length, '#1565C0', '#E3F2FD')}
         ${kindTabBtn('all', '📋', 'すべて', allMachines.length + allVehicles.length, '#2E7D32', '#E8F5E9')}
       </div>
       <div style="background:#FAFAFA; border:1px solid #E0E0E0; border-radius:10px; padding:8px; margin-bottom:10px;">
-        ${hubChipsHtml}
-        ${signChipsHtml}
-        ${curLocChipsHtml}
-        <div style="margin-top:6px;">
-          <input type="search" value="${esc(qRaw)}" placeholder="🔍 名前・番号・ナンバー・型式・拠点・設置看板・現在地で検索..."
-            oninput="window._maintHistSearchQuery=this.value; window.openWorkerMachineMaintHistoryModal_();"
-            style="width:100%; box-sizing:border-box; padding:6px 10px; border:1px solid #ccc; border-radius:8px; font-size:12px; background:#fff;">
+        <div id="maintHistChipsArea">
+          ${hubChipsHtml}
+          ${signChipsHtml}
+          ${curLocChipsHtml}
+        </div>
+        <div style="position:relative; margin-top:6px;">
+          <input type="search" id="maintHistSearchInput" value="${esc(qRaw)}" placeholder="🔍 名前・番号・ナンバー・型式・拠点・設置看板・現在地で検索..."
+            oninput="window._maintHistOnSearchInput_(this.value)"
+            style="width:100%; box-sizing:border-box; padding:7px 28px 7px 10px; border:1px solid #ccc; border-radius:8px; font-size:12px; background:#fff; outline:none;">
+          <span id="maintHistSearchClearBtn" onclick="window._maintHistClearSearch_()"
+            style="display:${qRaw ? 'flex' : 'none'}; position:absolute; right:8px; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:50%; background:#ccc; color:#fff; align-items:center; justify-content:center; font-size:12px; cursor:pointer; font-weight:bold; line-height:1;" title="クリア">×</span>
         </div>
       </div>
-      <div style="max-height:54vh; overflow-y:auto; -webkit-overflow-scrolling:touch;">${listHtml}</div>
+      <div id="maintHistListArea" style="max-height:54vh; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-right:2px;">${listHtml}</div>
       <div style="display:flex; gap:8px; margin-top:10px;">
         <button type="button" onclick="openWorkerMachineMaintHistoryModal_({force:true})"
-          style="flex:1; padding:11px; background:#FFF3E0; color:#E65100; border:1px solid #FFB74D; border-radius:8px; font-weight:bold; cursor:pointer;">🔄 再読込</button>
+          style="flex:1; padding:11px; background:#FFF3E0; color:#E65100; border:1px solid #FFB74D; border-radius:8px; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px;">🔄 再読込</button>
         <button type="button" onclick="closeWorkerMachineMaintHistoryModal_()"
-          style="flex:1; padding:11px; background:#ccc; color:#333; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">閉じる</button>
+          style="flex:1; padding:11px; background:#eee; color:#333; border:1px solid #ccc; border-radius:8px; font-weight:bold; cursor:pointer;">閉じる</button>
       </div>
     `;
   }
@@ -918,18 +1032,26 @@
       return;
     }
     const force = !!(opts && opts.force);
+    if (force) {
+      _locCtxCache = null;
+      _locCtxCacheTime = 0;
+    }
     showModal_(modal);
     const cachedMachines = getMachines_();
-    if (cachedMachines.length && !force) {
-      renderList_(window._workerMachineMaintenanceRecords || [], cachedMachines);
+    const cachedVehicles = getVehicles_();
+    if ((cachedMachines.length || cachedVehicles.length) && !force) {
+      renderList_(window._workerMachineMaintenanceRecords || [], cachedMachines, cachedVehicles);
     } else {
       modalBody.innerHTML = '<div style="text-align:center; padding:24px; font-weight:bold; color:#E65100;">整備履歴を読み込み中...</div>';
     }
     try {
-      const machines = await ensureMachines_(force);
-      const records = await fetchRecords_(force);
+      const [machines, vehicles, records] = await Promise.all([
+        ensureMachines_(force),
+        ensureVehicles_(force),
+        fetchRecords_(force)
+      ]);
       if (modal.style.display === 'none') return;
-      renderList_(records, machines.length ? machines : cachedMachines);
+      renderList_(records, machines.length ? machines : cachedMachines, vehicles.length ? vehicles : cachedVehicles);
     } catch (e) {
       console.warn(e);
       if (modal.style.display === 'none') return;
