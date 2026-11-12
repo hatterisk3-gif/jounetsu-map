@@ -19423,6 +19423,17 @@ window.buildBulkConcurrentWorksHtml_ = (d, uid) => {
     const machines = (Array.isArray(entry.usedMachines) && entry.usedMachines.length) ? entry.usedMachines.map(m => m.name || m.id).filter(Boolean).join('、') : '';
     const minsShow = (entry.minutes != null && !isNaN(Number(entry.minutes)) && Number(entry.minutes) > 0) ? `${Math.round(Number(entry.minutes))}分` : '';
 
+    const cwTargetWork = isMeta ? prepTarget : (entry.workName || entry.guessedName || '');
+    const cwFlags = (typeof window.calcSingleWorkUiFlags_ === 'function')
+      ? window.calcSingleWorkUiFlags_(cwTargetWork, cat, entry)
+      : (typeof window.getWorkExtraUiFlags_ === 'function' ? (window.getWorkExtraUiFlags_(cwTargetWork) || {}) : {});
+    const featureBadges = [];
+    if (cwFlags.showField !== false && cwFlags.showField) featureBadges.push('<span style="font-size:10px; color:#2E7D32; background:#E8F5E9; border:1px solid #C8E6C9; padding:1px 5px; border-radius:4px;">🗺️ 圃場選択</span>');
+    if (cwFlags.showFuel) featureBadges.push('<span style="font-size:10px; color:#C2185B; background:#FCE4EC; border:1px solid #F8BBD0; padding:1px 5px; border-radius:4px;">⛽ 給油マスタ</span>');
+    if (cwFlags.showMaintenance) featureBadges.push('<span style="font-size:10px; color:#E65100; background:#FFF3E0; border:1px solid #FFE0B2; padding:1px 5px; border-radius:4px;">🔧 整備UI</span>');
+    if (cwFlags.showRidgePolygon) featureBadges.push('<span style="font-size:10px; color:#00695C; background:#E0F7FA; border:1px solid #80DEEA; padding:1px 5px; border-radius:4px;">🛤️ 畝ポリゴン</span>');
+    const featureBadgesHtml = featureBadges.join('');
+
     return `<div style="padding:9px 10px; background:#fff; border:1px solid ${hasName ? '#D1C4E9' : '#CE93D8'}; border-radius:8px; margin-bottom:6px; box-shadow:0 1px 2px rgba(106,27,154,0.06);">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px;">
         <span style="display:inline-flex; align-items:center; gap:4px; padding:2px 7px; border-radius:6px; font-size:11px; font-weight:bold; background:#EDE7F6; color:#5E35B1; border:1px solid #D1C4E9;">
@@ -19439,6 +19450,7 @@ window.buildBulkConcurrentWorksHtml_ = (d, uid) => {
         <b style="font-size:12px; color:#263238;">${esc(wName)}</b>
         ${details ? `<span style="font-size:10px; color:#5E35B1; background:#F3E5F5; border:1px solid #E1BEE7; padding:1px 5px; border-radius:4px;">${esc(details)}</span>` : ''}
         ${machines ? `<span style="font-size:10px; color:#BF360C; background:#FBE9E7; border:1px solid #FFCCBC; padding:1px 5px; border-radius:4px;">🚜 ${esc(machines)}</span>` : ''}
+        ${featureBadgesHtml}
       </div>
       ${needPick}
     </div>`;
@@ -19549,6 +19561,21 @@ window.buildBulkConcurrentWorksHtml_ = (d, uid) => {
     `<div style="font-size:10px; color:#666; margin-bottom:8px; line-height:1.35;">作業時間内で、この作業を行った時間</div>
           ${minsHtml || '<div style="font-size:11px; color:#888;">この時間帯では選べる分数がありません</div>'}`
   );
+  const curWorkFeatures = [];
+  if (curWork) {
+    const curFlags = (typeof window.calcSingleWorkUiFlags_ === 'function')
+      ? window.calcSingleWorkUiFlags_(curWork, curFilter || draft.category, draft)
+      : concurrentUiFlags;
+    if (curFlags.showField !== false && curFlags.showField) curWorkFeatures.push('🗺️圃場選択');
+    if (curFlags.showFuel) curWorkFeatures.push('⛽給油マスタ');
+    if (curFlags.showMaintenance) curWorkFeatures.push('🔧整備UI');
+    if (curFlags.showRidgePolygon) curWorkFeatures.push('🛤️畝ポリゴン登録');
+  }
+  const curWorkNotice = curWorkFeatures.length
+    ? `<div style="font-size:11px; color:#5E35B1; background:#EDE7F6; border:1px solid #D1C4E9; border-radius:8px; padding:7px 10px; margin-bottom:8px; line-height:1.4;">
+        💡 この作業でチェックされた項目（<b>${esc(curWorkFeatures.join('・'))}</b>）の入力欄が作業枠に表示されます。
+      </div>`
+    : '';
   const panelHtml = panelOpen ? `
           <div style="margin-top:8px; padding:10px; background:#fff; border:1px solid #CE93D8; border-radius:10px;">
             <div style="font-size:11px; font-weight:bold; color:#6A1B9A; margin-bottom:8px;">新規追加（この時間帯・${slotMins || '—'}分）</div>
@@ -19557,6 +19584,7 @@ window.buildBulkConcurrentWorksHtml_ = (d, uid) => {
             ${workStep}
             ${detailStep}
             ${equipStep}
+            ${curWorkNotice}
             ${minsStep}
             <button type="button" onclick="confirmBulkConcurrentDraft_('${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:10px 12px; border:none; border-radius:8px; background:#7E57C2; color:#fff; font-size:13px; font-weight:bold; cursor:pointer;">追加</button>
           </div>` : '';
@@ -37176,16 +37204,29 @@ window.bulkWorkMemoFieldReplacedByAssetMove_ = (draft) => {
 window.bulkWorkMemoNeedsField_ = (draft) => {
   if (!draft || window.bulkWorkMemoIsRestDraft_(draft)) return false;
   if (window.bulkWorkMemoFieldReplacedByAssetMove_(draft)) return false;
-  const wName = String(draft.workName || '').trim();
-  if (!wName || wName.includes('休憩')) return false;
-  const workCat = String(
-    (typeof window.getBulkWorkMemoWorkCategory_ === 'function' && window.getBulkWorkMemoWorkCategory_(wName))
-    || draft.category
-    || ''
-  ).trim();
-  if (typeof window.resolveShowFieldSelect_ === 'function') {
-    if (window.resolveShowFieldSelect_({ category: workCat, workName: wName })) return true;
-  } else if (typeof window.isFieldCategory === 'function' && window.isFieldCategory(workCat)) {
+
+  const checkWork = (wName, category) => {
+    const wn = String(wName || '').trim();
+    if (!wn || wn.includes('休憩')) return false;
+    const workCat = String(
+      (typeof window.getBulkWorkMemoWorkCategory_ === 'function' && window.getBulkWorkMemoWorkCategory_(wn))
+      || category
+      || ''
+    ).trim();
+    if (typeof window.resolveShowFieldSelect_ === 'function') {
+      if (window.resolveShowFieldSelect_({ category: workCat, workName: wn })) return true;
+    } else if (typeof window.isFieldCategory === 'function' && window.isFieldCategory(workCat)) {
+      return true;
+    }
+    return false;
+  };
+
+  if (checkWork(draft.workName, draft.category)) return true;
+
+  // 同時に行った作業（確定分・ドラフト中）も判定
+  const cws = (Array.isArray(draft.concurrentWorks) ? draft.concurrentWorks.slice() : []);
+  if (draft._concurrentDraft && draft._concurrentDraft.workName) cws.push(draft._concurrentDraft);
+  if (cws.some(cw => checkWork(cw.workName || cw.prepTargetWork || cw.guessedName, cw.category || cw.prepTargetCategory))) {
     return true;
   }
   return false;
@@ -37195,6 +37236,19 @@ window.bulkWorkMemoNeedsField_ = (draft) => {
 window.bulkWorkMemoShowFieldSection_ = (draft) => {
   if (!draft || window.bulkWorkMemoIsRestDraft_(draft)) return false;
   if (window.bulkWorkMemoFieldReplacedByAssetMove_(draft)) return false;
+
+  // 同時に行った作業（確定分・ドラフト中）に圃場選択を出す設定の作業があるかチェック
+  const cws = (Array.isArray(draft.concurrentWorks) ? draft.concurrentWorks.slice() : []);
+  if (draft._concurrentDraft && draft._concurrentDraft.workName) cws.push(draft._concurrentDraft);
+  const anyCwNeedsField = cws.some(cw => {
+    const cwName = String(cw.workName || cw.prepTargetWork || cw.guessedName || '').trim();
+    if (!cwName || cwName.includes('休憩')) return false;
+    const cwCat = String(cw.category || (typeof window.getBulkWorkMemoWorkCategory_ === 'function' ? window.getBulkWorkMemoWorkCategory_(cwName) : '') || '').trim();
+    if (typeof window.resolveShowFieldSelect_ === 'function') {
+      return !!window.resolveShowFieldSelect_({ category: cwCat, workName: cwName });
+    }
+    return true;
+  });
 
   const wName = String(draft.workName || '').trim();
   const guess = String(draft.guessedName || (Array.isArray(draft.workCandidates) ? draft.workCandidates[0] : '') || '').trim();
@@ -37207,11 +37261,14 @@ window.bulkWorkMemoShowFieldSection_ = (draft) => {
       || ''
     ).trim();
     const allowed = window.resolveShowFieldSelect_({ category: workCat, workName: effWork });
-    if (!allowed) {
-      // 作業マスタ等で圃場選択を出さない設定なら、メモに候補があっても一切出さない
+    if (!allowed && !anyCwNeedsField) {
+      // メイン作業も同時作業も圃場選択を出さない設定なら、メモに候補があっても一切出さない
       return false;
     }
+    if (allowed) return true;
   }
+
+  if (anyCwNeedsField) return true;
 
   // 作業マスタ「圃場選択を出す」やカテゴリ表示設定がONなら出す
   if (window.bulkWorkMemoNeedsField_(draft)) return true;
@@ -38148,12 +38205,12 @@ window.getBulkWorkMemoDetailOptions_ = (workName, cropNameOrDraft, prepTargetWor
   return names;
 };
 
-/** 一括入力：作業名・カテゴリから記録欄の出し分け（通常フォームと同じ判定） */
-window.getBulkWorkMemoUiFlags_ = (draft) => {
-  const wName = String(draft && draft.workName || '').trim();
+/** 一括入力：単一の作業名・カテゴリに対する記録欄の出し分け判定 */
+window.calcSingleWorkUiFlags_ = (workName, category, draftBase) => {
+  const wName = String(workName || '').trim();
   const cat = String(
-    (draft && (draft.category || draft.listFilterCategory))
-    || window.getBulkWorkMemoWorkCategory_(wName)
+    category
+    || (wName && typeof window.getBulkWorkMemoWorkCategory_ === 'function' ? window.getBulkWorkMemoWorkCategory_(wName) : '')
     || ''
   ).trim();
   const w = (typeof window.findWorkMasterByName_ === 'function')
@@ -38161,7 +38218,7 @@ window.getBulkWorkMemoUiFlags_ = (draft) => {
     : (pdlWorkMaster || []).find(x => x && String(x.name || '').trim() === wName);
   const inferred = (typeof window.inferWorkRecordUiFlags_ === 'function')
     ? window.inferWorkRecordUiFlags_(wName, cat)
-    : { showMachine: false, showMaterial: false, showPesticide: false, showField: false };
+    : { showMachine: false, showMaterial: false, showPesticide: false, showField: false, showFuel: false, showRidgePolygon: false, showMaintenance: false };
   const isMachineryCat = cat.includes('農機');
   const isDelivery = (typeof window.bulkWorkMemoIsDelivery_ === 'function')
     ? window.bulkWorkMemoIsDelivery_({ workName: wName, category: cat })
@@ -38172,8 +38229,8 @@ window.getBulkWorkMemoUiFlags_ = (draft) => {
       : null;
     return parsed == null ? fallback : parsed;
   };
-  const hasMats = Array.isArray(draft && draft.usedMaterials) && draft.usedMaterials.some(m => m && (m.id || m.name));
-  const hasTools = Array.isArray(draft && draft.usedTools) && draft.usedTools.some(t => t && (t.id || t.name));
+  const hasMats = Array.isArray(draftBase && draftBase.usedMaterials) && draftBase.usedMaterials.some(m => m && (m.id || m.name));
+  const hasTools = Array.isArray(draftBase && draftBase.usedTools) && draftBase.usedTools.some(t => t && (t.id || t.name));
   // 移動物UIが有効なときだけ、運搬では使用機械／資材／道具のチェックUIを出さない
   const useAssetMoveUi = !!isDelivery && (typeof window.isBulkAssetMoveUiEnabled_ === 'function'
     ? window.isBulkAssetMoveUiEnabled_()
@@ -38192,6 +38249,40 @@ window.getBulkWorkMemoUiFlags_ = (draft) => {
     isCleanup: false,
     isDelivery: !!isDelivery
   };
+};
+
+/** 一括入力：作業名・カテゴリから記録欄の出し分け（メイン作業および同時に行った作業を合算） */
+window.getBulkWorkMemoUiFlags_ = (draft) => {
+  const mainFlags = window.calcSingleWorkUiFlags_(
+    draft && draft.workName,
+    draft && (draft.category || draft.listFilterCategory),
+    draft
+  );
+
+  // 同時に行った作業（確定分・ドラフト中）のフラグも合算
+  const cws = (Array.isArray(draft && draft.concurrentWorks) ? draft.concurrentWorks.slice() : []);
+  if (draft && draft._concurrentDraft && draft._concurrentDraft.workName) {
+    cws.push(draft._concurrentDraft);
+  }
+  if (!cws.length) return mainFlags;
+
+  const combined = Object.assign({}, mainFlags);
+  cws.forEach(cw => {
+    if (!cw) return;
+    const cwName = String(cw.workName || cw.prepTargetWork || cw.guessedName || '').trim();
+    if (!cwName) return;
+    const cwFlags = window.calcSingleWorkUiFlags_(cwName, cw.category || cw.prepTargetCategory, cw);
+    if (cwFlags.showMachine) combined.showMachine = true;
+    if (cwFlags.showFuel) combined.showFuel = true;
+    if (cwFlags.showRidgePolygon) combined.showRidgePolygon = true;
+    if (cwFlags.showMaintenance) combined.showMaintenance = true;
+    if (cwFlags.showField !== false && cwFlags.showField) combined.showField = true;
+    if (cwFlags.showMaterial) combined.showMaterial = true;
+    if (cwFlags.showTool) combined.showTool = true;
+    if (cwFlags.showPesticide) combined.showPesticide = true;
+    if (cwFlags.isDelivery) combined.isDelivery = true;
+  });
+  return combined;
 };
 
 /** 一括入力：id/name アイテムを重複なくマージ */
@@ -38357,7 +38448,23 @@ window.getBulkWorkMemoMachineList_ = (draft) => {
   const flags = window.getBulkWorkMemoUiFlags_(draft || {});
   // 運搬の移動物追加でも一覧が必要なので isDelivery は許可
   if (!flags.showMachine && !flags.isDelivery) return [];
-  if (window.bulkWorkMemoIsMaintenance_(draft)) return [];
+  // 純粋な整備作業（同時作業・メイン作業のいずれにも非整備でshowMachineがONの作業がない）なら機械一覧は不要（整備対象選択を出す）
+  const isPureMaintenance = window.bulkWorkMemoIsMaintenance_(draft) && (() => {
+    const allWorks = [];
+    if (draft && draft.workName) allWorks.push({ workName: draft.workName, category: draft.category });
+    if (Array.isArray(draft && draft.concurrentWorks)) allWorks.push(...draft.concurrentWorks);
+    if (draft && draft._concurrentDraft && draft._concurrentDraft.workName) allWorks.push(draft._concurrentDraft);
+    const hasNonMaintMachine = allWorks.some(w => {
+      const wn = String(w.workName || w.prepTargetWork || w.guessedName || '').trim();
+      if (!wn) return false;
+      const f = typeof window.calcSingleWorkUiFlags_ === 'function'
+        ? window.calcSingleWorkUiFlags_(wn, w.category, w)
+        : (typeof window.getWorkExtraUiFlags_ === 'function' ? window.getWorkExtraUiFlags_(wn) : {});
+      return !!f.showMachine && !f.showMaintenance;
+    });
+    return !hasNonMaintMachine;
+  })();
+  if (isPureMaintenance) return [];
   const machines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
   if (!machines.length) return [];
   const t = String((draft && draft.rawLine) || '');
@@ -38410,26 +38517,51 @@ window.getBulkWorkMemoMachineList_ = (draft) => {
   return allItems;
 };
 
-/** 一括入力：給油記録UIを出すか（給油マスタ設定、または詳細作業に給油があるとき） */
+/** 一括入力：給油記録UIを出すか（給油マスタ設定、または詳細作業に給油があるとき。同時に行った作業も対象） */
 window.bulkWorkMemoIsFuel_ = (draft) => {
-  const cat = String(draft && draft.category || '').trim();
-  if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat)) return false;
+  if (!draft) return false;
   const flags = (typeof window.getBulkWorkMemoUiFlags_ === 'function')
     ? window.getBulkWorkMemoUiFlags_(draft)
     : null;
   if (flags && flags.showFuel) return true;
-  const details = Array.isArray(draft && draft.detailedWorks) ? draft.detailedWorks : [];
-  return details.some(n => typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(n));
+
+  const checkFuel = (d) => {
+    if (!d) return false;
+    const cat = String(d.category || '').trim();
+    if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat)) return false;
+    const wName = String(d.workName || d.prepTargetWork || d.guessedName || '').trim();
+    if (wName && typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wName)) return true;
+    const details = Array.isArray(d.detailedWorks) ? d.detailedWorks : [];
+    return details.some(n => typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(n));
+  };
+
+  if (checkFuel(draft)) return true;
+
+  // 同時に行った作業（確定分・ドラフト中）もチェック
+  const cws = (Array.isArray(draft.concurrentWorks) ? draft.concurrentWorks.slice() : []);
+  if (draft._concurrentDraft && draft._concurrentDraft.workName) cws.push(draft._concurrentDraft);
+  return cws.some(checkFuel);
 };
 
-/** 一括入力：畝ポリゴン登録欄を出すか */
+/** 一括入力：畝ポリゴン登録欄を出すか（同時に行った作業も対象） */
 window.bulkWorkMemoShowsRidgePolygon_ = (draft) => {
-  const cat = String(draft && draft.category || '').trim();
-  if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat)) return false;
+  if (!draft) return false;
   const flags = (typeof window.getBulkWorkMemoUiFlags_ === 'function')
     ? window.getBulkWorkMemoUiFlags_(draft)
     : null;
-  return !!(flags && flags.showRidgePolygon);
+  if (flags && flags.showRidgePolygon) return true;
+
+  // 同時に行った作業に畝ポリゴン登録がONの作業があれば出す
+  const cws = (Array.isArray(draft.concurrentWorks) ? draft.concurrentWorks.slice() : []);
+  if (draft._concurrentDraft && draft._concurrentDraft.workName) cws.push(draft._concurrentDraft);
+  return cws.some(cw => {
+    const wn = String(cw.workName || cw.prepTargetWork || cw.guessedName || '').trim();
+    if (!wn) return false;
+    const f = typeof window.calcSingleWorkUiFlags_ === 'function'
+      ? window.calcSingleWorkUiFlags_(wn, cw.category, cw)
+      : (typeof window.getWorkExtraUiFlags_ === 'function' ? window.getWorkExtraUiFlags_(wn) : {});
+    return !!f.showRidgePolygon;
+  });
 };
 
 window.buildBulkWorkMemoRidgePolygonHtml_ = (d, uid) => {
@@ -38739,31 +38871,51 @@ window.buildBulkWorkMemoFuelSideEffects_ = (d, userName) => {
   }];
 };
 
-/** 一括入力：整備・修理・点検文脈か（通常フォームの isMaintenanceRelatedWork 相当） */
+/** 一括入力：整備・修理・点検文脈か（通常フォームの isMaintenanceRelatedWork 相当。同時に行った作業も対象） */
 window.bulkWorkMemoIsMaintenance_ = (draft) => {
-  const wName = String(draft && draft.workName || '').trim();
-  const rawLine = String(draft && draft.rawLine || '').trim();
-  const matchText = String(draft && draft._workMatchText || '').trim();
-  if (!wName && !rawLine && !matchText) return false;
-  const cat = String(draft && draft.category || (wName ? window.getBulkWorkMemoWorkCategory_(wName) : '') || '').trim();
-  // 準備／片づけでは対象作業が整備系でも整備UIは出さない
-  if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat)) return false;
-  if (wName && typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wName)) return false;
-  if (wName && typeof window.isMachinePullWorkName === 'function' && window.isMachinePullWorkName(wName)) return false;
-  // 移動・運搬は農機名（馬力呼び）が出ても整備UIにしない
-  if (/移動|運搬|配送|納品/.test(wName) || /移動|運搬/.test(cat)) return false;
-  // 記録画面に出す項目「整備UI」で判定（カテゴリ保全/整備だけでは出さない）
+  if (!draft) return false;
+  // 記録画面に出す項目「整備UI」で判定（メイン作業または同時に行った作業でチェックされていればON）
   const flags = (typeof window.getBulkWorkMemoUiFlags_ === 'function')
     ? window.getBulkWorkMemoUiFlags_(draft || {})
     : null;
   if (flags && flags.showMaintenance) return true;
+
   const looksLikeMaint = (s) => (typeof window.looksLikeMaintenanceText_ === 'function'
     ? window.looksLikeMaintenanceText_(s)
     : (() => {
       const t = String(s || '');
       return t.includes('整備') || t.includes('修理') || t.includes('点検') || t.includes('清掃') || t.includes('保全');
     })());
-  const details = Array.isArray(draft && draft.detailedWorks) ? draft.detailedWorks : [];
+
+  // 同時に行った作業（確定分・ドラフト中）をチェック
+  const cws = (Array.isArray(draft.concurrentWorks) ? draft.concurrentWorks.slice() : []);
+  if (draft._concurrentDraft && draft._concurrentDraft.workName) cws.push(draft._concurrentDraft);
+  for (let i = 0; i < cws.length; i++) {
+    const cw = cws[i];
+    const cwName = String(cw.workName || cw.prepTargetWork || cw.guessedName || '').trim();
+    if (cwName && looksLikeMaint(cwName)) return true;
+    const cwDetails = Array.isArray(cw.detailedWorks) ? cw.detailedWorks : [];
+    if (cwDetails.some(looksLikeMaint)) return true;
+    if (typeof window.calcSingleWorkUiFlags_ === 'function') {
+      const cwFlags = window.calcSingleWorkUiFlags_(cwName, cw.category, cw);
+      if (cwFlags && cwFlags.showMaintenance) return true;
+    }
+  }
+
+  // メイン作業側のチェック
+  const wName = String(draft.workName || '').trim();
+  const rawLine = String(draft.rawLine || '').trim();
+  const matchText = String(draft._workMatchText || '').trim();
+  if (!wName && !rawLine && !matchText) return false;
+  const cat = String(draft.category || (wName ? window.getBulkWorkMemoWorkCategory_(wName) : '') || '').trim();
+  // 準備／片づけでは対象作業が整備系でも整備UIは出さない
+  if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(cat)) return false;
+  if (wName && typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wName)) return false;
+  if (wName && typeof window.isMachinePullWorkName === 'function' && window.isMachinePullWorkName(wName)) return false;
+  // 移動・運搬は農機名（馬力呼び）が出ても整備UIにしない
+  if (/移動|運搬|配送|納品/.test(wName) || /移動|運搬/.test(cat)) return false;
+
+  const details = Array.isArray(draft.detailedWorks) ? draft.detailedWorks : [];
   if (details.some(looksLikeMaint)) return true;
   // 作業名未確定でメモ本文だけ整備系のとき（マスタフラグがまだ無い）
   if (!wName && ((rawLine && looksLikeMaint(rawLine)) || (matchText && looksLikeMaint(matchText)))) return true;
@@ -43178,14 +43330,16 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
     return '';
   }
   const hasConcurrent = Array.isArray(d.concurrentWorks) && d.concurrentWorks.length;
+  const hasConcurrentDraft = d._concurrentDraft && String(d._concurrentDraft.workName || '').trim();
+  const hasAnyWork = !!(d.workName || hasConcurrent || hasConcurrentDraft);
   let html = '';
-  // 準備／片づけの対象作業モードは廃止。通常どおり詳細・機械などを出す
+  // メイン作業名がない場合でも、圃場選択判定を満たせば圃場選択を出す
   if (!d.workName) {
     html += window.buildBulkWorkMemoFieldWrapHtml_(d, uid);
   }
-  if (d.workName) {
+  if (hasAnyWork) {
     const flags = window.getBulkWorkMemoUiFlags_(d);
-    const details = window.getBulkWorkMemoDetailOptions_(d.workName, d, '');
+    const details = d.workName ? window.getBulkWorkMemoDetailOptions_(d.workName, d, '') : [];
     const machines = flags.showMachine ? window.getBulkWorkMemoMachineList_(d) : [];
     const selectedDetails = Array.isArray(d.detailedWorks) ? d.detailedWorks : [];
     const selectedMachines = Array.isArray(d.usedMachines) ? d.usedMachines.map(m => String(m.id || m.name || '')) : [];
@@ -43217,7 +43371,7 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
         <div style="font-size:10px; color:#5E35B1; font-weight:bold; margin-bottom:6px;">📋 詳細作業設定（任意）</div>
         <div style="${chipGrid()}">${detailChips}${addBtn}</div>
       </div>`;
-    } else if (d.workMatched || String(d.workName || '').trim()) {
+    } else if (d.workName && (d.workMatched || String(d.workName || '').trim())) {
       const safeWork = String(d.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       const chipGrid = (typeof window.bulkChipGridWrapStyle_ === 'function')
         ? window.bulkChipGridWrapStyle_
@@ -43230,10 +43384,15 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
         </div>
       </div>`;
     }
-    html += window.buildBulkWorkMemoFieldWrapHtml_(d, uid);
-    if (window.bulkWorkMemoIsMaintenance_(d)) {
+    if (d.workName) {
+      html += window.buildBulkWorkMemoFieldWrapHtml_(d, uid);
+    }
+    const showMaint = window.bulkWorkMemoIsMaintenance_(d);
+    if (showMaint) {
       html += window.buildBulkWorkMemoMaintenanceTargetHtml_(d, uid);
-    } else if (flags.showMachine) {
+    }
+    const showMachineSection = flags.showMachine && (!showMaint || machines.length > 0);
+    if (showMachineSection) {
       const used = Array.isArray(d.usedMachines) ? d.usedMachines.filter(m => m && (m.id || m.name)) : [];
       const collapsed = used.length && d._machinePickOpen !== true;
       if (collapsed) {
@@ -43378,8 +43537,8 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
     }
     // 運搬元・運搬先の入力欄は出さない
   }
-  // メイン作業名未選択でも、メモから同時作業が付いていれば表示
-  if ((d.workName || hasConcurrent) && typeof window.buildBulkConcurrentWorksHtml_ === 'function') {
+  // メイン作業名未選択でも、メモやドラフトから同時作業が付いていれば表示
+  if (hasAnyWork && typeof window.buildBulkConcurrentWorksHtml_ === 'function') {
     html += window.buildBulkConcurrentWorksHtml_(d, uid);
   }
   return html;

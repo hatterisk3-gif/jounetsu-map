@@ -574,6 +574,27 @@
     return serverRecords;
   }
 
+  async function fetchInspectionRecords_(force) {
+    if (!force && Array.isArray(window._workerMachineInspectionRecords) && window._workerMachineInspCacheAt
+      && (Date.now() - window._workerMachineInspCacheAt) < 5 * 60 * 1000) {
+      return window._workerMachineInspectionRecords.slice();
+    }
+    let serverRecords = [];
+    try {
+      if (typeof callGAS === 'function') {
+        const res = await callGAS('machine_loadInspectionRecords', { limit: 500 }, 1, { jumpQueue: true, timeoutMs: 30000 });
+        if (res && Array.isArray(res.records)) {
+          serverRecords = res.records.slice();
+        }
+      }
+    } catch (e) {
+      console.warn('maint-history fetchInspectionRecords_', e);
+    }
+    window._workerMachineInspectionRecords = serverRecords.slice();
+    window._workerMachineInspCacheAt = Date.now();
+    return serverRecords;
+  }
+
   function photosHtml_(urls, size) {
     if (!urls || !urls.length) return '';
     const sz = size || 72;
@@ -596,6 +617,7 @@
 
   let _activeMaintState = {
     merged: [],
+    inspRecords: [],
     machines: [],
     vehicles: [],
     searchTimer: null
@@ -604,10 +626,10 @@
   // 高速フィルター切り替え（DOM全体を壊さずリストとチップのみ更新）
   function refreshMaintListFast_() {
     if (!document.getElementById('maintHistListArea')) {
-      renderList_(_activeMaintState.merged, _activeMaintState.machines, _activeMaintState.vehicles, false);
+      renderList_(_activeMaintState.merged, _activeMaintState.machines, _activeMaintState.vehicles, false, _activeMaintState.inspRecords);
       return;
     }
-    renderList_(_activeMaintState.merged, _activeMaintState.machines, _activeMaintState.vehicles, true);
+    renderList_(_activeMaintState.merged, _activeMaintState.machines, _activeMaintState.vehicles, true, _activeMaintState.inspRecords);
   }
 
   window._maintHistSelectKindTab_ = function (key) {
@@ -657,11 +679,12 @@
     refreshMaintListFast_();
   };
 
-  function renderList_(merged, machines, vehicles, isFilterOnly) {
+  function renderList_(merged, machines, vehicles, isFilterOnly, inspRecords) {
     const modalBody = document.getElementById('modalBody');
     if (!modalBody) return;
 
     _activeMaintState.merged = merged || _activeMaintState.merged || [];
+    _activeMaintState.inspRecords = inspRecords || _activeMaintState.inspRecords || window._workerMachineInspectionRecords || [];
     _activeMaintState.machines = machines || _activeMaintState.machines || getMachines_();
     _activeMaintState.vehicles = vehicles || _activeMaintState.vehicles || getVehicles_();
 
@@ -680,6 +703,14 @@
       byMachine.get(id).push(r);
     });
 
+    const byMachineInsp = new Map();
+    (_activeMaintState.inspRecords || []).forEach((r) => {
+      const id = String((r && r.machineId) || '').trim();
+      if (!id) return;
+      if (!byMachineInsp.has(id)) byMachineInsp.set(id, []);
+      byMachineInsp.get(id).push(r);
+    });
+
     const getRecsForEquip = (m) => {
       const id = String(m.id || '');
       const list = (byMachine.get(id) || []).slice();
@@ -693,14 +724,30 @@
       return list;
     };
 
+    const getInspRecsForEquip = (m) => {
+      const id = String(m.id || '');
+      const list = (byMachineInsp.get(id) || []).slice();
+      if (m._maintKind === 'vehicle' && m._rawVehId && id !== m._rawVehId) {
+        const rawList = byMachineInsp.get(String(m._rawVehId)) || [];
+        rawList.forEach(r => {
+          if (!list.includes(r)) list.push(r);
+        });
+      }
+      list.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+      return list;
+    };
+
     const locCtx = getCachedLocContext_();
     const allRows = targetEquipments.map((m) => {
       const recs = getRecsForEquip(m);
+      const inspRecs = getInspRecsForEquip(m);
       const locInfo = resolveLocAndSign_(m, locCtx);
       return {
         m,
         recs,
         count: recs.length,
+        inspRecs,
+        inspCount: inspRecs.length,
         latest: recs[0] || null,
         hub: locInfo.hub,
         baseSignGroup: locInfo.baseSignGroup,
@@ -804,7 +851,7 @@
         const signRecCount = signItems.reduce((s, x) => s + x.count, 0);
         const isUnsetBase = baseSignName === '設置看板未設定';
 
-        const cards = signItems.map(({ m, count, latest, locInfo }) => {
+        const cards = signItems.map(({ m, count, inspCount, latest, locInfo }) => {
           const safeId = String(m.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
           const isVeh = m._maintKind === 'vehicle' || !!m.isVehicle;
           const machinePhotos = getMachinePhotos_(m);
@@ -862,11 +909,14 @@
               </div>
               <div style="flex-shrink:0; align-self:center; color:#bbb; font-size:20px; font-weight:bold; padding-left:4px;" title="タップで整備履歴を開く">›</div>
             </div>
-            <!-- 下段フッター: 整備履歴件数案内 ＆ 調和したマスタボタン -->
+            <!-- 下段フッター: 点検履歴・整備履歴件数案内 ＆ 調和したマスタボタン -->
             <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 12px; background:${isVeh ? '#EDF5FD' : '#FFF9EE'}; border-top:1px solid ${isVeh ? '#E3F2FD' : '#FFECC7'}; gap:8px;">
-              <div style="display:flex; align-items:center; gap:5px; font-size:12px; min-width:0;">
+              <div style="display:flex; align-items:center; gap:8px; font-size:12px; min-width:0; flex-wrap:wrap;">
+                <span style="font-weight:bold; color:${inspCount ? '#00695C' : '#888'}; white-space:nowrap;">
+                  📋 点検履歴 <b>${inspCount}</b> 件
+                </span>
                 <span style="font-weight:bold; color:${count ? (isVeh ? '#1565C0' : '#E65100') : '#888'}; white-space:nowrap;">
-                  📋 整備履歴 <b>${count}</b> 件
+                  🔧 整備履歴 <b>${count}</b> 件
                 </span>
                 <span style="font-size:11px; color:#888; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">（タップで履歴・記録）</span>
               </div>
@@ -908,33 +958,47 @@
       </button>`;
     };
 
-    const hubChipsHtml = `<div style="display:flex; align-items:center; gap:5px; overflow-x:auto; padding-bottom:4px; -webkit-overflow-scrolling:touch;">
-      <span style="flex-shrink:0; font-size:11px; font-weight:bold; color:#BF360C; min-width:74px;">📍 拠点名</span>
-      ${[{ key: 'all', label: 'すべての拠点', count: allRows.length }].concat(
-        allHubs.map(h => ({ key: h, label: '📍 ' + h, count: allRows.filter(r => r.hub === h).length }))
-      ).map(chip => {
-        const on = hubFilter === chip.key;
-        const safeKey = String(chip.key).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        return `<button type="button" onclick="window._maintHistSelectHub_('${safeKey}')"
-          style="flex-shrink:0; padding:5px 10px; border-radius:14px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${on ? '#E65100' : '#FFCC80'}; background:${on ? '#E65100' : '#FFF8E1'}; color:${on ? '#fff' : '#BF360C'}; transition:all 0.15s;">
-          ${esc(chip.label)} (${chip.count})
-        </button>`;
-      }).join('')}
-    </div>`;
+    const buildChipsRowHtml_ = (iconLabel, labelColor, chipButtonsHtml) => {
+      return `
+        <div style="display:flex; align-items:center; gap:4px; margin-top:3px;">
+          <span style="flex-shrink:0; font-size:11px; font-weight:bold; color:${labelColor}; min-width:72px;">${iconLabel}</span>
+          <button type="button" onclick="this.nextElementSibling.scrollBy({left:-140, behavior:'smooth'})"
+            style="flex-shrink:0; width:18px; height:24px; border:1px solid #ddd; background:#f9f9f9; color:#666; border-radius:4px; cursor:pointer; font-size:12px; padding:0; display:flex; align-items:center; justify-content:center; line-height:1;" title="前へ">‹</button>
+          <div class="maint-chips-scroll" onwheel="if(event.deltaY){ event.preventDefault(); this.scrollLeft += event.deltaY * 0.8; }"
+            style="flex:1; min-width:0; display:flex; align-items:center; gap:5px; overflow-x:auto; scrollbar-width:none; -ms-overflow-style:none; padding:2px 0; -webkit-overflow-scrolling:touch;">
+            ${chipButtonsHtml}
+          </div>
+          <button type="button" onclick="this.previousElementSibling.scrollBy({left:140, behavior:'smooth'})"
+            style="flex-shrink:0; width:18px; height:24px; border:1px solid #ddd; background:#f9f9f9; color:#666; border-radius:4px; cursor:pointer; font-size:12px; padding:0; display:flex; align-items:center; justify-content:center; line-height:1;" title="次へ">›</button>
+        </div>
+      `;
+    };
 
-    const signChipsHtml = `<div style="display:flex; align-items:center; gap:5px; overflow-x:auto; padding-bottom:4px; margin-top:4px; -webkit-overflow-scrolling:touch;">
-      <span style="flex-shrink:0; font-size:11px; font-weight:bold; color:#00695C; min-width:74px;">🪧 設置看板</span>
-      ${[{ key: 'all', label: 'すべての設置看板', count: rowsAfterHub.length }].concat(
-        allBaseSignsInHub.map(s => ({ key: s, label: '🪧 ' + s, count: rowsAfterHub.filter(r => r.baseSignGroup === s).length }))
-      ).map(chip => {
-        const on = signFilter === chip.key;
-        const safeKey = String(chip.key).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        return `<button type="button" onclick="window._maintHistSelectSign_('${safeKey}')"
-          style="flex-shrink:0; padding:4px 9px; border-radius:14px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${on ? '#00695C' : '#80CBC4'}; background:${on ? '#00796B' : '#E0F2F1'}; color:${on ? '#fff' : '#00695C'}; transition:all 0.15s;">
-          ${esc(chip.label)} (${chip.count})
-        </button>`;
-      }).join('')}
-    </div>`;
+    const hubChipsButtonsHtml = [{ key: 'all', label: 'すべての拠点', count: allRows.length }].concat(
+      allHubs.map(h => ({ key: h, label: '📍 ' + h, count: allRows.filter(r => r.hub === h).length }))
+    ).map(chip => {
+      const on = hubFilter === chip.key;
+      const safeKey = String(chip.key).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      return `<button type="button" onclick="window._maintHistSelectHub_('${safeKey}')"
+        style="flex-shrink:0; padding:4px 9px; border-radius:14px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${on ? '#E65100' : '#FFCC80'}; background:${on ? '#E65100' : '#FFF8E1'}; color:${on ? '#fff' : '#BF360C'}; transition:all 0.15s; white-space:nowrap;">
+        ${esc(chip.label)} (${chip.count})
+      </button>`;
+    }).join('');
+
+    const hubChipsHtml = buildChipsRowHtml_('📍 拠点名', '#BF360C', hubChipsButtonsHtml);
+
+    const signChipsButtonsHtml = [{ key: 'all', label: 'すべての設置看板', count: rowsAfterHub.length }].concat(
+      allBaseSignsInHub.map(s => ({ key: s, label: '🪧 ' + s, count: rowsAfterHub.filter(r => r.baseSignGroup === s).length }))
+    ).map(chip => {
+      const on = signFilter === chip.key;
+      const safeKey = String(chip.key).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      return `<button type="button" onclick="window._maintHistSelectSign_('${safeKey}')"
+        style="flex-shrink:0; padding:4px 9px; border-radius:14px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${on ? '#00695C' : '#80CBC4'}; background:${on ? '#00796B' : '#E0F2F1'}; color:${on ? '#fff' : '#00695C'}; transition:all 0.15s; white-space:nowrap;">
+        ${esc(chip.label)} (${chip.count})
+      </button>`;
+    }).join('');
+
+    const signChipsHtml = buildChipsRowHtml_('🪧 設置看板', '#00695C', signChipsButtonsHtml);
 
     const curLocChipItems = [{ key: 'all', label: 'すべての現在地', count: rowsAfterSign.length }];
     if (atBaseCount > 0) curLocChipItems.push({ key: '__at_base__', label: '✅ 定位置にある', count: atBaseCount });
@@ -943,22 +1007,21 @@
       curLocChipItems.push({ key: c, label: '📌 ' + c, count: rowsAfterSign.filter(r => r.curLocGroup === c).length });
     });
 
-    const curLocChipsHtml = `<div style="display:flex; align-items:center; gap:5px; overflow-x:auto; padding-bottom:4px; margin-top:4px; -webkit-overflow-scrolling:touch;">
-      <span style="flex-shrink:0; font-size:11px; font-weight:bold; color:#2E7D32; min-width:74px;">📌 現在の場所</span>
-      ${curLocChipItems.map(chip => {
-        const on = curLocFilter === chip.key;
-        const isMovedChip = chip.key === '__moved__';
-        const safeKey = String(chip.key).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        const activeBg = isMovedChip ? '#C62828' : '#2E7D32';
-        const inactiveBg = isMovedChip ? '#FFEBEE' : '#E8F5E9';
-        const inactiveColor = isMovedChip ? '#C62828' : '#2E7D32';
-        const borderCol = on ? activeBg : (isMovedChip ? '#EF9A9A' : '#A5D6A7');
-        return `<button type="button" onclick="window._maintHistSelectCurLoc_('${safeKey}')"
-          style="flex-shrink:0; padding:4px 9px; border-radius:14px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${borderCol}; background:${on ? activeBg : inactiveBg}; color:${on ? '#fff' : inactiveColor}; transition:all 0.15s;">
-          ${esc(chip.label)} (${chip.count})
-        </button>`;
-      }).join('')}
-    </div>`;
+    const curLocChipsButtonsHtml = curLocChipItems.map(chip => {
+      const on = curLocFilter === chip.key;
+      const isMovedChip = chip.key === '__moved__';
+      const safeKey = String(chip.key).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const activeBg = isMovedChip ? '#C62828' : '#2E7D32';
+      const inactiveBg = isMovedChip ? '#FFEBEE' : '#E8F5E9';
+      const inactiveColor = isMovedChip ? '#C62828' : '#2E7D32';
+      const borderCol = on ? activeBg : (isMovedChip ? '#EF9A9A' : '#A5D6A7');
+      return `<button type="button" onclick="window._maintHistSelectCurLoc_('${safeKey}')"
+        style="flex-shrink:0; padding:4px 9px; border-radius:14px; font-size:11px; font-weight:bold; cursor:pointer; border:1px solid ${borderCol}; background:${on ? activeBg : inactiveBg}; color:${on ? '#fff' : inactiveColor}; transition:all 0.15s; white-space:nowrap;">
+        ${esc(chip.label)} (${chip.count})
+      </button>`;
+    }).join('');
+
+    const curLocChipsHtml = buildChipsRowHtml_('📌 現在の場所', '#2E7D32', curLocChipsButtonsHtml);
 
     const listHtml = filteredRows.length === 0
       ? '<p style="color:#666; text-align:center; padding:24px; background:#fff; border-radius:8px; border:1px dashed #ccc;">該当する農機・車両がありません。</p>'
@@ -984,8 +1047,12 @@
     }
 
     modalBody.innerHTML = `
+      <style>
+        .maint-chips-scroll::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+        .maint-chips-scroll { -ms-overflow-style: none !important; scrollbar-width: none !important; }
+      </style>
       <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #E65100; padding-bottom:8px; margin-bottom:10px;">
-        <h3 style="margin:0; color:#E65100; font-size:16px;">🔧 整備履歴（拠点名・設置看板場所・現在の置き場所）</h3>
+        <h3 style="margin:0; color:#E65100; font-size:16px;">🔧 機械履歴（拠点名・設置看板場所・現在の置き場所）</h3>
         <span onclick="closeWorkerMachineMaintHistoryModal_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;" title="閉じる">×</span>
       </div>
       <div id="maintHistKindTabsArea" style="display:flex; gap:6px; margin-bottom:8px;">
@@ -1040,18 +1107,19 @@
     const cachedMachines = getMachines_();
     const cachedVehicles = getVehicles_();
     if ((cachedMachines.length || cachedVehicles.length) && !force) {
-      renderList_(window._workerMachineMaintenanceRecords || [], cachedMachines, cachedVehicles);
+      renderList_(window._workerMachineMaintenanceRecords || [], cachedMachines, cachedVehicles, false, window._workerMachineInspectionRecords || []);
     } else {
-      modalBody.innerHTML = '<div style="text-align:center; padding:24px; font-weight:bold; color:#E65100;">整備履歴を読み込み中...</div>';
+      modalBody.innerHTML = '<div style="text-align:center; padding:24px; font-weight:bold; color:#E65100;">機械履歴を読み込み中...</div>';
     }
     try {
-      const [machines, vehicles, records] = await Promise.all([
+      const [machines, vehicles, records, inspRecords] = await Promise.all([
         ensureMachines_(force),
         ensureVehicles_(force),
-        fetchRecords_(force)
+        fetchRecords_(force),
+        fetchInspectionRecords_(force)
       ]);
       if (modal.style.display === 'none') return;
-      renderList_(records, machines.length ? machines : cachedMachines, vehicles.length ? vehicles : cachedVehicles);
+      renderList_(records, machines.length ? machines : cachedMachines, vehicles.length ? vehicles : cachedVehicles, false, inspRecords);
     } catch (e) {
       console.warn(e);
       if (modal.style.display === 'none') return;
@@ -1099,6 +1167,10 @@
           </div>
         `).join('');
     modalBody.innerHTML = `
+      <style>
+        .maint-chips-scroll::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+        .maint-chips-scroll { -ms-overflow-style: none !important; scrollbar-width: none !important; }
+      </style>
       <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #E65100; padding-bottom:8px; margin-bottom:10px;">
         <h3 style="margin:0; color:#E65100; font-size:16px;">📋 整備履歴（${list.length}件）</h3>
         <span onclick="closeWorkerMachineMaintHistoryModal_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>

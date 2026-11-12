@@ -1087,8 +1087,10 @@ function persistAdminInitCache_() {
                 machineTypes: pdlMachineTypes,
                 machineGroups: pdlMachineGroups,
                 hitchTypes: pdlHitchTypes,
-                machines: window.pdlMachines || (cached.pdl && cached.pdl.machines) || []
-            }
+                machines: window.pdlMachines || (cached.pdl && cached.pdl.machines) || [],
+                vehicles: window.pdlMobileVehicles || (cached.pdl && cached.pdl.vehicles) || cached.vehicles || []
+            },
+            vehicles: window.pdlMobileVehicles || (cached.pdl && cached.pdl.vehicles) || cached.vehicles || []
         };
         localStorage.setItem('pMapAdminInitData', JSON.stringify(data));
     } catch (e) {
@@ -2324,6 +2326,18 @@ function renderInitData(data, opts) {
     };
     if (!keepLocalMasters) {
         window.pdlMachines = data.pdl.machines || [];
+        const vehIncoming = (data.pdl && data.pdl.vehicles) || data.vehicles || data.mobileVehicles;
+        if (Array.isArray(vehIncoming) && vehIncoming.length) {
+            window.pdlMobileVehicles = vehIncoming;
+            window._adminVehiclesLoaded = true;
+        } else if (!window.pdlMobileVehicles || !window.pdlMobileVehicles.length) {
+            try {
+                const pInit = JSON.parse(localStorage.getItem('passionMapInitData') || '{}');
+                if (Array.isArray(pInit.mobileVehicles) && pInit.mobileVehicles.length) {
+                    window.pdlMobileVehicles = pInit.mobileVehicles;
+                }
+            } catch (e) { }
+        }
         if (typeof window.refreshAdminMachineDisplayNames_ === 'function') {
             window.refreshAdminMachineDisplayNames_();
         }
@@ -2495,6 +2509,8 @@ window._adminVehPhotoB64 = '';
 window.openEquipmentManageModal = (tab) => {
     window._equipmentManageActive = true;
     window._equipmentManageTab = tab || window._equipmentManageTab || 'machine';
+    // 車両データを事前に裏読み（Prefetch）しておくことで、車両タブを開く時に0秒で表示
+    try { window.ensureAdminVehiclesLoaded_(); } catch (e) { }
     const mm = document.getElementById('masterModal');
     if (mm) mm.style.display = 'none';
     const modal = document.getElementById('equipmentManageModal');
@@ -2543,7 +2559,23 @@ window.switchEquipmentManageTab = (tab) => {
 };
 
 window.getAdminVehicleList_ = () => {
-    const list = window.pdlMobileVehicles;
+    let list = window.pdlMobileVehicles;
+    if (!list || (Array.isArray(list) && !list.length)) {
+        try {
+            const adminCache = JSON.parse(localStorage.getItem('pMapAdminInitData') || '{}');
+            const vList = (adminCache.pdl && adminCache.pdl.vehicles) || adminCache.vehicles;
+            if (Array.isArray(vList) && vList.length) {
+                window.pdlMobileVehicles = vList;
+                list = vList;
+            } else {
+                const pMapCache = JSON.parse(localStorage.getItem('passionMapInitData') || '{}');
+                if (Array.isArray(pMapCache.mobileVehicles) && pMapCache.mobileVehicles.length) {
+                    window.pdlMobileVehicles = pMapCache.mobileVehicles;
+                    list = pMapCache.mobileVehicles;
+                }
+            }
+        } catch (e) { }
+    }
     if (Array.isArray(list)) return list;
     if (list && typeof list === 'object') {
         return Object.keys(list).map(k => Object.assign({ id: k }, list[k]));
@@ -2553,6 +2585,8 @@ window.getAdminVehicleList_ = () => {
 
 window.setAdminVehicleList_ = (arr) => {
     window.pdlMobileVehicles = Array.isArray(arr) ? arr : [];
+    window._adminVehiclesLoaded = true;
+    try { persistAdminInitCache_(); } catch (e) { }
 };
 
 window.adminVehicleDisplayName_ = (v) => {
@@ -2566,26 +2600,70 @@ window.adminVehicleDisplayName_ = (v) => {
     return plate || type || v.id || '';
 };
 
-window.ensureAdminVehiclesLoaded_ = async () => {
-    if (Array.isArray(window.pdlMobileVehicles) && window.pdlMobileVehicles.length) return window.pdlMobileVehicles;
-    try {
-        const res = await callGAS('vehicle_loadAll', {});
-        const map = (res && res.vehicles) ? res.vehicles : {};
-        const arr = Object.keys(map).map(id => Object.assign({ id }, map[id]));
-        window.setAdminVehicleList_(arr);
-        return arr;
-    } catch (e) {
-        console.warn('vehicle_loadAll failed', e);
-        window.setAdminVehicleList_(window.pdlMobileVehicles || []);
+window.ensureAdminVehiclesLoaded_ = async (force) => {
+    if (!force && window._adminVehiclesLoaded && Array.isArray(window.pdlMobileVehicles)) {
         return window.getAdminVehicleList_();
     }
+    if (window._adminVehiclesPromise) {
+        return window._adminVehiclesPromise;
+    }
+    const current = window.getAdminVehicleList_();
+    if (!force && current.length > 0) {
+        window._adminVehiclesLoaded = true;
+    }
+    window._adminVehiclesPromise = (async () => {
+        try {
+            const res = await callGAS('vehicle_loadAll', {}, 1, { jumpQueue: true, timeoutMs: 30000 });
+            const map = (res && res.vehicles) ? res.vehicles : {};
+            const arr = Object.keys(map).map(id => Object.assign({ id }, map[id]));
+            window.pdlMobileVehicles = arr;
+            window._adminVehiclesLoaded = true;
+            try { persistAdminInitCache_(); } catch (e) { }
+            return arr;
+        } catch (e) {
+            console.warn('vehicle_loadAll failed', e);
+            if (!Array.isArray(window.pdlMobileVehicles)) {
+                window.pdlMobileVehicles = [];
+            }
+            return window.getAdminVehicleList_();
+        } finally {
+            window._adminVehiclesPromise = null;
+        }
+    })();
+    return window._adminVehiclesPromise;
 };
 
 window.renderEquipmentVehiclePanel_ = async (editVehicle) => {
     const body = document.getElementById('equipmentManageBody');
     if (!body) return;
-    body.innerHTML = '<div style="padding:24px; text-align:center; color:#888;">車両データを読み込み中...</div>';
-    await ensureAdminVehiclesLoaded_();
+
+    const currentList = window.getAdminVehicleList_();
+    const hasData = currentList && currentList.length > 0;
+    const isLoaded = !!window._adminVehiclesLoaded;
+
+    // キャッシュやデータが全くなく、未取得の場合のみスピナーを表示して完了を待つ
+    if (!hasData && !isLoaded) {
+        body.innerHTML = `
+          <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:240px; color:#666;">
+            <div style="width:36px; height:36px; border:3px solid #ffe0b2; border-top-color:#e65100; border-radius:50%; animation:spinAdminVeh 0.8s linear infinite; margin-bottom:12px;"></div>
+            <div style="font-weight:bold; font-size:14px; color:#e65100;">車両データを読み込み中...</div>
+          </div>
+          <style>@keyframes spinAdminVeh { to { transform: rotate(360deg); } }</style>
+        `;
+        await ensureAdminVehiclesLoaded_();
+        if (window._equipmentManageTab !== 'vehicle') return;
+    } else if (!isLoaded) {
+        // キャッシュデータで即時描画しつつ、バックグラウンドで最新を取得
+        ensureAdminVehiclesLoaded_().then(() => {
+            if (window._equipmentManageActive && window._equipmentManageTab === 'vehicle') {
+                const editInput = document.getElementById('admin_veh_edit_id');
+                if (!editInput || !editInput.value) {
+                    window.renderEquipmentVehiclePanel_(editVehicle);
+                }
+            }
+        });
+    }
+
     const list = window.getAdminVehicleList_().slice().sort((a, b) =>
         String(a.plateNumber || '').localeCompare(String(b.plateNumber || ''), 'ja'));
     const editing = editVehicle || null;
@@ -2616,7 +2694,7 @@ window.renderEquipmentVehiclePanel_ = async (editVehicle) => {
     } else {
         list.forEach(v => {
             const safe = encodeURIComponent(JSON.stringify(v));
-            const sub = [v.driveType || v.mainCategory, (v.mileage === 0 || v.mileage) ? (v.mileage + ' km') : '', v.model].filter(Boolean).join(' / ');
+            const sub = [v.mainCategory || v.driveType, v.vehicleType || v.type, (v.mileage === 0 || v.mileage) ? (v.mileage + ' km') : '', v.model].filter(Boolean).join(' / ');
             listRows += `<tr style="border-bottom:1px solid #eee;">
               <td style="padding:10px; vertical-align:middle;">
                 <div style="font-weight:bold; color:#333; font-size:14px;">${adminVehicleDisplayName_(v) || '(未設定)'}</div>
@@ -2642,15 +2720,15 @@ window.renderEquipmentVehiclePanel_ = async (editVehicle) => {
               <div style="display:flex; flex-direction:column; gap:8px;">
                 <label style="font-size:12px; font-weight:bold; color:#555;">ナンバー（登録番号）*</label>
                 <input type="text" id="admin_veh_plate" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例：徳島 480 あ 1234" value="${editing ? String(editing.plateNumber || '').replace(/"/g, '&quot;') : ''}">
-                <label style="font-size:12px; font-weight:bold; color:#555;">メインカテゴリ</label>
+                <label style="font-size:12px; font-weight:bold; color:#555;">用途別分類</label>
                 <select id="admin_veh_main" class="form-input" style="margin-bottom:0; padding:8px;">
                   <option value="自動車"${mainCat === '自動車' ? ' selected' : ''}>自動車</option>
                   <option value="作業機"${mainCat === '作業機' ? ' selected' : ''}>作業機</option>
                 </select>
-                <label style="font-size:12px; font-weight:bold; color:#555;">車種</label>
+                <label style="font-size:12px; font-weight:bold; color:#555;">ナンバー区分</label>
                 <div style="display:flex; gap:5px;">
                   <select id="admin_veh_type" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">${typeOpts}</select>
-                  <button type="button" onclick="addAdminVehicleType_()" style="padding:8px; border-radius:4px; border:1px solid #ccc;" title="車種を追加">➕</button>
+                  <button type="button" onclick="addAdminVehicleType_()" style="padding:8px; border-radius:4px; border:1px solid #ccc;" title="ナンバー区分を追加">➕</button>
                 </div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">番号 / 型式</label>
                 <div style="display:flex; gap:5px;">
@@ -2693,7 +2771,7 @@ window.renderEquipmentVehiclePanel_ = async (editVehicle) => {
 };
 
 window.addAdminVehicleType_ = () => {
-    const val = prompt('新しい車種を入力してください（例：ステップワゴン、キャリー）');
+    const val = prompt('新しいナンバー区分を入力してください（例：軽トラ、普通車、トラック）');
     if (!val) return;
     const name = val.trim();
     if (!name) return;
@@ -2747,7 +2825,7 @@ window.saveAdminVehicle = async () => {
     const editId = (document.getElementById('admin_veh_edit_id') || {}).value || '';
     const existing = window.getAdminVehicleList_().find(x => String(x.id) === String(editId));
     const mileageRaw = (document.getElementById('admin_veh_mileage') || {}).value;
-    const mainCategory = (document.getElementById('admin_veh_main') || {}).value || '自動車';
+    const mainCategory = (document.getElementById('admin_veh_main') || {}).value || (existing ? (existing.mainCategory || existing.group || '自動車') : '自動車');
     const vehicleType = (document.getElementById('admin_veh_type') || {}).value || '';
     const vehicleNumber = ((document.getElementById('admin_veh_number') || {}).value || '').trim();
     const model = ((document.getElementById('admin_veh_model') || {}).value || '').trim();
@@ -3018,9 +3096,119 @@ window.startMarkerRegisterForMachineSign_ = () => {
     }
 };
 
-window.getMachineTypeOptionsHtml = (selected) => {
+window.getAdminMachineTypeGroupMap_ = () => {
+    const map = {};
+    const defaults = {
+        '圃場': ['トラクター', 'コンバイン', '田植機', '定植機', '管理機', '草刈機', '動噴', '散布機', 'ドローン', 'マルチャー', '畝立て機', 'ロータリー', 'ハロー', 'プラウ'],
+        '出荷': ['選別機', '洗浄機', '包装機', '結束機', '計量器', 'フォークリフト', 'コンベア', '保冷庫', '冷蔵庫']
+    };
+    Object.keys(defaults).forEach(g => {
+        defaults[g].forEach(t => { map[t] = g; });
+    });
+    try {
+        const saved = JSON.parse(localStorage.getItem('adminMachineTypeGroupMap') || '{}');
+        if (saved && typeof saved === 'object') {
+            Object.assign(map, saved);
+        }
+    } catch (e) { }
+    (window.pdlMachines || []).forEach(m => {
+        if (m && m.type && m.group) {
+            const t = String(m.type).trim();
+            const g = String(m.group).trim();
+            if (t && g) map[t] = g;
+        }
+    });
+    return map;
+};
+
+window.saveAdminMachineTypeGroupMapping_ = (type, group) => {
+    if (!type || !group) return;
+    try {
+        const saved = JSON.parse(localStorage.getItem('adminMachineTypeGroupMap') || '{}');
+        saved[type] = group;
+        localStorage.setItem('adminMachineTypeGroupMap', JSON.stringify(saved));
+    } catch (e) { }
+};
+
+window.getMachineTypeOptionsHtml = (selected, targetGroup) => {
     const list = pdlMachineTypes || [];
+    const groupMap = window.getAdminMachineTypeGroupMap_();
+    const currentGroup = String(targetGroup || '').trim();
+
     let html = '<option value="">機械カテゴリを選択...</option>';
+
+    if (currentGroup) {
+        const matched = [];
+        const others = [];
+        list.forEach(t => {
+            const g = groupMap[t];
+            if (g === currentGroup) {
+                matched.push(t);
+            } else {
+                others.push(t);
+            }
+        });
+
+        if (matched.length > 0) {
+            html += `<optgroup label="【${currentGroup}】の機械カテゴリ">`;
+            matched.forEach(t => {
+                const sel = String(t) === String(selected || '') ? 'selected' : '';
+                html += `<option value="${String(t).replace(/"/g, '&quot;')}" ${sel}>${t}</option>`;
+            });
+            html += `</optgroup>`;
+        }
+        if (others.length > 0) {
+            html += `<optgroup label="その他の機械カテゴリ">`;
+            others.forEach(t => {
+                const sel = String(t) === String(selected || '') ? 'selected' : '';
+                html += `<option value="${String(t).replace(/"/g, '&quot;')}" ${sel}>${t}</option>`;
+            });
+            html += `</optgroup>`;
+        }
+    } else {
+        const groups = [...(pdlMachineGroups || [])];
+        const categorized = {};
+        const uncategorized = [];
+
+        list.forEach(t => {
+            const g = groupMap[t];
+            if (g && groups.includes(g)) {
+                if (!categorized[g]) categorized[g] = [];
+                categorized[g].push(t);
+            } else {
+                uncategorized.push(t);
+            }
+        });
+
+        groups.forEach(g => {
+            const items = categorized[g] || [];
+            if (items.length > 0) {
+                html += `<optgroup label="【${g}】">`;
+                items.forEach(t => {
+                    const sel = String(t) === String(selected || '') ? 'selected' : '';
+                    html += `<option value="${String(t).replace(/"/g, '&quot;')}" ${sel}>${t}</option>`;
+                });
+                html += `</optgroup>`;
+            }
+        });
+
+        if (uncategorized.length > 0) {
+            html += `<optgroup label="未分類・その他">`;
+            uncategorized.forEach(t => {
+                const sel = String(t) === String(selected || '') ? 'selected' : '';
+                html += `<option value="${String(t).replace(/"/g, '&quot;')}" ${sel}>${t}</option>`;
+            });
+            html += `</optgroup>`;
+        }
+    }
+
+    return html;
+};
+
+window.getMachineGroupOptionsHtml = (selected) => {
+    const list = [...(pdlMachineGroups || [])];
+    if (selected && !list.includes(selected)) list.unshift(selected);
+    let html = '<option value="">機種を選択...</option>';
     list.forEach(t => {
         const sel = String(t) === String(selected || '') ? 'selected' : '';
         html += `<option value="${String(t).replace(/"/g, '&quot;')}" ${sel}>${t}</option>`;
@@ -3028,14 +3216,55 @@ window.getMachineTypeOptionsHtml = (selected) => {
     return html;
 };
 
-window.getMachineGroupOptionsHtml = (selected) => {
-    const list = [...(pdlMachineGroups || [])];
-    if (selected && !list.includes(selected)) list.unshift(selected);
-    let html = '<option value="">メインカテゴリを選択...</option>';
-    list.forEach(t => {
-        const sel = String(t) === String(selected || '') ? 'selected' : '';
-        html += `<option value="${String(t).replace(/"/g, '&quot;')}" ${sel}>${t}</option>`;
+window.buildAdminInspectionTargetOptionsHtml_ = (selected) => {
+    const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;');
+    const cur = String(selected || '').trim();
+
+    // 1. 機械のすべての機械カテゴリ
+    const macTypes = [...new Set([
+        ...(pdlMachineTypes || []),
+        ...((window.pdlMachines || []).map(m => m.type).filter(Boolean)),
+        'トラクター', 'コンバイン', '田植機', '定植機', '管理機', '草刈機', '動噴', '散布機', 'ドローン', 'マルチャー', '畝立て機'
+    ])].filter(Boolean);
+
+    // 2. 用途別分類（車両）
+    const vehicleUses = ['自動車', '作業機'];
+
+    // 3. ナンバー区分（車両）
+    const vehTypes = [...new Set([
+        ...(window._adminVehicleTypes || ['軽トラ', '軽バン', '軽四', '普通車', 'トラック']),
+        ...((window.getAdminVehicleList_ ? window.getAdminVehicleList_() : []).map(v => v.vehicleType || v.type).filter(Boolean))
+    ])].filter(Boolean);
+
+    let html = '<option value="">対象（機械カテゴリ / 用途別分類）を選択...</option>';
+
+    html += '<optgroup label="🚜 機械カテゴリ（すべての機械）">';
+    macTypes.forEach(t => {
+        const sel = t === cur ? ' selected' : '';
+        html += `<option value="${esc(t)}"${sel}>${t}</option>`;
     });
+    html += '</optgroup>';
+
+    html += '<optgroup label="🚚 用途別分類（車両）">';
+    vehicleUses.forEach(u => {
+        const sel = u === cur ? ' selected' : '';
+        html += `<option value="${esc(u)}"${sel}>${u}</option>`;
+    });
+    html += '</optgroup>';
+
+    html += '<optgroup label="🛻 ナンバー区分（車両）">';
+    vehTypes.forEach(vt => {
+        if (!macTypes.includes(vt) && !vehicleUses.includes(vt)) {
+            const sel = vt === cur ? ' selected' : '';
+            html += `<option value="${esc(vt)}"${sel}>${vt}</option>`;
+        }
+    });
+    html += '</optgroup>';
+
+    if (cur && !macTypes.includes(cur) && !vehicleUses.includes(cur) && !vehTypes.includes(cur)) {
+        html += `<option value="${esc(cur)}" selected>${cur}</option>`;
+    }
+
     return html;
 };
 
@@ -3052,7 +3281,7 @@ window.getMasterTypeInfo = (type) => {
         workCategory: { title: '📂 作業カテゴリマスタ', desc: '作業のカテゴリ区分設定', list: pdlWorkCategories || [] },
         contentUnit: { title: '📏 コンテナ内容単位マスタ', desc: '収穫記録の内容単位（kg・本など）', list: pdlContentUnits || [] },
         machineType: { title: '🏷️ 機械名マスタ', desc: '機械名・車両名（トラクター、軽トラ等）', list: pdlMachineTypes || [] },
-        machineGroup: { title: '📁 メインカテゴリマスタ', desc: '農機=圃場/出荷、車両=自動車/作業機', list: pdlMachineGroups || [] },
+        machineGroup: { title: '📁 機種マスタ', desc: '農機の機種区分（圃場、出荷など）', list: pdlMachineGroups || [] },
         hitchType: { title: '🔗 ヒッチ規格マスタ', desc: 'トラクターと作業機の連結規格。同じ規格の機械が作業記録で紐づきます', list: pdlHitchTypes || [] },
         work: { title: '📋 作業記録マスタ', desc: '作業項目および詳細作業名リストの設定', list: pdlWorkMaster || [] },
         machine: { title: '🚜 農機マスタ', desc: '管理車両・農業機械・機番・拠点・定位置の設定', list: window.pdlMachines || [] },
@@ -3305,8 +3534,8 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             </div>`;
         } else if (type === 'machineGroup') {
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
-                <label style="font-size:12px; font-weight:bold; color:#555;">機械グループ名</label>
-                <input type="text" id="add_machineGroup_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 農業機械">
+                <label style="font-size:12px; font-weight:bold; color:#555;">機種名</label>
+                <input type="text" id="add_machineGroup_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 圃場、出荷">
                 <button onclick="execMaster('machineGroup', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
         } else if (type === 'hitchType') {
@@ -3317,19 +3546,12 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <button onclick="execMaster('hitchType', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
         } else if (type === 'inspection') {
-            const allTypes = [...new Set([
-                ...(pdlMachineTypes || []),
-                ...((window.pdlMachines || []).map(m => m.type).filter(Boolean)),
-                'トラクター', 'コンバイン', '田植機', '定植機', '管理機', '草刈機', '動噴', '散布機', 'ドローン', '軽トラ', '軽バン', 'トラック'
-            ])];
-            const macTypeOpts = allTypes.map(t => `<option value="${String(t).replace(/"/g, '&quot;')}">${t}</option>`).join('');
             const existingCats = [...new Set((pdlInspections || []).map(i => i.inspectionCategory).filter(Boolean))];
             const catDatalist = existingCats.map(c => `<option value="${String(c).replace(/"/g, '&quot;')}">`).join('');
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
-                <label style="font-size:12px; font-weight:bold; color:#555;">機械カテゴリ <span style="color:red;">*</span></label>
+                <label style="font-size:12px; font-weight:bold; color:#555;">対象（機械カテゴリ / 用途別分類） <span style="color:red;">*</span></label>
                 <select id="add_insp_mac_type" class="form-input" style="margin-bottom:0; padding:8px;">
-                    <option value="">機械カテゴリを選択...</option>
-                    ${macTypeOpts}
+                    ${window.buildAdminInspectionTargetOptionsHtml_('')}
                 </select>
                 <label style="font-size:12px; font-weight:bold; color:#555;">点検カテゴリ <span style="color:red;">*</span></label>
                 <input type="text" id="add_insp_category" list="insp_cat_options" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: エンジン部、走行部、作業部、電装・安全">
@@ -3558,11 +3780,17 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
                 <label style="font-size:12px; font-weight:bold; color:#555;">拠点名</label>
                 <select id="add_mac_location" class="form-input" style="margin-bottom:0; padding:8px;" onchange="refreshAdminMachineSignOptionsFromLocation_('add')">${locOpts}</select>
-                <label style="font-size:12px; font-weight:bold; color:#555;">メインカテゴリ</label>
-                <select id="add_mac_group" class="form-input" style="margin-bottom:0; padding:8px;" onchange="autoFillAdminMachineNumber_(true)">${getMachineGroupOptionsHtml('')}</select>
+                <label style="font-size:12px; font-weight:bold; color:#555;">機種</label>
+                <div style="display:flex; gap:5px; align-items:center;">
+                  <select id="add_mac_group" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" onchange="onAdminMachineGroupChanged_('add')">${getMachineGroupOptionsHtml('')}</select>
+                  <button type="button" onclick="addAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="機種を追加">➕</button>
+                  <button type="button" onclick="renameAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="選択中の機種名を編集">✏️</button>
+                  <button type="button" onclick="removeAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; color:#c62828; cursor:pointer;" title="選択中の機種を削除">➖</button>
+                </div>
+                <div style="font-size:11px; color:#888; margin-top:-4px;">例：圃場 / 出荷 — ➕で追加、✏️で名称変更、➖でマスタから削除</div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">機械カテゴリ</label>
                 <div style="display:flex; gap:5px; align-items:center;">
-                  <select id="add_mac_type" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" onchange="autoFillAdminMachineNumber_(true)">${getMachineTypeOptionsHtml('')}</select>
+                  <select id="add_mac_type" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" onchange="autoFillAdminMachineNumber_(true)">${getMachineTypeOptionsHtml('', '')}</select>
                   <button type="button" onclick="addAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="機械カテゴリを追加">➕</button>
                   <button type="button" onclick="renameAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="選択中の名称を編集">✏️</button>
                   <button type="button" onclick="removeAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; color:#c62828; cursor:pointer;" title="選択中を削除">➖</button>
@@ -3575,7 +3803,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 </div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">番号</label>
                 <input type="text" id="add_mac_number" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="自動採番（手動変更可）" oninput="markAdminMachineNumberManual_()">
-                <div id="add_mac_number_hint" style="font-size:11px; color:#888; margin-top:-4px;">メインカテゴリ・機械カテゴリ・型式名が一致する既存台があれば、次の番号を自動入力します</div>
+                <div id="add_mac_number_hint" style="font-size:11px; color:#888; margin-top:-4px;">機種・機械カテゴリ・型式名が一致する既存台があれば、次の番号を自動入力します</div>
                 <div style="font-size:11px; color:#888;">表示名は「機械カテゴリ 型式1 / 型式2」＋（同型式が2台以上のときだけ）①②…</div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">購入日 / 燃料</label>
                 <div style="display:flex; gap:5px;">
@@ -3676,7 +3904,9 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             if (type === 'inspection') {
                 const sortLabel = (v.sortOrder != null && v.sortOrder !== 0) ? `<span style="font-size:10px; color:#888; margin-left:4px;">(順: ${v.sortOrder})</span>` : '';
                 const noteLabel = v.note ? `<div style="font-size:11px; color:#666; margin-top:2px;">基準: ${v.note}</div>` : '';
-                subInfo = `<span style="font-size:11px; background:#e0f2f1; color:#00695c; padding:2px 6px; border-radius:4px; font-weight:bold; margin-left:6px;">🚜 ${v.machineType || ''}</span> <span style="font-size:11px; background:#ede7f6; color:#512da8; padding:2px 6px; border-radius:4px; margin-left:4px;">📁 ${v.inspectionCategory || ''}</span>${sortLabel}${noteLabel}`;
+                const isVeh = ['自動車', '作業機', '移動車両', '作業車両', '軽トラ', '軽バン', 'トラック', '普通車', '軽四'].includes(String(v.machineType || '').trim());
+                const icon = isVeh ? '🚚' : '🚜';
+                subInfo = `<span style="font-size:11px; background:#e0f2f1; color:#00695c; padding:2px 6px; border-radius:4px; font-weight:bold; margin-left:6px;">${icon} ${v.machineType || ''}</span> <span style="font-size:11px; background:#ede7f6; color:#512da8; padding:2px 6px; border-radius:4px; margin-left:4px;">📁 ${v.inspectionCategory || ''}</span>${sortLabel}${noteLabel}`;
             }
             if (type === 'costItem') {
                 const bits = [];
@@ -4042,24 +4272,14 @@ window.openEditCropMaster = (encoded) => {
 window.openEditInspectionMaster = (encoded) => {
     const v = JSON.parse(decodeURIComponent(encoded || '%7B%7D'));
     const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;');
-    const allTypes = [...new Set([
-        ...(pdlMachineTypes || []),
-        ...((window.pdlMachines || []).map(m => m.type).filter(Boolean)),
-        v.machineType || '',
-        'トラクター', 'コンバイン', '田植機', '定植機', '管理機', '草刈機', '動噴', '散布機', 'ドローン', '軽トラ', '軽バン', 'トラック'
-    ])].filter(Boolean);
-    const macTypeOpts = allTypes.map(t => {
-        const sel = String(t) === String(v.machineType || '') ? 'selected' : '';
-        return `<option value="${esc(t)}" ${sel}>${t}</option>`;
-    }).join('');
     const existingCats = [...new Set((pdlInspections || []).map(i => i.inspectionCategory).filter(Boolean))];
     const catDatalist = existingCats.map(c => `<option value="${esc(c)}">`).join('');
     const editHtml = `
         <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
             <h4 style="margin-top:0; color:#00897B; font-size:15px; border-bottom:2px solid #00897B; padding-bottom:5px;">✏️ 点検項目の編集</h4>
             <input type="hidden" id="edit_insp_id" value="${esc(v.id)}">
-            <label class="form-label">機械カテゴリ <span style="color:red;">*</span></label>
-            <select id="edit_insp_mac_type" class="form-input" style="margin-bottom:8px; padding:8px;">${macTypeOpts}</select>
+            <label class="form-label">対象（機械カテゴリ / 用途別分類） <span style="color:red;">*</span></label>
+            <select id="edit_insp_mac_type" class="form-input" style="margin-bottom:8px; padding:8px;">${window.buildAdminInspectionTargetOptionsHtml_(v.machineType)}</select>
             <label class="form-label">点検カテゴリ <span style="color:red;">*</span></label>
             <input type="text" id="edit_insp_category" list="edit_insp_cat_list" class="form-input" style="margin-bottom:8px; padding:8px;" value="${esc(v.inspectionCategory)}">
             <datalist id="edit_insp_cat_list">${catDatalist}</datalist>
@@ -6263,11 +6483,16 @@ window.openEditMachineMaster = (encodedStr) => {
             <input type="hidden" id="edit_mac_id" value="${String(v.id || '').replace(/"/g, '&quot;')}">
             <label class="form-label">拠点名</label>
             <select id="edit_mac_location" class="form-input" onchange="refreshAdminMachineSignOptionsFromLocation_('edit')">${locOpts}</select>
-            <label class="form-label">メインカテゴリ</label>
-            <select id="edit_mac_group" class="form-input">${getMachineGroupOptionsHtml(v.group || '')}</select>
+            <label class="form-label">機種</label>
+            <div style="display:flex; gap:5px; align-items:center; margin-bottom:10px;">
+              <select id="edit_mac_group" class="form-input" style="flex:1; margin-bottom:0;" onchange="onAdminMachineGroupChanged_('edit')">${getMachineGroupOptionsHtml(v.group || '')}</select>
+              <button type="button" onclick="addAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="機種を追加">➕</button>
+              <button type="button" onclick="renameAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="選択中の機種名を編集">✏️</button>
+              <button type="button" onclick="removeAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; color:#c62828; cursor:pointer;" title="選択中の機種を削除">➖</button>
+            </div>
             <label class="form-label">機械カテゴリ</label>
             <div style="display:flex; gap:5px; align-items:center; margin-bottom:10px;">
-              <select id="edit_mac_type" class="form-input" style="flex:1; margin-bottom:0;">${getMachineTypeOptionsHtml(v.type || '')}</select>
+              <select id="edit_mac_type" class="form-input" style="flex:1; margin-bottom:0;">${getMachineTypeOptionsHtml(v.type || '', v.group || '')}</select>
               <button type="button" onclick="addAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="機械カテゴリを追加">➕</button>
               <button type="button" onclick="renameAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="選択中の名称を編集">✏️</button>
               <button type="button" onclick="removeAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; color:#c62828; cursor:pointer;" title="選択中を削除">➖</button>
@@ -6410,7 +6635,7 @@ window.autoFillAdminMachineNumber_ = (force) => {
 
     if (!group || !typeName || !model) {
         if (hintEl) {
-            hintEl.textContent = 'メインカテゴリ・機械カテゴリ・型式名を揃えると、一致する既存台から次の番号を自動入力します';
+            hintEl.textContent = '機種・機械カテゴリ・型式名を揃えると、一致する既存台から次の番号を自動入力します';
             hintEl.style.color = '#888';
         }
         return;
@@ -6434,16 +6659,57 @@ window.autoFillAdminMachineNumber_ = (force) => {
     }
 };
 
+window.getAdminMachineGroupSelectEl_ = () => {
+    return document.getElementById('add_mac_group') || document.getElementById('edit_mac_group');
+};
+
 window.getAdminMachineTypeSelectEl_ = () => {
     return document.getElementById('add_mac_type') || document.getElementById('edit_mac_type');
+};
+
+window.onAdminMachineGroupChanged_ = (mode) => {
+    const groupEl = document.getElementById(mode + '_mac_group');
+    const typeEl = document.getElementById(mode + '_mac_type');
+    if (!groupEl || !typeEl) return;
+    const selectedGroup = groupEl.value || '';
+    const currentType = typeEl.value || '';
+    typeEl.innerHTML = window.getMachineTypeOptionsHtml(currentType, selectedGroup);
+    if (currentType) typeEl.value = currentType;
+    if (typeof autoFillAdminMachineNumber_ === 'function') {
+        autoFillAdminMachineNumber_(true);
+    }
+};
+
+window.refreshAdminMachineGroupSelect_ = (selected) => {
+    const sel = window.getAdminMachineGroupSelectEl_();
+    if (!sel) return;
+    const cur = selected != null ? String(selected) : String(sel.value || '');
+    sel.innerHTML = window.getMachineGroupOptionsHtml(cur);
+    if (cur) sel.value = cur;
+    window.refreshAdminMachineTypeSelect_();
 };
 
 window.refreshAdminMachineTypeSelect_ = (selected) => {
     const sel = window.getAdminMachineTypeSelectEl_();
     if (!sel) return;
+    const grpSel = window.getAdminMachineGroupSelectEl_();
+    const grp = grpSel ? grpSel.value : '';
     const cur = selected != null ? String(selected) : String(sel.value || '');
-    sel.innerHTML = getMachineTypeOptionsHtml(cur);
+    sel.innerHTML = window.getMachineTypeOptionsHtml(cur, grp);
     if (cur) sel.value = cur;
+};
+
+window.renameAdminMachineGroupInLocalMachines_ = (oldName, newName) => {
+    const o = String(oldName || '').trim();
+    const n = String(newName || '').trim();
+    if (!o || !n || o === n) return;
+    (window.pdlMachines || []).forEach(m => {
+        if (!m) return;
+        if (String(m.group || m.mainCategory || '').trim() === o) {
+            m.group = n;
+            m.mainCategory = n;
+        }
+    });
 };
 
 window.renameAdminMachineTypeInLocalMachines_ = (oldName, newName) => {
@@ -6456,11 +6722,109 @@ window.renameAdminMachineTypeInLocalMachines_ = (oldName, newName) => {
     });
 };
 
+window.addAdminMachineGroupFromForm_ = async () => {
+    const raw = prompt('新しい機種名を入力してください（例：圃場、出荷、育苗、加工）');
+    if (raw == null) return;
+    const name = String(raw).trim();
+    if (!name) return;
+    if ((pdlMachineGroups || []).includes(name)) {
+        customAlert('既に登録されています');
+        window.refreshAdminMachineGroupSelect_(name);
+        if (typeof autoFillAdminMachineNumber_ === 'function') autoFillAdminMachineNumber_(true);
+        return;
+    }
+    pdlMachineGroups = [...(pdlMachineGroups || []), name];
+    persistAdminInitCache_();
+    window.refreshAdminMachineGroupSelect_(name);
+    if (typeof autoFillAdminMachineNumber_ === 'function') autoFillAdminMachineNumber_(true);
+    showAdminSyncToast('✅ 機種を追加しました（同期中…）', 'ok');
+    try {
+        const updated = await callGAS('manageMaster', {
+            masterType: 'machineGroup', manageAction: 'add', value: name, userName: currentUser
+        });
+        if (Array.isArray(updated)) pdlMachineGroups = updated;
+        persistAdminInitCache_();
+        window.refreshAdminMachineGroupSelect_(name);
+        showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+    } catch (e) {
+        showAdminSyncToast('⚠️ 保存に失敗しました: ' + (e.message || e), 'error');
+    }
+};
+
+window.renameAdminMachineGroupFromForm_ = async () => {
+    const sel = window.getAdminMachineGroupSelectEl_();
+    if (!sel || !sel.value) {
+        customAlert('編集する機種を選択してください');
+        return;
+    }
+    const original = String(sel.value).trim();
+    const raw = prompt('機種名を変更', original);
+    if (raw == null) return;
+    const newName = String(raw).trim();
+    if (!newName) return;
+    if (newName !== original && (pdlMachineGroups || []).includes(newName)) {
+        customAlert('既に登録されています');
+        return;
+    }
+    if (!await customConfirm(`機種「${original}」を「${newName}」に変更しますか？\n※登録済み農機の同じ機種区分も更新されます。`)) return;
+    pdlMachineGroups = (pdlMachineGroups || []).map(t => String(t) === original ? newName : t);
+    window.renameAdminMachineGroupInLocalMachines_(original, newName);
+    persistAdminInitCache_();
+    window.refreshAdminMachineGroupSelect_(newName);
+    if (typeof autoFillAdminMachineNumber_ === 'function') autoFillAdminMachineNumber_(true);
+    showAdminSyncToast('✅ 機種名を更新しました（同期中…）', 'ok');
+    try {
+        const updated = await callGAS('manageMaster', {
+            masterType: 'machineGroup',
+            manageAction: 'edit',
+            value: { originalName: original, newData: { name: newName } },
+            userName: currentUser
+        });
+        if (Array.isArray(updated)) pdlMachineGroups = updated;
+        persistAdminInitCache_();
+        window.refreshAdminMachineGroupSelect_(newName);
+        showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+    } catch (e) {
+        showAdminSyncToast('⚠️ 保存に失敗しました: ' + (e.message || e), 'error');
+    }
+};
+
+window.removeAdminMachineGroupFromForm_ = async () => {
+    const sel = window.getAdminMachineGroupSelectEl_();
+    if (!sel || !sel.value) {
+        customAlert('削除する機種を選択してください');
+        return;
+    }
+    const val = String(sel.value).trim();
+    if (!await customConfirm(`機種「${val}」をマスタから削除しますか？\n※既に登録済みの農機の機種区分値自体は残ります。`)) return;
+    pdlMachineGroups = (pdlMachineGroups || []).filter(t => String(t) !== val);
+    persistAdminInitCache_();
+    window.refreshAdminMachineGroupSelect_('');
+    if (typeof autoFillAdminMachineNumber_ === 'function') autoFillAdminMachineNumber_(true);
+    showAdminSyncToast('✅ 機種を削除しました（同期中…）', 'ok');
+    try {
+        const updated = await callGAS('manageMaster', {
+            masterType: 'machineGroup', manageAction: 'delete', value: val, userName: currentUser
+        });
+        if (Array.isArray(updated)) pdlMachineGroups = updated;
+        persistAdminInitCache_();
+        window.refreshAdminMachineGroupSelect_('');
+        showAdminSyncToast('☁️ サーバーへ削除完了', 'ok');
+    } catch (e) {
+        showAdminSyncToast('⚠️ 削除に失敗しました: ' + (e.message || e), 'error');
+    }
+};
+
 window.addAdminMachineTypeFromForm_ = async () => {
     const raw = prompt('新しい機械カテゴリ名を入力してください（例：トラクター）');
     if (raw == null) return;
     const name = String(raw).trim();
     if (!name) return;
+    const grpSel = window.getAdminMachineGroupSelectEl_();
+    const curGroup = grpSel ? String(grpSel.value || '').trim() : '';
+    if (curGroup) {
+        window.saveAdminMachineTypeGroupMapping_(name, curGroup);
+    }
     if ((pdlMachineTypes || []).includes(name)) {
         customAlert('既に登録されています');
         refreshAdminMachineTypeSelect_(name);
@@ -6503,6 +6867,10 @@ window.renameAdminMachineTypeFromForm_ = async () => {
     if (!await customConfirm(`機械カテゴリ「${original}」を「${newName}」に変更しますか？\n※登録済み農機の同じカテゴリも更新されます。`)) return;
     pdlMachineTypes = (pdlMachineTypes || []).map(t => String(t) === original ? newName : t);
     window.renameAdminMachineTypeInLocalMachines_(original, newName);
+    const grpSel = window.getAdminMachineGroupSelectEl_();
+    if (grpSel && grpSel.value) {
+        window.saveAdminMachineTypeGroupMapping_(newName, grpSel.value);
+    }
     persistAdminInitCache_();
     refreshAdminMachineTypeSelect_(newName);
     if (typeof autoFillAdminMachineNumber_ === 'function') autoFillAdminMachineNumber_(true);
@@ -6585,7 +6953,7 @@ window.execMaster = async (type, act, val) => {
                     });
                     if (dup) {
                         const suggested = window.getNextAdminMachineNumber_(group, macType, model, null, model2);
-                        customAlert(`同じメインカテゴリ・機械カテゴリ・型式で番号「${machineNumber}」は既にあります。\n番号「${suggested}」などで登録してください。`);
+                        customAlert(`同じ機種・機械カテゴリ・型式で番号「${machineNumber}」は既にあります。\n番号「${suggested}」などで登録してください。`);
                         return;
                     }
                 }
@@ -6661,7 +7029,7 @@ window.execMaster = async (type, act, val) => {
                     });
                     if (dup) {
                         const suggested = window.getNextAdminMachineNumber_(group, macType, model, machineId, model2);
-                        customAlert(`同じメインカテゴリ・機械カテゴリ・型式で番号「${number}」は既にあります。\n番号「${suggested}」などにしてください。`);
+                        customAlert(`同じ機種・機械カテゴリ・型式で番号「${number}」は既にあります。\n番号「${suggested}」などにしてください。`);
                         return;
                     }
                 }
@@ -6846,7 +7214,7 @@ window.execMaster = async (type, act, val) => {
         else if (type === 'hitchType') { const name = document.getElementById('add_hitchType_name').value.trim(); if (!name) { customAlert("ヒッチ規格名を入力してください"); return; } if ((pdlHitchTypes || []).includes(name)) { customAlert("既に登録されています"); return; } value = name; }
         else if (type === 'inspection') {
             const macType = (document.getElementById('add_insp_mac_type')?.value || '').trim();
-            if (!macType) { customAlert("機械カテゴリを選択してください"); return; }
+            if (!macType) { customAlert("対象（機械カテゴリまたは用途別分類）を選択してください"); return; }
             const cat = (document.getElementById('add_insp_category')?.value || '').trim();
             if (!cat) { customAlert("点検カテゴリを入力してください"); return; }
             const item = (document.getElementById('add_insp_item')?.value || '').trim();
@@ -7131,7 +7499,7 @@ window.execMaster = async (type, act, val) => {
             const id = document.getElementById('edit_insp_id')?.value || '';
             if (!id) { customAlert('編集対象IDがありません'); return; }
             const macType = (document.getElementById('edit_insp_mac_type')?.value || '').trim();
-            if (!macType) { customAlert("機械カテゴリを選択してください"); return; }
+            if (!macType) { customAlert("対象（機械カテゴリまたは用途別分類）を選択してください"); return; }
             const cat = (document.getElementById('edit_insp_category')?.value || '').trim();
             if (!cat) { customAlert("点検カテゴリを入力してください"); return; }
             const item = (document.getElementById('edit_insp_item')?.value || '').trim();
