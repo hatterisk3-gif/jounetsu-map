@@ -3217,10 +3217,12 @@ window.getMachineGroupOptionsHtml = (selected) => {
     return html;
 };
 
-window.buildAdminInspectionTargetOptionsHtml_ = (selected) => {
-    const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;');
-    const cur = String(selected || '').trim();
+window.parseAdminInspectionTargets_ = (val) => {
+    if (Array.isArray(val)) return [...new Set(val.map(s => String(s || '').trim()).filter(Boolean))];
+    return [...new Set(String(val || '').split(/[,、]/).map(s => s.trim()).filter(Boolean))];
+};
 
+window.getAdminInspectionTargetGroups_ = () => {
     // 1. 機械のすべての機械カテゴリ
     const macTypes = [...new Set([
         ...(pdlMachineTypes || []),
@@ -3235,7 +3237,119 @@ window.buildAdminInspectionTargetOptionsHtml_ = (selected) => {
     const vehTypes = [...new Set([
         ...(window._adminVehicleTypes || ['軽トラ', '軽バン', '軽四', '普通車', 'トラック']),
         ...((window.getAdminVehicleList_ ? window.getAdminVehicleList_() : []).map(v => v.vehicleType || v.type).filter(Boolean))
-    ])].filter(Boolean);
+    ])].filter(Boolean).filter(vt => !macTypes.includes(vt) && !vehicleUses.includes(vt));
+
+    return { macTypes, vehicleUses, vehTypes };
+};
+
+window.buildAdminInspectionTargetMultiSelectHtml_ = (context, selected) => {
+    const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;');
+    const prefix = context === 'edit' ? 'edit' : 'add';
+    const selectedList = window.parseAdminInspectionTargets_(selected);
+    const selectedSet = new Set(selectedList);
+    const { macTypes, vehicleUses, vehTypes } = window.getAdminInspectionTargetGroups_();
+    const knownAll = new Set([...macTypes, ...vehicleUses, ...vehTypes]);
+    const extraTargets = selectedList.filter(t => !knownAll.has(t));
+
+    const renderGroup = (title, items) => {
+        if (!items.length) return '';
+        const chips = items.map(t => {
+            const isChecked = selectedSet.has(t);
+            const bg = isChecked ? '#e0f2f1' : '#fff';
+            const border = isChecked ? '#00897b' : '#d0d7de';
+            const color = isChecked ? '#00695c' : '#333';
+            const fw = isChecked ? 'bold' : 'normal';
+            return `<label style="display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:14px; border:1px solid ${border}; background:${bg}; color:${color}; font-size:12px; font-weight:${fw}; cursor:pointer; user-select:none; transition:all 0.12s;">
+                <input type="checkbox" class="${prefix}-insp-target-cb" value="${esc(t)}" ${isChecked ? 'checked' : ''} onchange="onAdminInspectionTargetCheckboxChange_('${prefix}')" style="margin:0; accent-color:#00897b; cursor:pointer;">
+                <span>${esc(t)}</span>
+            </label>`;
+        }).join('');
+        return `<div style="margin-bottom:6px;">
+            <div style="font-size:11px; font-weight:bold; color:#555; margin-bottom:4px;">${title}</div>
+            <div style="display:flex; flex-wrap:wrap; gap:5px;">${chips}</div>
+        </div>`;
+    };
+
+    const countBadgeColor = selectedList.length > 0 ? '#00796b' : '#c62828';
+    const countBadgeBg = selectedList.length > 0 ? '#e0f2f1' : '#ffebee';
+
+    return `
+        <input type="hidden" id="${prefix}_insp_mac_type" value="${esc(selectedList.join(','))}">
+        <div style="border:1px solid #ccc; border-radius:6px; background:#fafafa; padding:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; padding-bottom:5px; border-bottom:1px solid #e5e5e5;">
+                <span id="${prefix}_insp_mac_count" style="font-size:11px; font-weight:bold; padding:2px 8px; border-radius:10px; background:${countBadgeBg}; color:${countBadgeColor};">
+                    ${selectedList.length > 0 ? `選択中: ${selectedList.length}件` : '未選択（1つ以上選択）'}
+                </span>
+                <div style="display:flex; gap:4px;">
+                    <button type="button" onclick="toggleAllAdminInspectionTargets_('${prefix}', true)" style="font-size:11px; padding:2px 7px; border-radius:4px; border:1px solid #bbb; background:#fff; cursor:pointer;">全選択</button>
+                    <button type="button" onclick="toggleAllAdminInspectionTargets_('${prefix}', false)" style="font-size:11px; padding:2px 7px; border-radius:4px; border:1px solid #bbb; background:#fff; cursor:pointer;">全解除</button>
+                </div>
+            </div>
+            <div style="max-height:175px; overflow-y:auto; padding-right:2px;">
+                ${renderGroup('🚜 機械カテゴリ（すべての機械）', macTypes)}
+                ${renderGroup('🚚 用途別分類（車両）', vehicleUses)}
+                ${renderGroup('🛻 ナンバー区分（車両）', vehTypes)}
+                ${renderGroup('📌 その他の対象', extraTargets)}
+            </div>
+        </div>
+    `;
+};
+
+window.onAdminInspectionTargetCheckboxChange_ = (context) => {
+    const prefix = context === 'edit' ? 'edit' : 'add';
+    const cbs = document.querySelectorAll(`.${prefix}-insp-target-cb`);
+    const selected = [];
+    cbs.forEach(cb => {
+        const lbl = cb.closest('label');
+        if (cb.checked) {
+            selected.push(String(cb.value || '').trim());
+            if (lbl) {
+                lbl.style.background = '#e0f2f1';
+                lbl.style.borderColor = '#00897b';
+                lbl.style.color = '#00695c';
+                lbl.style.fontWeight = 'bold';
+            }
+        } else {
+            if (lbl) {
+                lbl.style.background = '#fff';
+                lbl.style.borderColor = '#d0d7de';
+                lbl.style.color = '#333';
+                lbl.style.fontWeight = 'normal';
+            }
+        }
+    });
+    const hidden = document.getElementById(`${prefix}_insp_mac_type`);
+    if (hidden) hidden.value = selected.join(',');
+
+    const countEl = document.getElementById(`${prefix}_insp_mac_count`);
+    if (countEl) {
+        if (selected.length > 0) {
+            countEl.textContent = `選択中: ${selected.length}件`;
+            countEl.style.background = '#e0f2f1';
+            countEl.style.color = '#00796b';
+        } else {
+            countEl.textContent = '未選択（1つ以上選択）';
+            countEl.style.background = '#ffebee';
+            countEl.style.color = '#c62828';
+        }
+    }
+    if (typeof window.onAdminInspectionTargetChange_ === 'function') {
+        window.onAdminInspectionTargetChange_(prefix);
+    }
+};
+
+window.toggleAllAdminInspectionTargets_ = (context, checked) => {
+    const prefix = context === 'edit' ? 'edit' : 'add';
+    document.querySelectorAll(`.${prefix}-insp-target-cb`).forEach(cb => {
+        cb.checked = !!checked;
+    });
+    window.onAdminInspectionTargetCheckboxChange_(prefix);
+};
+
+window.buildAdminInspectionTargetOptionsHtml_ = (selected) => {
+    const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;');
+    const cur = String(selected || '').trim();
+    const { macTypes, vehicleUses, vehTypes } = window.getAdminInspectionTargetGroups_();
 
     let html = '<option value="">対象（機械カテゴリ / 用途別分類）を選択...</option>';
 
@@ -3255,10 +3369,8 @@ window.buildAdminInspectionTargetOptionsHtml_ = (selected) => {
 
     html += '<optgroup label="🛻 ナンバー区分（車両）">';
     vehTypes.forEach(vt => {
-        if (!macTypes.includes(vt) && !vehicleUses.includes(vt)) {
-            const sel = vt === cur ? ' selected' : '';
-            html += `<option value="${esc(vt)}"${sel}>${vt}</option>`;
-        }
+        const sel = vt === cur ? ' selected' : '';
+        html += `<option value="${esc(vt)}"${sel}>${vt}</option>`;
     });
     html += '</optgroup>';
 
@@ -3293,13 +3405,13 @@ const DEFAULT_TARGET_INSP_CATEGORIES = {
 const DEFAULT_COMMON_INSP_CATEGORIES = ['外観・ボルト緩み', '駆動・可動部', '給油・グリスアップ', '安全装置・機能'];
 
 window.getAdminTargetInspectionCategoryCounts_ = (target) => {
-    const tFilter = target ? String(target).trim() : null;
+    const tFilters = target ? window.parseAdminInspectionTargets_(target) : [];
     const counts = {};
     (pdlInspections || []).forEach(i => {
-        const t = String(i.machineType || '').trim();
+        const targets = window.parseAdminInspectionTargets_(i.machineType);
         const c = String(i.inspectionCategory || '').trim();
         if (!c) return;
-        if (!tFilter || t === tFilter) {
+        if (!tFilters.length || targets.some(t => tFilters.includes(t))) {
             counts[c] = (counts[c] || 0) + 1;
         }
     });
@@ -3310,11 +3422,14 @@ window.getAdminTargetInspectionCategoryMap_ = () => {
     const map = {};
 
     (pdlInspections || []).forEach(i => {
-        const t = String(i.machineType || '').trim() || '一般・共通';
+        const targets = window.parseAdminInspectionTargets_(i.machineType);
+        const targetList = targets.length ? targets : ['一般・共通'];
         const c = String(i.inspectionCategory || '').trim();
         if (c) {
-            if (!map[t]) map[t] = new Set();
-            map[t].add(c);
+            targetList.forEach(t => {
+                if (!map[t]) map[t] = new Set();
+                map[t].add(c);
+            });
         }
     });
 
@@ -3437,37 +3552,51 @@ window.deleteAdminTargetInspectionCategory_ = (target, catName) => {
     return true;
 };
 
-// 互換用
+// 互換用（カンマ区切り複数対象にも対応）
 window.addAdminInspectionCategory_ = (cat, target) => {
-    const curTarget = target || (document.getElementById('add_insp_mac_type')?.value || document.getElementById('edit_insp_mac_type')?.value || '').trim();
-    return window.addAdminTargetInspectionCategory_(curTarget, cat);
+    const rawTarget = target != null ? target : (document.getElementById('add_insp_mac_type')?.value || document.getElementById('edit_insp_mac_type')?.value || '');
+    const targets = window.parseAdminInspectionTargets_(rawTarget);
+    if (!targets.length) return window.addAdminTargetInspectionCategory_('', cat);
+    targets.forEach(t => window.addAdminTargetInspectionCategory_(t, cat));
+    return true;
 };
 
 window.buildAdminInspectionCategoryOptionsHtml_ = (selectedCat, selectedTarget) => {
     const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;');
     const cur = String(selectedCat || '').trim();
-    const target = String(selectedTarget || '').trim();
+    const targets = window.parseAdminInspectionTargets_(selectedTarget);
     const targetMap = window.getAdminTargetInspectionCategoryMap_();
     const allCounts = window.getAdminTargetInspectionCategoryCounts_();
 
     let html = '<option value="">点検カテゴリを選択...</option>';
 
-    if (target && targetMap[target]) {
-        const primaryCats = targetMap[target] || [];
-        const targetCounts = window.getAdminTargetInspectionCategoryCounts_(target);
-        html += `<optgroup label="【${esc(target)}】の点検カテゴリ">`;
-        primaryCats.forEach(cat => {
-            const count = targetCounts[cat] || 0;
-            const badge = count > 0 ? `(${count}件)` : `(0件・削除可)`;
-            const isSel = (cat === cur) ? ' selected' : '';
-            html += `<option value="${esc(cat)}"${isSel}>${esc(cat)} ${badge}</option>`;
+    if (targets.length > 0) {
+        const primaryCats = [];
+        targets.forEach(t => {
+            (targetMap[t] || []).forEach(c => {
+                if (!primaryCats.includes(c)) primaryCats.push(c);
+            });
         });
-        html += `</optgroup>`;
+        const targetCounts = window.getAdminTargetInspectionCategoryCounts_(targets);
+        const labelText = targets.length === 1
+            ? `【${esc(targets[0])}】の点検カテゴリ`
+            : `【${esc(targets.slice(0, 3).join('・'))}${targets.length > 3 ? ' 他' : ''}】の点検カテゴリ`;
+
+        if (primaryCats.length > 0) {
+            html += `<optgroup label="${labelText}">`;
+            primaryCats.forEach(cat => {
+                const count = targetCounts[cat] || 0;
+                const badge = count > 0 ? `(${count}件)` : `(0件・削除可)`;
+                const isSel = (cat === cur) ? ' selected' : '';
+                html += `<option value="${esc(cat)}"${isSel}>${esc(cat)} ${badge}</option>`;
+            });
+            html += `</optgroup>`;
+        }
 
         // 他の対象・共通カテゴリ
         const otherCats = [];
         Object.keys(targetMap).forEach(t => {
-            if (t === target) return;
+            if (targets.includes(t)) return;
             (targetMap[t] || []).forEach(c => {
                 if (!primaryCats.includes(c) && !otherCats.includes(c)) otherCats.push(c);
             });
@@ -3584,22 +3713,35 @@ window.refreshAdminInspectionCategorySelects_ = (selectedCat, selectedTarget) =>
 };
 
 window.addAdminInspectionCategoryPrompt_ = (context) => {
-    let curTarget = '';
+    let curTargetRaw = '';
     if (context === 'edit') {
-        curTarget = (document.getElementById('edit_insp_mac_type')?.value || '').trim();
-    } else {
-        curTarget = (document.getElementById('add_insp_mac_type')?.value || '').trim();
+        curTargetRaw = (document.getElementById('edit_insp_mac_type')?.value || '').trim();
+    } else if (context === 'add') {
+        curTargetRaw = (document.getElementById('add_insp_mac_type')?.value || '').trim();
     }
-    const targetHint = curTarget ? `（対象: ${curTarget}）` : '（一般・共通）';
+    const curTargets = window.parseAdminInspectionTargets_(curTargetRaw);
+    const targetHint = curTargets.length > 0 ? `（対象: ${curTargets.join('・')}）` : '（一般・共通）';
     const raw = prompt(`新しい点検カテゴリ名を入力してください ${targetHint}\n例: エンジン部、オイル・油脂類、足回り、作業部、消耗品`);
     if (raw == null) return;
     const name = raw.trim();
     if (!name) return;
 
-    window.addAdminTargetInspectionCategory_(curTarget, name);
-    window.refreshAdminInspectionCategorySelects_(name, curTarget);
-    if (context === 'list' || currentActiveMasterType === 'inspection') {
+    if (curTargets.length > 0) {
+        curTargets.forEach(t => window.addAdminTargetInspectionCategory_(t, name));
+    } else {
+        window.addAdminTargetInspectionCategory_('', name);
+    }
+    window.refreshAdminInspectionCategorySelects_(name, curTargetRaw);
+    if (context === 'list' || (currentActiveMasterType === 'inspection' && context !== 'edit')) {
         openMasterDetail('inspection');
+        if (context === 'add' && curTargets.length > 0) {
+            document.querySelectorAll('.add-insp-target-cb').forEach(cb => {
+                cb.checked = curTargets.includes(cb.value);
+            });
+            window.onAdminInspectionTargetCheckboxChange_('add');
+            const addSel = document.getElementById('add_insp_category');
+            if (addSel) addSel.value = name;
+        }
     }
     if (typeof showAdminSyncToast === 'function') {
         showAdminSyncToast(`✅ 点検カテゴリ「${name}」を追加しました`, 'ok');
@@ -3614,7 +3756,8 @@ window.renameAdminInspectionCategoryPrompt_ = (context) => {
     const macSel = document.getElementById(macSelId);
 
     const oldName = sel ? String(sel.value || '').trim() : '';
-    const curTarget = macSel ? String(macSel.value || '').trim() : '';
+    const curTargetRaw = macSel ? String(macSel.value || '').trim() : '';
+    const curTargets = window.parseAdminInspectionTargets_(curTargetRaw);
 
     if (!oldName) {
         customAlert('名前を変更する点検カテゴリをプルダウンで選択してください');
@@ -3626,11 +3769,16 @@ window.renameAdminInspectionCategoryPrompt_ = (context) => {
     const newName = raw.trim();
     if (!newName || newName === oldName) return;
 
-    window.renameAdminTargetInspectionCategory_(curTarget, oldName, newName);
+    if (curTargets.length > 0) {
+        curTargets.forEach(t => window.renameAdminTargetInspectionCategory_(t, oldName, newName));
+    } else {
+        window.renameAdminTargetInspectionCategory_('', oldName, newName);
+    }
 
     // pdlInspections 内の該当点検項目のカテゴリ名を一括変更
     const matchingItems = (pdlInspections || []).filter(i => {
-        const matchTarget = !curTarget || !i.machineType || i.machineType === curTarget;
+        const itemTargets = window.parseAdminInspectionTargets_(i.machineType);
+        const matchTarget = !curTargets.length || !itemTargets.length || itemTargets.some(t => curTargets.includes(t));
         return matchTarget && String(i.inspectionCategory || '').trim() === oldName;
     });
 
@@ -3655,8 +3803,18 @@ window.renameAdminInspectionCategoryPrompt_ = (context) => {
         persistAdminInitCache_();
     }
 
-    window.refreshAdminInspectionCategorySelects_(newName, curTarget);
-    openMasterDetail('inspection');
+    window.refreshAdminInspectionCategorySelects_(newName, curTargetRaw);
+    if (!isEdit) {
+        openMasterDetail('inspection');
+        if (curTargets.length > 0) {
+            document.querySelectorAll('.add-insp-target-cb').forEach(cb => {
+                cb.checked = curTargets.includes(cb.value);
+            });
+            window.onAdminInspectionTargetCheckboxChange_('add');
+            const addSel = document.getElementById('add_insp_category');
+            if (addSel) addSel.value = newName;
+        }
+    }
     if (typeof showAdminSyncToast === 'function') {
         const countMsg = matchingItems.length > 0 ? `（${matchingItems.length}件の点検項目に反映）` : '';
         showAdminSyncToast(`✅ 点検カテゴリ「${oldName}」を「${newName}」に変更しました${countMsg}`, 'ok');
@@ -3671,13 +3829,14 @@ window.removeAdminInspectionCategoryPrompt_ = (context) => {
     const macSel = document.getElementById(macSelId);
 
     const cat = sel ? String(sel.value || '').trim() : '';
-    const curTarget = macSel ? String(macSel.value || '').trim() : '';
+    const curTargetRaw = macSel ? String(macSel.value || '').trim() : '';
+    const curTargets = window.parseAdminInspectionTargets_(curTargetRaw);
 
     if (!cat) {
         customAlert('削除する点検カテゴリを選択してください');
         return;
     }
-    const counts = window.getAdminTargetInspectionCategoryCounts_(curTarget);
+    const counts = window.getAdminTargetInspectionCategoryCounts_(curTargets);
     const count = counts[cat] || 0;
     if (count > 0) {
         customAlert(`点検カテゴリ「${cat}」には ${count}件の点検項目が登録されています。\n登録済みデータで使用されているカテゴリは削除できません。\n先に点検項目を変更または削除してください。`);
@@ -3686,9 +3845,21 @@ window.removeAdminInspectionCategoryPrompt_ = (context) => {
     const ok = confirm(`点検カテゴリ「${cat}」は登録済みデータが0件です。\nこの点検カテゴリを削除しますか？`);
     if (!ok) return;
 
-    window.deleteAdminTargetInspectionCategory_(curTarget, cat);
-    window.refreshAdminInspectionCategorySelects_('', curTarget);
-    openMasterDetail('inspection');
+    if (curTargets.length > 0) {
+        curTargets.forEach(t => window.deleteAdminTargetInspectionCategory_(t, cat));
+    } else {
+        window.deleteAdminTargetInspectionCategory_('', cat);
+    }
+    window.refreshAdminInspectionCategorySelects_('', curTargetRaw);
+    if (!isEdit) {
+        openMasterDetail('inspection');
+        if (curTargets.length > 0) {
+            document.querySelectorAll('.add-insp-target-cb').forEach(cb => {
+                cb.checked = curTargets.includes(cb.value);
+            });
+            window.onAdminInspectionTargetCheckboxChange_('add');
+        }
+    }
     if (typeof showAdminSyncToast === 'function') {
         showAdminSyncToast(`✅ 点検カテゴリ「${cat}」を削除しました`, 'ok');
     }
@@ -3711,6 +3882,212 @@ window.confirmDeleteAdminInspectionCategory_ = (cat, target) => {
     if (typeof showAdminSyncToast === 'function') {
         showAdminSyncToast(`✅ 点検カテゴリ「${cat}」を削除しました`, 'ok');
     }
+};
+
+window.saveAdminInspectionOrderFromDom_ = () => {
+    const tbody = document.querySelector('#masterListTable tbody');
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr.insp-sortable-row'));
+    if (!rows.length) return;
+
+    const orderedIds = rows.map(r => String(r.dataset.inspId || '').trim()).filter(Boolean);
+    rows.forEach((r, idx) => {
+        const numEl = r.querySelector('.insp-order-num');
+        if (numEl) numEl.textContent = String(idx + 1);
+    });
+
+    const idToItem = new Map();
+    (pdlInspections || []).forEach(item => {
+        if (item && item.id) idToItem.set(String(item.id), item);
+    });
+
+    const changedItems = [];
+    const nextList = [];
+    orderedIds.forEach((id, idx) => {
+        const item = idToItem.get(id);
+        if (!item) return;
+        const newSort = idx + 1;
+        if (Number(item.sortOrder) !== newSort) {
+            item.sortOrder = newSort;
+            changedItems.push(item);
+        }
+        nextList.push(item);
+        idToItem.delete(id);
+    });
+    // 万一 DOM にないアイテムがあれば末尾に保持
+    idToItem.forEach(item => nextList.push(item));
+
+    if (!changedItems.length) return;
+    pdlInspections = nextList;
+    persistAdminInitCache_();
+
+    changedItems.forEach(item => {
+        const payload = {
+            masterType: 'inspection',
+            manageAction: 'edit',
+            value: {
+                id: item.id,
+                newData: {
+                    machineType: item.machineType || '',
+                    inspectionCategory: item.inspectionCategory || '',
+                    item: item.item || item.name || '',
+                    sortOrder: item.sortOrder,
+                    note: item.note || ''
+                }
+            },
+            userName: currentUser
+        };
+        syncAdminCall_('manageMaster', payload, {
+            key: 'manageMaster:inspection:edit:' + item.id,
+            op: 'manageMaster',
+            payload
+        }).catch(e => console.warn('Sync inspection sort err:', e));
+    });
+
+    if (typeof showAdminSyncToast === 'function') {
+        showAdminSyncToast(`✅ 点検項目の並び順を更新しました（${changedItems.length}件保存）`, 'ok');
+    }
+};
+
+window.initAdminInspectionSortHandlers_ = () => {
+    const tbody = document.querySelector('#masterListTable tbody');
+    if (!tbody || tbody.dataset.inspSortBound === '1') return;
+    tbody.dataset.inspSortBound = '1';
+
+    let draggedRow = null;
+    let touchDragging = false;
+    let longPressTimer = null;
+    let startX = 0;
+    let startY = 0;
+
+    const resetRowStyle = (tr) => {
+        if (!tr) return;
+        tr.style.opacity = '';
+        tr.style.background = '';
+        tr.style.boxShadow = '';
+    };
+
+    const moveRowToPoint = (clientY) => {
+        if (!draggedRow) return;
+        const rows = Array.from(tbody.querySelectorAll('tr.insp-sortable-row')).filter(r => r !== draggedRow && r.style.display !== 'none');
+        let targetBefore = null;
+        for (const r of rows) {
+            const rect = r.getBoundingClientRect();
+            if (clientY < rect.top + rect.height / 2) {
+                targetBefore = r;
+                break;
+            }
+        }
+        if (targetBefore) {
+            if (draggedRow.nextSibling !== targetBefore) {
+                tbody.insertBefore(draggedRow, targetBefore);
+            }
+        } else {
+            const lastRow = rows[rows.length - 1];
+            if (lastRow && lastRow.nextSibling !== draggedRow) {
+                tbody.insertBefore(draggedRow, lastRow.nextSibling);
+            }
+        }
+    };
+
+    // PC: HTML5 Drag & Drop
+    tbody.addEventListener('dragstart', (e) => {
+        if (e.target && e.target.closest('button')) {
+            e.preventDefault();
+            return;
+        }
+        const tr = e.target ? e.target.closest('tr.insp-sortable-row') : null;
+        if (!tr) return;
+        draggedRow = tr;
+        tr.style.opacity = '0.45';
+        tr.style.background = '#e0f2f1';
+        if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', tr.dataset.inspId || '');
+        }
+    });
+
+    tbody.addEventListener('dragover', (e) => {
+        if (!draggedRow) return;
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+        moveRowToPoint(e.clientY);
+    });
+
+    tbody.addEventListener('drop', (e) => {
+        if (!draggedRow) return;
+        e.preventDefault();
+        resetRowStyle(draggedRow);
+        draggedRow = null;
+        window.saveAdminInspectionOrderFromDom_();
+    });
+
+    tbody.addEventListener('dragend', () => {
+        if (draggedRow) {
+            resetRowStyle(draggedRow);
+            draggedRow = null;
+            window.saveAdminInspectionOrderFromDom_();
+        }
+    });
+
+    // スマホ・タブレット: 長押しタッチドラッグ
+    tbody.addEventListener('touchstart', (e) => {
+        if (e.target && e.target.closest('button')) return;
+        if (!e.touches || e.touches.length !== 1) return;
+        const tr = e.target ? e.target.closest('tr.insp-sortable-row') : null;
+        if (!tr) return;
+
+        const touch = e.touches[0];
+        startX = touch.clientX;
+        startY = touch.clientY;
+        const isHandle = !!(e.target && e.target.closest('.insp-drag-handle'));
+        const delay = isHandle ? 80 : 250;
+
+        clearTimeout(longPressTimer);
+        longPressTimer = setTimeout(() => {
+            touchDragging = true;
+            draggedRow = tr;
+            tr.style.background = '#e0f2f1';
+            tr.style.boxShadow = '0 4px 12px rgba(0,137,123,0.28)';
+            tr.style.opacity = '0.92';
+            try { if (navigator.vibrate) navigator.vibrate(20); } catch (err) { }
+        }, delay);
+    }, { passive: true });
+
+    tbody.addEventListener('touchmove', (e) => {
+        if (!e.touches || e.touches.length !== 1) return;
+        const touch = e.touches[0];
+        if (!touchDragging) {
+            if (Math.abs(touch.clientX - startX) > 10 || Math.abs(touch.clientY - startY) > 10) {
+                clearTimeout(longPressTimer);
+            }
+            return;
+        }
+        e.preventDefault();
+        moveRowToPoint(touch.clientY);
+
+        // スクロールコンテナ端での自動スクロール
+        const scrollBox = tbody.closest('div[style*="overflow-y:auto"]');
+        if (scrollBox) {
+            const boxRect = scrollBox.getBoundingClientRect();
+            if (touch.clientY < boxRect.top + 40) scrollBox.scrollTop -= 12;
+            else if (touch.clientY > boxRect.bottom - 40) scrollBox.scrollTop += 12;
+        }
+    }, { passive: false });
+
+    const finishTouchDrag = () => {
+        clearTimeout(longPressTimer);
+        if (touchDragging && draggedRow) {
+            resetRowStyle(draggedRow);
+            draggedRow = null;
+            touchDragging = false;
+            window.saveAdminInspectionOrderFromDom_();
+        }
+        touchDragging = false;
+    };
+
+    tbody.addEventListener('touchend', finishTouchDrag);
+    tbody.addEventListener('touchcancel', finishTouchDrag);
 };
 
 let currentActiveMasterType = null;
@@ -3848,6 +4225,8 @@ window.openMasterDetail = (type, customEditHtml = null) => {
     let list = info.list;
     if (type === 'machine') {
         list = [...pdlMachines].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
+    } else if (type === 'inspection') {
+        list = [...(info.list || [])].sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
     }
 
     // フォーム部分の生成
@@ -3989,10 +4368,8 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             </div>`;
         } else if (type === 'inspection') {
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
-                <label style="font-size:12px; font-weight:bold; color:#555;">対象（機械カテゴリ / 用途別分類） <span style="color:red;">*</span></label>
-                <select id="add_insp_mac_type" class="form-input" style="margin-bottom:0; padding:8px;" onchange="onAdminInspectionTargetChange_('add')">
-                    ${window.buildAdminInspectionTargetOptionsHtml_('')}
-                </select>
+                <label style="font-size:12px; font-weight:bold; color:#555;">対象（機械カテゴリ / 用途別分類・複数選択可） <span style="color:red;">*</span></label>
+                ${window.buildAdminInspectionTargetMultiSelectHtml_('add', '')}
                 <label style="font-size:12px; font-weight:bold; color:#555;">点検カテゴリ <span style="color:red;">*</span></label>
                 <div style="display:flex; gap:5px;">
                     <select id="add_insp_category" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">
@@ -4004,12 +4381,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 </div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">点検項目 <span style="color:red;">*</span></label>
                 <input type="text" id="add_insp_item" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: オイル量・汚れ、冷却水量、ベルト張り">
-                <div style="display:flex; gap:10px;">
-                    <div style="flex:1;">
-                        <label style="font-size:12px; font-weight:bold; color:#555;">並び順</label>
-                        <input type="number" id="add_insp_sort" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="0" min="0">
-                    </div>
-                </div>
+                <div style="font-size:11px; color:#00695c; background:#e0f2f1; padding:6px 8px; border-radius:4px;">💡 表示順は追加後、右側の一覧をドラッグ（スマホは長押し）して入れ替えられます。</div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">点検基準・備考</label>
                 <input type="text" id="add_insp_note" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 上限と下限の間、ヒビ割れなきこと">
                 <button onclick="execMaster('inspection', 'add')" style="background:#00897B; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
@@ -4285,6 +4657,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
           <input type="text" id="masterSearchFilter" oninput="filterMasterListTable(this.value)" placeholder="🔍 一覧から検索..." style="padding:6px 10px; border:1px solid #ccc; border-radius:6px; font-size:13px; width:180px;">
         </div>
         ${type === 'inspection' ? window.buildAdminInspectionCategoryChipsHtml_() : ''}
+        ${type === 'inspection' ? `<div style="display:flex; justify-content:space-between; align-items:center; background:#e8f5e9; border:1px solid #c8e6c9; border-radius:6px; padding:6px 10px; margin-bottom:8px; font-size:11px; color:#2e7d32; flex-shrink:0;"><span>↕️ <strong>行を長押し／ドラッグ</strong>して表示順を入れ替えられます（上にあるものから先に表示）</span></div>` : ''}
         <div style="flex:1; min-height:0; overflow-y:auto;">
           <table id="masterListTable" style="width:100%; border-collapse:collapse; font-size:13px;">
             <thead>
@@ -4299,7 +4672,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
     if (list.length === 0) {
         listHtml += `<tr><td colspan="2" style="padding:20px; text-align:center; color:#888;">登録されたデータはありません</td></tr>`;
     } else {
-        list.forEach(v => {
+        list.forEach((v, idx) => {
             let dispName = (type === 'cropCultSetting') ? (v.cropName || v.name || v) : (type === 'inspection' ? (v.item || v.name || v) : (v.name || v));
             if (type === 'machine' && typeof window.buildAdminMachineDisplayName_ === 'function') {
                 dispName = window.buildAdminMachineDisplayName_(
@@ -4349,11 +4722,16 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 else subInfo = tagLabel;
             }
             if (type === 'inspection') {
-                const sortLabel = (v.sortOrder != null && v.sortOrder !== 0) ? `<span style="font-size:10px; color:#888; margin-left:4px;">(順: ${v.sortOrder})</span>` : '';
                 const noteLabel = v.note ? `<div style="font-size:11px; color:#666; margin-top:2px;">基準: ${v.note}</div>` : '';
-                const isVeh = ['自動車', '作業機', '移動車両', '作業車両', '軽トラ', '軽バン', 'トラック', '普通車', '軽四'].includes(String(v.machineType || '').trim());
-                const icon = isVeh ? '🚚' : '🚜';
-                subInfo = `<span style="font-size:11px; background:#e0f2f1; color:#00695c; padding:2px 6px; border-radius:4px; font-weight:bold; margin-left:6px;">${icon} ${v.machineType || ''}</span> <span style="font-size:11px; background:#ede7f6; color:#512da8; padding:2px 6px; border-radius:4px; margin-left:4px;">📁 ${v.inspectionCategory || ''}</span>${sortLabel}${noteLabel}`;
+                const targets = window.parseAdminInspectionTargets_(v.machineType);
+                const vehNames = ['自動車', '作業機', '移動車両', '作業車両', '軽トラ', '軽バン', 'トラック', '普通車', '軽四'];
+                const targetBadges = targets.length
+                    ? targets.map(t => {
+                        const icon = vehNames.includes(t) ? '🚚' : '🚜';
+                        return `<span style="font-size:11px; background:#e0f2f1; color:#00695c; padding:2px 6px; border-radius:4px; font-weight:bold; margin-left:4px; display:inline-block; margin-bottom:2px;">${icon} ${t}</span>`;
+                    }).join('')
+                    : `<span style="font-size:11px; background:#eee; color:#666; padding:2px 6px; border-radius:4px; margin-left:4px;">未設定</span>`;
+                subInfo = `${targetBadges} <span style="font-size:11px; background:#ede7f6; color:#512da8; padding:2px 6px; border-radius:4px; margin-left:4px; display:inline-block; margin-bottom:2px;">📁 ${v.inspectionCategory || ''}</span>${noteLabel}`;
             }
             if (type === 'costItem') {
                 const bits = [];
@@ -4464,14 +4842,33 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 actionBtns = `<button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             }
 
-            listHtml += `<tr style="border-bottom:1px solid #eee;">
-                <td style="padding:10px; vertical-align:middle;">
-                  <div style="font-weight:bold; color:#333; font-size:14px;">${dispName} ${subInfo}</div>
-                </td>
-                <td style="padding:10px; vertical-align:middle; text-align:right;">
-                  ${actionBtns}
-                </td>
-            </tr>`;
+            if (type === 'inspection') {
+                const safeId = String(v.id || '').replace(/"/g, '&quot;');
+                listHtml += `<tr class="insp-sortable-row" data-insp-id="${safeId}" draggable="true" style="border-bottom:1px solid #eee; cursor:grab; transition:background 0.12s;">
+                    <td style="padding:10px; vertical-align:middle;">
+                      <div style="display:flex; align-items:flex-start; gap:8px;">
+                        <span class="insp-drag-handle" title="ドラッグ（長押し）で並び替え" style="display:inline-flex; align-items:center; gap:3px; color:#78909c; font-size:13px; padding:2px 5px; border-radius:4px; background:#f4f6f8; border:1px solid #dce1e6; user-select:none; flex-shrink:0; margin-top:1px; cursor:grab;">
+                          <span>⠿</span><span class="insp-order-num" style="font-size:11px; font-weight:bold; color:#455a64; min-width:14px; text-align:center;">${idx + 1}</span>
+                        </span>
+                        <div style="flex:1; min-width:0;">
+                          <div style="font-weight:bold; color:#333; font-size:14px;">${dispName} ${subInfo}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style="padding:10px; vertical-align:middle; text-align:right;">
+                      ${actionBtns}
+                    </td>
+                </tr>`;
+            } else {
+                listHtml += `<tr style="border-bottom:1px solid #eee;">
+                    <td style="padding:10px; vertical-align:middle;">
+                      <div style="font-weight:bold; color:#333; font-size:14px;">${dispName} ${subInfo}</div>
+                    </td>
+                    <td style="padding:10px; vertical-align:middle; text-align:right;">
+                      ${actionBtns}
+                    </td>
+                </tr>`;
+            }
         });
     }
 
@@ -4503,6 +4900,9 @@ window.openMasterDetail = (type, customEditHtml = null) => {
         ? window.getMasterSectionsTargetEl_()
         : document.getElementById('masterSections');
     if (_outEl) _outEl.innerHTML = containerHtml;
+    if (type === 'inspection' && typeof window.initAdminInspectionSortHandlers_ === 'function') {
+        window.initAdminInspectionSortHandlers_();
+    }
     if (type === 'machine' && !customEditHtml && typeof window.autoFillAdminMachineNumber_ === 'function') {
         window.autoFillAdminMachineNumber_(true);
     }
@@ -4723,8 +5123,8 @@ window.openEditInspectionMaster = (encoded) => {
         <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
             <h4 style="margin-top:0; color:#00897B; font-size:15px; border-bottom:2px solid #00897B; padding-bottom:5px;">✏️ 点検項目の編集</h4>
             <input type="hidden" id="edit_insp_id" value="${esc(v.id)}">
-            <label class="form-label">対象（機械カテゴリ / 用途別分類） <span style="color:red;">*</span></label>
-            <select id="edit_insp_mac_type" class="form-input" style="margin-bottom:8px; padding:8px;" onchange="onAdminInspectionTargetChange_('edit')">${window.buildAdminInspectionTargetOptionsHtml_(v.machineType)}</select>
+            <label class="form-label">対象（機械カテゴリ / 用途別分類・複数選択可） <span style="color:red;">*</span></label>
+            <div style="margin-bottom:8px;">${window.buildAdminInspectionTargetMultiSelectHtml_('edit', v.machineType)}</div>
             <label class="form-label">点検カテゴリ <span style="color:red;">*</span></label>
             <div style="display:flex; gap:5px; margin-bottom:8px;">
                 <select id="edit_insp_category" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">
@@ -4736,12 +5136,8 @@ window.openEditInspectionMaster = (encoded) => {
             </div>
             <label class="form-label">点検項目 <span style="color:red;">*</span></label>
             <input type="text" id="edit_insp_item" class="form-input" style="margin-bottom:8px; padding:8px;" value="${esc(v.item)}">
-            <div style="display:flex; gap:10px;">
-                <div style="flex:1;">
-                    <label class="form-label">並び順</label>
-                    <input type="number" id="edit_insp_sort" class="form-input" style="margin-bottom:8px; padding:8px;" value="${v.sortOrder != null ? v.sortOrder : 0}">
-                </div>
-            </div>
+            <input type="hidden" id="edit_insp_sort" value="${v.sortOrder != null ? v.sortOrder : 0}">
+            <div style="font-size:11px; color:#00695c; background:#e0f2f1; padding:6px 8px; border-radius:4px; margin-bottom:8px;">💡 表示順は右側の一覧をドラッグ（スマホは長押し）して入れ替えられます。</div>
             <label class="form-label">点検基準・備考</label>
             <input type="text" id="edit_insp_note" class="form-input" style="margin-bottom:8px; padding:8px;" value="${esc(v.note)}">
             <div style="display:flex; gap:10px; margin-top:15px;">
@@ -7672,7 +8068,8 @@ window.execMaster = async (type, act, val) => {
             const item = (document.getElementById('add_insp_item')?.value || '').trim();
             if (!item) { customAlert("点検項目を入力してください"); return; }
             const sortVal = document.getElementById('add_insp_sort')?.value;
-            const sortOrder = (sortVal !== '' && sortVal != null) ? Number(sortVal) || 0 : 0;
+            const maxSort = (pdlInspections || []).reduce((mx, x) => Math.max(mx, Number(x && x.sortOrder) || 0), 0);
+            const sortOrder = (sortVal !== '' && sortVal != null) ? (Number(sortVal) || 0) : (maxSort + 1);
             const note = (document.getElementById('add_insp_note')?.value || '').trim();
             const id = 'insp_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
             value = {
@@ -10472,255 +10869,333 @@ document.addEventListener('click', (e) => {
 
 // ====================================================
 // 🔭 視野地点登録・管理 (拠点別 Viewpoint / Camera Bookmark)
+//   1) 照準モード：地図を動かして「この視野を登録」
+//   2) 登録フォーム：所属拠点（ログイン拠点）・地点名（住所）自動入力
+//   3) ズーム調整モード：ドラッグ不可・ズームのみ → 決定で倍率反映
 // ====================================================
-window._editingViewpointId = null;
+window._vpDraft = null;
 window._viewpointFilterLoc = '';
+window._vpMode = null; // 'pick' | 'zoom' | null
+window._vpListeners = [];
+window._vpSavedMapOpts = null;
 
-window.openViewpointManageModal = (defaultLoc) => {
-    const modal = document.getElementById('viewpointManageModal');
-    if (!modal) return;
-    modal.style.display = 'flex';
-    window._editingViewpointId = null;
-    if (defaultLoc) {
-        window._viewpointFilterLoc = defaultLoc;
-    } else if (!window._viewpointFilterLoc && Array.isArray(pdlLocations) && pdlLocations.length) {
-        window._viewpointFilterLoc = pdlLocations[0];
+const vpEsc_ = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const vpUserLoc_ = () => String(localStorage.getItem('passionMapUserLocation') || '').trim();
+
+function vpClearListeners_() {
+    (window._vpListeners || []).forEach(l => { try { google.maps.event.removeListener(l); } catch (e) { } });
+    window._vpListeners = [];
+}
+
+function vpEnsureCrosshair_() {
+    if (!map || typeof map.getDiv !== 'function') return null;
+    let el = document.getElementById('vpCrosshair');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'vpCrosshair';
+        el.style.cssText = 'position:absolute; left:50%; top:50%; width:56px; height:56px; transform:translate(-50%,-50%); pointer-events:none; z-index:5;';
+        el.innerHTML = `
+          <svg width="56" height="56" viewBox="0 0 56 56" style="filter:drop-shadow(0 0 2px rgba(0,0,0,0.8));">
+            <circle cx="28" cy="28" r="15" fill="none" stroke="#fff" stroke-width="2.5"/>
+            <circle cx="28" cy="28" r="15" fill="none" stroke="#7E57C2" stroke-width="1.2"/>
+            <line x1="28" y1="2" x2="28" y2="18" stroke="#fff" stroke-width="2.5"/>
+            <line x1="28" y1="38" x2="28" y2="54" stroke="#fff" stroke-width="2.5"/>
+            <line x1="2" y1="28" x2="18" y2="28" stroke="#fff" stroke-width="2.5"/>
+            <line x1="38" y1="28" x2="54" y2="28" stroke="#fff" stroke-width="2.5"/>
+            <circle cx="28" cy="28" r="2.5" fill="#FF5252" stroke="#fff" stroke-width="1"/>
+          </svg>`;
+        map.getDiv().appendChild(el);
     }
-    // 最新マスタを裏で取得
-    if (typeof callGAS === 'function') {
-        callGAS('getViewpoints', {}, 1, { timeoutMs: 15000 }).then(res => {
-            if (res && res.success && Array.isArray(res.viewpoints)) {
-                window.pdlViewpoints = res.viewpoints;
-                window.renderViewpointModalUI();
+    el.style.display = 'block';
+    return el;
+}
+
+function vpHideCrosshair_() {
+    const el = document.getElementById('vpCrosshair');
+    if (el) el.style.display = 'none';
+}
+
+function vpEnsureBar_() {
+    let bar = document.getElementById('vpModeBar');
+    if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'vpModeBar';
+        bar.style.cssText = 'position:fixed; left:50%; transform:translateX(-50%); bottom:max(16px, calc(env(safe-area-inset-bottom, 0px) + 16px)); z-index:9000; background:rgba(30,20,50,0.94); color:#fff; border-radius:14px; padding:10px 12px; box-shadow:0 6px 24px rgba(0,0,0,0.4); width:min(94vw, 460px); box-sizing:border-box;';
+        document.body.appendChild(bar);
+    }
+    bar.style.display = 'block';
+    return bar;
+}
+
+function vpHideBar_() {
+    const bar = document.getElementById('vpModeBar');
+    if (bar) bar.style.display = 'none';
+}
+
+function vpSetFabHidden_(hidden) {
+    const wrap = document.getElementById('adminRegPlusWrap');
+    if (wrap) wrap.style.visibility = hidden ? 'hidden' : '';
+}
+
+function vpExitMapModes_() {
+    vpClearListeners_();
+    vpHideCrosshair_();
+    vpHideBar_();
+    vpSetFabHidden_(false);
+    if (window._vpSavedMapOpts && map) {
+        try { map.setOptions(window._vpSavedMapOpts); } catch (e) { }
+    }
+    window._vpSavedMapOpts = null;
+    window._vpMode = null;
+    if (typeof window.syncAdminRegPlusBtnState_ === 'function') window.syncAdminRegPlusBtnState_('view');
+}
+
+// ---------- 1) 照準モード ----------
+window.startViewpointPickMode_ = (opts) => {
+    if (typeof map === 'undefined' || !map) { customAlert('地図が準備できていません'); return; }
+    opts = opts || {};
+    window.closeViewpointManageModal(true);
+    if (typeof window.closeAdminRegPlusMenu_ === 'function') window.closeAdminRegPlusMenu_();
+    vpClearListeners_();
+    if (window._vpSavedMapOpts) { try { map.setOptions(window._vpSavedMapOpts); } catch (e) { } window._vpSavedMapOpts = null; }
+
+    // 編集時の地点選び直しは元の位置から
+    if (opts.keepDraft && window._vpDraft && isFinite(window._vpDraft.lat)) {
+        map.setCenter({ lat: Number(window._vpDraft.lat), lng: Number(window._vpDraft.lng) });
+        if (window._vpDraft.zoom) map.setZoom(Number(window._vpDraft.zoom));
+    } else if (!opts.keepDraft) {
+        window._vpDraft = null;
+    }
+
+    window._vpMode = 'pick';
+    try { map.setOptions({ draggable: true }); } catch (e) { }
+    vpEnsureCrosshair_();
+    vpSetFabHidden_(true);
+    if (typeof window.syncAdminRegPlusBtnState_ === 'function') window.syncAdminRegPlusBtnState_('location');
+
+    const count = (window.pdlViewpoints || []).length;
+    const bar = vpEnsureBar_();
+    bar.innerHTML = `
+      <div style="font-size:13px; font-weight:bold; color:#D1C4E9; margin-bottom:8px; text-align:center;">
+        🔭 地図を動かして、照準を登録したい視野の中心に合わせてください
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button type="button" onclick="window.cancelViewpointMode_()"
+          style="flex:0 0 auto; background:#424242; color:#fff; border:none; border-radius:10px; padding:10px 12px; font-size:13px; font-weight:bold; cursor:pointer;">✕ 閉じる</button>
+        <button type="button" onclick="window.openViewpointListModal()"
+          style="flex:0 0 auto; background:#5E35B1; color:#fff; border:1px solid #9575CD; border-radius:10px; padding:10px 12px; font-size:13px; font-weight:bold; cursor:pointer;">📋 一覧(${count})</button>
+        <button type="button" onclick="window.confirmViewpointPick_()"
+          style="flex:1; background:#7C4DFF; color:#fff; border:none; border-radius:10px; padding:10px 12px; font-size:14px; font-weight:bold; cursor:pointer; box-shadow:0 2px 8px rgba(124,77,255,0.5);">✅ この視野を登録</button>
+      </div>`;
+};
+
+window.cancelViewpointMode_ = () => {
+    vpExitMapModes_();
+    window._vpDraft = null;
+};
+
+window.confirmViewpointPick_ = () => {
+    const c = map.getCenter();
+    if (!c) return;
+    const lat = Number(c.lat().toFixed(7));
+    const lng = Number(c.lng().toFixed(7));
+    const prev = window._vpDraft;
+    const isEdit = !!(prev && prev.id);
+    window._vpDraft = {
+        id: isEdit ? prev.id : '',
+        location: prev ? prev.location : vpUserLoc_(),
+        name: prev ? prev.name : '',
+        lat: lat,
+        lng: lng,
+        zoom: map.getZoom() || 16,
+        nameAuto: !prev || !prev.name || !!prev.nameAuto,
+        sortOrder: prev ? prev.sortOrder : undefined
+    };
+    vpExitMapModes_();
+    window.openViewpointFormModal_();
+    // 地点名が未入力（または自動入力）なら住所で自動入力
+    if (window._vpDraft.nameAuto) vpFillAddressName_(lat, lng);
+};
+
+function vpFillAddressName_(lat, lng) {
+    const draft = window._vpDraft;
+    if (!draft) return;
+    const nameEl = document.getElementById('vpInputName');
+    if (nameEl) nameEl.placeholder = '📍 住所を取得中...';
+    try {
+        new google.maps.Geocoder().geocode({ location: { lat: lat, lng: lng } }, (results, status) => {
+            const cur = window._vpDraft;
+            if (!cur || cur.lat !== lat || cur.lng !== lng) return;
+            const el = document.getElementById('vpInputName');
+            if (status === 'OK' && results && results.length) {
+                const r = results.find(x => !x.types.includes('plus_code')) || results[0];
+                const addr = String(r.formatted_address || '')
+                    .replace(/^日本、/, '').replace(/〒\d{3}-\d{4}\s?/, '').replace(/^[A-Z0-9\+]+\s/, '').trim();
+                // ユーザーが既に手入力していたら上書きしない
+                if (el && (!el.value || el.dataset.auto === '1')) {
+                    el.value = addr;
+                    el.dataset.auto = '1';
+                    cur.name = addr;
+                    cur.nameAuto = true;
+                }
+                if (el) el.placeholder = '地点名を入力';
+            } else if (el) {
+                el.placeholder = '住所を取得できませんでした。地点名を入力';
             }
-        }).catch(err => console.warn('getViewpoints fetch skipped:', err));
+        });
+    } catch (e) {
+        if (nameEl) nameEl.placeholder = '地点名を入力';
     }
-    window.renderViewpointModalUI();
-};
+}
 
-window.closeViewpointManageModal = () => {
+// ---------- 2) 登録フォーム ----------
+function vpReadFormToDraft_() {
+    const d = window._vpDraft;
+    if (!d) return;
+    const locEl = document.getElementById('vpInputLocation');
+    const nameEl = document.getElementById('vpInputName');
+    if (locEl) d.location = String(locEl.value || '').trim();
+    if (nameEl) {
+        d.name = String(nameEl.value || '').trim();
+        d.nameAuto = nameEl.dataset.auto === '1';
+    }
+}
+
+window.openViewpointFormModal_ = () => {
     const modal = document.getElementById('viewpointManageModal');
-    if (modal) modal.style.display = 'none';
-    window._editingViewpointId = null;
-};
-
-window.renderViewpointModalUI = () => {
     const body = document.getElementById('viewpointManageBody');
-    if (!body) return;
+    const d = window._vpDraft;
+    if (!modal || !body || !d) return;
+    const titleEl = document.getElementById('viewpointManageTitle');
+    if (titleEl) titleEl.textContent = d.id ? '✏️ 視野地点の編集' : '🔭 視野地点の登録';
+    modal.style.display = 'flex';
 
     const locs = (pdlLocations || []).filter(Boolean);
-    const filterLoc = window._viewpointFilterLoc || '';
-    const allVps = window.pdlViewpoints || [];
-    const editingId = window._editingViewpointId;
-    const editingVp = editingId ? allVps.find(v => v.id === editingId) : null;
+    const userLoc = vpUserLoc_();
+    if (d.location && !locs.includes(d.location)) locs.unshift(d.location);
 
-    // 現在の地図の中心とズーム（フォームの初期値用）
-    let curCenter = { lat: 34.0, lng: 134.0 }, curZoom = 16;
-    if (typeof map !== 'undefined' && map && typeof map.getCenter === 'function') {
-        try {
-            const c = map.getCenter();
-            curCenter = { lat: Number(c.lat().toFixed(6)), lng: Number(c.lng().toFixed(6)) };
-            curZoom = map.getZoom() || 16;
-        } catch (e) { }
-    }
+    body.innerHTML = `
+    <div style="background:#fff; border-radius:10px; padding:16px; border:1px solid #e0e0e0; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+      <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">
+        所属拠点 ${userLoc ? `<span style="font-weight:normal; color:#7E57C2;">（ログイン拠点: ${vpEsc_(userLoc)}）</span>` : ''}
+      </label>
+      <select id="vpInputLocation"
+        style="width:100%; padding:10px; border:1px solid #ccc; border-radius:8px; font-size:15px; box-sizing:border-box; margin-bottom:14px;">
+        <option value="">(拠点なし / 全社共通)</option>
+        ${locs.map(l => `<option value="${vpEsc_(l)}" ${l === d.location ? 'selected' : ''}>${vpEsc_(l)}</option>`).join('')}
+      </select>
 
-    const formLoc = editingVp ? (editingVp.location || '') : (filterLoc || (locs[0] || ''));
-    const formName = editingVp ? (editingVp.name || '') : '';
-    const formLat = editingVp ? editingVp.lat : curCenter.lat;
-    const formLng = editingVp ? editingVp.lng : curCenter.lng;
-    const formZoom = editingVp ? editingVp.zoom : curZoom;
+      <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">
+        地点名 <span style="color:red;">*</span> <span style="font-weight:normal; color:#888;">（住所を自動入力・書き換え可）</span>
+      </label>
+      <input type="text" id="vpInputName" value="${vpEsc_(d.name)}" data-auto="${d.nameAuto ? '1' : '0'}" placeholder="地点名を入力"
+        oninput="this.dataset.auto='0'"
+        style="width:100%; padding:10px; border:1px solid #ccc; border-radius:8px; font-size:15px; box-sizing:border-box; margin-bottom:14px;">
 
-    // フィルタした視野一覧
-    const filteredVps = filterLoc ? allVps.filter(v => String(v.location || '').trim() === filterLoc.trim()) : allVps;
-
-    let html = `
-    <!-- 登録・編集カード -->
-    <div style="background:#fff; border-radius:10px; padding:14px; border:1px solid #e0e0e0; box-shadow:0 2px 8px rgba(0,0,0,0.06); margin-bottom:16px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-        <div style="font-weight:bold; font-size:14px; color:${editingVp ? '#E65100' : '#4527A0'}; display:flex; align-items:center; gap:6px;">
-          ${editingVp ? '✏️ 視野地点の編集' : '＋ 新規視野地点の登録'}
+      <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">ズーム倍率</label>
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:18px;">
+        <div style="flex:1; background:#F3E5F5; border:1px solid #CE93D8; border-radius:8px; padding:9px 12px; font-size:16px; font-weight:bold; color:#6A1B9A;">
+          🔍 <span id="vpZoomDisplay">${Number(d.zoom) || 16}</span>
         </div>
-        <button type="button" onclick="window.captureCurrentMapViewpoint()"
-          style="background:#ede7f6; color:#5e35b1; border:1px solid #b39ddb; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer; display:flex; align-items:center; gap:4px;">
-          📍 現在の地図の視野を取り込む
-        </button>
+        <button type="button" onclick="window.startViewpointZoomMode_()"
+          style="flex:0 0 auto; background:#fff; color:#6A1B9A; border:2px solid #9C27B0; border-radius:8px; padding:9px 14px; font-size:14px; font-weight:bold; cursor:pointer;">🔍 変更</button>
       </div>
 
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
-        <div>
-          <label style="display:block; font-size:11px; font-weight:bold; color:#555; margin-bottom:4px;">所属拠点 <span style="color:red;">*</span></label>
-          <select id="vpInputLocation" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px; box-sizing:border-box;">
-            <option value="">(拠点なし/全社共通)</option>
-            ${locs.map(l => `<option value="${String(l).replace(/"/g, '&quot;')}" ${l === formLoc ? 'selected' : ''}>${String(l).replace(/</g, '&lt;')}</option>`).join('')}
-          </select>
-        </div>
-        <div>
-          <label style="display:block; font-size:11px; font-weight:bold; color:#555; margin-bottom:4px;">地点名 (例: 第1農場エリア) <span style="color:red;">*</span></label>
-          <input type="text" id="vpInputName" value="${String(formName).replace(/"/g, '&quot;')}" placeholder="地点の名称を入力"
-            style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px; box-sizing:border-box;">
-        </div>
-      </div>
-
-      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:14px;">
-        <div>
-          <label style="display:block; font-size:11px; font-weight:bold; color:#555; margin-bottom:4px;">中心緯度 (lat)</label>
-          <input type="number" step="0.000001" id="vpInputLat" value="${formLat}"
-            style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px; box-sizing:border-box;">
-        </div>
-        <div>
-          <label style="display:block; font-size:11px; font-weight:bold; color:#555; margin-bottom:4px;">中心経度 (lng)</label>
-          <input type="number" step="0.000001" id="vpInputLng" value="${formLng}"
-            style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px; box-sizing:border-box;">
-        </div>
-        <div>
-          <label style="display:block; font-size:11px; font-weight:bold; color:#555; margin-bottom:4px;">ズーム倍率 (1〜21)</label>
-          <input type="number" min="1" max="21" id="vpInputZoom" value="${formZoom}"
-            style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:13px; box-sizing:border-box;">
-        </div>
-      </div>
-
-      <div style="display:flex; justify-content:flex-end; gap:8px;">
-        ${editingVp ? `
-          <button type="button" onclick="window.cancelEditViewpoint()"
-            style="background:#f5f5f5; color:#666; border:1px solid #ccc; border-radius:6px; padding:7px 14px; font-size:13px; font-weight:bold; cursor:pointer;">
-            キャンセル
-          </button>
-        ` : ''}
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button type="button" onclick="window.repickViewpointLocation_()"
+          style="flex:1 1 auto; background:#f5f5f5; color:#555; border:1px solid #ccc; border-radius:8px; padding:10px 12px; font-size:13px; font-weight:bold; cursor:pointer;">📍 地点を選び直す</button>
         <button type="button" id="btnSaveVpForm" onclick="window.saveViewpointForm()"
-          style="background:${editingVp ? '#FB8C00' : '#5E35B1'}; color:#fff; border:none; border-radius:6px; padding:7px 18px; font-size:13px; font-weight:bold; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,0.15);">
-          ${editingVp ? '💾 変更を保存' : '＋ この視野を登録する'}
+          style="flex:2 1 auto; background:#5E35B1; color:#fff; border:none; border-radius:8px; padding:10px 16px; font-size:15px; font-weight:bold; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,0.15);">
+          ${d.id ? '💾 変更を保存' : '＋ 登録する'}
         </button>
       </div>
-    </div>
-
-    <!-- 拠点別フィルター＆一覧 -->
-    <div style="background:#fff; border-radius:10px; padding:14px; border:1px solid #e0e0e0; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
-        <div style="font-weight:bold; font-size:14px; color:#333; display:flex; align-items:center; gap:6px;">
-          📋 登録済み視野地点一覧
-          <span style="font-size:11px; font-weight:normal; color:#666; background:#eee; padding:2px 8px; border-radius:10px;">${filteredVps.length}件</span>
-        </div>
-        <div style="display:flex; align-items:center; gap:6px;">
-          <span style="font-size:12px; color:#555;">拠点絞込:</span>
-          <select id="vpFilterLocationSelect" onchange="window.changeViewpointFilterLoc(this.value)"
-            style="padding:5px 10px; border:1px solid #ccc; border-radius:6px; font-size:12px;">
-            <option value="">すべての拠点</option>
-            ${locs.map(l => `<option value="${String(l).replace(/"/g, '&quot;')}" ${l === filterLoc ? 'selected' : ''}>🏢 ${String(l).replace(/</g, '&lt;')}</option>`).join('')}
-          </select>
-        </div>
-      </div>
-
-      ${filteredVps.length === 0 ? `
-        <div style="text-align:center; padding:30px 10px; color:#999; font-size:13px;">
-          登録されている視野地点はありません。<br>
-          地図で移動・ズームして「📍 現在の地図の視野を取り込む」を押すと簡単に登録できます。
-        </div>
-      ` : `
-        <div style="display:flex; flex-direction:column; gap:8px;">
-          ${filteredVps.map((vp) => `
-            <div style="border:1px solid #eee; border-radius:8px; padding:10px 12px; display:flex; justify-content:space-between; align-items:center; background:#fafafa; gap:10px;">
-              <div style="flex:1; min-width:0;">
-                <div style="display:flex; align-items:center; gap:6px; margin-bottom:3px;">
-                  <span style="background:${vp.location ? '#e8eaf6' : '#eee'}; color:${vp.location ? '#3949ab' : '#666'}; font-size:10px; font-weight:bold; padding:2px 6px; border-radius:4px;">
-                    ${vp.location ? ('🏢 ' + String(vp.location).replace(/</g, '&lt;')) : '全体'}
-                  </span>
-                  <span style="font-weight:bold; font-size:13px; color:#222; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                    ${String(vp.name).replace(/</g, '&lt;')}
-                  </span>
-                </div>
-                <div style="font-size:11px; color:#777; display:flex; gap:10px; flex-wrap:wrap;">
-                  <span>🔍 Zoom: ${vp.zoom || 16}</span>
-                  <span>緯度: ${Number(vp.lat).toFixed(4)}</span>
-                  <span>経度: ${Number(vp.lng).toFixed(4)}</span>
-                </div>
-              </div>
-              <div style="display:flex; gap:6px; flex-shrink:0;">
-                <button type="button" onclick="window.jumpToViewpoint(${vp.lat}, ${vp.lng}, ${vp.zoom || 16})"
-                  title="地図をこの視野に移動"
-                  style="background:#E8F5E9; color:#2E7D32; border:1px solid #A5D6A7; border-radius:5px; padding:5px 8px; font-size:12px; font-weight:bold; cursor:pointer;">
-                  🗺️ 移動
-                </button>
-                <button type="button" onclick="window.editViewpointItem('${String(vp.id).replace(/'/g, "\\'")}')"
-                  title="編集"
-                  style="background:#FFF3E0; color:#E65100; border:1px solid #FFCC80; border-radius:5px; padding:5px 8px; font-size:12px; font-weight:bold; cursor:pointer;">
-                  ✏️
-                </button>
-                <button type="button" onclick="window.deleteViewpointItem('${String(vp.id).replace(/'/g, "\\'")}')"
-                  title="削除"
-                  style="background:#FFEBEE; color:#C62828; border:1px solid #EF9A9A; border-radius:5px; padding:5px 8px; font-size:12px; font-weight:bold; cursor:pointer;">
-                  🗑️
-                </button>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      `}
-    </div>
-    `;
-
-    body.innerHTML = html;
+    </div>`;
 };
 
-window.changeViewpointFilterLoc = (loc) => {
-    window._viewpointFilterLoc = loc;
-    window.renderViewpointModalUI();
+window.repickViewpointLocation_ = () => {
+    vpReadFormToDraft_();
+    window.startViewpointPickMode_({ keepDraft: true });
 };
 
-window.captureCurrentMapViewpoint = () => {
-    if (typeof map === 'undefined' || !map || typeof map.getCenter !== 'function') {
-        customAlert('地図が準備できていません');
-        return;
-    }
-    try {
+// ---------- 3) ズーム調整モード（ドラッグ不可） ----------
+window.startViewpointZoomMode_ = () => {
+    vpReadFormToDraft_();
+    const d = window._vpDraft;
+    if (!d || !map) return;
+    window.closeViewpointManageModal(true);
+
+    const center = { lat: Number(d.lat), lng: Number(d.lng) };
+    window._vpSavedMapOpts = {
+        draggable: true,
+        keyboardShortcuts: map.get('keyboardShortcuts') !== false
+    };
+    map.setCenter(center);
+    map.setZoom(Number(d.zoom) || 16);
+    map.setOptions({ draggable: false, keyboardShortcuts: false });
+    window._vpMode = 'zoom';
+    vpEnsureCrosshair_();
+    vpSetFabHidden_(true);
+
+    // ピンチ・ホイールで中心がずれても元の地点へ戻す
+    vpClearListeners_();
+    let relocking = false;
+    const relock = () => {
+        if (relocking || window._vpMode !== 'zoom') return;
         const c = map.getCenter();
-        const latInput = document.getElementById('vpInputLat');
-        const lngInput = document.getElementById('vpInputLng');
-        const zoomInput = document.getElementById('vpInputZoom');
-        if (latInput) latInput.value = Number(c.lat().toFixed(6));
-        if (lngInput) lngInput.value = Number(c.lng().toFixed(6));
-        if (zoomInput) zoomInput.value = map.getZoom() || 16;
-        customAlert('現在の地図の視野（中心・ズーム）を取り込みました');
-    } catch (e) {
-        customAlert('地図の視野取得に失敗しました: ' + e.message);
-    }
+        if (!c) return;
+        if (Math.abs(c.lat() - center.lat) > 1e-7 || Math.abs(c.lng() - center.lng) > 1e-7) {
+            relocking = true;
+            map.setCenter(center);
+            relocking = false;
+        }
+    };
+    window._vpListeners.push(map.addListener('center_changed', relock));
+    window._vpListeners.push(map.addListener('zoom_changed', () => {
+        relock();
+        const z = document.getElementById('vpZoomModeValue');
+        if (z) z.textContent = map.getZoom();
+    }));
+
+    const bar = vpEnsureBar_();
+    const btnStyle = 'flex:0 0 52px; height:48px; background:#fff; color:#4A148C; border:none; border-radius:10px; font-size:26px; font-weight:bold; cursor:pointer; line-height:1;';
+    bar.innerHTML = `
+      <div style="font-size:12px; font-weight:bold; color:#D1C4E9; margin-bottom:8px; text-align:center;">
+        🔍 ズーム（ピンチ / ＋−）で表示範囲を決めて「決定」を押してください
+      </div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button type="button" onclick="map.setZoom((map.getZoom()||16)-1)" style="${btnStyle}">−</button>
+        <div style="flex:1; text-align:center; font-size:20px; font-weight:bold;">🔍 <span id="vpZoomModeValue">${map.getZoom()}</span></div>
+        <button type="button" onclick="map.setZoom((map.getZoom()||16)+1)" style="${btnStyle}">＋</button>
+        <button type="button" onclick="window.confirmViewpointZoom_()"
+          style="flex:0 0 auto; height:48px; background:#7C4DFF; color:#fff; border:none; border-radius:10px; padding:0 18px; font-size:15px; font-weight:bold; cursor:pointer;">✅ 決定</button>
+      </div>`;
+};
+
+window.confirmViewpointZoom_ = () => {
+    const d = window._vpDraft;
+    if (d && map) d.zoom = map.getZoom() || d.zoom || 16;
+    vpExitMapModes_();
+    window.openViewpointFormModal_();
 };
 
 window.saveViewpointForm = async () => {
-    const locEl = document.getElementById('vpInputLocation');
-    const nameEl = document.getElementById('vpInputName');
-    const latEl = document.getElementById('vpInputLat');
-    const lngEl = document.getElementById('vpInputLng');
-    const zoomEl = document.getElementById('vpInputZoom');
+    vpReadFormToDraft_();
+    const d = window._vpDraft;
     const btn = document.getElementById('btnSaveVpForm');
+    if (!d) return;
+    if (!d.name) { customAlert('地点名を入力してください'); return; }
+    if (!isFinite(Number(d.lat)) || !isFinite(Number(d.lng))) { customAlert('地点が選択されていません'); return; }
 
-    const loc = locEl ? String(locEl.value || '').trim() : '';
-    const name = nameEl ? String(nameEl.value || '').trim() : '';
-    const lat = latEl ? Number(latEl.value) : NaN;
-    const lng = lngEl ? Number(lngEl.value) : NaN;
-    const zoom = zoomEl ? Number(zoomEl.value) : 16;
-
-    if (!name) {
-        customAlert('地点名を入力してください');
-        return;
-    }
-    if (isNaN(lat) || isNaN(lng)) {
-        customAlert('中心緯度・経度を正しく指定してください');
-        return;
-    }
-
-    if (btn) {
-        btn.disabled = true;
-        btn.textContent = '保存中...';
-    }
-
+    if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
     const payload = {
-        id: window._editingViewpointId || '',
-        location: loc,
-        name: name,
-        lat: lat,
-        lng: lng,
-        zoom: zoom || 16
+        id: d.id || '',
+        location: d.location || '',
+        name: d.name,
+        lat: Number(d.lat),
+        lng: Number(d.lng),
+        zoom: Number(d.zoom) || 16
     };
+    if (d.sortOrder != null) payload.sortOrder = d.sortOrder;
 
     try {
         const res = await callGAS('saveViewpoint', { viewpoint: payload, userName: currentUser }, 2, { timeoutMs: 30000 });
@@ -10728,51 +11203,137 @@ window.saveViewpointForm = async () => {
             const saved = res.viewpoint;
             if (!Array.isArray(window.pdlViewpoints)) window.pdlViewpoints = [];
             const idx = window.pdlViewpoints.findIndex(v => v.id === saved.id);
-            if (idx >= 0) {
-                window.pdlViewpoints[idx] = saved;
-            } else {
-                window.pdlViewpoints.push(saved);
-            }
-            window._editingViewpointId = null;
-            if (loc) window._viewpointFilterLoc = loc;
-            customAlert('視野地点「' + saved.name + '」を登録・保存しました');
-            window.renderViewpointModalUI();
+            if (idx >= 0) window.pdlViewpoints[idx] = saved; else window.pdlViewpoints.push(saved);
+            window._vpDraft = null;
+            if (saved.location) window._viewpointFilterLoc = saved.location;
+            customAlert('視野地点「' + saved.name + '」を保存しました');
+            window.openViewpointListModal();
         } else {
             customAlert('保存に失敗しました: ' + ((res && res.message) || '応答エラー'));
+            if (btn) { btn.disabled = false; btn.textContent = d.id ? '💾 変更を保存' : '＋ 登録する'; }
         }
     } catch (err) {
         customAlert('通信エラーが発生しました: ' + err.message);
-    } finally {
-        if (btn) {
-            btn.disabled = false;
-            btn.textContent = window._editingViewpointId ? '💾 変更を保存' : '＋ この視野を登録する';
-        }
+        if (btn) { btn.disabled = false; btn.textContent = d.id ? '💾 変更を保存' : '＋ 登録する'; }
     }
 };
 
-window.editViewpointItem = (id) => {
-    window._editingViewpointId = id;
+// ---------- 一覧 ----------
+// ＋メニューの「視野地点登録」からは照準モードを開始
+window.openViewpointManageModal = () => window.startViewpointPickMode_();
+
+window.openViewpointListModal = () => {
+    vpExitMapModes_();
+    const modal = document.getElementById('viewpointManageModal');
+    if (!modal) return;
+    if (!window._viewpointFilterLoc) window._viewpointFilterLoc = vpUserLoc_();
+    modal.style.display = 'flex';
+    if (typeof callGAS === 'function') {
+        callGAS('getViewpoints', {}, 1, { timeoutMs: 15000 }).then(res => {
+            if (res && res.success && Array.isArray(res.viewpoints)) {
+                window.pdlViewpoints = res.viewpoints;
+                if (modal.style.display !== 'none' && window._vpListShowing) window.renderViewpointModalUI();
+            }
+        }).catch(err => console.warn('getViewpoints fetch skipped:', err));
+    }
     window.renderViewpointModalUI();
-    const input = document.getElementById('vpInputName');
-    if (input) input.focus();
 };
 
-window.cancelEditViewpoint = () => {
-    window._editingViewpointId = null;
+window.closeViewpointManageModal = (keepState) => {
+    const modal = document.getElementById('viewpointManageModal');
+    if (modal) modal.style.display = 'none';
+    window._vpListShowing = false;
+    if (!keepState) window._vpDraft = null;
+};
+
+window.renderViewpointModalUI = () => {
+    const body = document.getElementById('viewpointManageBody');
+    if (!body) return;
+    window._vpListShowing = true;
+    const titleEl = document.getElementById('viewpointManageTitle');
+    if (titleEl) titleEl.textContent = '📋 登録済み視野地点';
+
+    const locs = (pdlLocations || []).filter(Boolean);
+    const filterLoc = window._viewpointFilterLoc || '';
+    const allVps = window.pdlViewpoints || [];
+    const list = filterLoc ? allVps.filter(v => String(v.location || '').trim() === filterLoc) : allVps;
+
+    body.innerHTML = `
+    <button type="button" onclick="window.startViewpointPickMode_()"
+      style="width:100%; background:#5E35B1; color:#fff; border:none; border-radius:10px; padding:12px; font-size:15px; font-weight:bold; cursor:pointer; margin-bottom:14px; box-shadow:0 2px 8px rgba(94,53,177,0.35);">
+      ＋ 新しい視野地点を登録
+    </button>
+    <div style="background:#fff; border-radius:10px; padding:14px; border:1px solid #e0e0e0;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:8px; flex-wrap:wrap;">
+        <div style="font-weight:bold; font-size:14px; color:#333;">
+          一覧 <span style="font-size:11px; font-weight:normal; color:#666; background:#eee; padding:2px 8px; border-radius:10px;">${list.length}件</span>
+        </div>
+        <select onchange="window.changeViewpointFilterLoc(this.value)"
+          style="padding:6px 10px; border:1px solid #ccc; border-radius:6px; font-size:13px;">
+          <option value="">すべての拠点</option>
+          ${locs.map(l => `<option value="${vpEsc_(l)}" ${l === filterLoc ? 'selected' : ''}>🏢 ${vpEsc_(l)}</option>`).join('')}
+        </select>
+      </div>
+      ${list.length === 0 ? `
+        <div style="text-align:center; padding:26px 10px; color:#999; font-size:13px;">登録されている視野地点はありません。</div>
+      ` : `
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          ${list.map(vp => {
+              const idJs = String(vp.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+              return `
+            <div style="border:1px solid #eee; border-radius:8px; padding:10px 12px; display:flex; justify-content:space-between; align-items:center; background:#fafafa; gap:10px;">
+              <div style="flex:1; min-width:0;">
+                <div style="font-weight:bold; font-size:14px; color:#222; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${vpEsc_(vp.name)}</div>
+                <div style="font-size:11px; color:#777; margin-top:2px;">
+                  <span style="background:${vp.location ? '#e8eaf6' : '#eee'}; color:${vp.location ? '#3949ab' : '#666'}; font-weight:bold; padding:1px 6px; border-radius:4px;">${vp.location ? '🏢 ' + vpEsc_(vp.location) : '全体'}</span>
+                  <span style="margin-left:6px;">🔍 ${vp.zoom || 16}</span>
+                </div>
+              </div>
+              <div style="display:flex; gap:6px; flex-shrink:0;">
+                <button type="button" onclick="window.jumpToViewpoint('${idJs}')" title="地図をこの視野に移動"
+                  style="background:#E8F5E9; color:#2E7D32; border:1px solid #A5D6A7; border-radius:6px; padding:6px 9px; font-size:12px; font-weight:bold; cursor:pointer;">🗺️ 移動</button>
+                <button type="button" onclick="window.editViewpointItem('${idJs}')" title="編集"
+                  style="background:#FFF3E0; color:#E65100; border:1px solid #FFCC80; border-radius:6px; padding:6px 9px; font-size:12px; cursor:pointer;">✏️</button>
+                <button type="button" onclick="window.deleteViewpointItem('${idJs}')" title="削除"
+                  style="background:#FFEBEE; color:#C62828; border:1px solid #EF9A9A; border-radius:6px; padding:6px 9px; font-size:12px; cursor:pointer;">🗑️</button>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      `}
+    </div>`;
+};
+
+window.changeViewpointFilterLoc = (loc) => {
+    window._viewpointFilterLoc = loc;
     window.renderViewpointModalUI();
+};
+
+window.editViewpointItem = (id) => {
+    const vp = (window.pdlViewpoints || []).find(v => v.id === id);
+    if (!vp) return;
+    window._vpDraft = {
+        id: vp.id,
+        location: vp.location || '',
+        name: vp.name || '',
+        lat: Number(vp.lat),
+        lng: Number(vp.lng),
+        zoom: Number(vp.zoom) || 16,
+        nameAuto: false,
+        sortOrder: vp.sortOrder
+    };
+    window._vpListShowing = false;
+    window.openViewpointFormModal_();
 };
 
 window.deleteViewpointItem = async (id) => {
-    const all = window.pdlViewpoints || [];
-    const target = all.find(v => v.id === id);
+    const target = (window.pdlViewpoints || []).find(v => v.id === id);
     const targetName = target ? target.name : 'この視野地点';
     if (!confirm('視野地点「' + targetName + '」を削除してもよろしいですか？')) return;
-
     try {
         const res = await callGAS('deleteViewpoint', { id: id, userName: currentUser }, 2, { timeoutMs: 30000 });
         if (res && res.success) {
             window.pdlViewpoints = (window.pdlViewpoints || []).filter(v => v.id !== id);
-            if (window._editingViewpointId === id) window._editingViewpointId = null;
             customAlert('削除しました');
             window.renderViewpointModalUI();
         } else {
@@ -10783,10 +11344,11 @@ window.deleteViewpointItem = async (id) => {
     }
 };
 
-window.jumpToViewpoint = (lat, lng, zoom) => {
-    if (typeof map === 'undefined' || !map || typeof map.setCenter !== 'function') return;
-    map.setCenter({ lat: Number(lat), lng: Number(lng) });
-    if (zoom) map.setZoom(Number(zoom));
+window.jumpToViewpoint = (id) => {
+    const vp = (window.pdlViewpoints || []).find(v => v.id === id);
+    if (!vp || typeof map === 'undefined' || !map) return;
+    map.setCenter({ lat: Number(vp.lat), lng: Number(vp.lng) });
+    if (vp.zoom) map.setZoom(Number(vp.zoom));
     window.closeViewpointManageModal();
 };
 

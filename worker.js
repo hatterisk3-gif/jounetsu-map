@@ -55818,10 +55818,17 @@ window.deleteQualification = async function (userName, index) {
       ? pdlInspections
       : (Array.isArray(window.pdlInspections) ? window.pdlInspections : []);
 
+    const macKeys = new Set([
+      macType,
+      mac ? String(mac.vehicleType || '').trim() : '',
+      mac ? String(mac.vehicleUse || '').trim() : '',
+      mac ? String(mac.category || '').trim() : ''
+    ].filter(Boolean));
+
     const items = allInsps.filter(i => {
       if (!i) return false;
-      const t = String(i.machineType || '').trim();
-      return t === macType || t === '共通' || t === '全般';
+      const targets = String(i.machineType || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+      return targets.some(t => macKeys.has(t) || t === '共通' || t === '全般');
     }).sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
 
     if (!items.length) {
