@@ -25,6 +25,7 @@ window.cadSnapGridOn = false; // 自由畝セル配置グリッド
 window.cadSnapGridSizeM = null; // nullなら基準畝幅
 window.cadCellEraseMode = false; // true=消しゴム（塗ったセルを消す）
 window.cadPaintedCellSet = new Set(); // 塗ったセル "iu,iv"（隣接点は結合して1畝）
+window.cadPaintedCellTypes = {}; // セルごとの形状 { "iu,iv": "rect" | "circle" }
 window.cadPaintedCells = {}; // 互換: 塗り済み判定用（Setと同期）
 window.cadCellPainting = false; // ドラッグ塗り中
 window.cadSnapGridAlignPoint = null; // {lat,lng} 選んだ辺上の点（位相合わせ）
@@ -1609,22 +1610,25 @@ window.handleMapClick = (pageX, pageY) => {
             if (window.cadGpsWatchId != null && (window.cadGpsPurpose === 'custom_rect' || window.cadGpsPurpose === 'custom_circle')) {
                 window.cadStopGpsPinPlace({ silent: true });
             }
-            if (result === 'painted' || result === 'erased') {
+            if (result === 'painted' || result === 'erased' || result === 'replaced') {
                 // 単発クリック時は即結合（ドラッグ中は mouseup で結合）
                 if (!window.cadCellPainting) {
-                    window.cadSyncMergedCellRidges_({ type: shapeType });
+                    window.cadSyncMergedCellRidges_();
                 }
                 if (typeof window.reassignLabels === 'function') window.reassignLabels();
                 if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
-            } else if (result === 'outside' && !window.cadCellEraseMode) {
-                alert('圃場の内側のセルを塗ってください。');
+            } else if (result === 'outside') {
+                alert('圃場の内側のセルをタップしてください。');
             }
             if (msgEl) {
-                if (window.cadCellEraseMode) {
-                    msgEl.innerText = '【セル消しゴム】続けてタップ／ドラッグで消去できます';
+                if (result === 'erased') {
+                    msgEl.innerText = '畝を消去しました。セルをタップして再配置できます';
                     msgEl.style.color = '#EF5350';
+                } else if (result === 'replaced') {
+                    msgEl.innerText = `${shapeType === 'circle' ? '丸畝' : '四角畝'}に置き換えました`;
+                    msgEl.style.color = '#81D4FA';
                 } else {
-                    msgEl.innerText = `【セル塗り・${shapeType === 'circle' ? '丸' : '四角'}】隣り合うセルは1畝になります。ドラッグで連続塗り`;
+                    msgEl.innerText = `【${shapeType === 'circle' ? '丸畝' : '四角畝'}】配置しました。同じセルをタップすると消去できます`;
                     msgEl.style.color = '#8BC34A';
                 }
             }
@@ -4040,21 +4044,7 @@ window.cadUpdateSnapGridUi_ = () => {
         }
     }
     const paintBar = document.getElementById('cadCellPaintBar');
-    if (paintBar) paintBar.style.display = window.cadSnapGridOn ? 'flex' : 'none';
-    const paintBtn = document.getElementById('cadCellPaintBtn');
-    const eraseBtn = document.getElementById('cadCellEraseBtn');
-    if (paintBtn) {
-        const on = window.cadSnapGridOn && !window.cadCellEraseMode;
-        paintBtn.style.background = on ? '#558B2F' : '#333';
-        paintBtn.style.color = on ? '#fff' : '#ccc';
-        paintBtn.style.border = on ? 'none' : '1px solid #666';
-    }
-    if (eraseBtn) {
-        const on = window.cadSnapGridOn && !!window.cadCellEraseMode;
-        eraseBtn.style.background = on ? '#C62828' : '#333';
-        eraseBtn.style.color = on ? '#fff' : '#ccc';
-        eraseBtn.style.border = on ? 'none' : '1px solid #666';
-    }
+    if (paintBar) paintBar.style.display = 'none';
     const infoEl = document.getElementById('cadGridSizeInfo');
     const hint = document.getElementById('cadSnapGridHint');
     const { rows, cols } = window.cadGetSnapGridRowCol();
@@ -4070,10 +4060,8 @@ window.cadUpdateSnapGridUi_ = () => {
     if (hint) {
         if (!window.cadSnapGridOn) {
             hint.textContent = sizeText ? `OFF時は自由配置。ONで縦${rows}×横${cols}マス（${sizeText}）に分割` : `OFF時は自由配置。ONで圃場を縦${rows}マス×横${cols}マスに等分割`;
-        } else if (window.cadCellEraseMode) {
-            hint.textContent = `消しゴム中 — マス目をタップして消す（隣り合う塊は再結合）`;
         } else {
-            hint.textContent = `セル塗り中 — 縦${rows}×横${cols}マスの枠を塗って自由畝を作成できます`;
+            hint.textContent = `セルをタップして畝を設置／同じセルをタップで消去。四角・丸の切替もタップで置き換えられます`;
         }
     }
 };
@@ -4092,6 +4080,10 @@ window.cadToggleSnapGrid = (forceOn) => {
 
     if (window.cadSnapGridOn) {
         window.cadRebuildSnapGrid();
+        if (window.cadPinMode !== 'custom_rect' && window.cadPinMode !== 'custom_circle') {
+            window.cadPinMode = 'custom_rect';
+            if (typeof window.cadUpdateCustomShapeBtns_ === 'function') window.cadUpdateCustomShapeBtns_();
+        }
     } else {
         window.cadClearSnapGridLines_();
         window.cadCellEraseMode = false;
@@ -4270,12 +4262,22 @@ window.cadUpdateCellHoverSvg = (latLng) => {
     }).join(' ');
     const key = window.cadCellKey_(idx.iu, idx.iv);
     const filled = !!(window.cadPaintedCellSet && window.cadPaintedCellSet.has(key));
-    const erase = !!window.cadCellEraseMode;
-    let fill = erase ? 'rgba(244,67,54,0.28)' : 'rgba(139,195,74,0.35)';
-    let stroke = erase ? '#EF5350' : '#AED581';
-    if (filled && !erase) {
-        fill = 'rgba(255,235,59,0.25)';
-        stroke = '#FFEE58';
+    const types = window.cadPaintedCellTypes || {};
+    const existingType = types[key] || 'rect';
+    const currentMode = (window.cadPinMode === 'custom_circle') ? 'circle' : 'rect';
+
+    let fill = 'rgba(139,195,74,0.35)';
+    let stroke = '#AED581';
+    if (filled) {
+        if (existingType === currentMode) {
+            // 同じ形状なら消去になる（赤色）
+            fill = 'rgba(244,67,54,0.3)';
+            stroke = '#EF5350';
+        } else {
+            // 異なる形状なら置き換えになる（水色）
+            fill = 'rgba(3,169,244,0.35)';
+            stroke = '#03A9F4';
+        }
     }
     g.innerHTML = `<polygon points="${pts}" fill="${fill}" stroke="${stroke}" stroke-width="2" stroke-opacity="0.95"></polygon>`;
 };
@@ -4283,13 +4285,6 @@ window.cadUpdateCellHoverSvg = (latLng) => {
 window.cadSetCellEraseMode = (on) => {
     window.cadCellEraseMode = !!on;
     window.cadUpdateSnapGridUi_();
-    const msgEl = document.getElementById('cadPinModeMsg');
-    if (msgEl && window.cadSnapGridOn) {
-        msgEl.innerText = window.cadCellEraseMode
-            ? '【セル消しゴム】塗ったセルを消します（塊は自動で再結合）'
-            : '【セル塗り】隣り合うセルは1本の畝になります';
-        msgEl.style.color = window.cadCellEraseMode ? '#EF5350' : '#8BC34A';
-    }
 };
 
 window.cadSyncPaintedCellsCompat_ = () => {
@@ -4318,30 +4313,45 @@ window.cadRefreshCellFillsSvg_ = () => {
     const frame = window.cadGetSnapGridFrame_(null);
     if (!frame) { g.innerHTML = ''; return; }
     let html = '';
+    const types = window.cadPaintedCellTypes || {};
     window.cadPaintedCellSet.forEach((key) => {
         const parts = key.split(',');
         const iu = parseInt(parts[0], 10);
         const iv = parseInt(parts[1], 10);
         if (isNaN(iu) || isNaN(iv)) return;
-        const ring = window.cadGetGridCellRing_(iu, iv, frame);
-        const pts = ring.map(c => {
-            const s = window.latLngToScreenPixel(c[1], c[0]);
-            return s.x + ',' + s.y;
-        }).join(' ');
-        html += `<polygon points="${pts}" fill="rgba(139,195,74,0.45)" stroke="#7CB342" stroke-width="1.2" stroke-opacity="0.9"></polygon>`;
+        const type = types[key] || 'rect';
+        if (type === 'circle') {
+            const cu = frame.cellU != null ? frame.cellU : frame.cell;
+            const cv = frame.cellV != null ? frame.cellV : frame.cell;
+            const mid = window.cadUvToLatLng_((iu + 0.5) * cu, (iv + 0.5) * cv, frame);
+            const sMid = window.latLngToScreenPixel(mid.lat, mid.lng);
+            const edge = window.cadUvToLatLng_((iu + 0.5) * cu, iv * cv, frame);
+            const sEdge = window.latLngToScreenPixel(edge.lat, edge.lng);
+            const rPx = Math.max(Math.hypot(sMid.x - sEdge.x, sMid.y - sEdge.y), 4);
+            html += `<circle cx="${sMid.x}" cy="${sMid.y}" r="${rPx}" fill="rgba(102,187,106,0.45)" stroke="#43A047" stroke-width="1.2" stroke-opacity="0.9"></circle>`;
+        } else {
+            const ring = window.cadGetGridCellRing_(iu, iv, frame);
+            const pts = ring.map(c => {
+                const s = window.latLngToScreenPixel(c[1], c[0]);
+                return s.x + ',' + s.y;
+            }).join(' ');
+            html += `<polygon points="${pts}" fill="rgba(139,195,74,0.45)" stroke="#7CB342" stroke-width="1.2" stroke-opacity="0.9"></polygon>`;
+        }
     });
     g.innerHTML = html;
 };
 
-/** 隣接セルを連結成分に分割 */
+/** 隣接セルを連結成分に分割（同種形状同士のみ連結） */
 window.cadGetPaintedCellComponents_ = () => {
     const set = window.cadPaintedCellSet || new Set();
+    const types = window.cadPaintedCellTypes || {};
     const remaining = new Set(set);
     const comps = [];
     const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
     while (remaining.size) {
         const start = remaining.values().next().value;
         remaining.delete(start);
+        const startType = types[start] || 'rect';
         const queue = [start];
         const comp = [start];
         while (queue.length) {
@@ -4352,13 +4362,16 @@ window.cadGetPaintedCellComponents_ = () => {
             for (let d = 0; d < dirs.length; d++) {
                 const nk = window.cadCellKey_(iu + dirs[d][0], iv + dirs[d][1]);
                 if (remaining.has(nk)) {
-                    remaining.delete(nk);
-                    queue.push(nk);
-                    comp.push(nk);
+                    const nbType = types[nk] || 'rect';
+                    if (nbType === startType) {
+                        remaining.delete(nk);
+                        queue.push(nk);
+                        comp.push(nk);
+                    }
                 }
             }
         }
-        comps.push(comp);
+        comps.push({ keys: comp, type: startType });
     }
     return comps;
 };
@@ -4370,6 +4383,7 @@ window.cadSyncMergedCellRidges_ = (opts) => {
     opts = opts || {};
     if (!window.cadTargetId || typeof turf === 'undefined') return;
     if (!window.cadPaintedCellSet) window.cadPaintedCellSet = new Set();
+    if (!window.cadPaintedCellTypes) window.cadPaintedCellTypes = {};
     window.cadSyncPaintedCellsCompat_();
 
     // セル塗り由来の畝だけ消す（通常の自由畝は残す）
@@ -4402,11 +4416,12 @@ window.cadSyncMergedCellRidges_ = (opts) => {
         fieldCoords.push([fieldCoords[0][0], fieldCoords[0][1]]);
     }
     const tPoly = turf.polygon([fieldCoords]);
-    const type = opts.type || ((window.cadPinMode === 'custom_circle') ? 'circle' : 'rect');
-    const groupName = type === 'circle' ? '丸' : '四角';
     const comps = window.cadGetPaintedCellComponents_();
 
-    comps.forEach((comp, cIdx) => {
+    comps.forEach((compObj, cIdx) => {
+        const comp = compObj.keys;
+        const type = compObj.type; // 'rect' または 'circle'
+        const groupName = type === 'circle' ? '丸' : '四角';
         const cellPolys = [];
         comp.forEach((key) => {
             const parts = key.split(',');
@@ -4456,12 +4471,13 @@ window.cadSyncMergedCellRidges_ = (opts) => {
             const paths = coordinates.map(r => r.map(c => ({ lat: c[1], lng: c[0] })));
             if (!paths[0] || paths[0].length < 3) return;
             const gPoly = window.cadCreateRidgePolygon(paths, {
-                fillColor: window.cadGetGroupColor ? window.cadGetGroupColor(groupName) : '#8BC34A'
+                fillColor: window.cadGetGroupColor ? window.cadGetGroupColor(groupName) : (type === 'circle' ? '#66BB6A' : '#8BC34A')
             });
             gPoly.uneIndex = 'custom_cellmerge_' + cIdx + '_' + Date.now() + '_' + fIdx;
             gPoly.uneGroup = groupName;
             gPoly._cadFromCellPaint = true;
             gPoly._cadCellKeys = comp.slice();
+            gPoly._cadCellType = type;
             window.bindShapeHistoryEvents(gPoly);
             window.cadCustomShapes.push(gPoly);
         });
@@ -4480,22 +4496,25 @@ window.cadSyncMergedCellRidges_ = (opts) => {
 };
 
 /**
- * セルを塗る／消す（隣接セルはストローク終了時に1畝へ結合）
- * @returns {'painted'|'erased'|'exists'|'outside'|'fail'|null}
+ * セルを塗る／消す／置き換える
+ * @returns {'painted'|'erased'|'replaced'|'outside'|'fail'|null}
  */
 window.cadPaintGridCell = (iu, iv, opts) => {
     opts = opts || {};
     if (!window.cadTargetId || typeof turf === 'undefined') return null;
     if (!window.cadPaintedCellSet) window.cadPaintedCellSet = new Set();
+    if (!window.cadPaintedCellTypes) window.cadPaintedCellTypes = {};
 
     const frame = opts.frame || window.cadGetSnapGridFrame_(null);
     if (!frame) return null;
     const key = window.cadCellKey_(iu, iv);
-    const erase = opts.erase != null ? !!opts.erase : !!window.cadCellEraseMode;
+    const targetType = opts.type || ((window.cadPinMode === 'custom_circle') ? 'circle' : 'rect');
 
     // 圃場外セルは塗らない
     try {
-        const mid = window.cadUvToLatLng_((iu + 0.5) * frame.cell, (iv + 0.5) * frame.cell, frame);
+        const cu = frame.cellU != null ? frame.cellU : frame.cell;
+        const cv = frame.cellV != null ? frame.cellV : frame.cell;
+        const mid = window.cadUvToLatLng_((iu + 0.5) * cu, (iv + 0.5) * cv, frame);
         const p = loadedPolygons[window.cadTargetId];
         let fieldCoords = p.coords.map(pt => [
             typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng),
@@ -4510,23 +4529,38 @@ window.cadPaintGridCell = (iu, iv, opts) => {
         }
     } catch (e) { }
 
-    if (erase) {
-        if (!window.cadPaintedCellSet.has(key)) return null;
-        window.cadPaintedCellSet.delete(key);
-        window.cadSyncPaintedCellsCompat_();
-        window.cadRefreshCellFillsSvg_();
-        if (!opts.deferSync && !window.cadCellPainting) {
-            window.cadSyncMergedCellRidges_({ silent: !!opts.silent, type: opts.type });
+    // すでに畝がある場合
+    if (window.cadPaintedCellSet.has(key)) {
+        const curType = window.cadPaintedCellTypes[key] || 'rect';
+        if (curType !== targetType) {
+            // 🌟 異なる形状を選択してタップ：置き換え！
+            window.cadPaintedCellTypes[key] = targetType;
+            window.cadSyncPaintedCellsCompat_();
+            window.cadRefreshCellFillsSvg_();
+            if (!opts.deferSync && !window.cadCellPainting) {
+                window.cadSyncMergedCellRidges_({ silent: !!opts.silent });
+            }
+            return 'replaced';
+        } else {
+            // 🌟 同じ形状を選択してタップ：あったら消す（トグル消去）！
+            window.cadPaintedCellSet.delete(key);
+            delete window.cadPaintedCellTypes[key];
+            window.cadSyncPaintedCellsCompat_();
+            window.cadRefreshCellFillsSvg_();
+            if (!opts.deferSync && !window.cadCellPainting) {
+                window.cadSyncMergedCellRidges_({ silent: !!opts.silent });
+            }
+            return 'erased';
         }
-        return 'erased';
     }
 
-    if (window.cadPaintedCellSet.has(key)) return 'exists';
+    // 畝がない場合：設置！
     window.cadPaintedCellSet.add(key);
+    window.cadPaintedCellTypes[key] = targetType;
     window.cadSyncPaintedCellsCompat_();
     window.cadRefreshCellFillsSvg_();
     if (!opts.deferSync && !window.cadCellPainting) {
-        window.cadSyncMergedCellRidges_({ silent: !!opts.silent, type: opts.type });
+        window.cadSyncMergedCellRidges_({ silent: !!opts.silent });
     }
     return 'painted';
 };
@@ -4595,6 +4629,7 @@ window.cadClearLines = (skipHistory = false) => {
     window.cadDrainageLines = [];
     window.cadCustomShapes.forEach(pl => pl.setMap(null)); window.cadCustomShapes = [];
     window.cadPaintedCellSet = new Set();
+    window.cadPaintedCellTypes = {};
     window.cadPaintedCells = {};
     if (typeof window.cadClearSnapGridLines_ === 'function') window.cadClearSnapGridLines_();
     else if (window.cadGridLines) { window.cadGridLines.forEach(l => l.setMap(null)); window.cadGridLines = []; }
@@ -4622,6 +4657,7 @@ window.cadClearRidgesOnly = (skipHistory = false) => {
         window.cadCustomShapes = [];
     }
     window.cadPaintedCellSet = new Set();
+    window.cadPaintedCellTypes = {};
     window.cadPaintedCells = {};
     // セル配置グリッドは消さない（塗り直し用に残す）
     if (window.cadSnapGridOn) {
@@ -4674,6 +4710,7 @@ window.cadClearRidgesKeepMakura = (skipHistory = false) => {
     window.cadUnePolygons = drop(window.cadUnePolygons);
     window.cadCustomShapes = drop(window.cadCustomShapes);
     window.cadPaintedCellSet = new Set();
+    window.cadPaintedCellTypes = {};
     window.cadPaintedCells = {};
     if (window.cadSnapGridOn) {
         if (typeof window.cadRebuildSnapGrid === 'function') window.cadRebuildSnapGrid();

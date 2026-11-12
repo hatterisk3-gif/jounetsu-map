@@ -1,6 +1,7 @@
 
 let currentUser = localStorage.getItem('passionMapUserName') || "", activePolyId = null, currentEditRecordId = null, currentRecordType = "growth", currentFilterType = "growth", existingUrlsInEdit = [];
 let pdlSignLinks = {}, pdlLocations = [], pdlCrops = [], pdlStages = [], pdlWorkStatuses = [], pdlContainerNames = [], pdlContainers = [], pdlContentUnits = [], activeLots = [];
+let pdlViewpoints = [];
 let pdlTools = [], pdlMaterials = [], pdlMachines = [], pdlPesticides = [], pdlWorkMaster = [], pdlPastReports = {}, pdlSymptoms = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [], pdlInspections = [];
 let pdlDeliveryDestinations = [];
 let pdlNurseryLocations = [], pdlCropCultSettings = [];
@@ -1961,6 +1962,8 @@ function renderInitData(data) {
   window.pdlCropCostPlans = pdlCropCostPlans;
   pdlDeliveryDestinations = data.pdl.deliveryDestinations || [];
   window.pdlDeliveryDestinations = pdlDeliveryDestinations;
+  pdlViewpoints = data.pdl.viewpoints || [];
+  window.pdlViewpoints = pdlViewpoints;
   window.pdlMaintenanceContents = data.pdl.maintenanceContents || [];
   pdlWorkCategories = data.pdl.workCategories || [];
   pdlMachineTypes = data.pdl.machineTypes || ["トラクター", "ドローン"];
@@ -3425,9 +3428,128 @@ function initMap() {
       }, function () { customAlert("現在地を取得できませんでした"); btn.innerHTML = orgText; btn.disabled = false; }, { enableHighAccuracy: true });
     }
   };
+
+  // 🔭 視野切替ボタンのイベントバインド（onclick属性のフォールバック）
+  const btnToggleVp = document.getElementById('btnToggleViewpoint');
+  if (btnToggleVp) {
+    btnToggleVp.onclick = () => {
+      if (typeof window.cycleNextViewpoint === 'function') window.cycleNextViewpoint();
+    };
+  }
+
   setupSearch();
   setupWorkerMapSearch();
 }
+
+// ====================================================
+// 🔭 視野切替（拠点別 Viewpoint サイクル移動）
+// ====================================================
+window._currentViewpointIndex = -1;
+let _viewpointToastTimer = null;
+
+window.showViewpointToast = function (name, curIdx, totalCount, locName) {
+  let toast = document.getElementById('viewpointToast');
+  let textEl = document.getElementById('viewpointToastText');
+
+  // もしDOMが無ければ動的生成
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'viewpointToast';
+    toast.style.cssText = 'display:none; position:fixed; bottom:max(80px, calc(env(safe-area-inset-bottom, 0px) + 80px)); right:70px; background:rgba(33,33,33,0.92); color:#fff; padding:8px 14px; border-radius:20px; font-size:13px; font-weight:bold; z-index:2100; box-shadow:0 4px 16px rgba(0,0,0,0.3); pointer-events:none; transition:opacity 0.25s ease, transform 0.25s ease; transform:translateY(8px); opacity:0; align-items:center; gap:8px; border:1px solid rgba(255,255,255,0.15);';
+    toast.innerHTML = '<span style="font-size:15px;">🔭</span><span id="viewpointToastText">視野切替</span>';
+    document.body.appendChild(toast);
+    textEl = document.getElementById('viewpointToastText');
+  }
+
+  if (textEl) {
+    const locBadge = locName ? `[${locName}] ` : '';
+    textEl.textContent = `${locBadge}${name} (${curIdx}/${totalCount})`;
+  }
+
+  toast.style.display = 'flex';
+  void toast.offsetWidth; // リフロー
+  toast.style.opacity = '1';
+  toast.style.transform = 'translateY(0)';
+
+  if (_viewpointToastTimer) clearTimeout(_viewpointToastTimer);
+  _viewpointToastTimer = setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(8px)';
+    setTimeout(() => {
+      if (toast.style.opacity === '0') toast.style.display = 'none';
+    }, 250);
+  }, 2500);
+};
+
+window.cycleNextViewpoint = function () {
+  if (typeof map === 'undefined' || !map || typeof map.setCenter !== 'function') {
+    if (typeof customAlert === 'function') customAlert('地図が準備できていません');
+    return;
+  }
+
+  // 作業員のアカウントに紐づく拠点
+  const userLoc = (typeof currentUser !== 'undefined' && localStorage.getItem('passionMapUserLocation')) || '';
+  const trimmedUserLoc = String(userLoc || '').trim();
+
+  let allVps = window.pdlViewpoints || pdlViewpoints || [];
+  // キャッシュ等で未設定なら localStorage からも探す
+  if ((!allVps || !allVps.length) && typeof localStorage !== 'undefined') {
+    try {
+      const initCache = JSON.parse(localStorage.getItem('passionMapInitData') || '{}');
+      if (initCache && initCache.pdl && Array.isArray(initCache.pdl.viewpoints)) {
+        allVps = initCache.pdl.viewpoints;
+        window.pdlViewpoints = allVps;
+      }
+    } catch (e) { }
+  }
+
+  if (!allVps || !allVps.length) {
+    if (typeof customAlert === 'function') {
+      customAlert('視野地点がまだ登録されていません。\n管理者画面の「＋」メニュー ＞「🔭 視野地点登録」から登録してください。');
+    }
+    return;
+  }
+
+  // 拠点に紐づく視野地点を抽出
+  let targetVps = [];
+  if (trimmedUserLoc) {
+    targetVps = allVps.filter(v => String(v.location || '').trim() === trimmedUserLoc);
+  }
+
+  // 所属拠点の視野がない場合の判定
+  if (!targetVps.length) {
+    if (trimmedUserLoc) {
+      if (typeof customAlert === 'function') {
+        customAlert(`所属拠点「${trimmedUserLoc}」の視野地点はまだ登録されていません。\n管理者画面（＋ ＞ 視野地点登録）で拠点を「${trimmedUserLoc}」にして地点を登録してください。`);
+      }
+      return;
+    } else {
+      // ユーザーの拠点が未設定の場合は全地点を対象
+      targetVps = allVps;
+    }
+  }
+
+  if (!targetVps.length) return;
+
+  // 次のインデックスへ進める
+  window._currentViewpointIndex = ((window._currentViewpointIndex != null ? window._currentViewpointIndex : -1) + 1) % targetVps.length;
+  const target = targetVps[window._currentViewpointIndex];
+
+  const lat = Number(target.lat);
+  const lng = Number(target.lng);
+  const zoom = Number(target.zoom) || 16;
+
+  if (isNaN(lat) || isNaN(lng)) {
+    if (typeof customAlert === 'function') customAlert('視野地点の座標が不正です');
+    return;
+  }
+
+  map.setCenter({ lat: lat, lng: lng });
+  if (zoom) map.setZoom(zoom);
+
+  // トースト表示
+  window.showViewpointToast(target.name, window._currentViewpointIndex + 1, targetVps.length, target.location);
+};
 
 function updateMarkersVisibility() {
   const zoom = map.getZoom(), far = 15, close = 17;

@@ -491,108 +491,233 @@
     return live.length ? live : vehiclesFromInitCache_();
   }
 
+  const STORAGE_KEY_MAINT_RECS = 'pMapMachineMaintRecords_v1';
+  const STORAGE_KEY_INSP_RECS = 'pMapMachineInspRecords_v1';
+  const STORAGE_KEY_MAINT_TIME = 'pMapMachineMaintTime_v1';
+  const STORAGE_KEY_INSP_TIME = 'pMapMachineInspTime_v1';
+  const CACHE_FRESH_MS = 5 * 60 * 1000; // 5分間は最新とみなす
+
+  function getCachedMaintRecords_() {
+    if (Array.isArray(window._workerMachineMaintenanceRecords) && window._workerMachineMaintenanceRecords.length) {
+      return window._workerMachineMaintenanceRecords;
+    }
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_MAINT_RECS);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length) {
+          window._workerMachineMaintenanceRecords = parsed;
+          const t = Number(localStorage.getItem(STORAGE_KEY_MAINT_TIME)) || 0;
+          if (t) window._workerMachineMaintCacheAt = t;
+          return parsed;
+        }
+      }
+    } catch (e) { }
+    return Array.isArray(window._workerMachineMaintenanceRecords) ? window._workerMachineMaintenanceRecords : [];
+  }
+
+  function saveMaintRecordsCache_(records) {
+    if (!Array.isArray(records)) return;
+    window._workerMachineMaintenanceRecords = records.slice();
+    window._workerMachineMaintCacheAt = Date.now();
+    try {
+      localStorage.setItem(STORAGE_KEY_MAINT_RECS, JSON.stringify(records));
+      localStorage.setItem(STORAGE_KEY_MAINT_TIME, String(Date.now()));
+    } catch (e) { }
+  }
+
+  function getCachedInspRecords_() {
+    if (Array.isArray(window._workerMachineInspectionRecords) && window._workerMachineInspectionRecords.length) {
+      return window._workerMachineInspectionRecords;
+    }
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_INSP_RECS);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length) {
+          window._workerMachineInspectionRecords = parsed;
+          const t = Number(localStorage.getItem(STORAGE_KEY_INSP_TIME)) || 0;
+          if (t) window._workerMachineInspCacheAt = t;
+          return parsed;
+        }
+      }
+    } catch (e) { }
+    return Array.isArray(window._workerMachineInspectionRecords) ? window._workerMachineInspectionRecords : [];
+  }
+
+  function saveInspRecordsCache_(records) {
+    if (!Array.isArray(records)) return;
+    window._workerMachineInspectionRecords = records.slice();
+    window._workerMachineInspCacheAt = Date.now();
+    try {
+      localStorage.setItem(STORAGE_KEY_INSP_RECS, JSON.stringify(records));
+      localStorage.setItem(STORAGE_KEY_INSP_TIME, String(Date.now()));
+    } catch (e) { }
+  }
+
+  let _inflightEnsureMachines = null;
+  let _inflightEnsureVehicles = null;
+  let _inflightFetchRecords = null;
+  let _inflightFetchInspRecords = null;
+
   async function ensureMachines_(force) {
     const cached = getMachines_();
     const freshLoaded = window._maintHistoryMachinesLoadedAt
-      && (Date.now() - window._maintHistoryMachinesLoadedAt) < 5 * 60 * 1000;
+      && (Date.now() - window._maintHistoryMachinesLoadedAt) < CACHE_FRESH_MS;
     if (!force && freshLoaded && cached.length) return cached;
     if (typeof callGAS !== 'function') return cached;
-    try {
-      let res = null;
+
+    if (_inflightEnsureMachines && !force) return _inflightEnsureMachines;
+
+    const prom = (async () => {
       try {
-        res = await callGAS('machine_loadAll', {}, 1, { jumpQueue: true, timeoutMs: 60000 });
-      } catch (e1) {
-        res = await callGAS('getInitData', {}, 1, { jumpQueue: true, timeoutMs: 90000 });
+        let res = null;
+        try {
+          res = await callGAS('machine_loadAll', {}, 1, { jumpQueue: true, timeoutMs: 60000 });
+        } catch (e1) {
+          res = await callGAS('getInitData', {}, 1, { jumpQueue: true, timeoutMs: 90000 });
+        }
+        let machines = [];
+        if (res && res.machines && typeof res.machines === 'object' && !Array.isArray(res.machines)) {
+          machines = Object.keys(res.machines).map(k => res.machines[k]).filter(Boolean);
+        } else if (res && Array.isArray(res.machines)) {
+          machines = res.machines;
+        } else if (res && res.pdl && Array.isArray(res.pdl.machines)) {
+          machines = res.pdl.machines;
+        }
+        machines = usableMachines_(machines);
+        if (machines.length) {
+          window._maintHistoryMachinesLoadedAt = Date.now();
+          try { window.pdlMachines = machines; } catch (e) { }
+          try { pdlMachines = machines; } catch (e2) { }
+        }
+        if (res && Array.isArray(res.maintenanceRecords)) {
+          saveMaintRecordsCache_(res.maintenanceRecords);
+        }
+        if (machines.length) return machines;
+      } catch (e) {
+        console.warn('maint-history ensureMachines_', e);
+      } finally {
+        _inflightEnsureMachines = null;
       }
-      let machines = [];
-      if (res && res.machines && typeof res.machines === 'object' && !Array.isArray(res.machines)) {
-        machines = Object.keys(res.machines).map(k => res.machines[k]).filter(Boolean);
-      } else if (res && Array.isArray(res.machines)) {
-        machines = res.machines;
-      } else if (res && res.pdl && Array.isArray(res.pdl.machines)) {
-        machines = res.pdl.machines;
-      }
-      machines = usableMachines_(machines);
-      if (machines.length) {
-        window._maintHistoryMachinesLoadedAt = Date.now();
-        try { window.pdlMachines = machines; } catch (e) { }
-        try { pdlMachines = machines; } catch (e2) { }
-      }
-      if (res && Array.isArray(res.maintenanceRecords)) {
-        window._workerMachineMaintenanceRecords = res.maintenanceRecords.slice();
-        window._workerMachineMaintCacheAt = Date.now();
-      }
-      if (machines.length) return machines;
-    } catch (e) {
-      console.warn('maint-history ensureMachines_', e);
-    }
-    return getMachines_();
+      return getMachines_();
+    })();
+
+    _inflightEnsureMachines = prom;
+    return prom;
   }
 
   async function ensureVehicles_(force) {
     const cached = getVehicles_();
     if (!force && cached.length) return cached;
     if (typeof callGAS !== 'function') return cached;
-    try {
-      const res = await callGAS('vehicle_loadAll', {}, 1, { jumpQueue: true, timeoutMs: 60000 });
-      const map = (res && res.vehicles) ? res.vehicles : {};
-      const arr = Object.keys(map).map(k => Object.assign({}, map[k], { id: map[k].id || k }));
-      window.pdlMobileVehicles = arr;
-      return usableVehicles_(arr);
-    } catch (e) {
-      console.warn('maint-history ensureVehicles_', e);
-    }
-    return cached;
+
+    if (_inflightEnsureVehicles && !force) return _inflightEnsureVehicles;
+
+    const prom = (async () => {
+      try {
+        const res = await callGAS('vehicle_loadAll', {}, 1, { jumpQueue: true, timeoutMs: 60000 });
+        const map = (res && res.vehicles) ? res.vehicles : {};
+        const arr = Object.keys(map).map(k => Object.assign({}, map[k], { id: map[k].id || k }));
+        window.pdlMobileVehicles = arr;
+        return usableVehicles_(arr);
+      } catch (e) {
+        console.warn('maint-history ensureVehicles_', e);
+      } finally {
+        _inflightEnsureVehicles = null;
+      }
+      return cached;
+    })();
+
+    _inflightEnsureVehicles = prom;
+    return prom;
   }
 
   async function fetchRecords_(force) {
-    if (!force && Array.isArray(window._workerMachineMaintenanceRecords) && window._workerMachineMaintCacheAt
-      && (Date.now() - window._workerMachineMaintCacheAt) < 5 * 60 * 1000) {
-      return window._workerMachineMaintenanceRecords.slice();
+    const cached = getCachedMaintRecords_();
+    const isFresh = window._workerMachineMaintCacheAt
+      && (Date.now() - window._workerMachineMaintCacheAt) < CACHE_FRESH_MS;
+    if (!force && isFresh && cached.length) {
+      return cached.slice();
     }
+    // ensureMachines_ が走っている場合はその完了を待つ（重複取得を回避）
+    if (_inflightEnsureMachines && !force) {
+      try {
+        await _inflightEnsureMachines;
+        const afterEnsure = getCachedMaintRecords_();
+        if (afterEnsure.length) return afterEnsure.slice();
+      } catch (e) { }
+    }
+    if (_inflightFetchRecords && !force) return _inflightFetchRecords;
+
     if (typeof window.fetchWorkerMachineMaintenanceRecords_ === 'function'
       && /worker\.html/i.test(location.pathname || location.href)) {
       const res = await window.fetchWorkerMachineMaintenanceRecords_({ force: !!force });
-      return (res && res.records) || [];
+      const recs = (res && res.records) || [];
+      if (recs.length) saveMaintRecordsCache_(recs);
+      return recs;
     }
-    let serverRecords = [];
-    try {
-      let res = null;
+
+    const prom = (async () => {
+      let serverRecords = [];
       try {
-        res = await callGAS('machine_loadMaintenanceRecords', {}, 1, { jumpQueue: true, timeoutMs: 60000 });
-      } catch (e1) {
-        res = await callGAS('machine_loadAll', {}, 1, { jumpQueue: true, timeoutMs: 60000 });
+        let res = null;
+        try {
+          res = await callGAS('machine_loadMaintenanceRecords', {}, 1, { jumpQueue: true, timeoutMs: 60000 });
+        } catch (e1) {
+          res = await callGAS('machine_loadAll', {}, 1, { jumpQueue: true, timeoutMs: 60000 });
+        }
+        if (res && Array.isArray(res.maintenanceRecords)) {
+          serverRecords = res.maintenanceRecords.slice();
+        }
+      } catch (e) {
+        console.warn('maint-history fetchRecords_', e);
+      } finally {
+        _inflightFetchRecords = null;
       }
-      if (res && Array.isArray(res.maintenanceRecords)) {
-        serverRecords = res.maintenanceRecords.slice();
+      if (serverRecords.length || !cached.length) {
+        saveMaintRecordsCache_(serverRecords);
+        return serverRecords;
       }
-    } catch (e) {
-      console.warn('maint-history fetchRecords_', e);
-    }
-    window._workerMachineMaintenanceRecords = serverRecords.slice();
-    window._workerMachineMaintCacheAt = Date.now();
-    return serverRecords;
+      return cached.slice();
+    })();
+
+    _inflightFetchRecords = prom;
+    return prom;
   }
 
   async function fetchInspectionRecords_(force) {
-    if (!force && Array.isArray(window._workerMachineInspectionRecords) && window._workerMachineInspCacheAt
-      && (Date.now() - window._workerMachineInspCacheAt) < 5 * 60 * 1000) {
-      return window._workerMachineInspectionRecords.slice();
+    const cached = getCachedInspRecords_();
+    const isFresh = window._workerMachineInspCacheAt
+      && (Date.now() - window._workerMachineInspCacheAt) < CACHE_FRESH_MS;
+    if (!force && isFresh && cached.length) {
+      return cached.slice();
     }
-    let serverRecords = [];
-    try {
-      if (typeof callGAS === 'function') {
-        const res = await callGAS('machine_loadInspectionRecords', { limit: 500 }, 1, { jumpQueue: true, timeoutMs: 30000 });
-        if (res && Array.isArray(res.records)) {
-          serverRecords = res.records.slice();
+    if (_inflightFetchInspRecords && !force) return _inflightFetchInspRecords;
+
+    const prom = (async () => {
+      let serverRecords = [];
+      try {
+        if (typeof callGAS === 'function') {
+          const res = await callGAS('machine_loadInspectionRecords', { limit: 500 }, 1, { jumpQueue: true, timeoutMs: 30000 });
+          if (res && Array.isArray(res.records)) {
+            serverRecords = res.records.slice();
+          }
         }
+      } catch (e) {
+        console.warn('maint-history fetchInspectionRecords_', e);
+      } finally {
+        _inflightFetchInspRecords = null;
       }
-    } catch (e) {
-      console.warn('maint-history fetchInspectionRecords_', e);
-    }
-    window._workerMachineInspectionRecords = serverRecords.slice();
-    window._workerMachineInspCacheAt = Date.now();
-    return serverRecords;
+      if (serverRecords.length || !cached.length) {
+        saveInspRecordsCache_(serverRecords);
+        return serverRecords;
+      }
+      return cached.slice();
+    })();
+
+    _inflightFetchInspRecords = prom;
+    return prom;
   }
 
   function photosHtml_(urls, size) {
@@ -912,13 +1037,15 @@
             <!-- 下段フッター: 点検履歴・整備履歴件数案内 ＆ 調和したマスタボタン -->
             <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 12px; background:${isVeh ? '#EDF5FD' : '#FFF9EE'}; border-top:1px solid ${isVeh ? '#E3F2FD' : '#FFECC7'}; gap:8px;">
               <div style="display:flex; align-items:center; gap:8px; font-size:12px; min-width:0; flex-wrap:wrap;">
-                <span style="font-weight:bold; color:${inspCount ? '#00695C' : '#888'}; white-space:nowrap;">
+                <span onclick="event.stopPropagation(); openWorkerMachineMaintHistoryForMachine_('${safeId}', 'insp')"
+                  style="font-weight:bold; color:${inspCount ? '#00695C' : '#888'}; white-space:nowrap; cursor:pointer; padding:2px 4px; border-radius:4px; background:${inspCount ? '#E0F2F1' : 'transparent'};" title="タップで点検履歴を表示">
                   📋 点検履歴 <b>${inspCount}</b> 件
                 </span>
-                <span style="font-weight:bold; color:${count ? (isVeh ? '#1565C0' : '#E65100') : '#888'}; white-space:nowrap;">
+                <span onclick="event.stopPropagation(); openWorkerMachineMaintHistoryForMachine_('${safeId}', 'maint')"
+                  style="font-weight:bold; color:${count ? (isVeh ? '#1565C0' : '#E65100') : '#888'}; white-space:nowrap; cursor:pointer; padding:2px 4px; border-radius:4px; background:${count ? (isVeh ? '#E3F2FD' : '#FFE0B2') : 'transparent'};" title="タップで整備履歴を表示">
                   🔧 整備履歴 <b>${count}</b> 件
                 </span>
-                <span style="font-size:11px; color:#888; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">（タップで履歴・記録）</span>
+                <span style="font-size:11px; color:#888; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">（タップで履歴切替）</span>
               </div>
               <button type="button" onclick="event.stopPropagation(); openMaintMachineMasterModal_('${safeId}', 'list')"
                 style="flex-shrink:0; padding:4px 10px; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:4px; box-shadow:0 1px 2px rgba(0,0,0,0.04);"
@@ -1090,6 +1217,86 @@
     modal.style.display = 'flex';
   }
 
+  function inspectionListHtml_(inspList, safeId) {
+    if (!inspList || !inspList.length) {
+      return `
+        <div style="padding:28px 16px; text-align:center; color:#777;">
+          <div style="font-size:32px; margin-bottom:8px;">📋</div>
+          <div style="font-weight:bold; color:#555; font-size:14px;">点検履歴はありません</div>
+          <div style="font-size:12px; color:#888; margin-top:4px;">日常点検を記録すると、ここに結果が表示されます。</div>
+        </div>
+      `;
+    }
+    return inspList.map((r, idx) => {
+      const isOk = (Number(r.abnormalCount) || 0) === 0 && (Number(r.maintCount) || 0) === 0;
+      const statusBadge = isOk
+        ? `<span style="padding:2px 8px; border-radius:10px; background:#E8F5E9; color:#2E7D32; border:1px solid #A5D6A7; font-size:11px; font-weight:bold;">✅ 異常なし</span>`
+        : `<span style="padding:2px 8px; border-radius:10px; background:#FFEBEE; color:#C62828; border:1px solid #EF9A9A; font-size:11px; font-weight:bold;">⚠️ 異常:${r.abnormalCount || 0}件 / 要整備:${r.maintCount || 0}件</span>`;
+      const hourMeterText = (r.hourMeter !== undefined && r.hourMeter !== null && String(r.hourMeter).trim() !== '')
+        ? `<span style="font-size:11px; color:#555; background:#f5f5f5; padding:2px 6px; border-radius:4px; border:1px solid #ddd;">⏱️ ${esc(String(r.hourMeter))}h</span>`
+        : '';
+      const inspectorText = r.inspector ? `👤 ${esc(r.inspector)}` : '';
+
+      const detailItems = Array.isArray(r.details) ? r.details : [];
+      const abnormalItems = detailItems.filter(d => d && (d.result === '×' || d.result === 'NG' || d.isAbnormal));
+      let detailsSummaryHtml = '';
+      if (abnormalItems.length) {
+        detailsSummaryHtml = `
+          <div style="margin-top:6px; padding:6px 8px; background:#FFF5F5; border-radius:6px; border:1px solid #FFCDD2; font-size:12px; color:#C62828;">
+            <b>【指摘箇所】</b>
+            ${abnormalItems.map(d => `<div>・${esc(d.category ? `[${d.category}] ` : '')}${esc(d.itemName || '')}: × 異常あり ${d.note ? `（${esc(d.note)}）` : ''}</div>`).join('')}
+          </div>
+        `;
+      } else if (detailItems.length) {
+        detailsSummaryHtml = `<div style="font-size:11px; color:#666; margin-top:4px;">全${detailItems.length}項目の点検完了（すべて正常）</div>`;
+      }
+
+      const commentHtml = r.comment
+        ? `<div style="font-size:12px; margin-top:6px; color:#333; background:#fafafa; padding:6px 8px; border-radius:6px; border:1px solid #eee;">💬 ${esc(r.comment)}</div>`
+        : '';
+
+      return `
+        <div style="border-bottom:1px solid #eee; padding:12px 4px; ${idx === 0 ? '' : 'border-top:1px dashed #eee;'}">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap;">
+            <div style="font-size:13px; font-weight:bold; color:#333; display:flex; align-items:center; gap:6px;">
+              <span>📅 ${esc(r.date || '-')}</span>
+              ${inspectorText ? `<span style="font-weight:normal; font-size:12px; color:#666;">${inspectorText}</span>` : ''}
+              ${hourMeterText}
+            </div>
+            <div>${statusBadge}</div>
+          </div>
+          ${detailsSummaryHtml}
+          ${commentHtml}
+        </div>
+      `;
+    }).join('');
+  }
+
+  window.switchMachineHistoryTab_ = function(tabName) {
+    const btnMaint = document.getElementById('maintTabBtn_maint');
+    const btnInsp = document.getElementById('maintTabBtn_insp');
+    const panelMaint = document.getElementById('maintTabContent_maint');
+    const panelInsp = document.getElementById('maintTabContent_insp');
+    const actionMaint = document.getElementById('maintActionBtn_maint');
+    const actionInsp = document.getElementById('maintActionBtn_insp');
+
+    if (tabName === 'insp') {
+      if (btnMaint) { btnMaint.style.background = '#f0f0f0'; btnMaint.style.color = '#666'; }
+      if (btnInsp) { btnInsp.style.background = '#00695C'; btnInsp.style.color = '#fff'; }
+      if (panelMaint) panelMaint.style.display = 'none';
+      if (panelInsp) panelInsp.style.display = 'block';
+      if (actionMaint) actionMaint.style.display = 'none';
+      if (actionInsp) actionInsp.style.display = 'flex';
+    } else {
+      if (btnMaint) { btnMaint.style.background = '#E65100'; btnMaint.style.color = '#fff'; }
+      if (btnInsp) { btnInsp.style.background = '#f0f0f0'; btnInsp.style.color = '#666'; }
+      if (panelMaint) panelMaint.style.display = 'block';
+      if (panelInsp) panelInsp.style.display = 'none';
+      if (actionMaint) actionMaint.style.display = 'flex';
+      if (actionInsp) actionInsp.style.display = 'none';
+    }
+  };
+
   async function openList_(opts) {
     const modal = document.getElementById('modal');
     const modalBody = document.getElementById('modalBody');
@@ -1106,38 +1313,74 @@
     showModal_(modal);
     const cachedMachines = getMachines_();
     const cachedVehicles = getVehicles_();
-    if ((cachedMachines.length || cachedVehicles.length) && !force) {
-      renderList_(window._workerMachineMaintenanceRecords || [], cachedMachines, cachedVehicles, false, window._workerMachineInspectionRecords || []);
+    const cachedRecords = getCachedMaintRecords_();
+    const cachedInspRecords = getCachedInspRecords_();
+
+    const hasAnyCache = (cachedMachines.length || cachedVehicles.length);
+    if (hasAnyCache && !force) {
+      // キャッシュから0ミリ秒で即座に表示！
+      renderList_(cachedRecords, cachedMachines, cachedVehicles, false, cachedInspRecords);
     } else {
-      modalBody.innerHTML = '<div style="text-align:center; padding:24px; font-weight:bold; color:#E65100;">機械履歴を読み込み中...</div>';
+      modalBody.innerHTML = '<div style="text-align:center; padding:36px 16px; font-weight:bold; color:#E65100; font-size:14px;"><div style="display:inline-block; width:28px; height:28px; border:3px solid #FFCC80; border-top-color:#E65100; border-radius:50%; animation:maintSpin 0.8s linear infinite; margin-bottom:12px;"></div><br>機械履歴を読み込み中...</div>';
     }
-    try {
-      const [machines, vehicles, records, inspRecords] = await Promise.all([
-        ensureMachines_(force),
-        ensureVehicles_(force),
-        fetchRecords_(force),
-        fetchInspectionRecords_(force)
-      ]);
+
+    const isMachinesFresh = window._maintHistoryMachinesLoadedAt && (Date.now() - window._maintHistoryMachinesLoadedAt) < CACHE_FRESH_MS;
+    const isMaintFresh = window._workerMachineMaintCacheAt && (Date.now() - window._workerMachineMaintCacheAt) < CACHE_FRESH_MS;
+    const isInspFresh = window._workerMachineInspCacheAt && (Date.now() - window._workerMachineInspCacheAt) < CACHE_FRESH_MS;
+
+    if (!force && hasAnyCache && isMachinesFresh && isMaintFresh && isInspFresh) {
+      return; // 全て新鮮ならバックグラウンド通信もスキップ（超高速）
+    }
+
+    const syncPromise = Promise.all([
+      ensureMachines_(force),
+      ensureVehicles_(force),
+      fetchRecords_(force),
+      fetchInspectionRecords_(force)
+    ]).then(([machines, vehicles, records, inspRecords]) => {
       if (modal.style.display === 'none') return;
-      renderList_(records, machines.length ? machines : cachedMachines, vehicles.length ? vehicles : cachedVehicles, false, inspRecords);
-    } catch (e) {
-      console.warn(e);
-      if (modal.style.display === 'none') return;
-      const msg = (e && e.message) ? String(e.message) : '読み込みに失敗しました';
-      modalBody.innerHTML = `<div style="padding:20px; color:#c62828; text-align:center;">${esc(msg)}<br>
-        <button type="button" onclick="openWorkerMachineMaintHistoryModal_({force:true})"
-          style="margin-top:12px; padding:10px 16px; border:none; border-radius:8px; background:#E65100; color:#fff; font-weight:bold;">再試行</button></div>`;
+      const isViewingList = document.getElementById('maintHistSearchInput') !== null;
+      if (isViewingList || !hasAnyCache) {
+        renderList_(records, machines.length ? machines : cachedMachines, vehicles.length ? vehicles : cachedVehicles, false, inspRecords);
+      }
+    }).catch(e => {
+      console.warn('maint-history sync error:', e);
+      if (!hasAnyCache && modal.style.display !== 'none') {
+        const msg = (e && e.message) ? String(e.message) : '読み込みに失敗しました';
+        modalBody.innerHTML = `<div style="padding:20px; color:#c62828; text-align:center;">${esc(msg)}<br>
+          <button type="button" onclick="openWorkerMachineMaintHistoryModal_({force:true})"
+            style="margin-top:12px; padding:10px 16px; border:none; border-radius:8px; background:#E65100; color:#fff; font-weight:bold;">再試行</button></div>`;
+      }
+    });
+
+    if (!hasAnyCache) {
+      await syncPromise;
     }
   }
 
-  async function openMachine_(machineId) {
+  async function openMachine_(machineId, defaultTab) {
     const modalBody = document.getElementById('modalBody');
     if (!modalBody) return;
     const id = String(machineId || '').trim();
     const safeId = id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const machines = await ensureMachines_(false);
-    const vehicles = await ensureVehicles_(false);
-    const machine = machines.concat(vehicles).find(m => m && (String(m.id) === id || String(m._rawVehId || '') === id)) || null;
+
+    let machines = getMachines_();
+    let vehicles = getVehicles_();
+    let records = getCachedMaintRecords_();
+    let inspRecords = getCachedInspRecords_();
+
+    let machine = machines.concat(vehicles).find(m => m && (String(m.id) === id || String(m._rawVehId || '') === id)) || null;
+
+    if (!machine) {
+      modalBody.innerHTML = '<div style="text-align:center; padding:32px; font-weight:bold; color:#E65100;">機械情報を読み込み中...</div>';
+      const [mRes, vRes] = await Promise.all([ensureMachines_(false), ensureVehicles_(false)]);
+      machines = mRes;
+      vehicles = vRes;
+      machine = machines.concat(vehicles).find(m => m && (String(m.id) === id || String(m._rawVehId || '') === id)) || null;
+      records = await fetchRecords_(false);
+      inspRecords = await fetchInspectionRecords_(false);
+    }
+
     const isVeh = !!(machine && (machine._maintKind === 'vehicle' || machine.isVehicle));
     const label = labelMachine_(machine) || id;
     const locInfo = resolveLocAndSign_(machine);
@@ -1148,15 +1391,23 @@
         return `<img src="${esc(u)}" alt="" loading="lazy" onclick="event.stopPropagation(); openLightbox('${safeU}')" title="タップで写真を拡大" style="width:64px; height:64px; object-fit:cover; border-radius:8px; border:1px solid ${isVeh ? '#90CAF9' : '#FFE0B2'}; background:#fff; cursor:zoom-in;">`;
       }).join('')}</div>`
       : `<div style="width:64px; height:64px; margin-right:10px; border-radius:8px; background:${isVeh ? '#E3F2FD' : '#FFF3E0'}; border:1px dashed ${isVeh ? '#90CAF9' : '#FFCC80'}; display:flex; align-items:center; justify-content:center; color:${isVeh ? '#1565C0' : '#FF9800'}; font-size:28px; flex-shrink:0;">${isVeh ? '🛻' : '🚜'}</div>`;
-    const records = await fetchRecords_(false);
+
     const rawVehId = machine && machine._rawVehId ? String(machine._rawVehId) : '';
     const list = (records || []).filter(r => String(r.machineId) === id || (rawVehId && String(r.machineId) === rawVehId))
       .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    const inspList = (inspRecords || []).filter(r => String(r.machineId) === id || (rawVehId && String(r.machineId) === rawVehId))
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+
     const curStatusLabel = locInfo.isMoved
       ? `${locInfo.curLocGroup}（⚠️ 移動中）`
       : (locInfo.isAtBase ? `${locInfo.curLocGroup}（✅ 定位置）` : locInfo.curLocGroup);
+
     const historyHtml = list.length === 0
-      ? '<p style="color:#666; text-align:center; padding:20px;">整備履歴はありません。</p>'
+      ? `<div style="padding:28px 16px; text-align:center; color:#777;">
+           <div style="font-size:32px; margin-bottom:8px;">🔧</div>
+           <div style="font-weight:bold; color:#555; font-size:14px;">整備履歴はありません</div>
+           <div style="font-size:12px; color:#888; margin-top:4px;">整備・修理を記録すると、ここに履歴が表示されます。</div>
+         </div>`
       : list.map((r) => `
           <div style="border-bottom:1px solid #eee; padding:12px 0;">
             <div style="font-size:12px; color:#888;">${esc(r.date)}</div>
@@ -1166,13 +1417,17 @@
             ${photosHtml_(normPhotos_(r), 88)}
           </div>
         `).join('');
+
+    let activeTab = defaultTab || (inspList.length > 0 && list.length === 0 ? 'insp' : 'maint');
+    const canInspRecord = (typeof window.openInspectionRecord === 'function');
+
     modalBody.innerHTML = `
       <style>
         .maint-chips-scroll::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
         .maint-chips-scroll { -ms-overflow-style: none !important; scrollbar-width: none !important; }
       </style>
       <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #E65100; padding-bottom:8px; margin-bottom:10px;">
-        <h3 style="margin:0; color:#E65100; font-size:16px;">📋 整備履歴（${list.length}件）</h3>
+        <h3 style="margin:0; color:#E65100; font-size:16px;">機械履歴詳細（${esc(label)}）</h3>
         <span onclick="closeWorkerMachineMaintHistoryModal_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
       </div>
       <div style="margin:0 0 12px;">
@@ -1203,12 +1458,49 @@
           </button>
         </div>
       </div>
-      <div style="max-height:44vh; overflow-y:auto; border:1px solid #eee; border-radius:8px; padding:10px; margin-bottom:12px;">
+
+      <!-- 履歴タブ切り替えバー -->
+      <div style="display:flex; gap:6px; margin-bottom:8px; border-bottom:2px solid #E65100; padding-bottom:6px;">
+        <button type="button" id="maintTabBtn_maint" onclick="switchMachineHistoryTab_('maint')"
+          style="flex:1; padding:9px 8px; border-radius:8px 8px 0 0; border:none; font-size:13px; font-weight:bold; cursor:pointer; background:${activeTab === 'maint' ? '#E65100' : '#f0f0f0'}; color:${activeTab === 'maint' ? '#fff' : '#666'}; transition:all 0.15s; display:flex; align-items:center; justify-content:center; gap:4px;">
+          <span>🔧 整備履歴（<b>${list.length}</b>件）</span>
+        </button>
+        <button type="button" id="maintTabBtn_insp" onclick="switchMachineHistoryTab_('insp')"
+          style="flex:1; padding:9px 8px; border-radius:8px 8px 0 0; border:none; font-size:13px; font-weight:bold; cursor:pointer; background:${activeTab === 'insp' ? '#00695C' : '#f0f0f0'}; color:${activeTab === 'insp' ? '#fff' : '#666'}; transition:all 0.15s; display:flex; align-items:center; justify-content:center; gap:4px;">
+          <span>📋 点検履歴（<b>${inspList.length}</b>件）</span>
+        </button>
+      </div>
+
+      <!-- 整備履歴パネル -->
+      <div id="maintTabContent_maint" style="display:${activeTab === 'maint' ? 'block' : 'none'}; max-height:42vh; overflow-y:auto; border:1px solid #eee; border-radius:8px; padding:10px; margin-bottom:10px; background:#fff;">
         ${historyHtml}
       </div>
+
+      <!-- 点検履歴パネル -->
+      <div id="maintTabContent_insp" style="display:${activeTab === 'insp' ? 'block' : 'none'}; max-height:42vh; overflow-y:auto; border:1px solid #eee; border-radius:8px; padding:10px; margin-bottom:10px; background:#fff;">
+        ${inspectionListHtml_(inspList, safeId)}
+      </div>
+
+      <!-- アクションボタン（新規記録） -->
+      <div style="display:flex; gap:8px; margin-bottom:10px;">
+        <button type="button" onclick="openWorkerMachineMaintAdd_('${safeId}')"
+          id="maintActionBtn_maint"
+          style="flex:1; padding:10px 14px; background:#FFF3E0; color:#E65100; border:1px solid #FFB74D; border-radius:8px; font-size:13px; font-weight:bold; cursor:pointer; display:${activeTab === 'maint' ? 'flex' : 'none'}; align-items:center; justify-content:center; gap:6px;">
+          <span>➕ この機械の整備・修理を記録する</span>
+        </button>
+        ${canInspRecord ? `
+        <button type="button" onclick="openInspectionRecord('${safeId}')"
+          id="maintActionBtn_insp"
+          style="flex:1; padding:10px 14px; background:#E0F2F1; color:#00695C; border:1px solid #80CBC4; border-radius:8px; font-size:13px; font-weight:bold; cursor:pointer; display:${activeTab === 'insp' ? 'flex' : 'none'}; align-items:center; justify-content:center; gap:6px;">
+          <span>➕ この機械の点検を記録する</span>
+        </button>
+        ` : ''}
+      </div>
+
+      <!-- フッター戻る・閉じるボタン -->
       <div style="display:flex; gap:8px;">
         <button type="button" onclick="openWorkerMachineMaintHistoryModal_()"
-          style="flex:1; padding:12px; background:#FFF3E0; color:#E65100; border:1px solid #FFB74D; border-radius:8px; font-weight:bold; cursor:pointer;">← 一覧へ戻る</button>
+          style="flex:1; padding:12px; background:#f5f5f5; color:#555; border:1px solid #ddd; border-radius:8px; font-weight:bold; cursor:pointer;">← 一覧へ戻る</button>
         <button type="button" onclick="closeWorkerMachineMaintHistoryModal_()"
           style="flex:1; padding:12px; background:#ccc; color:#333; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">閉じる</button>
       </div>
@@ -1658,6 +1950,38 @@
       }
     }
   }
+
+  window.openWorkerMachineMaintAdd_ = function(machineId) {
+    if (typeof window.directOpenForm === 'function') {
+      closeModal_();
+      window.directOpenForm('', 'work');
+      setTimeout(() => {
+        if (typeof window.populateMaintenanceMachineSelect === 'function') {
+          window.populateMaintenanceMachineSelect(machineId);
+        }
+      }, 300);
+      return;
+    }
+    if (typeof customAlert === 'function') {
+      customAlert('整備・修理の記録は、作業画面（日報）の作業登録フォームより行ってください。');
+    } else {
+      alert('整備・修理の記録は、作業画面（日報）の作業登録フォームより行ってください。');
+    }
+  };
+
+  window.clearMachineHistoryCache_ = function() {
+    window._workerMachineMaintenanceRecords = null;
+    window._workerMachineMaintCacheAt = 0;
+    window._workerMachineInspectionRecords = null;
+    window._workerMachineInspCacheAt = 0;
+    window._maintHistoryMachinesLoadedAt = 0;
+    try {
+      localStorage.removeItem(STORAGE_KEY_MAINT_RECS);
+      localStorage.removeItem(STORAGE_KEY_INSP_RECS);
+      localStorage.removeItem(STORAGE_KEY_MAINT_TIME);
+      localStorage.removeItem(STORAGE_KEY_INSP_TIME);
+    } catch (e) { }
+  };
 
   window.hubOfWorkerMaintMachine_ = hubOf_;
   window.resolveWorkerMachineMaintLocInfo_ = resolveLocAndSign_;

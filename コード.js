@@ -44,6 +44,9 @@ const API_ACTIONS = {
   "listUsersForAdmin": function (p) { return listUsersForAdmin(p); },
   "updateUserRole": function (p) { return updateUserRole(p); },
   "getInitData": function (p) { return getInitData(p || {}); },
+  "getViewpoints": function (p) { return getViewpoints(p); },
+  "saveViewpoint": function (p) { return saveViewpoint_(p); },
+  "deleteViewpoint": function (p) { return deleteViewpoint_(p); },
   "getMapDelta": function (p) { return getMapDelta(p || {}); },
   "getDeliveryDestinations": function (p) { return getDeliveryDestinations(); },
   "saveDeliveryDestination": function (p) { return saveDeliveryDestination(p); },
@@ -1668,6 +1671,9 @@ function getInitData(opts) {
   const pdl = {
     locations: locationDetails.map(l => l.name),
     locationDetails: locationDetails,
+    viewpoints: (function () {
+      try { return readViewpointMasterList_(); } catch (e) { return []; }
+    })(),
     workCategories: Array.from(new Set(getCol(['作業カテゴリマスタ'], 0))).length > 0 ? Array.from(new Set(getCol(['作業カテゴリマスタ'], 0))) : [],
     conditions: getCol(['圃場設定マスタ', '圃場条件'], 1),
     statuses: getCol(['圃場設定マスタ', '稼働状況'], 2),
@@ -2320,6 +2326,152 @@ function readLocationMasterDetails_() {
     });
   }
   return results;
+}
+
+// =========================================
+// 視野地点マスタ（拠点別・視野ブックマーク）
+// =========================================
+function ensureViewpointMasterSheet_() {
+  const ss = TENANT_SS;
+  if (!ss) return null;
+  let sheet = ss.getSheetByName('視野地点マスタ');
+  if (!sheet) {
+    sheet = ss.insertSheet('視野地点マスタ');
+    sheet.appendRow(['ID', '拠点名', '地点名', '緯度', '経度', 'ズーム', '表示順', '更新日時', '更新者']);
+    sheet.getRange(1, 1, 1, 9).setFontWeight('bold').setBackground('#e0e0e0');
+    return sheet;
+  }
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
+  if (headers.indexOf('拠点名') === -1 || headers.indexOf('ID') === -1) {
+    sheet.insertRowBefore(1);
+    sheet.getRange(1, 1, 1, 9).setValues([['ID', '拠点名', '地点名', '緯度', '経度', 'ズーム', '表示順', '更新日時', '更新者']]).setFontWeight('bold').setBackground('#e0e0e0');
+  }
+  return sheet;
+}
+
+function readViewpointMasterList_() {
+  const sheet = ensureViewpointMasterSheet_();
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h || '').trim());
+  const idxId = headers.indexOf('ID');
+  const idxLoc = headers.indexOf('拠点名') >= 0 ? headers.indexOf('拠点名') : headers.indexOf('拠点');
+  const idxName = headers.indexOf('地点名') >= 0 ? headers.indexOf('地点名') : headers.indexOf('名前');
+  const idxLat = headers.indexOf('緯度');
+  const idxLng = headers.indexOf('経度');
+  const idxZoom = headers.indexOf('ズーム');
+  const idxOrder = headers.indexOf('表示順');
+  const idxUpdatedAt = headers.indexOf('更新日時');
+  const idxUpdatedBy = headers.indexOf('更新者');
+
+  const results = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const id = idxId >= 0 ? String(row[idxId] || '').trim() : '';
+    const loc = idxLoc >= 0 ? String(row[idxLoc] || '').trim() : '';
+    const name = idxName >= 0 ? String(row[idxName] || '').trim() : '';
+    const lat = idxLat >= 0 ? Number(row[idxLat]) : NaN;
+    const lng = idxLng >= 0 ? Number(row[idxLng]) : NaN;
+    if (!name || isNaN(lat) || isNaN(lng)) continue;
+    results.push({
+      id: id || ('vp_' + i),
+      location: loc,
+      name: name,
+      lat: lat,
+      lng: lng,
+      zoom: (idxZoom >= 0 && Number(row[idxZoom])) ? Number(row[idxZoom]) : 16,
+      sortOrder: (idxOrder >= 0 && !isNaN(Number(row[idxOrder]))) ? Number(row[idxOrder]) : i,
+      updatedAt: idxUpdatedAt >= 0 ? String(row[idxUpdatedAt] || '') : '',
+      updatedBy: idxUpdatedBy >= 0 ? String(row[idxUpdatedBy] || '') : ''
+    });
+  }
+  results.sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
+  return results;
+}
+
+function getViewpoints(params) {
+  const all = readViewpointMasterList_();
+  const loc = params && params.location ? String(params.location).trim() : '';
+  if (loc) {
+    return { success: true, viewpoints: all.filter(v => String(v.location || '').trim() === loc) };
+  }
+  return { success: true, viewpoints: all };
+}
+
+function saveViewpoint_(params) {
+  const vp = params && params.viewpoint;
+  if (!vp) return { success: false, message: '視野データが指定されていません' };
+  const loc = String(vp.location || '').trim();
+  const name = String(vp.name || '').trim();
+  const lat = Number(vp.lat);
+  const lng = Number(vp.lng);
+  const zoom = Number(vp.zoom) || 16;
+  const sortOrder = !isNaN(Number(vp.sortOrder)) ? Number(vp.sortOrder) : 0;
+  const userName = String(params.userName || '管理者').trim();
+
+  if (!name) return { success: false, message: '地点名を入力してください' };
+  if (isNaN(lat) || isNaN(lng)) return { success: false, message: '有効な緯度・経度を指定してください' };
+
+  const sheet = ensureViewpointMasterSheet_();
+  if (!sheet) return { success: false, message: '視野地点マスタシートを開けません' };
+
+  const lastRow = sheet.getLastRow();
+  const id = String(vp.id || '').trim() || ('vp_' + new Date().getTime());
+  const now = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
+
+  let targetRow = -1;
+  if (lastRow >= 2) {
+    const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < ids.length; i++) {
+      if (String(ids[i][0] || '').trim() === id) {
+        targetRow = i + 2;
+        break;
+      }
+    }
+  }
+
+  const rowData = [id, loc, name, lat, lng, zoom, sortOrder, now, userName];
+  if (targetRow > 0) {
+    sheet.getRange(targetRow, 1, 1, 9).setValues([rowData]);
+  } else {
+    sheet.appendRow(rowData);
+  }
+  SpreadsheetApp.flush();
+
+  return {
+    success: true,
+    viewpoint: {
+      id: id,
+      location: loc,
+      name: name,
+      lat: lat,
+      lng: lng,
+      zoom: zoom,
+      sortOrder: sortOrder,
+      updatedAt: now,
+      updatedBy: userName
+    }
+  };
+}
+
+function deleteViewpoint_(params) {
+  const id = String((params && params.id) || '').trim();
+  if (!id) return { success: false, message: '削除対象のIDがありません' };
+  const sheet = ensureViewpointMasterSheet_();
+  if (!sheet) return { success: false, message: '視野地点マスタシートを開けません' };
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { success: true };
+  const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0] || '').trim() === id) {
+      sheet.deleteRow(i + 2);
+      SpreadsheetApp.flush();
+      return { success: true };
+    }
+  }
+  return { success: true };
 }
 
 function ensureMaintenanceContentMasterSheet_() {
