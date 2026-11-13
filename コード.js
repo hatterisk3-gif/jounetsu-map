@@ -1983,6 +1983,16 @@ function getInitData(opts) {
   try {
     resolveNoukiMachinesHubLocation_(pdl.machines, polygons, pdl.locations);
   } catch (locErr) { }
+  try {
+    const vRes = vehicle_loadAll();
+    const vMap = (vRes && vRes.vehicles) ? vRes.vehicles : {};
+    pdl.vehicles = Object.keys(vMap).map(function(id) {
+      return Object.assign({ id: id }, vMap[id]);
+    });
+  } catch (vehErr) {
+    console.warn('車両マスタ読込スキップ:', vehErr);
+    pdl.vehicles = [];
+  }
   let prodCategories = [];
   try {
     prodCategories = getProdMgmtCategories();

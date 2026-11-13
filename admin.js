@@ -338,7 +338,7 @@ window.onLocationCityChange = function (sel) {
     const prefix = locationFormPrefix_(sel);
     syncLocationCityCustomVisibility(prefix);
 };
-let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlPesticides = [], pdlFertilizers = [], pdlCropChemPlans = [], pdlCostItems = [], pdlCropCostPlans = [], pdlCropWorkPlans = [], pdlNurseryLocations = [], pdlCropCultSettings = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [], pdlHitchTypes = [], pdlContainers = [], pdlContainerNames = [], pdlContentUnits = [];
+let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlPesticides = [], pdlFertilizers = [], pdlCropChemPlans = [], pdlCostItems = [], pdlCropCostPlans = [], pdlCropWorkPlans = [], pdlNurseryLocations = [], pdlCropCultSettings = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [], pdlHitchTypes = [], pdlContainers = [], pdlContainerNames = [], pdlContentUnits = [], pdlInspections = [];
 let mapInitPromise, resolveMapInit;
 mapInitPromise = new Promise((resolve) => { resolveMapInit = resolve; });
 
@@ -1022,7 +1022,9 @@ function persistAdminInitCache_() {
                 machineTypes: pdlMachineTypes,
                 machineGroups: pdlMachineGroups,
                 hitchTypes: pdlHitchTypes,
-                machines: window.pdlMachines || (cached.pdl && cached.pdl.machines) || []
+                inspections: pdlInspections,
+                machines: window.pdlMachines || (cached.pdl && cached.pdl.machines) || [],
+                vehicles: window.pdlMobileVehicles || (cached.pdl && cached.pdl.vehicles) || []
             }
         };
         localStorage.setItem('pMapAdminInitData', JSON.stringify(data));
@@ -1525,6 +1527,7 @@ function applyMasterServerList_(type, updatedList) {
     else if (type === 'machineType') pdlMachineTypes = updatedList;
     else if (type === 'machineGroup' || type === 'machineCategory') pdlMachineGroups = updatedList;
     else if (type === 'hitchType') pdlHitchTypes = updatedList;
+    else if (type === 'inspection') pdlInspections = updatedList || [];
 }
 
 function applyOptimisticMasterChange_(type, act, value) {
@@ -1577,6 +1580,7 @@ function applyOptimisticMasterChange_(type, act, value) {
     else if (type === 'machineType') wrap(() => pdlMachineTypes, v => { pdlMachineTypes = v; }, nameOf);
     else if (type === 'machineGroup' || type === 'machineCategory') wrap(() => pdlMachineGroups, v => { pdlMachineGroups = v; }, nameOf);
     else if (type === 'hitchType') wrap(() => pdlHitchTypes, v => { pdlHitchTypes = v; }, nameOf);
+    else if (type === 'inspection') wrap(() => pdlInspections, v => { pdlInspections = v; }, item => item.id || (item.machineType + '|' + item.inspectionCategory + '|' + (item.item || item.name)));
 }
 
 function saveAdminCredentials(id, pw, name) {
@@ -2245,6 +2249,11 @@ function renderInitData(data, opts) {
         pdlMachineTypes = data.pdl.machineTypes || ["トラクター", "ドローン"];
         pdlMachineGroups = data.pdl.machineGroups || ["圃場", "出荷"];
         pdlHitchTypes = data.pdl.hitchTypes || [];
+        pdlInspections = keepIfLight_(data.pdl.inspections, pdlInspections);
+        if (Array.isArray(data.pdl.vehicles)) {
+            window.setAdminVehicleList_(data.pdl.vehicles);
+            window._adminVehiclesLoaded = true;
+        }
         if ((!data.pdl.machineGroups || !data.pdl.machineGroups.length) && Array.isArray(data.pdl.machineCategories)
             && data.pdl.machineCategories.length && !data.pdl.machineCategories.some(c => c === 'トラクター' || c === 'ドローン')) {
             pdlMachineGroups = data.pdl.machineCategories;
@@ -2370,7 +2379,7 @@ window.openMasterModal = () => {
 window.getMasterSectionsTargetEl_ = () => {
     const equip = !!window._equipmentManageActive;
     const tab = window._equipmentManageTab;
-    if (equip && (tab === 'machine' || tab === 'tool' || currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool')) {
+    if (equip && (tab === 'machine' || tab === 'tool' || tab === 'inspection' || currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool' || currentActiveMasterType === 'inspection')) {
         const el = document.getElementById('equipmentManageBody');
         if (el) return el;
     }
@@ -2399,22 +2408,23 @@ window.closeEquipmentManageModal = (opts) => {
     const body = document.getElementById('equipmentManageBody');
     if (body) body.innerHTML = '';
     if (!(opts && opts.keepMaster)) {
-        if (currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool') {
+        if (currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool' || currentActiveMasterType === 'inspection') {
             currentActiveMasterType = null;
         }
     }
 };
 
 window.switchEquipmentManageTab = (tab) => {
-    const next = (tab === 'vehicle' || tab === 'tool') ? tab : 'machine';
+    const next = (tab === 'vehicle' || tab === 'tool' || tab === 'inspection') ? tab : 'machine';
     window._equipmentManageTab = next;
     window._equipmentManageActive = true;
     const styles = {
         machine: { on: '#43A047', bg: '#e8f5e9', fg: '#2e7d32' },
         vehicle: { on: '#FB8C00', bg: '#fff3e0', fg: '#e65100' },
-        tool: { on: '#5C6BC0', bg: '#e8eaf6', fg: '#3949ab' }
+        tool: { on: '#5C6BC0', bg: '#e8eaf6', fg: '#3949ab' },
+        inspection: { on: '#00897B', bg: '#e0f2f1', fg: '#00695c' }
     };
-    ['machine', 'vehicle', 'tool'].forEach(t => {
+    ['machine', 'vehicle', 'tool', 'inspection'].forEach(t => {
         const btn = document.getElementById('equipmentTab_' + t);
         if (!btn) return;
         const active = t === next;
@@ -2428,7 +2438,7 @@ window.switchEquipmentManageTab = (tab) => {
         renderEquipmentVehiclePanel_();
         return;
     }
-    openMasterDetail(next === 'tool' ? 'tool' : 'machine');
+    openMasterDetail(next === 'tool' ? 'tool' : (next === 'inspection' ? 'inspection' : 'machine'));
 };
 
 window.getAdminVehicleList_ = () => {
@@ -2456,12 +2466,18 @@ window.adminVehicleDisplayName_ = (v) => {
 };
 
 window.ensureAdminVehiclesLoaded_ = async () => {
-    if (Array.isArray(window.pdlMobileVehicles) && window.pdlMobileVehicles.length) return window.pdlMobileVehicles;
+    if (window._adminVehiclesLoaded && Array.isArray(window.pdlMobileVehicles)) return window.pdlMobileVehicles;
+    if (Array.isArray(window.pdlMobileVehicles) && window.pdlMobileVehicles.length) {
+        window._adminVehiclesLoaded = true;
+        return window.pdlMobileVehicles;
+    }
     try {
         const res = await callGAS('vehicle_loadAll', {});
         const map = (res && res.vehicles) ? res.vehicles : {};
         const arr = Object.keys(map).map(id => Object.assign({ id }, map[id]));
         window.setAdminVehicleList_(arr);
+        window._adminVehiclesLoaded = true;
+        persistAdminInitCache_();
         return arr;
     } catch (e) {
         console.warn('vehicle_loadAll failed', e);
@@ -2473,8 +2489,12 @@ window.ensureAdminVehiclesLoaded_ = async () => {
 window.renderEquipmentVehiclePanel_ = async (editVehicle) => {
     const body = document.getElementById('equipmentManageBody');
     if (!body) return;
-    body.innerHTML = '<div style="padding:24px; text-align:center; color:#888;">車両データを読み込み中...</div>';
-    await ensureAdminVehiclesLoaded_();
+    const hasLoaded = (window._adminVehiclesLoaded && Array.isArray(window.pdlMobileVehicles))
+        || (Array.isArray(window.pdlMobileVehicles) && window.pdlMobileVehicles.length > 0);
+    if (!hasLoaded) {
+        body.innerHTML = '<div style="padding:24px; text-align:center; color:#888;">車両データを読み込み中...</div>';
+        await ensureAdminVehiclesLoaded_();
+    }
     const list = window.getAdminVehicleList_().slice().sort((a, b) =>
         String(a.plateNumber || '').localeCompare(String(b.plateNumber || ''), 'ja'));
     const editing = editVehicle || null;
@@ -2687,6 +2707,8 @@ window.saveAdminVehicle = async () => {
         if (idx >= 0) list[idx] = Object.assign({}, list[idx], saved);
         else list.push(saved);
         window.setAdminVehicleList_(list);
+        window._adminVehiclesLoaded = true;
+        persistAdminInitCache_();
         window._adminVehPhotoB64 = '';
         showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
         renderEquipmentVehiclePanel_();
@@ -2703,6 +2725,8 @@ window.deleteAdminVehicle = async (id) => {
     try {
         await callGAS('vehicle_deleteVehicle', { id });
         window.setAdminVehicleList_(window.getAdminVehicleList_().filter(x => String(x.id) !== String(id)));
+        window._adminVehiclesLoaded = true;
+        persistAdminInitCache_();
         showAdminSyncToast('☁️ 削除しました', 'ok');
         renderEquipmentVehiclePanel_();
     } catch (e) {
@@ -2931,6 +2955,817 @@ window.getMachineGroupOptionsHtml = (selected) => {
 // 互換エイリアス
 window.getMachineCategoryOptionsHtml = window.getMachineGroupOptionsHtml;
 
+window.parseAdminInspectionTargets_ = (val) => {
+    if (Array.isArray(val)) return [...new Set(val.map(s => String(s || '').trim()).filter(Boolean))];
+    return [...new Set(String(val || '').split(/[,、]/).map(s => s.trim()).filter(Boolean))];
+};
+
+window.getAdminInspectionTargetGroups_ = () => {
+    const macTypes = [...new Set([
+        ...(pdlMachineTypes || []),
+        ...((window.pdlMachines || []).map(m => m.type).filter(Boolean)),
+        'トラクター', 'コンバイン', '田植機', '定植機', '管理機', '草刈機', '動噴', '散布機', 'ドローン', 'マルチャー', '畝立て機'
+    ])].filter(Boolean);
+    const vehicleUses = ['自動車', '作業機'];
+    const vehTypes = [...new Set([
+        ...(window._adminVehicleTypes || ['軽トラ', '軽バン', '軽四', '普通車', 'トラック']),
+        ...((window.getAdminVehicleList_ ? window.getAdminVehicleList_() : []).map(v => v.vehicleType || v.type).filter(Boolean))
+    ])].filter(Boolean).filter(vt => !macTypes.includes(vt) && !vehicleUses.includes(vt));
+    return { macTypes, vehicleUses, vehTypes };
+};
+
+window.buildAdminInspectionTargetMultiSelectHtml_ = (context, selected) => {
+    const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;');
+    const prefix = context === 'edit' ? 'edit' : 'add';
+    const selectedList = window.parseAdminInspectionTargets_(selected);
+    const selectedSet = new Set(selectedList);
+    const { macTypes, vehicleUses, vehTypes } = window.getAdminInspectionTargetGroups_();
+    const knownAll = new Set([...macTypes, ...vehicleUses, ...vehTypes]);
+    const extraTargets = selectedList.filter(t => !knownAll.has(t));
+
+    const renderGroup = (title, items) => {
+        if (!items.length) return '';
+        const chips = items.map(t => {
+            const isChecked = selectedSet.has(t);
+            const bg = isChecked ? '#e0f2f1' : '#fff';
+            const border = isChecked ? '#00897b' : '#d0d7de';
+            const color = isChecked ? '#00695c' : '#333';
+            const fw = isChecked ? 'bold' : 'normal';
+            return `<label style="display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:14px; border:1px solid ${border}; background:${bg}; color:${color}; font-size:12px; font-weight:${fw}; cursor:pointer; user-select:none; transition:all 0.12s;">
+                <input type="checkbox" class="${prefix}-insp-target-cb" value="${esc(t)}" ${isChecked ? 'checked' : ''} onchange="onAdminInspectionTargetCheckboxChange_('${prefix}')" style="margin:0; accent-color:#00897b; cursor:pointer;">
+                <span>${esc(t)}</span>
+            </label>`;
+        }).join('');
+        return `<div style="margin-bottom:6px;">
+            <div style="font-size:11px; font-weight:bold; color:#555; margin-bottom:4px;">${title}</div>
+            <div style="display:flex; flex-wrap:wrap; gap:5px;">${chips}</div>
+        </div>`;
+    };
+
+    const countBadgeColor = selectedList.length > 0 ? '#00796b' : '#c62828';
+    const countBadgeBg = selectedList.length > 0 ? '#e0f2f1' : '#ffebee';
+
+    return `
+        <input type="hidden" id="${prefix}_insp_mac_type" value="${esc(selectedList.join(','))}">
+        <div style="border:1px solid #ccc; border-radius:6px; background:#fafafa; padding:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; padding-bottom:5px; border-bottom:1px solid #e5e5e5;">
+                <span id="${prefix}_insp_mac_count" style="font-size:11px; font-weight:bold; padding:2px 8px; border-radius:10px; background:${countBadgeBg}; color:${countBadgeColor};">
+                    ${selectedList.length > 0 ? `選択中: ${selectedList.length}件` : '未選択（1つ以上選択）'}
+                </span>
+                <div style="display:flex; gap:4px;">
+                    <button type="button" onclick="toggleAllAdminInspectionTargets_('${prefix}', true)" style="font-size:11px; padding:2px 7px; border-radius:4px; border:1px solid #bbb; background:#fff; cursor:pointer;">全選択</button>
+                    <button type="button" onclick="toggleAllAdminInspectionTargets_('${prefix}', false)" style="font-size:11px; padding:2px 7px; border-radius:4px; border:1px solid #bbb; background:#fff; cursor:pointer;">全解除</button>
+                </div>
+            </div>
+            <div style="max-height:175px; overflow-y:auto; padding-right:2px;">
+                ${renderGroup('🚜 機械カテゴリ（すべての機械）', macTypes)}
+                ${renderGroup('🚚 用途別分類（車両）', vehicleUses)}
+                ${renderGroup('🛻 ナンバー区分（車両）', vehTypes)}
+                ${renderGroup('📌 その他の対象', extraTargets)}
+            </div>
+        </div>
+    `;
+};
+
+window.onAdminInspectionTargetCheckboxChange_ = (context) => {
+    const prefix = context === 'edit' ? 'edit' : 'add';
+    const cbs = document.querySelectorAll(`.${prefix}-insp-target-cb`);
+    const selected = [];
+    cbs.forEach(cb => {
+        const lbl = cb.closest('label');
+        if (cb.checked) {
+            selected.push(String(cb.value || '').trim());
+            if (lbl) {
+                lbl.style.background = '#e0f2f1';
+                lbl.style.borderColor = '#00897b';
+                lbl.style.color = '#00695c';
+                lbl.style.fontWeight = 'bold';
+            }
+        } else {
+            if (lbl) {
+                lbl.style.background = '#fff';
+                lbl.style.borderColor = '#d0d7de';
+                lbl.style.color = '#333';
+                lbl.style.fontWeight = 'normal';
+            }
+        }
+    });
+    const hidden = document.getElementById(`${prefix}_insp_mac_type`);
+    if (hidden) hidden.value = selected.join(',');
+
+    const countEl = document.getElementById(`${prefix}_insp_mac_count`);
+    if (countEl) {
+        if (selected.length > 0) {
+            countEl.textContent = `選択中: ${selected.length}件`;
+            countEl.style.background = '#e0f2f1';
+            countEl.style.color = '#00796b';
+        } else {
+            countEl.textContent = '未選択（1つ以上選択）';
+            countEl.style.background = '#ffebee';
+            countEl.style.color = '#c62828';
+        }
+    }
+    if (typeof window.onAdminInspectionTargetChange_ === 'function') {
+        window.onAdminInspectionTargetChange_(prefix);
+    }
+};
+
+window.toggleAllAdminInspectionTargets_ = (context, checked) => {
+    const prefix = context === 'edit' ? 'edit' : 'add';
+    document.querySelectorAll(`.${prefix}-insp-target-cb`).forEach(cb => {
+        cb.checked = !!checked;
+    });
+    window.onAdminInspectionTargetCheckboxChange_(prefix);
+};
+
+// ══════════════════════════════════════════════════════════════
+// 📋 対象別 点検カテゴリ管理ヘルパー
+// ══════════════════════════════════════════════════════════════
+const DEFAULT_TARGET_INSP_CATEGORIES = {
+    'トラクター': ['エンジン部', '走行部・タイヤ/クローラ', '油圧・昇降部', 'PTO・連結部', '電装・操作・安全'],
+    'コンバイン': ['エンジン部', '走行・クローラ部', '刈取部', '脱穀・選別部', '排ワラ・カッター部', '電装・安全'],
+    '田植機': ['エンジン部', '走行・車輪部', '植付部', '苗のせ台・送出部', '油圧・昇降部'],
+    '管理機': ['エンジン部', '走行・車輪部', 'ロータリー・作業部', 'ベルト・クラッチ', '操作・安全レバー'],
+    '草刈機': ['エンジン部', '刈刃・ローター部', '走行部', '飛散防止カバー', '操作・安全装置'],
+    '動噴': ['エンジン・モーター部', 'ポンプ部', 'ホース・ノズル', '圧力計・調圧弁', '薬液タンク'],
+    '散布機': ['エンジン・動力部', '散布部・シャッター', 'タンク・ノズル', '配管・フィルター'],
+    'ドローン': ['機体・フレーム', 'モーター・ESC・プロペラ', '散布装置・ノズル', 'バッテリー・充電器', '送信機・通信'],
+    '自動車': ['エンジンルーム', '足回り・タイヤ', 'ブレーキ', '灯火・電装', '車体・車内', '定期点検'],
+    '作業機': ['連結・ヒッチ部', '駆動部・チェーン/ギア', '刃・作業部', '油圧・配管', '安全カバー・ボルト'],
+    '軽トラ': ['エンジンルーム', '足回り・タイヤ', 'ブレーキ', '灯火・電装', '荷台・アオリ', '車内・計器'],
+    '軽バン': ['エンジンルーム', '足回り・タイヤ', 'ブレーキ', '灯火・電装', '荷室・ドア', '車内・計器'],
+    'トラック': ['エンジンルーム', 'タイヤ・ホイール', 'ブレーキ・エアー', '灯火・反射器', '荷台・油圧', '車内・計器']
+};
+const DEFAULT_COMMON_INSP_CATEGORIES = ['外観・ボルト緩み', '駆動・可動部', '給油・グリスアップ', '安全装置・機能'];
+
+window.getAdminTargetInspectionCategoryCounts_ = (target) => {
+    const tFilters = target ? window.parseAdminInspectionTargets_(target) : [];
+    const counts = {};
+    (pdlInspections || []).forEach(i => {
+        const targets = window.parseAdminInspectionTargets_(i.machineType);
+        const c = String(i.inspectionCategory || '').trim();
+        if (!c) return;
+        if (!tFilters.length || targets.some(t => tFilters.includes(t))) {
+            counts[c] = (counts[c] || 0) + 1;
+        }
+    });
+    return counts;
+};
+
+window.getAdminTargetInspectionCategoryMap_ = () => {
+    const map = {};
+    (pdlInspections || []).forEach(i => {
+        const targets = window.parseAdminInspectionTargets_(i.machineType);
+        const targetList = targets.length ? targets : ['一般・共通'];
+        const c = String(i.inspectionCategory || '').trim();
+        if (c) {
+            targetList.forEach(t => {
+                if (!map[t]) map[t] = new Set();
+                map[t].add(c);
+            });
+        }
+    });
+
+    let customMap = {};
+    try {
+        const raw = localStorage.getItem('pMapAdminTargetInspCats_v2');
+        if (raw) customMap = JSON.parse(raw);
+    } catch (e) { }
+
+    let deletedMap = {};
+    try {
+        const rawDel = localStorage.getItem('pMapAdminDeletedTargetInspCats_v2');
+        if (rawDel) deletedMap = JSON.parse(rawDel);
+    } catch (e) { }
+
+    Object.keys(DEFAULT_TARGET_INSP_CATEGORIES).forEach(t => {
+        if (!map[t]) map[t] = new Set();
+        DEFAULT_TARGET_INSP_CATEGORIES[t].forEach(c => {
+            const delList = (deletedMap[t] || []);
+            if (!delList.includes(c)) map[t].add(c);
+        });
+    });
+
+    Object.keys(customMap).forEach(t => {
+        if (!map[t]) map[t] = new Set();
+        (customMap[t] || []).forEach(c => {
+            const delList = (deletedMap[t] || []);
+            if (c && !delList.includes(c)) map[t].add(c);
+        });
+    });
+
+    if (!map['一般・共通']) map['一般・共通'] = new Set();
+    DEFAULT_COMMON_INSP_CATEGORIES.forEach(c => {
+        const delList = (deletedMap['一般・共通'] || []);
+        if (!delList.includes(c)) map['一般・共通'].add(c);
+    });
+
+    const result = {};
+    Object.keys(map).forEach(t => {
+        result[t] = Array.from(map[t]);
+    });
+    return result;
+};
+
+window.addAdminTargetInspectionCategory_ = (target, catName) => {
+    const t = String(target || '').trim() || '一般・共通';
+    const c = String(catName || '').trim();
+    if (!c) return false;
+    try {
+        let deletedMap = JSON.parse(localStorage.getItem('pMapAdminDeletedTargetInspCats_v2') || '{}');
+        if (deletedMap[t]) {
+            deletedMap[t] = deletedMap[t].filter(x => x !== c);
+            localStorage.setItem('pMapAdminDeletedTargetInspCats_v2', JSON.stringify(deletedMap));
+        }
+    } catch (e) { }
+    try {
+        let customMap = JSON.parse(localStorage.getItem('pMapAdminTargetInspCats_v2') || '{}');
+        if (!customMap[t]) customMap[t] = [];
+        if (!customMap[t].includes(c)) {
+            customMap[t].push(c);
+            localStorage.setItem('pMapAdminTargetInspCats_v2', JSON.stringify(customMap));
+        }
+    } catch (e) { }
+    return true;
+};
+
+window.renameAdminTargetInspectionCategory_ = (target, oldName, newName) => {
+    const t = String(target || '').trim() || '一般・共通';
+    const oldC = String(oldName || '').trim();
+    const newC = String(newName || '').trim();
+    if (!oldC || !newC || oldC === newC) return false;
+    try {
+        let customMap = JSON.parse(localStorage.getItem('pMapAdminTargetInspCats_v2') || '{}');
+        if (!customMap[t]) customMap[t] = [];
+        customMap[t] = customMap[t].filter(x => x !== oldC);
+        if (!customMap[t].includes(newC)) customMap[t].push(newC);
+        localStorage.setItem('pMapAdminTargetInspCats_v2', JSON.stringify(customMap));
+    } catch (e) { }
+    try {
+        let deletedMap = JSON.parse(localStorage.getItem('pMapAdminDeletedTargetInspCats_v2') || '{}');
+        if (!deletedMap[t]) deletedMap[t] = [];
+        if (!deletedMap[t].includes(oldC)) deletedMap[t].push(oldC);
+        deletedMap[t] = deletedMap[t].filter(x => x !== newC);
+        localStorage.setItem('pMapAdminDeletedTargetInspCats_v2', JSON.stringify(deletedMap));
+    } catch (e) { }
+    return true;
+};
+
+window.deleteAdminTargetInspectionCategory_ = (target, catName) => {
+    const t = String(target || '').trim() || '一般・共通';
+    const c = String(catName || '').trim();
+    if (!c) return false;
+    const counts = window.getAdminTargetInspectionCategoryCounts_(t);
+    if (counts[c] > 0) {
+        customAlert(`点検カテゴリ「${c}」には ${counts[c]}件の点検項目が登録されているため削除できません。`);
+        return false;
+    }
+    try {
+        let customMap = JSON.parse(localStorage.getItem('pMapAdminTargetInspCats_v2') || '{}');
+        if (customMap[t]) {
+            customMap[t] = customMap[t].filter(x => x !== c);
+            localStorage.setItem('pMapAdminTargetInspCats_v2', JSON.stringify(customMap));
+        }
+    } catch (e) { }
+    try {
+        let deletedMap = JSON.parse(localStorage.getItem('pMapAdminDeletedTargetInspCats_v2') || '{}');
+        if (!deletedMap[t]) deletedMap[t] = [];
+        if (!deletedMap[t].includes(c)) deletedMap[t].push(c);
+        localStorage.setItem('pMapAdminDeletedTargetInspCats_v2', JSON.stringify(deletedMap));
+    } catch (e) { }
+    return true;
+};
+
+window.addAdminInspectionCategory_ = (cat, target) => {
+    const rawTarget = target != null ? target : (document.getElementById('add_insp_mac_type')?.value || document.getElementById('edit_insp_mac_type')?.value || '');
+    const targets = window.parseAdminInspectionTargets_(rawTarget);
+    if (!targets.length) return window.addAdminTargetInspectionCategory_('', cat);
+    targets.forEach(t => window.addAdminTargetInspectionCategory_(t, cat));
+    return true;
+};
+
+window.buildAdminInspectionCategoryOptionsHtml_ = (selectedCat, selectedTarget) => {
+    const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;');
+    const cur = String(selectedCat || '').trim();
+    const targets = window.parseAdminInspectionTargets_(selectedTarget);
+    const targetMap = window.getAdminTargetInspectionCategoryMap_();
+    const allCounts = window.getAdminTargetInspectionCategoryCounts_();
+
+    let html = '<option value="">点検カテゴリを選択...</option>';
+
+    if (targets.length > 0) {
+        const primaryCats = [];
+        targets.forEach(t => {
+            (targetMap[t] || []).forEach(c => {
+                if (!primaryCats.includes(c)) primaryCats.push(c);
+            });
+        });
+        const targetCounts = window.getAdminTargetInspectionCategoryCounts_(targets);
+        const labelText = targets.length === 1
+            ? `【${esc(targets[0])}】の点検カテゴリ`
+            : `【${esc(targets.slice(0, 3).join('・'))}${targets.length > 3 ? ' 他' : ''}】の点検カテゴリ`;
+
+        if (primaryCats.length > 0) {
+            html += `<optgroup label="${labelText}">`;
+            primaryCats.forEach(cat => {
+                const count = targetCounts[cat] || 0;
+                const badge = count > 0 ? `(${count}件)` : `(0件・削除可)`;
+                const isSel = (cat === cur) ? ' selected' : '';
+                html += `<option value="${esc(cat)}"${isSel}>${esc(cat)} ${badge}</option>`;
+            });
+            html += `</optgroup>`;
+        }
+
+        const otherCats = [];
+        Object.keys(targetMap).forEach(t => {
+            if (targets.includes(t)) return;
+            (targetMap[t] || []).forEach(c => {
+                if (!primaryCats.includes(c) && !otherCats.includes(c)) otherCats.push(c);
+            });
+        });
+        if (otherCats.length > 0) {
+            html += `<optgroup label="【その他の点検カテゴリ】">`;
+            otherCats.forEach(cat => {
+                const count = allCounts[cat] || 0;
+                const badge = count > 0 ? `(${count}件)` : `(0件・削除可)`;
+                const isSel = (cat === cur) ? ' selected' : '';
+                html += `<option value="${esc(cat)}"${isSel}>${esc(cat)} ${badge}</option>`;
+            });
+            html += `</optgroup>`;
+        }
+    } else {
+        Object.keys(targetMap).forEach(t => {
+            const cats = targetMap[t] || [];
+            if (!cats.length) return;
+            const tCounts = window.getAdminTargetInspectionCategoryCounts_(t);
+            html += `<optgroup label="【${esc(t)}】">`;
+            cats.forEach(cat => {
+                const count = tCounts[cat] || 0;
+                const badge = count > 0 ? `(${count}件)` : `(0件・削除可)`;
+                const isSel = (cat === cur) ? ' selected' : '';
+                html += `<option value="${esc(cat)}"${isSel}>${esc(cat)} ${badge}</option>`;
+            });
+            html += `</optgroup>`;
+        });
+    }
+
+    if (cur) {
+        const allKnown = Object.values(targetMap).flat();
+        if (!allKnown.includes(cur)) {
+            html += `<option value="${esc(cur)}" selected>${esc(cur)} (0件・削除可)</option>`;
+        }
+    }
+    return html;
+};
+
+window.onAdminInspectionTargetChange_ = (context) => {
+    const isEdit = (context === 'edit');
+    const targetSel = document.getElementById(isEdit ? 'edit_insp_mac_type' : 'add_insp_mac_type');
+    const catSel = document.getElementById(isEdit ? 'edit_insp_category' : 'add_insp_category');
+    if (!targetSel || !catSel) return;
+    const target = (targetSel.value || '').trim();
+    const prevCat = (catSel.value || '').trim();
+    catSel.innerHTML = window.buildAdminInspectionCategoryOptionsHtml_(prevCat, target);
+};
+
+window.buildAdminInspectionCategoryChipsHtml_ = () => {
+    const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;');
+    const targetMap = window.getAdminTargetInspectionCategoryMap_();
+
+    let groupsHtml = '';
+    const targets = Object.keys(targetMap);
+    targets.forEach(t => {
+        const cats = targetMap[t] || [];
+        if (!cats.length) return;
+        const tCounts = window.getAdminTargetInspectionCategoryCounts_(t);
+        const chips = cats.map(cat => {
+            const count = tCounts[cat] || 0;
+            const safeCat = cat.replace(/'/g, "\\'");
+            const safeTarget = t.replace(/'/g, "\\'");
+            if (count > 0) {
+                return `<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 7px; border-radius:12px; background:#e0f2f1; color:#00695c; font-size:11px; font-weight:bold; border:1px solid #80cbc4;">
+                    📁 ${esc(cat)} <span style="font-size:10px; background:#00796b; color:#fff; padding:1px 4px; border-radius:8px;">${count}件</span>
+                </span>`;
+            } else {
+                return `<span style="display:inline-flex; align-items:center; gap:3px; padding:2px 7px; border-radius:12px; background:#fff3e0; color:#e65100; font-size:11px; font-weight:bold; border:1px dashed #ffb74d;" title="登録データがありません。削除可能です">
+                    📁 ${esc(cat)} <span style="font-size:10px; background:#ff9800; color:#fff; padding:1px 4px; border-radius:8px;">0件</span>
+                    <button type="button" onclick="confirmDeleteAdminInspectionCategory_('${safeCat}', '${safeTarget}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:50%; width:16px; height:16px; line-height:12px; font-size:11px; padding:0; cursor:pointer; font-weight:bold; margin-left:1px;" title="この点検カテゴリを削除">×</button>
+                </span>`;
+            }
+        }).join('');
+
+        groupsHtml += `
+          <div style="margin-bottom:6px;">
+            <div style="font-size:11px; font-weight:bold; color:#00796b; margin-bottom:3px;">🏷️ 【${esc(t)}】</div>
+            <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:4px;">
+              ${chips}
+            </div>
+          </div>
+        `;
+    });
+
+    return `
+      <div style="margin-bottom:12px; padding:8px 10px; background:#f4fbf9; border:1px solid #b2dfdb; border-radius:8px; flex-shrink:0; max-height:220px; overflow-y:auto;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; position:sticky; top:0; background:#f4fbf9; padding-bottom:4px; border-bottom:1px solid #e0f2f1; z-index:2;">
+          <span style="font-size:12px; font-weight:bold; color:#00695c;">📁 対象別 点検カテゴリ一覧（データ0件は「×」で削除可）:</span>
+          <button type="button" onclick="addAdminInspectionCategoryPrompt_('list')" style="font-size:11px; padding:3px 8px; border-radius:4px; background:#00897b; color:#fff; border:none; cursor:pointer; font-weight:bold;">➕ カテゴリ追加</button>
+        </div>
+        ${groupsHtml || '<span style="color:#888; font-size:11px;">カテゴリがありません</span>'}
+      </div>
+    `;
+};
+
+window.refreshAdminInspectionCategorySelects_ = (selectedCat, selectedTarget) => {
+    const addMac = (document.getElementById('add_insp_mac_type')?.value || '').trim();
+    const editMac = (document.getElementById('edit_insp_mac_type')?.value || '').trim();
+
+    const addSel = document.getElementById('add_insp_category');
+    if (addSel) {
+        const curAdd = selectedCat != null ? selectedCat : addSel.value;
+        const curTarget = selectedTarget != null ? selectedTarget : addMac;
+        addSel.innerHTML = window.buildAdminInspectionCategoryOptionsHtml_(curAdd, curTarget);
+    }
+    const editSel = document.getElementById('edit_insp_category');
+    if (editSel) {
+        const curEdit = selectedCat != null ? selectedCat : editSel.value;
+        const curTarget = selectedTarget != null ? selectedTarget : editMac;
+        editSel.innerHTML = window.buildAdminInspectionCategoryOptionsHtml_(curEdit, curTarget);
+    }
+};
+
+window.addAdminInspectionCategoryPrompt_ = (context) => {
+    let curTargetRaw = '';
+    if (context === 'edit') {
+        curTargetRaw = (document.getElementById('edit_insp_mac_type')?.value || '').trim();
+    } else if (context === 'add') {
+        curTargetRaw = (document.getElementById('add_insp_mac_type')?.value || '').trim();
+    }
+    const curTargets = window.parseAdminInspectionTargets_(curTargetRaw);
+    const targetHint = curTargets.length > 0 ? `（対象: ${curTargets.join('・')}）` : '（一般・共通）';
+    const raw = prompt(`新しい点検カテゴリ名を入力してください ${targetHint}\n例: エンジン部、オイル・油脂類、足回り、作業部、消耗品`);
+    if (raw == null) return;
+    const name = raw.trim();
+    if (!name) return;
+
+    if (curTargets.length > 0) {
+        curTargets.forEach(t => window.addAdminTargetInspectionCategory_(t, name));
+    } else {
+        window.addAdminTargetInspectionCategory_('', name);
+    }
+    window.refreshAdminInspectionCategorySelects_(name, curTargetRaw);
+    if (context === 'list' || (currentActiveMasterType === 'inspection' && context !== 'edit')) {
+        openMasterDetail('inspection');
+        if (context === 'add' && curTargets.length > 0) {
+            document.querySelectorAll('.add-insp-target-cb').forEach(cb => {
+                cb.checked = curTargets.includes(cb.value);
+            });
+            window.onAdminInspectionTargetCheckboxChange_('add');
+            const addSel = document.getElementById('add_insp_category');
+            if (addSel) addSel.value = name;
+        }
+    }
+    if (typeof showAdminSyncToast === 'function') {
+        showAdminSyncToast(`✅ 点検カテゴリ「${name}」を追加しました`, 'ok');
+    }
+};
+
+window.renameAdminInspectionCategoryPrompt_ = (context) => {
+    const isEdit = (context === 'edit');
+    const selId = isEdit ? 'edit_insp_category' : 'add_insp_category';
+    const macSelId = isEdit ? 'edit_insp_mac_type' : 'add_insp_mac_type';
+    const sel = document.getElementById(selId);
+    const macSel = document.getElementById(macSelId);
+
+    const oldName = sel ? String(sel.value || '').trim() : '';
+    const curTargetRaw = macSel ? String(macSel.value || '').trim() : '';
+    const curTargets = window.parseAdminInspectionTargets_(curTargetRaw);
+
+    if (!oldName) {
+        customAlert('名前を変更する点検カテゴリをプルダウンで選択してください');
+        return;
+    }
+
+    const raw = prompt(`点検カテゴリ「${oldName}」の新しい名称を入力してください:`, oldName);
+    if (raw == null) return;
+    const newName = raw.trim();
+    if (!newName || newName === oldName) return;
+
+    if (curTargets.length > 0) {
+        curTargets.forEach(t => window.renameAdminTargetInspectionCategory_(t, oldName, newName));
+    } else {
+        window.renameAdminTargetInspectionCategory_('', oldName, newName);
+    }
+
+    const matchingItems = (pdlInspections || []).filter(i => {
+        const itemTargets = window.parseAdminInspectionTargets_(i.machineType);
+        const matchTarget = !curTargets.length || !itemTargets.length || itemTargets.some(t => curTargets.includes(t));
+        return matchTarget && String(i.inspectionCategory || '').trim() === oldName;
+    });
+
+    if (matchingItems.length > 0) {
+        matchingItems.forEach(i => {
+            i.inspectionCategory = newName;
+            const payload = {
+                masterType: 'inspection',
+                manageAction: 'edit',
+                value: {
+                    id: i.id,
+                    newData: Object.assign({}, i, { inspectionCategory: newName })
+                },
+                userName: currentUser
+            };
+            syncAdminCall_('manageMaster', payload, {
+                key: 'manageMaster:inspection:edit:' + i.id,
+                op: 'manageMaster',
+                payload
+            }).catch(e => console.warn('Sync inspection cat rename err:', e));
+        });
+        persistAdminInitCache_();
+    }
+
+    window.refreshAdminInspectionCategorySelects_(newName, curTargetRaw);
+    if (!isEdit) {
+        openMasterDetail('inspection');
+        if (curTargets.length > 0) {
+            document.querySelectorAll('.add-insp-target-cb').forEach(cb => {
+                cb.checked = curTargets.includes(cb.value);
+            });
+            window.onAdminInspectionTargetCheckboxChange_('add');
+            const addSel = document.getElementById('add_insp_category');
+            if (addSel) addSel.value = newName;
+        }
+    }
+    if (typeof showAdminSyncToast === 'function') {
+        const countMsg = matchingItems.length > 0 ? `（${matchingItems.length}件の点検項目に反映）` : '';
+        showAdminSyncToast(`✅ 点検カテゴリ「${oldName}」を「${newName}」に変更しました${countMsg}`, 'ok');
+    }
+};
+
+window.removeAdminInspectionCategoryPrompt_ = (context) => {
+    const isEdit = (context === 'edit');
+    const selId = isEdit ? 'edit_insp_category' : 'add_insp_category';
+    const macSelId = isEdit ? 'edit_insp_mac_type' : 'add_insp_mac_type';
+    const sel = document.getElementById(selId);
+    const macSel = document.getElementById(macSelId);
+
+    const cat = sel ? String(sel.value || '').trim() : '';
+    const curTargetRaw = macSel ? String(macSel.value || '').trim() : '';
+    const curTargets = window.parseAdminInspectionTargets_(curTargetRaw);
+
+    if (!cat) {
+        customAlert('削除する点検カテゴリを選択してください');
+        return;
+    }
+    const counts = window.getAdminTargetInspectionCategoryCounts_(curTargets);
+    const count = counts[cat] || 0;
+    if (count > 0) {
+        customAlert(`点検カテゴリ「${cat}」には ${count}件の点検項目が登録されています。\n登録済みデータで使用されているカテゴリは削除できません。\n先に点検項目を変更または削除してください。`);
+        return;
+    }
+    const ok = confirm(`点検カテゴリ「${cat}」は登録済みデータが0件です。\nこの点検カテゴリを削除しますか？`);
+    if (!ok) return;
+
+    if (curTargets.length > 0) {
+        curTargets.forEach(t => window.deleteAdminTargetInspectionCategory_(t, cat));
+    } else {
+        window.deleteAdminTargetInspectionCategory_('', cat);
+    }
+    window.refreshAdminInspectionCategorySelects_('', curTargetRaw);
+    if (!isEdit) {
+        openMasterDetail('inspection');
+        if (curTargets.length > 0) {
+            document.querySelectorAll('.add-insp-target-cb').forEach(cb => {
+                cb.checked = curTargets.includes(cb.value);
+            });
+            window.onAdminInspectionTargetCheckboxChange_('add');
+        }
+    }
+    if (typeof showAdminSyncToast === 'function') {
+        showAdminSyncToast(`✅ 点検カテゴリ「${cat}」を削除しました`, 'ok');
+    }
+};
+
+window.saveAdminInspectionOrderFromDom_ = () => {
+    const tbody = document.querySelector('#masterListTable tbody');
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr.insp-sortable-row'));
+    if (!rows.length) return;
+
+    const orderedIds = rows.map(r => String(r.dataset.inspId || '').trim()).filter(Boolean);
+    rows.forEach((r, idx) => {
+        const numEl = r.querySelector('.insp-order-num');
+        if (numEl) numEl.textContent = String(idx + 1);
+    });
+
+    const idToItem = new Map();
+    (pdlInspections || []).forEach(item => {
+        if (item && item.id) idToItem.set(String(item.id), item);
+    });
+
+    const changedItems = [];
+    const nextList = [];
+    orderedIds.forEach((id, idx) => {
+        const item = idToItem.get(id);
+        if (!item) return;
+        const newSort = idx + 1;
+        if (Number(item.sortOrder) !== newSort) {
+            item.sortOrder = newSort;
+            changedItems.push(item);
+        }
+        nextList.push(item);
+        idToItem.delete(id);
+    });
+    idToItem.forEach(item => nextList.push(item));
+
+    if (!changedItems.length) return;
+    pdlInspections = nextList;
+    persistAdminInitCache_();
+
+    changedItems.forEach(item => {
+        const payload = {
+            masterType: 'inspection',
+            manageAction: 'edit',
+            value: {
+                id: item.id,
+                newData: {
+                    machineType: item.machineType || '',
+                    inspectionCategory: item.inspectionCategory || '',
+                    item: item.item || item.name || '',
+                    sortOrder: item.sortOrder,
+                    note: item.note || ''
+                }
+            },
+            userName: currentUser
+        };
+        syncAdminCall_('manageMaster', payload, {
+            key: 'manageMaster:inspection:edit:' + item.id,
+            op: 'manageMaster',
+            payload
+        }).catch(e => console.warn('Sync inspection sort err:', e));
+    });
+
+    if (typeof showAdminSyncToast === 'function') {
+        showAdminSyncToast(`✅ 点検項目の並び順を更新しました（${changedItems.length}件保存）`, 'ok');
+    }
+};
+
+window.initAdminInspectionSortHandlers_ = () => {
+    const tbody = document.querySelector('#masterListTable tbody');
+    if (!tbody || tbody.dataset.inspSortBound === '1') return;
+    tbody.dataset.inspSortBound = '1';
+
+    let draggedRow = null;
+    let touchDragging = false;
+    let longPressTimer = null;
+    let startX = 0;
+    let startY = 0;
+
+    const resetRowStyle = (tr) => {
+        if (!tr) return;
+        tr.style.opacity = '';
+        tr.style.background = '';
+        tr.style.boxShadow = '';
+    };
+
+    const moveRowToPoint = (clientY) => {
+        if (!draggedRow) return;
+        const rows = Array.from(tbody.querySelectorAll('tr.insp-sortable-row')).filter(r => r !== draggedRow && r.style.display !== 'none');
+        let targetBefore = null;
+        for (const r of rows) {
+            const rect = r.getBoundingClientRect();
+            if (clientY < rect.top + rect.height / 2) {
+                targetBefore = r;
+                break;
+            }
+        }
+        if (targetBefore) {
+            if (draggedRow.nextSibling !== targetBefore) {
+                tbody.insertBefore(draggedRow, targetBefore);
+            }
+        } else {
+            const lastRow = rows[rows.length - 1];
+            if (lastRow && lastRow.nextSibling !== draggedRow) {
+                tbody.insertBefore(draggedRow, lastRow.nextSibling);
+            }
+        }
+    };
+
+    tbody.addEventListener('dragstart', (e) => {
+        if (e.target && e.target.closest('button')) {
+            e.preventDefault();
+            return;
+        }
+        const tr = e.target ? e.target.closest('tr.insp-sortable-row') : null;
+        if (!tr) return;
+        draggedRow = tr;
+        tr.style.opacity = '0.45';
+        tr.style.background = '#e0f2f1';
+        if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', tr.dataset.inspId || '');
+        }
+    });
+
+    tbody.addEventListener('dragover', (e) => {
+        if (!draggedRow) return;
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+        moveRowToPoint(e.clientY);
+    });
+
+    tbody.addEventListener('drop', (e) => {
+        if (!draggedRow) return;
+        e.preventDefault();
+        resetRowStyle(draggedRow);
+        draggedRow = null;
+        window.saveAdminInspectionOrderFromDom_();
+    });
+
+    tbody.addEventListener('dragend', () => {
+        if (draggedRow) {
+            resetRowStyle(draggedRow);
+            draggedRow = null;
+            window.saveAdminInspectionOrderFromDom_();
+        }
+    });
+
+    tbody.addEventListener('touchstart', (e) => {
+        if (e.target && e.target.closest('button')) return;
+        if (!e.touches || e.touches.length !== 1) return;
+        const tr = e.target ? e.target.closest('tr.insp-sortable-row') : null;
+        if (!tr) return;
+
+        const touch = e.touches[0];
+        startX = touch.clientX;
+        startY = touch.clientY;
+        const isHandle = !!(e.target && e.target.closest('.insp-drag-handle'));
+        const delay = isHandle ? 80 : 250;
+
+        clearTimeout(longPressTimer);
+        longPressTimer = setTimeout(() => {
+            touchDragging = true;
+            draggedRow = tr;
+            tr.style.background = '#e0f2f1';
+            tr.style.boxShadow = '0 4px 12px rgba(0,137,123,0.28)';
+            tr.style.opacity = '0.92';
+            try { if (navigator.vibrate) navigator.vibrate(20); } catch (err) { }
+        }, delay);
+    }, { passive: true });
+
+    tbody.addEventListener('touchmove', (e) => {
+        if (!e.touches || e.touches.length !== 1) return;
+        const touch = e.touches[0];
+        if (!touchDragging) {
+            if (Math.abs(touch.clientX - startX) > 10 || Math.abs(touch.clientY - startY) > 10) {
+                clearTimeout(longPressTimer);
+            }
+            return;
+        }
+        e.preventDefault();
+        moveRowToPoint(touch.clientY);
+
+        const scrollBox = tbody.closest('div[style*="overflow-y:auto"]');
+        if (scrollBox) {
+            const boxRect = scrollBox.getBoundingClientRect();
+            if (touch.clientY < boxRect.top + 40) scrollBox.scrollTop -= 12;
+            else if (touch.clientY > boxRect.bottom - 40) scrollBox.scrollTop += 12;
+        }
+    }, { passive: false });
+
+    const finishTouchDrag = () => {
+        clearTimeout(longPressTimer);
+        if (touchDragging && draggedRow) {
+            resetRowStyle(draggedRow);
+            draggedRow = null;
+            touchDragging = false;
+            window.saveAdminInspectionOrderFromDom_();
+        }
+        touchDragging = false;
+    };
+
+    tbody.addEventListener('touchend', finishTouchDrag);
+    tbody.addEventListener('touchcancel', finishTouchDrag);
+};
+
+window.confirmDeleteAdminInspectionCategory_ = (cat, target) => {
+    const counts = window.getAdminTargetInspectionCategoryCounts_(target);
+    const count = counts[cat] || 0;
+    if (count > 0) {
+        customAlert(`点検カテゴリ「${cat}」には ${count}件の点検項目が登録されているため削除できません。\n先に登録済みの点検項目を削除またはカテゴリを変更してください。`);
+        return;
+    }
+    const targetMsg = target ? `（対象: ${target}）` : '';
+    const ok = confirm(`点検カテゴリ「${cat}」${targetMsg}は登録済みデータが0件です。\nこの点検カテゴリを削除しますか？`);
+    if (!ok) return;
+
+    window.deleteAdminTargetInspectionCategory_(target, cat);
+    window.refreshAdminInspectionCategorySelects_('', target);
+    openMasterDetail('inspection');
+    if (typeof showAdminSyncToast === 'function') {
+        showAdminSyncToast(`✅ 点検カテゴリ「${cat}」を削除しました`, 'ok');
+    }
+};
+
 let currentActiveMasterType = null;
 
 window.getMasterTypeInfo = (type) => {
@@ -2955,7 +3790,8 @@ window.getMasterTypeInfo = (type) => {
         cropWorkPlan: { title: '🛠️ 品目別作業設定', desc: '日数・半旬・積算温度/日射/降水＋降水キャンセル', list: pdlCropWorkPlans || [] },
         nurseryLocation: { title: '🪴 育苗場所マスタ', desc: '育苗区画（圃場）と方向の登録', list: pdlNurseryLocations || [] },
         cropCultSetting: { title: '📐 作物栽培設定マスタ', desc: '品目ごとの播種穴数など栽培デフォルト', list: pdlCropCultSettings || [] },
-        container: { title: '🧺 コンテナマスタ', desc: 'コンテナ種類×品目ごとの内容単位・内容個数（共通なし）', list: pdlContainers || [] }
+        container: { title: '🧺 コンテナマスタ', desc: 'コンテナ種類×品目ごとの内容単位・内容個数（共通なし）', list: pdlContainers || [] },
+        inspection: { title: '📋 点検マスタ', desc: '機械カテゴリごとの点検カテゴリ・点検項目の設定', list: pdlInspections || [] }
     };
     return listMap[type] || { title: type, desc: '', list: [] };
 };
@@ -2973,7 +3809,7 @@ window.renderMasterMenu = () => {
 
     const masterTypes = [
         'crop', 'cropCultSetting', 'nurseryLocation', 'cropChemPlan', 'cropWorkPlan', 'costItem', 'cropCostPlan', 'container', 'contentUnit', 'location', 'workCategory',
-        'machineType', 'machineGroup', 'hitchType', 'work', 'machine', 'tool', 'material', 'pesticide', 'fertilizer'
+        'machineType', 'machineGroup', 'hitchType', 'work', 'machine', 'tool', 'inspection', 'material', 'pesticide', 'fertilizer'
     ];
 
     let html = `
@@ -3065,6 +3901,8 @@ window.openMasterDetail = (type, customEditHtml = null) => {
     let list = info.list;
     if (type === 'machine') {
         list = [...pdlMachines].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
+    } else if (type === 'inspection') {
+        list = [...(info.list || [])].sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
     }
 
     // フォーム部分の生成
@@ -3203,6 +4041,24 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <input type="text" id="add_hitchType_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: オートヒッチ Aタイプ">
                 <div style="font-size:11px; color:#666;">トラクターと作業機に同じ規格を設定すると、作業記録で連結候補として提案されます。</div>
                 <button onclick="execMaster('hitchType', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
+            </div>`;
+        } else if (type === 'inspection') {
+            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size:12px; font-weight:bold; color:#555;">点検カテゴリ <span style="color:#d32f2f;">*</span></label>
+                <div style="display:flex; gap:6px; align-items:center;">
+                    <select id="add_insp_category" class="form-input" style="margin-bottom:0; padding:8px; flex:1; background:#fff;">${window.buildAdminInspectionCategoryOptionsHtml_('', '')}</select>
+                    <button type="button" onclick="addAdminInspectionCategoryPrompt_('add')" style="background:#fff; border:1px solid #ccc; border-radius:6px; padding:7px 10px; cursor:pointer; font-size:14px; flex-shrink:0;" title="カテゴリを追加">➕</button>
+                    <button type="button" onclick="renameAdminInspectionCategoryPrompt_('add')" style="background:#fff; border:1px solid #ccc; border-radius:6px; padding:7px 10px; cursor:pointer; font-size:14px; flex-shrink:0;" title="選択中のカテゴリ名を変更">✏️</button>
+                    <button type="button" onclick="removeAdminInspectionCategoryPrompt_('add')" style="background:#fff5f5; border:1px solid #ef9a9a; border-radius:6px; padding:7px 10px; cursor:pointer; font-size:14px; flex-shrink:0;" title="選択中のカテゴリを削除（登録済みデータがない場合のみ）">➖</button>
+                </div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">点検項目 <span style="color:#d32f2f;">*</span></label>
+                <input type="text" id="add_insp_item" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: エンジンオイル量・汚れ">
+                <div style="font-size:11px; color:#00695c; background:#e0f2f1; padding:6px 8px; border-radius:4px; line-height:1.4;">💡 表示順は右側の一覧をドラッグ（スマホは長押し）して入れ替えられます。</div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">点検基準・備考</label>
+                <input type="text" id="add_insp_note" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: レベルゲージのH-L範囲内であること">
+                <label style="font-size:12px; font-weight:bold; color:#555;">対象（機械カテゴリ / 用途別分類・複数選択可） <span style="color:#d32f2f;">*</span></label>
+                ${window.buildAdminInspectionTargetMultiSelectHtml_('add', '')}
+                <button onclick="execMaster('inspection', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
         } else if (type === 'tool') {
             const wOpts = '<option value="">+ 関連作業を選ぶ...</option>' + pdlWorkMaster.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
@@ -3468,10 +4324,13 @@ window.openMasterDetail = (type, customEditHtml = null) => {
           <div style="font-weight:bold; font-size:15px; color:#333;">登録済みデータ一覧 (${list.length}件)</div>
           <input type="text" id="masterSearchFilter" oninput="filterMasterListTable(this.value)" placeholder="🔍 一覧から検索..." style="padding:6px 10px; border:1px solid #ccc; border-radius:6px; font-size:13px; width:180px;">
         </div>
+        ${type === 'inspection' ? window.buildAdminInspectionCategoryChipsHtml_() : ''}
+        ${type === 'inspection' && list.length > 1 ? `<div style="font-size:11px; color:#00695c; background:#e0f2f1; border:1px solid #b2dfdb; border-radius:6px; padding:6px 10px; margin-bottom:8px; flex-shrink:0;">⠿ 左端のハンドルをドラッグ（スマホは長押し）して上から表示順を入れ替えられます</div>` : ''}
         <div style="flex:1; min-height:0; overflow-y:auto;">
           <table id="masterListTable" style="width:100%; border-collapse:collapse; font-size:13px;">
             <thead>
               <tr style="background:#f4f6f8; text-align:left; border-bottom:2px solid #e0e0e0; color:#555;">
+                ${type === 'inspection' ? '<th style="padding:10px 4px; width:44px; text-align:center;">順序</th>' : ''}
                 <th style="padding:10px;">名称 / 詳細</th>
                 <th style="padding:10px; width:110px; text-align:right;">操作</th>
               </tr>
@@ -3480,10 +4339,10 @@ window.openMasterDetail = (type, customEditHtml = null) => {
     `;
 
     if (list.length === 0) {
-        listHtml += `<tr><td colspan="2" style="padding:20px; text-align:center; color:#888;">登録されたデータはありません</td></tr>`;
+        listHtml += `<tr><td colspan="${type === 'inspection' ? 3 : 2}" style="padding:20px; text-align:center; color:#888;">登録されたデータはありません</td></tr>`;
     } else {
-        list.forEach(v => {
-            let dispName = (type === 'cropCultSetting') ? (v.cropName || v.name || v) : (v.name || v);
+        list.forEach((v, idx) => {
+            let dispName = (type === 'cropCultSetting') ? (v.cropName || v.name || v) : (type === 'inspection') ? (v.item || v.name || '') : (v.name || v);
             if (type === 'machine' && typeof window.buildAdminMachineDisplayName_ === 'function') {
                 dispName = window.buildAdminMachineDisplayName_(
                     v.type,
@@ -3495,7 +4354,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                     v.model2
                 ) || dispName;
             }
-            const deleteVal = (type === 'cropCultSetting') ? (v.cropName || v.name || v) : (v.id || v.name || v);
+            const deleteVal = (type === 'cropCultSetting') ? (v.cropName || v.name || v) : (type === 'inspection') ? (v.id || v.item || '') : (v.id || v.name || v);
             let subInfo = "";
 
             if (type === 'crop') {
@@ -3632,13 +4491,26 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 actionBtns = `<button onclick="openEditPesticideMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else if (type === 'fertilizer') {
                 actionBtns = `<button onclick="openEditFertilizerMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
+            } else if (type === 'inspection') {
+                const targets = window.parseAdminInspectionTargets_(v.target || '');
+                const targetBadges = targets.map(t => `<span style="font-size:11px; background:#e0f2f1; color:#00695c; padding:1px 6px; border-radius:4px; margin-left:4px; display:inline-block;">🚜 ${t}</span>`).join('');
+                subInfo += targetBadges;
+                if (v.category) subInfo += `<span style="font-size:11px; background:#ede7f6; color:#4527a0; padding:1px 6px; border-radius:4px; margin-left:4px; display:inline-block;">📁 ${v.category}</span>`;
+                if (v.note) subInfo += `<br><span style="font-size:11px; color:#555; font-weight:normal;">基準: ${v.note}</span>`;
+                actionBtns = `<button onclick="openEditInspectionMaster('${safeV}')" style="background:#e0f2f1; color:#00695c; border:1px solid #80cbc4; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else if (type === 'costItem') {
                 actionBtns = `<button onclick="openEditCostItemMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else {
                 actionBtns = `<button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             }
 
-            listHtml += `<tr style="border-bottom:1px solid #eee;">
+            if (type === 'inspection') {
+                const rowId = String(v.id || '').replace(/"/g, '&quot;');
+                listHtml += `<tr class="insp-sortable-row" data-insp-id="${rowId}" style="border-bottom:1px solid #eee; transition:background 0.15s;">
+                <td class="insp-drag-handle" style="padding:8px 4px; vertical-align:middle; text-align:center; cursor:grab; user-select:none; touch-action:none; color:#78909c; width:44px;" title="ドラッグまたは長押しで並び替え">
+                  <div style="font-size:15px; line-height:1;">⠿</div>
+                  <div class="insp-order-num" style="font-size:10px; font-weight:bold; color:#90a4ae; margin-top:2px;">${idx + 1}</div>
+                </td>
                 <td style="padding:10px; vertical-align:middle;">
                   <div style="font-weight:bold; color:#333; font-size:14px;">${dispName} ${subInfo}</div>
                 </td>
@@ -3646,6 +4518,16 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                   ${actionBtns}
                 </td>
             </tr>`;
+            } else {
+                listHtml += `<tr style="border-bottom:1px solid #eee;">
+                <td style="padding:10px; vertical-align:middle;">
+                  <div style="font-weight:bold; color:#333; font-size:14px;">${dispName} ${subInfo}</div>
+                </td>
+                <td style="padding:10px; vertical-align:middle; text-align:right;">
+                  ${actionBtns}
+                </td>
+            </tr>`;
+            }
         });
     }
 
@@ -3677,6 +4559,9 @@ window.openMasterDetail = (type, customEditHtml = null) => {
         ? window.getMasterSectionsTargetEl_()
         : document.getElementById('masterSections');
     if (_outEl) _outEl.innerHTML = containerHtml;
+    if (type === 'inspection' && typeof window.initAdminInspectionSortHandlers_ === 'function') {
+        window.initAdminInspectionSortHandlers_();
+    }
     if (type === 'machine' && !customEditHtml && typeof window.autoFillAdminMachineNumber_ === 'function') {
         window.autoFillAdminMachineNumber_(true);
     }
@@ -3698,6 +4583,23 @@ window.openMasterDetail = (type, customEditHtml = null) => {
     }
 };
 
+window.isAdminMasterFormBusy_ = () => {
+    const outEl = (typeof window.getMasterSectionsTargetEl_ === 'function')
+        ? window.getMasterSectionsTargetEl_()
+        : document.getElementById('masterSections');
+    if (!outEl) return false;
+    // 編集フォームが開いているか、入力欄にフォーカス・入力中の値がある場合は自動再描画しない
+    if (outEl.querySelector('[id^="edit_"]')) return true;
+    const active = document.activeElement;
+    if (active && outEl.contains(active) && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return true;
+    const inputs = outEl.querySelectorAll('input[type="text"], input[type="number"], textarea');
+    for (const inp of inputs) {
+        if (inp.id === 'masterSearchFilter') continue;
+        if (String(inp.value || '').trim() !== '') return true;
+    }
+    return false;
+};
+
 window.filterMasterListTable = (keyword) => {
     const kw = (keyword || '').toLowerCase().trim();
     const rows = document.querySelectorAll('#masterListTable tbody tr');
@@ -3714,9 +4616,9 @@ window.renderMasterSection = () => {
             if (typeof window.renderEquipmentVehiclePanel_ === 'function') window.renderEquipmentVehiclePanel_();
             return;
         }
-        const type = (currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool')
+        const type = (currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool' || currentActiveMasterType === 'inspection')
             ? currentActiveMasterType
-            : (tab === 'tool' ? 'tool' : 'machine');
+            : (tab === 'tool' ? 'tool' : (tab === 'inspection' ? 'inspection' : 'machine'));
         openMasterDetail(type);
         return;
     }
@@ -3759,6 +4661,44 @@ window.openEditLocationMaster = (encodedStr) => {
     ensureJpCitiesLoaded().then(() => {
         populateLocationCitySelect('edit', v.prefecture || '', v.city || '');
     });
+};
+
+window.openEditInspectionMaster = (encodedStr) => {
+    const v = JSON.parse(decodeURIComponent(encodedStr));
+    const safeId = String(v.id || "").replace(/"/g, '&quot;');
+    const safeTarget = String(v.target || "").replace(/"/g, '&quot;');
+    const safeCategory = String(v.category || "").replace(/"/g, '&quot;');
+    const safeItem = String(v.item || "").replace(/"/g, '&quot;');
+    const safeNote = String(v.note || "").replace(/"/g, '&quot;');
+    const safeSortOrder = Number(v.sortOrder) || 0;
+    const editHtml = `
+        <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
+            <h4 style="margin-top:0; color:#00897b; font-size:15px; border-bottom:2px solid #00897b; padding-bottom:5px;">✏️ 点検項目の編集</h4>
+            <input type="hidden" id="edit_insp_id" value="${safeId}">
+            <input type="hidden" id="edit_insp_sortOrder" value="${safeSortOrder}">
+            <div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size:12px; font-weight:bold; color:#555;">点検カテゴリ <span style="color:#d32f2f;">*</span></label>
+                <div style="display:flex; gap:6px; align-items:center;">
+                    <select id="edit_insp_category" class="form-input" style="margin-bottom:0; padding:8px; flex:1; background:#fff;">${window.buildAdminInspectionCategoryOptionsHtml_(safeTarget, safeCategory)}</select>
+                    <button type="button" onclick="addAdminInspectionCategoryPrompt_('edit')" style="background:#fff; border:1px solid #ccc; border-radius:6px; padding:7px 10px; cursor:pointer; font-size:14px; flex-shrink:0;" title="カテゴリを追加">➕</button>
+                    <button type="button" onclick="renameAdminInspectionCategoryPrompt_('edit')" style="background:#fff; border:1px solid #ccc; border-radius:6px; padding:7px 10px; cursor:pointer; font-size:14px; flex-shrink:0;" title="選択中のカテゴリ名を変更">✏️</button>
+                    <button type="button" onclick="removeAdminInspectionCategoryPrompt_('edit')" style="background:#fff5f5; border:1px solid #ef9a9a; border-radius:6px; padding:7px 10px; cursor:pointer; font-size:14px; flex-shrink:0;" title="選択中のカテゴリを削除（登録済みデータがない場合のみ）">➖</button>
+                </div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">点検項目 <span style="color:#d32f2f;">*</span></label>
+                <input type="text" id="edit_insp_item" class="form-input" style="margin-bottom:0; padding:8px;" value="${safeItem}">
+                <div style="font-size:11px; color:#00695c; background:#e0f2f1; padding:6px 8px; border-radius:4px; line-height:1.4;">💡 表示順は右側の一覧をドラッグ（スマホは長押し）して入れ替えられます。</div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">点検基準・備考</label>
+                <input type="text" id="edit_insp_note" class="form-input" style="margin-bottom:0; padding:8px;" value="${safeNote}">
+                <label style="font-size:12px; font-weight:bold; color:#555;">対象（機械カテゴリ / 用途別分類・複数選択可） <span style="color:#d32f2f;">*</span></label>
+                ${window.buildAdminInspectionTargetMultiSelectHtml_('edit', v.target || '')}
+            </div>
+            <div style="display:flex; gap:10px; margin-top:15px;">
+                <button onclick="execMaster('inspection', 'edit')" style="flex:1; background:#00897b; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">更新する</button>
+                <button onclick="openMasterDetail('inspection')" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">キャンセル</button>
+            </div>
+        </div>
+    `;
+    openMasterDetail('inspection', editHtml);
 };
 
 window.openEditMachineGroupMaster = (encodedName) => {
@@ -6606,6 +7546,19 @@ window.execMaster = async (type, act, val) => {
         else if (type === 'machineType') { const name = document.getElementById('add_machineType_name').value.trim(); if (!name) { customAlert("カテゴリ名を入力してください"); return; } if ((pdlMachineTypes || []).includes(name)) { customAlert("既に登録されています"); return; } value = name; }
         else if (type === 'machineGroup') { const name = document.getElementById('add_machineGroup_name').value.trim(); if (!name) { customAlert("グループ名を入力してください"); return; } if ((pdlMachineGroups || []).includes(name)) { customAlert("既に登録されています"); return; } value = name; }
         else if (type === 'hitchType') { const name = document.getElementById('add_hitchType_name').value.trim(); if (!name) { customAlert("ヒッチ規格名を入力してください"); return; } if ((pdlHitchTypes || []).includes(name)) { customAlert("既に登録されています"); return; } value = name; }
+        else if (type === 'inspection') {
+            const target = typeof window.collectAdminInspectionTargetStr_ === 'function'
+                ? window.collectAdminInspectionTargetStr_('add')
+                : String(document.getElementById('add_insp_target')?.value || '').trim();
+            const category = (document.getElementById('add_insp_category')?.value || '').trim();
+            const item = (document.getElementById('add_insp_item')?.value || '').trim();
+            const note = (document.getElementById('add_insp_note')?.value || '').trim();
+            if (!target) { customAlert("対象を1つ以上選択してください"); return; }
+            if (!category) { customAlert("点検カテゴリを入力してください"); return; }
+            if (!item) { customAlert("点検項目を入力してください"); return; }
+            const maxSort = (pdlInspections || []).reduce((mx, x) => Math.max(mx, Number(x.sortOrder) || 0), 0);
+            value = { target, category, item, note, sortOrder: maxSort + 1 };
+        }
         else if (type === 'tool') { const name = document.getElementById('add_tool_name').value.trim(); if (!name) { customAlert("道具名を入力してください"); return; } value = { name: name, workCategory: document.getElementById('add_tool_cat').value.trim() }; }
         else if (type === 'costItem') {
             const name = (document.getElementById('add_cost_name')?.value || '').trim();
@@ -6869,6 +7822,20 @@ window.execMaster = async (type, act, val) => {
                     note: document.getElementById('edit_cost_note')?.value || ''
                 }
             };
+        } else if (type === 'inspection') {
+            const id = document.getElementById('edit_insp_id')?.value || '';
+            const target = typeof window.collectAdminInspectionTargetStr_ === 'function'
+                ? window.collectAdminInspectionTargetStr_('edit')
+                : String(document.getElementById('edit_insp_target')?.value || '').trim();
+            const category = (document.getElementById('edit_insp_category')?.value || '').trim();
+            const item = (document.getElementById('edit_insp_item')?.value || '').trim();
+            const note = (document.getElementById('edit_insp_note')?.value || '').trim();
+            const sortOrder = Number(document.getElementById('edit_insp_sortOrder')?.value) || 0;
+            if (!id) { customAlert("編集対象IDがありません"); return; }
+            if (!target) { customAlert("対象を1つ以上選択してください"); return; }
+            if (!category) { customAlert("点検カテゴリを入力してください"); return; }
+            if (!item) { customAlert("点検項目を入力してください"); return; }
+            value = { id, newData: { target, category, item, note, sortOrder } };
         }
     } else {
         if (type === 'container') {
@@ -6922,13 +7889,19 @@ window.execMaster = async (type, act, val) => {
     persistAdminInitCache_();
     renderMasterSection();
     showAdminSyncToast(act === 'merge' ? '✅ 統合しました（同期中…）' : (act === 'edit' ? '✅ 更新しました（同期中…）' : (act === 'add' ? '✅ 追加しました（同期中…）' : '✅ 削除しました（同期中…）')), 'ok');
+    const _syncSeq = (window._adminMasterSyncSeq = (window._adminMasterSyncSeq || 0) + 1);
     const payload = { masterType: type, manageAction: act, value: value, userName: currentUser };
     syncAdminCall_('manageMaster', payload, { key: 'manageMaster:' + type + ':' + act + ':' + Date.now(), op: 'manageMaster', payload }).then(updatedList => {
+        if (_syncSeq !== window._adminMasterSyncSeq) {
+            showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+            return;
+        }
         applyMasterServerList_(type, updatedList);
         persistAdminInitCache_();
         const mm = document.getElementById('masterModal');
         const em = document.getElementById('equipmentManageModal');
-        if ((mm && mm.style.display === 'flex') || (em && em.style.display === 'flex' && window._equipmentManageActive)) {
+        const modalOpen = (mm && mm.style.display === 'flex') || (em && em.style.display === 'flex' && window._equipmentManageActive);
+        if (modalOpen && !(typeof window.isAdminMasterFormBusy_ === 'function' && window.isAdminMasterFormBusy_())) {
             renderMasterSection();
         }
         showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');

@@ -547,10 +547,10 @@ window.updateCadSvgOverlay = (opts) => {
         if (window.cadGridLines && gridGroup) {
             window.cadGridLines.forEach(l => {
                 const isMajor = !!(l && l._cadGridMajor);
-                l._svgPathNode = createPathNode('none', isMajor ? '#00E5FF' : '#80DEEA', true);
-                l._svgPathNode.setAttribute('stroke-opacity', isMajor ? '0.85' : '0.6');
-                l._svgPathNode.setAttribute('stroke-width', isMajor ? '2' : '1.2');
-                l._svgPathNode.setAttribute('style', 'pointer-events: none;');
+                l._svgPathNode = createPathNode('none', isMajor ? '#FFFFFF' : '#00E5FF', true);
+                l._svgPathNode.setAttribute('stroke-opacity', isMajor ? '1.0' : '0.95');
+                l._svgPathNode.setAttribute('stroke-width', isMajor ? '2.5' : '1.8');
+                l._svgPathNode.setAttribute('style', 'pointer-events: none; filter: drop-shadow(0 0 1.2px rgba(0,0,0,0.85));');
                 gridGroup.appendChild(l._svgPathNode);
             });
         }
@@ -4279,7 +4279,7 @@ window.cadUpdateCellHoverSvg = (latLng) => {
             stroke = '#03A9F4';
         }
     }
-    g.innerHTML = `<polygon points="${pts}" fill="${fill}" stroke="${stroke}" stroke-width="2" stroke-opacity="0.95"></polygon>`;
+    g.innerHTML = `<polygon points="${pts}" fill="${fill}" stroke="${stroke}" stroke-width="2.5" stroke-opacity="1.0" style="filter: drop-shadow(0 0 1.5px rgba(0,0,0,0.85));"></polygon>`;
 };
 
 window.cadSetCellEraseMode = (on) => {
