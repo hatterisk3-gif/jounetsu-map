@@ -338,7 +338,7 @@ window.onLocationCityChange = function (sel) {
     const prefix = locationFormPrefix_(sel);
     syncLocationCityCustomVisibility(prefix);
 };
-let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlPesticides = [], pdlFertilizers = [], pdlCropChemPlans = [], pdlCostItems = [], pdlCropCostPlans = [], pdlCropWorkPlans = [], pdlNurseryLocations = [], pdlCropCultSettings = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [], pdlHitchTypes = [], pdlContainers = [], pdlContainerNames = [], pdlContentUnits = [], pdlInspections = [];
+let pdlCrops = [], pdlWorkMaster = [], pdlTools = [], pdlMaterials = [], pdlPesticides = [], pdlFertilizers = [], pdlCropChemPlans = [], pdlCostItems = [], pdlCropCostPlans = [], pdlCropWorkPlans = [], pdlNurseryLocations = [], pdlCropCultSettings = [], pdlWorkCategories = [], pdlMachineTypes = [], pdlMachineGroups = [], pdlHitchTypes = [], pdlContainers = [], pdlContainerNames = [], pdlContentUnits = [];
 let mapInitPromise, resolveMapInit;
 mapInitPromise = new Promise((resolve) => { resolveMapInit = resolve; });
 
@@ -362,8 +362,6 @@ function parseMapDeepLinkFromSearch(search) {
     const targetFieldId = fieldIdParam || (!shouldOpenCad && idParam ? idParam : null);
     const fromBulkMemoRaw = urlParams.get('fromBulkMemo');
     const fromBulkMemo = !!(fromBulkMemoRaw && (fromBulkMemoRaw === '1' || fromBulkMemoRaw === 'true'));
-    const fromWorkerMapSelectRaw = urlParams.get('fromWorkerMapSelect');
-    const fromWorkerMapSelect = !!(fromWorkerMapSelectRaw && (fromWorkerMapSelectRaw === '1' || fromWorkerMapSelectRaw === 'true'));
     return {
         lat: isNaN(lat) ? null : lat,
         lng: isNaN(lng) ? null : lng,
@@ -372,9 +370,8 @@ function parseMapDeepLinkFromSearch(search) {
         openCad: !!shouldOpenCad,
         cadFieldId: targetFieldId,
         fromBulkMemo: fromBulkMemo,
-        fromWorkerMapSelect: fromWorkerMapSelect,
         action: urlParams.get('action'),
-        startDraw: urlParams.get('startDraw') || urlParams.get('mode') || urlParams.get('regMode'),
+        startDraw: urlParams.get('startDraw') || urlParams.get('mode'),
         sharedText: [urlParams.get('title'), urlParams.get('text'), urlParams.get('url')].filter(Boolean).join(' ')
     };
 }
@@ -385,9 +382,6 @@ try {
         pendingMapDeepLink = parseMapDeepLinkFromSearch(window.location.search);
         if (pendingMapDeepLink && pendingMapDeepLink.fromBulkMemo) {
             window._cadOpenedFromBulkMemo = true;
-        }
-        if (pendingMapDeepLink && pendingMapDeepLink.fromWorkerMapSelect) {
-            window._openedFromWorkerMapSelect = true;
         }
     }
 } catch (e) { pendingMapDeepLink = null; }
@@ -463,15 +457,7 @@ if (!window._openCadFieldMsgBound_) {
     window._openCadFieldMsgBound_ = true;
     window.addEventListener('message', (ev) => {
         const data = ev && ev.data;
-        if (!data) return;
-        if (data.type === 'openAdminRegMode') {
-            window._openedFromWorkerMapSelect = !!data.fromWorkerMapSelect;
-            if (typeof window.openAdminRegModeFromWorker_ === 'function') {
-                window.openAdminRegModeFromWorker_(data);
-            }
-            return;
-        }
-        if (data.type !== 'openCadField') return;
+        if (!data || data.type !== 'openCadField') return;
         if (Object.prototype.hasOwnProperty.call(data, 'fromBulkMemo')) {
             window._cadOpenedFromBulkMemo = !!data.fromBulkMemo;
         }
@@ -485,35 +471,6 @@ if (!window._openCadFieldMsgBound_) {
         }
     });
 }
-
-window.openAdminRegModeFromWorker_ = (opts) => {
-    opts = opts || {};
-    try {
-        const cadOv = document.getElementById('cadOverlay');
-        if (cadOv && cadOv.style.display !== 'none') {
-            if (typeof window.closeCADMode === 'function') window.closeCADMode();
-            else cadOv.style.display = 'none';
-        }
-    } catch (e) { }
-    try {
-        const m = document.getElementById('modal');
-        if (m) m.style.display = 'none';
-    } catch (e) { }
-    const lat = parseFloat(opts.lat);
-    const lng = parseFloat(opts.lng);
-    const zoom = parseInt(opts.zoom, 10) || 18;
-    if (map && !isNaN(lat) && !isNaN(lng)) {
-        map.setCenter({ lat, lng });
-        map.setZoom(zoom);
-    }
-    const raw = String(opts.regMode || opts.startDraw || 'draw').trim();
-    const mode = (raw === '1' || raw === 'true') ? 'draw' : raw;
-    setTimeout(() => {
-        if (typeof window.pickAdminRegPlus_ === 'function') {
-            window.pickAdminRegPlus_(mode);
-        }
-    }, 250);
-};
 
 let mapDeepLinkUrlCleared = false;
 let deepLinkFieldHandled = false;
@@ -685,31 +642,10 @@ function applyPendingMapDeepLink() {
     const hasCoords = link.lat != null && link.lng != null;
     const hasField = !!link.fieldId;
     const hasShared = !!link.sharedText;
-    const rawStartMode = String(link.startDraw || '').trim();
-    const shouldAutoStartDraw = rawStartMode && (rawStartMode === '1' || rawStartMode === 'true' || rawStartMode === 'draw');
-    const shouldAutoStartOtherReg = rawStartMode && ['marker', 'marker_child', 'marker_parent', 'location'].includes(rawStartMode);
-    if (!hasCoords && !hasField && !hasShared && !link.openCad && !shouldAutoStartDraw && !shouldAutoStartOtherReg) return;
+    const shouldAutoStartDraw = link.startDraw && (link.startDraw === '1' || link.startDraw === 'true' || link.startDraw === 'draw');
+    if (!hasCoords && !hasField && !hasShared && !link.openCad && !shouldAutoStartDraw) return;
 
     clearMapDeepLinkFromUrl();
-
-    if (link.fromWorkerMapSelect && (shouldAutoStartDraw || shouldAutoStartOtherReg)) {
-        window._openedFromWorkerMapSelect = true;
-        window.openAdminRegModeFromWorker_({
-            regMode: shouldAutoStartDraw ? 'draw' : rawStartMode,
-            lat: link.lat,
-            lng: link.lng,
-            zoom: link.zoom
-        });
-        return;
-    }
-
-    if (shouldAutoStartOtherReg) {
-        if (hasCoords) flyMapToDeepLinkPosition(link.lat, link.lng, link.zoom, false);
-        setTimeout(() => {
-            if (typeof window.pickAdminRegPlus_ === 'function') window.pickAdminRegPlus_(rawStartMode);
-        }, 300);
-        return;
-    }
 
     if (shouldAutoStartDraw && link.action !== 'draw') {
         setTimeout(() => {
@@ -1081,16 +1017,13 @@ function persistAdminInitCache_() {
                 cropWorkPlans: pdlCropWorkPlans,
                 nurseryLocations: pdlNurseryLocations,
                 cropCultSettings: pdlCropCultSettings,
-                inspections: pdlInspections,
                 workCategories: pdlWorkCategories,
                 contentUnits: pdlContentUnits,
                 machineTypes: pdlMachineTypes,
                 machineGroups: pdlMachineGroups,
                 hitchTypes: pdlHitchTypes,
-                machines: window.pdlMachines || (cached.pdl && cached.pdl.machines) || [],
-                vehicles: window.pdlMobileVehicles || (cached.pdl && cached.pdl.vehicles) || cached.vehicles || []
-            },
-            vehicles: window.pdlMobileVehicles || (cached.pdl && cached.pdl.vehicles) || cached.vehicles || []
+                machines: window.pdlMachines || (cached.pdl && cached.pdl.machines) || []
+            }
         };
         localStorage.setItem('pMapAdminInitData', JSON.stringify(data));
     } catch (e) {
@@ -1126,15 +1059,6 @@ function remapLoadedPolygonId_(oldId, newId) {
         const extra = obj._pendingUpdate;
         obj._pendingUpdate = null;
         setTimeout(() => { syncUpdatePolygon_(obj, extra).catch(() => { }); }, 0);
-    }
-    if (window.parent && window.parent !== window) {
-        try {
-            window.parent.postMessage({
-                type: 'workerMapSelectPolygonIdRemapped',
-                oldId: String(oldId),
-                newId: String(newId)
-            }, '*');
-        } catch (e) { }
     }
     return obj;
 }
@@ -1601,7 +1525,6 @@ function applyMasterServerList_(type, updatedList) {
     else if (type === 'machineType') pdlMachineTypes = updatedList;
     else if (type === 'machineGroup' || type === 'machineCategory') pdlMachineGroups = updatedList;
     else if (type === 'hitchType') pdlHitchTypes = updatedList;
-    else if (type === 'inspection') pdlInspections = updatedList || [];
 }
 
 function applyOptimisticMasterChange_(type, act, value) {
@@ -1654,7 +1577,6 @@ function applyOptimisticMasterChange_(type, act, value) {
     else if (type === 'machineType') wrap(() => pdlMachineTypes, v => { pdlMachineTypes = v; }, nameOf);
     else if (type === 'machineGroup' || type === 'machineCategory') wrap(() => pdlMachineGroups, v => { pdlMachineGroups = v; }, nameOf);
     else if (type === 'hitchType') wrap(() => pdlHitchTypes, v => { pdlHitchTypes = v; }, nameOf);
-    else if (type === 'inspection') wrap(() => pdlInspections, v => { pdlInspections = v; }, item => item.id || (item.machineType + '|' + item.inspectionCategory + '|' + (item.item || item.name)));
 }
 
 function saveAdminCredentials(id, pw, name) {
@@ -1913,39 +1835,6 @@ function startLocationWatch() {
 function openMasterFromQuery_() {
     if (window._adminMasterQueryHandled) return;
     const params = new URLSearchParams(window.location.search);
-    const editMachineId = String(params.get('editMachine') || '').trim();
-    if (editMachineId) {
-        if (editMachineId.indexOf('veh:') === 0) {
-            const rawVehId = editMachineId.replace(/^veh:/, '');
-            window._adminMasterQueryHandled = true;
-            setTimeout(async () => {
-                if (typeof openEquipmentManageModal === 'function') openEquipmentManageModal('vehicle');
-                if (typeof ensureAdminVehiclesLoaded_ === 'function') await ensureAdminVehiclesLoaded_();
-                const vList = typeof getAdminVehicleList_ === 'function' ? getAdminVehicleList_() : [];
-                const foundVeh = vList.find(v => v && String(v.id) === rawVehId);
-                if (foundVeh && typeof renderEquipmentVehiclePanel_ === 'function') {
-                    renderEquipmentVehiclePanel_(foundVeh);
-                }
-            }, 0);
-            return;
-        }
-        const macList = Array.isArray(window.pdlMachines) ? window.pdlMachines : [];
-        const foundMac = macList.find(m => m && String(m.id) === editMachineId);
-        if (foundMac) {
-            window._adminMasterQueryHandled = true;
-            setTimeout(() => {
-                if (typeof openEquipmentManageModal === 'function') {
-                    openEquipmentManageModal('machine');
-                } else {
-                    openMasterModal();
-                }
-                if (typeof openEditMachineMaster === 'function') {
-                    openEditMachineMaster(encodeURIComponent(JSON.stringify(foundMac)));
-                }
-            }, 0);
-            return;
-        }
-    }
     const masterType = params.get('master');
     if (!masterType) return;
     const allowed = [
@@ -2326,18 +2215,6 @@ function renderInitData(data, opts) {
     };
     if (!keepLocalMasters) {
         window.pdlMachines = data.pdl.machines || [];
-        const vehIncoming = (data.pdl && data.pdl.vehicles) || data.vehicles || data.mobileVehicles;
-        if (Array.isArray(vehIncoming) && vehIncoming.length) {
-            window.pdlMobileVehicles = vehIncoming;
-            window._adminVehiclesLoaded = true;
-        } else if (!window.pdlMobileVehicles || !window.pdlMobileVehicles.length) {
-            try {
-                const pInit = JSON.parse(localStorage.getItem('passionMapInitData') || '{}');
-                if (Array.isArray(pInit.mobileVehicles) && pInit.mobileVehicles.length) {
-                    window.pdlMobileVehicles = pInit.mobileVehicles;
-                }
-            } catch (e) { }
-        }
         if (typeof window.refreshAdminMachineDisplayNames_ === 'function') {
             window.refreshAdminMachineDisplayNames_();
         }
@@ -2346,7 +2223,6 @@ function renderInitData(data, opts) {
         if (data.pdl.locationDetails && data.pdl.locationDetails.length) {
             pdlLocations = data.pdl.locationDetails.map(l => l.name);
         }
-        window.pdlViewpoints = data.pdl.viewpoints || [];
         pdlConditions = data.pdl.conditions || [];
         pdlStatuses = data.pdl.statuses || [];
         toukiList = data.toukiList || [];
@@ -2364,7 +2240,6 @@ function renderInitData(data, opts) {
         pdlCropWorkPlans = keepIfLight_(data.pdl.cropWorkPlans, pdlCropWorkPlans);
         pdlNurseryLocations = keepIfLight_(data.pdl.nurseryLocations, pdlNurseryLocations);
         pdlCropCultSettings = keepIfLight_(data.pdl.cropCultSettings, pdlCropCultSettings);
-        pdlInspections = keepIfLight_(data.pdl.inspections, pdlInspections);
         pdlWorkCategories = data.pdl.workCategories || ["圃場作業", "事務作業", "保全・整備"];
         pdlContentUnits = data.pdl.contentUnits || ['kg', 'g', '本', 'パック', '個', '束'];
         pdlMachineTypes = data.pdl.machineTypes || ["トラクター", "ドローン"];
@@ -2495,7 +2370,7 @@ window.openMasterModal = () => {
 window.getMasterSectionsTargetEl_ = () => {
     const equip = !!window._equipmentManageActive;
     const tab = window._equipmentManageTab;
-    if (equip && (tab === 'machine' || tab === 'tool' || tab === 'inspection' || currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool' || currentActiveMasterType === 'inspection')) {
+    if (equip && (tab === 'machine' || tab === 'tool' || currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool')) {
         const el = document.getElementById('equipmentManageBody');
         if (el) return el;
     }
@@ -2510,8 +2385,6 @@ window._adminVehPhotoB64 = '';
 window.openEquipmentManageModal = (tab) => {
     window._equipmentManageActive = true;
     window._equipmentManageTab = tab || window._equipmentManageTab || 'machine';
-    // 車両データを事前に裏読み（Prefetch）しておくことで、車両タブを開く時に0秒で表示
-    try { window.ensureAdminVehiclesLoaded_(); } catch (e) { }
     const mm = document.getElementById('masterModal');
     if (mm) mm.style.display = 'none';
     const modal = document.getElementById('equipmentManageModal');
@@ -2526,23 +2399,22 @@ window.closeEquipmentManageModal = (opts) => {
     const body = document.getElementById('equipmentManageBody');
     if (body) body.innerHTML = '';
     if (!(opts && opts.keepMaster)) {
-        if (currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool' || currentActiveMasterType === 'inspection') {
+        if (currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool') {
             currentActiveMasterType = null;
         }
     }
 };
 
 window.switchEquipmentManageTab = (tab) => {
-    const next = (tab === 'vehicle' || tab === 'tool' || tab === 'inspection') ? tab : 'machine';
+    const next = (tab === 'vehicle' || tab === 'tool') ? tab : 'machine';
     window._equipmentManageTab = next;
     window._equipmentManageActive = true;
     const styles = {
         machine: { on: '#43A047', bg: '#e8f5e9', fg: '#2e7d32' },
         vehicle: { on: '#FB8C00', bg: '#fff3e0', fg: '#e65100' },
-        tool: { on: '#5C6BC0', bg: '#e8eaf6', fg: '#3949ab' },
-        inspection: { on: '#00897B', bg: '#e0f2f1', fg: '#00695c' }
+        tool: { on: '#5C6BC0', bg: '#e8eaf6', fg: '#3949ab' }
     };
-    ['machine', 'vehicle', 'tool', 'inspection'].forEach(t => {
+    ['machine', 'vehicle', 'tool'].forEach(t => {
         const btn = document.getElementById('equipmentTab_' + t);
         if (!btn) return;
         const active = t === next;
@@ -2556,27 +2428,11 @@ window.switchEquipmentManageTab = (tab) => {
         renderEquipmentVehiclePanel_();
         return;
     }
-    openMasterDetail(next);
+    openMasterDetail(next === 'tool' ? 'tool' : 'machine');
 };
 
 window.getAdminVehicleList_ = () => {
-    let list = window.pdlMobileVehicles;
-    if (!list || (Array.isArray(list) && !list.length)) {
-        try {
-            const adminCache = JSON.parse(localStorage.getItem('pMapAdminInitData') || '{}');
-            const vList = (adminCache.pdl && adminCache.pdl.vehicles) || adminCache.vehicles;
-            if (Array.isArray(vList) && vList.length) {
-                window.pdlMobileVehicles = vList;
-                list = vList;
-            } else {
-                const pMapCache = JSON.parse(localStorage.getItem('passionMapInitData') || '{}');
-                if (Array.isArray(pMapCache.mobileVehicles) && pMapCache.mobileVehicles.length) {
-                    window.pdlMobileVehicles = pMapCache.mobileVehicles;
-                    list = pMapCache.mobileVehicles;
-                }
-            }
-        } catch (e) { }
-    }
+    const list = window.pdlMobileVehicles;
     if (Array.isArray(list)) return list;
     if (list && typeof list === 'object') {
         return Object.keys(list).map(k => Object.assign({ id: k }, list[k]));
@@ -2586,8 +2442,6 @@ window.getAdminVehicleList_ = () => {
 
 window.setAdminVehicleList_ = (arr) => {
     window.pdlMobileVehicles = Array.isArray(arr) ? arr : [];
-    window._adminVehiclesLoaded = true;
-    try { persistAdminInitCache_(); } catch (e) { }
 };
 
 window.adminVehicleDisplayName_ = (v) => {
@@ -2601,70 +2455,26 @@ window.adminVehicleDisplayName_ = (v) => {
     return plate || type || v.id || '';
 };
 
-window.ensureAdminVehiclesLoaded_ = async (force) => {
-    if (!force && window._adminVehiclesLoaded && Array.isArray(window.pdlMobileVehicles)) {
+window.ensureAdminVehiclesLoaded_ = async () => {
+    if (Array.isArray(window.pdlMobileVehicles) && window.pdlMobileVehicles.length) return window.pdlMobileVehicles;
+    try {
+        const res = await callGAS('vehicle_loadAll', {});
+        const map = (res && res.vehicles) ? res.vehicles : {};
+        const arr = Object.keys(map).map(id => Object.assign({ id }, map[id]));
+        window.setAdminVehicleList_(arr);
+        return arr;
+    } catch (e) {
+        console.warn('vehicle_loadAll failed', e);
+        window.setAdminVehicleList_(window.pdlMobileVehicles || []);
         return window.getAdminVehicleList_();
     }
-    if (window._adminVehiclesPromise) {
-        return window._adminVehiclesPromise;
-    }
-    const current = window.getAdminVehicleList_();
-    if (!force && current.length > 0) {
-        window._adminVehiclesLoaded = true;
-    }
-    window._adminVehiclesPromise = (async () => {
-        try {
-            const res = await callGAS('vehicle_loadAll', {}, 1, { jumpQueue: true, timeoutMs: 30000 });
-            const map = (res && res.vehicles) ? res.vehicles : {};
-            const arr = Object.keys(map).map(id => Object.assign({ id }, map[id]));
-            window.pdlMobileVehicles = arr;
-            window._adminVehiclesLoaded = true;
-            try { persistAdminInitCache_(); } catch (e) { }
-            return arr;
-        } catch (e) {
-            console.warn('vehicle_loadAll failed', e);
-            if (!Array.isArray(window.pdlMobileVehicles)) {
-                window.pdlMobileVehicles = [];
-            }
-            return window.getAdminVehicleList_();
-        } finally {
-            window._adminVehiclesPromise = null;
-        }
-    })();
-    return window._adminVehiclesPromise;
 };
 
 window.renderEquipmentVehiclePanel_ = async (editVehicle) => {
     const body = document.getElementById('equipmentManageBody');
     if (!body) return;
-
-    const currentList = window.getAdminVehicleList_();
-    const hasData = currentList && currentList.length > 0;
-    const isLoaded = !!window._adminVehiclesLoaded;
-
-    // キャッシュやデータが全くなく、未取得の場合のみスピナーを表示して完了を待つ
-    if (!hasData && !isLoaded) {
-        body.innerHTML = `
-          <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:240px; color:#666;">
-            <div style="width:36px; height:36px; border:3px solid #ffe0b2; border-top-color:#e65100; border-radius:50%; animation:spinAdminVeh 0.8s linear infinite; margin-bottom:12px;"></div>
-            <div style="font-weight:bold; font-size:14px; color:#e65100;">車両データを読み込み中...</div>
-          </div>
-          <style>@keyframes spinAdminVeh { to { transform: rotate(360deg); } }</style>
-        `;
-        await ensureAdminVehiclesLoaded_();
-        if (window._equipmentManageTab !== 'vehicle') return;
-    } else if (!isLoaded) {
-        // キャッシュデータで即時描画しつつ、バックグラウンドで最新を取得
-        ensureAdminVehiclesLoaded_().then(() => {
-            if (window._equipmentManageActive && window._equipmentManageTab === 'vehicle') {
-                const editInput = document.getElementById('admin_veh_edit_id');
-                if (!editInput || !editInput.value) {
-                    window.renderEquipmentVehiclePanel_(editVehicle);
-                }
-            }
-        });
-    }
-
+    body.innerHTML = '<div style="padding:24px; text-align:center; color:#888;">車両データを読み込み中...</div>';
+    await ensureAdminVehiclesLoaded_();
     const list = window.getAdminVehicleList_().slice().sort((a, b) =>
         String(a.plateNumber || '').localeCompare(String(b.plateNumber || ''), 'ja'));
     const editing = editVehicle || null;
@@ -2695,7 +2505,7 @@ window.renderEquipmentVehiclePanel_ = async (editVehicle) => {
     } else {
         list.forEach(v => {
             const safe = encodeURIComponent(JSON.stringify(v));
-            const sub = [v.mainCategory || v.driveType, v.vehicleType || v.type, (v.mileage === 0 || v.mileage) ? (v.mileage + ' km') : '', v.model].filter(Boolean).join(' / ');
+            const sub = [v.driveType || v.mainCategory, (v.mileage === 0 || v.mileage) ? (v.mileage + ' km') : '', v.model].filter(Boolean).join(' / ');
             listRows += `<tr style="border-bottom:1px solid #eee;">
               <td style="padding:10px; vertical-align:middle;">
                 <div style="font-weight:bold; color:#333; font-size:14px;">${adminVehicleDisplayName_(v) || '(未設定)'}</div>
@@ -2721,15 +2531,15 @@ window.renderEquipmentVehiclePanel_ = async (editVehicle) => {
               <div style="display:flex; flex-direction:column; gap:8px;">
                 <label style="font-size:12px; font-weight:bold; color:#555;">ナンバー（登録番号）*</label>
                 <input type="text" id="admin_veh_plate" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例：徳島 480 あ 1234" value="${editing ? String(editing.plateNumber || '').replace(/"/g, '&quot;') : ''}">
-                <label style="font-size:12px; font-weight:bold; color:#555;">用途別分類</label>
+                <label style="font-size:12px; font-weight:bold; color:#555;">メインカテゴリ</label>
                 <select id="admin_veh_main" class="form-input" style="margin-bottom:0; padding:8px;">
                   <option value="自動車"${mainCat === '自動車' ? ' selected' : ''}>自動車</option>
                   <option value="作業機"${mainCat === '作業機' ? ' selected' : ''}>作業機</option>
                 </select>
-                <label style="font-size:12px; font-weight:bold; color:#555;">ナンバー区分</label>
+                <label style="font-size:12px; font-weight:bold; color:#555;">車種</label>
                 <div style="display:flex; gap:5px;">
                   <select id="admin_veh_type" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">${typeOpts}</select>
-                  <button type="button" onclick="addAdminVehicleType_()" style="padding:8px; border-radius:4px; border:1px solid #ccc;" title="ナンバー区分を追加">➕</button>
+                  <button type="button" onclick="addAdminVehicleType_()" style="padding:8px; border-radius:4px; border:1px solid #ccc;" title="車種を追加">➕</button>
                 </div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">番号 / 型式</label>
                 <div style="display:flex; gap:5px;">
@@ -2772,7 +2582,7 @@ window.renderEquipmentVehiclePanel_ = async (editVehicle) => {
 };
 
 window.addAdminVehicleType_ = () => {
-    const val = prompt('新しいナンバー区分を入力してください（例：軽トラ、普通車、トラック）');
+    const val = prompt('新しい車種を入力してください（例：ステップワゴン、キャリー）');
     if (!val) return;
     const name = val.trim();
     if (!name) return;
@@ -2826,7 +2636,7 @@ window.saveAdminVehicle = async () => {
     const editId = (document.getElementById('admin_veh_edit_id') || {}).value || '';
     const existing = window.getAdminVehicleList_().find(x => String(x.id) === String(editId));
     const mileageRaw = (document.getElementById('admin_veh_mileage') || {}).value;
-    const mainCategory = (document.getElementById('admin_veh_main') || {}).value || (existing ? (existing.mainCategory || existing.group || '自動車') : '自動車');
+    const mainCategory = (document.getElementById('admin_veh_main') || {}).value || '自動車';
     const vehicleType = (document.getElementById('admin_veh_type') || {}).value || '';
     const vehicleNumber = ((document.getElementById('admin_veh_number') || {}).value || '').trim();
     const model = ((document.getElementById('admin_veh_model') || {}).value || '').trim();
@@ -3097,119 +2907,9 @@ window.startMarkerRegisterForMachineSign_ = () => {
     }
 };
 
-window.getAdminMachineTypeGroupMap_ = () => {
-    const map = {};
-    const defaults = {
-        '圃場': ['トラクター', 'コンバイン', '田植機', '定植機', '管理機', '草刈機', '動噴', '散布機', 'ドローン', 'マルチャー', '畝立て機', 'ロータリー', 'ハロー', 'プラウ'],
-        '出荷': ['選別機', '洗浄機', '包装機', '結束機', '計量器', 'フォークリフト', 'コンベア', '保冷庫', '冷蔵庫']
-    };
-    Object.keys(defaults).forEach(g => {
-        defaults[g].forEach(t => { map[t] = g; });
-    });
-    try {
-        const saved = JSON.parse(localStorage.getItem('adminMachineTypeGroupMap') || '{}');
-        if (saved && typeof saved === 'object') {
-            Object.assign(map, saved);
-        }
-    } catch (e) { }
-    (window.pdlMachines || []).forEach(m => {
-        if (m && m.type && m.group) {
-            const t = String(m.type).trim();
-            const g = String(m.group).trim();
-            if (t && g) map[t] = g;
-        }
-    });
-    return map;
-};
-
-window.saveAdminMachineTypeGroupMapping_ = (type, group) => {
-    if (!type || !group) return;
-    try {
-        const saved = JSON.parse(localStorage.getItem('adminMachineTypeGroupMap') || '{}');
-        saved[type] = group;
-        localStorage.setItem('adminMachineTypeGroupMap', JSON.stringify(saved));
-    } catch (e) { }
-};
-
-window.getMachineTypeOptionsHtml = (selected, targetGroup) => {
+window.getMachineTypeOptionsHtml = (selected) => {
     const list = pdlMachineTypes || [];
-    const groupMap = window.getAdminMachineTypeGroupMap_();
-    const currentGroup = String(targetGroup || '').trim();
-
     let html = '<option value="">機械カテゴリを選択...</option>';
-
-    if (currentGroup) {
-        const matched = [];
-        const others = [];
-        list.forEach(t => {
-            const g = groupMap[t];
-            if (g === currentGroup) {
-                matched.push(t);
-            } else {
-                others.push(t);
-            }
-        });
-
-        if (matched.length > 0) {
-            html += `<optgroup label="【${currentGroup}】の機械カテゴリ">`;
-            matched.forEach(t => {
-                const sel = String(t) === String(selected || '') ? 'selected' : '';
-                html += `<option value="${String(t).replace(/"/g, '&quot;')}" ${sel}>${t}</option>`;
-            });
-            html += `</optgroup>`;
-        }
-        if (others.length > 0) {
-            html += `<optgroup label="その他の機械カテゴリ">`;
-            others.forEach(t => {
-                const sel = String(t) === String(selected || '') ? 'selected' : '';
-                html += `<option value="${String(t).replace(/"/g, '&quot;')}" ${sel}>${t}</option>`;
-            });
-            html += `</optgroup>`;
-        }
-    } else {
-        const groups = [...(pdlMachineGroups || [])];
-        const categorized = {};
-        const uncategorized = [];
-
-        list.forEach(t => {
-            const g = groupMap[t];
-            if (g && groups.includes(g)) {
-                if (!categorized[g]) categorized[g] = [];
-                categorized[g].push(t);
-            } else {
-                uncategorized.push(t);
-            }
-        });
-
-        groups.forEach(g => {
-            const items = categorized[g] || [];
-            if (items.length > 0) {
-                html += `<optgroup label="【${g}】">`;
-                items.forEach(t => {
-                    const sel = String(t) === String(selected || '') ? 'selected' : '';
-                    html += `<option value="${String(t).replace(/"/g, '&quot;')}" ${sel}>${t}</option>`;
-                });
-                html += `</optgroup>`;
-            }
-        });
-
-        if (uncategorized.length > 0) {
-            html += `<optgroup label="未分類・その他">`;
-            uncategorized.forEach(t => {
-                const sel = String(t) === String(selected || '') ? 'selected' : '';
-                html += `<option value="${String(t).replace(/"/g, '&quot;')}" ${sel}>${t}</option>`;
-            });
-            html += `</optgroup>`;
-        }
-    }
-
-    return html;
-};
-
-window.getMachineGroupOptionsHtml = (selected) => {
-    const list = [...(pdlMachineGroups || [])];
-    if (selected && !list.includes(selected)) list.unshift(selected);
-    let html = '<option value="">機種を選択...</option>';
     list.forEach(t => {
         const sel = String(t) === String(selected || '') ? 'selected' : '';
         html += `<option value="${String(t).replace(/"/g, '&quot;')}" ${sel}>${t}</option>`;
@@ -3217,878 +2917,19 @@ window.getMachineGroupOptionsHtml = (selected) => {
     return html;
 };
 
-window.parseAdminInspectionTargets_ = (val) => {
-    if (Array.isArray(val)) return [...new Set(val.map(s => String(s || '').trim()).filter(Boolean))];
-    return [...new Set(String(val || '').split(/[,、]/).map(s => s.trim()).filter(Boolean))];
-};
-
-window.getAdminInspectionTargetGroups_ = () => {
-    // 1. 機械のすべての機械カテゴリ
-    const macTypes = [...new Set([
-        ...(pdlMachineTypes || []),
-        ...((window.pdlMachines || []).map(m => m.type).filter(Boolean)),
-        'トラクター', 'コンバイン', '田植機', '定植機', '管理機', '草刈機', '動噴', '散布機', 'ドローン', 'マルチャー', '畝立て機'
-    ])].filter(Boolean);
-
-    // 2. 用途別分類（車両）
-    const vehicleUses = ['自動車', '作業機'];
-
-    // 3. ナンバー区分（車両）
-    const vehTypes = [...new Set([
-        ...(window._adminVehicleTypes || ['軽トラ', '軽バン', '軽四', '普通車', 'トラック']),
-        ...((window.getAdminVehicleList_ ? window.getAdminVehicleList_() : []).map(v => v.vehicleType || v.type).filter(Boolean))
-    ])].filter(Boolean).filter(vt => !macTypes.includes(vt) && !vehicleUses.includes(vt));
-
-    return { macTypes, vehicleUses, vehTypes };
-};
-
-window.buildAdminInspectionTargetMultiSelectHtml_ = (context, selected) => {
-    const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;');
-    const prefix = context === 'edit' ? 'edit' : 'add';
-    const selectedList = window.parseAdminInspectionTargets_(selected);
-    const selectedSet = new Set(selectedList);
-    const { macTypes, vehicleUses, vehTypes } = window.getAdminInspectionTargetGroups_();
-    const knownAll = new Set([...macTypes, ...vehicleUses, ...vehTypes]);
-    const extraTargets = selectedList.filter(t => !knownAll.has(t));
-
-    const renderGroup = (title, items) => {
-        if (!items.length) return '';
-        const chips = items.map(t => {
-            const isChecked = selectedSet.has(t);
-            const bg = isChecked ? '#e0f2f1' : '#fff';
-            const border = isChecked ? '#00897b' : '#d0d7de';
-            const color = isChecked ? '#00695c' : '#333';
-            const fw = isChecked ? 'bold' : 'normal';
-            return `<label style="display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:14px; border:1px solid ${border}; background:${bg}; color:${color}; font-size:12px; font-weight:${fw}; cursor:pointer; user-select:none; transition:all 0.12s;">
-                <input type="checkbox" class="${prefix}-insp-target-cb" value="${esc(t)}" ${isChecked ? 'checked' : ''} onchange="onAdminInspectionTargetCheckboxChange_('${prefix}')" style="margin:0; accent-color:#00897b; cursor:pointer;">
-                <span>${esc(t)}</span>
-            </label>`;
-        }).join('');
-        return `<div style="margin-bottom:6px;">
-            <div style="font-size:11px; font-weight:bold; color:#555; margin-bottom:4px;">${title}</div>
-            <div style="display:flex; flex-wrap:wrap; gap:5px;">${chips}</div>
-        </div>`;
-    };
-
-    const countBadgeColor = selectedList.length > 0 ? '#00796b' : '#c62828';
-    const countBadgeBg = selectedList.length > 0 ? '#e0f2f1' : '#ffebee';
-
-    return `
-        <input type="hidden" id="${prefix}_insp_mac_type" value="${esc(selectedList.join(','))}">
-        <div style="border:1px solid #ccc; border-radius:6px; background:#fafafa; padding:8px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; padding-bottom:5px; border-bottom:1px solid #e5e5e5;">
-                <span id="${prefix}_insp_mac_count" style="font-size:11px; font-weight:bold; padding:2px 8px; border-radius:10px; background:${countBadgeBg}; color:${countBadgeColor};">
-                    ${selectedList.length > 0 ? `選択中: ${selectedList.length}件` : '未選択（1つ以上選択）'}
-                </span>
-                <div style="display:flex; gap:4px;">
-                    <button type="button" onclick="toggleAllAdminInspectionTargets_('${prefix}', true)" style="font-size:11px; padding:2px 7px; border-radius:4px; border:1px solid #bbb; background:#fff; cursor:pointer;">全選択</button>
-                    <button type="button" onclick="toggleAllAdminInspectionTargets_('${prefix}', false)" style="font-size:11px; padding:2px 7px; border-radius:4px; border:1px solid #bbb; background:#fff; cursor:pointer;">全解除</button>
-                </div>
-            </div>
-            <div style="max-height:175px; overflow-y:auto; padding-right:2px;">
-                ${renderGroup('🚜 機械カテゴリ（すべての機械）', macTypes)}
-                ${renderGroup('🚚 用途別分類（車両）', vehicleUses)}
-                ${renderGroup('🛻 ナンバー区分（車両）', vehTypes)}
-                ${renderGroup('📌 その他の対象', extraTargets)}
-            </div>
-        </div>
-    `;
-};
-
-window.onAdminInspectionTargetCheckboxChange_ = (context) => {
-    const prefix = context === 'edit' ? 'edit' : 'add';
-    const cbs = document.querySelectorAll(`.${prefix}-insp-target-cb`);
-    const selected = [];
-    cbs.forEach(cb => {
-        const lbl = cb.closest('label');
-        if (cb.checked) {
-            selected.push(String(cb.value || '').trim());
-            if (lbl) {
-                lbl.style.background = '#e0f2f1';
-                lbl.style.borderColor = '#00897b';
-                lbl.style.color = '#00695c';
-                lbl.style.fontWeight = 'bold';
-            }
-        } else {
-            if (lbl) {
-                lbl.style.background = '#fff';
-                lbl.style.borderColor = '#d0d7de';
-                lbl.style.color = '#333';
-                lbl.style.fontWeight = 'normal';
-            }
-        }
+window.getMachineGroupOptionsHtml = (selected) => {
+    const list = [...(pdlMachineGroups || [])];
+    if (selected && !list.includes(selected)) list.unshift(selected);
+    let html = '<option value="">メインカテゴリを選択...</option>';
+    list.forEach(t => {
+        const sel = String(t) === String(selected || '') ? 'selected' : '';
+        html += `<option value="${String(t).replace(/"/g, '&quot;')}" ${sel}>${t}</option>`;
     });
-    const hidden = document.getElementById(`${prefix}_insp_mac_type`);
-    if (hidden) hidden.value = selected.join(',');
-
-    const countEl = document.getElementById(`${prefix}_insp_mac_count`);
-    if (countEl) {
-        if (selected.length > 0) {
-            countEl.textContent = `選択中: ${selected.length}件`;
-            countEl.style.background = '#e0f2f1';
-            countEl.style.color = '#00796b';
-        } else {
-            countEl.textContent = '未選択（1つ以上選択）';
-            countEl.style.background = '#ffebee';
-            countEl.style.color = '#c62828';
-        }
-    }
-    if (typeof window.onAdminInspectionTargetChange_ === 'function') {
-        window.onAdminInspectionTargetChange_(prefix);
-    }
-};
-
-window.toggleAllAdminInspectionTargets_ = (context, checked) => {
-    const prefix = context === 'edit' ? 'edit' : 'add';
-    document.querySelectorAll(`.${prefix}-insp-target-cb`).forEach(cb => {
-        cb.checked = !!checked;
-    });
-    window.onAdminInspectionTargetCheckboxChange_(prefix);
-};
-
-window.buildAdminInspectionTargetOptionsHtml_ = (selected) => {
-    const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;');
-    const cur = String(selected || '').trim();
-    const { macTypes, vehicleUses, vehTypes } = window.getAdminInspectionTargetGroups_();
-
-    let html = '<option value="">対象（機械カテゴリ / 用途別分類）を選択...</option>';
-
-    html += '<optgroup label="🚜 機械カテゴリ（すべての機械）">';
-    macTypes.forEach(t => {
-        const sel = t === cur ? ' selected' : '';
-        html += `<option value="${esc(t)}"${sel}>${t}</option>`;
-    });
-    html += '</optgroup>';
-
-    html += '<optgroup label="🚚 用途別分類（車両）">';
-    vehicleUses.forEach(u => {
-        const sel = u === cur ? ' selected' : '';
-        html += `<option value="${esc(u)}"${sel}>${u}</option>`;
-    });
-    html += '</optgroup>';
-
-    html += '<optgroup label="🛻 ナンバー区分（車両）">';
-    vehTypes.forEach(vt => {
-        const sel = vt === cur ? ' selected' : '';
-        html += `<option value="${esc(vt)}"${sel}>${vt}</option>`;
-    });
-    html += '</optgroup>';
-
-    if (cur && !macTypes.includes(cur) && !vehicleUses.includes(cur) && !vehTypes.includes(cur)) {
-        html += `<option value="${esc(cur)}" selected>${cur}</option>`;
-    }
-
     return html;
 };
 
 // 互換エイリアス
 window.getMachineCategoryOptionsHtml = window.getMachineGroupOptionsHtml;
-
-// ══════════════════════════════════════════════════════════════
-// 📋 対象別 点検カテゴリ管理ヘルパー
-// ══════════════════════════════════════════════════════════════
-const DEFAULT_TARGET_INSP_CATEGORIES = {
-    'トラクター': ['エンジン部', '走行部・タイヤ/クローラ', '油圧・昇降部', 'PTO・連結部', '電装・操作・安全'],
-    'コンバイン': ['エンジン部', '走行・クローラ部', '刈取部', '脱穀・選別部', '排ワラ・カッター部', '電装・安全'],
-    '田植機': ['エンジン部', '走行・車輪部', '植付部', '苗のせ台・送出部', '油圧・昇降部'],
-    '管理機': ['エンジン部', '走行・車輪部', 'ロータリー・作業部', 'ベルト・クラッチ', '操作・安全レバー'],
-    '草刈機': ['エンジン部', '刈刃・ローター部', '走行部', '飛散防止カバー', '操作・安全装置'],
-    '動噴': ['エンジン・モーター部', 'ポンプ部', 'ホース・ノズル', '圧力計・調圧弁', '薬液タンク'],
-    '散布機': ['エンジン・動力部', '散布部・シャッター', 'タンク・ノズル', '配管・フィルター'],
-    'ドローン': ['機体・フレーム', 'モーター・ESC・プロペラ', '散布装置・ノズル', 'バッテリー・充電器', '送信機・通信'],
-    '自動車': ['エンジンルーム', '足回り・タイヤ', 'ブレーキ', '灯火・電装', '車体・車内', '定期点検'],
-    '作業機': ['連結・ヒッチ部', '駆動部・チェーン/ギア', '刃・作業部', '油圧・配管', '安全カバー・ボルト'],
-    '軽トラ': ['エンジンルーム', '足回り・タイヤ', 'ブレーキ', '灯火・電装', '荷台・アオリ', '車内・計器'],
-    '軽バン': ['エンジンルーム', '足回り・タイヤ', 'ブレーキ', '灯火・電装', '荷室・ドア', '車内・計器'],
-    'トラック': ['エンジンルーム', 'タイヤ・ホイール', 'ブレーキ・エアー', '灯火・反射器', '荷台・油圧', '車内・計器']
-};
-const DEFAULT_COMMON_INSP_CATEGORIES = ['外観・ボルト緩み', '駆動・可動部', '給油・グリスアップ', '安全装置・機能'];
-
-window.getAdminTargetInspectionCategoryCounts_ = (target) => {
-    const tFilters = target ? window.parseAdminInspectionTargets_(target) : [];
-    const counts = {};
-    (pdlInspections || []).forEach(i => {
-        const targets = window.parseAdminInspectionTargets_(i.machineType);
-        const c = String(i.inspectionCategory || '').trim();
-        if (!c) return;
-        if (!tFilters.length || targets.some(t => tFilters.includes(t))) {
-            counts[c] = (counts[c] || 0) + 1;
-        }
-    });
-    return counts;
-};
-
-window.getAdminTargetInspectionCategoryMap_ = () => {
-    const map = {};
-
-    (pdlInspections || []).forEach(i => {
-        const targets = window.parseAdminInspectionTargets_(i.machineType);
-        const targetList = targets.length ? targets : ['一般・共通'];
-        const c = String(i.inspectionCategory || '').trim();
-        if (c) {
-            targetList.forEach(t => {
-                if (!map[t]) map[t] = new Set();
-                map[t].add(c);
-            });
-        }
-    });
-
-    let customMap = {};
-    try {
-        const raw = localStorage.getItem('pMapAdminTargetInspCats_v2');
-        if (raw) customMap = JSON.parse(raw);
-    } catch (e) { }
-
-    let deletedMap = {};
-    try {
-        const rawDel = localStorage.getItem('pMapAdminDeletedTargetInspCats_v2');
-        if (rawDel) deletedMap = JSON.parse(rawDel);
-    } catch (e) { }
-
-    Object.keys(DEFAULT_TARGET_INSP_CATEGORIES).forEach(t => {
-        if (!map[t]) map[t] = new Set();
-        DEFAULT_TARGET_INSP_CATEGORIES[t].forEach(c => {
-            const delList = (deletedMap[t] || []);
-            if (!delList.includes(c)) map[t].add(c);
-        });
-    });
-
-    Object.keys(customMap).forEach(t => {
-        if (!map[t]) map[t] = new Set();
-        (customMap[t] || []).forEach(c => {
-            const delList = (deletedMap[t] || []);
-            if (c && !delList.includes(c)) map[t].add(c);
-        });
-    });
-
-    if (!map['一般・共通']) map['一般・共通'] = new Set();
-    DEFAULT_COMMON_INSP_CATEGORIES.forEach(c => {
-        const delList = (deletedMap['一般・共通'] || []);
-        if (!delList.includes(c)) map['一般・共通'].add(c);
-    });
-
-    const result = {};
-    Object.keys(map).forEach(t => {
-        result[t] = Array.from(map[t]);
-    });
-    return result;
-};
-
-window.addAdminTargetInspectionCategory_ = (target, catName) => {
-    const t = String(target || '').trim() || '一般・共通';
-    const c = String(catName || '').trim();
-    if (!c) return false;
-
-    try {
-        let deletedMap = JSON.parse(localStorage.getItem('pMapAdminDeletedTargetInspCats_v2') || '{}');
-        if (deletedMap[t]) {
-            deletedMap[t] = deletedMap[t].filter(x => x !== c);
-            localStorage.setItem('pMapAdminDeletedTargetInspCats_v2', JSON.stringify(deletedMap));
-        }
-    } catch (e) { }
-
-    try {
-        let customMap = JSON.parse(localStorage.getItem('pMapAdminTargetInspCats_v2') || '{}');
-        if (!customMap[t]) customMap[t] = [];
-        if (!customMap[t].includes(c)) {
-            customMap[t].push(c);
-            localStorage.setItem('pMapAdminTargetInspCats_v2', JSON.stringify(customMap));
-        }
-    } catch (e) { }
-    return true;
-};
-
-window.renameAdminTargetInspectionCategory_ = (target, oldName, newName) => {
-    const t = String(target || '').trim() || '一般・共通';
-    const oldC = String(oldName || '').trim();
-    const newC = String(newName || '').trim();
-    if (!oldC || !newC || oldC === newC) return false;
-
-    try {
-        let customMap = JSON.parse(localStorage.getItem('pMapAdminTargetInspCats_v2') || '{}');
-        if (!customMap[t]) customMap[t] = [];
-        customMap[t] = customMap[t].filter(x => x !== oldC);
-        if (!customMap[t].includes(newC)) customMap[t].push(newC);
-        localStorage.setItem('pMapAdminTargetInspCats_v2', JSON.stringify(customMap));
-    } catch (e) { }
-
-    try {
-        let deletedMap = JSON.parse(localStorage.getItem('pMapAdminDeletedTargetInspCats_v2') || '{}');
-        if (!deletedMap[t]) deletedMap[t] = [];
-        if (!deletedMap[t].includes(oldC)) deletedMap[t].push(oldC);
-        deletedMap[t] = deletedMap[t].filter(x => x !== newC);
-        localStorage.setItem('pMapAdminDeletedTargetInspCats_v2', JSON.stringify(deletedMap));
-    } catch (e) { }
-
-    return true;
-};
-
-window.deleteAdminTargetInspectionCategory_ = (target, catName) => {
-    const t = String(target || '').trim() || '一般・共通';
-    const c = String(catName || '').trim();
-    if (!c) return false;
-
-    const counts = window.getAdminTargetInspectionCategoryCounts_(t);
-    if (counts[c] > 0) {
-        customAlert(`点検カテゴリ「${c}」には ${counts[c]}件の点検項目が登録されているため削除できません。`);
-        return false;
-    }
-
-    try {
-        let customMap = JSON.parse(localStorage.getItem('pMapAdminTargetInspCats_v2') || '{}');
-        if (customMap[t]) {
-            customMap[t] = customMap[t].filter(x => x !== c);
-            localStorage.setItem('pMapAdminTargetInspCats_v2', JSON.stringify(customMap));
-        }
-    } catch (e) { }
-
-    try {
-        let deletedMap = JSON.parse(localStorage.getItem('pMapAdminDeletedTargetInspCats_v2') || '{}');
-        if (!deletedMap[t]) deletedMap[t] = [];
-        if (!deletedMap[t].includes(c)) deletedMap[t].push(c);
-        localStorage.setItem('pMapAdminDeletedTargetInspCats_v2', JSON.stringify(deletedMap));
-    } catch (e) { }
-
-    return true;
-};
-
-// 互換用（カンマ区切り複数対象にも対応）
-window.addAdminInspectionCategory_ = (cat, target) => {
-    const rawTarget = target != null ? target : (document.getElementById('add_insp_mac_type')?.value || document.getElementById('edit_insp_mac_type')?.value || '');
-    const targets = window.parseAdminInspectionTargets_(rawTarget);
-    if (!targets.length) return window.addAdminTargetInspectionCategory_('', cat);
-    targets.forEach(t => window.addAdminTargetInspectionCategory_(t, cat));
-    return true;
-};
-
-window.buildAdminInspectionCategoryOptionsHtml_ = (selectedCat, selectedTarget) => {
-    const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;');
-    const cur = String(selectedCat || '').trim();
-    const targets = window.parseAdminInspectionTargets_(selectedTarget);
-    const targetMap = window.getAdminTargetInspectionCategoryMap_();
-    const allCounts = window.getAdminTargetInspectionCategoryCounts_();
-
-    let html = '<option value="">点検カテゴリを選択...</option>';
-
-    if (targets.length > 0) {
-        const primaryCats = [];
-        targets.forEach(t => {
-            (targetMap[t] || []).forEach(c => {
-                if (!primaryCats.includes(c)) primaryCats.push(c);
-            });
-        });
-        const targetCounts = window.getAdminTargetInspectionCategoryCounts_(targets);
-        const labelText = targets.length === 1
-            ? `【${esc(targets[0])}】の点検カテゴリ`
-            : `【${esc(targets.slice(0, 3).join('・'))}${targets.length > 3 ? ' 他' : ''}】の点検カテゴリ`;
-
-        if (primaryCats.length > 0) {
-            html += `<optgroup label="${labelText}">`;
-            primaryCats.forEach(cat => {
-                const count = targetCounts[cat] || 0;
-                const badge = count > 0 ? `(${count}件)` : `(0件・削除可)`;
-                const isSel = (cat === cur) ? ' selected' : '';
-                html += `<option value="${esc(cat)}"${isSel}>${esc(cat)} ${badge}</option>`;
-            });
-            html += `</optgroup>`;
-        }
-
-        // 他の対象・共通カテゴリ
-        const otherCats = [];
-        Object.keys(targetMap).forEach(t => {
-            if (targets.includes(t)) return;
-            (targetMap[t] || []).forEach(c => {
-                if (!primaryCats.includes(c) && !otherCats.includes(c)) otherCats.push(c);
-            });
-        });
-        if (otherCats.length > 0) {
-            html += `<optgroup label="【その他の点検カテゴリ】">`;
-            otherCats.forEach(cat => {
-                const count = allCounts[cat] || 0;
-                const badge = count > 0 ? `(${count}件)` : `(0件・削除可)`;
-                const isSel = (cat === cur) ? ' selected' : '';
-                html += `<option value="${esc(cat)}"${isSel}>${esc(cat)} ${badge}</option>`;
-            });
-            html += `</optgroup>`;
-        }
-    } else {
-        // 対象未指定時は対象ごとにグループ化
-        Object.keys(targetMap).forEach(t => {
-            const cats = targetMap[t] || [];
-            if (!cats.length) return;
-            const tCounts = window.getAdminTargetInspectionCategoryCounts_(t);
-            html += `<optgroup label="【${esc(t)}】">`;
-            cats.forEach(cat => {
-                const count = tCounts[cat] || 0;
-                const badge = count > 0 ? `(${count}件)` : `(0件・削除可)`;
-                const isSel = (cat === cur) ? ' selected' : '';
-                html += `<option value="${esc(cat)}"${isSel}>${esc(cat)} ${badge}</option>`;
-            });
-            html += `</optgroup>`;
-        });
-    }
-
-    if (cur) {
-        const allKnown = Object.values(targetMap).flat();
-        if (!allKnown.includes(cur)) {
-            html += `<option value="${esc(cur)}" selected>${esc(cur)} (0件・削除可)</option>`;
-        }
-    }
-    return html;
-};
-
-window.onAdminInspectionTargetChange_ = (context) => {
-    const isEdit = (context === 'edit');
-    const targetSel = document.getElementById(isEdit ? 'edit_insp_mac_type' : 'add_insp_mac_type');
-    const catSel = document.getElementById(isEdit ? 'edit_insp_category' : 'add_insp_category');
-    if (!targetSel || !catSel) return;
-    const target = (targetSel.value || '').trim();
-    const prevCat = (catSel.value || '').trim();
-    catSel.innerHTML = window.buildAdminInspectionCategoryOptionsHtml_(prevCat, target);
-};
-
-window.buildAdminInspectionCategoryChipsHtml_ = () => {
-    const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;');
-    const targetMap = window.getAdminTargetInspectionCategoryMap_();
-
-    let groupsHtml = '';
-    const targets = Object.keys(targetMap);
-    targets.forEach(t => {
-        const cats = targetMap[t] || [];
-        if (!cats.length) return;
-        const tCounts = window.getAdminTargetInspectionCategoryCounts_(t);
-        const chips = cats.map(cat => {
-            const count = tCounts[cat] || 0;
-            const safeCat = cat.replace(/'/g, "\\'");
-            const safeTarget = t.replace(/'/g, "\\'");
-            if (count > 0) {
-                return `<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 7px; border-radius:12px; background:#e0f2f1; color:#00695c; font-size:11px; font-weight:bold; border:1px solid #80cbc4;">
-                    📁 ${esc(cat)} <span style="font-size:10px; background:#00796b; color:#fff; padding:1px 4px; border-radius:8px;">${count}件</span>
-                </span>`;
-            } else {
-                return `<span style="display:inline-flex; align-items:center; gap:3px; padding:2px 7px; border-radius:12px; background:#fff3e0; color:#e65100; font-size:11px; font-weight:bold; border:1px dashed #ffb74d;" title="登録データがありません。削除可能です">
-                    📁 ${esc(cat)} <span style="font-size:10px; background:#ff9800; color:#fff; padding:1px 4px; border-radius:8px;">0件</span>
-                    <button type="button" onclick="confirmDeleteAdminInspectionCategory_('${safeCat}', '${safeTarget}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:50%; width:16px; height:16px; line-height:12px; font-size:11px; padding:0; cursor:pointer; font-weight:bold; margin-left:1px;" title="この点検カテゴリを削除">×</button>
-                </span>`;
-            }
-        }).join('');
-
-        groupsHtml += `
-          <div style="margin-bottom:6px;">
-            <div style="font-size:11px; font-weight:bold; color:#00796b; margin-bottom:3px;">🏷️ 【${esc(t)}】</div>
-            <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:4px;">
-              ${chips}
-            </div>
-          </div>
-        `;
-    });
-
-    return `
-      <div style="margin-bottom:12px; padding:8px 10px; background:#f4fbf9; border:1px solid #b2dfdb; border-radius:8px; flex-shrink:0; max-height:220px; overflow-y:auto;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; position:sticky; top:0; background:#f4fbf9; padding-bottom:4px; border-bottom:1px solid #e0f2f1; z-index:2;">
-          <span style="font-size:12px; font-weight:bold; color:#00695c;">📁 対象別 点検カテゴリ一覧（データ0件は「×」で削除可）:</span>
-          <button type="button" onclick="addAdminInspectionCategoryPrompt_('list')" style="font-size:11px; padding:3px 8px; border-radius:4px; background:#00897b; color:#fff; border:none; cursor:pointer; font-weight:bold;">➕ カテゴリ追加</button>
-        </div>
-        ${groupsHtml || '<span style="color:#888; font-size:11px;">カテゴリがありません</span>'}
-      </div>
-    `;
-};
-
-window.refreshAdminInspectionCategorySelects_ = (selectedCat, selectedTarget) => {
-    const addMac = (document.getElementById('add_insp_mac_type')?.value || '').trim();
-    const editMac = (document.getElementById('edit_insp_mac_type')?.value || '').trim();
-
-    const addSel = document.getElementById('add_insp_category');
-    if (addSel) {
-        const curAdd = selectedCat != null ? selectedCat : addSel.value;
-        const curTarget = selectedTarget != null ? selectedTarget : addMac;
-        addSel.innerHTML = window.buildAdminInspectionCategoryOptionsHtml_(curAdd, curTarget);
-    }
-    const editSel = document.getElementById('edit_insp_category');
-    if (editSel) {
-        const curEdit = selectedCat != null ? selectedCat : editSel.value;
-        const curTarget = selectedTarget != null ? selectedTarget : editMac;
-        editSel.innerHTML = window.buildAdminInspectionCategoryOptionsHtml_(curEdit, curTarget);
-    }
-};
-
-window.addAdminInspectionCategoryPrompt_ = (context) => {
-    let curTargetRaw = '';
-    if (context === 'edit') {
-        curTargetRaw = (document.getElementById('edit_insp_mac_type')?.value || '').trim();
-    } else if (context === 'add') {
-        curTargetRaw = (document.getElementById('add_insp_mac_type')?.value || '').trim();
-    }
-    const curTargets = window.parseAdminInspectionTargets_(curTargetRaw);
-    const targetHint = curTargets.length > 0 ? `（対象: ${curTargets.join('・')}）` : '（一般・共通）';
-    const raw = prompt(`新しい点検カテゴリ名を入力してください ${targetHint}\n例: エンジン部、オイル・油脂類、足回り、作業部、消耗品`);
-    if (raw == null) return;
-    const name = raw.trim();
-    if (!name) return;
-
-    if (curTargets.length > 0) {
-        curTargets.forEach(t => window.addAdminTargetInspectionCategory_(t, name));
-    } else {
-        window.addAdminTargetInspectionCategory_('', name);
-    }
-    window.refreshAdminInspectionCategorySelects_(name, curTargetRaw);
-    if (context === 'list' || (currentActiveMasterType === 'inspection' && context !== 'edit')) {
-        openMasterDetail('inspection');
-        if (context === 'add' && curTargets.length > 0) {
-            document.querySelectorAll('.add-insp-target-cb').forEach(cb => {
-                cb.checked = curTargets.includes(cb.value);
-            });
-            window.onAdminInspectionTargetCheckboxChange_('add');
-            const addSel = document.getElementById('add_insp_category');
-            if (addSel) addSel.value = name;
-        }
-    }
-    if (typeof showAdminSyncToast === 'function') {
-        showAdminSyncToast(`✅ 点検カテゴリ「${name}」を追加しました`, 'ok');
-    }
-};
-
-window.renameAdminInspectionCategoryPrompt_ = (context) => {
-    const isEdit = (context === 'edit');
-    const selId = isEdit ? 'edit_insp_category' : 'add_insp_category';
-    const macSelId = isEdit ? 'edit_insp_mac_type' : 'add_insp_mac_type';
-    const sel = document.getElementById(selId);
-    const macSel = document.getElementById(macSelId);
-
-    const oldName = sel ? String(sel.value || '').trim() : '';
-    const curTargetRaw = macSel ? String(macSel.value || '').trim() : '';
-    const curTargets = window.parseAdminInspectionTargets_(curTargetRaw);
-
-    if (!oldName) {
-        customAlert('名前を変更する点検カテゴリをプルダウンで選択してください');
-        return;
-    }
-
-    const raw = prompt(`点検カテゴリ「${oldName}」の新しい名称を入力してください:`, oldName);
-    if (raw == null) return;
-    const newName = raw.trim();
-    if (!newName || newName === oldName) return;
-
-    if (curTargets.length > 0) {
-        curTargets.forEach(t => window.renameAdminTargetInspectionCategory_(t, oldName, newName));
-    } else {
-        window.renameAdminTargetInspectionCategory_('', oldName, newName);
-    }
-
-    // pdlInspections 内の該当点検項目のカテゴリ名を一括変更
-    const matchingItems = (pdlInspections || []).filter(i => {
-        const itemTargets = window.parseAdminInspectionTargets_(i.machineType);
-        const matchTarget = !curTargets.length || !itemTargets.length || itemTargets.some(t => curTargets.includes(t));
-        return matchTarget && String(i.inspectionCategory || '').trim() === oldName;
-    });
-
-    if (matchingItems.length > 0) {
-        matchingItems.forEach(i => {
-            i.inspectionCategory = newName;
-            const payload = {
-                masterType: 'inspection',
-                manageAction: 'edit',
-                value: {
-                    id: i.id,
-                    newData: Object.assign({}, i, { inspectionCategory: newName })
-                },
-                userName: currentUser
-            };
-            syncAdminCall_('manageMaster', payload, {
-                key: 'manageMaster:inspection:edit:' + i.id,
-                op: 'manageMaster',
-                payload
-            }).catch(e => console.warn('Sync inspection cat rename err:', e));
-        });
-        persistAdminInitCache_();
-    }
-
-    window.refreshAdminInspectionCategorySelects_(newName, curTargetRaw);
-    if (!isEdit) {
-        openMasterDetail('inspection');
-        if (curTargets.length > 0) {
-            document.querySelectorAll('.add-insp-target-cb').forEach(cb => {
-                cb.checked = curTargets.includes(cb.value);
-            });
-            window.onAdminInspectionTargetCheckboxChange_('add');
-            const addSel = document.getElementById('add_insp_category');
-            if (addSel) addSel.value = newName;
-        }
-    }
-    if (typeof showAdminSyncToast === 'function') {
-        const countMsg = matchingItems.length > 0 ? `（${matchingItems.length}件の点検項目に反映）` : '';
-        showAdminSyncToast(`✅ 点検カテゴリ「${oldName}」を「${newName}」に変更しました${countMsg}`, 'ok');
-    }
-};
-
-window.removeAdminInspectionCategoryPrompt_ = (context) => {
-    const isEdit = (context === 'edit');
-    const selId = isEdit ? 'edit_insp_category' : 'add_insp_category';
-    const macSelId = isEdit ? 'edit_insp_mac_type' : 'add_insp_mac_type';
-    const sel = document.getElementById(selId);
-    const macSel = document.getElementById(macSelId);
-
-    const cat = sel ? String(sel.value || '').trim() : '';
-    const curTargetRaw = macSel ? String(macSel.value || '').trim() : '';
-    const curTargets = window.parseAdminInspectionTargets_(curTargetRaw);
-
-    if (!cat) {
-        customAlert('削除する点検カテゴリを選択してください');
-        return;
-    }
-    const counts = window.getAdminTargetInspectionCategoryCounts_(curTargets);
-    const count = counts[cat] || 0;
-    if (count > 0) {
-        customAlert(`点検カテゴリ「${cat}」には ${count}件の点検項目が登録されています。\n登録済みデータで使用されているカテゴリは削除できません。\n先に点検項目を変更または削除してください。`);
-        return;
-    }
-    const ok = confirm(`点検カテゴリ「${cat}」は登録済みデータが0件です。\nこの点検カテゴリを削除しますか？`);
-    if (!ok) return;
-
-    if (curTargets.length > 0) {
-        curTargets.forEach(t => window.deleteAdminTargetInspectionCategory_(t, cat));
-    } else {
-        window.deleteAdminTargetInspectionCategory_('', cat);
-    }
-    window.refreshAdminInspectionCategorySelects_('', curTargetRaw);
-    if (!isEdit) {
-        openMasterDetail('inspection');
-        if (curTargets.length > 0) {
-            document.querySelectorAll('.add-insp-target-cb').forEach(cb => {
-                cb.checked = curTargets.includes(cb.value);
-            });
-            window.onAdminInspectionTargetCheckboxChange_('add');
-        }
-    }
-    if (typeof showAdminSyncToast === 'function') {
-        showAdminSyncToast(`✅ 点検カテゴリ「${cat}」を削除しました`, 'ok');
-    }
-};
-
-window.confirmDeleteAdminInspectionCategory_ = (cat, target) => {
-    const counts = window.getAdminTargetInspectionCategoryCounts_(target);
-    const count = counts[cat] || 0;
-    if (count > 0) {
-        customAlert(`点検カテゴリ「${cat}」には ${count}件の点検項目が登録されているため削除できません。\n先に登録済みの点検項目を削除またはカテゴリを変更してください。`);
-        return;
-    }
-    const targetMsg = target ? `（対象: ${target}）` : '';
-    const ok = confirm(`点検カテゴリ「${cat}」${targetMsg}は登録済みデータが0件です。\nこの点検カテゴリを削除しますか？`);
-    if (!ok) return;
-
-    window.deleteAdminTargetInspectionCategory_(target, cat);
-    window.refreshAdminInspectionCategorySelects_('', target);
-    openMasterDetail('inspection');
-    if (typeof showAdminSyncToast === 'function') {
-        showAdminSyncToast(`✅ 点検カテゴリ「${cat}」を削除しました`, 'ok');
-    }
-};
-
-window.saveAdminInspectionOrderFromDom_ = () => {
-    const tbody = document.querySelector('#masterListTable tbody');
-    if (!tbody) return;
-    const rows = Array.from(tbody.querySelectorAll('tr.insp-sortable-row'));
-    if (!rows.length) return;
-
-    const orderedIds = rows.map(r => String(r.dataset.inspId || '').trim()).filter(Boolean);
-    rows.forEach((r, idx) => {
-        const numEl = r.querySelector('.insp-order-num');
-        if (numEl) numEl.textContent = String(idx + 1);
-    });
-
-    const idToItem = new Map();
-    (pdlInspections || []).forEach(item => {
-        if (item && item.id) idToItem.set(String(item.id), item);
-    });
-
-    const changedItems = [];
-    const nextList = [];
-    orderedIds.forEach((id, idx) => {
-        const item = idToItem.get(id);
-        if (!item) return;
-        const newSort = idx + 1;
-        if (Number(item.sortOrder) !== newSort) {
-            item.sortOrder = newSort;
-            changedItems.push(item);
-        }
-        nextList.push(item);
-        idToItem.delete(id);
-    });
-    // 万一 DOM にないアイテムがあれば末尾に保持
-    idToItem.forEach(item => nextList.push(item));
-
-    if (!changedItems.length) return;
-    pdlInspections = nextList;
-    persistAdminInitCache_();
-
-    changedItems.forEach(item => {
-        const payload = {
-            masterType: 'inspection',
-            manageAction: 'edit',
-            value: {
-                id: item.id,
-                newData: {
-                    machineType: item.machineType || '',
-                    inspectionCategory: item.inspectionCategory || '',
-                    item: item.item || item.name || '',
-                    sortOrder: item.sortOrder,
-                    note: item.note || ''
-                }
-            },
-            userName: currentUser
-        };
-        syncAdminCall_('manageMaster', payload, {
-            key: 'manageMaster:inspection:edit:' + item.id,
-            op: 'manageMaster',
-            payload
-        }).catch(e => console.warn('Sync inspection sort err:', e));
-    });
-
-    if (typeof showAdminSyncToast === 'function') {
-        showAdminSyncToast(`✅ 点検項目の並び順を更新しました（${changedItems.length}件保存）`, 'ok');
-    }
-};
-
-window.initAdminInspectionSortHandlers_ = () => {
-    const tbody = document.querySelector('#masterListTable tbody');
-    if (!tbody || tbody.dataset.inspSortBound === '1') return;
-    tbody.dataset.inspSortBound = '1';
-
-    let draggedRow = null;
-    let touchDragging = false;
-    let longPressTimer = null;
-    let startX = 0;
-    let startY = 0;
-
-    const resetRowStyle = (tr) => {
-        if (!tr) return;
-        tr.style.opacity = '';
-        tr.style.background = '';
-        tr.style.boxShadow = '';
-    };
-
-    const moveRowToPoint = (clientY) => {
-        if (!draggedRow) return;
-        const rows = Array.from(tbody.querySelectorAll('tr.insp-sortable-row')).filter(r => r !== draggedRow && r.style.display !== 'none');
-        let targetBefore = null;
-        for (const r of rows) {
-            const rect = r.getBoundingClientRect();
-            if (clientY < rect.top + rect.height / 2) {
-                targetBefore = r;
-                break;
-            }
-        }
-        if (targetBefore) {
-            if (draggedRow.nextSibling !== targetBefore) {
-                tbody.insertBefore(draggedRow, targetBefore);
-            }
-        } else {
-            const lastRow = rows[rows.length - 1];
-            if (lastRow && lastRow.nextSibling !== draggedRow) {
-                tbody.insertBefore(draggedRow, lastRow.nextSibling);
-            }
-        }
-    };
-
-    // PC: HTML5 Drag & Drop
-    tbody.addEventListener('dragstart', (e) => {
-        if (e.target && e.target.closest('button')) {
-            e.preventDefault();
-            return;
-        }
-        const tr = e.target ? e.target.closest('tr.insp-sortable-row') : null;
-        if (!tr) return;
-        draggedRow = tr;
-        tr.style.opacity = '0.45';
-        tr.style.background = '#e0f2f1';
-        if (e.dataTransfer) {
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/plain', tr.dataset.inspId || '');
-        }
-    });
-
-    tbody.addEventListener('dragover', (e) => {
-        if (!draggedRow) return;
-        e.preventDefault();
-        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-        moveRowToPoint(e.clientY);
-    });
-
-    tbody.addEventListener('drop', (e) => {
-        if (!draggedRow) return;
-        e.preventDefault();
-        resetRowStyle(draggedRow);
-        draggedRow = null;
-        window.saveAdminInspectionOrderFromDom_();
-    });
-
-    tbody.addEventListener('dragend', () => {
-        if (draggedRow) {
-            resetRowStyle(draggedRow);
-            draggedRow = null;
-            window.saveAdminInspectionOrderFromDom_();
-        }
-    });
-
-    // スマホ・タブレット: 長押しタッチドラッグ
-    tbody.addEventListener('touchstart', (e) => {
-        if (e.target && e.target.closest('button')) return;
-        if (!e.touches || e.touches.length !== 1) return;
-        const tr = e.target ? e.target.closest('tr.insp-sortable-row') : null;
-        if (!tr) return;
-
-        const touch = e.touches[0];
-        startX = touch.clientX;
-        startY = touch.clientY;
-        const isHandle = !!(e.target && e.target.closest('.insp-drag-handle'));
-        const delay = isHandle ? 80 : 250;
-
-        clearTimeout(longPressTimer);
-        longPressTimer = setTimeout(() => {
-            touchDragging = true;
-            draggedRow = tr;
-            tr.style.background = '#e0f2f1';
-            tr.style.boxShadow = '0 4px 12px rgba(0,137,123,0.28)';
-            tr.style.opacity = '0.92';
-            try { if (navigator.vibrate) navigator.vibrate(20); } catch (err) { }
-        }, delay);
-    }, { passive: true });
-
-    tbody.addEventListener('touchmove', (e) => {
-        if (!e.touches || e.touches.length !== 1) return;
-        const touch = e.touches[0];
-        if (!touchDragging) {
-            if (Math.abs(touch.clientX - startX) > 10 || Math.abs(touch.clientY - startY) > 10) {
-                clearTimeout(longPressTimer);
-            }
-            return;
-        }
-        e.preventDefault();
-        moveRowToPoint(touch.clientY);
-
-        // スクロールコンテナ端での自動スクロール
-        const scrollBox = tbody.closest('div[style*="overflow-y:auto"]');
-        if (scrollBox) {
-            const boxRect = scrollBox.getBoundingClientRect();
-            if (touch.clientY < boxRect.top + 40) scrollBox.scrollTop -= 12;
-            else if (touch.clientY > boxRect.bottom - 40) scrollBox.scrollTop += 12;
-        }
-    }, { passive: false });
-
-    const finishTouchDrag = () => {
-        clearTimeout(longPressTimer);
-        if (touchDragging && draggedRow) {
-            resetRowStyle(draggedRow);
-            draggedRow = null;
-            touchDragging = false;
-            window.saveAdminInspectionOrderFromDom_();
-        }
-        touchDragging = false;
-    };
-
-    tbody.addEventListener('touchend', finishTouchDrag);
-    tbody.addEventListener('touchcancel', finishTouchDrag);
-};
 
 let currentActiveMasterType = null;
 
@@ -4100,7 +2941,7 @@ window.getMasterTypeInfo = (type) => {
         workCategory: { title: '📂 作業カテゴリマスタ', desc: '作業のカテゴリ区分設定', list: pdlWorkCategories || [] },
         contentUnit: { title: '📏 コンテナ内容単位マスタ', desc: '収穫記録の内容単位（kg・本など）', list: pdlContentUnits || [] },
         machineType: { title: '🏷️ 機械名マスタ', desc: '機械名・車両名（トラクター、軽トラ等）', list: pdlMachineTypes || [] },
-        machineGroup: { title: '📁 機種マスタ', desc: '農機の機種区分（圃場、出荷など）', list: pdlMachineGroups || [] },
+        machineGroup: { title: '📁 メインカテゴリマスタ', desc: '農機=圃場/出荷、車両=自動車/作業機', list: pdlMachineGroups || [] },
         hitchType: { title: '🔗 ヒッチ規格マスタ', desc: 'トラクターと作業機の連結規格。同じ規格の機械が作業記録で紐づきます', list: pdlHitchTypes || [] },
         work: { title: '📋 作業記録マスタ', desc: '作業項目および詳細作業名リストの設定', list: pdlWorkMaster || [] },
         machine: { title: '🚜 農機マスタ', desc: '管理車両・農業機械・機番・拠点・定位置の設定', list: window.pdlMachines || [] },
@@ -4114,8 +2955,7 @@ window.getMasterTypeInfo = (type) => {
         cropWorkPlan: { title: '🛠️ 品目別作業設定', desc: '日数・半旬・積算温度/日射/降水＋降水キャンセル', list: pdlCropWorkPlans || [] },
         nurseryLocation: { title: '🪴 育苗場所マスタ', desc: '育苗区画（圃場）と方向の登録', list: pdlNurseryLocations || [] },
         cropCultSetting: { title: '📐 作物栽培設定マスタ', desc: '品目ごとの播種穴数など栽培デフォルト', list: pdlCropCultSettings || [] },
-        container: { title: '🧺 コンテナマスタ', desc: 'コンテナ種類×品目ごとの内容単位・内容個数（共通なし）', list: pdlContainers || [] },
-        inspection: { title: '📋 点検マスタ', desc: '機械カテゴリごとの点検カテゴリ・点検項目の設定', list: pdlInspections || [] }
+        container: { title: '🧺 コンテナマスタ', desc: 'コンテナ種類×品目ごとの内容単位・内容個数（共通なし）', list: pdlContainers || [] }
     };
     return listMap[type] || { title: type, desc: '', list: [] };
 };
@@ -4133,7 +2973,7 @@ window.renderMasterMenu = () => {
 
     const masterTypes = [
         'crop', 'cropCultSetting', 'nurseryLocation', 'cropChemPlan', 'cropWorkPlan', 'costItem', 'cropCostPlan', 'container', 'contentUnit', 'location', 'workCategory',
-        'machineType', 'machineGroup', 'hitchType', 'inspection', 'work', 'machine', 'tool', 'material', 'pesticide', 'fertilizer'
+        'machineType', 'machineGroup', 'hitchType', 'work', 'machine', 'tool', 'material', 'pesticide', 'fertilizer'
     ];
 
     let html = `
@@ -4188,7 +3028,7 @@ window.switchPesticideMasterTab = tab => switchCatalogMasterTab('pesticide', tab
 
 window.openMasterDetail = (type, customEditHtml = null) => {
     currentActiveMasterType = type;
-    const inEquipment = !!window._equipmentManageActive && (type === 'machine' || type === 'tool' || type === 'inspection');
+    const inEquipment = !!window._equipmentManageActive && (type === 'machine' || type === 'tool');
     const btnBack = document.getElementById('btnMasterBack');
     if (btnBack) btnBack.style.display = inEquipment ? 'none' : 'inline-block';
 
@@ -4225,8 +3065,6 @@ window.openMasterDetail = (type, customEditHtml = null) => {
     let list = info.list;
     if (type === 'machine') {
         list = [...pdlMachines].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
-    } else if (type === 'inspection') {
-        list = [...(info.list || [])].sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
     }
 
     // フォーム部分の生成
@@ -4355,8 +3193,8 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             </div>`;
         } else if (type === 'machineGroup') {
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
-                <label style="font-size:12px; font-weight:bold; color:#555;">機種名</label>
-                <input type="text" id="add_machineGroup_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 圃場、出荷">
+                <label style="font-size:12px; font-weight:bold; color:#555;">機械グループ名</label>
+                <input type="text" id="add_machineGroup_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 農業機械">
                 <button onclick="execMaster('machineGroup', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
         } else if (type === 'hitchType') {
@@ -4365,26 +3203,6 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <input type="text" id="add_hitchType_name" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: オートヒッチ Aタイプ">
                 <div style="font-size:11px; color:#666;">トラクターと作業機に同じ規格を設定すると、作業記録で連結候補として提案されます。</div>
                 <button onclick="execMaster('hitchType', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
-            </div>`;
-        } else if (type === 'inspection') {
-            formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
-                <label style="font-size:12px; font-weight:bold; color:#555;">対象（機械カテゴリ / 用途別分類・複数選択可） <span style="color:red;">*</span></label>
-                ${window.buildAdminInspectionTargetMultiSelectHtml_('add', '')}
-                <label style="font-size:12px; font-weight:bold; color:#555;">点検カテゴリ <span style="color:red;">*</span></label>
-                <div style="display:flex; gap:5px;">
-                    <select id="add_insp_category" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">
-                        ${window.buildAdminInspectionCategoryOptionsHtml_('', '')}
-                    </select>
-                    <button type="button" onclick="addAdminInspectionCategoryPrompt_('add')" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="点検カテゴリを追加">➕</button>
-                    <button type="button" onclick="renameAdminInspectionCategoryPrompt_('add')" id="btn_rename_insp_cat_add" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="選択中の点検カテゴリ名を編集">✏️</button>
-                    <button type="button" onclick="removeAdminInspectionCategoryPrompt_('add')" id="btn_delete_insp_cat_add" style="padding:8px; border-radius:4px; border:1px solid #ef9a9a; background:#ffebee; color:#c62828; cursor:pointer;" title="登録データがない点検カテゴリを削除">➖</button>
-                </div>
-                <label style="font-size:12px; font-weight:bold; color:#555;">点検項目 <span style="color:red;">*</span></label>
-                <input type="text" id="add_insp_item" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: オイル量・汚れ、冷却水量、ベルト張り">
-                <div style="font-size:11px; color:#00695c; background:#e0f2f1; padding:6px 8px; border-radius:4px;">💡 表示順は追加後、右側の一覧をドラッグ（スマホは長押し）して入れ替えられます。</div>
-                <label style="font-size:12px; font-weight:bold; color:#555;">点検基準・備考</label>
-                <input type="text" id="add_insp_note" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: 上限と下限の間、ヒビ割れなきこと">
-                <button onclick="execMaster('inspection', 'add')" style="background:#00897B; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
         } else if (type === 'tool') {
             const wOpts = '<option value="">+ 関連作業を選ぶ...</option>' + pdlWorkMaster.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
@@ -4598,17 +3416,11 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
                 <label style="font-size:12px; font-weight:bold; color:#555;">拠点名</label>
                 <select id="add_mac_location" class="form-input" style="margin-bottom:0; padding:8px;" onchange="refreshAdminMachineSignOptionsFromLocation_('add')">${locOpts}</select>
-                <label style="font-size:12px; font-weight:bold; color:#555;">機種</label>
-                <div style="display:flex; gap:5px; align-items:center;">
-                  <select id="add_mac_group" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" onchange="onAdminMachineGroupChanged_('add')">${getMachineGroupOptionsHtml('')}</select>
-                  <button type="button" onclick="addAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="機種を追加">➕</button>
-                  <button type="button" onclick="renameAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="選択中の機種名を編集">✏️</button>
-                  <button type="button" onclick="removeAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; color:#c62828; cursor:pointer;" title="選択中の機種を削除">➖</button>
-                </div>
-                <div style="font-size:11px; color:#888; margin-top:-4px;">例：圃場 / 出荷 — ➕で追加、✏️で名称変更、➖でマスタから削除</div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">メインカテゴリ</label>
+                <select id="add_mac_group" class="form-input" style="margin-bottom:0; padding:8px;" onchange="autoFillAdminMachineNumber_(true)">${getMachineGroupOptionsHtml('')}</select>
                 <label style="font-size:12px; font-weight:bold; color:#555;">機械カテゴリ</label>
                 <div style="display:flex; gap:5px; align-items:center;">
-                  <select id="add_mac_type" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" onchange="autoFillAdminMachineNumber_(true)">${getMachineTypeOptionsHtml('', '')}</select>
+                  <select id="add_mac_type" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" onchange="autoFillAdminMachineNumber_(true)">${getMachineTypeOptionsHtml('')}</select>
                   <button type="button" onclick="addAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="機械カテゴリを追加">➕</button>
                   <button type="button" onclick="renameAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="選択中の名称を編集">✏️</button>
                   <button type="button" onclick="removeAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; color:#c62828; cursor:pointer;" title="選択中を削除">➖</button>
@@ -4621,7 +3433,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 </div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">番号</label>
                 <input type="text" id="add_mac_number" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="自動採番（手動変更可）" oninput="markAdminMachineNumberManual_()">
-                <div id="add_mac_number_hint" style="font-size:11px; color:#888; margin-top:-4px;">機種・機械カテゴリ・型式名が一致する既存台があれば、次の番号を自動入力します</div>
+                <div id="add_mac_number_hint" style="font-size:11px; color:#888; margin-top:-4px;">メインカテゴリ・機械カテゴリ・型式名が一致する既存台があれば、次の番号を自動入力します</div>
                 <div style="font-size:11px; color:#888;">表示名は「機械カテゴリ 型式1 / 型式2」＋（同型式が2台以上のときだけ）①②…</div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">購入日 / 燃料</label>
                 <div style="display:flex; gap:5px;">
@@ -4656,8 +3468,6 @@ window.openMasterDetail = (type, customEditHtml = null) => {
           <div style="font-weight:bold; font-size:15px; color:#333;">登録済みデータ一覧 (${list.length}件)</div>
           <input type="text" id="masterSearchFilter" oninput="filterMasterListTable(this.value)" placeholder="🔍 一覧から検索..." style="padding:6px 10px; border:1px solid #ccc; border-radius:6px; font-size:13px; width:180px;">
         </div>
-        ${type === 'inspection' ? window.buildAdminInspectionCategoryChipsHtml_() : ''}
-        ${type === 'inspection' ? `<div style="display:flex; justify-content:space-between; align-items:center; background:#e8f5e9; border:1px solid #c8e6c9; border-radius:6px; padding:6px 10px; margin-bottom:8px; font-size:11px; color:#2e7d32; flex-shrink:0;"><span>↕️ <strong>行を長押し／ドラッグ</strong>して表示順を入れ替えられます（上にあるものから先に表示）</span></div>` : ''}
         <div style="flex:1; min-height:0; overflow-y:auto;">
           <table id="masterListTable" style="width:100%; border-collapse:collapse; font-size:13px;">
             <thead>
@@ -4672,8 +3482,8 @@ window.openMasterDetail = (type, customEditHtml = null) => {
     if (list.length === 0) {
         listHtml += `<tr><td colspan="2" style="padding:20px; text-align:center; color:#888;">登録されたデータはありません</td></tr>`;
     } else {
-        list.forEach((v, idx) => {
-            let dispName = (type === 'cropCultSetting') ? (v.cropName || v.name || v) : (type === 'inspection' ? (v.item || v.name || v) : (v.name || v));
+        list.forEach(v => {
+            let dispName = (type === 'cropCultSetting') ? (v.cropName || v.name || v) : (v.name || v);
             if (type === 'machine' && typeof window.buildAdminMachineDisplayName_ === 'function') {
                 dispName = window.buildAdminMachineDisplayName_(
                     v.type,
@@ -4685,7 +3495,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                     v.model2
                 ) || dispName;
             }
-            const deleteVal = (type === 'cropCultSetting') ? (v.cropName || v.name || v) : (type === 'inspection' ? (v.id || v.item) : (v.id || v.name || v));
+            const deleteVal = (type === 'cropCultSetting') ? (v.cropName || v.name || v) : (v.id || v.name || v);
             let subInfo = "";
 
             if (type === 'crop') {
@@ -4720,18 +3530,6 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                     : '';
                 if (bits.length) subInfo = `<span style="font-size:11px; color:#1565c0; margin-left:6px;">${bits.join(' / ')}</span>${tagLabel}`;
                 else subInfo = tagLabel;
-            }
-            if (type === 'inspection') {
-                const noteLabel = v.note ? `<div style="font-size:11px; color:#666; margin-top:2px;">基準: ${v.note}</div>` : '';
-                const targets = window.parseAdminInspectionTargets_(v.machineType);
-                const vehNames = ['自動車', '作業機', '移動車両', '作業車両', '軽トラ', '軽バン', 'トラック', '普通車', '軽四'];
-                const targetBadges = targets.length
-                    ? targets.map(t => {
-                        const icon = vehNames.includes(t) ? '🚚' : '🚜';
-                        return `<span style="font-size:11px; background:#e0f2f1; color:#00695c; padding:2px 6px; border-radius:4px; font-weight:bold; margin-left:4px; display:inline-block; margin-bottom:2px;">${icon} ${t}</span>`;
-                    }).join('')
-                    : `<span style="font-size:11px; background:#eee; color:#666; padding:2px 6px; border-radius:4px; margin-left:4px;">未設定</span>`;
-                subInfo = `${targetBadges} <span style="font-size:11px; background:#ede7f6; color:#512da8; padding:2px 6px; border-radius:4px; margin-left:4px; display:inline-block; margin-bottom:2px;">📁 ${v.inspectionCategory || ''}</span>${noteLabel}`;
             }
             if (type === 'costItem') {
                 const bits = [];
@@ -4836,39 +3634,18 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 actionBtns = `<button onclick="openEditFertilizerMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else if (type === 'costItem') {
                 actionBtns = `<button onclick="openEditCostItemMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
-            } else if (type === 'inspection') {
-                actionBtns = `<button onclick="openEditInspectionMaster('${safeV}')" style="background:#e0f2f1; color:#00695c; border:1px solid #80cbc4; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else {
                 actionBtns = `<button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             }
 
-            if (type === 'inspection') {
-                const safeId = String(v.id || '').replace(/"/g, '&quot;');
-                listHtml += `<tr class="insp-sortable-row" data-insp-id="${safeId}" draggable="true" style="border-bottom:1px solid #eee; cursor:grab; transition:background 0.12s;">
-                    <td style="padding:10px; vertical-align:middle;">
-                      <div style="display:flex; align-items:flex-start; gap:8px;">
-                        <span class="insp-drag-handle" title="ドラッグ（長押し）で並び替え" style="display:inline-flex; align-items:center; gap:3px; color:#78909c; font-size:13px; padding:2px 5px; border-radius:4px; background:#f4f6f8; border:1px solid #dce1e6; user-select:none; flex-shrink:0; margin-top:1px; cursor:grab;">
-                          <span>⠿</span><span class="insp-order-num" style="font-size:11px; font-weight:bold; color:#455a64; min-width:14px; text-align:center;">${idx + 1}</span>
-                        </span>
-                        <div style="flex:1; min-width:0;">
-                          <div style="font-weight:bold; color:#333; font-size:14px;">${dispName} ${subInfo}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td style="padding:10px; vertical-align:middle; text-align:right;">
-                      ${actionBtns}
-                    </td>
-                </tr>`;
-            } else {
-                listHtml += `<tr style="border-bottom:1px solid #eee;">
-                    <td style="padding:10px; vertical-align:middle;">
-                      <div style="font-weight:bold; color:#333; font-size:14px;">${dispName} ${subInfo}</div>
-                    </td>
-                    <td style="padding:10px; vertical-align:middle; text-align:right;">
-                      ${actionBtns}
-                    </td>
-                </tr>`;
-            }
+            listHtml += `<tr style="border-bottom:1px solid #eee;">
+                <td style="padding:10px; vertical-align:middle;">
+                  <div style="font-weight:bold; color:#333; font-size:14px;">${dispName} ${subInfo}</div>
+                </td>
+                <td style="padding:10px; vertical-align:middle; text-align:right;">
+                  ${actionBtns}
+                </td>
+            </tr>`;
         });
     }
 
@@ -4900,9 +3677,6 @@ window.openMasterDetail = (type, customEditHtml = null) => {
         ? window.getMasterSectionsTargetEl_()
         : document.getElementById('masterSections');
     if (_outEl) _outEl.innerHTML = containerHtml;
-    if (type === 'inspection' && typeof window.initAdminInspectionSortHandlers_ === 'function') {
-        window.initAdminInspectionSortHandlers_();
-    }
     if (type === 'machine' && !customEditHtml && typeof window.autoFillAdminMachineNumber_ === 'function') {
         window.autoFillAdminMachineNumber_(true);
     }
@@ -4940,9 +3714,9 @@ window.renderMasterSection = () => {
             if (typeof window.renderEquipmentVehiclePanel_ === 'function') window.renderEquipmentVehiclePanel_();
             return;
         }
-        const type = (currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool' || currentActiveMasterType === 'inspection')
+        const type = (currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool')
             ? currentActiveMasterType
-            : (tab === 'tool' || tab === 'inspection' ? tab : 'machine');
+            : (tab === 'tool' ? 'tool' : 'machine');
         openMasterDetail(type);
         return;
     }
@@ -5114,39 +3888,6 @@ window.openEditCropMaster = (encoded) => {
             window.refreshCropIconSuggestions_('edit_crop_icon', document.getElementById('edit_crop_name')?.value || '');
         }
     }, 0);
-};
-
-window.openEditInspectionMaster = (encoded) => {
-    const v = JSON.parse(decodeURIComponent(encoded || '%7B%7D'));
-    const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;');
-    const editHtml = `
-        <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
-            <h4 style="margin-top:0; color:#00897B; font-size:15px; border-bottom:2px solid #00897B; padding-bottom:5px;">✏️ 点検項目の編集</h4>
-            <input type="hidden" id="edit_insp_id" value="${esc(v.id)}">
-            <label class="form-label">対象（機械カテゴリ / 用途別分類・複数選択可） <span style="color:red;">*</span></label>
-            <div style="margin-bottom:8px;">${window.buildAdminInspectionTargetMultiSelectHtml_('edit', v.machineType)}</div>
-            <label class="form-label">点検カテゴリ <span style="color:red;">*</span></label>
-            <div style="display:flex; gap:5px; margin-bottom:8px;">
-                <select id="edit_insp_category" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">
-                    ${window.buildAdminInspectionCategoryOptionsHtml_(v.inspectionCategory, v.machineType)}
-                </select>
-                <button type="button" onclick="addAdminInspectionCategoryPrompt_('edit')" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="点検カテゴリを追加">➕</button>
-                <button type="button" onclick="renameAdminInspectionCategoryPrompt_('edit')" id="btn_rename_insp_cat_edit" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="選択中の点検カテゴリ名を編集">✏️</button>
-                <button type="button" onclick="removeAdminInspectionCategoryPrompt_('edit')" id="btn_delete_insp_cat_edit" style="padding:8px; border-radius:4px; border:1px solid #ef9a9a; background:#ffebee; color:#c62828; cursor:pointer;" title="登録データがない点検カテゴリを削除">➖</button>
-            </div>
-            <label class="form-label">点検項目 <span style="color:red;">*</span></label>
-            <input type="text" id="edit_insp_item" class="form-input" style="margin-bottom:8px; padding:8px;" value="${esc(v.item)}">
-            <input type="hidden" id="edit_insp_sort" value="${v.sortOrder != null ? v.sortOrder : 0}">
-            <div style="font-size:11px; color:#00695c; background:#e0f2f1; padding:6px 8px; border-radius:4px; margin-bottom:8px;">💡 表示順は右側の一覧をドラッグ（スマホは長押し）して入れ替えられます。</div>
-            <label class="form-label">点検基準・備考</label>
-            <input type="text" id="edit_insp_note" class="form-input" style="margin-bottom:8px; padding:8px;" value="${esc(v.note)}">
-            <div style="display:flex; gap:10px; margin-top:15px;">
-                <button onclick="execMaster('inspection', 'edit')" style="flex:1; background:#00897B; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">更新する</button>
-                <button onclick="openMasterDetail('inspection')" style="flex:1; background:#ccc; color:#333; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">キャンセル</button>
-            </div>
-        </div>
-    `;
-    openMasterDetail('inspection', editHtml);
 };
 
 window.openEditPesticideMaster = (encoded) => {
@@ -6257,76 +4998,30 @@ window.buildFertilizerItemsFromCsvRows_ = function (csvRows) {
     const seen = {};
     (csvRows || []).forEach(r => {
         const name = window.findCsvCol_(r, [
-            '肥料名称', '肥料名', '銘柄名', '銘柄', '肥料の名称', 'FertilizerName', '名称'
+            '肥料名称', '肥料名', '銘柄名', '銘柄', 'FertilizerName', '名称'
         ]);
         const manufacturer = window.findCsvCol_(r, [
-            '生産業者の氏名又は名称', '生産業者氏名又は名称', '生産業者名', '生産業者',
-            '輸入業者の氏名又は名称', '輸入業者氏名又は名称', '輸入業者名', '輸入業者',
-            '届出業者の氏名又は名称', '届出業者氏名又は名称', '届出業者名', '届出業者',
-            '氏名又は名称', '肥料業者名称', '肥料業者名', '業者名称', '業者名', '会社名', '製造メーカー', 'メーカー', 'SupplierName'
+            '肥料業者名称', '肥料業者名', '業者名称', '業者名', '会社名', '製造メーカー', 'メーカー', 'SupplierName'
         ]);
         const fertilizerType = window.findCsvCol_(r, [
-            '肥料の種類', '肥料種類名称', '肥料種類名', '種類名称', 'FertilizerTypeName', '肥料種類', '種類'
+            '肥料種類名称', '肥料種類名', '肥料種類', '種類名称', '種類', 'FertilizerTypeName'
         ]);
         const regNumber = window.findCsvCol_(r, [
-            '登録番号', '肥料登録番号', 'RegistrationNumberForReport', 'RegistrationNumber', '登録No'
+            '登録番号', 'RegistrationNumberForReport', 'RegistrationNumber', '登録No'
         ]);
-
-        // 窒素 (N): 全量 → アンモニア性 → 硝酸性
-        let nitrogen = window.findCsvCol_(r, ['窒素全量', '窒素全量(%)', '窒素', 'TN', '保証窒素']);
-        if (!nitrogen) nitrogen = window.findCsvCol_(r, ['アンモニア性窒素', 'アンモニア性窒素(%)', 'AN']);
-        if (!nitrogen) nitrogen = window.findCsvCol_(r, ['硝酸性窒素', '硝酸性窒素(%)', 'NN']);
-
-        // りん酸 (P): 全量 → 水溶性 → く溶性 → 可溶性
-        let phosphate = window.findCsvCol_(r, ['りん酸全量', 'リン酸全量', 'りん酸全量(%)', 'リン酸全量(%)', 'りん酸', 'リン酸', 'TP']);
-        if (!phosphate) phosphate = window.findCsvCol_(r, ['水溶性りん酸', '水溶性リン酸', '水溶性りん酸(%)', 'WP', 'IWP']);
-        if (!phosphate) phosphate = window.findCsvCol_(r, ['く溶性りん酸', 'く溶性リン酸', 'く溶性りん酸(%)', 'CP']);
-        if (!phosphate) phosphate = window.findCsvCol_(r, ['可溶性りん酸', '可溶性リン酸', 'SP']);
-
-        // 加里 (K): 全量 → 水溶性 → く溶性
-        let potash = window.findCsvCol_(r, ['加里全量', 'カリ全量', '加里全量(%)', 'カリ全量(%)', '加里', 'カリ', 'TK']);
-        if (!potash) potash = window.findCsvCol_(r, ['水溶性加里', '水溶性カリ', '水溶性加里(%)', '水溶性カリ(%)', 'WK']);
-        if (!potash) potash = window.findCsvCol_(r, ['く溶性加里', 'く溶性カリ', 'く溶性加里(%)', 'CK']);
-
-        // 微量要素・原料・副成分
+        // 検索画面の成分略号列（TN/TP/TK）にも対応
+        const nitrogen = window.findCsvCol_(r, ['窒素全量', '窒素全量(%)', '窒素', 'TN', '保証窒素']);
+        const phosphate = window.findCsvCol_(r, ['りん酸全量', 'リン酸全量', 'りん酸全量(%)', 'りん酸', 'リン酸', 'TP']);
+        const potash = window.findCsvCol_(r, ['加里全量', 'カリ全量', '加里全量(%)', '加里', 'カリ', 'TK']);
         const extras = [];
-        const rawMaterials = window.findCsvCol_(r, ['原料の種類', '原料', '主原料']);
-        if (rawMaterials) extras.push('原料: ' + rawMaterials);
-
-        const colorMat = window.findCsvCol_(r, ['材料の種類', '着色材', '着色剤']);
-        if (colorMat) extras.push('着色材: ' + colorMat);
-
-        const elementDefs = [
-            ['苦土', ['苦土', 'SMG', 'CMG', 'WMG', '水溶性苦土', 'く溶性苦土']],
-            ['石灰', ['石灰', 'SCa', 'アルカリ分', 'アルカリ']],
-            ['ほう素', ['ほう素', 'ホウ素', 'CB', 'WB', '水溶性ほう素']],
-            ['マンガン', ['マンガン', 'SMN', 'WMN', '水溶性マンガン']],
-            ['けい酸', ['けい酸', 'ケイ酸', 'SSI']],
-            ['鉄', ['鉄', 'SFe', 'WFe']],
-            ['亜鉛', ['亜鉛', 'SZn', 'WZn']],
-            ['銅', ['銅', 'SCu', 'WCu']],
-            ['モリブデン', ['モリブデン', 'SMo']]
-        ];
-        elementDefs.forEach(def => {
-            const val = window.findCsvCol_(r, def[1]);
-            if (val) extras.push(def[0] + ': ' + val);
+        [['苦土', 'SMG'], ['石灰', 'SCa'], ['ほう素', 'CB'], ['マンガン', 'SMN'], ['けい酸', 'SSI']].forEach(pair => {
+            const val = window.findCsvCol_(r, pair);
+            if (val) extras.push(pair[0] + val);
         });
-
-        // 正味重量・荷姿
-        const weight = window.findCsvCol_(r, ['正味重量', '重量', '容量', '正味容量', '荷姿']);
-
         if (!name) return;
         const item = {
-            name,
-            fertilizerType: fertilizerType || '',
-            nitrogen: nitrogen || '',
-            phosphate: phosphate || '',
-            potash: potash || '',
-            components: extras.join(' ／ '),
-            volume: weight || '',
-            manufacturer: manufacturer || '',
-            regNumber: regNumber || '',
-            note: ''
+            name, fertilizerType, nitrogen, phosphate, potash,
+            components: extras.join('・'), volume: '', manufacturer, regNumber, note: ''
         };
         const key = (regNumber || name) + '\t' + (manufacturer || '');
         if (seen[key]) return;
@@ -6371,7 +5066,7 @@ window.uploadFertilizerCatalogFromCsv = async function () {
             }
             const res = await window.uploadCatalogChunks_('importFertilizerCatalogChunk', items, (msg, ratio) => {
                 window.setCatalogJobProgress_('fertilizer', msg, 'running', ratio);
-            }, { chunkSize: 1500, ratioBase: 0.15, ratioSpan: 0.85 });
+            }, { ratioBase: 0.15, ratioSpan: 0.85 });
             const count = ((res && res.count) || items.length).toLocaleString();
             window.setCatalogJobProgress_('fertilizer', '完了: ' + count + ' 件', 'done');
             await refreshFertilizerCatalogStats();
@@ -7330,16 +6025,11 @@ window.openEditMachineMaster = (encodedStr) => {
             <input type="hidden" id="edit_mac_id" value="${String(v.id || '').replace(/"/g, '&quot;')}">
             <label class="form-label">拠点名</label>
             <select id="edit_mac_location" class="form-input" onchange="refreshAdminMachineSignOptionsFromLocation_('edit')">${locOpts}</select>
-            <label class="form-label">機種</label>
-            <div style="display:flex; gap:5px; align-items:center; margin-bottom:10px;">
-              <select id="edit_mac_group" class="form-input" style="flex:1; margin-bottom:0;" onchange="onAdminMachineGroupChanged_('edit')">${getMachineGroupOptionsHtml(v.group || '')}</select>
-              <button type="button" onclick="addAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="機種を追加">➕</button>
-              <button type="button" onclick="renameAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="選択中の機種名を編集">✏️</button>
-              <button type="button" onclick="removeAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; color:#c62828; cursor:pointer;" title="選択中の機種を削除">➖</button>
-            </div>
+            <label class="form-label">メインカテゴリ</label>
+            <select id="edit_mac_group" class="form-input">${getMachineGroupOptionsHtml(v.group || '')}</select>
             <label class="form-label">機械カテゴリ</label>
             <div style="display:flex; gap:5px; align-items:center; margin-bottom:10px;">
-              <select id="edit_mac_type" class="form-input" style="flex:1; margin-bottom:0;">${getMachineTypeOptionsHtml(v.type || '', v.group || '')}</select>
+              <select id="edit_mac_type" class="form-input" style="flex:1; margin-bottom:0;">${getMachineTypeOptionsHtml(v.type || '')}</select>
               <button type="button" onclick="addAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="機械カテゴリを追加">➕</button>
               <button type="button" onclick="renameAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="選択中の名称を編集">✏️</button>
               <button type="button" onclick="removeAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; color:#c62828; cursor:pointer;" title="選択中を削除">➖</button>
@@ -7482,7 +6172,7 @@ window.autoFillAdminMachineNumber_ = (force) => {
 
     if (!group || !typeName || !model) {
         if (hintEl) {
-            hintEl.textContent = '機種・機械カテゴリ・型式名を揃えると、一致する既存台から次の番号を自動入力します';
+            hintEl.textContent = 'メインカテゴリ・機械カテゴリ・型式名を揃えると、一致する既存台から次の番号を自動入力します';
             hintEl.style.color = '#888';
         }
         return;
@@ -7506,57 +6196,16 @@ window.autoFillAdminMachineNumber_ = (force) => {
     }
 };
 
-window.getAdminMachineGroupSelectEl_ = () => {
-    return document.getElementById('add_mac_group') || document.getElementById('edit_mac_group');
-};
-
 window.getAdminMachineTypeSelectEl_ = () => {
     return document.getElementById('add_mac_type') || document.getElementById('edit_mac_type');
-};
-
-window.onAdminMachineGroupChanged_ = (mode) => {
-    const groupEl = document.getElementById(mode + '_mac_group');
-    const typeEl = document.getElementById(mode + '_mac_type');
-    if (!groupEl || !typeEl) return;
-    const selectedGroup = groupEl.value || '';
-    const currentType = typeEl.value || '';
-    typeEl.innerHTML = window.getMachineTypeOptionsHtml(currentType, selectedGroup);
-    if (currentType) typeEl.value = currentType;
-    if (typeof autoFillAdminMachineNumber_ === 'function') {
-        autoFillAdminMachineNumber_(true);
-    }
-};
-
-window.refreshAdminMachineGroupSelect_ = (selected) => {
-    const sel = window.getAdminMachineGroupSelectEl_();
-    if (!sel) return;
-    const cur = selected != null ? String(selected) : String(sel.value || '');
-    sel.innerHTML = window.getMachineGroupOptionsHtml(cur);
-    if (cur) sel.value = cur;
-    window.refreshAdminMachineTypeSelect_();
 };
 
 window.refreshAdminMachineTypeSelect_ = (selected) => {
     const sel = window.getAdminMachineTypeSelectEl_();
     if (!sel) return;
-    const grpSel = window.getAdminMachineGroupSelectEl_();
-    const grp = grpSel ? grpSel.value : '';
     const cur = selected != null ? String(selected) : String(sel.value || '');
-    sel.innerHTML = window.getMachineTypeOptionsHtml(cur, grp);
+    sel.innerHTML = getMachineTypeOptionsHtml(cur);
     if (cur) sel.value = cur;
-};
-
-window.renameAdminMachineGroupInLocalMachines_ = (oldName, newName) => {
-    const o = String(oldName || '').trim();
-    const n = String(newName || '').trim();
-    if (!o || !n || o === n) return;
-    (window.pdlMachines || []).forEach(m => {
-        if (!m) return;
-        if (String(m.group || m.mainCategory || '').trim() === o) {
-            m.group = n;
-            m.mainCategory = n;
-        }
-    });
 };
 
 window.renameAdminMachineTypeInLocalMachines_ = (oldName, newName) => {
@@ -7569,109 +6218,11 @@ window.renameAdminMachineTypeInLocalMachines_ = (oldName, newName) => {
     });
 };
 
-window.addAdminMachineGroupFromForm_ = async () => {
-    const raw = prompt('新しい機種名を入力してください（例：圃場、出荷、育苗、加工）');
-    if (raw == null) return;
-    const name = String(raw).trim();
-    if (!name) return;
-    if ((pdlMachineGroups || []).includes(name)) {
-        customAlert('既に登録されています');
-        window.refreshAdminMachineGroupSelect_(name);
-        if (typeof autoFillAdminMachineNumber_ === 'function') autoFillAdminMachineNumber_(true);
-        return;
-    }
-    pdlMachineGroups = [...(pdlMachineGroups || []), name];
-    persistAdminInitCache_();
-    window.refreshAdminMachineGroupSelect_(name);
-    if (typeof autoFillAdminMachineNumber_ === 'function') autoFillAdminMachineNumber_(true);
-    showAdminSyncToast('✅ 機種を追加しました（同期中…）', 'ok');
-    try {
-        const updated = await callGAS('manageMaster', {
-            masterType: 'machineGroup', manageAction: 'add', value: name, userName: currentUser
-        });
-        if (Array.isArray(updated)) pdlMachineGroups = updated;
-        persistAdminInitCache_();
-        window.refreshAdminMachineGroupSelect_(name);
-        showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
-    } catch (e) {
-        showAdminSyncToast('⚠️ 保存に失敗しました: ' + (e.message || e), 'error');
-    }
-};
-
-window.renameAdminMachineGroupFromForm_ = async () => {
-    const sel = window.getAdminMachineGroupSelectEl_();
-    if (!sel || !sel.value) {
-        customAlert('編集する機種を選択してください');
-        return;
-    }
-    const original = String(sel.value).trim();
-    const raw = prompt('機種名を変更', original);
-    if (raw == null) return;
-    const newName = String(raw).trim();
-    if (!newName) return;
-    if (newName !== original && (pdlMachineGroups || []).includes(newName)) {
-        customAlert('既に登録されています');
-        return;
-    }
-    if (!await customConfirm(`機種「${original}」を「${newName}」に変更しますか？\n※登録済み農機の同じ機種区分も更新されます。`)) return;
-    pdlMachineGroups = (pdlMachineGroups || []).map(t => String(t) === original ? newName : t);
-    window.renameAdminMachineGroupInLocalMachines_(original, newName);
-    persistAdminInitCache_();
-    window.refreshAdminMachineGroupSelect_(newName);
-    if (typeof autoFillAdminMachineNumber_ === 'function') autoFillAdminMachineNumber_(true);
-    showAdminSyncToast('✅ 機種名を更新しました（同期中…）', 'ok');
-    try {
-        const updated = await callGAS('manageMaster', {
-            masterType: 'machineGroup',
-            manageAction: 'edit',
-            value: { originalName: original, newData: { name: newName } },
-            userName: currentUser
-        });
-        if (Array.isArray(updated)) pdlMachineGroups = updated;
-        persistAdminInitCache_();
-        window.refreshAdminMachineGroupSelect_(newName);
-        showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
-    } catch (e) {
-        showAdminSyncToast('⚠️ 保存に失敗しました: ' + (e.message || e), 'error');
-    }
-};
-
-window.removeAdminMachineGroupFromForm_ = async () => {
-    const sel = window.getAdminMachineGroupSelectEl_();
-    if (!sel || !sel.value) {
-        customAlert('削除する機種を選択してください');
-        return;
-    }
-    const val = String(sel.value).trim();
-    if (!await customConfirm(`機種「${val}」をマスタから削除しますか？\n※既に登録済みの農機の機種区分値自体は残ります。`)) return;
-    pdlMachineGroups = (pdlMachineGroups || []).filter(t => String(t) !== val);
-    persistAdminInitCache_();
-    window.refreshAdminMachineGroupSelect_('');
-    if (typeof autoFillAdminMachineNumber_ === 'function') autoFillAdminMachineNumber_(true);
-    showAdminSyncToast('✅ 機種を削除しました（同期中…）', 'ok');
-    try {
-        const updated = await callGAS('manageMaster', {
-            masterType: 'machineGroup', manageAction: 'delete', value: val, userName: currentUser
-        });
-        if (Array.isArray(updated)) pdlMachineGroups = updated;
-        persistAdminInitCache_();
-        window.refreshAdminMachineGroupSelect_('');
-        showAdminSyncToast('☁️ サーバーへ削除完了', 'ok');
-    } catch (e) {
-        showAdminSyncToast('⚠️ 削除に失敗しました: ' + (e.message || e), 'error');
-    }
-};
-
 window.addAdminMachineTypeFromForm_ = async () => {
     const raw = prompt('新しい機械カテゴリ名を入力してください（例：トラクター）');
     if (raw == null) return;
     const name = String(raw).trim();
     if (!name) return;
-    const grpSel = window.getAdminMachineGroupSelectEl_();
-    const curGroup = grpSel ? String(grpSel.value || '').trim() : '';
-    if (curGroup) {
-        window.saveAdminMachineTypeGroupMapping_(name, curGroup);
-    }
     if ((pdlMachineTypes || []).includes(name)) {
         customAlert('既に登録されています');
         refreshAdminMachineTypeSelect_(name);
@@ -7714,10 +6265,6 @@ window.renameAdminMachineTypeFromForm_ = async () => {
     if (!await customConfirm(`機械カテゴリ「${original}」を「${newName}」に変更しますか？\n※登録済み農機の同じカテゴリも更新されます。`)) return;
     pdlMachineTypes = (pdlMachineTypes || []).map(t => String(t) === original ? newName : t);
     window.renameAdminMachineTypeInLocalMachines_(original, newName);
-    const grpSel = window.getAdminMachineGroupSelectEl_();
-    if (grpSel && grpSel.value) {
-        window.saveAdminMachineTypeGroupMapping_(newName, grpSel.value);
-    }
     persistAdminInitCache_();
     refreshAdminMachineTypeSelect_(newName);
     if (typeof autoFillAdminMachineNumber_ === 'function') autoFillAdminMachineNumber_(true);
@@ -7800,7 +6347,7 @@ window.execMaster = async (type, act, val) => {
                     });
                     if (dup) {
                         const suggested = window.getNextAdminMachineNumber_(group, macType, model, null, model2);
-                        customAlert(`同じ機種・機械カテゴリ・型式で番号「${machineNumber}」は既にあります。\n番号「${suggested}」などで登録してください。`);
+                        customAlert(`同じメインカテゴリ・機械カテゴリ・型式で番号「${machineNumber}」は既にあります。\n番号「${suggested}」などで登録してください。`);
                         return;
                     }
                 }
@@ -7876,7 +6423,7 @@ window.execMaster = async (type, act, val) => {
                     });
                     if (dup) {
                         const suggested = window.getNextAdminMachineNumber_(group, macType, model, machineId, model2);
-                        customAlert(`同じ機種・機械カテゴリ・型式で番号「${number}」は既にあります。\n番号「${suggested}」などにしてください。`);
+                        customAlert(`同じメインカテゴリ・機械カテゴリ・型式で番号「${number}」は既にあります。\n番号「${suggested}」などにしてください。`);
                         return;
                     }
                 }
@@ -8059,28 +6606,6 @@ window.execMaster = async (type, act, val) => {
         else if (type === 'machineType') { const name = document.getElementById('add_machineType_name').value.trim(); if (!name) { customAlert("カテゴリ名を入力してください"); return; } if ((pdlMachineTypes || []).includes(name)) { customAlert("既に登録されています"); return; } value = name; }
         else if (type === 'machineGroup') { const name = document.getElementById('add_machineGroup_name').value.trim(); if (!name) { customAlert("グループ名を入力してください"); return; } if ((pdlMachineGroups || []).includes(name)) { customAlert("既に登録されています"); return; } value = name; }
         else if (type === 'hitchType') { const name = document.getElementById('add_hitchType_name').value.trim(); if (!name) { customAlert("ヒッチ規格名を入力してください"); return; } if ((pdlHitchTypes || []).includes(name)) { customAlert("既に登録されています"); return; } value = name; }
-        else if (type === 'inspection') {
-            const macType = (document.getElementById('add_insp_mac_type')?.value || '').trim();
-            if (!macType) { customAlert("対象（機械カテゴリまたは用途別分類）を選択してください"); return; }
-            const cat = (document.getElementById('add_insp_category')?.value || '').trim();
-            if (!cat) { customAlert("点検カテゴリを選択または入力してください"); return; }
-            window.addAdminInspectionCategory_(cat, macType);
-            const item = (document.getElementById('add_insp_item')?.value || '').trim();
-            if (!item) { customAlert("点検項目を入力してください"); return; }
-            const sortVal = document.getElementById('add_insp_sort')?.value;
-            const maxSort = (pdlInspections || []).reduce((mx, x) => Math.max(mx, Number(x && x.sortOrder) || 0), 0);
-            const sortOrder = (sortVal !== '' && sortVal != null) ? (Number(sortVal) || 0) : (maxSort + 1);
-            const note = (document.getElementById('add_insp_note')?.value || '').trim();
-            const id = 'insp_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-            value = {
-                id: id,
-                machineType: macType,
-                inspectionCategory: cat,
-                item: item,
-                sortOrder: sortOrder,
-                note: note
-            };
-        }
         else if (type === 'tool') { const name = document.getElementById('add_tool_name').value.trim(); if (!name) { customAlert("道具名を入力してください"); return; } value = { name: name, workCategory: document.getElementById('add_tool_cat').value.trim() }; }
         else if (type === 'costItem') {
             const name = (document.getElementById('add_cost_name')?.value || '').trim();
@@ -8344,29 +6869,6 @@ window.execMaster = async (type, act, val) => {
                     note: document.getElementById('edit_cost_note')?.value || ''
                 }
             };
-        } else if (type === 'inspection') {
-            const id = document.getElementById('edit_insp_id')?.value || '';
-            if (!id) { customAlert('編集対象IDがありません'); return; }
-            const macType = (document.getElementById('edit_insp_mac_type')?.value || '').trim();
-            if (!macType) { customAlert("対象（機械カテゴリまたは用途別分類）を選択してください"); return; }
-            const cat = (document.getElementById('edit_insp_category')?.value || '').trim();
-            if (!cat) { customAlert("点検カテゴリを選択または入力してください"); return; }
-            window.addAdminInspectionCategory_(cat, macType);
-            const item = (document.getElementById('edit_insp_item')?.value || '').trim();
-            if (!item) { customAlert("点検項目を入力してください"); return; }
-            const sortVal = document.getElementById('edit_insp_sort')?.value;
-            const sortOrder = (sortVal !== '' && sortVal != null) ? Number(sortVal) || 0 : 0;
-            const note = (document.getElementById('edit_insp_note')?.value || '').trim();
-            value = {
-                id: id,
-                newData: {
-                    machineType: macType,
-                    inspectionCategory: cat,
-                    item: item,
-                    sortOrder: sortOrder,
-                    note: note
-                }
-            };
         }
     } else {
         if (type === 'container') {
@@ -8564,6 +7066,7 @@ function openAttr(id) {
                <div style="font-size:14px; margin-bottom:10px;">看板情報変更</div>
                <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">看板名</div>
                <input type="text" id="rnIn" value="${p.name}" class="form-input" style="width:100%; margin-bottom:10px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">
+               ${adminSignFunctionFieldHtml_('rnFunc', p.signFunction)}
                <div id="rnFuncBox" style="${isParentNow ? 'opacity:0.65;' : ''}">
                  ${adminSignFunctionFieldHtml_('rnFunc', isParentNow ? '機能なし' : p.signFunction)}
                  <div id="rnFuncParentNote" style="display:${isParentNow ? 'block' : 'none'}; font-size:10px; color:#7E57C2; font-weight:bold; margin-top:-6px; margin-bottom:8px; text-align:left;">※大看板（親看板）は目印のため看板機能は無効になります</div>
@@ -8572,16 +7075,18 @@ function openAttr(id) {
                <select id="rnLoc" class="form-input" style="width:100%; margin-bottom:4px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">${locOptions}</select>
                <div style="font-size:11px; color:#666; text-align:left; line-height:1.4; margin:0 0 8px;">この看板の所属拠点です。</div>
                ${childNote}
-               ${isParentNow ? `
-               <div style="background:#EDE7F6;border:1px solid #7E57C2;border-radius:8px;padding:8px;margin-bottom:8px;text-align:left;">
-                 <div style="font-size:12px;font-weight:bold;color:#4A148C;margin-bottom:6px;">🪧 大看板（親看板・目印）</div>
+               <label style="display:flex;align-items:center;gap:8px;background:#EDE7F6;border:1px solid #7E57C2;border-radius:8px;padding:8px;margin-bottom:6px;cursor:pointer;text-align:left;">
+                 <input type="checkbox" id="rnAsParent" ${isParentNow ? 'checked' : ''} onchange="window.toggleAdminSignGroupRoleUI_()" style="width:16px;height:16px;">
+                 <span style="font-size:12px;font-weight:bold;color:#4A148C;">この看板を大看板にする</span>
+               </label>
+               <div id="rnChildrenBox" style="display:${isParentNow ? 'block' : 'none'};margin-bottom:8px;">
                  <button type="button" onclick="startAdminSignGroupMapSelect('${id}')" style="width:100%;background:#6A1B9A;color:white;border:none;border-radius:6px;padding:9px;font-weight:bold;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 1px 3px rgba(0,0,0,0.15);">
                    <span>🗺️ 地図から小看板を束ねる</span>
                    <span style="background:rgba(255,255,255,0.25);border-radius:10px;padding:1px 6px;font-size:11px;">${childCount}件</span>
                  </button>
                  <div style="font-size:10px;color:#666;text-align:left;line-height:1.3;margin-top:4px;">タップすると地図上で束ねる小看板を選択できます。</div>
                </div>
-               ` : ''}
+               <div style="font-size:10px; color:#666; text-align:left; line-height:1.4; margin:0 0 10px;">基本は単独。大看板にしたら小看板を地図から選びます。</div>
                <button onclick="execAttr('${id}')" style="width:100%; padding:10px; border-radius:4px; border:none; background:#d32f2f; color:white; font-weight:bold; cursor:pointer;">保存</button>
              </div>
            `);
@@ -8636,7 +7141,7 @@ function execAttr(id) {
         const f = funcEl ? funcEl.value : (p.signFunction || '機能なし');
         const locEl = document.getElementById('rnLoc');
         const loc = locEl ? locEl.value : (p.location || '');
-        const asParent = !!(window.SignGroup && window.SignGroup.isParentSign(p));
+        const asParent = !!(document.getElementById('rnAsParent') || {}).checked;
         const cbEls = document.querySelectorAll('.admin_sign_child_cb');
         const selectedChildIds = asParent
             ? (cbEls.length > 0
@@ -8644,6 +7149,7 @@ function execAttr(id) {
                 : (window.SignGroup ? window.SignGroup.getChildren(id, loadedPolygons).map(c => String(c.id)) : []))
             : [];
         if (!n) return;
+        p.name = n; p.signFunction = f; p.location = loc; p.labelConfig.text = n;
         // 大看板（親看板）にする場合は看板機能を無効（機能なし）にする（ただの目印のため）
         const finalFunc = asParent ? '機能なし' : f;
         p.name = n; p.signFunction = finalFunc; p.location = loc; p.labelConfig.text = n;
@@ -8716,74 +7222,77 @@ window.applyAdminSignGroupChildren_ = (parentId, selectedIds) => {
     const selected = new Set((selectedIds || []).map(String));
     const changed = [];
     const parent = loadedPolygons[pid];
-    if (parent && parent.isMarker) {
-        let parentChanged = false;
-        if (String(parent.parentSignId || '').trim()) {
-            parent.parentSignId = '';
-            parentChanged = true;
+    if (parent && parent.isMarker && String(parent.parentSignId || '').trim()) {
+        parent.parentSignId = '';
+        changed.push(pid);
+        if (parent && parent.isMarker) {
+            let parentChanged = false;
+            if (String(parent.parentSignId || '').trim()) {
+                parent.parentSignId = '';
+                parentChanged = true;
+            }
+            // 子看板から親看板にする場合、または大看板（親看板）として子看板を束ねる場合、看板機能は無効（機能なし）にする（ただの目印のため）
+            if (selected.size > 0 && String(parent.signFunction || '機能なし') !== '機能なし') {
+                parent.signFunction = '機能なし';
+                parentChanged = true;
+            }
+            if (parentChanged) changed.push(pid);
         }
-        // 子看板から親看板にする場合、または大看板（親看板）として子看板を束ねる場合、看板機能は無効（機能なし）にする（ただの目印のため）
-        if (selected.size > 0 && String(parent.signFunction || '機能なし') !== '機能なし') {
-            parent.signFunction = '機能なし';
-            parentChanged = true;
-        }
-        if (parentChanged) changed.push(pid);
-    }
-    Object.keys(loadedPolygons || {}).forEach((id) => {
-        const p = loadedPolygons[id];
-        if (!p || !p.isMarker) return;
-        const sid = String(id);
-        if (sid === pid) return;
-        const prev = String(p.parentSignId || '').trim();
-        if (selected.has(sid)) {
-            if (prev !== pid) {
-                p.parentSignId = pid;
+        Object.keys(loadedPolygons || {}).forEach((id) => {
+            const p = loadedPolygons[id];
+            if (!p || !p.isMarker) return;
+            const sid = String(id);
+            if (sid === pid) return;
+            const prev = String(p.parentSignId || '').trim();
+            if (selected.has(sid)) {
+                if (prev !== pid) {
+                    p.parentSignId = pid;
+                    changed.push(sid);
+                }
+            } else if (prev === pid) {
+                p.parentSignId = '';
                 changed.push(sid);
             }
-        } else if (prev === pid) {
-            p.parentSignId = '';
-            changed.push(sid);
-        }
-    });
-    return changed;
-};
+        });
+        return changed;
+    };
 
-// ========================================================
-// 🪧 大看板・小看板 地図選択モード（Admin）
-// ========================================================
-window.isAdminSignGroupMapSelecting = false;
-window.adminSignGroupTargetId = null;
-window.tempSignGroupChildren = [];
-
-window.startAdminSignGroupMapSelect = (targetId) => {
-    const tid = String(targetId || '').trim();
-    const p = loadedPolygons[tid];
-    if (!p || !p.isMarker) return;
-    if (typeof isAdminLocationPin_ === 'function' && isAdminLocationPin_(p)) {
-        if (typeof customAlert === 'function') customAlert('位置ピンは大・小看板の対象外です');
-        return;
-    }
-
-    window.adminSignGroupTargetId = tid;
-    window.isAdminSignGroupMapSelecting = true;
-    if (infoWindow) infoWindow.close();
-
-    // 初期選択：現在この親に属している小看板
+    // ========================================================
+    // 🪧 大看板・小看板 地図選択モード（Admin）
+    // ========================================================
+    window.isAdminSignGroupMapSelecting = false;
+    window.adminSignGroupTargetId = null;
     window.tempSignGroupChildren = [];
-    if (window.SignGroup) {
-        window.tempSignGroupChildren = window.SignGroup.getChildren(tid, loadedPolygons).map(c => String(c.id));
-    }
 
-    let ui = document.getElementById('adminSignGroupMapSelectUI');
-    if (!ui) {
-        ui = document.createElement('div');
-        ui.id = 'adminSignGroupMapSelectUI';
-        ui.style.cssText = 'display:none; position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(26,20,35,0.92); color:white; padding:16px 20px; border-radius:14px; z-index:9999; align-items:center; gap:10px; width:92%; max-width:440px; box-shadow:0 6px 24px rgba(0,0,0,0.45); flex-direction:column; box-sizing:border-box; backdrop-filter:blur(6px); border:1px solid rgba(186,104,200,0.5);';
-        document.body.appendChild(ui);
-    }
+    window.startAdminSignGroupMapSelect = (targetId) => {
+        const tid = String(targetId || '').trim();
+        const p = loadedPolygons[tid];
+        if (!p || !p.isMarker) return;
+        if (typeof isAdminLocationPin_ === 'function' && isAdminLocationPin_(p)) {
+            if (typeof customAlert === 'function') customAlert('位置ピンは大・小看板の対象外です');
+            return;
+        }
 
-    const parentName = String(p.name || '大看板');
-    ui.innerHTML = `
+        window.adminSignGroupTargetId = tid;
+        window.isAdminSignGroupMapSelecting = true;
+        if (infoWindow) infoWindow.close();
+
+        // 初期選択：現在この親に属している小看板
+        window.tempSignGroupChildren = [];
+        if (window.SignGroup) {
+            window.tempSignGroupChildren = window.SignGroup.getChildren(tid, loadedPolygons).map(c => String(c.id));
+        }
+
+        let ui = document.getElementById('adminSignGroupMapSelectUI');
+        if (!ui) {
+            ui = document.createElement('div');
+            ui.id = 'adminSignGroupMapSelectUI';
+            ui.style.cssText = 'display:none; position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(26,20,35,0.92); color:white; padding:16px 20px; border-radius:14px; z-index:9999; align-items:center; gap:10px; width:92%; max-width:440px; box-shadow:0 6px 24px rgba(0,0,0,0.45); flex-direction:column; box-sizing:border-box; backdrop-filter:blur(6px); border:1px solid rgba(186,104,200,0.5);';
+            document.body.appendChild(ui);
+        }
+
+        const parentName = String(p.name || '大看板');
+        ui.innerHTML = `
         <div style="width:100%; text-align:center;">
             <div style="font-weight:bold; font-size:15px; color:#E1BEE7; margin-bottom:4px; display:flex; align-items:center; justify-content:center; gap:6px;">
                 <span>🪧</span>
@@ -8798,788 +7307,824 @@ window.startAdminSignGroupMapSelect = (targetId) => {
             <button type="button" onclick="cancelAdminSignGroupMapSelect()" style="flex:1; background:#616161; color:white; border:none; padding:10px 14px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer;">キャンセル</button>
         </div>
     `;
-    ui.style.display = 'flex';
+        ui.style.display = 'flex';
 
-    updateAdminSignGroupMapVisuals();
-};
+        updateAdminSignGroupMapVisuals();
+    };
 
-window.updateAdminSignGroupMapVisuals = () => {
-    if (!window.isAdminSignGroupMapSelecting || !window.adminSignGroupTargetId) return;
-    const parentId = String(window.adminSignGroupTargetId);
-    const parentPoly = loadedPolygons[parentId];
-    const selectedSet = new Set((window.tempSignGroupChildren || []).map(String));
+    window.updateAdminSignGroupMapVisuals = () => {
+        if (!window.isAdminSignGroupMapSelecting || !window.adminSignGroupTargetId) return;
+        const parentId = String(window.adminSignGroupTargetId);
+        const parentPoly = loadedPolygons[parentId];
+        const selectedSet = new Set((window.tempSignGroupChildren || []).map(String));
 
-    const countEl = document.getElementById('adminSignGroupMapSelectCount');
-    if (countEl) {
-        countEl.textContent = `地図上の看板をタップして選択 / 解除（${selectedSet.size}件 選択中）`;
-    }
+        const countEl = document.getElementById('adminSignGroupMapSelectCount');
+        if (countEl) {
+            countEl.textContent = `地図上の看板をタップして選択 / 解除（${selectedSet.size}件 選択中）`;
+        }
 
-    const z = map.getZoom();
-    for (const id in loadedPolygons) {
-        const p = loadedPolygons[id];
-        if (!p) continue;
-        const sid = String(id);
+        const z = map.getZoom();
+        for (const id in loadedPolygons) {
+            const p = loadedPolygons[id];
+            if (!p) continue;
+            const sid = String(id);
 
-        if (p.isMarker && p.marker) {
-            const isLoc = typeof isAdminLocationPin_ === 'function' && isAdminLocationPin_(p);
-            if (isLoc) {
-                p.marker.setOpacity(0.3);
-                p.marker.setVisible(true);
-            } else if (sid === parentId) {
-                p.marker.setOpacity(1.0);
-                p.marker.setVisible(true);
-                try { p.marker.setZIndex(1500); } catch (e) { }
-            } else {
-                p.marker.setVisible(true);
-                if (selectedSet.has(sid)) {
+            if (p.isMarker && p.marker) {
+                const isLoc = typeof isAdminLocationPin_ === 'function' && isAdminLocationPin_(p);
+                if (isLoc) {
+                    p.marker.setOpacity(0.3);
+                    p.marker.setVisible(true);
+                } else if (sid === parentId) {
                     p.marker.setOpacity(1.0);
-                    try { p.marker.setZIndex(1400); } catch (e) { }
-                } else {
-                    p.marker.setOpacity(0.7);
-                    try { p.marker.setZIndex(1000); } catch (e) { }
-                }
-            }
-        } else if (p.polygon) {
-            p.polygon.setOptions({ fillOpacity: 0.1, strokeOpacity: 0.25 });
-        }
-    }
-
-    if (window.SignGroup && parentPoly) {
-        const selectedChildren = Array.from(selectedSet).map(cid => loadedPolygons[cid]).filter(Boolean);
-        window.SignGroup.drawConnectorLines(map, parentPoly, selectedChildren);
-    }
-};
-
-window.handleAdminSignGroupMarkerClick_ = async (id) => {
-    if (!window.isAdminSignGroupMapSelecting || !window.adminSignGroupTargetId) return;
-    const sid = String(id || '').trim();
-    const parentId = String(window.adminSignGroupTargetId);
-    const p = loadedPolygons[sid];
-    if (!p || !p.isMarker) return;
-
-    if (sid === parentId) {
-        if (typeof customAlert === 'function') {
-            customAlert('これは現在選択中の「大看板」です。\n束ねたい周りの看板をタップして選んでください。');
-        }
-        return;
-    }
-
-    if (typeof isAdminLocationPin_ === 'function' && isAdminLocationPin_(p)) {
-        if (typeof customAlert === 'function') customAlert('位置ピンは大・小看板の対象外です。');
-        return;
-    }
-
-    if (window.SignGroup && window.SignGroup.isParentSign(p) && !window.tempSignGroupChildren.includes(sid)) {
-        const ch = window.SignGroup.getChildren(sid, loadedPolygons);
-        if (ch.length > 0) {
-            const ok = await customConfirm(`「${p.name}」は現在別の大看板です。\nこの大看板の小看板にすると、元の子看板(${ch.length}件)は束ねから外れます。よろしいですか？`);
-            if (!ok) return;
-        }
-    }
-
-    const idx = window.tempSignGroupChildren.indexOf(sid);
-    if (idx >= 0) {
-        window.tempSignGroupChildren.splice(idx, 1);
-    } else {
-        window.tempSignGroupChildren.push(sid);
-    }
-
-    updateAdminSignGroupMapVisuals();
-};
-
-window.applyAdminSignGroupMapSelect = async () => {
-    if (!window.isAdminSignGroupMapSelecting || !window.adminSignGroupTargetId) return;
-    const targetId = String(window.adminSignGroupTargetId);
-    const selectedIds = (window.tempSignGroupChildren || []).slice();
-
-    window.isAdminSignGroupMapSelecting = false;
-    window.adminSignGroupTargetId = null;
-    window.tempSignGroupChildren = [];
-
-    const ui = document.getElementById('adminSignGroupMapSelectUI');
-    if (ui) ui.style.display = 'none';
-
-    if (window.SignGroup) {
-        window.SignGroup.clearConnectorLines();
-    }
-
-    const changedIds = (typeof window.applyAdminSignGroupChildren_ === 'function')
-        ? window.applyAdminSignGroupChildren_(targetId, selectedIds)
-        : [];
-
-    const allAffectedIds = Array.from(new Set([targetId].concat(changedIds)));
-    allAffectedIds.forEach(sid => {
-        const sp = loadedPolygons[sid];
-        if (sp && sp.isMarker && sp.marker) {
-            const pos = sp.marker.getPosition();
-            sp.marker.setMap(null);
-            sp.marker = createSignboardMarker(sp.name, pos, sp.color, sp._adminIdRef || sid);
-        }
-    });
-
-    restoreAdminMapVisuals_();
-
-    persistAdminInitCache_();
-    showAdminSyncToast(`✅ 大看板に${selectedIds.length}件の小看板を束ねました（同期中…）`, 'ok');
-
-    Promise.all(allAffectedIds.map(sid => {
-        const sp = loadedPolygons[sid];
-        return sp ? syncUpdatePolygon_(sp) : Promise.resolve(false);
-    })).then(results => {
-        if (results.some(Boolean)) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
-    });
-};
-
-window.cancelAdminSignGroupMapSelect = () => {
-    window.isAdminSignGroupMapSelecting = false;
-    window.adminSignGroupTargetId = null;
-    window.tempSignGroupChildren = [];
-
-    const ui = document.getElementById('adminSignGroupMapSelectUI');
-    if (ui) ui.style.display = 'none';
-
-    if (window.SignGroup) {
-        window.SignGroup.clearConnectorLines();
-    }
-
-    restoreAdminMapVisuals_();
-};
-
-function restoreAdminMapVisuals_() {
-    const z = map.getZoom();
-    for (const id in loadedPolygons) {
-        const p = loadedPolygons[id];
-        if (!p) continue;
-        if (p.isMarker && p.marker) {
-            p.marker.setOpacity(1.0);
-            if (typeof isAdminLocationPin_ === 'function' && isAdminLocationPin_(p)) {
-                if (typeof window.refreshLocationPinMarker_ === 'function') {
-                    window.refreshLocationPinMarker_(p.marker, p.name, z);
+                    p.marker.setVisible(true);
+                    try { p.marker.setZIndex(1500); } catch (e) { }
                 } else {
                     p.marker.setVisible(true);
-                    if (p.labelConfig) p.marker.setLabel(p.labelConfig);
+                    if (selectedSet.has(sid)) {
+                        p.marker.setOpacity(1.0);
+                        try { p.marker.setZIndex(1400); } catch (e) { }
+                    } else {
+                        p.marker.setOpacity(0.7);
+                        try { p.marker.setZIndex(1000); } catch (e) { }
+                    }
                 }
-            } else {
-                const isChild = !!(window.SignGroup && window.SignGroup.isChildSign(p));
-                const expId = window.SignGroup ? window.SignGroup.getExpandedParentId() : null;
-                const parentId = window.SignGroup ? window.SignGroup.getParentId(p) : '';
-                if (isChild && (!expId || expId !== parentId)) {
-                    p.marker.setVisible(false);
-                } else {
-                    p.marker.setVisible(z >= 15);
-                }
-                if (p.labelConfig) {
-                    p.marker.setLabel(null);
-                    if (z >= 17) p.marker.setLabel(p.labelConfig);
-                }
+            } else if (p.polygon) {
+                p.polygon.setOptions({ fillOpacity: 0.1, strokeOpacity: 0.25 });
             }
-        } else if (p.polygon) {
-            const isU = (p.status === '未使用（返却）' || p.status === '未使用');
-            p.polygon.setOptions({ fillOpacity: isU ? 0.5 : 0.3, strokeOpacity: 1 });
         }
-    }
-    if (window.SignGroup) {
-        window.SignGroup.refreshMarkers(loadedPolygons);
-    }
-}
 
-window.removeAdminSignFromGroup_ = async (id) => {
-    const sid = String(id || '').trim();
-    const p = loadedPolygons[sid];
-    if (!p || !p.isMarker) return;
-    const prevParentId = String(p.parentSignId || '').trim();
-    if (!prevParentId) return;
-
-    if (infoWindow) infoWindow.close();
-    p.parentSignId = '';
-
-    const pos = p.marker.getPosition();
-    p.marker.setMap(null);
-    p.marker = createSignboardMarker(p.name, pos, p.color, p._adminIdRef || sid);
-
-    if (prevParentId && loadedPolygons[prevParentId]) {
-        const pp = loadedPolygons[prevParentId];
-        if (pp.marker) {
-            const ppos = pp.marker.getPosition();
-            pp.marker.setMap(null);
-            pp.marker = createSignboardMarker(pp.name, ppos, pp.color, pp._adminIdRef || prevParentId);
+        if (window.SignGroup && parentPoly) {
+            const selectedChildren = Array.from(selectedSet).map(cid => loadedPolygons[cid]).filter(Boolean);
+            window.SignGroup.drawConnectorLines(map, parentPoly, selectedChildren);
         }
-    }
+    };
 
-    if (window.SignGroup) {
-        window.SignGroup.collapse(map, loadedPolygons, () => {
-            google.maps.event.trigger(map, 'zoom_changed');
+    window.handleAdminSignGroupMarkerClick_ = async (id) => {
+        if (!window.isAdminSignGroupMapSelecting || !window.adminSignGroupTargetId) return;
+        const sid = String(id || '').trim();
+        const parentId = String(window.adminSignGroupTargetId);
+        const p = loadedPolygons[sid];
+        if (!p || !p.isMarker) return;
+
+        if (sid === parentId) {
+            if (typeof customAlert === 'function') {
+                customAlert('これは現在選択中の「大看板」です。\n束ねたい周りの看板をタップして選んでください。');
+            }
+            return;
+        }
+
+        if (typeof isAdminLocationPin_ === 'function' && isAdminLocationPin_(p)) {
+            if (typeof customAlert === 'function') customAlert('位置ピンは大・小看板の対象外です。');
+            return;
+        }
+
+        if (window.SignGroup && window.SignGroup.isParentSign(p) && !window.tempSignGroupChildren.includes(sid)) {
+            const ch = window.SignGroup.getChildren(sid, loadedPolygons);
+            if (ch.length > 0) {
+                const ok = await customConfirm(`「${p.name}」は現在別の大看板です。\nこの大看板の小看板にすると、元の子看板(${ch.length}件)は束ねから外れます。よろしいですか？`);
+                if (!ok) return;
+            }
+        }
+
+        const idx = window.tempSignGroupChildren.indexOf(sid);
+        if (idx >= 0) {
+            window.tempSignGroupChildren.splice(idx, 1);
+        } else {
+            window.tempSignGroupChildren.push(sid);
+        }
+
+        updateAdminSignGroupMapVisuals();
+    };
+
+    window.applyAdminSignGroupMapSelect = async () => {
+        if (!window.isAdminSignGroupMapSelecting || !window.adminSignGroupTargetId) return;
+        const targetId = String(window.adminSignGroupTargetId);
+        const selectedIds = (window.tempSignGroupChildren || []).slice();
+
+        window.isAdminSignGroupMapSelecting = false;
+        window.adminSignGroupTargetId = null;
+        window.tempSignGroupChildren = [];
+
+        const ui = document.getElementById('adminSignGroupMapSelectUI');
+        if (ui) ui.style.display = 'none';
+
+        if (window.SignGroup) {
+            window.SignGroup.clearConnectorLines();
+        }
+
+        const changedIds = (typeof window.applyAdminSignGroupChildren_ === 'function')
+            ? window.applyAdminSignGroupChildren_(targetId, selectedIds)
+            : [];
+
+        const allAffectedIds = Array.from(new Set([targetId].concat(changedIds)));
+        allAffectedIds.forEach(sid => {
+            const sp = loadedPolygons[sid];
+            if (sp && sp.isMarker && sp.marker) {
+                const pos = sp.marker.getPosition();
+                sp.marker.setMap(null);
+                sp.marker = createSignboardMarker(sp.name, pos, sp.color, sp._adminIdRef || sid);
+            }
         });
-    }
 
-    persistAdminInitCache_();
-    showAdminSyncToast('✅ 大看板への束ねを解除しました（同期中…）', 'ok');
+        restoreAdminMapVisuals_();
 
-    const syncIds = [sid];
-    if (prevParentId) syncIds.push(prevParentId);
-    Promise.all(syncIds.map(s => {
-        const sp = loadedPolygons[s];
-        return sp ? syncUpdatePolygon_(sp) : Promise.resolve(false);
-    })).then(results => {
-        if (results.some(Boolean)) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
-    });
-};
+        persistAdminInitCache_();
+        showAdminSyncToast(`✅ 大看板に${selectedIds.length}件の小看板を束ねました（同期中…）`, 'ok');
 
-function openCol(id) {
-    const p = loadedPolygons[id]; let h;
-    const wide = 'min(780px, calc(100vw - 64px))';
-    if (p.isMarker) {
-        h = `<div style="max-height:360px;overflow-y:auto;width:${wide};box-sizing:border-box;">${renderAdminSignIconPickerHtml_({ onPick: 'applyCol', arg0: id, activeIcon: p.color })}</div>`;
-        infoWindow.setOptions({ maxWidth: 860 });
-    } else {
-        const cl = ['#FF0000', '#FF6600', '#FFFF00', '#00FF00', '#556B2F', '#00CCFF', '#0033FF', '#9900FF', '#d32f2f'];
-        h = `<div style="display:flex;flex-wrap:wrap;gap:5px;justify-content:center;">${cl.map(c => `<button style="background:${c};width:35px;height:35px;border-radius:4px;border:1px solid #ccc;" onclick="applyCol('${id}','${c}')"></button>`).join('')}</div>`;
-        infoWindow.setOptions({ maxWidth: 320 });
-    }
-    const boxW = p.isMarker ? wide : '240px';
-    infoWindow.setContent(`<div style="text-align:center;width:${boxW};box-sizing:border-box;color:#000;"><b>${p.isMarker ? 'アイコン' : '色'}変更</b><br><br>${h}</div>`);
-    const pos = p.marker && p.marker.getPosition ? p.marker.getPosition() : null;
-    if (pos) {
-        infoWindow.close();
-        infoWindow.setPosition(pos);
-        infoWindow.open(map);
-    }
-}
+        Promise.all(allAffectedIds.map(sid => {
+            const sp = loadedPolygons[sid];
+            return sp ? syncUpdatePolygon_(sp) : Promise.resolve(false);
+        })).then(results => {
+            if (results.some(Boolean)) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+        });
+    };
 
-function applyCol(id, v) {
-    const p = loadedPolygons[id];
-    if (p && p.isMarker && isAdminLocationPin_(p)) return;
-    p.color = v;
-    if (p.isMarker) {
-        if (p.marker) p.marker.setMap(null);
-        p.marker = createSignboardMarker(p.name, p.marker.getPosition(), v, p._adminIdRef || id);
-    }
-    else { if (p.status !== '未使用（返却）' && p.status !== '未使用') p.polygon.setOptions({ fillColor: v, strokeColor: v }); }
-    infoWindow.close();
-    showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
-    syncUpdatePolygon_(p, { color: v, signFunction: p.signFunction }).then(ok => { if (ok) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok'); });
-}
+    window.cancelAdminSignGroupMapSelect = () => {
+        window.isAdminSignGroupMapSelecting = false;
+        window.adminSignGroupTargetId = null;
+        window.tempSignGroupChildren = [];
 
-function actionEditShape(id) {
-    infoWindow.close();
-    editingId = id;
-    loadedPolygons[id].polygon ? loadedPolygons[id].polygon.setEditable(true) : loadedPolygons[id].marker.setDraggable(true);
+        const ui = document.getElementById('adminSignGroupMapSelectUI');
+        if (ui) ui.style.display = 'none';
 
-    if (loadedPolygons[id].polygon) {
-        originalCoordsForEdit = loadedPolygons[id].polygon.getPath().getArray().map(p => ({ lat: p.lat(), lng: p.lng() }));
-        if (document.getElementById('editLoadFudeBtn')) document.getElementById('editLoadFudeBtn').style.display = 'inline-block';
-        // 範囲変更を開いた時点で県判定＋JSON先読み（「筆ポリから」押下を速くする）
-        if (typeof window.preloadFudeData === 'function') {
-            window.preloadFudeData();
+        if (window.SignGroup) {
+            window.SignGroup.clearConnectorLines();
         }
-    } else {
-        originalCoordsForEdit = [loadedPolygons[id].marker.getPosition()];
-        if (document.getElementById('editLoadFudeBtn')) document.getElementById('editLoadFudeBtn').style.display = 'none';
-    }
 
-    document.getElementById('editShapePanel').style.display = 'block';
-    if (typeof window.enterShapeEditFocusMode_ === 'function') {
-        window.enterShapeEditFocusMode_(id);
-    }
-    map.setZoom(map.getZoom());
-}
-async function actionDelete(id) {
-    if ((localStorage.getItem('passionMapUserRole') || '作業員') !== '管理者') {
-        customAlert('管理者権限がないため、圃場の削除はできません。');
-        return;
-    }
+        restoreAdminMapVisuals_();
+    };
 
-    const p = loadedPolygons[id];
-    if (!p) return;
-
-    const label = isAdminLocationPin_(p) ? '拠点' : (p.isMarker ? '看板' : '圃場');
-    const name = String(p.name || '').trim() || label;
-    if (await customConfirm(`「${name}」を削除しますか？\n(復元できません)`)) {
-        await doDeletePolygons([id]);
-    }
-}
-
-async function doDeletePolygons(ids) {
-    infoWindow.close();
-    document.getElementById('modal').style.display = 'none';
-    ids.forEach(id => {
-        if (!loadedPolygons[id]) return;
-        if (loadedPolygons[id].polygon) loadedPolygons[id].polygon.setMap(null);
-        if (loadedPolygons[id].marker) loadedPolygons[id].marker.setMap(null);
-        delete loadedPolygons[id];
-        for (const cid in loadedPolygons) {
-            if (loadedPolygons[cid] && String(loadedPolygons[cid].parentSignId || '').trim() === String(id)) {
-                loadedPolygons[cid].parentSignId = '';
-            }
-        }
-    });
-    if (window.SignGroup) {
-        window.SignGroup.collapse(map, loadedPolygons);
-    }
-    persistAdminInitCache_();
-    showAdminSyncToast('✅ 削除しました（同期中…）', 'ok');
-    const realIds = ids.filter(id => !isAdminTempId_(id));
-    if (typeof window.rememberDeletedPolygonIds_ === 'function') window.rememberDeletedPolygonIds_(realIds);
-    if (!realIds.length) return;
-    const payload = realIds.length === 1
-        ? { id: realIds[0], userName: currentUser }
-        : { ids: realIds, userName: currentUser };
-    const op = realIds.length === 1 ? 'deletePolygon' : 'deletePolygonBatch';
-    syncAdminCall_(op, payload, { key: op + ':' + realIds.join(','), op, payload }).then(() => {
-        showAdminSyncToast('☁️ サーバーへ削除完了', 'ok');
-    }).catch(() => { });
-}
-function cancelMerge() { isMergeMode = false; mergeBaseId = null; document.getElementById('mergeModePanel').style.display = 'none'; }
-function startMerge(id) { isMergeMode = true; mergeBaseId = id; infoWindow.close(); document.getElementById('mergeModePanel').style.display = 'block'; customAlert("統合する別の圃場をクリックしてください。"); }
-async function execMerge(bId, tId) { if (bId === tId) return; if (!await customConfirm("マスタと履歴を統合しますか？")) { cancelMerge(); return; } const bP = loadedPolygons[bId], tP = loadedPolygons[tId]; if (tP.toukiId) bP.toukiId = bP.toukiId ? [...new Set((bP.toukiId + "," + tP.toukiId).split(","))].join(",") : tP.toukiId; tP.polygon.setMap(null); tP.marker.setMap(null); delete loadedPolygons[tId]; cancelMerge(); persistAdminInitCache_(); showAdminSyncToast('✅ 統合しました（同期中…）', 'ok'); const payload = { baseId: bId, targetId: tId, userName: currentUser }; syncAdminCall_('mergeFields', payload, { key: 'mergeFields:' + bId + ':' + tId, op: 'mergeFields', payload }).then(() => showAdminSyncToast('☁️ サーバーへ保存完了', 'ok')).catch(() => { }); }
-
-function isAdminLocationPin_(p) {
-    if (!p) return false;
-    if (typeof window.isLocationPinSign_ === 'function') return window.isLocationPinSign_(p.signFunction);
-    return String(p.signFunction || '').trim() === '拠点';
-}
-
-function findLocationPinIdByName_(name) {
-    const n = String(name || '').trim();
-    if (!n) return '';
-    for (const id in loadedPolygons) {
-        const p = loadedPolygons[id];
-        if (p && isAdminLocationPin_(p) && String(p.name || '').trim() === n) return id;
-    }
-    return '';
-}
-
-function bindAdminMarkerClick_(marker, getId) {
-    google.maps.event.addListener(marker, 'click', (e) => {
-        const id = getId();
-        if (customDrawingMode) { google.maps.event.trigger(map, 'click', e); return; }
-        if (window.isAdminSignGroupMapSelecting) {
-            if (typeof window.handleAdminSignGroupMarkerClick_ === 'function') {
-                window.handleAdminSignGroupMarkerClick_(id);
-            }
-            return;
-        }
-        if (isBatchDeleteMode) {
-            let idx = selectedForDelete.indexOf(id);
-            if (idx === -1) {
-                selectedForDelete.push(id);
-                marker.setOptions({ opacity: 0.5 });
-            } else {
-                selectedForDelete.splice(idx, 1);
-                marker.setOptions({ opacity: 1.0 });
-            }
-            document.getElementById('batchDeleteCount').innerText = selectedForDelete.length;
-            return;
-        }
-        if (window.isAdminMapSelecting) {
-            if (window.tempLinkedSigns.includes(id)) { window.tempLinkedSigns = window.tempLinkedSigns.filter(x => x !== id); } else { window.tempLinkedSigns.push(id); }
-            updateAdminMapVisuals(); return;
-        }
-        if (editingId) return;
-
-        // 🪧 大看板・小看板の展開 & 2段階タップ制御
-        const sid = String(id);
-        const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[sid] : null;
-        if (window.SignGroup && p && p.isMarker && !isAdminLocationPin_(p)) {
-            const isParent = window.SignGroup.isParentSign(p);
-            const isChild = window.SignGroup.isChildSign(p);
-            const expId = window.SignGroup.getExpandedParentId();
-
-            if (isParent) {
-                if (expId !== sid) {
-                    // 1回目のタップ：小看板を展開する
-                    window.SignGroup.expand(sid, map, loadedPolygons, () => {
-                        google.maps.event.trigger(map, 'zoom_changed');
-                    });
-                    if (infoWindow) infoWindow.close();
-                    return;
+    function restoreAdminMapVisuals_() {
+        const z = map.getZoom();
+        for (const id in loadedPolygons) {
+            const p = loadedPolygons[id];
+            if (!p) continue;
+            if (p.isMarker && p.marker) {
+                p.marker.setOpacity(1.0);
+                if (typeof isAdminLocationPin_ === 'function' && isAdminLocationPin_(p)) {
+                    if (typeof window.refreshLocationPinMarker_ === 'function') {
+                        window.refreshLocationPinMarker_(p.marker, p.name, z);
+                    } else {
+                        p.marker.setVisible(true);
+                        if (p.labelConfig) p.marker.setLabel(p.labelConfig);
+                    }
                 } else {
-                    // 2回目のタップ：大看板のメニューを開く
-                    openM(id);
-                    return;
+                    const isChild = !!(window.SignGroup && window.SignGroup.isChildSign(p));
+                    const expId = window.SignGroup ? window.SignGroup.getExpandedParentId() : null;
+                    const parentId = window.SignGroup ? window.SignGroup.getParentId(p) : '';
+                    if (isChild && (!expId || expId !== parentId)) {
+                        p.marker.setVisible(false);
+                    } else {
+                        p.marker.setVisible(z >= 15);
+                    }
+                    if (p.labelConfig) {
+                        p.marker.setLabel(null);
+                        if (z >= 17) p.marker.setLabel(p.labelConfig);
+                    }
                 }
-            } else if (isChild) {
-                // 展開された小看板をタップ：小看板のメニューを開く
-                openM(id);
-                return;
-            } else {
-                // 単独の看板：展開中の大看板があれば閉じる
-                if (expId) {
-                    window.SignGroup.collapse(map, loadedPolygons, () => {
-                        google.maps.event.trigger(map, 'zoom_changed');
-                    });
-                }
+            } else if (p.polygon) {
+                const isU = (p.status === '未使用（返却）' || p.status === '未使用');
+                p.polygon.setOptions({ fillOpacity: isU ? 0.5 : 0.3, strokeOpacity: 1 });
+            }
+        }
+        if (window.SignGroup) {
+            window.SignGroup.refreshMarkers(loadedPolygons);
+        }
+    }
+
+    window.removeAdminSignFromGroup_ = async (id) => {
+        const sid = String(id || '').trim();
+        const p = loadedPolygons[sid];
+        if (!p || !p.isMarker) return;
+        const prevParentId = String(p.parentSignId || '').trim();
+        if (!prevParentId) return;
+
+        if (infoWindow) infoWindow.close();
+        p.parentSignId = '';
+
+        const pos = p.marker.getPosition();
+        p.marker.setMap(null);
+        p.marker = createSignboardMarker(p.name, pos, p.color, p._adminIdRef || sid);
+
+        if (prevParentId && loadedPolygons[prevParentId]) {
+            const pp = loadedPolygons[prevParentId];
+            if (pp.marker) {
+                const ppos = pp.marker.getPosition();
+                pp.marker.setMap(null);
+                pp.marker = createSignboardMarker(pp.name, ppos, pp.color, pp._adminIdRef || prevParentId);
             }
         }
 
-        openM(id);
-    });
-}
+        if (window.SignGroup) {
+            window.SignGroup.collapse(map, loadedPolygons, () => {
+                google.maps.event.trigger(map, 'zoom_changed');
+            });
+        }
 
-function createSignboardMarker(name, pos, icon, idOrRef) {
-    if ((String(name || '').indexOf('排水口') >= 0 || String(name || '').indexOf('水落口') >= 0) && (!icon || icon === '🕳️')) icon = '🚩';
-    const getId = () => (idOrRef && typeof idOrRef === 'object' && 'id' in idOrRef) ? idOrRef.id : idOrRef;
-    const zoom = map.getZoom(), config = { text: name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' };
-    const polyObj = (typeof loadedPolygons !== 'undefined' && loadedPolygons[getId()]) ? loadedPolygons[getId()] : { name: name, color: icon, id: getId() };
-    const iconOpt = (window.SignGroup && typeof window.SignGroup.buildSignMarkerIcon === 'function')
-        ? window.SignGroup.buildSignMarkerIcon(polyObj)
-        : { url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="20">${icon || '🪧'}</text></svg>`), scaledSize: new google.maps.Size(26, 26), labelOrigin: new google.maps.Point(13, 30) };
-    const marker = new google.maps.Marker({ position: pos, map: map, visible: zoom >= 15, label: zoom >= 17 ? config : null, icon: iconOpt });
-    bindAdminMarkerClick_(marker, getId);
-    return marker;
-}
+        persistAdminInitCache_();
+        showAdminSyncToast('✅ 大看板への束ねを解除しました（同期中…）', 'ok');
 
-function createLocationPinMarker(name, pos, idOrRef) {
-    const getId = () => (idOrRef && typeof idOrRef === 'object' && 'id' in idOrRef) ? idOrRef.id : idOrRef;
-    const zoom = map ? map.getZoom() : 15;
-    const label = (typeof window.locationPinLabelConfig_ === 'function')
-        ? window.locationPinLabelConfig_(name, zoom)
-        : { text: name, color: '#3E2723', fontSize: '13px', fontWeight: 'bold', className: 'location-pin-label' };
-    const icon = (typeof window.locationPinMarkerIcon_ === 'function')
-        ? window.locationPinMarkerIcon_(zoom)
-        : { path: google.maps.SymbolPath.CIRCLE, scale: 12, fillColor: '#FFEB3B', fillOpacity: 1, strokeColor: '#F57F17', strokeWeight: 3 };
-    const marker = new google.maps.Marker({ position: pos, map: map, visible: true, zIndex: 1200, label: label, icon: icon });
-    if (typeof window.attachLocationPinGlow_ === 'function') window.attachLocationPinGlow_(marker);
-    if (typeof window.syncLocationPinGlowScale_ === 'function') window.syncLocationPinGlowScale_(map);
-    bindAdminMarkerClick_(marker, getId);
-    return marker;
-}
+        const syncIds = [sid];
+        if (prevParentId) syncIds.push(prevParentId);
+        Promise.all(syncIds.map(s => {
+            const sp = loadedPolygons[s];
+            return sp ? syncUpdatePolygon_(sp) : Promise.resolve(false);
+        })).then(results => {
+            if (results.some(Boolean)) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+        });
+    };
 
-function createPolygonObject(p) {
-    if (!p || !p.coords) return;
-    if (typeof p.coords === 'string') {
-        try {
-            p.coords = JSON.parse(p.coords);
-        } catch (e) {
-            console.error('coords parse error:', e, p);
-            return;
+    function openCol(id) {
+        const p = loadedPolygons[id]; let h;
+        const wide = 'min(780px, calc(100vw - 64px))';
+        if (p.isMarker) {
+            h = `<div style="max-height:360px;overflow-y:auto;width:${wide};box-sizing:border-box;">${renderAdminSignIconPickerHtml_({ onPick: 'applyCol', arg0: id, activeIcon: p.color })}</div>`;
+            infoWindow.setOptions({ maxWidth: 860 });
+        } else {
+            const cl = ['#FF0000', '#FF6600', '#FFFF00', '#00FF00', '#556B2F', '#00CCFF', '#0033FF', '#9900FF', '#d32f2f'];
+            h = `<div style="display:flex;flex-wrap:wrap;gap:5px;justify-content:center;">${cl.map(c => `<button style="background:${c};width:35px;height:35px;border-radius:4px;border:1px solid #ccc;" onclick="applyCol('${id}','${c}')"></button>`).join('')}</div>`;
+            infoWindow.setOptions({ maxWidth: 320 });
+        }
+        const boxW = p.isMarker ? wide : '240px';
+        infoWindow.setContent(`<div style="text-align:center;width:${boxW};box-sizing:border-box;color:#000;"><b>${p.isMarker ? 'アイコン' : '色'}変更</b><br><br>${h}</div>`);
+        const pos = p.marker && p.marker.getPosition ? p.marker.getPosition() : null;
+        if (pos) {
+            infoWindow.close();
+            infoWindow.setPosition(pos);
+            infoWindow.open(map);
         }
     }
-    if (!Array.isArray(p.coords) || p.coords.length === 0) return;
-    p.isMarker = p.coords.length === 1;
-    const idRef = p._adminIdRef || { id: p.id };
-    idRef.id = p.id;
-    p._adminIdRef = idRef;
 
-    if (p.isMarker) {
-        let lat = typeof p.coords[0].lat === 'function' ? p.coords[0].lat() : parseFloat(p.coords[0].lat);
-        let lng = typeof p.coords[0].lng === 'function' ? p.coords[0].lng() : parseFloat(p.coords[0].lng);
-        const locPin = isAdminLocationPin_(p);
-        const m = locPin
-            ? createLocationPinMarker(p.name, new google.maps.LatLng(lat, lng), idRef)
-            : createSignboardMarker(p.name, new google.maps.LatLng(lat, lng), p.color, idRef);
-        const labelConfig = locPin
-            ? ((typeof window.locationPinLabelConfig_ === 'function') ? window.locationPinLabelConfig_(p.name, map.getZoom()) : { text: p.name, color: '#3E2723', fontSize: '13px', fontWeight: 'bold', className: 'location-pin-label' })
-            : { text: p.name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' };
-        loadedPolygons[p.id] = { ...p, marker: m, labelConfig: labelConfig, signFunction: p.signFunction, linkedSigns: p.linkedSigns || "", parentSignId: p.parentSignId || "", _adminIdRef: idRef };
-    } else {
-        const isU = (p.status === '未使用（返却）' || p.status === '未使用'), dC = getAdminColor(p.status);
-        const poly = new google.maps.Polygon({ paths: p.coords, map, fillColor: dC, fillOpacity: isU ? 0.5 : 0.3, strokeColor: dC, strokeOpacity: 1, strokeWeight: 3 });
-        const m = createLabelMarker(p.name, p.coords, dC, p.area);
+    function applyCol(id, v) {
+        const p = loadedPolygons[id];
+        if (p && p.isMarker && isAdminLocationPin_(p)) return;
+        p.color = v;
+        if (p.isMarker) {
+            if (p.marker) p.marker.setMap(null);
+            p.marker = createSignboardMarker(p.name, p.marker.getPosition(), v, p._adminIdRef || id);
+        }
+        else { if (p.status !== '未使用（返却）' && p.status !== '未使用') p.polygon.setOptions({ fillColor: v, strokeColor: v }); }
+        infoWindow.close();
+        showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
+        syncUpdatePolygon_(p, { color: v, signFunction: p.signFunction }).then(ok => { if (ok) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok'); });
+    }
 
-        google.maps.event.addListener(poly, 'click', (e) => {
-            const id = idRef.id;
+    function actionEditShape(id) {
+        infoWindow.close();
+        editingId = id;
+        loadedPolygons[id].polygon ? loadedPolygons[id].polygon.setEditable(true) : loadedPolygons[id].marker.setDraggable(true);
+
+        if (loadedPolygons[id].polygon) {
+            originalCoordsForEdit = loadedPolygons[id].polygon.getPath().getArray().map(p => ({ lat: p.lat(), lng: p.lng() }));
+            if (document.getElementById('editLoadFudeBtn')) document.getElementById('editLoadFudeBtn').style.display = 'inline-block';
+            // 範囲変更を開いた時点で県判定＋JSON先読み（「筆ポリから」押下を速くする）
+            if (typeof window.preloadFudeData === 'function') {
+                window.preloadFudeData();
+            }
+        } else {
+            originalCoordsForEdit = [loadedPolygons[id].marker.getPosition()];
+            if (document.getElementById('editLoadFudeBtn')) document.getElementById('editLoadFudeBtn').style.display = 'none';
+        }
+
+        document.getElementById('editShapePanel').style.display = 'block';
+        if (typeof window.enterShapeEditFocusMode_ === 'function') {
+            window.enterShapeEditFocusMode_(id);
+        }
+        map.setZoom(map.getZoom());
+    }
+    async function actionDelete(id) {
+        if ((localStorage.getItem('passionMapUserRole') || '作業員') !== '管理者') {
+            customAlert('管理者権限がないため、圃場の削除はできません。');
+            return;
+        }
+
+        const p = loadedPolygons[id];
+        if (!p) return;
+
+        const label = isAdminLocationPin_(p) ? '拠点' : (p.isMarker ? '看板' : '圃場');
+        const name = String(p.name || '').trim() || label;
+        if (await customConfirm(`「${name}」を削除しますか？\n(復元できません)`)) {
+            await doDeletePolygons([id]);
+        }
+    }
+
+    async function doDeletePolygons(ids) {
+        infoWindow.close();
+        document.getElementById('modal').style.display = 'none';
+        ids.forEach(id => {
+            if (!loadedPolygons[id]) return;
+            if (loadedPolygons[id].polygon) loadedPolygons[id].polygon.setMap(null);
+            if (loadedPolygons[id].marker) loadedPolygons[id].marker.setMap(null);
+            delete loadedPolygons[id];
+            for (const cid in loadedPolygons) {
+                if (loadedPolygons[cid] && String(loadedPolygons[cid].parentSignId || '').trim() === String(id)) {
+                    loadedPolygons[cid].parentSignId = '';
+                }
+            }
+        });
+        if (window.SignGroup) {
+            window.SignGroup.collapse(map, loadedPolygons);
+        }
+        persistAdminInitCache_();
+        showAdminSyncToast('✅ 削除しました（同期中…）', 'ok');
+        const realIds = ids.filter(id => !isAdminTempId_(id));
+        if (typeof window.rememberDeletedPolygonIds_ === 'function') window.rememberDeletedPolygonIds_(realIds);
+        if (!realIds.length) return;
+        const payload = realIds.length === 1
+            ? { id: realIds[0], userName: currentUser }
+            : { ids: realIds, userName: currentUser };
+        const op = realIds.length === 1 ? 'deletePolygon' : 'deletePolygonBatch';
+        syncAdminCall_(op, payload, { key: op + ':' + realIds.join(','), op, payload }).then(() => {
+            showAdminSyncToast('☁️ サーバーへ削除完了', 'ok');
+        }).catch(() => { });
+    }
+    function cancelMerge() { isMergeMode = false; mergeBaseId = null; document.getElementById('mergeModePanel').style.display = 'none'; }
+    function startMerge(id) { isMergeMode = true; mergeBaseId = id; infoWindow.close(); document.getElementById('mergeModePanel').style.display = 'block'; customAlert("統合する別の圃場をクリックしてください。"); }
+    async function execMerge(bId, tId) { if (bId === tId) return; if (!await customConfirm("マスタと履歴を統合しますか？")) { cancelMerge(); return; } const bP = loadedPolygons[bId], tP = loadedPolygons[tId]; if (tP.toukiId) bP.toukiId = bP.toukiId ? [...new Set((bP.toukiId + "," + tP.toukiId).split(","))].join(",") : tP.toukiId; tP.polygon.setMap(null); tP.marker.setMap(null); delete loadedPolygons[tId]; cancelMerge(); persistAdminInitCache_(); showAdminSyncToast('✅ 統合しました（同期中…）', 'ok'); const payload = { baseId: bId, targetId: tId, userName: currentUser }; syncAdminCall_('mergeFields', payload, { key: 'mergeFields:' + bId + ':' + tId, op: 'mergeFields', payload }).then(() => showAdminSyncToast('☁️ サーバーへ保存完了', 'ok')).catch(() => { }); }
+
+    function isAdminLocationPin_(p) {
+        if (!p) return false;
+        if (typeof window.isLocationPinSign_ === 'function') return window.isLocationPinSign_(p.signFunction);
+        return String(p.signFunction || '').trim() === '拠点';
+    }
+
+    function findLocationPinIdByName_(name) {
+        const n = String(name || '').trim();
+        if (!n) return '';
+        for (const id in loadedPolygons) {
+            const p = loadedPolygons[id];
+            if (p && isAdminLocationPin_(p) && String(p.name || '').trim() === n) return id;
+        }
+        return '';
+    }
+
+    function bindAdminMarkerClick_(marker, getId) {
+        google.maps.event.addListener(marker, 'click', (e) => {
+            const id = getId();
             if (customDrawingMode) { google.maps.event.trigger(map, 'click', e); return; }
+            if (window.isAdminSignGroupMapSelecting) {
+                if (typeof window.handleAdminSignGroupMarkerClick_ === 'function') {
+                    window.handleAdminSignGroupMarkerClick_(id);
+                }
+                return;
+            }
             if (isBatchDeleteMode) {
                 let idx = selectedForDelete.indexOf(id);
                 if (idx === -1) {
                     selectedForDelete.push(id);
-                    poly.setOptions({ strokeColor: '#000000', strokeWeight: 6 });
+                    marker.setOptions({ opacity: 0.5 });
                 } else {
                     selectedForDelete.splice(idx, 1);
-                    poly.setOptions({ strokeColor: dC, strokeWeight: 3 });
+                    marker.setOptions({ opacity: 1.0 });
                 }
                 document.getElementById('batchDeleteCount').innerText = selectedForDelete.length;
                 return;
             }
+            if (window.isAdminMapSelecting) {
+                if (window.tempLinkedSigns.includes(id)) { window.tempLinkedSigns = window.tempLinkedSigns.filter(x => x !== id); } else { window.tempLinkedSigns.push(id); }
+                updateAdminMapVisuals(); return;
+            }
             if (editingId) return;
-            if (window.isAdminSignGroupMapSelecting) return;
-            if (isMergeMode) { execMerge(mergeBaseId, id); return; }
+
+            // 🪧 大看板・小看板の展開 & 2段階タップ制御
+            const sid = String(id);
+            const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[sid] : null;
+            if (window.SignGroup && p && p.isMarker && !isAdminLocationPin_(p)) {
+                const isParent = window.SignGroup.isParentSign(p);
+                const isChild = window.SignGroup.isChildSign(p);
+                const expId = window.SignGroup.getExpandedParentId();
+
+                if (isParent) {
+                    if (expId !== sid) {
+                        // 1回目のタップ：小看板を展開する
+                        window.SignGroup.expand(sid, map, loadedPolygons, () => {
+                            google.maps.event.trigger(map, 'zoom_changed');
+                        });
+                        if (infoWindow) infoWindow.close();
+                        return;
+                    } else {
+                        // 2回目のタップ：大看板のメニューを開く
+                        openM(id);
+                        return;
+                    }
+                } else if (isChild) {
+                    // 展開された小看板をタップ：小看板のメニューを開く
+                    openM(id);
+                    return;
+                } else {
+                    // 単独の看板：展開中の大看板があれば閉じる
+                    if (expId) {
+                        window.SignGroup.collapse(map, loadedPolygons, () => {
+                            google.maps.event.trigger(map, 'zoom_changed');
+                        });
+                    }
+                }
+            }
+
             openM(id);
         });
-        loadedPolygons[p.id] = { ...p, polygon: poly, marker: m, _adminIdRef: idRef };
-    }
-    window.loadedPolygons = loadedPolygons;
-    if (typeof window.applyMapLayerFilter_ === 'function') window.applyMapLayerFilter_();
-    if (window._openedFromWorkerMapSelect && window.parent && window.parent !== window && String(p.id || '').indexOf('tmp_') === 0) {
-        try {
-            const plainCoords = (p.coords || []).map(pt => ({
-                lat: typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat),
-                lng: typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng)
-            }));
-            window.parent.postMessage({
-                type: 'workerMapSelectPolygonSaved',
-                item: {
-                    id: String(p.id),
-                    name: p.name || '',
-                    coords: plainCoords,
-                    color: p.color || (p.isMarker ? '🚩' : '#FF9800'),
-                    location: p.location || '',
-                    condition: p.condition || '',
-                    soilType: p.soilType || '',
-                    area: p.area || 0,
-                    status: p.status || '稼働中',
-                    signFunction: p.signFunction || '',
-                    parentSignId: p.parentSignId || '',
-                    isMarker: !!p.isMarker
-                }
-            }, '*');
-        } catch (e) { }
-    }
-}
-function createLabelMarker(n, c, col, a) {
-    const b = new google.maps.LatLngBounds();
-    if (Array.isArray(c)) {
-        c.forEach(pt => {
-            if (pt) {
-                let lat = typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat);
-                let lng = typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng);
-                if (!isNaN(lat) && !isNaN(lng)) {
-                    b.extend(new google.maps.LatLng(lat, lng));
-                }
-            }
-        });
-    }
-    return new google.maps.Marker({
-        position: b.getCenter(),
-        map,
-        visible: map ? map.getZoom() >= 16 : true,
-        clickable: false,
-        label: { text: `${n} / ${a}a`, color: 'white', fontSize: '13px', fontWeight: 'bold', className: 'polygon-label' },
-        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }
-    });
-}
-
-window.calcRidges = (coords, dir, widthCm) => {
-    if (!dir || !widthCm || widthCm <= 0 || !coords || coords.length < 3) return "--";
-    let center = { lat: 0, lng: 0 };
-    coords.forEach(pt => { center.lat += pt.lat; center.lng += pt.lng; });
-    center.lat /= coords.length; center.lng /= coords.length;
-    const cosLat = Math.cos(center.lat * Math.PI / 180);
-    const LAT_TO_METER = 111320;
-
-    let maxLenNS = 0, angleNS = 0, maxLenEW = 0, angleEW = 0;
-    for (let i = 0; i < coords.length; i++) {
-        let p1 = coords[i], p2 = coords[(i + 1) % coords.length];
-        let dx = (p2.lng - p1.lng) * cosLat * LAT_TO_METER;
-        let dy = (p2.lat - p1.lat) * LAT_TO_METER;
-        let len = Math.sqrt(dx * dx + dy * dy);
-        if (len > 0) {
-            let angle = Math.atan2(dy, dx);
-            let deg = Math.abs(angle * 180 / Math.PI);
-            if (deg > 90) deg = 180 - deg;
-            if (deg >= 45) { if (len > maxLenNS) { maxLenNS = len; angleNS = angle; } }
-            else { if (len > maxLenEW) { maxLenEW = len; angleEW = angle; } }
-        }
-    }
-    if (maxLenNS === 0) angleNS = Math.PI / 2;
-    if (maxLenEW === 0) angleEW = 0;
-
-    let rotAngle = (dir.includes('南北')) ? -angleNS : -angleEW;
-    let minRy = Infinity, maxRy = -Infinity;
-    coords.forEach(pt => {
-        let dx = (pt.lng - center.lng) * cosLat * LAT_TO_METER;
-        let dy = (pt.lat - center.lat) * LAT_TO_METER;
-        let ry = dx * Math.sin(rotAngle) + dy * Math.cos(rotAngle);
-        if (ry < minRy) minRy = ry;
-        if (ry > maxRy) maxRy = ry;
-    });
-
-    let trueWidthM = maxRy - minRy;
-    return Math.floor((trueWidthM * 0.95) / (widthCm / 100));
-};
-
-function initMap() {
-    if (map) {
-        if (typeof resolveMapInit === 'function') resolveMapInit();
-        return; // 二重初期化防止
-    }
-    const mapEl = document.getElementById('map');
-    if (!mapEl) {
-        // 地図なしで resolve すると圃場描画が永久にスキップされるため、再試行のみ行う
-        console.warn('地図コンテナ #map が見つかりません。再試行します');
-        setTimeout(() => { try { initMap(); } catch (e) { console.warn(e); } }, 120);
-        return;
-    }
-    if (typeof google === 'undefined' || !google.maps || typeof google.maps.Map !== 'function') {
-        console.warn('Google Maps API が未ロードです。再試行します');
-        setTimeout(() => { try { initMap(); } catch (e) { console.warn(e); } }, 120);
-        return;
-    }
-    let centerPos = { lat: 33.91, lng: 134.66 };
-    let zoomLevel = 15;
-    const deepLinkForInit = pendingMapDeepLink || parseMapDeepLinkFromSearch(window.location.search);
-    if (deepLinkForInit && deepLinkForInit.lat != null && deepLinkForInit.lng != null) {
-        centerPos = { lat: deepLinkForInit.lat, lng: deepLinkForInit.lng };
-        zoomLevel = deepLinkForInit.zoom || 18;
-    } else {
-        const shared = (typeof window.readSharedMapView_ === 'function')
-            ? window.readSharedMapView_({ lat: 33.91, lng: 134.66, zoom: 15 })
-            : null;
-        if (shared && shared.lat != null && shared.lng != null) {
-            centerPos = { lat: shared.lat, lng: shared.lng };
-            zoomLevel = shared.zoom || 15;
-        } else {
-            let savedLat = localStorage.getItem('pMapAdminLastLat');
-            let savedLng = localStorage.getItem('pMapAdminLastLng');
-            let savedZoom = localStorage.getItem('pMapAdminLastZoom');
-            let parsedLat = parseFloat(savedLat), parsedLng = parseFloat(savedLng);
-            if (!isNaN(parsedLat) && !isNaN(parsedLng)) centerPos = { lat: parsedLat, lng: parsedLng };
-            if (savedZoom) zoomLevel = parseInt(savedZoom);
-        }
     }
 
-    class StretchedMapType {
-        constructor() {
-            this.tileSize = new google.maps.Size(256, 256);
-            this.maxZoom = 45;
-            this.name = 'ハイブリッド';
-            this.alt = 'ハイブリッド';
-            this.maxNativeZoom = 21; // Googleの最大ネイティブズーム
+    function createSignboardMarker(name, pos, icon, idOrRef) {
+        if ((String(name || '').indexOf('排水口') >= 0 || String(name || '').indexOf('水落口') >= 0) && (!icon || icon === '🕳️')) icon = '🚩';
+        const getId = () => (idOrRef && typeof idOrRef === 'object' && 'id' in idOrRef) ? idOrRef.id : idOrRef;
+        const zoom = map.getZoom(), config = { text: name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' };
+        const polyObj = (typeof loadedPolygons !== 'undefined' && loadedPolygons[getId()]) ? loadedPolygons[getId()] : { name: name, color: icon, id: getId() };
+        const iconOpt = (window.SignGroup && typeof window.SignGroup.buildSignMarkerIcon === 'function')
+            ? window.SignGroup.buildSignMarkerIcon(polyObj)
+            : { url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="20">${icon || '🪧'}</text></svg>`), scaledSize: new google.maps.Size(26, 26), labelOrigin: new google.maps.Point(13, 30) };
+        const marker = new google.maps.Marker({ position: pos, map: map, visible: zoom >= 15, label: zoom >= 17 ? config : null, icon: iconOpt });
+        bindAdminMarkerClick_(marker, getId);
+        return marker;
+    }
 
-            // Get standard projection to prevent Google Maps from rejecting the custom map type
-            let baseType = null;
+    function createLocationPinMarker(name, pos, idOrRef) {
+        const getId = () => (idOrRef && typeof idOrRef === 'object' && 'id' in idOrRef) ? idOrRef.id : idOrRef;
+        const zoom = map ? map.getZoom() : 15;
+        const label = (typeof window.locationPinLabelConfig_ === 'function')
+            ? window.locationPinLabelConfig_(name, zoom)
+            : { text: name, color: '#3E2723', fontSize: '13px', fontWeight: 'bold', className: 'location-pin-label' };
+        const icon = (typeof window.locationPinMarkerIcon_ === 'function')
+            ? window.locationPinMarkerIcon_(zoom)
+            : { path: google.maps.SymbolPath.CIRCLE, scale: 12, fillColor: '#FFEB3B', fillOpacity: 1, strokeColor: '#F57F17', strokeWeight: 3 };
+        const marker = new google.maps.Marker({ position: pos, map: map, visible: true, zIndex: 1200, label: label, icon: icon });
+        if (typeof window.attachLocationPinGlow_ === 'function') window.attachLocationPinGlow_(marker);
+        if (typeof window.syncLocationPinGlowScale_ === 'function') window.syncLocationPinGlowScale_(map);
+        bindAdminMarkerClick_(marker, getId);
+        return marker;
+    }
+
+    function createPolygonObject(p) {
+        if (!p || !p.coords) return;
+        if (typeof p.coords === 'string') {
             try {
-                baseType = (map && map.mapTypes)
-                    ? (map.mapTypes.get('roadmap') || map.mapTypes.get('hybrid'))
-                    : null;
-            } catch (e) { baseType = null; }
-            if (baseType && baseType.projection) {
-                this.projection = baseType.projection;
-            } else {
-                // Fallback manual Mercator projection just in case
-                this.projection = {
-                    fromLatLngToPoint: function (latLng, opt_point) {
-                        let point = opt_point || new google.maps.Point(0, 0);
-                        let origin = new google.maps.Point(128, 128);
-                        point.x = origin.x + latLng.lng() * (256 / 360);
-                        let siny = Math.min(Math.max(Math.sin((latLng.lat() * Math.PI) / 180), -0.9999), 0.9999);
-                        point.y = origin.y + 0.5 * Math.log((1 + siny) / (1 - siny)) * -(256 / (2 * Math.PI));
-                        return point;
-                    },
-                    fromPointToLatLng: function (point) {
-                        let origin = new google.maps.Point(128, 128);
-                        let lng = (point.x - origin.x) / (256 / 360);
-                        let latRadians = (point.y - origin.y) / -(256 / (2 * Math.PI));
-                        let lat = (2 * Math.atan(Math.exp(latRadians)) - Math.PI / 2) * 180 / Math.PI;
-                        return new google.maps.LatLng(lat, lng);
+                p.coords = JSON.parse(p.coords);
+            } catch (e) {
+                console.error('coords parse error:', e, p);
+                return;
+            }
+        }
+        if (!Array.isArray(p.coords) || p.coords.length === 0) return;
+        p.isMarker = p.coords.length === 1;
+        const idRef = p._adminIdRef || { id: p.id };
+        idRef.id = p.id;
+        p._adminIdRef = idRef;
+
+        if (p.isMarker) {
+            let lat = typeof p.coords[0].lat === 'function' ? p.coords[0].lat() : parseFloat(p.coords[0].lat);
+            let lng = typeof p.coords[0].lng === 'function' ? p.coords[0].lng() : parseFloat(p.coords[0].lng);
+            const locPin = isAdminLocationPin_(p);
+            const m = locPin
+                ? createLocationPinMarker(p.name, new google.maps.LatLng(lat, lng), idRef)
+                : createSignboardMarker(p.name, new google.maps.LatLng(lat, lng), p.color, idRef);
+            const labelConfig = locPin
+                ? ((typeof window.locationPinLabelConfig_ === 'function') ? window.locationPinLabelConfig_(p.name, map.getZoom()) : { text: p.name, color: '#3E2723', fontSize: '13px', fontWeight: 'bold', className: 'location-pin-label' })
+                : { text: p.name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' };
+            loadedPolygons[p.id] = { ...p, marker: m, labelConfig: labelConfig, signFunction: p.signFunction, linkedSigns: p.linkedSigns || "", parentSignId: p.parentSignId || "", _adminIdRef: idRef };
+        } else {
+            const isU = (p.status === '未使用（返却）' || p.status === '未使用'), dC = getAdminColor(p.status);
+            const poly = new google.maps.Polygon({ paths: p.coords, map, fillColor: dC, fillOpacity: isU ? 0.5 : 0.3, strokeColor: dC, strokeOpacity: 1, strokeWeight: 3 });
+            const m = createLabelMarker(p.name, p.coords, dC, p.area);
+
+            google.maps.event.addListener(poly, 'click', (e) => {
+                const id = idRef.id;
+                if (customDrawingMode) { google.maps.event.trigger(map, 'click', e); return; }
+                if (isBatchDeleteMode) {
+                    let idx = selectedForDelete.indexOf(id);
+                    if (idx === -1) {
+                        selectedForDelete.push(id);
+                        poly.setOptions({ strokeColor: '#000000', strokeWeight: 6 });
+                    } else {
+                        selectedForDelete.splice(idx, 1);
+                        poly.setOptions({ strokeColor: dC, strokeWeight: 3 });
                     }
-                };
-            }
+                    document.getElementById('batchDeleteCount').innerText = selectedForDelete.length;
+                    return;
+                }
+                if (editingId) return;
+                if (window.isAdminSignGroupMapSelecting) return;
+                if (isMergeMode) { execMerge(mergeBaseId, id); return; }
+                openM(id);
+            });
+            loadedPolygons[p.id] = { ...p, polygon: poly, marker: m, _adminIdRef: idRef };
         }
-        getTile(coord, zoom, ownerDocument) {
-            let div = ownerDocument.createElement('div');
-            div.style.width = '256px';
-            div.style.height = '256px';
-            div.style.overflow = 'hidden';
-            div.style.position = 'relative';
-
-            let z = zoom;
-            let x = coord.x;
-            let y = coord.y;
-            let scale = 1;
-
-            if (z > this.maxNativeZoom) {
-                let zDiff = z - this.maxNativeZoom;
-                scale = Math.pow(2, zDiff);
-                z = this.maxNativeZoom;
-                x = Math.floor(x / scale);
-                y = Math.floor(y / scale);
-            }
-
-            let img = ownerDocument.createElement('img');
-            img.src = `https://mt1.google.com/vt/lyrs=y&x=${x}&y=${y}&z=${z}`;
-            img.style.position = 'absolute';
-
-            if (scale > 1) {
-                img.style.width = (256 * scale) + 'px';
-                img.style.height = (256 * scale) + 'px';
-                // JSの % は負になり得るので正の余りに揃える
-                let modX = ((coord.x % scale) + scale) % scale;
-                let modY = ((coord.y % scale) + scale) % scale;
-                let offsetX = modX * 256;
-                let offsetY = modY * 256;
-                img.style.left = `-${offsetX}px`;
-                img.style.top = `-${offsetY}px`;
-                img.style.imageRendering = 'pixelated';
-            } else {
-                img.style.width = '256px';
-                img.style.height = '256px';
-                img.style.left = '0px';
-                img.style.top = '0px';
-            }
-
-            div.appendChild(img);
-            return div;
-        }
-        releaseTile(tile) { }
+        window.loadedPolygons = loadedPolygons;
+        if (typeof window.applyMapLayerFilter_ === 'function') window.applyMapLayerFilter_();
     }
-
-    // Dummy map options to register MapType before instantiation? No, we can just instantiate Map directly if we use mapTypes.set inside a registry. But MapTypeRegistry is on the map instance!
-    // Wait, mapTypes is a property of the map instance! So we MUST create the map first.
-    map = new google.maps.Map(mapEl, {
-        center: centerPos,
-        zoom: zoomLevel,
-        maxZoom: 30,
-        mapTypeId: 'hybrid',
-        gestureHandling: 'greedy',
-        mapTypeControl: false,
-        fullscreenControl: false,
-        streetViewControl: false,
-        rotateControl: false,
-        cameraControl: false,
-        zoomControl: false,
-        // 店舗表示は map-filter.js 側で制御（ここでの固定非表示はしない）
-        // また styles は raster 地図でのみ有効
-        renderingType: (google.maps.RenderingType && google.maps.RenderingType.RASTER) || 'RASTER'
-    });
-
-    try {
-        // 引き延ばしタイルは登録描画時のみ使用。通常閲覧は hybrid のままにし Google 店舗を出せる状態を保つ
-        map.mapTypes.set('hybrid_stretched', new StretchedMapType());
-        map.setOptions({ maxZoom: 30 });
-    } catch (e) {
-        console.warn('StretchedMapType 登録スキップ:', e);
-        try { map.setMapTypeId('hybrid'); } catch (e2) { }
-    }
-
-    // コンテナサイズが後から確定する場合に備えリサイズを通知
-    setTimeout(() => {
-        try { google.maps.event.trigger(map, 'resize'); } catch (e) { }
-    }, 0);
-
-    infoWindow = new google.maps.InfoWindow();
-    google.maps.event.addListener(map, 'click', () => {
-        if (window.isAdminSignGroupMapSelecting) return;
-        if (window.SignGroup && window.SignGroup.getExpandedParentId()) {
-            window.SignGroup.collapse(map, loadedPolygons, () => {
-                try { google.maps.event.trigger(map, 'zoom_changed'); } catch (e) { }
+    function createLabelMarker(n, c, col, a) {
+        const b = new google.maps.LatLngBounds();
+        if (Array.isArray(c)) {
+            c.forEach(pt => {
+                if (pt) {
+                    let lat = typeof pt.lat === 'function' ? pt.lat() : parseFloat(pt.lat);
+                    let lng = typeof pt.lng === 'function' ? pt.lng() : parseFloat(pt.lng);
+                    if (!isNaN(lat) && !isNaN(lng)) {
+                        b.extend(new google.maps.LatLng(lat, lng));
+                    }
+                }
             });
         }
-        infoWindow.close();
-    });
+        return new google.maps.Marker({
+            position: b.getCenter(),
+            map,
+            visible: map ? map.getZoom() >= 16 : true,
+            clickable: false,
+            label: { text: `${n} / ${a}a`, color: 'white', fontSize: '13px', fontWeight: 'bold', className: 'polygon-label' },
+            icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }
+        });
+    }
 
-    map.data.setStyle({
-        fillColor: '#2196F3',
-        fillOpacity: 0.15,
-        strokeColor: '#2196F3',
-        strokeWeight: 1,
-        clickable: true
-    });
+    window.calcRidges = (coords, dir, widthCm) => {
+        if (!dir || !widthCm || widthCm <= 0 || !coords || coords.length < 3) return "--";
+        let center = { lat: 0, lng: 0 };
+        coords.forEach(pt => { center.lat += pt.lat; center.lng += pt.lng; });
+        center.lat /= coords.length; center.lng /= coords.length;
+        const cosLat = Math.cos(center.lat * Math.PI / 180);
+        const LAT_TO_METER = 111320;
 
-    // 🌟修正：読込中のブロックと、もう一度タップでの選択解除
-    map.data.addListener('click', (e) => {
-        if (window.isMapLoadingFude) return; // ★読込中バリア
-        if (window.cadSplittingEdgeMode && typeof window.finishSplitEdgePick_ === 'function') {
-            window.ignoreNextMapClick = true;
-            setTimeout(() => { window.ignoreNextMapClick = false; }, 200);
-            window.finishSplitEdgePick_(e.latLng);
+        let maxLenNS = 0, angleNS = 0, maxLenEW = 0, angleEW = 0;
+        for (let i = 0; i < coords.length; i++) {
+            let p1 = coords[i], p2 = coords[(i + 1) % coords.length];
+            let dx = (p2.lng - p1.lng) * cosLat * LAT_TO_METER;
+            let dy = (p2.lat - p1.lat) * LAT_TO_METER;
+            let len = Math.sqrt(dx * dx + dy * dy);
+            if (len > 0) {
+                let angle = Math.atan2(dy, dx);
+                let deg = Math.abs(angle * 180 / Math.PI);
+                if (deg > 90) deg = 180 - deg;
+                if (deg >= 45) { if (len > maxLenNS) { maxLenNS = len; angleNS = angle; } }
+                else { if (len > maxLenEW) { maxLenEW = len; angleEW = angle; } }
+            }
+        }
+        if (maxLenNS === 0) angleNS = Math.PI / 2;
+        if (maxLenEW === 0) angleEW = 0;
+
+        let rotAngle = (dir.includes('南北')) ? -angleNS : -angleEW;
+        let minRy = Infinity, maxRy = -Infinity;
+        coords.forEach(pt => {
+            let dx = (pt.lng - center.lng) * cosLat * LAT_TO_METER;
+            let dy = (pt.lat - center.lat) * LAT_TO_METER;
+            let ry = dx * Math.sin(rotAngle) + dy * Math.cos(rotAngle);
+            if (ry < minRy) minRy = ry;
+            if (ry > maxRy) maxRy = ry;
+        });
+
+        let trueWidthM = maxRy - minRy;
+        return Math.floor((trueWidthM * 0.95) / (widthCm / 100));
+    };
+
+    function initMap() {
+        if (map) {
+            if (typeof resolveMapInit === 'function') resolveMapInit();
+            return; // 二重初期化防止
+        }
+        const mapEl = document.getElementById('map');
+        if (!mapEl) {
+            // 地図なしで resolve すると圃場描画が永久にスキップされるため、再試行のみ行う
+            console.warn('地図コンテナ #map が見つかりません。再試行します');
+            setTimeout(() => { try { initMap(); } catch (e) { console.warn(e); } }, 120);
             return;
         }
+        if (typeof google === 'undefined' || !google.maps || typeof google.maps.Map !== 'function') {
+            console.warn('Google Maps API が未ロードです。再試行します');
+            setTimeout(() => { try { initMap(); } catch (e) { console.warn(e); } }, 120);
+            return;
+        }
+        let centerPos = { lat: 33.91, lng: 134.66 };
+        let zoomLevel = 15;
+        const deepLinkForInit = pendingMapDeepLink || parseMapDeepLinkFromSearch(window.location.search);
+        if (deepLinkForInit && deepLinkForInit.lat != null && deepLinkForInit.lng != null) {
+            centerPos = { lat: deepLinkForInit.lat, lng: deepLinkForInit.lng };
+            zoomLevel = deepLinkForInit.zoom || 18;
+        } else {
+            const shared = (typeof window.readSharedMapView_ === 'function')
+                ? window.readSharedMapView_({ lat: 33.91, lng: 134.66, zoom: 15 })
+                : null;
+            if (shared && shared.lat != null && shared.lng != null) {
+                centerPos = { lat: shared.lat, lng: shared.lng };
+                zoomLevel = shared.zoom || 15;
+            } else {
+                let savedLat = localStorage.getItem('pMapAdminLastLat');
+                let savedLng = localStorage.getItem('pMapAdminLastLng');
+                let savedZoom = localStorage.getItem('pMapAdminLastZoom');
+                let parsedLat = parseFloat(savedLat), parsedLng = parseFloat(savedLng);
+                if (!isNaN(parsedLat) && !isNaN(parsedLng)) centerPos = { lat: parsedLat, lng: parsedLng };
+                if (savedZoom) zoomLevel = parseInt(savedZoom);
+            }
+        }
 
-        // ★ 形状変更中の筆ポリゴン適用（複数選択→確定で合体）
-        if (window.isEditingFude && editingId && document.getElementById('editShapePanel').style.display === 'block') {
+        class StretchedMapType {
+            constructor() {
+                this.tileSize = new google.maps.Size(256, 256);
+                this.maxZoom = 45;
+                this.name = 'ハイブリッド';
+                this.alt = 'ハイブリッド';
+                this.maxNativeZoom = 21; // Googleの最大ネイティブズーム
+
+                // Get standard projection to prevent Google Maps from rejecting the custom map type
+                let baseType = null;
+                try {
+                    baseType = (map && map.mapTypes)
+                        ? (map.mapTypes.get('roadmap') || map.mapTypes.get('hybrid'))
+                        : null;
+                } catch (e) { baseType = null; }
+                if (baseType && baseType.projection) {
+                    this.projection = baseType.projection;
+                } else {
+                    // Fallback manual Mercator projection just in case
+                    this.projection = {
+                        fromLatLngToPoint: function (latLng, opt_point) {
+                            let point = opt_point || new google.maps.Point(0, 0);
+                            let origin = new google.maps.Point(128, 128);
+                            point.x = origin.x + latLng.lng() * (256 / 360);
+                            let siny = Math.min(Math.max(Math.sin((latLng.lat() * Math.PI) / 180), -0.9999), 0.9999);
+                            point.y = origin.y + 0.5 * Math.log((1 + siny) / (1 - siny)) * -(256 / (2 * Math.PI));
+                            return point;
+                        },
+                        fromPointToLatLng: function (point) {
+                            let origin = new google.maps.Point(128, 128);
+                            let lng = (point.x - origin.x) / (256 / 360);
+                            let latRadians = (point.y - origin.y) / -(256 / (2 * Math.PI));
+                            let lat = (2 * Math.atan(Math.exp(latRadians)) - Math.PI / 2) * 180 / Math.PI;
+                            return new google.maps.LatLng(lat, lng);
+                        }
+                    };
+                }
+            }
+            getTile(coord, zoom, ownerDocument) {
+                let div = ownerDocument.createElement('div');
+                div.style.width = '256px';
+                div.style.height = '256px';
+                div.style.overflow = 'hidden';
+                div.style.position = 'relative';
+
+                let z = zoom;
+                let x = coord.x;
+                let y = coord.y;
+                let scale = 1;
+
+                if (z > this.maxNativeZoom) {
+                    let zDiff = z - this.maxNativeZoom;
+                    scale = Math.pow(2, zDiff);
+                    z = this.maxNativeZoom;
+                    x = Math.floor(x / scale);
+                    y = Math.floor(y / scale);
+                }
+
+                let img = ownerDocument.createElement('img');
+                img.src = `https://mt1.google.com/vt/lyrs=y&x=${x}&y=${y}&z=${z}`;
+                img.style.position = 'absolute';
+
+                if (scale > 1) {
+                    img.style.width = (256 * scale) + 'px';
+                    img.style.height = (256 * scale) + 'px';
+                    // JSの % は負になり得るので正の余りに揃える
+                    let modX = ((coord.x % scale) + scale) % scale;
+                    let modY = ((coord.y % scale) + scale) % scale;
+                    let offsetX = modX * 256;
+                    let offsetY = modY * 256;
+                    img.style.left = `-${offsetX}px`;
+                    img.style.top = `-${offsetY}px`;
+                    img.style.imageRendering = 'pixelated';
+                } else {
+                    img.style.width = '256px';
+                    img.style.height = '256px';
+                    img.style.left = '0px';
+                    img.style.top = '0px';
+                }
+
+                div.appendChild(img);
+                return div;
+            }
+            releaseTile(tile) { }
+        }
+
+        // Dummy map options to register MapType before instantiation? No, we can just instantiate Map directly if we use mapTypes.set inside a registry. But MapTypeRegistry is on the map instance!
+        // Wait, mapTypes is a property of the map instance! So we MUST create the map first.
+        map = new google.maps.Map(mapEl, {
+            center: centerPos,
+            zoom: zoomLevel,
+            maxZoom: 30,
+            mapTypeId: 'hybrid',
+            gestureHandling: 'greedy',
+            mapTypeControl: false,
+            fullscreenControl: false,
+            streetViewControl: false,
+            rotateControl: false,
+            cameraControl: false,
+            zoomControl: false,
+            // 店舗表示は map-filter.js 側で制御（ここでの固定非表示はしない）
+            // また styles は raster 地図でのみ有効
+            renderingType: (google.maps.RenderingType && google.maps.RenderingType.RASTER) || 'RASTER'
+        });
+
+        try {
+            // 引き延ばしタイルは登録描画時のみ使用。通常閲覧は hybrid のままにし Google 店舗を出せる状態を保つ
+            map.mapTypes.set('hybrid_stretched', new StretchedMapType());
+            map.setOptions({ maxZoom: 30 });
+        } catch (e) {
+            console.warn('StretchedMapType 登録スキップ:', e);
+            try { map.setMapTypeId('hybrid'); } catch (e2) { }
+        }
+
+        // コンテナサイズが後から確定する場合に備えリサイズを通知
+        setTimeout(() => {
+            try { google.maps.event.trigger(map, 'resize'); } catch (e) { }
+        }, 0);
+
+        infoWindow = new google.maps.InfoWindow();
+        google.maps.event.addListener(map, 'click', () => {
+            if (window.isAdminSignGroupMapSelecting) return;
+            if (window.SignGroup && window.SignGroup.getExpandedParentId()) {
+                window.SignGroup.collapse(map, loadedPolygons, () => {
+                    try { google.maps.event.trigger(map, 'zoom_changed'); } catch (e) { }
+                });
+            }
+            infoWindow.close();
+        });
+
+        map.data.setStyle({
+            fillColor: '#2196F3',
+            fillOpacity: 0.15,
+            strokeColor: '#2196F3',
+            strokeWeight: 1,
+            clickable: true
+        });
+
+        // 🌟修正：読込中のブロックと、もう一度タップでの選択解除
+        map.data.addListener('click', (e) => {
+            if (window.isMapLoadingFude) return; // ★読込中バリア
+            if (window.cadSplittingEdgeMode && typeof window.finishSplitEdgePick_ === 'function') {
+                window.ignoreNextMapClick = true;
+                setTimeout(() => { window.ignoreNextMapClick = false; }, 200);
+                window.finishSplitEdgePick_(e.latLng);
+                return;
+            }
+
+            // ★ 形状変更中の筆ポリゴン適用（複数選択→確定で合体）
+            if (window.isEditingFude && editingId && document.getElementById('editShapePanel').style.display === 'block') {
+                let geom = e.feature.getGeometry();
+                let targetArray = null;
+                if (geom.getType() === 'Polygon') {
+                    targetArray = geom.getAt(0).getArray();
+                } else if (geom.getType() === 'MultiPolygon') {
+                    targetArray = geom.getAt(0).getAt(0).getArray();
+                }
+
+                if (targetArray) {
+                    let path = [];
+                    targetArray.forEach(latLng => path.push(latLng));
+
+                    if (!window.selectedFudePaths) window.selectedFudePaths = [];
+                    if (!window.selectedFudePolygons) window.selectedFudePolygons = [];
+
+                    let existingIndex = window.selectedFudePaths.findIndex(p =>
+                        p.length > 0 && path.length > 0 &&
+                        p[0].lat() === path[0].lat() && p[0].lng() === path[0].lng()
+                    );
+
+                    if (existingIndex !== -1) {
+                        window.selectedFudePaths.splice(existingIndex, 1);
+                        let removedPoly = window.selectedFudePolygons.splice(existingIndex, 1)[0];
+                        if (removedPoly) removedPoly.setMap(null);
+                    } else {
+                        window.selectedFudePaths.push(path);
+                        let poly = new google.maps.Polygon({
+                            map: map, paths: path,
+                            fillColor: '#d32f2f', fillOpacity: 0.3,
+                            strokeColor: '#d32f2f', strokeOpacity: 1.0, strokeWeight: 3,
+                            zIndex: 9998, clickable: false
+                        });
+                        window.selectedFudePolygons.push(poly);
+                    }
+
+                    const hint = document.getElementById('editFudeHint');
+                    if (hint) {
+                        const n = window.selectedFudePaths.length;
+                        hint.innerText = n > 0
+                            ? `筆ポリ ${n} 件選択中 →「確定」で合体適用`
+                            : '筆ポリを複数タップして選択し、「確定」で合体';
+                    }
+                }
+                return;
+            }
+
+            if (customDrawingMode !== 'polygon') return;
+            if (document.getElementById('drawStep2') && document.getElementById('drawStep2').style.display === 'block') return;
+
+            window.ignoreNextMapClick = true;
+            setTimeout(() => { window.ignoreNextMapClick = false; }, 200);
+
             let geom = e.feature.getGeometry();
+
+            if (customDrawingPath.length > 0 && (!window.selectedFudePaths || window.selectedFudePaths.length === 0)) {
+                clearCustomDrawing();
+                customDrawingMode = 'polygon';
+            }
+
+            if (!window.selectedFudePaths) window.selectedFudePaths = [];
+            if (!window.selectedFudePolygons) window.selectedFudePolygons = [];
+
             let targetArray = null;
             if (geom.getType() === 'Polygon') {
                 targetArray = geom.getAt(0).getArray();
@@ -9591,9 +8136,7 @@ function initMap() {
                 let path = [];
                 targetArray.forEach(latLng => path.push(latLng));
 
-                if (!window.selectedFudePaths) window.selectedFudePaths = [];
-                if (!window.selectedFudePolygons) window.selectedFudePolygons = [];
-
+                // ★重複チェック（同じ枠を2回タップしたら「選択解除」する！）
                 let existingIndex = window.selectedFudePaths.findIndex(p =>
                     p.length > 0 && path.length > 0 &&
                     p[0].lat() === path[0].lat() && p[0].lng() === path[0].lng()
@@ -9602,605 +8145,397 @@ function initMap() {
                 if (existingIndex !== -1) {
                     window.selectedFudePaths.splice(existingIndex, 1);
                     let removedPoly = window.selectedFudePolygons.splice(existingIndex, 1)[0];
-                    if (removedPoly) removedPoly.setMap(null);
-                } else {
-                    window.selectedFudePaths.push(path);
-                    let poly = new google.maps.Polygon({
-                        map: map, paths: path,
-                        fillColor: '#d32f2f', fillOpacity: 0.3,
-                        strokeColor: '#d32f2f', strokeOpacity: 1.0, strokeWeight: 3,
-                        zIndex: 9998, clickable: false
-                    });
-                    window.selectedFudePolygons.push(poly);
+                    if (removedPoly) removedPoly.setMap(null); // 赤枠を消す
+
+                    if (window.selectedFudePaths.length === 0) {
+                        document.getElementById('step1SaveBtn').disabled = true;
+                        document.getElementById('undoDrawBtn').disabled = true;
+                        document.getElementById('addressHint').style.display = 'none';
+                    }
+                    let splitPanel = document.getElementById('splitPolygonPanel');
+                    if (splitPanel) {
+                        splitPanel.style.display = 'none';
+                        if (document.getElementById('splitCountModal')) document.getElementById('splitCountModal').style.display = 'none';
+                        clearSplitEdgePreview_();
+                    }
+                    if (typeof window.syncAdminDrawRegModeUi_ === 'function') window.syncAdminDrawRegModeUi_();
+                    return; // 処理を終了する
                 }
 
-                const hint = document.getElementById('editFudeHint');
-                if (hint) {
-                    const n = window.selectedFudePaths.length;
-                    hint.innerText = n > 0
-                        ? `筆ポリ ${n} 件選択中 →「確定」で合体適用`
-                        : '筆ポリを複数タップして選択し、「確定」で合体';
-                }
-            }
-            return;
-        }
+                window.selectedFudePaths.push(path);
 
-        if (customDrawingMode !== 'polygon') return;
-        if (document.getElementById('drawStep2') && document.getElementById('drawStep2').style.display === 'block') return;
+                let poly = new google.maps.Polygon({
+                    map: map, paths: path,
+                    fillColor: '#d32f2f', fillOpacity: 0.3,
+                    strokeColor: '#d32f2f', strokeOpacity: 1.0, strokeWeight: 3,
+                    zIndex: 9998, clickable: false
+                });
+                window.selectedFudePolygons.push(poly);
 
-        window.ignoreNextMapClick = true;
-        setTimeout(() => { window.ignoreNextMapClick = false; }, 200);
+                document.getElementById('step1SaveBtn').disabled = false;
+                document.getElementById('undoDrawBtn').disabled = false;
 
-        let geom = e.feature.getGeometry();
-
-        if (customDrawingPath.length > 0 && (!window.selectedFudePaths || window.selectedFudePaths.length === 0)) {
-            clearCustomDrawing();
-            customDrawingMode = 'polygon';
-        }
-
-        if (!window.selectedFudePaths) window.selectedFudePaths = [];
-        if (!window.selectedFudePolygons) window.selectedFudePolygons = [];
-
-        let targetArray = null;
-        if (geom.getType() === 'Polygon') {
-            targetArray = geom.getAt(0).getArray();
-        } else if (geom.getType() === 'MultiPolygon') {
-            targetArray = geom.getAt(0).getAt(0).getArray();
-        }
-
-        if (targetArray) {
-            let path = [];
-            targetArray.forEach(latLng => path.push(latLng));
-
-            // ★重複チェック（同じ枠を2回タップしたら「選択解除」する！）
-            let existingIndex = window.selectedFudePaths.findIndex(p =>
-                p.length > 0 && path.length > 0 &&
-                p[0].lat() === path[0].lat() && p[0].lng() === path[0].lng()
-            );
-
-            if (existingIndex !== -1) {
-                window.selectedFudePaths.splice(existingIndex, 1);
-                let removedPoly = window.selectedFudePolygons.splice(existingIndex, 1)[0];
-                if (removedPoly) removedPoly.setMap(null); // 赤枠を消す
-
-                if (window.selectedFudePaths.length === 0) {
-                    document.getElementById('step1SaveBtn').disabled = true;
-                    document.getElementById('undoDrawBtn').disabled = true;
-                    document.getElementById('addressHint').style.display = 'none';
+                if (window.selectedFudePaths.length === 1) {
+                    fetchAddressHint(e.latLng);
                 }
                 let splitPanel = document.getElementById('splitPolygonPanel');
                 if (splitPanel) {
-                    splitPanel.style.display = 'none';
-                    if (document.getElementById('splitCountModal')) document.getElementById('splitCountModal').style.display = 'none';
-                    clearSplitEdgePreview_();
-                }
-                if (typeof window.syncAdminDrawRegModeUi_ === 'function') window.syncAdminDrawRegModeUi_();
-                return; // 処理を終了する
-            }
-
-            window.selectedFudePaths.push(path);
-
-            let poly = new google.maps.Polygon({
-                map: map, paths: path,
-                fillColor: '#d32f2f', fillOpacity: 0.3,
-                strokeColor: '#d32f2f', strokeOpacity: 1.0, strokeWeight: 3,
-                zIndex: 9998, clickable: false
-            });
-            window.selectedFudePolygons.push(poly);
-
-            document.getElementById('step1SaveBtn').disabled = false;
-            document.getElementById('undoDrawBtn').disabled = false;
-
-            if (window.selectedFudePaths.length === 1) {
-                fetchAddressHint(e.latLng);
-            }
-            let splitPanel = document.getElementById('splitPolygonPanel');
-            if (splitPanel) {
-                if (window.selectedFudePaths.length === 1) {
-                    splitPanel.style.display = 'block';
-                } else {
-                    splitPanel.style.display = 'none';
-                    if (document.getElementById('splitCountModal')) document.getElementById('splitCountModal').style.display = 'none';
-                    clearSplitEdgePreview_();
-                }
-            }
-            if (typeof window.syncAdminDrawRegModeUi_ === 'function') window.syncAdminDrawRegModeUi_();
-        }
-    });
-
-    // 🌟修正：手動ピン打ち時の読込中ブロック
-    map.addListener('click', (e) => {
-        if (window.isMapLoadingFude) return; // ★読込中バリア
-        if (window.ignoreNextMapClick) return;
-        if (!customDrawingMode) return;
-
-        if (customDrawingMode === 'marker' || customDrawingMode === 'location') {
-            const placingLocation = customDrawingMode === 'location';
-            if (currentMarker) currentMarker.setMap(null);
-            if (placingLocation) {
-                const zoom = map.getZoom();
-                currentMarker = new google.maps.Marker({
-                    position: e.latLng,
-                    map: map,
-                    visible: true,
-                    zIndex: 1200,
-                    icon: (typeof window.locationPinMarkerIcon_ === 'function') ? window.locationPinMarkerIcon_(zoom) : { path: google.maps.SymbolPath.CIRCLE, scale: 12, fillColor: '#FFEB3B', fillOpacity: 1, strokeColor: '#F57F17', strokeWeight: 3 }
-                });
-                if (typeof window.attachLocationPinGlow_ === 'function') window.attachLocationPinGlow_(currentMarker);
-                if (typeof window.syncLocationPinGlowScale_ === 'function') window.syncLocationPinGlowScale_(map);
-                openLocationPinForm_(currentMarker);
-            } else {
-                currentMarker = new google.maps.Marker({ position: e.latLng, map: map });
-                openMarkerForm(currentMarker);
-            }
-            customDrawingMode = null;
-            map.setOptions({ draggable: true, draggableCursor: null });
-            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-            document.getElementById('btnViewMode').classList.add('active');
-            if (typeof window.syncAdminRegPlusBtnState_ === 'function') window.syncAdminRegPlusBtnState_('view');
-        }
-        else if (customDrawingMode === 'polygon') {
-            if (window.cadSplittingEdgeMode && typeof window.finishSplitEdgePick_ === 'function') {
-                window.finishSplitEdgePick_(e.latLng);
-                return;
-            }
-            if (document.getElementById('drawStep2') && document.getElementById('drawStep2').style.display === 'block') return;
-            // 筆ポリ選択中は、地図の余白を触っても頂点を打たない
-            if (!window._adminDrawManualMode) return;
-
-            customDrawingPath.push(e.latLng);
-            let dotMarker = new google.maps.Marker({
-                position: e.latLng, map: map,
-                icon: { path: google.maps.SymbolPath.CIRCLE, scale: 5, fillColor: '#ffffff', fillOpacity: 1, strokeColor: '#d32f2f', strokeWeight: 2 },
-                zIndex: 10000, draggable: true, cursor: 'move'
-            });
-            google.maps.event.addListener(dotMarker, 'drag', (evt) => {
-                let idx = customDrawingMarkers.indexOf(dotMarker);
-                if (idx !== -1) { customDrawingPath[idx] = evt.latLng; updateCustomDrawingVisuals(); }
-            });
-            customDrawingMarkers.push(dotMarker);
-            updateCustomDrawingVisuals();
-
-            if (customDrawingPath.length === 3) fetchAddressHint(e.latLng);
-        } else {
-            if (window.SignGroup && window.SignGroup.getExpandedParentId()) {
-                window.SignGroup.collapse(map, loadedPolygons, () => {
-                    google.maps.event.trigger(map, 'zoom_changed');
-                });
-            }
-        }
-    });
-
-    map.addListener('zoom_changed', () => {
-        const z = map.getZoom();
-        if (typeof window.syncLocationPinGlowScale_ === 'function') window.syncLocationPinGlowScale_(map);
-        const hasSignGroup = !!(window.SignGroup && typeof window.SignGroup.isChildSign === 'function');
-        const expandedPid = hasSignGroup ? window.SignGroup.getExpandedParentId() : null;
-        for (let id in loadedPolygons) {
-            const p = loadedPolygons[id];
-            if (!p.marker) continue;
-            if (p.isMarker) {
-                if (isAdminLocationPin_(p)) {
-                    if (typeof window.refreshLocationPinMarker_ === 'function') window.refreshLocationPinMarker_(p.marker, p.name, z);
-                    else p.marker.setVisible(true);
-                } else {
-                    const isChild = hasSignGroup && window.SignGroup.isChildSign(p);
-                    const isParent = hasSignGroup && window.SignGroup.isParentSign(p);
-                    const isExpChild = hasSignGroup && window.SignGroup.isChildOfExpanded(p);
-
-                    if (isChild) {
-                        p.marker.setVisible(isExpChild && z >= 15);
-                        if (isExpChild) {
-                            p.marker.setZIndex(850);
-                            p.marker.setIcon(window.SignGroup.buildSignMarkerIcon(p, { isExpandedChild: true }));
-                            p.marker.setLabel(customDrawingMode === 'polygon' ? null : window.SignGroup.buildSignLabelConfig(p, { isExpandedChild: true }));
-                        }
-                    } else if (isParent) {
-                        p.marker.setVisible(z >= 15);
-                        p.marker.setZIndex(900);
-                        const isExp = String(id) === String(expandedPid);
-                        p.marker.setIcon(window.SignGroup.buildSignMarkerIcon(p, { isParent: true, isExpandedParent: isExp }));
-                        if ((z < 17 && !isExp) || customDrawingMode === 'polygon') {
-                            p.marker.setLabel(null);
-                        } else {
-                            p.marker.setLabel(window.SignGroup.buildSignLabelConfig(p, { isParent: true, isExpandedParent: isExp }));
-                        }
+                    if (window.selectedFudePaths.length === 1) {
+                        splitPanel.style.display = 'block';
                     } else {
-                        p.marker.setVisible(z >= 15);
-                        try { p.marker.setOpacity(1.0); } catch (eOp2) { }
-                        // ラベルは近接ズーム時のみ（圃場描画モード中は出さない）
-                        if (z < 17 || customDrawingMode === 'polygon') p.marker.setLabel(null);
-                        else if (p.labelConfig) p.marker.setLabel(p.labelConfig);
+                        splitPanel.style.display = 'none';
+                        if (document.getElementById('splitCountModal')) document.getElementById('splitCountModal').style.display = 'none';
+                        clearSplitEdgePreview_();
                     }
                 }
-            } else {
-                p.marker.setVisible(z >= 14);
+                if (typeof window.syncAdminDrawRegModeUi_ === 'function') window.syncAdminDrawRegModeUi_();
             }
-        }
-        if (typeof window.applyMapLayerFilter_ === 'function') window.applyMapLayerFilter_();
-    });
+        });
 
+        // 🌟修正：手動ピン打ち時の読込中ブロック
+        map.addListener('click', (e) => {
+            if (window.isMapLoadingFude) return; // ★読込中バリア
+            if (window.ignoreNextMapClick) return;
+            if (!customDrawingMode) return;
 
-    // 🌟変更：地図をスクロールし終わって少し待ってから判定する（もっさり感軽減のため1000ms→400msに変更）
-    let idleTimer = null;
-    map.addListener('idle', () => {
-        let center = map.getCenter();
-        if (typeof window.saveSharedMapView_ === 'function') {
-            window.saveSharedMapView_(map);
-        } else {
-            localStorage.setItem('pMapAdminLastLat', center.lat());
-            localStorage.setItem('pMapAdminLastLng', center.lng());
-            localStorage.setItem('pMapAdminLastZoom', map.getZoom());
-        }
-
-        if (typeof autoSwitchFudeRegion === 'function') {
-            clearTimeout(idleTimer);
-            idleTimer = setTimeout(() => {
-                autoSwitchFudeRegion();
-                if (typeof refreshFudeMapData === 'function') refreshFudeMapData();
-            }, 400);
-        }
-    });
-
-    document.getElementById('btnCurrentLocation').onclick = () => {
-        if (latestUserPos) { map.setCenter(latestUserPos); map.setZoom(18); }
-        else if (navigator.geolocation) {
-            const btn = document.getElementById('btnCurrentLocation');
-            const orgText = btn.innerHTML;
-            btn.innerHTML = "取得中..."; btn.disabled = true;
-            navigator.geolocation.getCurrentPosition(p => {
-                latestUserPos = { lat: p.coords.latitude, lng: p.coords.longitude };
-                map.setCenter(latestUserPos); map.setZoom(18);
-                if (!userLocationMarker) { userLocationMarker = new google.maps.Marker({ position: latestUserPos, map, icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#4285F4', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 }, zIndex: 999 }); }
-                else { userLocationMarker.setPosition(latestUserPos); }
-                btn.innerHTML = orgText; btn.disabled = false;
-            }, function () { customAlert("現在地を取得できません"); btn.innerHTML = orgText; btn.disabled = false; }, { enableHighAccuracy: true });
-        }
-    };
-    try {
-        if (typeof setupSearch === 'function') setupSearch();
-    } catch (e) {
-        console.warn('圃場検索の初期化に失敗しました:', e);
-    }
-    try {
-        if (typeof setupMapSearch === 'function') setupMapSearch();
-    } catch (e) {
-        console.warn('地図検索の初期化に失敗しました:', e);
-    }
-    if (typeof resolveMapInit === 'function') resolveMapInit();
-    // 地図完成直後に、待ち行列・キャッシュの圃場を必ず描画する
-    // （Schedule の initMap→loadData、Worker の map ready→renderInitData と同じタイミング）
-    try { flushPendingInitData(); } catch (e) {
-        console.warn('地図準備後の圃場描画に失敗:', e);
-    }
-    // まだ描画が無ければキャッシュを即反映（Admin→Worker→Schedule の順）
-    if (Object.keys(loadedPolygons || {}).length === 0) {
-        const boot = readAdminBootInitData_();
-        if (boot) {
-            try { renderInitData(boot, { interim: true }); } catch (e) { }
-        }
-    }
-    // spreadsheetId があればログイン完了を待たず最新取得（Schedule と同じ）
-    if (localStorage.getItem('spreadsheetId') && !window._adminInitDataInFlight) {
-        try { ensureAdminInitDataLoad_('map-ready'); } catch (e) { }
-    }
-    window.map = map;
-    window.loadedPolygons = loadedPolygons;
-    if (typeof window.initMapLayerFilter_ === 'function') window.initMapLayerFilter_(map);
-}
-window.initMap = initMap;
-
-function refreshAdminMapSize() {
-    if (!map || typeof google === 'undefined' || !google.maps || !google.maps.event) return;
-    try { google.maps.event.trigger(map, 'resize'); } catch (e) { }
-}
-
-/** 推定住所から県・市と町名を除いた字・番地（例: 塩崎１２５） */
-function townAndBelowFromGeocode_(result, formatted) {
-    const comps = (result && result.address_components) || [];
-    const keep = {
-        sublocality_level_2: 1, sublocality_level_3: 1, sublocality_level_4: 1,
-        sublocality_level_5: 1, premise: 1, subpremise: 1, street_number: 1
-    };
-    const parts = [];
-    const seen = {};
-    comps.slice().reverse().forEach((c) => {
-        const types = c.types || [];
-        if (types.indexOf('sublocality_level_1') >= 0) return;
-        if (!types.some((t) => keep[t])) return;
-        const name = String(c.long_name || '').trim();
-        if (!name || seen[name]) return;
-        seen[name] = 1;
-        parts.push(name);
-    });
-    let text = parts.join('');
-    const addr = String(formatted || '').replace(/^日本、/, '').replace(/〒\d{3}-\d{4}\s?/, '').trim();
-    if (!text) {
-        const m = addr.match(/^(?:.+?[都道府県])(?:.+?郡)?(?:.+?[市区町村])(.+)$/);
-        text = m ? String(m[1] || '').trim() : '';
-    }
-    const belowTown = text.match(/^(.+?町)(.+)$/);
-    if (belowTown && belowTown[2].trim() && !/丁目$/.test(belowTown[1])) {
-        text = belowTown[2].trim();
-    }
-    const tail = addr.match(/([0-9０-９]+(?:[-－−][0-9０-９]+)*)\s*$/);
-    if (tail && text && text.indexOf(tail[1]) < 0) text += tail[1];
-    return text;
-}
-
-function applyTownAddressToFieldName_(text) {
-    const input = document.getElementById('fieldName');
-    if (!input || !text) return;
-    const cur = String(input.value || '').trim();
-    const prev = window._fieldNameFromAddress || '';
-    if (cur && cur !== prev) return;
-    input.value = text;
-    window._fieldNameFromAddress = text;
-}
-
-function fetchAddressHint(latLng) {
-    const hintDiv = document.getElementById('addressHint');
-    hintDiv.innerHTML = "📍 住所を取得中..."; hintDiv.style.display = "block";
-    new google.maps.Geocoder().geocode({ location: latLng }, (results, status) => {
-        if (status === 'OK' && results.length > 0) {
-            let targetResult = results.find(r => !r.types.includes("plus_code")) || results[0];
-            let addr = targetResult.formatted_address.replace(/^日本、/, '').replace(/〒\d{3}-\d{4}\s?/, '').replace(/^[A-Z0-9\+]+\s/, '');
-            hintDiv.innerHTML = `<div style="font-size:11px;font-weight:bold;color:#2E7D32;">推定住所</div><div style="font-size:14px;font-weight:bold;color:#1B5E20;margin-top:2px;">${addr}</div><div style="font-size:11px;color:#558B2F;margin-top:2px;">字と番地を圃場名に入れています。違えば書き換えてください。</div>`;
-            applyTownAddressToFieldName_(townAndBelowFromGeocode_(targetResult, addr));
-        } else { hintDiv.innerHTML = "📍 住所取得失敗"; }
-    });
-}
-
-window.cancelMarkerForm_ = () => {
-    try { if (infoWindow) infoWindow.close(); } catch (e) { }
-    if (currentMarker) {
-        currentMarker.setMap(null);
-        currentMarker = null;
-    }
-    window._pendingSignRegPhotos = [];
-    window._signRegState = null;
-    window._targetSignKind = null;
-    const modal = document.getElementById('modal');
-    if (modal) modal.style.display = 'none';
-};
-
-window._signRegQuickPresets_ = {
-    water: { label: '給水地点', icon: '💧', name: '給水地点', signFunction: '機能なし' },
-    inlet: { label: '給水口', icon: '⛲', name: '給水口', signFunction: '機能なし' },
-    drain: { label: '排水口/水落口', icon: '🚩', name: '排水口/水落口', signFunction: '機能なし' },
-    sw: { label: 'スイッチ', icon: '🔌', name: 'スイッチ', signFunction: '機能なし' },
-    parking: { label: '駐車場', icon: '🅿️', name: '駐車場', signFunction: '機能なし' },
-    toilet: { label: 'トイレ', icon: '🚻', name: 'トイレ', signFunction: '機能なし' },
-    warehouse: { label: '倉庫', icon: '📦', name: '倉庫', signFunction: '倉庫' },
-    fuel: { label: '給油', icon: '⛽', name: '給油', signFunction: '給油' },
-    bird: { label: '鳥被害', icon: '🐦', name: '鳥被害', signFunction: '鳥獣害設定-鳥', wildlife: '鳥' },
-    deer: { label: 'シカ被害', icon: '🦌', name: 'シカ被害', signFunction: '鳥獣害設定-シカ', wildlife: 'シカ' },
-    rat: { label: 'ネズミ被害', icon: '🐭', name: 'ネズミ被害', signFunction: '鳥獣害設定-ネズミ', wildlife: 'ネズミ' },
-    boar: { label: 'イノシシ被害', icon: '🐗', name: 'イノシシ被害', signFunction: '鳥獣害設定-イノシシ', wildlife: 'イノシシ' },
-    wildlife: { label: 'その他の鳥獣害', icon: '🐾', name: '鳥獣害', signFunction: '鳥獣害設定', wildlife: '' },
-    caution: { label: '注意', icon: '⚠️', name: '注意', signFunction: '機能なし' }
-};
-
-function openMarkerForm(markerObj) {
-    window.selectMI = (i) => {
-        const sel = document.getElementById('selIco');
-        if (sel) sel.value = i;
-        const mapped = iconFunctionMap[i];
-        const funcEl = document.getElementById('mFunc');
-        const mappedOk = mapped && (String(mapped).indexOf('鳥獣害設定') === 0 || adminSignFunctionNames_().indexOf(mapped) >= 0);
-        if (mappedOk && funcEl) {
-            const cur = String(funcEl.value || '');
-            const keepSpecies = cur.indexOf('鳥獣害設定-') === 0 && String(mapped).indexOf('鳥獣害設定') === 0 && cur !== mapped;
-            if (!keepSpecies) {
-                if (!Array.from(funcEl.options || []).some((opt) => opt.value === mapped)) {
-                    const opt = document.createElement('option');
-                    opt.value = mapped;
-                    opt.textContent = mapped;
-                    funcEl.appendChild(opt);
+            if (customDrawingMode === 'marker' || customDrawingMode === 'location') {
+                const placingLocation = customDrawingMode === 'location';
+                if (currentMarker) currentMarker.setMap(null);
+                if (placingLocation) {
+                    const zoom = map.getZoom();
+                    currentMarker = new google.maps.Marker({
+                        position: e.latLng,
+                        map: map,
+                        visible: true,
+                        zIndex: 1200,
+                        icon: (typeof window.locationPinMarkerIcon_ === 'function') ? window.locationPinMarkerIcon_(zoom) : { path: google.maps.SymbolPath.CIRCLE, scale: 12, fillColor: '#FFEB3B', fillOpacity: 1, strokeColor: '#F57F17', strokeWeight: 3 }
+                    });
+                    if (typeof window.attachLocationPinGlow_ === 'function') window.attachLocationPinGlow_(currentMarker);
+                    if (typeof window.syncLocationPinGlowScale_ === 'function') window.syncLocationPinGlowScale_(map);
+                    openLocationPinForm_(currentMarker);
+                } else {
+                    currentMarker = new google.maps.Marker({ position: e.latLng, map: map });
+                    openMarkerForm(currentMarker);
                 }
-                funcEl.value = mapped;
+                customDrawingMode = null;
+                map.setOptions({ draggable: true, draggableCursor: null });
+                document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+                document.getElementById('btnViewMode').classList.add('active');
+                if (typeof window.syncAdminRegPlusBtnState_ === 'function') window.syncAdminRegPlusBtnState_('view');
+            }
+            else if (customDrawingMode === 'polygon') {
+                if (window.cadSplittingEdgeMode && typeof window.finishSplitEdgePick_ === 'function') {
+                    window.finishSplitEdgePick_(e.latLng);
+                    return;
+                }
+                if (document.getElementById('drawStep2') && document.getElementById('drawStep2').style.display === 'block') return;
+                // 筆ポリ選択中は、地図の余白を触っても頂点を打たない
+                if (!window._adminDrawManualMode) return;
+
+                customDrawingPath.push(e.latLng);
+                let dotMarker = new google.maps.Marker({
+                    position: e.latLng, map: map,
+                    icon: { path: google.maps.SymbolPath.CIRCLE, scale: 5, fillColor: '#ffffff', fillOpacity: 1, strokeColor: '#d32f2f', strokeWeight: 2 },
+                    zIndex: 10000, draggable: true, cursor: 'move'
+                });
+                google.maps.event.addListener(dotMarker, 'drag', (evt) => {
+                    let idx = customDrawingMarkers.indexOf(dotMarker);
+                    if (idx !== -1) { customDrawingPath[idx] = evt.latLng; updateCustomDrawingVisuals(); }
+                });
+                customDrawingMarkers.push(dotMarker);
+                updateCustomDrawingVisuals();
+
+                if (customDrawingPath.length === 3) fetchAddressHint(e.latLng);
+            } else {
+                if (window.SignGroup && window.SignGroup.getExpandedParentId()) {
+                    window.SignGroup.collapse(map, loadedPolygons, () => {
+                        google.maps.event.trigger(map, 'zoom_changed');
+                    });
+                }
+            }
+        });
+
+        map.addListener('zoom_changed', () => {
+            const z = map.getZoom();
+            if (typeof window.syncLocationPinGlowScale_ === 'function') window.syncLocationPinGlowScale_(map);
+            const hasSignGroup = !!(window.SignGroup && typeof window.SignGroup.isChildSign === 'function');
+            const expandedPid = hasSignGroup ? window.SignGroup.getExpandedParentId() : null;
+            for (let id in loadedPolygons) {
+                const p = loadedPolygons[id];
+                if (!p.marker) continue;
+                if (p.isMarker) {
+                    if (isAdminLocationPin_(p)) {
+                        if (typeof window.refreshLocationPinMarker_ === 'function') window.refreshLocationPinMarker_(p.marker, p.name, z);
+                        else p.marker.setVisible(true);
+                    } else {
+                        const isChild = hasSignGroup && window.SignGroup.isChildSign(p);
+                        const isParent = hasSignGroup && window.SignGroup.isParentSign(p);
+                        const isExpChild = hasSignGroup && window.SignGroup.isChildOfExpanded(p);
+
+                        if (isChild) {
+                            p.marker.setVisible(isExpChild && z >= 15);
+                            if (isExpChild) {
+                                p.marker.setZIndex(850);
+                                p.marker.setIcon(window.SignGroup.buildSignMarkerIcon(p, { isExpandedChild: true }));
+                                p.marker.setLabel(customDrawingMode === 'polygon' ? null : window.SignGroup.buildSignLabelConfig(p, { isExpandedChild: true }));
+                            }
+                        } else if (isParent) {
+                            p.marker.setVisible(z >= 15);
+                            p.marker.setZIndex(900);
+                            const isExp = String(id) === String(expandedPid);
+                            p.marker.setIcon(window.SignGroup.buildSignMarkerIcon(p, { isParent: true, isExpandedParent: isExp }));
+                            if ((z < 17 && !isExp) || customDrawingMode === 'polygon') {
+                                p.marker.setLabel(null);
+                            } else {
+                                p.marker.setLabel(window.SignGroup.buildSignLabelConfig(p, { isParent: true, isExpandedParent: isExp }));
+                            }
+                        } else {
+                            p.marker.setVisible(z >= 15);
+                            try { p.marker.setOpacity(1.0); } catch (eOp2) { }
+                            // ラベルは近接ズーム時のみ（圃場描画モード中は出さない）
+                            if (z < 17 || customDrawingMode === 'polygon') p.marker.setLabel(null);
+                            else if (p.labelConfig) p.marker.setLabel(p.labelConfig);
+                        }
+                    }
+                } else {
+                    p.marker.setVisible(z >= 14);
+                }
+            }
+            if (typeof window.applyMapLayerFilter_ === 'function') window.applyMapLayerFilter_();
+        });
+
+
+        // 🌟変更：地図をスクロールし終わって少し待ってから判定する（もっさり感軽減のため1000ms→400msに変更）
+        let idleTimer = null;
+        map.addListener('idle', () => {
+            let center = map.getCenter();
+            if (typeof window.saveSharedMapView_ === 'function') {
+                window.saveSharedMapView_(map);
+            } else {
+                localStorage.setItem('pMapAdminLastLat', center.lat());
+                localStorage.setItem('pMapAdminLastLng', center.lng());
+                localStorage.setItem('pMapAdminLastZoom', map.getZoom());
+            }
+
+            if (typeof autoSwitchFudeRegion === 'function') {
+                clearTimeout(idleTimer);
+                idleTimer = setTimeout(() => {
+                    autoSwitchFudeRegion();
+                    if (typeof refreshFudeMapData === 'function') refreshFudeMapData();
+                }, 400);
+            }
+        });
+
+        document.getElementById('btnCurrentLocation').onclick = () => {
+            if (latestUserPos) { map.setCenter(latestUserPos); map.setZoom(18); }
+            else if (navigator.geolocation) {
+                const btn = document.getElementById('btnCurrentLocation');
+                const orgText = btn.innerHTML;
+                btn.innerHTML = "取得中..."; btn.disabled = true;
+                navigator.geolocation.getCurrentPosition(p => {
+                    latestUserPos = { lat: p.coords.latitude, lng: p.coords.longitude };
+                    map.setCenter(latestUserPos); map.setZoom(18);
+                    if (!userLocationMarker) { userLocationMarker = new google.maps.Marker({ position: latestUserPos, map, icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#4285F4', fillOpacity: 1, strokeColor: 'white', strokeWeight: 2 }, zIndex: 999 }); }
+                    else { userLocationMarker.setPosition(latestUserPos); }
+                    btn.innerHTML = orgText; btn.disabled = false;
+                }, function () { customAlert("現在地を取得できません"); btn.innerHTML = orgText; btn.disabled = false; }, { enableHighAccuracy: true });
+            }
+        };
+        try {
+            if (typeof setupSearch === 'function') setupSearch();
+        } catch (e) {
+            console.warn('圃場検索の初期化に失敗しました:', e);
+        }
+        try {
+            if (typeof setupMapSearch === 'function') setupMapSearch();
+        } catch (e) {
+            console.warn('地図検索の初期化に失敗しました:', e);
+        }
+        if (typeof resolveMapInit === 'function') resolveMapInit();
+        // 地図完成直後に、待ち行列・キャッシュの圃場を必ず描画する
+        // （Schedule の initMap→loadData、Worker の map ready→renderInitData と同じタイミング）
+        try { flushPendingInitData(); } catch (e) {
+            console.warn('地図準備後の圃場描画に失敗:', e);
+        }
+        // まだ描画が無ければキャッシュを即反映（Admin→Worker→Schedule の順）
+        if (Object.keys(loadedPolygons || {}).length === 0) {
+            const boot = readAdminBootInitData_();
+            if (boot) {
+                try { renderInitData(boot, { interim: true }); } catch (e) { }
             }
         }
-        document.querySelectorAll('.ib').forEach(el => el.style.background = 'none');
-        const chip = document.getElementById('i_' + i);
-        if (chip) chip.style.background = '#ddd';
-    };
-
-    const prefill = window._pendingMarkerPrefill || {};
-    const defaultLoc = String(prefill.location || localStorage.getItem('passionMapUserLocation') || '').trim();
-    const defaultFunc = String(prefill.signFunction || '').trim();
-    const lat = markerObj && markerObj.getPosition ? markerObj.getPosition().lat() : null;
-    const lng = markerObj && markerObj.getPosition ? markerObj.getPosition().lng() : null;
-    const posLabel = (lat != null && lng != null)
-        ? `${Number(lat).toFixed(6)}, ${Number(lng).toFixed(6)}`
-        : '';
-
-    window._signRegState = {
-        markerObj: markerObj,
-        posLabel: posLabel,
-        defaultLoc: defaultLoc,
-        defaultFunc: defaultFunc,
-        // 機械管理などから来た場合は最初から従来画面
-        skipQuick: !!(defaultFunc && (defaultFunc.indexOf('車両') >= 0 || defaultFunc.indexOf('農機') >= 0 || defaultFunc.indexOf('機械') >= 0)),
-        quick: null
-    };
-    window._pendingSignRegPhotos = [];
-    window._pendingMarkerPrefill = null;
-
-    try { if (infoWindow) infoWindow.close(); } catch (e) { }
-    const modal = document.getElementById('modal');
-    if (!modal || !document.getElementById('modalBody')) {
-        customAlert('登録画面を開けませんでした。ページを再読み込みしてください。');
-        return;
+        // spreadsheetId があればログイン完了を待たず最新取得（Schedule と同じ）
+        if (localStorage.getItem('spreadsheetId') && !window._adminInitDataInFlight) {
+            try { ensureAdminInitDataLoad_('map-ready'); } catch (e) { }
+        }
+        window.map = map;
+        window.loadedPolygons = loadedPolygons;
+        if (typeof window.initMapLayerFilter_ === 'function') window.initMapLayerFilter_(map);
     }
-    modal.style.display = 'flex';
+    window.initMap = initMap;
 
-    const preKind = window._targetSignKind || (window._signRegState.skipQuick ? 'child' : null);
-    window._targetSignKind = null;
+    function refreshAdminMapSize() {
+        if (!map || typeof google === 'undefined' || !google.maps || !google.maps.event) return;
+        try { google.maps.event.trigger(map, 'resize'); } catch (e) { }
+    }
 
-    if (preKind === 'parent') {
-        window._signRegState.signKind = 'parent';
-        window.renderSignRegParentScreen_({});
-    } else if (preKind === 'child') {
-        window._signRegState.signKind = 'child';
+    /** 推定住所から県・市と町名を除いた字・番地（例: 塩崎１２５） */
+    function townAndBelowFromGeocode_(result, formatted) {
+        const comps = (result && result.address_components) || [];
+        const keep = {
+            sublocality_level_2: 1, sublocality_level_3: 1, sublocality_level_4: 1,
+            sublocality_level_5: 1, premise: 1, subpremise: 1, street_number: 1
+        };
+        const parts = [];
+        const seen = {};
+        comps.slice().reverse().forEach((c) => {
+            const types = c.types || [];
+            if (types.indexOf('sublocality_level_1') >= 0) return;
+            if (!types.some((t) => keep[t])) return;
+            const name = String(c.long_name || '').trim();
+            if (!name || seen[name]) return;
+            seen[name] = 1;
+            parts.push(name);
+        });
+        let text = parts.join('');
+        const addr = String(formatted || '').replace(/^日本、/, '').replace(/〒\d{3}-\d{4}\s?/, '').trim();
+        if (!text) {
+            const m = addr.match(/^(?:.+?[都道府県])(?:.+?郡)?(?:.+?[市区町村])(.+)$/);
+            text = m ? String(m[1] || '').trim() : '';
+        }
+        const belowTown = text.match(/^(.+?町)(.+)$/);
+        if (belowTown && belowTown[2].trim() && !/丁目$/.test(belowTown[1])) {
+            text = belowTown[2].trim();
+        }
+        const tail = addr.match(/([0-9０-９]+(?:[-－−][0-9０-９]+)*)\s*$/);
+        if (tail && text && text.indexOf(tail[1]) < 0) text += tail[1];
+        return text;
+    }
+
+    function applyTownAddressToFieldName_(text) {
+        const input = document.getElementById('fieldName');
+        if (!input || !text) return;
+        const cur = String(input.value || '').trim();
+        const prev = window._fieldNameFromAddress || '';
+        if (cur && cur !== prev) return;
+        input.value = text;
+        window._fieldNameFromAddress = text;
+    }
+
+    function fetchAddressHint(latLng) {
+        const hintDiv = document.getElementById('addressHint');
+        hintDiv.innerHTML = "📍 住所を取得中..."; hintDiv.style.display = "block";
+        new google.maps.Geocoder().geocode({ location: latLng }, (results, status) => {
+            if (status === 'OK' && results.length > 0) {
+                let targetResult = results.find(r => !r.types.includes("plus_code")) || results[0];
+                let addr = targetResult.formatted_address.replace(/^日本、/, '').replace(/〒\d{3}-\d{4}\s?/, '').replace(/^[A-Z0-9\+]+\s/, '');
+                hintDiv.innerHTML = `<div style="font-size:11px;font-weight:bold;color:#2E7D32;">推定住所</div><div style="font-size:14px;font-weight:bold;color:#1B5E20;margin-top:2px;">${addr}</div><div style="font-size:11px;color:#558B2F;margin-top:2px;">字と番地を圃場名に入れています。違えば書き換えてください。</div>`;
+                applyTownAddressToFieldName_(townAndBelowFromGeocode_(targetResult, addr));
+            } else { hintDiv.innerHTML = "📍 住所取得失敗"; }
+        });
+    }
+
+    window.cancelMarkerForm_ = () => {
+        try { if (infoWindow) infoWindow.close(); } catch (e) { }
+        if (currentMarker) {
+            currentMarker.setMap(null);
+            currentMarker = null;
+        }
+        window._pendingSignRegPhotos = [];
+        window._signRegState = null;
+        const modal = document.getElementById('modal');
+        if (modal) modal.style.display = 'none';
+    };
+
+    window._signRegQuickPresets_ = {
+        water: { label: '給水地点', icon: '💧', name: '給水地点', signFunction: '機能なし' },
+        inlet: { label: '給水口', icon: '⛲', name: '給水口', signFunction: '機能なし' },
+        drain: { label: '排水口/水落口', icon: '🚩', name: '排水口/水落口', signFunction: '機能なし' },
+        sw: { label: 'スイッチ', icon: '🔌', name: 'スイッチ', signFunction: '機能なし' },
+        parking: { label: '駐車場', icon: '🅿️', name: '駐車場', signFunction: '機能なし' },
+        toilet: { label: 'トイレ', icon: '🚻', name: 'トイレ', signFunction: '機能なし' },
+        warehouse: { label: '倉庫', icon: '📦', name: '倉庫', signFunction: '倉庫' },
+        fuel: { label: '給油', icon: '⛽', name: '給油', signFunction: '給油' },
+        bird: { label: '鳥被害', icon: '🐦', name: '鳥被害', signFunction: '鳥獣害設定-鳥', wildlife: '鳥' },
+        deer: { label: 'シカ被害', icon: '🦌', name: 'シカ被害', signFunction: '鳥獣害設定-シカ', wildlife: 'シカ' },
+        rat: { label: 'ネズミ被害', icon: '🐭', name: 'ネズミ被害', signFunction: '鳥獣害設定-ネズミ', wildlife: 'ネズミ' },
+        boar: { label: 'イノシシ被害', icon: '🐗', name: 'イノシシ被害', signFunction: '鳥獣害設定-イノシシ', wildlife: 'イノシシ' },
+        wildlife: { label: 'その他の鳥獣害', icon: '🐾', name: '鳥獣害', signFunction: '鳥獣害設定', wildlife: '' },
+        caution: { label: '注意', icon: '⚠️', name: '注意', signFunction: '機能なし' }
+    };
+
+    function openMarkerForm(markerObj) {
+        window.selectMI = (i) => {
+            const sel = document.getElementById('selIco');
+            if (sel) sel.value = i;
+            const mapped = iconFunctionMap[i];
+            const funcEl = document.getElementById('mFunc');
+            const mappedOk = mapped && (String(mapped).indexOf('鳥獣害設定') === 0 || adminSignFunctionNames_().indexOf(mapped) >= 0);
+            if (mappedOk && funcEl) {
+                const cur = String(funcEl.value || '');
+                const keepSpecies = cur.indexOf('鳥獣害設定-') === 0 && String(mapped).indexOf('鳥獣害設定') === 0 && cur !== mapped;
+                if (!keepSpecies) {
+                    if (!Array.from(funcEl.options || []).some((opt) => opt.value === mapped)) {
+                        const opt = document.createElement('option');
+                        opt.value = mapped;
+                        opt.textContent = mapped;
+                        funcEl.appendChild(opt);
+                    }
+                    funcEl.value = mapped;
+                }
+            }
+            document.querySelectorAll('.ib').forEach(el => el.style.background = 'none');
+            const chip = document.getElementById('i_' + i);
+            if (chip) chip.style.background = '#ddd';
+        };
+
+        const prefill = window._pendingMarkerPrefill || {};
+        const defaultLoc = String(prefill.location || localStorage.getItem('passionMapUserLocation') || '').trim();
+        const defaultFunc = String(prefill.signFunction || '').trim();
+        const lat = markerObj && markerObj.getPosition ? markerObj.getPosition().lat() : null;
+        const lng = markerObj && markerObj.getPosition ? markerObj.getPosition().lng() : null;
+        const posLabel = (lat != null && lng != null)
+            ? `${Number(lat).toFixed(6)}, ${Number(lng).toFixed(6)}`
+            : '';
+
+        window._signRegState = {
+            markerObj: markerObj,
+            posLabel: posLabel,
+            defaultLoc: defaultLoc,
+            defaultFunc: defaultFunc,
+            // 機械管理などから来た場合は最初から従来画面
+            skipQuick: !!(defaultFunc && (defaultFunc.indexOf('車両') >= 0 || defaultFunc.indexOf('農機') >= 0 || defaultFunc.indexOf('機械') >= 0)),
+            quick: null
+        };
+        window._pendingSignRegPhotos = [];
+        window._pendingMarkerPrefill = null;
+
+        try { if (infoWindow) infoWindow.close(); } catch (e) { }
+        const modal = document.getElementById('modal');
+        if (!modal || !document.getElementById('modalBody')) {
+            customAlert('登録画面を開けませんでした。ページを再読み込みしてください。');
+            return;
+        }
+        modal.style.display = 'flex';
         if (window._signRegState.skipQuick) {
             window.renderSignRegDetailScreen_({});
         } else {
             window.renderSignRegQuickScreen_();
         }
-    } else {
-        // まず小看板か大看板かを選択する画面を表示
-        window.renderSignRegKindChoiceScreen_();
-    }
-}
-
-window.chooseSignRegKind_ = (kind) => {
-    if (!window._signRegState) window._signRegState = {};
-    window._signRegState.signKind = kind;
-    if (kind === 'parent') {
-        window.renderSignRegParentScreen_({});
-    } else {
-        window.renderSignRegQuickScreen_();
-    }
-};
-
-window.renderSignRegKindChoiceScreen_ = () => {
-    const st = window._signRegState || {};
-    const modalBody = document.getElementById('modalBody');
-    if (!modalBody) return;
-    const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-    modalBody.innerHTML = `
-      <div style="width:min(92vw,380px);max-width:100%;box-sizing:border-box;padding:6px;color:#000;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-          <h3 style="margin:0; color:#d32f2f; font-size:18px;">🪧 看板作成</h3>
-          <span onclick="cancelMarkerForm_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
-        </div>
-        ${st.posLabel ? `<div style="font-size:11px; color:#888; margin-bottom:12px; text-align:center;">📍 ${esc(st.posLabel)}</div>` : ''}
-        <div style="font-size:13px; font-weight:bold; color:#444; margin-bottom:12px; text-align:left;">作成する看板の種類を選択してください</div>
-
-        <!-- 小看板ボタン -->
-        <button type="button" onclick="chooseSignRegKind_('child')"
-          style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:14px; margin-bottom:12px; border:2px solid #81C784; border-radius:10px; background:#F1F8E9; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.06); transition:background 0.15s;">
-          <span style="font-size:32px; line-height:1;">🏷️</span>
-          <div style="flex:1;">
-            <div style="font-size:16px; font-weight:bold; color:#2E7D32;">小看板（通常看板）</div>
-            <div style="font-size:11px; color:#558B2F; margin-top:3px; line-height:1.4;">給水口・排水口・倉庫・給油・道具・注意など、現場の個別設備やピンを登録します。</div>
-          </div>
-        </button>
-
-        <!-- 大看板ボタン -->
-        <button type="button" onclick="chooseSignRegKind_('parent')"
-          style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:14px; margin-bottom:16px; border:2px solid #BA68C8; border-radius:10px; background:#EDE7F6; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.06); transition:background 0.15s;">
-          <span style="font-size:32px; line-height:1;">🪧</span>
-          <div style="flex:1;">
-            <div style="font-size:16px; font-weight:bold; color:#4A148C;">大看板（親看板・目印）</div>
-            <div style="font-size:11px; color:#6A1B9A; margin-top:3px; line-height:1.4;">周辺の小看板をグループとして束ねる目印看板です。高倍率ズームで小看板が展開されます。</div>
-          </div>
-        </button>
-
-        <button type="button" onclick="cancelMarkerForm_()"
-          style="width:100%; background:#eee; color:#666; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">キャンセル</button>
-      </div>
-    `;
-};
-
-window.renderSignRegParentScreen_ = (opts) => {
-    opts = opts || {};
-    const st = window._signRegState || {};
-    const modalBody = document.getElementById('modalBody');
-    if (!modalBody) return;
-
-    const defaultLoc = String(st.defaultLoc || '').trim();
-    const locOpts = `<option value="">拠点を選択...</option>` + (pdlLocations || []).map(l =>
-        `<option value="${String(l).replace(/"/g, '&quot;')}" ${l === defaultLoc ? 'selected' : ''}>${l}</option>`
-    ).join('');
-    const presetName = opts.name != null ? String(opts.name) : '';
-    const presetIcon = opts.icon || '🪧';
-    const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-
-    modalBody.innerHTML = `
-      <div style="width:min(92vw,360px);max-width:100%;box-sizing:border-box;padding:4px;text-align:center;color:#000;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <h3 style="margin:0; color:#6A1B9A; font-size:18px;">🪧 大看板（目印）の登録</h3>
-          <span onclick="cancelMarkerForm_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
-        </div>
-        <button type="button" onclick="renderSignRegKindChoiceScreen_()"
-          style="width:100%; background:#f5f5f5; color:#555; border:1px solid #ddd; border-radius:6px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:10px;">
-          ← 種類選択（小看板 / 大看板）に戻る
-        </button>
-        ${st.posLabel ? `<div style="font-size:11px; color:#888; margin-bottom:8px;">📍 ${esc(st.posLabel)}</div>` : ''}
-
-        <div style="font-size:11px; color:#4A148C; background:#EDE7F6; border:1px solid #D1C4E9; border-radius:8px; padding:8px 10px; margin-bottom:10px; text-align:left; line-height:1.4;">
-          <b>※ 大看板（親看板）</b><br>
-          エリアの目印となる看板です（看板機能は無効になります）。登録後、周辺の小看板を地図から束ねることができます。
-        </div>
-
-        <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">大看板名 <span style="color:#d32f2f;">*</span></div>
-        <input type="text" id="mName" class="form-input" placeholder="例：第1農場、資材置場エリア、北側ハウス群" value="${esc(presetName)}" style="margin-bottom:8px;">
-
-        <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">所属拠点</div>
-        <select id="mLoc" class="form-input" style="margin-bottom:4px;">${locOpts}</select>
-        <div style="font-size:11px; color:#666; text-align:left; line-height:1.4; margin:0 0 10px;">この大看板の所属拠点です。</div>
-
-        <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">アイコン選択</div>
-        <div style="max-height:240px;overflow-y:auto;padding:0 6px 6px;border:1px solid #ddd;border-radius:8px;background:#fafafa;margin-bottom:8px;">
-          ${renderAdminSignIconPickerHtml_({ onPick: 'selectMI', activeIcon: presetIcon })}
-        </div>
-        <input type="hidden" id="selIco" value="${esc(presetIcon)}">
-        <input type="hidden" id="mFunc" value="大看板">
-
-        <div style="text-align:left; margin-top:10px;">
-          <div style="font-size:11px; color:#666; margin-bottom:4px; font-weight:bold;">📷 写真（任意・複数可）</div>
-          <div id="mPhotoPreview" style="min-height:64px; background:#f5f5f5; border:1px dashed #bbb; border-radius:8px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; justify-content:center; overflow:hidden; padding:6px; margin-bottom:6px;">
-            <div style="color:#888; font-size:12px;">写真未選択</div>
-          </div>
-          <input type="file" id="mPhotoInput" accept="image/*" multiple capture="environment" onchange="previewSignRegPhotos_(this)" style="width:100%; font-size:12px; margin-bottom:6px;">
-          <button type="button" onclick="clearSignRegPhotos_()" style="width:100%; background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px; font-size:12px; cursor:pointer;">写真をクリア</button>
-        </div>
-
-        <div style="display:flex; gap:8px; margin-top:14px;">
-          <button type="button" id="btnSaveSignMarker" onclick="saveM()" style="background:#6A1B9A;color:white;flex:2;padding:12px;border-radius:6px;border:none;font-weight:bold;font-size:14px;cursor:pointer;box-shadow:0 2px 4px rgba(0,0,0,0.15);">🪧 大看板として登録</button>
-          <button type="button" onclick="cancelMarkerForm_()" style="background:#ccc;color:#333;flex:1;padding:12px;border-radius:6px;border:none;font-weight:bold;cursor:pointer;">キャンセル</button>
-        </div>
-      </div>
-    `;
-
-    if (Array.isArray(window._pendingSignRegPhotos) && window._pendingSignRegPhotos.length) {
-        const preview = document.getElementById('mPhotoPreview');
-        const out = window._pendingSignRegPhotos;
-        if (preview) {
-            preview.innerHTML = out.map((p) =>
-                `<img src="${p.base64}" alt="preview" style="width:64px; height:64px; object-fit:cover; border-radius:6px; border:1px solid #ccc;">`
-            ).join('') + `<div style="width:100%; font-size:11px; color:#666; text-align:center;">${out.length}枚選択中</div>`;
-        }
     }
 
-    setTimeout(() => {
-        if (typeof window.selectMI === 'function') window.selectMI(presetIcon);
-        const nameEl = document.getElementById('mName');
-        if (nameEl) {
-            if (!presetName) nameEl.focus();
-            else nameEl.select();
-        }
-    }, 10);
-};
-
-window.renderSignRegQuickScreen_ = () => {
-    const st = window._signRegState || {};
-    const modalBody = document.getElementById('modalBody');
-    if (!modalBody) return;
-    const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-    modalBody.innerHTML = `
+    window.renderSignRegQuickScreen_ = () => {
+        const st = window._signRegState || {};
+        const modalBody = document.getElementById('modalBody');
+        if (!modalBody) return;
+        const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        modalBody.innerHTML = `
       <div style="width:min(92vw,380px);max-width:100%;box-sizing:border-box;padding:4px;color:#000;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <h3 style="margin:0; color:#2E7D32; font-size:18px;">🏷️ 小看板の登録</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <h3 style="margin:0; color:#d32f2f; font-size:18px;">🪧 看板登録</h3>
           <span onclick="cancelMarkerForm_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
         </div>
-        <button type="button" onclick="renderSignRegKindChoiceScreen_()"
-          style="width:100%; background:#f5f5f5; color:#555; border:1px solid #ddd; border-radius:6px; padding:7px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:8px;">
-          ← 種類選択（小看板 / 大看板）に戻る
-        </button>
-        ${st.posLabel ? `<div style="font-size:11px; color:#888; margin-bottom:8px; text-align:center;">📍 ${esc(st.posLabel)}</div>` : ''}
+        ${st.posLabel ? `<div style="font-size:11px; color:#888; margin-bottom:10px; text-align:center;">📍 ${esc(st.posLabel)}</div>` : ''}
         <div style="font-size:13px; font-weight:bold; color:#333; margin-bottom:8px;">よく使う種類（クイックセット）</div>
         <div style="display:grid; grid-template-columns:1fr; gap:8px; margin-bottom:12px; max-height:46vh; overflow-y:auto;">
           <button type="button" onclick="pickSignRegQuick_('water')"
@@ -10297,103 +8632,103 @@ window.renderSignRegQuickScreen_ = () => {
           style="width:100%; margin-top:10px; background:#eee; color:#666; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">キャンセル</button>
       </div>
     `;
-};
+    };
 
-window.pickSignRegQuick_ = (key) => {
-    const presets = window._signRegQuickPresets_ || {};
-    const preset = presets[key];
-    if (!preset) return;
-    if (key === 'caution') {
-        const wild = document.getElementById('signRegWildlifeBox');
-        if (wild) wild.style.display = 'none';
-        const box = document.getElementById('signRegCautionBox');
-        if (box) {
-            box.style.display = 'block';
-            const note = document.getElementById('signRegCautionNote');
-            if (note) note.focus();
-        }
-        return;
-    }
-    if (Object.prototype.hasOwnProperty.call(preset, 'wildlife')) {
-        const caution = document.getElementById('signRegCautionBox');
-        if (caution) caution.style.display = 'none';
-        window._signRegWildlifeKey = key;
-        const box = document.getElementById('signRegWildlifeBox');
-        if (box) {
-            box.style.display = 'block';
-            const input = document.getElementById('signRegWildlifeName');
-            if (input) {
-                input.value = preset.wildlife || '';
-                input.focus();
-                input.select();
+    window.pickSignRegQuick_ = (key) => {
+        const presets = window._signRegQuickPresets_ || {};
+        const preset = presets[key];
+        if (!preset) return;
+        if (key === 'caution') {
+            const wild = document.getElementById('signRegWildlifeBox');
+            if (wild) wild.style.display = 'none';
+            const box = document.getElementById('signRegCautionBox');
+            if (box) {
+                box.style.display = 'block';
+                const note = document.getElementById('signRegCautionNote');
+                if (note) note.focus();
             }
+            return;
         }
-        return;
-    }
-    window.renderSignRegDetailScreen_({
-        name: preset.name,
-        icon: preset.icon,
-        signFunction: preset.signFunction,
-        fromQuick: key
-    });
-};
+        if (Object.prototype.hasOwnProperty.call(preset, 'wildlife')) {
+            const caution = document.getElementById('signRegCautionBox');
+            if (caution) caution.style.display = 'none';
+            window._signRegWildlifeKey = key;
+            const box = document.getElementById('signRegWildlifeBox');
+            if (box) {
+                box.style.display = 'block';
+                const input = document.getElementById('signRegWildlifeName');
+                if (input) {
+                    input.value = preset.wildlife || '';
+                    input.focus();
+                    input.select();
+                }
+            }
+            return;
+        }
+        window.renderSignRegDetailScreen_({
+            name: preset.name,
+            icon: preset.icon,
+            signFunction: preset.signFunction,
+            fromQuick: key
+        });
+    };
 
-window.confirmSignRegWildlifeQuick_ = () => {
-    const key = window._signRegWildlifeKey || 'wildlife';
-    const preset = (window._signRegQuickPresets_ || {})[key] || { name: '鳥獣害', icon: '🐾', wildlife: '' };
-    const input = document.getElementById('signRegWildlifeName');
-    const animal = input ? String(input.value || '').trim() : '';
-    const species = animal || String(preset.wildlife || '').trim();
-    if (!species) {
-        customAlert('生物名を入力してください');
-        return;
-    }
-    const same = species === String(preset.wildlife || '').trim();
-    const name = same && preset.name ? preset.name : (species + '被害');
-    window.renderSignRegDetailScreen_({
-        name: name,
-        icon: preset.icon,
-        signFunction: '鳥獣害設定-' + species,
-        fromQuick: key
-    });
-};
+    window.confirmSignRegWildlifeQuick_ = () => {
+        const key = window._signRegWildlifeKey || 'wildlife';
+        const preset = (window._signRegQuickPresets_ || {})[key] || { name: '鳥獣害', icon: '🐾', wildlife: '' };
+        const input = document.getElementById('signRegWildlifeName');
+        const animal = input ? String(input.value || '').trim() : '';
+        const species = animal || String(preset.wildlife || '').trim();
+        if (!species) {
+            customAlert('生物名を入力してください');
+            return;
+        }
+        const same = species === String(preset.wildlife || '').trim();
+        const name = same && preset.name ? preset.name : (species + '被害');
+        window.renderSignRegDetailScreen_({
+            name: name,
+            icon: preset.icon,
+            signFunction: '鳥獣害設定-' + species,
+            fromQuick: key
+        });
+    };
 
-window.confirmSignRegCautionQuick_ = () => {
-    const preset = (window._signRegQuickPresets_ || {}).caution || { name: '注意', icon: '⚠️', signFunction: '機能なし' };
-    const noteEl = document.getElementById('signRegCautionNote');
-    const note = noteEl ? String(noteEl.value || '').trim() : '';
-    const name = note ? (`注意：${note}`) : preset.name;
-    window.renderSignRegDetailScreen_({
-        name: name,
-        icon: preset.icon,
-        signFunction: preset.signFunction,
-        fromQuick: 'caution'
-    });
-};
+    window.confirmSignRegCautionQuick_ = () => {
+        const preset = (window._signRegQuickPresets_ || {}).caution || { name: '注意', icon: '⚠️', signFunction: '機能なし' };
+        const noteEl = document.getElementById('signRegCautionNote');
+        const note = noteEl ? String(noteEl.value || '').trim() : '';
+        const name = note ? (`注意：${note}`) : preset.name;
+        window.renderSignRegDetailScreen_({
+            name: name,
+            icon: preset.icon,
+            signFunction: preset.signFunction,
+            fromQuick: 'caution'
+        });
+    };
 
-window.renderSignRegDetailScreen_ = (opts) => {
-    opts = opts || {};
-    const st = window._signRegState || {};
-    const modalBody = document.getElementById('modalBody');
-    if (!modalBody) return;
+    window.renderSignRegDetailScreen_ = (opts) => {
+        opts = opts || {};
+        const st = window._signRegState || {};
+        const modalBody = document.getElementById('modalBody');
+        if (!modalBody) return;
 
-    const defaultLoc = String(st.defaultLoc || '').trim();
-    const locOpts = `<option value="">拠点を選択...</option>` + (pdlLocations || []).map(l =>
-        `<option value="${String(l).replace(/"/g, '&quot;')}" ${l === defaultLoc ? 'selected' : ''}>${l}</option>`
-    ).join('');
-    const presetName = opts.name != null ? String(opts.name) : '';
-    const presetIcon = opts.icon || '🪧';
-    const presetFunc = opts.signFunction || st.defaultFunc || '';
-    const fromQuick = !!opts.fromQuick;
-    const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+        const defaultLoc = String(st.defaultLoc || '').trim();
+        const locOpts = `<option value="">拠点を選択...</option>` + (pdlLocations || []).map(l =>
+            `<option value="${String(l).replace(/"/g, '&quot;')}" ${l === defaultLoc ? 'selected' : ''}>${l}</option>`
+        ).join('');
+        const presetName = opts.name != null ? String(opts.name) : '';
+        const presetIcon = opts.icon || '🪧';
+        const presetFunc = opts.signFunction || st.defaultFunc || '';
+        const fromQuick = !!opts.fromQuick;
+        const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 
-    modalBody.innerHTML = `
+        modalBody.innerHTML = `
             <div style="width:min(92vw,360px);max-width:100%;box-sizing:border-box;padding:4px;text-align:center;color:#000;">
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                 <h3 style="margin:0; color:#d32f2f; font-size:18px;">🪧 ${fromQuick ? '内容確認・登録' : '詳細登録'}</h3>
                 <span onclick="cancelMarkerForm_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
               </div>
-              ${!st.skipQuick ? `<button type="button" onclick="renderSignRegQuickScreen_()" style="width:100%; background:#f5f5f5; color:#555; border:1px solid #ddd; border-radius:6px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:10px;">← クイックセットに戻る</button>` : `<button type="button" onclick="renderSignRegKindChoiceScreen_()" style="width:100%; background:#f5f5f5; color:#555; border:1px solid #ddd; border-radius:6px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:10px;">← 種類選択（小看板 / 大看板）に戻る</button>`}
+              ${!st.skipQuick ? `<button type="button" onclick="renderSignRegQuickScreen_()" style="width:100%; background:#f5f5f5; color:#555; border:1px solid #ddd; border-radius:6px; padding:8px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:10px;">← クイックセットに戻る</button>` : ''}
               ${st.posLabel ? `<div style="font-size:11px; color:#888; margin-bottom:8px;">📍 ${esc(st.posLabel)}</div>` : ''}
               ${fromQuick ? `<div style="font-size:12px; color:#2E7D32; background:#E8F5E9; border-radius:6px; padding:8px; margin-bottom:10px; line-height:1.4;">✅ 「${esc(presetName)}」 ${presetIcon} をセットしました。必要なら修正して登録してください。</div>` : ''}
               <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">看板名</div>
@@ -10401,7 +8736,8 @@ window.renderSignRegDetailScreen_ = (opts) => {
               ${adminSignFunctionFieldHtml_('mFunc', presetFunc || '機能なし')}
               <div style="font-size:11px; font-weight:bold; color:#555; text-align:left; margin-bottom:4px;">拠点</div>
               <select id="mLoc" class="form-input" style="margin-bottom:4px;">${locOpts}</select>
-              <div style="font-size:11px; color:#666; text-align:left; line-height:1.4; margin:0 0 10px;">この看板の所属拠点です。</div>
+              <div style="font-size:11px; color:#666; text-align:left; line-height:1.4; margin:0 0 8px;">この看板の所属拠点です。</div>
+              <div style="font-size:11px; color:#666; background:#F3E5F5; border-radius:6px; padding:8px; text-align:left; line-height:1.4; margin:0 0 8px;">登録後、「情報・大小看板」から大看板にして小看板を選べます。</div>
               <div style="max-height:280px;overflow-y:auto;padding:0 6px 6px;border:1px solid #ddd;border-radius:8px;background:#fafafa;">
                 ${renderAdminSignIconPickerHtml_({ onPick: 'selectMI', activeIcon: presetIcon })}
               </div>
@@ -10421,60 +8757,62 @@ window.renderSignRegDetailScreen_ = (opts) => {
             </div>
           `;
 
-    // 写真選択は詳細画面に移っても維持
-    if (Array.isArray(window._pendingSignRegPhotos) && window._pendingSignRegPhotos.length) {
+        // 写真選択は詳細画面に移っても維持
+        if (Array.isArray(window._pendingSignRegPhotos) && window._pendingSignRegPhotos.length) {
+            const preview = document.getElementById('mPhotoPreview');
+            const out = window._pendingSignRegPhotos;
+            if (preview) {
+                preview.innerHTML = out.map((p) =>
+                    `<img src="${p.base64}" alt="preview" style="width:64px; height:64px; object-fit:cover; border-radius:6px; border:1px solid #ccc;">`
+                ).join('') + `<div style="width:100%; font-size:11px; color:#666; text-align:center;">${out.length}枚選択中</div>`;
+            }
+        }
+
+        setTimeout(() => {
+            if (typeof window.selectMI === 'function') window.selectMI(presetIcon);
+            const nameEl = document.getElementById('mName');
+            if (nameEl) {
+                if (!presetName) nameEl.focus();
+                else nameEl.select();
+            }
+        }, 10);
+    };
+
+    window.clearSignRegPhotos_ = () => {
+        window._pendingSignRegPhotos = [];
+        const input = document.getElementById('mPhotoInput');
+        if (input) input.value = '';
         const preview = document.getElementById('mPhotoPreview');
-        const out = window._pendingSignRegPhotos;
-        if (preview) {
-            preview.innerHTML = out.map((p) =>
-                `<img src="${p.base64}" alt="preview" style="width:64px; height:64px; object-fit:cover; border-radius:6px; border:1px solid #ccc;">`
-            ).join('') + `<div style="width:100%; font-size:11px; color:#666; text-align:center;">${out.length}枚選択中</div>`;
+        if (preview) preview.innerHTML = '<div style="color:#888; font-size:12px;">写真未選択</div>';
+    };
+
+    window.previewSignRegPhotos_ = async (input) => {
+        const files = input && input.files ? Array.from(input.files) : [];
+        const preview = document.getElementById('mPhotoPreview');
+        if (!files.length) {
+            window.clearSignRegPhotos_();
+            return;
         }
-    }
-
-    setTimeout(() => {
-        if (typeof window.selectMI === 'function') window.selectMI(presetIcon);
-        const nameEl = document.getElementById('mName');
-        if (nameEl) {
-            if (!presetName) nameEl.focus();
-            else nameEl.select();
+        const maxCount = 5;
+        const picked = files.slice(0, maxCount);
+        if (files.length > maxCount && typeof customAlert === 'function') {
+            customAlert(`写真は最大${maxCount}枚まで登録できます（先頭${maxCount}枚を使います）。`);
         }
-    }, 10);
-};
-
-window.clearSignRegPhotos_ = () => {
-    window._pendingSignRegPhotos = [];
-    const input = document.getElementById('mPhotoInput');
-    if (input) input.value = '';
-    const preview = document.getElementById('mPhotoPreview');
-    if (preview) preview.innerHTML = '<div style="color:#888; font-size:12px;">写真未選択</div>';
-};
-
-window.previewSignRegPhotos_ = async (input) => {
-    const files = input && input.files ? Array.from(input.files) : [];
-    const preview = document.getElementById('mPhotoPreview');
-    if (!files.length) {
-        window.clearSignRegPhotos_();
-        return;
-    }
-    const maxCount = 5;
-    const picked = files.slice(0, maxCount);
-    if (files.length > maxCount && typeof customAlert === 'function') {
-        customAlert(`写真は最大${maxCount}枚まで登録できます（先頭${maxCount}枚を使います）。`);
-    }
-    if (preview) preview.innerHTML = '<div style="color:#888; font-size:12px; padding:8px;">読み込み中...</div>';
-    const out = [];
-    for (let i = 0; i < picked.length; i++) {
-        const file = picked[i];
-        try {
-            const base64 = (typeof window.resizeAdminMachineImg === 'function')
-                ? await window.resizeAdminMachineImg(file)
-                : await new Promise((resolve, reject) => {
-                    const r = new FileReader();
-                    r.onload = () => resolve(r.result);
-                    r.onerror = () => reject(new Error('読込失敗'));
-                    r.readAsDataURL(file);
-                });
+        if (preview) preview.innerHTML = '<div style="color:#888; font-size:12px; padding:8px;">読み込み中...</div>';
+        const out = [];
+        for (let i = 0; i < picked.length; i++) {
+            const file = picked[i];
+            try {
+                const base64 = (typeof window.resizeAdminMachineImg === 'function')
+                    ? await window.resizeAdminMachineImg(file)
+                    : await new Promise((resolve, reject) => {
+         
+...[truncated for diff preview]
+                const r = new FileReader();
+                r.onload = () => resolve(r.result);
+                r.onerror = () => reject(new Error('読込失敗'));
+                r.readAsDataURL(file);
+            });
             out.push({
                 filename: (file.name || ('sign_' + (i + 1) + '.jpg')).replace(/\s+/g, '_'),
                 base64: base64
@@ -10728,7 +9066,6 @@ document.getElementById('btnMarkerMode').onclick = () => {
     document.getElementById('btnMarkerMode').classList.add('active');
     document.getElementById('drawArea').style.display = 'none';
 
-    window._targetSignKind = null;
     customDrawingMode = 'marker';
     clearCustomDrawing();
     setFudeVisibility(false);
@@ -10742,37 +9079,7 @@ document.getElementById('btnMarkerMode').onclick = () => {
     if (legendDiv) legendDiv.style.display = 'none';
 
     // 登録操作のたびに案内を出す（「今後表示しない」で消えないようにする）
-    customAlert("【看板作成モード】\n地図上の看板を置きたい場所を1回タップしてください。\nタップ後に【小看板】か【大看板】を選んで登録できます。");
-    if (typeof window.closeAdminRegPlusMenu_ === 'function') window.closeAdminRegPlusMenu_();
-    if (typeof window.syncAdminRegPlusBtnState_ === 'function') window.syncAdminRegPlusBtnState_('marker');
-};
-
-window.startMarkerKindMode_ = (kind) => {
-    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-    const btnMarker = document.getElementById('btnMarkerMode');
-    if (btnMarker) btnMarker.classList.add('active');
-    const drawArea = document.getElementById('drawArea');
-    if (drawArea) drawArea.style.display = 'none';
-
-    window._targetSignKind = kind || null;
-    customDrawingMode = 'marker';
-    clearCustomDrawing();
-    setFudeVisibility(false);
-
-    map.setOptions({ draggable: true, draggableCursor: pinCursor });
-    if (typeof preloadFudeData === 'function') preloadFudeData();
-    if (typeof updateMarkerLabels === 'function') updateMarkerLabels();
-
-    let legendDiv = document.getElementById('adminLegendUI');
-    if (legendDiv) legendDiv.style.display = 'none';
-
-    if (kind === 'parent') {
-        customAlert("【大看板作成モード】\n地図上の大看板（親看板・目印）を置きたい場所を1回タップしてください。\n登録後に周辺の小看板を束ねることができます。");
-    } else if (kind === 'child') {
-        customAlert("【小看板作成モード】\n地図上の小看板を置きたい場所を1回タップしてください。\nタップ後に登録ポップアップが開きます。");
-    } else {
-        customAlert("【看板作成モード】\n地図上の看板を置きたい場所を1回タップしてください。\nタップ後に【小看板】か【大看板】を選んで登録できます。");
-    }
+    customAlert("【看板作成モード】\n地図上の看板を置きたい場所を1回タップしてください。\nタップ後に登録ポップアップが開きます。");
     if (typeof window.closeAdminRegPlusMenu_ === 'function') window.closeAdminRegPlusMenu_();
     if (typeof window.syncAdminRegPlusBtnState_ === 'function') window.syncAdminRegPlusBtnState_('marker');
 };
@@ -10813,25 +9120,11 @@ window.pickAdminRegPlus_ = (kind) => {
     if (kind === 'draw') {
         const btn = document.getElementById('btnDrawMode');
         if (btn) btn.click();
-    } else if (kind === 'marker_parent') {
-        if (typeof window.startMarkerKindMode_ === 'function') window.startMarkerKindMode_('parent');
-        else {
-            const btn = document.getElementById('btnMarkerMode');
-            if (btn) btn.click();
-        }
-    } else if (kind === 'marker_child') {
-        if (typeof window.startMarkerKindMode_ === 'function') window.startMarkerKindMode_('child');
-        else {
-            const btn = document.getElementById('btnMarkerMode');
-            if (btn) btn.click();
-        }
     } else if (kind === 'marker') {
         const btn = document.getElementById('btnMarkerMode');
         if (btn) btn.click();
     } else if (kind === 'location') {
         if (typeof window.startLocationPinMode_ === 'function') window.startLocationPinMode_();
-    } else if (kind === 'viewpoint') {
-        if (typeof window.openViewpointManageModal === 'function') window.openViewpointManageModal();
     } else if (kind === 'equipment') {
         if (typeof window.openEquipmentManageModal === 'function') window.openEquipmentManageModal();
     } else if (kind === 'batchDelete') {
@@ -10866,491 +9159,6 @@ document.addEventListener('click', (e) => {
     if (wrap.contains(e.target)) return;
     window.closeAdminRegPlusMenu_();
 });
-
-// ====================================================
-// 🔭 視野地点登録・管理 (拠点別 Viewpoint / Camera Bookmark)
-//   1) 照準モード：地図を動かして「この視野を登録」
-//   2) 登録フォーム：所属拠点（ログイン拠点）・地点名（住所）自動入力
-//   3) ズーム調整モード：ドラッグ不可・ズームのみ → 決定で倍率反映
-// ====================================================
-window._vpDraft = null;
-window._viewpointFilterLoc = '';
-window._vpMode = null; // 'pick' | 'zoom' | null
-window._vpListeners = [];
-window._vpSavedMapOpts = null;
-
-const vpEsc_ = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const vpUserLoc_ = () => String(localStorage.getItem('passionMapUserLocation') || '').trim();
-
-function vpClearListeners_() {
-    (window._vpListeners || []).forEach(l => { try { google.maps.event.removeListener(l); } catch (e) { } });
-    window._vpListeners = [];
-}
-
-function vpEnsureCrosshair_() {
-    if (!map || typeof map.getDiv !== 'function') return null;
-    let el = document.getElementById('vpCrosshair');
-    if (!el) {
-        el = document.createElement('div');
-        el.id = 'vpCrosshair';
-        el.style.cssText = 'position:absolute; left:50%; top:50%; width:56px; height:56px; transform:translate(-50%,-50%); pointer-events:none; z-index:5;';
-        el.innerHTML = `
-          <svg width="56" height="56" viewBox="0 0 56 56" style="filter:drop-shadow(0 0 2px rgba(0,0,0,0.8));">
-            <circle cx="28" cy="28" r="15" fill="none" stroke="#fff" stroke-width="2.5"/>
-            <circle cx="28" cy="28" r="15" fill="none" stroke="#7E57C2" stroke-width="1.2"/>
-            <line x1="28" y1="2" x2="28" y2="18" stroke="#fff" stroke-width="2.5"/>
-            <line x1="28" y1="38" x2="28" y2="54" stroke="#fff" stroke-width="2.5"/>
-            <line x1="2" y1="28" x2="18" y2="28" stroke="#fff" stroke-width="2.5"/>
-            <line x1="38" y1="28" x2="54" y2="28" stroke="#fff" stroke-width="2.5"/>
-            <circle cx="28" cy="28" r="2.5" fill="#FF5252" stroke="#fff" stroke-width="1"/>
-          </svg>`;
-        map.getDiv().appendChild(el);
-    }
-    el.style.display = 'block';
-    return el;
-}
-
-function vpHideCrosshair_() {
-    const el = document.getElementById('vpCrosshair');
-    if (el) el.style.display = 'none';
-}
-
-function vpEnsureBar_() {
-    let bar = document.getElementById('vpModeBar');
-    if (!bar) {
-        bar = document.createElement('div');
-        bar.id = 'vpModeBar';
-        bar.style.cssText = 'position:fixed; left:50%; transform:translateX(-50%); bottom:max(16px, calc(env(safe-area-inset-bottom, 0px) + 16px)); z-index:9000; background:rgba(30,20,50,0.94); color:#fff; border-radius:14px; padding:10px 12px; box-shadow:0 6px 24px rgba(0,0,0,0.4); width:min(94vw, 460px); box-sizing:border-box;';
-        document.body.appendChild(bar);
-    }
-    bar.style.display = 'block';
-    return bar;
-}
-
-function vpHideBar_() {
-    const bar = document.getElementById('vpModeBar');
-    if (bar) bar.style.display = 'none';
-}
-
-function vpSetFabHidden_(hidden) {
-    const wrap = document.getElementById('adminRegPlusWrap');
-    if (wrap) wrap.style.visibility = hidden ? 'hidden' : '';
-}
-
-function vpExitMapModes_() {
-    vpClearListeners_();
-    vpHideCrosshair_();
-    vpHideBar_();
-    vpSetFabHidden_(false);
-    if (window._vpSavedMapOpts && map) {
-        try { map.setOptions(window._vpSavedMapOpts); } catch (e) { }
-    }
-    window._vpSavedMapOpts = null;
-    window._vpMode = null;
-    if (typeof window.syncAdminRegPlusBtnState_ === 'function') window.syncAdminRegPlusBtnState_('view');
-}
-
-// ---------- 1) 照準モード ----------
-window.startViewpointPickMode_ = (opts) => {
-    if (typeof map === 'undefined' || !map) { customAlert('地図が準備できていません'); return; }
-    opts = opts || {};
-    window.closeViewpointManageModal(true);
-    if (typeof window.closeAdminRegPlusMenu_ === 'function') window.closeAdminRegPlusMenu_();
-    vpClearListeners_();
-    if (window._vpSavedMapOpts) { try { map.setOptions(window._vpSavedMapOpts); } catch (e) { } window._vpSavedMapOpts = null; }
-
-    // 編集時の地点選び直しは元の位置から
-    if (opts.keepDraft && window._vpDraft && isFinite(window._vpDraft.lat)) {
-        map.setCenter({ lat: Number(window._vpDraft.lat), lng: Number(window._vpDraft.lng) });
-        if (window._vpDraft.zoom) map.setZoom(Number(window._vpDraft.zoom));
-    } else if (!opts.keepDraft) {
-        window._vpDraft = null;
-    }
-
-    window._vpMode = 'pick';
-    try { map.setOptions({ draggable: true }); } catch (e) { }
-    vpEnsureCrosshair_();
-    vpSetFabHidden_(true);
-    if (typeof window.syncAdminRegPlusBtnState_ === 'function') window.syncAdminRegPlusBtnState_('location');
-
-    const count = (window.pdlViewpoints || []).length;
-    const bar = vpEnsureBar_();
-    bar.innerHTML = `
-      <div style="font-size:13px; font-weight:bold; color:#D1C4E9; margin-bottom:8px; text-align:center;">
-        🔭 地図を動かして、照準を登録したい視野の中心に合わせてください
-      </div>
-      <div style="display:flex; gap:8px;">
-        <button type="button" onclick="window.cancelViewpointMode_()"
-          style="flex:0 0 auto; background:#424242; color:#fff; border:none; border-radius:10px; padding:10px 12px; font-size:13px; font-weight:bold; cursor:pointer;">✕ 閉じる</button>
-        <button type="button" onclick="window.openViewpointListModal()"
-          style="flex:0 0 auto; background:#5E35B1; color:#fff; border:1px solid #9575CD; border-radius:10px; padding:10px 12px; font-size:13px; font-weight:bold; cursor:pointer;">📋 一覧(${count})</button>
-        <button type="button" onclick="window.confirmViewpointPick_()"
-          style="flex:1; background:#7C4DFF; color:#fff; border:none; border-radius:10px; padding:10px 12px; font-size:14px; font-weight:bold; cursor:pointer; box-shadow:0 2px 8px rgba(124,77,255,0.5);">✅ この視野を登録</button>
-      </div>`;
-};
-
-window.cancelViewpointMode_ = () => {
-    vpExitMapModes_();
-    window._vpDraft = null;
-};
-
-window.confirmViewpointPick_ = () => {
-    const c = map.getCenter();
-    if (!c) return;
-    const lat = Number(c.lat().toFixed(7));
-    const lng = Number(c.lng().toFixed(7));
-    const prev = window._vpDraft;
-    const isEdit = !!(prev && prev.id);
-    window._vpDraft = {
-        id: isEdit ? prev.id : '',
-        location: prev ? prev.location : vpUserLoc_(),
-        name: prev ? prev.name : '',
-        lat: lat,
-        lng: lng,
-        zoom: map.getZoom() || 16,
-        nameAuto: !prev || !prev.name || !!prev.nameAuto,
-        sortOrder: prev ? prev.sortOrder : undefined
-    };
-    vpExitMapModes_();
-    window.openViewpointFormModal_();
-    // 地点名が未入力（または自動入力）なら住所で自動入力
-    if (window._vpDraft.nameAuto) vpFillAddressName_(lat, lng);
-};
-
-function vpFillAddressName_(lat, lng) {
-    const draft = window._vpDraft;
-    if (!draft) return;
-    const nameEl = document.getElementById('vpInputName');
-    if (nameEl) nameEl.placeholder = '📍 住所を取得中...';
-    try {
-        new google.maps.Geocoder().geocode({ location: { lat: lat, lng: lng } }, (results, status) => {
-            const cur = window._vpDraft;
-            if (!cur || cur.lat !== lat || cur.lng !== lng) return;
-            const el = document.getElementById('vpInputName');
-            if (status === 'OK' && results && results.length) {
-                const r = results.find(x => !x.types.includes('plus_code')) || results[0];
-                const addr = String(r.formatted_address || '')
-                    .replace(/^日本、/, '').replace(/〒\d{3}-\d{4}\s?/, '').replace(/^[A-Z0-9\+]+\s/, '').trim();
-                // ユーザーが既に手入力していたら上書きしない
-                if (el && (!el.value || el.dataset.auto === '1')) {
-                    el.value = addr;
-                    el.dataset.auto = '1';
-                    cur.name = addr;
-                    cur.nameAuto = true;
-                }
-                if (el) el.placeholder = '地点名を入力';
-            } else if (el) {
-                el.placeholder = '住所を取得できませんでした。地点名を入力';
-            }
-        });
-    } catch (e) {
-        if (nameEl) nameEl.placeholder = '地点名を入力';
-    }
-}
-
-// ---------- 2) 登録フォーム ----------
-function vpReadFormToDraft_() {
-    const d = window._vpDraft;
-    if (!d) return;
-    const locEl = document.getElementById('vpInputLocation');
-    const nameEl = document.getElementById('vpInputName');
-    if (locEl) d.location = String(locEl.value || '').trim();
-    if (nameEl) {
-        d.name = String(nameEl.value || '').trim();
-        d.nameAuto = nameEl.dataset.auto === '1';
-    }
-}
-
-window.openViewpointFormModal_ = () => {
-    const modal = document.getElementById('viewpointManageModal');
-    const body = document.getElementById('viewpointManageBody');
-    const d = window._vpDraft;
-    if (!modal || !body || !d) return;
-    const titleEl = document.getElementById('viewpointManageTitle');
-    if (titleEl) titleEl.textContent = d.id ? '✏️ 視野地点の編集' : '🔭 視野地点の登録';
-    modal.style.display = 'flex';
-
-    const locs = (pdlLocations || []).filter(Boolean);
-    const userLoc = vpUserLoc_();
-    if (d.location && !locs.includes(d.location)) locs.unshift(d.location);
-
-    body.innerHTML = `
-    <div style="background:#fff; border-radius:10px; padding:16px; border:1px solid #e0e0e0; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
-      <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">
-        所属拠点 ${userLoc ? `<span style="font-weight:normal; color:#7E57C2;">（ログイン拠点: ${vpEsc_(userLoc)}）</span>` : ''}
-      </label>
-      <select id="vpInputLocation"
-        style="width:100%; padding:10px; border:1px solid #ccc; border-radius:8px; font-size:15px; box-sizing:border-box; margin-bottom:14px;">
-        <option value="">(拠点なし / 全社共通)</option>
-        ${locs.map(l => `<option value="${vpEsc_(l)}" ${l === d.location ? 'selected' : ''}>${vpEsc_(l)}</option>`).join('')}
-      </select>
-
-      <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">
-        地点名 <span style="color:red;">*</span> <span style="font-weight:normal; color:#888;">（住所を自動入力・書き換え可）</span>
-      </label>
-      <input type="text" id="vpInputName" value="${vpEsc_(d.name)}" data-auto="${d.nameAuto ? '1' : '0'}" placeholder="地点名を入力"
-        oninput="this.dataset.auto='0'"
-        style="width:100%; padding:10px; border:1px solid #ccc; border-radius:8px; font-size:15px; box-sizing:border-box; margin-bottom:14px;">
-
-      <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">ズーム倍率</label>
-      <div style="display:flex; align-items:center; gap:10px; margin-bottom:18px;">
-        <div style="flex:1; background:#F3E5F5; border:1px solid #CE93D8; border-radius:8px; padding:9px 12px; font-size:16px; font-weight:bold; color:#6A1B9A;">
-          🔍 <span id="vpZoomDisplay">${Number(d.zoom) || 16}</span>
-        </div>
-        <button type="button" onclick="window.startViewpointZoomMode_()"
-          style="flex:0 0 auto; background:#fff; color:#6A1B9A; border:2px solid #9C27B0; border-radius:8px; padding:9px 14px; font-size:14px; font-weight:bold; cursor:pointer;">🔍 変更</button>
-      </div>
-
-      <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <button type="button" onclick="window.repickViewpointLocation_()"
-          style="flex:1 1 auto; background:#f5f5f5; color:#555; border:1px solid #ccc; border-radius:8px; padding:10px 12px; font-size:13px; font-weight:bold; cursor:pointer;">📍 地点を選び直す</button>
-        <button type="button" id="btnSaveVpForm" onclick="window.saveViewpointForm()"
-          style="flex:2 1 auto; background:#5E35B1; color:#fff; border:none; border-radius:8px; padding:10px 16px; font-size:15px; font-weight:bold; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,0.15);">
-          ${d.id ? '💾 変更を保存' : '＋ 登録する'}
-        </button>
-      </div>
-    </div>`;
-};
-
-window.repickViewpointLocation_ = () => {
-    vpReadFormToDraft_();
-    window.startViewpointPickMode_({ keepDraft: true });
-};
-
-// ---------- 3) ズーム調整モード（ドラッグ不可） ----------
-window.startViewpointZoomMode_ = () => {
-    vpReadFormToDraft_();
-    const d = window._vpDraft;
-    if (!d || !map) return;
-    window.closeViewpointManageModal(true);
-
-    const center = { lat: Number(d.lat), lng: Number(d.lng) };
-    window._vpSavedMapOpts = {
-        draggable: true,
-        keyboardShortcuts: map.get('keyboardShortcuts') !== false
-    };
-    map.setCenter(center);
-    map.setZoom(Number(d.zoom) || 16);
-    map.setOptions({ draggable: false, keyboardShortcuts: false });
-    window._vpMode = 'zoom';
-    vpEnsureCrosshair_();
-    vpSetFabHidden_(true);
-
-    // ピンチ・ホイールで中心がずれても元の地点へ戻す
-    vpClearListeners_();
-    let relocking = false;
-    const relock = () => {
-        if (relocking || window._vpMode !== 'zoom') return;
-        const c = map.getCenter();
-        if (!c) return;
-        if (Math.abs(c.lat() - center.lat) > 1e-7 || Math.abs(c.lng() - center.lng) > 1e-7) {
-            relocking = true;
-            map.setCenter(center);
-            relocking = false;
-        }
-    };
-    window._vpListeners.push(map.addListener('center_changed', relock));
-    window._vpListeners.push(map.addListener('zoom_changed', () => {
-        relock();
-        const z = document.getElementById('vpZoomModeValue');
-        if (z) z.textContent = map.getZoom();
-    }));
-
-    const bar = vpEnsureBar_();
-    const btnStyle = 'flex:0 0 52px; height:48px; background:#fff; color:#4A148C; border:none; border-radius:10px; font-size:26px; font-weight:bold; cursor:pointer; line-height:1;';
-    bar.innerHTML = `
-      <div style="font-size:12px; font-weight:bold; color:#D1C4E9; margin-bottom:8px; text-align:center;">
-        🔍 ズーム（ピンチ / ＋−）で表示範囲を決めて「決定」を押してください
-      </div>
-      <div style="display:flex; gap:8px; align-items:center;">
-        <button type="button" onclick="map.setZoom((map.getZoom()||16)-1)" style="${btnStyle}">−</button>
-        <div style="flex:1; text-align:center; font-size:20px; font-weight:bold;">🔍 <span id="vpZoomModeValue">${map.getZoom()}</span></div>
-        <button type="button" onclick="map.setZoom((map.getZoom()||16)+1)" style="${btnStyle}">＋</button>
-        <button type="button" onclick="window.confirmViewpointZoom_()"
-          style="flex:0 0 auto; height:48px; background:#7C4DFF; color:#fff; border:none; border-radius:10px; padding:0 18px; font-size:15px; font-weight:bold; cursor:pointer;">✅ 決定</button>
-      </div>`;
-};
-
-window.confirmViewpointZoom_ = () => {
-    const d = window._vpDraft;
-    if (d && map) d.zoom = map.getZoom() || d.zoom || 16;
-    vpExitMapModes_();
-    window.openViewpointFormModal_();
-};
-
-window.saveViewpointForm = async () => {
-    vpReadFormToDraft_();
-    const d = window._vpDraft;
-    const btn = document.getElementById('btnSaveVpForm');
-    if (!d) return;
-    if (!d.name) { customAlert('地点名を入力してください'); return; }
-    if (!isFinite(Number(d.lat)) || !isFinite(Number(d.lng))) { customAlert('地点が選択されていません'); return; }
-
-    if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
-    const payload = {
-        id: d.id || '',
-        location: d.location || '',
-        name: d.name,
-        lat: Number(d.lat),
-        lng: Number(d.lng),
-        zoom: Number(d.zoom) || 16
-    };
-    if (d.sortOrder != null) payload.sortOrder = d.sortOrder;
-
-    try {
-        const res = await callGAS('saveViewpoint', { viewpoint: payload, userName: currentUser }, 2, { timeoutMs: 30000 });
-        if (res && res.success && res.viewpoint) {
-            const saved = res.viewpoint;
-            if (!Array.isArray(window.pdlViewpoints)) window.pdlViewpoints = [];
-            const idx = window.pdlViewpoints.findIndex(v => v.id === saved.id);
-            if (idx >= 0) window.pdlViewpoints[idx] = saved; else window.pdlViewpoints.push(saved);
-            window._vpDraft = null;
-            if (saved.location) window._viewpointFilterLoc = saved.location;
-            customAlert('視野地点「' + saved.name + '」を保存しました');
-            window.openViewpointListModal();
-        } else {
-            customAlert('保存に失敗しました: ' + ((res && res.message) || '応答エラー'));
-            if (btn) { btn.disabled = false; btn.textContent = d.id ? '💾 変更を保存' : '＋ 登録する'; }
-        }
-    } catch (err) {
-        customAlert('通信エラーが発生しました: ' + err.message);
-        if (btn) { btn.disabled = false; btn.textContent = d.id ? '💾 変更を保存' : '＋ 登録する'; }
-    }
-};
-
-// ---------- 一覧 ----------
-// ＋メニューの「視野地点登録」からは照準モードを開始
-window.openViewpointManageModal = () => window.startViewpointPickMode_();
-
-window.openViewpointListModal = () => {
-    vpExitMapModes_();
-    const modal = document.getElementById('viewpointManageModal');
-    if (!modal) return;
-    if (!window._viewpointFilterLoc) window._viewpointFilterLoc = vpUserLoc_();
-    modal.style.display = 'flex';
-    if (typeof callGAS === 'function') {
-        callGAS('getViewpoints', {}, 1, { timeoutMs: 15000 }).then(res => {
-            if (res && res.success && Array.isArray(res.viewpoints)) {
-                window.pdlViewpoints = res.viewpoints;
-                if (modal.style.display !== 'none' && window._vpListShowing) window.renderViewpointModalUI();
-            }
-        }).catch(err => console.warn('getViewpoints fetch skipped:', err));
-    }
-    window.renderViewpointModalUI();
-};
-
-window.closeViewpointManageModal = (keepState) => {
-    const modal = document.getElementById('viewpointManageModal');
-    if (modal) modal.style.display = 'none';
-    window._vpListShowing = false;
-    if (!keepState) window._vpDraft = null;
-};
-
-window.renderViewpointModalUI = () => {
-    const body = document.getElementById('viewpointManageBody');
-    if (!body) return;
-    window._vpListShowing = true;
-    const titleEl = document.getElementById('viewpointManageTitle');
-    if (titleEl) titleEl.textContent = '📋 登録済み視野地点';
-
-    const locs = (pdlLocations || []).filter(Boolean);
-    const filterLoc = window._viewpointFilterLoc || '';
-    const allVps = window.pdlViewpoints || [];
-    const list = filterLoc ? allVps.filter(v => String(v.location || '').trim() === filterLoc) : allVps;
-
-    body.innerHTML = `
-    <button type="button" onclick="window.startViewpointPickMode_()"
-      style="width:100%; background:#5E35B1; color:#fff; border:none; border-radius:10px; padding:12px; font-size:15px; font-weight:bold; cursor:pointer; margin-bottom:14px; box-shadow:0 2px 8px rgba(94,53,177,0.35);">
-      ＋ 新しい視野地点を登録
-    </button>
-    <div style="background:#fff; border-radius:10px; padding:14px; border:1px solid #e0e0e0;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:8px; flex-wrap:wrap;">
-        <div style="font-weight:bold; font-size:14px; color:#333;">
-          一覧 <span style="font-size:11px; font-weight:normal; color:#666; background:#eee; padding:2px 8px; border-radius:10px;">${list.length}件</span>
-        </div>
-        <select onchange="window.changeViewpointFilterLoc(this.value)"
-          style="padding:6px 10px; border:1px solid #ccc; border-radius:6px; font-size:13px;">
-          <option value="">すべての拠点</option>
-          ${locs.map(l => `<option value="${vpEsc_(l)}" ${l === filterLoc ? 'selected' : ''}>🏢 ${vpEsc_(l)}</option>`).join('')}
-        </select>
-      </div>
-      ${list.length === 0 ? `
-        <div style="text-align:center; padding:26px 10px; color:#999; font-size:13px;">登録されている視野地点はありません。</div>
-      ` : `
-        <div style="display:flex; flex-direction:column; gap:8px;">
-          ${list.map(vp => {
-              const idJs = String(vp.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-              return `
-            <div style="border:1px solid #eee; border-radius:8px; padding:10px 12px; display:flex; justify-content:space-between; align-items:center; background:#fafafa; gap:10px;">
-              <div style="flex:1; min-width:0;">
-                <div style="font-weight:bold; font-size:14px; color:#222; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${vpEsc_(vp.name)}</div>
-                <div style="font-size:11px; color:#777; margin-top:2px;">
-                  <span style="background:${vp.location ? '#e8eaf6' : '#eee'}; color:${vp.location ? '#3949ab' : '#666'}; font-weight:bold; padding:1px 6px; border-radius:4px;">${vp.location ? '🏢 ' + vpEsc_(vp.location) : '全体'}</span>
-                  <span style="margin-left:6px;">🔍 ${vp.zoom || 16}</span>
-                </div>
-              </div>
-              <div style="display:flex; gap:6px; flex-shrink:0;">
-                <button type="button" onclick="window.jumpToViewpoint('${idJs}')" title="地図をこの視野に移動"
-                  style="background:#E8F5E9; color:#2E7D32; border:1px solid #A5D6A7; border-radius:6px; padding:6px 9px; font-size:12px; font-weight:bold; cursor:pointer;">🗺️ 移動</button>
-                <button type="button" onclick="window.editViewpointItem('${idJs}')" title="編集"
-                  style="background:#FFF3E0; color:#E65100; border:1px solid #FFCC80; border-radius:6px; padding:6px 9px; font-size:12px; cursor:pointer;">✏️</button>
-                <button type="button" onclick="window.deleteViewpointItem('${idJs}')" title="削除"
-                  style="background:#FFEBEE; color:#C62828; border:1px solid #EF9A9A; border-radius:6px; padding:6px 9px; font-size:12px; cursor:pointer;">🗑️</button>
-              </div>
-            </div>`;
-          }).join('')}
-        </div>
-      `}
-    </div>`;
-};
-
-window.changeViewpointFilterLoc = (loc) => {
-    window._viewpointFilterLoc = loc;
-    window.renderViewpointModalUI();
-};
-
-window.editViewpointItem = (id) => {
-    const vp = (window.pdlViewpoints || []).find(v => v.id === id);
-    if (!vp) return;
-    window._vpDraft = {
-        id: vp.id,
-        location: vp.location || '',
-        name: vp.name || '',
-        lat: Number(vp.lat),
-        lng: Number(vp.lng),
-        zoom: Number(vp.zoom) || 16,
-        nameAuto: false,
-        sortOrder: vp.sortOrder
-    };
-    window._vpListShowing = false;
-    window.openViewpointFormModal_();
-};
-
-window.deleteViewpointItem = async (id) => {
-    const target = (window.pdlViewpoints || []).find(v => v.id === id);
-    const targetName = target ? target.name : 'この視野地点';
-    if (!confirm('視野地点「' + targetName + '」を削除してもよろしいですか？')) return;
-    try {
-        const res = await callGAS('deleteViewpoint', { id: id, userName: currentUser }, 2, { timeoutMs: 30000 });
-        if (res && res.success) {
-            window.pdlViewpoints = (window.pdlViewpoints || []).filter(v => v.id !== id);
-            customAlert('削除しました');
-            window.renderViewpointModalUI();
-        } else {
-            customAlert('削除に失敗しました: ' + ((res && res.message) || '応答エラー'));
-        }
-    } catch (err) {
-        customAlert('通信エラーが発生しました: ' + err.message);
-    }
-};
-
-window.jumpToViewpoint = (id) => {
-    const vp = (window.pdlViewpoints || []).find(v => v.id === id);
-    if (!vp || typeof map === 'undefined' || !map) return;
-    map.setCenter({ lat: Number(vp.lat), lng: Number(vp.lng) });
-    if (vp.zoom) map.setZoom(Number(vp.zoom));
-    window.closeViewpointManageModal();
-};
 
 // --- 「進む」「戻る」の処理も修正 ---
 let undoBtn = document.getElementById('undoDrawBtn');
@@ -12543,14 +10351,13 @@ window.saveLocationPin_ = async () => {
 };
 
 window.saveM = async () => {
-    const isParent = !!(window._signRegState && window._signRegState.signKind === 'parent');
     const nameEl = document.getElementById('mName');
     const n = nameEl ? String(nameEl.value || '').trim() : '';
-    if (!n) { customAlert(isParent ? "大看板名を入力してください" : "看板名を入力してください"); return; }
+    if (!n) { customAlert("看板名を入力してください"); return; }
     if (!currentMarker) { customAlert("位置が設定されていません。地図をタップしてから登録してください。"); return; }
-    const ic = (document.getElementById('selIco') || {}).value || (isParent ? '🪧' : '📍');
+    const ic = document.getElementById('selIco').value;
     const funcEl = document.getElementById('mFunc');
-    const funcType = isParent ? '大看板' : (funcEl ? String(funcEl.value || '').trim() : '機能なし');
+    const funcType = funcEl ? String(funcEl.value || '').trim() : '機能なし';
     const pos = currentMarker.getPosition();
     const coords = [{ lat: pos.lat(), lng: pos.lng() }];
     const locEl = document.getElementById('mLoc');
@@ -12572,7 +10379,7 @@ window.saveM = async () => {
             time: hm,
             author: currentUser || '',
             urls: photos.map(p => p.base64).filter(Boolean),
-            data: { notes: isParent ? '大看板登録時' : '看板登録時' },
+            data: { notes: '看板登録時' },
             _pendingSync: true
         }]
         : [];
@@ -12592,8 +10399,6 @@ window.saveM = async () => {
         signFunction: funcType,
         parentSignId: parentSignId,
         isMarker: true,
-        isParentSign: isParent,
-        isParent: isParent,
         photos: localPhotos
     });
     document.getElementById('btnViewMode').click();
@@ -12619,11 +10424,6 @@ window.saveM = async () => {
         remapLoadedPolygonId_(tempId, id);
         if (id && loadedPolygons[id]) {
             loadedPolygons[id].parentSignId = parentSignId;
-            if (isParent) {
-                loadedPolygons[id].isParentSign = true;
-                loadedPolygons[id].isParent = true;
-                loadedPolygons[id].signFunction = '大看板';
-            }
         }
         if (window.SignGroup) window.SignGroup.refreshMarkers();
         if (photos.length && id) {
@@ -12633,7 +10433,7 @@ window.saveM = async () => {
                     name: n,
                     author: currentUser,
                     recordType: 'growth',
-                    data: { notes: isParent ? '大看板登録時' : '看板登録時' },
+                    data: { notes: '看板登録時' },
                     photos: photos
                 });
                 if (loadedPolygons[id] && Array.isArray(updated)) {
@@ -12650,16 +10450,6 @@ window.saveM = async () => {
             showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
         }
         persistAdminInitCache_();
-
-        // 大看板を登録した場合、続けて小看板の紐付け選択を促す
-        if (isParent && id) {
-            setTimeout(async () => {
-                const ok = await customConfirm(`🪧 大看板「${n}」を登録しました！\n\n続けて、この大看板に束ねる小看板を地図から選びますか？`);
-                if (ok && typeof window.startAdminSignGroupMapSelect === 'function') {
-                    window.startAdminSignGroupMapSelect(id);
-                }
-            }, 300);
-        }
     } catch (e) {
         showAdminSyncToast('⚠️ 保存に失敗しました: ' + (e.message || e), 'error');
     }
@@ -12991,11 +10781,13 @@ window.openM = (id) => {
             const parentName = parentPoly ? parentPoly.name : '大看板';
             signGroupInfo = `<div style="background:#FFF3E0; color:#E65100; border:1px solid #FFE0B2; border-radius:6px; padding:6px; margin-bottom:8px; font-size:11px; text-align:left;">
                 <b>↳ 小看板</b>（親看板: ${parentName} に束ねられています）
-                <button type="button" onclick="removeAdminSignFromGroup_('${id}')" style="width:100%; margin-top:6px; background:#E65100; color:white; border:none; border-radius:4px; padding:6px 0; font-size:11px; font-weight:bold; cursor:pointer;">❌ 大看板への束ねを解除する</button>
+                <button type="button" onclick="startAdminSignGroupMapSelect('${id}')" style="width:100%; margin-top:6px; background:#6A1B9A; color:white; border:none; border-radius:4px; padding:6px 0; font-size:11px; font-weight:bold; cursor:pointer;">🪧 この小看板を大看板にする（目印化）</button>
+                <button type="button" onclick="removeAdminSignFromGroup_('${id}')" style="width:100%; margin-top:4px; background:#E65100; color:white; border:none; border-radius:4px; padding:6px 0; font-size:11px; font-weight:bold; cursor:pointer;">❌ 大看板への束ねを解除する</button>
             </div>`;
         } else {
-            // 通常の小看板（小看板から大看板への変更は行わない）
-            signGroupInfo = '';
+            signGroupInfo = `<div style="margin-bottom:8px;">
+                <button type="button" onclick="startAdminSignGroupMapSelect('${id}')" style="width:100%; background:#F3E5F5; color:#4A148C; border:1px solid #BA68C8; border-radius:6px; padding:7px 0; font-size:11px; font-weight:bold; cursor:pointer;">🪧 大看板にして小看板を地図から束ねる</button>
+            </div>`;
         }
     }
 

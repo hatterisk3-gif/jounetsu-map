@@ -3,7 +3,7 @@ const path = require('path');
 const { execSync, spawnSync } = require('child_process');
 
 // LINE指令用GAS（AIブリッジ）。本番MAP API (AKfycbzqga3_...) とは別物
-const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw7y4G2ltoMtBtyu0fqqClXfzOloZMm4fe1bd3zk5epOAoa7glPOcwc_8vAJxIl3lBz/exec';
+const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbw7y4G2ltoMtBtyu0fqqClXfzOloZMm4fe1bd3zk5epOAoa7glPOcwc_8vAJxIl3lBz/exec?target=MAP';
 // 本番MAP APIのデプロイID（clasp deploy用。上記URLとは混同しない）
 const MAP_GAS_DEPLOY_ID = 'AKfycbzqga3_gw7fKTFdOieVZbudC36yP7_xKWiYPu4XyPIg8ahwe2y7JcB93sGyUTrHGQWV';
 
@@ -63,19 +63,55 @@ process.on('SIGTERM', () => { releaseWatchLock(); process.exit(0); });
 async function runAIAgent(promptText) {
   // 前回の古い完了ファイルが残っていたら消しておく
   if (fs.existsSync(DONE_FILE)) fs.unlinkSync(DONE_FILE);
+  // 1. プロンプトを .ai_task.txt に保存
+  fs.writeFileSync(TASK_FILE, promptText, 'utf8');
 
-  // IDEにAI実行の指示を送信（手紙を保存）
-  // create+change の二重発火を減らすため、一時ファイルへ書いてから置換する
-  const tmpTask = TASK_FILE + '.tmp';
-  fs.writeFileSync(tmpTask, promptText, 'utf8');
+  // 現在のフォルダ名（"dump-app" または "情熱MAP"）をウィンドウ検索キーワードにする
+  const windowKeyword = path.basename(__dirname);
+
+  // 2. 該当フォルダ名の Antigravity ウィンドウだけを最前面に出して Ctrl+V → Enter
+  const psScript = `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class Win32 {
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
+}
+"@
+
+$text = Get-Content -Path "${TASK_FILE.replace(/\\/g, '\\\\')}" -Raw -Encoding UTF8
+Set-Clipboard -Value $text
+
+# ウィンドウタイトルにフォルダ名（${windowKeyword}）を含むプロセスを検索
+$proc = Get-Process | Where-Object { $_.MainWindowTitle -like "*${windowKeyword}*" } | Select-Object -First 1
+
+if ($proc -and $proc.MainWindowHandle -ne [IntPtr]::Zero) {
+  # 最小化されていても元のサイズに戻して最前面にアクティブ化 (9 = SW_RESTORE)
+  [Win32]::ShowWindowAsync($proc.MainWindowHandle, 9) | Out-Null
+  Start-Sleep -Milliseconds 200
+  [Win32]::SetForegroundWindow($proc.MainWindowHandle) | Out-Null
+  Start-Sleep -Milliseconds 500
+
+  $wshell = New-Object -ComObject wscript.shell
+  $wshell.SendKeys('^v')
+  Start-Sleep -Milliseconds 400
+  $wshell.SendKeys('{ENTER}')
+} else {
+  Write-Warning "対象のウィンドウ (*${windowKeyword}*) が見つかりませんでした。"
+}
+`;
+
+  const psFile = path.join(__dirname, 'tmp_send.ps1');
+  fs.writeFileSync(psFile, '\ufeff' + psScript, 'utf8');
   try {
-    fs.renameSync(tmpTask, TASK_FILE);
+    execSync(`powershell -NoProfile -ExecutionPolicy Bypass -File "${psFile}"`);
   } catch (e) {
-    // Windows/OneDrive で rename 失敗時は直接上書き
-    fs.writeFileSync(TASK_FILE, promptText, 'utf8');
-    try { fs.unlinkSync(tmpTask); } catch (e2) { }
+    console.warn('⚠️ キー送信エラー:', e.message);
   }
-  console.log('📝 IDEにAI実行の指示を送信しました！自動処理が始まります...');
+  try { fs.unlinkSync(psFile); } catch (e) { }
+
+  console.log(`📝 エディタ（${windowKeyword}）を最前面に出して指示を送信しました！`);
 
   // IDEの処理が終わる（.ai_task_done.txt が作られる）まで待機（最大30分）
   let waitTime = 0;
@@ -305,7 +341,7 @@ function collectGitDiffSummary() {
       try {
         const lastCommitDiff = execSync('git diff HEAD~1 HEAD --name-status', { cwd: __dirname, env: { ...process.env, GIT_PAGER: 'cat' } }).toString().trim();
         parseLines(lastCommitDiff);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (modified.size > 0) fileChangesText += `\n【変更】: ${Array.from(modified).join(', ')}`;
@@ -364,7 +400,12 @@ async function processJob(data) {
         pendingImages = []; // 基地のメモリをリセット
       }
 
-      const modifyPrompt = `${imageContext}${cleanCommand}
+      // 🌟 /deploy の場合はワークフローを邪魔しないようシンプルに送る
+      const isSlashDeploy = /^\/deploy\b/i.test(cleanCommand.trim());
+
+      const modifyPrompt = isSlashDeploy
+        ? `/deploy\n\n※デプロイ処理がすべて完了したら、必ず最後に Node.js の \`fs.writeFileSync('.ai_task_done.txt', 'デプロイ完了レポート本文', 'utf8')\` を実行して「.ai_task_done.txt」を作成してください。`
+        : `${imageContext}${cleanCommand}
 【最後に行うことのリスト】
  1.修正したら、個所が正しく動作するか自律的にテスト・再修正してください。
  2.コードを修正したら、関連するhtml(箱)のページ名に記載されているバージョン情報を0.01足してください。
@@ -425,10 +466,10 @@ async function processJob(data) {
       const safeFullOutput = aiOutput.length > 8000 ? aiOutput.slice(0, 8000) + '\n...(長文のため以下省略)' : aiOutput;
       const shortAiOutput = aiOutput.length > 1500 ? aiOutput.slice(0, 1500) + '\n...(以下省略)' : aiOutput;
 
-      const isDeployTask = String(rawCommand || '').toLowerCase().includes('deploy') || 
-                           String(rawCommand || '').includes('デプロイ') ||
-                           String(aiOutput || '').includes('clasp deploy') ||
-                           String(aiOutput || '').includes('デプロイが完了');
+      const isDeployTask = String(rawCommand || '').toLowerCase().includes('deploy') ||
+        String(rawCommand || '').includes('デプロイ') ||
+        String(aiOutput || '').includes('clasp deploy') ||
+        String(aiOutput || '').includes('デプロイが完了');
 
       const hasValidAiReport = !!(rawAiOutput && rawAiOutput !== '完了' && !rawAiOutput.includes('【AIエージェント実行エラー】'));
 
