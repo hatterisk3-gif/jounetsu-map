@@ -7222,10 +7222,7 @@ window.applyAdminSignGroupChildren_ = (parentId, selectedIds) => {
     const selected = new Set((selectedIds || []).map(String));
     const changed = [];
     const parent = loadedPolygons[pid];
-    if (parent && parent.isMarker && String(parent.parentSignId || '').trim()) {
-        parent.parentSignId = '';
-        changed.push(pid);
-        if (parent && parent.isMarker) {
+    if (parent && parent.isMarker) {
             let parentChanged = false;
             if (String(parent.parentSignId || '').trim()) {
                 parent.parentSignId = '';
@@ -8806,9 +8803,7 @@ window.applyAdminSignGroupChildren_ = (parentId, selectedIds) => {
                 const base64 = (typeof window.resizeAdminMachineImg === 'function')
                     ? await window.resizeAdminMachineImg(file)
                     : await new Promise((resolve, reject) => {
-         
-...[truncated for diff preview]
-                const r = new FileReader();
+                        const r = new FileReader();
                 r.onload = () => resolve(r.result);
                 r.onerror = () => reject(new Error('読込失敗'));
                 r.readAsDataURL(file);
