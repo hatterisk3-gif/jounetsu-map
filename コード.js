@@ -1674,6 +1674,33 @@ function getInitData(opts) {
     viewpoints: (function () {
       try { return readViewpointMasterList_(); } catch (e) { return []; }
     })(),
+    userLocations: (function () {
+      try {
+        const mSh = ss.getSheetByName('名簿');
+        if (!mSh || mSh.getLastRow() <= 1) return [];
+        const mData = mSh.getDataRange().getValues();
+        const mHead = mData[0].map(function (h) { return String(h || '').trim(); });
+        let locCol = -1;
+        let deptCol = -1;
+        for (let c = 0; c < mHead.length; c++) {
+          if (mHead[c] === '所属拠点' || mHead[c] === '拠点' || mHead[c] === '拠点名') locCol = c;
+          if (mHead[c] === '部署' || mHead[c] === '所属部署') deptCol = c;
+        }
+        const out = [];
+        for (let i = 1; i < mData.length; i++) {
+          const uid = String(mData[i][0] || '').trim();
+          const uname = String(mData[i][2] || '').trim();
+          if (!uid && !uname) continue;
+          out.push({
+            userId: uid,
+            userName: uname,
+            location: locCol >= 0 ? String(mData[i][locCol] || '').trim() : '',
+            dept: deptCol >= 0 ? String(mData[i][deptCol] || '').trim() : ''
+          });
+        }
+        return out;
+      } catch (e) { return []; }
+    })(),
     workCategories: Array.from(new Set(getCol(['作業カテゴリマスタ'], 0))).length > 0 ? Array.from(new Set(getCol(['作業カテゴリマスタ'], 0))) : [],
     conditions: getCol(['圃場設定マスタ', '圃場条件'], 1),
     statuses: getCol(['圃場設定マスタ', '稼働状況'], 2),
@@ -8645,6 +8672,39 @@ function mergeFields(baseId, targetId, userName) {
   return true;
 }
 
+function clearOrphanSignParents_(ss, deletedIds) {
+  if (!ss || !Array.isArray(deletedIds) || !deletedIds.length) return;
+  const delSet = {};
+  deletedIds.forEach(function (id) {
+    const s = String(id == null ? '' : id).trim();
+    if (s) delSet[s] = true;
+  });
+  if (!Object.keys(delSet).length) return;
+
+  const signSheet = ss.getSheetByName('看板');
+  if (!signSheet) return;
+  const parentCol = findSignParentColumnIndex_(signSheet);
+  if (parentCol < 0) return;
+
+  const lastRow = signSheet.getLastRow();
+  if (lastRow < 2) return;
+
+  const numRows = lastRow - 1;
+  const colRange = signSheet.getRange(2, parentCol + 1, numRows, 1);
+  const vals = colRange.getValues();
+  let changed = false;
+  for (let i = 0; i < vals.length; i++) {
+    const pid = String(vals[i][0] == null ? '' : vals[i][0]).trim();
+    if (pid && delSet[pid]) {
+      vals[i][0] = '';
+      changed = true;
+    }
+  }
+  if (changed) {
+    colRange.setValues(vals);
+  }
+}
+
 function deletePolygonData(id, user) {
   if (!checkAdminRole(user)) throw new Error("管理者権限がないため、削除できません。");
   const found = findSheetAndRowById(id);
@@ -8653,6 +8713,7 @@ function deletePolygonData(id, user) {
   const isHojo = found.sheet.getName() === '圃場';
   found.sheet.deleteRow(found.rowIndex);
   if (isHojo) syncToukiMapping();
+  else clearOrphanSignParents_(TENANT_SS, [id]);
   writeLog(user, "図形削除", name, `システムID: ${id}`);
   return "DELETED";
 }
@@ -8695,6 +8756,9 @@ function deletePolygonBatchData(ids, user) {
   }
 
   if (hasHojoDeleted) syncToukiMapping();
+  if (rowsToDelete['看板'] && rowsToDelete['看板'].length) {
+    clearOrphanSignParents_(ss, ids);
+  }
   writeLog(user, "図形削除(一括)", names.join(", "), `システムID: ${ids.length}件`);
   return "DELETED_BATCH";
 }

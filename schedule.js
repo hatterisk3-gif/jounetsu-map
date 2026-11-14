@@ -1972,7 +1972,7 @@ window.sharePigManureRequestFromSchedule = function (fieldId) {
   }
 
   const mapsUrl = (lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
-    ? `https://maps.google.com/?q=${lat.toFixed(6)},${lng.toFixed(6)}`
+    ? new URL(`go-map.html?lat=${lat.toFixed(6)}&lng=${lng.toFixed(6)}`, window.location.href).toString()
     : '';
   const coordLabel = (lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
     ? `座標: ${lat.toFixed(6)},${lng.toFixed(6)}`

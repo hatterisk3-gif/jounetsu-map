@@ -868,7 +868,7 @@ window.promptLineUrl = async () => {
         customAlert("通信エラーが発生しました。デプロイが最新か確認してください。");
     }
 };
-const iconFunctionMap = { '📦': '倉庫', '⛽': '給油', '🚜': '車両・機械管理', '🚁': '車両・機械管理', '🛠️': '道具管理', '🧰': '道具管理', '🪚': '道具管理', '🚫': '鳥獣害設定-鳥', '🐦': '鳥獣害設定-鳥', '🦌': '鳥獣害設定-シカ', '🐭': '鳥獣害設定-ネズミ', '🐗': '鳥獣害設定-イノシシ', '🐾': '鳥獣害設定' };
+const iconFunctionMap = { '📦': '倉庫', '⛽': '給油', '🚜': '機械設置場所', '🚁': '機械設置場所', '🚚': '車両設置場所', '🚙': '車両設置場所', '🛠️': '道具管理', '🧰': '道具管理', '🪚': '道具管理', '🚫': '鳥獣害設定-鳥', '🐦': '鳥獣害設定-鳥', '🦌': '鳥獣害設定-シカ', '🐭': '鳥獣害設定-ネズミ', '🐗': '鳥獣害設定-イノシシ', '🐾': '鳥獣害設定' };
 /** 看板登録・アイコン変更で共通。ジャンル見出し付きで表示する */
 const ADMIN_SIGN_ICON_GROUPS = [
     { label: '案内・注意', tab: '🪧', icons: ['🪧', '⚠️', '🚧', '🚫', '🚩', '📢', '🔒', '📷'] },
@@ -1065,6 +1065,8 @@ function persistAdminInitCache_() {
                 ...(cached.pdl || {}),
                 locations: pdlLocations,
                 locationDetails: pdlLocationDetails,
+                viewpoints: window.pdlViewpoints || (cached.pdl && cached.pdl.viewpoints) || [],
+                userLocations: window.pdlUserLocations || (cached.pdl && cached.pdl.userLocations) || [],
                 conditions: pdlConditions,
                 statuses: pdlStatuses,
                 crops: pdlCrops,
@@ -1679,6 +1681,9 @@ function restoreAdminLoginForm() {
 function continueCachedAdminSession_(message, toastType) {
     window._adminCacheSessionActive = true;
     currentUser = currentUser || localStorage.getItem('pMapAdminName') || localStorage.getItem('passionMapUserName') || '';
+    if (typeof window.vpEnsureAccountLocationLoaded_ === 'function') {
+        try { window.vpEnsureAccountLocationLoaded_(); } catch (e) { }
+    }
     const loginScreen = document.getElementById('loginScreen');
     if (loginScreen) loginScreen.style.display = 'none';
     setTimeout(refreshAdminMapSize, 50);
@@ -2347,6 +2352,12 @@ function renderInitData(data, opts) {
             pdlLocations = data.pdl.locationDetails.map(l => l.name);
         }
         window.pdlViewpoints = data.pdl.viewpoints || [];
+        if (Array.isArray(data.pdl.userLocations) && data.pdl.userLocations.length) {
+            window.pdlUserLocations = data.pdl.userLocations;
+        }
+        if (typeof window.vpUserLoc_ === 'function') {
+            try { window.vpUserLoc_(); } catch (e) { }
+        }
         pdlConditions = data.pdl.conditions || [];
         pdlStatuses = data.pdl.statuses || [];
         toukiList = data.toukiList || [];
@@ -2980,7 +2991,7 @@ window.buildMachineWorkCategoryEditorHtml = (containerId, workCategoryStr) => {
 
 window.isMachineManageSign = (p) => {
     const f = String((p && p.signFunction) || '');
-    return f.includes('車両・機械管理') || f.includes('農機管理');
+    return f.includes('機械設置場所') || f.includes('車両設置場所') || f.includes('車両・機械管理') || f.includes('農機管理');
 };
 
 /** 拠点に紐づく機械管理看板を取得（selectedId はフィルタ外でも残す） */
@@ -3039,9 +3050,9 @@ window.buildAdminMachineSignFieldHtml_ = (selectId, selectedId, location) => {
     const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
     let hint = '拠点を選ぶと、その拠点に紐づく看板だけが表示されます。';
     if (loc && matchedCount > 0) {
-        hint = `拠点「${esc(loc)}」の看板（車両・機械管理／農機管理）から選べます。`;
+        hint = `拠点「${esc(loc)}」の看板（機械設置場所・車両設置場所等）から選べます。`;
     } else if (loc && matchedCount === 0) {
-        hint = `拠点「${esc(loc)}」に紐づく看板がありません。地図で看板を登録し、機能を「車両・機械管理」にしてください。`;
+        hint = `拠点「${esc(loc)}」に紐づく看板がありません。地図で看板を登録し、機能を「機械設置場所」または「車両設置場所」にしてください。`;
     }
     const showSetup = !!(loc && matchedCount === 0);
     const setupBtns = showSetup
@@ -3083,7 +3094,7 @@ window.startMarkerRegisterForMachineSign_ = () => {
     ).trim();
     window._pendingMarkerPrefill = {
         location: loc,
-        signFunction: '車両・機械管理'
+        signFunction: '機械設置場所'
     };
     if (typeof window.closeEquipmentManageModal === 'function') {
         window.closeEquipmentManageModal();
@@ -8785,7 +8796,7 @@ function adminSignFunctionNames_() {
         if (!s || names.indexOf(s) >= 0) return;
         names.push(s);
     };
-    ['機能なし', '倉庫', '在庫', '給油', '車両・機械管理', '道具管理', '鳥獣害設定'].forEach(push);
+    ['機能なし', '倉庫', '在庫', '給油', '車両設置場所', '機械設置場所', '道具管理', '鳥獣害設定'].forEach(push);
     return names;
 }
 
@@ -8794,7 +8805,9 @@ function adminSignFunctionHint_(func) {
     if (!f || f === '機能なし') return '名前とアイコンだけの看板です。';
     if (f.indexOf('倉庫') >= 0 || f.indexOf('在庫') >= 0) return '資材の登録と、在庫の入出庫ができます。';
     if (f.indexOf('給油') >= 0) return '作業者画面に「給油する」が出ます。';
-    if (f.indexOf('車両・機械管理') >= 0 || f.indexOf('農機管理') >= 0) return '車両・農機の状況を開き、機械の定位置に使えます。';
+    if (f.indexOf('車両設置場所') >= 0) return '車両の定位置（設置看板場所）の候補として使えます。';
+    if (f.indexOf('機械設置場所') >= 0) return '農機・機械の定位置（設置看板場所）の候補として使えます。';
+    if (f.indexOf('車両・機械管理') >= 0 || f.indexOf('農機管理') >= 0) return '旧設定の車両・農機看板です（「車両設置場所」「機械設置場所」への変更を推奨）。';
     if (f.indexOf('道具管理') >= 0) return '作業者画面に「道具状況」が出ます。';
     if (f.indexOf('鳥獣害設定') === 0) {
         const species = f.slice('鳥獣害設定'.length).replace(/^[-－ー]/, '').trim();
@@ -9405,6 +9418,7 @@ async function actionDelete(id) {
 async function doDeletePolygons(ids) {
     infoWindow.close();
     document.getElementById('modal').style.display = 'none';
+    const releasedChildIds = [];
     ids.forEach(id => {
         if (!loadedPolygons[id]) return;
         if (loadedPolygons[id].polygon) loadedPolygons[id].polygon.setMap(null);
@@ -9413,11 +9427,24 @@ async function doDeletePolygons(ids) {
         for (const cid in loadedPolygons) {
             if (loadedPolygons[cid] && String(loadedPolygons[cid].parentSignId || '').trim() === String(id)) {
                 loadedPolygons[cid].parentSignId = '';
+                releasedChildIds.push(cid);
             }
         }
     });
+    releasedChildIds.forEach(cid => {
+        const cp = loadedPolygons[cid];
+        if (!cp || !cp.isMarker || !cp.marker) return;
+        const pos = cp.marker.getPosition();
+        cp.marker.setMap(null);
+        cp.marker = createSignboardMarker(cp.name, pos, cp.color, cp._adminIdRef || cid);
+    });
     if (window.SignGroup) {
-        window.SignGroup.collapse(map, loadedPolygons);
+        const expPid = window.SignGroup.getExpandedParentId();
+        if (expPid && !loadedPolygons[expPid]) {
+            window.SignGroup.collapse(map, loadedPolygons);
+        } else {
+            window.SignGroup.refreshMarkers(loadedPolygons);
+        }
     }
     persistAdminInitCache_();
     showAdminSyncToast('✅ 削除しました（同期中…）', 'ok');
@@ -9832,9 +9859,7 @@ function initMap() {
         rotateControl: false,
         cameraControl: false,
         zoomControl: false,
-        // 店舗表示は map-filter.js 側で制御（ここでの固定非表示はしない）
-        // また styles は raster 地図でのみ有効
-        renderingType: (google.maps.RenderingType && google.maps.RenderingType.RASTER) || 'RASTER'
+        styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }]
     });
 
     try {
@@ -11183,7 +11208,147 @@ window._vpListeners = [];
 window._vpSavedMapOpts = null;
 
 const vpEsc_ = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const vpUserLoc_ = () => String(localStorage.getItem('passionMapUserLocation') || '').trim();
+
+function vpMatchLocationOption_(rawLoc, locs) {
+    const raw = String(rawLoc || '').trim();
+    if (!raw) return '';
+    const list = Array.isArray(locs) && locs.length ? locs.filter(Boolean) : (pdlLocations || []).filter(Boolean);
+    if (!list.length) return raw.split(/[・,、\/｜|]+/)[0].trim() || raw;
+    if (list.includes(raw)) return raw;
+    const tokens = raw.split(/[・,、\/｜|\s]+/).map(s => String(s || '').trim()).filter(Boolean);
+    for (let i = 0; i < tokens.length; i++) {
+        if (list.includes(tokens[i])) return tokens[i];
+    }
+    for (let i = 0; i < tokens.length; i++) {
+        const tok = tokens[i];
+        const hit = list.find(l => l.indexOf(tok) >= 0 || tok.indexOf(l) >= 0);
+        if (hit) return hit;
+    }
+    return tokens[0] || raw;
+}
+
+function vpResolveRawAccountLoc_() {
+    const ids = [
+        localStorage.getItem('pMapAdminId'),
+        localStorage.getItem('passionMapUserId'),
+        document.getElementById('loginId') ? document.getElementById('loginId').value : ''
+    ].map(s => String(s || '').trim()).filter(Boolean);
+    const names = [
+        typeof currentUser !== 'undefined' ? currentUser : '',
+        localStorage.getItem('pMapAdminName'),
+        localStorage.getItem('passionMapUserName')
+    ].map(s => String(s || '').trim()).filter(Boolean);
+
+    const sources = [];
+    if (Array.isArray(window.pdlUserLocations)) sources.push(window.pdlUserLocations);
+    if (Array.isArray(window._userRoleManageUsers)) sources.push(window._userRoleManageUsers);
+    try {
+        const aCache = JSON.parse(localStorage.getItem('pMapAdminInitData') || '{}');
+        if (aCache && aCache.pdl && Array.isArray(aCache.pdl.userLocations)) sources.push(aCache.pdl.userLocations);
+    } catch (e) { }
+    try {
+        const wCache = JSON.parse(localStorage.getItem('passionMapInitData') || '{}');
+        if (wCache && wCache.pdl && Array.isArray(wCache.pdl.userLocations)) sources.push(wCache.pdl.userLocations);
+    } catch (e) { }
+
+    for (let s = 0; s < sources.length; s++) {
+        const arr = sources[s];
+        const hit = arr.find(u => {
+            if (!u) return false;
+            const uid = String(u.userId || '').trim();
+            const uname = String(u.userName || u.name || '').trim();
+            return (uid && (ids.includes(uid) || names.includes(uid)))
+                || (uname && (names.includes(uname) || ids.includes(uname)));
+        });
+        if (hit && String(hit.location || '').trim()) {
+            const loc = String(hit.location || '').trim();
+            try { localStorage.setItem('passionMapUserLocation', loc); } catch (e) { }
+            return loc;
+        }
+    }
+    return String(localStorage.getItem('passionMapUserLocation') || '').trim();
+}
+
+const vpUserLoc_ = () => {
+    const raw = vpResolveRawAccountLoc_();
+    return vpMatchLocationOption_(raw, pdlLocations);
+};
+window.vpUserLoc_ = vpUserLoc_;
+
+function vpApplyResolvedAccountLocToOpenForm_(loc) {
+    const matched = vpMatchLocationOption_(loc, pdlLocations);
+    if (!matched) return;
+    const badgeEl = document.getElementById('vpUserLocBadge');
+    if (badgeEl) {
+        badgeEl.textContent = `（ログイン拠点: ${matched}）`;
+        badgeEl.style.display = 'inline';
+    }
+    const d = window._vpDraft;
+    if (d && !d.id && !d.location) {
+        d.location = matched;
+    }
+    const sel = document.getElementById('vpInputLocation');
+    if (sel && (!sel.value || (d && !d.id && sel.dataset.autoLoc !== '0'))) {
+        const hasOpt = Array.from(sel.options).some(o => o.value === matched);
+        if (!hasOpt) {
+            const opt = document.createElement('option');
+            opt.value = matched;
+            opt.textContent = matched;
+            sel.appendChild(opt);
+        }
+        sel.value = matched;
+        if (d) d.location = matched;
+    }
+}
+
+window.vpEnsureAccountLocationLoaded_ = async function () {
+    const existing = vpUserLoc_();
+    if (existing) {
+        vpApplyResolvedAccountLocToOpenForm_(existing);
+        return existing;
+    }
+    if (window._vpLocFetchInFlight) return window._vpLocFetchInFlight;
+    const id = String(
+        localStorage.getItem('pMapAdminId')
+        || localStorage.getItem('passionMapUserId')
+        || (document.getElementById('loginId') ? document.getElementById('loginId').value : '')
+        || ''
+    ).trim();
+    const pw = String(
+        localStorage.getItem('pMapAdminPw')
+        || localStorage.getItem('passionMapUserPw')
+        || (document.getElementById('loginPw') ? document.getElementById('loginPw').value : '')
+        || ''
+    );
+    if (!id || !pw || typeof callGAS !== 'function') return '';
+
+    window._vpLocFetchInFlight = (async () => {
+        try {
+            const loginRes = await callGAS('login', { orgId: 'default', userId: id, password: pw }, 1, { timeoutMs: 20000 });
+            if (loginRes && loginRes.success && String(loginRes.location || '').trim()) {
+                const loc = String(loginRes.location || '').trim();
+                try { localStorage.setItem('passionMapUserLocation', loc); } catch (e) { }
+                vpApplyResolvedAccountLocToOpenForm_(loc);
+                return vpMatchLocationOption_(loc, pdlLocations);
+            }
+        } catch (e) { }
+        try {
+            const listRes = await callGAS('listUsersForAdmin', { adminUserId: id, adminPassword: pw }, 1, { timeoutMs: 20000 });
+            if (listRes && listRes.success && Array.isArray(listRes.users)) {
+                window._userRoleManageUsers = listRes.users;
+                const loc = vpUserLoc_();
+                if (loc) {
+                    vpApplyResolvedAccountLocToOpenForm_(loc);
+                    return loc;
+                }
+            }
+        } catch (e) { }
+        return '';
+    })().finally(() => {
+        window._vpLocFetchInFlight = null;
+    });
+    return window._vpLocFetchInFlight;
+};
 
 function vpClearListeners_() {
     (window._vpListeners || []).forEach(l => { try { google.maps.event.removeListener(l); } catch (e) { } });
@@ -11257,6 +11422,9 @@ function vpExitMapModes_() {
 window.startViewpointPickMode_ = (opts) => {
     if (typeof map === 'undefined' || !map) { customAlert('地図が準備できていません'); return; }
     opts = opts || {};
+    if (typeof window.vpEnsureAccountLocationLoaded_ === 'function') {
+        try { window.vpEnsureAccountLocationLoaded_(); } catch (e) { }
+    }
     window.closeViewpointManageModal(true);
     if (typeof window.closeAdminRegPlusMenu_ === 'function') window.closeAdminRegPlusMenu_();
     vpClearListeners_();
@@ -11297,6 +11465,118 @@ window.cancelViewpointMode_ = () => {
     window._vpDraft = null;
 };
 
+// 画面に映っている圃場（畑）のうち、中心(lat,lng)に一番近い畑の名前＋「周辺」を返す
+function vpFindNearestVisibleFieldName_(lat, lng) {
+    try {
+        const mapBounds = (typeof map !== 'undefined' && map && typeof map.getBounds === 'function') ? map.getBounds() : null;
+        const centerLatLng = (typeof google !== 'undefined' && google.maps && google.maps.LatLng)
+            ? new google.maps.LatLng(lat, lng) : null;
+        const cosLat = Math.cos((lat * Math.PI) / 180) || 1;
+
+        // 1) loadedPolygons から畑ポリゴン候補を収集（未ロード時はキャッシュから補完）
+        let candidates = Object.values((typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons : {})
+            .filter(p => p && !p.isMarker && String(p.name || '').trim() && Array.isArray(p.coords) && p.coords.length >= 3);
+
+        if (candidates.length === 0 && typeof readAdminBootInitData_ === 'function') {
+            const cached = readAdminBootInitData_();
+            if (cached && Array.isArray(cached.polygons)) {
+                candidates = cached.polygons.filter(p => p && !p.isMarker && String(p.name || '').trim() && Array.isArray(p.coords) && p.coords.length >= 3);
+            }
+        }
+        if (candidates.length === 0) return '';
+
+        // 点(lat,lng)と線分ABの最短距離二乗（緯度経度スケール補正付き）
+        const distSqToSeg = (px, py, ax, ay, bx, by) => {
+            const dx = (bx - ax) * cosLat;
+            const dy = by - ay;
+            const lenSq = dx * dx + dy * dy;
+            let t = 0;
+            if (lenSq > 0) {
+                t = (((px - ax) * cosLat) * dx + (py - ay) * dy) / lenSq;
+                t = Math.max(0, Math.min(1, t));
+            }
+            const cx = (ax - px) * cosLat + t * dx;
+            const cy = (ay - py) + t * dy;
+            return cx * cx + cy * cy;
+        };
+
+        let bestVisible = null;
+        let bestVisibleDist = Infinity;
+        let bestAny = null;
+        let bestAnyDist = Infinity;
+
+        for (const p of candidates) {
+            const name = String(p.name || '').trim();
+            if (!name) continue;
+            const coords = p.coords;
+            let sumLat = 0, sumLng = 0, validCount = 0;
+            let inView = !mapBounds;
+            let minEdgeDistSq = Infinity;
+
+            const polyBounds = (typeof google !== 'undefined' && google.maps && google.maps.LatLngBounds)
+                ? new google.maps.LatLngBounds() : null;
+
+            for (let i = 0; i < coords.length; i++) {
+                const pt = coords[i];
+                const plat = Number(pt.lat);
+                const plng = Number(pt.lng);
+                if (isNaN(plat) || isNaN(plng)) continue;
+                sumLat += plat;
+                sumLng += plng;
+                validCount++;
+                if (polyBounds) polyBounds.extend({ lat: plat, lng: plng });
+
+                const next = coords[(i + 1) % coords.length];
+                const nlat = Number(next.lat);
+                const nlng = Number(next.lng);
+                if (!isNaN(nlat) && !isNaN(nlng)) {
+                    const dSq = distSqToSeg(lng, lat, plng, plat, nlng, nlat);
+                    if (dSq < minEdgeDistSq) minEdgeDistSq = dSq;
+                } else {
+                    const dLat = plat - lat;
+                    const dLng = (plng - lng) * cosLat;
+                    const dSq = dLat * dLat + dLng * dLng;
+                    if (dSq < minEdgeDistSq) minEdgeDistSq = dSq;
+                }
+            }
+            if (validCount === 0) continue;
+
+            if (mapBounds && polyBounds) {
+                try { inView = mapBounds.intersects(polyBounds); } catch (e) { inView = true; }
+            }
+
+            // ポリゴン内部に照準がある場合は距離0（最優先）
+            let containsCenter = false;
+            try {
+                if (centerLatLng && p.polygon && google.maps.geometry && google.maps.geometry.poly) {
+                    containsCenter = google.maps.geometry.poly.containsLocation(centerLatLng, p.polygon);
+                }
+            } catch (e) { }
+
+            const cLat = sumLat / validCount;
+            const cLng = sumLng / validCount;
+            const centroidDistSq = (cLat - lat) * (cLat - lat) + ((cLng - lng) * cosLat) * ((cLng - lng) * cosLat);
+            // ポリゴン内部なら0、それ以外は外周への最短距離を主指標にしつつ重心距離を加味
+            const scoreDist = containsCenter ? 0 : (minEdgeDistSq * 0.85 + centroidDistSq * 0.15);
+
+            if (inView && scoreDist < bestVisibleDist) {
+                bestVisibleDist = scoreDist;
+                bestVisible = name;
+            }
+            if (scoreDist < bestAnyDist) {
+                bestAnyDist = scoreDist;
+                bestAny = name;
+            }
+        }
+
+        const chosen = bestVisible || bestAny || '';
+        if (!chosen) return '';
+        return chosen.endsWith('周辺') ? chosen : (chosen + '周辺');
+    } catch (e) {
+        return '';
+    }
+}
+
 window.confirmViewpointPick_ = () => {
     const c = map.getCenter();
     if (!c) return;
@@ -11304,27 +11584,32 @@ window.confirmViewpointPick_ = () => {
     const lng = Number(c.lng().toFixed(7));
     const prev = window._vpDraft;
     const isEdit = !!(prev && prev.id);
+    const shouldAutoName = !prev || !prev.name || !!prev.nameAuto;
+    const nearFieldName = shouldAutoName ? vpFindNearestVisibleFieldName_(lat, lng) : '';
     window._vpDraft = {
         id: isEdit ? prev.id : '',
-        location: prev ? prev.location : vpUserLoc_(),
-        name: prev ? prev.name : '',
+        location: (prev && prev.location) ? prev.location : vpUserLoc_(),
+        name: shouldAutoName ? (nearFieldName || '') : (prev ? prev.name : ''),
         lat: lat,
         lng: lng,
         zoom: map.getZoom() || 16,
-        nameAuto: !prev || !prev.name || !!prev.nameAuto,
+        nameAuto: shouldAutoName,
         sortOrder: prev ? prev.sortOrder : undefined
     };
     vpExitMapModes_();
     window.openViewpointFormModal_();
-    // 地点名が未入力（または自動入力）なら住所で自動入力
-    if (window._vpDraft.nameAuto) vpFillAddressName_(lat, lng);
+    if (!window._vpDraft.location && typeof window.vpEnsureAccountLocationLoaded_ === 'function') {
+        try { window.vpEnsureAccountLocationLoaded_(); } catch (e) { }
+    }
+    // 近くに畑が見つからなかった場合のみ住所で自動入力（末尾に「周辺」を付与）
+    if (window._vpDraft.nameAuto && !nearFieldName) vpFillAddressName_(lat, lng);
 };
 
 function vpFillAddressName_(lat, lng) {
     const draft = window._vpDraft;
     if (!draft) return;
     const nameEl = document.getElementById('vpInputName');
-    if (nameEl) nameEl.placeholder = '📍 住所を取得中...';
+    if (nameEl) nameEl.placeholder = '📍 周辺の地点名を取得中...';
     try {
         new google.maps.Geocoder().geocode({ location: { lat: lat, lng: lng } }, (results, status) => {
             const cur = window._vpDraft;
@@ -11332,8 +11617,9 @@ function vpFillAddressName_(lat, lng) {
             const el = document.getElementById('vpInputName');
             if (status === 'OK' && results && results.length) {
                 const r = results.find(x => !x.types.includes('plus_code')) || results[0];
-                const addr = String(r.formatted_address || '')
+                let addr = String(r.formatted_address || '')
                     .replace(/^日本、/, '').replace(/〒\d{3}-\d{4}\s?/, '').replace(/^[A-Z0-9\+]+\s/, '').trim();
+                if (addr && !addr.endsWith('周辺')) addr += '周辺';
                 // ユーザーが既に手入力していたら上書きしない
                 if (el && (!el.value || el.dataset.auto === '1')) {
                     el.value = addr;
@@ -11343,7 +11629,7 @@ function vpFillAddressName_(lat, lng) {
                 }
                 if (el) el.placeholder = '地点名を入力';
             } else if (el) {
-                el.placeholder = '住所を取得できませんでした。地点名を入力';
+                el.placeholder = '地点名を入力';
             }
         });
     } catch (e) {
@@ -11375,21 +11661,27 @@ window.openViewpointFormModal_ = () => {
 
     const locs = (pdlLocations || []).filter(Boolean);
     const userLoc = vpUserLoc_();
+    if (!d.id && !d.location && userLoc) {
+        d.location = userLoc;
+    }
+    if (d.location) {
+        d.location = vpMatchLocationOption_(d.location, locs);
+    }
     if (d.location && !locs.includes(d.location)) locs.unshift(d.location);
 
     body.innerHTML = `
     <div style="background:#fff; border-radius:10px; padding:16px; border:1px solid #e0e0e0; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
       <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">
-        所属拠点 ${userLoc ? `<span style="font-weight:normal; color:#7E57C2;">（ログイン拠点: ${vpEsc_(userLoc)}）</span>` : ''}
+        所属拠点 <span id="vpUserLocBadge" style="font-weight:normal; color:#7E57C2; display:${userLoc ? 'inline' : 'none'};">${userLoc ? `（ログイン拠点: ${vpEsc_(userLoc)}）` : ''}</span>
       </label>
-      <select id="vpInputLocation"
+      <select id="vpInputLocation" data-auto-loc="1" onchange="this.dataset.autoLoc='0'"
         style="width:100%; padding:10px; border:1px solid #ccc; border-radius:8px; font-size:15px; box-sizing:border-box; margin-bottom:14px;">
         <option value="">(拠点なし / 全社共通)</option>
         ${locs.map(l => `<option value="${vpEsc_(l)}" ${l === d.location ? 'selected' : ''}>${vpEsc_(l)}</option>`).join('')}
       </select>
 
       <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">
-        地点名 <span style="color:red;">*</span> <span style="font-weight:normal; color:#888;">（住所を自動入力・書き換え可）</span>
+        地点名 <span style="color:red;">*</span> <span style="font-weight:normal; color:#888;">（中心に近い畑名＋周辺を自動入力・書き換え可）</span>
       </label>
       <input type="text" id="vpInputName" value="${vpEsc_(d.name)}" data-auto="${d.nameAuto ? '1' : '0'}" placeholder="地点名を入力"
         oninput="this.dataset.auto='0'"
@@ -11507,6 +11799,14 @@ window.saveViewpointForm = async () => {
             if (!Array.isArray(window.pdlViewpoints)) window.pdlViewpoints = [];
             const idx = window.pdlViewpoints.findIndex(v => v.id === saved.id);
             if (idx >= 0) window.pdlViewpoints[idx] = saved; else window.pdlViewpoints.push(saved);
+            try { persistAdminInitCache_(); } catch (e) { }
+            try {
+                const wCache = JSON.parse(localStorage.getItem('passionMapInitData') || '{}');
+                if (wCache && wCache.pdl) {
+                    wCache.pdl.viewpoints = window.pdlViewpoints;
+                    localStorage.setItem('passionMapInitData', JSON.stringify(wCache));
+                }
+            } catch (e) { }
             window._vpDraft = null;
             if (saved.location) window._viewpointFilterLoc = saved.location;
             customAlert('視野地点「' + saved.name + '」を保存しました');
@@ -13326,7 +13626,7 @@ window.openM = (id) => {
         h += `<div style="display:flex;gap:4px;margin-bottom:4px;width:100%;"><button onclick="openAttr('${id}')" style="flex:1;background:#FFF8E1;padding:8px 0;font-size:11px;border-radius:4px;color:#E65100;border:1px solid #FFB74D;white-space:nowrap;cursor:pointer;font-weight:bold;">拠点名を変更</button></div>`;
         h += `<div style="display:flex;gap:4px;width:100%;"><button onclick="actionEditShape('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">位置を移動</button><button onclick="actionDelete('${id}')" style="flex:1;background:#ffebee;color:red;padding:8px 0;font-size:11px;border-radius:4px;border:1px solid #f44336;white-space:nowrap;cursor:pointer;">削除</button></div></div>`;
     } else {
-        h += `<div style="display:flex;gap:4px;margin-bottom:4px;width:100%;"><button onclick="openAttr('${id}')" style="flex:1;background:#EDE7F6;padding:8px 0;font-size:11px;border-radius:4px;color:#4A148C;border:1px solid #7E57C2;white-space:nowrap;cursor:pointer;font-weight:bold;">情報・大小看板</button><button onclick="openCol('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">アイコン変更</button></div>`;
+        h += `<div style="display:flex;gap:4px;margin-bottom:4px;width:100%;"><button onclick="openAttr('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">情報変更</button><button onclick="openCol('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">アイコン変更</button></div>`;
         h += `<div style="display:flex;gap:4px;width:100%;"><button onclick="actionEditShape('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">範囲変更</button><button onclick="actionDelete('${id}')" style="flex:1;background:#ffebee;color:red;padding:8px 0;font-size:11px;border-radius:4px;border:1px solid #f44336;white-space:nowrap;cursor:pointer;">削除</button></div></div>`;
     }
     infoWindow.setContent(h); infoWindow.setPosition(p.isMarker ? p.marker.getPosition() : p.marker.getPosition()); infoWindow.open(map);

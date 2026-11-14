@@ -230,7 +230,7 @@
       }
     });
 
-    return { byId, byName, knownHubs, nonHubSignNames, hubRefs, fieldRefs };
+    return { byId, byName, polys: Object.values(byId), knownHubs, nonHubSignNames, hubRefs, fieldRefs };
   }
 
   let _locCtxCache = null;
@@ -609,7 +609,9 @@
 
   async function ensureVehicles_(force) {
     const cached = getVehicles_();
-    if (!force && cached.length) return cached;
+    const freshLoaded = window._maintHistoryVehiclesLoadedAt
+      && (Date.now() - window._maintHistoryVehiclesLoadedAt) < CACHE_FRESH_MS;
+    if (!force && (cached.length || freshLoaded)) return cached;
     if (typeof callGAS !== 'function') return cached;
 
     if (_inflightEnsureVehicles && !force) return _inflightEnsureVehicles;
@@ -620,6 +622,7 @@
         const map = (res && res.vehicles) ? res.vehicles : {};
         const arr = Object.keys(map).map(k => Object.assign({}, map[k], { id: map[k].id || k }));
         window.pdlMobileVehicles = arr;
+        window._maintHistoryVehiclesLoadedAt = Date.now();
         return usableVehicles_(arr);
       } catch (e) {
         console.warn('maint-history ensureVehicles_', e);
@@ -1507,10 +1510,22 @@
     `;
   }
 
-  function buildSignOptionsForHub_(locCtx, selectedSignId, selectedHub) {
+  function isSignForPlacementKind_(poly, isVeh) {
+    const sf = String((poly && poly.signFunction) || '').trim();
+    if (isVeh === true) return sf.indexOf('車両設置場所') >= 0;
+    if (isVeh === false) return sf.indexOf('機械設置場所') >= 0;
+    return sf.indexOf('車両設置場所') >= 0 || sf.indexOf('機械設置場所') >= 0;
+  }
+
+  function buildSignOptionsForHub_(locCtx, selectedSignId, selectedHub, isVeh) {
     const hub = String(selectedHub || '').trim();
     const curId = String(selectedSignId || '').trim();
-    const allMarkers = (locCtx.polys || []).filter(p => p && p.id && p.name && (p.isMarker || (Array.isArray(p.coords) && p.coords.length === 1)) && !isHubPin_(p));
+    const allMarkers = (locCtx.polys || []).filter(p =>
+      p && p.id && p.name
+      && (p.isMarker || (Array.isArray(p.coords) && p.coords.length === 1))
+      && !isHubPin_(p)
+      && isSignForPlacementKind_(p, isVeh)
+    );
     allMarkers.sort((a, b) => {
       const ha = resolvePolyHub_(a, locCtx);
       const hb = resolvePolyHub_(b, locCtx);
@@ -1524,9 +1539,9 @@
     allMarkers.forEach(p => {
       const pid = String(p.id);
       const pHub = resolvePolyHub_(p, locCtx);
-      const isMachineSign = String(p.signFunction || '').indexOf('車両・機械') >= 0 || String(p.signFunction || '').indexOf('農機') >= 0;
+      const sf = String(p.signFunction || '');
       const hubTag = pHub ? `[${pHub}] ` : '';
-      const fnTag = isMachineSign ? '🚜 ' : '🪧 ';
+      const fnTag = sf.indexOf('車両設置場所') >= 0 ? '🚚 ' : (sf.indexOf('機械設置場所') >= 0 ? '🚜 ' : '🪧 ');
       const sel = (curId && pid === curId) ? 'selected' : '';
       if (sel) found = true;
       html += `<option value="${esc(pid)}" data-sign-name="${esc(p.name)}" data-hub="${esc(pHub)}" ${sel}>${esc(hubTag + fnTag + p.name)}</option>`;
@@ -1534,6 +1549,10 @@
     if (curId && !found && locCtx.byId[curId]) {
       const p = locCtx.byId[curId];
       html += `<option value="${esc(curId)}" data-sign-name="${esc(p.name || curId)}" selected>${esc(p.name || curId)}</option>`;
+    }
+    if (!allMarkers.length) {
+      const needName = isVeh === true ? '車両設置場所' : (isVeh === false ? '機械設置場所' : '車両設置場所／機械設置場所');
+      html += `<option value="" disabled>※看板機能「${needName}」の看板が未登録です</option>`;
     }
     return html;
   }
@@ -1570,7 +1589,7 @@
     if (!hubEl || !signEl) return;
     const locCtx = buildLocContext_();
     const keepSignId = String(signEl.value || '').trim();
-    signEl.innerHTML = buildSignOptionsForHub_(locCtx, keepSignId, hubEl.value);
+    signEl.innerHTML = buildSignOptionsForHub_(locCtx, keepSignId, hubEl.value, window._maintMasterModalIsVeh);
   }
 
   async function openMaintMachineMasterModal_(machineId, returnMode) {
@@ -1582,9 +1601,12 @@
     const safeId = id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const ret = returnMode === 'list' ? 'list' : 'detail';
 
-    const machines = await ensureMachines_(false);
-    const vehicles = await ensureVehicles_(false);
-    const m = machines.concat(vehicles).find(x => x && (String(x.id) === id || String(x._rawVehId || '') === id)) || null;
+    let m = getMachines_().concat(getVehicles_()).find(x => x && (String(x.id) === id || String(x._rawVehId || '') === id)) || null;
+    if (!m) {
+      modalBody.innerHTML = '<div style="text-align:center; padding:24px; color:#1565C0; font-weight:bold;">マスタデータを読み込み中...</div>';
+      const [machines, vehicles] = await Promise.all([ensureMachines_(false), ensureVehicles_(false)]);
+      m = machines.concat(vehicles).find(x => x && (String(x.id) === id || String(x._rawVehId || '') === id)) || null;
+    }
     if (!m) {
       if (typeof customAlert === 'function') customAlert('対象のマスタデータが見つかりません');
       else alert('対象のマスタデータが見つかりません');
@@ -1592,6 +1614,7 @@
     }
 
     const isVeh = !!(m._maintKind === 'vehicle' || m.isVehicle);
+    window._maintMasterModalIsVeh = isVeh;
     const locCtx = buildLocContext_();
     const locInfo = resolveLocAndSign_(m, locCtx);
     const label = labelMachine_(m) || id;
@@ -1616,7 +1639,7 @@
       `<option value="${esc(h)}" ${h === curHub ? 'selected' : ''}>📍 ${esc(h)}</option>`
     ).join('');
 
-    const baseSignOptsHtml = buildSignOptionsForHub_(locCtx, locInfo.baseSignId, curHub);
+    const baseSignOptsHtml = buildSignOptionsForHub_(locCtx, locInfo.baseSignId, curHub, isVeh);
     const curLocOptsHtml = buildCurLocOptions_(locCtx, locInfo.curSignId, locInfo.baseSignId, locInfo.baseSignName);
 
     let specFieldsHtml = '';
@@ -1817,12 +1840,15 @@
   async function saveMaintMachineMaster_(machineId, returnMode) {
     const id = String(machineId || '').trim();
     const ret = returnMode === 'list' ? 'list' : 'detail';
-    const machines = await ensureMachines_(false);
-    const vehicles = await ensureVehicles_(false);
-    const m = machines.concat(vehicles).find(x => x && (String(x.id) === id || String(x._rawVehId || '') === id)) || null;
+    let m = getMachines_().concat(getVehicles_()).find(x => x && (String(x.id) === id || String(x._rawVehId || '') === id)) || null;
+    if (!m) {
+      const [machines, vehicles] = await Promise.all([ensureMachines_(false), ensureVehicles_(false)]);
+      m = machines.concat(vehicles).find(x => x && (String(x.id) === id || String(x._rawVehId || '') === id)) || null;
+    }
     if (!m) return;
 
     const isVeh = !!(m._maintKind === 'vehicle' || m.isVehicle);
+    window._maintMasterModalIsVeh = isVeh;
     const locCtx = buildLocContext_();
     const hubVal = String((document.getElementById('maint_mst_hub') || {}).value || '').trim();
     const baseSignEl = document.getElementById('maint_mst_base_sign');

@@ -1967,6 +1967,20 @@ function renderInitData(data) {
   window.pdlDeliveryDestinations = pdlDeliveryDestinations;
   pdlViewpoints = data.pdl.viewpoints || [];
   window.pdlViewpoints = pdlViewpoints;
+  if (Array.isArray(data.pdl.userLocations) && data.pdl.userLocations.length) {
+    window.pdlUserLocations = data.pdl.userLocations;
+    if (!String(localStorage.getItem('passionMapUserLocation') || '').trim()) {
+      const uid = String(localStorage.getItem('passionMapUserId') || localStorage.getItem('pMapAdminId') || '').trim();
+      const uname = String(localStorage.getItem('passionMapUserName') || currentUser || '').trim();
+      const hit = data.pdl.userLocations.find(u => u && (
+        (uid && (String(u.userId || '').trim() === uid || String(u.userName || '').trim() === uid)) ||
+        (uname && (String(u.userName || '').trim() === uname || String(u.userId || '').trim() === uname))
+      ));
+      if (hit && String(hit.location || '').trim()) {
+        try { localStorage.setItem('passionMapUserLocation', String(hit.location || '').trim()); } catch (e) { }
+      }
+    }
+  }
   window.pdlMaintenanceContents = data.pdl.maintenanceContents || [];
   pdlWorkCategories = data.pdl.workCategories || [];
   pdlMachineTypes = data.pdl.machineTypes || ["トラクター", "ドローン"];
@@ -3491,7 +3505,19 @@ window.cycleNextViewpoint = function () {
   }
 
   // 作業員のアカウントに紐づく拠点
-  const userLoc = (typeof currentUser !== 'undefined' && localStorage.getItem('passionMapUserLocation')) || '';
+  let userLoc = String(localStorage.getItem('passionMapUserLocation') || '').trim();
+  if (!userLoc && Array.isArray(window.pdlUserLocations)) {
+    const uid = String(localStorage.getItem('passionMapUserId') || localStorage.getItem('pMapAdminId') || '').trim();
+    const uname = String(localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '').trim();
+    const hit = window.pdlUserLocations.find(u => u && (
+      (uid && (String(u.userId || '').trim() === uid || String(u.userName || '').trim() === uid)) ||
+      (uname && (String(u.userName || '').trim() === uname || String(u.userId || '').trim() === uname))
+    ));
+    if (hit && String(hit.location || '').trim()) {
+      userLoc = String(hit.location || '').trim();
+      try { localStorage.setItem('passionMapUserLocation', userLoc); } catch (e) { }
+    }
+  }
   const trimmedUserLoc = String(userLoc || '').trim();
 
   let allVps = window.pdlViewpoints || pdlViewpoints || [];
@@ -3516,7 +3542,18 @@ window.cycleNextViewpoint = function () {
   // 拠点に紐づく視野地点を抽出
   let targetVps = [];
   if (trimmedUserLoc) {
-    targetVps = allVps.filter(v => String(v.location || '').trim() === trimmedUserLoc);
+    const userTokens = trimmedUserLoc.split(/[・,、\/｜|]+/).map(s => String(s || '').trim()).filter(Boolean);
+    targetVps = allVps.filter(v => {
+      const vLoc = String(v.location || '').trim();
+      return vLoc === trimmedUserLoc || userTokens.includes(vLoc);
+    });
+    if (!targetVps.length && userTokens.length) {
+      targetVps = allVps.filter(v => {
+        const vLoc = String(v.location || '').trim();
+        if (!vLoc) return false;
+        return userTokens.some(ul => vLoc.indexOf(ul) >= 0 || ul.indexOf(vLoc) >= 0);
+      });
+    }
   }
 
   // 所属拠点の視野がない場合の判定
@@ -3829,7 +3866,7 @@ window.openMainMenu = (id) => {
     if (!isParentSign && p.isMarker && p.signFunction && String(p.signFunction).includes('給油')) {
       actions += `<button type="button" onclick="openRefuelUI('${id}')" class="field-infowindow-btn-single" style="margin-bottom:6px; background:#E91E63;">⛽ 給油する</button>`;
     }
-    if (!isParentSign && p.isMarker && p.signFunction && String(p.signFunction).includes('車両・機械管理')) {
+    if (!isParentSign && p.isMarker && p.signFunction && (String(p.signFunction).includes('車両設置場所') || String(p.signFunction).includes('機械設置場所') || String(p.signFunction).includes('車両・機械管理'))) {
       actions += `<button type="button" onclick="openMachineStatusUI('${id}')" class="field-infowindow-btn-single" style="margin-bottom:6px; background:#1976D2;">🚜 車両・農機状況</button>`;
     }
     if (!isParentSign && p.isMarker && p.signFunction && String(p.signFunction).includes('道具管理')) {

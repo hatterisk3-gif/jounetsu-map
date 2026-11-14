@@ -1126,7 +1126,7 @@ function getFieldGoogleMapsSearchUrl(pData) {
         } catch (e) {}
     }
     if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) return '';
-    return `https://maps.google.com/?q=${lat.toFixed(6)},${lng.toFixed(6)}`;
+    return new URL(`go-map.html?lat=${lat.toFixed(6)}&lng=${lng.toFixed(6)}`, window.location.href).toString();
 }
 
 function resolveFieldAreaA(pData) {
