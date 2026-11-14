@@ -2954,20 +2954,24 @@ function manageMasterData(masterType, manageAction, value, userName) {
       writeLog(userName, "マスタ追加", cropName, `対象: ${sheetName}`);
     } else if (masterType === 'inspection') {
       const itemData = value || {};
-      const macType = String(itemData.machineType || '').trim();
+      const macType = String(itemData.machineType || itemData.target || '').trim();
       const inspCat = String(itemData.inspectionCategory || itemData.category || '一般').trim();
       const itemName = String(itemData.item || itemData.name || '').trim();
+      const inspType = String(itemData.inspectionType || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+      const alertMonths = inspType === '定期点検'
+        ? String(itemData.alertMonths || '').split(/[,、]/).map(s => Number(String(s).trim())).filter(n => n >= 1 && n <= 12).filter((n, i, a) => a.indexOf(n) === i).sort((a, b) => a - b).join(',')
+        : '';
       if (!macType) throw new Error('機械カテゴリを選択してください');
       if (!itemName) throw new Error('点検項目名を入力してください');
       const id = String(itemData.id || ('insp_' + Date.now() + '_' + Math.floor(Math.random() * 1000)));
       const sortOrder = (itemData.sortOrder !== '' && itemData.sortOrder != null) ? Number(itemData.sortOrder) || 0 : 0;
       const note = String(itemData.note || '').trim();
       const existing = readInspectionMasterList_();
-      if (existing.some(x => x.machineType === macType && x.inspectionCategory === inspCat && x.item === itemName)) {
-        throw new Error(`機械「${macType}」の点検項目「${itemName}」は既に登録されています`);
+      if (existing.some(x => x.machineType === macType && (x.inspectionType || '始動前点検') === inspType && x.inspectionCategory === inspCat && x.item === itemName)) {
+        throw new Error(`機械「${macType}」の${inspType}項目「${itemName}」は既に登録されています`);
       }
-      sheet.appendRow([id, macType, inspCat, itemName, sortOrder, note]);
-      writeLog(userName, "マスタ追加", `${macType} - ${itemName}`, `対象: ${sheetName}`);
+      sheet.appendRow([id, macType, inspCat, itemName, sortOrder, note, inspType, alertMonths]);
+      writeLog(userName, "マスタ追加", `${macType} [${inspType}] - ${itemName}`, `対象: ${sheetName}`);
     } else {
       sheet.appendRow([value]);
     }
@@ -3372,9 +3376,13 @@ function manageMasterData(masterType, manageAction, value, userName) {
     } else if (masterType === 'inspection') {
       const id = String((value && (value.id || value.originalId)) || '').trim();
       const nd = (value && value.newData) || value || {};
-      const macType = String(nd.machineType || '').trim();
+      const macType = String(nd.machineType || nd.target || '').trim();
       const inspCat = String(nd.inspectionCategory || nd.category || '一般').trim();
       const itemName = String(nd.item || nd.name || '').trim();
+      const inspType = String(nd.inspectionType || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+      const alertMonths = inspType === '定期点検'
+        ? String(nd.alertMonths || '').split(/[,、]/).map(s => Number(String(s).trim())).filter(n => n >= 1 && n <= 12).filter((n, i, a) => a.indexOf(n) === i).sort((a, b) => a - b).join(',')
+        : '';
       if (!macType) throw new Error('機械カテゴリを選択してください');
       if (!itemName) throw new Error('点検項目名を入力してください');
       const sortOrder = (nd.sortOrder !== '' && nd.sortOrder != null) ? Number(nd.sortOrder) || 0 : 0;
@@ -3384,13 +3392,13 @@ function manageMasterData(masterType, manageAction, value, userName) {
       for (let i = 1; i < latest.length; i++) {
         const rowId = String(latest[i][0] || '').trim();
         if (id && rowId === id) {
-          sheet.getRange(i + 1, 1, 1, 6).setValues([[id, macType, inspCat, itemName, sortOrder, note]]);
+          sheet.getRange(i + 1, 1, 1, 8).setValues([[id, macType, inspCat, itemName, sortOrder, note, inspType, alertMonths]]);
           found = true;
           break;
         }
       }
       if (!found) throw new Error('対象の点検項目が見つかりません');
-      writeLog(userName, "マスタ編集", `${macType} - ${itemName}`, `対象: ${sheetName}`);
+      writeLog(userName, "マスタ編集", `${macType} [${inspType}] - ${itemName}`, `対象: ${sheetName}`);
     }
   }
   else if (manageAction === 'delete') {
@@ -17800,8 +17808,8 @@ function appendSowingRecordFromWork_(recordData, author, recordId) {
 }
 
 // ===== 点検マスタ / 点検記録 =====
-const INSPECTION_MASTER_HEADERS_ = ['id', 'machineType', 'inspectionCategory', 'item', 'sortOrder', 'note'];
-const INSPECTION_RECORD_HEADERS_ = ['id', 'date', 'inspector', 'machineId', 'machineName', 'machineType', 'hourMeter', 'summary', 'abnormalCount', 'maintCount', 'detailsJson', 'comment', 'createdAt'];
+const INSPECTION_MASTER_HEADERS_ = ['id', 'machineType', 'inspectionCategory', 'item', 'sortOrder', 'note', 'inspectionType', 'alertMonths'];
+const INSPECTION_RECORD_HEADERS_ = ['id', 'date', 'inspector', 'machineId', 'machineName', 'machineType', 'hourMeter', 'summary', 'abnormalCount', 'maintCount', 'detailsJson', 'comment', 'createdAt', 'inspectionType'];
 
 function ensureInspectionMasterSheet_() {
   const ss = TENANT_SS;
@@ -17825,14 +17833,20 @@ function readInspectionMasterList_() {
   const last = sheet.getLastRow();
   if (last < 2) return [];
   const values = sheet.getRange(2, 1, last - 1, INSPECTION_MASTER_HEADERS_.length).getValues();
-  return values.map(r => ({
-    id: String(r[0] || '').trim(),
-    machineType: String(r[1] || '').trim(),
-    inspectionCategory: String(r[2] || '').trim(),
-    item: String(r[3] || '').trim(),
-    sortOrder: (r[4] === '' || r[4] == null) ? 0 : (Number(r[4]) || 0),
-    note: String(r[5] || '').trim()
-  })).filter(x => x.machineType && x.item);
+  return values.map(r => {
+    const inspType = String(r[6] || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+    const alertMonths = inspType === '定期点検' ? String(r[7] || '').trim() : '';
+    return {
+      id: String(r[0] || '').trim(),
+      machineType: String(r[1] || '').trim(),
+      inspectionCategory: String(r[2] || '').trim(),
+      item: String(r[3] || '').trim(),
+      sortOrder: (r[4] === '' || r[4] == null) ? 0 : (Number(r[4]) || 0),
+      note: String(r[5] || '').trim(),
+      inspectionType: inspType,
+      alertMonths: alertMonths
+    };
+  }).filter(x => x.machineType && x.item);
 }
 
 function ensureInspectionRecordSheet_() {
@@ -17874,10 +17888,11 @@ function machine_saveInspection(p) {
     detailsJson = JSON.stringify(p.details);
   }
   const comment = String(p.comment || '').trim();
+  const inspType = String(p.inspectionType || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
 
   sheet.appendRow([
     id, dateStr, inspector, machineId, machineName, machineType,
-    hourMeter, summary, abnormalCount, maintCount, detailsJson, comment, nowStr
+    hourMeter, summary, abnormalCount, maintCount, detailsJson, comment, nowStr, inspType
   ]);
 
   return { success: true, id: id };
@@ -17916,7 +17931,8 @@ function machine_loadInspectionRecords(p) {
       maintCount: Number(r[9]) || 0,
       details: details,
       comment: String(r[11] || '').trim(),
-      createdAt: String(r[12] || '').trim()
+      createdAt: String(r[12] || '').trim(),
+      inspectionType: String(r[13] || '').trim() === '定期点検' ? '定期点検' : '始動前点検'
     });
   }
   return { success: true, records: records };

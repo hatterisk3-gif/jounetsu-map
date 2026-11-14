@@ -1954,6 +1954,9 @@ function renderInitData(data) {
   pdlCropCultSettings = data.pdl.cropCultSettings || [];
   pdlInspections = data.pdl.inspections || [];
   window.pdlInspections = pdlInspections;
+  if (typeof window.updateWorkerPeriodicInspectionAlertBadge_ === 'function') {
+    window.updateWorkerPeriodicInspectionAlertBadge_();
+  }
   pdlFertilizers = data.pdl.fertilizers || [];
   window.pdlFertilizers = pdlFertilizers;
   pdlCostItems = data.pdl.costItems || [];
@@ -55702,9 +55705,72 @@ window.deleteQualification = async function (userName, index) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
-  window.openInspectionRecord = function (presetMachineId) {
+  window.normalizeWorkerInspectionType_ = function (val) {
+    return String(val || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+  };
+
+  window.parseWorkerInspectionAlertMonths_ = function (val) {
+    const arr = Array.isArray(val) ? val : String(val || '').split(/[,、\s]+/);
+    return Array.from(new Set(arr.map(x => Number(String(x || '').trim())).filter(n => n >= 1 && n <= 12))).sort((a, b) => a - b);
+  };
+
+  window.updateWorkerPeriodicInspectionAlertBadge_ = function () {
+    const allInsps = (typeof pdlInspections !== 'undefined' && Array.isArray(pdlInspections))
+      ? pdlInspections
+      : (Array.isArray(window.pdlInspections) ? window.pdlInspections : []);
+    const nowMonth = new Date().getMonth() + 1;
+    const dueCount = allInsps.filter(i => {
+      if (!i || window.normalizeWorkerInspectionType_(i.inspectionType) !== '定期点検') return false;
+      return window.parseWorkerInspectionAlertMonths_(i.alertMonths).includes(nowMonth);
+    }).length;
+    const menuBadge = document.getElementById('inspPeriodicAlertBadge');
+    if (menuBadge) {
+      if (dueCount > 0) {
+        menuBadge.textContent = `🔔 ${nowMonth}月定期 (${dueCount})`;
+        menuBadge.style.display = 'inline-block';
+      } else {
+        menuBadge.style.display = 'none';
+      }
+    }
+    const tabBadge = document.getElementById('inspTabPeriodicBadge');
+    if (tabBadge) {
+      if (dueCount > 0) {
+        tabBadge.textContent = `🔔 ${dueCount}`;
+        tabBadge.style.display = 'inline-block';
+      } else {
+        tabBadge.style.display = 'none';
+      }
+    }
+  };
+
+  window.switchInspectionTypeTab = function (inspType, opts) {
+    const next = window.normalizeWorkerInspectionType_(inspType);
+    window._currentInspType = next;
+    const preBtn = document.getElementById('inspTypeTab_pre');
+    const perBtn = document.getElementById('inspTypeTab_periodic');
+    if (preBtn) {
+      const on = next === '始動前点検';
+      preBtn.style.borderBottomColor = on ? '#00897B' : 'transparent';
+      preBtn.style.background = on ? '#e0f2f1' : '#fff';
+      preBtn.style.color = on ? '#00695c' : '#555';
+    }
+    if (perBtn) {
+      const on = next === '定期点検';
+      perBtn.style.borderBottomColor = on ? '#FB8C00' : 'transparent';
+      perBtn.style.background = on ? '#fff3e0' : '#fff';
+      perBtn.style.color = on ? '#e65100' : '#555';
+    }
+    if (!(opts && opts.skipRefresh)) {
+      const macEl = document.getElementById('insp_machine');
+      window.onInspectionMachineChange(macEl ? macEl.value : '');
+    }
+  };
+
+  window.openInspectionRecord = function (presetMachineId, presetInspType) {
     const modal = document.getElementById('inspectionRecordModal');
     if (!modal) return;
+    window.switchInspectionTypeTab(presetInspType || '始動前点検', { skipRefresh: true });
+    window.updateWorkerPeriodicInspectionAlertBadge_();
 
     // 日付の初期設定
     const dateInput = document.getElementById('insp_date');
@@ -55794,12 +55860,28 @@ window.deleteQualification = async function (userName, index) {
 
   window.onInspectionMachineChange = function (machineId) {
     const badgeEl = document.getElementById('insp_mac_badge');
+    const bannerEl = document.getElementById('insp_periodic_alert_banner');
     const container = document.getElementById('insp_items_container');
     if (!container) return;
 
+    const curInspType = window.normalizeWorkerInspectionType_(window._currentInspType);
+    const nowMonth = new Date().getMonth() + 1;
+    const allInsps = (typeof pdlInspections !== 'undefined' && Array.isArray(pdlInspections))
+      ? pdlInspections
+      : (Array.isArray(window.pdlInspections) ? window.pdlInspections : []);
+
     if (!machineId) {
       if (badgeEl) badgeEl.innerHTML = '';
-      container.innerHTML = `<div style="text-align:center; color:#888; padding:30px 10px; font-size:13px;">機械を選択すると、そのカテゴリの点検項目が表示されます。</div>`;
+      if (bannerEl) {
+        const allDue = allInsps.filter(i => i && window.normalizeWorkerInspectionType_(i.inspectionType) === '定期点検' && window.parseWorkerInspectionAlertMonths_(i.alertMonths).includes(nowMonth));
+        if (allDue.length > 0) {
+          bannerEl.innerHTML = `<strong>🔔 今月（${nowMonth}月）の定期点検アラート対象が ${allDue.length}件 あります。</strong><br>対象機械を選択して定期点検を実施してください。`;
+          bannerEl.style.display = 'block';
+        } else {
+          bannerEl.style.display = 'none';
+        }
+      }
+      container.innerHTML = `<div style="text-align:center; color:#888; padding:30px 10px; font-size:13px;">機械を選択すると、そのカテゴリの${esc(curInspType)}項目が表示されます。</div>`;
       return;
     }
 
@@ -55813,11 +55895,6 @@ window.deleteQualification = async function (userName, index) {
         : '';
     }
 
-    // 点検マスタから該当機械カテゴリの項目を取得
-    const allInsps = (typeof pdlInspections !== 'undefined' && Array.isArray(pdlInspections))
-      ? pdlInspections
-      : (Array.isArray(window.pdlInspections) ? window.pdlInspections : []);
-
     const macKeys = new Set([
       macType,
       mac ? String(mac.vehicleType || '').trim() : '',
@@ -55825,18 +55902,40 @@ window.deleteQualification = async function (userName, index) {
       mac ? String(mac.category || '').trim() : ''
     ].filter(Boolean));
 
-    const items = allInsps.filter(i => {
+    const matchMachineItems = allInsps.filter(i => {
       if (!i) return false;
-      const targets = String(i.machineType || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+      const targets = String(i.machineType || i.target || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
       return targets.some(t => macKeys.has(t) || t === '共通' || t === '全般');
-    }).sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
+    });
+
+    const duePeriodicItems = matchMachineItems.filter(i =>
+      window.normalizeWorkerInspectionType_(i.inspectionType) === '定期点検'
+      && window.parseWorkerInspectionAlertMonths_(i.alertMonths).includes(nowMonth)
+    );
+
+    if (bannerEl) {
+      if (duePeriodicItems.length > 0) {
+        const itemNames = duePeriodicItems.map(x => esc(x.item || '')).slice(0, 5).join('・') + (duePeriodicItems.length > 5 ? ` 他${duePeriodicItems.length - 5}件` : '');
+        const switchBtn = curInspType !== '定期点検'
+          ? ` <button type="button" onclick="switchInspectionTypeTab('定期点検')" style="margin-top:6px; background:#FB8C00; color:#fff; border:none; border-radius:4px; padding:4px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🗓️ 定期点検タブを開く</button>`
+          : '';
+        bannerEl.innerHTML = `<strong>🔔 今月（${nowMonth}月）の定期点検アラート（${duePeriodicItems.length}件）</strong><br>対象項目: ${itemNames}${switchBtn ? '<br>' + switchBtn : ''}`;
+        bannerEl.style.display = 'block';
+      } else {
+        bannerEl.style.display = 'none';
+      }
+    }
+
+    const items = matchMachineItems
+      .filter(i => window.normalizeWorkerInspectionType_(i.inspectionType) === curInspType)
+      .sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
 
     if (!items.length) {
       container.innerHTML = `
         <div style="background:#fff3e0; border:1px solid #ffe0b2; border-radius:8px; padding:16px; text-align:center; color:#e65100; font-size:13px; line-height:1.5;">
-          <div style="font-weight:bold; font-size:14px; margin-bottom:4px;">⚠️ 点検項目が未登録です</div>
-          機械カテゴリ「<strong>${esc(macType || '未設定')}</strong>」の点検項目はまだ登録されていません。<br>
-          管理画面（Admin）の「マスタ項目設定 ＞ 📋 点検マスタ」または「🚜 機械管理 ＞ 📋 点検項目」から点検項目を追加してください。
+          <div style="font-weight:bold; font-size:14px; margin-bottom:4px;">⚠️ ${esc(curInspType)}項目が未登録です</div>
+          機械カテゴリ「<strong>${esc(macType || '未設定')}</strong>」の${esc(curInspType)}項目はまだ登録されていません。<br>
+          管理画面（Admin）の「🚜 機械管理 ＞ 📋 点検項目」から登録してください。
         </div>
       `;
       return;
@@ -55865,10 +55964,15 @@ window.deleteQualification = async function (userName, index) {
       grouped[catName].forEach((item, itemIdx) => {
         const rowId = `insp_item_row_${catIdx}_${itemIdx}`;
         const noteHtml = item.note ? `<div style="font-size:11px; color:#666; margin-top:2px;">基準: ${esc(item.note)}</div>` : '';
+        const aMonths = curInspType === '定期点検' ? window.parseWorkerInspectionAlertMonths_(item.alertMonths) : [];
+        const isDueThisMonth = aMonths.includes(nowMonth);
+        const alertTag = isDueThisMonth
+          ? `<span style="background:#ffebee; color:#c62828; border:1px solid #ffcdd2; font-size:10px; font-weight:bold; padding:1px 6px; border-radius:10px; margin-left:6px;">🔔 今月(${nowMonth}月)点検予定</span>`
+          : (aMonths.length ? `<span style="background:#fff3e0; color:#e65100; font-size:10px; padding:1px 6px; border-radius:10px; margin-left:6px;">🗓️ ${aMonths.map(m => m + '月').join('・')}</span>` : '');
         html += `
           <div id="${rowId}" class="insp-item-row" data-item-id="${esc(item.id || '')}" data-item-name="${esc(item.item || '')}" data-category="${esc(catName)}" data-result="/" style="border-bottom:1px solid #f0f0f0; padding-bottom:8px;">
             <div style="font-weight:bold; font-size:13px; color:#333; margin-bottom:4px;">
-              ${esc(item.item || '')}
+              ${esc(item.item || '')}${alertTag}
               ${noteHtml}
             </div>
             <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:4px;">
@@ -56026,6 +56130,7 @@ window.deleteQualification = async function (userName, index) {
       machineId: machineId,
       machineName: macName,
       machineType: macType,
+      inspectionType: window.normalizeWorkerInspectionType_(window._currentInspType),
       hourMeter: (hourInput && hourInput.value !== '') ? Number(hourInput.value) || hourInput.value : '',
       summary: summary,
       abnormalCount: abnormalCount,
