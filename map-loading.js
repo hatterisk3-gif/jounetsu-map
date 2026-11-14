@@ -454,6 +454,163 @@
   global.showLoader = function (msg) { beginMapDataLoad(msg || '処理中...'); };
   global.hideLoader = function () { endMapDataLoad(true); };
 
+  /**
+   * 衛星タイルのCSS引き延ばし（ネイティブズーム超え・最大45）を地図に組み込む
+   * - ズーム21以下では標準 hybrid / satellite を維持し Google 店舗表示等と両立する
+   * - ズーム21超では自動で引き延ばしタイル（hybrid_stretched / satellite_stretched）へ切り替える
+   */
+  function createStretchedMapType(targetMap, opts) {
+    var maxZoom = (opts && opts.maxZoom) || 45;
+    var maxNativeZoom = (opts && opts.maxNativeZoom) || 21;
+    var lyrs = (opts && opts.lyrs) || 'y';
+    var label = (opts && opts.label) || (lyrs === 's' ? '航空写真' : 'ハイブリッド');
+
+    var baseType = null;
+    try {
+      if (targetMap && targetMap.mapTypes) {
+        baseType = targetMap.mapTypes.get('roadmap') ||
+          targetMap.mapTypes.get('hybrid') ||
+          targetMap.mapTypes.get('satellite');
+      }
+    } catch (e) { baseType = null; }
+
+    var projection = (baseType && baseType.projection) ? baseType.projection : {
+      fromLatLngToPoint: function (latLng, opt_point) {
+        var point = opt_point || new google.maps.Point(0, 0);
+        var origin = new google.maps.Point(128, 128);
+        point.x = origin.x + latLng.lng() * (256 / 360);
+        var siny = Math.min(Math.max(Math.sin((latLng.lat() * Math.PI) / 180), -0.9999), 0.9999);
+        point.y = origin.y + 0.5 * Math.log((1 + siny) / (1 - siny)) * -(256 / (2 * Math.PI));
+        return point;
+      },
+      fromPointToLatLng: function (point) {
+        var origin = new google.maps.Point(128, 128);
+        var lng = (point.x - origin.x) / (256 / 360);
+        var latRadians = (point.y - origin.y) / -(256 / (2 * Math.PI));
+        var lat = (2 * Math.atan(Math.exp(latRadians)) - Math.PI / 2) * 180 / Math.PI;
+        return new google.maps.LatLng(lat, lng);
+      }
+    };
+
+    return {
+      tileSize: new google.maps.Size(256, 256),
+      maxZoom: maxZoom,
+      name: label,
+      alt: label,
+      maxNativeZoom: maxNativeZoom,
+      projection: projection,
+      getTile: function (coord, zoom, ownerDocument) {
+        var div = ownerDocument.createElement('div');
+        div.style.width = '256px';
+        div.style.height = '256px';
+        div.style.overflow = 'hidden';
+        div.style.position = 'relative';
+
+        var z = zoom;
+        var x = coord.x;
+        var y = coord.y;
+        var scale = 1;
+
+        if (z > maxNativeZoom) {
+          var zDiff = z - maxNativeZoom;
+          scale = Math.pow(2, zDiff);
+          z = maxNativeZoom;
+          x = Math.floor(x / scale);
+          y = Math.floor(y / scale);
+        }
+
+        var img = ownerDocument.createElement('img');
+        img.src = 'https://mt1.google.com/vt/lyrs=' + lyrs + '&x=' + x + '&y=' + y + '&z=' + z;
+        img.style.position = 'absolute';
+        img.style.width = '256px';
+        img.style.height = '256px';
+        img.style.left = '0px';
+        img.style.top = '0px';
+
+        if (scale > 1) {
+          var modX = ((coord.x % scale) + scale) % scale;
+          var modY = ((coord.y % scale) + scale) % scale;
+          img.style.transformOrigin = '0 0';
+          img.style.transform = 'translate(' + (-modX * 256) + 'px, ' + (-modY * 256) + 'px) scale(' + scale + ')';
+          img.style.imageRendering = 'pixelated';
+        }
+
+        div.appendChild(img);
+        return div;
+      },
+      releaseTile: function () { }
+    };
+  }
+
+  function applyNativeTypeMaxZoom(targetMap, maxZoom) {
+    if (!targetMap || !targetMap.mapTypes) return;
+    try {
+      var hyb = targetMap.mapTypes.get('hybrid');
+      if (hyb) hyb.maxZoom = maxZoom;
+      var sat = targetMap.mapTypes.get('satellite');
+      if (sat) sat.maxZoom = maxZoom;
+    } catch (e) { /* ignore */ }
+  }
+
+  function setupStretchedZoom(targetMap, options) {
+    if (!targetMap || typeof google === 'undefined' || !google.maps) return false;
+    var opts = options || {};
+    var maxZoom = opts.maxZoom || 45;
+    var maxNativeZoom = opts.maxNativeZoom || 21;
+
+    try {
+      targetMap.setOptions({ maxZoom: maxZoom });
+      if (targetMap.mapTypes) {
+        targetMap.mapTypes.set('hybrid_stretched', createStretchedMapType(targetMap, {
+          maxZoom: maxZoom,
+          maxNativeZoom: maxNativeZoom,
+          lyrs: 'y',
+          label: 'ハイブリッド'
+        }));
+        targetMap.mapTypes.set('satellite_stretched', createStretchedMapType(targetMap, {
+          maxZoom: maxZoom,
+          maxNativeZoom: maxNativeZoom,
+          lyrs: 's',
+          label: '航空写真'
+        }));
+      }
+      applyNativeTypeMaxZoom(targetMap, maxZoom);
+      google.maps.event.addListenerOnce(targetMap, 'idle', function () {
+        applyNativeTypeMaxZoom(targetMap, maxZoom);
+      });
+
+      if (!targetMap._stretchedZoomBound) {
+        targetMap._stretchedZoomBound = true;
+        var syncMapTypeForZoom = function () {
+          try {
+            var z = targetMap.getZoom();
+            if (typeof z !== 'number') return;
+            var cur = String(targetMap.getMapTypeId() || '');
+            if (z > maxNativeZoom) {
+              if (cur === 'hybrid' || cur === 'satellite') {
+                targetMap._stretchedBaseTypeBeforeZoom = cur;
+                targetMap.setMapTypeId(cur === 'satellite' ? 'satellite_stretched' : 'hybrid_stretched');
+              }
+            } else {
+              if (!global.customDrawingMode && (cur === 'hybrid_stretched' || cur === 'satellite_stretched')) {
+                var restoreId = targetMap._stretchedBaseTypeBeforeZoom || (cur === 'satellite_stretched' ? 'satellite' : 'hybrid');
+                targetMap.setMapTypeId(restoreId);
+              }
+            }
+          } catch (e) { /* ignore */ }
+        };
+        targetMap.addListener('zoom_changed', syncMapTypeForZoom);
+        syncMapTypeForZoom();
+      }
+      return true;
+    } catch (e) {
+      console.warn('setupStretchedZoom スキップ:', e);
+      return false;
+    }
+  }
+
+  global.setupStretchedZoom = setupStretchedZoom;
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () { ensureOverlay(); });
   } else {

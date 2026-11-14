@@ -102,9 +102,10 @@
 
   function ensureStyleableMapType_() {
     if (!mapRef || typeof mapRef.getMapTypeId !== 'function') return;
-    // 登録描画中の引き延ばしタイルは維持（店舗フィルターより優先）
+    // 登録描画中やネイティブズーム超えの引き延ばし表示中は維持（店舗フィルターより優先）
     if (global.customDrawingMode) return;
     try {
+      if (typeof mapRef.getZoom === 'function' && mapRef.getZoom() > 21) return;
       var id = String(mapRef.getMapTypeId() || '');
       // カスタム衛星タイルには Google 店舗オーバーレイが載らないため標準 hybrid に戻す
       if (id === 'hybrid_stretched' || id.indexOf('stretched') >= 0) {

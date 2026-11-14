@@ -207,11 +207,16 @@ function initMap() {
     map = new google.maps.Map(document.getElementById('map'), {
         center: centerPos,
         zoom: 15,
+        maxZoom: 45,
         mapTypeId: 'satellite',
         disableDefaultUI: true,
         zoomControl: false,
         gestureHandling: 'greedy'
     });
+
+    if (typeof window.setupStretchedZoom === 'function') {
+        window.setupStretchedZoom(map, { maxZoom: 45 });
+    }
 
     map.addListener('idle', () => {
         let center = map.getCenter();

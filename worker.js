@@ -2817,11 +2817,11 @@ function initMap() {
     zoomLevel = savedZoom ? parseInt(savedZoom) : zoomLevel;
   }
 
-  map = new google.maps.Map(document.getElementById('map'), { center: centerPos, zoom: zoomLevel, maxZoom: 30, mapTypeId: 'hybrid', gestureHandling: 'greedy', mapTypeControl: false, fullscreenControl: false, streetViewControl: false, rotateControl: false, cameraControl: false, zoomControl: false, styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }] });
+  map = new google.maps.Map(document.getElementById('map'), { center: centerPos, zoom: zoomLevel, maxZoom: 45, mapTypeId: 'hybrid', gestureHandling: 'greedy', mapTypeControl: false, fullscreenControl: false, streetViewControl: false, rotateControl: false, cameraControl: false, zoomControl: false, styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }] });
 
-  google.maps.event.addListenerOnce(map, 'idle', () => {
-    // Native scaling enabled by NOT overriding satType.maxZoom
-  });
+  if (typeof window.setupStretchedZoom === 'function') {
+    window.setupStretchedZoom(map, { maxZoom: 45 });
+  }
 
   window.isRecordFormActive_ = () => {
     const panel = document.getElementById('rightPanel');

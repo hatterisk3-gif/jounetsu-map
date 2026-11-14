@@ -1246,6 +1246,7 @@ function syncUpdatePolygon_(p, extra) {
         if (payload.toukiId == null) payload.toukiId = p.toukiId || '';
         if (payload.ridgeDir == null) payload.ridgeDir = p.ridgeDir || '';
         if (payload.ridgeWidth == null) payload.ridgeWidth = p.ridgeWidth || '';
+        if (payload.googleMapsUrl == null) payload.googleMapsUrl = p.googleMapsUrl || '';
         if (payload.area == null && p.area != null) payload.area = p.area;
         if (payload.coords == null && p.coords) payload.coords = JSON.stringify(p.coords);
         if (payload.color == null && p.color != null) payload.color = p.color;
@@ -8908,7 +8909,7 @@ function openAttr(id) {
             }, 0);
         }
     } else {
-        infoWindow.setContent(`<div style="width:240px;max-width:100%;box-sizing:border-box;text-align:left;color:#333;padding:4px;"><b>圃場情報変更</b><br><label class="form-label">名前</label><input type="text" id="edN" value="${p.name}" class="form-input"><label class="form-label">拠点</label><select id="edL" class="form-input"><option value="">未設定</option>${pdlLocations.map(l => `<option value="${l}" ${l === p.location ? 'selected' : ''}>${l}</option>`).join('')}</select><label class="form-label">条件</label><select id="edC" class="form-input"><option value="">未設定</option>${pdlConditions.map(c => `<option value="${c}" ${c === p.condition ? 'selected' : ''}>${c}</option>`).join('')}</select><label class="form-label">土質</label><select id="edSoil" class="form-input"><option value="">未設定</option>${(['粘土質', '砂質', '壌質']).map(s => `<option value="${s}" ${s === (p.soilType || '') ? 'selected' : ''}>${s}</option>`).join('')}</select><div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;"><label class="form-label" style="margin:0;">稼働状況</label><button type="button" onclick="openFieldStatusManager()" style="background:none;border:none;color:#1976d2;font-size:11px;cursor:pointer;padding:0;font-weight:bold;">⚙️ 管理</button></div><select id="edS" class="form-input" onchange="handleStatusSelect(this)"><option value="">未設定</option>${pdlStatuses.map(s => `<option value="${s}" ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}<option value="ADD_NEW" style="color:#1976d2;font-weight:bold;">➕ 新規項目追加...</option><option value="MANAGE_STATUS" style="color:#d32f2f;font-weight:bold;">⚙️ 項目の編集・削除...</option></select><button onclick="execAttr('${id}')" style="background:#d32f2f;color:white;width:100%;padding:10px;border-radius:4px;font-weight:bold;border:none;margin-top:10px;">情報を更新</button></div>`);
+        infoWindow.setContent(`<div style="width:240px;max-width:100%;box-sizing:border-box;text-align:left;color:#333;padding:4px;"><b>圃場情報変更</b><br><label class="form-label">名前</label><input type="text" id="edN" value="${p.name}" class="form-input"><label class="form-label">拠点</label><select id="edL" class="form-input"><option value="">未設定</option>${pdlLocations.map(l => `<option value="${l}" ${l === p.location ? 'selected' : ''}>${l}</option>`).join('')}</select><label class="form-label">条件</label><select id="edC" class="form-input"><option value="">未設定</option>${pdlConditions.map(c => `<option value="${c}" ${c === p.condition ? 'selected' : ''}>${c}</option>`).join('')}</select><label class="form-label">土質</label><select id="edSoil" class="form-input"><option value="">未設定</option>${(['粘土質', '砂質', '壌質']).map(s => `<option value="${s}" ${s === (p.soilType || '') ? 'selected' : ''}>${s}</option>`).join('')}</select><div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;"><label class="form-label" style="margin:0;">稼働状況</label><button type="button" onclick="openFieldStatusManager()" style="background:none;border:none;color:#1976d2;font-size:11px;cursor:pointer;padding:0;font-weight:bold;">⚙️ 管理</button></div><select id="edS" class="form-input" onchange="handleStatusSelect(this)"><option value="">未設定</option>${pdlStatuses.map(s => `<option value="${s}" ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}<option value="ADD_NEW" style="color:#1976d2;font-weight:bold;">➕ 新規項目追加...</option><option value="MANAGE_STATUS" style="color:#d32f2f;font-weight:bold;">⚙️ 項目の編集・削除...</option></select><label class="form-label">共有GoogleマップURL</label><input type="url" id="edMapUrl" value="${String(p.googleMapsUrl || '').replace(/"/g, '&quot;')}" placeholder="https://maps.app.goo.gl/..." class="form-input"><button onclick="execAttr('${id}')" style="background:#d32f2f;color:white;width:100%;padding:10px;border-radius:4px;font-weight:bold;border:none;margin-top:10px;">情報を更新</button></div>`);
     }
 }
 
@@ -8982,8 +8983,8 @@ function execAttr(id) {
             if (results.some(Boolean)) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
         });
     } else {
-        const n = document.getElementById('edN').value, l = document.getElementById('edL').value, c = document.getElementById('edC').value, soil = (document.getElementById('edSoil') || {}).value || '', s = document.getElementById('edS').value, t = p.toukiId;
-        if (!n) return; p.name = n; p.location = l; p.condition = c; p.soilType = soil; p.status = s; p.toukiId = t;
+        const n = document.getElementById('edN').value, l = document.getElementById('edL').value, c = document.getElementById('edC').value, soil = (document.getElementById('edSoil') || {}).value || '', s = document.getElementById('edS').value, mapUrl = String((document.getElementById('edMapUrl') || {}).value || '').trim(), t = p.toukiId;
+        if (!n) return; p.name = n; p.location = l; p.condition = c; p.soilType = soil; p.status = s; p.googleMapsUrl = mapUrl; p.toukiId = t;
         const isU = (s === '未使用（返却）' || s === '未使用'), col = getAdminColor(s);
         p.polygon.setOptions({ fillColor: col, strokeColor: col, fillOpacity: isU ? 0.5 : 0.3 }); p.marker.setMap(null); p.marker = createLabelMarker(n, p.polygon.getPath().getArray(), col, p.area);
         updateAdminLegend();
@@ -9850,7 +9851,7 @@ function initMap() {
     map = new google.maps.Map(mapEl, {
         center: centerPos,
         zoom: zoomLevel,
-        maxZoom: 30,
+        maxZoom: 45,
         mapTypeId: 'hybrid',
         gestureHandling: 'greedy',
         mapTypeControl: false,
@@ -9863,9 +9864,13 @@ function initMap() {
     });
 
     try {
-        // 引き延ばしタイルは登録描画時のみ使用。通常閲覧は hybrid のままにし Google 店舗を出せる状態を保つ
-        map.mapTypes.set('hybrid_stretched', new StretchedMapType());
-        map.setOptions({ maxZoom: 30 });
+        if (typeof window.setupStretchedZoom === 'function') {
+            window.setupStretchedZoom(map, { maxZoom: 45 });
+        } else {
+            // 引き延ばしタイルは登録描画時のみ使用。通常閲覧は hybrid のままにし Google 店舗を出せる状態を保つ
+            map.mapTypes.set('hybrid_stretched', new StretchedMapType());
+            map.setOptions({ maxZoom: 45 });
+        }
     } catch (e) {
         console.warn('StretchedMapType 登録スキップ:', e);
         try { map.setMapTypeId('hybrid'); } catch (e2) { }
@@ -11006,7 +11011,7 @@ window.enableStretchedMapType = function () {
     try {
         if (!map.mapTypes.get('hybrid_stretched')) return false;
         map.setMapTypeId('hybrid_stretched');
-        map.setOptions({ maxZoom: 30 });
+        map.setOptions({ maxZoom: 45 });
         return true;
     } catch (e) {
         console.warn('stretched map 切替失敗:', e);
@@ -11026,7 +11031,7 @@ document.getElementById('btnDrawMode').onclick = () => {
     // 圃場作成時は限界ズームを超えてCSS引き延ばしできるようにする
     if (typeof window.enableStretchedMapType === 'function') window.enableStretchedMapType();
 
-    map.setOptions({ draggable: true, draggableCursor: pinCursor, maxZoom: 30 });
+    map.setOptions({ draggable: true, draggableCursor: pinCursor, maxZoom: 45 });
 
     if (typeof preloadFudeData === 'function') preloadFudeData();
     if (typeof updateMarkerLabels === 'function') updateMarkerLabels(); // ★追加（ここで文字が消えます！）
@@ -11162,6 +11167,8 @@ window.pickAdminRegPlus_ = (kind) => {
         if (typeof window.startViewpointPickMode_ === 'function') window.startViewpointPickMode_();
     } else if (kind === 'equipment') {
         if (typeof window.openEquipmentManageModal === 'function') window.openEquipmentManageModal();
+    } else if (kind === 'mapUrlBatch') {
+        if (typeof window.openMapUrlBatchModal === 'function') window.openMapUrlBatchModal();
     } else if (kind === 'batchDelete') {
         if (typeof window.openBatchDeleteModal === 'function') window.openBatchDeleteModal();
     }
@@ -11184,6 +11191,184 @@ window.syncAdminRegPlusBtnState_ = (mode) => {
     } else {
         plus.title = '登録';
     }
+};
+
+// ====== 🔗 共有GoogleマップURL 一括登録ツール ======
+function getFieldCenterForBatch_(p) {
+    if (!p) return null;
+    if (p.polygon && typeof p.polygon.getPath === 'function' && window.google && google.maps) {
+        try {
+            const b = new google.maps.LatLngBounds();
+            p.polygon.getPath().forEach(pt => b.extend(pt));
+            const c = b.getCenter();
+            if (c) return { lat: c.lat(), lng: c.lng() };
+        } catch (e) {}
+    }
+    if (Array.isArray(p.coords) && p.coords.length > 0) {
+        let latSum = 0, lngSum = 0, n = 0;
+        p.coords.forEach(pt => {
+            const pla = (typeof pt.lat === 'function') ? pt.lat() : parseFloat(pt.lat);
+            const pln = (typeof pt.lng === 'function') ? pt.lng() : parseFloat(pt.lng);
+            if (!isNaN(pla) && !isNaN(pln)) { latSum += pla; lngSum += pln; n++; }
+        });
+        if (n > 0) return { lat: latSum / n, lng: lngSum / n };
+    }
+    return null;
+}
+
+function extractHttpUrlFromText_(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return '';
+    const m = s.match(/https?:\/\/[^\s"'<>]+/i);
+    return m ? m[0] : s;
+}
+
+function updateMapUrlBatchProgress_() {
+    const el = document.getElementById('mapUrlBatchProgress');
+    if (!el) return;
+    const fields = Object.values(loadedPolygons || {}).filter(p => p && !p.isMarker);
+    const done = fields.filter(p => !!String(p.googleMapsUrl || '').trim()).length;
+    el.textContent = `登録済: ${done} / 全 ${fields.length} 件（残り ${Math.max(0, fields.length - done)} 件）`;
+}
+
+window.openMapUrlBatchModal = function() {
+    const modal = document.getElementById('mapUrlBatchModal');
+    if (!modal) return;
+    const locSel = document.getElementById('mapUrlBatchLoc');
+    if (locSel) {
+        const cur = locSel.value || '';
+        const locs = Array.from(new Set(
+            Object.values(loadedPolygons || {})
+                .filter(p => p && !p.isMarker && p.location)
+                .map(p => String(p.location).trim())
+                .filter(Boolean)
+        )).sort();
+        locSel.innerHTML = '<option value="">すべての拠点</option>' + locs.map(l => `<option value="${l.replace(/"/g, '&quot;')}">${l}</option>`).join('');
+        if (cur && locs.includes(cur)) locSel.value = cur;
+    }
+    modal.style.display = 'flex';
+    window.renderMapUrlBatchList();
+};
+
+window.closeMapUrlBatchModal = function() {
+    const modal = document.getElementById('mapUrlBatchModal');
+    if (modal) modal.style.display = 'none';
+};
+
+window.openFieldInGoogleMapsForBatch_ = function(fieldId) {
+    const p = loadedPolygons[fieldId];
+    const c = getFieldCenterForBatch_(p);
+    if (!c) {
+        customAlert('この圃場の座標が見つかりません。');
+        return;
+    }
+    const url = `https://www.google.com/maps/search/?api=1&query=${c.lat.toFixed(6)},${c.lng.toFixed(6)}`;
+    window.open(url, '_blank', 'noopener');
+};
+
+window.saveMapUrlBatchRow_ = async function(fieldId, overrideText) {
+    const p = loadedPolygons[fieldId];
+    if (!p) return;
+    const inp = document.getElementById('mapUrlBatchInp_' + fieldId);
+    const statusEl = document.getElementById('mapUrlBatchSt_' + fieldId);
+    const raw = (overrideText !== undefined) ? overrideText : (inp ? inp.value : '');
+    const url = extractHttpUrlFromText_(raw);
+    if (url && !/^https?:\/\//i.test(url)) {
+        customAlert('http:// または https:// で始まるURLを入力してください。');
+        return;
+    }
+    if (inp) inp.value = url;
+    p.googleMapsUrl = url;
+    if (statusEl) {
+        statusEl.textContent = '⏳ 保存中...';
+        statusEl.style.color = '#E65100';
+    }
+    const ok = await syncUpdatePolygon_(p, { googleMapsUrl: url });
+    updateMapUrlBatchProgress_();
+    if (statusEl) {
+        if (ok) {
+            statusEl.textContent = url ? '✅ 登録済' : '未登録';
+            statusEl.style.color = url ? '#2E7D32' : '#888';
+        } else {
+            statusEl.textContent = '⚠️ 同期待ち';
+            statusEl.style.color = '#E65100';
+        }
+    }
+    showAdminSyncToast(url ? `✅ 「${p.name}」のURLを保存しました` : `「${p.name}」のURLをクリアしました`, 'ok');
+};
+
+window.pasteAndSaveMapUrlBatchRow_ = async function(fieldId) {
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+        customAlert('このブラウザではワンタップ貼付が使えません。入力欄に長押し等で貼り付けて「保存」を押してください。');
+        return;
+    }
+    try {
+        const text = await navigator.clipboard.readText();
+        const url = extractHttpUrlFromText_(text);
+        if (!url || !/^https?:\/\//i.test(url)) {
+            customAlert('クリップボードにURLが見つかりませんでした。\nGoogleマップで「共有 → リンクをコピー」をしてからもう一度お試しください。');
+            return;
+        }
+        await window.saveMapUrlBatchRow_(fieldId, url);
+    } catch (e) {
+        customAlert('クリップボードの読み取りが許可されませんでした。入力欄に貼り付けて「保存」を押してください。');
+    }
+};
+
+window.renderMapUrlBatchList = function() {
+    updateMapUrlBatchProgress_();
+    const listEl = document.getElementById('mapUrlBatchList');
+    if (!listEl) return;
+    const locFilter = (document.getElementById('mapUrlBatchLoc') || {}).value || '';
+    const modeFilter = (document.getElementById('mapUrlBatchFilter') || {}).value || 'unregistered';
+    const kw = String((document.getElementById('mapUrlBatchSearch') || {}).value || '').trim().toLowerCase();
+
+    const fields = Object.values(loadedPolygons || {})
+        .filter(p => p && !p.isMarker)
+        .filter(p => !locFilter || String(p.location || '').trim() === locFilter)
+        .filter(p => {
+            const hasUrl = !!String(p.googleMapsUrl || '').trim();
+            if (modeFilter === 'unregistered') return !hasUrl;
+            if (modeFilter === 'registered') return hasUrl;
+            return true;
+        })
+        .filter(p => !kw || String(p.name || '').toLowerCase().includes(kw) || String(p.location || '').toLowerCase().includes(kw))
+        .sort((a, b) => String(a.location || '').localeCompare(String(b.location || ''), 'ja') || String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
+
+    if (!fields.length) {
+        listEl.innerHTML = '<div style="text-align:center; padding:32px 12px; color:#777; font-size:13px;">該当する圃場がありません。</div>';
+        return;
+    }
+
+    listEl.innerHTML = fields.map(p => {
+        const url = String(p.googleMapsUrl || '').trim();
+        const areaNum = parseFloat(p.area) || 0;
+        const areaStr = areaNum > 0 ? `${Math.round(areaNum * 10) / 10}a` : '';
+        const meta = [p.location || '拠点未設定', areaStr].filter(Boolean).join(' / ');
+        const escId = String(p.id).replace(/'/g, "\\'");
+        const escUrl = url.replace(/"/g, '&quot;');
+        return `
+          <div style="background:#fff; border:1px solid #e0d6d0; border-radius:10px; padding:10px 12px; margin-bottom:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+              <div>
+                <div style="font-weight:bold; font-size:14px; color:#3E2723;">${p.name || '圃場'}</div>
+                <div style="font-size:11px; color:#777;">${meta}</div>
+              </div>
+              <span id="mapUrlBatchSt_${p.id}" style="font-size:12px; font-weight:bold; color:${url ? '#2E7D32' : '#888'}; white-space:nowrap;">${url ? '✅ 登録済' : '未登録'}</span>
+            </div>
+            <div style="display:flex; gap:6px; margin-bottom:6px; flex-wrap:wrap;">
+              <button type="button" onclick="openFieldInGoogleMapsForBatch_('${escId}')" style="flex:1; min-width:140px; padding:8px; border:none; border-radius:6px; background:#1565C0; color:#fff; font-weight:bold; font-size:12px; cursor:pointer;">🗺️ Googleマップで開く</button>
+              <button type="button" onclick="pasteAndSaveMapUrlBatchRow_('${escId}')" style="flex:1; min-width:140px; padding:8px; border:none; border-radius:6px; background:#2E7D32; color:#fff; font-weight:bold; font-size:12px; cursor:pointer;">📋 貼付して保存</button>
+            </div>
+            <div style="display:flex; gap:6px; align-items:center;">
+              <input type="url" id="mapUrlBatchInp_${p.id}" value="${escUrl}" placeholder="https://maps.app.goo.gl/..."
+                onpaste="setTimeout(() => saveMapUrlBatchRow_('${escId}'), 80)"
+                style="flex:1; padding:7px 9px; border:1px solid #ccc; border-radius:6px; font-size:12px; min-width:0;">
+              <button type="button" onclick="saveMapUrlBatchRow_('${escId}')" style="padding:7px 12px; border:none; border-radius:6px; background:#5D4037; color:#fff; font-weight:bold; font-size:12px; cursor:pointer; white-space:nowrap;">保存</button>
+            </div>
+          </div>
+        `;
+    }).join('');
 };
 
 // メニュー外タップで閉じる

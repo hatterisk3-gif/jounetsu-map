@@ -88,6 +88,10 @@ function initMap() {
         zoomControl: false
     });
 
+    if (typeof window.setupStretchedZoom === 'function') {
+        window.setupStretchedZoom(map, { maxZoom: 45 });
+    }
+
     map.addListener('click', (e) => {
         if (isPickingLocation) {
             handleLocationPicked(e.latLng);

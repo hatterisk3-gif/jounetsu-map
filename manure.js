@@ -484,12 +484,16 @@ function createMap() {
   map = new google.maps.Map(document.getElementById("map"), {
     center: { lat: 35.6895, lng: 139.6917 },
     zoom: 15,
+    maxZoom: 45,
     mapTypeId: "hybrid",
     tilt: 0,
     disableDefaultUI: true,
     zoomControl: true,
     gestureHandling: "greedy"
   });
+  if (typeof window.setupStretchedZoom === 'function') {
+    window.setupStretchedZoom(map, { maxZoom: 45 });
+  }
   const gps = document.getElementById("btnCurrentLocation");
   if (gps) {
     gps.onclick = () => {

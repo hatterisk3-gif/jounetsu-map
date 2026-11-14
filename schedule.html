@@ -1253,7 +1253,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000356';
+    const cacheBust = '1788600000357';
     // 豚糞共有：台数＋短いGoogleマップURL＋座標（v1.49）
     // ※ https://maps.google.com/?q=緯度,経度
     // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）
@@ -2127,9 +2127,10 @@
           if (n > 0) { lat = latSum / n; lng = lngSum / n; }
         }
 
-        const mapsUrl = (lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
-          ? (new URL('go-map.html?lat=' + lat.toFixed(6) + '&lng=' + lng.toFixed(6), window.location.href).toString())
-          : '';
+        const customMapUrl = String(p.googleMapsUrl || '').trim();
+        const mapsUrl = customMapUrl || ((lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
+          ? ('https://www.google.com/maps/search/?api=1&query=' + lat.toFixed(6) + ',' + lng.toFixed(6))
+          : '');
         const coordLabel = (lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
           ? ('座標: ' + lat.toFixed(6) + ',' + lng.toFixed(6))
           : '';

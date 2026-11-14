@@ -1352,7 +1352,7 @@ function initMap() {
   map = new google.maps.Map(document.getElementById('map'), {
     center: centerPos,
     zoom: zoomLevel,
-    maxZoom: 30,
+    maxZoom: 45,
     mapTypeId: 'hybrid',
     gestureHandling: 'greedy',
     disableDefaultUI: true,
@@ -1362,9 +1362,9 @@ function initMap() {
   });
   window.map = map;
 
-  google.maps.event.addListenerOnce(map, 'idle', () => {
-    // Native scaling enabled by NOT overriding satType.maxZoom
-  });
+  if (typeof window.setupStretchedZoom === 'function') {
+    window.setupStretchedZoom(map, { maxZoom: 45 });
+  }
 
   infoWindow = new google.maps.InfoWindow();
   window.infoWindow = infoWindow;
@@ -1866,11 +1866,16 @@ function showPopup(p, latLng) {
               border:none; border-radius:6px; font-weight:bold; font-size:13px;
               cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.3);">🌱 この圃場で栽培計画</button>
           </div>`;
+    const hasCustomMapUrl = !!String(p.googleMapsUrl || '').trim();
     manureBtn = `<div style="margin-top:6px; text-align:center;">
             <button onclick="sharePigManureRequestFromSchedule('${p.id}')"
               style="width:100%; padding:8px; background:#8D6E63; color:white;
               border:none; border-radius:6px; font-weight:bold; font-size:13px;
               cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.3);">🐷 豚糞散布依頼</button>
+            <button onclick="editFieldGoogleMapsUrlFromSchedule('${p.id}')"
+              style="width:100%; margin-top:4px; padding:5px 8px; background:${hasCustomMapUrl ? '#EFEBE9' : '#FFF8E1'}; color:#5D4037;
+              border:1px solid ${hasCustomMapUrl ? '#BCAAA4' : '#FFD54F'}; border-radius:6px; font-weight:bold; font-size:11px;
+              cursor:pointer;">${hasCustomMapUrl ? '✅ 共有マップURL変更' : '🔗 共有マップURL未設定（登録）'}</button>
           </div>`;
   }
 
@@ -1927,6 +1932,41 @@ window.closeAdminCadModal = function () {
   if (typeof window.cadCloseRegistryModal_ === 'function') window.cadCloseRegistryModal_();
 };
 
+window.editFieldGoogleMapsUrlFromSchedule = async function (fieldId) {
+  const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[fieldId] : null;
+  if (!p) return;
+  const current = String(p.googleMapsUrl || '').trim();
+  const input = prompt(
+    `「${p.name || '圃場'}」の共有GoogleマップURL（maps.app.goo.gl 等）を入力してください。\n（空欄でOKを押すとクリアされます）`,
+    current
+  );
+  if (input === null) return;
+  const nextUrl = String(input).trim();
+  if (nextUrl && !/^https?:\/\//i.test(nextUrl)) {
+    if (typeof customAlert === 'function') customAlert('http:// または https:// で始まるURLを入力してください。');
+    else alert('http:// または https:// で始まるURLを入力してください。');
+    return;
+  }
+  p.googleMapsUrl = nextUrl;
+  try {
+    if (typeof callGAS === 'function') {
+      await callGAS('updatePolygon', {
+        id: p.id,
+        googleMapsUrl: nextUrl,
+        userName: (typeof currentUser !== 'undefined' && currentUser) ? currentUser : ''
+      });
+    }
+    if (typeof customAlert === 'function') {
+      customAlert(nextUrl ? '✅ 共有GoogleマップURLを保存しました。' : '共有GoogleマップURLをクリアしました。');
+    } else {
+      alert(nextUrl ? '✅ 共有GoogleマップURLを保存しました。' : '共有GoogleマップURLをクリアしました。');
+    }
+  } catch (e) {
+    if (typeof customAlert === 'function') customAlert('❌ 保存に失敗しました: ' + (e && e.message ? e.message : e));
+    else alert('❌ 保存に失敗しました');
+  }
+};
+
 window.sharePigManureRequestFromSchedule = function (fieldId) {
   const p = loadedPolygons[fieldId];
   if (!p) {
@@ -1971,9 +2011,10 @@ window.sharePigManureRequestFromSchedule = function (fieldId) {
     if (n > 0) { lat = latSum / n; lng = lngSum / n; }
   }
 
-  const mapsUrl = (lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
-    ? new URL(`go-map.html?lat=${lat.toFixed(6)}&lng=${lng.toFixed(6)}`, window.location.href).toString()
-    : '';
+  const customMapUrl = String(p.googleMapsUrl || '').trim();
+  const mapsUrl = customMapUrl || ((lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
+    ? `https://www.google.com/maps/search/?api=1&query=${lat.toFixed(6)},${lng.toFixed(6)}`
+    : '');
   const coordLabel = (lat != null && lng != null && !isNaN(lat) && !isNaN(lng))
     ? `座標: ${lat.toFixed(6)},${lng.toFixed(6)}`
     : '';

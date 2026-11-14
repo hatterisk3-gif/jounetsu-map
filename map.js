@@ -1112,6 +1112,8 @@ function calcCompostTrucksFromAreaA(areaA) {
 
 function getFieldGoogleMapsSearchUrl(pData) {
     if (!pData) return '';
+    const customMapUrl = String(pData.googleMapsUrl || '').trim();
+    if (customMapUrl) return customMapUrl;
     let lat = null, lng = null;
     if (pData.coords && pData.coords.length > 0) {
         try {
@@ -1126,7 +1128,7 @@ function getFieldGoogleMapsSearchUrl(pData) {
         } catch (e) {}
     }
     if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) return '';
-    return new URL(`go-map.html?lat=${lat.toFixed(6)}&lng=${lng.toFixed(6)}`, window.location.href).toString();
+    return `https://www.google.com/maps/search/?api=1&query=${lat.toFixed(6)},${lng.toFixed(6)}`;
 }
 
 function resolveFieldAreaA(pData) {
@@ -1140,6 +1142,40 @@ function resolveFieldAreaA(pData) {
     }
     return areaA;
 }
+
+window.editFieldGoogleMapsUrlFromMap = async function(pData) {
+    const field = pData || currentEditPoly;
+    if (!field || !field.id) {
+        alert('圃場情報がありません');
+        return;
+    }
+    const current = String(field.googleMapsUrl || '').trim();
+    const input = prompt(
+        `「${field.name || '圃場'}」の共有GoogleマップURL（maps.app.goo.gl 等）を入力してください。\n（空欄でOKを押すとクリアされます）`,
+        current
+    );
+    if (input === null) return;
+    const nextUrl = String(input).trim();
+    if (nextUrl && !/^https?:\/\//i.test(nextUrl)) {
+        alert('http:// または https:// で始まるURLを入力してください。');
+        return;
+    }
+    field.googleMapsUrl = nextUrl;
+    try {
+        await enqueueFieldSync_(() => callGAS('updatePolygon', {
+            id: field.id,
+            googleMapsUrl: nextUrl,
+            userName: (typeof currentUser !== 'undefined' && currentUser) ? currentUser : ''
+        }));
+        const btn = document.getElementById('btnEditFieldMapUrl');
+        if (btn) {
+            btn.textContent = nextUrl ? '✅ 共有マップURL変更' : '🔗 共有マップURL未設定（登録）';
+        }
+        alert(nextUrl ? '✅ 共有GoogleマップURLを保存しました。' : '共有GoogleマップURLをクリアしました。');
+    } catch (e) {
+        alert('❌ 保存に失敗しました');
+    }
+};
 
 window.sharePigManureRequest = function(pData) {
     const field = pData || currentEditPoly;
@@ -1229,7 +1265,8 @@ function openManureStatusModal(pData) {
                 <div><strong>圃場名:</strong> ${pData.name}</div>
                 <div style="font-size:13px; font-weight:bold; color:#2E7D32;">${areaStr}</div>
             </div>
-            <button type="button" onclick="sharePigManureRequest(currentEditPoly)" style="width:100%; padding:10px; margin-bottom:10px; border:none; border-radius:4px; background:#8D6E63; color:white; font-weight:bold; font-size:13px; box-sizing:border-box; cursor:pointer;">🐷 豚糞散布依頼</button>
+            <button type="button" onclick="sharePigManureRequest(currentEditPoly)" style="width:100%; padding:10px; margin-bottom:6px; border:none; border-radius:4px; background:#8D6E63; color:white; font-weight:bold; font-size:13px; box-sizing:border-box; cursor:pointer;">🐷 豚糞散布依頼</button>
+            <button type="button" id="btnEditFieldMapUrl" onclick="editFieldGoogleMapsUrlFromMap(currentEditPoly)" style="width:100%; padding:7px 10px; margin-bottom:10px; border:1px solid #BCAAA4; border-radius:4px; background:#EFEBE9; color:#5D4037; font-weight:bold; font-size:12px; box-sizing:border-box; cursor:pointer;">${pData.googleMapsUrl ? '✅ 共有マップURL変更' : '🔗 共有マップURL未設定（登録）'}</button>
             
             <div style="background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; padding:12px; ${isCompost ? '' : 'display:none;'}" id="compostHintBox">
                 <div style="font-weight:bold; color:#795548; margin-bottom:8px; font-size:14px; border-bottom:1px dashed #FFD54F; padding-bottom:4px; display:flex; align-items:center; gap:6px;">
