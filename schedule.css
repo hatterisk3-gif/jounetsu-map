@@ -515,13 +515,15 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; displ
         white-space: nowrap;
       }
 
-      /* スマホで見切れないように折り返し対応 */
+      /* スマホで見切れず1行スリムに収める（超狭幅時は折り返し） */
       @media screen and (max-width: 768px) {
-        .control-panel { flex-wrap: wrap; gap: 6px 8px; padding: 8px 10px; padding-top: calc(8px + env(safe-area-inset-top, 0px)); overflow: visible; position: relative; z-index: 50; }
-        .control-panel-buttons { flex: 1 1 240px; width: auto; max-width: 100%; min-width: 0; flex-wrap: wrap; overflow: visible; padding-bottom: 0; gap: 6px; }
-        .sched-top-btn { height: 38px; padding: 0 10px; font-size: 12px; }
-        .sched-account-wrap { max-width: 100%; }
-        .sched-top-btn-account { max-width: min(220px, 65vw); }
+        .control-panel { flex-wrap: wrap; gap: 4px; padding: 6px 6px; padding-top: calc(7px + env(safe-area-inset-top, 0px)); min-height: 46px; overflow: visible; position: relative; z-index: 50; }
+        .sched-top-brand { display: none; }
+        .control-panel-buttons { flex: 1 1 100%; width: 100%; max-width: 100%; min-width: 0; flex-wrap: wrap; overflow: visible; padding-bottom: 0; gap: 4px; }
+        .sched-top-btn { height: 34px; padding: 0 6px; font-size: 11px; border-radius: 8px; gap: 2px; flex-shrink: 0; }
+        .sched-top-btn-weather { min-width: 38px; padding: 2px 5px; font-size: 10px; line-height: 1.05; }
+        .sched-account-wrap { flex: 1 1 0; min-width: 68px; max-width: 100%; display: inline-flex; justify-content: flex-end; }
+        .sched-top-btn-account { width: auto; max-width: 100%; min-width: 0; flex: 0 1 auto; padding: 0 6px; }
         #accountMenuDropdown {
           position: fixed !important;
           z-index: 200000 !important;
