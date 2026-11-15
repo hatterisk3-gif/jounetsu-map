@@ -3655,7 +3655,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
   const zoom = map.getZoom();
   const config = isLocPin && typeof window.locationPinLabelConfig_ === 'function'
     ? window.locationPinLabelConfig_(name, zoom)
-    : { text: name, color: '#333', fontSize: '13px', fontWeight: 'bold', className: 'signboard-label' };
+    : { text: name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' };
   const iconOpt = isLocPin && typeof window.locationPinMarkerIcon_ === 'function'
     ? window.locationPinMarkerIcon_(zoom)
     : { url: `data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="13" y="20" text-anchor="middle" font-size="20">${icon}</text></svg>`, scaledSize: new google.maps.Size(26, 26), anchor: new google.maps.Point(13, 13), labelOrigin: new google.maps.Point(13, 30) };
@@ -3703,11 +3703,13 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
       const expandedId = window.SignGroup.getExpandedParentId();
 
       if (isParent) {
-        // 小看板を展開（未展開なら展開）
         if (expandedId !== sid) {
+          // 1回目のタップ：小看板を展開する（admin.html と同じ2段階タップ）
           window.SignGroup.expand(sid, map, loadedPolygons, updateMarkersVisibility);
+          if (infoWindow) infoWindow.close();
+          return;
         }
-        // 1回目のタップでも必ず大看板のメニューを開く！
+        // 2回目のタップ：大看板のメニューを開く
         showPolygonActionMenu_(id, e && e.latLng, e);
         return;
       } else if (isChild) {
@@ -4597,6 +4599,9 @@ window.renderFieldPhotosTable = (id) => {
         : '';
 
       const safeRecId = String(item.id || '').replace(/'/g, "\\'");
+      const editBtnHtml = (!item._isSaving)
+        ? `<button type="button" onclick="editFieldPhotoRecord('${safeRecId}', '${polyId}')" style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;" title="写真・タグ・メモを編集">✏️ 編集</button>`
+        : '';
       const deleteBtnHtml = (!item._isSaving && isOwner)
         ? `<button type="button" onclick="deleteFieldPhotoRecord('${safeRecId}', '${polyId}')" style="background:#FFEBEE; color:#C62828; border:1px solid #FFCDD2; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;" title="削除">🗑️ 削除</button>`
         : '';
@@ -4649,6 +4654,7 @@ window.renderFieldPhotosTable = (id) => {
             <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
               ${savingBadge}
               ${badgeType}
+              ${editBtnHtml}
               ${deleteBtnHtml}
             </div>
           </div>
@@ -4677,6 +4683,11 @@ window.renderFieldPhotosTable = (id) => {
       </div>
     `;
   }
+};
+
+window.editFieldPhotoRecord = (recordId, polyId) => {
+  const pid = polyId || activePolyId;
+  renderFieldPhotoAddForm(pid, recordId);
 };
 
 window.renderFieldPhotoTagSelector = () => {
@@ -4719,7 +4730,7 @@ window.addCustomFieldPhotoTag = () => {
   window.renderFieldPhotoTagSelector();
 };
 
-window.renderFieldPhotoAddForm = (id) => {
+window.renderFieldPhotoAddForm = (id, editRecordId) => {
   const polyId = id || activePolyId;
   const p = loadedPolygons[polyId];
   if (!p) {
@@ -4728,26 +4739,50 @@ window.renderFieldPhotoAddForm = (id) => {
   }
   activePolyId = polyId;
   clearFieldPhotoPendingFiles_();
-  window.fieldPhotoSelectedTags = [];
+
+  const isEdit = !!editRecordId;
+  const targetRec = isEdit && Array.isArray(p.photos)
+    ? p.photos.find(r => r && String(r.id) === String(editRecordId))
+    : null;
+
+  window.fieldPhotoEditingRecordId = (isEdit && targetRec) ? String(editRecordId) : null;
+  window.fieldPhotoKeptUrls = (isEdit && targetRec)
+    ? ((targetRec.urls && targetRec.urls.length) ? [...targetRec.urls] : (targetRec.url ? [targetRec.url] : []))
+    : [];
+  window.fieldPhotoSelectedTags = (isEdit && targetRec && targetRec.data && Array.isArray(targetRec.data.photoTags))
+    ? [...targetRec.data.photoTags]
+    : [];
 
   const titleEl = document.getElementById('rightPanelTitle');
-  if (titleEl) titleEl.innerText = `${p.name} - 📷 写真の追加`;
+  if (titleEl) {
+    titleEl.innerText = `${p.name} - ${window.fieldPhotoEditingRecordId ? '✏️ 写真の編集' : '📷 写真の追加'}`;
+  }
 
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
+  const defaultDateVal = (targetRec && targetRec.data && targetRec.data.photoDate)
+    ? String(targetRec.data.photoDate).replace(/\//g, '-')
+    : ((targetRec && targetRec.date && targetRec.date !== '-') ? String(targetRec.date).replace(/\//g, '-') : todayStr);
+  const defaultTimeVal = (targetRec && targetRec.data && targetRec.data.photoTime)
+    ? String(targetRec.data.photoTime)
+    : ((targetRec && targetRec.time) ? String(targetRec.time) : currentTimeStr);
+  const defaultMemoVal = (targetRec && targetRec.data)
+    ? String(targetRec.data.notes || targetRec.data.memo || targetRec.data.comment || '')
+    : '';
+
   const html = `
     <div style="background:white; padding:16px; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
-      <div style="background:#E8F5E9; border-radius:8px; padding:10px 12px; margin-bottom:14px; color:#1B5E20; font-size:13px; font-weight:bold; border:1px solid #C8E6C9;">
-        📍 登録対象: ${escapeHtmlFieldPhoto_(p.name)}
+      <div style="background:${window.fieldPhotoEditingRecordId ? '#E3F2FD' : '#E8F5E9'}; border-radius:8px; padding:10px 12px; margin-bottom:14px; color:${window.fieldPhotoEditingRecordId ? '#0D47A1' : '#1B5E20'}; font-size:13px; font-weight:bold; border:1px solid ${window.fieldPhotoEditingRecordId ? '#90CAF9' : '#C8E6C9'};">
+        📍 ${window.fieldPhotoEditingRecordId ? '編集中' : '登録対象'}: ${escapeHtmlFieldPhoto_(p.name)}
       </div>
 
       <!-- 写真選択ボタン -->
       <label class="form-label" style="margin-top:0; color:#2E7D32; font-size:14px; font-weight:bold;">
         📷 写真を選択 / 撮影 <span style="color:#d32f2f; font-size:11px;">(必須)</span>
       </label>
-      <div style="display:flex; gap:10px; margin-bottom:10px;">
+      <div style="display:flex; gap:10px; margin-bottom:8px;">
         <label style="flex:1; background:#4CAF50; color:white; text-align:center; padding:12px; border-radius:8px; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.15); display:flex; align-items:center; justify-content:center; gap:6px;">
           📸 カメラ
           <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="handleFieldPhotoInput(this)">
@@ -4758,8 +4793,12 @@ window.renderFieldPhotoAddForm = (id) => {
         </label>
       </div>
 
+      <div style="font-size:11px; color:#1565C0; background:#E3F2FD; border:1px solid #BBDEFB; border-radius:6px; padding:6px 10px; margin-bottom:8px; line-height:1.4;">
+        💡 追加した写真の<b>「✏️ 編集」</b>をタップすると、<b>ペン描画・丸囲み・矢印・文字入れ・回転・切り抜き</b>ができます
+      </div>
+
       <!-- プレビュー表示 -->
-      <div id="field_photos_preview_box" style="display:flex; gap:10px; overflow-x:auto; padding:8px; min-height:45px; margin-bottom:16px; border:2px dashed #C8E6C9; border-radius:8px; background:#FAFAFA; align-items:center;">
+      <div id="field_photos_preview_box" style="display:flex; gap:12px; overflow-x:auto; padding:10px 8px; min-height:55px; margin-bottom:16px; border:2px dashed #C8E6C9; border-radius:8px; background:#FAFAFA; align-items:center;">
         <span style="color:#999; font-size:12px; width:100%; text-align:center;">ここに撮影または選択した写真が表示されます</span>
       </div>
 
@@ -4779,22 +4818,22 @@ window.renderFieldPhotoAddForm = (id) => {
       <label class="form-label" style="color:#333; font-size:14px; font-weight:bold;">
         📝 メモ・気付き <span style="color:#888; font-size:11px; font-weight:normal;">(任意)</span>
       </label>
-      <textarea id="field_photo_memo_input" rows="4" class="form-input" placeholder="写真についてのメモや生育の様子、状況などを入力..." style="width:100%; box-sizing:border-box; padding:10px; border:1px solid #ccc; border-radius:8px; font-size:13px; margin-bottom:16px; line-height:1.5; resize:vertical;"></textarea>
+      <textarea id="field_photo_memo_input" rows="4" class="form-input" placeholder="写真についてのメモや生育の様子、状況などを入力..." style="width:100%; box-sizing:border-box; padding:10px; border:1px solid #ccc; border-radius:8px; font-size:13px; margin-bottom:16px; line-height:1.5; resize:vertical;">${escapeHtmlFieldPhoto_(defaultMemoVal)}</textarea>
 
       <!-- 日時と記録者 -->
       <div style="background:#f9f9f9; padding:12px; border-radius:8px; border:1px solid #eee; margin-bottom:8px;">
         <div style="display:flex; gap:10px; margin-bottom:10px;">
           <div style="flex:1;">
             <label class="form-label" style="font-size:11px; margin-bottom:3px; color:#555;">📅 撮影日</label>
-            <input type="date" id="field_photo_date_input" class="form-input" value="${todayStr}" style="margin-bottom:0; font-size:13px; padding:8px;">
+            <input type="date" id="field_photo_date_input" class="form-input" value="${escapeHtmlFieldPhoto_(defaultDateVal)}" style="margin-bottom:0; font-size:13px; padding:8px;">
           </div>
           <div style="flex:1;">
             <label class="form-label" style="font-size:11px; margin-bottom:3px; color:#555;">⏰ 撮影時刻</label>
-            <input type="text" id="field_photo_time_input" class="form-input app-time-input" readonly value="${currentTimeStr}" onclick="openAppTimePicker('field_photo_time_input', '撮影時刻')" style="margin-bottom:0; text-align:center; font-size:14px; font-weight:bold; padding:8px;">
+            <input type="text" id="field_photo_time_input" class="form-input app-time-input" readonly value="${escapeHtmlFieldPhoto_(defaultTimeVal)}" onclick="openAppTimePicker('field_photo_time_input', '撮影時刻')" style="margin-bottom:0; text-align:center; font-size:14px; font-weight:bold; padding:8px;">
           </div>
         </div>
         <div style="font-size:12px; color:#666;">
-          👤 記録者: <b>${escapeHtmlFieldPhoto_(currentUser)}</b>
+          👤 記録者: <b>${escapeHtmlFieldPhoto_((targetRec && targetRec.author) || currentUser)}</b>
         </div>
       </div>
     </div>
@@ -4804,13 +4843,16 @@ window.renderFieldPhotoAddForm = (id) => {
   if (contentEl) contentEl.innerHTML = `<div style="padding:14px; background:#f4f6f8; min-height:100%; box-sizing:border-box;">${html}</div>`;
 
   window.renderFieldPhotoTagSelector();
+  window.renderFieldPhotoPreviews();
 
   const footerEl = document.getElementById('rightPanelFooter');
   if (footerEl) {
+    const saveBtnLabel = window.fieldPhotoEditingRecordId ? '💾 変更を保存する' : '💾 写真とメモを保存する';
+    const saveBtnBg = window.fieldPhotoEditingRecordId ? '#1565C0' : '#2E7D32';
     footerEl.innerHTML = `
       <div style="display:flex; gap:10px;">
-        <button id="submitFieldPhotoBtn" type="button" onclick="submitFieldPhotoRecord('${polyId}')" style="background:#2E7D32; color:white; flex:1; padding:14px; border-radius:8px; border:none; font-weight:bold; cursor:pointer; font-size:16px; box-shadow:0 3px 6px rgba(46,125,50,0.3);">
-          💾 写真とメモを保存する
+        <button id="submitFieldPhotoBtn" type="button" onclick="submitFieldPhotoRecord('${polyId}')" style="background:${saveBtnBg}; color:white; flex:1; padding:14px; border-radius:8px; border:none; font-weight:bold; cursor:pointer; font-size:16px; box-shadow:0 3px 6px rgba(0,0,0,0.25);">
+          ${saveBtnLabel}
         </button>
         <button type="button" onclick="renderFieldPhotosTable('${polyId}')" style="background:#eee; color:#333; padding:14px 18px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:14px;">
           一覧に戻る
@@ -4829,6 +4871,7 @@ window.handleFieldPhotoInput = (input) => {
     });
     window.fieldPhotoPendingFiles.push({
       file: f,
+      originalFile: f,
       filename: f.name || ('photo_' + Date.now() + '.jpg'),
       previewUrl: previewUrl,
       resizePromise: resizePromise
@@ -4841,23 +4884,53 @@ window.handleFieldPhotoInput = (input) => {
 window.renderFieldPhotoPreviews = () => {
   const box = document.getElementById('field_photos_preview_box');
   if (!box) return;
-  if (!window.fieldPhotoPendingFiles || window.fieldPhotoPendingFiles.length === 0) {
+  const keptList = Array.isArray(window.fieldPhotoKeptUrls) ? window.fieldPhotoKeptUrls : [];
+  const pendingList = Array.isArray(window.fieldPhotoPendingFiles) ? window.fieldPhotoPendingFiles : [];
+
+  if (keptList.length === 0 && pendingList.length === 0) {
     box.innerHTML = `<span style="color:#999; font-size:12px; width:100%; text-align:center;">ここに撮影または選択した写真が表示されます</span>`;
     return;
   }
+
   let html = '';
-  window.fieldPhotoPendingFiles.forEach((item, idx) => {
-    const url = item.previewUrl || URL.createObjectURL(item.file || item);
+  keptList.forEach((u, idx) => {
+    if (!u) return;
+    const thumbUrl = String(u).replace('sz=w1600', 'sz=w800');
     html += `
-      <div style="position:relative; flex-shrink:0;">
-        <img src="${url}" style="width:75px; height:75px; object-fit:cover; border-radius:8px; border:1px solid #bbb; display:block;">
-        <div onclick="removeFieldPhotoPreview(${idx})" style="position:absolute; top:-7px; right:-7px; background:#F44336; color:white; width:22px; height:22px; text-align:center; line-height:22px; border-radius:50%; cursor:pointer; font-weight:bold; font-size:13px; box-shadow:0 2px 4px rgba(0,0,0,0.3);">
+      <div style="position:relative; flex-shrink:0; width:88px;">
+        <img src="${thumbUrl}" onclick="openFieldPhotoImageEditor('kept', ${idx})" style="width:88px; height:88px; object-fit:cover; border-radius:8px; border:2px solid #90CAF9; display:block; cursor:pointer;" title="タップで写真を加工・編集">
+        <button type="button" onclick="openFieldPhotoImageEditor('kept', ${idx})" style="margin-top:4px; width:100%; background:#1565C0; color:#fff; border:none; border-radius:6px; padding:4px 0; font-size:11px; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:2px; box-shadow:0 1px 3px rgba(0,0,0,0.2);">
+          ✏️ 編集
+        </button>
+        <div onclick="removeFieldPhotoKeptUrl(${idx})" style="position:absolute; top:-7px; right:-7px; background:#F44336; color:white; width:24px; height:24px; text-align:center; line-height:24px; border-radius:50%; cursor:pointer; font-weight:bold; font-size:14px; box-shadow:0 2px 4px rgba(0,0,0,0.35);" title="この写真を削除">
           ×
         </div>
       </div>
     `;
   });
+
+  pendingList.forEach((item, idx) => {
+    const url = item.previewUrl || URL.createObjectURL(item.file || item);
+    html += `
+      <div style="position:relative; flex-shrink:0; width:88px;">
+        <img src="${url}" onclick="openFieldPhotoImageEditor('pending', ${idx})" style="width:88px; height:88px; object-fit:cover; border-radius:8px; border:2px solid #66BB6A; display:block; cursor:pointer;" title="タップで写真を加工・編集">
+        <button type="button" onclick="openFieldPhotoImageEditor('pending', ${idx})" style="margin-top:4px; width:100%; background:#2E7D32; color:#fff; border:none; border-radius:6px; padding:4px 0; font-size:11px; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:2px; box-shadow:0 1px 3px rgba(0,0,0,0.2);">
+          ✏️ 編集
+        </button>
+        <div onclick="removeFieldPhotoPreview(${idx})" style="position:absolute; top:-7px; right:-7px; background:#F44336; color:white; width:24px; height:24px; text-align:center; line-height:24px; border-radius:50%; cursor:pointer; font-weight:bold; font-size:14px; box-shadow:0 2px 4px rgba(0,0,0,0.35);" title="この写真を削除">
+          ×
+        </div>
+      </div>
+    `;
+  });
+
   box.innerHTML = html;
+};
+
+window.removeFieldPhotoKeptUrl = (idx) => {
+  if (!Array.isArray(window.fieldPhotoKeptUrls)) return;
+  window.fieldPhotoKeptUrls.splice(idx, 1);
+  renderFieldPhotoPreviews();
 };
 
 window.removeFieldPhotoPreview = (idx) => {
@@ -4869,6 +4942,580 @@ window.removeFieldPhotoPreview = (idx) => {
   renderFieldPhotoPreviews();
 };
 
+// ══════════════════════════════════════════════════════════════
+// 🎨 写真画像の編集モーダル（ペン描画・丸囲み・矢印・文字入れ・回転・切り抜き）
+// ══════════════════════════════════════════════════════════════
+window.openFieldPhotoImageEditor = async (sourceType, idx) => {
+  let srcUrl = '';
+  let origUrl = '';
+  let filename = 'edited_photo_' + Date.now() + '.jpg';
+
+  if (sourceType === 'pending') {
+    const item = window.fieldPhotoPendingFiles && window.fieldPhotoPendingFiles[idx];
+    if (!item) return;
+    srcUrl = item.previewUrl || URL.createObjectURL(item.file || item);
+    origUrl = item.originalFile ? URL.createObjectURL(item.originalFile) : srcUrl;
+    filename = item.filename || filename;
+  } else if (sourceType === 'kept') {
+    const u = window.fieldPhotoKeptUrls && window.fieldPhotoKeptUrls[idx];
+    if (!u) return;
+    srcUrl = String(u).replace('sz=w800', 'sz=w1600');
+    origUrl = srcUrl;
+  } else if (sourceType === 'legacyPending') {
+    const f = pendingFiles && pendingFiles[idx];
+    if (!f) return;
+    srcUrl = URL.createObjectURL(f);
+    origUrl = f._originalFile ? URL.createObjectURL(f._originalFile) : srcUrl;
+    filename = f.name || filename;
+  } else {
+    return;
+  }
+
+  let modal = document.getElementById('fieldPhotoEditorModal');
+  if (modal) modal.remove();
+
+  modal = document.createElement('div');
+  modal.id = 'fieldPhotoEditorModal';
+  modal.style.cssText = 'position:fixed; inset:0; z-index:100005; background:rgba(15,20,25,0.96); display:flex; flex-direction:column; user-select:none; -webkit-user-select:none;';
+
+  modal.innerHTML = `
+    <!-- Top Header -->
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; background:#1b242c; color:#fff; border-bottom:1px solid #2e3b46; flex-shrink:0;">
+      <div style="font-weight:bold; font-size:14px; display:flex; align-items:center; gap:6px;">
+        <span>🎨 写真の編集・書き込み</span>
+      </div>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <button type="button" id="fpeUndoBtn" style="background:#37474F; color:#fff; border:1px solid #546E7A; border-radius:6px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">↩️ 戻す</button>
+        <button type="button" id="fpeResetBtn" style="background:#455A64; color:#fff; border:1px solid #607D8B; border-radius:6px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🔄 元に戻す</button>
+        <button type="button" id="fpeCloseBtn" style="background:transparent; color:#cfd8dc; border:none; font-size:20px; padding:2px 8px; cursor:pointer; font-weight:bold;">✕</button>
+      </div>
+    </div>
+
+    <!-- Canvas Viewport -->
+    <div id="fpeViewport" style="flex:1; position:relative; display:flex; align-items:center; justify-content:center; overflow:hidden; padding:8px; touch-action:none;">
+      <div id="fpeLoadingMsg" style="color:#fff; font-size:14px; font-weight:bold;">⏳ 写真を読み込み中...</div>
+      <canvas id="fpeCanvas" style="display:none; max-width:100%; max-height:100%; object-fit:contain; border-radius:4px; box-shadow:0 4px 16px rgba(0,0,0,0.5); touch-action:none;"></canvas>
+    </div>
+
+    <!-- Crop Action Banner (visible only in crop mode) -->
+    <div id="fpeCropBar" style="display:none; background:#263238; padding:8px 12px; border-top:1px solid #37474F; justify-content:center; align-items:center; gap:10px; flex-shrink:0;">
+      <span style="color:#B0BEC5; font-size:12px;">写真の上をドラッグして範囲を選択</span>
+      <button type="button" id="fpeApplyCropBtn" style="background:#FF9800; color:#fff; border:none; border-radius:6px; padding:6px 14px; font-size:12px; font-weight:bold; cursor:pointer;">✂️ 選択範囲で切り抜く</button>
+    </div>
+
+    <!-- Text Action Banner (visible only in text mode) -->
+    <div id="fpeTextBar" style="display:none; background:#263238; padding:8px 12px; border-top:1px solid #37474F; align-items:center; gap:8px; flex-shrink:0;">
+      <input type="text" id="fpeTextInput" placeholder="ここに入れる文字を入力してから、写真の上をタップ..." style="flex:1; padding:8px 10px; border-radius:6px; border:1px solid #607D8B; background:#fff; color:#222; font-size:13px;">
+    </div>
+
+    <!-- Tool Controls -->
+    <div style="background:#1b242c; border-top:1px solid #2e3b46; padding:10px 12px; display:flex; flex-direction:column; gap:8px; flex-shrink:0;">
+      <!-- Mode selector -->
+      <div style="display:flex; gap:6px; overflow-x:auto; padding-bottom:2px;">
+        <button type="button" class="fpe-tool-btn" data-tool="pen" style="flex:1; min-width:58px; background:#2E7D32; color:#fff; border:1px solid #66BB6A; border-radius:8px; padding:7px 6px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">🖊️ ペン</button>
+        <button type="button" class="fpe-tool-btn" data-tool="circle" style="flex:1; min-width:58px; background:#263238; color:#cfd8dc; border:1px solid #455A64; border-radius:8px; padding:7px 6px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">⭕ 丸枠</button>
+        <button type="button" class="fpe-tool-btn" data-tool="arrow" style="flex:1; min-width:58px; background:#263238; color:#cfd8dc; border:1px solid #455A64; border-radius:8px; padding:7px 6px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">↗️ 矢印</button>
+        <button type="button" class="fpe-tool-btn" data-tool="text" style="flex:1; min-width:58px; background:#263238; color:#cfd8dc; border:1px solid #455A64; border-radius:8px; padding:7px 6px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">🔤 文字</button>
+        <button type="button" class="fpe-tool-btn" data-tool="crop" style="flex:1; min-width:64px; background:#263238; color:#cfd8dc; border:1px solid #455A64; border-radius:8px; padding:7px 6px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">✂️ 切抜</button>
+        <button type="button" id="fpeRotateLeftBtn" style="min-width:48px; background:#263238; color:#cfd8dc; border:1px solid #455A64; border-radius:8px; padding:7px 8px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;" title="左に90°回転">↺ 左90°</button>
+        <button type="button" id="fpeRotateRightBtn" style="min-width:48px; background:#263238; color:#cfd8dc; border:1px solid #455A64; border-radius:8px; padding:7px 8px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;" title="右に90°回転">↻ 右90°</button>
+      </div>
+
+      <!-- Color & Stroke Width -->
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button type="button" class="fpe-color-btn" data-color="#FF1744" style="width:26px; height:26px; border-radius:50%; background:#FF1744; border:3px solid #fff; cursor:pointer; box-shadow:0 0 4px rgba(0,0,0,0.5);"></button>
+          <button type="button" class="fpe-color-btn" data-color="#FFD600" style="width:26px; height:26px; border-radius:50%; background:#FFD600; border:2px solid #555; cursor:pointer;"></button>
+          <button type="button" class="fpe-color-btn" data-color="#00E676" style="width:26px; height:26px; border-radius:50%; background:#00E676; border:2px solid #555; cursor:pointer;"></button>
+          <button type="button" class="fpe-color-btn" data-color="#2979FF" style="width:26px; height:26px; border-radius:50%; background:#2979FF; border:2px solid #555; cursor:pointer;"></button>
+          <button type="button" class="fpe-color-btn" data-color="#FFFFFF" style="width:26px; height:26px; border-radius:50%; background:#FFFFFF; border:2px solid #555; cursor:pointer;"></button>
+          <button type="button" class="fpe-color-btn" data-color="#212121" style="width:26px; height:26px; border-radius:50%; background:#212121; border:2px solid #999; cursor:pointer;"></button>
+        </div>
+        <div style="display:flex; gap:4px; align-items:center;">
+          <button type="button" class="fpe-size-btn" data-size="4" style="background:#263238; color:#cfd8dc; border:1px solid #455A64; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">細</button>
+          <button type="button" class="fpe-size-btn" data-size="8" style="background:#37474F; color:#fff; border:1px solid #90CAF9; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">中</button>
+          <button type="button" class="fpe-size-btn" data-size="14" style="background:#263238; color:#cfd8dc; border:1px solid #455A64; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">太</button>
+        </div>
+      </div>
+
+      <!-- Footer Save / Cancel -->
+      <div style="display:flex; gap:10px; margin-top:2px;">
+        <button type="button" id="fpeSaveBtn" style="flex:1; background:linear-gradient(135deg, #2E7D32 0%, #43A047 100%); color:#fff; border:none; border-radius:8px; padding:12px; font-size:15px; font-weight:bold; cursor:pointer; box-shadow:0 2px 6px rgba(46,125,50,0.4);">
+          ✅ 編集を反映する
+        </button>
+        <button type="button" id="fpeCancelBtn" style="background:#37474F; color:#eceff1; border:none; border-radius:8px; padding:12px 16px; font-size:14px; font-weight:bold; cursor:pointer;">
+          キャンセル
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const canvas = document.getElementById('fpeCanvas');
+  const ctx = canvas.getContext('2d');
+  const loadingMsg = document.getElementById('fpeLoadingMsg');
+  const cropBar = document.getElementById('fpeCropBar');
+  const textBar = document.getElementById('fpeTextBar');
+  const textInput = document.getElementById('fpeTextInput');
+
+  let currentTool = 'pen';
+  let currentColor = '#FF1744';
+  let currentSize = 8;
+  let historyStack = []; // Array of ImageData snapshots
+  let originalImageObj = null;
+  let isDrawing = false;
+  let startPt = null;
+  let currentBaseImageData = null; // ImageData before active drag shape
+  let pendingCropRect = null;
+
+  let onPointerMoveRef = null;
+  let onPointerUpRef = null;
+
+  const cleanupAndClose = () => {
+    if (onPointerMoveRef) window.removeEventListener('mousemove', onPointerMoveRef);
+    if (onPointerUpRef) window.removeEventListener('mouseup', onPointerUpRef);
+    if (origUrl && origUrl !== srcUrl && origUrl.indexOf('blob:') === 0) {
+      try { URL.revokeObjectURL(origUrl); } catch (e) { }
+    }
+    if (sourceType === 'legacyPending' && srcUrl && srcUrl.indexOf('blob:') === 0) {
+      try { URL.revokeObjectURL(srcUrl); } catch (e) { }
+    }
+    modal.remove();
+  };
+
+  document.getElementById('fpeCloseBtn').onclick = cleanupAndClose;
+  document.getElementById('fpeCancelBtn').onclick = cleanupAndClose;
+
+  const pushHistory = () => {
+    try {
+      if (historyStack.length >= 15) historyStack.shift();
+      historyStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+    } catch (e) { }
+  };
+
+  const initCanvasFromImage = (img) => {
+    const maxSide = 1280;
+    let w = img.naturalWidth || img.width;
+    let h = img.naturalHeight || img.height;
+    if (w > maxSide || h > maxSide) {
+      if (w >= h) {
+        h = Math.round((h * maxSide) / w);
+        w = maxSide;
+      } else {
+        w = Math.round((w * maxSide) / h);
+        h = maxSide;
+      }
+    }
+    canvas.width = w;
+    canvas.height = h;
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    historyStack = [];
+    pushHistory();
+    loadingMsg.style.display = 'none';
+    canvas.style.display = 'block';
+  };
+
+  const loadImageSafe = (urlToLoad, allowServerFallback) => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      if (urlToLoad.indexOf('http') === 0) {
+        img.crossOrigin = 'anonymous';
+      }
+      img.onload = () => {
+        try {
+          const testC = document.createElement('canvas');
+          testC.width = 2;
+          testC.height = 2;
+          const testCtx = testC.getContext('2d');
+          testCtx.drawImage(img, 0, 0, 2, 2);
+          testC.toDataURL('image/jpeg');
+          resolve(img);
+        } catch (corsErr) {
+          if (allowServerFallback) {
+            callGAS('getDriveImageBase64', { url: urlToLoad })
+              .then(b64Url => loadImageSafe(b64Url, false))
+              .then(resolve)
+              .catch(reject);
+          } else {
+            reject(corsErr);
+          }
+        }
+      };
+      img.onerror = () => {
+        if (allowServerFallback && urlToLoad.indexOf('http') === 0) {
+          callGAS('getDriveImageBase64', { url: urlToLoad })
+            .then(b64Url => loadImageSafe(b64Url, false))
+            .then(resolve)
+            .catch(reject);
+        } else {
+          reject(new Error('画像の読み込みに失敗しました'));
+        }
+      };
+      img.src = urlToLoad;
+    });
+  };
+
+  try {
+    const loadedImg = await loadImageSafe(srcUrl, true);
+    originalImageObj = loadedImg;
+    initCanvasFromImage(loadedImg);
+  } catch (err) {
+    cleanupAndClose();
+    customAlert('この画像は編集用に読み込めませんでした: ' + (err.message || err));
+    return;
+  }
+
+  // Tool switching
+  const toolBtns = modal.querySelectorAll('.fpe-tool-btn');
+  const setTool = (toolName) => {
+    currentTool = toolName;
+    pendingCropRect = null;
+    toolBtns.forEach(btn => {
+      const active = btn.getAttribute('data-tool') === toolName;
+      btn.style.background = active ? '#2E7D32' : '#263238';
+      btn.style.color = active ? '#fff' : '#cfd8dc';
+      btn.style.borderColor = active ? '#66BB6A' : '#455A64';
+    });
+    cropBar.style.display = toolName === 'crop' ? 'flex' : 'none';
+    if (textBar) textBar.style.display = toolName === 'text' ? 'flex' : 'none';
+    if (toolName === 'text' && textInput) {
+      setTimeout(() => { try { textInput.focus(); } catch (e) { } }, 50);
+    }
+    if (historyStack.length > 0) {
+      const last = historyStack[historyStack.length - 1];
+      canvas.width = last.width;
+      canvas.height = last.height;
+      ctx.putImageData(last, 0, 0);
+    }
+  };
+  toolBtns.forEach(btn => {
+    btn.onclick = () => setTool(btn.getAttribute('data-tool'));
+  });
+
+  // Color switching
+  const colorBtns = modal.querySelectorAll('.fpe-color-btn');
+  colorBtns.forEach(btn => {
+    btn.onclick = () => {
+      currentColor = btn.getAttribute('data-color');
+      colorBtns.forEach(b => {
+        const isSel = b === btn;
+        b.style.border = isSel ? '3px solid #fff' : '2px solid #555';
+        b.style.transform = isSel ? 'scale(1.15)' : 'scale(1)';
+      });
+    };
+  });
+
+  // Size switching
+  const sizeBtns = modal.querySelectorAll('.fpe-size-btn');
+  sizeBtns.forEach(btn => {
+    btn.onclick = () => {
+      currentSize = Number(btn.getAttribute('data-size')) || 8;
+      sizeBtns.forEach(b => {
+        const isSel = b === btn;
+        b.style.background = isSel ? '#37474F' : '#263238';
+        b.style.color = isSel ? '#fff' : '#cfd8dc';
+        b.style.borderColor = isSel ? '#90CAF9' : '#455A64';
+      });
+    };
+  });
+
+  // Undo & Reset
+  document.getElementById('fpeUndoBtn').onclick = () => {
+    if (historyStack.length > 1) {
+      historyStack.pop();
+      const prev = historyStack[historyStack.length - 1];
+      canvas.width = prev.width;
+      canvas.height = prev.height;
+      ctx.putImageData(prev, 0, 0);
+      pendingCropRect = null;
+    }
+  };
+
+  document.getElementById('fpeResetBtn').onclick = async () => {
+    try {
+      const origImg = origUrl !== srcUrl ? await loadImageSafe(origUrl, true) : originalImageObj;
+      initCanvasFromImage(origImg);
+      pendingCropRect = null;
+    } catch (e) {
+      if (originalImageObj) initCanvasFromImage(originalImageObj);
+    }
+  };
+
+  // Rotate helper
+  const rotateCanvas90 = (dir) => {
+    if (historyStack.length > 0) {
+      const last = historyStack[historyStack.length - 1];
+      canvas.width = last.width;
+      canvas.height = last.height;
+      ctx.putImageData(last, 0, 0);
+    }
+    const tempC = document.createElement('canvas');
+    tempC.width = canvas.width;
+    tempC.height = canvas.height;
+    tempC.getContext('2d').drawImage(canvas, 0, 0);
+
+    const newW = tempC.height;
+    const newH = tempC.width;
+    canvas.width = newW;
+    canvas.height = newH;
+    ctx.save();
+    if (dir > 0) {
+      ctx.translate(newW, 0);
+      ctx.rotate(Math.PI / 2);
+    } else {
+      ctx.translate(0, newH);
+      ctx.rotate(-Math.PI / 2);
+    }
+    ctx.drawImage(tempC, 0, 0);
+    ctx.restore();
+    pendingCropRect = null;
+    pushHistory();
+  };
+
+  document.getElementById('fpeRotateLeftBtn').onclick = () => rotateCanvas90(-1);
+  document.getElementById('fpeRotateRightBtn').onclick = () => rotateCanvas90(1);
+
+  // Apply crop
+  document.getElementById('fpeApplyCropBtn').onclick = () => {
+    if (!pendingCropRect || pendingCropRect.w < 20 || pendingCropRect.h < 20) {
+      customAlert('写真の上をドラッグして、切り抜く範囲を選択してください。');
+      return;
+    }
+    const baseData = historyStack[historyStack.length - 1];
+    if (!baseData) return;
+    const tempC = document.createElement('canvas');
+    tempC.width = baseData.width;
+    tempC.height = baseData.height;
+    tempC.getContext('2d').putImageData(baseData, 0, 0);
+
+    const rx = Math.max(0, Math.round(pendingCropRect.x));
+    const ry = Math.max(0, Math.round(pendingCropRect.y));
+    const rw = Math.min(tempC.width - rx, Math.round(pendingCropRect.w));
+    const rh = Math.min(tempC.height - ry, Math.round(pendingCropRect.h));
+    if (rw < 20 || rh < 20) return;
+
+    canvas.width = rw;
+    canvas.height = rh;
+    ctx.drawImage(tempC, rx, ry, rw, rh, 0, 0, rw, rh);
+    pendingCropRect = null;
+    pushHistory();
+    setTool('pen');
+  };
+
+  // Pointer coordinates helper
+  const getCanvasPoint = (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const clientX = (ev.touches && ev.touches.length > 0) ? ev.touches[0].clientX : (ev.changedTouches && ev.changedTouches.length > 0 ? ev.changedTouches[0].clientX : ev.clientX);
+    const clientY = (ev.touches && ev.touches.length > 0) ? ev.touches[0].clientY : (ev.changedTouches && ev.changedTouches.length > 0 ? ev.changedTouches[0].clientY : ev.clientY);
+    const scaleX = canvas.width / (rect.width || 1);
+    const scaleY = canvas.height / (rect.height || 1);
+    return {
+      x: Math.max(0, Math.min(canvas.width, (clientX - rect.left) * scaleX)),
+      y: Math.max(0, Math.min(canvas.height, (clientY - rect.top) * scaleY)),
+      scale: Math.max(scaleX, scaleY)
+    };
+  };
+
+  const drawArrow = (x1, y1, x2, y2, lineWidth, color) => {
+    const headLen = Math.max(18, lineWidth * 3.5);
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = lineWidth;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI / 6), y2 - headLen * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI / 6), y2 - headLen * Math.sin(angle + Math.PI / 6));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  };
+
+  const onPointerDown = (ev) => {
+    if (ev.cancelable) ev.preventDefault();
+    const pt = getCanvasPoint(ev);
+    const scaledWidth = Math.max(3, Math.round(currentSize * (canvas.width / 600)));
+
+    if (currentTool === 'text') {
+      let txt = textInput ? textInput.value.trim() : '';
+      if (!txt) {
+        txt = (window.prompt('写真に入れる文字を入力してください:') || '').trim();
+      }
+      if (txt) {
+        if (historyStack.length > 0) {
+          ctx.putImageData(historyStack[historyStack.length - 1], 0, 0);
+        }
+        const fontSize = Math.max(20, Math.round(currentSize * 3.8 * (canvas.width / 600)));
+        ctx.save();
+        ctx.font = `bold ${fontSize}px sans-serif`;
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = Math.max(4, Math.round(fontSize / 6));
+        ctx.strokeStyle = currentColor === '#212121' ? '#FFFFFF' : 'rgba(0,0,0,0.8)';
+        ctx.fillStyle = currentColor;
+        ctx.strokeText(txt, pt.x, pt.y);
+        ctx.fillText(txt, pt.x, pt.y);
+        ctx.restore();
+        pushHistory();
+      }
+      return;
+    }
+
+    isDrawing = true;
+    startPt = pt;
+    currentBaseImageData = historyStack.length > 0
+      ? historyStack[historyStack.length - 1]
+      : ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+    if (currentTool === 'pen') {
+      ctx.save();
+      ctx.strokeStyle = currentColor;
+      ctx.fillStyle = currentColor;
+      ctx.lineWidth = scaledWidth;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(pt.x, pt.y);
+      ctx.lineTo(pt.x + 0.1, pt.y + 0.1);
+      ctx.stroke();
+    }
+  };
+
+  const onPointerMove = (ev) => {
+    if (!isDrawing) return;
+    if (ev.cancelable) ev.preventDefault();
+    const pt = getCanvasPoint(ev);
+    const scaledWidth = Math.max(3, Math.round(currentSize * (canvas.width / 600)));
+
+    if (currentTool === 'pen') {
+      ctx.lineTo(pt.x, pt.y);
+      ctx.stroke();
+    } else if (currentTool === 'circle') {
+      ctx.putImageData(currentBaseImageData, 0, 0);
+      const cx = (startPt.x + pt.x) / 2;
+      const cy = (startPt.y + pt.y) / 2;
+      const rx = Math.abs(pt.x - startPt.x) / 2;
+      const ry = Math.abs(pt.y - startPt.y) / 2;
+      ctx.save();
+      ctx.strokeStyle = currentColor;
+      ctx.lineWidth = scaledWidth;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, Math.max(2, rx), Math.max(2, ry), 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    } else if (currentTool === 'arrow') {
+      ctx.putImageData(currentBaseImageData, 0, 0);
+      drawArrow(startPt.x, startPt.y, pt.x, pt.y, scaledWidth, currentColor);
+    } else if (currentTool === 'crop') {
+      ctx.putImageData(currentBaseImageData, 0, 0);
+      const rx = Math.min(startPt.x, pt.x);
+      const ry = Math.min(startPt.y, pt.y);
+      const rw = Math.abs(pt.x - startPt.x);
+      const rh = Math.abs(pt.y - startPt.y);
+      pendingCropRect = { x: rx, y: ry, w: rw, h: rh };
+      ctx.save();
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.putImageData(currentBaseImageData, 0, 0, rx, ry, rw, rh);
+      ctx.strokeStyle = '#FF9800';
+      ctx.lineWidth = Math.max(2, Math.round(canvas.width / 300));
+      ctx.setLineDash([8, 6]);
+      ctx.strokeRect(rx, ry, rw, rh);
+      ctx.restore();
+    }
+  };
+
+  const onPointerUp = (ev) => {
+    if (!isDrawing) return;
+    if (ev && ev.cancelable) ev.preventDefault();
+    isDrawing = false;
+    if (currentTool === 'pen') {
+      ctx.restore();
+      pushHistory();
+    } else if (currentTool === 'circle' || currentTool === 'arrow') {
+      pushHistory();
+    }
+  };
+
+  onPointerMoveRef = onPointerMove;
+  onPointerUpRef = onPointerUp;
+  canvas.addEventListener('mousedown', onPointerDown);
+  window.addEventListener('mousemove', onPointerMove);
+  window.addEventListener('mouseup', onPointerUp);
+  canvas.addEventListener('touchstart', onPointerDown, { passive: false });
+  canvas.addEventListener('touchmove', onPointerMove, { passive: false });
+  canvas.addEventListener('touchend', onPointerUp, { passive: false });
+
+  // Save edited image
+  document.getElementById('fpeSaveBtn').onclick = () => {
+    if (currentTool === 'crop' && pendingCropRect && pendingCropRect.w >= 20 && pendingCropRect.h >= 20) {
+      document.getElementById('fpeApplyCropBtn').click();
+    } else if (currentTool === 'crop' && historyStack.length > 0) {
+      ctx.putImageData(historyStack[historyStack.length - 1], 0, 0);
+    }
+
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        customAlert('編集画像の生成に失敗しました');
+        return;
+      }
+      const editedFile = new File([blob], filename.replace(/\.[^.]+$/, '') + '_edited.jpg', { type: 'image/jpeg' });
+      const newPreviewUrl = URL.createObjectURL(editedFile);
+      const newResizePromise = fastResizeFieldPhoto_(editedFile).catch(() => {
+        return typeof resizeImg === 'function' ? resizeImg(editedFile) : '';
+      });
+
+      if (sourceType === 'pending') {
+        const item = window.fieldPhotoPendingFiles[idx];
+        if (item) {
+          if (item.previewUrl) {
+            try { URL.revokeObjectURL(item.previewUrl); } catch (e) { }
+          }
+          item.file = editedFile;
+          item.previewUrl = newPreviewUrl;
+          item.resizePromise = newResizePromise;
+        }
+        renderFieldPhotoPreviews();
+      } else if (sourceType === 'kept') {
+        // 既存の保存済み写真を加工した場合は、元のURLを除外して新規アップロード対象へ置き換える
+        if (Array.isArray(window.fieldPhotoKeptUrls)) {
+          window.fieldPhotoKeptUrls.splice(idx, 1);
+        }
+        if (!Array.isArray(window.fieldPhotoPendingFiles)) window.fieldPhotoPendingFiles = [];
+        window.fieldPhotoPendingFiles.push({
+          file: editedFile,
+          originalFile: editedFile,
+          filename: editedFile.name,
+          previewUrl: newPreviewUrl,
+          resizePromise: newResizePromise
+        });
+        renderFieldPhotoPreviews();
+      } else if (sourceType === 'legacyPending') {
+        if (pendingFiles && pendingFiles[idx]) {
+          const origF = pendingFiles[idx]._originalFile || pendingFiles[idx];
+          editedFile._originalFile = origF;
+          pendingFiles[idx] = editedFile;
+          if (typeof renderPendingPhotos === 'function') renderPendingPhotos();
+        }
+      }
+
+      cleanupAndClose();
+      if (typeof window.showRecordSyncToast === 'function') {
+        window.showRecordSyncToast('✨ 写真の編集を反映しました', 'ok');
+      }
+    }, 'image/jpeg', 0.88);
+  };
+};
+
 window.submitFieldPhotoRecord = async (id) => {
   const polyId = id || activePolyId;
   const p = loadedPolygons[polyId];
@@ -4877,12 +5524,15 @@ window.submitFieldPhotoRecord = async (id) => {
     return;
   }
 
-  if (!window.fieldPhotoPendingFiles || window.fieldPhotoPendingFiles.length === 0) {
-    customAlert("写真を選択または撮影してください。");
+  const editingId = window.fieldPhotoEditingRecordId || null;
+  const keptUrls = Array.isArray(window.fieldPhotoKeptUrls) ? window.fieldPhotoKeptUrls.filter(Boolean) : [];
+  const pendingItems = Array.isArray(window.fieldPhotoPendingFiles) ? window.fieldPhotoPendingFiles.slice() : [];
+
+  if (keptUrls.length === 0 && pendingItems.length === 0) {
+    customAlert("写真を1枚以上選択または残してください。");
     return;
   }
 
-  const pendingItems = window.fieldPhotoPendingFiles.slice();
   const memo = document.getElementById('field_photo_memo_input')?.value.trim() || '';
   const dateVal = document.getElementById('field_photo_date_input')?.value || '';
   const timeVal = document.getElementById('field_photo_time_input')?.value || '';
@@ -4894,40 +5544,59 @@ window.submitFieldPhotoRecord = async (id) => {
     saveFieldPhotoCustomTag_(unaddedTag);
   }
 
-  const recordData = {
+  if (!Array.isArray(loadedPolygons[polyId].photos)) loadedPolygons[polyId].photos = [];
+  const existingItem = editingId
+    ? loadedPolygons[polyId].photos.find(x => x && String(x.id) === String(editingId))
+    : null;
+
+  const baseData = (existingItem && existingItem.data && typeof existingItem.data === 'object')
+    ? Object.assign({}, existingItem.data)
+    : { isPhotoOnly: true };
+
+  const recordData = Object.assign(baseData, {
     notes: memo,
     photoDate: dateVal,
     photoTime: timeVal,
-    photoTags: tags,
-    isPhotoOnly: true
-  };
+    photoTags: tags
+  });
 
   // 楽観的UI更新：押した瞬間に一覧へ切り替えてユーザーを待たせない
-  const tempId = 'temp_photo_' + Date.now();
   pendingItems.forEach(it => { it.keepPreviewUrl = true; });
   const tempUrls = pendingItems.map(it => it.previewUrl).filter(Boolean);
   const formattedDate = dateVal ? dateVal.replace(/-/g, '/') : '';
-  const tempRecord = {
-    id: tempId,
-    date: formattedDate || '-',
-    time: timeVal,
-    author: currentUser,
-    type: 'growth',
-    urls: tempUrls,
-    data: recordData,
-    _isSaving: true
-  };
 
-  if (!Array.isArray(loadedPolygons[polyId].photos)) loadedPolygons[polyId].photos = [];
-  loadedPolygons[polyId].photos.unshift(tempRecord);
+  const tempId = editingId || ('temp_photo_' + Date.now());
+  const prevBackup = existingItem ? Object.assign({}, existingItem) : null;
+
+  if (editingId && existingItem) {
+    existingItem.date = formattedDate || existingItem.date || '-';
+    existingItem.time = timeVal || existingItem.time || '';
+    existingItem.urls = [...keptUrls, ...tempUrls];
+    existingItem.data = recordData;
+    existingItem._isSaving = true;
+  } else {
+    const tempRecord = {
+      id: tempId,
+      date: formattedDate || '-',
+      time: timeVal,
+      author: currentUser,
+      type: 'growth',
+      urls: tempUrls,
+      data: recordData,
+      _isSaving: true
+    };
+    loadedPolygons[polyId].photos.unshift(tempRecord);
+  }
 
   window.fieldPhotoPendingFiles = [];
+  window.fieldPhotoKeptUrls = [];
+  window.fieldPhotoEditingRecordId = null;
   window.fieldPhotoSelectedTags = [];
   window.fieldPhotoActiveFilterTag = 'ALL';
   renderFieldPhotosTable(polyId);
 
   if (typeof window.showRecordSyncToast === 'function') {
-    window.showRecordSyncToast("⏳ 写真をバックグラウンドで保存中...", "info");
+    window.showRecordSyncToast(editingId ? "⏳ 写真の編集内容を保存中..." : "⏳ 写真をバックグラウンドで保存中...", "info");
   }
 
   try {
@@ -4941,21 +5610,38 @@ window.submitFieldPhotoRecord = async (id) => {
       };
     }));
 
-    const updatedItems = await callGAS('saveRecord', {
-      id: polyId,
-      name: p.name,
-      author: currentUser,
-      recordType: 'growth',
-      data: recordData,
-      photos: resizedList
-    });
+    let updatedItems;
+    if (editingId) {
+      updatedItems = await callGAS('updateRecordItem', {
+        id: polyId,
+        recordId: editingId,
+        recordType: (existingItem && existingItem.type) ? existingItem.type : 'growth',
+        data: recordData,
+        photos: resizedList,
+        keptUrls: keptUrls,
+        userName: currentUser
+      });
+    } else {
+      updatedItems = await callGAS('saveRecord', {
+        id: polyId,
+        name: p.name,
+        author: currentUser,
+        recordType: 'growth',
+        data: recordData,
+        photos: resizedList
+      });
+    }
 
     tempUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (e) { } });
 
     if (Array.isArray(updatedItems)) {
       loadedPolygons[polyId].photos = updatedItems;
     } else {
-      loadedPolygons[polyId].photos = (loadedPolygons[polyId].photos || []).filter(x => x.id !== tempId);
+      if (!editingId) {
+        loadedPolygons[polyId].photos = (loadedPolygons[polyId].photos || []).filter(x => x.id !== tempId);
+      } else if (existingItem) {
+        delete existingItem._isSaving;
+      }
       if (typeof window.refreshPolygonPhotos === 'function') {
         try { await window.refreshPolygonPhotos(polyId); } catch (e) { }
       }
@@ -4966,7 +5652,7 @@ window.submitFieldPhotoRecord = async (id) => {
     }
 
     if (typeof window.showRecordSyncToast === 'function') {
-      window.showRecordSyncToast("📸 写真とメモを保存しました！", "ok");
+      window.showRecordSyncToast(editingId ? "✅ 写真の編集を保存しました！" : "📸 写真とメモを保存しました！", "ok");
     }
 
     if (activePolyId === polyId && document.getElementById('rightPanel')?.classList.contains('open')) {
@@ -4978,7 +5664,10 @@ window.submitFieldPhotoRecord = async (id) => {
     }
   } catch (e) {
     console.error("submitFieldPhotoRecord error:", e);
-    if (loadedPolygons[polyId] && Array.isArray(loadedPolygons[polyId].photos)) {
+    if (editingId && existingItem && prevBackup) {
+      Object.assign(existingItem, prevBackup);
+      delete existingItem._isSaving;
+    } else if (loadedPolygons[polyId] && Array.isArray(loadedPolygons[polyId].photos)) {
       loadedPolygons[polyId].photos = loadedPolygons[polyId].photos.filter(x => x.id !== tempId);
     }
     tempUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (err) { } });
@@ -5816,8 +6505,9 @@ window.renderPendingPhotos = () => {
   let html = '';
   pendingFiles.forEach((f, i) => {
     const url = URL.createObjectURL(f);
-    html += `<div style="position:relative;flex-shrink:0;">
-                <img src="${url}" style="width:80px;height:80px;object-fit:cover;border-radius:4px;border:1px solid #ccc;">
+    html += `<div style="position:relative;flex-shrink:0;width:84px;">
+                <img src="${url}" onclick="openFieldPhotoImageEditor('legacyPending', ${i})" style="width:84px;height:84px;object-fit:cover;border-radius:6px;border:1px solid #ccc;display:block;cursor:pointer;" title="タップで写真を加工・編集">
+                <button type="button" onclick="openFieldPhotoImageEditor('legacyPending', ${i})" style="margin-top:3px;width:100%;background:#2E7D32;color:#fff;border:none;border-radius:5px;padding:3px 0;font-size:11px;font-weight:bold;cursor:pointer;">✏️ 編集</button>
                 <div onclick="removePendingPhoto(${i})" style="position:absolute;top:-8px;right:-8px;background:#F44336;color:white;width:24px;height:24px;text-align:center;line-height:24px;border-radius:50%;cursor:pointer;font-weight:bold;box-shadow:0 2px 4px rgba(0,0,0,0.3);">×</div>
             </div>`;
   });
@@ -56077,6 +56767,93 @@ window.deleteQualification = async function (userName, index) {
     return Array.from(new Set(arr.map(x => Number(String(x || '').trim())).filter(n => n >= 1 && n <= 12))).sort((a, b) => a - b);
   };
 
+  window.getWorkerInspectionCurrentMeter_ = function (machineId, mac) {
+    const hourEl = document.getElementById('insp_hour_meter');
+    const rawIn = hourEl ? String(hourEl.value || '').trim() : '';
+    if (rawIn !== '' && isFinite(Number(rawIn))) return Number(rawIn);
+    if (machineId && window.lastHourMeters && window.lastHourMeters[machineId] != null && window.lastHourMeters[machineId] !== '') {
+      const mVal = Number(window.lastHourMeters[machineId]);
+      if (isFinite(mVal)) return mVal;
+    }
+    if (mac && mac.mileage != null && mac.mileage !== '' && isFinite(Number(mac.mileage))) {
+      return Number(mac.mileage);
+    }
+    return null;
+  };
+
+  window.getWorkerPeriodicAlertReasons_ = function (item, nowMonth, curMeter) {
+    if (!item || window.normalizeWorkerInspectionType_(item.inspectionType) !== '定期点検') return [];
+    const reasons = [];
+    const aMonths = window.parseWorkerInspectionAlertMonths_(item.alertMonths);
+    if (aMonths.includes(nowMonth)) reasons.push(`今月(${nowMonth}月)予定`);
+    const aHour = Number(item.alertHourMeter);
+    if (item.alertHourMeter !== '' && item.alertHourMeter != null && isFinite(aHour) && aHour > 0) {
+      if (curMeter !== null && curMeter >= aHour) {
+        reasons.push(`⏱️ ${aHour}h到達(現在${curMeter}h)`);
+      }
+    }
+    const aDist = Number(item.alertDistance);
+    if (item.alertDistance !== '' && item.alertDistance != null && isFinite(aDist) && aDist > 0) {
+      if (curMeter !== null && curMeter >= aDist) {
+        reasons.push(`🚗 ${aDist}km到達(現在${curMeter}km)`);
+      }
+    }
+    return reasons;
+  };
+
+  window.updateInspectionPeriodicAlertBanner_ = function (machineId) {
+    const bannerEl = document.getElementById('insp_periodic_alert_banner');
+    if (!bannerEl) return;
+    const curInspType = window.normalizeWorkerInspectionType_(window._currentInspType);
+    const nowMonth = new Date().getMonth() + 1;
+    const allInsps = (typeof pdlInspections !== 'undefined' && Array.isArray(pdlInspections))
+      ? pdlInspections
+      : (Array.isArray(window.pdlInspections) ? window.pdlInspections : []);
+
+    if (!machineId) {
+      const allDue = allInsps.filter(i => i && window.normalizeWorkerInspectionType_(i.inspectionType) === '定期点検' && window.parseWorkerInspectionAlertMonths_(i.alertMonths).includes(nowMonth));
+      if (allDue.length > 0) {
+        bannerEl.innerHTML = `<strong>🔔 今月（${nowMonth}月）の定期点検アラート対象が ${allDue.length}件 あります。</strong><br>対象機械を選択して定期点検を実施してください。`;
+        bannerEl.style.display = 'block';
+      } else {
+        bannerEl.style.display = 'none';
+      }
+      return;
+    }
+
+    const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+    const mac = macs.find(m => String(m.id) === String(machineId));
+    const macType = mac ? String(mac.type || '').trim() : '';
+    const macKeys = new Set([
+      macType,
+      mac ? String(mac.vehicleType || '').trim() : '',
+      mac ? String(mac.vehicleUse || '').trim() : '',
+      mac ? String(mac.category || '').trim() : ''
+    ].filter(Boolean));
+
+    const curMeter = window.getWorkerInspectionCurrentMeter_(machineId, mac);
+    const dueItems = allInsps.filter(i => {
+      if (!i) return false;
+      const targets = String(i.machineType || i.target || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+      if (!targets.some(t => macKeys.has(t) || t === '共通' || t === '全般')) return false;
+      return window.getWorkerPeriodicAlertReasons_(i, nowMonth, curMeter).length > 0;
+    });
+
+    if (dueItems.length > 0) {
+      const itemText = dueItems.slice(0, 5).map(x => {
+        const rs = window.getWorkerPeriodicAlertReasons_(x, nowMonth, curMeter);
+        return `${esc(x.item || '')}(${esc(rs.join('・'))})`;
+      }).join('、') + (dueItems.length > 5 ? ` 他${dueItems.length - 5}件` : '');
+      const switchBtn = curInspType !== '定期点検'
+        ? ` <button type="button" onclick="switchInspectionTypeTab('定期点検')" style="margin-top:6px; background:#FB8C00; color:#fff; border:none; border-radius:4px; padding:4px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🗓️ 定期点検タブを開く</button>`
+        : '';
+      bannerEl.innerHTML = `<strong>🔔 定期点検アラート（${dueItems.length}件）</strong><br>対象項目: ${itemText}${switchBtn ? '<br>' + switchBtn : ''}`;
+      bannerEl.style.display = 'block';
+    } else {
+      bannerEl.style.display = 'none';
+    }
+  };
+
   window.updateWorkerPeriodicInspectionAlertBadge_ = function () {
     const allInsps = (typeof pdlInspections !== 'undefined' && Array.isArray(pdlInspections))
       ? pdlInspections
@@ -56199,7 +56976,20 @@ window.deleteQualification = async function (userName, index) {
 
     // アワーメータークリア
     const hourInput = document.getElementById('insp_hour_meter');
-    if (hourInput) hourInput.value = '';
+    if (hourInput) {
+      hourInput.value = '';
+      hourInput.oninput = function () {
+        const macEl = document.getElementById('insp_machine');
+        window.updateInspectionPeriodicAlertBanner_(macEl ? macEl.value : '');
+      };
+    }
+    if (!window.lastHourMeters && typeof callGAS === 'function') {
+      callGAS('getMachineLastHourMeters').then(res => {
+        if (res && typeof res === 'object') window.lastHourMeters = res;
+        const macEl = document.getElementById('insp_machine');
+        if (macEl && macEl.value) window.updateInspectionPeriodicAlertBanner_(macEl.value);
+      }).catch(() => {});
+    }
 
     // 総合メモクリア
     const commentEl = document.getElementById('insp_comment');
@@ -56233,17 +57023,10 @@ window.deleteQualification = async function (userName, index) {
       ? pdlInspections
       : (Array.isArray(window.pdlInspections) ? window.pdlInspections : []);
 
+    window.updateInspectionPeriodicAlertBanner_(machineId);
+
     if (!machineId) {
       if (badgeEl) badgeEl.innerHTML = '';
-      if (bannerEl) {
-        const allDue = allInsps.filter(i => i && window.normalizeWorkerInspectionType_(i.inspectionType) === '定期点検' && window.parseWorkerInspectionAlertMonths_(i.alertMonths).includes(nowMonth));
-        if (allDue.length > 0) {
-          bannerEl.innerHTML = `<strong>🔔 今月（${nowMonth}月）の定期点検アラート対象が ${allDue.length}件 あります。</strong><br>対象機械を選択して定期点検を実施してください。`;
-          bannerEl.style.display = 'block';
-        } else {
-          bannerEl.style.display = 'none';
-        }
-      }
       container.innerHTML = `<div style="text-align:center; color:#888; padding:30px 10px; font-size:13px;">機械を選択すると、そのカテゴリの${esc(curInspType)}項目が表示されます。</div>`;
       return;
     }
@@ -56251,6 +57034,13 @@ window.deleteQualification = async function (userName, index) {
     const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
     const mac = macs.find(m => String(m.id) === String(machineId));
     const macType = mac ? String(mac.type || '').trim() : '';
+    const curMeter = window.getWorkerInspectionCurrentMeter_(machineId, mac);
+
+    const hourInput = document.getElementById('insp_hour_meter');
+    if (hourInput && !hourInput.value) {
+      const refMeter = window.getWorkerInspectionCurrentMeter_(machineId, mac);
+      hourInput.placeholder = refMeter !== null ? `前回: ${refMeter}` : '例: 1250.5';
+    }
 
     if (badgeEl) {
       badgeEl.innerHTML = macType
@@ -56270,24 +57060,6 @@ window.deleteQualification = async function (userName, index) {
       const targets = String(i.machineType || i.target || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
       return targets.some(t => macKeys.has(t) || t === '共通' || t === '全般');
     });
-
-    const duePeriodicItems = matchMachineItems.filter(i =>
-      window.normalizeWorkerInspectionType_(i.inspectionType) === '定期点検'
-      && window.parseWorkerInspectionAlertMonths_(i.alertMonths).includes(nowMonth)
-    );
-
-    if (bannerEl) {
-      if (duePeriodicItems.length > 0) {
-        const itemNames = duePeriodicItems.map(x => esc(x.item || '')).slice(0, 5).join('・') + (duePeriodicItems.length > 5 ? ` 他${duePeriodicItems.length - 5}件` : '');
-        const switchBtn = curInspType !== '定期点検'
-          ? ` <button type="button" onclick="switchInspectionTypeTab('定期点検')" style="margin-top:6px; background:#FB8C00; color:#fff; border:none; border-radius:4px; padding:4px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🗓️ 定期点検タブを開く</button>`
-          : '';
-        bannerEl.innerHTML = `<strong>🔔 今月（${nowMonth}月）の定期点検アラート（${duePeriodicItems.length}件）</strong><br>対象項目: ${itemNames}${switchBtn ? '<br>' + switchBtn : ''}`;
-        bannerEl.style.display = 'block';
-      } else {
-        bannerEl.style.display = 'none';
-      }
-    }
 
     const items = matchMachineItems
       .filter(i => window.normalizeWorkerInspectionType_(i.inspectionType) === curInspType)
@@ -56328,10 +57100,16 @@ window.deleteQualification = async function (userName, index) {
         const rowId = `insp_item_row_${catIdx}_${itemIdx}`;
         const noteHtml = item.note ? `<div style="font-size:11px; color:#666; margin-top:2px;">基準: ${esc(item.note)}</div>` : '';
         const aMonths = curInspType === '定期点検' ? window.parseWorkerInspectionAlertMonths_(item.alertMonths) : [];
-        const isDueThisMonth = aMonths.includes(nowMonth);
-        const alertTag = isDueThisMonth
-          ? `<span style="background:#ffebee; color:#c62828; border:1px solid #ffcdd2; font-size:10px; font-weight:bold; padding:1px 6px; border-radius:10px; margin-left:6px;">🔔 今月(${nowMonth}月)点検予定</span>`
-          : (aMonths.length ? `<span style="background:#fff3e0; color:#e65100; font-size:10px; padding:1px 6px; border-radius:10px; margin-left:6px;">🗓️ ${aMonths.map(m => m + '月').join('・')}</span>` : '');
+        const aHour = (curInspType === '定期点検' && Number(item.alertHourMeter) > 0) ? Number(item.alertHourMeter) : 0;
+        const aDist = (curInspType === '定期点検' && Number(item.alertDistance) > 0) ? Number(item.alertDistance) : 0;
+        const dueReasons = curInspType === '定期点検' ? window.getWorkerPeriodicAlertReasons_(item, nowMonth, curMeter) : [];
+        const condParts = [];
+        if (aMonths.length) condParts.push(aMonths.map(m => m + '月').join('・'));
+        if (aHour > 0) condParts.push(`⏱️ ${aHour}h`);
+        if (aDist > 0) condParts.push(`🚗 ${aDist}km`);
+        const alertTag = dueReasons.length
+          ? `<span style="background:#ffebee; color:#c62828; border:1px solid #ffcdd2; font-size:10px; font-weight:bold; padding:1px 6px; border-radius:10px; margin-left:6px;">🔔 ${esc(dueReasons.join(' / '))}</span>`
+          : (condParts.length ? `<span style="background:#fff3e0; color:#e65100; font-size:10px; padding:1px 6px; border-radius:10px; margin-left:6px;">🗓️ ${esc(condParts.join(' / '))}</span>` : '');
         html += `
           <div id="${rowId}" class="insp-item-row" data-item-id="${esc(item.id || '')}" data-item-name="${esc(item.item || '')}" data-category="${esc(catName)}" data-result="/" style="border-bottom:1px solid #f0f0f0; padding-bottom:8px;">
             <div style="font-weight:bold; font-size:13px; color:#333; margin-bottom:4px;">

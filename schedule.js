@@ -1380,7 +1380,8 @@ function initMap() {
     }
   });
 
-  map.addListener('zoom_changed', () => {
+  function updateMarkersVisibility() {
+    if (!map) return;
     const z = map.getZoom();
     if (typeof window.syncLocationPinGlowScale_ === 'function') window.syncLocationPinGlowScale_(map);
     const hasSignGroup = !!(window.SignGroup && typeof window.SignGroup.isChildSign === 'function');
@@ -1428,7 +1429,10 @@ function initMap() {
       window.applySoilMoistureColors();
     }
     if (typeof window.applyMapLayerFilter_ === 'function') window.applyMapLayerFilter_();
-  });
+  }
+  window.updateMarkersVisibility = updateMarkersVisibility;
+
+  map.addListener('zoom_changed', updateMarkersVisibility);
 
   map.addListener('idle', () => {
     if (typeof window.saveSharedMapView_ === 'function') {
@@ -1794,7 +1798,8 @@ function updateMapVisuals() {
     window.applySoilMoistureColors();
   }
   window.loadedPolygons = loadedPolygons;
-  if (typeof window.applyMapLayerFilter_ === 'function') window.applyMapLayerFilter_();
+  if (typeof window.updateMarkersVisibility === 'function') window.updateMarkersVisibility();
+  else if (typeof window.applyMapLayerFilter_ === 'function') window.applyMapLayerFilter_();
 }
 
 function showPopup(p, latLng) {

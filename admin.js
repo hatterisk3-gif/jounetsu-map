@@ -3476,10 +3476,24 @@ window.formatAdminInspectionAlertMonths_ = (val) => {
     return ms.map(m => `${m}月`).join('・');
 };
 
-window.buildAdminInspectionTypeAndAlertHtml_ = (context, inspType, alertMonths) => {
+window.formatAdminInspectionAlertSummary_ = (item) => {
+    if (!item || window.normalizeAdminInspectionType_(item.inspectionType) !== '定期点検') return '';
+    const parts = [];
+    const mStr = window.formatAdminInspectionAlertMonths_(item.alertMonths);
+    if (mStr) parts.push(mStr);
+    const h = Number(item.alertHourMeter);
+    if (item.alertHourMeter !== '' && item.alertHourMeter != null && isFinite(h) && h > 0) parts.push(`⏱️ ${h}h`);
+    const d = Number(item.alertDistance);
+    if (item.alertDistance !== '' && item.alertDistance != null && isFinite(d) && d > 0) parts.push(`🚗 ${d}km`);
+    return parts.join(' / ');
+};
+
+window.buildAdminInspectionTypeAndAlertHtml_ = (context, inspType, alertMonths, alertHourMeter, alertDistance) => {
     const prefix = context === 'edit' ? 'edit' : 'add';
     const curType = window.normalizeAdminInspectionType_(inspType);
     const months = new Set(window.parseAdminInspectionAlertMonths_(alertMonths));
+    const hourVal = (alertHourMeter !== '' && alertHourMeter != null && Number(alertHourMeter) > 0) ? Number(alertHourMeter) : '';
+    const distVal = (alertDistance !== '' && alertDistance != null && Number(alertDistance) > 0) ? Number(alertDistance) : '';
     const isPeriodic = curType === '定期点検';
     const typeBtns = [
         { val: '始動前点検', label: '🌅 始動前点検' },
@@ -3517,7 +3531,23 @@ window.buildAdminInspectionTypeAndAlertHtml_ = (context, inspType, alertMonths) 
                 </div>
             </div>
             <div style="display:flex; flex-wrap:wrap; gap:5px;">${monthChips}</div>
-            <div style="font-size:11px; color:#777; margin-top:5px;">※選択した月になると点検画面でアラート表示されます（未選択時はアラートなし）</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; padding-top:8px; border-top:1px dashed #ffcc80;">
+                <div>
+                    <label style="font-size:11px; font-weight:bold; color:#e65100; display:block; margin-bottom:3px;">⏱️ アワーメーター (時間)</label>
+                    <div style="display:flex; align-items:center; gap:4px;">
+                        <input type="number" id="${prefix}_insp_alert_hour" class="form-input" min="0" step="any" placeholder="例: 100" value="${hourVal}" style="margin-bottom:0; padding:6px 8px; flex:1; background:#fff;">
+                        <span style="font-size:12px; font-weight:bold; color:#555;">h</span>
+                    </div>
+                </div>
+                <div>
+                    <label style="font-size:11px; font-weight:bold; color:#e65100; display:block; margin-bottom:3px;">🚗 走行距離 (km)</label>
+                    <div style="display:flex; align-items:center; gap:4px;">
+                        <input type="number" id="${prefix}_insp_alert_distance" class="form-input" min="0" step="any" placeholder="例: 5000" value="${distVal}" style="margin-bottom:0; padding:6px 8px; flex:1; background:#fff;">
+                        <span style="font-size:12px; font-weight:bold; color:#555;">km</span>
+                    </div>
+                </div>
+            </div>
+            <div style="font-size:11px; color:#777; margin-top:5px;">※月・アワーメーター(h)・走行距離(km)のいずれか（複数可）を設定できます</div>
         </div>
     `;
 };
@@ -3568,12 +3598,18 @@ window.setAllAdminInspectionAlertMonths_ = (context, checked) => {
 window.collectAdminInspectionTypeAndAlert_ = (context) => {
     const prefix = context === 'edit' ? 'edit' : 'add';
     const inspectionType = window.normalizeAdminInspectionType_(document.getElementById(`${prefix}_insp_type`)?.value);
-    if (inspectionType !== '定期点検') return { inspectionType, alertMonths: '' };
+    if (inspectionType !== '定期点検') return { inspectionType, alertMonths: '', alertHourMeter: '', alertDistance: '' };
     const months = Array.from(document.querySelectorAll(`.${prefix}-insp-alert-month-cb:checked`))
         .map(cb => Number(cb.value))
         .filter(n => n >= 1 && n <= 12)
         .sort((a, b) => a - b);
-    return { inspectionType, alertMonths: months.join(',') };
+    const rawHour = document.getElementById(`${prefix}_insp_alert_hour`)?.value ?? '';
+    const hourNum = Number(rawHour);
+    const alertHourMeter = (String(rawHour).trim() !== '' && isFinite(hourNum) && hourNum > 0) ? hourNum : '';
+    const rawDist = document.getElementById(`${prefix}_insp_alert_distance`)?.value ?? '';
+    const distNum = Number(rawDist);
+    const alertDistance = (String(rawDist).trim() !== '' && isFinite(distNum) && distNum > 0) ? distNum : '';
+    return { inspectionType, alertMonths: months.join(','), alertHourMeter, alertDistance };
 };
 
 window.setAdminInspectionTypeFilter_ = (typeFilter) => {
@@ -4147,7 +4183,9 @@ window.saveAdminInspectionOrderFromDom_ = () => {
                     sortOrder: item.sortOrder,
                     note: item.note || '',
                     inspectionType: window.normalizeAdminInspectionType_(item.inspectionType),
-                    alertMonths: item.alertMonths || ''
+                    alertMonths: item.alertMonths || '',
+                    alertHourMeter: item.alertHourMeter || '',
+                    alertDistance: item.alertDistance || ''
                 }
             },
             userName: currentUser
@@ -5098,7 +5136,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 const rawTarget = v.machineType || v.target || '';
                 const rawCat = v.inspectionCategory || v.category || '';
                 const inspType = window.normalizeAdminInspectionType_(v.inspectionType);
-                const alertText = inspType === '定期点検' ? window.formatAdminInspectionAlertMonths_(v.alertMonths) : '';
+                const alertText = inspType === '定期点検' ? window.formatAdminInspectionAlertSummary_(v) : '';
                 const typeBadge = inspType === '定期点検'
                     ? `<span style="font-size:11px; background:#fff3e0; color:#e65100; border:1px solid #ffcc80; padding:1px 6px; border-radius:4px; margin-left:4px; display:inline-block;">🗓️ 定期点検</span>`
                     : `<span style="font-size:11px; background:#e0f2f1; color:#00695c; padding:1px 6px; border-radius:4px; margin-left:4px; display:inline-block;">🌅 始動前</span>`;
@@ -5424,6 +5462,8 @@ window.openEditInspectionMaster = (encodedStr) => {
     const safeSortOrder = Number(v.sortOrder) || 0;
     const inspType = window.normalizeAdminInspectionType_(v.inspectionType);
     const alertMonths = v.alertMonths || '';
+    const alertHourMeter = v.alertHourMeter || '';
+    const alertDistance = v.alertDistance || '';
     const editKind = window.inferAdminInspectionKindFromTargets_(rawTarget);
     const editHtml = `
         <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">
@@ -5432,7 +5472,7 @@ window.openEditInspectionMaster = (encodedStr) => {
             <input type="hidden" id="edit_insp_sortOrder" value="${safeSortOrder}">
             <div style="display:flex; flex-direction:column; gap:8px;">
                 <label style="font-size:12px; font-weight:bold; color:#555;">点検種別 <span style="color:#d32f2f;">*</span></label>
-                ${window.buildAdminInspectionTypeAndAlertHtml_('edit', inspType, alertMonths)}
+                ${window.buildAdminInspectionTypeAndAlertHtml_('edit', inspType, alertMonths, alertHourMeter, alertDistance)}
                 <label style="font-size:12px; font-weight:bold; color:#555;">対象（農機 / 車両・複数選択可） <span style="color:#d32f2f;">*</span></label>
                 ${window.buildAdminInspectionTargetMultiSelectHtml_('edit', rawTarget, editKind)}
                 <label style="font-size:12px; font-weight:bold; color:#555;">点検カテゴリ <span style="color:#d32f2f;">*</span></label>
@@ -8374,7 +8414,7 @@ window.execMaster = async (type, act, val) => {
             const category = (document.getElementById('add_insp_category')?.value || '').trim();
             const item = (document.getElementById('add_insp_item')?.value || '').trim();
             const note = (document.getElementById('add_insp_note')?.value || '').trim();
-            const { inspectionType, alertMonths } = window.collectAdminInspectionTypeAndAlert_('add');
+            const { inspectionType, alertMonths, alertHourMeter, alertDistance } = window.collectAdminInspectionTypeAndAlert_('add');
             if (!target) { customAlert("対象を1つ以上選択してください"); return; }
             if (!category) { customAlert("点検カテゴリを入力してください"); return; }
             if (!item) { customAlert("点検項目を入力してください"); return; }
@@ -8386,7 +8426,7 @@ window.execMaster = async (type, act, val) => {
                 machineType: target, target,
                 inspectionCategory: category, category,
                 item, note, sortOrder: maxSort + 1,
-                inspectionType, alertMonths
+                inspectionType, alertMonths, alertHourMeter, alertDistance
             };
         }
         else if (type === 'tool') { const name = document.getElementById('add_tool_name').value.trim(); if (!name) { customAlert("道具名を入力してください"); return; } value = { name: name, workCategory: document.getElementById('add_tool_cat').value.trim() }; }
@@ -8661,7 +8701,7 @@ window.execMaster = async (type, act, val) => {
             const item = (document.getElementById('edit_insp_item')?.value || '').trim();
             const note = (document.getElementById('edit_insp_note')?.value || '').trim();
             const sortOrder = Number(document.getElementById('edit_insp_sortOrder')?.value) || 0;
-            const { inspectionType, alertMonths } = window.collectAdminInspectionTypeAndAlert_('edit');
+            const { inspectionType, alertMonths, alertHourMeter, alertDistance } = window.collectAdminInspectionTypeAndAlert_('edit');
             if (!id) { customAlert("編集対象IDがありません"); return; }
             if (!target) { customAlert("対象を1つ以上選択してください"); return; }
             if (!category) { customAlert("点検カテゴリを入力してください"); return; }
@@ -8673,7 +8713,7 @@ window.execMaster = async (type, act, val) => {
                     machineType: target, target,
                     inspectionCategory: category, category,
                     item, note, sortOrder,
-                    inspectionType, alertMonths
+                    inspectionType, alertMonths, alertHourMeter, alertDistance
                 }
             };
         }

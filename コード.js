@@ -63,6 +63,7 @@ const API_ACTIONS = {
   "batchUpdateWorkRecordDates": function (p) { return batchUpdateWorkRecordDates(p); },
   "deleteRecordItem": function (p) { return deleteRecordItem(p.id, p.recordId, p.userName); },
   "getPolygonPhotos": function (p) { return getPolygonPhotos(p.id); },
+  "getDriveImageBase64": function (p) { return getDriveImageBase64(p.url); },
   "deleteWorkRecordById": function (p) { return deleteWorkRecordById(p); },
   "cancelClockInAndDeleteTodayWorkRecords": function (p) { return cancelClockInAndDeleteTodayWorkRecords(p); },
   "addFieldStatus": function (p) { return addFieldStatusToMaster(p.statusName); },
@@ -2989,6 +2990,10 @@ function manageMasterData(masterType, manageAction, value, userName) {
       const alertMonths = inspType === '定期点検'
         ? String(itemData.alertMonths || '').split(/[,、]/).map(s => Number(String(s).trim())).filter(n => n >= 1 && n <= 12).filter((n, i, a) => a.indexOf(n) === i).sort((a, b) => a - b).join(',')
         : '';
+      const rawHour = Number(itemData.alertHourMeter);
+      const alertHourMeter = (inspType === '定期点検' && itemData.alertHourMeter !== '' && itemData.alertHourMeter != null && isFinite(rawHour) && rawHour > 0) ? rawHour : '';
+      const rawDist = Number(itemData.alertDistance);
+      const alertDistance = (inspType === '定期点検' && itemData.alertDistance !== '' && itemData.alertDistance != null && isFinite(rawDist) && rawDist > 0) ? rawDist : '';
       if (!macType) throw new Error('機械カテゴリを選択してください');
       if (!itemName) throw new Error('点検項目名を入力してください');
       const id = String(itemData.id || ('insp_' + Date.now() + '_' + Math.floor(Math.random() * 1000)));
@@ -2998,7 +3003,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
       if (existing.some(x => x.machineType === macType && (x.inspectionType || '始動前点検') === inspType && x.inspectionCategory === inspCat && x.item === itemName)) {
         throw new Error(`機械「${macType}」の${inspType}項目「${itemName}」は既に登録されています`);
       }
-      sheet.appendRow([id, macType, inspCat, itemName, sortOrder, note, inspType, alertMonths]);
+      sheet.appendRow([id, macType, inspCat, itemName, sortOrder, note, inspType, alertMonths, alertHourMeter, alertDistance]);
       writeLog(userName, "マスタ追加", `${macType} [${inspType}] - ${itemName}`, `対象: ${sheetName}`);
     } else {
       sheet.appendRow([value]);
@@ -3411,6 +3416,10 @@ function manageMasterData(masterType, manageAction, value, userName) {
       const alertMonths = inspType === '定期点検'
         ? String(nd.alertMonths || '').split(/[,、]/).map(s => Number(String(s).trim())).filter(n => n >= 1 && n <= 12).filter((n, i, a) => a.indexOf(n) === i).sort((a, b) => a - b).join(',')
         : '';
+      const rawHour = Number(nd.alertHourMeter);
+      const alertHourMeter = (inspType === '定期点検' && nd.alertHourMeter !== '' && nd.alertHourMeter != null && isFinite(rawHour) && rawHour > 0) ? rawHour : '';
+      const rawDist = Number(nd.alertDistance);
+      const alertDistance = (inspType === '定期点検' && nd.alertDistance !== '' && nd.alertDistance != null && isFinite(rawDist) && rawDist > 0) ? rawDist : '';
       if (!macType) throw new Error('機械カテゴリを選択してください');
       if (!itemName) throw new Error('点検項目名を入力してください');
       const sortOrder = (nd.sortOrder !== '' && nd.sortOrder != null) ? Number(nd.sortOrder) || 0 : 0;
@@ -3420,7 +3429,7 @@ function manageMasterData(masterType, manageAction, value, userName) {
       for (let i = 1; i < latest.length; i++) {
         const rowId = String(latest[i][0] || '').trim();
         if (id && rowId === id) {
-          sheet.getRange(i + 1, 1, 1, 8).setValues([[id, macType, inspCat, itemName, sortOrder, note, inspType, alertMonths]]);
+          sheet.getRange(i + 1, 1, 1, 10).setValues([[id, macType, inspCat, itemName, sortOrder, note, inspType, alertMonths, alertHourMeter, alertDistance]]);
           found = true;
           break;
         }
@@ -8007,6 +8016,18 @@ function getPolygonPhotos(id) {
   return Array.isArray(photos) ? photos : [];
 }
 
+/** Drive画像URLからBase64 DataURLを取得する（ブラウザ側Canvas編集のCORS回避用） */
+function getDriveImageBase64(url) {
+  if (!url) throw new Error("URLが指定されていません");
+  const m = String(url).match(/[?&]id=([a-zA-Z0-9_-]+)/) || String(url).match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (!m || !m[1]) throw new Error("DriveファイルIDを特定できません");
+  const file = DriveApp.getFileById(m[1]);
+  const blob = file.getBlob();
+  const mime = blob.getContentType() || 'image/jpeg';
+  const b64 = Utilities.base64Encode(blob.getBytes());
+  return 'data:' + mime + ';base64,' + b64;
+}
+
 function getSavedPolygons(options) {
   const ss = TENANT_SS;
   let result = [];
@@ -8899,7 +8920,9 @@ function saveRecord(idStr, nameStr, author, recordType, recordData, photosBase64
       file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); urls.push("https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w800");
     }
   }
-  const today = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd"), time = Utilities.formatDate(new Date(), "JST", "HH:mm");
+  const nowDate = Utilities.formatDate(new Date(), "JST", "yyyy/MM/dd"), nowTime = Utilities.formatDate(new Date(), "JST", "HH:mm");
+  const today = (recordData && recordData.photoDate) ? String(recordData.photoDate).replace(/-/g, '/') : nowDate;
+  const time = (recordData && recordData.photoTime) ? String(recordData.photoTime) : nowTime;
 
   // ====================================================
   // ★開始条件(D列)と終了条件(E列)をマスタから取得
@@ -9037,7 +9060,12 @@ function updateRecordItem(polyId, recordId, recordType, newData, newPhotosBase64
       file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); newUrls.push("https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w800");
     }
   }
-  tgt.urls = (keptUrls || []).concat(newUrls); tgt.data = newData; tgt.type = recordType || 'growth'; delete tgt.url;
+  tgt.urls = (keptUrls || []).concat(newUrls);
+  tgt.data = newData;
+  tgt.type = recordType || 'growth';
+  if (newData && newData.photoDate) tgt.date = String(newData.photoDate).replace(/-/g, '/');
+  if (newData && newData.photoTime) tgt.time = String(newData.photoTime);
+  delete tgt.url;
   found.sheet.getRange(found.rowIndex, pc).setValue(JSON.stringify(ex));
 
   const rsName = recordType === 'work' ? '作業記録' : (pType === '看板' ? '看板記録' : '生育記録');
@@ -17910,7 +17938,7 @@ function appendSowingRecordFromWork_(recordData, author, recordId) {
 }
 
 // ===== 点検マスタ / 点検記録 =====
-const INSPECTION_MASTER_HEADERS_ = ['id', 'machineType', 'inspectionCategory', 'item', 'sortOrder', 'note', 'inspectionType', 'alertMonths'];
+const INSPECTION_MASTER_HEADERS_ = ['id', 'machineType', 'inspectionCategory', 'item', 'sortOrder', 'note', 'inspectionType', 'alertMonths', 'alertHourMeter', 'alertDistance'];
 const INSPECTION_RECORD_HEADERS_ = ['id', 'date', 'inspector', 'machineId', 'machineName', 'machineType', 'hourMeter', 'summary', 'abnormalCount', 'maintCount', 'detailsJson', 'comment', 'createdAt', 'inspectionType'];
 
 function ensureInspectionMasterSheet_() {
@@ -17938,6 +17966,10 @@ function readInspectionMasterList_() {
   return values.map(r => {
     const inspType = String(r[6] || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
     const alertMonths = inspType === '定期点検' ? String(r[7] || '').trim() : '';
+    const rawHour = Number(r[8]);
+    const alertHourMeter = (inspType === '定期点検' && r[8] !== '' && r[8] != null && isFinite(rawHour) && rawHour > 0) ? rawHour : '';
+    const rawDist = Number(r[9]);
+    const alertDistance = (inspType === '定期点検' && r[9] !== '' && r[9] != null && isFinite(rawDist) && rawDist > 0) ? rawDist : '';
     return {
       id: String(r[0] || '').trim(),
       machineType: String(r[1] || '').trim(),
@@ -17946,7 +17978,9 @@ function readInspectionMasterList_() {
       sortOrder: (r[4] === '' || r[4] == null) ? 0 : (Number(r[4]) || 0),
       note: String(r[5] || '').trim(),
       inspectionType: inspType,
-      alertMonths: alertMonths
+      alertMonths: alertMonths,
+      alertHourMeter: alertHourMeter,
+      alertDistance: alertDistance
     };
   }).filter(x => x.machineType && x.item);
 }
