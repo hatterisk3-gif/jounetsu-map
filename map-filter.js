@@ -239,6 +239,19 @@
     }
   }
 
+  function updateUiPosition_() {
+    if (!uiRoot) return;
+    var panel = document.querySelector('.control-panel');
+    if (panel) {
+      var rect = panel.getBoundingClientRect();
+      if (rect && rect.height > 0 && rect.top >= 0 && rect.top < (global.innerHeight || 800) * 0.45 && rect.bottom > 0) {
+        uiRoot.style.top = (Math.ceil(rect.bottom) + 8) + 'px';
+        return;
+      }
+    }
+    uiRoot.style.top = '';
+  }
+
   function buildUi_() {
     if (uiRoot && uiRoot.parentNode) return;
 
@@ -314,6 +327,19 @@
     });
 
     syncUiFromState_();
+    updateUiPosition_();
+    setTimeout(updateUiPosition_, 200);
+    setTimeout(updateUiPosition_, 1000);
+    global.addEventListener('resize', updateUiPosition_);
+    if (typeof ResizeObserver === 'function') {
+      try {
+        var cp = document.querySelector('.control-panel');
+        if (cp) {
+          var ro = new ResizeObserver(updateUiPosition_);
+          ro.observe(cp);
+        }
+      } catch (e) { /* ignore */ }
+    }
   }
 
   function rowHtml_(key, emoji, label) {

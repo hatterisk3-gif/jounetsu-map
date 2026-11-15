@@ -1,7 +1,7 @@
 /* 地図レイヤーフィルター（schedule / worker / admin 共通） */
 .map-layer-filter-root {
   position: fixed;
-  top: calc(68px + env(safe-area-inset-top, 0px));
+  top: calc(96px + env(safe-area-inset-top, 0px));
   right: 12px;
   z-index: 1800;
   font-family: inherit;
@@ -162,11 +162,11 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
-.map-layer-filter-switch input:checked + .map-layer-filter-slider {
+.map-layer-filter-switch input:checked+.map-layer-filter-slider {
   background: #2E7D32;
 }
 
-.map-layer-filter-switch input:checked + .map-layer-filter-slider::before {
+.map-layer-filter-switch input:checked+.map-layer-filter-slider::before {
   transform: translateX(18px);
 }
 

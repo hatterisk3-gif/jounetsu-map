@@ -1965,8 +1965,10 @@ function renderInitData(data) {
   window.pdlCropCostPlans = pdlCropCostPlans;
   pdlDeliveryDestinations = data.pdl.deliveryDestinations || [];
   window.pdlDeliveryDestinations = pdlDeliveryDestinations;
-  pdlViewpoints = data.pdl.viewpoints || [];
-  window.pdlViewpoints = pdlViewpoints;
+  if (Array.isArray(data.pdl.viewpoints)) {
+    pdlViewpoints = data.pdl.viewpoints;
+    window.pdlViewpoints = pdlViewpoints;
+  }
   if (Array.isArray(data.pdl.userLocations) && data.pdl.userLocations.length) {
     window.pdlUserLocations = data.pdl.userLocations;
     if (!String(localStorage.getItem('passionMapUserLocation') || '').trim()) {
@@ -3557,6 +3559,10 @@ window.cycleNextViewpoint = function () {
         return userTokens.some(ul => vLoc.indexOf(ul) >= 0 || ul.indexOf(vLoc) >= 0);
       });
     }
+    // 所属拠点の視野が無い場合は「(拠点なし / 全社共通)」をフォールバック対象にする
+    if (!targetVps.length) {
+      targetVps = allVps.filter(v => !String(v.location || '').trim());
+    }
   }
 
   // 所属拠点の視野がない場合の判定
@@ -3889,13 +3895,13 @@ window.openMainMenu = (id) => {
           </div>
           <div style="display:flex; flex-direction:column; gap:4px; max-height:160px; overflow-y:auto;">
             ${children.map(ch => {
-              const chIcon = ch.color || '🪧';
-              const chFunc = ch.signFunction ? `[${ch.signFunction}]` : '';
-              return `<button type="button" onclick="focusAndOpen('${ch.id}')" style="width:100%; background:#F3E5F5; color:#4A148C; border:1px solid #BA68C8; border-radius:6px; padding:6px 8px; font-size:12px; font-weight:bold; cursor:pointer; text-align:left; display:flex; justify-content:space-between; align-items:center; box-sizing:border-box;">
+          const chIcon = ch.color || '🪧';
+          const chFunc = ch.signFunction ? `[${ch.signFunction}]` : '';
+          return `<button type="button" onclick="focusAndOpen('${ch.id}')" style="width:100%; background:#F3E5F5; color:#4A148C; border:1px solid #BA68C8; border-radius:6px; padding:6px 8px; font-size:12px; font-weight:bold; cursor:pointer; text-align:left; display:flex; justify-content:space-between; align-items:center; box-sizing:border-box;">
                 <span>${chIcon} ${ch.name || '看板'}</span>
                 <span style="font-size:10px; color:#7B1FA2;">${chFunc} ❯</span>
               </button>`;
-            }).join('')}
+        }).join('')}
           </div>
         </div>`;
       }
@@ -56988,7 +56994,7 @@ window.deleteQualification = async function (userName, index) {
         if (res && typeof res === 'object') window.lastHourMeters = res;
         const macEl = document.getElementById('insp_machine');
         if (macEl && macEl.value) window.updateInspectionPeriodicAlertBanner_(macEl.value);
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     // 総合メモクリア

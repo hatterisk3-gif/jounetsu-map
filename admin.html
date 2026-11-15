@@ -45,6 +45,12 @@
     ⚙️
   </button>
 
+  <button id="btnAdminMapUrlBatch" type="button" onclick="openMapUrlBatchModal()"
+    style="position: fixed; bottom: 184px; right: 10px; width: 50px; height: 50px; background: white; color: #5D4037; border: none; border-radius: 50%; font-weight: bold; font-size: 22px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0;"
+    title="共有GoogleマップURL一括登録" aria-label="共有GoogleマップURL一括登録">
+    🔗
+  </button>
+
   <div class="admin-reg-plus-wrap is-fab" id="adminRegPlusWrap">
     <button type="button" id="btnAdminRegPlus" class="admin-reg-plus-btn" onclick="toggleAdminRegPlusMenu_(event)"
       title="登録" aria-label="登録">＋</button>
@@ -95,19 +101,15 @@
       <div id="equipmentManageTabs"
         style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; background:#fff; border-bottom:1px solid #e0e0e0; flex-shrink:0;">
         <button type="button" id="equipmentTab_machine" onclick="switchEquipmentManageTab('machine')"
-          style="border:none; border-bottom:3px solid #43A047; background:#e8f5e9; color:#2e7d32; padding:12px 8px; font-weight:bold; font-size:14px; cursor:pointer;">🚜
-          機械</button>
+          style="border:none; border-bottom:3px solid #43A047; background:#e8f5e9; color:#2e7d32; padding:11px 4px; font-weight:bold; font-size:clamp(11px, 3.2vw, 14px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer;">🚜 機械</button>
         <button type="button" id="equipmentTab_vehicle" onclick="switchEquipmentManageTab('vehicle')"
-          style="border:none; border-bottom:3px solid transparent; background:#fff; color:#666; padding:12px 8px; font-weight:bold; font-size:14px; cursor:pointer;">🛻
-          車両</button>
+          style="border:none; border-bottom:3px solid transparent; background:#fff; color:#666; padding:11px 4px; font-weight:bold; font-size:clamp(11px, 3.2vw, 14px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer;">🛻 車両</button>
         <button type="button" id="equipmentTab_tool" onclick="switchEquipmentManageTab('tool')"
-          style="border:none; border-bottom:3px solid transparent; background:#fff; color:#666; padding:12px 8px; font-weight:bold; font-size:14px; cursor:pointer;">🔧
-          道具</button>
+          style="border:none; border-bottom:3px solid transparent; background:#fff; color:#666; padding:11px 4px; font-weight:bold; font-size:clamp(11px, 3.2vw, 14px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer;">🔧 道具</button>
         <button type="button" id="equipmentTab_inspection" onclick="switchEquipmentManageTab('inspection')"
-          style="border:none; border-bottom:3px solid transparent; background:#fff; color:#666; padding:12px 8px; font-weight:bold; font-size:14px; cursor:pointer;">📋
-          点検項目</button>
+          style="border:none; border-bottom:3px solid transparent; background:#fff; color:#666; padding:11px 4px; font-weight:bold; font-size:clamp(11px, 3.2vw, 14px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer;">📋 点検項目</button>
       </div>
-      <div id="equipmentManageBody" style="flex:1; min-height:0; overflow:auto; padding:16px; box-sizing:border-box;">
+      <div id="equipmentManageBody" style="flex:1; min-height:0; overflow:auto; padding:12px; box-sizing:border-box;">
       </div>
     </div>
   </div>
@@ -900,12 +902,12 @@
   <script src="api-client.js?v=1788600000116" defer></script>
   <script src="location-pin.js?v=1788600000301" defer></script>
   <script src="map-filter.js?v=1794700000000" defer></script>
-  <script src="admin.js?v=1794735000000" defer></script>
+  <script src="admin.js?v=1794735000001" defer></script>
   <script src="admin_cost.js?v=1785489000008" defer></script>
   <script src="admin_crop_work.js?v=1787570400000" defer></script>
-  <script src="release-notes.js?v=1788600000361" defer></script>
+  <script src="release-notes.js?v=1788600000362" defer></script>
   <script src="tracking.js?v=1788600000324" defer></script>
-  <script src="cad.js?v=1788600000306" defer></script>
+  <script src="cad.js?v=1788600000307" defer></script>
   <script type="importmap">
   {
     "imports": {

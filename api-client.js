@@ -74,6 +74,8 @@
     updatePolygon: true,
     deletePolygon: true,
     deletePolygonBatch: true,
+    saveViewpoint: true,
+    deleteViewpoint: true,
     getOsakaMarketDaily: true,
     importOsakaMarketDaily: true,
     getTokyoMarketDaily: true,
@@ -84,7 +86,9 @@
     savePolygonBatch: true,
     updatePolygon: true,
     deletePolygon: true,
-    deletePolygonBatch: true
+    deletePolygonBatch: true,
+    saveViewpoint: true,
+    deleteViewpoint: true
   };
 
   var controllers = {};

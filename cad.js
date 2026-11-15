@@ -563,8 +563,10 @@ window.updateCadSvgOverlay = (opts) => {
     let handleStateId = '';
     const editEl = document.getElementById('cadEditIndex');
     const editingId = editEl ? editEl.value : '';
-    const selectedRidgeId = window.cadSelectedRidgeId || '';
-    handleStateId = 'edit:' + (editingId || '') + '|sel:' + selectedRidgeId + '|';
+    const selectedRidgeIdsStr = Array.isArray(window.cadSelectedRidgeIds)
+        ? window.cadSelectedRidgeIds.join(',')
+        : (window.cadSelectedRidgeId || '');
+    handleStateId = 'edit:' + (editingId || '') + '|sel:' + selectedRidgeIdsStr + '|';
     if (editingId) {
         const allForHandle = [...(window.cadUnePolygons || []), ...(window.cadCustomShapes || [])];
         const ep = allForHandle.find(p => p && p.uneIndex === editingId);
@@ -572,7 +574,7 @@ window.updateCadSvgOverlay = (opts) => {
     }
 
     let handlesGroup = svg.querySelector('#cadSvgHandles');
-    if (!light && handlesGroup && !window.cadRidgeEndDragging && svg._lastHandleStateId !== handleStateId) {
+    if (!light && handlesGroup && !window.cadRidgeEndDragging && !window.cadRidgeMoveDragging && !window.cadRidgeWidthDragging && svg._lastHandleStateId !== handleStateId) {
         svg._lastHandleStateId = handleStateId;
         handlesGroup.innerHTML = '';
 
@@ -701,9 +703,11 @@ window.updateCadSvgOverlay = (opts) => {
             const ep = allForHandle.find(p => p && p.uneIndex === editingId);
             if (ep) createHandlesForPoly(ep);
         }
-        if (selectedRidgeId && typeof window.cadAttachRidgeEndHandles_ === 'function') {
+        if (selectedRidgeIdsStr && typeof window.cadAttachSelectionHandles_ === 'function') {
+            window.cadAttachSelectionHandles_(handlesGroup);
+        } else if (selectedRidgeIdsStr && typeof window.cadAttachRidgeEndHandles_ === 'function') {
             const allForEnd = [...(window.cadUnePolygons || []), ...(window.cadCustomShapes || [])];
-            const sp = allForEnd.find(p => p && p.uneIndex === selectedRidgeId);
+            const sp = allForEnd.find(p => p && p.uneIndex === window.cadSelectedRidgeId);
             if (sp) window.cadAttachRidgeEndHandles_(sp, handlesGroup);
         }
         createHandlesForNakamichiLines();
@@ -830,7 +834,9 @@ window.updateCadSvgOverlay = (opts) => {
         const ep = allForHandlePos.find(p => p && p.uneIndex === editingId);
         if (ep) updateHandlesPosition(ep);
     }
-    if (window.cadSelectedRidgeId && typeof window.cadPositionRidgeEndHandles_ === 'function') {
+    if (typeof window.cadPositionSelectionHandles_ === 'function') {
+        window.cadPositionSelectionHandles_();
+    } else if (window.cadSelectedRidgeId && typeof window.cadPositionRidgeEndHandles_ === 'function') {
         const allForEndPos = [...(window.cadUnePolygons || []), ...(window.cadCustomShapes || [])];
         const sp = allForEndPos.find(p => p && p.uneIndex === window.cadSelectedRidgeId);
         if (sp) window.cadPositionRidgeEndHandles_(sp);
@@ -1380,8 +1386,8 @@ window.saveCadStateToHistory = () => {
     if (window.isHistoryNavigating || !window.cadTargetId) return;
 
     let pins = window.cadPins.map(mk => ({ type: mk.cadPinType, lat: mk.getPosition().lat(), lng: mk.getPosition().lng() }));
-    let customShapesData = window.cadCustomShapes.map(poly => ({ coords: window.cadPolyToSavedCoords(poly), group: poly.uneGroup || '', customLabel: poly.customLabel || '' }));
-    let unePolygonsData = window.cadUnePolygons.map(poly => ({ coords: window.cadPolyToSavedCoords(poly), group: poly.uneGroup || '', customLabel: poly.customLabel || '' }));
+    let customShapesData = window.cadCustomShapes.map(poly => ({ coords: window.cadPolyToSavedCoords(poly), group: poly.uneGroup || '', customLabel: poly.customLabel || '', uneIndex: poly.uneIndex || '' }));
+    let unePolygonsData = window.cadUnePolygons.map(poly => ({ coords: window.cadPolyToSavedCoords(poly), group: poly.uneGroup || '', customLabel: poly.customLabel || '', uneIndex: poly.uneIndex || '' }));
 
     const state = {
         angle: document.getElementById('cadAngle').value,
@@ -1477,7 +1483,7 @@ window.loadCadStateFromHistory = (index) => {
             let cPath = window.cadNormalizeSavedPaths(shape.coords ? shape.coords : shape);
             let uGroup = shape.group || 'default';
             let gPoly = window.cadCreateRidgePolygon(cPath, { fillColor: window.cadGetGroupColor ? window.cadGetGroupColor(uGroup) : '#8BC34A' });
-            gPoly.uneIndex = 'custom_' + idx;
+            gPoly.uneIndex = shape.uneIndex || ('custom_' + idx);
             gPoly.uneGroup = uGroup;
             if (shape.customLabel) gPoly.customLabel = shape.customLabel;
             window.bindShapeHistoryEvents(gPoly);
@@ -1490,13 +1496,16 @@ window.loadCadStateFromHistory = (index) => {
             let uPath = window.cadNormalizeSavedPaths(shape.coords ? shape.coords : shape);
             let uGroup = shape.group || 'default';
             let gPoly = window.cadCreateRidgePolygon(uPath, { fillColor: window.cadGetGroupColor ? window.cadGetGroupColor(uGroup) : '#8BC34A' });
-            gPoly.uneIndex = 'une_' + idx;
+            gPoly.uneIndex = shape.uneIndex || ('une_' + (idx + 1));
             gPoly.uneGroup = uGroup;
             if (shape.customLabel) gPoly.customLabel = shape.customLabel;
             window.bindShapeHistoryEvents(gPoly);
             window.cadUnePolygons.push(gPoly);
         });
     }
+
+    if (typeof window.cadPruneSelectedRidges_ === 'function') window.cadPruneSelectedRidges_();
+    if (typeof window.cadRefreshRidgeSelectionUi_ === 'function') window.cadRefreshRidgeSelectionUi_();
 
     window.reassignLabels();
     window.cadAlignMapHeading();
@@ -1807,6 +1816,9 @@ window.initCadTouchEvents = () => {
     // 🌟 つまみやピンをドラッグしたときに地図全体のドラッグ（独自スクロール）が競合するのを防ぐ
     const checkIgnoreDrag = (target) => {
         if (!target) return false;
+        if (typeof target.closest === 'function' && target.closest('#cadRidgePopup, #cadMultiRidgeEditPanel, [data-cad-handle="1"]')) {
+            return true;
+        }
 
         // 1. Google Mapsの地図タイル画像（衛星写真等）、キャンバス、ポリゴン本体(path/svg)は絶対にドラッグ無視しない
         const tagName = target.tagName.toLowerCase();
@@ -3077,6 +3089,9 @@ window.switchCadTab = (tab) => {
         el.style.background = on ? colors[n] : '#222';
         el.style.color = on ? '#fff' : '#aaa';
     });
+    if (tab === 2 && typeof window.cadRefreshRidgeSelectionUi_ === 'function') {
+        window.cadRefreshRidgeSelectionUi_();
+    }
     if (tab === 4 && typeof window.cadPreviewRidgeNumberSplit === 'function') {
         window.cadPreviewRidgeNumberSplit();
     }
@@ -4641,6 +4656,12 @@ window.cadClearLines = (skipHistory = false) => {
     if (window.cadFrontBaselineMarker) { window.cadFrontBaselineMarker.setMap(null); window.cadFrontBaselineMarker = null; }
     if (window.cadFrontBaselineVisual) { window.cadFrontBaselineVisual.setMap(null); window.cadFrontBaselineVisual = null; }
     window.cadFrontBaseline = null;
+    if (!skipHistory) {
+        window.cadSelectedRidgeIds = [];
+        window.cadSelectedRidgeId = null;
+        window.cadSelectedRidgeAnchorLatLng = null;
+        if (typeof window.cadRefreshRidgeSelectionUi_ === 'function') window.cadRefreshRidgeSelectionUi_();
+    }
     if (typeof window.cadClearPartialPoints === 'function') window.cadClearPartialPoints(true);
     if (typeof window.cadClearQuadCorners === 'function') window.cadClearQuadCorners(true);
     const msgEl = document.getElementById('cadPinModeMsg'); if (msgEl) msgEl.innerText = "💡 操作を選ぶと、ここに案内が出ます。";
@@ -4656,6 +4677,10 @@ window.cadClearRidgesOnly = (skipHistory = false) => {
         window.cadCustomShapes.forEach(pl => pl.setMap(null));
         window.cadCustomShapes = [];
     }
+    window.cadSelectedRidgeIds = [];
+    window.cadSelectedRidgeId = null;
+    window.cadSelectedRidgeAnchorLatLng = null;
+    if (typeof window.cadRefreshRidgeSelectionUi_ === 'function') window.cadRefreshRidgeSelectionUi_();
     window.cadPaintedCellSet = new Set();
     window.cadPaintedCellTypes = {};
     window.cadPaintedCells = {};
@@ -4719,7 +4744,9 @@ window.cadClearRidgesKeepMakura = (skipHistory = false) => {
         window.cadGridLines.forEach(l => l.setMap(null));
         window.cadGridLines = [];
     }
-    if (window.cadSelectedRidgeId) {
+    if (typeof window.cadPruneSelectedRidges_ === 'function') {
+        window.cadPruneSelectedRidges_();
+    } else if (window.cadSelectedRidgeId) {
         const still = window.cadUnePolygons.concat(window.cadCustomShapes).some((pl) => pl && pl.uneIndex === window.cadSelectedRidgeId);
         if (!still) window.cadSelectedRidgeId = null;
     }
@@ -9717,6 +9744,7 @@ window.cadResizePoly = (scaleFactor, isContinuous = false) => {
 };
 
 window.cadSelectedRidgeId = null;
+window.cadSelectedRidgeIds = [];
 
 window.cadFindRidgeByIndex_ = (uneIndex) => {
     const lists = [window.cadUnePolygons, window.cadCustomShapes];
@@ -9727,6 +9755,146 @@ window.cadFindRidgeByIndex_ = (uneIndex) => {
         if (at >= 0) return { found: arr[at], list: arr, at: at };
     }
     return null;
+};
+
+window.cadIsRidgeSelected_ = (uneIndex) => {
+    if (!uneIndex) return false;
+    if (Array.isArray(window.cadSelectedRidgeIds) && window.cadSelectedRidgeIds.includes(uneIndex)) return true;
+    return window.cadSelectedRidgeId === uneIndex;
+};
+
+window.cadPruneSelectedRidges_ = () => {
+    if (!Array.isArray(window.cadSelectedRidgeIds)) {
+        window.cadSelectedRidgeIds = window.cadSelectedRidgeId ? [window.cadSelectedRidgeId] : [];
+    }
+    const validIds = [];
+    const seen = new Set();
+    window.cadSelectedRidgeIds.forEach((id) => {
+        if (!id || seen.has(id)) return;
+        const hit = window.cadFindRidgeByIndex_(id);
+        if (hit && hit.found) {
+            seen.add(id);
+            validIds.push(id);
+        }
+    });
+    window.cadSelectedRidgeIds = validIds;
+    window.cadSelectedRidgeId = validIds.length ? validIds[validIds.length - 1] : null;
+};
+
+window.cadGetSelectedRidges_ = () => {
+    window.cadPruneSelectedRidges_();
+    const out = [];
+    window.cadSelectedRidgeIds.forEach((id) => {
+        const hit = window.cadFindRidgeByIndex_(id);
+        if (hit && hit.found) out.push(hit.found);
+    });
+    return out;
+};
+
+/** 畝の長手方向(bearing)と画面右向き直交方向(rightBearing)を取得 */
+window.cadGetRidgeAxes_ = (poly) => {
+    const angleEl = document.getElementById('cadAngle');
+    let bearing = (angleEl && angleEl.value !== '' && Number.isFinite(parseFloat(angleEl.value)))
+        ? parseFloat(angleEl.value)
+        : 0;
+    const caps = poly ? window.cadRidgeEndCaps_(poly) : null;
+    if (caps && Number.isFinite(caps.bearing)) {
+        bearing = caps.bearing;
+    }
+    const rot = (typeof window.cadCurrentRotation === 'number' && Number.isFinite(window.cadCurrentRotation))
+        ? window.cadCurrentRotation
+        : -bearing;
+    const candPlus = bearing + 90;
+    const candMinus = bearing - 90;
+    const sinPlus = Math.sin((candPlus + rot) * Math.PI / 180);
+    const rightBearing = (sinPlus >= 0) ? candPlus : candMinus;
+    return { bearing: bearing, rightBearing: rightBearing };
+};
+
+window.cadGetSelectionRightBearing_ = () => {
+    const selected = window.cadGetSelectedRidges_();
+    const refPoly = selected.length ? selected[selected.length - 1] : null;
+    return window.cadGetRidgeAxes_(refPoly);
+};
+
+window.cadGetPolyRings_ = (poly) => {
+    const rings = [];
+    if (!poly) return rings;
+    try {
+        const paths = poly.getPaths && poly.getPaths();
+        const n = paths && typeof paths.getLength === 'function' ? paths.getLength() : 0;
+        if (n > 0) {
+            for (let r = 0; r < n; r++) {
+                const ring = paths.getAt(r);
+                if (ring && typeof ring.getLength === 'function' && ring.getLength() > 0) rings.push(ring);
+            }
+            if (rings.length) return rings;
+        }
+    } catch (e) { }
+    const single = poly.getPath && poly.getPath();
+    if (single && typeof single.getLength === 'function' && single.getLength() > 0) rings.push(single);
+    return rings;
+};
+
+window.cadMeasureRidgeTransverse_ = (poly, rightBearingOverride) => {
+    if (!poly || !poly.getPath) return null;
+    const path = poly.getPath();
+    if (!path || path.getLength() < 3) return null;
+    const axes = window.cadGetRidgeAxes_(poly);
+    const rightBearing = (rightBearingOverride != null && Number.isFinite(rightBearingOverride))
+        ? rightBearingOverride
+        : axes.rightBearing;
+    const pt0 = path.getAt(0);
+    const origin = [pt0.lng(), pt0.lat()];
+    let minT = Infinity;
+    let maxT = -Infinity;
+    let minS = Infinity;
+    let maxS = -Infinity;
+    for (let i = 0; i < path.getLength(); i++) {
+        const pt = path.getAt(i);
+        const coord = [pt.lng(), pt.lat()];
+        const t = window.cadMetersAlongBearing_(origin, coord, rightBearing);
+        const s = window.cadMetersAlongBearing_(origin, coord, axes.bearing);
+        if (t < minT) minT = t;
+        if (t > maxT) maxT = t;
+        if (s < minS) minS = s;
+        if (s > maxS) maxS = s;
+    }
+    if (!Number.isFinite(minT) || !Number.isFinite(maxT)) return null;
+    const widthM = Math.max(0, maxT - minT);
+    const midT = (minT + maxT) / 2;
+    const lenM = Math.max(0, maxS - minS);
+    const midS = (minS + maxS) / 2;
+    const centerOnAxis = window.cadDestinationMeters_(
+        window.cadDestinationMeters_(origin, midS, axes.bearing),
+        midT,
+        rightBearing
+    );
+    return {
+        origin: origin,
+        bearing: axes.bearing,
+        rightBearing: rightBearing,
+        minT: minT,
+        maxT: maxT,
+        widthM: widthM,
+        midT: midT,
+        lenM: lenM,
+        midS: midS,
+        centerLngLat: centerOnAxis
+    };
+};
+
+window.cadGetSelectedRepresentativeWidthCm_ = () => {
+    const selected = window.cadGetSelectedRidges_();
+    if (!selected.length) return null;
+    const widths = selected.map((p) => {
+        const m = window.cadMeasureRidgeTransverse_(p);
+        return m && m.widthM > 0.05 ? m.widthM : (typeof window.estimateCadUneWidthMeters === 'function' ? window.estimateCadUneWidthMeters(p) : 0);
+    }).filter((w) => w > 0.05 && w < 15);
+    if (!widths.length) return null;
+    widths.sort((a, b) => a - b);
+    const medM = widths[Math.floor(widths.length / 2)];
+    return Math.round(medM * 100);
 };
 
 window.cadRidgeEndCaps_ = (poly) => {
@@ -9783,10 +9951,11 @@ window.cadAttachRidgeEndHandles_ = (poly, handlesGroup) => {
     poly._svgEndHandles = [];
     caps.caps.forEach((cap, capIndex) => {
         const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        circle.setAttribute('r', '11');
+        circle.setAttribute('r', '10');
         circle.setAttribute('fill', '#FFEB3B');
         circle.setAttribute('stroke', '#F57F17');
-        circle.setAttribute('stroke-width', '3');
+        circle.setAttribute('stroke-width', '2.5');
+        circle.setAttribute('data-cad-handle', '1');
         circle.setAttribute('style', 'cursor: grab; pointer-events: auto;');
         let dragging = false;
         const onMove = (ev) => {
@@ -9856,16 +10025,713 @@ window.cadStretchRidgeEnd_ = (poly, capIndex, lng, lat) => {
     if ((sign > 0 && next < 0.4) || (sign < 0 && next > -0.4)) next = sign * 0.4;
     const delta = next - cur;
     if (Math.abs(delta) < 0.01) return;
-    const path = poly.getPath();
+    const outwardBearing = sign > 0 ? caps.bearing : (caps.bearing + 180);
+    const stretchAmount = delta * sign; // >0 = 伸ばす, <0 = 縮める
+
     window.cadSuppressPathEvents = true;
     try {
+        const path = poly.getPath();
         cap.idxs.forEach((idx) => {
             const pt = path.getAt(idx);
             const moved = window.cadDestinationMeters_([pt.lng(), pt.lat()], delta, caps.bearing);
             path.setAt(idx, new google.maps.LatLng(moved[1], moved[0]));
         });
+
+        // 複数選択時は、他の選択畝の同じ側の端も一緒に伸縮
+        const selected = window.cadGetSelectedRidges_();
+        if (selected.length > 1 && selected.includes(poly)) {
+            selected.forEach((other) => {
+                if (!other || other === poly) return;
+                const oc = window.cadRidgeEndCaps_(other);
+                if (!oc || !oc.caps || oc.caps.length < 2) return;
+                const c0 = oc.caps[0];
+                const c1 = oc.caps[1];
+                const sAlong = window.cadMetersAlongBearing_([c0.lng, c0.lat], [c1.lng, c1.lat], outwardBearing);
+                const targetIdx = sAlong >= 0 ? 1 : 0;
+                const oCap = oc.caps[targetIdx];
+                const oAnc = oc.caps[1 - targetIdx];
+                const oCur = window.cadMetersAlongBearing_([oAnc.lng, oAnc.lat], [oCap.lng, oCap.lat], oc.bearing);
+                const oSign = oCur >= 0 ? 1 : -1;
+                const oLen = Math.abs(oCur);
+                let newLen = oLen + stretchAmount;
+                if (newLen < 0.4) newLen = 0.4;
+                const oDelta = (newLen - oLen) * oSign;
+                if (Math.abs(oDelta) < 0.005) return;
+                const oPath = other.getPath();
+                oCap.idxs.forEach((idx) => {
+                    const pt = oPath.getAt(idx);
+                    const moved = window.cadDestinationMeters_([pt.lng(), pt.lat()], oDelta, oc.bearing);
+                    oPath.setAt(idx, new google.maps.LatLng(moved[1], moved[0]));
+                });
+            });
+        }
     } finally {
         window.cadSuppressPathEvents = false;
+    }
+};
+
+window.cadGetSelectionCenterLatLng_ = (selectedRidges) => {
+    const list = selectedRidges || window.cadGetSelectedRidges_();
+    if (!list.length) return null;
+    let sumLat = 0;
+    let sumLng = 0;
+    let count = 0;
+    list.forEach((poly) => {
+        const c = window.cadGetPolyCenterLatLng_(poly);
+        if (c) {
+            sumLat += c.lat();
+            sumLng += c.lng();
+            count++;
+        }
+    });
+    if (!count) return null;
+    return { lat: sumLat / count, lng: sumLng / count };
+};
+
+/** 選択畝のSVGハンドル（上下端伸縮＋中央の左右移動⇔＋左右の幅変更↔）を生成 */
+window.cadAttachSelectionHandles_ = (handlesGroup) => {
+    window._cadSelectionHandleNodes = null;
+    if (!handlesGroup) return;
+    const selected = window.cadGetSelectedRidges_();
+    if (!selected.length) return;
+
+    // 1. 各選択畝の上下端ハンドル（最大35本まで表示）
+    if (selected.length <= 35) {
+        selected.forEach((sp) => {
+            window.cadAttachRidgeEndHandles_(sp, handlesGroup);
+        });
+    }
+
+    // 2. 左右の幅変更ハンドル（緑丸 ↔）
+    const makeWidthHandle = (sideSign) => {
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('r', '11');
+        circle.setAttribute('fill', '#43A047');
+        circle.setAttribute('stroke', '#FFFFFF');
+        circle.setAttribute('stroke-width', '2.5');
+        circle.setAttribute('data-cad-handle', '1');
+        circle.setAttribute('style', 'cursor: ew-resize; pointer-events: auto;');
+
+        const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        txt.setAttribute('fill', '#FFFFFF');
+        txt.setAttribute('font-size', '11');
+        txt.setAttribute('font-weight', 'bold');
+        txt.setAttribute('text-anchor', 'middle');
+        txt.setAttribute('dominant-baseline', 'central');
+        txt.setAttribute('style', 'pointer-events: none; user-select: none;');
+        txt.textContent = sideSign < 0 ? '◀' : '▶';
+
+        let draggingW = false;
+        let startLL = null;
+        let rightB = 0;
+        let snapshots = [];
+
+        const onMove = (ev) => {
+            if (!draggingW) return;
+            if (ev.cancelable) ev.preventDefault();
+            const cx = ev.touches ? ev.touches[0].clientX : ev.clientX;
+            const cy = ev.touches ? ev.touches[0].clientY : ev.clientY;
+            const curLL = window.screenPixelToLatLng(cx, cy);
+            if (!curLL || !startLL || !snapshots.length) return;
+            const dragAlongRight = window.cadMetersAlongBearing_(
+                [startLL.lng(), startLL.lat()],
+                [curLL.lng(), curLL.lat()],
+                rightB
+            );
+            const deltaWidthM = dragAlongRight * sideSign * 2;
+            let repCm = null;
+            window.cadSuppressPathEvents = true;
+            try {
+                snapshots.forEach((snap) => {
+                    const newW = Math.max(0.15, Math.min(10.0, snap.mInfo.widthM + deltaWidthM));
+                    if (repCm === null) repCm = Math.round(newW * 100);
+                    const scaleDelta = (newW / snap.mInfo.widthM) - 1;
+                    snap.rings.forEach((rData) => {
+                        rData.coords.forEach((c, idx) => {
+                            const t = window.cadMetersAlongBearing_(snap.mInfo.origin, c, snap.mInfo.rightBearing);
+                            const dt = t - snap.mInfo.midT;
+                            const shiftT = dt * scaleDelta;
+                            const moved = window.cadDestinationMeters_(c, shiftT, snap.mInfo.rightBearing);
+                            rData.ring.setAt(idx, new google.maps.LatLng(moved[1], moved[0]));
+                        });
+                    });
+                });
+            } finally {
+                window.cadSuppressPathEvents = false;
+            }
+            if (repCm != null) {
+                const msg = document.getElementById('cadPinModeMsg');
+                if (msg) {
+                    msg.innerText = `📏 畝幅を変更中: 約${repCm}cm`;
+                    msg.style.color = '#81C784';
+                }
+                const inp1 = document.getElementById('cadPopupWidthCmInput');
+                if (inp1) inp1.value = String(repCm);
+                const inp2 = document.getElementById('cadPanelWidthCmInput');
+                if (inp2) inp2.value = String(repCm);
+            }
+            if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: true });
+        };
+
+        const onEnd = () => {
+            if (!draggingW) return;
+            draggingW = false;
+            window.cadRidgeWidthDragging = false;
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onEnd);
+            window.removeEventListener('touchmove', onMove);
+            window.removeEventListener('touchend', onEnd);
+            if (typeof window.reassignLabels === 'function') window.reassignLabels();
+            if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+            if (typeof window.cadRefreshRidgeSelectionUi_ === 'function') window.cadRefreshRidgeSelectionUi_();
+            if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: false });
+        };
+
+        const onStart = (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const cx = e.touches ? e.touches[0].clientX : e.clientX;
+            const cy = e.touches ? e.touches[0].clientY : e.clientY;
+            startLL = window.screenPixelToLatLng(cx, cy);
+            if (!startLL) return;
+            const curSel = window.cadGetSelectedRidges_();
+            if (!curSel.length) return;
+            rightB = window.cadGetSelectionRightBearing_().rightBearing;
+            snapshots = curSel.map((poly) => {
+                const mInfo = window.cadMeasureRidgeTransverse_(poly, rightB);
+                if (!mInfo || !(mInfo.widthM > 0.05)) return null;
+                const rings = window.cadGetPolyRings_(poly).map((ring) => {
+                    const coords = [];
+                    for (let i = 0; i < ring.getLength(); i++) {
+                        const pt = ring.getAt(i);
+                        coords.push([pt.lng(), pt.lat()]);
+                    }
+                    return { ring: ring, coords: coords };
+                });
+                return { poly: poly, mInfo: mInfo, rings: rings };
+            }).filter(Boolean);
+            if (!snapshots.length) return;
+            draggingW = true;
+            window.cadRidgeWidthDragging = true;
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onEnd);
+            window.addEventListener('touchmove', onMove, { passive: false });
+            window.addEventListener('touchend', onEnd);
+        };
+
+        circle.addEventListener('mousedown', onStart);
+        circle.addEventListener('touchstart', onStart, { passive: false });
+        handlesGroup.appendChild(circle);
+        handlesGroup.appendChild(txt);
+        return { circle: circle, txt: txt };
+    };
+
+    const leftWidthHandle = makeWidthHandle(-1);
+    const rightWidthHandle = makeWidthHandle(1);
+
+    // 3. 中央の左右移動ハンドル（水色丸 ⇔）
+    const moveCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    moveCircle.setAttribute('r', '15');
+    moveCircle.setAttribute('fill', '#0288D1');
+    moveCircle.setAttribute('stroke', '#FFFFFF');
+    moveCircle.setAttribute('stroke-width', '3');
+    moveCircle.setAttribute('data-cad-handle', '1');
+    moveCircle.setAttribute('style', 'cursor: ew-resize; pointer-events: auto;');
+
+    const moveTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    moveTxt.setAttribute('fill', '#FFFFFF');
+    moveTxt.setAttribute('font-size', '14');
+    moveTxt.setAttribute('font-weight', 'bold');
+    moveTxt.setAttribute('text-anchor', 'middle');
+    moveTxt.setAttribute('dominant-baseline', 'central');
+    moveTxt.setAttribute('style', 'pointer-events: none; user-select: none;');
+    moveTxt.textContent = '⇔';
+
+    let draggingMove = false;
+    let moveStartLL = null;
+    let moveRightB = 0;
+    let moveSnapshots = [];
+
+    const onMoveDrag = (ev) => {
+        if (!draggingMove) return;
+        if (ev.cancelable) ev.preventDefault();
+        const cx = ev.touches ? ev.touches[0].clientX : ev.clientX;
+        const cy = ev.touches ? ev.touches[0].clientY : ev.clientY;
+        const curLL = window.screenPixelToLatLng(cx, cy);
+        if (!curLL || !moveStartLL || !moveSnapshots.length) return;
+        const deltaM = window.cadMetersAlongBearing_(
+            [moveStartLL.lng(), moveStartLL.lat()],
+            [curLL.lng(), curLL.lat()],
+            moveRightB
+        );
+        window.cadSuppressPathEvents = true;
+        try {
+            moveSnapshots.forEach((snap) => {
+                snap.rings.forEach((rData) => {
+                    rData.coords.forEach((c, idx) => {
+                        const moved = window.cadDestinationMeters_(c, deltaM, moveRightB);
+                        rData.ring.setAt(idx, new google.maps.LatLng(moved[1], moved[0]));
+                    });
+                });
+                if (typeof window.updateSingleLabelPosition === 'function') {
+                    window.updateSingleLabelPosition(snap.poly);
+                }
+            });
+        } finally {
+            window.cadSuppressPathEvents = false;
+        }
+        const msg = document.getElementById('cadPinModeMsg');
+        if (msg) {
+            const cm = Math.round(Math.abs(deltaM) * 100);
+            const dirStr = deltaM >= 0 ? '右へ' : '左へ';
+            msg.innerText = `↔ 選択した${moveSnapshots.length}本の畝を${dirStr} ${cm}cm 移動中`;
+            msg.style.color = '#4FC3F7';
+        }
+        if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: true });
+    };
+
+    const onMoveEnd = () => {
+        if (!draggingMove) return;
+        draggingMove = false;
+        window.cadRidgeMoveDragging = false;
+        window.removeEventListener('mousemove', onMoveDrag);
+        window.removeEventListener('mouseup', onMoveEnd);
+        window.removeEventListener('touchmove', onMoveDrag);
+        window.removeEventListener('touchend', onMoveEnd);
+        if (typeof window.reassignLabels === 'function') window.reassignLabels();
+        if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+        if (typeof window.cadRefreshRidgeSelectionUi_ === 'function') window.cadRefreshRidgeSelectionUi_();
+        if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: false });
+    };
+
+    const onMoveStart = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const cx = e.touches ? e.touches[0].clientX : e.clientX;
+        const cy = e.touches ? e.touches[0].clientY : e.clientY;
+        moveStartLL = window.screenPixelToLatLng(cx, cy);
+        if (!moveStartLL) return;
+        const curSel = window.cadGetSelectedRidges_();
+        if (!curSel.length) return;
+        moveRightB = window.cadGetSelectionRightBearing_().rightBearing;
+        moveSnapshots = curSel.map((poly) => {
+            const rings = window.cadGetPolyRings_(poly).map((ring) => {
+                const coords = [];
+                for (let i = 0; i < ring.getLength(); i++) {
+                    const pt = ring.getAt(i);
+                    coords.push([pt.lng(), pt.lat()]);
+                }
+                return { ring: ring, coords: coords };
+            });
+            return { poly: poly, rings: rings };
+        });
+        draggingMove = true;
+        window.cadRidgeMoveDragging = true;
+        window.addEventListener('mousemove', onMoveDrag);
+        window.addEventListener('mouseup', onMoveEnd);
+        window.addEventListener('touchmove', onMoveDrag, { passive: false });
+        window.addEventListener('touchend', onMoveEnd);
+    };
+
+    moveCircle.addEventListener('mousedown', onMoveStart);
+    moveCircle.addEventListener('touchstart', onMoveStart, { passive: false });
+    handlesGroup.appendChild(moveCircle);
+    handlesGroup.appendChild(moveTxt);
+
+    window._cadSelectionHandleNodes = {
+        moveCircle: moveCircle,
+        moveTxt: moveTxt,
+        leftWidthHandle: leftWidthHandle,
+        rightWidthHandle: rightWidthHandle
+    };
+    window.cadPositionSelectionHandles_();
+};
+
+window.cadPositionSelectionHandles_ = () => {
+    const selected = window.cadGetSelectedRidges_();
+    if (!selected.length) return;
+    selected.forEach((sp) => {
+        window.cadPositionRidgeEndHandles_(sp);
+    });
+    const nodes = window._cadSelectionHandleNodes;
+    if (!nodes || typeof window.latLngToScreenPixel !== 'function') return;
+
+    const selCenter = window.cadGetSelectionCenterLatLng_(selected);
+    if (selCenter && nodes.moveCircle && nodes.moveTxt) {
+        const pt = window.latLngToScreenPixel(selCenter.lat, selCenter.lng);
+        if (pt) {
+            nodes.moveCircle.setAttribute('cx', pt.x);
+            nodes.moveCircle.setAttribute('cy', pt.y);
+            nodes.moveTxt.setAttribute('x', pt.x);
+            nodes.moveTxt.setAttribute('y', pt.y);
+        }
+    }
+
+    const primaryPoly = selected[selected.length - 1];
+    const mInfo = window.cadMeasureRidgeTransverse_(primaryPoly);
+    if (mInfo && nodes.leftWidthHandle && nodes.rightWidthHandle) {
+        // 中央の移動ハンドル(⇔)と重ならないよう、長手方向に少しずらした位置の左右端に配置
+        const alongShift = Math.min(Math.max(mInfo.lenM * 0.24, 0.8), 6.0);
+        const basePt = window.cadDestinationMeters_(mInfo.centerLngLat, alongShift, mInfo.bearing);
+        const halfW = Math.max(0.25, mInfo.widthM / 2);
+        const leftLL = window.cadDestinationMeters_(basePt, -halfW, mInfo.rightBearing);
+        const rightLL = window.cadDestinationMeters_(basePt, halfW, mInfo.rightBearing);
+        let leftPx = window.latLngToScreenPixel(leftLL[1], leftLL[0]);
+        let rightPx = window.latLngToScreenPixel(rightLL[1], rightLL[0]);
+        if (leftPx && rightPx) {
+            // 画面上で狭すぎるときは左右に少し広げてタップしやすくする
+            const dx = rightPx.x - leftPx.x;
+            const dy = rightPx.y - leftPx.y;
+            const distPx = Math.hypot(dx, dy);
+            if (distPx < 36) {
+                const mx = (leftPx.x + rightPx.x) / 2;
+                const my = (leftPx.y + rightPx.y) / 2;
+                const ux = distPx > 0.5 ? dx / distPx : 1;
+                const uy = distPx > 0.5 ? dy / distPx : 0;
+                leftPx = { x: mx - ux * 18, y: my - uy * 18 };
+                rightPx = { x: mx + ux * 18, y: my + uy * 18 };
+            }
+            nodes.leftWidthHandle.circle.setAttribute('cx', leftPx.x);
+            nodes.leftWidthHandle.circle.setAttribute('cy', leftPx.y);
+            nodes.leftWidthHandle.txt.setAttribute('x', leftPx.x);
+            nodes.leftWidthHandle.txt.setAttribute('y', leftPx.y);
+            nodes.rightWidthHandle.circle.setAttribute('cx', rightPx.x);
+            nodes.rightWidthHandle.circle.setAttribute('cy', rightPx.y);
+            nodes.rightWidthHandle.txt.setAttribute('x', rightPx.x);
+            nodes.rightWidthHandle.txt.setAttribute('y', rightPx.y);
+        }
+    }
+};
+
+/** 選択された畝をまとめて左右に移動（deltaMeters: 左は負、右は正） */
+window.cadMoveSelectedRidgesLateral = (deltaMeters, isContinuous = false) => {
+    const m = Number(deltaMeters) || 0;
+    if (Math.abs(m) < 1e-4) return;
+    const selected = window.cadGetSelectedRidges_();
+    if (!selected.length) return;
+    const { rightBearing } = window.cadGetSelectionRightBearing_();
+
+    window.cadSuppressPathEvents = true;
+    try {
+        selected.forEach((poly) => {
+            const rings = window.cadGetPolyRings_(poly);
+            rings.forEach((ring) => {
+                for (let i = 0; i < ring.getLength(); i++) {
+                    const pt = ring.getAt(i);
+                    const moved = window.cadDestinationMeters_([pt.lng(), pt.lat()], m, rightBearing);
+                    ring.setAt(i, new google.maps.LatLng(moved[1], moved[0]));
+                }
+            });
+            if (typeof window.updateSingleLabelPosition === 'function') {
+                window.updateSingleLabelPosition(poly);
+            }
+        });
+    } finally {
+        window.cadSuppressPathEvents = false;
+    }
+
+    const msg = document.getElementById('cadPinModeMsg');
+    if (msg) {
+        const dirText = m >= 0 ? '右へ' : '左へ';
+        msg.innerText = `↔ 選択した${selected.length}本の畝を${dirText} ${Math.round(Math.abs(m) * 100)}cm 動かしました`;
+        msg.style.color = '#4FC3F7';
+    }
+    if (typeof window.cadRefreshRidgeSelectionUi_ === 'function') window.cadRefreshRidgeSelectionUi_();
+    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: !!isContinuous });
+    if (!isContinuous) {
+        if (typeof window.reassignLabels === 'function') window.reassignLabels();
+        if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+    }
+};
+
+/** 選択された各畝の幅を増減（deltaMeters: 広げるは正、狭めるは負） */
+window.cadChangeSelectedRidgesWidth = (deltaMeters, isContinuous = false) => {
+    const dM = Number(deltaMeters) || 0;
+    if (Math.abs(dM) < 1e-4) return;
+    const selected = window.cadGetSelectedRidges_();
+    if (!selected.length) return;
+    const { rightBearing } = window.cadGetSelectionRightBearing_();
+
+    let changedCount = 0;
+    window.cadSuppressPathEvents = true;
+    try {
+        selected.forEach((poly) => {
+            const mInfo = window.cadMeasureRidgeTransverse_(poly, rightBearing);
+            if (!mInfo || !(mInfo.widthM > 0.05)) return;
+            const newW = Math.max(0.15, Math.min(10.0, mInfo.widthM + dM));
+            const scaleDelta = (newW / mInfo.widthM) - 1;
+            if (Math.abs(scaleDelta) < 1e-4) return;
+            const rings = window.cadGetPolyRings_(poly);
+            rings.forEach((ring) => {
+                const nextPts = [];
+                for (let i = 0; i < ring.getLength(); i++) {
+                    const pt = ring.getAt(i);
+                    const c = [pt.lng(), pt.lat()];
+                    const t = window.cadMetersAlongBearing_(mInfo.origin, c, mInfo.rightBearing);
+                    const dt = t - mInfo.midT;
+                    const shiftT = dt * scaleDelta;
+                    const moved = window.cadDestinationMeters_(c, shiftT, mInfo.rightBearing);
+                    nextPts.push(new google.maps.LatLng(moved[1], moved[0]));
+                }
+                for (let i = 0; i < nextPts.length; i++) {
+                    ring.setAt(i, nextPts[i]);
+                }
+            });
+            changedCount++;
+        });
+    } finally {
+        window.cadSuppressPathEvents = false;
+    }
+
+    if (!changedCount) return;
+    const repCm = window.cadGetSelectedRepresentativeWidthCm_();
+    const msg = document.getElementById('cadPinModeMsg');
+    if (msg && repCm != null) {
+        msg.innerText = `📏 選択した${selected.length}本の畝幅を 約${repCm}cm に変更しました`;
+        msg.style.color = '#81C784';
+    }
+    if (typeof window.cadRefreshRidgeSelectionUi_ === 'function') window.cadRefreshRidgeSelectionUi_();
+    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: !!isContinuous });
+    if (!isContinuous) {
+        if (typeof window.reassignLabels === 'function') window.reassignLabels();
+        if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+    }
+};
+
+/** 選択された各畝の幅を指定cmに揃える */
+window.cadSetSelectedRidgesWidthCm = (targetCm) => {
+    const cm = parseFloat(targetCm);
+    if (!Number.isFinite(cm) || cm < 15 || cm > 1000) {
+        alert('畝幅は 15cm 〜 1000cm の範囲で指定してください。');
+        return;
+    }
+    const targetM = cm / 100;
+    const selected = window.cadGetSelectedRidges_();
+    if (!selected.length) return;
+    const { rightBearing } = window.cadGetSelectionRightBearing_();
+
+    window.cadSuppressPathEvents = true;
+    try {
+        selected.forEach((poly) => {
+            const mInfo = window.cadMeasureRidgeTransverse_(poly, rightBearing);
+            if (!mInfo || !(mInfo.widthM > 0.05)) return;
+            const scaleDelta = (targetM / mInfo.widthM) - 1;
+            if (Math.abs(scaleDelta) < 1e-4) return;
+            const rings = window.cadGetPolyRings_(poly);
+            rings.forEach((ring) => {
+                const nextPts = [];
+                for (let i = 0; i < ring.getLength(); i++) {
+                    const pt = ring.getAt(i);
+                    const c = [pt.lng(), pt.lat()];
+                    const t = window.cadMetersAlongBearing_(mInfo.origin, c, mInfo.rightBearing);
+                    const dt = t - mInfo.midT;
+                    const shiftT = dt * scaleDelta;
+                    const moved = window.cadDestinationMeters_(c, shiftT, mInfo.rightBearing);
+                    nextPts.push(new google.maps.LatLng(moved[1], moved[0]));
+                }
+                for (let i = 0; i < nextPts.length; i++) {
+                    ring.setAt(i, nextPts[i]);
+                }
+            });
+        });
+    } finally {
+        window.cadSuppressPathEvents = false;
+    }
+
+    if (typeof window.reassignLabels === 'function') window.reassignLabels();
+    if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+    if (typeof window.cadRefreshRidgeSelectionUi_ === 'function') window.cadRefreshRidgeSelectionUi_();
+    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: false });
+    const msg = document.getElementById('cadPinModeMsg');
+    if (msg) {
+        msg.innerText = `📏 選択した${selected.length}本の畝幅を ${Math.round(cm)}cm に設定しました`;
+        msg.style.color = '#81C784';
+    }
+};
+
+/** 複数選択された畝のあいだの間隔（ピッチ）を広げる／狭める */
+window.cadChangeSelectedRidgesGap = (deltaGapMeters, isContinuous = false) => {
+    const dGap = Number(deltaGapMeters) || 0;
+    if (Math.abs(dGap) < 1e-4) return;
+    const selected = window.cadGetSelectedRidges_();
+    if (selected.length < 2) return;
+    const { rightBearing } = window.cadGetSelectionRightBearing_();
+    const refCenter = window.cadGetPolyCenterLatLng_(selected[0]);
+    if (!refCenter) return;
+    const origin = [refCenter.lng(), refCenter.lat()];
+
+    const items = selected.map((poly) => {
+        const c = window.cadGetPolyCenterLatLng_(poly);
+        const pos = c ? window.cadMetersAlongBearing_(origin, [c.lng(), c.lat()], rightBearing) : 0;
+        return { poly: poly, pos: pos };
+    }).sort((a, b) => a.pos - b.pos);
+
+    // 狭めすぎて順序が逆転するのを防ぐ
+    if (dGap < 0) {
+        for (let i = 1; i < items.length; i++) {
+            if ((items[i].pos - items[i - 1].pos) + dGap < 0.2) return;
+        }
+    }
+
+    const midIdx = (items.length - 1) / 2;
+    window.cadSuppressPathEvents = true;
+    try {
+        items.forEach((it, idx) => {
+            const shift = (idx - midIdx) * dGap;
+            if (Math.abs(shift) < 1e-4) return;
+            const rings = window.cadGetPolyRings_(it.poly);
+            rings.forEach((ring) => {
+                for (let i = 0; i < ring.getLength(); i++) {
+                    const pt = ring.getAt(i);
+                    const moved = window.cadDestinationMeters_([pt.lng(), pt.lat()], shift, rightBearing);
+                    ring.setAt(i, new google.maps.LatLng(moved[1], moved[0]));
+                }
+            });
+            if (typeof window.updateSingleLabelPosition === 'function') {
+                window.updateSingleLabelPosition(it.poly);
+            }
+        });
+    } finally {
+        window.cadSuppressPathEvents = false;
+    }
+
+    const msg = document.getElementById('cadPinModeMsg');
+    if (msg) {
+        msg.innerText = `⇔ 選択した${selected.length}本の畝間隔を${dGap >= 0 ? '広げ' : '詰め'}ました`;
+        msg.style.color = '#CE93D8';
+    }
+    if (typeof window.cadRefreshRidgeSelectionUi_ === 'function') window.cadRefreshRidgeSelectionUi_();
+    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: !!isContinuous });
+    if (!isContinuous) {
+        if (typeof window.reassignLabels === 'function') window.reassignLabels();
+        if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+    }
+};
+
+window._cadRidgeContTimer = null;
+window._cadRidgeContInterval = null;
+window._cadRidgeContActive = false;
+
+window.cadStartRidgeContinuousAction = (actionType, deltaVal, ev) => {
+    if (ev && ev.cancelable) ev.preventDefault();
+    if (ev && ev.stopPropagation) ev.stopPropagation();
+    window.cadStopRidgeContinuousAction(true);
+    window._cadRidgeContActive = true;
+    const step = () => {
+        if (actionType === 'move') window.cadMoveSelectedRidgesLateral(deltaVal, true);
+        else if (actionType === 'width') window.cadChangeSelectedRidgesWidth(deltaVal, true);
+        else if (actionType === 'gap') window.cadChangeSelectedRidgesGap(deltaVal, true);
+    };
+    step();
+    window._cadRidgeContTimer = setTimeout(() => {
+        window._cadRidgeContInterval = setInterval(step, 55);
+    }, 260);
+};
+
+window.cadStopRidgeContinuousAction = (skipSave = false) => {
+    if (window._cadRidgeContTimer) {
+        clearTimeout(window._cadRidgeContTimer);
+        window._cadRidgeContTimer = null;
+    }
+    if (window._cadRidgeContInterval) {
+        clearInterval(window._cadRidgeContInterval);
+        window._cadRidgeContInterval = null;
+    }
+    if (window._cadRidgeContActive && !skipSave) {
+        window._cadRidgeContActive = false;
+        if (typeof window.reassignLabels === 'function') window.reassignLabels();
+        if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+        if (typeof window.cadRefreshRidgeSelectionUi_ === 'function') window.cadRefreshRidgeSelectionUi_();
+        if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: false });
+    } else {
+        window._cadRidgeContActive = false;
+    }
+};
+
+window.cadSelectAllRidges = () => {
+    const mainList = [
+        ...(window.cadUnePolygons || []),
+        ...((window.cadCustomShapes || []).filter((p) => p && String(p.uneGroup || '') !== '枕'))
+    ].filter((p) => p && p.uneIndex);
+    const allList = [
+        ...(window.cadUnePolygons || []),
+        ...(window.cadCustomShapes || [])
+    ].filter((p) => p && p.uneIndex);
+
+    const targetList = mainList.length ? mainList : allList;
+    if (!targetList.length) return;
+
+    const currentIds = new Set(window.cadSelectedRidgeIds || []);
+    const allMainSelected = targetList.every((p) => currentIds.has(p.uneIndex));
+    if (allMainSelected && currentIds.size === targetList.length) {
+        // すでに通常畝が全選択されている場合は解除
+        window.cadClearRidgeSelection();
+        return;
+    }
+    window.cadSelectedRidgeIds = targetList.map((p) => p.uneIndex);
+    window.cadSelectedRidgeId = window.cadSelectedRidgeIds[window.cadSelectedRidgeIds.length - 1] || null;
+    const center = window.cadGetSelectionCenterLatLng_();
+    window.cadSelectedRidgeAnchorLatLng = center ? new google.maps.LatLng(center.lat, center.lng) : null;
+    window.cadRefreshRidgeSelectionUi_();
+    window.cadPaintRidgeSelection_();
+    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: false });
+    const msg = document.getElementById('cadPinModeMsg');
+    if (msg) {
+        msg.innerText = `✅ 全${window.cadSelectedRidgeIds.length}本の畝を選択しました。まとめて左右移動・幅変更ができます。`;
+        msg.style.color = '#FFB74D';
+    }
+};
+
+/** 選択された2本以上の畝の間にある畝もまとめて選択する */
+window.cadSelectRidgeRange = () => {
+    const selected = window.cadGetSelectedRidges_();
+    if (selected.length < 2) {
+        const msg = document.getElementById('cadPinModeMsg');
+        if (msg) {
+            msg.innerText = '💡 端と端の2本以上の畝をタップして選んでから「間も選択」を押すと、その間の畝をまとめて選べます。';
+            msg.style.color = '#FFB74D';
+        }
+        return;
+    }
+    const { rightBearing } = window.cadGetSelectionRightBearing_();
+    const refCenter = window.cadGetPolyCenterLatLng_(selected[0]);
+    if (!refCenter) return;
+    const origin = [refCenter.lng(), refCenter.lat()];
+
+    let minPos = Infinity;
+    let maxPos = -Infinity;
+    selected.forEach((p) => {
+        const c = window.cadGetPolyCenterLatLng_(p);
+        if (!c) return;
+        const pos = window.cadMetersAlongBearing_(origin, [c.lng(), c.lat()], rightBearing);
+        if (pos < minPos) minPos = pos;
+        if (pos > maxPos) maxPos = pos;
+    });
+
+    const candidates = [
+        ...(window.cadUnePolygons || []),
+        ...((window.cadCustomShapes || []).filter((p) => p && String(p.uneGroup || '') !== '枕'))
+    ].filter((p) => p && p.uneIndex);
+
+    const set = new Set(window.cadSelectedRidgeIds || []);
+    candidates.forEach((p) => {
+        const c = window.cadGetPolyCenterLatLng_(p);
+        if (!c) return;
+        const pos = window.cadMetersAlongBearing_(origin, [c.lng(), c.lat()], rightBearing);
+        if (pos >= minPos - 0.15 && pos <= maxPos + 0.15) {
+            set.add(p.uneIndex);
+        }
+    });
+
+    window.cadSelectedRidgeIds = Array.from(set);
+    window.cadSelectedRidgeId = window.cadSelectedRidgeIds[window.cadSelectedRidgeIds.length - 1] || null;
+    window.cadRefreshRidgeSelectionUi_();
+    window.cadPaintRidgeSelection_();
+    if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: false });
+    const msg = document.getElementById('cadPinModeMsg');
+    if (msg) {
+        msg.innerText = `✅ 間の畝を含めて計${window.cadSelectedRidgeIds.length}本を選択しました。`;
+        msg.style.color = '#FFB74D';
     }
 };
 
@@ -9879,9 +10745,107 @@ window.cadRidgeSelectName_ = (poly) => {
 window.cadApplyRidgeSelectionStyle_ = (poly) => {
     const node = poly && poly._svgPathNode;
     if (!node) return;
-    const on = !!(window.cadSelectedRidgeId && poly.uneIndex === window.cadSelectedRidgeId);
+    const on = !!(poly && poly.uneIndex && window.cadIsRidgeSelected_(poly.uneIndex));
     node.setAttribute('stroke', on ? '#FFEB3B' : '#558B2F');
     node.setAttribute('stroke-width', on ? '5' : '2');
+    node.setAttribute('fill-opacity', on ? '0.88' : '0.7');
+};
+
+window.cadBuildRidgeControlMarkup_ = (prefix) => {
+    const widthInputId = prefix + 'WidthCmInput';
+    const gapRowId = prefix + 'GapRow';
+    const labelId = prefix + 'Label';
+    const rangeBtnId = prefix + 'RangeBtn';
+    return `
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
+            <div id="${labelId}" style="font-size:12px; color:#FFE0B2; font-weight:bold;">選択中: 0本</div>
+            <div style="display:flex; gap:4px; align-items:center; flex-wrap:wrap;">
+                <button type="button" onclick="cadSelectAllRidges()" style="background:#1565C0; color:#fff; border:none; padding:4px 8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">全選択</button>
+                <button type="button" id="${rangeBtnId}" onclick="cadSelectRidgeRange()" style="background:#00838F; color:#fff; border:none; padding:4px 8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">間も選択</button>
+                <button type="button" onclick="cadDeleteSelectedRidge()" style="background:#E53935; color:#fff; border:none; padding:4px 8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">🗑️ 削除</button>
+                <button type="button" onclick="cadClearRidgeSelection()" style="background:#616161; color:#fff; border:none; padding:4px 8px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">✖ 解除</button>
+            </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:4px; margin-bottom:6px;">
+            <span style="font-size:11px; color:#81D4FA; font-weight:bold; min-width:58px;">↔ 左右移動</span>
+            <button type="button"
+                onmousedown="cadStartRidgeContinuousAction('move', -0.20, event)"
+                onmouseup="cadStopRidgeContinuousAction()"
+                onmouseleave="cadStopRidgeContinuousAction()"
+                ontouchstart="cadStartRidgeContinuousAction('move', -0.20, event)"
+                ontouchend="cadStopRidgeContinuousAction()"
+                ontouchcancel="cadStopRidgeContinuousAction()"
+                style="flex:1; background:#0277BD; color:#fff; border:none; padding:7px 4px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">⏪ 20cm</button>
+            <button type="button"
+                onmousedown="cadStartRidgeContinuousAction('move', -0.05, event)"
+                onmouseup="cadStopRidgeContinuousAction()"
+                onmouseleave="cadStopRidgeContinuousAction()"
+                ontouchstart="cadStartRidgeContinuousAction('move', -0.05, event)"
+                ontouchend="cadStopRidgeContinuousAction()"
+                ontouchcancel="cadStopRidgeContinuousAction()"
+                style="flex:1.15; background:#0288D1; color:#fff; border:none; padding:7px 4px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">◀ 左へ</button>
+            <button type="button"
+                onmousedown="cadStartRidgeContinuousAction('move', 0.05, event)"
+                onmouseup="cadStopRidgeContinuousAction()"
+                onmouseleave="cadStopRidgeContinuousAction()"
+                ontouchstart="cadStartRidgeContinuousAction('move', 0.05, event)"
+                ontouchend="cadStopRidgeContinuousAction()"
+                ontouchcancel="cadStopRidgeContinuousAction()"
+                style="flex:1.15; background:#0288D1; color:#fff; border:none; padding:7px 4px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">右へ ▶</button>
+            <button type="button"
+                onmousedown="cadStartRidgeContinuousAction('move', 0.20, event)"
+                onmouseup="cadStopRidgeContinuousAction()"
+                onmouseleave="cadStopRidgeContinuousAction()"
+                ontouchstart="cadStartRidgeContinuousAction('move', 0.20, event)"
+                ontouchend="cadStopRidgeContinuousAction()"
+                ontouchcancel="cadStopRidgeContinuousAction()"
+                style="flex:1; background:#0277BD; color:#fff; border:none; padding:7px 4px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">20cm ⏩</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:4px; margin-bottom:4px;">
+            <span style="font-size:11px; color:#A5D6A7; font-weight:bold; min-width:58px;">📏 畝幅</span>
+            <button type="button"
+                onmousedown="cadStartRidgeContinuousAction('width', -0.05, event)"
+                onmouseup="cadStopRidgeContinuousAction()"
+                onmouseleave="cadStopRidgeContinuousAction()"
+                ontouchstart="cadStartRidgeContinuousAction('width', -0.05, event)"
+                ontouchend="cadStopRidgeContinuousAction()"
+                ontouchcancel="cadStopRidgeContinuousAction()"
+                style="flex:1; background:#2E7D32; color:#fff; border:none; padding:7px 6px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">➖ 狭める</button>
+            <div style="display:flex; align-items:center; gap:2px; background:#222; border:1px solid #666; border-radius:4px; padding:2px 4px;">
+                <input type="number" id="${widthInputId}" min="15" max="1000" step="5" value="120"
+                    onchange="cadSetSelectedRidgesWidthCm(this.value)"
+                    style="width:52px; padding:4px 2px; border:none; border-radius:3px; font-size:13px; font-weight:bold; text-align:center; background:#fff; color:#111;">
+                <span style="font-size:11px; color:#ccc;">cm</span>
+            </div>
+            <button type="button"
+                onmousedown="cadStartRidgeContinuousAction('width', 0.05, event)"
+                onmouseup="cadStopRidgeContinuousAction()"
+                onmouseleave="cadStopRidgeContinuousAction()"
+                ontouchstart="cadStartRidgeContinuousAction('width', 0.05, event)"
+                ontouchend="cadStopRidgeContinuousAction()"
+                ontouchcancel="cadStopRidgeContinuousAction()"
+                style="flex:1; background:#43A047; color:#fff; border:none; padding:7px 6px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">➕ 広げる</button>
+        </div>
+        <div id="${gapRowId}" style="display:none; align-items:center; gap:4px; margin-top:4px; padding-top:4px; border-top:1px dashed rgba(255,255,255,0.18);">
+            <span style="font-size:11px; color:#CE93D8; font-weight:bold; min-width:58px;">⇔ 畝間隔</span>
+            <button type="button"
+                onmousedown="cadStartRidgeContinuousAction('gap', -0.05, event)"
+                onmouseup="cadStopRidgeContinuousAction()"
+                onmouseleave="cadStopRidgeContinuousAction()"
+                ontouchstart="cadStartRidgeContinuousAction('gap', -0.05, event)"
+                ontouchend="cadStopRidgeContinuousAction()"
+                ontouchcancel="cadStopRidgeContinuousAction()"
+                style="flex:1; background:#6A1B9A; color:#fff; border:none; padding:6px 6px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">➖ 間隔を詰める</button>
+            <button type="button"
+                onmousedown="cadStartRidgeContinuousAction('gap', 0.05, event)"
+                onmouseup="cadStopRidgeContinuousAction()"
+                onmouseleave="cadStopRidgeContinuousAction()"
+                ontouchstart="cadStartRidgeContinuousAction('gap', 0.05, event)"
+                ontouchend="cadStopRidgeContinuousAction()"
+                ontouchcancel="cadStopRidgeContinuousAction()"
+                style="flex:1; background:#8E24AA; color:#fff; border:none; padding:6px 6px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">➕ 間隔を広げる</button>
+        </div>
+    `;
 };
 
 window.cadEnsureRidgePopup_ = () => {
@@ -9892,23 +10856,9 @@ window.cadEnsureRidgePopup_ = () => {
 
     popup = document.createElement('div');
     popup.id = 'cadRidgePopup';
-    popup.style.cssText = 'position:absolute; display:none; z-index:1050; background:rgba(30, 20, 15, 0.95); border:1.5px solid #FFB74D; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,0.5); padding:8px 12px; color:#fff; pointer-events:auto; transform:translate(-50%, -100%); margin-top:-12px; white-space:nowrap; user-select:none; backdrop-filter:blur(4px); font-family:sans-serif;';
+    popup.style.cssText = 'position:absolute; top:54px; left:8px; width:calc(100% - 76px); max-width:410px; box-sizing:border-box; display:none; z-index:1050; background:rgba(24, 28, 34, 0.94); border:1.5px solid #FFB74D; border-radius:10px; box-shadow:0 6px 20px rgba(0,0,0,0.55); padding:8px 10px; color:#fff; pointer-events:auto; user-select:none; backdrop-filter:blur(5px); font-family:sans-serif;';
 
-    popup.innerHTML = `
-        <div id="cadRidgePopupArrowDown" style="position:absolute; bottom:-7px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:7px solid transparent; border-right:7px solid transparent; border-top:7px solid #FFB74D;"></div>
-        <div id="cadRidgePopupArrowDownInner" style="position:absolute; bottom:-5.5px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:6px solid rgba(30,20,15,0.95);"></div>
-        <div id="cadRidgePopupArrowUp" style="display:none; position:absolute; top:-7px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:7px solid transparent; border-right:7px solid transparent; border-bottom:7px solid #FFB74D;"></div>
-        <div id="cadRidgePopupArrowUpInner" style="display:none; position:absolute; top:-5.5px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-bottom:6px solid rgba(30,20,15,0.95);"></div>
-        <div id="cadRidgePopupLabel" style="font-size:12px; color:#FFE0B2; font-weight:bold; margin-bottom:6px; text-align:center;">選択中</div>
-        <div style="display:flex; gap:6px; align-items:center;">
-            <button type="button" onclick="cadDeleteSelectedRidge()" style="background:#E53935; color:#fff; border:none; padding:6px 12px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.3); display:inline-flex; align-items:center; gap:3px;">
-                🗑️ 削除する
-            </button>
-            <button type="button" onclick="cadClearRidgeSelection()" style="background:#616161; color:#fff; border:none; padding:6px 10px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.3);">
-                ✖ 解除
-            </button>
-        </div>
-    `;
+    popup.innerHTML = window.cadBuildRidgeControlMarkup_('cadPopup');
 
     const stopEvents = ['click', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'dblclick'];
     stopEvents.forEach(evt => {
@@ -9917,6 +10867,31 @@ window.cadEnsureRidgePopup_ = () => {
 
     wrapper.appendChild(popup);
     return popup;
+};
+
+window.cadEnsureMode2MultiRidgePanel_ = () => {
+    let panel = document.getElementById('cadMultiRidgeEditPanel');
+    if (panel) return panel;
+    const mode2 = document.getElementById('cadMode2');
+    if (!mode2) return null;
+
+    panel = document.createElement('div');
+    panel.id = 'cadMultiRidgeEditPanel';
+    panel.style.cssText = 'background:#1b2631; border:1px solid #29B6F6; border-radius:8px; padding:8px; margin-bottom:10px;';
+    panel.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <div style="font-size:12px; color:#81D4FA; font-weight:bold;">🚜 畝の複数選択・左右移動・幅変更</div>
+            <button type="button" onclick="cadSelectAllRidges()" style="background:#1565C0; color:#fff; border:none; padding:4px 10px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">全畝を選択</button>
+        </div>
+        <div id="cadMultiRidgeEmptyHint" style="font-size:11px; color:#cfd8dc; line-height:1.4;">
+            地図上の畝をタップすると複数選べます。選んだ畝はまとめて左右に動かしたり、畝幅を広げたり狭めたりできます。
+        </div>
+        <div id="cadMultiRidgeControlsWrap" style="display:none; margin-top:6px;">
+            ${window.cadBuildRidgeControlMarkup_('cadPanel')}
+        </div>
+    `;
+    mode2.insertBefore(panel, mode2.firstChild);
+    return panel;
 };
 
 window.cadGetPolyCenterLatLng_ = (poly) => {
@@ -9937,57 +10912,11 @@ window.cadGetPolyCenterLatLng_ = (poly) => {
 window.cadUpdateRidgePopupPosition_ = () => {
     const popup = window.cadEnsureRidgePopup_();
     if (!popup) return;
-    if (!window.cadSelectedRidgeId || !window.cadSelectedRidgeAnchorLatLng) {
+    const selected = window.cadGetSelectedRidges_();
+    if (!selected.length) {
         popup.style.display = 'none';
         return;
     }
-    const wrapper = document.getElementById('cadMapWrapper');
-    if (!wrapper || typeof window.latLngToScreenPixel !== 'function') {
-        popup.style.display = 'none';
-        return;
-    }
-    const anchor = window.cadSelectedRidgeAnchorLatLng;
-    const lat = typeof anchor.lat === 'function' ? anchor.lat() : anchor.lat;
-    const lng = typeof anchor.lng === 'function' ? anchor.lng() : anchor.lng;
-    const pt = window.latLngToScreenPixel(lat, lng);
-    if (!pt) {
-        popup.style.display = 'none';
-        return;
-    }
-
-    const wWidth = wrapper.offsetWidth;
-    const wHeight = wrapper.offsetHeight;
-
-    if (pt.x < -80 || pt.x > wWidth + 80 || pt.y < -80 || pt.y > wHeight + 80) {
-        popup.style.display = 'none';
-        return;
-    }
-
-    const clampedX = Math.max(75, Math.min(wWidth - 75, pt.x));
-
-    const arrowDown = document.getElementById('cadRidgePopupArrowDown');
-    const arrowDownInner = document.getElementById('cadRidgePopupArrowDownInner');
-    const arrowUp = document.getElementById('cadRidgePopupArrowUp');
-    const arrowUpInner = document.getElementById('cadRidgePopupArrowUpInner');
-
-    if (pt.y < 80) {
-        popup.style.transform = 'translate(-50%, 0)';
-        popup.style.marginTop = '14px';
-        if (arrowDown) arrowDown.style.display = 'none';
-        if (arrowDownInner) arrowDownInner.style.display = 'none';
-        if (arrowUp) arrowUp.style.display = 'block';
-        if (arrowUpInner) arrowUpInner.style.display = 'block';
-    } else {
-        popup.style.transform = 'translate(-50%, -100%)';
-        popup.style.marginTop = '-12px';
-        if (arrowDown) arrowDown.style.display = 'block';
-        if (arrowDownInner) arrowDownInner.style.display = 'block';
-        if (arrowUp) arrowUp.style.display = 'none';
-        if (arrowUpInner) arrowUpInner.style.display = 'none';
-    }
-
-    popup.style.left = clampedX + 'px';
-    popup.style.top = pt.y + 'px';
     popup.style.display = 'block';
 };
 
@@ -9995,22 +10924,66 @@ window.cadRefreshRidgeSelectionUi_ = () => {
     const bar = document.getElementById('cadRidgeSelectBar');
     const label = document.getElementById('cadRidgeSelectLabel');
     const popup = window.cadEnsureRidgePopup_();
-    const popupLabel = document.getElementById('cadRidgePopupLabel');
-    const hit = window.cadSelectedRidgeId ? window.cadFindRidgeByIndex_(window.cadSelectedRidgeId) : null;
-    if (!hit || !hit.found) {
+    const panel = window.cadEnsureMode2MultiRidgePanel_();
+    const selected = window.cadGetSelectedRidges_();
+
+    if (!selected.length) {
         window.cadSelectedRidgeId = null;
+        window.cadSelectedRidgeIds = [];
         window.cadSelectedRidgeAnchorLatLng = null;
         if (bar) bar.style.display = 'none';
         if (popup) popup.style.display = 'none';
+        if (panel) {
+            const emptyHint = document.getElementById('cadMultiRidgeEmptyHint');
+            const wrap = document.getElementById('cadMultiRidgeControlsWrap');
+            if (emptyHint) emptyHint.style.display = 'block';
+            if (wrap) wrap.style.display = 'none';
+        }
         return;
     }
-    const titleText = '選択中: ' + window.cadRidgeSelectName_(hit.found);
-    if (bar) bar.style.display = 'none'; // タブ内は非表示にし、押した畝の上のポップアップに集約
-    if (label) label.textContent = titleText;
-    if (popupLabel) popupLabel.textContent = titleText;
 
-    if (!window.cadSelectedRidgeAnchorLatLng) {
-        window.cadSelectedRidgeAnchorLatLng = window.cadGetPolyCenterLatLng_(hit.found);
+    const names = selected.map((p) => window.cadRidgeSelectName_(p));
+    const repCm = window.cadGetSelectedRepresentativeWidthCm_();
+    const widthBit = repCm != null ? `（幅 約${repCm}cm）` : '';
+    let titleText = '';
+    if (selected.length === 1) {
+        titleText = `選択中: ${names[0]}${widthBit}`;
+    } else if (selected.length <= 4) {
+        titleText = `選択中: ${selected.length}本 [${names.join(', ')}]${widthBit}`;
+    } else {
+        titleText = `選択中: ${selected.length}本 [${names.slice(0, 3).join(', ')}…]${widthBit}`;
+    }
+
+    if (bar) bar.style.display = 'none';
+    if (label) label.textContent = titleText;
+
+    ['cadPopup', 'cadPanel'].forEach((prefix) => {
+        const lbl = document.getElementById(prefix + 'Label');
+        if (lbl) lbl.textContent = titleText;
+        const wInp = document.getElementById(prefix + 'WidthCmInput');
+        if (wInp && repCm != null && document.activeElement !== wInp) {
+            wInp.value = String(repCm);
+        }
+        const gapRow = document.getElementById(prefix + 'GapRow');
+        if (gapRow) {
+            gapRow.style.display = selected.length >= 2 ? 'flex' : 'none';
+        }
+        const rangeBtn = document.getElementById(prefix + 'RangeBtn');
+        if (rangeBtn) {
+            rangeBtn.style.opacity = selected.length >= 2 ? '1' : '0.6';
+        }
+    });
+
+    if (panel) {
+        const emptyHint = document.getElementById('cadMultiRidgeEmptyHint');
+        const wrap = document.getElementById('cadMultiRidgeControlsWrap');
+        if (emptyHint) emptyHint.style.display = 'none';
+        if (wrap) wrap.style.display = 'block';
+    }
+
+    const center = window.cadGetSelectionCenterLatLng_(selected);
+    if (center) {
+        window.cadSelectedRidgeAnchorLatLng = new google.maps.LatLng(center.lat, center.lng);
     }
     window.cadUpdateRidgePopupPosition_();
 };
@@ -10022,45 +10995,42 @@ window.cadPaintRidgeSelection_ = () => {
 
 window.cadSelectRidgeByTap = (uneIndex, clickEvent) => {
     if (window.cadPinMode || !uneIndex) return;
-    if (window.cadSelectedRidgeId === uneIndex) {
+    const hit = window.cadFindRidgeByIndex_(uneIndex);
+    if (!hit || !hit.found) return;
+
+    window.cadPruneSelectedRidges_();
+    const at = window.cadSelectedRidgeIds.indexOf(uneIndex);
+    if (at >= 0) {
+        // 既に選択中の畝をタップしたら選択から外す
+        window.cadSelectedRidgeIds.splice(at, 1);
+    } else {
+        // 未選択の畝をタップしたら複数選択に追加する
+        window.cadSelectedRidgeIds.push(uneIndex);
+    }
+    window.cadSelectedRidgeId = window.cadSelectedRidgeIds.length
+        ? window.cadSelectedRidgeIds[window.cadSelectedRidgeIds.length - 1]
+        : null;
+
+    if (!window.cadSelectedRidgeIds.length) {
         window.cadClearRidgeSelection();
         return;
     }
-    const hit = window.cadFindRidgeByIndex_(uneIndex);
-    if (!hit) return;
-    window.cadSelectedRidgeId = uneIndex;
-
-    // タップ位置の緯度経度を計算してアンカーにする
-    let anchorLatLng = null;
-    if (clickEvent) {
-        const wrapper = document.getElementById('cadMapWrapper');
-        if (wrapper && typeof window.screenPixelToLatLng === 'function') {
-            const rect = wrapper.getBoundingClientRect();
-            const clientX = clickEvent.touches ? clickEvent.touches[0].clientX : clickEvent.clientX;
-            const clientY = clickEvent.touches ? clickEvent.touches[0].clientY : clickEvent.clientY;
-            if (clientX != null && clientY != null) {
-                const localX = clientX - rect.left;
-                const localY = clientY - rect.top;
-                anchorLatLng = window.screenPixelToLatLng(localX, localY);
-            }
-        }
-    }
-    if (!anchorLatLng && hit.found) {
-        anchorLatLng = window.cadGetPolyCenterLatLng_(hit.found);
-    }
-    window.cadSelectedRidgeAnchorLatLng = anchorLatLng;
 
     window.cadRefreshRidgeSelectionUi_();
     window.cadPaintRidgeSelection_();
     if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
     const msg = document.getElementById('cadPinModeMsg');
     if (msg) {
-        msg.innerText = '選択中です。上下の丸を引っ張ると長さを変えられます。';
+        const cnt = window.cadSelectedRidgeIds.length;
+        msg.innerText = cnt === 1
+            ? '1本選択中。他の畝もタップすると複数選択できます。左右移動・幅変更・端の伸縮が可能です。'
+            : `${cnt}本選択中。まとめて左右移動・幅の拡大縮小ができます（もう一度タップで個別解除）。`;
         msg.style.color = '#FFB74D';
     }
 };
 
 window.cadClearRidgeSelection = () => {
+    window.cadSelectedRidgeIds = [];
     window.cadSelectedRidgeId = null;
     window.cadSelectedRidgeAnchorLatLng = null;
     window.cadRefreshRidgeSelectionUi_();
@@ -10069,15 +11039,20 @@ window.cadClearRidgeSelection = () => {
 };
 
 window.cadDeleteSelectedRidge = () => {
-    const id = window.cadSelectedRidgeId;
-    if (!id) return;
-    const hit = window.cadFindRidgeByIndex_(id);
-    if (!hit || !hit.found) {
+    const selected = window.cadGetSelectedRidges_();
+    if (!selected.length) {
         window.cadClearRidgeSelection();
         return;
     }
-    try { hit.found.setMap(null); } catch (e) { }
-    hit.list.splice(hit.at, 1);
+    const delCount = selected.length;
+    selected.forEach((poly) => {
+        const hit = poly && poly.uneIndex ? window.cadFindRidgeByIndex_(poly.uneIndex) : null;
+        if (hit && hit.found) {
+            try { hit.found.setMap(null); } catch (e) { }
+            hit.list.splice(hit.at, 1);
+        }
+    });
+    window.cadSelectedRidgeIds = [];
     window.cadSelectedRidgeId = null;
     window.cadSelectedRidgeAnchorLatLng = null;
     window.cadRefreshRidgeSelectionUi_();
@@ -10087,7 +11062,7 @@ window.cadDeleteSelectedRidge = () => {
     if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
     const msg = document.getElementById('cadPinModeMsg');
     if (msg) {
-        msg.innerText = '畝を削除しました。戻すで元に戻せます。';
+        msg.innerText = `${delCount}本の畝を削除しました。「戻す」で元に戻せます。`;
         msg.style.color = '#FFB74D';
     }
 };
@@ -10481,8 +11456,8 @@ window.saveUneSim = async () => {
     window.cadDrawingCrops = Array.isArray(meta.crops) ? meta.crops : [];
 
     let pins = window.cadPins.map(mk => ({ type: mk.cadPinType, lat: mk.getPosition().lat(), lng: mk.getPosition().lng() }));
-    let customShapesData = window.cadCustomShapes.map(poly => ({ coords: window.cadPolyToSavedCoords(poly), group: poly.uneGroup || '', customLabel: poly.customLabel || '' }));
-    let unePolygonsData = window.cadUnePolygons.map(poly => ({ coords: window.cadPolyToSavedCoords(poly), group: poly.uneGroup || '', customLabel: poly.customLabel || '' }));
+    let customShapesData = window.cadCustomShapes.map(poly => ({ coords: window.cadPolyToSavedCoords(poly), group: poly.uneGroup || '', customLabel: poly.customLabel || '', uneIndex: poly.uneIndex || '' }));
+    let unePolygonsData = window.cadUnePolygons.map(poly => ({ coords: window.cadPolyToSavedCoords(poly), group: poly.uneGroup || '', customLabel: poly.customLabel || '', uneIndex: poly.uneIndex || '' }));
 
     const angleEl = document.getElementById('cadAngle'); const widthEl = document.getElementById('cadWidth'); const countEl = document.getElementById('cadUneCount');
     const marginSideEl = document.getElementById('cadMarginSide'); const marginEndEl = document.getElementById('cadMarginEnd');

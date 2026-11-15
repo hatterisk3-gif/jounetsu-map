@@ -51,6 +51,8 @@
 | 6 | note |
 | 7 | inspectionType |
 | 8 | alertMonths |
+| 9 | alertHourMeter |
+| 10 | alertDistance |
 
 ## 📄 シート名: 市況_東京
 | 列番号 | 項目名（ヘッダー） |
