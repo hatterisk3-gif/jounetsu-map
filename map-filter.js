@@ -101,18 +101,8 @@
   }
 
   function ensureStyleableMapType_() {
-    if (!mapRef || typeof mapRef.getMapTypeId !== 'function') return;
-    // 登録描画中やネイティブズーム超えの引き延ばし表示中は維持（店舗フィルターより優先）
-    if (global.customDrawingMode) return;
-    try {
-      if (typeof mapRef.getZoom === 'function' && mapRef.getZoom() > 21) return;
-      var id = String(mapRef.getMapTypeId() || '');
-      // カスタム衛星タイルには Google 店舗オーバーレイが載らないため標準 hybrid に戻す
-      if (id === 'hybrid_stretched' || id.indexOf('stretched') >= 0) {
-        mapRef.setMapTypeId('hybrid');
-        lastPoiApplied = null; // 地図種別変更後に styles を必ず再適用
-      }
-    } catch (e) { /* ignore */ }
+    // 限界拡大（hybrid_stretched / satellite_stretched）を通常閲覧時でも維持する
+    return;
   }
 
   function applyGooglePoiStyles_() {

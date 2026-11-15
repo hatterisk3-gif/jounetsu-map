@@ -3834,7 +3834,7 @@ window.openMainMenu = (id) => {
 
   const workCount = p.photos.filter(ph => ph && ((ph.type === 'work') || (ph.data && ph.data.workName))).length;
   const growthCount = p.photos.filter(ph => ph && (ph.type === 'growth' || (!ph.type && !p.isMarker))).length;
-  const photoCount = p.photos.filter(ph => ph && ((ph.urls && ph.urls.length > 0) || ph.url)).length;
+  const photoCount = p.photos.filter(ph => ph && ((ph.urls && ph.urls.length > 0) || ph.url || ph._hasUrls)).length;
 
   const isWorker2 = /worker2\.html/i.test(location.pathname) || /worker2\.html/i.test(location.href);
 
@@ -4289,14 +4289,183 @@ window.actionManagePhotos = (id, filterType) => {
 window.directOpenForm = (id, type) => { activePolyId = id; currentEditRecordId = null; currentRecordType = type; renderRecordForm(); document.getElementById('rightPanel').classList.add('open'); };
 
 // ══════════════════════════════════════════════════════════════
-// 📷 圃場写真一覧・写真＆メモ登録機能
+// 📷 圃場写真一覧・写真＆メモ登録機能（高速リサイズ・タグ・カードUI）
 // ══════════════════════════════════════════════════════════════
 window.fieldPhotoPendingFiles = [];
+window.fieldPhotoSelectedTags = [];
+window.fieldPhotoActiveFilterTag = 'ALL';
+
+const FIELD_PHOTO_DEFAULT_TAGS_ = ['生育記録', '圃場状況'];
+const FIELD_PHOTO_CUSTOM_TAGS_KEY_ = 'passionMap_fieldPhotoCustomTags';
 
 function escapeHtmlFieldPhoto_(str) {
   if (!str) return '';
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+
+function getFieldPhotoCustomTags_() {
+  try {
+    const raw = localStorage.getItem(FIELD_PHOTO_CUSTOM_TAGS_KEY_);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.filter(t => typeof t === 'string' && t.trim()) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveFieldPhotoCustomTag_(tag) {
+  const clean = String(tag || '').trim();
+  if (!clean || FIELD_PHOTO_DEFAULT_TAGS_.includes(clean)) return;
+  try {
+    const list = getFieldPhotoCustomTags_();
+    if (!list.includes(clean)) {
+      list.push(clean);
+      localStorage.setItem(FIELD_PHOTO_CUSTOM_TAGS_KEY_, JSON.stringify(list.slice(-20)));
+    }
+  } catch (e) { }
+}
+
+function getAllFieldPhotoAvailableTags_() {
+  const seen = new Set(FIELD_PHOTO_DEFAULT_TAGS_);
+  const list = [...FIELD_PHOTO_DEFAULT_TAGS_];
+  getFieldPhotoCustomTags_().forEach(t => {
+    if (!seen.has(t)) {
+      seen.add(t);
+      list.push(t);
+    }
+  });
+  (window.fieldPhotoSelectedTags || []).forEach(t => {
+    if (t && !seen.has(t)) {
+      seen.add(t);
+      list.push(t);
+    }
+  });
+  return list;
+}
+
+function getFieldPhotoTagStyle_(tag) {
+  if (tag === '生育記録') return 'background:#E8F5E9; color:#2E7D32; border:1px solid #A5D6A7;';
+  if (tag === '圃場状況') return 'background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9;';
+  return 'background:#F3E5F5; color:#6A1B9A; border:1px solid #CE93D8;';
+}
+
+function fastResizeFieldPhoto_(file) {
+  const maxDim = 960;
+  const quality = 0.72;
+  const objUrl = URL.createObjectURL(file);
+
+  const drawToDataUrl = (source, origW, origH) => {
+    let w = origW;
+    let h = origH;
+    if (w > h && w > maxDim) {
+      h = Math.round(h * (maxDim / w));
+      w = maxDim;
+    } else if (h > maxDim) {
+      w = Math.round(w * (maxDim / h));
+      h = maxDim;
+    }
+    const cvs = document.createElement('canvas');
+    cvs.width = Math.max(1, w);
+    cvs.height = Math.max(1, h);
+    const ctx = cvs.getContext('2d');
+    ctx.drawImage(source, 0, 0, cvs.width, cvs.height);
+    return cvs.toDataURL('image/jpeg', quality);
+  };
+
+  if (typeof createImageBitmap === 'function') {
+    return createImageBitmap(file).then(bitmap => {
+      try {
+        const dataUrl = drawToDataUrl(bitmap, bitmap.width, bitmap.height);
+        if (typeof bitmap.close === 'function') bitmap.close();
+        URL.revokeObjectURL(objUrl);
+        return dataUrl;
+      } catch (err) {
+        URL.revokeObjectURL(objUrl);
+        throw err;
+      }
+    }).catch(() => {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const dataUrl = drawToDataUrl(img, img.width, img.height);
+            URL.revokeObjectURL(objUrl);
+            resolve(dataUrl);
+          } catch (err) {
+            URL.revokeObjectURL(objUrl);
+            reject(err);
+          }
+        };
+        img.onerror = (err) => {
+          URL.revokeObjectURL(objUrl);
+          reject(err);
+        };
+        img.src = objUrl;
+      });
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const dataUrl = drawToDataUrl(img, img.width, img.height);
+        URL.revokeObjectURL(objUrl);
+        resolve(dataUrl);
+      } catch (err) {
+        URL.revokeObjectURL(objUrl);
+        reject(err);
+      }
+    };
+    img.onerror = (err) => {
+      URL.revokeObjectURL(objUrl);
+      reject(err);
+    };
+    img.src = objUrl;
+  });
+}
+
+function clearFieldPhotoPendingFiles_() {
+  if (Array.isArray(window.fieldPhotoPendingFiles)) {
+    window.fieldPhotoPendingFiles.forEach(item => {
+      if (item && item.previewUrl && !item.keepPreviewUrl) {
+        try { URL.revokeObjectURL(item.previewUrl); } catch (e) { }
+      }
+    });
+  }
+  window.fieldPhotoPendingFiles = [];
+}
+
+window.refreshPolygonPhotos = async (id) => {
+  const polyId = id || activePolyId;
+  if (!polyId || !loadedPolygons[polyId]) return;
+  try {
+    const serverPhotos = await callGAS('getPolygonPhotos', { id: polyId });
+    if (!Array.isArray(serverPhotos) || !loadedPolygons[polyId]) return;
+    const currentPhotos = Array.isArray(loadedPolygons[polyId].photos) ? loadedPolygons[polyId].photos : [];
+    const savingItems = currentPhotos.filter(ph => ph && (ph._isSaving || ph._pendingSync || ph._syncFailed || String(ph.id || '').indexOf('local_') === 0));
+    const merged = serverPhotos.slice();
+    savingItems.forEach(localItem => {
+      if (!merged.some(s => s && s.id && s.id === localItem.id)) {
+        merged.unshift(localItem);
+      }
+    });
+    loadedPolygons[polyId].photos = merged;
+    if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
+      window.updateInitDataCacheWithLocalRecords_();
+    }
+    const panel = document.getElementById('rightPanel');
+    const isPhotoFormOpen = !!document.getElementById('field_photo_memo_input');
+    if (activePolyId === polyId && panel && panel.classList.contains('open') && !isPhotoFormOpen) {
+      const titleText = document.getElementById('rightPanelTitle')?.innerText || '';
+      if (titleText.includes('写真一覧')) {
+        window.renderFieldPhotosTable(polyId);
+      }
+    }
+  } catch (e) {
+    console.warn('refreshPolygonPhotos failed:', e);
+  }
+};
 
 window.openFieldPhotosList = (id) => {
   if (!id || !loadedPolygons[id]) {
@@ -4304,10 +4473,19 @@ window.openFieldPhotosList = (id) => {
     return;
   }
   activePolyId = id;
-  window.fieldPhotoPendingFiles = [];
+  clearFieldPhotoPendingFiles_();
+  window.fieldPhotoActiveFilterTag = 'ALL';
   window.renderFieldPhotosTable(id);
   const panel = document.getElementById('rightPanel');
   if (panel) panel.classList.add('open');
+  if (typeof window.refreshPolygonPhotos === 'function') {
+    window.refreshPolygonPhotos(id);
+  }
+};
+
+window.setFieldPhotoFilterTag = (tag, polyId) => {
+  window.fieldPhotoActiveFilterTag = tag || 'ALL';
+  window.renderFieldPhotosTable(polyId);
 };
 
 window.renderFieldPhotosTable = (id) => {
@@ -4323,41 +4501,84 @@ window.renderFieldPhotosTable = (id) => {
 
   if (!Array.isArray(p.photos)) p.photos = [];
 
-  const photoRecords = p.photos.filter(item => {
+  const allPhotoRecords = p.photos.filter(item => {
     return item && ((item.urls && item.urls.length > 0) || item.url);
   });
 
-  photoRecords.sort((a, b) => {
+  allPhotoRecords.sort((a, b) => {
+    if (a._isSaving && !b._isSaving) return -1;
+    if (!a._isSaving && b._isSaving) return 1;
     const da = new Date((a.date || '').replace(/\//g, '-') + 'T' + (a.time || '00:00') + ':00');
     const db = new Date((b.date || '').replace(/\//g, '-') + 'T' + (b.time || '00:00') + ':00');
     return db - da;
   });
 
-  let bodyHtml = `
-          <div style="margin-bottom:14px;">
-            <button type="button" onclick="renderFieldPhotoAddForm('${polyId}')" style="width:100%; padding:13px 16px; background:linear-gradient(135deg, #2E7D32 0%, #43A047 100%); color:white; border:none; border-radius:8px; font-weight:bold; font-size:15px; cursor:pointer; box-shadow:0 3px 6px rgba(46,125,50,0.3); display:flex; align-items:center; justify-content:center; gap:8px;">
-              <span style="font-size:18px;">➕</span> 写真とメモを追加する
-            </button>
-          </div>
-        `;
+  const usedTagsSet = new Set();
+  allPhotoRecords.forEach(item => {
+    const tags = (item.data && Array.isArray(item.data.photoTags)) ? item.data.photoTags : [];
+    tags.forEach(t => { if (t) usedTagsSet.add(t); });
+  });
+  const filterTags = ['生育記録', '圃場状況', ...Array.from(usedTagsSet).filter(t => t !== '生育記録' && t !== '圃場状況')];
+  const activeFilter = window.fieldPhotoActiveFilterTag || 'ALL';
 
-  if (photoRecords.length === 0) {
+  const photoRecords = activeFilter === 'ALL'
+    ? allPhotoRecords
+    : allPhotoRecords.filter(item => item.data && Array.isArray(item.data.photoTags) && item.data.photoTags.includes(activeFilter));
+
+  let bodyHtml = `
+    <div style="margin-bottom:12px;">
+      <button type="button" onclick="renderFieldPhotoAddForm('${polyId}')" style="width:100%; padding:13px 16px; background:linear-gradient(135deg, #2E7D32 0%, #43A047 100%); color:white; border:none; border-radius:10px; font-weight:bold; font-size:15px; cursor:pointer; box-shadow:0 3px 8px rgba(46,125,50,0.28); display:flex; align-items:center; justify-content:center; gap:8px;">
+        <span style="font-size:18px;">➕</span> 写真とメモを追加する
+      </button>
+    </div>
+  `;
+
+  if (allPhotoRecords.length > 0) {
+    let filterHtml = `
+      <div style="display:flex; align-items:center; gap:6px; overflow-x:auto; padding:2px 2px 10px 2px; margin-bottom:4px;">
+        <button type="button" onclick="setFieldPhotoFilterTag('ALL', '${polyId}')" style="flex-shrink:0; padding:6px 12px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid ${activeFilter === 'ALL' ? '#2E7D32' : '#cfd8dc'}; background:${activeFilter === 'ALL' ? '#2E7D32' : '#fff'}; color:${activeFilter === 'ALL' ? '#fff' : '#555'};">
+          すべて (${allPhotoRecords.length})
+        </button>
+    `;
+    filterTags.forEach(tag => {
+      const cnt = allPhotoRecords.filter(it => it.data && Array.isArray(it.data.photoTags) && it.data.photoTags.includes(tag)).length;
+      if (cnt === 0 && !usedTagsSet.has(tag)) return;
+      const isSelected = activeFilter === tag;
+      const safeTag = escapeHtmlFieldPhoto_(tag);
+      const jsTag = String(tag).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      filterHtml += `
+        <button type="button" onclick="setFieldPhotoFilterTag('${jsTag}', '${polyId}')" style="flex-shrink:0; padding:6px 12px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid ${isSelected ? '#1565C0' : '#cfd8dc'}; background:${isSelected ? '#1565C0' : '#fff'}; color:${isSelected ? '#fff' : '#444'};">
+          🏷️ ${safeTag} (${cnt})
+        </button>
+      `;
+    });
+    filterHtml += `</div>`;
+    bodyHtml += filterHtml;
+  }
+
+  if (allPhotoRecords.length === 0) {
     bodyHtml += `
-            <div style="background:white; border-radius:8px; border:1px dashed #A5D6A7; padding:40px 16px; text-align:center; color:#555; box-shadow:0 1px 4px rgba(0,0,0,0.05);">
-              <div style="font-size:42px; margin-bottom:10px;">📷</div>
-              <div style="font-weight:bold; font-size:15px; color:#2E7D32; margin-bottom:6px;">登録された写真はまだありません</div>
-              <div style="font-size:12px; color:#777; line-height:1.6; margin-bottom:16px;">
-                上の「写真とメモを追加する」ボタンから、<br>この圃場の写真とメモを登録してください。
-              </div>
-            </div>
-          `;
+      <div style="background:white; border-radius:12px; border:1px dashed #A5D6A7; padding:36px 16px; text-align:center; color:#555; box-shadow:0 2px 6px rgba(0,0,0,0.04);">
+        <div style="font-size:42px; margin-bottom:10px;">📷</div>
+        <div style="font-weight:bold; font-size:15px; color:#2E7D32; margin-bottom:6px;">登録された写真はまだありません</div>
+        <div style="font-size:12px; color:#777; line-height:1.6;">
+          上の「写真とメモを追加する」ボタンから、<br>この圃場の写真・タグ・メモを登録してください。
+        </div>
+      </div>
+    `;
+  } else if (photoRecords.length === 0) {
+    bodyHtml += `
+      <div style="background:white; border-radius:12px; border:1px solid #e0e0e0; padding:28px 16px; text-align:center; color:#666;">
+        <div style="font-size:28px; margin-bottom:6px;">🏷️</div>
+        <div style="font-size:13px; font-weight:bold;">「${escapeHtmlFieldPhoto_(activeFilter)}」タグの写真はまだありません</div>
+      </div>
+    `;
   } else {
-    let rowsHtml = '';
-    photoRecords.forEach((item, idx) => {
+    bodyHtml += `<div style="display:flex; flex-direction:column; gap:12px;">`;
+    photoRecords.forEach(item => {
       const isOwner = (item.author === currentUser || currentUser === 'システム');
       const urls = (item.urls && item.urls.length) ? item.urls : (item.url ? [item.url] : []);
-      const firstThumb = urls[0] || '';
-      const fullUrl = firstThumb.replace('sz=w800', 'sz=w1600');
+      const tags = (item.data && Array.isArray(item.data.photoTags)) ? item.data.photoTags : [];
 
       let memo = (item.data && (item.data.notes || item.data.memo || item.data.comment)) || '';
       if (!memo && item.data && item.data.workName) {
@@ -4368,82 +4589,76 @@ window.renderFieldPhotosTable = (id) => {
 
       const isWork = (item.type === 'work') || (item.data && item.data.workName);
       const badgeType = isWork
-        ? `<span style="display:inline-block; font-size:10px; background:#FFF3E0; color:#E65100; padding:1px 5px; border-radius:3px; margin-top:2px;">🚜 作業</span>`
-        : `<span style="display:inline-block; font-size:10px; background:#E8F5E9; color:#2E7D32; padding:1px 5px; border-radius:3px; margin-top:2px;">🌱 写真</span>`;
+        ? `<span style="display:inline-flex; align-items:center; font-size:11px; font-weight:bold; background:#FFF3E0; color:#E65100; padding:2px 8px; border-radius:10px; border:1px solid #FFCC80;">🚜 作業</span>`
+        : `<span style="display:inline-flex; align-items:center; font-size:11px; font-weight:bold; background:#E8F5E9; color:#2E7D32; padding:2px 8px; border-radius:10px; border:1px solid #A5D6A7;">📷 写真</span>`;
 
-      let thumbsHtml = '';
+      const savingBadge = item._isSaving
+        ? `<span style="display:inline-flex; align-items:center; font-size:11px; font-weight:bold; background:#E3F2FD; color:#1565C0; padding:2px 8px; border-radius:10px; border:1px solid #90CAF9;">⏳ 保存中...</span>`
+        : '';
+
+      const safeRecId = String(item.id || '').replace(/'/g, "\\'");
+      const deleteBtnHtml = (!item._isSaving && isOwner)
+        ? `<button type="button" onclick="deleteFieldPhotoRecord('${safeRecId}', '${polyId}')" style="background:#FFEBEE; color:#C62828; border:1px solid #FFCDD2; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;" title="削除">🗑️ 削除</button>`
+        : '';
+
+      let galleryHtml = '';
       if (urls.length === 1) {
-        thumbsHtml = `
-                <div style="position:relative; width:64px; height:64px; margin:0 auto; cursor:pointer;" onclick="openLightbox('${fullUrl}')" title="クリックで拡大">
-                  <img src="${firstThumb}" style="width:64px; height:64px; object-fit:cover; border-radius:6px; border:1px solid #ccc; display:block;" onerror="this.src='icon.png'">
-                  <span style="position:absolute; bottom:2px; right:2px; background:rgba(0,0,0,0.6); color:white; font-size:9px; padding:1px 3px; border-radius:3px;">🔍</span>
-                </div>
-              `;
+        const u = urls[0];
+        const fullUrl = u.replace('sz=w800', 'sz=w1600');
+        galleryHtml = `
+          <div style="position:relative; width:100%; border-radius:8px; overflow:hidden; border:1px solid #e0e0e0; cursor:pointer; background:#f0f0f0;" onclick="openLightbox('${fullUrl}')" title="タップで拡大">
+            <img src="${u}" style="width:100%; max-height:220px; object-fit:cover; display:block;" onerror="this.src='icon.png'">
+            <span style="position:absolute; bottom:8px; right:8px; background:rgba(0,0,0,0.65); color:#fff; font-size:11px; font-weight:bold; padding:4px 8px; border-radius:12px;">🔍 タップで拡大</span>
+          </div>
+        `;
       } else {
-        thumbsHtml = `<div style="display:flex; flex-wrap:wrap; gap:3px; max-width:85px; justify-content:center;">`;
+        const cols = urls.length === 2 ? '1fr 1fr' : 'repeat(3, 1fr)';
+        galleryHtml = `<div style="display:grid; grid-template-columns:${cols}; gap:6px;">`;
         urls.forEach((u, uIdx) => {
           const fU = u.replace('sz=w800', 'sz=w1600');
-          const size = urls.length > 2 ? '36px' : '40px';
-          thumbsHtml += `
-                  <div style="cursor:pointer;" onclick="openLightbox('${fU}')" title="写真 ${uIdx + 1} (クリックで拡大)">
-                    <img src="${u}" style="width:${size}; height:${size}; object-fit:cover; border-radius:4px; border:1px solid #ccc; display:block;" onerror="this.src='icon.png'">
-                  </div>
-                `;
-        });
-        thumbsHtml += `</div>`;
-      }
-
-      const rowBg = idx % 2 === 0 ? '#ffffff' : '#fafafa';
-      const safeRecId = String(item.id || '').replace(/'/g, "\\'");
-
-      rowsHtml += `
-              <tr style="background:${rowBg}; border-bottom:1px solid #eee;">
-                <td style="padding:8px 6px; text-align:center; vertical-align:middle;">
-                  ${thumbsHtml}
-                </td>
-                <td style="padding:8px 6px; vertical-align:middle; line-height:1.4;">
-                  <div style="font-weight:bold; color:#333; font-size:12px;">📅 ${item.date || '-'}</div>
-                  <div style="color:#666; font-size:11px;">⏰ ${item.time || ''}</div>
-                  <div style="color:#555; font-size:11px; margin-top:2px;">👤 ${item.author || '-'}</div>
-                  <div>${badgeType}</div>
-                </td>
-                <td style="padding:8px 8px; vertical-align:middle; line-height:1.4;">
-                  ${memo ? `<div style="white-space:pre-wrap; word-break:break-word; color:#222; font-size:13px;">${escapeHtmlFieldPhoto_(memo)}</div>` : `<span style="color:#aaa; font-style:italic; font-size:11px;">(メモなし)</span>`}
-                </td>
-                <td style="padding:8px 4px; text-align:center; vertical-align:middle;">
-                  ${isOwner ? `
-                    <button type="button" onclick="deleteFieldPhotoRecord('${safeRecId}', '${polyId}')" style="background:#FFEBEE; color:#D32F2F; border:1px solid #FFCDD2; border-radius:4px; padding:5px 8px; font-size:12px; cursor:pointer;" title="削除">
-                      🗑️
-                    </button>
-                  ` : `<span style="color:#ccc;">-</span>`}
-                </td>
-              </tr>
-            `;
-    });
-
-    bodyHtml += `
-            <div style="background:white; border-radius:8px; border:1px solid #C8E6C9; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,0.06);">
-              <div style="padding:8px 12px; background:#E8F5E9; border-bottom:1px solid #C8E6C9; display:flex; justify-content:space-between; align-items:center;">
-                <span style="font-weight:bold; color:#1B5E20; font-size:13px;">📸 登録写真一覧 (${photoRecords.length}件)</span>
-                <span style="font-size:11px; color:#555;">タップで拡大表示</span>
-              </div>
-              <div style="overflow-x:auto;">
-                <table style="width:100%; border-collapse:collapse; min-width:320px;">
-                  <thead>
-                    <tr style="background:#F1F8E9; color:#2E7D32; border-bottom:2px solid #C8E6C9; font-size:12px;">
-                      <th style="padding:8px 6px; width:75px; text-align:center;">写真</th>
-                      <th style="padding:8px 6px; width:100px; text-align:left;">日時/撮影者</th>
-                      <th style="padding:8px 8px; text-align:left;">メモ・気付き</th>
-                      <th style="padding:8px 4px; width:45px; text-align:center;">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${rowsHtml}
-                  </tbody>
-                </table>
-              </div>
+          galleryHtml += `
+            <div style="position:relative; border-radius:8px; overflow:hidden; border:1px solid #e0e0e0; cursor:pointer; aspect-ratio:1/1; background:#f0f0f0;" onclick="openLightbox('${fU}')" title="写真 ${uIdx + 1} (タップで拡大)">
+              <img src="${u}" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="this.src='icon.png'">
+              <span style="position:absolute; bottom:4px; right:4px; background:rgba(0,0,0,0.6); color:#fff; font-size:10px; padding:2px 5px; border-radius:8px;">🔍</span>
             </div>
           `;
+        });
+        galleryHtml += `</div>`;
+      }
+
+      let tagsHtml = '';
+      if (tags.length > 0) {
+        tagsHtml = `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;">`;
+        tags.forEach(t => {
+          tagsHtml += `<span style="display:inline-flex; align-items:center; font-size:11px; font-weight:bold; padding:3px 9px; border-radius:12px; ${getFieldPhotoTagStyle_(t)}">🏷️ ${escapeHtmlFieldPhoto_(t)}</span>`;
+        });
+        tagsHtml += `</div>`;
+      }
+
+      const memoHtml = memo
+        ? `<div style="margin-top:10px; background:#f8faf9; border:1px solid #e8ecea; border-radius:8px; padding:10px 12px; white-space:pre-wrap; word-break:break-word; color:#222; font-size:13px; line-height:1.5;">${escapeHtmlFieldPhoto_(memo)}</div>`
+        : '';
+
+      bodyHtml += `
+        <div style="background:#fff; border-radius:12px; border:1px solid ${item._isSaving ? '#90CAF9' : '#dce7df'}; padding:12px; box-shadow:0 2px 6px rgba(0,0,0,0.05);">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:10px;">
+            <div>
+              <div style="font-weight:bold; color:#222; font-size:13px;">📅 ${escapeHtmlFieldPhoto_(item.date || '-')} <span style="color:#666; font-weight:normal; font-size:12px;">${escapeHtmlFieldPhoto_(item.time || '')}</span></div>
+              <div style="color:#555; font-size:12px; margin-top:2px;">👤 ${escapeHtmlFieldPhoto_(item.author || '-')}</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+              ${savingBadge}
+              ${badgeType}
+              ${deleteBtnHtml}
+            </div>
+          </div>
+          ${galleryHtml}
+          ${tagsHtml}
+          ${memoHtml}
+        </div>
+      `;
+    });
+    bodyHtml += `</div>`;
   }
 
   const contentEl = document.getElementById('rightPanelContent');
@@ -4452,16 +4667,56 @@ window.renderFieldPhotosTable = (id) => {
   const footerEl = document.getElementById('rightPanelFooter');
   if (footerEl) {
     footerEl.innerHTML = `
-            <div style="display:flex; gap:10px;">
-              <button type="button" onclick="renderFieldPhotoAddForm('${polyId}')" style="background:#2E7D32; color:white; flex:1; padding:14px; border-radius:8px; border:none; font-weight:bold; cursor:pointer; font-size:15px; box-shadow:0 2px 5px rgba(46,125,50,0.3);">
-                📷 写真を追加する
-              </button>
-              <button type="button" onclick="closeRightPanel()" style="background:#eee; color:#333; padding:14px 18px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:14px;">
-                閉じる
-              </button>
-            </div>
-          `;
+      <div style="display:flex; gap:10px;">
+        <button type="button" onclick="renderFieldPhotoAddForm('${polyId}')" style="background:#2E7D32; color:white; flex:1; padding:14px; border-radius:8px; border:none; font-weight:bold; cursor:pointer; font-size:15px; box-shadow:0 2px 5px rgba(46,125,50,0.3);">
+          📷 写真を追加する
+        </button>
+        <button type="button" onclick="closeRightPanel()" style="background:#eee; color:#333; padding:14px 18px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:14px;">
+          閉じる
+        </button>
+      </div>
+    `;
   }
+};
+
+window.renderFieldPhotoTagSelector = () => {
+  const wrap = document.getElementById('field_photo_tags_wrap');
+  if (!wrap) return;
+  const available = getAllFieldPhotoAvailableTags_();
+  const selected = window.fieldPhotoSelectedTags || [];
+  let html = '';
+  available.forEach(tag => {
+    const isOn = selected.includes(tag);
+    const jsTag = String(tag).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    html += `
+      <button type="button" onclick="toggleFieldPhotoTag('${jsTag}')" style="padding:7px 12px; border-radius:18px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:4px; border:1px solid ${isOn ? '#2E7D32' : '#cfd8dc'}; background:${isOn ? '#2E7D32' : '#fff'}; color:${isOn ? '#fff' : '#444'}; box-shadow:${isOn ? '0 2px 4px rgba(46,125,50,0.25)' : 'none'};">
+        <span>${isOn ? '✓' : '🏷️'}</span><span>${escapeHtmlFieldPhoto_(tag)}</span>
+      </button>
+    `;
+  });
+  wrap.innerHTML = html;
+};
+
+window.toggleFieldPhotoTag = (tag) => {
+  if (!Array.isArray(window.fieldPhotoSelectedTags)) window.fieldPhotoSelectedTags = [];
+  const idx = window.fieldPhotoSelectedTags.indexOf(tag);
+  if (idx >= 0) window.fieldPhotoSelectedTags.splice(idx, 1);
+  else window.fieldPhotoSelectedTags.push(tag);
+  window.renderFieldPhotoTagSelector();
+};
+
+window.addCustomFieldPhotoTag = () => {
+  const input = document.getElementById('field_photo_custom_tag_input');
+  if (!input) return;
+  const val = input.value.trim();
+  if (!val) return;
+  if (!Array.isArray(window.fieldPhotoSelectedTags)) window.fieldPhotoSelectedTags = [];
+  if (!window.fieldPhotoSelectedTags.includes(val)) {
+    window.fieldPhotoSelectedTags.push(val);
+  }
+  saveFieldPhotoCustomTag_(val);
+  input.value = '';
+  window.renderFieldPhotoTagSelector();
 };
 
 window.renderFieldPhotoAddForm = (id) => {
@@ -4472,7 +4727,8 @@ window.renderFieldPhotoAddForm = (id) => {
     return;
   }
   activePolyId = polyId;
-  window.fieldPhotoPendingFiles = [];
+  clearFieldPhotoPendingFiles_();
+  window.fieldPhotoSelectedTags = [];
 
   const titleEl = document.getElementById('rightPanelTitle');
   if (titleEl) titleEl.innerText = `${p.name} - 📷 写真の追加`;
@@ -4482,78 +4738,101 @@ window.renderFieldPhotoAddForm = (id) => {
   const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
   const html = `
-          <div style="background:white; padding:16px; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
-            <div style="background:#E8F5E9; border-radius:6px; padding:10px 12px; margin-bottom:14px; color:#1B5E20; font-size:13px; font-weight:bold; border:1px solid #C8E6C9;">
-              📍 登録対象: ${p.name}
-            </div>
+    <div style="background:white; padding:16px; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+      <div style="background:#E8F5E9; border-radius:8px; padding:10px 12px; margin-bottom:14px; color:#1B5E20; font-size:13px; font-weight:bold; border:1px solid #C8E6C9;">
+        📍 登録対象: ${escapeHtmlFieldPhoto_(p.name)}
+      </div>
 
-            <!-- 写真選択ボタン -->
-            <label class="form-label" style="margin-top:0; color:#2E7D32; font-size:14px; font-weight:bold;">
-              📷 写真を選択 / 撮影 <span style="color:#d32f2f; font-size:11px;">(必須)</span>
-            </label>
-            <div style="display:flex; gap:10px; margin-bottom:10px;">
-              <label style="flex:1; background:#4CAF50; color:white; text-align:center; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.15); display:flex; align-items:center; justify-content:center; gap:6px;">
-                📸 カメラ
-                <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="handleFieldPhotoInput(this)">
-              </label>
-              <label style="flex:1; background:#2196F3; color:white; text-align:center; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.15); display:flex; align-items:center; justify-content:center; gap:6px;">
-                🖼️ フォルダ
-                <input type="file" accept="image/*" multiple style="display:none;" onchange="handleFieldPhotoInput(this)">
-              </label>
-            </div>
+      <!-- 写真選択ボタン -->
+      <label class="form-label" style="margin-top:0; color:#2E7D32; font-size:14px; font-weight:bold;">
+        📷 写真を選択 / 撮影 <span style="color:#d32f2f; font-size:11px;">(必須)</span>
+      </label>
+      <div style="display:flex; gap:10px; margin-bottom:10px;">
+        <label style="flex:1; background:#4CAF50; color:white; text-align:center; padding:12px; border-radius:8px; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.15); display:flex; align-items:center; justify-content:center; gap:6px;">
+          📸 カメラ
+          <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="handleFieldPhotoInput(this)">
+        </label>
+        <label style="flex:1; background:#2196F3; color:white; text-align:center; padding:12px; border-radius:8px; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.15); display:flex; align-items:center; justify-content:center; gap:6px;">
+          🖼️ フォルダ
+          <input type="file" accept="image/*" multiple style="display:none;" onchange="handleFieldPhotoInput(this)">
+        </label>
+      </div>
 
-            <!-- プレビュー表示 -->
-            <div id="field_photos_preview_box" style="display:flex; gap:10px; overflow-x:auto; padding:8px; min-height:45px; margin-bottom:16px; border:2px dashed #C8E6C9; border-radius:6px; background:#FAFAFA; align-items:center;">
-              <span style="color:#999; font-size:12px; width:100%; text-align:center;">ここに撮影または選択した写真が表示されます</span>
-            </div>
+      <!-- プレビュー表示 -->
+      <div id="field_photos_preview_box" style="display:flex; gap:10px; overflow-x:auto; padding:8px; min-height:45px; margin-bottom:16px; border:2px dashed #C8E6C9; border-radius:8px; background:#FAFAFA; align-items:center;">
+        <span style="color:#999; font-size:12px; width:100%; text-align:center;">ここに撮影または選択した写真が表示されます</span>
+      </div>
 
-            <!-- メモ入力欄 -->
-            <label class="form-label" style="color:#333; font-size:14px; font-weight:bold;">
-              📝 メモ・気付き <span style="color:#888; font-size:11px; font-weight:normal;">(任意)</span>
-            </label>
-            <textarea id="field_photo_memo_input" rows="4" class="form-input" placeholder="写真についてのメモや生育の様子、状況などを入力..." style="width:100%; box-sizing:border-box; padding:10px; border:1px solid #ccc; border-radius:6px; font-size:13px; margin-bottom:16px; line-height:1.5; resize:vertical;"></textarea>
+      <!-- タグ選択＆手入力追加 -->
+      <div style="margin-bottom:16px;">
+        <label class="form-label" style="color:#333; font-size:14px; font-weight:bold; margin-bottom:6px; display:block;">
+          🏷️ タグ <span style="color:#888; font-size:11px; font-weight:normal;">(複数選択・手入力追加可)</span>
+        </label>
+        <div id="field_photo_tags_wrap" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;"></div>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="field_photo_custom_tag_input" class="form-input" placeholder="＋ その他タグを手入力..." style="flex:1; margin-bottom:0; padding:8px 10px; font-size:13px; border:1px solid #cfd8dc; border-radius:8px;" onkeydown="if(event.key==='Enter'){event.preventDefault();addCustomFieldPhotoTag();}">
+          <button type="button" onclick="addCustomFieldPhotoTag()" style="background:#546E7A; color:#fff; border:none; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋ 追加</button>
+        </div>
+      </div>
 
-            <!-- 日時と記録者 -->
-            <div style="background:#f9f9f9; padding:12px; border-radius:6px; border:1px solid #eee; margin-bottom:8px;">
-              <div style="display:flex; gap:10px; margin-bottom:10px;">
-                <div style="flex:1;">
-                  <label class="form-label" style="font-size:11px; margin-bottom:3px; color:#555;">📅 撮影日</label>
-                  <input type="date" id="field_photo_date_input" class="form-input" value="${todayStr}" style="margin-bottom:0; font-size:13px; padding:8px;">
-                </div>
-                <div style="flex:1;">
-                  <label class="form-label" style="font-size:11px; margin-bottom:3px; color:#555;">⏰ 撮影時刻</label>
-                  <input type="text" id="field_photo_time_input" class="form-input app-time-input" readonly value="${currentTimeStr}" onclick="openAppTimePicker('field_photo_time_input', '撮影時刻')" style="margin-bottom:0; text-align:center; font-size:14px; font-weight:bold; padding:8px;">
-                </div>
-              </div>
-              <div style="font-size:12px; color:#666;">
-                👤 記録者: <b>${currentUser}</b>
-              </div>
-            </div>
+      <!-- メモ入力欄 -->
+      <label class="form-label" style="color:#333; font-size:14px; font-weight:bold;">
+        📝 メモ・気付き <span style="color:#888; font-size:11px; font-weight:normal;">(任意)</span>
+      </label>
+      <textarea id="field_photo_memo_input" rows="4" class="form-input" placeholder="写真についてのメモや生育の様子、状況などを入力..." style="width:100%; box-sizing:border-box; padding:10px; border:1px solid #ccc; border-radius:8px; font-size:13px; margin-bottom:16px; line-height:1.5; resize:vertical;"></textarea>
+
+      <!-- 日時と記録者 -->
+      <div style="background:#f9f9f9; padding:12px; border-radius:8px; border:1px solid #eee; margin-bottom:8px;">
+        <div style="display:flex; gap:10px; margin-bottom:10px;">
+          <div style="flex:1;">
+            <label class="form-label" style="font-size:11px; margin-bottom:3px; color:#555;">📅 撮影日</label>
+            <input type="date" id="field_photo_date_input" class="form-input" value="${todayStr}" style="margin-bottom:0; font-size:13px; padding:8px;">
           </div>
-        `;
+          <div style="flex:1;">
+            <label class="form-label" style="font-size:11px; margin-bottom:3px; color:#555;">⏰ 撮影時刻</label>
+            <input type="text" id="field_photo_time_input" class="form-input app-time-input" readonly value="${currentTimeStr}" onclick="openAppTimePicker('field_photo_time_input', '撮影時刻')" style="margin-bottom:0; text-align:center; font-size:14px; font-weight:bold; padding:8px;">
+          </div>
+        </div>
+        <div style="font-size:12px; color:#666;">
+          👤 記録者: <b>${escapeHtmlFieldPhoto_(currentUser)}</b>
+        </div>
+      </div>
+    </div>
+  `;
 
   const contentEl = document.getElementById('rightPanelContent');
   if (contentEl) contentEl.innerHTML = `<div style="padding:14px; background:#f4f6f8; min-height:100%; box-sizing:border-box;">${html}</div>`;
 
+  window.renderFieldPhotoTagSelector();
+
   const footerEl = document.getElementById('rightPanelFooter');
   if (footerEl) {
     footerEl.innerHTML = `
-            <div style="display:flex; gap:10px;">
-              <button id="submitFieldPhotoBtn" type="button" onclick="submitFieldPhotoRecord('${polyId}')" style="background:#2E7D32; color:white; flex:1; padding:14px; border-radius:8px; border:none; font-weight:bold; cursor:pointer; font-size:16px; box-shadow:0 3px 6px rgba(46,125,50,0.3);">
-                💾 写真とメモを保存する
-              </button>
-              <button type="button" onclick="renderFieldPhotosTable('${polyId}')" style="background:#eee; color:#333; padding:14px 18px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:14px;">
-                一覧に戻る
-              </button>
-            </div>
-          `;
+      <div style="display:flex; gap:10px;">
+        <button id="submitFieldPhotoBtn" type="button" onclick="submitFieldPhotoRecord('${polyId}')" style="background:#2E7D32; color:white; flex:1; padding:14px; border-radius:8px; border:none; font-weight:bold; cursor:pointer; font-size:16px; box-shadow:0 3px 6px rgba(46,125,50,0.3);">
+          💾 写真とメモを保存する
+        </button>
+        <button type="button" onclick="renderFieldPhotosTable('${polyId}')" style="background:#eee; color:#333; padding:14px 18px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:14px;">
+          一覧に戻る
+        </button>
+      </div>
+    `;
   }
 };
 
 window.handleFieldPhotoInput = (input) => {
   if (!input.files || input.files.length === 0) return;
-  for (let f of input.files) {
-    window.fieldPhotoPendingFiles.push(f);
+  for (const f of input.files) {
+    const previewUrl = URL.createObjectURL(f);
+    const resizePromise = fastResizeFieldPhoto_(f).catch(() => {
+      return typeof resizeImg === 'function' ? resizeImg(f) : '';
+    });
+    window.fieldPhotoPendingFiles.push({
+      file: f,
+      filename: f.name || ('photo_' + Date.now() + '.jpg'),
+      previewUrl: previewUrl,
+      resizePromise: resizePromise
+    });
   }
   input.value = "";
   renderFieldPhotoPreviews();
@@ -4567,23 +4846,26 @@ window.renderFieldPhotoPreviews = () => {
     return;
   }
   let html = '';
-  window.fieldPhotoPendingFiles.forEach((file, idx) => {
-    const url = URL.createObjectURL(file);
+  window.fieldPhotoPendingFiles.forEach((item, idx) => {
+    const url = item.previewUrl || URL.createObjectURL(item.file || item);
     html += `
-            <div style="position:relative; flex-shrink:0;">
-              <img src="${url}" style="width:75px; height:75px; object-fit:cover; border-radius:6px; border:1px solid #bbb; display:block;">
-              <div onclick="removeFieldPhotoPreview(${idx})" style="position:absolute; top:-7px; right:-7px; background:#F44336; color:white; width:22px; height:22px; text-align:center; line-height:22px; border-radius:50%; cursor:pointer; font-weight:bold; font-size:13px; box-shadow:0 2px 4px rgba(0,0,0,0.3);">
-                ×
-              </div>
-            </div>
-          `;
+      <div style="position:relative; flex-shrink:0;">
+        <img src="${url}" style="width:75px; height:75px; object-fit:cover; border-radius:8px; border:1px solid #bbb; display:block;">
+        <div onclick="removeFieldPhotoPreview(${idx})" style="position:absolute; top:-7px; right:-7px; background:#F44336; color:white; width:22px; height:22px; text-align:center; line-height:22px; border-radius:50%; cursor:pointer; font-weight:bold; font-size:13px; box-shadow:0 2px 4px rgba(0,0,0,0.3);">
+          ×
+        </div>
+      </div>
+    `;
   });
   box.innerHTML = html;
 };
 
 window.removeFieldPhotoPreview = (idx) => {
   if (!window.fieldPhotoPendingFiles) return;
-  window.fieldPhotoPendingFiles.splice(idx, 1);
+  const removed = window.fieldPhotoPendingFiles.splice(idx, 1)[0];
+  if (removed && removed.previewUrl) {
+    try { URL.revokeObjectURL(removed.previewUrl); } catch (e) { }
+  }
   renderFieldPhotoPreviews();
 };
 
@@ -4600,37 +4882,64 @@ window.submitFieldPhotoRecord = async (id) => {
     return;
   }
 
-  const btn = document.getElementById('submitFieldPhotoBtn');
-  if (btn) {
-    btn.disabled = true;
-    btn.innerText = "写真を保存中...";
+  const pendingItems = window.fieldPhotoPendingFiles.slice();
+  const memo = document.getElementById('field_photo_memo_input')?.value.trim() || '';
+  const dateVal = document.getElementById('field_photo_date_input')?.value || '';
+  const timeVal = document.getElementById('field_photo_time_input')?.value || '';
+  const customInput = document.getElementById('field_photo_custom_tag_input');
+  const unaddedTag = customInput ? customInput.value.trim() : '';
+  const tags = Array.isArray(window.fieldPhotoSelectedTags) ? window.fieldPhotoSelectedTags.slice() : [];
+  if (unaddedTag && !tags.includes(unaddedTag)) {
+    tags.push(unaddedTag);
+    saveFieldPhotoCustomTag_(unaddedTag);
   }
 
+  const recordData = {
+    notes: memo,
+    photoDate: dateVal,
+    photoTime: timeVal,
+    photoTags: tags,
+    isPhotoOnly: true
+  };
+
+  // 楽観的UI更新：押した瞬間に一覧へ切り替えてユーザーを待たせない
+  const tempId = 'temp_photo_' + Date.now();
+  pendingItems.forEach(it => { it.keepPreviewUrl = true; });
+  const tempUrls = pendingItems.map(it => it.previewUrl).filter(Boolean);
+  const formattedDate = dateVal ? dateVal.replace(/-/g, '/') : '';
+  const tempRecord = {
+    id: tempId,
+    date: formattedDate || '-',
+    time: timeVal,
+    author: currentUser,
+    type: 'growth',
+    urls: tempUrls,
+    data: recordData,
+    _isSaving: true
+  };
+
+  if (!Array.isArray(loadedPolygons[polyId].photos)) loadedPolygons[polyId].photos = [];
+  loadedPolygons[polyId].photos.unshift(tempRecord);
+
+  window.fieldPhotoPendingFiles = [];
+  window.fieldPhotoSelectedTags = [];
+  window.fieldPhotoActiveFilterTag = 'ALL';
+  renderFieldPhotosTable(polyId);
+
   if (typeof window.showRecordSyncToast === 'function') {
-    window.showRecordSyncToast("⏳ 写真を保存中です...", "info");
+    window.showRecordSyncToast("⏳ 写真をバックグラウンドで保存中...", "info");
   }
 
   try {
-    const memo = document.getElementById('field_photo_memo_input')?.value.trim() || '';
-    const dateVal = document.getElementById('field_photo_date_input')?.value || '';
-    const timeVal = document.getElementById('field_photo_time_input')?.value || '';
-
-    const recordData = {
-      notes: memo,
-      photoDate: dateVal,
-      photoTime: timeVal,
-      isPhotoOnly: true
-    };
-
-    const photosPayload = [];
-    for (let i = 0; i < window.fieldPhotoPendingFiles.length; i++) {
-      const f = window.fieldPhotoPendingFiles[i];
-      const b64 = await resizeImg(f);
-      photosPayload.push({
-        filename: f.name || ('photo_' + i + '.jpg'),
+    const resizedList = await Promise.all(pendingItems.map(async (it, i) => {
+      const b64 = it.resizePromise
+        ? await it.resizePromise
+        : (typeof resizeImg === 'function' ? await resizeImg(it.file || it) : '');
+      return {
+        filename: it.filename || ('photo_' + i + '.jpg'),
         base64: b64
-      });
-    }
+      };
+    }));
 
     const updatedItems = await callGAS('saveRecord', {
       id: polyId,
@@ -4638,35 +4947,45 @@ window.submitFieldPhotoRecord = async (id) => {
       author: currentUser,
       recordType: 'growth',
       data: recordData,
-      photos: photosPayload
+      photos: resizedList
     });
+
+    tempUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (e) { } });
 
     if (Array.isArray(updatedItems)) {
       loadedPolygons[polyId].photos = updatedItems;
     } else {
+      loadedPolygons[polyId].photos = (loadedPolygons[polyId].photos || []).filter(x => x.id !== tempId);
       if (typeof window.refreshPolygonPhotos === 'function') {
         try { await window.refreshPolygonPhotos(polyId); } catch (e) { }
       }
+    }
+
+    if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
+      window.updateInitDataCacheWithLocalRecords_();
     }
 
     if (typeof window.showRecordSyncToast === 'function') {
       window.showRecordSyncToast("📸 写真とメモを保存しました！", "ok");
     }
 
-    window.fieldPhotoPendingFiles = [];
-    renderFieldPhotosTable(polyId);
+    if (activePolyId === polyId && document.getElementById('rightPanel')?.classList.contains('open')) {
+      renderFieldPhotosTable(polyId);
+    }
 
     if (typeof openMainMenu === 'function') {
       try { openMainMenu(polyId); } catch (e) { }
     }
-
   } catch (e) {
     console.error("submitFieldPhotoRecord error:", e);
-    customAlert("写真の保存に失敗しました: " + (e.message || e));
-    if (btn) {
-      btn.disabled = false;
-      btn.innerText = "💾 写真とメモを保存する";
+    if (loadedPolygons[polyId] && Array.isArray(loadedPolygons[polyId].photos)) {
+      loadedPolygons[polyId].photos = loadedPolygons[polyId].photos.filter(x => x.id !== tempId);
     }
+    tempUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (err) { } });
+    if (activePolyId === polyId && document.getElementById('rightPanel')?.classList.contains('open')) {
+      renderFieldPhotosTable(polyId);
+    }
+    customAlert("写真の保存に失敗しました: " + (e.message || e));
   }
 };
 
@@ -4689,6 +5008,10 @@ window.deleteFieldPhotoRecord = async (recordId, polyId) => {
       loadedPolygons[pid].photos = updatedPhotos;
     } else if (loadedPolygons[pid] && loadedPolygons[pid].photos) {
       loadedPolygons[pid].photos = loadedPolygons[pid].photos.filter(x => x.id !== recordId);
+    }
+
+    if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
+      window.updateInitDataCacheWithLocalRecords_();
     }
 
     if (typeof window.showRecordSyncToast === 'function') {

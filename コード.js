@@ -62,6 +62,7 @@ const API_ACTIONS = {
   "updateWorkRecordById": function (p) { return updateWorkRecordById(p); },
   "batchUpdateWorkRecordDates": function (p) { return batchUpdateWorkRecordDates(p); },
   "deleteRecordItem": function (p) { return deleteRecordItem(p.id, p.recordId, p.userName); },
+  "getPolygonPhotos": function (p) { return getPolygonPhotos(p.id); },
   "deleteWorkRecordById": function (p) { return deleteWorkRecordById(p); },
   "cancelClockInAndDeleteTodayWorkRecords": function (p) { return cancelClockInAndDeleteTodayWorkRecords(p); },
   "addFieldStatus": function (p) { return addFieldStatusToMaster(p.statusName); },
@@ -7950,25 +7951,30 @@ function trimPolygonPhotosForInit_(photos, maxKeep) {
     });
     trimmed = scored.slice(0, limit).map(function (x) { return x.ph; });
   }
-  // 地図描画・作物判定に必要な最小項目だけ残す
+  // 地図描画・作物判定・写真一覧に必要な最小項目だけ残す
   const keepDataKeys = {
     workDate: 1, workName: 1, category: 1, crop: 1, cropName: 1,
     startTime: 1, endTime: 1, totalTime: 1, progressStatus: 1,
     notes: 1, comment: 1, placeLabel: 1,
+    photoTags: 1, isPhotoOnly: 1, photoDate: 1, photoTime: 1,
     // 一括入力の削除・日付変更で必要
     bulkBatchId: 1, recordKind: 1, fromBulkMemo: 1
   };
   return trimmed.map(function (ph) {
     if (!ph || typeof ph !== 'object') return ph;
+    const rawUrls = Array.isArray(ph.urls) ? ph.urls : (ph.url ? [ph.url] : []);
+    const safeUrls = rawUrls.filter(function (u) {
+      return typeof u === 'string' && u.length > 0 && u.indexOf('data:') !== 0;
+    });
     const out = {
       id: ph.id,
       type: ph.type,
       date: ph.date,
       time: ph.time,
       author: ph.author,
-      urls: []
+      urls: safeUrls
     };
-    if (Array.isArray(ph.urls) && ph.urls.length) out._hasUrls = true;
+    if (rawUrls.length > 0 && safeUrls.length === 0) out._hasUrls = true;
     if (ph.data && typeof ph.data === 'object') {
       const slimData = {};
       Object.keys(ph.data).forEach(function (dk) {
@@ -7981,6 +7987,24 @@ function trimPolygonPhotosForInit_(photos, maxKeep) {
     }
     return out;
   });
+}
+
+/** 1圃場（または看板）の全写真・記録履歴を取得する */
+function getPolygonPhotos(id) {
+  if (!id) return [];
+  const found = findSheetAndRowById(String(id));
+  if (!found || !found.rowData) return [];
+  let photos = [];
+  try {
+    if (found.rowData[9] && found.rowData[9] !== "[]") {
+      photos = JSON.parse(found.rowData[9]);
+    } else if (found.rowData[6] && String(found.rowData[6]).trim().indexOf('[') === 0) {
+      photos = JSON.parse(found.rowData[6]);
+    }
+  } catch (e) {
+    photos = [];
+  }
+  return Array.isArray(photos) ? photos : [];
 }
 
 function getSavedPolygons(options) {

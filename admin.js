@@ -10992,9 +10992,9 @@ document.getElementById('btnViewMode').onclick = () => {
     window.gridGeneratedPaths = [];
 
     setFudeVisibility(false);
-    map.setOptions({ draggable: true, draggableCursor: null });
-    // 閲覧に戻ったら標準 hybrid に戻し、店舗フィルターを再適用
-    try { map.setMapTypeId('hybrid'); } catch (e) { /* ignore */ }
+    map.setOptions({ draggable: true, draggableCursor: null, maxZoom: 45 });
+    // 閲覧に戻っても引き延ばしタイルを維持する
+    if (typeof window.enableStretchedMapType === 'function') window.enableStretchedMapType();
     if (typeof window.refreshMapLayerFilter_ === 'function') window.refreshMapLayerFilter_();
 
     let legendDiv = document.getElementById('adminLegendUI');

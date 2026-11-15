@@ -505,6 +505,7 @@
         div.style.height = '256px';
         div.style.overflow = 'hidden';
         div.style.position = 'relative';
+        div.style.pointerEvents = 'none';
 
         var z = zoom;
         var x = coord.x;
@@ -526,6 +527,7 @@
         img.style.height = '256px';
         img.style.left = '0px';
         img.style.top = '0px';
+        img.style.pointerEvents = 'none';
 
         if (scale > 1) {
           var modX = ((coord.x % scale) + scale) % scale;
@@ -579,28 +581,11 @@
         applyNativeTypeMaxZoom(targetMap, maxZoom);
       });
 
-      if (!targetMap._stretchedZoomBound) {
-        targetMap._stretchedZoomBound = true;
-        var syncMapTypeForZoom = function () {
-          try {
-            var z = targetMap.getZoom();
-            if (typeof z !== 'number') return;
-            var cur = String(targetMap.getMapTypeId() || '');
-            if (z > maxNativeZoom) {
-              if (cur === 'hybrid' || cur === 'satellite') {
-                targetMap._stretchedBaseTypeBeforeZoom = cur;
-                targetMap.setMapTypeId(cur === 'satellite' ? 'satellite_stretched' : 'hybrid_stretched');
-              }
-            } else {
-              if (!global.customDrawingMode && (cur === 'hybrid_stretched' || cur === 'satellite_stretched')) {
-                var restoreId = targetMap._stretchedBaseTypeBeforeZoom || (cur === 'satellite_stretched' ? 'satellite' : 'hybrid');
-                targetMap.setMapTypeId(restoreId);
-              }
-            }
-          } catch (e) { /* ignore */ }
-        };
-        targetMap.addListener('zoom_changed', syncMapTypeForZoom);
-        syncMapTypeForZoom();
+      var cur = String((typeof targetMap.getMapTypeId === 'function' && targetMap.getMapTypeId()) || '');
+      if (cur === 'satellite') {
+        targetMap.setMapTypeId('satellite_stretched');
+      } else if (cur !== 'satellite_stretched') {
+        targetMap.setMapTypeId('hybrid_stretched');
       }
       return true;
     } catch (e) {
