@@ -38,6 +38,7 @@
 | 11 | detailsJson |
 | 12 | comment |
 | 13 | createdAt |
+| 14 | inspectionType |
 
 ## 📄 シート名: 点検マスタ
 | 列番号 | 項目名（ヘッダー） |
@@ -48,6 +49,8 @@
 | 4 | item |
 | 5 | sortOrder |
 | 6 | note |
+| 7 | inspectionType |
+| 8 | alertMonths |
 
 ## 📄 シート名: 市況_東京
 | 列番号 | 項目名（ヘッダー） |

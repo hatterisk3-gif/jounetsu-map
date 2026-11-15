@@ -1376,7 +1376,112 @@
     }
   };
 
+  function fallbackWeatherEmoji_(code) {
+    const c = Number(code);
+    if (c === 0) return '☀️';
+    if (c <= 2) return '🌤️';
+    if (c === 3) return '☁️';
+    if (c === 45 || c === 48) return '🌫️';
+    if (c <= 67 || (c >= 80 && c <= 82)) return '🌧️';
+    if ((c >= 71 && c <= 77) || c === 85 || c === 86) return '❄️';
+    if (c >= 95) return '⛈️';
+    return '☁️';
+  }
+
+  function fallbackWeatherDesc_(code) {
+    const c = Number(code);
+    if (c === 0) return '快晴';
+    if (c <= 2) return '晴れ';
+    if (c === 3) return '曇り';
+    if (c === 45 || c === 48) return '霧';
+    if (c <= 57) return '霧雨';
+    if (c <= 67 || (c >= 80 && c <= 82)) return '雨';
+    if ((c >= 71 && c <= 77) || c === 85 || c === 86) return '雪';
+    if (c >= 95) return '雷雨';
+    return '曇り';
+  }
+
+  function renderPastWeatherTableHtml() {
+    const st = global.weatherSunshineState;
+    const daily = st && st.data && st.data.daily;
+    if (!daily || !Array.isArray(daily.time) || daily.time.length === 0) return '';
+    let todayStr = st.todayStr;
+    if (!todayStr) {
+      const now = new Date();
+      todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+    }
+    let todayIndex = daily.time.indexOf(todayStr);
+    if (todayIndex < 0) {
+      todayIndex = daily.time.findIndex(function (t) { return t >= todayStr; });
+      if (todayIndex < 0) todayIndex = daily.time.length;
+    }
+    if (todayIndex <= 0) return '';
+
+    const wdays = ['日', '月', '火', '水', '木', '金', '土'];
+    const emojiFn = typeof global.getWeatherEmoji === 'function' ? global.getWeatherEmoji : fallbackWeatherEmoji_;
+    const descFn = typeof global.getWeatherDescription === 'function' ? global.getWeatherDescription : fallbackWeatherDesc_;
+    const pastCount = todayIndex;
+
+    let html = '<div id="pastWeatherSection" style="margin-top:16px;">';
+    html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">🕰️ 過去の天気（過去${pastCount}日・新しい順）</div>`;
+    html += '<div style="max-height:300px; overflow-y:auto; border:1px solid #e0e0e0; border-radius:6px;">';
+    html += '<table style="width:100%; border-collapse:collapse; font-size:13px;">';
+    html += '<thead><tr style="position:sticky; top:0; z-index:1; background:#f0f0f0; border-bottom:1px solid #ccc;">' +
+      '<th style="padding:6px 4px; text-align:left;">日付</th>' +
+      '<th style="padding:6px 4px; text-align:center;">天気</th>' +
+      '<th style="padding:6px 4px; text-align:right;">最高/最低 (前日差)</th>' +
+      '<th style="padding:6px 4px; text-align:right;">降水</th>' +
+      '<th style="padding:6px 4px; text-align:right;">日照</th>' +
+      '<th style="padding:6px 4px; text-align:right;">風速</th>' +
+      '</tr></thead><tbody>';
+
+    for (let i = todayIndex - 1; i >= 0; i--) {
+      const dateStr = daily.time[i];
+      const d = new Date(dateStr + 'T12:00:00');
+      const shortDate = `${d.getMonth() + 1}/${d.getDate()}(${wdays[d.getDay()]})`;
+      const code = daily.weathercode ? daily.weathercode[i] : 0;
+      const maxT = daily.temperature_2m_max ? daily.temperature_2m_max[i] : undefined;
+      const minT = daily.temperature_2m_min ? daily.temperature_2m_min[i] : undefined;
+      const pcp = (daily.precipitation_sum && daily.precipitation_sum[i] !== undefined && daily.precipitation_sum[i] !== null) ? daily.precipitation_sum[i] + 'mm' : '-';
+      const sunSec = daily.sunshine_duration ? daily.sunshine_duration[i] : null;
+      const sunHours = (sunSec !== null && sunSec !== undefined) ? (sunSec / 3600).toFixed(1) + 'h' : '-';
+      const wind = (daily.wind_speed_10m_max && daily.wind_speed_10m_max[i] !== undefined && daily.wind_speed_10m_max[i] !== null) ? daily.wind_speed_10m_max[i] + 'm/s' : '-';
+      const dEmoji = emojiFn(code);
+      const dDesc = descFn(code);
+
+      const prevMax = (i > 0 && daily.temperature_2m_max) ? daily.temperature_2m_max[i - 1] : undefined;
+      const prevMin = (i > 0 && daily.temperature_2m_min) ? daily.temperature_2m_min[i - 1] : undefined;
+      let diffMaxInline = '';
+      let diffMinInline = '';
+      if (prevMax !== undefined && maxT !== undefined) {
+        const dm = Math.round((maxT - prevMax) * 10) / 10;
+        if (dm > 0) diffMaxInline = `<span style="font-size:10px; color:#d32f2f;">(+${dm})</span>`;
+        else if (dm < 0) diffMaxInline = `<span style="font-size:10px; color:#1976d2;">(${dm})</span>`;
+      }
+      if (prevMin !== undefined && minT !== undefined) {
+        const dn = Math.round((minT - prevMin) * 10) / 10;
+        if (dn > 0) diffMinInline = `<span style="font-size:10px; color:#d32f2f;">(+${dn})</span>`;
+        else if (dn < 0) diffMinInline = `<span style="font-size:10px; color:#1976d2;">(${dn})</span>`;
+      }
+
+      const maxStr = maxT !== undefined ? maxT : '-';
+      const minStr = minT !== undefined ? minT : '-';
+      const rowBg = (i === todayIndex - 1) ? 'background:#f5f9ff;' : '';
+      html += `<tr style="border-bottom:1px solid #eee; ${rowBg}">` +
+        `<td style="padding:6px 4px; text-align:left; white-space:nowrap;">${shortDate}</td>` +
+        `<td style="padding:6px 4px; text-align:center;" title="${dDesc}">${dEmoji}</td>` +
+        `<td style="padding:6px 4px; text-align:right;"><span style="color:#F44336;">${maxStr}</span>${diffMaxInline} / <span style="color:#1976D2;">${minStr}</span>${diffMinInline}℃</td>` +
+        `<td style="padding:6px 4px; text-align:right; color:#2196F3;">${pcp}</td>` +
+        `<td style="padding:6px 4px; text-align:right; color:#FF9800;">${sunHours}</td>` +
+        `<td style="padding:6px 4px; text-align:right; color:#4CAF50;">${wind}</td>` +
+        `</tr>`;
+    }
+    html += '</tbody></table></div></div>';
+    return html;
+  }
+
   global.computeAgriWeatherInsights = computeAgriWeatherInsights;
+  global.renderPastWeatherTableHtml = renderPastWeatherTableHtml;
   global.renderAgriWeatherPanelHtml = renderAgriWeatherPanelHtml;
   global.refreshWeatherPriorityPanel_ = refreshWeatherPriorityPanel_;
   global.refreshMonthlyClimatePanel_ = refreshMonthlyClimatePanel_;

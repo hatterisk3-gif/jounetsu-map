@@ -58,38 +58,8 @@
       <button type="button" onclick="pickAdminRegPlus_('location')">🏢 拠点を登録</button>
       <button type="button" onclick="pickAdminRegPlus_('viewpoint')">🔭 視野地点登録</button>
       <button type="button" onclick="pickAdminRegPlus_('equipment')">🚜 機械管理</button>
-      <button type="button" onclick="pickAdminRegPlus_('mapUrlBatch')">🔗 共有マップURL一括登録</button>
       <button type="button" onclick="pickAdminRegPlus_('batchDelete')" style="color:#c62828;">🗑️ 一括削除</button>
       <button type="button" class="admin-reg-plus-cancel" onclick="closeAdminRegPlusMenu_()">閉じる</button>
-    </div>
-  </div>
-
-  <!-- 🔗 共有GoogleマップURL 一括登録モーダル -->
-  <div id="mapUrlBatchModal"
-    style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:9998; justify-content:center; align-items:center; padding:12px; box-sizing:border-box;">
-    <div style="background:#fff; width:100%; max-width:680px; max-height:90vh; border-radius:12px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 28px rgba(0,0,0,0.35);">
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#5D4037; color:#fff;">
-        <div>
-          <div style="font-size:16px; font-weight:bold;">🔗 共有GoogleマップURL 一括登録</div>
-          <div id="mapUrlBatchProgress" style="font-size:12px; opacity:0.9; margin-top:2px;">読込中...</div>
-        </div>
-        <button type="button" onclick="closeMapUrlBatchModal()" style="background:rgba(255,255,255,0.2); border:none; color:#fff; border-radius:6px; padding:6px 12px; font-weight:bold; cursor:pointer;">✕ 閉じる</button>
-      </div>
-      <div style="padding:10px 14px; background:#faf7f4; border-bottom:1px solid #e0d6d0; display:flex; gap:8px; flex-wrap:wrap;">
-        <select id="mapUrlBatchLoc" onchange="renderMapUrlBatchList()" style="padding:7px 8px; border:1px solid #ccc; border-radius:6px; font-size:13px; background:#fff;">
-          <option value="">すべての拠点</option>
-        </select>
-        <select id="mapUrlBatchFilter" onchange="renderMapUrlBatchList()" style="padding:7px 8px; border:1px solid #ccc; border-radius:6px; font-size:13px; background:#fff;">
-          <option value="unregistered">未登録のみ</option>
-          <option value="all">すべて表示</option>
-          <option value="registered">登録済のみ</option>
-        </select>
-        <input type="text" id="mapUrlBatchSearch" oninput="renderMapUrlBatchList()" placeholder="圃場名で検索..." style="flex:1; min-width:140px; padding:7px 10px; border:1px solid #ccc; border-radius:6px; font-size:13px;">
-      </div>
-      <div style="padding:8px 14px; background:#FFF8E1; border-bottom:1px solid #FFE082; font-size:12px; color:#5D4037; line-height:1.4;">
-        ① <b>「🗺️ Googleマップで開く」</b>で場所を開く → ② Googleマップで「共有」→「リンクをコピー」 → ③ 戻って<b>「📋 貼付して保存」</b>を押すだけで登録できます。
-      </div>
-      <div id="mapUrlBatchList" style="flex:1; overflow-y:auto; padding:10px 14px; background:#f5f2ee;"></div>
     </div>
   </div>
 
@@ -924,16 +894,16 @@
   <script src="map-loading.js?v=1786243000000" defer></script>
 
   <script
-    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=ja"
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=ja&v=weekly"
     async defer></script>
 
   <script src="api-client.js?v=1788600000116" defer></script>
   <script src="location-pin.js?v=1788600000301" defer></script>
   <script src="map-filter.js?v=1788600000330" defer></script>
-  <script src="admin.js?v=1794697000000" defer></script>
+  <script src="admin.js?v=1794630000000" defer></script>
   <script src="admin_cost.js?v=1785489000008" defer></script>
   <script src="admin_crop_work.js?v=1787570400000" defer></script>
-  <script src="release-notes.js?v=1788600000357" defer></script>
+  <script src="release-notes.js?v=1788600000358" defer></script>
   <script src="tracking.js?v=1788600000324" defer></script>
   <script src="cad.js?v=1788600000306" defer></script>
   <script type="importmap">

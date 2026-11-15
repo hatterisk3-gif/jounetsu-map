@@ -800,6 +800,9 @@ async function fetchWeatherAndUpdateUI() {
                </tr>`;
     }
     html += `</table>`;
+    if (typeof window.renderPastWeatherTableHtml === 'function') {
+      html += window.renderPastWeatherTableHtml();
+    }
     html += `<div style="font-size: 11px; color: #999; text-align: right; margin-top: 10px;">Data: Open-Meteo</div>`;
     html += `</div>`;
 
