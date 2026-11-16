@@ -7320,7 +7320,9 @@ function inferWorkRecordUiFlags_(workName, category) {
         showField: !(isMeta || isFuel || n.includes('休憩'))
             && (c.includes('圃場') || c.includes('整備') || c.includes('保全') || !c),
         showFuel: isFuel,
-        showRidgePolygon: n.indexOf('畝立') >= 0
+        showRidgePolygon: n.indexOf('畝立') >= 0,
+        showPreInspection: n.indexOf('始動前点検') >= 0,
+        showPeriodicInspection: n.indexOf('定期点検') >= 0
     };
 }
 
@@ -7338,7 +7340,9 @@ function resolveWorkRecordUiFlags_(work) {
         showPesticide: matPestOn ? pick(w.showPesticide, inferred.showPesticide) : false,
         showField: pick(w.showField, inferred.showField),
         showFuel: pick(w.showFuel, inferred.showFuel),
-        showRidgePolygon: pick(w.showRidgePolygon, inferred.showRidgePolygon)
+        showRidgePolygon: pick(w.showRidgePolygon, inferred.showRidgePolygon),
+        showPreInspection: pick(w.showPreInspection, inferred.showPreInspection),
+        showPeriodicInspection: pick(w.showPeriodicInspection, inferred.showPeriodicInspection)
     };
 }
 
@@ -7357,6 +7361,8 @@ function buildWorkRecordUiFlagsHtml_(prefix, flags) {
             ${row('show_machine', !!f.showMachine, '🚜 農機マスタを出す', '使用した機械を選べます')}
             ${row('show_fuel', !!f.showFuel, '⛽ 給油マスタを出す', '給油した車両・機械を選べます。一覧に無い車両も登録できます')}
             ${row('show_ridge_polygon', !!f.showRidgePolygon, '🛤️ 畝ポリゴン登録を出す', '選んだ圃場の畝ポリゴンを農業CADで登録できます')}
+            ${row('show_pre_inspection', !!f.showPreInspection, '🌅 始動前点検UIを出す', '一括入力等で機械カテゴリ→機械・車両を選び、当日の始動前点検の確認・記録ができます')}
+            ${row('show_periodic_inspection', !!f.showPeriodicInspection, '🗓️ 定期点検UIを出す', '一括入力等で機械カテゴリ→機械・車両を選び、当日の定期点検の確認・記録ができます')}
         </div>
     </div>`;
 }
@@ -7385,7 +7391,9 @@ function collectWorkRecordUiFlagsFromForm_(prefix) {
         showMaterial: matPestOn ? readOr('show_material', !!baseline.showMaterial) : false,
         showPesticide: matPestOn ? readOr('show_pesticide', !!baseline.showPesticide) : false,
         showFuel: readOr('show_fuel', !!baseline.showFuel),
-        showRidgePolygon: readOr('show_ridge_polygon', !!baseline.showRidgePolygon)
+        showRidgePolygon: readOr('show_ridge_polygon', !!baseline.showRidgePolygon),
+        showPreInspection: readOr('show_pre_inspection', !!baseline.showPreInspection),
+        showPeriodicInspection: readOr('show_periodic_inspection', !!baseline.showPeriodicInspection)
     };
 }
 
@@ -7399,10 +7407,14 @@ window.syncAdminWorkUiFlagDefaults_ = (prefix) => {
     const m = document.getElementById(prefix + '_show_machine');
     const fuel = document.getElementById(prefix + '_show_fuel');
     const ridge = document.getElementById(prefix + '_show_ridge_polygon');
+    const preInsp = document.getElementById(prefix + '_show_pre_inspection');
+    const perInsp = document.getElementById(prefix + '_show_periodic_inspection');
     if (f) f.checked = inferred.showField !== false;
     if (m) m.checked = !!inferred.showMachine;
     if (fuel) fuel.checked = !!inferred.showFuel;
     if (ridge) ridge.checked = !!inferred.showRidgePolygon;
+    if (preInsp) preInsp.checked = !!inferred.showPreInspection;
+    if (perInsp) perInsp.checked = !!inferred.showPeriodicInspection;
 };
 
 window.openEditWorkMaster = (encodedStr) => {

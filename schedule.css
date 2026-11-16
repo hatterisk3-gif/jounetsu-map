@@ -2626,8 +2626,8 @@ select.snr-input {
 
 .schedule-side-fabs {
   position: fixed;
-  right: 17px;
-  bottom: calc(136px + env(safe-area-inset-bottom, 0px));
+  right: 12px;
+  bottom: calc(185px + env(safe-area-inset-bottom, 0px));
   z-index: 3500;
   display: flex;
   flex-direction: column;
@@ -3651,8 +3651,8 @@ select.snr-input {
 /* ===== DUMP ツリー／ガント FAB（情熱MAP寄り） ===== */
 .dump-fab-root {
   position: fixed;
-  right: 14px;
-  bottom: calc(136px + env(safe-area-inset-bottom, 0px));
+  right: 12px;
+  bottom: calc(185px + env(safe-area-inset-bottom, 0px));
   z-index: 3500;
   display: flex;
   flex-direction: column;

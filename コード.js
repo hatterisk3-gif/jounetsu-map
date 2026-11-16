@@ -1772,7 +1772,9 @@ function getInitData(opts) {
             showField: uiFlags.showField,
             showFuel: uiFlags.showFuel,
             showRidgePolygon: uiFlags.showRidgePolygon,
-            showMaintenance: uiFlags.showMaintenance
+            showMaintenance: uiFlags.showMaintenance,
+            showPreInspection: uiFlags.showPreInspection,
+            showPeriodicInspection: uiFlags.showPeriodicInspection
           });
         }
         if (idxStatus >= 0 && data[i][idxStatus]) workStatuses.push(data[i][idxStatus]);
@@ -3849,7 +3851,9 @@ function mergeWorkMasterObjects_(keepObj, origObj, incoming, originalName) {
     showField: orWorkMasterFlag_(keepObj.showField, origObj && origObj.showField, incoming.showField),
     showFuel: orWorkMasterFlag_(keepObj.showFuel, origObj && origObj.showFuel, incoming.showFuel),
     showRidgePolygon: orWorkMasterFlag_(keepObj.showRidgePolygon, origObj && origObj.showRidgePolygon, incoming.showRidgePolygon),
-    showMaintenance: orWorkMasterFlag_(keepObj.showMaintenance, origObj && origObj.showMaintenance, incoming.showMaintenance)
+    showMaintenance: orWorkMasterFlag_(keepObj.showMaintenance, origObj && origObj.showMaintenance, incoming.showMaintenance),
+    showPreInspection: orWorkMasterFlag_(keepObj.showPreInspection, origObj && origObj.showPreInspection, incoming.showPreInspection),
+    showPeriodicInspection: orWorkMasterFlag_(keepObj.showPeriodicInspection, origObj && origObj.showPeriodicInspection, incoming.showPeriodicInspection)
   };
 }
 
@@ -3885,7 +3889,9 @@ function workMasterObjectFromRow_(headers, row) {
     showField: uiFlags.showField,
     showFuel: uiFlags.showFuel,
     showRidgePolygon: uiFlags.showRidgePolygon,
-    showMaintenance: uiFlags.showMaintenance
+    showMaintenance: uiFlags.showMaintenance,
+    showPreInspection: uiFlags.showPreInspection,
+    showPeriodicInspection: uiFlags.showPeriodicInspection
   };
 }
 
@@ -3937,7 +3943,9 @@ const WORK_UI_FLAG_HEADERS_ = {
   showField: ['圃場選択を出す', '圃場を出す'],
   showFuel: ['給油マスタを出す', '給油を出す'],
   showRidgePolygon: ['畝ポリゴン登録を出す', '畝ポリゴンを出す'],
-  showMaintenance: ['整備UIを出す', '整備・修理を出す', '整備を出す']
+  showMaintenance: ['整備UIを出す', '整備・修理を出す', '整備を出す'],
+  showPreInspection: ['始動前点検UIを出す', '始動前点検を出す'],
+  showPeriodicInspection: ['定期点検UIを出す', '定期点検を出す']
 };
 
 function findHeaderIndexByNames_(headers, names) {
@@ -3968,7 +3976,7 @@ function formatWorkUiFlagValue_(v) {
 }
 
 function readWorkMasterUiFlagsFromRow_(headers, row) {
-  const out = { showMachine: null, showMaterial: null, showPesticide: null, showField: null, showFuel: null, showRidgePolygon: null, showMaintenance: null };
+  const out = { showMachine: null, showMaterial: null, showPesticide: null, showField: null, showFuel: null, showRidgePolygon: null, showMaintenance: null, showPreInspection: null, showPeriodicInspection: null };
   Object.keys(WORK_UI_FLAG_HEADERS_).forEach(function (k) {
     const idx = findHeaderIndexByNames_(headers, WORK_UI_FLAG_HEADERS_[k]);
     out[k] = idx >= 0 ? parseWorkUiFlagValue_(row[idx]) : null;
@@ -3979,7 +3987,7 @@ function readWorkMasterUiFlagsFromRow_(headers, row) {
 /** 作業マスタ必須ヘッダーを保証（欠けていれば末尾に追加） */
 function ensureWorkMasterHeaders_(sheet, opts) {
   opts = opts || {};
-  const required = ['作業名', 'カテゴリ', '作物名', '詳細作業名', '作物別詳細作業', '類似作業名', '使用農機を出す', '使用資材を出す', '使用薬剤を出す', '圃場選択を出す', '給油マスタを出す', '畝ポリゴン登録を出す', '整備UIを出す'];
+  const required = ['作業名', 'カテゴリ', '作物名', '詳細作業名', '作物別詳細作業', '類似作業名', '使用農機を出す', '使用資材を出す', '使用薬剤を出す', '圃場選択を出す', '給油マスタを出す', '畝ポリゴン登録を出す', '整備UIを出す', '始動前点検UIを出す', '定期点検UIを出す'];
   let lastCol = Math.max(sheet.getLastColumn(), 1);
   let headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || '').trim());
   let changed = false;
@@ -4101,7 +4109,9 @@ function readWorkMasterList_(sheet) {
       showField: uiFlags.showField,
       showFuel: uiFlags.showFuel,
       showRidgePolygon: uiFlags.showRidgePolygon,
-      showMaintenance: uiFlags.showMaintenance
+      showMaintenance: uiFlags.showMaintenance,
+      showPreInspection: uiFlags.showPreInspection,
+      showPeriodicInspection: uiFlags.showPeriodicInspection
     };
   });
 }
@@ -4187,7 +4197,11 @@ function buildWorkMasterColumnMap_(value) {
     '畝ポリゴンを出す': Object.prototype.hasOwnProperty.call(value || {}, 'showRidgePolygon') ? formatWorkUiFlagValue_(value.showRidgePolygon) : undefined,
     '整備UIを出す': Object.prototype.hasOwnProperty.call(value || {}, 'showMaintenance') ? formatWorkUiFlagValue_(value.showMaintenance) : undefined,
     '整備・修理を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showMaintenance') ? formatWorkUiFlagValue_(value.showMaintenance) : undefined,
-    '整備を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showMaintenance') ? formatWorkUiFlagValue_(value.showMaintenance) : undefined
+    '整備を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showMaintenance') ? formatWorkUiFlagValue_(value.showMaintenance) : undefined,
+    '始動前点検UIを出す': Object.prototype.hasOwnProperty.call(value || {}, 'showPreInspection') ? formatWorkUiFlagValue_(value.showPreInspection) : undefined,
+    '始動前点検を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showPreInspection') ? formatWorkUiFlagValue_(value.showPreInspection) : undefined,
+    '定期点検UIを出す': Object.prototype.hasOwnProperty.call(value || {}, 'showPeriodicInspection') ? formatWorkUiFlagValue_(value.showPeriodicInspection) : undefined,
+    '定期点検を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showPeriodicInspection') ? formatWorkUiFlagValue_(value.showPeriodicInspection) : undefined
   };
 }
 // ==========================================

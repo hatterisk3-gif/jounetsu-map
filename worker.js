@@ -12188,7 +12188,9 @@ window.inferWorkRecordUiFlags_ = (workName, category) => {
     // カテゴリ「保全/整備」だけでは出さない。作業名が整備系のときだけ推定ON
     showMaintenance: (typeof window.looksLikeMaintenanceText_ === 'function')
       ? !!window.looksLikeMaintenanceText_(n)
-      : /整備|修理|点検|清掃|保全|交換/.test(n)
+      : /整備|修理|点検|清掃|保全|交換/.test(n),
+    showPreInspection: n.indexOf('始動前点検') >= 0,
+    showPeriodicInspection: n.indexOf('定期点検') >= 0
   };
 };
 
@@ -12198,7 +12200,7 @@ window.getWorkExtraUiFlags_ = (workName) => {
   const formCat = String(document.getElementById('rec_work_category')?.value || '').trim();
   // 準備／片づけは「対象作業」の紐づけ専用。対象作業の詳細・機械・資材フラグは出さない
   if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(formCat)) {
-    return { showMachine: false, showMaterial: false, showPesticide: false, showField: false, showFuel: false, showRidgePolygon: false, showMaintenance: false };
+    return { showMachine: false, showMaterial: false, showPesticide: false, showField: false, showFuel: false, showRidgePolygon: false, showMaintenance: false, showPreInspection: false, showPeriodicInspection: false };
   }
   const w = (typeof window.findWorkMasterByName_ === 'function')
     ? (window.findWorkMasterByName_(mainName) || window.findWorkMasterByName_(combined))
@@ -12220,7 +12222,9 @@ window.getWorkExtraUiFlags_ = (workName) => {
     showField: pick(w && w.showField, inferred.showField),
     showFuel: pick(w && w.showFuel, inferred.showFuel),
     showRidgePolygon: pick(w && w.showRidgePolygon, inferred.showRidgePolygon),
-    showMaintenance: pick(w && w.showMaintenance, inferred.showMaintenance)
+    showMaintenance: pick(w && w.showMaintenance, inferred.showMaintenance),
+    showPreInspection: pick(w && w.showPreInspection, inferred.showPreInspection),
+    showPeriodicInspection: pick(w && w.showPeriodicInspection, inferred.showPeriodicInspection)
   };
 };
 
@@ -12240,6 +12244,8 @@ window.buildWorkRecordUiFlagsHtml_ = (prefix, flags) => {
             ${row('show_fuel', !!f.showFuel, '⛽ 給油マスタを出す', '給油した車両・機械を選べます。一覧に無い車両も登録できます')}
             ${row('show_ridge_polygon', !!f.showRidgePolygon, '🛤️ 畝ポリゴン登録を出す', '選んだ圃場の畝ポリゴンを農業CADで登録できます')}
             ${row('show_maintenance', !!f.showMaintenance, '🔧 整備UIを出す', '整備対象・症状・整備内容の入力欄を出します（カテゴリ保全/整備だけでは出ません）')}
+            ${row('show_pre_inspection', !!f.showPreInspection, '🌅 始動前点検UIを出す', '一括入力等で機械カテゴリ→機械・車両を選び、当日の始動前点検の確認・記録ができます')}
+            ${row('show_periodic_inspection', !!f.showPeriodicInspection, '🗓️ 定期点検UIを出す', '一括入力等で機械カテゴリ→機械・車両を選び、当日の定期点検の確認・記録ができます')}
           </div>
         </div>`;
 };
@@ -12266,7 +12272,9 @@ window.collectWorkRecordUiFlagsFromForm_ = (prefix) => {
     showPesticide: matPestOn ? readOr('show_pesticide', !!baseline.showPesticide) : false,
     showFuel: readOr('show_fuel', !!baseline.showFuel),
     showRidgePolygon: readOr('show_ridge_polygon', !!baseline.showRidgePolygon),
-    showMaintenance: readOr('show_maintenance', !!baseline.showMaintenance)
+    showMaintenance: readOr('show_maintenance', !!baseline.showMaintenance),
+    showPreInspection: readOr('show_pre_inspection', !!baseline.showPreInspection),
+    showPeriodicInspection: readOr('show_periodic_inspection', !!baseline.showPeriodicInspection)
   };
 };
 
@@ -16360,7 +16368,7 @@ window.openWorkNameEditorModal = (mode, originalName, presetCat, presetCrop, opt
   document.body.appendChild(modal);
   window._workExtraFlagsTouched = (mode === 'edit');
   const bindFlagTouch = () => {
-    ['wn_edit_show_field', 'wn_edit_show_machine', 'wn_edit_show_fuel', 'wn_edit_show_ridge_polygon'].forEach(id => {
+    ['wn_edit_show_field', 'wn_edit_show_machine', 'wn_edit_show_fuel', 'wn_edit_show_ridge_polygon', 'wn_edit_show_maintenance', 'wn_edit_show_pre_inspection', 'wn_edit_show_periodic_inspection'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.addEventListener('change', () => { window._workExtraFlagsTouched = true; });
     });
@@ -16376,11 +16384,15 @@ window.openWorkNameEditorModal = (mode, originalName, presetCat, presetCrop, opt
     const fuel = document.getElementById('wn_edit_show_fuel');
     const ridge = document.getElementById('wn_edit_show_ridge_polygon');
     const maint = document.getElementById('wn_edit_show_maintenance');
+    const preInsp = document.getElementById('wn_edit_show_pre_inspection');
+    const perInsp = document.getElementById('wn_edit_show_periodic_inspection');
     if (f) f.checked = inferred.showField !== false;
     if (m) m.checked = !!inferred.showMachine;
     if (fuel) fuel.checked = !!inferred.showFuel;
     if (ridge) ridge.checked = !!inferred.showRidgePolygon;
     if (maint) maint.checked = !!inferred.showMaintenance;
+    if (preInsp) preInsp.checked = !!inferred.showPreInspection;
+    if (perInsp) perInsp.checked = !!inferred.showPeriodicInspection;
   };
   bindFlagTouch();
   window._syncWorkNameEditorFlagDefaults_ = syncFlagDefaults;
@@ -39402,7 +39414,7 @@ window.calcSingleWorkUiFlags_ = (workName, category, draftBase) => {
     : (pdlWorkMaster || []).find(x => x && String(x.name || '').trim() === wName);
   const inferred = (typeof window.inferWorkRecordUiFlags_ === 'function')
     ? window.inferWorkRecordUiFlags_(wName, cat)
-    : { showMachine: false, showMaterial: false, showPesticide: false, showField: false, showFuel: false, showRidgePolygon: false, showMaintenance: false };
+    : { showMachine: false, showMaterial: false, showPesticide: false, showField: false, showFuel: false, showRidgePolygon: false, showMaintenance: false, showPreInspection: false, showPeriodicInspection: false };
   const isMachineryCat = cat.includes('農機');
   const isDelivery = (typeof window.bulkWorkMemoIsDelivery_ === 'function')
     ? window.bulkWorkMemoIsDelivery_({ workName: wName, category: cat })
@@ -39429,6 +39441,8 @@ window.calcSingleWorkUiFlags_ = (workName, category, draftBase) => {
     showFuel: pick(w && w.showFuel, inferred.showFuel),
     showRidgePolygon: pick(w && w.showRidgePolygon, inferred.showRidgePolygon),
     showMaintenance: pick(w && w.showMaintenance, inferred.showMaintenance),
+    showPreInspection: pick(w && w.showPreInspection, inferred.showPreInspection),
+    showPeriodicInspection: pick(w && w.showPeriodicInspection, inferred.showPeriodicInspection),
     isPrep: false,
     isCleanup: false,
     isDelivery: !!isDelivery
@@ -39460,6 +39474,8 @@ window.getBulkWorkMemoUiFlags_ = (draft) => {
     if (cwFlags.showFuel) combined.showFuel = true;
     if (cwFlags.showRidgePolygon) combined.showRidgePolygon = true;
     if (cwFlags.showMaintenance) combined.showMaintenance = true;
+    if (cwFlags.showPreInspection) combined.showPreInspection = true;
+    if (cwFlags.showPeriodicInspection) combined.showPeriodicInspection = true;
     if (cwFlags.showField !== false && cwFlags.showField) combined.showField = true;
     if (cwFlags.showMaterial) combined.showMaterial = true;
     if (cwFlags.showTool) combined.showTool = true;
@@ -44719,6 +44735,12 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
     if (typeof window.buildBulkWorkMemoRidgePolygonHtml_ === 'function') {
       html += window.buildBulkWorkMemoRidgePolygonHtml_(d, uid);
     }
+    if (flags.showPreInspection && typeof window.buildBulkWorkMemoInspectionHtml_ === 'function') {
+      html += window.buildBulkWorkMemoInspectionHtml_(d, uid, '始動前点検');
+    }
+    if (flags.showPeriodicInspection && typeof window.buildBulkWorkMemoInspectionHtml_ === 'function') {
+      html += window.buildBulkWorkMemoInspectionHtml_(d, uid, '定期点検');
+    }
     // 運搬元・運搬先の入力欄は出さない
   }
   // メイン作業名未選択でも、メモやドラフトから同時作業が付いていれば表示
@@ -44726,6 +44748,396 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
     html += window.buildBulkConcurrentWorksHtml_(d, uid);
   }
   return html;
+};
+
+window._bulkInspectionRecordsCache = window._bulkInspectionRecordsCache || null;
+window._bulkInspectionRecordsLoading = false;
+
+window.findBulkWorkMemoDraftForInsp_ = (uid) => {
+  if (window._bulkWorkMemoManualAddDraft && window._bulkWorkMemoManualAddDraft._uid === uid) {
+    return window._bulkWorkMemoManualAddDraft;
+  }
+  return (window._bulkWorkMemoDrafts || []).find(x => x && x._uid === uid) || null;
+};
+
+window.getBulkInspMachineCategory_ = (m) => {
+  if (!m) return '';
+  return String(m.type || m.vehicleType || m.category || 'その他').trim() || 'その他';
+};
+
+window.ensureBulkInspectionRecordsLoaded_ = (uid) => {
+  if (Array.isArray(window._bulkInspectionRecordsCache) || window._bulkInspectionRecordsLoading) return;
+  if (typeof callGAS !== 'function') return;
+  window._bulkInspectionRecordsLoading = true;
+  callGAS('machine_loadInspectionRecords', { limit: 200 }).then(res => {
+    window._bulkInspectionRecordsCache = (res && Array.isArray(res.records)) ? res.records : [];
+  }).catch(() => {
+    window._bulkInspectionRecordsCache = [];
+  }).finally(() => {
+    window._bulkInspectionRecordsLoading = false;
+    if (uid && typeof window.rerenderBulkWorkMemoCardUi_ === 'function') {
+      try { window.rerenderBulkWorkMemoCardUi_(uid); } catch (e) { }
+    }
+  });
+};
+
+window.getBulkInspectionDraftState_ = (d, inspType) => {
+  if (!d) return { category: '', machineId: '', hourMeter: '', comment: '', items: {} };
+  const normType = String(inspType || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+  const key = normType === '定期点検' ? 'periodic' : 'pre';
+  if (!d._inspState || typeof d._inspState !== 'object') d._inspState = {};
+  if (!d._inspState[key]) {
+    let initCat = '';
+    let initMacId = '';
+    const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+    const used = Array.isArray(d.usedMachines) ? d.usedMachines : [];
+    if (used.length && used[0]) {
+      const m = macs.find(x => x && !x.isTool && (String(x.id) === String(used[0].id || '') || String(x.name) === String(used[0].name || '')));
+      if (m) {
+        initCat = window.getBulkInspMachineCategory_(m);
+        initMacId = String(m.id || '');
+      }
+    }
+    d._inspState[key] = {
+      category: initCat,
+      machineId: initMacId,
+      hourMeter: '',
+      comment: '',
+      items: {}
+    };
+  }
+  return d._inspState[key];
+};
+
+window.onBulkInspCategoryChange_ = (uid, inspType, category) => {
+  const d = window.findBulkWorkMemoDraftForInsp_(uid);
+  if (!d) return;
+  const st = window.getBulkInspectionDraftState_(d, inspType);
+  st.category = String(category || '').trim();
+  const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+  const filtered = macs.filter(m => m && !m.isTool && (!st.category || window.getBulkInspMachineCategory_(m) === st.category));
+  if (!filtered.some(m => String(m.id) === String(st.machineId))) {
+    st.machineId = filtered.length === 1 ? String(filtered[0].id || '') : '';
+  }
+  st.items = {};
+  if (typeof window.rerenderBulkWorkMemoCardUi_ === 'function') window.rerenderBulkWorkMemoCardUi_(uid);
+};
+
+window.onBulkInspMachineChange_ = (uid, inspType, machineId) => {
+  const d = window.findBulkWorkMemoDraftForInsp_(uid);
+  if (!d) return;
+  const st = window.getBulkInspectionDraftState_(d, inspType);
+  st.machineId = String(machineId || '').trim();
+  st.items = {};
+  if (typeof window.rerenderBulkWorkMemoCardUi_ === 'function') window.rerenderBulkWorkMemoCardUi_(uid);
+};
+
+window.getBulkInspItemsForMachine_ = (mac, inspType) => {
+  if (!mac) return [];
+  const normType = String(inspType || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+  const allInsps = (typeof pdlInspections !== 'undefined' && Array.isArray(pdlInspections))
+    ? pdlInspections
+    : (Array.isArray(window.pdlInspections) ? window.pdlInspections : []);
+  const macKeys = new Set([
+    String(mac.type || '').trim(),
+    String(mac.vehicleType || '').trim(),
+    String(mac.vehicleUse || '').trim(),
+    String(mac.category || '').trim()
+  ].filter(Boolean));
+  return allInsps.filter(i => {
+    if (!i) return false;
+    const itemType = String(i.inspectionType || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+    if (itemType !== normType) return false;
+    const targets = String(i.machineType || i.target || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+    return targets.some(t => macKeys.has(t) || t === '共通' || t === '全般');
+  }).sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
+};
+
+window.setBulkInspItemResult_ = (uid, inspType, itemKey, resultVal) => {
+  const d = window.findBulkWorkMemoDraftForInsp_(uid);
+  if (!d) return;
+  const st = window.getBulkInspectionDraftState_(d, inspType);
+  if (!st.items[itemKey]) st.items[itemKey] = { result: '/', maintAction: '', note: '' };
+  st.items[itemKey].result = resultVal;
+  if (typeof window.rerenderBulkWorkMemoCardUi_ === 'function') window.rerenderBulkWorkMemoCardUi_(uid);
+};
+
+window.setBulkInspAllOk_ = (uid, inspType) => {
+  const d = window.findBulkWorkMemoDraftForInsp_(uid);
+  if (!d) return;
+  const st = window.getBulkInspectionDraftState_(d, inspType);
+  const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+  const mac = macs.find(m => m && String(m.id) === String(st.machineId));
+  if (!mac) return;
+  const items = window.getBulkInspItemsForMachine_(mac, inspType);
+  items.forEach((item, idx) => {
+    const ik = String(item.id || ('idx_' + idx));
+    if (!st.items[ik]) st.items[ik] = { result: '☑', maintAction: '', note: '' };
+    else st.items[ik].result = '☑';
+  });
+  if (typeof window.rerenderBulkWorkMemoCardUi_ === 'function') window.rerenderBulkWorkMemoCardUi_(uid);
+};
+
+window.setBulkInspItemMaint_ = (uid, inspType, itemKey, maintVal) => {
+  const d = window.findBulkWorkMemoDraftForInsp_(uid);
+  if (!d) return;
+  const st = window.getBulkInspectionDraftState_(d, inspType);
+  if (!st.items[itemKey]) st.items[itemKey] = { result: '/', maintAction: '', note: '' };
+  st.items[itemKey].maintAction = String(maintVal || '');
+};
+
+window.setBulkInspItemNote_ = (uid, inspType, itemKey, noteVal) => {
+  const d = window.findBulkWorkMemoDraftForInsp_(uid);
+  if (!d) return;
+  const st = window.getBulkInspectionDraftState_(d, inspType);
+  if (!st.items[itemKey]) st.items[itemKey] = { result: '/', maintAction: '', note: '' };
+  st.items[itemKey].note = String(noteVal || '');
+};
+
+window.saveBulkWorkMemoInspection_ = async (uid, inspType) => {
+  const d = window.findBulkWorkMemoDraftForInsp_(uid);
+  if (!d) return;
+  const st = window.getBulkInspectionDraftState_(d, inspType);
+  if (!st.machineId) {
+    customAlert('機械・車両を選択してください');
+    return;
+  }
+  const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+  const mac = macs.find(m => m && String(m.id) === String(st.machineId));
+  const macName = (typeof window.labelWorkerMaintMachine_ === 'function' && mac)
+    ? window.labelWorkerMaintMachine_(mac)
+    : (mac ? (mac.name || st.machineId) : st.machineId);
+  const macType = mac ? window.getBulkInspMachineCategory_(mac) : st.category;
+  const targetDate = String(
+    window._bulkWorkMemoDate
+    || document.getElementById('bulk_work_memo_date')?.value
+    || (typeof window.getBulkWorkMemoTodayYmd_ === 'function' ? window.getBulkWorkMemoTodayYmd_() : '')
+  ).trim().slice(0, 10);
+  const workerVal = (typeof currentUser !== 'undefined' && currentUser)
+    ? currentUser
+    : (localStorage.getItem('passionMapUserName') || '');
+
+  const items = window.getBulkInspItemsForMachine_(mac, inspType);
+  const details = [];
+  let abnormalCount = 0;
+  let maintCount = 0;
+  items.forEach((item, idx) => {
+    const ik = String(item.id || ('idx_' + idx));
+    const entry = st.items[ik] || { result: '/', maintAction: '', note: '' };
+    const result = entry.result || '/';
+    const maintAction = String(entry.maintAction || '').trim();
+    const note = String(entry.note || '').trim();
+    if (result === '×') abnormalCount++;
+    if (maintAction) maintCount++;
+    details.push({
+      id: item.id || '',
+      category: String(item.inspectionCategory || '一般点検').trim() || '一般点検',
+      item: item.item || '',
+      result: result,
+      maintAction: maintAction,
+      note: note
+    });
+  });
+
+  let summary = '☑ 異常なし';
+  if (abnormalCount > 0 && maintCount > 0) {
+    summary = `⚠️ 異常あり(${abnormalCount}件)・🔧 整備済(${maintCount}件)`;
+  } else if (abnormalCount > 0) {
+    summary = `⚠️ 異常あり(${abnormalCount}件)`;
+  } else if (maintCount > 0) {
+    summary = `🔧 整備済(${maintCount}件)`;
+  }
+
+  const normType = String(inspType || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+  const payload = {
+    date: targetDate,
+    inspector: workerVal,
+    machineId: st.machineId,
+    machineName: macName,
+    machineType: macType,
+    inspectionType: normType,
+    hourMeter: (st.hourMeter !== '' && st.hourMeter != null) ? (Number(st.hourMeter) || st.hourMeter) : '',
+    summary: summary,
+    abnormalCount: abnormalCount,
+    maintCount: maintCount,
+    details: details,
+    comment: String(st.comment || '').trim()
+  };
+
+  const btnId = `bulk_insp_save_${normType === '定期点検' ? 'per' : 'pre'}_${uid}`;
+  const btn = document.getElementById(btnId);
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '保存中...';
+  }
+  try {
+    const res = await callGAS('machine_saveInspection', payload);
+    if (res && res.success === false) throw new Error(res.error || '保存に失敗しました');
+    if (!Array.isArray(window._bulkInspectionRecordsCache)) window._bulkInspectionRecordsCache = [];
+    window._bulkInspectionRecordsCache.unshift(Object.assign({}, payload, {
+      id: (res && res.id) || ('local_' + Date.now()),
+      createdAt: 'たった今'
+    }));
+    if (typeof window.showRecordSyncToast === 'function') {
+      window.showRecordSyncToast(`✅ ${macName} の${normType}を登録しました`, 'ok');
+    } else if (typeof showToast === 'function') {
+      showToast(`✅ ${normType}を登録しました`);
+    }
+    if (typeof window.rerenderBulkWorkMemoCardUi_ === 'function') window.rerenderBulkWorkMemoCardUi_(uid);
+  } catch (err) {
+    customAlert('点検記録の保存に失敗しました: ' + (err.message || err));
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = `💾 ${normType}を登録する`;
+    }
+  }
+};
+
+window.buildBulkWorkMemoInspectionHtml_ = (d, uid, inspType) => {
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const normType = String(inspType || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+  const isPeriodic = normType === '定期点検';
+  const icon = isPeriodic ? '🗓️' : '🌅';
+  const themeBg = isPeriodic ? '#FFF8E1' : '#E0F2F1';
+  const themeBorder = isPeriodic ? '#FFB74D' : '#80CBC4';
+  const themeText = isPeriodic ? '#E65100' : '#00695C';
+  const themeBtn = isPeriodic ? '#FB8C00' : '#00897B';
+  const typeArg = normType.replace(/'/g, "\\'");
+  const safeUid = String(uid || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+  const st = window.getBulkInspectionDraftState_(d, normType);
+  const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
+    ? pdlMachines.filter(m => m && !m.isTool)
+    : [];
+  const categories = Array.from(new Set(macs.map(m => window.getBulkInspMachineCategory_(m)).filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b, 'ja'));
+  const filteredMacs = macs.filter(m => !st.category || window.getBulkInspMachineCategory_(m) === st.category);
+
+  const catOpts = `<option value="">すべて (${macs.length}台)</option>` + categories.map(c =>
+    `<option value="${esc(c)}" ${c === st.category ? 'selected' : ''}>${esc(c)}</option>`
+  ).join('');
+
+  const macOpts = `<option value="">機械・車両を選択...</option>` + filteredMacs.map(m => {
+    const mLabel = (typeof window.labelWorkerMaintMachine_ === 'function')
+      ? window.labelWorkerMaintMachine_(m)
+      : (m.name || m.id);
+    const prefix = m.isVehicle ? '🛻 ' : '🚜 ';
+    return `<option value="${esc(m.id)}" ${String(m.id) === String(st.machineId) ? 'selected' : ''}>${prefix}${esc(mLabel)}</option>`;
+  }).join('');
+
+  window.ensureBulkInspectionRecordsLoaded_(uid);
+
+  const targetDate = String(
+    window._bulkWorkMemoDate
+    || document.getElementById('bulk_work_memo_date')?.value
+    || (typeof window.getBulkWorkMemoTodayYmd_ === 'function' ? window.getBulkWorkMemoTodayYmd_() : '')
+  ).trim().slice(0, 10);
+
+  let statusAndFormHtml = '';
+  if (!st.machineId) {
+    statusAndFormHtml = `<div style="font-size:12px; color:#666; background:#fff; border:1px dashed ${themeBorder}; border-radius:8px; padding:10px; text-align:center;">
+      機械カテゴリで絞り込み、機械・車両を選ぶと当日の${esc(normType)}状況を確認・記録できます。
+    </div>`;
+  } else if (!Array.isArray(window._bulkInspectionRecordsCache)) {
+    statusAndFormHtml = `<div style="font-size:12px; color:${themeText}; background:#fff; border:1px solid ${themeBorder}; border-radius:8px; padding:10px; text-align:center;">
+      ⏳ ${esc(targetDate)} の${esc(normType)}記録を確認しています…
+    </div>`;
+  } else {
+    const existing = window._bulkInspectionRecordsCache.find(r => {
+      if (!r) return false;
+      const rType = String(r.inspectionType || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+      return String(r.machineId || '') === String(st.machineId)
+        && String(r.date || '').slice(0, 10) === targetDate
+        && rType === normType;
+    });
+
+    if (existing) {
+      const meterStr = (existing.hourMeter !== '' && existing.hourMeter != null) ? ` ／ ⏱️ ${esc(existing.hourMeter)}` : '';
+      const commentStr = existing.comment ? `<div style="font-size:11px; color:#555; margin-top:4px;">メモ: ${esc(existing.comment)}</div>` : '';
+      statusAndFormHtml = `<div style="background:#E8F5E9; border:2px solid #66BB6A; border-radius:8px; padding:10px 12px;">
+        <div style="font-weight:bold; font-size:13px; color:#2E7D32;">✅ ${esc(targetDate)} の${esc(normType)}は登録済みです</div>
+        <div style="font-size:12px; color:#1B5E20; margin-top:4px;">${esc(existing.summary || '☑ 異常なし')}${meterStr}</div>
+        <div style="font-size:11px; color:#555; margin-top:2px;">点検者: ${esc(existing.inspector || '—')}</div>
+        ${commentStr}
+      </div>`;
+    } else {
+      const selectedMac = macs.find(m => String(m.id) === String(st.machineId));
+      const items = window.getBulkInspItemsForMachine_(selectedMac, normType);
+      const refMeter = (typeof window.getWorkerInspectionCurrentMeter_ === 'function' && selectedMac)
+        ? window.getWorkerInspectionCurrentMeter_(st.machineId, selectedMac)
+        : null;
+      const meterPh = refMeter !== null ? `前回: ${refMeter}` : '例: 1250.5';
+
+      let itemsHtml = '';
+      if (!items.length) {
+        itemsHtml = `<div style="font-size:12px; color:#E65100; background:#FFF3E0; border:1px solid #FFE0B2; border-radius:6px; padding:8px; margin-bottom:8px;">
+          ⚠️ この機械カテゴリの${esc(normType)}項目がマスタに未登録です（アワーメーター・メモのみで登録できます）。
+        </div>`;
+      } else {
+        itemsHtml = `<div style="display:flex; justify-content:flex-end; margin-bottom:6px;">
+          <button type="button" onclick="setBulkInspAllOk_('${safeUid}', '${typeArg}')" style="background:#2E7D32; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer;">✅ すべて異常なし</button>
+        </div>`;
+        itemsHtml += items.map((item, idx) => {
+          const ik = String(item.id || ('idx_' + idx));
+          const safeIk = ik.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const entry = st.items[ik] || { result: '/', maintAction: '', note: '' };
+          const curRes = entry.result || '/';
+          const btnStyle = (active, bg) => active
+            ? `background:${bg}; color:#fff;`
+            : `background:#f5f5f5; color:#666;`;
+          const maintOpts = [
+            ['', '整備: なし'],
+            ['×交換', '× 交換'],
+            ['A調整', 'A 調整'],
+            ['C清掃', 'C 清掃'],
+            ['T締付け', 'T 締付け'],
+            ['L給油(水)', 'L 給油（水）'],
+            ['△修理', '△ 修理']
+          ].map(([v, l]) => `<option value="${esc(v)}" ${entry.maintAction === v ? 'selected' : ''}>${esc(l)}</option>`).join('');
+          return `<div style="background:#fff; border:1px solid #e0e0e0; border-radius:8px; padding:8px 10px; margin-bottom:6px;">
+            <div style="font-weight:bold; font-size:12px; color:#333; margin-bottom:4px;">${esc(item.item || '')}</div>
+            ${item.note ? `<div style="font-size:10px; color:#777; margin-bottom:4px;">基準: ${esc(item.note)}</div>` : ''}
+            <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+              <div style="display:inline-flex; border-radius:6px; overflow:hidden; border:1px solid #ccc;">
+                <button type="button" onclick="setBulkInspItemResult_('${safeUid}', '${typeArg}', '${safeIk}', '/')" style="border:none; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer; ${btnStyle(curRes === '/', '#757575')}">／</button>
+                <button type="button" onclick="setBulkInspItemResult_('${safeUid}', '${typeArg}', '${safeIk}', '☑')" style="border:none; border-left:1px solid #ccc; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer; ${btnStyle(curRes === '☑', '#2e7d32')}">☑ 異常なし</button>
+                <button type="button" onclick="setBulkInspItemResult_('${safeUid}', '${typeArg}', '${safeIk}', '×')" style="border:none; border-left:1px solid #ccc; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer; ${btnStyle(curRes === '×', '#d32f2f')}">× 異常あり</button>
+              </div>
+              <select onchange="setBulkInspItemMaint_('${safeUid}', '${typeArg}', '${safeIk}', this.value)" style="flex:1; min-width:110px; padding:5px 6px; border:1px solid #ccc; border-radius:6px; font-size:11px; background:#fff;">${maintOpts}</select>
+            </div>
+            <input type="text" value="${esc(entry.note || '')}" oninput="setBulkInspItemNote_('${safeUid}', '${typeArg}', '${safeIk}', this.value)" placeholder="特記事項（任意）" style="width:100%; margin-top:5px; padding:4px 8px; border:1px solid #e0e0e0; border-radius:4px; font-size:11px; box-sizing:border-box;">
+          </div>`;
+        }).join('');
+      }
+
+      const saveBtnId = `bulk_insp_save_${isPeriodic ? 'per' : 'pre'}_${uid}`;
+      statusAndFormHtml = `<div style="background:#fff; border:1px solid ${themeBorder}; border-radius:8px; padding:10px;">
+        <div style="font-size:12px; font-weight:bold; color:#C62828; margin-bottom:8px;">⚠️ ${esc(targetDate)} の${esc(normType)}は未登録です（このまま下で記録できます）</div>
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+          <label style="font-size:11px; font-weight:bold; color:#555; white-space:nowrap;">⏱️ メーター</label>
+          <input type="number" step="0.1" value="${esc(st.hourMeter || '')}" oninput="var d=window.findBulkWorkMemoDraftForInsp_('${safeUid}'); if(d){ window.getBulkInspectionDraftState_(d,'${typeArg}').hourMeter=this.value; }" placeholder="${esc(meterPh)}" style="flex:1; padding:6px 8px; border:1px solid #ccc; border-radius:6px; font-size:12px; min-width:0;">
+        </div>
+        ${itemsHtml}
+        <input type="text" value="${esc(st.comment || '')}" oninput="var d=window.findBulkWorkMemoDraftForInsp_('${safeUid}'); if(d){ window.getBulkInspectionDraftState_(d,'${typeArg}').comment=this.value; }" placeholder="総合メモ（任意）" style="width:100%; margin:6px 0 8px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; font-size:12px; box-sizing:border-box;">
+        <button type="button" id="${esc(saveBtnId)}" onclick="saveBulkWorkMemoInspection_('${safeUid}', '${typeArg}')" style="width:100%; background:${themeBtn}; color:#fff; border:none; border-radius:8px; padding:10px; font-weight:bold; font-size:13px; cursor:pointer;">💾 ${esc(normType)}を登録する</button>
+      </div>`;
+    }
+  }
+
+  return `<div style="margin:10px 0 8px; padding:10px 12px; background:${themeBg}; border:1px solid ${themeBorder}; border-radius:10px;">
+    <div style="font-size:12px; font-weight:bold; color:${themeText}; margin-bottom:8px;">${icon} ${esc(normType)}（対象日: ${esc(targetDate || '本日')}）</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px;">
+      <div>
+        <div style="font-size:10px; font-weight:bold; color:#555; margin-bottom:3px;">1. 機械カテゴリ</div>
+        <select onchange="onBulkInspCategoryChange_('${safeUid}', '${typeArg}', this.value)" style="width:100%; padding:7px 8px; border:1px solid ${themeBorder}; border-radius:6px; font-size:12px; background:#fff; box-sizing:border-box;">${catOpts}</select>
+      </div>
+      <div>
+        <div style="font-size:10px; font-weight:bold; color:#555; margin-bottom:3px;">2. 機械・車両</div>
+        <select onchange="onBulkInspMachineChange_('${safeUid}', '${typeArg}', this.value)" style="width:100%; padding:7px 8px; border:1px solid ${themeBorder}; border-radius:6px; font-size:12px; background:#fff; box-sizing:border-box;">${macOpts}</select>
+      </div>
+    </div>
+    ${statusAndFormHtml}
+  </div>`;
 };
 
 window.buildBulkWorkMemoCommentForSave_ = (draft) => {
