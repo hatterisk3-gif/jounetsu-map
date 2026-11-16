@@ -1360,6 +1360,8 @@ function initMap() {
     gestureHandling: 'greedy',
     disableDefaultUI: true,
     zoomControl: false,
+    streetViewControl: true,
+    cameraControl: true,
     keyboardShortcuts: false,
     // 店舗表示は map-filter.js 側で制御（ここでの固定非表示はしない）
     renderingType: (google.maps.RenderingType && google.maps.RenderingType.RASTER) || 'RASTER'
@@ -1853,7 +1855,6 @@ function showPopup(p, latLng) {
 
   // 圃場の場合のみ農地CAD・衛星写真等のボタンを追加
   let cadBtn = '';
-  let satBtn = '';
   let cpBtn = '';
   let manureBtn = '';
   if (!p.isMarker && p.coords && p.coords.length >= 3) {
@@ -1866,28 +1867,17 @@ function showPopup(p, latLng) {
               border:none; border-radius:6px; font-weight:bold; font-size:13px;
               cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.3);">🚜 農地CADを開く</button>
           </div>`;
-    satBtn = `<div style="margin-top:6px; text-align:center;">
-            <button onclick="openFieldSatForField('${p.id}')"
-              style="width:100%; padding:8px; background:#1B5E20; color:white;
-              border:none; border-radius:6px; font-weight:bold; font-size:13px;
-              cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.3);">🛰️ この圃場の衛星写真を見る</button>
-          </div>`;
     cpBtn = `<div style="margin-top:6px; text-align:center;">
             <button onclick="startCultivationPlanForField('${p.id}')"
               style="width:100%; padding:8px; background:#4CAF50; color:white;
               border:none; border-radius:6px; font-weight:bold; font-size:13px;
               cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.3);">🌱 この圃場で栽培計画</button>
           </div>`;
-    const hasCustomMapUrl = !!String(p.googleMapsUrl || '').trim();
     manureBtn = `<div style="margin-top:6px; text-align:center;">
             <button onclick="sharePigManureRequestFromSchedule('${p.id}')"
               style="width:100%; padding:8px; background:#8D6E63; color:white;
               border:none; border-radius:6px; font-weight:bold; font-size:13px;
               cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.3);">🐷 豚糞散布依頼</button>
-            <button onclick="editFieldGoogleMapsUrlFromSchedule('${p.id}')"
-              style="width:100%; margin-top:4px; padding:5px 8px; background:${hasCustomMapUrl ? '#EFEBE9' : '#FFF8E1'}; color:#5D4037;
-              border:1px solid ${hasCustomMapUrl ? '#BCAAA4' : '#FFD54F'}; border-radius:6px; font-weight:bold; font-size:11px;
-              cursor:pointer;">${hasCustomMapUrl ? '✅ 共有マップURL変更' : '🔗 共有マップURL未設定（登録）'}</button>
           </div>`;
   }
 
@@ -1902,7 +1892,6 @@ function showPopup(p, latLng) {
                    ${cadBtn}
                    ${manureBtn}
                    ${cpBtn}
-                   ${satBtn}
                  </div>`;
   infoWindow.setContent(h);
   infoWindow.setPosition(latLng);
@@ -2101,8 +2090,7 @@ window.editFieldGoogleMapsUrlFromSchedule = function (fieldId) {
             style="flex:1; padding:9px 10px; border:1px solid #ccc; border-radius:8px; font-size:13px; min-width:0;">
           <button type="button" onclick="saveScheduleMapUrlModal_('${escId}')" style="padding:9px 14px; border:none; border-radius:8px; background:#5D4037; color:#fff; font-weight:bold; font-size:13px; cursor:pointer; white-space:nowrap;">保存</button>
         </div>
-        <div style="display:flex; gap:8px; border-top:1px solid #eee; padding-top:10px;">
-          <button type="button" onclick="closeScheduleMapUrlModal_(); sharePigManureRequestFromSchedule('${escId}');" style="flex:1; padding:10px; border:none; border-radius:8px; background:#8D6E63; color:#fff; font-weight:bold; font-size:13px; cursor:pointer;">🐷 この内容で豚糞散布依頼をコピー</button>
+        <div style="display:flex; justify-content:flex-end; gap:8px; border-top:1px solid #eee; padding-top:10px;">
           <button type="button" onclick="saveScheduleMapUrlModal_('${escId}', '')" style="padding:10px 12px; border:1px solid #ccc; border-radius:8px; background:#fff; color:#666; font-weight:bold; font-size:12px; cursor:pointer;">クリア</button>
         </div>
       </div>

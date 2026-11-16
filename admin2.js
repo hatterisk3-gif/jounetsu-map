@@ -1165,9 +1165,9 @@ function initMap() {
         gestureHandling: 'greedy',
         mapTypeControl: false,
         fullscreenControl: false,
-        streetViewControl: false,
+        streetViewControl: true,
         rotateControl: false,
-        cameraControl: false,
+        cameraControl: true,
         zoomControl: false,
         styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }]
     });

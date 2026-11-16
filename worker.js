@@ -2822,7 +2822,7 @@ function initMap() {
     zoomLevel = savedZoom ? parseInt(savedZoom) : zoomLevel;
   }
 
-  map = new google.maps.Map(document.getElementById('map'), { center: centerPos, zoom: zoomLevel, maxZoom: 45, mapTypeId: 'hybrid', gestureHandling: 'greedy', mapTypeControl: false, fullscreenControl: false, streetViewControl: false, rotateControl: false, cameraControl: false, zoomControl: false, styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }] });
+  map = new google.maps.Map(document.getElementById('map'), { center: centerPos, zoom: zoomLevel, maxZoom: 45, mapTypeId: 'hybrid', gestureHandling: 'greedy', mapTypeControl: false, fullscreenControl: false, streetViewControl: true, rotateControl: false, cameraControl: true, zoomControl: false, styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }] });
 
   if (typeof window.setupStretchedZoom === 'function') {
     window.setupStretchedZoom(map, { maxZoom: 45 });

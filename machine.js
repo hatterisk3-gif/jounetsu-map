@@ -82,9 +82,9 @@ function initMap() {
         disableDefaultUI: false,
         mapTypeControl: false,
         fullscreenControl: false,
-        streetViewControl: false,
+        streetViewControl: true,
         rotateControl: false,
-        cameraControl: false,
+        cameraControl: true,
         zoomControl: false
     });
 

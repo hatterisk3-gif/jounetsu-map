@@ -489,6 +489,8 @@ function createMap() {
     tilt: 0,
     disableDefaultUI: true,
     zoomControl: true,
+    streetViewControl: true,
+    cameraControl: true,
     gestureHandling: "greedy"
   });
   if (typeof window.setupStretchedZoom === 'function') {

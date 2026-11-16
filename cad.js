@@ -6191,15 +6191,11 @@ window.cadRebuildFrontBaselineFromEdges_ = (ring) => {
     entries.forEach((start) => {
         if (used[start.ei]) return;
         used[start.ei] = true;
+        const sameGroup = window.cadCollectSameFacingEdges(ring, start.ei);
         const group = [start];
         entries.forEach((other) => {
             if (used[other.ei]) return;
-            const diff = window.cadBearingDiff(start.info.bearing, other.info.bearing);
-            if (Math.min(diff, Math.abs(180 - diff)) > 12) return;
-            if (start.inward != null && other.inward != null && window.cadBearingDiff(start.inward, other.inward) > 35) return;
-            const mid = turf.midpoint(turf.point(other.info.a), turf.point(other.info.b)).geometry.coordinates;
-            const off = window.cadMetersAlongBearing_(start.info.a, mid, start.info.bearing + 90);
-            if (Math.abs(off) > 0.85) return;
+            if (!sameGroup.includes(other.ei)) return;
             used[other.ei] = true;
             group.push(other);
         });
@@ -6240,7 +6236,7 @@ window.cadApplyFrontEdge = (edgeIndex) => {
     const ring = window.cadGetFieldRingCoords();
     const info = ring ? window.cadRingEdgeInfo(ring, edgeIndex) : null;
     if (!info) return false;
-    const group = window.cadCollectCollinearFrontEdges_(ring, edgeIndex);
+    const group = window.cadCollectSameFacingEdges(ring, edgeIndex);
     const current = Array.isArray(window.cadFrontEdgeIndexes) ? window.cadFrontEdgeIndexes.slice() : [];
     const allAlreadySelected = group.every((idx) => current.includes(idx));
 

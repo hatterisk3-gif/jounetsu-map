@@ -211,6 +211,8 @@ function initMap() {
         mapTypeId: 'satellite',
         disableDefaultUI: true,
         zoomControl: false,
+        streetViewControl: true,
+        cameraControl: true,
         gestureHandling: 'greedy'
     });
 

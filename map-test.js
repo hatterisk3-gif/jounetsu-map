@@ -535,6 +535,8 @@ function initMap() {
         disableDefaultUI: true,
         zoomControl: true,
         zoomControlOptions: { position: google.maps.ControlPosition.RIGHT_BOTTOM },
+        streetViewControl: true,
+        cameraControl: true,
         gestureHandling: 'greedy',
         scrollwheel: true,
         draggable: true,

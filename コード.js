@@ -8273,10 +8273,12 @@ function savePolygonsBatch(paramsList) {
       params.toukiId || "",      // L列: 登記ID
       params.parentId || "",     // M列: 親ID
       "", "", "", "", "", "", "", // N〜T 予備
-      params.soilType || ""      // U列: 土質
+      params.soilType || "",     // U列: 土質
+      String(params.googleMapsUrl || '').trim() // V列: 共有GoogleマップURL
     ]);
   }
   ensureFieldSoilTypeHeader_(sheet);
+  ensureFieldGoogleMapsUrlHeader_(sheet);
 
   if (rowsToAppend.length > 0) {
     sheet.getRange(sheet.getLastRow() + 1, 1, rowsToAppend.length, rowsToAppend[0].length).setValues(rowsToAppend);
@@ -8358,6 +8360,7 @@ function savePolygon(params) {
     // 【圃場シートの列構成（画像に合わせて完全に修正）】
     // A:ID, B:圃場の名前, C:所属拠点名, D:圃場条件, E:圃場面積, F:座標, G:色/アイコン, H:登録日時, I:登録者, J:システム用データ(履歴), K:稼働状況, L:登記ID, M:親ID
     ensureFieldSoilTypeHeader_(sheet);
+    ensureFieldGoogleMapsUrlHeader_(sheet);
     sheet.appendRow([
       newId,
       params.name || "",         // B列: 圃場の名前
@@ -8379,7 +8382,8 @@ function savePolygon(params) {
       "",                        // R列: 生産管理
       "",                        // S列: 圃場メモ
       "",                        // T列: 排水溝
-      params.soilType || ""      // U列: 土質（粘土質・砂質・壌質）
+      params.soilType || "",     // U列: 土質（粘土質・砂質・壌質）
+      String(params.googleMapsUrl || '').trim() // V列: 共有GoogleマップURL
     ]);
   }
 
@@ -8406,6 +8410,7 @@ function savePolygonBatch(params) {
   if (!params.polygons || params.polygons.length === 0) return [];
 
   ensureFieldSoilTypeHeader_(sheet);
+  ensureFieldGoogleMapsUrlHeader_(sheet);
   const rows = params.polygons.map(p => {
     const newId = Utilities.getUuid();
     newIds.push(newId);
@@ -8427,7 +8432,8 @@ function savePolygonBatch(params) {
       p.ridgeWidth || "",
       p.uneSimData || "",
       "", "", "", "",
-      p.soilType || ""
+      p.soilType || "",
+      String(p.googleMapsUrl || '').trim()
     ];
   });
 

@@ -878,6 +878,18 @@
             </select>
           </div>
         </div>
+        <div style="margin-bottom:10px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <label class="form-label" for="fieldGoogleMapsUrl" style="margin:0;">共有GoogleマップURL（任意）</label>
+            <div style="display:flex; gap:4px;">
+              <button type="button" id="fieldMapOpenBtn" onclick="openDrawingFieldInGoogleMaps_()"
+                style="background:#1565C0; color:#fff; border:none; border-radius:4px; padding:3px 7px; font-size:11px; font-weight:bold; cursor:pointer;">🗺️ Googleマップ</button>
+              <button type="button" id="fieldMapPasteBtn" onclick="pasteDrawingFieldGoogleMapsUrl_()"
+                style="background:#2E7D32; color:#fff; border:none; border-radius:4px; padding:3px 7px; font-size:11px; font-weight:bold; cursor:pointer;">📋 貼付</button>
+            </div>
+          </div>
+          <input type="url" id="fieldGoogleMapsUrl" class="form-input" placeholder="https://maps.app.goo.gl/..." style="margin-bottom:0;">
+        </div>
         <div style="display:flex; gap:8px;">
           <button id="backToStep1Btn" type="button"
             style="background:#eceff1; color:#37474F; flex:1; border:1px solid #cfd8dc; border-radius:8px; font-weight:bold; padding:11px;">形を直す</button>
@@ -925,18 +937,18 @@
   <script src="map-loading.js?v=1794700000000" defer></script>
 
   <script
-    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=ja&v=weekly"
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjTdBJUXSQOk3fxGk0ESoKErCwdPg0MQ8&libraries=drawing,geometry,places&language=en&v=weekly"
     async defer></script>
 
   <script src="api-client.js?v=1788600000116" defer></script>
   <script src="location-pin.js?v=1788600000301" defer></script>
   <script src="map-filter.js?v=1794700000000" defer></script>
-  <script src="admin.js?v=1794735000001" defer></script>
+  <script src="admin.js?v=1794818000000" defer></script>
   <script src="admin_cost.js?v=1785489000008" defer></script>
   <script src="admin_crop_work.js?v=1787570400000" defer></script>
-  <script src="release-notes.js?v=1788600000364" defer></script>
+  <script src="release-notes.js?v=1788600000365" defer></script>
   <script src="tracking.js?v=1788600000324" defer></script>
-  <script src="cad.js?v=1788600000315" defer></script>
+  <script src="cad.js?v=1788600000316" defer></script>
   <script type="importmap">
   {
     "imports": {

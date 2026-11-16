@@ -153,6 +153,8 @@ window.initMap = function initMap() {
     mapTypeId: "hybrid",
     tilt: 0,
     disableDefaultUI: true,
+    streetViewControl: true,
+    cameraControl: true,
     gestureHandling: "greedy"
   });
   if (typeof window.setupStretchedZoom === 'function') {
