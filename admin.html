@@ -34,32 +34,32 @@
 
 
   <button id="btnCurrentLocation"
-    style="position: fixed; bottom: 112px; right: 10px; width: 50px; height: 50px; background: white; color: #4285F4; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;"
+    style="position: fixed; bottom: 112px; right: 68px; width: 50px; height: 50px; background: white; color: #4285F4; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;"
     title="現在地" aria-label="現在地">
     📍
   </button>
 
   <button id="btnToggleViewpoint" type="button" onclick="cycleNextViewpoint()"
-    style="position: fixed; bottom: 40px; right: 10px; width: 50px; height: 50px; background: white; color: #6A1B9A; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;"
+    style="position: fixed; bottom: 40px; right: 68px; width: 50px; height: 50px; background: white; color: #6A1B9A; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;"
     title="視野切替（拠点地点）" aria-label="視野切替（拠点地点）">
     🔭
   </button>
 
   <!-- 🔭 視野切替トースト表示 -->
   <div id="viewpointToast"
-    style="display:none; position:fixed; bottom:46px; right:70px; background:rgba(33,33,33,0.92); color:#fff; padding:8px 14px; border-radius:20px; font-size:13px; font-weight:bold; z-index:2100; box-shadow:0 4px 16px rgba(0,0,0,0.3); pointer-events:none; transition:opacity 0.25s ease, transform 0.25s ease; transform:translateY(8px); opacity:0; align-items:center; gap:8px; border:1px solid rgba(255,255,255,0.15);">
+    style="display:none; position:fixed; bottom:46px; right:126px; background:rgba(33,33,33,0.92); color:#fff; padding:8px 14px; border-radius:20px; font-size:13px; font-weight:bold; z-index:2100; box-shadow:0 4px 16px rgba(0,0,0,0.3); pointer-events:none; transition:opacity 0.25s ease, transform 0.25s ease; transform:translateY(8px); opacity:0; align-items:center; gap:8px; border:1px solid rgba(255,255,255,0.15);">
     <span style="font-size:15px;">🔭</span>
     <span id="viewpointToastText">視野切替</span>
   </div>
 
   <button id="btnAdminMaster" type="button" onclick="openMasterModal()"
-    style="position: fixed; bottom: 184px; right: 10px; width: 50px; height: 50px; background: white; color: #1565C0; border: none; border-radius: 50%; font-weight: bold; font-size: 22px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0;"
+    style="position: fixed; bottom: 184px; right: 68px; width: 50px; height: 50px; background: white; color: #1565C0; border: none; border-radius: 50%; font-weight: bold; font-size: 22px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0;"
     title="マスタ" aria-label="マスタ">
     ⚙️
   </button>
 
   <button id="btnAdminMapUrlBatch" type="button" onclick="openMapUrlBatchModal()"
-    style="position: fixed; bottom: 256px; right: 10px; width: 50px; height: 50px; background: white; color: #5D4037; border: none; border-radius: 50%; font-weight: bold; font-size: 22px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0;"
+    style="position: fixed; bottom: 256px; right: 68px; width: 50px; height: 50px; background: white; color: #5D4037; border: none; border-radius: 50%; font-weight: bold; font-size: 22px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0;"
     title="共有GoogleマップURL一括登録" aria-label="共有GoogleマップURL一括登録">
     🔗
   </button>
@@ -946,7 +946,7 @@
   <script src="admin.js?v=1794818000000" defer></script>
   <script src="admin_cost.js?v=1785489000008" defer></script>
   <script src="admin_crop_work.js?v=1787570400000" defer></script>
-  <script src="release-notes.js?v=1788600000365" defer></script>
+  <script src="release-notes.js?v=1788600000366" defer></script>
   <script src="tracking.js?v=1788600000324" defer></script>
   <script src="cad.js?v=1788600000316" defer></script>
   <script type="importmap">

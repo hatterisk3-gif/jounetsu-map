@@ -1192,7 +1192,7 @@ select.snr-input { appearance:auto; }
 
 .schedule-side-fabs {
   position: fixed;
-  right: 17px;
+  right: 68px;
   bottom: calc(80px + env(safe-area-inset-bottom, 0px));
   z-index: 3500;
   display: flex;
@@ -1838,7 +1838,7 @@ select.snr-input { appearance:auto; }
 /* ===== DUMP ツリー／ガント FAB（情熱MAP寄り） ===== */
 .dump-fab-root {
   position: fixed;
-  right: 14px;
+  right: 68px;
   bottom: calc(72px + env(safe-area-inset-bottom, 0px));
   z-index: 3500;
   display: flex;

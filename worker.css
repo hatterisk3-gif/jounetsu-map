@@ -642,7 +642,7 @@ body.bulk-work-memo-map-picking .worker-top-bar {
 .map-action-bar {
   position: fixed;
   left: auto;
-  right: 10px;
+  right: 68px;
   bottom: max(12px, env(safe-area-inset-bottom, 0px));
   z-index: 2000;
   display: flex;
