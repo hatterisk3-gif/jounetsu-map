@@ -12242,6 +12242,140 @@ window.onFuncChangeEdit = () => { const val = document.getElementById('rnFunc').
         window.closeViewpointManageModal();
     };
 
+    // ====================================================
+    // 🔭 視野切替（拠点別 Viewpoint サイクル移動）
+    // ====================================================
+    window._currentViewpointIndex = -1;
+    let _viewpointToastTimer = null;
+
+    window.showViewpointToast = function (name, curIdx, totalCount, locName) {
+        let toast = document.getElementById('viewpointToast');
+        let textEl = document.getElementById('viewpointToastText');
+
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'viewpointToast';
+            toast.style.cssText = 'display:none; position:fixed; bottom:100px; right:72px; background:rgba(33,33,33,0.92); color:#fff; padding:8px 14px; border-radius:20px; font-size:13px; font-weight:bold; z-index:2100; box-shadow:0 4px 16px rgba(0,0,0,0.3); pointer-events:none; transition:opacity 0.25s ease, transform 0.25s ease; transform:translateY(8px); opacity:0; align-items:center; gap:8px; border:1px solid rgba(255,255,255,0.15);';
+            toast.innerHTML = '<span style="font-size:15px;">🔭</span><span id="viewpointToastText">視野切替</span>';
+            document.body.appendChild(toast);
+            textEl = document.getElementById('viewpointToastText');
+        }
+
+        if (textEl) {
+            const locBadge = locName ? `[${locName}] ` : '';
+            textEl.textContent = `${locBadge}${name} (${curIdx}/${totalCount})`;
+        }
+
+        toast.style.display = 'flex';
+        void toast.offsetWidth;
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateY(0)';
+
+        if (_viewpointToastTimer) clearTimeout(_viewpointToastTimer);
+        _viewpointToastTimer = setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateY(8px)';
+            setTimeout(() => {
+                if (toast.style.opacity === '0') toast.style.display = 'none';
+            }, 250);
+        }, 2500);
+    };
+
+    window.cycleNextViewpoint = function () {
+        if (typeof map === 'undefined' || !map || typeof map.setCenter !== 'function') {
+            if (typeof customAlert === 'function') customAlert('地図が準備できていません');
+            return;
+        }
+
+        const trimmedUserLoc = String((typeof vpResolveRawAccountLoc_ === 'function' ? vpResolveRawAccountLoc_() : localStorage.getItem('passionMapUserLocation')) || '').trim();
+
+        let allVps = window.pdlViewpoints || [];
+        if ((!allVps || !allVps.length) && typeof localStorage !== 'undefined') {
+            try {
+                const aCache = JSON.parse(localStorage.getItem('pMapAdminInitData') || '{}');
+                if (aCache && aCache.pdl && Array.isArray(aCache.pdl.viewpoints)) {
+                    allVps = aCache.pdl.viewpoints;
+                    window.pdlViewpoints = allVps;
+                }
+            } catch (e) { }
+            if (!allVps || !allVps.length) {
+                try {
+                    const initCache = JSON.parse(localStorage.getItem('passionMapInitData') || '{}');
+                    if (initCache && initCache.pdl && Array.isArray(initCache.pdl.viewpoints)) {
+                        allVps = initCache.pdl.viewpoints;
+                        window.pdlViewpoints = allVps;
+                    }
+                } catch (e) { }
+            }
+        }
+
+        if ((!allVps || !allVps.length) && typeof callGAS === 'function' && !window._vpFetchingForCycle) {
+            window._vpFetchingForCycle = true;
+            callGAS('getViewpoints', {}, 1, { timeoutMs: 15000 }).then(res => {
+                window._vpFetchingForCycle = false;
+                if (res && res.success && Array.isArray(res.viewpoints) && res.viewpoints.length) {
+                    window.pdlViewpoints = res.viewpoints;
+                    window.cycleNextViewpoint();
+                } else if (typeof customAlert === 'function') {
+                    customAlert('視野地点がまだ登録されていません。\n「＋」メニュー ＞「🔭 視野地点登録」から登録してください。');
+                }
+            }).catch(() => {
+                window._vpFetchingForCycle = false;
+                if (typeof customAlert === 'function') customAlert('視野地点の取得に失敗しました');
+            });
+            return;
+        }
+
+        if (!allVps || !allVps.length) {
+            if (typeof customAlert === 'function') {
+                customAlert('視野地点がまだ登録されていません。\n「＋」メニュー ＞「🔭 視野地点登録」から登録してください。');
+            }
+            return;
+        }
+
+        let targetVps = [];
+        if (trimmedUserLoc) {
+            const userTokens = trimmedUserLoc.split(/[・,、\/｜|]+/).map(s => String(s || '').trim()).filter(Boolean);
+            targetVps = allVps.filter(v => {
+                const vLoc = String(v.location || '').trim();
+                return vLoc === trimmedUserLoc || userTokens.includes(vLoc);
+            });
+            if (!targetVps.length && userTokens.length) {
+                targetVps = allVps.filter(v => {
+                    const vLoc = String(v.location || '').trim();
+                    if (!vLoc) return false;
+                    return userTokens.some(ul => vLoc.indexOf(ul) >= 0 || ul.indexOf(vLoc) >= 0);
+                });
+            }
+            if (!targetVps.length) {
+                targetVps = allVps.filter(v => !String(v.location || '').trim());
+            }
+        }
+
+        if (!targetVps.length) {
+            targetVps = allVps;
+        }
+
+        if (!targetVps.length) return;
+
+        window._currentViewpointIndex = ((window._currentViewpointIndex != null ? window._currentViewpointIndex : -1) + 1) % targetVps.length;
+        const target = targetVps[window._currentViewpointIndex];
+
+        const lat = Number(target.lat);
+        const lng = Number(target.lng);
+        const zoom = Number(target.zoom) || 16;
+
+        if (isNaN(lat) || isNaN(lng)) {
+            if (typeof customAlert === 'function') customAlert('視野地点の座標が不正です');
+            return;
+        }
+
+        map.setCenter({ lat: lat, lng: lng });
+        if (zoom) map.setZoom(zoom);
+
+        window.showViewpointToast(target.name, window._currentViewpointIndex + 1, targetVps.length, target.location);
+    };
+
     // --- 「進む」「戻る」の処理も修正 ---
     let undoBtn = document.getElementById('undoDrawBtn');
     if (undoBtn) {
@@ -12520,7 +12654,7 @@ window.onFuncChangeEdit = () => { const val = document.getElementById('rnFunc').
     window.enterShapeEditFocusMode_ = function (editId) {
         window._shapeEditFocusId = String(editId || '');
         const chromeIds = [
-            'btnCurrentLocation', 'adminRegPlusWrap', 'btnAdminMaster', 'btnClockBoard', 'adminLegendUI'
+            'btnCurrentLocation', 'btnToggleViewpoint', 'adminRegPlusWrap', 'btnAdminMaster', 'btnClockBoard', 'adminLegendUI'
         ];
         chromeIds.forEach(function (id) {
             const el = document.getElementById(id);
@@ -12553,7 +12687,7 @@ window.onFuncChangeEdit = () => { const val = document.getElementById('rnFunc').
     window.exitShapeEditFocusMode_ = function () {
         window._shapeEditFocusId = null;
         const chromeIds = [
-            'btnCurrentLocation', 'adminRegPlusWrap', 'btnAdminMaster', 'btnClockBoard', 'adminLegendUI'
+            'btnCurrentLocation', 'btnToggleViewpoint', 'adminRegPlusWrap', 'btnAdminMaster', 'btnClockBoard', 'adminLegendUI'
         ];
         chromeIds.forEach(function (id) {
             const el = document.getElementById(id);

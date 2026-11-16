@@ -102,6 +102,18 @@
   </div>
 
   <div id="map"></div>
+  <button id="btnToggleViewpoint" type="button" onclick="cycleNextViewpoint()"
+    style="position: fixed; bottom: var(--sched-legend-bottom, calc(72px + env(safe-area-inset-bottom, 0px))); right: 10px; width: 50px; height: 50px; background: white; color: #6A1B9A; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;"
+    title="視野切替（拠点地点）" aria-label="視野切替（拠点地点）">
+    🔭
+  </button>
+
+  <!-- 🔭 視野切替トースト表示 -->
+  <div id="viewpointToast"
+    style="display:none; position:fixed; bottom:calc(var(--sched-legend-bottom, 72px) + 6px); right:70px; background:rgba(33,33,33,0.92); color:#fff; padding:8px 14px; border-radius:20px; font-size:13px; font-weight:bold; z-index:2100; box-shadow:0 4px 16px rgba(0,0,0,0.3); pointer-events:none; transition:opacity 0.25s ease, transform 0.25s ease; transform:translateY(8px); opacity:0; align-items:center; gap:8px; border:1px solid rgba(255,255,255,0.15);">
+    <span style="font-size:15px;">🔭</span>
+    <span id="viewpointToastText">視野切替</span>
+  </div>
   <div class="legend">
     <div class="leg-item">
       <div class="leg-color" style="background:#4CAF50;"></div>平和
@@ -1258,7 +1270,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1794700000004';
+    const cacheBust = '1794700000005';
     // 豚糞共有：台数＋短いGoogleマップURL＋座標（v1.49）
     // ※ https://maps.google.com/?q=緯度,経度
     // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）

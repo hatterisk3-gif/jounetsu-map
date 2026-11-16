@@ -9277,3 +9277,172 @@ document.addEventListener('keydown', (ev) => {
   }
   window.closeDumpFabMenu_();
 });
+
+// ====================================================
+// 🔭 視野切替（拠点別 Viewpoint サイクル移動）
+// ====================================================
+window._currentViewpointIndex = -1;
+let _viewpointToastTimer = null;
+
+window.showViewpointToast = function (name, curIdx, totalCount, locName) {
+  let toast = document.getElementById('viewpointToast');
+  let textEl = document.getElementById('viewpointToastText');
+
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'viewpointToast';
+    toast.style.cssText = 'display:none; position:fixed; bottom:calc(var(--sched-legend-bottom, 72px) + 6px); right:70px; background:rgba(33,33,33,0.92); color:#fff; padding:8px 14px; border-radius:20px; font-size:13px; font-weight:bold; z-index:2100; box-shadow:0 4px 16px rgba(0,0,0,0.3); pointer-events:none; transition:opacity 0.25s ease, transform 0.25s ease; transform:translateY(8px); opacity:0; align-items:center; gap:8px; border:1px solid rgba(255,255,255,0.15);';
+    toast.innerHTML = '<span style="font-size:15px;">🔭</span><span id="viewpointToastText">視野切替</span>';
+    document.body.appendChild(toast);
+    textEl = document.getElementById('viewpointToastText');
+  }
+
+  if (textEl) {
+    const locBadge = locName ? `[${locName}] ` : '';
+    textEl.textContent = `${locBadge}${name} (${curIdx}/${totalCount})`;
+  }
+
+  toast.style.display = 'flex';
+  void toast.offsetWidth;
+  toast.style.opacity = '1';
+  toast.style.transform = 'translateY(0)';
+
+  if (_viewpointToastTimer) clearTimeout(_viewpointToastTimer);
+  _viewpointToastTimer = setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(8px)';
+    setTimeout(() => {
+      if (toast.style.opacity === '0') toast.style.display = 'none';
+    }, 250);
+  }, 2500);
+};
+
+window.cycleNextViewpoint = function () {
+  if (typeof map === 'undefined' || !map || typeof map.setCenter !== 'function') {
+    if (typeof customAlert === 'function') customAlert('地図が準備できていません');
+    return;
+  }
+
+  let userLoc = String(localStorage.getItem('passionMapUserLocation') || '').trim();
+  if (!userLoc && typeof localStorage !== 'undefined') {
+    const uid = String(localStorage.getItem('passionMapUserId') || localStorage.getItem('pMapAdminId') || '').trim();
+    const uname = String(localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '').trim();
+    const cacheKeys = ['passionMapInitData', 'pMapAdminInitData'];
+    for (let i = 0; i < cacheKeys.length && !userLoc; i++) {
+      try {
+        const c = JSON.parse(localStorage.getItem(cacheKeys[i]) || '{}');
+        const arr = c && c.pdl && Array.isArray(c.pdl.userLocations) ? c.pdl.userLocations : [];
+        const hit = arr.find(u => u && (
+          (uid && (String(u.userId || '').trim() === uid || String(u.userName || '').trim() === uid)) ||
+          (uname && (String(u.userName || '').trim() === uname || String(u.userId || '').trim() === uname))
+        ));
+        if (hit && String(hit.location || '').trim()) {
+          userLoc = String(hit.location || '').trim();
+          try { localStorage.setItem('passionMapUserLocation', userLoc); } catch (e) { }
+        }
+      } catch (e) { }
+    }
+  }
+  const trimmedUserLoc = String(userLoc || '').trim();
+
+  let allVps = window.pdlViewpoints || [];
+  if ((!allVps || !allVps.length) && typeof localStorage !== 'undefined') {
+    try {
+      const vpCache = JSON.parse(localStorage.getItem('passionMapViewpointsCache') || '[]');
+      if (Array.isArray(vpCache) && vpCache.length) {
+        allVps = vpCache;
+        window.pdlViewpoints = allVps;
+      }
+    } catch (e) { }
+    if (!allVps || !allVps.length) {
+      const cacheKeys = ['passionMapInitData', 'pMapAdminInitData'];
+      for (let i = 0; i < cacheKeys.length && (!allVps || !allVps.length); i++) {
+        try {
+          const c = JSON.parse(localStorage.getItem(cacheKeys[i]) || '{}');
+          if (c && c.pdl && Array.isArray(c.pdl.viewpoints) && c.pdl.viewpoints.length) {
+            allVps = c.pdl.viewpoints;
+            window.pdlViewpoints = allVps;
+          }
+        } catch (e) { }
+      }
+    }
+  }
+
+  if ((!allVps || !allVps.length) && typeof callGAS === 'function' && !window._vpFetchingForCycle) {
+    window._vpFetchingForCycle = true;
+    const btn = document.getElementById('btnToggleViewpoint');
+    if (btn) btn.disabled = true;
+    callGAS('getViewpoints', {}, 1, { timeoutMs: 15000 }).then(res => {
+      window._vpFetchingForCycle = false;
+      if (btn) btn.disabled = false;
+      if (res && res.success && Array.isArray(res.viewpoints) && res.viewpoints.length) {
+        window.pdlViewpoints = res.viewpoints;
+        try { localStorage.setItem('passionMapViewpointsCache', JSON.stringify(res.viewpoints)); } catch (e) { }
+        window.cycleNextViewpoint();
+      } else if (typeof customAlert === 'function') {
+        customAlert('視野地点がまだ登録されていません。\n管理者画面の「＋」メニュー ＞「🔭 視野地点登録」から登録してください。');
+      }
+    }).catch(() => {
+      window._vpFetchingForCycle = false;
+      if (btn) btn.disabled = false;
+      if (typeof customAlert === 'function') customAlert('視野地点の取得に失敗しました');
+    });
+    return;
+  }
+
+  if (!allVps || !allVps.length) {
+    if (typeof customAlert === 'function') {
+      customAlert('視野地点がまだ登録されていません。\n管理者画面の「＋」メニュー ＞「🔭 視野地点登録」から登録してください。');
+    }
+    return;
+  }
+
+  let targetVps = [];
+  if (trimmedUserLoc) {
+    const userTokens = trimmedUserLoc.split(/[・,、\/｜|]+/).map(s => String(s || '').trim()).filter(Boolean);
+    targetVps = allVps.filter(v => {
+      const vLoc = String(v.location || '').trim();
+      return vLoc === trimmedUserLoc || userTokens.includes(vLoc);
+    });
+    if (!targetVps.length && userTokens.length) {
+      targetVps = allVps.filter(v => {
+        const vLoc = String(v.location || '').trim();
+        if (!vLoc) return false;
+        return userTokens.some(ul => vLoc.indexOf(ul) >= 0 || ul.indexOf(vLoc) >= 0);
+      });
+    }
+    if (!targetVps.length) {
+      targetVps = allVps.filter(v => !String(v.location || '').trim());
+    }
+  }
+
+  if (!targetVps.length) {
+    if (trimmedUserLoc) {
+      if (typeof customAlert === 'function') {
+        customAlert(`所属拠点「${trimmedUserLoc}」の視野地点はまだ登録されていません。\n管理者画面（＋ ＞ 視野地点登録）で拠点を「${trimmedUserLoc}」にして地点を登録してください。`);
+      }
+      return;
+    } else {
+      targetVps = allVps;
+    }
+  }
+
+  if (!targetVps.length) return;
+
+  window._currentViewpointIndex = ((window._currentViewpointIndex != null ? window._currentViewpointIndex : -1) + 1) % targetVps.length;
+  const target = targetVps[window._currentViewpointIndex];
+
+  const lat = Number(target.lat);
+  const lng = Number(target.lng);
+  const zoom = Number(target.zoom) || 16;
+
+  if (isNaN(lat) || isNaN(lng)) {
+    if (typeof customAlert === 'function') customAlert('視野地点の座標が不正です');
+    return;
+  }
+
+  map.setCenter({ lat: lat, lng: lng });
+  if (zoom) map.setZoom(zoom);
+
+  window.showViewpointToast(target.name, window._currentViewpointIndex + 1, targetVps.length, target.location);
+};
