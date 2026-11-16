@@ -3617,9 +3617,9 @@ function updateMarkersVisibility() {
         const isExpandedChild = hasSignGroup && window.SignGroup.isChildOfExpanded(p);
 
         if (isChild) {
-          // 束ねられた小看板：大看板が展開されている時のみ表示（またはマップ選択中でこの小看板自身が選択されている時）
+          // 束ねられた小看板：大看板が展開されている時（ズーム15以上）、ズーム20以上、またはマップ選択中で選択されている時に表示
           const isSelected = isMapSelecting && Array.isArray(selectedPolyIds) && selectedPolyIds.includes(String(id));
-          const showChild = (isExpandedChild || isSelected) && (zoom >= far);
+          const showChild = ((isExpandedChild || isSelected) && (zoom >= far)) || (zoom >= 20);
           p.marker.setVisible(showChild);
           if (showChild) {
             p.marker.setZIndex(isSelected ? 9999 : 850);
@@ -6774,15 +6774,18 @@ window.applySignMarkerSelectStyle_ = (p, on) => {
     return;
   }
 
+  const z = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : 0;
+  const isChildZoomShown = isChild && z >= 20;
+
   // 通常（非選択時）に戻す
   if (isLocPin && typeof window.locationPinMarkerIcon_ === 'function') {
-    const z = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : 16;
-    p.marker.setIcon(window.locationPinMarkerIcon_(z));
+    const zLoc = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : 16;
+    p.marker.setIcon(window.locationPinMarkerIcon_(zLoc));
   } else if (hasSignGroup) {
     p.marker.setIcon(window.SignGroup.buildSignMarkerIcon(p, {
       isParent: isParent,
       isExpandedParent: isExpParent,
-      isExpandedChild: isExpChild
+      isExpandedChild: isExpChild || isChildZoomShown
     }));
   } else {
     const normalSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="13" y="20" text-anchor="middle" font-size="20">' + signIcon + '</text></svg>';
@@ -6794,13 +6797,12 @@ window.applySignMarkerSelectStyle_ = (p, on) => {
     });
   }
 
-  const z = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : 0;
-  if (isLocPin || z >= 17 || isExpParent || isExpChild) {
-    if (hasSignGroup && (isParent || isExpChild)) {
+  if (isLocPin || z >= 17 || isExpParent || isExpChild || isChildZoomShown) {
+    if (hasSignGroup && (isParent || isExpChild || isChildZoomShown)) {
       p.marker.setLabel(window.SignGroup.buildSignLabelConfig(p, {
         isParent: isParent,
         isExpandedParent: isExpParent,
-        isExpandedChild: isExpChild
+        isExpandedChild: isExpChild || isChildZoomShown
       }));
     } else {
       p.marker.setLabel(Object.assign({}, base, {
