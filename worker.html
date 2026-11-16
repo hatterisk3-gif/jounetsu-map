@@ -267,16 +267,16 @@
   </div>
 
   <div id="mapActionBar" class="map-action-bar">
-    <button id="btnMeasureRidge" class="map-action-btn" onclick="toggleMeasureToolMenu()" title="計測（距離・面積）"
-      style="color: #00838F;">
-      📏
+    <button id="btnToggleViewpoint" class="map-action-btn" onclick="cycleNextViewpoint()" title="視野切替（拠点地点）"
+      style="color: #6A1B9A;">
+      🔭
     </button>
     <button id="btnCurrentLocation" class="map-action-btn" style="color: #4285F4;">
       📍
     </button>
-    <button id="btnToggleViewpoint" class="map-action-btn" onclick="cycleNextViewpoint()" title="視野切替（拠点地点）"
-      style="color: #6A1B9A;">
-      🔭
+    <button id="btnMeasureRidge" class="map-action-btn" onclick="toggleMeasureToolMenu()" title="計測（距離・面積）"
+      style="color: #00838F;">
+      📏
     </button>
     <button id="btnGpsWorkRecord" class="map-action-btn map-action-btn--plus"
       onclick="document.getElementById('recordTypeSelectModal').style.display='flex'" title="記録を追加"
@@ -287,7 +287,7 @@
 
   <!-- 🔭 視野切替トースト表示 -->
   <div id="viewpointToast"
-    style="display:none; position:fixed; bottom:max(80px, calc(env(safe-area-inset-bottom, 0px) + 80px)); right:70px; background:rgba(33,33,33,0.92); color:#fff; padding:8px 14px; border-radius:20px; font-size:13px; font-weight:bold; z-index:2100; box-shadow:0 4px 16px rgba(0,0,0,0.3); pointer-events:none; transition:opacity 0.25s ease, transform 0.25s ease; transform:translateY(8px); opacity:0; align-items:center; gap:8px; border:1px solid rgba(255,255,255,0.15);">
+    style="display:none; position:fixed; bottom:max(18px, calc(env(safe-area-inset-bottom, 0px) + 18px)); right:70px; background:rgba(33,33,33,0.92); color:#fff; padding:8px 14px; border-radius:20px; font-size:13px; font-weight:bold; z-index:2100; box-shadow:0 4px 16px rgba(0,0,0,0.3); pointer-events:none; transition:opacity 0.25s ease, transform 0.25s ease; transform:translateY(8px); opacity:0; align-items:center; gap:8px; border:1px solid rgba(255,255,255,0.15);">
     <span style="font-size:15px;">🔭</span>
     <span id="viewpointToastText">視野切替</span>
   </div>
@@ -887,7 +887,7 @@
   <script src="map-filter.js?v=1794700000000"></script>
   <script src="worker.js?v=1794735000000"></script>
   <script src="maint-history.js?v=1794695000000"></script>
-  <script src="release-notes.js?v=1788600000363"></script>
+  <script src="release-notes.js?v=1788600000364"></script>
   <script src="tracking.js?v=1788600000323"></script>
   <script>
     if ('serviceWorker' in navigator) {

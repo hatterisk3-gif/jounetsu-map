@@ -12995,28 +12995,32 @@ function getPolygonDrawingHistory(params) {
     const lastRow = sheet.getLastRow();
     if (lastRow <= 1) return fallbackFromPolygonSheet_();
 
-    // 一覧は図面JSON（D列）を読まない。A〜Fを一括取得する
-    const colCount = Math.max(6, sheet.getLastColumn());
-    const head = sheet.getRange(2, 1, lastRow - 1, Math.min(colCount, 6)).getValues();
+    // 一覧は図面JSON（D列）を絶対に読まない（A列で一致行を特定し、C列・E〜F列のみ取得）
+    const idCol = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
     const hits = [];
-    for (let i = head.length - 1; i >= 0; i--) {
-      if (String(head[i][0]) === targetId) {
+    for (let i = idCol.length - 1; i >= 0; i--) {
+      if (String(idCol[i][0]) === targetId) {
         hits.push(i);
         if (hits.length >= 20) break;
       }
     }
     if (!hits.length) return fallbackFromPolygonSheet_();
 
+    const dateCol = sheet.getRange(2, 3, lastRow - 1, 1).getValues();
+    const lastCol = sheet.getLastColumn();
+    const efWidth = lastCol >= 6 ? 2 : (lastCol === 5 ? 1 : 0);
+    const efCols = efWidth > 0 ? sheet.getRange(2, 5, lastRow - 1, efWidth).getValues() : null;
+
     const history = [];
     for (let h = 0; h < hits.length; h++) {
       const i = hits[h];
       const row = i + 2;
-      const dateStr = cadHistoryDateStr_(head[i][2]);
+      const dateStr = cadHistoryDateStr_(dateCol[i][0]);
       const item = {
         row: row,
         date: dateStr,
-        name: String(head[i][4] || ""),
-        fp: String(head[i][5] || "")
+        name: efCols && efCols[i][0] ? String(efCols[i][0]) : "",
+        fp: efCols && efWidth >= 2 && efCols[i][1] ? String(efCols[i][1]) : ""
       };
       if (!summaryOnly) {
         const dataVal = sheet.getRange(row, 4).getValue();

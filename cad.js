@@ -383,6 +383,7 @@ window.updateCadSvgOverlay = (opts) => {
 
         const wireRidgePath = (p, baseLabel) => {
             p._svgPathNode = createPathNode(window.cadGetGroupColor ? window.cadGetGroupColor(p.uneGroup) : '#8BC34A', '#558B2F');
+            if (p.uneIndex) p._svgPathNode.setAttribute('data-une-index', p.uneIndex);
             p._svgPathNode.setAttribute('style', 'pointer-events: auto; cursor: pointer;');
             if (!disableHover) {
                 p._svgPathNode.addEventListener('mouseover', () => p._svgPathNode.setAttribute('filter', 'url(#hover-shadow)'));
@@ -392,6 +393,8 @@ window.updateCadSvgOverlay = (opts) => {
                 e.stopPropagation();
                 e.preventDefault();
                 if (window.cadPinMode) return;
+                if (Date.now() - (window._cadLastDragEndTime || 0) < 250) return;
+                if (Date.now() - (window._cadLastRidgeTapHandledAt || 0) < 350) return;
                 if (p.uneIndex && typeof window.cadSelectRidgeByTap === 'function') window.cadSelectRidgeByTap(p.uneIndex, e);
             });
             if (typeof window.cadApplyRidgeSelectionStyle_ === 'function') window.cadApplyRidgeSelectionStyle_(p);
@@ -896,6 +899,9 @@ window.updateCadSvgOverlay = (opts) => {
                 } else if (pinType === 'water_out') {
                     iconStr = '🚩';
                     nameStr = '排水口/水落口';
+                } else if (pinType === 'valve') {
+                    iconStr = '⛲';
+                    nameStr = 'ポンプ';
                 } else if (pinType === 'parking_truck') {
                     iconStr = '🅿️';
                     nameStr = '駐車場';
@@ -1097,65 +1103,72 @@ window.updateCadSvgOverlay = (opts) => {
     // svg is already defined at the top of the function
     let frontBarGroup = svg ? svg.querySelector('#front-bar') : null;
     if (frontBarGroup) {
-        if (window.cadFrontBaseline) {
-            let pLat, pLng;
-            if (Array.isArray(window.cadFrontBaseline) && window.cadFrontBaseline.length === 2) {
-                pLat = (window.cadFrontBaseline[0].lat + window.cadFrontBaseline[1].lat) / 2;
-                pLng = (window.cadFrontBaseline[0].lng + window.cadFrontBaseline[1].lng) / 2;
-            } else {
-                pLat = window.cadFrontBaseline.lat;
-                pLng = window.cadFrontBaseline.lng;
-            }
+        const frontItems = typeof window.cadGetFrontBaselineList_ === 'function'
+            ? window.cadGetFrontBaselineList_()
+            : [];
+        if (frontItems.length > 0) {
+            let fos = frontBarGroup.querySelectorAll('foreignObject');
+            if (fos.length !== frontItems.length) {
+                frontBarGroup.innerHTML = '';
+                frontItems.forEach((item, itemIdx) => {
+                    let fo = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
+                    fo.setAttribute('width', '120');
+                    fo.setAttribute('height', '48');
+                    fo.setAttribute('style', 'overflow:visible; pointer-events:none;');
+                    let div = document.createElement('div');
+                    div.className = 'front-bar-label';
+                    div.style.cssText = 'color:#ffffff; background:#FF5722; padding:6px 12px; border-radius:4px; font-size:17px; font-weight:bold; text-align:center; white-space:nowrap; transform:translate(-50%, -50%); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.5);';
+                    div.innerText = '畝の正面';
+                    fo.appendChild(div);
+                    frontBarGroup.appendChild(fo);
 
-            let fo = frontBarGroup.querySelector('foreignObject');
-            if (!fo) {
-                frontBarGroup.innerHTML = ''; // 古い線とハンドルをクリア
-                fo = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
-                fo.setAttribute('width', '120');
-                fo.setAttribute('height', '48');
-                fo.setAttribute('style', 'overflow:visible; pointer-events:none;');
-                let div = document.createElement('div');
-                div.className = 'front-bar-label';
-                div.style.cssText = 'color:#ffffff; background:#FF5722; padding:6px 12px; border-radius:4px; font-size:17px; font-weight:bold; text-align:center; white-space:nowrap; transform:translate(-50%, -50%); position:absolute; left:50%; top:50%; pointer-events:auto; cursor:pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.5);';
-                div.innerText = '畝の正面';
-                fo.appendChild(div);
-                frontBarGroup.appendChild(fo);
-
-                let isDragging = false;
-                const onMove = (ev) => {
-                    if (ev.cancelable) ev.preventDefault();
-                    if (!isDragging) return;
-                    let cx = ev.touches ? ev.touches[0].clientX : ev.clientX;
-                    let cy = ev.touches ? ev.touches[0].clientY : ev.clientY;
-                    let newLatLng = window.screenPixelToLatLng(cx, cy);
-                    if (newLatLng) {
-                        window.cadFrontBaseline = { lat: newLatLng.lat(), lng: newLatLng.lng() };
-                        window.updateCadSvgOverlay();
-                    }
-                };
-                const onEnd = () => {
-                    if (!isDragging) return;
-                    isDragging = false;
-                    window.removeEventListener('mousemove', onMove);
-                    window.removeEventListener('mouseup', onEnd);
-                    window.removeEventListener('touchmove', onMove);
-                    window.removeEventListener('touchend', onEnd);
-                    if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
-                };
-                div.addEventListener('mousedown', (e) => {
-                    isDragging = true; e.stopPropagation();
-                    window.addEventListener('mousemove', onMove);
-                    window.addEventListener('mouseup', onEnd);
+                    let isDragging = false;
+                    const onMove = (ev) => {
+                        if (ev.cancelable) ev.preventDefault();
+                        if (!isDragging) return;
+                        let cx = ev.touches ? ev.touches[0].clientX : ev.clientX;
+                        let cy = ev.touches ? ev.touches[0].clientY : ev.clientY;
+                        let newLatLng = window.screenPixelToLatLng(cx, cy);
+                        if (newLatLng) {
+                            if (typeof window.cadUpdateFrontBaselineItemPos_ === 'function') {
+                                window.cadUpdateFrontBaselineItemPos_(itemIdx, newLatLng.lat(), newLatLng.lng());
+                            } else {
+                                window.cadFrontBaseline = { lat: newLatLng.lat(), lng: newLatLng.lng() };
+                            }
+                            window.updateCadSvgOverlay();
+                        }
+                    };
+                    const onEnd = () => {
+                        if (!isDragging) return;
+                        isDragging = false;
+                        window.removeEventListener('mousemove', onMove);
+                        window.removeEventListener('mouseup', onEnd);
+                        window.removeEventListener('touchmove', onMove);
+                        window.removeEventListener('touchend', onEnd);
+                        if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
+                    };
+                    div.addEventListener('mousedown', (e) => {
+                        isDragging = true; e.stopPropagation();
+                        window.addEventListener('mousemove', onMove);
+                        window.addEventListener('mouseup', onEnd);
+                    });
+                    div.addEventListener('touchstart', (e) => {
+                        isDragging = true; e.stopPropagation();
+                        window.addEventListener('touchmove', onMove, { passive: false });
+                        window.addEventListener('touchend', onEnd);
+                    }, { passive: false });
                 });
-                div.addEventListener('touchstart', (e) => {
-                    isDragging = true; e.stopPropagation();
-                    window.addEventListener('touchmove', onMove, { passive: false });
-                    window.addEventListener('touchend', onEnd);
-                }, { passive: false });
+                fos = frontBarGroup.querySelectorAll('foreignObject');
             }
-            let pt = window.latLngToScreenPixel(pLat, pLng);
-            fo.setAttribute('x', pt.x - 60);
-            fo.setAttribute('y', pt.y - 24);
+            frontItems.forEach((item, itemIdx) => {
+                const fo = fos[itemIdx];
+                if (!fo || !Number.isFinite(Number(item.lat)) || !Number.isFinite(Number(item.lng))) return;
+                let pt = window.latLngToScreenPixel(Number(item.lat), Number(item.lng));
+                if (pt) {
+                    fo.setAttribute('x', pt.x - 60);
+                    fo.setAttribute('y', pt.y - 24);
+                }
+            });
         } else {
             frontBarGroup.innerHTML = '';
         }
@@ -1401,6 +1414,7 @@ window.saveCadStateToHistory = () => {
         customShapes: customShapesData,
         unePolygons: unePolygonsData,
         frontBaseline: window.cadFrontBaseline ? JSON.parse(JSON.stringify(window.cadFrontBaseline)) : null,
+        frontEdgeIndexes: Array.isArray(window.cadFrontEdgeIndexes) ? window.cadFrontEdgeIndexes.slice() : [],
         ridgeGapRatio: window.cadRidgeGapRatio,
         pinNumFontSize: window.cadPinNumFontSize || 24
     };
@@ -1477,6 +1491,10 @@ window.loadCadStateFromHistory = (index) => {
     if (window.cadFrontBaselineMarker) { window.cadFrontBaselineMarker.setMap(null); window.cadFrontBaselineMarker = null; }
     if (window.cadFrontBaselineVisual) { window.cadFrontBaselineVisual.setMap(null); window.cadFrontBaselineVisual = null; }
     window.cadFrontBaseline = state.frontBaseline || null;
+    window.cadFrontEdgeIndexes = Array.isArray(state.frontEdgeIndexes)
+        ? state.frontEdgeIndexes.slice()
+        : (state.frontBaseline && Array.isArray(state.frontBaseline.edgeIndexes) ? state.frontBaseline.edgeIndexes.slice() : []);
+    if (typeof window.cadUpdateFrontPickUi === 'function') window.cadUpdateFrontPickUi();
 
     if (state.customShapes) {
         state.customShapes.forEach((shape, idx) => {
@@ -1573,13 +1591,34 @@ window.getPageLatLng = (pageX, pageY) => {
     return window.screenPixelToLatLng(clientX, clientY);
 };
 
-window.handleMapClick = (pageX, pageY) => {
+window.handleMapClick = (pageX, pageY, tapTarget) => {
     if (document.getElementById('cadOverlay').style.display !== 'flex') return;
 
     const latLng = window.getPageLatLng(pageX, pageY);
     if (!latLng) return;
 
-    if (!window.cadPinMode) return;
+    if (!window.cadPinMode) {
+        const ridgeEl = (tapTarget && typeof tapTarget.closest === 'function')
+            ? tapTarget.closest('[data-une-index]')
+            : null;
+        if (ridgeEl) {
+            const uneIndex = ridgeEl.getAttribute('data-une-index');
+            if (uneIndex && typeof window.cadSelectRidgeByTap === 'function') {
+                window._cadLastRidgeTapHandledAt = Date.now();
+                window.cadSelectRidgeByTap(uneIndex);
+            }
+            return;
+        }
+        const onPopupOrHandle = (tapTarget && typeof tapTarget.closest === 'function')
+            ? tapTarget.closest('#cadRidgePopup, [data-cad-handle="1"]')
+            : null;
+        if (!onPopupOrHandle && ((Array.isArray(window.cadSelectedRidgeIds) && window.cadSelectedRidgeIds.length > 0) || window.cadSelectedRidgeId)) {
+            if (typeof window.cadClearRidgeSelection === 'function') {
+                window.cadClearRidgeSelection();
+            }
+        }
+        return;
+    }
 
     const msgEl = document.getElementById('cadPinModeMsg');
 
@@ -1871,8 +1910,8 @@ window.initCadTouchEvents = () => {
                 }
             }
 
-            // 設備ピン（💧, 🕳️, 🅿️, 🚜など）はドラッグできるようにする
-            if (currEl.innerText && (currEl.innerText.includes('🚰') || currEl.innerText.includes('💧') || currEl.innerText.includes('🚩') || currEl.innerText.includes('🕳️') || currEl.innerText.includes('🅿️') || currEl.innerText.includes('🚜') || currEl.innerText.includes('🛻'))) {
+            // 設備ピン（💧, 🕳️, ⛲, 🅿️, 🚜など）はドラッグできるようにする
+            if (currEl.innerText && (currEl.innerText.includes('🚰') || currEl.innerText.includes('💧') || currEl.innerText.includes('🚩') || currEl.innerText.includes('🕳️') || currEl.innerText.includes('⛲') || currEl.innerText.includes('🔧') || currEl.innerText.includes('🅿️') || currEl.innerText.includes('🚜') || currEl.innerText.includes('🛻'))) {
                 return true;
             }
             currEl = currEl.parentElement;
@@ -2093,9 +2132,10 @@ window.initCadTouchEvents = () => {
         }
 
         if (document.getElementById('cadOverlay').style.display === 'flex' && !isDragging && isMouseDown && startPageX !== null && startPageY !== null && !ignoreDrag) {
-            window.handleMapClick(e.pageX, e.pageY);
+            window.handleMapClick(e.pageX, e.pageY, e.target);
         }
         if (isDragging && !ignoreDrag) {
+            window._cadLastDragEndTime = Date.now();
             e.stopPropagation();
             if (window.cadDragStartCenter) {
                 const finalDx = (e.pageX - startPageX);
@@ -2305,9 +2345,10 @@ window.initCadTouchEvents = () => {
             }
 
             if (!isDragging && startPageX !== null && startPageY !== null && !ignoreDrag) {
-                window.handleMapClick(startPageX, startPageY);
+                window.handleMapClick(startPageX, startPageY, e.target);
             }
             if (isDragging && !ignoreDrag) {
+                window._cadLastDragEndTime = Date.now();
                 e.stopPropagation();
                 if (window.cadDragStartCenter) {
                     const finalDx = (window.cadDragRawDx || 0);
@@ -2569,6 +2610,10 @@ window.renderCadSavedData = (savedDataStr) => {
         if (window.cadFrontBaselineMarker) { window.cadFrontBaselineMarker.setMap(null); window.cadFrontBaselineMarker = null; }
         if (saved.frontBaseline) {
             window.cadFrontBaseline = saved.frontBaseline;
+            window.cadFrontEdgeIndexes = Array.isArray(saved.frontEdgeIndexes)
+                ? saved.frontEdgeIndexes.slice()
+                : (saved.frontBaseline && Array.isArray(saved.frontBaseline.edgeIndexes) ? saved.frontBaseline.edgeIndexes.slice() : []);
+            if (typeof window.cadUpdateFrontPickUi === 'function') window.cadUpdateFrontPickUi();
             if (window.updateCadSvgOverlay) window.updateCadSvgOverlay();
         }
 
@@ -2614,11 +2659,94 @@ window.renderCadSavedData = (savedDataStr) => {
     }
 };
 
-window.closeCADMode = () => {
+window.cadHasUnsavedChanges_ = () => {
+    return Array.isArray(window.cadHistory) && typeof window.cadHistoryIndex === 'number' && window.cadHistoryIndex > 0;
+};
+
+window.cadShowCloseConfirmModal_ = () => {
+    const existing = document.getElementById('cadCloseConfirmModal');
+    if (existing) existing.remove();
+
+    const hasUnsaved = window.cadHasUnsavedChanges_();
+    const modal = document.createElement('div');
+    modal.id = 'cadCloseConfirmModal';
+    modal.style.cssText = 'position:fixed; inset:0; z-index:1000004; background:rgba(0,0,0,0.65); display:flex; align-items:center; justify-content:center; padding:16px; box-sizing:border-box;';
+
+    const card = document.createElement('div');
+    card.style.cssText = 'background:#1e293b; color:#f8fafc; border:1px solid #475569; border-radius:14px; max-width:380px; width:100%; padding:20px; box-shadow:0 20px 40px rgba(0,0,0,0.5); font-family:inherit;';
+
+    const title = document.createElement('div');
+    title.style.cssText = 'font-size:17px; font-weight:800; margin-bottom:10px; display:flex; align-items:center; gap:8px;';
+    title.textContent = hasUnsaved ? '⚠️ CAD画面を閉じますか？' : '🚜 CAD画面を閉じますか？';
+
+    const desc = document.createElement('div');
+    desc.style.cssText = 'font-size:13.5px; line-height:1.55; color:#cbd5e1; margin-bottom:18px;';
+    desc.textContent = hasUnsaved
+        ? '保存していない変更があります。他の画面に移ると変更内容は失われます。'
+        : 'CAD画面を閉じて元の画面に戻ります。';
+
+    const btnWrap = document.createElement('div');
+    btnWrap.style.cssText = 'display:flex; flex-direction:column; gap:8px;';
+
+    const closeModal = () => {
+        if (modal.parentNode) modal.remove();
+    };
+
+    if (hasUnsaved) {
+        const saveBtn = document.createElement('button');
+        saveBtn.type = 'button';
+        saveBtn.style.cssText = 'width:100%; padding:11px 14px; border:none; border-radius:9px; background:#16a34a; color:#fff; font-size:14px; font-weight:700; cursor:pointer;';
+        saveBtn.textContent = '💾 保存して閉じる';
+        saveBtn.onclick = () => {
+            closeModal();
+            if (typeof window.saveUneSim === 'function') window.saveUneSim();
+        };
+        btnWrap.appendChild(saveBtn);
+    }
+
+    const discardBtn = document.createElement('button');
+    discardBtn.type = 'button';
+    discardBtn.style.cssText = hasUnsaved
+        ? 'width:100%; padding:11px 14px; border:1px solid #ef4444; border-radius:9px; background:rgba(239,68,68,0.16); color:#fca5a5; font-size:14px; font-weight:700; cursor:pointer;'
+        : 'width:100%; padding:11px 14px; border:none; border-radius:9px; background:#2563eb; color:#fff; font-size:14px; font-weight:700; cursor:pointer;';
+    discardBtn.textContent = hasUnsaved ? '保存せずに閉じる' : '閉じる';
+    discardBtn.onclick = () => {
+        closeModal();
+        window.closeCADMode({ force: true });
+    };
+    btnWrap.appendChild(discardBtn);
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.style.cssText = 'width:100%; padding:10px 14px; border:1px solid #475569; border-radius:9px; background:#334155; color:#e2e8f0; font-size:14px; font-weight:600; cursor:pointer;';
+    cancelBtn.textContent = 'キャンセル';
+    cancelBtn.onclick = closeModal;
+    btnWrap.appendChild(cancelBtn);
+
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+    });
+
+    card.appendChild(title);
+    card.appendChild(desc);
+    card.appendChild(btnWrap);
+    modal.appendChild(card);
+    document.body.appendChild(modal);
+};
+
+window.closeCADMode = (opts) => {
+    const overlay = document.getElementById('cadOverlay');
+    const isVisible = overlay && overlay.style.display !== 'none' && overlay.style.display !== '';
+    if (!(opts && opts.force) && isVisible) {
+        window.cadShowCloseConfirmModal_();
+        return;
+    }
+    const confirmModal = document.getElementById('cadCloseConfirmModal');
+    if (confirmModal) confirmModal.remove();
     if (typeof window.cadClearRidgeSelection === 'function') window.cadClearRidgeSelection();
     if (typeof window.cadClearMakuraEdgePick === 'function') window.cadClearMakuraEdgePick();
     if (typeof window.cadStopGpsPinPlace === 'function') window.cadStopGpsPinPlace({ silent: true });
-    document.getElementById('cadOverlay').style.display = 'none';
+    if (overlay) overlay.style.display = 'none';
     window.cadClearLines(true);
     if (window.cadTargetPolygon) window.cadTargetPolygon.setMap(null);
     window.cadTargetId = null;
@@ -3120,14 +3248,19 @@ window.cadGetMainRidgesForSplit = () => {
  */
 window.cadReadRidgeNumberSplitOptions = () => {
     const nEl = document.getElementById('cadSplitEveryN');
+    const gapEl = document.getElementById('cadSplitGapCount');
     const startEl = document.getElementById('cadSplitEndStart');
     const finishEl = document.getElementById('cadSplitEndFinish');
     const dirEl = document.querySelector('input[name="cadSplitDirection"]:checked');
+    const rawGap = (gapEl && gapEl.value !== '') ? parseInt(gapEl.value, 10) : 1;
+    const rawStart = (startEl && startEl.value !== '') ? parseInt(startEl.value, 10) : 0;
+    const rawFinish = (finishEl && finishEl.value !== '') ? parseInt(finishEl.value, 10) : 0;
     return {
         everyN: Math.max(1, parseInt(nEl && nEl.value, 10) || 1),
+        gapCount: Number.isFinite(rawGap) ? Math.max(0, rawGap) : 1,
         direction: (dirEl && dirEl.value === 'reverse') ? 'reverse' : 'normal',
-        endStart: Math.max(0, parseInt(startEl && startEl.value, 10) || 0),
-        endFinish: Math.max(0, parseInt(finishEl && finishEl.value, 10) || 0)
+        endStart: Number.isFinite(rawStart) ? Math.max(0, rawStart) : 0,
+        endFinish: Number.isFinite(rawFinish) ? Math.max(0, rawFinish) : 0
     };
 };
 
@@ -3135,7 +3268,7 @@ window.cadReadRidgeNumberSplitOptions = () => {
  * 〇畝おき分割の計画を作る
  * - 開始側／終了側の空き畝（端）は植えず対象外
  * - 番号開始向きでどちら側から分割ブロックを付けるか決める
- * - 対象区間を「N畝取り → 1畝空け」で繰り返す
+ * - 対象区間を「N畝取り → M畝空け（間）」で繰り返す
  */
 window.cadBuildRidgeNumberSplitPlan = (everyNOrOpts) => {
     const opts = (everyNOrOpts && typeof everyNOrOpts === 'object')
@@ -3144,6 +3277,9 @@ window.cadBuildRidgeNumberSplitPlan = (everyNOrOpts) => {
             everyN: Math.max(1, parseInt(everyNOrOpts, 10) || 1)
         });
     const n = Math.max(1, parseInt(opts.everyN, 10) || 1);
+    const gapCount = (opts.gapCount != null && Number.isFinite(parseInt(opts.gapCount, 10)))
+        ? Math.max(0, parseInt(opts.gapCount, 10))
+        : 1;
     const reverse = opts.direction === 'reverse';
     let endStart = Math.max(0, parseInt(opts.endStart, 10) || 0);
     let endFinish = Math.max(0, parseInt(opts.endFinish, 10) || 0);
@@ -3156,6 +3292,7 @@ window.cadBuildRidgeNumberSplitPlan = (everyNOrOpts) => {
     const fail = (message) => ({
         ok: false,
         everyN: n,
+        gapCount,
         direction: reverse ? 'reverse' : 'normal',
         endStart,
         endFinish,
@@ -3220,19 +3357,27 @@ window.cadBuildRidgeNumberSplitPlan = (everyNOrOpts) => {
         groups.push({ name: groupName, count: take, labels });
         groupNum++;
         i += take;
-        if (i < middle.length) {
+        if (i < middle.length && gapCount > 0) {
             const prevNum = groupNum - 1;
             const nextNum = groupNum;
-            const gapPoly = middle[i];
-            plan.push({
-                poly: gapPoly,
-                role: 'gap',
-                group: '空け',
-                label: prevNum + '番/' + nextNum + '番',
-                index: ridgesOrig.indexOf(gapPoly),
-                origLabel: origNumberOf(gapPoly)
-            });
-            i += 1;
+            const gapTake = Math.min(gapCount, middle.length - i);
+            const hasNextBlock = (i + gapTake) < middle.length;
+            for (let gIdx = 0; gIdx < gapTake; gIdx++) {
+                const gapPoly = middle[i + gIdx];
+                let gapLabel = prevNum + '番/' + (hasNextBlock ? (nextNum + '番') : '');
+                if (gapTake > 1) {
+                    gapLabel += '(' + (gIdx + 1) + ')';
+                }
+                plan.push({
+                    poly: gapPoly,
+                    role: 'gap',
+                    group: '空け',
+                    label: gapLabel,
+                    index: ridgesOrig.indexOf(gapPoly),
+                    origLabel: origNumberOf(gapPoly)
+                });
+            }
+            i += gapTake;
         }
     }
 
@@ -3242,7 +3387,7 @@ window.cadBuildRidgeNumberSplitPlan = (everyNOrOpts) => {
         plan.push({
             poly: ordered[j],
             role: 'end',
-            group: '端',
+            group: 'end' === 'end' ? '端' : '端',
             label: lastN > 0 ? (lastN + '番/') : '端',
             index: ridgesOrig.indexOf(ordered[j]),
             origLabel: origNumberOf(ordered[j])
@@ -3250,9 +3395,11 @@ window.cadBuildRidgeNumberSplitPlan = (everyNOrOpts) => {
     }
 
     const dirLabel = reverse ? '逆向き（最終畝側から）' : '生成順（1番側から）';
+    const gapText = gapCount > 0 ? `（間${gapCount}畝空け）` : '（間なし）';
     return {
         ok: groups.length > 0,
         everyN: n,
+        gapCount,
         direction: reverse ? 'reverse' : 'normal',
         endStart,
         endFinish,
@@ -3260,7 +3407,7 @@ window.cadBuildRidgeNumberSplitPlan = (everyNOrOpts) => {
         groups,
         plan,
         message: groups.length
-            ? `全${total}畝 → 開始側空き${endStart}・終了側空き${endFinish}を除き、${n}畝おきで ${groups.length} ブロック（${dirLabel}）`
+            ? `全${total}畝 → 開始側空き${endStart}・終了側空き${endFinish}を除き、${n}畝ごと${gapText}で ${groups.length} ブロック（${dirLabel}）`
             : '分割ブロックを作れませんでした。空き畝の本数や「何畝おき」を見直してください。'
     };
 };
@@ -3322,13 +3469,16 @@ window.cadPreviewRidgeNumberSplit = () => {
         }
         return '<span title="' + tip + '" style="width:26px; height:32px; border-radius:4px; background:' + bg + '; color:' + fg + '; font-size:11px; font-weight:bold; display:flex; align-items:center; justify-content:center;">' + mark + '</span>';
     }).join('');
+    const gapLegend = (built.gapCount > 0)
+        ? `<span><b style="color:#FFE082;">間</b> 番号のあいだの${built.gapCount}本</span>`
+        : `<span><b style="color:#FFE082;">間</b> 番号のあいだ（0本）</span>`;
     el.innerHTML =
         '<div style="color:#ce93d8; font-weight:bold; margin-bottom:4px;">' + dirLabel + 'です。1マスが畝1本です。</div>' +
         '<div style="display:flex; flex-wrap:wrap; gap:3px; margin-bottom:8px;">' + cells + '</div>' +
         '<div style="display:flex; flex-wrap:wrap; gap:8px; font-size:11px; color:#ddd;">' +
         '<span><b style="color:#546E7A;">空</b> 植えない端</span>' +
         '<span><b style="color:#CE93D8;">1</b> その番号のまとまり</span>' +
-        '<span><b style="color:#FFE082;">間</b> 番号のあいだの1本</span>' +
+        gapLegend +
         '</div>';
 };
 
@@ -4656,6 +4806,8 @@ window.cadClearLines = (skipHistory = false) => {
     if (window.cadFrontBaselineMarker) { window.cadFrontBaselineMarker.setMap(null); window.cadFrontBaselineMarker = null; }
     if (window.cadFrontBaselineVisual) { window.cadFrontBaselineVisual.setMap(null); window.cadFrontBaselineVisual = null; }
     window.cadFrontBaseline = null;
+    window.cadFrontEdgeIndexes = [];
+    window.cadFrontEdgeIndex = null;
     if (!skipHistory) {
         window.cadSelectedRidgeIds = [];
         window.cadSelectedRidgeId = null;
@@ -4784,7 +4936,7 @@ window.cadUserClearLines = () => {
     }
 };
 
-window.CAD_GPS_PIN_TYPES = ['water_in', 'water_out', 'machine_entry', 'parking_truck'];
+window.CAD_GPS_PIN_TYPES = ['water_in', 'water_out', 'valve', 'machine_entry', 'parking_truck'];
 window.cadGpsWatchId = null;
 window.cadGpsLastPos = null;
 window.cadGpsPreviewMarker = null;
@@ -4880,7 +5032,7 @@ window.cadSetPinMode = (type) => {
         if (msgEl) { msgEl.innerText = `【角度合わせ】緑の辺をタップしてください`; msgEl.style.color = "#4CAF50"; }
         if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: true });
     } else if (isEquipPin) {
-        const name = type === 'water_in' ? '🚰 給水口ピン' : type === 'water_out' ? '🚩 排水口/水落口ピン' : type === 'parking_truck' ? '🅿️ 駐車場' : '🚜 機械侵入口';
+        const name = type === 'water_in' ? '🚰 給水口ピン' : type === 'water_out' ? '🚩 排水口/水落口ピン' : type === 'valve' ? '⛲ ポンプピン' : type === 'parking_truck' ? '🅿️ 駐車場' : '🚜 機械侵入口';
         if (msgEl) { msgEl.innerText = `【${name}】配置場所をタップ！（または下のGPSで置く）`; msgEl.style.color = "#03A9F4"; }
         window.cadGpsPinType = type;
         window.cadUpdateGpsUi({ status: `選択中: ${name} → 「GPSで置く」か地図タップ` });
@@ -4893,6 +5045,7 @@ window.cadSetPinMode = (type) => {
 window.cadGpsPinTypeLabel = (type) => {
     if (type === 'water_in') return '🚰 給水口';
     if (type === 'water_out') return '🚩 排水口/水落口';
+    if (type === 'valve') return '⛲ ポンプ';
     if (type === 'parking_truck') return '🅿️ 駐車場';
     if (type === 'machine_entry') return '🚜 侵入口';
     return type || '';
@@ -5804,6 +5957,67 @@ window.cadGenerateDrainageLinesFromPins = () => {
 };
 
 window.cadFrontEdgeIndex = null;
+window.cadFrontEdgeIndexes = [];
+
+/** cadFrontBaseline（旧形式・新複数形式）から描画・計算用の正面ラベル位置配列[{lat,lng,a,b}]を返す */
+window.cadGetFrontBaselineList_ = () => {
+    const fb = window.cadFrontBaseline;
+    if (!fb) return [];
+    if (fb && typeof fb === 'object' && Array.isArray(fb.items)) {
+        return fb.items.filter((it) => it && Number.isFinite(Number(it.lat)) && Number.isFinite(Number(it.lng)));
+    }
+    if (Array.isArray(fb)) {
+        if (fb.length === 2 && fb[0] && fb[1] && fb[0].lat != null && fb[1].lat != null && !fb[0].isFrontItem) {
+            const lat0 = typeof fb[0].lat === 'function' ? fb[0].lat() : Number(fb[0].lat);
+            const lng0 = typeof fb[0].lng === 'function' ? fb[0].lng() : Number(fb[0].lng);
+            const lat1 = typeof fb[1].lat === 'function' ? fb[1].lat() : Number(fb[1].lat);
+            const lng1 = typeof fb[1].lng === 'function' ? fb[1].lng() : Number(fb[1].lng);
+            if (Number.isFinite(lat0) && Number.isFinite(lng0) && Number.isFinite(lat1) && Number.isFinite(lng1)) {
+                return [{
+                    lat: (lat0 + lat1) / 2,
+                    lng: (lng0 + lng1) / 2,
+                    a: { lat: lat0, lng: lng0 },
+                    b: { lat: lat1, lng: lng1 }
+                }];
+            }
+        }
+        return fb.map((it) => {
+            if (!it) return null;
+            const lat = typeof it.lat === 'function' ? it.lat() : Number(it.lat);
+            const lng = typeof it.lng === 'function' ? it.lng() : Number(it.lng);
+            return (Number.isFinite(lat) && Number.isFinite(lng)) ? { lat: lat, lng: lng, a: it.a, b: it.b } : null;
+        }).filter(Boolean);
+    }
+    if (typeof fb === 'object' && fb.lat != null && fb.lng != null) {
+        const lat = typeof fb.lat === 'function' ? fb.lat() : Number(fb.lat);
+        const lng = typeof fb.lng === 'function' ? fb.lng() : Number(fb.lng);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            return [{ lat: lat, lng: lng }];
+        }
+    }
+    return [];
+};
+
+window.cadUpdateFrontBaselineItemPos_ = (itemIdx, newLat, newLng) => {
+    const fb = window.cadFrontBaseline;
+    if (fb && typeof fb === 'object' && Array.isArray(fb.items) && fb.items[itemIdx]) {
+        fb.items[itemIdx].lat = newLat;
+        fb.items[itemIdx].lng = newLng;
+        return;
+    }
+    const items = window.cadGetFrontBaselineList_();
+    if (items[itemIdx]) {
+        items[itemIdx].lat = newLat;
+        items[itemIdx].lng = newLng;
+        window.cadFrontBaseline = {
+            multi: true,
+            items: items,
+            edgeIndexes: Array.isArray(window.cadFrontEdgeIndexes) ? window.cadFrontEdgeIndexes.slice() : []
+        };
+    } else {
+        window.cadFrontBaseline = { lat: newLat, lng: newLng };
+    }
+};
 
 window.cadUpdateFrontPickUi = () => {
     const picking = window.cadPinMode === 'front_edge';
@@ -5813,8 +6027,8 @@ window.cadUpdateFrontPickUi = () => {
     const confirmBtn = document.getElementById('cadFrontConfirmBtn');
     if (hint) {
         hint.textContent = picking
-            ? '辺をタップして正面を選び、よければ確定を押してください。確定するまで、別の辺をタップすると選び直します。'
-            : (chosen ? '正面を確定しました。変えるときは「辺を選ぶ」からやり直します。' : '辺をタップすると、同じ方角の辺をまとめて正面にします。');
+            ? '辺をタップして正面を選べます（複数選択可・同じ辺を再タップで解除）。よければ確定を押してください。'
+            : (chosen ? `正面（${chosen}辺）を確定しました。追加・変更するときは「辺を選ぶ」を押してください。` : '辺をタップすると正面にします（複数選択可）。');
     }
     if (btn) {
         btn.textContent = picking ? '選択中' : '辺を選ぶ';
@@ -5828,7 +6042,7 @@ window.cadUpdateFrontPickUi = () => {
     }
     const msg = document.getElementById('cadPinModeMsg');
     if (msg && picking) {
-        msg.innerText = chosen ? '畝の正面：この辺でよければ確定を押してください' : '畝の正面：辺をタップしてください';
+        msg.innerText = chosen ? `畝の正面：${chosen}辺を選択中（続けて他の辺も追加選択できます。よければ確定）` : '畝の正面：正面にする辺をタップしてください（複数選択可）';
         msg.style.color = '#FF5722';
     }
 };
@@ -5915,51 +6129,162 @@ window.cadCollectSameFacingEdges = (ring, edgeIndex) => {
     return indexes;
 };
 
+/** 同じ直線上の辺（段差のない同一ライン）のみをまとめる。段違いの辺は個別に選択・解除できるようにする */
+window.cadCollectCollinearFrontEdges_ = (ring, edgeIndex) => {
+    const base = window.cadRingEdgeInfo(ring, edgeIndex);
+    if (!base) return [edgeIndex];
+    const n = window.cadRingVertexCount(ring);
+    let tPoly = null;
+    let center = null;
+    try {
+        tPoly = turf.polygon([ring]);
+        center = turf.center(tPoly).geometry.coordinates;
+    } catch (e) { }
+    const baseInward = (center && tPoly && typeof window.cadInwardBearingForEdge === 'function')
+        ? window.cadInwardBearingForEdge(base, center, tPoly)
+        : null;
+    const indexes = [];
+    for (let i = 0; i < n; i++) {
+        const info = window.cadRingEdgeInfo(ring, i);
+        if (!info || info.len < 0.2) continue;
+        const diff = window.cadBearingDiff(info.bearing, base.bearing);
+        const parallel = Math.min(diff, Math.abs(180 - diff)) <= 12;
+        if (!parallel) continue;
+        if (baseInward != null && center && tPoly && typeof window.cadInwardBearingForEdge === 'function') {
+            const inw = window.cadInwardBearingForEdge(info, center, tPoly);
+            if (window.cadBearingDiff(inw, baseInward) > 35) continue;
+        }
+        const mid = turf.midpoint(turf.point(info.a), turf.point(info.b)).geometry.coordinates;
+        const off = window.cadMetersAlongBearing_(base.a, mid, base.bearing + 90);
+        if (Math.abs(off) > 0.85) continue;
+        indexes.push(i);
+    }
+    if (!indexes.length) indexes.push(edgeIndex);
+    return indexes;
+};
+
+/** 選択された複数の正面辺から、同一ラインごとの「畝の正面」ラベル位置を計算してwindow.cadFrontBaselineを更新 */
+window.cadRebuildFrontBaselineFromEdges_ = (ring) => {
+    const edgeIndexes = Array.isArray(window.cadFrontEdgeIndexes) ? window.cadFrontEdgeIndexes : [];
+    if (!ring || !edgeIndexes.length) {
+        window.cadFrontBaseline = null;
+        return;
+    }
+    let tPoly = null;
+    let center = null;
+    try {
+        tPoly = turf.polygon([ring]);
+        center = turf.center(tPoly).geometry.coordinates;
+    } catch (e) { }
+
+    const entries = edgeIndexes.map((ei) => {
+        const info = window.cadRingEdgeInfo(ring, ei);
+        if (!info) return null;
+        const inward = (center && tPoly && typeof window.cadInwardBearingForEdge === 'function')
+            ? window.cadInwardBearingForEdge(info, center, tPoly)
+            : null;
+        return { ei: ei, info: info, inward: inward };
+    }).filter(Boolean);
+
+    const used = {};
+    const items = [];
+    entries.forEach((start) => {
+        if (used[start.ei]) return;
+        used[start.ei] = true;
+        const group = [start];
+        entries.forEach((other) => {
+            if (used[other.ei]) return;
+            const diff = window.cadBearingDiff(start.info.bearing, other.info.bearing);
+            if (Math.min(diff, Math.abs(180 - diff)) > 12) return;
+            if (start.inward != null && other.inward != null && window.cadBearingDiff(start.inward, other.inward) > 35) return;
+            const mid = turf.midpoint(turf.point(other.info.a), turf.point(other.info.b)).geometry.coordinates;
+            const off = window.cadMetersAlongBearing_(start.info.a, mid, start.info.bearing + 90);
+            if (Math.abs(off) > 0.85) return;
+            used[other.ei] = true;
+            group.push(other);
+        });
+
+        const origin = turf.point(start.info.a);
+        let minD = Infinity;
+        let maxD = -Infinity;
+        let minC = start.info.a;
+        let maxC = start.info.b;
+        group.forEach((g) => {
+            [g.info.a, g.info.b].forEach((c) => {
+                const d = turf.distance(origin, turf.point(c), { units: 'meters' });
+                const b = turf.bearing(origin, turf.point(c));
+                const signed = d * Math.cos((b - start.info.bearing) * Math.PI / 180);
+                if (signed < minD) { minD = signed; minC = c; }
+                if (signed > maxD) { maxD = signed; maxC = c; }
+            });
+        });
+
+        items.push({
+            isFrontItem: true,
+            lat: (minC[1] + maxC[1]) / 2,
+            lng: (minC[0] + maxC[0]) / 2,
+            a: { lng: minC[0], lat: minC[1] },
+            b: { lng: maxC[0], lat: maxC[1] },
+            edgeIndexes: group.map((g) => g.ei)
+        });
+    });
+
+    window.cadFrontBaseline = items.length ? {
+        multi: true,
+        items: items,
+        edgeIndexes: edgeIndexes.slice()
+    } : null;
+};
+
 window.cadApplyFrontEdge = (edgeIndex) => {
     const ring = window.cadGetFieldRingCoords();
     const info = ring ? window.cadRingEdgeInfo(ring, edgeIndex) : null;
     if (!info) return false;
-    const indexes = window.cadCollectSameFacingEdges(ring, edgeIndex);
-    window.cadFrontEdgeIndex = edgeIndex;
-    window.cadFrontEdgeIndexes = indexes;
+    const group = window.cadCollectCollinearFrontEdges_(ring, edgeIndex);
+    const current = Array.isArray(window.cadFrontEdgeIndexes) ? window.cadFrontEdgeIndexes.slice() : [];
+    const allAlreadySelected = group.every((idx) => current.includes(idx));
 
-    const origin = turf.point(info.a);
-    let minD = Infinity;
-    let maxD = -Infinity;
-    let minC = info.a;
-    let maxC = info.b;
-    indexes.forEach((i) => {
-        const edge = window.cadRingEdgeInfo(ring, i);
-        if (!edge) return;
-        [edge.a, edge.b].forEach((c) => {
-            const d = turf.distance(origin, turf.point(c), { units: 'meters' });
-            const b = turf.bearing(origin, turf.point(c));
-            const signed = d * Math.cos((b - info.bearing) * Math.PI / 180);
-            if (signed < minD) { minD = signed; minC = c; }
-            if (signed > maxD) { maxD = signed; maxC = c; }
+    if (allAlreadySelected) {
+        // 既に選択されている辺をタップした場合は選択解除
+        window.cadFrontEdgeIndexes = current.filter((idx) => !group.includes(idx));
+    } else {
+        // 未選択の辺をタップした場合は追加選択
+        group.forEach((idx) => {
+            if (!current.includes(idx)) current.push(idx);
         });
-    });
-    window.cadFrontBaseline = [
-        { lng: minC[0], lat: minC[1] },
-        { lng: maxC[0], lat: maxC[1] }
-    ];
+        window.cadFrontEdgeIndexes = current;
+    }
+
+    window.cadFrontEdgeIndex = window.cadFrontEdgeIndexes.length
+        ? window.cadFrontEdgeIndexes[window.cadFrontEdgeIndexes.length - 1]
+        : null;
+
+    window.cadRebuildFrontBaselineFromEdges_(ring);
     if (window.cadFrontBaselineVisual) window.cadFrontBaselineVisual.setMap(null);
     if (window.cadFrontBaselineMarker) window.cadFrontBaselineMarker.setMap(null);
 
-    let angle = info.bearing;
-    while (angle < 0) angle += 360;
-    while (angle >= 180) angle -= 180;
-    angle = Math.round(angle * 10) / 10;
-    const angleEl = document.getElementById('cadAngle');
-    if (angleEl) angleEl.value = String(angle);
-    if (typeof window.updateCadPreviewCount === 'function') window.updateCadPreviewCount();
+    // 畝が未生成のときのみ角度を連動（生成後に正面を追加選択したときに角度がリセットされないようにする）
+    const hasRidges = ((window.cadUnePolygons && window.cadUnePolygons.length) || 0) > 0;
+    if (!hasRidges && window.cadFrontEdgeIndexes.length > 0) {
+        let angle = info.bearing;
+        while (angle < 0) angle += 360;
+        while (angle >= 180) angle -= 180;
+        angle = Math.round(angle * 10) / 10;
+        const angleEl = document.getElementById('cadAngle');
+        if (angleEl) angleEl.value = String(angle);
+        if (typeof window.updateCadPreviewCount === 'function') window.updateCadPreviewCount();
+    }
+
     if (typeof window.cadUpdateFrontPickUi === 'function') window.cadUpdateFrontPickUi();
     if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay();
     if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
 
     const msg = document.getElementById('cadPinModeMsg');
     if (msg) {
-        msg.innerText = `この方角の辺 ${indexes.length} 本を選びました。よければ確定を押してください。`;
+        const totalChosen = window.cadFrontEdgeIndexes.length;
+        msg.innerText = totalChosen > 0
+            ? `畝の正面を ${totalChosen} 辺選択中です（他の辺もタップで追加選択可）。よければ確定を押してください。`
+            : '畝の正面の選択を解除しました。辺をタップして選んでください。';
         msg.style.color = '#FF5722';
     }
     return true;
@@ -9234,24 +9559,21 @@ window.cadGenerateLines = () => {
         let startOffset = 0;
 
         if (window.cadFrontBaseline) {
-            if (Array.isArray(window.cadFrontBaseline) && window.cadFrontBaseline.length === 2) {
-                let p1lng = typeof window.cadFrontBaseline[0].lng === 'function' ? window.cadFrontBaseline[0].lng() : parseFloat(window.cadFrontBaseline[0].lng);
-                let p1lat = typeof window.cadFrontBaseline[0].lat === 'function' ? window.cadFrontBaseline[0].lat() : parseFloat(window.cadFrontBaseline[0].lat);
-                let p2lng = typeof window.cadFrontBaseline[1].lng === 'function' ? window.cadFrontBaseline[1].lng() : parseFloat(window.cadFrontBaseline[1].lng);
-                let p2lat = typeof window.cadFrontBaseline[1].lat === 'function' ? window.cadFrontBaseline[1].lat() : parseFloat(window.cadFrontBaseline[1].lat);
-                let p1 = turf.point([p1lng, p1lat]);
-                let p2 = turf.point([p2lng, p2lat]);
-                baseOrigin = turf.midpoint(p1, p2);
-            } else {
-                let pLng = typeof window.cadFrontBaseline.lng === 'function' ? window.cadFrontBaseline.lng() : parseFloat(window.cadFrontBaseline.lng);
-                let pLat = typeof window.cadFrontBaseline.lat === 'function' ? window.cadFrontBaseline.lat() : parseFloat(window.cadFrontBaseline.lat);
-                baseOrigin = turf.point([pLng, pLat]);
+            const frontItems = typeof window.cadGetFrontBaselineList_ === 'function'
+                ? window.cadGetFrontBaselineList_()
+                : [];
+            if (frontItems.length > 0) {
+                let sumLng = 0, sumLat = 0;
+                frontItems.forEach((it) => {
+                    sumLng += Number(it.lng);
+                    sumLat += Number(it.lat);
+                });
+                baseOrigin = turf.point([sumLng / frontItems.length, sumLat / frontItems.length]);
+                let centerBearing = turf.bearing(baseOrigin, centerTurf);
+                let diffPlus = (centerBearing - (angle + 90)) * Math.PI / 180;
+                let diffMinus = (centerBearing - (angle - 90)) * Math.PI / 180;
+                growDirection = Math.cos(diffPlus) > Math.cos(diffMinus) ? angle + 90 : angle - 90;
             }
-
-            let centerBearing = turf.bearing(baseOrigin, centerTurf);
-            let diffPlus = (centerBearing - (angle + 90)) * Math.PI / 180;
-            let diffMinus = (centerBearing - (angle - 90)) * Math.PI / 180;
-            growDirection = Math.cos(diffPlus) > Math.cos(diffMinus) ? angle + 90 : angle - 90;
         }
 
         tPoly.geometry.coordinates[0].forEach(coord => {
@@ -10088,263 +10410,18 @@ window.cadGetSelectionCenterLatLng_ = (selectedRidges) => {
     return { lat: sumLat / count, lng: sumLng / count };
 };
 
-/** 選択畝のSVGハンドル（上下端伸縮＋中央の左右移動⇔＋左右の幅変更↔）を生成 */
+/** 選択畝のSVGハンドル（上下端伸縮のみ）を生成 */
 window.cadAttachSelectionHandles_ = (handlesGroup) => {
     window._cadSelectionHandleNodes = null;
     if (!handlesGroup) return;
     const selected = window.cadGetSelectedRidges_();
     if (!selected.length) return;
 
-    // 1. 各選択畝の上下端ハンドル（最大35本まで表示）
     if (selected.length <= 35) {
         selected.forEach((sp) => {
             window.cadAttachRidgeEndHandles_(sp, handlesGroup);
         });
     }
-
-    // 2. 左右の幅変更ハンドル（緑丸 ↔）
-    const makeWidthHandle = (sideSign) => {
-        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        circle.setAttribute('r', '11');
-        circle.setAttribute('fill', '#43A047');
-        circle.setAttribute('stroke', '#FFFFFF');
-        circle.setAttribute('stroke-width', '2.5');
-        circle.setAttribute('data-cad-handle', '1');
-        circle.setAttribute('style', 'cursor: ew-resize; pointer-events: auto;');
-
-        const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        txt.setAttribute('fill', '#FFFFFF');
-        txt.setAttribute('font-size', '11');
-        txt.setAttribute('font-weight', 'bold');
-        txt.setAttribute('text-anchor', 'middle');
-        txt.setAttribute('dominant-baseline', 'central');
-        txt.setAttribute('style', 'pointer-events: none; user-select: none;');
-        txt.textContent = sideSign < 0 ? '◀' : '▶';
-
-        let draggingW = false;
-        let startLL = null;
-        let rightB = 0;
-        let snapshots = [];
-
-        const onMove = (ev) => {
-            if (!draggingW) return;
-            if (ev.cancelable) ev.preventDefault();
-            const cx = ev.touches ? ev.touches[0].clientX : ev.clientX;
-            const cy = ev.touches ? ev.touches[0].clientY : ev.clientY;
-            const curLL = window.screenPixelToLatLng(cx, cy);
-            if (!curLL || !startLL || !snapshots.length) return;
-            const dragAlongRight = window.cadMetersAlongBearing_(
-                [startLL.lng(), startLL.lat()],
-                [curLL.lng(), curLL.lat()],
-                rightB
-            );
-            const deltaWidthM = dragAlongRight * sideSign * 2;
-            let repCm = null;
-            window.cadSuppressPathEvents = true;
-            try {
-                snapshots.forEach((snap) => {
-                    const newW = Math.max(0.15, Math.min(10.0, snap.mInfo.widthM + deltaWidthM));
-                    if (repCm === null) repCm = Math.round(newW * 100);
-                    const scaleDelta = (newW / snap.mInfo.widthM) - 1;
-                    snap.rings.forEach((rData) => {
-                        rData.coords.forEach((c, idx) => {
-                            const t = window.cadMetersAlongBearing_(snap.mInfo.origin, c, snap.mInfo.rightBearing);
-                            const dt = t - snap.mInfo.midT;
-                            const shiftT = dt * scaleDelta;
-                            const moved = window.cadDestinationMeters_(c, shiftT, snap.mInfo.rightBearing);
-                            rData.ring.setAt(idx, new google.maps.LatLng(moved[1], moved[0]));
-                        });
-                    });
-                });
-            } finally {
-                window.cadSuppressPathEvents = false;
-            }
-            if (repCm != null) {
-                const msg = document.getElementById('cadPinModeMsg');
-                if (msg) {
-                    msg.innerText = `📏 畝幅を変更中: 約${repCm}cm`;
-                    msg.style.color = '#81C784';
-                }
-                const inp1 = document.getElementById('cadPopupWidthCmInput');
-                if (inp1) inp1.value = String(repCm);
-                const inp2 = document.getElementById('cadPanelWidthCmInput');
-                if (inp2) inp2.value = String(repCm);
-            }
-            if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: true });
-        };
-
-        const onEnd = () => {
-            if (!draggingW) return;
-            draggingW = false;
-            window.cadRidgeWidthDragging = false;
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onEnd);
-            window.removeEventListener('touchmove', onMove);
-            window.removeEventListener('touchend', onEnd);
-            if (typeof window.reassignLabels === 'function') window.reassignLabels();
-            if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
-            if (typeof window.cadRefreshRidgeSelectionUi_ === 'function') window.cadRefreshRidgeSelectionUi_();
-            if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: false });
-        };
-
-        const onStart = (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            const cx = e.touches ? e.touches[0].clientX : e.clientX;
-            const cy = e.touches ? e.touches[0].clientY : e.clientY;
-            startLL = window.screenPixelToLatLng(cx, cy);
-            if (!startLL) return;
-            const curSel = window.cadGetSelectedRidges_();
-            if (!curSel.length) return;
-            rightB = window.cadGetSelectionRightBearing_().rightBearing;
-            snapshots = curSel.map((poly) => {
-                const mInfo = window.cadMeasureRidgeTransverse_(poly, rightB);
-                if (!mInfo || !(mInfo.widthM > 0.05)) return null;
-                const rings = window.cadGetPolyRings_(poly).map((ring) => {
-                    const coords = [];
-                    for (let i = 0; i < ring.getLength(); i++) {
-                        const pt = ring.getAt(i);
-                        coords.push([pt.lng(), pt.lat()]);
-                    }
-                    return { ring: ring, coords: coords };
-                });
-                return { poly: poly, mInfo: mInfo, rings: rings };
-            }).filter(Boolean);
-            if (!snapshots.length) return;
-            draggingW = true;
-            window.cadRidgeWidthDragging = true;
-            window.addEventListener('mousemove', onMove);
-            window.addEventListener('mouseup', onEnd);
-            window.addEventListener('touchmove', onMove, { passive: false });
-            window.addEventListener('touchend', onEnd);
-        };
-
-        circle.addEventListener('mousedown', onStart);
-        circle.addEventListener('touchstart', onStart, { passive: false });
-        handlesGroup.appendChild(circle);
-        handlesGroup.appendChild(txt);
-        return { circle: circle, txt: txt };
-    };
-
-    const leftWidthHandle = makeWidthHandle(-1);
-    const rightWidthHandle = makeWidthHandle(1);
-
-    // 3. 中央の左右移動ハンドル（水色丸 ⇔）
-    const moveCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    moveCircle.setAttribute('r', '15');
-    moveCircle.setAttribute('fill', '#0288D1');
-    moveCircle.setAttribute('stroke', '#FFFFFF');
-    moveCircle.setAttribute('stroke-width', '3');
-    moveCircle.setAttribute('data-cad-handle', '1');
-    moveCircle.setAttribute('style', 'cursor: ew-resize; pointer-events: auto;');
-
-    const moveTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    moveTxt.setAttribute('fill', '#FFFFFF');
-    moveTxt.setAttribute('font-size', '14');
-    moveTxt.setAttribute('font-weight', 'bold');
-    moveTxt.setAttribute('text-anchor', 'middle');
-    moveTxt.setAttribute('dominant-baseline', 'central');
-    moveTxt.setAttribute('style', 'pointer-events: none; user-select: none;');
-    moveTxt.textContent = '⇔';
-
-    let draggingMove = false;
-    let moveStartLL = null;
-    let moveRightB = 0;
-    let moveSnapshots = [];
-
-    const onMoveDrag = (ev) => {
-        if (!draggingMove) return;
-        if (ev.cancelable) ev.preventDefault();
-        const cx = ev.touches ? ev.touches[0].clientX : ev.clientX;
-        const cy = ev.touches ? ev.touches[0].clientY : ev.clientY;
-        const curLL = window.screenPixelToLatLng(cx, cy);
-        if (!curLL || !moveStartLL || !moveSnapshots.length) return;
-        const deltaM = window.cadMetersAlongBearing_(
-            [moveStartLL.lng(), moveStartLL.lat()],
-            [curLL.lng(), curLL.lat()],
-            moveRightB
-        );
-        window.cadSuppressPathEvents = true;
-        try {
-            moveSnapshots.forEach((snap) => {
-                snap.rings.forEach((rData) => {
-                    rData.coords.forEach((c, idx) => {
-                        const moved = window.cadDestinationMeters_(c, deltaM, moveRightB);
-                        rData.ring.setAt(idx, new google.maps.LatLng(moved[1], moved[0]));
-                    });
-                });
-                if (typeof window.updateSingleLabelPosition === 'function') {
-                    window.updateSingleLabelPosition(snap.poly);
-                }
-            });
-        } finally {
-            window.cadSuppressPathEvents = false;
-        }
-        const msg = document.getElementById('cadPinModeMsg');
-        if (msg) {
-            const cm = Math.round(Math.abs(deltaM) * 100);
-            const dirStr = deltaM >= 0 ? '右へ' : '左へ';
-            msg.innerText = `↔ 選択した${moveSnapshots.length}本の畝を${dirStr} ${cm}cm 移動中`;
-            msg.style.color = '#4FC3F7';
-        }
-        if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: true });
-    };
-
-    const onMoveEnd = () => {
-        if (!draggingMove) return;
-        draggingMove = false;
-        window.cadRidgeMoveDragging = false;
-        window.removeEventListener('mousemove', onMoveDrag);
-        window.removeEventListener('mouseup', onMoveEnd);
-        window.removeEventListener('touchmove', onMoveDrag);
-        window.removeEventListener('touchend', onMoveEnd);
-        if (typeof window.reassignLabels === 'function') window.reassignLabels();
-        if (typeof window.saveCadStateToHistory === 'function') window.saveCadStateToHistory();
-        if (typeof window.cadRefreshRidgeSelectionUi_ === 'function') window.cadRefreshRidgeSelectionUi_();
-        if (typeof window.updateCadSvgOverlay === 'function') window.updateCadSvgOverlay({ light: false });
-    };
-
-    const onMoveStart = (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        const cx = e.touches ? e.touches[0].clientX : e.clientX;
-        const cy = e.touches ? e.touches[0].clientY : e.clientY;
-        moveStartLL = window.screenPixelToLatLng(cx, cy);
-        if (!moveStartLL) return;
-        const curSel = window.cadGetSelectedRidges_();
-        if (!curSel.length) return;
-        moveRightB = window.cadGetSelectionRightBearing_().rightBearing;
-        moveSnapshots = curSel.map((poly) => {
-            const rings = window.cadGetPolyRings_(poly).map((ring) => {
-                const coords = [];
-                for (let i = 0; i < ring.getLength(); i++) {
-                    const pt = ring.getAt(i);
-                    coords.push([pt.lng(), pt.lat()]);
-                }
-                return { ring: ring, coords: coords };
-            });
-            return { poly: poly, rings: rings };
-        });
-        draggingMove = true;
-        window.cadRidgeMoveDragging = true;
-        window.addEventListener('mousemove', onMoveDrag);
-        window.addEventListener('mouseup', onMoveEnd);
-        window.addEventListener('touchmove', onMoveDrag, { passive: false });
-        window.addEventListener('touchend', onMoveEnd);
-    };
-
-    moveCircle.addEventListener('mousedown', onMoveStart);
-    moveCircle.addEventListener('touchstart', onMoveStart, { passive: false });
-    handlesGroup.appendChild(moveCircle);
-    handlesGroup.appendChild(moveTxt);
-
-    window._cadSelectionHandleNodes = {
-        moveCircle: moveCircle,
-        moveTxt: moveTxt,
-        leftWidthHandle: leftWidthHandle,
-        rightWidthHandle: rightWidthHandle
-    };
-    window.cadPositionSelectionHandles_();
 };
 
 window.cadPositionSelectionHandles_ = () => {
@@ -10353,54 +10430,6 @@ window.cadPositionSelectionHandles_ = () => {
     selected.forEach((sp) => {
         window.cadPositionRidgeEndHandles_(sp);
     });
-    const nodes = window._cadSelectionHandleNodes;
-    if (!nodes || typeof window.latLngToScreenPixel !== 'function') return;
-
-    const selCenter = window.cadGetSelectionCenterLatLng_(selected);
-    if (selCenter && nodes.moveCircle && nodes.moveTxt) {
-        const pt = window.latLngToScreenPixel(selCenter.lat, selCenter.lng);
-        if (pt) {
-            nodes.moveCircle.setAttribute('cx', pt.x);
-            nodes.moveCircle.setAttribute('cy', pt.y);
-            nodes.moveTxt.setAttribute('x', pt.x);
-            nodes.moveTxt.setAttribute('y', pt.y);
-        }
-    }
-
-    const primaryPoly = selected[selected.length - 1];
-    const mInfo = window.cadMeasureRidgeTransverse_(primaryPoly);
-    if (mInfo && nodes.leftWidthHandle && nodes.rightWidthHandle) {
-        // 中央の移動ハンドル(⇔)と重ならないよう、長手方向に少しずらした位置の左右端に配置
-        const alongShift = Math.min(Math.max(mInfo.lenM * 0.24, 0.8), 6.0);
-        const basePt = window.cadDestinationMeters_(mInfo.centerLngLat, alongShift, mInfo.bearing);
-        const halfW = Math.max(0.25, mInfo.widthM / 2);
-        const leftLL = window.cadDestinationMeters_(basePt, -halfW, mInfo.rightBearing);
-        const rightLL = window.cadDestinationMeters_(basePt, halfW, mInfo.rightBearing);
-        let leftPx = window.latLngToScreenPixel(leftLL[1], leftLL[0]);
-        let rightPx = window.latLngToScreenPixel(rightLL[1], rightLL[0]);
-        if (leftPx && rightPx) {
-            // 画面上で狭すぎるときは左右に少し広げてタップしやすくする
-            const dx = rightPx.x - leftPx.x;
-            const dy = rightPx.y - leftPx.y;
-            const distPx = Math.hypot(dx, dy);
-            if (distPx < 36) {
-                const mx = (leftPx.x + rightPx.x) / 2;
-                const my = (leftPx.y + rightPx.y) / 2;
-                const ux = distPx > 0.5 ? dx / distPx : 1;
-                const uy = distPx > 0.5 ? dy / distPx : 0;
-                leftPx = { x: mx - ux * 18, y: my - uy * 18 };
-                rightPx = { x: mx + ux * 18, y: my + uy * 18 };
-            }
-            nodes.leftWidthHandle.circle.setAttribute('cx', leftPx.x);
-            nodes.leftWidthHandle.circle.setAttribute('cy', leftPx.y);
-            nodes.leftWidthHandle.txt.setAttribute('x', leftPx.x);
-            nodes.leftWidthHandle.txt.setAttribute('y', leftPx.y);
-            nodes.rightWidthHandle.circle.setAttribute('cx', rightPx.x);
-            nodes.rightWidthHandle.circle.setAttribute('cy', rightPx.y);
-            nodes.rightWidthHandle.txt.setAttribute('x', rightPx.x);
-            nodes.rightWidthHandle.txt.setAttribute('y', rightPx.y);
-        }
-    }
 };
 
 /** 選択された畝をまとめて左右に移動（deltaMeters: 左は負、右は正） */
@@ -10869,31 +10898,6 @@ window.cadEnsureRidgePopup_ = () => {
     return popup;
 };
 
-window.cadEnsureMode2MultiRidgePanel_ = () => {
-    let panel = document.getElementById('cadMultiRidgeEditPanel');
-    if (panel) return panel;
-    const mode2 = document.getElementById('cadMode2');
-    if (!mode2) return null;
-
-    panel = document.createElement('div');
-    panel.id = 'cadMultiRidgeEditPanel';
-    panel.style.cssText = 'background:#1b2631; border:1px solid #29B6F6; border-radius:8px; padding:8px; margin-bottom:10px;';
-    panel.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-            <div style="font-size:12px; color:#81D4FA; font-weight:bold;">🚜 畝の複数選択・左右移動・幅変更</div>
-            <button type="button" onclick="cadSelectAllRidges()" style="background:#1565C0; color:#fff; border:none; padding:4px 10px; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">全畝を選択</button>
-        </div>
-        <div id="cadMultiRidgeEmptyHint" style="font-size:11px; color:#cfd8dc; line-height:1.4;">
-            地図上の畝をタップすると複数選べます。選んだ畝はまとめて左右に動かしたり、畝幅を広げたり狭めたりできます。
-        </div>
-        <div id="cadMultiRidgeControlsWrap" style="display:none; margin-top:6px;">
-            ${window.cadBuildRidgeControlMarkup_('cadPanel')}
-        </div>
-    `;
-    mode2.insertBefore(panel, mode2.firstChild);
-    return panel;
-};
-
 window.cadGetPolyCenterLatLng_ = (poly) => {
     if (!poly) return null;
     if (typeof poly.getPath === 'function') {
@@ -10924,7 +10928,10 @@ window.cadRefreshRidgeSelectionUi_ = () => {
     const bar = document.getElementById('cadRidgeSelectBar');
     const label = document.getElementById('cadRidgeSelectLabel');
     const popup = window.cadEnsureRidgePopup_();
-    const panel = window.cadEnsureMode2MultiRidgePanel_();
+    const oldBottomPanel = document.getElementById('cadMultiRidgeEditPanel');
+    if (oldBottomPanel && oldBottomPanel.parentNode) {
+        oldBottomPanel.parentNode.removeChild(oldBottomPanel);
+    }
     const selected = window.cadGetSelectedRidges_();
 
     if (!selected.length) {
@@ -10933,12 +10940,6 @@ window.cadRefreshRidgeSelectionUi_ = () => {
         window.cadSelectedRidgeAnchorLatLng = null;
         if (bar) bar.style.display = 'none';
         if (popup) popup.style.display = 'none';
-        if (panel) {
-            const emptyHint = document.getElementById('cadMultiRidgeEmptyHint');
-            const wrap = document.getElementById('cadMultiRidgeControlsWrap');
-            if (emptyHint) emptyHint.style.display = 'block';
-            if (wrap) wrap.style.display = 'none';
-        }
         return;
     }
 
@@ -10957,28 +10958,19 @@ window.cadRefreshRidgeSelectionUi_ = () => {
     if (bar) bar.style.display = 'none';
     if (label) label.textContent = titleText;
 
-    ['cadPopup', 'cadPanel'].forEach((prefix) => {
-        const lbl = document.getElementById(prefix + 'Label');
-        if (lbl) lbl.textContent = titleText;
-        const wInp = document.getElementById(prefix + 'WidthCmInput');
-        if (wInp && repCm != null && document.activeElement !== wInp) {
-            wInp.value = String(repCm);
-        }
-        const gapRow = document.getElementById(prefix + 'GapRow');
-        if (gapRow) {
-            gapRow.style.display = selected.length >= 2 ? 'flex' : 'none';
-        }
-        const rangeBtn = document.getElementById(prefix + 'RangeBtn');
-        if (rangeBtn) {
-            rangeBtn.style.opacity = selected.length >= 2 ? '1' : '0.6';
-        }
-    });
-
-    if (panel) {
-        const emptyHint = document.getElementById('cadMultiRidgeEmptyHint');
-        const wrap = document.getElementById('cadMultiRidgeControlsWrap');
-        if (emptyHint) emptyHint.style.display = 'none';
-        if (wrap) wrap.style.display = 'block';
+    const lbl = document.getElementById('cadPopupLabel');
+    if (lbl) lbl.textContent = titleText;
+    const wInp = document.getElementById('cadPopupWidthCmInput');
+    if (wInp && repCm != null && document.activeElement !== wInp) {
+        wInp.value = String(repCm);
+    }
+    const gapRow = document.getElementById('cadPopupGapRow');
+    if (gapRow) {
+        gapRow.style.display = selected.length >= 2 ? 'flex' : 'none';
+    }
+    const rangeBtn = document.getElementById('cadPopupRangeBtn');
+    if (rangeBtn) {
+        rangeBtn.style.opacity = selected.length >= 2 ? '1' : '0.6';
     }
 
     const center = window.cadGetSelectionCenterLatLng_(selected);
@@ -11271,16 +11263,108 @@ window.cadUpdateTargetNameHeader_ = () => {
     el.innerText = label;
 };
 
+/** 今年の年度（例: "2026年度"）を返す */
+window.cadGetCurrentFiscalYearLabel_ = () => {
+    return new Date().getFullYear() + '年度';
+};
+
+/** 圃場の既存図面名一覧を取得（重複チェック用） */
+window.cadGetExistingDrawingNames_ = async (fieldId, excludeRow) => {
+    const names = new Set();
+    if (!fieldId) return names;
+    let history = null;
+    const cache = window._cadRegistryCache && window._cadRegistryCache[fieldId];
+    if (cache && Array.isArray(cache.history)) {
+        history = cache.history;
+    } else if (typeof callGAS === 'function') {
+        try {
+            history = await callGAS('getPolygonDrawingHistory', { id: fieldId, summary: true }) || [];
+            window._cadRegistryCache = window._cadRegistryCache || {};
+            window._cadRegistryCache[fieldId] = { at: Date.now(), history: history };
+        } catch (e) {
+            history = [];
+        }
+    }
+    if (Array.isArray(history)) {
+        history.forEach((item) => {
+            if (!item) return;
+            if (excludeRow != null && String(item.row) === String(excludeRow)) return;
+            const raw = String(item.name || '').trim();
+            if (!raw) return;
+            names.add(raw);
+            if (typeof window.cadParseDrawingNameAndCrops_ === 'function') {
+                const parsed = window.cadParseDrawingNameAndCrops_(raw);
+                if (parsed && parsed.name) names.add(String(parsed.name).trim());
+            }
+        });
+    }
+    return names;
+};
+
+/** 既存図面名と被らないよう、同じ名前があれば2以降の数字を付与する */
+window.cadMakeUniqueDrawingName_ = (baseName, existingNamesSet) => {
+    const base = String(baseName || '').trim();
+    if (!base) return '';
+    if (!existingNamesSet || !existingNamesSet.size || !existingNamesSet.has(base)) {
+        return base;
+    }
+    const stripped = base.replace(/\d+$/, '').trimEnd();
+    const stem = stripped ? (base.match(/^(.*?)\s*\d+$/) ? base.replace(/\s*\d+$/, '') : base) : base;
+    const prefix = stem || base;
+    let num = 2;
+    while (existingNamesSet.has(prefix + num) || existingNamesSet.has(prefix + ' ' + num)) {
+        num++;
+    }
+    return prefix + num;
+};
+
+/** CAD共通: 作物マスタへ新しい作物を追加してローカルキャッシュにも反映 */
+window.cadAddNewCropToMaster_ = async (rawName) => {
+    const name = String(rawName || '').trim();
+    if (!name) return { ok: false, reason: 'empty' };
+    const icon = (typeof window.getCropIconEmoji_ === 'function') ? window.getCropIconEmoji_(name) : '🌱';
+    const existing = window.cadGetAvailableCropsList_();
+    if (existing.includes(name)) {
+        return { ok: true, name: name, alreadyExists: true };
+    }
+    if (typeof callGAS === 'function') {
+        const updated = await callGAS('manageMaster', {
+            masterType: 'crop',
+            manageAction: 'add',
+            value: { name: name, density: 0, icon: icon },
+            userName: window.getCadCurrentUserName_()
+        });
+        if (typeof pdlCrops !== 'undefined') {
+            if (Array.isArray(updated)) pdlCrops = updated;
+            else if (Array.isArray(pdlCrops)) pdlCrops.push({ name: name, density: 0, icon: icon });
+        }
+    } else if (typeof pdlCrops !== 'undefined' && Array.isArray(pdlCrops)) {
+        pdlCrops.push({ name: name, density: 0, icon: icon });
+    }
+    if (window._ganttMasters && Array.isArray(window._ganttMasters.crops)) {
+        if (!window._ganttMasters.crops.some(c => String((c && c.name) || c || '').trim() === name)) {
+            window._ganttMasters.crops.push({ name: name, density: 0, icon: icon });
+        }
+    }
+    try { localStorage.removeItem('passionMapInitData'); } catch (e) { }
+    try { localStorage.removeItem('pMapAdminInitData'); } catch (e) { }
+    return { ok: true, name: name, alreadyExists: false };
+};
+
 /** 図面名（任意）と対象作物（複数選択）を設定するモーダル */
 window.cadPickDrawingMeta_ = (opts) => {
     return new Promise((resolve) => {
         let initName = '';
         let initCrops = [];
+        let fieldId = window.cadTargetId || null;
+        let excludeRow = null;
         if (typeof opts === 'string') {
             initName = opts;
         } else if (opts && typeof opts === 'object') {
             initName = opts.name || '';
             initCrops = Array.isArray(opts.crops) ? [...opts.crops] : [];
+            if (opts.fieldId != null) fieldId = opts.fieldId;
+            if (opts.excludeRow != null) excludeRow = opts.excludeRow;
         }
 
         const masterCrops = window.cadGetAvailableCropsList_();
@@ -11290,6 +11374,10 @@ window.cadPickDrawingMeta_ = (opts) => {
         selectedSet.forEach(c => {
             if (c && !masterCrops.includes(c)) masterCrops.push(c);
         });
+
+        let existingNamesSet = new Set();
+        let userEditedName = false;
+        const fiscalYearLabel = window.cadGetCurrentFiscalYearLabel_();
 
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed; inset:0; z-index:1000002; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; backdrop-filter:blur(2px);';
@@ -11307,10 +11395,10 @@ window.cadPickDrawingMeta_ = (opts) => {
             <div style="overflow-y:auto; flex:1; padding-right:2px; display:flex; flex-direction:column; gap:14px;">
                 <div>
                     <label style="display:block; font-size:13px; font-weight:bold; color:#37474f; margin-bottom:6px;">
-                        📝 図面名 <span style="font-size:11px; font-weight:normal; color:#78909c;">(任意)</span>
+                        📝 図面名 <span style="font-size:11px; font-weight:normal; color:#78909c;">(作物を選ぶと「${fiscalYearLabel} 作物名」を自動入力)</span>
                     </label>
                     <input type="text" id="cadMetaDrawingNameInput"
-                        placeholder="例: 2026年春作、標準、全面 など"
+                        placeholder="例: ${fiscalYearLabel} キャベツ"
                         style="width:100%; box-sizing:border-box; padding:10px 12px; font-size:14px; border:1px solid #cfd8dc; border-radius:8px; outline:none;"
                     />
                 </div>
@@ -11324,11 +11412,17 @@ window.cadPickDrawingMeta_ = (opts) => {
                             <button type="button" id="cadMetaClearCropsBtn" style="background:none; border:none; color:#d32f2f; font-size:11px; cursor:pointer; text-decoration:underline; padding:0;">選択解除</button>
                         </div>
                     </div>
-                    ${masterCrops.length > 8 ? `
+                    <div style="display:flex; gap:6px; margin-bottom:8px;">
+                        <input type="text" id="cadMetaNewCropInput" placeholder="＋ 新しい作物名を追加..."
+                            style="flex:1; box-sizing:border-box; padding:7px 10px; font-size:13px; border:1px solid #c8e6c9; border-radius:6px; outline:none; background:#fff;"
+                        />
+                        <button type="button" id="cadMetaAddCropBtn"
+                            style="background:#1565C0; color:#fff; border:none; border-radius:6px; padding:7px 12px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋ 追加</button>
+                    </div>
                     <input type="text" id="cadMetaCropFilterInput" placeholder="🔍 作物を絞り込み..."
-                        style="width:100%; box-sizing:border-box; padding:6px 10px; font-size:12px; border:1px solid #e0e0e0; border-radius:6px; margin-bottom:8px; outline:none;"
-                    />` : ''}
-                    <div id="cadMetaCropsContainer" style="max-height:200px; overflow-y:auto; display:flex; flex-wrap:wrap; gap:6px; padding:6px; border:1px solid #eceff1; border-radius:8px; background:#f9fbe7/0.2; background-color:#fafafa;">
+                        style="width:100%; box-sizing:border-box; padding:6px 10px; font-size:12px; border:1px solid #e0e0e0; border-radius:6px; margin-bottom:8px; outline:none; display:${masterCrops.length > 8 ? 'block' : 'none'};"
+                    />
+                    <div id="cadMetaCropsContainer" style="max-height:200px; overflow-y:auto; display:flex; flex-wrap:wrap; gap:6px; padding:6px; border:1px solid #eceff1; border-radius:8px; background-color:#fafafa;">
                     </div>
                 </div>
             </div>
@@ -11346,8 +11440,8 @@ window.cadPickDrawingMeta_ = (opts) => {
         document.body.appendChild(overlay);
 
         const nameInput = panel.querySelector('#cadMetaDrawingNameInput');
-        if (nameInput) nameInput.value = initName;
-
+        const newCropInput = panel.querySelector('#cadMetaNewCropInput');
+        const addCropBtn = panel.querySelector('#cadMetaAddCropBtn');
         const countEl = panel.querySelector('#cadMetaSelectedCount');
         const clearBtn = panel.querySelector('#cadMetaClearCropsBtn');
         const filterInput = panel.querySelector('#cadMetaCropFilterInput');
@@ -11356,6 +11450,35 @@ window.cadPickDrawingMeta_ = (opts) => {
         const cancelBtn = panel.querySelector('#cadMetaCancelBtn');
         const okBtn = panel.querySelector('#cadMetaOkBtn');
 
+        const buildAutoName = () => {
+            const cropsArr = Array.from(selectedSet);
+            if (!cropsArr.length) return '';
+            const raw = `${fiscalYearLabel} ${cropsArr.join('・')}`;
+            return window.cadMakeUniqueDrawingName_(raw, existingNamesSet);
+        };
+
+        const syncAutoDrawingName = (forceIfAuto) => {
+            if (!nameInput) return;
+            if (userEditedName) return;
+            const auto = buildAutoName();
+            if (auto) {
+                nameInput.value = auto;
+            } else if (forceIfAuto) {
+                nameInput.value = '';
+            }
+        };
+
+        if (nameInput) {
+            if (initName) {
+                nameInput.value = initName;
+            } else if (selectedSet.size > 0) {
+                syncAutoDrawingName(true);
+            }
+            nameInput.addEventListener('input', () => {
+                userEditedName = nameInput.value.trim().length > 0;
+            });
+        }
+
         const updateCount = () => {
             if (countEl) countEl.textContent = `${selectedSet.size}件選択中`;
         };
@@ -11363,6 +11486,9 @@ window.cadPickDrawingMeta_ = (opts) => {
         const renderCrops = () => {
             if (!cropsBox) return;
             cropsBox.innerHTML = '';
+            if (filterInput) {
+                filterInput.style.display = masterCrops.length > 8 ? 'block' : 'none';
+            }
             const filter = filterInput ? filterInput.value.trim().toLowerCase() : '';
             const filtered = masterCrops.filter(name => !filter || name.toLowerCase().includes(filter));
             if (!filtered.length) {
@@ -11385,6 +11511,7 @@ window.cadPickDrawingMeta_ = (opts) => {
                     if (selectedSet.has(name)) selectedSet.delete(name);
                     else selectedSet.add(name);
                     renderCrops();
+                    syncAutoDrawingName(true);
                 };
                 cropsBox.appendChild(btn);
             });
@@ -11393,6 +11520,68 @@ window.cadPickDrawingMeta_ = (opts) => {
 
         renderCrops();
 
+        // 既存図面名一覧を取得して重複回避（2以降を自動付与）を反映
+        const existingReadyPromise = (async () => {
+            existingNamesSet = await window.cadGetExistingDrawingNames_(fieldId, excludeRow);
+            if (!userEditedName && nameInput) {
+                const curVal = nameInput.value.trim();
+                if (!curVal && selectedSet.size > 0) {
+                    nameInput.value = buildAutoName();
+                } else if (curVal && existingNamesSet.has(curVal)) {
+                    nameInput.value = window.cadMakeUniqueDrawingName_(curVal, existingNamesSet);
+                }
+            }
+        })();
+
+        const handleAddCrop = async () => {
+            if (!newCropInput) return;
+            const raw = newCropInput.value.trim();
+            if (!raw) {
+                newCropInput.focus();
+                return;
+            }
+            if (masterCrops.includes(raw)) {
+                selectedSet.add(raw);
+                newCropInput.value = '';
+                renderCrops();
+                syncAutoDrawingName(true);
+                return;
+            }
+            if (addCropBtn) {
+                addCropBtn.disabled = true;
+                addCropBtn.textContent = '追加中…';
+            }
+            try {
+                const res = await window.cadAddNewCropToMaster_(raw);
+                if (res && res.ok) {
+                    if (!masterCrops.includes(res.name)) {
+                        masterCrops.push(res.name);
+                    }
+                    selectedSet.add(res.name);
+                    newCropInput.value = '';
+                    renderCrops();
+                    syncAutoDrawingName(true);
+                }
+            } catch (err) {
+                alert('作物の追加に失敗しました。\n' + (err && err.message ? err.message : err));
+            } finally {
+                if (addCropBtn) {
+                    addCropBtn.disabled = false;
+                    addCropBtn.textContent = '＋ 追加';
+                }
+            }
+        };
+
+        if (addCropBtn) addCropBtn.onclick = handleAddCrop;
+        if (newCropInput) {
+            newCropInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddCrop();
+                }
+            });
+        }
+
         if (filterInput) {
             filterInput.addEventListener('input', renderCrops);
         }
@@ -11400,6 +11589,7 @@ window.cadPickDrawingMeta_ = (opts) => {
             clearBtn.onclick = () => {
                 selectedSet.clear();
                 renderCrops();
+                syncAutoDrawingName(true);
             };
         }
 
@@ -11413,13 +11603,24 @@ window.cadPickDrawingMeta_ = (opts) => {
         overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(null); });
 
         if (okBtn) {
-            okBtn.onclick = () => {
-                const enteredName = nameInput ? nameInput.value.trim() : '';
+            okBtn.onclick = async () => {
+                okBtn.disabled = true;
+                try {
+                    await existingReadyPromise;
+                } catch (e) { }
+                okBtn.disabled = false;
                 const cropsArr = Array.from(selectedSet);
+                let enteredName = nameInput ? nameInput.value.trim() : '';
+                if (!enteredName && cropsArr.length > 0) {
+                    enteredName = `${fiscalYearLabel} ${cropsArr.join('・')}`;
+                }
                 if (!enteredName && !cropsArr.length) {
                     if (!confirm('図面名も作物も指定されていません。このまま登録しますか？')) {
                         return;
                     }
+                }
+                if (enteredName) {
+                    enteredName = window.cadMakeUniqueDrawingName_(enteredName, existingNamesSet);
                 }
                 finish({
                     name: enteredName,
@@ -11447,6 +11648,7 @@ window.saveUneSim = async () => {
 
     // 図面名・複数作物の登録ダイアログを開く
     const meta = await window.cadPickDrawingMeta_({
+        fieldId: p.id,
         name: window.cadDrawingName || '',
         crops: window.cadDrawingCrops || []
     });
@@ -11474,6 +11676,7 @@ window.saveUneSim = async () => {
         customShapes: customShapesData,
         unePolygons: unePolygonsData,
         frontBaseline: window.cadFrontBaseline || null,
+        frontEdgeIndexes: Array.isArray(window.cadFrontEdgeIndexes) ? window.cadFrontEdgeIndexes.slice() : [],
         pinNumFontSize: window.cadPinNumFontSize || 24,
         drawingName: window.cadDrawingName || '',
         drawingCrops: window.cadDrawingCrops || []
@@ -11501,7 +11704,8 @@ window.saveUneSim = async () => {
             drawingCrops: window.cadDrawingCrops || [],
             userName: window.getCadCurrentUserName_()
         });
-        if (window._cadRegistryCache) delete window._cadRegistryCache[p.id];
+        if (typeof window.cadInvalidateRegistryCache_ === 'function') window.cadInvalidateRegistryCache_(p.id);
+        else if (window._cadRegistryCache) delete window._cadRegistryCache[p.id];
         if (typeof window.cadUpdateTargetNameHeader_ === 'function') {
             window.cadUpdateTargetNameHeader_();
         }
@@ -11528,7 +11732,7 @@ window.saveUneSim = async () => {
         } else {
             alert('💾 描画した地形とピンをすべて保存しました！');
         }
-        window.closeCADMode();
+        window.closeCADMode({ force: true });
     } catch (e) {
         console.error(e);
         alert("保存中にエラーが発生しました。");
@@ -11588,6 +11792,80 @@ window.cadCanApplyRegistryResult_ = (seq, id) => {
     return true;
 };
 
+window.cadRegistryCacheTtlMs_ = 300000;
+
+window.cadGetRegistryCache_ = (id) => {
+    const key = String(id || '');
+    if (!key) return null;
+    window._cadRegistryCache = window._cadRegistryCache || {};
+    if (window._cadRegistryCache[key]) return window._cadRegistryCache[key];
+    try {
+        const raw = localStorage.getItem('cadRegCache_' + key);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.history) && typeof parsed.at === 'number') {
+            window._cadRegistryCache[key] = parsed;
+            return parsed;
+        }
+    } catch (e) { }
+    return null;
+};
+
+window.cadSetRegistryCache_ = (id, history) => {
+    const key = String(id || '');
+    if (!key) return;
+    const entry = { at: Date.now(), history: Array.isArray(history) ? history : [] };
+    window._cadRegistryCache = window._cadRegistryCache || {};
+    window._cadRegistryCache[key] = entry;
+    try {
+        // summaryのみなので軽量だが、万一容量超過時は無視
+        const slim = entry.history.map(item => ({
+            row: item.row,
+            date: item.date,
+            name: item.name,
+            fp: item.fp
+        }));
+        localStorage.setItem('cadRegCache_' + key, JSON.stringify({ at: entry.at, history: slim }));
+    } catch (e) { }
+};
+
+window.cadInvalidateRegistryCache_ = (id) => {
+    const key = String(id || '');
+    if (!key) return;
+    if (window._cadRegistryCache) delete window._cadRegistryCache[key];
+    if (window._cadRegistryInflight) delete window._cadRegistryInflight[key];
+    try { localStorage.removeItem('cadRegCache_' + key); } catch (e) { }
+};
+
+window.cadFetchRegistryHistory_ = (id) => {
+    const key = String(id || '');
+    window._cadRegistryInflight = window._cadRegistryInflight || {};
+    if (window._cadRegistryInflight[key]) return window._cadRegistryInflight[key];
+    const req = (async () => {
+        try {
+            const history = await callGAS('getPolygonDrawingHistory', { id: id, summary: true }) || [];
+            window.cadSetRegistryCache_(id, history);
+            return history;
+        } finally {
+            if (window._cadRegistryInflight && window._cadRegistryInflight[key] === req) {
+                delete window._cadRegistryInflight[key];
+            }
+        }
+    })();
+    window._cadRegistryInflight[key] = req;
+    return req;
+};
+
+window.cadPrefetchRegistry_ = (id) => {
+    const key = String(id || '');
+    if (!key || typeof callGAS !== 'function') return;
+    if (typeof window.isAdminAuthenticatedForCad_ === 'function' && !window.isAdminAuthenticatedForCad_()) return;
+    const cache = window.cadGetRegistryCache_(key);
+    if (cache && (Date.now() - cache.at) < window.cadRegistryCacheTtlMs_) return;
+    if (window._cadRegistryInflight && window._cadRegistryInflight[key]) return;
+    window.cadFetchRegistryHistory_(key).catch(() => { });
+};
+
 window.openCadRegistry = async (id, opts) => {
     opts = opts || {};
     // Admin未ログイン時はCADを開かず、ログイン後に再開する
@@ -11640,19 +11918,35 @@ window.openCadRegistry = async (id, opts) => {
             window.openCADMode(id, { blank: true });
         };
     }
-    const cache = window._cadRegistryCache && window._cadRegistryCache[id];
-    if (!opts.refresh && cache && (Date.now() - cache.at) < 60000) {
+    const cache = window.cadGetRegistryCache_(id);
+    const cacheAge = cache ? (Date.now() - cache.at) : Infinity;
+    const hasFreshCache = !opts.refresh && cache && cacheAge < window.cadRegistryCacheTtlMs_;
+    if (hasFreshCache) {
         if (window.cadCanApplyRegistryResult_(seq, id)) {
             window.cadRenderRegistryList_(id, cache.history);
         }
         return;
     }
-    window.cadRenderRegistryList_(id, [], { loading: true });
+    const hasStaleCache = !opts.refresh && cache && Array.isArray(cache.history);
+    if (hasStaleCache) {
+        // 前回キャッシュを即時表示し、裏で最新を取得して差し替える
+        if (window.cadCanApplyRegistryResult_(seq, id)) {
+            window.cadRenderRegistryList_(id, cache.history, { refreshing: true });
+        }
+    } else {
+        window.cadRenderRegistryList_(id, [], { loading: true });
+    }
     let history = [];
     try {
-        history = await callGAS('getPolygonDrawingHistory', { id: id, summary: true }) || [];
+        history = await window.cadFetchRegistryHistory_(id);
     } catch (e) {
         console.warn('CAD登録一覧の取得に失敗:', e);
+        if (hasStaleCache) {
+            if (window.cadCanApplyRegistryResult_(seq, id)) {
+                window.cadRenderRegistryList_(id, cache.history);
+            }
+            return;
+        }
         history = [];
     }
     if (!window.cadCanApplyRegistryResult_(seq, id)) {
@@ -11660,8 +11954,6 @@ window.openCadRegistry = async (id, opts) => {
         if (m && window.cadIsCadOverlayOpen_()) m.style.display = 'none';
         return;
     }
-    window._cadRegistryCache = window._cadRegistryCache || {};
-    window._cadRegistryCache[id] = { at: Date.now(), history: history };
     window.cadRenderRegistryList_(id, history);
 };
 
@@ -11833,6 +12125,12 @@ window.cadRenderRegistryList_ = (id, history, opts) => {
         actions.push({ label: '削除', color: '#E53935', onClick: () => window.cadDeleteRegistryItem_(id, item) });
         addCard(info, item.data, actions, item, applied);
     });
+    if (opts && opts.refreshing) {
+        const note = document.createElement('div');
+        note.style.cssText = 'text-align:center; padding:6px; color:#888; font-size:11px;';
+        note.textContent = '最新を確認中...';
+        listEl.appendChild(note);
+    }
 };
 
 window.cadApplyRegistryItem_ = async (id, item) => {
@@ -11936,6 +12234,8 @@ window.cadRenameRegistryItem_ = async (id, item) => {
     }
 
     const next = await window.cadPickDrawingMeta_({
+        fieldId: id,
+        excludeRow: item.row,
         name: curName,
         crops: curCrops
     });
@@ -11957,7 +12257,7 @@ window.cadRenameRegistryItem_ = async (id, item) => {
             userName: window.getCadCurrentUserName_()
         });
         item.name = historyDrawingName;
-        if (window._cadRegistryCache && window._cadRegistryCache[id]) delete window._cadRegistryCache[id];
+        window.cadInvalidateRegistryCache_(id);
         window.openCadRegistry(id, { refresh: true });
     } catch (e) {
         alert('図面情報の変更に失敗しました。\n' + (e && e.message ? e.message : e));
@@ -12019,7 +12319,7 @@ window.loadCadHistoryData = (simDataStr) => {
     if (p) p.uneSimData = simDataStr;
     window.cadClearLines(true);
     let currentId = window.cadTargetId;
-    window.closeCADMode();
+    window.closeCADMode({ force: true });
     window.openCADMode(currentId);
 };
 

@@ -108,7 +108,7 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; displ
       
       /* ★追加：部署フィルターのエリア */
       #map { flex-grow: 1; width: 100%; }
-      #map .gm-style-cc {
+      .gm-style-cc {
         display: none !important;
       }
       button { padding: 10px 15px; font-size: 14px; cursor: pointer; border-radius: 5px; border: none; font-weight: bold; }

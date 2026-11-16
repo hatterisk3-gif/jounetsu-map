@@ -1857,6 +1857,9 @@ function showPopup(p, latLng) {
   let cpBtn = '';
   let manureBtn = '';
   if (!p.isMarker && p.coords && p.coords.length >= 3) {
+    if (typeof window.cadPrefetchRegistry_ === 'function') {
+      window.cadPrefetchRegistry_(p.id);
+    }
     cadBtn = `<div style="margin-top:8px; text-align:center;">
             <button type="button" onclick="openCadRegistry('${p.id}')"
               style="width:100%; padding:8px; background:#FF9800; color:white;
@@ -1937,7 +1940,7 @@ window.openAdminCadForField = function (polyId, opts) {
 };
 
 window.closeAdminCadModal = function () {
-  if (typeof window.closeCADMode === 'function') window.closeCADMode();
+  if (typeof window.closeCADMode === 'function') window.closeCADMode({ force: true });
   if (typeof window.cadCloseRegistryModal_ === 'function') window.cadCloseRegistryModal_();
 };
 

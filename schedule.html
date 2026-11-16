@@ -102,15 +102,10 @@
   </div>
 
   <div id="map"></div>
-  <button id="btnToggleViewpoint" type="button" onclick="cycleNextViewpoint()"
-    style="position: fixed; bottom: var(--sched-legend-bottom, calc(72px + env(safe-area-inset-bottom, 0px))); right: 10px; width: 50px; height: 50px; background: white; color: #6A1B9A; border: none; border-radius: 50%; font-weight: bold; font-size: 24px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); z-index: 2000; display: flex; justify-content: center; align-items: center; cursor: pointer; padding: 0; transition: all 0.3s ease;"
-    title="視野切替（拠点地点）" aria-label="視野切替（拠点地点）">
-    🔭
-  </button>
 
   <!-- 🔭 視野切替トースト表示 -->
   <div id="viewpointToast"
-    style="display:none; position:fixed; bottom:calc(var(--sched-legend-bottom, 72px) + 6px); right:70px; background:rgba(33,33,33,0.92); color:#fff; padding:8px 14px; border-radius:20px; font-size:13px; font-weight:bold; z-index:2100; box-shadow:0 4px 16px rgba(0,0,0,0.3); pointer-events:none; transition:opacity 0.25s ease, transform 0.25s ease; transform:translateY(8px); opacity:0; align-items:center; gap:8px; border:1px solid rgba(255,255,255,0.15);">
+    style="display:none; position:fixed; bottom:calc(86px + env(safe-area-inset-bottom, 0px)); right:78px; background:rgba(33,33,33,0.92); color:#fff; padding:8px 14px; border-radius:20px; font-size:13px; font-weight:bold; z-index:2100; box-shadow:0 4px 16px rgba(0,0,0,0.3); pointer-events:none; transition:opacity 0.25s ease, transform 0.25s ease; transform:translateY(8px); opacity:0; align-items:center; gap:8px; border:1px solid rgba(255,255,255,0.15);">
     <span style="font-size:15px;">🔭</span>
     <span id="viewpointToastText">視野切替</span>
   </div>
@@ -720,6 +715,11 @@
       <span class="schedule-side-fab-pest-icon">🧪</span>
       <span class="schedule-side-fab-pest-label">農薬</span>
     </button>
+    <button id="btnToggleViewpoint" type="button" class="schedule-side-fab" onclick="cycleNextViewpoint()"
+      style="color: #6A1B9A; font-size: 24px; transition: all 0.3s ease;"
+      title="視野切替（拠点地点）" aria-label="視野切替（拠点地点）">
+      🔭
+    </button>
   </div>
 
   <div id="fertilizerLookupModal" class="fert-lookup-modal" style="display:none;"
@@ -1270,7 +1270,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1794700000005';
+    const cacheBust = '1794700000006';
     // 豚糞共有：台数＋短いGoogleマップURL＋座標（v1.49）
     // ※ https://maps.google.com/?q=緯度,経度
     // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）
@@ -1674,7 +1674,7 @@
         </div>
         <div style="font-size:11px; color:#aaa; margin-bottom:2px;">📐 畝の正面</div>
         <div id="cadFrontHint" style="font-size:10px; color:#ccc; line-height:1.35; margin-bottom:6px;">
-          辺をタップすると、同じ方角の辺をまとめて正面にします。</div>
+          辺をタップすると正面にします（複数選択可・同じ辺を再タップで解除）。</div>
         <div style="display:flex; gap:5px; margin-bottom:10px;">
           <button type="button" id="cadFrontPickBtn" onclick="cadBeginFrontEdgePick()"
             style="flex:1; background:#333; color:#FFCC80; border:1px solid #ea580c; padding:8px; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">辺を選ぶ</button>
@@ -1704,15 +1704,18 @@
       </div>
 
       <div id="cadMode3" style="display:none;">
-        <div style="font-size:11px; color:#aaa; margin-bottom:6px; line-height:1.4;">地図をタップして、給水口・排水口/水落口・侵入口・駐車場を置きます。
+        <div style="font-size:11px; color:#aaa; margin-bottom:6px; line-height:1.4;">地図をタップして、給水口・排水口/水落口・ポンプ・侵入口・駐車場を置きます。
         </div>
-        <div style="display:flex; gap:4px; margin-bottom:6px;">
+        <div style="display:flex; gap:4px; margin-bottom:6px; flex-wrap:wrap;">
           <button onclick="cadSetPinMode('water_in')"
             style="flex:1; background:#03A9F4; color:white; border:none; padding:8px 2px; border-radius:4px; font-weight:bold; font-size:11px; white-space:nowrap;">🚰
             給水口</button>
           <button onclick="cadSetPinMode('water_out')"
             style="flex:1.25; background:#8D6E63; color:white; border:none; padding:8px 2px; border-radius:4px; font-weight:bold; font-size:11px; white-space:nowrap;">🚩
             排水口/水落口</button>
+          <button onclick="cadSetPinMode('valve')"
+            style="flex:1; background:#00897B; color:white; border:none; padding:8px 2px; border-radius:4px; font-weight:bold; font-size:11px; white-space:nowrap;">⛲
+            ポンプ</button>
           <button onclick="cadSetPinMode('machine_entry')"
             style="flex:1; background:#FF5722; color:white; border:none; padding:8px 2px; border-radius:4px; font-weight:bold; font-size:11px; white-space:nowrap;">🚜
             侵入口</button>
@@ -1751,7 +1754,7 @@
 
       <div id="cadMode4" style="display:none;">
         <div style="font-size:12px; color:#e1bee7; line-height:1.45; margin-bottom:10px;">
-          並んだ畝を本数ごとに区切ります。区切りのあいだは1本空けます。</div>
+          並んだ畝を本数ごとに区切ります。設定することで管理をわかりやすくできます。</div>
         <div style="font-size:11px; color:#aaa; margin-bottom:4px;">番号を付ける向き</div>
         <div style="display:flex; gap:6px; margin-bottom:10px;">
           <label
@@ -1764,15 +1767,28 @@
             <input type="radio" name="cadSplitDirection" value="reverse" onchange="cadPreviewRidgeNumberSplit()"> 反対側から
           </label>
         </div>
-        <div style="background:#2a2030; border:1px solid #6A1B9A; border-radius:8px; padding:10px; margin-bottom:10px;">
-          <div style="font-size:12px; font-weight:bold; color:#CE93D8; margin-bottom:6px;">何本ずつまとめるか</div>
-          <div style="display:flex; gap:6px; align-items:center;">
-            <button type="button" onclick="cadStepSplitField('cadSplitEveryN', -1)"
-              style="width:40px; height:40px; border:none; border-radius:8px; background:#4A148C; color:#fff; font-size:20px; font-weight:bold; cursor:pointer;">−</button>
-            <input type="number" id="cadSplitEveryN" value="5" min="1" step="1" oninput="cadPreviewRidgeNumberSplit()"
-              style="flex:1; padding:8px; border-radius:8px; border:none; box-sizing:border-box; font-size:20px; font-weight:bold; text-align:center;">
-            <button type="button" onclick="cadStepSplitField('cadSplitEveryN', 1)"
-              style="width:40px; height:40px; border:none; border-radius:8px; background:#4A148C; color:#fff; font-size:20px; font-weight:bold; cursor:pointer;">＋</button>
+        <div style="display:flex; gap:8px; margin-bottom:10px;">
+          <div style="flex:1; background:#2a2030; border:1px solid #6A1B9A; border-radius:8px; padding:8px;">
+            <div style="font-size:11px; font-weight:bold; color:#CE93D8; margin-bottom:6px;">何本ずつまとめるか</div>
+            <div style="display:flex; gap:4px; align-items:center;">
+              <button type="button" onclick="cadStepSplitField('cadSplitEveryN', -1)"
+                style="width:32px; height:32px; border:none; border-radius:6px; background:#4A148C; color:#fff; font-weight:bold; cursor:pointer;">−</button>
+              <input type="number" id="cadSplitEveryN" value="5" min="1" step="1" oninput="cadPreviewRidgeNumberSplit()"
+                style="flex:1; padding:6px; border-radius:6px; border:none; box-sizing:border-box; font-size:16px; font-weight:bold; text-align:center;">
+              <button type="button" onclick="cadStepSplitField('cadSplitEveryN', 1)"
+                style="width:32px; height:32px; border:none; border-radius:6px; background:#4A148C; color:#fff; font-weight:bold; cursor:pointer;">＋</button>
+            </div>
+          </div>
+          <div style="flex:1; background:#2a2030; border:1px solid #FFB300; border-radius:8px; padding:8px;">
+            <div style="font-size:11px; font-weight:bold; color:#FFE082; margin-bottom:6px;">あいだ（間）の本数</div>
+            <div style="display:flex; gap:4px; align-items:center;">
+              <button type="button" onclick="cadStepSplitField('cadSplitGapCount', -1)"
+                style="width:32px; height:32px; border:none; border-radius:6px; background:#795548; color:#fff; font-weight:bold; cursor:pointer;">−</button>
+              <input type="number" id="cadSplitGapCount" value="1" min="0" step="1" oninput="cadPreviewRidgeNumberSplit()"
+                style="flex:1; padding:6px; border-radius:6px; border:none; box-sizing:border-box; font-size:16px; font-weight:bold; text-align:center;">
+              <button type="button" onclick="cadStepSplitField('cadSplitGapCount', 1)"
+                style="width:32px; height:32px; border:none; border-radius:6px; background:#795548; color:#fff; font-weight:bold; cursor:pointer;">＋</button>
+            </div>
           </div>
         </div>
         <div style="display:flex; gap:8px; margin-bottom:10px;">

@@ -491,7 +491,7 @@ window.openAdminRegModeFromWorker_ = (opts) => {
     try {
         const cadOv = document.getElementById('cadOverlay');
         if (cadOv && cadOv.style.display !== 'none') {
-            if (typeof window.closeCADMode === 'function') window.closeCADMode();
+            if (typeof window.closeCADMode === 'function') window.closeCADMode({ force: true });
             else cadOv.style.display = 'none';
         }
     } catch (e) { }
@@ -1798,7 +1798,7 @@ async function executeLogin(isAuto = false, options = {}) {
                 if (btn) { btn.disabled = false; btn.innerText = "管理者としてログイン"; }
                 try {
                     if (typeof window.cadCloseRegistryModal_ === 'function') window.cadCloseRegistryModal_();
-                    if (typeof window.closeCADMode === 'function') window.closeCADMode();
+                    if (typeof window.closeCADMode === 'function') window.closeCADMode({ force: true });
                 } catch (eClose) { }
                 return;
             }
@@ -14051,6 +14051,9 @@ window.onFuncChangeEdit = () => { const val = document.getElementById('rnFunc').
             h += `<div style="display:flex;gap:4px;width:100%;"><button onclick="actionEditShape('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">範囲変更</button><button onclick="actionDelete('${id}')" style="flex:1;background:#ffebee;color:red;padding:8px 0;font-size:11px;border-radius:4px;border:1px solid #f44336;white-space:nowrap;cursor:pointer;">削除</button></div></div>`;
         }
         infoWindow.setContent(h); infoWindow.setPosition(p.isMarker ? p.marker.getPosition() : p.marker.getPosition()); infoWindow.open(map);
+        if (!p.isMarker && typeof window.cadPrefetchRegistry_ === 'function') {
+            window.cadPrefetchRegistry_(id);
+        }
     };
 
     window.openAdminMaterialForm_ = (signId) => {
