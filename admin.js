@@ -3501,13 +3501,9 @@ window.formatAdminInspectionAlertSummary_ = (item) => {
     return parts.join(' / ');
 };
 
-window.buildAdminInspectionTypeAndAlertHtml_ = (context, inspType, alertMonths, alertHourMeter, alertDistance) => {
+window.buildAdminInspectionTypeButtonsHtml_ = (context, inspType) => {
     const prefix = context === 'edit' ? 'edit' : 'add';
     const curType = window.normalizeAdminInspectionType_(inspType);
-    const months = new Set(window.parseAdminInspectionAlertMonths_(alertMonths));
-    const hourVal = (alertHourMeter !== '' && alertHourMeter != null && Number(alertHourMeter) > 0) ? Number(alertHourMeter) : '';
-    const distVal = (alertDistance !== '' && alertDistance != null && Number(alertDistance) > 0) ? Number(alertDistance) : '';
-    const isPeriodic = curType === '定期点検';
     const typeBtns = [
         { val: '始動前点検', label: '🌅 始動前点検' },
         { val: '定期点検', label: '🗓️ 定期点検' }
@@ -3518,7 +3514,19 @@ window.buildAdminInspectionTypeAndAlertHtml_ = (context, inspType, alertMonths, 
         const bd = active ? (opt.val === '定期点検' ? '#FB8C00' : '#00897B') : '#ccc';
         return `<button type="button" class="${prefix}-insp-type-btn" data-insp-type="${opt.val}" onclick="onAdminInspectionTypeChange_('${prefix}', '${opt.val}')" style="flex:1; padding:8px 10px; border-radius:6px; border:2px solid ${bd}; background:${bg}; color:${fg}; font-weight:bold; font-size:13px; cursor:pointer; transition:all 0.15s;">${opt.label}</button>`;
     }).join('');
+    return `
+        <input type="hidden" id="${prefix}_insp_type" value="${curType}">
+        <div style="display:flex; gap:8px;">${typeBtns}</div>
+    `;
+};
 
+window.buildAdminInspectionAlertBoxHtml_ = (context, inspType, alertMonths, alertHourMeter, alertDistance) => {
+    const prefix = context === 'edit' ? 'edit' : 'add';
+    const curType = window.normalizeAdminInspectionType_(inspType);
+    const months = new Set(window.parseAdminInspectionAlertMonths_(alertMonths));
+    const hourVal = (alertHourMeter !== '' && alertHourMeter != null && Number(alertHourMeter) > 0) ? Number(alertHourMeter) : '';
+    const distVal = (alertDistance !== '' && alertDistance != null && Number(alertDistance) > 0) ? Number(alertDistance) : '';
+    const isPeriodic = curType === '定期点検';
     const monthChips = Array.from({ length: 12 }, (_, idx) => {
         const m = idx + 1;
         const checked = months.has(m);
@@ -3533,11 +3541,9 @@ window.buildAdminInspectionTypeAndAlertHtml_ = (context, inspType, alertMonths, 
     }).join('');
 
     return `
-        <input type="hidden" id="${prefix}_insp_type" value="${curType}">
-        <div style="display:flex; gap:8px;">${typeBtns}</div>
         <div id="${prefix}_insp_alert_box" style="display:${isPeriodic ? 'block' : 'none'}; border:1px solid #ffcc80; background:#fffaf2; border-radius:6px; padding:8px; margin-top:2px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; gap:6px; flex-wrap:wrap;">
-                <span style="font-size:12px; font-weight:bold; color:#e65100;">🔔 定期点検アラート月（何月に通知するか）</span>
+                <span style="font-size:12px; font-weight:bold; color:#e65100;">🔔 定期点検アラート頻度（月・アワーメーター・走行距離）</span>
                 <div style="display:flex; gap:4px;">
                     <button type="button" onclick="setAllAdminInspectionAlertMonths_('${prefix}', true)" style="font-size:11px; padding:2px 7px; border-radius:4px; border:1px solid #ffb74d; background:#fff; color:#e65100; cursor:pointer;">毎月</button>
                     <button type="button" onclick="setAllAdminInspectionAlertMonths_('${prefix}', false)" style="font-size:11px; padding:2px 7px; border-radius:4px; border:1px solid #bbb; background:#fff; cursor:pointer;">クリア</button>
@@ -3563,6 +3569,11 @@ window.buildAdminInspectionTypeAndAlertHtml_ = (context, inspType, alertMonths, 
             <div style="font-size:11px; color:#777; margin-top:5px;">※月・アワーメーター(h)・走行距離(km)のいずれか（複数可）を設定できます</div>
         </div>
     `;
+};
+
+window.buildAdminInspectionTypeAndAlertHtml_ = (context, inspType, alertMonths, alertHourMeter, alertDistance) => {
+    return window.buildAdminInspectionTypeButtonsHtml_(context, inspType)
+        + window.buildAdminInspectionAlertBoxHtml_(context, inspType, alertMonths, alertHourMeter, alertDistance);
 };
 
 window.onAdminInspectionTypeChange_ = (context, typeVal) => {
@@ -4660,9 +4671,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 : 'all';
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
                 <label style="font-size:12px; font-weight:bold; color:#555;">点検種別 <span style="color:#d32f2f;">*</span></label>
-                ${window.buildAdminInspectionTypeAndAlertHtml_('add', defaultInspType, '')}
-                <label style="font-size:12px; font-weight:bold; color:#555;">対象（農機 / 車両・複数選択可） <span style="color:#d32f2f;">*</span></label>
-                ${window.buildAdminInspectionTargetMultiSelectHtml_('add', '', defaultInspKind)}
+                ${window.buildAdminInspectionTypeButtonsHtml_('add', defaultInspType)}
                 <label style="font-size:12px; font-weight:bold; color:#555;">点検カテゴリ <span style="color:#d32f2f;">*</span></label>
                 <div style="display:flex; gap:6px; align-items:center;">
                     <select id="add_insp_category" class="form-input" style="margin-bottom:0; padding:8px; flex:1; background:#fff;">${window.buildAdminInspectionCategoryOptionsHtml_('', '', defaultInspKind)}</select>
@@ -4675,6 +4684,9 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <div style="font-size:11px; color:#00695c; background:#e0f2f1; padding:6px 8px; border-radius:4px; line-height:1.4;">💡 表示順は右側の一覧をドラッグ（スマホは長押し）して入れ替えられます。</div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">点検基準・備考</label>
                 <input type="text" id="add_insp_note" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="例: レベルゲージのH-L範囲内であること">
+                ${window.buildAdminInspectionAlertBoxHtml_('add', defaultInspType, '', '', '')}
+                <label style="font-size:12px; font-weight:bold; color:#555;">対象（農機 / 車両・複数選択可） <span style="color:#d32f2f;">*</span></label>
+                ${window.buildAdminInspectionTargetMultiSelectHtml_('add', '', defaultInspKind)}
                 <button onclick="execMaster('inspection', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
         } else if (type === 'tool') {
@@ -5488,9 +5500,7 @@ window.openEditInspectionMaster = (encodedStr) => {
             <input type="hidden" id="edit_insp_sortOrder" value="${safeSortOrder}">
             <div style="display:flex; flex-direction:column; gap:8px;">
                 <label style="font-size:12px; font-weight:bold; color:#555;">点検種別 <span style="color:#d32f2f;">*</span></label>
-                ${window.buildAdminInspectionTypeAndAlertHtml_('edit', inspType, alertMonths, alertHourMeter, alertDistance)}
-                <label style="font-size:12px; font-weight:bold; color:#555;">対象（農機 / 車両・複数選択可） <span style="color:#d32f2f;">*</span></label>
-                ${window.buildAdminInspectionTargetMultiSelectHtml_('edit', rawTarget, editKind)}
+                ${window.buildAdminInspectionTypeButtonsHtml_('edit', inspType)}
                 <label style="font-size:12px; font-weight:bold; color:#555;">点検カテゴリ <span style="color:#d32f2f;">*</span></label>
                 <div style="display:flex; gap:6px; align-items:center;">
                     <select id="edit_insp_category" class="form-input" style="margin-bottom:0; padding:8px; flex:1; background:#fff;">${window.buildAdminInspectionCategoryOptionsHtml_(rawCategory, rawTarget, editKind)}</select>
@@ -5503,6 +5513,9 @@ window.openEditInspectionMaster = (encodedStr) => {
                 <div style="font-size:11px; color:#00695c; background:#e0f2f1; padding:6px 8px; border-radius:4px; line-height:1.4;">💡 表示順は右側の一覧をドラッグ（スマホは長押し）して入れ替えられます。</div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">点検基準・備考</label>
                 <input type="text" id="edit_insp_note" class="form-input" style="margin-bottom:0; padding:8px;" value="${safeNote}">
+                ${window.buildAdminInspectionAlertBoxHtml_('edit', inspType, alertMonths, alertHourMeter, alertDistance)}
+                <label style="font-size:12px; font-weight:bold; color:#555;">対象（農機 / 車両・複数選択可） <span style="color:#d32f2f;">*</span></label>
+                ${window.buildAdminInspectionTargetMultiSelectHtml_('edit', rawTarget, editKind)}
             </div>
             <div style="display:flex; gap:10px; margin-top:15px;">
                 <button onclick="execMaster('inspection', 'edit')" style="flex:1; background:#00897b; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; cursor:pointer;">更新する</button>
