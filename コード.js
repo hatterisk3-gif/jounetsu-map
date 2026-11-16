@@ -1774,7 +1774,8 @@ function getInitData(opts) {
             showRidgePolygon: uiFlags.showRidgePolygon,
             showMaintenance: uiFlags.showMaintenance,
             showPreInspection: uiFlags.showPreInspection,
-            showPeriodicInspection: uiFlags.showPeriodicInspection
+            showPeriodicInspection: uiFlags.showPeriodicInspection,
+            showFuelInspection: uiFlags.showFuelInspection
           });
         }
         if (idxStatus >= 0 && data[i][idxStatus]) workStatuses.push(data[i][idxStatus]);
@@ -2988,7 +2989,8 @@ function manageMasterData(masterType, manageAction, value, userName) {
       const macType = String(itemData.machineType || itemData.target || '').trim();
       const inspCat = String(itemData.inspectionCategory || itemData.category || '一般').trim();
       const itemName = String(itemData.item || itemData.name || '').trim();
-      const inspType = String(itemData.inspectionType || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+      const rawInspType = String(itemData.inspectionType || '').trim();
+      const inspType = (rawInspType === '定期点検' || rawInspType === '給油時点検') ? rawInspType : '始動前点検';
       const alertMonths = inspType === '定期点検'
         ? String(itemData.alertMonths || '').split(/[,、]/).map(s => Number(String(s).trim())).filter(n => n >= 1 && n <= 12).filter((n, i, a) => a.indexOf(n) === i).sort((a, b) => a - b).join(',')
         : '';
@@ -3414,7 +3416,8 @@ function manageMasterData(masterType, manageAction, value, userName) {
       const macType = String(nd.machineType || nd.target || '').trim();
       const inspCat = String(nd.inspectionCategory || nd.category || '一般').trim();
       const itemName = String(nd.item || nd.name || '').trim();
-      const inspType = String(nd.inspectionType || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+      const rawInspType = String(nd.inspectionType || '').trim();
+      const inspType = (rawInspType === '定期点検' || rawInspType === '給油時点検') ? rawInspType : '始動前点検';
       const alertMonths = inspType === '定期点検'
         ? String(nd.alertMonths || '').split(/[,、]/).map(s => Number(String(s).trim())).filter(n => n >= 1 && n <= 12).filter((n, i, a) => a.indexOf(n) === i).sort((a, b) => a - b).join(',')
         : '';
@@ -3853,7 +3856,8 @@ function mergeWorkMasterObjects_(keepObj, origObj, incoming, originalName) {
     showRidgePolygon: orWorkMasterFlag_(keepObj.showRidgePolygon, origObj && origObj.showRidgePolygon, incoming.showRidgePolygon),
     showMaintenance: orWorkMasterFlag_(keepObj.showMaintenance, origObj && origObj.showMaintenance, incoming.showMaintenance),
     showPreInspection: orWorkMasterFlag_(keepObj.showPreInspection, origObj && origObj.showPreInspection, incoming.showPreInspection),
-    showPeriodicInspection: orWorkMasterFlag_(keepObj.showPeriodicInspection, origObj && origObj.showPeriodicInspection, incoming.showPeriodicInspection)
+    showPeriodicInspection: orWorkMasterFlag_(keepObj.showPeriodicInspection, origObj && origObj.showPeriodicInspection, incoming.showPeriodicInspection),
+    showFuelInspection: orWorkMasterFlag_(keepObj.showFuelInspection, origObj && origObj.showFuelInspection, incoming.showFuelInspection)
   };
 }
 
@@ -3891,7 +3895,8 @@ function workMasterObjectFromRow_(headers, row) {
     showRidgePolygon: uiFlags.showRidgePolygon,
     showMaintenance: uiFlags.showMaintenance,
     showPreInspection: uiFlags.showPreInspection,
-    showPeriodicInspection: uiFlags.showPeriodicInspection
+    showPeriodicInspection: uiFlags.showPeriodicInspection,
+    showFuelInspection: uiFlags.showFuelInspection
   };
 }
 
@@ -3945,7 +3950,8 @@ const WORK_UI_FLAG_HEADERS_ = {
   showRidgePolygon: ['畝ポリゴン登録を出す', '畝ポリゴンを出す'],
   showMaintenance: ['整備UIを出す', '整備・修理を出す', '整備を出す'],
   showPreInspection: ['始動前点検UIを出す', '始動前点検を出す'],
-  showPeriodicInspection: ['定期点検UIを出す', '定期点検を出す']
+  showPeriodicInspection: ['定期点検UIを出す', '定期点検を出す'],
+  showFuelInspection: ['給油時点検UIを出す', '給油時点検を出す']
 };
 
 function findHeaderIndexByNames_(headers, names) {
@@ -3976,7 +3982,7 @@ function formatWorkUiFlagValue_(v) {
 }
 
 function readWorkMasterUiFlagsFromRow_(headers, row) {
-  const out = { showMachine: null, showMaterial: null, showPesticide: null, showField: null, showFuel: null, showRidgePolygon: null, showMaintenance: null, showPreInspection: null, showPeriodicInspection: null };
+  const out = { showMachine: null, showMaterial: null, showPesticide: null, showField: null, showFuel: null, showRidgePolygon: null, showMaintenance: null, showPreInspection: null, showPeriodicInspection: null, showFuelInspection: null };
   Object.keys(WORK_UI_FLAG_HEADERS_).forEach(function (k) {
     const idx = findHeaderIndexByNames_(headers, WORK_UI_FLAG_HEADERS_[k]);
     out[k] = idx >= 0 ? parseWorkUiFlagValue_(row[idx]) : null;
@@ -4111,7 +4117,8 @@ function readWorkMasterList_(sheet) {
       showRidgePolygon: uiFlags.showRidgePolygon,
       showMaintenance: uiFlags.showMaintenance,
       showPreInspection: uiFlags.showPreInspection,
-      showPeriodicInspection: uiFlags.showPeriodicInspection
+      showPeriodicInspection: uiFlags.showPeriodicInspection,
+      showFuelInspection: uiFlags.showFuelInspection
     };
   });
 }
@@ -4201,7 +4208,9 @@ function buildWorkMasterColumnMap_(value) {
     '始動前点検UIを出す': Object.prototype.hasOwnProperty.call(value || {}, 'showPreInspection') ? formatWorkUiFlagValue_(value.showPreInspection) : undefined,
     '始動前点検を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showPreInspection') ? formatWorkUiFlagValue_(value.showPreInspection) : undefined,
     '定期点検UIを出す': Object.prototype.hasOwnProperty.call(value || {}, 'showPeriodicInspection') ? formatWorkUiFlagValue_(value.showPeriodicInspection) : undefined,
-    '定期点検を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showPeriodicInspection') ? formatWorkUiFlagValue_(value.showPeriodicInspection) : undefined
+    '定期点検を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showPeriodicInspection') ? formatWorkUiFlagValue_(value.showPeriodicInspection) : undefined,
+    '給油時点検UIを出す': Object.prototype.hasOwnProperty.call(value || {}, 'showFuelInspection') ? formatWorkUiFlagValue_(value.showFuelInspection) : undefined,
+    '給油時点検を出す': Object.prototype.hasOwnProperty.call(value || {}, 'showFuelInspection') ? formatWorkUiFlagValue_(value.showFuelInspection) : undefined
   };
 }
 // ==========================================
@@ -12021,26 +12030,57 @@ function saveNoukiMachinePhoto_(photoObj) {
   }
 }
 
+function resolveMachineOrVehiclePhotoItems_(photoItems, uploadFn) {
+  const list = Array.isArray(photoItems) ? photoItems : [];
+  const mainIdx = list.findIndex(x => x && x.isMain);
+  const ordered = mainIdx > 0
+    ? [list[mainIdx]].concat(list.slice(0, mainIdx), list.slice(mainIdx + 1))
+    : list.slice();
+  const urls = [];
+  ordered.forEach((it, idx) => {
+    if (!it) return;
+    let u = '';
+    if (it.base64) {
+      u = uploadFn(it.base64, it.filename || ('photo_' + idx + '.jpg')) || '';
+    } else if (it.url) {
+      u = String(it.url).trim();
+    }
+    if (u && urls.indexOf(u) < 0) urls.push(u);
+  });
+  return {
+    photo: urls[0] || '',
+    photo2: urls.slice(1).join(',')
+  };
+}
+
 function addMachineToSign(params) {
   const sheet = ensureNoukiMasterSheet();
   const newId = 'MAC-' + Utilities.getUuid().substring(0, 8);
 
   let photo1Url = params.photo || "";
   let photo2Url = params.photo2 || "";
-  // photoBase64 と photos[0] は同じ写真の二重指定になりやすいので、片方だけ保存する
-  if (params.photoBase64) {
-    const u = saveNoukiMachinePhoto_({ base64: params.photoBase64, filename: params.photoFilename || "photo.jpg" });
-    if (u) photo1Url = u;
-  } else if (params.photos && params.photos.length > 0 && params.photos[0] && params.photos[0].base64) {
-    const u = saveNoukiMachinePhoto_(params.photos[0]);
-    if (u) photo1Url = u;
-  }
-  if (params.photo2Base64) {
-    const u = saveNoukiMachinePhoto_({ base64: params.photo2Base64, filename: params.photo2Filename || "photo2.jpg" });
-    if (u) photo2Url = u;
-  } else if (params.photos && params.photos.length > 1 && params.photos[1] && params.photos[1].base64) {
-    const u = saveNoukiMachinePhoto_(params.photos[1]);
-    if (u) photo2Url = u;
+  if (Array.isArray(params.photoItems)) {
+    const resolved = resolveMachineOrVehiclePhotoItems_(params.photoItems, function (b64, fname) {
+      return saveNoukiMachinePhoto_({ base64: b64, filename: fname });
+    });
+    photo1Url = resolved.photo;
+    photo2Url = resolved.photo2;
+  } else {
+    // photoBase64 と photos[0] は同じ写真の二重指定になりやすいので、片方だけ保存する
+    if (params.photoBase64) {
+      const u = saveNoukiMachinePhoto_({ base64: params.photoBase64, filename: params.photoFilename || "photo.jpg" });
+      if (u) photo1Url = u;
+    } else if (params.photos && params.photos.length > 0 && params.photos[0] && params.photos[0].base64) {
+      const u = saveNoukiMachinePhoto_(params.photos[0]);
+      if (u) photo1Url = u;
+    }
+    if (params.photo2Base64) {
+      const u = saveNoukiMachinePhoto_({ base64: params.photo2Base64, filename: params.photo2Filename || "photo2.jpg" });
+      if (u) photo2Url = u;
+    } else if (params.photos && params.photos.length > 1 && params.photos[1] && params.photos[1].base64) {
+      const u = saveNoukiMachinePhoto_(params.photos[1]);
+      if (u) photo2Url = u;
+    }
   }
   const signName = params.signName || "";
   const signId = params.signId || "";
@@ -12809,28 +12849,36 @@ function editMachineInMaster(params) {
 
   let photo = existing.photo || '';
   let photo2 = existing.photo2 || '';
-  if (params.clearPhoto) photo = '';
-  if (params.clearPhoto2) photo2 = '';
-  // photoBase64 と photos[0] の二重アップロードを防止
-  if (params.photoBase64) {
-    const u = saveNoukiMachinePhoto_({ base64: params.photoBase64, filename: params.photoFilename || 'machine.jpg' });
-    if (u) photo = u;
-  } else if (params.photos && params.photos[0] && params.photos[0].base64) {
-    const u = saveNoukiMachinePhoto_(params.photos[0]);
-    if (u) photo = u;
-  }
-  if (params.photo2Base64) {
-    const u = saveNoukiMachinePhoto_({ base64: params.photo2Base64, filename: params.photo2Filename || 'machine2.jpg' });
-    if (u) photo2 = u;
-  } else if (params.photos && params.photos[1] && params.photos[1].base64) {
-    const u = saveNoukiMachinePhoto_(params.photos[1]);
-    if (u) photo2 = u;
-  }
-  if (params.photo && !params.photoBase64 && !(params.photos && params.photos[0] && params.photos[0].base64) && !params.clearPhoto) {
-    photo = params.photo;
-  }
-  if (params.photo2 && !params.photo2Base64 && !(params.photos && params.photos[1] && params.photos[1].base64) && !params.clearPhoto2) {
-    photo2 = params.photo2;
+  if (Array.isArray(params.photoItems)) {
+    const resolved = resolveMachineOrVehiclePhotoItems_(params.photoItems, function (b64, fname) {
+      return saveNoukiMachinePhoto_({ base64: b64, filename: fname });
+    });
+    photo = resolved.photo;
+    photo2 = resolved.photo2;
+  } else {
+    if (params.clearPhoto) photo = '';
+    if (params.clearPhoto2) photo2 = '';
+    // photoBase64 と photos[0] の二重アップロードを防止
+    if (params.photoBase64) {
+      const u = saveNoukiMachinePhoto_({ base64: params.photoBase64, filename: params.photoFilename || 'machine.jpg' });
+      if (u) photo = u;
+    } else if (params.photos && params.photos[0] && params.photos[0].base64) {
+      const u = saveNoukiMachinePhoto_(params.photos[0]);
+      if (u) photo = u;
+    }
+    if (params.photo2Base64) {
+      const u = saveNoukiMachinePhoto_({ base64: params.photo2Base64, filename: params.photo2Filename || 'machine2.jpg' });
+      if (u) photo2 = u;
+    } else if (params.photos && params.photos[1] && params.photos[1].base64) {
+      const u = saveNoukiMachinePhoto_(params.photos[1]);
+      if (u) photo2 = u;
+    }
+    if (params.photo && !params.photoBase64 && !(params.photos && params.photos[0] && params.photos[0].base64) && !params.clearPhoto) {
+      photo = params.photo;
+    }
+    if (params.photo2 && !params.photo2Base64 && !(params.photos && params.photos[1] && params.photos[1].base64) && !params.clearPhoto2) {
+      photo2 = params.photo2;
+    }
   }
 
   const merged = Object.assign({}, existing, {
@@ -17988,7 +18036,8 @@ function readInspectionMasterList_() {
   if (last < 2) return [];
   const values = sheet.getRange(2, 1, last - 1, INSPECTION_MASTER_HEADERS_.length).getValues();
   return values.map(r => {
-    const inspType = String(r[6] || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+    const rawInspType = String(r[6] || '').trim();
+    const inspType = (rawInspType === '定期点検' || rawInspType === '給油時点検') ? rawInspType : '始動前点検';
     const alertMonths = inspType === '定期点検' ? String(r[7] || '').trim() : '';
     const rawHour = Number(r[8]);
     const alertHourMeter = (inspType === '定期点検' && r[8] !== '' && r[8] != null && isFinite(rawHour) && rawHour > 0) ? rawHour : '';
@@ -18048,7 +18097,8 @@ function machine_saveInspection(p) {
     detailsJson = JSON.stringify(p.details);
   }
   const comment = String(p.comment || '').trim();
-  const inspType = String(p.inspectionType || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+  const rawInspType = String(p.inspectionType || '').trim();
+  const inspType = (rawInspType === '定期点検' || rawInspType === '給油時点検') ? rawInspType : '始動前点検';
 
   sheet.appendRow([
     id, dateStr, inspector, machineId, machineName, machineType,
@@ -18092,7 +18142,7 @@ function machine_loadInspectionRecords(p) {
       details: details,
       comment: String(r[11] || '').trim(),
       createdAt: String(r[12] || '').trim(),
-      inspectionType: String(r[13] || '').trim() === '定期点検' ? '定期点検' : '始動前点検'
+      inspectionType: (function () { const t = String(r[13] || '').trim(); return (t === '定期点検' || t === '給油時点検') ? t : '始動前点検'; })()
     });
   }
   return { success: true, records: records };
@@ -22099,13 +22149,13 @@ function machine_saveFuel(p) {
 // 移動車両（軽トラ）管理
 // ==========================================
 function ensureVehicleMasterSheet() {
-  const headers = ['id', 'plateNumber', 'photo', 'mileage', 'driveType', 'registrationDate', 'status', 'lat', 'lng', 'mainCategory', 'vehicleType', 'vehicleNumber', 'model', 'fuelChecks', 'location', 'signName', 'signId', 'currentLocName', 'currentLocId'];
+  const headers = ['id', 'plateNumber', 'photo', 'mileage', 'driveType', 'registrationDate', 'status', 'lat', 'lng', 'mainCategory', 'vehicleType', 'vehicleNumber', 'model', 'fuelChecks', 'location', 'signName', 'signId', 'currentLocName', 'currentLocId', 'photo2'];
   const sheet = getOrCreateSheet('VehicleMaster', headers);
   const lastCol = Math.max(sheet.getLastColumn(), headers.length);
   const existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   if (String(existing[0] || '') !== 'id' || String(existing[7] || '') !== 'lat' || String(existing[8] || '') !== 'lng') {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  } else if (lastCol < headers.length || String(existing[14] || '') !== 'location') {
+  } else if (lastCol < headers.length || String(existing[14] || '') !== 'location' || String(existing[19] || '') !== 'photo2') {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   }
   return sheet;
@@ -22143,7 +22193,8 @@ function parseVehicleRow_(row) {
     signName: signName,
     signId: signId,
     currentLocName: String(row[17] || signName || '').trim(),
-    currentLocId: String(row[18] || signId || '').trim()
+    currentLocId: String(row[18] || signId || '').trim(),
+    photo2: String(row[19] || '').trim()
   };
 }
 
@@ -22172,6 +22223,7 @@ function vehicle_saveVehicle(p) {
   let existingSignId = '';
   let existingCurLocName = '';
   let existingCurLocId = '';
+  let existingPhoto2 = '';
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === p.id) {
       rowIdx = i + 1;
@@ -22185,25 +22237,38 @@ function vehicle_saveVehicle(p) {
       existingSignId = (data[i][16] != null) ? String(data[i][16]) : '';
       existingCurLocName = (data[i][17] != null) ? String(data[i][17]) : '';
       existingCurLocId = (data[i][18] != null) ? String(data[i][18]) : '';
+      existingPhoto2 = (data[i][19] != null) ? String(data[i][19]) : '';
       break;
     }
   }
 
   let photoUrl = existingPhoto || '';
-  if (p.clearPhoto) {
-    photoUrl = '';
-  } else if (p.photo && !p.photoBase64) {
-    photoUrl = p.photo;
-  }
-  if (p.photoBase64) {
+  let photo2Str = existingPhoto2 || '';
+  const saveVehPhotoB64_ = function (b64, fname) {
     const folders = DriveApp.getFoldersByName("情熱MAP_車両写真");
     const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("情熱MAP_車両写真");
-    const parts = p.photoBase64.split(',');
+    const parts = String(b64).split(',');
     const type = parts[0].split(';')[0].replace('data:', '');
-    const blob = Utilities.newBlob(Utilities.base64Decode(parts[1]), type, p.photoFilename || "vehicle.jpg");
+    const blob = Utilities.newBlob(Utilities.base64Decode(parts[1]), type, fname || "vehicle.jpg");
     const file = folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    photoUrl = "https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w800";
+    return "https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w800";
+  };
+
+  if (Array.isArray(p.photoItems)) {
+    const resolved = resolveMachineOrVehiclePhotoItems_(p.photoItems, saveVehPhotoB64_);
+    photoUrl = resolved.photo;
+    photo2Str = resolved.photo2;
+  } else {
+    if (p.clearPhoto) {
+      photoUrl = '';
+    } else if (p.photo && !p.photoBase64) {
+      photoUrl = p.photo;
+    }
+    if (p.photoBase64) {
+      photoUrl = saveVehPhotoB64_(p.photoBase64, p.photoFilename || "vehicle.jpg");
+    }
+    if (p.photo2 != null) photo2Str = String(p.photo2 || '').trim();
   }
 
   const mainCategory = String(p.mainCategory || p.group || '').trim();
@@ -22237,7 +22302,8 @@ function vehicle_saveVehicle(p) {
     signNameVal,
     signIdVal,
     (p.currentLocName != null) ? String(p.currentLocName).trim() : (existingCurLocName || signNameVal),
-    (p.currentLocId != null) ? String(p.currentLocId).trim() : (existingCurLocId || signIdVal)
+    (p.currentLocId != null) ? String(p.currentLocId).trim() : (existingCurLocId || signIdVal),
+    photo2Str
   ];
 
   if (rowIdx !== -1) {
@@ -22245,7 +22311,7 @@ function vehicle_saveVehicle(p) {
   } else {
     sheet.appendRow(rowData);
   }
-  return { success: true, photo: photoUrl };
+  return { success: true, photo: photoUrl, photo2: photo2Str };
 }
 
 function vehicle_deleteVehicle(p) {

@@ -276,14 +276,19 @@
       var timeoutId = setTimeout(function () { controller.abort(); }, timeoutMs);
       try {
         var reqUrl = GAS_URL + (GAS_URL.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now() + '_' + i;
-        var res = await fetch(reqUrl, {
+        var bodyStr = JSON.stringify(params);
+        var fetchOpts = {
           method: 'POST',
           redirect: 'follow',
           cache: 'no-store',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify(params),
+          body: bodyStr,
           signal: controller.signal
-        });
+        };
+        if (options && options.keepalive !== false && bodyStr.length < 60000) {
+          fetchOpts.keepalive = true;
+        }
+        var res = await fetch(reqUrl, fetchOpts);
         clearTimeout(timeoutId);
         // GASが落ちていると HTML/リダイレクトになり CORS なし → Failed to fetch。HTTPステータスも見る
         if (!res.ok && res.status >= 500) {
@@ -706,3 +711,246 @@
   global.rememberDeletedPolygonIds_ = rememberDeletedPolygonIds_;
   global.filterDeletedPolygons_ = filterDeletedPolygons_;
 })(typeof window !== 'undefined' ? window : this);
+
+// ==========================================
+// 📋 全画面共通: 画像ファイル入力へのクリップボード貼り付け対応
+// ==========================================
+(function initGlobalImageClipboardPaste_() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  if (window.__passionMapImagePasteBound) return;
+  window.__passionMapImagePasteBound = true;
+
+  function isImageFileInput_(el) {
+    if (!el || el.tagName !== 'INPUT' || el.type !== 'file' || el.disabled) return false;
+    var acc = String(el.getAttribute('accept') || '').toLowerCase();
+    return acc.indexOf('image') >= 0;
+  }
+
+  function isElementDisplayed_(el) {
+    if (!el || !el.getBoundingClientRect) return false;
+    var cur = el;
+    while (cur && cur.nodeType === 1) {
+      var st = window.getComputedStyle(cur);
+      if (st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0') return false;
+      cur = cur.parentElement;
+    }
+    var r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  }
+
+  function getVisibleAnchor_(inp) {
+    if (isElementDisplayed_(inp)) return inp;
+    var lbl = inp.closest ? inp.closest('label') : null;
+    if (lbl && isElementDisplayed_(lbl)) return lbl;
+    return null;
+  }
+
+  function getTopZIndex_(el) {
+    var maxZ = 0;
+    var cur = el;
+    while (cur && cur.nodeType === 1) {
+      var st = window.getComputedStyle(cur);
+      var z = parseInt(st.zIndex, 10);
+      if (!isNaN(z) && z > maxZ) maxZ = z;
+      cur = cur.parentElement;
+    }
+    return maxZ;
+  }
+
+  function notifyPaste_(msg, isWarn) {
+    if (typeof window.showToast === 'function') {
+      try { window.showToast(msg); return; } catch (e) { }
+    }
+    if (isWarn && typeof window.customAlert === 'function') {
+      try { window.customAlert(msg); return; } catch (e2) { }
+    }
+    if (isWarn) {
+      try { alert(msg); } catch (e3) { }
+    }
+  }
+
+  function applyImageFilesToInput_(inp, imageFiles) {
+    if (!inp || !imageFiles || !imageFiles.length) return false;
+    if (typeof DataTransfer === 'undefined') return false;
+    var dt = new DataTransfer();
+    var limit = inp.multiple ? imageFiles.length : 1;
+    for (var i = 0; i < limit; i++) {
+      dt.items.add(imageFiles[i]);
+    }
+    try {
+      inp.files = dt.files;
+    } catch (e) {
+      return false;
+    }
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+    notifyPaste_('📋 クリップボードから画像を貼り付けました', false);
+    return true;
+  }
+
+  function extractImagesFromClipboardData_(cd) {
+    var out = [];
+    if (!cd) return out;
+    if (cd.items && cd.items.length) {
+      for (var i = 0; i < cd.items.length; i++) {
+        var it = cd.items[i];
+        if (it && it.kind === 'file' && String(it.type || '').indexOf('image/') === 0) {
+          var f = it.getAsFile();
+          if (f) {
+            if (!f.name || f.name === 'image.png') {
+              var ext = (String(f.type || '').split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '') || 'png';
+              try {
+                f = new File([f], 'paste_' + Date.now() + '_' + i + '.' + ext, { type: f.type || 'image/png' });
+              } catch (e) { }
+            }
+            out.push(f);
+          }
+        }
+      }
+    }
+    if (!out.length && cd.files && cd.files.length) {
+      for (var j = 0; j < cd.files.length; j++) {
+        if (String(cd.files[j].type || '').indexOf('image/') === 0) out.push(cd.files[j]);
+      }
+    }
+    return out;
+  }
+
+  function findTargetImageInput_(preferInput) {
+    if (preferInput && isImageFileInput_(preferInput) && getVisibleAnchor_(preferInput)) {
+      return preferInput;
+    }
+    var all = Array.prototype.slice.call(document.querySelectorAll('input[type="file"]'))
+      .filter(isImageFileInput_);
+    var candidates = [];
+    all.forEach(function (inp) {
+      var anchor = getVisibleAnchor_(inp);
+      if (!anchor) return;
+      var z = getTopZIndex_(anchor);
+      var capPenalty = inp.hasAttribute('capture') ? 1 : 0;
+      candidates.push({ inp: inp, z: z, capPenalty: capPenalty });
+    });
+    if (!candidates.length) return null;
+    candidates.sort(function (a, b) {
+      if (b.z !== a.z) return b.z - a.z;
+      return a.capPenalty - b.capPenalty;
+    });
+    return candidates[0].inp;
+  }
+
+  async function pasteFromClipboardButton_(targetInp) {
+    var inp = findTargetImageInput_(targetInp);
+    if (!inp) return;
+    if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') {
+      notifyPaste_('このブラウザではボタンからの貼り付け非対応です。Ctrl+V（貼り付け）をお試しください。', true);
+      return;
+    }
+    try {
+      var items = await navigator.clipboard.read();
+      var files = [];
+      for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        var types = item.types || [];
+        for (var j = 0; j < types.length; j++) {
+          if (String(types[j]).indexOf('image/') === 0) {
+            var blob = await item.getType(types[j]);
+            var ext = (String(types[j]).split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '') || 'png';
+            var file = new File([blob], 'paste_' + Date.now() + '_' + i + '.' + ext, { type: types[j] });
+            files.push(file);
+            break;
+          }
+        }
+      }
+      if (!files.length) {
+        notifyPaste_('クリップボードに画像がありません。画像をコピーしてからお試しください。', true);
+        return;
+      }
+      applyImageFilesToInput_(inp, files);
+    } catch (err) {
+      notifyPaste_('クリップボードの読み取りが許可されませんでした。Ctrl+V（貼り付け）をお試しください。', true);
+    }
+  }
+
+  document.addEventListener('paste', function (e) {
+    var images = extractImagesFromClipboardData_(e.clipboardData);
+    if (!images.length) return;
+    var target = findTargetImageInput_(null);
+    if (!target) return;
+    e.preventDefault();
+    applyImageFilesToInput_(target, images);
+  }, true);
+
+  function attachPasteButtons_(root) {
+    var scope = (root && root.querySelectorAll) ? root : document;
+    var inputs = scope.querySelectorAll('input[type="file"]');
+    for (var i = 0; i < inputs.length; i++) {
+      var inp = inputs[i];
+      if (!isImageFileInput_(inp)) continue;
+      if (inp.getAttribute('data-image-paste-bound') === '1') continue;
+      inp.setAttribute('data-image-paste-bound', '1');
+
+      var lbl = inp.closest ? inp.closest('label') : null;
+      var inHiddenLabel = !!(lbl && window.getComputedStyle(inp).display === 'none');
+      if (inHiddenLabel && lbl.parentElement) {
+        var row = lbl.parentElement;
+        if (row.getAttribute('data-image-paste-row') === '1') continue;
+        // 同じ行に「カメラ」「フォルダ」など複数ある場合、非captureのinputを優先して代表にする
+        var rowInputs = Array.prototype.slice.call(row.querySelectorAll('input[type="file"]')).filter(isImageFileInput_);
+        var primaryInp = rowInputs.find(function (x) { return !x.hasAttribute('capture'); }) || inp;
+        row.setAttribute('data-image-paste-row', '1');
+        rowInputs.forEach(function (x) { x.setAttribute('data-image-paste-bound', '1'); });
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.setAttribute('data-image-paste-btn', '1');
+        btn.textContent = '📋 貼り付け';
+        btn.title = 'クリップボードの画像を貼り付け (Ctrl+V対応)';
+        btn.style.cssText = 'flex:1; background:#7E57C2; color:#fff; border:none; border-radius:8px; padding:9px 6px; font-weight:bold; font-size:12px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap;';
+        btn.addEventListener('click', (function (targetRef) {
+          return function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            pasteFromClipboardButton_(targetRef);
+          };
+        })(primaryInp));
+        row.appendChild(btn);
+      } else {
+        if (inp.nextElementSibling && inp.nextElementSibling.getAttribute && inp.nextElementSibling.getAttribute('data-image-paste-btn') === '1') continue;
+        var wrapBtn = document.createElement('button');
+        wrapBtn.type = 'button';
+        wrapBtn.setAttribute('data-image-paste-btn', '1');
+        wrapBtn.textContent = '📋 画像を貼り付け (Ctrl+V可)';
+        wrapBtn.style.cssText = 'margin:2px 0 6px; padding:4px 10px; background:#EDE7F6; color:#4A148C; border:1px solid #B39DDB; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer; display:inline-block;';
+        wrapBtn.addEventListener('click', (function (targetRef) {
+          return function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            pasteFromClipboardButton_(targetRef);
+          };
+        })(inp));
+        if (inp.parentNode) {
+          inp.parentNode.insertBefore(wrapBtn, inp.nextSibling);
+        }
+      }
+    }
+  }
+
+  function startObserver_() {
+    attachPasteButtons_(document);
+    if (typeof MutationObserver === 'undefined' || !document.body) return;
+    var scheduled = false;
+    var obs = new MutationObserver(function () {
+      if (scheduled) return;
+      scheduled = true;
+      setTimeout(function () {
+        scheduled = false;
+        attachPasteButtons_(document);
+      }, 60);
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startObserver_);
+  } else {
+    startObserver_();
+  }
+})();

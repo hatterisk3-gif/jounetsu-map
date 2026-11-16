@@ -12192,7 +12192,8 @@ window.inferWorkRecordUiFlags_ = (workName, category) => {
       ? !!window.looksLikeMaintenanceText_(n)
       : /整備|修理|点検|清掃|保全|交換/.test(n),
     showPreInspection: n.indexOf('始動前点検') >= 0,
-    showPeriodicInspection: n.indexOf('定期点検') >= 0
+    showPeriodicInspection: n.indexOf('定期点検') >= 0,
+    showFuelInspection: n.indexOf('給油時点検') >= 0
   };
 };
 
@@ -12202,7 +12203,7 @@ window.getWorkExtraUiFlags_ = (workName) => {
   const formCat = String(document.getElementById('rec_work_category')?.value || '').trim();
   // 準備／片づけは「対象作業」の紐づけ専用。対象作業の詳細・機械・資材フラグは出さない
   if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(formCat)) {
-    return { showMachine: false, showMaterial: false, showPesticide: false, showField: false, showFuel: false, showRidgePolygon: false, showMaintenance: false, showPreInspection: false, showPeriodicInspection: false };
+    return { showMachine: false, showMaterial: false, showPesticide: false, showField: false, showFuel: false, showRidgePolygon: false, showMaintenance: false, showPreInspection: false, showPeriodicInspection: false, showFuelInspection: false };
   }
   const w = (typeof window.findWorkMasterByName_ === 'function')
     ? (window.findWorkMasterByName_(mainName) || window.findWorkMasterByName_(combined))
@@ -12226,7 +12227,8 @@ window.getWorkExtraUiFlags_ = (workName) => {
     showRidgePolygon: pick(w && w.showRidgePolygon, inferred.showRidgePolygon),
     showMaintenance: pick(w && w.showMaintenance, inferred.showMaintenance),
     showPreInspection: pick(w && w.showPreInspection, inferred.showPreInspection),
-    showPeriodicInspection: pick(w && w.showPeriodicInspection, inferred.showPeriodicInspection)
+    showPeriodicInspection: pick(w && w.showPeriodicInspection, inferred.showPeriodicInspection),
+    showFuelInspection: pick(w && w.showFuelInspection, inferred.showFuelInspection)
   };
 };
 
@@ -12248,6 +12250,7 @@ window.buildWorkRecordUiFlagsHtml_ = (prefix, flags) => {
             ${row('show_maintenance', !!f.showMaintenance, '🔧 整備UIを出す', '整備対象・症状・整備内容の入力欄を出します（カテゴリ保全/整備だけでは出ません）')}
             ${row('show_pre_inspection', !!f.showPreInspection, '🌅 始動前点検UIを出す', '一括入力等で機械カテゴリ→機械・車両を選び、当日の始動前点検の確認・記録ができます')}
             ${row('show_periodic_inspection', !!f.showPeriodicInspection, '🗓️ 定期点検UIを出す', '一括入力等で機械カテゴリ→機械・車両を選び、当日の定期点検の確認・記録ができます')}
+            ${row('show_fuel_inspection', !!f.showFuelInspection, '⛽ 給油時点検UIを出す', '一括入力等で機械カテゴリ→機械・車両を選び、当日の給油時点検の確認・記録ができます')}
           </div>
         </div>`;
 };
@@ -12276,7 +12279,8 @@ window.collectWorkRecordUiFlagsFromForm_ = (prefix) => {
     showRidgePolygon: readOr('show_ridge_polygon', !!baseline.showRidgePolygon),
     showMaintenance: readOr('show_maintenance', !!baseline.showMaintenance),
     showPreInspection: readOr('show_pre_inspection', !!baseline.showPreInspection),
-    showPeriodicInspection: readOr('show_periodic_inspection', !!baseline.showPeriodicInspection)
+    showPeriodicInspection: readOr('show_periodic_inspection', !!baseline.showPeriodicInspection),
+    showFuelInspection: readOr('show_fuel_inspection', !!baseline.showFuelInspection)
   };
 };
 
@@ -16370,7 +16374,7 @@ window.openWorkNameEditorModal = (mode, originalName, presetCat, presetCrop, opt
   document.body.appendChild(modal);
   window._workExtraFlagsTouched = (mode === 'edit');
   const bindFlagTouch = () => {
-    ['wn_edit_show_field', 'wn_edit_show_machine', 'wn_edit_show_fuel', 'wn_edit_show_ridge_polygon', 'wn_edit_show_maintenance', 'wn_edit_show_pre_inspection', 'wn_edit_show_periodic_inspection'].forEach(id => {
+    ['wn_edit_show_field', 'wn_edit_show_machine', 'wn_edit_show_fuel', 'wn_edit_show_ridge_polygon', 'wn_edit_show_maintenance', 'wn_edit_show_pre_inspection', 'wn_edit_show_periodic_inspection', 'wn_edit_show_fuel_inspection'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.addEventListener('change', () => { window._workExtraFlagsTouched = true; });
     });
@@ -16388,6 +16392,7 @@ window.openWorkNameEditorModal = (mode, originalName, presetCat, presetCrop, opt
     const maint = document.getElementById('wn_edit_show_maintenance');
     const preInsp = document.getElementById('wn_edit_show_pre_inspection');
     const perInsp = document.getElementById('wn_edit_show_periodic_inspection');
+    const fuelInsp = document.getElementById('wn_edit_show_fuel_inspection');
     if (f) f.checked = inferred.showField !== false;
     if (m) m.checked = !!inferred.showMachine;
     if (fuel) fuel.checked = !!inferred.showFuel;
@@ -16395,6 +16400,7 @@ window.openWorkNameEditorModal = (mode, originalName, presetCat, presetCrop, opt
     if (maint) maint.checked = !!inferred.showMaintenance;
     if (preInsp) preInsp.checked = !!inferred.showPreInspection;
     if (perInsp) perInsp.checked = !!inferred.showPeriodicInspection;
+    if (fuelInsp) fuelInsp.checked = !!inferred.showFuelInspection;
   };
   bindFlagTouch();
   window._syncWorkNameEditorFlagDefaults_ = syncFlagDefaults;
@@ -19870,12 +19876,19 @@ window.clearBulkConcurrentDraft_ = (d) => {
 
 window.syncBulkConcurrentEqualMinutes_ = (d) => {
   if (!d || !Array.isArray(d.concurrentWorks) || !d.concurrentWorks.length) return;
-  // 分母＝メイン作業1 + 同時作業数（例: 80分で同時1件 → 40分ずつ）
-  const n = d.concurrentWorks.length + 1;
   const slot = window.getBulkConcurrentSlotMins_(d);
-  const equalMins = n > 0 ? Math.floor(slot / n) : 0;
+  let fixedSum = 0;
+  const equalCws = [];
   d.concurrentWorks.forEach(cw => {
-    if (!cw || cw.minutesMode !== 'equal') return;
+    if (!cw) return;
+    if (cw.minutesMode === 'equal') equalCws.push(cw);
+    else fixedSum += Math.max(0, Number(cw.minutes) || 0);
+  });
+  if (!equalCws.length) return;
+  const rem = Math.max(0, slot - fixedSum);
+  const n = 1 + equalCws.length; // 作業1（メイン） + 均等指定の作業群
+  const equalMins = Math.floor(rem / n);
+  equalCws.forEach(cw => {
     cw.minutes = equalMins;
   });
 };
@@ -19943,7 +19956,9 @@ window.toggleBulkConcurrentPanel_ = (uid) => {
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
   if (!row) return;
   row._concurrentPanelOpen = !row._concurrentPanelOpen;
-  if (row._concurrentPanelOpen) {
+  if (!row._concurrentPanelOpen) {
+    row._concurrentEditId = '';
+  } else {
     window.ensureBulkConcurrentDraft_(row);
     if (typeof window.ensureMobileVehiclesLoaded_ === 'function') {
       window.ensureMobileVehiclesLoaded_().then(() => window.rerenderBulkConcurrentCard_(uid)).catch(() => {
@@ -19953,6 +19968,44 @@ window.toggleBulkConcurrentPanel_ = (uid) => {
     }
   }
   window.rerenderBulkConcurrentCard_(uid, row._concurrentPanelOpen ? {} : { scrollToConcurrent: true });
+};
+
+window.editBulkConcurrentWork_ = (uid, cwId) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row || !Array.isArray(row.concurrentWorks)) return;
+  const sid = String(cwId || '').trim();
+  const entry = row.concurrentWorks.find(cw => cw && String(cw.id) === sid);
+  if (!entry) return;
+  row._concurrentEditId = entry.id;
+  row._concurrentDraft = {
+    cropNames: Array.isArray(entry.cropNames) && entry.cropNames.length ? entry.cropNames.slice() : ['共通'],
+    category: String(entry.category || '').trim(),
+    listFilterCategory: String(entry.category || '').trim(),
+    workName: String(entry.workName || '').trim(),
+    prepTargetWork: String(entry.prepTargetWork || '').trim(),
+    prepTargetCategory: String(entry.prepTargetCategory || '').trim(),
+    detailedWorks: Array.isArray(entry.detailedWorks) ? entry.detailedWorks.slice() : [],
+    usedMachines: Array.isArray(entry.usedMachines) ? entry.usedMachines.map(m => Object.assign({}, m)) : [],
+    minutes: entry.minutes != null ? entry.minutes : null,
+    minutesMode: entry.minutesMode || 'fixed'
+  };
+  row._concurrentPanelOpen = true;
+  if (typeof window.ensureMobileVehiclesLoaded_ === 'function') {
+    window.ensureMobileVehiclesLoaded_().then(() => window.rerenderBulkConcurrentCard_(uid, { scrollToConcurrent: true })).catch(() => {
+      window.rerenderBulkConcurrentCard_(uid, { scrollToConcurrent: true });
+    });
+    return;
+  }
+  window.rerenderBulkConcurrentCard_(uid, { scrollToConcurrent: true });
+};
+
+window.cancelBulkConcurrentEdit_ = (uid) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  row._concurrentEditId = '';
+  window.clearBulkConcurrentDraft_(row);
+  row._concurrentPanelOpen = false;
+  window.rerenderBulkConcurrentCard_(uid, { scrollToConcurrent: true });
 };
 
 window.pickBulkConcurrentDraftCrop_ = (uid, name) => {
@@ -20076,8 +20129,19 @@ window.setBulkConcurrentDraftMinutes_ = (uid, value) => {
   if (String(value) === 'equal') {
     draft.minutesMode = 'equal';
     // 追加予定の同時作業も含め、メイン＋同時（既存＋今回）で割る
-    const n = (Array.isArray(row.concurrentWorks) ? row.concurrentWorks.length : 0) + 2;
-    draft.minutes = n > 0 ? Math.floor(slot / n) : 0;
+    const editId = String(row._concurrentEditId || '').trim();
+    const existingList = Array.isArray(row.concurrentWorks) ? row.concurrentWorks : [];
+    let fixedSum = 0;
+    let equalCount = 0;
+    existingList.forEach(cw => {
+      if (!cw) return;
+      if (editId && String(cw.id) === editId) return;
+      if (cw.minutesMode === 'equal') equalCount++;
+      else fixedSum += Math.max(0, Number(cw.minutes) || 0);
+    });
+    const rem = Math.max(0, slot - fixedSum);
+    const n = 1 + equalCount + 1; // 作業1（メイン） + 既存均等 + この作業
+    draft.minutes = n > 0 ? Math.floor(rem / n) : 0;
   } else if (String(value) === 'remain') {
     draft.minutesMode = 'fixed';
     draft.minutes = window.getBulkConcurrentRemainingMins_(row);
@@ -20200,9 +20264,10 @@ window.confirmBulkConcurrentDraft_ = (uid) => {
     if (typeof customAlert === 'function') customAlert('作業名を選んでください。');
     return;
   }
+  const editId = String(row._concurrentEditId || '').trim();
   if (draft.minutesMode !== 'equal' && !(draft.minutes != null && Number(draft.minutes) > 0)) {
     // 未選択なら残り分数を自動セット（例: 60分枠で15分登録済み → 45分）
-    const remain = window.getBulkConcurrentRemainingMins_(row);
+    const remain = window.getBulkConcurrentRemainingMins_(row, editId ? { excludeId: editId } : undefined);
     if (remain > 0) {
       draft.minutesMode = 'fixed';
       draft.minutes = remain;
@@ -20222,7 +20287,14 @@ window.confirmBulkConcurrentDraft_ = (uid) => {
   draft.cropNames = crops;
   const entry = window.createConcurrentWorkEntry_(draft);
   if (!Array.isArray(row.concurrentWorks)) row.concurrentWorks = [];
-  row.concurrentWorks.push(entry);
+  const editIdx = editId ? row.concurrentWorks.findIndex(cw => cw && String(cw.id) === editId) : -1;
+  if (editIdx >= 0) {
+    entry.id = row.concurrentWorks[editIdx].id;
+    row.concurrentWorks[editIdx] = entry;
+  } else {
+    row.concurrentWorks.push(entry);
+  }
+  row._concurrentEditId = '';
   window.syncBulkConcurrentEqualMinutes_(row);
   // ⑥確定後 → メイン作業＝時間帯−同時作業合計
   if (typeof window.syncBulkMainWorkMinutesAuto_ === 'function') {
@@ -20573,7 +20645,7 @@ window.buildBulkConcurrentWorksHtml_ = (d, uid) => {
     return `<div style="padding:9px 10px; background:#fff; border:1.5px solid #FFB74D; border-radius:8px; margin-bottom:6px; box-shadow:0 1px 2px rgba(255,152,0,0.08);">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px;">
         <span style="display:inline-flex; align-items:center; gap:4px; padding:2px 7px; border-radius:6px; font-size:11px; font-weight:bold; background:#FFF3E0; color:#E65100; border:1px solid #FFE0B2;">
-          ⭐ メイン作業
+          作業1
         </span>
         ${minsShow ? `<span style="display:inline-flex; align-items:center; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold; background:#FFF8E1; color:#E65100; border:1px solid #FFE082;">⏱️ ${esc(minsShow)}</span>` : ''}
       </div>
@@ -20632,13 +20704,18 @@ window.buildBulkConcurrentWorksHtml_ = (d, uid) => {
     if (cwFlags.showRidgePolygon) featureBadges.push('<span style="font-size:10px; color:#00695C; background:#E0F7FA; border:1px solid #80DEEA; padding:1px 5px; border-radius:4px;">🛤️ 畝ポリゴン</span>');
     const featureBadgesHtml = featureBadges.join('');
 
-    return `<div style="padding:9px 10px; background:#fff; border:1px solid ${hasName ? '#D1C4E9' : '#CE93D8'}; border-radius:8px; margin-bottom:6px; box-shadow:0 1px 2px rgba(106,27,154,0.06);">
+    const isEditingThis = !!(d._concurrentEditId && String(d._concurrentEditId) === String(entry.id || ''));
+    const editBadge = isEditingThis
+      ? `<span style="font-size:9px; font-weight:bold; color:#fff; background:#1976D2; padding:1px 6px; border-radius:8px; margin-left:4px;">編集中</span>`
+      : '';
+    return `<div style="padding:9px 10px; background:${isEditingThis ? '#F3E5F5' : '#fff'}; border:${isEditingThis ? '2px solid #7E57C2' : ('1px solid ' + (hasName ? '#D1C4E9' : '#CE93D8'))}; border-radius:8px; margin-bottom:6px; box-shadow:0 1px 2px rgba(106,27,154,0.06);">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px;">
         <span style="display:inline-flex; align-items:center; gap:4px; padding:2px 7px; border-radius:6px; font-size:11px; font-weight:bold; background:#EDE7F6; color:#5E35B1; border:1px solid #D1C4E9;">
-          🔀 同時に行った作業${idx + 1}${autoBadge}
+          作業${(mainRowHtml ? idx + 2 : idx + 1)}${autoBadge}${editBadge}
         </span>
         <div style="display:inline-flex; align-items:center; gap:6px;">
           ${minsShow ? `<span style="display:inline-flex; align-items:center; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold; background:#E0F7FA; color:#006064; border:1px solid #80CBC4;">⏱️ ${esc(minsShow)}</span>` : ''}
+          <button type="button" onclick="editBulkConcurrentWork_('${esc(uid)}','${safeId}')" title="編集" style="background:#fff; color:#1976D2; border:1px solid #90CAF9; border-radius:6px; width:26px; height:24px; flex-shrink:0; cursor:pointer; font-size:12px; line-height:1; display:flex; align-items:center; justify-content:center;">✏️</button>
           <button type="button" onclick="removeBulkConcurrentWork_('${esc(uid)}','${safeId}')" title="削除" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; width:24px; height:24px; flex-shrink:0; cursor:pointer; font-size:13px; line-height:1; display:flex; align-items:center; justify-content:center;">×</button>
         </div>
       </div>
@@ -20760,31 +20837,40 @@ window.buildBulkConcurrentWorksHtml_ = (d, uid) => {
           ${minsHtml || '<div style="font-size:11px; color:#888;">この時間帯では選べる分数がありません</div>'}`
   );
   const curWorkFeatures = [];
+  let curFlags = null;
   if (curWork) {
-    const curFlags = (typeof window.calcSingleWorkUiFlags_ === 'function')
+    curFlags = (typeof window.calcSingleWorkUiFlags_ === 'function')
       ? window.calcSingleWorkUiFlags_(curWork, curFilter || draft.category, draft)
       : concurrentUiFlags;
     if (curFlags.showField !== false && curFlags.showField) curWorkFeatures.push('🗺️圃場選択');
     if (curFlags.showFuel) curWorkFeatures.push('⛽給油マスタ');
-    if (curFlags.showMaintenance) curWorkFeatures.push('🔧整備UI');
     if (curFlags.showRidgePolygon) curWorkFeatures.push('🛤️畝ポリゴン登録');
   }
+  const showConcurrentMaint = !!(curFlags && curFlags.showMaintenance);
+  const concurrentMaintHtml = (showConcurrentMaint && typeof window.buildBulkWorkMemoMaintenanceTargetHtml_ === 'function')
+    ? window.buildBulkWorkMemoMaintenanceTargetHtml_(d, uid)
+    : '';
   const curWorkNotice = curWorkFeatures.length
     ? `<div style="font-size:11px; color:#5E35B1; background:#EDE7F6; border:1px solid #D1C4E9; border-radius:8px; padding:7px 10px; margin-bottom:8px; line-height:1.4;">
         💡 この作業でチェックされた項目（<b>${esc(curWorkFeatures.join('・'))}</b>）の入力欄が作業枠に表示されます。
       </div>`
     : '';
+  const isEditing = !!(d._concurrentEditId && list.some(cw => cw && String(cw.id) === String(d._concurrentEditId)));
   const panelHtml = panelOpen ? `
-          <div style="margin-top:8px; padding:10px; background:#fff; border:1px solid #CE93D8; border-radius:10px;">
-            <div style="font-size:11px; font-weight:bold; color:#6A1B9A; margin-bottom:8px;">新規追加（この時間帯・${slotMins || '—'}分）</div>
+          <div style="margin-top:8px; padding:10px; background:#fff; border:1px solid ${isEditing ? '#7E57C2' : '#CE93D8'}; border-radius:10px;">
+            <div style="font-size:11px; font-weight:bold; color:${isEditing ? '#1565C0' : '#6A1B9A'}; margin-bottom:8px;">${isEditing ? `✏️ 作業内容を編集中（この時間帯・${slotMins || '—'}分）` : `新規追加（この時間帯・${slotMins || '—'}分）`}</div>
             ${cropStep}
             ${catStep}
             ${workStep}
             ${detailStep}
             ${equipStep}
+            ${concurrentMaintHtml}
             ${curWorkNotice}
             ${minsStep}
-            <button type="button" onclick="confirmBulkConcurrentDraft_('${esc(uid)}')" style="width:100%; box-sizing:border-box; padding:10px 12px; border:none; border-radius:8px; background:#7E57C2; color:#fff; font-size:13px; font-weight:bold; cursor:pointer;">追加</button>
+            <div style="display:flex; gap:8px;">
+              <button type="button" onclick="confirmBulkConcurrentDraft_('${esc(uid)}')" style="flex:1; box-sizing:border-box; padding:10px 12px; border:none; border-radius:8px; background:${isEditing ? '#1976D2' : '#7E57C2'}; color:#fff; font-size:13px; font-weight:bold; cursor:pointer;">${isEditing ? '更新する' : '追加'}</button>
+              ${isEditing ? `<button type="button" onclick="cancelBulkConcurrentEdit_('${esc(uid)}')" style="box-sizing:border-box; padding:10px 14px; border:1px solid #ccc; border-radius:8px; background:#f5f5f5; color:#333; font-size:13px; font-weight:bold; cursor:pointer;">キャンセル</button>` : ''}
+            </div>
           </div>` : '';
 
   const addBtnHtml = `
@@ -24384,7 +24470,7 @@ window.getMachinePhotoUrl = (item) => {
   if (!item) return '';
   let raw = '';
   if (item.photo && typeof item.photo === 'string' && item.photo.trim()) raw = item.photo.trim();
-  else if (item.photo2 && typeof item.photo2 === 'string' && item.photo2.trim()) raw = item.photo2.trim();
+  else if (item.photo2 && typeof item.photo2 === 'string' && item.photo2.trim()) raw = item.photo2.split(',')[0].trim();
   else if (item.photoUrl && typeof item.photoUrl === 'string' && item.photoUrl.trim()) raw = item.photoUrl.trim();
   else if (Array.isArray(item.photos) && item.photos.length > 0) {
     const p = item.photos[0];
@@ -24681,14 +24767,14 @@ window.ensureMachineItemEditorModal = () => {
                 <div>
                   <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">② メインカテゴリ</label>
                   <div style="display:flex; gap:4px;">
-                    <select id="mie_group" class="form-input" style="flex:1; box-sizing:border-box; margin-bottom:0;"></select>
+                    <select id="mie_group" class="form-input" onchange="updateMachineItemEditorAutoNumber_()" style="flex:1; box-sizing:border-box; margin-bottom:0;"></select>
                     <button type="button" onclick="addMachineGroupFromForm('mie_group')" style="padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; cursor:pointer; flex-shrink:0;" title="追加">➕</button>
                   </div>
                 </div>
                 <div>
                   <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">③ 機械名（機種）</label>
                   <div style="display:flex; gap:4px;">
-                    <select id="mie_type" class="form-input" style="flex:1; box-sizing:border-box; margin-bottom:0;">
+                    <select id="mie_type" class="form-input" onchange="updateMachineItemEditorAutoNumber_()" style="flex:1; box-sizing:border-box; margin-bottom:0;">
                       <option value="">選択...</option>
                     </select>
                     <button type="button" onclick="addMachineTypeFromForm('mie_type')" style="padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; cursor:pointer; flex-shrink:0;" title="追加">➕</button>
@@ -24696,12 +24782,12 @@ window.ensureMachineItemEditorModal = () => {
                 </div>
                 <div style="display:flex; gap:8px;">
                   <div style="flex:1;">
-                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">④ 番号</label>
-                    <input type="text" id="mie_number" class="form-input" placeholder="管理番号" style="width:100%; box-sizing:border-box;">
+                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">④ 型式</label>
+                    <input type="text" id="mie_model" class="form-input" oninput="updateMachineItemEditorAutoNumber_()" placeholder="例: PH2R" style="width:100%; box-sizing:border-box;">
                   </div>
                   <div style="flex:1;">
-                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">⑤ 型式名</label>
-                    <input type="text" id="mie_model" class="form-input" placeholder="例: PH2R" style="width:100%; box-sizing:border-box;">
+                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">⑤ 番号（自動）</label>
+                    <input type="text" id="mie_number" class="form-input" readonly placeholder="被り時のみ自動入力" style="width:100%; box-sizing:border-box; background:#f5f5f5; color:#555;">
                   </div>
                 </div>
                 <div>
@@ -24757,7 +24843,7 @@ window.ensureMachineItemEditorModal = () => {
                   </select>
                 </div>
               </div>
-              <div id="mie_fuel_checks_section" style="background:#FCE4EC; border:1px solid #F48FB1; border-radius:10px; padding:10px; margin-bottom:12px;">
+              <div id="mie_fuel_checks_section" style="display:none; background:#FCE4EC; border:1px solid #F48FB1; border-radius:10px; padding:10px; margin-bottom:12px;">
                 <div style="font-size:13px; font-weight:bold; color:#C2185B; margin-bottom:4px;">⛽ 給油時の確認項目</div>
                 <div style="font-size:11px; color:#880E4F; line-height:1.4; margin-bottom:8px;">この機械・車両の給油記録で出す項目を選びます。すべてONのままなら従来どおり全項目が表示されます。</div>
                 <div style="display:flex; flex-wrap:wrap; gap:8px 12px; font-size:12px; color:#880E4F;">
@@ -24792,8 +24878,8 @@ window.ensureMachineItemEditorModal = () => {
                   <div id="mie_maint_parts_chips" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
                 </div>
               </div>
-              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">写真（任意・あとから編集可）</label>
-              <div id="mie_photo_preview" style="width:100%; min-height:100px; background:#f5f5f5; border:1px dashed #bbb; border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:hidden; margin-bottom:8px;"></div>
+              <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">写真（複数登録可・選択画面に出す写真を選べます）</label>
+              <div id="mie_photo_preview" style="width:100%; min-height:100px; background:#f5f5f5; border:1px dashed #bbb; border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:hidden; margin-bottom:8px; padding:6px; box-sizing:border-box;"></div>
               <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
                 <label style="flex:1; min-width:120px; background:#2E7D32; color:#fff; text-align:center; padding:8px; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer;">
                   📷 写真を選ぶ
@@ -24801,10 +24887,10 @@ window.ensureMachineItemEditorModal = () => {
                 </label>
                 <label style="flex:1; min-width:120px; background:#2196F3; color:#fff; text-align:center; padding:8px; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer;">
                   🖼️ フォルダから
-                  <input type="file" accept="image/*" style="display:none;" onchange="onMachineItemEditorPhotoChange(this)">
+                  <input type="file" accept="image/*" multiple style="display:none;" onchange="onMachineItemEditorPhotoChange(this)">
                 </label>
               </div>
-              <button type="button" id="mie_clear_photo" onclick="clearMachineItemEditorPhoto()" style="display:none; width:100%; background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:8px; padding:7px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:8px;">写真を外す</button>
+              <button type="button" id="mie_clear_photo" onclick="clearMachineItemEditorPhoto()" style="display:none; width:100%; background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:8px; padding:7px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:8px;">写真をすべて外す</button>
               <div id="mie_add_hint" style="font-size:11px; color:#666; line-height:1.45; margin-bottom:8px;">農機具と車両を混ぜて、何台でもリストに追加してからまとめて登録できます。</div>
               <button type="button" id="mie_queue_btn" onclick="queueMachineItemFromEditor()" style="width:100%; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:10px; font-size:13px; font-weight:bold; cursor:pointer; margin-bottom:10px;">＋ リストに追加（続けて登録）</button>
               <div id="mie_queue_wrap" style="display:none;">
@@ -24821,34 +24907,107 @@ window.ensureMachineItemEditorModal = () => {
   return modal;
 };
 
+window.collectExistingMachinePhotoItems_ = (item) => {
+  if (!item) return [];
+  const rawUrls = [];
+  const addUrl = (u) => {
+    const s = String(u || '').trim();
+    if (s && rawUrls.indexOf(s) < 0) rawUrls.push(s);
+  };
+  addUrl(item.photo);
+  if (item.photo2 && typeof item.photo2 === 'string') {
+    item.photo2.split(',').forEach(addUrl);
+  }
+  if (Array.isArray(item.photos)) {
+    item.photos.forEach(p => {
+      if (typeof p === 'string') addUrl(p);
+      else if (p && (p.url || p.base64)) addUrl(p.url || p.base64);
+    });
+  }
+  return rawUrls.map((u, idx) => ({ url: u, base64: '', isMain: idx === 0 }));
+};
+
+window.syncMachineItemEditorMainPhotoLegacyFields_ = () => {
+  const st = window._machineItemEditorState || {};
+  const list = Array.isArray(st.photoItems) ? st.photoItems : [];
+  if (list.length > 0 && !list.some(x => x && x.isMain)) {
+    list[0].isMain = true;
+  }
+  const main = list.find(x => x && x.isMain) || list[0] || null;
+  st.photoBase64 = (main && main.base64) ? main.base64 : '';
+  st.existingPhoto = (main && main.url) ? main.url : '';
+  st.clearPhoto = list.length === 0;
+};
+
+window.setMachineItemEditorMainPhoto = (idx) => {
+  const st = window._machineItemEditorState || {};
+  const list = Array.isArray(st.photoItems) ? st.photoItems : [];
+  if (!list[idx]) return;
+  list.forEach((it, i) => { if (it) it.isMain = (i === idx); });
+  window.syncMachineItemEditorMainPhotoLegacyFields_();
+  window.renderMachineItemEditorPreview();
+};
+
+window.removeMachineItemEditorPhoto = (idx) => {
+  const st = window._machineItemEditorState || {};
+  if (!Array.isArray(st.photoItems)) st.photoItems = [];
+  st.photoItems.splice(idx, 1);
+  window.syncMachineItemEditorMainPhotoLegacyFields_();
+  window.renderMachineItemEditorPreview();
+};
+
 window.renderMachineItemEditorPreview = () => {
   const box = document.getElementById('mie_photo_preview');
   const clearBtn = document.getElementById('mie_clear_photo');
   if (!box) return;
   const st = window._machineItemEditorState || {};
-  const url = st.photoBase64 || (!st.clearPhoto ? (typeof window.toDriveThumbUrl === 'function' ? window.toDriveThumbUrl(st.existingPhoto) : st.existingPhoto) : '');
-  if (url) {
-    box.innerHTML = `<img src="${url.replace(/"/g, '&quot;')}" alt="preview" style="width:100%; max-height:180px; object-fit:contain; display:block;">`;
-  } else {
+  const list = Array.isArray(st.photoItems) ? st.photoItems : [];
+  if (!list.length) {
+    box.style.display = 'flex';
     box.innerHTML = '<div style="color:#888; font-size:13px; padding:18px; text-align:center;">写真未登録</div>';
+    if (clearBtn) clearBtn.style.display = 'none';
+    return;
   }
-  if (clearBtn) clearBtn.style.display = url ? 'block' : 'none';
+  window.syncMachineItemEditorMainPhotoLegacyFields_();
+  box.style.display = 'block';
+  const cards = list.map((it, idx) => {
+    const rawSrc = it.base64 || (typeof window.toDriveThumbUrl === 'function' ? window.toDriveThumbUrl(it.url) : it.url) || '';
+    const isMain = !!it.isMain;
+    const border = isMain ? '2px solid #1976D2' : '1px solid #ccc';
+    const bg = isMain ? '#E3F2FD' : '#fff';
+    const mainBtn = isMain
+      ? `<div style="background:#1976D2; color:#fff; font-size:10px; font-weight:bold; padding:3px 4px; border-radius:4px; text-align:center;">⭐ 選択画面に表示</div>`
+      : `<button type="button" onclick="setMachineItemEditorMainPhoto(${idx})" style="width:100%; background:#f5f5f5; color:#333; border:1px solid #ccc; font-size:10px; font-weight:bold; padding:3px 4px; border-radius:4px; cursor:pointer;">☆ 選択画面に設定</button>`;
+    return `<div style="position:relative; border:${border}; background:${bg}; border-radius:8px; padding:5px; display:flex; flex-direction:column; gap:5px; box-sizing:border-box;">
+      <button type="button" onclick="removeMachineItemEditorPhoto(${idx})" title="この写真を削除" style="position:absolute; top:2px; right:2px; width:20px; height:20px; border-radius:50%; border:none; background:rgba(198,40,40,0.9); color:#fff; font-size:12px; font-weight:bold; cursor:pointer; line-height:1; display:flex; align-items:center; justify-content:center; z-index:2;">×</button>
+      <img src="${String(rawSrc).replace(/"/g, '&quot;')}" alt="photo_${idx + 1}" style="width:100%; height:92px; object-fit:cover; border-radius:5px; display:block; background:#eee;">
+      ${mainBtn}
+    </div>`;
+  }).join('');
+  box.innerHTML = `<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(112px, 1fr)); gap:8px; width:100%;">${cards}</div>`;
+  if (clearBtn) clearBtn.style.display = 'block';
 };
 
 window.onMachineItemEditorPhotoChange = async (input) => {
-  if (!input || !input.files || !input.files[0]) return;
-  const file = input.files[0];
+  if (!input || !input.files || !input.files.length) return;
+  const files = Array.from(input.files);
+  const st = window._machineItemEditorState || {};
+  if (!Array.isArray(st.photoItems)) st.photoItems = [];
   try {
-    const b64 = (typeof resizeImg === 'function')
-      ? await resizeImg(file)
-      : await new Promise((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve(r.result);
-        r.onerror = reject;
-        r.readAsDataURL(file);
-      });
-    window._machineItemEditorState.photoBase64 = b64;
-    window._machineItemEditorState.clearPhoto = false;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const b64 = (typeof resizeImg === 'function')
+        ? await resizeImg(file)
+        : await new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result);
+          r.onerror = reject;
+          r.readAsDataURL(file);
+        });
+      const hasMain = st.photoItems.some(x => x && x.isMain);
+      st.photoItems.push({ url: '', base64: b64, filename: file.name || ('photo_' + Date.now() + '.jpg'), isMain: !hasMain });
+    }
+    window.syncMachineItemEditorMainPhotoLegacyFields_();
     window.renderMachineItemEditorPreview();
   } catch (e) {
     if (typeof customAlert === 'function') customAlert('写真の読み込みに失敗しました');
@@ -24857,7 +25016,9 @@ window.onMachineItemEditorPhotoChange = async (input) => {
 };
 
 window.clearMachineItemEditorPhoto = () => {
+  window._machineItemEditorState.photoItems = [];
   window._machineItemEditorState.photoBase64 = '';
+  window._machineItemEditorState.existingPhoto = '';
   window._machineItemEditorState.clearPhoto = true;
   window.renderMachineItemEditorPreview();
 };
@@ -24939,6 +25100,44 @@ window.isMachineItemEditorFieldsValid_ = (fields) => {
   );
 };
 
+window.updateMachineItemEditorAutoNumber_ = () => {
+  const numEl = document.getElementById('mie_number');
+  if (!numEl) return;
+  const st = window._machineItemEditorState || {};
+  const group = String((document.getElementById('mie_group') || {}).value || '').trim();
+  const type = String((document.getElementById('mie_type') || {}).value || '').trim();
+  const model = String((document.getElementById('mie_model') || {}).value || '').trim();
+  if (!type && !model) {
+    numEl.value = '';
+    return;
+  }
+  const norm = (s) => String(s || '').trim();
+  const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
+    ? pdlMachines.filter(m => m && !m.isTool && !m.isVehicle)
+    : [];
+  const pendingMacs = (Array.isArray(st.pending) ? st.pending : []).filter(p => p && p.kind === 'machine');
+  const excludeId = st.mode === 'edit' ? String(st.itemId || '') : '';
+  const all = macs.concat(pendingMacs).filter(m => {
+    if (excludeId && String(m.id || '') === excludeId) return false;
+    const mg = norm(m.group || m.mainCategory);
+    const mt = norm(m.type);
+    const mm = norm(m.model);
+    return mg === group && mt === type && mm === model;
+  });
+  if (all.length === 0) {
+    numEl.value = '';
+    return;
+  }
+  let maxN = 1;
+  all.forEach(m => {
+    const raw = norm(m.machineNumber || m.serialNo);
+    const digits = raw.match(/\d+/);
+    const n = digits ? parseInt(digits[0], 10) : 1;
+    if (!isNaN(n) && n > maxN) maxN = n;
+  });
+  numEl.value = String(maxN + 1);
+};
+
 window.clearMachineItemEditorInputFields_ = () => {
   ['mie_number', 'mie_model', 'mie_vehicle_number', 'mie_vehicle_model'].forEach(id => {
     const el = document.getElementById(id);
@@ -24955,6 +25154,7 @@ window.clearMachineItemEditorInputFields_ = () => {
   if (typeof window.setMachineItemEditorFuelChecksUi_ === 'function') {
     window.setMachineItemEditorFuelChecksUi_('');
   }
+  window.updateMachineItemEditorAutoNumber_();
 };
 
 window.setMachineItemEditorKind = (kind) => {
@@ -25115,10 +25315,12 @@ window.queueMachineItemFromEditor = () => {
     if (typeof customAlert === 'function') customAlert('同じ内容がすでにリストにあります');
     return;
   }
-  st.pending.push(Object.assign({ photoBase64: st.photoBase64 || '' }, fields));
+  st.pending.push(Object.assign({ photoBase64: st.photoBase64 || '', photoItems: (st.photoItems || []).slice() }, fields));
   window._machineItemEditorState = st;
   window.clearMachineItemEditorInputFields_();
+  st.photoItems = [];
   st.photoBase64 = '';
+  st.existingPhoto = '';
   st.clearPhoto = false;
   window.renderMachineItemEditorPreview();
   window.renderMachineItemEditorQueue();
@@ -25404,6 +25606,7 @@ window.openMachineItemEditorModal = (opts) => {
     mode: mode,
     itemId: item ? String(item.id || '') : '',
     existingPhoto: item ? (window.getMachinePhotoUrl(item) || item.photo || '') : '',
+    photoItems: item ? window.collectExistingMachinePhotoItems_(item) : [],
     photoBase64: '',
     clearPhoto: false,
     workCategory: opts.workCategory || '',
@@ -25462,14 +25665,19 @@ window.openMachineItemEditorModal = (opts) => {
       }
       window.setMachineItemEditorFuelChecksUi_(fuelSpec);
     }
-  } else if (typeof window.setMachineItemEditorFuelChecksUi_ === 'function') {
-    window.setMachineItemEditorFuelChecksUi_('');
+  } else {
+    if (typeof window.setMachineItemEditorFuelChecksUi_ === 'function') {
+      window.setMachineItemEditorFuelChecksUi_('');
+    }
+    if (typeof window.updateMachineItemEditorAutoNumber_ === 'function') {
+      window.updateMachineItemEditorAutoNumber_();
+    }
   }
 
   const isAdmin = typeof window.isWorkerAdmin === 'function' ? window.isWorkerAdmin() : true;
   const adminWrap = document.getElementById('mie_admin_edit_section');
   const adminSel = document.getElementById('mie_admin_item_select');
-  if (adminWrap) adminWrap.style.display = isAdmin ? 'block' : 'none';
+  if (adminWrap) adminWrap.style.display = 'none';
   if (adminSel) {
     const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
     const vehs = (typeof pdlMobileVehicles !== 'undefined' && Array.isArray(pdlMobileVehicles)) ? pdlMobileVehicles : [];
@@ -25570,16 +25778,24 @@ window.persistOneMachineOrVehicle_ = async (entry) => {
       status: status,
       fuelChecks: entry.fuelChecks != null ? entry.fuelChecks : ''
     };
-    if (photoBase64) {
+    if (Array.isArray(entry.photoItems)) {
+      payload.photoItems = entry.photoItems.map(p => ({
+        url: p.url || '',
+        base64: p.base64 || '',
+        filename: p.filename || '',
+        isMain: !!p.isMain
+      }));
+    } else if (photoBase64) {
       payload.photoBase64 = photoBase64;
       payload.photoFilename = plateNumber.replace(/\s+/g, '_') + '.jpg';
     }
-    if (entry.clearPhoto && !photoBase64) payload.clearPhoto = true;
+    if (entry.clearPhoto && !photoBase64 && (!Array.isArray(entry.photoItems) || !entry.photoItems.length)) payload.clearPhoto = true;
     const res = await safeCallGAS('vehicle_saveVehicle', payload);
-    const photoUrl = (res && res.photo) || photoBase64 || (entry.clearPhoto ? '' : (entry.existingPhoto || ''));
+    const photoUrl = (res && res.photo != null) ? res.photo : (photoBase64 || (entry.clearPhoto ? '' : (entry.existingPhoto || '')));
+    const photo2Url = (res && res.photo2 != null) ? res.photo2 : '';
     if (!Array.isArray(window.pdlMobileVehicles)) window.pdlMobileVehicles = [];
     const rec = {
-      id: rawId, plateNumber: plateNumber, driveType: driveType, status: status, photo: photoUrl,
+      id: rawId, plateNumber: plateNumber, driveType: driveType, status: status, photo: photoUrl, photo2: photo2Url,
       mainCategory: mainCategory, group: mainCategory, vehicleType: vehicleType, type: vehicleType,
       vehicleNumber: plateNumber, machineNumber: plateNumber, model: model,
       fuelChecks: payload.fuelChecks || ''
@@ -25622,7 +25838,14 @@ window.persistOneMachineOrVehicle_ = async (entry) => {
     parts: entry.parts != null ? entry.parts : (st.parts || ''),
     fuelChecks: entry.fuelChecks != null ? entry.fuelChecks : ''
   };
-  if (photoBase64) {
+  if (Array.isArray(entry.photoItems)) {
+    payload.photoItems = entry.photoItems.map(p => ({
+      url: p.url || '',
+      base64: p.base64 || '',
+      filename: p.filename || '',
+      isMain: !!p.isMain
+    }));
+  } else if (photoBase64) {
     // photoBase64 のみ送る（photos と二重送信すると Drive に同じ写真が2枚できる）
     payload.photoBase64 = photoBase64;
     payload.photoFilename = name.replace(/\s+/g, '_') + '.jpg';
@@ -25727,6 +25950,7 @@ window.saveMachineItemEditorModal = async () => {
         return;
       }
       const result = await window.persistOneMachineOrVehicle_(Object.assign({
+        photoItems: (st.photoItems || []).slice(),
         photoBase64: st.photoBase64 || '',
         clearPhoto: st.clearPhoto,
         existingPhoto: st.existingPhoto || '',
@@ -25748,7 +25972,7 @@ window.saveMachineItemEditorModal = async () => {
     const pending = Array.isArray(st.pending) ? st.pending.slice() : [];
     if (window.isMachineItemEditorFieldsValid_(currentFields)) {
       currentFields.displayLabel = window.getMachineItemEditorDisplayLabel_(currentFields);
-      pending.push(Object.assign({ photoBase64: st.photoBase64 || '' }, currentFields));
+      pending.push(Object.assign({ photoBase64: st.photoBase64 || '', photoItems: (st.photoItems || []).slice() }, currentFields));
     }
     if (!pending.length) {
       if (typeof customAlert === 'function') {
@@ -28703,10 +28927,10 @@ window.refreshRecordSyncBanner_ = (opts) => {
     const rest = pending > 1 ? `（残り${pending}件）` : '';
     const batchN = Number(window._recordSyncCurrentBatchCount) || 0;
     const msg = batchN > 1
-      ? `☁️ 記録をまとめて同期中…（${batchN}件）${rest}`
+      ? `☁️ 記録をまとめて同期中…（${batchN}件）${rest}（画面を閉じても登録されます）`
       : (hasPhotos
         ? `☁️ 写真つき記録を同期中…${rest}`
-        : `☁️ 記録を同期中…${rest}`);
+        : `☁️ 記録を同期中…${rest}（画面を閉じても登録されます）`);
     window.setRecordSyncBanner_('syncing', msg);
     return;
   }
@@ -29669,6 +29893,59 @@ window.runRecordSyncBatch_ = async (batch) => {
   }
   return { failed: 0, message: '' };
 };
+
+if (!window.__recordSyncPageHideBound) {
+  window.__recordSyncPageHideBound = true;
+  window.addEventListener('pagehide', () => {
+    try {
+      if (navigator && navigator.onLine === false) return;
+      const q = Array.isArray(window._recordSyncQueue) ? window._recordSyncQueue : [];
+      if (!q.length || typeof GAS_URL !== 'string' || !GAS_URL) return;
+      const batchable = [];
+      const remain = [];
+      q.forEach(job => {
+        if (typeof window.canBatchRecordSyncJob_ === 'function' && window.canBatchRecordSyncJob_(job)) {
+          batchable.push(job);
+        } else {
+          remain.push(job);
+        }
+      });
+      if (!batchable.length) return;
+      const records = batchable.map(job => {
+        const serverTargetIds = window.normalizeRecordSyncTargetIdsForServer_
+          ? window.normalizeRecordSyncTargetIdsForServer_(job.targetIds)
+          : (job.targetIds || []);
+        return {
+          localId: job.localId,
+          id: serverTargetIds.join(','),
+          name: job.nameStr || '',
+          author: job.userName || '',
+          recordType: job.recordType || 'work',
+          data: job.data || {},
+          photos: []
+        };
+      });
+      const bodyStr = JSON.stringify({ action: 'saveRecordBatch', params: { records: records } });
+      if (bodyStr.length < 60000) {
+        const reqUrl = GAS_URL + (GAS_URL.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now() + '_ph';
+        fetch(reqUrl, {
+          method: 'POST',
+          redirect: 'follow',
+          cache: 'no-store',
+          keepalive: true,
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: bodyStr
+        }).catch(() => { });
+        window._recordSyncQueue = remain;
+        batchable.forEach(job => {
+          if (job && job.localId && typeof window.removePersistedRecordSyncJob_ === 'function') {
+            window.removePersistedRecordSyncJob_(job.localId);
+          }
+        });
+      }
+    } catch (e) { }
+  });
+}
 
 window.runRecordSyncJob_ = async (job) => {
   if (!job) return;
@@ -33577,18 +33854,33 @@ window.addHitchTypeFromForm = async (selectId) => {
     if (sel) sel.value = t;
     return;
   }
+  const overlay = document.createElement('div');
+  overlay.id = 'hitchAddingOverlay';
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:30050; display:flex; justify-content:center; align-items:center; padding:16px;';
+  const escT = t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  overlay.innerHTML = `<div style="background:#fff; border-radius:12px; padding:20px 26px; box-shadow:0 8px 24px rgba(0,0,0,0.28); text-align:center; min-width:210px;">
+    <div style="font-size:22px; margin-bottom:8px;">⏳</div>
+    <div style="font-weight:bold; font-size:15px; color:#333;">追加中です…</div>
+    <div style="font-size:12px; color:#666; margin-top:4px;">「${escT}」を登録しています</div>
+  </div>`;
+  document.body.appendChild(overlay);
   try {
     const updated = await callGAS('manageMaster', { masterType: 'hitchType', manageAction: 'add', value: t, userName: currentUser });
     window.pdlHitchTypes = (Array.isArray(updated) && updated.length) ? updated : [...window.getHitchTypeOptions_(), t];
   } catch (e) {
     // オフライン等でも入力内容は失わない（次回同期時にマスタへ反映される）
     window.pdlHitchTypes = [...window.getHitchTypeOptions_(), t];
+  } finally {
+    if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
   }
   if (typeof window.refreshMachineItemEditorSelectOptions_ === 'function') {
     window.refreshMachineItemEditorSelectOptions_();
   }
   const sel = selectId ? document.getElementById(selectId) : null;
   if (sel) sel.value = t;
+  if (typeof showToast === 'function') {
+    showToast(`✅ ヒッチ規格「${t}」を追加しました`);
+  }
 };
 
 window.addMachineTypeFromForm = async (selectId) => {
@@ -39416,7 +39708,7 @@ window.calcSingleWorkUiFlags_ = (workName, category, draftBase) => {
     : (pdlWorkMaster || []).find(x => x && String(x.name || '').trim() === wName);
   const inferred = (typeof window.inferWorkRecordUiFlags_ === 'function')
     ? window.inferWorkRecordUiFlags_(wName, cat)
-    : { showMachine: false, showMaterial: false, showPesticide: false, showField: false, showFuel: false, showRidgePolygon: false, showMaintenance: false, showPreInspection: false, showPeriodicInspection: false };
+    : { showMachine: false, showMaterial: false, showPesticide: false, showField: false, showFuel: false, showRidgePolygon: false, showMaintenance: false, showPreInspection: false, showPeriodicInspection: false, showFuelInspection: false };
   const isMachineryCat = cat.includes('農機');
   const isDelivery = (typeof window.bulkWorkMemoIsDelivery_ === 'function')
     ? window.bulkWorkMemoIsDelivery_({ workName: wName, category: cat })
@@ -39445,6 +39737,7 @@ window.calcSingleWorkUiFlags_ = (workName, category, draftBase) => {
     showMaintenance: pick(w && w.showMaintenance, inferred.showMaintenance),
     showPreInspection: pick(w && w.showPreInspection, inferred.showPreInspection),
     showPeriodicInspection: pick(w && w.showPeriodicInspection, inferred.showPeriodicInspection),
+    showFuelInspection: pick(w && w.showFuelInspection, inferred.showFuelInspection),
     isPrep: false,
     isCleanup: false,
     isDelivery: !!isDelivery
@@ -39478,6 +39771,7 @@ window.getBulkWorkMemoUiFlags_ = (draft) => {
     if (cwFlags.showMaintenance) combined.showMaintenance = true;
     if (cwFlags.showPreInspection) combined.showPreInspection = true;
     if (cwFlags.showPeriodicInspection) combined.showPeriodicInspection = true;
+    if (cwFlags.showFuelInspection) combined.showFuelInspection = true;
     if (cwFlags.showField !== false && cwFlags.showField) combined.showField = true;
     if (cwFlags.showMaterial) combined.showMaterial = true;
     if (cwFlags.showTool) combined.showTool = true;
@@ -44743,6 +45037,9 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
     if (flags.showPeriodicInspection && typeof window.buildBulkWorkMemoInspectionHtml_ === 'function') {
       html += window.buildBulkWorkMemoInspectionHtml_(d, uid, '定期点検');
     }
+    if (flags.showFuelInspection && typeof window.buildBulkWorkMemoInspectionHtml_ === 'function') {
+      html += window.buildBulkWorkMemoInspectionHtml_(d, uid, '給油時点検');
+    }
     // 運搬元・運搬先の入力欄は出さない
   }
   // メイン作業名未選択でも、メモやドラフトから同時作業が付いていれば表示
@@ -44785,8 +45082,9 @@ window.ensureBulkInspectionRecordsLoaded_ = (uid) => {
 
 window.getBulkInspectionDraftState_ = (d, inspType) => {
   if (!d) return { category: '', machineId: '', hourMeter: '', comment: '', items: {} };
-  const normType = String(inspType || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
-  const key = normType === '定期点検' ? 'periodic' : 'pre';
+  const rawType = String(inspType || '').trim();
+  const normType = (rawType === '定期点検' || rawType === '給油時点検') ? rawType : '始動前点検';
+  const key = normType === '定期点検' ? 'periodic' : (normType === '給油時点検' ? 'fuel' : 'pre');
   if (!d._inspState || typeof d._inspState !== 'object') d._inspState = {};
   if (!d._inspState[key]) {
     let initCat = '';
@@ -44836,7 +45134,8 @@ window.onBulkInspMachineChange_ = (uid, inspType, machineId) => {
 
 window.getBulkInspItemsForMachine_ = (mac, inspType) => {
   if (!mac) return [];
-  const normType = String(inspType || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+  const rawType = String(inspType || '').trim();
+  const normType = (rawType === '定期点検' || rawType === '給油時点検') ? rawType : '始動前点検';
   const allInsps = (typeof pdlInspections !== 'undefined' && Array.isArray(pdlInspections))
     ? pdlInspections
     : (Array.isArray(window.pdlInspections) ? window.pdlInspections : []);
@@ -44848,7 +45147,8 @@ window.getBulkInspItemsForMachine_ = (mac, inspType) => {
   ].filter(Boolean));
   return allInsps.filter(i => {
     if (!i) return false;
-    const itemType = String(i.inspectionType || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+    const rawItemType = String(i.inspectionType || '').trim();
+    const itemType = (rawItemType === '定期点検' || rawItemType === '給油時点検') ? rawItemType : '始動前点検';
     if (itemType !== normType) return false;
     const targets = String(i.machineType || i.target || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
     return targets.some(t => macKeys.has(t) || t === '共通' || t === '全般');
@@ -44950,7 +45250,8 @@ window.saveBulkWorkMemoInspection_ = async (uid, inspType) => {
     summary = `🔧 整備済(${maintCount}件)`;
   }
 
-  const normType = String(inspType || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+  const rawType = String(inspType || '').trim();
+  const normType = (rawType === '定期点検' || rawType === '給油時点検') ? rawType : '始動前点検';
   const payload = {
     date: targetDate,
     inspector: workerVal,
@@ -44966,7 +45267,7 @@ window.saveBulkWorkMemoInspection_ = async (uid, inspType) => {
     comment: String(st.comment || '').trim()
   };
 
-  const btnId = `bulk_insp_save_${normType === '定期点検' ? 'per' : 'pre'}_${uid}`;
+  const btnId = `bulk_insp_save_${normType === '定期点検' ? 'per' : (normType === '給油時点検' ? 'fuel' : 'pre')}_${uid}`;
   const btn = document.getElementById(btnId);
   if (btn) {
     btn.disabled = true;
@@ -44997,13 +45298,15 @@ window.saveBulkWorkMemoInspection_ = async (uid, inspType) => {
 
 window.buildBulkWorkMemoInspectionHtml_ = (d, uid, inspType) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  const normType = String(inspType || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+  const rawType = String(inspType || '').trim();
+  const normType = (rawType === '定期点検' || rawType === '給油時点検') ? rawType : '始動前点検';
   const isPeriodic = normType === '定期点検';
-  const icon = isPeriodic ? '🗓️' : '🌅';
-  const themeBg = isPeriodic ? '#FFF8E1' : '#E0F2F1';
-  const themeBorder = isPeriodic ? '#FFB74D' : '#80CBC4';
-  const themeText = isPeriodic ? '#E65100' : '#00695C';
-  const themeBtn = isPeriodic ? '#FB8C00' : '#00897B';
+  const isFuelInsp = normType === '給油時点検';
+  const icon = isPeriodic ? '🗓️' : (isFuelInsp ? '⛽' : '🌅');
+  const themeBg = isPeriodic ? '#FFF8E1' : (isFuelInsp ? '#FCE4EC' : '#E0F2F1');
+  const themeBorder = isPeriodic ? '#FFB74D' : (isFuelInsp ? '#F48FB1' : '#80CBC4');
+  const themeText = isPeriodic ? '#E65100' : (isFuelInsp ? '#AD1457' : '#00695C');
+  const themeBtn = isPeriodic ? '#FB8C00' : (isFuelInsp ? '#E91E63' : '#00897B');
   const typeArg = normType.replace(/'/g, "\\'");
   const safeUid = String(uid || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
@@ -45019,14 +45322,6 @@ window.buildBulkWorkMemoInspectionHtml_ = (d, uid, inspType) => {
     `<option value="${esc(c)}" ${c === st.category ? 'selected' : ''}>${esc(c)}</option>`
   ).join('');
 
-  const macOpts = `<option value="">機械・車両を選択...</option>` + filteredMacs.map(m => {
-    const mLabel = (typeof window.labelWorkerMaintMachine_ === 'function')
-      ? window.labelWorkerMaintMachine_(m)
-      : (m.name || m.id);
-    const prefix = m.isVehicle ? '🛻 ' : '🚜 ';
-    return `<option value="${esc(m.id)}" ${String(m.id) === String(st.machineId) ? 'selected' : ''}>${prefix}${esc(mLabel)}</option>`;
-  }).join('');
-
   window.ensureBulkInspectionRecordsLoaded_(uid);
 
   const targetDate = String(
@@ -45034,6 +45329,58 @@ window.buildBulkWorkMemoInspectionHtml_ = (d, uid, inspType) => {
     || document.getElementById('bulk_work_memo_date')?.value
     || (typeof window.getBulkWorkMemoTodayYmd_ === 'function' ? window.getBulkWorkMemoTodayYmd_() : '')
   ).trim().slice(0, 10);
+
+  const getInspMacThumbHtml_ = (m) => {
+    const rawUrl = (typeof window.getMachinePhotoUrl === 'function')
+      ? String(window.getMachinePhotoUrl(m) || '').trim()
+      : String((m && (m.photoUrl || m.photo)) || '').trim();
+    const fallbackIcon = (m && m.isVehicle) ? '🛻' : '🚜';
+    if (rawUrl) {
+      return `<img src="${esc(rawUrl)}" alt="" style="width:42px; height:42px; object-fit:cover; border-radius:6px; border:1px solid #ddd; background:#fff; flex-shrink:0;" onerror="this.style.display='none'; if(this.nextElementSibling)this.nextElementSibling.style.display='flex';"><div style="display:none; width:42px; height:42px; border-radius:6px; background:#f5f5f5; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; border:1px solid #e0e0e0;">${fallbackIcon}</div>`;
+    }
+    return `<div style="width:42px; height:42px; border-radius:6px; background:#f5f5f5; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; border:1px solid #e0e0e0;">${fallbackIcon}</div>`;
+  };
+
+  const doneMacIds = new Set();
+  if (Array.isArray(window._bulkInspectionRecordsCache) && targetDate) {
+    window._bulkInspectionRecordsCache.forEach(r => {
+      if (!r) return;
+      const rawRType = String(r.inspectionType || '').trim();
+      const rType = (rawRType === '定期点検' || rawRType === '給油時点検') ? rawRType : '始動前点検';
+      if (String(r.date || '').slice(0, 10) === targetDate && rType === normType && r.machineId) {
+        doneMacIds.add(String(r.machineId));
+      }
+    });
+  }
+
+  const macCardsHtml = filteredMacs.length
+    ? `<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(145px, 1fr)); gap:6px; max-height:190px; overflow-y:auto; padding:2px;">` + filteredMacs.map(m => {
+        const mid = String(m.id || '');
+        const safeMid = mid.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const isSel = mid === String(st.machineId || '');
+        const isDone = doneMacIds.has(mid);
+        const mLabel = (typeof window.labelWorkerMaintMachine_ === 'function')
+          ? window.labelWorkerMaintMachine_(m)
+          : (m.name || mid);
+        const kindTag = m.isVehicle ? '🛻 車両' : '🚜 機械';
+        const cardBg = isSel ? (isPeriodic ? '#FFF3E0' : '#E0F2F1') : '#fff';
+        const cardBorder = isSel ? `2px solid ${themeBtn}` : '1px solid #ddd';
+        const doneBadge = isDone
+          ? `<span style="font-size:9px; background:#E8F5E9; color:#2E7D32; border:1px solid #A5D6A7; border-radius:4px; padding:0 4px; font-weight:bold;">済</span>`
+          : '';
+        return `<button type="button" onclick="onBulkInspMachineChange_('${safeUid}', '${typeArg}', '${safeMid}')" style="display:flex; align-items:center; gap:7px; padding:6px; border:${cardBorder}; border-radius:8px; background:${cardBg}; text-align:left; cursor:pointer; box-sizing:border-box; min-width:0; transition:all 0.12s;">
+          ${getInspMacThumbHtml_(m)}
+          <div style="flex:1; min-width:0;">
+            <div style="display:flex; align-items:center; gap:4px; margin-bottom:2px;">
+              <span style="font-size:10px; color:#666;">${kindTag}</span>
+              ${doneBadge}
+              ${isSel ? `<span style="font-size:10px; color:${themeBtn}; font-weight:bold; margin-left:auto;">✓</span>` : ''}
+            </div>
+            <div style="font-size:11px; font-weight:bold; color:#333; line-height:1.25; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;">${esc(mLabel)}</div>
+          </div>
+        </button>`;
+      }).join('') + `</div>`
+    : `<div style="font-size:11px; color:#888; padding:8px; background:#fff; border:1px dashed #ccc; border-radius:6px; text-align:center;">該当する機械・車両がありません</div>`;
 
   let statusAndFormHtml = '';
   if (!st.machineId) {
@@ -45047,7 +45394,8 @@ window.buildBulkWorkMemoInspectionHtml_ = (d, uid, inspType) => {
   } else {
     const existing = window._bulkInspectionRecordsCache.find(r => {
       if (!r) return false;
-      const rType = String(r.inspectionType || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+      const rawRType = String(r.inspectionType || '').trim();
+      const rType = (rawRType === '定期点検' || rawRType === '給油時点検') ? rawRType : '始動前点検';
       return String(r.machineId || '') === String(st.machineId)
         && String(r.date || '').slice(0, 10) === targetDate
         && rType === normType;
@@ -45112,7 +45460,7 @@ window.buildBulkWorkMemoInspectionHtml_ = (d, uid, inspType) => {
         }).join('');
       }
 
-      const saveBtnId = `bulk_insp_save_${isPeriodic ? 'per' : 'pre'}_${uid}`;
+      const saveBtnId = `bulk_insp_save_${isPeriodic ? 'per' : (isFuelInsp ? 'fuel' : 'pre')}_${uid}`;
       statusAndFormHtml = `<div style="background:#fff; border:1px solid ${themeBorder}; border-radius:8px; padding:10px;">
         <div style="font-size:12px; font-weight:bold; color:#C62828; margin-bottom:8px;">⚠️ ${esc(targetDate)} の${esc(normType)}は未登録です（このまま下で記録できます）</div>
         <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
@@ -45128,15 +45476,13 @@ window.buildBulkWorkMemoInspectionHtml_ = (d, uid, inspType) => {
 
   return `<div style="margin:10px 0 8px; padding:10px 12px; background:${themeBg}; border:1px solid ${themeBorder}; border-radius:10px;">
     <div style="font-size:12px; font-weight:bold; color:${themeText}; margin-bottom:8px;">${icon} ${esc(normType)}（対象日: ${esc(targetDate || '本日')}）</div>
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px;">
-      <div>
-        <div style="font-size:10px; font-weight:bold; color:#555; margin-bottom:3px;">1. 機械カテゴリ</div>
-        <select onchange="onBulkInspCategoryChange_('${safeUid}', '${typeArg}', this.value)" style="width:100%; padding:7px 8px; border:1px solid ${themeBorder}; border-radius:6px; font-size:12px; background:#fff; box-sizing:border-box;">${catOpts}</select>
-      </div>
-      <div>
-        <div style="font-size:10px; font-weight:bold; color:#555; margin-bottom:3px;">2. 機械・車両</div>
-        <select onchange="onBulkInspMachineChange_('${safeUid}', '${typeArg}', this.value)" style="width:100%; padding:7px 8px; border:1px solid ${themeBorder}; border-radius:6px; font-size:12px; background:#fff; box-sizing:border-box;">${macOpts}</select>
-      </div>
+    <div style="margin-bottom:8px;">
+      <div style="font-size:10px; font-weight:bold; color:#555; margin-bottom:3px;">1. 機械カテゴリ</div>
+      <select onchange="onBulkInspCategoryChange_('${safeUid}', '${typeArg}', this.value)" style="width:100%; padding:7px 8px; border:1px solid ${themeBorder}; border-radius:6px; font-size:12px; background:#fff; box-sizing:border-box;">${catOpts}</select>
+    </div>
+    <div style="margin-bottom:8px;">
+      <div style="font-size:10px; font-weight:bold; color:#555; margin-bottom:4px;">2. 機械・車両（${filteredMacs.length}台）</div>
+      ${macCardsHtml}
     </div>
     ${statusAndFormHtml}
   </div>`;
@@ -48590,30 +48936,165 @@ window.cancelBulkWorkMemoManualAdd_ = () => {
   else window.openBulkWorkMemoModal_();
 };
 
-window.renderBulkWorkMemoConfirmModal_ = () => {
+window.applyLunchInterruptToBulkDrafts_ = (drafts, lunchStartHm, lunchEndHm) => {
+  const list = Array.isArray(drafts) ? drafts : [];
+  const toM = (hm) => {
+    const s = (typeof window.bulkWorkMemoNormHm_ === 'function')
+      ? window.bulkWorkMemoNormHm_(hm)
+      : String(hm || '').trim();
+    if (!s || typeof window.timeHmToMinutes !== 'function') return null;
+    const m = window.timeHmToMinutes(s);
+    return (m != null && isFinite(m)) ? m : null;
+  };
+  const minToHm = (m) => {
+    const clamped = Math.max(0, Math.round(Number(m) || 0));
+    const h = Math.floor(clamped / 60);
+    const mm = clamped % 60;
+    return String(h).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
+  };
+  const ls = toM(lunchStartHm);
+  const le = toM(lunchEndHm);
+  if (ls == null || le == null || le <= ls) return list.slice();
+
+  const scaleDraftSlice_ = (orig, newStartMin, newEndMin, origSpanMin) => {
+    const newSpan = Math.max(0, newEndMin - newStartMin);
+    const cloned = Object.assign({}, orig, {
+      startTime: minToHm(newStartMin),
+      endTime: minToHm(newEndMin)
+    });
+    if (Array.isArray(orig.concurrentWorks) && orig.concurrentWorks.length && origSpanMin > 0) {
+      const ratio = newSpan / origSpanMin;
+      cloned.concurrentWorks = orig.concurrentWorks.map(cw => {
+        if (!cw) return cw;
+        const c = Object.assign({}, cw);
+        if (c.minutes != null && !isNaN(Number(c.minutes))) {
+          c.minutes = Math.max(1, Math.round(Number(c.minutes) * ratio));
+        }
+        return c;
+      });
+      if (typeof window.syncBulkConcurrentEqualMinutes_ === 'function') {
+        window.syncBulkConcurrentEqualMinutes_(cloned);
+      }
+      if (typeof window.syncBulkMainWorkMinutesAuto_ === 'function') {
+        window.syncBulkMainWorkMinutesAuto_(cloned);
+      }
+    } else if (cloned.mainWorkMinutes != null && !isNaN(Number(cloned.mainWorkMinutes))) {
+      cloned.mainWorkMinutes = newSpan;
+    }
+    return cloned;
+  };
+
+  const out = [];
+  list.forEach(d => {
+    if (!d) return;
+    if (typeof window.bulkWorkMemoIsRestDraft_ === 'function' && window.bulkWorkMemoIsRestDraft_(d)) {
+      out.push(d);
+      return;
+    }
+    const ws = toM(d.startTime);
+    const we = toM(d.endTime);
+    if (ws == null || we == null || we <= ws || we <= ls || ws >= le) {
+      out.push(d);
+      return;
+    }
+    const origSpan = we - ws;
+    // 完全に昼休憩内なら除外
+    if (ws >= ls && we <= le) {
+      return;
+    }
+    // 昼休憩をまたぐ場合は前後2つに分割
+    if (ws < ls && we > le) {
+      out.push(scaleDraftSlice_(d, ws, ls, origSpan));
+      out.push(scaleDraftSlice_(d, le, we, origSpan));
+      return;
+    }
+    // 前半のみ残る（終了側が昼休憩に重なる）
+    if (ws < ls && we > ls && we <= le) {
+      out.push(scaleDraftSlice_(d, ws, ls, origSpan));
+      return;
+    }
+    // 後半のみ残る（開始側が昼休憩に重なる）
+    if (ws >= ls && ws < le && we > le) {
+      out.push(scaleDraftSlice_(d, le, we, origSpan));
+      return;
+    }
+    out.push(d);
+  });
+  return out;
+};
+
+window.onBulkWorkMemoLunchInterruptChange_ = () => {
+  const chk = document.getElementById('bulk_work_memo_sync_lunch');
+  const lsEl = document.getElementById('bulk_work_memo_lunch_start');
+  const leEl = document.getElementById('bulk_work_memo_lunch_end');
+  window._bulkLunchInterruptState = {
+    checked: !!(chk && chk.checked),
+    start: lsEl ? String(lsEl.value || '').trim() : '',
+    end: leEl ? String(leEl.value || '').trim() : ''
+  };
+  window.renderBulkWorkMemoConfirmModal_(true);
+};
+
+window.renderBulkWorkMemoConfirmModal_ = (keepLunchState) => {
   const drafts = (window._bulkWorkMemoDrafts || []).filter(d => d && d.included !== false);
   const modalEl = document.getElementById('modal');
   if (!modalEl || typeof window.fillAppModalHtml_ !== 'function') return;
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const ymd = window._bulkWorkMemoDate || window.getBulkWorkMemoTodayYmd_();
-  const rows = drafts.map((d, i) => window.buildBulkWorkMemoConfirmRowHtml_(d, i)).join('');
   const att = window.getBulkWorkMemoAttendanceSummary_(drafts);
   const lunchGap = !att.hasLunch ? window.getBulkWorkMemoSuggestedLunchGap_(drafts) : null;
-  const lunchDefaultStart = lunchGap ? lunchGap.startHm : '11:30';
-  const lunchDefaultEnd = lunchGap ? lunchGap.endHm : '12:30';
+  if (!keepLunchState) {
+    window._bulkLunchInterruptState = {
+      checked: false,
+      start: lunchGap ? lunchGap.startHm : '11:30',
+      end: lunchGap ? lunchGap.endHm : '12:30'
+    };
+  }
+  const lState = window._bulkLunchInterruptState || {};
+  const lunchDefaultStart = lState.start || (lunchGap ? lunchGap.startHm : '11:30');
+  const lunchDefaultEnd = lState.end || (lunchGap ? lunchGap.endHm : '12:30');
+  const lunchChecked = !att.hasLunch && !!lState.checked;
+
+  let displayDrafts = drafts;
+  if (lunchChecked && lunchDefaultStart && lunchDefaultEnd) {
+    const adjusted = window.applyLunchInterruptToBulkDrafts_(drafts, lunchDefaultStart, lunchDefaultEnd);
+    const lunchPreviewRow = {
+      workName: '昼休憩',
+      startTime: lunchDefaultStart,
+      endTime: lunchDefaultEnd,
+      isRest: true,
+      cropNames: []
+    };
+    const toMin = (hm) => (typeof window.timeHmToMinutes === 'function' ? (window.timeHmToMinutes(hm) || 0) : 0);
+    const lsMin = toMin(lunchDefaultStart);
+    const inserted = [];
+    let put = false;
+    adjusted.forEach(item => {
+      const sMin = toMin(item.startTime);
+      if (!put && sMin >= lsMin) {
+        inserted.push(lunchPreviewRow);
+        put = true;
+      }
+      inserted.push(item);
+    });
+    if (!put) inserted.push(lunchPreviewRow);
+    displayDrafts = inserted;
+  }
+
+  const rows = displayDrafts.map((d, i) => window.buildBulkWorkMemoConfirmRowHtml_(d, i)).join('');
   const lunchLine = att.hasLunch
     ? `<div style="font-size:12px; color:#E65100; margin-top:6px; line-height:1.4;">🍱 昼休憩 <b>${esc(att.lunchStart || '--:--')}〜${esc(att.lunchEnd || '--:--')}</b> も連動登録します</div>`
-    : `<div style="font-size:11px; color:#666; margin-top:6px; line-height:1.35;">🍱 昼休憩の行はありませんが、<b>作業の登録はそのまま行えます</b>（任意で下から追加できます）。</div>
+    : `<div style="font-size:11px; color:#555; margin-top:6px; line-height:1.45;">🍱 <b>昼休憩の行はありませんが、このまま登録しますか？</b><br>登録忘れであれば下に入力した時間を、作業時間に割り込んで登録します。</div>
        <label style="display:flex; align-items:flex-start; gap:8px; margin-top:10px; padding:10px; background:#FFF3E0; border:1px solid #FFCC80; border-radius:8px; cursor:pointer;">
-         <input type="checkbox" id="bulk_work_memo_sync_lunch" style="margin-top:2px;">
+         <input type="checkbox" id="bulk_work_memo_sync_lunch" ${lunchChecked ? 'checked' : ''} onchange="onBulkWorkMemoLunchInterruptChange_()" style="margin-top:2px;">
          <span style="font-size:12px; color:#E65100; line-height:1.4; flex:1;">
-           <b>昼休憩も連動登録する（任意）</b><br>
-           ${lunchGap ? `未登録の時間帯 ${esc(lunchGap.startHm)}〜${esc(lunchGap.endHm)} を初期値にしています。` : '開始・終了を入力してください。'}
+           <b>昼休憩を割り込み登録する（☑で作業時間を調整）</b><br>
+           ${lunchGap ? `未登録の時間帯 ${esc(lunchGap.startHm)}〜${esc(lunchGap.endHm)} を初期値にしています。` : '開始・終了を入力してください（重なる作業時間は自動で削られます）。'}
            <span style="display:flex; gap:8px; margin-top:8px;">
              <span style="flex:1;"><label style="font-size:10px; color:#888;">開始</label>
-               <input type="text" id="bulk_work_memo_lunch_start" class="form-input app-time-input" readonly inputmode="none" value="${esc(lunchDefaultStart)}" onclick="if(window.openAppTimePicker) window.openAppTimePicker('bulk_work_memo_lunch_start','昼休憩 開始')" style="margin:0; text-align:center; font-weight:bold; font-size:14px;"></span>
+               <input type="text" id="bulk_work_memo_lunch_start" class="form-input app-time-input" readonly inputmode="none" value="${esc(lunchDefaultStart)}" onclick="if(window.openAppTimePicker) window.openAppTimePicker('bulk_work_memo_lunch_start','昼休憩 開始')" onchange="onBulkWorkMemoLunchInterruptChange_()" style="margin:0; text-align:center; font-weight:bold; font-size:14px;"></span>
              <span style="flex:1;"><label style="font-size:10px; color:#888;">終了</label>
-               <input type="text" id="bulk_work_memo_lunch_end" class="form-input app-time-input" readonly inputmode="none" value="${esc(lunchDefaultEnd)}" onclick="if(window.openAppTimePicker) window.openAppTimePicker('bulk_work_memo_lunch_end','昼休憩 終了')" style="margin:0; text-align:center; font-weight:bold; font-size:14px;"></span>
+               <input type="text" id="bulk_work_memo_lunch_end" class="form-input app-time-input" readonly inputmode="none" value="${esc(lunchDefaultEnd)}" onclick="if(window.openAppTimePicker) window.openAppTimePicker('bulk_work_memo_lunch_end','昼休憩 終了')" onchange="onBulkWorkMemoLunchInterruptChange_()" style="margin:0; text-align:center; font-weight:bold; font-size:14px;"></span>
            </span>
          </span>
        </label>`;
@@ -48776,6 +49257,11 @@ window.executeBulkWorkMemoRegistration_ = async () => {
     && !window.hasBulkWorkMemoClockInForDate_(ymd);
   const syncLunchEl = document.getElementById('bulk_work_memo_sync_lunch');
   const doSyncLunch = !!(syncLunchEl && syncLunchEl.checked && !att.hasLunch);
+  const lunchInputStart = document.getElementById('bulk_work_memo_lunch_start')?.value || '';
+  const lunchInputEnd = document.getElementById('bulk_work_memo_lunch_end')?.value || '';
+  if (doSyncLunch && lunchInputStart && lunchInputEnd && typeof window.applyLunchInterruptToBulkDrafts_ === 'function') {
+    drafts = window.applyLunchInterruptToBulkDrafts_(drafts, lunchInputStart, lunchInputEnd);
+  }
   const syncOutEl = document.getElementById('bulk_work_memo_sync_clockout');
   const doSyncClockOut = !!(syncOutEl && syncOutEl.checked && att.clockOutTime);
   let optionalLunchStart = '';
@@ -57179,7 +57665,9 @@ window.deleteQualification = async function (userName, index) {
     .replace(/"/g, '&quot;');
 
   window.normalizeWorkerInspectionType_ = function (val) {
-    return String(val || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+    const s = String(val || '').trim();
+    if (s === '定期点検' || s === '給油時点検') return s;
+    return '始動前点検';
   };
 
   window.parseWorkerInspectionAlertMonths_ = function (val) {
@@ -57308,6 +57796,7 @@ window.deleteQualification = async function (userName, index) {
     window._currentInspType = next;
     const preBtn = document.getElementById('inspTypeTab_pre');
     const perBtn = document.getElementById('inspTypeTab_periodic');
+    const fuelBtn = document.getElementById('inspTypeTab_fuel');
     if (preBtn) {
       const on = next === '始動前点検';
       preBtn.style.borderBottomColor = on ? '#00897B' : 'transparent';
@@ -57319,6 +57808,12 @@ window.deleteQualification = async function (userName, index) {
       perBtn.style.borderBottomColor = on ? '#FB8C00' : 'transparent';
       perBtn.style.background = on ? '#fff3e0' : '#fff';
       perBtn.style.color = on ? '#e65100' : '#555';
+    }
+    if (fuelBtn) {
+      const on = next === '給油時点検';
+      fuelBtn.style.borderBottomColor = on ? '#E91E63' : 'transparent';
+      fuelBtn.style.background = on ? '#fce4ec' : '#fff';
+      fuelBtn.style.color = on ? '#ad1457' : '#555';
     }
     if (!(opts && opts.skipRefresh)) {
       const macEl = document.getElementById('insp_machine');

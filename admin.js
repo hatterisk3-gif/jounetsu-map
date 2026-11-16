@@ -3476,7 +3476,9 @@ window.collectAdminInspectionTargetStr_ = (context) => {
 };
 
 window.normalizeAdminInspectionType_ = (val) => {
-    return String(val || '').trim() === '定期点検' ? '定期点検' : '始動前点検';
+    const s = String(val || '').trim();
+    if (s === '定期点検' || s === '給油時点検') return s;
+    return '始動前点検';
 };
 
 window.parseAdminInspectionAlertMonths_ = (val) => {
@@ -3505,18 +3507,19 @@ window.buildAdminInspectionTypeButtonsHtml_ = (context, inspType) => {
     const prefix = context === 'edit' ? 'edit' : 'add';
     const curType = window.normalizeAdminInspectionType_(inspType);
     const typeBtns = [
-        { val: '始動前点検', label: '🌅 始動前点検' },
-        { val: '定期点検', label: '🗓️ 定期点検' }
+        { val: '始動前点検', label: '🌅 始動前点検', color: '#00897B' },
+        { val: '定期点検', label: '🗓️ 定期点検', color: '#FB8C00' },
+        { val: '給油時点検', label: '⛽ 給油時点検', color: '#E91E63' }
     ].map(opt => {
         const active = curType === opt.val;
-        const bg = active ? (opt.val === '定期点検' ? '#FB8C00' : '#00897B') : '#fff';
+        const bg = active ? opt.color : '#fff';
         const fg = active ? '#fff' : '#444';
-        const bd = active ? (opt.val === '定期点検' ? '#FB8C00' : '#00897B') : '#ccc';
-        return `<button type="button" class="${prefix}-insp-type-btn" data-insp-type="${opt.val}" onclick="onAdminInspectionTypeChange_('${prefix}', '${opt.val}')" style="flex:1; padding:8px 10px; border-radius:6px; border:2px solid ${bd}; background:${bg}; color:${fg}; font-weight:bold; font-size:13px; cursor:pointer; transition:all 0.15s;">${opt.label}</button>`;
+        const bd = active ? opt.color : '#ccc';
+        return `<button type="button" class="${prefix}-insp-type-btn" data-insp-type="${opt.val}" onclick="onAdminInspectionTypeChange_('${prefix}', '${opt.val}')" style="flex:1; min-width:92px; padding:8px 6px; border-radius:6px; border:2px solid ${bd}; background:${bg}; color:${fg}; font-weight:bold; font-size:12px; cursor:pointer; transition:all 0.15s; white-space:nowrap;">${opt.label}</button>`;
     }).join('');
     return `
         <input type="hidden" id="${prefix}_insp_type" value="${curType}">
-        <div style="display:flex; gap:8px;">${typeBtns}</div>
+        <div style="display:flex; flex-wrap:wrap; gap:6px;">${typeBtns}</div>
     `;
 };
 
@@ -3584,9 +3587,10 @@ window.onAdminInspectionTypeChange_ = (context, typeVal) => {
     document.querySelectorAll(`.${prefix}-insp-type-btn`).forEach(btn => {
         const v = btn.getAttribute('data-insp-type');
         const active = v === next;
-        btn.style.background = active ? (v === '定期点検' ? '#FB8C00' : '#00897B') : '#fff';
+        const activeCol = v === '定期点検' ? '#FB8C00' : (v === '給油時点検' ? '#E91E63' : '#00897B');
+        btn.style.background = active ? activeCol : '#fff';
         btn.style.color = active ? '#fff' : '#444';
-        btn.style.borderColor = active ? (v === '定期点検' ? '#FB8C00' : '#00897B') : '#ccc';
+        btn.style.borderColor = active ? activeCol : '#ccc';
     });
     const alertBox = document.getElementById(`${prefix}_insp_alert_box`);
     if (alertBox) alertBox.style.display = next === '定期点検' ? 'block' : 'none';
@@ -4665,7 +4669,9 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <button onclick="execMaster('hitchType', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">追加する</button>
             </div>`;
         } else if (type === 'inspection') {
-            const defaultInspType = (window._adminInspTypeFilter === '定期点検') ? '定期点検' : '始動前点検';
+            const defaultInspType = (window._adminInspTypeFilter === '定期点検' || window._adminInspTypeFilter === '給油時点検')
+                ? window._adminInspTypeFilter
+                : '始動前点検';
             const defaultInspKind = (window._adminInspKindFilter === 'machine' || window._adminInspKindFilter === 'vehicle')
                 ? window._adminInspKindFilter
                 : 'all';
@@ -4968,6 +4974,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             const vehCount = allList.filter(x => window.matchAdminInspectionItemKind_(x, 'vehicle')).length;
             const preCount = kindBaseList.filter(x => window.normalizeAdminInspectionType_(x.inspectionType) === '始動前点検').length;
             const perCount = kindBaseList.filter(x => window.normalizeAdminInspectionType_(x.inspectionType) === '定期点検').length;
+            const fuelCount = kindBaseList.filter(x => window.normalizeAdminInspectionType_(x.inspectionType) === '給油時点検').length;
             const mkKindBtn = (val, label, activeBg) => {
                 const on = kf === val;
                 return `<button type="button" onclick="setAdminInspectionKindFilter_('${val}')" style="padding:5px 10px; border-radius:16px; border:1px solid ${on ? activeBg : '#ccc'}; background:${on ? activeBg : '#fff'}; color:${on ? '#fff' : '#444'}; font-size:12px; font-weight:bold; cursor:pointer;">${label}</button>`;
@@ -4988,6 +4995,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                     ${mkBtn('all', `すべて (${kindBaseList.length})`, '#455a64')}
                     ${mkBtn('始動前点検', `🌅 始動前点検 (${preCount})`, '#00897B')}
                     ${mkBtn('定期点検', `🗓️ 定期点検 (${perCount})`, '#FB8C00')}
+                    ${mkBtn('給油時点検', `⛽ 給油時点検 (${fuelCount})`, '#E91E63')}
                 </div>
             </div>`;
         })() : ''}
@@ -5164,7 +5172,9 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 const alertText = inspType === '定期点検' ? window.formatAdminInspectionAlertSummary_(v) : '';
                 const typeBadge = inspType === '定期点検'
                     ? `<span style="font-size:11px; background:#fff3e0; color:#e65100; border:1px solid #ffcc80; padding:2px 6px; border-radius:4px; white-space:nowrap; display:inline-flex; align-items:center;">🗓️ 定期点検</span>`
-                    : `<span style="font-size:11px; background:#e0f2f1; color:#00695c; padding:2px 6px; border-radius:4px; white-space:nowrap; display:inline-flex; align-items:center;">🌅 始動前</span>`;
+                    : (inspType === '給油時点検'
+                        ? `<span style="font-size:11px; background:#fce4ec; color:#c2185b; border:1px solid #f48fb1; padding:2px 6px; border-radius:4px; white-space:nowrap; display:inline-flex; align-items:center;">⛽ 給油時点検</span>`
+                        : `<span style="font-size:11px; background:#e0f2f1; color:#00695c; padding:2px 6px; border-radius:4px; white-space:nowrap; display:inline-flex; align-items:center;">🌅 始動前</span>`);
                 const alertBadge = alertText
                     ? `<span style="font-size:11px; background:#ffebee; color:#c62828; border:1px solid #ffcdd2; padding:2px 6px; border-radius:4px; white-space:nowrap; display:inline-flex; align-items:center;">🔔 ${alertText}</span>`
                     : '';
@@ -7322,7 +7332,8 @@ function inferWorkRecordUiFlags_(workName, category) {
         showFuel: isFuel,
         showRidgePolygon: n.indexOf('畝立') >= 0,
         showPreInspection: n.indexOf('始動前点検') >= 0,
-        showPeriodicInspection: n.indexOf('定期点検') >= 0
+        showPeriodicInspection: n.indexOf('定期点検') >= 0,
+        showFuelInspection: n.indexOf('給油時点検') >= 0
     };
 }
 
@@ -7342,7 +7353,8 @@ function resolveWorkRecordUiFlags_(work) {
         showFuel: pick(w.showFuel, inferred.showFuel),
         showRidgePolygon: pick(w.showRidgePolygon, inferred.showRidgePolygon),
         showPreInspection: pick(w.showPreInspection, inferred.showPreInspection),
-        showPeriodicInspection: pick(w.showPeriodicInspection, inferred.showPeriodicInspection)
+        showPeriodicInspection: pick(w.showPeriodicInspection, inferred.showPeriodicInspection),
+        showFuelInspection: pick(w.showFuelInspection, inferred.showFuelInspection)
     };
 }
 
@@ -7363,6 +7375,7 @@ function buildWorkRecordUiFlagsHtml_(prefix, flags) {
             ${row('show_ridge_polygon', !!f.showRidgePolygon, '🛤️ 畝ポリゴン登録を出す', '選んだ圃場の畝ポリゴンを農業CADで登録できます')}
             ${row('show_pre_inspection', !!f.showPreInspection, '🌅 始動前点検UIを出す', '一括入力等で機械カテゴリ→機械・車両を選び、当日の始動前点検の確認・記録ができます')}
             ${row('show_periodic_inspection', !!f.showPeriodicInspection, '🗓️ 定期点検UIを出す', '一括入力等で機械カテゴリ→機械・車両を選び、当日の定期点検の確認・記録ができます')}
+            ${row('show_fuel_inspection', !!f.showFuelInspection, '⛽ 給油時点検UIを出す', '一括入力等で機械カテゴリ→機械・車両を選び、当日の給油時点検の確認・記録ができます')}
         </div>
     </div>`;
 }
@@ -7393,7 +7406,8 @@ function collectWorkRecordUiFlagsFromForm_(prefix) {
         showFuel: readOr('show_fuel', !!baseline.showFuel),
         showRidgePolygon: readOr('show_ridge_polygon', !!baseline.showRidgePolygon),
         showPreInspection: readOr('show_pre_inspection', !!baseline.showPreInspection),
-        showPeriodicInspection: readOr('show_periodic_inspection', !!baseline.showPeriodicInspection)
+        showPeriodicInspection: readOr('show_periodic_inspection', !!baseline.showPeriodicInspection),
+        showFuelInspection: readOr('show_fuel_inspection', !!baseline.showFuelInspection)
     };
 }
 
@@ -7409,12 +7423,14 @@ window.syncAdminWorkUiFlagDefaults_ = (prefix) => {
     const ridge = document.getElementById(prefix + '_show_ridge_polygon');
     const preInsp = document.getElementById(prefix + '_show_pre_inspection');
     const perInsp = document.getElementById(prefix + '_show_periodic_inspection');
+    const fuelInsp = document.getElementById(prefix + '_show_fuel_inspection');
     if (f) f.checked = inferred.showField !== false;
     if (m) m.checked = !!inferred.showMachine;
     if (fuel) fuel.checked = !!inferred.showFuel;
     if (ridge) ridge.checked = !!inferred.showRidgePolygon;
     if (preInsp) preInsp.checked = !!inferred.showPreInspection;
     if (perInsp) perInsp.checked = !!inferred.showPeriodicInspection;
+    if (fuelInsp) fuelInsp.checked = !!inferred.showFuelInspection;
 };
 
 window.openEditWorkMaster = (encodedStr) => {
