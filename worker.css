@@ -642,8 +642,8 @@ body.bulk-work-memo-map-picking .worker-top-bar {
 .map-action-bar {
   position: fixed;
   left: auto;
-  right: 68px;
-  bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  right: 10px;
+  bottom: max(136px, calc(124px + env(safe-area-inset-bottom, 0px)));
   z-index: 2000;
   display: flex;
   flex-direction: column-reverse;
