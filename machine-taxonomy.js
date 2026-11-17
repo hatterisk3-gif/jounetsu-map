@@ -196,6 +196,8 @@
       numPart = '';
     } else if (numPart) {
       numPart = formatMachineNumberLabel(numPart);
+    } else if (opts.defaultNumberWhenMultiple !== false && list && list.length && countMachinesWithSameModel_(groupPart, typePart, modelPart, list) >= 2) {
+      numPart = formatMachineNumberLabel('1');
     }
     var mParts = [typePart, modelPart, numPart].filter(Boolean);
     if (mParts.length) return mParts.join(' ');

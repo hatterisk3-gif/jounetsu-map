@@ -8412,6 +8412,32 @@ window.execMaster = async (type, act, val) => {
                     currentLocName: signName,
                     currentLocId: signId
                 });
+                if (typeof window.findAdminMachinesMatchingTrio_ === 'function') {
+                    window.findAdminMachinesMatchingTrio_(group, macType, model, tempId, model2).forEach(sib => {
+                        if (!sib || String(sib.id || '') === String(tempId)) return;
+                        if (String(sib.machineNumber || sib.serialNo || '').trim()) return;
+                        sib.machineNumber = '1';
+                        sib.name = window.buildAdminMachineDisplayName_(sib.type, '1', sib.model, sib.name, sib.group, sib.id, sib.model2);
+                        if (sib.id && String(sib.id).indexOf('tmp') !== 0) {
+                            enqueueAdminSync_(() => callGAS('editMachineInMaster', {
+                                machineId: sib.id,
+                                name: sib.name || '',
+                                machineNumber: '1',
+                                model: sib.model || '',
+                                model2: sib.model2 || '',
+                                type: sib.type || '',
+                                group: sib.group || '',
+                                location: sib.location || '',
+                                fuel: sib.fuel || '',
+                                hitch: sib.hitch || '',
+                                purchaseDate: sib.purchaseDate || '',
+                                workCategory: sib.workCategory || '',
+                                signId: sib.signId || '',
+                                signName: sib.signName || ''
+                            }));
+                        }
+                    });
+                }
                 if (typeof window.refreshAdminMachineDisplayNames_ === 'function') window.refreshAdminMachineDisplayNames_();
                 if (window._adminMacPhoto) {
                     window._adminMacPhoto.add = '';

@@ -2181,7 +2181,7 @@ function updateWorkerLegend() {
   if (!legendDiv) {
     legendDiv = document.createElement('div');
     legendDiv.id = 'workerLegendUI';
-    legendDiv.style.cssText = 'position:absolute; bottom:20px; left:20px; background:rgba(255,255,255,0.94); padding:8px 10px; border-radius:10px; z-index:1000; box-shadow:0 2px 10px rgba(0,0,0,0.22); max-height: 230px; overflow-y: auto; font-size:12px; pointer-events:auto; max-width:210px;';
+    legendDiv.style.cssText = 'position:absolute; bottom:34px; left:12px; background:rgba(255,255,255,0.94); padding:8px 10px; border-radius:10px; z-index:1000; box-shadow:0 2px 10px rgba(0,0,0,0.22); max-height: 230px; overflow-y: auto; font-size:12px; pointer-events:auto; max-width:210px;';
     legendDiv.addEventListener('click', (e) => { e.stopPropagation(); });
     legendDiv.addEventListener('touchstart', (e) => { e.stopPropagation(); }, { passive: true });
     document.getElementById('map').appendChild(legendDiv);
@@ -13008,6 +13008,9 @@ window.addNewSymptomMaster = async (machine) => {
   if (!inputName || !String(inputName).trim()) return;
   const name = String(inputName).trim();
   try {
+    if (typeof window.setWorkerActionLoadingOverlay_ === 'function') {
+      window.setWorkerActionLoadingOverlay_(true, '登録中です...');
+    }
     await callGAS('addMachineSymptom', { machineId: target.id, newSymptom: name });
     window.appendMachineMaintOptionLocal_(target, 'symptoms', name);
     const sel = document.getElementById('m_symptom');
@@ -13018,9 +13021,19 @@ window.addNewSymptomMaster = async (machine) => {
     }
     if (typeof window.updatePartsList === 'function') window.updatePartsList();
     if (typeof window.refreshMachineItemEditorMaintLists_ === 'function') window.refreshMachineItemEditorMaintLists_();
+    if (typeof window.setWorkerActionLoadingOverlay_ === 'function') {
+      window.setWorkerActionLoadingOverlay_(false);
+    }
     if (typeof customAlert === 'function') customAlert(`✅ 「${target.name || ''}」に症状「${name}」を追加しました`);
   } catch (e) {
+    if (typeof window.setWorkerActionLoadingOverlay_ === 'function') {
+      window.setWorkerActionLoadingOverlay_(false);
+    }
     if (typeof customAlert === 'function') customAlert('追加に失敗しました: ' + e.message);
+  } finally {
+    if (typeof window.setWorkerActionLoadingOverlay_ === 'function') {
+      window.setWorkerActionLoadingOverlay_(false);
+    }
   }
 };
 
@@ -13114,6 +13127,9 @@ window.addNewMaintenanceContentMaster = async (machine) => {
   if (!inputName || !String(inputName).trim()) return;
   const name = String(inputName).trim();
   try {
+    if (typeof window.setWorkerActionLoadingOverlay_ === 'function') {
+      window.setWorkerActionLoadingOverlay_(true, '登録中です...');
+    }
     await callGAS('addMachineMaintenanceContent', { machineId: target.id, newContent: name });
     window.appendMachineMaintOptionLocal_(target, 'maintenanceContents', name);
     if (typeof window.rememberMachineSymptomContent_ === 'function') {
@@ -13128,9 +13144,19 @@ window.addNewMaintenanceContentMaster = async (machine) => {
     }
     if (typeof window.updatePartsList === 'function') window.updatePartsList();
     if (typeof window.refreshMachineItemEditorMaintLists_ === 'function') window.refreshMachineItemEditorMaintLists_();
+    if (typeof window.setWorkerActionLoadingOverlay_ === 'function') {
+      window.setWorkerActionLoadingOverlay_(false);
+    }
     if (typeof customAlert === 'function') customAlert(`✅ 「${target.name || ''}」に整備内容「${name}」を追加しました`);
   } catch (e) {
+    if (typeof window.setWorkerActionLoadingOverlay_ === 'function') {
+      window.setWorkerActionLoadingOverlay_(false);
+    }
     if (typeof customAlert === 'function') customAlert('整備内容の登録に失敗しました: ' + e.message);
+  } finally {
+    if (typeof window.setWorkerActionLoadingOverlay_ === 'function') {
+      window.setWorkerActionLoadingOverlay_(false);
+    }
   }
 };
 
@@ -26219,6 +26245,52 @@ window.onMachineItemEditorSelectExisting = (val) => {
   }
 };
 
+window.assignFirstNumberToUnnumberedSiblingMachine_ = (saved) => {
+  if (!saved || saved.isVehicle || saved.isTool) return;
+  const list = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+  const norm = (s) => String(s || '').trim();
+  const group = norm(saved.group || saved.mainCategory);
+  const type = norm(saved.type);
+  const model = norm(saved.model || saved.modelType);
+  const model2 = norm(saved.model2);
+  if (!type && !model && !model2) return;
+  const siblings = list.filter(m => {
+    if (!m || m.isVehicle || m.isTool) return false;
+    if (String(m.id || '') === String(saved.id || '')) return false;
+    return norm(m.group || m.mainCategory) === group
+      && norm(m.type) === type
+      && norm(m.model || m.modelType) === model
+      && norm(m.model2) === model2;
+  });
+  siblings.forEach(m => {
+    const curNum = norm(m.machineNumber || m.serialNo);
+    if (curNum) return;
+    m.machineNumber = '1';
+    if (typeof window.buildEquipmentDisplayLabel_ === 'function') {
+      const nextName = window.buildEquipmentDisplayLabel_(m);
+      if (nextName) m.name = nextName;
+    }
+    if (typeof safeCallGAS === 'function' && m.id) {
+      safeCallGAS('editMachineInMaster', {
+        machineId: m.id,
+        name: m.name || '',
+        machineNumber: '1',
+        model: m.model || '',
+        model2: m.model2 || '',
+        type: m.type || '',
+        group: m.group || '',
+        location: m.location || '',
+        fuel: m.fuel || '',
+        hitch: m.hitch || '',
+        purchaseDate: m.purchaseDate || '',
+        workCategory: m.workCategory || '',
+        signId: m.signId || '',
+        signName: m.signName || ''
+      });
+    }
+  });
+};
+
 window.persistOneMachineOrVehicle_ = async (entry) => {
   const st = window._machineItemEditorState || {};
   const userName = localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '管理者';
@@ -26373,6 +26445,9 @@ window.persistOneMachineOrVehicle_ = async (entry) => {
   }, newMachine);
   if (existingIdx !== -1) pdlMachines[existingIdx] = Object.assign({}, pdlMachines[existingIdx], saved);
   else pdlMachines.push(saved);
+  if (entry.mode !== 'edit' && typeof window.assignFirstNumberToUnnumberedSiblingMachine_ === 'function') {
+    window.assignFirstNumberToUnnumberedSiblingMachine_(saved);
+  }
   if (typeof window.saveLocalFuelChecks_ === 'function') {
     window.saveLocalFuelChecks_(saved.id, payload.fuelChecks || '');
   }
@@ -38618,7 +38693,7 @@ window.syncBulkWorkMemoMapSelectOffset_ = () => {
   if (!activeBottomBar) {
     document.body.style.removeProperty('--bulk-map-select-bar-h');
     if (legendDiv) {
-      legendDiv.style.bottom = '20px';
+      legendDiv.style.bottom = '34px';
       legendDiv.style.zIndex = '1000';
     }
     if (actionBar) {
@@ -39050,14 +39125,15 @@ window.finishBulkWorkMemoMapSelect_ = () => {
   if (mapUi) mapUi.classList.remove('bulk-work-memo-map-select');
 };
 
-window.buildBulkWorkMemoModalHeaderHtml_ = (title, subtitleHtml) => {
+window.buildBulkWorkMemoModalHeaderHtml_ = (title, subtitleHtml, opts) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const closeArgs = (opts && opts.forceClose) ? '{force:true}' : '';
   return `<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:${subtitleHtml ? '10px' : '12px'};">
     <div style="min-width:0; flex:1;">
       <div style="font-size:17px; font-weight:bold; color:#E65100;">${esc(title)}</div>
       ${subtitleHtml ? `<div style="font-size:12px; color:#666; line-height:1.45; margin-top:4px;">${subtitleHtml}</div>` : ''}
     </div>
-    <button type="button" onclick="closeBulkWorkMemoModal_()" aria-label="閉じる" title="閉じる" style="flex-shrink:0; width:36px; height:36px; border:none; border-radius:50%; background:#f0f0f0; color:#555; font-size:24px; line-height:1; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.12);">×</button>
+    <button type="button" onclick="closeBulkWorkMemoModal_(${closeArgs})" aria-label="閉じる" title="閉じる" style="flex-shrink:0; width:36px; height:36px; border:none; border-radius:50%; background:#f0f0f0; color:#555; font-size:24px; line-height:1; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.12);">×</button>
   </div>`;
 };
 
@@ -41192,10 +41268,11 @@ window.buildEquipmentDisplayLabel_ = (item) => {
       && String(mac.model2 || '').trim() === model2;
   }).length;
   if (sameCount <= 1) num = '';
-  else if (num) {
+  else {
+    const rawNum = num || '1';
     num = (window.MachineTaxonomy && typeof MachineTaxonomy.formatMachineNumberLabel === 'function')
-      ? MachineTaxonomy.formatMachineNumberLabel(num)
-      : ((/^no\./i.test(num) ? num.replace(/^no\.?/i, '') : num));
+      ? MachineTaxonomy.formatMachineNumberLabel(rawNum)
+      : ((/^no\./i.test(rawNum) ? rawNum.replace(/^no\.?/i, '') : rawNum));
   }
   const legacy = String(enriched.name || '').trim();
   const legacyOk = legacy && legacy !== '(無名)' && legacy !== '（無名）' ? legacy : '';
@@ -41495,7 +41572,14 @@ window.syncBulkWorkMemoMaintPrimary_ = (d) => {
 
 window.setBulkWorkMemoMaintTargets_ = (d, list) => {
   if (!d) return;
-  d.maintenanceTargets = Array.isArray(list) ? list.slice() : [];
+  const next = Array.isArray(list) ? list.slice() : [];
+  d.maintenanceTargets = next;
+  if (!next.length) {
+    d.maintenanceToolId = '';
+    d.maintenanceTool = '';
+    d.maintenanceTargetKind = '';
+    d._maintFocusId = '';
+  }
   window.syncBulkWorkMemoMaintPrimary_(d);
 };
 
@@ -41606,10 +41690,8 @@ window.getBulkWorkMemoMaintFocusMachine_ = (draft) => {
 
 window.getBulkWorkMemoMaintenanceSymptomOptions_ = (draft) => {
   const machine = window.getBulkWorkMemoMaintFocusMachine_(draft);
-  const cur = window.getBulkWorkMemoMaintDetail_(draft, window.getBulkWorkMemoMaintFocusId_(draft)).symptom
-    || (draft && draft.maintenanceSymptom) || '';
   return window.getMachineMaintenanceOptions_
-    ? window.getMachineMaintenanceOptions_(machine, 'symptoms', cur)
+    ? window.getMachineMaintenanceOptions_(machine, 'symptoms', '')
     : [];
 };
 
@@ -41619,8 +41701,7 @@ window.getBulkWorkMemoMaintenanceContentOptions_ = (draft) => {
   const detail = window.getBulkWorkMemoMaintDetail_(draft, focusId);
   const symptom = String(detail.symptom || '').trim();
   if (!symptom || !window.getMachineContentsForSymptom_) return [];
-  const cur = String(detail.content || '').trim();
-  return window.getMachineContentsForSymptom_(machine, symptom, cur) || [];
+  return window.getMachineContentsForSymptom_(machine, symptom, '') || [];
 };
 
 window.getBulkWorkMemoMaintenancePartsOptions_ = (draft) => {
@@ -41629,10 +41710,9 @@ window.getBulkWorkMemoMaintenancePartsOptions_ = (draft) => {
   const detail = window.getBulkWorkMemoMaintDetail_(draft, focusId);
   const symptom = String(detail.symptom || (draft && draft.maintenanceSymptom) || '').trim();
   const content = String(detail.content || (draft && draft.maintenanceContent) || '').trim();
-  const cur = detail.parts || (draft && draft.maintenanceParts) || '';
   if (!symptom || !content) return [];
   return window.getMachineMaintenanceOptions_
-    ? window.getMachineMaintenanceOptions_(machine, 'parts', cur, { content: content })
+    ? window.getMachineMaintenanceOptions_(machine, 'parts', '', { content: content })
     : [];
 };
 
@@ -41700,7 +41780,10 @@ window.guessBulkWorkMemoMaintenanceFields_ = (draft) => {
     }
     const after = window.getBulkWorkMemoMaintDetail_(draft, id);
     const symptomForGuess = String(after.symptom || '').trim();
-    if (!after.content && symptomForGuess) {
+    if (!after.content && symptomForGuess && canMachine) {
+      const registeredContents = (window.getMachineContentsForSymptom_)
+        ? (window.getMachineContentsForSymptom_(machine, symptomForGuess, '') || [])
+        : [];
       let guessedContent = '';
       if (/修理/.test(t)) guessedContent = '本体修理';
       else if (/点検|清掃/.test(t)) guessedContent = '清掃・点検';
@@ -41710,7 +41793,7 @@ window.guessBulkWorkMemoMaintenanceFields_ = (draft) => {
         const m = t.match(/([一-龥ぁ-んァ-ヶーA-Za-z0-9]{2,}\s*交換)/);
         if (m && m[1]) guessedContent = String(m[1]).replace(/\s+/g, '');
       }
-      if (guessedContent) {
+      if (guessedContent && registeredContents.indexOf(guessedContent) >= 0) {
         window.setBulkWorkMemoMaintDetailField_(draft, id, 'content', guessedContent);
         if (typeof window.rememberMachineSymptomContent_ === 'function') {
           window.rememberMachineSymptomContent_(machine, symptomForGuess, guessedContent);
@@ -42091,6 +42174,32 @@ window.focusBulkWorkMemoMaintTarget_ = (uid, id) => {
   window.refreshBulkWorkMemoExtras_(uid);
 };
 
+window.setWorkerActionLoadingOverlay_ = (show, titleText, subText) => {
+  const id = 'worker_action_loading_overlay';
+  let ov = document.getElementById(id);
+  if (!show) {
+    if (ov) ov.style.display = 'none';
+    return;
+  }
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = id;
+    ov.style.cssText = 'display:none; position:fixed; inset:0; background:rgba(0,0,0,0.58); z-index:2000000; flex-direction:column; justify-content:center; align-items:center; padding:20px; box-sizing:border-box;';
+    ov.innerHTML = `<div style="background:#fff; border-radius:14px; padding:24px 28px; box-shadow:0 12px 32px rgba(0,0,0,0.32); text-align:center; min-width:220px; max-width:320px;">
+      <div style="width:38px; height:38px; border:4px solid #e3f2fd; border-top-color:#1976D2; border-radius:50%; animation:spinWorkerActOv 0.8s linear infinite; margin:0 auto 14px;"></div>
+      <div id="worker_action_loading_title" style="font-size:16px; font-weight:bold; color:#1565C0; margin-bottom:6px;">登録中です...</div>
+      <div id="worker_action_loading_sub" style="font-size:12px; color:#666; line-height:1.45;">サーバーに保存しています。しばらくお待ちください。</div>
+      <style>@keyframes spinWorkerActOv { to { transform: rotate(360deg); } }</style>
+    </div>`;
+    document.body.appendChild(ov);
+  }
+  const tEl = document.getElementById('worker_action_loading_title');
+  const sEl = document.getElementById('worker_action_loading_sub');
+  if (tEl) tEl.textContent = titleText || '登録中です...';
+  if (sEl) sEl.textContent = subText || 'サーバーに保存しています。しばらくお待ちください。';
+  ov.style.display = 'flex';
+};
+
 window.addBulkWorkMemoMaintOption_ = async (uid, kind) => {
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
   if (!row) return;
@@ -42157,6 +42266,7 @@ window.addBulkWorkMemoMaintOption_ = async (uid, kind) => {
     return;
   }
   try {
+    window.setWorkerActionLoadingOverlay_(true, '登録中です...');
     if (kind === 'symptoms') {
       await callGAS('addMachineSymptom', { machineId: machine.id, newSymptom: name });
     } else if (kind === 'maintenanceContents') {
@@ -42178,6 +42288,7 @@ window.addBulkWorkMemoMaintOption_ = async (uid, kind) => {
     }
     appendToSelection(name);
     window.refreshBulkWorkMemoExtras_(uid);
+    window.setWorkerActionLoadingOverlay_(false);
     const label = (typeof window.buildEquipmentDisplayLabel_ === 'function')
       ? window.buildEquipmentDisplayLabel_(machine)
       : (machine.name || '');
@@ -42189,7 +42300,10 @@ window.addBulkWorkMemoMaintOption_ = async (uid, kind) => {
       }
     }
   } catch (e) {
+    window.setWorkerActionLoadingOverlay_(false);
     if (typeof customAlert === 'function') customAlert('登録に失敗しました: ' + (e && e.message ? e.message : e));
+  } finally {
+    window.setWorkerActionLoadingOverlay_(false);
   }
 };
 
@@ -42266,7 +42380,13 @@ window.manageBulkWorkMemoMaintOption_ = (uid, kind) => {
   window.showMaintenanceMasterManageModal({
     title: titles[kind],
     items: items,
-    onAdd: () => window.addBulkWorkMemoMaintOption_(uid, kind),
+    onAdd: async () => {
+      await window.addBulkWorkMemoMaintOption_(uid, kind);
+      const m = document.getElementById('maintenanceMasterManageModal');
+      if (m && m.style.display !== 'none') {
+        window.manageBulkWorkMemoMaintOption_(uid, kind);
+      }
+    },
     onEdit: async (oldName) => {
       const newName = await customPrompt(editPrompt, oldName);
       if (!newName || !String(newName).trim() || String(newName).trim() === oldName) return;
@@ -43201,8 +43321,23 @@ window.getBulkWorkMemoManualWorkList_ = (d) => {
   return { names, fallbackNote, filterCat };
 };
 
-window.refreshBulkWorkMemoAfterMachineChange_ = (machineRec) => {
-  const uid = String(window._bulkWorkMemoMachineEditUid || '').trim();
+window.captureBulkWorkMemoScrollAnchor_ = (anchorId) => {
+  const sc = document.getElementById('bulk_work_memo_review_scroll');
+  const aid = String(anchorId || '').trim();
+  const anchor = aid ? document.getElementById(aid) : null;
+  const offset = (sc && anchor)
+    ? (anchor.getBoundingClientRect().top - sc.getBoundingClientRect().top)
+    : null;
+  return {
+    anchorId: anchor ? aid : '',
+    anchorOffset: offset,
+    scrollTop: sc ? sc.scrollTop : 0
+  };
+};
+
+window.refreshBulkWorkMemoAfterMachineChange_ = (machineRec, opts) => {
+  opts = opts || {};
+  const uid = String(opts.uid || window._bulkWorkMemoMachineEditUid || '').trim();
   window._bulkWorkMemoMachineEditUid = '';
   if (!document.getElementById('bulk_work_memo_review_scroll')) return;
   const rec = machineRec && typeof machineRec === 'object' ? machineRec : {};
@@ -43219,12 +43354,19 @@ window.refreshBulkWorkMemoAfterMachineChange_ = (machineRec) => {
       row._machinePickOpen = true;
     }
   }
-  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+  window.renderBulkWorkMemoReviewModal_({
+    keepScroll: true,
+    scrollUid: uid,
+    anchorId: opts.anchorId || (uid ? ('bulk_card_' + uid) : ''),
+    anchorOffset: opts.anchorOffset
+  });
 };
 
 window.addBulkWorkMemoMachine_ = (uid) => {
-  window._bulkWorkMemoMachineEditUid = String(uid || '').trim();
-  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === window._bulkWorkMemoMachineEditUid);
+  const targetUid = String(uid || '').trim();
+  window._bulkWorkMemoMachineEditUid = targetUid;
+  const scrollCtx = window.captureBulkWorkMemoScrollAnchor_(targetUid ? ('bulk_card_' + targetUid) : '');
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === targetUid);
   const wName = row ? String(row.workName || '').trim() : '';
   if (typeof window.openMachineItemEditorModal !== 'function') {
     window._bulkWorkMemoMachineEditUid = '';
@@ -43236,7 +43378,11 @@ window.addBulkWorkMemoMachine_ = (uid) => {
     kind: 'machine',
     workCategory: wName || '',
     afterSave: (rec) => {
-      window.refreshBulkWorkMemoAfterMachineChange_(rec);
+      window.refreshBulkWorkMemoAfterMachineChange_(rec, {
+        uid: targetUid,
+        anchorId: scrollCtx.anchorId,
+        anchorOffset: scrollCtx.anchorOffset
+      });
     }
   });
 };
@@ -43251,7 +43397,7 @@ window.buildBulkWorkMemoMachineAddBtnHtml_ = (uid) => {
 /** 一括入力・整備：機械マスタ変更後に一覧・選択を更新 */
 window.refreshBulkWorkMemoAfterMaintTargetChange_ = (rec, optionId, opts) => {
   opts = opts || {};
-  const uid = String(window._bulkWorkMemoMaintEditUid || '').trim();
+  const uid = String(opts.uid || window._bulkWorkMemoMaintEditUid || '').trim();
   const mode = String(opts.mode || 'add');
   const kindHint = String(opts.kind || '').trim();
   window._bulkWorkMemoMaintEditUid = '';
@@ -43307,7 +43453,12 @@ window.refreshBulkWorkMemoAfterMaintTargetChange_ = (rec, optionId, opts) => {
     row._maintPickOpen = true;
   }
   if (typeof window.renderBulkWorkMemoReviewModal_ === 'function') {
-    window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+    window.renderBulkWorkMemoReviewModal_({
+      keepScroll: true,
+      scrollUid: uid,
+      anchorId: opts.anchorId || (uid ? ('bulk_maint_' + uid) : ''),
+      anchorOffset: opts.anchorOffset
+    });
   } else if (typeof window.refreshBulkWorkMemoExtras_ === 'function') {
     window.refreshBulkWorkMemoExtras_(uid);
   }
@@ -43357,14 +43508,20 @@ window.addBulkWorkMemoMaintTarget_ = async (uid) => {
     if (typeof customAlert === 'function') customAlert('登録画面を開けませんでした。');
     return;
   }
+  const scrollCtx = (typeof window.captureBulkWorkMemoScrollAnchor_ === 'function')
+    ? window.captureBulkWorkMemoScrollAnchor_('bulk_maint_' + id)
+    : { anchorId: '', anchorOffset: null };
   window.openMachineItemEditorModal({
     mode: 'add',
     kind: kind === 'vehicle' ? 'vehicle' : 'machine',
     workCategory: wName || '',
     afterSave: (rec, optionId) => {
       window.refreshBulkWorkMemoAfterMaintTargetChange_(rec, optionId, {
+        uid: id,
         mode: 'add',
-        kind: kind === 'vehicle' ? 'vehicle' : 'machine'
+        kind: kind === 'vehicle' ? 'vehicle' : 'machine',
+        anchorId: scrollCtx.anchorId,
+        anchorOffset: scrollCtx.anchorOffset
       });
     }
   });
@@ -43437,14 +43594,20 @@ window.editBulkWorkMemoMaintTarget_ = async (uid, targetId) => {
     if (typeof customAlert === 'function') customAlert('編集画面を開けませんでした。');
     return;
   }
+  const scrollCtx = (typeof window.captureBulkWorkMemoScrollAnchor_ === 'function')
+    ? window.captureBulkWorkMemoScrollAnchor_('bulk_maint_' + id)
+    : { anchorId: '', anchorOffset: null };
   window.openMachineItemEditorModal({
     mode: 'edit',
     kind: kind,
     item: item,
     afterSave: (rec, optionId) => {
       window.refreshBulkWorkMemoAfterMaintTargetChange_(rec, optionId || tid, {
+        uid: id,
         mode: 'edit',
-        kind: kind
+        kind: kind,
+        anchorId: scrollCtx.anchorId,
+        anchorOffset: scrollCtx.anchorOffset
       });
     }
   });
@@ -51449,14 +51612,14 @@ window.openWorkerActivityNoticeModal_ = () => {
     }).join('')
     : `<div style="padding:20px 12px; text-align:center; color:#888; font-size:13px; line-height:1.5;">まだお知らせはありません。<br>作業の登録や機械の場所を更新するとここに表示されます。</div>`;
   const headerHtml = (typeof window.buildBulkWorkMemoModalHeaderHtml_ === 'function')
-    ? window.buildBulkWorkMemoModalHeaderHtml_('🔔 お知らせ', '作業記録の登録・機械の場所更新を確認できます。')
+    ? window.buildBulkWorkMemoModalHeaderHtml_('🔔 お知らせ', '作業記録の登録・機械の場所更新を確認できます。', { forceClose: true })
     : `<div style="font-size:17px; font-weight:bold; color:#5E35B1; margin-bottom:12px;">🔔 お知らせ</div>`;
   window.fillAppModalHtml_(`
     <div style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
       ${headerHtml}
       <div style="margin-bottom:12px;">${rows}</div>
       <button type="button" onclick="openBulkWorkMemoHistoryModal_()" style="width:100%; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-bottom:8px;">📜 一括入力履歴を開く</button>
-      <button type="button" onclick="closeBulkWorkMemoModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
+      <button type="button" onclick="closeBulkWorkMemoModal_({force:true})" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
     </div>`);
   modalEl.style.display = 'flex';
   window._bulkWorkMemoActive = true;
@@ -51497,10 +51660,10 @@ window.openBulkWorkMemoHistoryModal_ = () => {
     : `<div style="padding:16px; text-align:center; color:#888; font-size:13px; line-height:1.5;">まだ一括入力の履歴がありません。<br>これから登録した一括入力がここに残ります。</div>`;
   window.fillAppModalHtml_(`
     <div style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
-      ${window.buildBulkWorkMemoModalHeaderHtml_('📜 一括入力履歴', '登録した一括分ごとに、日付の変更と削除ができます。')}
+      ${window.buildBulkWorkMemoModalHeaderHtml_('📜 一括入力履歴', '登録した一括分ごとに、日付の変更と削除ができます。', { forceClose: true })}
       <div style="margin-bottom:12px;">${rows}</div>
       <button type="button" onclick="openBulkWorkMemoModal_()" style="width:100%; background:#FF9800; color:#fff; border:none; border-radius:8px; padding:12px; font-weight:bold; cursor:pointer; margin-bottom:8px;">← 一括入力に戻る</button>
-      <button type="button" onclick="closeBulkWorkMemoModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
+      <button type="button" onclick="closeBulkWorkMemoModal_({force:true})" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
     </div>`);
   modalEl.style.display = 'flex';
   window._bulkWorkMemoActive = true;
@@ -51541,7 +51704,7 @@ window.openBulkWorkMemoHistoryDetail_ = (batchId) => {
   window._bulkWorkMemoHistoryEditBatchId = String(batchId || '');
   window.fillAppModalHtml_(`
     <div style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
-      ${window.buildBulkWorkMemoModalHeaderHtml_('📅 一括入力の日付変更', 'この一括で登録した作業・昼休憩の日付をまとめて変更します。')}
+      ${window.buildBulkWorkMemoModalHeaderHtml_('📅 一括入力の日付変更', 'この一括で登録した作業・昼休憩の日付をまとめて変更します。', { forceClose: true })}
       <div style="background:#FFF8E1; border:2px solid #FFB74D; border-radius:10px; padding:12px; margin-bottom:12px;">
         <label class="form-label" style="margin:0 0 6px; color:#E65100;">新しい作業日</label>
         <input type="date" id="bulk_work_memo_history_date" class="form-input" value="${esc(curDate)}" style="margin:0; font-size:15px; font-weight:bold;">

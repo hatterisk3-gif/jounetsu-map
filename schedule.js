@@ -1645,8 +1645,216 @@ function scheduleMatchesField_(t, p) {
   });
 }
 
+// ★マップ表示色モード（schedule: 状況 / crop: 作物 / status: 稼働状況）
+window._scheduleFieldColorMode = (() => {
+  try {
+    const m = localStorage.getItem('scheduleFieldColorMode');
+    return (m === 'crop' || m === 'status') ? m : 'schedule';
+  } catch (e) {
+    return 'schedule';
+  }
+})();
+
+window.getScheduleFieldColorMode_ = () => {
+  const m = window._scheduleFieldColorMode;
+  return (m === 'crop' || m === 'status') ? m : 'schedule';
+};
+
+window._schedCropColors = window._schedCropColors || {};
+window._schedCropColorIdx = window._schedCropColorIdx || 0;
+const SCHED_CROP_PALETTE = ['#4CAF50', '#2196F3', '#FF9800', '#E91E63', '#00BCD4', '#8BC34A', '#795548', '#3F51B5', '#9C27B0', '#F44336'];
+
+function hydrateSchedInitDataFromCache_() {
+  if (window._schedInitPolygonsById && window._schedPdlCrops) return;
+  try {
+    const raw = localStorage.getItem('passionMapInitData');
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!parsed) return;
+    if (parsed.pdl && Array.isArray(parsed.pdl.crops)) {
+      window._schedPdlCrops = parsed.pdl.crops;
+    }
+    if (Array.isArray(parsed.polygons)) {
+      const mapById = {};
+      parsed.polygons.forEach(item => {
+        if (item && item.id != null) mapById[String(item.id)] = item;
+      });
+      window._schedInitPolygonsById = mapById;
+    }
+  } catch (e) { }
+}
+
+function ensureScheduleInitDataLoaded_(forceFetch) {
+  hydrateSchedInitDataFromCache_();
+  const hasPolys = !!(window._schedInitPolygonsById && Object.keys(window._schedInitPolygonsById).length > 0);
+  if ((!forceFetch && hasPolys) || window._schedInitDataFetching) return;
+  if (window._schedInitDataFetchedOnce && !forceFetch) return;
+  if (typeof callGAS !== 'function' || typeof hasValidSpreadsheetId_ !== 'function' || !hasValidSpreadsheetId_()) return;
+
+  window._schedInitDataFetching = true;
+  callGAS('getInitData', {}, 1).then(data => {
+    window._schedInitDataFetching = false;
+    window._schedInitDataFetchedOnce = true;
+    if (!data || !Array.isArray(data.polygons) || data.polygons.length === 0) return;
+    try { localStorage.setItem('passionMapInitData', JSON.stringify(data)); } catch (e) { }
+    if (data.pdl && Array.isArray(data.pdl.crops)) {
+      window._schedPdlCrops = data.pdl.crops;
+    }
+    const mapById = {};
+    data.polygons.forEach(item => {
+      if (item && item.id != null) mapById[String(item.id)] = item;
+    });
+    window._schedInitPolygonsById = mapById;
+    window._schedCropColors = {};
+    window._schedCropColorIdx = 0;
+    if (window.getScheduleFieldColorMode_() !== 'schedule' && typeof updateMapVisuals === 'function') {
+      updateMapVisuals();
+    }
+  }).catch(() => {
+    window._schedInitDataFetching = false;
+  });
+}
+
+function schedGetCropColor_(cropName) {
+  if (!cropName) return '#8D6E63';
+  if (window._schedCropColors[cropName]) return window._schedCropColors[cropName];
+  const crops = Array.isArray(window._schedPdlCrops) ? window._schedPdlCrops : [];
+  const master = crops.find(c => c && String(c.name || '').trim() === String(cropName).trim());
+  if (master && master.color) {
+    const hex = String(master.color).trim();
+    if (hex) {
+      window._schedCropColors[cropName] = hex;
+      return hex;
+    }
+  }
+  const color = SCHED_CROP_PALETTE[window._schedCropColorIdx % SCHED_CROP_PALETTE.length];
+  window._schedCropColors[cropName] = color;
+  window._schedCropColorIdx++;
+  return color;
+}
+
+function schedGetCurrentCrop_(photos) {
+  if (!photos || photos.length === 0) return null;
+  const sorted = [...photos].sort((a, b) => {
+    const dA = new Date(((a.data && a.data.workDate) || a.date || '').replace(/\//g, '-'));
+    const dB = new Date(((b.data && b.data.workDate) || b.date || '').replace(/\//g, '-'));
+    return dB - dA;
+  });
+  for (let i = 0; i < sorted.length; i++) {
+    const ph = sorted[i];
+    if (ph && ph.data && ph.data.workName) {
+      if (ph.data.workName.includes('定植')) return ph.data.crop || '不明な作物';
+      if (ph.data.workName.includes('チッパー') || ph.data.workName.includes('畝つぶし')) return null;
+    }
+  }
+  return null;
+}
+
+function getSchedFieldInitMeta_(p) {
+  hydrateSchedInitDataFromCache_();
+  const byId = window._schedInitPolygonsById || {};
+  const initP = p && p.id != null ? byId[String(p.id)] : null;
+  return {
+    status: (initP && initP.status) || (p && p.status) || '',
+    photos: (initP && Array.isArray(initP.photos)) ? initP.photos : ((p && Array.isArray(p.photos)) ? p.photos : []),
+    color: (initP && initP.color) || (p && p.color) || '#8BC34A'
+  };
+}
+
+function schedGetWorkerModeColor_(p) {
+  const meta = getSchedFieldInitMeta_(p);
+  const isUnused = (meta.status === '未使用（返却）' || meta.status === '未使用');
+  if (isUnused) return '#999999';
+  if (window.getScheduleFieldColorMode_() === 'status') {
+    return meta.color || '#8BC34A';
+  }
+  return schedGetCropColor_(schedGetCurrentCrop_(meta.photos));
+}
+
+function updateScheduleLegend_() {
+  const legendDiv = document.getElementById('scheduleLegendUI');
+  const bodyEl = document.getElementById('scheduleLegendBody');
+  if (!legendDiv || !bodyEl) return;
+  const mode = window.getScheduleFieldColorMode_();
+  const tabs = legendDiv.querySelectorAll('.sched-legend-tab');
+  tabs.forEach(btn => {
+    btn.classList.toggle('is-active', btn.getAttribute('data-mode') === mode);
+  });
+
+  if (mode === 'schedule') {
+    bodyEl.innerHTML =
+      '<div class="sched-legend-title">📅 状況色分け</div>' +
+      '<div class="leg-item"><div class="leg-color" style="background:#4CAF50;"></div>平和</div>' +
+      '<div class="leg-item"><div class="leg-color" style="background:#FFEB3B;"></div>予定有</div>' +
+      '<div class="leg-item"><div class="leg-color" style="background:#F44336;"></div>問題/遅延</div>' +
+      '<div class="leg-item"><div class="leg-color" style="background:#FF9800;"></div>収穫中</div>' +
+      '<div class="leg-item"><div class="leg-color" style="background:#777777;"></div>対象外</div>';
+    return;
+  }
+
+  if (mode === 'status') {
+    const statusMap = new Map();
+    let hasUnused = false;
+    for (let id in loadedPolygons) {
+      const p = loadedPolygons[id];
+      if (!p || p.isMarker) continue;
+      const meta = getSchedFieldInitMeta_(p);
+      if (meta.status === '未使用（返却）' || meta.status === '未使用') {
+        hasUnused = true;
+        continue;
+      }
+      const label = (meta.status && String(meta.status).trim()) ? String(meta.status).trim() : 'その他';
+      if (!statusMap.has(label)) {
+        statusMap.set(label, meta.color || '#8BC34A');
+      }
+    }
+    let html = '<div class="sched-legend-title">🚜 稼働状況の色分け</div>';
+    if (hasUnused || statusMap.size === 0) {
+      html += '<div class="leg-item"><div class="leg-color" style="background:#999999;"></div>未使用</div>';
+    }
+    statusMap.forEach((col, label) => {
+      html += `<div class="leg-item"><div class="leg-color" style="background:${col};"></div>${label}</div>`;
+    });
+    if (window._schedInitDataFetching && statusMap.size <= 1) {
+      html += '<div style="font-size:10px; color:#777;">読込中…</div>';
+    }
+    bodyEl.innerHTML = html;
+    return;
+  }
+
+  // crop モード
+  let html = '<div class="sched-legend-title">🌾 作物色分け</div>';
+  html += '<div class="leg-item"><div class="leg-color" style="background:#8D6E63;"></div>未定植</div>';
+  for (let crop in window._schedCropColors) {
+    html += `<div class="leg-item"><div class="leg-color" style="background:${window._schedCropColors[crop]};"></div>${crop}</div>`;
+  }
+  if (window._schedInitDataFetching && Object.keys(window._schedCropColors).length === 0) {
+    html += '<div style="font-size:10px; color:#777;">作物データ読込中…</div>';
+  }
+  bodyEl.innerHTML = html;
+}
+
+window.setScheduleFieldColorMode_ = (mode, ev) => {
+  if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+  const next = (mode === 'crop' || mode === 'status') ? mode : 'schedule';
+  window._scheduleFieldColorMode = next;
+  try { localStorage.setItem('scheduleFieldColorMode', next); } catch (e) { }
+  if (next !== 'schedule') {
+    ensureScheduleInitDataLoaded_(false);
+  }
+  if (typeof updateMapVisuals === 'function') {
+    updateMapVisuals();
+  } else {
+    updateScheduleLegend_();
+  }
+};
+
 // ★変更：選択された部署に基づいて地図上のオブジェクトを描画＆色付けする
 function updateMapVisuals() {
+  const colorMode = window.getScheduleFieldColorMode_();
+  if (colorMode !== 'schedule') {
+    ensureScheduleInitDataLoaded_(false);
+  }
   for (let id in loadedPolygons) {
     const p = loadedPolygons[id];
 
@@ -1759,13 +1967,15 @@ function updateMapVisuals() {
       p.labelConfig = lblConf;
 
     } else {
-      const polyColor = hasProblem ? '#F44336' : sColor;
-      const polyStroke = hasProblem ? '#FFEB3B' : sColor;
-      const polyOpacity = isActiveForDept ? 0.6 : 0.2;
-      const markerColor = hasProblem ? '#FFEB3B' : (isActiveForDept ? 'white' : '#aaa');
+      const workerModeCol = colorMode !== 'schedule' ? schedGetWorkerModeColor_(p) : null;
+      const polyColor = workerModeCol || (hasProblem ? '#F44336' : sColor);
+      const polyStroke = workerModeCol || (hasProblem ? '#FFEB3B' : sColor);
+      const polyOpacity = workerModeCol ? 0.5 : (isActiveForDept ? 0.6 : 0.2);
+      const polyWeight = workerModeCol ? 3 : (hasProblem ? 4 : (isActiveForDept ? 3 : 1));
+      const markerColor = workerModeCol ? 'white' : (hasProblem ? '#FFEB3B' : (isActiveForDept ? 'white' : '#aaa'));
 
       if (!p.polygon) {
-        p.polygon = new google.maps.Polygon({ paths: p.coords, map, fillColor: polyColor, fillOpacity: polyOpacity, strokeColor: polyStroke, strokeOpacity: 1, strokeWeight: hasProblem ? 4 : (isActiveForDept ? 3 : 1) });
+        p.polygon = new google.maps.Polygon({ paths: p.coords, map, fillColor: polyColor, fillOpacity: polyOpacity, strokeColor: polyStroke, strokeOpacity: 1, strokeWeight: polyWeight });
         const bounds = new google.maps.LatLngBounds(); p.coords.forEach(pt => bounds.extend(pt));
         p.marker = new google.maps.Marker({ position: bounds.getCenter(), map, visible: map.getZoom() >= 14, clickable: false, label: { text: labelText, color: markerColor, fontSize: '13px', fontWeight: 'bold', className: 'polygon-label' }, icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 } });
         google.maps.event.addListener(p.polygon, 'click', (e) => {
@@ -1787,7 +1997,7 @@ function updateMapVisuals() {
       } else {
         // 範囲変更後も同じオブジェクトを再利用する場合は座標も反映する
         try { p.polygon.setPaths(p.coords); } catch (e) { }
-        p.polygon.setOptions({ fillColor: polyColor, fillOpacity: polyOpacity, strokeColor: polyStroke, strokeWeight: hasProblem ? 4 : (isActiveForDept ? 3 : 1) });
+        p.polygon.setOptions({ fillColor: polyColor, fillOpacity: polyOpacity, strokeColor: polyStroke, strokeWeight: polyWeight });
         if (p.marker) {
           const bounds = new google.maps.LatLngBounds();
           p.coords.forEach(pt => bounds.extend(pt));
@@ -1797,6 +2007,7 @@ function updateMapVisuals() {
       }
     }
   }
+  updateScheduleLegend_();
   // 土壌水分オーバーレイ中は色・%ラベルを再適用（予定色で上書きされないように）
   if (window._soilMoistureOverlayOn && typeof window.applySoilMoistureColors === 'function') {
     window.applySoilMoistureColors();
