@@ -24909,7 +24909,7 @@ window.ensureMachineItemEditorModal = () => {
                 <div>
                   <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">③ 機械カテゴリ（機種）</label>
                   <div style="display:flex; gap:4px;">
-                    <select id="mie_type" class="form-input" onchange="updateMachineItemEditorAutoNumber_()" style="flex:1; box-sizing:border-box; margin-bottom:0;">
+                    <select id="mie_type" class="form-input" onchange="updateMachineItemEditorAutoNumber_(); syncMachineItemEditorWorkCategoryFromType_()" style="flex:1; box-sizing:border-box; margin-bottom:0;">
                       <option value="">選択...</option>
                     </select>
                     <button type="button" onclick="addMachineTypeFromForm('mie_type')" style="padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; cursor:pointer; flex-shrink:0;" title="追加">➕</button>
@@ -25073,6 +25073,7 @@ window.ensureMachineItemEditorModal = () => {
             </div>
             <div id="mie_footer" style="padding:10px 16px 14px; display:flex; gap:8px; flex-shrink:0; border-top:1px solid #eee;">
               <button type="button" id="mie_save_btn" onclick="saveMachineItemEditorModal()" style="flex:2; background:#1976D2; color:#fff; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">まとめて登録する</button>
+              <button type="button" id="mie_delete_btn" onclick="deleteMachineItemEditorModal()" style="display:none; flex:1; background:#E53935; color:#fff; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">🗑️ 削除</button>
               <button type="button" onclick="closeMachineItemEditorModal()" style="flex:1; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">キャンセル</button>
             </div>
           </div>`;
@@ -25231,6 +25232,30 @@ window.renderMachineItemEditorWorkCategoryRows_ = (workCategoryStr) => {
   box.innerHTML = '';
   const items = String(workCategoryStr || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
   (items.length ? items : ['']).forEach(item => window.addMachineItemEditorWorkCategoryRow_(item));
+};
+
+window.syncMachineItemEditorWorkCategoryFromType_ = () => {
+  const st = window._machineItemEditorState || {};
+  if (st.mode === 'edit') return;
+  const typeVal = String((document.getElementById('mie_type') || {}).value || '').trim();
+  if (!typeVal) {
+    window.renderMachineItemEditorWorkCategoryRows_('');
+    return;
+  }
+  const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+  const cats = [];
+  const seen = new Set();
+  macs.forEach(m => {
+    if (!m || m.isTool || m.isVehicle) return;
+    if (String(m.type || '').trim() !== typeVal) return;
+    String(m.workCategory || m.workTypes || '').split(/[,、]/).map(s => s.trim()).filter(Boolean).forEach(c => {
+      if (!seen.has(c)) {
+        seen.add(c);
+        cats.push(c);
+      }
+    });
+  });
+  window.renderMachineItemEditorWorkCategoryRows_(cats.join(', '));
 };
 
 window.collectMachineItemEditorWorkCategories_ = () => {
@@ -25491,23 +25516,33 @@ window.setMachineItemEditorKind = (kind) => {
   }
 };
 
-window.copyMachineItemFromQueue = (idx) => {
-  const st = window._machineItemEditorState || {};
-  const p = (Array.isArray(st.pending) && st.pending[idx]) ? st.pending[idx] : null;
+window.applyMachineItemEditorQueueItem_ = (p, includeNumberAndPhoto) => {
   if (!p) return;
+  const st = window._machineItemEditorState || {};
   const kind = p.kind === 'vehicle' ? 'vehicle' : 'machine';
   if (typeof window.setMachineItemEditorKind === 'function') window.setMachineItemEditorKind(kind);
   if (typeof window.clearMachineItemEditorInputFields_ === 'function') window.clearMachineItemEditorInputFields_();
-  st.photoItems = [];
-  st.photoBase64 = '';
-  st.existingPhoto = '';
-  st.clearPhoto = false;
+  if (includeNumberAndPhoto) {
+    st.photoItems = Array.isArray(p.photoItems) ? p.photoItems.map(x => Object.assign({}, x)) : [];
+    st.photoBase64 = p.photoBase64 || '';
+    st.existingPhoto = '';
+    st.clearPhoto = false;
+  } else {
+    st.photoItems = [];
+    st.photoBase64 = '';
+    st.existingPhoto = '';
+    st.clearPhoto = false;
+  }
   if (typeof window.renderMachineItemEditorPreview === 'function') window.renderMachineItemEditorPreview();
   if (kind === 'vehicle') {
     if (document.getElementById('mie_vehicle_main')) document.getElementById('mie_vehicle_main').value = p.mainCategory || p.group || '自動車';
     if (document.getElementById('mie_vehicle_type')) document.getElementById('mie_vehicle_type').value = p.vehicleType || p.type || '';
-    if (document.getElementById('mie_vehicle_number')) document.getElementById('mie_vehicle_number').value = '';
-    if (document.getElementById('mie_vehicle_sub_number')) document.getElementById('mie_vehicle_sub_number').value = '';
+    if (document.getElementById('mie_vehicle_number')) {
+      document.getElementById('mie_vehicle_number').value = includeNumberAndPhoto ? (p.plateNumber || '') : '';
+    }
+    if (document.getElementById('mie_vehicle_sub_number')) {
+      document.getElementById('mie_vehicle_sub_number').value = includeNumberAndPhoto ? (p.vehicleNumber || p.machineNumber || '') : '';
+    }
     if (document.getElementById('mie_vehicle_model')) document.getElementById('mie_vehicle_model').value = p.model || '';
     if (document.getElementById('mie_vehicle_mileage')) document.getElementById('mie_vehicle_mileage').value = (p.mileage === 0 || p.mileage) ? p.mileage : '';
     if (document.getElementById('mie_vehicle_date')) document.getElementById('mie_vehicle_date').value = String(p.registrationDate || '').replace(/\//g, '-').slice(0, 10);
@@ -25521,7 +25556,6 @@ window.copyMachineItemFromQueue = (idx) => {
     if (document.getElementById('mie_type')) document.getElementById('mie_type').value = p.type || '';
     if (document.getElementById('mie_model')) document.getElementById('mie_model').value = p.model || '';
     if (document.getElementById('mie_model2')) document.getElementById('mie_model2').value = p.model2 || '';
-    if (document.getElementById('mie_number')) document.getElementById('mie_number').value = '';
     if (document.getElementById('mie_purchase_date')) document.getElementById('mie_purchase_date').value = String(p.purchaseDate || '').replace(/\//g, '-').slice(0, 10);
     if (document.getElementById('mie_fuel')) document.getElementById('mie_fuel').value = p.fuel || '';
     if (document.getElementById('mie_hitch')) document.getElementById('mie_hitch').value = p.hitch || '';
@@ -25529,15 +25563,38 @@ window.copyMachineItemFromQueue = (idx) => {
       window.renderMachineItemEditorWorkCategoryRows_(p.workCategory || '');
     }
     if (document.getElementById('mie_sign')) document.getElementById('mie_sign').value = p.signId || '';
-    if (typeof window.updateMachineItemEditorAutoNumber_ === 'function') {
-      window.updateMachineItemEditorAutoNumber_();
+    if (includeNumberAndPhoto) {
+      if (document.getElementById('mie_number')) document.getElementById('mie_number').value = p.machineNumber || '';
+    } else {
+      if (document.getElementById('mie_number')) document.getElementById('mie_number').value = '';
+      if (typeof window.updateMachineItemEditorAutoNumber_ === 'function') {
+        window.updateMachineItemEditorAutoNumber_();
+      }
     }
   }
   if (typeof window.setMachineItemEditorFuelChecksUi_ === 'function') {
     window.setMachineItemEditorFuelChecksUi_(p.fuelChecks || '');
   }
+};
+
+window.copyMachineItemFromQueue = (idx) => {
+  const st = window._machineItemEditorState || {};
+  const p = (Array.isArray(st.pending) && st.pending[idx]) ? st.pending[idx] : null;
+  if (!p) return;
+  window.applyMachineItemEditorQueueItem_(p, false);
   if (typeof window.showRecordSyncToast === 'function') {
     window.showRecordSyncToast('📋 番号・写真以外を上の入力欄にコピーしました', 'ok');
+  }
+};
+
+window.editMachineItemFromQueue = (idx) => {
+  const st = window._machineItemEditorState || {};
+  if (!Array.isArray(st.pending) || !st.pending[idx]) return;
+  const p = st.pending.splice(idx, 1)[0];
+  window.renderMachineItemEditorQueue();
+  window.applyMachineItemEditorQueueItem_(p, true);
+  if (typeof window.showRecordSyncToast === 'function') {
+    window.showRecordSyncToast('✏️ 上の入力欄に戻しました。編集して再度追加・登録してください', 'ok');
   }
 };
 
@@ -25564,6 +25621,7 @@ window.renderMachineItemEditorQueue = () => {
             </div>
             <div style="display:flex; gap:6px; flex-shrink:0;">
               <button type="button" onclick="copyMachineItemFromQueue(${idx})" style="background:#fff; color:#1565c0; border:1px solid #90caf9; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">コピー</button>
+              <button type="button" onclick="editMachineItemFromQueue(${idx})" style="background:#fff; color:#EF6C00; border:1px solid #FFB74D; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">編集</button>
               <button type="button" onclick="removeMachineItemFromQueue(${idx})" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">削除</button>
             </div>
           </div>`;
@@ -25944,10 +26002,13 @@ window.syncMachineEditorAddModeUi = () => {
   const queueBtn = document.getElementById('mie_queue_btn');
   const hint = document.getElementById('mie_add_hint');
   const saveBtn = document.getElementById('mie_save_btn');
+  const delBtn = document.getElementById('mie_delete_btn');
+  const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
   if (kindRow) kindRow.style.display = isAdd ? 'flex' : 'none';
   if (queueBtn) queueBtn.style.display = isAdd ? 'block' : 'none';
   if (hint) hint.style.display = isAdd ? 'block' : 'none';
   if (saveBtn) saveBtn.textContent = isAdd ? 'まとめて登録する' : '保存する';
+  if (delBtn) delBtn.style.display = (!isAdd && isAdmin && st.itemId) ? 'inline-block' : 'none';
   if (isAdd) window.setMachineItemEditorKind(st.kind || 'machine');
   window.renderMachineItemEditorQueue();
 };
@@ -26077,9 +26138,6 @@ window.openMachineItemEditorModal = (opts) => {
       if (typeof window.updateMachineItemEditorAutoNumber_ === 'function') {
         window.updateMachineItemEditorAutoNumber_();
       }
-    }
-    if (opts.workCategory && typeof window.renderMachineItemEditorWorkCategoryRows_ === 'function') {
-      window.renderMachineItemEditorWorkCategoryRows_(opts.workCategory);
     }
     if (document.getElementById('mie_vehicle_date')) {
       document.getElementById('mie_vehicle_date').value = new Date().toISOString().slice(0, 10);
@@ -26241,7 +26299,7 @@ window.persistOneMachineOrVehicle_ = async (entry) => {
   const hitch = entry.hitch != null ? entry.hitch : ((document.getElementById('mie_hitch') || {}).value || '');
   const workCategory = entry.workCategory != null
     ? entry.workCategory
-    : ((typeof window.collectMachineItemEditorWorkCategories_ === 'function' ? window.collectMachineItemEditorWorkCategories_() : '') || st.workCategory || '');
+    : (typeof window.collectMachineItemEditorWorkCategories_ === 'function' ? window.collectMachineItemEditorWorkCategories_() : '');
   const signId = entry.signId != null ? entry.signId : ((document.getElementById('mie_sign') || {}).value || '');
   const signObj = (signId && typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons[signId] : null;
   const signName = entry.signName != null ? entry.signName : (signObj ? (signObj.name || '') : '');
@@ -26468,6 +26526,80 @@ window.saveMachineItemEditorModal = async () => {
       saveBtn.disabled = false;
       saveBtn.textContent = (window._machineItemEditorState || {}).mode === 'edit' ? '保存する' : 'まとめて登録する';
     }
+  }
+};
+
+window.deleteMachineItemEditorModal = async () => {
+  if (typeof window.isWorkerAdmin === 'function' && !window.isWorkerAdmin()) {
+    if (typeof customAlert === 'function') customAlert('削除は管理者権限のみ実行できます。');
+    return;
+  }
+  const st = window._machineItemEditorState || {};
+  if (st.mode !== 'edit' || !st.itemId) return;
+  const kind = st.kind === 'vehicle' ? 'vehicle' : 'machine';
+  const kindLabel = kind === 'vehicle' ? '車両' : '農機具';
+  const rawId = String(st.itemId).replace(/^veh:/, '');
+  const item = kind === 'vehicle'
+    ? ((Array.isArray(window.pdlMobileVehicles) ? window.pdlMobileVehicles : []).find(v => String(v.id) === rawId) || { id: rawId })
+    : ((typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines) ? pdlMachines : []).find(m => String(m.id) === String(st.itemId)) || { id: st.itemId });
+  const currentFields = (typeof window.readMachineItemEditorFormFields_ === 'function')
+    ? window.readMachineItemEditorFormFields_(kind)
+    : {};
+  const label = String(item.plateNumber || item.name || currentFields.name || st.itemId || '名称未設定').trim();
+  if (typeof customConfirm === 'function') {
+    if (!(await customConfirm(`${kindLabel}「${label}」をマスタから削除しますか？\n※この操作は取り消せません。`))) return;
+  }
+  const delBtn = document.getElementById('mie_delete_btn');
+  if (delBtn) delBtn.disabled = true;
+  if (typeof window.setMachineItemEditorLoading_ === 'function') {
+    window.setMachineItemEditorLoading_(true, '削除中です...');
+  }
+  try {
+    const userName = (typeof currentUser !== 'undefined' ? currentUser : '') || localStorage.getItem('passionMapUserName') || '管理者';
+    let optionId = String(st.itemId);
+    if (kind === 'vehicle') {
+      await callGAS('vehicle_deleteVehicle', { id: rawId });
+      if (Array.isArray(window.pdlMobileVehicles)) {
+        window.pdlMobileVehicles = window.pdlMobileVehicles.filter(v => String(v.id) !== rawId);
+      }
+      optionId = 'veh:' + rawId;
+    } else {
+      await callGAS('deleteMachineFromMaster', { machineId: st.itemId, userName: userName });
+      if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) {
+        window.pdlMachines = pdlMachines.filter(m => String(m.id) !== String(st.itemId));
+      }
+    }
+    try {
+      if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+      else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) { }
+      try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) { }
+    } catch (e) { }
+    if (typeof window.setMachineItemEditorLoading_ === 'function') {
+      window.setMachineItemEditorLoading_(false);
+    }
+    window.closeMachineItemEditorModal();
+    if (typeof window.refreshBulkWorkMemoAfterMaintTargetChange_ === 'function' && window._bulkWorkMemoMaintEditUid) {
+      window.refreshBulkWorkMemoAfterMaintTargetChange_(item, optionId, { mode: 'delete', kind: kind });
+    }
+    if (typeof window.populateMaintenanceMachineSelect === 'function') {
+      window.populateMaintenanceMachineSelect('');
+    }
+    if (typeof window.populateFieldMachineOptions === 'function') {
+      const selected = Array.from(document.querySelectorAll('#field_machinery_section .used-machine-check:checked'))
+        .map(c => c.value)
+        .filter(v => String(v) !== String(st.itemId) && String(v) !== optionId);
+      window.populateFieldMachineOptions(selected);
+    }
+    if (typeof window.showRecordSyncToast === 'function') {
+      window.showRecordSyncToast(`🗑️ ${kindLabel}「${label}」をマスタから削除しました`, 'ok');
+    }
+  } catch (e) {
+    if (typeof customAlert === 'function') customAlert(e.message || '削除に失敗しました');
+  } finally {
+    if (typeof window.setMachineItemEditorLoading_ === 'function') {
+      window.setMachineItemEditorLoading_(false);
+    }
+    if (delBtn) delBtn.disabled = false;
   }
 };
 
@@ -34377,6 +34509,9 @@ window.removeMachineTypeFromForm = async (selectId) => {
   if (typeof customConfirm === 'function') {
     if (!(await customConfirm(`機械名「${val}」をマスタから削除しますか？\n※既に登録済みの機械の値は残ります。`))) return;
   }
+  if (typeof window.setMachineItemEditorLoading_ === 'function') {
+    window.setMachineItemEditorLoading_(true, '削除中です...');
+  }
   try {
     const updated = await callGAS('manageMaster', {
       masterType: 'machineType',
@@ -34400,6 +34535,10 @@ window.removeMachineTypeFromForm = async (selectId) => {
     }
   } catch (e) {
     if (typeof customAlert === 'function') customAlert(e.message || '機械名の削除に失敗しました');
+  } finally {
+    if (typeof window.setMachineItemEditorLoading_ === 'function') {
+      window.setMachineItemEditorLoading_(false);
+    }
   }
 };
 
@@ -43395,14 +43534,9 @@ window.buildBulkWorkMemoMaintTargetManageBtnsHtml_ = (uid, d) => {
     ? window.getBulkWorkMemoMaintTargetsSelected_(d)
     : [];
   const canManageSelected = selected.length > 0;
-  const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
-  const deleteBtnHtml = isAdmin
-    ? `<button type="button" onclick="deleteBulkWorkMemoMaintTarget_('${esc(uid)}')" ${canManageSelected ? '' : 'disabled'} style="background:${canManageSelected ? '#E53935' : '#BDBDBD'}; color:#fff; border:none; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:${canManageSelected ? 'pointer' : 'default'}; box-shadow:${canManageSelected ? '0 1px 3px rgba(229,57,53,0.28)' : 'none'};">🗑️ 削除</button>`
-    : '';
   return `<div style="display:flex; justify-content:flex-end; flex-wrap:wrap; gap:6px; margin:0 0 8px;">
     <button type="button" onclick="addBulkWorkMemoMaintTarget_('${esc(uid)}')" style="background:#2196F3; color:#fff; border:none; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow:0 1px 3px rgba(33,150,243,0.28);">${addLabel}</button>
     <button type="button" onclick="editBulkWorkMemoMaintTarget_('${esc(uid)}')" ${canManageSelected ? '' : 'disabled'} style="background:${canManageSelected ? '#FFA000' : '#BDBDBD'}; color:#fff; border:none; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:${canManageSelected ? 'pointer' : 'default'}; box-shadow:${canManageSelected ? '0 1px 3px rgba(255,160,0,0.28)' : 'none'};">✏️ 編集</button>
-    ${deleteBtnHtml}
   </div>`;
 };
 

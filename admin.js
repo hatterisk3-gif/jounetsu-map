@@ -3048,6 +3048,33 @@ window.addWorkMasterFromMachineForm_ = async (containerId) => {
     }
 };
 
+window.syncAdminMachineWorkCategoryFromType_ = () => {
+    const typeEl = document.getElementById('add_mac_type');
+    const box = document.getElementById('add_mac_category_rows');
+    if (!typeEl || !box) return;
+    const typeVal = String(typeEl.value || '').trim();
+    const cats = [];
+    const seen = new Set();
+    if (typeVal && typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) {
+        pdlMachines.forEach(m => {
+            if (!m || m.isTool || m.isVehicle) return;
+            if (String(m.type || '').trim() !== typeVal) return;
+            String(m.workCategory || m.workTypes || '').split(/[,、]/).map(s => s.trim()).filter(Boolean).forEach(c => {
+                if (!seen.has(c)) {
+                    seen.add(c);
+                    cats.push(c);
+                }
+            });
+        });
+    }
+    box.innerHTML = '';
+    (cats.length ? cats : ['']).forEach(c => {
+        if (typeof window.addMachineWorkCategoryRow === 'function') {
+            window.addMachineWorkCategoryRow('add_mac_category_rows', c);
+        }
+    });
+};
+
 window.addMachineWorkCategoryRow = (containerId, value = '') => {
     const box = document.getElementById(containerId);
     if (!box) return;
@@ -5038,7 +5065,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 <div style="font-size:11px; color:#888; margin-top:-4px;">例：圃場 / 出荷 — ➕で追加、✏️で名称変更、➖でマスタから削除</div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">機械カテゴリ（機種）</label>
                 <div style="display:flex; gap:5px; align-items:center;">
-                  <select id="add_mac_type" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" onchange="autoFillAdminMachineNumber_(true)">${getMachineTypeOptionsHtml('', '')}</select>
+                  <select id="add_mac_type" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" onchange="autoFillAdminMachineNumber_(true); syncAdminMachineWorkCategoryFromType_()">${getMachineTypeOptionsHtml('', '')}</select>
                   <button type="button" onclick="addAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="機械カテゴリ（機種）を追加">➕</button>
                   <button type="button" onclick="renameAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="選択中の名称を編集">✏️</button>
                   <button type="button" onclick="removeAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; color:#c62828; cursor:pointer;" title="選択中を削除">➖</button>
