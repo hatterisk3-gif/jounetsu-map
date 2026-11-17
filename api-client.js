@@ -285,7 +285,7 @@
           body: bodyStr,
           signal: controller.signal
         };
-        if (options && options.keepalive !== false && bodyStr.length < 60000) {
+        if (callOptions && callOptions.keepalive !== false && bodyStr.length < 60000) {
           fetchOpts.keepalive = true;
         }
         var res = await fetch(reqUrl, fetchOpts);

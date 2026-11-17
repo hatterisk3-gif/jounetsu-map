@@ -2980,6 +2980,68 @@ window.getWorkMasterOptionsHtml = (selected) => {
     return html;
 };
 
+window.refreshMachineWorkCategorySelects_ = (containerId, autoSelectName) => {
+    const box = document.getElementById(containerId);
+    if (!box) return;
+    const selects = Array.from(box.querySelectorAll('select.detail-work-input'));
+    let assigned = false;
+    selects.forEach(sel => {
+        const cur = String(sel.value || '').trim();
+        let nextVal = cur;
+        if (!cur && autoSelectName && !assigned) {
+            nextVal = autoSelectName;
+            assigned = true;
+        }
+        sel.innerHTML = getWorkMasterOptionsHtml(nextVal);
+        if (nextVal) sel.value = nextVal;
+    });
+    if (autoSelectName && !assigned) {
+        const already = selects.some(sel => String(sel.value || '').trim() === autoSelectName);
+        if (!already) {
+            window.addMachineWorkCategoryRow(containerId, autoSelectName);
+        }
+    }
+};
+
+window.addWorkMasterFromMachineForm_ = async (containerId) => {
+    const raw = prompt('新しい作業名（作業マスタ）を入力してください（例：耕起、定植、草刈）:');
+    if (raw == null) return;
+    const name = String(raw).trim();
+    if (!name) return;
+    const exists = (pdlWorkMaster || []).some(w => String((w && w.name) || w || '').trim() === name);
+    if (exists) {
+        if (typeof customAlert === 'function') customAlert('既に作業マスタに登録されています');
+        window.refreshMachineWorkCategorySelects_(containerId, name);
+        return;
+    }
+    pdlWorkMaster = [...(pdlWorkMaster || []), { name: name, category: '共通' }];
+    if (typeof persistAdminInitCache_ === 'function') persistAdminInitCache_();
+    window.refreshMachineWorkCategorySelects_(containerId, name);
+    if (typeof showAdminSyncToast === 'function') {
+        showAdminSyncToast(`✅ 作業マスタ「${name}」を追加しました（同期中…）`, 'ok');
+    }
+    try {
+        const updated = await callGAS('manageMaster', {
+            masterType: 'work',
+            manageAction: 'add',
+            value: { name: name, category: '共通' },
+            userName: currentUser
+        });
+        if (Array.isArray(updated)) {
+            pdlWorkMaster = updated;
+            if (typeof persistAdminInitCache_ === 'function') persistAdminInitCache_();
+            window.refreshMachineWorkCategorySelects_(containerId, '');
+        }
+        if (typeof showAdminSyncToast === 'function') {
+            showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+        }
+    } catch (e) {
+        if (typeof showAdminSyncToast === 'function') {
+            showAdminSyncToast('⚠️ 作業マスタの保存に失敗しました: ' + (e.message || e), 'error');
+        }
+    }
+};
+
 window.addMachineWorkCategoryRow = (containerId, value = '') => {
     const box = document.getElementById(containerId);
     if (!box) return;
@@ -3000,12 +3062,15 @@ window.buildMachineWorkCategoryEditorHtml = (containerId, workCategoryStr) => {
         </div>`;
     }).join('');
     return `<div id="${containerId}" style="background:#fafafa; border:1px solid #ddd; border-radius:6px; padding:8px; margin-bottom:8px;">${rows}</div>
-        <button type="button" onclick="addMachineWorkCategoryRow('${containerId}')" style="background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:10px;">＋ 作業を追加</button>`;
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+            <button type="button" onclick="addMachineWorkCategoryRow('${containerId}')" style="flex:1; min-width:120px; background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 作業を追加</button>
+            <button type="button" onclick="addWorkMasterFromMachineForm_('${containerId}')" style="flex:1; min-width:140px; background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:4px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer;">➕ 作業マスタを新規追加</button>
+        </div>`;
 };
 
 window.isMachineManageSign = (p) => {
     const f = String((p && p.signFunction) || '');
-    return f.includes('機械設置場所') || f.includes('車両設置場所') || f.includes('車両・機械管理') || f.includes('農機管理');
+    return f.includes('機械設置場所') || f.includes('車両設置場所') || f.includes('倉庫') || f.includes('車両・機械管理') || f.includes('農機管理');
 };
 
 /** 拠点に紐づく機械管理看板を取得（selectedId はフィルタ外でも残す） */
@@ -3064,9 +3129,9 @@ window.buildAdminMachineSignFieldHtml_ = (selectId, selectedId, location) => {
     const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
     let hint = '拠点を選ぶと、その拠点に紐づく看板だけが表示されます。';
     if (loc && matchedCount > 0) {
-        hint = `拠点「${esc(loc)}」の看板（機械設置場所・車両設置場所等）から選べます。`;
+        hint = `拠点「${esc(loc)}」の看板（機械設置場所・車両設置場所・倉庫等）から選べます。`;
     } else if (loc && matchedCount === 0) {
-        hint = `拠点「${esc(loc)}」に紐づく看板がありません。地図で看板を登録し、機能を「機械設置場所」または「車両設置場所」にしてください。`;
+        hint = `拠点「${esc(loc)}」に紐づく看板がありません。地図で看板を登録し、機能を「機械設置場所」「車両設置場所」「倉庫」のいずれかにしてください。`;
     }
     const showSetup = !!(loc && matchedCount === 0);
     const setupBtns = showSetup
@@ -3161,7 +3226,7 @@ window.getMachineTypeOptionsHtml = (selected, targetGroup) => {
     const groupMap = window.getAdminMachineTypeGroupMap_();
     const currentGroup = String(targetGroup || '').trim();
 
-    let html = '<option value="">機械カテゴリを選択...</option>';
+    let html = '<option value="">機械カテゴリ（機種）を選択...</option>';
 
     if (currentGroup) {
         const matched = [];
@@ -4907,18 +4972,18 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             formHtml += `<div style="display:flex; flex-direction:column; gap:8px;">
                 <label style="font-size:12px; font-weight:bold; color:#555;">拠点名</label>
                 <select id="add_mac_location" class="form-input" style="margin-bottom:0; padding:8px;" onchange="refreshAdminMachineSignOptionsFromLocation_('add')">${locOpts}</select>
-                <label style="font-size:12px; font-weight:bold; color:#555;">機種</label>
+                <label style="font-size:12px; font-weight:bold; color:#555;">メインカテゴリ</label>
                 <div style="display:flex; gap:5px; align-items:center;">
                   <select id="add_mac_group" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" onchange="onAdminMachineGroupChanged_('add')">${getMachineGroupOptionsHtml('')}</select>
-                  <button type="button" onclick="addAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="機種を追加">➕</button>
-                  <button type="button" onclick="renameAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="選択中の機種名を編集">✏️</button>
-                  <button type="button" onclick="removeAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; color:#c62828; cursor:pointer;" title="選択中の機種を削除">➖</button>
+                  <button type="button" onclick="addAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="メインカテゴリを追加">➕</button>
+                  <button type="button" onclick="renameAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="選択中のメインカテゴリ名を編集">✏️</button>
+                  <button type="button" onclick="removeAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; color:#c62828; cursor:pointer;" title="選択中のメインカテゴリを削除">➖</button>
                 </div>
                 <div style="font-size:11px; color:#888; margin-top:-4px;">例：圃場 / 出荷 — ➕で追加、✏️で名称変更、➖でマスタから削除</div>
-                <label style="font-size:12px; font-weight:bold; color:#555;">機械カテゴリ</label>
+                <label style="font-size:12px; font-weight:bold; color:#555;">機械カテゴリ（機種）</label>
                 <div style="display:flex; gap:5px; align-items:center;">
                   <select id="add_mac_type" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" onchange="autoFillAdminMachineNumber_(true)">${getMachineTypeOptionsHtml('', '')}</select>
-                  <button type="button" onclick="addAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="機械カテゴリを追加">➕</button>
+                  <button type="button" onclick="addAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="機械カテゴリ（機種）を追加">➕</button>
                   <button type="button" onclick="renameAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="選択中の名称を編集">✏️</button>
                   <button type="button" onclick="removeAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; color:#c62828; cursor:pointer;" title="選択中を削除">➖</button>
                 </div>
@@ -4930,8 +4995,8 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                 </div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">番号</label>
                 <input type="text" id="add_mac_number" class="form-input" style="margin-bottom:0; padding:8px;" placeholder="自動採番（手動変更可）" oninput="markAdminMachineNumberManual_()">
-                <div id="add_mac_number_hint" style="font-size:11px; color:#888; margin-top:-4px;">機種・機械カテゴリ・型式名が一致する既存台があれば、次の番号を自動入力します</div>
-                <div style="font-size:11px; color:#888;">表示名は「機械カテゴリ 型式1 / 型式2」＋（同型式が2台以上のときだけ）①②…</div>
+                <div id="add_mac_number_hint" style="font-size:11px; color:#888; margin-top:-4px;">メインカテゴリ・機械カテゴリ（機種）・型式名が一致する既存台があれば、次の番号を自動入力します</div>
+                <div style="font-size:11px; color:#888;">表示名は「機械カテゴリ（機種） 型式1 / 型式2」＋（同型式が2台以上のときだけ）①②…</div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">購入日 / 燃料</label>
                 <div style="display:flex; gap:5px;">
                   <input type="date" id="add_mac_date" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">
@@ -7735,17 +7800,17 @@ window.openEditMachineMaster = (encodedStr) => {
             <input type="hidden" id="edit_mac_id" value="${String(v.id || '').replace(/"/g, '&quot;')}">
             <label class="form-label">拠点名</label>
             <select id="edit_mac_location" class="form-input" onchange="refreshAdminMachineSignOptionsFromLocation_('edit')">${locOpts}</select>
-            <label class="form-label">機種</label>
+            <label class="form-label">メインカテゴリ</label>
             <div style="display:flex; gap:5px; align-items:center; margin-bottom:10px;">
               <select id="edit_mac_group" class="form-input" style="flex:1; margin-bottom:0;" onchange="onAdminMachineGroupChanged_('edit')">${getMachineGroupOptionsHtml(v.group || '')}</select>
-              <button type="button" onclick="addAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="機種を追加">➕</button>
-              <button type="button" onclick="renameAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="選択中の機種名を編集">✏️</button>
-              <button type="button" onclick="removeAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; color:#c62828; cursor:pointer;" title="選択中の機種を削除">➖</button>
+              <button type="button" onclick="addAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="メインカテゴリを追加">➕</button>
+              <button type="button" onclick="renameAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="選択中のメインカテゴリ名を編集">✏️</button>
+              <button type="button" onclick="removeAdminMachineGroupFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; color:#c62828; cursor:pointer;" title="選択中のメインカテゴリを削除">➖</button>
             </div>
-            <label class="form-label">機械カテゴリ</label>
+            <label class="form-label">機械カテゴリ（機種）</label>
             <div style="display:flex; gap:5px; align-items:center; margin-bottom:10px;">
               <select id="edit_mac_type" class="form-input" style="flex:1; margin-bottom:0;">${getMachineTypeOptionsHtml(v.type || '', v.group || '')}</select>
-              <button type="button" onclick="addAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="機械カテゴリを追加">➕</button>
+              <button type="button" onclick="addAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="機械カテゴリ（機種）を追加">➕</button>
               <button type="button" onclick="renameAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="選択中の名称を編集">✏️</button>
               <button type="button" onclick="removeAdminMachineTypeFromForm_()" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; color:#c62828; cursor:pointer;" title="選択中を削除">➖</button>
             </div>
@@ -7756,7 +7821,7 @@ window.openEditMachineMaster = (encodedStr) => {
             </div>
             <label class="form-label">番号</label>
             <input type="text" id="edit_mac_number" class="form-input" value="${safeNumber}">
-            <div style="font-size:11px; color:#888; margin:-6px 0 10px;">表示名は「機械カテゴリ 型式1 / 型式2」＋（同型式が2台以上のときだけ）①②…</div>
+            <div style="font-size:11px; color:#888; margin:-6px 0 10px;">表示名は「機械カテゴリ（機種） 型式1 / 型式2」＋（同型式が2台以上のときだけ）①②…</div>
             <label class="form-label">燃料</label>
             <select id="edit_mac_fuel" class="form-input">${fuelOpts}</select>
             <label class="form-label">購入年月日</label>

@@ -716,8 +716,7 @@
       <span class="schedule-side-fab-pest-label">農薬</span>
     </button>
     <button id="btnToggleViewpoint" type="button" class="schedule-side-fab" onclick="cycleNextViewpoint()"
-      style="color: #6A1B9A; font-size: 24px; transition: all 0.3s ease;"
-      title="視野切替（拠点地点）" aria-label="視野切替（拠点地点）">
+      style="color: #6A1B9A; font-size: 24px; transition: all 0.3s ease;" title="視野切替（拠点地点）" aria-label="視野切替（拠点地点）">
       🔭
     </button>
   </div>
@@ -1270,7 +1269,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000372';
+    const cacheBust = '1788600000373';
     // 豚糞共有：台数＋短いGoogleマップURL＋座標（v1.49）
     // ※ https://maps.google.com/?q=緯度,経度
     // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）
@@ -1704,7 +1703,8 @@
       </div>
 
       <div id="cadMode3" style="display:none;">
-        <div style="font-size:11px; color:#aaa; margin-bottom:6px; line-height:1.4;">地図をタップして、給水口・排水口/水落口・ポンプ・侵入口・駐車場を置きます。
+        <div style="font-size:11px; color:#aaa; margin-bottom:6px; line-height:1.4;">
+          地図をタップして、給水口・排水口/水落口・ポンプ・侵入口・駐車場を置きます。
         </div>
         <div style="display:flex; gap:4px; margin-bottom:6px; flex-wrap:wrap;">
           <button onclick="cadSetPinMode('water_in')"
@@ -1784,7 +1784,8 @@
             <div style="display:flex; gap:4px; align-items:center;">
               <button type="button" onclick="cadStepSplitField('cadSplitGapCount', -1)"
                 style="width:32px; height:32px; border:none; border-radius:6px; background:#795548; color:#fff; font-weight:bold; cursor:pointer;">−</button>
-              <input type="number" id="cadSplitGapCount" value="1" min="0" step="1" oninput="cadPreviewRidgeNumberSplit()"
+              <input type="number" id="cadSplitGapCount" value="1" min="0" step="1"
+                oninput="cadPreviewRidgeNumberSplit()"
                 style="flex:1; padding:6px; border-radius:6px; border:none; box-sizing:border-box; font-size:16px; font-weight:bold; text-align:center;">
               <button type="button" onclick="cadStepSplitField('cadSplitGapCount', 1)"
                 style="width:32px; height:32px; border:none; border-radius:6px; background:#795548; color:#fff; font-weight:bold; cursor:pointer;">＋</button>

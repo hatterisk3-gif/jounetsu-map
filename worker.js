@@ -11758,7 +11758,22 @@ window.populateFieldMachineOptions = async (selectedMachineIds) => {
           `;
 
     const canEditFieldPhoto = typeof window.isWorkerAdmin !== 'function' || window.isWorkerAdmin();
-    html += filtered.map(m => {
+    const activeWorkNames = (() => {
+      const names = [];
+      const mainWn = String((document.getElementById('rec_work_name') || {}).value || '').trim();
+      if (mainWn) names.push(mainWn);
+      document.querySelectorAll('input[name="detail_work_ids"]:checked').forEach(cb => {
+        if (cb && cb.value) names.push(String(cb.value).trim());
+      });
+      if (Array.isArray(window.recordConcurrentWorks)) {
+        window.recordConcurrentWorks.forEach(cw => {
+          const wn = cw && String(cw.workName || '').trim();
+          if (wn) names.push(wn);
+        });
+      }
+      return Array.from(new Set(names.filter(Boolean)));
+    })();
+    const renderFieldMachineChip_ = (m, isWorkCandidate) => {
       const id = String(m.id || m.name || '');
       const name = String(m._displayName || m.name || m.plateNumber || m.id || '');
       const isDiesel = typeof window.isDieselFuelMachine_ === 'function' && window.isDieselFuelMachine_(m);
@@ -11776,13 +11791,31 @@ window.populateFieldMachineOptions = async (selectedMachineIds) => {
         : String(m.location || '').trim();
       const meta = baseLoc || '';
       const hitch = window.getMachineHitch_(m);
+      const bg = isChecked ? '#FFE0B2' : (isWorkCandidate ? '#FFF8E1' : '#FAFAFA');
+      const border = isChecked ? '#FF9800' : (isWorkCandidate ? '#FFB74D' : '#DDD');
       return `
-              <label style="display:inline-flex; align-items:center; gap:4px; padding:5px 10px; background:${isChecked ? '#FFE0B2' : '#FAFAFA'}; border:1px solid ${isChecked ? '#FF9800' : '#DDD'}; border-radius:16px; font-size:12px; cursor:pointer; font-weight:${isChecked ? 'bold' : 'normal'};">
+              <label style="display:inline-flex; align-items:center; gap:4px; padding:5px 10px; background:${bg}; border:1px solid ${border}; border-radius:16px; font-size:12px; cursor:pointer; font-weight:${isChecked ? 'bold' : 'normal'};">
                 <input type="checkbox" class="used-machine-check" value="${id.replace(/"/g, '&quot;')}" data-name="${name.replace(/"/g, '&quot;')}" ${isChecked ? 'checked' : ''} onchange="if(window.syncFieldMachineChipStyle) window.syncFieldMachineChipStyle(this)">
                 ${thumb} <span>${name.replace(/</g, '&lt;')}</span>${meta ? `<span style="font-size:10px;color:#888;">(📍${meta.replace(/</g, '&lt;')})</span>` : ''}${(!isVehicleKind && hitch) ? ` <span style="font-size:10px; color:#4527A0;" title="ヒッチ規格">🔗${hitch.replace(/</g, '&lt;')}</span>` : ''}${isDiesel ? ' <span style="font-size:10px; color:#C2185B; font-weight:bold;">⛽</span>' : ''} ${editBtn}
               </label>
             `;
-    }).join('');
+    };
+    const workCandidateItems = (activeWorkNames.length && typeof window.machineMatchesWorkName_ === 'function')
+      ? filtered.filter(m => m._kind !== 'vehicle' && window.machineMatchesWorkName_(m, activeWorkNames))
+      : [];
+    if (workCandidateItems.length) {
+      const workCandSet = new Set(workCandidateItems.map(m => String(m.id || m.name || '')));
+      const restItems = filtered.filter(m => !workCandSet.has(String(m.id || m.name || '')));
+      const mainWorkLabel = String((document.getElementById('rec_work_name') || {}).value || activeWorkNames[0] || '').trim();
+      html += `<div style="width:100%; font-size:11px; font-weight:bold; color:#E65100; margin-bottom:2px;">✨ この作業の候補${mainWorkLabel ? `（${mainWorkLabel.replace(/</g, '&lt;')}）` : ''}</div>`;
+      html += workCandidateItems.map(m => renderFieldMachineChip_(m, true)).join('');
+      if (restItems.length) {
+        html += `<div style="width:100%; font-size:11px; font-weight:bold; color:#888; margin:6px 0 2px; border-top:1px dashed #FFE0B2; padding-top:6px;">その他の機械・車両</div>`;
+        html += restItems.map(m => renderFieldMachineChip_(m, false)).join('');
+      }
+    } else {
+      html += filtered.map(m => renderFieldMachineChip_(m, false)).join('');
+    }
 
     html += `</div>`;
     html += `<div id="hitch_link_suggest" style="display:none; margin-top:8px; padding:8px; background:#F3E5F5; border:1px solid #D1C4E9; border-radius:8px;"></div>`;
@@ -18534,6 +18567,20 @@ window.filterEquipmentByUserLocation_ = (items) => {
   const locs = window.getUserAffiliatedLocations_();
   if (!locs.length) return list.slice();
   return list.filter(item => window.equipmentMatchesUserLocation_(item, locs));
+};
+
+/** 機械の「作業カテゴリ（対応可能な作業）」に対象作業名が含まれるか */
+window.machineMatchesWorkName_ = (machine, workNames) => {
+  if (!machine) return false;
+  const rawCat = String(machine.workCategory || machine.workTypes || '').trim();
+  if (!rawCat) return false;
+  const machineCats = rawCat.split(/[,、\/・]+/).map(s => s.trim()).filter(Boolean);
+  if (!machineCats.length) return false;
+  const names = (Array.isArray(workNames) ? workNames : [workNames])
+    .map(w => String(w || '').trim())
+    .filter(Boolean);
+  if (!names.length) return false;
+  return names.some(wn => machineCats.some(mc => mc === wn));
 };
 
 /** 同時作業登録用：農機＋車両一覧（車両は veh:ID・ナンバー付き／所属拠点でフィルター） */
@@ -25666,11 +25713,18 @@ window.openMachineItemEditorModal = (opts) => {
       window.setMachineItemEditorFuelChecksUi_(fuelSpec);
     }
   } else {
-    if (typeof window.setMachineItemEditorFuelChecksUi_ === 'function') {
-      window.setMachineItemEditorFuelChecksUi_('');
-    }
-    if (typeof window.updateMachineItemEditorAutoNumber_ === 'function') {
-      window.updateMachineItemEditorAutoNumber_();
+    if (document.getElementById('mie_group')) document.getElementById('mie_group').selectedIndex = 0;
+    if (document.getElementById('mie_vehicle_main')) document.getElementById('mie_vehicle_main').selectedIndex = 0;
+    if (document.getElementById('mie_status')) document.getElementById('mie_status').value = '使用可能';
+    if (typeof window.clearMachineItemEditorInputFields_ === 'function') {
+      window.clearMachineItemEditorInputFields_();
+    } else {
+      if (typeof window.setMachineItemEditorFuelChecksUi_ === 'function') {
+        window.setMachineItemEditorFuelChecksUi_('');
+      }
+      if (typeof window.updateMachineItemEditorAutoNumber_ === 'function') {
+        window.updateMachineItemEditorAutoNumber_();
+      }
     }
   }
 
@@ -26942,6 +26996,9 @@ window.renderUsedItems = (workName) => {
     : (isPullWork || isMachineryCat
       ? (Array.isArray(pdlMachines) ? pdlMachines.slice() : [])
       : pdlMachines.filter(m => isMatch(m.workCategory)));
+  if (matchMachines.length && typeof window.filterEquipmentByUserLocation_ === 'function') {
+    matchMachines = window.filterEquipmentByUserLocation_(matchMachines);
+  }
   // 潅水作業のポンプは専用UI（設置中ボタン）で扱うため、ここでは除外
   if (typeof window.isIrrigationWork === 'function' && window.isIrrigationWork(workName) && typeof window.isPumpMachine === 'function') {
     matchMachines = matchMachines.filter(m => !window.isPumpMachine(m));
@@ -39961,9 +40018,32 @@ window.getBulkWorkMemoMachineList_ = (draft) => {
     return !hasNonMaintMachine;
   })();
   if (isPureMaintenance) return [];
-  const machines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+  const rawMachines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+  if (!rawMachines.length) return [];
+  const selectedIds = new Set(
+    (Array.isArray(draft && draft.usedMachines) ? draft.usedMachines : [])
+      .map(m => String((m && (m.id || m.name)) || '').trim())
+      .filter(Boolean)
+  );
+  const machines = (typeof window.filterEquipmentByUserLocation_ === 'function')
+    ? rawMachines.filter(m => window.equipmentMatchesUserLocation_(m) || selectedIds.has(String((m && m.id) || '').trim()) || selectedIds.has(String((m && m.name) || '').trim()))
+    : rawMachines;
   if (!machines.length) return [];
   const t = String((draft && draft.rawLine) || '');
+  const draftWorkNames = (() => {
+    const names = [];
+    if (draft && draft.workName) names.push(String(draft.workName).trim());
+    if (draft && draft.guessedName) names.push(String(draft.guessedName).trim());
+    if (Array.isArray(draft && draft.detailedWorks)) {
+      draft.detailedWorks.forEach(dw => { if (dw) names.push(String(dw).trim()); });
+    }
+    if (Array.isArray(draft && draft.concurrentWorks)) {
+      draft.concurrentWorks.forEach(cw => {
+        if (cw && cw.workName) names.push(String(cw.workName).trim());
+      });
+    }
+    return Array.from(new Set(names.filter(Boolean)));
+  })();
   const toItem = (m) => {
     if (!m) return null;
     const name = (typeof window.buildEquipmentDisplayLabel_ === 'function')
@@ -39988,6 +40068,9 @@ window.getBulkWorkMemoMachineList_ = (draft) => {
       serialNo: m.serialNo,
       type: m.type,
       model: m.model,
+      location: m.location || '',
+      workCategory: String(m.workCategory || m.workTypes || '').trim(),
+      isWorkCandidate: !!(draftWorkNames.length && typeof window.machineMatchesWorkName_ === 'function' && window.machineMatchesWorkName_(m, draftWorkNames)),
       currentLocName: m.currentLocName,
       currentLocId: m.currentLocId,
       signName: m.signName,
@@ -40005,10 +40088,18 @@ window.getBulkWorkMemoMachineList_ = (draft) => {
       const hit = allItems.find(m => String(m.id) === String(x.id) || String(m.name) === String(x.name));
       return hit || { id: String(x.id), name: String(x.name), photoUrl: '', currentLocName: '' };
     });
-  if (suggested.length) {
-    const suggestedIds = new Set(suggested.map(m => String(m.id)));
-    const rest = allItems.filter(m => !suggestedIds.has(String(m.id)) && !suggestedIds.has(String(m.name)));
-    return suggested.concat(rest);
+  const workMatched = allItems.filter(m => m.isWorkCandidate);
+  const prioritized = [];
+  const seenPrioritized = new Set();
+  workMatched.concat(suggested).forEach(m => {
+    const key = String(m.id || m.name);
+    if (seenPrioritized.has(key)) return;
+    seenPrioritized.add(key);
+    prioritized.push(m);
+  });
+  if (prioritized.length) {
+    const rest = allItems.filter(m => !seenPrioritized.has(String(m.id || m.name)));
+    return prioritized.concat(rest);
   }
   return allItems;
 };
@@ -44941,14 +45032,21 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
           ${selectedChips}
           ${window.buildBulkWorkMemoMachineAddBtnHtml_(uid)}`;
         if (!machines.length) {
-          html += `<div style="font-size:11px; color:#888; margin-bottom:6px; line-height:1.4;">農機マスタに登録がありません。上のボタンから追加できます。</div>`;
+          const userLocsBulk = (typeof window.getUserAffiliatedLocations_ === 'function') ? window.getUserAffiliatedLocations_() : [];
+          const emptyMsg = userLocsBulk.length
+            ? `所属拠点（${esc(userLocsBulk.join('・'))}）の農機マスタに登録がありません。上のボタンから追加できます。`
+            : '農機マスタに登録がありません。上のボタンから追加できます。';
+          html += `<div style="font-size:11px; color:#888; margin-bottom:6px; line-height:1.4;">${emptyMsg}</div>`;
         } else {
           const sug = window.suggestBulkWorkMemoMaintenanceTargets_(d.rawLine);
           const isSug = (m) => (sug.primary || []).concat(sug.maybe || []).some(x =>
             String(x.id) === String(m.id) || String(x.name) === String(m.name)
           );
-          const sugMachines = machines.filter(isSug);
-          const restMachines = machines.filter(m => !isSug(m));
+          const workSugMachines = machines.filter(m => m.isWorkCandidate);
+          const workSugIds = new Set(workSugMachines.map(m => String(m.id)));
+          const sugMachines = machines.filter(m => !workSugIds.has(String(m.id)) && isSug(m));
+          const sugIds = new Set(sugMachines.map(m => String(m.id)));
+          const restMachines = machines.filter(m => !workSugIds.has(String(m.id)) && !sugIds.has(String(m.id)));
           const machineLabel = (m, style) => {
             const on = selectedMachines.indexOf(String(m.id)) >= 0 || selectedMachines.indexOf(String(m.name)) >= 0;
             const safeId = String(m.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -44961,12 +45059,17 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
               <input type="checkbox" ${on ? 'checked' : ''} onchange="toggleBulkWorkMemoMachine_('${esc(uid)}','${safeId}','${safeName}', this.checked)" style="margin:0 0 0 4px;"> ${machinePhotoHtml_(m)}<span><span>${esc(m.name)}</span>${locLine}</span>
             </label>`;
           };
+          if (workSugMachines.length) {
+            const workLabel = String(d.workName || d.guessedName || '').trim();
+            html += `<div style="font-size:10px; color:#E65100; font-weight:bold; margin-bottom:4px;">✨ この作業の候補${workLabel ? `（${esc(workLabel)}）` : ''}</div>
+              <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${workSugMachines.map(m => machineLabel(m, 'sug')).join('')}</div>`;
+          }
           if (sugMachines.length) {
             html += `<div style="font-size:10px; color:#E65100; font-weight:bold; margin-bottom:4px;">メモから合いそうな機械</div>
               <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${sugMachines.map(m => machineLabel(m, 'sug')).join('')}</div>`;
           }
           if (restMachines.length) {
-            html += `<div style="font-size:10px; color:#888; font-weight:bold; margin-bottom:4px;">${sugMachines.length ? '一覧から選ぶ' : ''}</div>
+            html += `<div style="font-size:10px; color:#888; font-weight:bold; margin-bottom:4px;">${(workSugMachines.length || sugMachines.length) ? '一覧から選ぶ' : ''}</div>
               <div style="display:flex; flex-wrap:wrap; gap:6px; max-height:140px; overflow-y:auto;">${restMachines.map(m => machineLabel(m, 'all')).join('')}</div>`;
           }
         }
@@ -45788,6 +45891,42 @@ window.clearBulkWorkMemoTemp_ = () => {
   } catch (e) { }
 };
 
+window.showBulkWorkMemoTempSavedDialog_ = (count, savedAtLabel) => {
+  const existing = document.getElementById('bulkWorkMemoTempSavedModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'bulkWorkMemoTempSavedModal';
+  modal.style.cssText = 'display:flex; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:2000000; flex-direction:column; justify-content:center; align-items:center; padding:16px; box-sizing:border-box;';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:#fff; color:#333; padding:20px; border-radius:10px; width:100%; max-width:320px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.3); box-sizing:border-box;';
+  const msgEl = document.createElement('div');
+  msgEl.style.cssText = 'margin-bottom:18px; font-size:15px; font-weight:bold; line-height:1.5; white-space:pre-line;';
+  msgEl.textContent = `✅ 一括入力の内容を一時保存しました！\n（${count}件 ／ ${savedAtLabel}）\n再開時は一括入力画面から復元できます。`;
+  const btnWrap = document.createElement('div');
+  btnWrap.style.cssText = 'display:flex; flex-direction:column; gap:8px;';
+  const okBtn = document.createElement('button');
+  okBtn.type = 'button';
+  okBtn.textContent = 'OK';
+  okBtn.style.cssText = 'width:100%; background:#2196F3; color:#fff; padding:12px; border-radius:6px; border:none; font-size:14px; font-weight:bold; cursor:pointer;';
+  okBtn.onclick = () => { modal.remove(); };
+  const closeBulkBtn = document.createElement('button');
+  closeBulkBtn.type = 'button';
+  closeBulkBtn.textContent = '一括入力画面を閉じる';
+  closeBulkBtn.style.cssText = 'width:100%; background:#eee; color:#333; padding:11px; border-radius:6px; border:none; font-size:13px; font-weight:bold; cursor:pointer;';
+  closeBulkBtn.onclick = () => {
+    modal.remove();
+    if (typeof window.closeBulkWorkMemoModal_ === 'function') {
+      window.closeBulkWorkMemoModal_({ force: true });
+    }
+  };
+  btnWrap.appendChild(okBtn);
+  btnWrap.appendChild(closeBulkBtn);
+  box.appendChild(msgEl);
+  box.appendChild(btnWrap);
+  modal.appendChild(box);
+  document.body.appendChild(modal);
+};
+
 window.saveBulkWorkMemoTemp_ = () => {
   if (typeof window.syncBulkWorkMemoDraftsFromDom_ === 'function') {
     window.syncBulkWorkMemoDraftsFromDom_();
@@ -45815,8 +45954,8 @@ window.saveBulkWorkMemoTemp_ = () => {
     }
     return;
   }
-  if (typeof customAlert === 'function') {
-    customAlert(`✅ 一括入力の内容を一時保存しました！\n（${drafts.length}件 ／ ${savedAtLabel}）\n再開時は一括入力画面から復元できます。`);
+  if (typeof window.showBulkWorkMemoTempSavedDialog_ === 'function') {
+    window.showBulkWorkMemoTempSavedDialog_(drafts.length, savedAtLabel);
   } else if (typeof window.showRecordSyncToast === 'function') {
     window.showRecordSyncToast(`✅ 一時保存しました（${drafts.length}件）`, 'ok');
   }
