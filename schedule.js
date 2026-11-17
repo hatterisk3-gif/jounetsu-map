@@ -1401,8 +1401,9 @@ function initMap() {
           const isExpChild = hasSignGroup && window.SignGroup.isChildOfExpanded(p);
 
           if (isChild) {
-            p.marker.setVisible(isExpChild && z >= 15);
-            if (isExpChild) {
+            const showChild = (isExpChild && z >= 15) || (z >= 20);
+            p.marker.setVisible(showChild);
+            if (showChild) {
               p.marker.setZIndex(850);
               p.marker.setIcon(window.SignGroup.buildSignMarkerIcon(p, { isExpandedChild: true }));
               p.marker.setLabel(window.SignGroup.buildSignLabelConfig(p, { isExpandedChild: true }));

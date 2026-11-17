@@ -2766,6 +2766,12 @@ window.renderEquipmentVehiclePanel_ = async (editVehicle) => {
                   <input type="number" id="admin_veh_mileage" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" placeholder="例: 12000" value="${editing && (editing.mileage === 0 || editing.mileage) ? editing.mileage : ''}">
                   <input type="date" id="admin_veh_date" class="form-input" style="flex:1; margin-bottom:0; padding:8px;" value="${regDate}">
                 </div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">状態</label>
+                <select id="admin_veh_status" class="form-input" style="margin-bottom:0; padding:8px;">
+                  <option value="使用可能"${(!editing || !editing.status || editing.status === '使用可能') ? ' selected' : ''}>使用可能</option>
+                  <option value="整備中"${(editing && editing.status === '整備中') ? ' selected' : ''}>整備中</option>
+                  <option value="使用不可"${(editing && editing.status === '使用不可') ? ' selected' : ''}>使用不可</option>
+                </select>
                 <label style="font-size:12px; font-weight:bold; color:#555;">写真</label>
                 <div id="admin_veh_photo_preview" style="min-height:70px; background:#f5f5f5; border:1px dashed #bbb; border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:hidden; margin-bottom:4px;">
                   ${editing && editing.photo ? `<img src="${String(editing.photo).replace(/"/g, '&quot;')}" style="max-width:100%; max-height:120px;">` : '<div style="color:#888; font-size:12px; padding:10px;">写真未登録</div>'}
@@ -2872,7 +2878,7 @@ window.saveAdminVehicle = async () => {
         photoBase64: window._adminVehPhotoB64 || '',
         photoFilename: plateNumber.replace(/\s+/g, '_') + '.jpg',
         photo: existing ? (existing.photo || '') : '',
-        status: existing ? (existing.status || '使用可能') : '使用可能',
+        status: (document.getElementById('admin_veh_status') || {}).value || (existing ? (existing.status || '使用可能') : '使用可能'),
         lat: existing ? (existing.lat || '') : '',
         lng: existing ? (existing.lng || '') : ''
     };
@@ -3066,6 +3072,56 @@ window.buildMachineWorkCategoryEditorHtml = (containerId, workCategoryStr) => {
             <button type="button" onclick="addMachineWorkCategoryRow('${containerId}')" style="flex:1; min-width:120px; background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:4px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 作業を追加</button>
             <button type="button" onclick="addWorkMasterFromMachineForm_('${containerId}')" style="flex:1; min-width:140px; background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:4px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer;">➕ 作業マスタを新規追加</button>
         </div>`;
+};
+
+window.getAdminHitchTypeOptionsList_ = () => {
+    const defaults = ['標準3点リンク（0・1形）', '特殊3点リンク（ワンタッチ）', '特殊3点リンクBヒッチ', 'オートヒッチ', 'Sヒッチ（ヤンマー）', 'Aヒッチ（クボタ）', 'けん引フック'];
+    const custom = Array.isArray(window.pdlHitchTypes) ? window.pdlHitchTypes : [];
+    const fromMachines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
+        ? pdlMachines.map(m => String((m && m.hitch) || '').trim()).filter(Boolean)
+        : [];
+    return Array.from(new Set(defaults.concat(custom).concat(fromMachines)));
+};
+
+window.getAdminHitchTypeOptionsHtml_ = (selected) => {
+    const cur = String(selected || '').trim();
+    const list = window.getAdminHitchTypeOptionsList_();
+    if (cur && list.indexOf(cur) < 0) list.push(cur);
+    return '<option value="">ヒッチなし / 指定なし</option>' + list.map(h => {
+        const safe = String(h).replace(/"/g, '&quot;');
+        const sel = cur === h ? ' selected' : '';
+        return `<option value="${safe}"${sel}>${String(h).replace(/</g, '&lt;')}</option>`;
+    }).join('');
+};
+
+window.addAdminHitchTypeFromForm_ = async (selectId) => {
+    const raw = prompt('新しいヒッチ規格名を入力してください（例：オートヒッチ Aタイプ、3点リンク 1形）:');
+    if (raw == null) return;
+    const t = String(raw).trim();
+    if (!t) return;
+    const sel = selectId ? document.getElementById(selectId) : null;
+    if (window.getAdminHitchTypeOptionsList_().includes(t)) {
+        if (typeof customAlert === 'function') customAlert('既に登録されています');
+        if (sel) sel.value = t;
+        return;
+    }
+    window.pdlHitchTypes = [...window.getAdminHitchTypeOptionsList_(), t];
+    if (sel) {
+        sel.innerHTML = window.getAdminHitchTypeOptionsHtml_(t);
+        sel.value = t;
+    }
+    if (typeof showAdminSyncToast === 'function') showAdminSyncToast(`✅ ヒッチ規格「${t}」を追加しました（同期中…）`, 'ok');
+    try {
+        const updated = await callGAS('manageMaster', { masterType: 'hitchType', manageAction: 'add', value: t, userName: currentUser });
+        if (Array.isArray(updated) && updated.length) window.pdlHitchTypes = updated;
+        if (sel) {
+            sel.innerHTML = window.getAdminHitchTypeOptionsHtml_(t);
+            sel.value = t;
+        }
+        if (typeof showAdminSyncToast === 'function') showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
+    } catch (e) {
+        if (typeof showAdminSyncToast === 'function') showAdminSyncToast('⚠️ ヒッチ規格の保存に失敗しました: ' + (e.message || e), 'error');
+    }
 };
 
 window.isMachineManageSign = (p) => {
@@ -5005,16 +5061,24 @@ window.openMasterDetail = (type, customEditHtml = null) => {
                     <option value="軽油">軽油</option>
                     <option value="ガソリン">ガソリン</option>
                     <option value="混合油">混合油</option>
+                    <option value="電動">電動</option>
                     <option value="電気100V">電気100V</option>
                     <option value="電気200V">電気200V</option>
                   </select>
                 </div>
+                <label style="font-size:12px; font-weight:bold; color:#555;">🔗 ヒッチ規格</label>
+                <div style="display:flex; gap:5px; align-items:center;">
+                  <select id="add_mac_hitch" class="form-input" style="flex:1; margin-bottom:0; padding:8px;">${window.getAdminHitchTypeOptionsHtml_('')}</select>
+                  <button type="button" onclick="addAdminHitchTypeFromForm_('add_mac_hitch')" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="ヒッチ規格を追加">➕</button>
+                </div>
+                <div style="font-size:11px; color:#888; margin-top:-4px;">トラクターと作業機に同じ規格を設定すると、作業記録で自動的に紐づきます</div>
                 <label style="font-size:12px; font-weight:bold; color:#555;">作業カテゴリ（対応可能な作業）</label>
                 ${buildMachineWorkCategoryEditorHtml('add_mac_category_rows', '', '作業名 (例:草刈)')}
                 <label style="font-size:12px; font-weight:bold; color:#555;">定位置（看板を選択）*</label>
                 <div id="add_mac_sign_wrap">${buildAdminMachineSignFieldHtml_('add_mac_sign', '', '')}</div>
                 ${buildAdminMachinePhotoFieldsHtml_('add')}
-                <button onclick="execMaster('machine', 'add')" style="background:#4CAF50; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:pointer;">農機を追加する</button>
+                <button id="btnAddAdminMachine" onclick="execMaster('machine', 'add')" ${window._adminMachineAdding ? 'disabled' : ''} style="background:${window._adminMachineAdding ? '#9e9e9e' : '#4CAF50'}; color:white; border-radius:4px; border:none; padding:10px; font-weight:bold; margin-top:5px; cursor:${window._adminMachineAdding ? 'wait' : 'pointer'};">${window._adminMachineAdding ? '⏳ 追加中です...' : '農機を追加する'}</button>
+                <div id="add_mac_status_msg" style="display:${window._adminMachineAdding ? 'block' : 'none'}; font-size:12px; font-weight:bold; color:#1565c0; background:#e3f2fd; border:1px solid #90caf9; border-radius:4px; padding:6px 10px; text-align:center;">⏳ 農機を追加中です...（サーバーへ保存しています）</div>
             </div>`;
         }
 
@@ -5200,7 +5264,7 @@ window.openMasterDetail = (type, customEditHtml = null) => {
             }
 
             let actionBtns = '';
-            const safeV = encodeURIComponent(JSON.stringify(v));
+            const safeV = encodeURIComponent(JSON.stringify(v)).replace(/'/g, '%27');
             if (type === 'work') {
                 actionBtns = `<button onclick="openEditWorkMaster('${safeV}')" style="background:#e3f2fd; color:#1976d2; border:1px solid #90caf9; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer; margin-right:4px;">✏️ 編集</button><button onclick="execMaster('${type}', 'delete', '${deleteVal}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-weight:bold; font-size:12px; cursor:pointer;">× 削除</button>`;
             } else if (type === 'crop') {
@@ -7780,17 +7844,18 @@ window.openEditToolMaster = (encodedStr) => {
 };
 
 window.openEditMachineMaster = (encodedStr) => {
+  try {
     const v = JSON.parse(decodeURIComponent(encodedStr));
-    const safeModel = (v.model || "").replace(/"/g, '&quot;');
-    const safeModel2 = String(v.model2 || "").replace(/"/g, '&quot;');
-    const safeNumber = (v.machineNumber || "").replace(/"/g, '&quot;');
-    const purchaseDate = String(v.purchaseDate || '').replace(/\//g, '-');
-    const fuel = v.fuel || v.fuelType || '';
+    const safeModel = String(v.model != null ? v.model : '').replace(/"/g, '&quot;');
+    const safeModel2 = String(v.model2 != null ? v.model2 : '').replace(/"/g, '&quot;');
+    const safeNumber = String(v.machineNumber != null ? v.machineNumber : (v.serialNo != null ? v.serialNo : '')).replace(/"/g, '&quot;');
+    const purchaseDate = String(v.purchaseDate || '').replace(/\//g, '-').slice(0, 10);
+    const fuel = String(v.fuel || v.fuelType || '');
     const locOpts = '<option value="">拠点を選択...</option>' + (pdlLocations || []).map(l => {
         const sel = String(l) === String(v.location || '') ? 'selected' : '';
         return `<option value="${String(l).replace(/"/g, '&quot;')}" ${sel}>${l}</option>`;
     }).join('');
-    const fuelOpts = ['', '軽油', 'ガソリン', '混合油', '電気100V', '電気200V'].map(f => {
+    const fuelOpts = ['', '軽油', 'ガソリン', '混合油', '電動', '電気100V', '電気200V'].map(f => {
         if (!f) return `<option value="">燃料...</option>`;
         return `<option value="${f}" ${fuel === f ? 'selected' : ''}>${f}</option>`;
     }).join('');
@@ -7824,6 +7889,11 @@ window.openEditMachineMaster = (encodedStr) => {
             <div style="font-size:11px; color:#888; margin:-6px 0 10px;">表示名は「機械カテゴリ（機種） 型式1 / 型式2」＋（同型式が2台以上のときだけ）①②…</div>
             <label class="form-label">燃料</label>
             <select id="edit_mac_fuel" class="form-input">${fuelOpts}</select>
+            <label class="form-label">🔗 ヒッチ規格</label>
+            <div style="display:flex; gap:5px; align-items:center; margin-bottom:10px;">
+              <select id="edit_mac_hitch" class="form-input" style="flex:1; margin-bottom:0;">${window.getAdminHitchTypeOptionsHtml_(v.hitch || '')}</select>
+              <button type="button" onclick="addAdminHitchTypeFromForm_('edit_mac_hitch')" style="padding:8px; border-radius:4px; border:1px solid #ccc; background:#fff; cursor:pointer;" title="ヒッチ規格を追加">➕</button>
+            </div>
             <label class="form-label">購入年月日</label>
             <input type="date" id="edit_mac_date" class="form-input" value="${purchaseDate}">
             <label class="form-label">定位置・片付け場所（看板）*</label>
@@ -7849,6 +7919,10 @@ window.openEditMachineMaster = (encodedStr) => {
         window.renderAdminMachinePhotoPreview('edit');
         window.renderAdminMachinePhotoPreview('edit2');
     }
+  } catch (e) {
+    console.error('openEditMachineMaster error:', e);
+    if (typeof customAlert === 'function') customAlert('編集画面を開けませんでした: ' + (e.message || e));
+  }
 };
 
 window.joinAdminMachineModels_ = (model, model2) => {
@@ -8234,11 +8308,27 @@ window.removeAdminMachineTypeFromForm_ = async () => {
     }
 };
 
+function setAdminMachineAddingState_(isAdding) {
+    window._adminMachineAdding = !!isAdding;
+    const btn = document.getElementById('btnAddAdminMachine');
+    if (btn) {
+        btn.disabled = !!isAdding;
+        btn.style.background = isAdding ? '#9e9e9e' : '#4CAF50';
+        btn.style.cursor = isAdding ? 'wait' : 'pointer';
+        btn.textContent = isAdding ? '⏳ 追加中です...' : '農機を追加する';
+    }
+    const statusEl = document.getElementById('add_mac_status_msg');
+    if (statusEl) {
+        statusEl.style.display = isAdding ? 'block' : 'none';
+    }
+}
+
 window.execMaster = async (type, act, val) => {
     // 農機マスタは専用GASを使う
     if (type === 'machine') {
         try {
             if (act === 'add') {
+                if (window._adminMachineAdding) return;
                 const signId = document.getElementById('add_mac_sign').value;
                 if (!signId) { customAlert("定位置の看板を選択してください"); return; }
                 const sign = loadedPolygons[signId];
@@ -8276,6 +8366,7 @@ window.execMaster = async (type, act, val) => {
                 }
                 const name = window.buildAdminMachineDisplayName_(macType, machineNumber, model, macType || model || machineNumber, group, null, model2);
                 const fuel = (document.getElementById('add_mac_fuel') || {}).value || '';
+                const hitch = (document.getElementById('add_mac_hitch') || {}).value || '';
                 const purchaseDate = document.getElementById('add_mac_date').value;
                 const workCategory = collectDetailWorksFromInputs('add_mac_category_rows');
                 const photoB64 = (window._adminMacPhoto && window._adminMacPhoto.add) || '';
@@ -8287,7 +8378,7 @@ window.execMaster = async (type, act, val) => {
                 if (!window.pdlMachines) window.pdlMachines = [];
                 window.pdlMachines.push({
                     id: tempId,
-                    name, machineNumber, workCategory, model, model2, type: macType, group, location, fuel, purchaseDate,
+                    name, machineNumber, workCategory, model, model2, type: macType, group, location, fuel, hitch, purchaseDate,
                     photo: photoB64 || '',
                     photo2: photo2B64 || '',
                     signName, signId,
@@ -8299,11 +8390,12 @@ window.execMaster = async (type, act, val) => {
                     window._adminMacPhoto.add = '';
                     window._adminMacPhoto.add2 = '';
                 }
+                setAdminMachineAddingState_(true);
+                showAdminSyncToast('⏳ 農機を追加中です…', 'info', 0);
                 persistAdminInitCache_();
                 renderMasterSection();
-                showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
                 enqueueAdminSync_(() => callGAS('addMachineToSign', {
-                    name, machineNumber, model, model2, type: macType, group, location, fuel, workCategory, purchaseDate,
+                    name, machineNumber, model, model2, type: macType, group, location, fuel, hitch, workCategory, purchaseDate,
                     parts: "", photos,
                     photoBase64: photoB64, photoFilename: (name || 'machine').replace(/\s+/g, '_') + '.jpg',
                     photo2Base64: photo2B64, photo2Filename: (name || 'machine').replace(/\s+/g, '_') + '_plate.jpg',
@@ -8320,7 +8412,11 @@ window.execMaster = async (type, act, val) => {
                     }
                     persistAdminInitCache_();
                     showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
-                }).catch(e => showAdminSyncToast('⚠️ 保存に失敗しました: ' + (e.message || e), 'error'));
+                }).catch(e => {
+                    showAdminSyncToast('⚠️ 保存に失敗しました: ' + (e.message || e), 'error');
+                }).finally(() => {
+                    setAdminMachineAddingState_(false);
+                });
                 return;
             } else if (act === 'edit') {
                 if (!await customConfirm('更新しますか？')) return;
@@ -8352,6 +8448,7 @@ window.execMaster = async (type, act, val) => {
                 }
                 const name = window.buildAdminMachineDisplayName_(macType, number, model, macType || model || number, group, machineId, model2);
                 const fuel = (document.getElementById('edit_mac_fuel') || {}).value || '';
+                const hitch = (document.getElementById('edit_mac_hitch') || {}).value || '';
                 const date = (document.getElementById('edit_mac_date').value || '').replace(/-/g, '/');
                 const category = collectDetailWorksFromInputs('edit_mac_category_rows');
                 const signId = (document.getElementById('edit_mac_sign') || {}).value || '';
@@ -8368,7 +8465,7 @@ window.execMaster = async (type, act, val) => {
                 const m = (window.pdlMachines || []).find(x => String(x.id) === String(machineId));
                 if (m) {
                     m.name = name; m.machineNumber = number; m.model = model; m.model2 = model2;
-                    m.type = macType; m.group = group; m.location = location; m.fuel = fuel;
+                    m.type = macType; m.group = group; m.location = location; m.fuel = fuel; m.hitch = hitch;
                     m.purchaseDate = date; m.workCategory = category;
                     m.signId = signId; m.signName = signName;
                     if (photoB64) m.photo = photoB64;
@@ -8387,7 +8484,7 @@ window.execMaster = async (type, act, val) => {
                 renderMasterSection();
                 showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
                 enqueueAdminSync_(() => callGAS('editMachineInMaster', {
-                    machineId, name, machineNumber: number, model, model2, type: macType, group, location, fuel,
+                    machineId, name, machineNumber: number, model, model2, type: macType, group, location, fuel, hitch,
                     purchaseDate: date, workCategory: category, signId, signName,
                     photos,
                     photoBase64: photoB64, photoFilename: (name || 'machine').replace(/\s+/g, '_') + '.jpg',
@@ -10284,8 +10381,9 @@ function initMap() {
                     const isExpChild = hasSignGroup && window.SignGroup.isChildOfExpanded(p);
 
                     if (isChild) {
-                        p.marker.setVisible(isExpChild && z >= 15);
-                        if (isExpChild) {
+                        const showChild = (isExpChild && z >= 15) || (z >= 20);
+                        p.marker.setVisible(showChild);
+                        if (showChild) {
                             p.marker.setZIndex(850);
                             p.marker.setIcon(window.SignGroup.buildSignMarkerIcon(p, { isExpandedChild: true }));
                             p.marker.setLabel(customDrawingMode === 'polygon' ? null : window.SignGroup.buildSignLabelConfig(p, { isExpandedChild: true }));

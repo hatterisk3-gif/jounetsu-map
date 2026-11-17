@@ -2138,18 +2138,94 @@ function getCurrentCrop(photos) {
   return null;
 }
 
+window._workerFieldColorMode = (() => {
+  try {
+    return localStorage.getItem('workerFieldColorMode') === 'status' ? 'status' : 'crop';
+  } catch (e) {
+    return 'crop';
+  }
+})();
+
+window.getWorkerFieldColorMode_ = () => {
+  return window._workerFieldColorMode === 'status' ? 'status' : 'crop';
+};
+
+window.getWorkerFieldBaseColor_ = (p) => {
+  if (!p) return '#8BC34A';
+  const isUnused = (p.status === '未使用（返却）' || p.status === '未使用');
+  if (isUnused) return '#999999';
+  if (window.getWorkerFieldColorMode_() === 'status') {
+    return p.color || '#8BC34A';
+  }
+  const currentCrop = getCurrentCrop(p.photos);
+  return getCropColor(currentCrop);
+};
+
+window.setWorkerFieldColorMode_ = (mode, ev) => {
+  if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+  const next = (mode === 'status') ? 'status' : 'crop';
+  window._workerFieldColorMode = next;
+  try { localStorage.setItem('workerFieldColorMode', next); } catch (e) { }
+  if (typeof isMapSelecting !== 'undefined' && isMapSelecting && typeof window.updateMapSelectVisuals === 'function') {
+    window.updateMapSelectVisuals();
+  } else {
+    for (let id in loadedPolygons) {
+      updatePolygonColor(id, true);
+    }
+  }
+  updateWorkerLegend();
+};
+
 function updateWorkerLegend() {
   let legendDiv = document.getElementById('workerLegendUI');
   if (!legendDiv) {
     legendDiv = document.createElement('div');
     legendDiv.id = 'workerLegendUI';
-    legendDiv.style.cssText = 'position:absolute; bottom:20px; left:20px; background:rgba(255,255,255,0.9); padding:10px; border-radius:8px; z-index:1000; box-shadow:0 2px 10px rgba(0,0,0,0.2); max-height: 200px; overflow-y: auto; font-size:12px; pointer-events:none;';
+    legendDiv.style.cssText = 'position:absolute; bottom:20px; left:20px; background:rgba(255,255,255,0.94); padding:8px 10px; border-radius:10px; z-index:1000; box-shadow:0 2px 10px rgba(0,0,0,0.22); max-height: 230px; overflow-y: auto; font-size:12px; pointer-events:auto; max-width:210px;';
+    legendDiv.addEventListener('click', (e) => { e.stopPropagation(); });
+    legendDiv.addEventListener('touchstart', (e) => { e.stopPropagation(); }, { passive: true });
     document.getElementById('map').appendChild(legendDiv);
   }
-  let html = '<div style="font-weight:bold; margin-bottom:5px; font-size:13px; color:#333;">🌾 作物色分け</div>';
-  html += `<div style="display:flex; align-items:center; margin-bottom:3px;"><div style="width:12px; height:12px; background:#8D6E63; border-radius:50%; margin-right:5px;"></div><span style="color:#333;">未定植</span></div>`;
-  for (let crop in cropColors) {
-    html += `<div style="display:flex; align-items:center; margin-bottom:3px;"><div style="width:12px; height:12px; background:${cropColors[crop]}; border-radius:50%; margin-right:5px;"></div><span style="color:#333;">${crop}</span></div>`;
+  const mode = window.getWorkerFieldColorMode_();
+  const btnStyle = (active, bg) =>
+    `flex:1; border:none; border-radius:6px; padding:4px 6px; font-size:11px; font-weight:bold; cursor:pointer; white-space:nowrap; ` +
+    (active
+      ? `background:${bg}; color:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.2);`
+      : `background:#eceff1; color:#555;`);
+
+  let html = `<div style="display:flex; gap:4px; margin-bottom:7px; background:#eceff1; padding:3px; border-radius:8px;">
+    <button type="button" onclick="window.setWorkerFieldColorMode_('crop', event)" style="${btnStyle(mode === 'crop', '#2E7D32')}">🌾 作物</button>
+    <button type="button" onclick="window.setWorkerFieldColorMode_('status', event)" style="${btnStyle(mode === 'status', '#1565C0')}">🚜 稼働状況</button>
+  </div>`;
+
+  if (mode === 'status') {
+    html += '<div style="font-weight:bold; margin-bottom:5px; font-size:12px; color:#333;">🚜 稼働状況の色分け</div>';
+    const statusMap = new Map();
+    let hasUnused = false;
+    for (let id in loadedPolygons) {
+      const p = loadedPolygons[id];
+      if (!p || p.isMarker) continue;
+      if (p.status === '未使用（返却）' || p.status === '未使用') {
+        hasUnused = true;
+        continue;
+      }
+      const label = (p.status && String(p.status).trim()) ? String(p.status).trim() : 'その他';
+      if (!statusMap.has(label)) {
+        statusMap.set(label, p.color || '#8BC34A');
+      }
+    }
+    if (hasUnused || statusMap.size === 0) {
+      html += `<div style="display:flex; align-items:center; margin-bottom:3px;"><div style="width:12px; height:12px; background:#999999; border-radius:50%; margin-right:5px; flex-shrink:0;"></div><span style="color:#333;">未使用</span></div>`;
+    }
+    statusMap.forEach((col, label) => {
+      html += `<div style="display:flex; align-items:center; margin-bottom:3px;"><div style="width:12px; height:12px; background:${col}; border-radius:50%; margin-right:5px; flex-shrink:0;"></div><span style="color:#333;">${label}</span></div>`;
+    });
+  } else {
+    html += '<div style="font-weight:bold; margin-bottom:5px; font-size:12px; color:#333;">🌾 作物色分け</div>';
+    html += `<div style="display:flex; align-items:center; margin-bottom:3px;"><div style="width:12px; height:12px; background:#8D6E63; border-radius:50%; margin-right:5px; flex-shrink:0;"></div><span style="color:#333;">未定植</span></div>`;
+    for (let crop in cropColors) {
+      html += `<div style="display:flex; align-items:center; margin-bottom:3px;"><div style="width:12px; height:12px; background:${cropColors[crop]}; border-radius:50%; margin-right:5px; flex-shrink:0;"></div><span style="color:#333;">${crop}</span></div>`;
+    }
   }
   legendDiv.innerHTML = html;
   if (typeof window.syncBulkWorkMemoMapSelectOffset_ === 'function') {
@@ -2157,12 +2233,11 @@ function updateWorkerLegend() {
   }
 }
 
-function updatePolygonColor(id) {
+function updatePolygonColor(id, skipLegend) {
   const p = loadedPolygons[id];
   if (!p || p.isMarker || !p.polygon) return;
   const isUnused = (p.status === '未使用（返却）' || p.status === '未使用');
-  let currentCrop = getCurrentCrop(p.photos);
-  let dispColor = isUnused ? '#999999' : getCropColor(currentCrop);
+  let dispColor = window.getWorkerFieldBaseColor_(p);
   // マップ選択時の黄ハイライト(opacity/stroke)も必ず通常表示に戻す
   p.polygon.setOptions({
     fillColor: dispColor,
@@ -2172,7 +2247,7 @@ function updatePolygonColor(id) {
     strokeWeight: 3,
     zIndex: 1
   });
-  updateWorkerLegend();
+  if (!skipLegend) updateWorkerLegend();
 }
 
 /** 作業記録のマップ選択モード／黄ハイライトを解除して通常色に戻す */
@@ -2200,10 +2275,11 @@ window.resetWorkMapSelectionVisuals = (opts) => {
     if (typeof window.clearWorkMapSelectHighlightOverlays_ === 'function') {
       window.clearWorkMapSelectHighlightOverlays_();
     }
-    // 作物色ベースで通常表示に戻す（選択黄・太い枠線・高opacityを除去）
+    // 選択中の色分けモードで通常表示に戻す（選択黄・太い枠線・高opacityを除去）
     for (let id in loadedPolygons) {
-      if (typeof updatePolygonColor === 'function') updatePolygonColor(id);
+      if (typeof updatePolygonColor === 'function') updatePolygonColor(id, true);
     }
+    if (typeof updateWorkerLegend === 'function') updateWorkerLegend();
   } catch (e) {
     console.warn('resetWorkMapSelectionVisuals:', e);
   }
@@ -2238,8 +2314,10 @@ function createPolygonObject(id, name, coords, color, photos, author, loc, cond,
     loadedPolygons[id] = { id, marker, name, color, photos: photos || [], author, isMarker: true, location: loc || '', labelConfig: labelConfig, signFunction: signFunc || '一般看板', linkedSigns: linkedSigns || "", parentSignId: (existing && existing.parentSignId) || '' };
   } else {
     const isUnused = (status === '未使用（返却）' || status === '未使用');
-    let currentCrop = getCurrentCrop(photos);
-    let dispColor = isUnused ? '#999999' : getCropColor(currentCrop);
+    if (!isUnused) {
+      getCropColor(getCurrentCrop(photos));
+    }
+    let dispColor = window.getWorkerFieldBaseColor_({ status, photos, color });
     const polygon = new google.maps.Polygon({
       paths: safeCoords,
       map,
@@ -6891,7 +6969,7 @@ window.updateMapSelectVisuals = () => {
       }
     }
     if (!p.isMarker && p.polygon) {
-      const isU = (p.status === '未使用（返却）' || p.status === '未使用'), baseColor = isU ? '#999999' : p.color;
+      const baseColor = window.getWorkerFieldBaseColor_(p);
       if (isMapSelecting) {
         const sid = String(id);
         if (focusId && sid === focusId) {
@@ -24792,7 +24870,13 @@ window.ensureMachineItemEditorModal = () => {
   modal.setAttribute('data-multi', '1');
   modal.style.cssText = 'display:none; position:fixed; inset:0; background:rgba(0,0,0,0.62); z-index:26000; justify-content:center; align-items:center; padding:12px; box-sizing:border-box;';
   modal.innerHTML = `
-          <div style="width:100%; max-width:440px; max-height:92vh; background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 12px 32px rgba(0,0,0,0.35); display:flex; flex-direction:column;">
+          <div style="position:relative; width:100%; max-width:440px; max-height:92vh; background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 12px 32px rgba(0,0,0,0.35); display:flex; flex-direction:column;">
+            <div id="mie_loading_overlay" style="display:none; position:absolute; inset:0; background:rgba(255,255,255,0.96); z-index:20; flex-direction:column; justify-content:center; align-items:center; padding:24px; text-align:center;">
+              <div style="width:42px; height:42px; border:4px solid #e3f2fd; border-top-color:#1976D2; border-radius:50%; animation:spinMieModal 0.8s linear infinite; margin-bottom:14px;"></div>
+              <div id="mie_loading_title" style="font-size:17px; font-weight:bold; color:#1565C0; margin-bottom:6px;">更新中です...</div>
+              <div style="font-size:12px; color:#666; line-height:1.5;">サーバーに保存しています。<br>そのまましばらくお待ちください。</div>
+              <style>@keyframes spinMieModal { to { transform: rotate(360deg); } }</style>
+            </div>
             <div style="background:#1976D2; color:#fff; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
               <div id="mie_title" style="font-weight:bold; font-size:15px;">＋ 農機具・車両を登録</div>
               <button type="button" onclick="closeMachineItemEditorModal()" style="background:transparent; border:none; color:#fff; font-size:22px; cursor:pointer; line-height:1;">×</button>
@@ -24812,6 +24896,10 @@ window.ensureMachineItemEditorModal = () => {
               </div>
               <div id="mie_machine_extra" style="display:none; flex-direction:column; gap:8px; margin-bottom:12px;">
                 <div>
+                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">拠点名</label>
+                  <select id="mie_location" class="form-input" onchange="refreshMachineItemEditorSignOptions_()" style="width:100%; box-sizing:border-box; margin-bottom:0;"></select>
+                </div>
+                <div>
                   <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">② メインカテゴリ</label>
                   <div style="display:flex; gap:4px;">
                     <select id="mie_group" class="form-input" onchange="updateMachineItemEditorAutoNumber_()" style="flex:1; box-sizing:border-box; margin-bottom:0;"></select>
@@ -24819,32 +24907,43 @@ window.ensureMachineItemEditorModal = () => {
                   </div>
                 </div>
                 <div>
-                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">③ 機械名（機種）</label>
+                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">③ 機械カテゴリ（機種）</label>
                   <div style="display:flex; gap:4px;">
                     <select id="mie_type" class="form-input" onchange="updateMachineItemEditorAutoNumber_()" style="flex:1; box-sizing:border-box; margin-bottom:0;">
                       <option value="">選択...</option>
                     </select>
                     <button type="button" onclick="addMachineTypeFromForm('mie_type')" style="padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; cursor:pointer; flex-shrink:0;" title="追加">➕</button>
-                  </div>
-                </div>
-                <div style="display:flex; gap:8px;">
-                  <div style="flex:1;">
-                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">④ 型式</label>
-                    <input type="text" id="mie_model" class="form-input" oninput="updateMachineItemEditorAutoNumber_()" placeholder="例: PH2R" style="width:100%; box-sizing:border-box;">
-                  </div>
-                  <div style="flex:1;">
-                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">⑤ 番号（自動）</label>
-                    <input type="text" id="mie_number" class="form-input" readonly placeholder="被り時のみ自動入力" style="width:100%; box-sizing:border-box; background:#f5f5f5; color:#555;">
+                    <button type="button" onclick="removeMachineTypeFromForm('mie_type')" style="padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; color:#c62828; cursor:pointer; flex-shrink:0;" title="選択中の機械名を削除">➖</button>
                   </div>
                 </div>
                 <div>
-                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">燃料</label>
-                  <select id="mie_fuel" class="form-input" style="width:100%; box-sizing:border-box;">
-                    <option value="">指定なし</option>
-                    <option value="軽油">⛽ 軽油</option>
-                    <option value="ガソリン">⛽ ガソリン</option>
-                    <option value="電動">⚡ 電動</option>
-                  </select>
+                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">④ 型式名（最大2つ）</label>
+                  <div style="display:flex; gap:6px;">
+                    <input type="text" id="mie_model" class="form-input" oninput="updateMachineItemEditorAutoNumber_()" placeholder="型式1（例: PH2R）" style="flex:1; box-sizing:border-box; margin-bottom:0;">
+                    <input type="text" id="mie_model2" class="form-input" oninput="updateMachineItemEditorAutoNumber_()" placeholder="型式2（任意）" style="flex:1; box-sizing:border-box; margin-bottom:0;">
+                  </div>
+                </div>
+                <div>
+                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">⑤ 番号（自動）</label>
+                  <input type="text" id="mie_number" class="form-input" readonly placeholder="被り時のみ自動入力" style="width:100%; box-sizing:border-box; background:#f5f5f5; color:#555; margin-bottom:0;">
+                </div>
+                <div style="display:flex; gap:8px;">
+                  <div style="flex:1;">
+                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">購入日</label>
+                    <input type="date" id="mie_purchase_date" class="form-input" style="width:100%; box-sizing:border-box; margin-bottom:0;">
+                  </div>
+                  <div style="flex:1;">
+                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">燃料</label>
+                    <select id="mie_fuel" class="form-input" style="width:100%; box-sizing:border-box; margin-bottom:0;">
+                      <option value="">指定なし</option>
+                      <option value="軽油">⛽ 軽油</option>
+                      <option value="ガソリン">⛽ ガソリン</option>
+                      <option value="混合油">⛽ 混合油</option>
+                      <option value="電動">⚡ 電動</option>
+                      <option value="電気100V">⚡ 電気100V</option>
+                      <option value="電気200V">⚡ 電気200V</option>
+                    </select>
+                  </div>
                 </div>
                 <div>
                   <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">🔗 ヒッチ規格</label>
@@ -24854,31 +24953,58 @@ window.ensureMachineItemEditorModal = () => {
                   </div>
                   <div style="font-size:11px; color:#888; margin-top:4px;">トラクターと作業機に同じ規格を設定すると、作業記録で自動的に紐づきます</div>
                 </div>
+                <div>
+                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">作業カテゴリ（対応可能な作業）</label>
+                  <div id="mie_work_category_rows" style="background:#fafafa; border:1px solid #ddd; border-radius:6px; padding:8px; margin-bottom:6px;"></div>
+                  <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <button type="button" onclick="addMachineItemEditorWorkCategoryRow_('')" style="flex:1; min-width:110px; background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:6px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 作業を追加</button>
+                    <button type="button" onclick="addWorkMasterFromMachineItemEditor_()" style="flex:1; min-width:130px; background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:6px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">➕ 作業マスタを新規追加</button>
+                  </div>
+                </div>
+                <div>
+                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">定位置（看板を選択）</label>
+                  <select id="mie_sign" class="form-input" style="width:100%; box-sizing:border-box; margin-bottom:0;"></select>
+                  <div style="font-size:11px; color:#888; margin-top:4px;">拠点を選ぶと、その拠点の機械設置場所・車両設置場所・倉庫等の看板から選べます</div>
+                </div>
               </div>
               <div id="mie_vehicle_extra" style="display:none; flex-direction:column; gap:8px; margin-bottom:12px;">
                 <div>
-                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">② メインカテゴリ</label>
+                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">② 用途別分類（メインカテゴリ）</label>
                   <select id="mie_vehicle_main" class="form-input" style="width:100%; box-sizing:border-box;">
                     <option value="自動車">自動車</option>
                     <option value="作業機">作業機</option>
                   </select>
                 </div>
                 <div>
-                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">③ 車種</label>
+                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">③ 車種・ナンバー区分</label>
                   <div style="display:flex; gap:4px;">
                     <select id="mie_vehicle_type" class="form-input" style="flex:1; box-sizing:border-box; margin-bottom:0;"></select>
                     <button type="button" onclick="addVehicleTypeFromForm('mie_vehicle_type')" style="padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; cursor:pointer; flex-shrink:0;" title="車種を追加">➕</button>
                   </div>
                   <div style="font-size:11px; color:#888; margin-top:4px;">例：ステップワゴン / キャリー / 軽トラ</div>
                 </div>
+                <div>
+                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">④ ナンバープレート番号</label>
+                  <input type="text" id="mie_vehicle_number" class="form-input" placeholder="例: 熊谷500あ1234" style="width:100%; box-sizing:border-box; margin-bottom:0;">
+                </div>
                 <div style="display:flex; gap:8px;">
                   <div style="flex:1;">
-                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">④ ナンバープレート番号</label>
-                    <input type="text" id="mie_vehicle_number" class="form-input" placeholder="例: 熊谷500あ1234" style="width:100%; box-sizing:border-box;">
+                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">管理番号</label>
+                    <input type="text" id="mie_vehicle_sub_number" class="form-input" placeholder="管理番号" style="width:100%; box-sizing:border-box; margin-bottom:0;">
                   </div>
                   <div style="flex:1;">
                     <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">⑤ 型式名</label>
-                    <input type="text" id="mie_vehicle_model" class="form-input" placeholder="型式" style="width:100%; box-sizing:border-box;">
+                    <input type="text" id="mie_vehicle_model" class="form-input" placeholder="型式" style="width:100%; box-sizing:border-box; margin-bottom:0;">
+                  </div>
+                </div>
+                <div style="display:flex; gap:8px;">
+                  <div style="flex:1;">
+                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">走行距離 (km)</label>
+                    <input type="number" id="mie_vehicle_mileage" class="form-input" placeholder="例: 12000" style="width:100%; box-sizing:border-box; margin-bottom:0;">
+                  </div>
+                  <div style="flex:1;">
+                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">登録日</label>
+                    <input type="date" id="mie_vehicle_date" class="form-input" style="width:100%; box-sizing:border-box; margin-bottom:0;">
                   </div>
                 </div>
                 <div>
@@ -25070,7 +25196,131 @@ window.clearMachineItemEditorPhoto = () => {
   window.renderMachineItemEditorPreview();
 };
 
+window.getMachineItemEditorWorkOptionsHtml_ = (selected) => {
+  const cur = String(selected || '').trim();
+  let html = '<option value="">作業を選択...</option>';
+  const names = (typeof pdlWorkMaster !== 'undefined' && Array.isArray(pdlWorkMaster) ? pdlWorkMaster : [])
+    .map(w => String((w && w.name) || w || '').trim())
+    .filter(Boolean);
+  const seen = new Set();
+  names.forEach(n => {
+    if (seen.has(n)) return;
+    seen.add(n);
+    const sel = n === cur ? ' selected' : '';
+    html += `<option value="${n.replace(/"/g, '&quot;')}"${sel}>${n.replace(/</g, '&lt;')}</option>`;
+  });
+  if (cur && !seen.has(cur)) {
+    html += `<option value="${cur.replace(/"/g, '&quot;')}" selected>${cur.replace(/</g, '&lt;')}</option>`;
+  }
+  return html;
+};
+
+window.addMachineItemEditorWorkCategoryRow_ = (value) => {
+  const box = document.getElementById('mie_work_category_rows');
+  if (!box) return;
+  const row = document.createElement('div');
+  row.className = 'mie-work-cat-row';
+  row.style.cssText = 'display:flex; gap:6px; align-items:center; margin-bottom:6px;';
+  row.innerHTML = `<select class="form-input mie-work-cat-select" style="flex:1; margin-bottom:0; padding:6px 8px;">${window.getMachineItemEditorWorkOptionsHtml_(value || '')}</select><button type="button" onclick="this.closest('.mie-work-cat-row').remove()" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:6px 9px; font-weight:bold; cursor:pointer; flex-shrink:0;">×</button>`;
+  box.appendChild(row);
+};
+
+window.renderMachineItemEditorWorkCategoryRows_ = (workCategoryStr) => {
+  const box = document.getElementById('mie_work_category_rows');
+  if (!box) return;
+  box.innerHTML = '';
+  const items = String(workCategoryStr || '').split(/[,、]/).map(s => s.trim()).filter(Boolean);
+  (items.length ? items : ['']).forEach(item => window.addMachineItemEditorWorkCategoryRow_(item));
+};
+
+window.collectMachineItemEditorWorkCategories_ = () => {
+  const box = document.getElementById('mie_work_category_rows');
+  if (!box) return '';
+  const vals = Array.from(box.querySelectorAll('select.mie-work-cat-select'))
+    .map(s => String(s.value || '').trim())
+    .filter(Boolean);
+  return Array.from(new Set(vals)).join(', ');
+};
+
+window.addWorkMasterFromMachineItemEditor_ = async () => {
+  const raw = (typeof customPrompt === 'function')
+    ? await customPrompt('新しい作業名（作業マスタ）を入力してください（例：耕起、定植、草刈）:', '')
+    : prompt('新しい作業名（作業マスタ）を入力してください（例：耕起、定植、草刈）:');
+  if (raw == null) return;
+  const name = String(raw).trim();
+  if (!name) return;
+  if (typeof pdlWorkMaster === 'undefined' || !Array.isArray(pdlWorkMaster)) window.pdlWorkMaster = [];
+  const exists = pdlWorkMaster.some(w => String((w && w.name) || w || '').trim() === name);
+  if (!exists) {
+    pdlWorkMaster.push({ name: name, category: '共通' });
+    try {
+      const updated = await callGAS('manageMaster', {
+        masterType: 'work',
+        manageAction: 'add',
+        value: { name: name, category: '共通' },
+        userName: (typeof currentUser !== 'undefined' ? currentUser : '') || '管理者'
+      });
+      if (Array.isArray(updated)) window.pdlWorkMaster = updated;
+    } catch (e) { }
+  }
+  const box = document.getElementById('mie_work_category_rows');
+  if (!box) return;
+  const selects = Array.from(box.querySelectorAll('select.mie-work-cat-select'));
+  let assigned = false;
+  selects.forEach(sel => {
+    const cur = String(sel.value || '').trim();
+    let nextVal = cur;
+    if (!cur && !assigned) {
+      nextVal = name;
+      assigned = true;
+    }
+    sel.innerHTML = window.getMachineItemEditorWorkOptionsHtml_(nextVal);
+    if (nextVal) sel.value = nextVal;
+  });
+  if (!assigned && !selects.some(s => String(s.value || '').trim() === name)) {
+    window.addMachineItemEditorWorkCategoryRow_(name);
+  }
+  if (typeof window.showRecordSyncToast === 'function') {
+    window.showRecordSyncToast(`✅ 作業マスタ「${name}」を追加しました`, 'ok');
+  }
+};
+
+window.refreshMachineItemEditorSignOptions_ = (keepSignId) => {
+  const signSel = document.getElementById('mie_sign');
+  if (!signSel) return;
+  const loc = String((document.getElementById('mie_location') || {}).value || '').trim();
+  const keep = keepSignId != null ? String(keepSignId) : String(signSel.value || '');
+  const allPolys = (typeof loadedPolygons !== 'undefined' && loadedPolygons) ? Object.values(loadedPolygons) : [];
+  let signs = allPolys.filter(p => {
+    if (!p || !p.isMarker) return false;
+    const f = String(p.signFunction || '');
+    return f.includes('機械設置場所') || f.includes('車両設置場所') || f.includes('倉庫') || f.includes('車両・機械管理') || f.includes('農機管理');
+  });
+  if (loc) signs = signs.filter(p => String(p.location || '').trim() === loc);
+  if (keep && loadedPolygons && loadedPolygons[keep] && loadedPolygons[keep].isMarker) {
+    if (!signs.some(p => String(p.id) === keep)) signs = [loadedPolygons[keep], ...signs];
+  }
+  signs.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ja'));
+  let html = '<option value="">定位置・片付け場所の看板を選択...</option>';
+  signs.forEach(p => {
+    const pLoc = p.location ? `［${p.location}］` : '';
+    html += `<option value="${String(p.id).replace(/"/g, '&quot;')}">${String(pLoc + (p.name || p.id)).replace(/</g, '&lt;')}</option>`;
+  });
+  signSel.innerHTML = html;
+  if (keep && Array.from(signSel.options).some(o => o.value === keep)) signSel.value = keep;
+};
+
 window.refreshMachineItemEditorSelectOptions_ = () => {
+  const locSel = document.getElementById('mie_location');
+  if (locSel) {
+    const keep = String(locSel.value || '');
+    const locs = (typeof pdlLocations !== 'undefined' && Array.isArray(pdlLocations)) ? pdlLocations : [];
+    locSel.innerHTML = '<option value="">拠点を選択...</option>' + locs.map(l =>
+      `<option value="${String(l).replace(/"/g, '&quot;')}">${String(l).replace(/</g, '&lt;')}</option>`
+    ).join('');
+    if (keep && Array.from(locSel.options).some(o => o.value === keep)) locSel.value = keep;
+  }
+  window.refreshMachineItemEditorSignOptions_();
   const typeSel = document.getElementById('mie_type');
   if (typeSel) {
     const keep = String(typeSel.value || '');
@@ -25186,10 +25436,17 @@ window.updateMachineItemEditorAutoNumber_ = () => {
 };
 
 window.clearMachineItemEditorInputFields_ = () => {
-  ['mie_number', 'mie_model', 'mie_vehicle_number', 'mie_vehicle_model'].forEach(id => {
+  ['mie_number', 'mie_model', 'mie_model2', 'mie_purchase_date', 'mie_vehicle_number', 'mie_vehicle_sub_number', 'mie_vehicle_model', 'mie_vehicle_mileage', 'mie_vehicle_date'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
+  const locSel = document.getElementById('mie_location');
+  if (locSel) locSel.selectedIndex = 0;
+  if (typeof window.refreshMachineItemEditorSignOptions_ === 'function') {
+    window.refreshMachineItemEditorSignOptions_('');
+  }
+  const signSel = document.getElementById('mie_sign');
+  if (signSel) signSel.selectedIndex = 0;
   const typeSel = document.getElementById('mie_type');
   if (typeSel) typeSel.selectedIndex = 0;
   const vehTypeSel = document.getElementById('mie_vehicle_type');
@@ -25198,6 +25455,9 @@ window.clearMachineItemEditorInputFields_ = () => {
   if (fuelSel) fuelSel.selectedIndex = 0;
   const hitchSel = document.getElementById('mie_hitch');
   if (hitchSel) hitchSel.selectedIndex = 0;
+  if (typeof window.renderMachineItemEditorWorkCategoryRows_ === 'function') {
+    window.renderMachineItemEditorWorkCategoryRows_('');
+  }
   if (typeof window.setMachineItemEditorFuelChecksUi_ === 'function') {
     window.setMachineItemEditorFuelChecksUi_('');
   }
@@ -25231,6 +25491,56 @@ window.setMachineItemEditorKind = (kind) => {
   }
 };
 
+window.copyMachineItemFromQueue = (idx) => {
+  const st = window._machineItemEditorState || {};
+  const p = (Array.isArray(st.pending) && st.pending[idx]) ? st.pending[idx] : null;
+  if (!p) return;
+  const kind = p.kind === 'vehicle' ? 'vehicle' : 'machine';
+  if (typeof window.setMachineItemEditorKind === 'function') window.setMachineItemEditorKind(kind);
+  if (typeof window.clearMachineItemEditorInputFields_ === 'function') window.clearMachineItemEditorInputFields_();
+  st.photoItems = [];
+  st.photoBase64 = '';
+  st.existingPhoto = '';
+  st.clearPhoto = false;
+  if (typeof window.renderMachineItemEditorPreview === 'function') window.renderMachineItemEditorPreview();
+  if (kind === 'vehicle') {
+    if (document.getElementById('mie_vehicle_main')) document.getElementById('mie_vehicle_main').value = p.mainCategory || p.group || '自動車';
+    if (document.getElementById('mie_vehicle_type')) document.getElementById('mie_vehicle_type').value = p.vehicleType || p.type || '';
+    if (document.getElementById('mie_vehicle_number')) document.getElementById('mie_vehicle_number').value = '';
+    if (document.getElementById('mie_vehicle_sub_number')) document.getElementById('mie_vehicle_sub_number').value = '';
+    if (document.getElementById('mie_vehicle_model')) document.getElementById('mie_vehicle_model').value = p.model || '';
+    if (document.getElementById('mie_vehicle_mileage')) document.getElementById('mie_vehicle_mileage').value = (p.mileage === 0 || p.mileage) ? p.mileage : '';
+    if (document.getElementById('mie_vehicle_date')) document.getElementById('mie_vehicle_date').value = String(p.registrationDate || '').replace(/\//g, '-').slice(0, 10);
+    if (document.getElementById('mie_status')) document.getElementById('mie_status').value = p.status || '使用可能';
+  } else {
+    if (document.getElementById('mie_location')) document.getElementById('mie_location').value = p.location || '';
+    if (typeof window.refreshMachineItemEditorSignOptions_ === 'function') {
+      window.refreshMachineItemEditorSignOptions_(p.signId || '');
+    }
+    if (document.getElementById('mie_group')) document.getElementById('mie_group').value = p.group || p.mainCategory || '圃場';
+    if (document.getElementById('mie_type')) document.getElementById('mie_type').value = p.type || '';
+    if (document.getElementById('mie_model')) document.getElementById('mie_model').value = p.model || '';
+    if (document.getElementById('mie_model2')) document.getElementById('mie_model2').value = p.model2 || '';
+    if (document.getElementById('mie_number')) document.getElementById('mie_number').value = '';
+    if (document.getElementById('mie_purchase_date')) document.getElementById('mie_purchase_date').value = String(p.purchaseDate || '').replace(/\//g, '-').slice(0, 10);
+    if (document.getElementById('mie_fuel')) document.getElementById('mie_fuel').value = p.fuel || '';
+    if (document.getElementById('mie_hitch')) document.getElementById('mie_hitch').value = p.hitch || '';
+    if (typeof window.renderMachineItemEditorWorkCategoryRows_ === 'function') {
+      window.renderMachineItemEditorWorkCategoryRows_(p.workCategory || '');
+    }
+    if (document.getElementById('mie_sign')) document.getElementById('mie_sign').value = p.signId || '';
+    if (typeof window.updateMachineItemEditorAutoNumber_ === 'function') {
+      window.updateMachineItemEditorAutoNumber_();
+    }
+  }
+  if (typeof window.setMachineItemEditorFuelChecksUi_ === 'function') {
+    window.setMachineItemEditorFuelChecksUi_(p.fuelChecks || '');
+  }
+  if (typeof window.showRecordSyncToast === 'function') {
+    window.showRecordSyncToast('📋 番号・写真以外を上の入力欄にコピーしました', 'ok');
+  }
+};
+
 window.renderMachineItemEditorQueue = () => {
   const wrap = document.getElementById('mie_queue_wrap');
   const list = document.getElementById('mie_queue_list');
@@ -25252,7 +25562,10 @@ window.renderMachineItemEditorQueue = () => {
               <div style="font-size:13px; font-weight:bold; color:#333; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${String(label || '').replace(/</g, '&lt;')}</div>
               <div style="font-size:10px; color:#666;">${kindLabel}${p.photoBase64 ? ' ・写真あり' : ''}</div>
             </div>
-            <button type="button" onclick="removeMachineItemFromQueue(${idx})" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">削除</button>
+            <div style="display:flex; gap:6px; flex-shrink:0;">
+              <button type="button" onclick="copyMachineItemFromQueue(${idx})" style="background:#fff; color:#1565c0; border:1px solid #90caf9; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">コピー</button>
+              <button type="button" onclick="removeMachineItemFromQueue(${idx})" style="background:#fff; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;">削除</button>
+            </div>
           </div>`;
   }).join('');
 };
@@ -25286,7 +25599,10 @@ window.readMachineItemEditorFormFields_ = (kind) => {
     const mainCategory = (document.getElementById('mie_vehicle_main') || {}).value || '自動車';
     const vehicleType = (document.getElementById('mie_vehicle_type') || {}).value || '';
     const plateNumber = ((document.getElementById('mie_vehicle_number') || {}).value || '').trim();
+    const vehicleNumber = ((document.getElementById('mie_vehicle_sub_number') || {}).value || '').trim();
     const model = ((document.getElementById('mie_vehicle_model') || {}).value || '').trim();
+    const mileageRaw = (document.getElementById('mie_vehicle_mileage') || {}).value;
+    const registrationDate = (document.getElementById('mie_vehicle_date') || {}).value || '';
     const status = (document.getElementById('mie_status') || {}).value || '使用可能';
     return {
       kind: 'vehicle',
@@ -25296,40 +25612,58 @@ window.readMachineItemEditorFormFields_ = (kind) => {
       vehicleType: vehicleType,
       group: mainCategory,
       mainCategory: mainCategory,
-      machineNumber: plateNumber,
-      vehicleNumber: plateNumber,
+      machineNumber: vehicleNumber || plateNumber,
+      vehicleNumber: vehicleNumber || plateNumber,
       model: model,
+      mileage: mileageRaw === '' ? '' : Number(mileageRaw),
+      registrationDate: registrationDate,
       driveType: mainCategory === '作業機' ? '作業車両' : '移動車両',
       status: status,
       fuelChecks: fuelChecks
     };
   }
+  const location = (document.getElementById('mie_location') || {}).value || '';
   const group = (document.getElementById('mie_group') || {}).value || '圃場';
   const type = (document.getElementById('mie_type') || {}).value || '';
   const machineNumber = ((document.getElementById('mie_number') || {}).value || '').trim();
   const model = ((document.getElementById('mie_model') || {}).value || '').trim();
+  const model2 = ((document.getElementById('mie_model2') || {}).value || '').trim();
+  const purchaseDate = (document.getElementById('mie_purchase_date') || {}).value || '';
   const fuel = (document.getElementById('mie_fuel') || {}).value || '';
+  const workCategory = (typeof window.collectMachineItemEditorWorkCategories_ === 'function')
+    ? window.collectMachineItemEditorWorkCategories_()
+    : '';
+  const signId = (document.getElementById('mie_sign') || {}).value || '';
+  const signObj = (signId && typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons[signId] : null;
+  const signName = signObj ? (signObj.name || '') : '';
   let displayName = '';
   if (window.MachineTaxonomy && MachineTaxonomy.buildDisplayName) {
-    displayName = MachineTaxonomy.buildDisplayName('machine', type, machineNumber, model, '');
+    displayName = MachineTaxonomy.buildDisplayName('machine', type, machineNumber, model, '', model2);
   } else {
     const numLabel = machineNumber
-      ? ((window.MachineTaxonomy && MachineTaxonomy.formatMachineNumberLabel)
+      ? ((window.MachineTaxonomy && typeof MachineTaxonomy.formatMachineNumberLabel === 'function')
         ? MachineTaxonomy.formatMachineNumberLabel(machineNumber)
         : String(machineNumber).replace(/^no\.?/i, ''))
       : '';
-    displayName = [type, model, numLabel]
+    const modelStr = [model, model2].filter(Boolean).join(' / ');
+    displayName = [type, modelStr, numLabel]
       .map(x => String(x || '').trim()).filter(Boolean).join(' ');
   }
   return {
     kind: 'machine',
     name: displayName || type,
+    location: location,
     type: type,
     group: group,
     mainCategory: group,
     machineNumber: machineNumber,
     fuel: fuel,
     model: model,
+    model2: model2,
+    purchaseDate: purchaseDate,
+    workCategory: workCategory,
+    signId: signId,
+    signName: signName,
     hitch: (document.getElementById('mie_hitch') || {}).value || '',
     status: (document.getElementById('mie_status') || {}).value || '',
     fuelChecks: fuelChecks
@@ -25680,11 +26014,20 @@ window.openMachineItemEditorModal = (opts) => {
     const normGroup = (window.MachineTaxonomy && MachineTaxonomy.normalizeMainCategory)
       ? MachineTaxonomy.normalizeMainCategory(kind === 'vehicle' ? 'vehicle' : 'machine', item.group || item.mainCategory || item.driveType)
       : (item.group || '');
+    if (document.getElementById('mie_location')) document.getElementById('mie_location').value = item.location || '';
+    if (typeof window.refreshMachineItemEditorSignOptions_ === 'function') {
+      window.refreshMachineItemEditorSignOptions_(item.signId || item.currentLocId || '');
+    }
     if (document.getElementById('mie_type')) document.getElementById('mie_type').value = item.type || item.category || '';
     if (document.getElementById('mie_group')) document.getElementById('mie_group').value = normGroup || '圃場';
     if (document.getElementById('mie_number')) document.getElementById('mie_number').value = item.machineNumber || item.serialNo || '';
-    if (document.getElementById('mie_fuel')) document.getElementById('mie_fuel').value = item.fuel || '';
+    if (document.getElementById('mie_fuel')) document.getElementById('mie_fuel').value = item.fuel || item.fuelType || '';
     if (document.getElementById('mie_model')) document.getElementById('mie_model').value = item.model || '';
+    if (document.getElementById('mie_model2')) document.getElementById('mie_model2').value = item.model2 || '';
+    if (document.getElementById('mie_purchase_date')) document.getElementById('mie_purchase_date').value = String(item.purchaseDate || '').replace(/\//g, '-').slice(0, 10);
+    if (typeof window.renderMachineItemEditorWorkCategoryRows_ === 'function') {
+      window.renderMachineItemEditorWorkCategoryRows_(item.workCategory || item.workTypes || '');
+    }
     if (document.getElementById('mie_hitch')) {
       const hitchSel = document.getElementById('mie_hitch');
       const hv = String(item.hitch || '').trim();
@@ -25696,9 +26039,18 @@ window.openMachineItemEditorModal = (opts) => {
     if (document.getElementById('mie_vehicle_main')) document.getElementById('mie_vehicle_main').value = normGroup || '自動車';
     if (document.getElementById('mie_vehicle_type')) document.getElementById('mie_vehicle_type').value = item.vehicleType || item.type || '';
     if (document.getElementById('mie_vehicle_number')) {
-      document.getElementById('mie_vehicle_number').value = item.vehicleNumber || item.machineNumber || item.plateNumber || '';
+      document.getElementById('mie_vehicle_number').value = item.plateNumber || item.vehicleNumber || item.machineNumber || '';
+    }
+    if (document.getElementById('mie_vehicle_sub_number')) {
+      document.getElementById('mie_vehicle_sub_number').value = item.vehicleNumber || item.machineNumber || '';
     }
     if (document.getElementById('mie_vehicle_model')) document.getElementById('mie_vehicle_model').value = item.model || '';
+    if (document.getElementById('mie_vehicle_mileage')) {
+      document.getElementById('mie_vehicle_mileage').value = (item.mileage === 0 || item.mileage) ? item.mileage : '';
+    }
+    if (document.getElementById('mie_vehicle_date')) {
+      document.getElementById('mie_vehicle_date').value = String(item.registrationDate || '').replace(/\//g, '-').slice(0, 10);
+    }
     if (document.getElementById('mie_status')) document.getElementById('mie_status').value = item.status || '使用可能';
     if (typeof window.setMachineItemEditorFuelChecksUi_ === 'function') {
       let fuelSpec = item.fuelChecks;
@@ -25725,6 +26077,12 @@ window.openMachineItemEditorModal = (opts) => {
       if (typeof window.updateMachineItemEditorAutoNumber_ === 'function') {
         window.updateMachineItemEditorAutoNumber_();
       }
+    }
+    if (opts.workCategory && typeof window.renderMachineItemEditorWorkCategoryRows_ === 'function') {
+      window.renderMachineItemEditorWorkCategoryRows_(opts.workCategory);
+    }
+    if (document.getElementById('mie_vehicle_date')) {
+      document.getElementById('mie_vehicle_date').value = new Date().toISOString().slice(0, 10);
     }
   }
 
@@ -25814,8 +26172,11 @@ window.persistOneMachineOrVehicle_ = async (entry) => {
       : ('veh_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6));
     const mainCategory = entry.mainCategory || entry.group || '自動車';
     const vehicleType = entry.type || '';
-    const plateNumber = String(entry.plateNumber || entry.vehicleNumber || entry.machineNumber || '').trim();
+    const plateNumber = String(entry.plateNumber || '').trim();
+    const vehicleNumber = String(entry.vehicleNumber || entry.machineNumber || plateNumber).trim();
     const model = entry.model || '';
+    const mileage = entry.mileage != null ? entry.mileage : '';
+    const registrationDate = entry.registrationDate || '';
     const driveType = entry.driveType || (mainCategory === '作業機' ? '作業車両' : '移動車両');
     const status = entry.status || '使用可能';
     const payload = {
@@ -25825,9 +26186,11 @@ window.persistOneMachineOrVehicle_ = async (entry) => {
       group: mainCategory,
       vehicleType: vehicleType,
       type: vehicleType,
-      vehicleNumber: plateNumber,
-      machineNumber: plateNumber,
+      vehicleNumber: vehicleNumber,
+      machineNumber: vehicleNumber,
       model: model,
+      mileage: mileage,
+      registrationDate: registrationDate,
       driveType: driveType,
       status: status,
       fuelChecks: entry.fuelChecks != null ? entry.fuelChecks : ''
@@ -25851,7 +26214,8 @@ window.persistOneMachineOrVehicle_ = async (entry) => {
     const rec = {
       id: rawId, plateNumber: plateNumber, driveType: driveType, status: status, photo: photoUrl, photo2: photo2Url,
       mainCategory: mainCategory, group: mainCategory, vehicleType: vehicleType, type: vehicleType,
-      vehicleNumber: plateNumber, machineNumber: plateNumber, model: model,
+      vehicleNumber: vehicleNumber, machineNumber: vehicleNumber, model: model,
+      mileage: mileage, registrationDate: registrationDate,
       fuelChecks: payload.fuelChecks || ''
     };
     const idx = window.pdlMobileVehicles.findIndex(v => String(v.id) === String(rawId));
@@ -25865,28 +26229,42 @@ window.persistOneMachineOrVehicle_ = async (entry) => {
   }
 
   const name = String(entry.name || '').trim();
+  const location = entry.location != null ? entry.location : ((document.getElementById('mie_location') || {}).value || '');
   let group = entry.group || (document.getElementById('mie_group') || {}).value || '圃場';
   if (window.MachineTaxonomy) group = MachineTaxonomy.normalizeMainCategory('machine', group);
   const fuel = entry.fuel != null ? entry.fuel : ((document.getElementById('mie_fuel') || {}).value || '');
   const model = entry.model || (document.getElementById('mie_model') || {}).value || '';
+  const model2 = entry.model2 != null ? entry.model2 : ((document.getElementById('mie_model2') || {}).value || '');
+  const purchaseDate = entry.purchaseDate != null ? entry.purchaseDate : ((document.getElementById('mie_purchase_date') || {}).value || '');
   const machineNumber = entry.machineNumber || (document.getElementById('mie_number') || {}).value || '';
   const type = entry.type || (document.getElementById('mie_type') || {}).value || '';
   const hitch = entry.hitch != null ? entry.hitch : ((document.getElementById('mie_hitch') || {}).value || '');
+  const workCategory = entry.workCategory != null
+    ? entry.workCategory
+    : ((typeof window.collectMachineItemEditorWorkCategories_ === 'function' ? window.collectMachineItemEditorWorkCategories_() : '') || st.workCategory || '');
+  const signId = entry.signId != null ? entry.signId : ((document.getElementById('mie_sign') || {}).value || '');
+  const signObj = (signId && typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons[signId] : null;
+  const signName = entry.signName != null ? entry.signName : (signObj ? (signObj.name || '') : '');
   let displayName = name;
   if (!displayName && window.MachineTaxonomy) {
-    displayName = MachineTaxonomy.buildDisplayName('machine', type, machineNumber, model, '');
+    displayName = MachineTaxonomy.buildDisplayName('machine', type, machineNumber, model, '', model2);
   }
   const payload = {
     name: displayName || type,
     userName: userName,
-    workCategory: st.workCategory || '',
+    location: location,
+    workCategory: workCategory,
     group: group,
     mainCategory: group,
     fuel: fuel,
     model: model,
+    model2: model2,
+    purchaseDate: purchaseDate,
     machineNumber: machineNumber,
     type: type,
     hitch: hitch,
+    signId: signId,
+    signName: signName,
     symptoms: entry.symptoms != null ? entry.symptoms : (st.symptoms || ''),
     maintenanceContents: entry.maintenanceContents != null ? entry.maintenanceContents : (st.maintenanceContents || ''),
     parts: entry.parts != null ? entry.parts : (st.parts || ''),
@@ -25912,15 +26290,21 @@ window.persistOneMachineOrVehicle_ = async (entry) => {
     newMachine = (res && res.machine) ? res.machine : Object.assign({}, payload, { id: entry.itemId, photo: photoBase64 || (payload.clearPhoto ? '' : (entry.existingPhoto || '')) });
   } else {
     const res = await safeCallGAS('addMachineToSign', payload);
-    newMachine = (res && res.id) ? res : { id: 'MAC_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), name: name, workCategory: payload.workCategory, group: group, fuel: fuel, model: model, type: type, hitch: hitch, status: '使用可能', photo: photoBase64 || '' };
+    newMachine = (res && res.id) ? res : { id: 'MAC_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), name: name, location: location, workCategory: payload.workCategory, group: group, fuel: fuel, model: model, model2: model2, purchaseDate: purchaseDate, type: type, hitch: hitch, signId: signId, signName: signName, status: '使用可能', photo: photoBase64 || '' };
   }
   if (typeof pdlMachines === 'undefined' || !Array.isArray(pdlMachines)) window.pdlMachines = [];
   const existingIdx = pdlMachines.findIndex(m => String(m.id) === String(newMachine.id) || m.name === name);
   const saved = Object.assign({
     name: displayName || name,
+    location: location,
     group: group,
     fuel: fuel,
     model: model,
+    model2: model2,
+    purchaseDate: purchaseDate,
+    workCategory: workCategory,
+    signId: signId,
+    signName: signName,
     type: type,
     machineNumber: machineNumber,
     hitch: hitch,
@@ -25987,6 +26371,13 @@ window.applySavedMachineItemsToWorkForm_ = (results) => {
   }
 };
 
+window.setMachineItemEditorLoading_ = (show, titleText) => {
+  const ov = document.getElementById('mie_loading_overlay');
+  const titleEl = document.getElementById('mie_loading_title');
+  if (titleEl && titleText) titleEl.textContent = titleText;
+  if (ov) ov.style.display = show ? 'flex' : 'none';
+};
+
 window.saveMachineItemEditorModal = async () => {
   const st = window._machineItemEditorState || {};
   const kind = st.kind === 'vehicle' ? 'vehicle' : 'machine';
@@ -26003,6 +26394,12 @@ window.saveMachineItemEditorModal = async () => {
         }
         return;
       }
+      const saveBtn = document.getElementById('mie_save_btn');
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = '更新中...';
+      }
+      window.setMachineItemEditorLoading_(true, '更新中です...');
       const result = await window.persistOneMachineOrVehicle_(Object.assign({
         photoItems: (st.photoItems || []).slice(),
         photoBase64: st.photoBase64 || '',
@@ -26016,6 +26413,7 @@ window.saveMachineItemEditorModal = async () => {
         else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) { }
         try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) { }
       } catch (e) { }
+      window.setMachineItemEditorLoading_(false);
       window.closeMachineItemEditorModal();
       window.applySavedMachineItemsToWorkForm_([result]);
       if (typeof customAlert === 'function') customAlert('✅ 更新しました');
@@ -26042,9 +26440,11 @@ window.saveMachineItemEditorModal = async () => {
       saveBtn.disabled = true;
       saveBtn.textContent = '登録中... 0/' + pending.length;
     }
+    window.setMachineItemEditorLoading_(true, '登録中です... (1/' + pending.length + ')');
     const results = [];
     for (let i = 0; i < pending.length; i++) {
       if (saveBtn) saveBtn.textContent = '登録中... ' + (i + 1) + '/' + pending.length;
+      window.setMachineItemEditorLoading_(true, '登録中です... (' + (i + 1) + '/' + pending.length + ')');
       results.push(await window.persistOneMachineOrVehicle_(pending[i]));
     }
     try {
@@ -26052,6 +26452,7 @@ window.saveMachineItemEditorModal = async () => {
       else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) { }
       try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) { }
     } catch (e) { }
+    window.setMachineItemEditorLoading_(false);
     window.closeMachineItemEditorModal();
     window.applySavedMachineItemsToWorkForm_(results);
     if (typeof customAlert === 'function') customAlert('✅ ' + results.length + '件を登録しました');
@@ -26061,6 +26462,7 @@ window.saveMachineItemEditorModal = async () => {
   } catch (e) {
     if (typeof customAlert === 'function') customAlert(e.message || '保存に失敗しました');
   } finally {
+    window.setMachineItemEditorLoading_(false);
     const saveBtn = document.getElementById('mie_save_btn');
     if (saveBtn) {
       saveBtn.disabled = false;
@@ -33962,6 +34364,42 @@ window.addMachineTypeFromForm = async (selectId) => {
     window._selectedMaintMachineType = t;
   } catch (e) {
     customAlert(e.message || '機械カテゴリの追加に失敗しました');
+  }
+};
+
+window.removeMachineTypeFromForm = async (selectId) => {
+  const sel = selectId ? document.getElementById(selectId) : null;
+  const val = sel ? String(sel.value || '').trim() : '';
+  if (!val) {
+    if (typeof customAlert === 'function') customAlert('削除する機械名（機種）を選択してください');
+    return;
+  }
+  if (typeof customConfirm === 'function') {
+    if (!(await customConfirm(`機械名「${val}」をマスタから削除しますか？\n※既に登録済みの機械の値は残ります。`))) return;
+  }
+  try {
+    const updated = await callGAS('manageMaster', {
+      masterType: 'machineType',
+      manageAction: 'delete',
+      value: val,
+      userName: (typeof currentUser !== 'undefined' ? currentUser : '') || '管理者'
+    });
+    pdlMachineTypes = Array.isArray(updated) ? updated : (pdlMachineTypes || []).filter(x => String(x) !== val);
+    if (sel) sel.value = '';
+    if (typeof window.refreshMachineItemEditorSelectOptions_ === 'function') {
+      window.refreshMachineItemEditorSelectOptions_();
+    } else if (sel) {
+      sel.innerHTML = '<option value="">選択...</option>' + (pdlMachineTypes || []).map(x => `<option value="${String(x).replace(/"/g, '&quot;')}">${x}</option>`).join('');
+      sel.value = '';
+    }
+    if (typeof window.updateMachineItemEditorAutoNumber_ === 'function') {
+      window.updateMachineItemEditorAutoNumber_();
+    }
+    if (typeof window.showRecordSyncToast === 'function') {
+      window.showRecordSyncToast(`🗑️ 機械名「${val}」を削除しました`, 'ok');
+    }
+  } catch (e) {
+    if (typeof customAlert === 'function') customAlert(e.message || '機械名の削除に失敗しました');
   }
 };
 
@@ -42874,6 +43312,10 @@ window.editBulkWorkMemoMaintTarget_ = async (uid, targetId) => {
 };
 
 window.deleteBulkWorkMemoMaintTarget_ = async (uid, targetId) => {
+  if (typeof window.isWorkerAdmin === 'function' && !window.isWorkerAdmin()) {
+    if (typeof customAlert === 'function') customAlert('削除は管理者権限のみ実行できます。');
+    return;
+  }
   const id = String(uid || '').trim();
   if (!id) return;
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === id);
@@ -42881,65 +43323,64 @@ window.deleteBulkWorkMemoMaintTarget_ = async (uid, targetId) => {
   const selected = (typeof window.getBulkWorkMemoMaintTargetsSelected_ === 'function')
     ? window.getBulkWorkMemoMaintTargetsSelected_(row)
     : [];
-  let tid = String(targetId || '').trim();
-  if (!tid) {
-    if (selected.length > 1) {
-      if (typeof customAlert === 'function') {
-        customAlert('複数選ばれています。削除したい対象を1件だけ選ぶか、一覧の対象を指定してください。');
-      }
-      return;
-    }
-    tid = selected.length === 1
-      ? String(selected[0].id || '').trim()
-      : String(row.maintenanceToolId || '').trim();
-  }
-  if (!tid) {
+  const explicitTid = String(targetId || '').trim();
+  const targetIds = explicitTid
+    ? [explicitTid]
+    : (selected.length
+      ? selected.map(s => String(s && s.id || '').trim()).filter(Boolean)
+      : (row.maintenanceToolId ? [String(row.maintenanceToolId).trim()] : []));
+  if (!targetIds.length) {
     if (typeof customAlert === 'function') customAlert('削除する整備対象を選んでください。');
     return;
   }
-  const item = (typeof window.findMaintenanceTargetById_ === 'function')
-    ? window.findMaintenanceTargetById_(tid)
-    : null;
-  if (!item) {
+  const targets = targetIds
+    .map(tid => ({
+      tid: tid,
+      item: (typeof window.findMaintenanceTargetById_ === 'function') ? window.findMaintenanceTargetById_(tid) : null
+    }))
+    .filter(x => !!x.item);
+  if (!targets.length) {
     if (typeof customAlert === 'function') customAlert('対象の情報が見つかりませんでした。');
     return;
   }
-  const name = item.name || '名称未設定';
-  const catName = item.isVehicle ? '車両' : (item.isTool ? '道具' : '農機具');
+  const confirmMsg = targets.length === 1
+    ? `${targets[0].item.isVehicle ? '車両' : (targets[0].item.isTool ? '道具' : '農機具')}「${targets[0].item.name || '名称未設定'}」をマスターから削除しますか？`
+    : `選択中の${targets.length}件をマスターから削除しますか？\n${targets.map(t => `・${t.item.name || '名称未設定'}`).join('\n')}`;
   if (typeof customConfirm === 'function') {
-    if (!(await customConfirm(`${catName}「${name}」をマスターから削除しますか？`))) return;
+    if (!(await customConfirm(confirmMsg))) return;
   }
-  window._bulkWorkMemoMaintEditUid = id;
-  if (item.isVehicle) {
-    const rawVid = String(item.id).replace(/^veh:/, '');
-    if (Array.isArray(window.pdlMobileVehicles)) {
-      window.pdlMobileVehicles = window.pdlMobileVehicles.filter(v => String(v.id) !== rawVid);
+  const userName = (typeof currentUser !== 'undefined' ? currentUser : '') || '管理者';
+  targets.forEach(({ tid, item }) => {
+    const catName = item.isVehicle ? '車両' : (item.isTool ? '道具' : '農機具');
+    window._bulkWorkMemoMaintEditUid = id;
+    if (item.isVehicle) {
+      const rawVid = String(item.id).replace(/^veh:/, '');
+      if (Array.isArray(window.pdlMobileVehicles)) {
+        window.pdlMobileVehicles = window.pdlMobileVehicles.filter(v => String(v.id) !== rawVid);
+      }
+      if (typeof safeCallGAS === 'function') safeCallGAS('vehicle_deleteVehicle', { id: rawVid });
+    } else if (item.isTool) {
+      if (Array.isArray(pdlTools)) {
+        window.pdlTools = pdlTools.filter(t => String(t.id || ('tool_' + t.name)) !== String(item.id));
+      }
+      if (typeof safeCallGAS === 'function') {
+        safeCallGAS('deleteToolFromMaster', { toolId: item.id, userName: userName });
+      }
+    } else {
+      if (Array.isArray(pdlMachines)) {
+        window.pdlMachines = pdlMachines.filter(m => String(m.id) !== String(item.id));
+      }
+      if (typeof safeCallGAS === 'function') {
+        safeCallGAS('deleteMachineFromMaster', { machineId: item.id, userName: userName });
+      }
     }
-    if (typeof safeCallGAS === 'function') safeCallGAS('vehicle_deleteVehicle', { id: rawVid });
-  } else if (item.isTool) {
-    if (Array.isArray(pdlTools)) {
-      window.pdlTools = pdlTools.filter(t => String(t.id || ('tool_' + t.name)) !== String(item.id));
-    }
-    if (typeof safeCallGAS === 'function') {
-      safeCallGAS('deleteToolFromMaster', {
-        toolId: item.id,
-        userName: (typeof currentUser !== 'undefined' ? currentUser : '') || '管理者'
-      });
-    }
-  } else {
-    if (Array.isArray(pdlMachines)) {
-      window.pdlMachines = pdlMachines.filter(m => String(m.id) !== String(item.id));
-    }
-    if (typeof safeCallGAS === 'function') {
-      safeCallGAS('deleteMachineFromMaster', {
-        machineId: item.id,
-        userName: (typeof currentUser !== 'undefined' ? currentUser : '') || '管理者'
-      });
-    }
-  }
-  window.refreshBulkWorkMemoAfterMaintTargetChange_(item, tid, { mode: 'delete', kind: catName });
+    window.refreshBulkWorkMemoAfterMaintTargetChange_(item, tid, { mode: 'delete', kind: catName });
+  });
   if (typeof window.showRecordSyncToast === 'function') {
-    window.showRecordSyncToast(`🗑️ ${catName}「${name}」を削除しました`, 'ok');
+    const toastMsg = targets.length === 1
+      ? `🗑️ ${targets[0].item.isVehicle ? '車両' : (targets[0].item.isTool ? '道具' : '農機具')}「${targets[0].item.name || '名称未設定'}」を削除しました`
+      : `🗑️ 選択中の${targets.length}件を削除しました`;
+    window.showRecordSyncToast(toastMsg, 'ok');
   }
 };
 
@@ -42954,10 +43395,14 @@ window.buildBulkWorkMemoMaintTargetManageBtnsHtml_ = (uid, d) => {
     ? window.getBulkWorkMemoMaintTargetsSelected_(d)
     : [];
   const canManageSelected = selected.length > 0;
+  const isAdmin = typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin();
+  const deleteBtnHtml = isAdmin
+    ? `<button type="button" onclick="deleteBulkWorkMemoMaintTarget_('${esc(uid)}')" ${canManageSelected ? '' : 'disabled'} style="background:${canManageSelected ? '#E53935' : '#BDBDBD'}; color:#fff; border:none; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:${canManageSelected ? 'pointer' : 'default'}; box-shadow:${canManageSelected ? '0 1px 3px rgba(229,57,53,0.28)' : 'none'};">🗑️ 削除</button>`
+    : '';
   return `<div style="display:flex; justify-content:flex-end; flex-wrap:wrap; gap:6px; margin:0 0 8px;">
     <button type="button" onclick="addBulkWorkMemoMaintTarget_('${esc(uid)}')" style="background:#2196F3; color:#fff; border:none; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow:0 1px 3px rgba(33,150,243,0.28);">${addLabel}</button>
     <button type="button" onclick="editBulkWorkMemoMaintTarget_('${esc(uid)}')" ${canManageSelected ? '' : 'disabled'} style="background:${canManageSelected ? '#FFA000' : '#BDBDBD'}; color:#fff; border:none; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:${canManageSelected ? 'pointer' : 'default'}; box-shadow:${canManageSelected ? '0 1px 3px rgba(255,160,0,0.28)' : 'none'};">✏️ 編集</button>
-    <button type="button" onclick="deleteBulkWorkMemoMaintTarget_('${esc(uid)}')" ${canManageSelected ? '' : 'disabled'} style="background:${canManageSelected ? '#E53935' : '#BDBDBD'}; color:#fff; border:none; border-radius:8px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:${canManageSelected ? 'pointer' : 'default'}; box-shadow:${canManageSelected ? '0 1px 3px rgba(229,57,53,0.28)' : 'none'};">🗑️ 削除</button>
+    ${deleteBtnHtml}
   </div>`;
 };
 
