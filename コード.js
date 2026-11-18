@@ -7988,7 +7988,7 @@ function trimPolygonPhotosForInit_(photos, maxKeep) {
     workDate: 1, workName: 1, category: 1, crop: 1, cropName: 1,
     startTime: 1, endTime: 1, totalTime: 1, progressStatus: 1,
     notes: 1, comment: 1, placeLabel: 1,
-    photoTags: 1, isPhotoOnly: 1, photoDate: 1, photoTime: 1,
+    photoTags: 1, photoTitle: 1, isPhotoOnly: 1, photoDate: 1, photoTime: 1,
     // 一括入力の削除・日付変更で必要
     bulkBatchId: 1, recordKind: 1, fromBulkMemo: 1
   };

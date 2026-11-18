@@ -2073,32 +2073,26 @@ function showPopup(p, latLng) {
     if (typeof window.cadPrefetchRegistry_ === 'function') {
       window.cadPrefetchRegistry_(p.id);
     }
-    cadBtn = `<div style="margin-top:8px; text-align:center;">
-            <button type="button" onclick="openCadRegistry('${p.id}')"
-              style="width:100%; padding:8px; background:#FF9800; color:white;
-              border:none; border-radius:6px; font-weight:bold; font-size:13px;
-              cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.3);">🚜 農地CADを開く</button>
+    cadBtn = `<div style="margin-top:8px;">
+            <button type="button" class="schedule-field-popup-btn" onclick="openCadRegistry('${p.id}')"
+              style="background:#FF9800;">🚜 農地CADを開く</button>
           </div>`;
-    cpBtn = `<div style="margin-top:6px; text-align:center;">
-            <button onclick="startCultivationPlanForField('${p.id}')"
-              style="width:100%; padding:8px; background:#4CAF50; color:white;
-              border:none; border-radius:6px; font-weight:bold; font-size:13px;
-              cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.3);">🌱 この圃場で栽培計画</button>
+    cpBtn = `<div style="margin-top:6px;">
+            <button type="button" class="schedule-field-popup-btn" onclick="startCultivationPlanForField('${p.id}')"
+              style="background:#4CAF50;">🌱 この圃場で栽培計画</button>
           </div>`;
-    manureBtn = `<div style="margin-top:6px; text-align:center;">
-            <button onclick="sharePigManureRequestFromSchedule('${p.id}')"
-              style="width:100%; padding:8px; background:#8D6E63; color:white;
-              border:none; border-radius:6px; font-weight:bold; font-size:13px;
-              cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.3);">🐷 豚糞散布依頼</button>
+    manureBtn = `<div style="margin-top:6px;">
+            <button type="button" class="schedule-field-popup-btn" onclick="sharePigManureRequestFromSchedule('${p.id}')"
+              style="background:#8D6E63;">🐷 豚糞散布依頼</button>
           </div>`;
   }
 
-  let h = `<div style="width:220px; padding:5px; font-family:sans-serif;">
-                   <h3 style="margin:0 0 5px 0;">${p.isMarker ? p.color + ' ' : ''}${p.name}</h3>
+  let h = `<div class="schedule-field-popup">
+                   <h3 style="margin:0 0 6px 0; padding-right:24px; font-size:16px; line-height:1.3; word-break:break-word;">${p.isMarker ? p.color + ' ' : ''}${p.name}</h3>
                    ${funcHtml}
                    <div style="font-size:12px; font-weight:bold; margin-bottom:5px;">${p.statusText}</div>
                    ${planHint}
-                   <div style="background:#f9f9f9; padding:5px; border-radius:4px; max-height:180px; overflow-y:auto;">
+                   <div style="background:#f9f9f9; padding:6px; border-radius:6px; max-height:180px; overflow-y:auto; overflow-x:hidden;">
                      ${tasksHtml}
                    </div>
                    ${cadBtn}

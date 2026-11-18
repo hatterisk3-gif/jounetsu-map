@@ -3943,3 +3943,48 @@ select.snr-input {
   width: 100%;
   min-height: 0;
 }
+
+/* ===================================================
+   圃場 InfoWindow（吹き出し）横スライド防止＆ボタン幅最適化
+   =================================================== */
+.gm-style .gm-style-iw-c {
+  padding: 12px !important;
+  border-radius: 12px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22) !important;
+  max-width: 92vw !important;
+}
+
+.gm-style .gm-style-iw-d {
+  overflow: hidden !important;
+  padding: 0 !important;
+  max-width: 100% !important;
+}
+
+.schedule-field-popup {
+  width: 250px;
+  max-width: calc(92vw - 24px);
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: sans-serif;
+  overflow: hidden;
+}
+
+.schedule-field-popup * {
+  box-sizing: border-box;
+}
+
+.schedule-field-popup-btn {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: bold;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  text-align: center;
+}

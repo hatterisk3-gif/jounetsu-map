@@ -4380,9 +4380,11 @@ window.directOpenForm = (id, type) => { activePolyId = id; currentEditRecordId =
 window.fieldPhotoPendingFiles = [];
 window.fieldPhotoSelectedTags = [];
 window.fieldPhotoActiveFilterTag = 'ALL';
+window.fieldPhotoTagEditMode = false;
 
 const FIELD_PHOTO_DEFAULT_TAGS_ = ['生育記録', '圃場状況'];
 const FIELD_PHOTO_CUSTOM_TAGS_KEY_ = 'passionMap_fieldPhotoCustomTags';
+const FIELD_PHOTO_TAGS_KEY_ = 'passionMap_fieldPhotoTags';
 
 function escapeHtmlFieldPhoto_(str) {
   if (!str) return '';
@@ -4399,27 +4401,63 @@ function getFieldPhotoCustomTags_() {
   }
 }
 
+function getFieldPhotoTagsList_() {
+  try {
+    const raw = localStorage.getItem(FIELD_PHOTO_TAGS_KEY_);
+    if (raw !== null) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        const seen = new Set();
+        return arr.map(t => typeof t === 'string' ? t.trim() : '').filter(t => {
+          if (!t || seen.has(t)) return false;
+          seen.add(t);
+          return true;
+        });
+      }
+    }
+  } catch (e) { }
+  // 初回アクセス時はデフォルトタグ＋旧カスタムタグを統合して保存
+  const seen = new Set();
+  const merged = [];
+  [...FIELD_PHOTO_DEFAULT_TAGS_, ...getFieldPhotoCustomTags_()].forEach(t => {
+    const clean = typeof t === 'string' ? t.trim() : '';
+    if (clean && !seen.has(clean)) {
+      seen.add(clean);
+      merged.push(clean);
+    }
+  });
+  saveFieldPhotoTagsList_(merged);
+  return merged;
+}
+
+function saveFieldPhotoTagsList_(list) {
+  try {
+    const seen = new Set();
+    const cleaned = (Array.isArray(list) ? list : []).map(t => typeof t === 'string' ? t.trim() : '').filter(t => {
+      if (!t || seen.has(t)) return false;
+      seen.add(t);
+      return true;
+    }).slice(-30);
+    localStorage.setItem(FIELD_PHOTO_TAGS_KEY_, JSON.stringify(cleaned));
+  } catch (e) { }
+}
+
 function saveFieldPhotoCustomTag_(tag) {
   const clean = String(tag || '').trim();
-  if (!clean || FIELD_PHOTO_DEFAULT_TAGS_.includes(clean)) return;
+  if (!clean) return;
   try {
-    const list = getFieldPhotoCustomTags_();
+    const list = getFieldPhotoTagsList_();
     if (!list.includes(clean)) {
       list.push(clean);
-      localStorage.setItem(FIELD_PHOTO_CUSTOM_TAGS_KEY_, JSON.stringify(list.slice(-20)));
+      saveFieldPhotoTagsList_(list);
     }
   } catch (e) { }
 }
 
 function getAllFieldPhotoAvailableTags_() {
-  const seen = new Set(FIELD_PHOTO_DEFAULT_TAGS_);
-  const list = [...FIELD_PHOTO_DEFAULT_TAGS_];
-  getFieldPhotoCustomTags_().forEach(t => {
-    if (!seen.has(t)) {
-      seen.add(t);
-      list.push(t);
-    }
-  });
+  const baseList = getFieldPhotoTagsList_();
+  const seen = new Set(baseList);
+  const list = [...baseList];
   (window.fieldPhotoSelectedTags || []).forEach(t => {
     if (t && !seen.has(t)) {
       seen.add(t);
@@ -4666,6 +4704,8 @@ window.renderFieldPhotosTable = (id) => {
       const urls = (item.urls && item.urls.length) ? item.urls : (item.url ? [item.url] : []);
       const tags = (item.data && Array.isArray(item.data.photoTags)) ? item.data.photoTags : [];
 
+      const photoTitle = (item.data && (item.data.photoTitle || item.data.title)) ? String(item.data.photoTitle || item.data.title).trim() : '';
+
       let memo = (item.data && (item.data.notes || item.data.memo || item.data.comment)) || '';
       if (!memo && item.data && item.data.workName) {
         memo = `作業: ${item.data.workName}`;
@@ -4724,6 +4764,10 @@ window.renderFieldPhotosTable = (id) => {
         tagsHtml += `</div>`;
       }
 
+      const titleHtml = photoTitle
+        ? `<div style="font-size:15px; font-weight:bold; color:#1B5E20; margin-bottom:8px; padding:6px 10px; background:#F1F8E9; border-left:4px solid #43A047; border-radius:6px; word-break:break-word; line-height:1.4;">${escapeHtmlFieldPhoto_(photoTitle)}</div>`
+        : '';
+
       const memoHtml = memo
         ? `<div style="margin-top:10px; background:#f8faf9; border:1px solid #e8ecea; border-radius:8px; padding:10px 12px; white-space:pre-wrap; word-break:break-word; color:#222; font-size:13px; line-height:1.5;">${escapeHtmlFieldPhoto_(memo)}</div>`
         : '';
@@ -4742,6 +4786,7 @@ window.renderFieldPhotosTable = (id) => {
               ${deleteBtnHtml}
             </div>
           </div>
+          ${titleHtml}
           ${galleryHtml}
           ${tagsHtml}
           ${memoHtml}
@@ -4774,21 +4819,95 @@ window.editFieldPhotoRecord = (recordId, polyId) => {
   renderFieldPhotoAddForm(pid, recordId);
 };
 
+window.toggleFieldPhotoTagEditMode = () => {
+  window.fieldPhotoTagEditMode = !window.fieldPhotoTagEditMode;
+  window.renderFieldPhotoTagSelector();
+};
+
+window.renameFieldPhotoTag = async (oldTag) => {
+  const input = await customPrompt(`タグ「${oldTag}」の新しい名前を入力してください`, oldTag);
+  if (input === null) return;
+  const newTag = String(input).trim();
+  if (!newTag) {
+    customAlert('タグ名を入力してください。');
+    return;
+  }
+  if (newTag === oldTag) return;
+
+  const list = getFieldPhotoTagsList_();
+  const idx = list.indexOf(oldTag);
+  if (idx >= 0) {
+    list[idx] = newTag;
+  } else {
+    list.push(newTag);
+  }
+  saveFieldPhotoTagsList_(list);
+
+  if (Array.isArray(window.fieldPhotoSelectedTags)) {
+    const nextSel = [];
+    window.fieldPhotoSelectedTags.forEach(t => {
+      const mapped = (t === oldTag) ? newTag : t;
+      if (mapped && !nextSel.includes(mapped)) nextSel.push(mapped);
+    });
+    window.fieldPhotoSelectedTags = nextSel;
+  }
+  window.renderFieldPhotoTagSelector();
+};
+
+window.deleteFieldPhotoTag = async (tag) => {
+  if (!await customConfirm(`タグ「${tag}」を一覧から削除しますか？`)) return;
+  const list = getFieldPhotoTagsList_().filter(t => t !== tag);
+  saveFieldPhotoTagsList_(list);
+  if (Array.isArray(window.fieldPhotoSelectedTags)) {
+    window.fieldPhotoSelectedTags = window.fieldPhotoSelectedTags.filter(t => t !== tag);
+  }
+  window.renderFieldPhotoTagSelector();
+};
+
 window.renderFieldPhotoTagSelector = () => {
   const wrap = document.getElementById('field_photo_tags_wrap');
+  const modeBtn = document.getElementById('field_photo_tag_edit_mode_btn');
+  const isEditMode = !!window.fieldPhotoTagEditMode;
+  if (modeBtn) {
+    if (isEditMode) {
+      modeBtn.innerText = '✓ 完了';
+      modeBtn.style.background = '#1565C0';
+      modeBtn.style.color = '#fff';
+      modeBtn.style.borderColor = '#1565C0';
+    } else {
+      modeBtn.innerText = '✏️ 編集・削除';
+      modeBtn.style.background = '#f5f7f8';
+      modeBtn.style.color = '#455A64';
+      modeBtn.style.borderColor = '#cfd8dc';
+    }
+  }
   if (!wrap) return;
   const available = getAllFieldPhotoAvailableTags_();
   const selected = window.fieldPhotoSelectedTags || [];
   let html = '';
-  available.forEach(tag => {
-    const isOn = selected.includes(tag);
-    const jsTag = String(tag).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    html += `
-      <button type="button" onclick="toggleFieldPhotoTag('${jsTag}')" style="padding:7px 12px; border-radius:18px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:4px; border:1px solid ${isOn ? '#2E7D32' : '#cfd8dc'}; background:${isOn ? '#2E7D32' : '#fff'}; color:${isOn ? '#fff' : '#444'}; box-shadow:${isOn ? '0 2px 4px rgba(46,125,50,0.25)' : 'none'};">
-        <span>${isOn ? '✓' : '🏷️'}</span><span>${escapeHtmlFieldPhoto_(tag)}</span>
-      </button>
-    `;
-  });
+  if (available.length === 0) {
+    html = '<span style="font-size:12px; color:#888;">タグがありません。下の入力欄から追加してください。</span>';
+  } else {
+    available.forEach(tag => {
+      const isOn = selected.includes(tag);
+      const jsTag = String(tag).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      if (isEditMode) {
+        html += `
+          <div style="display:inline-flex; align-items:center; border-radius:18px; border:1px solid #90CAF9; background:#F5FAFF; padding:3px 4px 3px 10px; gap:4px;">
+            <span style="font-size:12px; font-weight:bold; color:#333;">🏷️ ${escapeHtmlFieldPhoto_(tag)}</span>
+            <button type="button" onclick="renameFieldPhotoTag('${jsTag}')" style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:12px; padding:3px 7px; font-size:11px; font-weight:bold; cursor:pointer;" title="タグ名を編集">✏️</button>
+            <button type="button" onclick="deleteFieldPhotoTag('${jsTag}')" style="background:#FFEBEE; color:#C62828; border:1px solid #FFCDD2; border-radius:12px; padding:3px 7px; font-size:11px; font-weight:bold; cursor:pointer;" title="タグを削除">🗑️</button>
+          </div>
+        `;
+      } else {
+        html += `
+          <button type="button" onclick="toggleFieldPhotoTag('${jsTag}')" style="padding:7px 12px; border-radius:18px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:4px; border:1px solid ${isOn ? '#2E7D32' : '#cfd8dc'}; background:${isOn ? '#2E7D32' : '#fff'}; color:${isOn ? '#fff' : '#444'}; box-shadow:${isOn ? '0 2px 4px rgba(46,125,50,0.25)' : 'none'};">
+            <span>${isOn ? '✓' : '🏷️'}</span><span>${escapeHtmlFieldPhoto_(tag)}</span>
+          </button>
+        `;
+      }
+    });
+  }
   wrap.innerHTML = html;
 };
 
@@ -4836,6 +4955,7 @@ window.renderFieldPhotoAddForm = (id, editRecordId) => {
   window.fieldPhotoSelectedTags = (isEdit && targetRec && targetRec.data && Array.isArray(targetRec.data.photoTags))
     ? [...targetRec.data.photoTags]
     : [];
+  window.fieldPhotoTagEditMode = false;
 
   const titleEl = document.getElementById('rightPanelTitle');
   if (titleEl) {
@@ -4852,6 +4972,9 @@ window.renderFieldPhotoAddForm = (id, editRecordId) => {
   const defaultTimeVal = (targetRec && targetRec.data && targetRec.data.photoTime)
     ? String(targetRec.data.photoTime)
     : ((targetRec && targetRec.time) ? String(targetRec.time) : currentTimeStr);
+  const defaultTitleVal = (targetRec && targetRec.data)
+    ? String(targetRec.data.photoTitle || targetRec.data.title || '')
+    : '';
   const defaultMemoVal = (targetRec && targetRec.data)
     ? String(targetRec.data.notes || targetRec.data.memo || targetRec.data.comment || '')
     : '';
@@ -4888,15 +5011,26 @@ window.renderFieldPhotoAddForm = (id, editRecordId) => {
 
       <!-- タグ選択＆手入力追加 -->
       <div style="margin-bottom:16px;">
-        <label class="form-label" style="color:#333; font-size:14px; font-weight:bold; margin-bottom:6px; display:block;">
-          🏷️ タグ <span style="color:#888; font-size:11px; font-weight:normal;">(複数選択・手入力追加可)</span>
-        </label>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; gap:8px;">
+          <label class="form-label" style="color:#333; font-size:14px; font-weight:bold; margin:0;">
+            🏷️ タグ <span style="color:#888; font-size:11px; font-weight:normal;">(複数選択・手入力追加可)</span>
+          </label>
+          <button type="button" id="field_photo_tag_edit_mode_btn" onclick="toggleFieldPhotoTagEditMode()" style="background:#f5f7f8; color:#455A64; border:1px solid #cfd8dc; border-radius:14px; padding:4px 10px; font-size:11px; font-weight:bold; cursor:pointer; white-space:nowrap;">
+            ✏️ 編集・削除
+          </button>
+        </div>
         <div id="field_photo_tags_wrap" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;"></div>
         <div style="display:flex; gap:6px;">
           <input type="text" id="field_photo_custom_tag_input" class="form-input" placeholder="＋ その他タグを手入力..." style="flex:1; margin-bottom:0; padding:8px 10px; font-size:13px; border:1px solid #cfd8dc; border-radius:8px;" onkeydown="if(event.key==='Enter'){event.preventDefault();addCustomFieldPhotoTag();}">
           <button type="button" onclick="addCustomFieldPhotoTag()" style="background:#546E7A; color:#fff; border:none; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋ 追加</button>
         </div>
       </div>
+
+      <!-- タイトル入力欄 -->
+      <label class="form-label" style="color:#333; font-size:14px; font-weight:bold;">
+        📌 タイトル <span style="color:#888; font-size:11px; font-weight:normal;">(任意)</span>
+      </label>
+      <input type="text" id="field_photo_title_input" class="form-input" value="${escapeHtmlFieldPhoto_(defaultTitleVal)}" placeholder="例：東側畝の定植後、害虫発生状況 など..." style="width:100%; box-sizing:border-box; padding:10px; border:1px solid #ccc; border-radius:8px; font-size:14px; font-weight:bold; margin-bottom:16px;">
 
       <!-- メモ入力欄 -->
       <label class="form-label" style="color:#333; font-size:14px; font-weight:bold;">
@@ -5617,6 +5751,7 @@ window.submitFieldPhotoRecord = async (id) => {
     return;
   }
 
+  const photoTitle = document.getElementById('field_photo_title_input')?.value.trim() || '';
   const memo = document.getElementById('field_photo_memo_input')?.value.trim() || '';
   const dateVal = document.getElementById('field_photo_date_input')?.value || '';
   const timeVal = document.getElementById('field_photo_time_input')?.value || '';
@@ -5638,6 +5773,7 @@ window.submitFieldPhotoRecord = async (id) => {
     : { isPhotoOnly: true };
 
   const recordData = Object.assign(baseData, {
+    photoTitle: photoTitle,
     notes: memo,
     photoDate: dateVal,
     photoTime: timeVal,

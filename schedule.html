@@ -17,7 +17,7 @@
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1794700000000"></script>
   <link rel="stylesheet" href="schedule.css?v=1788600000370">
-  <link rel="stylesheet" href="schedule.css?v=1788600000371">
+  <link rel="stylesheet" href="schedule.css?v=1788600000372">
   <link rel="stylesheet" href="cad.css?v=1788600000326">
   <link rel="stylesheet" href="location-pin.css?v=1788600000301">
   <link rel="stylesheet" href="map-filter.css?v=1788600000330">
@@ -111,17 +111,30 @@
   </div>
   <div class="legend" id="scheduleLegendUI" onclick="event.stopPropagation();" ontouchstart="event.stopPropagation();">
     <div class="sched-legend-tabs">
-      <button type="button" class="sched-legend-tab is-active" data-mode="schedule" onclick="window.setScheduleFieldColorMode_('schedule', event)">📅 状況</button>
-      <button type="button" class="sched-legend-tab" data-mode="crop" onclick="window.setScheduleFieldColorMode_('crop', event)">🌾 作物</button>
-      <button type="button" class="sched-legend-tab" data-mode="status" onclick="window.setScheduleFieldColorMode_('status', event)">🚜 稼働状況</button>
+      <button type="button" class="sched-legend-tab is-active" data-mode="schedule"
+        onclick="window.setScheduleFieldColorMode_('schedule', event)">📅 状況</button>
+      <button type="button" class="sched-legend-tab" data-mode="crop"
+        onclick="window.setScheduleFieldColorMode_('crop', event)">🌾 作物</button>
+      <button type="button" class="sched-legend-tab" data-mode="status"
+        onclick="window.setScheduleFieldColorMode_('status', event)">🚜 稼働状況</button>
     </div>
     <div id="scheduleLegendBody" class="sched-legend-body">
       <div class="sched-legend-title">📅 状況色分け</div>
-      <div class="leg-item"><div class="leg-color" style="background:#4CAF50;"></div>平和</div>
-      <div class="leg-item"><div class="leg-color" style="background:#FFEB3B;"></div>予定有</div>
-      <div class="leg-item"><div class="leg-color" style="background:#F44336;"></div>問題/遅延</div>
-      <div class="leg-item"><div class="leg-color" style="background:#FF9800;"></div>収穫中</div>
-      <div class="leg-item"><div class="leg-color" style="background:#777777;"></div>対象外</div>
+      <div class="leg-item">
+        <div class="leg-color" style="background:#4CAF50;"></div>平和
+      </div>
+      <div class="leg-item">
+        <div class="leg-color" style="background:#FFEB3B;"></div>予定有
+      </div>
+      <div class="leg-item">
+        <div class="leg-color" style="background:#F44336;"></div>問題/遅延
+      </div>
+      <div class="leg-item">
+        <div class="leg-color" style="background:#FF9800;"></div>収穫中
+      </div>
+      <div class="leg-item">
+        <div class="leg-color" style="background:#777777;"></div>対象外
+      </div>
     </div>
   </div>
 
@@ -1267,7 +1280,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000376';
+    const cacheBust = '1788600000377';
     // 豚糞共有：台数＋短いGoogleマップURL＋座標（v1.49）
     // ※ https://maps.google.com/?q=緯度,経度
     // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）
