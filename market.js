@@ -34,6 +34,7 @@
   let _active = 'tokyo';
   const _cache = { tokyo: null, osaka: null };
   const _loading = { tokyo: false, osaka: false };
+  const _loadingRefresh = { tokyo: false, osaka: false };
   /** 選択中の品目名（空 = すべて） */
   const _selectedItems = { tokyo: new Set(), osaka: new Set() };
   const CHIP_PREF_KEY = 'passionMapMarketItemChips';
@@ -100,7 +101,20 @@
     return Promise.reject(new Error('通信モジュールが未読込です'));
   }
 
+  function ensureLoadingStyle_() {
+    if (document.getElementById('marketLoadingStyle')) return;
+    const style = document.createElement('style');
+    style.id = 'marketLoadingStyle';
+    style.textContent = [
+      '@keyframes marketSpin { to { transform: rotate(360deg); } }',
+      '@keyframes marketSlide { 0% { transform: translateX(-110%); } 50% { transform: translateX(95%); } 100% { transform: translateX(285%); } }',
+      '@keyframes marketPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }'
+    ].join('\n');
+    document.head.appendChild(style);
+  }
+
   function ensurePanelDom_() {
+    ensureLoadingStyle_();
     let root = document.getElementById('marketDataRoot');
     if (root) return root;
 
@@ -232,6 +246,12 @@
     renderActiveTable_();
   }
 
+  function loadingStatusMessage_(key) {
+    return _loadingRefresh[key]
+      ? '最新の日報CSVを取り込み中...（数秒〜十数秒かかります）'
+      : '市況データを読み込み中... しばらくお待ちください';
+  }
+
   function renderItemChips_() {
     const wrap = document.getElementById('marketItemChips');
     if (!wrap) return;
@@ -241,7 +261,21 @@
     const selected = _selectedItems[_active] || new Set();
 
     if (!names.length) {
-      wrap.innerHTML = '<span style="font-size:11px;color:#90A4AE;padding:4px 2px;">品目データ読み込み後にチップが表示されます</span>';
+      if (_loading[_active]) {
+        const color = (conf && conf.color) || '#e65100';
+        const border = (conf && conf.border) || '#ffcc80';
+        const placeholders = [58, 66, 52, 74, 60].map(function (w) {
+          return '<span style="display:inline-block;width:' + w + 'px;height:24px;border-radius:999px;border:1px solid ' + border + ';background:rgba(255,255,255,0.75);"></span>';
+        }).join('');
+        wrap.innerHTML = [
+          '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;animation:marketPulse 1.4s ease-in-out infinite;">',
+          '  <span style="font-size:11px;font-weight:700;color:' + color + ';padding:4px 2px;">⏳ 品目リストを読み込み中...</span>',
+          placeholders,
+          '</div>'
+        ].join('');
+      } else {
+        wrap.innerHTML = '<span style="font-size:11px;color:#90A4AE;padding:4px 2px;">品目データ読み込み後にチップが表示されます</span>';
+      }
       return;
     }
 
@@ -285,7 +319,26 @@
       title.textContent = conf.title;
       title.style.color = conf.color;
     }
-    if (refresh) refresh.style.background = conf.color;
+    if (refresh) {
+      refresh.style.background = conf.color;
+      if (_loading[_active]) {
+        const label = _loadingRefresh[_active] ? '取込中...' : '読込中...';
+        refresh.disabled = true;
+        refresh.style.opacity = '0.75';
+        refresh.style.cursor = 'wait';
+        refresh.innerHTML = [
+          '<span style="display:inline-flex;align-items:center;gap:5px;">',
+          '  <span style="display:inline-block;width:11px;height:11px;border:2px solid rgba(255,255,255,0.4);border-top-color:#fff;border-radius:50%;animation:marketSpin 0.8s linear infinite;"></span>',
+          '  <span>' + label + '</span>',
+          '</span>'
+        ].join('');
+      } else {
+        refresh.disabled = false;
+        refresh.style.opacity = '1';
+        refresh.style.cursor = 'pointer';
+        refresh.textContent = '更新';
+      }
+    }
     if (note) note.textContent = conf.sourceNote;
     if (filter) filter.style.borderColor = conf.border;
 
@@ -296,27 +349,55 @@
       tabTokyo.style.background = on ? MARKETS.tokyo.color : '#fff';
       tabTokyo.style.color = on ? '#fff' : '#795548';
       tabTokyo.style.border = on ? 'none' : '1px solid #ffcc80';
+      tabTokyo.textContent = '東京・大田' + (_loading.tokyo ? '（読込中…）' : '');
     }
     if (tabOsaka) {
       const on = _active === 'osaka';
       tabOsaka.style.background = on ? MARKETS.osaka.color : '#fff';
       tabOsaka.style.color = on ? '#fff' : '#37474F';
       tabOsaka.style.border = on ? 'none' : '1px solid #bbdefb';
+      tabOsaka.textContent = '大阪・本場' + (_loading.osaka ? '（読込中…）' : '');
     }
+  }
+
+  function renderActiveLoadingView_() {
+    applyActiveChrome_();
+    renderItemChips_();
+    renderActiveTable_();
+    setStatus_(loadingStatusMessage_(_active), false, true);
   }
 
   function setActiveMarket_(key) {
     if (!MARKETS[key]) return;
     _active = key;
-    applyActiveChrome_();
-    renderItemChips_();
-    renderActiveTable_();
+    if (_loading[key]) {
+      renderActiveLoadingView_();
+      return;
+    }
     loadMarket_(key, false);
   }
 
-  function setStatus_(msg, isError) {
+  function setStatus_(msg, isError, isLoading) {
     const el = document.getElementById('marketActiveStatus');
     if (!el) return;
+    if (isLoading) {
+      const conf = MARKETS[_active] || MARKETS.tokyo;
+      el.setAttribute('aria-busy', 'true');
+      el.style.color = conf.color;
+      el.innerHTML = [
+        '<div style="border:1px solid ' + conf.border + ';border-left:4px solid ' + conf.color + ';background:#fff;border-radius:6px;padding:8px 10px;">',
+        '  <div style="display:flex;align-items:center;gap:8px;">',
+        '    <span style="display:inline-block;width:16px;height:16px;flex:0 0 16px;border:2.5px solid ' + conf.border + ';border-top-color:' + conf.color + ';border-radius:50%;animation:marketSpin 0.8s linear infinite;"></span>',
+        '    <span style="font-weight:700;font-size:12px;color:' + conf.color + ';line-height:1.4;">' + esc_(msg || '市況データを読み込み中... しばらくお待ちください') + '</span>',
+        '  </div>',
+        '  <div style="height:5px;background:' + conf.border + ';border-radius:999px;overflow:hidden;margin-top:6px;">',
+        '    <div style="height:100%;width:35%;background:' + conf.color + ';border-radius:999px;animation:marketSlide 1.2s ease-in-out infinite;"></div>',
+        '  </div>',
+        '</div>'
+      ].join('');
+      return;
+    }
+    el.setAttribute('aria-busy', 'false');
     el.textContent = msg || '';
     el.style.color = isError ? '#c62828' : '#546E7A';
   }
@@ -328,6 +409,9 @@
     const meta = document.getElementById('marketActiveMeta');
     const commentEl = document.getElementById('marketActiveComment');
     if (!tbody || !conf) return;
+
+    const isLoading = !!_loading[_active];
+    const isRefresh = !!_loadingRefresh[_active];
 
     if (commentEl) {
       const c = data && data.comment ? String(data.comment) : '';
@@ -341,8 +425,28 @@
     }
 
     if (!data || !Array.isArray(data.items)) {
-      tbody.innerHTML = '<tr><td colspan="6" style="padding:16px;text-align:center;color:#90A4AE;">データなし</td></tr>';
-      if (meta) meta.textContent = '未読込';
+      if (isLoading) {
+        const title = isRefresh ? '最新の日報CSVを取り込み中...' : '市況データを読み込み中...';
+        tbody.innerHTML = [
+          '<tr><td colspan="6" style="padding:36px 16px;text-align:center;">',
+          '  <div style="width:36px;height:36px;margin:0 auto 12px;border:3.5px solid ' + conf.border + ';border-top-color:' + conf.color + ';border-radius:50%;animation:marketSpin 0.8s linear infinite;"></div>',
+          '  <div style="font-size:14px;font-weight:700;color:' + conf.color + ';margin-bottom:4px;">' + title + '</div>',
+          '  <div style="font-size:11px;color:#78909C;line-height:1.5;">サーバーから市況データを取得しています。そのまま少々お待ちください。</div>',
+          '</td></tr>'
+        ].join('');
+        if (meta) {
+          meta.textContent = '⏳ 市況データを取得しています...';
+          meta.style.color = conf.color;
+          meta.style.fontWeight = '700';
+        }
+      } else {
+        tbody.innerHTML = '<tr><td colspan="6" style="padding:16px;text-align:center;color:#90A4AE;">データなし</td></tr>';
+        if (meta) {
+          meta.textContent = '未読込';
+          meta.style.color = '#607D8B';
+          meta.style.fontWeight = '400';
+        }
+      }
       renderItemChips_();
       return;
     }
@@ -352,10 +456,13 @@
     if (meta) {
       const src = data.source === 'csv' ? 'CSV取込'
         : (data.fromSheet || String(data.source || '').indexOf('sheet') === 0 ? '保存データ' : (data.source || ''));
+      meta.style.color = '#607D8B';
+      meta.style.fontWeight = '400';
       meta.textContent = (data.date || '—') + ' / ' + (data.market || conf.defaultMarket)
         + ' / ' + data.items.length + '品目'
         + (data.importedAt ? ' / 取込 ' + data.importedAt : '')
-        + (src ? '（' + src + '）' : '');
+        + (src ? '（' + src + '）' : '')
+        + (isLoading ? '（🔄 最新データ取得中...）' : '');
     }
 
     const selected = _selectedItems[_active] || new Set();
@@ -374,13 +481,25 @@
       });
     }
 
+    const loadingBannerRow = isLoading ? [
+      '<tr style="background:' + conf.bg + ';border-bottom:2px solid ' + conf.border + ';">',
+      '  <td colspan="6" style="padding:10px 8px;">',
+      '    <div style="display:flex;align-items:center;justify-content:center;gap:8px;font-size:12px;font-weight:700;color:' + conf.color + ';">',
+      '      <span style="display:inline-block;width:14px;height:14px;flex:0 0 14px;border:2px solid ' + conf.border + ';border-top-color:' + conf.color + ';border-radius:50%;animation:marketSpin 0.8s linear infinite;"></span>',
+      '      <span>' + (isRefresh ? '最新の日報CSVを取り込み中です。完了すると自動で切り替わります...' : '最新の市況データを確認中です。完了すると自動で切り替わります...') + '</span>',
+      '    </div>',
+      '  </td>',
+      '</tr>'
+    ].join('') : '';
+
     if (!items.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="padding:16px;text-align:center;color:#90A4AE;">該当する品目がありません</td></tr>';
+      tbody.innerHTML = loadingBannerRow + '<tr><td colspan="6" style="padding:16px;text-align:center;color:#90A4AE;">該当する品目がありません</td></tr>';
       return;
     }
 
     const showTrend = _active === 'osaka';
-    tbody.innerHTML = items.map(function (it) {
+    const rowOpacity = isLoading ? 'opacity:0.55;' : '';
+    tbody.innerHTML = loadingBannerRow + items.map(function (it) {
       const tr = trendLabel_(it.trend);
       const unitHint = (it.unitSize != null)
         ? ('<div style="font-size:10px;color:#90A4AE;">/' + esc_(fmtNum_(it.unitSize)) + 'kg</div>')
@@ -392,7 +511,7 @@
         ? ('<td style="padding:8px 6px;text-align:center;font-weight:bold;color:' + tr.color + ';white-space:nowrap;">' + esc_(tr.text) + '</td>')
         : ('<td style="padding:8px 6px;text-align:center;color:#90A4AE;">—</td>');
       return [
-        '<tr style="border-bottom:1px solid #f0f0f0;">',
+        '<tr style="border-bottom:1px solid #f0f0f0;' + rowOpacity + '">',
         '  <td style="padding:8px 6px;font-weight:600;color:#37474F;">' + esc_(it.name) + origin + '</td>',
         '  <td style="padding:8px 6px;text-align:right;white-space:nowrap;">' + esc_(fmtNum_(it.qtyKg)) + '<div style="font-size:10px;color:#90A4AE;">kg</div></td>',
         '  <td style="padding:8px 6px;text-align:right;white-space:nowrap;">' + esc_(fmtYen_(it.high)) + unitHint + '</td>',
@@ -410,32 +529,41 @@
     ensurePanelDom_();
     if (_loading[key]) return;
     _loading[key] = true;
+    _loadingRefresh[key] = !!refresh;
+    applyActiveChrome_();
     if (key === _active) {
-      setStatus_(refresh ? '最新CSVを取り込み中...' : '市況データを読み込み中...');
+      renderItemChips_();
+      renderActiveTable_();
+      setStatus_(loadingStatusMessage_(key), false, true);
     }
-    const refreshBtn = document.getElementById('marketActiveRefresh');
-    if (refreshBtn && key === _active) refreshBtn.disabled = true;
     try {
       const params = Object.assign({}, conf.getParams || {}, { refresh: !!refresh });
       const data = await callMarketGas_(refresh ? conf.importAction : conf.getAction, params);
       _cache[key] = data || null;
+      _loading[key] = false;
+      _loadingRefresh[key] = false;
+      applyActiveChrome_();
       if (key === _active) {
         renderItemChips_();
         renderActiveTable_();
-        if (data && data.warning) setStatus_(data.warning, false);
+        if (data && data.warning) setStatus_(data.warning, false, false);
         else {
           const selected = _selectedItems[key] || new Set();
           const total = data && data.count != null ? data.count : ((data && data.items) || []).length;
           if (selected.size) {
-            setStatus_(selected.size + '品目を選択中（全' + total + '品目）');
+            setStatus_(selected.size + '品目を選択中（全' + total + '品目）', false, false);
           } else {
-            setStatus_(total + '品目を表示しています');
+            setStatus_(total + '品目を表示しています', false, false);
           }
         }
       }
     } catch (err) {
       console.warn(key + ' market load failed', err);
+      _loading[key] = false;
+      _loadingRefresh[key] = false;
+      applyActiveChrome_();
       if (key === _active) {
+        renderItemChips_();
         let msg = String((err && err.message) || err || '取得に失敗しました');
         msg = msg.replace(/^Error:\s*/i, '').replace(/^Exception:\s*/i, '');
         if (/大阪/.test(msg) || key === 'osaka') {
@@ -445,8 +573,16 @@
         } else if (key === 'tokyo' && /取得できません|Failed to fetch|タイムアウト|Aborted|timeout/i.test(msg)) {
           msg = '東京都日報の取得に失敗しました。通信が混み合っているか、当日分が未公開の可能性があります。「更新」で再試行してください。';
         }
-        setStatus_(msg, true);
-        if (!_cache[key]) {
+        setStatus_(msg, true, false);
+        if (_cache[key]) {
+          renderActiveTable_();
+        } else {
+          const meta = document.getElementById('marketActiveMeta');
+          if (meta) {
+            meta.textContent = '取得に失敗しました';
+            meta.style.color = '#c62828';
+            meta.style.fontWeight = '400';
+          }
           const tbody = document.getElementById('marketActiveTbody');
           if (tbody) {
             const help = key === 'osaka'
@@ -458,7 +594,8 @@
       }
     } finally {
       _loading[key] = false;
-      if (refreshBtn && key === _active) refreshBtn.disabled = false;
+      _loadingRefresh[key] = false;
+      applyActiveChrome_();
     }
   }
 
@@ -481,11 +618,13 @@
       if (!modal) return;
       bindChrome();
       ensurePanelDom_();
-      applyActiveChrome_();
       modal.style.display = 'flex';
-      renderActiveTable_();
       // 既定は東京。大阪公式サイト障害時に先読みでタイムアウトしないよう、開いたタブだけ読む
-      loadMarket_(_active, false);
+      if (_loading[_active]) {
+        renderActiveLoadingView_();
+      } else {
+        loadMarket_(_active, false);
+      }
     },
 
     close() {

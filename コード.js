@@ -6,6 +6,7 @@ const DEFAULT_GOOGLE_CLIENT_ID = "897816769504-n26f6sodn6bvoupptvn0jnqb3b3513li.
 const DEFAULT_LINE_CHANNEL_ID = "2012460474"; // LINEログイン チャネルID（未設定時はスクリプトプロパティ LINE_CHANNEL_ID を参照）
 const DEFAULT_LINE_CHANNEL_SECRET = "3a924fc342e0d6100a67be3c9241aecb"; // LINEログイン チャネルシークレット（未設定時はスクリプトプロパティ LINE_CHANNEL_SECRET を参照）
 let TENANT_SS = null;
+let _cpFieldLookupCache = null;
 
 function jsonOut_(obj) {
   try {
@@ -19,6 +20,7 @@ function jsonOut_(obj) {
 
 function bindTenantSpreadsheet_(params) {
   TENANT_SS = null;
+  _cpFieldLookupCache = null;
   const raw = params && params.spreadsheetId;
   if (raw && raw !== 'undefined' && raw !== 'null' && String(raw).trim() !== '') {
     TENANT_SS = SpreadsheetApp.openById(String(raw).trim());
@@ -660,6 +662,7 @@ function resolveTenantSpreadsheetId_(orgId) {
 
 function openTenantByOrgId_(orgId) {
   const targetSpreadsheetId = resolveTenantSpreadsheetId_(orgId || 'default');
+  _cpFieldLookupCache = null;
   try {
     TENANT_SS = SpreadsheetApp.openById(targetSpreadsheetId);
   } catch (e) {
@@ -12343,15 +12346,26 @@ function addMachineSymptom(params) {
   const data = sheet.getDataRange().getValues();
   const symCol = NOUKI_COL.symptoms; // O列
   const symIdx = symCol - 1;
+  // 同じ機械カテゴリ（機種: type）で共通化するため、machineId から機種を解決
+  let targetType = String(params.machineType || "").trim();
+  if (!targetType && params.machineId && params.syncByType !== false) {
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0] || "") === String(params.machineId)) {
+        targetType = String(data[i][NOUKI_COL.type - 1] || "").trim();
+        break;
+      }
+    }
+  }
   let updatedCount = 0;
   for (let i = 1; i < data.length; i++) {
     const rowId = String(data[i][0] || "");
-    const rowType = String(data[i][NOUKI_COL.type - 1] || "");
-    const rowGroup = String(data[i][NOUKI_COL.group - 1] || "");
+    const rowType = String(data[i][NOUKI_COL.type - 1] || "").trim();
+    const rowGroup = String(data[i][NOUKI_COL.group - 1] || "").trim();
     const matchId = params.machineId && rowId === String(params.machineId);
+    const matchType = targetType && rowType === targetType;
     const matchCat = params.category && (rowType === String(params.category) || rowGroup === String(params.category));
 
-    if (matchId || matchCat || (!params.machineId && !params.category)) {
+    if (matchId || matchType || matchCat || (!params.machineId && !params.category && !targetType)) {
       if (params.fullSymptoms != null) {
         sheet.getRange(i + 1, symCol).setValue(String(params.fullSymptoms || ""));
         updatedCount++;
@@ -12380,18 +12394,30 @@ function addMachineSymptom(params) {
   return updatedCount;
 }
 // ==========================================
-// 農機の整備内容候補を追加/編集/削除する（機械別）
+// 農機の整備内容候補を追加/編集/削除する（機械カテゴリ共通）
 // ==========================================
 function addMachineMaintenanceContent(params) {
   const sheet = ensureNoukiMasterSheet();
   const data = sheet.getDataRange().getValues();
   const col = NOUKI_COL.maintenanceContents; // Q列: 整備内容候補
   const idx = col - 1;
+  // 同じ機械カテゴリ（機種: type）で共通化するため、machineId から機種を解決
+  let targetType = String(params.machineType || "").trim();
+  if (!targetType && params.machineId && params.syncByType !== false) {
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0] || "") === String(params.machineId)) {
+        targetType = String(data[i][NOUKI_COL.type - 1] || "").trim();
+        break;
+      }
+    }
+  }
   let updatedCount = 0;
   for (let i = 1; i < data.length; i++) {
     const rowId = String(data[i][0] || "");
+    const rowType = String(data[i][NOUKI_COL.type - 1] || "").trim();
     const matchId = params.machineId && rowId === String(params.machineId);
-    if (!matchId) continue;
+    const matchType = targetType && rowType === targetType;
+    if (!matchId && !matchType) continue;
 
     if (params.fullContents != null) {
       sheet.getRange(i + 1, col).setValue(String(params.fullContents || ""));
@@ -17717,36 +17743,56 @@ function formatCpPeriodLabel(planYear, sowingCells) {
   return fLabel + '〜' + lLabel;
 }
 
-function resolveCpFieldDisplayName_(fieldId) {
+function getCpFieldLookupMap_() {
   const ss = TENANT_SS;
+  if (_cpFieldLookupCache && _cpFieldLookupCache.ss === ss) {
+    return _cpFieldLookupCache.map;
+  }
+  const map = {};
+  const sheet = ss ? ss.getSheetByName('圃場') : null;
+  if (sheet) {
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const id = String(data[i][0] || '');
+      if (!id) continue;
+      map[id] = {
+        name: String(data[i][1] || id),
+        uneSim: data[i][15],
+        uneList: null
+      };
+    }
+  }
+  _cpFieldLookupCache = { ss: ss, map: map };
+  return map;
+}
+
+function resolveCpFieldDisplayName_(fieldId) {
   const idStr = String(fieldId || '');
   const m = idStr.match(/^(.+)#une#(\d+)$/);
   const baseId = m ? m[1] : idStr;
   const uneIndex = m ? parseInt(m[2], 10) : null;
 
-  const sheet = ss.getSheetByName('圃場');
-  if (!sheet || sheet.getLastRow() <= 1) return idStr;
-  const data = sheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(baseId)) {
-      const name = String(data[i][1] || baseId);
-      if (uneIndex == null) return name;
-      // 畝ラベル（CADデータから）
-      let uneLabel = '畝' + (uneIndex + 1);
-      try {
-        const uneSim = data[i][15];
-        if (uneSim) {
-          const parsed = (typeof uneSim === 'string') ? JSON.parse(uneSim) : uneSim;
-          const list = parsed && parsed.unePolygons ? parsed.unePolygons : (Array.isArray(parsed) ? parsed : []);
-          const une = list[uneIndex];
-          if (une && une.customLabel) uneLabel = String(une.customLabel);
-          else if (une && une.group) uneLabel = String(une.group) + '-' + (uneIndex + 1);
-        }
-      } catch (e) { }
-      return name + '(' + uneLabel + ')';
+  const map = getCpFieldLookupMap_();
+  const info = map[String(baseId)];
+  if (!info) return idStr;
+  if (uneIndex == null) return info.name;
+
+  // 畝ラベル（CADデータから）
+  let uneLabel = '畝' + (uneIndex + 1);
+  try {
+    if (info.uneList === null) {
+      let list = [];
+      if (info.uneSim) {
+        const parsed = (typeof info.uneSim === 'string') ? JSON.parse(info.uneSim) : info.uneSim;
+        list = parsed && parsed.unePolygons ? parsed.unePolygons : (Array.isArray(parsed) ? parsed : []);
+      }
+      info.uneList = list;
     }
-  }
-  return idStr;
+    const une = info.uneList[uneIndex];
+    if (une && une.customLabel) uneLabel = String(une.customLabel);
+    else if (une && une.group) uneLabel = String(une.group) + '-' + (uneIndex + 1);
+  } catch (e) { }
+  return info.name + '(' + uneLabel + ')';
 }
 
 /**
@@ -17934,57 +17980,80 @@ function ensureSowingRecordSheet_() {
 }
 
 function readNurseryLocationList_() {
-  const sheet = ensureNurseryLocationSheet_();
-  const last = sheet.getLastRow();
-  if (last < 2) return [];
-  const colCount = Math.max(NURSERY_LOCATION_HEADERS_.length, 6);
-  const values = sheet.getRange(2, 1, last - 1, colCount).getValues();
-  return values.map(r => ({
-    id: String(r[0] || '').trim(),
-    name: String(r[1] || '').trim(),
-    polyId: String(r[2] || '').trim(),
-    polyName: String(r[3] || '').trim(),
-    direction: String(r[4] || '').trim(),
-    note: String(r[5] || '').trim(),
-    locationName: String(r[6] || '').trim(),
-    mapLat: (r[7] === '' || r[7] == null) ? '' : r[7],
-    mapLng: (r[8] === '' || r[8] == null) ? '' : r[8],
-    mapZoom: (r[9] === '' || r[9] == null) ? '' : r[9]
-  })).filter(x => x.id || x.name);
+  const sheet = TENANT_SS.getSheetByName('育苗場所マスタ');
+  if (!sheet) return [];
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return [];
+  const out = [];
+  for (let i = 1; i < values.length; i++) {
+    const r = values[i];
+    const id = String(r[0] || '').trim();
+    const name = String(r[1] || '').trim();
+    if (!id && !name) continue;
+    out.push({
+      id: id,
+      name: name,
+      polyId: String(r[2] || '').trim(),
+      polyName: String(r[3] || '').trim(),
+      direction: String(r[4] || '').trim(),
+      note: String(r[5] || '').trim(),
+      locationName: String(r[6] || '').trim(),
+      mapLat: (r[7] === '' || r[7] == null) ? '' : r[7],
+      mapLng: (r[8] === '' || r[8] == null) ? '' : r[8],
+      mapZoom: (r[9] === '' || r[9] == null) ? '' : r[9]
+    });
+  }
+  return out;
 }
 
 function readCropCultSettingList_() {
-  const sheet = ensureCropCultSettingSheet_();
-  const last = sheet.getLastRow();
-  if (last < 2) return [];
-  const values = sheet.getRange(2, 1, last - 1, 3).getValues();
-  return values.map(r => ({
-    cropName: String(r[0] || '').trim(),
-    sowingHoles: (r[1] === '' || r[1] == null) ? '' : r[1],
-    note: String(r[2] || '').trim()
-  })).filter(x => x.cropName);
+  const sheet = TENANT_SS.getSheetByName('作物栽培設定マスタ');
+  if (!sheet) return [];
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return [];
+  const out = [];
+  for (let i = 1; i < values.length; i++) {
+    const r = values[i];
+    const cropName = String(r[0] || '').trim();
+    if (!cropName) continue;
+    out.push({
+      cropName: cropName,
+      sowingHoles: (r[1] === '' || r[1] == null) ? '' : r[1],
+      note: String(r[2] || '').trim()
+    });
+  }
+  return out;
 }
 
 function readSowingRecordList_() {
-  const sheet = ensureSowingRecordSheet_();
-  const last = sheet.getLastRow();
-  if (last < 2) return [];
-  const values = sheet.getRange(2, 1, last - 1, SOWING_RECORD_HEADERS_.length).getValues();
-  return values.map(r => ({
-    recordedAt: String(r[0] || '').trim(),
-    author: String(r[1] || '').trim(),
-    tag: String(r[2] || '').trim(),
-    cropName: String(r[3] || '').trim(),
-    variety: String(r[4] || '').trim(),
-    nurseryName: String(r[5] || '').trim(),
-    direction: String(r[6] || '').trim(),
-    sowingDate: r[7] instanceof Date ? Utilities.formatDate(r[7], 'Asia/Tokyo', 'yyyy-MM-dd') : String(r[7] || '').trim(),
-    trays: Number(r[8]) || 0,
-    holes: (r[9] === '' || r[9] == null) ? '' : r[9],
-    planId: String(r[10] || '').trim(),
-    recordId: String(r[11] || '').trim(),
-    note: String(r[12] || '').trim()
-  })).filter(x => x.tag || x.cropName || x.trays);
+  const sheet = TENANT_SS.getSheetByName('播種記録');
+  if (!sheet) return [];
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return [];
+  const out = [];
+  for (let i = 1; i < values.length; i++) {
+    const r = values[i];
+    const tag = String(r[2] || '').trim();
+    const cropName = String(r[3] || '').trim();
+    const trays = Number(r[8]) || 0;
+    if (!tag && !cropName && !trays) continue;
+    out.push({
+      recordedAt: String(r[0] || '').trim(),
+      author: String(r[1] || '').trim(),
+      tag: tag,
+      cropName: cropName,
+      variety: String(r[4] || '').trim(),
+      nurseryName: String(r[5] || '').trim(),
+      direction: String(r[6] || '').trim(),
+      sowingDate: r[7] instanceof Date ? Utilities.formatDate(r[7], 'Asia/Tokyo', 'yyyy-MM-dd') : String(r[7] || '').trim(),
+      trays: trays,
+      holes: (r[9] === '' || r[9] == null) ? '' : r[9],
+      planId: String(r[10] || '').trim(),
+      recordId: String(r[11] || '').trim(),
+      note: String(r[12] || '').trim()
+    });
+  }
+  return out;
 }
 
 function appendSowingRecordFromWork_(recordData, author, recordId) {
@@ -18260,13 +18329,14 @@ function buildCompletedSowTraysByPlanId_() {
 }
 
 /** 播種・育苗で共通利用するシート読込（1回だけ） */
-function loadSowingSharedContext_() {
-  const planLookup = buildCultivationPlanLookupById_();
+function loadSowingSharedContext_(yearFilter) {
+  const planLookup = buildCultivationPlanLookupById_(yearFilter);
   const records = readSowingRecordList_();
   let sData = [];
   const schedSheet = TENANT_SS.getSheetByName('作業予定');
-  if (schedSheet && schedSheet.getLastRow() > 1) {
-    sData = schedSheet.getRange(2, 1, schedSheet.getLastRow() - 1, 11).getValues();
+  if (schedSheet) {
+    const sAll = schedSheet.getDataRange().getValues();
+    if (sAll.length > 1) sData = sAll.slice(1);
   }
   return {
     planLookup: planLookup,
@@ -18277,12 +18347,15 @@ function loadSowingSharedContext_() {
   };
 }
 
-function buildCultivationPlanLookupById_() {
+function buildCultivationPlanLookupById_(yearFilter) {
   const map = {};
   const sheet = TENANT_SS.getSheetByName('栽培計画');
-  if (!sheet || sheet.getLastRow() < 2) return map;
-  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
-  data.forEach(r => {
+  if (!sheet) return map;
+  const all = sheet.getDataRange().getValues();
+  const yFilter = yearFilter ? String(yearFilter).trim() : '';
+  for (let i = 1; i < all.length; i++) {
+    const r = all[i];
+    if (yFilter && r[1] !== '' && r[1] != null && String(r[1]) !== yFilter) continue;
     try {
       const plan = JSON.parse(String(r[5] || '{}'));
       if (plan && plan.id) {
@@ -18290,7 +18363,7 @@ function buildCultivationPlanLookupById_() {
         map[String(plan.id)] = plan;
       }
     } catch (e) { }
-  });
+  }
   return map;
 }
 
@@ -19770,7 +19843,8 @@ function getWeatherPlantingPriorities(params) {
 }
 
 function getSowingProgress(params) {
-  return getSowingProgressFromContext_(loadSowingSharedContext_(), params);
+  const yearFilter = (params && params.year) ? String(params.year) : '';
+  return getSowingProgressFromContext_(loadSowingSharedContext_(yearFilter), params);
 }
 
 function getSowingProgressFromContext_(ctx, params) {
@@ -19886,10 +19960,11 @@ function getCurrentSowingPlanOptionsFromContext_(ctx, params) {
   const includeDone = params.includeDone === true || params.includeDone === 'true';
   const includePastPlans = params.includePastPlans === true || params.includePastPlans === 'true';
   const lightProgress = params.lightProgress === true || params.lightProgress === 'true';
+  const skipFieldNames = params.skipFieldNames === true || params.skipFieldNames === 'true';
   const BEFORE_DAYS = 7;
   const AFTER_DAYS = 14;
 
-  if (!ctx) ctx = loadSowingSharedContext_();
+  if (!ctx) ctx = loadSowingSharedContext_(yearFilter);
   const planLookup = ctx.planLookup;
   const state = ctx.scheduleState;
   const records = ctx.records;
@@ -19981,7 +20056,7 @@ function getCurrentSowingPlanOptionsFromContext_(ctx, params) {
       holes: plan.holes != null ? plan.holes : '',
       doneTrays: doneTrays,
       remainTrays: Math.max(0, plannedTrays - doneTrays),
-      fieldNames: cpPlanFieldNames_(plan),
+      fieldNames: skipFieldNames ? '' : cpPlanFieldNames_(plan),
       periodLabel: periodLabel,
       sowingLabel: sowingLabel,
       plantingLabel: plantingLabel,
@@ -20024,7 +20099,8 @@ function getSowingNurseryFormOptions(params) {
   const planRes = getCurrentSowingPlanOptions(Object.assign({}, params, {
     includeDone: params.includeDone != null ? params.includeDone : true,
     includePastPlans: includePastPlans,
-    lightProgress: includePastPlans === true || includePastPlans === 'true'
+    lightProgress: includePastPlans === true || includePastPlans === 'true',
+    skipFieldNames: true
   }));
   return buildSowingNurseryFormOptionsPayload_(planRes, params);
 }
@@ -20032,18 +20108,39 @@ function getSowingNurseryFormOptions(params) {
 /** 進捗＋フォーム用データを1回のシート読込でまとめて返す */
 function getSowingNurseryBundle(params) {
   params = params || {};
-  const ctx = loadSowingSharedContext_();
   const year = String(params.year || Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy'));
+  const ctx = loadSowingSharedContext_(year);
   const includePastPlans = params.includePastPlans != null ? params.includePastPlans : true;
   const progress = getSowingProgressFromContext_(ctx, { year: year });
   const planRes = getCurrentSowingPlanOptionsFromContext_(ctx, Object.assign({}, params, {
     year: year,
     includeDone: params.includeDone != null ? params.includeDone : true,
     includePastPlans: includePastPlans,
-    lightProgress: includePastPlans === true || includePastPlans === 'true'
+    lightProgress: includePastPlans === true || includePastPlans === 'true',
+    skipFieldNames: true
   }));
   const formOptions = buildSowingNurseryFormOptionsPayload_(planRes, params);
   return { success: true, progress: progress, formOptions: formOptions };
+}
+
+/** 栽培計画マスタの穴数選択肢だけを読み取る軽量ヘルパー */
+function readCultivationHolesOptions_() {
+  const holesOptions = [72, 128, 200, 288];
+  try {
+    const sheet = TENANT_SS.getSheetByName('栽培計画マスタ');
+    if (sheet) {
+      const values = sheet.getDataRange().getValues();
+      for (let i = 1; i < values.length; i++) {
+        const raw = values[i][2];
+        if (raw === '' || raw == null) continue;
+        const n = Number(raw);
+        if (!isFinite(n) || n < 0) continue;
+        if (holesOptions.indexOf(n) < 0) holesOptions.push(n);
+      }
+      holesOptions.sort(function (a, b) { return a - b; });
+    }
+  } catch (eHoles) { }
+  return holesOptions;
 }
 
 function buildSowingNurseryFormOptionsPayload_(planRes, params) {
@@ -20113,9 +20210,14 @@ function buildSowingNurseryFormOptionsPayload_(planRes, params) {
   });
   // 予定にない作物も播種できるよう、作物マスタも候補に含める
   try {
-    readMergedCropMasterList_().forEach(function (c) {
-      const n = String((c && c.name) || c || '').trim();
-      if (n) cropSet[n] = true;
+    ['作物マスタ', '生育記録マスタ'].forEach(function (sheetName) {
+      const sh = TENANT_SS.getSheetByName(sheetName);
+      if (!sh) return;
+      const values = sh.getDataRange().getValues();
+      for (let i = 1; i < values.length; i++) {
+        const n = String(values[i][0] || '').trim();
+        if (n) cropSet[n] = true;
+      }
     });
   } catch (eCrop) { }
   const crops = Object.keys(cropSet).sort(function (a, b) {
@@ -20132,26 +20234,24 @@ function buildSowingNurseryFormOptionsPayload_(planRes, params) {
     nurseryLocations: nurseryLocations,
     locations: (function () {
       try {
-        return readLocationMasterDetails_().map(function (l) {
-          return { name: String(l.name || '').trim() };
-        }).filter(function (l) { return !!l.name; });
+        const locSheet = TENANT_SS.getSheetByName('拠点マスタ');
+        if (!locSheet) return [];
+        const values = locSheet.getDataRange().getValues();
+        if (!values.length) return [];
+        const firstCell = String(values[0][0] || '').trim();
+        const startRow = (firstCell === '拠点名' || firstCell === '拠点') ? 1 : 0;
+        const out = [];
+        const seen = {};
+        for (let i = startRow; i < values.length; i++) {
+          const name = String(values[i][0] || '').trim();
+          if (!name || name === '拠点名' || name === '拠点' || seen[name]) continue;
+          seen[name] = true;
+          out.push({ name: name });
+        }
+        return out;
       } catch (eLoc) { return []; }
     })(),
-    holesOptions: (function () {
-      var holesOptions = [72, 128, 200, 288];
-      try {
-        var master = getCultivationMaster();
-        if (master && Array.isArray(master.holes)) {
-          master.holes.forEach(function (h) {
-            var n = Number(h);
-            if (!isFinite(n) || n < 0) return;
-            if (holesOptions.indexOf(n) < 0) holesOptions.push(n);
-          });
-          holesOptions.sort(function (a, b) { return a - b; });
-        }
-      } catch (eHoles) { }
-      return holesOptions;
-    })(),
+    holesOptions: readCultivationHolesOptions_(),
     cropCultSettings: cropCultSettings
   };
 }
@@ -20220,19 +20320,7 @@ function manageCultivationListOption(params) {
     throw new Error('未対応の操作です: ' + manageAction);
   }
 
-  let holesOptions = [72, 128, 200, 288];
-  try {
-    const master = getCultivationMaster();
-    if (master && Array.isArray(master.holes)) {
-      master.holes.forEach(function (h) {
-        const n = Number(h);
-        if (!isFinite(n) || n < 0) return;
-        if (holesOptions.indexOf(n) < 0) holesOptions.push(n);
-      });
-      holesOptions.sort(function (a, b) { return a - b; });
-    }
-  } catch (e2) { }
-  return { success: true, holesOptions: holesOptions };
+  return { success: true, holesOptions: readCultivationHolesOptions_() };
 }
 
 function saveSowingRecord(params) {

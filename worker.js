@@ -1946,8 +1946,10 @@ function renderInitData(data) {
   pdlPastReports = data.pdl.pastReports || [];
   activeLots = data.activeLots || [];
   pdlTools = data.pdl.tools || [];
+  window.pdlTools = pdlTools;
   pdlMaterials = data.pdl.materials || [];
   pdlMachines = data.pdl.machines || [];
+  window.pdlMachines = pdlMachines;
   pdlPesticides = data.pdl.pesticides || [];
   pdlSymptoms = data.pdl.symptoms || [];
   pdlNurseryLocations = data.pdl.nurseryLocations || [];
@@ -2150,12 +2152,27 @@ window.getWorkerFieldColorMode_ = () => {
   return window._workerFieldColorMode === 'status' ? 'status' : 'crop';
 };
 
+const workerStatusColors = {};
+const workerStatusPalette = ['#4CAF50', '#2196F3', '#FF9800', '#E91E63', '#00BCD4', '#8BC34A', '#795548', '#3F51B5', '#9C27B0', '#009688'];
+let workerStatusColorIdx = 0;
+
+function getWorkerStatusColor_(statusStr) {
+  const s = String(statusStr || '').trim();
+  if (!s || s.includes('未使用')) return '#9E9E9E';
+  if (workerStatusColors[s]) return workerStatusColors[s];
+  const color = workerStatusPalette[workerStatusColorIdx % workerStatusPalette.length];
+  workerStatusColors[s] = color;
+  workerStatusColorIdx++;
+  return color;
+}
+
 window.getWorkerFieldBaseColor_ = (p) => {
   if (!p) return '#8BC34A';
-  const isUnused = (p.status === '未使用（返却）' || p.status === '未使用');
-  if (isUnused) return '#999999';
+  const statusStr = String(p.status || '').trim();
+  const isUnused = (statusStr === '未使用（返却）' || statusStr === '未使用' || statusStr.includes('未使用'));
+  if (isUnused) return '#9E9E9E';
   if (window.getWorkerFieldColorMode_() === 'status') {
-    return p.color || '#8BC34A';
+    return getWorkerStatusColor_(statusStr);
   }
   const currentCrop = getCurrentCrop(p.photos);
   return getCropColor(currentCrop);
@@ -2181,7 +2198,7 @@ function updateWorkerLegend() {
   if (!legendDiv) {
     legendDiv = document.createElement('div');
     legendDiv.id = 'workerLegendUI';
-    legendDiv.style.cssText = 'position:absolute; bottom:34px; left:12px; background:rgba(255,255,255,0.94); padding:8px 10px; border-radius:10px; z-index:1000; box-shadow:0 2px 10px rgba(0,0,0,0.22); max-height: 230px; overflow-y: auto; font-size:12px; pointer-events:auto; max-width:210px;';
+    legendDiv.style.cssText = 'position:absolute; bottom:38px; left:12px; background:rgba(255,255,255,0.94); padding:8px 10px; border-radius:10px; z-index:1000; box-shadow:0 2px 10px rgba(0,0,0,0.22); max-height: 230px; overflow-y: auto; font-size:12px; pointer-events:auto; max-width:210px;';
     legendDiv.addEventListener('click', (e) => { e.stopPropagation(); });
     legendDiv.addEventListener('touchstart', (e) => { e.stopPropagation(); }, { passive: true });
     document.getElementById('map').appendChild(legendDiv);
@@ -2205,17 +2222,17 @@ function updateWorkerLegend() {
     for (let id in loadedPolygons) {
       const p = loadedPolygons[id];
       if (!p || p.isMarker) continue;
-      if (p.status === '未使用（返却）' || p.status === '未使用') {
+      const statusStr = String(p.status || '').trim();
+      if (!statusStr || statusStr.includes('未使用')) {
         hasUnused = true;
         continue;
       }
-      const label = (p.status && String(p.status).trim()) ? String(p.status).trim() : 'その他';
-      if (!statusMap.has(label)) {
-        statusMap.set(label, p.color || '#8BC34A');
+      if (!statusMap.has(statusStr)) {
+        statusMap.set(statusStr, getWorkerStatusColor_(statusStr));
       }
     }
     if (hasUnused || statusMap.size === 0) {
-      html += `<div style="display:flex; align-items:center; margin-bottom:3px;"><div style="width:12px; height:12px; background:#999999; border-radius:50%; margin-right:5px; flex-shrink:0;"></div><span style="color:#333;">未使用</span></div>`;
+      html += `<div style="display:flex; align-items:center; margin-bottom:3px;"><div style="width:12px; height:12px; background:#9E9E9E; border-radius:50%; margin-right:5px; flex-shrink:0;"></div><span style="color:#333;">未使用</span></div>`;
     }
     statusMap.forEach((col, label) => {
       html += `<div style="display:flex; align-items:center; margin-bottom:3px;"><div style="width:12px; height:12px; background:${col}; border-radius:50%; margin-right:5px; flex-shrink:0;"></div><span style="color:#333;">${label}</span></div>`;
@@ -13229,8 +13246,11 @@ window.openMaintenanceSymptomManagerModal = (action) => {
     return;
   }
   const items = window.getMachineMaintenanceOptions_(machine, 'symptoms');
+  const scopeTitle = String(machine.type || '').trim()
+    ? `${String(machine.type).trim()} 共通`
+    : (machine.name || 'この機械');
   window.showMaintenanceMasterManageModal({
-    title: `症状（${machine.name || 'この機械'}）`,
+    title: `症状（${scopeTitle}）`,
     items: items,
     onAdd: () => window.addNewSymptomMaster(machine),
     onEdit: async (oldName) => {
@@ -13337,8 +13357,11 @@ window.openMaintenanceContentManagerModal = (action) => {
     return;
   }
   const items = window.getMachineMaintenanceOptions_(machine, 'maintenanceContents');
+  const scopeTitle = String(machine.type || '').trim()
+    ? `${String(machine.type).trim()} 共通`
+    : (machine.name || 'この機械');
   window.showMaintenanceMasterManageModal({
-    title: `整備内容（${machine.name || 'この機械'}）`,
+    title: `整備内容（${scopeTitle}）`,
     items: items,
     onAdd: () => window.addNewMaintenanceContentMaster(machine),
     onEdit: async (oldName) => {
@@ -14800,25 +14823,86 @@ window.writeMachineSymptomContentStore_ = (store) => {
   } catch (e) { }
 };
 
-/** 過去の記録と、選んだ組み合わせから 症状→整備内容 を集める */
+/** 同じ機械カテゴリ（機種: type）に属する農機具一覧を返す（症状・整備内容の共通化用） */
+window.getMachineCategoryPeers_ = (machine) => {
+  if (!machine) return [];
+  if (machine.isTool || machine.isVehicle) return [machine];
+  const type = String(machine.type || '').trim();
+  const id = String(machine.id || '').trim();
+  const out = [];
+  const seenIds = new Set();
+  const pushOne = (m) => {
+    if (!m || m.isTool || m.isVehicle) return;
+    const mid = String(m.id || '').trim();
+    if (mid && seenIds.has(mid)) return;
+    if (mid) seenIds.add(mid);
+    out.push(m);
+  };
+  if (type && typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) {
+    pdlMachines.forEach((m) => {
+      if (!m || m.isTool || m.isVehicle) return;
+      if (String(m.type || '').trim() === type) pushOne(m);
+    });
+  }
+  if (!id || !seenIds.has(id)) pushOne(machine);
+  return out;
+};
+
+/** 症状→整備内容の紐づけストア用キー一覧（同じ機械カテゴリ共通キー＋同カテゴリ全機体ID） */
+window.getMachineSymptomContentStoreKeys_ = (machine) => {
+  const keys = [];
+  const addKey = (k) => {
+    const s = String(k || '').trim();
+    if (s && keys.indexOf(s) < 0) keys.push(s);
+  };
+  const type = (!machine || machine.isTool || machine.isVehicle) ? '' : String(machine.type || '').trim();
+  if (type) addKey('cat:' + type);
+  const peers = window.getMachineCategoryPeers_(machine);
+  peers.forEach((m) => addKey(m && m.id));
+  addKey(machine && machine.id);
+  return keys;
+};
+
+/** 過去の記録と、選んだ組み合わせから 症状→整備内容 を集める（同じ機械カテゴリで共通化） */
 window.collectMachineSymptomContentLinks_ = (machine) => {
-  const id = String(machine && machine.id || '').trim();
+  const peers = window.getMachineCategoryPeers_(machine);
+  const peerIdSet = new Set();
+  peers.forEach((m) => {
+    const mid = String(m && m.id || '').trim();
+    if (mid) peerIdSet.add(mid);
+  });
+  const selfId = String(machine && machine.id || '').trim();
+  if (selfId) peerIdSet.add(selfId);
+  const hasFilter = peerIdSet.size > 0;
+  const storeKeys = window.getMachineSymptomContentStoreKeys_(machine);
   const out = {};
   const push = (sym, content) => {
-    const s = String(sym || '').trim();
-    const c = String(content || '').trim();
-    if (!s || !c) return;
-    if (!out[s]) out[s] = [];
-    if (out[s].indexOf(c) < 0) out[s].push(c);
+    const syms = (Array.isArray(sym) ? sym : String(sym || '').split(/[,、]/))
+      .map((x) => String(x || '').trim()).filter(Boolean);
+    const contents = (Array.isArray(content) ? content : String(content || '').split(/[,、]/))
+      .map((x) => String(x || '').trim()).filter(Boolean);
+    if (!syms.length || !contents.length) return;
+    syms.forEach((s) => {
+      if (!out[s]) out[s] = [];
+      contents.forEach((c) => {
+        if (out[s].indexOf(c) < 0) out[s].push(c);
+      });
+    });
   };
   const store = window.readMachineSymptomContentStore_();
-  const saved = (id && store[id] && typeof store[id] === 'object') ? store[id] : {};
-  Object.keys(saved).forEach((sym) => {
-    (Array.isArray(saved[sym]) ? saved[sym] : []).forEach((c) => push(sym, c));
+  storeKeys.forEach((k) => {
+    const saved = (store[k] && typeof store[k] === 'object') ? store[k] : null;
+    if (!saved) return;
+    Object.keys(saved).forEach((sym) => {
+      (Array.isArray(saved[sym]) ? saved[sym] : []).forEach((c) => push(sym, c));
+    });
   });
-  const mem = (window._machineContentBySymptom && id && window._machineContentBySymptom[id]) || {};
-  Object.keys(mem).forEach((sym) => {
-    (mem[sym] || []).forEach((c) => push(sym, c));
+  storeKeys.forEach((k) => {
+    const mem = (window._machineContentBySymptom && window._machineContentBySymptom[k]) || null;
+    if (!mem) return;
+    Object.keys(mem).forEach((sym) => {
+      (mem[sym] || []).forEach((c) => push(sym, c));
+    });
   });
   const considerData = (data) => {
     if (!data || typeof data !== 'object') return;
@@ -14827,8 +14911,7 @@ window.collectMachineSymptomContentLinks_ = (machine) => {
     targets.forEach((t) => {
       if (!t) return;
       const tid = String(t.id || t.machineId || '').trim();
-      if (id && tid && tid !== id) return;
-      if (id && !tid) return;
+      if (hasFilter && (!tid || !peerIdSet.has(tid))) return;
       matched = true;
       push(t.symptom || t.maintenanceSymptom, t.content || t.maintenanceContent);
     });
@@ -14836,8 +14919,8 @@ window.collectMachineSymptomContentLinks_ = (machine) => {
     const mids = [data.maintenanceToolId, data.machineId, data.toolId]
       .map((x) => String(x || '').trim())
       .filter(Boolean);
-    if (id && mids.length && mids.indexOf(id) < 0) return;
-    if (id && !mids.length && !String(data.maintenanceSymptom || '').trim()) return;
+    if (hasFilter && mids.length && !mids.some((x) => peerIdSet.has(x))) return;
+    if (hasFilter && !mids.length && !String(data.maintenanceSymptom || '').trim()) return;
     push(data.maintenanceSymptom, data.maintenanceContent);
   };
   try {
@@ -14851,20 +14934,29 @@ window.collectMachineSymptomContentLinks_ = (machine) => {
     const map = d && d.maintenanceByTarget;
     if (!map || typeof map !== 'object') return;
     Object.keys(map).forEach((tid) => {
-      if (id && String(tid) !== id) return;
+      if (hasFilter && !peerIdSet.has(String(tid))) return;
       const row = map[tid] || {};
       push(row.symptom, row.content);
     });
   });
   // 整備履歴（MachineMaintenance）。作業記録に残っていない組み合わせもここにある
-  const machineName = String((machine && (machine.name || machine.type)) || '').replace(/\s+/g, '');
+  const machineNames = [];
+  const addMachineName = (n) => {
+    const s = String(n || '').replace(/\s+/g, '');
+    if (s && machineNames.indexOf(s) < 0) machineNames.push(s);
+  };
+  addMachineName(machine && (machine.type || machine.name));
+  peers.forEach((m) => {
+    addMachineName(m && m.type);
+    addMachineName(m && m.name);
+  });
   (Array.isArray(window._workerMachineMaintenanceRecords) ? window._workerMachineMaintenanceRecords : []).forEach((r) => {
     if (!r) return;
     const mid = String(r.machineId || '').trim();
-    if (id && mid && mid !== id) return;
-    if (id && !mid && machineName) {
+    if (hasFilter && mid && !peerIdSet.has(mid)) return;
+    if (hasFilter && !mid && machineNames.length) {
       const commentName = String(r.comment || '').replace(/\s+/g, '');
-      if (commentName.indexOf(machineName) < 0) return;
+      if (!machineNames.some((mn) => commentName.indexOf(mn) >= 0)) return;
     }
     let sym = '';
     const comment = String(r.comment || '');
@@ -14889,10 +14981,12 @@ window.maintContentMatchesSymptom_ = (contentName, symptomName) => {
   return false;
 };
 
-/** 選んだ整備内容を、そのときの症状に紐づける（カンマ・読点・配列の複数対応） */
+/** 選んだ整備内容を、そのときの症状に紐づける（カンマ・読点・配列の複数対応、同じ機械カテゴリで共通化） */
 window.rememberMachineSymptomContent_ = (machine, symptom, content) => {
-  const id = String(machine && machine.id || '').trim();
-  if (!id) return;
+  const keys = (typeof window.getMachineSymptomContentStoreKeys_ === 'function')
+    ? window.getMachineSymptomContentStoreKeys_(machine)
+    : [String(machine && machine.id || '').trim()].filter(Boolean);
+  if (!keys.length) return;
   const symptoms = (Array.isArray(symptom) ? symptom : String(symptom || '').split(/[,、]/))
     .map(s => String(s || '').trim()).filter(Boolean);
   const contents = (Array.isArray(content) ? content : String(content || '').split(/[,、]/))
@@ -14900,31 +14994,35 @@ window.rememberMachineSymptomContent_ = (machine, symptom, content) => {
   if (!symptoms.length || !contents.length) return;
 
   window._machineContentBySymptom = window._machineContentBySymptom || {};
-  const bag = window._machineContentBySymptom[id] || {};
   const store = window.readMachineSymptomContentStore_();
-  const saved = (store[id] && typeof store[id] === 'object') ? store[id] : {};
 
-  symptoms.forEach((s) => {
-    const list = Array.isArray(bag[s]) ? bag[s].slice() : [];
-    const savedList = Array.isArray(saved[s]) ? saved[s].slice() : [];
-    contents.forEach((c) => {
-      if (list.indexOf(c) < 0) list.push(c);
-      if (savedList.indexOf(c) < 0) savedList.push(c);
+  keys.forEach((k) => {
+    const bag = window._machineContentBySymptom[k] || {};
+    const saved = (store[k] && typeof store[k] === 'object') ? store[k] : {};
+    symptoms.forEach((s) => {
+      const list = Array.isArray(bag[s]) ? bag[s].slice() : [];
+      const savedList = Array.isArray(saved[s]) ? saved[s].slice() : [];
+      contents.forEach((c) => {
+        if (list.indexOf(c) < 0) list.push(c);
+        if (savedList.indexOf(c) < 0) savedList.push(c);
+      });
+      bag[s] = list;
+      saved[s] = savedList;
     });
-    bag[s] = list;
-    saved[s] = savedList;
+    window._machineContentBySymptom[k] = bag;
+    store[k] = saved;
   });
 
-  window._machineContentBySymptom[id] = bag;
-  store[id] = saved;
   window.writeMachineSymptomContentStore_(store);
 };
 
-/** 整備内容を、症状の紐づけ記憶から外す（削除後に候補へ戻さない） */
+/** 整備内容を、症状の紐づけ記憶から外す（削除後に候補へ戻さない、同じ機械カテゴリで共通化） */
 window.forgetMachineSymptomContent_ = (machine, contentName) => {
-  const id = String(machine && machine.id || '').trim();
+  const keys = (typeof window.getMachineSymptomContentStoreKeys_ === 'function')
+    ? window.getMachineSymptomContentStoreKeys_(machine)
+    : [String(machine && machine.id || '').trim()].filter(Boolean);
   const name = String(contentName || '').trim();
-  if (!id || !name) return;
+  if (!keys.length || !name) return;
   const dropBag = (bag) => {
     if (!bag || typeof bag !== 'object') return;
     Object.keys(bag).forEach((sym) => {
@@ -14932,21 +15030,27 @@ window.forgetMachineSymptomContent_ = (machine, contentName) => {
       if (!bag[sym].length) delete bag[sym];
     });
   };
-  if (window._machineContentBySymptom && window._machineContentBySymptom[id]) {
-    dropBag(window._machineContentBySymptom[id]);
-  }
   const store = window.readMachineSymptomContentStore_();
-  if (store[id]) {
-    dropBag(store[id]);
-    window.writeMachineSymptomContentStore_(store);
-  }
+  let storeChanged = false;
+  keys.forEach((k) => {
+    if (window._machineContentBySymptom && window._machineContentBySymptom[k]) {
+      dropBag(window._machineContentBySymptom[k]);
+    }
+    if (store[k]) {
+      dropBag(store[k]);
+      storeChanged = true;
+    }
+  });
+  if (storeChanged) window.writeMachineSymptomContentStore_(store);
 };
 
 window.renameMachineSymptomContent_ = (machine, oldName, newName) => {
-  const id = String(machine && machine.id || '').trim();
+  const keys = (typeof window.getMachineSymptomContentStoreKeys_ === 'function')
+    ? window.getMachineSymptomContentStoreKeys_(machine)
+    : [String(machine && machine.id || '').trim()].filter(Boolean);
   const prev = String(oldName || '').trim();
   const next = String(newName || '').trim();
-  if (!id || !prev || !next || prev === next) return;
+  if (!keys.length || !prev || !next || prev === next) return;
   const renameBag = (bag) => {
     if (!bag || typeof bag !== 'object') return;
     Object.keys(bag).forEach((sym) => {
@@ -14957,51 +15061,59 @@ window.renameMachineSymptomContent_ = (machine, oldName, newName) => {
       else delete bag[sym];
     });
   };
-  if (window._machineContentBySymptom && window._machineContentBySymptom[id]) {
-    renameBag(window._machineContentBySymptom[id]);
-  }
   const store = window.readMachineSymptomContentStore_();
-  if (store[id]) {
-    renameBag(store[id]);
-    window.writeMachineSymptomContentStore_(store);
-  }
+  let storeChanged = false;
+  keys.forEach((k) => {
+    if (window._machineContentBySymptom && window._machineContentBySymptom[k]) {
+      renameBag(window._machineContentBySymptom[k]);
+    }
+    if (store[k]) {
+      renameBag(store[k]);
+      storeChanged = true;
+    }
+  });
+  if (storeChanged) window.writeMachineSymptomContentStore_(store);
 };
 
 /**
- * 症状で整備内容を絞る。
+ * 症状で整備内容を絞る（同じ機械カテゴリで共通化）。
  * 症状が複数（カンマ・読点・配列）の場合はすべて集約して重複排除。
  * 1) その症状で過去に使った整備内容
- * 2) この機械に登録済みで、症状名と対象が一致するもの（燃料ホース裂け → 燃料ホース交換）
+ * 2) 同じ機械カテゴリに登録済みで、症状名と対象が一致するもの（燃料ホース裂け → 燃料ホース交換）
  * 別対象（例: オイル交換）は出さない。
  */
 window.getMachineContentsForSymptom_ = (machine, symptomName, extraCurrent) => {
-  const all = window.splitMachineMaintList_(machine && machine.maintenanceContents);
+  const all = (typeof window.getMachineMaintenanceOptions_ === 'function')
+    ? window.getMachineMaintenanceOptions_(machine, 'maintenanceContents', '')
+    : window.splitMachineMaintList_(machine && machine.maintenanceContents);
+  const allowedSet = new Set(all);
   const symptoms = (Array.isArray(symptomName) ? symptomName : String(symptomName || '').split(/[,、]/))
     .map(s => String(s || '').trim()).filter(Boolean);
   if (!symptoms.length) return [];
   const links = window.collectMachineSymptomContentLinks_(machine);
   const list = [];
-  const add = (name) => {
+  const add = (name, requireMaster) => {
     const n = String(name || '').trim();
     if (!n || list.indexOf(n) >= 0) return;
+    if (requireMaster && !allowedSet.has(n)) return;
     list.push(n);
   };
   symptoms.forEach((symptom) => {
-    (links[symptom] || []).forEach(add);
-    // 表記ゆれ（空白）でも過去の組み合わせを拾う
+    (links[symptom] || []).forEach((n) => add(n, true));
+    // 表記ゆれ（空白）でも過去の組み合わせを拾う（マスタ登録済みのもののみ）
     Object.keys(links).forEach((key) => {
       if (String(key || '').replace(/\s+/g, '') !== symptom.replace(/\s+/g, '')) return;
-      (links[key] || []).forEach(add);
+      (links[key] || []).forEach((n) => add(n, true));
     });
     all.forEach((name) => {
       if (typeof window.maintContentMatchesSymptom_ === 'function'
-        && window.maintContentMatchesSymptom_(name, symptom)) add(name);
+        && window.maintContentMatchesSymptom_(name, symptom)) add(name, true);
     });
   });
   if (extraCurrent) {
     const extras = (Array.isArray(extraCurrent) ? extraCurrent : String(extraCurrent).split(/[,、]/))
       .map(s => String(s || '').trim()).filter(Boolean);
-    extras.forEach(add);
+    extras.forEach((n) => add(n, false));
   }
   return list;
 };
@@ -15105,7 +15217,7 @@ window.removeMachineContentPartsKey_ = (machine, contentName) => {
 
 /**
  * kind: 'symptoms' | 'maintenanceContents' | 'parts'
- * 機械に紐づく候補のみ（共通マスタは混ぜない）
+ * 症状・整備内容は同じ機械カテゴリ（機種: type）で共通化（交換部品は機械ごと）
  * opts.content: 整備内容（parts の絞り込み用）
  */
 window.getMachineMaintenanceOptions_ = (machine, kind, extraCurrent, opts) => {
@@ -15118,7 +15230,14 @@ window.getMachineMaintenanceOptions_ = (machine, kind, extraCurrent, opts) => {
   } else {
     const key = window.getMachineMaintFieldKey_(kind);
     if (machine) {
+      const peers = (typeof window.getMachineCategoryPeers_ === 'function')
+        ? window.getMachineCategoryPeers_(machine)
+        : [machine];
       window.splitMachineMaintList_(machine[key]).forEach(v => set.add(v));
+      peers.forEach((peer) => {
+        if (!peer) return;
+        window.splitMachineMaintList_(peer[key]).forEach(v => set.add(v));
+      });
     }
   }
   if (extraCurrent) {
@@ -15164,13 +15283,26 @@ window.appendMachineMaintOptionLocal_ = (machine, kind, name, opts) => {
     return;
   }
   const key = window.getMachineMaintFieldKey_(kind);
-  const list = window.splitMachineMaintList_(machine[key]);
-  if (!list.includes(name)) list.push(name);
-  machine[key] = window.joinMachineMaintList_(list);
-  if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines) && machine.id) {
-    const idx = pdlMachines.findIndex(m => m && String(m.id) === String(machine.id));
-    if (idx >= 0) pdlMachines[idx][key] = machine[key];
+  const applyTo = (m) => {
+    if (!m) return;
+    const list = window.splitMachineMaintList_(m[key]);
+    if (!list.includes(name)) list.push(name);
+    m[key] = window.joinMachineMaintList_(list);
+  };
+  applyTo(machine);
+  const peers = (typeof window.getMachineCategoryPeers_ === 'function')
+    ? window.getMachineCategoryPeers_(machine)
+    : [];
+  const peerIds = new Set(peers.map(p => String(p && p.id || '').trim()).filter(Boolean));
+  if (machine.id) peerIds.add(String(machine.id));
+  if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) {
+    pdlMachines.forEach((m) => {
+      if (m && m.id && peerIds.has(String(m.id))) applyTo(m);
+    });
   }
+  try {
+    if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+  } catch (e) { }
 };
 
 window.renameMachineMaintOptionLocal_ = (machine, kind, oldName, newName, opts) => {
@@ -15180,11 +15312,21 @@ window.renameMachineMaintOptionLocal_ = (machine, kind, oldName, newName, opts) 
     return;
   }
   const key = window.getMachineMaintFieldKey_(kind);
-  const list = window.splitMachineMaintList_(machine[key]).map(v => (v === oldName ? newName : v));
-  machine[key] = window.joinMachineMaintList_(list);
-  if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines) && machine.id) {
-    const idx = pdlMachines.findIndex(m => m && String(m.id) === String(machine.id));
-    if (idx >= 0) pdlMachines[idx][key] = machine[key];
+  const applyTo = (m) => {
+    if (!m) return;
+    const list = window.splitMachineMaintList_(m[key]).map(v => (v === oldName ? newName : v));
+    m[key] = window.joinMachineMaintList_(list);
+  };
+  applyTo(machine);
+  const peers = (typeof window.getMachineCategoryPeers_ === 'function')
+    ? window.getMachineCategoryPeers_(machine)
+    : [];
+  const peerIds = new Set(peers.map(p => String(p && p.id || '').trim()).filter(Boolean));
+  if (machine.id) peerIds.add(String(machine.id));
+  if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) {
+    pdlMachines.forEach((m) => {
+      if (m && m.id && peerIds.has(String(m.id))) applyTo(m);
+    });
   }
   if (key === 'maintenanceContents') {
     window.renameMachineContentPartsKey_(machine, oldName, newName);
@@ -15192,6 +15334,9 @@ window.renameMachineMaintOptionLocal_ = (machine, kind, oldName, newName, opts) 
       window.renameMachineSymptomContent_(machine, oldName, newName);
     }
   }
+  try {
+    if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+  } catch (e) { }
 };
 
 window.removeMachineMaintOptionLocal_ = (machine, kind, name, opts) => {
@@ -15201,12 +15346,22 @@ window.removeMachineMaintOptionLocal_ = (machine, kind, name, opts) => {
     return;
   }
   const key = window.getMachineMaintFieldKey_(kind);
-  machine[key] = window.joinMachineMaintList_(
-    window.splitMachineMaintList_(machine[key]).filter(v => v !== name)
-  );
-  if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines) && machine.id) {
-    const idx = pdlMachines.findIndex(m => m && String(m.id) === String(machine.id));
-    if (idx >= 0) pdlMachines[idx][key] = machine[key];
+  const applyTo = (m) => {
+    if (!m) return;
+    m[key] = window.joinMachineMaintList_(
+      window.splitMachineMaintList_(m[key]).filter(v => v !== name)
+    );
+  };
+  applyTo(machine);
+  const peers = (typeof window.getMachineCategoryPeers_ === 'function')
+    ? window.getMachineCategoryPeers_(machine)
+    : [];
+  const peerIds = new Set(peers.map(p => String(p && p.id || '').trim()).filter(Boolean));
+  if (machine.id) peerIds.add(String(machine.id));
+  if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) {
+    pdlMachines.forEach((m) => {
+      if (m && m.id && peerIds.has(String(m.id))) applyTo(m);
+    });
   }
   if (key === 'maintenanceContents') {
     window.removeMachineContentPartsKey_(machine, name);
@@ -15214,6 +15369,9 @@ window.removeMachineMaintOptionLocal_ = (machine, kind, name, opts) => {
       window.forgetMachineSymptomContent_(machine, name);
     }
   }
+  try {
+    if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+  } catch (e) { }
 };
 
 window.updatePartsList = () => {
@@ -25447,7 +25605,10 @@ window.addWorkMasterFromMachineItemEditor_ = async () => {
         value: { name: name, category: '共通' },
         userName: (typeof currentUser !== 'undefined' ? currentUser : '') || '管理者'
       });
-      if (Array.isArray(updated)) window.pdlWorkMaster = updated;
+      if (Array.isArray(updated)) {
+        pdlWorkMaster = updated;
+        window.pdlWorkMaster = pdlWorkMaster;
+      }
     } catch (e) { }
   }
   const box = document.getElementById('mie_work_category_rows');
@@ -26558,7 +26719,8 @@ window.persistOneMachineOrVehicle_ = async (entry) => {
     const res = await safeCallGAS('addMachineToSign', payload);
     newMachine = (res && res.id) ? res : { id: 'MAC_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), name: name, location: location, workCategory: payload.workCategory, group: group, fuel: fuel, model: model, model2: model2, purchaseDate: purchaseDate, type: type, hitch: hitch, signId: signId, signName: signName, status: '使用可能', photo: photoBase64 || '' };
   }
-  if (typeof pdlMachines === 'undefined' || !Array.isArray(pdlMachines)) window.pdlMachines = [];
+  if (typeof pdlMachines === 'undefined' || !Array.isArray(pdlMachines)) pdlMachines = [];
+  window.pdlMachines = pdlMachines;
   const existingIdx = pdlMachines.findIndex(m => String(m.id) === String(newMachine.id) || m.name === name);
   const saved = Object.assign({
     name: displayName || name,
@@ -26777,7 +26939,8 @@ window.deleteMachineItemEditorModal = async () => {
     } else {
       await callGAS('deleteMachineFromMaster', { machineId: st.itemId, userName: userName });
       if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) {
-        window.pdlMachines = pdlMachines.filter(m => String(m.id) !== String(st.itemId));
+        pdlMachines = pdlMachines.filter(m => String(m.id) !== String(st.itemId));
+        window.pdlMachines = pdlMachines;
       }
     }
     try {
@@ -26789,7 +26952,10 @@ window.deleteMachineItemEditorModal = async () => {
       window.setMachineItemEditorLoading_(false);
     }
     window.closeMachineItemEditorModal();
-    if (typeof window.refreshBulkWorkMemoAfterMaintTargetChange_ === 'function' && window._bulkWorkMemoMaintEditUid) {
+    if (typeof window.refreshBulkWorkMemoAfterMaintTargetChange_ === 'function'
+      && (window._bulkWorkMemoMaintEditUid
+        || document.getElementById('bulk_work_memo_review_scroll')
+        || document.getElementById('bulk_work_memo_manual_add_scroll'))) {
       window.refreshBulkWorkMemoAfterMaintTargetChange_(item, optionId, { mode: 'delete', kind: kind });
     }
     if (typeof window.populateMaintenanceMachineSelect === 'function') {
@@ -26941,15 +27107,20 @@ window.deleteSelectedCategoryItemFromWorker = async () => {
     safeCallGAS('vehicle_deleteVehicle', { id: rawVid });
   } else if (item.isTool) {
     if (Array.isArray(pdlTools)) {
-      window.pdlTools = pdlTools.filter(t => String(t.id || ('tool_' + t.name)) !== String(item.id));
+      pdlTools = pdlTools.filter(t => String(t.id || ('tool_' + t.name)) !== String(item.id));
+      window.pdlTools = pdlTools;
     }
     safeCallGAS('deleteToolFromMaster', { toolId: item.id });
   } else {
     if (Array.isArray(pdlMachines)) {
-      window.pdlMachines = pdlMachines.filter(m => String(m.id) !== String(item.id));
+      pdlMachines = pdlMachines.filter(m => String(m.id) !== String(item.id));
+      window.pdlMachines = pdlMachines;
     }
     safeCallGAS('deleteMachineFromMaster', { machineId: item.id });
   }
+  try {
+    if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+  } catch (e) { }
 
   window.populateMaintenanceMachineSelect('');
   if (sel) sel.value = '';
@@ -35883,6 +36054,7 @@ window.deleteMachine = async (machineId, signId) => {
   try {
     await callGAS('deleteMachineFromMaster', { machineId: machineId });
     pdlMachines = pdlMachines.filter(x => x.id !== machineId);
+    window.pdlMachines = pdlMachines;
     customAlert("削除しました。");
     openMachineStatusUI(signId);
   } catch (e) {
@@ -38829,7 +39001,7 @@ window.syncBulkWorkMemoMapSelectOffset_ = () => {
   if (!activeBottomBar) {
     document.body.style.removeProperty('--bulk-map-select-bar-h');
     if (legendDiv) {
-      legendDiv.style.bottom = '34px';
+      legendDiv.style.bottom = '38px';
       legendDiv.style.zIndex = '1000';
     }
     if (actionBar) {
@@ -42193,7 +42365,7 @@ window.pickBulkWorkMemoMaintenanceField_ = (uid, field, value) => {
       : key === 'maintenanceParts' ? 'parts' : '';
   if (focusId && detailKey && typeof window.getBulkWorkMemoMaintDetail_ === 'function') {
     const cur = window.getBulkWorkMemoMaintDetail_(row, focusId)[detailKey] || '';
-    const curList = String(cur).split(/[,、]/).map(s => s.trim()).filter(Boolean);
+    const curList = String(cur).split(/[,、]/).map(s => s.trim()).filter((s, i, a) => s && a.indexOf(s) === i);
     const idx = curList.indexOf(next);
     let isToggledOn = false;
     if (idx >= 0) {
@@ -42470,9 +42642,12 @@ window.manageBulkWorkMemoMaintOption_ = (uid, kind) => {
     return;
   }
   const promptLabel = contentList.length > 1 ? contentList.join('・') : (contentList[0] || '');
+  const scopeTitle = String(machine.type || '').trim()
+    ? `${String(machine.type).trim()} 共通`
+    : (machine.name || 'この機械');
   const titles = {
-    symptoms: `症状（${machine.name || 'この機械'}）`,
-    maintenanceContents: `整備内容（${machine.name || 'この機械'}）`,
+    symptoms: `症状（${scopeTitle}）`,
+    maintenanceContents: `整備内容（${scopeTitle}）`,
     parts: `交換部品（${promptLabel}）`
   };
   const detailKey = kind === 'symptoms' ? 'symptom'
@@ -43577,24 +43752,32 @@ window.refreshBulkWorkMemoAfterMaintTargetChange_ = (rec, optionId, opts) => {
       }
       row._maintPickOpen = true;
     }
-  } else if (row && mode === 'delete') {
+  } else if (mode === 'delete') {
     const delId = String(optionId || (rec && rec.id) || '').trim();
     if (delId && typeof window.getBulkWorkMemoMaintTargetsSelected_ === 'function') {
-      const list = window.getBulkWorkMemoMaintTargetsSelected_(row)
-        .filter(t => String(t.id) !== delId);
-      if (typeof window.setBulkWorkMemoMaintTargets_ === 'function') {
-        window.setBulkWorkMemoMaintTargets_(row, list);
-      }
+      const drafts = Array.isArray(window._bulkWorkMemoDrafts) ? window._bulkWorkMemoDrafts : (row ? [row] : []);
+      drafts.forEach(d => {
+        if (!d) return;
+        const cur = window.getBulkWorkMemoMaintTargetsSelected_(d);
+        const nextList = cur.filter(t => String(t.id) !== delId);
+        if (nextList.length !== cur.length && typeof window.setBulkWorkMemoMaintTargets_ === 'function') {
+          window.setBulkWorkMemoMaintTargets_(d, nextList);
+        }
+      });
     }
-    row._maintPickOpen = true;
+    if (row) row._maintPickOpen = true;
   }
-  if (typeof window.renderBulkWorkMemoReviewModal_ === 'function') {
+  if (typeof window.renderBulkWorkMemoReviewModal_ === 'function'
+    && document.getElementById('bulk_work_memo_review_scroll')) {
     window.renderBulkWorkMemoReviewModal_({
       keepScroll: true,
       scrollUid: uid,
       anchorId: opts.anchorId || (uid ? ('bulk_maint_' + uid) : ''),
       anchorOffset: opts.anchorOffset
     });
+  } else if (typeof window.renderBulkWorkMemoManualAddModal_ === 'function'
+    && document.getElementById('bulk_work_memo_manual_add_scroll')) {
+    window.renderBulkWorkMemoManualAddModal_();
   } else if (typeof window.refreshBulkWorkMemoExtras_ === 'function') {
     window.refreshBulkWorkMemoExtras_(uid);
   }
@@ -43799,19 +43982,24 @@ window.deleteBulkWorkMemoMaintTarget_ = async (uid, targetId) => {
       if (typeof safeCallGAS === 'function') safeCallGAS('vehicle_deleteVehicle', { id: rawVid });
     } else if (item.isTool) {
       if (Array.isArray(pdlTools)) {
-        window.pdlTools = pdlTools.filter(t => String(t.id || ('tool_' + t.name)) !== String(item.id));
+        pdlTools = pdlTools.filter(t => String(t.id || ('tool_' + t.name)) !== String(item.id));
+        window.pdlTools = pdlTools;
       }
       if (typeof safeCallGAS === 'function') {
         safeCallGAS('deleteToolFromMaster', { toolId: item.id, userName: userName });
       }
     } else {
       if (Array.isArray(pdlMachines)) {
-        window.pdlMachines = pdlMachines.filter(m => String(m.id) !== String(item.id));
+        pdlMachines = pdlMachines.filter(m => String(m.id) !== String(item.id));
+        window.pdlMachines = pdlMachines;
       }
       if (typeof safeCallGAS === 'function') {
         safeCallGAS('deleteMachineFromMaster', { machineId: item.id, userName: userName });
       }
     }
+    try {
+      if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+    } catch (e) { }
     window.refreshBulkWorkMemoAfterMaintTargetChange_(item, tid, { mode: 'delete', kind: catName });
   });
   if (typeof window.showRecordSyncToast === 'function') {

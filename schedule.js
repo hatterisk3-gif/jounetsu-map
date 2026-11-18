@@ -1563,6 +1563,9 @@ function loadData(options) {
     } else if (cachedStr && typeof showMapSyncToast === 'function') {
       showMapSyncToast('☁️ スケジュールを最新に更新しました', 'ok');
     }
+    if (typeof window.scheduleSowingNurseryPrefetch_ === 'function') {
+      window.scheduleSowingNurseryPrefetch_(1200);
+    }
   }).catch(e => {
     console.error('getScheduleData failed', e);
     if (btn) {
@@ -1664,6 +1667,20 @@ window._schedCropColors = window._schedCropColors || {};
 window._schedCropColorIdx = window._schedCropColorIdx || 0;
 const SCHED_CROP_PALETTE = ['#4CAF50', '#2196F3', '#FF9800', '#E91E63', '#00BCD4', '#8BC34A', '#795548', '#3F51B5', '#9C27B0', '#F44336'];
 
+window._schedStatusColors = window._schedStatusColors || {};
+window._schedStatusColorIdx = window._schedStatusColorIdx || 0;
+const SCHED_STATUS_PALETTE = ['#4CAF50', '#2196F3', '#FF9800', '#E91E63', '#00BCD4', '#8BC34A', '#795548', '#3F51B5', '#9C27B0', '#009688'];
+
+function schedGetStatusColor_(statusStr) {
+  const s = String(statusStr || '').trim();
+  if (!s || s.includes('未使用')) return '#9E9E9E';
+  if (window._schedStatusColors[s]) return window._schedStatusColors[s];
+  const color = SCHED_STATUS_PALETTE[window._schedStatusColorIdx % SCHED_STATUS_PALETTE.length];
+  window._schedStatusColors[s] = color;
+  window._schedStatusColorIdx++;
+  return color;
+}
+
 function hydrateSchedInitDataFromCache_() {
   if (window._schedInitPolygonsById && window._schedPdlCrops) return;
   try {
@@ -1763,10 +1780,11 @@ function getSchedFieldInitMeta_(p) {
 
 function schedGetWorkerModeColor_(p) {
   const meta = getSchedFieldInitMeta_(p);
-  const isUnused = (meta.status === '未使用（返却）' || meta.status === '未使用');
-  if (isUnused) return '#999999';
+  const statusStr = String(meta.status || '').trim();
+  const isUnused = (!statusStr || statusStr.includes('未使用'));
+  if (isUnused) return '#9E9E9E';
   if (window.getScheduleFieldColorMode_() === 'status') {
-    return meta.color || '#8BC34A';
+    return schedGetStatusColor_(statusStr);
   }
   return schedGetCropColor_(schedGetCurrentCrop_(meta.photos));
 }
@@ -1799,18 +1817,18 @@ function updateScheduleLegend_() {
       const p = loadedPolygons[id];
       if (!p || p.isMarker) continue;
       const meta = getSchedFieldInitMeta_(p);
-      if (meta.status === '未使用（返却）' || meta.status === '未使用') {
+      const statusStr = String(meta.status || '').trim();
+      if (!statusStr || statusStr.includes('未使用')) {
         hasUnused = true;
         continue;
       }
-      const label = (meta.status && String(meta.status).trim()) ? String(meta.status).trim() : 'その他';
-      if (!statusMap.has(label)) {
-        statusMap.set(label, meta.color || '#8BC34A');
+      if (!statusMap.has(statusStr)) {
+        statusMap.set(statusStr, schedGetStatusColor_(statusStr));
       }
     }
     let html = '<div class="sched-legend-title">🚜 稼働状況の色分け</div>';
     if (hasUnused || statusMap.size === 0) {
-      html += '<div class="leg-item"><div class="leg-color" style="background:#999999;"></div>未使用</div>';
+      html += '<div class="leg-item"><div class="leg-color" style="background:#9E9E9E;"></div>未使用</div>';
     }
     statusMap.forEach((col, label) => {
       html += `<div class="leg-item"><div class="leg-color" style="background:${col};"></div>${label}</div>`;
@@ -4053,8 +4071,15 @@ window._sowingNurseryState = window._sowingNurseryState || {
   formOptions: null,
   formBusy: false,
   loadToken: 0,
-  formStep: 0
+  formStep: 0,
+  inFlightPromise: null,
+  inFlightYear: '',
+  refreshInFlightPromise: null,
+  refreshInFlightYear: '',
+  fetchedFromServerAt: 0,
+  hydratedSid: ''
 };
+window.SNR_BUNDLE_CACHE_KEY_ = 'passionMapSowingNurseryCache_v1';
 
 window.SNR_WIZARD_STEPS_ = ['作物', 'TAG・品種', '育苗場所', '播種内容', '確認'];
 
@@ -4184,28 +4209,121 @@ window.applySowingNurseryFormOptions_ = (res) => {
   }
 };
 
-window.fetchSowingNurseryBundle_ = async (year) => {
+window.getSowingNurseryCacheSid_ = () => {
+  try {
+    const sid = String(localStorage.getItem('spreadsheetId') || '').trim();
+    return (sid && sid !== 'undefined' && sid !== 'null') ? sid : '';
+  } catch (e) {
+    return '';
+  }
+};
+
+window.saveSowingNurseryCache_ = () => {
+  const st = window._sowingNurseryState;
+  if (!st || !st.data || !st.year) return;
+  const sid = window.getSowingNurseryCacheSid_();
+  if (!sid) return;
+  try {
+    localStorage.setItem(window.SNR_BUNDLE_CACHE_KEY_, JSON.stringify({
+      sid: sid,
+      year: String(st.year),
+      savedAt: Date.now(),
+      progress: st.data,
+      formOptions: st.formOptions || null
+    }));
+  } catch (e) {
+    console.warn('sowing nursery cache save failed', e);
+  }
+};
+
+window.hydrateSowingNurseryCache_ = (year) => {
+  const st = window._sowingNurseryState;
+  if (!st) return false;
+  const y = String(year || new Date().getFullYear());
+  const sid = window.getSowingNurseryCacheSid_();
+  if (sid && st.hydratedSid && st.hydratedSid !== sid) {
+    st.data = null;
+    st.formOptions = null;
+    st.year = '';
+    st.fetchedFromServerAt = 0;
+  }
+  if (st.data && st.year === y && st.formOptions) {
+    return true;
+  }
+  if (!sid) return false;
+  try {
+    const raw = localStorage.getItem(window.SNR_BUNDLE_CACHE_KEY_);
+    if (!raw) return false;
+    const cached = JSON.parse(raw);
+    if (!cached || cached.sid !== sid || String(cached.year || '') !== y) return false;
+    if (!cached.progress) return false;
+    st.year = y;
+    st.hydratedSid = sid;
+    st.data = cached.progress;
+    if (cached.formOptions && typeof window.applySowingNurseryFormOptions_ === 'function') {
+      window.applySowingNurseryFormOptions_(cached.formOptions);
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+};
+
+window.fetchSowingNurseryBundle_ = (year, opts) => {
+  const st = window._sowingNurseryState;
+  const y = String(year || (st && st.year) || new Date().getFullYear());
+  const force = !!(opts && opts.force);
+  if (!force && st && st.inFlightPromise && st.inFlightYear === y) {
+    return st.inFlightPromise;
+  }
   const d = new Date();
   const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  return callGAS('getSowingNurseryBundle', {
-    year: year,
+  const p = callGAS('getSowingNurseryBundle', {
+    year: y,
     today: today,
     includeDone: true,
     includePastPlans: true
+  }).finally(() => {
+    if (st && st.inFlightPromise === p) {
+      st.inFlightPromise = null;
+      st.inFlightYear = '';
+    }
   });
+  if (st) {
+    st.inFlightPromise = p;
+    st.inFlightYear = y;
+  }
+  return p;
 };
 
-window.refreshSowingNurseryData_ = async (year, opts) => {
+window.refreshSowingNurseryData_ = (year, opts) => {
   const st = window._sowingNurseryState;
-  if (!st) return null;
-  const y = year || st.year || String(new Date().getFullYear());
+  if (!st) return Promise.resolve(null);
+  const y = String(year || st.year || new Date().getFullYear());
+  const force = !!(opts && opts.force);
+  if (!force && st.refreshInFlightPromise && st.refreshInFlightYear === y) {
+    return st.refreshInFlightPromise;
+  }
   const token = ++st.loadToken;
-  const bundle = await window.fetchSowingNurseryBundle_(y);
-  if (token !== st.loadToken) return null;
-  st.year = y;
-  st.data = (bundle && bundle.progress) || { cropSummary: [], rows: [], records: [] };
-  if (bundle && bundle.formOptions) window.applySowingNurseryFormOptions_(bundle.formOptions);
-  return bundle;
+  const p = (async () => {
+    const bundle = await window.fetchSowingNurseryBundle_(y, { force: force });
+    if (token !== st.loadToken) return null;
+    st.year = y;
+    st.hydratedSid = window.getSowingNurseryCacheSid_();
+    st.data = (bundle && bundle.progress) || { cropSummary: [], rows: [], records: [] };
+    if (bundle && bundle.formOptions) window.applySowingNurseryFormOptions_(bundle.formOptions);
+    st.fetchedFromServerAt = Date.now();
+    window.saveSowingNurseryCache_();
+    return bundle;
+  })().finally(() => {
+    if (st.refreshInFlightPromise === p) {
+      st.refreshInFlightPromise = null;
+      st.refreshInFlightYear = '';
+    }
+  });
+  st.refreshInFlightPromise = p;
+  st.refreshInFlightYear = y;
+  return p;
 };
 
 window.escSowingNurseryHtml_ = (v) => String(v == null ? '' : v).replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -4771,16 +4889,14 @@ window.openSowingNurseryAddForm_ = async () => {
   window.renderSowingNurseryBody_();
   modal.style.display = 'flex';
   const year = st.year || String(new Date().getFullYear());
+  window.hydrateSowingNurseryCache_(year);
   if (st.formOptions && st.year === year) {
     window.renderSowingNurseryAddFormIntoModal_();
     return;
   }
   window.renderSowingNurseryAddFormIntoModal_();
   try {
-    const bundle = await window.fetchSowingNurseryBundle_(year);
-    st.year = year;
-    if (bundle && bundle.formOptions) window.applySowingNurseryFormOptions_(bundle.formOptions);
-    if (bundle && bundle.progress) st.data = bundle.progress;
+    await window.refreshSowingNurseryData_(year);
     if (st.showAddForm) window.renderSowingNurseryAddFormIntoModal_();
   } catch (e) {
     window.cancelSowingNurseryAddForm_();
@@ -6073,7 +6189,10 @@ window.submitSowingNurseryRecord_ = async () => {
   };
   try {
     const userName = localStorage.getItem('passionMapUserName') || 'ユーザー';
-    await callGAS('saveSowingRecord', {
+    const nowD = new Date();
+    const todayYmd = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}-${String(nowD.getDate()).padStart(2, '0')}`;
+    const effDate = sowingDate || todayYmd;
+    const saveRes = await callGAS('saveSowingRecord', {
       userName: userName,
       sowingRecord: {
         tag: tag,
@@ -6081,7 +6200,7 @@ window.submitSowingNurseryRecord_ = async () => {
         variety: variety,
         nurseryName: nurseryName,
         direction: direction,
-        sowingDate: sowingDate,
+        sowingDate: effDate,
         trays: trays,
         holes: holesRaw === '' || holesRaw == null ? '' : holesRaw,
         planId: planId,
@@ -6090,12 +6209,34 @@ window.submitSowingNurseryRecord_ = async () => {
     });
     st.showAddForm = false;
     window.cancelSowingNurseryAddForm_();
-    const year = st.year || String(new Date().getFullYear());
-    await window.refreshSowingNurseryData_(year);
+    const year = st.year || String(nowD.getFullYear());
+    st.year = year;
+    if (!st.data) st.data = { cropSummary: [], rows: [], records: [] };
+    if (!Array.isArray(st.data.records)) st.data.records = [];
+    const recordedAt = `${nowD.getFullYear()}/${String(nowD.getMonth() + 1).padStart(2, '0')}/${String(nowD.getDate()).padStart(2, '0')} ${String(nowD.getHours()).padStart(2, '0')}:${String(nowD.getMinutes()).padStart(2, '0')}:${String(nowD.getSeconds()).padStart(2, '0')}`;
+    st.data.records.unshift({
+      recordedAt: recordedAt,
+      author: userName,
+      tag: tag,
+      cropName: crop,
+      variety: variety,
+      nurseryName: nurseryName,
+      direction: direction,
+      sowingDate: effDate,
+      trays: trays,
+      holes: holesRaw === '' || holesRaw == null ? '' : holesRaw,
+      planId: planId,
+      recordId: (saveRes && saveRes.recordId) || '',
+      note: ''
+    });
+    window.saveSowingNurseryCache_();
     window.renderSowingNurseryBody_();
     await endBusy_();
     if (typeof customAlert === 'function') customAlert('追加を完了しました');
     else alert('追加を完了しました');
+    window.refreshSowingNurseryData_(year, { force: true }).then((bundle) => {
+      if (bundle) window.renderSowingNurseryBody_();
+    }).catch(() => { });
   } catch (e) {
     await endBusy_();
     if (msg) { msg.style.color = '#c62828'; msg.textContent = '登録失敗: ' + (e.message || e); }
@@ -6242,6 +6383,7 @@ window.openSowingProgressModal = async () => {
   st.tab = st.tab || 'records';
   window.syncSowingNurseryTabButtons_();
   const year = String(new Date().getFullYear());
+  window.hydrateSowingNurseryCache_(year);
   const hasCached = !!(st.data && st.year === year);
   if (hasCached) {
     window.renderSowingNurseryBody_();
@@ -6256,16 +6398,36 @@ window.openSowingProgressModal = async () => {
   try {
     const bundle = await window.refreshSowingNurseryData_(year);
     if (loading) loading.done();
-    if (bundle) window.renderSowingNurseryBody_();
+    if (bundle && modal.style.display !== 'none') window.renderSowingNurseryBody_();
   } catch (e) {
     if (loading) loading.done();
     if (!hasCached) {
       body.innerHTML = `<div style="color:#c62828; padding:12px;">読込失敗: ${String(e.message || e).replace(/</g, '&lt;')}</div>`;
-    } else if (typeof customAlert === 'function') {
+    } else if (modal.style.display !== 'none' && typeof customAlert === 'function') {
       customAlert('最新データの取得に失敗しました: ' + (e.message || e));
     }
   }
 };
+
+window.scheduleSowingNurseryPrefetch_ = (delayMs) => {
+  if (!hasValidSpreadsheetId_()) return;
+  const st = window._sowingNurseryState;
+  if (!st || st.fetchedFromServerAt || st.refreshInFlightPromise) return;
+  const year = String(new Date().getFullYear());
+  window.hydrateSowingNurseryCache_(year);
+  if (window._sowingNurseryPrefetchTimer) return;
+  const wait = Math.max(0, Number(delayMs) || 0);
+  window._sowingNurseryPrefetchTimer = setTimeout(() => {
+    window._sowingNurseryPrefetchTimer = null;
+    if (!hasValidSpreadsheetId_()) return;
+    if (st.fetchedFromServerAt || st.refreshInFlightPromise) return;
+    window.refreshSowingNurseryData_(year).catch(() => { });
+  }, wait);
+};
+
+try {
+  window.hydrateSowingNurseryCache_(String(new Date().getFullYear()));
+} catch (e) { }
 
 // ========== 作業分析（その人の働きを可視化） ==========
 window._workAnalysisState = window._workAnalysisState || {
