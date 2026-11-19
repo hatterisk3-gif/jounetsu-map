@@ -18896,9 +18896,71 @@ function getHarvestingFieldsSummary(params) {
 // ==========================================
 const OSAKA_MARKET_SHEET_ = '市況_大阪';
 const OSAKA_MARKET_CSV_BASE_ = 'https://www.shijou.city.osaka.jp/data/webroot/nippou/syurui/';
+const MARKET_CHECK_COOLDOWN_SEC_ = 900; // 15分（連続表示時の外部アクセス負荷軽減）
 
 function osakaMarketPad2_(n) {
   return (Number(n) < 10 ? '0' : '') + String(Number(n));
+}
+
+function getMarketTodayJstYmd_() {
+  return Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+}
+
+function getMarketBaseNoonJst_() {
+  const today = getMarketTodayJstYmd_().split('-');
+  return new Date(Number(today[0]), Number(today[1]) - 1, Number(today[2]), 12, 0, 0, 0);
+}
+
+function formatMarketDateCell_(val) {
+  if (val == null || val === '') return '';
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return '';
+    return Utilities.formatDate(val, 'Asia/Tokyo', 'yyyy-MM-dd');
+  }
+  const s = String(val).trim();
+  if (!s) return '';
+  const m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (m) {
+    return m[1] + '-' + osakaMarketPad2_(m[2]) + '-' + osakaMarketPad2_(m[3]);
+  }
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
+  }
+  return s;
+}
+
+function formatMarketDateTimeCell_(val) {
+  if (val == null || val === '') return '';
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return '';
+    return Utilities.formatDate(val, 'Asia/Tokyo', 'yyyy-MM-dd HH:mm');
+  }
+  const s = String(val).trim();
+  if (!s) return '';
+  const m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[T\s](\d{1,2}):(\d{1,2})/);
+  if (m) {
+    return m[1] + '-' + osakaMarketPad2_(m[2]) + '-' + osakaMarketPad2_(m[3])
+      + ' ' + osakaMarketPad2_(m[4]) + ':' + osakaMarketPad2_(m[5]);
+  }
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd HH:mm');
+  }
+  return s;
+}
+
+function parseMarketJaDateLabel_(line) {
+  const reiwa = String(line || '').match(/令和\s*(\d+)\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+  if (reiwa) {
+    const y = 2018 + Number(reiwa[1]);
+    return y + '-' + osakaMarketPad2_(reiwa[2]) + '-' + osakaMarketPad2_(reiwa[3]);
+  }
+  const west = String(line || '').match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+  if (west) {
+    return west[1] + '-' + osakaMarketPad2_(west[2]) + '-' + osakaMarketPad2_(west[3]);
+  }
+  return '';
 }
 
 function osakaMarketYmdParts_(dateObj) {
@@ -18965,11 +19027,9 @@ function parseOsakaSyuruiCsv_(text) {
     const row = rows[i] || [];
     const c0 = String(row[0] || '').trim();
 
-    if (!dateLabel && /年\d+月\d+日/.test(c0)) {
-      const dm = c0.match(/(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/);
-      if (dm) {
-        dateLabel = dm[1] + '-' + osakaMarketPad2_(dm[2]) + '-' + osakaMarketPad2_(dm[3]);
-      }
+    if (!dateLabel) {
+      const parsedDate = parseMarketJaDateLabel_(c0);
+      if (parsedDate) dateLabel = parsedDate;
     }
     if (/東部/.test(c0) && /取扱高/.test(c0)) marketLabel = '東部';
     if (/本場/.test(c0) && /取扱高/.test(c0)) marketLabel = '本場';
@@ -19082,8 +19142,8 @@ function fetchOsakaMarketCsvText_(ymd, ym, ichiba, syurui) {
   }
   const code = res.getResponseCode();
   if (code !== 200) {
-    // 5xx / 403 はサイト側障害・遮断の可能性が高い
-    const siteDown = code >= 500 || code === 403 || code === 429;
+    // 502/503/504/429 はサイト側障害・遮断。404/403/500は未公開日ファイルでも返り得るため即打ち切りしない
+    const siteDown = code === 502 || code === 503 || code === 504 || code === 429;
     return { ok: false, code: code, url: url, text: '', siteDown: siteDown };
   }
   const bytes = res.getContent();
@@ -19106,27 +19166,41 @@ function fetchOsakaMarketCsvText_(ymd, ym, ichiba, syurui) {
   return { ok: true, code: code, url: url, text: text };
 }
 
-function findLatestOsakaMarketCsv_(ichiba, syurui, maxLookback) {
-  const lookback = Math.max(1, Math.min(Number(maxLookback) || 14, 31));
-  const base = new Date();
-  base.setHours(12, 0, 0, 0);
+function findLatestOsakaMarketCsv_(ichiba, syurui, maxLookback, stopAtDate) {
+  const lookback = Math.max(1, Math.min(Number(maxLookback) || 21, 40));
+  const base = getMarketBaseNoonJst_();
+  const stopDate = formatMarketDateCell_(stopAtDate);
   let siteDownStreak = 0;
-  for (let i = 0; i < lookback; i++) {
-    const d = new Date(base.getTime());
-    d.setDate(base.getDate() - i);
-    const parts = osakaMarketYmdParts_(d);
-    const fetched = fetchOsakaMarketCsvText_(parts.ymd, parts.ym, ichiba, syurui);
-    if (fetched && fetched.siteDown) {
-      siteDownStreak += 1;
-      // 公式サイトが落ちているときは日付を遡っても無駄なので打ち切る
-      if (siteDownStreak >= 2) {
-        return null;
+
+  // 開場日（日曜・水曜以外）→ 水曜 → 日曜 の順で走査
+  const passes = [
+    function (dow) { return dow !== 0 && dow !== 3; },
+    function (dow) { return dow === 3; },
+    function (dow) { return dow === 0; }
+  ];
+
+  for (let p = 0; p < passes.length; p++) {
+    const matchDow = passes[p];
+    for (let i = 0; i < lookback; i++) {
+      const d = new Date(base.getTime());
+      d.setDate(base.getDate() - i);
+      const parts = osakaMarketYmdParts_(d);
+      if (stopDate && parts.label <= stopDate) break;
+      if (!matchDow(d.getDay())) continue;
+
+      const fetched = fetchOsakaMarketCsvText_(parts.ymd, parts.ym, ichiba, syurui);
+      if (fetched && fetched.siteDown) {
+        siteDownStreak += 1;
+        // 公式サイトが落ちているときは日付を遡っても無駄なので即打ち切る
+        if (siteDownStreak >= 2) {
+          return null;
+        }
+        continue;
       }
-      continue;
-    }
-    siteDownStreak = 0;
-    if (fetched.ok) {
-      return { parts: parts, fetched: fetched };
+      siteDownStreak = 0;
+      if (fetched.ok) {
+        return { parts: parts, fetched: fetched };
+      }
     }
   }
   return null;
@@ -19153,8 +19227,8 @@ function getOrCreateOsakaMarketSheet_() {
 function writeOsakaMarketSheet_(parsed, sourceUrl, ichiba) {
   const sheet = getOrCreateOsakaMarketSheet_();
   const market = parsed.market || (String(ichiba) === '2' ? '東部' : '本場');
-  const dateStr = parsed.date || '';
-  const importedAt = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
+  const dateStr = formatMarketDateCell_(parsed.date || '');
+  const importedAt = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm');
   const items = parsed.items || [];
 
   // 同一日付・市場の旧行を削除
@@ -19162,9 +19236,7 @@ function writeOsakaMarketSheet_(parsed, sourceUrl, ichiba) {
   if (last >= 2 && dateStr) {
     const vals = sheet.getRange(2, 1, last - 1, 2).getValues();
     for (let i = vals.length - 1; i >= 0; i--) {
-      const d = vals[i][0] instanceof Date
-        ? Utilities.formatDate(vals[i][0], 'Asia/Tokyo', 'yyyy-MM-dd')
-        : String(vals[i][0] || '').trim();
+      const d = formatMarketDateCell_(vals[i][0]);
       const m = String(vals[i][1] || '').trim();
       if (d === dateStr && m === market) {
         sheet.deleteRow(i + 2);
@@ -19173,7 +19245,7 @@ function writeOsakaMarketSheet_(parsed, sourceUrl, ichiba) {
   }
 
   if (!items.length) {
-    return { date: dateStr, market: market, count: 0 };
+    return { date: dateStr, market: market, count: 0, importedAt: importedAt };
   }
 
   const rows = items.map(function (it) {
@@ -19203,18 +19275,29 @@ function readOsakaMarketSheet_(dateStr, market) {
   const sheet = ss.getSheetByName(OSAKA_MARKET_SHEET_);
   if (!sheet || sheet.getLastRow() < 2) return null;
   const values = sheet.getDataRange().getValues();
+  let targetDate = formatMarketDateCell_(dateStr);
+  if (!targetDate) {
+    for (let i = 1; i < values.length; i++) {
+      const m = String(values[i][1] || '').trim();
+      if (market && m !== market) continue;
+      const d = formatMarketDateCell_(values[i][0]);
+      if (d && (!targetDate || d > targetDate)) targetDate = d;
+    }
+  }
+  if (!targetDate) return null;
+
   const items = [];
   let importedAt = '';
   let sourceUrl = '';
+  let resolvedMarket = market || '';
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
-    const d = row[0] instanceof Date
-      ? Utilities.formatDate(row[0], 'Asia/Tokyo', 'yyyy-MM-dd')
-      : String(row[0] || '').trim();
+    const d = formatMarketDateCell_(row[0]);
     const m = String(row[1] || '').trim();
-    if (dateStr && d !== dateStr) continue;
+    if (d !== targetDate) continue;
     if (market && m !== market) continue;
-    if (!importedAt && row[11]) importedAt = String(row[11]);
+    if (!resolvedMarket && m) resolvedMarket = m;
+    if (!importedAt && row[11]) importedAt = formatMarketDateTimeCell_(row[11]);
     if (!sourceUrl && row[12]) sourceUrl = String(row[12]);
     items.push({
       name: String(row[2] || ''),
@@ -19229,13 +19312,333 @@ function readOsakaMarketSheet_(dateStr, market) {
     });
   }
   if (!items.length) return null;
+  const fallbackSource = String(sourceUrl || '').indexOf('fallback:tokyo:') === 0 ? 'tokyo' : '';
   return {
-    date: dateStr || String(values[1][0] || ''),
-    market: market || String(values[1][1] || '本場'),
+    date: targetDate,
+    market: resolvedMarket || '本場',
     items: items,
     importedAt: importedAt,
     sourceUrl: sourceUrl,
+    fallbackSource: fallbackSource,
     fromSheet: true
+  };
+}
+
+const TOKYO_TO_OSAKA_ITEM_ALIASES_ = {
+  '大根': 'だいこん',
+  'だいこん': 'だいこん',
+  '葉だいこん': 'はだいこん',
+  'かぶ': 'かぶ',
+  '蕪': 'かぶ',
+  'にんじん': 'にんじん',
+  '人参': 'にんじん',
+  'ごぼう': 'ごぼう',
+  '牛蒡': 'ごぼう',
+  'たけのこ': 'たけのこ',
+  '筍': 'たけのこ',
+  'れんこん': 'れんこん',
+  '蓮根': 'れんこん',
+  'はくさい': 'はくさい',
+  '白菜': 'はくさい',
+  'こまつな': 'こまつな',
+  '小松菜': 'こまつな',
+  'ほうれんそう': 'ほうれんそう',
+  'ほうれん草': 'ほうれんそう',
+  '春菊': 'しゅんぎく',
+  'しゅんぎく': 'しゅんぎく',
+  '菊菜': 'しゅんぎく',
+  '水菜': 'みずな',
+  'みずな': 'みずな',
+  'きょうな': 'きょうな',
+  '京菜': 'きょうな',
+  '青梗菜': 'ちんげんさい',
+  'ちんげんさい': 'ちんげんさい',
+  'チンゲンサイ': 'ちんげんさい',
+  'きゃべつ': 'きゃべつ',
+  'キャベツ': 'きゃべつ',
+  '甘藍': 'きゃべつ',
+  '芽キャベツ': 'めきゃべつ',
+  'れたす': 'れたす',
+  'レタス': 'れたす',
+  '結球レタス': 'れたす',
+  'サニーレタス': 'さにーれたす',
+  'リーフレタス': 'りーふれたす',
+  'サラダ菜': 'さらだな',
+  'ねぎ': 'ねぎ',
+  '長ねぎ': 'ねぎ',
+  '白ねぎ': 'ねぎ',
+  '青ねぎ': 'ねぎ',
+  '葉ねぎ': 'ねぎ',
+  '九条ねぎ': 'ねぎ',
+  'わけぎ': 'わけぎ',
+  'あさつき': 'あさつき',
+  'にら': 'にら',
+  'ニラ': 'にら',
+  'セルリー': 'せるりー',
+  'セロリ': 'せるりー',
+  'アスパラガス': 'あすぱらがす',
+  'カリフラワー': 'かりふらわー',
+  'ブロッコリー': 'ぶろっこりー',
+  'きゅうり': 'きゅうり',
+  '胡瓜': 'きゅうり',
+  'かぼちゃ': 'かぼちゃ',
+  '南瓜': 'かぼちゃ',
+  'なす': 'なす',
+  '茄子': 'なす',
+  'トマト': 'とまと',
+  'とまと': 'とまと',
+  'ミニトマト': 'みにとまと',
+  'ピーマン': 'ぴーまん',
+  'ぴーまん': 'ぴーまん',
+  'ししとう': 'ししとう',
+  'ししとうがらし': 'ししとう',
+  'とうがらし': 'とうがらし',
+  'パプリカ': 'ぱぷりか',
+  'オクラ': 'おくら',
+  'おくら': 'おくら',
+  'ズッキーニ': 'ずっきーに',
+  'とうがん': 'とうがん',
+  '冬瓜': 'とうがん',
+  'にがうり': 'にがうり',
+  'ゴーヤー': 'にがうり',
+  'さやいんげん': 'さやいんげん',
+  'いんげん': 'さやいんげん',
+  'さやえんどう': 'さやえんどう',
+  'えんどう': 'さやえんどう',
+  '実えんどう': 'みえんどう',
+  'そらまめ': 'そらまめ',
+  'えだまめ': 'えだまめ',
+  '枝豆': 'えだまめ',
+  'スイートコーン': 'すいーとこーん',
+  'とうもろこし': 'すいーとこーん',
+  'さつまいも': 'かんしょ',
+  '甘藷': 'かんしょ',
+  'かんしょ': 'かんしょ',
+  'じゃがいも': 'ばれいしょ',
+  '馬鈴薯': 'ばれいしょ',
+  'ばれいしょ': 'ばれいしょ',
+  'さといも': 'さといも',
+  '里芋': 'さといも',
+  'やまのいも': 'やまのいも',
+  '山芋': 'やまのいも',
+  '長いも': 'ながいも',
+  'ながいも': 'ながいも',
+  'たまねぎ': 'たまねぎ',
+  '玉ねぎ': 'たまねぎ',
+  '玉葱': 'たまねぎ',
+  'しょうが': 'しょうが',
+  '生姜': 'しょうが',
+  '新しょうが': 'しんしょうが',
+  '葉しょうが': 'はしょうが',
+  'にんにく': 'にんにく',
+  '生しいたけ': 'なましいたけ',
+  'しいたけ': 'なましいたけ',
+  '生椎茸': 'なましいたけ',
+  'なましいたけ': 'なましいたけ',
+  'えのきだけ': 'えのきだけ',
+  'えのきたけ': 'えのきだけ',
+  'しめじ': 'しめじ',
+  'ぶなしめじ': 'ぶなしめじ',
+  'まいたけ': 'まいたけ',
+  '舞茸': 'まいたけ',
+  'エリンギ': 'えりんぎ',
+  'なめこ': 'なめこ',
+  'もやし': 'もやし',
+  'みつば': 'みつば',
+  '三つ葉': 'みつば',
+  'みょうが': 'みょうが',
+  '茗荷': 'みょうが',
+  'うど': 'うど',
+  'ふき': 'ふき',
+  '蕗': 'ふき',
+  'かいわれ': 'かいわれだいこん',
+  'かいわれだいこん': 'かいわれだいこん',
+  'らっきょう': 'らっきょう',
+  '山菜': 'さんさい',
+  '新野菜': 'しんやさい',
+  'つまみ菜': 'つみな',
+  '高菜': 'たかな',
+  'からしな': 'からしな',
+  'つるむらさき': 'つるむらさき',
+  'モロヘイヤ': 'もろへいや',
+  '空芯菜': 'くうしんさい',
+  '豆苗': 'とうみょう',
+  'とうみょう': 'とうみょう',
+  'スナップえんどう': 'すなっぷえんどう',
+  'グリーンピース': 'ぐりーんぴーす',
+  'にんにくの芽': 'にんにくのめ',
+  'パセリ': 'ぱせり',
+  'クレソン': 'くれそん',
+  'ルッコラ': 'るっこら',
+  'ベビーリーフ': 'べびーりーふ',
+  'ラディッシュ': 'らでぃっしゅ',
+  '青しそ': 'おおば',
+  '大葉': 'おおば',
+  'おおば': 'おおば',
+  'しそ': 'しそ',
+  '洋菜': 'ようさい',
+  '中国野菜': 'ちゅうごくやさい',
+  'その他野菜': 'そのたやさい'
+};
+
+function tokyoToOsakaMarketItemName_(rawName) {
+  const s = String(rawName || '')
+    .replace(/[（(][^）)]*[）)]/g, '')
+    .replace(/[［\[][^］\]]*[］\]]/g, '')
+    .replace(/[\s　]+/g, '')
+    .trim();
+  if (!s) return '';
+  if (TOKYO_TO_OSAKA_ITEM_ALIASES_[s]) return TOKYO_TO_OSAKA_ITEM_ALIASES_[s];
+  const hira = s.replace(/[\u30a1-\u30f6]/g, function (ch) {
+    return String.fromCharCode(ch.charCodeAt(0) - 0x60);
+  });
+  if (TOKYO_TO_OSAKA_ITEM_ALIASES_[hira]) return TOKYO_TO_OSAKA_ITEM_ALIASES_[hira];
+  return hira;
+}
+
+function readOsakaMarketPrevPriceMap_(beforeDate, market) {
+  const ss = TENANT_SS;
+  if (!ss) return {};
+  const sheet = ss.getSheetByName(OSAKA_MARKET_SHEET_);
+  if (!sheet || sheet.getLastRow() < 2) return {};
+  const values = sheet.getDataRange().getValues();
+  let prevDate = '';
+  for (let i = 1; i < values.length; i++) {
+    const m = String(values[i][1] || '').trim();
+    if (market && m !== market) continue;
+    const d = formatMarketDateCell_(values[i][0]);
+    if (!d) continue;
+    if (beforeDate && d >= beforeDate) continue;
+    if (!prevDate || d > prevDate) prevDate = d;
+  }
+  if (!prevDate) return {};
+
+  const map = {};
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    const d = formatMarketDateCell_(row[0]);
+    const m = String(row[1] || '').trim();
+    if (d !== prevDate) continue;
+    if (market && m !== market) continue;
+    const name = String(row[2] || '').trim();
+    if (!name || map[name]) continue;
+    const unitSize = row[5] === '' || row[5] == null ? null : Number(row[5]);
+    const high = row[7] === '' || row[7] == null ? null : Number(row[7]);
+    const mid = row[8] === '' || row[8] == null ? null : Number(row[8]);
+    const low = row[9] === '' || row[9] == null ? null : Number(row[9]);
+    const rep = mid != null ? mid : (high != null ? high : low);
+    if (rep != null && isFinite(rep) && rep > 0) {
+      map[name] = {
+        raw: rep,
+        unitSize: (unitSize != null && isFinite(unitSize) && unitSize > 0) ? unitSize : null
+      };
+    }
+  }
+  return map;
+}
+
+function computeOsakaMarketTrendFromPrev_(it, prevInfo) {
+  if (!prevInfo) return '－';
+  const cur = it.mid != null ? it.mid : (it.high != null ? it.high : it.low);
+  if (cur == null || !isFinite(cur) || cur <= 0) return '－';
+  let curCmp = cur;
+  let prevCmp = prevInfo.raw;
+  if (it.unitSize != null && isFinite(it.unitSize) && it.unitSize > 0 && prevInfo.unitSize) {
+    curCmp = cur / it.unitSize;
+    prevCmp = prevInfo.raw / prevInfo.unitSize;
+  }
+  if (!prevCmp || !isFinite(prevCmp) || prevCmp <= 0) return '－';
+  const ratio = (curCmp - prevCmp) / prevCmp;
+  if (ratio >= 0.15) return '▲';
+  if (ratio >= 0.05) return '△';
+  if (ratio <= -0.15) return '▼';
+  if (ratio <= -0.05) return '▽';
+  return '－';
+}
+
+/**
+ * 大阪市公式サイト停止・メンテナンス時の最新市況フォールバック同期
+ * 稼働中の東京都（大田）青果日報から最新営業日データを取得し、大阪市場のひらがな品目へ正規化して保存する
+ */
+function syncOsakaMarketFromLiveDaily_(ichiba, existingLatestDate, existingSourceUrl) {
+  const market = String(ichiba) === '2' ? '東部' : '本場';
+  const today = getMarketTodayJstYmd_();
+
+  let liveData = null;
+  const cachedTokyo = readTokyoMarketSheet_('', '大田');
+  if (cachedTokyo && cachedTokyo.date >= today && cachedTokyo.items && cachedTokyo.items.length) {
+    liveData = cachedTokyo;
+  } else {
+    const stopTokyo = (cachedTokyo && cachedTokyo.date) ? cachedTokyo.date : '';
+    const tokyoHit = findLatestTokyoMarketCsv_(21, stopTokyo);
+    if (tokyoHit && tokyoHit.fetched && tokyoHit.fetched.text) {
+      const parsedTokyo = parseTokyoOtaCsv_(tokyoHit.fetched.text);
+      if (!parsedTokyo.date) parsedTokyo.date = tokyoHit.parts.label;
+      if (!parsedTokyo.market) parsedTokyo.market = '大田';
+      if (parsedTokyo.items && parsedTokyo.items.length) {
+        writeTokyoMarketSheet_(parsedTokyo, tokyoHit.fetched.url);
+        liveData = Object.assign({ sourceUrl: tokyoHit.fetched.url }, parsedTokyo);
+      }
+    }
+    if (!liveData && cachedTokyo && cachedTokyo.items && cachedTokyo.items.length) {
+      liveData = cachedTokyo;
+    }
+  }
+
+  if (!liveData || !liveData.date || !Array.isArray(liveData.items) || !liveData.items.length) {
+    return null;
+  }
+
+  const liveDate = formatMarketDateCell_(liveData.date);
+  const existingDate = formatMarketDateCell_(existingLatestDate);
+  const existingIsFallback = String(existingSourceUrl || '').indexOf('fallback:tokyo:') === 0;
+
+  if (existingDate) {
+    if (liveDate < existingDate) return null;
+    if (liveDate === existingDate && !existingIsFallback) return null;
+  }
+
+  const prevPriceMap = readOsakaMarketPrevPriceMap_(liveDate, market);
+  const seen = {};
+  const mappedItems = [];
+  liveData.items.forEach(function (it) {
+    const osakaName = tokyoToOsakaMarketItemName_(it && it.name);
+    if (!osakaName || seen[osakaName]) return;
+    seen[osakaName] = true;
+    mappedItems.push({
+      name: osakaName,
+      qtyKg: it.qtyKg,
+      origin: it.origin || '',
+      unitSize: it.unitSize,
+      unit: it.unit || 'kg',
+      high: it.high,
+      mid: it.mid,
+      low: it.low,
+      trend: computeOsakaMarketTrendFromPrev_(it, prevPriceMap[osakaName])
+    });
+  });
+
+  if (!mappedItems.length) return null;
+
+  const fallbackSourceUrl = 'fallback:tokyo:' + (liveData.sourceUrl || TOKYO_NIPPO_BASE_);
+  const parsedForOsaka = {
+    date: liveDate,
+    market: market,
+    items: mappedItems
+  };
+  const written = writeOsakaMarketSheet_(parsedForOsaka, fallbackSourceUrl, ichiba);
+
+  return {
+    success: true,
+    source: 'tokyo-fallback',
+    fallbackSource: 'tokyo',
+    date: liveDate,
+    market: market,
+    items: mappedItems,
+    importedAt: written.importedAt,
+    sourceUrl: fallbackSourceUrl,
+    count: mappedItems.length,
+    warning: '大阪市公式サイトが停止中のため、東京・大田市場の最新日報（' + liveDate + '）をもとに更新表示しています。'
   };
 }
 
@@ -19246,42 +19649,49 @@ function readOsakaMarketSheet_(dateStr, market) {
 function getOsakaMarketDaily(params) {
   params = params || {};
   requireTenantSs_();
+  ensureMarketDailyAutoUpdateTrigger_();
   const ichiba = String(params.ichiba || 1) === '2' ? 2 : 1;
   const market = ichiba === 2 ? '東部' : '本場';
   const refresh = !!params.refresh;
-  const wantDate = String(params.date || '').trim();
+  const wantDate = formatMarketDateCell_(params.date || '');
+  const today = getMarketTodayJstYmd_();
 
   if (!refresh && wantDate) {
     const cached = readOsakaMarketSheet_(wantDate, market);
     if (cached && cached.items && cached.items.length) {
-      return Object.assign({ success: true, source: 'sheet' }, cached);
+      const extra = cached.fallbackSource === 'tokyo'
+        ? { warning: '大阪市公式サイトが停止中のため、東京・大田市場の最新日報（' + cached.date + '）をもとに更新表示しています。' }
+        : {};
+      return Object.assign({ success: true, source: 'sheet' }, cached, extra);
     }
   }
-  if (!refresh && !wantDate) {
-    // シート内の最新日付を優先
-    const sheet = TENANT_SS.getSheetByName(OSAKA_MARKET_SHEET_);
-    if (sheet && sheet.getLastRow() >= 2) {
-      const vals = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
-      let latest = '';
-      vals.forEach(function (r) {
-        const d = r[0] instanceof Date
-          ? Utilities.formatDate(r[0], 'Asia/Tokyo', 'yyyy-MM-dd')
-          : String(r[0] || '').trim();
-        const m = String(r[1] || '').trim();
-        if (m === market && d && d > latest) latest = d;
-      });
-      if (latest) {
-        const cached = readOsakaMarketSheet_(latest, market);
-        if (cached && cached.items && cached.items.length) {
-          // 当日〜1営業日以内ならシートをそのまま返す（頻繁な外部アクセスを避ける）
-          const today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
-          if (!refresh && latest >= osakaMarketYmdParts_(new Date(Date.now() - 2 * 86400000)).label) {
-            return Object.assign({ success: true, source: 'sheet' }, cached, { today: today });
-          }
-        }
+
+  const cachedLatest = !wantDate ? readOsakaMarketSheet_('', market) : null;
+  if (!refresh && !wantDate && cachedLatest && cachedLatest.items && cachedLatest.items.length) {
+    if (cachedLatest.date >= today && cachedLatest.fallbackSource !== 'tokyo') {
+      return Object.assign({ success: true, source: 'sheet' }, cachedLatest, { today: today });
+    }
+    try {
+      const recentlyChecked = CacheService.getScriptCache().get('osakaMktCheck:' + ichiba);
+      if (recentlyChecked) {
+        const warn = cachedLatest.fallbackSource === 'tokyo'
+          ? '大阪市公式サイトが停止中のため、東京・大田市場の最新日報（' + cachedLatest.date + '）をもとに更新表示しています。'
+          : (cachedLatest.date < today
+            ? '最新日の日報を確認済みのため、保存済み最新データ（' + cachedLatest.date + '）を表示しています。'
+            : '');
+        return Object.assign(
+          { success: true, source: 'sheet' },
+          cachedLatest,
+          { today: today },
+          warn ? { warning: warn } : {}
+        );
       }
-    }
+    } catch (eCache) { }
   }
+
+  try {
+    CacheService.getScriptCache().put('osakaMktCheck:' + ichiba, '1', MARKET_CHECK_COOLDOWN_SEC_);
+  } catch (ePut) { }
 
   let hit = null;
   if (wantDate && /^\d{4}-\d{2}-\d{2}$/.test(wantDate)) {
@@ -19298,15 +19708,31 @@ function getOsakaMarketDaily(params) {
     if (fetched.ok) hit = { parts: parts, fetched: fetched };
   }
   if (!hit) {
-    hit = findLatestOsakaMarketCsv_(ichiba, 1, 14);
+    const stopAt = (!refresh && cachedLatest && cachedLatest.fallbackSource !== 'tokyo')
+      ? cachedLatest.date
+      : '';
+    hit = findLatestOsakaMarketCsv_(ichiba, 1, 21, stopAt);
   }
   if (!hit) {
-    const fallback = readOsakaMarketSheet_(wantDate || '', market);
+    if (!wantDate) {
+      const synced = syncOsakaMarketFromLiveDaily_(
+        ichiba,
+        cachedLatest ? cachedLatest.date : '',
+        cachedLatest ? cachedLatest.sourceUrl : ''
+      );
+      if (synced) {
+        return synced;
+      }
+    }
+    const fallback = wantDate ? readOsakaMarketSheet_(wantDate, market) : (cachedLatest || readOsakaMarketSheet_('', market));
     if (fallback) {
+      const warn = fallback.fallbackSource === 'tokyo'
+        ? '大阪市公式サイトが停止中のため、東京・大田市場の最新日報（' + fallback.date + '）をもとに更新表示しています。'
+        : '大阪市公式サイトから最新CSVを取得できないため、保存済み最新データ（' + fallback.date + '）を表示しています。';
       return Object.assign({
         success: true,
-        source: 'sheet-fallback',
-        warning: '大阪市公式サイトから最新CSVを取得できないため、保存済みデータを表示しています。'
+        source: fallback.fallbackSource === 'tokyo' ? 'tokyo-fallback' : 'sheet-fallback',
+        warning: warn
       }, fallback);
     }
     throw new Error('大阪市中央卸売市場の日報を取得できません（公式サイト障害または休場の可能性）。東京タブは利用できる場合があります。');
@@ -19361,16 +19787,7 @@ function tokyoMarketParseNum_(raw) {
 }
 
 function tokyoMarketParseDateLabel_(line) {
-  const reiwa = String(line || '').match(/令和\s*(\d+)\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
-  if (reiwa) {
-    const y = 2018 + Number(reiwa[1]);
-    return y + '-' + osakaMarketPad2_(reiwa[2]) + '-' + osakaMarketPad2_(reiwa[3]);
-  }
-  const west = String(line || '').match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
-  if (west) {
-    return west[1] + '-' + osakaMarketPad2_(west[2]) + '-' + osakaMarketPad2_(west[3]);
-  }
-  return '';
+  return parseMarketJaDateLabel_(line);
 }
 
 function tokyoMarketPriceScore_(high, mid, low, method, origin) {
@@ -19504,7 +19921,7 @@ function fetchTokyoMarketCsvText_(ymd, ym, csvId) {
   }
   const code = res.getResponseCode();
   if (code !== 200) {
-    const siteDown = code >= 500 || code === 403 || code === 429;
+    const siteDown = code === 502 || code === 503 || code === 504 || code === 429;
     return { ok: false, code: code, url: url, text: '', siteDown: siteDown };
   }
   const bytes = res.getContent();
@@ -19524,38 +19941,39 @@ function fetchTokyoMarketCsvText_(ymd, ym, csvId) {
   return { ok: true, code: code, url: url, text: text };
 }
 
-function findLatestTokyoMarketCsv_(maxLookback) {
+function findLatestTokyoMarketCsv_(maxLookback, stopAtDate) {
   const lookback = Math.max(1, Math.min(Number(maxLookback) || 21, 40));
-  const base = new Date();
-  base.setHours(12, 0, 0, 0);
+  const base = getMarketBaseNoonJst_();
+  const stopDate = formatMarketDateCell_(stopAtDate);
   let siteDownStreak = 0;
-  for (let i = 0; i < lookback; i++) {
-    const d = new Date(base.getTime());
-    d.setDate(base.getDate() - i);
-    // 土日は休場が多いので後回し（まずは平日を優先）
-    const dow = d.getDay();
-    if (dow === 0 || dow === 6) continue;
-    const parts = osakaMarketYmdParts_(d);
-    const fetched = fetchTokyoMarketCsvText_(parts.ymd, parts.ym, TOKYO_OTA_CSV_ID_);
-    if (fetched && fetched.siteDown) {
-      siteDownStreak += 1;
-      if (siteDownStreak >= 3) return null;
-      continue;
+
+  // 平日優先 → 土曜 → 日曜 の順で走査
+  const passes = [
+    function (dow) { return dow !== 0 && dow !== 6; },
+    function (dow) { return dow === 6; },
+    function (dow) { return dow === 0; }
+  ];
+
+  for (let p = 0; p < passes.length; p++) {
+    const matchDow = passes[p];
+    for (let i = 0; i < lookback; i++) {
+      const d = new Date(base.getTime());
+      d.setDate(base.getDate() - i);
+      const parts = osakaMarketYmdParts_(d);
+      if (stopDate && parts.label <= stopDate) break;
+      if (!matchDow(d.getDay())) continue;
+
+      const fetched = fetchTokyoMarketCsvText_(parts.ymd, parts.ym, TOKYO_OTA_CSV_ID_);
+      if (fetched && fetched.siteDown) {
+        siteDownStreak += 1;
+        if (siteDownStreak >= 3) return null;
+        continue;
+      }
+      siteDownStreak = 0;
+      if (fetched.ok) {
+        return { parts: parts, fetched: fetched };
+      }
     }
-    siteDownStreak = 0;
-    if (fetched.ok) {
-      return { parts: parts, fetched: fetched };
-    }
-  }
-  // 平日で見つからなければ土日も含めて再走査
-  for (let i = 0; i < lookback; i++) {
-    const d = new Date(base.getTime());
-    d.setDate(base.getDate() - i);
-    const dow = d.getDay();
-    if (dow !== 0 && dow !== 6) continue;
-    const parts = osakaMarketYmdParts_(d);
-    const fetched = fetchTokyoMarketCsvText_(parts.ymd, parts.ym, TOKYO_OTA_CSV_ID_);
-    if (fetched && fetched.ok) return { parts: parts, fetched: fetched };
   }
   return null;
 }
@@ -19581,8 +19999,8 @@ function getOrCreateTokyoMarketSheet_() {
 function writeTokyoMarketSheet_(parsed, sourceUrl) {
   const sheet = getOrCreateTokyoMarketSheet_();
   const market = parsed.market || '大田';
-  const dateStr = parsed.date || '';
-  const importedAt = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
+  const dateStr = formatMarketDateCell_(parsed.date || '');
+  const importedAt = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm');
   const items = parsed.items || [];
   const comment = parsed.comment || '';
 
@@ -19590,9 +20008,7 @@ function writeTokyoMarketSheet_(parsed, sourceUrl) {
   if (last >= 2 && dateStr) {
     const vals = sheet.getRange(2, 1, last - 1, 2).getValues();
     for (let i = vals.length - 1; i >= 0; i--) {
-      const d = vals[i][0] instanceof Date
-        ? Utilities.formatDate(vals[i][0], 'Asia/Tokyo', 'yyyy-MM-dd')
-        : String(vals[i][0] || '').trim();
+      const d = formatMarketDateCell_(vals[i][0]);
       const m = String(vals[i][1] || '').trim();
       if (d === dateStr && m === market) {
         sheet.deleteRow(i + 2);
@@ -19601,7 +20017,7 @@ function writeTokyoMarketSheet_(parsed, sourceUrl) {
   }
 
   if (!items.length) {
-    return { date: dateStr, market: market, count: 0 };
+    return { date: dateStr, market: market, count: 0, importedAt: importedAt };
   }
 
   const rows = items.map(function (it) {
@@ -19631,20 +20047,29 @@ function readTokyoMarketSheet_(dateStr, market) {
   const sheet = ss.getSheetByName(TOKYO_MARKET_SHEET_);
   if (!sheet || sheet.getLastRow() < 2) return null;
   const values = sheet.getDataRange().getValues();
+  const mkt = market || '大田';
+  let targetDate = formatMarketDateCell_(dateStr);
+  if (!targetDate) {
+    for (let i = 1; i < values.length; i++) {
+      const m = String(values[i][1] || '').trim();
+      if (m !== mkt) continue;
+      const d = formatMarketDateCell_(values[i][0]);
+      if (d && (!targetDate || d > targetDate)) targetDate = d;
+    }
+  }
+  if (!targetDate) return null;
+
   const items = [];
   let importedAt = '';
   let sourceUrl = '';
   let comment = '';
-  const mkt = market || '大田';
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
-    const d = row[0] instanceof Date
-      ? Utilities.formatDate(row[0], 'Asia/Tokyo', 'yyyy-MM-dd')
-      : String(row[0] || '').trim();
+    const d = formatMarketDateCell_(row[0]);
     const m = String(row[1] || '').trim();
-    if (dateStr && d !== dateStr) continue;
+    if (d !== targetDate) continue;
     if (m !== mkt) continue;
-    if (!importedAt && row[11]) importedAt = String(row[11]);
+    if (!importedAt && row[11]) importedAt = formatMarketDateTimeCell_(row[11]);
     if (!sourceUrl && row[12]) sourceUrl = String(row[12]);
     if (!comment && row[10]) comment = String(row[10]);
     items.push({
@@ -19661,7 +20086,7 @@ function readTokyoMarketSheet_(dateStr, market) {
   }
   if (!items.length) return null;
   return {
-    date: dateStr || String(values[1][0] || ''),
+    date: targetDate,
     market: mkt,
     comment: comment,
     items: items,
@@ -19678,9 +20103,11 @@ function readTokyoMarketSheet_(dateStr, market) {
 function getTokyoMarketDaily(params) {
   params = params || {};
   requireTenantSs_();
+  ensureMarketDailyAutoUpdateTrigger_();
   const market = '大田';
   const refresh = !!params.refresh;
-  const wantDate = String(params.date || '').trim();
+  const wantDate = formatMarketDateCell_(params.date || '');
+  const today = getMarketTodayJstYmd_();
 
   if (!refresh && wantDate) {
     const cached = readTokyoMarketSheet_(wantDate, market);
@@ -19688,29 +20115,28 @@ function getTokyoMarketDaily(params) {
       return Object.assign({ success: true, source: 'sheet' }, cached);
     }
   }
-  if (!refresh && !wantDate) {
-    const sheet = TENANT_SS.getSheetByName(TOKYO_MARKET_SHEET_);
-    if (sheet && sheet.getLastRow() >= 2) {
-      const vals = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
-      let latest = '';
-      vals.forEach(function (r) {
-        const d = r[0] instanceof Date
-          ? Utilities.formatDate(r[0], 'Asia/Tokyo', 'yyyy-MM-dd')
-          : String(r[0] || '').trim();
-        const m = String(r[1] || '').trim();
-        if (m === market && d && d > latest) latest = d;
-      });
-      if (latest) {
-        const cached = readTokyoMarketSheet_(latest, market);
-        if (cached && cached.items && cached.items.length) {
-          const cutoff = osakaMarketYmdParts_(new Date(Date.now() - 2 * 86400000)).label;
-          if (latest >= cutoff) {
-            return Object.assign({ success: true, source: 'sheet' }, cached);
-          }
-        }
-      }
+
+  const cachedLatest = !wantDate ? readTokyoMarketSheet_('', market) : null;
+  if (!refresh && !wantDate && cachedLatest && cachedLatest.items && cachedLatest.items.length) {
+    if (cachedLatest.date >= today) {
+      return Object.assign({ success: true, source: 'sheet' }, cachedLatest, { today: today });
     }
+    try {
+      const recentlyChecked = CacheService.getScriptCache().get('tokyoMktCheck:' + market);
+      if (recentlyChecked) {
+        return Object.assign({
+          success: true,
+          source: 'sheet',
+          today: today,
+          warning: '最新日の日報を確認済みのため、保存済み最新データ（' + cachedLatest.date + '）を表示しています。'
+        }, cachedLatest);
+      }
+    } catch (eCache) { }
   }
+
+  try {
+    CacheService.getScriptCache().put('tokyoMktCheck:' + market, '1', MARKET_CHECK_COOLDOWN_SEC_);
+  } catch (ePut) { }
 
   let hit = null;
   if (wantDate && /^\d{4}-\d{2}-\d{2}$/.test(wantDate)) {
@@ -19724,15 +20150,16 @@ function getTokyoMarketDaily(params) {
     if (fetched.ok) hit = { parts: parts, fetched: fetched };
   }
   if (!hit) {
-    hit = findLatestTokyoMarketCsv_(14);
+    const stopAt = (!refresh && cachedLatest) ? cachedLatest.date : '';
+    hit = findLatestTokyoMarketCsv_(21, stopAt);
   }
   if (!hit) {
-    const fallback = readTokyoMarketSheet_(wantDate || '', market);
+    const fallback = wantDate ? readTokyoMarketSheet_(wantDate, market) : (cachedLatest || readTokyoMarketSheet_('', market));
     if (fallback) {
       return Object.assign({
         success: true,
         source: 'sheet-fallback',
-        warning: '最新の公開CSVが見つからないため、保存済みデータを表示しています。'
+        warning: '最新日の日報が未公開または休場のため、保存済み最新データ（' + fallback.date + '）を表示しています。'
       }, fallback);
     }
     throw new Error('東京都中央卸売市場（大田）の日報CSVを取得できませんでした（休場または未公開の可能性があります）');
@@ -19760,6 +20187,93 @@ function importTokyoMarketDaily(params) {
   params = params || {};
   params.refresh = true;
   return getTokyoMarketDaily(params);
+}
+
+/**
+ * 市況日報の毎日自動更新トリガー（午前9時台）を登録する
+ */
+function ensureMarketDailyAutoUpdateTrigger_() {
+  try {
+    if (TENANT_SS) {
+      const ssId = TENANT_SS.getId();
+      const props = PropertiesService.getScriptProperties();
+      if (ssId && props.getProperty('MARKET_AUTO_UPDATE_SS_ID') !== ssId) {
+        props.setProperty('MARKET_AUTO_UPDATE_SS_ID', ssId);
+      }
+    }
+    const cache = CacheService.getScriptCache();
+    if (cache.get('marketTriggerChecked')) return;
+    cache.put('marketTriggerChecked', '1', 21600);
+    const triggers = ScriptApp.getProjectTriggers();
+    const exists = triggers.some(function (t) {
+      return t.getHandlerFunction && t.getHandlerFunction() === 'autoUpdateAllMarketDaily';
+    });
+    if (!exists) {
+      ScriptApp.newTrigger('autoUpdateAllMarketDaily')
+        .timeBased()
+        .everyDays(1)
+        .atHour(9)
+        .create();
+    }
+  } catch (e) {
+    // 権限不足やトリガー上限でも市況取得本体は継続する
+  }
+}
+
+/**
+ * GAS時間主導型トリガー／手動実行用: 東京・大阪の最新市況を全テナントDBへ取り込む
+ */
+function autoUpdateAllMarketDaily() {
+  const ssIds = [];
+  const seen = {};
+  const addSsId = function (raw) {
+    let s = String(raw || '').trim();
+    if (!s) return;
+    if (s.indexOf('spreadsheets/d/') >= 0) {
+      const m = s.match(/\/d\/([a-zA-Z0-9-_]+)/);
+      if (m && m[1]) s = m[1];
+    }
+    if (!s || seen[s]) return;
+    seen[s] = true;
+    ssIds.push(s);
+  };
+
+  try {
+    const masterSS = SpreadsheetApp.openById(MASTER_SPREADSHEET_ID);
+    const masterSheet = masterSS.getSheetByName('組織一覧');
+    if (masterSheet && masterSheet.getLastRow() >= 2) {
+      const rows = masterSheet.getRange(2, 1, masterSheet.getLastRow() - 1, 3).getValues();
+      rows.forEach(function (r) { addSsId(r[2]); });
+    }
+  } catch (eMaster) { }
+
+  try {
+    addSsId(PropertiesService.getScriptProperties().getProperty('MARKET_AUTO_UPDATE_SS_ID'));
+  } catch (eProp) { }
+
+  if (!ssIds.length) {
+    try { addSsId(resolveTenantSpreadsheetId_('default')); } catch (eDef) { }
+  }
+
+  const results = [];
+  for (let i = 0; i < ssIds.length; i++) {
+    const ssId = ssIds[i];
+    try {
+      TENANT_SS = SpreadsheetApp.openById(ssId);
+      _cpFieldLookupCache = null;
+      const tokyoRes = getTokyoMarketDaily({ refresh: true });
+      const osakaRes = getOsakaMarketDaily({ ichiba: 1, refresh: true });
+      results.push({
+        ssId: ssId,
+        tokyoDate: tokyoRes && tokyoRes.date,
+        osakaDate: osakaRes && osakaRes.date,
+        osakaSource: osakaRes && osakaRes.source
+      });
+    } catch (eTenant) {
+      results.push({ ssId: ssId, error: String(eTenant) });
+    }
+  }
+  return { success: true, results: results };
 }
 
 /**

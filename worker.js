@@ -5825,6 +5825,25 @@ window.submitFieldPhotoRecord = async (id) => {
     loadedPolygons[polyId].photos.unshift(tempRecord);
   }
 
+  if (typeof window.pushPhotoActivityNotice_ === 'function') {
+    try {
+      window.pushPhotoActivityNotice_({
+        polyId: polyId,
+        polyName: p.name || '',
+        recordId: tempId,
+        photoCount: (keptUrls.length + pendingItems.length) || 1,
+        photoTitle: photoTitle,
+        photoTags: tags,
+        preview: memo,
+        thumbUrl: keptUrls[0] || '',
+        workDate: dateVal,
+        userName: currentUser,
+        isEdit: !!editingId,
+        isMarker: !!p.isMarker
+      });
+    } catch (eNotice) { }
+  }
+
   window.fieldPhotoPendingFiles = [];
   window.fieldPhotoKeptUrls = [];
   window.fieldPhotoEditingRecordId = null;
@@ -5873,6 +5892,18 @@ window.submitFieldPhotoRecord = async (id) => {
 
     if (Array.isArray(updatedItems)) {
       loadedPolygons[polyId].photos = updatedItems;
+      if (typeof window.updateActivityNoticeExtraRecordId_ === 'function') {
+        try {
+          const savedItem = editingId
+            ? updatedItems.find(x => x && String(x.id) === String(editingId))
+            : updatedItems[updatedItems.length - 1];
+          const realId = (savedItem && savedItem.id) ? String(savedItem.id) : '';
+          const firstUrl = savedItem
+            ? ((Array.isArray(savedItem.urls) && savedItem.urls[0]) || savedItem.url || '')
+            : '';
+          window.updateActivityNoticeExtraRecordId_(tempId, realId, firstUrl);
+        } catch (eNoticeUpd) { }
+      }
     } else {
       if (!editingId) {
         loadedPolygons[polyId].photos = (loadedPolygons[polyId].photos || []).filter(x => x.id !== tempId);
@@ -30309,6 +30340,12 @@ window.replaceOptimisticRecordItem_ = (localId, serverItem, targetIds) => {
       }
     }
   } catch (e) { }
+  try {
+    if (localId && serverItem && serverItem.id && typeof window.updateActivityNoticeExtraRecordId_ === 'function') {
+      const firstUrl = (Array.isArray(serverItem.urls) && serverItem.urls[0]) || serverItem.url || '';
+      window.updateActivityNoticeExtraRecordId_(localId, serverItem.id, firstUrl);
+    }
+  } catch (e) { }
 };
 
 window.markOptimisticRecordFailed_ = (localId, targetIds) => {
@@ -30989,6 +31026,15 @@ window.runRecordSyncJob_ = async (job) => {
           .filter(ph => ph && ph._pendingSync && ph.id !== job.localId && String(ph.id).indexOf('local_') === 0);
         loadedPolygons[polyId].photos = updated.concat(pendingLocals);
         if (typeof updatePolygonColor === 'function') updatePolygonColor(polyId);
+        if (typeof window.updateActivityNoticeExtraRecordId_ === 'function') {
+          try {
+            const updItem = updated.find(ph => ph && String(ph.id) === String(editId));
+            const firstUrl = updItem
+              ? ((Array.isArray(updItem.urls) && updItem.urls[0]) || updItem.url || '')
+              : '';
+            if (firstUrl) window.updateActivityNoticeExtraRecordId_(editId, editId, firstUrl);
+          } catch (eNoticeUpd) { }
+        }
       }
     } else {
       // 圃場なし／埋め込みのみ見つからない場合もシート上書き（新規行を増やさない）
@@ -32901,6 +32947,100 @@ async function submitRecord() {
       keptUrls: keptUrls
     });
 
+    try {
+      const primaryPolyId = String(targetIdsSnap[0] || activePolySnap || '__global__');
+      const primaryPolyName = (nameStr && nameStr !== '未選択')
+        ? nameStr
+        : (primaryPolyId === '__global__' ? '共通・全体' : String((p && p.name) || ''));
+      if (recordTypeSnap !== 'work' && !p.isMarker) {
+        if (typeof window.pushGrowthRecordActivityNotice_ === 'function') {
+          window.pushGrowthRecordActivityNotice_({
+            polyId: primaryPolyId,
+            polyIds: targetIdsSnap,
+            polyName: primaryPolyName,
+            recordId: localId,
+            data: data,
+            userName: userSnap,
+            isEdit: !!editIdSnap
+          });
+        }
+        if (files.length > 0 && typeof window.pushPhotoActivityNotice_ === 'function') {
+          window.pushPhotoActivityNotice_({
+            polyId: primaryPolyId,
+            polyIds: targetIdsSnap,
+            polyName: primaryPolyName,
+            recordId: localId,
+            photoCount: files.length,
+            preview: [data && data.crop ? ('作物: ' + data.crop) : '', (data && data.notes) || ''].filter(Boolean).join(' ／ '),
+            thumbUrl: keptUrls[0] || '',
+            userName: userSnap,
+            isEdit: !!editIdSnap,
+            isMarker: false
+          });
+        }
+      } else if (recordTypeSnap !== 'work' && p.isMarker) {
+        if (typeof window.pushPhotoActivityNotice_ === 'function') {
+          const timeRange = (data && (data.startTime || data.endTime))
+            ? `${data.startTime || '--:--'}〜${data.endTime || '--:--'}`
+            : '';
+          window.pushPhotoActivityNotice_({
+            polyId: primaryPolyId,
+            polyIds: targetIdsSnap,
+            polyName: primaryPolyName,
+            recordId: localId,
+            photoCount: (files.length + keptUrls.length) || 1,
+            preview: [timeRange, '看板現地写真'].filter(Boolean).join(' ／ '),
+            thumbUrl: keptUrls[0] || '',
+            userName: userSnap,
+            isEdit: !!editIdSnap,
+            isMarker: true
+          });
+        }
+      } else if (recordTypeSnap === 'work') {
+        if (typeof window.pushWorkRecordActivityNotice_ === 'function') {
+          const timeRange = (data && (data.startTime || data.endTime))
+            ? `${data.startTime || '--:--'}〜${data.endTime || '--:--'}`
+            : '';
+          const workPreview = [
+            timeRange,
+            data && data.detailedWorks ? data.detailedWorks : '',
+            data && data.comment ? data.comment : ''
+          ].filter(Boolean).join(' ／ ');
+          window.pushWorkRecordActivityNotice_({
+            polyId: primaryPolyId,
+            polyIds: targetIdsSnap,
+            polyName: primaryPolyName,
+            recordId: localId,
+            workName: (data && data.workName) || '',
+            crop: (data && data.crop) || '',
+            workDate: (data && data.workDate) || '',
+            preview: workPreview,
+            userName: userSnap,
+            isEdit: !!editIdSnap
+          });
+        }
+        if (files.length > 0 && typeof window.pushPhotoActivityNotice_ === 'function') {
+          window.pushPhotoActivityNotice_({
+            polyId: primaryPolyId,
+            polyIds: targetIdsSnap,
+            polyName: primaryPolyName,
+            recordId: localId,
+            photoCount: files.length,
+            preview: [
+              data && data.workName ? ('作業: ' + data.workName) : '',
+              data && data.crop ? ('作物: ' + data.crop) : '',
+              (data && data.comment) || ''
+            ].filter(Boolean).join(' ／ '),
+            thumbUrl: keptUrls[0] || '',
+            workDate: (data && data.workDate) || '',
+            userName: userSnap,
+            isEdit: !!editIdSnap,
+            isMarker: !!p.isMarker
+          });
+        }
+      }
+    } catch (eNotice) { }
+
     // マイページ等で最早作業の開始を直したら、その日の出勤も合わせる
     if (editIdSnap && recordTypeSnap === 'work' && data && data.workDate && data.startTime
       && typeof window.syncClockInAfterEarliestWorkEdit_ === 'function') {
@@ -34707,9 +34847,26 @@ window.returnMachineToBase = async (machineId, baseSignId, baseSignName) => {
 
     // ローカルのデータも更新してあげる
     const m = pdlMachines.find(x => x.id === machineId);
+    const prevLocId = m ? String(m.currentLocId || m.signId || '').trim() : '';
+    const prevLocName = m ? String(m.currentLocName || m.signName || '').trim() : '';
     if (m) {
       m.currentLocId = baseSignId;
       m.currentLocName = baseSignName;
+    }
+    if (String(baseSignId || '').trim() && String(baseSignId || '').trim() !== prevLocId
+      && typeof window.pushMachineLocationActivityNotice_ === 'function') {
+      try {
+        window.pushMachineLocationActivityNotice_({
+          polyId: String(baseSignId || '').trim(),
+          machines: [{
+            id: String(machineId || ''),
+            name: String((m && m.name) || machineId || '').trim(),
+            fromName: prevLocName,
+            toName: String(baseSignName || '').trim()
+          }],
+          userName: String(localStorage.getItem('passionMapUserName') || (typeof currentUser !== 'undefined' ? currentUser : '') || '')
+        });
+      } catch (eNotice) { }
     }
 
     customAlert("定位置に戻しました！");
@@ -51749,7 +51906,7 @@ window.loadActivityNoticeExtras_ = () => {
 };
 
 window.persistActivityNoticeExtras_ = (list) => {
-  const arr = Array.isArray(list) ? list.slice(0, 60) : [];
+  const arr = Array.isArray(list) ? list.slice(0, 100) : [];
   try {
     localStorage.setItem(window.getActivityNoticeExtraCacheKey_(), JSON.stringify(arr));
   } catch (e) {
@@ -51760,6 +51917,7 @@ window.persistActivityNoticeExtras_ = (list) => {
 window.pushActivityNoticeExtra_ = (entry) => {
   if (!entry || !entry.id) return;
   const list = window.loadActivityNoticeExtras_();
+  const rawThumb = String(entry.thumbUrl || '').trim();
   const next = {
     id: String(entry.id),
     type: String(entry.type || 'extra'),
@@ -51767,14 +51925,29 @@ window.pushActivityNoticeExtra_ = (entry) => {
     workDate: String(entry.workDate || '').slice(0, 10),
     batchId: String(entry.batchId || ''),
     itemCount: Number(entry.itemCount) || 0,
-    preview: String(entry.preview || '').slice(0, 200),
+    preview: String(entry.preview || '').slice(0, 240),
+    notes: String(entry.notes || '').slice(0, 200),
     userName: String(entry.userName || ''),
     machines: Array.isArray(entry.machines) ? entry.machines.map(m => ({
       id: String(m.id || ''),
       name: String(m.name || ''),
       fromName: String(m.fromName || ''),
       toName: String(m.toName || '')
-    })) : []
+    })) : [],
+    polyId: String(entry.polyId || ''),
+    polyIds: Array.isArray(entry.polyIds) ? entry.polyIds.map(String).filter(Boolean) : [],
+    polyName: String(entry.polyName || ''),
+    recordId: String(entry.recordId || ''),
+    crop: String(entry.crop || ''),
+    fieldStatus: String(entry.fieldStatus || ''),
+    growthTags: Array.isArray(entry.growthTags) ? entry.growthTags.map(String).filter(Boolean) : [],
+    photoTitle: String(entry.photoTitle || ''),
+    photoTags: Array.isArray(entry.photoTags) ? entry.photoTags.map(String).filter(Boolean) : [],
+    photoCount: Number(entry.photoCount) || 0,
+    thumbUrl: rawThumb.indexOf('blob:') === 0 ? '' : rawThumb,
+    workName: String(entry.workName || ''),
+    isEdit: !!entry.isEdit,
+    isMarker: !!entry.isMarker
   };
   const filtered = list.filter(x => x && String(x.id) !== next.id);
   filtered.unshift(next);
@@ -51782,6 +51955,166 @@ window.pushActivityNoticeExtra_ = (entry) => {
   if (typeof window.refreshActivityNoticeBadge_ === 'function') {
     try { window.refreshActivityNoticeBadge_(); } catch (e) { }
   }
+};
+
+window.updateActivityNoticeExtraRecordId_ = (oldRecordId, newRecordId, newThumbUrl) => {
+  const oldId = String(oldRecordId || '').trim();
+  if (!oldId) return;
+  const nextId = String(newRecordId || '').trim();
+  const rawThumb = String(newThumbUrl || '').trim();
+  const cleanThumb = (rawThumb && rawThumb.indexOf('blob:') !== 0) ? rawThumb : '';
+  const list = window.loadActivityNoticeExtras_();
+  let changed = false;
+  list.forEach((x) => {
+    if (!x || String(x.recordId || '') !== oldId) return;
+    if (nextId && nextId !== oldId) {
+      x.recordId = nextId;
+      changed = true;
+    }
+    if (cleanThumb && x.thumbUrl !== cleanThumb) {
+      x.thumbUrl = cleanThumb;
+      changed = true;
+    }
+  });
+  if (changed) {
+    window.persistActivityNoticeExtras_(list);
+  }
+};
+
+window.buildGrowthRecordNoticeTagsAndPreview_ = (d) => {
+  d = (d && typeof d === 'object') ? d : {};
+  const growthTags = [];
+  if (d.mowing) growthTags.push('草刈り');
+  if (d.weeding) growthTags.push('草抜き');
+  if (d.drainage) growthTags.push('排水');
+  if (d.bug) growthTags.push('虫食有');
+  if (d.disease) growthTags.push('病気有');
+  if (d.flower) growthTags.push('花芽有');
+  if (d.survivalRate) growthTags.push('活着率:' + d.survivalRate);
+  if (d.leafLength) growthTags.push('葉長:' + d.leafLength);
+  if (d.harvestSize) growthTags.push('収穫サイズ:' + d.harvestSize);
+  if (d.harvestAmount) growthTags.push('収穫量:' + d.harvestAmount);
+  if (d.ph) growthTags.push('pH:' + d.ph);
+  const crop = String(d.crop || '').trim();
+  const fieldStatus = String(d.fieldStatus || '').trim();
+  const notes = String(d.notes || '').trim();
+  const preview = [
+    crop ? ('作物: ' + crop) : '',
+    fieldStatus ? ('状況: ' + fieldStatus) : '',
+    growthTags.length ? growthTags.join('・') : '',
+    notes
+  ].filter(Boolean).join(' ／ ');
+  return { crop, fieldStatus, growthTags, notes, preview };
+};
+
+window.getActivityNoticeTodayYmd_ = () => {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+};
+
+window.pushGrowthRecordActivityNotice_ = (opts) => {
+  opts = opts || {};
+  const d = (opts.data && typeof opts.data === 'object') ? opts.data : opts;
+  const summary = window.buildGrowthRecordNoticeTagsAndPreview_(d);
+  const polyId = String(opts.polyId || '').trim();
+  const polyIds = Array.isArray(opts.polyIds) ? opts.polyIds.map(String).filter(Boolean) : (polyId ? [polyId] : []);
+  const fallbackName = (polyId && typeof loadedPolygons !== 'undefined' && loadedPolygons && loadedPolygons[polyId])
+    ? String(loadedPolygons[polyId].name || '')
+    : '';
+  const polyName = String(opts.polyName || fallbackName).trim();
+  const recordId = String(opts.recordId || '').trim();
+  const workDate = String(opts.workDate || window.getActivityNoticeTodayYmd_()).replace(/\//g, '-').slice(0, 10);
+  const ts = Number(opts.savedAt) || Date.now();
+  window.pushActivityNoticeExtra_({
+    id: 'gr_' + (recordId || ('form_' + ts)) + '_' + ts + '_' + Math.floor(Math.random() * 1000),
+    type: 'growth_record',
+    savedAt: ts,
+    workDate: workDate,
+    polyId: polyId,
+    polyIds: polyIds,
+    polyName: polyName,
+    recordId: recordId,
+    itemCount: 1,
+    crop: summary.crop,
+    fieldStatus: summary.fieldStatus,
+    growthTags: summary.growthTags,
+    notes: summary.notes,
+    preview: summary.preview,
+    userName: String(opts.userName || ''),
+    isEdit: !!opts.isEdit,
+    isMarker: false
+  });
+};
+
+window.pushPhotoActivityNotice_ = (opts) => {
+  opts = opts || {};
+  const polyId = String(opts.polyId || '').trim();
+  const polyIds = Array.isArray(opts.polyIds) ? opts.polyIds.map(String).filter(Boolean) : (polyId ? [polyId] : []);
+  const fallbackName = (polyId && typeof loadedPolygons !== 'undefined' && loadedPolygons && loadedPolygons[polyId])
+    ? String(loadedPolygons[polyId].name || '')
+    : '';
+  const polyName = String(opts.polyName || fallbackName).trim();
+  const recordId = String(opts.recordId || '').trim();
+  const photoTags = Array.isArray(opts.photoTags) ? opts.photoTags.map(String).filter(Boolean) : [];
+  const photoTitle = String(opts.photoTitle || '').trim();
+  const memo = String(opts.preview || opts.notes || '').trim();
+  const photoCount = Number(opts.photoCount) || 1;
+  const previewParts = [];
+  if (photoTitle) previewParts.push(photoTitle);
+  if (photoTags.length) previewParts.push(photoTags.map(t => '#' + t).join(' '));
+  if (memo) previewParts.push(memo);
+  const workDate = String(opts.workDate || window.getActivityNoticeTodayYmd_()).replace(/\//g, '-').slice(0, 10);
+  const ts = Number(opts.savedAt) || Date.now();
+  window.pushActivityNoticeExtra_({
+    id: 'ph_' + (recordId || ('form_' + ts)) + '_' + ts + '_' + Math.floor(Math.random() * 1000),
+    type: 'photo_add',
+    savedAt: ts,
+    workDate: workDate,
+    polyId: polyId,
+    polyIds: polyIds,
+    polyName: polyName,
+    recordId: recordId,
+    itemCount: photoCount,
+    photoCount: photoCount,
+    photoTitle: photoTitle,
+    photoTags: photoTags,
+    thumbUrl: String(opts.thumbUrl || ''),
+    preview: previewParts.join(' ／ '),
+    userName: String(opts.userName || ''),
+    isEdit: !!opts.isEdit,
+    isMarker: !!opts.isMarker
+  });
+};
+
+window.pushWorkRecordActivityNotice_ = (opts) => {
+  opts = opts || {};
+  const polyId = String(opts.polyId || '').trim();
+  const polyIds = Array.isArray(opts.polyIds) ? opts.polyIds.map(String).filter(Boolean) : (polyId ? [polyId] : []);
+  const fallbackName = (polyId && typeof loadedPolygons !== 'undefined' && loadedPolygons && loadedPolygons[polyId])
+    ? String(loadedPolygons[polyId].name || '')
+    : '';
+  const polyName = String(opts.polyName || fallbackName).trim();
+  const recordId = String(opts.recordId || '').trim();
+  const workName = String(opts.workName || '').trim();
+  const crop = String(opts.crop || '').trim();
+  const workDate = String(opts.workDate || window.getActivityNoticeTodayYmd_()).replace(/\//g, '-').slice(0, 10);
+  const ts = Number(opts.savedAt) || Date.now();
+  window.pushActivityNoticeExtra_({
+    id: 'wk_' + (recordId || ('form_' + ts)) + '_' + ts + '_' + Math.floor(Math.random() * 1000),
+    type: 'work_record',
+    savedAt: ts,
+    workDate: workDate,
+    polyId: polyId,
+    polyIds: polyIds,
+    polyName: polyName,
+    recordId: recordId,
+    itemCount: 1,
+    workName: workName,
+    crop: crop,
+    preview: String(opts.preview || '').trim(),
+    userName: String(opts.userName || ''),
+    isEdit: !!opts.isEdit
+  });
 };
 
 /** 一括下書きから機械の置き場所更新一覧を抽出 */
@@ -51841,6 +52174,7 @@ window.pushMachineLocationActivityNotice_ = (opts) => {
     savedAt: Date.now(),
     workDate: String(opts.workDate || '').slice(0, 10),
     batchId: batchId,
+    polyId: String(opts.polyId || '').trim(),
     itemCount: machines.length,
     preview: preview,
     userName: String(opts.userName || ''),
@@ -51852,34 +52186,164 @@ window.pushBulkMachineLocationActivityNotice_ = (opts) => {
   window.pushMachineLocationActivityNotice_(opts || {});
 };
 
+window.ACTIVITY_NOTICE_CATEGORIES_ = [
+  { key: 'all', label: 'すべて', icon: '🔔', color: '#5E35B1', bg: '#EDE7F6', border: '#B39DDB' },
+  { key: 'growth', label: '生育記録', icon: '🌱', color: '#1B5E20', bg: '#E8F5E9', border: '#A5D6A7' },
+  { key: 'photo', label: '写真追加', icon: '📷', color: '#00695C', bg: '#E0F2F1', border: '#80CBC4' },
+  { key: 'work', label: '作業記録', icon: '🚜', color: '#4527A0', bg: '#EDE7F6', border: '#D1C4E9' },
+  { key: 'machine', label: '機械の場所', icon: '📍', color: '#E65100', bg: '#FFF3E0', border: '#FFE0B2' }
+];
+
+window.getActivityNoticeCategoryKey_ = (entry) => {
+  const t = String((entry && entry.type) || '').trim();
+  if (t === 'growth_record') return 'growth';
+  if (t === 'photo_add') return 'photo';
+  if (t === 'machine_location') return 'machine';
+  return 'work';
+};
+
+window.parseActivityNoticeRecordTs_ = (dateStr, timeStr) => {
+  const d = String(dateStr || '').trim().replace(/\//g, '-').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return 0;
+  const rawT = String(timeStr || '').trim();
+  const m = rawT.match(/^(\d{1,2}):(\d{2})/);
+  const t = m ? `${m[1].padStart(2, '0')}:${m[2]}` : '00:00';
+  const dt = new Date(`${d}T${t}:00`);
+  return isNaN(dt.getTime()) ? 0 : dt.getTime();
+};
+
 window.getActivityNoticeFeed_ = () => {
-  const feed = [];
+  const localFeed = [];
+  const seenGrowthRecordIds = new Set();
+  const seenPhotoRecordIds = new Set();
   const hist = (typeof window.loadBulkWorkMemoHistory_ === 'function')
     ? window.loadBulkWorkMemoHistory_()
     : [];
   hist.forEach((entry) => {
     if (!entry) return;
-    feed.push({
+    localFeed.push({
       id: 'bulk_' + String(entry.batchId || entry.savedAt || ''),
       type: 'bulk_work',
+      _fromLocalNotice: true,
       savedAt: Number(entry.savedAt) || 0,
       workDate: String(entry.workDate || ''),
       batchId: String(entry.batchId || ''),
+      userName: String(entry.userName || ''),
       itemCount: Number(entry.itemCount) || (Array.isArray(entry.items) ? entry.items.length : 0) || 0,
       preview: String(entry.preview || '')
     });
   });
   window.loadActivityNoticeExtras_().forEach((entry) => {
     if (!entry) return;
-    feed.push(entry);
+    const item = Object.assign({}, entry, { _fromLocalNotice: true });
+    localFeed.push(item);
+    const rid = String(entry.recordId || '').trim();
+    if (rid) {
+      if (entry.type === 'growth_record') seenGrowthRecordIds.add(rid);
+      else if (entry.type === 'photo_add') seenPhotoRecordIds.add(rid);
+    }
   });
-  feed.sort((a, b) => (Number(b.savedAt) || 0) - (Number(a.savedAt) || 0));
-  return feed.slice(0, 80);
+
+  const mapGrowthFeed = [];
+  const mapPhotoFeed = [];
+  const seenGrowthMapKeys = new Set();
+  const seenPhotoMapKeys = new Set();
+
+  if (typeof loadedPolygons !== 'undefined' && loadedPolygons && typeof loadedPolygons === 'object') {
+    Object.keys(loadedPolygons).forEach((pid) => {
+      if (!pid || pid === '__global__') return;
+      const p = loadedPolygons[pid];
+      if (!p || !Array.isArray(p.photos) || !p.photos.length) return;
+      p.photos.forEach((ph) => {
+        if (!ph || typeof ph !== 'object') return;
+        const d = (ph.data && typeof ph.data === 'object') ? ph.data : {};
+        const recId = String(ph.id || '').trim();
+        const isWork = (ph.type === 'work') || !!d.workName;
+        const isPhotoOnly = !!d.isPhotoOnly || (!isWork && (Array.isArray(d.photoTags) || !!d.photoTitle || !!d.photoDate));
+        const urls = Array.isArray(ph.urls) ? ph.urls.filter(Boolean) : (ph.url ? [ph.url] : []);
+        const hasPhoto = urls.length > 0 || !!ph._hasUrls;
+        const recDateRaw = String(d.photoDate || ph.date || d.workDate || '').trim();
+        const recTimeRaw = String(d.photoTime || ph.time || d.startTime || '').trim();
+        const ts = window.parseActivityNoticeRecordTs_(recDateRaw, recTimeRaw);
+        const ymdRaw = recDateRaw.replace(/\//g, '-').slice(0, 10);
+        const ymd = /^\d{4}-\d{2}-\d{2}$/.test(ymdRaw) ? ymdRaw : '';
+        const placeLabel = String(d.placeLabel || d.multiFieldNames || p.name || '').trim();
+
+        if (!isWork && !p.isMarker && !isPhotoOnly) {
+          const gKey = recId || `${pid}|${ymd}|${recTimeRaw}|gr`;
+          if (!seenGrowthMapKeys.has(gKey) && (!recId || !seenGrowthRecordIds.has(recId))) {
+            seenGrowthMapKeys.add(gKey);
+            const summary = window.buildGrowthRecordNoticeTagsAndPreview_(d);
+            mapGrowthFeed.push({
+              id: 'map_gr_' + gKey,
+              type: 'growth_record',
+              _fromLocalNotice: false,
+              savedAt: ts,
+              workDate: ymd,
+              polyId: String(pid),
+              polyIds: [String(pid)],
+              polyName: placeLabel,
+              recordId: recId,
+              itemCount: 1,
+              crop: summary.crop,
+              fieldStatus: summary.fieldStatus,
+              growthTags: summary.growthTags,
+              notes: summary.notes,
+              preview: summary.preview,
+              userName: String(ph.author || ''),
+              isMarker: false
+            });
+          }
+        }
+
+        if (hasPhoto || isPhotoOnly || (!isWork && p.isMarker)) {
+          const pKey = recId || `${pid}|${ymd}|${recTimeRaw}|ph`;
+          if (!seenPhotoMapKeys.has(pKey) && (!recId || !seenPhotoRecordIds.has(recId))) {
+            seenPhotoMapKeys.add(pKey);
+            const photoTags = Array.isArray(d.photoTags) ? d.photoTags.map(String).filter(Boolean) : [];
+            const photoTitle = String(d.photoTitle || d.title || '').trim();
+            const memo = String(d.notes || d.memo || d.comment || (d.workName ? ('作業: ' + d.workName) : (d.crop ? ('作物: ' + d.crop) : ''))).trim();
+            const previewParts = [];
+            if (photoTitle) previewParts.push(photoTitle);
+            if (photoTags.length) previewParts.push(photoTags.map(t => '#' + t).join(' '));
+            if (memo) previewParts.push(memo);
+            const thumb = urls.find(u => u && String(u).indexOf('blob:') !== 0) || urls[0] || '';
+            mapPhotoFeed.push({
+              id: 'map_ph_' + pKey,
+              type: 'photo_add',
+              _fromLocalNotice: false,
+              savedAt: ts,
+              workDate: ymd,
+              polyId: String(pid),
+              polyIds: [String(pid)],
+              polyName: placeLabel,
+              recordId: recId,
+              itemCount: urls.length || 1,
+              photoCount: urls.length || 1,
+              photoTitle: photoTitle,
+              photoTags: photoTags,
+              thumbUrl: thumb,
+              preview: previewParts.join(' ／ '),
+              userName: String(ph.author || ''),
+              isMarker: !!p.isMarker
+            });
+          }
+        }
+      });
+    });
+  }
+
+  mapGrowthFeed.sort((a, b) => (Number(b.savedAt) || 0) - (Number(a.savedAt) || 0));
+  mapPhotoFeed.sort((a, b) => (Number(b.savedAt) || 0) - (Number(a.savedAt) || 0));
+
+  const combined = localFeed.concat(mapGrowthFeed.slice(0, 30), mapPhotoFeed.slice(0, 30));
+  combined.sort((a, b) => (Number(b.savedAt) || 0) - (Number(a.savedAt) || 0));
+  return combined.slice(0, 120);
 };
 
 window.countUnreadActivityNotices_ = () => {
   const seenAt = window.getActivityNoticeSeenAt_();
-  return window.getActivityNoticeFeed_().filter(x => x && Number(x.savedAt || 0) > seenAt).length;
+  return window.getActivityNoticeFeed_().filter(x => x && x._fromLocalNotice !== false && Number(x.savedAt || 0) > seenAt).length;
 };
 
 window.refreshActivityNoticeBadge_ = () => {
@@ -51898,50 +52362,286 @@ window.refreshActivityNoticeBadge_ = () => {
 
 window.formatActivityNoticeWhen_ = (savedAt) => {
   const d = new Date(Number(savedAt) || 0);
-  if (isNaN(d.getTime())) return '';
+  if (isNaN(d.getTime()) || Number(savedAt) <= 0) return '';
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
-window.openWorkerActivityNoticeModal_ = () => {
+window.resolveActivityNoticeThumbUrl_ = (entry) => {
+  if (!entry) return '';
+  if (entry.thumbUrl && String(entry.thumbUrl).indexOf('blob:') !== 0) {
+    return String(entry.thumbUrl);
+  }
+  const polyId = String(entry.polyId || '').trim();
+  const recordId = String(entry.recordId || '').trim();
+  if (polyId && recordId && typeof loadedPolygons !== 'undefined' && loadedPolygons && loadedPolygons[polyId] && Array.isArray(loadedPolygons[polyId].photos)) {
+    const found = loadedPolygons[polyId].photos.find(ph => ph && String(ph.id || '') === recordId);
+    if (found) {
+      const urls = Array.isArray(found.urls) ? found.urls.filter(Boolean) : (found.url ? [found.url] : []);
+      if (urls.length) return String(urls[0]);
+    }
+  }
+  return '';
+};
+
+window.setActivityNoticeCategoryFilter_ = (catKey) => {
+  const valid = (window.ACTIVITY_NOTICE_CATEGORIES_ || []).some(c => c.key === catKey);
+  window._activityNoticeCategoryFilter = valid ? catKey : 'all';
+  window.openWorkerActivityNoticeModal_({ keepPrevSeen: true });
+};
+
+window.openActivityNoticeTarget_ = (type, polyId, batchId) => {
+  const bid = String(batchId || '').trim();
+  if (bid && typeof window.openBulkWorkMemoHistoryDetail_ === 'function') {
+    window.openBulkWorkMemoHistoryDetail_(bid);
+    return;
+  }
+  const pid = String(polyId || '').trim();
+  const poly = (pid && typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons[pid] : null;
+  if (!poly) {
+    if (type === 'work_record' && pid === '__global__' && typeof window.openAllHistory === 'function') {
+      if (typeof window.closeBulkWorkMemoModal_ === 'function') window.closeBulkWorkMemoModal_({ force: true });
+      window.openAllHistory();
+      return;
+    }
+    if (type === 'bulk_work' && typeof window.openBulkWorkMemoHistoryModal_ === 'function') {
+      window.openBulkWorkMemoHistoryModal_();
+      return;
+    }
+    if (typeof customAlert === 'function') {
+      customAlert('対象の圃場・看板が見つかりませんでした。');
+    }
+    return;
+  }
+  if (typeof window.closeBulkWorkMemoModal_ === 'function') {
+    window.closeBulkWorkMemoModal_({ force: true });
+  }
+  const rp = document.getElementById('rightPanel');
+  if (rp && rp.style.display === 'none') rp.style.display = '';
+  if (pid !== '__global__' && typeof focusAndOpen === 'function') {
+    focusAndOpen(pid);
+  }
+  if (type === 'growth_record') {
+    if (typeof window.actionManagePhotos === 'function') {
+      window.actionManagePhotos(pid, 'growth');
+    }
+  } else if (type === 'photo_add') {
+    if (poly.isMarker) {
+      if (typeof window.actionManagePhotos === 'function') {
+        window.actionManagePhotos(pid, 'growth');
+      }
+    } else if (typeof window.openFieldPhotosList === 'function') {
+      window.openFieldPhotosList(pid);
+    }
+  } else if (type === 'work_record') {
+    if (typeof window.actionManagePhotos === 'function') {
+      window.actionManagePhotos(pid, 'work');
+    }
+  } else if (type === 'machine_location') {
+    if (poly.isMarker && poly.signFunction && (
+      String(poly.signFunction).includes('車両設置場所')
+      || String(poly.signFunction).includes('機械設置場所')
+      || String(poly.signFunction).includes('車両・機械管理')
+    ) && typeof window.openMachineStatusUI === 'function') {
+      window.openMachineStatusUI(pid);
+    }
+  }
+};
+
+window.renderActivityNoticeCardHtml_ = (entry, esc, prevSeenAt) => {
+  const jsEsc = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const type = String(entry.type || '');
+  const catKey = window.getActivityNoticeCategoryKey_(entry);
+  const safeBatch = jsEsc(entry.batchId || '');
+  const safePolyId = jsEsc(entry.polyId || '');
+  const safeType = jsEsc(type);
+  const when = window.formatActivityNoticeWhen_(entry.savedAt);
+  const n = Number(entry.itemCount) || 0;
+  const workDate = String(entry.workDate || '').trim();
+  const userName = String(entry.userName || '').trim();
+  const isNew = entry._fromLocalNotice !== false && Number(entry.savedAt || 0) > Number(prevSeenAt || 0);
+  const newBadge = isNew
+    ? '<span style="display:inline-block; background:#E53935; color:#fff; font-size:10px; font-weight:bold; padding:1px 6px; border-radius:999px; margin-left:6px; vertical-align:middle;">NEW</span>'
+    : '';
+  const dateLabel = type === 'photo_add' ? '撮影日' : (type === 'growth_record' ? '記録日' : '作業日');
+  const metaTail = [
+    when ? esc(when) : (workDate ? '' : '登録時刻不明'),
+    workDate ? `${dateLabel} ${esc(workDate)}` : '',
+    userName ? `👤 ${esc(userName)}` : ''
+  ].filter(Boolean).join(' ／ ');
+
+  let border = '#D1C4E9';
+  let bg = '#FAF8FF';
+  let titleColor = '#4527A0';
+  let metaColor = '#7E57C2';
+  let titleHtml = '';
+  let badgesHtml = '';
+  let bodyText = '';
+  let thumbHtml = '';
+
+  if (catKey === 'growth') {
+    border = '#A5D6A7';
+    bg = '#F6FBF6';
+    titleColor = '#1B5E20';
+    metaColor = '#2E7D32';
+    const place = entry.polyName ? `${esc(entry.polyName)} の` : '';
+    titleHtml = `🌱 ${place}生育記録が${entry.isEdit ? '更新' : '登録'}されました`;
+    const chips = [];
+    if (entry.crop) chips.push(`<span style="background:#E8F5E9; color:#1B5E20; border:1px solid #A5D6A7; font-size:11px; font-weight:bold; padding:2px 7px; border-radius:999px;">🌱 ${esc(entry.crop)}</span>`);
+    if (entry.fieldStatus) chips.push(`<span style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; font-size:11px; font-weight:bold; padding:2px 7px; border-radius:999px;">${esc(entry.fieldStatus)}</span>`);
+    (Array.isArray(entry.growthTags) ? entry.growthTags.slice(0, 5) : []).forEach((tg) => {
+      chips.push(`<span style="background:#fff; color:#33691E; border:1px solid #C5E1A5; font-size:10px; font-weight:bold; padding:2px 6px; border-radius:999px;">${esc(tg)}</span>`);
+    });
+    if (chips.length) {
+      badgesHtml = `<div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:6px;">${chips.join('')}</div>`;
+    }
+    bodyText = entry.notes ? String(entry.notes) : (!chips.length && entry.preview ? String(entry.preview) : '');
+  } else if (catKey === 'photo') {
+    border = '#80CBC4';
+    bg = '#F2FBF9';
+    titleColor = '#004D40';
+    metaColor = '#00796B';
+    const place = entry.polyName ? `${esc(entry.polyName)} に` : '';
+    const photoLabel = entry.isMarker ? '現地写真' : '写真';
+    const cnt = Number(entry.photoCount) || n;
+    const cntStr = cnt > 1 ? ` (${cnt}枚)` : '';
+    titleHtml = `📷 ${place}${photoLabel}が${entry.isEdit ? '更新' : '追加'}されました${cntStr}`;
+    const pTags = Array.isArray(entry.photoTags) ? entry.photoTags.slice(0, 5) : [];
+    if (pTags.length) {
+      badgesHtml = `<div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:6px;">${pTags.map(t => `<span style="background:#E0F2F1; color:#00695C; border:1px solid #80CBC4; font-size:10px; font-weight:bold; padding:2px 7px; border-radius:999px;">🏷️ ${esc(t)}</span>`).join('')}</div>`;
+    }
+    bodyText = entry.preview ? String(entry.preview) : '';
+    const thumb = window.resolveActivityNoticeThumbUrl_(entry);
+    if (thumb) {
+      thumbHtml = `<img src="${esc(thumb)}" alt="" style="width:54px; height:54px; object-fit:cover; border-radius:8px; border:1px solid #B2DFDB; flex-shrink:0; background:#fff;" onerror="this.style.display='none'">`;
+    }
+  } else if (catKey === 'machine') {
+    border = '#FFE0B2';
+    bg = '#FFF8E1';
+    titleColor = '#E65100';
+    metaColor = '#EF6C00';
+    titleHtml = `📍 機械の場所が ${n || 1} 件更新されました`;
+    bodyText = entry.preview ? String(entry.preview) : '';
+  } else {
+    border = '#D1C4E9';
+    bg = '#FAF8FF';
+    titleColor = '#4527A0';
+    metaColor = '#7E57C2';
+    if (type === 'work_record') {
+      const place = entry.polyName ? `${esc(entry.polyName)}：` : '';
+      const wName = entry.workName ? esc(entry.workName) : '作業記録';
+      titleHtml = `🚜 ${place}${wName}が${entry.isEdit ? '更新' : '登録'}されました`;
+      if (entry.crop) {
+        badgesHtml = `<div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:6px;"><span style="background:#EDE7F6; color:#4527A0; border:1px solid #D1C4E9; font-size:11px; font-weight:bold; padding:2px 7px; border-radius:999px;">🌱 ${esc(entry.crop)}</span></div>`;
+      }
+      bodyText = entry.preview ? String(entry.preview) : '';
+    } else {
+      titleHtml = `🚜 作業記録が ${n} 件登録されました <span style="display:inline-block; background:#EDE7F6; color:#5E35B1; font-size:10px; padding:1px 6px; border-radius:6px; margin-left:4px;">一括</span>`;
+      bodyText = entry.preview ? String(entry.preview) : '';
+    }
+  }
+
+  let clickAttr = '';
+  let cursor = 'default';
+  if (safeBatch) {
+    clickAttr = ` onclick="openActivityNoticeTarget_('${safeType}', '${safePolyId}', '${safeBatch}')"`;
+    cursor = 'pointer';
+  } else if (safePolyId && (type === 'growth_record' || type === 'photo_add' || type === 'work_record' || type === 'machine_location')) {
+    clickAttr = ` onclick="openActivityNoticeTarget_('${safeType}', '${safePolyId}', '')"`;
+    cursor = 'pointer';
+  } else if (catKey === 'work') {
+    clickAttr = ' onclick="openBulkWorkMemoHistoryModal_()"';
+    cursor = 'pointer';
+  }
+
+  return `
+    <button type="button"${clickAttr} style="display:block; width:100%; box-sizing:border-box; text-align:left; border:1px solid ${border}; border-radius:10px; padding:11px 12px; margin-bottom:8px; background:${bg}; cursor:${cursor};">
+      <div style="display:flex; gap:10px; align-items:flex-start;">
+        <div style="min-width:0; flex:1;">
+          <div style="font-size:11px; color:${metaColor}; font-weight:bold; margin-bottom:4px; line-height:1.35;">${metaTail}${newBadge}</div>
+          <div style="font-size:13px; font-weight:bold; color:${titleColor}; line-height:1.4;">${titleHtml}</div>
+          ${badgesHtml}
+          ${bodyText ? `<div style="font-size:11px; color:#555; margin-top:6px; line-height:1.4; word-break:break-word;">${esc(bodyText)}</div>` : ''}
+        </div>
+        ${thumbHtml}
+      </div>
+    </button>`;
+};
+
+window.openWorkerActivityNoticeModal_ = (opts) => {
+  opts = opts || {};
   const modalEl = document.getElementById('modal');
   if (!modalEl || typeof window.fillAppModalHtml_ !== 'function') return;
-  window.markActivityNoticeSeen_();
-  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  const list = window.getActivityNoticeFeed_();
-  const rows = list.length
-    ? list.map(entry => {
-      const safeBatch = String(entry.batchId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-      const when = window.formatActivityNoticeWhen_(entry.savedAt);
-      const n = Number(entry.itemCount) || 0;
-      const workDate = String(entry.workDate || '').trim();
-      const isMachine = String(entry.type || '') === 'machine_location';
-      const clickAttr = safeBatch
-        ? ` onclick="openBulkWorkMemoHistoryDetail_('${safeBatch}')"`
-        : (isMachine ? '' : ' onclick="openBulkWorkMemoHistoryModal_()"');
-      const cursor = (safeBatch || !isMachine) ? 'pointer' : 'default';
-      const title = isMachine
-        ? `機械の場所が ${n} 件更新されました`
-        : `作業記録が ${n} 件登録されました`;
-      const border = isMachine ? '#FFE0B2' : '#D1C4E9';
-      const bg = isMachine ? '#FFF8E1' : '#FAF8FF';
-      const titleColor = isMachine ? '#E65100' : '#4527A0';
-      const metaColor = isMachine ? '#EF6C00' : '#7E57C2';
-      const icon = isMachine ? '🚜 ' : '';
+  if (!opts.keepPrevSeen) {
+    window._activityNoticeModalPrevSeenAt = window.getActivityNoticeSeenAt_();
+    window.markActivityNoticeSeen_();
+  }
+  const prevSeenAt = Number(window._activityNoticeModalPrevSeenAt || 0);
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const allList = window.getActivityNoticeFeed_();
+  const categories = window.ACTIVITY_NOTICE_CATEGORIES_ || [];
+  let activeCat = String(window._activityNoticeCategoryFilter || 'all');
+  if (!categories.some(c => c.key === activeCat)) activeCat = 'all';
+
+  const counts = { all: allList.length, growth: 0, photo: 0, work: 0, machine: 0 };
+  const byCat = { growth: [], photo: [], work: [], machine: [] };
+  allList.forEach((entry) => {
+    const k = window.getActivityNoticeCategoryKey_(entry);
+    if (byCat[k]) {
+      byCat[k].push(entry);
+      counts[k] += 1;
+    }
+  });
+
+  const tabsHtml = `
+    <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;">
+      ${categories.map((cat) => {
+        const isActive = activeCat === cat.key;
+        const cnt = counts[cat.key] || 0;
+        const tabStyle = isActive
+          ? `background:${cat.color}; color:#fff; border:1px solid ${cat.color}; box-shadow:0 2px 6px rgba(0,0,0,0.14);`
+          : `background:#fff; color:#444; border:1px solid #d0d7de;`;
+        return `<button type="button" onclick="setActivityNoticeCategoryFilter_('${cat.key}')" style="padding:6px 10px; border-radius:999px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:4px; ${tabStyle}"><span>${cat.icon}</span><span>${esc(cat.label)}</span><span style="font-size:11px; opacity:${isActive ? '0.95' : '0.75'};">(${cnt})</span></button>`;
+      }).join('')}
+    </div>`;
+
+  let listHtml = '';
+  if (allList.length === 0) {
+    listHtml = `<div style="padding:22px 12px; text-align:center; color:#888; font-size:13px; line-height:1.55;">まだお知らせはありません。<br>生育記録・写真の追加や作業の登録、機械の場所を更新するとここに表示されます。</div>`;
+  } else if (activeCat === 'all') {
+    const sections = ['growth', 'photo', 'work', 'machine'].map((catKey) => {
+      const items = byCat[catKey] || [];
+      if (!items.length) return '';
+      const cat = categories.find(c => c.key === catKey) || { key: catKey, label: catKey, icon: '🔔', color: '#5E35B1', bg: '#EDE7F6', border: '#D1C4E9' };
+      const previewItems = items.slice(0, 5);
+      const moreBtn = items.length > 5
+        ? `<button type="button" onclick="setActivityNoticeCategoryFilter_('${cat.key}')" style="background:#fff; color:${cat.color}; border:1px solid ${cat.border}; border-radius:999px; padding:3px 9px; font-size:11px; font-weight:bold; cursor:pointer;">すべて見る (${items.length}件) ›</button>`
+        : '';
       return `
-          <button type="button"${clickAttr} style="display:block; width:100%; box-sizing:border-box; text-align:left; border:1px solid ${border}; border-radius:10px; padding:12px; margin-bottom:10px; background:${bg}; cursor:${cursor};">
-            <div style="font-size:11px; color:${metaColor}; font-weight:bold; margin-bottom:4px;">${when ? esc(when) : '登録時刻不明'}${workDate ? ` ／ 作業日 ${esc(workDate)}` : ''}</div>
-            <div style="font-size:13px; font-weight:bold; color:${titleColor}; line-height:1.4;">${icon}${esc(title)}</div>
-            ${entry.preview ? `<div style="font-size:11px; color:#666; margin-top:6px; line-height:1.35;">${esc(entry.preview)}</div>` : ''}
-          </button>`;
-    }).join('')
-    : `<div style="padding:20px 12px; text-align:center; color:#888; font-size:13px; line-height:1.5;">まだお知らせはありません。<br>作業の登録や機械の場所を更新するとここに表示されます。</div>`;
+        <div style="margin-bottom:14px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; padding:7px 10px; border-radius:8px; background:${cat.bg}; border:1px solid ${cat.border};">
+            <div style="font-size:13px; font-weight:bold; color:${cat.color};">${cat.icon} ${esc(cat.label)} <span style="font-size:12px; opacity:0.85;">(${items.length})</span></div>
+            ${moreBtn}
+          </div>
+          ${previewItems.map(entry => window.renderActivityNoticeCardHtml_(entry, esc, prevSeenAt)).join('')}
+        </div>`;
+    }).filter(Boolean).join('');
+    listHtml = sections;
+  } else {
+    const items = byCat[activeCat] || [];
+    const cat = categories.find(c => c.key === activeCat) || { label: '', icon: '🔔' };
+    listHtml = items.length
+      ? items.map(entry => window.renderActivityNoticeCardHtml_(entry, esc, prevSeenAt)).join('')
+      : `<div style="padding:22px 12px; text-align:center; color:#888; font-size:13px; line-height:1.5;">「${cat.icon} ${esc(cat.label)}」のお知らせはまだありません。</div>`;
+  }
+
   const headerHtml = (typeof window.buildBulkWorkMemoModalHeaderHtml_ === 'function')
-    ? window.buildBulkWorkMemoModalHeaderHtml_('🔔 お知らせ', '作業記録の登録・機械の場所更新を確認できます。', { forceClose: true })
+    ? window.buildBulkWorkMemoModalHeaderHtml_('🔔 お知らせ', '生育記録・写真追加・作業記録・機械の場所をカテゴリ別に確認できます。', { forceClose: true })
     : `<div style="font-size:17px; font-weight:bold; color:#5E35B1; margin-bottom:12px;">🔔 お知らせ</div>`;
   window.fillAppModalHtml_(`
     <div style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
       ${headerHtml}
-      <div style="margin-bottom:12px;">${rows}</div>
+      ${tabsHtml}
+      <div style="margin-bottom:12px;">${listHtml}</div>
       <button type="button" onclick="openBulkWorkMemoHistoryModal_()" style="width:100%; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-bottom:8px;">📜 一括入力履歴を開く</button>
       <button type="button" onclick="closeBulkWorkMemoModal_({force:true})" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
     </div>`);

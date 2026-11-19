@@ -1,0 +1,4 @@
+project_id = "jounetsu-map"
+
+[functions.r2-presign]
+verify_jwt = true

@@ -35,6 +35,9 @@
   const _cache = { tokyo: null, osaka: null };
   const _loading = { tokyo: false, osaka: false };
   const _loadingRefresh = { tokyo: false, osaka: false };
+  const _fetchedAt = { tokyo: 0, osaka: 0 };
+  const _autoRefreshed = { tokyo: false, osaka: false };
+  const AUTO_CACHE_TTL_MS = 15 * 60 * 1000;
   /** 選択中の品目名（空 = すべて） */
   const _selectedItems = { tokyo: new Set(), osaka: new Set() };
   const CHIP_PREF_KEY = 'passionMapMarketItemChips';
@@ -82,6 +85,42 @@
   function fmtYen_(n) {
     if (n == null || n === '' || isNaN(Number(n))) return '—';
     return Number(n).toLocaleString('ja-JP') + '円';
+  }
+
+  function pad2_(n) {
+    return (Number(n) < 10 ? '0' : '') + String(Number(n));
+  }
+
+  function todayYmd_() {
+    const d = new Date();
+    return d.getFullYear() + '-' + pad2_(d.getMonth() + 1) + '-' + pad2_(d.getDate());
+  }
+
+  function fmtDateLabel_(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return '—';
+    const m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (m) return m[1] + '-' + pad2_(m[2]) + '-' + pad2_(m[3]);
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      return d.getFullYear() + '-' + pad2_(d.getMonth() + 1) + '-' + pad2_(d.getDate());
+    }
+    return s;
+  }
+
+  function fmtDateTimeLabel_(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return '';
+    const m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[T\s](\d{1,2}):(\d{1,2})/);
+    if (m) {
+      return m[1] + '-' + pad2_(m[2]) + '-' + pad2_(m[3]) + ' ' + pad2_(m[4]) + ':' + pad2_(m[5]);
+    }
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      return d.getFullYear() + '-' + pad2_(d.getMonth() + 1) + '-' + pad2_(d.getDate())
+        + ' ' + pad2_(d.getHours()) + ':' + pad2_(d.getMinutes());
+    }
+    return s;
   }
 
   function trendLabel_(t) {
@@ -374,6 +413,9 @@
       renderActiveLoadingView_();
       return;
     }
+    if (_fetchedAt[key] && (Date.now() - _fetchedAt[key] > AUTO_CACHE_TTL_MS)) {
+      _autoRefreshed[key] = false;
+    }
     loadMarket_(key, false);
   }
 
@@ -455,12 +497,15 @@
 
     if (meta) {
       const src = data.source === 'csv' ? 'CSV取込'
-        : (data.fromSheet || String(data.source || '').indexOf('sheet') === 0 ? '保存データ' : (data.source || ''));
+        : (data.source === 'tokyo-fallback' || data.fallbackSource === 'tokyo' ? '代理取得(大田)'
+          : (data.fromSheet || String(data.source || '').indexOf('sheet') === 0 ? '保存データ' : (data.source || '')));
       meta.style.color = '#607D8B';
       meta.style.fontWeight = '400';
-      meta.textContent = (data.date || '—') + ' / ' + (data.market || conf.defaultMarket)
+      const dateDisp = fmtDateLabel_(data.date);
+      const impDisp = data.importedAt ? fmtDateTimeLabel_(data.importedAt) : '';
+      meta.textContent = dateDisp + ' / ' + (data.market || conf.defaultMarket)
         + ' / ' + data.items.length + '品目'
-        + (data.importedAt ? ' / 取込 ' + data.importedAt : '')
+        + (impDisp ? ' / 取込 ' + impDisp : '')
         + (src ? '（' + src + '）' : '')
         + (isLoading ? '（🔄 最新データ取得中...）' : '');
     }
@@ -523,11 +568,37 @@
     }).join('');
   }
 
+  function renderLoadedStatus_(key, data) {
+    if (data && data.warning) {
+      setStatus_(data.warning, false, false);
+      return;
+    }
+    const selected = _selectedItems[key] || new Set();
+    const total = data && data.count != null ? data.count : ((data && data.items) || []).length;
+    if (selected.size) {
+      setStatus_(selected.size + '品目を選択中（全' + total + '品目）', false, false);
+    } else {
+      setStatus_(total + '品目を表示しています', false, false);
+    }
+  }
+
   async function loadMarket_(key, refresh) {
     const conf = MARKETS[key];
     if (!conf) return;
     ensurePanelDom_();
     if (_loading[key]) return;
+    if (!refresh && _cache[key] && _fetchedAt[key] && (Date.now() - _fetchedAt[key] < AUTO_CACHE_TTL_MS)) {
+      const cachedDate = fmtDateLabel_(_cache[key].date);
+      if (cachedDate && cachedDate !== '—' && cachedDate >= todayYmd_() && _cache[key].source !== 'sheet-fallback') {
+        applyActiveChrome_();
+        if (key === _active) {
+          renderItemChips_();
+          renderActiveTable_();
+          renderLoadedStatus_(key, _cache[key]);
+        }
+        return;
+      }
+    }
     _loading[key] = true;
     _loadingRefresh[key] = !!refresh;
     applyActiveChrome_();
@@ -540,22 +611,22 @@
       const params = Object.assign({}, conf.getParams || {}, { refresh: !!refresh });
       const data = await callMarketGas_(refresh ? conf.importAction : conf.getAction, params);
       _cache[key] = data || null;
+      _fetchedAt[key] = Date.now();
+      if (refresh) _autoRefreshed[key] = true;
       _loading[key] = false;
       _loadingRefresh[key] = false;
       applyActiveChrome_();
       if (key === _active) {
         renderItemChips_();
         renderActiveTable_();
-        if (data && data.warning) setStatus_(data.warning, false, false);
-        else {
-          const selected = _selectedItems[key] || new Set();
-          const total = data && data.count != null ? data.count : ((data && data.items) || []).length;
-          if (selected.size) {
-            setStatus_(selected.size + '品目を選択中（全' + total + '品目）', false, false);
-          } else {
-            setStatus_(total + '品目を表示しています', false, false);
-          }
-        }
+        renderLoadedStatus_(key, data);
+      }
+      const dataDate = fmtDateLabel_(data && data.date);
+      const isStaleDate = !dataDate || dataDate === '—' || dataDate < todayYmd_();
+      const isFallback = !!(data && data.source === 'sheet-fallback');
+      if (!refresh && !_autoRefreshed[key] && (isStaleDate || isFallback)) {
+        _autoRefreshed[key] = true;
+        setTimeout(function () { loadMarket_(key, true); }, 50);
       }
     } catch (err) {
       console.warn(key + ' market load failed', err);
@@ -623,6 +694,9 @@
       if (_loading[_active]) {
         renderActiveLoadingView_();
       } else {
+        if (_fetchedAt[_active] && (Date.now() - _fetchedAt[_active] > AUTO_CACHE_TTL_MS)) {
+          _autoRefreshed[_active] = false;
+        }
         loadMarket_(_active, false);
       }
     },

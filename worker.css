@@ -1,42 +1,255 @@
 /* worker.css */
-html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; display: flex; flex-direction: column; overflow: hidden; background-color: #f8f9fa; }
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: sans-serif;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: #f8f9fa;
+}
 
-#loginScreen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.85); z-index: 20000; display: none; justify-content: center; align-items: center; flex-direction: column; }
-.login-box { background: white; padding: 30px 20px; border-radius: 12px; width: 85%; max-width: 320px; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
-.login-input { width: 90%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; box-sizing: border-box; }
-.login-btn { background: #4CAF50; color: white; border: none; padding: 14px; width: 90%; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; }
+#loginScreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.85);
+  z-index: 20000;
+  display: none;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+}
 
-.control-panel { position: absolute; top: 0; left: 0; width: 100%; box-sizing: border-box; padding: 10px; background-color: transparent; border-bottom: none; z-index: 10; display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none; }
-.control-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; align-items: center; width: 100%; pointer-events: auto; }
+.login-box {
+  background: white;
+  padding: 30px 20px;
+  border-radius: 12px;
+  width: 85%;
+  max-width: 320px;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
 
-#map { flex-grow: 1; width: 100%; }
-.gm-style-cc { display: none !important; }
-input[type="text"], select, input[type="number"], input[type="date"], input[type="time"], textarea { padding: 8px; font-size: 16px; border-radius: 5px; border: 1px solid #aaa; box-sizing: border-box; }
-::placeholder { color: #bbb !important; opacity: 1; }
-button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px; border: 1px solid #aaa; box-sizing: border-box;}
-.gps-btn { background-color: white; color: #4285F4; border-color: #4285F4; font-weight: bold; }
+.login-input {
+  width: 90%;
+  padding: 12px;
+  margin-bottom: 15px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 16px;
+  box-sizing: border-box;
+}
 
-.search-container { position: relative; display: flex; align-items: center; }
-#searchInput { width: 220px; padding: 8px 12px; border-radius: 20px; border: 1px solid #888; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); }
-#mapSearchInput { width: 180px; padding: 8px 12px; border-radius: 20px; border: 1px solid #888; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); background: rgba(255,255,255,0.85); }
-#searchSuggestions { position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #ccc; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 2000; max-height: 250px; overflow-y: auto; display: none; margin-top: 5px; }
-.suggestion-item { padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px; text-align: left; }
+.login-btn {
+  background: #4CAF50;
+  color: white;
+  border: none;
+  padding: 14px;
+  width: 90%;
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+}
 
-.polygon-label { text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; }
-.signboard-label { background: rgba(255,255,255,0.95); padding: 2px 6px; border-radius: 4px; border: 1px solid #666; font-size: 11px; font-weight: bold; margin-top: 5px; color: #000; }
-.signboard-label.selected { background-color: #FFEB3B !important; border: 2px solid #F57F17 !important; color: #000 !important; z-index: 1000; box-shadow: 0 0 0 3px rgba(245, 127, 23, 0.45); }
+.control-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  background-color: transparent;
+  border-bottom: none;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
 
-#rightPanel { position: fixed; top: 0; right: -100%; width: 35%; min-width: 340px; height: 100%; background-color: #f4f6f8; box-shadow: -5px 0 15px rgba(0,0,0,0.3); transition: right 0.3s; z-index: 3000; display: flex; flex-direction: column; }
-@media (max-width: 600px) { #rightPanel { width: 100%; } }
-#rightPanel.open { right: 0; } 
-.panel-header { background-color: #4CAF50; color: white; padding: 12px 15px; font-size: 16px; display: flex; justify-content: space-between; align-items: center; font-weight:bold; }
-.panel-content { flex-grow: 1; padding: 15px; overflow-y: auto; }
-.panel-footer { padding: 15px; background: white; border-top: 1px solid #ddd; }
+.control-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 5px;
+  align-items: center;
+  width: 100%;
+  pointer-events: auto;
+}
+
+#map {
+  flex-grow: 1;
+  width: 100%;
+}
+
+.gm-style-cc {
+  display: none !important;
+}
+
+input[type="text"],
+select,
+input[type="number"],
+input[type="date"],
+input[type="time"],
+textarea {
+  padding: 8px;
+  font-size: 16px;
+  border-radius: 5px;
+  border: 1px solid #aaa;
+  box-sizing: border-box;
+}
+
+::placeholder {
+  color: #bbb !important;
+  opacity: 1;
+}
+
+button {
+  padding: 8px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 5px;
+  border: 1px solid #aaa;
+  box-sizing: border-box;
+}
+
+.gps-btn {
+  background-color: white;
+  color: #4285F4;
+  border-color: #4285F4;
+  font-weight: bold;
+}
+
+.search-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+#searchInput {
+  width: 220px;
+  padding: 8px 12px;
+  border-radius: 20px;
+  border: 1px solid #888;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+#mapSearchInput {
+  width: 180px;
+  padding: 8px 12px;
+  border-radius: 20px;
+  border: 1px solid #888;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.85);
+}
+
+#searchSuggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  background: white;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+  z-index: 2000;
+  max-height: 250px;
+  overflow-y: auto;
+  display: none;
+  margin-top: 5px;
+}
+
+.suggestion-item {
+  padding: 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+  font-size: 14px;
+  text-align: left;
+}
+
+.polygon-label {
+  text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+}
+
+.signboard-label {
+  background: rgba(255, 255, 255, 0.95);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #666;
+  font-size: 11px;
+  font-weight: bold;
+  margin-top: 5px;
+  color: #000;
+}
+
+.signboard-label.selected {
+  background-color: #FFEB3B !important;
+  border: 2px solid #F57F17 !important;
+  color: #000 !important;
+  z-index: 1000;
+  box-shadow: 0 0 0 3px rgba(245, 127, 23, 0.45);
+}
+
+#rightPanel {
+  position: fixed;
+  top: 0;
+  right: -100%;
+  width: 35%;
+  min-width: 340px;
+  height: 100%;
+  background-color: #f4f6f8;
+  box-shadow: -5px 0 15px rgba(0, 0, 0, 0.3);
+  transition: right 0.3s;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 600px) {
+  #rightPanel {
+    width: 100%;
+  }
+}
+
+#rightPanel.open {
+  right: 0;
+}
+
+.panel-header {
+  background-color: #4CAF50;
+  color: white;
+  padding: 12px 15px;
+  font-size: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: bold;
+}
+
+.panel-content {
+  flex-grow: 1;
+  padding: 15px;
+  overflow-y: auto;
+}
+
+.panel-footer {
+  padding: 15px;
+  background: white;
+  border-top: 1px solid #ddd;
+}
 
 /* 個人スケジュール：全画面 */
 #personalScheduleBackdrop {
   display: none;
 }
+
 #personalSchedulePanel {
   position: fixed;
   inset: 0;
@@ -53,7 +266,11 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   flex-direction: column;
   box-sizing: border-box;
 }
-#personalSchedulePanel.open { transform: translateX(0); }
+
+#personalSchedulePanel.open {
+  transform: translateX(0);
+}
+
 .ps-panel-header {
   background: #2E7D32;
   color: #fff;
@@ -66,7 +283,12 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   flex-shrink: 0;
   gap: 8px;
 }
-.ps-header-title { flex-shrink: 0; white-space: nowrap; }
+
+.ps-header-title {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .ps-main-tabs {
   display: flex;
   gap: 4px;
@@ -74,6 +296,7 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   justify-content: center;
   max-width: 280px;
 }
+
 .ps-main-tab {
   flex: 1;
   border: none;
@@ -82,18 +305,21 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   font-size: 13px;
   font-weight: bold;
   cursor: pointer;
-  background: rgba(255,255,255,0.18);
+  background: rgba(255, 255, 255, 0.18);
   color: #fff;
 }
+
 .ps-main-tab.active {
   background: #fff;
   color: #2E7D32;
 }
+
 .ps-sub-tabs {
   display: flex;
   gap: 6px;
   margin-bottom: 12px;
 }
+
 .ps-sub-tab {
   flex: 1;
   border: none;
@@ -105,10 +331,12 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   background: #eee;
   color: #555;
 }
+
 .ps-sub-tab.active {
   background: #7B1FA2;
   color: #fff;
 }
+
 .ps-panel-content {
   flex: 1;
   padding: 10px 12px;
@@ -116,7 +344,11 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   -webkit-overflow-scrolling: touch;
   min-height: 0;
 }
-.ps-panel-footer { display: none; }
+
+.ps-panel-footer {
+  display: none;
+}
+
 .ps-cal-nav {
   display: flex;
   align-items: center;
@@ -124,6 +356,7 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   gap: 8px;
   margin-bottom: 10px;
 }
+
 .ps-cal-nav-btn {
   background: #fff;
   border: 1px solid #ccc;
@@ -134,11 +367,13 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   cursor: pointer;
   color: #333;
 }
+
 .ps-cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 6px;
 }
+
 .ps-cal-weekday {
   text-align: center;
   font-size: 11px;
@@ -146,8 +381,15 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   color: #666;
   padding: 4px 0;
 }
-.ps-cal-weekday.is-sun { color: #c62828; }
-.ps-cal-weekday.is-sat { color: #1565c0; }
+
+.ps-cal-weekday.is-sun {
+  color: #c62828;
+}
+
+.ps-cal-weekday.is-sat {
+  color: #1565c0;
+}
+
 .ps-cal-day {
   min-height: 88px;
   background: #fff;
@@ -156,8 +398,16 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   padding: 4px;
   box-sizing: border-box;
 }
-.ps-cal-day.is-today { border-color: #2E7D32; background: #f1f8e9; }
-.ps-cal-day.is-other { opacity: 0.55; }
+
+.ps-cal-day.is-today {
+  border-color: #2E7D32;
+  background: #f1f8e9;
+}
+
+.ps-cal-day.is-other {
+  opacity: 0.55;
+}
+
 .ps-cal-day-num {
   font-size: 12px;
   font-weight: bold;
@@ -165,7 +415,11 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   margin-bottom: 4px;
   text-align: right;
 }
-.ps-cal-day.is-today .ps-cal-day-num { color: #2E7D32; }
+
+.ps-cal-day.is-today .ps-cal-day-num {
+  color: #2E7D32;
+}
+
 .ps-cal-ev {
   font-size: 10px;
   line-height: 1.25;
@@ -178,11 +432,39 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   color: #fff;
   font-weight: bold;
 }
-.ps-gantt-table { width: 100%; border-collapse: collapse; min-width: 480px; table-layout: fixed; }
-.ps-gantt-table th, .ps-gantt-table td { border: 1px solid #e0e0e0; font-size: 11px; }
-.ps-gantt-table thead th { background: #fafafa; padding: 4px 2px; text-align: center; font-weight: bold; }
-.ps-gantt-label { width: 120px; padding: 4px 6px; vertical-align: middle; }
-.ps-gantt-track { position: relative; height: 28px; background: #fafafa; }
+
+.ps-gantt-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 480px;
+  table-layout: fixed;
+}
+
+.ps-gantt-table th,
+.ps-gantt-table td {
+  border: 1px solid #e0e0e0;
+  font-size: 11px;
+}
+
+.ps-gantt-table thead th {
+  background: #fafafa;
+  padding: 4px 2px;
+  text-align: center;
+  font-weight: bold;
+}
+
+.ps-gantt-label {
+  width: 120px;
+  padding: 4px 6px;
+  vertical-align: middle;
+}
+
+.ps-gantt-track {
+  position: relative;
+  height: 28px;
+  background: #fafafa;
+}
+
 .ps-gantt-bar {
   position: absolute;
   top: 4px;
@@ -200,13 +482,23 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   z-index: 1;
   box-sizing: border-box;
 }
-.ps-gantt-bar.is-dragging { cursor: grabbing; opacity: 0.85; z-index: 5; }
-.ps-gantt-bar.is-dayplan { border: 1px dashed rgba(255,255,255,0.6); }
+
+.ps-gantt-bar.is-dragging {
+  cursor: grabbing;
+  opacity: 0.85;
+  z-index: 5;
+}
+
+.ps-gantt-bar.is-dayplan {
+  border: 1px dashed rgba(255, 255, 255, 0.6);
+}
+
 .ps-gantt-bar.is-done {
   opacity: 0.75;
   text-decoration: line-through;
   cursor: grab;
 }
+
 .ps-gantt-badge {
   display: inline-block;
   font-size: 9px;
@@ -215,15 +507,34 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   border-radius: 4px;
   vertical-align: middle;
 }
-.ps-gantt-badge.is-done { background: #eeeeee; color: #616161; }
+
+.ps-gantt-badge.is-done {
+  background: #eeeeee;
+  color: #616161;
+}
+
 .ps-gantt-done-check {
   display: inline-flex;
   align-items: center;
   margin-right: 2px;
   vertical-align: middle;
 }
-.ps-gantt-done-check input { width: 14px; height: 14px; margin: 0; cursor: pointer; }
-.ps-gantt-root { overflow: auto; -webkit-overflow-scrolling: touch; border: 1px solid #cfd8dc; border-radius: 8px; background: #fff; }
+
+.ps-gantt-done-check input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.ps-gantt-root {
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid #cfd8dc;
+  border-radius: 8px;
+  background: #fff;
+}
+
 .ps-gantt-toolbar {
   display: flex;
   align-items: center;
@@ -231,11 +542,13 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   margin-bottom: 8px;
   flex-wrap: wrap;
 }
+
 .ps-gantt-mode-tabs {
   display: flex;
   gap: 4px;
   margin-left: auto;
 }
+
 .ps-gantt-mode-tab {
   border: 1px solid #b0bec5;
   border-radius: 8px;
@@ -246,19 +559,28 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   background: #f5f5f5;
   color: #546e7a;
 }
+
 .ps-gantt-mode-tab.active {
   background: #1565c0;
   color: #fff;
   border-color: #1565c0;
 }
-.ps-gantt-mode-tab:hover:not(.active) { background: #e3f2fd; }
+
+.ps-gantt-mode-tab:hover:not(.active) {
+  background: #e3f2fd;
+}
+
 .ps-gantt-time-sub {
   font-size: 9px !important;
   font-weight: normal !important;
   color: #888;
   padding: 2px !important;
 }
-.ps-gantt-track-time { min-height: 28px; }
+
+.ps-gantt-track-time {
+  min-height: 28px;
+}
+
 .ps-gantt-bar-text {
   display: block;
   overflow: hidden;
@@ -267,6 +589,7 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   padding: 0 8px;
   pointer-events: none;
 }
+
 .ps-gantt-resize {
   position: absolute;
   top: 0;
@@ -276,9 +599,21 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   z-index: 2;
   touch-action: none;
 }
-.ps-gantt-resize-l { left: 0; border-radius: 4px 0 0 4px; }
-.ps-gantt-resize-r { right: 0; border-radius: 0 4px 4px 0; }
-.ps-gantt-resize:hover { background: rgba(255,255,255,0.35); }
+
+.ps-gantt-resize-l {
+  left: 0;
+  border-radius: 4px 0 0 4px;
+}
+
+.ps-gantt-resize-r {
+  right: 0;
+  border-radius: 0 4px 4px 0;
+}
+
+.ps-gantt-resize:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
 .ps-gantt-add-btn {
   background: #1565c0;
   color: #fff;
@@ -289,12 +624,35 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   font-weight: bold;
   cursor: pointer;
 }
-.ps-gantt-toolbar-hint { font-size: 11px; color: #666; }
-.ps-gantt-day-hdr { cursor: pointer; }
-.ps-gantt-day-hdr.is-today { background: #fff8e1 !important; color: #c62828 !important; }
-.ps-gantt-day-hdr:hover { background: #e3f2fd !important; }
-.ps-gantt-track-add { cursor: pointer; background: #fafafa; min-height: 32px; }
-.ps-gantt-track-add:hover { background: #e3f2fd; }
+
+.ps-gantt-toolbar-hint {
+  font-size: 11px;
+  color: #666;
+}
+
+.ps-gantt-day-hdr {
+  cursor: pointer;
+}
+
+.ps-gantt-day-hdr.is-today {
+  background: #fff8e1 !important;
+  color: #c62828 !important;
+}
+
+.ps-gantt-day-hdr:hover {
+  background: #e3f2fd !important;
+}
+
+.ps-gantt-track-add {
+  cursor: pointer;
+  background: #fafafa;
+  min-height: 32px;
+}
+
+.ps-gantt-track-add:hover {
+  background: #e3f2fd;
+}
+
 .ps-gantt-add-hint {
   position: absolute;
   inset: 0;
@@ -305,7 +663,11 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   color: #90caf9;
   pointer-events: none;
 }
-.ps-gantt-add-row td { border-top: 2px dashed #bbdefb; }
+
+.ps-gantt-add-row td {
+  border-top: 2px dashed #bbdefb;
+}
+
 .ps-gantt-add-type {
   flex: 1;
   border: 1px solid #ccc;
@@ -317,13 +679,20 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   background: #f5f5f5;
   color: #555;
 }
+
 .ps-gantt-add-type.active {
   background: #1565c0;
   color: #fff;
   border-color: #1565c0;
 }
 
-.form-label { display: block; font-size: 14px; color: #555; margin-bottom: 5px; font-weight: bold; }
+.form-label {
+  display: block;
+  font-size: 14px;
+  color: #555;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
 
 /* 作業記録の圃場選択（作物ゾーンと同系色で埋もれないように強調） */
 .rec-zone-field {
@@ -333,6 +702,7 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   border-radius: 10px;
   box-shadow: 0 2px 8px rgba(46, 125, 50, 0.14);
 }
+
 .rec-zone-field .field-select-box {
   display: flex;
   flex-wrap: wrap;
@@ -345,24 +715,84 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   padding: 10px 12px;
   box-sizing: border-box;
 }
+
 .rec-zone-field .field-select-box.is-empty {
   border-style: dashed;
   border-color: #FB8C00;
   background: #FFF8E1;
 }
+
 .rec-zone-crop.crop-pick-focus {
   box-shadow: 0 0 0 3px #FF9800, 0 2px 10px rgba(255, 152, 0, 0.28);
   outline: 2px solid #FF9800;
 }
-.form-input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
-.checkbox-label { display: flex; align-items: center; background: white; padding: 10px; border-radius: 4px; border: 1px solid #ddd; font-size: 14px; cursor: pointer;}
-.checkbox-label input { margin-right: 8px; transform: scale(1.2); }
 
-#modal, #lightbox, #feedbackModal { display: none; position: fixed; z-index: 9999; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); justify-content: center; align-items: center; }
-.modal-content { background: #fff; color: #333; padding: 20px; border-radius: 12px; width: 90%; max-width: 400px; max-height: 85vh; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.3); -webkit-overflow-scrolling: touch; }
-#modal { cursor: pointer; }
-#modal .modal-content { cursor: default; }
+.form-input {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 15px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  background: white;
+  padding: 10px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.checkbox-label input {
+  margin-right: 8px;
+  transform: scale(1.2);
+}
+
+#modal,
+#lightbox,
+#feedbackModal {
+  display: none;
+  position: fixed;
+  z-index: 9999;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.6);
+  justify-content: center;
+  align-items: center;
+}
+
+.modal-content {
+  background: #fff;
+  color: #333;
+  padding: 20px;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 400px;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  -webkit-overflow-scrolling: touch;
+}
+
+#modal {
+  cursor: pointer;
+}
+
+#modal .modal-content {
+  cursor: default;
+}
 
 /* 一括入力：下から出るシート型モーダル（地図操作中も入力画面を残す） */
 #modal.bulk-work-memo-open {
@@ -373,6 +803,7 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   padding: 0 0 max(8px, env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
 }
+
 #modal.bulk-work-memo-open #modalBody {
   width: 100%;
   max-width: 440px;
@@ -381,6 +812,7 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   border-radius: 14px 14px 0 0;
   box-shadow: 0 -6px 28px rgba(0, 0, 0, 0.22);
 }
+
 #modal.bulk-work-memo-map-picking {
   background: transparent !important;
   pointer-events: none;
@@ -397,12 +829,14 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   justify-content: flex-end;
   padding: 0 !important;
 }
+
 #modal.bulk-work-memo-map-picking #modalBody {
   display: none !important;
   pointer-events: none;
   max-height: 0;
   overflow: hidden;
 }
+
 #mapSelectUI.bulk-work-memo-map-select {
   z-index: 10050 !important;
   top: auto !important;
@@ -425,7 +859,8 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.35);
   background: rgba(0, 0, 0, 0.88) !important;
 }
-#mapSelectUI.bulk-work-memo-map-select > button {
+
+#mapSelectUI.bulk-work-memo-map-select>button {
   flex: 1 1 40%;
   min-width: 120px;
   min-height: 48px;
@@ -433,14 +868,17 @@ button { padding: 8px 12px; font-size: 14px; cursor: pointer; border-radius: 5px
   padding: 14px 12px !important;
   border-radius: 10px !important;
 }
+
 body.bulk-work-memo-map-picking .map-action-bar {
   bottom: calc(var(--bulk-map-select-bar-h, 160px) + 12px) !important;
   z-index: 10060 !important;
 }
+
 body.bulk-work-memo-map-picking #workerLegendUI {
   bottom: calc(var(--bulk-map-select-bar-h, 160px) + 12px) !important;
   z-index: 10060 !important;
 }
+
 body.bulk-work-memo-map-picking #workerMapSelectPlusWrap {
   bottom: calc(var(--bulk-map-select-bar-h, 160px) + 74px) !important;
   right: 10px !important;
@@ -454,6 +892,7 @@ body.bulk-work-memo-map-picking #workerMapSelectPlusWrap {
   bottom: 82px;
   z-index: 10060;
 }
+
 #workerMapSelectPlusWrap .admin-reg-plus-btn {
   width: 50px;
   height: 50px;
@@ -465,31 +904,34 @@ body.bulk-work-memo-map-picking #workerMapSelectPlusWrap {
   font-size: 28px;
   font-weight: bold;
   line-height: 1;
-  box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
 }
+
 #workerMapSelectPlusMenu.admin-reg-plus-menu {
   display: none;
   position: fixed;
   inset: 0;
   z-index: 25000;
-  background: rgba(0,0,0,0.45);
+  background: rgba(0, 0, 0, 0.45);
   align-items: center;
   justify-content: center;
   padding: 18px;
   box-sizing: border-box;
 }
+
 #workerMapSelectPlusMenu .admin-reg-plus-sheet {
   width: min(420px, 100%);
   background: #fff;
   border-radius: 16px;
   padding: 16px 16px 12px;
-  box-shadow: 0 12px 36px rgba(0,0,0,0.28);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.28);
   box-sizing: border-box;
 }
+
 #workerMapSelectPlusMenu .admin-reg-plus-title {
   color: #333;
   font-size: 16px;
@@ -497,6 +939,7 @@ body.bulk-work-memo-map-picking #workerMapSelectPlusWrap {
   text-align: center;
   margin-bottom: 12px;
 }
+
 #workerMapSelectPlusMenu button {
   display: block;
   width: 100%;
@@ -513,6 +956,7 @@ body.bulk-work-memo-map-picking #workerMapSelectPlusWrap {
   min-height: 54px;
   box-sizing: border-box;
 }
+
 #workerMapSelectPlusMenu button.admin-reg-plus-cancel {
   text-align: center;
   background: #eee;
@@ -521,20 +965,57 @@ body.bulk-work-memo-map-picking #workerMapSelectPlusWrap {
   margin-bottom: 0;
   margin-top: 4px;
 }
+
 #workerMapSelectPlusMenu button:hover {
   filter: brightness(0.97);
   background: #fff3e0;
 }
+
 #workerMapSelectPlusMenu button.admin-reg-plus-cancel:hover {
   background: #e0e0e0;
 }
 
 /* 作業記録の時刻入力（カスタムピッカー起動） */
-.app-time-input { background: #fff; cursor: pointer; caret-color: transparent; text-align: center; font-weight: bold; letter-spacing: 0.05em; }
-.app-time-input:focus { outline: 2px solid #2196F3; outline-offset: -1px; }
-.app-time-select { flex: 1; max-width: 120px; padding: 12px 8px; font-size: 22px; font-weight: bold; border: 1px solid #ccc; border-radius: 8px; background: #fafafa; text-align: center; }
-#lightbox img { max-width: 95%; max-height: 90%; border-radius: 4px; }
-.lot-section { background: #e3f2fd; border: 1px solid #90caf9; padding: 15px; border-radius: 8px; margin-bottom: 15px; display: none; }
+.app-time-input {
+  background: #fff;
+  cursor: pointer;
+  caret-color: transparent;
+  text-align: center;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+}
+
+.app-time-input:focus {
+  outline: 2px solid #2196F3;
+  outline-offset: -1px;
+}
+
+.app-time-select {
+  flex: 1;
+  max-width: 120px;
+  padding: 12px 8px;
+  font-size: 22px;
+  font-weight: bold;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: #fafafa;
+  text-align: center;
+}
+
+#lightbox img {
+  max-width: 95%;
+  max-height: 90%;
+  border-radius: 4px;
+}
+
+.lot-section {
+  background: #e3f2fd;
+  border: 1px solid #90caf9;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  display: none;
+}
 
 /* 天気・台風・お知らせ・予定（検索バーの下・中央チップ） */
 .worker-top-bar {
@@ -549,6 +1030,7 @@ body.bulk-work-memo-map-picking #workerMapSelectPlusWrap {
   width: 100%;
   pointer-events: none;
 }
+
 .worker-top-bar .map-action-btn {
   pointer-events: auto;
   width: auto;
@@ -561,10 +1043,20 @@ body.bulk-work-memo-map-picking #workerMapSelectPlusWrap {
   flex-direction: row;
   gap: 4px;
   line-height: 1;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.16);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
 }
-.worker-top-chip-emoji { font-size: 16px; line-height: 1; }
-.worker-top-chip-label { font-size: 12px; font-weight: bold; line-height: 1; }
+
+.worker-top-chip-emoji {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.worker-top-chip-label {
+  font-size: 12px;
+  font-weight: bold;
+  line-height: 1;
+}
+
 .worker-top-bar #btnWeather {
   width: auto;
   min-width: 0;
@@ -573,6 +1065,7 @@ body.bulk-work-memo-map-picking #workerMapSelectPlusWrap {
   padding: 0 12px;
   border-radius: 999px;
 }
+
 .worker-top-bar.is-hidden,
 body.ridge-measuring-mode .worker-top-bar,
 body.bulk-work-memo-map-picking .worker-top-bar {
@@ -586,6 +1079,7 @@ body.bulk-work-memo-map-picking .worker-top-bar {
     gap: 6px;
     align-items: stretch;
   }
+
   #mainControlRow {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto auto;
@@ -593,13 +1087,16 @@ body.bulk-work-memo-map-picking .worker-top-bar {
     align-items: center;
     justify-content: stretch;
   }
-  #mainControlRow > .search-container:first-child {
+
+  #mainControlRow>.search-container:first-child {
     grid-column: 1 / -1;
   }
+
   #mainControlRow .search-container {
     min-width: 0;
     width: 100%;
   }
+
   #searchInput,
   #mapSearchInput {
     width: 100%;
@@ -607,24 +1104,29 @@ body.bulk-work-memo-map-picking .worker-top-bar {
     padding: 7px 12px;
     font-size: 14px;
   }
+
   #mainControlRow .worker-reload-btn,
   #mainControlRow .worker-account-btn {
     padding: 7px 10px;
     font-size: 12px;
     white-space: nowrap;
   }
+
   #mainControlRow .worker-account-wrap {
     min-width: 0;
     max-width: 38vw;
   }
+
   #mainControlRow .worker-account-btn {
     max-width: 100% !important;
     width: 100%;
   }
+
   .worker-top-bar {
     flex-wrap: nowrap;
     gap: 6px;
   }
+
   .worker-top-bar .map-action-btn {
     flex: 1 1 0;
     width: auto;
@@ -634,8 +1136,14 @@ body.bulk-work-memo-map-picking .worker-top-bar {
     justify-content: center;
     overflow: hidden;
   }
-  .worker-top-chip-emoji { font-size: 14px; }
-  .worker-top-chip-label { font-size: 11px; }
+
+  .worker-top-chip-emoji {
+    font-size: 14px;
+  }
+
+  .worker-top-chip-label {
+    font-size: 11px;
+  }
 }
 
 /* 地図アクションボタン群（右下・縦並び） */
@@ -654,10 +1162,12 @@ body.bulk-work-memo-map-picking .worker-top-bar {
   pointer-events: none;
   box-sizing: border-box;
 }
+
 /* 圃場・マップ選択中は現在地ボタンのみ残して他ボタンを撤去（非表示） */
 .map-action-bar.map-selecting-mode .map-action-btn:not(#btnCurrentLocation) {
   display: none !important;
 }
+
 /* 畝の長さ計測中は地図操作に集中できるよう他UIを隠す */
 body.ridge-measuring-mode .map-action-bar,
 body.ridge-measuring-mode #mainControlPanel,
@@ -665,6 +1175,7 @@ body.ridge-measuring-mode #rightPanel,
 body.ridge-measuring-mode #clockOutNudgeBanner {
   display: none !important;
 }
+
 .map-action-btn {
   pointer-events: auto;
   width: 50px;
@@ -676,7 +1187,7 @@ body.ridge-measuring-mode #clockOutNudgeBanner {
   border-radius: 50%;
   font-weight: bold;
   font-size: 24px;
-  box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -685,11 +1196,13 @@ body.ridge-measuring-mode #clockOutNudgeBanner {
   transition: all 0.3s ease;
   flex-shrink: 0;
 }
+
 .map-action-btn--typhoon {
   background: #ffebee;
   color: #d32f2f;
   border: 2px solid #d32f2f;
 }
+
 .map-action-btn--plus {
   background: #4285F4 !important;
   color: #fff !important;
@@ -717,9 +1230,11 @@ body.ridge-measuring-mode #clockOutNudgeBanner {
   transition: all 0.2s ease;
   padding: 0;
   line-height: 1;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
-.info-icon-btn:hover, .info-icon-btn:active {
+
+.info-icon-btn:hover,
+.info-icon-btn:active {
   background: #1976D2;
   color: #ffffff;
 }
@@ -733,31 +1248,51 @@ body.ridge-measuring-mode #clockOutNudgeBanner {
   font-size: 12px;
   line-height: 1.5;
   z-index: 40;
-  box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
   max-width: 100%;
   display: none;
   word-break: break-word;
   border: 1px solid #424242;
 }
+
 .info-popover-box.active {
   /* 動的HTMLの inline display:none より開閉クラスを優先する */
   display: block !important;
   animation: fadeInPopover 0.2s ease;
 }
+
 @keyframes fadeInPopover {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes clockOutNudgePulse {
-  0%, 100% { transform: scale(1); box-shadow: 0 3px 8px rgba(229,57,53,0.35); }
-  50% { transform: scale(1.08); box-shadow: 0 6px 16px rgba(229,57,53,0.55); }
+
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 3px 8px rgba(229, 57, 53, 0.35);
+  }
+
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 6px 16px rgba(229, 57, 53, 0.55);
+  }
 }
+
 #btnTracking.clock-out-nudge {
   background: #E53935 !important;
   color: #fff !important;
   animation: clockOutNudgePulse 1.2s ease-in-out infinite;
 }
+
 #clockOutNudgeBanner {
   position: fixed;
   left: 10px;
@@ -769,9 +1304,10 @@ body.ridge-measuring-mode #clockOutNudgeBanner {
   border: 2px solid #E53935;
   border-radius: 12px;
   padding: 10px 12px;
-  box-shadow: 0 6px 18px rgba(229,57,53,0.28);
+  box-shadow: 0 6px 18px rgba(229, 57, 53, 0.28);
 }
-.map-action-bar.map-selecting-mode ~ #clockOutNudgeBanner,
+
+.map-action-bar.map-selecting-mode~#clockOutNudgeBanner,
 body.map-selecting-mode #clockOutNudgeBanner {
   display: none !important;
 }
@@ -785,6 +1321,7 @@ body.map-selecting-mode #clockOutNudgeBanner {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22) !important;
   max-width: 95vw !important;
 }
+
 .gm-style .gm-style-iw-d {
   overflow: hidden !important;
   padding: 0 !important;
@@ -814,7 +1351,8 @@ body.map-selecting-mode #clockOutNudgeBanner {
 
 .field-infowindow-header {
   position: relative;
-  padding-right: 22px; /* Googleマップの閉じる(✕)ボタンとの被り防止 */
+  padding-right: 22px;
+  /* Googleマップの閉じる(✕)ボタンとの被り防止 */
   margin-bottom: 6px;
 }
 
@@ -865,6 +1403,7 @@ body.map-selecting-mode #clockOutNudgeBanner {
   user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
+
 .field-infowindow-btn:active {
   transform: scale(0.97);
   opacity: 0.85;
@@ -878,6 +1417,7 @@ body.map-selecting-mode #clockOutNudgeBanner {
   width: 100%;
   margin-bottom: 6px;
 }
+
 .field-infowindow-btn-single {
   width: 100%;
   padding: 9px 0;
@@ -891,6 +1431,7 @@ body.map-selecting-mode #clockOutNudgeBanner {
   white-space: nowrap;
   transition: opacity 0.15s ease;
 }
+
 .field-infowindow-btn-single:active {
   opacity: 0.85;
 }
@@ -900,26 +1441,33 @@ body.map-selecting-mode #clockOutNudgeBanner {
   .gm-style .gm-style-iw-c {
     padding: 10px 8px 8px 8px !important;
   }
+
   .field-infowindow-container.field-type {
     width: min(290px, calc(100vw - 44px));
   }
+
   .field-infowindow-container.marker-type {
     width: min(220px, calc(100vw - 44px));
   }
+
   .field-infowindow-title {
     font-size: 13.5px;
   }
+
   .field-infowindow-sub {
     font-size: 10.5px;
   }
+
   .field-infowindow-grid {
     gap: 5px;
   }
+
   .field-infowindow-btn {
     padding: 8px 2px;
     font-size: 11px;
     letter-spacing: -0.3px;
   }
+
   .field-infowindow-btn-single {
     padding: 8px 0;
     font-size: 12px;
@@ -931,14 +1479,14 @@ body.map-selecting-mode #clockOutNudgeBanner {
   .field-infowindow-container.field-type {
     width: min(270px, calc(100vw - 32px));
   }
+
   .field-infowindow-grid {
     gap: 4px;
   }
+
   .field-infowindow-btn {
     padding: 7px 1px;
     font-size: 10px;
     letter-spacing: -0.5px;
   }
 }
-
-

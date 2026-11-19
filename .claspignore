@@ -24,3 +24,12 @@ scratch/**
 **/*.js
 !コード.js
 !scratch/tmp_fix_id.js
+
+# Supabase / Cloudflare R2 / Migration tooling
+supabase/**
+migration/**
+supabase-bridge.js
+*.sql
+*.md
+.env
+.env.*

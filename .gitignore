@@ -6,3 +6,11 @@ watch.js
 error_image.jpg
 .ai_task_done.txt
 node_modules/
+
+# Supabase / Cloudflare R2 ローカル秘密情報・移行データ
+.env
+.env.local
+.env.*.local
+migration/.env
+migration/data/
+supabase/.temp/

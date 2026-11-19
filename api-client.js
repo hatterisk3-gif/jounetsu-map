@@ -196,8 +196,33 @@
     return writePreferCount_ > 0 && (action === 'getInitData' || action === 'getScheduleData');
   }
 
+  // 段階移行用アクションルーター（未登録のアクションはすべて従来の callGASInner_ へ進む）
+  var actionHandlers_ = {};
+
+  function registerActionHandler(action, handlerFn) {
+    var key = String(action || '').trim();
+    if (!key || typeof handlerFn !== 'function') return false;
+    actionHandlers_[key] = handlerFn;
+    return true;
+  }
+
+  function unregisterActionHandler(action) {
+    var key = String(action || '').trim();
+    if (!key) return false;
+    delete actionHandlers_[key];
+    return true;
+  }
+
+  function hasActionHandler(action) {
+    return typeof actionHandlers_[String(action || '').trim()] === 'function';
+  }
+
   async function callGAS(action, params, retries, callOptions) {
     callOptions = callOptions || {};
+    var handler = !callOptions.forceGAS ? actionHandlers_[String(action || '').trim()] : null;
+    if (typeof handler === 'function') {
+      return await handler(params || {}, callOptions);
+    }
     var preferWrite = !!(WRITE_PRIORITY_ACTIONS[action] || callOptions.jumpQueue);
     if (preferWrite) preferGasWrites_(true);
     var run = enqueueGasLane_(function () {
@@ -710,6 +735,12 @@
   global.preferGasWrites_ = preferGasWrites_;
   global.rememberDeletedPolygonIds_ = rememberDeletedPolygonIds_;
   global.filterDeletedPolygons_ = filterDeletedPolygons_;
+  global.PassionMapApiRouter = {
+    register: registerActionHandler,
+    unregister: unregisterActionHandler,
+    has: hasActionHandler,
+    list: function () { return Object.keys(actionHandlers_); }
+  };
 })(typeof window !== 'undefined' ? window : this);
 
 // ==========================================
