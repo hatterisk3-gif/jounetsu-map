@@ -24619,7 +24619,7 @@ window.findMaintenanceTargetById_ = (rawId) => {
   if (!tId) return null;
   if (tId.indexOf('veh:') === 0) {
     const vid = tId.slice(4);
-    const v = (window.pdlMobileVehicles || []).find(x => String(x.id) === String(vid));
+    const v = (Array.isArray(window.pdlMobileVehicles) ? window.pdlMobileVehicles : []).find(x => x && String(x.id) === String(vid));
     if (!v) return null;
     const plate = v.plateNumber || v.vehicleNumber || v.machineNumber || '';
     return Object.assign({}, v, {
@@ -24637,11 +24637,11 @@ window.findMaintenanceTargetById_ = (rawId) => {
     });
   }
   const machine = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
-    ? pdlMachines.find(t => String(t.id) === tId)
+    ? pdlMachines.find(t => t && String(t.id) === tId)
     : null;
   if (machine) return Object.assign({}, machine, { isVehicle: false, isTool: false });
   const tool = (typeof pdlTools !== 'undefined' && Array.isArray(pdlTools))
-    ? pdlTools.find(t => String(t.id || ('tool_' + t.name)) === tId)
+    ? pdlTools.find(t => t && String(t.id || ('tool_' + t.name)) === tId)
     : null;
   if (tool) {
     return Object.assign({}, tool, {
@@ -27385,7 +27385,7 @@ window.getFuelChecksSpecForTarget_ = (targetId) => {
   }
   if (id.indexOf('veh:') === 0) {
     const vid = id.slice(4);
-    const v = (window.pdlMobileVehicles || []).find(x => String(x.id) === String(vid));
+    const v = (Array.isArray(window.pdlMobileVehicles) ? window.pdlMobileVehicles : []).find(x => x && String(x.id) === String(vid));
     if (v && v.fuelChecks != null) return String(v.fuelChecks);
   } else if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) {
     const m = pdlMachines.find(x => String(x.id) === id);
@@ -38772,12 +38772,16 @@ window.parseBulkWorkMemoLine_ = (line, prevEndHm) => {
     try { window.applyBulkWorkMemoFieldHints_(row, { mergePolyIds: false }); } catch (e) { }
   }
   if (!work.isRest && window.bulkWorkMemoIsMaintenance_(row) && typeof window.setBulkWorkMemoMaintTargets_ === 'function') {
-    row.usedMachines = [];
-    // 候補表示のみ（自動選択しない）。UI側の suggest でハイライトする
-    window.setBulkWorkMemoMaintTargets_(row, []);
-    row._maintPickOpen = true;
-    if (typeof window.guessBulkWorkMemoMaintenanceFields_ === 'function') {
-      window.guessBulkWorkMemoMaintenanceFields_(row);
+    try {
+      row.usedMachines = [];
+      // 候補表示のみ（自動選択しない）。UI側の suggest でハイライトする
+      window.setBulkWorkMemoMaintTargets_(row, []);
+      row._maintPickOpen = true;
+      if (typeof window.guessBulkWorkMemoMaintenanceFields_ === 'function') {
+        window.guessBulkWorkMemoMaintenanceFields_(row);
+      }
+    } catch (e) {
+      row._maintPickOpen = false;
     }
   }
   return row;
@@ -41623,7 +41627,13 @@ window.bulkWorkMemoIsMaintenance_ = (draft) => {
   const details = Array.isArray(draft.detailedWorks) ? draft.detailedWorks : [];
   if (details.some(looksLikeMaint)) return true;
   // 作業名未確定でメモ本文だけ整備系のとき（マスタフラグがまだ無い）
-  if (!wName && ((rawLine && looksLikeMaint(rawLine)) || (matchText && looksLikeMaint(matchText)))) return true;
+  // 場所を矢印でつなぐ移動メモに「点検」が混ざっていても、ここでは整備画面を開かない
+  if (!wName) {
+    const body = rawLine || matchText;
+    const routeMove = /[→⇒➡]/.test(body) || /移動|運搬|配送/.test(body);
+    if (routeMove && !/整備|修理/.test(body)) return false;
+    if ((rawLine && looksLikeMaint(rawLine)) || (matchText && looksLikeMaint(matchText))) return true;
+  }
   return false;
 };
 
@@ -41637,11 +41647,17 @@ window.getBulkWorkMemoMaintenanceTargets_ = (draft) => {
     items.push(Object.assign({ id: iid, name: iname, kind: kind || 'machine' }, extra || {}));
   };
   (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines) ? pdlMachines : []).forEach(m => {
-    const displayName = (typeof window.buildEquipmentDisplayLabel_ === 'function')
-      ? window.buildEquipmentDisplayLabel_(m)
-      : ((window.MachineTaxonomy && MachineTaxonomy.getDisplayName)
-        ? MachineTaxonomy.getDisplayName(m)
-        : '');
+    if (!m) return;
+    let displayName = '';
+    try {
+      displayName = (typeof window.buildEquipmentDisplayLabel_ === 'function')
+        ? window.buildEquipmentDisplayLabel_(m)
+        : ((window.MachineTaxonomy && MachineTaxonomy.getDisplayName)
+          ? MachineTaxonomy.getDisplayName(m)
+          : '');
+    } catch (e) {
+      displayName = String(m.name || m.type || '').trim();
+    }
     push(m.id, displayName || '（名称未設定）', 'machine', {
       isTool: false,
       isVehicle: false,
@@ -41663,6 +41679,7 @@ window.getBulkWorkMemoMaintenanceTargets_ = (draft) => {
     });
   });
   (typeof pdlTools !== 'undefined' && Array.isArray(pdlTools) ? pdlTools : []).forEach(tool => {
+    if (!tool) return;
     push(tool.id || ('tool_' + tool.name), tool.name, 'tool', {
       isTool: true,
       isVehicle: false,
@@ -41675,7 +41692,8 @@ window.getBulkWorkMemoMaintenanceTargets_ = (draft) => {
       photoUrl: tool.photoUrl
     });
   });
-  (window.pdlMobileVehicles || []).forEach(v => {
+  (Array.isArray(window.pdlMobileVehicles) ? window.pdlMobileVehicles : []).forEach(v => {
+    if (!v) return;
     const oid = (typeof window.getMobileVehicleOptionId_ === 'function')
       ? window.getMobileVehicleOptionId_(v)
       : ('veh:' + String(v.id || ''));
@@ -41724,7 +41742,9 @@ window.buildEquipmentDisplayLabel_ = (item) => {
   const model2 = String(enriched.model2 || '').trim();
   const group = String(enriched.group || enriched.mainCategory || '').trim();
   let num = String(enriched.machineNumber || enriched.serialNo || '').trim();
-  const list = window.pdlMachines || [];
+  const list = Array.isArray(window.pdlMachines)
+    ? window.pdlMachines
+    : (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines) ? pdlMachines : []);
   const sameCount = list.filter(mac => {
     if (!mac || mac.isVehicle || mac.isTool) return false;
     return String(mac.group || mac.mainCategory || '').trim() === group
@@ -47321,7 +47341,17 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
   const modalEl = document.getElementById('modal');
   if (!modalEl || typeof window.fillAppModalHtml_ !== 'function') return;
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const safePart_ = (label, fn) => {
+    try {
+      return fn() || '';
+    } catch (partErr) {
+      console.error('bulk work memo card part failed', label, partErr);
+      const msg = partErr && partErr.message ? String(partErr.message) : '';
+      return `<div style="font-size:11px; color:#E65100; background:#FFF8E1; border:1px solid #FFB74D; border-radius:8px; padding:8px 10px; margin:0 0 8px; line-height:1.45;">${esc(label)}を表示できませんでした。表示の切り替えではなく、この部分だけの描画エラーです。他の項目はそのまま入力できます。${msg ? `<div style="margin-top:4px; color:#6D4C41; word-break:break-word;">${esc(msg)}</div>` : ''}</div>`;
+    }
+  };
   const buildOneCardHtml_ = (d, i, metaCtx) => {
+    if (!d) return '';
     const uid = d._uid || ('bm_' + i);
     d._uid = uid;
     metaCtx = metaCtx || null;
@@ -47344,8 +47374,8 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
                   : `メモ推定「${esc(d.guessedName)}」→ 作業名チップを選んでください`))
               : '合いそうな作業名を選んでください')
             : ''));
-      const restBody = isRestCard ? window.buildBulkWorkMemoRestTypeHtml_(d, uid) : '';
-      const kindSwitch = window.buildBulkWorkMemoKindSwitchHtml_(d, uid);
+      const restBody = isRestCard ? safePart_('休憩の種類', () => window.buildBulkWorkMemoRestTypeHtml_(d, uid)) : '';
+      const kindSwitch = safePart_('登録種別', () => window.buildBulkWorkMemoKindSwitchHtml_(d, uid));
       const prevEndHint = window.getBulkWorkMemoPrevEndHint_(uid);
       const prevEndBtnLabel = prevEndHint
         ? `◀️ 前の終了(${esc(prevEndHint)})に合わせる`
@@ -47361,10 +47391,10 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
       const hasComment = !!String(d.comment || '').trim();
       const commentSummary = (!commentOpen && hasComment) ? 'コメントあり' : '';
       const workCore = isRestCard ? '' : `
-        <div id="bulk_crop_pick_${esc(uid)}">${window.buildBulkWorkMemoCropPickSectionHtml_(d, uid)}</div>
-        <div id="bulk_work_pick_${esc(uid)}">${window.buildBulkWorkMemoWorkPickSectionHtml_(d, uid)}</div>
+        <div id="bulk_crop_pick_${esc(uid)}">${safePart_('作物', () => window.buildBulkWorkMemoCropPickSectionHtml_(d, uid))}</div>
+        <div id="bulk_work_pick_${esc(uid)}">${safePart_('作業名', () => window.buildBulkWorkMemoWorkPickSectionHtml_(d, uid))}</div>
         <div id="bulk_work_hint_${esc(uid)}" style="display:${hint && !d._workListOpen ? 'block' : 'none'}; font-size:11px; color:#E65100; margin:0 0 8px; line-height:1.35;">${hint}</div>
-        <div id="bulk_extras_${esc(uid)}">${window.buildBulkWorkMemoExtrasHtml_(d, uid)}</div>`;
+        <div id="bulk_extras_${esc(uid)}">${safePart_('圃場・機械などの追加欄', () => window.buildBulkWorkMemoExtrasHtml_(d, uid))}</div>`;
       const inMetaGroup = !!(metaCtx && metaCtx.groupSize >= 1);
       const isMetaSibling = !!(inMetaGroup && metaCtx.itemIndex > 1);
       const cardBg = isRestCard ? '#FFFBF0' : (inMetaGroup ? '#F8F1FC' : '#fafafa');
@@ -47452,10 +47482,19 @@ window.renderBulkWorkMemoReviewModal_ = (opts) => {
       </div>`;
     } catch (cardErr) {
       console.error('bulk work memo card render failed', cardErr, d);
+      const errMsg = cardErr && cardErr.message ? String(cardErr.message) : '';
       return `<div id="bulk_card_${esc(uid)}" style="background:#fff8e1; border:1px solid #FFB74D; border-radius:10px; padding:12px; margin-bottom:10px;">
         <div style="position:sticky; top:-18px; z-index:5; background:#fff8e1; margin:-12px -12px 10px -12px; padding:10px 12px 8px; border-top-left-radius:9px; border-top-right-radius:9px; border-bottom:1px solid #FFB74D; box-shadow:0 2px 4px rgba(0,0,0,0.06);">
-          <div style="font-size:12px; font-weight:bold; color:#E65100; margin-bottom:4px;">${i + 1}件目（簡易表示）</div>
-          <div style="font-size:11.5px; color:#37474F; line-height:1.4; word-break:break-word; background:rgba(255,255,255,0.75); border:1px dashed #B0BEC5; border-radius:6px; padding:4px 8px;">📝 <span style="font-weight:bold; color:#455A64;">メモ:</span> ${esc(d && d.rawLine)}</div>
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+            <label style="font-size:12px; font-weight:bold; color:#E65100; display:flex; align-items:center; gap:6px; flex:1; min-width:0; cursor:pointer;">
+              <input type="checkbox" ${d && d.included !== false ? 'checked' : ''} onchange="updateBulkWorkMemoDraftField_('${esc(uid)}','included', this.checked)">
+              ${i + 1}件目（表示に失敗）
+            </label>
+            <button type="button" onclick="removeBulkWorkMemoDraft_('${esc(uid)}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer; flex-shrink:0;">削除</button>
+          </div>
+          <div style="font-size:11px; color:#6D4C41; line-height:1.45; margin-top:6px;">表示モードではありません。この件の入力欄を作る処理が失敗したため、メモと時間だけ残しています。解除スイッチはありません。</div>
+          ${errMsg ? `<div style="font-size:11px; color:#8D6E63; line-height:1.4; margin-top:4px; word-break:break-word;">${esc(errMsg)}</div>` : ''}
+          <div style="font-size:11.5px; color:#37474F; line-height:1.4; word-break:break-word; background:rgba(255,255,255,0.75); border:1px dashed #B0BEC5; border-radius:6px; padding:4px 8px; margin-top:6px;">📝 <span style="font-weight:bold; color:#455A64;">メモ:</span> ${esc(d && d.rawLine)}</div>
         </div>
         <div style="display:flex; gap:8px;">
           <div style="flex:1;"><label style="font-size:10px; color:#888;">開始</label>

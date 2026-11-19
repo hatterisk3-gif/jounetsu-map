@@ -176,17 +176,19 @@ async function checkSupabaseTables(supabaseUrl, apiKey) {
   ];
 
   const missing = [];
+  const isJwt = apiKey.split(".").length === 3;
+  const headers = {
+    apikey: apiKey,
+    ...(isJwt ? { Authorization: `Bearer ${apiKey}` } : {}),
+  };
   for (const tbl of tables) {
     const res = await fetch(`${supabaseUrl}/rest/v1/${tbl}?select=*&limit=0`, {
       method: "GET",
-      headers: {
-        apikey: apiKey,
-        Authorization: `Bearer ${apiKey}`,
-      },
+      headers,
     });
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
-      missing.push(`${tbl} (HTTP ${res.status}: ${txt.slice(0, 80)})`);
+      missing.push(`${tbl} (HTTP ${res.status}: ${txt.slice(0, 200)})`);
     }
   }
 

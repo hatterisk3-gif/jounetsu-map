@@ -304,7 +304,8 @@ const API_ACTIONS = {
   "getOpsIndex": function (p) { return getOpsIndex(p); },
   "saveOpsRoute": function (p) { return saveOpsRoute(p); },
   "deleteOpsRoute": function (p) { return deleteOpsRoute(p); },
-  "planBoard": function (p) { return planBoard_(p); }
+  "planBoard": function (p) { return planBoard_(p); },
+  "migrationExport": function (p) { return migrationExport_(p); }
 };
 
 function ensurePlanBoardSheet_() {
@@ -26235,4 +26236,211 @@ function exportCultivationPlanToExternalSheet(params) {
   } catch (e) {
     return { success: false, message: e.message || String(e) };
   }
+}
+
+// ============================================================================
+// Supabase + R2 移行専用 読み取り専用エクスポート口（本番機能へは影響しない）
+// ============================================================================
+function migrationConstantTimeEq_(a, b) {
+  const sa = String(a || '');
+  const sb = String(b || '');
+  if (!sa || sa.length !== sb.length) return false;
+  let diff = 0;
+  for (let i = 0; i < sa.length; i++) {
+    diff |= sa.charCodeAt(i) ^ sb.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+function migrationSerializeCell_(v) {
+  if (v === null || v === undefined) return '';
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return '';
+    const hms = Utilities.formatDate(v, 'Asia/Tokyo', 'HH:mm:ss');
+    return hms === '00:00:00'
+      ? Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy-MM-dd')
+      : Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
+  }
+  return v;
+}
+
+function migrationResolveTargetSsId_(requestedSsId) {
+  const explicit = String(requestedSsId || '').trim();
+  if (explicit && explicit !== 'undefined' && explicit !== 'null') {
+    return explicit;
+  }
+  try {
+    const masterSs = SpreadsheetApp.openById(MASTER_SPREADSHEET_ID);
+    const orgSh = masterSs.getSheetByName('組織一覧');
+    if (orgSh && orgSh.getLastRow() > 1) {
+      const val = String(orgSh.getRange(2, 3).getValue() || '').trim();
+      if (val.indexOf('spreadsheets/d/') >= 0) {
+        const m = val.match(/\/d\/([a-zA-Z0-9-_]+)/);
+        if (m && m[1]) return m[1];
+      }
+      if (val) return val;
+    }
+  } catch (e) { }
+  return MASTER_SPREADSHEET_ID;
+}
+
+function migrationExport_(params) {
+  params = params || {};
+  const props = PropertiesService.getScriptProperties();
+  const expectedSecret = String(props.getProperty('MIGRATION_EXPORT_SECRET') || '').trim();
+  if (expectedSecret.length < 16 || !migrationConstantTimeEq_(params.secret, expectedSecret)) {
+    throw new Error('移行エクスポート権限がありません');
+  }
+
+  const mode = String(params.mode || 'list').trim();
+  const targetSsId = migrationResolveTargetSsId_(params.spreadsheetId);
+
+  if (mode === 'list') {
+    const organizations = [];
+    try {
+      const masterSs = SpreadsheetApp.openById(MASTER_SPREADSHEET_ID);
+      const orgSh = masterSs.getSheetByName('組織一覧');
+      if (orgSh && orgSh.getLastRow() >= 1) {
+        const vals = orgSh.getDataRange().getValues();
+        const headers = vals[0].map(function (h) { return String(h || '').trim(); });
+        for (let r = 1; r < vals.length; r++) {
+          organizations.push(vals[r].map(migrationSerializeCell_));
+        }
+        organizations._headers = headers;
+      }
+    } catch (eOrg) { }
+
+    const ss = SpreadsheetApp.openById(targetSsId);
+    const sheets = ss.getSheets().map(function (sh) {
+      return {
+        name: sh.getName(),
+        lastRow: sh.getLastRow(),
+        lastCol: sh.getLastColumn()
+      };
+    });
+    return {
+      success: true,
+      mode: 'list',
+      masterSpreadsheetId: MASTER_SPREADSHEET_ID,
+      spreadsheetId: ss.getId(),
+      spreadsheetName: ss.getName(),
+      organizationsHeaders: organizations._headers || [],
+      organizationsRows: organizations.slice(),
+      sheets: sheets
+    };
+  }
+
+  if (mode === 'chunk') {
+    const sheetName = String(params.sheetName || '').trim();
+    if (!sheetName) throw new Error('sheetName が必要です');
+    const ss = (sheetName === '組織一覧')
+      ? SpreadsheetApp.openById(MASTER_SPREADSHEET_ID)
+      : SpreadsheetApp.openById(targetSsId);
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      return {
+        success: true,
+        mode: 'chunk',
+        sheetName: sheetName,
+        exists: false,
+        headers: [],
+        totalRows: 0,
+        startRow: 2,
+        nextStartRow: 2,
+        hasMore: false,
+        rows: []
+      };
+    }
+
+    const lastRow = sheet.getLastRow();
+    const lastCol = Math.max(1, sheet.getLastColumn());
+    const headers = lastRow >= 1
+      ? sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h || '').trim(); })
+      : [];
+
+    const startRow = Math.max(2, parseInt(params.startRow, 10) || 2);
+    const limit = Math.min(2000, Math.max(1, parseInt(params.limit, 10) || 1000));
+    if (lastRow < 2 || startRow > lastRow) {
+      return {
+        success: true,
+        mode: 'chunk',
+        sheetName: sheetName,
+        exists: true,
+        headers: headers,
+        totalRows: Math.max(0, lastRow - 1),
+        startRow: startRow,
+        nextStartRow: startRow,
+        hasMore: false,
+        rows: []
+      };
+    }
+
+    const count = Math.min(limit, lastRow - startRow + 1);
+    const rawRows = sheet.getRange(startRow, 1, count, lastCol).getValues();
+    const rows = rawRows.map(function (row) {
+      return row.map(migrationSerializeCell_);
+    });
+    const nextStartRow = startRow + count;
+    return {
+      success: true,
+      mode: 'chunk',
+      sheetName: sheetName,
+      exists: true,
+      headers: headers,
+      totalRows: Math.max(0, lastRow - 1),
+      startRow: startRow,
+      nextStartRow: nextStartRow,
+      hasMore: nextStartRow <= lastRow,
+      rows: rows
+    };
+  }
+
+  if (mode === 'scriptProps') {
+    const whitelist = ['DELIVERY_DESTINATIONS_JSON'];
+    const result = {};
+    for (let i = 0; i < whitelist.length; i++) {
+      const k = whitelist[i];
+      result[k] = props.getProperty(k) || '';
+    }
+    return { success: true, mode: 'scriptProps', properties: result };
+  }
+
+  if (mode === 'driveFile') {
+    const fileId = String(params.fileId || '').trim();
+    if (!fileId) throw new Error('fileId が必要です');
+    const file = DriveApp.getFileById(fileId);
+    const sizeBytes = file.getSize();
+    if (sizeBytes > 15 * 1024 * 1024) {
+      throw new Error('ファイルサイズが15MBを超えています (' + sizeBytes + ' bytes)');
+    }
+    const blob = file.getBlob();
+    return {
+      success: true,
+      mode: 'driveFile',
+      fileId: fileId,
+      name: file.getName(),
+      mimeType: blob.getContentType() || 'application/octet-stream',
+      sizeBytes: sizeBytes,
+      base64: Utilities.base64Encode(blob.getBytes())
+    };
+  }
+
+  throw new Error('未知の migrationExport mode: ' + mode);
+}
+
+/** GASエディタから1回実行すると移行用シークレットを自動発行してログに出力する */
+function initMigrationExportSecret(forceRegenerate) {
+  const props = PropertiesService.getScriptProperties();
+  let secret = String(props.getProperty('MIGRATION_EXPORT_SECRET') || '').trim();
+  if (!secret || secret.length < 16 || forceRegenerate === true) {
+    const raw = Utilities.getUuid() + '-' + Utilities.getUuid() + '-' + Date.now();
+    const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, raw);
+    secret = digest.map(function (b) {
+      const n = (b < 0) ? b + 256 : b;
+      return ('0' + n.toString(16)).slice(-2);
+    }).join('');
+    props.setProperty('MIGRATION_EXPORT_SECRET', secret);
+  }
+  Logger.log('MIGRATION_EXPORT_SECRET=' + secret);
+  return secret;
 }

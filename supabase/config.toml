@@ -1,4 +1,7 @@
 project_id = "jounetsu-map"
 
 [functions.r2-presign]
-verify_jwt = true
+verify_jwt = false
+
+[functions.auth-gateway]
+verify_jwt = false

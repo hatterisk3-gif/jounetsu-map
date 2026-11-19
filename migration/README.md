@@ -11,10 +11,21 @@
 - `supabase/migrations/0003_core_operations.sql` — 圃場/看板/畝・登記・記録・R2メディア台帳・予定・勤怠・一時保存・トラッキング
 - `supabase/migrations/0004_cultivation_and_assets.sql` — 栽培計画・作型DB・播種・ロット・在庫・農機/車両/道具/資材・見積・マニュアル・アイデア/計画ボード
 - `supabase/migrations/0005_rls_policies.sql` — 全33テーブルの Row Level Security (RLS) ポリシー
+- `supabase/migrations/0006_api_grants.sql` — 全33テーブルへの Data API (`service_role` / `authenticated`) 最小権限 GRANT
+- `supabase/migrations/0007_auth_credentials.sql` — パスワードハッシュ隔離テーブル (`org_member_credentials`) と農薬名グループ検索RPC
 - `supabase/functions/r2-presign/index.ts` — Cloudflare R2 署名付き PUT URL 発行・確定・削除 Edge Function
+- `supabase/functions/auth-gateway/index.ts` — ID/PW・Google・LINE認証＆JWT発行・名簿管理 Edge Function
 - `api-client.js` — `PassionMapApiRouter` フック（未登録アクションは100%従来のGASへそのまま送信）
 - `supabase-bridge.js` — WebP圧縮・R2直アップロード＆Phase 1以降のアクション切替ブリッジ（初期無効）
 - `migration/check-connection.mjs` — Supabase / R2 / Edge Function 疎通確認スクリプト
+- `migration/export-from-gas.mjs` — 既存GASスプレッドシート読み取り専用エクスポートツール
+- `migration/import-phase1.mjs` — Phase 1 データ（組織・名簿・拠点/部署・カタログ・市況）Supabase投入ツール
+- `migration/test-phase1.mjs` — Phase 1（auth-gateway + RLS + R2一気通貫）E2E検証ツール
+- `migration/lib/r2-client.mjs` — Node CLI 用 Cloudflare R2 SigV4 アップロード・削除＆Drive URL解析ユーティリティ
+- `migration/import-phase2.mjs` — Phase 2 データ（圃場・看板・畝・登記・記録・Phase 2マスタ）Supabase投入ツール
+- `migration/migrate-drive-to-r2.mjs` — Google Drive 写真 → Cloudflare R2 移行＆ `field_records` URL置換ツール
+- `migration/import-phase3.mjs` — Phase 3 データ（作業/依頼/個人/日次予定・出退勤/休憩/休暇/確認・一時保存・トラッキング・設定・操作ログ）Supabase投入ツール
+- `migration/import-phase4.mjs` — Phase 4 データ（農薬/肥料/原価/育苗場所/栽培設定/コンテナ系マスタ7種・品目別農薬/原価/作業設定・栽培計画・プリセット/マスタ・作型DB・播種記録・ロット記録・在庫記録・見積台帳/明細＋添付DriveファイルのR2移行）Supabase投入ツール
 
 ---
 
@@ -36,6 +47,7 @@
        3. `supabase/migrations/0003_core_operations.sql`
        4. `supabase/migrations/0004_cultivation_and_assets.sql`
        5. `supabase/migrations/0005_rls_policies.sql`
+       6. `supabase/migrations/0006_api_grants.sql`
    - **方法2（Supabase CLI を使う場合）**
      ```bash
      npx supabase login
@@ -66,6 +78,7 @@
    [
      {
        "AllowedOrigins": [
+         "https://jounetsu-map.pages.dev",
          "https://hatterisk3-gif.github.io",
          "http://localhost:3000",
          "http://localhost:5500",
@@ -96,11 +109,11 @@
      R2_SECRET_ACCESS_KEY="YOUR_R2_SECRET_ACCESS_KEY" \
      R2_BUCKET_NAME="jounetsu-map-media" \
      R2_PUBLIC_BASE_URL="https://pub-xxxxxxxxxxxxxxxx.r2.dev" \
-     ALLOWED_ORIGINS="https://hatterisk3-gif.github.io,http://localhost:3000,http://127.0.0.1:5500"
+     ALLOWED_ORIGINS="https://jounetsu-map.pages.dev,https://hatterisk3-gif.github.io,http://localhost:3000,http://127.0.0.1:5500"
 
-   npx supabase functions deploy r2-presign
+   npx supabase functions deploy r2-presign --no-verify-jwt
    ```
-   > ※ `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` は Supabase Edge Runtime が自動注入します。
+   > ※ `config.toml` の `verify_jwt = false` と整合させるため `--no-verify-jwt` でデプロイします（ユーザーJWTの検証は `r2-presign` 内部の `auth.getUser()` で厳格に行われます）。また `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` は Supabase Edge Runtime が自動注入します。
 
 ---
 
@@ -164,3 +177,86 @@ node migration/check-connection.mjs
 - **Phase 3**: 作業予定・依頼作業・個人/日次予定・出退勤・休暇・GPSトラッキングのSupabase化
 - **Phase 4**: 栽培計画・作型DB・播種・ロット・在庫・品目別設定・見積のSupabase化
 - **Phase 5**: 農機/車両/道具/資材・マニュアル・アイデア/計画ボード・Gemini/GoogleカレンダーのEdge Function化 → 旧GAS完全撤廃
+
+---
+
+## 5. Phase 1 導入・データ移行手順
+
+### Step 1: SQL 追加適用 (`0007_auth_credentials.sql`)
+Supabase Dashboard の **SQL Editor > New query** に `supabase/migrations/0007_auth_credentials.sql` の内容を貼り付けて **Run** します。
+
+### Step 2: 認証 Edge Function (`auth-gateway`) のシークレット設定とデプロイ
+LINEログインも Edge Function で使う場合は `LINE_CHANNEL_SECRET` 等を設定してデプロイします：
+```powershell
+npx supabase secrets set LINE_CHANNEL_ID="2012460474" LINE_CHANNEL_SECRET="YOUR_LINE_CHANNEL_SECRET"
+npx supabase functions deploy auth-gateway --no-verify-jwt
+```
+
+### Step 3: E2E 動作検証 (`test-phase1.mjs`)
+```powershell
+node migration/test-phase1.mjs
+```
+全 5 項目（`getSignupOptions`・`login`・`refreshSession`・`RLS検証`・`r2-presign一気通貫`）が合格することを確認します。
+
+### Step 4: 既存スプレッドシートからの吸い上げ＆投入
+1. GAS 側（`コード.js`）に追記された `migrationExport` を GAS へ反映（`clasp push` / デプロイ）した上で、Apps Script エディタで **`initMigrationExportSecret`** を1回実行します。
+2. 実行ログに表示された `MIGRATION_EXPORT_SECRET=...` の値を `migration/.env` に記入します。
+3. スプレッドシートから Phase 1 対象シートをローカルへエクスポートします：
+   ```powershell
+   node migration/export-from-gas.mjs --phase1
+   ```
+4. まずドライランで件数・変換結果を確認し、問題なければ本投入します：
+   ```powershell
+   node migration/import-phase1.mjs --dry-run
+   node migration/import-phase1.mjs --replace-catalogs
+   ```
+
+## 6. Phase 2 導入・データ移行＆Drive→R2写真移行手順
+
+Phase 1 に続き、マップ中核データ（圃場・看板・畝・登記・作業/生育/看板記録・圃場メモ/図面履歴・Phase 2 各種マスタ）および既存 Google Drive 写真を Supabase + Cloudflare R2 へ移行します。
+
+1. スプレッドシートから Phase 2 対象シート（17シート）をローカルへエクスポートします：
+   ```powershell
+   node migration/export-from-gas.mjs --phase2 --resume --chunk-size=2000
+   ```
+2. まずドライランで変換件数・検出されたユニーク Google Drive 写真件数を確認し、問題なければ Supabase へ本投入します（既存レコードは `legacy_id` 等をキーに冪等更新されます）：
+   ```powershell
+   node migration/import-phase2.mjs --dry-run
+   node migration/import-phase2.mjs
+   ```
+3. Google Drive の既存写真を Cloudflare R2 へ移行し、`media_assets` 登録と `field_records` 内 URL 置換を行います（まず `--dry-run` で件数確認後、`--limit=5` の試験実行または全件実行を行います）：
+   ```powershell
+   node migration/migrate-drive-to-r2.mjs --dry-run
+   node migration/migrate-drive-to-r2.mjs
+   ```
+4. フロントエンド側の切替ブリッジ（`supabase-bridge.js`）には Phase 2 用 26 アクション（`registerPhase2Handlers()`）が実装済みですが、初期状態は `enabled: false` であり、明示的に有効化しない限り従来の GAS 通信に影響しません。
+
+## 7. Phase 3 導入・データ移行手順
+
+Phase 2 に続き、作業予定・依頼作業・個人スケジュール・日次予定・出退勤/昼休憩/休暇/退勤確認・作業一時保存・GPSトラッキング・各種設定・操作ログを Supabase（`work_schedules`, `attendance_records`, `temp_work_records`, `tracking_logs`, `org_settings`, `audit_logs`）へ移行します。
+
+1. スプレッドシートから Phase 3 対象シート（15シート）をローカルへエクスポートします（既存の `manifest.json` は累積保持されます）：
+   ```powershell
+   node migration/export-from-gas.mjs --phase3 --resume --chunk-size=2000
+   ```
+2. まずドライランで各テーブルへの変換件数を確認し、問題なければ Supabase へ本投入します：
+   ```powershell
+   node migration/import-phase3.mjs --dry-run
+   node migration/import-phase3.mjs
+   ```
+3. フロントエンド側の切替ブリッジ（`supabase-bridge.js`）には Phase 3 用 69 アクション（`registerPhase3Handlers()`）が実装済みですが、初期状態は `enabled: false` のため従来の GAS 動作には影響しません。
+
+## 8. Phase 4 導入・データ移行手順
+
+Phase 3 に続き、栽培計画・作型DB・栽培計画プリセット/マスタ・播種記録・収穫/出荷ロット記録・在庫記録・品目別設定（農薬/原価/作業）・見積台帳/明細・Phase 4 各種マスタ（農薬マスタ・肥料マスタ・原価マスタ・育苗場所マスタ・作物栽培設定マスタ・コンテナマスタ・コンテナ内容単位マスタ）を Supabase（`org_masters`, `crop_plans`, `cultivation_plans`, `cultivation_presets`, `croptype_db`, `sowing_records`, `lots`, `inventory_logs`, `quotations`, `quotation_lines`）および Cloudflare R2（`media_assets`）へ移行します。
+
+1. スプレッドシートから Phase 4 対象シート（19シート）をローカルへエクスポートします（既存の `manifest.json` は累積保持されます）：
+   ```powershell
+   node migration/export-from-gas.mjs --phase4 --resume --chunk-size=2000
+   ```
+2. まずドライランで各テーブルへの変換件数および検出された Google Drive 添付ファイル件数を確認し、問題なければ Supabase へ本投入します：
+   ```powershell
+   node migration/import-phase4.mjs --dry-run
+   node migration/import-phase4.mjs
+   ```
+3. フロントエンド側の切替ブリッジ（`supabase-bridge.js`）には Phase 4 用 64 アクション（`registerPhase4Handlers()`）および `getInitData` の Phase 4 マスタ/計画/稼働ロット統合読込が実装済みですが、初期状態は `enabled: false` のため従来の GAS 動作には影響しません。
