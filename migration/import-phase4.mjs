@@ -1109,13 +1109,13 @@ async function migratePhase4DriveFilesToR2(env, dumpDir, manifest, orgId, dryRun
   };
 
   for (const row of ctRows) {
-    String(row.file_url || "").split(",").map((s) => s.trim()).filter(Boolean).forEach((u) => collectUrl(u, "croptype_docs"));
+    String(row.file_url || "").split(",").map((s) => s.trim()).filter(Boolean).forEach((u) => collectUrl(u, "croptype_files"));
   }
   for (const row of prRows) {
-    collectUrl(row.meta?.fileUrl, "croptype_docs");
+    collectUrl(row.meta?.fileUrl, "croptype_files");
   }
   for (const row of quRows) {
-    (Array.isArray(row.attachments) ? row.attachments : []).forEach((a) => collectUrl(a?.url || a?.fileId, "quotation_docs"));
+    (Array.isArray(row.attachments) ? row.attachments : []).forEach((a) => collectUrl(a?.url || a?.fileId, "quotation_files"));
   }
 
   console.log(`\n[10] Phase 4 Google Drive ファイル検出: ${uniqueDriveIds.size} 件`);
@@ -1148,11 +1148,16 @@ async function migratePhase4DriveFilesToR2(env, dumpDir, manifest, orgId, dryRun
     const dl = await fetchDriveFileViaGas(env.legacyGasUrl, env.migrationExportSecret, item.fileId);
     const bytes = Buffer.from(dl.base64, "base64");
     const ext = mimeToExt(dl.mimeType, dl.name);
-    const r2Key = `orgs/${orgId}/${item.category}/${ym}/${crypto.randomUUID()}.${ext}`;
-    const putRes = await putR2Object(r2, {
+    const r2Key = `${orgId}/${item.category}/${ym}/${crypto.randomUUID()}.${ext}`;
+    const publicUrl = `${r2.publicBaseUrl}/${r2Key}`;
+    await putR2Object({
+      accountId: r2.accountId,
+      accessKeyId: r2.accessKeyId,
+      secretAccessKey: r2.secretAccessKey,
+      bucket: r2.bucket,
       key: r2Key,
-      body: bytes,
       contentType: dl.mimeType || "application/octet-stream",
+      bodyBytes: bytes,
     });
     await restInsert(
       env,
@@ -1160,7 +1165,7 @@ async function migratePhase4DriveFilesToR2(env, dumpDir, manifest, orgId, dryRun
       [{
         org_id: orgId,
         r2_key: r2Key,
-        public_url: putRes.publicUrl,
+        public_url: publicUrl,
         category: item.category,
         mime_type: dl.mimeType || "application/octet-stream",
         size_bytes: bytes.length,
@@ -1170,7 +1175,7 @@ async function migratePhase4DriveFilesToR2(env, dumpDir, manifest, orgId, dryRun
       }],
       { returnRep: false },
     );
-    urlByDriveId.set(item.fileId, putRes.publicUrl);
+    urlByDriveId.set(item.fileId, publicUrl);
     uploaded++;
   }
 

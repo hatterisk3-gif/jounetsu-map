@@ -17,6 +17,7 @@
 - `supabase/functions/auth-gateway/index.ts` — ID/PW・Google・LINE認証＆JWT発行・名簿管理 Edge Function
 - `api-client.js` — `PassionMapApiRouter` フック（未登録アクションは100%従来のGASへそのまま送信）
 - `supabase-bridge.js` — WebP圧縮・R2直アップロード＆Phase 1以降のアクション切替ブリッジ（初期無効）
+- `supabase-config.js` — URL パラメータ（`?backend=supabase` / `?backend=gas`）＆ `localStorage` によるオプトイン切替設定・画面左下検証バッジ（初期無効）
 - `migration/check-connection.mjs` — Supabase / R2 / Edge Function 疎通確認スクリプト
 - `migration/export-from-gas.mjs` — 既存GASスプレッドシート読み取り専用エクスポートツール
 - `migration/import-phase1.mjs` — Phase 1 データ（組織・名簿・拠点/部署・カタログ・市況）Supabase投入ツール
@@ -26,6 +27,8 @@
 - `migration/migrate-drive-to-r2.mjs` — Google Drive 写真 → Cloudflare R2 移行＆ `field_records` URL置換ツール
 - `migration/import-phase3.mjs` — Phase 3 データ（作業/依頼/個人/日次予定・出退勤/休憩/休暇/確認・一時保存・トラッキング・設定・操作ログ）Supabase投入ツール
 - `migration/import-phase4.mjs` — Phase 4 データ（農薬/肥料/原価/育苗場所/栽培設定/コンテナ系マスタ7種・品目別農薬/原価/作業設定・栽培計画・プリセット/マスタ・作型DB・播種記録・ロット記録・在庫記録・見積台帳/明細＋添付DriveファイルのR2移行）Supabase投入ツール
+- `migration/import-phase5.mjs` — Phase 5 データ（ヒッチ規格/機械グループ/機種・機械カテゴリ/整備内容/点検/アイデアカテゴリマスタ・農機/車両/道具/資材・整備/点検/給油/道具使用履歴・作業マニュアル・アイデアボード・計画ボード＋添付Driveファイル/写真のR2移行）Supabase投入ツール
+- `migration/test-e2e-bridge.mjs` — 切替スイッチ（オフラインVM）＆全Phase主要アクション＋R2画像配信 Live E2E 検証ツール
 
 ---
 
@@ -260,3 +263,29 @@ Phase 3 に続き、栽培計画・作型DB・栽培計画プリセット/マス
    node migration/import-phase4.mjs
    ```
 3. フロントエンド側の切替ブリッジ（`supabase-bridge.js`）には Phase 4 用 64 アクション（`registerPhase4Handlers()`）および `getInitData` の Phase 4 マスタ/計画/稼働ロット統合読込が実装済みですが、初期状態は `enabled: false` のため従来の GAS 動作には影響しません。
+
+## 9. Phase 5 導入・データ移行＆フロントエンド切替手順
+
+Phase 4 に続き、残りの全 21 シート（ヒッチ規格マスタ・機械グループマスタ・機種マスタ・機械カテゴリマスタ・整備内容マスタ・点検マスタ・アイデアカテゴリ・農機マスタ・`MachineMaster`・`VehicleMaster`・道具マスタ・資材マスタ・`MachineMaintenance`・`MachineInspection`・点検記録・`MachineFuel`・給油記録・道具記録・作業マニュアルマスタ・アイデアボード・計画ボード）を Supabase（`org_masters`, `machines`, `vehicles`, `tools`, `materials`, `asset_logs`, `manuals`, `idea_board`, `plan_board`）および Cloudflare R2（`media_assets`）へ移行します。
+
+1. スプレッドシートから Phase 5 対象シート（21シート）をローカルへエクスポートします（既存の `manifest.json` は累積保持されます）：
+   ```powershell
+   node migration/export-from-gas.mjs --phase5 --resume --chunk-size=2000
+   ```
+2. まずドライランで各テーブルへの変換件数および検出されたユニーク Google Drive 写真・ファイル件数を確認し、問題なければ Supabase へ本投入します：
+   ```powershell
+   node migration/import-phase5.mjs --dry-run
+   node migration/import-phase5.mjs
+   ```
+3. フロントエンド側の切替ブリッジ（`supabase-bridge.js`）には Phase 5 用 94 アクション + 完全版 `manageMaster`（`registerPhase5Handlers()`）および `getInitData` の Phase 5 農機・車両・道具・資材・点検・過去報告統合読込が実装済みであり、GAS `API_ACTIONS` の全 270 アプリケーションアクション（`migrationExport` 除く）を 100% カバーしています（初期状態は `enabled: false` のため、明示的に有効化しない限り従来の GAS 動作には影響しません）。
+4. フロントエンドで Supabase + R2 へ切り替えて検証する場合は、全 18 画面に組み込まれたオプトイン切替スイッチ（`supabase-config.js`）を使用します：
+   - **通常アクセス（デフォルト）**: `enabled: false` のため 100% 従来の GAS 通信で動作し、本番運用には一切影響しません。
+   - **Supabase + R2 検証モードON**: 任意の画面 URL に `?backend=supabase`（または短縮 `?sb=1`）を付けて開くと、`localStorage`（`passionMapBackendMode = 'supabase'`）に保存され、以降のページ遷移でも全 270 アクションが Supabase + R2 経由になります（画面左下に `⚡ Supabase検証中 [GASに戻す]` バッジを表示）。
+   - **自動 JWT 再取得**: すでに GAS でログイン済み（`localStorage` に資格情報あり）のブラウザで `?backend=supabase` に切り替えた場合も、`passionMapSupabaseSession` が未取得・期限切れなら `supabase-bridge.js` が自動的に `auth-gateway` 経由で JWT を取得するため再ログイン不要です（手動操作時も `PassionMapSupabaseBridge.enableAllActions(true)` で全アクション有効化可能）。
+   - **GAS へ即座に戻す**: 画面左下の `GASに戻す` ボタンを押すか、URL に `?backend=gas`（または `?sb=0`）を付けて開くと、`passionMapBackendMode` と `passionMapSupabaseSession` を消去して即座に GAS モードへ戻ります。
+   - **一般作業員のプロフィール保存（`saveUserGmail` / `saveUserCalendarIds` / `saveUserQualifications`）**: `org_members` の `UPDATE` RLS は管理者限定のため、作業員自身が保存した場合は `org_settings`（`setting_key = 'user_profile_prefs'`）へ同期保存し、取得時は両方から透過的に解決します。
+   - **GAS 連携が残る一部機能**: Google カレンダー連携（`getScriptAuthorizationInfo` / `listGoogleCalendars` / `getTodayGoogleCalendarEvents`）、Gemini 解析（`parseWithGemini` / `parseCropImageWithGemini`）、外部スプレッドシート入出力（`importCultivationPlanFromExternalSheet` / `exportCultivationPlanToExternalSheet`）、共有カタログ/市況の書込（`import*CatalogChunk` / `import*MarketDaily`）、および短縮 URL 展開（`getMapCoordinates` で URL 内座標が直接取れない場合）は、`callGAS(..., { forceGAS: true })` へフォールバックする設計です（`setLineChannelConfig` のシークレット設定は本番では Edge Function Secrets を使用してください）。
+5. 切替スイッチ（オフラインVM）および Live Supabase + Cloudflare R2 全 Phase E2E 検証は以下のスクリプトで実行できます（本番データを汚さず一時テストメンバーを作成し、`finally` で自動削除します）：
+   ```powershell
+   node migration/test-e2e-bridge.mjs
+   ```

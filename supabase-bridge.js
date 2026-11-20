@@ -11,6 +11,7 @@
     supabaseAnonKey: '',
     r2PublicBaseUrl: '',
     enabled: false,
+    enableAllActions: false,
     supabaseActions: {}
   };
 
@@ -21,6 +22,7 @@
       supabaseAnonKey: String(src.supabaseAnonKey || defaultConfig.supabaseAnonKey).trim(),
       r2PublicBaseUrl: String(src.r2PublicBaseUrl || defaultConfig.r2PublicBaseUrl).replace(/\/+$/, ''),
       enabled: !!src.enabled,
+      enableAllActions: !!src.enableAllActions,
       supabaseActions: Object.assign({}, src.supabaseActions || {})
     };
   }
@@ -43,8 +45,16 @@
     if (partial.enabled != null) {
       config_.enabled = !!partial.enabled;
     }
+    if (partial.enableAllActions != null) {
+      config_.enableAllActions = !!partial.enableAllActions;
+    }
     if (partial.supabaseActions && typeof partial.supabaseActions === 'object') {
       config_.supabaseActions = Object.assign({}, config_.supabaseActions, partial.supabaseActions);
+    }
+    if (config_.enableAllActions) {
+      Object.keys(registeredHandlers_).forEach(function (k) {
+        config_.supabaseActions[k] = true;
+      });
     }
     syncRouterRegistrations_();
     return getConfig();
@@ -56,6 +66,7 @@
       supabaseAnonKey: config_.supabaseAnonKey,
       r2PublicBaseUrl: config_.r2PublicBaseUrl,
       enabled: config_.enabled,
+      enableAllActions: config_.enableAllActions,
       supabaseActions: Object.assign({}, config_.supabaseActions)
     };
   }
@@ -136,6 +147,87 @@
     return true;
   }
 
+  var autoLoginPromise_ = null;
+
+  function readLocalGasCredentials_() {
+    try {
+      if (typeof localStorage === 'undefined') return null;
+      var u1 = String(localStorage.getItem('passionMapUserId') || '').trim();
+      var p1 = String(localStorage.getItem('passionMapUserPw') || '');
+      var u2 = String(localStorage.getItem('pMapAdminId') || '').trim();
+      var p2 = String(localStorage.getItem('pMapAdminPw') || '');
+      var uid = '';
+      var upw = '';
+      if (u1 && p1) {
+        uid = u1;
+        upw = p1;
+      } else if (u2 && p2) {
+        uid = u2;
+        upw = p2;
+      }
+      if (!uid || !upw) return null;
+      var orgId = String(
+        localStorage.getItem('passionMapOrgId') ||
+        localStorage.getItem('pMapAdminOrgId') ||
+        'default'
+      ).trim() || 'default';
+      return { userId: uid, password: upw, orgId: orgId };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function ensureAutoLoginSession_(force) {
+    var creds = readLocalGasCredentials_();
+    if (!force) {
+      var curSess = getSession();
+      if (curSess && curSess.access_token) {
+        if (!creds || !curSess.loginId || curSess.loginId === creds.userId) {
+          return String(curSess.access_token);
+        }
+      }
+    }
+    if (!creds) return null;
+    var baseUrl = String(config_.supabaseUrl || '').replace(/\/+$/, '');
+    var anonKey = String(config_.supabaseAnonKey || '').trim();
+    if (!baseUrl || !anonKey) return null;
+    if (autoLoginPromise_) return await autoLoginPromise_;
+
+    autoLoginPromise_ = (async function () {
+      try {
+        var res = await fetch(baseUrl + '/functions/v1/auth-gateway', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: anonKey
+          },
+          body: JSON.stringify({
+            action: 'login',
+            params: {
+              userId: creds.userId,
+              password: creds.password,
+              orgId: creds.orgId
+            }
+          })
+        });
+        var json = await res.json().catch(function () { return null; });
+        var sess = json && json.status === 'success' && json.data && json.data.success && json.data.supabaseSession;
+        if (sess && sess.access_token) {
+          var sessToSave = Object.assign({}, sess, { loginId: creds.userId });
+          setSession(sessToSave);
+          return String(sessToSave.access_token);
+        }
+      } catch (e) {}
+      return null;
+    })();
+
+    try {
+      return await autoLoginPromise_;
+    } finally {
+      autoLoginPromise_ = null;
+    }
+  }
+
   async function refreshSession() {
     var s = getSession();
     if (!s || !s.refresh_token) return null;
@@ -157,8 +249,12 @@
       var json = await res.json().catch(function () { return null; });
       var sess = json && json.status === 'success' && json.data && json.data.success && json.data.supabaseSession;
       if (sess && sess.access_token) {
-        setSession(sess);
-        return String(sess.access_token);
+        var sessToSave = Object.assign({}, sess);
+        if (s.loginId && !sessToSave.loginId) {
+          sessToSave.loginId = s.loginId;
+        }
+        setSession(sessToSave);
+        return String(sessToSave.access_token);
       }
     } catch (e) {}
     return null;
@@ -172,6 +268,12 @@
       throw new Error('Supabase の接続設定（supabaseUrl / supabaseAnonKey）が未設定です。');
     }
     var userToken = String(opts.accessToken || getAccessToken() || '').trim();
+    if (!opts.accessToken) {
+      var ensuredToken = await ensureAutoLoginSession_(false);
+      if (ensuredToken) {
+        userToken = ensuredToken;
+      }
+    }
     var bearerToken = userToken || (anonKey.split('.').length === 3 ? anonKey : '');
     var baseHeaders = {
       apikey: anonKey
@@ -188,6 +290,9 @@
     });
     if (res.status === 401 && !opts._retried && !opts.accessToken) {
       var refreshed = await refreshSession();
+      if (!refreshed) {
+        refreshed = await ensureAutoLoginSession_(true);
+      }
       if (refreshed) {
         var retryOpts = Object.assign({}, opts, { _retried: true, accessToken: refreshed });
         return await restFetch(path, retryOpts);
@@ -248,7 +353,11 @@
       throw new Error((json && (json.message || json.error)) || ('認証サーバーエラー (' + res.status + ')'));
     }
     if (json.data && json.data.supabaseSession) {
-      setSession(json.data.supabaseSession);
+      var sessToSave = Object.assign({}, json.data.supabaseSession);
+      if (params && params.userId && !sessToSave.loginId) {
+        sessToSave.loginId = String(params.userId);
+      }
+      setSession(sessToSave);
     }
     return json.data;
   }
@@ -977,6 +1086,281 @@
       }
     }
     return urls;
+  }
+
+  var DEFAULT_HITCH_TYPES_ = [
+    '3点リンク 0形', '3点リンク 1形', '3点リンク 2形',
+    'オートヒッチ Aタイプ', 'オートヒッチ Bタイプ', 'スライドヒッチ'
+  ];
+
+  var DEFAULT_PROD_MGMT_CATEGORIES_ = [
+    { id: 'ridge_crush', name: '畝つぶし', order: 1 },
+    { id: 'compost', name: '堆肥散布', order: 2 },
+    { id: 'dolomite', name: '苦土石灰散布', order: 3 },
+    { id: 'forward_pull', name: '正転引き', order: 4 },
+    { id: 'fertilizer', name: '肥料散布', order: 5 },
+    { id: 'forward_pull_finish', name: '正転引き（仕上げ）', order: 6 },
+    { id: 'ridge_make', name: '畝立て', order: 7 }
+  ];
+
+  function joinNoukiModels_(model, model2) {
+    var a = String(model || '').trim();
+    var b = String(model2 || '').trim();
+    if (a && b && a !== b) return a + ' / ' + b;
+    return a || b || '';
+  }
+
+  function formatNoukiNumberLabel_(raw) {
+    var s = String(raw == null ? '' : raw).trim();
+    if (!s) return '';
+    if (/^[①-⑳㉑-㉟㊱-㊿]$/.test(s)) return s;
+    s = s.replace(/^no\.?\s*/i, '').trim();
+    if (!s) return '';
+    s = s.replace(/[０-９]/g, function (ch) {
+      return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+    });
+    var m = s.match(/^(\d+)/);
+    if (!m) return s;
+    var n = parseInt(m[1], 10);
+    if (!isFinite(n) || n < 1) return s;
+    if (n <= 20) return String.fromCharCode(0x245F + n);
+    if (n <= 35) return String.fromCharCode(0x3251 + (n - 21));
+    if (n <= 50) return String.fromCharCode(0x32B1 + (n - 36));
+    return '(' + n + ')';
+  }
+
+  function buildNoukiDisplayName_(type, model, number, sameModelCount, model2) {
+    var typePart = String(type || '').trim();
+    var modelPart = joinNoukiModels_(model, model2);
+    var numPart = String(number || '').trim();
+    if (sameModelCount != null && Number(sameModelCount) <= 1) {
+      numPart = '';
+    } else if (numPart) {
+      numPart = formatNoukiNumberLabel_(numPart);
+    }
+    return [typePart, modelPart, numPart].filter(Boolean).join(' ');
+  }
+
+  function noukiSameModelKey_(group, type, model, model2) {
+    return [
+      String(group || '').trim(),
+      String(type || '').trim(),
+      String(model || '').trim(),
+      String(model2 || '').trim()
+    ].join('\t');
+  }
+
+  function applyNoukiDisplayNamesByModelCount_(machines) {
+    var list = Array.isArray(machines) ? machines : [];
+    var counts = {};
+    list.forEach(function (m) {
+      if (!m) return;
+      var key = noukiSameModelKey_(m.group || m.mainCategory, m.type, m.model || m.modelType, m.model2);
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    list.forEach(function (m) {
+      if (!m) return;
+      var key = noukiSameModelKey_(m.group || m.mainCategory, m.type, m.model || m.modelType, m.model2);
+      var displayName = buildNoukiDisplayName_(m.type, m.model || m.modelType, m.machineNumber || m.serialNo, counts[key] || 1, m.model2);
+      m.name = displayName || m.type || m.model || m.machineNumber || m.name || '';
+    });
+    return list;
+  }
+
+  function resolveNoukiMachinesHubLocation_(machinesList, optPolygons, optLocations) {
+    var list = Array.isArray(machinesList)
+      ? machinesList
+      : (machinesList && typeof machinesList === 'object' ? Object.keys(machinesList).map(function (k) { return machinesList[k]; }) : []);
+    if (!list.length) return;
+    var knownHubs = {};
+    (Array.isArray(optLocations) ? optLocations : []).forEach(function (n) {
+      var s = String(n || '').trim();
+      if (s) knownHubs[s] = true;
+    });
+    var byId = {};
+    var byName = {};
+    (Array.isArray(optPolygons) ? optPolygons : []).forEach(function (p) {
+      if (!p) return;
+      if (p.id) byId[String(p.id)] = p;
+      if (p.name && !byName[String(p.name).trim()]) byName[String(p.name).trim()] = p;
+      if (String(p.signFunction || '').trim() === '拠点' && p.name) {
+        knownHubs[String(p.name).trim()] = true;
+      }
+      if (p.location && String(p.location).trim()) {
+        knownHubs[String(p.location).trim()] = true;
+      }
+    });
+    list.forEach(function (m) {
+      if (!m) return;
+      var rawLoc = String(m.location || '').trim();
+      if (rawLoc && knownHubs[rawLoc]) return;
+      var basePoly = (m.signId && byId[String(m.signId)]) || (m.signName && byName[String(m.signName).trim()]) || null;
+      var curPoly = (m.currentLocId && byId[String(m.currentLocId)]) || (m.currentLocName && byName[String(m.currentLocName).trim()]) || null;
+      var hub = '';
+      if (basePoly && String(basePoly.location || '').trim()) hub = String(basePoly.location).trim();
+      else if (curPoly && String(curPoly.location || '').trim()) hub = String(curPoly.location).trim();
+      else if (m.signName && knownHubs[String(m.signName).trim()]) hub = String(m.signName).trim();
+      else if (m.currentLocName && knownHubs[String(m.currentLocName).trim()]) hub = String(m.currentLocName).trim();
+      if (hub) m.location = hub;
+    });
+  }
+
+  function mapMachineRowToObj_(r) {
+    var meta = (r && r.meta && typeof r.meta === 'object') ? r.meta : {};
+    var photos = Array.isArray(r && r.photos) ? r.photos.filter(Boolean) : [];
+    var type = String((r && r.machine_type) || '').trim();
+    var model = String((r && r.model) || '').trim();
+    var model2 = String(meta.model2 || '').trim();
+    var machineNumber = String((r && r.machine_number) || '').trim();
+    var group = String((r && r.machine_group) || '').trim();
+    var workCategory = String((r && r.work_category) || '').trim();
+    var fuel = String((r && r.fuel_type) || '').trim();
+    var hitch = String((r && r.hitch_type) || '').trim();
+    var signName = String((r && r.sign_name) || '').trim();
+    var signId = String((r && r.sign_id) || '').trim();
+    var photo = meta.photo != null ? String(meta.photo) : (photos[0] || '');
+    var photo2 = meta.photo2 != null ? String(meta.photo2) : (photos.length > 1 ? photos.slice(1).join(',') : '');
+    var symptoms = meta.rawSymptoms != null ? String(meta.rawSymptoms) : (Array.isArray(r && r.symptoms) ? r.symptoms.join(',') : '');
+    var parts = meta.rawParts != null ? String(meta.rawParts) : (Array.isArray(r && r.parts) ? r.parts.join(',') : '');
+    var maintContents = meta.rawMaintContents != null ? String(meta.rawMaintContents) : (Array.isArray(r && r.maintenance_candidates) ? r.maintenance_candidates.join(',') : '');
+    var purchaseDate = meta.rawPurchaseDate != null ? String(meta.rawPurchaseDate) : (r && r.purchase_date ? String(r.purchase_date).slice(0, 10) : '');
+    var fuelChecks = meta.rawFuelChecks != null ? String(meta.rawFuelChecks) : (Array.isArray(r && r.fuel_checks) ? r.fuel_checks.join(',') : '');
+    var maintSettings = [];
+    if (r && Array.isArray(r.maintenance_settings)) maintSettings = r.maintenance_settings;
+    else if (r && r.maintenance_settings && Array.isArray(r.maintenance_settings.items)) maintSettings = r.maintenance_settings.items;
+    var displayName = buildNoukiDisplayName_(type, model, machineNumber, null, model2);
+    return {
+      id: String((r && (r.legacy_id || r.id)) || '').trim(),
+      name: displayName || type || model || machineNumber || meta.name || '',
+      type: type,
+      model: model,
+      model2: model2,
+      machineNumber: machineNumber,
+      group: group,
+      mainCategory: group,
+      workCategory: workCategory,
+      fuel: fuel,
+      hitch: hitch,
+      photo: photo,
+      photo2: photo2,
+      signName: signName,
+      signId: signId,
+      currentLocName: String((r && r.current_loc_name) || signName || '').trim(),
+      currentLocId: String((r && r.current_loc_id) || signId || '').trim(),
+      symptoms: symptoms,
+      parts: parts,
+      maintenanceContents: maintContents,
+      status: String((r && r.status) || '使用可能').trim() || '使用可能',
+      userName: String((r && r.registered_by) || '').trim(),
+      purchaseDate: purchaseDate,
+      targetMachineIds: String((r && r.compatible_machine_id) || '').trim(),
+      category: group || workCategory,
+      location: String((r && r.location_name) || '').trim(),
+      lat: (r && r.lat != null) ? r.lat : null,
+      lng: (r && r.lng != null) ? r.lng : null,
+      maintenanceSettings: maintSettings,
+      fuelChecks: fuelChecks,
+      modelType: model,
+      fuelType: fuel,
+      serialNo: machineNumber
+    };
+  }
+
+  function mapVehicleRowToObj_(r) {
+    var meta = (r && r.meta && typeof r.meta === 'object') ? r.meta : {};
+    var photos = Array.isArray(r && r.photos) ? r.photos.filter(Boolean) : [];
+    var driveType = String((r && r.drive_type) || '').trim();
+    var mainCategory = String((r && r.main_category) || '').trim();
+    if (!mainCategory) {
+      if (driveType === '作業車両' || driveType === '作業機') mainCategory = '作業機';
+      else if (driveType === '移動車両' || driveType === '自動車' || driveType === '2WD' || driveType === '4WD') mainCategory = '自動車';
+    }
+    var signName = String((r && r.sign_name) || '').trim();
+    var signId = String((r && r.sign_id) || '').trim();
+    var vType = String((r && r.vehicle_type) || '').trim();
+    var vNum = String((r && r.vehicle_number) || '').trim();
+    return {
+      id: String((r && (r.legacy_id || r.id)) || '').trim(),
+      plateNumber: String((r && r.plate_number) || ''),
+      photo: meta.photo != null ? String(meta.photo) : (photos[0] || ''),
+      mileage: (r && r.mileage != null) ? r.mileage : '',
+      driveType: driveType,
+      registrationDate: String((r && r.registration_date) || ''),
+      status: String((r && r.status) || '使用可能') || '使用可能',
+      lat: (r && r.lat != null) ? r.lat : null,
+      lng: (r && r.lng != null) ? r.lng : null,
+      mainCategory: mainCategory,
+      group: mainCategory,
+      vehicleType: vType,
+      type: vType,
+      vehicleNumber: vNum,
+      machineNumber: vNum,
+      model: String((r && r.model) || '').trim(),
+      fuelChecks: meta.rawFuelChecks != null ? String(meta.rawFuelChecks) : (Array.isArray(r && r.fuel_checks) ? r.fuel_checks.join(',') : ''),
+      location: String((r && r.location_name) || '').trim(),
+      signName: signName,
+      signId: signId,
+      currentLocName: String((r && r.current_loc_name) || signName || '').trim(),
+      currentLocId: String((r && r.current_loc_id) || signId || '').trim(),
+      photo2: meta.photo2 != null ? String(meta.photo2) : (photos.length > 1 ? photos.slice(1).join(',') : '')
+    };
+  }
+
+  function mapToolRowToObj_(r) {
+    var meta = (r && r.meta && typeof r.meta === 'object') ? r.meta : {};
+    var photos = Array.isArray(r && r.photos) ? r.photos.filter(Boolean) : [];
+    return {
+      id: String((r && (r.legacy_id || r.id)) || '').trim(),
+      date: String((r && r.registered_date) || '').trim(),
+      name: String((r && r.name) || '').trim(),
+      regNumber: String((r && r.registration_number) || '').trim(),
+      workTypes: String((r && r.work_category) || '').trim(),
+      url: String((meta.photoUrl != null ? meta.photoUrl : (photos[0] || '')) || '').trim(),
+      status: String((r && r.status) || '').trim(),
+      signName: String((r && r.sign_name) || '').trim(),
+      signId: String((r && r.sign_id) || '').trim()
+    };
+  }
+
+  function mapMaterialRowToObj_(r) {
+    var meta = (r && r.meta && typeof r.meta === 'object') ? r.meta : {};
+    var stockVal = 0;
+    if (meta.stock != null && meta.stock !== '') {
+      stockVal = Number(meta.stock) || 0;
+    } else if (r && r.stock_status !== '' && r.stock_status != null && !isNaN(Number(r.stock_status))) {
+      stockVal = Number(r.stock_status);
+    }
+    return {
+      id: String((r && (r.legacy_id || r.id)) || '').trim(),
+      name: String((r && r.name) || '').trim(),
+      workCategory: String((r && r.work_category) || '').trim(),
+      size: String((r && r.capacity_size) || ''),
+      volUnit: String((r && r.capacity_unit) || ''),
+      stockUnit: String((r && r.inventory_unit) || ''),
+      signName: String((r && r.sign_name) || ''),
+      signId: String((r && r.sign_id) || ''),
+      stock: stockVal
+    };
+  }
+
+  function mapInspectionMasterRow_(m) {
+    var d = (m && m.data && typeof m.data === 'object') ? m.data : {};
+    var rawType = String(d.inspectionType || '').trim();
+    var inspType = (rawType === '定期点検' || rawType === '給油時点検') ? rawType : '始動前点検';
+    var rawHour = Number(d.alertHourMeter);
+    var rawDist = Number(d.alertDistance);
+    return {
+      id: String(d.id || (m && (m.legacy_id || m.id)) || '').trim(),
+      machineType: String(d.machineType || '').trim(),
+      inspectionCategory: String(d.inspectionCategory || '一般').trim(),
+      item: String(d.item || (m && m.name) || '').trim(),
+      sortOrder: (d.sortOrder !== '' && d.sortOrder != null) ? (Number(d.sortOrder) || 0) : ((m && m.sort_order) || 0),
+      note: String(d.note || '').trim(),
+      inspectionType: inspType,
+      alertMonths: inspType === '定期点検' ? String(d.alertMonths || '').trim() : '',
+      alertHourMeter: (inspType === '定期点検' && d.alertHourMeter !== '' && d.alertHourMeter != null && isFinite(rawHour) && rawHour > 0) ? rawHour : '',
+      alertDistance: (inspType === '定期点検' && d.alertDistance !== '' && d.alertDistance != null && isFinite(rawDist) && rawDist > 0) ? rawDist : ''
+    };
   }
 
   function registerPhase2Handlers() {
@@ -1797,14 +2181,20 @@
       params = params || {};
       var light = !!(params.light || params.slim);
       var orgId = await resolveCurrentOrgId_();
+      var encOrg = encodeURIComponent(orgId);
       var results = await Promise.all([
-        restSelectAll_('fields', 'org_id=eq.' + encodeURIComponent(orgId)),
-        restSelectAll_('field_records', 'org_id=eq.' + encodeURIComponent(orgId) + '&record_type=in.(work,growth,sign,report)&order=recorded_at.asc'),
-        restSelectAll_('org_masters', 'org_id=eq.' + encodeURIComponent(orgId) + '&is_active=eq.true&order=sort_order.asc'),
-        restSelectAll_('org_members', 'org_id=eq.' + encodeURIComponent(orgId) + '&is_active=eq.true&select=login_id,display_name,location,department'),
-        restSelectAll_('touki_records', 'org_id=eq.' + encodeURIComponent(orgId) + '&select=legacy_id,id'),
-        light ? Promise.resolve([]) : restSelectAll_('crop_plans', 'org_id=eq.' + encodeURIComponent(orgId)),
-        light ? Promise.resolve([]) : restSelectAll_('lots', 'org_id=eq.' + encodeURIComponent(orgId) + '&status=neq.%E5%87%BA%E8%8D%B7%E6%B8%88&status=neq.%E5%AE%8C%E4%BA%86&order=generated_at.asc')
+        restSelectAll_('fields', 'org_id=eq.' + encOrg),
+        restSelectAll_('field_records', 'org_id=eq.' + encOrg + '&record_type=in.(work,growth,sign,report)&order=recorded_at.asc'),
+        restSelectAll_('org_masters', 'org_id=eq.' + encOrg + '&is_active=eq.true&order=sort_order.asc'),
+        restSelectAll_('org_members', 'org_id=eq.' + encOrg + '&is_active=eq.true&select=login_id,display_name,location,department'),
+        restSelectAll_('touki_records', 'org_id=eq.' + encOrg + '&select=legacy_id,id'),
+        light ? Promise.resolve([]) : restSelectAll_('crop_plans', 'org_id=eq.' + encOrg),
+        light ? Promise.resolve([]) : restSelectAll_('lots', 'org_id=eq.' + encOrg + '&status=neq.%E5%87%BA%E8%8D%B7%E6%B8%88&status=neq.%E5%AE%8C%E4%BA%86&order=generated_at.asc'),
+        restSelectAll_('machines', 'org_id=eq.' + encOrg + '&order=created_at.asc'),
+        restSelectAll_('vehicles', 'org_id=eq.' + encOrg + '&order=created_at.asc'),
+        restSelectAll_('tools', 'org_id=eq.' + encOrg + '&order=created_at.asc'),
+        restSelectAll_('materials', 'org_id=eq.' + encOrg + '&order=created_at.asc'),
+        light ? Promise.resolve([]) : restSelectAll_('work_schedules', 'org_id=eq.' + encOrg + '&schedule_kind=eq.work&work_name=ilike.*%E5%95%8F%E9%A1%8C%E5%AF%BE%E5%BF%9C*&select=work_name,payload,field_id')
       ]);
 
       var fieldRows = results[0];
@@ -1814,6 +2204,11 @@
       var toukiRows = results[4];
       var cropPlanRows = results[5] || [];
       var lotRows = results[6] || [];
+      var machineRows = results[7] || [];
+      var vehicleRows = results[8] || [];
+      var toolRows = results[9] || [];
+      var materialRows = results[10] || [];
+      var reportSchedRows = results[11] || [];
 
       var photosByFieldUuid = {};
       recordRows.forEach(function (rec) {
@@ -1823,7 +2218,9 @@
       });
 
       var signLinks = {};
+      var fieldLegacyByUuid = {};
       var polygons = fieldRows.map(function (fRow) {
+        fieldLegacyByUuid[fRow.id] = fRow.legacy_id || fRow.id;
         if (fRow.entity_type === 'sign' && fRow.linked_sign_id) {
           signLinks[fRow.legacy_id || fRow.id] = fRow.linked_sign_id;
         }
@@ -1860,7 +2257,12 @@
           updatedBy: d.updatedBy || ''
         };
       });
-      var workMaster = (byType.work || []).filter(function (m) { return m.name && m.name.indexOf('work_extra_') !== 0; }).map(function (m) {
+      var maintenanceFromWork = [];
+      var workMaster = (byType.work || []).filter(function (m) {
+        var d = m.data || {};
+        if (d.maintenanceOption) maintenanceFromWork.push(String(d.maintenanceOption).trim());
+        return m.name && m.name.indexOf('work_extra_') !== 0;
+      }).map(function (m) {
         var d = m.data || {};
         return Object.assign({
           category: d.category || '',
@@ -1905,7 +2307,63 @@
       var prodCategories = (byType.prod_mgmt_category || []).map(function (m) {
         return { id: m.legacy_id || m.id, name: m.name, order: m.sort_order || 0 };
       });
-      var deliveryDestinations = (byType.delivery_destination || []).map(function (m) { return m.data || { id: m.legacy_id, name: m.name }; });
+      if (!prodCategories.length) prodCategories = DEFAULT_PROD_MGMT_CATEGORIES_.slice();
+
+      var deliveryDestinations = light
+        ? []
+        : (byType.delivery_destination || []).map(function (m) { return m.data || { id: m.legacy_id, name: m.name }; });
+
+      var machineGroups = (byType.machine_group || []).map(function (m) { return String(m.name || '').trim(); }).filter(Boolean);
+      if (!machineGroups.length) machineGroups = ['圃場', '出荷'];
+      var machineTypes = (byType.machine_type || []).map(function (m) { return String(m.name || '').trim(); }).filter(Boolean);
+      if (!machineTypes.length) machineTypes = ['トラクター', 'ドローン'];
+      var hitchTypes = (byType.hitch || []).map(function (m) { return String(m.name || '').trim(); }).filter(Boolean);
+      if (!hitchTypes.length) hitchTypes = DEFAULT_HITCH_TYPES_.slice();
+
+      var maintSeen = {};
+      var maintenanceContents = [];
+      var pushMaint_ = function (v) {
+        var s = String(v || '').trim();
+        if (s && !maintSeen[s]) {
+          maintSeen[s] = true;
+          maintenanceContents.push(s);
+        }
+      };
+      maintenanceFromWork.forEach(pushMaint_);
+      (byType.work_record_master || []).forEach(function (m) {
+        if (m.data && m.data.maintenance) pushMaint_(m.data.maintenance);
+      });
+      (byType.maintenance_content || []).forEach(function (m) {
+        pushMaint_(m.name || (m.data && m.data.name));
+      });
+
+      var inspections = (byType.inspection_item || []).map(mapInspectionMasterRow_).filter(function (x) {
+        return !!(x.machineType && x.item);
+      });
+
+      var locationNames = locationDetails.map(function (l) { return l.name; });
+      var machines = machineRows.map(mapMachineRowToObj_);
+      applyNoukiDisplayNamesByModelCount_(machines);
+      resolveNoukiMachinesHubLocation_(machines, polygons, locationNames);
+
+      var materials = materialRows.filter(function (r) { return !!String(r.name || '').trim(); }).map(mapMaterialRowToObj_);
+      var tools = toolRows.map(mapToolRowToObj_);
+      var vehicles = vehicleRows.map(mapVehicleRowToObj_);
+
+      var pastReports = {};
+      if (!light) {
+        reportSchedRows.forEach(function (sr) {
+          var wn = String(sr.work_name || '');
+          var pObj = (sr.payload && typeof sr.payload === 'object') ? sr.payload : {};
+          var polyId = String(pObj.placeId || (sr.field_id && fieldLegacyByUuid[sr.field_id]) || sr.field_id || '').trim();
+          if (wn.indexOf('⚠️問題対応:') >= 0 && polyId) {
+            var reason = wn.replace('⚠️問題対応: ', '').replace('⚠️問題対応:', '').trim();
+            if (reason.indexOf(' / ') >= 0) reason = reason.split(' / ')[0].trim();
+            if (!pastReports[polyId]) pastReports[polyId] = [];
+            if (reason && pastReports[polyId].indexOf(reason) < 0) pastReports[polyId].push(reason);
+          }
+        });
+      }
 
       var containers = [];
       var containerPairSeen = {};
@@ -2080,7 +2538,7 @@
 
       return {
         pdl: {
-          locations: locationDetails.map(function (l) { return l.name; }),
+          locations: locationNames,
           locationDetails: locationDetails,
           viewpoints: viewpoints,
           userLocations: memberRows.map(function (m) {
@@ -2091,23 +2549,23 @@
           statuses: statuses,
           stages: stages,
           signFunctionsMaster: [],
-          machineGroups: ['圃場', '出荷'],
-          machineTypes: ['トラクター', 'ドローン'],
-          machineCategories: ['トラクター', 'ドローン'],
+          machineGroups: machineGroups,
+          machineTypes: machineTypes,
+          machineCategories: machineTypes.slice(),
           vehicleTypes: ['軽トラ', '軽バン', '軽四', '普通車', 'トラック'],
-          hitchTypes: [],
+          hitchTypes: hitchTypes,
           workMaster: workMaster,
           signFunctions: [],
           workStatuses: workStatuses,
           containers: containers,
           containerNames: containerNames,
           contentUnits: contentUnits,
-          maintenanceContents: [],
+          maintenanceContents: maintenanceContents,
           crops: crops,
           signLinks: signLinks,
-          machines: [],
-          materials: [],
-          tools: [],
+          machines: machines,
+          materials: materials,
+          tools: tools,
           pesticides: pesticides,
           fertilizers: fertilizers,
           cropChemPlans: cropChemPlans,
@@ -2116,10 +2574,10 @@
           cropWorkPlans: cropWorkPlans,
           nurseryLocations: nurseryLocations,
           cropCultSettings: cropCultSettings,
-          inspections: [],
-          pastReports: {},
+          inspections: inspections,
+          pastReports: pastReports,
           deliveryDestinations: deliveryDestinations,
-          vehicles: []
+          vehicles: vehicles
         },
         polygons: polygons,
         toukiList: toukiRows.map(function (t) { return t.legacy_id || t.id; }),
@@ -5162,7 +5620,7 @@
       var detectedMime = (mimeMatch && mimeMatch[1]) || opts.mimeType || 'application/octet-stream';
       var isImage = detectedMime.indexOf('image/') === 0;
       return await uploadToR2(dataUrl, {
-        category: opts.category || 'phase4_docs',
+        category: opts.category || 'other',
         linkedTable: opts.linkedTable || undefined,
         linkedRecordId: opts.linkedRecordId || undefined,
         skipCompress: !isImage
@@ -7537,7 +7995,7 @@
       if (params.fileData && params.fileName) {
         var up = await uploadDataOrBase64ToR2_({
           dataUrl: params.fileData, mimeType: params.fileType,
-          category: 'croptype_docs', linkedTable: 'cultivation_presets'
+          category: 'croptype_files', linkedTable: 'cultivation_presets'
         });
         fileUrl = up.publicUrl || '';
       }
@@ -7665,12 +8123,12 @@
         for (var i = 0; i < params.files.length; i++) {
           var f = params.files[i];
           if (f && f.base64Data) {
-            var r = await uploadDataOrBase64ToR2_({ base64Data: f.base64Data, mimeType: f.mimeType || 'application/octet-stream', category: 'croptype_docs', linkedTable: 'croptype_db' });
+            var r = await uploadDataOrBase64ToR2_({ base64Data: f.base64Data, mimeType: f.mimeType || 'application/octet-stream', category: 'croptype_files', linkedTable: 'croptype_db' });
             if (r.publicUrl) urls.push(r.publicUrl);
           }
         }
       } else if (params.fileData && params.fileName) {
-        var r2 = await uploadDataOrBase64ToR2_({ dataUrl: params.fileData, category: 'croptype_docs', linkedTable: 'croptype_db' });
+        var r2 = await uploadDataOrBase64ToR2_({ dataUrl: params.fileData, category: 'croptype_files', linkedTable: 'croptype_db' });
         if (r2.publicUrl) urls.push(r2.publicUrl);
       }
       await saveCroptypeOne_(orgId, Object.assign({}, params, { fileUrl: urls.join(',') || params.fileUrl }));
@@ -8552,7 +9010,7 @@
       var legacyId = String(quote.id || '').trim() || ('QUO-' + genUuid_().slice(0, 8));
       var attachments = Array.isArray(quote.existingAttachments) ? quote.existingAttachments.slice() : [];
       if (quote.attachment && quote.attachment.dataUrl) {
-        var up = await uploadDataOrBase64ToR2_({ dataUrl: quote.attachment.dataUrl, category: 'quotation_docs', linkedTable: 'quotations' });
+        var up = await uploadDataOrBase64ToR2_({ dataUrl: quote.attachment.dataUrl, category: 'quotation_files', linkedTable: 'quotations' });
         attachments.push({ fileId: up.r2Key, fileName: quote.attachment.name || 'quotation-file', mimeType: up.mimeType, size: up.sizeBytes, url: up.publicUrl });
       }
       var subtotal = 0;
@@ -8640,6 +9098,3245 @@
   }
 
   registerPhase4Handlers();
+
+  // ========================================================================
+  // Phase 5: 農機・車両・道具・資材・マニュアル・ボード・設定・全マスタ Supabase ハンドラ群
+  // ========================================================================
+  function registerPhase5Handlers() {
+    var phase4ManageMaster_ = registeredHandlers_.manageMaster;
+
+    function toNumOrNullP5_(v) {
+      if (v === '' || v == null) return null;
+      var n = Number(String(v).replace(/,/g, ''));
+      return isFinite(n) ? n : null;
+    }
+
+    function parseYmdOrNullP5_(v) {
+      var s = String(v == null ? '' : v).trim().replace(/\//g, '-');
+      var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (!m) return null;
+      var yyyy = Number(m[1]), mm = Number(m[2]), dd = Number(m[3]);
+      if (yyyy < 1970 || mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+      return m[1] + '-' + ('0' + mm).slice(-2) + '-' + ('0' + dd).slice(-2);
+    }
+
+    function splitUrlTokensP5_(raw) {
+      if (!raw) return [];
+      if (Array.isArray(raw)) {
+        return raw.map(function (x) {
+          return typeof x === 'string' ? x.trim() : String((x && x.url) || '').trim();
+        }).filter(Boolean);
+      }
+      var s = String(raw).trim();
+      if (!s || s === '[]') return [];
+      if (s.charAt(0) === '[') {
+        var arr = parseJsonMaybe_(s, []);
+        if (Array.isArray(arr)) {
+          return arr.map(function (x) {
+            return typeof x === 'string' ? x.trim() : String((x && x.url) || '').trim();
+          }).filter(Boolean);
+        }
+      }
+      return s.split(/[\n,]/).map(function (x) { return x.trim(); }).filter(Boolean);
+    }
+
+    function splitCsvTokensP5_(raw) {
+      return String(raw == null ? '' : raw).split(/[,、]/).map(function (s) { return s.trim(); }).filter(Boolean);
+    }
+
+    function formatIsoJstHmP5_(v) {
+      if (!v) return '';
+      var s = String(v).trim();
+      if (/^\d{4}\/\d{2}\/\d{2}/.test(s)) return s;
+      var ms = Date.parse(s);
+      if (isNaN(ms)) return s;
+      var d = new Date(ms + 9 * 3600 * 1000);
+      return d.getUTCFullYear() + '/' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '/' + ('0' + d.getUTCDate()).slice(-2) + ' ' +
+        ('0' + d.getUTCHours()).slice(-2) + ':' + ('0' + d.getUTCMinutes()).slice(-2);
+    }
+
+    function sortAssetLogsChronoP5_(rows) {
+      return (rows || []).slice().sort(function (a, b) {
+        var am = String(a.legacy_id || '').match(/_row_(\d+)$/);
+        var bm = String(b.legacy_id || '').match(/_row_(\d+)$/);
+        if (am && bm) return Number(am[1]) - Number(bm[1]);
+        if (am && !bm) return -1;
+        if (!am && bm) return 1;
+        return String(a.created_at || '').localeCompare(String(b.created_at || ''));
+      });
+    }
+
+    async function writeLogP5_(orgId, actor, action, target, detail) {
+      try {
+        await restFetch('rest/v1/audit_logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            org_id: orgId,
+            actor_name: String(actor || 'システム'),
+            action: String(action || ''),
+            target: String(target || ''),
+            detail: String(detail || '')
+          })
+        });
+      } catch (e) {}
+    }
+
+    async function isAdminRoleP5_(orgId, userName) {
+      var uname = String(userName || '').trim();
+      if (uname === 'system') return true;
+      if (!uname) return false;
+      var members = await restSelectAll_(
+        'org_members',
+        'org_id=eq.' + encodeURIComponent(orgId) + '&is_active=eq.true&select=display_name,login_id,role'
+      );
+      var uk = uname.replace(/\s+/g, '');
+      return members.some(function (m) {
+        var dn = String(m.display_name || '').trim();
+        var lid = String(m.login_id || '').trim();
+        if (dn !== uname && lid !== uname && dn.replace(/\s+/g, '') !== uk) return false;
+        var r = String(m.role || '').toLowerCase();
+        return r === 'admin' || r === 'owner';
+      });
+    }
+
+    async function uploadOnePhotoP5_(photoObjOrStr, category, linkedTable, linkedRecordId) {
+      if (!photoObjOrStr) return '';
+      if (typeof photoObjOrStr === 'string') {
+        var s = photoObjOrStr.trim();
+        if (!s) return '';
+        if (s.indexOf('http://') === 0 || s.indexOf('https://') === 0) return s;
+        var dataUrl = s.indexOf('data:') === 0 ? s : ('data:image/jpeg;base64,' + s);
+        var up = await uploadToR2(dataUrl, {
+          category: category || 'other',
+          linkedTable: linkedTable || undefined,
+          linkedRecordId: linkedRecordId || undefined
+        });
+        return (up && up.publicUrl) || '';
+      }
+      var directUrl = String(photoObjOrStr.url || '').trim();
+      var b64 = String(photoObjOrStr.base64 || photoObjOrStr.photoBase64 || photoObjOrStr.dataUrl || '').trim();
+      if (!b64 && directUrl) return directUrl;
+      if (!b64) return '';
+      var url2 = b64.indexOf('data:') === 0 ? b64 : ('data:image/jpeg;base64,' + b64);
+      var up2 = await uploadToR2(url2, {
+        category: category || 'other',
+        linkedTable: linkedTable || undefined,
+        linkedRecordId: linkedRecordId || undefined
+      });
+      return (up2 && up2.publicUrl) || '';
+    }
+
+    async function resolvePhotoItemsP5_(photoItems, category, linkedTable, linkedRecordId) {
+      var list = Array.isArray(photoItems) ? photoItems : [];
+      var mainIdx = list.findIndex(function (x) { return x && x.isMain; });
+      var ordered = mainIdx > 0
+        ? [list[mainIdx]].concat(list.slice(0, mainIdx), list.slice(mainIdx + 1))
+        : list.slice();
+      var urls = [];
+      for (var i = 0; i < ordered.length; i++) {
+        var it = ordered[i];
+        if (!it) continue;
+        var u = await uploadOnePhotoP5_(it, category, linkedTable, linkedRecordId);
+        if (u && urls.indexOf(u) < 0) urls.push(u);
+      }
+      return { photo: urls[0] || '', photo2: urls.slice(1).join(','), photos: urls };
+    }
+
+    async function readSettingP5_(orgId, key, fallback) {
+      var rows = await restFetch(
+        'rest/v1/org_settings?org_id=eq.' + encodeURIComponent(orgId) + '&setting_key=eq.' + encodeURIComponent(key) + '&limit=1'
+      );
+      if (Array.isArray(rows) && rows.length && rows[0].value !== undefined) {
+        return rows[0].value;
+      }
+      return fallback;
+    }
+
+    async function upsertSettingP5_(orgId, key, val, updatedBy) {
+      await restFetch('rest/v1/org_settings?on_conflict=org_id,setting_key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify({
+          org_id: orgId,
+          setting_key: key,
+          value: val,
+          updated_by: String(updatedBy || '')
+        })
+      });
+    }
+
+    async function findMemberByLoginOrNameP5_(orgId, userIdOrName) {
+      var target = String(userIdOrName || '').trim();
+      if (!target) return null;
+      var members = await restSelectAll_(
+        'org_members',
+        'org_id=eq.' + encodeURIComponent(orgId) + '&is_active=eq.true'
+      );
+      return members.find(function (m) {
+        return String(m.login_id || '').trim() === target;
+      }) || members.find(function (m) {
+        return String(m.display_name || '').trim() === target;
+      }) || null;
+    }
+
+    async function tryPatchMemberAndSyncPrefP5_(orgId, member, memberPatch, prefKey, prefField, prefVal, actor) {
+      if (member && member.id) {
+        try {
+          await restFetch('rest/v1/org_members?id=eq.' + encodeURIComponent(member.id), {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify(memberPatch)
+          });
+        } catch (e) {}
+      }
+      var allPrefs = await readSettingP5_(orgId, 'user_profile_prefs', {});
+      var map = (allPrefs && typeof allPrefs === 'object' && !Array.isArray(allPrefs)) ? Object.assign({}, allPrefs) : {};
+      var keys = [prefKey];
+      if (member && member.login_id && keys.indexOf(member.login_id) < 0) keys.push(String(member.login_id).trim());
+      if (member && member.display_name && keys.indexOf(member.display_name) < 0) keys.push(String(member.display_name).trim());
+      keys.forEach(function (k) {
+        if (!k) return;
+        var cur = (map[k] && typeof map[k] === 'object') ? Object.assign({}, map[k]) : {};
+        cur[prefField] = prefVal;
+        cur.updatedAt = new Date().toISOString();
+        map[k] = cur;
+      });
+      await upsertSettingP5_(orgId, 'user_profile_prefs', map, actor || prefKey);
+    }
+
+    async function fallbackToGasP5_(action, params, fallbackMsg) {
+      if (typeof global.callGAS === 'function') {
+        return await global.callGAS(action, params || {}, 1, { forceGAS: true });
+      }
+      throw new Error(fallbackMsg || ('この操作 (' + action + ') には GAS 連携が必要です'));
+    }
+
+    // ---- 1. Machines, Maintenance, Inspections, Refuel (21 actions) ----
+    async function finalizeMachineDisplayWithAll_(orgId, machineObj) {
+      var allRows = await restSelectAll_('machines', 'org_id=eq.' + encodeURIComponent(orgId));
+      var mapped = allRows.map(mapMachineRowToObj_);
+      applyNoukiDisplayNamesByModelCount_(mapped);
+      var hit = mapped.find(function (m) { return String(m.id) === String(machineObj.id); });
+      return hit || machineObj;
+    }
+
+    registerAction('machine_loadAll', async function () {
+      var orgId = await resolveCurrentOrgId_();
+      var encOrg = encodeURIComponent(orgId);
+      var fetched = await Promise.all([
+        restSelectAll_('machines', 'org_id=eq.' + encOrg + '&order=created_at.asc'),
+        restSelectAll_('asset_logs', 'org_id=eq.' + encOrg + '&log_kind=eq.maintenance&order=created_at.asc'),
+        restSelectAll_('asset_logs', 'org_id=eq.' + encOrg + '&log_kind=eq.machine_fuel&order=created_at.asc'),
+        restSelectAll_('fields', 'org_id=eq.' + encOrg),
+        restSelectAll_('org_masters', 'org_id=eq.' + encOrg + '&master_type=eq.location&is_active=eq.true')
+      ]);
+      var machineList = fetched[0].map(mapMachineRowToObj_);
+      applyNoukiDisplayNamesByModelCount_(machineList);
+      var polygons = fetched[3].map(function (f) { return fieldRowToPolygon_(f, [], true); });
+      var locations = fetched[4].map(function (m) { return m.name; });
+      resolveNoukiMachinesHubLocation_(machineList, polygons, locations);
+      var machines = {};
+      machineList.forEach(function (m) {
+        if (m.id) machines[m.id] = m;
+      });
+      var maintenanceRecords = sortAssetLogsChronoP5_(fetched[1]).map(function (r) {
+        var p = (r.payload && typeof r.payload === 'object') ? r.payload : {};
+        return {
+          id: r.legacy_id || r.id,
+          machineId: String(r.asset_id || ''),
+          date: String(r.log_date || '').slice(0, 10),
+          material: p.material != null ? p.material : (r.summary || ''),
+          replaceParts: p.replaceParts != null ? p.replaceParts : '',
+          comment: r.comment || '',
+          photos: Array.isArray(r.photos) ? r.photos : []
+        };
+      });
+      var fuelRecords = sortAssetLogsChronoP5_(fetched[2]).map(function (r) {
+        var p = (r.payload && typeof r.payload === 'object') ? r.payload : {};
+        return {
+          id: r.legacy_id || r.id,
+          machineId: r.asset_id || '',
+          date: r.log_date || '',
+          hourMeter: r.hour_meter != null ? r.hour_meter : '',
+          fuelAmount: r.fuel_amount != null ? r.fuel_amount : '',
+          fuelCanStatus: p.fuelCanStatus != null ? p.fuelCanStatus : (r.summary || ''),
+          capCheck: p.capCheck != null ? p.capCheck : ''
+        };
+      });
+      return { machines: machines, maintenanceRecords: maintenanceRecords, fuelRecords: fuelRecords };
+    });
+
+    registerAction('machine_loadMaintenanceRecords', async function () {
+      var orgId = await resolveCurrentOrgId_();
+      var rows = sortAssetLogsChronoP5_(await restSelectAll_(
+        'asset_logs',
+        'org_id=eq.' + encodeURIComponent(orgId) + '&log_kind=eq.maintenance&order=created_at.asc'
+      ));
+      var maintenanceRecords = rows.map(function (r) {
+        var p = (r.payload && typeof r.payload === 'object') ? r.payload : {};
+        return {
+          id: r.legacy_id || r.id,
+          machineId: String(r.asset_id || ''),
+          date: String(r.log_date || '').slice(0, 10),
+          material: p.material != null ? p.material : (r.summary || ''),
+          replaceParts: p.replaceParts != null ? p.replaceParts : '',
+          comment: r.comment || '',
+          photos: Array.isArray(r.photos) ? r.photos : []
+        };
+      });
+      return { success: true, maintenanceRecords: maintenanceRecords };
+    });
+
+    registerAction('machine_saveMachine', async function (p) {
+      p = p || {};
+      var orgId = await resolveCurrentOrgId_();
+      var id = String(p.id || '').trim();
+      if (!id || id.indexOf('m_') === 0) {
+        id = 'MAC-' + genUuid_().slice(0, 8);
+      }
+      var existingRows = await restFetch(
+        'rest/v1/machines?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(id) + '&limit=1'
+      );
+      var hitRow = (Array.isArray(existingRows) && existingRows.length) ? existingRows[0] : null;
+      var existing = hitRow ? mapMachineRowToObj_(hitRow) : {};
+      var photo1 = p.photo != null ? String(p.photo) : (existing.photo || '');
+      var photo2 = p.photo2 != null ? String(p.photo2) : (existing.photo2 || '');
+      if (p.photoBase64) {
+        var upUrl = await uploadOnePhotoP5_(p.photoBase64, 'machine_photos', 'machines', id);
+        if (upUrl) photo1 = upUrl;
+      }
+      var signName = String(p.signName != null ? p.signName : (existing.signName || '')).trim();
+      var signId = String(p.signId != null ? p.signId : (existing.signId || '')).trim();
+      var rawLoc = String(p.location != null ? p.location : (existing.location || '')).trim();
+      var hubLoc = (rawLoc && rawLoc === signName && signId) ? '' : rawLoc;
+      var curLocName = (p.currentLocName != null) ? String(p.currentLocName).trim() : (p.signName != null ? signName : (existing.currentLocName || signName));
+      var curLocId = (p.currentLocId != null) ? String(p.currentLocId).trim() : (p.signId != null ? signId : (existing.currentLocId || signId));
+      var rawSymp = p.symptoms != null ? String(p.symptoms) : (existing.symptoms || '');
+      var rawParts = p.parts != null ? String(p.parts) : (existing.parts || '');
+      var rawMaint = p.maintenanceContents != null ? String(p.maintenanceContents) : (existing.maintenanceContents || '');
+      var rawFuelChk = p.fuelChecks != null ? String(p.fuelChecks) : (existing.fuelChecks || '');
+      var rawPurch = p.purchaseDate != null ? String(p.purchaseDate) : (existing.purchaseDate || '');
+      var model = String(p.model != null ? p.model : (p.modelType != null ? p.modelType : (existing.model || '')));
+      var model2 = String(p.model2 != null ? p.model2 : (existing.model2 || ''));
+      var mNum = String(p.machineNumber != null ? p.machineNumber : (p.serialNo != null ? p.serialNo : (existing.machineNumber || '')));
+      var group = String(p.group != null ? p.group : (p.mainCategory != null ? p.mainCategory : (existing.group || ''))).trim();
+      var fuel = String(p.fuel != null ? p.fuel : (p.fuelType != null ? p.fuelType : (existing.fuel || '')));
+      var maintSettings = p.maintenanceSettings != null ? p.maintenanceSettings : (existing.maintenanceSettings || []);
+      var photosArr = [].concat(splitUrlTokensP5_(photo1), splitUrlTokensP5_(photo2));
+
+      var dbBody = {
+        org_id: orgId,
+        legacy_id: id,
+        machine_type: String(p.type != null ? p.type : (existing.type || '')).trim(),
+        model: model,
+        machine_number: mNum,
+        machine_group: group,
+        work_category: String(p.workCategory != null ? p.workCategory : (existing.workCategory || '')),
+        fuel_type: fuel,
+        hitch_type: String(p.hitch != null ? p.hitch : (existing.hitch || '')),
+        photos: photosArr,
+        sign_name: signName,
+        sign_id: signId,
+        current_loc_name: curLocName || signName,
+        current_loc_id: curLocId || signId,
+        location_name: hubLoc,
+        status: String(p.status || existing.status || '使用可能'),
+        purchase_date: parseYmdOrNullP5_(rawPurch),
+        compatible_machine_id: String(p.targetMachineIds != null ? p.targetMachineIds : (existing.targetMachineIds || '')),
+        maintenance_settings: Array.isArray(maintSettings) ? { items: maintSettings } : (maintSettings || {}),
+        fuel_checks: splitCsvTokensP5_(rawFuelChk),
+        symptoms: splitCsvTokensP5_(rawSymp),
+        parts: rawParts ? [rawParts] : [],
+        maintenance_candidates: splitCsvTokensP5_(rawMaint),
+        registered_by: String(p.userName != null ? p.userName : (existing.userName || '')),
+        meta: Object.assign({}, (hitRow && hitRow.meta) || {}, {
+          model2: model2,
+          photo: photo1,
+          photo2: photo2,
+          rawSymptoms: rawSymp,
+          rawParts: rawParts,
+          rawMaintContents: rawMaint,
+          rawPurchaseDate: rawPurch,
+          rawFuelChecks: rawFuelChk
+        })
+      };
+      if (hitRow) {
+        await restFetch('rest/v1/machines?id=eq.' + encodeURIComponent(hitRow.id), {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(dbBody)
+        });
+      } else {
+        await restFetch('rest/v1/machines', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(dbBody)
+        });
+      }
+      var machineOut = await finalizeMachineDisplayWithAll_(orgId, mapMachineRowToObj_(dbBody));
+      return { success: true, machine: machineOut };
+    });
+
+    registerAction('machine_saveStatus', async function (p) {
+      p = p || {};
+      var orgId = await resolveCurrentOrgId_();
+      await restFetch(
+        'rest/v1/machines?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(String(p.id || '')),
+        { method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ status: String(p.status || '') }) }
+      );
+      return { success: true };
+    });
+
+    registerAction('machine_saveLocation', async function (p) {
+      p = p || {};
+      if (p.currentLocName != null || p.currentLocId != null || p.signName != null || p.signId != null) {
+        var orgId = await resolveCurrentOrgId_();
+        var patch = {};
+        if (p.currentLocName != null || p.signName != null) {
+          patch.current_loc_name = String(p.currentLocName != null ? p.currentLocName : (p.signName || ''));
+        }
+        if (p.currentLocId != null || p.signId != null) {
+          patch.current_loc_id = String(p.currentLocId != null ? p.currentLocId : (p.signId || ''));
+        }
+        await restFetch(
+          'rest/v1/machines?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(String(p.id || '')),
+          { method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(patch) }
+        );
+      }
+      return { success: true };
+    });
+
+    registerAction('machine_saveMaintenanceSetting', async function () {
+      return { success: true, skipped: true };
+    });
+
+    registerAction('machine_saveMaintenance', async function (p) {
+      p = p || {};
+      var orgId = await resolveCurrentOrgId_();
+      var photoUrls = splitUrlTokensP5_(p.photoUrls || p.photosUrls || '');
+      if (Array.isArray(p.photoUrlList)) {
+        photoUrls = photoUrls.concat(p.photoUrlList.map(String).filter(Boolean));
+      }
+      var photoObjs = Array.isArray(p.photos) ? p.photos : [];
+      for (var i = 0; i < photoObjs.length; i++) {
+        var u = await uploadOnePhotoP5_(photoObjs[i], 'machine_photos', 'asset_logs', p.id);
+        if (u) photoUrls.push(u);
+      }
+      if (p.photoBase64) {
+        var u2 = await uploadOnePhotoP5_(p.photoBase64, 'machine_photos', 'asset_logs', p.id);
+        if (u2) photoUrls.push(u2);
+      }
+      photoUrls = Array.from(new Set(photoUrls.map(function (u) { return String(u || '').trim(); }).filter(Boolean)));
+      var recId = String(p.id || '').trim() || ('maint_' + Date.now() + '_' + genUuid_().slice(0, 4));
+      var existing = await restFetch(
+        'rest/v1/asset_logs?org_id=eq.' + encodeURIComponent(orgId) + '&log_kind=eq.maintenance&legacy_id=eq.' + encodeURIComponent(recId) + '&limit=1'
+      );
+      if (Array.isArray(existing) && existing.length) {
+        var existingPhotos = Array.isArray(existing[0].photos) ? existing[0].photos : [];
+        var mergedPhotos = photoUrls.length ? photoUrls : existingPhotos;
+        await restFetch('rest/v1/asset_logs?id=eq.' + encodeURIComponent(existing[0].id), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            asset_id: String(p.machineId || ''),
+            log_date: String(p.date || '').slice(0, 10),
+            summary: String(p.material || ''),
+            comment: String(p.comment || ''),
+            photos: mergedPhotos,
+            payload: { material: String(p.material || ''), replaceParts: String(p.replaceParts || '') }
+          })
+        });
+        return { success: true, photos: mergedPhotos, updated: true };
+      }
+      await restFetch('rest/v1/asset_logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          org_id: orgId,
+          log_kind: 'maintenance',
+          legacy_id: recId,
+          asset_id: String(p.machineId || ''),
+          asset_type: 'machine',
+          log_date: String(p.date || '').slice(0, 10),
+          summary: String(p.material || ''),
+          comment: String(p.comment || ''),
+          photos: photoUrls,
+          payload: { material: String(p.material || ''), replaceParts: String(p.replaceParts || '') }
+        })
+      });
+      return { success: true, photos: photoUrls };
+    });
+
+    registerAction('machine_saveFuel', async function (p) {
+      p = p || {};
+      var orgId = await resolveCurrentOrgId_();
+      var legacyId = String(p.id || ('mfuel_' + Date.now() + '_' + genUuid_().slice(0, 4)));
+      await restFetch('rest/v1/asset_logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          org_id: orgId,
+          log_kind: 'machine_fuel',
+          legacy_id: legacyId,
+          asset_id: String(p.machineId || ''),
+          asset_type: 'machine',
+          log_date: String(p.date || ''),
+          hour_meter: toNumOrNullP5_(p.hourMeter),
+          fuel_amount: toNumOrNullP5_(p.fuelAmount),
+          summary: String(p.fuelCanStatus || ''),
+          payload: { fuelCanStatus: String(p.fuelCanStatus || ''), capCheck: p.capCheck }
+        })
+      });
+      return { success: true };
+    });
+
+    registerAction('machine_saveInspection', async function (p) {
+      p = p || {};
+      var orgId = await resolveCurrentOrgId_();
+      var id = String(p.id || ('insprec_' + Date.now() + '_' + Math.floor(Math.random() * 1000)));
+      var nowStr = formatJstNowParts_().fullSlash.replace(/\//g, '-') + ':00';
+      var dateStr = String(p.date || formatJstNowParts_().dateDash).slice(0, 10);
+      var rawType = String(p.inspectionType || '').trim();
+      var inspType = (rawType === '定期点検' || rawType === '給油時点検') ? rawType : '始動前点検';
+      var details = typeof p.details === 'string' ? parseJsonMaybe_(p.details, []) : (Array.isArray(p.details) || (p.details && typeof p.details === 'object') ? p.details : []);
+      await restFetch('rest/v1/asset_logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          org_id: orgId,
+          log_kind: 'inspection',
+          legacy_id: id,
+          asset_id: String(p.machineId || ''),
+          asset_name: String(p.machineName || ''),
+          asset_type: String(p.machineType || ''),
+          log_date: dateStr,
+          actor_name: String(p.inspector || ''),
+          hour_meter: toNumOrNullP5_(p.hourMeter),
+          summary: String(p.summary || ''),
+          comment: String(p.comment || ''),
+          photos: [],
+          payload: {
+            abnormalCount: Number(p.abnormalCount) || 0,
+            maintCount: Number(p.maintCount) || 0,
+            details: details,
+            createdAtStr: nowStr,
+            inspectionType: inspType
+          }
+        })
+      });
+      return { success: true, id: id };
+    });
+
+    registerAction('machine_loadInspectionRecords', async function (p) {
+      p = p || {};
+      var orgId = await resolveCurrentOrgId_();
+      var limit = Number(p.limit) || 100;
+      var rows = sortAssetLogsChronoP5_(await restSelectAll_(
+        'asset_logs',
+        'org_id=eq.' + encodeURIComponent(orgId) + '&log_kind=eq.inspection&order=created_at.asc'
+      ));
+      var records = rows.slice(-limit).reverse().map(function (r) {
+        var pl = (r.payload && typeof r.payload === 'object') ? r.payload : {};
+        var t = String(pl.inspectionType || '').trim();
+        return {
+          id: r.legacy_id || r.id,
+          date: String(r.log_date || '').slice(0, 10),
+          inspector: r.actor_name || '',
+          machineId: r.asset_id || '',
+          machineName: r.asset_name || '',
+          machineType: r.asset_type || '',
+          hourMeter: r.hour_meter != null ? r.hour_meter : '',
+          summary: r.summary || '',
+          abnormalCount: Number(pl.abnormalCount) || 0,
+          maintCount: Number(pl.maintCount) || 0,
+          details: pl.details != null ? pl.details : [],
+          comment: r.comment || '',
+          createdAt: pl.createdAtStr || r.created_at || '',
+          inspectionType: (t === '定期点検' || t === '給油時点検') ? t : '始動前点検'
+        };
+      });
+      return { success: true, records: records };
+    });
+
+    registerAction('addMachineToSign', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var newId = 'MAC-' + genUuid_().slice(0, 8);
+      var photo1 = String(params.photo || '');
+      var photo2 = String(params.photo2 || '');
+      if (Array.isArray(params.photoItems)) {
+        var resPh = await resolvePhotoItemsP5_(params.photoItems, 'machine_photos', 'machines', newId);
+        photo1 = resPh.photo;
+        photo2 = resPh.photo2;
+      } else {
+        if (params.photoBase64) {
+          var u1 = await uploadOnePhotoP5_(params.photoBase64, 'machine_photos', 'machines', newId);
+          if (u1) photo1 = u1;
+        } else if (Array.isArray(params.photos) && params.photos[0]) {
+          var u1b = await uploadOnePhotoP5_(params.photos[0], 'machine_photos', 'machines', newId);
+          if (u1b) photo1 = u1b;
+        }
+        if (params.photo2Base64) {
+          var u2 = await uploadOnePhotoP5_(params.photo2Base64, 'machine_photos', 'machines', newId);
+          if (u2) photo2 = u2;
+        } else if (Array.isArray(params.photos) && params.photos[1]) {
+          var u2b = await uploadOnePhotoP5_(params.photos[1], 'machine_photos', 'machines', newId);
+          if (u2b) photo2 = u2b;
+        }
+      }
+      var signName = String(params.signName || '').trim();
+      var signId = String(params.signId || '').trim();
+      var rawLoc = String(params.location || '').trim();
+      var hubLoc = (rawLoc && rawLoc === signName && signId) ? '' : rawLoc;
+      var mType = String(params.type || '').trim();
+      var model = String(params.model || params.modelType || '');
+      var model2 = String(params.model2 || '');
+      var mNum = String(params.machineNumber || params.serialNo || '');
+      var group = String(params.group || '').trim();
+      var dbBody = {
+        org_id: orgId,
+        legacy_id: newId,
+        machine_type: mType,
+        model: model,
+        machine_number: mNum,
+        machine_group: group,
+        work_category: String(params.workCategory || ''),
+        fuel_type: String(params.fuel || params.fuelType || ''),
+        hitch_type: String(params.hitch || ''),
+        photos: [].concat(splitUrlTokensP5_(photo1), splitUrlTokensP5_(photo2)),
+        sign_name: signName,
+        sign_id: signId,
+        current_loc_name: String(params.currentLocName || signName),
+        current_loc_id: String(params.currentLocId || signId),
+        location_name: hubLoc,
+        status: String(params.status || '使用可能'),
+        purchase_date: parseYmdOrNullP5_(params.purchaseDate),
+        compatible_machine_id: String(params.targetMachineIds || ''),
+        maintenance_settings: {},
+        fuel_checks: splitCsvTokensP5_(params.fuelChecks),
+        symptoms: splitCsvTokensP5_(params.symptoms),
+        parts: params.parts ? [String(params.parts)] : [],
+        maintenance_candidates: splitCsvTokensP5_(params.maintenanceContents),
+        registered_by: String(params.userName || ''),
+        meta: {
+          name: String(params.name || ''),
+          model2: model2,
+          photo: photo1,
+          photo2: photo2,
+          rawSymptoms: String(params.symptoms || ''),
+          rawParts: String(params.parts || ''),
+          rawMaintContents: String(params.maintenanceContents || ''),
+          rawPurchaseDate: String(params.purchaseDate || ''),
+          rawFuelChecks: String(params.fuelChecks || '')
+        }
+      };
+      await restFetch('rest/v1/machines', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(dbBody)
+      });
+      var out = await finalizeMachineDisplayWithAll_(orgId, mapMachineRowToObj_(dbBody));
+      await writeLogP5_(orgId, params.userName, '農機新規登録', out.name || params.name || newId, '定位置: ' + signName);
+      return out;
+    });
+
+    registerAction('editMachineInMaster', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var mId = String(params.machineId || '').trim();
+      var rows = await restFetch('rest/v1/machines?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(mId) + '&limit=1');
+      if (!Array.isArray(rows) || !rows.length) throw new Error('指定された農機が見つかりません。');
+      var hitRow = rows[0];
+      var existing = mapMachineRowToObj_(hitRow);
+      var photo1 = existing.photo || '';
+      var photo2 = existing.photo2 || '';
+      if (Array.isArray(params.photoItems)) {
+        var resPh = await resolvePhotoItemsP5_(params.photoItems, 'machine_photos', 'machines', mId);
+        photo1 = resPh.photo;
+        photo2 = resPh.photo2;
+      } else {
+        if (params.clearPhoto) photo1 = '';
+        if (params.clearPhoto2) photo2 = '';
+        if (params.photoBase64) {
+          var u1 = await uploadOnePhotoP5_(params.photoBase64, 'machine_photos', 'machines', mId);
+          if (u1) photo1 = u1;
+        } else if (Array.isArray(params.photos) && params.photos[0] && (params.photos[0].base64 || params.photos[0].photoBase64)) {
+          var u1b = await uploadOnePhotoP5_(params.photos[0], 'machine_photos', 'machines', mId);
+          if (u1b) photo1 = u1b;
+        }
+        if (params.photo2Base64) {
+          var u2 = await uploadOnePhotoP5_(params.photo2Base64, 'machine_photos', 'machines', mId);
+          if (u2) photo2 = u2;
+        } else if (Array.isArray(params.photos) && params.photos[1] && (params.photos[1].base64 || params.photos[1].photoBase64)) {
+          var u2b = await uploadOnePhotoP5_(params.photos[1], 'machine_photos', 'machines', mId);
+          if (u2b) photo2 = u2b;
+        }
+        if (params.photo && !params.photoBase64 && !(params.photos && params.photos[0] && params.photos[0].base64) && !params.clearPhoto) photo1 = String(params.photo);
+        if (params.photo2 && !params.photo2Base64 && !(params.photos && params.photos[1] && params.photos[1].base64) && !params.clearPhoto2) photo2 = String(params.photo2);
+      }
+      var signName = String(params.signName != null ? params.signName : existing.signName).trim();
+      var signId = String(params.signId != null ? params.signId : existing.signId).trim();
+      var rawLoc = String(params.location != null ? params.location : existing.location).trim();
+      var hubLoc = (rawLoc && rawLoc === signName && signId) ? '' : rawLoc;
+      var rawSymp = params.symptoms != null ? String(params.symptoms) : existing.symptoms;
+      var rawParts = params.parts != null ? String(params.parts) : existing.parts;
+      var rawMaint = params.maintenanceContents != null ? String(params.maintenanceContents) : existing.maintenanceContents;
+      var rawFuelChk = params.fuelChecks != null ? String(params.fuelChecks) : existing.fuelChecks;
+      var rawPurch = params.purchaseDate != null ? String(params.purchaseDate) : existing.purchaseDate;
+      var model = String(params.model != null ? params.model : (params.modelType != null ? params.modelType : existing.model));
+      var model2 = String(params.model2 != null ? params.model2 : existing.model2);
+      var mNum = String(params.machineNumber != null ? params.machineNumber : (params.serialNo != null ? params.serialNo : existing.machineNumber));
+      var dbBody = {
+        machine_type: String(params.type != null ? params.type : existing.type).trim(),
+        model: model,
+        machine_number: mNum,
+        machine_group: String(params.group != null ? params.group : existing.group).trim(),
+        work_category: String(params.workCategory != null ? params.workCategory : existing.workCategory),
+        fuel_type: String(params.fuel != null ? params.fuel : (params.fuelType != null ? params.fuelType : existing.fuel)),
+        hitch_type: String(params.hitch != null ? params.hitch : existing.hitch),
+        photos: [].concat(splitUrlTokensP5_(photo1), splitUrlTokensP5_(photo2)),
+        sign_name: signName,
+        sign_id: signId,
+        current_loc_name: String(params.currentLocName != null ? params.currentLocName : existing.currentLocName),
+        current_loc_id: String(params.currentLocId != null ? params.currentLocId : existing.currentLocId),
+        location_name: hubLoc,
+        status: String(params.status != null ? params.status : existing.status),
+        purchase_date: parseYmdOrNullP5_(rawPurch),
+        fuel_checks: splitCsvTokensP5_(rawFuelChk),
+        symptoms: splitCsvTokensP5_(rawSymp),
+        parts: rawParts ? [String(rawParts)] : [],
+        maintenance_candidates: splitCsvTokensP5_(rawMaint),
+        meta: Object.assign({}, (hitRow && hitRow.meta) || {}, {
+          model2: model2,
+          photo: photo1,
+          photo2: photo2,
+          rawSymptoms: rawSymp,
+          rawParts: rawParts,
+          rawMaintContents: rawMaint,
+          rawPurchaseDate: rawPurch,
+          rawFuelChecks: rawFuelChk
+        })
+      };
+      await restFetch('rest/v1/machines?id=eq.' + encodeURIComponent(hitRow.id), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(dbBody)
+      });
+      var patched = Object.assign({}, hitRow, dbBody);
+      var out = await finalizeMachineDisplayWithAll_(orgId, mapMachineRowToObj_(patched));
+      return { success: true, machine: out };
+    });
+
+    registerAction('deleteMachineFromMaster', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var mId = String(params.machineId || '').trim();
+      var rows = await restFetch('rest/v1/machines?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(mId) + '&limit=1');
+      if (!Array.isArray(rows) || !rows.length) throw new Error('指定された農機が見つかりません。');
+      await restFetch('rest/v1/machines?id=eq.' + encodeURIComponent(rows[0].id), { method: 'DELETE' });
+      return true;
+    });
+
+    registerAction('updateMachineLocations', async function (params) {
+      params = params || {};
+      var updates = Array.isArray(params.updates) ? params.updates : [];
+      if (!updates.length) return true;
+      var orgId = await resolveCurrentOrgId_();
+      for (var i = 0; i < updates.length; i++) {
+        var upd = updates[i];
+        if (!upd || !upd.id) continue;
+        await restFetch(
+          'rest/v1/machines?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(String(upd.id)),
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({ current_loc_name: String(upd.signName || ''), current_loc_id: String(upd.signId || '') })
+          }
+        );
+      }
+      return true;
+    });
+
+    var MACHINE_PARTS_MAP_PREFIX_P5_ = '__PARTS_MAP_V1__:';
+    function splitPartsP5_(raw) {
+      return String(raw == null ? '' : raw).split(/[,、]/).map(function (s) { return s.trim(); }).filter(Boolean);
+    }
+    function joinPartsP5_(list) {
+      var seen = {}, out = [];
+      (list || []).forEach(function (s) {
+        var v = String(s || '').trim();
+        if (!v || seen[v]) return;
+        seen[v] = true;
+        out.push(v);
+      });
+      return out.join(',');
+    }
+    function parsePartsMapP5_(raw) {
+      var empty = { common: [], byContent: {} };
+      var s = String(raw == null ? '' : raw).trim();
+      if (!s) return empty;
+      var obj = null;
+      if (s.indexOf(MACHINE_PARTS_MAP_PREFIX_P5_) === 0) obj = parseJsonMaybe_(s.slice(MACHINE_PARTS_MAP_PREFIX_P5_.length), null);
+      else if (s.charAt(0) === '{') obj = parseJsonMaybe_(s, null);
+      if (obj && typeof obj === 'object') {
+        var common = splitPartsP5_(Array.isArray(obj.common) ? obj.common.join(',') : (obj.common || ''));
+        var byContent = {};
+        var src = (obj.byContent && typeof obj.byContent === 'object') ? obj.byContent : {};
+        Object.keys(src).forEach(function (k) {
+          var key = String(k || '').trim();
+          if (!key) return;
+          var lst = splitPartsP5_(Array.isArray(src[k]) ? src[k].join(',') : src[k]);
+          if (lst.length) byContent[key] = lst;
+        });
+        return { common: common, byContent: byContent };
+      }
+      return { common: splitPartsP5_(s), byContent: {} };
+    }
+    function serializePartsMapP5_(map) {
+      var common = splitPartsP5_(Array.isArray(map && map.common) ? map.common.join(',') : ((map && map.common) || ''));
+      var byContent = {};
+      var src = (map && map.byContent && typeof map.byContent === 'object') ? map.byContent : {};
+      Object.keys(src).forEach(function (k) {
+        var key = String(k || '').trim();
+        if (!key) return;
+        var lst = splitPartsP5_(Array.isArray(src[k]) ? src[k].join(',') : src[k]);
+        if (lst.length) byContent[key] = lst;
+      });
+      if (!Object.keys(byContent).length) return joinPartsP5_(common);
+      return MACHINE_PARTS_MAP_PREFIX_P5_ + JSON.stringify({ common: common, byContent: byContent });
+    }
+    function partMatchesContentP5_(partName, contentName) {
+      var part = String(partName || '').replace(/\s+/g, '');
+      var content = String(contentName || '').replace(/\s+/g, '');
+      if (!part || !content || part === content) return false;
+      var subj = content.replace(/交換/g, '');
+      if (!subj) return false;
+      return part.indexOf(subj) >= 0 || (subj.indexOf(part) >= 0 && part.length >= 2);
+    }
+    function applyPartsMutationP5_(raw, params, maintContentsRaw) {
+      var map = parsePartsMapP5_(raw);
+      var content = String(params.contentName || params.contentKey || '').trim();
+      var renameIn = function (list, o, n) {
+        return splitPartsP5_((list || []).map(function (v) { return v === o ? n : v; }).join(','));
+      };
+      if (params.fullParts != null) return String(params.fullParts || '');
+      if (params.oldPart && params.newPart) {
+        if (!content) {
+          map.common = renameIn(map.common, params.oldPart, params.newPart);
+          Object.keys(map.byContent).forEach(function (k) { map.byContent[k] = renameIn(map.byContent[k], params.oldPart, params.newPart); });
+        } else {
+          var inThis = !!(map.byContent[content] && map.byContent[content].indexOf(params.oldPart) >= 0);
+          var inCommon = (map.common || []).indexOf(params.oldPart) >= 0;
+          if (inThis) map.byContent[content] = renameIn(map.byContent[content], params.oldPart, params.newPart);
+          if (inCommon) {
+            map.common = renameIn(map.common, params.oldPart, params.newPart);
+            if (!map.byContent[content]) map.byContent[content] = [];
+            map.byContent[content] = renameIn(map.byContent[content], params.oldPart, params.newPart);
+            if (map.byContent[content].indexOf(params.newPart) < 0) map.byContent[content].push(params.newPart);
+          }
+          if (!inThis && !inCommon) map.common = renameIn(map.common, params.oldPart, params.newPart);
+        }
+        return serializePartsMapP5_(map);
+      }
+      if (params.deletePart) {
+        var delName = String(params.deletePart);
+        if (!content) {
+          map.common = (map.common || []).filter(function (v) { return v !== delName; });
+          Object.keys(map.byContent).forEach(function (k) {
+            map.byContent[k] = (map.byContent[k] || []).filter(function (v) { return v !== delName; });
+            if (!map.byContent[k].length) delete map.byContent[k];
+          });
+        } else {
+          if (map.byContent[content]) {
+            map.byContent[content] = map.byContent[content].filter(function (v) { return v !== delName; });
+            if (!map.byContent[content].length) delete map.byContent[content];
+          }
+          if ((map.common || []).indexOf(delName) >= 0) {
+            map.common = map.common.filter(function (v) { return v !== delName; });
+            splitPartsP5_(maintContentsRaw).forEach(function (c) {
+              if (!c || c === content || !partMatchesContentP5_(delName, c)) return;
+              if (!map.byContent[c]) map.byContent[c] = [];
+              if (map.byContent[c].indexOf(delName) < 0) map.byContent[c].push(delName);
+            });
+          }
+        }
+        return serializePartsMapP5_(map);
+      }
+      if (params.newPart) {
+        var nm = String(params.newPart || '').trim();
+        if (nm) {
+          if (!content) { if (map.common.indexOf(nm) < 0) map.common.push(nm); }
+          else {
+            if (!map.byContent[content]) map.byContent[content] = [];
+            if (map.byContent[content].indexOf(nm) < 0) map.byContent[content].push(nm);
+          }
+        }
+        return serializePartsMapP5_(map);
+      }
+      return serializePartsMapP5_(map);
+    }
+
+    registerAction('addMachinePart', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var rows = await restSelectAll_('machines', 'org_id=eq.' + encodeURIComponent(orgId));
+      var updated = 0;
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var rId = String(r.legacy_id || r.id);
+        var matchId = params.machineId && rId === String(params.machineId);
+        var matchCat = params.category && (String(r.machine_type || '') === String(params.category) || String(r.machine_group || '') === String(params.category));
+        if (matchId || matchCat || (!params.machineId && !params.category)) {
+          var meta = (r.meta && typeof r.meta === 'object') ? Object.assign({}, r.meta) : {};
+          var rawP = meta.rawParts != null ? meta.rawParts : (Array.isArray(r.parts) ? r.parts.join(',') : '');
+          var rawM = meta.rawMaintContents != null ? meta.rawMaintContents : (Array.isArray(r.maintenance_candidates) ? r.maintenance_candidates.join(',') : '');
+          var next = applyPartsMutationP5_(rawP, params, rawM);
+          meta.rawParts = next;
+          await restFetch('rest/v1/machines?id=eq.' + encodeURIComponent(r.id), {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({ parts: next ? [next] : [], meta: meta })
+          });
+          updated++;
+        }
+      }
+      return updated;
+    });
+
+    registerAction('addMachineSymptom', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var rows = await restSelectAll_('machines', 'org_id=eq.' + encodeURIComponent(orgId));
+      var targetType = String(params.machineType || '').trim();
+      if (!targetType && params.machineId && params.syncByType !== false) {
+        var hit = rows.find(function (r) { return String(r.legacy_id || r.id) === String(params.machineId); });
+        if (hit) targetType = String(hit.machine_type || '').trim();
+      }
+      var updated = 0;
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var rId = String(r.legacy_id || r.id);
+        var rType = String(r.machine_type || '').trim();
+        var rGroup = String(r.machine_group || '').trim();
+        var matchId = params.machineId && rId === String(params.machineId);
+        var matchType = targetType && rType === targetType;
+        var matchCat = params.category && (rType === String(params.category) || rGroup === String(params.category));
+        if (!(matchId || matchType || matchCat || (!params.machineId && !params.category && !targetType))) continue;
+        var meta = (r.meta && typeof r.meta === 'object') ? Object.assign({}, r.meta) : {};
+        var curStr = meta.rawSymptoms != null ? String(meta.rawSymptoms) : (Array.isArray(r.symptoms) ? r.symptoms.join(',') : '');
+        var symps = splitCsvTokensP5_(curStr);
+        var changed = false;
+        if (params.fullSymptoms != null) {
+          symps = splitCsvTokensP5_(params.fullSymptoms);
+          curStr = String(params.fullSymptoms || '');
+          changed = true;
+        } else if (params.oldSymptom && params.newSymptom) {
+          var idx = symps.indexOf(params.oldSymptom);
+          if (idx >= 0) { symps[idx] = params.newSymptom; curStr = symps.join(','); changed = true; }
+        } else if (params.deleteSymptom) {
+          symps = symps.filter(function (s) { return s !== params.deleteSymptom; });
+          curStr = symps.join(',');
+          changed = true;
+        } else if (params.newSymptom) {
+          if (symps.indexOf(params.newSymptom) < 0) {
+            symps.push(params.newSymptom);
+            curStr = symps.join(',');
+            changed = true;
+          }
+        }
+        if (changed) {
+          meta.rawSymptoms = curStr;
+          await restFetch('rest/v1/machines?id=eq.' + encodeURIComponent(r.id), {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({ symptoms: symps, meta: meta })
+          });
+          updated++;
+        }
+      }
+      return updated;
+    });
+
+    registerAction('addMachineMaintenanceContent', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var rows = await restSelectAll_('machines', 'org_id=eq.' + encodeURIComponent(orgId));
+      var targetType = String(params.machineType || '').trim();
+      if (!targetType && params.machineId && params.syncByType !== false) {
+        var hit = rows.find(function (r) { return String(r.legacy_id || r.id) === String(params.machineId); });
+        if (hit) targetType = String(hit.machine_type || '').trim();
+      }
+      var updated = 0;
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var rId = String(r.legacy_id || r.id);
+        var rType = String(r.machine_type || '').trim();
+        var matchId = params.machineId && rId === String(params.machineId);
+        var matchType = targetType && rType === targetType;
+        if (!matchId && !matchType) continue;
+        var meta = (r.meta && typeof r.meta === 'object') ? Object.assign({}, r.meta) : {};
+        var curStr = meta.rawMaintContents != null ? String(meta.rawMaintContents) : (Array.isArray(r.maintenance_candidates) ? r.maintenance_candidates.join(',') : '');
+        var items = splitCsvTokensP5_(curStr);
+        var changed = false;
+        if (params.fullContents != null) {
+          items = splitCsvTokensP5_(params.fullContents);
+          curStr = String(params.fullContents || '');
+          changed = true;
+        } else if (params.oldContent && params.newContent) {
+          var at = items.indexOf(params.oldContent);
+          if (at >= 0) { items[at] = params.newContent; curStr = items.join(','); changed = true; }
+        } else if (params.deleteContent) {
+          items = items.filter(function (s) { return s !== params.deleteContent; });
+          curStr = items.join(',');
+          changed = true;
+        } else if (params.newContent) {
+          if (items.indexOf(params.newContent) < 0) {
+            items.push(params.newContent);
+            curStr = items.join(',');
+            changed = true;
+          }
+        }
+        if (changed) {
+          meta.rawMaintContents = curStr;
+          await restFetch('rest/v1/machines?id=eq.' + encodeURIComponent(r.id), {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({ maintenance_candidates: items, meta: meta })
+          });
+          updated++;
+        }
+      }
+      return updated;
+    });
+
+    registerAction('addMaintenanceContent', async function (params) {
+      var name = String((params && (params.name || params.content)) || '').trim();
+      if (!name) return { success: false, message: '整備内容を入力してください' };
+      if (name.length > 80) return { success: false, message: '整備内容は80文字以内で入力してください' };
+      var orgId = await resolveCurrentOrgId_();
+      var rows = await restSelectAll_(
+        'org_masters',
+        'org_id=eq.' + encodeURIComponent(orgId) + '&master_type=eq.maintenance_content&is_active=eq.true&order=sort_order.asc'
+      );
+      var items = rows.map(function (r) { return String(r.name || '').trim(); }).filter(Boolean);
+      var exists = items.indexOf(name) >= 0;
+      if (!exists) {
+        await restFetch('rest/v1/org_masters', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            org_id: orgId, master_type: 'maintenance_content', legacy_id: 'maint_content_' + name,
+            name: name, sort_order: items.length + 1, is_active: true, data: { name: name }
+          })
+        });
+        items.push(name);
+      }
+      return { success: true, message: exists ? '既に登録されています' : '整備内容を追加しました', items: items };
+    });
+
+    registerAction('saveRefuelRecord', async function (p) {
+      p = p || {};
+      var orgId = await resolveCurrentOrgId_();
+      var legacyId = 'refuel_' + Date.now() + '_' + genUuid_().slice(0, 6);
+      await restFetch('rest/v1/asset_logs', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          org_id: orgId, log_kind: 'refuel', legacy_id: legacyId,
+          asset_id: String(p.machineId || ''), asset_name: String(p.machineName || ''), asset_type: 'machine',
+          log_date: String(p.date || ''), actor_name: String(p.userName || ''),
+          hour_meter: toNumOrNullP5_(p.hourMeter), fuel_amount: toNumOrNullP5_(p.amount),
+          summary: String(p.attachment || ''), comment: '', photos: [],
+          payload: {
+            attachment: String(p.attachment || ''),
+            cap: p.cap ? '確認済' : '', oil: p.oil ? '確認済' : '', net: p.net ? '確認済' : '',
+            water: p.water ? '確認済' : '', chainCover: p.chainCover ? '確認済' : '', rotaryClaw: p.rotaryClaw ? '確認済' : ''
+          }
+        })
+      });
+      return true;
+    });
+
+    registerAction('getRefuelHistory', async function () {
+      var orgId = await resolveCurrentOrgId_();
+      var rows = sortAssetLogsChronoP5_(await restSelectAll_(
+        'asset_logs',
+        'org_id=eq.' + encodeURIComponent(orgId) + '&log_kind=eq.refuel&order=created_at.asc'
+      ));
+      return rows.filter(function (r) { return !!String(r.asset_id || '').trim(); }).map(function (r) {
+        return {
+          machineName: String(r.asset_name || '-'),
+          date: r.log_date || '',
+          amount: r.fuel_amount != null ? r.fuel_amount : '',
+          hourMeter: r.hour_meter != null ? r.hour_meter : '',
+          user: String(r.actor_name || '-')
+        };
+      }).reverse().slice(0, 30);
+    });
+
+    registerAction('getMachineLastHourMeters', async function () {
+      var orgId = await resolveCurrentOrgId_();
+      var rows = sortAssetLogsChronoP5_(await restSelectAll_(
+        'asset_logs',
+        'org_id=eq.' + encodeURIComponent(orgId) + '&log_kind=eq.refuel&order=created_at.asc'
+      ));
+      var res = {};
+      rows.forEach(function (r) {
+        if (r.asset_id && r.hour_meter != null && r.hour_meter !== '') {
+          res[r.asset_id] = r.hour_meter;
+        }
+      });
+      return res;
+    });
+
+    // ---- 2. Vehicles (5 actions) ----
+    registerAction('vehicle_loadAll', async function () {
+      var orgId = await resolveCurrentOrgId_();
+      var rows = await restSelectAll_('vehicles', 'org_id=eq.' + encodeURIComponent(orgId) + '&order=created_at.asc');
+      var vehicles = {};
+      rows.forEach(function (r) {
+        var v = mapVehicleRowToObj_(r);
+        if (v.id) vehicles[v.id] = v;
+      });
+      return { vehicles: vehicles };
+    });
+
+    registerAction('vehicle_saveVehicle', async function (p) {
+      p = p || {};
+      var orgId = await resolveCurrentOrgId_();
+      var vId = String(p.id || '').trim();
+      var existingRows = vId
+        ? await restFetch('rest/v1/vehicles?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(vId) + '&limit=1')
+        : [];
+      var hitRow = (Array.isArray(existingRows) && existingRows.length) ? existingRows[0] : null;
+      var existing = hitRow ? mapVehicleRowToObj_(hitRow) : {};
+      var photo1 = existing.photo || '';
+      var photo2 = existing.photo2 || '';
+      if (Array.isArray(p.photoItems)) {
+        var resPh = await resolvePhotoItemsP5_(p.photoItems, 'vehicle_photos', 'vehicles', vId);
+        photo1 = resPh.photo;
+        photo2 = resPh.photo2;
+      } else {
+        if (p.clearPhoto) photo1 = '';
+        else if (p.photo && !p.photoBase64) photo1 = String(p.photo);
+        if (p.photoBase64) {
+          var up1 = await uploadOnePhotoP5_(p.photoBase64, 'vehicle_photos', 'vehicles', vId);
+          if (up1) photo1 = up1;
+        }
+        if (p.photo2 != null) photo2 = String(p.photo2 || '').trim();
+      }
+      var mainCat = String(p.mainCategory || p.group || '').trim();
+      var vType = String(p.vehicleType || p.type || '').trim();
+      var vNum = String(p.vehicleNumber || p.machineNumber || '').trim();
+      var driveType = String(p.driveType || '').trim();
+      if (!driveType) {
+        if (mainCat === '作業機') driveType = '作業車両';
+        else if (mainCat === '自動車') driveType = '移動車両';
+      }
+      var signNameVal = p.signName != null ? String(p.signName).trim() : (existing.signName || '');
+      var signIdVal = p.signId != null ? String(p.signId).trim() : (existing.signId || '');
+      var rawFuelChk = p.fuelChecks != null ? String(p.fuelChecks) : (existing.fuelChecks || '');
+      var body = {
+        org_id: orgId,
+        legacy_id: vId || ('VEH-' + genUuid_().slice(0, 8)),
+        plate_number: String(p.plateNumber || ''),
+        photos: [].concat(splitUrlTokensP5_(photo1), splitUrlTokensP5_(photo2)),
+        mileage: (p.mileage === 0 || p.mileage) ? toNumOrNullP5_(p.mileage) : null,
+        drive_type: driveType,
+        registration_date: String(p.registrationDate || ''),
+        status: String(p.status || existing.status || '使用可能'),
+        lat: (p.lat === 0 || p.lat) ? toNumOrNullP5_(p.lat) : toNumOrNullP5_(existing.lat),
+        lng: (p.lng === 0 || p.lng) ? toNumOrNullP5_(p.lng) : toNumOrNullP5_(existing.lng),
+        main_category: mainCat,
+        vehicle_type: vType,
+        vehicle_number: vNum,
+        model: String(p.model || '').trim(),
+        fuel_checks: splitCsvTokensP5_(rawFuelChk),
+        location_name: p.location != null ? String(p.location).trim() : (existing.location || ''),
+        sign_name: signNameVal,
+        sign_id: signIdVal,
+        current_loc_name: p.currentLocName != null ? String(p.currentLocName).trim() : (existing.currentLocName || signNameVal),
+        current_loc_id: p.currentLocId != null ? String(p.currentLocId).trim() : (existing.currentLocId || signIdVal),
+        meta: Object.assign({}, (hitRow && hitRow.meta) || {}, { photo: photo1, photo2: photo2, rawFuelChecks: rawFuelChk })
+      };
+      if (hitRow) {
+        await restFetch('rest/v1/vehicles?id=eq.' + encodeURIComponent(hitRow.id), {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(body)
+        });
+      } else {
+        await restFetch('rest/v1/vehicles', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(body)
+        });
+      }
+      return { success: true, photo: photo1, photo2: photo2 };
+    });
+
+    registerAction('vehicle_deleteVehicle', async function (p) {
+      p = p || {};
+      var orgId = await resolveCurrentOrgId_();
+      await restFetch('rest/v1/vehicles?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(String(p.id || '')), { method: 'DELETE' });
+      return { success: true };
+    });
+
+    registerAction('vehicle_saveLocation', async function (p) {
+      p = p || {};
+      var orgId = await resolveCurrentOrgId_();
+      await restFetch('rest/v1/vehicles?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(String(p.id || '')), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ lat: toNumOrNullP5_(p.lat), lng: toNumOrNullP5_(p.lng) })
+      });
+      return { success: true };
+    });
+
+    registerAction('vehicle_saveStatus', async function (p) {
+      p = p || {};
+      var orgId = await resolveCurrentOrgId_();
+      await restFetch('rest/v1/vehicles?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(String(p.id || '')), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ status: String(p.status || '使用可能') })
+      });
+      return { success: true };
+    });
+
+    // ---- 3. Tools & Tool Usage (6 actions) ----
+    registerAction('addToolToMaster', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var partsNow = formatJstNowParts_();
+      var id = 'TL-' + partsNow.dateDash.slice(5).replace('-', '') + partsNow.timeHm.replace(':', '') + Math.floor(Math.random() * 1000);
+      var photoUrl = params.photoBase64 ? await uploadOnePhotoP5_(params.photoBase64, 'tool_photos', 'tools', id) : '';
+      var status = '使用可';
+      var dateStr = String(params.date || partsNow.dateSlash);
+      await restFetch('rest/v1/tools', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          org_id: orgId, legacy_id: id, registered_date: dateStr,
+          name: String(params.name || ''), registration_number: String(params.regNumber || ''),
+          work_category: String(params.works || ''), photos: photoUrl ? [photoUrl] : [],
+          status: status, sign_name: String(params.signName || ''), sign_id: String(params.signId || ''),
+          registered_by: String(params.userName || ''), meta: { photoUrl: photoUrl }
+        })
+      });
+      await writeLogP5_(orgId, params.userName, '道具登録', params.name, '対象: ' + (params.signName || ''));
+      return {
+        id: id, date: dateStr, name: params.name, regNumber: params.regNumber,
+        workTypes: params.works, url: photoUrl, status: status,
+        signName: params.signName, signId: params.signId
+      };
+    });
+
+    registerAction('editToolInMaster', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var rows = await restFetch('rest/v1/tools?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(String(params.toolId || '')) + '&limit=1');
+      if (!Array.isArray(rows) || !rows.length) throw new Error('指定された道具が見つかりません。');
+      await restFetch('rest/v1/tools?id=eq.' + encodeURIComponent(rows[0].id), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          registered_date: String(params.date || ''), name: String(params.name || ''),
+          registration_number: String(params.regNumber || ''), work_category: String(params.works || '')
+        })
+      });
+      await writeLogP5_(orgId, params.userName, '道具編集', params.name, '番号: ' + (params.regNumber || ''));
+      return true;
+    });
+
+    registerAction('deleteToolFromMaster', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var rows = await restFetch('rest/v1/tools?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(String(params.toolId || '')) + '&limit=1');
+      if (!Array.isArray(rows) || !rows.length) throw new Error('指定された道具が見つかりません。');
+      var toolName = rows[0].name || '';
+      await restFetch('rest/v1/tools?id=eq.' + encodeURIComponent(rows[0].id), { method: 'DELETE' });
+      await writeLogP5_(orgId, params.userName, '道具削除', toolName, 'マスタから削除');
+      return true;
+    });
+
+    registerAction('updateToolStatus', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var rows = await restFetch('rest/v1/tools?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(String(params.toolId || '')) + '&limit=1');
+      if (!Array.isArray(rows) || !rows.length) throw new Error('指定された道具が見つかりません。');
+      var tool = rows[0];
+      var newStatus = String(params.newStatus || '');
+      var uname = String(params.userName || '');
+      await restFetch('rest/v1/tools?id=eq.' + encodeURIComponent(tool.id), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      var dateStr = formatJstNowParts_().fullSlash;
+      var actionLog = '【' + newStatus + '】へ変更 (操作者: ' + uname + ')';
+      await restFetch('rest/v1/asset_logs', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          org_id: orgId, log_kind: 'tool_usage', legacy_id: 'tool_log_' + Date.now() + '_' + genUuid_().slice(0, 6),
+          asset_id: String(tool.legacy_id || tool.id), asset_name: String(tool.name || ''), asset_type: 'tool',
+          log_date: dateStr, actor_name: uname, summary: newStatus, comment: actionLog,
+          photos: Array.isArray(tool.photos) ? tool.photos : [],
+          payload: {
+            regNumber: tool.registration_number || '', actionLog: actionLog,
+            status: newStatus, signName: tool.sign_name || '', signId: tool.sign_id || ''
+          }
+        })
+      });
+      await writeLogP5_(orgId, uname, '道具状態更新', tool.name, newStatus + 'に変更');
+      return true;
+    });
+
+    registerAction('updateToolLocations', async function (params) {
+      params = params || {};
+      var updates = Array.isArray(params.updates) ? params.updates : [];
+      var orgId = await resolveCurrentOrgId_();
+      for (var i = 0; i < updates.length; i++) {
+        var upd = updates[i];
+        if (!upd || !upd.id) continue;
+        await restFetch('rest/v1/tools?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(String(upd.id)), {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({ sign_name: String(upd.signName || ''), sign_id: String(upd.signId || '') })
+        });
+      }
+      return true;
+    });
+
+    registerAction('getToolUsageHistory', async function (params) {
+      var userName = String((params && params.userName) || '').trim();
+      if (!userName) return { success: true, usageRecords: [] };
+      var orgId = await resolveCurrentOrgId_();
+      var rows = sortAssetLogsChronoP5_(await restSelectAll_(
+        'asset_logs',
+        'org_id=eq.' + encodeURIComponent(orgId) + '&log_kind=eq.tool_usage&order=created_at.asc'
+      ));
+      var marker = '(操作者: ' + userName + ')';
+      var usageRecords = [];
+      rows.forEach(function (r) {
+        var pl = (r.payload && typeof r.payload === 'object') ? r.payload : {};
+        var status = String(pl.status || r.summary || '').trim();
+        var actionLog = String(pl.actionLog || r.comment || '');
+        if (status !== '貸出中' || actionLog.indexOf(marker) < 0) return;
+        usageRecords.push({
+          toolId: String(r.asset_id || ''),
+          date: String(r.log_date || ''),
+          name: String(r.asset_name || '道具'),
+          regNumber: String(pl.regNumber || '')
+        });
+      });
+      return { success: true, usageRecords: usageRecords };
+    });
+
+    // ---- 4. Materials (3 actions) ----
+    registerAction('addMaterialToSign', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var newId = 'MAT-' + genUuid_().slice(0, 8);
+      var photosIn = Array.isArray(params.photos) ? params.photos : [];
+      var p1 = photosIn[0] ? await uploadOnePhotoP5_(photosIn[0], 'material_photos', 'materials', newId) : '';
+      var p2 = photosIn[1] ? await uploadOnePhotoP5_(photosIn[1], 'material_photos', 'materials', newId) : '';
+      var initStock = parseInt(params.initialStock, 10) || 0;
+      await restFetch('rest/v1/materials', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          org_id: orgId, legacy_id: newId, name: String(params.name || ''), work_category: '',
+          capacity_size: String(params.size || ''), capacity_unit: String(params.volUnit || ''),
+          inventory_unit: String(params.stockUnit || ''), photos: [p1, p2].filter(Boolean),
+          sign_name: String(params.signName || ''), sign_id: String(params.signId || ''),
+          stock_status: String(initStock), registered_by: String(params.userName || ''),
+          meta: { stock: initStock, photo1: p1, photo2: p2 }
+        })
+      });
+      if (initStock > 0) {
+        await restFetch('rest/v1/inventory_logs', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            org_id: orgId, changed_at: new Date().toISOString(), recorder_name: String(params.userName || ''),
+            item_legacy_id: newId, item_name: String(params.name || ''), qty_delta: initStock,
+            operation: '初期入庫', sign_id: String(params.signId || ''), sign_name: String(params.signName || ''),
+            payload: { changedAtStr: formatJstNowParts_().fullSlash + ':00' }
+          })
+        });
+      }
+      await writeLogP5_(orgId, params.userName, '資材新規登録', params.name, '対象看板: ' + (params.signName || ''));
+      return {
+        id: newId, name: params.name, workCategory: '', size: params.size, volUnit: params.volUnit,
+        stockUnit: params.stockUnit, signName: params.signName, signId: params.signId, stock: initStock
+      };
+    });
+
+    registerAction('editMaterial', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var rows = await restFetch('rest/v1/materials?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(String(params.id || '')) + '&limit=1');
+      if (!Array.isArray(rows) || !rows.length) return false;
+      await restFetch('rest/v1/materials?id=eq.' + encodeURIComponent(rows[0].id), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          name: String(params.name || ''), work_category: String(params.workCategory || ''),
+          capacity_size: String(params.size || ''), capacity_unit: String(params.volUnit || ''),
+          inventory_unit: String(params.stockUnit || '')
+        })
+      });
+      return true;
+    });
+
+    registerAction('updateMaterialLocations', async function (params) {
+      params = params || {};
+      var updates = Array.isArray(params.updates) ? params.updates : [];
+      var orgId = await resolveCurrentOrgId_();
+      for (var i = 0; i < updates.length; i++) {
+        var upd = updates[i];
+        if (!upd || !upd.id) continue;
+        await restFetch('rest/v1/materials?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(String(upd.id)), {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({ sign_name: String(upd.signName || ''), sign_id: String(upd.signId || '') })
+        });
+      }
+      return true;
+    });
+
+    // ---- 5. Manuals (3 actions) ----
+    registerAction('saveManualData', async function (params) {
+      try {
+        var manual = (params && params.manual) ? params.manual : params;
+        if (!manual || !manual.id) return { success: false, message: '無効なデータ' };
+        var orgId = await resolveCurrentOrgId_();
+        var crops = Array.isArray(manual.crops)
+          ? manual.crops.map(function (x) { return String(x || '').trim(); }).filter(Boolean)
+          : String(manual.crop || '').split(/[,、]/).map(function (x) { return x.trim(); }).filter(Boolean);
+        var linkedWork = {
+          workNames: Array.isArray(manual.workNames) ? manual.workNames : (manual.workNames ? [manual.workNames] : []),
+          category: manual.category || '',
+          crops: crops
+        };
+        var photos = [];
+        var inPhotos = Array.isArray(manual.photos) ? manual.photos : [];
+        for (var i = 0; i < inPhotos.length; i++) {
+          var pItem = inPhotos[i];
+          if (typeof pItem === 'string' && pItem.indexOf('data:') === 0) {
+            photos.push(await uploadOnePhotoP5_(pItem, 'manual_photos', 'manuals', manual.id));
+          } else if (pItem && typeof pItem === 'object' && pItem.url && String(pItem.url).indexOf('data:') === 0) {
+            photos.push(Object.assign({}, pItem, { url: await uploadOnePhotoP5_(pItem.url, 'manual_photos', 'manuals', manual.id) }));
+          } else {
+            photos.push(pItem);
+          }
+        }
+        var steps = [];
+        var inSteps = Array.isArray(manual.steps) ? manual.steps : [];
+        for (var j = 0; j < inSteps.length; j++) {
+          var st = inSteps[j];
+          if (st && typeof st === 'object') {
+            var copy = Object.assign({}, st);
+            var keys = ['photo', 'image', 'photoUrl', 'url'];
+            for (var ki = 0; ki < keys.length; ki++) {
+              var k = keys[ki];
+              if (copy[k] && typeof copy[k] === 'string' && copy[k].indexOf('data:') === 0) {
+                copy[k] = await uploadOnePhotoP5_(copy[k], 'manual_photos', 'manuals', manual.id);
+              }
+            }
+            steps.push(copy);
+          } else {
+            steps.push(st);
+          }
+        }
+        var rows = await restFetch('rest/v1/manuals?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(String(manual.id)) + '&limit=1');
+        var body = {
+          org_id: orgId, legacy_id: String(manual.id), title: String(manual.title || ''),
+          linked_work: linkedWork, caution: String(manual.notice || ''), steps: steps, photos: photos
+        };
+        if (Array.isArray(rows) && rows.length) {
+          await restFetch('rest/v1/manuals?id=eq.' + encodeURIComponent(rows[0].id), {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(body)
+          });
+        } else {
+          await restFetch('rest/v1/manuals', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(body)
+          });
+        }
+        return { success: true, id: manual.id };
+      } catch (e) {
+        return { success: false, message: e.message };
+      }
+    });
+
+    registerAction('getManualList', async function () {
+      try {
+        var orgId = await resolveCurrentOrgId_();
+        var rows = await restSelectAll_('manuals', 'org_id=eq.' + encodeURIComponent(orgId) + '&order=created_at.asc');
+        var manuals = rows.map(function (r) {
+          var lw = (r.linked_work && typeof r.linked_work === 'object') ? r.linked_work : {};
+          return {
+            id: String(r.legacy_id || r.id),
+            title: String(r.title || ''),
+            workNames: Array.isArray(lw.workNames) ? lw.workNames : [],
+            category: String(lw.category || ''),
+            crops: Array.isArray(lw.crops) ? lw.crops : [],
+            notice: String(r.caution || ''),
+            steps: Array.isArray(r.steps) ? r.steps : [],
+            photos: Array.isArray(r.photos) ? r.photos : [],
+            updatedAt: String(r.updated_at || '')
+          };
+        });
+        return { success: true, manuals: manuals };
+      } catch (e) {
+        return { success: false, manuals: [], message: e.message };
+      }
+    });
+
+    registerAction('deleteManualData', async function (params) {
+      try {
+        var orgId = await resolveCurrentOrgId_();
+        var manualId = String((params && params.manualId) || '').trim();
+        if (manualId) {
+          await restFetch('rest/v1/manuals?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(manualId), { method: 'DELETE' });
+        }
+        return { success: true };
+      } catch (e) {
+        return { success: false, message: e.message };
+      }
+    });
+
+    // ---- 6. Idea Board (5 actions) ----
+    var DEFAULT_IDEA_CATS_P5_ = ['機械', '栽培', '運営', '販売'];
+    function mapIdeaRowP5_(r) {
+      return {
+        id: String(r.legacy_id || r.id || ''),
+        author: String(r.author_name || ''),
+        date: String(r.posted_date || ''),
+        category: String(r.category || ''),
+        content: String(r.content || ''),
+        status: String(r.status || 'idea'),
+        rejectReason: String(r.discard_reason || ''),
+        memos: Array.isArray(r.memos) ? r.memos : [],
+        history: Array.isArray(r.history) ? r.history : [],
+        updatedBy: String(r.updated_by || ''),
+        updatedAt: formatIsoJstHmP5_(r.updated_at || ''),
+        issue: String(r.issue || '')
+      };
+    }
+
+    async function listIdeaCategoriesP5_(orgId) {
+      var rows = await restSelectAll_(
+        'org_masters',
+        'org_id=eq.' + encodeURIComponent(orgId) + '&master_type=eq.idea_category&is_active=eq.true&order=sort_order.asc'
+      );
+      var names = DEFAULT_IDEA_CATS_P5_.slice();
+      rows.forEach(function (r) {
+        var n = String(r.name || '').trim();
+        if (n && names.indexOf(n) < 0) names.push(n);
+      });
+      return names;
+    }
+
+    registerAction('ideaBoard_list', async function () {
+      var orgId = await resolveCurrentOrgId_();
+      var fetched = await Promise.all([
+        restSelectAll_('idea_board', 'org_id=eq.' + encodeURIComponent(orgId)),
+        listIdeaCategoriesP5_(orgId)
+      ]);
+      var items = fetched[0].map(mapIdeaRowP5_).sort(function (a, b) {
+        return String(b.date || '').localeCompare(String(a.date || '')) || String(b.id).localeCompare(String(a.id));
+      });
+      return { success: true, items: items, categories: fetched[1] };
+    });
+
+    registerAction('ideaBoard_save', async function (params) {
+      params = params || {};
+      var user = String(params.userName || '').trim() || '不明';
+      var content = String(params.content || '').trim();
+      if (!content) return { success: false, message: '内容を入力してください' };
+      var category = String(params.category || '').trim();
+      if (!category) return { success: false, message: 'カテゴリを選択してください' };
+      var author = String(params.author || user).trim();
+      var parts = formatJstNowParts_();
+      var dateYmd = String(params.date || '').trim() || parts.dateDash;
+      var issue = String(params.issue || '').trim();
+      var id = 'IDEA_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      var history = [{ at: parts.fullSlash, by: author, from: '', to: 'idea', note: '登録' }];
+      var orgId = await resolveCurrentOrgId_();
+      var inserted = await restFetch('rest/v1/idea_board', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify({
+          org_id: orgId, legacy_id: id, author_name: author, posted_date: dateYmd,
+          category: category, issue: issue, content: content, status: 'idea',
+          discard_reason: '', memos: [], history: history, updated_by: author
+        })
+      });
+      await writeLogP5_(orgId, author, 'アイデア登録', category, content.slice(0, 80));
+      var row = Array.isArray(inserted) && inserted[0] ? inserted[0] : {
+        legacy_id: id, author_name: author, posted_date: dateYmd, category: category,
+        issue: issue, content: content, status: 'idea', discard_reason: '', memos: [], history: history,
+        updated_by: author, updated_at: parts.fullSlash
+      };
+      return { success: true, item: mapIdeaRowP5_(row) };
+    });
+
+    registerAction('ideaBoard_setStatus', async function (params) {
+      params = params || {};
+      var id = String(params.id || '').trim();
+      var to = String(params.status || '').trim();
+      var allowed = { idea: 1, review: 1, running: 1, rejected: 1 };
+      if (!id || !allowed[to]) return { success: false, message: '対象または進捗が不正です' };
+      var orgId = await resolveCurrentOrgId_();
+      var rows = await restFetch('rest/v1/idea_board?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(id) + '&limit=1');
+      if (!Array.isArray(rows) || !rows.length) return { success: false, message: 'アイデアが見つかりません' };
+      var cur = rows[0];
+      var from = String(cur.status || 'idea');
+      var user = String(params.userName || '').trim() || '不明';
+      var history = Array.isArray(cur.history) ? cur.history.slice() : [];
+      if (from !== to) {
+        history.push({ at: formatJstNowParts_().fullSlash, by: user, from: from, to: to, note: to === 'rejected' ? '廃案' : '' });
+      }
+      var rejectReason = to === 'rejected'
+        ? String(params.rejectReason || cur.discard_reason || '')
+        : ((to === 'review' || to === 'idea' || to === 'running') ? String(cur.discard_reason || '') : '');
+      var updated = await restFetch('rest/v1/idea_board?id=eq.' + encodeURIComponent(cur.id), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify({ status: to, discard_reason: rejectReason, history: history, updated_by: user })
+      });
+      await writeLogP5_(orgId, user, 'アイデア進捗', id, from + '→' + to);
+      return { success: true, item: mapIdeaRowP5_(Array.isArray(updated) && updated[0] ? updated[0] : Object.assign({}, cur, { status: to, discard_reason: rejectReason, history: history, updated_by: user })) };
+    });
+
+    registerAction('ideaBoard_addMemo', async function (params) {
+      params = params || {};
+      var id = String(params.id || '').trim();
+      var text = String(params.text || '').trim();
+      if (!id || !text) return { success: false, message: 'メモを入力してください' };
+      var orgId = await resolveCurrentOrgId_();
+      var rows = await restFetch('rest/v1/idea_board?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(id) + '&limit=1');
+      if (!Array.isArray(rows) || !rows.length) return { success: false, message: 'アイデアが見つかりません' };
+      var cur = rows[0];
+      var memos = Array.isArray(cur.memos) ? cur.memos.slice() : [];
+      var user = String(params.userName || '').trim() || '不明';
+      memos.push({ at: formatJstNowParts_().fullSlash, by: user, text: text });
+      var updated = await restFetch('rest/v1/idea_board?id=eq.' + encodeURIComponent(cur.id), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify({ memos: memos, updated_by: user })
+      });
+      await writeLogP5_(orgId, user, 'アイデアメモ', id, text.slice(0, 80));
+      return { success: true, item: mapIdeaRowP5_(Array.isArray(updated) && updated[0] ? updated[0] : Object.assign({}, cur, { memos: memos, updated_by: user })) };
+    });
+
+    registerAction('ideaBoard_addCategory', async function (params) {
+      params = params || {};
+      var name = String(params.name || '').trim();
+      if (!name) return { success: false, message: 'カテゴリ名を入力してください' };
+      var orgId = await resolveCurrentOrgId_();
+      var list = await listIdeaCategoriesP5_(orgId);
+      if (list.indexOf(name) >= 0) return { success: true, categories: list };
+      await restFetch('rest/v1/org_masters', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          org_id: orgId, master_type: 'idea_category', legacy_id: 'ideacat_' + name,
+          name: name, sort_order: list.length + 1, is_active: true, data: { name: name }
+        })
+      });
+      await writeLogP5_(orgId, String(params.userName || ''), 'アイデアカテゴリ追加', name, '');
+      return { success: true, categories: await listIdeaCategoriesP5_(orgId) };
+    });
+
+    // ---- 7. Plan Board (1 action) ----
+    async function runPlanBoardOp_(orgId, params) {
+      params = params || {};
+      var action = String(params.boardAction || '');
+      if (action === 'batch') {
+        var ops = Array.isArray(params.ops) ? params.ops : [];
+        var results = [];
+        var ok = true;
+        for (var i = 0; i < ops.length; i++) {
+          var op = Object.assign({}, ops[i] || {});
+          var sub = op.action;
+          delete op.action;
+          try {
+            results.push(await runPlanBoardOp_(orgId, Object.assign({ boardAction: sub }, op)));
+          } catch (err) {
+            ok = false;
+            results.push({ error: true, message: String((err && err.message) || err) });
+          }
+        }
+        return { success: ok, results: results };
+      }
+      if (action === 'addConfigRecord') return { success: true };
+      if (action === 'getFolderFileItems') {
+        var folder = String(params.folder || '');
+        var file = String(params.file || '');
+        var rows = await restSelectAll_(
+          'plan_board',
+          'org_id=eq.' + encodeURIComponent(orgId) + '&folder_name=eq.' + encodeURIComponent(folder) + '&file_name=eq.' + encodeURIComponent(file) + '&order=created_at.asc'
+        );
+        var groups = {};
+        var order = [];
+        rows.forEach(function (r) {
+          var id = String(r.legacy_id || r.id || '').trim();
+          if (!id) return;
+          if (!groups[id]) { groups[id] = []; order.push(id); }
+          groups[id].push({ n: Number(r.split_key) || 0, content: String(r.content || '') });
+        });
+        return order.map(function (id) {
+          groups[id].sort(function (a, b) { return a.n - b.n; });
+          return { id: id, folder: folder, file: file, content: groups[id].map(function (p) { return p.content; }).join('') };
+        });
+      }
+      if (action === 'deleteDataRecord') {
+        var delId = String(params.id || '').trim();
+        if (!delId) return { success: true };
+        var isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(delId);
+        var filter = isUuid
+          ? ('or=(legacy_id.eq.' + encodeURIComponent(delId) + ',id.eq.' + encodeURIComponent(delId) + ')')
+          : ('legacy_id=eq.' + encodeURIComponent(delId));
+        await restFetch('rest/v1/plan_board?org_id=eq.' + encodeURIComponent(orgId) + '&' + filter, { method: 'DELETE' });
+        return { success: true };
+      }
+      if (action === 'addDataRecord') {
+        var newId = genUuid_();
+        await restFetch('rest/v1/plan_board', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            org_id: orgId, legacy_id: newId, folder_name: String(params.folder || ''),
+            file_name: String(params.file || ''), split_key: '0', content: String(params.content == null ? '' : params.content)
+          })
+        });
+        return { success: true, id: newId };
+      }
+      throw new Error('未知の計画ボード操作です: ' + action);
+    }
+
+    registerAction('planBoard', async function (params) {
+      var orgId = await resolveCurrentOrgId_();
+      return await runPlanBoardOp_(orgId, params || {});
+    });
+
+    // ---- 8. Drone Lobby (4 actions) ----
+    var DRONE_LOBBY_STALE_MS_P5_ = 90 * 1000;
+    function normLobbyCodeP5_(code) {
+      return String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+    }
+    function purgeStaleLobbyRooms_(rooms) {
+      var now = Date.now();
+      return (Array.isArray(rooms) ? rooms : []).filter(function (rm) {
+        if (!rm || !rm.code) return false;
+        if (rm.status !== 'waiting') return false;
+        var beat = Number(rm.lastBeatMs) || Date.parse(rm.lastBeat || '') || 0;
+        return beat > 0 && (now - beat) <= DRONE_LOBBY_STALE_MS_P5_;
+      });
+    }
+
+    registerAction('droneLobby_list', async function (params) {
+      var orgId = await resolveCurrentOrgId_();
+      var data = await readSettingP5_(orgId, 'drone_lobby', { rooms: [] });
+      var active = purgeStaleLobbyRooms_(data && data.rooms);
+      var kindFilter = params && params.kind ? String(params.kind) : '';
+      var rooms = active.filter(function (rm) {
+        return !kindFilter || rm.kind === kindFilter;
+      }).map(function (rm) {
+        return { code: rm.code, kind: rm.kind || 'pvp', mode: rm.mode === 1 ? 1 : 2, hostName: rm.hostName || 'Player', createdAt: rm.createdAt || '' };
+      }).sort(function (a, b) {
+        return String(b.createdAt).localeCompare(String(a.createdAt));
+      });
+      return { rooms: rooms };
+    });
+
+    registerAction('droneLobby_create', async function (params) {
+      var code = normLobbyCodeP5_(params && params.code);
+      if (code.length < 4) throw new Error('ルームコードが不正です');
+      var orgId = await resolveCurrentOrgId_();
+      var data = await readSettingP5_(orgId, 'drone_lobby', { rooms: [] });
+      var rooms = purgeStaleLobbyRooms_(data && data.rooms).filter(function (rm) { return rm.code !== code; });
+      var nowIso = new Date().toISOString();
+      rooms.push({
+        code: code,
+        kind: (params && params.kind) === 'coop' ? 'coop' : 'pvp',
+        mode: Number(params && params.mode) === 1 ? 1 : 2,
+        hostName: String((params && params.hostName) || 'Player').slice(0, 24),
+        createdAt: nowIso,
+        lastBeat: nowIso,
+        lastBeatMs: Date.now(),
+        status: 'waiting'
+      });
+      await upsertSettingP5_(orgId, 'drone_lobby', { rooms: rooms }, (params && params.hostName) || 'droneLobby');
+      return { ok: true, code: code };
+    });
+
+    registerAction('droneLobby_heartbeat', async function (params) {
+      var code = normLobbyCodeP5_(params && params.code);
+      if (code.length < 4) throw new Error('ルームコードが不正です');
+      var orgId = await resolveCurrentOrgId_();
+      var data = await readSettingP5_(orgId, 'drone_lobby', { rooms: [] });
+      var rooms = Array.isArray(data && data.rooms) ? data.rooms.slice() : [];
+      var rm = rooms.find(function (r) { return r && r.code === code; });
+      if (!rm) throw new Error('ルームが見つかりません');
+      if (rm.status !== 'waiting') throw new Error('このルームは募集終了しています');
+      var kind = (params && params.kind) === 'coop' ? 'coop' : ((params && params.kind) === 'pvp' ? 'pvp' : null);
+      var mode = (params && (params.mode === 1 || params.mode === 2 || params.mode === '1' || params.mode === '2')) ? (Number(params.mode) === 1 ? 1 : 2) : null;
+      rm.lastBeat = new Date().toISOString();
+      rm.lastBeatMs = Date.now();
+      if (kind) rm.kind = kind;
+      if (mode) rm.mode = mode;
+      await upsertSettingP5_(orgId, 'drone_lobby', { rooms: purgeStaleLobbyRooms_(rooms) }, rm.hostName || 'droneLobby');
+      return { ok: true };
+    });
+
+    registerAction('droneLobby_close', async function (params) {
+      var code = normLobbyCodeP5_(params && params.code);
+      if (code.length < 4) return { ok: true };
+      var orgId = await resolveCurrentOrgId_();
+      var data = await readSettingP5_(orgId, 'drone_lobby', { rooms: [] });
+      var rooms = purgeStaleLobbyRooms_(data && data.rooms).filter(function (r) { return r.code !== code; });
+      await upsertSettingP5_(orgId, 'drone_lobby', { rooms: rooms }, 'droneLobby');
+      return { ok: true };
+    });
+
+    // ---- 9. Destinations, Field Settings, Crops, Fields, Reports, ProdMgmt, Dept/Users (32 actions) ----
+    async function readDestinationsP5_(orgId) {
+      var rows = await restSelectAll_(
+        'org_masters',
+        'org_id=eq.' + encodeURIComponent(orgId) + '&master_type=eq.delivery_destination&is_active=eq.true&order=sort_order.asc'
+      );
+      return rows.map(function (r) {
+        return (r.data && typeof r.data === 'object' && r.data.name) ? r.data : { id: r.legacy_id || r.id, name: r.name };
+      });
+    }
+
+    registerAction('getDeliveryDestinations', async function () {
+      var orgId = await resolveCurrentOrgId_();
+      return await readDestinationsP5_(orgId);
+    });
+
+    registerAction('saveDeliveryDestination', async function (params) {
+      var dest = (params && (params.destination || params.dest)) ? (params.destination || params.dest) : params;
+      if (!dest || !dest.name) return { success: false, message: '配送先名が必要です。' };
+      var orgId = await resolveCurrentOrgId_();
+      var rows = await restSelectAll_('org_masters', 'org_id=eq.' + encodeURIComponent(orgId) + '&master_type=eq.delivery_destination&order=sort_order.asc');
+      var id = String(dest.id || ('dest_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7))).trim();
+      var trimmedName = String(dest.name).trim();
+      var hit = rows.find(function (r) {
+        return String(r.legacy_id || '') === id || String(r.name || '').trim() === trimmedName;
+      });
+      var newEntry = Object.assign({}, (hit && hit.data) || {}, {
+        id: hit ? String(hit.legacy_id || id) : id,
+        name: trimmedName,
+        lat: dest.lat != null && dest.lat !== '' ? Number(dest.lat) : null,
+        lng: dest.lng != null && dest.lng !== '' ? Number(dest.lng) : null,
+        address: dest.address ? String(dest.address).trim() : '',
+        updatedAt: new Date().toISOString()
+      });
+      if (hit) {
+        await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(hit.id), {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({ name: newEntry.name, data: newEntry })
+        });
+      } else {
+        var minOrder = rows.reduce(function (mn, r) { return Math.min(mn, Number(r.sort_order) || 0); }, 0);
+        await restFetch('rest/v1/org_masters', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            org_id: orgId, master_type: 'delivery_destination', legacy_id: newEntry.id,
+            name: newEntry.name, sort_order: minOrder - 1, data: newEntry, is_active: true
+          })
+        });
+      }
+      return { success: true, list: await readDestinationsP5_(orgId), entry: newEntry };
+    });
+
+    registerAction('deleteDeliveryDestination', async function (params) {
+      var id = params ? String(params.id || params.destId || '').trim() : '';
+      var name = params ? String(params.name || '').trim() : '';
+      var orgId = await resolveCurrentOrgId_();
+      var rows = await restSelectAll_('org_masters', 'org_id=eq.' + encodeURIComponent(orgId) + '&master_type=eq.delivery_destination');
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var dId = String((r.data && r.data.id) || r.legacy_id || '');
+        if ((id && dId === id) || (name && String(r.name || '').trim() === name)) {
+          await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(r.id), { method: 'DELETE' });
+        }
+      }
+      return { success: true, list: await readDestinationsP5_(orgId) };
+    });
+
+    async function readFieldSettingsP5_(orgId) {
+      return await restSelectAll_(
+        'org_masters',
+        'org_id=eq.' + encodeURIComponent(orgId) + '&master_type=eq.field_setting&is_active=eq.true&order=sort_order.asc'
+      );
+    }
+
+    async function setFieldSettingColValueP5_(orgId, fieldKey, val, matchOldVal) {
+      var rows = await readFieldSettingsP5_(orgId);
+      if (matchOldVal != null) {
+        for (var i = 0; i < rows.length; i++) {
+          var d = Object.assign({ climate: '', condition: '', status: '', startCondition: '', endCondition: '' }, rows[i].data || {});
+          if (String(d[fieldKey] || '').trim() === matchOldVal) {
+            d[fieldKey] = val;
+            await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(rows[i].id), {
+              method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+              body: JSON.stringify({ name: d.condition || d.status || d.climate || rows[i].name, data: d })
+            });
+            return true;
+          }
+        }
+        return false;
+      }
+      var emptySlot = rows.find(function (r) {
+        var d = r.data || {};
+        return !String(d[fieldKey] || '').trim();
+      });
+      if (emptySlot) {
+        var d2 = Object.assign({ climate: '', condition: '', status: '', startCondition: '', endCondition: '' }, emptySlot.data || {});
+        d2[fieldKey] = val;
+        await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(emptySlot.id), {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({ name: d2.condition || d2.status || d2.climate || val, data: d2 })
+        });
+      } else {
+        var nextIdx = rows.length + 1;
+        var newD = { climate: '', condition: '', status: '', startCondition: '', endCondition: '' };
+        newD[fieldKey] = val;
+        await restFetch('rest/v1/org_masters', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            org_id: orgId, master_type: 'field_setting', legacy_id: 'fs_' + Date.now() + '_' + nextIdx,
+            name: val, sort_order: nextIdx, data: newD, is_active: true
+          })
+        });
+      }
+      return true;
+    }
+
+    registerAction('addFieldStatus', async function (params) {
+      var name = String((params && params.statusName) || '').trim();
+      if (!name) return name;
+      var orgId = await resolveCurrentOrgId_();
+      var rows = await readFieldSettingsP5_(orgId);
+      if (!rows.some(function (r) { return String((r.data && r.data.status) || '').trim() === name; })) {
+        await setFieldSettingColValueP5_(orgId, 'status', name, null);
+      }
+      return name;
+    });
+
+    registerAction('editFieldStatus', async function (params) {
+      var oldName = String((params && params.oldStatusName) || '').trim();
+      var newName = String((params && params.newStatusName) || '').trim();
+      if (!oldName || !newName) return newName;
+      var orgId = await resolveCurrentOrgId_();
+      var renamed = await setFieldSettingColValueP5_(orgId, 'status', newName, oldName);
+      if (!renamed) await setFieldSettingColValueP5_(orgId, 'status', newName, null);
+      await restFetch(
+        'rest/v1/fields?org_id=eq.' + encodeURIComponent(orgId) + '&status=eq.' + encodeURIComponent(oldName),
+        { method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ status: newName }) }
+      );
+      return newName;
+    });
+
+    registerAction('deleteFieldStatus', async function (params) {
+      var name = String((params && params.statusName) || '').trim();
+      if (!name) return true;
+      var orgId = await resolveCurrentOrgId_();
+      await setFieldSettingColValueP5_(orgId, 'status', '', name);
+      return true;
+    });
+
+    function readColListFromSettings_(rows, key) {
+      var out = [];
+      (rows || []).forEach(function (r) {
+        var n = String((r.data && r.data[key]) || '').trim();
+        if (n && out.indexOf(n) < 0) out.push(n);
+      });
+      return out;
+    }
+
+    registerAction('addFieldCondition', async function (params) {
+      var name = String((params && params.conditionName) || '').trim();
+      if (!name) throw new Error('圃場条件名を入力してください');
+      var orgId = await resolveCurrentOrgId_();
+      var rows = await readFieldSettingsP5_(orgId);
+      var existing = readColListFromSettings_(rows, 'condition');
+      if (existing.indexOf(name) >= 0) throw new Error('圃場条件「' + name + '」は既に登録されています');
+      await setFieldSettingColValueP5_(orgId, 'condition', name, null);
+      var after = readColListFromSettings_(await readFieldSettingsP5_(orgId), 'condition');
+      return after.length ? after : ['露地', 'ハウス'];
+    });
+
+    registerAction('editFieldCondition', async function (params) {
+      var oldName = String((params && params.oldConditionName) || '').trim();
+      var newName = String((params && params.newConditionName) || '').trim();
+      if (!oldName || !newName) throw new Error('圃場条件名を入力してください');
+      var orgId = await resolveCurrentOrgId_();
+      var rows = await readFieldSettingsP5_(orgId);
+      var existing = readColListFromSettings_(rows, 'condition');
+      if (oldName !== newName && existing.indexOf(newName) >= 0) {
+        throw new Error('圃場条件「' + newName + '」は既に登録されています');
+      }
+      if (!(await setFieldSettingColValueP5_(orgId, 'condition', newName, oldName))) {
+        await setFieldSettingColValueP5_(orgId, 'condition', newName, null);
+      }
+      await restFetch(
+        'rest/v1/fields?org_id=eq.' + encodeURIComponent(orgId) + '&field_condition=eq.' + encodeURIComponent(oldName),
+        { method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ field_condition: newName }) }
+      );
+      var after = readColListFromSettings_(await readFieldSettingsP5_(orgId), 'condition');
+      return after.length ? after : ['露地', 'ハウス'];
+    });
+
+    registerAction('deleteFieldCondition', async function (params) {
+      var name = String((params && params.conditionName) || '').trim();
+      if (!name) throw new Error('圃場条件名を指定してください');
+      var orgId = await resolveCurrentOrgId_();
+      await setFieldSettingColValueP5_(orgId, 'condition', '', name);
+      var after = readColListFromSettings_(await readFieldSettingsP5_(orgId), 'condition');
+      return after.length ? after : ['露地', 'ハウス'];
+    });
+
+    async function getClimateColListP5_(orgId) {
+      var defaults = ['暖地', '温暖地', '一般地', '高冷地'];
+      var rows = await readFieldSettingsP5_(orgId);
+      var list = readColListFromSettings_(rows, 'climate');
+      if (!list.length) {
+        for (var i = 0; i < defaults.length; i++) {
+          await setFieldSettingColValueP5_(orgId, 'climate', defaults[i], null);
+        }
+        return defaults.slice();
+      }
+      return list;
+    }
+
+    async function updateLocationClimatesP5_(orgId, transformFn) {
+      var locRows = await restSelectAll_(
+        'org_masters',
+        'org_id=eq.' + encodeURIComponent(orgId) + '&master_type=eq.location&is_active=eq.true'
+      );
+      for (var i = 0; i < locRows.length; i++) {
+        var r = locRows[i];
+        var d = Object.assign({}, r.data || {});
+        var raw = d.climates != null ? d.climates : d.climate;
+        var prev = Array.isArray(raw) ? raw.map(String) : String(raw || '').split(/[,、]/).map(function (s) { return s.trim(); }).filter(Boolean);
+        var next = transformFn(prev);
+        var nextStr = next.join('、');
+        if (prev.join('、') !== nextStr) {
+          d.climate = nextStr;
+          d.climates = next;
+          await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(r.id), {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({ data: d })
+          });
+        }
+      }
+    }
+
+    registerAction('addClimateMaster', async function (params) {
+      var name = String((params && params.climateName) || '').trim();
+      if (!name) throw new Error('産地名を入力してください');
+      var orgId = await resolveCurrentOrgId_();
+      var existing = await getClimateColListP5_(orgId);
+      if (existing.indexOf(name) >= 0) throw new Error('産地「' + name + '」は既に登録されています');
+      await setFieldSettingColValueP5_(orgId, 'climate', name, null);
+      return await getClimateColListP5_(orgId);
+    });
+
+    registerAction('editClimateMaster', async function (params) {
+      var oldName = String((params && params.oldClimateName) || '').trim();
+      var newName = String((params && params.newClimateName) || '').trim();
+      if (!oldName || !newName) throw new Error('産地名を入力してください');
+      var orgId = await resolveCurrentOrgId_();
+      var existing = await getClimateColListP5_(orgId);
+      if (oldName !== newName && existing.indexOf(newName) >= 0) throw new Error('産地「' + newName + '」は既に登録されています');
+      if (!(await setFieldSettingColValueP5_(orgId, 'climate', newName, oldName))) {
+        await setFieldSettingColValueP5_(orgId, 'climate', newName, null);
+      }
+      if (oldName !== newName) {
+        await updateLocationClimatesP5_(orgId, function (list) {
+          return list.map(function (c) { return c === oldName ? newName : c; }).filter(function (c, idx, arr) { return c && arr.indexOf(c) === idx; });
+        });
+      }
+      return await getClimateColListP5_(orgId);
+    });
+
+    registerAction('deleteClimateMaster', async function (params) {
+      var name = String((params && params.climateName) || '').trim();
+      if (!name) throw new Error('産地名を指定してください');
+      var orgId = await resolveCurrentOrgId_();
+      await setFieldSettingColValueP5_(orgId, 'climate', '', name);
+      await updateLocationClimatesP5_(orgId, function (list) {
+        return list.filter(function (c) { return c !== name; });
+      });
+      return await getClimateColListP5_(orgId);
+    });
+
+    registerAction('mergeFields', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var base = await findFieldByAnyId_(orgId, params.baseId);
+      var target = await findFieldByAnyId_(orgId, params.targetId);
+      if (!base || !target) throw new Error('統合する圃場が見つかりません');
+      var baseTouki = Array.isArray(base.touki_ids) ? base.touki_ids : [];
+      var targetTouki = Array.isArray(target.touki_ids) ? target.touki_ids : [];
+      var mergedTouki = Array.from(new Set(baseTouki.concat(targetTouki).map(String).filter(Boolean)));
+      await restFetch('rest/v1/fields?id=eq.' + encodeURIComponent(base.id), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ touki_ids: mergedTouki })
+      });
+      await restFetch('rest/v1/field_records?org_id=eq.' + encodeURIComponent(orgId) + '&field_id=eq.' + encodeURIComponent(target.id), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ field_id: base.id, field_legacy_id: base.legacy_id || base.id })
+      });
+      await restFetch('rest/v1/fields?id=eq.' + encodeURIComponent(target.id), { method: 'DELETE' });
+      await writeLogP5_(orgId, params.userName, '圃場統合', target.name + ' を ' + base.name + ' に統合', '対象: 圃場');
+      return true;
+    });
+
+    registerAction('splitField', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var orig = await findFieldByAnyId_(orgId, params.id);
+      if (!orig) throw new Error('分割元の圃場が見つかりません');
+      var newId = genUuid_();
+      var finalName = params.newName ? String(params.newName) : (String(orig.name || '') + '_分割');
+      await restFetch('rest/v1/fields', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          org_id: orgId, legacy_id: newId, entity_type: orig.entity_type || 'field',
+          name: finalName, location_name: orig.location_name || '', field_condition: orig.field_condition || '',
+          area_sqm: orig.area_sqm || 0, coords: orig.coords || [], color_icon: orig.color_icon || '',
+          created_by: String(params.userName || 'システム'), status: orig.status || '',
+          touki_ids: orig.touki_ids || [], parent_field_id: orig.legacy_id || orig.id,
+          ridge_direction: orig.ridge_direction || '', ridge_width: orig.ridge_width,
+          ridge_data: orig.ridge_data || [], soil_type: orig.soil_type || '',
+          meta: Object.assign({}, orig.meta || {}, { registeredAt: formatJstNowParts_().fullSlash })
+        })
+      });
+      await writeLogP5_(orgId, params.userName, '圃場分割', orig.name + ' -> ' + finalName, '対象: 圃場');
+      return newId;
+    });
+
+    registerAction('updateSignLink', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var sign = await findFieldByAnyId_(orgId, params.id);
+      if (!sign) return false;
+      await restFetch('rest/v1/fields?id=eq.' + encodeURIComponent(sign.id), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ linked_sign_id: String(params.linkedSigns || '') })
+      });
+      return true;
+    });
+
+    registerAction('saveReport', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var urls = [];
+      var phList = Array.isArray(params.photos) ? params.photos : [];
+      for (var i = 0; i < phList.length; i++) {
+        var u = await uploadOnePhotoP5_(phList[i], 'field_photos', 'work_schedules', params.id);
+        if (u) urls.push(u);
+      }
+      var parts = formatJstNowParts_();
+      var field = params.id ? await findFieldByAnyId_(orgId, params.id) : null;
+      await restFetch('rest/v1/work_schedules', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          org_id: orgId, schedule_kind: 'work',
+          legacy_id: 'rpt_' + Date.now() + '_' + genUuid_().slice(0, 6),
+          field_id: (field && field.id) || null,
+          field_name: String(params.name || ''), department: '運営', crop_name: '',
+          work_name: '⚠️問題対応: ' + String(params.text || ''),
+          planned_date: parts.dateDash, due_date: parts.dateDash,
+          assigned_users: params.author ? [String(params.author)] : [],
+          owner_name: String(params.author || ''), is_completed: false,
+          photos: urls,
+          payload: {
+            placeId: String(params.id || ''), rawHours: '', rawPerson: String(params.author || ''),
+            rawPlanDate: parts.dateSlash, rawDueDate: parts.dateSlash
+          }
+        })
+      });
+      await writeLogP5_(orgId, params.author, '問題報告', params.name, '内容: ' + String(params.text || ''));
+      return true;
+    });
+
+    async function readProdMgmtCategoriesP5_(orgId) {
+      var rows = await restSelectAll_(
+        'org_masters',
+        'org_id=eq.' + encodeURIComponent(orgId) + '&master_type=eq.prod_mgmt_category&is_active=eq.true&order=sort_order.asc'
+      );
+      var list = rows.map(function (r, idx) {
+        return { id: String(r.legacy_id || r.id), name: String(r.name || ''), order: Number(r.sort_order) || (idx + 1) };
+      }).filter(function (c) { return !!(c.id && c.name); }).sort(function (a, b) { return a.order - b.order; });
+      return list.length ? list : DEFAULT_PROD_MGMT_CATEGORIES_.slice();
+    }
+
+    registerAction('getProdMgmtCategories', async function () {
+      var orgId = await resolveCurrentOrgId_();
+      return await readProdMgmtCategoriesP5_(orgId);
+    });
+
+    registerAction('saveProdMgmtCategories', async function (params) {
+      params = params || {};
+      var uname = String(params.userName || '').trim();
+      var orgId = await resolveCurrentOrgId_();
+      if (!(await isAdminRoleP5_(orgId, uname))) throw new Error('管理者権限が必要です');
+      var cats = Array.isArray(params.categories) ? params.categories : [];
+      if (!cats.length) throw new Error('カテゴリが空です');
+      var seen = {}, toInsert = [];
+      cats.forEach(function (c, idx) {
+        if (!c) return;
+        var id = String(c.id || '').trim(), name = String(c.name || '').trim();
+        if (!id || !name) return;
+        if (seen[id]) throw new Error('カテゴリIDが重複しています: ' + id);
+        seen[id] = true;
+        var order = parseInt(c.order, 10);
+        var ordVal = isNaN(order) ? (idx + 1) : order;
+        toInsert.push({
+          org_id: orgId, master_type: 'prod_mgmt_category', legacy_id: id,
+          name: name, sort_order: ordVal, data: { id: id, name: name, order: ordVal }, is_active: true, updated_by: uname
+        });
+      });
+      if (!toInsert.length) throw new Error('有効なカテゴリがありません');
+      await restFetch('rest/v1/org_masters?org_id=eq.' + encodeURIComponent(orgId) + '&master_type=eq.prod_mgmt_category', { method: 'DELETE' });
+      await restFetch('rest/v1/org_masters', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(toInsert)
+      });
+      await writeLogP5_(orgId, uname, '生産管理カテゴリ更新', 'カテゴリ', toInsert.length + '件');
+      return { success: true, categories: await readProdMgmtCategoriesP5_(orgId) };
+    });
+
+    registerAction('resetAllManureStatus', async function (params) {
+      var uname = String((params && params.userName) || '').trim();
+      var orgId = await resolveCurrentOrgId_();
+      if (!(await isAdminRoleP5_(orgId, uname))) throw new Error('管理者権限が必要です');
+      var cats = await readProdMgmtCategoriesP5_(orgId);
+      var fieldRows = await restSelectAll_('fields', 'org_id=eq.' + encodeURIComponent(orgId) + '&entity_type=eq.field');
+      var count = 0;
+      for (var i = 0; i < fieldRows.length; i++) {
+        var r = fieldRows[i];
+        var meta = (r.meta && typeof r.meta === 'object') ? Object.assign({}, r.meta) : {};
+        var oldMd = (meta.manureData && typeof meta.manureData === 'object') ? meta.manureData : {};
+        var catStatuses = {};
+        cats.forEach(function (c) {
+          if (c && c.id) catStatuses[c.id] = { status: 'none', deadline: '', scheduled_date: '', cancel_reason: '', has_pin: false, route_selected: false };
+        });
+        if (!catStatuses.compost) catStatuses.compost = { status: 'none', deadline: '', scheduled_date: '', cancel_reason: '', has_pin: false, route_selected: false };
+        meta.manureData = {
+          catStatuses: catStatuses, manure_status: 'none', manure_deadline: '', manure_scheduled_date: '',
+          manure_cancel_reason: '', manure_has_pin: false, manure_route_selected: false,
+          transplant_jun: oldMd.transplant_jun || ''
+        };
+        await restFetch('rest/v1/fields?id=eq.' + encodeURIComponent(r.id), {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ meta: meta })
+        });
+        count++;
+      }
+      await writeLogP5_(orgId, uname, '生産管理ステータス全リセット', '全圃場', count + '件リセット');
+      return { success: true, count: count };
+    });
+
+    async function readDeptListP5_(orgId) {
+      var rows = await restSelectAll_(
+        'org_masters',
+        'org_id=eq.' + encodeURIComponent(orgId) + '&master_type=eq.department&is_active=eq.true&order=sort_order.asc'
+      );
+      var out = [];
+      rows.forEach(function (r) {
+        var n = String(r.name || '').trim();
+        if (n && n !== '未設定' && out.indexOf(n) < 0) out.push(n);
+      });
+      if (out.indexOf('未設定') < 0) out.push('未設定');
+      return out;
+    }
+
+    registerAction('saveDepartmentMaster', async function (params) {
+      var p = params || {};
+      var userName = String(p.userName || '').trim() || 'システム';
+      var orgId = await resolveCurrentOrgId_();
+      var names = [];
+      if (Array.isArray(p.departments)) {
+        names = p.departments.map(function (d) { return String(d || '').trim(); }).filter(Boolean);
+      } else if (p.department) {
+        names = (await readDeptListP5_(orgId)).filter(function (x) { return x !== '未設定'; });
+        var add = String(p.department || '').trim();
+        if (add && names.indexOf(add) < 0) names.push(add);
+      }
+      var uniq = [], seen = {};
+      names.forEach(function (n) {
+        if (!n || n === '未設定' || seen[n]) return;
+        seen[n] = true;
+        uniq.push(n);
+      });
+      await restFetch('rest/v1/org_masters?org_id=eq.' + encodeURIComponent(orgId) + '&master_type=eq.department', { method: 'DELETE' });
+      if (uniq.length) {
+        await restFetch('rest/v1/org_masters', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify(uniq.map(function (n, idx) {
+            return { org_id: orgId, master_type: 'department', legacy_id: 'dept_' + n, name: n, sort_order: idx + 1, data: { name: n }, is_active: true, updated_by: userName };
+          }))
+        });
+      }
+      await writeLogP5_(orgId, userName, '部署マスタ保存', '部署マスタ', uniq.join(', '));
+      return { success: true, departments: await readDeptListP5_(orgId) };
+    });
+
+    registerAction('getWorkDeptSettings', async function () {
+      var orgId = await resolveCurrentOrgId_();
+      var encOrg = encodeURIComponent(orgId);
+      var fetched = await Promise.all([
+        readDeptListP5_(orgId),
+        restSelectAll_('org_masters', 'org_id=eq.' + encOrg + '&master_type=eq.work_category&is_active=eq.true&order=sort_order.asc'),
+        restSelectAll_('org_masters', 'org_id=eq.' + encOrg + '&master_type=eq.work&is_active=eq.true&order=sort_order.asc'),
+        restSelectAll_('work_schedules', 'org_id=eq.' + encOrg + '&schedule_kind=eq.work&is_completed=eq.false'),
+        restSelectAll_('org_members', 'org_id=eq.' + encOrg + '&is_active=eq.true')
+      ]);
+      var departments = fetched[0];
+      var workCategories = fetched[1].map(function (m) { return String(m.name || '').trim(); }).filter(Boolean);
+      var workDeptMap = {};
+      var rows = [];
+      var seen = {};
+      fetched[2].forEach(function (w) {
+        var name = String(w.name || '').trim();
+        if (!name || name.indexOf('work_extra_') === 0) return;
+        var dept = String((w.data && w.data.category) || '').trim() || '未設定';
+        workDeptMap[name] = dept;
+        if (name === '播種') workDeptMap.__SOWING__ = dept;
+        if (!seen[name]) {
+          seen[name] = true;
+          rows.push({ workName: name, dept: dept, inMaster: true });
+        }
+      });
+      fetched[3].forEach(function (s) {
+        if (s.completed_date || s.is_completed) return;
+        var name = String(s.work_name || '').trim();
+        if (!name) return;
+        var key = (name.indexOf('播種') === 0) ? '播種' : name;
+        if (seen[key]) return;
+        seen[key] = true;
+        var dept = String(s.department || '').trim() ||
+          (name.indexOf('⚠️') >= 0 ? '運営' : (workDeptMap[name] || (name.indexOf('播種') === 0 && workDeptMap.__SOWING__) || (name === '調達' && (workDeptMap['調達'] || workDeptMap.__SOWING__)) || '未設定'));
+        rows.push({ workName: key, dept: dept, inMaster: !!(workDeptMap[key] || (key === '播種' && workDeptMap.__SOWING__)) });
+      });
+      rows.sort(function (a, b) { return String(a.workName).localeCompare(String(b.workName), 'ja'); });
+      var users = fetched[4].filter(function (m) { return !!String(m.login_id || '').trim(); }).map(function (m) {
+        var r = String(m.role || '').toLowerCase();
+        return {
+          userId: String(m.login_id || '').trim(),
+          userName: String(m.display_name || '').trim(),
+          role: (r === 'admin' || r === 'owner') ? '管理者' : '作業員',
+          dept: String(m.department || '').trim() || '未設定'
+        };
+      }).sort(function (a, b) { return String(a.userName || a.userId).localeCompare(String(b.userName || b.userId), 'ja'); });
+      return { success: true, departments: departments, workCategories: workCategories, rows: rows, users: users };
+    });
+
+    registerAction('updateWorkDeptSettings', async function (params) {
+      var updates = (params && Array.isArray(params.updates)) ? params.updates : [];
+      var syncSchedule = !(params && params.syncScheduleRows === false);
+      var userName = String((params && params.userName) || '').trim() || 'システム';
+      if (!updates.length) return { success: true, updatedMaster: 0, updatedSchedule: 0 };
+      var orgId = await resolveCurrentOrgId_();
+      var existingDepts = await readDeptListP5_(orgId);
+      var toAddDepts = [];
+      updates.forEach(function (u) {
+        var d = String(u.dept || '').trim();
+        if (d && d !== '未設定' && existingDepts.indexOf(d) < 0 && toAddDepts.indexOf(d) < 0) toAddDepts.push(d);
+      });
+      if (toAddDepts.length) {
+        var nextDepts = existingDepts.filter(function (x) { return x !== '未設定'; }).concat(toAddDepts);
+        await restFetch('rest/v1/org_masters', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify(toAddDepts.map(function (n, idx) {
+            return { org_id: orgId, master_type: 'department', legacy_id: 'dept_' + n, name: n, sort_order: nextDepts.length + idx, data: { name: n }, is_active: true, updated_by: userName };
+          }))
+        });
+      }
+      var workRows = await restSelectAll_('org_masters', 'org_id=eq.' + encodeURIComponent(orgId) + '&master_type=eq.work');
+      var updatedMaster = 0, updatedSchedule = 0;
+      for (var i = 0; i < updates.length; i++) {
+        var wn = String(updates[i].workName || '').trim();
+        var dept = String(updates[i].dept || '').trim();
+        if (!wn || !dept) continue;
+        var hit = workRows.find(function (w) { return String(w.name || '').trim() === wn; });
+        if (hit) {
+          var nextData = Object.assign({}, hit.data || {}, { category: dept });
+          await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(hit.id), {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({ data: nextData, is_active: true, updated_by: userName })
+          });
+        } else {
+          await restFetch('rest/v1/org_masters', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({
+              org_id: orgId, master_type: 'work', legacy_id: wn, name: wn,
+              sort_order: workRows.length + updatedMaster + 1, data: { category: dept }, is_active: true, updated_by: userName
+            })
+          });
+        }
+        updatedMaster++;
+        await writeLogP5_(orgId, userName, '部署設定', wn, dept);
+      }
+      if (syncSchedule) {
+        var scheds = await restSelectAll_('work_schedules', 'org_id=eq.' + encodeURIComponent(orgId) + '&schedule_kind=eq.work&is_completed=eq.false');
+        for (var uIdx = 0; uIdx < updates.length; uIdx++) {
+          var keyWn = String(updates[uIdx].workName || '').trim();
+          var targetDept = String(updates[uIdx].dept || '').trim();
+          if (!keyWn || !targetDept) continue;
+          for (var sIdx = 0; sIdx < scheds.length; sIdx++) {
+            var sr = scheds[sIdx];
+            if (sr.completed_date || sr.is_completed) continue;
+            var rWn = String(sr.work_name || '').trim();
+            if (!(rWn === keyWn || (keyWn === '播種' && rWn.indexOf('播種') === 0))) continue;
+            await restFetch('rest/v1/work_schedules?id=eq.' + encodeURIComponent(sr.id), {
+              method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+              body: JSON.stringify({ department: targetDept })
+            });
+            sr.department = targetDept;
+            updatedSchedule++;
+          }
+        }
+      }
+      return { success: true, updatedMaster: updatedMaster, updatedSchedule: updatedSchedule };
+    });
+
+    registerAction('updateUserDepts', async function (params) {
+      var p = params || {};
+      var userName = String(p.userName || '').trim() || 'システム';
+      var updates = Array.isArray(p.updates) ? p.updates : [];
+      if (!updates.length) return { success: true, updated: 0 };
+      var orgId = await resolveCurrentOrgId_();
+      var members = await restSelectAll_('org_members', 'org_id=eq.' + encodeURIComponent(orgId));
+      var updated = 0;
+      for (var i = 0; i < updates.length; i++) {
+        var uid = String((updates[i] && updates[i].userId) || '').trim();
+        var dept = String((updates[i] && updates[i].dept) || '').trim();
+        if (!uid) continue;
+        var hit = members.find(function (m) { return String(m.login_id || '').trim() === uid; });
+        if (!hit) continue;
+        await restFetch('rest/v1/org_members?id=eq.' + encodeURIComponent(hit.id), {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ department: dept })
+        });
+        updated++;
+        await writeLogP5_(orgId, userName, 'ユーザー部署設定', uid, (hit.display_name || uid) + ': ' + (dept || '未設定'));
+      }
+      return { success: true, updated: updated };
+    });
+
+    registerAction('updateUserLocations', async function (params) {
+      var p = params || {};
+      var userName = String(p.userName || '').trim() || 'システム';
+      var updates = Array.isArray(p.updates) ? p.updates : [];
+      if (!updates.length) return { success: true, updated: 0 };
+      var orgId = await resolveCurrentOrgId_();
+      var members = await restSelectAll_('org_members', 'org_id=eq.' + encodeURIComponent(orgId));
+      var updated = 0;
+      for (var i = 0; i < updates.length; i++) {
+        var uid = String((updates[i] && updates[i].userId) || '').trim();
+        var location = String((updates[i] && updates[i].location) || '').trim();
+        if (!uid) continue;
+        var hit = members.find(function (m) { return String(m.login_id || '').trim() === uid; });
+        if (!hit) continue;
+        await restFetch('rest/v1/org_members?id=eq.' + encodeURIComponent(hit.id), {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ location: location })
+        });
+        updated++;
+        await writeLogP5_(orgId, userName, 'ユーザー所属拠点設定', uid, (hit.display_name || uid) + ': ' + (location || '未設定'));
+      }
+      return { success: true, updated: updated };
+    });
+
+    registerAction('saveUserQualifications', async function (params) {
+      try {
+        var userName = String((params && params.userName) || '').trim();
+        if (!userName) return { success: false, message: 'ユーザー名が指定されていません' };
+        var orgId = await resolveCurrentOrgId_();
+        var member = await findMemberByLoginOrNameP5_(orgId, userName);
+        var quals = Array.isArray(params && params.qualifications) ? params.qualifications : [];
+        await tryPatchMemberAndSyncPrefP5_(orgId, member, { qualifications: quals }, userName, 'qualifications', quals, userName);
+        return { success: true, message: '資格情報を保存しました' };
+      } catch (err) {
+        return { success: false, message: '保存エラー: ' + String(err && err.message ? err.message : err) };
+      }
+    });
+
+    registerAction('getUserQualifications', async function (params) {
+      try {
+        var userName = String((params && params.userName) || '').trim();
+        if (!userName) return { success: true, qualifications: [] };
+        var orgId = await resolveCurrentOrgId_();
+        var fetched = await Promise.all([
+          readSettingP5_(orgId, 'user_profile_prefs', {}),
+          findMemberByLoginOrNameP5_(orgId, userName)
+        ]);
+        var prefs = fetched[0] || {};
+        var member = fetched[1];
+        var prefEntry = prefs[userName] || (member && (prefs[member.login_id] || prefs[member.display_name]));
+        if (prefEntry && Array.isArray(prefEntry.qualifications)) {
+          return { success: true, qualifications: prefEntry.qualifications };
+        }
+        return { success: true, qualifications: (member && Array.isArray(member.qualifications)) ? member.qualifications : [] };
+      } catch (err) {
+        return { success: false, message: '取得エラー: ' + String(err && err.message ? err.message : err), qualifications: [] };
+      }
+    });
+
+    registerAction('saveUserGmail', async function (params) {
+      var userId = String((params && params.userId) || '').trim();
+      var gmail = String((params && params.gmail) || '').trim();
+      if (!userId) throw new Error('ユーザーIDがありません');
+      if (gmail && gmail.indexOf('@') < 0) throw new Error('Gmailアドレスの形式が正しくありません');
+      var orgId = await resolveCurrentOrgId_();
+      var member = await findMemberByLoginOrNameP5_(orgId, userId);
+      if (!member) throw new Error('名簿にユーザーが見つかりません');
+      await tryPatchMemberAndSyncPrefP5_(orgId, member, { email: gmail }, userId, 'gmail', gmail, member.display_name || userId);
+      return { success: true, gmail: gmail };
+    });
+
+    registerAction('getUserGmail', async function (params) {
+      var userId = String((params && params.userId) || '').trim();
+      if (!userId) return { gmail: '' };
+      var orgId = await resolveCurrentOrgId_();
+      var fetched = await Promise.all([
+        readSettingP5_(orgId, 'user_profile_prefs', {}),
+        findMemberByLoginOrNameP5_(orgId, userId)
+      ]);
+      var prefs = fetched[0] || {};
+      var member = fetched[1];
+      var prefEntry = prefs[userId] || (member && (prefs[member.login_id] || prefs[member.display_name]));
+      if (prefEntry && prefEntry.gmail !== undefined) {
+        return { gmail: String(prefEntry.gmail || '').trim() };
+      }
+      return { gmail: String((member && member.email) || '').trim() };
+    });
+
+    registerAction('getUserCalendarIds', async function (params) {
+      var userId = String((params && params.userId) || '').trim();
+      if (!userId) return { ids: [], hasPreference: false };
+      var orgId = await resolveCurrentOrgId_();
+      var fetched = await Promise.all([
+        readSettingP5_(orgId, 'user_profile_prefs', {}),
+        findMemberByLoginOrNameP5_(orgId, userId)
+      ]);
+      var prefs = fetched[0] || {};
+      var member = fetched[1];
+      var prefEntry = prefs[userId] || (member && (prefs[member.login_id] || prefs[member.display_name]));
+      var rawIds = (prefEntry && Array.isArray(prefEntry.calendarIds))
+        ? prefEntry.calendarIds
+        : ((member && Array.isArray(member.calendar_ids)) ? member.calendar_ids : []);
+      var ids = rawIds.map(function (v) { return String(v || '').trim(); }).filter(Boolean);
+      return { ids: ids, hasPreference: ids.length > 0 };
+    });
+
+    registerAction('saveUserCalendarIds', async function (params) {
+      var userId = String((params && params.userId) || '').trim();
+      if (!userId) throw new Error('ユーザーIDがありません');
+      var ids = Array.isArray(params && params.ids)
+        ? params.ids.map(function (v) { return String(v || '').trim(); }).filter(Boolean)
+        : String((params && params.ids) || '').split(',').map(function (v) { return v.trim(); }).filter(Boolean);
+      var uniq = Array.from(new Set(ids));
+      var orgId = await resolveCurrentOrgId_();
+      var member = await findMemberByLoginOrNameP5_(orgId, userId);
+      if (!member) throw new Error('名簿にユーザーが見つかりません');
+      await tryPatchMemberAndSyncPrefP5_(orgId, member, { calendar_ids: uniq }, userId, 'calendarIds', uniq, member.display_name || userId);
+      return { success: true, ids: uniq, hasPreference: uniq.length > 0 };
+    });
+
+    // ---- 10. Map URL Coords, OAuth Settings, Google Calendar, Gemini, Catalog/Market Writes (14 actions) ----
+    registerAction('getMapCoordinates', async function (params) {
+      var url = String((params && params.url) || '').trim();
+      var decoded = url;
+      try { decoded = decodeURIComponent(decoded); } catch (e) {}
+      decoded = decoded.replace(/%2C/gi, ',');
+      var patterns = [
+        /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/,
+        /@(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/,
+        /[?&](?:q|query|ll|center)=(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/i,
+        /[?&]lat=(-?\d+\.\d+)[&]lng=(-?\d+\.\d+)/i
+      ];
+      for (var i = 0; i < patterns.length; i++) {
+        var m = decoded.match(patterns[i]);
+        if (m) return { success: true, lat: parseFloat(m[1]), lng: parseFloat(m[2]), expandedUrl: url };
+      }
+      return await fallbackToGasP5_('getMapCoordinates', params, '短縮URLの展開にはGAS連携が必要です');
+    });
+
+    registerAction('setGoogleClientId', async function (params) {
+      var clientId = String((params && params.clientId) || '').trim();
+      if (!clientId || clientId.indexOf('.apps.googleusercontent.com') < 0) {
+        return { success: false, message: '有効な Google OAuth クライアントID（.apps.googleusercontent.com）を入力してください' };
+      }
+      var orgId = await resolveCurrentOrgId_();
+      var cur = await readSettingP5_(orgId, 'oauth_public_config', {});
+      var next = Object.assign({}, (cur && typeof cur === 'object') ? cur : {}, { googleClientId: clientId });
+      await upsertSettingP5_(orgId, 'oauth_public_config', next, (params && params.userName) || 'admin');
+      if (typeof global.callGAS === 'function') {
+        try { await global.callGAS('setGoogleClientId', params, 1, { forceGAS: true }); } catch (e) {}
+      }
+      return { success: true, googleClientId: clientId };
+    });
+
+    registerAction('setLineChannelConfig', async function (params) {
+      var channelId = String((params && params.channelId) || '').trim();
+      var channelSecret = String((params && params.channelSecret) || '').trim();
+      if (!channelId || !/^\d{6,20}$/.test(channelId)) {
+        return { success: false, message: '有効な LINEログイン チャネルID（数字）を入力してください' };
+      }
+      if (!channelSecret || channelSecret.length < 16) {
+        return { success: false, message: '有効な LINEログイン チャネルシークレットを入力してください' };
+      }
+      var orgId = await resolveCurrentOrgId_();
+      var cur = await readSettingP5_(orgId, 'oauth_public_config', {});
+      await upsertSettingP5_(orgId, 'oauth_public_config', Object.assign({}, (cur && typeof cur === 'object') ? cur : {}, { lineChannelId: channelId }), 'admin');
+      if (typeof global.callGAS === 'function') {
+        return await global.callGAS('setLineChannelConfig', params, 1, { forceGAS: true });
+      }
+      return { success: true, lineChannelId: channelId, note: 'LINE_CHANNEL_SECRET は Supabase Edge Function Secrets で設定してください' };
+    });
+
+    ['importFertilizerCatalogChunk', 'importPesticideCatalogChunk', 'importOsakaMarketDaily', 'importTokyoMarketDaily'].forEach(function (act) {
+      registerAction(act, function (params) {
+        return fallbackToGasP5_(act, params, '共有カタログ／市況データの書込は管理者CLIまたはGAS経由で実行してください');
+      });
+    });
+
+    registerAction('getScriptAuthorizationInfo', async function (params) {
+      if (typeof global.callGAS === 'function') return await global.callGAS('getScriptAuthorizationInfo', params || {}, 1, { forceGAS: true });
+      return { success: false, authorized: false, needsAuth: false, url: '', effectiveUser: '', status: 'UNAVAILABLE', message: 'Googleカレンダー連携は現在GAS連携が必要です' };
+    });
+
+    registerAction('listGoogleCalendars', async function (params) {
+      if (typeof global.callGAS === 'function') return await global.callGAS('listGoogleCalendars', params || {}, 1, { forceGAS: true });
+      return { success: false, calendars: [], selectedIds: [], hasPreference: false, message: 'Googleカレンダー連携は現在GAS連携が必要です' };
+    });
+
+    registerAction('getTodayGoogleCalendarEvents', async function (params) {
+      if (typeof global.callGAS === 'function') return await global.callGAS('getTodayGoogleCalendarEvents', params || {}, 1, { forceGAS: true });
+      return { success: false, gmail: '', events: [], message: 'Googleカレンダー連携は現在GAS連携が必要です', calendarUrl: 'https://calendar.google.com/calendar/u/0/r/day' };
+    });
+
+    ['parseWithGemini', 'parseCropImageWithGemini', 'importCultivationPlanFromExternalSheet', 'exportCultivationPlanToExternalSheet'].forEach(function (act) {
+      registerAction(act, function (params) {
+        return fallbackToGasP5_(act, params, 'この機能（Gemini/外部スプレッドシート連携）は現在GAS連携が必要です');
+      });
+    });
+
+    // ---- 11. Complete manageMaster (all masterTypes on Supabase) + addCrop / deleteCrop ----
+    async function readSingleColMasterP5_(orgId, masterType, defaultsOpt) {
+      var rows = await restSelectAll_(
+        'org_masters',
+        'org_id=eq.' + encodeURIComponent(orgId) + '&master_type=eq.' + encodeURIComponent(masterType) + '&is_active=eq.true&order=sort_order.asc'
+      );
+      var out = rows.map(function (r) { return String(r.name || '').trim(); }).filter(Boolean);
+      return (!out.length && Array.isArray(defaultsOpt)) ? defaultsOpt.slice() : out;
+    }
+
+    async function readLocationDetailsP5_(orgId) {
+      var rows = await restSelectAll_(
+        'org_masters',
+        'org_id=eq.' + encodeURIComponent(orgId) + '&master_type=eq.location&is_active=eq.true&order=sort_order.asc'
+      );
+      return rows.map(function (r) {
+        var d = r.data || {};
+        return {
+          name: r.name,
+          prefecture: d.prefecture || '',
+          city: d.city || '',
+          climate: d.climate || '',
+          tagAbbreviation: d.tagAbbr || d.tagAbbreviation || ''
+        };
+      });
+    }
+
+    async function readCropListP5_(orgId) {
+      var rows = await restSelectAll_(
+        'org_masters',
+        'org_id=eq.' + encodeURIComponent(orgId) + '&master_type=eq.crop&is_active=eq.true&order=sort_order.asc'
+      );
+      return rows.map(function (r) {
+        var d = r.data || {};
+        return { name: r.name, density: d.density != null ? d.density : '', color: d.color || '', tagAbbreviation: d.tagAbbreviation || '', icon: d.icon || '' };
+      });
+    }
+
+    async function readInspectionListP5_(orgId) {
+      var rows = await restSelectAll_(
+        'org_masters',
+        'org_id=eq.' + encodeURIComponent(orgId) + '&master_type=eq.inspection_item&is_active=eq.true&order=sort_order.asc'
+      );
+      return rows.map(mapInspectionMasterRow_).filter(function (x) { return !!(x.machineType && x.item); });
+    }
+
+    function mapWorkMasterRowP5_(m) {
+      var d = (m && m.data && typeof m.data === 'object') ? m.data : {};
+      var cropStr = String(d.cropName || '');
+      var crops = Array.isArray(d.crops) ? d.crops : (cropStr ? splitCsvTokensP5_(cropStr) : []);
+      var aliasStr = String(d.aliasNames || d.similarWorks || '').trim();
+      var aliases = Array.isArray(d.aliases) ? d.aliases : (aliasStr ? aliasStr.split(/[,、\n]/).map(function (s) { return s.trim(); }).filter(Boolean) : []);
+      return {
+        name: String(m.name || '').trim(),
+        category: String(d.category || ''),
+        cropName: cropStr,
+        crops: crops,
+        cropDetails: d.cropDetails || null,
+        detailWorks: String(d.detailWorks || ''),
+        aliasNames: aliasStr,
+        aliases: aliases,
+        showMachine: d.showMachine != null ? d.showMachine : null,
+        showMaterial: d.showMaterial != null ? d.showMaterial : null,
+        showPesticide: d.showPesticide != null ? d.showPesticide : null,
+        showField: d.showField != null ? d.showField : null,
+        showFuel: d.showFuel != null ? d.showFuel : null,
+        showRidgePolygon: d.showRidgePolygon != null ? d.showRidgePolygon : null,
+        showMaintenance: d.showMaintenance != null ? d.showMaintenance : null,
+        showPreInspection: d.showPreInspection != null ? d.showPreInspection : null,
+        showPeriodicInspection: d.showPeriodicInspection != null ? d.showPeriodicInspection : null,
+        showFuelInspection: d.showFuelInspection != null ? d.showFuelInspection : null
+      };
+    }
+
+    function buildWorkDataP5_(existingData, incoming) {
+      var val = incoming || {};
+      var aliasStr = val.aliasNames != null ? String(val.aliasNames).trim() : (Array.isArray(val.aliases) ? val.aliases.join(', ') : (existingData.aliasNames || ''));
+      var cropName = val.cropName != null ? String(val.cropName).trim() : (Array.isArray(val.crops) ? val.crops.join(',') : (existingData.cropName || ''));
+      var next = Object.assign({}, existingData, {
+        category: val.category != null ? String(val.category).trim() : (existingData.category || ''),
+        cropName: cropName,
+        crops: cropName ? splitCsvTokensP5_(cropName) : [],
+        detailWorks: val.detailWorks != null ? String(val.detailWorks).trim() : (existingData.detailWorks || ''),
+        aliasNames: aliasStr,
+        similarWorks: aliasStr,
+        aliases: aliasStr ? aliasStr.split(/[,、\n]/).map(function (s) { return s.trim(); }).filter(Boolean) : []
+      });
+      if (Object.prototype.hasOwnProperty.call(val, 'cropDetails')) next.cropDetails = val.cropDetails || null;
+      ['showMachine', 'showMaterial', 'showPesticide', 'showField', 'showFuel', 'showRidgePolygon', 'showMaintenance', 'showPreInspection', 'showPeriodicInspection', 'showFuelInspection'].forEach(function (fk) {
+        if (Object.prototype.hasOwnProperty.call(val, fk)) {
+          next[fk] = val[fk] === true ? true : (val[fk] === false ? false : null);
+        }
+      });
+      return next;
+    }
+
+    function buildWorkAckP5_(manageAction, value) {
+      var incoming = (value && value.newData && typeof value.newData === 'object') ? value.newData : ((value && typeof value === 'object') ? value : {});
+      var name = manageAction === 'delete'
+        ? String((value && (value.id || value.name)) || value || '').trim()
+        : String((incoming && incoming.name) || (value && value.name) || '').trim();
+      return { ok: true, masterType: 'work', manageAction: String(manageAction || ''), originalName: String((value && value.originalName) || '').trim(), name: name };
+    }
+
+    async function assertTagAbbrUniqueP5_(orgId, candidate, opts) {
+      var cand = String(candidate || '').trim();
+      if (!cand) return;
+      opts = opts || {};
+      var locs = await readLocationDetailsP5_(orgId);
+      for (var i = 0; i < locs.length; i++) {
+        if (opts.excludeLocationName && locs[i].name === opts.excludeLocationName) continue;
+        if ((locs[i].tagAbbreviation || locs[i].name) === cand) throw new Error('タグ略称「' + cand + '」は他の拠点で使用されています');
+      }
+      var crops = await readCropListP5_(orgId);
+      for (var j = 0; j < crops.length; j++) {
+        if (opts.excludeCropName && crops[j].name === opts.excludeCropName) continue;
+        if ((crops[j].tagAbbreviation || crops[j].name) === cand) throw new Error('タグ略称「' + cand + '」は他の作物で使用されています');
+      }
+    }
+
+    async function handleManageMasterP5_(params) {
+      params = params || {};
+      var masterType = String(params.masterType || '').trim();
+      var manageAction = String(params.manageAction || '').trim();
+      var value = params.value;
+      var userName = String(params.userName || '').trim();
+
+      if (masterType === 'sign') {
+        throw new Error('看板機能マスタは廃止しました。看板機能は画面の固定候補から選んでください');
+      }
+      if (masterType === 'machineCategory') masterType = 'machineGroup';
+
+      var phase4Types = { pesticide: 1, fertilizer: 1, costItem: 1, nurseryLocation: 1, cropCultSetting: 1, container: 1, contentUnit: 1 };
+      if (phase4Types[masterType] && typeof phase4ManageMaster_ === 'function') {
+        return await phase4ManageMaster_(params);
+      }
+
+      var orgId = await resolveCurrentOrgId_();
+      var encOrg = encodeURIComponent(orgId);
+
+      // ---- Simple single-column masters: machineGroup, machineType, hitchType, workCategory, department ----
+      var singleColMap = {
+        machineGroup: { type: 'machine_group', prefix: 'mgroup_', label: 'グループ', defaults: ['圃場', '出荷'], machineCol: 'machine_group' },
+        machineType: { type: 'machine_type', prefix: 'mtype_', label: '機械カテゴリ', defaults: ['トラクター', 'ドローン'], machineCol: 'machine_type' },
+        hitchType: { type: 'hitch', prefix: 'hitch_', label: 'ヒッチ規格', defaults: DEFAULT_HITCH_TYPES_, machineCol: 'hitch_type' },
+        workCategory: { type: 'work_category', prefix: 'wcat_', label: 'カテゴリ', defaults: [] },
+        department: { type: 'department', prefix: 'dept_', label: '部署', defaults: ['未設定'] },
+        dept: { type: 'department', prefix: 'dept_', label: '部署', defaults: ['未設定'] }
+      };
+      if (singleColMap[masterType]) {
+        var cfg = singleColMap[masterType];
+        var curRows = await restSelectAll_('org_masters', 'org_id=eq.' + encOrg + '&master_type=eq.' + cfg.type + '&is_active=eq.true&order=sort_order.asc');
+        if (manageAction === 'add') {
+          var addVal = String((value && value.name) || value || '').trim();
+          if (addVal && !curRows.some(function (r) { return String(r.name || '').trim() === addVal; })) {
+            await restFetch('rest/v1/org_masters', {
+              method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+              body: JSON.stringify({ org_id: orgId, master_type: cfg.type, legacy_id: cfg.prefix + addVal, name: addVal, sort_order: curRows.length + 1, data: { name: addVal }, is_active: true, updated_by: userName })
+            });
+            await writeLogP5_(orgId, userName, 'マスタ追加', addVal, '対象: ' + masterType);
+          }
+        } else if (manageAction === 'edit') {
+          var oName = String((value && value.originalName) || '').trim();
+          var nName = String((value && value.newData && value.newData.name) || (value && value.name) || '').trim();
+          if (!oName) throw new Error('変更前の' + cfg.label + '名がありません');
+          if (!nName) throw new Error(cfg.label + '名を入力してください');
+          if (nName !== oName && curRows.some(function (r) { return String(r.name || '').trim() === nName; })) {
+            throw new Error(cfg.label + '「' + nName + '」は既に登録されています');
+          }
+          var hitS = curRows.find(function (r) { return String(r.name || '').trim() === oName; });
+          if (!hitS && masterType !== 'machineGroup' && masterType !== 'hitchType') {
+            throw new Error(cfg.label + '「' + oName + '」が見つかりません');
+          }
+          if (hitS) {
+            await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(hitS.id), {
+              method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+              body: JSON.stringify({ name: nName, legacy_id: cfg.prefix + nName, data: { name: nName }, updated_by: userName })
+            });
+          }
+          if (nName !== oName && cfg.machineCol) {
+            var mPatch = {};
+            mPatch[cfg.machineCol] = nName;
+            await restFetch('rest/v1/machines?org_id=eq.' + encOrg + '&' + cfg.machineCol + '=eq.' + encodeURIComponent(oName), {
+              method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(mPatch)
+            });
+          }
+          if (nName !== oName && masterType === 'workCategory') {
+            var worksAll = await restSelectAll_('org_masters', 'org_id=eq.' + encOrg + '&master_type=eq.work');
+            for (var wi = 0; wi < worksAll.length; wi++) {
+              if (worksAll[wi].data && String(worksAll[wi].data.category || '').trim() === oName) {
+                var wd = Object.assign({}, worksAll[wi].data, { category: nName });
+                await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(worksAll[wi].id), {
+                  method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ data: wd })
+                });
+              }
+            }
+          }
+          await writeLogP5_(orgId, userName, 'マスタ編集', nName, '対象: ' + masterType + ' (元: ' + oName + ')');
+        } else if (manageAction === 'delete') {
+          var dName = String((value && (value.id || value.name)) || value || '').trim();
+          var hitD = curRows.find(function (r) { return String(r.name || '').trim() === dName || String(r.legacy_id || '') === dName; });
+          if (hitD) {
+            await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(hitD.id), { method: 'DELETE' });
+            await writeLogP5_(orgId, userName, 'マスタ削除', dName, '対象: ' + masterType);
+          }
+        }
+        return await readSingleColMasterP5_(orgId, cfg.type, cfg.defaults);
+      }
+
+      // ---- inspection ----
+      if (masterType === 'inspection') {
+        var curInsp = await readInspectionListP5_(orgId);
+        var normInspPayload = function (itemData, forceId) {
+          var macType = String(itemData.machineType || itemData.target || '').trim();
+          var inspCat = String(itemData.inspectionCategory || itemData.category || '一般').trim();
+          var itemName = String(itemData.item || itemData.name || '').trim();
+          var rawT = String(itemData.inspectionType || '').trim();
+          var inspType = (rawT === '定期点検' || rawT === '給油時点検') ? rawT : '始動前点検';
+          var alertMonths = inspType === '定期点検'
+            ? String(itemData.alertMonths || '').split(/[,、]/).map(function (s) { return Number(s.trim()); }).filter(function (n) { return n >= 1 && n <= 12; }).filter(function (n, i, a) { return a.indexOf(n) === i; }).sort(function (a, b) { return a - b; }).join(',')
+            : '';
+          var rawH = Number(itemData.alertHourMeter), rawD = Number(itemData.alertDistance);
+          var alertH = (inspType === '定期点検' && itemData.alertHourMeter !== '' && itemData.alertHourMeter != null && isFinite(rawH) && rawH > 0) ? rawH : '';
+          var alertD = (inspType === '定期点検' && itemData.alertDistance !== '' && itemData.alertDistance != null && isFinite(rawD) && rawD > 0) ? rawD : '';
+          if (!macType) throw new Error('機械カテゴリを選択してください');
+          if (!itemName) throw new Error('点検項目名を入力してください');
+          var id = forceId || String(itemData.id || ('insp_' + Date.now() + '_' + Math.floor(Math.random() * 1000)));
+          var sortOrder = (itemData.sortOrder !== '' && itemData.sortOrder != null) ? Number(itemData.sortOrder) || 0 : 0;
+          return {
+            id: id, machineType: macType, inspectionCategory: inspCat, item: itemName, sortOrder: sortOrder,
+            note: String(itemData.note || '').trim(), inspectionType: inspType,
+            alertMonths: alertMonths, alertHourMeter: alertH, alertDistance: alertD
+          };
+        };
+        if (manageAction === 'add') {
+          var objI = normInspPayload(value || {});
+          if (curInsp.some(function (x) { return x.machineType === objI.machineType && x.inspectionType === objI.inspectionType && x.inspectionCategory === objI.inspectionCategory && x.item === objI.item; })) {
+            throw new Error('機械「' + objI.machineType + '」の' + objI.inspectionType + '項目「' + objI.item + '」は既に登録されています');
+          }
+          await restFetch('rest/v1/org_masters', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({ org_id: orgId, master_type: 'inspection_item', legacy_id: objI.id, name: objI.item, sort_order: objI.sortOrder, data: objI, is_active: true, updated_by: userName })
+          });
+          await writeLogP5_(orgId, userName, 'マスタ追加', objI.machineType + ' [' + objI.inspectionType + '] - ' + objI.item, '対象: 点検マスタ');
+        } else if (manageAction === 'edit') {
+          var eId = String((value && (value.id || value.originalId)) || '').trim();
+          var objIE = normInspPayload((value && value.newData) || value || {}, eId);
+          var rawRows = await restFetch('rest/v1/org_masters?org_id=eq.' + encOrg + '&master_type=eq.inspection_item&legacy_id=eq.' + encodeURIComponent(eId) + '&limit=1');
+          if (!Array.isArray(rawRows) || !rawRows.length) throw new Error('対象の点検項目が見つかりません');
+          await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(rawRows[0].id), {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({ name: objIE.item, sort_order: objIE.sortOrder, data: objIE, updated_by: userName })
+          });
+          await writeLogP5_(orgId, userName, 'マスタ編集', objIE.machineType + ' [' + objIE.inspectionType + '] - ' + objIE.item, '対象: 点検マスタ');
+        } else if (manageAction === 'delete') {
+          var tvI = String((value && (value.id || value.name)) || value || '').trim();
+          var allI = await restSelectAll_('org_masters', 'org_id=eq.' + encOrg + '&master_type=eq.inspection_item');
+          var hitI = allI.find(function (r) { return String(r.legacy_id || '') === tvI || String(r.name || '').trim() === tvI; });
+          if (hitI) {
+            await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(hitI.id), { method: 'DELETE' });
+            await writeLogP5_(orgId, userName, 'マスタ削除', tvI, '対象: 点検マスタ');
+          }
+        }
+        return await readInspectionListP5_(orgId);
+      }
+
+      // ---- location ----
+      if (masterType === 'location') {
+        var curLocs = await restSelectAll_('org_masters', 'org_id=eq.' + encOrg + '&master_type=eq.location&is_active=eq.true&order=sort_order.asc');
+        if (manageAction === 'add') {
+          var loc = (value && typeof value === 'object') ? value : { name: value };
+          var lName = String(loc.name || '').trim();
+          if (!lName) throw new Error('拠点名を入力してください');
+          if (curLocs.some(function (l) { return String(l.name || '').trim() === lName; })) throw new Error('拠点名「' + lName + '」は既に登録されています');
+          var lAbbr = String(loc.tagAbbreviation || '').trim();
+          await assertTagAbbrUniqueP5_(orgId, lAbbr || lName, {});
+          var climates = loc.climates != null ? loc.climates : loc.climate;
+          var climStr = Array.isArray(climates) ? climates.filter(Boolean).join('、') : String(climates || '').trim();
+          await restFetch('rest/v1/org_masters', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({
+              org_id: orgId, master_type: 'location', legacy_id: lName, name: lName, sort_order: curLocs.length + 1, is_active: true, updated_by: userName,
+              data: { prefecture: String(loc.prefecture || '').trim(), city: String(loc.city || '').trim(), climate: climStr, tagAbbreviation: lAbbr, tagAbbr: lAbbr }
+            })
+          });
+          await writeLogP5_(orgId, userName, 'マスタ追加', lName, '対象: 拠点マスタ');
+        } else if (manageAction === 'edit') {
+          var origL = String((value && value.originalName) || '').trim();
+          var ndL = (value && value.newData) || {};
+          var newL = String(ndL.name || '').trim();
+          if (!newL) throw new Error('拠点名を入力してください');
+          if (newL !== origL && curLocs.some(function (l) { return String(l.name || '').trim() === newL; })) throw new Error('拠点名「' + newL + '」は既に登録されています');
+          var newAbbr = String(ndL.tagAbbreviation || '').trim();
+          await assertTagAbbrUniqueP5_(orgId, newAbbr || newL, { excludeLocationName: origL });
+          var hitL = curLocs.find(function (l) { return String(l.name || '').trim() === origL; });
+          if (!hitL) throw new Error('拠点「' + origL + '」が拠点マスタにありません');
+          var cl2 = ndL.climates != null ? ndL.climates : ndL.climate;
+          var clStr2 = Array.isArray(cl2) ? cl2.filter(Boolean).join('、') : String(cl2 || '').trim();
+          await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(hitL.id), {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({
+              legacy_id: newL, name: newL, updated_by: userName,
+              data: { prefecture: String(ndL.prefecture || '').trim(), city: String(ndL.city || '').trim(), climate: clStr2, tagAbbreviation: newAbbr, tagAbbr: newAbbr }
+            })
+          });
+          await writeLogP5_(orgId, userName, 'マスタ編集', newL, '対象: 拠点マスタ (元: ' + origL + ')');
+        } else if (manageAction === 'delete') {
+          var delL = String((value && (value.id || value.name)) || value || '').trim();
+          var hitLD = curLocs.find(function (l) { return String(l.name || '').trim() === delL; });
+          if (hitLD) {
+            await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(hitLD.id), { method: 'DELETE' });
+            await writeLogP5_(orgId, userName, 'マスタ削除', delL, '対象: 拠点マスタ');
+          }
+        }
+        return await readLocationDetailsP5_(orgId);
+      }
+
+      // ---- crop ----
+      if (masterType === 'crop') {
+        var curCrops = await restSelectAll_('org_masters', 'org_id=eq.' + encOrg + '&master_type=eq.crop&is_active=eq.true&order=sort_order.asc');
+        if (manageAction === 'add') {
+          var cName = String((value && value.name) || '').trim();
+          if (!cName) throw new Error('作物名を入力してください');
+          if (curCrops.some(function (c) { return String(c.name || '').trim() === cName; })) throw new Error('作物名「' + cName + '」は既に登録されています');
+          var cDen = Number((value && value.density) || 0) || 0;
+          var cAbbr = String((value && value.tagAbbreviation) || '').trim();
+          var cIcon = String((value && value.icon) || '').trim();
+          await assertTagAbbrUniqueP5_(orgId, cAbbr || cName, {});
+          await restFetch('rest/v1/org_masters', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({
+              org_id: orgId, master_type: 'crop', legacy_id: cName, name: cName,
+              sort_order: curCrops.length + 1, is_active: true, updated_by: userName,
+              data: { density: cDen, color: String((value && value.color) || ''), tagAbbreviation: cAbbr, icon: cIcon }
+            })
+          });
+          await writeLogP5_(orgId, userName, 'マスタ追加', cName, '対象: 作物マスタ');
+        } else if (manageAction === 'edit') {
+          var origC = String((value && value.originalName) || '').trim();
+          var ndC = (value && value.newData) || value || {};
+          var newC = String(ndC.name || '').trim();
+          if (!origC) throw new Error('変更前の作物名がありません');
+          if (!newC) throw new Error('作物名を入力してください');
+          if (newC !== origC && curCrops.some(function (c) { return String(c.name || '').trim() === newC; })) throw new Error('作物名「' + newC + '」は既に登録されています');
+          var hitC = curCrops.find(function (c) { return String(c.name || '').trim() === origC; });
+          var exD = (hitC && hitC.data) || {};
+          var wDen = (ndC.density != null && ndC.density !== '') ? (Number(ndC.density) || 0) : (Number(exD.density) || 0);
+          var wAbbr = Object.prototype.hasOwnProperty.call(ndC, 'tagAbbreviation') ? String(ndC.tagAbbreviation || '').trim() : String(exD.tagAbbreviation || '').trim();
+          var wIcon = Object.prototype.hasOwnProperty.call(ndC, 'icon') ? String(ndC.icon || '').trim() : String(exD.icon || '').trim();
+          await assertTagAbbrUniqueP5_(orgId, wAbbr || newC, { excludeCropName: origC });
+          var newDataObj = { density: wDen, color: String(exD.color || ''), tagAbbreviation: wAbbr, icon: wIcon };
+          if (hitC) {
+            await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(hitC.id), {
+              method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+              body: JSON.stringify({ legacy_id: newC, name: newC, data: newDataObj, updated_by: userName })
+            });
+          } else {
+            await restFetch('rest/v1/org_masters', {
+              method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+              body: JSON.stringify({ org_id: orgId, master_type: 'crop', legacy_id: newC, name: newC, sort_order: curCrops.length + 1, data: newDataObj, is_active: true, updated_by: userName })
+            });
+          }
+          if (newC !== origC) {
+            var works = await restSelectAll_('org_masters', 'org_id=eq.' + encOrg + '&master_type=eq.work');
+            for (var k = 0; k < works.length; k++) {
+              var wd = works[k].data || {};
+              var arr = Array.isArray(wd.crops) ? wd.crops : splitCsvTokensP5_(wd.cropName);
+              if (arr.indexOf(origC) >= 0) {
+                var repl = Array.from(new Set(arr.map(function (c) { return c === origC ? newC : c; })));
+                var nextWd = Object.assign({}, wd, { crops: repl, cropName: repl.join(',') });
+                await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(works[k].id), {
+                  method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ data: nextWd })
+                });
+              }
+            }
+          }
+          await writeLogP5_(orgId, userName, 'マスタ編集', newC, '対象: 作物マスタ (元: ' + origC + ')');
+        } else if (manageAction === 'delete') {
+          var delC = String((value && (value.id || value.name)) || value || '').trim();
+          var hitCD = curCrops.find(function (c) { return String(c.name || '').trim() === delC; });
+          if (hitCD) {
+            await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(hitCD.id), { method: 'DELETE' });
+            await writeLogP5_(orgId, userName, 'マスタ削除', delC, '対象: 作物マスタ');
+          }
+        }
+        return await readCropListP5_(orgId);
+      }
+
+      // ---- work ----
+      if (masterType === 'work') {
+        var allWorks = await restSelectAll_('org_masters', 'org_id=eq.' + encOrg + '&master_type=eq.work&order=sort_order.asc');
+        var activeWorks = allWorks.filter(function (w) { return w.is_active !== false && w.name && w.name.indexOf('work_extra_') !== 0; });
+        if (manageAction === 'exists') {
+          var qName = String((value && (value.name || value.id)) || value || '').trim();
+          return { ok: true, exists: activeWorks.some(function (w) { return String(w.name || '').trim() === qName; }), name: qName, masterType: 'work', manageAction: 'exists' };
+        }
+        if (manageAction === 'list' || manageAction === 'get') {
+          return activeWorks.map(mapWorkMasterRowP5_);
+        }
+        if (manageAction === 'add') {
+          var awName = String((value && value.name) || '').trim();
+          if (!awName) throw new Error('作業名を入力してください');
+          if (!activeWorks.some(function (w) { return String(w.name || '').trim() === awName; })) {
+            await restFetch('rest/v1/org_masters', {
+              method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+              body: JSON.stringify({
+                org_id: orgId, master_type: 'work', legacy_id: awName, name: awName,
+                sort_order: activeWorks.length + 1, data: buildWorkDataP5_({}, value), is_active: true, updated_by: userName
+              })
+            });
+          }
+          return buildWorkAckP5_('add', value);
+        }
+        if (manageAction === 'delete') {
+          var dwName = String((value && (value.id || value.name)) || value || '').trim();
+          if (!dwName) throw new Error('削除する作業名がありません');
+          var hitDW = activeWorks.find(function (w) { return String(w.name || '').trim() === dwName; });
+          if (hitDW) await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(hitDW.id), { method: 'DELETE' });
+          return buildWorkAckP5_('delete', value);
+        }
+        if (manageAction === 'edit') {
+          var owName = String((value && value.originalName) || '').trim();
+          var ndW = (value && value.newData) || {};
+          var nwName = String(ndW.name || '').trim();
+          if (!owName) throw new Error('変更前の作業名がありません');
+          if (!nwName) throw new Error('作業名を入力してください');
+          if (nwName !== owName && activeWorks.some(function (w) { return String(w.name || '').trim() === nwName; })) {
+            throw new Error('作業名「' + nwName + '」は既に登録されています');
+          }
+          var hitEW = activeWorks.find(function (w) { return String(w.name || '').trim() === owName; });
+          if (!hitEW) throw new Error('作業「' + owName + '」が作業マスタにありません');
+          await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(hitEW.id), {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({ legacy_id: nwName, name: nwName, data: buildWorkDataP5_(hitEW.data || {}, ndW), updated_by: userName })
+          });
+          return buildWorkAckP5_('edit', value);
+        }
+        if (manageAction === 'merge') {
+          var incM = (value && value.newData) ? value.newData : (value || {});
+          var keepM = String(incM.name || (value && value.name) || '').trim();
+          var origM = String((value && value.originalName) || '').trim();
+          if (!keepM) throw new Error('作業名を入力してください');
+          var keepRow = activeWorks.find(function (w) { return String(w.name || '').trim() === keepM; });
+          if (!keepRow) throw new Error('作業名「' + keepM + '」が見つかりません');
+          var origRow = (origM && origM !== keepM) ? activeWorks.find(function (w) { return String(w.name || '').trim() === origM; }) : null;
+          var kObj = mapWorkMasterRowP5_(keepRow);
+          var oObj = origRow ? mapWorkMasterRowP5_(origRow) : null;
+          var mergedCrops = Array.from(new Set([].concat(kObj.crops || [], (oObj && oObj.crops) || [], incM.crops || splitCsvTokensP5_(incM.cropName)).filter(Boolean)));
+          var mergedDetail = Array.from(new Set([kObj.detailWorks, oObj && oObj.detailWorks, incM.detailWorks].join('、').split(/[,、\n]/).map(function (s) { return s.trim(); }).filter(Boolean))).join('、');
+          var mergedAliases = Array.from(new Set([].concat(kObj.aliases || [], (oObj && oObj.aliases) || [], incM.aliases || [], origM ? [origM] : []).filter(function (a) { return a && a !== keepM; })));
+          var mergedCropDetails = {};
+          [kObj.cropDetails, oObj && oObj.cropDetails, incM.cropDetails].forEach(function (cd) {
+            if (!cd || typeof cd !== 'object') return;
+            Object.keys(cd).forEach(function (ck) {
+              mergedCropDetails[ck] = Array.from(new Set([mergedCropDetails[ck] || '', cd[ck] || ''].join('、').split(/[,、\n]/).map(function (s) { return s.trim(); }).filter(Boolean))).join('、');
+            });
+          });
+          var orFlag = function (a, b, c) {
+            var vals = [a, b, c].filter(function (v) { return v !== null && v !== undefined; });
+            if (vals.indexOf(true) >= 0) return true;
+            return vals.length ? vals[0] : null;
+          };
+          var nextW = Object.assign({}, keepRow.data || {}, {
+            category: String(incM.category || (oObj && oObj.category) || kObj.category || '').trim(),
+            cropName: mergedCrops.join(','), crops: mergedCrops, cropDetails: mergedCropDetails, detailWorks: mergedDetail,
+            aliasNames: mergedAliases.join(', '), similarWorks: mergedAliases.join(', '), aliases: mergedAliases,
+            showMachine: orFlag(kObj.showMachine, oObj && oObj.showMachine, incM.showMachine),
+            showMaterial: orFlag(kObj.showMaterial, oObj && oObj.showMaterial, incM.showMaterial),
+            showPesticide: orFlag(kObj.showPesticide, oObj && oObj.showPesticide, incM.showPesticide),
+            showField: orFlag(kObj.showField, oObj && oObj.showField, incM.showField),
+            showFuel: orFlag(kObj.showFuel, oObj && oObj.showFuel, incM.showFuel),
+            showRidgePolygon: orFlag(kObj.showRidgePolygon, oObj && oObj.showRidgePolygon, incM.showRidgePolygon),
+            showMaintenance: orFlag(kObj.showMaintenance, oObj && oObj.showMaintenance, incM.showMaintenance),
+            showPreInspection: orFlag(kObj.showPreInspection, oObj && oObj.showPreInspection, incM.showPreInspection),
+            showPeriodicInspection: orFlag(kObj.showPeriodicInspection, oObj && oObj.showPeriodicInspection, incM.showPeriodicInspection),
+            showFuelInspection: orFlag(kObj.showFuelInspection, oObj && oObj.showFuelInspection, incM.showFuelInspection)
+          });
+          await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(keepRow.id), {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({ data: nextW, updated_by: userName })
+          });
+          if (origRow) await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(origRow.id), { method: 'DELETE' });
+          return buildWorkAckP5_('merge', value);
+        }
+        return activeWorks.map(mapWorkMasterRowP5_);
+      }
+
+      // ---- tool ----
+      if (masterType === 'tool') {
+        var curTools = await restSelectAll_('tools', 'org_id=eq.' + encOrg + '&order=created_at.asc');
+        if (manageAction === 'add') {
+          var newTId = 'TOOL-' + genUuid_().slice(0, 6);
+          await restFetch('rest/v1/tools', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({
+              org_id: orgId, legacy_id: newTId, name: String((value && value.name) || ''),
+              work_category: String((value && (value.workCategory || value.workTypes || value.works)) || ''),
+              status: '所有', registered_by: userName
+            })
+          });
+          await writeLogP5_(orgId, userName, 'マスタ追加', (value && value.name) || newTId, '対象: 道具マスタ');
+        } else if (manageAction === 'edit') {
+          var tId = String((value && (value.id || value.originalId)) || '').trim();
+          var origT = String((value && value.originalName) || '').trim();
+          var ndT = (value && value.newData) || value || {};
+          var newTName = String(ndT.name || '').trim();
+          if (!newTName) throw new Error('道具名を入力してください');
+          var hitT = curTools.find(function (t) {
+            return (tId && String(t.legacy_id || t.id) === tId) || (!tId && String(t.name || '').trim() === origT);
+          });
+          if (!hitT) throw new Error('対象の道具が見つかりません');
+          await restFetch('rest/v1/tools?id=eq.' + encodeURIComponent(hitT.id), {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({ name: newTName, work_category: String(ndT.workCategory || ndT.workTypes || ndT.works || '').trim() })
+          });
+          await writeLogP5_(orgId, userName, 'マスタ編集', newTName, '対象: 道具マスタ');
+        } else if (manageAction === 'delete') {
+          var dTVal = String((value && (value.id || value.name)) || value || '').trim();
+          var hitTD = curTools.find(function (t) { return String(t.legacy_id || t.id) === dTVal || String(t.name || '').trim() === dTVal; });
+          if (hitTD) {
+            await restFetch('rest/v1/tools?id=eq.' + encodeURIComponent(hitTD.id), { method: 'DELETE' });
+            await writeLogP5_(orgId, userName, 'マスタ削除', dTVal, '対象: 道具マスタ');
+          }
+        }
+        var resTools = await restSelectAll_('tools', 'org_id=eq.' + encOrg + '&order=created_at.asc');
+        return resTools.filter(function (r) { return !!r.name; }).map(function (r) {
+          return { id: r.legacy_id || r.id, name: r.name, workCategory: r.work_category || '' };
+        });
+      }
+
+      // ---- material ----
+      if (masterType === 'material') {
+        var curMats = await restSelectAll_('materials', 'org_id=eq.' + encOrg + '&order=created_at.asc');
+        if (manageAction === 'add') {
+          var newMId = 'MAT-' + genUuid_().slice(0, 6);
+          await restFetch('rest/v1/materials', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({
+              org_id: orgId, legacy_id: newMId, name: String((value && value.name) || ''),
+              work_category: String((value && value.workCategory) || ''), capacity_size: String((value && value.size) || ''),
+              capacity_unit: String((value && value.unit) || ''), registered_by: userName
+            })
+          });
+          await writeLogP5_(orgId, userName, 'マスタ追加', (value && value.name) || newMId, '対象: 資材マスタ');
+        } else if (manageAction === 'edit') {
+          var mId = String((value && (value.id || value.originalId)) || '').trim();
+          var ndM = (value && value.newData) || value || {};
+          var hitM = curMats.find(function (m) {
+            return (mId && String(m.legacy_id || m.id) === mId) || String(m.name || '').trim() === String((value && value.originalName) || '').trim();
+          });
+          if (hitM) {
+            await restFetch('rest/v1/materials?id=eq.' + encodeURIComponent(hitM.id), {
+              method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+              body: JSON.stringify({
+                name: String(ndM.name != null ? ndM.name : hitM.name),
+                work_category: String(ndM.workCategory != null ? ndM.workCategory : (hitM.work_category || '')),
+                capacity_size: String(ndM.size != null ? ndM.size : (hitM.capacity_size || '')),
+                capacity_unit: String(ndM.unit != null ? ndM.unit : (hitM.capacity_unit || ''))
+              })
+            });
+          }
+        } else if (manageAction === 'delete') {
+          var dMVal = String((value && (value.id || value.name)) || value || '').trim();
+          var hitMD = curMats.find(function (m) { return String(m.legacy_id || m.id) === dMVal || String(m.name || '').trim() === dMVal; });
+          if (hitMD) {
+            await restFetch('rest/v1/materials?id=eq.' + encodeURIComponent(hitMD.id), { method: 'DELETE' });
+            await writeLogP5_(orgId, userName, 'マスタ削除', dMVal, '対象: 資材マスタ');
+          }
+        }
+        var resMats = await restSelectAll_('materials', 'org_id=eq.' + encOrg + '&order=created_at.asc');
+        return resMats.filter(function (r) { return !!r.name; }).map(function (r) {
+          return { id: r.legacy_id || r.id, name: r.name, workCategory: r.work_category || '', unit: r.capacity_unit || '' };
+        });
+      }
+
+      return [];
+    }
+
+    registerAction('manageMaster', handleManageMasterP5_);
+
+    registerAction('addCrop', async function (params) {
+      var c = (params && params.cropData) || {};
+      var name = String(c.name || '').trim();
+      if (!name) throw new Error('作物名を入力してください');
+      var density = Number(c.density || 0) || 0;
+      var tagAbbreviation = String(c.tagAbbreviation || '').trim();
+      var icon = String(c.icon || '').trim();
+      await handleManageMasterP5_({ masterType: 'crop', manageAction: 'add', value: { name: name, density: density, tagAbbreviation: tagAbbreviation, icon: icon }, userName: 'system' });
+      return { name: name, density: density, tagAbbreviation: tagAbbreviation, icon: icon };
+    });
+
+    registerAction('deleteCrop', async function (params) {
+      var name = String((params && params.cropName) || '').trim();
+      if (!name) throw new Error('作物名を指定してください');
+      await handleManageMasterP5_({ masterType: 'crop', manageAction: 'delete', value: { name: name }, userName: 'system' });
+      return name;
+    });
+
+    return [
+      'machine_loadAll', 'machine_loadMaintenanceRecords', 'machine_saveMachine', 'machine_saveStatus',
+      'machine_saveLocation', 'machine_saveMaintenance', 'machine_saveMaintenanceSetting', 'machine_saveFuel',
+      'machine_saveInspection', 'machine_loadInspectionRecords',
+      'addMachineToSign', 'editMachineInMaster', 'deleteMachineFromMaster', 'updateMachineLocations',
+      'addMachinePart', 'addMachineSymptom', 'addMachineMaintenanceContent', 'addMaintenanceContent',
+      'saveRefuelRecord', 'getRefuelHistory', 'getMachineLastHourMeters',
+      'vehicle_loadAll', 'vehicle_saveVehicle', 'vehicle_deleteVehicle', 'vehicle_saveLocation', 'vehicle_saveStatus',
+      'addToolToMaster', 'editToolInMaster', 'deleteToolFromMaster', 'updateToolStatus', 'updateToolLocations', 'getToolUsageHistory',
+      'addMaterialToSign', 'editMaterial', 'updateMaterialLocations',
+      'saveManualData', 'getManualList', 'deleteManualData',
+      'ideaBoard_list', 'ideaBoard_save', 'ideaBoard_setStatus', 'ideaBoard_addMemo', 'ideaBoard_addCategory',
+      'planBoard',
+      'droneLobby_list', 'droneLobby_create', 'droneLobby_heartbeat', 'droneLobby_close',
+      'getDeliveryDestinations', 'saveDeliveryDestination', 'deleteDeliveryDestination',
+      'addFieldStatus', 'editFieldStatus', 'deleteFieldStatus',
+      'addFieldCondition', 'editFieldCondition', 'deleteFieldCondition',
+      'addClimateMaster', 'editClimateMaster', 'deleteClimateMaster',
+      'addCrop', 'deleteCrop', 'mergeFields', 'splitField', 'updateSignLink', 'saveReport',
+      'resetAllManureStatus', 'getProdMgmtCategories', 'saveProdMgmtCategories',
+      'getWorkDeptSettings', 'updateWorkDeptSettings', 'saveDepartmentMaster', 'updateUserDepts', 'updateUserLocations',
+      'saveUserQualifications', 'getUserQualifications', 'saveUserGmail', 'getUserGmail', 'getUserCalendarIds', 'saveUserCalendarIds',
+      'getMapCoordinates', 'setGoogleClientId', 'setLineChannelConfig',
+      'importFertilizerCatalogChunk', 'importPesticideCatalogChunk', 'importOsakaMarketDaily', 'importTokyoMarketDaily',
+      'getScriptAuthorizationInfo', 'listGoogleCalendars', 'getTodayGoogleCalendarEvents',
+      'parseWithGemini', 'parseCropImageWithGemini', 'importCultivationPlanFromExternalSheet', 'exportCultivationPlanToExternalSheet',
+      'manageMaster'
+    ];
+  }
+
+  registerPhase5Handlers();
+
+  if (config_.enableAllActions) {
+    Object.keys(registeredHandlers_).forEach(function (k) {
+      config_.supabaseActions[k] = true;
+    });
+    if (config_.enabled) {
+      syncRouterRegistrations_();
+    }
+  }
 
   // ========================================================================
   // 画像圧縮（WebP 変換）＆ Cloudflare R2 アップロードヘルパー
@@ -8759,6 +12456,12 @@
     var baseUrl = String(opts.supabaseUrl || config_.supabaseUrl || '').replace(/\/+$/, '');
     var anonKey = String(opts.supabaseAnonKey || config_.supabaseAnonKey || '').trim();
     var token = String(opts.accessToken || getAccessToken() || '').trim();
+    if (!opts.accessToken) {
+      var ensuredToken = await ensureAutoLoginSession_(false);
+      if (ensuredToken) {
+        token = ensuredToken;
+      }
+    }
 
     if (!baseUrl || !anonKey) {
       throw new Error('Supabase の接続設定が未設定です');
@@ -8802,21 +12505,37 @@
       Authorization: 'Bearer ' + token
     };
 
+    var presignBody = JSON.stringify({
+      op: 'presign',
+      orgId: opts.orgId || undefined,
+      category: opts.category || 'other',
+      contentType: mimeType,
+      sizeBytes: uploadBlob.size,
+      width: width,
+      height: height,
+      linkedTable: opts.linkedTable || undefined,
+      linkedRecordId: opts.linkedRecordId || undefined
+    });
     var presignRes = await fetch(presignEndpoint, {
       method: 'POST',
       headers: commonHeaders,
-      body: JSON.stringify({
-        op: 'presign',
-        orgId: opts.orgId || undefined,
-        category: opts.category || 'other',
-        contentType: mimeType,
-        sizeBytes: uploadBlob.size,
-        width: width,
-        height: height,
-        linkedTable: opts.linkedTable || undefined,
-        linkedRecordId: opts.linkedRecordId || undefined
-      })
+      body: presignBody
     });
+    if (presignRes.status === 401 && !opts.accessToken) {
+      var refreshedToken = await refreshSession();
+      if (!refreshedToken) {
+        refreshedToken = await ensureAutoLoginSession_(true);
+      }
+      if (refreshedToken) {
+        token = refreshedToken;
+        commonHeaders.Authorization = 'Bearer ' + token;
+        presignRes = await fetch(presignEndpoint, {
+          method: 'POST',
+          headers: commonHeaders,
+          body: presignBody
+        });
+      }
+    }
     var presignJson = await presignRes.json().catch(function () { return null; });
     if (!presignRes.ok || !presignJson || !presignJson.uploadUrl) {
       throw new Error((presignJson && presignJson.error) || ('署名URLの発行に失敗しました (' + presignRes.status + ')'));
@@ -8868,9 +12587,21 @@
     var baseUrl = String(opts.supabaseUrl || config_.supabaseUrl || '').replace(/\/+$/, '');
     var anonKey = String(opts.supabaseAnonKey || config_.supabaseAnonKey || '').trim();
     var token = String(opts.accessToken || getAccessToken() || '').trim();
+    if (!opts.accessToken) {
+      var ensuredToken = await ensureAutoLoginSession_(false);
+      if (ensuredToken) {
+        token = ensuredToken;
+      }
+    }
     if (!baseUrl || !anonKey || !token) {
       throw new Error('Supabase の接続設定またはセッションが不足しています');
     }
+    var delBody = JSON.stringify({
+      op: 'delete',
+      orgId: opts.orgId || undefined,
+      assetId: opts.assetId || undefined,
+      r2Key: opts.r2Key || undefined
+    });
     var res = await fetch(baseUrl + '/functions/v1/r2-presign', {
       method: 'POST',
       headers: {
@@ -8878,13 +12609,26 @@
         apikey: anonKey,
         Authorization: 'Bearer ' + token
       },
-      body: JSON.stringify({
-        op: 'delete',
-        orgId: opts.orgId || undefined,
-        assetId: opts.assetId || undefined,
-        r2Key: opts.r2Key || undefined
-      })
+      body: delBody
     });
+    if (res.status === 401 && !opts.accessToken) {
+      var refreshedToken = await refreshSession();
+      if (!refreshedToken) {
+        refreshedToken = await ensureAutoLoginSession_(true);
+      }
+      if (refreshedToken) {
+        token = refreshedToken;
+        res = await fetch(baseUrl + '/functions/v1/r2-presign', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: anonKey,
+            Authorization: 'Bearer ' + token
+          },
+          body: delBody
+        });
+      }
+    }
     var json = await res.json().catch(function () { return null; });
     if (!res.ok || !json || !json.ok) {
       throw new Error((json && json.error) || ('R2 ファイル削除に失敗しました (' + res.status + ')'));
@@ -8918,6 +12662,19 @@
     registerPhase2Handlers: registerPhase2Handlers,
     registerPhase3Handlers: registerPhase3Handlers,
     registerPhase4Handlers: registerPhase4Handlers,
+    registerPhase5Handlers: registerPhase5Handlers,
+    getRegisteredActions: function () { return Object.keys(registeredHandlers_); },
+    enableAllActions: function (enableGlobal) {
+      var keys = Object.keys(registeredHandlers_);
+      keys.forEach(function (k) {
+        config_.supabaseActions[k] = true;
+      });
+      if (enableGlobal === true) {
+        config_.enabled = true;
+      }
+      syncRouterRegistrations_();
+      return keys;
+    },
     toHalfWidthKana: toHalfWidthKana_,
     buildCatalogSearchVariants: buildCatalogSearchVariants_
   };

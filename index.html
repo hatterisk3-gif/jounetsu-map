@@ -342,6 +342,8 @@
     </div>
 
     <script src="api-client.js?v=1788600000343"></script>
+    <script src="supabase-config.js?v=1795120000001"></script>
+    <script src="supabase-bridge.js?v=1795120000001"></script>
   <script>
       const PORTAL_ORG_ID = 'default';
 
@@ -875,7 +877,13 @@
           localStorage.removeItem('pMapAdminId');
           localStorage.removeItem('pMapAdminPw');
           localStorage.removeItem('pMapAdminName');
+          localStorage.removeItem('passionMapSupabaseSession');
         } catch (e) {}
+        try {
+          if (window.PassionMapSupabaseBridge && typeof window.PassionMapSupabaseBridge.clearSession === 'function') {
+            window.PassionMapSupabaseBridge.clearSession();
+          }
+        } catch (e2) {}
         updateLoginDisplay();
         closeAccountModal();
       }
