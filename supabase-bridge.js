@@ -362,6 +362,51 @@
     return json.data;
   }
 
+  async function callEdgeFunction_(functionName, bodyObj, opts) {
+    opts = opts || {};
+    var baseUrl = String(config_.supabaseUrl || '').replace(/\/+$/, '');
+    var anonKey = String(config_.supabaseAnonKey || '').trim();
+    if (!baseUrl || !anonKey) {
+      throw new Error('Supabase の接続設定（supabaseUrl / supabaseAnonKey）が未設定です。');
+    }
+    var userToken = String(opts.accessToken || getAccessToken() || '').trim();
+    if (!opts.accessToken) {
+      var ensuredToken = await ensureAutoLoginSession_(false);
+      if (ensuredToken) {
+        userToken = ensuredToken;
+      }
+    }
+    var headers = {
+      'Content-Type': 'application/json',
+      apikey: anonKey
+    };
+    if (userToken) {
+      headers.Authorization = 'Bearer ' + userToken;
+    } else if (anonKey.split('.').length === 3) {
+      headers.Authorization = 'Bearer ' + anonKey;
+    }
+    var res = await fetch(baseUrl + '/functions/v1/' + encodeURIComponent(String(functionName || '')), {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(bodyObj || {})
+    });
+    if (res.status === 401 && !opts._retried && !opts.accessToken) {
+      var refreshed = await refreshSession();
+      if (!refreshed) {
+        refreshed = await ensureAutoLoginSession_(true);
+      }
+      if (refreshed) {
+        var retryOpts = Object.assign({}, opts, { _retried: true, accessToken: refreshed });
+        return await callEdgeFunction_(functionName, bodyObj, retryOpts);
+      }
+    }
+    var json = await res.json().catch(function () { return null; });
+    if (!res.ok || !json || json.status !== 'success') {
+      throw new Error((json && (json.message || json.error)) || ('Edge Function エラー (' + functionName + ': HTTP ' + res.status + ')'));
+    }
+    return json.data;
+  }
+
   // ========================================================================
   // Phase 1: 認証・共有カタログ・市況 Supabase ハンドラ群
   // ========================================================================
@@ -757,10 +802,13 @@
 
     async function fetchMarketFromSupabaseOrFallback_(action, params) {
       params = params || {};
-      if (params.refresh && typeof global.callGAS === 'function') {
-        return await global.callGAS(action, params, 1, { forceGAS: true });
-      }
       var isOsaka = action === 'getOsakaMarketDaily';
+      if (params.refresh) {
+        return await callEdgeFunction_('market-sync', {
+          action: isOsaka ? 'importOsakaMarketDaily' : 'importTokyoMarketDaily',
+          params: params
+        });
+      }
       var region = isOsaka ? 'osaka' : 'tokyo';
       var market = isOsaka ? (String(params.ichiba || 1) === '2' ? '東部' : '本場') : '大田';
       var wantDate = String(params.date || '').trim().replace(/\//g, '-');
@@ -777,10 +825,10 @@
       }
 
       if (!wantDate) {
-        if (typeof global.callGAS === 'function') {
-          return await global.callGAS(action, params, 1, { forceGAS: true });
-        }
-        return { success: true, source: 'supabase', date: '', market: market, items: [], count: 0 };
+        return await callEdgeFunction_('market-sync', {
+          action: action,
+          params: params
+        });
       }
 
       var rows = await restFetch(
@@ -791,15 +839,16 @@
         '&order=id.asc'
       );
       if (!Array.isArray(rows) || !rows.length) {
-        if (typeof global.callGAS === 'function') {
-          return await global.callGAS(action, params, 1, { forceGAS: true });
-        }
-        return { success: true, source: 'supabase', date: wantDate, market: market, items: [], count: 0 };
+        return await callEdgeFunction_('market-sync', {
+          action: action,
+          params: params
+        });
       }
 
       var head = rows[0] || {};
       var sourceUrl = String(head.source_url || '');
       var isTokyoFallback = isOsaka && sourceUrl.indexOf('fallback:tokyo:') === 0;
+      var tokyoComment = !isOsaka ? String(head.trend || '') : '';
       var items = rows.map(function (r) {
         return {
           name: String(r.item_name || ''),
@@ -810,7 +859,7 @@
           high: r.price_high == null ? null : Number(r.price_high),
           mid: r.price_mid == null ? null : Number(r.price_mid),
           low: r.price_low == null ? null : Number(r.price_low),
-          trend: String(r.trend || '')
+          trend: !isOsaka ? '' : String(r.trend || '')
         };
       });
 
@@ -819,6 +868,7 @@
         source: isTokyoFallback ? 'tokyo-fallback' : 'supabase',
         date: wantDate,
         market: market,
+        comment: tokyoComment,
         items: items,
         importedAt: String(head.imported_at || ''),
         sourceUrl: sourceUrl,
@@ -11672,9 +11722,23 @@
       return { success: true, lineChannelId: channelId, note: 'LINE_CHANNEL_SECRET は Supabase Edge Function Secrets で設定してください' };
     });
 
-    ['importFertilizerCatalogChunk', 'importPesticideCatalogChunk', 'importOsakaMarketDaily', 'importTokyoMarketDaily'].forEach(function (act) {
+    ['importFertilizerCatalogChunk', 'importPesticideCatalogChunk'].forEach(function (act) {
       registerAction(act, function (params) {
-        return fallbackToGasP5_(act, params, '共有カタログ／市況データの書込は管理者CLIまたはGAS経由で実行してください');
+        return fallbackToGasP5_(act, params, '共有カタログデータの書込は管理者CLIまたはGAS経由で実行してください');
+      });
+    });
+
+    registerAction('importOsakaMarketDaily', function (params) {
+      return callEdgeFunction_('market-sync', {
+        action: 'importOsakaMarketDaily',
+        params: Object.assign({}, params || {}, { refresh: true })
+      });
+    });
+
+    registerAction('importTokyoMarketDaily', function (params) {
+      return callEdgeFunction_('market-sync', {
+        action: 'importTokyoMarketDaily',
+        params: Object.assign({}, params || {}, { refresh: true })
       });
     });
 
@@ -11693,9 +11757,18 @@
       return { success: false, gmail: '', events: [], message: 'Googleカレンダー連携は現在GAS連携が必要です', calendarUrl: 'https://calendar.google.com/calendar/u/0/r/day' };
     });
 
-    ['parseWithGemini', 'parseCropImageWithGemini', 'importCultivationPlanFromExternalSheet', 'exportCultivationPlanToExternalSheet'].forEach(function (act) {
+    ['parseWithGemini', 'parseCropImageWithGemini'].forEach(function (act) {
       registerAction(act, function (params) {
-        return fallbackToGasP5_(act, params, 'この機能（Gemini/外部スプレッドシート連携）は現在GAS連携が必要です');
+        return callEdgeFunction_('gemini-proxy', {
+          action: act,
+          params: params || {}
+        });
+      });
+    });
+
+    ['importCultivationPlanFromExternalSheet', 'exportCultivationPlanToExternalSheet'].forEach(function (act) {
+      registerAction(act, function (params) {
+        return fallbackToGasP5_(act, params, 'この機能（外部スプレッドシート連携）は現在GAS連携が必要です');
       });
     });
 

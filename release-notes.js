@@ -7,6 +7,12 @@
  */
 window.PASSION_MAP_RELEASES = [
   {
+    id: '1788600000382',
+    date: '2026-11-21',
+    tags: ['お知らせ・システム', '市況・原価', '栽培計画'],
+    message: 'Supabase + Cloudflare R2 へ本番完全移行（市況自動更新・Gemini解析を含む）'
+  },
+  {
     id: '1788600000381',
     date: '2026-11-20',
     tags: ['お知らせ・システム', '機械・車両'],

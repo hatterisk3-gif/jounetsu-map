@@ -5,3 +5,9 @@ verify_jwt = false
 
 [functions.auth-gateway]
 verify_jwt = false
+
+[functions.market-sync]
+verify_jwt = false
+
+[functions.gemini-proxy]
+verify_jwt = false

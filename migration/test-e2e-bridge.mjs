@@ -219,21 +219,41 @@ function collectUrlsMatching(val, predicate, out = []) {
 async function runOfflineSwitchTests() {
   console.log("=== [Part 1] Offline URL/localStorage Switcher & Router Tests ===");
 
-  // 1) デフォルト URL では 100% GAS 固定（enabled: false / router 空）
+  // 1) デフォルト URL では 100% Supabase + R2 が有効（enabled: true / 全アクション / バッジなし）
   {
-    let gasFetchCalled = 0;
-    let supabaseFetchCalled = 0;
     const storageMap = new Map();
-    storageMap.set("passionMapUserId", "mock_user");
-    storageMap.set("passionMapUserPw", "mock_pw");
     const ctx = createBrowserSandbox({
       href: "https://passion-map.example/worker.html",
       storageMap,
+      customFetch: async () => new Response("{}", { status: 200 }),
+    });
+
+    const totalHandlers = ctx.PassionMapSupabaseBridge.getRegisteredActions().length;
+    assert.ok(totalHandlers >= 270, `expected >= 270 registered actions, got ${totalHandlers}`);
+    assert.equal(ctx.PASSION_MAP_BACKEND_CONFIG.enabled, true, "default enabled must be true");
+    assert.equal(ctx.PASSION_MAP_BACKEND_CONFIG.enableAllActions, true, "default enableAllActions must be true");
+    assert.equal(ctx.PassionMapBackendSwitch.getMode(), "supabase", "default mode must be supabase");
+    assert.equal(ctx.PassionMapApiRouter.list().length, totalHandlers, "all actions must be routed by default");
+    assert.equal(ctx.document.getElementById("passionMapBackendBadge"), null, "badge must not mount in normal production mode");
+    console.log(`  [OK] 1-1: デフォルトURLで全 ${totalHandlers} アクション有効 (Supabase本番 / バッジなし)`);
+  }
+
+  // 2) ?backend=gas で緊急 GAS 退避（enabled: false / router 空 / セッション消去 / バッジ表示）
+  {
+    let gasFetchCalled = 0;
+    let supabaseFetchCalled = 0;
+    const sharedStorage = new Map();
+    sharedStorage.set("passionMapUserId", "mock_user");
+    sharedStorage.set("passionMapUserPw", "mock_pw");
+    sharedStorage.set("passionMapSupabaseSession", JSON.stringify({ access_token: "dummy" }));
+    const ctx = createBrowserSandbox({
+      href: "https://passion-map.example/worker.html?backend=gas",
+      storageMap: sharedStorage,
       customFetch: async (url) => {
         const s = String(url);
         if (s.includes("supabase.co")) {
           supabaseFetchCalled += 1;
-          throw new Error("Should not hit Supabase in default GAS mode");
+          throw new Error("Should not hit Supabase in GAS fallback mode");
         }
         gasFetchCalled += 1;
         return new Response(
@@ -243,88 +263,63 @@ async function runOfflineSwitchTests() {
       },
     });
 
-    assert.equal(ctx.PASSION_MAP_BACKEND_CONFIG.enabled, false, "default enabled must be false");
-    assert.equal(ctx.PassionMapBackendSwitch.getMode(), "gas", "default mode must be gas");
-    assert.equal(ctx.PassionMapApiRouter.list().length, 0, "router must have 0 handlers in default mode");
-    assert.equal(ctx.document.getElementById("passionMapBackendBadge"), null, "badge must not mount in GAS mode");
+    assert.equal(ctx.PASSION_MAP_BACKEND_CONFIG.enabled, false, "GAS mode enabled must be false");
+    assert.equal(ctx.PassionMapBackendSwitch.getMode(), "gas", "mode must be gas");
+    assert.equal(ctx.PassionMapApiRouter.list().length, 0, "router must have 0 handlers in GAS mode");
+    assert.equal(sharedStorage.get("passionMapBackendMode"), "gas");
+    assert.equal(sharedStorage.has("passionMapSupabaseSession"), false);
+
+    const badge = ctx.document.getElementById("passionMapBackendBadge");
+    assert.ok(badge, "bottom-left badge must exist in GAS fallback mode");
+    assert.ok(badge.children[0].textContent.includes("GAS緊急モード"));
+    assert.equal(badge.children[1].textContent, "Supabaseに戻す");
 
     const gasRes = await ctx.callGAS("getSignupOptions", { orgId: "default" });
     assert.equal(gasRes.source, "mock-gas");
     assert.equal(gasFetchCalled, 1);
     assert.equal(supabaseFetchCalled, 0);
-    console.log("  [OK] 1-1: デフォルトURLでは GAS 専用 (router=0, badge=なし)");
-  }
+    console.log("  [OK] 1-2: ?backend=gas で GAS 退避 (router=0, セッション消去, 緊急バッジ表示)");
 
-  // 2) ?backend=supabase で全 270 アクションが有効化 + バッジ表示
-  const sharedStorage = new Map();
-  {
-    const ctx = createBrowserSandbox({
-      href: "https://passion-map.example/worker.html?backend=supabase",
-      storageMap: sharedStorage,
-      customFetch: async () => new Response("{}", { status: 200 }),
-    });
-
-    const totalHandlers = ctx.PassionMapSupabaseBridge.getRegisteredActions().length;
-    assert.ok(totalHandlers >= 270, `expected >= 270 registered actions, got ${totalHandlers}`);
-    assert.equal(ctx.PASSION_MAP_BACKEND_CONFIG.enabled, true);
-    assert.equal(ctx.PASSION_MAP_BACKEND_CONFIG.enableAllActions, true);
-    assert.equal(ctx.PassionMapBackendSwitch.getMode(), "supabase");
-    assert.equal(sharedStorage.get("passionMapBackendMode"), "supabase");
-    assert.equal(ctx.PassionMapApiRouter.list().length, totalHandlers, "all actions must be routed");
-
-    const badge = ctx.document.getElementById("passionMapBackendBadge");
-    assert.ok(badge, "bottom-left badge must exist in supabase mode");
-    assert.ok(badge.children[0].textContent.includes("Supabase検証中"));
-    assert.equal(badge.children[1].textContent, "GASに戻す");
-    console.log(`  [OK] 1-2: ?backend=supabase で全 ${totalHandlers} アクション有効 + 検証バッジ表示`);
-
-    // 2b) 「GASに戻す」ボタンでセッション・モード消去＆URLクリーンリダイレクト
-    sharedStorage.set("passionMapSupabaseSession", JSON.stringify({ access_token: "dummy" }));
+    // 3) 「Supabaseに戻す」ボタンでオーバーライド消去＆通常URL遷移
     badge.children[1].dispatchClick();
     assert.equal(sharedStorage.has("passionMapBackendMode"), false);
-    assert.equal(sharedStorage.has("passionMapSupabaseSession"), false);
-    assert.equal(ctx.PassionMapBackendSwitch.getMode(), "gas");
+    assert.equal(ctx.PassionMapBackendSwitch.getMode(), "supabase");
+    assert.equal(ctx.document.getElementById("passionMapBackendBadge"), null);
     assert.equal(ctx.__getNavigatedTo(), "https://passion-map.example/worker.html");
-    console.log("  [OK] 1-3: 「GASに戻す」クリックで localStorage 消去＆クリーンURL遷移");
+    console.log("  [OK] 1-3: 「Supabaseに戻す」クリックで通常運用復帰＆クリーンURL遷移");
   }
 
-  // 3) ?sb=1 -> 次ページ遷移（クエリなし）でも localStorage により継続有効 -> ?backend=gas で解除
+  // 4) ?sb=0 -> 次ページ遷移（クエリなし）でも localStorage により GAS 退避継続 -> ?backend=supabase で復帰
   {
     const persistMap = new Map();
-    const ctxOn = createBrowserSandbox({
-      href: "https://passion-map.example/index.html?sb=1",
+    const ctxGas = createBrowserSandbox({
+      href: "https://passion-map.example/index.html?sb=0",
       storageMap: persistMap,
     });
-    assert.equal(ctxOn.PassionMapBackendSwitch.getMode(), "supabase");
-    assert.equal(persistMap.get("passionMapBackendMode"), "supabase");
+    assert.equal(ctxGas.PassionMapBackendSwitch.getMode(), "gas");
+    assert.equal(persistMap.get("passionMapBackendMode"), "gas");
 
-    // 次のページへクエリなしで遷移
     const ctxNext = createBrowserSandbox({
       href: "https://passion-map.example/map.html",
       storageMap: persistMap,
     });
-    assert.equal(ctxNext.PASSION_MAP_BACKEND_CONFIG.enabled, true);
-    assert.equal(ctxNext.PassionMapBackendSwitch.getMode(), "supabase");
-    assert.equal(
-      ctxNext.PassionMapApiRouter.list().length,
-      ctxNext.PassionMapSupabaseBridge.getRegisteredActions().length,
-    );
+    assert.equal(ctxNext.PASSION_MAP_BACKEND_CONFIG.enabled, false);
+    assert.equal(ctxNext.PassionMapBackendSwitch.getMode(), "gas");
+    assert.equal(ctxNext.PassionMapApiRouter.list().length, 0);
     assert.ok(ctxNext.document.getElementById("passionMapBackendBadge"));
-    console.log("  [OK] 1-4: 別ページ(map.html)へのクエリなし遷移で Supabase モード継続");
+    console.log("  [OK] 1-4: 別ページ(map.html)へのクエリなし遷移で GAS 退避モード継続");
 
-    // ?backend=gas で完全復帰＆セッション消去
-    persistMap.set("passionMapSupabaseSession", JSON.stringify({ access_token: "tok" }));
-    const ctxOff = createBrowserSandbox({
-      href: "https://passion-map.example/schedule.html?backend=gas",
+    const ctxBack = createBrowserSandbox({
+      href: "https://passion-map.example/schedule.html?backend=supabase",
       storageMap: persistMap,
     });
-    assert.equal(ctxOff.PASSION_MAP_BACKEND_CONFIG.enabled, false);
-    assert.equal(ctxOff.PassionMapBackendSwitch.getMode(), "gas");
-    assert.equal(ctxOff.PassionMapApiRouter.list().length, 0);
+    const totalHandlers = ctxBack.PassionMapSupabaseBridge.getRegisteredActions().length;
+    assert.equal(ctxBack.PASSION_MAP_BACKEND_CONFIG.enabled, true);
+    assert.equal(ctxBack.PassionMapBackendSwitch.getMode(), "supabase");
+    assert.equal(ctxBack.PassionMapApiRouter.list().length, totalHandlers);
     assert.equal(persistMap.has("passionMapBackendMode"), false);
-    assert.equal(persistMap.has("passionMapSupabaseSession"), false);
-    assert.equal(ctxOff.document.getElementById("passionMapBackendBadge"), null);
-    console.log("  [OK] 1-5: ?backend=gas で GAS 復帰・セッション完全クリア");
+    assert.equal(ctxBack.document.getElementById("passionMapBackendBadge"), null);
+    console.log("  [OK] 1-5: ?backend=supabase で GAS 退避解除・本番モード完全復帰");
   }
 }
 
@@ -369,7 +364,7 @@ async function runLiveE2ETests() {
 
     const storageMap = new Map();
     const ctx = createBrowserSandbox({
-      href: "https://passion-map.example/index.html?backend=supabase",
+      href: "https://passion-map.example/index.html",
       storageMap,
       customFetch: (...args) => globalThis.fetch(...args),
     });
@@ -507,7 +502,6 @@ async function runLiveE2ETests() {
 
     // 8) 既存 GAS ログイン状態（passionMapSupabaseSession 欠損時）からの自動 JWT 再取得確認
     const autoStorage = new Map();
-    autoStorage.set("passionMapBackendMode", "supabase");
     autoStorage.set("passionMapUserId", testUserId);
     autoStorage.set("passionMapUserPw", testPw);
     const ctxAuto = createBrowserSandbox({
@@ -522,6 +516,47 @@ async function runLiveE2ETests() {
     assert.ok(recoveredSess.access_token, "ensureAutoLoginSession_ must persist fresh JWT");
     assert.equal(recoveredSess.loginId, testUserId);
     console.log("  [OK] 2-9: 既存 GAS localStorage 認証情報からのシームレス自動 JWT 取得確認");
+
+    // 9) Supabase Edge Function: market-sync（東京/大阪 Live CSV 更新 & DBキャッシュ取得）
+    const tokyoRefresh = await ctx.callGAS("importTokyoMarketDaily", { refresh: true });
+    assert.equal(tokyoRefresh?.success, true, "importTokyoMarketDaily failed");
+    assert.ok(Array.isArray(tokyoRefresh.items) && tokyoRefresh.items.length > 0, "tokyoRefresh items empty");
+    assert.match(String(tokyoRefresh.date || ""), /^\d{4}-\d{2}-\d{2}$/, "tokyoRefresh date invalid");
+
+    const tokyoCached = await ctx.callGAS("getTokyoMarketDaily", {});
+    assert.equal(tokyoCached?.success, true, "getTokyoMarketDaily failed");
+    assert.equal(tokyoCached.source, "supabase", "getTokyoMarketDaily must read from supabase");
+    assert.equal(tokyoCached.date, tokyoRefresh.date, "tokyoCached date mismatch");
+    assert.ok(Array.isArray(tokyoCached.items) && tokyoCached.items.length > 0, "tokyoCached items empty");
+
+    const osakaRefresh = await ctx.callGAS("importOsakaMarketDaily", { ichiba: 1, refresh: true });
+    assert.equal(osakaRefresh?.success, true, "importOsakaMarketDaily failed");
+    assert.ok(Array.isArray(osakaRefresh.items) && osakaRefresh.items.length > 0, "osakaRefresh items empty");
+    assert.match(String(osakaRefresh.date || ""), /^\d{4}-\d{2}-\d{2}$/, "osakaRefresh date invalid");
+    console.log(
+      `  [OK] 2-10: market-sync Edge Function (東京=${tokyoRefresh.date}/${tokyoRefresh.items.length}件[${tokyoRefresh.source}], 大阪=${osakaRefresh.date}/${osakaRefresh.items.length}件[${osakaRefresh.source}])`,
+    );
+
+    // 10) Supabase Edge Function: gemini-proxy（認証＆ルーティング確認）
+    let geminiStatusNote = "";
+    try {
+      const geminiRes = await ctx.callGAS("parseWithGemini", {
+        text: "第1圃場でトマト収穫 10時から2時間",
+        workNames: ["収穫"],
+        cropNames: ["トマト"],
+        fieldNames: [{ id: "f1", name: "第1圃場" }],
+      });
+      assert.ok(geminiRes && typeof geminiRes === "object", "parseWithGemini must return JSON object");
+      geminiStatusNote = "実行OK";
+    } catch (geminiErr) {
+      const msg = String(geminiErr && geminiErr.message ? geminiErr.message : geminiErr);
+      assert.ok(
+        msg.includes("GEMINI_API_KEY"),
+        `parseWithGemini failed unexpectedly (expected GEMINI_API_KEY missing or success): ${msg}`,
+      );
+      geminiStatusNote = "認証＆疎通OK (GEMINI_API_KEY未設定をSupabase側から正常検知)";
+    }
+    console.log(`  [OK] 2-11: gemini-proxy Edge Function (${geminiStatusNote})`);
   } finally {
     // 一時テストメンバーを漏れなくクリーンアップ
     if (createdMember?.id) {

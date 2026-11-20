@@ -1,9 +1,9 @@
 /**
  * 情熱MAP Supabase + Cloudflare R2 切り替え設定
- * デフォルトは従来どおり GAS（enabled: false）。
- * URL に ?backend=supabase（または ?sb=1）を付けると、ブラウザの localStorage に保存され
- * 全ページが Supabase + Cloudflare R2 モードで動作する。
- * ?backend=gas（または ?sb=0）または画面左下の「GASに戻す」で即座に GAS へ戻る。
+ * デフォルトは Supabase + Cloudflare R2（enabled: true / バッジ非表示）。
+ * 緊急時に URL へ ?backend=gas（または ?sb=0）を付けると localStorage に保存され
+ * GAS モードへ一時退避し、画面左下に「🔙 GAS緊急モード [Supabaseに戻す]」を表示する。
+ * ?backend=supabase（または ?sb=1）または「Supabaseに戻す」で通常運用へ戻る。
  */
 (function (global) {
   var MODE_STORAGE_KEY = 'passionMapBackendMode';
@@ -54,18 +54,18 @@
       }
     } catch (e) {}
 
-    if (backendParam === 'supabase' || sbParam === '1' || sbParam === 'true') {
-      safeSetStorage(MODE_STORAGE_KEY, 'supabase');
-      return 'supabase';
-    }
     if (backendParam === 'gas' || sbParam === '0' || sbParam === 'false') {
-      safeRemoveStorage(MODE_STORAGE_KEY);
+      safeSetStorage(MODE_STORAGE_KEY, 'gas');
       safeRemoveStorage(SESSION_STORAGE_KEY);
       return 'gas';
     }
+    if (backendParam === 'supabase' || sbParam === '1' || sbParam === 'true') {
+      safeRemoveStorage(MODE_STORAGE_KEY);
+      return 'supabase';
+    }
 
     var saved = String(safeGetStorage(MODE_STORAGE_KEY) || '').trim().toLowerCase();
-    return saved === 'supabase' ? 'supabase' : 'gas';
+    return saved === 'gas' ? 'gas' : 'supabase';
   }
 
   function applyConfigForMode_(mode) {
@@ -131,17 +131,17 @@
   function mountSwitchBadge_() {
     try {
       if (typeof document === 'undefined') return;
-      if (currentMode_ !== 'supabase') {
+      if (currentMode_ !== 'gas') {
         removeSwitchBadge_();
         return;
       }
       var attach = function () {
-        if (currentMode_ !== 'supabase' || !document.body) return;
+        if (currentMode_ !== 'gas' || !document.body) return;
         if (document.getElementById(BADGE_ELEMENT_ID)) return;
 
         var badge = document.createElement('div');
         badge.id = BADGE_ELEMENT_ID;
-        badge.setAttribute('data-backend-mode', 'supabase');
+        badge.setAttribute('data-backend-mode', 'gas');
         badge.style.cssText = [
           'position:fixed',
           'left:10px',
@@ -152,9 +152,9 @@
           'gap:6px',
           'padding:4px 8px',
           'border-radius:999px',
-          'background:rgba(15,23,42,0.88)',
-          'color:#38bdf8',
-          'border:1px solid rgba(56,189,248,0.45)',
+          'background:rgba(120,53,15,0.92)',
+          'color:#fef3c7',
+          'border:1px solid rgba(251,191,36,0.55)',
           'box-shadow:0 2px 8px rgba(0,0,0,0.28)',
           'font-family:sans-serif',
           'font-size:11px',
@@ -163,16 +163,16 @@
         ].join(';');
 
         var label = document.createElement('span');
-        label.textContent = '⚡ Supabase検証中';
+        label.textContent = '🔙 GAS緊急モード';
         badge.appendChild(label);
 
         var btn = document.createElement('button');
         btn.type = 'button';
-        btn.textContent = 'GASに戻す';
+        btn.textContent = 'Supabaseに戻す';
         btn.style.cssText = [
-          'background:#334155',
-          'color:#f8fafc',
-          'border:1px solid rgba(148,163,184,0.45)',
+          'background:#0f172a',
+          'color:#38bdf8',
+          'border:1px solid rgba(56,189,248,0.45)',
           'border-radius:999px',
           'padding:2px 7px',
           'font-size:10px',
@@ -180,7 +180,7 @@
           'cursor:pointer'
         ].join(';');
         btn.addEventListener('click', function () {
-          enableGas(true);
+          enableSupabase(true);
         });
         badge.appendChild(btn);
 
@@ -200,22 +200,8 @@
   }
 
   function enableSupabase(shouldReload) {
-    safeSetStorage(MODE_STORAGE_KEY, 'supabase');
-    currentMode_ = applyConfigForMode_('supabase');
-    mountSwitchBadge_();
-    if (shouldReload === true) {
-      reloadClean_(false);
-    }
-    return currentMode_;
-  }
-
-  function enableGas(shouldReload) {
     safeRemoveStorage(MODE_STORAGE_KEY);
-    safeRemoveStorage(SESSION_STORAGE_KEY);
-    currentMode_ = applyConfigForMode_('gas');
-    if (global.PassionMapSupabaseBridge && typeof global.PassionMapSupabaseBridge.clearSession === 'function') {
-      global.PassionMapSupabaseBridge.clearSession();
-    }
+    currentMode_ = applyConfigForMode_('supabase');
     removeSwitchBadge_();
     if (shouldReload === true) {
       reloadClean_(true);
@@ -223,9 +209,23 @@
     return currentMode_;
   }
 
+  function enableGas(shouldReload) {
+    safeSetStorage(MODE_STORAGE_KEY, 'gas');
+    safeRemoveStorage(SESSION_STORAGE_KEY);
+    currentMode_ = applyConfigForMode_('gas');
+    if (global.PassionMapSupabaseBridge && typeof global.PassionMapSupabaseBridge.clearSession === 'function') {
+      global.PassionMapSupabaseBridge.clearSession();
+    }
+    mountSwitchBadge_();
+    if (shouldReload === true) {
+      reloadClean_(false);
+    }
+    return currentMode_;
+  }
+
   var currentMode_ = detectInitialMode_();
   applyConfigForMode_(currentMode_);
-  if (currentMode_ === 'supabase') {
+  if (currentMode_ === 'gas') {
     mountSwitchBadge_();
   }
 

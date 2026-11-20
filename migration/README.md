@@ -15,9 +15,12 @@
 - `supabase/migrations/0007_auth_credentials.sql` — パスワードハッシュ隔離テーブル (`org_member_credentials`) と農薬名グループ検索RPC
 - `supabase/functions/r2-presign/index.ts` — Cloudflare R2 署名付き PUT URL 発行・確定・削除 Edge Function
 - `supabase/functions/auth-gateway/index.ts` — ID/PW・Google・LINE認証＆JWT発行・名簿管理 Edge Function
+- `supabase/functions/market-sync/index.ts` — 東京（大田）・大阪（本場/東部）公式市況日報 CSV 自動取得＆ `market_prices` 保存 Edge Function
+- `supabase/functions/gemini-proxy/index.ts` — 作業記述・作型表画像の Gemini AI 解析 Edge Function（`parseWithGemini` / `parseCropImageWithGemini`）
+- `.github/workflows/market-daily-sync.yml` — 毎日 09:05 JST に `market-sync`（`syncAll`）を実行する定期同期ワークフロー
 - `api-client.js` — `PassionMapApiRouter` フック（未登録アクションは100%従来のGASへそのまま送信）
 - `supabase-bridge.js` — WebP圧縮・R2直アップロード＆Phase 1以降のアクション切替ブリッジ（初期無効）
-- `supabase-config.js` — URL パラメータ（`?backend=supabase` / `?backend=gas`）＆ `localStorage` によるオプトイン切替設定・画面左下検証バッジ（初期無効）
+- `supabase-config.js` — デフォルト Supabase + R2 本番設定＆緊急時 GAS 退避切替（`?backend=gas` / `?backend=supabase`）・緊急モードバッジ
 - `migration/check-connection.mjs` — Supabase / R2 / Edge Function 疎通確認スクリプト
 - `migration/export-from-gas.mjs` — 既存GASスプレッドシート読み取り専用エクスポートツール
 - `migration/import-phase1.mjs` — Phase 1 データ（組織・名簿・拠点/部署・カタログ・市況）Supabase投入ツール
@@ -278,13 +281,22 @@ Phase 4 に続き、残りの全 21 シート（ヒッチ規格マスタ・機�
    node migration/import-phase5.mjs
    ```
 3. フロントエンド側の切替ブリッジ（`supabase-bridge.js`）には Phase 5 用 94 アクション + 完全版 `manageMaster`（`registerPhase5Handlers()`）および `getInitData` の Phase 5 農機・車両・道具・資材・点検・過去報告統合読込が実装済みであり、GAS `API_ACTIONS` の全 270 アプリケーションアクション（`migrationExport` 除く）を 100% カバーしています（初期状態は `enabled: false` のため、明示的に有効化しない限り従来の GAS 動作には影響しません）。
-4. フロントエンドで Supabase + R2 へ切り替えて検証する場合は、全 18 画面に組み込まれたオプトイン切替スイッチ（`supabase-config.js`）を使用します：
-   - **通常アクセス（デフォルト）**: `enabled: false` のため 100% 従来の GAS 通信で動作し、本番運用には一切影響しません。
-   - **Supabase + R2 検証モードON**: 任意の画面 URL に `?backend=supabase`（または短縮 `?sb=1`）を付けて開くと、`localStorage`（`passionMapBackendMode = 'supabase'`）に保存され、以降のページ遷移でも全 270 アクションが Supabase + R2 経由になります（画面左下に `⚡ Supabase検証中 [GASに戻す]` バッジを表示）。
-   - **自動 JWT 再取得**: すでに GAS でログイン済み（`localStorage` に資格情報あり）のブラウザで `?backend=supabase` に切り替えた場合も、`passionMapSupabaseSession` が未取得・期限切れなら `supabase-bridge.js` が自動的に `auth-gateway` 経由で JWT を取得するため再ログイン不要です（手動操作時も `PassionMapSupabaseBridge.enableAllActions(true)` で全アクション有効化可能）。
-   - **GAS へ即座に戻す**: 画面左下の `GASに戻す` ボタンを押すか、URL に `?backend=gas`（または `?sb=0`）を付けて開くと、`passionMapBackendMode` と `passionMapSupabaseSession` を消去して即座に GAS モードへ戻ります。
+4. フロントエンド（全 18 画面）は `supabase-config.js` により **Supabase + Cloudflare R2 が本番デフォルト（`enabled: true` / バッジ非表示）** で動作します：
+   - **通常アクセス（本番デフォルト）**: URL パラメータなしで自動的に全 270 アクションが Supabase + R2（および `market-sync` / `gemini-proxy`）経由で動作します。
+   - **自動 JWT 再取得**: 既存 GAS の `localStorage` に資格情報を保持している端末でも、`passionMapSupabaseSession` が未取得または期限切れの場合は `supabase-bridge.js` が自動的に `auth-gateway` 経由で JWT を再取得するため再ログイン不要です。
+   - **緊急時の一時 GAS 退避（フォールバック）**: 万一 GAS 側で動作確認・緊急対応が必要になった場合は、任意の画面 URL に `?backend=gas`（または `?sb=0`）を付けて開くと `localStorage`（`passionMapBackendMode = 'gas'`）へ保存され、画面遷移後も GAS モードで動作します（画面左下に `🔙 GAS緊急モード [Supabaseに戻す]` バッジを表示）。
+   - **本番運用へ戻す**: 画面左下の `Supabaseに戻す` ボタンを押すか、`?backend=supabase`（または `?sb=1`）を付けて開くと退避状態を解除して本番モードへ戻ります。
    - **一般作業員のプロフィール保存（`saveUserGmail` / `saveUserCalendarIds` / `saveUserQualifications`）**: `org_members` の `UPDATE` RLS は管理者限定のため、作業員自身が保存した場合は `org_settings`（`setting_key = 'user_profile_prefs'`）へ同期保存し、取得時は両方から透過的に解決します。
-   - **GAS 連携が残る一部機能**: Google カレンダー連携（`getScriptAuthorizationInfo` / `listGoogleCalendars` / `getTodayGoogleCalendarEvents`）、Gemini 解析（`parseWithGemini` / `parseCropImageWithGemini`）、外部スプレッドシート入出力（`importCultivationPlanFromExternalSheet` / `exportCultivationPlanToExternalSheet`）、共有カタログ/市況の書込（`import*CatalogChunk` / `import*MarketDaily`）、および短縮 URL 展開（`getMapCoordinates` で URL 内座標が直接取れない場合）は、`callGAS(..., { forceGAS: true })` へフォールバックする設計です（`setLineChannelConfig` のシークレット設定は本番では Edge Function Secrets を使用してください）。
+   - **市況自動取得（東京/大阪）＆ Gemini AI 解析**: `getTokyoMarketDaily` / `importTokyoMarketDaily` / `getOsakaMarketDaily` / `importOsakaMarketDaily` は Supabase Edge Function `market-sync` へ、`parseWithGemini` / `parseCropImageWithGemini` は `gemini-proxy` へ移行済みです。
+     - Gemini 解析を有効にするには Supabase Edge Function Secrets に `GEMINI_API_KEY` を設定します：
+       ```powershell
+       npx supabase secrets set GEMINI_API_KEY=your_gemini_api_key
+       ```
+     - GitHub Actions による毎日 09:05 JST の市況自動更新を有効にする場合は、任意のランダム文字列を Supabase Secrets と GitHub Actions Secrets の両方へ `MARKET_SYNC_SECRET` として設定します：
+       ```powershell
+       npx supabase secrets set MARKET_SYNC_SECRET=your_random_cron_secret
+       ```
+   - **GAS 連携が残る一部機能**: Google カレンダー連携（`getScriptAuthorizationInfo` / `listGoogleCalendars` / `getTodayGoogleCalendarEvents`）、外部スプレッドシート入出力（`importCultivationPlanFromExternalSheet` / `exportCultivationPlanToExternalSheet`）、共有カタログ一括書込（`importFertilizerCatalogChunk` / `importPesticideCatalogChunk`）、および短縮 URL 展開（`getMapCoordinates` で URL 内座標が直接取れない場合）は、`callGAS(..., { forceGAS: true })` へフォールバックする設計です（`setLineChannelConfig` のシークレット設定は本番では Edge Function Secrets を使用してください）。
 5. 切替スイッチ（オフラインVM）および Live Supabase + Cloudflare R2 全 Phase E2E 検証は以下のスクリプトで実行できます（本番データを汚さず一時テストメンバーを作成し、`finally` で自動削除します）：
    ```powershell
    node migration/test-e2e-bridge.mjs
