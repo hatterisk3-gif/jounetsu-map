@@ -880,7 +880,7 @@ body.bulk-work-memo-map-picking #workerLegendUI {
 }
 
 body.bulk-work-memo-map-picking #workerMapSelectPlusWrap {
-  bottom: calc(var(--bulk-map-select-bar-h, 160px) + 74px) !important;
+  bottom: calc(var(--bulk-map-select-bar-h, 160px) + 134px) !important;
   right: 10px !important;
   z-index: 10060 !important;
 }
@@ -1163,8 +1163,8 @@ body.bulk-work-memo-map-picking .worker-top-bar {
   box-sizing: border-box;
 }
 
-/* 圃場・マップ選択中は現在地ボタンのみ残して他ボタンを撤去（非表示） */
-.map-action-bar.map-selecting-mode .map-action-btn:not(#btnCurrentLocation) {
+/* 圃場・マップ選択中は現在地と視野地点切替だけ残す */
+.map-action-bar.map-selecting-mode .map-action-btn:not(#btnCurrentLocation):not(#btnToggleViewpoint) {
   display: none !important;
 }
 

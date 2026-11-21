@@ -687,7 +687,7 @@ function applyPendingMapDeepLink() {
     const hasShared = !!link.sharedText;
     const rawStartMode = String(link.startDraw || '').trim();
     const shouldAutoStartDraw = rawStartMode && (rawStartMode === '1' || rawStartMode === 'true' || rawStartMode === 'draw');
-    const shouldAutoStartOtherReg = rawStartMode && ['marker', 'marker_child', 'marker_parent', 'location'].includes(rawStartMode);
+    const shouldAutoStartOtherReg = rawStartMode && ['marker', 'marker_child', 'marker_parent', 'location', 'viewpoint'].includes(rawStartMode);
     if (!hasCoords && !hasField && !hasShared && !link.openCad && !shouldAutoStartDraw && !shouldAutoStartOtherReg) return;
 
     clearMapDeepLinkFromUrl();
