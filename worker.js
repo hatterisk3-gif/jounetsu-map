@@ -9686,22 +9686,58 @@ window.getValidWorkCategories_ = () => {
   return VALID_WORK_CATEGORIES_.slice();
 };
 
+/** カテゴリ比較用。全角スラッシュ・余分な空白を揃える */
+window.normalizeWorkCategoryKey_ = (cat) => {
+  return String(cat || '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\u3000/g, ' ')
+    .replace(/[／⁄∕]/g, '/')
+    .replace(/\s*\/\s*/g, '/')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+window.normalizedWorkCategoryList_ = () => {
+  const out = [];
+  const push = (list) => {
+    (list || []).forEach(item => {
+      const n = window.normalizeWorkCategoryKey_(item);
+      if (n && out.indexOf(n) < 0) out.push(n);
+    });
+  };
+  push(VALID_WORK_CATEGORIES_);
+  push((typeof window.getValidWorkCategories_ === 'function') ? window.getValidWorkCategories_() : []);
+  return out;
+};
+
 window.isValidWorkCategory_ = (cat) => {
-  const c = String(cat || '').trim();
+  const c = window.normalizeWorkCategoryKey_(cat);
   if (!c || c === 'すべて') return false;
-  if (VALID_WORK_CATEGORIES_.indexOf(c) >= 0) return true;
-  const master = (typeof window.getValidWorkCategories_ === 'function') ? window.getValidWorkCategories_() : [];
-  return master.indexOf(c) >= 0;
+  const known = window.normalizedWorkCategoryList_();
+  if (known.indexOf(c) >= 0) return true;
+  const parts = c.split('/').filter(Boolean);
+  // 「移動」はカテゴリマスタの「移動/運搬」に含まれる
+  if (parts.length === 1 && known.some(m => {
+    const mp = m.split('/').filter(Boolean);
+    return mp.length > 1 && mp.indexOf(c) >= 0;
+  })) return true;
+  if (parts.length > 1 && parts.every(p => known.some(m => m === p || m.split('/').indexOf(p) >= 0))) return true;
+  return false;
 };
 
 /** 「栽培/生産」は、統合前の「栽培」「生産」に付いた作業も同じ候補として扱う */
 window.workCategoryMatches_ = (workCat, selectedCat) => {
-  const w = String(workCat || '').trim();
-  const s = String(selectedCat || '').trim();
+  const w = window.normalizeWorkCategoryKey_(workCat);
+  const s = window.normalizeWorkCategoryKey_(selectedCat);
   if (!s || s === 'すべて') return true;
+  if (!w) return false;
   if (w === s) return true;
-  const parts = s.split(/[\/／]/).map(x => x.trim()).filter(Boolean);
-  return parts.length > 1 && parts.indexOf(w) >= 0;
+  const sParts = s.split('/').filter(Boolean);
+  const wParts = w.split('/').filter(Boolean);
+  if (sParts.length > 1 && sParts.indexOf(w) >= 0) return true;
+  if (wParts.length > 1 && sParts.length === 1 && wParts.indexOf(s) >= 0) return true;
+  if (sParts.length > 1 && wParts.length > 1 && wParts.every(p => sParts.indexOf(p) >= 0) && sParts.every(p => wParts.indexOf(p) >= 0)) return true;
+  return false;
 };
 
 window.getWorkMasterCategoryOrEmpty_ = (w) => {
@@ -40733,8 +40769,11 @@ window.getBulkWorkMemoAllWorkNames_ = (category) => {
     const wCat = window.getWorkMasterCategoryOrEmpty_(w);
     const isRestName = name.includes('休憩');
     if (cat && !metaAll) {
-      if (!window.isValidWorkCategory_(wCat)) return;
-      if (!(typeof window.workCategoryMatches_ === 'function' ? window.workCategoryMatches_(wCat, cat) : wCat === cat)) return;
+      // 選んだカテゴリに表記ゆれで一致する作業は、有効判定で落とさない
+      const matched = (typeof window.workCategoryMatches_ === 'function')
+        ? window.workCategoryMatches_(wCat, cat)
+        : (window.normalizeWorkCategoryKey_ ? window.normalizeWorkCategoryKey_(wCat) === window.normalizeWorkCategoryKey_(cat) : wCat === cat);
+      if (!matched) return;
     } else if (!isRestName && !window.isValidWorkCategory_(wCat)) {
       return;
     }
@@ -43755,56 +43794,102 @@ window.refreshBulkWorkMemoWorkSuggestions_ = (d) => {
   if (sorted[0] && sorted[0].matchedAlias) d.guessedAlias = sorted[0].matchedAlias;
 };
 
+window.bulkWorkMemoCropSelectionIsCommon_ = (cropNames) => {
+  const list = Array.isArray(cropNames) ? cropNames : [];
+  if (!list.length) return true;
+  return list.every(n => {
+    if (typeof window.isBulkWorkMemoCommonCrop_ === 'function' && window.isBulkWorkMemoCommonCrop_(n)) return true;
+    return typeof window.normalizeWorkCropKey === 'function' && window.normalizeWorkCropKey(n) === '__common__';
+  });
+};
+
+window.bulkWorkMemoNamesFromWorks_ = (works) => {
+  const names = [];
+  const seen = new Set();
+  (works || []).forEach(w => {
+    const n = String((w && (w.name || w.workName)) || '').trim();
+    if (!n || seen.has(n) || window.isBulkWorkMemoRestWorkName_(n)) return;
+    seen.add(n);
+    names.push(n);
+  });
+  names.sort((a, b) => a.localeCompare(b, 'ja'));
+  return names;
+};
+
+/** 有効カテゴリ判定で落ちた作業も、選んだカテゴリに表記が近ければ拾う */
+window.bulkWorkMemoLooseWorkNames_ = (category) => {
+  const cat = String(category || '').trim();
+  const names = [];
+  const seen = new Set();
+  (pdlWorkMaster || []).forEach(w => {
+    const n = String((w && (w.name || w.workName)) || '').trim();
+    if (!n || seen.has(n) || window.isBulkWorkMemoRestWorkName_(n)) return;
+    if (cat) {
+      const wCat = window.getWorkMasterCategoryOrEmpty_(w);
+      const matched = (typeof window.workCategoryMatches_ === 'function')
+        ? window.workCategoryMatches_(wCat, cat)
+        : String(wCat || '').trim() === cat;
+      if (!matched) return;
+    }
+    seen.add(n);
+    names.push(n);
+  });
+  names.sort((a, b) => a.localeCompare(b, 'ja'));
+  return names;
+};
+
 window.getBulkWorkMemoManualWorkList_ = (d) => {
   const filterCat = String(d && d.listFilterCategory != null ? d.listFilterCategory : '').trim();
   const metaAll = typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(filterCat);
   const cropNames = (typeof window.getBulkWorkMemoCropNames_ === 'function')
     ? window.getBulkWorkMemoCropNames_(d)
     : [];
+  const cropIsCommon = window.bulkWorkMemoCropSelectionIsCommon_(cropNames);
+  const fromMaster = (cat) => (window.getBulkWorkMemoAllWorkNames_(cat) || []).filter(n => !window.isBulkWorkMemoRestWorkName_(n));
   let names = [];
   let fallbackNote = '';
-  if (typeof window.getWorksByCategoryAndCrop === 'function' && cropNames.length) {
-    const works = window.getWorksByCategoryAndCrop(filterCat, cropNames, null) || [];
-    const seen = new Set();
-    works.forEach(w => {
-      const n = String((w && w.name) || '').trim();
-      if (!n || seen.has(n) || window.isBulkWorkMemoRestWorkName_(n)) return;
-      seen.add(n);
-      names.push(n);
-    });
-    names.sort((a, b) => a.localeCompare(b, 'ja'));
+  // 共通は作物で絞らない。カテゴリの作業をそのまま出す
+  if (!cropIsCommon && typeof window.getWorksByCategoryAndCrop === 'function' && cropNames.length) {
+    names = window.bulkWorkMemoNamesFromWorks_(window.getWorksByCategoryAndCrop(filterCat, cropNames, null));
   } else {
-    names = (window.getBulkWorkMemoAllWorkNames_(filterCat) || []).filter(n => !window.isBulkWorkMemoRestWorkName_(n));
+    names = fromMaster(filterCat);
+  }
+  if (!names.length && filterCat) {
+    const loose = window.bulkWorkMemoLooseWorkNames_(filterCat);
+    if (loose.length) {
+      names = loose;
+      if (!cropIsCommon) {
+        fallbackNote = `「${filterCat}」に、この作物専用の作業がないため、カテゴリの作業を表示しています。`;
+      }
+    }
   }
   if (metaAll) {
     fallbackNote = `「${filterCat}」：下の「対象カテゴリ → 対象作業」から選ぶか、全作業一覧から対象作業を選んでください（カテゴリは「${filterCat}」のまま保存されます）。`;
-  } else if (!names.length && filterCat && cropNames.length) {
-    const works = (typeof window.getWorksByCategoryAndCrop === 'function')
-      ? (window.getWorksByCategoryAndCrop('', cropNames, null) || [])
+  } else if (!names.length && filterCat && !cropIsCommon) {
+    const byCrop = (typeof window.getWorksByCategoryAndCrop === 'function')
+      ? window.bulkWorkMemoNamesFromWorks_(window.getWorksByCategoryAndCrop('', cropNames, null))
       : [];
-    const seen = new Set();
-    names = [];
-    works.forEach(w => {
-      const n = String((w && w.name) || '').trim();
-      if (!n || seen.has(n) || window.isBulkWorkMemoRestWorkName_(n)) return;
-      seen.add(n);
-      names.push(n);
-    });
-    names.sort((a, b) => a.localeCompare(b, 'ja'));
-    fallbackNote = names.length
-      ? `「${filterCat}」×作物に該当する作業がないため、作物のみで絞った一覧を表示しています。`
-      : `「${filterCat}」に該当する作業がないため、すべての作業を表示しています。`;
-    if (!names.length) {
-      names = (window.getBulkWorkMemoAllWorkNames_('') || []).filter(n => !window.isBulkWorkMemoRestWorkName_(n));
+    if (byCrop.length) {
+      names = byCrop;
+      fallbackNote = `「${filterCat}」×この作物に該当する作業がないため、作物のみで絞った一覧を表示しています。`;
+    } else {
+      names = fromMaster('');
+      if (!names.length) names = window.bulkWorkMemoLooseWorkNames_('');
+      fallbackNote = names.length
+        ? `「${filterCat}」に該当する作業がないため、すべての作業を表示しています。`
+        : '';
     }
   } else if (!names.length && filterCat) {
-    names = (window.getBulkWorkMemoAllWorkNames_('') || []).filter(n => !window.isBulkWorkMemoRestWorkName_(n));
-    fallbackNote = `「${filterCat}」に該当する作業がないため、すべての作業を表示しています。`;
+    names = fromMaster('');
+    if (!names.length) names = window.bulkWorkMemoLooseWorkNames_('');
+    fallbackNote = names.length
+      ? `「${filterCat}」に該当する作業がないため、すべての作業を表示しています。`
+      : '';
+  } else if (!names.length) {
+    names = window.bulkWorkMemoLooseWorkNames_('');
   }
   if (!names.length) {
-    fallbackNote = cropNames.length
-      ? 'この作物に合う作業がありません。「＋ 新しい作業を追加」から追加できます。'
-      : '作業マスタが空です。「＋ 新しい作業を追加」から追加できます。';
+    fallbackNote = '作業マスタに表示できる作業名がありません。「＋ 新しい作業を追加」から追加できます。';
   }
   return { names, fallbackNote, filterCat };
 };
@@ -45592,7 +45677,10 @@ window.getBulkWorkMemoSuggestedWorksForCategory_ = (d, category) => {
     const name = String(n || '').trim();
     if (!name || window.isBulkWorkMemoRestWorkName_(name)) return false;
     if (!cat) return true;
-    return String(window.getBulkWorkMemoWorkCategory_(name) || '').trim() === cat;
+    const wCat = String(window.getBulkWorkMemoWorkCategory_(name) || '').trim();
+    return (typeof window.workCategoryMatches_ === 'function')
+      ? window.workCategoryMatches_(wCat, cat)
+      : wCat === cat;
   });
   const primary = filter(d && d.workCandidates).slice(0, 10);
   const maybe = filter(d && d.workMaybeCandidates)
