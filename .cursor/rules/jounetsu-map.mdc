@@ -1,0 +1,40 @@
+---
+description: 情熱MAP プロジェクト開発・キャッシュバスター・Supabase本番デプロイ必須ルール
+globs:
+alwaysApply: true
+---
+
+# 情熱MAP 開発・デプロイ必須ルール（Cursor / 全エージェント共通）
+
+このリポジトリ（情熱MAP）でコードを修正・追加する際は、**毎回必ず**以下のルールに従うこと。
+
+## 1. 本番バックエンドは Supabase + Cloudflare R2（GAS ではない）
+- 本番トラフィックはデフォルトで **Supabase（PostgreSQL + Auth + RLS + Edge Functions）+ Cloudflare R2** を使用する（`supabase-config.js` の `enabled: true`）。
+- フロントエンドの `callGAS()` 呼び出しは `api-client.js`（`PassionMapApiRouter`）が横取りし、`supabase-bridge.js`（REST API）および `supabase/functions/` 配下の Edge Functions（`auth-gateway`, `r2-presign`, `market-sync`, `gemini-proxy`）で処理される。
+- **通常のデータ読書き・機能追加・バグ修正は `supabase-bridge.js`（および `supabase/functions/*`, `supabase/migrations/*`）を修正すること。`コード.js` を変更しても本番には反映されない。**
+- `コード.js` と `clasp push` / `clasp deploy` を使うのは、残存 GAS フォールバック機能（Google カレンダー連携、外部スプレッドシート入出力、共有カタログ一括書込、Google マップ短縮 URL 展開）または `?backend=gas` 緊急ロールバック対応時のみ。
+
+## 2. ブランチ確認（`main` が本番公開ブランチ）
+- 作業前に `git branch --show-current` を確認すること。別ブランチ（例: `cursor/...`）にコミットしただけでは本番（GitHub Pages / `main`）に反映されない。変更は最終的に `main` へマージ／プッシュすること。
+
+## 3. フロントエンド（`.js` / `.css`）編集後の必須キャッシュバスター更新
+- `.js` や `.css` を編集して `git push` しただけでは、ブラウザキャッシュ（旧 `?v=` のまま）により本番へ反映されない。また構文チェックなしの編集はランタイムで無言停止する。
+- **フロントエンドを変更したら、コミット前に必ず次の 1 コマンドを実行すること**：
+  ```bash
+  node scripts/bump-version.mjs --message="変更内容の簡潔な日本語要約（50文字以内）" --tags="対象機能タグ"
+  ```
+  - 自動で行われる処理:
+    1. 変更された `.js` / `.mjs` の `node --check` 構文チェック
+    2. `release-notes.js` 先頭エントリの `id` を `+1` して本日（JST）の更新履歴を追加
+    3. 変更された `.js` / `.css`（`supabase-bridge.js` / `supabase-config.js` 変更時の全 HTML 参照含む）および `release-notes.js` の `?v=...`、さらに `schedule.html` の `const cacheBust = '...'` を新 `id` へ一括統一
+  - すでに手動で `release-notes.js` を更新済みの場合は `--keep-id`、事前確認のみ行いたい場合は `--dry-run`、全ルートアセット一括更新は `--all` を使用する。
+  - 利用可能な主な `tags`: `'畝CAD・図面'`, `'栽培計画'`, `'マップ・圃場'`, `'作業画面'`, `'スケジュール'`, `'出退勤・休憩'`, `'農薬・資材'`, `'市況・原価'`, `'機械・車両'`, `'看板・ピン'`, `'天気・環境'`, `'お知らせ・システム'`
+
+## 4. Supabase Edge Functions / SQL マイグレーション
+- `supabase/functions/<関数名>/` を変更した場合は、`git push` だけでは本番反映されない。デプロイ時に `npx supabase functions deploy <関数名> --no-verify-jwt` を実行すること（本番反映前はユーザー確認を取る）。
+- `supabase/migrations/` を追加・変更した場合は、Supabase Dashboard（SQL Editor）または `npx supabase db push` で本番 DB へ適用すること。
+
+## 5. コミット・後片付け・セキュリティ厳守
+- `migration/.env`、`migration/data/`、`supabase/.temp/`、秘密鍵（`sb_secret_*`, `SUPABASE_SERVICE_ROLE_KEY`, `R2_SECRET_ACCESS_KEY`, `GEMINI_API_KEY`, `MARKET_SYNC_SECRET`）は絶対にフロントエンドや git に含めないこと。
+- 一時スクリプト（`update_*.js`、検証用 `.mjs` / `.py` / `.txt` 等）を作成した場合は、作業完了後すぐに削除して `git status` をクリーンに保つこと。
+- 通常の公開手順：`node scripts/bump-version.mjs ...` → `git add` & `git commit` → `git push origin main`（原則 `clasp` は実行しない）。

@@ -8,11 +8,18 @@ description: 変更内容の差分分析・要約コミットを行い、GitHub�
 # 作業手順
 1. まず、ターミナルで `git status` および `git diff` を実行し、現在どのファイルがどのように変更されているか（差分）を読み取り、`migration/.env`、`migration/data/`、`supabase/.temp/` などの秘密情報や一時スクリプトが含まれていないことを確認してください。
 2. その変更内容を分析し、何が行われたかを端的に表すコミットメッセージ（日本語で50文字以内）を生成してください。
-3. **更新情報（`release-notes.js`）とキャッシュバスターの更新**：
-   - `release-notes.js` の `window.PASSION_MAP_RELEASES` 先頭にある `id` の数値に `+1` した新しい `id`、当日の日付（`YYYY-MM-DD`）、対象機能のジャンルラベル `tags`（例: `['畝CAD・図面', '栽培計画']`）、および手順2で生成したコミットメッセージ（`Manual: ` を除いた本文）を配列の先頭に追加してください。
-   - 合わせて、`worker.html`、`worker2.html`、`admin.html` 内の `release-notes.js?v=...` の数値を新しい `id` に更新し、`schedule.html` の `const cacheBust = '...'` も新しい数値に更新してキャッシュが確実に切り替わるようにしてください。
-   - さらに、`supabase-bridge.js` または `supabase-config.js` に変更がある場合は、静的 HTML 17ファイル（`index.html`, `admin.html`, `admin2.html`, `estimate.html`, `farm-board.html`, `farm-skill-battle.html`, `machine.html`, `manual.html`, `manure.html`, `map-test.html`, `map.html`, `ops-index.html`, `spray.html`, `water.html`, `worker.html`, `worker2.html`, `アイデア.html`）内の `?v=...` も新しい `id` へ統一更新してください（`schedule.html` は `cacheBust` で自動反映されます）。
-   - 変更した `.js` ファイルは `node --check` で構文エラーがないことを確認してください。
+3. **更新情報（`release-notes.js`）とキャッシュバスター・構文チェックの一括更新**：
+   - 基本はリポジトリ同梱の自動化スクリプト（1コマンド）を実行してください（推奨・最速）：
+     ```bash
+     node scripts/bump-version.mjs --message="【手順2で生成したコミットメッセージ（Manual: なし）】" --tags="【対象タグ（例: 作業画面,マップ・圃場）】"
+     ```
+     ※ すでに手動で `release-notes.js` を更新済みの場合は `--keep-id` を指定します。事前確認したい場合は `--dry-run`、全ルート `.js`/`.css` の `?v=` を強制更新したい場合は `--all` を利用できます。
+     - このスクリプトは自動で以下を実行します：
+       1. 変更された `.js` / `.mjs` の `node --check` 構文検証
+       2. `release-notes.js` の `window.PASSION_MAP_RELEASES` 先頭 `id` に `+1` した新エントリ追加（`date` は本日 JST、手動で入れる場合も形式同一）
+       3. 変更された `.js` / `.css`（`supabase-bridge.js` / `supabase-config.js` を含む）と `release-notes.js` を参照する全ルート HTML（静的 HTML 17 ファイル＋他 HTML）の `?v=...` 更新、および `schedule.html` の `const cacheBust = '...'` 同期
+       4. `supabase/functions/` や `supabase/migrations/`、`コード.js`、非 `main` ブランチ変更時の注意警告
+   - （手動で実施する場合のみ）`release-notes.js` 先頭 `id` を `+1` し、`worker.html`・`worker2.html`・`admin.html` の `release-notes.js?v=...` と `schedule.html` の `cacheBust`、さらに `supabase-bridge.js` / `supabase-config.js` 等変更ファイルの全 HTML 内 `?v=...` を新 `id` へ更新し、`node --check` を実施してください。
 4. **本番デプロイ手順**（現在の本番バックエンドは **Supabase + Cloudflare R2** です）：
    - **A. Supabase SQL マイグレーション（`supabase/migrations/` に新規・変更がある場合のみ）**
      - Supabase Dashboard（SQL Editor）または `npx supabase db push` で本番 DB へ適用済みであることを確認してください。
