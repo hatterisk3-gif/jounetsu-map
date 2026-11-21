@@ -21230,7 +21230,7 @@ window.buildBulkConcurrentWorksHtml_ = (d, uid) => {
     return `<div style="padding:9px 10px; background:${isEditingThis ? '#F3E5F5' : '#fff'}; border:${isEditingThis ? '2px solid #7E57C2' : ('1px solid ' + (hasName ? '#D1C4E9' : '#CE93D8'))}; border-radius:8px; margin-bottom:6px; box-shadow:0 1px 2px rgba(106,27,154,0.06);">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px;">
         <span style="display:inline-flex; align-items:center; gap:4px; padding:2px 7px; border-radius:6px; font-size:11px; font-weight:bold; background:#EDE7F6; color:#5E35B1; border:1px solid #D1C4E9;">
-          作業${(mainRowHtml ? idx + 2 : idx + 1)}${autoBadge}${editBadge}
+          作業${(mainWorkRowHtml ? idx + 2 : idx + 1)}${autoBadge}${editBadge}
         </span>
         <div style="display:inline-flex; align-items:center; gap:6px;">
           ${minsShow ? `<span style="display:inline-flex; align-items:center; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold; background:#E0F7FA; color:#006064; border:1px solid #80CBC4;">⏱️ ${esc(minsShow)}</span>` : ''}
