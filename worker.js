@@ -9686,13 +9686,16 @@ window.getValidWorkCategories_ = () => {
   return VALID_WORK_CATEGORIES_.slice();
 };
 
-/** カテゴリ比較用。全角スラッシュ・余分な空白を揃える */
+/** カテゴリ比較用。スラッシュと中黒（保全・整備 と 保全/整備）を揃える */
 window.normalizeWorkCategoryKey_ = (cat) => {
   return String(cat || '')
     .replace(/[\u200B-\u200D\uFEFF]/g, '')
     .replace(/\u3000/g, ' ')
     .replace(/[／⁄∕]/g, '/')
+    .replace(/[・･·∙]/g, '/')
     .replace(/\s*\/\s*/g, '/')
+    .replace(/\/+/g, '/')
+    .replace(/^\/|\/$/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 };
@@ -9737,6 +9740,10 @@ window.workCategoryMatches_ = (workCat, selectedCat) => {
   if (sParts.length > 1 && sParts.indexOf(w) >= 0) return true;
   if (wParts.length > 1 && sParts.length === 1 && wParts.indexOf(s) >= 0) return true;
   if (sParts.length > 1 && wParts.length > 1 && wParts.every(p => sParts.indexOf(p) >= 0) && sParts.every(p => wParts.indexOf(p) >= 0)) return true;
+  // 「修理」「整備・修理」は保全/整備へ入れる
+  if (typeof window.isMaintenanceCategory_ === 'function'
+    && window.isMaintenanceCategory_(s)
+    && window.isMaintenanceCategory_(w)) return true;
   return false;
 };
 
@@ -43859,37 +43866,20 @@ window.getBulkWorkMemoManualWorkList_ = (d) => {
     if (loose.length) {
       names = loose;
       if (!cropIsCommon) {
-        fallbackNote = `「${filterCat}」に、この作物専用の作業がないため、カテゴリの作業を表示しています。`;
+        fallbackNote = `「${filterCat}」に、この作物専用の作業がないため、このカテゴリの作業を表示しています。`;
       }
     }
   }
   if (metaAll) {
     fallbackNote = `「${filterCat}」：下の「対象カテゴリ → 対象作業」から選ぶか、全作業一覧から対象作業を選んでください（カテゴリは「${filterCat}」のまま保存されます）。`;
-  } else if (!names.length && filterCat && !cropIsCommon) {
-    const byCrop = (typeof window.getWorksByCategoryAndCrop === 'function')
-      ? window.bulkWorkMemoNamesFromWorks_(window.getWorksByCategoryAndCrop('', cropNames, null))
-      : [];
-    if (byCrop.length) {
-      names = byCrop;
-      fallbackNote = `「${filterCat}」×この作物に該当する作業がないため、作物のみで絞った一覧を表示しています。`;
-    } else {
-      names = fromMaster('');
-      if (!names.length) names = window.bulkWorkMemoLooseWorkNames_('');
-      fallbackNote = names.length
-        ? `「${filterCat}」に該当する作業がないため、すべての作業を表示しています。`
-        : '';
-    }
-  } else if (!names.length && filterCat) {
+  } else if (!names.length && !filterCat) {
     names = fromMaster('');
     if (!names.length) names = window.bulkWorkMemoLooseWorkNames_('');
-    fallbackNote = names.length
-      ? `「${filterCat}」に該当する作業がないため、すべての作業を表示しています。`
-      : '';
-  } else if (!names.length) {
-    names = window.bulkWorkMemoLooseWorkNames_('');
   }
   if (!names.length) {
-    fallbackNote = '作業マスタに表示できる作業名がありません。「＋ 新しい作業を追加」から追加できます。';
+    fallbackNote = filterCat
+      ? `「${filterCat}」に入っている作業はまだありません。「＋ 新しい作業を追加」から、このカテゴリで追加できます。`
+      : '作業マスタに表示できる作業名がありません。「＋ 新しい作業を追加」から追加できます。';
   }
   return { names, fallbackNote, filterCat };
 };
