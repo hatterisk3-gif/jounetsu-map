@@ -412,6 +412,9 @@ async function runLiveE2ETests() {
     assert.ok(Array.isArray(initFull.pdl.machines) && initFull.pdl.machines.length > 0, "pdl.machines missing");
     assert.ok(Array.isArray(initFull.pdl.hitchTypes) && initFull.pdl.hitchTypes.length > 0, "pdl.hitchTypes missing");
     assert.ok(Array.isArray(initFull.prodCategories) && initFull.prodCategories.length > 0, "prodCategories missing");
+    assert.ok(Array.isArray(initFull.pdl.workMaster) && initFull.pdl.workMaster.length > 0, "pdl.workMaster missing");
+    const maintWorks = initFull.pdl.workMaster.filter((w) => w.category === "保全/整備").map((w) => w.name);
+    assert.ok(maintWorks.length > 0 && maintWorks.includes("整備・修理"), `pdl.workMaster missing 保全/整備 works: ${JSON.stringify(maintWorks)}`);
 
     const initDriveUrls = collectUrlsMatching(
       initFull,

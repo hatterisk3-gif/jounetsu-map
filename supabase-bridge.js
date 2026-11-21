@@ -2314,13 +2314,20 @@
         return m.name && m.name.indexOf('work_extra_') !== 0;
       }).map(function (m) {
         var d = m.data || {};
+        var aliasStr = String(d.aliasNames || d.similarWorks || '').trim();
+        var aliases = Array.isArray(d.aliases)
+          ? d.aliases
+          : (aliasStr ? aliasStr.split(/[,、\n]/).map(function (s) { return s.trim(); }).filter(Boolean) : []);
         return Object.assign({
           category: d.category || '',
+          department: d.department || d.dept || '',
           name: m.name,
           cropName: d.cropName || '',
           crops: Array.isArray(d.crops) ? d.crops : [],
           cropDetails: d.cropDetails || null,
           detailWorks: d.detailWorks || '',
+          aliasNames: aliasStr,
+          aliases: aliases,
           showMachine: d.showMachine != null ? d.showMachine : null,
           showMaterial: d.showMaterial != null ? d.showMaterial : null,
           showPesticide: d.showPesticide != null ? d.showPesticide : null,
@@ -3042,8 +3049,8 @@
       var workCategories = [];
       var departments = [];
       masterRows.forEach(function (m) {
-        if (m.master_type === 'work' && m.name && m.data && m.data.category) {
-          workDeptMap[m.name] = String(m.data.category);
+        if (m.master_type === 'work' && m.name && m.data && (m.data.department || m.data.dept)) {
+          workDeptMap[m.name] = String(m.data.department || m.data.dept);
         } else if (m.master_type === 'work_category' && m.name) {
           workCategories.push(m.name);
         } else if (m.master_type === 'department' && m.name) {
@@ -8677,7 +8684,7 @@
       ]);
       var polyByName = {}, workDeptMap = {};
       fetched[0].forEach(function (f) { if (f.name) polyByName[f.name] = f.legacy_id || f.id; });
-      fetched[2].forEach(function (w) { if (w.name && w.data && w.data.category) workDeptMap[w.name] = w.data.category; });
+      fetched[2].forEach(function (w) { if (w.name && w.data && (w.data.department || w.data.dept || w.data.category)) workDeptMap[w.name] = w.data.department || w.data.dept || w.data.category; });
       var groups = {};
       fetched[1].forEach(function (r) {
         if (!r.work_name || String(r.work_name).indexOf('収穫') < 0) return;
@@ -11427,7 +11434,7 @@
       fetched[2].forEach(function (w) {
         var name = String(w.name || '').trim();
         if (!name || name.indexOf('work_extra_') === 0) return;
-        var dept = String((w.data && w.data.category) || '').trim() || '未設定';
+        var dept = String((w.data && (w.data.department || w.data.dept)) || '').trim() || '未設定';
         workDeptMap[name] = dept;
         if (name === '播種') workDeptMap.__SOWING__ = dept;
         if (!seen[name]) {
@@ -11488,7 +11495,7 @@
         if (!wn || !dept) continue;
         var hit = workRows.find(function (w) { return String(w.name || '').trim() === wn; });
         if (hit) {
-          var nextData = Object.assign({}, hit.data || {}, { category: dept });
+          var nextData = Object.assign({}, hit.data || {}, { department: dept });
           await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(hit.id), {
             method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
             body: JSON.stringify({ data: nextData, is_active: true, updated_by: userName })
@@ -11498,7 +11505,7 @@
             method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
             body: JSON.stringify({
               org_id: orgId, master_type: 'work', legacy_id: wn, name: wn,
-              sort_order: workRows.length + updatedMaster + 1, data: { category: dept }, is_active: true, updated_by: userName
+              sort_order: workRows.length + updatedMaster + 1, data: { department: dept }, is_active: true, updated_by: userName
             })
           });
         }
@@ -11827,6 +11834,7 @@
       return {
         name: String(m.name || '').trim(),
         category: String(d.category || ''),
+        department: String(d.department || d.dept || ''),
         cropName: cropStr,
         crops: crops,
         cropDetails: d.cropDetails || null,
@@ -11852,6 +11860,7 @@
       var cropName = val.cropName != null ? String(val.cropName).trim() : (Array.isArray(val.crops) ? val.crops.join(',') : (existingData.cropName || ''));
       var next = Object.assign({}, existingData, {
         category: val.category != null ? String(val.category).trim() : (existingData.category || ''),
+        department: val.department != null ? String(val.department).trim() : (existingData.department || existingData.dept || ''),
         cropName: cropName,
         crops: cropName ? splitCsvTokensP5_(cropName) : [],
         detailWorks: val.detailWorks != null ? String(val.detailWorks).trim() : (existingData.detailWorks || ''),

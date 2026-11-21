@@ -23,10 +23,12 @@ function parseArgs(argv) {
   const opts = {
     dir: "",
     dryRun: false,
+    onlyMasters: false,
     orgSlug: "default",
   };
   for (const arg of argv) {
     if (arg === "--dry-run") opts.dryRun = true;
+    else if (arg === "--only-masters") opts.onlyMasters = true;
     else if (arg.startsWith("--dir=")) opts.dir = arg.slice("--dir=".length).trim();
     else if (arg.startsWith("--org-slug=")) {
       opts.orgSlug = arg.slice("--org-slug=".length).trim() || "default";
@@ -328,7 +330,8 @@ async function importPhase2Masters(env, dumpDir, manifest, orgId, dryRun) {
   if (wmDump?.rows?.length) {
     const h = wmDump.headers || [];
     const idxName = findHeaderCol(h, ["作業名"]);
-    const idxCat = findHeaderCol(h, ["担当部署", "カテゴリ", "分類"]);
+    const idxCat = findHeaderCol(h, ["カテゴリ", "作業カテゴリ", "カテゴリー", "作業カテゴリー", "分類"]);
+    const idxDept = findHeaderCol(h, ["担当部署", "部署"]);
     const idxCrop = findHeaderCol(h, ["作物名", "作物"]);
     const idxDetail = findHeaderCol(h, ["詳細作業名", "詳細作業"]);
     const idxCropDetails = findHeaderCol(h, ["作物別詳細作業"]);
@@ -368,13 +371,17 @@ async function importPhase2Masters(env, dumpDir, manifest, orgId, dryRun) {
       seen.add(legacyId);
 
       const cropName = idxCrop >= 0 ? String(r[idxCrop] ?? "").trim() : "";
+      const aliasStr = idxAlias >= 0 ? String(r[idxAlias] ?? "").trim() : "";
       const data = {
-        category: idxCat >= 0 ? String(r[idxCat] ?? "").trim() : String(r[1] ?? "").trim(),
+        category: idxCat >= 0 ? String(r[idxCat] ?? "").trim() : "",
+        department: idxDept >= 0 ? String(r[idxDept] ?? "").trim() : "",
         cropName,
         crops: cropName ? cropName.split(/[,、]/).map((s) => s.trim()).filter(Boolean) : [],
         detailWorks: idxDetail >= 0 ? String(r[idxDetail] ?? "").trim() : "",
         cropDetails: idxCropDetails >= 0 ? parseJsonSafe(r[idxCropDetails], null) : null,
-        similarWorks: idxAlias >= 0 ? String(r[idxAlias] ?? "").trim() : "",
+        aliasNames: aliasStr,
+        similarWorks: aliasStr,
+        aliases: aliasStr ? aliasStr.split(/[,、\n]/).map((s) => s.trim()).filter(Boolean) : [],
         displayPlace: idxLoc >= 0 ? String(r[idxLoc] ?? "").trim() : "",
         signFunction: idxSignFn >= 0 ? String(r[idxSignFn] ?? "").trim() : "",
         deptPriority: idxPriority >= 0 ? parseJsonSafe(r[idxPriority], r[idxPriority]) : null,
@@ -1108,8 +1115,10 @@ async function main() {
   console.log(`対象組織: ${org.name} (slug=${org.slug}, id=${org.id})`);
 
   await importPhase2Masters(env, dumpDir, manifest, org.id, opts.dryRun);
-  await importTouki(env, dumpDir, manifest, org.id, opts.dryRun);
-  await importFieldsAndRecords(env, dumpDir, manifest, org.id, opts.dryRun);
+  if (!opts.onlyMasters) {
+    await importTouki(env, dumpDir, manifest, org.id, opts.dryRun);
+    await importFieldsAndRecords(env, dumpDir, manifest, org.id, opts.dryRun);
+  }
 
   console.log("\n=== Phase 2 インポート処理完了 ===");
 }
