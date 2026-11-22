@@ -464,6 +464,7 @@
     var maxNativeZoom = (opts && opts.maxNativeZoom) || 21;
     var lyrs = (opts && opts.lyrs) || 'y';
     var label = (opts && opts.label) || (lyrs === 's' ? '航空写真' : 'ハイブリッド');
+    var extraParams = (opts && opts.extraParams) ? String(opts.extraParams) : '';
 
     var baseType = null;
     try {
@@ -521,7 +522,7 @@
         }
 
         var img = ownerDocument.createElement('img');
-        img.src = 'https://mt1.google.com/vt/lyrs=' + lyrs + '&x=' + x + '&y=' + y + '&z=' + z;
+        img.src = 'https://mt1.google.com/vt/lyrs=' + lyrs + '&x=' + x + '&y=' + y + '&z=' + z + extraParams;
         img.style.position = 'absolute';
         img.style.width = '256px';
         img.style.height = '256px';
@@ -554,6 +555,29 @@
     } catch (e) { /* ignore */ }
   }
 
+  var NOPOI_APISTYLE_PARAM = '&apistyle=s.t%3A2%7Cp.v%3Aoff';
+
+  function ensureNoPoiStretchedMapType(targetMap, options) {
+    if (!targetMap || !targetMap.mapTypes || typeof google === 'undefined' || !google.maps) return false;
+    try {
+      if (targetMap.mapTypes.get('hybrid_stretched_nopoi')) return true;
+      var savedOpts = targetMap._stretchedZoomOpts || {};
+      var opts = options || {};
+      var maxZoom = opts.maxZoom || savedOpts.maxZoom || 45;
+      var maxNativeZoom = opts.maxNativeZoom || savedOpts.maxNativeZoom || 21;
+      targetMap.mapTypes.set('hybrid_stretched_nopoi', createStretchedMapType(targetMap, {
+        maxZoom: maxZoom,
+        maxNativeZoom: maxNativeZoom,
+        lyrs: 'y',
+        extraParams: NOPOI_APISTYLE_PARAM,
+        label: 'ハイブリッド（店舗非表示）'
+      }));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   function setupStretchedZoom(targetMap, options) {
     if (!targetMap || typeof google === 'undefined' || !google.maps) return false;
     var opts = options || {};
@@ -561,6 +585,7 @@
     var maxNativeZoom = opts.maxNativeZoom || 21;
 
     try {
+      targetMap._stretchedZoomOpts = { maxZoom: maxZoom, maxNativeZoom: maxNativeZoom };
       targetMap.setOptions({ maxZoom: maxZoom });
       if (targetMap.mapTypes) {
         targetMap.mapTypes.set('hybrid_stretched', createStretchedMapType(targetMap, {
@@ -575,6 +600,7 @@
           lyrs: 's',
           label: '航空写真'
         }));
+        ensureNoPoiStretchedMapType(targetMap, { maxZoom: maxZoom, maxNativeZoom: maxNativeZoom });
       }
       applyNativeTypeMaxZoom(targetMap, maxZoom);
       google.maps.event.addListenerOnce(targetMap, 'idle', function () {
@@ -595,6 +621,7 @@
   }
 
   global.setupStretchedZoom = setupStretchedZoom;
+  global.ensureNoPoiStretchedMapType_ = ensureNoPoiStretchedMapType;
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () { ensureOverlay(); });

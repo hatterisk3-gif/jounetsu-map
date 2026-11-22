@@ -2369,7 +2369,7 @@ window.closeScheduleMapUrlModal_ = function () {
 
 window.saveScheduleMapUrlModal_ = async function (fieldId, overrideRaw) {
   const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[fieldId] : null;
-  if (!p) return;
+  if (!p) return false;
   const inp = document.getElementById('schedMapUrlInp');
   const st = document.getElementById('schedMapUrlStatus');
   const raw = (overrideRaw !== undefined) ? overrideRaw : (inp ? inp.value : '');
@@ -2377,7 +2377,7 @@ window.saveScheduleMapUrlModal_ = async function (fieldId, overrideRaw) {
   if (nextUrl && !/^https?:\/\//i.test(nextUrl)) {
     if (typeof customAlert === 'function') customAlert('http:// または https:// で始まるURLを入力してください。');
     else alert('http:// または https:// で始まるURLを入力してください。');
-    return;
+    return false;
   }
   if (inp) inp.value = nextUrl;
   p.googleMapsUrl = nextUrl;
@@ -2393,6 +2393,21 @@ window.saveScheduleMapUrlModal_ = async function (fieldId, overrideRaw) {
         userName: (typeof currentUser !== 'undefined' && currentUser) ? currentUser : ''
       });
     }
+    try {
+      const cachedStr = localStorage.getItem('passionMapScheduleData');
+      if (cachedStr) {
+        const cachedObj = JSON.parse(cachedStr);
+        if (cachedObj && Array.isArray(cachedObj.polygons)) {
+          const target = cachedObj.polygons.find(item => item && String(item.id) === String(p.id));
+          if (target) {
+            target.googleMapsUrl = nextUrl;
+            localStorage.setItem('passionMapScheduleData', JSON.stringify(cachedObj));
+          }
+        }
+      }
+    } catch (eCache) {
+      console.warn('googleMapsUrlキャッシュ同期エラー:', eCache);
+    }
     if (st) {
       st.textContent = nextUrl ? '✅ 登録済（保存しました）' : '未登録（クリアしました）';
       st.style.color = nextUrl ? '#2E7D32' : '#777';
@@ -2403,6 +2418,7 @@ window.saveScheduleMapUrlModal_ = async function (fieldId, overrideRaw) {
       iwBtn.style.background = nextUrl ? '#EFEBE9' : '#FFF8E1';
       iwBtn.style.borderColor = nextUrl ? '#BCAAA4' : '#FFD54F';
     }
+    return true;
   } catch (e) {
     if (st) {
       st.textContent = '❌ 保存に失敗しました';
@@ -2410,7 +2426,29 @@ window.saveScheduleMapUrlModal_ = async function (fieldId, overrideRaw) {
     }
     if (typeof customAlert === 'function') customAlert('❌ 保存に失敗しました: ' + (e && e.message ? e.message : e));
     else alert('❌ 保存に失敗しました');
+    return false;
   }
+};
+
+window.saveAndShareFromScheduleMapUrlModal_ = function (fieldId) {
+  const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[fieldId] : null;
+  const inp = document.getElementById('schedMapUrlInp');
+  const raw = inp ? inp.value : (p ? p.googleMapsUrl : '');
+  const nextUrl = extractScheduleHttpUrl_(raw);
+  const curUrl = String((p && p.googleMapsUrl) || '').trim();
+  const runShare = () => {
+    if (typeof window.closeScheduleMapUrlModal_ === 'function') window.closeScheduleMapUrlModal_();
+    if (typeof window.executePigManureShareFromSchedule_ === 'function') {
+      window.executePigManureShareFromSchedule_(fieldId);
+    }
+  };
+  if (nextUrl === curUrl) {
+    runShare();
+    return;
+  }
+  return Promise.resolve(window.saveScheduleMapUrlModal_(fieldId)).then((ok) => {
+    if (ok) runShare();
+  });
 };
 
 window.pasteAndSaveScheduleMapUrl_ = async function (fieldId) {
@@ -2460,6 +2498,12 @@ window.editFieldGoogleMapsUrlFromSchedule = function (fieldId) {
   const curUrl = String(p.googleMapsUrl || '').trim();
   const escId = String(p.id).replace(/'/g, "\\'");
   const escUrl = curUrl.replace(/"/g, '&quot;');
+  const escName = String(p.name || '圃場')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
   modal.innerHTML = `
     <div style="background:#fff; width:100%; max-width:420px; border-radius:14px; overflow:hidden; box-shadow:0 8px 28px rgba(0,0,0,0.35); font-family:sans-serif;" onclick="event.stopPropagation()">
       <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#5D4037; color:#fff;">
@@ -2468,7 +2512,7 @@ window.editFieldGoogleMapsUrlFromSchedule = function (fieldId) {
       </div>
       <div style="padding:14px 16px;">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
-          <div style="font-weight:bold; font-size:15px; color:#3E2723;">${p.name || '圃場'}</div>
+          <div style="font-weight:bold; font-size:15px; color:#3E2723;">${escName}</div>
           <span id="schedMapUrlStatus" style="font-size:12px; font-weight:bold; color:${curUrl ? '#2E7D32' : '#777'};">${curUrl ? '✅ 登録済' : '未登録'}</span>
         </div>
         <div style="background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; padding:8px 10px; font-size:12px; color:#5D4037; line-height:1.45; margin-bottom:12px;">
@@ -2486,7 +2530,8 @@ window.editFieldGoogleMapsUrlFromSchedule = function (fieldId) {
             style="flex:1; padding:9px 10px; border:1px solid #ccc; border-radius:8px; font-size:13px; min-width:0;">
           <button type="button" onclick="saveScheduleMapUrlModal_('${escId}')" style="padding:9px 14px; border:none; border-radius:8px; background:#5D4037; color:#fff; font-weight:bold; font-size:13px; cursor:pointer; white-space:nowrap;">保存</button>
         </div>
-        <div style="display:flex; justify-content:flex-end; gap:8px; border-top:1px solid #eee; padding-top:10px;">
+        <div style="display:flex; gap:8px; align-items:center; border-top:1px solid #eee; padding-top:10px;">
+          <button type="button" onclick="saveAndShareFromScheduleMapUrlModal_('${escId}')" style="flex:1; padding:10px 12px; border:none; border-radius:8px; background:#4CAF50; color:#fff; font-weight:bold; font-size:13px; cursor:pointer;">🐷 この内容で共有する</button>
           <button type="button" onclick="saveScheduleMapUrlModal_('${escId}', '')" style="padding:10px 12px; border:1px solid #ccc; border-radius:8px; background:#fff; color:#666; font-weight:bold; font-size:12px; cursor:pointer;">クリア</button>
         </div>
       </div>
@@ -2495,7 +2540,7 @@ window.editFieldGoogleMapsUrlFromSchedule = function (fieldId) {
   modal.style.display = 'flex';
 };
 
-window.sharePigManureRequestFromSchedule = function (fieldId) {
+function executePigManureShareFallback_(fieldId) {
   const p = loadedPolygons[fieldId];
   if (!p) {
     if (typeof customAlert === 'function') customAlert('圃場が見つかりません。');
@@ -2580,6 +2625,17 @@ window.sharePigManureRequestFromSchedule = function (fieldId) {
   };
   // 共有シートに url だけ渡すと台数文面が消える端末があるため、コピー優先
   copyThenAlert();
+}
+
+if (typeof window.executePigManureShareFromSchedule_ !== 'function') {
+  window.executePigManureShareFromSchedule_ = executePigManureShareFallback_;
+}
+
+window.sharePigManureRequestFromSchedule = function (fieldId) {
+  if (typeof window.openPigManureChoiceModal_ === 'function') {
+    return window.openPigManureChoiceModal_(fieldId);
+  }
+  return executePigManureShareFallback_(fieldId);
 };
 
 function formatWorkStatusBadgeHtml(t) {

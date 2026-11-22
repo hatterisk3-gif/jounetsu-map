@@ -580,7 +580,9 @@
     zoomTimers: [],
     animTimers: [],
     animDragListener: null,
+    animDoneCb: null,
     fitTimeout: null,
+    poiBackup: null,
     onSelect: null
   };
 
@@ -669,7 +671,90 @@
     return global.ViewpointPinOverlay_;
   }
 
-  function clearVpAnimTimers_() {
+  function suppressViewpointPoi_(map) {
+    if (!map) return;
+    if (vpState.poiBackup) {
+      if (vpState.poiBackup.map === map) {
+        if (vpState.poiBackup.mode === 'mapType') {
+          var existingType = typeof map.getMapTypeId === 'function' ? String(map.getMapTypeId() || '') : '';
+          if (existingType === 'hybrid_stretched') {
+            if ((!map.mapTypes || !map.mapTypes.get('hybrid_stretched_nopoi')) && typeof global.ensureNoPoiStretchedMapType_ === 'function') {
+              global.ensureNoPoiStretchedMapType_(map);
+            }
+            if (map.mapTypes && map.mapTypes.get('hybrid_stretched_nopoi') && typeof map.setMapTypeId === 'function') {
+              try { map.setMapTypeId('hybrid_stretched_nopoi'); } catch (e) {}
+            }
+          }
+        }
+        return;
+      }
+      restoreViewpointPoi_();
+    }
+
+    var curType = typeof map.getMapTypeId === 'function' ? String(map.getMapTypeId() || '') : '';
+    if (curType === 'hybrid_stretched') {
+      if ((!map.mapTypes || !map.mapTypes.get('hybrid_stretched_nopoi')) && typeof global.ensureNoPoiStretchedMapType_ === 'function') {
+        global.ensureNoPoiStretchedMapType_(map);
+      }
+      if (map.mapTypes && map.mapTypes.get('hybrid_stretched_nopoi')) {
+        vpState.poiBackup = { map: map, mode: 'mapType', prevMapTypeId: curType };
+        try { map.setMapTypeId('hybrid_stretched_nopoi'); } catch (e) {}
+        return;
+      }
+    }
+    if (curType === 'hybrid_stretched_nopoi' || curType === 'satellite_stretched' || curType === 'satellite') {
+      vpState.poiBackup = { map: map, mode: 'noop', prevMapTypeId: curType };
+      return;
+    }
+
+    var prevStyles = typeof map.get === 'function' ? map.get('styles') : undefined;
+    var prevClickableIcons = typeof map.get === 'function' ? map.get('clickableIcons') : undefined;
+    vpState.poiBackup = {
+      map: map,
+      mode: 'styles',
+      prevStyles: Array.isArray(prevStyles) ? prevStyles.slice() : prevStyles,
+      prevClickableIcons: prevClickableIcons
+    };
+    var baseStyles = Array.isArray(prevStyles) ? prevStyles.filter(function (s) {
+      if (!s || !s.featureType) return true;
+      var ft = String(s.featureType);
+      return ft !== 'poi' && ft.indexOf('poi.') !== 0;
+    }) : [];
+    var nextStyles = baseStyles.concat([
+      { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+      { featureType: 'poi.business', stylers: [{ visibility: 'off' }] }
+    ]);
+    if (typeof map.setOptions === 'function') {
+      try { map.setOptions({ styles: nextStyles, clickableIcons: false }); } catch (e) {}
+    }
+  }
+
+  function restoreViewpointPoi_() {
+    var backup = vpState.poiBackup;
+    if (!backup) return;
+    vpState.poiBackup = null;
+    var m = backup.map;
+    if (!m) return;
+    if (typeof global.syncMapLayerPoi_ === 'function' && global.syncMapLayerPoi_(m)) {
+      return;
+    }
+    try {
+      if (backup.mode === 'mapType') {
+        var curType = typeof m.getMapTypeId === 'function' ? String(m.getMapTypeId() || '') : '';
+        if (curType === 'hybrid_stretched_nopoi' && typeof m.setMapTypeId === 'function') {
+          m.setMapTypeId(backup.prevMapTypeId || 'hybrid_stretched');
+        }
+      } else if (backup.mode === 'styles' && typeof m.setOptions === 'function') {
+        m.setOptions({
+          styles: Array.isArray(backup.prevStyles) ? backup.prevStyles : [],
+          clickableIcons: backup.prevClickableIcons !== undefined ? backup.prevClickableIcons : true
+        });
+      }
+    } catch (e) {}
+  }
+
+  function clearVpAnimTimers_(opts) {
+    opts = opts || {};
     if (Array.isArray(vpState.animTimers)) {
       vpState.animTimers.forEach(function (t) { clearTimeout(t); });
     }
@@ -678,6 +763,16 @@
       try { google.maps.event.removeListener(vpState.animDragListener); } catch (e) {}
     }
     vpState.animDragListener = null;
+    var doneCb = vpState.animDoneCb;
+    vpState.animDoneCb = null;
+    if (!opts.keepPoiSuppressed) {
+      if (typeof doneCb === 'function') {
+        try { doneCb(); } catch (e) {}
+      }
+      if (!vpState.open && vpState.poiBackup) {
+        restoreViewpointPoi_();
+      }
+    }
   }
 
   function clearVpOpenTimersAndListeners_() {
@@ -851,17 +946,27 @@
     vpState.fitTimeout = setTimeout(clampZoomIfNeeded, 180);
   }
 
-  function animateZoomToViewpoint_(map, lat, lng, targetZoom) {
-    clearVpAnimTimers_();
-    if (!map || typeof map.panTo !== 'function') return;
+  function animateZoomToViewpoint_(map, lat, lng, targetZoom, onDone) {
+    clearVpAnimTimers_({ keepPoiSuppressed: true });
+    if (!map || typeof map.panTo !== 'function') {
+      if (typeof onDone === 'function') {
+        try { onDone(); } catch (e) {}
+      }
+      return;
+    }
 
     var curZoom = (typeof map.getZoom === 'function' && isFinite(map.getZoom())) ? map.getZoom() : targetZoom;
     map.panTo({ lat: lat, lng: lng });
 
     if (curZoom >= targetZoom) {
       map.setZoom(targetZoom);
+      if (typeof onDone === 'function') {
+        try { onDone(); } catch (e) {}
+      }
       return;
     }
+
+    vpState.animDoneCb = typeof onDone === 'function' ? onDone : null;
 
     vpState.animDragListener = google.maps.event.addListenerOnce(map, 'dragstart', function () {
       clearVpAnimTimers_();
@@ -895,6 +1000,10 @@
       return !!vpState.open;
     },
 
+    isPoiSuppressed: function () {
+      return !!(vpState.open || vpState.poiBackup);
+    },
+
     close: function (opts) {
       opts = opts || {};
       var mapRef = vpState.map;
@@ -916,6 +1025,11 @@
         vpState.bannerEl.classList.remove('is-visible');
       }
       setViewpointToggleBtnActive_(false);
+
+      if (!opts.keepPoiSuppressed) {
+        clearVpAnimTimers_();
+        restoreViewpointPoi_();
+      }
 
       if (restore) {
         try {
@@ -951,9 +1065,9 @@
         return false;
       }
 
-      clearVpAnimTimers_();
+      clearVpAnimTimers_({ keepPoiSuppressed: true });
       if (vpState.open) {
-        ViewpointPicker.close({ restoreView: false });
+        ViewpointPicker.close({ restoreView: false, keepPoiSuppressed: true });
       }
 
       try {
@@ -969,6 +1083,8 @@
       vpState.userInteracted = false;
       vpState.onSelect = typeof opts.onSelect === 'function' ? opts.onSelect : null;
 
+      suppressViewpointPoi_(map);
+
       var PinClass = ensureViewpointPinOverlayClass_();
       var onSelectCb = vpState.onSelect;
 
@@ -977,8 +1093,8 @@
           var lat = Number(pickedVp.lat);
           var lng = Number(pickedVp.lng);
           var zoom = Number(pickedVp.zoom) || 16;
-          ViewpointPicker.close({ restoreView: false });
-          animateZoomToViewpoint_(map, lat, lng, zoom);
+          ViewpointPicker.close({ restoreView: false, keepPoiSuppressed: true });
+          animateZoomToViewpoint_(map, lat, lng, zoom, restoreViewpointPoi_);
           if (onSelectCb) {
             try { onSelectCb(pickedVp, pickedIdx, validVps); } catch (e) {}
           }

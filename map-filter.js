@@ -105,12 +105,35 @@
     return;
   }
 
-  function applyGooglePoiStyles_() {
+  function isEffectiveGooglePoiOn_() {
+    if (global.ViewpointPicker && typeof global.ViewpointPicker.isPoiSuppressed === 'function' && global.ViewpointPicker.isPoiSuppressed()) {
+      return false;
+    }
+    return isLayerOn_('googlePoi');
+  }
+
+  function applyGooglePoiStyles_(force) {
     if (!mapRef || typeof mapRef.setOptions !== 'function') return;
     captureBaselineStyles_(mapRef);
     ensureStyleableMapType_();
-    var on = isLayerOn_('googlePoi');
-    if (lastPoiApplied === on) return;
+    var on = isEffectiveGooglePoiOn_();
+    var curType = typeof mapRef.getMapTypeId === 'function' ? String(mapRef.getMapTypeId() || '') : '';
+    if (curType === 'hybrid_stretched' || curType === 'hybrid_stretched_nopoi') {
+      if (!on && (!mapRef.mapTypes || !mapRef.mapTypes.get('hybrid_stretched_nopoi')) && typeof global.ensureNoPoiStretchedMapType_ === 'function') {
+        global.ensureNoPoiStretchedMapType_(mapRef);
+      }
+      var desiredType = on ? 'hybrid_stretched' : 'hybrid_stretched_nopoi';
+      if (curType !== desiredType && mapRef.mapTypes && mapRef.mapTypes.get(desiredType)) {
+        try { mapRef.setMapTypeId(desiredType); } catch (eMt) { /* ignore */ }
+      }
+      lastPoiApplied = on;
+      return;
+    }
+    if (curType === 'satellite_stretched' || curType === 'satellite') {
+      lastPoiApplied = on;
+      return;
+    }
+    if (!force && lastPoiApplied === on) return;
     lastPoiApplied = on;
     var styles = on ? googlePoiOnStyles_() : googlePoiOffStyles_();
     try {
@@ -122,6 +145,14 @@
         mapRef.setOptions({ styles: styles, clickableIcons: !!on });
       } catch (e2) { /* ignore */ }
     }
+  }
+
+  function syncMapLayerPoi_(targetMap) {
+    if (!inited || !mapRef) return false;
+    if (targetMap && targetMap !== mapRef) return false;
+    lastPoiApplied = null;
+    applyGooglePoiStyles_(true);
+    return true;
   }
 
   function setOverlayVisible_(overlay, visible) {
@@ -396,6 +427,7 @@
   global.ensureMapLayerFilter_ = ensureMapLayerFilter_;
   global.applyMapLayerFilter_ = applyMapLayerFilter_;
   global.refreshMapLayerFilter_ = refreshMapLayerFilter_;
+  global.syncMapLayerPoi_ = syncMapLayerPoi_;
   global.isMapLayerOn_ = isLayerOn_;
   global.classifyMapLayerItem_ = classifyItem_;
   global.getMapLayerFilterState_ = function () { return Object.assign({}, state); };

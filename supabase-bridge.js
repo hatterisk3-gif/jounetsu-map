@@ -907,6 +907,81 @@
       return fetchMarketFromSupabaseOrFallback_('getTokyoMarketDaily', params);
     });
 
+    registerAction('getMarketPriceHistory', async function (params) {
+      params = params || {};
+      var region = String(params.region || '').trim().toLowerCase() === 'osaka' ? 'osaka' : 'tokyo';
+      var defaultMarket = region === 'osaka' ? (String(params.ichiba || 1) === '2' ? '東部' : '本場') : '大田';
+      var market = String(params.market || defaultMarket).trim() || defaultMarket;
+      var itemName = String(params.itemName || '').trim();
+      var itemNames = Array.isArray(params.itemNames)
+        ? params.itemNames.map(function (s) { return String(s || '').trim(); }).filter(Boolean)
+        : [];
+
+      var rawDays = params.days;
+      var useAllDays = rawDays === 0 || rawDays === '0' || rawDays === 'all';
+      var days = useAllDays ? 0 : Math.max(1, Math.min(Number(rawDays) || 90, 3650));
+      var limit = Math.max(1, Math.min(Number(params.limit) || 1000, 2000));
+
+      var qs = 'rest/v1/market_prices?select=price_date,market_name,item_name,quantity_kg,origin,unit_qty,unit,price_high,price_mid,price_low,trend,source_url' +
+        '&market_region=eq.' + encodeURIComponent(region) +
+        '&market_name=eq.' + encodeURIComponent(market);
+
+      if (itemName) {
+        qs += '&item_name=eq.' + encodeURIComponent(itemName);
+      } else if (itemNames.length) {
+        var inVals = itemNames.map(function (s) {
+          return encodeURIComponent('"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"');
+        }).join(',');
+        qs += '&item_name=in.(' + inVals + ')';
+      }
+
+      if (!useAllDays && days > 0) {
+        var nowJst = new Date(Date.now() + 9 * 3600 * 1000);
+        var sinceUtc = new Date(Date.UTC(nowJst.getUTCFullYear(), nowJst.getUTCMonth(), nowJst.getUTCDate() - days));
+        var sy = sinceUtc.getUTCFullYear();
+        var sm = sinceUtc.getUTCMonth() + 1;
+        var sd = sinceUtc.getUTCDate();
+        var sinceDate = sy + '-' + (sm < 10 ? '0' : '') + sm + '-' + (sd < 10 ? '0' : '') + sd;
+        qs += '&price_date=gte.' + encodeURIComponent(sinceDate);
+        qs += '&order=price_date.asc,id.asc&limit=' + limit;
+      } else {
+        qs += '&order=price_date.desc,id.asc&limit=' + limit;
+      }
+
+      var rows = await restFetch(qs);
+      var list = Array.isArray(rows) ? rows : [];
+      if (useAllDays) {
+        list.sort(function (a, b) {
+          var da = String((a && a.price_date) || '');
+          var db = String((b && b.price_date) || '');
+          return da < db ? -1 : (da > db ? 1 : 0);
+        });
+      }
+
+      return {
+        success: true,
+        region: region,
+        market: market,
+        rows: list.map(function (r) {
+          var srcUrl = String(r.source_url || '');
+          return {
+            date: String(r.price_date || ''),
+            market: String(r.market_name || ''),
+            name: String(r.item_name || ''),
+            qtyKg: r.quantity_kg == null ? null : Number(r.quantity_kg),
+            origin: String(r.origin || ''),
+            unitSize: r.unit_qty == null ? null : Number(r.unit_qty),
+            unit: String(r.unit || 'kg'),
+            high: r.price_high == null ? null : Number(r.price_high),
+            mid: r.price_mid == null ? null : Number(r.price_mid),
+            low: r.price_low == null ? null : Number(r.price_low),
+            trend: String(r.trend || ''),
+            sourceUrl: srcUrl
+          };
+        })
+      };
+    });
+
     return authActions.concat([
       'getFertilizerCatalogStats',
       'searchFertilizerCatalog',
@@ -914,7 +989,8 @@
       'searchPesticideCatalog',
       'getPesticideApplicationTable',
       'getOsakaMarketDaily',
-      'getTokyoMarketDaily'
+      'getTokyoMarketDaily',
+      'getMarketPriceHistory'
     ]);
   }
 

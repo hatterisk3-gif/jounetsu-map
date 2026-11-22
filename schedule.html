@@ -14,7 +14,7 @@
 
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
-  <script src="map-loading.js?v=1794700000000"></script>
+  <script src="map-loading.js?v=1788600000403"></script>
   <link rel="stylesheet" href="schedule.css?v=1788600000399">
   <link rel="stylesheet" href="cad.css?v=1788600000326">
   <link rel="stylesheet" href="location-pin.css?v=1788600000400">
@@ -1278,7 +1278,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000400';
+    const cacheBust = '1788600000403';
     // 豚糞共有：台数＋短いGoogleマップURL＋座標（v1.49）
     // ※ https://maps.google.com/?q=緯度,経度
     // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）
@@ -2206,7 +2206,14 @@
         const lines = [name, '台数: ' + trucksLabel + '（1反1台）', '面積: ' + areaLabel];
         if (coordLabel) lines.push(coordLabel);
         if (mapsUrl) lines.push(mapsUrl);
-        return { name: name, text: lines.join('\n'), mapsUrl: mapsUrl };
+        return {
+          name: name,
+          text: lines.join('\n'),
+          mapsUrl: mapsUrl,
+          customMapUrl: customMapUrl,
+          trucksLabel: trucksLabel,
+          areaLabel: areaLabel
+        };
       }
 
       function copyTextFallback_(text) {
@@ -2301,7 +2308,7 @@
         }
       }
 
-      function pigShareImpl(fieldId) {
+      function executePigShare_(fieldId) {
         const built = buildPigShareText_(fieldId);
         if (!built) {
           if (typeof customAlert === 'function') customAlert('圃場が見つかりません。');
@@ -2333,18 +2340,134 @@
         });
       }
 
-      window.installPigManureShareOverride_ = function () {
-        window.sharePigManureRequestFromSchedule = pigShareImpl;
-        try {
-          Object.defineProperty(window, 'sharePigManureRequestFromSchedule', {
-            configurable: true,
-            enumerable: true,
-            get: function () { return pigShareImpl; },
-            set: function () { /* 古い schedule.js の上書きを無視 */ }
-          });
-        } catch (e) {
-          window.sharePigManureRequestFromSchedule = pigShareImpl;
+      function escapeChoiceHtml_(str) {
+        return String(str == null ? '' : str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function closePigManureChoiceModal_() {
+        const modal = document.getElementById('schedulePigManureChoiceModal');
+        if (modal) modal.style.display = 'none';
+      }
+
+      function openPigManureChoiceModal_(fieldId) {
+        const built = buildPigShareText_(fieldId);
+        if (!built) {
+          if (typeof customAlert === 'function') customAlert('圃場が見つかりません。');
+          else alert('圃場が見つかりません。');
+          return;
         }
+        let modal = document.getElementById('schedulePigManureChoiceModal');
+        if (!modal) {
+          modal = document.createElement('div');
+          modal.id = 'schedulePigManureChoiceModal';
+          modal.style.cssText = 'display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:250000; justify-content:center; align-items:center; padding:14px; box-sizing:border-box;';
+          modal.addEventListener('click', function (ev) {
+            if (ev.target === modal) closePigManureChoiceModal_();
+          });
+          document.body.appendChild(modal);
+        }
+        if (!window.__pigChoiceEscBound) {
+          window.__pigChoiceEscBound = true;
+          document.addEventListener('keydown', function (ev) {
+            if (ev && ev.key === 'Escape') {
+              const m = document.getElementById('schedulePigManureChoiceModal');
+              if (m && m.style.display !== 'none') {
+                closePigManureChoiceModal_();
+              }
+            }
+          });
+        }
+
+        const hasCustomUrl = !!built.customMapUrl;
+        const urlStatusHtml = hasCustomUrl
+          ? '<div style="background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px; padding:9px 10px; margin-bottom:12px;">' +
+              '<div style="display:inline-block; background:#2E7D32; color:#fff; font-size:11px; font-weight:bold; padding:2px 8px; border-radius:999px; margin-bottom:5px;">✅ 短縮URL登録済</div>' +
+              '<div style="font-size:12px; color:#1B5E20; word-break:break-all; line-height:1.4;">' + escapeChoiceHtml_(built.customMapUrl) + '</div>' +
+            '</div>'
+          : '<div style="background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; padding:9px 10px; margin-bottom:12px; font-size:12px; font-weight:bold; color:#8D6E63; line-height:1.45;">' +
+              '⚠️ 短縮URL未登録（このまま共有すると座標URLになります）' +
+            '</div>';
+
+        const regLabel = hasCustomUrl ? '🔗 短縮URLを変更する' : '🔗 短縮URLを登録する';
+        const shareLabel = hasCustomUrl ? '📤 共有する' : '📤 このまま共有する';
+
+        modal.innerHTML =
+          '<div id="pigChoiceDialogCard" style="background:#fff; width:100%; max-width:380px; border-radius:14px; overflow:hidden; box-shadow:0 8px 28px rgba(0,0,0,0.35); font-family:sans-serif;">' +
+            '<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#5D4037; color:#fff;">' +
+              '<div style="font-weight:bold; font-size:15px;">🐷 豚糞散布依頼</div>' +
+              '<button type="button" id="pigChoiceHeaderCloseBtn" aria-label="閉じる" style="background:rgba(255,255,255,0.2); border:none; color:#fff; border-radius:6px; padding:5px 10px; font-weight:bold; cursor:pointer;">✕</button>' +
+            '</div>' +
+            '<div style="padding:14px 16px;">' +
+              '<div style="margin-bottom:10px;">' +
+                '<div style="font-weight:bold; font-size:16px; color:#3E2723; margin-bottom:3px; word-break:break-word;">' + escapeChoiceHtml_(built.name) + '</div>' +
+                '<div style="font-size:12px; color:#555; font-weight:bold;">台数: ' + escapeChoiceHtml_(built.trucksLabel) + '（1反1台） / 面積: ' + escapeChoiceHtml_(built.areaLabel) + '</div>' +
+              '</div>' +
+              urlStatusHtml +
+              '<div style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">' +
+                '<button type="button" id="pigChoiceRegisterUrlBtn" style="width:100%; padding:12px 10px; border:none; border-radius:8px; background:#1565C0; color:#fff; font-weight:bold; font-size:14px; cursor:pointer;">' + regLabel + '</button>' +
+                '<button type="button" id="pigChoiceShareBtn" style="width:100%; padding:12px 10px; border:none; border-radius:8px; background:#4CAF50; color:#fff; font-weight:bold; font-size:14px; cursor:pointer;">' + shareLabel + '</button>' +
+              '</div>' +
+              '<button type="button" id="pigChoiceCancelBtn" style="width:100%; padding:9px 10px; border:1px solid #ccc; border-radius:8px; background:#fff; color:#666; font-weight:bold; font-size:13px; cursor:pointer;">キャンセル</button>' +
+            '</div>' +
+          '</div>';
+
+        const card = modal.querySelector('#pigChoiceDialogCard');
+        if (card) {
+          card.addEventListener('click', function (ev) { ev.stopPropagation(); });
+        }
+        const closeBtn = modal.querySelector('#pigChoiceHeaderCloseBtn');
+        if (closeBtn) closeBtn.addEventListener('click', closePigManureChoiceModal_);
+        const cancelBtn = modal.querySelector('#pigChoiceCancelBtn');
+        if (cancelBtn) cancelBtn.addEventListener('click', closePigManureChoiceModal_);
+
+        const regBtn = modal.querySelector('#pigChoiceRegisterUrlBtn');
+        if (regBtn) {
+          regBtn.addEventListener('click', function () {
+            closePigManureChoiceModal_();
+            if (typeof window.editFieldGoogleMapsUrlFromSchedule === 'function') {
+              window.editFieldGoogleMapsUrlFromSchedule(fieldId);
+            } else if (typeof customAlert === 'function') {
+              customAlert('短縮URL登録画面の準備中です。少し待ってからもう一度お試しください。');
+            } else {
+              alert('短縮URL登録画面の準備中です。少し待ってからもう一度お試しください。');
+            }
+          });
+        }
+        const shareBtn = modal.querySelector('#pigChoiceShareBtn');
+        if (shareBtn) {
+          shareBtn.addEventListener('click', function () {
+            closePigManureChoiceModal_();
+            executePigShare_(fieldId);
+          });
+        }
+
+        modal.style.display = 'flex';
+      }
+
+      window.closePigManureChoiceModal_ = closePigManureChoiceModal_;
+      window.openPigManureChoiceModal_ = openPigManureChoiceModal_;
+
+      window.installPigManureShareOverride_ = function () {
+        var lockProp = function (prop, fn) {
+          window[prop] = fn;
+          try {
+            Object.defineProperty(window, prop, {
+              configurable: true,
+              enumerable: true,
+              get: function () { return fn; },
+              set: function () { /* 古い schedule.js の上書きを無視 */ }
+            });
+          } catch (e) {
+            window[prop] = fn;
+          }
+        };
+        lockProp('sharePigManureRequestFromSchedule', openPigManureChoiceModal_);
+        lockProp('executePigManureShareFromSchedule_', executePigShare_);
       };
 
       window.installPigManureShareOverride_();
