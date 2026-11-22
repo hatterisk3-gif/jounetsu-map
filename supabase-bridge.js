@@ -996,8 +996,11 @@
       var count = parseInt(obj && obj.uneCount, 10) || 0;
       if (!count && obj && Array.isArray(obj.unePolygons)) count = obj.unePolygons.length;
       if (!count && Array.isArray(obj)) count = obj.length;
-      if (count > 0 || (obj && Array.isArray(obj.pins) && obj.pins.length > 0)) {
-        return JSON.stringify({ uneCount: count, _slim: true });
+      var pins = (obj && Array.isArray(obj.pins)) ? obj.pins : [];
+      if (count > 0 || pins.length > 0) {
+        var slimOut = { uneCount: count, _slim: true };
+        if (pins.length > 0) slimOut.pins = pins;
+        return JSON.stringify(slimOut);
       }
     } catch (e) {}
     return '';
@@ -1667,6 +1670,21 @@
 
       if (params.uneSimData !== undefined) {
         var uneRaw = String(params.uneSimData || '');
+        var incomingUne = parseJsonMaybe_(uneRaw, null);
+        if (incomingUne && typeof incomingUne === 'object' && !Array.isArray(incomingUne) && incomingUne._slim) {
+          var prevUne = parseJsonMaybe_(meta.uneSimDataRaw, null);
+          if (!prevUne && row.ridge_data && typeof row.ridge_data === 'object' && !Array.isArray(row.ridge_data)) {
+            prevUne = Object.assign({}, row.ridge_data);
+          }
+          if (prevUne && typeof prevUne === 'object' && !Array.isArray(prevUne) && !prevUne._slim) {
+            if (Array.isArray(incomingUne.pins)) prevUne.pins = incomingUne.pins;
+            delete prevUne._slim;
+            uneRaw = JSON.stringify(prevUne);
+          } else {
+            delete incomingUne._slim;
+            uneRaw = JSON.stringify(incomingUne);
+          }
+        }
         meta.uneSimDataRaw = uneRaw;
         patch.ridge_data = parseJsonMaybe_(uneRaw, []);
         if (!params.skipCadHistory && row.entity_type !== 'sign') {
@@ -9585,6 +9603,8 @@
         current_loc_id: curLocId || signId,
         location_name: hubLoc,
         status: String(p.status || existing.status || '使用可能'),
+        lat: toNumOrNullP5_(p.lat !== undefined ? p.lat : existing.lat),
+        lng: toNumOrNullP5_(p.lng !== undefined ? p.lng : existing.lng),
         purchase_date: parseYmdOrNullP5_(rawPurch),
         compatible_machine_id: String(p.targetMachineIds != null ? p.targetMachineIds : (existing.targetMachineIds || '')),
         maintenance_settings: Array.isArray(maintSettings) ? { items: maintSettings } : (maintSettings || {}),
@@ -9629,15 +9649,17 @@
 
     registerAction('machine_saveLocation', async function (p) {
       p = p || {};
-      if (p.currentLocName != null || p.currentLocId != null || p.signName != null || p.signId != null) {
-        var orgId = await resolveCurrentOrgId_();
-        var patch = {};
-        if (p.currentLocName != null || p.signName != null) {
-          patch.current_loc_name = String(p.currentLocName != null ? p.currentLocName : (p.signName || ''));
-        }
-        if (p.currentLocId != null || p.signId != null) {
-          patch.current_loc_id = String(p.currentLocId != null ? p.currentLocId : (p.signId || ''));
-        }
+      var orgId = await resolveCurrentOrgId_();
+      var patch = {};
+      if (p.currentLocName != null || p.signName != null) {
+        patch.current_loc_name = String(p.currentLocName != null ? p.currentLocName : (p.signName || ''));
+      }
+      if (p.currentLocId != null || p.signId != null) {
+        patch.current_loc_id = String(p.currentLocId != null ? p.currentLocId : (p.signId || ''));
+      }
+      if (p.lat !== undefined) patch.lat = toNumOrNullP5_(p.lat);
+      if (p.lng !== undefined) patch.lng = toNumOrNullP5_(p.lng);
+      if (Object.keys(patch).length > 0 && p.id) {
         await restFetch(
           'rest/v1/machines?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(String(p.id || '')),
           { method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(patch) }
@@ -9646,8 +9668,17 @@
       return { success: true };
     });
 
-    registerAction('machine_saveMaintenanceSetting', async function () {
-      return { success: true, skipped: true };
+    registerAction('machine_saveMaintenanceSetting', async function (p) {
+      p = p || {};
+      var mId = String(p.id || p.machineId || '').trim();
+      if (!mId) return { success: false, message: '機械IDが指定されていません' };
+      var orgId = await resolveCurrentOrgId_();
+      var ms = Array.isArray(p.maintenanceSettings) ? { items: p.maintenanceSettings } : (p.maintenanceSettings || { items: [] });
+      await restFetch(
+        'rest/v1/machines?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(mId),
+        { method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ maintenance_settings: ms }) }
+      );
+      return { success: true };
     });
 
     registerAction('machine_saveMaintenance', async function (p) {

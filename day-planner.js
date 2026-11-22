@@ -76,6 +76,10 @@
     return localStorage.getItem('passionMapUserId') || '';
   }
 
+  function userName() {
+    return localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+  }
+
   function dpDayStatus(ymd) {
     const att = window._dayPlan.attendance;
     if (!att) return { kind: 'unknown' };

@@ -5,6 +5,7 @@ let markers = [];
 let currentStaffId = localStorage.getItem('passionMapUserId') || '';
 let currentUserRole = localStorage.getItem('passionMapUserRole') || '';
 let currentUserName = localStorage.getItem('passionMapUserName') || '';
+let currentUser = currentUserName;
 let waterHistory = JSON.parse(localStorage.getItem('waterHistory') || '[]');
 let lastWeatherFetchPos = null;
 let isFirstBoundsFit = true;
@@ -51,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('loginScreen').style.display = 'none';
     currentUserName = localStorage.getItem('passionMapUserName') || '';
+    currentUser = currentUserName;
     currentUserRole = localStorage.getItem('passionMapUserRole') || '';
     currentStaffId = id;
     initMap();
@@ -114,6 +116,7 @@ async function executeLogin(isAuto = false, options = {}) {
 
     if (fromCache) {
         currentUserName = currentUserName || localStorage.getItem('passionMapUserName') || '';
+        currentUser = currentUserName;
         currentUserRole = currentUserRole || localStorage.getItem('passionMapUserRole') || '';
         currentStaffId = id;
         document.getElementById('loginScreen').style.display = 'none';
@@ -130,6 +133,7 @@ async function executeLogin(isAuto = false, options = {}) {
         if (result.success) {
             if (startupLoad && !fromCache) startupLoad.update({ detail: 'ログイン確認完了', current: 1, total: 4 });
             currentUserName = result.name;
+            currentUser = currentUserName;
             currentUserRole = result.role || '作業員';
             currentStaffId = id;
             document.getElementById('loginScreen').style.display = 'none';
@@ -632,6 +636,23 @@ window.openWaterCadSimple = function(polyId, options) {
         renderWaterCadPins(getWaterInPins(pData));
         if (waterCadEditMode && getWaterInPins(pData).length === 0) {
             toggleWaterCadAddMode(true);
+        }
+        if (waterCadBaseData && waterCadBaseData._slim && typeof callGAS === 'function') {
+            callGAS('getPolygonDrawingHistory', { id: polyId }).then((hist) => {
+                const raw = Array.isArray(hist) && hist[0] && hist[0].data;
+                if (!raw) return;
+                const fullObj = parseUneSimData(raw);
+                if (!fullObj || fullObj._slim) return;
+                const rawStr = typeof raw === 'string' ? raw : JSON.stringify(fullObj);
+                pData.uneSimData = rawStr;
+                updateLocalUneSimData(polyId, rawStr);
+                if (waterCadTarget === pData) {
+                    waterCadBaseData = fullObj;
+                    if (!waterCadEditMode || !waterCadAddMode) {
+                        renderWaterCadPins(getWaterInPins(pData));
+                    }
+                }
+            }).catch(() => {});
         }
     }, 50);
 };

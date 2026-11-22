@@ -150,6 +150,20 @@
         const host = document.getElementById('attDayEditor');
         if (host) host.innerHTML = renderDayEditor(keepEdit);
       }
+      if (state.view === 'calendar' && (data.isAdmin || isAdmin()) && (!state.staffList || !Array.isArray(state.staffList.staff))) {
+        callGAS('getAttendanceStaffList', { requesterId: myId() }).then(function (listRes) {
+          if (listRes && listRes.success !== false && Array.isArray(listRes.staff) && listRes.staff.length) {
+            state.staffList = listRes;
+            if (state.view === 'calendar' && state.data === data) {
+              body.innerHTML = renderCalendarView(data);
+              if (state.editDate) {
+                const h = document.getElementById('attDayEditor');
+                if (h) h.innerHTML = renderDayEditor(state.editDate);
+              }
+            }
+          }
+        }).catch(function () {});
+      }
     } catch (e) {
       if (loading) loading.done();
       body.innerHTML = `<div style="color:#c62828;padding:16px;">エラー: ${esc(e.message || e)}</div>`;
@@ -259,8 +273,15 @@
       ? `<button type="button" class="att-btn att-btn-admin" onclick="attShowAdminView()">管理者設定</button>`
       : '';
 
+    const staffListArr = (state.staffList && Array.isArray(state.staffList.staff)) ? state.staffList.staff : [];
     const staffSelect = (data.isAdmin || isAdmin())
-      ? `<button type="button" class="att-btn att-btn-ghost" onclick="attPickStaff()">スタッフ切替</button>`
+      ? (staffListArr.length
+          ? `<select class="att-staff-select" aria-label="スタッフ切替" onchange="attOnStaffSelectChange(this.value)" style="padding:5px 8px;border:1px solid #90caf9;border-radius:6px;font-size:13px;font-weight:bold;background:#e3f2fd;color:#1565c0;cursor:pointer;">${staffListArr.map(function (s) {
+              const uid = String(s.userId || '');
+              const sel = uid === String(state.targetUserId || '') ? ' selected' : '';
+              return `<option value="${esc(uid)}"${sel}>${esc(s.userName || uid)} (${esc(uid)})</option>`;
+            }).join('')}</select>`
+          : `<button type="button" class="att-btn att-btn-ghost" onclick="attPickStaff()">スタッフ切替</button>`)
       : '';
 
     return `
@@ -444,6 +465,18 @@
     state.targetUserId = userId;
     state.targetUserName = userName;
     state.view = 'calendar';
+    state.editDate = '';
+    state.weeklyDraft = null;
+    refreshAttendanceCalendar();
+  };
+
+  window.attOnStaffSelectChange = function (userId) {
+    const uid = String(userId || '').trim();
+    if (!uid) return;
+    const staff = (state.staffList && state.staffList.staff) || [];
+    const hit = staff.find(function (s) { return String(s.userId || '') === uid; });
+    state.targetUserId = uid;
+    state.targetUserName = (hit && hit.userName) || uid;
     state.editDate = '';
     state.weeklyDraft = null;
     refreshAttendanceCalendar();

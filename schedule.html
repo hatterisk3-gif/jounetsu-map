@@ -15,7 +15,7 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1794700000000"></script>
-  <link rel="stylesheet" href="schedule.css?v=1795003700000">
+  <link rel="stylesheet" href="schedule.css?v=1788600000399">
   <link rel="stylesheet" href="cad.css?v=1788600000326">
   <link rel="stylesheet" href="location-pin.css?v=1788600000301">
   <link rel="stylesheet" href="map-filter.css?v=1788600000330">
@@ -103,7 +103,7 @@
 
   <!-- 🔭 視野切替トースト表示 -->
   <div id="viewpointToast"
-    style="display:none; position:fixed; bottom:calc(86px + env(safe-area-inset-bottom, 0px)); right:78px; background:rgba(33,33,33,0.92); color:#fff; padding:8px 14px; border-radius:20px; font-size:13px; font-weight:bold; z-index:2100; box-shadow:0 4px 16px rgba(0,0,0,0.3); pointer-events:none; transition:opacity 0.25s ease, transform 0.25s ease; transform:translateY(8px); opacity:0; align-items:center; gap:8px; border:1px solid rgba(255,255,255,0.15);">
+    style="display:none; position:fixed; bottom:calc(var(--sched-side-fabs-bottom, calc(216px + env(safe-area-inset-bottom, 0px))) + 6px); right:78px; background:rgba(33,33,33,0.92); color:#fff; padding:8px 14px; border-radius:20px; font-size:13px; font-weight:bold; z-index:2100; box-shadow:0 4px 16px rgba(0,0,0,0.3); pointer-events:none; transition:opacity 0.25s ease, transform 0.25s ease; transform:translateY(8px); opacity:0; align-items:center; gap:8px; border:1px solid rgba(255,255,255,0.15);">
     <span style="font-size:15px;">🔭</span>
     <span id="viewpointToastText">視野切替</span>
   </div>
@@ -1278,7 +1278,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000398';
+    const cacheBust = '1788600000399';
     // 豚糞共有：台数＋短いGoogleマップURL＋座標（v1.49）
     // ※ https://maps.google.com/?q=緯度,経度
     // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）
@@ -2322,22 +2322,145 @@
   </script>
   <script>
     (function () {
-      function syncLegendBottom() {
+      let lastLegendBottom = '';
+      let lastSideFabsBottom = '';
+      let rafScheduled = false;
+
+      function measureRightMapControlHighestTop_(mapEl) {
+        if (!mapEl || !mapEl.getBoundingClientRect) return Infinity;
+        const mapRect = mapEl.getBoundingClientRect();
+        if (!mapRect || mapRect.width <= 0 || mapRect.height <= 0) return Infinity;
+        let highestTop = Infinity;
+        const candidates = mapEl.querySelectorAll('.gm-svpc, .gm-control-active, .gm-bundled-control-on-bottom button');
+        for (let i = 0; i < candidates.length; i++) {
+          const el = candidates[i];
+          if (!el || !el.getBoundingClientRect) continue;
+          if (el.closest && el.closest('.gm-style-iw, .gm-style-iw-a, .gm-style-iw-c')) continue;
+          const rect = el.getBoundingClientRect();
+          if (!rect || rect.width < 20 || rect.height < 20 || rect.width > 120 || rect.height > 180) continue;
+          if (
+            rect.right >= mapRect.right - 96 &&
+            rect.left >= mapRect.right - 130 &&
+            rect.top >= mapRect.top + mapRect.height * 0.35 &&
+            rect.bottom <= mapRect.bottom + 4
+          ) {
+            if (rect.top < highestTop) highestTop = rect.top;
+          }
+        }
+        return highestTop;
+      }
+
+      function computeOverlayBottoms_() {
         const bar = document.querySelector('.mobile-bottom-bar');
         const h = bar ? (bar.getBoundingClientRect().height || bar.offsetHeight || 0) : 0;
         // Google Maps ロゴ（高さ約24px）が下に隠れないよう +34px 確保
-        document.documentElement.style.setProperty('--sched-legend-bottom', Math.ceil((h > 0 ? h : 0) + 34) + 'px');
+        const legendBottomVal = Math.ceil((h > 0 ? h : 0) + 34) + 'px';
+
+        const baseBarH = h > 0 ? h : 64;
+        let fabsBottom = Math.ceil(baseBarH + 144);
+
+        const mapEl = document.getElementById('map');
+        const highestTop = measureRightMapControlHighestTop_(mapEl);
+        const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+        if (isFinite(highestTop) && vh > 0) {
+          const fromViewportBottom = Math.ceil((vh - highestTop) + 20);
+          const capped = Math.min(fromViewportBottom, Math.ceil(baseBarH + 240));
+          fabsBottom = Math.max(fabsBottom, capped);
+        }
+
+        const fabsEl = document.querySelector('.schedule-side-fabs');
+        const fabsH = fabsEl ? (fabsEl.getBoundingClientRect().height || fabsEl.offsetHeight || 0) : 0;
+        if (vh > 0 && fabsH > 0) {
+          let topLimit = 0;
+          const filterRoot = document.getElementById('mapLayerFilterRoot');
+          if (filterRoot && filterRoot.getBoundingClientRect) {
+            const fRect = filterRoot.getBoundingClientRect();
+            if (fRect && fRect.height > 0 && fRect.bottom > 0) {
+              topLimit = fRect.bottom + 8;
+            }
+          }
+          if (!topLimit) {
+            const cp = document.querySelector('.control-panel');
+            if (cp && cp.getBoundingClientRect) {
+              const cpRect = cp.getBoundingClientRect();
+              if (cpRect && cpRect.bottom > 0) topLimit = cpRect.bottom + 56;
+            }
+          }
+          if (topLimit > 0) {
+            const maxBottom = Math.floor(vh - topLimit - fabsH);
+            if (fabsBottom > maxBottom) {
+              fabsBottom = Math.max(Math.ceil((h > 0 ? h : 0) + 8), maxBottom);
+            }
+          }
+        }
+
+        return {
+          legendBottom: legendBottomVal,
+          sideFabsBottom: fabsBottom + 'px'
+        };
       }
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', syncLegendBottom);
-      } else {
+
+      function syncLegendBottom() {
+        const next = computeOverlayBottoms_();
+        if (next.legendBottom !== lastLegendBottom) {
+          lastLegendBottom = next.legendBottom;
+          document.documentElement.style.setProperty('--sched-legend-bottom', next.legendBottom);
+        }
+        if (next.sideFabsBottom !== lastSideFabsBottom) {
+          lastSideFabsBottom = next.sideFabsBottom;
+          document.documentElement.style.setProperty('--sched-side-fabs-bottom', next.sideFabsBottom);
+        }
+      }
+
+      function scheduleSync_() {
+        if (rafScheduled) return;
+        rafScheduled = true;
+        requestAnimationFrame(function () {
+          rafScheduled = false;
+          syncLegendBottom();
+        });
+      }
+
+      window.syncScheduleBottomOverlays_ = syncLegendBottom;
+
+      function setupObservers_() {
         syncLegendBottom();
+        if (typeof ResizeObserver === 'function') {
+          const ro = new ResizeObserver(scheduleSync_);
+          const bar = document.querySelector('.mobile-bottom-bar');
+          const cp = document.querySelector('.control-panel');
+          const fabs = document.querySelector('.schedule-side-fabs');
+          if (bar) ro.observe(bar);
+          if (cp) ro.observe(cp);
+          if (fabs) ro.observe(fabs);
+        }
+        if (typeof MutationObserver === 'function') {
+          const mapEl = document.getElementById('map');
+          if (mapEl) {
+            const mo = new MutationObserver(function () {
+              scheduleSync_();
+              setTimeout(syncLegendBottom, 150);
+              setTimeout(syncLegendBottom, 600);
+              setTimeout(syncLegendBottom, 1500);
+              setTimeout(syncLegendBottom, 3000);
+            });
+            mo.observe(mapEl, { childList: true, subtree: false });
+          }
+        }
+        setTimeout(syncLegendBottom, 600);
+        setTimeout(syncLegendBottom, 1800);
+        setTimeout(syncLegendBottom, 4000);
       }
-      window.addEventListener('resize', syncLegendBottom);
-      if (typeof ResizeObserver === 'function') {
-        const bar = document.querySelector('.mobile-bottom-bar');
-        if (bar) new ResizeObserver(syncLegendBottom).observe(bar);
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setupObservers_);
+      } else {
+        setupObservers_();
       }
+      window.addEventListener('resize', scheduleSync_);
+      window.addEventListener('orientationchange', function () {
+        setTimeout(syncLegendBottom, 200);
+      });
     })();
   </script>
 </body>

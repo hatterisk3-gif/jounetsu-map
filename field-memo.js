@@ -612,6 +612,11 @@
                 } catch (e) {}
             }
             fmDirty = false;
+            if (typeof window.onFieldMemoSavedFromManure === 'function') {
+                window.onFieldMemoSavedFromManure(fmTarget, saved);
+            } else if (typeof renderRequestList === 'function') {
+                renderRequestList();
+            }
             alert('圃場メモを保存しました');
             setHint('保存しました（' + (saved.workDate || '') + '）');
         } catch (e) {

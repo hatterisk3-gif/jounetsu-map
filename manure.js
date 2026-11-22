@@ -137,9 +137,34 @@ function parseCoords(raw) {
   }).filter((c) => !isNaN(c.lat) && !isNaN(c.lng));
 }
 
+function computeSphericalAreaSqm_(coords) {
+  if (!Array.isArray(coords) || coords.length < 3) return 0;
+  try {
+    if (typeof google !== "undefined" && google.maps && google.maps.geometry && google.maps.geometry.spherical) {
+      const latLngs = coords.map((c) => new google.maps.LatLng(c.lat, c.lng));
+      const sqm = google.maps.geometry.spherical.computeArea(latLngs);
+      if (sqm > 0) return sqm;
+    }
+  } catch (e) {}
+  const R = 6378137;
+  const rad = Math.PI / 180;
+  let total = 0;
+  for (let i = 0; i < coords.length; i++) {
+    const p1 = coords[i];
+    const p2 = coords[(i + 1) % coords.length];
+    total += ((p2.lng - p1.lng) * rad) * (2 + Math.sin(p1.lat * rad) + Math.sin(p2.lat * rad));
+  }
+  return Math.abs(total * R * R / 2);
+}
+
 function fieldAreaA(field) {
-  const n = Number(field && field.area);
+  const n = parseFloat(field && field.area);
   if (!isNaN(n) && n > 0) return n;
+  const coords = parseCoords(field && field.coords);
+  if (coords.length >= 3) {
+    const sqm = computeSphericalAreaSqm_(coords);
+    if (sqm > 0) return Math.round((sqm / 100) * 10) / 10;
+  }
   return 0;
 }
 
@@ -714,8 +739,11 @@ function renderRequestList() {
       const deadline = f.manure_deadline || (f.catStatuses && f.catStatuses.compost && f.catStatuses.compost.deadline) || "";
       const scheduled = f.manure_scheduled_date || (f.catStatuses && f.catStatuses.compost && f.catStatuses.compost.scheduled_date) || "";
       const extra = st === "accepted" && scheduled ? scheduled : (deadline || "—");
+      const hasPartialMemo = !!(f.fieldMemo && Array.isArray(f.fieldMemo.regions) && f.fieldMemo.regions.some((r) => r && (r.status === "sprayed" || r.status === "unsprayed")));
       return '<tr class="' + (on ? "on " : "") + (st === "inprogress" ? "inprogress" : "") + '" data-id="' + escapeHtml(f.id) + '">' +
-        '<td><button type="button" class="name-link" data-focus="' + escapeHtml(f.id) + '">' + escapeHtml(f.name || "無名") + "</button></td>" +
+        '<td><button type="button" class="name-link" data-focus="' + escapeHtml(f.id) + '">' + escapeHtml(f.name || "無名") + "</button>" +
+        (hasPartialMemo ? '<div style="font-size:11px; color:#2E7D32; font-weight:700; margin-top:2px;">📝 一部散布メモあり</div>' : '') +
+        "</td>" +
         "<td>" + escapeHtml(f.location || "—") + "</td>" +
         '<td><span class="status-pill st-' + st + '">' + escapeHtml(STATUS_LABELS[st] || st) + "</span></td>" +
         "<td>" + escapeHtml(amt.area) + "</td>" +
@@ -787,6 +815,20 @@ function markComplete(id) {
   showMapSyncToast("✅ 完了にしました（同期中…）", "ok");
   syncFieldToServer_(field);
 }
+
+window.onFieldMemoSavedFromManure = function (field, memo) {
+  if (!field || !field.id) return;
+  const target = findField(field.id) || field;
+  if (memo) target.fieldMemo = memo;
+  const hasSprayed = !!(memo && Array.isArray(memo.regions) && memo.regions.some((r) => r && r.status === "sprayed"));
+  const curStatus = getCompostStatus(target);
+  if (hasSprayed && (curStatus === "request" || curStatus === "accepted")) {
+    markInProgress(target.id);
+    return;
+  }
+  persistManureMapCache_();
+  renderRequestList();
+};
 
 function closeModal() {}
 

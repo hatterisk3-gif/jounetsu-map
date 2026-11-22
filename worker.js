@@ -7713,17 +7713,23 @@ window.hydrateCadUneCountFromHistory_ = async (polyId) => {
     const raw = hist && hist[0] && hist[0].data;
     if (!raw) return current;
     let count = 0;
+    let parsedObj = null;
     try {
       const obj = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+      parsedObj = obj;
       count = parseInt(obj && obj.uneCount, 10) || 0;
       if (!count && obj && Array.isArray(obj.unePolygons)) count = obj.unePolygons.length;
       if (!count && Array.isArray(obj)) count = obj.length;
     } catch (e) { count = 0; }
-    if (count > 0) {
+    if (count > 0 || (parsedObj && Array.isArray(parsedObj.pins) && parsedObj.pins.length > 0)) {
       // 巨大データは件数スタブだけ残す（フルデータはCADを開いたときに取得）
       const rawStr = String(raw);
       if (rawStr.length > 1500) {
-        poly.uneSimData = JSON.stringify({ uneCount: count, _slim: true });
+        const stub = { uneCount: count, _slim: true };
+        if (parsedObj && Array.isArray(parsedObj.pins) && parsedObj.pins.length > 0) {
+          stub.pins = parsedObj.pins;
+        }
+        poly.uneSimData = JSON.stringify(stub);
       } else {
         poly.uneSimData = raw;
       }
@@ -29178,7 +29184,7 @@ window.renderRecordForm = () => {
 
   let targetSection = '';
   const placeInfoText = (p && p.name !== "未選択")
-    ? `📍 <b>${p.name}</b><br>${p.memo || p.notes || p.linkedSigns || (p.area ? `面積: ${p.area}㎡` : '特記事項なし')}`
+    ? `📍 <b>${p.name}</b><br>${p.memo || p.notes || p.linkedSigns || (p.area ? `面積: ${p.area}a` : '特記事項なし')}`
     : '📍 <b>場所未選択</b><br>マップから作業対象の場所を選択してください。';
   const lastFieldBtn = `<button type="button" id="btn_select_last_fields" onclick="selectLastWorkFields()" style="display:none; background:#FFF8E1; color:#E65100; border:2px solid #FF9800; border-radius:20px; padding:8px 12px; font-weight:bold; font-size:13px; cursor:pointer; ${addBtnStyle}">↩️ 前回の圃場</button>`;
   const buildFieldTargetSection = (opts) => {

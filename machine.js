@@ -21,6 +21,16 @@ let vehicleMarkers = {};
 let currentMachineId = null;
 let currentVehicleId = null;
 let isPickingLocation = false;
+let currentUser = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+
+function persistMachineAllCache_() {
+    try {
+        localStorage.setItem('passionMapMachineAllData', JSON.stringify({
+            machineData: { machines, maintenanceRecords, fuelRecords },
+            vehicleData: { vehicles }
+        }));
+    } catch (e) {}
+}
 
 /** Google Drive の画像共有URLを <img> タグ用直リンク画像URLに変換 */
 function getDriveDirectImageUrl(url) {
@@ -218,8 +228,17 @@ async function loadAllData() {
     if (usedCache) showToast("キャッシュで起動（最新を確認中…）");
     else showToast("データ読み込み中...");
     try {
-        // 1/4 圃場＋マスタデータ取得・描画
-        const initData = await callGAS('getInitData');
+        if (load) load.update({ label: 'データを取得中...', detail: '圃場・機械・車両データを並列読み込みしています', current: 0, total: 4 });
+        const [initData, machineData, vehicleData] = await Promise.all([
+            callGAS('getInitData'),
+            callGAS('machine_loadAll'),
+            callGAS('vehicle_loadAll').catch(ve => {
+                console.warn("Vehicle load skipped:", ve);
+                return { vehicles: {} };
+            })
+        ]);
+
+        // 1/4 圃場＋マスタデータ反映
         try {
             localStorage.setItem(MACHINE_INIT_CACHE_KEY, JSON.stringify({
                 polygons: (initData && initData.polygons) || [],
@@ -229,26 +248,10 @@ async function loadAllData() {
         applyInitPayload_(initData);
         if (load) load.update({
             label: '圃場・マスタを読み込みました',
-            detail: `1/4 圃場 ${(initData && initData.polygons ? initData.polygons.length : 0)} 件`,
-            current: 1,
+            detail: `2/4 機械 ${Object.keys((machineData && machineData.machines) || {}).length} 件 / 車両 ${Object.keys((vehicleData && vehicleData.vehicles) || {}).length} 件`,
+            current: 3,
             total: 4
         });
-        
-        // 2/4 機械データ取得（農機マスタ正本）
-        if (load) load.update({ label: '機械データを取得中...', detail: '2/4 農機マスタと履歴を読み込んでいます' });
-        const machineData = await callGAS('machine_loadAll');
-        if (load) load.update({ label: '機械データを読み込みました', detail: `2/4 機械 ${Object.keys((machineData && machineData.machines) || {}).length} 件`, current: 2, total: 4 });
-
-        // 3/4 移動車両データ取得
-        if (load) load.update({ label: '移動車両を取得中...', detail: '3/4 車両マスタを読み込んでいます' });
-        let vehicleData = { vehicles: {} };
-        try {
-            vehicleData = await callGAS('vehicle_loadAll');
-        } catch (ve) {
-            console.warn("Vehicle load skipped:", ve);
-            vehicleData = { vehicles: {} };
-        }
-        if (load) load.update({ label: '移動車両を読み込みました', detail: `3/4 車両 ${Object.keys((vehicleData && vehicleData.vehicles) || {}).length} 件`, current: 3, total: 4 });
 
         applyMachinePayload_(machineData, vehicleData);
         try {
@@ -1031,6 +1034,7 @@ async function saveMachineRegistration() {
         const saved = (res && res.machine) ? res.machine : m;
         if (saved.id) machines[saved.id] = Object.assign({}, existing || {}, saved);
         pendingMachinePhotoBase64 = "";
+        persistMachineAllCache_();
         closeModal('modalMachineRegister');
         showToast(existing ? "機械を更新しました" : "機械を登録しました");
         if (saved.id) currentMachineId = saved.id;
@@ -1201,6 +1205,7 @@ async function saveVehicleRegistration() {
             photo: (result && result.photo) || v.photo || ''
         };
         pendingVehiclePhotoBase64 = "";
+        persistMachineAllCache_();
         closeModal('modalVehicleRegister');
         renderVehicleMarkers();
         updateVehicleSettingsDropdown();
@@ -1264,14 +1269,19 @@ function renderVehicleList() {
             const v = vehicles[id];
             const statusIcon = v.status === '修理中' ? '🔴' : '🟢';
             const pin = (v.lat && v.lng) ? '📍' : '・';
+            const safeId = String(id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const photoUrl = getDriveDirectImageUrl(v.photo);
-            html += `<div onclick="selectVehicleFromList('${id}')" style="display:flex; gap:10px; align-items:center; padding:10px 12px; border-bottom:1px solid #f0f0f0; cursor:pointer;">
+            html += `<div onclick="selectVehicleFromList('${safeId}')" style="display:flex; gap:10px; align-items:center; padding:10px 12px; border-bottom:1px solid #f0f0f0; cursor:pointer;">
                 <div style="width:48px; height:48px; border-radius:6px; overflow:hidden; background:#eee; flex-shrink:0; display:flex; align-items:center; justify-content:center;">
                     ${photoUrl ? `<img src="${photoUrl}" style="width:100%; height:100%; object-fit:cover;">` : '🛻'}
                 </div>
                 <div style="flex:1; min-width:0;">
                     <div style="font-weight:bold; color:#333;">${statusIcon} ${getVehicleDisplayName(v) || '(未設定)'}</div>
                     <div style="font-size:12px; color:#666;">${v.driveType || '-'} / ${v.mileage === '' || v.mileage == null ? '-' : v.mileage + ' km'} ${pin}</div>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:4px; flex-shrink:0;" onclick="event.stopPropagation();">
+                    <button type="button" onclick="editVehicleFromList('${safeId}')" style="background:#fff3e0; color:#e65100; border:1px solid #ffcc80; border-radius:4px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">編集</button>
+                    <button type="button" onclick="deleteVehicleFromList('${safeId}')" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:6px 10px; font-size:11px; font-weight:bold; cursor:pointer;">削除</button>
                 </div>
             </div>`;
         });
@@ -1282,6 +1292,45 @@ function selectVehicleFromList(id) {
     const sel = document.getElementById('settingVehicleSelect');
     if (sel) sel.value = id;
     loadVehicleSettings();
+}
+
+function editVehicleFromList(id) {
+    if (!id || !vehicles[id]) return;
+    currentVehicleId = id;
+    closeModal('modalVehicleSettings');
+    openVehicleRegisterModal(id);
+}
+
+async function deleteVehicleFromList(id) {
+    if (!id || !vehicles[id]) return;
+    const label = getVehicleDisplayName(vehicles[id]) || vehicles[id].plateNumber || id;
+    if (!confirm(`車両「${label}」を削除しますか？\nこの操作は取り消せません。`)) return;
+    showToast("削除中...");
+    try {
+        await callGAS('vehicle_deleteVehicle', { id: id });
+        delete vehicles[id];
+        if (vehicleMarkers[id]) {
+            vehicleMarkers[id].setMap(null);
+            delete vehicleMarkers[id];
+        }
+        if (String(currentVehicleId) === String(id)) {
+            currentVehicleId = null;
+            const panel = document.getElementById('vehicleActionPanel');
+            if (panel) panel.style.display = 'none';
+        }
+        persistMachineAllCache_();
+        updateVehicleSettingsDropdown();
+        renderVehicleList();
+        renderVehicleMarkers();
+        showToast("車両を削除しました");
+    } catch (e) {
+        alert("削除に失敗しました: " + e.message);
+    }
+}
+
+async function deleteSelectedVehicle() {
+    if (!currentVehicleId) return;
+    await deleteVehicleFromList(currentVehicleId);
 }
 
 function loadVehicleSettings() {
@@ -1353,6 +1402,7 @@ async function saveVehicleStatus(btn) {
     try {
         await callGAS('vehicle_saveStatus', { id: currentVehicleId, status: val });
         vehicles[currentVehicleId].status = val;
+        persistMachineAllCache_();
         removeDynamicModal('modalVehicleStatus');
         renderVehicleMarkers();
         renderVehicleList();
@@ -1449,6 +1499,7 @@ async function deleteMachineFromList(id) {
             const panel = document.getElementById('machineActionPanel');
             if (panel) panel.style.display = 'none';
         }
+        persistMachineAllCache_();
         renderMachineList();
         renderMachineMarkers();
         showToast("機械を削除しました");
@@ -1529,6 +1580,7 @@ async function saveStatus(btn) {
     try {
         await callGAS('machine_saveStatus', { id: currentMachineId, status: val });
         machines[currentMachineId].status = val;
+        persistMachineAllCache_();
         removeDynamicModal('modalStatus');
         renderMachineMarkers();
         renderMachineList();
@@ -1585,12 +1637,14 @@ async function savePickedLocation() {
             await callGAS('vehicle_saveLocation', { id: currentVehicleId, lat: pendingLocation.lat, lng: pendingLocation.lng });
             vehicles[currentVehicleId].lat = pendingLocation.lat;
             vehicles[currentVehicleId].lng = pendingLocation.lng;
+            persistMachineAllCache_();
             showToast("車両の置き場所を保存しました");
             renderVehicleMarkers();
         } else if (currentMachineId) {
             await callGAS('machine_saveLocation', { id: currentMachineId, lat: pendingLocation.lat, lng: pendingLocation.lng });
             machines[currentMachineId].lat = pendingLocation.lat;
             machines[currentMachineId].lng = pendingLocation.lng;
+            persistMachineAllCache_();
             showToast("置き場所を保存しました");
             renderMachineMarkers();
             renderMachineList();
@@ -1764,6 +1818,7 @@ async function saveMaintenance(btn) {
             photos: (res && Array.isArray(res.photos)) ? res.photos : []
         });
         window._maintRegPhotos = [];
+        persistMachineAllCache_();
         removeDynamicModal('modalMaintReg');
         showToast("整備内容を登録しました");
     } catch(e) {
@@ -1778,14 +1833,18 @@ async function saveMaintenance(btn) {
 function openMaintenanceSettingsModal() {
     let m = machines[currentMachineId];
     if (!m) return;
+    const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
     
     let itemsHtml = "";
     if(m.maintenanceSettings && m.maintenanceSettings.length > 0) {
         m.maintenanceSettings.forEach((s, idx) => {
             itemsHtml += `
-            <div style="background:#f9f9f9; padding:8px; margin-bottom:5px; border-radius:4px; font-size:13px;">
-                <b>${s.item_name}</b> - リマインダー: ${s.reminder_hours}h おき <br>
-                目安・量: ${s.amount}
+            <div style="background:#f9f9f9; padding:8px; margin-bottom:5px; border-radius:4px; font-size:13px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                <div>
+                    <b>${esc(s.item_name)}</b> - リマインダー: ${esc(s.reminder_hours)}h おき <br>
+                    目安・量: ${esc(s.amount)}
+                </div>
+                <button type="button" onclick="deleteMaintenanceSetting(${idx})" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:4px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer; flex-shrink:0;">削除</button>
             </div>`;
         });
     } else {
@@ -1794,7 +1853,7 @@ function openMaintenanceSettingsModal() {
     
     let html = buildDynamicOverlay('modalMaintSet', `
         <h3>⚙️ 整備設定</h3>
-        <p>対象: <b>${m.name}</b></p>
+        <p>対象: <b>${esc(m.name)}</b></p>
         
         <div style="margin-bottom:20px;">
             <h4>現在の設定</h4>
@@ -1824,6 +1883,27 @@ function openMaintenanceSettingsModal() {
     document.getElementById('dynamicModals').innerHTML = html;
 }
 
+async function deleteMaintenanceSetting(idx) {
+    let m = machines[currentMachineId];
+    if (!m || !Array.isArray(m.maintenanceSettings) || idx < 0 || idx >= m.maintenanceSettings.length) return;
+    const item = m.maintenanceSettings[idx];
+    const label = (item && item.item_name) ? item.item_name : ('項目' + (idx + 1));
+    if (!confirm(`整備設定「${label}」を削除しますか？`)) return;
+    let newSettings = JSON.parse(JSON.stringify(m.maintenanceSettings));
+    newSettings.splice(idx, 1);
+    showToast("削除中...");
+    try {
+        await callGAS('machine_saveMaintenanceSetting', { id: currentMachineId, maintenanceSettings: newSettings });
+        m.maintenanceSettings = newSettings;
+        persistMachineAllCache_();
+        removeDynamicModal('modalMaintSet');
+        openMaintenanceSettingsModal();
+        showToast("整備設定を削除しました");
+    } catch(e) {
+        alert("削除に失敗しました: " + e.message);
+    }
+}
+
 async function saveMaintenanceSetting(btn) {
     let item = document.getElementById('maintSetItem').value;
     let hours = document.getElementById('maintSetHours').value;
@@ -1844,6 +1924,7 @@ async function saveMaintenanceSetting(btn) {
     try {
         await callGAS('machine_saveMaintenanceSetting', { id: currentMachineId, maintenanceSettings: newSettings });
         m.maintenanceSettings = newSettings;
+        persistMachineAllCache_();
         removeDynamicModal('modalMaintSet');
         openMaintenanceSettingsModal();
         showToast("整備設定を追加しました");
@@ -1924,6 +2005,7 @@ async function saveFuel(btn) {
     try {
         await callGAS('machine_saveFuel', data);
         fuelRecords.push(data);
+        persistMachineAllCache_();
         removeDynamicModal('modalFuel');
         showToast("給油情報を登録しました");
         

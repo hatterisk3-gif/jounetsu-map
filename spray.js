@@ -201,12 +201,41 @@ function parseCoords(raw) {
   return Array.isArray(coords) ? coords : [];
 }
 
+function computeSprayAreaSqm_(coords) {
+  const normalized = (coords || []).map((c) => ({
+    lat: Number(c && (c.lat != null ? c.lat : c[0])),
+    lng: Number(c && (c.lng != null ? c.lng : c[1]))
+  })).filter((c) => !isNaN(c.lat) && !isNaN(c.lng));
+  if (normalized.length < 3) return 0;
+  try {
+    if (typeof google !== "undefined" && google.maps && google.maps.geometry && google.maps.geometry.spherical) {
+      const latLngs = normalized.map((c) => new google.maps.LatLng(c.lat, c.lng));
+      const sqm = google.maps.geometry.spherical.computeArea(latLngs);
+      if (sqm > 0) return sqm;
+    }
+  } catch (e) {}
+  const R = 6378137;
+  const rad = Math.PI / 180;
+  let total = 0;
+  for (let i = 0; i < normalized.length; i++) {
+    const p1 = normalized[i];
+    const p2 = normalized[(i + 1) % normalized.length];
+    total += ((p2.lng - p1.lng) * rad) * (2 + Math.sin(p1.lat * rad) + Math.sin(p2.lat * rad));
+  }
+  return Math.abs(total * R * R / 2);
+}
+
 function fieldAreaA(field) {
-  const n = Number(field && field.area);
+  const n = parseFloat(field && field.area);
   if (!isNaN(n) && n > 0) return n;
   const poly = fieldPolys[field && field.id];
-  if (poly && google.maps.geometry && google.maps.geometry.spherical) {
+  if (poly && typeof google !== "undefined" && google.maps && google.maps.geometry && google.maps.geometry.spherical) {
     const sqm = google.maps.geometry.spherical.computeArea(poly.getPath());
+    if (sqm > 0) return Math.round((sqm / 100) * 10) / 10;
+  }
+  const coords = parseCoords(field && field.coords);
+  if (coords.length >= 3) {
+    const sqm = computeSprayAreaSqm_(coords);
     if (sqm > 0) return Math.round((sqm / 100) * 10) / 10;
   }
   return 0;
@@ -599,13 +628,16 @@ function renderRunCard() {
   const total = selectedIds.length;
   const done = runDoneIds.length;
   if (runIndex >= total) {
+    window._lastSprayCompletedIds = runDoneIds.slice();
     document.getElementById("runTitle").textContent = "防除完了";
     document.getElementById("runProgressLabel").textContent = "全 " + total + " 圃場";
     document.getElementById("runProgressBar").style.width = "100%";
     document.getElementById("runFieldName").textContent = "すべての畑が完了しました";
     document.getElementById("runFieldMeta").textContent = "完了 " + done + " ／ スキップ " + (total - done);
     document.getElementById("runSolution").textContent = "—";
-    document.getElementById("runChems").innerHTML = "";
+    document.getElementById("runChems").innerHTML = done > 0
+      ? ('<button type="button" class="primary" style="width:100%; background:#1565C0; color:#fff; border:none; border-radius:10px; padding:12px; font-size:15px; font-weight:bold; cursor:pointer; margin-top:6px;" onclick="saveSprayRunToWorkRecords(this)">📝 完了した ' + done + " 圃場を防除作業記録として保存</button>")
+      : "";
     const btn = document.getElementById("btnCompleteNext");
     btn.textContent = "設定に戻る";
     btn.onclick = backToSetup;
@@ -744,4 +776,79 @@ window.startSprayRun = startSprayRun;
 window.completeCurrentField = completeCurrentField;
 window.skipCurrentField = skipCurrentField;
 window.backToSetup = backToSetup;
+async function saveSprayRunToWorkRecords(btn) {
+  const ids = (Array.isArray(window._lastSprayCompletedIds) && window._lastSprayCompletedIds.length)
+    ? window._lastSprayCompletedIds
+    : runDoneIds;
+  const doneFields = ids
+    .map((id) => allFields.find((f) => String(f.id) === String(id)))
+    .filter(Boolean);
+  if (!doneFields.length) {
+    alert("完了した圃場がありません");
+    return;
+  }
+  const origText = btn ? btn.textContent : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "保存中...";
+  }
+  try {
+    const fieldsPayload = doneFields.map((f) => ({ id: f.id, name: f.name || "" }));
+    const st = spraySettings();
+    let totalArea = 0;
+    let totalSol = 0;
+    const chemTot = {};
+    doneFields.forEach((f) => {
+      const calc = calcFieldSpray(f);
+      totalArea += calc.areaA;
+      totalSol += calc.solutionL;
+      calc.chems.forEach((c) => {
+        chemTot[c.name] = (chemTot[c.name] || 0) + c.amountL;
+      });
+    });
+    const pesticidesPayload = chemicals.map((c) => {
+      const amtL = chemTot[c.name] || 0;
+      const amtStr = amtL > 0 ? formatLiters(amtL) : "";
+      return {
+        name: c.name || "",
+        dilution: String(c.dilution || ""),
+        amount: amtStr,
+        unit: ""
+      };
+    });
+    const d = new Date();
+    const workDate = d.getFullYear() + "/" + String(d.getMonth() + 1).padStart(2, "0") + "/" + String(d.getDate()).padStart(2, "0");
+    const author = localStorage.getItem("passionMapUserName") || localStorage.getItem("passionMapUserId") || "";
+    const notesParts = [
+      "防除アプリから登録（完了 " + doneFields.length + "圃場 / 計" + (Math.round(totalArea * 10) / 10) + "a）",
+      "散布量 " + st.volumePer10a + "L/10a・ロス" + st.lossPct + "% / 薬液 " + formatLiters(totalSol)
+    ];
+    await callGAS("saveRecord", {
+      fields: fieldsPayload,
+      type: "work",
+      author: author,
+      data: {
+        workDate: workDate,
+        workName: "防除",
+        category: "防除・農薬",
+        progressStatus: "完了",
+        pesticides: pesticidesPayload,
+        notes: notesParts.join(" ／ ")
+      }
+    });
+    showMapSyncToast("✅ 防除作業記録を保存しました", "ok");
+    if (btn) {
+      btn.textContent = "✅ 作業記録に保存済み";
+      btn.disabled = true;
+    }
+  } catch (e) {
+    alert("作業記録の保存に失敗しました: " + (e && e.message ? e.message : e));
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = origText;
+    }
+  }
+}
+
+window.saveSprayRunToWorkRecords = saveSprayRunToWorkRecords;
 window.toggleSheet = toggleSheet;

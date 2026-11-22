@@ -1,4 +1,3 @@
-
 const IDEA_LS_KEY = 'passionMapIdeaBoard';
 const IDEA_CAT_LS_KEY = 'passionMapIdeaCategories';
 
@@ -11,8 +10,9 @@ const IDEA_STATUS = {
 
 window._ideaState = {
   tab: 'idea',
+  categoryFilter: '',
   items: [],
-  categories: ['機械', '栽培', '運営', '販売'],
+  categories: ['機械', '栽培', '運営', '販売', '現場フィードバック'],
   pendingReject: {}
 };
 
@@ -39,6 +39,19 @@ function ideaCallGAS(action, params) {
   return callGAS(action, params);
 }
 
+function ideaMergeCategories_(extra) {
+  const set = new Set(['機械', '栽培', '運営', '販売', '現場フィードバック']);
+  (window._ideaState.categories || []).concat(Array.isArray(extra) ? extra : []).forEach(c => {
+    const s = String(c || '').trim();
+    if (s) set.add(s);
+  });
+  (window._ideaState.items || []).forEach(it => {
+    const c = String((it && it.category) || '').trim();
+    if (c) set.add(c);
+  });
+  window._ideaState.categories = Array.from(set);
+}
+
 function ideaLoadLocal() {
   try {
     const items = JSON.parse(localStorage.getItem(IDEA_LS_KEY) || '[]');
@@ -46,6 +59,7 @@ function ideaLoadLocal() {
     if (Array.isArray(items)) window._ideaState.items = items;
     if (Array.isArray(cats) && cats.length) window._ideaState.categories = cats;
   } catch (e) {}
+  ideaMergeCategories_();
 }
 
 function ideaSaveLocal() {
@@ -62,6 +76,7 @@ function ideaUpsert(item) {
   if (i >= 0) list[i] = item;
   else list.unshift(item);
   window._ideaState.items = list;
+  ideaMergeCategories_();
   ideaSaveLocal();
 }
 
@@ -99,6 +114,11 @@ window.ideaSwitchTab = (tab) => {
   ideaRenderList();
 };
 
+window.ideaSetCategoryFilter = (cat) => {
+  window._ideaState.categoryFilter = cat || '';
+  ideaRenderList();
+};
+
 window.ideaOpenRegister = () => {
   const overlay = document.getElementById('ideaRegisterOverlay');
   if (!overlay) return;
@@ -125,6 +145,7 @@ window.ideaAddCategory = async () => {
   } catch (e) {
     if (window._ideaState.categories.indexOf(name) < 0) window._ideaState.categories.push(name);
   }
+  ideaMergeCategories_();
   ideaSaveLocal();
   ideaRenderCategories(name);
   if (input) input.value = '';
@@ -256,7 +277,7 @@ function ideaCardHtml(item, tab) {
     return `<option value="${v}" ${sel}>${l}</option>`;
   }).join('');
   const pending = window._ideaState.pendingReject[item.id];
-  const showReject = item.status === 'rejected' || pending || false;
+  const showReject = item.status === 'rejected' || pending != null;
   const reasonVal = pending != null ? pending : (item.rejectReason || '');
   return `
     <div class="idea ${cls}" onclick="ideaOpenDetail('${ideaJs(item.id)}')">
@@ -278,7 +299,11 @@ function ideaCardHtml(item, tab) {
       <div class="reject-box" id="reject_${ideaEsc(item.id)}" style="display:${showReject && tab === 'review' ? 'block' : 'none'};" onclick="event.stopPropagation()">
         <label>廃案の理由</label>
         <textarea id="reject_reason_${ideaEsc(item.id)}" placeholder="廃案にした理由を記入">${ideaEsc(reasonVal)}</textarea>
-        <button type="button" class="btn btn-save" style="margin-top:8px;" onclick="ideaSaveReject('${ideaJs(item.id)}')">廃案理由を保存</button>
+        <div id="reject_err_${ideaEsc(item.id)}" style="color:#c62828; font-size:12px; font-weight:bold; margin-top:4px; display:none;"></div>
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <button type="button" class="btn btn-save" onclick="ideaSaveReject('${ideaJs(item.id)}')">廃案理由を保存</button>
+          <button type="button" class="btn btn-sub" onclick="ideaCancelReject('${ideaJs(item.id)}')">キャンセル</button>
+        </div>
       </div>
     </div>
   `;
@@ -297,12 +322,27 @@ window.ideaOnProgressChange = async (id, status) => {
   await ideaSetStatus(id, status, item.rejectReason || '');
 };
 
+window.ideaCancelReject = (id) => {
+  delete window._ideaState.pendingReject[id];
+  ideaRenderList();
+};
+
 window.ideaSaveReject = async (id) => {
   const ta = document.getElementById('reject_reason_' + id);
   const reason = String((ta && ta.value) || '').trim();
+  const errEl = document.getElementById('reject_err_' + id);
   if (!reason) {
-    ideaSetFormStatus('廃案の理由を入力してください', true);
+    if (errEl) {
+      errEl.textContent = '廃案の理由を入力してください';
+      errEl.style.display = 'block';
+    }
+    alert('廃案の理由を入力してください');
+    if (ta) ta.focus();
     return;
+  }
+  if (errEl) {
+    errEl.textContent = '';
+    errEl.style.display = 'none';
   }
   delete window._ideaState.pendingReject[id];
   await ideaSetStatus(id, 'rejected', reason);
@@ -403,11 +443,27 @@ function ideaRenderList() {
   if (cRun) cRun.textContent = String(counts.running);
   if (!box) return;
   const tab = window._ideaState.tab;
-  const items = window._ideaState.items || [];
+  const catFilter = String(window._ideaState.categoryFilter || '').trim();
+  const allItems = window._ideaState.items || [];
+  const items = catFilter
+    ? allItems.filter(i => String((i && i.category) || '').trim() === catFilter)
+    : allItems;
+  const cats = (window._ideaState.categories || []).slice();
+  allItems.forEach(i => {
+    const c = String((i && i.category) || '').trim();
+    if (c && cats.indexOf(c) < 0) cats.push(c);
+  });
+  const filterBar = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">'
+    + '<button type="button" onclick="ideaSetCategoryFilter(\'\')" style="border:1px solid ' + (!catFilter ? '#5e35b1' : '#d1c4e9') + ';background:' + (!catFilter ? '#5e35b1' : '#fff') + ';color:' + (!catFilter ? '#fff' : '#4527a0') + ';border-radius:999px;padding:4px 12px;font-size:12px;font-weight:bold;cursor:pointer;">すべて</button>'
+    + cats.map(c => {
+      const on = catFilter === c;
+      return '<button type="button" onclick="ideaSetCategoryFilter(\'' + ideaJs(c) + '\')" style="border:1px solid ' + (on ? '#5e35b1' : '#d1c4e9') + ';background:' + (on ? '#5e35b1' : '#fff') + ';color:' + (on ? '#fff' : '#4527a0') + ';border-radius:999px;padding:4px 12px;font-size:12px;font-weight:bold;cursor:pointer;">' + ideaEsc(c) + '</button>';
+    }).join('')
+    + '</div>';
   if (tab === 'review') {
     const active = items.filter(i => i.status === 'review');
     const rejected = items.filter(i => i.status === 'rejected');
-    let html = '';
+    let html = filterBar;
     html += active.length
       ? active.map(i => ideaCardHtml(i, 'review')).join('')
       : '<div class="empty">審議中のアイデアはまだありません</div>';
@@ -419,9 +475,9 @@ function ideaRenderList() {
     return;
   }
   const filtered = items.filter(i => i.status === tab);
-  box.innerHTML = filtered.length
+  box.innerHTML = filterBar + (filtered.length
     ? filtered.map(i => ideaCardHtml(i, tab)).join('')
-    : '<div class="empty">このタブのアイデアはまだありません</div>';
+    : '<div class="empty">このタブのアイデアはまだありません</div>');
 }
 
 async function ideaInit() {
@@ -439,6 +495,7 @@ async function ideaInit() {
     if (data && Array.isArray(data.categories) && data.categories.length) {
       window._ideaState.categories = data.categories;
     }
+    ideaMergeCategories_(data && data.categories);
     ideaSaveLocal();
     ideaRenderCategories();
     ideaRenderList();
