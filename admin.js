@@ -7489,7 +7489,8 @@ function inferWorkRecordUiFlags_(workName, category) {
         showRidgePolygon: n.indexOf('畝立') >= 0,
         showPreInspection: n.indexOf('始動前点検') >= 0,
         showPeriodicInspection: n.indexOf('定期点検') >= 0,
-        showFuelInspection: n.indexOf('給油時点検') >= 0
+        showFuelInspection: n.indexOf('給油時点検') >= 0,
+        showMember: false
     };
 }
 
@@ -7510,7 +7511,8 @@ function resolveWorkRecordUiFlags_(work) {
         showRidgePolygon: pick(w.showRidgePolygon, inferred.showRidgePolygon),
         showPreInspection: pick(w.showPreInspection, inferred.showPreInspection),
         showPeriodicInspection: pick(w.showPeriodicInspection, inferred.showPeriodicInspection),
-        showFuelInspection: pick(w.showFuelInspection, inferred.showFuelInspection)
+        showFuelInspection: pick(w.showFuelInspection, inferred.showFuelInspection),
+        showMember: pick(w.showMember, inferred.showMember)
     };
 }
 
@@ -7532,6 +7534,7 @@ function buildWorkRecordUiFlagsHtml_(prefix, flags) {
             ${row('show_pre_inspection', !!f.showPreInspection, '🌅 始動前点検UIを出す', '一括入力等で機械カテゴリ→機械・車両を選び、当日の始動前点検の確認・記録ができます')}
             ${row('show_periodic_inspection', !!f.showPeriodicInspection, '🗓️ 定期点検UIを出す', '一括入力等で機械カテゴリ→機械・車両を選び、当日の定期点検の確認・記録ができます')}
             ${row('show_fuel_inspection', !!f.showFuelInspection, '⛽ 給油時点検UIを出す', '一括入力等で機械カテゴリ→機械・車両を選び、当日の給油時点検の確認・記録ができます')}
+            ${row('show_member', !!f.showMember, '👥 メンバー登録を出す', '所属拠点を選んでから、その拠点のメンバー名を選べます')}
         </div>
     </div>`;
 }
@@ -7563,7 +7566,8 @@ function collectWorkRecordUiFlagsFromForm_(prefix) {
         showRidgePolygon: readOr('show_ridge_polygon', !!baseline.showRidgePolygon),
         showPreInspection: readOr('show_pre_inspection', !!baseline.showPreInspection),
         showPeriodicInspection: readOr('show_periodic_inspection', !!baseline.showPeriodicInspection),
-        showFuelInspection: readOr('show_fuel_inspection', !!baseline.showFuelInspection)
+        showFuelInspection: readOr('show_fuel_inspection', !!baseline.showFuelInspection),
+        showMember: readOr('show_member', !!baseline.showMember)
     };
 }
 
@@ -11785,21 +11789,19 @@ function vpApplyResolvedAccountLocToOpenForm_(loc) {
         badgeEl.style.display = 'inline';
     }
     const d = window._vpDraft;
-    if (d && !d.id && !d.location) {
-        d.location = matched;
-    }
     const sel = document.getElementById('vpInputLocation');
-    if (sel && (!sel.value || (d && !d.id && sel.dataset.autoLoc !== '0'))) {
-        const hasOpt = Array.from(sel.options).some(o => o.value === matched);
-        if (!hasOpt) {
-            const opt = document.createElement('option');
-            opt.value = matched;
-            opt.textContent = matched;
-            sel.appendChild(opt);
-        }
-        sel.value = matched;
-        if (d) d.location = matched;
+    const manual = (sel && sel.dataset.autoLoc === '0') || (d && d.locationManual);
+    if (manual) return;
+    if (d) d.location = matched;
+    if (!sel) return;
+    const hasOpt = Array.from(sel.options).some(o => o.value === matched);
+    if (!hasOpt) {
+        const opt = document.createElement('option');
+        opt.value = matched;
+        opt.textContent = matched;
+        sel.appendChild(opt);
     }
+    sel.value = matched;
 }
 
 window.vpEnsureAccountLocationLoaded_ = async function () {
@@ -12103,7 +12105,7 @@ window.confirmViewpointPick_ = () => {
     const nearFieldName = shouldAutoName ? vpFindNearestVisibleFieldName_(lat, lng) : '';
     window._vpDraft = {
         id: isEdit ? prev.id : '',
-        location: (prev && prev.location) ? prev.location : vpUserLoc_(),
+        location: (prev && prev.locationManual) ? prev.location : (vpUserLoc_() || (prev && prev.location) || ''),
         name: shouldAutoName ? (nearFieldName || '') : (prev ? prev.name : ''),
         lat: lat,
         lng: lng,
@@ -12113,7 +12115,7 @@ window.confirmViewpointPick_ = () => {
     };
     vpExitMapModes_();
     window.openViewpointFormModal_();
-    if (!window._vpDraft.location && typeof window.vpEnsureAccountLocationLoaded_ === 'function') {
+    if (window._vpDraft && !window._vpDraft.locationManual && typeof window.vpEnsureAccountLocationLoaded_ === 'function') {
         try { window.vpEnsureAccountLocationLoaded_(); } catch (e) { }
     }
     // 近くに畑が見つからなかった場合のみ住所で自動入力（末尾に「周辺」を付与）
@@ -12158,7 +12160,10 @@ function vpReadFormToDraft_() {
     if (!d) return;
     const locEl = document.getElementById('vpInputLocation');
     const nameEl = document.getElementById('vpInputName');
-    if (locEl) d.location = String(locEl.value || '').trim();
+    if (locEl) {
+        d.location = String(locEl.value || '').trim();
+        d.locationManual = locEl.dataset.autoLoc === '0';
+    }
     if (nameEl) {
         d.name = String(nameEl.value || '').trim();
         d.nameAuto = nameEl.dataset.auto === '1';
@@ -12176,10 +12181,9 @@ window.openViewpointFormModal_ = () => {
 
     const locs = (pdlLocations || []).filter(Boolean);
     const userLoc = vpUserLoc_();
-    if (!d.id && !d.location && userLoc) {
-        d.location = userLoc;
-    }
-    if (d.location) {
+    if (userLoc && d.locationManual !== true) {
+        d.location = vpMatchLocationOption_(userLoc, locs) || userLoc;
+    } else if (d.location) {
         d.location = vpMatchLocationOption_(d.location, locs);
     }
     if (d.location && !locs.includes(d.location)) locs.unshift(d.location);
@@ -12220,6 +12224,9 @@ window.openViewpointFormModal_ = () => {
         </button>
       </div>
     </div>`;
+    if (d.locationManual !== true && typeof window.vpEnsureAccountLocationLoaded_ === 'function') {
+        try { window.vpEnsureAccountLocationLoaded_(); } catch (e) { }
+    }
 };
 
 window.repickViewpointLocation_ = () => {

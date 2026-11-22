@@ -3627,12 +3627,47 @@ window.cycleNextViewpoint = function () {
   // キャッシュ等で未設定なら localStorage からも探す
   if ((!allVps || !allVps.length) && typeof localStorage !== 'undefined') {
     try {
-      const initCache = JSON.parse(localStorage.getItem('passionMapInitData') || '{}');
-      if (initCache && initCache.pdl && Array.isArray(initCache.pdl.viewpoints)) {
-        allVps = initCache.pdl.viewpoints;
+      const vpCache = JSON.parse(localStorage.getItem('passionMapViewpointsCache') || '[]');
+      if (Array.isArray(vpCache) && vpCache.length) {
+        allVps = vpCache;
         window.pdlViewpoints = allVps;
       }
     } catch (e) { }
+    if (!allVps || !allVps.length) {
+      const cacheKeys = ['passionMapInitData', 'pMapAdminInitData'];
+      for (let i = 0; i < cacheKeys.length && (!allVps || !allVps.length); i++) {
+        try {
+          const c = JSON.parse(localStorage.getItem(cacheKeys[i]) || '{}');
+          if (c && c.pdl && Array.isArray(c.pdl.viewpoints) && c.pdl.viewpoints.length) {
+            allVps = c.pdl.viewpoints;
+            window.pdlViewpoints = allVps;
+          }
+        } catch (e) { }
+      }
+    }
+  }
+
+  if ((!allVps || !allVps.length) && typeof callGAS === 'function' && !window._vpFetchingForCycle) {
+    window._vpFetchingForCycle = true;
+    const btn = document.getElementById('btnToggleViewpoint');
+    if (btn) btn.disabled = true;
+    callGAS('getViewpoints', {}, 1, { timeoutMs: 15000 }).then(res => {
+      window._vpFetchingForCycle = false;
+      if (btn) btn.disabled = false;
+      if (res && res.success && Array.isArray(res.viewpoints) && res.viewpoints.length) {
+        window.pdlViewpoints = res.viewpoints;
+        if (typeof pdlViewpoints !== 'undefined') pdlViewpoints = res.viewpoints;
+        try { localStorage.setItem('passionMapViewpointsCache', JSON.stringify(res.viewpoints)); } catch (e) { }
+        window.cycleNextViewpoint();
+      } else if (typeof customAlert === 'function') {
+        customAlert('視野地点がまだ登録されていません。\n管理者画面の「＋」メニュー ＞「🔭 視野地点登録」から登録してください。');
+      }
+    }).catch(() => {
+      window._vpFetchingForCycle = false;
+      if (btn) btn.disabled = false;
+      if (typeof customAlert === 'function') customAlert('視野地点の取得に失敗しました');
+    });
+    return;
   }
 
   if (!allVps || !allVps.length) {
@@ -6081,6 +6116,14 @@ window.renderHistoryList = () => {
             h += `<div style="font-size:12px;color:#00695C;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #80cbc4;">🚰 ポンプ設置中: ${pumpText}</div>`;
           }
           if (item.data.detailedWorks) h += `<div style="font-size:12px;color:#1a73e8;margin-bottom:5px;">✅ 詳細: ${item.data.detailedWorks}</div>`;
+          if (Array.isArray(item.data.workMembers) && item.data.workMembers.length) {
+            const memEsc = window.escapeWorkUiHtml_ || (s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'));
+            const memNames = item.data.workMembers.map(m => m && (m.name || m.id)).filter(Boolean).join('、');
+            if (memNames) {
+              const sharedNote = item.data.sharedFromAuthor ? ` <span style="font-size:10px;color:#1565C0;">（${memEsc(item.data.sharedFromAuthor)}さんの記録から同時登録）</span>` : '';
+              h += `<div style="font-size:12px;color:#0D47A1;margin-bottom:5px;background:#E3F2FD;padding:4px 8px;border-radius:4px;border:1px solid #90CAF9;">👥 メンバー: ${memEsc(memNames)}${sharedNote}</div>`;
+            }
+          }
           if (Array.isArray(item.data.concurrentWorks) && item.data.concurrentWorks.length) {
             const cwText = item.data.concurrentWorks.map(cw =>
               typeof window.formatConcurrentWorkSummary_ === 'function'
@@ -6238,6 +6281,14 @@ window.openAllHistory = () => {
           h += `<div style="font-size:12px;color:#00695C;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #80cbc4;">🚰 ポンプ設置中: ${pumpText}</div>`;
         }
         if (item.data.detailedWorks) h += `<div style="font-size:12px;color:#1a73e8;margin-bottom:5px;">✅ 詳細: ${item.data.detailedWorks}</div>`;
+        if (Array.isArray(item.data.workMembers) && item.data.workMembers.length) {
+          const memEsc = window.escapeWorkUiHtml_ || (s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'));
+          const memNames = item.data.workMembers.map(m => m && (m.name || m.id)).filter(Boolean).join('、');
+          if (memNames) {
+            const sharedNote = item.data.sharedFromAuthor ? ` <span style="font-size:10px;color:#1565C0;">（${memEsc(item.data.sharedFromAuthor)}さんの記録から同時登録）</span>` : '';
+            h += `<div style="font-size:12px;color:#0D47A1;margin-bottom:5px;background:#E3F2FD;padding:4px 8px;border-radius:4px;border:1px solid #90CAF9;">👥 メンバー: ${memEsc(memNames)}${sharedNote}</div>`;
+          }
+        }
         if (Array.isArray(item.data.concurrentWorks) && item.data.concurrentWorks.length) {
           const cwText = item.data.concurrentWorks.map(cw =>
             typeof window.formatConcurrentWorkSummary_ === 'function'
@@ -12126,6 +12177,7 @@ window.populateFieldMachineOptions = async (selectedMachineIds) => {
     }
 
     html += `</div>`;
+    html += `<div id="field_machine_periodic_alert" style="display:none; margin-top:8px;"></div>`;
     html += `<div id="hitch_link_suggest" style="display:none; margin-top:8px; padding:8px; background:#F3E5F5; border:1px solid #D1C4E9; border-radius:8px;"></div>`;
   }
 
@@ -12150,6 +12202,36 @@ window.populateFieldMachineOptions = async (selectedMachineIds) => {
   }
   if (typeof window.refreshHitchLinkSuggestions_ === 'function') {
     setTimeout(() => { try { window.refreshHitchLinkSuggestions_(); } catch (e) { } }, 0);
+  }
+  if (typeof window.refreshFieldMachinePeriodicAlert_ === 'function') {
+    setTimeout(() => { try { window.refreshFieldMachinePeriodicAlert_(); } catch (e) { } }, 0);
+  }
+};
+
+window.refreshFieldMachinePeriodicAlert_ = () => {
+  const box = document.getElementById('field_machine_periodic_alert');
+  if (!box) return;
+  const checked = Array.from(document.querySelectorAll('#field_machinery_section .used-machine-check:checked'));
+  if (!checked.length || typeof window.buildMachinesPeriodicAlertBannerHtml_ !== 'function') {
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  const list = checked.map(chk => ({
+    id: String(chk.value || '').trim(),
+    name: String(chk.getAttribute('data-name') || '').trim()
+  })).filter(m => m.id || m.name);
+  const rawDate = String(document.getElementById('rec_work_date')?.value || '').trim().slice(0, 10);
+  const banner = window.buildMachinesPeriodicAlertBannerHtml_(list, {
+    mode: 'record',
+    targetDate: rawDate
+  });
+  if (banner) {
+    box.innerHTML = banner;
+    box.style.display = 'block';
+  } else {
+    box.style.display = 'none';
+    box.innerHTML = '';
   }
 };
 
@@ -12177,6 +12259,7 @@ window.syncFieldMachineChipStyle = (chkEl) => {
   }
   if (typeof window.syncFieldMachineryFuelPairing_ === 'function') window.syncFieldMachineryFuelPairing_();
   if (typeof window.refreshHitchLinkSuggestions_ === 'function') window.refreshHitchLinkSuggestions_();
+  if (typeof window.refreshFieldMachinePeriodicAlert_ === 'function') window.refreshFieldMachinePeriodicAlert_();
 };
 
 window.isDieselFuelMachine_ = (m) => {
@@ -12534,7 +12617,8 @@ window.inferWorkRecordUiFlags_ = (workName, category) => {
       : /整備|修理|点検|清掃|保全|交換/.test(n),
     showPreInspection: n.indexOf('始動前点検') >= 0,
     showPeriodicInspection: n.indexOf('定期点検') >= 0,
-    showFuelInspection: n.indexOf('給油時点検') >= 0
+    showFuelInspection: n.indexOf('給油時点検') >= 0,
+    showMember: false
   };
 };
 
@@ -12544,7 +12628,7 @@ window.getWorkExtraUiFlags_ = (workName) => {
   const formCat = String(document.getElementById('rec_work_category')?.value || '').trim();
   // 準備／片づけは「対象作業」の紐づけ専用。対象作業の詳細・機械・資材フラグは出さない
   if (typeof window.isMetaTargetCategory_ === 'function' && window.isMetaTargetCategory_(formCat)) {
-    return { showMachine: false, showMaterial: false, showPesticide: false, showField: false, showFuel: false, showRidgePolygon: false, showMaintenance: false, showPreInspection: false, showPeriodicInspection: false, showFuelInspection: false };
+    return { showMachine: false, showMaterial: false, showPesticide: false, showField: false, showFuel: false, showRidgePolygon: false, showMaintenance: false, showPreInspection: false, showPeriodicInspection: false, showFuelInspection: false, showMember: false };
   }
   const w = (typeof window.findWorkMasterByName_ === 'function')
     ? (window.findWorkMasterByName_(mainName) || window.findWorkMasterByName_(combined))
@@ -12569,7 +12653,8 @@ window.getWorkExtraUiFlags_ = (workName) => {
     showMaintenance: pick(w && w.showMaintenance, inferred.showMaintenance),
     showPreInspection: pick(w && w.showPreInspection, inferred.showPreInspection),
     showPeriodicInspection: pick(w && w.showPeriodicInspection, inferred.showPeriodicInspection),
-    showFuelInspection: pick(w && w.showFuelInspection, inferred.showFuelInspection)
+    showFuelInspection: pick(w && w.showFuelInspection, inferred.showFuelInspection),
+    showMember: pick(w && w.showMember, inferred.showMember)
   };
 };
 
@@ -12592,6 +12677,7 @@ window.buildWorkRecordUiFlagsHtml_ = (prefix, flags) => {
             ${row('show_pre_inspection', !!f.showPreInspection, '🌅 始動前点検UIを出す', '一括入力等で機械カテゴリ→機械・車両を選び、当日の始動前点検の確認・記録ができます')}
             ${row('show_periodic_inspection', !!f.showPeriodicInspection, '🗓️ 定期点検UIを出す', '一括入力等で機械カテゴリ→機械・車両を選び、当日の定期点検の確認・記録ができます')}
             ${row('show_fuel_inspection', !!f.showFuelInspection, '⛽ 給油時点検UIを出す', '一括入力等で機械カテゴリ→機械・車両を選び、当日の給油時点検の確認・記録ができます')}
+            ${row('show_member', !!f.showMember, '👥 メンバー登録を出す', '所属拠点を選んでから、その拠点のメンバー名を選べます')}
           </div>
         </div>`;
 };
@@ -12621,11 +12707,226 @@ window.collectWorkRecordUiFlagsFromForm_ = (prefix) => {
     showMaintenance: readOr('show_maintenance', !!baseline.showMaintenance),
     showPreInspection: readOr('show_pre_inspection', !!baseline.showPreInspection),
     showPeriodicInspection: readOr('show_periodic_inspection', !!baseline.showPeriodicInspection),
-    showFuelInspection: readOr('show_fuel_inspection', !!baseline.showFuelInspection)
+    showFuelInspection: readOr('show_fuel_inspection', !!baseline.showFuelInspection),
+    showMember: readOr('show_member', !!baseline.showMember)
   };
 };
 
+window.normalizeMemberLocParts_ = (loc) => String(loc || '').split(/[・,、\/｜|]+/).map(s => s.trim()).filter(Boolean);
+
+window.listWorkMemberPeople_ = () => {
+  const rows = Array.isArray(window.pdlUserLocations) ? window.pdlUserLocations : [];
+  const out = [];
+  const seen = new Set();
+  rows.forEach((u) => {
+    if (!u) return;
+    const name = String(u.userName || u.name || '').trim();
+    const id = String(u.userId || name).trim();
+    if (!name || !id || seen.has(id)) return;
+    seen.add(id);
+    out.push({ id: id, name: name, location: String(u.location || '').trim() });
+  });
+  out.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+  return out;
+};
+
+window.listWorkMemberLocations_ = () => {
+  const set = new Set();
+  window.listWorkMemberPeople_().forEach((m) => {
+    const parts = window.normalizeMemberLocParts_(m.location);
+    if (!parts.length) set.add('');
+    else parts.forEach(p => set.add(p));
+  });
+  return Array.from(set).sort((a, b) => {
+    if (!a) return 1;
+    if (!b) return -1;
+    return a.localeCompare(b, 'ja');
+  });
+};
+
+window.memberBelongsToLoc_ = (member, loc) => {
+  const parts = window.normalizeMemberLocParts_(member && member.location);
+  if (!loc) return parts.length === 0;
+  return parts.indexOf(loc) >= 0;
+};
+
+window.resolveDefaultWorkMemberLoc_ = (locs) => {
+  const arr = Array.isArray(locs) ? locs : [];
+  if (!arr.length) return '';
+  if (arr.length === 1) return arr[0];
+  const userTokens = (typeof window.getUserAffiliatedLocations_ === 'function')
+    ? window.getUserAffiliatedLocations_()
+    : window.normalizeMemberLocParts_(typeof localStorage !== 'undefined' ? localStorage.getItem('passionMapUserLocation') : '');
+  for (let i = 0; i < userTokens.length; i++) {
+    const t = userTokens[i];
+    if (arr.indexOf(t) >= 0) return t;
+  }
+  for (let i = 0; i < userTokens.length; i++) {
+    const t = userTokens[i];
+    const hit = arr.find(l => l && (l.indexOf(t) >= 0 || t.indexOf(l) >= 0));
+    if (hit) return hit;
+  }
+  return '';
+};
+
+window.buildWorkMemberPickerHtml_ = (opts) => {
+  opts = opts || {};
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const escJs = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const people = window.listWorkMemberPeople_();
+  const locs = window.listWorkMemberLocations_();
+  const selected = Array.isArray(opts.selected) ? opts.selected.filter(m => m && (m.id || m.name)) : [];
+  const selectedIds = new Set(selected.map(m => String(m.id || m.name)));
+  let loc = (opts.loc === undefined || opts.loc === null)
+    ? window.resolveDefaultWorkMemberLoc_(locs)
+    : String(opts.loc).trim();
+  const hasLocSelected = (opts.loc !== undefined && opts.loc !== null) || !!loc || locs.length === 1;
+  const uid = escJs(opts.uid || '');
+  const scope = escJs(opts.scope || 'main');
+  const setLocFn = opts.setLocFn || 'setBulkWorkMemberLoc_';
+  const toggleFn = opts.toggleFn || 'toggleBulkWorkMember_';
+  const alsoSaveFn = opts.alsoSaveFn || 'toggleBulkWorkMemberAlsoSave_';
+  const alsoSaveChecked = !!opts.alsoSave;
+  const chip = (on, border, bg, color, click, label) => `<button type="button" onclick="${click}" style="width:100%; box-sizing:border-box; min-height:40px; padding:8px 10px; border-radius:12px; font-size:13px; font-weight:bold; cursor:pointer; border:2px solid ${border}; background:${bg}; color:${color}; text-align:center; line-height:1.25;">${label}</button>`;
+  const selectedHtml = selected.length
+    ? `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${selected.map(m => {
+      const safeId = escJs(m.id || '');
+      const safeName = escJs(m.name || '');
+      const safeLoc = escJs(m.location || '');
+      return `<span style="display:inline-flex; align-items:center; gap:4px; background:#E3F2FD; color:#0D47A1; border:1px solid #90CAF9; border-radius:14px; padding:4px 8px; font-size:12px; font-weight:bold;">${esc(m.name || m.id)}<span onclick="${toggleFn}('${uid}','${scope}','${safeId}','${safeName}','${safeLoc}',false)" style="cursor:pointer; color:#c62828;" title="外す">×</span></span>`;
+    }).join('')}</div>`
+    : `<div style="font-size:12px; color:#888; margin-bottom:8px;">まだメンバーは選んでいません</div>`;
+  const alsoSaveHtml = (selected.length > 0 && opts.scope !== 'cw')
+    ? `<label style="display:flex; align-items:flex-start; gap:8px; margin-bottom:10px; padding:8px 10px; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px; cursor:pointer;">
+        <input type="checkbox" ${alsoSaveChecked ? 'checked' : ''} onchange="${alsoSaveFn}('${uid}','${scope}',this.checked)" style="margin-top:2px; width:16px; height:16px; flex-shrink:0;">
+        <span style="font-size:12px; color:#1B5E20; line-height:1.4;">
+          <b>選んだメンバーの作業記録としても同時登録する</b><br>
+          <span style="font-size:10px; color:#388E3C;">ONにすると、選んだメンバー各自の作業記録にも同じ内容が登録されます</span>
+        </span>
+      </label>`
+    : '';
+  const locHtml = locs.length
+    ? `<div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; margin-bottom:8px;">${locs.map(l => {
+      const on = hasLocSelected && l === loc;
+      const label = l || '（拠点なし）';
+      return chip(on, on ? '#1565C0' : '#90CAF9', on ? '#E3F2FD' : '#fff', '#0D47A1', `${setLocFn}('${uid}','${scope}','${escJs(l)}')`, esc(label));
+    }).join('')}</div>`
+    : `<div style="font-size:12px; color:#888;">メンバーの所属拠点がありません。</div>`;
+  const names = hasLocSelected
+    ? people.filter(m => window.memberBelongsToLoc_(m, loc))
+    : [];
+  const nameHtml = !hasLocSelected
+    ? `<div style="font-size:12px; color:#546E7A;">所属拠点を選ぶと、その拠点の名前が出ます。</div>`
+    : (names.length
+      ? `<div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px;">${names.map(m => {
+        const on = selectedIds.has(String(m.id));
+        return chip(on, on ? '#1565C0' : '#BBDEFB', on ? '#E3F2FD' : '#fff', '#0D47A1', `${toggleFn}('${uid}','${scope}','${escJs(m.id)}','${escJs(m.name)}','${escJs(loc)}',${!on})`, `${on ? '✅ ' : ''}${esc(m.name)}`);
+      }).join('')}</div>`
+      : `<div style="font-size:12px; color:#888;">この拠点のメンバーはいません。</div>`);
+  return `<div style="margin:8px 0; padding:12px; border:2px solid #90CAF9; border-radius:12px; background:#F5FAFF; box-sizing:border-box;">
+    <div style="font-size:13px; font-weight:bold; color:#0D47A1; margin-bottom:4px;">👥 メンバー</div>
+    <div style="font-size:11px; color:#546E7A; line-height:1.4; margin-bottom:8px;">所属拠点を選んでから、名前を選んでください。複数選べます。</div>
+    ${selectedHtml}
+    ${alsoSaveHtml}
+    <div style="font-size:11px; font-weight:bold; color:#1565C0; margin-bottom:4px;">① 所属拠点</div>
+    ${locHtml}
+    <div style="font-size:11px; font-weight:bold; color:#1565C0; margin:8px 0 4px;">② 名前</div>
+    ${nameHtml}
+  </div>`;
+};
+
+window.findBulkMemberHost_ = (uid, scope) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return null;
+  if (scope === 'cw') return (typeof window.ensureBulkConcurrentDraft_ === 'function') ? window.ensureBulkConcurrentDraft_(row) : (row._concurrentDraft || null);
+  return row;
+};
+
+window.setBulkWorkMemberLoc_ = (uid, scope, loc) => {
+  const host = window.findBulkMemberHost_(uid, scope);
+  if (!host) return;
+  host._memberLoc = String(loc || '');
+  if (typeof window.rerenderBulkConcurrentCard_ === 'function') window.rerenderBulkConcurrentCard_(uid);
+};
+
+window.toggleBulkWorkMember_ = (uid, scope, id, name, loc, on) => {
+  const host = window.findBulkMemberHost_(uid, scope);
+  if (!host) return;
+  if (!Array.isArray(host.workMembers)) host.workMembers = [];
+  const mid = String(id || name || '').trim();
+  const mname = String(name || id || '').trim();
+  if (on) {
+    if (!host.workMembers.some(m => m && String(m.id || m.name) === mid)) {
+      host.workMembers.push({ id: mid, name: mname, location: String(loc || '') });
+    }
+    if (loc) host._memberLoc = String(loc);
+  } else {
+    host.workMembers = host.workMembers.filter(m => !(m && String(m.id || m.name) === mid));
+    if (!host.workMembers.length) host.alsoSaveForMembers = false;
+  }
+  if (typeof window.rerenderBulkConcurrentCard_ === 'function') window.rerenderBulkConcurrentCard_(uid);
+};
+
+window.toggleBulkWorkMemberAlsoSave_ = (uid, scope, checked) => {
+  const host = window.findBulkMemberHost_(uid, scope);
+  if (!host) return;
+  host.alsoSaveForMembers = !!checked;
+};
+
+window._workRecordMembers = window._workRecordMembers || [];
+window._workRecordMemberLoc = window._workRecordMemberLoc !== undefined ? window._workRecordMemberLoc : null;
+window._workRecordAlsoSaveForMembers = !!window._workRecordAlsoSaveForMembers;
+
+window.renderWorkRecordMemberSection_ = () => {
+  const el = document.getElementById('work_member_section');
+  if (!el) return;
+  const wName = String(document.getElementById('rec_work_name')?.value || '').trim();
+  const flags = (typeof window.getWorkExtraUiFlags_ === 'function') ? window.getWorkExtraUiFlags_(wName) : {};
+  if (!flags.showMember) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  el.style.display = 'block';
+  el.innerHTML = window.buildWorkMemberPickerHtml_({
+    uid: 'record',
+    scope: 'record',
+    loc: window._workRecordMemberLoc,
+    selected: window._workRecordMembers,
+    alsoSave: !!window._workRecordAlsoSaveForMembers,
+    setLocFn: 'setWorkRecordMemberLoc_',
+    toggleFn: 'toggleWorkRecordMember_',
+    alsoSaveFn: 'toggleWorkRecordMemberAlsoSave_'
+  });
+};
+
+window.setWorkRecordMemberLoc_ = (uid, scope, loc) => {
+  window._workRecordMemberLoc = String(loc || '');
+  window.renderWorkRecordMemberSection_();
+};
+
+window.toggleWorkRecordMember_ = (uid, scope, id, name, loc, on) => {
+  if (!Array.isArray(window._workRecordMembers)) window._workRecordMembers = [];
+  const mid = String(id || name || '').trim();
+  const mname = String(name || id || '').trim();
+  if (on) {
+    if (!window._workRecordMembers.some(m => m && String(m.id || m.name) === mid)) {
+      window._workRecordMembers.push({ id: mid, name: mname, location: String(loc || '') });
+    }
+    if (loc) window._workRecordMemberLoc = String(loc);
+  } else {
+    window._workRecordMembers = window._workRecordMembers.filter(m => !(m && String(m.id || m.name) === mid));
+    if (!window._workRecordMembers.length) window._workRecordAlsoSaveForMembers = false;
+  }
+  window.renderWorkRecordMemberSection_();
+};
+
+window.toggleWorkRecordMemberAlsoSave_ = (uid, scope, checked) => {
+  window._workRecordAlsoSaveForMembers = !!checked;
+};
+
 window.refreshFieldMachinerySectionVisibility = () => {
+  if (typeof window.renderWorkRecordMemberSection_ === 'function') window.renderWorkRecordMemberSection_();
   const section = document.getElementById('field_machinery_section');
   if (!section) return;
   const cat = (document.getElementById('rec_work_category')?.value || '').trim();
@@ -16882,7 +17183,7 @@ window.openWorkNameEditorModal = (mode, originalName, presetCat, presetCrop, opt
   document.body.appendChild(modal);
   window._workExtraFlagsTouched = (mode === 'edit');
   const bindFlagTouch = () => {
-    ['wn_edit_show_field', 'wn_edit_show_machine', 'wn_edit_show_fuel', 'wn_edit_show_ridge_polygon', 'wn_edit_show_maintenance', 'wn_edit_show_pre_inspection', 'wn_edit_show_periodic_inspection', 'wn_edit_show_fuel_inspection'].forEach(id => {
+    ['wn_edit_show_field', 'wn_edit_show_machine', 'wn_edit_show_fuel', 'wn_edit_show_ridge_polygon', 'wn_edit_show_maintenance', 'wn_edit_show_pre_inspection', 'wn_edit_show_periodic_inspection', 'wn_edit_show_fuel_inspection', 'wn_edit_show_member'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.addEventListener('change', () => { window._workExtraFlagsTouched = true; });
     });
@@ -18973,6 +19274,13 @@ window.createConcurrentWorkEntry_ = (draft) => ({
       kind: String(m && m.kind || '').trim() || undefined
     })).filter(m => m.id || m.name)
     : [],
+  workMembers: Array.isArray(draft && draft.workMembers)
+    ? draft.workMembers.map(m => ({
+      id: String(m && (m.id || m.name) || '').trim(),
+      name: String(m && (m.name || m.id) || '').trim(),
+      location: String(m && m.location || '').trim()
+    })).filter(m => m.id || m.name)
+    : [],
   minutes: (draft && draft.minutes != null && !isNaN(Number(draft.minutes)))
     ? Math.max(0, Math.round(Number(draft.minutes)))
     : null,
@@ -18991,6 +19299,9 @@ window.formatConcurrentWorkSummary_ = (entry) => {
   const machines = (Array.isArray(entry.usedMachines) && entry.usedMachines.length)
     ? ` ／ ${entry.usedMachines.map(m => m.name || m.id).filter(Boolean).join('、')}`
     : '';
+  const members = (Array.isArray(entry.workMembers) && entry.workMembers.length)
+    ? ` ／ 👥 ${entry.workMembers.map(m => m.name || m.id).filter(Boolean).join('、')}`
+    : '';
   const mins = (entry.minutes != null && !isNaN(Number(entry.minutes)) && Number(entry.minutes) > 0)
     ? `（${Math.round(Number(entry.minutes))}分）`
     : '';
@@ -19000,7 +19311,7 @@ window.formatConcurrentWorkSummary_ = (entry) => {
   if (isMeta) {
     const target = prepTarget || String(entry.workName || '').trim() || '（対象未選択）';
     const tCat = prepTargetCat ? `／対象カテゴリ:${prepTargetCat}` : '';
-    return `[${cat}] ${crops} / 対象:${target}${tCat}${details}${machines}${mins}`;
+    return `[${cat}] ${crops} / 対象:${target}${tCat}${details}${machines}${members}${mins}`;
   }
   const catLabel = cat ? `[${cat}] ` : '';
   const wName = String(entry.workName || '').trim()
@@ -19008,7 +19319,7 @@ window.formatConcurrentWorkSummary_ = (entry) => {
     || String(entry.rawHint || '').trim()
     || '（未選択）';
   const memoTag = entry._fromMemo && !entry.workName ? '📝' : '';
-  return `${memoTag}${catLabel}${crops} / ${wName}${details}${machines}${mins}`;
+  return `${memoTag}${catLabel}${crops} / ${wName}${details}${machines}${members}${mins}`;
 };
 
 /** ログインユーザーの所属拠点（名簿）。複数は「・」「,」「、」区切り */
@@ -19925,7 +20236,22 @@ window.renderConcurrentWorkModal_ = () => {
   if (!showEquip && Array.isArray(d.usedMachines) && d.usedMachines.length) {
     d.usedMachines = [];
   }
+  const showMemberCw = !isMeta && !!String(d.workName || '').trim() && !!modalUiFlags.showMember;
+  if (!showMemberCw && Array.isArray(d.workMembers) && d.workMembers.length) {
+    d.workMembers = [];
+  }
+  const memberHtmlCw = (showMemberCw && typeof window.buildWorkMemberPickerHtml_ === 'function')
+    ? window.buildWorkMemberPickerHtml_({
+      uid: 'modal',
+      scope: 'cw',
+      loc: d._memberLoc,
+      selected: d.workMembers,
+      setLocFn: 'setConcurrentWorkModalMemberLoc_',
+      toggleFn: 'toggleConcurrentWorkModalMember_'
+    })
+    : '';
 
+  const prevScrollModal = document.getElementById('concurrent_work_modal_scroll')?.scrollTop || 0;
   const title = window._concurrentWorkModalContext === 'bulk' ? '🔀 同時作業を追加（一括入力）' : '🔀 同時に行った作業を登録';
   window.fillAppModalHtml_(`
           <div id="concurrent_work_modal_scroll" style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
@@ -19933,11 +20259,36 @@ window.renderConcurrentWorkModal_ = () => {
             <div style="font-size:11px; color:#666; line-height:1.4; margin-bottom:14px;">作物・カテゴリ・作業を番号ごとの枠で選んでください。圃場と時間はメイン作業と同じです。</div>
             ${bodyHtml}
             ${equipHtml}
+            ${memberHtmlCw}
             <button type="button" onclick="confirmConcurrentWorkModal_()" style="width:100%; background:#5E35B1; color:#fff; border:none; border-radius:8px; padding:14px; font-weight:bold; font-size:15px; cursor:pointer; margin-top:8px;">✅ 登録する</button>
             <button type="button" onclick="cancelConcurrentWorkModal_()" style="width:100%; background:#fff; color:#666; border:1px solid #ccc; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-top:8px;">キャンセル</button>
           </div>`);
   modalEl.style.display = 'flex';
+  const nextScrollModal = document.getElementById('concurrent_work_modal_scroll');
+  if (nextScrollModal && prevScrollModal > 0) nextScrollModal.scrollTop = prevScrollModal;
   try { modalEl.onclick = null; } catch (e) { }
+};
+
+window.setConcurrentWorkModalMemberLoc_ = (uid, scope, loc) => {
+  const d = window.getConcurrentWorkModalDraft_();
+  d._memberLoc = String(loc || '');
+  window.renderConcurrentWorkModal_();
+};
+
+window.toggleConcurrentWorkModalMember_ = (uid, scope, id, name, loc, on) => {
+  const d = window.getConcurrentWorkModalDraft_();
+  if (!Array.isArray(d.workMembers)) d.workMembers = [];
+  const mid = String(id || name || '').trim();
+  const mname = String(name || id || '').trim();
+  if (on) {
+    if (!d.workMembers.some(m => m && String(m.id || m.name) === mid)) {
+      d.workMembers.push({ id: mid, name: mname, location: String(loc || '') });
+    }
+    if (loc) d._memberLoc = String(loc);
+  } else {
+    d.workMembers = d.workMembers.filter(m => !(m && String(m.id || m.name) === mid));
+  }
+  window.renderConcurrentWorkModal_();
 };
 
 window.pickConcurrentWorkModalCategory_ = (cat) => {
@@ -20527,6 +20878,7 @@ window.editBulkConcurrentWork_ = (uid, cwId) => {
     prepTargetCategory: String(entry.prepTargetCategory || '').trim(),
     detailedWorks: Array.isArray(entry.detailedWorks) ? entry.detailedWorks.slice() : [],
     usedMachines: Array.isArray(entry.usedMachines) ? entry.usedMachines.map(m => Object.assign({}, m)) : [],
+    workMembers: Array.isArray(entry.workMembers) ? entry.workMembers.map(m => Object.assign({}, m)) : [],
     minutes: entry.minutes != null ? entry.minutes : null,
     minutesMode: entry.minutesMode || 'fixed'
   };
@@ -21387,21 +21739,27 @@ window.buildBulkConcurrentWorksHtml_ = (d, uid) => {
   const concurrentMaintHtml = (showConcurrentMaint && typeof window.buildBulkWorkMemoMaintenanceTargetHtml_ === 'function')
     ? window.buildBulkWorkMemoMaintenanceTargetHtml_(d, uid)
     : '';
+  const parentShowsField = (typeof window.bulkWorkMemoShowFieldSection_ === 'function')
+    ? !!window.bulkWorkMemoShowFieldSection_(d)
+    : false;
+  const concurrentFieldHtml = (curFlags && curFlags.showField && typeof window.buildBulkWorkMemoFieldHtml_ === 'function')
+    ? ((parentShowsField
+      ? `<div style="font-size:11px; color:#1B5E20; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:6px; padding:6px 8px; margin:6px 0 -4px; line-height:1.4;">📍 <b>この時間帯のメイン作業と共通の圃場</b>が選ばれます（ここで選んでも上の欄と連動します）。</div>`
+      : '')
+      + window.buildBulkWorkMemoFieldHtml_(d, uid)
+        .replace(/id="bulk_field_section_/g, 'id="bulk_field_section_cw_')
+        .replace(/id="bulk_field_display_/g, 'id="bulk_field_display_cw_')
+        .replace(/id="bulk_nearby_fields_/g, 'id="bulk_nearby_fields_cw_'))
+    : '';
+  const concurrentMemberHtml = (curFlags && curFlags.showMember && typeof window.buildWorkMemberPickerHtml_ === 'function')
+    ? window.buildWorkMemberPickerHtml_({
+      uid: uid,
+      scope: 'cw',
+      loc: draft._memberLoc,
+      selected: draft.workMembers
+    })
+    : '';
   const concurrentExtraBlocks = [];
-  if (curFlags && curFlags.showField) {
-    const placeIds = (typeof window.getBulkWorkMemoPolyIds_ === 'function') ? window.getBulkWorkMemoPolyIds_(d) : [];
-    const placeNames = (placeIds || []).map((id) => {
-      const poly = (typeof loadedPolygons !== 'undefined' && loadedPolygons) ? loadedPolygons[id] : null;
-      return String((poly && poly.name) || id || '').trim();
-    }).filter(Boolean);
-    concurrentExtraBlocks.push(`
-            <div>
-              <div style="font-size:12px; font-weight:bold; color:#1B5E20; margin-bottom:4px;">🗺️ 圃場を選ぶ</div>
-              <div style="font-size:11px; color:#33691E; line-height:1.45; margin-bottom:6px;">「${esc(curWork)}」は作業した場所を記録します。ここで選んだ圃場は、この時間帯の作業と共通です。</div>
-              <div style="font-size:12px; font-weight:bold; color:${placeNames.length ? '#1B5E20' : '#E65100'}; margin-bottom:6px;">${placeNames.length ? esc(placeNames.join('、')) : 'まだ選んでいません'}</div>
-              <button type="button" onclick="openBulkWorkMemoMapSelect_('${esc(uid)}')" style="width:100%; box-sizing:border-box; background:#2E7D32; color:#fff; border:none; border-radius:8px; padding:10px 12px; font-size:13px; font-weight:bold; cursor:pointer;">マップから選ぶ</button>
-            </div>`);
-  }
   if (curFlags && curFlags.showFuel) {
     concurrentExtraBlocks.push(`
             <div>
@@ -21433,6 +21791,8 @@ window.buildBulkConcurrentWorksHtml_ = (d, uid) => {
             ${detailStep}
             ${equipStep}
             ${concurrentMaintHtml}
+            ${concurrentFieldHtml}
+            ${concurrentMemberHtml}
             ${curWorkNotice}
             ${minsStep}
             <div style="display:flex; gap:8px;">
@@ -28647,6 +29007,9 @@ window.renderRecordForm = () => {
   window.selectedPrepTargetCategory = '';
   window._selectedPesticides = [];
   window._pestSearchQ = '';
+  window._workRecordMembers = [];
+  window._workRecordMemberLoc = null;
+  window._workRecordAlsoSaveForMembers = false;
   window._workRecordStep = (typeof currentEditRecordId !== 'undefined' && currentEditRecordId) ? 'details' : 'time';
   if (!(typeof currentEditRecordId !== 'undefined' && currentEditRecordId)) {
     if (!window._pendingWorkRecordTimeMode) window._workRecordTimeMode = window._workRecordTimeMode || 'work';
@@ -29059,6 +29422,7 @@ window.renderRecordForm = () => {
                   <label class="form-label">👤 ユーザー名</label><input type="text" class="form-input" value="${currentUser}" readonly style="background:#f4f6f8; color:#666;">
                   <div id="work_assoc_suggest" style="display:none; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
                   <div id="field_machinery_section" style="display:none; background:#FFF3E0; border:1px solid #FFE0B2; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
+                  <div id="work_member_section" style="display:none; margin-bottom:12px;"></div>
                   <div id="prep_target_work_section" style="display:none; background:#f3e5f5; border:1px solid #ce93d8; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
                   <div id="delivery_destination_section" style="display:none; background:#E1F5FE; border:2px solid #0288D1; border-radius:10px; padding:12px; margin-bottom:15px;"></div>
                   <div id="detailed_works_section" style="display:none; background:#f0f8ff; padding:10px; border-radius:6px; border:1px solid #c6dafc; margin-bottom:15px;"></div>
@@ -29505,6 +29869,21 @@ window.renderRecordForm = () => {
           }
         }, 50);
       }
+      if (Array.isArray(d.workMembers) && d.workMembers.length) {
+        window._workRecordMembers = d.workMembers.filter(m => m && (m.id || m.name)).map(m => ({
+          id: String(m.id || m.name || '').trim(),
+          name: String(m.name || m.id || '').trim(),
+          location: String(m.location || '').trim()
+        }));
+        const firstLoc = window._workRecordMembers.find(m => m.location);
+        if (firstLoc && firstLoc.location) window._workRecordMemberLoc = firstLoc.location;
+        window._workRecordAlsoSaveForMembers = !!d.alsoSaveForMembers;
+        setTimeout(() => {
+          if (typeof window.renderWorkRecordMemberSection_ === 'function') {
+            window.renderWorkRecordMemberSection_();
+          }
+        }, 80);
+      }
       if (Array.isArray(d.concurrentWorks) && d.concurrentWorks.length) {
         window.recordConcurrentWorks = d.concurrentWorks.map(cw => ({
           id: cw.id || ('cw_' + Date.now() + '_' + Math.floor(Math.random() * 1000)),
@@ -29519,6 +29898,13 @@ window.renderRecordForm = () => {
               id: String(m && (m.id || m.name) || '').trim(),
               name: String(m && (m.name || m.id) || '').trim(),
               kind: String(m && m.kind || '').trim() || undefined
+            })).filter(m => m.id || m.name)
+            : [],
+          workMembers: Array.isArray(cw.workMembers)
+            ? cw.workMembers.map(m => ({
+              id: String(m && (m.id || m.name) || '').trim(),
+              name: String(m && (m.name || m.id) || '').trim(),
+              location: String(m && m.location || '').trim()
             })).filter(m => m.id || m.name)
             : [],
           minutes: (cw.minutes != null && !isNaN(Number(cw.minutes))) ? Math.round(Number(cw.minutes)) : null,
@@ -29785,7 +30171,9 @@ window.saveTempRecord = async (opts) => {
     userName: currentUser || localStorage.getItem('passionMapUserName') || '',
     detailStageCursor: window.getDetailStageCursor_ ? window.getDetailStageCursor_() : '',
     detailStageLastStamp: window._detailStageLastStamp || null,
-    recordConcurrentWorks: Array.isArray(window.recordConcurrentWorks) ? window.recordConcurrentWorks.slice() : []
+    recordConcurrentWorks: Array.isArray(window.recordConcurrentWorks) ? window.recordConcurrentWorks.slice() : [],
+    workRecordMembers: Array.isArray(window._workRecordMembers) ? window._workRecordMembers.slice() : [],
+    workRecordAlsoSaveForMembers: !!window._workRecordAlsoSaveForMembers
   };
   // まず端末に保存して即座に完了表示（クラウド待ちでボタンが無反応に見えないようにする）
   try {
@@ -29964,6 +30352,15 @@ window.loadTempRecord = async () => {
       window.recordConcurrentWorks = parsed.recordConcurrentWorks.slice();
       if (typeof window.renderConcurrentWorksSection_ === 'function') {
         window.renderConcurrentWorksSection_();
+      }
+    }
+    if (Array.isArray(parsed.workRecordMembers)) {
+      window._workRecordMembers = parsed.workRecordMembers.slice();
+      const firstLoc = window._workRecordMembers.find(m => m && m.location);
+      if (firstLoc && firstLoc.location) window._workRecordMemberLoc = firstLoc.location;
+      window._workRecordAlsoSaveForMembers = !!parsed.workRecordAlsoSaveForMembers;
+      if (typeof window.renderWorkRecordMemberSection_ === 'function') {
+        window.renderWorkRecordMemberSection_();
       }
     }
     if (typeof calcTotalTime === 'function') calcTotalTime();
@@ -32636,6 +33033,20 @@ async function submitRecord() {
         return;
       }
       const wNameForSave = document.getElementById('rec_work_name')?.value || wName || prepTargetVal || "";
+      const mainWorkFlagsForSave = (typeof window.getWorkExtraUiFlags_ === 'function')
+        ? window.getWorkExtraUiFlags_(wNameForSave)
+        : { showMember: false };
+      const savedWorkMembers = (mainWorkFlagsForSave.showMember && Array.isArray(window._workRecordMembers))
+        ? window._workRecordMembers.filter(m => m && (m.id || m.name)).map(m => ({
+          id: String(m.id || m.name || '').trim(),
+          name: String(m.name || m.id || '').trim(),
+          location: String(m.location || '').trim()
+        }))
+        : [];
+      const uniqueWorkersForSave = new Set();
+      if (typeof currentUser !== 'undefined' && currentUser) uniqueWorkersForSave.add(String(currentUser).trim());
+      savedWorkMembers.forEach(m => { if (m.name || m.id) uniqueWorkersForSave.add(m.name || m.id); });
+      const alsoSaveForMembersFlag = !!(mainWorkFlagsForSave.showMember && savedWorkMembers.length && window._workRecordAlsoSaveForMembers && !isEditBtn);
       data = {
         workDate: document.getElementById('rec_work_date')?.value || "",
         workName: wNameForSave,
@@ -32656,6 +33067,9 @@ async function submitRecord() {
           : (document.getElementById('rec_progress_status')?.value || ""),
         usedTools: "",
         usedMachines: usedMachines,
+        workMembers: savedWorkMembers,
+        alsoSaveForMembers: alsoSaveForMembersFlag,
+        workerCount: Math.max(1, uniqueWorkersForSave.size),
         usedMaterials: usedItemsText,
         usedPesticides: (typeof window.collectUsedPesticidesForSave_ === 'function')
           ? window.collectUsedPesticidesForSave_()
@@ -32679,6 +33093,13 @@ async function submitRecord() {
                 id: String(m && (m.id || m.name) || '').trim(),
                 name: String(m && (m.name || m.id) || '').trim(),
                 kind: String(m && m.kind || '').trim() || undefined
+              })).filter(m => m.id || m.name)
+              : [],
+            workMembers: Array.isArray(cw.workMembers)
+              ? cw.workMembers.map(m => ({
+                id: String(m && (m.id || m.name) || '').trim(),
+                name: String(m && (m.name || m.id) || '').trim(),
+                location: String(m && m.location || '').trim()
               })).filter(m => m.id || m.name)
               : [],
             minutes: (cw.minutes != null && !isNaN(Number(cw.minutes))) ? Math.round(Number(cw.minutes)) : null,
@@ -37489,7 +37910,7 @@ window.extractBulkWorkMemoFieldHintTexts_ = (raw) => {
 
 window.splitBulkWorkMemoFieldHintTokens_ = (hintText) => {
   return String(hintText || '')
-    .split(/[,、/／・]+|(?:→|⇒|➔|➜|->|=>|＞|>|～|〜|~|から|へ)/)
+    .split(/[,、/／・]+|(?:→|⇒|➔|➜|➡|➝|➞|->|=>|＞|>|～|〜|~|から|へ)|[\u2190-\u21FF\u2794-\u27BF\u2900-\u297F]/)
     .map(t => window.cleanBulkWorkMemoFieldHintToken_(t))
     .filter(t => t.length >= 2);
 };
@@ -37499,7 +37920,7 @@ window.extractBulkWorkMemoRoutePlaceTokens_ = (raw) => {
   const s = String(raw || '');
   if (!s) return [];
   const out = [];
-  const re = /([^\s、,。()（）\[\]「」→⇒＞>~～〜]{2,24})\s*(?:→|⇒|➔|➜|->|=>|＞|>|～|〜|から)\s*([^\s、,。()（）\[\]「」→⇒＞>~～〜]{2,24})/g;
+  const re = /([^\s、,。()（）\[\]「」]{2,24}?)\s*(?:→|⇒|➔|➜|➡|➝|➞|->|=>|＞|>|～|〜|から|[\u2190-\u21FF\u2794-\u27BF])\s*([^\s、,。()（）\[\]「」]{2,24})/g;
   let m;
   while ((m = re.exec(s))) {
     if (m[1]) out.push(m[1]);
@@ -37630,11 +38051,12 @@ window.scoreBulkWorkMemoFieldNameMatch_ = (token, polyName) => {
   if (tokKey && nameKey && tokKey.indexOf(nameKey) >= 0 && nameKey.length >= 2) {
     return 82 + Math.min(12, nameKey.length);
   }
-  // 「宝田小学校」⇔「宝田小学校近く」のように、近く・付近だけ違う名前
+  // 「宝田小学校」⇔「宝田小学校近く」。矢印でつながった文の中に核の名前があれば候補にする
   const proxRe = /(近く|付近|あたり|周辺|一帯|方面)$/;
   const tokCore = String(tokKey || tok).replace(proxRe, '');
   const nameCore = String(nameKey || name).replace(proxRe, '');
   if (tokCore.length >= 3 && nameCore.length >= 3 && tokCore === nameCore) return 96;
+  if (nameCore.length >= 4 && String(tokKey || tok).indexOf(nameCore) >= 0) return 93;
   if (tokCore.length >= 4 && nameCore.length >= 4 && (name.indexOf(tokCore) >= 0 || String(nameKey || '').indexOf(tokCore) >= 0)) {
     return 90;
   }
@@ -37673,7 +38095,7 @@ window.suggestBulkWorkMemoFieldsFromMemo_ = (raw) => {
       return;
     }
 
-    const opts = scored.filter(x => x.score >= (x.isMarker ? 90 : CAND_MIN)).slice(0, 5);
+    const opts = scored.filter(x => x.score >= (x.isMarker ? 90 : CAND_MIN)).slice(0, 8);
     if (!opts.length) {
       tokenResults.push({ token: token, status: 'unknown', options: [] });
       return;
@@ -40045,9 +40467,12 @@ window.bulkWorkMemoShowFieldSection_ = (draft) => {
   if (!draft || window.bulkWorkMemoIsRestDraft_(draft)) return false;
   if (window.bulkWorkMemoFieldReplacedByAssetMove_(draft)) return false;
 
-  // 同時に行った作業（確定分・ドラフト中）に圃場選択を出す設定の作業があるかチェック
+  // 同時に行った作業（確定分・閉じたドラフト分）に圃場選択を出す設定の作業があるかチェック
+  // 同時作業パネルが開いている間はパネル内にも圃場欄が出るため、カード上部に突然別枠が出現してジャンプするのを防ぐ
   const cws = (Array.isArray(draft.concurrentWorks) ? draft.concurrentWorks.slice() : []);
-  if (draft._concurrentDraft && draft._concurrentDraft.workName) cws.push(draft._concurrentDraft);
+  if (draft._concurrentDraft && draft._concurrentDraft.workName && !draft._concurrentPanelOpen) {
+    cws.push(draft._concurrentDraft);
+  }
   const anyCwNeedsField = cws.some(cw => {
     const cwName = String(cw.workName || cw.prepTargetWork || cw.guessedName || '').trim();
     if (!cwName || cwName.includes('休憩')) return false;
@@ -40422,7 +40847,7 @@ window.pickBulkWorkMemoFieldCandidate_ = (uid, polyId) => {
     window.panMapToPolygon_(pid);
   }
 
-  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid, keepScroll: true });
 };
 
 /** 選択中の場所を圃場と看板に分ける */
@@ -40566,7 +40991,7 @@ window.selectBulkWorkMemoLastFields_ = (uid) => {
     return;
   }
   window.setBulkWorkMemoPolyIds_(row, last.ids.slice());
-  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid, keepScroll: true });
 };
 
 window.toggleBulkWorkMemoNearbyField_ = (uid, polyId) => {
@@ -40582,7 +41007,7 @@ window.toggleBulkWorkMemoNearbyField_ = (uid, polyId) => {
   if (sid && typeof window.panMapToPolygon_ === 'function') {
     window.panMapToPolygon_(sid);
   }
-  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid, keepScroll: true });
 };
 
 window.loadBulkWorkMemoNearbyFields_ = (uid, opts) => {
@@ -40610,7 +41035,7 @@ window.loadBulkWorkMemoNearbyFields_ = (uid, opts) => {
     window._nearbyFieldCandidates = list;
     row._nearbyFieldCandidates = list;
     done();
-    window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+    window.renderBulkWorkMemoReviewModal_({ scrollUid: uid, keepScroll: true });
     if (!list.length && !opts.silent && typeof customAlert === 'function') {
       customAlert('近くに圃場が見つかりませんでした。');
     }
@@ -40717,7 +41142,7 @@ window.applyBulkWorkMemoPrevFields_ = (uid) => {
   if (prev.ids[0] && typeof window.panMapToPolygon_ === 'function') {
     window.panMapToPolygon_(prev.ids[0]);
   }
-  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid, keepScroll: true });
 };
 
 window.buildBulkWorkMemoFieldHtml_ = (d, uid) => {
@@ -40770,7 +41195,7 @@ window.removeBulkWorkMemoPoly_ = (uid, polyId) => {
   if (!row) return;
   const next = window.getBulkWorkMemoPolyIds_(row).filter(id => String(id) !== String(polyId));
   window.setBulkWorkMemoPolyIds_(row, next);
-  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid });
+  window.renderBulkWorkMemoReviewModal_({ scrollUid: uid, keepScroll: true });
 };
 
 /** 一括入力チップ：2列グリッドで幅を揃える（文字長でガタつかない） */
@@ -41033,7 +41458,7 @@ window.calcSingleWorkUiFlags_ = (workName, category, draftBase) => {
     : (pdlWorkMaster || []).find(x => x && String(x.name || '').trim() === wName);
   const inferred = (typeof window.inferWorkRecordUiFlags_ === 'function')
     ? window.inferWorkRecordUiFlags_(wName, cat)
-    : { showMachine: false, showMaterial: false, showPesticide: false, showField: false, showFuel: false, showRidgePolygon: false, showMaintenance: false, showPreInspection: false, showPeriodicInspection: false, showFuelInspection: false };
+    : { showMachine: false, showMaterial: false, showPesticide: false, showField: false, showFuel: false, showRidgePolygon: false, showMaintenance: false, showPreInspection: false, showPeriodicInspection: false, showFuelInspection: false, showMember: false };
   const isMachineryCat = cat.includes('農機');
   const isDelivery = (typeof window.bulkWorkMemoIsDelivery_ === 'function')
     ? window.bulkWorkMemoIsDelivery_({ workName: wName, category: cat })
@@ -41063,6 +41488,7 @@ window.calcSingleWorkUiFlags_ = (workName, category, draftBase) => {
     showPreInspection: pick(w && w.showPreInspection, inferred.showPreInspection),
     showPeriodicInspection: pick(w && w.showPeriodicInspection, inferred.showPeriodicInspection),
     showFuelInspection: pick(w && w.showFuelInspection, inferred.showFuelInspection),
+    showMember: pick(w && w.showMember, !!inferred.showMember),
     isPrep: false,
     isCleanup: false,
     isDelivery: !!isDelivery
@@ -41097,6 +41523,7 @@ window.getBulkWorkMemoUiFlags_ = (draft) => {
     if (cwFlags.showPreInspection) combined.showPreInspection = true;
     if (cwFlags.showPeriodicInspection) combined.showPeriodicInspection = true;
     if (cwFlags.showFuelInspection) combined.showFuelInspection = true;
+    if (cwFlags.showMember) combined.showMember = true;
     if (cwFlags.showField !== false && cwFlags.showField) combined.showField = true;
     if (cwFlags.showMaterial) combined.showMaterial = true;
     if (cwFlags.showTool) combined.showTool = true;
@@ -46497,6 +46924,19 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
         html += `</div>`;
       }
     }
+    const selectedMacsForAlert = Array.isArray(d.usedMachines) ? d.usedMachines.filter(m => m && (m.id || m.name)) : [];
+    if (selectedMacsForAlert.length && typeof window.buildMachinesPeriodicAlertBannerHtml_ === 'function') {
+      const bulkDateYmd = String(
+        window._bulkWorkMemoDate
+        || document.getElementById('bulk_work_memo_date')?.value
+        || (typeof window.getBulkWorkMemoTodayYmd_ === 'function' ? window.getBulkWorkMemoTodayYmd_() : '')
+      ).trim().slice(0, 10);
+      html += window.buildMachinesPeriodicAlertBannerHtml_(selectedMacsForAlert, {
+        mode: 'bulk',
+        uid: uid,
+        targetDate: bulkDateYmd
+      });
+    }
     if (flags.showMaterial && typeof window.buildBulkWorkMemoAssetChipsHtml_ === 'function') {
       html += window.buildBulkWorkMemoAssetChipsHtml_({
         uid: uid,
@@ -46558,11 +46998,23 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
     if (flags.showPreInspection && typeof window.buildBulkWorkMemoInspectionHtml_ === 'function') {
       html += window.buildBulkWorkMemoInspectionHtml_(d, uid, '始動前点検');
     }
-    if (flags.showPeriodicInspection && typeof window.buildBulkWorkMemoInspectionHtml_ === 'function') {
+    if ((flags.showPeriodicInspection || d._forceShowPeriodicInspection) && typeof window.buildBulkWorkMemoInspectionHtml_ === 'function') {
       html += window.buildBulkWorkMemoInspectionHtml_(d, uid, '定期点検');
     }
     if (flags.showFuelInspection && typeof window.buildBulkWorkMemoInspectionHtml_ === 'function') {
       html += window.buildBulkWorkMemoInspectionHtml_(d, uid, '給油時点検');
+    }
+    const mainMemberFlags = (typeof window.calcSingleWorkUiFlags_ === 'function')
+      ? window.calcSingleWorkUiFlags_(d.workName, d.category || d.listFilterCategory, d)
+      : flags;
+    if (mainMemberFlags.showMember && typeof window.buildWorkMemberPickerHtml_ === 'function') {
+      html += window.buildWorkMemberPickerHtml_({
+        uid: uid,
+        scope: 'main',
+        loc: d._memberLoc,
+        selected: d.workMembers,
+        alsoSave: !!d.alsoSaveForMembers
+      });
     }
     // 運搬元・運搬先の入力欄は出さない
   }
@@ -46598,10 +47050,38 @@ window.ensureBulkInspectionRecordsLoaded_ = (uid) => {
     window._bulkInspectionRecordsCache = [];
   }).finally(() => {
     window._bulkInspectionRecordsLoading = false;
-    if (uid && typeof window.rerenderBulkWorkMemoCardUi_ === 'function') {
+    if (uid === '__record__' && typeof window.refreshFieldMachinePeriodicAlert_ === 'function') {
+      try { window.refreshFieldMachinePeriodicAlert_(); } catch (e) { }
+    } else if (uid && typeof window.rerenderBulkWorkMemoCardUi_ === 'function') {
       try { window.rerenderBulkWorkMemoCardUi_(uid); } catch (e) { }
     }
   });
+};
+
+window.listInspectionEquipment_ = () => {
+  const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
+    ? pdlMachines.filter(m => m && !m.isTool)
+    : [];
+  const out = macs.slice();
+  const seenIds = new Set(out.map(m => String(m.id || '').trim()).filter(Boolean));
+  const seenBare = new Set(out.map(m => String(m.id || '').trim().replace(/^veh:/, '')).filter(Boolean));
+  const vehs = Array.isArray(window.pdlMobileVehicles) ? window.pdlMobileVehicles : [];
+  vehs.forEach(v => {
+    if (!v) return;
+    const rawId = String(v.id || '').trim();
+    const bare = rawId.replace(/^veh:/, '');
+    if (rawId && (seenIds.has(rawId) || (bare && seenBare.has(bare)))) return;
+    const vid = rawId ? (rawId.indexOf('veh:') === 0 ? rawId : ('veh:' + rawId)) : '';
+    if (vid) seenIds.add(vid);
+    if (bare) seenBare.add(bare);
+    out.push(Object.assign({}, v, {
+      id: vid || v.name || v.plateNumber || '',
+      name: v.name || v.plateNumber || v.id || '',
+      type: v.type || v.vehicleType || '車両',
+      isVehicle: true
+    }));
+  });
+  return out;
 };
 
 window.getBulkInspectionDraftState_ = (d, inspType) => {
@@ -46613,10 +47093,11 @@ window.getBulkInspectionDraftState_ = (d, inspType) => {
   if (!d._inspState[key]) {
     let initCat = '';
     let initMacId = '';
-    const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+    const macs = window.listInspectionEquipment_();
     const used = Array.isArray(d.usedMachines) ? d.usedMachines : [];
     if (used.length && used[0]) {
-      const m = macs.find(x => x && !x.isTool && (String(x.id) === String(used[0].id || '') || String(x.name) === String(used[0].name || '')));
+      const m = window.resolveEquipmentObjForInspection_(used[0])
+        || macs.find(x => x && !x.isTool && (String(x.id) === String(used[0].id || '') || String(x.name) === String(used[0].name || '')));
       if (m) {
         initCat = window.getBulkInspMachineCategory_(m);
         initMacId = String(m.id || '');
@@ -46638,7 +47119,7 @@ window.onBulkInspCategoryChange_ = (uid, inspType, category) => {
   if (!d) return;
   const st = window.getBulkInspectionDraftState_(d, inspType);
   st.category = String(category || '').trim();
-  const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+  const macs = window.listInspectionEquipment_();
   const filtered = macs.filter(m => m && !m.isTool && (!st.category || window.getBulkInspMachineCategory_(m) === st.category));
   if (!filtered.some(m => String(m.id) === String(st.machineId))) {
     st.machineId = filtered.length === 1 ? String(filtered[0].id || '') : '';
@@ -46679,6 +47160,153 @@ window.getBulkInspItemsForMachine_ = (mac, inspType) => {
   }).sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
 };
 
+window.resolveEquipmentObjForInspection_ = (macOrId) => {
+  if (!macOrId) return null;
+  const rawId = typeof macOrId === 'object' ? String(macOrId.id || '').trim() : String(macOrId || '').trim();
+  const rawName = typeof macOrId === 'object' ? String(macOrId.name || '').trim() : String(macOrId || '').trim();
+  const stripVeh = rawId.replace(/^veh:/, '');
+  const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+  let hit = macs.find(m => m && !m.isTool && (
+    (rawId && (String(m.id || '') === rawId || String(m.id || '') === stripVeh))
+    || (rawName && String(m.name || '') === rawName)
+  ));
+  if (hit) return hit;
+  const vehs = Array.isArray(window.pdlMobileVehicles) ? window.pdlMobileVehicles : [];
+  hit = vehs.find(v => v && (
+    (rawId && (String(v.id || '') === rawId || String(v.id || '') === stripVeh || ('veh:' + String(v.id || '')) === rawId))
+    || (rawName && (String(v.name || '') === rawName || String(v.plateNumber || '') === rawName))
+  ));
+  if (hit) {
+    return Object.assign({}, hit, {
+      id: hit.id || rawId,
+      name: hit.name || hit.plateNumber || rawName,
+      type: hit.type || hit.vehicleType || '車両',
+      isVehicle: true
+    });
+  }
+  return (typeof macOrId === 'object' && (macOrId.type || macOrId.vehicleType)) ? macOrId : null;
+};
+
+window.getMachinePeriodicDueItemsForWork_ = (macOrId, targetDateYmd) => {
+  const mac = window.resolveEquipmentObjForInspection_(macOrId);
+  if (!mac || mac.isTool) return [];
+  const ymdRaw = String(targetDateYmd || '').trim().slice(0, 10);
+  const todayNow = new Date();
+  const ymd = /^\d{4}-\d{2}-\d{2}$/.test(ymdRaw)
+    ? ymdRaw
+    : `${todayNow.getFullYear()}-${String(todayNow.getMonth() + 1).padStart(2, '0')}-${String(todayNow.getDate()).padStart(2, '0')}`;
+  const macId = String(mac.id || '').trim();
+  const macIdBare = macId.replace(/^veh:/, '');
+  if (Array.isArray(window._bulkInspectionRecordsCache) && macId) {
+    const alreadyDone = window._bulkInspectionRecordsCache.some(r => {
+      if (!r) return false;
+      const rType = String(r.inspectionType || '').trim();
+      if (rType !== '定期点検') return false;
+      if (String(r.date || '').slice(0, 10) !== ymd) return false;
+      const rMacId = String(r.machineId || '').trim();
+      return rMacId === macId || rMacId.replace(/^veh:/, '') === macIdBare;
+    });
+    if (alreadyDone) return [];
+  }
+  const items = window.getBulkInspItemsForMachine_(mac, '定期点検');
+  if (!items.length) return [];
+  const mMatch = ymd.match(/^\d{4}-(\d{2})/);
+  const refMonth = mMatch ? Number(mMatch[1]) : (todayNow.getMonth() + 1);
+  const curMeter = (typeof window.getWorkerInspectionCurrentMeter_ === 'function')
+    ? window.getWorkerInspectionCurrentMeter_(macId || macIdBare, mac)
+    : null;
+  if (typeof window.getWorkerPeriodicAlertReasons_ !== 'function') return [];
+  return items
+    .map(item => ({ item: item, reasons: window.getWorkerPeriodicAlertReasons_(item, refMonth, curMeter) }))
+    .filter(x => x.reasons && x.reasons.length > 0);
+};
+
+window.buildMachinesPeriodicAlertBannerHtml_ = (machinesList, opts) => {
+  opts = opts || {};
+  const list = Array.isArray(machinesList) ? machinesList : [];
+  if (!list.length) return '';
+  const mode = opts.mode === 'record' ? 'record' : 'bulk';
+  const uid = String(opts.uid || '').trim();
+  const refreshTarget = mode === 'record' ? '__record__' : uid;
+
+  if (!Array.isArray(window._bulkInspectionRecordsCache) && typeof window.ensureBulkInspectionRecordsLoaded_ === 'function') {
+    window.ensureBulkInspectionRecordsLoaded_(refreshTarget);
+  }
+  if (!window.lastHourMeters && !window._periodicLastMetersLoading && typeof callGAS === 'function') {
+    window._periodicLastMetersLoading = true;
+    callGAS('getMachineLastHourMeters').then(res => {
+      if (res && typeof res === 'object') window.lastHourMeters = res;
+      else window.lastHourMeters = window.lastHourMeters || {};
+    }).catch(() => {
+      window.lastHourMeters = window.lastHourMeters || {};
+    }).finally(() => {
+      window._periodicLastMetersLoading = false;
+      if (mode === 'record' && typeof window.refreshFieldMachinePeriodicAlert_ === 'function') {
+        try { window.refreshFieldMachinePeriodicAlert_(); } catch (e) { }
+      } else if (uid && typeof window.rerenderBulkWorkMemoCardUi_ === 'function') {
+        try { window.rerenderBulkWorkMemoCardUi_(uid); } catch (e) { }
+      }
+    });
+  }
+
+  const seenMac = new Set();
+  const alerts = [];
+  list.forEach(m => {
+    const mac = window.resolveEquipmentObjForInspection_(m);
+    if (!mac) return;
+    const key = String(mac.id || mac.name || '').trim();
+    if (!key || seenMac.has(key)) return;
+    seenMac.add(key);
+    const due = window.getMachinePeriodicDueItemsForWork_(mac, opts.targetDate);
+    if (due.length) {
+      alerts.push({ mac: mac, due: due });
+    }
+  });
+  if (!alerts.length) return '';
+
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const escJs = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const rowsHtml = alerts.map(({ mac, due }) => {
+    const macId = String(mac.id || '').trim();
+    const macLabel = (typeof window.labelWorkerMaintMachine_ === 'function')
+      ? window.labelWorkerMaintMachine_(mac)
+      : (mac.name || macId);
+    const summary = due.slice(0, 3).map(x => `${esc(x.item.item || '')}(${esc(x.reasons.join('・'))})`).join('、')
+      + (due.length > 3 ? ` 他${due.length - 3}件` : '');
+    const clickAction = mode === 'bulk'
+      ? `openBulkPeriodicInspectionForMachine_('${escJs(uid)}','${escJs(macId)}')`
+      : `openInspectionRecord('${escJs(macId)}','定期点検')`;
+    return `<div style="background:#fff; border:1px solid #FFB74D; border-radius:8px; padding:8px 10px; margin-top:6px;">
+      <div style="font-size:12px; font-weight:bold; color:#E65100;">🔔 ${esc(macLabel)} の定期点検時期です（${due.length}件）</div>
+      <div style="font-size:11px; color:#555; margin-top:3px; line-height:1.4;">${summary}</div>
+      <button type="button" onclick="${clickAction}" style="margin-top:6px; background:#FB8C00; color:#fff; border:none; border-radius:6px; padding:6px 10px; font-size:12px; font-weight:bold; cursor:pointer;">🗓️ 定期点検を開く</button>
+    </div>`;
+  }).join('');
+
+  return `<div style="margin:8px 0; padding:10px 12px; background:#FFF3E0; border:2px solid #FB8C00; border-radius:10px; box-sizing:border-box;">
+    <div style="font-size:12px; font-weight:bold; color:#BF360C;">⚠️ 定期点検のアラート対象があります</div>
+    ${rowsHtml}
+  </div>`;
+};
+
+window.openBulkPeriodicInspectionForMachine_ = (uid, machineId) => {
+  const d = window.findBulkWorkMemoDraftForInsp_(uid);
+  if (!d) return;
+  d._forceShowPeriodicInspection = true;
+  const st = window.getBulkInspectionDraftState_(d, '定期点検');
+  const mac = window.resolveEquipmentObjForInspection_(machineId);
+  if (mac) {
+    st.category = window.getBulkInspMachineCategory_(mac);
+    st.machineId = String(mac.id || machineId || '').trim();
+  } else {
+    st.machineId = String(machineId || '').trim();
+  }
+  st.items = {};
+  if (typeof window.rerenderBulkWorkMemoCardUi_ === 'function') {
+    window.rerenderBulkWorkMemoCardUi_(uid);
+  }
+};
+
 window.setBulkInspItemResult_ = (uid, inspType, itemKey, resultVal) => {
   const d = window.findBulkWorkMemoDraftForInsp_(uid);
   if (!d) return;
@@ -46692,8 +47320,8 @@ window.setBulkInspAllOk_ = (uid, inspType) => {
   const d = window.findBulkWorkMemoDraftForInsp_(uid);
   if (!d) return;
   const st = window.getBulkInspectionDraftState_(d, inspType);
-  const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
-  const mac = macs.find(m => m && String(m.id) === String(st.machineId));
+  const macs = window.listInspectionEquipment_();
+  const mac = macs.find(m => m && String(m.id) === String(st.machineId)) || window.resolveEquipmentObjForInspection_(st.machineId);
   if (!mac) return;
   const items = window.getBulkInspItemsForMachine_(mac, inspType);
   items.forEach((item, idx) => {
@@ -46728,8 +47356,8 @@ window.saveBulkWorkMemoInspection_ = async (uid, inspType) => {
     customAlert('機械・車両を選択してください');
     return;
   }
-  const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
-  const mac = macs.find(m => m && String(m.id) === String(st.machineId));
+  const macs = window.listInspectionEquipment_();
+  const mac = macs.find(m => m && String(m.id) === String(st.machineId)) || window.resolveEquipmentObjForInspection_(st.machineId);
   const macName = (typeof window.labelWorkerMaintMachine_ === 'function' && mac)
     ? window.labelWorkerMaintMachine_(mac)
     : (mac ? (mac.name || st.machineId) : st.machineId);
@@ -46835,9 +47463,7 @@ window.buildBulkWorkMemoInspectionHtml_ = (d, uid, inspType) => {
   const safeUid = String(uid || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
   const st = window.getBulkInspectionDraftState_(d, normType);
-  const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
-    ? pdlMachines.filter(m => m && !m.isTool)
-    : [];
+  const macs = window.listInspectionEquipment_();
   const categories = Array.from(new Set(macs.map(m => window.getBulkInspMachineCategory_(m)).filter(Boolean)))
     .sort((a, b) => a.localeCompare(b, 'ja'));
   const filteredMacs = macs.filter(m => !st.category || window.getBulkInspMachineCategory_(m) === st.category);
@@ -48070,6 +48696,10 @@ window.pickBulkWorkMemoWorkName_ = (uid, name) => {
       row.maintenanceTargets = [];
     }
     if (!flags.showMachine && !flags.isDelivery) row.usedMachines = [];
+    if (!flags.showMember) {
+      row.workMembers = [];
+      row.alsoSaveForMembers = false;
+    }
     if (!flags.showMaterial && !flags.isDelivery) row.usedMaterials = [];
     if (!flags.showTool && !flags.isDelivery) row.usedTools = [];
   }
@@ -49657,6 +50287,9 @@ window.buildBulkWorkMemoConfirmRowHtml_ = (d, index) => {
   const machines = (!isRest && Array.isArray(d.usedMachines) && d.usedMachines.length)
     ? `<div style="font-size:11px; color:#E65100; margin-top:4px;">🚜 ${d.usedMachines.map(m => m.name || m.id).filter(Boolean).map(s => esc(s)).join('、')}</div>`
     : '';
+  const members = (!isRest && Array.isArray(d.workMembers) && d.workMembers.length)
+    ? `<div style="font-size:11px; color:#0D47A1; margin-top:4px;">👥 ${d.workMembers.map(m => m.name || m.id).filter(Boolean).map(s => esc(s)).join('、')}${d.alsoSaveForMembers ? ' <span style="color:#2E7D32;">（各自の記録にも同時登録）</span>' : ''}</div>`
+    : '';
   const fuelNote = (!isRest && typeof window.bulkWorkMemoIsFuel_ === 'function' && window.bulkWorkMemoIsFuel_(d))
     ? `<div style="font-size:11px; color:#C2185B; margin-top:4px;">⛽ ${esc(d.fuelTargetName || d.fuelTargetId || '車両未選択')}${d.fuelAmount ? ` ／ ${esc(d.fuelAmount)}L` : ''}</div>`
     : '';
@@ -49666,7 +50299,7 @@ window.buildBulkWorkMemoConfirmRowHtml_ = (d, index) => {
       ${metaNote}
       <div style="font-size:12px; color:#555; margin-top:4px;">🕒 ${esc(start)}〜${esc(end)}</div>
       <div style="font-size:11px; color:#666; margin-top:3px;">🌱 ${esc(crops)}　📍 ${esc(fieldNames)}</div>
-      ${maint}${machines}${fuelNote}${concurrent}
+      ${maint}${machines}${members}${fuelNote}${concurrent}
     </div>`;
 };
 
@@ -50447,6 +51080,7 @@ window.renderBulkWorkMemoManualAddModal_ = () => {
   const commentOpen = d._commentOpen === true;
   const hasComment = !!String(d.comment || '').trim();
   const commentSummary = (!commentOpen && hasComment) ? 'コメントあり' : '';
+  const prevManualScroll = document.getElementById('bulk_work_memo_manual_add_scroll')?.scrollTop || 0;
   window.fillAppModalHtml_(`
     <div id="bulk_work_memo_manual_add_scroll" style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
       ${window.buildBulkWorkMemoModalHeaderHtml_('➕ 作業を追加', `作業日 <b>${esc(ymd)}</b> に追加する行を入力してください。`)}
@@ -50486,6 +51120,14 @@ window.renderBulkWorkMemoManualAddModal_ = () => {
   modalEl.style.display = 'flex';
   window._bulkWorkMemoActive = true;
   if (typeof window.setBulkWorkMemoModalClass_ === 'function') window.setBulkWorkMemoModalClass_('open');
+  const nextManualScrollEl = document.getElementById('bulk_work_memo_manual_add_scroll');
+  if (nextManualScrollEl && prevManualScroll > 0) {
+    nextManualScrollEl.scrollTop = prevManualScroll;
+    requestAnimationFrame(() => {
+      const el2 = document.getElementById('bulk_work_memo_manual_add_scroll');
+      if (el2) el2.scrollTop = prevManualScroll;
+    });
+  }
   try { modalEl.onclick = null; } catch (e) { }
 };
 
@@ -50906,6 +51548,24 @@ window.executeBulkWorkMemoRegistration_ = async () => {
           ? window.formatBulkWorkMemoUsedToolsText_(d)
           : '',
         usedMachines: Array.isArray(d.usedMachines) ? d.usedMachines.filter(m => m && (m.id || m.name)) : [],
+        workMembers: (() => {
+          const listM = Array.isArray(d.workMembers) ? d.workMembers.filter(m => m && (m.id || m.name)).map(m => ({
+            id: String(m.id || m.name || '').trim(),
+            name: String(m.name || m.id || '').trim(),
+            location: String(m.location || '').trim()
+          })) : [];
+          return listM;
+        })(),
+        alsoSaveForMembers: !!(Array.isArray(d.workMembers) && d.workMembers.some(m => m && (m.id || m.name)) && d.alsoSaveForMembers),
+        workerCount: (() => {
+          const set = new Set();
+          if (userSnap) set.add(String(userSnap).trim());
+          (Array.isArray(d.workMembers) ? d.workMembers : []).forEach(m => {
+            const nm = String((m && (m.name || m.id)) || '').trim();
+            if (nm) set.add(nm);
+          });
+          return Math.max(1, set.size);
+        })(),
         usedMaterials: (typeof window.formatBulkWorkMemoUsedMaterialsText_ === 'function')
           ? window.formatBulkWorkMemoUsedMaterialsText_(d)
           : '',
@@ -50924,6 +51584,13 @@ window.executeBulkWorkMemoRegistration_ = async () => {
                 id: String(m && (m.id || m.name) || '').trim(),
                 name: String(m && (m.name || m.id) || '').trim(),
                 kind: String(m && m.kind || '').trim() || undefined
+              })).filter(m => m.id || m.name)
+              : [],
+            workMembers: Array.isArray(cw.workMembers)
+              ? cw.workMembers.map(m => ({
+                id: String(m && (m.id || m.name) || '').trim(),
+                name: String(m && (m.name || m.id) || '').trim(),
+                location: String(m && m.location || '').trim()
               })).filter(m => m.id || m.name)
               : [],
             minutes: (cw.minutes != null && !isNaN(Number(cw.minutes))) ? Math.round(Number(cw.minutes)) : null,
@@ -54128,7 +54795,9 @@ window.mergeMyWorkRecordsWithAnalysis_ = function (localRecords, serverRecords, 
         startTime: row.startTime || '',
         endTime: row.endTime || '',
         totalTime: row.totalTime || '',
-        progressStatus: row.progress || ''
+        progressStatus: row.progress || '',
+        workMembers: Array.isArray(row.workMembers) ? row.workMembers : [],
+        sharedFromAuthor: String(row.sharedFromAuthor || '').trim()
       },
       polyId: polyId,
       polyName: row.fieldName || (poly && poly.name) || '全体・共通',
@@ -54737,6 +55406,7 @@ window.renderMyWorkRecordCardHtml = function (rec) {
                 ${progressBadge}
             </div>
             ${d.detailedWorks ? `<div style="font-size:11px; color:#1a73e8; margin-bottom:3px;">✅ 詳細: ${d.detailedWorks}</div>` : ''}
+            ${(Array.isArray(d.workMembers) && d.workMembers.length) ? `<div style="font-size:11px; color:#0D47A1; margin-bottom:3px;">👥 メンバー: ${d.workMembers.map(m => m && (m.name || m.id)).filter(Boolean).join('、')}${d.sharedFromAuthor ? `（${d.sharedFromAuthor}さんの記録から同時登録）` : ''}</div>` : ''}
             ${d.comment || d.notes ? `<div style="font-size:11px; color:#555; background:#f5f5f5; padding:4px 6px; border-radius:4px; margin-top:4px; white-space:pre-wrap;">${d.comment || d.notes}</div>` : ''}
             ${window.buildWorkTimeTrackButtonHtml_(rec.recordYmd, d.startTime, d.endTime)}
             <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:6px; border-top:1px dashed #eee; padding-top:4px;">
@@ -59851,8 +60521,11 @@ window.deleteQualification = async function (userName, index) {
       return;
     }
 
-    const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
-    const mac = macs.find(m => String(m.id) === String(machineId));
+    const macs = (typeof window.listInspectionEquipment_ === 'function')
+      ? window.listInspectionEquipment_()
+      : ((typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : []);
+    const mac = macs.find(m => String(m.id) === String(machineId))
+      || (typeof window.resolveEquipmentObjForInspection_ === 'function' ? window.resolveEquipmentObjForInspection_(machineId) : null);
     const macType = mac ? String(mac.type || '').trim() : '';
     const macKeys = new Set([
       macType,
@@ -59982,20 +60655,24 @@ window.deleteQualification = async function (userName, index) {
       workerSelect.innerHTML = optsHtml;
     }
 
-    // 対象機械プルダウンの構築
+    // 対象機械・車両プルダウンの構築
     const machineSelect = document.getElementById('insp_machine');
+    let resolvedPresetId = presetMachineId ? String(presetMachineId) : '';
     if (machineSelect) {
-      const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+      const macs = (typeof window.listInspectionEquipment_ === 'function')
+        ? window.listInspectionEquipment_()
+        : ((typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : []);
+      const presetBare = resolvedPresetId.replace(/^veh:/, '');
       // カテゴリごとにグループ化
       const byCategory = {};
       macs.forEach(m => {
-        if (!m || m.isTool || m.isVehicle) return;
-        const cat = String(m.type || 'その他機械').trim();
+        if (!m || m.isTool) return;
+        const cat = String((m.isVehicle ? (m.vehicleType || m.type || '車両') : m.type) || 'その他機械').trim();
         if (!byCategory[cat]) byCategory[cat] = [];
         byCategory[cat].push(m);
       });
 
-      let macHtml = '<option value="">機械を選択してください...</option>';
+      let macHtml = '<option value="">機械・車両を選択してください...</option>';
       const catKeys = Object.keys(byCategory).sort((a, b) => a.localeCompare(b, 'ja'));
       catKeys.forEach(cat => {
         macHtml += `<optgroup label="📂 ${esc(cat)}">`;
@@ -60003,8 +60680,10 @@ window.deleteQualification = async function (userName, index) {
           const mLabel = (typeof window.labelWorkerMaintMachine_ === 'function')
             ? window.labelWorkerMaintMachine_(m)
             : (m.name || `${m.type || ''} ${m.model || ''} ${m.machineNumber || ''}`.trim() || m.id);
-          const sel = (presetMachineId && String(m.id) === String(presetMachineId)) ? 'selected' : '';
-          macHtml += `<option value="${esc(m.id)}" data-type="${esc(m.type || '')}" ${sel}>${esc(mLabel)}</option>`;
+          const mIdStr = String(m.id || '');
+          const sel = resolvedPresetId && (mIdStr === resolvedPresetId || mIdStr.replace(/^veh:/, '') === presetBare);
+          if (sel) resolvedPresetId = mIdStr;
+          macHtml += `<option value="${esc(m.id)}" data-type="${esc(m.type || '')}" ${sel ? 'selected' : ''}>${esc(mLabel)}</option>`;
         });
         macHtml += `</optgroup>`;
       });
@@ -60036,8 +60715,8 @@ window.deleteQualification = async function (userName, index) {
     modal.style.display = 'flex';
 
     // 初期選択があれば反映、なければクリア表示
-    if (presetMachineId) {
-      window.onInspectionMachineChange(presetMachineId);
+    if (resolvedPresetId) {
+      window.onInspectionMachineChange(resolvedPresetId);
     } else {
       window.onInspectionMachineChange('');
     }
@@ -60068,8 +60747,11 @@ window.deleteQualification = async function (userName, index) {
       return;
     }
 
-    const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
-    const mac = macs.find(m => String(m.id) === String(machineId));
+    const macs = (typeof window.listInspectionEquipment_ === 'function')
+      ? window.listInspectionEquipment_()
+      : ((typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : []);
+    const mac = macs.find(m => String(m.id) === String(machineId))
+      || (typeof window.resolveEquipmentObjForInspection_ === 'function' ? window.resolveEquipmentObjForInspection_(machineId) : null);
     const macType = mac ? String(mac.type || '').trim() : '';
     const curMeter = window.getWorkerInspectionCurrentMeter_(machineId, mac);
 
@@ -60256,8 +60938,11 @@ window.deleteQualification = async function (userName, index) {
       return;
     }
 
-    const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
-    const mac = macs.find(m => String(m.id) === String(machineId));
+    const macs = (typeof window.listInspectionEquipment_ === 'function')
+      ? window.listInspectionEquipment_()
+      : ((typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : []);
+    const mac = macs.find(m => String(m.id) === String(machineId))
+      || (typeof window.resolveEquipmentObjForInspection_ === 'function' ? window.resolveEquipmentObjForInspection_(machineId) : null);
     const macName = (typeof window.labelWorkerMaintMachine_ === 'function' && mac)
       ? window.labelWorkerMaintMachine_(mac)
       : (mac ? (mac.name || machineId) : machineId);
@@ -60326,6 +61011,14 @@ window.deleteQualification = async function (userName, index) {
       const res = await callGAS('machine_saveInspection', payload);
       if (res && res.success === false) {
         throw new Error(res.error || '保存に失敗しました');
+      }
+      if (!Array.isArray(window._bulkInspectionRecordsCache)) window._bulkInspectionRecordsCache = [];
+      window._bulkInspectionRecordsCache.unshift(Object.assign({}, payload, {
+        id: (res && res.id) || ('local_' + Date.now()),
+        createdAt: 'たった今'
+      }));
+      if (typeof window.refreshFieldMachinePeriodicAlert_ === 'function') {
+        try { window.refreshFieldMachinePeriodicAlert_(); } catch (e) { }
       }
       if (typeof showToast === 'function') {
         showToast('✅ 点検記録を保存しました');

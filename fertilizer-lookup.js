@@ -168,9 +168,15 @@
     }
     if (masterLoadingPromise_) return masterLoadingPromise_;
     if (typeof callGAS === 'function') {
-      masterLoadingPromise_ = callGAS('loadMaster', { masterType: 'fertilizer' }).then(function (res) {
-        if (Array.isArray(res)) masterFertilizers_ = res;
-        else masterFertilizers_ = [];
+      masterLoadingPromise_ = callGAS('manageMaster', { masterType: 'fertilizer', manageAction: 'get' }).then(function (res) {
+        if (Array.isArray(res)) {
+          masterFertilizers_ = res;
+          if (!window.pdlFertilizers || !window.pdlFertilizers.length) {
+            window.pdlFertilizers = res;
+          }
+        } else {
+          masterFertilizers_ = [];
+        }
         masterLoadingPromise_ = null;
         return masterFertilizers_;
       }).catch(function () {

@@ -116,12 +116,31 @@
     });
   }
 
+  var initDataInFlightP2_ = null;
+  var initDataRecentP2_ = null;
+  var INIT_DATA_CACHE_TTL_MS_ = 3000;
+
+  function invalidateInitDataCacheP2_() {
+    initDataRecentP2_ = null;
+  }
+
+  function wrapActionWithCacheInvalidation_(key, handlerFn) {
+    if (key === 'getInitData' || key.indexOf('get') === 0 || key.indexOf('list') === 0 || key.indexOf('search') === 0 || key.indexOf('load') === 0) {
+      return handlerFn;
+    }
+    return async function () {
+      invalidateInitDataCacheP2_();
+      return await handlerFn.apply(this, arguments);
+    };
+  }
+
   function registerAction(action, handlerFn) {
     var key = String(action || '').trim();
     if (!key || typeof handlerFn !== 'function') return false;
-    registeredHandlers_[key] = handlerFn;
+    var wrapped = wrapActionWithCacheInvalidation_(key, handlerFn);
+    registeredHandlers_[key] = wrapped;
     if (config_.enabled && config_.supabaseActions[key] && global.PassionMapApiRouter) {
-      global.PassionMapApiRouter.register(key, handlerFn);
+      global.PassionMapApiRouter.register(key, wrapped);
     }
     return true;
   }
@@ -1016,7 +1035,8 @@
       startTime: 1, endTime: 1, totalTime: 1, progressStatus: 1,
       notes: 1, comment: 1, placeLabel: 1,
       photoTags: 1, photoTitle: 1, isPhotoOnly: 1, photoDate: 1, photoTime: 1,
-      bulkBatchId: 1, recordKind: 1, fromBulkMemo: 1
+      bulkBatchId: 1, recordKind: 1, fromBulkMemo: 1,
+      workMembers: 1, sharedFromAuthor: 1, alsoSaveForMembers: 1, concurrentWorks: 1
     };
     return trimmed.map(function (ph) {
       if (!ph || typeof ph !== 'object') return ph;
@@ -1420,7 +1440,13 @@
       var kinds = Array.isArray(params.kinds) && params.kinds.length ? params.kinds : ['sign', 'field'];
       var wantSign = kinds.indexOf('sign') >= 0 || kinds.indexOf('all') >= 0;
       var wantField = kinds.indexOf('field') >= 0 || kinds.indexOf('all') >= 0;
-      var rows = await restSelectAll_('fields', 'org_id=eq.' + encodeURIComponent(orgId));
+      var fieldFilter = 'org_id=eq.' + encodeURIComponent(orgId);
+      if (wantSign && !wantField) {
+        fieldFilter += '&entity_type=eq.sign';
+      } else if (!wantSign && wantField) {
+        fieldFilter += '&entity_type=neq.sign';
+      }
+      var rows = await restSelectAll_('fields', fieldFilter);
       var out = { serverTime: new Date().toISOString(), signs: null, fields: null, since: params.since || null };
       var signs = [];
       var fields = [];
@@ -2033,60 +2059,95 @@
       var workDateYmd = (recordData.workDate || today).replace(/\//g, '-').slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(workDateYmd)) workDateYmd = nowP.dateDash;
 
-      if (!fields.length) {
-        await restFetch('rest/v1/field_records', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-          body: JSON.stringify({
+      var workMembersArr = Array.isArray(recordData.workMembers)
+        ? recordData.workMembers.filter(function (m) { return m && (m.name || m.id); })
+        : [];
+      var uniqueWorkerNames = new Set();
+      if (author) uniqueWorkerNames.add(author);
+      workMembersArr.forEach(function (m) {
+        var nm = String(m.name || m.id || '').trim();
+        if (nm) uniqueWorkerNames.add(nm);
+      });
+      var effectiveWorkerCount = Math.max(Number(recordData.workerCount) || 1, uniqueWorkerNames.size || 1);
+
+      var extraMemberNames = [];
+      if (recordData.alsoSaveForMembers && workMembersArr.length) {
+        var seenExtra = {};
+        workMembersArr.forEach(function (m) {
+          var nm = String(m.name || m.id || '').trim();
+          if (!nm || nm === author || seenExtra[nm]) return;
+          seenExtra[nm] = true;
+          extraMemberNames.push(nm);
+        });
+      }
+
+      var buildInsertRowsForActor = function (recOrigId, actorName, dataObj) {
+        var nowIso = new Date().toISOString();
+        if (!fields.length) {
+          return [{
             org_id: orgId,
             field_id: null,
             field_legacy_id: null,
             field_name: nameStr,
             record_type: normalizedType,
-            legacy_id: origId,
+            legacy_id: recOrigId,
             work_date: workDateYmd,
-            recorded_at: new Date().toISOString(),
-            author_name: author,
-            work_name: String(recordData.workName || ''),
-            crop_name: String(recordData.crop || ''),
-            start_time: String(recordData.startTime || '') || null,
-            end_time: String(recordData.endTime || '') || null,
-            worker_count: Number(recordData.workerCount) || 1,
-            progress: String(recordData.progressStatus || ''),
+            recorded_at: nowIso,
+            author_name: actorName,
+            work_name: String(dataObj.workName || ''),
+            crop_name: String(dataObj.crop || ''),
+            start_time: String(dataObj.startTime || '') || null,
+            end_time: String(dataObj.endTime || '') || null,
+            worker_count: effectiveWorkerCount,
+            progress: String(dataObj.progressStatus || ''),
             photos: urls,
-            payload: { origRecordId: origId, dateStr: today, timeStr: time, data: recordData }
-          })
+            payload: { origRecordId: recOrigId, dateStr: today, timeStr: time, data: dataObj }
+          }];
+        }
+        return fields.map(function (fld) {
+          var fLeg = fld.legacy_id || fld.id;
+          return {
+            org_id: orgId,
+            field_id: fld.id,
+            field_legacy_id: fLeg,
+            field_name: fld.name || nameStr,
+            record_type: normalizedType,
+            legacy_id: recOrigId + '::' + fLeg,
+            work_date: workDateYmd,
+            recorded_at: nowIso,
+            author_name: actorName,
+            work_name: String(dataObj.workName || ''),
+            crop_name: String(dataObj.crop || ''),
+            start_time: String(dataObj.startTime || '') || null,
+            end_time: String(dataObj.endTime || '') || null,
+            worker_count: effectiveWorkerCount,
+            progress: String(dataObj.progressStatus || ''),
+            photos: urls,
+            payload: { origRecordId: recOrigId, dateStr: today, timeStr: time, data: dataObj }
+          };
         });
-        return [{ id: origId, type: normalizedType, date: today, time: time, author: author, urls: urls, data: recordData }];
+      };
+
+      var allRowsToInsert = buildInsertRowsForActor(origId, author, recordData);
+      for (var mi = 0; mi < extraMemberNames.length; mi++) {
+        var memName = extraMemberNames[mi];
+        var memOrigId = genUuid_();
+        var memData = Object.assign({}, recordData, {
+          sharedFromAuthor: author,
+          alsoSaveForMembers: false
+        });
+        allRowsToInsert = allRowsToInsert.concat(buildInsertRowsForActor(memOrigId, memName, memData));
       }
 
-      var rowsToInsert = fields.map(function (fld) {
-        var fLeg = fld.legacy_id || fld.id;
-        return {
-          org_id: orgId,
-          field_id: fld.id,
-          field_legacy_id: fLeg,
-          field_name: fld.name || nameStr,
-          record_type: normalizedType,
-          legacy_id: origId + '::' + fLeg,
-          work_date: workDateYmd,
-          recorded_at: new Date().toISOString(),
-          author_name: author,
-          work_name: String(recordData.workName || ''),
-          crop_name: String(recordData.crop || ''),
-          start_time: String(recordData.startTime || '') || null,
-          end_time: String(recordData.endTime || '') || null,
-          worker_count: Number(recordData.workerCount) || 1,
-          progress: String(recordData.progressStatus || ''),
-          photos: urls,
-          payload: { origRecordId: origId, dateStr: today, timeStr: time, data: recordData }
-        };
-      });
       await restFetch('rest/v1/field_records', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-        body: JSON.stringify(rowsToInsert)
+        body: JSON.stringify(allRowsToInsert)
       });
+
+      if (!fields.length) {
+        return [{ id: origId, type: normalizedType, date: today, time: time, author: author, urls: urls, data: recordData }];
+      }
       return await restSelectAll_(
         'field_records',
         'org_id=eq.' + encodeURIComponent(orgId) +
@@ -2229,23 +2290,33 @@
 
     registerAction('getInitData', async function (params) {
       params = params || {};
-      var light = !!(params.light || params.slim);
       var orgId = await resolveCurrentOrgId_();
-      var encOrg = encodeURIComponent(orgId);
-      var results = await Promise.all([
-        restSelectAll_('fields', 'org_id=eq.' + encOrg),
-        restSelectAll_('field_records', 'org_id=eq.' + encOrg + '&record_type=in.(work,growth,sign,report)&order=recorded_at.asc'),
-        restSelectAll_('org_masters', 'org_id=eq.' + encOrg + '&is_active=eq.true&order=sort_order.asc'),
-        restSelectAll_('org_members', 'org_id=eq.' + encOrg + '&is_active=eq.true&select=login_id,display_name,location,department'),
-        restSelectAll_('touki_records', 'org_id=eq.' + encOrg + '&select=legacy_id,id'),
-        light ? Promise.resolve([]) : restSelectAll_('crop_plans', 'org_id=eq.' + encOrg),
-        light ? Promise.resolve([]) : restSelectAll_('lots', 'org_id=eq.' + encOrg + '&status=neq.%E5%87%BA%E8%8D%B7%E6%B8%88&status=neq.%E5%AE%8C%E4%BA%86&order=generated_at.asc'),
-        restSelectAll_('machines', 'org_id=eq.' + encOrg + '&order=created_at.asc'),
-        restSelectAll_('vehicles', 'org_id=eq.' + encOrg + '&order=created_at.asc'),
-        restSelectAll_('tools', 'org_id=eq.' + encOrg + '&order=created_at.asc'),
-        restSelectAll_('materials', 'org_id=eq.' + encOrg + '&order=created_at.asc'),
-        light ? Promise.resolve([]) : restSelectAll_('work_schedules', 'org_id=eq.' + encOrg + '&schedule_kind=eq.work&work_name=ilike.*%E5%95%8F%E9%A1%8C%E5%AF%BE%E5%BF%9C*&select=work_name,payload,field_id')
-      ]);
+      if (!params.forceRefresh && initDataRecentP2_ && initDataRecentP2_.orgId === orgId && (Date.now() - initDataRecentP2_.ts) < INIT_DATA_CACHE_TTL_MS_) {
+        return initDataRecentP2_.data;
+      }
+      if (!params.forceRefresh && initDataInFlightP2_ && initDataInFlightP2_.orgId === orgId) {
+        return await initDataInFlightP2_.promise;
+      }
+
+      var fetchPromise = (async function () {
+        // Supabase は全テーブルを並列取得で高速に返せるため、常にフルデータ（_light: false）を返し
+        // 管理画面側の初回 light 取得後の 2回目フル再ダウンロードを不要にする
+        var light = false;
+        var encOrg = encodeURIComponent(orgId);
+        var results = await Promise.all([
+          restSelectAll_('fields', 'org_id=eq.' + encOrg),
+          restSelectAll_('field_records', 'org_id=eq.' + encOrg + '&record_type=in.(work,growth,sign,report)&order=recorded_at.asc'),
+          restSelectAll_('org_masters', 'org_id=eq.' + encOrg + '&is_active=eq.true&order=sort_order.asc'),
+          restSelectAll_('org_members', 'org_id=eq.' + encOrg + '&is_active=eq.true&select=login_id,display_name,location,department'),
+          restSelectAll_('touki_records', 'org_id=eq.' + encOrg + '&select=legacy_id,id'),
+          restSelectAll_('crop_plans', 'org_id=eq.' + encOrg),
+          restSelectAll_('lots', 'org_id=eq.' + encOrg + '&status=neq.%E5%87%BA%E8%8D%B7%E6%B8%88&status=neq.%E5%AE%8C%E4%BA%86&order=generated_at.asc'),
+          restSelectAll_('machines', 'org_id=eq.' + encOrg + '&order=created_at.asc'),
+          restSelectAll_('vehicles', 'org_id=eq.' + encOrg + '&order=created_at.asc'),
+          restSelectAll_('tools', 'org_id=eq.' + encOrg + '&order=created_at.asc'),
+          restSelectAll_('materials', 'org_id=eq.' + encOrg + '&order=created_at.asc'),
+          restSelectAll_('work_schedules', 'org_id=eq.' + encOrg + '&schedule_kind=eq.work&work_name=ilike.*%E5%95%8F%E9%A1%8C%E5%AF%BE%E5%BF%9C*&select=work_name,payload,field_id')
+        ]);
 
       var fieldRows = results[0];
       var recordRows = results[1];
@@ -2337,7 +2408,8 @@
           showMaintenance: d.showMaintenance != null ? d.showMaintenance : null,
           showPreInspection: d.showPreInspection != null ? d.showPreInspection : null,
           showPeriodicInspection: d.showPeriodicInspection != null ? d.showPeriodicInspection : null,
-          showFuelInspection: d.showFuelInspection != null ? d.showFuelInspection : null
+          showFuelInspection: d.showFuelInspection != null ? d.showFuelInspection : null,
+          showMember: d.showMember != null ? d.showMember : null
         });
       });
 
@@ -2643,6 +2715,18 @@
         _light: light,
         _source: 'supabase'
       };
+      })();
+
+      initDataInFlightP2_ = { orgId: orgId, promise: fetchPromise };
+      try {
+        var out = await fetchPromise;
+        initDataRecentP2_ = { orgId: orgId, ts: Date.now(), data: out };
+        return out;
+      } finally {
+        if (initDataInFlightP2_ && initDataInFlightP2_.promise === fetchPromise) {
+          initDataInFlightP2_ = null;
+        }
+      }
     });
 
     return [
@@ -4817,7 +4901,9 @@
           records.push({
             workDate: workDateYmd, author: author, workName: workName, crop: cropName, fieldName: fieldName,
             startTime: startHm, endTime: endHm, totalTime: String(d.totalTime || ''),
-            minutes: mins, progress: r.progress || '', recordId: String((r.payload && r.payload.origRecordId) || r.legacy_id || r.id)
+            minutes: mins, progress: r.progress || '', recordId: String((r.payload && r.payload.origRecordId) || r.legacy_id || r.id),
+            workMembers: Array.isArray(d.workMembers) ? d.workMembers : [],
+            sharedFromAuthor: String(d.sharedFromAuthor || '').trim()
           });
         }
       });
@@ -11850,7 +11936,8 @@
         showMaintenance: d.showMaintenance != null ? d.showMaintenance : null,
         showPreInspection: d.showPreInspection != null ? d.showPreInspection : null,
         showPeriodicInspection: d.showPeriodicInspection != null ? d.showPeriodicInspection : null,
-        showFuelInspection: d.showFuelInspection != null ? d.showFuelInspection : null
+        showFuelInspection: d.showFuelInspection != null ? d.showFuelInspection : null,
+        showMember: d.showMember != null ? d.showMember : null
       };
     }
 
@@ -11869,7 +11956,7 @@
         aliases: aliasStr ? aliasStr.split(/[,、\n]/).map(function (s) { return s.trim(); }).filter(Boolean) : []
       });
       if (Object.prototype.hasOwnProperty.call(val, 'cropDetails')) next.cropDetails = val.cropDetails || null;
-      ['showMachine', 'showMaterial', 'showPesticide', 'showField', 'showFuel', 'showRidgePolygon', 'showMaintenance', 'showPreInspection', 'showPeriodicInspection', 'showFuelInspection'].forEach(function (fk) {
+      ['showMachine', 'showMaterial', 'showPesticide', 'showField', 'showFuel', 'showRidgePolygon', 'showMaintenance', 'showPreInspection', 'showPeriodicInspection', 'showFuelInspection', 'showMember'].forEach(function (fk) {
         if (Object.prototype.hasOwnProperty.call(val, fk)) {
           next[fk] = val[fk] === true ? true : (val[fk] === false ? false : null);
         }
@@ -11907,6 +11994,37 @@
       var manageAction = String(params.manageAction || '').trim();
       var value = params.value;
       var userName = String(params.userName || '').trim();
+
+      if (manageAction === 'feedback') {
+        var fbText = String((value && (value.text || value.content)) || value || '').trim();
+        if (!fbText) return { ok: true, saved: false };
+        var fbOrgId = await resolveCurrentOrgId_();
+        var fbActor = userName || '作業員';
+        await writeLogP5_(fbOrgId, fbActor, '開発者へ連絡', fbText.slice(0, 200), fbText);
+        try {
+          var fbParts = formatJstNowParts_();
+          var fbId = 'FB_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+          await restFetch('rest/v1/idea_board', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({
+              org_id: fbOrgId,
+              legacy_id: fbId,
+              author_name: fbActor,
+              posted_date: fbParts.dateDash,
+              category: '現場フィードバック',
+              issue: '作業画面からの連絡',
+              content: fbText,
+              status: 'idea',
+              discard_reason: '',
+              memos: [],
+              history: [{ at: fbParts.fullSlash, by: fbActor, from: '', to: 'idea', note: '開発者へ連絡' }],
+              updated_by: fbActor
+            })
+          });
+        } catch (eFb) { }
+        return { ok: true, saved: true };
+      }
 
       if (masterType === 'sign') {
         throw new Error('看板機能マスタは廃止しました。看板機能は画面の固定候補から選んでください');
@@ -12256,7 +12374,8 @@
             showMaintenance: orFlag(kObj.showMaintenance, oObj && oObj.showMaintenance, incM.showMaintenance),
             showPreInspection: orFlag(kObj.showPreInspection, oObj && oObj.showPreInspection, incM.showPreInspection),
             showPeriodicInspection: orFlag(kObj.showPeriodicInspection, oObj && oObj.showPeriodicInspection, incM.showPeriodicInspection),
-            showFuelInspection: orFlag(kObj.showFuelInspection, oObj && oObj.showFuelInspection, incM.showFuelInspection)
+            showFuelInspection: orFlag(kObj.showFuelInspection, oObj && oObj.showFuelInspection, incM.showFuelInspection),
+            showMember: orFlag(kObj.showMember, oObj && oObj.showMember, incM.showMember)
           });
           await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(keepRow.id), {
             method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
