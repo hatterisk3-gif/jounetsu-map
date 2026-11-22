@@ -928,18 +928,104 @@ window.openTyphoonModal = function () {
   document.getElementById('typhoonModal').style.display = 'flex';
 };
 
-window.customAlert = (msg) => {
+window.customAlert = (msg, options) => {
   const messageEl = document.getElementById('customAlertMessage');
   const modalEl = document.getElementById('customAlertModal');
   const okBtn = document.getElementById('customAlertOk');
+  const shareBtn = document.getElementById('customAlertShareBtn');
+  const statusEl = document.getElementById('customAlertShareStatus');
   if (!messageEl || !modalEl) {
     alert(msg);
     return;
   }
+  const resetShareUi = () => {
+    if (shareBtn) {
+      shareBtn.style.display = 'none';
+      shareBtn.onclick = null;
+    }
+    if (statusEl) {
+      statusEl.style.display = 'none';
+      statusEl.textContent = '';
+    }
+  };
+  resetShareUi();
+
+  const shareText = (options && options.shareText) ? String(options.shareText) : '';
+  const shareTitle = (options && options.shareTitle) ? String(options.shareTitle) : '';
+  if (shareBtn && shareText) {
+    const copyFallbackExec = (txt) => {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = txt;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-9999px';
+        ta.style.left = '-9999px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, txt.length);
+        const copied = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return !!copied;
+      } catch (e) {
+        return false;
+      }
+    };
+    const showDesktopCopied = (ok) => {
+      if (ok && statusEl) {
+        statusEl.textContent = '✓ コピーしました（貼り付けて送信できます）';
+        statusEl.style.display = 'block';
+      } else if (!ok) {
+        prompt('以下をコピーしてください', shareText);
+      }
+    };
+    const runShareFallback = () => {
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+      if (isMobile) {
+        const lineUrl = 'https://line.me/R/share?text=' + encodeURIComponent(shareText);
+        let opened = null;
+        try {
+          opened = window.open(lineUrl, '_blank', 'noopener');
+        } catch (e) { }
+        if (!opened) {
+          window.location.href = lineUrl;
+        }
+        return;
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(shareText).then(() => {
+          showDesktopCopied(true);
+        }).catch(() => {
+          showDesktopCopied(copyFallbackExec(shareText));
+        });
+      } else {
+        showDesktopCopied(copyFallbackExec(shareText));
+      }
+    };
+
+    shareBtn.style.display = 'inline-flex';
+    shareBtn.onclick = () => {
+      if (typeof navigator.share === 'function') {
+        // 共有シートに url を別途渡すと台数文面が消える端末があるため text に全文を入れて渡す
+        const payload = shareTitle ? { title: shareTitle, text: shareText } : { text: shareText };
+        navigator.share(payload).catch((err) => {
+          if (err && err.name === 'AbortError') return;
+          runShareFallback();
+        });
+      } else {
+        runShareFallback();
+      }
+    };
+  }
+
   messageEl.innerText = msg;
   modalEl.style.display = 'flex';
   if (okBtn) {
-    okBtn.onclick = () => { modalEl.style.display = 'none'; };
+    okBtn.onclick = () => {
+      modalEl.style.display = 'none';
+      resetShareUi();
+    };
   }
 };
 
@@ -1007,18 +1093,104 @@ window.openTyphoonModal = function () {
   document.getElementById('typhoonModal').style.display = 'flex';
 };
 
-window.customAlert = (msg) => {
+window.customAlert = (msg, options) => {
   const messageEl = document.getElementById('customAlertMessage');
   const modalEl = document.getElementById('customAlertModal');
   const okBtn = document.getElementById('customAlertOk');
+  const shareBtn = document.getElementById('customAlertShareBtn');
+  const statusEl = document.getElementById('customAlertShareStatus');
   if (!messageEl || !modalEl) {
     alert(msg);
     return;
   }
+  const resetShareUi = () => {
+    if (shareBtn) {
+      shareBtn.style.display = 'none';
+      shareBtn.onclick = null;
+    }
+    if (statusEl) {
+      statusEl.style.display = 'none';
+      statusEl.textContent = '';
+    }
+  };
+  resetShareUi();
+
+  const shareText = (options && options.shareText) ? String(options.shareText) : '';
+  const shareTitle = (options && options.shareTitle) ? String(options.shareTitle) : '';
+  if (shareBtn && shareText) {
+    const copyFallbackExec = (txt) => {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = txt;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-9999px';
+        ta.style.left = '-9999px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, txt.length);
+        const copied = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return !!copied;
+      } catch (e) {
+        return false;
+      }
+    };
+    const showDesktopCopied = (ok) => {
+      if (ok && statusEl) {
+        statusEl.textContent = '✓ コピーしました（貼り付けて送信できます）';
+        statusEl.style.display = 'block';
+      } else if (!ok) {
+        prompt('以下をコピーしてください', shareText);
+      }
+    };
+    const runShareFallback = () => {
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+      if (isMobile) {
+        const lineUrl = 'https://line.me/R/share?text=' + encodeURIComponent(shareText);
+        let opened = null;
+        try {
+          opened = window.open(lineUrl, '_blank', 'noopener');
+        } catch (e) { }
+        if (!opened) {
+          window.location.href = lineUrl;
+        }
+        return;
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(shareText).then(() => {
+          showDesktopCopied(true);
+        }).catch(() => {
+          showDesktopCopied(copyFallbackExec(shareText));
+        });
+      } else {
+        showDesktopCopied(copyFallbackExec(shareText));
+      }
+    };
+
+    shareBtn.style.display = 'inline-flex';
+    shareBtn.onclick = () => {
+      if (typeof navigator.share === 'function') {
+        // 共有シートに url を別途渡すと台数文面が消える端末があるため text に全文を入れて渡す
+        const payload = shareTitle ? { title: shareTitle, text: shareText } : { text: shareText };
+        navigator.share(payload).catch((err) => {
+          if (err && err.name === 'AbortError') return;
+          runShareFallback();
+        });
+      } else {
+        runShareFallback();
+      }
+    };
+  }
+
   messageEl.innerText = msg;
   modalEl.style.display = 'flex';
   if (okBtn) {
-    okBtn.onclick = () => { modalEl.style.display = 'none'; };
+    okBtn.onclick = () => {
+      modalEl.style.display = 'none';
+      resetShareUi();
+    };
   }
 };
 
@@ -2386,16 +2558,24 @@ window.sharePigManureRequestFromSchedule = function (fieldId) {
 
   const fallbackPrompt = () => prompt('以下をコピーしてください', text);
   const copyThenAlert = () => {
+    const shareOpts = { shareTitle: name, shareText: text };
+    const openShareFallback = () => {
+      if (typeof customAlert === 'function') {
+        customAlert('📤 下の「共有」ボタンから相手に送れます。\n\n' + text, shareOpts);
+      } else {
+        fallbackPrompt();
+      }
+    };
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(() => {
         if (typeof customAlert === 'function') {
-          customAlert('📋 コピーしました。そのまま相手に貼り付けて送れます。\n\n' + text);
+          customAlert('📋 コピーしました。そのまま相手に貼り付けて送れます。\n\n' + text, shareOpts);
         } else {
           alert('📋 コピーしました\n\n' + text);
         }
-      }).catch(fallbackPrompt);
+      }).catch(openShareFallback);
     } else {
-      fallbackPrompt();
+      openShareFallback();
     }
   };
   // 共有シートに url だけ渡すと台数文面が消える端末があるため、コピー優先
@@ -9682,6 +9862,11 @@ window.cycleNextViewpoint = function () {
     return;
   }
 
+  if (window.ViewpointPicker && typeof window.ViewpointPicker.isOpen === 'function' && window.ViewpointPicker.isOpen()) {
+    window.ViewpointPicker.close({ restoreView: true });
+    return;
+  }
+
   let userLoc = String(localStorage.getItem('passionMapUserLocation') || '').trim();
   if (!userLoc && typeof localStorage !== 'undefined') {
     const uid = String(localStorage.getItem('passionMapUserId') || localStorage.getItem('pMapAdminId') || '').trim();
@@ -9787,6 +9972,18 @@ window.cycleNextViewpoint = function () {
   }
 
   if (!targetVps.length) return;
+
+  if (window.ViewpointPicker && typeof window.ViewpointPicker.open === 'function') {
+    window.ViewpointPicker.open(map, targetVps, {
+      onSelect: function (picked, idx, validList) {
+        window._currentViewpointIndex = idx;
+        if (typeof window.showViewpointToast === 'function') {
+          window.showViewpointToast(picked.name, idx + 1, validList.length, picked.location);
+        }
+      }
+    });
+    return;
+  }
 
   window._currentViewpointIndex = ((window._currentViewpointIndex != null ? window._currentViewpointIndex : -1) + 1) % targetVps.length;
   const target = targetVps[window._currentViewpointIndex];

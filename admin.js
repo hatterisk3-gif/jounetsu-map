@@ -1815,7 +1815,12 @@ async function executeLogin(isAuto = false, options = {}) {
             localStorage.setItem('passionMapUserName', res.name);
             localStorage.setItem('passionMapUserRole', res.role || '管理者');
             if (res.dept != null) localStorage.setItem('passionMapUserDept', res.dept || '');
-            if (res.location != null) localStorage.setItem('passionMapUserLocation', res.location || '');
+            if (res.location != null) {
+                localStorage.setItem('passionMapUserLocation', res.location || '');
+                if (res.location && typeof vpApplyResolvedAccountLocToOpenForm_ === 'function') {
+                    try { vpApplyResolvedAccountLocToOpenForm_(res.location); } catch (e) { }
+                }
+            }
             localStorage.setItem('spreadsheetId', res.spreadsheetId);
             localStorage.setItem('pMapAdminOrgId', 'default');
             localStorage.setItem('pMapAdminId', id);
@@ -2370,7 +2375,12 @@ function renderInitData(data, opts) {
             window.pdlUserLocations = data.pdl.userLocations;
         }
         if (typeof window.vpUserLoc_ === 'function') {
-            try { window.vpUserLoc_(); } catch (e) { }
+            try {
+                const resolvedLoc = window.vpUserLoc_();
+                if (resolvedLoc && typeof vpApplyResolvedAccountLocToOpenForm_ === 'function') {
+                    vpApplyResolvedAccountLocToOpenForm_(resolvedLoc);
+                }
+            } catch (e) { }
         }
         pdlConditions = data.pdl.conditions || [];
         pdlStatuses = data.pdl.statuses || [];
@@ -11714,64 +11724,119 @@ window._vpSavedMapOpts = null;
 
 const vpEsc_ = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+function vpNormIdentity_(s) {
+    return String(s == null ? '' : s).replace(/[\s\u3000]+/g, '').toLowerCase();
+}
+
 function vpMatchLocationOption_(rawLoc, locs) {
     const raw = String(rawLoc || '').trim();
     if (!raw) return '';
     const list = Array.isArray(locs) && locs.length ? locs.filter(Boolean) : (pdlLocations || []).filter(Boolean);
     if (!list.length) return raw.split(/[・,、\/｜|]+/)[0].trim() || raw;
     if (list.includes(raw)) return raw;
-    const tokens = raw.split(/[・,、\/｜|\s]+/).map(s => String(s || '').trim()).filter(Boolean);
+    const rawNorm = vpNormIdentity_(raw);
+    const exactNormHit = list.find(l => vpNormIdentity_(l) === rawNorm);
+    if (exactNormHit) return exactNormHit;
+    const primaryTokens = raw.split(/[・,、\/｜|]+/).map(s => String(s || '').trim()).filter(Boolean);
+    for (let i = 0; i < primaryTokens.length; i++) {
+        if (list.includes(primaryTokens[i])) return primaryTokens[i];
+        const pNorm = vpNormIdentity_(primaryTokens[i]);
+        if (!pNorm) continue;
+        const pHit = list.find(l => vpNormIdentity_(l) === pNorm);
+        if (pHit) return pHit;
+    }
+    const tokens = raw.split(/[・,、\/｜|\s\u3000]+/).map(s => String(s || '').trim()).filter(Boolean);
     for (let i = 0; i < tokens.length; i++) {
         if (list.includes(tokens[i])) return tokens[i];
     }
     for (let i = 0; i < tokens.length; i++) {
+        const tokNorm = vpNormIdentity_(tokens[i]);
+        if (!tokNorm) continue;
+        const normHit = list.find(l => vpNormIdentity_(l) === tokNorm);
+        if (normHit) return normHit;
+    }
+    for (let i = 0; i < tokens.length; i++) {
         const tok = tokens[i];
-        const hit = list.find(l => l.indexOf(tok) >= 0 || tok.indexOf(l) >= 0);
+        const tokNorm = vpNormIdentity_(tok);
+        const hit = list.find(l => {
+            const ln = vpNormIdentity_(l);
+            return l.indexOf(tok) >= 0 || tok.indexOf(l) >= 0 || (tokNorm && ln && (ln.indexOf(tokNorm) >= 0 || tokNorm.indexOf(ln) >= 0));
+        });
         if (hit) return hit;
     }
     return tokens[0] || raw;
 }
 
-function vpResolveRawAccountLoc_() {
-    const ids = [
-        localStorage.getItem('pMapAdminId'),
-        localStorage.getItem('passionMapUserId'),
-        document.getElementById('loginId') ? document.getElementById('loginId').value : ''
-    ].map(s => String(s || '').trim()).filter(Boolean);
-    const names = [
+function vpCollectAccountDisplayNames_() {
+    const out = [
         typeof currentUser !== 'undefined' ? currentUser : '',
         localStorage.getItem('pMapAdminName'),
         localStorage.getItem('passionMapUserName')
+    ];
+    try {
+        document.querySelectorAll('[data-account-name]').forEach(el => {
+            const t = String(el && el.textContent ? el.textContent : '').trim();
+            if (t && t !== 'マイページ' && t !== 'アカウント') out.push(t);
+        });
+    } catch (e) { }
+    return out.map(s => String(s || '').trim()).filter(Boolean);
+}
+
+function vpResolveRawAccountLoc_() {
+    const ids = [
+        localStorage.getItem('passionMapUserId'),
+        localStorage.getItem('pMapAdminId'),
+        document.getElementById('loginId') ? document.getElementById('loginId').value : ''
     ].map(s => String(s || '').trim()).filter(Boolean);
+    const names = vpCollectAccountDisplayNames_();
+    const idNorms = ids.map(vpNormIdentity_).filter(Boolean);
+    const nameNorms = names.map(vpNormIdentity_).filter(Boolean);
 
-    const sources = [];
-    if (Array.isArray(window.pdlUserLocations)) sources.push(window.pdlUserLocations);
-    if (Array.isArray(window._userRoleManageUsers)) sources.push(window._userRoleManageUsers);
-    try {
-        const aCache = JSON.parse(localStorage.getItem('pMapAdminInitData') || '{}');
-        if (aCache && aCache.pdl && Array.isArray(aCache.pdl.userLocations)) sources.push(aCache.pdl.userLocations);
-    } catch (e) { }
-    try {
-        const wCache = JSON.parse(localStorage.getItem('passionMapInitData') || '{}');
-        if (wCache && wCache.pdl && Array.isArray(wCache.pdl.userLocations)) sources.push(wCache.pdl.userLocations);
-    } catch (e) { }
-
-    for (let s = 0; s < sources.length; s++) {
-        const arr = sources[s];
+    const findInList_ = (arr) => {
+        if (!Array.isArray(arr) || !arr.length) return '';
         const hit = arr.find(u => {
             if (!u) return false;
             const uid = String(u.userId || '').trim();
             const uname = String(u.userName || u.name || '').trim();
-            return (uid && (ids.includes(uid) || names.includes(uid)))
-                || (uname && (names.includes(uname) || ids.includes(uname)));
+            const uidNorm = vpNormIdentity_(uid);
+            const unameNorm = vpNormIdentity_(uname);
+            return (uid && (ids.includes(uid) || names.includes(uid) || idNorms.includes(uidNorm) || nameNorms.includes(uidNorm)))
+                || (uname && (names.includes(uname) || ids.includes(uname) || nameNorms.includes(unameNorm) || idNorms.includes(unameNorm)));
         });
-        if (hit && String(hit.location || '').trim()) {
-            const loc = String(hit.location || '').trim();
+        return (hit && String(hit.location || '').trim()) ? String(hit.location || '').trim() : '';
+    };
+
+    // 1. 最新のオンメモリ一覧（getInitData / listUsersForAdmin 反映済み）を最優先
+    const liveSources = [];
+    if (Array.isArray(window.pdlUserLocations)) liveSources.push(window.pdlUserLocations);
+    if (Array.isArray(window._userRoleManageUsers)) liveSources.push(window._userRoleManageUsers);
+    for (let s = 0; s < liveSources.length; s++) {
+        const loc = findInList_(liveSources[s]);
+        if (loc) {
             try { localStorage.setItem('passionMapUserLocation', loc); } catch (e) { }
             return loc;
         }
     }
-    return String(localStorage.getItem('passionMapUserLocation') || '').trim();
+
+    // 2. ログイン時・管理操作時に保存された localStorage を優先（古い initData キャッシュより優先）
+    const storedLoc = String(localStorage.getItem('passionMapUserLocation') || '').trim();
+    if (storedLoc) return storedLoc;
+
+    // 3. フォールバックとして localStorage キャッシュ内の名簿を参照
+    const cacheKeys = ['pMapAdminInitData', 'passionMapInitData', 'passionMapScheduleData'];
+    for (let k = 0; k < cacheKeys.length; k++) {
+        try {
+            const c = JSON.parse(localStorage.getItem(cacheKeys[k]) || '{}');
+            if (c && c.pdl && Array.isArray(c.pdl.userLocations)) {
+                const loc = findInList_(c.pdl.userLocations);
+                if (loc) {
+                    try { localStorage.setItem('passionMapUserLocation', loc); } catch (e) { }
+                    return loc;
+                }
+            }
+        } catch (e) { }
+    }
+    return '';
 }
 
 const vpUserLoc_ = () => {
@@ -11780,16 +11845,40 @@ const vpUserLoc_ = () => {
 };
 window.vpUserLoc_ = vpUserLoc_;
 
-function vpApplyResolvedAccountLocToOpenForm_(loc) {
-    const matched = vpMatchLocationOption_(loc, pdlLocations);
-    if (!matched) return;
+function vpApplyResolvedAccountLocToOpenForm_(loc, opts) {
+    opts = opts || {};
+    const sel = document.getElementById('vpInputLocation');
+    const locs = (pdlLocations || []).filter(Boolean);
+    if (sel && locs.length) {
+        const existingVals = new Set(Array.from(sel.options).map(o => o.value));
+        locs.forEach(l => {
+            if (!existingVals.has(l)) {
+                const opt = document.createElement('option');
+                opt.value = l;
+                opt.textContent = l;
+                sel.appendChild(opt);
+                existingVals.add(l);
+            }
+        });
+    }
+
+    const matched = vpMatchLocationOption_(loc, locs);
     const badgeEl = document.getElementById('vpUserLocBadge');
+    if (!matched) {
+        if (opts.checkedServer && badgeEl) {
+            badgeEl.textContent = '（アカウントの所属拠点が未設定）';
+            badgeEl.style.color = '#888';
+            badgeEl.style.display = 'inline';
+        }
+        return;
+    }
+
     if (badgeEl) {
         badgeEl.textContent = `（ログイン拠点: ${matched}）`;
+        badgeEl.style.color = '#7E57C2';
         badgeEl.style.display = 'inline';
     }
     const d = window._vpDraft;
-    const sel = document.getElementById('vpInputLocation');
     const manual = (sel && sel.dataset.autoLoc === '0') || (d && d.locationManual);
     if (manual) return;
     if (d) d.location = matched;
@@ -11812,32 +11901,51 @@ window.vpEnsureAccountLocationLoaded_ = async function () {
     }
     if (window._vpLocFetchInFlight) return window._vpLocFetchInFlight;
     const id = String(
-        localStorage.getItem('pMapAdminId')
-        || localStorage.getItem('passionMapUserId')
+        localStorage.getItem('passionMapUserId')
+        || localStorage.getItem('pMapAdminId')
         || (document.getElementById('loginId') ? document.getElementById('loginId').value : '')
         || ''
     ).trim();
+    const uname = vpCollectAccountDisplayNames_()[0] || '';
     const pw = String(
-        localStorage.getItem('pMapAdminPw')
-        || localStorage.getItem('passionMapUserPw')
+        localStorage.getItem('passionMapUserPw')
+        || localStorage.getItem('pMapAdminPw')
         || (document.getElementById('loginPw') ? document.getElementById('loginPw').value : '')
         || ''
     );
-    if (!id || !pw || typeof callGAS !== 'function') return '';
+    if (typeof callGAS !== 'function') return '';
 
     window._vpLocFetchInFlight = (async () => {
+        // 1) Supabase JWT / ID・氏名ベース（Google/LINEログイン等のパスワード無しセッションにも対応）
         try {
-            const loginRes = await callGAS('login', { orgId: 'default', userId: id, password: pw }, 1, { timeoutMs: 20000 });
-            if (loginRes && loginRes.success && String(loginRes.location || '').trim()) {
-                const loc = String(loginRes.location || '').trim();
-                try { localStorage.setItem('passionMapUserLocation', loc); } catch (e) { }
-                vpApplyResolvedAccountLocToOpenForm_(loc);
-                return vpMatchLocationOption_(loc, pdlLocations);
+            const accRes = await callGAS('getAccountLocation', { userId: id, userName: uname }, 1, { timeoutMs: 15000 });
+            if (accRes && accRes.success) {
+                if (Array.isArray(accRes.locations) && accRes.locations.length && (!Array.isArray(pdlLocations) || !pdlLocations.length)) {
+                    pdlLocations = accRes.locations.slice();
+                }
+                if (Array.isArray(accRes.userLocations) && accRes.userLocations.length) {
+                    window.pdlUserLocations = accRes.userLocations;
+                }
+                const loc = String(accRes.location || '').trim() || vpResolveRawAccountLoc_();
+                if (loc) {
+                    try { localStorage.setItem('passionMapUserLocation', loc); } catch (e) { }
+                    vpApplyResolvedAccountLocToOpenForm_(loc);
+                    return vpMatchLocationOption_(loc, pdlLocations) || loc;
+                }
+                if (accRes.matched) {
+                    vpApplyResolvedAccountLocToOpenForm_('', { checkedServer: true });
+                    return '';
+                }
             }
         } catch (e) { }
+
+        // 2) listUsersForAdmin（Bearer トークン認証対応のためパスワード無しでも動作）
         try {
-            const listRes = await callGAS('listUsersForAdmin', { adminUserId: id, adminPassword: pw }, 1, { timeoutMs: 20000 });
+            const listRes = await callGAS('listUsersForAdmin', { adminUserId: id, adminPassword: pw }, 1, { timeoutMs: 15000 });
             if (listRes && listRes.success && Array.isArray(listRes.users)) {
+                if (Array.isArray(listRes.locations) && listRes.locations.length && (!Array.isArray(pdlLocations) || !pdlLocations.length)) {
+                    pdlLocations = listRes.locations.slice();
+                }
                 window._userRoleManageUsers = listRes.users;
                 const loc = vpUserLoc_();
                 if (loc) {
@@ -11846,6 +11954,21 @@ window.vpEnsureAccountLocationLoaded_ = async function () {
                 }
             }
         } catch (e) { }
+
+        // 3) GAS 緊急モード等のフォールバック（ID/PW がある場合）
+        if (id && pw) {
+            try {
+                const loginRes = await callGAS('login', { orgId: 'default', userId: id, password: pw }, 1, { timeoutMs: 20000 });
+                if (loginRes && loginRes.success && String(loginRes.location || '').trim()) {
+                    const loc = String(loginRes.location || '').trim();
+                    try { localStorage.setItem('passionMapUserLocation', loc); } catch (e) { }
+                    vpApplyResolvedAccountLocToOpenForm_(loc);
+                    return vpMatchLocationOption_(loc, pdlLocations) || loc;
+                }
+            } catch (e) { }
+        }
+
+        vpApplyResolvedAccountLocToOpenForm_('', { checkedServer: true });
         return '';
     })().finally(() => {
         window._vpLocFetchInFlight = null;
@@ -12188,12 +12311,18 @@ window.openViewpointFormModal_ = () => {
     }
     if (d.location && !locs.includes(d.location)) locs.unshift(d.location);
 
+    const badgeText = userLoc
+        ? `（ログイン拠点: ${vpEsc_(userLoc)}）`
+        : (d.locationManual !== true ? '（ログイン拠点を確認中...）' : '');
+    const badgeColor = userLoc ? '#7E57C2' : '#888';
+    const badgeDisplay = badgeText ? 'inline' : 'none';
+
     body.innerHTML = `
     <div style="background:#fff; border-radius:10px; padding:16px; border:1px solid #e0e0e0; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
       <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">
-        所属拠点 <span id="vpUserLocBadge" style="font-weight:normal; color:#7E57C2; display:${userLoc ? 'inline' : 'none'};">${userLoc ? `（ログイン拠点: ${vpEsc_(userLoc)}）` : ''}</span>
+        所属拠点 <span id="vpUserLocBadge" style="font-weight:normal; color:${badgeColor}; display:${badgeDisplay};">${badgeText}</span>
       </label>
-      <select id="vpInputLocation" data-auto-loc="1" onchange="this.dataset.autoLoc='0'"
+      <select id="vpInputLocation" data-auto-loc="${d.locationManual ? '0' : '1'}" onchange="this.dataset.autoLoc='0'"
         style="width:100%; padding:10px; border:1px solid #ccc; border-radius:8px; font-size:15px; box-sizing:border-box; margin-bottom:14px;">
         <option value="">(拠点なし / 全社共通)</option>
         ${locs.map(l => `<option value="${vpEsc_(l)}" ${l === d.location ? 'selected' : ''}>${vpEsc_(l)}</option>`).join('')}
@@ -12461,6 +12590,7 @@ window.editViewpointItem = (id) => {
     window._vpDraft = {
         id: vp.id,
         location: vp.location || '',
+        locationManual: !!String(vp.location || '').trim(),
         name: vp.name || '',
         lat: Number(vp.lat),
         lng: Number(vp.lng),
@@ -12552,6 +12682,11 @@ window.cycleNextViewpoint = function () {
         return;
     }
 
+    if (window.ViewpointPicker && typeof window.ViewpointPicker.isOpen === 'function' && window.ViewpointPicker.isOpen()) {
+        window.ViewpointPicker.close({ restoreView: true });
+        return;
+    }
+
     const trimmedUserLoc = String((typeof vpResolveRawAccountLoc_ === 'function' ? vpResolveRawAccountLoc_() : localStorage.getItem('passionMapUserLocation')) || '').trim();
 
     let allVps = window.pdlViewpoints || [];
@@ -12622,6 +12757,18 @@ window.cycleNextViewpoint = function () {
     }
 
     if (!targetVps.length) return;
+
+    if (window.ViewpointPicker && typeof window.ViewpointPicker.open === 'function') {
+        window.ViewpointPicker.open(map, targetVps, {
+            onSelect: function (picked, idx, validList) {
+                window._currentViewpointIndex = idx;
+                if (typeof window.showViewpointToast === 'function') {
+                    window.showViewpointToast(picked.name, idx + 1, validList.length, picked.location);
+                }
+            }
+        });
+        return;
+    }
 
     window._currentViewpointIndex = ((window._currentViewpointIndex != null ? window._currentViewpointIndex : -1) + 1) % targetVps.length;
     const target = targetVps[window._currentViewpointIndex];
@@ -12919,6 +13066,9 @@ window.syncFudeLoadButtonLabels_ = function () {
 
 /** 範囲変更中: 他UI・他圃場を隠して編集対象だけ残す */
 window.enterShapeEditFocusMode_ = function (editId) {
+    if (window.ViewpointPicker && typeof window.ViewpointPicker.close === 'function') {
+        window.ViewpointPicker.close({ restoreView: false });
+    }
     window._shapeEditFocusId = String(editId || '');
     const chromeIds = [
         'btnCurrentLocation', 'btnToggleViewpoint', 'adminRegPlusWrap', 'btnAdminMaster', 'btnClockBoard', 'adminLegendUI'
@@ -15589,8 +15739,29 @@ window.changeUserLocationFromAdmin = async function (targetUserId, selectedLocat
             return;
         }
         window.setUserRoleManageMsg(`拠点を変更しました（${targetUserId}: ${label}）`, true);
-        if (String(targetUserId) === String(adminUserId)) {
+        const targetNorm = typeof vpNormIdentity_ === 'function' ? vpNormIdentity_(targetUserId) : String(targetUserId || '').trim().toLowerCase();
+        [window.pdlUserLocations, window._userRoleManageUsers].forEach(arr => {
+            if (!Array.isArray(arr)) return;
+            arr.forEach(u => {
+                if (!u) return;
+                const uidNorm = typeof vpNormIdentity_ === 'function' ? vpNormIdentity_(u.userId) : String(u.userId || '').trim().toLowerCase();
+                if (uidNorm && uidNorm === targetNorm) u.location = newLocation;
+            });
+        });
+        const isSelf = [
+            adminUserId,
+            localStorage.getItem('pMapAdminId'),
+            localStorage.getItem('passionMapUserId')
+        ].some(id => {
+            if (!id) return false;
+            const n = typeof vpNormIdentity_ === 'function' ? vpNormIdentity_(id) : String(id).trim().toLowerCase();
+            return n === targetNorm;
+        });
+        if (isSelf) {
             localStorage.setItem('passionMapUserLocation', newLocation);
+            if (typeof vpApplyResolvedAccountLocToOpenForm_ === 'function') {
+                try { vpApplyResolvedAccountLocToOpenForm_(newLocation, { checkedServer: !newLocation }); } catch (e) { }
+            }
         }
         loadUserRoleManageList();
     } catch (e) {

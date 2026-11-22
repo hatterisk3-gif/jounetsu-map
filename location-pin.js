@@ -561,4 +561,465 @@
   };
 
   global.SignGroup = SignGroup;
+
+  // ==========================================
+  // 🔭 ViewpointPicker: 全体引き＋視野地点ピン選択拡大
+  // ==========================================
+  var vpState = {
+    open: false,
+    map: null,
+    overlays: [],
+    bannerEl: null,
+    prevCenter: null,
+    prevZoom: null,
+    userInteracted: false,
+    dragListener: null,
+    boundsListener: null,
+    keyHandler: null,
+    resizeHandler: null,
+    zoomTimers: [],
+    animTimers: [],
+    animDragListener: null,
+    fitTimeout: null,
+    onSelect: null
+  };
+
+  function escapeVpHtml_(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function vpPinSvg_() {
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44">' +
+      '<path d="M18 2C9.716 2 3 8.716 3 17c0 10.6 15 25 15 25s15-14.4 15-25C33 8.716 26.284 2 18 2z" fill="#7B1FA2" stroke="#FFFFFF" stroke-width="2.5"/>' +
+      '<circle cx="18" cy="16.5" r="7.2" fill="#F3E5F5"/>' +
+      '<circle cx="18" cy="16.5" r="3.4" fill="#4A148C"/>' +
+      '</svg>';
+  }
+
+  function ensureViewpointPinOverlayClass_() {
+    if (global.ViewpointPinOverlay_) return global.ViewpointPinOverlay_;
+    global.ViewpointPinOverlay_ = class ViewpointPinOverlay extends google.maps.OverlayView {
+      constructor(vp, idx, onPick) {
+        super();
+        this.vp = vp;
+        this.idx = idx;
+        this.onPick = onPick;
+        this.position = new google.maps.LatLng(Number(vp.lat), Number(vp.lng));
+        this.div = null;
+      }
+      onAdd() {
+        var div = document.createElement('div');
+        div.className = 'viewpoint-pin-wrap';
+        var labelText = String((this.vp && this.vp.name) || ('視野地点 ' + (this.idx + 1)));
+        var delayMs = Math.min(this.idx * 40, 360);
+        div.innerHTML =
+          '<div class="viewpoint-pin-ground"><span class="viewpoint-pin-pulse"></span></div>' +
+          '<button type="button" class="viewpoint-pin-btn" style="animation-delay:' + delayMs + 'ms;" aria-label="' + escapeVpHtml_(labelText) + '">' +
+            '<span class="viewpoint-pin-badge">🔭 ' + escapeVpHtml_(labelText) + '</span>' +
+            '<span class="viewpoint-pin-head" aria-hidden="true">' + vpPinSvg_() + '</span>' +
+          '</button>';
+
+        if (typeof google !== 'undefined' && google.maps && google.maps.OverlayView && typeof google.maps.OverlayView.preventMapHitsFrom === 'function') {
+          try { google.maps.OverlayView.preventMapHitsFrom(div); } catch (e) {}
+        }
+
+        var btn = div.querySelector('.viewpoint-pin-btn');
+        var self = this;
+        if (btn) {
+          ['mousedown', 'touchstart', 'pointerdown'].forEach(function (evName) {
+            btn.addEventListener(evName, function (ev) {
+              ev.stopPropagation();
+            }, { passive: true });
+          });
+          btn.addEventListener('click', function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            if (typeof self.onPick === 'function') {
+              self.onPick(self.vp, self.idx);
+            }
+          });
+        }
+
+        this.div = div;
+        var panes = this.getPanes();
+        var pane = panes && (panes.overlayMouseTarget || panes.floatPane);
+        if (pane) pane.appendChild(div);
+      }
+      draw() {
+        if (!this.div) return;
+        var proj = this.getProjection();
+        if (!proj || !this.position) return;
+        var pt = proj.fromLatLngToDivPixel(this.position);
+        if (!pt) return;
+        this.div.style.left = Math.round(pt.x) + 'px';
+        this.div.style.top = Math.round(pt.y) + 'px';
+      }
+      onRemove() {
+        if (this.div && this.div.parentNode) {
+          this.div.parentNode.removeChild(this.div);
+        }
+        this.div = null;
+      }
+    };
+    return global.ViewpointPinOverlay_;
+  }
+
+  function clearVpAnimTimers_() {
+    if (Array.isArray(vpState.animTimers)) {
+      vpState.animTimers.forEach(function (t) { clearTimeout(t); });
+    }
+    vpState.animTimers = [];
+    if (vpState.animDragListener && typeof google !== 'undefined' && google.maps && google.maps.event) {
+      try { google.maps.event.removeListener(vpState.animDragListener); } catch (e) {}
+    }
+    vpState.animDragListener = null;
+  }
+
+  function clearVpOpenTimersAndListeners_() {
+    if (Array.isArray(vpState.zoomTimers)) {
+      vpState.zoomTimers.forEach(function (t) { clearTimeout(t); });
+    }
+    vpState.zoomTimers = [];
+    if (vpState.fitTimeout) {
+      clearTimeout(vpState.fitTimeout);
+      vpState.fitTimeout = null;
+    }
+    if (typeof google !== 'undefined' && google.maps && google.maps.event) {
+      if (vpState.dragListener) {
+        try { google.maps.event.removeListener(vpState.dragListener); } catch (e) {}
+        vpState.dragListener = null;
+      }
+      if (vpState.boundsListener) {
+        try { google.maps.event.removeListener(vpState.boundsListener); } catch (e) {}
+        vpState.boundsListener = null;
+      }
+    }
+    if (vpState.keyHandler) {
+      document.removeEventListener('keydown', vpState.keyHandler);
+      vpState.keyHandler = null;
+    }
+    if (vpState.resizeHandler) {
+      global.removeEventListener('resize', vpState.resizeHandler);
+      vpState.resizeHandler = null;
+    }
+  }
+
+  function setViewpointToggleBtnActive_(active) {
+    var btn = document.getElementById('btnToggleViewpoint');
+    if (!btn) return;
+    if (active) btn.classList.add('viewpoint-picker-btn-active');
+    else btn.classList.remove('viewpoint-picker-btn-active');
+  }
+
+  function ensureBannerEl_() {
+    var banner = vpState.bannerEl || document.getElementById('viewpointPickerBanner');
+    if (banner) {
+      vpState.bannerEl = banner;
+      return banner;
+    }
+    banner = document.createElement('div');
+    banner.id = 'viewpointPickerBanner';
+    banner.className = 'viewpoint-picker-banner';
+    banner.setAttribute('role', 'status');
+    banner.innerHTML =
+      '<span class="viewpoint-picker-banner-text" id="viewpointPickerBannerText">🔭 ピンを押すと拡大</span>' +
+      '<button type="button" class="viewpoint-picker-close" aria-label="視野地点選択を閉じる">✕ 閉じる</button>';
+    var closeBtn = banner.querySelector('.viewpoint-picker-close');
+    if (closeBtn) {
+      ['mousedown', 'touchstart', 'pointerdown'].forEach(function (evName) {
+        closeBtn.addEventListener(evName, function (ev) {
+          ev.stopPropagation();
+        }, { passive: true });
+      });
+      closeBtn.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        ViewpointPicker.close({ restoreView: true });
+      });
+    }
+    document.body.appendChild(banner);
+    vpState.bannerEl = banner;
+    return banner;
+  }
+
+  function positionBanner_() {
+    var banner = vpState.bannerEl || document.getElementById('viewpointPickerBanner');
+    if (!banner) return;
+    var vh = global.innerHeight || document.documentElement.clientHeight || 800;
+    var cp = document.querySelector('.control-panel');
+    if (cp && cp.getBoundingClientRect) {
+      var cs = global.getComputedStyle ? global.getComputedStyle(cp) : null;
+      var rect = cp.getBoundingClientRect();
+      if ((!cs || cs.display !== 'none') && rect && rect.height > 0 && rect.bottom > 0 && rect.top < vh * 0.45) {
+        banner.style.top = Math.ceil(rect.bottom + 8) + 'px';
+        return;
+      }
+    }
+    banner.style.top = 'calc(12px + env(safe-area-inset-top, 0px))';
+  }
+
+  function computeOverviewPadding_() {
+    var vh = global.innerHeight || document.documentElement.clientHeight || 800;
+    var cpBottom = 0;
+    var cp = document.querySelector('.control-panel');
+    if (cp && cp.getBoundingClientRect) {
+      var cpCs = global.getComputedStyle ? global.getComputedStyle(cp) : null;
+      var cpRect = cp.getBoundingClientRect();
+      if ((!cpCs || cpCs.display !== 'none') && cpRect && cpRect.height > 0 && cpRect.bottom > 0 && cpRect.top < vh * 0.45) {
+        cpBottom = Math.ceil(cpRect.bottom);
+      }
+    }
+    var rawTop = (cpBottom > 0 ? cpBottom : 12) + 52 + 32;
+    var maxTopCap = Math.max(104, Math.min(200, Math.floor(vh * 0.35)));
+    var topPad = Math.min(Math.max(104, rawTop), maxTopCap);
+
+    var barOccupancy = 0;
+    ['.mobile-bottom-bar', '#mapSelectUI'].forEach(function (sel) {
+      var el = document.querySelector(sel);
+      if (!el || !el.getBoundingClientRect) return;
+      var cs = global.getComputedStyle ? global.getComputedStyle(el) : null;
+      if (cs && cs.display === 'none') return;
+      var r = el.getBoundingClientRect();
+      if (r && r.height > 0 && r.top < vh && r.bottom > 0) {
+        var occ = Math.ceil(vh - r.top);
+        if (occ > barOccupancy) barOccupancy = occ;
+      }
+    });
+    var rawBottom = Math.max(110, barOccupancy + 24);
+    var maxBottomCap = Math.max(110, Math.min(240, Math.floor(vh * 0.35)));
+    var bottomPad = Math.min(rawBottom, maxBottomCap);
+
+    return { top: topPad, right: 76, bottom: bottomPad, left: 44 };
+  }
+
+  function zoomOutToViewpoints_(map, validVps) {
+    if (!map || !validVps || !validVps.length) return;
+    var prevZ = (vpState.prevZoom != null && isFinite(vpState.prevZoom)) ? vpState.prevZoom : null;
+
+    if (validVps.length === 1) {
+      var vp0 = validVps[0];
+      var vpZ = Number(vp0.zoom) || 16;
+      var curZ = prevZ != null ? prevZ : 15;
+      var overviewZ = Math.max(10, Math.min(14, curZ - 2, vpZ - 2));
+      map.panTo({ lat: Number(vp0.lat), lng: Number(vp0.lng) });
+      map.setZoom(overviewZ);
+      return;
+    }
+
+    var bounds = new google.maps.LatLngBounds();
+    var minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+    validVps.forEach(function (v) {
+      var lat = Number(v.lat);
+      var lng = Number(v.lng);
+      bounds.extend({ lat: lat, lng: lng });
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+      if (lng < minLng) minLng = lng;
+      if (lng > maxLng) maxLng = lng;
+    });
+
+    var latSpan = maxLat - minLat;
+    var lngSpan = maxLng - minLng;
+    var maxOverviewZoom = Math.max(5, Math.min(15, (prevZ != null && prevZ > 12) ? (prevZ - 1) : 15));
+
+    if (latSpan < 0.0008 && lngSpan < 0.0008) {
+      var closeOverviewZ = Math.max(11, Math.min(14, (prevZ != null ? prevZ - 2 : 14)));
+      map.panTo(bounds.getCenter());
+      map.setZoom(closeOverviewZ);
+      return;
+    }
+
+    var pad = computeOverviewPadding_();
+    map.fitBounds(bounds, pad);
+
+    var clampZoomIfNeeded = function () {
+      if (!vpState.open || !vpState.map) return;
+      try {
+        var z = vpState.map.getZoom();
+        if (typeof z === 'number' && isFinite(z) && z > maxOverviewZoom) {
+          vpState.map.setZoom(maxOverviewZoom);
+        }
+      } catch (e) {}
+    };
+
+    vpState.boundsListener = google.maps.event.addListenerOnce(map, 'bounds_changed', clampZoomIfNeeded);
+    vpState.fitTimeout = setTimeout(clampZoomIfNeeded, 180);
+  }
+
+  function animateZoomToViewpoint_(map, lat, lng, targetZoom) {
+    clearVpAnimTimers_();
+    if (!map || typeof map.panTo !== 'function') return;
+
+    var curZoom = (typeof map.getZoom === 'function' && isFinite(map.getZoom())) ? map.getZoom() : targetZoom;
+    map.panTo({ lat: lat, lng: lng });
+
+    if (curZoom >= targetZoom) {
+      map.setZoom(targetZoom);
+      return;
+    }
+
+    vpState.animDragListener = google.maps.event.addListenerOnce(map, 'dragstart', function () {
+      clearVpAnimTimers_();
+    });
+
+    var diff = targetZoom - curZoom;
+    var steps = diff > 5 ? 5 : Math.max(1, Math.round(diff));
+    for (var s = 1; s <= steps; s++) {
+      (function (stepIdx) {
+        var timer = setTimeout(function () {
+          try {
+            if (stepIdx < steps) {
+              var nextZ = Math.round(curZoom + (diff * stepIdx) / steps);
+              map.setZoom(nextZ);
+            } else {
+              map.setCenter({ lat: lat, lng: lng });
+              map.setZoom(targetZoom);
+              clearVpAnimTimers_();
+            }
+          } catch (e) {
+            clearVpAnimTimers_();
+          }
+        }, 150 + (stepIdx - 1) * 105);
+        vpState.animTimers.push(timer);
+      })(s);
+    }
+  }
+
+  var ViewpointPicker = {
+    isOpen: function () {
+      return !!vpState.open;
+    },
+
+    close: function (opts) {
+      opts = opts || {};
+      var mapRef = vpState.map;
+      var restore = !!opts.restoreView && !vpState.userInteracted && vpState.prevCenter && mapRef;
+      var prevCenter = vpState.prevCenter;
+      var prevZoom = vpState.prevZoom;
+
+      vpState.open = false;
+      clearVpOpenTimersAndListeners_();
+
+      if (Array.isArray(vpState.overlays)) {
+        vpState.overlays.forEach(function (ov) {
+          try { ov.setMap(null); } catch (e) {}
+        });
+      }
+      vpState.overlays = [];
+
+      if (vpState.bannerEl) {
+        vpState.bannerEl.classList.remove('is-visible');
+      }
+      setViewpointToggleBtnActive_(false);
+
+      if (restore) {
+        try {
+          mapRef.panTo(prevCenter);
+          if (prevZoom != null && isFinite(prevZoom)) {
+            mapRef.setZoom(prevZoom);
+          }
+        } catch (e) {}
+      }
+
+      vpState.prevCenter = null;
+      vpState.prevZoom = null;
+      vpState.userInteracted = false;
+      vpState.onSelect = null;
+    },
+
+    open: function (map, viewpoints, opts) {
+      opts = opts || {};
+      if (!map || typeof map.setCenter !== 'function' || typeof google === 'undefined' || !google.maps) {
+        if (typeof global.customAlert === 'function') global.customAlert('地図が準備できていません');
+        return false;
+      }
+
+      var validVps = (Array.isArray(viewpoints) ? viewpoints : []).filter(function (v) {
+        if (!v) return false;
+        if (v.lat === null || v.lat === undefined || v.lat === '') return false;
+        if (v.lng === null || v.lng === undefined || v.lng === '') return false;
+        return isFinite(Number(v.lat)) && isFinite(Number(v.lng));
+      });
+
+      if (!validVps.length) {
+        if (typeof global.customAlert === 'function') global.customAlert('視野地点の座標が不正です');
+        return false;
+      }
+
+      clearVpAnimTimers_();
+      if (vpState.open) {
+        ViewpointPicker.close({ restoreView: false });
+      }
+
+      try {
+        if (global.infoWindow && typeof global.infoWindow.close === 'function') {
+          global.infoWindow.close();
+        }
+      } catch (e) {}
+
+      vpState.open = true;
+      vpState.map = map;
+      vpState.prevCenter = typeof map.getCenter === 'function' ? map.getCenter() : null;
+      vpState.prevZoom = typeof map.getZoom === 'function' ? map.getZoom() : null;
+      vpState.userInteracted = false;
+      vpState.onSelect = typeof opts.onSelect === 'function' ? opts.onSelect : null;
+
+      var PinClass = ensureViewpointPinOverlayClass_();
+      var onSelectCb = vpState.onSelect;
+
+      validVps.forEach(function (vp, idx) {
+        var ov = new PinClass(vp, idx, function (pickedVp, pickedIdx) {
+          var lat = Number(pickedVp.lat);
+          var lng = Number(pickedVp.lng);
+          var zoom = Number(pickedVp.zoom) || 16;
+          ViewpointPicker.close({ restoreView: false });
+          animateZoomToViewpoint_(map, lat, lng, zoom);
+          if (onSelectCb) {
+            try { onSelectCb(pickedVp, pickedIdx, validVps); } catch (e) {}
+          }
+        });
+        ov.setMap(map);
+        vpState.overlays.push(ov);
+      });
+
+      var banner = ensureBannerEl_();
+      var textEl = document.getElementById('viewpointPickerBannerText');
+      if (textEl) {
+        textEl.textContent = '🔭 ピンを押すと拡大（' + validVps.length + '地点）';
+      }
+      positionBanner_();
+      banner.classList.add('is-visible');
+      setViewpointToggleBtnActive_(true);
+
+      vpState.dragListener = google.maps.event.addListener(map, 'dragstart', function () {
+        vpState.userInteracted = true;
+      });
+      vpState.keyHandler = function (ev) {
+        if (ev && ev.key === 'Escape' && vpState.open) {
+          ViewpointPicker.close({ restoreView: true });
+        }
+      };
+      document.addEventListener('keydown', vpState.keyHandler);
+      vpState.resizeHandler = positionBanner_;
+      global.addEventListener('resize', vpState.resizeHandler);
+
+      zoomOutToViewpoints_(map, validVps);
+      return true;
+    },
+
+    toggle: function (map, viewpoints, opts) {
+      if (vpState.open) {
+        ViewpointPicker.close({ restoreView: true });
+        return false;
+      }
+      return ViewpointPicker.open(map, viewpoints, opts);
+    }
+  };
+
+  global.ViewpointPicker = ViewpointPicker;
 })(window);

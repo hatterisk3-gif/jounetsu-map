@@ -26,7 +26,7 @@
   </script>
 
   <link rel="stylesheet" href="worker.css?v=1788600000393">
-  <link rel="stylesheet" href="location-pin.css?v=1788600000301">
+  <link rel="stylesheet" href="location-pin.css?v=1788600000400">
   <link rel="stylesheet" href="map-filter.css?v=1788600000330">
   <style>
     @keyframes workerBootSpin {
@@ -267,12 +267,12 @@
   </div>
 
   <div id="mapActionBar" class="map-action-bar">
-    <button id="btnCurrentLocation" class="map-action-btn" style="color: #4285F4;">
-      📍
-    </button>
-    <button id="btnToggleViewpoint" class="map-action-btn" onclick="cycleNextViewpoint()" title="視野地点切替" aria-label="視野地点切替"
+    <button id="btnToggleViewpoint" class="map-action-btn" onclick="cycleNextViewpoint()" title="視野切替（拠点地点）"
       style="color: #6A1B9A;">
       🔭
+    </button>
+    <button id="btnCurrentLocation" class="map-action-btn" style="color: #4285F4;">
+      📍
     </button>
     <button id="btnMeasureRidge" class="map-action-btn" onclick="toggleMeasureToolMenu()" title="計測（距離・面積）"
       style="color: #00838F;">
@@ -887,12 +887,12 @@
   <script src="weather-agri.js?v=1788600000104"></script>
   <script src="api-client.js?v=1794881000001"></script>
   <script src="supabase-config.js?v=1788600000382"></script>
-  <script src="supabase-bridge.js?v=1788600000399"></script>
-  <script src="location-pin.js?v=1788600000301"></script>
+  <script src="supabase-bridge.js?v=1795333100000"></script>
+  <script src="location-pin.js?v=1788600000400"></script>
   <script src="map-filter.js?v=1794700000000"></script>
-  <script src="worker.js?v=1788600000399"></script>
+  <script src="worker.js?v=1788600000400"></script>
   <script src="maint-history.js?v=1794695000000"></script>
-  <script src="release-notes.js?v=1788600000399"></script>
+  <script src="release-notes.js?v=1788600000400"></script>
   <script src="tracking.js?v=1788600000323"></script>
   <script>
     if ('serviceWorker' in navigator) {

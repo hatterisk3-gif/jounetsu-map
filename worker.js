@@ -3607,6 +3607,11 @@ window.cycleNextViewpoint = function () {
     return;
   }
 
+  if (window.ViewpointPicker && typeof window.ViewpointPicker.isOpen === 'function' && window.ViewpointPicker.isOpen()) {
+    window.ViewpointPicker.close({ restoreView: true });
+    return;
+  }
+
   // 作業員のアカウントに紐づく拠点
   let userLoc = String(localStorage.getItem('passionMapUserLocation') || '').trim();
   if (!userLoc && Array.isArray(window.pdlUserLocations)) {
@@ -3712,6 +3717,18 @@ window.cycleNextViewpoint = function () {
   }
 
   if (!targetVps.length) return;
+
+  if (window.ViewpointPicker && typeof window.ViewpointPicker.open === 'function') {
+    window.ViewpointPicker.open(map, targetVps, {
+      onSelect: function (picked, idx, validList) {
+        window._currentViewpointIndex = idx;
+        if (typeof window.showViewpointToast === 'function') {
+          window.showViewpointToast(picked.name, idx + 1, validList.length, picked.location);
+        }
+      }
+    });
+    return;
+  }
 
   // 次のインデックスへ進める
   window._currentViewpointIndex = ((window._currentViewpointIndex != null ? window._currentViewpointIndex : -1) + 1) % targetVps.length;
@@ -4704,13 +4721,7 @@ window.renderFieldPhotosTable = (id) => {
     ? allPhotoRecords
     : allPhotoRecords.filter(item => item.data && Array.isArray(item.data.photoTags) && item.data.photoTags.includes(activeFilter));
 
-  let bodyHtml = `
-    <div style="margin-bottom:12px;">
-      <button type="button" onclick="renderFieldPhotoAddForm('${polyId}')" style="width:100%; padding:13px 16px; background:linear-gradient(135deg, #2E7D32 0%, #43A047 100%); color:white; border:none; border-radius:10px; font-weight:bold; font-size:15px; cursor:pointer; box-shadow:0 3px 8px rgba(46,125,50,0.28); display:flex; align-items:center; justify-content:center; gap:8px;">
-        <span style="font-size:18px;">➕</span> 写真とメモを追加する
-      </button>
-    </div>
-  `;
+  let bodyHtml = '';
 
   if (allPhotoRecords.length > 0) {
     let filterHtml = `
@@ -4741,7 +4752,7 @@ window.renderFieldPhotosTable = (id) => {
         <div style="font-size:42px; margin-bottom:10px;">📷</div>
         <div style="font-weight:bold; font-size:15px; color:#2E7D32; margin-bottom:6px;">登録された写真はまだありません</div>
         <div style="font-size:12px; color:#777; line-height:1.6;">
-          上の「写真とメモを追加する」ボタンから、<br>この圃場の写真・タグ・メモを登録してください。
+          下の「写真を追加する」ボタンから、<br>この圃場の写真・タグ・メモを登録してください。
         </div>
       </div>
     `;
@@ -5040,6 +5051,29 @@ window.renderFieldPhotoAddForm = (id, editRecordId) => {
         📍 ${window.fieldPhotoEditingRecordId ? '編集中' : '登録対象'}: ${escapeHtmlFieldPhoto_(p.name)}
       </div>
 
+      <!-- タイトル入力欄 -->
+      <label class="form-label" style="margin-top:0; color:#333; font-size:14px; font-weight:bold;">
+        📌 タイトル <span style="color:#888; font-size:11px; font-weight:normal;">(任意)</span>
+      </label>
+      <input type="text" id="field_photo_title_input" class="form-input" value="${escapeHtmlFieldPhoto_(defaultTitleVal)}" placeholder="例：東側畝の定植後、害虫発生状況 など..." style="width:100%; box-sizing:border-box; padding:10px; border:1px solid #ccc; border-radius:8px; font-size:14px; font-weight:bold; margin-bottom:16px;">
+
+      <!-- タグ選択＆手入力追加 -->
+      <div style="margin-bottom:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; gap:8px;">
+          <label class="form-label" style="color:#333; font-size:14px; font-weight:bold; margin:0;">
+            🏷️ タグ <span style="color:#888; font-size:11px; font-weight:normal;">(複数選択・手入力追加可)</span>
+          </label>
+          <button type="button" id="field_photo_tag_edit_mode_btn" onclick="toggleFieldPhotoTagEditMode()" style="background:#f5f7f8; color:#455A64; border:1px solid #cfd8dc; border-radius:14px; padding:4px 10px; font-size:11px; font-weight:bold; cursor:pointer; white-space:nowrap;">
+            ✏️ 編集・削除
+          </button>
+        </div>
+        <div id="field_photo_tags_wrap" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;"></div>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="field_photo_custom_tag_input" class="form-input" placeholder="＋ その他タグを手入力..." style="flex:1; margin-bottom:0; padding:8px 10px; font-size:13px; border:1px solid #cfd8dc; border-radius:8px;" onkeydown="if(event.key==='Enter'){event.preventDefault();addCustomFieldPhotoTag();}">
+          <button type="button" onclick="addCustomFieldPhotoTag()" style="background:#546E7A; color:#fff; border:none; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋ 追加</button>
+        </div>
+      </div>
+
       <!-- 写真選択ボタン -->
       <label class="form-label" style="margin-top:0; color:#2E7D32; font-size:14px; font-weight:bold;">
         📷 写真を選択 / 撮影 <span style="color:#d32f2f; font-size:11px;">(必須)</span>
@@ -5063,29 +5097,6 @@ window.renderFieldPhotoAddForm = (id, editRecordId) => {
       <div id="field_photos_preview_box" style="display:flex; gap:12px; overflow-x:auto; padding:10px 8px; min-height:55px; margin-bottom:16px; border:2px dashed #C8E6C9; border-radius:8px; background:#FAFAFA; align-items:center;">
         <span style="color:#999; font-size:12px; width:100%; text-align:center;">ここに撮影または選択した写真が表示されます</span>
       </div>
-
-      <!-- タグ選択＆手入力追加 -->
-      <div style="margin-bottom:16px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; gap:8px;">
-          <label class="form-label" style="color:#333; font-size:14px; font-weight:bold; margin:0;">
-            🏷️ タグ <span style="color:#888; font-size:11px; font-weight:normal;">(複数選択・手入力追加可)</span>
-          </label>
-          <button type="button" id="field_photo_tag_edit_mode_btn" onclick="toggleFieldPhotoTagEditMode()" style="background:#f5f7f8; color:#455A64; border:1px solid #cfd8dc; border-radius:14px; padding:4px 10px; font-size:11px; font-weight:bold; cursor:pointer; white-space:nowrap;">
-            ✏️ 編集・削除
-          </button>
-        </div>
-        <div id="field_photo_tags_wrap" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;"></div>
-        <div style="display:flex; gap:6px;">
-          <input type="text" id="field_photo_custom_tag_input" class="form-input" placeholder="＋ その他タグを手入力..." style="flex:1; margin-bottom:0; padding:8px 10px; font-size:13px; border:1px solid #cfd8dc; border-radius:8px;" onkeydown="if(event.key==='Enter'){event.preventDefault();addCustomFieldPhotoTag();}">
-          <button type="button" onclick="addCustomFieldPhotoTag()" style="background:#546E7A; color:#fff; border:none; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">＋ 追加</button>
-        </div>
-      </div>
-
-      <!-- タイトル入力欄 -->
-      <label class="form-label" style="color:#333; font-size:14px; font-weight:bold;">
-        📌 タイトル <span style="color:#888; font-size:11px; font-weight:normal;">(任意)</span>
-      </label>
-      <input type="text" id="field_photo_title_input" class="form-input" value="${escapeHtmlFieldPhoto_(defaultTitleVal)}" placeholder="例：東側畝の定植後、害虫発生状況 など..." style="width:100%; box-sizing:border-box; padding:10px; border:1px solid #ccc; border-radius:8px; font-size:14px; font-weight:bold; margin-bottom:16px;">
 
       <!-- メモ入力欄 -->
       <label class="form-label" style="color:#333; font-size:14px; font-weight:bold;">
