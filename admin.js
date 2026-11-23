@@ -11520,6 +11520,10 @@ window.pickAdminRegPlus_ = (kind) => {
         if (btn) btn.click();
     } else if (kind === 'location') {
         if (typeof window.startLocationPinMode_ === 'function') window.startLocationPinMode_();
+    } else if (kind === 'member') {
+        window._equipmentManageActive = false;
+        currentActiveMasterType = 'member';
+        if (typeof window.openMasterModal === 'function') window.openMasterModal();
     } else if (kind === 'viewpoint') {
         if (typeof window.startViewpointPickMode_ === 'function') window.startViewpointPickMode_();
     } else if (kind === 'equipment') {

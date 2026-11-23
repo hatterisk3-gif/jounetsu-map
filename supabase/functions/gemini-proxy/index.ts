@@ -186,6 +186,170 @@ JSONのみ:
   });
 }
 
+const ANALYSIS_TYPE_DESCRIPTIONS: Record<string, string> = {
+  general: "総合診断（生育状態・栄養バランス・病害虫・環境要因・今後の管理ポイントをバランスよく診断）",
+  pest_disease: "病害虫・生理障害・異常箇所の特定を最優先（葉の変色・斑点・害虫・水ストレス・生理障害の見分け方と原因候補を詳しく整理）",
+  growth_compare: "複数枚・時系列での生育比較と変化分析（良化/悪化の傾向、栄養状態の推移、株間のばらつきを比較）",
+  action_plan: "現場で今すぐ取れる対策・管理作業・経過観察手順の提案（優先度付きの具体的な作業ステップを中心に提案）",
+};
+
+const VALID_SEVERITIES = new Set(["良好", "経過観察", "注意", "要対応"]);
+const VALID_LEVELS = new Set(["高", "中", "低"]);
+
+function sanitizePhotoAnalysisResult(raw: unknown, model: string) {
+  const obj = (raw && typeof raw === "object") ? (raw as Record<string, unknown>) : {};
+  const sevRaw = String(obj.severity || "").trim();
+  const severity = VALID_SEVERITIES.has(sevRaw) ? sevRaw : "経過観察";
+  const pickLevel = (v: unknown) => {
+    const s = String(v || "").trim();
+    return VALID_LEVELS.has(s) ? s : "中";
+  };
+
+  const observations = Array.isArray(obj.observations)
+    ? obj.observations
+      .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+      .map((x, idx) => ({
+        photoIndex: Math.max(1, Number(x.photoIndex) || idx + 1),
+        finding: String(x.finding || "").trim(),
+      }))
+      .filter((x) => x.finding.length > 0)
+    : [];
+
+  const possibleCauses = Array.isArray(obj.possibleCauses)
+    ? obj.possibleCauses
+      .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+      .map((x) => ({
+        name: String(x.name || "").trim(),
+        likelihood: pickLevel(x.likelihood),
+        reason: String(x.reason || "").trim(),
+      }))
+      .filter((x) => x.name.length > 0 || x.reason.length > 0)
+    : [];
+
+  const recommendedActions = Array.isArray(obj.recommendedActions)
+    ? obj.recommendedActions
+      .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+      .map((x) => ({
+        priority: pickLevel(x.priority),
+        action: String(x.action || "").trim(),
+        detail: String(x.detail || "").trim(),
+      }))
+      .filter((x) => x.action.length > 0 || x.detail.length > 0)
+    : [];
+
+  const checkPoints = Array.isArray(obj.checkPoints)
+    ? obj.checkPoints.map((x) => String(x || "").trim()).filter(Boolean)
+    : [];
+
+  return {
+    title: String(obj.title || "圃場写真AI診断").trim().slice(0, 60),
+    summary: String(obj.summary || "").trim(),
+    severity,
+    cropGuessed: String(obj.cropGuessed || "").trim(),
+    observations,
+    possibleCauses,
+    recommendedActions,
+    checkPoints,
+    followUpNote: String(obj.followUpNote || "").trim(),
+    analyzedAt: formatJstTimestamp(),
+    model,
+  };
+}
+
+async function handleAnalyzeFieldPhotosWithGemini(
+  apiKey: string,
+  model: string,
+  params: Record<string, unknown>,
+) {
+  const MAX_PHOTOS = 6;
+  const rawImages = Array.isArray(params.images) ? params.images.slice(0, MAX_PHOTOS) : [];
+  const validImages = rawImages.filter(
+    (img): img is Record<string, unknown> =>
+      !!img && typeof img === "object" && typeof (img as Record<string, unknown>).base64Data === "string" && String((img as Record<string, unknown>).base64Data).trim().length > 0,
+  );
+  if (validImages.length === 0) {
+    throw new Error("分析する写真データがありません。");
+  }
+
+  const fieldName = String(params.fieldName || "").trim();
+  const fieldInfo = (params.fieldInfo && typeof params.fieldInfo === "object")
+    ? (params.fieldInfo as Record<string, unknown>)
+    : {};
+  const analysisType = String(params.analysisType || "general").trim();
+  const analysisFocus = ANALYSIS_TYPE_DESCRIPTIONS[analysisType] || ANALYSIS_TYPE_DESCRIPTIONS.general;
+  const userQuestion = String(params.userQuestion || "").trim();
+  const includeMemo = params.includeMemo !== false;
+
+  const fieldLines: string[] = [];
+  if (fieldName) fieldLines.push(`- 圃場名: ${fieldName}`);
+  if (fieldInfo.crop) fieldLines.push(`- 登録作物: ${String(fieldInfo.crop).trim()}`);
+  if (fieldInfo.condition) fieldLines.push(`- 圃場状態: ${String(fieldInfo.condition).trim()}`);
+  if (fieldInfo.soilType) fieldLines.push(`- 土壌タイプ: ${String(fieldInfo.soilType).trim()}`);
+  if (fieldInfo.area) fieldLines.push(`- 面積: ${String(fieldInfo.area).trim()}`);
+
+  const photoMetaLines = validImages.map((img, idx) => {
+    const bits: string[] = [`写真${idx + 1}`];
+    if (img.date) bits.push(`撮影日:${String(img.date).trim()}`);
+    if (includeMemo && img.title) bits.push(`タイトル:${String(img.title).trim()}`);
+    if (includeMemo && Array.isArray(img.tags) && img.tags.length) {
+      bits.push(`タグ:${img.tags.map((t) => String(t || "").trim()).filter(Boolean).join(",")}`);
+    }
+    if (includeMemo && img.memo) bits.push(`メモ:${String(img.memo).trim()}`);
+    return `- ${bits.join(" / ")}`;
+  });
+
+  const prompt = `あなたは熟練の日本の営農指導員・植物医師です。添付された圃場・作物の写真を観察し、農業現場で実務に役立つ日本語の診断レポートをJSONのみで出力してください。
+
+【分析の重点】
+${analysisFocus}
+
+【圃場情報】
+${fieldLines.length ? fieldLines.join("\n") : "- 特記なし"}
+
+【添付写真のメタ情報（計${validImages.length}枚）】
+${photoMetaLines.join("\n")}
+
+${userQuestion ? `【ユーザーからの気になる点・質問】\n${userQuestion}\n` : ""}
+【重要な観察・安全ルール】
+1. 写真上に手書きの赤丸・矢印・文字などのマーキングがある場合は、その印が付いた部位を最優先で詳しく観察し、添付メモがあれば内容と照合してください。
+2. 映像から断定できない病害虫名・栄養欠乏・障害を1つに決めつけず、根拠を示したうえで可能性のある要因を挙げてください。
+3. 未確認の登録農薬名・希釈倍率・適用作物を捏造して断定しないでください。農薬散布に言及する場合は「対象作物に登録のある適用薬剤をラベル・農薬登録情報で確認のうえ使用」と明記し、耕種的防除や施肥・潅水・環境改善も含めて実践的に提案してください。
+4. 出力は下記のJSON形式のみ（コードブロックや前置き文章は不要）。
+
+{
+  "title": "短い診断タイトル（30文字以内）",
+  "summary": "全体の総合所見（2〜4文）",
+  "severity": "良好 | 経過観察 | 注意 | 要対応",
+  "cropGuessed": "推定または記録された作物名（不明なら空文字）",
+  "observations": [{ "photoIndex": 1, "finding": "写真ごとの観察内容" }],
+  "possibleCauses": [{ "name": "原因・要因名", "likelihood": "高 | 中 | 低", "reason": "根拠・説明" }],
+  "recommendedActions": [{ "priority": "高 | 中 | 低", "action": "対策タイトル", "detail": "具体的な手順・注意点" }],
+  "checkPoints": ["現地で確認したいポイント"],
+  "followUpNote": "次回撮影・経過観察のポイント"
+}`;
+
+  const payloadParts: Array<Record<string, unknown>> = [{ text: prompt }];
+  for (const img of validImages) {
+    payloadParts.push({
+      inlineData: {
+        mimeType: String(img.mimeType || "image/jpeg"),
+        data: String(img.base64Data),
+      },
+    });
+  }
+
+  const parsed = await callGeminiApi(apiKey, model, {
+    contents: [{ parts: payloadParts }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      maxOutputTokens: 8192,
+      temperature: 0.2,
+    },
+  });
+
+  return sanitizePhotoAnalysisResult(parsed, model);
+}
+
 Deno.serve(async (req: Request) => {
   const preflight = handleCorsPreflight(req);
   if (preflight) return preflight;
@@ -217,7 +381,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const model = Deno.env.get("GEMINI_MODEL")?.trim() || "gemini-3.5-flash";
+    const model = Deno.env.get("GEMINI_MODEL")?.trim() || "gemini-4-neon";
     const action = String((body as Record<string, unknown>).action || "").trim();
     const rawParams = (body as Record<string, unknown>).params;
     const params: Record<string, unknown> =
@@ -232,6 +396,9 @@ Deno.serve(async (req: Request) => {
         break;
       case "parseCropImageWithGemini":
         data = await handleParseCropImageWithGemini(apiKey, model, params);
+        break;
+      case "analyzeFieldPhotosWithGemini":
+        data = await handleAnalyzeFieldPhotosWithGemini(apiKey, model, params);
         break;
       default:
         return jsonResponse(

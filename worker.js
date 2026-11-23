@@ -4455,6 +4455,19 @@ window.fieldPhotoPendingFiles = [];
 window.fieldPhotoSelectedTags = [];
 window.fieldPhotoActiveFilterTag = 'ALL';
 window.fieldPhotoTagEditMode = false;
+window.fieldPhotoSelectMode = false;
+window.fieldPhotoSelectedItems = [];
+window.fieldPhotoAnalysisState = null;
+
+const FIELD_PHOTO_MAX_AI_PHOTOS_ = 6;
+const FIELD_PHOTO_ANALYSIS_TYPES_ = [
+  { id: 'general', label: '🔬 総合診断', desc: '生育・栄養・病害虫・環境を総合的に確認' },
+  { id: 'pest_disease', label: '🐛 病害虫・異常', desc: '病斑・害虫・生理障害や欠乏症の原因を特定' },
+  { id: 'growth_compare', label: '📈 生育・変化比較', desc: '複数枚の写真から生育差や時系列変化を比較' },
+  { id: 'action_plan', label: '🛠️ 対策・管理提案', desc: '現場で確認すべき点と優先対策を提案' }
+];
+const FIELD_PHOTO_AI_SAVED_TAG_ = 'AI分析';
+const FIELD_PHOTO_AI_FILTER_KEY_ = '__AI_ANALYSIS__';
 
 const FIELD_PHOTO_DEFAULT_TAGS_ = ['生育記録', '圃場状況'];
 const FIELD_PHOTO_CUSTOM_TAGS_KEY_ = 'passionMap_fieldPhotoCustomTags';
@@ -4634,6 +4647,43 @@ function clearFieldPhotoPendingFiles_() {
   window.fieldPhotoPendingFiles = [];
 }
 
+function escapeJsSingleFieldPhoto_(str) {
+  return String(str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+function getFieldPhotoRecordSortTs_(item) {
+  if (!item) return 0;
+  const rawDate = String(item.date || (item.data && (item.data.photoDate || item.data.workDate)) || '').trim().replace(/\//g, '-');
+  const rawTime = String(item.time || (item.data && (item.data.photoTime || item.data.startTime)) || '00:00').trim();
+  if (!rawDate || rawDate === '-') return 0;
+  const t = new Date(rawDate + 'T' + (rawTime || '00:00') + ':00').getTime();
+  return isNaN(t) ? 0 : t;
+}
+
+function sortFieldPhotoRecordsDesc_(list) {
+  return (Array.isArray(list) ? list.slice() : []).sort((a, b) => {
+    if (a && a._isSaving && !(b && b._isSaving)) return -1;
+    if (!(a && a._isSaving) && b && b._isSaving) return 1;
+    return getFieldPhotoRecordSortTs_(b) - getFieldPhotoRecordSortTs_(a);
+  });
+}
+
+function extractFieldPhotoRecordMeta_(item) {
+  const urls = (item && Array.isArray(item.urls) && item.urls.length)
+    ? item.urls
+    : (item && item.url ? [item.url] : []);
+  const data = (item && item.data && typeof item.data === 'object') ? item.data : {};
+  const tags = Array.isArray(data.photoTags) ? data.photoTags.filter(Boolean) : [];
+  const photoTitle = (data.photoTitle || data.title) ? String(data.photoTitle || data.title).trim() : '';
+  let memo = (data.notes || data.memo || data.comment) ? String(data.notes || data.memo || data.comment).trim() : '';
+  if (!memo && data.workName) {
+    memo = `作業: ${data.workName}`;
+  } else if (!memo && data.crop) {
+    memo = `作物: ${data.crop}`;
+  }
+  return { urls, tags, photoTitle, memo };
+}
+
 window.refreshPolygonPhotos = async (id) => {
   const polyId = id || activePolyId;
   if (!polyId || !loadedPolygons[polyId]) return;
@@ -4654,7 +4704,8 @@ window.refreshPolygonPhotos = async (id) => {
     }
     const panel = document.getElementById('rightPanel');
     const isPhotoFormOpen = !!document.getElementById('field_photo_memo_input');
-    if (activePolyId === polyId && panel && panel.classList.contains('open') && !isPhotoFormOpen) {
+    const isAnalysisOpen = !!document.getElementById('field_photo_analysis_root');
+    if (activePolyId === polyId && panel && panel.classList.contains('open') && !isPhotoFormOpen && !isAnalysisOpen && !window.fieldPhotoSelectMode) {
       const titleText = document.getElementById('rightPanelTitle')?.innerText || '';
       if (titleText.includes('写真一覧')) {
         window.renderFieldPhotosTable(polyId);
@@ -4673,6 +4724,9 @@ window.openFieldPhotosList = (id) => {
   activePolyId = id;
   clearFieldPhotoPendingFiles_();
   window.fieldPhotoActiveFilterTag = 'ALL';
+  window.fieldPhotoSelectMode = false;
+  window.fieldPhotoSelectedItems = [];
+  window.fieldPhotoAnalysisState = null;
   window.renderFieldPhotosTable(id);
   const panel = document.getElementById('rightPanel');
   if (panel) panel.classList.add('open');
@@ -4686,6 +4740,1152 @@ window.setFieldPhotoFilterTag = (tag, polyId) => {
   window.renderFieldPhotosTable(polyId);
 };
 
+window.getFieldPhotoSeverityStyle_ = (severity) => {
+  const s = String(severity || '').trim();
+  if (s === '要対応') return { bg: '#FFEBEE', color: '#C62828', border: '#EF9A9A', icon: '🚨' };
+  if (s === '注意') return { bg: '#FFF3E0', color: '#E65100', border: '#FFCC80', icon: '⚠️' };
+  if (s === '良好') return { bg: '#E8F5E9', color: '#2E7D32', border: '#A5D6A7', icon: '✅' };
+  return { bg: '#E3F2FD', color: '#1565C0', border: '#90CAF9', icon: '👀' };
+};
+
+window.getFieldPhotoAnalysisTypeLabel_ = (typeId) => {
+  const found = FIELD_PHOTO_ANALYSIS_TYPES_.find(t => t.id === typeId);
+  return found ? found.label : '🔬 総合診断';
+};
+
+window.normalizeFieldPhotoAnalysisResult_ = (raw) => {
+  const src = (raw && typeof raw === 'object') ? raw : {};
+  const sevRaw = String(src.severity || '').trim();
+  const severity = ['良好', '経過観察', '注意', '要対応'].includes(sevRaw) ? sevRaw : '経過観察';
+  const normLevel = (v) => (['高', '中', '低'].includes(String(v || '').trim()) ? String(v).trim() : '中');
+  const observations = Array.isArray(src.observations)
+    ? src.observations
+      .filter(x => x && typeof x === 'object')
+      .map((x, idx) => ({
+        photoIndex: Math.max(1, Number(x.photoIndex) || (idx + 1)),
+        finding: String(x.finding || '').trim()
+      }))
+      .filter(x => x.finding)
+    : [];
+  const possibleCauses = Array.isArray(src.possibleCauses)
+    ? src.possibleCauses
+      .filter(x => x && typeof x === 'object')
+      .map(x => ({
+        name: String(x.name || '').trim(),
+        likelihood: normLevel(x.likelihood),
+        reason: String(x.reason || '').trim()
+      }))
+      .filter(x => x.name || x.reason)
+    : [];
+  const recommendedActions = Array.isArray(src.recommendedActions)
+    ? src.recommendedActions
+      .filter(x => x && typeof x === 'object')
+      .map(x => ({
+        priority: normLevel(x.priority),
+        action: String(x.action || '').trim(),
+        detail: String(x.detail || '').trim()
+      }))
+      .filter(x => x.action || x.detail)
+    : [];
+  const checkPoints = Array.isArray(src.checkPoints)
+    ? src.checkPoints.map(x => String(x || '').trim()).filter(Boolean)
+    : [];
+  return {
+    title: String(src.title || '圃場写真AI診断').trim(),
+    summary: String(src.summary || '').trim(),
+    severity,
+    cropGuessed: String(src.cropGuessed || '').trim(),
+    observations,
+    possibleCauses,
+    recommendedActions,
+    checkPoints,
+    followUpNote: String(src.followUpNote || '').trim(),
+    analyzedAt: String(src.analyzedAt || '').trim(),
+    model: String(src.model || '').trim()
+  };
+};
+
+window.formatFieldPhotoAnalysisPlainText_ = (analysis, meta) => {
+  const a = window.normalizeFieldPhotoAnalysisResult_(analysis);
+  const m = (meta && typeof meta === 'object') ? meta : {};
+  const lines = [];
+  if (m.fieldName) lines.push(`【圃場】${m.fieldName}`);
+  lines.push(`【診断タイトル】${a.title}`);
+  lines.push(`【判定】${a.severity}${a.cropGuessed ? ` / 作物: ${a.cropGuessed}` : ''}`);
+  if (m.analysisType) lines.push(`【分析種別】${window.getFieldPhotoAnalysisTypeLabel_(m.analysisType)}`);
+  if (a.analyzedAt) lines.push(`【分析日時】${a.analyzedAt}`);
+  if (m.userQuestion) lines.push(`【質問・観点】${m.userQuestion}`);
+  lines.push('');
+  if (a.summary) {
+    lines.push('■ 総合所見');
+    lines.push(a.summary);
+    lines.push('');
+  }
+  if (a.observations.length) {
+    lines.push('■ 写真ごとの観察');
+    a.observations.forEach(o => {
+      lines.push(`・写真${o.photoIndex}: ${o.finding}`);
+    });
+    lines.push('');
+  }
+  if (a.possibleCauses.length) {
+    lines.push('■ 考えられる原因・要因');
+    a.possibleCauses.forEach(c => {
+      lines.push(`・[可能性:${c.likelihood}] ${c.name}${c.reason ? ` — ${c.reason}` : ''}`);
+    });
+    lines.push('');
+  }
+  if (a.recommendedActions.length) {
+    lines.push('■ 推奨される対策・対応');
+    a.recommendedActions.forEach(r => {
+      lines.push(`・[優先度:${r.priority}] ${r.action}${r.detail ? ` — ${r.detail}` : ''}`);
+    });
+    lines.push('');
+  }
+  if (a.checkPoints.length) {
+    lines.push('■ 現地確認ポイント');
+    a.checkPoints.forEach(pt => lines.push(`・${pt}`));
+    lines.push('');
+  }
+  if (a.followUpNote) {
+    lines.push('■ 経過観察のポイント');
+    lines.push(a.followUpNote);
+    lines.push('');
+  }
+  if (m.notes) {
+    lines.push('■ ユーザーメモ');
+    lines.push(m.notes);
+  }
+  return lines.join('\n').trim();
+};
+
+function copyFieldPhotoTextToClipboard_(text) {
+  const txt = String(text || '');
+  if (!txt) return Promise.resolve(false);
+  if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    return navigator.clipboard.writeText(txt).then(() => true).catch(() => {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = txt;
+        ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        ta.remove();
+        return !!ok;
+      } catch (e) {
+        return false;
+      }
+    });
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = txt;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return Promise.resolve(!!ok);
+  } catch (e) {
+    return Promise.resolve(false);
+  }
+}
+
+window.buildFieldPhotoAnalysisResultHtml_ = (analysis, analyzedPhotos) => {
+  const a = window.normalizeFieldPhotoAnalysisResult_(analysis);
+  const sev = window.getFieldPhotoSeverityStyle_(a.severity);
+  const esc = escapeHtmlFieldPhoto_;
+  const photos = Array.isArray(analyzedPhotos) ? analyzedPhotos : [];
+
+  const levelBadge = (lvl, prefix) => {
+    const l = String(lvl || '中');
+    const st = l === '高'
+      ? 'background:#FFEBEE; color:#C62828; border:1px solid #EF9A9A;'
+      : (l === '低'
+        ? 'background:#ECEFF1; color:#455A64; border:1px solid #CFD8DC;'
+        : 'background:#FFF3E0; color:#E65100; border:1px solid #FFCC80;');
+    return `<span style="display:inline-flex; align-items:center; font-size:10px; font-weight:bold; padding:2px 7px; border-radius:10px; ${st}">${esc(prefix + l)}</span>`;
+  };
+
+  let html = `
+    <div style="background:#fff; border:2px solid ${sev.border}; border-radius:12px; padding:14px; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+      <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px;">
+        <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px;">
+          <span style="display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:bold; padding:4px 10px; border-radius:14px; background:${sev.bg}; color:${sev.color}; border:1px solid ${sev.border};">
+            ${sev.icon} 状態: ${esc(a.severity)}
+          </span>
+          ${a.cropGuessed ? `<span style="display:inline-flex; align-items:center; font-size:11px; font-weight:bold; padding:3px 9px; border-radius:12px; background:#E8F5E9; color:#2E7D32; border:1px solid #A5D6A7;">🌱 ${esc(a.cropGuessed)}</span>` : ''}
+        </div>
+        ${a.analyzedAt ? `<span style="font-size:11px; color:#777;">🕒 ${esc(a.analyzedAt)}</span>` : ''}
+      </div>
+
+      <div style="font-size:16px; font-weight:bold; color:#1A237E; margin-bottom:10px; line-height:1.4;">${esc(a.title)}</div>
+
+      ${a.summary ? `
+        <div style="background:#F5F7FA; border-left:4px solid #5E35B1; border-radius:6px; padding:10px 12px; font-size:13px; color:#222; line-height:1.6; white-space:pre-wrap; margin-bottom:12px;">
+          ${esc(a.summary)}
+        </div>
+      ` : ''}
+  `;
+
+  if (a.observations.length) {
+    html += `
+      <div style="margin-bottom:12px;">
+        <div style="font-size:12px; font-weight:bold; color:#3949AB; margin-bottom:6px;">📷 写真ごとの観察</div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+    `;
+    a.observations.forEach(obs => {
+      const ph = photos[obs.photoIndex - 1] || null;
+      const thumbUrl = ph ? (ph.url || ph.fullUrl || '') : '';
+      const fullUrl = ph ? String(ph.fullUrl || ph.url || '').replace('sz=w800', 'sz=w1600') : '';
+      const jsFull = escapeJsSingleFieldPhoto_(fullUrl);
+      html += `
+        <div style="display:flex; gap:10px; align-items:flex-start; background:#FAFBFD; border:1px solid #E3E8EF; border-radius:8px; padding:8px 10px;">
+          ${thumbUrl ? `<img src="${esc(thumbUrl)}" onclick="openLightbox('${jsFull}')" style="width:46px; height:46px; object-fit:cover; border-radius:6px; border:1px solid #CFD8DC; flex-shrink:0; cursor:pointer;" onerror="this.style.display='none'" title="タップで拡大">` : ''}
+          <div style="min-width:0; flex:1;">
+            <div style="font-size:11px; font-weight:bold; color:#5E35B1; margin-bottom:2px;">写真 ${obs.photoIndex}${ph && ph.date ? `（${esc(ph.date)}）` : ''}</div>
+            <div style="font-size:12px; color:#333; line-height:1.5; white-space:pre-wrap;">${esc(obs.finding)}</div>
+          </div>
+        </div>
+      `;
+    });
+    html += `</div></div>`;
+  }
+
+  if (a.possibleCauses.length) {
+    html += `
+      <div style="margin-bottom:12px;">
+        <div style="font-size:12px; font-weight:bold; color:#BF360C; margin-bottom:6px;">🔎 考えられる原因・要因</div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+    `;
+    a.possibleCauses.forEach(c => {
+      html += `
+        <div style="background:#FFFBF7; border:1px solid #FFE0B2; border-radius:8px; padding:9px 11px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap; margin-bottom:4px;">
+            <span style="font-size:13px; font-weight:bold; color:#333;">${esc(c.name || '要因')}</span>
+            ${levelBadge(c.likelihood, '可能性: ')}
+          </div>
+          ${c.reason ? `<div style="font-size:12px; color:#444; line-height:1.5; white-space:pre-wrap;">${esc(c.reason)}</div>` : ''}
+        </div>
+      `;
+    });
+    html += `</div></div>`;
+  }
+
+  if (a.recommendedActions.length) {
+    html += `
+      <div style="margin-bottom:12px;">
+        <div style="font-size:12px; font-weight:bold; color:#1B5E20; margin-bottom:6px;">🛠️ 推奨される対策・対応</div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+    `;
+    a.recommendedActions.forEach(r => {
+      html += `
+        <div style="background:#F4FBF5; border:1px solid #C8E6C9; border-radius:8px; padding:9px 11px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap; margin-bottom:4px;">
+            <span style="font-size:13px; font-weight:bold; color:#1B5E20;">${esc(r.action || '対策')}</span>
+            ${levelBadge(r.priority, '優先度: ')}
+          </div>
+          ${r.detail ? `<div style="font-size:12px; color:#333; line-height:1.5; white-space:pre-wrap;">${esc(r.detail)}</div>` : ''}
+        </div>
+      `;
+    });
+    html += `</div></div>`;
+  }
+
+  if (a.checkPoints.length) {
+    html += `
+      <div style="margin-bottom:12px; background:#FFFDE7; border:1px solid #FFF59D; border-radius:8px; padding:10px 12px;">
+        <div style="font-size:12px; font-weight:bold; color:#F57F17; margin-bottom:5px;">☑️ 現地で確認したいポイント</div>
+        <ul style="margin:0; padding-left:18px; font-size:12px; color:#333; line-height:1.6;">
+          ${a.checkPoints.map(pt => `<li>${esc(pt)}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }
+
+  if (a.followUpNote) {
+    html += `
+      <div style="margin-bottom:10px; background:#E3F2FD; border:1px solid #BBDEFB; border-radius:8px; padding:9px 12px;">
+        <div style="font-size:11px; font-weight:bold; color:#1565C0; margin-bottom:3px;">📅 経過観察・次回撮影の目安</div>
+        <div style="font-size:12px; color:#222; line-height:1.5; white-space:pre-wrap;">${esc(a.followUpNote)}</div>
+      </div>
+    `;
+  }
+
+  html += `
+      <div style="font-size:11px; color:#666; background:#f5f5f5; border-radius:6px; padding:7px 10px; line-height:1.4;">
+        ※ AIによる画像診断の参考情報です。農薬を使用する場合は、必ず対象作物に登録のある適用薬剤・希釈倍率・使用時期を製品ラベルや最新の登録情報でご確認ください。
+      </div>
+    </div>
+  `;
+  return html;
+};
+
+window.buildSavedFieldPhotoAnalysisCardHtml_ = (item, polyId) => {
+  const esc = escapeHtmlFieldPhoto_;
+  const jsRecId = escapeJsSingleFieldPhoto_(item.id || '');
+  const jsPolyId = escapeJsSingleFieldPhoto_(polyId || '');
+  const d = (item && item.data && typeof item.data === 'object') ? item.data : {};
+  const pa = window.normalizeFieldPhotoAnalysisResult_(d.photoAnalysis || {});
+  const rawPa = (d.photoAnalysis && typeof d.photoAnalysis === 'object') ? d.photoAnalysis : {};
+  const analyzedPhotos = Array.isArray(rawPa.analyzedPhotos) ? rawPa.analyzedPhotos : [];
+  const sev = window.getFieldPhotoSeverityStyle_(pa.severity);
+  const isOwner = (item.author === currentUser || currentUser === 'システム');
+  const titleText = String(d.photoTitle || d.title || pa.title || 'AI写真分析').trim();
+  const userMemo = String(d.notes || d.memo || '').trim();
+  const topCause = pa.possibleCauses[0] ? pa.possibleCauses[0].name : '';
+  const topAction = pa.recommendedActions[0] ? pa.recommendedActions[0].action : '';
+
+  const thumbHtml = analyzedPhotos.length
+    ? `<div style="display:flex; gap:6px; overflow-x:auto; padding:4px 0 8px;">${analyzedPhotos.map((ph, idx) => {
+      const thumb = String((ph && (ph.url || ph.fullUrl)) || '').replace('sz=w1600', 'sz=w800');
+      const full = String((ph && (ph.fullUrl || ph.url)) || '').replace('sz=w800', 'sz=w1600');
+      if (!thumb) return '';
+      return `<img src="${esc(thumb)}" onclick="event.stopPropagation(); openLightbox('${escapeJsSingleFieldPhoto_(full)}')" style="width:52px; height:52px; object-fit:cover; border-radius:6px; border:1px solid #CE93D8; flex-shrink:0; cursor:pointer;" onerror="this.style.display='none'" title="分析対象写真 ${idx + 1}">`;
+    }).join('')}</div>`
+    : '';
+
+  return `
+    <div style="background:#fff; border-radius:12px; border:1px solid #D1C4E9; border-left:4px solid #5E35B1; padding:12px; box-shadow:0 2px 6px rgba(94,53,177,0.08);">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:8px;">
+        <div>
+          <div style="font-weight:bold; color:#222; font-size:13px;">📅 ${esc(item.date || '-')} <span style="color:#666; font-weight:normal; font-size:12px;">${esc(item.time || '')}</span></div>
+          <div style="color:#555; font-size:12px; margin-top:2px;">👤 ${esc(item.author || '-')}</div>
+        </div>
+        <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap; justify-content:flex-end;">
+          ${item._isSaving ? '<span style="font-size:11px; font-weight:bold; background:#E3F2FD; color:#1565C0; padding:2px 8px; border-radius:10px; border:1px solid #90CAF9;">⏳ 保存中...</span>' : ''}
+          <span style="display:inline-flex; align-items:center; font-size:11px; font-weight:bold; background:#EDE7F6; color:#5E35B1; padding:2px 8px; border-radius:10px; border:1px solid #B39DDB;">🤖 AI分析</span>
+          <span style="display:inline-flex; align-items:center; font-size:11px; font-weight:bold; background:${sev.bg}; color:${sev.color}; padding:2px 8px; border-radius:10px; border:1px solid ${sev.border};">${sev.icon} ${esc(pa.severity)}</span>
+          ${!item._isSaving ? `<button type="button" onclick="openSavedFieldPhotoAnalysis_('${jsRecId}', '${jsPolyId}')" style="background:#5E35B1; color:#fff; border:none; border-radius:6px; padding:4px 9px; font-size:11px; font-weight:bold; cursor:pointer;">📄 詳細</button>` : ''}
+          ${(!item._isSaving && isOwner) ? `<button type="button" onclick="deleteFieldPhotoRecord('${jsRecId}', '${jsPolyId}')" style="background:#FFEBEE; color:#C62828; border:1px solid #FFCDD2; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;" title="削除">🗑️ 削除</button>` : ''}
+        </div>
+      </div>
+
+      <div onclick="${!item._isSaving ? `openSavedFieldPhotoAnalysis_('${jsRecId}', '${jsPolyId}')` : ''}" style="cursor:${!item._isSaving ? 'pointer' : 'default'};">
+        <div style="font-size:15px; font-weight:bold; color:#4527A0; margin-bottom:6px; padding:6px 10px; background:#F5F0FF; border-radius:6px; line-height:1.4;">🤖 ${esc(titleText)}</div>
+        ${thumbHtml}
+        ${pa.summary ? `<div style="font-size:12.5px; color:#333; line-height:1.5; margin-bottom:8px; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;">${esc(pa.summary)}</div>` : ''}
+        ${(topCause || topAction || pa.cropGuessed) ? `
+          <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;">
+            ${pa.cropGuessed ? `<span style="font-size:11px; font-weight:bold; background:#E8F5E9; color:#2E7D32; border:1px solid #A5D6A7; border-radius:10px; padding:2px 8px;">🌱 ${esc(pa.cropGuessed)}</span>` : ''}
+            ${topCause ? `<span style="font-size:11px; font-weight:bold; background:#FFF3E0; color:#E65100; border:1px solid #FFCC80; border-radius:10px; padding:2px 8px;">🔎 ${esc(topCause)}</span>` : ''}
+            ${topAction ? `<span style="font-size:11px; font-weight:bold; background:#E8F5E9; color:#1B5E20; border:1px solid #A5D6A7; border-radius:10px; padding:2px 8px;">🛠️ ${esc(topAction)}</span>` : ''}
+          </div>
+        ` : ''}
+      </div>
+      ${userMemo ? `<div style="margin-top:6px; background:#f8faf9; border:1px solid #e8ecea; border-radius:8px; padding:8px 10px; white-space:pre-wrap; word-break:break-word; color:#222; font-size:12px; line-height:1.45;">📝 ${esc(userMemo)}</div>` : ''}
+    </div>
+  `;
+};
+
+window.enterFieldPhotoSelectMode_ = (polyId) => {
+  const pid = polyId || activePolyId;
+  if (window.fieldPhotoActiveFilterTag === FIELD_PHOTO_AI_FILTER_KEY_) {
+    window.fieldPhotoActiveFilterTag = 'ALL';
+  }
+  window.fieldPhotoSelectMode = true;
+  if (!Array.isArray(window.fieldPhotoSelectedItems)) window.fieldPhotoSelectedItems = [];
+  window.renderFieldPhotosTable(pid);
+};
+
+window.exitFieldPhotoSelectMode_ = (polyId) => {
+  const pid = polyId || activePolyId;
+  window.fieldPhotoSelectMode = false;
+  window.renderFieldPhotosTable(pid);
+};
+
+window.clearFieldPhotoAnalysisSelection_ = (polyId) => {
+  window.fieldPhotoSelectedItems = [];
+  window.renderFieldPhotosTable(polyId || activePolyId);
+};
+
+function makeFieldPhotoSelectedEntry_(item, uIdx) {
+  const meta = extractFieldPhotoRecordMeta_(item);
+  const url = meta.urls[uIdx];
+  if (!url) return null;
+  const fullUrl = String(url).replace('sz=w800', 'sz=w1600');
+  const recId = String(item.id || '');
+  return {
+    key: recId + '::' + uIdx,
+    recordId: recId,
+    urlIndex: uIdx,
+    url: String(url),
+    fullUrl,
+    date: String(item.date || '').trim(),
+    time: String(item.time || '').trim(),
+    author: String(item.author || '').trim(),
+    title: meta.photoTitle,
+    tags: meta.tags.slice(),
+    memo: meta.memo
+  };
+}
+
+window.toggleFieldPhotoAnalyzeSelect_ = (recordId, urlIdx, polyId) => {
+  const pid = polyId || activePolyId;
+  const p = loadedPolygons[pid];
+  if (!p || !Array.isArray(p.photos)) return;
+  const item = p.photos.find(x => x && String(x.id) === String(recordId));
+  if (!item) return;
+  const idxNum = Number(urlIdx) || 0;
+  const key = String(recordId) + '::' + idxNum;
+  if (!Array.isArray(window.fieldPhotoSelectedItems)) window.fieldPhotoSelectedItems = [];
+  const existIdx = window.fieldPhotoSelectedItems.findIndex(x => x && x.key === key);
+  if (existIdx >= 0) {
+    window.fieldPhotoSelectedItems.splice(existIdx, 1);
+  } else {
+    if (window.fieldPhotoSelectedItems.length >= FIELD_PHOTO_MAX_AI_PHOTOS_) {
+      if (typeof window.showRecordSyncToast === 'function') {
+        window.showRecordSyncToast(`分析に選べる写真は最大${FIELD_PHOTO_MAX_AI_PHOTOS_}枚までです`, 'warn');
+      } else if (typeof customAlert === 'function') {
+        customAlert(`分析に選べる写真は最大${FIELD_PHOTO_MAX_AI_PHOTOS_}枚までです。`);
+      }
+      return;
+    }
+    const entry = makeFieldPhotoSelectedEntry_(item, idxNum);
+    if (entry) window.fieldPhotoSelectedItems.push(entry);
+  }
+  window.renderFieldPhotosTable(pid);
+};
+
+window.toggleFieldPhotoCardSelectAll_ = (recordId, polyId) => {
+  const pid = polyId || activePolyId;
+  const p = loadedPolygons[pid];
+  if (!p || !Array.isArray(p.photos)) return;
+  const item = p.photos.find(x => x && String(x.id) === String(recordId));
+  if (!item) return;
+  const { urls } = extractFieldPhotoRecordMeta_(item);
+  if (!urls.length) return;
+  if (!Array.isArray(window.fieldPhotoSelectedItems)) window.fieldPhotoSelectedItems = [];
+
+  const keys = urls.map((_, idx) => String(recordId) + '::' + idx);
+  const allSelected = keys.every(k => window.fieldPhotoSelectedItems.some(s => s && s.key === k));
+  if (allSelected) {
+    window.fieldPhotoSelectedItems = window.fieldPhotoSelectedItems.filter(s => !s || keys.indexOf(s.key) < 0);
+  } else {
+    let capped = false;
+    urls.forEach((_, idx) => {
+      const k = String(recordId) + '::' + idx;
+      if (window.fieldPhotoSelectedItems.some(s => s && s.key === k)) return;
+      if (window.fieldPhotoSelectedItems.length >= FIELD_PHOTO_MAX_AI_PHOTOS_) {
+        capped = true;
+        return;
+      }
+      const entry = makeFieldPhotoSelectedEntry_(item, idx);
+      if (entry) window.fieldPhotoSelectedItems.push(entry);
+    });
+    if (capped && typeof window.showRecordSyncToast === 'function') {
+      window.showRecordSyncToast(`最大${FIELD_PHOTO_MAX_AI_PHOTOS_}枚までのため、先頭から追加しました`, 'warn');
+    }
+  }
+  window.renderFieldPhotosTable(pid);
+};
+
+window.startFieldPhotoAnalysisFromRecord_ = (recordId, polyId) => {
+  const pid = polyId || activePolyId;
+  const p = loadedPolygons[pid];
+  if (!p || !Array.isArray(p.photos)) return;
+  const item = p.photos.find(x => x && String(x.id) === String(recordId));
+  if (!item) return;
+  const { urls } = extractFieldPhotoRecordMeta_(item);
+  const entries = [];
+  for (let i = 0; i < urls.length && entries.length < FIELD_PHOTO_MAX_AI_PHOTOS_; i++) {
+    const entry = makeFieldPhotoSelectedEntry_(item, i);
+    if (entry) entries.push(entry);
+  }
+  if (!entries.length) {
+    customAlert('この投稿には選択できる写真がありません。');
+    return;
+  }
+  if (window.fieldPhotoActiveFilterTag === FIELD_PHOTO_AI_FILTER_KEY_) {
+    window.fieldPhotoActiveFilterTag = 'ALL';
+  }
+  window.fieldPhotoSelectedItems = entries;
+  window.fieldPhotoSelectMode = true;
+  if (urls.length > FIELD_PHOTO_MAX_AI_PHOTOS_ && typeof window.showRecordSyncToast === 'function') {
+    window.showRecordSyncToast(`最大${FIELD_PHOTO_MAX_AI_PHOTOS_}枚までのため、最初の${FIELD_PHOTO_MAX_AI_PHOTOS_}枚を選択しました`, 'warn');
+  }
+  window.renderFieldPhotosTable(pid);
+};
+
+async function loadFieldPhotoAsAiPayload_(rawUrl) {
+  const url = String(rawUrl || '').trim();
+  if (!url) throw new Error('写真URLが空です');
+
+  const drawImgToBase64 = (img) => {
+    const maxSide = 1024;
+    let w = img.naturalWidth || img.width || 1;
+    let h = img.naturalHeight || img.height || 1;
+    if (w > maxSide || h > maxSide) {
+      if (w >= h) {
+        h = Math.max(1, Math.round((h * maxSide) / w));
+        w = maxSide;
+      } else {
+        w = Math.max(1, Math.round((w * maxSide) / h));
+        h = maxSide;
+      }
+    }
+    const cvs = document.createElement('canvas');
+    cvs.width = w;
+    cvs.height = h;
+    const ctx = cvs.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    const dataUrl = cvs.toDataURL('image/jpeg', 0.80);
+    const commaIdx = dataUrl.indexOf(',');
+    if (commaIdx < 0) throw new Error('JPEG変換に失敗しました');
+    return { mimeType: 'image/jpeg', base64Data: dataUrl.slice(commaIdx + 1) };
+  };
+
+  const loadImg = (src, useCors) => new Promise((resolve, reject) => {
+    const img = new Image();
+    if (useCors) img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        resolve(drawImgToBase64(img));
+      } catch (err) {
+        reject(err);
+      }
+    };
+    img.onerror = () => reject(new Error('画像の読み込みに失敗しました'));
+    img.src = src;
+  });
+
+  try {
+    return await loadImg(url, url.indexOf('http') === 0);
+  } catch (directErr) {
+    if (url.indexOf('http') === 0) {
+      const b64Url = await callGAS('getDriveImageBase64', { url });
+      return await loadImg(b64Url, false);
+    }
+    throw directErr;
+  }
+}
+
+function getFieldContextForAiAnalysis_(p) {
+  if (!p) return {};
+  let crop = '';
+  if (typeof getCurrentCrop === 'function') {
+    crop = String(getCurrentCrop(p.photos) || '').trim();
+  }
+  if (!crop && Array.isArray(p.photos)) {
+    const sorted = sortFieldPhotoRecordsDesc_(p.photos);
+    for (const ph of sorted) {
+      if (ph && ph.data && ph.data.crop) {
+        crop = String(ph.data.crop).trim();
+        break;
+      }
+    }
+  }
+  return {
+    crop,
+    condition: String(p.condition || '').trim(),
+    soilType: String(p.soilType || '').trim(),
+    area: p.area ? `${p.area}㎡` : ''
+  };
+}
+
+function syncFieldPhotoAnalysisInputsFromDom_() {
+  const st = window.fieldPhotoAnalysisState;
+  if (!st) return;
+  const qEl = document.getElementById('field_photo_ai_question');
+  if (qEl) st.userQuestion = qEl.value;
+  const mEl = document.getElementById('field_photo_ai_include_memo');
+  if (mEl) st.includeMemo = !!mEl.checked;
+  const tEl = document.getElementById('field_photo_ai_save_title');
+  if (tEl) st.editTitle = tEl.value;
+  const nEl = document.getElementById('field_photo_ai_save_note');
+  if (nEl) st.saveNote = nEl.value;
+}
+
+window.openFieldPhotoAnalysisSetup_ = (polyId) => {
+  const pid = polyId || activePolyId;
+  const p = loadedPolygons[pid];
+  if (!p) {
+    customAlert('圃場が見つかりません。');
+    return;
+  }
+  const items = (Array.isArray(window.fieldPhotoSelectedItems) ? window.fieldPhotoSelectedItems : []).filter(Boolean);
+  if (!items.length) {
+    customAlert('分析したい写真を1枚以上選んでください。');
+    return;
+  }
+  if (items.length > FIELD_PHOTO_MAX_AI_PHOTOS_) {
+    customAlert(`分析できる写真は最大${FIELD_PHOTO_MAX_AI_PHOTOS_}枚までです。`);
+    return;
+  }
+  window.fieldPhotoSelectMode = false;
+  window.fieldPhotoAnalysisState = {
+    polyId: pid,
+    items: items.slice(0, FIELD_PHOTO_MAX_AI_PHOTOS_),
+    analysisType: 'general',
+    includeMemo: true,
+    userQuestion: '',
+    loading: false,
+    progressText: '',
+    error: '',
+    result: null,
+    editTitle: '',
+    saveNote: ''
+  };
+  window.renderFieldPhotoAnalysisView_(pid);
+};
+
+window.setFieldPhotoAnalysisType_ = (typeId, polyId) => {
+  syncFieldPhotoAnalysisInputsFromDom_();
+  if (window.fieldPhotoAnalysisState) {
+    window.fieldPhotoAnalysisState.analysisType = typeId || 'general';
+  }
+  window.renderFieldPhotoAnalysisView_(polyId || activePolyId);
+};
+
+window.toggleFieldPhotoAnalysisMemo_ = (checked, polyId) => {
+  syncFieldPhotoAnalysisInputsFromDom_();
+  if (window.fieldPhotoAnalysisState) {
+    window.fieldPhotoAnalysisState.includeMemo = !!checked;
+  }
+  window.renderFieldPhotoAnalysisView_(polyId || activePolyId);
+};
+
+window.removeFieldPhotoAnalysisItem_ = (idx, polyId) => {
+  syncFieldPhotoAnalysisInputsFromDom_();
+  const pid = polyId || activePolyId;
+  const st = window.fieldPhotoAnalysisState;
+  if (!st || !Array.isArray(st.items)) return;
+  const removed = st.items.splice(Number(idx), 1)[0];
+  if (removed && Array.isArray(window.fieldPhotoSelectedItems)) {
+    window.fieldPhotoSelectedItems = window.fieldPhotoSelectedItems.filter(x => x && x.key !== removed.key);
+  }
+  if (!st.items.length) {
+    window.enterFieldPhotoSelectMode_(pid);
+    return;
+  }
+  window.renderFieldPhotoAnalysisView_(pid);
+};
+
+window.returnToFieldPhotoSelectFromSetup_ = (polyId) => {
+  syncFieldPhotoAnalysisInputsFromDom_();
+  const pid = polyId || activePolyId;
+  const st = window.fieldPhotoAnalysisState;
+  if (st && Array.isArray(st.items)) {
+    window.fieldPhotoSelectedItems = st.items.slice();
+  }
+  window.enterFieldPhotoSelectMode_(pid);
+};
+
+window.renderFieldPhotoAnalysisView_ = (polyId) => {
+  const pid = polyId || (window.fieldPhotoAnalysisState && window.fieldPhotoAnalysisState.polyId) || activePolyId;
+  const p = loadedPolygons[pid];
+  const st = window.fieldPhotoAnalysisState;
+  if (!p || !st) {
+    window.renderFieldPhotosTable(pid);
+    return;
+  }
+  activePolyId = pid;
+  const esc = escapeHtmlFieldPhoto_;
+  const jsPid = escapeJsSingleFieldPhoto_(pid);
+
+  const titleEl = document.getElementById('rightPanelTitle');
+  if (titleEl) titleEl.innerText = `${p.name} - 🤖 写真AI分析`;
+
+  const thumbsHtml = st.items.map((it, idx) => {
+    const thumb = String(it.url || it.fullUrl || '').replace('sz=w1600', 'sz=w800');
+    const full = String(it.fullUrl || it.url || '').replace('sz=w800', 'sz=w1600');
+    return `
+      <div style="position:relative; flex-shrink:0; width:76px;">
+        <img src="${esc(thumb)}" onclick="openLightbox('${escapeJsSingleFieldPhoto_(full)}')" style="width:76px; height:76px; object-fit:cover; border-radius:8px; border:2px solid #B39DDB; display:block; cursor:pointer;" onerror="this.src='icon.png'" title="写真${idx + 1}（タップで拡大）">
+        <span style="position:absolute; top:4px; left:4px; background:#5E35B1; color:#fff; font-size:10px; font-weight:bold; padding:1px 6px; border-radius:10px;">${idx + 1}</span>
+        ${!st.loading ? `<button type="button" onclick="removeFieldPhotoAnalysisItem_(${idx}, '${jsPid}')" style="position:absolute; top:-6px; right:-6px; width:22px; height:22px; border-radius:50%; background:#F44336; color:#fff; border:none; font-size:12px; font-weight:bold; cursor:pointer; line-height:1;" title="外す">×</button>` : ''}
+      </div>
+    `;
+  }).join('');
+
+  const typeChipsHtml = FIELD_PHOTO_ANALYSIS_TYPES_.map(t => {
+    const on = st.analysisType === t.id;
+    return `
+      <button type="button" onclick="${st.loading ? '' : `setFieldPhotoAnalysisType_('${escapeJsSingleFieldPhoto_(t.id)}', '${jsPid}')`}" ${st.loading ? 'disabled' : ''} style="text-align:left; padding:8px 10px; border-radius:10px; border:2px solid ${on ? '#5E35B1' : '#D1C4E9'}; background:${on ? '#EDE7F6' : '#fff'}; color:${on ? '#4527A0' : '#444'}; cursor:${st.loading ? 'wait' : 'pointer'};">
+        <div style="font-size:12px; font-weight:bold;">${esc(t.label)}</div>
+        <div style="font-size:10px; color:#666; margin-top:2px; line-height:1.3;">${esc(t.desc)}</div>
+      </button>
+    `;
+  }).join('');
+
+  const memoSummaryItems = st.items
+    .map((it, idx) => {
+      const bits = [];
+      if (it.date) bits.push(it.date);
+      if (it.title) bits.push(`タイトル:${it.title}`);
+      if (Array.isArray(it.tags) && it.tags.length) bits.push(`#${it.tags.join(' #')}`);
+      if (it.memo) bits.push(it.memo);
+      return bits.length ? `写真${idx + 1}: ${bits.join(' / ')}` : '';
+    })
+    .filter(Boolean);
+
+  const memoPreviewHtml = (st.includeMemo && memoSummaryItems.length)
+    ? `<div style="margin-top:6px; background:#F8F9FA; border:1px solid #E0E0E0; border-radius:6px; padding:7px 9px; font-size:11px; color:#444; line-height:1.45; white-space:pre-wrap; max-height:110px; overflow-y:auto;">${esc(memoSummaryItems.join('\n'))}</div>`
+    : '';
+
+  let statusHtml = '';
+  if (st.loading) {
+    statusHtml = `
+      <div style="margin-top:12px; background:#EDE7F6; border:1px solid #B39DDB; border-radius:10px; padding:14px; text-align:center; color:#4527A0;">
+        <div style="font-size:22px; margin-bottom:6px;">🤖⏳</div>
+        <div id="field_photo_ai_progress_text" style="font-size:13px; font-weight:bold;">${esc(st.progressText || 'Gemini AI が写真を分析しています...')}</div>
+        <div style="font-size:11px; color:#5E35B1; margin-top:4px;">数十秒かかる場合があります。画面を閉じずにお待ちください。</div>
+      </div>
+    `;
+  } else if (st.error) {
+    statusHtml = `
+      <div style="margin-top:12px; background:#FFEBEE; border:1px solid #EF9A9A; border-radius:10px; padding:12px; color:#C62828;">
+        <div style="font-size:13px; font-weight:bold; margin-bottom:4px;">❌ AI分析に失敗しました</div>
+        <div style="font-size:12px; line-height:1.5; white-space:pre-wrap;">${esc(st.error)}</div>
+      </div>
+    `;
+  }
+
+  let resultSectionHtml = '';
+  if (st.result && !st.loading) {
+    const saveTitle = st.editTitle || st.result.title || 'AI写真分析';
+    resultSectionHtml = `
+      <div id="field_photo_ai_result_box" style="margin-top:14px;">
+        ${window.buildFieldPhotoAnalysisResultHtml_(st.result, st.items)}
+
+        <div style="margin-top:12px; background:#fff; border:2px solid #A5D6A7; border-radius:12px; padding:14px; box-shadow:0 2px 6px rgba(0,0,0,0.05);">
+          <div style="font-size:13px; font-weight:bold; color:#2E7D32; margin-bottom:10px;">💾 この分析結果を写真一覧へ保存</div>
+          <label class="form-label" style="font-size:12px; color:#333; margin:0 0 4px;">📌 保存タイトル</label>
+          <input type="text" id="field_photo_ai_save_title" class="form-input" value="${esc(saveTitle)}" style="margin-bottom:10px; font-size:13px; font-weight:bold; padding:9px 10px;">
+          <label class="form-label" style="font-size:12px; color:#333; margin:0 0 4px;">📝 補足メモ・実施した対応（任意）</label>
+          <textarea id="field_photo_ai_save_note" rows="3" class="form-input" placeholder="現地で確認したことや、これから行う対策メモなど..." style="margin-bottom:10px; font-size:13px; line-height:1.5; resize:vertical;">${esc(st.saveNote || '')}</textarea>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button type="button" onclick="saveFieldPhotoAnalysisResult_('${jsPid}')" style="flex:1; min-width:160px; background:#2E7D32; color:#fff; border:none; border-radius:8px; padding:11px 12px; font-size:14px; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(46,125,50,0.3);">
+              💾 分析結果を保存する
+            </button>
+            <button type="button" onclick="copyFieldPhotoAnalysisText_('current', '', '${jsPid}')" style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:11px 12px; font-size:13px; font-weight:bold; cursor:pointer;">
+              📋 コピー
+            </button>
+            <button type="button" onclick="runFieldPhotoAiAnalysis_('${jsPid}')" style="background:#EDE7F6; color:#5E35B1; border:1px solid #B39DDB; border-radius:8px; padding:11px 12px; font-size:13px; font-weight:bold; cursor:pointer;">
+              🔄 再分析
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  const contentEl = document.getElementById('rightPanelContent');
+  if (contentEl) {
+    contentEl.innerHTML = `
+      <div id="field_photo_analysis_root" style="padding:14px; background:#f4f6f8; min-height:100%; box-sizing:border-box;">
+        <div style="background:#fff; border-radius:12px; border:1px solid #D1C4E9; padding:14px; box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
+            <div style="font-size:13px; font-weight:bold; color:#4527A0;">📷 選択した写真 (${st.items.length}/${FIELD_PHOTO_MAX_AI_PHOTOS_}枚)</div>
+            ${!st.loading ? `<button type="button" onclick="returnToFieldPhotoSelectFromSetup_('${jsPid}')" style="background:#EDE7F6; color:#5E35B1; border:1px solid #B39DDB; border-radius:8px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer;">写真を選び直す</button>` : ''}
+          </div>
+          <div style="display:flex; gap:10px; overflow-x:auto; padding:6px 2px 4px; margin-bottom:12px;">
+            ${thumbsHtml}
+          </div>
+
+          <div style="font-size:12px; font-weight:bold; color:#333; margin-bottom:6px;">🎯 分析の観点</div>
+          <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; margin-bottom:12px;">
+            ${typeChipsHtml}
+          </div>
+
+          <label style="display:flex; align-items:center; gap:7px; font-size:12px; font-weight:bold; color:#333; cursor:pointer;">
+            <input type="checkbox" id="field_photo_ai_include_memo" ${st.includeMemo ? 'checked' : ''} ${st.loading ? 'disabled' : ''} onchange="toggleFieldPhotoAnalysisMemo_(this.checked, '${jsPid}')">
+            <span>記録のタイトル・タグ・メモもAIに渡す</span>
+          </label>
+          ${memoPreviewHtml}
+
+          <div style="margin-top:12px;">
+            <label class="form-label" style="font-size:12px; color:#333; margin:0 0 4px;">💬 気になる点・質問（任意）</label>
+            <textarea id="field_photo_ai_question" rows="2" class="form-input" ${st.loading ? 'disabled' : ''} placeholder="例：葉の黄変はマグネシウム欠乏か、他の原因か見極めたい など..." style="margin-bottom:10px; font-size:13px; line-height:1.45; resize:vertical;">${esc(st.userQuestion || '')}</textarea>
+          </div>
+
+          <button type="button" onclick="runFieldPhotoAiAnalysis_('${jsPid}')" ${st.loading ? 'disabled' : ''} style="width:100%; background:${st.loading ? '#9E9E9E' : 'linear-gradient(135deg, #5E35B1 0%, #3949AB 100%)'}; color:#fff; border:none; border-radius:8px; padding:12px; font-size:15px; font-weight:bold; cursor:${st.loading ? 'wait' : 'pointer'}; box-shadow:0 2px 6px rgba(94,53,177,0.3);">
+            ${st.loading ? '⏳ 分析中...' : (st.result ? '🔄 条件を変えて再分析する' : '🤖 AIで分析する')}
+          </button>
+
+          ${statusHtml}
+        </div>
+
+        ${resultSectionHtml}
+      </div>
+    `;
+  }
+
+  const footerEl = document.getElementById('rightPanelFooter');
+  if (footerEl) {
+    const primaryBtn = (st.result && !st.loading)
+      ? `<button type="button" onclick="saveFieldPhotoAnalysisResult_('${jsPid}')" style="background:#2E7D32; color:#fff; flex:1; padding:14px; border-radius:8px; border:none; font-weight:bold; cursor:pointer; font-size:15px;">💾 分析結果を保存する</button>`
+      : `<button type="button" onclick="runFieldPhotoAiAnalysis_('${jsPid}')" ${st.loading ? 'disabled' : ''} style="background:${st.loading ? '#9E9E9E' : '#5E35B1'}; color:#fff; flex:1; padding:14px; border-radius:8px; border:none; font-weight:bold; cursor:${st.loading ? 'wait' : 'pointer'}; font-size:15px;">${st.loading ? '⏳ 分析中...' : '🤖 AIで分析する'}</button>`;
+    footerEl.innerHTML = `
+      <div style="display:flex; gap:10px;">
+        ${primaryBtn}
+        <button type="button" onclick="renderFieldPhotosTable('${jsPid}')" ${st.loading ? 'disabled' : ''} style="background:#eee; color:#333; padding:14px 18px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:14px;">一覧に戻る</button>
+      </div>
+    `;
+  }
+};
+
+window.runFieldPhotoAiAnalysis_ = async (polyId) => {
+  syncFieldPhotoAnalysisInputsFromDom_();
+  const pid = polyId || (window.fieldPhotoAnalysisState && window.fieldPhotoAnalysisState.polyId) || activePolyId;
+  const p = loadedPolygons[pid];
+  const st = window.fieldPhotoAnalysisState;
+  if (!p || !st || st.loading) return;
+  if (!Array.isArray(st.items) || !st.items.length) {
+    customAlert('分析したい写真を1枚以上選んでください。');
+    return;
+  }
+
+  st.loading = true;
+  st.error = '';
+  st.progressText = `写真を読み込み・最適化中 (0/${st.items.length})...`;
+  window.renderFieldPhotoAnalysisView_(pid);
+
+  try {
+    const imagesPayload = [];
+    for (let i = 0; i < st.items.length; i++) {
+      const it = st.items[i];
+      const progEl = document.getElementById('field_photo_ai_progress_text');
+      if (progEl) progEl.textContent = `写真を読み込み・最適化中 (${i + 1}/${st.items.length})...`;
+      const imgData = await loadFieldPhotoAsAiPayload_(it.fullUrl || it.url);
+      imagesPayload.push({
+        mimeType: imgData.mimeType,
+        base64Data: imgData.base64Data,
+        date: it.date || '',
+        title: st.includeMemo ? (it.title || '') : '',
+        tags: st.includeMemo ? (Array.isArray(it.tags) ? it.tags : []) : [],
+        memo: st.includeMemo ? (it.memo || '') : ''
+      });
+    }
+
+    const progEl2 = document.getElementById('field_photo_ai_progress_text');
+    if (progEl2) progEl2.textContent = 'Gemini AI が写真とメモを分析しています...';
+
+    const res = await callGAS('analyzeFieldPhotosWithGemini', {
+      fieldName: p.name || '',
+      fieldInfo: getFieldContextForAiAnalysis_(p),
+      analysisType: st.analysisType || 'general',
+      userQuestion: st.userQuestion || '',
+      includeMemo: !!st.includeMemo,
+      images: imagesPayload
+    });
+
+    const normalized = window.normalizeFieldPhotoAnalysisResult_(res);
+    st.result = normalized;
+    st.editTitle = normalized.title || '圃場写真AI診断';
+    st.loading = false;
+    st.error = '';
+    window.renderFieldPhotoAnalysisView_(pid);
+
+    setTimeout(() => {
+      const resBox = document.getElementById('field_photo_ai_result_box');
+      if (resBox && typeof resBox.scrollIntoView === 'function') {
+        resBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 60);
+  } catch (err) {
+    console.error('runFieldPhotoAiAnalysis_ error:', err);
+    st.loading = false;
+    st.error = (err && err.message) ? err.message : String(err || '不明なエラーが発生しました');
+    window.renderFieldPhotoAnalysisView_(pid);
+  }
+};
+
+window.saveFieldPhotoAnalysisResult_ = async (polyId) => {
+  syncFieldPhotoAnalysisInputsFromDom_();
+  const pid = polyId || (window.fieldPhotoAnalysisState && window.fieldPhotoAnalysisState.polyId) || activePolyId;
+  const p = loadedPolygons[pid];
+  const st = window.fieldPhotoAnalysisState;
+  if (!p || !st || !st.result) {
+    customAlert('保存する分析結果がありません。');
+    return;
+  }
+  const now = new Date();
+  const ymd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const hm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const finalTitle = String(st.editTitle || st.result.title || 'AI写真分析').trim();
+  const userNote = String(st.saveNote || '').trim();
+
+  const recordData = {
+    isPhotoAnalysis: true,
+    photoTitle: finalTitle,
+    photoDate: ymd,
+    photoTime: hm,
+    photoTags: [FIELD_PHOTO_AI_SAVED_TAG_],
+    crop: st.result.cropGuessed || '',
+    notes: userNote,
+    photoAnalysis: Object.assign({}, st.result, {
+      analysisType: st.analysisType || 'general',
+      userQuestion: st.userQuestion || '',
+      includeMemo: !!st.includeMemo,
+      analyzedPhotos: st.items.map(it => ({
+        url: String(it.url || ''),
+        fullUrl: String(it.fullUrl || it.url || ''),
+        recordId: String(it.recordId || ''),
+        date: String(it.date || ''),
+        title: String(it.title || '')
+      }))
+    })
+  };
+
+  if (typeof showLoader === 'function') showLoader('AI分析結果を保存中...');
+  try {
+    const updatedItems = await callGAS('saveRecord', {
+      id: pid,
+      name: p.name,
+      author: currentUser,
+      recordType: 'report',
+      data: recordData,
+      photos: []
+    });
+    if (Array.isArray(updatedItems)) {
+      loadedPolygons[pid].photos = updatedItems;
+    } else {
+      if (!Array.isArray(loadedPolygons[pid].photos)) loadedPolygons[pid].photos = [];
+      loadedPolygons[pid].photos.unshift({
+        id: 'local_ai_' + Date.now(),
+        type: 'report',
+        date: ymd.replace(/-/g, '/'),
+        time: hm,
+        author: currentUser,
+        urls: [],
+        data: recordData
+      });
+    }
+    if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
+      window.updateInitDataCacheWithLocalRecords_();
+    }
+    window.fieldPhotoSelectMode = false;
+    window.fieldPhotoSelectedItems = [];
+    window.fieldPhotoAnalysisState = null;
+    window.fieldPhotoActiveFilterTag = 'ALL';
+    if (typeof window.showRecordSyncToast === 'function') {
+      window.showRecordSyncToast('✅ AI分析結果を保存しました！', 'ok');
+    }
+    window.renderFieldPhotosTable(pid);
+  } catch (err) {
+    console.error('saveFieldPhotoAnalysisResult_ error:', err);
+    customAlert('分析結果の保存に失敗しました: ' + ((err && err.message) || err));
+  } finally {
+    if (typeof hideLoader === 'function') hideLoader();
+  }
+};
+
+window.copyFieldPhotoAnalysisText_ = async (mode, recordId, polyId) => {
+  const pid = polyId || activePolyId;
+  const p = loadedPolygons[pid];
+  let txt = '';
+  if (mode === 'current') {
+    syncFieldPhotoAnalysisInputsFromDom_();
+    const st = window.fieldPhotoAnalysisState;
+    if (st && st.result) {
+      txt = window.formatFieldPhotoAnalysisPlainText_(st.result, {
+        fieldName: (p && p.name) || '',
+        analysisType: st.analysisType,
+        userQuestion: st.userQuestion,
+        notes: st.saveNote
+      });
+    }
+  } else if (p && Array.isArray(p.photos)) {
+    const item = p.photos.find(x => x && String(x.id) === String(recordId));
+    const d = (item && item.data && typeof item.data === 'object') ? item.data : {};
+    const pa = (d.photoAnalysis && typeof d.photoAnalysis === 'object') ? d.photoAnalysis : {};
+    txt = window.formatFieldPhotoAnalysisPlainText_(pa, {
+      fieldName: p.name || '',
+      analysisType: pa.analysisType || 'general',
+      userQuestion: pa.userQuestion || '',
+      notes: d.notes || d.memo || ''
+    });
+  }
+  const ok = await copyFieldPhotoTextToClipboard_(txt);
+  if (ok) {
+    if (typeof window.showRecordSyncToast === 'function') window.showRecordSyncToast('📋 分析結果をコピーしました', 'ok');
+    else customAlert('分析結果をコピーしました。');
+  } else {
+    customAlert('クリップボードへのコピーに失敗しました。');
+  }
+};
+
+window.updateSavedFieldPhotoAnalysisNote_ = async (recordId, polyId) => {
+  const pid = polyId || activePolyId;
+  const p = loadedPolygons[pid];
+  if (!p || !Array.isArray(p.photos)) return;
+  const item = p.photos.find(x => x && String(x.id) === String(recordId));
+  if (!item || !item.data) return;
+
+  const newTitle = document.getElementById('field_photo_saved_ai_title')?.value.trim() || String(item.data.photoTitle || 'AI写真分析');
+  const newNotes = document.getElementById('field_photo_saved_ai_note')?.value.trim() || '';
+  const updatedData = Object.assign({}, item.data, {
+    photoTitle: newTitle,
+    notes: newNotes
+  });
+
+  if (typeof showLoader === 'function') showLoader('メモを更新中...');
+  try {
+    const updatedItems = await callGAS('updateRecordItem', {
+      id: pid,
+      recordId: recordId,
+      recordType: item.type || 'report',
+      data: updatedData,
+      photos: [],
+      keptUrls: [],
+      userName: currentUser
+    });
+    if (Array.isArray(updatedItems)) {
+      loadedPolygons[pid].photos = updatedItems;
+    } else {
+      item.data = updatedData;
+    }
+    if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
+      window.updateInitDataCacheWithLocalRecords_();
+    }
+    if (typeof window.showRecordSyncToast === 'function') {
+      window.showRecordSyncToast('✅ メモを更新しました', 'ok');
+    }
+    window.openSavedFieldPhotoAnalysis_(recordId, pid);
+  } catch (err) {
+    console.error('updateSavedFieldPhotoAnalysisNote_ error:', err);
+    customAlert('メモの更新に失敗しました: ' + ((err && err.message) || err));
+  } finally {
+    if (typeof hideLoader === 'function') hideLoader();
+  }
+};
+
+window.reanalyzeSavedFieldPhotoAnalysis_ = (recordId, polyId) => {
+  const pid = polyId || activePolyId;
+  const p = loadedPolygons[pid];
+  if (!p || !Array.isArray(p.photos)) return;
+  const item = p.photos.find(x => x && String(x.id) === String(recordId));
+  const d = (item && item.data && typeof item.data === 'object') ? item.data : {};
+  const rawPa = (d.photoAnalysis && typeof d.photoAnalysis === 'object') ? d.photoAnalysis : {};
+  const srcPhotos = Array.isArray(rawPa.analyzedPhotos) ? rawPa.analyzedPhotos : [];
+  const nextItems = [];
+  srcPhotos.slice(0, FIELD_PHOTO_MAX_AI_PHOTOS_).forEach((sp, idx) => {
+    const u = String((sp && (sp.url || sp.fullUrl)) || '').trim();
+    if (!u) return;
+    const refRec = sp.recordId ? p.photos.find(x => x && String(x.id) === String(sp.recordId)) : null;
+    const refMeta = refRec ? extractFieldPhotoRecordMeta_(refRec) : null;
+    nextItems.push({
+      key: String((sp && sp.recordId) || ('saved_' + idx)) + '::' + idx,
+      recordId: String((sp && sp.recordId) || ''),
+      urlIndex: idx,
+      url: u,
+      fullUrl: String((sp && (sp.fullUrl || sp.url)) || u),
+      date: (refRec && refRec.date) || String((sp && sp.date) || ''),
+      time: (refRec && refRec.time) || '',
+      author: (refRec && refRec.author) || '',
+      title: (refMeta && refMeta.photoTitle) || String((sp && sp.title) || ''),
+      tags: (refMeta && refMeta.tags) || [],
+      memo: (refMeta && refMeta.memo) || ''
+    });
+  });
+  if (!nextItems.length) {
+    customAlert('再分析できる写真情報が見つかりません。');
+    return;
+  }
+  window.fieldPhotoSelectMode = false;
+  window.fieldPhotoSelectedItems = nextItems;
+  window.fieldPhotoAnalysisState = {
+    polyId: pid,
+    items: nextItems,
+    analysisType: rawPa.analysisType || 'general',
+    includeMemo: rawPa.includeMemo !== false,
+    userQuestion: rawPa.userQuestion || '',
+    loading: false,
+    progressText: '',
+    error: '',
+    result: null,
+    editTitle: '',
+    saveNote: ''
+  };
+  window.renderFieldPhotoAnalysisView_(pid);
+};
+
+window.openSavedFieldPhotoAnalysis_ = (recordId, polyId) => {
+  const pid = polyId || activePolyId;
+  const p = loadedPolygons[pid];
+  if (!p || !Array.isArray(p.photos)) {
+    window.renderFieldPhotosTable(pid);
+    return;
+  }
+  const item = p.photos.find(x => x && String(x.id) === String(recordId));
+  if (!item || !item.data || !item.data.isPhotoAnalysis) {
+    window.renderFieldPhotosTable(pid);
+    return;
+  }
+  activePolyId = pid;
+  window.fieldPhotoSelectMode = false;
+  const esc = escapeHtmlFieldPhoto_;
+  const jsPid = escapeJsSingleFieldPhoto_(pid);
+  const jsRecId = escapeJsSingleFieldPhoto_(item.id || '');
+  const d = item.data;
+  const rawPa = (d.photoAnalysis && typeof d.photoAnalysis === 'object') ? d.photoAnalysis : {};
+  const pa = window.normalizeFieldPhotoAnalysisResult_(rawPa);
+  const analyzedPhotos = Array.isArray(rawPa.analyzedPhotos) ? rawPa.analyzedPhotos : [];
+  const isOwner = (item.author === currentUser || currentUser === 'システム');
+  const titleText = String(d.photoTitle || d.title || pa.title || 'AI写真分析').trim();
+  const userMemo = String(d.notes || d.memo || '').trim();
+
+  const titleEl = document.getElementById('rightPanelTitle');
+  if (titleEl) titleEl.innerText = `${p.name} - 🤖 AI分析結果`;
+
+  const thumbsHtml = analyzedPhotos.length
+    ? `<div style="display:flex; gap:8px; overflow-x:auto; padding:4px 0;">${analyzedPhotos.map((ph, idx) => {
+      const thumb = String((ph && (ph.url || ph.fullUrl)) || '').replace('sz=w1600', 'sz=w800');
+      const full = String((ph && (ph.fullUrl || ph.url)) || '').replace('sz=w800', 'sz=w1600');
+      if (!thumb) return '';
+      return `<div style="flex-shrink:0; text-align:center;">
+        <img src="${esc(thumb)}" onclick="openLightbox('${escapeJsSingleFieldPhoto_(full)}')" style="width:72px; height:72px; object-fit:cover; border-radius:8px; border:2px solid #CE93D8; cursor:pointer; display:block;" onerror="this.style.display='none'">
+        <div style="font-size:10px; color:#666; margin-top:2px;">写真${idx + 1}</div>
+      </div>`;
+    }).join('')}</div>`
+    : '<div style="font-size:12px; color:#777;">（写真サムネイル情報なし）</div>';
+
+  const condBits = [];
+  if (rawPa.analysisType) condBits.push(window.getFieldPhotoAnalysisTypeLabel_(rawPa.analysisType));
+  if (rawPa.userQuestion) condBits.push(`質問: ${rawPa.userQuestion}`);
+
+  const contentEl = document.getElementById('rightPanelContent');
+  if (contentEl) {
+    contentEl.innerHTML = `
+      <div id="field_photo_analysis_root" style="padding:14px; background:#f4f6f8; min-height:100%; box-sizing:border-box;">
+        <div style="background:#fff; border:1px solid #D1C4E9; border-radius:12px; padding:12px; margin-bottom:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+            <div style="font-size:12px; color:#555;">📅 ${esc(item.date || '-')} ${esc(item.time || '')} ／ 👤 ${esc(item.author || '-')}</div>
+            <button type="button" onclick="copyFieldPhotoAnalysisText_('saved', '${jsRecId}', '${jsPid}')" style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:6px; padding:4px 10px; font-size:11px; font-weight:bold; cursor:pointer;">📋 テキストコピー</button>
+          </div>
+          ${condBits.length ? `<div style="font-size:11px; color:#5E35B1; background:#F5F0FF; border-radius:6px; padding:6px 8px; margin-bottom:8px;">${esc(condBits.join(' ／ '))}</div>` : ''}
+          ${thumbsHtml}
+        </div>
+
+        ${window.buildFieldPhotoAnalysisResultHtml_(pa, analyzedPhotos)}
+
+        <div style="margin-top:12px; background:#fff; border:1px solid #CFD8DC; border-radius:12px; padding:12px;">
+          <div style="font-size:12px; font-weight:bold; color:#333; margin-bottom:8px;">📝 保存タイトル・メモ</div>
+          <input type="text" id="field_photo_saved_ai_title" class="form-input" ${isOwner ? '' : 'readonly'} value="${esc(titleText)}" style="margin-bottom:8px; font-size:13px; font-weight:bold;">
+          <textarea id="field_photo_saved_ai_note" rows="3" class="form-input" ${isOwner ? '' : 'readonly'} placeholder="現地での確認結果や実施した作業メモ..." style="margin-bottom:8px; font-size:13px; line-height:1.5; resize:vertical;">${esc(userMemo)}</textarea>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            ${isOwner ? `<button type="button" onclick="updateSavedFieldPhotoAnalysisNote_('${jsRecId}', '${jsPid}')" style="flex:1; min-width:120px; background:#1565C0; color:#fff; border:none; border-radius:8px; padding:10px 12px; font-size:13px; font-weight:bold; cursor:pointer;">💾 メモを更新</button>` : ''}
+            ${analyzedPhotos.length ? `<button type="button" onclick="reanalyzeSavedFieldPhotoAnalysis_('${jsRecId}', '${jsPid}')" style="flex:1; min-width:120px; background:#EDE7F6; color:#5E35B1; border:1px solid #B39DDB; border-radius:8px; padding:10px 12px; font-size:13px; font-weight:bold; cursor:pointer;">🔄 同じ写真で再分析</button>` : ''}
+            ${isOwner ? `<button type="button" onclick="deleteFieldPhotoRecord('${jsRecId}', '${jsPid}')" style="background:#FFEBEE; color:#C62828; border:1px solid #FFCDD2; border-radius:8px; padding:10px 12px; font-size:13px; font-weight:bold; cursor:pointer;">🗑️ 削除</button>` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  const footerEl = document.getElementById('rightPanelFooter');
+  if (footerEl) {
+    footerEl.innerHTML = `
+      <div style="display:flex; gap:10px;">
+        <button type="button" onclick="renderFieldPhotosTable('${jsPid}')" style="background:#5E35B1; color:#fff; flex:1; padding:14px; border-radius:8px; border:none; font-weight:bold; cursor:pointer; font-size:15px;">📷 写真一覧に戻る</button>
+        <button type="button" onclick="closeRightPanel()" style="background:#eee; color:#333; padding:14px 18px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:14px;">閉じる</button>
+      </div>
+    `;
+  }
+};
+
 window.renderFieldPhotosTable = (id) => {
   const polyId = id || activePolyId;
   const p = loadedPolygons[polyId];
@@ -4694,22 +5894,24 @@ window.renderFieldPhotosTable = (id) => {
     return;
   }
   activePolyId = polyId;
+  const jsPolyId = escapeJsSingleFieldPhoto_(polyId);
+  const selectMode = !!window.fieldPhotoSelectMode;
+
   const titleEl = document.getElementById('rightPanelTitle');
-  if (titleEl) titleEl.innerText = `${p.name} - 📷 写真一覧`;
+  if (titleEl) {
+    titleEl.innerText = selectMode
+      ? `${p.name} - 🤖 分析する写真を選択`
+      : `${p.name} - 📷 写真一覧`;
+  }
 
   if (!Array.isArray(p.photos)) p.photos = [];
 
-  const allPhotoRecords = p.photos.filter(item => {
-    return item && ((item.urls && item.urls.length > 0) || item.url);
-  });
-
-  allPhotoRecords.sort((a, b) => {
-    if (a._isSaving && !b._isSaving) return -1;
-    if (!a._isSaving && b._isSaving) return 1;
-    const da = new Date((a.date || '').replace(/\//g, '-') + 'T' + (a.time || '00:00') + ':00');
-    const db = new Date((b.date || '').replace(/\//g, '-') + 'T' + (b.time || '00:00') + ':00');
-    return db - da;
-  });
+  const allPhotoRecords = sortFieldPhotoRecordsDesc_(p.photos.filter(item => {
+    return item && !(item.data && item.data.isPhotoAnalysis) && ((item.urls && item.urls.length > 0) || item.url);
+  }));
+  const allAnalysisRecords = sortFieldPhotoRecordsDesc_(p.photos.filter(item => {
+    return item && item.data && item.data.isPhotoAnalysis;
+  }));
 
   const usedTagsSet = new Set();
   allPhotoRecords.forEach(item => {
@@ -4717,29 +5919,74 @@ window.renderFieldPhotosTable = (id) => {
     tags.forEach(t => { if (t) usedTagsSet.add(t); });
   });
   const filterTags = ['生育記録', '圃場状況', ...Array.from(usedTagsSet).filter(t => t !== '生育記録' && t !== '圃場状況')];
-  const activeFilter = window.fieldPhotoActiveFilterTag || 'ALL';
 
-  const photoRecords = activeFilter === 'ALL'
-    ? allPhotoRecords
-    : allPhotoRecords.filter(item => item.data && Array.isArray(item.data.photoTags) && item.data.photoTags.includes(activeFilter));
+  let activeFilter = window.fieldPhotoActiveFilterTag || 'ALL';
+  if (selectMode && activeFilter === FIELD_PHOTO_AI_FILTER_KEY_) activeFilter = 'ALL';
+  if (!selectMode && activeFilter === FIELD_PHOTO_AI_FILTER_KEY_ && allAnalysisRecords.length === 0) activeFilter = 'ALL';
+
+  let displayRecords;
+  if (selectMode) {
+    displayRecords = (activeFilter === 'ALL')
+      ? allPhotoRecords
+      : allPhotoRecords.filter(item => item.data && Array.isArray(item.data.photoTags) && item.data.photoTags.includes(activeFilter));
+  } else if (activeFilter === FIELD_PHOTO_AI_FILTER_KEY_) {
+    displayRecords = allAnalysisRecords;
+  } else if (activeFilter === 'ALL') {
+    displayRecords = sortFieldPhotoRecordsDesc_([...allPhotoRecords, ...allAnalysisRecords]);
+  } else {
+    displayRecords = allPhotoRecords.filter(item => item.data && Array.isArray(item.data.photoTags) && item.data.photoTags.includes(activeFilter));
+  }
+
+  const selectedItems = Array.isArray(window.fieldPhotoSelectedItems) ? window.fieldPhotoSelectedItems : [];
+  const selectedKeyIdxMap = new Map();
+  selectedItems.forEach((it, idx) => {
+    if (it && it.key) selectedKeyIdxMap.set(it.key, idx);
+  });
 
   let bodyHtml = '';
 
-  if (allPhotoRecords.length > 0) {
+  if (selectMode) {
+    const selCount = selectedItems.length;
+    bodyHtml += `
+      <div style="background:linear-gradient(135deg, #EDE7F6 0%, #E8EAF6 100%); border:2px solid #B39DDB; border-radius:12px; padding:11px 12px; margin-bottom:10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+          <div>
+            <div style="font-size:13px; font-weight:bold; color:#4527A0;">🤖 分析する写真を選択 (${selCount}/${FIELD_PHOTO_MAX_AI_PHOTOS_}枚)</div>
+            <div style="font-size:11px; color:#5E35B1; margin-top:2px;">分析したい写真をタップ（別日の投稿からも一緒に選べます）</div>
+          </div>
+          <div style="display:flex; gap:6px; align-items:center;">
+            ${selCount > 0 ? `<button type="button" onclick="clearFieldPhotoAnalysisSelection_('${jsPolyId}')" style="background:#fff; color:#C62828; border:1px solid #EF9A9A; border-radius:8px; padding:5px 9px; font-size:11px; font-weight:bold; cursor:pointer;">解除</button>` : ''}
+            ${selCount > 0 ? `<button type="button" onclick="openFieldPhotoAnalysisSetup_('${jsPolyId}')" style="background:#5E35B1; color:#fff; border:none; border-radius:8px; padding:6px 11px; font-size:11px; font-weight:bold; cursor:pointer;">分析へ進む →</button>` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  const totalCount = selectMode ? allPhotoRecords.length : (allPhotoRecords.length + allAnalysisRecords.length);
+  if (totalCount > 0) {
     let filterHtml = `
       <div style="display:flex; align-items:center; gap:6px; overflow-x:auto; padding:2px 2px 10px 2px; margin-bottom:4px;">
-        <button type="button" onclick="setFieldPhotoFilterTag('ALL', '${polyId}')" style="flex-shrink:0; padding:6px 12px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid ${activeFilter === 'ALL' ? '#2E7D32' : '#cfd8dc'}; background:${activeFilter === 'ALL' ? '#2E7D32' : '#fff'}; color:${activeFilter === 'ALL' ? '#fff' : '#555'};">
-          すべて (${allPhotoRecords.length})
+        <button type="button" onclick="setFieldPhotoFilterTag('ALL', '${jsPolyId}')" style="flex-shrink:0; padding:6px 12px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid ${activeFilter === 'ALL' ? '#2E7D32' : '#cfd8dc'}; background:${activeFilter === 'ALL' ? '#2E7D32' : '#fff'}; color:${activeFilter === 'ALL' ? '#fff' : '#555'};">
+          すべて (${totalCount})
         </button>
     `;
+    if (!selectMode && allAnalysisRecords.length > 0) {
+      const aiSel = activeFilter === FIELD_PHOTO_AI_FILTER_KEY_;
+      filterHtml += `
+        <button type="button" onclick="setFieldPhotoFilterTag('${FIELD_PHOTO_AI_FILTER_KEY_}', '${jsPolyId}')" style="flex-shrink:0; padding:6px 12px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid ${aiSel ? '#5E35B1' : '#D1C4E9'}; background:${aiSel ? '#5E35B1' : '#fff'}; color:${aiSel ? '#fff' : '#5E35B1'};">
+          🤖 AI分析 (${allAnalysisRecords.length})
+        </button>
+      `;
+    }
     filterTags.forEach(tag => {
       const cnt = allPhotoRecords.filter(it => it.data && Array.isArray(it.data.photoTags) && it.data.photoTags.includes(tag)).length;
       if (cnt === 0 && !usedTagsSet.has(tag)) return;
       const isSelected = activeFilter === tag;
       const safeTag = escapeHtmlFieldPhoto_(tag);
-      const jsTag = String(tag).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const jsTag = escapeJsSingleFieldPhoto_(tag);
       filterHtml += `
-        <button type="button" onclick="setFieldPhotoFilterTag('${jsTag}', '${polyId}')" style="flex-shrink:0; padding:6px 12px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid ${isSelected ? '#1565C0' : '#cfd8dc'}; background:${isSelected ? '#1565C0' : '#fff'}; color:${isSelected ? '#fff' : '#444'};">
+        <button type="button" onclick="setFieldPhotoFilterTag('${jsTag}', '${jsPolyId}')" style="flex-shrink:0; padding:6px 12px; border-radius:16px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid ${isSelected ? '#1565C0' : '#cfd8dc'}; background:${isSelected ? '#1565C0' : '#fff'}; color:${isSelected ? '#fff' : '#444'};">
           🏷️ ${safeTag} (${cnt})
         </button>
       `;
@@ -4748,7 +5995,7 @@ window.renderFieldPhotosTable = (id) => {
     bodyHtml += filterHtml;
   }
 
-  if (allPhotoRecords.length === 0) {
+  if (allPhotoRecords.length === 0 && allAnalysisRecords.length === 0) {
     bodyHtml += `
       <div style="background:white; border-radius:12px; border:1px dashed #A5D6A7; padding:36px 16px; text-align:center; color:#555; box-shadow:0 2px 6px rgba(0,0,0,0.04);">
         <div style="font-size:42px; margin-bottom:10px;">📷</div>
@@ -4758,28 +6005,23 @@ window.renderFieldPhotosTable = (id) => {
         </div>
       </div>
     `;
-  } else if (photoRecords.length === 0) {
+  } else if (displayRecords.length === 0) {
     bodyHtml += `
       <div style="background:white; border-radius:12px; border:1px solid #e0e0e0; padding:28px 16px; text-align:center; color:#666;">
         <div style="font-size:28px; margin-bottom:6px;">🏷️</div>
-        <div style="font-size:13px; font-weight:bold;">「${escapeHtmlFieldPhoto_(activeFilter)}」タグの写真はまだありません</div>
+        <div style="font-size:13px; font-weight:bold;">該当する記録はまだありません</div>
       </div>
     `;
   } else {
     bodyHtml += `<div style="display:flex; flex-direction:column; gap:12px;">`;
-    photoRecords.forEach(item => {
-      const isOwner = (item.author === currentUser || currentUser === 'システム');
-      const urls = (item.urls && item.urls.length) ? item.urls : (item.url ? [item.url] : []);
-      const tags = (item.data && Array.isArray(item.data.photoTags)) ? item.data.photoTags : [];
-
-      const photoTitle = (item.data && (item.data.photoTitle || item.data.title)) ? String(item.data.photoTitle || item.data.title).trim() : '';
-
-      let memo = (item.data && (item.data.notes || item.data.memo || item.data.comment)) || '';
-      if (!memo && item.data && item.data.workName) {
-        memo = `作業: ${item.data.workName}`;
-      } else if (!memo && item.data && item.data.crop) {
-        memo = `作物: ${item.data.crop}`;
+    displayRecords.forEach(item => {
+      if (item.data && item.data.isPhotoAnalysis) {
+        bodyHtml += window.buildSavedFieldPhotoAnalysisCardHtml_(item, polyId);
+        return;
       }
+
+      const isOwner = (item.author === currentUser || currentUser === 'システム');
+      const { urls, tags, photoTitle, memo } = extractFieldPhotoRecordMeta_(item);
 
       const isWork = (item.type === 'work') || (item.data && item.data.workName);
       const badgeType = isWork
@@ -4790,22 +6032,42 @@ window.renderFieldPhotosTable = (id) => {
         ? `<span style="display:inline-flex; align-items:center; font-size:11px; font-weight:bold; background:#E3F2FD; color:#1565C0; padding:2px 8px; border-radius:10px; border:1px solid #90CAF9;">⏳ 保存中...</span>`
         : '';
 
-      const safeRecId = String(item.id || '').replace(/'/g, "\\'");
-      const editBtnHtml = (!item._isSaving)
-        ? `<button type="button" onclick="editFieldPhotoRecord('${safeRecId}', '${polyId}')" style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;" title="写真・タグ・メモを編集">✏️ 編集</button>`
+      const safeRecId = escapeJsSingleFieldPhoto_(item.id || '');
+      const analyzeBtnHtml = (!selectMode && !item._isSaving)
+        ? `<button type="button" onclick="startFieldPhotoAnalysisFromRecord_('${safeRecId}', '${jsPolyId}')" style="background:#EDE7F6; color:#5E35B1; border:1px solid #B39DDB; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;" title="この写真を選んでAI分析">🤖 分析</button>`
         : '';
-      const deleteBtnHtml = (!item._isSaving && isOwner)
-        ? `<button type="button" onclick="deleteFieldPhotoRecord('${safeRecId}', '${polyId}')" style="background:#FFEBEE; color:#C62828; border:1px solid #FFCDD2; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;" title="削除">🗑️ 削除</button>`
+      const editBtnHtml = (!selectMode && !item._isSaving)
+        ? `<button type="button" onclick="editFieldPhotoRecord('${safeRecId}', '${jsPolyId}')" style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;" title="写真・タグ・メモを編集">✏️ 編集</button>`
         : '';
+      const deleteBtnHtml = (!selectMode && !item._isSaving && isOwner)
+        ? `<button type="button" onclick="deleteFieldPhotoRecord('${safeRecId}', '${jsPolyId}')" style="background:#FFEBEE; color:#C62828; border:1px solid #FFCDD2; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;" title="削除">🗑️ 削除</button>`
+        : '';
+
+      let cardAllSelected = false;
+      let selectCardBtnHtml = '';
+      if (selectMode && urls.length > 0) {
+        cardAllSelected = urls.every((_, idx) => selectedKeyIdxMap.has(String(item.id || '') + '::' + idx));
+        selectCardBtnHtml = `<button type="button" onclick="toggleFieldPhotoCardSelectAll_('${safeRecId}', '${jsPolyId}')" style="background:${cardAllSelected ? '#5E35B1' : '#EDE7F6'}; color:${cardAllSelected ? '#fff' : '#5E35B1'}; border:1px solid #B39DDB; border-radius:6px; padding:4px 9px; font-size:11px; font-weight:bold; cursor:pointer;">${cardAllSelected ? '✓ 投稿を解除' : '＋ 投稿を全選択'}</button>`;
+      }
 
       let galleryHtml = '';
       if (urls.length === 1) {
         const u = urls[0];
         const fullUrl = u.replace('sz=w800', 'sz=w1600');
+        const selKey = String(item.id || '') + '::0';
+        const selPos = selectedKeyIdxMap.has(selKey) ? selectedKeyIdxMap.get(selKey) : -1;
+        const isSel = selPos >= 0;
+        const clickHandler = selectMode
+          ? `toggleFieldPhotoAnalyzeSelect_('${safeRecId}', 0, '${jsPolyId}')`
+          : `openLightbox('${escapeJsSingleFieldPhoto_(fullUrl)}')`;
+        const selBadge = selectMode
+          ? `<span style="position:absolute; top:8px; left:8px; background:${isSel ? '#5E35B1' : 'rgba(255,255,255,0.9)'}; color:${isSel ? '#fff' : '#5E35B1'}; border:2px solid #5E35B1; font-size:12px; font-weight:bold; padding:3px 9px; border-radius:14px; box-shadow:0 2px 4px rgba(0,0,0,0.25);">${isSel ? `✓ ${selPos + 1}` : '○ 選択'}</span>`
+          : '';
         galleryHtml = `
-          <div style="position:relative; width:100%; border-radius:8px; overflow:hidden; border:1px solid #e0e0e0; cursor:pointer; background:#f0f0f0;" onclick="openLightbox('${fullUrl}')" title="タップで拡大">
+          <div style="position:relative; width:100%; border-radius:8px; overflow:hidden; border:${isSel ? '3px solid #5E35B1' : '1px solid #e0e0e0'}; ${isSel ? 'box-shadow:0 0 0 2px rgba(94,53,177,0.25);' : ''} cursor:pointer; background:#f0f0f0;" onclick="${clickHandler}" title="${selectMode ? 'タップで分析対象に選択/解除' : 'タップで拡大'}">
             <img src="${u}" style="width:100%; max-height:220px; object-fit:cover; display:block;" onerror="this.src='icon.png'">
-            <span style="position:absolute; bottom:8px; right:8px; background:rgba(0,0,0,0.65); color:#fff; font-size:11px; font-weight:bold; padding:4px 8px; border-radius:12px;">🔍 タップで拡大</span>
+            ${selBadge}
+            ${!selectMode ? `<span style="position:absolute; bottom:8px; right:8px; background:rgba(0,0,0,0.65); color:#fff; font-size:11px; font-weight:bold; padding:4px 8px; border-radius:12px;">🔍 タップで拡大</span>` : ''}
           </div>
         `;
       } else {
@@ -4813,10 +6075,20 @@ window.renderFieldPhotosTable = (id) => {
         galleryHtml = `<div style="display:grid; grid-template-columns:${cols}; gap:6px;">`;
         urls.forEach((u, uIdx) => {
           const fU = u.replace('sz=w800', 'sz=w1600');
+          const selKey = String(item.id || '') + '::' + uIdx;
+          const selPos = selectedKeyIdxMap.has(selKey) ? selectedKeyIdxMap.get(selKey) : -1;
+          const isSel = selPos >= 0;
+          const clickHandler = selectMode
+            ? `toggleFieldPhotoAnalyzeSelect_('${safeRecId}', ${uIdx}, '${jsPolyId}')`
+            : `openLightbox('${escapeJsSingleFieldPhoto_(fU)}')`;
+          const selBadge = selectMode
+            ? `<span style="position:absolute; top:5px; left:5px; background:${isSel ? '#5E35B1' : 'rgba(255,255,255,0.9)'}; color:${isSel ? '#fff' : '#5E35B1'}; border:2px solid #5E35B1; font-size:11px; font-weight:bold; padding:1px 7px; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,0.25);">${isSel ? `✓ ${selPos + 1}` : '○'}</span>`
+            : '';
           galleryHtml += `
-            <div style="position:relative; border-radius:8px; overflow:hidden; border:1px solid #e0e0e0; cursor:pointer; aspect-ratio:1/1; background:#f0f0f0;" onclick="openLightbox('${fU}')" title="写真 ${uIdx + 1} (タップで拡大)">
+            <div style="position:relative; border-radius:8px; overflow:hidden; border:${isSel ? '3px solid #5E35B1' : '1px solid #e0e0e0'}; ${isSel ? 'box-shadow:0 0 0 2px rgba(94,53,177,0.25);' : ''} cursor:pointer; aspect-ratio:1/1; background:#f0f0f0;" onclick="${clickHandler}" title="${selectMode ? `写真 ${uIdx + 1} を選択/解除` : `写真 ${uIdx + 1} (タップで拡大)`}">
               <img src="${u}" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="this.src='icon.png'">
-              <span style="position:absolute; bottom:4px; right:4px; background:rgba(0,0,0,0.6); color:#fff; font-size:10px; padding:2px 5px; border-radius:8px;">🔍</span>
+              ${selBadge}
+              ${!selectMode ? `<span style="position:absolute; bottom:4px; right:4px; background:rgba(0,0,0,0.6); color:#fff; font-size:10px; padding:2px 5px; border-radius:8px;">🔍</span>` : ''}
             </div>
           `;
         });
@@ -4850,6 +6122,8 @@ window.renderFieldPhotosTable = (id) => {
             <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
               ${savingBadge}
               ${badgeType}
+              ${selectCardBtnHtml}
+              ${analyzeBtnHtml}
               ${editBtnHtml}
               ${deleteBtnHtml}
             </div>
@@ -4869,16 +6143,34 @@ window.renderFieldPhotosTable = (id) => {
 
   const footerEl = document.getElementById('rightPanelFooter');
   if (footerEl) {
-    footerEl.innerHTML = `
-      <div style="display:flex; gap:10px;">
-        <button type="button" onclick="renderFieldPhotoAddForm('${polyId}')" style="background:#2E7D32; color:white; flex:1; padding:14px; border-radius:8px; border:none; font-weight:bold; cursor:pointer; font-size:15px; box-shadow:0 2px 5px rgba(46,125,50,0.3);">
-          📷 写真を追加する
-        </button>
-        <button type="button" onclick="closeRightPanel()" style="background:#eee; color:#333; padding:14px 18px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:14px;">
-          閉じる
-        </button>
-      </div>
-    `;
+    if (selectMode) {
+      const selCount = selectedItems.length;
+      footerEl.innerHTML = `
+        <div style="display:flex; gap:10px;">
+          <button type="button" onclick="openFieldPhotoAnalysisSetup_('${jsPolyId}')" style="background:${selCount > 0 ? '#5E35B1' : '#B39DDB'}; color:white; flex:1; padding:14px; border-radius:8px; border:none; font-weight:bold; cursor:pointer; font-size:15px; box-shadow:0 2px 5px rgba(94,53,177,0.3);">
+            🤖 選んだ写真で分析へ進む (${selCount}枚)
+          </button>
+          <button type="button" onclick="exitFieldPhotoSelectMode_('${jsPolyId}')" style="background:#eee; color:#333; padding:14px 18px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:14px;">
+            キャンセル
+          </button>
+        </div>
+      `;
+    } else {
+      const analyzeFooterBtn = allPhotoRecords.length > 0
+        ? `<button type="button" onclick="enterFieldPhotoSelectMode_('${jsPolyId}')" style="background:#5E35B1; color:white; padding:14px 14px; border-radius:8px; border:none; font-weight:bold; cursor:pointer; font-size:14px; box-shadow:0 2px 5px rgba(94,53,177,0.3); white-space:nowrap;">🤖 写真分析</button>`
+        : '';
+      footerEl.innerHTML = `
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button type="button" onclick="renderFieldPhotoAddForm('${jsPolyId}')" style="background:#2E7D32; color:white; flex:1; min-width:140px; padding:14px 10px; border-radius:8px; border:none; font-weight:bold; cursor:pointer; font-size:15px; box-shadow:0 2px 5px rgba(46,125,50,0.3); white-space:nowrap;">
+            📷 写真を追加する
+          </button>
+          ${analyzeFooterBtn}
+          <button type="button" onclick="closeRightPanel()" style="background:#eee; color:#333; padding:14px 16px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:14px; white-space:nowrap;">
+            閉じる
+          </button>
+        </div>
+      `;
+    }
   }
 };
 
@@ -5010,6 +6302,9 @@ window.renderFieldPhotoAddForm = (id, editRecordId) => {
   }
   activePolyId = polyId;
   clearFieldPhotoPendingFiles_();
+  window.fieldPhotoSelectMode = false;
+  window.fieldPhotoSelectedItems = [];
+  window.fieldPhotoAnalysisState = null;
 
   const isEdit = !!editRecordId;
   const targetRec = isEdit && Array.isArray(p.photos)
@@ -6052,6 +7347,7 @@ window.renderHistoryList = () => {
     h = '<div style="color:#666;text-align:center;padding:20px;">まだ記録がありません。</div>';
   } else {
     const filtered = p.photos.filter(item => {
+      if (item && item.data && item.data.isPhotoAnalysis) return false;
       const isWork = (item.type === 'work') || (item.data && item.data.workName);
       if (currentRecordType === 'work') return isWork;
       return !isWork;
@@ -54113,6 +55409,7 @@ window.getActivityNoticeFeed_ = () => {
       p.photos.forEach((ph) => {
         if (!ph || typeof ph !== 'object') return;
         const d = (ph.data && typeof ph.data === 'object') ? ph.data : {};
+        if (d.isPhotoAnalysis) return;
         const recId = String(ph.id || '').trim();
         const isWork = (ph.type === 'work') || !!d.workName;
         const isPhotoOnly = !!d.isPhotoOnly || (!isWork && (Array.isArray(d.photoTags) || !!d.photoTitle || !!d.photoDate));

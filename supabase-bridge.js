@@ -1114,6 +1114,7 @@
       startTime: 1, endTime: 1, totalTime: 1, progressStatus: 1,
       notes: 1, comment: 1, placeLabel: 1,
       photoTags: 1, photoTitle: 1, isPhotoOnly: 1, photoDate: 1, photoTime: 1,
+      isPhotoAnalysis: 1, photoAnalysis: 1,
       bulkBatchId: 1, recordKind: 1, fromBulkMemo: 1,
       workMembers: 1, sharedFromAuthor: 1, alsoSaveForMembers: 1, concurrentWorks: 1, registeredWork: 1
     };
@@ -2147,7 +2148,7 @@
         if (f) fields.push(f);
       }
       var isSign = fields.length && fields[0].entity_type === 'sign';
-      var normalizedType = recordType === 'work' ? 'work' : (isSign ? 'sign' : (recordType === 'report' ? 'report' : 'growth'));
+      var normalizedType = recordType === 'work' ? 'work' : (recordType === 'report' ? 'report' : (isSign ? 'sign' : 'growth'));
       var urls = await uploadPhotoPayloadsToR2_(params.photos, isSign ? 'sign_photos' : 'field_photos', origId);
 
       var workDateYmd = (recordData.workDate || today).replace(/\//g, '-').slice(0, 10);
@@ -12482,7 +12483,7 @@
       return { success: false, gmail: '', events: [], message: 'Googleカレンダー連携は現在GAS連携が必要です', calendarUrl: 'https://calendar.google.com/calendar/u/0/r/day' };
     });
 
-    ['parseWithGemini', 'parseCropImageWithGemini'].forEach(function (act) {
+    ['parseWithGemini', 'parseCropImageWithGemini', 'analyzeFieldPhotosWithGemini'].forEach(function (act) {
       registerAction(act, function (params) {
         return callEdgeFunction_('gemini-proxy', {
           action: act,
@@ -13158,7 +13159,7 @@
       'getMapCoordinates', 'setGoogleClientId', 'setLineChannelConfig',
       'importFertilizerCatalogChunk', 'importPesticideCatalogChunk', 'importOsakaMarketDaily', 'importTokyoMarketDaily',
       'getScriptAuthorizationInfo', 'listGoogleCalendars', 'getTodayGoogleCalendarEvents',
-      'parseWithGemini', 'parseCropImageWithGemini', 'importCultivationPlanFromExternalSheet', 'exportCultivationPlanToExternalSheet',
+      'parseWithGemini', 'parseCropImageWithGemini', 'analyzeFieldPhotosWithGemini', 'importCultivationPlanFromExternalSheet', 'exportCultivationPlanToExternalSheet',
       'manageMaster'
     ];
   }
