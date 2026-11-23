@@ -13122,6 +13122,67 @@
 
     registerAction('manageMaster', handleManageMasterP5_);
 
+    registerAction('getUnifiedLogs', async function (params) {
+      var orgId = await resolveCurrentOrgId_();
+      var limit = Math.min(400, Math.max(50, Number(params && params.limit) || 200));
+      var qOrg = 'org_id=eq.' + encodeURIComponent(orgId);
+      async function takeRecent_(table, query) {
+        try {
+          var rows = await restFetch('rest/v1/' + table + '?' + query + '&limit=' + limit);
+          return Array.isArray(rows) ? rows : [];
+        } catch (e) {
+          return [];
+        }
+      }
+      var audits = await takeRecent_('audit_logs', qOrg + '&select=actor_name,action,target,detail,created_at&order=created_at.desc');
+      var inventories = await takeRecent_('inventory_logs', qOrg + '&select=changed_at,recorder_name,item_name,qty_delta,operation,sign_name&order=changed_at.desc');
+      var assets = await takeRecent_('asset_logs', qOrg + '&select=created_at,log_kind,asset_name,actor_name,summary,comment&order=created_at.desc');
+      var kindLabel = {
+        maintenance: '整備',
+        inspection: '点検',
+        machine_fuel: 'アワー',
+        refuel: '給油',
+        tool_usage: '道具'
+      };
+      var items = [];
+      audits.forEach(function (r) {
+        items.push({
+          at: r.created_at || '',
+          kind: '操作',
+          actor: r.actor_name || '',
+          action: r.action || '',
+          target: r.target || '',
+          detail: r.detail || ''
+        });
+      });
+      inventories.forEach(function (r) {
+        var delta = Number(r.qty_delta);
+        var deltaLabel = isFinite(delta) ? ((delta > 0 ? '+' : '') + delta) : '';
+        items.push({
+          at: r.changed_at || '',
+          kind: '在庫',
+          actor: r.recorder_name || '',
+          action: r.operation || '在庫',
+          target: r.item_name || '',
+          detail: [deltaLabel, r.sign_name].filter(Boolean).join(' / ')
+        });
+      });
+      assets.forEach(function (r) {
+        items.push({
+          at: r.created_at || '',
+          kind: '機械',
+          actor: r.actor_name || '',
+          action: kindLabel[r.log_kind] || r.log_kind || '記録',
+          target: r.asset_name || '',
+          detail: [r.summary, r.comment].filter(Boolean).join(' / ')
+        });
+      });
+      items.sort(function (a, b) {
+        return String(b.at || '').localeCompare(String(a.at || ''));
+      });
+      return { logs: items.slice(0, limit * 3) };
+    });
+
     registerAction('addCrop', async function (params) {
       var c = (params && params.cropData) || {};
       var name = String(c.name || '').trim();

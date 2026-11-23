@@ -17,7 +17,7 @@
 
   <link rel="stylesheet" href="admin.css?v=1788600000113">
   <link rel="stylesheet" href="location-pin.css?v=1788600000400">
-  <link rel="stylesheet" href="map-filter.css?v=1788600000330">
+  <link rel="stylesheet" href="map-filter.css?v=1788600000415">
   <link rel="stylesheet" href="cad.css">
 </head>
 
@@ -780,6 +780,32 @@
     </div>
   </div>
 
+  <div id="adminAllLogsModal"
+    style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.72); z-index:10050; justify-content:center; align-items:center; padding:12px; box-sizing:border-box;"
+    onclick="if(event.target===this) closeAdminAllLogsModal_()">
+    <div onclick="event.stopPropagation()"
+      style="background:#f7f8fa; color:#222; width:min(960px, 100%); height:min(86vh, 820px); border-radius:14px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 12px 36px rgba(0,0,0,0.35);">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:12px 16px; background:#fff; border-bottom:1px solid #e0e0e0;">
+        <div>
+          <div style="font-weight:bold; font-size:17px; color:#37474F;">📋 ログ</div>
+          <div style="font-size:11px; color:#78909C; margin-top:2px;">操作・在庫・整備・点検・給油・道具を新しい順に表示します</div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button type="button" onclick="loadAdminAllLogs_()"
+            style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:6px; padding:6px 10px; font-weight:bold; font-size:12px; cursor:pointer;">再読込</button>
+          <button type="button" onclick="closeAdminAllLogsModal_()"
+            style="background:#f5f5f5; color:#666; border:1px solid #ccc; border-radius:6px; padding:6px 12px; font-weight:bold; font-size:13px; cursor:pointer;">閉じる</button>
+        </div>
+      </div>
+      <div style="padding:10px 14px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; background:#fff; border-bottom:1px solid #eee;">
+        <div id="adminAllLogsKinds" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
+        <input type="search" id="adminAllLogsQuery" placeholder="名前・操作・対象で検索" oninput="renderAdminAllLogs_()"
+          style="flex:1; min-width:160px; padding:8px 10px; border:1px solid #CFD8DC; border-radius:8px; font-size:13px;">
+      </div>
+      <div id="adminAllLogsBody" style="flex:1; overflow:auto; padding:10px 14px;"></div>
+    </div>
+  </div>
+
   <div class="control-panel">
     <div class="control-row">
       <div class="search-container">
@@ -792,6 +818,9 @@
       <button onclick="forceUpdateApp()"
         style="background:#4CAF50; color:white; border:none; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px;">🔄
         最新に更新</button>
+      <button type="button" id="btnAdminAllLogs" onclick="openAdminAllLogsModal_()" title="操作・在庫・機械のログ"
+        style="background:#ECEFF1; color:#37474F; border:1px solid #90A4AE; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px; cursor:pointer;">📋
+        ログ</button>
       <button type="button" id="btnReleaseNotes" onclick="openReleaseNotesModal_()" title="更新情報"
         style="position:relative; background:#E0F2F1; color:#00695C; border:1px solid #26A69A; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px; cursor:pointer;">🆕
         更新情報<span data-release-notes-badge
@@ -965,14 +994,14 @@
 
   <script src="api-client.js?v=1794881000001" defer></script>
   <script src="supabase-config.js?v=1788600000382" defer></script>
-  <script src="supabase-bridge.js?v=1788600000412" defer></script>
+  <script src="supabase-bridge.js?v=1788600000415" defer></script>
   <script src="location-pin.js?v=1788600000403" defer></script>
-  <script src="map-filter.js?v=1788600000403" defer></script>
-  <script src="admin.js?v=1788600000412" defer></script>
+  <script src="map-filter.js?v=1788600000415" defer></script>
+  <script src="admin.js?v=1788600000415" defer></script>
   <script src="admin_cost.js?v=1785489000008" defer></script>
   <script src="admin_crop_work.js?v=1787570400000" defer></script>
   <script src="admin_member.js?v=1788600000406" defer></script>
-  <script src="release-notes.js?v=1788600000412" defer></script>
+  <script src="release-notes.js?v=1788600000415" defer></script>
   <script src="tracking.js?v=1788600000324" defer></script>
   <script src="cad.js?v=1788600000316" defer></script>
   <script type="importmap">

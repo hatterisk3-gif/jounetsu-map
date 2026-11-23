@@ -2472,6 +2472,46 @@ window.pasteAndSaveScheduleMapUrl_ = async function (fieldId) {
   }
 };
 
+window.openInAppGoogleMap_ = function (lat, lng, label) {
+  const latN = Number(lat);
+  const lngN = Number(lng);
+  if (!isFinite(latN) || !isFinite(lngN)) return;
+  let overlay = document.getElementById('passionInAppGoogleMap');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'passionInAppGoogleMap';
+    overlay.style.cssText = 'display:none;position:fixed;inset:0;z-index:280000;background:#102027;flex-direction:column;';
+    overlay.innerHTML = ''
+      + '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;padding-top:calc(10px + env(safe-area-inset-top,0px));background:#1565C0;color:#fff;flex-shrink:0;">'
+      + '<button type="button" id="passionInAppGmapClose" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:8px;padding:8px 12px;font-weight:bold;cursor:pointer;">← 戻る</button>'
+      + '<div style="min-width:0;flex:1;">'
+      + '<div style="font-weight:bold;font-size:14px;">Googleマップ</div>'
+      + '<div id="passionInAppGmapTitle" style="font-size:12px;opacity:.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>'
+      + '</div></div>'
+      + '<iframe id="passionInAppGmapFrame" title="Googleマップ" style="flex:1;width:100%;border:0;background:#e0e0e0;" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>';
+    document.body.appendChild(overlay);
+    document.getElementById('passionInAppGmapClose').onclick = function () {
+      if (typeof window.closeInAppGoogleMap_ === 'function') window.closeInAppGoogleMap_();
+    };
+  }
+  const title = document.getElementById('passionInAppGmapTitle');
+  if (title) title.textContent = label || '';
+  const frame = document.getElementById('passionInAppGmapFrame');
+  if (frame) {
+    frame.src = 'https://maps.google.com/maps?q=' + encodeURIComponent(latN.toFixed(6) + ',' + lngN.toFixed(6)) + '&z=18&hl=ja&output=embed';
+  }
+  document.documentElement.classList.add('in-app-gmap-open');
+  overlay.style.display = 'flex';
+};
+
+window.closeInAppGoogleMap_ = function () {
+  const overlay = document.getElementById('passionInAppGoogleMap');
+  if (overlay) overlay.style.display = 'none';
+  const frame = document.getElementById('passionInAppGmapFrame');
+  if (frame) frame.src = 'about:blank';
+  document.documentElement.classList.remove('in-app-gmap-open');
+};
+
 window.openFieldInGoogleMapsFromSchedule_ = function (fieldId) {
   const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[fieldId] : null;
   const c = getScheduleFieldCenter_(p);
@@ -2480,8 +2520,7 @@ window.openFieldInGoogleMapsFromSchedule_ = function (fieldId) {
     else alert('この圃場の座標が見つかりません。');
     return;
   }
-  const url = `https://www.google.com/maps/search/?api=1&query=${c.lat.toFixed(6)},${c.lng.toFixed(6)}`;
-  window.open(url, '_blank', 'noopener');
+  window.openInAppGoogleMap_(c.lat, c.lng, p && p.name);
 };
 
 window.editFieldGoogleMapsUrlFromSchedule = function (fieldId) {

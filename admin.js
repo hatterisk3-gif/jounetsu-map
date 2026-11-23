@@ -2517,6 +2517,101 @@ function updateAdminLegend() {
     legendDiv.innerHTML = html;
 }
 
+window._adminAllLogs = [];
+window._adminLogKind = 'すべて';
+
+window.closeAdminAllLogsModal_ = function () {
+    const modal = document.getElementById('adminAllLogsModal');
+    if (modal) modal.style.display = 'none';
+};
+
+window.openAdminAllLogsModal_ = function () {
+    const modal = document.getElementById('adminAllLogsModal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    window.loadAdminAllLogs_();
+};
+
+function formatAdminLogTime_(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return d.toLocaleString('ja-JP', {
+        timeZone: 'Asia/Tokyo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function escapeAdminLogHtml_(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+window.setAdminLogKind_ = function (kind) {
+    window._adminLogKind = kind || 'すべて';
+    window.renderAdminAllLogs_();
+};
+
+window.renderAdminAllLogs_ = function () {
+    const body = document.getElementById('adminAllLogsBody');
+    const kindsEl = document.getElementById('adminAllLogsKinds');
+    const q = String((document.getElementById('adminAllLogsQuery') || {}).value || '').trim().toLowerCase();
+    const kind = window._adminLogKind || 'すべて';
+    const all = Array.isArray(window._adminAllLogs) ? window._adminAllLogs : [];
+    const kinds = ['すべて', '操作', '在庫', '機械'];
+    if (kindsEl) {
+        kindsEl.innerHTML = kinds.map((k) => {
+            const on = k === kind;
+            const count = k === 'すべて' ? all.length : all.filter((row) => row.kind === k).length;
+            return `<button type="button" onclick="setAdminLogKind_('${k}')" style="border:1px solid ${on ? '#1565C0' : '#CFD8DC'}; background:${on ? '#1565C0' : '#fff'}; color:${on ? '#fff' : '#455A64'}; border-radius:999px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">${k} ${count}</button>`;
+        }).join('');
+    }
+    if (!body) return;
+    const rows = all.filter((row) => {
+        if (kind !== 'すべて' && row.kind !== kind) return false;
+        if (!q) return true;
+        return [row.actor, row.action, row.target, row.detail, row.kind].join(' ').toLowerCase().includes(q);
+    });
+    if (!rows.length) {
+        body.innerHTML = '<div style="text-align:center; color:#90A4AE; padding:28px 8px; font-weight:bold;">表示できるログはありません</div>';
+        return;
+    }
+    body.innerHTML = rows.map((row) => {
+        const tone = row.kind === '在庫' ? '#E8F5E9' : (row.kind === '機械' ? '#FFF3E0' : '#E3F2FD');
+        const ink = row.kind === '在庫' ? '#2E7D32' : (row.kind === '機械' ? '#E65100' : '#1565C0');
+        return `<div style="background:#fff; border:1px solid #ECEFF1; border-radius:10px; padding:10px 12px; margin-bottom:8px;">
+          <div style="display:flex; justify-content:space-between; gap:8px; align-items:center; margin-bottom:4px;">
+            <span style="background:${tone}; color:${ink}; font-size:11px; font-weight:bold; border-radius:999px; padding:2px 8px;">${escapeAdminLogHtml_(row.kind)} · ${escapeAdminLogHtml_(row.action)}</span>
+            <span style="font-size:11px; color:#90A4AE; white-space:nowrap;">${escapeAdminLogHtml_(formatAdminLogTime_(row.at))}</span>
+          </div>
+          <div style="font-size:13px; font-weight:bold; color:#263238;">${escapeAdminLogHtml_(row.target || '（対象なし）')}</div>
+          <div style="font-size:12px; color:#546E7A; margin-top:2px;">${escapeAdminLogHtml_(row.actor || 'システム')}${row.detail ? ' · ' + escapeAdminLogHtml_(row.detail) : ''}</div>
+        </div>`;
+    }).join('');
+};
+
+window.loadAdminAllLogs_ = async function () {
+    const body = document.getElementById('adminAllLogsBody');
+    if (body) body.innerHTML = '<div style="text-align:center; color:#607D8B; padding:28px 8px; font-weight:bold;">読み込み中...</div>';
+    try {
+        const res = await callGAS('getUnifiedLogs', { limit: 250 });
+        window._adminAllLogs = (res && Array.isArray(res.logs)) ? res.logs : [];
+        window.renderAdminAllLogs_();
+    } catch (e) {
+        if (body) {
+            body.innerHTML = '<div style="color:#C62828; font-weight:bold; padding:16px;">ログを読み込めませんでした: '
+                + escapeAdminLogHtml_(e && e.message ? e.message : e) + '</div>';
+        }
+    }
+};
+
 window.openMasterModal = () => {
     if (typeof window.closeEquipmentManageModal === 'function') {
         try { window.closeEquipmentManageModal({ keepMaster: true }); } catch (e) { }
@@ -13891,6 +13986,46 @@ window.pasteAdminFieldMapUrl_ = async function (fieldId) {
     }
 };
 
+window.openInAppGoogleMap_ = function (lat, lng, label) {
+    const latN = Number(lat);
+    const lngN = Number(lng);
+    if (!isFinite(latN) || !isFinite(lngN)) return;
+    let overlay = document.getElementById('passionInAppGoogleMap');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'passionInAppGoogleMap';
+        overlay.style.cssText = 'display:none;position:fixed;inset:0;z-index:280000;background:#102027;flex-direction:column;';
+        overlay.innerHTML = ''
+            + '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;padding-top:calc(10px + env(safe-area-inset-top,0px));background:#1565C0;color:#fff;flex-shrink:0;">'
+            + '<button type="button" id="passionInAppGmapClose" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:8px;padding:8px 12px;font-weight:bold;cursor:pointer;">← 戻る</button>'
+            + '<div style="min-width:0;flex:1;">'
+            + '<div style="font-weight:bold;font-size:14px;">Googleマップ</div>'
+            + '<div id="passionInAppGmapTitle" style="font-size:12px;opacity:.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>'
+            + '</div></div>'
+            + '<iframe id="passionInAppGmapFrame" title="Googleマップ" style="flex:1;width:100%;border:0;background:#e0e0e0;" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>';
+        document.body.appendChild(overlay);
+        document.getElementById('passionInAppGmapClose').onclick = function () {
+            if (typeof window.closeInAppGoogleMap_ === 'function') window.closeInAppGoogleMap_();
+        };
+    }
+    const title = document.getElementById('passionInAppGmapTitle');
+    if (title) title.textContent = label || '';
+    const frame = document.getElementById('passionInAppGmapFrame');
+    if (frame) {
+        frame.src = 'https://maps.google.com/maps?q=' + encodeURIComponent(latN.toFixed(6) + ',' + lngN.toFixed(6)) + '&z=18&hl=ja&output=embed';
+    }
+    document.documentElement.classList.add('in-app-gmap-open');
+    overlay.style.display = 'flex';
+};
+
+window.closeInAppGoogleMap_ = function () {
+    const overlay = document.getElementById('passionInAppGoogleMap');
+    if (overlay) overlay.style.display = 'none';
+    const frame = document.getElementById('passionInAppGmapFrame');
+    if (frame) frame.src = 'about:blank';
+    document.documentElement.classList.remove('in-app-gmap-open');
+};
+
 window.openAdminFieldInGoogleMaps_ = function (fieldId) {
     const p = loadedPolygons[fieldId];
     const c = adminFieldCenter_(p);
@@ -13898,8 +14033,7 @@ window.openAdminFieldInGoogleMaps_ = function (fieldId) {
         customAlert('この圃場の座標が見つかりません。');
         return;
     }
-    const url = `https://www.google.com/maps/search/?api=1&query=${c.lat.toFixed(6)},${c.lng.toFixed(6)}`;
-    window.open(url, '_blank', 'noopener');
+    window.openInAppGoogleMap_(c.lat, c.lng, p && p.name);
 };
 
 window.openAdminFieldMapUrlTool_ = function (fieldId) {

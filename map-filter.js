@@ -433,3 +433,45 @@
   global.getMapLayerFilterState_ = function () { return Object.assign({}, state); };
   global.setMapLayerFilter_ = setLayer_;
 })(window);
+
+window.closeInAppGoogleMap_ = window.closeInAppGoogleMap_ || function () {
+  var overlay = document.getElementById('passionInAppGoogleMap');
+  if (overlay) overlay.style.display = 'none';
+  var frame = document.getElementById('passionInAppGmapFrame');
+  if (frame) frame.src = 'about:blank';
+  document.documentElement.classList.remove('in-app-gmap-open');
+};
+
+if (typeof window.openInAppGoogleMap_ !== 'function') {
+  window.openInAppGoogleMap_ = function (lat, lng, label) {
+    var latN = Number(lat);
+    var lngN = Number(lng);
+    if (!isFinite(latN) || !isFinite(lngN)) return;
+    var overlay = document.getElementById('passionInAppGoogleMap');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'passionInAppGoogleMap';
+      overlay.style.cssText = 'display:none;position:fixed;inset:0;z-index:280000;background:#102027;flex-direction:column;';
+      overlay.innerHTML = ''
+        + '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;padding-top:calc(10px + env(safe-area-inset-top,0px));background:#1565C0;color:#fff;flex-shrink:0;">'
+        + '<button type="button" id="passionInAppGmapClose" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:8px;padding:8px 12px;font-weight:bold;cursor:pointer;">← 戻る</button>'
+        + '<div style="min-width:0;flex:1;">'
+        + '<div style="font-weight:bold;font-size:14px;">Googleマップ</div>'
+        + '<div id="passionInAppGmapTitle" style="font-size:12px;opacity:.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>'
+        + '</div></div>'
+        + '<iframe id="passionInAppGmapFrame" title="Googleマップ" style="flex:1;width:100%;border:0;background:#e0e0e0;" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>';
+      document.body.appendChild(overlay);
+      document.getElementById('passionInAppGmapClose').onclick = function () {
+        window.closeInAppGoogleMap_();
+      };
+    }
+    var title = document.getElementById('passionInAppGmapTitle');
+    if (title) title.textContent = label || '';
+    var frame = document.getElementById('passionInAppGmapFrame');
+    if (frame) {
+      frame.src = 'https://maps.google.com/maps?q=' + encodeURIComponent(latN.toFixed(6) + ',' + lngN.toFixed(6)) + '&z=18&hl=ja&output=embed';
+    }
+    document.documentElement.classList.add('in-app-gmap-open');
+    overlay.style.display = 'flex';
+  };
+}

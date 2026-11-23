@@ -381,7 +381,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const model = Deno.env.get("GEMINI_MODEL")?.trim() || "gemini-4-neon";
+    const model = Deno.env.get("GEMINI_MODEL")?.trim() || "gemini-4-hydrogen";
     const action = String((body as Record<string, unknown>).action || "").trim();
     const rawParams = (body as Record<string, unknown>).params;
     const params: Record<string, unknown> =

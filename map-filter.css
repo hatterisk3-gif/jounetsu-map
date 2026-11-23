@@ -8,6 +8,22 @@
   pointer-events: none;
 }
 
+/* アプリ内Googleマップ表示中は、地図の操作ボタンと色分けを重ねない */
+html.in-app-gmap-open #mapLayerFilterRoot,
+html.in-app-gmap-open .schedule-side-fabs,
+html.in-app-gmap-open #scheduleLegendUI,
+html.in-app-gmap-open #viewpointToast,
+html.in-app-gmap-open #btnCurrentLocation,
+html.in-app-gmap-open #btnToggleViewpoint,
+html.in-app-gmap-open #btnAdminMaster,
+html.in-app-gmap-open #adminRegPlusWrap,
+html.in-app-gmap-open #btnClockBoard,
+html.in-app-gmap-open #mapActionBar,
+html.in-app-gmap-open #workerLegendUI,
+html.in-app-gmap-open #adminLegendUI {
+  display: none !important;
+}
+
 .map-layer-filter-root * {
   box-sizing: border-box;
 }
