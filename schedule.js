@@ -2635,6 +2635,11 @@ window.sharePigManureRequestFromSchedule = function (fieldId) {
   if (typeof window.openPigManureChoiceModal_ === 'function') {
     return window.openPigManureChoiceModal_(fieldId);
   }
+  const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[fieldId] : null;
+  if (p && (p.directDumpAllowed === false || p.directDumpAllowed === '不可')) {
+    const name = p.name || 'この圃場';
+    if (!confirm('「' + name + '」は直ダンプ不可です。\n豚糞散布の依頼を続けますか？')) return;
+  }
   return executePigManureShareFallback_(fieldId);
 };
 

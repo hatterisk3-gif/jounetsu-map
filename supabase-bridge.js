@@ -1191,6 +1191,7 @@
       drainage_status: meta.drainage_status || '',
       soilType: row.soil_type || '',
       googleMapsUrl: meta.googleMapsUrl || '',
+      directDumpAllowed: !(meta.directDumpAllowed === false || meta.directDumpAllowed === '不可'),
       fieldMemo: meta.fieldMemo || null,
       manure_status: md.manure_status || 'none',
       manure_deadline: md.manure_deadline || '',
@@ -1646,6 +1647,7 @@
           manureData: {},
           fieldMemo: null,
           googleMapsUrl: String(params.googleMapsUrl || '').trim(),
+          directDumpAllowed: !(params.directDumpAllowed === false || params.directDumpAllowed === '不可' || params.directDumpAllowed === 'false'),
           uneSimDataRaw: uneRaw || undefined
         },
         created_by: String(params.userName || '')
@@ -1692,6 +1694,7 @@
             water_status: 'stopped',
             manureData: {},
             googleMapsUrl: String(p.googleMapsUrl || '').trim(),
+            directDumpAllowed: !(p.directDumpAllowed === false || p.directDumpAllowed === '不可' || p.directDumpAllowed === 'false'),
             uneSimDataRaw: uneRaw || undefined
           },
           created_by: String(p.userName || '')
@@ -1740,6 +1743,10 @@
         if (params.drainage_status !== undefined) meta.drainage_status = String(params.drainage_status || '');
         if (params.soilType !== undefined) patch.soil_type = String(params.soilType || '');
         if (params.googleMapsUrl !== undefined) meta.googleMapsUrl = String(params.googleMapsUrl || '').trim();
+        if (params.directDumpAllowed !== undefined) {
+          var dumpRaw = params.directDumpAllowed;
+          meta.directDumpAllowed = !(dumpRaw === false || dumpRaw === '不可' || dumpRaw === 'false' || dumpRaw === 0 || dumpRaw === '0');
+        }
         if (params.manureData !== undefined) meta.manureData = parseJsonMaybe_(params.manureData, {});
         if (params.ridgeDir !== undefined) patch.ridge_direction = String(params.ridgeDir || '');
         if (params.ridgeWidth !== undefined) patch.ridge_width = params.ridgeWidth !== '' && params.ridgeWidth != null ? Number(params.ridgeWidth) : null;

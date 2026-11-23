@@ -1247,6 +1247,7 @@ function syncUpdatePolygon_(p, extra) {
         if (payload.ridgeDir == null) payload.ridgeDir = p.ridgeDir || '';
         if (payload.ridgeWidth == null) payload.ridgeWidth = p.ridgeWidth || '';
         if (payload.googleMapsUrl == null) payload.googleMapsUrl = p.googleMapsUrl || '';
+        if (payload.directDumpAllowed == null) payload.directDumpAllowed = p.directDumpAllowed !== false;
         if (payload.area == null && p.area != null) payload.area = p.area;
         if (payload.coords == null && p.coords) payload.coords = JSON.stringify(p.coords);
         if (payload.color == null && p.color != null) payload.color = p.color;
@@ -1962,8 +1963,8 @@ function openMasterFromQuery_() {
     const allowed = [
         'menu', 'crop', 'cropCultSetting', 'nurseryLocation', 'cropChemPlan',
         'cropWorkPlan', 'costItem', 'cropCostPlan', 'container', 'contentUnit',
-        'location', 'member', 'workCategory', 'machineType', 'machineGroup', 'hitchType',
-        'work', 'machine', 'tool', 'material', 'pesticide', 'fertilizer'
+        'location', 'member', 'workCategory',
+        'work', 'tool', 'material', 'pesticide', 'fertilizer'
     ];
     if (!allowed.includes(masterType)) return;
     window._adminMasterQueryHandled = true;
@@ -2554,15 +2555,33 @@ window.openEquipmentManageModal = (tab) => {
     switchEquipmentManageTab(window._equipmentManageTab);
 };
 
+window.openEquipmentManageFromMaster_ = () => {
+    window._equipmentOpenedFromMaster = true;
+    if (typeof window.openEquipmentManageModal === 'function') window.openEquipmentManageModal('machine');
+};
+
 window.closeEquipmentManageModal = (opts) => {
+    const fromMaster = !!window._equipmentOpenedFromMaster;
     window._equipmentManageActive = false;
     const modal = document.getElementById('equipmentManageModal');
     if (modal) modal.style.display = 'none';
     const body = document.getElementById('equipmentManageBody');
     if (body) body.innerHTML = '';
+    if (opts && opts.keepMaster) {
+        window._equipmentOpenedFromMaster = false;
+    }
     if (!(opts && opts.keepMaster)) {
         if (currentActiveMasterType === 'machine' || currentActiveMasterType === 'tool' || currentActiveMasterType === 'inspection') {
             currentActiveMasterType = null;
+        }
+        if (fromMaster) {
+            window._equipmentOpenedFromMaster = false;
+            const mm = document.getElementById('masterModal');
+            if (mm) {
+                currentActiveMasterType = null;
+                mm.style.display = 'flex';
+                if (typeof renderMasterMenu === 'function') renderMasterMenu();
+            }
         }
     }
 };
@@ -4577,7 +4596,16 @@ window.getMasterTypeInfo = (type) => {
         nurseryLocation: { title: '🪴 育苗場所マスタ', desc: '育苗区画（圃場）と方向の登録', list: pdlNurseryLocations || [] },
         cropCultSetting: { title: '📐 作物栽培設定マスタ', desc: '品目ごとの播種穴数など栽培デフォルト', list: pdlCropCultSettings || [] },
         container: { title: '🧺 コンテナマスタ', desc: 'コンテナ種類×品目ごとの内容単位・内容個数（共通なし）', list: pdlContainers || [] },
-        inspection: { title: '📋 点検マスタ', desc: '機械カテゴリごとの点検カテゴリ・点検項目の設定', list: pdlInspections || [] }
+        inspection: { title: '📋 点検マスタ', desc: '機械カテゴリごとの点検カテゴリ・点検項目の設定', list: pdlInspections || [] },
+        equipmentManage: {
+            title: '🚜 機械管理マスタ',
+            desc: '機械・車両・道具・点検項目の一覧と登録',
+            list: []
+                .concat(window.pdlMachines || [])
+                .concat(typeof window.getAdminVehicleList_ === 'function' ? window.getAdminVehicleList_() : [])
+                .concat(pdlTools || [])
+                .concat(pdlInspections || [])
+        }
     };
     return listMap[type] || { title: type, desc: '', list: [] };
 };
@@ -4595,7 +4623,7 @@ window.renderMasterMenu = () => {
 
     const masterTypes = [
         'crop', 'cropCultSetting', 'nurseryLocation', 'cropChemPlan', 'cropWorkPlan', 'costItem', 'cropCostPlan', 'container', 'contentUnit', 'location', 'member', 'workCategory',
-        'machineType', 'machineGroup', 'hitchType', 'inspection', 'work', 'machine', 'tool', 'material', 'pesticide', 'fertilizer'
+        'equipmentManage', 'inspection', 'work', 'tool', 'material', 'pesticide', 'fertilizer'
     ];
 
     let html = `
@@ -4609,8 +4637,11 @@ window.renderMasterMenu = () => {
     masterTypes.forEach(type => {
         const info = getMasterTypeInfo(type);
         const count = info.list ? info.list.length : 0;
+        const openAction = type === 'equipmentManage'
+            ? 'openEquipmentManageFromMaster_()'
+            : `openMasterDetail('${type}')`;
         html += `
-          <div onclick="openMasterDetail('${type}')" style="background:#fff; border:1px solid #e0e0e0; border-radius:10px; padding:16px; cursor:pointer; transition:all 0.2s ease; box-shadow:0 2px 6px rgba(0,0,0,0.05); display:flex; flex-direction:column; justify-content:space-between;"
+          <div onclick="${openAction}" style="background:#fff; border:1px solid #e0e0e0; border-radius:10px; padding:16px; cursor:pointer; transition:all 0.2s ease; box-shadow:0 2px 6px rgba(0,0,0,0.05); display:flex; flex-direction:column; justify-content:space-between;"
                onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 15px rgba(0,0,0,0.1)'; this.style.borderColor='#2196F3';"
                onmouseout="this.style.transform='none'; this.style.boxShadow='0 2px 6px rgba(0,0,0,0.05)'; this.style.borderColor='#e0e0e0';">
             <div>
@@ -9264,7 +9295,7 @@ function openAttr(id) {
             }, 0);
         }
     } else {
-        infoWindow.setContent(`<div style="width:240px;max-width:100%;box-sizing:border-box;text-align:left;color:#333;padding:4px;"><b>圃場情報変更</b><br><label class="form-label">名前</label><input type="text" id="edN" value="${p.name}" class="form-input"><label class="form-label">拠点</label><select id="edL" class="form-input"><option value="">未設定</option>${pdlLocations.map(l => `<option value="${l}" ${l === p.location ? 'selected' : ''}>${l}</option>`).join('')}</select><label class="form-label">条件</label><select id="edC" class="form-input"><option value="">未設定</option>${pdlConditions.map(c => `<option value="${c}" ${c === p.condition ? 'selected' : ''}>${c}</option>`).join('')}</select><label class="form-label">土質</label><select id="edSoil" class="form-input"><option value="">未設定</option>${(['粘土質', '砂質', '壌質']).map(s => `<option value="${s}" ${s === (p.soilType || '') ? 'selected' : ''}>${s}</option>`).join('')}</select><div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;"><label class="form-label" style="margin:0;">稼働状況</label><button type="button" onclick="openFieldStatusManager()" style="background:none;border:none;color:#1976d2;font-size:11px;cursor:pointer;padding:0;font-weight:bold;">⚙️ 管理</button></div><select id="edS" class="form-input" onchange="handleStatusSelect(this)"><option value="">未設定</option>${pdlStatuses.map(s => `<option value="${s}" ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}<option value="ADD_NEW" style="color:#1976d2;font-weight:bold;">➕ 新規項目追加...</option><option value="MANAGE_STATUS" style="color:#d32f2f;font-weight:bold;">⚙️ 項目の編集・削除...</option></select><label class="form-label">共有GoogleマップURL</label><input type="url" id="edMapUrl" value="${String(p.googleMapsUrl || '').replace(/"/g, '&quot;')}" placeholder="https://maps.app.goo.gl/..." class="form-input"><button onclick="execAttr('${id}')" style="background:#d32f2f;color:white;width:100%;padding:10px;border-radius:4px;font-weight:bold;border:none;margin-top:10px;">情報を更新</button></div>`);
+        infoWindow.setContent(`<div style="width:240px;max-width:100%;box-sizing:border-box;text-align:left;color:#333;padding:4px;"><b>圃場情報変更</b><br><label class="form-label">名前</label><input type="text" id="edN" value="${p.name}" class="form-input"><label class="form-label">拠点</label><select id="edL" class="form-input"><option value="">未設定</option>${pdlLocations.map(l => `<option value="${l}" ${l === p.location ? 'selected' : ''}>${l}</option>`).join('')}</select><label class="form-label">条件</label><select id="edC" class="form-input"><option value="">未設定</option>${pdlConditions.map(c => `<option value="${c}" ${c === p.condition ? 'selected' : ''}>${c}</option>`).join('')}</select><label class="form-label">土質</label><select id="edSoil" class="form-input"><option value="">未設定</option>${(['粘土質', '砂質', '壌質']).map(s => `<option value="${s}" ${s === (p.soilType || '') ? 'selected' : ''}>${s}</option>`).join('')}</select><div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;"><label class="form-label" style="margin:0;">稼働状況</label><button type="button" onclick="openFieldStatusManager()" style="background:none;border:none;color:#1976d2;font-size:11px;cursor:pointer;padding:0;font-weight:bold;">⚙️ 管理</button></div><select id="edS" class="form-input" onchange="handleStatusSelect(this)"><option value="">未設定</option>${pdlStatuses.map(s => `<option value="${s}" ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}<option value="ADD_NEW" style="color:#1976d2;font-weight:bold;">➕ 新規項目追加...</option><option value="MANAGE_STATUS" style="color:#d32f2f;font-weight:bold;">⚙️ 項目の編集・削除...</option></select><label class="form-label">直ダンプ</label><select id="edDirectDump" class="form-input"><option value="可" ${p.directDumpAllowed === false ? '' : 'selected'}>可</option><option value="不可" ${p.directDumpAllowed === false ? 'selected' : ''}>不可</option></select><label class="form-label">共有GoogleマップURL</label><button type="button" id="edMapUrlBtn" onclick="openAdminFieldMapUrlTool_('${id}')" class="form-input" style="background:${String(p.googleMapsUrl || '').trim() ? '#E8F5E9' : '#FFF8E1'};font-weight:bold;cursor:pointer;text-align:left;">${String(p.googleMapsUrl || '').trim() ? '✅ 共有ツールを開く（登録済）' : '🔗 共有ツールを開く'}</button><button onclick="execAttr('${id}')" style="background:#d32f2f;color:white;width:100%;padding:10px;border-radius:4px;font-weight:bold;border:none;margin-top:10px;">情報を更新</button></div>`);
     }
 }
 
@@ -9338,8 +9369,12 @@ function execAttr(id) {
             if (results.some(Boolean)) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok');
         });
     } else {
-        const n = document.getElementById('edN').value, l = document.getElementById('edL').value, c = document.getElementById('edC').value, soil = (document.getElementById('edSoil') || {}).value || '', s = document.getElementById('edS').value, mapUrl = String((document.getElementById('edMapUrl') || {}).value || '').trim(), t = p.toukiId;
-        if (!n) return; p.name = n; p.location = l; p.condition = c; p.soilType = soil; p.status = s; p.googleMapsUrl = mapUrl; p.toukiId = t;
+        const n = document.getElementById('edN').value, l = document.getElementById('edL').value, c = document.getElementById('edC').value, soil = (document.getElementById('edSoil') || {}).value || '', s = document.getElementById('edS').value, t = p.toukiId;
+        const mapUrlEl = document.getElementById('edMapUrl');
+        const dumpEl = document.getElementById('edDirectDump');
+        if (!n) return; p.name = n; p.location = l; p.condition = c; p.soilType = soil; p.status = s; p.toukiId = t;
+        if (mapUrlEl) p.googleMapsUrl = String(mapUrlEl.value || '').trim();
+        if (dumpEl) p.directDumpAllowed = dumpEl.value !== '不可';
         const isU = (s === '未使用（返却）' || s === '未使用'), col = getAdminColor(s);
         p.polygon.setOptions({ fillColor: col, strokeColor: col, fillOpacity: isU ? 0.5 : 0.3 }); p.marker.setMap(null); p.marker = createLabelMarker(n, p.polygon.getPath().getArray(), col, p.area);
         updateAdminLegend();
@@ -11526,8 +11561,10 @@ window.pickAdminRegPlus_ = (kind) => {
         if (typeof window.openMasterModal === 'function') window.openMasterModal();
     } else if (kind === 'viewpoint') {
         if (typeof window.startViewpointPickMode_ === 'function') window.startViewpointPickMode_();
-    } else if (kind === 'equipment') {
-        if (typeof window.openEquipmentManageModal === 'function') window.openEquipmentManageModal();
+    } else if (kind === 'machineReg' || kind === 'vehicleReg' || kind === 'toolReg') {
+        window._equipmentOpenedFromMaster = false;
+        const tab = kind === 'vehicleReg' ? 'vehicle' : (kind === 'toolReg' ? 'tool' : 'machine');
+        if (typeof window.openEquipmentManageModal === 'function') window.openEquipmentManageModal(tab);
     } else if (kind === 'mapUrlBatch') {
         if (typeof window.openMapUrlBatchModal === 'function') window.openMapUrlBatchModal();
     } else if (kind === 'batchDelete') {
@@ -13772,6 +13809,146 @@ document.getElementById('btnLoadFude').onclick = async () => {
     }
 };
 
+function adminFieldCenter_(p) {
+    if (!p) return null;
+    try {
+        if (p.polygon && typeof p.polygon.getPath === 'function' && window.google && google.maps) {
+            const b = new google.maps.LatLngBounds();
+            p.polygon.getPath().forEach(pt => b.extend(pt));
+            const c = b.getCenter();
+            if (c) return { lat: c.lat(), lng: c.lng() };
+        }
+    } catch (e) { }
+    if (Array.isArray(p.coords) && p.coords.length) {
+        let latSum = 0, lngSum = 0, n = 0;
+        p.coords.forEach(pt => {
+            const pla = (typeof pt.lat === 'function') ? pt.lat() : parseFloat(pt.lat);
+            const pln = (typeof pt.lng === 'function') ? pt.lng() : parseFloat(pt.lng);
+            if (!isNaN(pla) && !isNaN(pln)) { latSum += pla; lngSum += pln; n++; }
+        });
+        if (n > 0) return { lat: latSum / n, lng: lngSum / n };
+    }
+    return null;
+}
+
+function refreshAdminFieldMapUrlBtn_(p) {
+    const btn = document.getElementById('edMapUrlBtn');
+    if (!btn || !p) return;
+    const has = !!String(p.googleMapsUrl || '').trim();
+    btn.textContent = has ? '✅ 共有ツールを開く（登録済）' : '🔗 共有ツールを開く';
+    btn.style.background = has ? '#E8F5E9' : '#FFF8E1';
+}
+
+window.closeAdminFieldMapUrlTool_ = function () {
+    const modal = document.getElementById('adminFieldMapUrlModal');
+    if (modal) modal.style.display = 'none';
+};
+
+window.saveAdminFieldMapUrl_ = async function (fieldId, overrideRaw) {
+    const p = loadedPolygons[fieldId];
+    if (!p) return false;
+    const inp = document.getElementById('adminFieldMapUrlInp');
+    const st = document.getElementById('adminFieldMapUrlStatus');
+    const raw = (overrideRaw !== undefined) ? overrideRaw : (inp ? inp.value : '');
+    const nextUrl = (typeof extractHttpUrlFromText_ === 'function') ? extractHttpUrlFromText_(raw) : String(raw || '').trim();
+    if (nextUrl && !/^https?:\/\//i.test(nextUrl)) {
+        customAlert('http:// または https:// で始まるURLを入力してください。');
+        return false;
+    }
+    if (inp) inp.value = nextUrl;
+    p.googleMapsUrl = nextUrl;
+    if (st) {
+        st.textContent = '⏳ 保存中...';
+        st.style.color = '#E65100';
+    }
+    refreshAdminFieldMapUrlBtn_(p);
+    const ok = await syncUpdatePolygon_(p, { googleMapsUrl: nextUrl });
+    if (st) {
+        st.textContent = ok
+            ? (nextUrl ? '✅ 登録済（保存しました）' : '未登録（クリアしました）')
+            : '⚠️ 端末には反映しました（同期待ち）';
+        st.style.color = ok ? (nextUrl ? '#2E7D32' : '#777') : '#E65100';
+    }
+    showAdminSyncToast(nextUrl ? '✅ 共有GoogleマップURLを保存しました' : '共有GoogleマップURLをクリアしました', 'ok');
+    return true;
+};
+
+window.pasteAdminFieldMapUrl_ = async function (fieldId) {
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+        customAlert('このブラウザではワンタップ貼付が使えません。下の入力欄に貼り付けて「保存」を押してください。');
+        return;
+    }
+    try {
+        const text = await navigator.clipboard.readText();
+        const url = (typeof extractHttpUrlFromText_ === 'function') ? extractHttpUrlFromText_(text) : String(text || '').trim();
+        if (!url || !/^https?:\/\//i.test(url)) {
+            customAlert('クリップボードにURLが見つかりませんでした。\nGoogleマップで「共有 → リンクをコピー」をしてからもう一度お試しください。');
+            return;
+        }
+        await window.saveAdminFieldMapUrl_(fieldId, url);
+    } catch (e) {
+        customAlert('クリップボードの読み取りが許可されませんでした。下の入力欄に貼り付けて「保存」を押してください。');
+    }
+};
+
+window.openAdminFieldInGoogleMaps_ = function (fieldId) {
+    const p = loadedPolygons[fieldId];
+    const c = adminFieldCenter_(p);
+    if (!c) {
+        customAlert('この圃場の座標が見つかりません。');
+        return;
+    }
+    const url = `https://www.google.com/maps/search/?api=1&query=${c.lat.toFixed(6)},${c.lng.toFixed(6)}`;
+    window.open(url, '_blank', 'noopener');
+};
+
+window.openAdminFieldMapUrlTool_ = function (fieldId) {
+    const p = loadedPolygons[fieldId];
+    if (!p) return;
+    let modal = document.getElementById('adminFieldMapUrlModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'adminFieldMapUrlModal';
+        modal.style.cssText = 'display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:260000; justify-content:center; align-items:center; padding:14px; box-sizing:border-box;';
+        modal.onclick = function (ev) { if (ev.target === modal) window.closeAdminFieldMapUrlTool_(); };
+        document.body.appendChild(modal);
+    }
+    const curUrl = String(p.googleMapsUrl || '').trim();
+    const escId = String(p.id).replace(/'/g, "\\'");
+    const escUrl = curUrl.replace(/"/g, '&quot;');
+    const escName = String(p.name || '圃場')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    modal.innerHTML = `
+      <div style="background:#fff; width:100%; max-width:420px; border-radius:14px; overflow:hidden; box-shadow:0 8px 28px rgba(0,0,0,0.35); font-family:sans-serif;" onclick="event.stopPropagation()">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#1565C0; color:#fff;">
+          <div style="font-weight:bold; font-size:15px;">🔗 共有Googleマップ</div>
+          <button type="button" onclick="closeAdminFieldMapUrlTool_()" style="background:rgba(255,255,255,0.2); border:none; color:#fff; border-radius:6px; padding:5px 10px; font-weight:bold; cursor:pointer;">✕</button>
+        </div>
+        <div style="padding:14px 16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
+            <div style="font-weight:bold; font-size:15px; color:#0D47A1;">${escName}</div>
+            <span id="adminFieldMapUrlStatus" style="font-size:12px; font-weight:bold; color:${curUrl ? '#2E7D32' : '#777'};">${curUrl ? '✅ 登録済' : '未登録'}</span>
+          </div>
+          <div style="background:#E3F2FD; border:1px solid #90CAF9; border-radius:8px; padding:8px 10px; font-size:12px; color:#0D47A1; line-height:1.45; margin-bottom:12px;">
+            ① <b>「🗺️ Googleマップで開く」</b>で場所を開く<br>
+            ② Googleマップで「共有」→「リンクをコピー」<br>
+            ③ 戻って<b>「📋 貼付して保存」</b>を押す
+          </div>
+          <div style="display:flex; gap:8px; margin-bottom:10px;">
+            <button type="button" onclick="openAdminFieldInGoogleMaps_('${escId}')" style="flex:1; padding:10px 8px; border:none; border-radius:8px; background:#1565C0; color:#fff; font-weight:bold; font-size:13px; cursor:pointer;">🗺️ Googleマップで開く</button>
+            <button type="button" onclick="pasteAdminFieldMapUrl_('${escId}')" style="flex:1; padding:10px 8px; border:none; border-radius:8px; background:#2E7D32; color:#fff; font-weight:bold; font-size:13px; cursor:pointer;">📋 貼付して保存</button>
+          </div>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <input type="url" id="adminFieldMapUrlInp" value="${escUrl}" placeholder="https://maps.app.goo.gl/..."
+              style="flex:1; padding:9px 10px; border:1px solid #ccc; border-radius:8px; font-size:13px; min-width:0;">
+            <button type="button" onclick="saveAdminFieldMapUrl_('${escId}')" style="padding:9px 14px; border:none; border-radius:8px; background:#1565C0; color:#fff; font-weight:bold; font-size:13px; cursor:pointer; white-space:nowrap;">保存</button>
+          </div>
+          <button type="button" onclick="saveAdminFieldMapUrl_('${escId}', '')" style="margin-top:10px; padding:8px 12px; border:1px solid #ccc; border-radius:8px; background:#fff; color:#666; font-weight:bold; font-size:12px; cursor:pointer;">クリア</button>
+        </div>
+      </div>`;
+    modal.style.display = 'flex';
+};
+
 window.openDrawingFieldInGoogleMaps_ = () => {
     let pts = null;
     if (Array.isArray(customDrawingPath) && customDrawingPath.length > 0) {
@@ -13821,6 +13998,7 @@ window.pasteDrawingFieldGoogleMapsUrl_ = async () => {
 // 🌟変更：合体した外郭を「1つの圃場」として保存する
 document.getElementById('finalSaveBtn').onclick = async () => {
     const n = document.getElementById('fieldName').value, l = document.getElementById('fieldLocation').value, c = document.getElementById('fieldCondition').value, soil = (document.getElementById('fieldSoilType') || {}).value || '', s = document.getElementById('fieldStatus').value, t = "";
+    const directDumpAllowed = ((document.getElementById('fieldDirectDump') || {}).value || '可') !== '不可';
     const rawMapUrl = (document.getElementById('fieldGoogleMapsUrl') || {}).value || '';
     const mapUrl = (typeof extractHttpUrlFromText_ === 'function') ? extractHttpUrlFromText_(rawMapUrl) : String(rawMapUrl || '').trim();
     if (mapUrl && !/^https?:\/\//i.test(mapUrl)) {
@@ -13839,9 +14017,9 @@ document.getElementById('finalSaveBtn').onclick = async () => {
             const pathData = customDrawingPath.map(pt => ({ lat: pt.lat(), lng: pt.lng() }));
             const area = Math.round(google.maps.geometry.spherical.computeArea(customDrawingPath) / 100);
             const tempId = newAdminTempId_('tmp');
-            createPolygonObject({ id: tempId, name: n, coords: pathData, color: '#d32f2f', location: l, condition: c, soilType: soil, area, status: s, toukiId: t, googleMapsUrl: mapUrl, isMarker: false });
+            createPolygonObject({ id: tempId, name: n, coords: pathData, color: '#d32f2f', location: l, condition: c, soilType: soil, area, status: s, toukiId: t, googleMapsUrl: mapUrl, directDumpAllowed, isMarker: false });
             persistAdminInitCache_();
-            const payload = { name: n, coords: JSON.stringify(pathData), color: '#d32f2f', userName: currentUser, location: l, condition: c, soilType: soil, area, status: s, toukiId: t, googleMapsUrl: mapUrl };
+            const payload = { name: n, coords: JSON.stringify(pathData), color: '#d32f2f', userName: currentUser, location: l, condition: c, soilType: soil, area, status: s, toukiId: t, googleMapsUrl: mapUrl, directDumpAllowed };
             syncAdminCall_('savePolygon', payload, { key: 'savePolygon:' + tempId, op: 'savePolygon', tempId, payload }).then(newId => {
                 remapLoadedPolygonId_(tempId, newId);
                 persistAdminInitCache_();
@@ -13875,7 +14053,7 @@ document.getElementById('finalSaveBtn').onclick = async () => {
                     coords: JSON.stringify(pathData),
                     color: '#d32f2f',
                     userName: currentUser,
-                    location: l, condition: c, soilType: soil, area, status: s, toukiId: t, googleMapsUrl: mapUrl
+                    location: l, condition: c, soilType: soil, area, status: s, toukiId: t, googleMapsUrl: mapUrl, directDumpAllowed
                 });
                 createPolygonObject({ ...paramsList[i], id: tempId, coords: pathData, isMarker: false });
             }
@@ -13897,12 +14075,12 @@ document.getElementById('finalSaveBtn').onclick = async () => {
             let pathData = currentPath.map(pt => ({ lat: pt.lat(), lng: pt.lng() }));
             let area = Math.round(google.maps.geometry.spherical.computeArea(currentPath) / 100);
             const tempId = newAdminTempId_('tmp');
-            createPolygonObject({ id: tempId, name: n, coords: pathData, color: '#d32f2f', location: l, condition: c, soilType: soil, area, status: s, toukiId: t, googleMapsUrl: mapUrl, isMarker: false });
+            createPolygonObject({ id: tempId, name: n, coords: pathData, color: '#d32f2f', location: l, condition: c, soilType: soil, area, status: s, toukiId: t, googleMapsUrl: mapUrl, directDumpAllowed, isMarker: false });
             document.getElementById('modal').style.display = 'none';
             document.getElementById('btnViewMode').click();
             persistAdminInitCache_();
             showAdminSyncToast('✅ 反映しました（同期中…）', 'ok');
-            const payload = { name: n, coords: JSON.stringify(pathData), color: '#d32f2f', userName: currentUser, location: l, condition: c, soilType: soil, area, status: s, toukiId: t, googleMapsUrl: mapUrl };
+            const payload = { name: n, coords: JSON.stringify(pathData), color: '#d32f2f', userName: currentUser, location: l, condition: c, soilType: soil, area, status: s, toukiId: t, googleMapsUrl: mapUrl, directDumpAllowed };
             syncAdminCall_('savePolygon', payload, { key: 'savePolygon:' + tempId, op: 'savePolygon', tempId, payload }).then(newId => {
                 remapLoadedPolygonId_(tempId, newId);
                 persistAdminInitCache_();

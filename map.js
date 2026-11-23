@@ -1185,6 +1185,10 @@ window.sharePigManureRequest = function(pData) {
         alert('圃場情報がありません');
         return;
     }
+    if (field.directDumpAllowed === false || field.directDumpAllowed === '不可') {
+        const name = field.name || 'この圃場';
+        if (!confirm('「' + name + '」は直ダンプ不可です。\n豚糞散布の依頼を続けますか？')) return;
+    }
     const name = field.name || '圃場';
     const areaA = resolveFieldAreaA(field);
     const trucks = calcCompostTrucksFromAreaA(areaA);

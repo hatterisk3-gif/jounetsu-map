@@ -7963,6 +7963,25 @@ function ensureFieldGoogleMapsUrlHeader_(sheet) {
   } catch (e) { }
 }
 
+/** 圃場シート W列ヘッダ「直ダンプ可否」を用意する */
+function ensureFieldDirectDumpHeader_(sheet) {
+  if (!sheet) return;
+  try {
+    const header = String(sheet.getRange(1, 23).getValue() || '').trim();
+    if (!header) sheet.getRange(1, 23).setValue('直ダンプ可否');
+  } catch (e) { }
+}
+
+function directDumpAllowedFromCell_(value) {
+  const s = String(value == null ? '' : value).trim();
+  return !(s === '不可' || s === 'false' || s === '0');
+}
+
+function directDumpCellFromParams_(params) {
+  const raw = params && params.directDumpAllowed;
+  return (raw === false || raw === '不可' || raw === 'false' || raw === 0 || raw === '0') ? '不可' : '可';
+}
+
 /** 初期読込用に圃場履歴を間引く（通信失敗・タイムアウト対策） */
 function trimPolygonPhotosForInit_(photos, maxKeep) {
   const list = Array.isArray(photos) ? photos : [];
@@ -8117,7 +8136,8 @@ function getSavedPolygons(options) {
           water_status: data[i][16] || 'stopped',
           drainage_status: data[i][19] || '',
           soilType: data[i][20] || '', // U列: 土質（粘土質・砂質・壌質）
-          googleMapsUrl: String(data[i][21] || '').trim() // V列: 共有GoogleマップURL
+          googleMapsUrl: String(data[i][21] || '').trim(), // V列: 共有GoogleマップURL
+          directDumpAllowed: directDumpAllowedFromCell_(data[i][22]) // W列: 直ダンプ可否
         });
         let manureData = {};
         try { if (data[i][17]) manureData = JSON.parse(data[i][17]); } catch (e) { }
@@ -8301,11 +8321,13 @@ function savePolygonsBatch(paramsList) {
       params.parentId || "",     // M列: 親ID
       "", "", "", "", "", "", "", // N〜T 予備
       params.soilType || "",     // U列: 土質
-      String(params.googleMapsUrl || '').trim() // V列: 共有GoogleマップURL
+      String(params.googleMapsUrl || '').trim(), // V列: 共有GoogleマップURL
+      directDumpCellFromParams_(params) // W列: 直ダンプ可否
     ]);
   }
   ensureFieldSoilTypeHeader_(sheet);
   ensureFieldGoogleMapsUrlHeader_(sheet);
+  ensureFieldDirectDumpHeader_(sheet);
 
   if (rowsToAppend.length > 0) {
     sheet.getRange(sheet.getLastRow() + 1, 1, rowsToAppend.length, rowsToAppend[0].length).setValues(rowsToAppend);
@@ -8388,6 +8410,7 @@ function savePolygon(params) {
     // A:ID, B:圃場の名前, C:所属拠点名, D:圃場条件, E:圃場面積, F:座標, G:色/アイコン, H:登録日時, I:登録者, J:システム用データ(履歴), K:稼働状況, L:登記ID, M:親ID
     ensureFieldSoilTypeHeader_(sheet);
     ensureFieldGoogleMapsUrlHeader_(sheet);
+    ensureFieldDirectDumpHeader_(sheet);
     sheet.appendRow([
       newId,
       params.name || "",         // B列: 圃場の名前
@@ -8410,7 +8433,8 @@ function savePolygon(params) {
       "",                        // S列: 圃場メモ
       "",                        // T列: 排水溝
       params.soilType || "",     // U列: 土質（粘土質・砂質・壌質）
-      String(params.googleMapsUrl || '').trim() // V列: 共有GoogleマップURL
+      String(params.googleMapsUrl || '').trim(), // V列: 共有GoogleマップURL
+      directDumpCellFromParams_(params) // W列: 直ダンプ可否
     ]);
   }
 
@@ -8438,6 +8462,7 @@ function savePolygonBatch(params) {
 
   ensureFieldSoilTypeHeader_(sheet);
   ensureFieldGoogleMapsUrlHeader_(sheet);
+  ensureFieldDirectDumpHeader_(sheet);
   const rows = params.polygons.map(p => {
     const newId = Utilities.getUuid();
     newIds.push(newId);
@@ -8460,7 +8485,8 @@ function savePolygonBatch(params) {
       p.uneSimData || "",
       "", "", "", "",
       p.soilType || "",
-      String(p.googleMapsUrl || '').trim()
+      String(p.googleMapsUrl || '').trim(),
+      directDumpCellFromParams_(p)
     ];
   });
 
@@ -8570,6 +8596,10 @@ function updatePolygon(params) {
     if (params.googleMapsUrl !== undefined) {
       ensureFieldGoogleMapsUrlHeader_(sheet);
       sheet.getRange(targetRow, 22).setValue(String(params.googleMapsUrl || '').trim()); // V列: 共有GoogleマップURL
+    }
+    if (params.directDumpAllowed !== undefined) {
+      ensureFieldDirectDumpHeader_(sheet);
+      sheet.getRange(targetRow, 23).setValue(directDumpCellFromParams_(params)); // W列: 直ダンプ可否
     }
     if (params.manureData !== undefined) {
       let md = params.manureData;
