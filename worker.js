@@ -2588,18 +2588,32 @@ window.renderSunshinePanelHtml = () => {
   `;
 };
 
-async function fetchWeatherAndUpdateUI() {
-  if (!map) return;
-  let center = map.getCenter();
-  let lat = center.lat();
-  let lng = center.lng();
+async function fetchWeatherAndUpdateUI(options) {
+  options = options || {};
+  const explicit = isFinite(Number(options.lat)) && isFinite(Number(options.lng));
+  const placeId = options.placeId || 'here';
+  const force = !!options.force || placeId !== 'here';
+  if (!explicit && !map) return;
+  let lat;
+  let lng;
+  if (explicit) {
+    lat = Number(options.lat);
+    lng = Number(options.lng);
+  } else {
+    const center = map.getCenter();
+    lat = center.lat();
+    lng = center.lng();
+  }
 
-  if (lastWeatherFetchPos) {
+  if (!force && lastWeatherFetchPos) {
     let diffLat = Math.abs(lat - lastWeatherFetchPos.lat);
     let diffLng = Math.abs(lng - lastWeatherFetchPos.lng);
     if (diffLat < 0.05 && diffLng < 0.05) return;
   }
-  lastWeatherFetchPos = { lat, lng };
+  if (placeId === 'here') lastWeatherFetchPos = { lat, lng };
+  const ctx = (typeof window.beginWeatherFetch === 'function')
+    ? window.beginWeatherFetch({ lat: lat, lng: lng, placeId: placeId, refreshModal: !!options.refreshModal })
+    : { lat: lat, lng: lng, placeId: placeId, refreshModal: false, isolate: false };
 
   try {
     let forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&past_days=31&forecast_days=16&hourly=temperature_2m,precipitation,weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration,wind_speed_10m_max&wind_speed_unit=ms&timezone=Asia%2FTokyo`;
@@ -2631,10 +2645,11 @@ async function fetchWeatherAndUpdateUI() {
     let tomorrowCode = data.daily.weathercode[todayIndex + 1] || data.daily.weathercode[1];
     let tomorrowEmoji = getWeatherEmoji(tomorrowCode);
     let btnWeather = document.getElementById('btnWeather');
-    if (btnWeather) {
+    if (placeId === 'here' && btnWeather) {
       btnWeather.innerHTML = `<span class="worker-top-chip-emoji">${emoji}</span><span class="worker-top-chip-label">明${tomorrowEmoji}</span>`;
     }
 
+    if (typeof window.holdWeatherFetch === 'function') window.holdWeatherFetch(ctx);
     // --- 気温・日照比較ステート保持 ---
     window.weatherSunshineState = window.weatherSunshineState || { data: null, historyData: null, todayStr: '', lastYearTodayStr: '', activeDays: 7 };
     window.weatherSunshineState.data = data;
@@ -2646,31 +2661,8 @@ async function fetchWeatherAndUpdateUI() {
 
     let html = `<div style="padding: 10px;">`;
 
-    // --- 🕒 今後の天気 (1時間ごと) ---
-    let now = new Date();
-    let currentHourStr = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, '0') + "-" + String(now.getDate()).padStart(2, '0') + "T" + String(now.getHours()).padStart(2, '0') + ":00";
-    let startIndex = data.hourly ? data.hourly.time.indexOf(currentHourStr) : -1;
-    if (startIndex === -1) startIndex = 0;
-
-    if (data.hourly) {
-      html += `<div style="margin-bottom:15px;">`;
-      html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">🕒 今後の天気 (1時間ごと)</div>`;
-      html += `<div style="display:flex; overflow-x:auto; padding-bottom:5px; gap:10px;">`;
-      for (let i = startIndex; i < startIndex + 12 && i < data.hourly.time.length; i++) {
-        let t = new Date(data.hourly.time[i]);
-        let hStr = t.getHours() + "時";
-        let hCode = data.hourly.weathercode[i];
-        let hTemp = Math.round(data.hourly.temperature_2m[i] * 10) / 10;
-        let hPrecip = data.hourly.precipitation[i];
-        let hEmoji = getWeatherEmoji(hCode);
-        html += `<div style="min-width:50px; text-align:center; background:#f9f9f9; padding:5px; border-radius:5px; border:1px solid #eee;">
-                     <div style="font-size:12px; color:#666;">${hStr}</div>
-                     <div style="font-size:18px; margin:3px 0;">${hEmoji}</div>
-                     <div style="font-size:13px; font-weight:bold;">${hTemp}℃</div>
-                     <div style="font-size:11px; color:#2196F3;">${hPrecip}mm</div>
-                   </div>`;
-      }
-      html += `</div></div>`;
+    if (typeof window.renderNearTermWeatherSectionHtml === 'function') {
+      html += window.renderNearTermWeatherSectionHtml(data);
     }
 
     html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">現在の天気: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}℃)</div>`;
@@ -2832,14 +2824,20 @@ async function fetchWeatherAndUpdateUI() {
 
     html += `</div>`;
 
-    window.cachedWeatherHtml = html;
+    if (typeof window.finishWeatherFetch === 'function') window.finishWeatherFetch(ctx, html);
+    else window.cachedWeatherHtml = html;
 
   } catch (e) {
     console.error("天気取得エラー:", e);
   }
 }
+window.fetchWeatherAndUpdateUI = fetchWeatherAndUpdateUI;
 
 window.openWeatherModal = function () {
+  if (typeof window.presentWeatherModal === 'function') {
+    window.presentWeatherModal();
+    return;
+  }
   let contentDiv = document.getElementById('weatherContent');
   if (window.cachedWeatherHtml) {
     contentDiv.innerHTML = window.cachedWeatherHtml;
@@ -40064,17 +40062,29 @@ window.collectBulkWorkMemoFieldHintTokens_ = (raw) => {
 window.getBulkWorkMemoFieldPolygonList_ = (opts) => {
   const includeMarkers = !!(opts && opts.includeMarkers);
   const list = [];
-  if (typeof loadedPolygons === 'undefined') return list;
-  Object.keys(loadedPolygons || {}).forEach(id => {
-    const p = loadedPolygons[id];
-    if (!p || !p.name || String(id) === '__global__') return;
-    if (p.isMarker && !includeMarkers) return;
-    list.push({
-      polyId: String(id),
-      polyName: String(p.name).trim(),
-      isMarker: !!p.isMarker
+  const seen = new Set();
+  const push = (id, name, isMarker) => {
+    const polyId = String(id || '').trim();
+    const polyName = String(name || '').trim();
+    if (!polyId || !polyName || polyId === '__global__' || seen.has(polyId)) return;
+    if (isMarker && !includeMarkers) return;
+    seen.add(polyId);
+    list.push({ polyId: polyId, polyName: polyName, isMarker: !!isMarker });
+  };
+  if (typeof loadedPolygons !== 'undefined' && loadedPolygons) {
+    Object.keys(loadedPolygons).forEach(id => {
+      const p = loadedPolygons[id];
+      if (!p) return;
+      push(id, p.name, !!p.isMarker);
     });
-  });
+  }
+  try {
+    const cache = JSON.parse(localStorage.getItem('passionMapInitData') || '{}');
+    (Array.isArray(cache.polygons) ? cache.polygons : []).forEach((p) => {
+      if (!p) return;
+      push(p.id, p.name, !!p.isMarker);
+    });
+  } catch (e) { }
   return list;
 };
 
@@ -40148,11 +40158,55 @@ window.suggestBulkWorkMemoFieldsFromMemo_ = (raw) => {
 
     opts.forEach(o => {
       if (!usedPolyIds.has(o.polyId)) {
+        usedPolyIds.add(o.polyId);
         candidateRows.push({ token: token, polyId: o.polyId, polyName: o.polyName, score: o.score });
       }
     });
     tokenResults.push({ token: token, status: 'candidate', options: opts });
   });
+
+  // 矢印でつながった文でも、「宝田小学校」→「宝田小学校近く」を落とさない
+  const rawKey = (typeof window.normalizeBulkWorkMemoFieldKey_ === 'function')
+    ? window.normalizeBulkWorkMemoFieldKey_(raw)
+    : String(raw || '').replace(/\s+/g, '');
+  const proxTail = /(近く|付近|あたり|周辺|一帯|方面)$/;
+  const extra = [];
+  fields.forEach((f) => {
+    if (!f || usedPolyIds.has(f.polyId)) return;
+    const nameKey = (typeof window.normalizeBulkWorkMemoFieldKey_ === 'function')
+      ? window.normalizeBulkWorkMemoFieldKey_(f.polyName)
+      : String(f.polyName || '').replace(/\s+/g, '');
+    const core = String(nameKey || '').replace(proxTail, '');
+    if (core.length < 4) return;
+    if (rawKey.indexOf(core) < 0 && rawKey.indexOf(nameKey) < 0) return;
+    extra.push({
+      token: core,
+      polyId: f.polyId,
+      polyName: f.polyName,
+      isMarker: !!f.isMarker,
+      score: nameKey === core ? 100 : 97
+    });
+    usedPolyIds.add(f.polyId);
+  });
+  if (extra.length) {
+    const byToken = new Map();
+    extra.forEach((row) => {
+      if (!byToken.has(row.token)) byToken.set(row.token, []);
+      byToken.get(row.token).push(row);
+    });
+    byToken.forEach((rows, token) => {
+      const existing = tokenResults.find(r => r && r.token === token && Array.isArray(r.options));
+      if (existing) {
+        rows.forEach((row) => {
+          if (!existing.options.some(o => String(o.polyId) === String(row.polyId))) existing.options.unshift(row);
+        });
+        existing.status = 'candidate';
+      } else {
+        tokenResults.unshift({ token: token, status: 'candidate', options: rows });
+      }
+      rows.forEach((row) => candidateRows.push(row));
+    });
+  }
 
   return { tokens: tokens, autoIds: [], candidateRows: candidateRows, tokenResults: tokenResults };
 };

@@ -1834,11 +1834,21 @@ window.renderSunshinePanelHtml = () => {
 };
 
 async function fetchWeatherAndUpdateUI(options = {}) {
-  if (!map) return;
-  const force = !!(options && options.force);
-  let center = map.getCenter();
-  let lat = center.lat();
-  let lng = center.lng();
+  options = options || {};
+  const explicit = isFinite(Number(options.lat)) && isFinite(Number(options.lng));
+  const placeId = options.placeId || 'here';
+  const force = !!(options && options.force) || placeId !== 'here';
+  if (!explicit && !map) return;
+  let lat;
+  let lng;
+  if (explicit) {
+    lat = Number(options.lat);
+    lng = Number(options.lng);
+  } else {
+    const center = map.getCenter();
+    lat = center.lat();
+    lng = center.lng();
+  }
 
   if (!force && lastWeatherFetchPos) {
     let diffLat = Math.abs(lat - lastWeatherFetchPos.lat);
@@ -1856,7 +1866,10 @@ async function fetchWeatherAndUpdateUI(options = {}) {
       return;
     }
   }
-  lastWeatherFetchPos = {lat, lng};
+  if (placeId === 'here') lastWeatherFetchPos = {lat, lng};
+  const ctx = (typeof window.beginWeatherFetch === 'function')
+    ? window.beginWeatherFetch({ lat: lat, lng: lng, placeId: placeId, refreshModal: !!options.refreshModal })
+    : { lat: lat, lng: lng, placeId: placeId, refreshModal: false, isolate: false };
 
   try {
     let forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&past_days=31&forecast_days=16&hourly=temperature_2m,precipitation,weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration,wind_speed_10m_max&wind_speed_unit=ms&timezone=Asia%2FTokyo`;
@@ -1888,10 +1901,11 @@ async function fetchWeatherAndUpdateUI(options = {}) {
     let tomorrowCode = data.daily.weathercode[todayIndex + 1] || data.daily.weathercode[1];
     let tomorrowEmoji = getWeatherEmoji(tomorrowCode);
     let btnWeather = document.getElementById('btnWeather');
-    if (btnWeather) {
+    if (placeId === 'here' && btnWeather) {
       btnWeather.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; line-height:1.2; margin-top:2px;"><span style="font-size:18px;">${emoji}</span><span style="font-size:10px; color:#555;">明${tomorrowEmoji}</span></div>`;
     }
 
+    if (typeof window.holdWeatherFetch === 'function') window.holdWeatherFetch(ctx);
     // --- 気温・日照比較ステート保持 ---
     window.weatherSunshineState.data = data;
     window.weatherSunshineState.historyData = historyData;
@@ -1905,31 +1919,8 @@ async function fetchWeatherAndUpdateUI(options = {}) {
 
     let html = `<div style="padding: 10px;">`;
 
-    // --- 🕒 今後の天気 (1時間ごと) ---
-    let now = new Date();
-    let currentHourStr = now.getFullYear() + "-" + String(now.getMonth()+1).padStart(2, '0') + "-" + String(now.getDate()).padStart(2, '0') + "T" + String(now.getHours()).padStart(2, '0') + ":00";
-    let startIndex = data.hourly ? data.hourly.time.indexOf(currentHourStr) : -1;
-    if (startIndex === -1) startIndex = 0;
-    
-    if (data.hourly) {
-      html += `<div style="margin-bottom:15px;">`;
-      html += `<div style="font-weight:bold; color:#333; margin-bottom:5px;">🕒 今後の天気 (1時間ごと)</div>`;
-      html += `<div style="display:flex; overflow-x:auto; padding-bottom:5px; gap:10px;">`;
-      for(let i = startIndex; i < startIndex + 12 && i < data.hourly.time.length; i++) {
-          let t = new Date(data.hourly.time[i]);
-          let hStr = t.getHours() + "時";
-          let hCode = data.hourly.weathercode[i];
-          let hTemp = Math.round(data.hourly.temperature_2m[i] * 10) / 10;
-          let hPrecip = data.hourly.precipitation[i];
-          let hEmoji = getWeatherEmoji(hCode);
-          html += `<div style="min-width:50px; text-align:center; background:#f9f9f9; padding:5px; border-radius:5px; border:1px solid #eee;">
-                     <div style="font-size:12px; color:#666;">${hStr}</div>
-                     <div style="font-size:18px; margin:3px 0;">${hEmoji}</div>
-                     <div style="font-size:13px; font-weight:bold;">${hTemp}℃</div>
-                     <div style="font-size:11px; color:#2196F3;">${hPrecip}mm</div>
-                   </div>`;
-      }
-      html += `</div></div>`;
+    if (typeof window.renderNearTermWeatherSectionHtml === 'function') {
+      html += window.renderNearTermWeatherSectionHtml(data);
     }
 
     html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #2196F3; padding-bottom: 5px;">現在の天気: ${emoji} ${getWeatherDescription(currentCode)} (${data.current_weather.temperature}℃)</div>`;
@@ -2092,7 +2083,8 @@ async function fetchWeatherAndUpdateUI(options = {}) {
 
     html += `</div>`; 
     
-    window.cachedWeatherHtml = html;
+    if (typeof window.finishWeatherFetch === 'function') window.finishWeatherFetch(ctx, html);
+    else window.cachedWeatherHtml = html;
 
   } catch (e) {
     console.error("天気取得エラー:", e);
@@ -2101,6 +2093,10 @@ async function fetchWeatherAndUpdateUI(options = {}) {
 window.fetchWeatherAndUpdateUI = fetchWeatherAndUpdateUI;
 
 window.openWeatherModal = function() {
+  if (typeof window.presentWeatherModal === 'function') {
+    window.presentWeatherModal();
+    return;
+  }
   let contentDiv = document.getElementById('weatherContent');
   if (window.cachedWeatherHtml) {
     contentDiv.innerHTML = window.cachedWeatherHtml;

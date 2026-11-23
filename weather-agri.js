@@ -1480,9 +1480,821 @@
     return html;
   }
 
+  const WEATHER_PLACE_STORAGE_KEY = 'passionMapWeatherPlaces.v1';
+  const WEATHER_PLACE_FRESH_MS = 20 * 60 * 1000;
+  const weatherPlaceBundles_ = {};
+  let weatherPlacePickerSlot_ = 'r1';
+  let weatherPlaceSearchSeq_ = 0;
+
+  function defaultWeatherPlaceStore_() {
+    return {
+      active: 'here',
+      touched: { r1: false, r2: false },
+      slots: { r1: null, r2: null }
+    };
+  }
+
+  function loadWeatherPlaceStore_() {
+    const base = defaultWeatherPlaceStore_();
+    try {
+      const raw = global.localStorage && global.localStorage.getItem(WEATHER_PLACE_STORAGE_KEY);
+      if (!raw) return base;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return base;
+      base.active = parsed.active === 'r1' || parsed.active === 'r2' ? parsed.active : 'here';
+      base.touched.r1 = !!(parsed.touched && parsed.touched.r1);
+      base.touched.r2 = !!(parsed.touched && parsed.touched.r2);
+      ['r1', 'r2'].forEach(function (key) {
+        const slot = parsed.slots && parsed.slots[key];
+        const lat = slot && Number(slot.lat);
+        const lng = slot && Number(slot.lng);
+        if (slot && isFinite(lat) && isFinite(lng)) {
+          base.slots[key] = { name: String(slot.name || '地域'), lat: lat, lng: lng };
+        }
+      });
+    } catch (e) { }
+    return base;
+  }
+
+  function saveWeatherPlaceStore_(store) {
+    try {
+      if (global.localStorage) global.localStorage.setItem(WEATHER_PLACE_STORAGE_KEY, JSON.stringify(store));
+    } catch (e) { }
+  }
+
+  function listWeatherViewpointChoices_() {
+    const src = Array.isArray(global.pdlViewpoints) ? global.pdlViewpoints : [];
+    const out = [];
+    src.forEach(function (v) {
+      if (!v) return;
+      const lat = Number(v.lat);
+      const lng = Number(v.lng);
+      if (!isFinite(lat) || !isFinite(lng)) return;
+      const loc = String(v.location || '').trim();
+      const name = String(v.name || '').trim() || '地点';
+      out.push({ name: name, sub: loc, lat: lat, lng: lng });
+    });
+    return out;
+  }
+
+  function ensureWeatherPlaceSeed_() {
+    const store = loadWeatherPlaceStore_();
+    const choices = listWeatherViewpointChoices_();
+    if (!choices.length) return store;
+    const reps = [];
+    const seen = {};
+    choices.forEach(function (c) {
+      const key = c.sub || c.name;
+      if (seen[key]) return;
+      seen[key] = true;
+      reps.push({ name: c.sub || c.name, lat: c.lat, lng: c.lng });
+    });
+    let changed = false;
+    if (!store.touched.r1 && !store.slots.r1 && reps[0]) {
+      store.slots.r1 = reps[0];
+      changed = true;
+    }
+    if (!store.touched.r2 && !store.slots.r2 && reps[1]) {
+      store.slots.r2 = reps[1];
+      changed = true;
+    }
+    if (changed) saveWeatherPlaceStore_(store);
+    return store;
+  }
+
+  function getWeatherActivePlaceId_() {
+    const store = loadWeatherPlaceStore_();
+    if ((store.active === 'r1' || store.active === 'r2') && store.slots[store.active]) return store.active;
+    return 'here';
+  }
+
+  function weatherPlaceTitle_(placeId) {
+    if (placeId === 'r1') return '地域1';
+    if (placeId === 'r2') return '地域2';
+    return '現在地';
+  }
+
+  function weatherPlaceSubtitle_(store, placeId) {
+    if (placeId === 'here') return '地図の中心';
+    const slot = store.slots[placeId];
+    return slot && slot.name ? String(slot.name) : '未設定';
+  }
+
+  function resolveWeatherPlacePos_(placeId) {
+    if (placeId === 'r1' || placeId === 'r2') {
+      const slot = ensureWeatherPlaceSeed_().slots[placeId];
+      if (!slot) return null;
+      return { lat: slot.lat, lng: slot.lng, name: slot.name };
+    }
+    try {
+      if (global.map && typeof global.map.getCenter === 'function') {
+        const c = global.map.getCenter();
+        return { lat: c.lat(), lng: c.lng(), name: '現在地' };
+      }
+    } catch (e) { }
+    const st = global.weatherSunshineState || {};
+    if (isFinite(Number(st.lat)) && isFinite(Number(st.lng))) {
+      return { lat: Number(st.lat), lng: Number(st.lng), name: '現在地' };
+    }
+    return null;
+  }
+
+  function fmtWeatherMm_(v) {
+    const n = Number(v);
+    if (!isFinite(n)) return '-';
+    const r = Math.round(n * 10) / 10;
+    return (Math.abs(r - Math.round(r)) < 0.05 ? String(Math.round(r)) : r.toFixed(1)) + 'mm';
+  }
+
+  function fmtWeatherTemp_(v) {
+    const n = Number(v);
+    if (!isFinite(n)) return '-';
+    const r = Math.round(n * 10) / 10;
+    return (Math.abs(r - Math.round(r)) < 0.05 ? String(Math.round(r)) : r.toFixed(1));
+  }
+
+  function weatherYmd_(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  function renderWeatherPlaceTabsHtml_() {
+    const store = ensureWeatherPlaceSeed_();
+    const active = global.__weatherRenderPlaceId || getWeatherActivePlaceId_();
+    const ids = ['here', 'r1', 'r2'];
+    const tabs = ids.map(function (id) {
+      const on = id === active;
+      const title = weatherPlaceTitle_(id);
+      const sub = weatherPlaceSubtitle_(store, id);
+      const edit = (id === 'r1' || id === 'r2')
+        ? `<span role="button" tabindex="0" title="${title}を地図で指定" onclick="event.stopPropagation(); if(window.startWeatherPlaceMapPick) window.startWeatherPlaceMapPick('${id}')" style="flex:0 0 auto; align-self:stretch; display:flex; align-items:center; padding:0 6px; color:${on ? '#bbdefb' : '#1976d2'}; font-size:12px; cursor:pointer;">✎</span>`
+        : '';
+      return `<div style="flex:1; min-width:0; display:flex; align-items:stretch; border-radius:8px; overflow:hidden; border:1px solid ${on ? '#1565c0' : '#d0d7de'}; background:${on ? '#1976d2' : '#f7f9fb'}; color:${on ? '#fff' : '#37474f'};">
+        <div role="button" tabindex="0" onclick="if(window.switchWeatherPlace) window.switchWeatherPlace('${id}')" style="flex:1; min-width:0; padding:6px 6px 6px 8px; cursor:pointer; text-align:left;">
+          <div style="font-size:12px; font-weight:bold; line-height:1.2;">${id === 'here' ? '📍 ' : ''}${title}</div>
+          <div title="${escHtml_(sub)}" style="font-size:10px; line-height:1.3; margin-top:2px; opacity:${on ? '0.92' : '0.8'}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escHtml_(sub)}</div>
+        </div>
+        ${edit}
+      </div>`;
+    }).join('');
+    return `<div data-weather-place-tabs="1" style="display:flex; gap:6px; margin-bottom:10px;">${tabs}</div>`;
+  }
+
+  function renderNearTermWeatherSectionHtml(data) {
+    const emojiFn = typeof global.getWeatherEmoji === 'function' ? global.getWeatherEmoji : fallbackWeatherEmoji_;
+    const labels = ['今日', '明日', '明後日'];
+    const accents = ['#1565c0', '#ef6c00', '#6a1b9a'];
+    const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+    const now = new Date();
+    let html = renderWeatherPlaceTabsHtml_();
+    html += `<div style="font-weight:bold; color:#333; margin:0 0 8px;">🕒 今日〜明後日（1時間ごと）</div>`;
+    if (!data || !data.hourly || !Array.isArray(data.hourly.time)) {
+      html += `<div style="font-size:12px; color:#888; margin-bottom:12px;">時間ごとの予報がありません</div>`;
+      return html;
+    }
+    const times = data.hourly.time;
+    for (let dayOffset = 0; dayOffset < 3; dayOffset++) {
+      const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + dayOffset);
+      const dayStr = weatherYmd_(day);
+      const dateLabel = `${day.getMonth() + 1}/${day.getDate()}(${weekdays[day.getDay()]})`;
+      let summary = '';
+      if (data.daily && Array.isArray(data.daily.time)) {
+        const di = data.daily.time.indexOf(dayStr);
+        if (di >= 0) {
+          const code = data.daily.weathercode ? data.daily.weathercode[di] : 0;
+          const maxT = data.daily.temperature_2m_max ? data.daily.temperature_2m_max[di] : null;
+          const minT = data.daily.temperature_2m_min ? data.daily.temperature_2m_min[di] : null;
+          const rain = data.daily.precipitation_sum ? data.daily.precipitation_sum[di] : null;
+          summary = `${emojiFn(code)} <span style="color:#F44336; font-weight:bold;">${fmtWeatherTemp_(maxT)}℃</span> / <span style="color:#1976D2; font-weight:bold;">${fmtWeatherTemp_(minT)}℃</span> <span style="color:#2196F3; font-weight:bold;">${fmtWeatherMm_(rain)}</span>`;
+        }
+      }
+      const cards = [];
+      for (let i = 0; i < times.length; i++) {
+        const stamp = String(times[i] || '');
+        if (stamp.slice(0, 10) !== dayStr) continue;
+        const hour = parseInt(stamp.slice(11, 13), 10);
+        if (!isFinite(hour)) continue;
+        if (dayOffset === 0 && hour < now.getHours()) continue;
+        const hCode = data.hourly.weathercode ? data.hourly.weathercode[i] : 0;
+        const hTemp = data.hourly.temperature_2m ? data.hourly.temperature_2m[i] : null;
+        const hPrecip = data.hourly.precipitation ? data.hourly.precipitation[i] : null;
+        cards.push(`<div style="min-width:48px; flex:0 0 auto; text-align:center; background:#f9f9f9; padding:5px 4px; border-radius:5px; border:1px solid #eee;">
+          <div style="font-size:12px; color:#666;">${hour}時</div>
+          <div style="font-size:18px; margin:3px 0;">${emojiFn(hCode)}</div>
+          <div style="font-size:13px; font-weight:bold;">${fmtWeatherTemp_(hTemp)}℃</div>
+          <div style="font-size:11px; color:#2196F3;">${fmtWeatherMm_(hPrecip)}</div>
+        </div>`);
+      }
+      html += `<div style="margin-bottom:12px; border-left:3px solid ${accents[dayOffset]}; padding-left:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:2px;">
+          <div style="font-weight:bold; color:${accents[dayOffset]}; font-size:13px; white-space:nowrap;">${labels[dayOffset]} <span style="color:#607d8b; font-weight:normal;">${dateLabel}</span></div>
+        </div>
+        <div style="font-size:12px; margin-bottom:5px; line-height:1.4;">${summary || '<span style="color:#999;">日別の予報がありません</span>'}</div>
+        <div style="display:flex; overflow-x:auto; gap:6px; padding-bottom:4px; -webkit-overflow-scrolling:touch;">
+          ${cards.length ? cards.join('') : '<div style="font-size:12px; color:#888; padding:6px 0;">この時間帯の予報はありません</div>'}
+        </div>
+      </div>`;
+    }
+    return html;
+  }
+
+  function takeWeatherStateSnapshot_() {
+    const st = global.weatherSunshineState || {};
+    return {
+      html: global.cachedWeatherHtml,
+      hadState: !!global.weatherSunshineState,
+      state: {
+        data: st.data,
+        historyData: st.historyData,
+        todayStr: st.todayStr,
+        lastYearTodayStr: st.lastYearTodayStr,
+        lat: st.lat,
+        lng: st.lng,
+        activeDays: st.activeDays,
+        yearCompareOpen: st.yearCompareOpen,
+        agriInsights: st.agriInsights
+      }
+    };
+  }
+
+  function restoreWeatherStateSnapshot_(snapshot) {
+    if (!snapshot) return;
+    if (!snapshot.hadState) {
+      global.cachedWeatherHtml = snapshot.html;
+      return;
+    }
+    global.weatherSunshineState = global.weatherSunshineState || {};
+    const st = global.weatherSunshineState;
+    const s = snapshot.state || {};
+    st.data = s.data;
+    st.historyData = s.historyData;
+    st.todayStr = s.todayStr;
+    st.lastYearTodayStr = s.lastYearTodayStr;
+    st.lat = s.lat;
+    st.lng = s.lng;
+    if (s.activeDays != null) st.activeDays = s.activeDays;
+    if (s.yearCompareOpen != null) st.yearCompareOpen = s.yearCompareOpen;
+    st.agriInsights = s.agriInsights;
+    global.cachedWeatherHtml = snapshot.html;
+  }
+
+  function applyWeatherBundle_(bundle) {
+    if (!bundle || !bundle.state) return;
+    global.weatherSunshineState = global.weatherSunshineState || {};
+    const st = global.weatherSunshineState;
+    const s = bundle.state;
+    st.data = s.data;
+    st.historyData = s.historyData;
+    st.todayStr = s.todayStr;
+    st.lastYearTodayStr = s.lastYearTodayStr;
+    st.lat = s.lat;
+    st.lng = s.lng;
+    if (s.activeDays != null) st.activeDays = s.activeDays;
+    if (s.yearCompareOpen != null) st.yearCompareOpen = s.yearCompareOpen;
+    st.agriInsights = s.agriInsights;
+    global.cachedWeatherHtml = bundle.html;
+  }
+
+  function weatherHtmlHasPlaceTabs_(html) {
+    return typeof html === 'string' && html.indexOf('data-weather-place-tabs') >= 0;
+  }
+
+  function paintOpenWeatherModal_(html) {
+    const content = document.getElementById('weatherContent');
+    const modal = document.getElementById('weatherModal');
+    if (!content || !modal) return;
+    if (modal.style.display === 'none' || !modal.style.display) return;
+    content.innerHTML = html;
+  }
+
+  function beginWeatherFetch(options) {
+    options = options || {};
+    const placeId = options.placeId || 'here';
+    const lat = Number(options.lat);
+    const lng = Number(options.lng);
+    if (!isFinite(lat) || !isFinite(lng)) return { skip: true, placeId: placeId };
+    global.__weatherRenderPlaceId = placeId;
+    return {
+      skip: false,
+      lat: lat,
+      lng: lng,
+      placeId: placeId,
+      refreshModal: !!options.refreshModal,
+      isolate: false,
+      snapshot: null
+    };
+  }
+
+  function holdWeatherFetch(ctx) {
+    if (!ctx || ctx.skip) return;
+    ctx.isolate = ctx.placeId !== getWeatherActivePlaceId_();
+    ctx.snapshot = ctx.isolate ? takeWeatherStateSnapshot_() : null;
+  }
+
+  function finishWeatherFetch(ctx, html) {
+    if (!ctx || ctx.skip) {
+      global.cachedWeatherHtml = html;
+      return;
+    }
+    const st = global.weatherSunshineState || {};
+    weatherPlaceBundles_[ctx.placeId] = {
+      html: html,
+      at: Date.now(),
+      lat: ctx.lat,
+      lng: ctx.lng,
+      state: {
+        data: st.data,
+        historyData: st.historyData,
+        todayStr: st.todayStr,
+        lastYearTodayStr: st.lastYearTodayStr,
+        lat: st.lat,
+        lng: st.lng,
+        activeDays: st.activeDays,
+        yearCompareOpen: st.yearCompareOpen,
+        agriInsights: st.agriInsights
+      }
+    };
+    if (ctx.isolate && ctx.snapshot) {
+      restoreWeatherStateSnapshot_(ctx.snapshot);
+      return;
+    }
+    global.cachedWeatherHtml = html;
+    if (ctx.refreshModal) paintOpenWeatherModal_(html);
+  }
+
+  function weatherPlaceMessageHtml_(text) {
+    return `<div style="padding:10px;">${renderWeatherPlaceTabsHtml_()}<div style="text-align:center; padding:16px 8px; color:#555; font-size:13px;">${escHtml_(text)}</div></div>`;
+  }
+
+  async function switchWeatherPlace(placeId, opts) {
+    opts = opts || {};
+    placeId = placeId === 'r1' || placeId === 'r2' ? placeId : 'here';
+    const store = ensureWeatherPlaceSeed_();
+    if ((placeId === 'r1' || placeId === 'r2') && !store.slots[placeId]) {
+      startWeatherPlaceMapPick(placeId);
+      return;
+    }
+    store.active = placeId;
+    saveWeatherPlaceStore_(store);
+    global.__weatherRenderPlaceId = placeId;
+    const pos = resolveWeatherPlacePos_(placeId);
+    const content = document.getElementById('weatherContent');
+    const modal = document.getElementById('weatherModal');
+    const modalOpen = !!(modal && content && modal.style.display && modal.style.display !== 'none');
+    if (!pos || !isFinite(pos.lat) || !isFinite(pos.lng)) {
+      if (modalOpen) content.innerHTML = weatherPlaceMessageHtml_('この場所の位置を取得できませんでした');
+      return;
+    }
+    const bundle = weatherPlaceBundles_[placeId];
+    const sameSpot = bundle && Math.abs(bundle.lat - pos.lat) < 0.02 && Math.abs(bundle.lng - pos.lng) < 0.02;
+    const fresh = !!(sameSpot && weatherHtmlHasPlaceTabs_(bundle.html) && (Date.now() - bundle.at) < WEATHER_PLACE_FRESH_MS);
+    if (fresh && !opts.force) {
+      applyWeatherBundle_(bundle);
+      if (modalOpen) content.innerHTML = bundle.html;
+      return;
+    }
+    if (modalOpen) content.innerHTML = weatherPlaceMessageHtml_(weatherPlaceTitle_(placeId) + 'の天気を取得中...');
+    if (typeof global.fetchWeatherAndUpdateUI !== 'function') {
+      if (modalOpen) content.innerHTML = weatherPlaceMessageHtml_('天気の取得機能が読み込まれていません');
+      return;
+    }
+    try {
+      await global.fetchWeatherAndUpdateUI({
+        force: true,
+        lat: pos.lat,
+        lng: pos.lng,
+        placeId: placeId,
+        refreshModal: true
+      });
+    } catch (e) {
+      console.warn('weather place switch', e);
+      if (modalOpen) content.innerHTML = weatherPlaceMessageHtml_('天気を取得できませんでした');
+    }
+  }
+
+  function closeWeatherPlacePicker() {
+    const el = document.getElementById('weatherPlacePickerModal');
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
+
+  function commitWeatherPlaceSlot_(slot, place) {
+    const store = loadWeatherPlaceStore_();
+    store.slots[slot] = { name: String(place.name || '地域').slice(0, 40), lat: Number(place.lat), lng: Number(place.lng) };
+    store.touched[slot] = true;
+    store.active = slot;
+    saveWeatherPlaceStore_(store);
+    delete weatherPlaceBundles_[slot];
+    closeWeatherPlacePicker();
+    switchWeatherPlace(slot, { force: true });
+  }
+
+  function renderWeatherPlacePickerList_(items, emptyText) {
+    if (!items || !items.length) {
+      return `<div style="font-size:12px; color:#888; padding:6px 2px;">${escHtml_(emptyText)}</div>`;
+    }
+    return items.map(function (item, index) {
+      const sub = item.sub ? `<div style="font-size:10px; color:#78909c; margin-top:1px;">${escHtml_(item.sub)}</div>` : '';
+      return `<button type="button" data-weather-pick="${index}" style="display:block; width:100%; text-align:left; background:#fff; border:1px solid #e0e0e0; border-radius:8px; padding:8px 10px; margin-bottom:6px; cursor:pointer;">
+        <div style="font-size:13px; font-weight:bold; color:#263238;">${escHtml_(item.name)}</div>${sub}
+      </button>`;
+    }).join('');
+  }
+
+  function bindWeatherPlacePickerList_(root, items) {
+    if (!root) return;
+    root.onclick = function (ev) {
+      const btn = ev.target && ev.target.closest ? ev.target.closest('[data-weather-pick]') : null;
+      if (!btn) return;
+      const item = items[Number(btn.getAttribute('data-weather-pick'))];
+      if (!item) return;
+      const name = item.sub ? (item.sub + ' ' + item.name) : item.name;
+      commitWeatherPlaceSlot_(weatherPlacePickerSlot_, { name: name, lat: item.lat, lng: item.lng });
+    };
+  }
+
+  function fillWeatherPlacePickerViewpoints_() {
+    const mount = document.getElementById('weatherPlaceViewpointList');
+    if (!mount) return;
+    const items = listWeatherViewpointChoices_().map(function (v) {
+      return { name: v.name, sub: v.sub, lat: v.lat, lng: v.lng };
+    });
+    mount.innerHTML = renderWeatherPlacePickerList_(items, '登録済みの視野地点はまだありません');
+    bindWeatherPlacePickerList_(mount, items);
+  }
+
+  function openWeatherPlacePicker(slot) {
+    weatherPlacePickerSlot_ = slot === 'r2' ? 'r2' : 'r1';
+    closeWeatherPlacePicker();
+    const title = weatherPlaceTitle_(weatherPlacePickerSlot_);
+    const wrap = document.createElement('div');
+    wrap.id = 'weatherPlacePickerModal';
+    wrap.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:10050; display:flex; align-items:center; justify-content:center;';
+    wrap.innerHTML = `<div style="background:#fff; color:#333; width:88%; max-width:400px; max-height:80vh; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,0.28); display:flex; flex-direction:column; overflow:hidden;">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid #eee;">
+        <div style="font-weight:bold; color:#1565c0;">${title}の場所</div>
+        <span role="button" onclick="window.closeWeatherPlacePicker && window.closeWeatherPlacePicker()" style="cursor:pointer; font-size:22px; line-height:1; color:#999;">×</span>
+      </div>
+      <div style="padding:12px 14px; overflow-y:auto;">
+        <input id="weatherPlaceSearchInput" type="text" placeholder="市区町村名で検索（例: 徳島市）" oninput="window.onWeatherPlaceSearchInput && window.onWeatherPlaceSearchInput(this.value)" style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #ccc; border-radius:8px; font-size:14px; margin-bottom:8px;">
+        <div id="weatherPlaceSearchList"></div>
+        <div style="font-size:12px; font-weight:bold; color:#455a64; margin:8px 0 6px;">登録済みの視野地点</div>
+        <div id="weatherPlaceViewpointList"></div>
+        <button type="button" onclick="window.useMapCenterForWeatherPlace && window.useMapCenterForWeatherPlace()" style="width:100%; margin-top:4px; background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:8px; padding:10px; font-weight:bold; cursor:pointer;">📍 今の地図の中心を使う</button>
+        <button type="button" onclick="window.clearWeatherPlaceSlot && window.clearWeatherPlaceSlot()" style="width:100%; margin-top:8px; background:#fff; color:#c62828; border:1px solid #ffcdd2; border-radius:8px; padding:8px; font-weight:bold; cursor:pointer;">この地域を解除</button>
+        <div style="font-size:10px; color:#90a4ae; margin-top:8px; line-height:1.4;">選んだ場所はこの端末に保存されます。</div>
+      </div>
+    </div>`;
+    wrap.addEventListener('click', function (ev) {
+      if (ev.target === wrap) closeWeatherPlacePicker();
+    });
+    document.body.appendChild(wrap);
+    fillWeatherPlacePickerViewpoints_();
+    const input = document.getElementById('weatherPlaceSearchInput');
+    if (input) input.focus();
+  }
+
+  function onWeatherPlaceSearchInput(value) {
+    const q = String(value || '').trim();
+    const mount = document.getElementById('weatherPlaceSearchList');
+    if (!mount) return;
+    if (q.length < 2) {
+      mount.innerHTML = '';
+      return;
+    }
+    const seq = ++weatherPlaceSearchSeq_;
+    mount.innerHTML = '<div style="font-size:12px; color:#78909c; padding:4px 2px 8px;">検索中...</div>';
+    const url = 'https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(q) + '&count=6&language=ja&format=json';
+    fetch(url).then(function (res) { return res.json(); }).then(function (data) {
+      if (seq !== weatherPlaceSearchSeq_) return;
+      const list = document.getElementById('weatherPlaceSearchList');
+      if (!list) return;
+      const items = ((data && data.results) || []).map(function (r) {
+        const bits = [r.admin1, r.country].filter(Boolean);
+        return { name: r.name, sub: bits.join(' · '), lat: r.latitude, lng: r.longitude };
+      }).filter(function (r) { return isFinite(Number(r.lat)) && isFinite(Number(r.lng)); });
+      list.innerHTML = renderWeatherPlacePickerList_(items, '見つかりませんでした');
+      bindWeatherPlacePickerList_(list, items);
+    }).catch(function () {
+      if (seq !== weatherPlaceSearchSeq_) return;
+      const list = document.getElementById('weatherPlaceSearchList');
+      if (list) list.innerHTML = '<div style="font-size:12px; color:#c62828; padding:4px 2px 8px;">検索できませんでした</div>';
+    });
+  }
+
+  function useMapCenterForWeatherPlace() {
+    const pos = resolveWeatherPlacePos_('here');
+    if (!pos) return;
+    commitWeatherPlaceSlot_(weatherPlacePickerSlot_, { name: '地図の中心', lat: pos.lat, lng: pos.lng });
+  }
+
+  function clearWeatherPlaceSlot() {
+    const slot = weatherPlacePickerSlot_;
+    const store = loadWeatherPlaceStore_();
+    store.slots[slot] = null;
+    store.touched[slot] = true;
+    if (store.active === slot) store.active = 'here';
+    saveWeatherPlaceStore_(store);
+    delete weatherPlaceBundles_[slot];
+    closeWeatherPlacePicker();
+    switchWeatherPlace(store.active === 'here' ? 'here' : store.active);
+  }
+
+  let weatherMapPick_ = null;
+
+  function weatherMapReady_() {
+    return !!(global.map && typeof global.map.getDiv === 'function' && global.google && global.google.maps);
+  }
+
+  function hideWeatherModalForMapPick_() {
+    const modal = document.getElementById('weatherModal');
+    if (!modal) return;
+    modal.classList.remove('weather-modal-closing');
+    modal.style.display = 'none';
+  }
+
+  function showWeatherModalAfterMapPick_() {
+    const modal = document.getElementById('weatherModal');
+    if (!modal) return;
+    modal.classList.remove('weather-modal-closing');
+    modal.style.display = 'flex';
+  }
+
+  function endWeatherPlaceMapPick_() {
+    const pick = weatherMapPick_;
+    weatherMapPick_ = null;
+    if (pick && pick.domHandler && global.map && typeof global.map.getDiv === 'function') {
+      try { global.map.getDiv().removeEventListener('click', pick.domHandler, true); } catch (e) { }
+    }
+    if (pick && pick.marker) {
+      try { pick.marker.setMap(null); } catch (e) { }
+    }
+    const bar = document.getElementById('weatherPlacePickBar');
+    if (bar && bar.parentNode) bar.parentNode.removeChild(bar);
+  }
+
+  function coordLatLng_(c) {
+    if (!c) return null;
+    try {
+      if (typeof c.lat === 'function' && typeof c.lng === 'function') {
+        const lat = Number(c.lat());
+        const lng = Number(c.lng());
+        if (isFinite(lat) && isFinite(lng)) return { lat: lat, lng: lng };
+      }
+    } catch (e) { }
+    const lat = Number(c.lat != null ? c.lat : c.latitude);
+    const lng = Number(c.lng != null ? c.lng : c.longitude);
+    if (!isFinite(lat) || !isFinite(lng)) return null;
+    return { lat: lat, lng: lng };
+  }
+
+  function pointInRing_(lat, lng, ring) {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const yi = ring[i].lat;
+      const xi = ring[i].lng;
+      const yj = ring[j].lat;
+      const xj = ring[j].lng;
+      const intersect = ((yi > lat) !== (yj > lat)) && (lng < (xj - xi) * (lat - yi) / ((yj - yi) || 1e-12) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  function fieldNameAtPoint_(lat, lng) {
+    const polys = global.loadedPolygons;
+    if (!polys || typeof polys !== 'object') return '';
+    let bestName = '';
+    let bestArea = Infinity;
+    Object.keys(polys).forEach(function (id) {
+      const p = polys[id];
+      if (!p || p.isMarker || !Array.isArray(p.coords) || p.coords.length < 3) return;
+      const name = String(p.name || '').trim();
+      if (!name) return;
+      const ring = [];
+      p.coords.forEach(function (c) {
+        const ll = coordLatLng_(c);
+        if (ll) ring.push(ll);
+      });
+      if (ring.length < 3 || !pointInRing_(lat, lng, ring)) return;
+      let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+      ring.forEach(function (ll) {
+        if (ll.lat < minLat) minLat = ll.lat;
+        if (ll.lat > maxLat) maxLat = ll.lat;
+        if (ll.lng < minLng) minLng = ll.lng;
+        if (ll.lng > maxLng) maxLng = ll.lng;
+      });
+      const area = Math.max(0, maxLat - minLat) * Math.max(0, maxLng - minLng);
+      if (area < bestArea) {
+        bestArea = area;
+        bestName = name;
+      }
+    });
+    return bestName;
+  }
+
+  function latLngFromContainerPixel_(x, y) {
+    const map = global.map;
+    if (!map) return null;
+    try {
+      if (global.google && global.google.maps && map.getProjection) {
+        const proj = typeof map.getProjection === 'function' ? map.getProjection() : null;
+        if (proj && typeof proj.fromContainerPixelToLatLng === 'function') {
+          const ll = proj.fromContainerPixelToLatLng(new global.google.maps.Point(x, y));
+          if (ll) return { lat: ll.lat(), lng: ll.lng() };
+        }
+      }
+    } catch (e) { }
+    const bounds = typeof map.getBounds === 'function' ? map.getBounds() : null;
+    const div = typeof map.getDiv === 'function' ? map.getDiv() : null;
+    if (!bounds || !div || typeof bounds.getNorthEast !== 'function') return null;
+    const ne = bounds.getNorthEast();
+    const sw = bounds.getSouthWest();
+    const w = div.clientWidth || div.offsetWidth || 1;
+    const h = div.clientHeight || div.offsetHeight || 1;
+    const lng = sw.lng() + (x / w) * (ne.lng() - sw.lng());
+    const latToY = function (lat) {
+      const s = Math.sin(lat * Math.PI / 180);
+      const clamped = Math.max(-0.9999, Math.min(0.9999, s));
+      return Math.log((1 + clamped) / (1 - clamped)) / 2;
+    };
+    const yNorth = latToY(ne.lat());
+    const ySouth = latToY(sw.lat());
+    const yMerc = yNorth + (y / h) * (ySouth - yNorth);
+    const lat = Math.atan(Math.sinh(yMerc)) * 180 / Math.PI;
+    if (!isFinite(lat) || !isFinite(lng)) return null;
+    return { lat: lat, lng: lng };
+  }
+
+  function renderWeatherPickBar_() {
+    const pick = weatherMapPick_;
+    if (!pick) return;
+    let bar = document.getElementById('weatherPlacePickBar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'weatherPlacePickBar';
+      bar.style.cssText = 'position:fixed; left:50%; bottom:max(18px, calc(env(safe-area-inset-bottom, 0px) + 18px)); transform:translateX(-50%); width:min(440px, calc(100% - 24px)); z-index:12000; background:rgba(15,23,42,0.94); color:#fff; border-radius:12px; padding:12px; box-shadow:0 8px 24px rgba(0,0,0,0.35); box-sizing:border-box;';
+      document.body.appendChild(bar);
+    }
+    const title = weatherPlaceTitle_(pick.slot);
+    const latN = typeof pick.lat === 'number' ? pick.lat : NaN;
+    const lngN = typeof pick.lng === 'number' ? pick.lng : NaN;
+    const hasPoint = isFinite(latN) && isFinite(lngN);
+    const nameLine = hasPoint
+      ? '<div style="font-size:14px; font-weight:bold; margin-bottom:2px;">📍 ' + escHtml_(pick.name || '地点を確認中...') + '</div>'
+        + '<div style="font-size:11px; color:#90caf9; margin-bottom:10px;">' + latN.toFixed(5) + ', ' + lngN.toFixed(5) + '</div>'
+      : '<div style="font-size:14px; font-weight:bold; margin-bottom:4px;">' + title + 'の場所を地図でタップ</div>'
+        + '<div style="font-size:12px; color:#b0bec5; margin-bottom:10px; line-height:1.4;">圃場や道路など、天気を見たい地点をタップしてください。もう一度タップすると地点を動かせます。</div>';
+    const confirmBtn = hasPoint
+      ? `<button type="button" onclick="window.confirmWeatherPlaceMapPick && window.confirmWeatherPlaceMapPick()" style="flex:1; background:#1976d2; color:#fff; border:none; border-radius:8px; padding:10px 12px; font-weight:bold; cursor:pointer;">この場所にする</button>`
+      : '';
+    bar.innerHTML = nameLine + `<div style="display:flex; gap:8px;">
+      ${confirmBtn}
+      <button type="button" onclick="window.cancelWeatherPlaceMapPick && window.cancelWeatherPlaceMapPick()" style="flex:0 0 auto; background:#455a64; color:#fff; border:none; border-radius:8px; padding:10px 12px; font-weight:bold; cursor:pointer;">キャンセル</button>
+    </div>`;
+  }
+
+  function rememberWeatherMapPickName_(seq, name) {
+    const pick = weatherMapPick_;
+    if (!pick || pick.seq !== seq || !name) return;
+    pick.name = String(name).slice(0, 40);
+    renderWeatherPickBar_();
+  }
+
+  function resolveWeatherMapPickName_(lat, lng) {
+    const pick = weatherMapPick_;
+    if (!pick) return;
+    const seq = ++pick.seq;
+    const fieldName = fieldNameAtPoint_(lat, lng);
+    if (fieldName) {
+      pick.name = fieldName;
+      renderWeatherPickBar_();
+      return;
+    }
+    pick.name = '地図の地点';
+    renderWeatherPickBar_();
+    const url = 'https://geocoding-api.open-meteo.com/v1/reverse?latitude=' + encodeURIComponent(lat) + '&longitude=' + encodeURIComponent(lng) + '&language=ja&format=json';
+    fetch(url).then(function (res) { return res.json(); }).then(function (data) {
+      const hit = data && data.results && data.results[0];
+      if (!hit) return;
+      const bits = [hit.name, hit.admin1].filter(Boolean);
+      rememberWeatherMapPickName_(seq, bits.join(' '));
+    }).catch(function () { });
+  }
+
+  function setWeatherMapPickPoint_(lat, lng) {
+    const pick = weatherMapPick_;
+    if (!pick || !isFinite(lat) || !isFinite(lng)) return;
+    pick.lat = lat;
+    pick.lng = lng;
+    pick.name = '';
+    try {
+      if (!pick.marker) {
+        pick.marker = new global.google.maps.Marker({
+          map: global.map,
+          position: { lat: lat, lng: lng },
+          zIndex: 10000,
+          clickable: false
+        });
+      } else {
+        pick.marker.setPosition({ lat: lat, lng: lng });
+        pick.marker.setMap(global.map);
+      }
+    } catch (e) { }
+    renderWeatherPickBar_();
+    resolveWeatherMapPickName_(lat, lng);
+  }
+
+  function onWeatherMapDomClick_(ev) {
+    const pick = weatherMapPick_;
+    if (!pick || !ev) return;
+    const target = ev.target;
+    if (target && target.closest && target.closest('#weatherPlacePickBar, .gmnoprint, .gm-bundled-control, .gm-control-active, a, button, input, select, textarea')) return;
+    const div = global.map && global.map.getDiv ? global.map.getDiv() : null;
+    if (!div) return;
+    const rect = div.getBoundingClientRect();
+    const x = ev.clientX - rect.left;
+    const y = ev.clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
+    const pos = latLngFromContainerPixel_(x, y);
+    if (!pos) return;
+    if (ev.preventDefault) ev.preventDefault();
+    if (ev.stopPropagation) ev.stopPropagation();
+    if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+    setWeatherMapPickPoint_(pos.lat, pos.lng);
+  }
+
+  function startWeatherPlaceMapPick(slot) {
+    slot = slot === 'r2' ? 'r2' : 'r1';
+    weatherPlacePickerSlot_ = slot;
+    if (!weatherMapReady_()) {
+      openWeatherPlacePicker(slot);
+      return;
+    }
+    endWeatherPlaceMapPick_();
+    closeWeatherPlacePicker();
+    weatherMapPick_ = { slot: slot, lat: null, lng: null, name: '', seq: 0, marker: null, domHandler: onWeatherMapDomClick_ };
+    hideWeatherModalForMapPick_();
+    renderWeatherPickBar_();
+    try { global.map.getDiv().addEventListener('click', onWeatherMapDomClick_, true); } catch (e) { }
+  }
+
+  function cancelWeatherPlaceMapPick() {
+    endWeatherPlaceMapPick_();
+    showWeatherModalAfterMapPick_();
+  }
+
+  function confirmWeatherPlaceMapPick() {
+    const pick = weatherMapPick_;
+    if (!pick || typeof pick.lat !== 'number' || typeof pick.lng !== 'number' || !isFinite(pick.lat) || !isFinite(pick.lng)) return;
+    const place = {
+      name: pick.name || '地図の地点',
+      lat: pick.lat,
+      lng: pick.lng
+    };
+    const slot = pick.slot;
+    endWeatherPlaceMapPick_();
+    showWeatherModalAfterMapPick_();
+    commitWeatherPlaceSlot_(slot, place);
+  }
+
+  function presentWeatherModal() {
+    const content = document.getElementById('weatherContent');
+    const modal = document.getElementById('weatherModal');
+    if (!content || !modal) return;
+    modal.style.display = 'flex';
+    const active = getWeatherActivePlaceId_();
+    global.__weatherRenderPlaceId = active;
+    const bundle = weatherPlaceBundles_[active];
+    const fresh = !!(bundle && weatherHtmlHasPlaceTabs_(bundle.html) && (Date.now() - bundle.at) < WEATHER_PLACE_FRESH_MS);
+    if (fresh) {
+      applyWeatherBundle_(bundle);
+      content.innerHTML = bundle.html;
+      return;
+    }
+    if (active === 'here' && weatherHtmlHasPlaceTabs_(global.cachedWeatherHtml)) {
+      content.innerHTML = global.cachedWeatherHtml;
+      return;
+    }
+    content.innerHTML = weatherPlaceMessageHtml_('天気を取得中...');
+    switchWeatherPlace(active, { force: true });
+  }
+
   global.computeAgriWeatherInsights = computeAgriWeatherInsights;
   global.renderPastWeatherTableHtml = renderPastWeatherTableHtml;
   global.renderAgriWeatherPanelHtml = renderAgriWeatherPanelHtml;
+  global.beginWeatherFetch = beginWeatherFetch;
+  global.holdWeatherFetch = holdWeatherFetch;
+  global.finishWeatherFetch = finishWeatherFetch;
+  global.renderNearTermWeatherSectionHtml = renderNearTermWeatherSectionHtml;
+  global.switchWeatherPlace = switchWeatherPlace;
+  global.openWeatherPlacePicker = openWeatherPlacePicker;
+  global.startWeatherPlaceMapPick = startWeatherPlaceMapPick;
+  global.cancelWeatherPlaceMapPick = cancelWeatherPlaceMapPick;
+  global.confirmWeatherPlaceMapPick = confirmWeatherPlaceMapPick;
+  global.closeWeatherPlacePicker = closeWeatherPlacePicker;
+  global.onWeatherPlaceSearchInput = onWeatherPlaceSearchInput;
+  global.useMapCenterForWeatherPlace = useMapCenterForWeatherPlace;
+  global.clearWeatherPlaceSlot = clearWeatherPlaceSlot;
+  global.presentWeatherModal = presentWeatherModal;
   global.refreshWeatherPriorityPanel_ = refreshWeatherPriorityPanel_;
   global.refreshMonthlyClimatePanel_ = refreshMonthlyClimatePanel_;
   global.toggleSoilMoistureMapOverlay = toggleSoilMoistureMapOverlay;
