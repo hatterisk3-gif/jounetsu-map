@@ -1962,7 +1962,7 @@ function openMasterFromQuery_() {
     const allowed = [
         'menu', 'crop', 'cropCultSetting', 'nurseryLocation', 'cropChemPlan',
         'cropWorkPlan', 'costItem', 'cropCostPlan', 'container', 'contentUnit',
-        'location', 'workCategory', 'machineType', 'machineGroup', 'hitchType',
+        'location', 'member', 'workCategory', 'machineType', 'machineGroup', 'hitchType',
         'work', 'machine', 'tool', 'material', 'pesticide', 'fertilizer'
     ];
     if (!allowed.includes(masterType)) return;
@@ -4552,6 +4552,13 @@ window.getMasterTypeInfo = (type) => {
     const listMap = {
         crop: { title: '🌱 作物マスタ', desc: '作物名・タグ略称・標準栽植密度の設定', list: pdlCrops || [] },
         location: { title: '🏢 拠点マスタ', desc: '拠点名・都道府県・産地データの設定', list: (pdlLocationDetails && pdlLocationDetails.length) ? pdlLocationDetails : (pdlLocations || []) },
+        member: {
+            title: '👥 メンバーマスタ',
+            desc: 'メンバー一覧・新規登録・所属拠点・部署・権限などの設定',
+            list: (Array.isArray(window.pdlMembers) && window.pdlMembers.length)
+                ? window.pdlMembers.filter(m => m && m.isActive !== false)
+                : (Array.isArray(window.pdlUserLocations) ? window.pdlUserLocations : [])
+        },
         workCategory: { title: '📂 作業カテゴリマスタ', desc: '作業のカテゴリ区分設定', list: pdlWorkCategories || [] },
         contentUnit: { title: '📏 コンテナ内容単位マスタ', desc: '収穫記録の内容単位（kg・本など）', list: pdlContentUnits || [] },
         machineType: { title: '🏷️ 機械名マスタ', desc: '機械名・車両名（トラクター、軽トラ等）', list: pdlMachineTypes || [] },
@@ -4587,7 +4594,7 @@ window.renderMasterMenu = () => {
     if (titleEl) titleEl.innerHTML = '⚙️ マスタ項目設定';
 
     const masterTypes = [
-        'crop', 'cropCultSetting', 'nurseryLocation', 'cropChemPlan', 'cropWorkPlan', 'costItem', 'cropCostPlan', 'container', 'contentUnit', 'location', 'workCategory',
+        'crop', 'cropCultSetting', 'nurseryLocation', 'cropChemPlan', 'cropWorkPlan', 'costItem', 'cropCostPlan', 'container', 'contentUnit', 'location', 'member', 'workCategory',
         'machineType', 'machineGroup', 'hitchType', 'inspection', 'work', 'machine', 'tool', 'material', 'pesticide', 'fertilizer'
     ];
 
@@ -4674,6 +4681,14 @@ window.openMasterDetail = (type, customEditHtml = null) => {
         if (el) el.innerHTML = window.buildCropWorkPlanUiHtml_();
         window.initCropWorkPlanUi_();
         return;
+    }
+    if (type === 'member' && !customEditHtml) {
+        const el = masterTarget();
+        if (el && typeof window.buildMemberMasterUiHtml_ === 'function') {
+            el.innerHTML = window.buildMemberMasterUiHtml_();
+            if (typeof window.initMemberMasterUi_ === 'function') window.initMemberMasterUi_();
+            return;
+        }
     }
 
     const pdlMachines = window.pdlMachines || [];
@@ -5454,9 +5469,9 @@ window.isAdminMasterFormBusy_ = () => {
     if (outEl.querySelector('[id^="edit_"]')) return true;
     const active = document.activeElement;
     if (active && outEl.contains(active) && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return true;
-    const inputs = outEl.querySelectorAll('input[type="text"], input[type="number"], textarea');
+    const inputs = outEl.querySelectorAll('input[type="text"], input[type="number"], input[type="email"], input[type="password"], textarea');
     for (const inp of inputs) {
-        if (inp.id === 'masterSearchFilter') continue;
+        if (inp.id === 'masterSearchFilter' || inp.id === 'memberMasterSearch') continue;
         if (String(inp.value || '').trim() !== '') return true;
     }
     return false;
@@ -5483,6 +5498,14 @@ window.renderMasterSection = () => {
             : (tab === 'tool' || tab === 'inspection' ? tab : 'machine');
         openMasterDetail(type);
         return;
+    }
+    if (currentActiveMasterType === 'member' && document.getElementById('memberMasterRoot')) {
+        if (typeof window.isAdminMasterFormBusy_ === 'function' && window.isAdminMasterFormBusy_()) {
+            if (typeof window.refreshMemberMasterNonDestructive_ === 'function') {
+                window.refreshMemberMasterNonDestructive_();
+            }
+            return;
+        }
     }
     if (currentActiveMasterType) {
         openMasterDetail(currentActiveMasterType);
@@ -7500,7 +7523,8 @@ function inferWorkRecordUiFlags_(workName, category) {
         showPreInspection: n.indexOf('始動前点検') >= 0,
         showPeriodicInspection: n.indexOf('定期点検') >= 0,
         showFuelInspection: n.indexOf('給油時点検') >= 0,
-        showMember: false
+        showMember: false,
+        showWorkRegistration: false
     };
 }
 
@@ -7522,7 +7546,8 @@ function resolveWorkRecordUiFlags_(work) {
         showPreInspection: pick(w.showPreInspection, inferred.showPreInspection),
         showPeriodicInspection: pick(w.showPeriodicInspection, inferred.showPeriodicInspection),
         showFuelInspection: pick(w.showFuelInspection, inferred.showFuelInspection),
-        showMember: pick(w.showMember, inferred.showMember)
+        showMember: pick(w.showMember, inferred.showMember),
+        showWorkRegistration: pick(w.showWorkRegistration, inferred.showWorkRegistration)
     };
 }
 
@@ -7545,6 +7570,7 @@ function buildWorkRecordUiFlagsHtml_(prefix, flags) {
             ${row('show_periodic_inspection', !!f.showPeriodicInspection, '🗓️ 定期点検UIを出す', '一括入力等で機械カテゴリ→機械・車両を選び、当日の定期点検の確認・記録ができます')}
             ${row('show_fuel_inspection', !!f.showFuelInspection, '⛽ 給油時点検UIを出す', '一括入力等で機械カテゴリ→機械・車両を選び、当日の給油時点検の確認・記録ができます')}
             ${row('show_member', !!f.showMember, '👥 メンバー登録を出す', '所属拠点を選んでから、その拠点のメンバー名を選べます')}
+            ${row('show_work_registration', !!f.showWorkRegistration, '📋 作業登録を出す', '作物名・作業名を選ぶUIを出します（選んだ作業の「記録画面に出す項目」も表示されます）')}
         </div>
     </div>`;
 }
@@ -7577,7 +7603,8 @@ function collectWorkRecordUiFlagsFromForm_(prefix) {
         showPreInspection: readOr('show_pre_inspection', !!baseline.showPreInspection),
         showPeriodicInspection: readOr('show_periodic_inspection', !!baseline.showPeriodicInspection),
         showFuelInspection: readOr('show_fuel_inspection', !!baseline.showFuelInspection),
-        showMember: readOr('show_member', !!baseline.showMember)
+        showMember: readOr('show_member', !!baseline.showMember),
+        showWorkRegistration: readOr('show_work_registration', !!baseline.showWorkRegistration)
     };
 }
 
@@ -7594,6 +7621,7 @@ window.syncAdminWorkUiFlagDefaults_ = (prefix) => {
     const preInsp = document.getElementById(prefix + '_show_pre_inspection');
     const perInsp = document.getElementById(prefix + '_show_periodic_inspection');
     const fuelInsp = document.getElementById(prefix + '_show_fuel_inspection');
+    const workReg = document.getElementById(prefix + '_show_work_registration');
     if (f) f.checked = inferred.showField !== false;
     if (m) m.checked = !!inferred.showMachine;
     if (fuel) fuel.checked = !!inferred.showFuel;
@@ -7601,6 +7629,7 @@ window.syncAdminWorkUiFlagDefaults_ = (prefix) => {
     if (preInsp) preInsp.checked = !!inferred.showPreInspection;
     if (perInsp) perInsp.checked = !!inferred.showPeriodicInspection;
     if (fuelInsp) fuelInsp.checked = !!inferred.showFuelInspection;
+    if (workReg) workReg.checked = !!inferred.showWorkRegistration;
 };
 
 window.openEditWorkMaster = (encodedStr) => {

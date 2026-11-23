@@ -1115,7 +1115,7 @@
       notes: 1, comment: 1, placeLabel: 1,
       photoTags: 1, photoTitle: 1, isPhotoOnly: 1, photoDate: 1, photoTime: 1,
       bulkBatchId: 1, recordKind: 1, fromBulkMemo: 1,
-      workMembers: 1, sharedFromAuthor: 1, alsoSaveForMembers: 1, concurrentWorks: 1
+      workMembers: 1, sharedFromAuthor: 1, alsoSaveForMembers: 1, concurrentWorks: 1, registeredWork: 1
     };
     return trimmed.map(function (ph) {
       if (!ph || typeof ph !== 'object') return ph;
@@ -2409,7 +2409,8 @@
           restSelectAll_('vehicles', 'org_id=eq.' + encOrg + '&order=created_at.asc'),
           restSelectAll_('tools', 'org_id=eq.' + encOrg + '&order=created_at.asc'),
           restSelectAll_('materials', 'org_id=eq.' + encOrg + '&order=created_at.asc'),
-          restSelectAll_('work_schedules', 'org_id=eq.' + encOrg + '&schedule_kind=eq.work&work_name=ilike.*%E5%95%8F%E9%A1%8C%E5%AF%BE%E5%BF%9C*&select=work_name,payload,field_id')
+          restSelectAll_('work_schedules', 'org_id=eq.' + encOrg + '&schedule_kind=eq.work&work_name=ilike.*%E5%95%8F%E9%A1%8C%E5%AF%BE%E5%BF%9C*&select=work_name,payload,field_id'),
+          restFetch('rest/v1/org_settings?org_id=eq.' + encOrg + '&setting_key=eq.user_profile_prefs&limit=1').catch(function () { return []; })
         ]);
 
       var fieldRows = results[0];
@@ -2424,6 +2425,10 @@
       var toolRows = results[9] || [];
       var materialRows = results[10] || [];
       var reportSchedRows = results[11] || [];
+      var profilePrefRows = results[12] || [];
+      var profilePrefs = (Array.isArray(profilePrefRows) && profilePrefRows.length && profilePrefRows[0] && typeof profilePrefRows[0].value === 'object' && profilePrefRows[0].value)
+        ? profilePrefRows[0].value
+        : {};
 
       var photosByFieldUuid = {};
       recordRows.forEach(function (rec) {
@@ -2503,7 +2508,8 @@
           showPreInspection: d.showPreInspection != null ? d.showPreInspection : null,
           showPeriodicInspection: d.showPeriodicInspection != null ? d.showPeriodicInspection : null,
           showFuelInspection: d.showFuelInspection != null ? d.showFuelInspection : null,
-          showMember: d.showMember != null ? d.showMember : null
+          showMember: d.showMember != null ? d.showMember : null,
+          showWorkRegistration: d.showWorkRegistration != null ? d.showWorkRegistration : null
         });
       });
 
@@ -2765,7 +2771,18 @@
           locationDetails: locationDetails,
           viewpoints: viewpoints,
           userLocations: memberRows.map(function (m) {
-            return { userId: m.login_id, userName: m.display_name, location: m.location || '', dept: m.department || '' };
+            var lid = String(m.login_id || '').trim();
+            var dn = String(m.display_name || '').trim();
+            var pref = (lid && profilePrefs[lid]) || (dn && profilePrefs[dn]) || null;
+            var loc = String(m.location || '').trim();
+            if (!loc && pref && typeof pref === 'object' && pref.location) {
+              loc = String(pref.location || '').trim();
+            }
+            var dept = String(m.department || '').trim();
+            if (!dept && pref && typeof pref === 'object' && pref.dept) {
+              dept = String(pref.dept || '').trim();
+            }
+            return { userId: lid, userName: dn, location: loc, dept: dept };
           }),
           workCategories: (byType.work_category || []).map(function (m) { return m.name; }),
           conditions: conditions,
@@ -4997,7 +5014,8 @@
             startTime: startHm, endTime: endHm, totalTime: String(d.totalTime || ''),
             minutes: mins, progress: r.progress || '', recordId: String((r.payload && r.payload.origRecordId) || r.legacy_id || r.id),
             workMembers: Array.isArray(d.workMembers) ? d.workMembers : [],
-            sharedFromAuthor: String(d.sharedFromAuthor || '').trim()
+            sharedFromAuthor: String(d.sharedFromAuthor || '').trim(),
+            registeredWork: (d.registeredWork && typeof d.registeredWork === 'object') ? d.registeredWork : null
           });
         }
       });
@@ -11763,15 +11781,522 @@
         var uid = String((updates[i] && updates[i].userId) || '').trim();
         var location = String((updates[i] && updates[i].location) || '').trim();
         if (!uid) continue;
-        var hit = members.find(function (m) { return String(m.login_id || '').trim() === uid; });
-        if (!hit) continue;
-        await restFetch('rest/v1/org_members?id=eq.' + encodeURIComponent(hit.id), {
-          method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ location: location })
+        var hit = members.find(function (m) {
+          return String(m.login_id || '').trim() === uid || String(m.display_name || '').trim() === uid;
         });
+        if (!hit) continue;
+        await tryPatchMemberAndSyncPrefP5_(orgId, hit, { location: location }, uid, 'location', location, userName);
         updated++;
         await writeLogP5_(orgId, userName, 'ユーザー所属拠点設定', uid, (hit.display_name || uid) + ': ' + (location || '未設定'));
       }
       return { success: true, updated: updated };
+    });
+
+    function isAdminMemberRoleP5_(role) {
+      var r = String(role || '').toLowerCase();
+      return r === 'owner' || r === 'admin';
+    }
+
+    function normMemberYmdP5_(val) {
+      if (!val && val !== 0) return '';
+      if (val instanceof Date && !isNaN(val.getTime())) {
+        var j = new Date(val.getTime() + 9 * 3600 * 1000);
+        return j.getUTCFullYear() + '-' + ('0' + (j.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + j.getUTCDate()).slice(-2);
+      }
+      var s = String(val).trim().replace(/\//g, '-');
+      var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+      if (m) {
+        var yr = Number(m[1]), mo = Number(m[2]), dy = Number(m[3]);
+        if (mo >= 1 && mo <= 12 && dy >= 1 && dy <= 31) {
+          return m[1] + '-' + ('0' + mo).slice(-2) + '-' + ('0' + dy).slice(-2);
+        }
+      }
+      return '';
+    }
+
+    function readMemberPaidLeaveOverrideP5_(m) {
+      var ov = m && m.paid_leave_override;
+      if (typeof ov === 'number' && isFinite(ov)) return ov;
+      if (ov && typeof ov === 'object') {
+        if (ov.days != null && ov.days !== '' && isFinite(Number(ov.days))) return Number(ov.days);
+        if (ov.value != null && ov.value !== '' && isFinite(Number(ov.value))) return Number(ov.value);
+      }
+      return null;
+    }
+
+    function normMemberLocationsStrP5_(raw) {
+      var parts = Array.isArray(raw)
+        ? raw.map(function (x) { return String(x || '').trim(); })
+        : String(raw || '').split(/[・,、\/｜|]+/).map(function (x) { return x.trim(); });
+      var out = [];
+      parts.forEach(function (p) {
+        if (p && out.indexOf(p) < 0) out.push(p);
+      });
+      return out.join('・');
+    }
+
+    function normMemberWeeklyOffP5_(raw) {
+      var src = Array.isArray(raw) ? raw : String(raw || '').split(/[,、\s]+/);
+      var days = [];
+      src.forEach(function (x) {
+        var n = parseInt(x, 10);
+        if (!isNaN(n) && n >= 0 && n <= 6 && days.indexOf(n) < 0) days.push(n);
+      });
+      days.sort(function (a, b) { return a - b; });
+      return days;
+    }
+
+    function normMemberQualsP5_(raw) {
+      if (!Array.isArray(raw)) return [];
+      var out = [];
+      raw.forEach(function (q) {
+        if (!q || typeof q !== 'object') return;
+        var name = String(q.name || '').trim();
+        if (!name) return;
+        out.push({
+          name: name,
+          date: String(q.date || '').trim(),
+          createdAt: q.createdAt || Date.now()
+        });
+      });
+      return out;
+    }
+
+    function mapMemberRowForMasterP5_(m, profilePrefs) {
+      var prefs = (profilePrefs && typeof profilePrefs === 'object') ? profilePrefs : {};
+      var lid = String(m.login_id || '').trim();
+      var dn = String(m.display_name || '').trim();
+      var pref = (lid && prefs[lid]) || (dn && prefs[dn]) || null;
+      var loc = String(m.location || '').trim();
+      if (!loc && pref && typeof pref.location === 'string') {
+        loc = pref.location.trim();
+      }
+      var dept = String(m.department || '').trim();
+      if (!dept && pref && typeof pref.dept === 'string') {
+        dept = pref.dept.trim();
+      }
+      var email = (pref && pref.gmail !== undefined)
+        ? String(pref.gmail || '').trim()
+        : String(m.email || '').trim();
+      var quals = (pref && Array.isArray(pref.qualifications))
+        ? pref.qualifications
+        : (Array.isArray(m.qualifications) ? m.qualifications : []);
+      return {
+        id: m.id,
+        userId: lid,
+        userName: dn,
+        role: isAdminMemberRoleP5_(m.role) ? '管理者' : '作業員',
+        rawRole: String(m.role || 'worker'),
+        dept: dept,
+        location: loc,
+        email: email,
+        hireDate: normMemberYmdP5_(m.hire_date),
+        paidLeaveOverride: readMemberPaidLeaveOverrideP5_(m),
+        weeklyOffDays: Array.isArray(m.weekly_off_days) ? m.weekly_off_days : [],
+        qualifications: quals,
+        googleLinked: !!m.google_uid,
+        lineLinked: !!m.line_uid,
+        hasAuthAccount: !!m.auth_user_id,
+        isActive: m.is_active !== false,
+        createdAt: m.created_at || '',
+        updatedAt: m.updated_at || ''
+      };
+    }
+
+    async function syncMemberProfilePrefsMultiP5_(orgId, keys, prefPatch, actor) {
+      var allPrefs = await readSettingP5_(orgId, 'user_profile_prefs', {});
+      var map = (allPrefs && typeof allPrefs === 'object' && !Array.isArray(allPrefs)) ? Object.assign({}, allPrefs) : {};
+      var uniqKeys = [];
+      (Array.isArray(keys) ? keys : []).forEach(function (k) {
+        var s = String(k || '').trim();
+        if (s && uniqKeys.indexOf(s) < 0) uniqKeys.push(s);
+      });
+      var nowIso = new Date().toISOString();
+      uniqKeys.forEach(function (k) {
+        var cur = (map[k] && typeof map[k] === 'object') ? Object.assign({}, map[k]) : {};
+        Object.keys(prefPatch || {}).forEach(function (field) {
+          cur[field] = prefPatch[field];
+        });
+        cur.updatedAt = nowIso;
+        map[k] = cur;
+      });
+      await upsertSettingP5_(orgId, 'user_profile_prefs', map, actor || 'システム');
+    }
+
+    function sortMembersForMasterP5_(list) {
+      return (list || []).slice().sort(function (a, b) {
+        var aa = a.isActive !== false ? 0 : 1;
+        var ba = b.isActive !== false ? 0 : 1;
+        if (aa !== ba) return aa - ba;
+        var ar = a.role === '管理者' ? 0 : 1;
+        var br = b.role === '管理者' ? 0 : 1;
+        if (ar !== br) return ar - br;
+        return String(a.userName || a.userId || '').localeCompare(String(b.userName || b.userId || ''), 'ja');
+      });
+    }
+
+    registerAction('listMembersForMaster', async function () {
+      var orgId = await resolveCurrentOrgId_();
+      var encOrg = encodeURIComponent(orgId);
+      var fetched = await Promise.all([
+        restSelectAll_('org_members', 'org_id=eq.' + encOrg + '&order=created_at.asc'),
+        readDeptListP5_(orgId),
+        readLocationDetailsP5_(orgId),
+        readSettingP5_(orgId, 'user_profile_prefs', {})
+      ]);
+      var memberRows = fetched[0] || [];
+      var departments = fetched[1] || ['運営', '未設定'];
+      var locDetails = fetched[2] || [];
+      var profilePrefs = fetched[3] || {};
+      var members = sortMembersForMasterP5_(memberRows.map(function (m) {
+        return mapMemberRowForMasterP5_(m, profilePrefs);
+      }));
+      var locations = locDetails.map(function (l) { return String((l && l.name) || '').trim(); }).filter(Boolean);
+      return { success: true, members: members, departments: departments, locations: locations };
+    });
+
+    registerAction('createMemberForMaster', async function (params) {
+      var p = params || {};
+      var actorName = String(p.actorName || p.userNameActor || '').trim() || '管理者';
+      var userName = String(p.userName || '').trim();
+      var rawUserId = String(p.userId || '').trim();
+      var password = String(p.password || '');
+      var email = String(p.email || '').trim().toLowerCase();
+      if (!userName) return { success: false, message: '名前を入力してください' };
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return { success: false, message: 'メールアドレスの形式が正しくありません' };
+      }
+      if (password && password.length < 4) {
+        return { success: false, message: 'パスワードは4文字以上で入力してください' };
+      }
+      if (password && !rawUserId) {
+        return { success: false, message: 'パスワードを設定する場合はログインIDを入力してください' };
+      }
+
+      var hireRaw = String(p.hireDate || '').trim();
+      var hireYmd = hireRaw ? normMemberYmdP5_(hireRaw) : '';
+      if (hireRaw && !hireYmd) {
+        return { success: false, message: '入社日の形式が正しくありません（YYYY-MM-DD）' };
+      }
+      var ovRaw = (p.paidLeaveOverride === undefined || p.paidLeaveOverride === null) ? '' : String(p.paidLeaveOverride).trim();
+      var paidLeaveObj = {};
+      if (ovRaw !== '') {
+        var ovNum = parseInt(ovRaw, 10);
+        if (isNaN(ovNum) || ovNum < 0) {
+          return { success: false, message: '有給付与上書きは0以上の整数で入力してください' };
+        }
+        paidLeaveObj = { days: ovNum };
+      }
+
+      var roleRaw = String(p.role || '作業員').trim();
+      var uiRole = (roleRaw === '管理者' || roleRaw === 'admin' || roleRaw === 'owner') ? '管理者' : '作業員';
+      var dbRole = uiRole === '管理者' ? 'admin' : 'worker';
+      var locStr = normMemberLocationsStrP5_(p.location);
+      var deptStr = String(p.dept || '').trim();
+      var weeklyOff = normMemberWeeklyOffP5_(p.weeklyOffDays);
+      var quals = normMemberQualsP5_(p.qualifications);
+
+      var orgId = await resolveCurrentOrgId_();
+      var encOrg = encodeURIComponent(orgId);
+      var existingMembers = await restSelectAll_('org_members', 'org_id=eq.' + encOrg);
+      var existingIds = {};
+      existingMembers.forEach(function (m) {
+        var lid = String(m.login_id || '').trim();
+        if (lid) existingIds[lid] = true;
+      });
+
+      var loginId = rawUserId;
+      if (!loginId) {
+        var baseId = userName;
+        loginId = baseId;
+        if (existingIds[loginId]) {
+          var seq = 2;
+          while (existingIds[baseId + '_' + seq]) seq++;
+          loginId = baseId + '_' + seq;
+        }
+      } else if (existingIds[loginId]) {
+        return { success: false, message: 'このログインIDは既に登録されています' };
+      }
+
+      var createdRow = null;
+      if (password) {
+        await ensureAutoLoginSession_(false);
+        var addRes = await callAuthGateway('adminAddUser', {
+          userId: loginId,
+          password: password,
+          userName: userName,
+          role: uiRole,
+          dept: deptStr,
+          location: locStr,
+          adminUserId: p.adminUserId || '',
+          adminPassword: p.adminPassword || ''
+        });
+        if (!addRes || addRes.success === false) {
+          return { success: false, message: (addRes && addRes.message) || 'メンバー登録に失敗しました' };
+        }
+        var rows = await restFetch(
+          'rest/v1/org_members?org_id=eq.' + encOrg + '&login_id=eq.' + encodeURIComponent(loginId) + '&limit=1'
+        );
+        createdRow = Array.isArray(rows) && rows[0] ? rows[0] : null;
+        if (createdRow && (email || hireYmd || ovRaw !== '' || weeklyOff.length || quals.length)) {
+          var extraPatch = {
+            email: email || null,
+            hire_date: hireYmd || null,
+            paid_leave_override: paidLeaveObj,
+            weekly_off_days: weeklyOff,
+            qualifications: quals
+          };
+          var patched = await restFetch('rest/v1/org_members?id=eq.' + encodeURIComponent(createdRow.id), {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+            body: JSON.stringify(extraPatch)
+          });
+          if (Array.isArray(patched) && patched[0]) createdRow = patched[0];
+          else createdRow = Object.assign({}, createdRow, extraPatch);
+        }
+      } else {
+        var inserted = await restFetch('rest/v1/org_members', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+          body: JSON.stringify({
+            org_id: orgId,
+            login_id: loginId,
+            display_name: userName,
+            role: dbRole,
+            department: deptStr,
+            location: locStr,
+            email: email || null,
+            hire_date: hireYmd || null,
+            paid_leave_override: paidLeaveObj,
+            weekly_off_days: weeklyOff,
+            qualifications: quals,
+            is_active: true
+          })
+        });
+        createdRow = Array.isArray(inserted) ? inserted[0] : inserted;
+        await writeLogP5_(
+          orgId,
+          actorName,
+          'メンバー追加',
+          loginId,
+          '名前:' + userName + ' / 権限:' + uiRole + ' / 拠点:' + (locStr || '未設定')
+        );
+      }
+
+      if (!createdRow) {
+        return { success: false, message: '登録結果の取得に失敗しました' };
+      }
+
+      var prefPatch = { location: locStr, dept: deptStr, gmail: email, qualifications: quals };
+      await syncMemberProfilePrefsMultiP5_(orgId, [loginId, userName], prefPatch, actorName);
+
+      var prefSnapshot = {};
+      prefSnapshot[loginId] = prefPatch;
+      return {
+        success: true,
+        member: mapMemberRowForMasterP5_(createdRow, prefSnapshot),
+        message: password ? 'メンバーを登録しました' : 'メンバーを名簿に登録しました'
+      };
+    });
+
+    registerAction('updateMemberForMaster', async function (params) {
+      var p = params || {};
+      var actorName = String(p.actorName || '').trim() || '管理者';
+      var orgId = await resolveCurrentOrgId_();
+      var encOrg = encodeURIComponent(orgId);
+      var members = await restSelectAll_('org_members', 'org_id=eq.' + encOrg + '&order=created_at.asc');
+
+      var targetId = String(p.id || '').trim();
+      var origUserId = String(p.originalUserId || '').trim();
+      var target = (targetId && members.find(function (m) { return String(m.id || '') === targetId; }))
+        || (origUserId && members.find(function (m) { return String(m.login_id || '').trim() === origUserId; }))
+        || null;
+      if (!target) return { success: false, message: '対象メンバーが見つかりません' };
+
+      var nextUserId = p.userId !== undefined ? String(p.userId || '').trim() : String(target.login_id || '').trim();
+      var nextUserName = p.userName !== undefined ? String(p.userName || '').trim() : String(target.display_name || '').trim();
+      if (!nextUserName) return { success: false, message: '名前を入力してください' };
+      if (!nextUserId) return { success: false, message: 'ログインIDを入力してください' };
+
+      var dup = members.some(function (m) {
+        return String(m.id || '') !== String(target.id) && String(m.login_id || '').trim() === nextUserId;
+      });
+      if (dup) return { success: false, message: 'このログインIDは既に他のメンバーで使用されています' };
+
+      var email = p.email !== undefined ? String(p.email || '').trim().toLowerCase() : String(target.email || '').trim().toLowerCase();
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return { success: false, message: 'メールアドレスの形式が正しくありません' };
+      }
+
+      var hireYmd = null;
+      if (p.hireDate !== undefined) {
+        var hireRaw = String(p.hireDate || '').trim();
+        if (hireRaw) {
+          hireYmd = normMemberYmdP5_(hireRaw);
+          if (!hireYmd) return { success: false, message: '入社日の形式が正しくありません（YYYY-MM-DD）' };
+        }
+      } else {
+        hireYmd = target.hire_date || null;
+      }
+
+      var paidLeaveObj = target.paid_leave_override && typeof target.paid_leave_override === 'object' ? target.paid_leave_override : {};
+      if (p.paidLeaveOverride !== undefined) {
+        var ovRaw = (p.paidLeaveOverride === null) ? '' : String(p.paidLeaveOverride).trim();
+        if (ovRaw === '') {
+          paidLeaveObj = {};
+        } else {
+          var ovNum = parseInt(ovRaw, 10);
+          if (isNaN(ovNum) || ovNum < 0) {
+            return { success: false, message: '有給付与上書きは0以上の整数で入力してください' };
+          }
+          paidLeaveObj = { days: ovNum };
+        }
+      }
+
+      var nextActive = p.isActive !== undefined ? !!p.isActive : (target.is_active !== false);
+      var uiRole = p.role !== undefined
+        ? ((String(p.role || '').trim() === '管理者' || String(p.role || '').trim() === 'admin' || String(p.role || '').trim() === 'owner') ? '管理者' : '作業員')
+        : (isAdminMemberRoleP5_(target.role) ? '管理者' : '作業員');
+
+      var wasActiveAdmin = isAdminMemberRoleP5_(target.role) && target.is_active !== false;
+      var willBeActiveAdmin = (uiRole === '管理者') && nextActive;
+      if (wasActiveAdmin && !willBeActiveAdmin) {
+        var otherActiveAdminCount = members.filter(function (m) {
+          return String(m.id || '') !== String(target.id)
+            && isAdminMemberRoleP5_(m.role)
+            && m.is_active !== false;
+        }).length;
+        if (otherActiveAdminCount < 1) {
+          return { success: false, message: '最後の管理者は作業員に変更・無効化できません' };
+        }
+      }
+
+      var nextDbRole = (uiRole === '管理者')
+        ? (String(target.role || '').toLowerCase() === 'owner' ? 'owner' : 'admin')
+        : 'worker';
+      var locStr = p.location !== undefined ? normMemberLocationsStrP5_(p.location) : normMemberLocationsStrP5_(target.location);
+      var deptStr = p.dept !== undefined ? String(p.dept || '').trim() : String(target.department || '').trim();
+      var weeklyOff = p.weeklyOffDays !== undefined ? normMemberWeeklyOffP5_(p.weeklyOffDays) : normMemberWeeklyOffP5_(target.weekly_off_days);
+      var quals = p.qualifications !== undefined ? normMemberQualsP5_(p.qualifications) : normMemberQualsP5_(target.qualifications);
+
+      var patch = {
+        login_id: nextUserId,
+        display_name: nextUserName,
+        role: nextDbRole,
+        department: deptStr,
+        location: locStr,
+        email: email || null,
+        hire_date: hireYmd,
+        paid_leave_override: paidLeaveObj,
+        weekly_off_days: weeklyOff,
+        qualifications: quals,
+        is_active: nextActive
+      };
+
+      var updatedRows = await restFetch('rest/v1/org_members?id=eq.' + encodeURIComponent(target.id), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify(patch)
+      });
+      var updatedRow = (Array.isArray(updatedRows) && updatedRows[0]) ? updatedRows[0] : Object.assign({}, target, patch);
+
+      var prefPatch = { location: locStr, dept: deptStr, gmail: email, qualifications: quals };
+      await syncMemberProfilePrefsMultiP5_(
+        orgId,
+        [target.login_id, target.display_name, nextUserId, nextUserName],
+        prefPatch,
+        actorName
+      );
+
+      await writeLogP5_(
+        orgId,
+        actorName,
+        'メンバー更新',
+        nextUserId,
+        nextUserName + ' / 権限:' + uiRole + ' / 拠点:' + (locStr || '未設定') + ' / 部署:' + (deptStr || '未設定')
+      );
+
+      var prefSnapshot = {};
+      prefSnapshot[nextUserId] = prefPatch;
+      return {
+        success: true,
+        member: mapMemberRowForMasterP5_(updatedRow, prefSnapshot),
+        message: 'メンバー情報を更新しました'
+      };
+    });
+
+    registerAction('deleteMemberForMaster', async function (params) {
+      var p = params || {};
+      var actorName = String(p.actorName || '').trim() || '管理者';
+      var orgId = await resolveCurrentOrgId_();
+      var encOrg = encodeURIComponent(orgId);
+      var members = await restSelectAll_('org_members', 'org_id=eq.' + encOrg + '&order=created_at.asc');
+
+      var targetId = String(p.id || '').trim();
+      var targetUid = String(p.userId || '').trim();
+      var target = (targetId && members.find(function (m) { return String(m.id || '') === targetId; }))
+        || (targetUid && members.find(function (m) { return String(m.login_id || '').trim() === targetUid; }))
+        || null;
+      if (!target) return { success: false, message: '対象メンバーが見つかりません' };
+
+      var hardDelete = p.hardDelete === true;
+      var nextActive = p.isActive !== undefined ? !!p.isActive : false;
+      var curAdminId = String(p.currentAdminUserId || '').trim();
+
+      if ((hardDelete || !nextActive) && curAdminId && String(target.login_id || '').trim() === curAdminId) {
+        return { success: false, message: '現在ログイン中の自分自身は無効化・削除できません' };
+      }
+
+      if ((hardDelete || !nextActive) && isAdminMemberRoleP5_(target.role) && target.is_active !== false) {
+        var otherActiveAdminCount = members.filter(function (m) {
+          return String(m.id || '') !== String(target.id)
+            && isAdminMemberRoleP5_(m.role)
+            && m.is_active !== false;
+        }).length;
+        if (otherActiveAdminCount < 1) {
+          return { success: false, message: '最後の管理者は無効化・削除できません' };
+        }
+      }
+
+      if (hardDelete) {
+        await restFetch('rest/v1/org_members?id=eq.' + encodeURIComponent(target.id), {
+          method: 'DELETE'
+        });
+        await writeLogP5_(
+          orgId,
+          actorName,
+          'メンバー削除',
+          String(target.login_id || ''),
+          String(target.display_name || target.login_id || '')
+        );
+        return {
+          success: true,
+          id: target.id,
+          isActive: false,
+          hardDeleted: true,
+          message: 'メンバーを削除しました'
+        };
+      }
+
+      await restFetch('rest/v1/org_members?id=eq.' + encodeURIComponent(target.id), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ is_active: nextActive })
+      });
+      await writeLogP5_(
+        orgId,
+        actorName,
+        nextActive ? 'メンバー再有効化' : 'メンバー無効化',
+        String(target.login_id || ''),
+        String(target.display_name || target.login_id || '')
+      );
+      return {
+        success: true,
+        id: target.id,
+        isActive: nextActive,
+        hardDeleted: false,
+        message: nextActive ? 'メンバーを再有効化しました' : 'メンバーを無効化しました'
+      };
     });
 
     registerAction('saveUserQualifications', async function (params) {
@@ -12044,7 +12569,8 @@
         showPreInspection: d.showPreInspection != null ? d.showPreInspection : null,
         showPeriodicInspection: d.showPeriodicInspection != null ? d.showPeriodicInspection : null,
         showFuelInspection: d.showFuelInspection != null ? d.showFuelInspection : null,
-        showMember: d.showMember != null ? d.showMember : null
+        showMember: d.showMember != null ? d.showMember : null,
+        showWorkRegistration: d.showWorkRegistration != null ? d.showWorkRegistration : null
       };
     }
 
@@ -12063,7 +12589,7 @@
         aliases: aliasStr ? aliasStr.split(/[,、\n]/).map(function (s) { return s.trim(); }).filter(Boolean) : []
       });
       if (Object.prototype.hasOwnProperty.call(val, 'cropDetails')) next.cropDetails = val.cropDetails || null;
-      ['showMachine', 'showMaterial', 'showPesticide', 'showField', 'showFuel', 'showRidgePolygon', 'showMaintenance', 'showPreInspection', 'showPeriodicInspection', 'showFuelInspection', 'showMember'].forEach(function (fk) {
+      ['showMachine', 'showMaterial', 'showPesticide', 'showField', 'showFuel', 'showRidgePolygon', 'showMaintenance', 'showPreInspection', 'showPeriodicInspection', 'showFuelInspection', 'showMember', 'showWorkRegistration'].forEach(function (fk) {
         if (Object.prototype.hasOwnProperty.call(val, fk)) {
           next[fk] = val[fk] === true ? true : (val[fk] === false ? false : null);
         }
@@ -12482,7 +13008,8 @@
             showPreInspection: orFlag(kObj.showPreInspection, oObj && oObj.showPreInspection, incM.showPreInspection),
             showPeriodicInspection: orFlag(kObj.showPeriodicInspection, oObj && oObj.showPeriodicInspection, incM.showPeriodicInspection),
             showFuelInspection: orFlag(kObj.showFuelInspection, oObj && oObj.showFuelInspection, incM.showFuelInspection),
-            showMember: orFlag(kObj.showMember, oObj && oObj.showMember, incM.showMember)
+            showMember: orFlag(kObj.showMember, oObj && oObj.showMember, incM.showMember),
+            showWorkRegistration: orFlag(kObj.showWorkRegistration, oObj && oObj.showWorkRegistration, incM.showWorkRegistration)
           });
           await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(keepRow.id), {
             method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
@@ -12626,6 +13153,7 @@
       'addCrop', 'deleteCrop', 'mergeFields', 'splitField', 'updateSignLink', 'saveReport',
       'resetAllManureStatus', 'getProdMgmtCategories', 'saveProdMgmtCategories',
       'getWorkDeptSettings', 'updateWorkDeptSettings', 'saveDepartmentMaster', 'updateUserDepts', 'updateUserLocations',
+      'listMembersForMaster', 'createMemberForMaster', 'updateMemberForMaster', 'deleteMemberForMaster',
       'saveUserQualifications', 'getUserQualifications', 'saveUserGmail', 'getUserGmail', 'getUserCalendarIds', 'saveUserCalendarIds',
       'getMapCoordinates', 'setGoogleClientId', 'setLineChannelConfig',
       'importFertilizerCatalogChunk', 'importPesticideCatalogChunk', 'importOsakaMarketDaily', 'importTokyoMarketDaily',
