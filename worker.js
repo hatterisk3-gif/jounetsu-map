@@ -21429,16 +21429,51 @@ window.getEquipmentBaseLocation_ = (item) => {
   return String(item.location || item.baseLocation || item.hub || '').trim();
 };
 
-/** 所属拠点と機械拠点が一致するか（部分一致も許容） */
+/** 所属拠点と機械拠点が一致するか（部分一致も許容）。拠点名が空の機械はどの拠点からでも選べる */
 window.equipmentMatchesUserLocation_ = (item, userLocs) => {
   const locs = Array.isArray(userLocs) ? userLocs : window.getUserAffiliatedLocations_();
-  if (!locs.length) return true; // 未設定時は絞らない（既存運用互換）
+  if (!locs.length) return true;
   const mLoc = window.getEquipmentBaseLocation_(item);
-  if (!mLoc) return false;
+  if (!mLoc) return true;
   return locs.some((ul) => {
     if (!ul) return false;
     return mLoc === ul || mLoc.indexOf(ul) >= 0 || ul.indexOf(mLoc) >= 0;
   });
+};
+
+/** 一括入力の機械一覧で使う拠点名。マスタの拠点と、機械に入っている拠点名 */
+window.listBulkMachineHubNames_ = (machines) => {
+  const set = new Set();
+  const masterLocs = (typeof pdlLocations !== 'undefined' && Array.isArray(pdlLocations))
+    ? pdlLocations
+    : (Array.isArray(window.pdlLocations) ? window.pdlLocations : []);
+  masterLocs.forEach((l) => {
+    const name = String((l && typeof l === 'object') ? (l.name || '') : (l || '')).trim();
+    if (name) set.add(name);
+  });
+  (Array.isArray(machines) ? machines : []).forEach((m) => {
+    String((m && m.location) || '').split(/[・,、\/｜|]+/).map(s => s.trim()).filter(Boolean).forEach(p => set.add(p));
+  });
+  const userLocs = (typeof window.getUserAffiliatedLocations_ === 'function')
+    ? window.getUserAffiliatedLocations_()
+    : [];
+  return Array.from(set).sort((a, b) => {
+    const ai = userLocs.indexOf(a);
+    const bi = userLocs.indexOf(b);
+    if (ai >= 0 && bi < 0) return -1;
+    if (bi >= 0 && ai < 0) return 1;
+    if (ai >= 0 && bi >= 0 && ai !== bi) return ai - bi;
+    return a.localeCompare(b, 'ja');
+  });
+};
+
+/** 一括入力の拠点フィルタ。空はすべて、__none__ は拠点未設定 */
+window.bulkMachineMatchesLocFilter_ = (machine, filterKey) => {
+  const key = String(filterKey || '').trim();
+  if (!key) return true;
+  const parts = String((machine && machine.location) || '').split(/[・,、\/｜|]+/).map(s => s.trim()).filter(Boolean);
+  if (key === '__none__') return parts.length === 0;
+  return parts.indexOf(key) >= 0;
 };
 
 /** アカウント所属拠点で農機・車両を絞り込み */
@@ -40116,11 +40151,40 @@ window.extractBulkWorkMemoFieldHintTexts_ = (raw) => {
   return texts;
 };
 
+window.bulkWorkMemoRouteSepSource_ = '(?:→|⇒|➔|➜|➡|➝|➞|->|=>|＞|>|～|〜|~|から|へ)|[\\u2190-\\u21FF\\u2794-\\u27FF\\u2900-\\u297F\\u2B00-\\u2BFF]';
+
 window.splitBulkWorkMemoFieldHintTokens_ = (hintText) => {
+  const sep = new RegExp('[,、/／・]+|(?:' + window.bulkWorkMemoRouteSepSource_ + ')', 'g');
   return String(hintText || '')
-    .split(/[,、/／・]+|(?:→|⇒|➔|➜|➡|➝|➞|->|=>|＞|>|～|〜|~|から|へ)|[\u2190-\u21FF\u2794-\u27BF\u2900-\u297F]/)
+    .split(sep)
     .map(t => window.cleanBulkWorkMemoFieldHintToken_(t))
     .filter(t => t.length >= 2);
+};
+
+/** 「A→B」のような移動文。候補は分けず、この文の下に出発地と到着地を並べる */
+window.collectBulkWorkMemoRoutePhrases_ = (raw) => {
+  const phrases = [];
+  const seen = {};
+  const pushPhrase = (phrase) => {
+    const label = window.cleanBulkWorkMemoFieldHintToken_(phrase);
+    const parts = window.splitBulkWorkMemoFieldHintTokens_(label);
+    if (!label || parts.length < 2) return;
+    const key = label.replace(new RegExp(window.bulkWorkMemoRouteSepSource_, 'g'), '→');
+    if (seen[key]) return;
+    seen[key] = true;
+    phrases.push({ label: label, parts: parts });
+  };
+  window.extractBulkWorkMemoFieldHintTexts_(raw).forEach(pushPhrase);
+  const re = new RegExp(
+    '([^\\s、,。()（）\\[\\]「」]{2,24}?)\\s*(?:' + window.bulkWorkMemoRouteSepSource_ + ')\\s*([^\\s、,。()（）\\[\\]「」]{2,24})',
+    'g'
+  );
+  const s = String(raw || '');
+  let m;
+  while ((m = re.exec(s))) {
+    if (m[1] && m[2]) pushPhrase(String(m[1]) + '→' + String(m[2]));
+  }
+  return phrases;
 };
 
 /** 「A→B」の出発地と到着地を、括弧の外でも場所候補にする */
@@ -40173,15 +40237,36 @@ window.extractBulkWorkMemoLocLikeTokens_ = (raw) => {
 
 window.collectBulkWorkMemoFieldHintTokens_ = (raw) => {
   const tokens = [];
+  const routePhrases = (typeof window.collectBulkWorkMemoRoutePhrases_ === 'function')
+    ? window.collectBulkWorkMemoRoutePhrases_(raw)
+    : [];
+  const routeSegKeys = {};
+  routePhrases.forEach(r => {
+    (r.parts || []).forEach(p => {
+      const key = (typeof window.normalizeBulkWorkMemoFieldKey_ === 'function')
+        ? window.normalizeBulkWorkMemoFieldKey_(p)
+        : String(p || '').replace(/\s+/g, '');
+      if (key) routeSegKeys[key] = true;
+    });
+  });
   const push = (t, trusted) => {
     const n = window.cleanBulkWorkMemoFieldHintToken_(t);
     if (!n || n.length < 2 || tokens.indexOf(n) >= 0) return;
+    const key = (typeof window.normalizeBulkWorkMemoFieldKey_ === 'function')
+      ? window.normalizeBulkWorkMemoFieldKey_(n)
+      : n.replace(/\s+/g, '');
+    // 移動文の出発地・到着地は、その文の候補にまとめる
+    const isRouteLabel = routePhrases.some(r => r && r.label === n);
+    if (routeSegKeys[key] && !isRouteLabel) return;
     if (!trusted && typeof window.isLikelyBulkWorkMemoFieldToken_ === 'function'
       && !window.isLikelyBulkWorkMemoFieldToken_(n)) return;
     tokens.push(n);
   };
+  routePhrases.forEach(r => push(r.label, true));
   window.extractBulkWorkMemoFieldHintTexts_(raw).forEach(hint => {
-    window.splitBulkWorkMemoFieldHintTokens_(hint).forEach(t => push(t, false));
+    const parts = window.splitBulkWorkMemoFieldHintTokens_(hint);
+    if (parts.length >= 2) return;
+    parts.forEach(t => push(t, false));
   });
   if (typeof window.extractBulkWorkMemoRoutePlaceTokens_ === 'function') {
     window.extractBulkWorkMemoRoutePlaceTokens_(raw).forEach(t => push(t, false));
@@ -40265,16 +40350,29 @@ window.scoreBulkWorkMemoFieldNameMatch_ = (token, polyName) => {
     ? window.normalizeBulkWorkMemoFieldKey_(name)
     : name.replace(/\s+/g, '');
   if (tokKey && nameKey && tokKey === nameKey) return 100;
+  // 「宝田小学校」⇔「宝田小学校近く」。矢印でつながった文の中に核の名前があれば候補にする
+  const proxRe = /(近く|付近|あたり|周辺|一帯|方面)$/;
+  const tokCore = String(tokKey || tok).replace(proxRe, '');
+  const nameCore = String(nameKey || name).replace(proxRe, '');
+  const routeParts = (typeof window.splitBulkWorkMemoFieldHintTokens_ === 'function')
+    ? window.splitBulkWorkMemoFieldHintTokens_(tok)
+    : [];
+  if (routeParts.length >= 2) {
+    const partKeys = routeParts.map(p => (
+      (typeof window.normalizeBulkWorkMemoFieldKey_ === 'function')
+        ? window.normalizeBulkWorkMemoFieldKey_(p)
+        : String(p || '').replace(/\s+/g, '')
+    ));
+    const partIndex = partKeys.indexOf(nameKey) >= 0 ? partKeys.indexOf(nameKey) : partKeys.indexOf(nameCore);
+    if (partKeys.indexOf(nameKey) >= 0 || routeParts.indexOf(name) >= 0) return 100 - Math.min(2, Math.max(0, partIndex));
+    if (nameCore.length >= 3 && partKeys.indexOf(nameCore) >= 0) return 97 - Math.min(2, partIndex);
+  }
   if (name.indexOf(tok) >= 0) return 88 + Math.min(12, tok.length);
   if (tokKey && nameKey && nameKey.indexOf(tokKey) >= 0) return 88 + Math.min(12, tokKey.length);
   if (tok.indexOf(name) >= 0 && name.length >= 2) return 82 + Math.min(12, name.length);
   if (tokKey && nameKey && tokKey.indexOf(nameKey) >= 0 && nameKey.length >= 2) {
     return 82 + Math.min(12, nameKey.length);
   }
-  // 「宝田小学校」⇔「宝田小学校近く」。矢印でつながった文の中に核の名前があれば候補にする
-  const proxRe = /(近く|付近|あたり|周辺|一帯|方面)$/;
-  const tokCore = String(tokKey || tok).replace(proxRe, '');
-  const nameCore = String(nameKey || name).replace(proxRe, '');
   if (tokCore.length >= 3 && nameCore.length >= 3 && tokCore === nameCore) return 96;
   if (nameCore.length >= 4 && String(tokKey || tok).indexOf(nameCore) >= 0) return 93;
   if (tokCore.length >= 4 && nameCore.length >= 4 && (name.indexOf(tokCore) >= 0 || String(nameKey || '').indexOf(tokCore) >= 0)) {
@@ -44053,14 +44151,7 @@ window.getBulkWorkMemoMachineList_ = (draft) => {
   if (isPureMaintenance) return [];
   const rawMachines = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
   if (!rawMachines.length) return [];
-  const selectedIds = new Set(
-    (Array.isArray(draft && draft.usedMachines) ? draft.usedMachines : [])
-      .map(m => String((m && (m.id || m.name)) || '').trim())
-      .filter(Boolean)
-  );
-  const machines = (typeof window.filterEquipmentByUserLocation_ === 'function')
-    ? rawMachines.filter(m => window.equipmentMatchesUserLocation_(m) || selectedIds.has(String((m && m.id) || '').trim()) || selectedIds.has(String((m && m.name) || '').trim()))
-    : rawMachines;
+  const machines = rawMachines;
   if (!machines.length) return [];
   const t = String((draft && draft.rawLine) || '');
   const draftWorkNames = (() => {
@@ -49284,33 +49375,55 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
           ${selectedChips}
           ${window.buildBulkWorkMemoMachineAddBtnHtml_(uid)}`;
         if (!machines.length) {
-          const userLocsBulk = (typeof window.getUserAffiliatedLocations_ === 'function') ? window.getUserAffiliatedLocations_() : [];
-          const emptyMsg = userLocsBulk.length
-            ? `所属拠点（${esc(userLocsBulk.join('・'))}）の農機マスタに登録がありません。上のボタンから追加できます。`
-            : '農機マスタに登録がありません。上のボタンから追加できます。';
-          html += `<div style="font-size:11px; color:#888; margin-bottom:6px; line-height:1.4;">${emptyMsg}</div>`;
+          html += `<div style="font-size:11px; color:#888; margin-bottom:6px; line-height:1.4;">農機マスタに登録がありません。上のボタンから追加できます。</div>`;
         } else {
+          const locFilter = String(d._machineLocFilter || '');
+          const hubNames = (typeof window.listBulkMachineHubNames_ === 'function')
+            ? window.listBulkMachineHubNames_(machines)
+            : [];
+          const matchesLoc = (m) => (typeof window.bulkMachineMatchesLocFilter_ === 'function')
+            ? window.bulkMachineMatchesLocFilter_(m, locFilter)
+            : true;
+          const countLoc = (key) => machines.filter(m => (
+            typeof window.bulkMachineMatchesLocFilter_ === 'function'
+              ? window.bulkMachineMatchesLocFilter_(m, key)
+              : true
+          )).length;
+          const hasUnassigned = countLoc('__none__') > 0;
+          const locBtn = (key, label, count) => {
+            const on = String(key || '') === locFilter;
+            const encoded = encodeURIComponent(String(key || ''));
+            return `<button type="button" onclick="setBulkWorkMemoMachineLoc_('${esc(uid)}','${encoded}')" style="padding:5px 10px; border-radius:14px; font-size:12px; font-weight:bold; cursor:pointer; border:1px solid ${on ? '#E65100' : '#FFCC80'}; background:${on ? '#FFE0B2' : '#fff'}; color:#E65100;">${esc(label)} ${count}</button>`;
+          };
+          html += `<div style="font-size:10px; color:#888; font-weight:bold; margin:2px 0 4px;">拠点で絞る</div>
+            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${locBtn('', 'すべて', machines.length)}${hubNames.map(name => locBtn(name, name, countLoc(name))).join('')}${hasUnassigned ? locBtn('__none__', '未設定', countLoc('__none__')) : ''}</div>`;
+          const visibleMachines = machines.filter(matchesLoc);
           const sug = window.suggestBulkWorkMemoMaintenanceTargets_(d.rawLine);
           const isSug = (m) => (sug.primary || []).concat(sug.maybe || []).some(x =>
             String(x.id) === String(m.id) || String(x.name) === String(m.name)
           );
-          const workSugMachines = machines.filter(m => m.isWorkCandidate);
+          const workSugMachines = visibleMachines.filter(m => m.isWorkCandidate);
           const workSugIds = new Set(workSugMachines.map(m => String(m.id)));
-          const sugMachines = machines.filter(m => !workSugIds.has(String(m.id)) && isSug(m));
+          const sugMachines = visibleMachines.filter(m => !workSugIds.has(String(m.id)) && isSug(m));
           const sugIds = new Set(sugMachines.map(m => String(m.id)));
-          const restMachines = machines.filter(m => !workSugIds.has(String(m.id)) && !sugIds.has(String(m.id)));
+          const restMachines = visibleMachines.filter(m => !workSugIds.has(String(m.id)) && !sugIds.has(String(m.id)));
           const machineLabel = (m, style) => {
             const on = selectedMachines.indexOf(String(m.id)) >= 0 || selectedMachines.indexOf(String(m.name)) >= 0;
             const safeId = String(m.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const safeName = String(m.name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const border = on ? '#FF9800' : (style === 'sug' ? '#FFB74D' : '#FFE0B2');
             const bg = on ? '#FFF3E0' : (style === 'sug' ? '#FFF8E1' : '#fff');
-            const loc = String(m.currentLocName || m.signName || '').trim();
-            const locLine = loc ? `<span style="display:block; font-size:10px; color:#888; font-weight:normal;">📍 ${esc(loc)}</span>` : '';
+            const hub = String(m.location || '').trim();
+            const park = String(m.currentLocName || m.signName || '').trim();
+            const meta = [hub ? esc(hub) : '', park ? `📍 ${esc(park)}` : ''].filter(Boolean).join(' · ');
+            const locLine = meta ? `<span style="display:block; font-size:10px; color:#888; font-weight:normal;">${meta}</span>` : '';
             return `<label style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px 4px 4px; border-radius:14px; font-size:12px; cursor:pointer; border:1px solid ${border}; background:${bg}; color:#E65100; text-align:left;">
               <input type="checkbox" ${on ? 'checked' : ''} onchange="toggleBulkWorkMemoMachine_('${esc(uid)}','${safeId}','${safeName}', this.checked)" style="margin:0 0 0 4px;"> ${machinePhotoHtml_(m)}<span><span>${esc(m.name)}</span>${locLine}</span>
             </label>`;
           };
+          if (!visibleMachines.length) {
+            html += `<div style="font-size:11px; color:#888; margin-bottom:6px; line-height:1.4;">この拠点の機械はありません。「すべて」で全台を表示できます。</div>`;
+          }
           if (workSugMachines.length) {
             const workLabel = String(d.workName || d.guessedName || '').trim();
             html += `<div style="font-size:10px; color:#E65100; font-weight:bold; margin-bottom:4px;">✨ この作業の候補${workLabel ? `（${esc(workLabel)}）` : ''}</div>
@@ -49321,8 +49434,11 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
               <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${sugMachines.map(m => machineLabel(m, 'sug')).join('')}</div>`;
           }
           if (restMachines.length) {
-            html += `<div style="font-size:10px; color:#888; font-weight:bold; margin-bottom:4px;">${(workSugMachines.length || sugMachines.length) ? '一覧から選ぶ' : ''}</div>
-              <div style="display:flex; flex-wrap:wrap; gap:6px; max-height:140px; overflow-y:auto;">${restMachines.map(m => machineLabel(m, 'all')).join('')}</div>`;
+            const listLabel = (workSugMachines.length || sugMachines.length)
+              ? `一覧から選ぶ（ほか${restMachines.length}台）`
+              : `農機マスタ（${restMachines.length}台）`;
+            html += `<div style="font-size:10px; color:#888; font-weight:bold; margin-bottom:4px;">${listLabel}</div>
+              <div style="display:flex; flex-wrap:wrap; gap:6px;">${restMachines.map(m => machineLabel(m, 'all')).join('')}</div>`;
           }
         }
         html += `</div>`;
@@ -51457,6 +51573,22 @@ window.toggleBulkWorkMemoDetail_ = (uid, detailName, checked) => {
       }
     }
     window.refreshBulkWorkMemoExtras_(uid);
+  }
+};
+
+window.setBulkWorkMemoMachineLoc_ = (uid, encodedLoc) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  let loc = '';
+  try { loc = decodeURIComponent(String(encodedLoc || '')); } catch (e) { loc = String(encodedLoc || ''); }
+  row._machineLocFilter = loc;
+  const scrollEl = document.getElementById('bulk_work_memo_review_scroll')
+    || document.getElementById('bulk_work_memo_manual_add_scroll');
+  const prevScroll = scrollEl ? scrollEl.scrollTop : null;
+  if (typeof window.refreshBulkWorkMemoExtras_ === 'function') window.refreshBulkWorkMemoExtras_(uid);
+  if (scrollEl && prevScroll != null) {
+    scrollEl.scrollTop = prevScroll;
+    try { requestAnimationFrame(() => { if (scrollEl) scrollEl.scrollTop = prevScroll; }); } catch (e) { }
   }
 };
 

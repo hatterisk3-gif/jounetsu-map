@@ -1652,6 +1652,7 @@
       return html;
     }
     const times = data.hourly.time;
+    const dayBlocks = [];
     for (let dayOffset = 0; dayOffset < 3; dayOffset++) {
       const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + dayOffset);
       const dayStr = weatherYmd_(day);
@@ -1677,23 +1678,23 @@
         const hCode = data.hourly.weathercode ? data.hourly.weathercode[i] : 0;
         const hTemp = data.hourly.temperature_2m ? data.hourly.temperature_2m[i] : null;
         const hPrecip = data.hourly.precipitation ? data.hourly.precipitation[i] : null;
-        cards.push(`<div style="min-width:48px; flex:0 0 auto; text-align:center; background:#f9f9f9; padding:5px 4px; border-radius:5px; border:1px solid #eee;">
-          <div style="font-size:12px; color:#666;">${hour}時</div>
-          <div style="font-size:18px; margin:3px 0;">${emojiFn(hCode)}</div>
-          <div style="font-size:13px; font-weight:bold;">${fmtWeatherTemp_(hTemp)}℃</div>
-          <div style="font-size:11px; color:#2196F3;">${fmtWeatherMm_(hPrecip)}</div>
+        cards.push(`<div style="min-width:44px; flex:0 0 auto; text-align:center; background:#f9f9f9; padding:4px 2px; border-radius:5px; border:1px solid #eee;">
+          <div style="font-size:11px; color:#666;">${hour}時</div>
+          <div style="font-size:16px; margin:2px 0;">${emojiFn(hCode)}</div>
+          <div style="font-size:12px; font-weight:bold;">${fmtWeatherTemp_(hTemp)}℃</div>
+          <div style="font-size:10px; color:#2196F3;">${fmtWeatherMm_(hPrecip)}</div>
         </div>`);
       }
-      html += `<div style="margin-bottom:12px; border-left:3px solid ${accents[dayOffset]}; padding-left:8px;">
-        <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:2px;">
-          <div style="font-weight:bold; color:${accents[dayOffset]}; font-size:13px; white-space:nowrap;">${labels[dayOffset]} <span style="color:#607d8b; font-weight:normal;">${dateLabel}</span></div>
+      dayBlocks.push(`<div style="min-width:0; border-top:3px solid ${accents[dayOffset]}; padding-top:6px;">
+        <div style="font-weight:bold; color:${accents[dayOffset]}; font-size:13px; line-height:1.3;">${labels[dayOffset]}</div>
+        <div style="color:#607d8b; font-size:11px; margin-bottom:4px;">${dateLabel}</div>
+        <div style="font-size:11px; margin-bottom:6px; line-height:1.35;">${summary || '<span style="color:#999;">日別の予報がありません</span>'}</div>
+        <div style="display:flex; overflow-x:auto; gap:4px; padding-bottom:4px; -webkit-overflow-scrolling:touch;">
+          ${cards.length ? cards.join('') : '<div style="font-size:11px; color:#888; padding:4px 0;">予報はありません</div>'}
         </div>
-        <div style="font-size:12px; margin-bottom:5px; line-height:1.4;">${summary || '<span style="color:#999;">日別の予報がありません</span>'}</div>
-        <div style="display:flex; overflow-x:auto; gap:6px; padding-bottom:4px; -webkit-overflow-scrolling:touch;">
-          ${cards.length ? cards.join('') : '<div style="font-size:12px; color:#888; padding:6px 0;">この時間帯の予報はありません</div>'}
-        </div>
-      </div>`;
+      </div>`);
     }
+    html += `<div data-weather-days-row="1" style="display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:8px; margin-bottom:12px; align-items:start;">${dayBlocks.join('')}</div>`;
     return html;
   }
 
@@ -1755,7 +1756,7 @@
   }
 
   function weatherHtmlHasPlaceTabs_(html) {
-    return typeof html === 'string' && html.indexOf('data-weather-place-tabs') >= 0;
+    return typeof html === 'string' && html.indexOf('data-weather-place-tabs') >= 0 && html.indexOf('data-weather-days-row') >= 0;
   }
 
   function paintOpenWeatherModal_(html) {
