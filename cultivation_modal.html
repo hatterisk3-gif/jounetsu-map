@@ -57,9 +57,14 @@
     <!-- モーダルフッター: 既存計画読込リンク -->
     <div style="padding:12px 20px 16px; background:#F8FAFC; border-top:1px solid #ECEFF1; border-radius:0 0 14px 14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <span style="font-size:12px; color:#607D8B;">すでに保存した計画がある場合:</span>
-      <button type="button" class="cp-btn-secondary cp-btn-secondary--green" onclick="closeCpModeSelectModal(); showPlanListModal({ mode: 'load' });" style="font-size:12px; min-height:36px; padding:6px 14px;">
-        📂 保存済み計画を読み込む
-      </button>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button type="button" class="cp-btn-secondary" onclick="window.openAgriGrowthCareModal && window.openAgriGrowthCareModal({ fromCultivation: true });" style="font-size:12px; min-height:36px; padding:6px 12px; border-color:#64B5F6; color:#1565C0; background:#E3F2FD;">
+          🌦️ 生育・施肥防除予測
+        </button>
+        <button type="button" class="cp-btn-secondary cp-btn-secondary--green" onclick="closeCpModeSelectModal(); showPlanListModal({ mode: 'load' });" style="font-size:12px; min-height:36px; padding:6px 14px;">
+          📂 保存済み計画を読み込む
+        </button>
+      </div>
     </div>
 
   </div>
@@ -107,6 +112,8 @@
             <span id="cpDraftStatus" class="cp-header-save-status"></span>
           </div>
         </div>
+        <button type="button" onclick="window.openAgriGrowthCareModal && window.openAgriGrowthCareModal({ fromCultivation: true })" title="天候に合わせた生育予測・肥料・農薬シミュレーションを開きます"
+          style="flex-shrink:0; padding:6px 10px; background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:6px; cursor:pointer; font-size:12px; font-weight:bold; white-space:nowrap;">🌦️ 生育・施肥防除予測</button>
         <button type="button" id="btnCpSavePlan" onclick="saveCultivationPlan()" title="栽培計画を保存します（保存ボタンを押すまで保存されません）"
           style="flex-shrink:0; padding:6px 14px; background:#FF9800; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:12px; font-weight:bold; box-shadow:0 1px 4px rgba(255,152,0,0.35); white-space:nowrap;">計画を保存</button>
         <span style="cursor: pointer; font-size: 24px; line-height: 1; color: #999; flex-shrink: 0;"

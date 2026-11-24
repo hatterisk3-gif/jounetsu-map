@@ -223,25 +223,24 @@
       : `<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:#e8f5e9;border:1px solid #a5d6a7;color:#2e7d32;font-size:12px;">💧 潅水は急がなくてよさそうです（推定 ${m}%）</div>`;
 
     const priorityBox = renderWeatherPrioritySectionHtml_(insights);
-
-    // DOM挿入後に定植候補を非同期取得
-    if (insights.rainWithin2Days) {
-      setTimeout(() => {
-        try { refreshWeatherPriorityPanel_(); } catch (e) { }
-      }, 40);
-    }
-    setTimeout(() => {
-      try { refreshMonthlyClimatePanel_(); } catch (e) { }
-    }, 60);
+    hydrateAgriWeatherAsyncPanels_();
 
     return `
       <div style="background:linear-gradient(180deg,#e8f5e9 0%,#e3f2fd 100%);border:1px solid #90caf9;border-radius:10px;padding:12px;margin-bottom:12px;font-size:12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
           <span style="font-weight:bold;color:#1565c0;font-size:13px;">🌱 農業天気ダッシュボード</span>
-          <button type="button" onclick="activateMoistureMapFromWeather(this)" style="border:1px solid #1976d2;background:linear-gradient(180deg,#ffffff,#e3f2fd);color:#0d47a1;border-radius:999px;padding:5px 12px;font-size:11px;font-weight:bold;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.1);display:inline-flex;align-items:center;gap:4px;">💧 地図に水分表示 ➔</button>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button type="button" onclick="openAgriGrowthCareModal && openAgriGrowthCareModal()" style="border:1px solid #2e7d32;background:linear-gradient(180deg,#ffffff,#e8f5e9);color:#1b5e20;border-radius:999px;padding:5px 12px;font-size:11px;font-weight:bold;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.1);display:inline-flex;align-items:center;gap:4px;">🌱 生育・施肥防除を拡大</button>
+            <button type="button" onclick="activateMoistureMapFromWeather(this)" style="border:1px solid #1976d2;background:linear-gradient(180deg,#ffffff,#e3f2fd);color:#0d47a1;border-radius:999px;padding:5px 12px;font-size:11px;font-weight:bold;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.1);display:inline-flex;align-items:center;gap:4px;">💧 地図に水分表示 ➔</button>
+          </div>
         </div>
 
         ${priorityBox}
+
+        <div id="agriGrowthCareMount" style="background:#fff;border-radius:8px;padding:10px;border:1px solid #a5d6a7;margin-bottom:8px;">
+          <div style="font-weight:bold;color:#1b5e20;margin-bottom:4px;">🌱 生育予測・天候連動 施肥／防除</div>
+          <div style="font-size:12px;color:#666;">栽培データと気象実績を読み込み中...</div>
+        </div>
 
         <div id="weatherMonthlyClimateMount" style="background:#fff;border-radius:8px;padding:10px;border:1px solid #b39ddb;margin-bottom:8px;">
           <div style="font-weight:bold;color:#5e35b1;margin-bottom:4px;">📅 月別の天気傾向</div>
@@ -438,7 +437,22 @@
     }
   }
 
-  let _monthlyClimateCache = { key: '', at: 0, months: null, years: 0 };
+  let _monthlyClimateCache = { key: '', at: 0, months: null, years: 0, avgRain: 0, avgTemp: null, dailyActualMap: null, doyNormals: null };
+
+  function hydrateAgriWeatherAsyncPanels_() {
+    setTimeout(() => {
+      try {
+        const st = global.weatherSunshineState;
+        if (st && st.agriInsights && st.agriInsights.rainWithin2Days) {
+          refreshWeatherPriorityPanel_();
+        }
+      } catch (e) { }
+      try { refreshMonthlyClimatePanel_(); } catch (e) { }
+      try {
+        if (typeof refreshAgriGrowthCarePanel_ === 'function') refreshAgriGrowthCarePanel_();
+      } catch (e) { }
+    }, 45);
+  }
 
   function resolveWeatherLatLng_() {
     const st = global.weatherSunshineState || {};
@@ -475,6 +489,18 @@
     return '';
   }
 
+  function buildDoyKeyList365_() {
+    const keys = [];
+    const d = new Date(Date.UTC(2023, 0, 1));
+    for (let i = 0; i < 365; i++) {
+      const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(d.getUTCDate()).padStart(2, '0');
+      keys.push(m + '-' + day);
+      d.setUTCDate(d.getUTCDate() + 1);
+    }
+    return keys;
+  }
+
   function buildMonthlyClimateFromArchive_(daily) {
     if (!daily || !daily.time || !daily.time.length) return null;
     const rainA = daily.precipitation_sum || [];
@@ -483,29 +509,56 @@
     const sunA = daily.sunshine_duration || [];
     const codeA = daily.weathercode || [];
 
+    const lastDs = String(daily.time[daily.time.length - 1] || '');
+    const lastParts = lastDs.split('-').map(Number);
+    const partialYm = (lastParts.length >= 3 && lastParts[2] < 28) ? lastDs.slice(0, 7) : '';
+
     const buckets = {};
     for (let m = 1; m <= 12; m++) {
       buckets[m] = { rain: 0, rainyDays: 0, tempSum: 0, tempN: 0, sunH: 0, days: 0, yearSet: {} };
     }
 
+    const dailyActualMap = {};
+    const doyRaw = {};
+
     for (let i = 0; i < daily.time.length; i++) {
-      const ds = String(daily.time[i] || '');
+      const ds = String(daily.time[i] || '').slice(0, 10);
       const parts = ds.split('-').map(Number);
       if (parts.length < 3 || !parts[1]) continue;
       const y = parts[0];
       const m = parts[1];
       const b = buckets[m];
       if (!b) continue;
+      const hasTemp = tmaxA[i] != null && tminA[i] != null && isFinite(Number(tmaxA[i])) && isFinite(Number(tminA[i]));
+      const tmax = hasTemp ? Number(tmaxA[i]) : null;
+      const tmin = hasTemp ? Number(tminA[i]) : null;
       const rain = num(rainA[i]);
       const code = num(codeA[i]);
-      const tmax = num(tmaxA[i]);
-      const tmin = num(tminA[i]);
       const sunH = num(sunA[i]) / 3600;
+
+      if (hasTemp) {
+        dailyActualMap[ds] = {
+          tmax: tmax,
+          tmin: tmin,
+          rain: Math.round(rain * 10) / 10,
+          sunH: Math.round(sunH * 10) / 10,
+          code: code
+        };
+        const mmdd = ds.slice(5, 10);
+        if (!doyRaw[mmdd]) doyRaw[mmdd] = { tmaxSum: 0, tminSum: 0, rainSum: 0, sunSum: 0, n: 0 };
+        doyRaw[mmdd].tmaxSum += tmax;
+        doyRaw[mmdd].tminSum += tmin;
+        doyRaw[mmdd].rainSum += rain;
+        doyRaw[mmdd].sunSum += sunH;
+        doyRaw[mmdd].n += 1;
+      }
+
+      if (partialYm && ds.slice(0, 7) === partialYm) continue;
       b.rain += rain;
       b.days += 1;
       b.yearSet[y] = true;
       if (rain >= 1.5 || code >= 51) b.rainyDays += 1;
-      if (isFinite(tmax) && isFinite(tmin)) {
+      if (hasTemp) {
         b.tempSum += (tmax + tmin) / 2;
         b.tempN += 1;
       }
@@ -550,7 +603,53 @@
       mo.wetRank = wetRank.findIndex(x => x.month === mo.month) + 1;
     });
 
-    return { months: months, years: yearsUsed, avgRain: Math.round(avgRain * 10) / 10, avgTemp };
+    // 366日平年値（前後±3日平滑）
+    const doyKeys = buildDoyKeyList365_();
+    const doyNormals = {};
+    for (let idx = 0; idx < doyKeys.length; idx++) {
+      let tmaxS = 0, tminS = 0, rainS = 0, sunS = 0, cnt = 0;
+      for (let off = -3; off <= 3; off++) {
+        const k = doyKeys[(idx + off + doyKeys.length) % doyKeys.length];
+        const row = doyRaw[k];
+        if (row && row.n > 0) {
+          tmaxS += row.tmaxSum;
+          tminS += row.tminSum;
+          rainS += row.rainSum;
+          sunS += row.sunSum;
+          cnt += row.n;
+        }
+      }
+      if (cnt > 0) {
+        const mx = Math.round((tmaxS / cnt) * 10) / 10;
+        const mn = Math.round((tminS / cnt) * 10) / 10;
+        doyNormals[doyKeys[idx]] = {
+          tmax: mx,
+          tmin: mn,
+          meanTemp: Math.round(((mx + mn) / 2) * 10) / 10,
+          rainMm: Math.round((rainS / cnt) * 10) / 10,
+          sunH: Math.round((sunS / cnt) * 10) / 10
+        };
+      }
+    }
+    if (doyNormals['02-28'] && doyNormals['03-01']) {
+      const a = doyNormals['02-28'], b = doyNormals['03-01'];
+      doyNormals['02-29'] = {
+        tmax: Math.round(((a.tmax + b.tmax) / 2) * 10) / 10,
+        tmin: Math.round(((a.tmin + b.tmin) / 2) * 10) / 10,
+        meanTemp: Math.round(((a.meanTemp + b.meanTemp) / 2) * 10) / 10,
+        rainMm: Math.round(((a.rainMm + b.rainMm) / 2) * 10) / 10,
+        sunH: Math.round(((a.sunH + b.sunH) / 2) * 10) / 10
+      };
+    }
+
+    return {
+      months: months,
+      years: yearsUsed,
+      avgRain: Math.round(avgRain * 10) / 10,
+      avgTemp,
+      dailyActualMap: dailyActualMap,
+      doyNormals: doyNormals
+    };
   }
 
   function buildMonthlyClimateNarrative_(profile, todayStr) {
@@ -632,20 +731,30 @@
   }
 
   async function loadMonthlyClimateProfile_(lat, lng) {
-    const now = new Date();
-    const endYear = now.getFullYear() - 1;
-    const startYear = endYear - 2;
-    const key = [Math.round(lat * 100) / 100, Math.round(lng * 100) / 100, startYear, endYear].join('|');
+    const jstNow = new Date(Date.now() + 9 * 3600 * 1000);
+    const startYear = jstNow.getUTCFullYear() - 3;
+    const endDt = new Date(Date.UTC(jstNow.getUTCFullYear(), jstNow.getUTCMonth(), jstNow.getUTCDate() - 7));
+    const start = startYear + '-01-01';
+    const end = endDt.getUTCFullYear() + '-' + String(endDt.getUTCMonth() + 1).padStart(2, '0') + '-' + String(endDt.getUTCDate()).padStart(2, '0');
+    const key = [Math.round(lat * 100) / 100, Math.round(lng * 100) / 100, start, end].join('|');
     if (
       _monthlyClimateCache.months &&
       _monthlyClimateCache.key === key &&
       (Date.now() - _monthlyClimateCache.at) < 12 * 60 * 60 * 1000
     ) {
-      return { months: _monthlyClimateCache.months, years: _monthlyClimateCache.years, avgRain: _monthlyClimateCache.avgRain, avgTemp: _monthlyClimateCache.avgTemp };
+      const cachedProfile = {
+        months: _monthlyClimateCache.months,
+        years: _monthlyClimateCache.years,
+        avgRain: _monthlyClimateCache.avgRain,
+        avgTemp: _monthlyClimateCache.avgTemp,
+        dailyActualMap: _monthlyClimateCache.dailyActualMap || {},
+        doyNormals: _monthlyClimateCache.doyNormals || {}
+      };
+      global.weatherSunshineState = global.weatherSunshineState || {};
+      global.weatherSunshineState.monthlyClimate = cachedProfile;
+      return cachedProfile;
     }
 
-    const start = startYear + '-01-01';
-    const end = endYear + '-12-31';
     const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lng}&start_date=${start}&end_date=${end}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration&timezone=Asia%2FTokyo`;
     const res = await fetch(url);
     if (!res.ok) throw new Error('月別天気の取得に失敗しました');
@@ -658,7 +767,9 @@
       months: profile.months,
       years: profile.years,
       avgRain: profile.avgRain,
-      avgTemp: profile.avgTemp
+      avgTemp: profile.avgTemp,
+      dailyActualMap: profile.dailyActualMap,
+      doyNormals: profile.doyNormals
     };
     global.weatherSunshineState = global.weatherSunshineState || {};
     global.weatherSunshineState.monthlyClimate = profile;
@@ -667,20 +778,25 @@
 
   async function refreshMonthlyClimatePanel_() {
     const body = document.getElementById('weatherMonthlyClimateBody');
-    if (!body) return;
+    const needGrowthUpgrade = !!document.getElementById('agriGrowthCareMount') || !!document.getElementById('agriGrowthCareModalBody');
+    if (!body && !needGrowthUpgrade) return;
     const pos = resolveWeatherLatLng_();
     if (!pos) {
-      body.innerHTML = '<div style="color:#888;">位置情報が無いため月別傾向を出せません</div>';
+      if (body) body.innerHTML = '<div style="color:#888;">位置情報が無いため月別傾向を出せません</div>';
       return;
     }
     try {
       const st = global.weatherSunshineState || {};
       const profile = await loadMonthlyClimateProfile_(pos.lat, pos.lng);
-      if (!document.getElementById('weatherMonthlyClimateBody')) return;
-      body.innerHTML = renderMonthlyClimateHtml_(profile, st.todayStr);
+      if (body && document.getElementById('weatherMonthlyClimateBody')) {
+        body.innerHTML = renderMonthlyClimateHtml_(profile, st.todayStr);
+      }
+      if (typeof rerenderAgriGrowthCarePanels_ === 'function') {
+        rerenderAgriGrowthCarePanels_();
+      }
     } catch (e) {
       console.warn('monthly climate', e);
-      if (document.getElementById('weatherMonthlyClimateBody')) {
+      if (body && document.getElementById('weatherMonthlyClimateBody')) {
         body.innerHTML = '<div style="color:#c62828;">月別傾向の取得に失敗しました</div>';
       }
     }
@@ -1639,12 +1755,47 @@
     return `<div data-weather-place-tabs="1" style="display:flex; gap:6px; margin-bottom:10px;">${tabs}</div>`;
   }
 
+  let activeNearTermDayOffset_ = 0;
+  const NEAR_TERM_ACCENTS_ = ['#1565c0', '#ef6c00', '#6a1b9a'];
+  const NEAR_TERM_BG_ = ['#e3f2fd', '#fff3e0', '#f3e5f5'];
+
+  function syncNearTermWeatherDayDom_(root) {
+    const scope = root && typeof root.querySelectorAll === 'function' ? root : (typeof document !== 'undefined' ? document : null);
+    if (!scope) return;
+    const active = Math.max(0, Math.min(2, Number(activeNearTermDayOffset_) || 0));
+    scope.querySelectorAll('[data-weather-day-tabs]').forEach(function (wrap) {
+      wrap.querySelectorAll('[data-weather-day-tab]').forEach(function (btn) {
+        const idx = Number(btn.getAttribute('data-weather-day-tab'));
+        const on = idx === active;
+        const accent = NEAR_TERM_ACCENTS_[idx] || NEAR_TERM_ACCENTS_[0];
+        const bg = NEAR_TERM_BG_[idx] || NEAR_TERM_BG_[0];
+        btn.setAttribute('aria-selected', on ? 'true' : 'false');
+        btn.style.border = on ? ('2px solid ' + accent) : '1px solid #d0d7de';
+        btn.style.background = on ? bg : '#f7f9fb';
+        btn.style.color = on ? accent : '#455a64';
+      });
+      wrap.querySelectorAll('[data-weather-day-panel]').forEach(function (panel) {
+        const idx = Number(panel.getAttribute('data-weather-day-panel'));
+        panel.style.display = idx === active ? 'block' : 'none';
+      });
+    });
+  }
+
+  function switchNearTermWeatherDay(dayOffset) {
+    const n = Number(dayOffset);
+    activeNearTermDayOffset_ = isFinite(n) ? Math.max(0, Math.min(2, Math.trunc(n))) : 0;
+    const content = typeof document !== 'undefined' ? document.getElementById('weatherContent') : null;
+    syncNearTermWeatherDayDom_(content || (typeof document !== 'undefined' ? document : null));
+  }
+
   function renderNearTermWeatherSectionHtml(data) {
     const emojiFn = typeof global.getWeatherEmoji === 'function' ? global.getWeatherEmoji : fallbackWeatherEmoji_;
     const labels = ['今日', '明日', '明後日'];
-    const accents = ['#1565c0', '#ef6c00', '#6a1b9a'];
+    const accents = NEAR_TERM_ACCENTS_;
+    const bgColors = NEAR_TERM_BG_;
     const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
     const now = new Date();
+    const activeDay = Math.max(0, Math.min(2, Number(activeNearTermDayOffset_) || 0));
     let html = renderWeatherPlaceTabsHtml_();
     html += `<div style="font-weight:bold; color:#333; margin:0 0 8px;">🕒 今日〜明後日（1時間ごと）</div>`;
     if (!data || !data.hourly || !Array.isArray(data.hourly.time)) {
@@ -1652,11 +1803,16 @@
       return html;
     }
     const times = data.hourly.time;
-    const dayBlocks = [];
+    const tabButtons = [];
+    const dayPanels = [];
     for (let dayOffset = 0; dayOffset < 3; dayOffset++) {
       const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + dayOffset);
       const dayStr = weatherYmd_(day);
       const dateLabel = `${day.getMonth() + 1}/${day.getDate()}(${weekdays[day.getDay()]})`;
+      const on = dayOffset === activeDay;
+      const accent = accents[dayOffset];
+      const bg = bgColors[dayOffset];
+      let dayEmoji = '';
       let summary = '';
       if (data.daily && Array.isArray(data.daily.time)) {
         const di = data.daily.time.indexOf(dayStr);
@@ -1665,7 +1821,8 @@
           const maxT = data.daily.temperature_2m_max ? data.daily.temperature_2m_max[di] : null;
           const minT = data.daily.temperature_2m_min ? data.daily.temperature_2m_min[di] : null;
           const rain = data.daily.precipitation_sum ? data.daily.precipitation_sum[di] : null;
-          summary = `${emojiFn(code)} <span style="color:#F44336; font-weight:bold;">${fmtWeatherTemp_(maxT)}℃</span> / <span style="color:#1976D2; font-weight:bold;">${fmtWeatherTemp_(minT)}℃</span> <span style="color:#2196F3; font-weight:bold;">${fmtWeatherMm_(rain)}</span>`;
+          dayEmoji = emojiFn(code);
+          summary = `${dayEmoji} <span style="color:#F44336; font-weight:bold;">${fmtWeatherTemp_(maxT)}℃</span> / <span style="color:#1976D2; font-weight:bold;">${fmtWeatherTemp_(minT)}℃</span> <span style="color:#2196F3; font-weight:bold;">${fmtWeatherMm_(rain)}</span>`;
         }
       }
       const cards = [];
@@ -1678,23 +1835,28 @@
         const hCode = data.hourly.weathercode ? data.hourly.weathercode[i] : 0;
         const hTemp = data.hourly.temperature_2m ? data.hourly.temperature_2m[i] : null;
         const hPrecip = data.hourly.precipitation ? data.hourly.precipitation[i] : null;
-        cards.push(`<div style="min-width:44px; flex:0 0 auto; text-align:center; background:#f9f9f9; padding:4px 2px; border-radius:5px; border:1px solid #eee;">
-          <div style="font-size:11px; color:#666;">${hour}時</div>
-          <div style="font-size:16px; margin:2px 0;">${emojiFn(hCode)}</div>
-          <div style="font-size:12px; font-weight:bold;">${fmtWeatherTemp_(hTemp)}℃</div>
-          <div style="font-size:10px; color:#2196F3;">${fmtWeatherMm_(hPrecip)}</div>
+        cards.push(`<div style="min-width:52px; flex:0 0 auto; text-align:center; background:#f9f9f9; padding:6px 4px; border-radius:6px; border:1px solid #eee;">
+          <div style="font-size:12px; color:#666;">${hour}時</div>
+          <div style="font-size:18px; margin:3px 0;">${emojiFn(hCode)}</div>
+          <div style="font-size:13px; font-weight:bold;">${fmtWeatherTemp_(hTemp)}℃</div>
+          <div style="font-size:11px; color:#2196F3;">${fmtWeatherMm_(hPrecip)}</div>
         </div>`);
       }
-      dayBlocks.push(`<div style="min-width:0; border-top:3px solid ${accents[dayOffset]}; padding-top:6px;">
-        <div style="font-weight:bold; color:${accents[dayOffset]}; font-size:13px; line-height:1.3;">${labels[dayOffset]}</div>
-        <div style="color:#607d8b; font-size:11px; margin-bottom:4px;">${dateLabel}</div>
-        <div style="font-size:11px; margin-bottom:6px; line-height:1.35;">${summary || '<span style="color:#999;">日別の予報がありません</span>'}</div>
-        <div style="display:flex; overflow-x:auto; gap:4px; padding-bottom:4px; -webkit-overflow-scrolling:touch;">
-          ${cards.length ? cards.join('') : '<div style="font-size:11px; color:#888; padding:4px 0;">予報はありません</div>'}
+      tabButtons.push(`<button type="button" data-weather-day-tab="${dayOffset}" role="tab" aria-selected="${on ? 'true' : 'false'}" onclick="window.switchNearTermWeatherDay && window.switchNearTermWeatherDay(${dayOffset})" style="flex:1; min-width:0; padding:7px 6px; border-radius:8px; cursor:pointer; text-align:center; border:${on ? '2px solid ' + accent : '1px solid #d0d7de'}; background:${on ? bg : '#f7f9fb'}; color:${on ? accent : '#455a64'};">
+        <div style="font-size:13px; font-weight:bold; line-height:1.25;">${dayEmoji ? dayEmoji + ' ' : ''}${labels[dayOffset]}</div>
+        <div style="font-size:11px; color:#607d8b; margin-top:2px; line-height:1.2;">${dateLabel}</div>
+      </button>`);
+      dayPanels.push(`<div data-weather-day-panel="${dayOffset}" style="display:${on ? 'block' : 'none'}; background:#fff; border:1px solid #e0e0e0; border-top:3px solid ${accent}; border-radius:8px; padding:10px;">
+        <div style="font-size:12px; margin-bottom:8px; line-height:1.4;"><span style="font-weight:bold; color:${accent}; margin-right:6px;">${labels[dayOffset]} ${dateLabel}</span>${summary || '<span style="color:#999;">日別の予報がありません</span>'}</div>
+        <div style="display:flex; overflow-x:auto; gap:6px; padding-bottom:4px; -webkit-overflow-scrolling:touch;">
+          ${cards.length ? cards.join('') : '<div style="font-size:12px; color:#888; padding:4px 0;">予報はありません</div>'}
         </div>
       </div>`);
     }
-    html += `<div data-weather-days-row="1" style="display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:8px; margin-bottom:12px; align-items:start;">${dayBlocks.join('')}</div>`;
+    html += `<div data-weather-day-tabs="1" style="margin-bottom:14px;">
+      <div role="tablist" style="display:flex; gap:6px; margin-bottom:8px;">${tabButtons.join('')}</div>
+      ${dayPanels.join('')}
+    </div>`;
     return html;
   }
 
@@ -1756,7 +1918,7 @@
   }
 
   function weatherHtmlHasPlaceTabs_(html) {
-    return typeof html === 'string' && html.indexOf('data-weather-place-tabs') >= 0 && html.indexOf('data-weather-days-row') >= 0;
+    return typeof html === 'string' && html.indexOf('data-weather-place-tabs') >= 0 && html.indexOf('data-weather-day-tabs') >= 0;
   }
 
   function paintOpenWeatherModal_(html) {
@@ -1765,6 +1927,8 @@
     if (!content || !modal) return;
     if (modal.style.display === 'none' || !modal.style.display) return;
     content.innerHTML = html;
+    syncNearTermWeatherDayDom_(content);
+    hydrateAgriWeatherAsyncPanels_();
   }
 
   function beginWeatherFetch(options) {
@@ -1850,7 +2014,11 @@
     const fresh = !!(sameSpot && weatherHtmlHasPlaceTabs_(bundle.html) && (Date.now() - bundle.at) < WEATHER_PLACE_FRESH_MS);
     if (fresh && !opts.force) {
       applyWeatherBundle_(bundle);
-      if (modalOpen) content.innerHTML = bundle.html;
+      if (modalOpen) {
+        content.innerHTML = bundle.html;
+        syncNearTermWeatherDayDom_(content);
+        hydrateAgriWeatherAsyncPanels_();
+      }
       return;
     }
     if (modalOpen) content.innerHTML = weatherPlaceMessageHtml_(weatherPlaceTitle_(placeId) + 'の天気を取得中...');
@@ -2269,15 +2437,1611 @@
     if (fresh) {
       applyWeatherBundle_(bundle);
       content.innerHTML = bundle.html;
+      syncNearTermWeatherDayDom_(content);
+      hydrateAgriWeatherAsyncPanels_();
       return;
     }
     if (active === 'here' && weatherHtmlHasPlaceTabs_(global.cachedWeatherHtml)) {
       content.innerHTML = global.cachedWeatherHtml;
+      syncNearTermWeatherDayDom_(content);
+      hydrateAgriWeatherAsyncPanels_();
       return;
     }
     content.innerHTML = weatherPlaceMessageHtml_('天気を取得中...');
     switchWeatherPlace(active, { force: true });
   }
+
+  // ========================================================================
+  // 🌱 種まきからの生育予測（GDD）＋ 天候連動の施肥・防除提案エンジン
+  // ========================================================================
+  const AGRI_CROP_MODELS_ = {
+    'キャベツ': {
+      family: 'アブラナ科', baseTemp: 5, capTemp: 28, directSow: false,
+      stages: { germination: 65, planting: 350, topdress1: 620, topdress2: 950, harvestStart: 1350, harvestEnd: 1600 },
+      fert10a: { basal: { n: 12, p: 12, k: 12 }, top1: { n: 5, p: 0, k: 4 }, top2: { n: 5, p: 0, k: 4 } },
+      sprayWater10a: { early: 120, mid: 180, late: 220 },
+      pestNotes: { wet: '黒腐病・べと病・菌核病・軟腐病', dry: 'コナガ・アオムシ・アブラムシ・ヨトウムシ' }
+    },
+    'はくさい': {
+      family: 'アブラナ科', baseTemp: 5, capTemp: 28, directSow: false,
+      stages: { germination: 55, planting: 280, topdress1: 520, topdress2: 800, harvestStart: 1150, harvestEnd: 1380 },
+      fert10a: { basal: { n: 12, p: 12, k: 12 }, top1: { n: 5, p: 0, k: 4 }, top2: { n: 4, p: 0, k: 4 } },
+      sprayWater10a: { early: 120, mid: 180, late: 220 },
+      pestNotes: { wet: '軟腐病・べと病・白斑病', dry: 'キスジノミハムシ・アブラムシ・ヨトウムシ' }
+    },
+    'だいこん': {
+      family: 'アブラナ科', baseTemp: 5, capTemp: 28, directSow: true,
+      stages: { germination: 65, planting: null, topdress1: 380, topdress2: 650, harvestStart: 950, harvestEnd: 1180 },
+      fert10a: { basal: { n: 8, p: 10, k: 8 }, top1: { n: 4, p: 0, k: 4 }, top2: { n: 3, p: 0, k: 3 } },
+      sprayWater10a: { early: 100, mid: 150, late: 180 },
+      pestNotes: { wet: '黒斑細菌病・べと病・軟腐病', dry: 'キスジノミハムシ・ダイコンシンクイムシ・アブラムシ' }
+    },
+    'ブロッコリー': {
+      family: 'アブラナ科', baseTemp: 5, capTemp: 28, directSow: false,
+      stages: { germination: 65, planting: 340, topdress1: 620, topdress2: 960, harvestStart: 1380, harvestEnd: 1650 },
+      fert10a: { basal: { n: 12, p: 12, k: 10 }, top1: { n: 6, p: 0, k: 5 }, top2: { n: 5, p: 0, k: 5 } },
+      sprayWater10a: { early: 120, mid: 180, late: 220 },
+      pestNotes: { wet: '黒すす病・べと病・花蕾腐敗病', dry: 'コナガ・ハイマダラノメイガ・アブラムシ' }
+    },
+    'レタス': {
+      family: 'キク科', baseTemp: 5, capTemp: 26, directSow: false,
+      stages: { germination: 60, planting: 300, topdress1: 550, topdress2: 780, harvestStart: 1020, harvestEnd: 1200 },
+      fert10a: { basal: { n: 10, p: 12, k: 10 }, top1: { n: 3, p: 0, k: 3 }, top2: { n: 2, p: 0, k: 2 } },
+      sprayWater10a: { early: 100, mid: 150, late: 180 },
+      pestNotes: { wet: '菌核病・灰色かび病・腐敗病・べと病', dry: 'オオタバコガ・アブラムシ・アザミウマ' }
+    },
+    'ほうれん草': {
+      family: 'ヒユ科', baseTemp: 5, capTemp: 26, directSow: true,
+      stages: { germination: 65, planting: null, topdress1: 280, topdress2: null, harvestStart: 580, harvestEnd: 760 },
+      fert10a: { basal: { n: 10, p: 10, k: 10 }, top1: { n: 3, p: 0, k: 2 }, top2: { n: 0, p: 0, k: 0 } },
+      sprayWater10a: { early: 100, mid: 140, late: 160 },
+      pestNotes: { wet: 'べと病・萎凋病・株腐病', dry: 'ホウレンソウケナガコナダニ・アブラムシ・シロオビノメイガ' }
+    },
+    'こまつな': {
+      family: 'アブラナ科', baseTemp: 5, capTemp: 28, directSow: true,
+      stages: { germination: 55, planting: null, topdress1: 240, topdress2: null, harvestStart: 480, harvestEnd: 640 },
+      fert10a: { basal: { n: 9, p: 9, k: 9 }, top1: { n: 3, p: 0, k: 2 }, top2: { n: 0, p: 0, k: 0 } },
+      sprayWater10a: { early: 100, mid: 140, late: 160 },
+      pestNotes: { wet: '白さび病・べと病・炭疽病', dry: 'キスジノミハムシ・コナガ・アブラムシ' }
+    },
+    'にんじん': {
+      family: 'セリ科', baseTemp: 5, capTemp: 28, directSow: true,
+      stages: { germination: 110, planting: null, topdress1: 480, topdress2: 900, harvestStart: 1400, harvestEnd: 1700 },
+      fert10a: { basal: { n: 10, p: 12, k: 10 }, top1: { n: 3, p: 0, k: 3 }, top2: { n: 3, p: 0, k: 3 } },
+      sprayWater10a: { early: 100, mid: 150, late: 180 },
+      pestNotes: { wet: '黒葉枯病・斑点病・しみ腐病', dry: 'キアゲハ・ヨトウムシ・ハダニ・アブラムシ' }
+    },
+    'ねぎ': {
+      family: 'ヒガンバナ科', baseTemp: 5, capTemp: 28, directSow: false,
+      stages: { germination: 110, planting: 580, topdress1: 1050, topdress2: 1550, harvestStart: 2150, harvestEnd: 2600 },
+      fert10a: { basal: { n: 10, p: 12, k: 10 }, top1: { n: 5, p: 0, k: 4 }, top2: { n: 5, p: 0, k: 4 } },
+      sprayWater10a: { early: 120, mid: 160, late: 200 },
+      pestNotes: { wet: 'べと病・さび病・黒斑病・軟腐病', dry: 'ネギアザミウマ・ネギハモグリバエ・シロイチモジヨトウ' }
+    },
+    'たまねぎ': {
+      family: 'ヒガンバナ科', baseTemp: 5, capTemp: 28, directSow: false,
+      stages: { germination: 100, planting: 550, topdress1: 1100, topdress2: 1500, harvestStart: 2100, harvestEnd: 2350 },
+      fert10a: { basal: { n: 10, p: 14, k: 10 }, top1: { n: 4, p: 0, k: 4 }, top2: { n: 4, p: 0, k: 4 } },
+      sprayWater10a: { early: 120, mid: 160, late: 200 },
+      pestNotes: { wet: 'べと病・白色疫病・灰色かび病・軟腐病', dry: 'ネギアザミウマ・ネギハモグリバエ' }
+    },
+    'じゃがいも': {
+      family: 'ナス科', baseTemp: 6, capTemp: 28, directSow: true,
+      stages: { germination: 160, planting: null, topdress1: 450, topdress2: null, harvestStart: 1050, harvestEnd: 1250 },
+      fert10a: { basal: { n: 8, p: 10, k: 10 }, top1: { n: 2, p: 0, k: 3 }, top2: { n: 0, p: 0, k: 0 } },
+      sprayWater10a: { early: 120, mid: 180, late: 200 },
+      pestNotes: { wet: '疫病・軟腐病・そうか病（排水対策重要）', dry: 'テントウムシダマシ・アブラムシ' }
+    },
+    'トマト': {
+      family: 'ナス科', baseTemp: 10, capTemp: 32, directSow: false,
+      stages: { germination: 75, planting: 480, topdress1: 780, topdress2: 1080, harvestStart: 1250, harvestEnd: 2100 },
+      fert10a: { basal: { n: 10, p: 15, k: 10 }, top1: { n: 4, p: 1, k: 4 }, top2: { n: 4, p: 1, k: 4 } },
+      sprayWater10a: { early: 150, mid: 220, late: 280 },
+      pestNotes: { wet: '疫病・灰色かび病・葉かび病・青枯病', dry: 'コナジラミ・トマトサビダニ・アザミウマ・オオタバコガ' }
+    },
+    'きゅうり': {
+      family: 'ウリ科', baseTemp: 10, capTemp: 32, directSow: false,
+      stages: { germination: 65, planting: 320, topdress1: 580, topdress2: 860, harvestStart: 880, harvestEnd: 1650 },
+      fert10a: { basal: { n: 12, p: 14, k: 12 }, top1: { n: 5, p: 1, k: 5 }, top2: { n: 5, p: 1, k: 5 } },
+      sprayWater10a: { early: 150, mid: 220, late: 280 },
+      pestNotes: { wet: 'べと病・炭疽病・褐斑病・つる枯病', dry: 'うどんこ病・ハダニ・アザミウマ・アブラムシ' }
+    },
+    'なす': {
+      family: 'ナス科', baseTemp: 10, capTemp: 33, directSow: false,
+      stages: { germination: 85, planting: 540, topdress1: 820, topdress2: 1140, harvestStart: 1220, harvestEnd: 2200 },
+      fert10a: { basal: { n: 14, p: 16, k: 14 }, top1: { n: 5, p: 1, k: 5 }, top2: { n: 5, p: 1, k: 5 } },
+      sprayWater10a: { early: 150, mid: 220, late: 280 },
+      pestNotes: { wet: '灰色かび病・半身萎凋病・褐紋病・青枯病', dry: 'ミナミキイロアザミウマ・チャノホコリダニ・ハダニ' }
+    },
+    'ピーマン': {
+      family: 'ナス科', baseTemp: 10, capTemp: 33, directSow: false,
+      stages: { germination: 85, planting: 560, topdress1: 840, topdress2: 1160, harvestStart: 1250, harvestEnd: 2200 },
+      fert10a: { basal: { n: 12, p: 15, k: 12 }, top1: { n: 4, p: 1, k: 4 }, top2: { n: 4, p: 1, k: 4 } },
+      sprayWater10a: { early: 150, mid: 200, late: 260 },
+      pestNotes: { wet: '疫病・斑点病・灰色かび病', dry: 'アザミウマ・アブラムシ・タバコガ・チャノホコリダニ' }
+    },
+    'かぼちゃ': {
+      family: 'ウリ科', baseTemp: 10, capTemp: 33, directSow: false,
+      stages: { germination: 70, planting: 280, topdress1: 580, topdress2: null, harvestStart: 1180, harvestEnd: 1400 },
+      fert10a: { basal: { n: 8, p: 12, k: 10 }, top1: { n: 3, p: 0, k: 3 }, top2: { n: 0, p: 0, k: 0 } },
+      sprayWater10a: { early: 140, mid: 180, late: 220 },
+      pestNotes: { wet: '疫病・つる枯病・黒星病', dry: 'うどんこ病・ワタアブラムシ・ハダニ' }
+    },
+    'スイートコーン': {
+      family: 'イネ科', baseTemp: 10, capTemp: 33, directSow: false,
+      stages: { germination: 70, planting: 210, topdress1: 450, topdress2: 750, harvestStart: 1050, harvestEnd: 1200 },
+      fert10a: { basal: { n: 10, p: 12, k: 10 }, top1: { n: 5, p: 0, k: 3 }, top2: { n: 4, p: 0, k: 3 } },
+      sprayWater10a: { early: 120, mid: 180, late: 220 },
+      pestNotes: { wet: 'すす紋病・ごま葉枯病・紋枯病', dry: 'アワノメイガ・オオタバコガ・アブラムシ' }
+    },
+    'えだまめ': {
+      family: 'マメ科', baseTemp: 10, capTemp: 32, directSow: true,
+      stages: { germination: 70, planting: null, topdress1: 420, topdress2: null, harvestStart: 980, harvestEnd: 1140 },
+      fert10a: { basal: { n: 3, p: 10, k: 8 }, top1: { n: 1.5, p: 0, k: 2 }, top2: { n: 0, p: 0, k: 0 } },
+      sprayWater10a: { early: 120, mid: 160, late: 200 },
+      pestNotes: { wet: 'べと病・紫斑病・立枯病', dry: 'カメムシ類・マメシンクイガ・ハスモンヨトウ・ハダニ' }
+    }
+  };
+
+  const AGRI_CROP_ALIASES_ = {
+    '白菜': 'はくさい', 'ハクサイ': 'はくさい',
+    '大根': 'だいこん', 'ダイコン': 'だいこん',
+    'ほうれんそう': 'ほうれん草', 'ホウレンソウ': 'ほうれん草', 'ホウレン草': 'ほうれん草', '法蓮草': 'ほうれん草',
+    '小松菜': 'こまつな', 'コマツナ': 'こまつな',
+    '人参': 'にんじん', 'ニンジン': 'にんじん',
+    '葱': 'ねぎ', 'ネギ': 'ねぎ', '白ねぎ': 'ねぎ', '長ねぎ': 'ねぎ', '青ねぎ': 'ねぎ', '葉ねぎ': 'ねぎ',
+    '玉ねぎ': 'たまねぎ', '玉葱': 'たまねぎ', 'タマネギ': 'たまねぎ',
+    'ばれいしょ': 'じゃがいも', 'バレイショ': 'じゃがいも', '馬鈴薯': 'じゃがいも', 'ジャガイモ': 'じゃがいも',
+    '胡瓜': 'きゅうり', 'キュウリ': 'きゅうり',
+    '茄子': 'なす', 'ナス': 'なす',
+    '南瓜': 'かぼちゃ', 'カボチャ': 'かぼちゃ',
+    'とうもろこし': 'スイートコーン', 'トウモロコシ': 'スイートコーン', 'コーン': 'スイートコーン',
+    '枝豆': 'えだまめ', 'エダマメ': 'えだまめ',
+    'きゃべつ': 'キャベツ', 'ぶろっこりー': 'ブロッコリー', 'れたす': 'レタス', 'とまと': 'トマト', 'ぴーまん': 'ピーマン'
+  };
+
+  function normalizeAgriCropKey_(rawName) {
+    const s = String(rawName || '').trim();
+    if (!s) return '';
+    if (AGRI_CROP_MODELS_[s]) return s;
+    if (AGRI_CROP_ALIASES_[s]) return AGRI_CROP_ALIASES_[s];
+    const keys = Object.keys(AGRI_CROP_MODELS_);
+    for (let i = 0; i < keys.length; i++) {
+      if (s.indexOf(keys[i]) >= 0) return keys[i];
+    }
+    const aliasKeys = Object.keys(AGRI_CROP_ALIASES_);
+    for (let i = 0; i < aliasKeys.length; i++) {
+      if (s.indexOf(aliasKeys[i]) >= 0) return AGRI_CROP_ALIASES_[aliasKeys[i]];
+    }
+    return s;
+  }
+
+  function resolveCropAgronomyModel_(cropName, croptypes) {
+    const raw = String(cropName || '').trim() || 'キャベツ';
+    const key = normalizeAgriCropKey_(raw);
+    if (AGRI_CROP_MODELS_[key]) {
+      return Object.assign({ cropKey: key, displayName: raw, isFallbackModel: false }, AGRI_CROP_MODELS_[key]);
+    }
+    // 作型DBからの動的フォールバック
+    let plantDays = 30;
+    let harvestDays = 95;
+    let hasPlant = true;
+    const list = Array.isArray(croptypes) ? croptypes : [];
+    const hit = list.find(function (ct) {
+      return ct && (String(ct.crop || '').trim() === raw || normalizeAgriCropKey_(ct.crop) === key);
+    });
+    if (hit) {
+      const flatToDays = function (arr) {
+        if (!Array.isArray(arr) || !arr.length) return null;
+        const f = Number(arr[0]);
+        return isFinite(f) ? f * 5 : null;
+      };
+      const sowD = flatToDays(hit.sowing);
+      const plantD = flatToDays(hit.planting);
+      const harvD = flatToDays(hit.harvesting);
+      if (sowD != null && harvD != null && harvD > sowD) {
+        harvestDays = Math.max(35, Math.min(240, harvD - sowD));
+      }
+      if (sowD != null && plantD != null && plantD > sowD) {
+        plantDays = Math.max(14, Math.min(75, plantD - sowD));
+      } else if (!hit.planting || !hit.planting.length) {
+        hasPlant = false;
+      }
+    }
+    const harvGdd = Math.round(harvestDays * 11);
+    const plantGdd = hasPlant ? Math.round(plantDays * 11) : null;
+    return {
+      cropKey: raw,
+      displayName: raw,
+      isFallbackModel: true,
+      family: '一般野菜',
+      baseTemp: 8,
+      capTemp: 30,
+      directSow: !hasPlant,
+      stages: {
+        germination: 70,
+        planting: plantGdd,
+        topdress1: Math.round(harvGdd * 0.45),
+        topdress2: harvGdd >= 900 ? Math.round(harvGdd * 0.7) : null,
+        harvestStart: harvGdd,
+        harvestEnd: Math.round(harvGdd * 1.2)
+      },
+      fert10a: { basal: { n: 10, p: 12, k: 10 }, top1: { n: 4, p: 0, k: 4 }, top2: { n: 4, p: 0, k: 4 } },
+      sprayWater10a: { early: 120, mid: 180, late: 220 },
+      pestNotes: { wet: 'べと病・灰色かび病・軟腐病', dry: 'アブラムシ・アザミウマ・ハダニ・チョウ目害虫' }
+    };
+  }
+
+  function parseYmdUtcMs_(ymd) {
+    const m = String(ymd || '').trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (!m) return NaN;
+    return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  }
+
+  function formatUtcMsYmd_(ms) {
+    if (!isFinite(ms)) return '';
+    const d = new Date(ms);
+    return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
+  }
+
+  function addDaysYmd_(ymd, deltaDays) {
+    const ms = parseYmdUtcMs_(ymd);
+    if (!isFinite(ms)) return '';
+    return formatUtcMsYmd_(ms + Number(deltaDays || 0) * 86400000);
+  }
+
+  function diffDaysYmd_(aYmd, bYmd) {
+    const a = parseYmdUtcMs_(aYmd);
+    const b = parseYmdUtcMs_(bYmd);
+    if (!isFinite(a) || !isFinite(b)) return 0;
+    return Math.round((a - b) / 86400000);
+  }
+
+  function fmtShortMd_(ymd) {
+    const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return ymd || '—';
+    return Number(m[2]) + '/' + Number(m[3]);
+  }
+
+  function fmtFullJaDate_(ymd) {
+    const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return ymd || '—';
+    const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+    const wd = ['日', '月', '火', '水', '木', '金', '土'][d.getUTCDay()];
+    return m[1] + '/' + Number(m[2]) + '/' + Number(m[3]) + '(' + wd + ')';
+  }
+
+  function getJstTodayYmd_() {
+    const j = new Date(Date.now() + 9 * 3600 * 1000);
+    return j.getUTCFullYear() + '-' + String(j.getUTCMonth() + 1).padStart(2, '0') + '-' + String(j.getUTCDate()).padStart(2, '0');
+  }
+
+  function normalizeCoverKind_(fieldCondition) {
+    const c = String(fieldCondition || '').trim();
+    if (!c) return 'open';
+    if (c.indexOf('ハウス') >= 0 || c.indexOf('施設') >= 0 || c.indexOf('ガラス') >= 0) return 'house';
+    if (c.indexOf('トンネル') >= 0 || c.indexOf('べたがけ') >= 0) return 'tunnel';
+    if (c.indexOf('雨よけ') >= 0) return 'rain_shelter';
+    return 'open';
+  }
+
+  function coverMicroclimateOffset_(coverKind) {
+    if (coverKind === 'house') return { tminDelta: 4.5, tmaxDelta: 3.5, rainExposure: 0, label: 'ハウス' };
+    if (coverKind === 'tunnel') return { tminDelta: 3.0, tmaxDelta: 2.0, rainExposure: 0.4, label: 'トンネル' };
+    if (coverKind === 'rain_shelter') return { tminDelta: 1.0, tmaxDelta: 1.0, rainExposure: 0, label: '雨よけ' };
+    return { tminDelta: 0, tmaxDelta: 0, rainExposure: 1.0, label: '露地' };
+  }
+
+  function fallbackNormalWeatherForYmd_(ymd, lat) {
+    const ms = parseYmdUtcMs_(ymd);
+    if (!isFinite(ms)) return { tmax: 20, tmin: 10, rainMm: 3, sunH: 5.5 };
+    const d = new Date(ms);
+    const jan1 = Date.UTC(d.getUTCFullYear(), 0, 1);
+    const doy = Math.floor((ms - jan1) / 86400000) + 1;
+    // 北緯35度前後を基準に緯度差で簡易補正
+    const latShift = isFinite(Number(lat)) ? (35 - Number(lat)) * 0.65 : 0;
+    const mean = 15.8 + latShift + 10.6 * Math.sin(((doy - 115) / 365) * 2 * Math.PI);
+    return {
+      tmax: Math.round((mean + 4.8) * 10) / 10,
+      tmin: Math.round((mean - 4.5) * 10) / 10,
+      rainMm: 3.5,
+      sunH: 5.5
+    };
+  }
+
+  function buildForecastDailyMap_(daily, todayStr) {
+    const map = {};
+    if (!daily || !Array.isArray(daily.time)) return map;
+    const tmaxA = daily.temperature_2m_max || [];
+    const tminA = daily.temperature_2m_min || [];
+    const rainA = daily.precipitation_sum || [];
+    const sunA = daily.sunshine_duration || [];
+    const windA = daily.wind_speed_10m_max || [];
+    for (let i = 0; i < daily.time.length; i++) {
+      const ds = String(daily.time[i] || '').slice(0, 10);
+      if (!ds) continue;
+      if (tmaxA[i] == null || tminA[i] == null) continue;
+      const tmax = Number(tmaxA[i]);
+      const tmin = Number(tminA[i]);
+      if (!isFinite(tmax) || !isFinite(tmin)) continue;
+      map[ds] = {
+        tmax: tmax,
+        tmin: tmin,
+        rain: num(rainA[i]),
+        sunH: Math.round((num(sunA[i]) / 3600) * 10) / 10,
+        wind: num(windA[i]),
+        source: (!todayStr || ds <= todayStr) ? 'actual' : 'forecast'
+      };
+    }
+    return map;
+  }
+
+  function buildAgriWeatherContext_() {
+    const st = global.weatherSunshineState || {};
+    const todayStr = st.todayStr || getJstTodayYmd_();
+    const daily = st.data && st.data.daily ? st.data.daily : null;
+    const hourly = st.data && st.data.hourly ? st.data.hourly : null;
+    const archive = st.monthlyClimate || null;
+    const insights = st.agriInsights || (daily ? computeAgriWeatherInsights(daily, todayStr) : null);
+    return {
+      todayStr: todayStr,
+      lat: st.lat,
+      lng: st.lng,
+      daily: daily,
+      hourly: hourly,
+      forecastDailyMap: buildForecastDailyMap_(daily, todayStr),
+      archiveActualMap: (archive && archive.dailyActualMap) || {},
+      doyNormals: (archive && archive.doyNormals) || {},
+      archiveYears: (archive && archive.years) || 0,
+      insights: insights
+    };
+  }
+
+  function resolveDayWeatherForGrowth_(ymd, weatherCtx) {
+    const fMap = (weatherCtx && weatherCtx.forecastDailyMap) || {};
+    const aMap = (weatherCtx && weatherCtx.archiveActualMap) || {};
+    const doyNormals = (weatherCtx && weatherCtx.doyNormals) || {};
+    if (fMap[ymd]) {
+      return { tmax: fMap[ymd].tmax, tmin: fMap[ymd].tmin, rain: fMap[ymd].rain, sunH: fMap[ymd].sunH, source: fMap[ymd].source };
+    }
+    if (aMap[ymd]) {
+      return { tmax: aMap[ymd].tmax, tmin: aMap[ymd].tmin, rain: aMap[ymd].rain, sunH: aMap[ymd].sunH, source: 'actual' };
+    }
+    const mmdd = ymd.slice(5, 10);
+    if (doyNormals[mmdd]) {
+      return { tmax: doyNormals[mmdd].tmax, tmin: doyNormals[mmdd].tmin, rain: doyNormals[mmdd].rainMm, sunH: doyNormals[mmdd].sunH, source: 'normal' };
+    }
+    const fb = fallbackNormalWeatherForYmd_(ymd, weatherCtx && weatherCtx.lat);
+    return { tmax: fb.tmax, tmin: fb.tmin, rain: fb.rainMm, sunH: fb.sunH, source: 'fallback_normal' };
+  }
+
+  function resolveNormalDayForGrowth_(ymd, weatherCtx) {
+    const doyNormals = (weatherCtx && weatherCtx.doyNormals) || {};
+    const mmdd = ymd.slice(5, 10);
+    if (doyNormals[mmdd]) {
+      return { tmax: doyNormals[mmdd].tmax, tmin: doyNormals[mmdd].tmin, usedArchiveNormal: true };
+    }
+    const fb = fallbackNormalWeatherForYmd_(ymd, weatherCtx && weatherCtx.lat);
+    return { tmax: fb.tmax, tmin: fb.tmin, usedArchiveNormal: false };
+  }
+
+  function calcDailyEffectiveGdd_(tmax, tmin, coverOffset, model) {
+    const adjMax = Number(tmax) + coverOffset.tmaxDelta;
+    const adjMin = Number(tmin) + coverOffset.tminDelta;
+    const mean = (adjMax + adjMin) / 2;
+    const capped = model.capTemp ? Math.min(mean, model.capTemp) : mean;
+    return Math.max(0, capped - model.baseTemp);
+  }
+
+  /**
+   * 種まき日（または定植日）からのGDD生育・収穫日予測（純粋関数）
+   */
+  function predictCropGrowthByWeather_(params, weatherCtx) {
+    params = params || {};
+    weatherCtx = weatherCtx || {};
+    const todayStr = weatherCtx.todayStr || getJstTodayYmd_();
+    const model = resolveCropAgronomyModel_(params.cropName, params.croptypes);
+    const startDate = String(params.sowingDate || todayStr).slice(0, 10);
+    const coverKind = normalizeCoverKind_(params.fieldCondition);
+    const coverOffset = coverMicroclimateOffset_(coverKind);
+    const startFromPlanting = !!(params.startFromPlanting && model.stages.planting != null);
+
+    const baseGdd = startFromPlanting ? model.stages.planting : 0;
+    const targets = {};
+    if (!startFromPlanting) targets.germination = model.stages.germination;
+    if (!startFromPlanting && model.stages.planting != null) targets.planting = model.stages.planting;
+    if (model.stages.topdress1 != null) targets.topdress1 = model.stages.topdress1;
+    if (model.stages.topdress2 != null) targets.topdress2 = model.stages.topdress2;
+    targets.harvestStart = model.stages.harvestStart;
+    targets.harvestEnd = model.stages.harvestEnd;
+
+    const reached = {};
+    let gdd = baseGdd;
+    let todayGdd = startDate > todayStr ? 0 : baseGdd;
+    const sourceCounts = { actual: 0, forecast: 0, normal: 0, fallback_normal: 0 };
+
+    for (let i = 0; i <= 365; i++) {
+      const ymd = addDaysYmd_(startDate, i);
+      if (!ymd) break;
+      const w = resolveDayWeatherForGrowth_(ymd, weatherCtx);
+      const dg = calcDailyEffectiveGdd_(w.tmax, w.tmin, coverOffset, model);
+      gdd += dg;
+      if (ymd <= todayStr) todayGdd = gdd;
+
+      Object.keys(targets).forEach(function (k) {
+        if (!reached[k] && gdd >= targets[k]) {
+          reached[k] = ymd;
+        }
+      });
+
+      if (!reached.harvestEnd) {
+        sourceCounts[w.source] = (sourceCounts[w.source] || 0) + 1;
+      } else if (ymd > todayStr) {
+        break;
+      }
+    }
+
+    // 平年値ベースライン（同じ開始日・被覆条件）
+    let normalGdd = baseGdd;
+    let normalHarvestStartDate = '';
+    let usedArchiveNormals = false;
+    for (let i = 0; i <= 365; i++) {
+      const ymd = addDaysYmd_(startDate, i);
+      if (!ymd) break;
+      const nw = resolveNormalDayForGrowth_(ymd, weatherCtx);
+      if (nw.usedArchiveNormal) usedArchiveNormals = true;
+      normalGdd += calcDailyEffectiveGdd_(nw.tmax, nw.tmin, coverOffset, model);
+      if (!normalHarvestStartDate && normalGdd >= targets.harvestStart) {
+        normalHarvestStartDate = ymd;
+        break;
+      }
+    }
+
+    const harvestStartDate = reached.harvestStart || addDaysYmd_(startDate, 120);
+    const harvestEndDate = reached.harvestEnd || addDaysYmd_(harvestStartDate, 20);
+    const vsNormalDays = (harvestStartDate && normalHarvestStartDate)
+      ? diffDaysYmd_(harvestStartDate, normalHarvestStartDate)
+      : 0;
+
+    const totalNeed = Math.max(1, targets.harvestStart - baseGdd);
+    const todayProgressGdd = Math.max(0, todayGdd - baseGdd);
+    const progressPct = startDate > todayStr
+      ? 0
+      : clamp(Math.round((todayProgressGdd / totalNeed) * 100), 0, 100);
+
+    let currentStage = '播種前';
+    if (startDate > todayStr) {
+      currentStage = `播種予定（あと${diffDaysYmd_(startDate, todayStr)}日）`;
+    } else if (todayStr >= harvestEndDate) {
+      currentStage = '収穫終盤';
+    } else if (todayStr >= harvestStartDate) {
+      currentStage = '収穫適期';
+    } else if (reached.topdress2 && todayStr >= reached.topdress2) {
+      currentStage = '肥大・結球期';
+    } else if (reached.topdress1 && todayStr >= reached.topdress1) {
+      currentStage = '生育中期（追肥後）';
+    } else if (reached.planting && todayStr >= reached.planting) {
+      currentStage = '定植後・活着期';
+    } else if (reached.germination && todayStr >= reached.germination) {
+      currentStage = startFromPlanting ? '活着〜生育初期' : (model.directSow ? '発芽〜初期生育' : '育苗期');
+    } else {
+      currentStage = startFromPlanting ? '定植直後' : '発芽待ち';
+    }
+
+    const timeline = [];
+    if (!startFromPlanting) {
+      timeline.push({ key: 'sowing', label: '播種', date: startDate, gddTarget: 0, done: startDate <= todayStr });
+      if (reached.germination) timeline.push({ key: 'germination', label: '発芽目安', date: reached.germination, gddTarget: targets.germination, done: reached.germination <= todayStr });
+      if (reached.planting) timeline.push({ key: 'planting', label: '定植適期', date: reached.planting, gddTarget: targets.planting, done: reached.planting <= todayStr });
+    } else {
+      timeline.push({ key: 'planting', label: '定植', date: startDate, gddTarget: baseGdd, done: startDate <= todayStr });
+    }
+    if (reached.topdress1) timeline.push({ key: 'topdress1', label: '追肥①', date: reached.topdress1, gddTarget: targets.topdress1, done: reached.topdress1 <= todayStr });
+    if (reached.topdress2) timeline.push({ key: 'topdress2', label: '追肥②', date: reached.topdress2, gddTarget: targets.topdress2, done: reached.topdress2 <= todayStr });
+    timeline.push({ key: 'harvestStart', label: '収穫開始', date: harvestStartDate, gddTarget: targets.harvestStart, done: harvestStartDate <= todayStr });
+    timeline.push({ key: 'harvestEnd', label: '収穫終了目安', date: harvestEndDate, gddTarget: targets.harvestEnd, done: harvestEndDate <= todayStr });
+
+    return {
+      model: model,
+      startDate: startDate,
+      startFromPlanting: startFromPlanting,
+      todayStr: todayStr,
+      coverKind: coverKind,
+      coverLabel: coverOffset.label,
+      coverOffset: coverOffset,
+      todayGdd: Math.round(todayGdd),
+      harvestStartGdd: targets.harvestStart,
+      progressPct: progressPct,
+      currentStage: currentStage,
+      germinationDate: reached.germination || '',
+      plantingDate: reached.planting || (startFromPlanting ? startDate : ''),
+      topdress1Date: reached.topdress1 || '',
+      topdress2Date: reached.topdress2 || '',
+      harvestStartDate: harvestStartDate,
+      harvestEndDate: harvestEndDate,
+      normalHarvestStartDate: normalHarvestStartDate,
+      vsNormalDays: vsNormalDays,
+      usedArchiveNormals: usedArchiveNormals,
+      sourceCounts: sourceCounts,
+      timeline: timeline
+    };
+  }
+
+  function parseFertPct_(val, componentsText, idx) {
+    const direct = parseFloat(String(val == null ? '' : val).replace(/[^\d.]/g, ''));
+    if (isFinite(direct) && direct >= 0) return direct;
+    const comp = String(componentsText || '').replace(/[０-９]/g, function (c) {
+      return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+    });
+    const m = comp.match(/(\d+(?:\.\d+)?)\s*[-－ー/]\s*(\d+(?:\.\d+)?)\s*[-－ー/]\s*(\d+(?:\.\d+)?)/);
+    if (m && m[idx + 1] != null) return parseFloat(m[idx + 1]);
+    return 0;
+  }
+
+  function parseFertBagKg_(fert) {
+    const raw = String((fert && (fert.volumeAmount || fert.volume)) || '').trim();
+    const unit = String((fert && fert.volumeUnit) || (fert && fert.volume) || '').toLowerCase();
+    const n = parseFloat(raw.replace(/[０-９]/g, function (c) {
+      return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+    }).replace(/[^\d.]/g, ''));
+    if (!isFinite(n) || n <= 0) return 20;
+    if (unit.indexOf('kg') >= 0 || unit.indexOf('キロ') >= 0) return n;
+    if (unit.indexOf('g') >= 0 && unit.indexOf('k') < 0) return Math.round((n / 1000) * 100) / 100;
+    if (n >= 1 && n <= 50) return n;
+    return 20;
+  }
+
+  function selectFertilizerProduct_(stageKey, orgFertilizers) {
+    const parsed = (Array.isArray(orgFertilizers) ? orgFertilizers : []).map(function (f) {
+      const n = parseFertPct_(f.nitrogen, f.components, 0);
+      const p = parseFertPct_(f.phosphate, f.components, 1);
+      const k = parseFertPct_(f.potash, f.components, 2);
+      return {
+        name: f.name || '登録肥料',
+        n: n, p: p, k: k,
+        bagKg: parseFertBagKg_(f),
+        isFallbackProduct: false
+      };
+    }).filter(function (f) { return f.n > 0 || f.k > 0; });
+
+    if (parsed.length) {
+      if (stageKey === 'basal') {
+        const balanced = parsed.find(function (f) { return f.n > 0 && f.p > 0 && f.k > 0; });
+        if (balanced) return balanced;
+      } else {
+        const nk = parsed.find(function (f) { return f.n > 0 && f.p <= f.n * 0.5; });
+        if (nk) return nk;
+        const anyN = parsed.find(function (f) { return f.n > 0; });
+        if (anyN) return anyN;
+      }
+      return parsed[0];
+    }
+
+    if (stageKey === 'basal') {
+      return { name: '化成 8-8-8（標準換算）', n: 8, p: 8, k: 8, bagKg: 20, isFallbackProduct: true };
+    }
+    return { name: 'NK化成 16-0-16（標準換算）', n: 16, p: 0, k: 16, bagKg: 20, isFallbackProduct: true };
+  }
+
+  function computeWindowWeatherStats_(weatherCtx) {
+    const todayStr = (weatherCtx && weatherCtx.todayStr) || getJstTodayYmd_();
+    let rain14 = 0, rainNext3 = 0, rainNext48h = 0, sun7h = 0, tempSum = 0, tempDays = 0;
+    for (let d = -13; d <= 0; d++) {
+      const ymd = addDaysYmd_(todayStr, d);
+      const w = resolveDayWeatherForGrowth_(ymd, weatherCtx);
+      rain14 += num(w.rain);
+      if (d >= -6) {
+        sun7h += num(w.sunH);
+        tempSum += (num(w.tmax) + num(w.tmin)) / 2;
+        tempDays++;
+      }
+    }
+    for (let d = 0; d <= 2; d++) {
+      const ymd = addDaysYmd_(todayStr, d);
+      const w = resolveDayWeatherForGrowth_(ymd, weatherCtx);
+      if (d >= 1) rainNext3 += num(w.rain);
+      else rainNext3 += num(w.rain) * 0.5;
+      if (d <= 1) rainNext48h += num(w.rain);
+      tempSum += (num(w.tmax) + num(w.tmin)) / 2;
+      tempDays++;
+    }
+    if (weatherCtx && weatherCtx.hourly && Array.isArray(weatherCtx.hourly.time)) {
+      const times = weatherCtx.hourly.time;
+      const precs = weatherCtx.hourly.precipitation || [];
+      const isLiveToday = todayStr === getJstTodayYmd_();
+      const nowMs = isLiveToday ? Date.now() : Date.parse(todayStr + 'T00:00:00+09:00');
+      let hSum = 0, hCount = 0;
+      for (let i = 0; i < times.length; i++) {
+        const ms = Date.parse(String(times[i]) + '+09:00');
+        if (!isFinite(ms)) continue;
+        if (ms >= nowMs - 3600000 && ms <= nowMs + 48 * 3600000) {
+          hSum += num(precs[i]);
+          hCount++;
+        }
+      }
+      if (hCount > 0) rainNext48h = hSum;
+    }
+    const insights = weatherCtx && weatherCtx.insights;
+    if (insights && isFinite(insights.rain14)) rain14 = insights.rain14;
+    if (insights && isFinite(insights.sun7h)) sun7h = insights.sun7h;
+    return {
+      rain14: Math.round(rain14 * 10) / 10,
+      rainNext3: Math.round(rainNext3 * 10) / 10,
+      rainNext48h: Math.round(rainNext48h * 10) / 10,
+      sun7h: Math.round(sun7h * 10) / 10,
+      meanTempRecent: tempDays ? Math.round((tempSum / tempDays) * 10) / 10 : 15,
+      moisture: insights && isFinite(insights.moisture) ? insights.moisture : BASE_MOISTURE,
+      dryStreak: insights ? num(insights.dryStreak) : 0,
+      tMaxToday: insights && isFinite(insights.tMaxToday) ? insights.tMaxToday : 20
+    };
+  }
+
+  /**
+   * 天候×土質×被覆条件に応じた肥料（量・タイミング）提案（純粋関数）
+   */
+  function computeWeatherFertilizerPlan_(params, growthRes, weatherCtx, orgFertilizers) {
+    params = params || {};
+    const areaA = (isFinite(Number(params.areaA)) && Number(params.areaA) > 0) ? Number(params.areaA) : 10;
+    const scale = areaA / 10;
+    const model = (growthRes && growthRes.model) || resolveCropAgronomyModel_(params.cropName, params.croptypes);
+    const coverKind = normalizeCoverKind_(params.fieldCondition);
+    const coverInfo = coverMicroclimateOffset_(coverKind);
+    const soilKind = normalizeSoilKind_(params.soilType);
+    const soilLabel = soilKindLabel_(soilKind);
+    const soilFactor = soilKind === 'sand' ? 1.35 : (soilKind === 'clay' ? 0.72 : 1.0);
+    const stats = computeWindowWeatherStats_(weatherCtx);
+
+    const leachScore = (stats.rain14 + stats.rainNext3 * 0.7) * coverInfo.rainExposure * soilFactor;
+    let nMult = 1.0;
+    let kMult = 1.0;
+    let timingShiftDays = 0;
+    const reasons = [];
+    const alerts = [];
+
+    if (coverInfo.rainExposure > 0) {
+      if (leachScore >= 110) {
+        nMult += 0.20;
+        kMult += 0.15;
+        timingShiftDays = -4;
+        reasons.push(`大雨・多雨（14日 ${stats.rain14}mm × ${soilLabel}）による窒素・カリ流亡分を補正（+20%・4日前倒し）`);
+      } else if (leachScore >= 65) {
+        nMult += 0.12;
+        kMult += 0.10;
+        timingShiftDays = -2;
+        reasons.push(`降雨多め（14日 ${stats.rain14}mm × ${soilLabel}）による流亡分を補正（+12%・2日前倒し）`);
+      } else {
+        reasons.push(`${coverInfo.label}・${soilLabel}：大きな流亡なし（標準量ベース）`);
+      }
+    } else {
+      reasons.push(`${coverInfo.label}栽培：降雨による流亡なし（標準量ベース）`);
+    }
+
+    if (stats.sun7h < 22 || stats.meanTempRecent < (model.baseTemp + 4)) {
+      nMult -= 0.10;
+      reasons.push(`低温・日照不足（7日日照 ${stats.sun7h}h / 平均 ${stats.meanTempRecent}℃）のため窒素控えめ（徒長・病害予防）`);
+    }
+
+    nMult = clamp(Math.round(nMult * 100) / 100, 0.80, 1.25);
+    kMult = clamp(Math.round(kMult * 100) / 100, 0.85, 1.20);
+
+    if ((stats.moisture < 40 || stats.dryStreak >= 5) && stats.tMaxToday >= 28) {
+      alerts.push({
+        kind: 'warn',
+        text: `高温乾燥中（推定水分 ${stats.moisture}%・無降水 ${stats.dryStreak}日）：濃度障害を防ぐため2回分施または潅水同時施肥を推奨`
+      });
+    }
+    if (coverInfo.rainExposure > 0 && stats.rainNext48h >= 25) {
+      alerts.push({
+        kind: 'danger',
+        text: `48時間以内に大雨予報（計 ${Math.round(stats.rainNext48h)}mm）：肥料流亡を防ぐため雨が抜けてから施肥してください`
+      });
+    }
+
+    const round1 = function (v) { return Math.round(v * 10) / 10; };
+    const stageDefs = [
+      { key: 'basal', label: '元肥', refDate: growthRes ? growthRes.startDate : '', applyWeather: false, base: model.fert10a.basal },
+      { key: 'top1', label: '追肥①', refDate: growthRes ? growthRes.topdress1Date : '', applyWeather: true, base: model.fert10a.top1 },
+      { key: 'top2', label: '追肥②', refDate: growthRes ? growthRes.topdress2Date : '', applyWeather: true, base: model.fert10a.top2 }
+    ];
+
+    const stages = [];
+    stageDefs.forEach(function (sd) {
+      const b = sd.base || { n: 0, p: 0, k: 0 };
+      if ((b.n + b.p + b.k) <= 0) return;
+      if (sd.key !== 'basal' && !sd.refDate) return;
+      const baseN = round1(b.n * scale);
+      const baseP = round1(b.p * scale);
+      const baseK = round1(b.k * scale);
+      const adjN = sd.applyWeather ? round1(baseN * nMult) : baseN;
+      const adjP = baseP;
+      const adjK = sd.applyWeather ? round1(baseK * kMult) : baseK;
+      const prod = selectFertilizerProduct_(sd.key, orgFertilizers);
+      const driverN = prod.n > 0 ? (adjN / (prod.n / 100)) : 0;
+      const driverK = (prod.n <= 0 && prod.k > 0) ? (adjK / (prod.k / 100)) : 0;
+      const productKg = round1(driverN > 0 ? driverN : driverK);
+      const bagsCount = prod.bagKg > 0 ? Math.round((productKg / prod.bagKg) * 10) / 10 : 0;
+      const shift = sd.applyWeather ? timingShiftDays : 0;
+      const recDate = sd.refDate ? addDaysYmd_(sd.refDate, shift) : '';
+
+      stages.push({
+        key: sd.key,
+        label: sd.label,
+        baseDate: sd.refDate,
+        recommendedDate: recDate,
+        timingShiftDays: shift,
+        baseN: baseN, baseP: baseP, baseK: baseK,
+        adjN: adjN, adjP: adjP, adjK: adjK,
+        multiplierPct: sd.applyWeather ? Math.round(nMult * 100) : 100,
+        productName: prod.name,
+        productNpk: `${prod.n}-${prod.p}-${prod.k}`,
+        productKg: productKg,
+        bagKg: prod.bagKg,
+        bagsCount: bagsCount,
+        isFallbackProduct: prod.isFallbackProduct
+      });
+    });
+
+    const totalBaseN = round1(stages.reduce(function (s, x) { return s + x.baseN; }, 0));
+    const totalAdjN = round1(stages.reduce(function (s, x) { return s + x.adjN; }, 0));
+
+    return {
+      areaA: areaA,
+      soilKind: soilKind,
+      soilLabel: soilLabel,
+      coverLabel: coverInfo.label,
+      nMultPct: Math.round(nMult * 100),
+      kMultPct: Math.round(kMult * 100),
+      timingShiftDays: timingShiftDays,
+      stats: stats,
+      reasons: reasons,
+      alerts: alerts,
+      stages: stages,
+      totalBaseN: totalBaseN,
+      totalAdjN: totalAdjN
+    };
+  }
+
+  function parsePhiDays_(rawPhi, timingText) {
+    const s1 = String(rawPhi == null ? '' : rawPhi).trim();
+    if (s1) {
+      if (/当日|なし|制限なし/.test(s1)) return 0;
+      if (/前日/.test(s1)) return 1;
+      const norm1 = s1.replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });
+      if (/^\d+$/.test(norm1)) return parseInt(norm1, 10);
+      const m1 = norm1.match(/(\d+)\s*日前/);
+      if (m1) return parseInt(m1[1], 10);
+    }
+    const s2 = String(timingText || '').replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });
+    if (/収穫\s*当日/.test(s2)) return 0;
+    if (/収穫\s*前日/.test(s2)) return 1;
+    const m2 = s2.match(/収穫\s*(\d+)\s*日前/);
+    if (m2) return parseInt(m2[1], 10);
+    return null;
+  }
+
+  function parseDilutionFactor_(rawDilution) {
+    const s = String(rawDilution || '').replace(/[０-９]/g, function (c) {
+      return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+    }).replace(/,/g, '').trim();
+    if (!s) return { min: null, max: null, label: 'ラベル確認' };
+    const mRange = s.match(/(\d+(?:\.\d+)?)\s*[〜~\-]\s*(\d+(?:\.\d+)?)/);
+    if (mRange) {
+      const a = parseFloat(mRange[1]);
+      const b = parseFloat(mRange[2]);
+      return { min: Math.min(a, b), max: Math.max(a, b), label: `${Math.min(a, b)}〜${Math.max(a, b)}倍` };
+    }
+    const mSingle = s.match(/(\d+(?:\.\d+)?)/);
+    if (mSingle) {
+      const v = parseFloat(mSingle[1]);
+      return { min: v, max: v, label: `${v}倍` };
+    }
+    return { min: null, max: null, label: s };
+  }
+
+  function parseUsageAmountRange_(rawAmount) {
+    const s = String(rawAmount || '').replace(/[０-９]/g, function (c) {
+      return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+    }).replace(/,/g, '').trim();
+    if (!s) return { minL: null, maxL: null, directNote: '' };
+    const mRange = s.match(/(\d+(?:\.\d+)?)\s*(?:[〜~\-]\s*(\d+(?:\.\d+)?))?\s*(?:L|ℓ|リットル)/i);
+    if (mRange) {
+      const a = parseFloat(mRange[1]);
+      const b = mRange[2] != null ? parseFloat(mRange[2]) : a;
+      return { minL: Math.min(a, b), maxL: Math.max(a, b), directNote: '' };
+    }
+    return { minL: null, maxL: null, directNote: s };
+  }
+
+  function extractSprayWindows72h_(hourlyData, insights, todayStr) {
+    if (!hourlyData || !Array.isArray(hourlyData.time)) return [];
+    const times = hourlyData.time;
+    const precs = hourlyData.precipitation || [];
+    const temps = hourlyData.temperature_2m || [];
+    const windByDate = {};
+    if (insights && Array.isArray(insights.workDays)) {
+      insights.workDays.forEach(function (wd) { windByDate[wd.date] = wd; });
+    }
+    const now = new Date(Date.now() + 9 * 3600 * 1000);
+    const liveYmd = now.getUTCFullYear() + '-' + String(now.getUTCMonth() + 1).padStart(2, '0') + '-' + String(now.getUTCDate()).padStart(2, '0');
+    const curYmd = todayStr || liveYmd;
+    const curHour = (curYmd === liveYmd) ? now.getUTCHours() : 0;
+
+    const goodHours = [];
+    for (let i = 0; i < times.length; i++) {
+      const stamp = String(times[i] || '');
+      const ymd = stamp.slice(0, 10);
+      const hr = parseInt(stamp.slice(11, 13), 10);
+      if (!ymd || !isFinite(hr)) continue;
+      if (ymd < curYmd || (ymd === curYmd && hr < curHour)) continue;
+      if (diffDaysYmd_(ymd, curYmd) > 2) continue;
+      if (hr < 6 || hr > 17) continue;
+
+      const temp = temps[i] != null ? Number(temps[i]) : 20;
+      if (temp < 5 || temp > 32) continue;
+      if (num(precs[i]) >= 0.1) continue;
+
+      let dry6h = true;
+      for (let k = 1; k <= 6; k++) {
+        if (i + k < precs.length && num(precs[i + k]) >= 0.2) { dry6h = false; break; }
+      }
+      if (!dry6h) continue;
+
+      let rainWithin18h = false;
+      for (let k = 7; k <= 18; k++) {
+        if (i + k < precs.length && num(precs[i + k]) >= 0.5) { rainWithin18h = true; break; }
+      }
+      goodHours.push({ idx: i, ymd: ymd, hr: hr, rainWithin18h: rainWithin18h });
+    }
+
+    // 連続時間帯にグルーピング
+    const windows = [];
+    let curWin = null;
+    goodHours.forEach(function (gh) {
+      if (curWin && curWin.ymd === gh.ymd && gh.hr === curWin.endHr + 1) {
+        curWin.endHr = gh.hr;
+        curWin.rainWithin18h = curWin.rainWithin18h || gh.rainWithin18h;
+      } else {
+        if (curWin) windows.push(curWin);
+        curWin = { ymd: gh.ymd, startHr: gh.hr, endHr: gh.hr, rainWithin18h: gh.rainWithin18h };
+      }
+    });
+    if (curWin) windows.push(curWin);
+
+    return windows.map(function (w) {
+      const dOff = diffDaysYmd_(w.ymd, curYmd);
+      const dayLabel = dOff === 0 ? '今日' : (dOff === 1 ? '明日' : (dOff === 2 ? '明後日' : fmtShortMd_(w.ymd)));
+      const wdInfo = windByDate[w.ymd];
+      const sprayScore = wdInfo ? wdInfo.spray : 1;
+      return {
+        ymd: w.ymd,
+        dayLabel: dayLabel,
+        startHr: w.startHr,
+        endHr: w.endHr + 1,
+        text: `${dayLabel} ${w.startHr}:00〜${w.endHr + 1}:00`,
+        sprayScore: sprayScore,
+        stickerRecommended: w.rainWithin18h
+      };
+    }).filter(function (w) { return w.sprayScore > 0; }).slice(0, 4);
+  }
+
+  function matchPesticideToCrop_(pestCropName, targetCropName, targetKey) {
+    const pc = String(pestCropName || '').trim();
+    if (!pc) return true;
+    if (pc === targetCropName || pc === targetKey) return true;
+    if (normalizeAgriCropKey_(pc) === targetKey) return true;
+    if (pc.indexOf('野菜') >= 0) return true;
+    if (pc.indexOf(targetCropName) >= 0 || pc.indexOf(targetKey) >= 0) return true;
+    return false;
+  }
+
+  /**
+   * 天候×病害虫リスク×PHI連動の農薬（量・タイミング）提案（純粋関数）
+   */
+  function computeWeatherPesticidePlan_(params, growthRes, weatherCtx, pestSources) {
+    params = params || {};
+    pestSources = pestSources || {};
+    const areaA = (isFinite(Number(params.areaA)) && Number(params.areaA) > 0) ? Number(params.areaA) : 10;
+    const model = (growthRes && growthRes.model) || resolveCropAgronomyModel_(params.cropName, params.croptypes);
+    const cropName = String(params.cropName || model.displayName || 'キャベツ').trim();
+    const targetKey = normalizeAgriCropKey_(cropName);
+    const todayStr = (weatherCtx && weatherCtx.todayStr) || getJstTodayYmd_();
+    const insights = (weatherCtx && weatherCtx.insights) || {};
+    const stats = computeWindowWeatherStats_(weatherCtx);
+
+    // 病害・害虫リスク判定
+    const wetStreak = num(insights.wetStreak);
+    const rain7 = num(insights.rain7);
+    const moisture = stats.moisture;
+    const dryStreak = stats.dryStreak;
+    const tMaxToday = stats.tMaxToday;
+
+    let diseaseLevel = '低';
+    const diseaseReasons = [];
+    if (wetStreak >= 2 || rain7 >= 45 || moisture >= 74) {
+      diseaseLevel = '高';
+      diseaseReasons.push(`多湿・降雨継続（連続雨 ${wetStreak}日 / 7日 ${rain7}mm / 水分 ${moisture}%）`);
+    } else if (rain7 >= 20 || moisture >= 64) {
+      diseaseLevel = '中';
+      diseaseReasons.push(`やや湿度高め（7日降水 ${rain7}mm / 水分 ${moisture}%）`);
+    } else {
+      diseaseReasons.push(`比較的乾燥（7日降水 ${rain7}mm）`);
+    }
+
+    let pestLevel = '低';
+    const pestReasons = [];
+    if (dryStreak >= 4 && tMaxToday >= 20) {
+      pestLevel = '高';
+      pestReasons.push(`少雨・温暖（無降水 ${dryStreak}日 / 最高 ${tMaxToday}℃）で吸汁性・食葉性害虫が増えやすい`);
+    } else if (tMaxToday >= 15 && dryStreak >= 2) {
+      pestLevel = '中';
+      pestReasons.push(`活動適温（最高 ${tMaxToday}℃・無降水 ${dryStreak}日）`);
+    } else {
+      pestReasons.push(`気温または降雨により害虫活動は穏やか`);
+    }
+
+    // 散布最適時間帯＆適日
+    const windows72h = extractSprayWindows72h_(weatherCtx && weatherCtx.hourly, insights, todayStr);
+    const bestDays = (Array.isArray(insights.workDays) ? insights.workDays : []).filter(function (d) { return d.spray > 0; });
+
+    // 生育ステージ別標準水量
+    const pct = growthRes ? growthRes.progressPct : 40;
+    const stageKey = pct < 30 ? 'early' : (pct < 70 ? 'mid' : 'late');
+    const stageWaterLabel = stageKey === 'early' ? '生育初期' : (stageKey === 'mid' ? '生育中期' : '繁茂・結球期');
+    const baseWater10a = (model.sprayWater10a && model.sprayWater10a[stageKey]) || 150;
+
+    // 予想収穫日までの残日数
+    const harvDate = (growthRes && growthRes.harvestStartDate) || '';
+    const daysToHarvest = harvDate ? diffDaysYmd_(harvDate, todayStr) : 999;
+
+    // 候補薬剤の収集（品目別農薬設定 -> 農場農薬マスタ -> 共有農薬カタログ）
+    const rawCandidates = [];
+    (Array.isArray(pestSources.chemPlanEntries) ? pestSources.chemPlanEntries : []).forEach(function (e) {
+      if (!e || e.kind !== 'pesticide') return;
+      rawCandidates.push({
+        source: '品目別設定',
+        name: e.productName || '',
+        dilution: e.dilution || '',
+        usageAmount: e.amount || '',
+        phiDays: e.phiDays,
+        useTimingText: e.note || '',
+        targetPest: '',
+        usageCount: ''
+      });
+    });
+    (Array.isArray(pestSources.orgPesticides) ? pestSources.orgPesticides : []).forEach(function (p) {
+      if (!p || !p.name) return;
+      if (!matchPesticideToCrop_(p.cropName, cropName, targetKey)) return;
+      rawCandidates.push({
+        source: '農場マスタ',
+        name: p.name,
+        dilution: p.dilution || '',
+        usageAmount: p.usageAmount || '',
+        phiDays: p.phiDays,
+        useTimingText: p.useTimingText || '',
+        targetPest: p.targetPest || '',
+        usageCount: p.usageCount || ''
+      });
+    });
+    (Array.isArray(pestSources.catalogPesticides) ? pestSources.catalogPesticides : []).forEach(function (c) {
+      if (!c || !c.name) return;
+      rawCandidates.push({
+        source: '登録カタログ',
+        name: c.name,
+        dilution: c.dilution || '',
+        usageAmount: c.usageAmount || '',
+        phiDays: c.phiDays,
+        useTimingText: c.useTimingText || '',
+        targetPest: c.targetPest || '',
+        usageCount: c.usageCount || ''
+      });
+    });
+
+    const seen = {};
+    const candidates = [];
+    rawCandidates.forEach(function (c) {
+      const nm = String(c.name || '').trim();
+      if (!nm) return;
+      const key = nm + '\t' + String(c.dilution || '').trim() + '\t' + String(c.targetPest || '').trim();
+      if (seen[key]) return;
+      seen[key] = true;
+
+      const phi = parsePhiDays_(c.phiDays, c.useTimingText);
+      let phiStatus = 'check';
+      let phiLabel = '⚠️ ラベル確認';
+      if (phi != null) {
+        if (daysToHarvest <= 0) {
+          if (phi === 0) { phiStatus = 'ok'; phiLabel = '✅ 使用可（当日まで）'; }
+          else if (phi === 1) { phiStatus = 'warn'; phiLabel = '⚠️ 収穫前日（収穫調整要）'; }
+          else { phiStatus = 'ng'; phiLabel = `🚫 PHI超過不可（${phi}日前）`; }
+        } else if (phi < daysToHarvest - 2) {
+          phiStatus = 'ok';
+          phiLabel = `✅ 使用可（収穫${phi}日前）`;
+        } else if (phi <= daysToHarvest) {
+          phiStatus = 'warn';
+          phiLabel = `⚠️ 収穫直前注意（${phi}日前 / 残${daysToHarvest}日）`;
+        } else {
+          phiStatus = 'ng';
+          phiLabel = `🚫 PHI超過不可（${phi}日前 > 残${daysToHarvest}日）`;
+        }
+      }
+
+      const amtInfo = parseUsageAmountRange_(c.usageAmount);
+      let water10a = baseWater10a;
+      if (amtInfo.minL != null && amtInfo.maxL != null) {
+        water10a = clamp(baseWater10a, amtInfo.minL, amtInfo.maxL);
+      }
+      const totalWaterL = Math.round((water10a * (areaA / 10)) * 10) / 10;
+      const dil = parseDilutionFactor_(c.dilution);
+      let chemAmountText = amtInfo.directNote ? `${amtInfo.directNote}/10a基準` : 'ラベル確認';
+      if (dil.min && dil.max) {
+        if (dil.min === dil.max) {
+          const ml = Math.round((totalWaterL * 1000 / dil.min) * 10) / 10;
+          chemAmountText = `${ml} mL(g)`;
+        } else {
+          const mlMin = Math.round((totalWaterL * 1000 / dil.max) * 10) / 10;
+          const mlMax = Math.round((totalWaterL * 1000 / dil.min) * 10) / 10;
+          chemAmountText = `${mlMin}〜${mlMax} mL(g)`;
+        }
+      }
+
+      candidates.push({
+        source: c.source,
+        name: nm,
+        targetPest: c.targetPest || '',
+        dilutionLabel: dil.label,
+        phiDays: phi,
+        phiStatus: phiStatus,
+        phiLabel: phiLabel,
+        water10a: water10a,
+        totalWaterL: totalWaterL,
+        chemAmountText: chemAmountText,
+        usageCount: c.usageCount || '',
+        useTimingText: c.useTimingText || ''
+      });
+    });
+
+    const rankOrder = { ok: 0, warn: 1, check: 2, ng: 3 };
+    candidates.sort(function (a, b) {
+      return (rankOrder[a.phiStatus] - rankOrder[b.phiStatus]) || String(a.name).localeCompare(String(b.name), 'ja');
+    });
+
+    return {
+      cropName: cropName,
+      areaA: areaA,
+      daysToHarvest: daysToHarvest,
+      stageWaterLabel: stageWaterLabel,
+      baseWater10a: baseWater10a,
+      defaultWaterL: Math.round((baseWater10a * (areaA / 10)) * 10) / 10,
+      diseaseRisk: { level: diseaseLevel, reasons: diseaseReasons, targets: model.pestNotes.wet },
+      pestRisk: { level: pestLevel, reasons: pestReasons, targets: model.pestNotes.dry },
+      windows72h: windows72h,
+      bestDays: bestDays,
+      candidates: candidates,
+      safetyNote: '※農薬取締法に基づき、必ず製品ラベル・最新登録情報（適用作物・希釈倍数・使用時期・総使用回数）を確認のうえ使用してください。'
+    };
+  }
+
+  // ========================================================================
+  // UI 状態管理・データ読込・モーダル描画
+  // ========================================================================
+  const _agriGrowthCareState = {
+    mode: 'lots',
+    modeUserPicked: false,
+    selectedLotKey: '',
+    simCrop: 'キャベツ',
+    simSowingDate: '',
+    simStartFromPlanting: false,
+    simFieldId: '',
+    simAreaA: 10,
+    simSoilType: '壌質',
+    simCover: '露地',
+    bundle: null,
+    bundlePromise: null,
+    bundleError: '',
+    bundleAt: 0,
+    catalogCache: {},
+    catalogPending: {},
+    showAllPesticides: false
+  };
+
+  function ensureCatalogPesticidesForCrop_(cropName) {
+    const key = String(cropName || '').trim();
+    if (!key || _agriGrowthCareState.catalogCache[key] || _agriGrowthCareState.catalogPending[key]) return;
+    if (typeof global.callGAS !== 'function') return;
+    _agriGrowthCareState.catalogPending[key] = global.callGAS('searchPesticideCatalog', { crop: key, limit: 15 })
+      .then(function (res) {
+        _agriGrowthCareState.catalogCache[key] = (res && Array.isArray(res.items)) ? res.items : [];
+      })
+      .catch(function () {
+        _agriGrowthCareState.catalogCache[key] = [];
+      })
+      .finally(function () {
+        delete _agriGrowthCareState.catalogPending[key];
+        rerenderAgriGrowthCarePanels_();
+      });
+  }
+
+  async function loadAgriGrowthCareBundle_(force) {
+    const now = Date.now();
+    if (!force && _agriGrowthCareState.bundle && (now - _agriGrowthCareState.bundleAt) < 5 * 60 * 1000) {
+      return _agriGrowthCareState.bundle;
+    }
+    if (!force && _agriGrowthCareState.bundlePromise) {
+      return _agriGrowthCareState.bundlePromise;
+    }
+    if (typeof global.callGAS !== 'function') {
+      return null;
+    }
+    const st = global.weatherSunshineState || {};
+    const todayStr = st.todayStr || getJstTodayYmd_();
+    _agriGrowthCareState.bundlePromise = global.callGAS('getAgriGrowthCareBundle', { today: todayStr })
+      .then(function (res) {
+        if (res && res.success) {
+          _agriGrowthCareState.bundle = res;
+          _agriGrowthCareState.bundleError = '';
+          _agriGrowthCareState.bundleAt = Date.now();
+          if (Array.isArray(res.lots) && res.lots.length > 0) {
+            if (!_agriGrowthCareState.selectedLotKey || !res.lots.some(function (l) { return l.lotKey === _agriGrowthCareState.selectedLotKey; })) {
+              _agriGrowthCareState.selectedLotKey = res.lots[0].lotKey;
+            }
+          } else if (!_agriGrowthCareState.modeUserPicked) {
+            _agriGrowthCareState.mode = 'sim';
+          }
+        }
+        return _agriGrowthCareState.bundle;
+      })
+      .catch(function (err) {
+        _agriGrowthCareState.bundleError = (err && err.message) || 'データの読み込みに失敗しました';
+        return null;
+      })
+      .finally(function () {
+        _agriGrowthCareState.bundlePromise = null;
+      });
+    return _agriGrowthCareState.bundlePromise;
+  }
+
+  function resolveActiveAgriParams_() {
+    const st = global.weatherSunshineState || {};
+    const todayStr = st.todayStr || getJstTodayYmd_();
+    if (!_agriGrowthCareState.simSowingDate) _agriGrowthCareState.simSowingDate = todayStr;
+    const bundle = _agriGrowthCareState.bundle;
+    const lots = (bundle && Array.isArray(bundle.lots)) ? bundle.lots : [];
+
+    if (_agriGrowthCareState.mode === 'lots' && lots.length) {
+      const lot = lots.find(function (l) { return l.lotKey === _agriGrowthCareState.selectedLotKey; }) || lots[0];
+      return {
+        isLot: true,
+        lot: lot,
+        cropName: lot.cropName || 'キャベツ',
+        sowingDate: lot.sowingDate || todayStr,
+        startFromPlanting: !!lot.startFromPlanting,
+        areaA: lot.areaA > 0 ? lot.areaA : 10,
+        soilType: lot.soilType || '未設定',
+        fieldCondition: lot.fieldCondition || '露地',
+        croptypes: (bundle && bundle.croptypes) || []
+      };
+    }
+
+    return {
+      isLot: false,
+      lot: null,
+      cropName: _agriGrowthCareState.simCrop || 'キャベツ',
+      sowingDate: _agriGrowthCareState.simSowingDate || todayStr,
+      startFromPlanting: !!_agriGrowthCareState.simStartFromPlanting,
+      areaA: _agriGrowthCareState.simAreaA > 0 ? _agriGrowthCareState.simAreaA : 10,
+      soilType: _agriGrowthCareState.simSoilType || '壌質',
+      fieldCondition: _agriGrowthCareState.simCover || '露地',
+      croptypes: (bundle && bundle.croptypes) || []
+    };
+  }
+
+  function renderAgriGrowthCareHtml_() {
+    const weatherCtx = buildAgriWeatherContext_();
+    const bundle = _agriGrowthCareState.bundle;
+    const lots = (bundle && Array.isArray(bundle.lots)) ? bundle.lots : [];
+    const fields = (bundle && Array.isArray(bundle.fields)) ? bundle.fields : [];
+    const active = resolveActiveAgriParams_();
+    const cropKey = normalizeAgriCropKey_(active.cropName);
+
+    ensureCatalogPesticidesForCrop_(active.cropName);
+
+    const growth = predictCropGrowthByWeather_(active, weatherCtx);
+    const fertPlan = computeWeatherFertilizerPlan_(active, growth, weatherCtx, (bundle && bundle.fertilizers) || []);
+    const chemPlan = bundle && bundle.chemPlans && (bundle.chemPlans[active.cropName] || bundle.chemPlans[cropKey]);
+    const pestPlan = computeWeatherPesticidePlan_(active, growth, weatherCtx, {
+      chemPlanEntries: chemPlan ? chemPlan.entries : [],
+      orgPesticides: (bundle && bundle.pesticides) || [],
+      catalogPesticides: _agriGrowthCareState.catalogCache[active.cropName] || []
+    });
+
+    const isLots = _agriGrowthCareState.mode === 'lots';
+    const tabBtnStyle = function (on) {
+      return `flex:1;padding:7px 8px;border-radius:8px;font-size:12px;font-weight:bold;cursor:pointer;border:${on ? '2px solid #2e7d32' : '1px solid #cfd8dc'};background:${on ? '#e8f5e9' : '#f7f9fb'};color:${on ? '#1b5e20' : '#455a64'};`;
+    };
+
+    // ロット選択 / 試算フォーム
+    let selectorHtml = '';
+    if (isLots) {
+      if (!bundle && _agriGrowthCareState.bundlePromise) {
+        selectorHtml = '<div style="font-size:12px;color:#555;padding:6px 0;">栽培・播種ロットを読み込み中...</div>';
+      } else if (!lots.length) {
+        selectorHtml = `<div style="background:#f5f9f5;border:1px dashed #a5d6a7;border-radius:8px;padding:10px;font-size:12px;color:#455a64;margin-bottom:8px;">
+          進行中の播種・栽培計画ロットが見つかりませんでした（${_agriGrowthCareState.bundleError ? escHtml_(_agriGrowthCareState.bundleError) : '0件'}）。
+          <button type="button" onclick="agcSetMode('sim')" style="margin-left:6px;padding:4px 10px;border-radius:6px;border:1px solid #2e7d32;background:#fff;color:#1b5e20;font-weight:bold;cursor:pointer;">🧪 種まきから試算する</button>
+        </div>`;
+      } else {
+        const lotOpts = lots.map(function (l) {
+          const sel = l.lotKey === active.lot.lotKey ? 'selected' : '';
+          const srcTag = l.dateSource === 'actual' ? '実績' : '計画';
+          const lbl = `[${srcTag}] ${l.cropName}${l.variety ? ' (' + l.variety + ')' : ''} · ${l.sowingDate}${l.fieldNames ? ' · ' + l.fieldNames : ''}${l.tag ? ' [' + l.tag + ']' : ''}`;
+          return `<option value="${escHtml_(l.lotKey)}" ${sel}>${escHtml_(lbl)}</option>`;
+        }).join('');
+        const lot = active.lot;
+        const histBadges = [];
+        if (lot.fertCount > 0) histBadges.push(`🧪 施肥${lot.fertCount}回 (最終 ${fmtShortMd_(lot.lastFertDate)})`);
+        if (lot.sprayCount > 0) histBadges.push(`🛡️ 防除${lot.sprayCount}回 (最終 ${fmtShortMd_(lot.lastSprayDate)})`);
+        selectorHtml = `
+          <div style="margin-bottom:8px;">
+            <select onchange="agcSelectLot(this.value)" style="width:100%;padding:8px;border:1px solid #81c784;border-radius:8px;font-size:12px;font-weight:bold;background:#fff;box-sizing:border-box;">${lotOpts}</select>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;font-size:11px;color:#37474f;">
+              <span style="background:#f1f8e9;padding:2px 8px;border-radius:999px;">📍 ${escHtml_(lot.fieldNames || '圃場未設定')}</span>
+              <span style="background:#e3f2fd;padding:2px 8px;border-radius:999px;">📐 面積 ${active.areaA}a${lot.areaA > 0 ? '' : '（標準換算）'}</span>
+              <span style="background:#fff3e0;padding:2px 8px;border-radius:999px;">🧱 土質:${escHtml_(fertPlan.soilLabel)} / ${escHtml_(growth.coverLabel)}</span>
+              ${histBadges.map(function (b) { return `<span style="background:#ede7f6;color:#4527a0;padding:2px 8px;border-radius:999px;">${escHtml_(b)}</span>`; }).join('')}
+            </div>
+          </div>`;
+      }
+    } else {
+      const cropList = Object.keys(AGRI_CROP_MODELS_);
+      if (bundle && Array.isArray(bundle.croptypes)) {
+        bundle.croptypes.forEach(function (ct) {
+          if (ct && ct.crop && cropList.indexOf(ct.crop) < 0) cropList.push(ct.crop);
+        });
+      }
+      if (active.cropName && cropList.indexOf(active.cropName) < 0) cropList.unshift(active.cropName);
+      const cropOpts = cropList.map(function (c) {
+        return `<option value="${escHtml_(c)}" ${c === active.cropName ? 'selected' : ''}>${escHtml_(c)}</option>`;
+      }).join('');
+      const fieldOpts = '<option value="">任意入力（圃場から自動入力可）</option>' + fields.map(function (f) {
+        const lbl = `${f.name}${f.areaA > 0 ? ' (' + f.areaA + 'a)' : ''}${f.soilType ? ' / ' + f.soilType : ''}`;
+        return `<option value="${escHtml_(f.id)}" ${f.id === _agriGrowthCareState.simFieldId ? 'selected' : ''}>${escHtml_(lbl)}</option>`;
+      }).join('');
+      const soilOpts = ['壌質', '砂質', '粘土質', '未設定'].map(function (s) {
+        return `<option value="${s}" ${s === _agriGrowthCareState.simSoilType ? 'selected' : ''}>${s}</option>`;
+      }).join('');
+      const coverOpts = ['露地', 'トンネル', '雨よけ', 'ハウス'].map(function (c) {
+        return `<option value="${c}" ${c === _agriGrowthCareState.simCover ? 'selected' : ''}>${c}</option>`;
+      }).join('');
+      const todayStr = weatherCtx.todayStr;
+      selectorHtml = `
+        <div style="background:#f9fbe7;border:1px solid #dce775;border-radius:8px;padding:8px;margin-bottom:8px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;">
+            <div>
+              <label style="display:block;font-size:10px;color:#555;font-weight:bold;">品目</label>
+              <select onchange="agcUpdateSimInput('simCrop', this.value)" style="width:100%;padding:6px;border:1px solid #c5e1a5;border-radius:6px;font-size:12px;background:#fff;">${cropOpts}</select>
+            </div>
+            <div>
+              <label style="display:block;font-size:10px;color:#555;font-weight:bold;">${_agriGrowthCareState.simStartFromPlanting ? '定植日' : '播種日'}</label>
+              <input type="date" value="${escHtml_(active.sowingDate)}" onchange="agcUpdateSimInput('simSowingDate', this.value)" style="width:100%;padding:5px;border:1px solid #c5e1a5;border-radius:6px;font-size:12px;box-sizing:border-box;">
+            </div>
+          </div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">
+            <button type="button" onclick="agcUpdateSimInput('simSowingDate', '${addDaysYmd_(todayStr, -30)}')" style="font-size:10px;padding:3px 7px;border:1px solid #cfd8dc;border-radius:999px;background:#fff;cursor:pointer;">30日前</button>
+            <button type="button" onclick="agcUpdateSimInput('simSowingDate', '${todayStr}')" style="font-size:10px;padding:3px 7px;border:1px solid #cfd8dc;border-radius:999px;background:#fff;cursor:pointer;">今日</button>
+            <button type="button" onclick="agcUpdateSimInput('simSowingDate', '${addDaysYmd_(todayStr, 7)}')" style="font-size:10px;padding:3px 7px;border:1px solid #cfd8dc;border-radius:999px;background:#fff;cursor:pointer;">7日後</button>
+            <button type="button" onclick="agcUpdateSimInput('simSowingDate', '${addDaysYmd_(todayStr, 14)}')" style="font-size:10px;padding:3px 7px;border:1px solid #cfd8dc;border-radius:999px;background:#fff;cursor:pointer;">14日後</button>
+            ${growth.model.stages.planting != null ? `<label style="font-size:11px;margin-left:auto;display:inline-flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" ${_agriGrowthCareState.simStartFromPlanting ? 'checked' : ''} onchange="agcUpdateSimInput('simStartFromPlanting', this.checked)">定植日から</label>` : ''}
+          </div>
+          <div style="display:grid;grid-template-columns:1.2fr 0.7fr 0.8fr 0.8fr;gap:5px;">
+            <div>
+              <label style="display:block;font-size:10px;color:#555;font-weight:bold;">圃場</label>
+              <select onchange="agcUpdateSimField(this.value)" style="width:100%;padding:5px;border:1px solid #c5e1a5;border-radius:6px;font-size:11px;background:#fff;">${fieldOpts}</select>
+            </div>
+            <div>
+              <label style="display:block;font-size:10px;color:#555;font-weight:bold;">面積(a)</label>
+              <input type="number" step="0.5" min="0.5" value="${active.areaA}" onchange="agcUpdateSimInput('simAreaA', this.value)" style="width:100%;padding:5px;border:1px solid #c5e1a5;border-radius:6px;font-size:11px;box-sizing:border-box;">
+            </div>
+            <div>
+              <label style="display:block;font-size:10px;color:#555;font-weight:bold;">土質</label>
+              <select onchange="agcUpdateSimInput('simSoilType', this.value)" style="width:100%;padding:5px;border:1px solid #c5e1a5;border-radius:6px;font-size:11px;background:#fff;">${soilOpts}</select>
+            </div>
+            <div>
+              <label style="display:block;font-size:10px;color:#555;font-weight:bold;">被覆</label>
+              <select onchange="agcUpdateSimInput('simCover', this.value)" style="width:100%;padding:5px;border:1px solid #c5e1a5;border-radius:6px;font-size:11px;background:#fff;">${coverOpts}</select>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    // --- 1. 生育・収穫日予測カード ---
+    const vsTxt = growth.vsNormalDays === 0
+      ? '平年並み'
+      : (growth.vsNormalDays < 0 ? `平年より ${Math.abs(growth.vsNormalDays)}日早い` : `平年より ${growth.vsNormalDays}日遅い`);
+    const vsColor = growth.vsNormalDays < 0 ? '#e65100' : (growth.vsNormalDays > 0 ? '#1565c0' : '#2e7d32');
+    const timelineHtml = growth.timeline.map(function (stItem) {
+      return `<div style="flex:1;min-width:68px;background:${stItem.done ? '#e8f5e9' : '#fafafa'};border:1px solid ${stItem.done ? '#81c784' : '#e0e0e0'};border-radius:6px;padding:4px 6px;text-align:center;">
+        <div style="font-size:10px;color:${stItem.done ? '#2e7d32' : '#666'};font-weight:bold;">${stItem.done ? '✓ ' : ''}${escHtml_(stItem.label)}</div>
+        <div style="font-size:12px;font-weight:bold;color:#263238;">${fmtShortMd_(stItem.date)}</div>
+      </div>`;
+    }).join('');
+    const srcNote = `実績${growth.sourceCounts.actual || 0}日＋予報${growth.sourceCounts.forecast || 0}日＋${growth.usedArchiveNormals ? '地点過去年平年値' : '季節推計'}${(growth.sourceCounts.normal || 0) + (growth.sourceCounts.fallback_normal || 0)}日`;
+
+    const growthCardHtml = `
+      <div style="background:#f1f8e9;border:1px solid #c5e1a5;border-radius:8px;padding:9px 10px;margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+          <span style="font-weight:bold;color:#1b5e20;font-size:12px;">🌱 生育・収穫予測（${escHtml_(active.cropName)} / 基準${growth.model.baseTemp}℃）</span>
+          <span style="font-size:11px;font-weight:bold;background:#fff;border:1px solid #a5d6a7;color:#2e7d32;padding:1px 8px;border-radius:999px;">${escHtml_(growth.currentStage)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px;margin-bottom:4px;">
+          <div style="font-size:13px;font-weight:bold;color:#1b5e20;">🗓️ 予想収穫：${fmtFullJaDate_(growth.harvestStartDate)} 〜 ${fmtShortMd_(growth.harvestEndDate)}</div>
+          <div style="font-size:11px;font-weight:bold;color:${vsColor};">${vsTxt}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <div style="flex:1;height:10px;background:#dcedc8;border-radius:999px;overflow:hidden;">
+            <div style="height:100%;width:${growth.progressPct}%;background:linear-gradient(90deg,#8bc34a,#2e7d32);border-radius:999px;"></div>
+          </div>
+          <span style="font-size:11px;font-weight:bold;color:#33691e;">${growth.progressPct}%（${growth.todayGdd} / ${growth.harvestStartGdd}℃日）</span>
+        </div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px;">${timelineHtml}</div>
+        <div style="font-size:10px;color:#607d8b;">微気象補正: ${escHtml_(growth.coverLabel)} ／ 計算内訳: ${srcNote}</div>
+      </div>`;
+
+    // --- 2. 肥料の量・タイミングカード ---
+    const fertAlertsHtml = fertPlan.alerts.map(function (a) {
+      const bg = a.kind === 'danger' ? '#ffebee' : '#fff8e1';
+      const bd = a.kind === 'danger' ? '#ef9a9a' : '#ffcc80';
+      const cl = a.kind === 'danger' ? '#c62828' : '#e65100';
+      return `<div style="background:${bg};border:1px solid ${bd};color:${cl};border-radius:6px;padding:5px 8px;font-size:11px;font-weight:bold;margin-bottom:4px;">⚠️ ${escHtml_(a.text)}</div>`;
+    }).join('');
+    const fertRowsHtml = fertPlan.stages.map(function (stRow) {
+      const shiftTxt = stRow.timingShiftDays < 0 ? `<br><span style="color:#e65100;font-size:10px;">(${Math.abs(stRow.timingShiftDays)}日前倒し)</span>` : '';
+      const pctBadge = stRow.multiplierPct !== 100
+        ? ` <span style="font-size:10px;color:${stRow.multiplierPct > 100 ? '#c62828' : '#1565c0'};font-weight:bold;">(${stRow.multiplierPct}%)</span>`
+        : '';
+      return `<tr style="border-bottom:1px solid #eee;">
+        <td style="padding:5px 4px;font-weight:bold;">${escHtml_(stRow.label)}</td>
+        <td style="padding:5px 4px;">${fmtShortMd_(stRow.recommendedDate)}${shiftTxt}</td>
+        <td style="padding:5px 4px;">${stRow.adjN}-${stRow.adjP}-${stRow.adjK} kg${pctBadge}</td>
+        <td style="padding:5px 4px;text-align:right;"><b>${stRow.productKg}kg</b><br><span style="font-size:10px;color:#555;">${escHtml_(stRow.productName)} (${stRow.bagsCount}袋)</span></td>
+      </tr>`;
+    }).join('');
+
+    const fertCardHtml = `
+      <div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:9px 10px;margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+          <span style="font-weight:bold;color:#e65100;font-size:12px;">🧪 肥料の量とタイミング（${fertPlan.areaA}a 換算）</span>
+          <span style="font-size:11px;font-weight:bold;background:#fff;border:1px solid #ffcc80;color:#bf360c;padding:1px 8px;border-radius:999px;">追肥N補正 ${fertPlan.nMultPct}%（計 ${fertPlan.totalAdjN}kg）</span>
+        </div>
+        ${fertAlertsHtml}
+        <div style="font-size:11px;color:#5d4037;line-height:1.45;margin-bottom:6px;">
+          ${fertPlan.reasons.map(function (r) { return '・' + escHtml_(r); }).join('<br>')}
+        </div>
+        <div style="overflow-x:auto;background:#fff;border-radius:6px;border:1px solid #ffe0b2;">
+          <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:300px;">
+            <tr style="background:#fff3e0;"><th style="padding:4px;text-align:left;">時期</th><th style="padding:4px;text-align:left;">目安日</th><th style="padding:4px;text-align:left;">成分(N-P-K)</th><th style="padding:4px;text-align:right;">施用量・袋数</th></tr>
+            ${fertRowsHtml}
+          </table>
+        </div>
+      </div>`;
+
+    // --- 3. 農薬の量・タイミング・PHIカード ---
+    const riskBadge = function (label, lv) {
+      const c = lv === '高' ? { bg: '#ffebee', fg: '#c62828' } : (lv === '中' ? { bg: '#fff3e0', fg: '#e65100' } : { bg: '#e8f5e9', fg: '#2e7d32' });
+      return `<span style="background:${c.bg};color:${c.fg};padding:2px 8px;border-radius:999px;font-weight:bold;font-size:11px;">${label}: ${lv}</span>`;
+    };
+    const winChips = pestPlan.windows72h.length
+      ? pestPlan.windows72h.map(function (w) {
+        return `<span style="display:inline-block;background:#fff;border:1px solid #90caf9;color:#0d47a1;border-radius:6px;padding:3px 7px;font-size:11px;margin:2px 4px 2px 0;">🕒 <b>${escHtml_(w.text)}</b>${w.sprayScore >= 2 ? ' ◎' : ' △風注意'}${w.stickerRecommended ? '・展着剤推奨' : ''}</span>`;
+      }).join('')
+      : '<span style="font-size:11px;color:#c62828;">向こう72時間以内に「散布後6h雨なし」の連続時間帯が見つかりません（天気回復待ち）。</span>';
+
+    const visibleCands = _agriGrowthCareState.showAllPesticides
+      ? pestPlan.candidates
+      : pestPlan.candidates.filter(function (c) { return c.phiStatus !== 'ng'; }).slice(0, 6);
+
+    const candRowsHtml = visibleCands.length
+      ? visibleCands.map(function (c) {
+        const phiBg = c.phiStatus === 'ok' ? '#e8f5e9' : (c.phiStatus === 'warn' ? '#fff3e0' : (c.phiStatus === 'ng' ? '#ffebee' : '#eceff1'));
+        const phiFg = c.phiStatus === 'ok' ? '#1b5e20' : (c.phiStatus === 'warn' ? '#e65100' : (c.phiStatus === 'ng' ? '#b71c1c' : '#455a64'));
+        return `<div style="background:#fff;border:1px solid #cfd8dc;border-radius:6px;padding:6px 8px;margin-bottom:5px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span style="font-weight:bold;font-size:12px;color:#263238;">${escHtml_(c.name)} <span style="font-size:10px;color:#78909c;">[${escHtml_(c.source)}]</span></span>
+            <span style="background:${phiBg};color:${phiFg};padding:1px 7px;border-radius:999px;font-size:10px;font-weight:bold;">${escHtml_(c.phiLabel)}</span>
+          </div>
+          <div style="font-size:11px;color:#455a64;margin-top:3px;">
+            希釈: <b>${escHtml_(c.dilutionLabel)}</b> ／ 散布水量: <b>${c.totalWaterL}L</b>（${c.water10a}L/10a） ／ 必要薬量: <b style="color:#0d47a1;">${escHtml_(c.chemAmountText)}</b>
+          </div>
+          ${c.targetPest ? `<div style="font-size:10px;color:#607d8b;margin-top:2px;">対象: ${escHtml_(c.targetPest)}${c.usageCount ? ' ／ 回数: ' + escHtml_(c.usageCount) : ''}</div>` : ''}
+        </div>`;
+      }).join('')
+      : `<div style="font-size:11px;color:#666;background:#fff;padding:8px;border-radius:6px;border:1px solid #e0e0e0;">${_agriGrowthCareState.catalogPending[active.cropName] ? '登録農薬カタログを検索中...' : '該当作物の登録農薬候補がありません（標準散布水量 ' + pestPlan.defaultWaterL + 'L / ' + pestPlan.areaA + 'a）。'}</div>`;
+
+    const pestCardHtml = `
+      <div style="background:#e3f2fd;border:1px solid #90caf9;border-radius:8px;padding:9px 10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+          <span style="font-weight:bold;color:#0d47a1;font-size:12px;">🛡️ 防除タイミング・農薬量（${pestPlan.areaA}a / ${escHtml_(pestPlan.stageWaterLabel)} ${pestPlan.defaultWaterL}L）</span>
+          <div style="display:flex;gap:4px;">${riskBadge('病害', pestPlan.diseaseRisk.level)}${riskBadge('害虫', pestPlan.pestRisk.level)}</div>
+        </div>
+        <div style="font-size:11px;color:#37474f;margin-bottom:6px;line-height:1.4;">
+          🦠 警戒病害: ${escHtml_(pestPlan.diseaseRisk.targets)}（${escHtml_(pestPlan.diseaseRisk.reasons.join(' '))}）<br>
+          🐛 警戒害虫: ${escHtml_(pestPlan.pestRisk.targets)}（${escHtml_(pestPlan.pestRisk.reasons.join(' '))}）
+        </div>
+        <div style="margin-bottom:6px;">
+          <div style="font-size:11px;font-weight:bold;color:#1565c0;margin-bottom:2px;">向こう72時間の散布最適時間（散布後6時間雨なし）</div>
+          <div>${winChips}</div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <span style="font-size:11px;font-weight:bold;color:#1565c0;">登録候補＆PHI判定（収穫まで残 ${pestPlan.daysToHarvest <= 0 ? '収穫期' : pestPlan.daysToHarvest + '日'}）</span>
+          ${pestPlan.candidates.length > 0 ? `<button type="button" onclick="agcToggleShowAllPesticides()" style="font-size:10px;padding:2px 8px;border:1px solid #90caf9;border-radius:999px;background:#fff;color:#1565c0;cursor:pointer;">${_agriGrowthCareState.showAllPesticides ? '推奨のみ' : '全候補(' + pestPlan.candidates.length + '件)'}</button>` : ''}
+        </div>
+        ${candRowsHtml}
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;">
+          <div style="font-size:10px;color:#546e7a;flex:1;line-height:1.35;">${escHtml_(pestPlan.safetyNote)}</div>
+          <a href="spray.html" target="_blank" rel="noopener" style="font-size:11px;font-weight:bold;padding:5px 10px;background:#1976d2;color:#fff;border-radius:6px;text-decoration:none;white-space:nowrap;">🚜 防除アプリを開く</a>
+        </div>
+      </div>`;
+
+    return `
+      <div data-agc-root="1">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:8px;">
+          <span style="font-weight:bold;color:#1b5e20;font-size:13px;">🌱 生育予測・天候連動 施肥／防除</span>
+          <button type="button" onclick="agcRefreshBundle()" style="font-size:10px;padding:3px 8px;border:1px solid #a5d6a7;border-radius:999px;background:#fff;color:#2e7d32;cursor:pointer;">🔄 最新読込</button>
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:8px;">
+          <button type="button" onclick="agcSetMode('lots')" style="${tabBtnStyle(isLots)}">📋 栽培・播種ロット (${lots.length})</button>
+          <button type="button" onclick="agcSetMode('sim')" style="${tabBtnStyle(!isLots)}">🧪 種まきから試算</button>
+        </div>
+        ${selectorHtml}
+        ${growthCardHtml}
+        ${fertCardHtml}
+        ${pestCardHtml}
+      </div>`;
+  }
+
+  function rerenderAgriGrowthCarePanels_() {
+    if (typeof document === 'undefined') return;
+    const targets = [
+      document.getElementById('agriGrowthCareMount'),
+      document.getElementById('agriGrowthCareModalBody')
+    ];
+    const hasAny = targets.some(Boolean);
+    if (!hasAny) return;
+    const html = renderAgriGrowthCareHtml_();
+    targets.forEach(function (el) {
+      if (el) el.innerHTML = html;
+    });
+  }
+
+  async function refreshAgriGrowthCarePanel_() {
+    const mount = typeof document !== 'undefined' ? document.getElementById('agriGrowthCareMount') : null;
+    const modalBody = typeof document !== 'undefined' ? document.getElementById('agriGrowthCareModalBody') : null;
+    if (!mount && !modalBody) return;
+    rerenderAgriGrowthCarePanels_();
+    await loadAgriGrowthCareBundle_(false);
+    rerenderAgriGrowthCarePanels_();
+  }
+
+  async function ensureStandaloneWeatherReady_(lat, lng) {
+    const st = global.weatherSunshineState || {};
+    if (st.data && st.data.daily && st.monthlyClimate && st.monthlyClimate.doyNormals) return;
+    const pos = (isFinite(Number(lat)) && isFinite(Number(lng))) ? { lat: Number(lat), lng: Number(lng) } : (resolveWeatherLatLng_() || { lat: 34.07, lng: 134.55 });
+    const todayStr = st.todayStr || getJstTodayYmd_();
+    if (!st.data || !st.data.daily) {
+      try {
+        const fUrl = `https://api.open-meteo.com/v1/forecast?latitude=${pos.lat}&longitude=${pos.lng}&current_weather=true&past_days=31&forecast_days=16&hourly=temperature_2m,precipitation,weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration,wind_speed_10m_max&wind_speed_unit=ms&timezone=Asia%2FTokyo`;
+        const res = await fetch(fUrl);
+        if (res.ok) {
+          const data = await res.json();
+          global.weatherSunshineState = global.weatherSunshineState || {};
+          global.weatherSunshineState.data = data;
+          global.weatherSunshineState.todayStr = todayStr;
+          global.weatherSunshineState.lat = pos.lat;
+          global.weatherSunshineState.lng = pos.lng;
+          global.weatherSunshineState.agriInsights = computeAgriWeatherInsights(data.daily, todayStr);
+        }
+      } catch (e) { console.warn('standalone forecast fetch', e); }
+    }
+    try {
+      await loadMonthlyClimateProfile_(pos.lat, pos.lng);
+    } catch (e) { console.warn('standalone archive fetch', e); }
+  }
+
+  function closeAgriGrowthCareModal() {
+    const modal = document.getElementById('agriGrowthCareModal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  async function openAgriGrowthCareModal(opts) {
+    opts = opts || {};
+    if (opts.fromCultivation && typeof document !== 'undefined') {
+      const cropVal = (typeof global.getCpVal === 'function' && global.getCpVal('cpCrop'))
+        || (document.getElementById('cpCrop') && document.getElementById('cpCrop').value)
+        || '';
+      const condVal = (typeof global.getCpVal === 'function' && global.getCpVal('cpFieldCondition'))
+        || (document.getElementById('cpFieldCondition') && document.getElementById('cpFieldCondition').value)
+        || '';
+      if (cropVal) _agriGrowthCareState.simCrop = String(cropVal).trim();
+      if (condVal) _agriGrowthCareState.simCover = coverMicroclimateOffset_(normalizeCoverKind_(condVal)).label;
+      if (opts.mode) {
+        _agriGrowthCareState.mode = opts.mode;
+        _agriGrowthCareState.modeUserPicked = true;
+      } else if (cropVal) {
+        _agriGrowthCareState.mode = 'sim';
+        _agriGrowthCareState.modeUserPicked = true;
+      }
+    }
+    if (opts.cropName) {
+      _agriGrowthCareState.simCrop = String(opts.cropName).trim();
+    }
+    if (opts.sowingDate) {
+      _agriGrowthCareState.simSowingDate = String(opts.sowingDate).slice(0, 10);
+    }
+
+    let modal = document.getElementById('agriGrowthCareModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'agriGrowthCareModal';
+      modal.style.cssText = 'display:none;position:fixed;inset:0;z-index:11500;background:rgba(0,0,0,0.68);align-items:center;justify-content:center;padding:12px;box-sizing:border-box;';
+      modal.innerHTML = `<div style="background:#fff;border-radius:14px;width:min(96vw,720px);max-height:92vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.35);">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #e0e0e0;background:#f1f8e9;">
+          <div style="font-weight:bold;color:#1b5e20;font-size:15px;">🌦️ 種まき生育予測・天候連動 施肥／防除</div>
+          <span role="button" tabindex="0" onclick="closeAgriGrowthCareModal && closeAgriGrowthCareModal()" style="cursor:pointer;font-size:24px;line-height:1;color:#666;padding:0 4px;">×</span>
+        </div>
+        <div id="agriGrowthCareModalBody" style="padding:12px 14px;overflow-y:auto;flex:1;"></div>
+      </div>`;
+      modal.addEventListener('click', function (ev) {
+        if (ev.target === modal) closeAgriGrowthCareModal();
+      });
+      document.body.appendChild(modal);
+    }
+    modal.style.display = 'flex';
+    rerenderAgriGrowthCarePanels_();
+    await Promise.all([
+      ensureStandaloneWeatherReady_(opts.lat, opts.lng),
+      loadAgriGrowthCareBundle_(false)
+    ]);
+    rerenderAgriGrowthCarePanels_();
+  }
+
+  global.agcSetMode = function (mode) {
+    _agriGrowthCareState.mode = mode === 'sim' ? 'sim' : 'lots';
+    _agriGrowthCareState.modeUserPicked = true;
+    rerenderAgriGrowthCarePanels_();
+  };
+  global.agcSelectLot = function (lotKey) {
+    _agriGrowthCareState.selectedLotKey = String(lotKey || '');
+    rerenderAgriGrowthCarePanels_();
+  };
+  global.agcUpdateSimInput = function (key, val) {
+    if (key === 'simAreaA') {
+      const n = parseFloat(val);
+      _agriGrowthCareState.simAreaA = (isFinite(n) && n > 0) ? n : 10;
+    } else if (key === 'simStartFromPlanting') {
+      _agriGrowthCareState.simStartFromPlanting = !!val;
+    } else {
+      _agriGrowthCareState[key] = String(val || '');
+    }
+    rerenderAgriGrowthCarePanels_();
+  };
+  global.agcUpdateSimField = function (fieldId) {
+    _agriGrowthCareState.simFieldId = String(fieldId || '');
+    const fields = (_agriGrowthCareState.bundle && _agriGrowthCareState.bundle.fields) || [];
+    const hit = fields.find(function (f) { return String(f.id) === _agriGrowthCareState.simFieldId; });
+    if (hit) {
+      if (hit.areaA > 0) _agriGrowthCareState.simAreaA = hit.areaA;
+      if (hit.soilType) _agriGrowthCareState.simSoilType = hit.soilType;
+      if (hit.fieldCondition) _agriGrowthCareState.simCover = coverMicroclimateOffset_(normalizeCoverKind_(hit.fieldCondition)).label;
+    }
+    rerenderAgriGrowthCarePanels_();
+  };
+  global.agcToggleShowAllPesticides = function () {
+    _agriGrowthCareState.showAllPesticides = !_agriGrowthCareState.showAllPesticides;
+    rerenderAgriGrowthCarePanels_();
+  };
+  global.agcRefreshBundle = async function () {
+    await loadAgriGrowthCareBundle_(true);
+    rerenderAgriGrowthCarePanels_();
+  };
 
   global.computeAgriWeatherInsights = computeAgriWeatherInsights;
   global.renderPastWeatherTableHtml = renderPastWeatherTableHtml;
@@ -2286,6 +4050,7 @@
   global.holdWeatherFetch = holdWeatherFetch;
   global.finishWeatherFetch = finishWeatherFetch;
   global.renderNearTermWeatherSectionHtml = renderNearTermWeatherSectionHtml;
+  global.switchNearTermWeatherDay = switchNearTermWeatherDay;
   global.switchWeatherPlace = switchWeatherPlace;
   global.openWeatherPlacePicker = openWeatherPlacePicker;
   global.startWeatherPlaceMapPick = startWeatherPlaceMapPick;
@@ -2298,6 +4063,14 @@
   global.presentWeatherModal = presentWeatherModal;
   global.refreshWeatherPriorityPanel_ = refreshWeatherPriorityPanel_;
   global.refreshMonthlyClimatePanel_ = refreshMonthlyClimatePanel_;
+  global.refreshAgriGrowthCarePanel_ = refreshAgriGrowthCarePanel_;
+  global.openAgriGrowthCareModal = openAgriGrowthCareModal;
+  global.closeAgriGrowthCareModal = closeAgriGrowthCareModal;
+  global.predictCropGrowthByWeather = predictCropGrowthByWeather_;
+  global.computeWeatherFertilizerPlan = computeWeatherFertilizerPlan_;
+  global.computeWeatherPesticidePlan = computeWeatherPesticidePlan_;
+  global.resolveCropAgronomyModel = resolveCropAgronomyModel_;
+  global.buildMonthlyClimateFromArchive = buildMonthlyClimateFromArchive_;
   global.toggleSoilMoistureMapOverlay = toggleSoilMoistureMapOverlay;
   global.activateMoistureMapFromWeather = activateMoistureMapFromWeather;
   global.closeWeatherModal = closeWeatherModal;

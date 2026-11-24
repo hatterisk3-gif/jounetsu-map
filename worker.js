@@ -1749,6 +1749,9 @@ window.fetchAndApplyMapDelta_ = async (opts) => {
             window.refreshRidgeProgressUI();
           }
         } catch (eRidge) { }
+        if (typeof window.refreshOpenBulkWorkMemoFieldHints_ === 'function') {
+          try { window.refreshOpenBulkWorkMemoFieldHints_(); } catch (eBulkHint) { }
+        }
         const bits = [];
         if (signRes.added || signRes.updated || signRes.removed) {
           const sBits = [];
@@ -2054,6 +2057,9 @@ function renderInitData(data) {
   }
   if (typeof window.restorePendingLocalRecordsAfterInit_ === 'function') {
     window.restorePendingLocalRecordsAfterInit_(prevPendingLocals);
+  }
+  if (typeof window.refreshOpenBulkWorkMemoFieldHints_ === 'function') {
+    try { window.refreshOpenBulkWorkMemoFieldHints_(); } catch (eBulkHint) { }
   }
   // 地図データ反映後、今日・昨日の最遅終了を実記録から再計算（古いキャッシュを捨てる）
   try {
@@ -40357,23 +40363,23 @@ window.scoreBulkWorkMemoFieldNameMatch_ = (token, polyName) => {
   const routeParts = (typeof window.splitBulkWorkMemoFieldHintTokens_ === 'function')
     ? window.splitBulkWorkMemoFieldHintTokens_(tok)
     : [];
-  if (routeParts.length >= 2) {
-    const partKeys = routeParts.map(p => (
-      (typeof window.normalizeBulkWorkMemoFieldKey_ === 'function')
-        ? window.normalizeBulkWorkMemoFieldKey_(p)
-        : String(p || '').replace(/\s+/g, '')
-    ));
-    const partIndex = partKeys.indexOf(nameKey) >= 0 ? partKeys.indexOf(nameKey) : partKeys.indexOf(nameCore);
-    if (partKeys.indexOf(nameKey) >= 0 || routeParts.indexOf(name) >= 0) return 100 - Math.min(2, Math.max(0, partIndex));
-    if (nameCore.length >= 3 && partKeys.indexOf(nameCore) >= 0) return 97 - Math.min(2, partIndex);
+  if (routeParts.length >= 2 && routeParts.some(p => p !== tok)) {
+    let bestRouteScore = 0;
+    routeParts.forEach((part, idx) => {
+      const s = window.scoreBulkWorkMemoFieldNameMatch_(part, name);
+      if (s <= 0) return;
+      const adjusted = s >= 92 ? (s - Math.min(2, idx)) : s;
+      if (adjusted > bestRouteScore) bestRouteScore = adjusted;
+    });
+    return bestRouteScore;
   }
+  if (tokCore.length >= 3 && nameCore.length >= 3 && tokCore === nameCore) return 96;
   if (name.indexOf(tok) >= 0) return 88 + Math.min(12, tok.length);
   if (tokKey && nameKey && nameKey.indexOf(tokKey) >= 0) return 88 + Math.min(12, tokKey.length);
   if (tok.indexOf(name) >= 0 && name.length >= 2) return 82 + Math.min(12, name.length);
   if (tokKey && nameKey && tokKey.indexOf(nameKey) >= 0 && nameKey.length >= 2) {
     return 82 + Math.min(12, nameKey.length);
   }
-  if (tokCore.length >= 3 && nameCore.length >= 3 && tokCore === nameCore) return 96;
   if (nameCore.length >= 4 && String(tokKey || tok).indexOf(nameCore) >= 0) return 93;
   if (tokCore.length >= 4 && nameCore.length >= 4 && (name.indexOf(tokCore) >= 0 || String(nameKey || '').indexOf(tokCore) >= 0)) {
     return 90;
@@ -40480,19 +40486,24 @@ window.applyBulkWorkMemoFieldHints_ = (draft, opts) => {
   const raw = String(draft.rawLine || '').trim();
   if (!raw) return;
 
-  const effWork = String(draft.workName || draft.guessedName || (Array.isArray(draft.workCandidates) ? draft.workCandidates[0] : '') || '').trim();
-  if (effWork && typeof window.resolveShowFieldSelect_ === 'function') {
-    const workCat = String(
-      (typeof window.getBulkWorkMemoWorkCategory_ === 'function' && window.getBulkWorkMemoWorkCategory_(effWork))
-      || draft.category
-      || ''
-    ).trim();
-    if (!window.resolveShowFieldSelect_({ category: workCat, workName: effWork })) {
-      window.setBulkWorkMemoPolyIds_(draft, []);
-      draft.fieldHintTokens = [];
-      draft.fieldTokenResults = [];
-      draft.fieldCandidates = [];
-      return;
+  if (!opts.skipWorkGate) {
+    const effWork = String(draft.workName || draft.guessedName || (Array.isArray(draft.workCandidates) ? draft.workCandidates[0] : '') || '').trim();
+    if (effWork && typeof window.resolveShowFieldSelect_ === 'function') {
+      const workCat = String(
+        (typeof window.getBulkWorkMemoWorkCategory_ === 'function' && window.getBulkWorkMemoWorkCategory_(effWork))
+        || draft.category
+        || ''
+      ).trim();
+      const showBySection = (typeof window.bulkWorkMemoShowFieldSection_ === 'function')
+        ? !!window.bulkWorkMemoShowFieldSection_(draft)
+        : false;
+      if (!showBySection && !window.resolveShowFieldSelect_({ category: workCat, workName: effWork })) {
+        if (!opts.keepSelected) window.setBulkWorkMemoPolyIds_(draft, []);
+        draft.fieldHintTokens = [];
+        draft.fieldTokenResults = [];
+        draft.fieldCandidates = [];
+        return;
+      }
     }
   }
 
@@ -43127,10 +43138,32 @@ window.syncBulkDeliveryMachineDest_ = (row) => {
   }
 };
 
+window.refreshOpenBulkWorkMemoFieldHints_ = () => {
+  if (!Array.isArray(window._bulkWorkMemoDrafts) || !window._bulkWorkMemoDrafts.length) return;
+  const scrollEl = document.getElementById('bulk_work_memo_review_scroll');
+  if (!scrollEl) return;
+  if (String(window._bulkWorkMemoMapSelectUid || '').trim()) return;
+  const prevScroll = scrollEl.scrollTop;
+  window._bulkWorkMemoDrafts.forEach((d) => {
+    if (!d || !d._uid || d.isRest || d.recordKind === 'rest') return;
+    if (typeof window.applyBulkWorkMemoFieldHints_ === 'function') {
+      try { window.applyBulkWorkMemoFieldHints_(d, { keepSelected: true }); } catch (e) { }
+    }
+    const section = document.getElementById('bulk_field_section_' + d._uid);
+    if (section && typeof window.buildBulkWorkMemoFieldHtml_ === 'function') {
+      try { section.outerHTML = window.buildBulkWorkMemoFieldHtml_(d, d._uid); } catch (e) { }
+    }
+  });
+  try { scrollEl.scrollTop = prevScroll; } catch (e) { }
+};
+
 window.buildBulkWorkMemoFieldCandidatesHtml_ = (d, uid) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const effWork = String((d && (d.workName || d.guessedName || (Array.isArray(d.workCandidates) ? d.workCandidates[0] : ''))) || '').trim();
-  if (effWork && typeof window.resolveShowFieldSelect_ === 'function') {
+  const showBySection = (typeof window.bulkWorkMemoShowFieldSection_ === 'function')
+    ? !!window.bulkWorkMemoShowFieldSection_(d)
+    : false;
+  if (!showBySection && effWork && typeof window.resolveShowFieldSelect_ === 'function') {
     const workCat = String(
       (typeof window.getBulkWorkMemoWorkCategory_ === 'function' && window.getBulkWorkMemoWorkCategory_(effWork))
       || (d && d.category)
@@ -43139,6 +43172,10 @@ window.buildBulkWorkMemoFieldCandidatesHtml_ = (d, uid) => {
     if (!window.resolveShowFieldSelect_({ category: workCat, workName: effWork })) {
       return '';
     }
+  }
+  if (d && !d.isRest && d.recordKind !== 'rest' && String(d.rawLine || '').trim()
+    && typeof window.applyBulkWorkMemoFieldHints_ === 'function') {
+    try { window.applyBulkWorkMemoFieldHints_(d, { keepSelected: true, skipWorkGate: true }); } catch (e) { }
   }
   const selected = new Set(window.getBulkWorkMemoPolyIds_(d));
   const tokenResults = Array.isArray(d.fieldTokenResults) ? d.fieldTokenResults : [];
@@ -46911,28 +46948,63 @@ window.captureBulkWorkMemoScrollAnchor_ = (anchorId) => {
 window.refreshBulkWorkMemoAfterMachineChange_ = (machineRec, opts) => {
   opts = opts || {};
   const uid = String(opts.uid || window._bulkWorkMemoMachineEditUid || '').trim();
+  const mode = String(opts.mode || 'add');
+  const prevId = String(opts.prevId || '').trim();
   window._bulkWorkMemoMachineEditUid = '';
-  if (!document.getElementById('bulk_work_memo_review_scroll')) return;
+  const reviewOpen = !!document.getElementById('bulk_work_memo_review_scroll');
+  const manualOpen = !!document.getElementById('bulk_work_memo_manual_add_scroll');
+  if (!reviewOpen && !manualOpen) return;
   const rec = machineRec && typeof machineRec === 'object' ? machineRec : {};
   const mid = String(rec.id || '').trim();
-  const mname = String(rec.name || rec.plateNumber || '').trim();
-  if (uid && (mid || mname)) {
+  let mname = '';
+  if (typeof window.buildEquipmentDisplayLabel_ === 'function') {
+    mname = String(window.buildEquipmentDisplayLabel_(rec) || '').trim();
+  }
+  if (!mname) mname = String(rec.name || rec.plateNumber || '').trim();
+  if (uid && (mid || mname || prevId)) {
     const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
     if (row) {
       if (!Array.isArray(row.usedMachines)) row.usedMachines = [];
-      const exists = row.usedMachines.some(m =>
-        (mid && String(m.id || '') === mid) || (mname && String(m.name || '') === mname)
-      );
-      if (!exists) row.usedMachines.push({ id: mid || mname, name: mname || mid });
+      const idx = row.usedMachines.findIndex(m => {
+        const id = String(m && m.id || '');
+        const name = String(m && m.name || '');
+        return (prevId && (id === prevId || name === prevId))
+          || (mid && id === mid)
+          || (mname && name === mname);
+      });
+      if (idx >= 0 && mode === 'edit') {
+        const prev = row.usedMachines[idx] || {};
+        const nextId = mid || String(prev.id || '');
+        const nextName = mname || String(prev.name || '');
+        row.usedMachines[idx] = Object.assign({}, prev, { id: nextId, name: nextName });
+        if (Array.isArray(row.assetMoves)) {
+          row.assetMoves.forEach(a => {
+            if (!a || String(a.kind || 'machine') !== 'machine') return;
+            const aid = String(a.id || '');
+            const aname = String(a.name || '');
+            const prevKey = String(prev.id || prevId || '');
+            if ((prevKey && (aid === prevKey || aname === prevKey)) || (mid && aid === mid)) {
+              a.id = nextId || aid;
+              a.name = nextName || aname;
+            }
+          });
+        }
+      } else if (idx < 0 && (mid || mname)) {
+        row.usedMachines.push({ id: mid || mname, name: mname || mid });
+      }
       row._machinePickOpen = true;
     }
   }
-  window.renderBulkWorkMemoReviewModal_({
-    keepScroll: true,
-    scrollUid: uid,
-    anchorId: opts.anchorId || (uid ? ('bulk_card_' + uid) : ''),
-    anchorOffset: opts.anchorOffset
-  });
+  if (reviewOpen && typeof window.renderBulkWorkMemoReviewModal_ === 'function') {
+    window.renderBulkWorkMemoReviewModal_({
+      keepScroll: true,
+      scrollUid: uid,
+      anchorId: opts.anchorId || (uid ? ('bulk_card_' + uid) : ''),
+      anchorOffset: opts.anchorOffset
+    });
+  } else if (manualOpen && typeof window.renderBulkWorkMemoManualAddModal_ === 'function') {
+    window.renderBulkWorkMemoManualAddModal_();
+  }
 };
 
 window.addBulkWorkMemoMachine_ = (uid) => {
@@ -46960,9 +47032,71 @@ window.addBulkWorkMemoMachine_ = (uid) => {
   });
 };
 
+window.editBulkWorkMemoMachine_ = (uid, machineId) => {
+  const id = String(uid || '').trim();
+  if (!id) return;
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === id);
+  if (!row) return;
+  const used = Array.isArray(row.usedMachines) ? row.usedMachines.filter(m => m && (m.id || m.name)) : [];
+  let key = String(machineId || '').trim();
+  if (!key) {
+    if (used.length > 1) {
+      if (typeof customAlert === 'function') customAlert('複数選ばれています。編集したい機械の ✏️ を押してください。');
+      return;
+    }
+    key = used.length === 1 ? String(used[0].id || used[0].name || '').trim() : '';
+  }
+  if (!key) {
+    if (typeof customAlert === 'function') customAlert('編集する機械を選んでください。');
+    return;
+  }
+  const macs = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : [];
+  let item = macs.find(m => m && String(m.id || '') === key);
+  if (!item) {
+    item = macs.find(m => m && (
+      String(m.name || '') === key
+      || (typeof window.buildEquipmentDisplayLabel_ === 'function'
+        && String(window.buildEquipmentDisplayLabel_(m) || '') === key)
+    ));
+  }
+  if (!item) {
+    if (typeof customAlert === 'function') customAlert('機械の情報が見つかりませんでした。');
+    return;
+  }
+  if (typeof window.openMachineItemEditorModal !== 'function') {
+    if (typeof customAlert === 'function') customAlert('編集画面を開けませんでした。');
+    return;
+  }
+  window._bulkWorkMemoMachineEditUid = id;
+  const scrollCtx = (typeof window.captureBulkWorkMemoScrollAnchor_ === 'function')
+    ? window.captureBulkWorkMemoScrollAnchor_('bulk_card_' + id)
+    : { anchorId: '', anchorOffset: null };
+  const prevId = String(item.id || key);
+  window.openMachineItemEditorModal({
+    mode: 'edit',
+    kind: 'machine',
+    item: item,
+    afterSave: (rec) => {
+      window.refreshBulkWorkMemoAfterMachineChange_(rec, {
+        uid: id,
+        mode: 'edit',
+        prevId: prevId,
+        anchorId: scrollCtx.anchorId,
+        anchorOffset: scrollCtx.anchorOffset
+      });
+    }
+  });
+};
+
 window.buildBulkWorkMemoMachineAddBtnHtml_ = (uid) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  return `<div style="display:flex; justify-content:flex-end; margin:0 0 8px;">
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  const usedCount = row && Array.isArray(row.usedMachines)
+    ? row.usedMachines.filter(m => m && (m.id || m.name)).length
+    : 0;
+  const canEdit = usedCount > 0;
+  return `<div style="display:flex; justify-content:flex-end; flex-wrap:wrap; gap:6px; margin:0 0 8px;">
+    <button type="button" onclick="editBulkWorkMemoMachine_('${esc(uid)}')" ${canEdit ? '' : 'disabled'} style="background:${canEdit ? '#FFA000' : '#BDBDBD'}; color:#fff; border:none; border-radius:8px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:${canEdit ? 'pointer' : 'default'}; box-shadow:${canEdit ? '0 1px 3px rgba(255,160,0,0.28)' : 'none'};">✏️ 選択中を編集</button>
     <button type="button" onclick="addBulkWorkMemoMachine_('${esc(uid)}')" style="background:#2196F3; color:#fff; border:none; border-radius:8px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer; box-shadow:0 1px 3px rgba(33,150,243,0.28);">＋ 機械を新規登録</button>
   </div>`;
 };
@@ -49357,10 +49491,11 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
           ? `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${used.map(m => {
             const safeId = String(m.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const safeName = String(m.name || m.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const editKey = safeId || safeName;
             const moveNote = (flags.isDelivery && deliveryDest && deliveryDest.name)
               ? `<span style="display:block; font-size:10px; font-weight:normal; color:#1565C0;">→ ${esc(deliveryDest.name)} へ移動</span>`
               : '';
-            return `<span style="display:inline-flex; align-items:center; gap:6px; background:#FFF3E0; color:#E65100; padding:4px 10px 4px 4px; border-radius:14px; font-size:12px; font-weight:bold; border:1px solid #FF9800;">${machinePhotoHtml_(m)}<span>✅ ${esc(m.name || m.id)}${moveNote}</span><span onclick="removeBulkWorkMemoMachine_('${esc(uid)}','${safeId}','${safeName}')" style="cursor:pointer; color:#c62828; font-size:14px; line-height:1;" title="外す">×</span></span>`;
+            return `<span style="display:inline-flex; align-items:center; gap:6px; background:#FFF3E0; color:#E65100; padding:4px 10px 4px 4px; border-radius:14px; font-size:12px; font-weight:bold; border:1px solid #FF9800;">${machinePhotoHtml_(m)}<span>✅ ${esc(m.name || m.id)}${moveNote}</span><span onclick="event.stopPropagation(); editBulkWorkMemoMachine_('${esc(uid)}','${editKey}')" style="cursor:pointer; color:#EF6C00; font-size:13px; line-height:1;" title="この機械を編集">✏️</span><span onclick="removeBulkWorkMemoMachine_('${esc(uid)}','${safeId}','${safeName}')" style="cursor:pointer; color:#c62828; font-size:14px; line-height:1;" title="外す">×</span></span>`;
           }).join('')}</div>`
           : `<div style="font-size:11px; color:#888; margin-bottom:8px; line-height:1.35;">${flags.isDelivery ? '運んだ機械を選ぶと、上で選んだ場所へ移動した扱いになります。' : '使った機械を複数選べます。メモに機械名があれば自動で入ります。'}</div>`;
         const deliveryHint = flags.isDelivery
@@ -50547,6 +50682,12 @@ window.restoreBulkWorkMemoTemp_ = () => {
   }
   window._bulkWorkMemoActive = true;
   window._bulkWorkMemoParsing = false;
+  if (typeof window.applyBulkWorkMemoFieldHints_ === 'function') {
+    window._bulkWorkMemoDrafts.forEach((d) => {
+      if (!d || d.isRest || d.recordKind === 'rest') return;
+      try { window.applyBulkWorkMemoFieldHints_(d, { keepSelected: true }); } catch (e) { }
+    });
+  }
   if (typeof window.renderBulkWorkMemoReviewModal_ === 'function') {
     window.renderBulkWorkMemoReviewModal_();
   }
