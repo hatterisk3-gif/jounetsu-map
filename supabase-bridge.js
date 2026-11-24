@@ -982,6 +982,503 @@
       };
     });
 
+    // ========================================================================
+    // 肥料価格・国際原料動向（Supabase DB + market-sync + フォールバック）
+    // ========================================================================
+    var FERT_CACHE_TTL_MS_ = 12 * 60 * 60 * 1000;
+    var FERT_JP_DEFS_ = [
+      { code: 'fert_total', name: '肥料（類別総合）', shortName: '肥料総合', spec: '農業生産資材・肥料類別', color: '#2E7D32' },
+      { code: 'high_analysis_compound', name: '高度化成', shortName: '高度化成', spec: 'N15-P15-K15 20kg', color: '#E65100', r2Base: 2420 },
+      { code: 'ordinary_compound', name: '普通化成', shortName: '普通化成', spec: 'N8-P8-K5 20kg', color: '#1565C0', r2Base: 1680 },
+      { code: 'urea', name: '尿素', shortName: '尿素', spec: 'N46% 20kg', color: '#6A1B9A', r2Base: 1850 },
+      { code: 'ammonium_sulfate', name: '硫安', shortName: '硫安', spec: 'N21% 20kg', color: '#00838F', r2Base: 1090 },
+      { code: 'potassium_chloride', name: '塩化カリウム', shortName: '塩化加里', spec: '水溶性カリ60% 20kg', color: '#C62828', r2Base: 1620 },
+      { code: 'superphosphate', name: '過りん酸石灰', shortName: '過石', spec: '可溶性りん酸17% 20kg', color: '#5D4037', r2Base: 1280 },
+      { code: 'organic_compound', name: '有機配合・配合肥料', shortName: '有機配合', spec: 'N8-P8-K5等 20kg', color: '#558B2F', r2Base: 2280 }
+    ];
+    var FERT_INTL_DEFS_ = [
+      { code: 'urea', name: '尿素 (Urea)', shortName: '尿素', spec: 'E.Europe / Black Sea FOB', color: '#6A1B9A' },
+      { code: 'dap', name: 'りん安 (DAP)', shortName: 'りん安 DAP', spec: 'US Gulf / Morocco Spot', color: '#E65100' },
+      { code: 'mop', name: '塩化加里 (MOP)', shortName: '塩化加里 MOP', spec: 'Vancouver FOB', color: '#C62828' },
+      { code: 'tsp', name: '重過りん酸石灰 (TSP)', shortName: '重過石 TSP', spec: 'Spot Bulk', color: '#1565C0' },
+      { code: 'phosphate_rock', name: 'りん鉱石 (Phosphate Rock)', shortName: 'りん鉱石', spec: 'Morocco 70% BPL', color: '#5D4037' }
+    ];
+
+    function fertPad2_(n) {
+      return (Number(n) < 10 ? '0' : '') + String(Number(n));
+    }
+
+    function fertRound_(v, digits) {
+      var f = Math.pow(10, digits || 1);
+      return Math.round(v * f) / f;
+    }
+
+    function fertFmtDateTimeJst_(raw) {
+      var d = raw ? new Date(String(raw)) : new Date();
+      if (isNaN(d.getTime())) d = new Date();
+      var jst = new Date(d.getTime() + 9 * 3600 * 1000);
+      return jst.getUTCFullYear() + '-' + fertPad2_(jst.getUTCMonth() + 1) + '-' + fertPad2_(jst.getUTCDate()) +
+        ' ' + fertPad2_(jst.getUTCHours()) + ':' + fertPad2_(jst.getUTCMinutes());
+    }
+
+    function fertPrevYm_(ym, deltaMonths) {
+      var parts = String(ym || '').split('-');
+      var y = Number(parts[0]);
+      var m = Number(parts[1]);
+      if (!y || !m) return '';
+      var dt = new Date(Date.UTC(y, m - 1 + deltaMonths, 1));
+      return dt.getUTCFullYear() + '-' + fertPad2_(dt.getUTCMonth() + 1);
+    }
+
+    function fertAvgLastN_(points, offsetFromEnd, count, useJpy) {
+      var endIdx = points.length - offsetFromEnd;
+      var startIdx = endIdx - count;
+      if (startIdx < 0 || endIdx <= startIdx) return null;
+      var sum = 0;
+      var n = 0;
+      for (var i = startIdx; i < endIdx; i++) {
+        var v = useJpy ? points[i].jpyValue : points[i].value;
+        if (v != null && isFinite(v) && v > 0) {
+          sum += Number(v);
+          n += 1;
+        }
+      }
+      return n > 0 ? sum / n : null;
+    }
+
+    function computeFertOutlookClient_(intlRawSeries, fxSeries, jpIndexSeries) {
+      var jst = new Date(Date.now() + 9 * 3600 * 1000);
+      var year = jst.getUTCFullYear();
+      var month = jst.getUTCMonth() + 1;
+      var isAutumn = month >= 6 && month <= 10;
+      var springTargetYear = month >= 11 ? year + 1 : year;
+      var currentSeasonLabel = isAutumn ? (year + '年 秋肥') : (springTargetYear + '年 春肥');
+      var currentSeasonPeriod = isAutumn ? '6月〜10月適用' : '11月〜翌5月適用';
+      var nextSeasonLabel = isAutumn ? ((year + 1) + '年 春肥') : (springTargetYear + '年 秋肥');
+      var nextSeasonPeriod = isAutumn ? '11月〜翌5月適用' : '6月〜10月適用';
+
+      var weights = [
+        { code: 'dap', name: 'りん安 (DAP)', weight: 0.40 },
+        { code: 'urea', name: '尿素 (Urea)', weight: 0.35 },
+        { code: 'mop', name: '塩化加里 (MOP)', weight: 0.25 }
+      ];
+      var byCode = {};
+      (intlRawSeries || []).forEach(function (s) { byCode[s.itemCode] = s; });
+
+      var w3v6 = 0;
+      var wSum3v6 = 0;
+      var wYoy = 0;
+      var wSumYoy = 0;
+      var latestIntlYm = '';
+      var components = [];
+
+      weights.forEach(function (w) {
+        var ser = byCode[w.code];
+        var pts = (ser && ser.points) || [];
+        var last = pts[pts.length - 1];
+        if (last && (!latestIntlYm || last.ym > latestIntlYm)) latestIntlYm = last.ym;
+
+        var recent3 = fertAvgLastN_(pts, 0, 3, true);
+        var prev3 = fertAvgLastN_(pts, 3, 3, true);
+        var pct3v6 = recent3 && prev3 && prev3 > 0 ? fertRound_(((recent3 - prev3) / prev3) * 100, 1) : null;
+        if (pct3v6 != null) {
+          w3v6 += pct3v6 * w.weight;
+          wSum3v6 += w.weight;
+        }
+        var latestJpy = last ? last.jpyValue : null;
+        var pt12 = pts.length > 12 ? pts[pts.length - 13] : null;
+        var yoyJpy = latestJpy && pt12 && pt12.jpyValue && pt12.jpyValue > 0
+          ? ((latestJpy - pt12.jpyValue) / pt12.jpyValue) * 100
+          : null;
+        if (yoyJpy != null) {
+          wYoy += yoyJpy * w.weight;
+          wSumYoy += w.weight;
+        }
+        components.push({
+          code: w.code,
+          name: w.name,
+          weightPct: Math.round(w.weight * 100),
+          latestJpyPerTon: latestJpy != null ? Math.round(latestJpy) : null,
+          changePct3mVs6m: pct3v6
+        });
+      });
+
+      var comp3v6 = wSum3v6 > 0 ? fertRound_(w3v6 / wSum3v6, 1) : null;
+      var compYoy = wSumYoy > 0 ? fertRound_(wYoy / wSumYoy, 1) : null;
+      var fxPts = fxSeries || [];
+      var latestFx = fxPts[fxPts.length - 1];
+      var fxR3 = fertAvgLastN_(fxPts, 0, 3, false);
+      var fxP3 = fertAvgLastN_(fxPts, 3, 3, false);
+      var fxChg = fxR3 && fxP3 && fxP3 > 0 ? fertRound_(((fxR3 - fxP3) / fxP3) * 100, 1) : null;
+
+      var jpTotal = (jpIndexSeries || []).filter(function (s) { return s.itemCode === 'fert_total'; })[0];
+      var latestJpYm = (jpTotal && jpTotal.points && jpTotal.points.length) ? jpTotal.points[jpTotal.points.length - 1].ym : '';
+
+      var score = comp3v6 != null ? comp3v6 : 0;
+      var pressureCode = 'flat';
+      var pressureBadge = '→ 横ばい圏';
+      var pressureColor = '#455A64';
+      var pressureBg = '#ECEFF1';
+      var pressureBorder = '#B0BEC5';
+      if (score >= 8) {
+        pressureCode = 'strong_up'; pressureBadge = '▲ 値上がり圧力（強）';
+        pressureColor = '#C62828'; pressureBg = '#FFEBEE'; pressureBorder = '#EF9A9A';
+      } else if (score >= 3) {
+        pressureCode = 'up'; pressureBadge = '△ やや値上がり圧力';
+        pressureColor = '#E65100'; pressureBg = '#FFF3E0'; pressureBorder = '#FFCC80';
+      } else if (score <= -8) {
+        pressureCode = 'strong_down'; pressureBadge = '▼ 値下がり圧力（強）';
+        pressureColor = '#1565C0'; pressureBg = '#E3F2FD'; pressureBorder = '#90CAF9';
+      } else if (score <= -3) {
+        pressureCode = 'down'; pressureBadge = '▽ やや値下がり圧力';
+        pressureColor = '#0277BD'; pressureBg = '#E1F5FE'; pressureBorder = '#81D4FA';
+      }
+
+      var pctSign = comp3v6 == null ? '—' : ((comp3v6 >= 0 ? '+' : '') + comp3v6.toFixed(1) + '%');
+      var fxLbl = latestFx ? (Number(latestFx.value).toFixed(1) + '円/ドル（' + latestFx.ym + '）') : '—';
+      return {
+        currentSeasonLabel: currentSeasonLabel,
+        currentSeasonPeriod: currentSeasonPeriod,
+        nextSeasonLabel: nextSeasonLabel,
+        nextSeasonPeriod: nextSeasonPeriod,
+        pressureCode: pressureCode,
+        pressureBadge: pressureBadge,
+        pressureColor: pressureColor,
+        pressureBg: pressureBg,
+        pressureBorder: pressureBorder,
+        compositeChangePct3mVs6m: comp3v6,
+        compositeChangePctYoy: compYoy,
+        latestFxYm: latestFx ? latestFx.ym : '',
+        latestFxRate: latestFx ? latestFx.value : null,
+        fxChangePct3mVs6m: fxChg,
+        latestIntlYm: latestIntlYm,
+        latestJpYm: latestJpYm,
+        summaryText: '国際原料3品目（りん安40%・尿素35%・加里25%）の円換算コストは直近3ヶ月平均で前期3ヶ月比 ' + pctSign + '、為替は ' + fxLbl + ' で推移しています。国内価格へは3〜6ヶ月遅れて波及する傾向があります。',
+        components: components
+      };
+    }
+
+    function formatFertPayloadFromDbRows_(rows) {
+      var defLookup = {};
+      FERT_JP_DEFS_.forEach(function (d) {
+        defLookup['jp_index:' + d.code] = d;
+        defLookup['jp_retail:' + d.code] = d;
+      });
+      FERT_INTL_DEFS_.forEach(function (d) {
+        defLookup['intl_raw:' + d.code] = d;
+      });
+
+      var grouped = { jp_index: {}, jp_retail: {}, intl_raw: {} };
+      var fxPoints = [];
+      var zennohNotices = [];
+      var latestImpMs = 0;
+      var latestImpRaw = '';
+
+      (rows || []).forEach(function (r) {
+        var impMs = Date.parse(String(r.imported_at || ''));
+        if (isFinite(impMs) && impMs > latestImpMs) {
+          latestImpMs = impMs;
+          latestImpRaw = String(r.imported_at || '');
+        }
+        var sg = String(r.series_group || '');
+        var code = String(r.item_code || '');
+        var meta = (r.meta && typeof r.meta === 'object') ? r.meta : {};
+
+        if (sg === 'fx') {
+          fxPoints.push({
+            ym: String(r.ym || ''),
+            priceDate: String(r.price_date || ''),
+            value: Number(r.value),
+            jpyValue: r.jpy_value == null ? Number(r.value) : Number(r.jpy_value),
+            momPct: r.mom_pct == null ? null : Number(r.mom_pct),
+            yoyPct: r.yoy_pct == null ? null : Number(r.yoy_pct),
+            meta: meta,
+            sourceUrl: String(r.source_url || '')
+          });
+        } else if (sg === 'zennoh_notice') {
+          zennohNotices.push({
+            date: String(meta.date || r.price_date || ''),
+            ym: String(r.ym || ''),
+            title: String(r.item_name || ''),
+            url: String(r.source_url || 'https://www.zennoh.or.jp/press/'),
+            season: String(meta.season || r.unit || '肥料'),
+            summary: String(meta.summary || ''),
+            source: meta.source === 'live' ? 'live' : 'baseline'
+          });
+        } else if (grouped[sg]) {
+          var ser = grouped[sg][code];
+          if (!ser) {
+            var def = defLookup[sg + ':' + code] || {};
+            ser = {
+              seriesGroup: sg,
+              itemCode: code,
+              itemName: String(r.item_name || def.name || code),
+              shortName: String(meta.shortName || def.shortName || code),
+              spec: String(meta.spec || def.spec || ''),
+              unit: String(r.unit || ''),
+              color: String(meta.color || def.color || '#2E7D32'),
+              points: []
+            };
+            grouped[sg][code] = ser;
+          }
+          ser.points.push({
+            ym: String(r.ym || ''),
+            priceDate: String(r.price_date || ''),
+            value: Number(r.value),
+            jpyValue: r.jpy_value == null ? null : Number(r.jpy_value),
+            momPct: r.mom_pct == null ? null : Number(r.mom_pct),
+            yoyPct: r.yoy_pct == null ? null : Number(r.yoy_pct),
+            meta: meta,
+            sourceUrl: String(r.source_url || '')
+          });
+        }
+      });
+
+      function orderList(mapObj, defs) {
+        var out = [];
+        var used = {};
+        defs.forEach(function (d) {
+          if (mapObj[d.code]) {
+            out.push(mapObj[d.code]);
+            used[d.code] = true;
+          }
+        });
+        Object.keys(mapObj).forEach(function (k) {
+          if (!used[k]) out.push(mapObj[k]);
+        });
+        return out;
+      }
+
+      var jpIndexSeries = orderList(grouped.jp_index, FERT_JP_DEFS_);
+      var jpRetailSeries = orderList(grouped.jp_retail, FERT_JP_DEFS_);
+      var intlRawSeries = orderList(grouped.intl_raw, FERT_INTL_DEFS_);
+      if (!jpIndexSeries.length || !intlRawSeries.length) return null;
+
+      zennohNotices.sort(function (a, b) { return a.date > b.date ? -1 : (a.date < b.date ? 1 : 0); });
+      var isFresh = latestImpMs > 0 && (Date.now() - latestImpMs < FERT_CACHE_TTL_MS_);
+      return {
+        isFresh: isFresh,
+        payload: {
+          success: true,
+          source: 'supabase',
+          importedAt: fertFmtDateTimeJst_(latestImpRaw),
+          liveSources: { maff: true, worldBank: true, fx: true, zennoh: true },
+          outlook: computeFertOutlookClient_(intlRawSeries, fxPoints, jpIndexSeries),
+          jpIndexSeries: jpIndexSeries,
+          jpRetailSeries: jpRetailSeries,
+          intlRawSeries: intlRawSeries,
+          fxSeries: fxPoints,
+          zennohNotices: zennohNotices
+        }
+      };
+    }
+
+    async function buildFallbackFertilizerTrends_(reasonText) {
+      var months = [];
+      for (var y = 2023; y <= 2026; y++) {
+        var maxM = y === 2026 ? 9 : 12;
+        for (var m = 1; m <= maxM; m++) months.push(y + '-' + fertPad2_(m));
+      }
+      var jpTotalBase = [
+        149.2, 149.5, 149.1, 148.8, 148.3, 147.2, 146.4, 145.8, 145.3, 144.9, 144.2, 143.6,
+        135.0, 133.9, 134.5, 133.8, 134.1, 136.6, 139.1, 139.4, 139.5, 139.5, 139.2, 139.0,
+        139.0, 139.0, 139.0, 139.1, 139.1, 139.9, 140.7, 140.9, 141.0, 141.4, 142.1, 142.7,
+        143.1, 143.4, 143.3, 143.4, 143.4, 146.3, 149.1, 149.8, 150.3
+      ];
+      var fxBase = [
+        130.4, 132.9, 133.7, 133.5, 137.3, 141.3, 141.0, 144.8, 147.7, 149.6, 149.8, 144.1,
+        146.4, 149.5, 149.7, 153.8, 155.8, 157.9, 158.0, 146.2, 143.3, 149.8, 153.7, 153.6,
+        156.2, 152.1, 149.2, 144.5, 145.1, 144.8, 147.2, 147.8, 148.4, 150.6, 152.3, 153.5,
+        154.2, 152.8, 151.6, 153.4, 154.9, 155.8, 156.4, 155.9, 156.8
+      ];
+      var intlBase = {
+        urea: [444, 358, 314, 313, 329, 288, 335, 386, 380, 411, 385, 354, 335, 351, 330, 320, 285, 332, 344, 340, 355, 368, 362, 358, 372, 415, 395, 382, 390, 418, 436, 442, 435, 422, 412, 405, 402, 416, 430, 438, 445, 436, 428, 421, 418],
+        dap: [631, 613, 606, 580, 510, 454, 460, 529, 528, 535, 536, 564, 596, 584, 618, 545, 519, 542, 545, 552, 558, 565, 570, 578, 588, 602, 615, 625, 642, 668, 685, 695, 704, 712, 718, 724, 730, 738, 745, 752, 760, 772, 785, 792, 798],
+        mop: [442, 425, 404, 398, 375, 343, 338, 352, 348, 336, 322, 311, 296, 289, 294, 307, 307, 305, 300, 296, 290, 285, 288, 292, 296, 305, 312, 322, 335, 348, 358, 364, 368, 374, 378, 382, 386, 392, 398, 402, 408, 414, 418, 422, 425],
+        tsp: [555, 535, 525, 505, 440, 395, 405, 445, 448, 455, 452, 450, 458, 450, 462, 445, 435, 465, 472, 480, 488, 495, 502, 510, 518, 528, 536, 545, 558, 575, 592, 604, 612, 620, 628, 634, 640, 648, 655, 662, 670, 682, 692, 698, 705],
+        phosphate_rock: [300, 322, 345, 345, 345, 345, 342, 345, 348, 348, 348, 348, 152, 152, 152, 152, 152, 152, 152, 152, 152, 152, 152, 152, 152, 155, 158, 160, 162, 165, 168, 170, 172, 174, 175, 176, 178, 180, 182, 184, 186, 188, 190, 192, 194]
+      };
+      var ratioByCode = {
+        high_analysis_compound: 1.04,
+        ordinary_compound: 0.97,
+        urea: 1.07,
+        ammonium_sulfate: 0.93,
+        potassium_chloride: 1.05,
+        superphosphate: 0.97,
+        organic_compound: 1.00
+      };
+
+      var fxByYm = {};
+      months.forEach(function (ym, i) { fxByYm[ym] = fxBase[i]; });
+      var liveFxOk = false;
+      try {
+        var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        var timer = controller ? setTimeout(function () { controller.abort(); }, 4500) : null;
+        var fxRes = await fetch('https://api.frankfurter.dev/v1/2025-01-01..?base=USD&symbols=JPY', controller ? { signal: controller.signal } : {});
+        if (timer) clearTimeout(timer);
+        if (fxRes.ok) {
+          var fxJson = await fxRes.json();
+          var acc = {};
+          Object.keys((fxJson && fxJson.rates) || {}).forEach(function (dStr) {
+            var ym = dStr.slice(0, 7);
+            var jpy = Number(fxJson.rates[dStr] && fxJson.rates[dStr].JPY);
+            if (!isFinite(jpy) || jpy <= 50) return;
+            if (!acc[ym]) acc[ym] = { sum: 0, cnt: 0 };
+            acc[ym].sum += jpy;
+            acc[ym].cnt += 1;
+          });
+          Object.keys(acc).forEach(function (ym) {
+            if (acc[ym].cnt > 0 && fxByYm[ym] != null) {
+              fxByYm[ym] = fertRound_(acc[ym].sum / acc[ym].cnt, 2);
+              liveFxOk = true;
+            }
+          });
+        }
+      } catch (e) {}
+
+      function finalize(points) {
+        var byYm = {};
+        points.forEach(function (p) { byYm[p.ym] = p.value; });
+        return points.map(function (p) {
+          var pm = byYm[fertPrevYm_(p.ym, -1)];
+          var py = byYm[fertPrevYm_(p.ym, -12)];
+          p.momPct = pm && pm > 0 ? fertRound_(((p.value - pm) / pm) * 100, 1) : null;
+          p.yoyPct = py && py > 0 ? fertRound_(((p.value - py) / py) * 100, 1) : null;
+          return p;
+        });
+      }
+
+      var fxSeries = finalize(months.map(function (ym) {
+        return { ym: ym, priceDate: ym + '-01', value: fxByYm[ym], jpyValue: fxByYm[ym], meta: {}, sourceUrl: 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=EXJPUS' };
+      }));
+
+      var jpIndexSeries = [];
+      var jpRetailSeries = [];
+      FERT_JP_DEFS_.forEach(function (d) {
+        var mult = d.code === 'fert_total' ? 1 : (ratioByCode[d.code] || 1);
+        var pts = finalize(months.map(function (ym, idx) {
+          return {
+            ym: ym,
+            priceDate: ym + '-01',
+            value: fertRound_(jpTotalBase[idx] * mult, 1),
+            jpyValue: null,
+            meta: { origin: 'baseline' },
+            sourceUrl: 'https://www.maff.go.jp/j/tokei/kouhyou/noubukka/index.html'
+          };
+        }));
+        jpIndexSeries.push({
+          seriesGroup: 'jp_index', itemCode: d.code, itemName: d.name, shortName: d.shortName,
+          spec: d.spec, unit: '指数(2020=100)', color: d.color, points: pts
+        });
+        if (d.r2Base) {
+          var rPts = finalize(pts.map(function (p) {
+            return {
+              ym: p.ym, priceDate: p.priceDate, value: Math.round(d.r2Base * (p.value / 100)),
+              jpyValue: null, meta: { estimatedRetail: true }, sourceUrl: p.sourceUrl
+            };
+          }));
+          jpRetailSeries.push({
+            seriesGroup: 'jp_retail', itemCode: d.code, itemName: d.name, shortName: d.shortName,
+            spec: d.spec, unit: '円/20kg', color: d.color, points: rPts
+          });
+        }
+      });
+
+      var intlRawSeries = FERT_INTL_DEFS_.map(function (d) {
+        var arr = intlBase[d.code] || [];
+        var pts = finalize(months.map(function (ym, idx) {
+          var usd = arr[idx];
+          return {
+            ym: ym, priceDate: ym + '-01', value: usd, jpyValue: Math.round(usd * (fxByYm[ym] || 155)),
+            meta: { fxRate: fxByYm[ym] || 155 }, sourceUrl: 'https://www.worldbank.org/en/research/commodity-markets'
+          };
+        }));
+        return {
+          seriesGroup: 'intl_raw', itemCode: d.code, itemName: d.name, shortName: d.shortName,
+          spec: d.spec, unit: 'USD/t', color: d.color, points: pts
+        };
+      });
+
+      var notices = [
+        {
+          date: '2026-10-30', ym: '2026-10',
+          title: '令和8肥料年度 春肥（11月〜翌5月）肥料価格について',
+          url: 'https://www.zennoh.or.jp/press/', season: '春肥',
+          summary: '高度化成(15-15-15)前期比+15.3%、輸入尿素-2.7%、国産尿素+21.7%、塩化加里+5.1%、硫酸加里+21.0%',
+          source: 'baseline'
+        },
+        {
+          date: '2026-05-15', ym: '2026-05',
+          title: '2026肥料年度 秋肥（6月〜10月）肥料価格について',
+          url: 'https://www.zennoh.or.jp/press/', season: '秋肥',
+          summary: '高度化成(15-15-15)前期比+5.0%、輸入尿素+14.5%、塩化加里+7.3%、硫酸加里+7.8%、過石+4.9%',
+          source: 'baseline'
+        }
+      ];
+
+      return {
+        success: true,
+        source: liveFxOk ? 'client-fallback-fx' : 'client-fallback',
+        importedAt: fertFmtDateTimeJst_(),
+        warning: reasonText || 'サーバー同期（market-sync）反映前のため、公的統計ベースライン＋公開為替レートで表示しています。',
+        liveSources: { maff: false, worldBank: false, fx: liveFxOk, zennoh: false },
+        outlook: computeFertOutlookClient_(intlRawSeries, fxSeries, jpIndexSeries),
+        jpIndexSeries: jpIndexSeries,
+        jpRetailSeries: jpRetailSeries,
+        intlRawSeries: intlRawSeries,
+        fxSeries: fxSeries,
+        zennohNotices: notices
+      };
+    }
+
+    async function fetchFertilizerTrendsHandler_(action, params) {
+      params = params || {};
+      var isRefresh = action === 'importFertilizerMarketTrends' || !!params.refresh;
+      var staleDbPayload = null;
+
+      if (!isRefresh) {
+        try {
+          var dbRows = await restFetch(
+            'rest/v1/fertilizer_price_trends?select=series_group,item_code,item_name,ym,price_date,value,jpy_value,unit,mom_pct,yoy_pct,meta,source_url,imported_at' +
+            '&order=ym.asc,id.asc&limit=3000'
+          );
+          if (Array.isArray(dbRows) && dbRows.length) {
+            var formatted = formatFertPayloadFromDbRows_(dbRows);
+            if (formatted) {
+              if (formatted.isFresh) return formatted.payload;
+              staleDbPayload = formatted.payload;
+            }
+          }
+        } catch (dbErr) {
+          // テーブル未適用時などは Edge Function / フォールバックへ継続
+        }
+      }
+
+      try {
+        return await callEdgeFunction_('market-sync', {
+          action: isRefresh ? 'importFertilizerMarketTrends' : 'getFertilizerMarketTrends',
+          params: params
+        });
+      } catch (edgeErr) {
+        var errMsg = String((edgeErr && edgeErr.message) || edgeErr || '');
+        if (staleDbPayload) {
+          staleDbPayload.warning = '最新同期サーバーに接続できないため、保存済みキャッシュを表示しています。';
+          return staleDbPayload;
+        }
+        var note = /未対応のaction/i.test(errMsg)
+          ? 'サーバー同期（market-sync）反映前のため、公的統計ベースライン＋公開為替レートで表示しています。'
+          : 'サーバー同期に接続できないため、公的統計ベースライン＋公開為替レートで表示しています。';
+        return await buildFallbackFertilizerTrends_(note);
+      }
+    }
+
+    registerAction('getFertilizerMarketTrends', function (params) {
+      return fetchFertilizerTrendsHandler_('getFertilizerMarketTrends', params);
+    });
+    registerAction('importFertilizerMarketTrends', function (params) {
+      return fetchFertilizerTrendsHandler_('importFertilizerMarketTrends', params);
+    });
+
     return authActions.concat([
       'getFertilizerCatalogStats',
       'searchFertilizerCatalog',
@@ -990,7 +1487,9 @@
       'getPesticideApplicationTable',
       'getOsakaMarketDaily',
       'getTokyoMarketDaily',
-      'getMarketPriceHistory'
+      'getMarketPriceHistory',
+      'getFertilizerMarketTrends',
+      'importFertilizerMarketTrends'
     ]);
   }
 
@@ -8966,6 +9465,345 @@
       return { success: true, today: todayStr, items: items };
     });
 
+    function computeFieldAreaA4_(f) {
+      var direct = Number(f && f.area_sqm);
+      if (isFinite(direct) && direct > 0) return Math.round(direct * 10) / 10;
+      var coords = parseJsonMaybe_(f && f.coords, []);
+      if (!Array.isArray(coords) || coords.length < 3) return 0;
+      var pts = coords.map(function (c) {
+        if (!c) return null;
+        var lat = Number(c.lat != null ? c.lat : c[0]);
+        var lng = Number(c.lng != null ? c.lng : c[1]);
+        return (isFinite(lat) && isFinite(lng)) ? { lat: lat, lng: lng } : null;
+      }).filter(Boolean);
+      if (pts.length < 3) return 0;
+      var R = 6378137, rad = Math.PI / 180, total = 0;
+      for (var i = 0; i < pts.length; i++) {
+        var p1 = pts[i], p2 = pts[(i + 1) % pts.length];
+        total += ((p2.lng - p1.lng) * rad) * (2 + Math.sin(p1.lat * rad) + Math.sin(p2.lat * rad));
+      }
+      var sqm = Math.abs(total * R * R / 2);
+      return sqm > 0 ? Math.round((sqm / 100) * 10) / 10 : 0;
+    }
+
+    function shiftYmdUtc4_(ymd, deltaDays) {
+      var parts = String(ymd || '').split('-').map(Number);
+      if (parts.length < 3) return '';
+      var d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + Number(deltaDays || 0)));
+      return d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + d.getUTCDate()).slice(-2);
+    }
+
+    registerAction('getAgriGrowthCareBundle', async function (params) {
+      params = params || {};
+      var todayStr = normYmd4_(params.today) || jstYmd_(new Date());
+      var cutoff240Ymd = shiftYmdUtc4_(todayStr, -240);
+      var cutoffFutureYmd = shiftYmdUtc4_(todayStr, 60);
+      var cutoffDone7Ymd = shiftYmdUtc4_(todayStr, -7);
+      var orgId = await resolveCurrentOrgId_();
+      var encOrg = encodeURIComponent(orgId);
+
+      var fetched = await Promise.all([
+        readSowingList_(orgId),
+        loadCultivationPlansLookup_(orgId, ''),
+        restSelectAll_('fields', 'org_id=eq.' + encOrg + '&entity_type=eq.field'),
+        readPesticideList_(orgId),
+        readFertilizerList_(orgId),
+        listCropPlansByKind_(orgId, 'chem'),
+        readCroptypeList_(orgId),
+        restSelectAll_('field_records', 'org_id=eq.' + encOrg + '&record_type=eq.work&work_date=gte.' + encodeURIComponent(cutoff240Ymd)),
+        restSelectAll_('work_schedules', 'org_id=eq.' + encOrg + '&schedule_kind=eq.work')
+      ]);
+
+      var sowingList = fetched[0] || [];
+      var planLookup = fetched[1] || { map: {}, list: [] };
+      var fieldRows = fetched[2] || [];
+      var pesticides = fetched[3] || [];
+      var fertilizers = fetched[4] || [];
+      var chemPlanRows = fetched[5] || [];
+      var croptypes = fetched[6] || [];
+      var workRecords = fetched[7] || [];
+      var schedRows = fetched[8] || [];
+
+      var fieldById = {};
+      var fieldRowById = {};
+      var fieldByName = {};
+      var fields = [];
+      fieldRows.forEach(function (f) {
+        var fid = String(f.legacy_id || f.id || '').trim();
+        var uuid = String(f.id || '').trim();
+        var areaA = computeFieldAreaA4_(f);
+        var obj = {
+          id: fid || uuid,
+          name: f.name || '',
+          locationName: f.location_name || '',
+          areaA: areaA,
+          soilType: f.soil_type || '',
+          fieldCondition: f.field_condition || ''
+        };
+        fields.push(obj);
+        if (fid) { fieldById[fid] = obj; fieldRowById[fid] = f; }
+        if (uuid) { fieldById[uuid] = obj; fieldRowById[uuid] = f; }
+        if (obj.name && !fieldByName[obj.name]) fieldByName[obj.name] = obj;
+      });
+      fields.sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'ja'); });
+
+      function resolveFieldLabelLocal_(fieldId) {
+        var idStr = String(fieldId || '');
+        var m = idStr.match(/^(.+)#une#(\d+)$/);
+        var baseId = m ? m[1] : idStr;
+        var uneIdx = m ? parseInt(m[2], 10) : null;
+        var info = fieldRowById[baseId];
+        if (!info) return idStr;
+        if (uneIdx == null) return info.name || idStr;
+        var uneLabel = '畝' + (uneIdx + 1);
+        try {
+          var meta = (info.meta && typeof info.meta === 'object') ? info.meta : {};
+          var parsed = meta.uneSimDataRaw ? parseJsonMaybe_(meta.uneSimDataRaw, info.ridge_data) : info.ridge_data;
+          var list = parsed && parsed.unePolygons ? parsed.unePolygons : (Array.isArray(parsed) ? parsed : []);
+          var une = list[uneIdx];
+          if (une && une.customLabel) uneLabel = String(une.customLabel);
+          else if (une && une.group) uneLabel = String(une.group) + '-' + (uneIdx + 1);
+        } catch (e) {}
+        return (info.name || baseId) + '(' + uneLabel + ')';
+      }
+
+      function resolveFieldMetaForIds_(fieldIds, plan) {
+        var ids = Array.isArray(fieldIds) ? fieldIds : [];
+        var labels = [], baseNames = [], seenBase = {};
+        var totalAreaA = 0, soilType = '', fieldCondition = (plan && (plan.fieldCondition || plan.condition)) || '';
+        ids.forEach(function (fid) {
+          var idStr = String(fid || '').trim();
+          if (!idStr) return;
+          var m = idStr.match(/^(.+)#une#(\d+)$/);
+          var baseId = m ? m[1] : idStr;
+          var info = fieldById[baseId] || fieldById[idStr];
+          labels.push(resolveFieldLabelLocal_(idStr));
+          if (info) {
+            if (info.name && baseNames.indexOf(info.name) < 0) baseNames.push(info.name);
+            if (!seenBase[info.id]) {
+              seenBase[info.id] = true;
+              totalAreaA += Number(info.areaA) || 0;
+            }
+            if (!soilType && info.soilType) soilType = info.soilType;
+            if (!fieldCondition && info.fieldCondition) fieldCondition = info.fieldCondition;
+          }
+        });
+        var planArea = Number(plan && (plan.areaA != null ? plan.areaA : plan.area));
+        var resolvedArea = (isFinite(planArea) && planArea > 0) ? Math.round(planArea * 10) / 10 : (Math.round(totalAreaA * 10) / 10);
+        return {
+          fieldNames: labels.join(', '),
+          baseFieldNames: baseNames,
+          areaA: resolvedArea,
+          soilType: soilType,
+          fieldCondition: fieldCondition
+        };
+      }
+
+      var chemPlans = {};
+      chemPlanRows.forEach(function (r) {
+        var s = (r.settings && typeof r.settings === 'object') ? r.settings : {};
+        var norm = normalizeChemEntries_(r.crop_name, s.entries || [], r.updated_by || '');
+        chemPlans[norm.cropName] = norm;
+      });
+
+      var cpState = computeCpState_(schedRows);
+      var sowDoneDateByPlan = {};
+      var plantDoneDateByPlan = {};
+      schedRows.forEach(function (sr) {
+        var comp = normYmd4_(sr.completed_date);
+        if (!comp) return;
+        var parsed = parseCpPlaceKind4_(sr.place_id || '');
+        if (parsed.kind === 'sow') {
+          parsed.planIds.forEach(function (pid) { if (!sowDoneDateByPlan[pid]) sowDoneDateByPlan[pid] = comp; });
+        } else if (parsed.kind === 'plant') {
+          parsed.planIds.forEach(function (pid) { if (!plantDoneDateByPlan[pid]) plantDoneDateByPlan[pid] = comp; });
+        }
+      });
+
+      var planByTag = {};
+      planLookup.list.forEach(function (p) {
+        if (p && p.tag && !planByTag[p.tag]) planByTag[p.tag] = p;
+      });
+
+      function summarizeWorkForLot_(baseFieldNames, cropName, refDate) {
+        var fertCount = 0, lastFertDate = '';
+        var sprayCount = 0, lastSprayDate = '';
+        var harvestCompleted = false, harvestCompleteDate = '';
+        var harvCutoff = shiftYmdUtc4_(refDate, 14);
+        var cropNorm = String(cropName || '').trim();
+        var fieldSet = {};
+        (baseFieldNames || []).forEach(function (fn) { if (fn) fieldSet[String(fn).trim()] = true; });
+        var hasFields = Object.keys(fieldSet).length > 0;
+
+        workRecords.forEach(function (r) {
+          var wd = normYmd4_(r.work_date);
+          if (!wd || wd < refDate) return;
+          var rCrop = String(r.crop_name || '').trim();
+          if (cropNorm && rCrop && rCrop !== cropNorm) return;
+          if (hasFields) {
+            var rFields = String(r.field_name || '').split(/[,、]/).map(function (x) {
+              return x.replace(/\([^)]*\)$/, '').trim();
+            }).filter(Boolean);
+            var matchedF = rFields.some(function (rf) { return !!fieldSet[rf]; });
+            if (!matchedF) return;
+          } else if (cropNorm && rCrop !== cropNorm) {
+            return;
+          }
+          var wn = String(r.work_name || '').trim();
+          if (/追肥|施肥|肥料|液肥|元肥|堆肥/.test(wn)) {
+            fertCount++;
+            if (!lastFertDate || wd > lastFertDate) lastFertDate = wd;
+          }
+          if (/防除|農薬|消毒|散布|殺菌|殺虫/.test(wn)) {
+            sprayCount++;
+            if (!lastSprayDate || wd > lastSprayDate) lastSprayDate = wd;
+          }
+          if (wd >= harvCutoff && /収穫/.test(wn) && String(r.progress || '').trim() === '完了') {
+            harvestCompleted = true;
+            if (!harvestCompleteDate || wd > harvestCompleteDate) harvestCompleteDate = wd;
+          }
+        });
+        return {
+          fertCount: fertCount,
+          lastFertDate: lastFertDate,
+          sprayCount: sprayCount,
+          lastSprayDate: lastSprayDate,
+          harvestCompleted: harvestCompleted,
+          harvestCompleteDate: harvestCompleteDate
+        };
+      }
+
+      var lots = [];
+      var matchedPlanIds = {};
+
+      sowingList.forEach(function (s) {
+        var sDate = normYmd4_(s.sowingDate);
+        if (!sDate || sDate < cutoff240Ymd || sDate > cutoffFutureYmd) return;
+        var plan = (s.planId && planLookup.map[s.planId]) || (s.tag && planByTag[s.tag]) || null;
+        if (plan) matchedPlanIds[plan.id] = true;
+        var fieldIds = plan && Array.isArray(plan.fieldIds) ? plan.fieldIds : [];
+        var fm = resolveFieldMetaForIds_(fieldIds, plan);
+        var plantCells = (plan && plan.tasks && Array.isArray(plan.tasks.planting)) ? plan.tasks.planting : [];
+        var plantStart = '';
+        if (plan && plantDoneDateByPlan[plan.id]) {
+          plantStart = plantDoneDateByPlan[plan.id];
+        } else if (plantCells.length && plan && plan.year) {
+          var pp = plantCells.map(function (c) { return cpCellToDateParts_(plan.year, c); }).sort(function (a, b) { return a.start - b.start; });
+          plantStart = jstYmd_(pp[0].start);
+        }
+        var prog = plan ? computePlanProgress_(plan, cpState, []) : null;
+        var cropName = s.cropName || (plan && plan.crop) || '';
+        var ws = summarizeWorkForLot_(fm.baseFieldNames, cropName, sDate);
+        if (ws.harvestCompleted && ws.harvestCompleteDate && ws.harvestCompleteDate < cutoffDone7Ymd) return;
+        lots.push({
+          lotKey: 'sow:' + String(s.recordId || (s.tag + '_' + sDate)),
+          source: 'sowing',
+          planId: plan ? plan.id : (s.planId || ''),
+          tag: s.tag || (plan && plan.tag) || '',
+          cropName: cropName,
+          variety: s.variety || (plan && plan.variety) || '',
+          sowingDate: sDate,
+          dateSource: 'actual',
+          startFromPlanting: false,
+          plantingDate: plantStart,
+          fieldIds: fieldIds,
+          fieldNames: fm.fieldNames || (s.nurseryName ? ('育苗: ' + s.nurseryName) : ''),
+          areaA: fm.areaA,
+          soilType: fm.soilType,
+          fieldCondition: fm.fieldCondition,
+          trays: Number(s.trays) || (plan && Number(plan.trays)) || 0,
+          planStatus: plan ? (plan.status || 'planned') : 'actual',
+          progressLabel: prog ? prog.statusLabel : '播種済',
+          fertCount: ws.fertCount,
+          lastFertDate: ws.lastFertDate,
+          sprayCount: ws.sprayCount,
+          lastSprayDate: ws.lastSprayDate,
+          harvestCompleted: ws.harvestCompleted,
+          harvestCompleteDate: ws.harvestCompleteDate
+        });
+      });
+
+      planLookup.list.forEach(function (plan) {
+        if (!plan || matchedPlanIds[plan.id]) return;
+        var sowCells = (plan.tasks && Array.isArray(plan.tasks.sowing)) ? plan.tasks.sowing : [];
+        var plantCells = (plan.tasks && Array.isArray(plan.tasks.planting)) ? plan.tasks.planting : [];
+        if (plan.status !== 'executed' && !sowCells.length && !plantCells.length) return;
+        var startFromPlanting = !sowCells.length && plantCells.length > 0;
+        var dateSource = 'planned';
+        var refDate = '';
+        if (!startFromPlanting && sowDoneDateByPlan[plan.id]) {
+          refDate = sowDoneDateByPlan[plan.id];
+          dateSource = 'actual';
+        } else if (startFromPlanting && plantDoneDateByPlan[plan.id]) {
+          refDate = plantDoneDateByPlan[plan.id];
+          dateSource = 'actual';
+        } else if (sowCells.length && plan.year) {
+          var sp = sowCells.map(function (c) { return cpCellToDateParts_(plan.year, c); }).sort(function (a, b) { return a.start - b.start; });
+          refDate = jstYmd_(sp[0].start);
+        } else if (plantCells.length && plan.year) {
+          var pp2 = plantCells.map(function (c) { return cpCellToDateParts_(plan.year, c); }).sort(function (a, b) { return a.start - b.start; });
+          refDate = jstYmd_(pp2[0].start);
+        }
+        if (!refDate || refDate < cutoff240Ymd || refDate > cutoffFutureYmd) return;
+        var plantStart = '';
+        if (plantDoneDateByPlan[plan.id]) {
+          plantStart = plantDoneDateByPlan[plan.id];
+        } else if (plantCells.length && plan.year) {
+          var pp3 = plantCells.map(function (c) { return cpCellToDateParts_(plan.year, c); }).sort(function (a, b) { return a.start - b.start; });
+          plantStart = jstYmd_(pp3[0].start);
+        }
+        var fieldIds = Array.isArray(plan.fieldIds) ? plan.fieldIds : [];
+        var fm = resolveFieldMetaForIds_(fieldIds, plan);
+        var prog = computePlanProgress_(plan, cpState, []);
+        var ws = summarizeWorkForLot_(fm.baseFieldNames, plan.crop || '', refDate);
+        if (ws.harvestCompleted && ws.harvestCompleteDate && ws.harvestCompleteDate < cutoffDone7Ymd) return;
+        lots.push({
+          lotKey: 'plan:' + String(plan.id),
+          source: 'plan',
+          planId: plan.id,
+          tag: plan.tag || '',
+          cropName: plan.crop || '',
+          variety: plan.variety || '',
+          sowingDate: refDate,
+          dateSource: dateSource,
+          startFromPlanting: startFromPlanting,
+          plantingDate: plantStart,
+          fieldIds: fieldIds,
+          fieldNames: fm.fieldNames,
+          areaA: fm.areaA,
+          soilType: fm.soilType,
+          fieldCondition: fm.fieldCondition,
+          trays: Number(plan.trays) || 0,
+          planStatus: plan.status || 'planned',
+          progressLabel: prog ? prog.statusLabel : (plan.status === 'executed' ? '実行中' : '計画'),
+          fertCount: ws.fertCount,
+          lastFertDate: ws.lastFertDate,
+          sprayCount: ws.sprayCount,
+          lastSprayDate: ws.lastSprayDate,
+          harvestCompleted: ws.harvestCompleted,
+          harvestCompleteDate: ws.harvestCompleteDate
+        });
+      });
+
+      lots.sort(function (a, b) {
+        if (!!a.harvestCompleted !== !!b.harvestCompleted) return a.harvestCompleted ? 1 : -1;
+        if ((a.dateSource === 'actual') !== (b.dateSource === 'actual')) return a.dateSource === 'actual' ? -1 : 1;
+        if (a.dateSource === 'actual') return String(b.sowingDate).localeCompare(String(a.sowingDate));
+        return String(a.sowingDate).localeCompare(String(b.sowingDate));
+      });
+
+      return {
+        success: true,
+        today: todayStr,
+        lots: lots,
+        fields: fields,
+        pesticides: pesticides,
+        fertilizers: fertilizers,
+        chemPlans: chemPlans,
+        croptypes: croptypes
+      };
+    });
+
     // ---- 5. Harvest / Shipping Lots & Inventory Logs ----
     registerAction('saveGlobalHarvest', async function (params) {
       params = params || {};
@@ -9345,7 +10183,7 @@
       'getCropWorkPlan', 'saveCropWorkPlan', 'listCropWorkPlans', 'deleteCropWorkPlan', 'previewCropWorkSchedule',
       'getSowingProgress', 'getSowingNurseryBundle', 'getCurrentSowingPlanOptions', 'getSowingNurseryFormOptions',
       'manageCultivationListOption', 'saveSowingRecord',
-      'lookupCultivationByTag', 'getCropWorkProgressSummary', 'getHarvestingFieldsSummary', 'getWeatherPlantingPriorities',
+      'lookupCultivationByTag', 'getCropWorkProgressSummary', 'getHarvestingFieldsSummary', 'getWeatherPlantingPriorities', 'getAgriGrowthCareBundle',
       'saveCultivationPlans', 'getCultivationPlans', 'previewCultivationPlanTags', 'executeCultivationPlans',
       'getSavedCultivationPlanList', 'deleteSavedCultivationPlans',
       'getFarmBoardData', 'completeFarmBoardTasks',

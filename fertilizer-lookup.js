@@ -257,6 +257,17 @@
     if (modal) modal.style.display = 'none';
   };
 
+  window.openFertilizerMarketTrendsFromLookup_ = function () {
+    window.closeFertilizerLookup_();
+    if (window.MarketInfo && typeof window.MarketInfo.open === 'function') {
+      window.MarketInfo.open('fertilizer');
+    } else if (typeof customAlert === 'function') {
+      customAlert('市況・肥料価格モジュールの読み込み中です。少し待って再度お試しください。');
+    } else {
+      alert('市況・肥料価格モジュールの読み込み中です。少し待って再度お試しください。');
+    }
+  };
+
   window.backFertilizerLookup_ = function () {
     window.showFertilizerLookupSearch_();
   };

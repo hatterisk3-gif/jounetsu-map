@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { handleCorsPreflight, jsonResponse } from "../_shared/cors.ts";
+import { handleFertilizerMarketTrends } from "./fertilizer-trends.ts";
 
 const OSAKA_MARKET_CSV_BASE = "https://www.shijou.city.osaka.jp/data/webroot/nippou/syurui/";
 const TOKYO_NIPPO_BASE = "https://www.shijou-nippo.metro.tokyo.lg.jp/SN/";
@@ -1419,6 +1420,12 @@ Deno.serve(async (req: Request) => {
       case "importOsakaMarketDaily":
         data = await handleOsakaMarketDaily(supabaseAdmin, { ...params, refresh: true });
         break;
+      case "getFertilizerMarketTrends":
+        data = await handleFertilizerMarketTrends(supabaseAdmin, params);
+        break;
+      case "importFertilizerMarketTrends":
+        data = await handleFertilizerMarketTrends(supabaseAdmin, { ...params, refresh: true });
+        break;
       case "syncAll": {
         const results: Array<{ market: string; ok: boolean; date?: string; count?: number; source?: string; error?: string }> = [];
         try {
@@ -1438,6 +1445,18 @@ Deno.serve(async (req: Request) => {
           results.push({ market: "osaka:東部", ok: true, date: tobu.date, count: tobu.count, source: tobu.source });
         } catch (e) {
           results.push({ market: "osaka:東部", ok: false, error: e instanceof Error ? e.message : String(e) });
+        }
+        try {
+          const fert = await handleFertilizerMarketTrends(supabaseAdmin, { refresh: true });
+          results.push({
+            market: "fertilizer:trends",
+            ok: true,
+            date: fert.outlook?.latestJpYm || fert.outlook?.latestIntlYm || "",
+            count: (fert.jpIndexSeries?.length || 0) + (fert.intlRawSeries?.length || 0),
+            source: fert.source,
+          });
+        } catch (e) {
+          results.push({ market: "fertilizer:trends", ok: false, error: e instanceof Error ? e.message : String(e) });
         }
         data = { success: true, syncedAt: getJstNowFormatted(), results };
         break;

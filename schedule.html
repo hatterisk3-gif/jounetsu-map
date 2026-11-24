@@ -15,7 +15,7 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1788600000403"></script>
-  <link rel="stylesheet" href="schedule.css?v=1788600000399">
+  <link rel="stylesheet" href="schedule.css?v=1788600000426">
   <link rel="stylesheet" href="cad.css?v=1788600000326">
   <link rel="stylesheet" href="location-pin.css?v=1788600000400">
   <link rel="stylesheet" href="map-filter.css?v=1788600000415">
@@ -680,18 +680,18 @@
     </div>
   </div>
 
-  <!-- 市況情報（東京都・大阪府） -->
+  <!-- 市況情報（東京都・大阪府・肥料価格動向） -->
   <div id="cropMarketModal"
     style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; flex-direction: column; justify-content: center; align-items: center; padding: 12px; box-sizing: border-box;">
     <div
       style="background: #fff; color: #333; padding: 18px 20px; border-radius: 8px; width: 100%; max-width: 640px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); box-sizing: border-box; max-height: 92vh; overflow: auto;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-        <h3 style="margin: 0; color: #E65100; font-size: 18px;">📈 野菜市況情報</h3>
+        <h3 style="margin: 0; color: #E65100; font-size: 18px;">📈 市況・肥料価格動向</h3>
         <span id="marketModalClose" style="cursor: pointer; font-size: 24px; line-height: 1; color: #999;">×</span>
       </div>
 
       <p style="margin: 0 0 12px 0; font-size: 13px; color: #555; line-height: 1.5;">
-        東京（大田）・大阪（本場）の品目別市況を表示します。
+        東京（大田）・大阪（本場）の野菜市況と、国内肥料・国際原料の月次価格動向を表示します。
       </p>
 
       <!-- 品目別テーブルは market.js が挿入 -->
@@ -756,6 +756,10 @@
           <button type="button" class="fert-lookup-go" onclick="searchFertilizerLookup_()">検索</button>
           <button type="button" id="fertLookupFavListBtn" class="fert-lookup-favbtn"
             onclick="showFertilizerFavorites_()">⭐ お気に入り</button>
+        </div>
+        <div class="fert-lookup-toolbar">
+          <button type="button" id="fertLookupTrendBtn" class="fert-lookup-trendbtn"
+            onclick="openFertilizerMarketTrendsFromLookup_()">📈 肥料価格・国際原料の動向を見る</button>
         </div>
         <div id="fertLookupResult" class="fert-lookup-result"></div>
       </div>
@@ -1278,7 +1282,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000421';
+    const cacheBust = '1788600000426';
     // 豚糞共有：台数＋短いGoogleマップURL＋座標（v1.49）
     // ※ https://maps.google.com/?q=緯度,経度
     // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）

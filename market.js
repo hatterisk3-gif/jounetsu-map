@@ -28,16 +28,35 @@
       defaultMarket: '本場',
       sourceNote: '単価は取引単位あたり（例: 10kg）。出典: 大阪市中央卸売市場 種類別取扱高日報CSV',
       getParams: { ichiba: 1 }
+    },
+    fertilizer: {
+      key: 'fertilizer',
+      title: '肥料価格・国際原料動向（月次）',
+      color: '#2E7D32',
+      border: '#A5D6A7',
+      bg: '#F1F8E9',
+      getAction: 'getFertilizerMarketTrends',
+      importAction: 'importFertilizerMarketTrends',
+      defaultMarket: '全国・国際',
+      sourceNote: '出典: 農林水産省「農業物価統計調査」(令和2年=100)・World Bank Pink Sheet・FRED/ECB為替・JA全農発表'
     }
   };
 
   let _active = 'tokyo';
-  const _cache = { tokyo: null, osaka: null };
-  const _loading = { tokyo: false, osaka: false };
-  const _loadingRefresh = { tokyo: false, osaka: false };
-  const _fetchedAt = { tokyo: 0, osaka: 0 };
-  const _autoRefreshed = { tokyo: false, osaka: false };
+  const _cache = { tokyo: null, osaka: null, fertilizer: null };
+  const _loading = { tokyo: false, osaka: false, fertilizer: false };
+  const _loadingRefresh = { tokyo: false, osaka: false, fertilizer: false };
+  const _fetchedAt = { tokyo: 0, osaka: 0, fertilizer: 0 };
+  const _autoRefreshed = { tokyo: false, osaka: false, fertilizer: false };
   const AUTO_CACHE_TTL_MS = 15 * 60 * 1000;
+  const FERT_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+  /** 肥料タブ状態 */
+  let _fertSubTab = 'domestic'; // 'domestic' | 'intl'
+  let _fertDomesticMetric = 'index'; // 'index' | 'retail'
+  let _fertIntlCurrency = 'jpy'; // 'jpy' | 'usd'
+  let _fertPeriodMonths = 36; // 12 | 36 | 0(全期間)
+  let _fertSelectedCode = 'all';
+  let _fertHoverIdx = -1;
   /** 選択中の品目名（空 = すべて） */
   const _selectedItems = { tokyo: new Set(), osaka: new Set() };
   const CHIP_PREF_KEY = 'passionMapMarketItemChips';
@@ -179,9 +198,11 @@
     root.innerHTML = [
       '<div style="display:flex;gap:6px;margin:0 0 10px 0;">',
       '  <button type="button" id="marketTabTokyo" data-market="tokyo"',
-      '    style="flex:1;border:none;border-radius:6px;padding:8px 10px;font-size:13px;font-weight:bold;cursor:pointer;">東京・大田</button>',
+      '    style="flex:1;border:none;border-radius:6px;padding:8px 8px;font-size:13px;font-weight:bold;cursor:pointer;">東京・大田</button>',
       '  <button type="button" id="marketTabOsaka" data-market="osaka"',
-      '    style="flex:1;border:none;border-radius:6px;padding:8px 10px;font-size:13px;font-weight:bold;cursor:pointer;">大阪・本場</button>',
+      '    style="flex:1;border:none;border-radius:6px;padding:8px 8px;font-size:13px;font-weight:bold;cursor:pointer;">大阪・本場</button>',
+      '  <button type="button" id="marketTabFertilizer" data-market="fertilizer"',
+      '    style="flex:1;border:none;border-radius:6px;padding:8px 8px;font-size:13px;font-weight:bold;cursor:pointer;">🌿 肥料価格</button>',
       '</div>',
       '<div id="marketActivePanel"',
       '  style="margin:0 0 12px 0;padding:12px;border-radius:8px;border:1px solid #ddd;">',
@@ -193,47 +214,50 @@
       '    <button type="button" id="marketActiveRefresh"',
       '      style="color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:bold;cursor:pointer;">更新</button>',
       '  </div>',
-      '  <div id="marketActiveComment" style="font-size:11px;color:#546E7A;margin-bottom:8px;line-height:1.4;display:none;"></div>',
-      '  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">',
-      '    <div style="font-size:11px;font-weight:800;color:#607D8B;">品目チップ</div>',
-      '    <button type="button" id="marketChipClear"',
-      '      style="border:none;background:transparent;color:#90A4AE;font-size:11px;font-weight:700;cursor:pointer;padding:2px 4px;">すべて表示</button>',
-      '  </div>',
-      '  <div id="marketItemChips"',
-      '    style="display:flex;flex-wrap:wrap;gap:6px;max-height:7.5rem;overflow:auto;margin-bottom:8px;padding:2px 0;"></div>',
-      '  <input id="marketActiveFilter" type="search" placeholder="品目・産地でさらに絞り込み"',
-      '    style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ccc;border-radius:6px;font-size:13px;margin-bottom:8px;" />',
-      '  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px;">',
-      '    <div id="marketViewSwitch" style="display:inline-flex;gap:4px;background:rgba(255,255,255,0.85);padding:3px;border-radius:8px;border:1px solid #cfd8dc;">',
-      '      <button type="button" id="marketViewBtnTable" data-view="table"',
-      '        style="border:none;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;">📋 一覧表</button>',
-      '      <button type="button" id="marketViewBtnChart" data-view="chart"',
-      '        style="border:none;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;">📊 グラフ</button>',
-      '    </div>',
-      '    <div id="marketChartSubSwitch" style="display:none;gap:4px;background:rgba(255,255,255,0.85);padding:3px;border-radius:8px;border:1px solid #cfd8dc;">',
-      '      <button type="button" id="marketChartTabCompare" data-chart-tab="compare"',
-      '        style="border:none;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;">📊 品目別比較（当日）</button>',
-      '      <button type="button" id="marketChartTabHistory" data-chart-tab="history"',
-      '        style="border:none;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;">📈 日別推移（履歴）</button>',
-      '    </div>',
-      '  </div>',
       '  <div id="marketActiveStatus" style="font-size:12px;color:#546E7A;margin-bottom:6px;"></div>',
-      '  <div id="marketTableWrap" style="max-height:min(48vh,400px);overflow:auto;border:1px solid #e0e0e0;border-radius:6px;background:#fff;">',
-      '    <table style="width:100%;border-collapse:collapse;font-size:12px;">',
-      '      <thead style="position:sticky;top:0;background:#eceff1;z-index:1;">',
-      '        <tr>',
-      '          <th style="text-align:left;padding:8px 6px;border-bottom:1px solid #cfd8dc;">品目</th>',
-      '          <th style="text-align:right;padding:8px 6px;border-bottom:1px solid #cfd8dc;">数量</th>',
-      '          <th style="text-align:right;padding:8px 6px;border-bottom:1px solid #cfd8dc;">高値</th>',
-      '          <th style="text-align:right;padding:8px 6px;border-bottom:1px solid #cfd8dc;">中値</th>',
-      '          <th style="text-align:right;padding:8px 6px;border-bottom:1px solid #cfd8dc;">安値</th>',
-      '          <th style="text-align:center;padding:8px 6px;border-bottom:1px solid #cfd8dc;">市況</th>',
-      '        </tr>',
-      '      </thead>',
-      '      <tbody id="marketActiveTbody"></tbody>',
-      '    </table>',
+      '  <div id="marketVegSection">',
+      '    <div id="marketActiveComment" style="font-size:11px;color:#546E7A;margin-bottom:8px;line-height:1.4;display:none;"></div>',
+      '    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">',
+      '      <div style="font-size:11px;font-weight:800;color:#607D8B;">品目チップ</div>',
+      '      <button type="button" id="marketChipClear"',
+      '        style="border:none;background:transparent;color:#90A4AE;font-size:11px;font-weight:700;cursor:pointer;padding:2px 4px;">すべて表示</button>',
+      '    </div>',
+      '    <div id="marketItemChips"',
+      '      style="display:flex;flex-wrap:wrap;gap:6px;max-height:7.5rem;overflow:auto;margin-bottom:8px;padding:2px 0;"></div>',
+      '    <input id="marketActiveFilter" type="search" placeholder="品目・産地でさらに絞り込み"',
+      '      style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ccc;border-radius:6px;font-size:13px;margin-bottom:8px;" />',
+      '    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px;">',
+      '      <div id="marketViewSwitch" style="display:inline-flex;gap:4px;background:rgba(255,255,255,0.85);padding:3px;border-radius:8px;border:1px solid #cfd8dc;">',
+      '        <button type="button" id="marketViewBtnTable" data-view="table"',
+      '          style="border:none;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;">📋 一覧表</button>',
+      '        <button type="button" id="marketViewBtnChart" data-view="chart"',
+      '          style="border:none;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;">📊 グラフ</button>',
+      '      </div>',
+      '      <div id="marketChartSubSwitch" style="display:none;gap:4px;background:rgba(255,255,255,0.85);padding:3px;border-radius:8px;border:1px solid #cfd8dc;">',
+      '        <button type="button" id="marketChartTabCompare" data-chart-tab="compare"',
+      '          style="border:none;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;">📊 品目別比較（当日）</button>',
+      '        <button type="button" id="marketChartTabHistory" data-chart-tab="history"',
+      '          style="border:none;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;">📈 日別推移（履歴）</button>',
+      '      </div>',
+      '    </div>',
+      '    <div id="marketTableWrap" style="max-height:min(48vh,400px);overflow:auto;border:1px solid #e0e0e0;border-radius:6px;background:#fff;">',
+      '      <table style="width:100%;border-collapse:collapse;font-size:12px;">',
+      '        <thead style="position:sticky;top:0;background:#eceff1;z-index:1;">',
+      '          <tr>',
+      '            <th style="text-align:left;padding:8px 6px;border-bottom:1px solid #cfd8dc;">品目</th>',
+      '            <th style="text-align:right;padding:8px 6px;border-bottom:1px solid #cfd8dc;">数量</th>',
+      '            <th style="text-align:right;padding:8px 6px;border-bottom:1px solid #cfd8dc;">高値</th>',
+      '            <th style="text-align:right;padding:8px 6px;border-bottom:1px solid #cfd8dc;">中値</th>',
+      '            <th style="text-align:right;padding:8px 6px;border-bottom:1px solid #cfd8dc;">安値</th>',
+      '            <th style="text-align:center;padding:8px 6px;border-bottom:1px solid #cfd8dc;">市況</th>',
+      '          </tr>',
+      '        </thead>',
+      '        <tbody id="marketActiveTbody"></tbody>',
+      '      </table>',
+      '    </div>',
+      '    <div id="marketChartPanel" style="display:none;border:1px solid #e0e0e0;border-radius:8px;background:#fff;padding:10px;"></div>',
       '  </div>',
-      '  <div id="marketChartPanel" style="display:none;border:1px solid #e0e0e0;border-radius:8px;background:#fff;padding:10px;"></div>',
+      '  <div id="marketFertilizerPanel" style="display:none;"></div>',
       '  <div id="marketActiveNote" style="font-size:10px;color:#90A4AE;margin-top:6px;line-height:1.4;"></div>',
       '</div>'
     ].join('');
@@ -264,7 +288,7 @@
       refreshBtn.dataset.bound = '1';
       refreshBtn.onclick = function () { loadMarket_(_active, true); };
     }
-    ['marketTabTokyo', 'marketTabOsaka'].forEach(function (id) {
+    ['marketTabTokyo', 'marketTabOsaka', 'marketTabFertilizer'].forEach(function (id) {
       const btn = document.getElementById(id);
       if (btn && !btn.dataset.bound) {
         btn.dataset.bound = '1';
@@ -337,6 +361,11 @@
   }
 
   function loadingStatusMessage_(key) {
+    if (key === 'fertilizer') {
+      return _loadingRefresh[key]
+        ? '公的統計（農水省・World Bank・為替・JA全農）から最新データを同期中...'
+        : '肥料価格・国際原料動向を読み込み中... しばらくお待ちください';
+    }
     return _loadingRefresh[key]
       ? '最新の日報CSVを取り込み中...（数秒〜十数秒かかります）'
       : '市況データを読み込み中... しばらくお待ちください';
@@ -464,6 +493,7 @@
 
     const tabTokyo = document.getElementById('marketTabTokyo');
     const tabOsaka = document.getElementById('marketTabOsaka');
+    const tabFert = document.getElementById('marketTabFertilizer');
     if (tabTokyo) {
       const on = _active === 'tokyo';
       tabTokyo.style.background = on ? MARKETS.tokyo.color : '#fff';
@@ -478,6 +508,18 @@
       tabOsaka.style.border = on ? 'none' : '1px solid #bbdefb';
       tabOsaka.textContent = '大阪・本場' + (_loading.osaka ? '（読込中…）' : '');
     }
+    if (tabFert) {
+      const on = _active === 'fertilizer';
+      tabFert.style.background = on ? MARKETS.fertilizer.color : '#fff';
+      tabFert.style.color = on ? '#fff' : '#2E7D32';
+      tabFert.style.border = on ? 'none' : '1px solid #A5D6A7';
+      tabFert.textContent = '🌿 肥料価格' + (_loading.fertilizer ? '（読込中…）' : '');
+    }
+
+    const vegSec = document.getElementById('marketVegSection');
+    const fertPanel = document.getElementById('marketFertilizerPanel');
+    if (vegSec) vegSec.style.display = _active === 'fertilizer' ? 'none' : 'block';
+    if (fertPanel) fertPanel.style.display = _active === 'fertilizer' ? 'block' : 'none';
 
     const viewSwitch = document.getElementById('marketViewSwitch');
     const btnTable = document.getElementById('marketViewBtnTable');
@@ -514,7 +556,7 @@
 
   function renderActiveLoadingView_() {
     applyActiveChrome_();
-    renderItemChips_();
+    if (_active !== 'fertilizer') renderItemChips_();
     renderActiveView_();
     setStatus_(loadingStatusMessage_(_active), false, true);
   }
@@ -523,11 +565,13 @@
     if (!MARKETS[key]) return;
     _active = key;
     _historySelectedIdx = -1;
+    applyActiveChrome_();
     if (_loading[key]) {
       renderActiveLoadingView_();
       return;
     }
-    if (_fetchedAt[key] && (Date.now() - _fetchedAt[key] > AUTO_CACHE_TTL_MS)) {
+    const ttl = key === 'fertilizer' ? FERT_CACHE_TTL_MS : AUTO_CACHE_TTL_MS;
+    if (_fetchedAt[key] && (Date.now() - _fetchedAt[key] > ttl)) {
       _autoRefreshed[key] = false;
     }
     loadMarket_(key, false);
@@ -596,6 +640,25 @@
     }
 
     if (!meta || !conf) return;
+    if (_active === 'fertilizer') {
+      if (!data || !Array.isArray(data.jpIndexSeries)) {
+        meta.textContent = isLoading ? '⏳ 肥料・国際原料データを取得しています...' : '未読込';
+        meta.style.color = isLoading ? conf.color : '#607D8B';
+        meta.style.fontWeight = isLoading ? '700' : '400';
+        return;
+      }
+      const ol = data.outlook || {};
+      const parts = [];
+      if (ol.latestJpYm) parts.push('国内統計 ' + ol.latestJpYm);
+      if (ol.latestIntlYm) parts.push('国際原料 ' + ol.latestIntlYm);
+      if (ol.latestFxRate != null) parts.push('為替 ' + Number(ol.latestFxRate).toFixed(1) + '円/$');
+      if (data.importedAt) parts.push('同期 ' + fmtDateTimeLabel_(data.importedAt));
+      meta.style.color = '#607D8B';
+      meta.style.fontWeight = '400';
+      meta.textContent = parts.join(' / ') + (isLoading ? '（🔄 最新データ取得中...）' : '');
+      return;
+    }
+
     if (!data || !Array.isArray(data.items)) {
       if (isLoading) {
         meta.textContent = '⏳ 市況データを取得しています...';
@@ -626,8 +689,12 @@
   function renderActiveView_() {
     const tableWrap = document.getElementById('marketTableWrap');
     const chartPanel = document.getElementById('marketChartPanel');
-    renderItemChips_();
     renderMarketMeta_();
+    if (_active === 'fertilizer') {
+      renderFertilizerPanel_();
+      return;
+    }
+    renderItemChips_();
     if (_viewMode === 'chart') {
       if (tableWrap) tableWrap.style.display = 'none';
       if (chartPanel) chartPanel.style.display = 'block';
@@ -1558,9 +1625,529 @@
     });
   }
 
+  // ==========================================
+  // 肥料価格・国際原料動向タブ描画
+  // ==========================================
+  function fmtPctBadge_(pct) {
+    if (pct == null || !isFinite(Number(pct))) return '—';
+    const n = Number(pct);
+    return (n > 0 ? '+' : '') + n.toFixed(1) + '%';
+  }
+
+  function pctColor_(pct) {
+    if (pct == null || !isFinite(Number(pct))) return '#78909C';
+    const n = Number(pct);
+    if (n >= 3) return '#C62828';
+    if (n > 0) return '#E65100';
+    if (n <= -3) return '#1565C0';
+    if (n < 0) return '#0277BD';
+    return '#546E7A';
+  }
+
+  function fertTrendBadgeInfo_(momPct, yoyPct) {
+    const ref = yoyPct != null && isFinite(Number(yoyPct)) ? Number(yoyPct) : (momPct != null ? Number(momPct) : 0);
+    if (ref >= 6) return { text: '▲ 上昇', color: '#C62828', bg: '#FFEBEE' };
+    if (ref >= 2) return { text: '△ やや上昇', color: '#E65100', bg: '#FFF3E0' };
+    if (ref <= -6) return { text: '▼ 下落', color: '#1565C0', bg: '#E3F2FD' };
+    if (ref <= -2) return { text: '▽ やや下落', color: '#0277BD', bg: '#E1F5FE' };
+    return { text: '→ 横ばい', color: '#455A64', bg: '#ECEFF1' };
+  }
+
+  function getActiveFertSeriesList_(data) {
+    if (!data) return [];
+    if (_fertSubTab === 'intl') {
+      return Array.isArray(data.intlRawSeries) ? data.intlRawSeries : [];
+    }
+    if (_fertDomesticMetric === 'retail' && Array.isArray(data.jpRetailSeries) && data.jpRetailSeries.length) {
+      return data.jpRetailSeries;
+    }
+    return Array.isArray(data.jpIndexSeries) ? data.jpIndexSeries : [];
+  }
+
+  function slicePointsByPeriod_(points, months) {
+    const arr = Array.isArray(points) ? points : [];
+    if (!months || months <= 0 || arr.length <= months) return arr;
+    return arr.slice(arr.length - months);
+  }
+
+  function fertPointDisplayVal_(pt) {
+    if (!pt) return null;
+    if (_fertSubTab === 'intl' && _fertIntlCurrency === 'jpy') {
+      return pt.jpyValue != null && isFinite(Number(pt.jpyValue)) ? Number(pt.jpyValue) : null;
+    }
+    return pt.value != null && isFinite(Number(pt.value)) ? Number(pt.value) : null;
+  }
+
+  function fmtFertValue_(val) {
+    if (val == null || !isFinite(Number(val))) return '—';
+    const n = Number(val);
+    if (_fertSubTab === 'intl') {
+      if (_fertIntlCurrency === 'jpy') {
+        return Math.round(n).toLocaleString('ja-JP') + '円/t';
+      }
+      return '$' + Math.round(n).toLocaleString('ja-JP') + '/t';
+    }
+    if (_fertDomesticMetric === 'retail') {
+      return Math.round(n).toLocaleString('ja-JP') + '円';
+    }
+    return n.toLocaleString('ja-JP', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  }
+
+  function fertUnitLabel_() {
+    if (_fertSubTab === 'intl') {
+      return _fertIntlCurrency === 'jpy' ? '円/トン（為替換算）' : 'USD/トン';
+    }
+    return _fertDomesticMetric === 'retail' ? '円/20kg袋（参考換算）' : '価格指数（令和2年=100）';
+  }
+
+  function renderFertilizerPanel_() {
+    const wrap = document.getElementById('marketFertilizerPanel');
+    const conf = MARKETS.fertilizer;
+    const data = _cache.fertilizer;
+    if (!wrap || !conf) return;
+
+    const isLoading = !!_loading.fertilizer;
+    const isRefresh = !!_loadingRefresh.fertilizer;
+
+    if (!data || !Array.isArray(data.jpIndexSeries)) {
+      if (isLoading) {
+        wrap.innerHTML = [
+          '<div style="background:#fff;border:1px solid ' + conf.border + ';border-radius:8px;padding:36px 16px;text-align:center;">',
+          '  <div style="width:36px;height:36px;margin:0 auto 12px;border:3.5px solid ' + conf.border + ';border-top-color:' + conf.color + ';border-radius:50%;animation:marketSpin 0.8s linear infinite;"></div>',
+          '  <div style="font-size:14px;font-weight:700;color:' + conf.color + ';margin-bottom:4px;">' + (isRefresh ? '公的統計・国際原料データを同期中...' : '肥料価格データを読み込み中...') + '</div>',
+          '  <div style="font-size:11px;color:#78909C;line-height:1.5;">農水省「農業物価統計調査」・World Bank・為替・JA全農の情報を整理しています。</div>',
+          '</div>'
+        ].join('');
+      } else {
+        wrap.innerHTML = '<div style="background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:24px 12px;text-align:center;color:#90A4AE;font-size:12px;">肥料価格データがありません。「更新」を押してください。</div>';
+      }
+      return;
+    }
+
+    const ol = data.outlook || {};
+    const seriesList = getActiveFertSeriesList_(data);
+    if (_fertSelectedCode !== 'all' && !seriesList.some(function (s) { return s.itemCode === _fertSelectedCode; })) {
+      _fertSelectedCode = 'all';
+    }
+
+    // 1) 次期（春肥・秋肥）改定圧力バナー
+    const compChg = ol.compositeChangePct3mVs6m;
+    const compYoy = ol.compositeChangePctYoy;
+    const fxChg = ol.fxChangePct3mVs6m;
+    const fxRateTxt = ol.latestFxRate != null ? (Number(ol.latestFxRate).toFixed(1) + '円/$') : '—';
+    const notices = Array.isArray(data.zennohNotices) ? data.zennohNotices.slice(0, 3) : [];
+    const noticesHtml = notices.length ? [
+      '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed ' + (ol.pressureBorder || '#C8E6C9') + ';">',
+      '  <div style="font-size:11px;font-weight:800;color:#2E7D32;margin-bottom:4px;">📢 JA全農 肥料価格発表</div>',
+      notices.map(function (n) {
+        return [
+          '<div style="font-size:11px;line-height:1.45;margin-bottom:3px;color:#37474F;">',
+          '  <span style="display:inline-block;background:#fff;border:1px solid #C8E6C9;color:#2E7D32;border-radius:4px;padding:0 5px;font-size:10px;font-weight:700;margin-right:4px;">' + esc_(n.season || '肥料') + '</span>',
+          '  <span style="color:#78909C;margin-right:4px;">' + esc_(n.date || '') + '</span>',
+          '  <a href="' + esc_(n.url || 'https://www.zennoh.or.jp/press/') + '" target="_blank" rel="noopener" style="color:#1565C0;font-weight:700;text-decoration:underline;">' + esc_(n.title) + '</a>',
+          (n.summary ? '<div style="font-size:10px;color:#546E7A;padding-left:4px;">' + esc_(n.summary) + '</div>' : ''),
+          '</div>'
+        ].join('');
+      }).join(''),
+      '</div>'
+    ].join('') : '';
+
+    const outlookHtml = [
+      '<div style="background:#fff;border:1px solid ' + (ol.pressureBorder || conf.border) + ';border-left:4px solid ' + (ol.pressureColor || conf.color) + ';border-radius:8px;padding:10px 12px;margin-bottom:10px;">',
+      '  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:6px;">',
+      '    <div>',
+      '      <div style="font-size:10px;color:#607D8B;font-weight:700;">現在: ' + esc_(ol.currentSeasonLabel || '—') + '（' + esc_(ol.currentSeasonPeriod || '') + '）</div>',
+      '      <div style="font-size:13px;font-weight:800;color:#263238;">🔮 次期見通し（' + esc_(ol.nextSeasonLabel || '次期') + '）</div>',
+      '    </div>',
+      '    <span style="display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:800;color:' + (ol.pressureColor || conf.color) + ';background:' + (ol.pressureBg || conf.bg) + ';border:1px solid ' + (ol.pressureBorder || conf.border) + ';">' + esc_(ol.pressureBadge || '→ 横ばい圏') + '</span>',
+      '  </div>',
+      '  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;margin-bottom:6px;">',
+      '    <div style="background:#fafafa;border:1px solid #eceff1;border-radius:6px;padding:5px 8px;">',
+      '      <div style="font-size:10px;color:#78909C;">国際原料(円) 3ヶ月変化</div>',
+      '      <div style="font-size:13px;font-weight:800;color:' + pctColor_(compChg) + ';">' + esc_(fmtPctBadge_(compChg)) + '</div>',
+      '    </div>',
+      '    <div style="background:#fafafa;border:1px solid #eceff1;border-radius:6px;padding:5px 8px;">',
+      '      <div style="font-size:10px;color:#78909C;">国際原料(円) 前年同月比</div>',
+      '      <div style="font-size:13px;font-weight:800;color:' + pctColor_(compYoy) + ';">' + esc_(fmtPctBadge_(compYoy)) + '</div>',
+      '    </div>',
+      '    <div style="background:#fafafa;border:1px solid #eceff1;border-radius:6px;padding:5px 8px;">',
+      '      <div style="font-size:10px;color:#78909C;">為替 USD/JPY（3ヶ月比）</div>',
+      '      <div style="font-size:13px;font-weight:800;color:#37474F;">' + esc_(fxRateTxt) + ' <span style="font-size:11px;color:' + pctColor_(fxChg) + ';">(' + esc_(fmtPctBadge_(fxChg)) + ')</span></div>',
+      '    </div>',
+      '  </div>',
+      '  <div style="font-size:11px;color:#546E7A;line-height:1.45;">' + esc_(ol.summaryText || '') + '</div>',
+      noticesHtml,
+      '</div>'
+    ].join('');
+
+    // 2) サブタブ & 単位・期間コントロール
+    const subTabsHtml = [
+      '<div style="display:flex;gap:6px;margin-bottom:8px;">',
+      '  <button type="button" class="fert-subtab-btn" data-subtab="domestic" style="flex:1;padding:7px 8px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer;border:1px solid ' + conf.border + ';background:' + (_fertSubTab === 'domestic' ? conf.color : '#fff') + ';color:' + (_fertSubTab === 'domestic' ? '#fff' : '#37474F') + ';">🇯🇵 国内肥料（農水省統計）</button>',
+      '  <button type="button" class="fert-subtab-btn" data-subtab="intl" style="flex:1;padding:7px 8px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer;border:1px solid ' + conf.border + ';background:' + (_fertSubTab === 'intl' ? conf.color : '#fff') + ';color:' + (_fertSubTab === 'intl' ? '#fff' : '#37474F') + ';">🌍 国際原料・為替（先行指標）</button>',
+      '</div>'
+    ].join('');
+
+    const metricBtnsHtml = _fertSubTab === 'domestic'
+      ? [
+        '<div style="display:inline-flex;gap:3px;background:#fff;padding:3px;border-radius:6px;border:1px solid ' + conf.border + ';">',
+        '  <button type="button" class="fert-metric-btn" data-metric="index" style="border:none;border-radius:5px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;background:' + (_fertDomesticMetric === 'index' ? conf.color : 'transparent') + ';color:' + (_fertDomesticMetric === 'index' ? '#fff' : '#546E7A') + ';">📊 指数 (2020=100)</button>',
+        '  <button type="button" class="fert-metric-btn" data-metric="retail" style="border:none;border-radius:5px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;background:' + (_fertDomesticMetric === 'retail' ? conf.color : 'transparent') + ';color:' + (_fertDomesticMetric === 'retail' ? '#fff' : '#546E7A') + ';">💴 参考価格 (円/20kg)</button>',
+        '</div>'
+      ].join('')
+      : [
+        '<div style="display:inline-flex;gap:3px;background:#fff;padding:3px;border-radius:6px;border:1px solid ' + conf.border + ';">',
+        '  <button type="button" class="fert-curr-btn" data-curr="jpy" style="border:none;border-radius:5px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;background:' + (_fertIntlCurrency === 'jpy' ? conf.color : 'transparent') + ';color:' + (_fertIntlCurrency === 'jpy' ? '#fff' : '#546E7A') + ';">💴 円換算 (円/t)</button>',
+        '  <button type="button" class="fert-curr-btn" data-curr="usd" style="border:none;border-radius:5px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;background:' + (_fertIntlCurrency === 'usd' ? conf.color : 'transparent') + ';color:' + (_fertIntlCurrency === 'usd' ? '#fff' : '#546E7A') + ';">💵 ドル建て (USD/t)</button>',
+        '</div>'
+      ].join('');
+
+    const periodBtnsHtml = [
+      { m: 12, label: '12ヶ月' },
+      { m: 36, label: '36ヶ月' },
+      { m: 0, label: '全期間' }
+    ].map(function (p) {
+      const on = _fertPeriodMonths === p.m;
+      return '<button type="button" class="fert-period-btn" data-months="' + p.m + '" style="border:none;border-radius:5px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;background:' + (on ? conf.color : 'transparent') + ';color:' + (on ? '#fff' : '#546E7A') + ';">' + p.label + '</button>';
+    }).join('');
+
+    const controlsRowHtml = [
+      '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:8px;">',
+      metricBtnsHtml,
+      '  <div style="display:inline-flex;gap:3px;background:#fff;padding:3px;border-radius:6px;border:1px solid ' + conf.border + ';">' + periodBtnsHtml + '</div>',
+      '</div>'
+    ].join('');
+
+    // 3) 品目チップ & 月次折れ線グラフ
+    const chipsHtml = [
+      '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;">',
+      '  <button type="button" class="fert-chip-btn" data-code="all" style="border:1px solid ' + (_fertSelectedCode === 'all' ? conf.color : conf.border) + ';background:' + (_fertSelectedCode === 'all' ? conf.color : '#fff') + ';color:' + (_fertSelectedCode === 'all' ? '#fff' : '#37474F') + ';border-radius:999px;padding:4px 10px;font-size:11px;font-weight:800;cursor:pointer;">主要品目を比較</button>',
+      seriesList.map(function (s) {
+        const on = _fertSelectedCode === s.itemCode;
+        return '<button type="button" class="fert-chip-btn" data-code="' + esc_(s.itemCode) + '" style="border:1px solid ' + (on ? s.color : conf.border) + ';background:' + (on ? s.color : '#fff') + ';color:' + (on ? '#fff' : '#37474F') + ';border-radius:999px;padding:4px 10px;font-size:11px;font-weight:800;cursor:pointer;"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:' + (on ? '#fff' : s.color) + ';margin-right:4px;"></span>' + esc_(s.shortName || s.itemName) + '</button>';
+      }).join(''),
+      '</div>'
+    ].join('');
+
+    let targetSeries = seriesList;
+    if (_fertSelectedCode === 'all') {
+      if (_fertSubTab === 'domestic') {
+        const preferred = _fertDomesticMetric === 'retail'
+          ? ['high_analysis_compound', 'ordinary_compound', 'urea', 'potassium_chloride', 'ammonium_sulfate']
+          : ['fert_total', 'high_analysis_compound', 'ordinary_compound', 'urea', 'potassium_chloride'];
+        targetSeries = seriesList.filter(function (s) { return preferred.indexOf(s.itemCode) >= 0; });
+      }
+      if (!targetSeries.length) targetSeries = seriesList.slice(0, 5);
+    } else {
+      targetSeries = seriesList.filter(function (s) { return s.itemCode === _fertSelectedCode; });
+    }
+
+    const chartBox = buildFertilizerChartHtml_(targetSeries, data.fxSeries || [], conf);
+
+    // 4) 品目別 最新動向テーブル
+    const tableRowsHtml = seriesList.map(function (s) {
+      const pts = s.points || [];
+      const last = pts[pts.length - 1];
+      const val = fertPointDisplayVal_(last);
+      const badge = fertTrendBadgeInfo_(last && last.momPct, last && last.yoyPct);
+      const isEst = _fertSubTab === 'domestic' && _fertDomesticMetric === 'retail' && last && last.meta && last.meta.estimatedRetail;
+      const specLine = s.spec ? '<div style="font-size:10px;color:#78909C;">' + esc_(s.spec) + (isEst ? ' ※指数換算' : '') + '</div>' : '';
+      return [
+        '<tr style="border-bottom:1px solid #f0f0f0;">',
+        '  <td style="padding:7px 6px;font-weight:700;color:#263238;">',
+        '    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + esc_(s.color) + ';margin-right:4px;"></span>' + esc_(s.itemName),
+        '    <button type="button" class="fert-row-focus-btn" data-code="' + esc_(s.itemCode) + '" title="グラフで確認" style="border:1px solid ' + conf.border + ';background:' + conf.bg + ';color:' + conf.color + ';border-radius:4px;padding:1px 5px;font-size:10px;cursor:pointer;margin-left:4px;">📈</button>',
+        specLine,
+        '  </td>',
+        '  <td style="padding:7px 5px;text-align:center;font-size:11px;color:#546E7A;white-space:nowrap;">' + esc_((last && last.ym) || '—') + '</td>',
+        '  <td style="padding:7px 6px;text-align:right;font-weight:800;color:#263238;white-space:nowrap;">' + esc_(fmtFertValue_(val)) + '</td>',
+        '  <td style="padding:7px 5px;text-align:right;font-weight:700;color:' + pctColor_(last && last.momPct) + ';white-space:nowrap;">' + esc_(fmtPctBadge_(last && last.momPct)) + '</td>',
+        '  <td style="padding:7px 5px;text-align:right;font-weight:700;color:' + pctColor_(last && last.yoyPct) + ';white-space:nowrap;">' + esc_(fmtPctBadge_(last && last.yoyPct)) + '</td>',
+        '  <td style="padding:7px 5px;text-align:center;white-space:nowrap;"><span style="display:inline-block;padding:2px 6px;border-radius:999px;font-size:10px;font-weight:800;color:' + badge.color + ';background:' + badge.bg + ';">' + esc_(badge.text) + '</span></td>',
+        '</tr>'
+      ].join('');
+    }).join('');
+
+    const tableHint = (_fertSubTab === 'domestic' && _fertDomesticMetric === 'retail')
+      ? '<div style="font-size:10px;color:#78909C;margin-top:5px;">※「指数換算」は令和2年全国平均小売価格（農水省）に月次価格指数を掛けた参考価格（20kg袋目安）です。</div>'
+      : '';
+
+    const tableHtml = [
+      '<div style="background:#fff;border:1px solid #e0e0e0;border-radius:8px;overflow:auto;margin-top:10px;max-height:min(38vh,320px);">',
+      '  <table style="width:100%;border-collapse:collapse;font-size:12px;">',
+      '    <thead style="position:sticky;top:0;background:#eceff1;z-index:1;">',
+      '      <tr>',
+      '        <th style="text-align:left;padding:7px 6px;border-bottom:1px solid #cfd8dc;">品目・規格</th>',
+      '        <th style="text-align:center;padding:7px 5px;border-bottom:1px solid #cfd8dc;">対象月</th>',
+      '        <th style="text-align:right;padding:7px 6px;border-bottom:1px solid #cfd8dc;">最新値</th>',
+      '        <th style="text-align:right;padding:7px 5px;border-bottom:1px solid #cfd8dc;">前月比</th>',
+      '        <th style="text-align:right;padding:7px 5px;border-bottom:1px solid #cfd8dc;">前年比</th>',
+      '        <th style="text-align:center;padding:7px 5px;border-bottom:1px solid #cfd8dc;">動向</th>',
+      '      </tr>',
+      '    </thead>',
+      '    <tbody>' + tableRowsHtml + '</tbody>',
+      '  </table>',
+      '</div>',
+      tableHint
+    ].join('');
+
+    wrap.innerHTML = outlookHtml + subTabsHtml + controlsRowHtml + chipsHtml + chartBox.html + tableHtml;
+    bindFertilizerControls_(wrap, chartBox.months, targetSeries, chartBox.fxByYm, conf);
+  }
+
+  function buildFertilizerChartHtml_(targetSeries, fxSeries, conf) {
+    const ymSet = new Set();
+    const slicedByCode = {};
+    targetSeries.forEach(function (s) {
+      const sliced = slicePointsByPeriod_(s.points, _fertPeriodMonths);
+      slicedByCode[s.itemCode] = {};
+      sliced.forEach(function (pt) {
+        ymSet.add(pt.ym);
+        slicedByCode[s.itemCode][pt.ym] = pt;
+      });
+    });
+    const months = Array.from(ymSet).sort();
+    const fxByYm = {};
+    (fxSeries || []).forEach(function (pt) { fxByYm[pt.ym] = pt.value; });
+
+    if (!months.length) {
+      return {
+        months: [],
+        fxByYm: fxByYm,
+        html: '<div style="background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:24px;text-align:center;color:#90A4AE;font-size:12px;">グラフデータがありません</div>'
+      };
+    }
+
+    const n = months.length;
+    if (_fertHoverIdx < 0 || _fertHoverIdx >= n) {
+      _fertHoverIdx = n - 1;
+    }
+
+    const W = 640;
+    const H = 250;
+    const padL = 56;
+    const padR = 16;
+    const padT = 22;
+    const padB = 34;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+
+    const allVals = [];
+    targetSeries.forEach(function (s) {
+      months.forEach(function (ym) {
+        const v = fertPointDisplayVal_(slicedByCode[s.itemCode][ym]);
+        if (v != null) allVals.push(v);
+      });
+    });
+
+    let vMinRaw = allVals.length ? Math.min.apply(null, allVals) : 0;
+    let vMaxRaw = allVals.length ? Math.max.apply(null, allVals) : 100;
+    if (vMinRaw === vMaxRaw) {
+      vMinRaw = Math.max(0, vMinRaw * 0.85);
+      vMaxRaw = vMaxRaw > 0 ? vMaxRaw * 1.15 : 100;
+    }
+    const span = vMaxRaw - vMinRaw;
+    const step = niceStep_(span * 1.15, 4);
+    const yMin = Math.max(0, Math.floor((vMinRaw - span * 0.08) / step) * step);
+    const yMax = Math.max(yMin + step, Math.ceil((vMaxRaw + span * 0.08) / step) * step);
+
+    function xFor(idx) {
+      if (n <= 1) return padL + plotW / 2;
+      return padL + (idx / (n - 1)) * plotW;
+    }
+
+    function yFor(v) {
+      return padT + plotH - ((v - yMin) / (yMax - yMin || 1)) * plotH;
+    }
+
+    const parts = [];
+    parts.push('<div id="fertChartCard" style="background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:10px;">');
+    parts.push('<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:6px;font-size:10px;color:#607D8B;">');
+    parts.push('  <div style="display:inline-flex;flex-wrap:wrap;gap:10px;">' + targetSeries.map(function (s) {
+      return '<span style="display:inline-flex;align-items:center;gap:4px;"><span style="display:inline-block;width:12px;border-top:2.5px solid ' + esc_(s.color) + ';"></span><span>' + esc_(s.shortName || s.itemName) + '</span></span>';
+    }).join('') + '</div>');
+    parts.push('  <span>単位: ' + esc_(fertUnitLabel_()) + '</span>');
+    parts.push('</div>');
+
+    parts.push('<svg id="fertTrendSvg" viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;touch-action:pan-y;user-select:none;">');
+
+    // Y軸グリッド
+    let guard = 0;
+    for (let v = yMin; v <= yMax + step * 0.001; v += step) {
+      if (++guard > 20) break;
+      const yy = yFor(v);
+      parts.push('<line x1="' + padL + '" y1="' + yy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + yy.toFixed(1) + '" stroke="#eceff1" stroke-width="1" />');
+      parts.push('<text x="' + (padL - 6) + '" y="' + (yy + 3.5).toFixed(1) + '" text-anchor="end" font-size="10" fill="#78909C">' + esc_(fmtNum_(Math.round(v * 10) / 10)) + '</text>');
+    }
+
+    // 国内指数100基準線
+    if (_fertSubTab === 'domestic' && _fertDomesticMetric === 'index' && 100 >= yMin && 100 <= yMax) {
+      const y100 = yFor(100);
+      parts.push('<line x1="' + padL + '" y1="' + y100.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y100.toFixed(1) + '" stroke="#90A4AE" stroke-width="1.2" stroke-dasharray="4 3" />');
+      parts.push('<text x="' + (W - padR - 2) + '" y="' + (y100 - 4).toFixed(1) + '" text-anchor="end" font-size="9.5" fill="#78909C">2020年基準(100)</text>');
+    }
+
+    // 春肥(11月)・秋肥(6月)改定月縦ガイド線
+    months.forEach(function (ym, idx) {
+      const mm = ym.slice(5, 7);
+      if (mm !== '06' && mm !== '11') return;
+      const xx = xFor(idx).toFixed(1);
+      const isAutumn = mm === '06';
+      const stroke = isAutumn ? '#FFE0B2' : '#C8E6C9';
+      const txtCol = isAutumn ? '#EF6C00' : '#2E7D32';
+      parts.push('<line x1="' + xx + '" y1="' + padT + '" x2="' + xx + '" y2="' + (padT + plotH) + '" stroke="' + stroke + '" stroke-width="1.2" stroke-dasharray="2 2" />');
+      parts.push('<text x="' + xx + '" y="' + (padT - 6) + '" text-anchor="middle" font-size="9.5" font-weight="700" fill="' + txtCol + '">' + (isAutumn ? '秋' : '春') + '</text>');
+    });
+
+    // 折れ線描画
+    const isSingle = targetSeries.length === 1;
+    targetSeries.forEach(function (s) {
+      const ptsStr = [];
+      const dotCoords = [];
+      months.forEach(function (ym, i) {
+        const v = fertPointDisplayVal_(slicedByCode[s.itemCode][ym]);
+        if (v == null) return;
+        const xx = xFor(i).toFixed(1);
+        const yy = yFor(v).toFixed(1);
+        ptsStr.push(xx + ',' + yy);
+        dotCoords.push({ x: xx, y: yy });
+      });
+      if (ptsStr.length >= 2) {
+        parts.push('<polyline fill="none" stroke="' + esc_(s.color) + '" stroke-width="' + (isSingle ? '2.8' : '2.1') + '" stroke-linejoin="round" stroke-linecap="round" points="' + ptsStr.join(' ') + '" />');
+      }
+      if (isSingle || n <= 18) {
+        dotCoords.forEach(function (dc) {
+          parts.push('<circle cx="' + dc.x + '" cy="' + dc.y + '" r="' + (isSingle ? '3.3' : '2.3') + '" fill="' + esc_(s.color) + '" stroke="#fff" stroke-width="1" />');
+        });
+      }
+    });
+
+    // X軸ラベル
+    const labelStep = Math.max(1, Math.ceil(n / 7));
+    months.forEach(function (ym, i) {
+      const isLast = i === n - 1;
+      if (i % labelStep !== 0 && !(isLast && (n - 1) % labelStep >= Math.ceil(labelStep / 2))) return;
+      const cx = xFor(i);
+      const anchor = i === 0 && n > 1 ? 'start' : (isLast && n > 1 ? 'end' : 'middle');
+      parts.push('<text x="' + cx.toFixed(1) + '" y="' + (H - 10) + '" text-anchor="' + anchor + '" font-size="10" fill="#78909C">' + esc_(ym.replace('-', '/')) + '</text>');
+    });
+
+    // クロスヘア
+    const selX = xFor(_fertHoverIdx).toFixed(1);
+    parts.push('<line id="fertChartCrosshair" x1="' + selX + '" y1="' + padT + '" x2="' + selX + '" y2="' + (padT + plotH) + '" stroke="' + conf.color + '" stroke-width="1.3" stroke-dasharray="3 3" opacity="0.75" />');
+
+    // ホバー/タップ判定領域
+    const slotW = n > 1 ? plotW / (n - 1) : plotW;
+    months.forEach(function (ym, i) {
+      const cx = xFor(i);
+      const xL = n === 1 ? padL : Math.max(padL, cx - slotW / 2);
+      const xR = n === 1 ? (padL + plotW) : Math.min(padL + plotW, cx + slotW / 2);
+      parts.push('<rect class="fert-chart-hit" data-idx="' + i + '" data-cx="' + cx.toFixed(1) + '" x="' + xL.toFixed(1) + '" y="' + padT + '" width="' + Math.max(1, xR - xL).toFixed(1) + '" height="' + plotH + '" fill="transparent" style="cursor:pointer;" />');
+    });
+
+    parts.push('</svg>');
+    parts.push('<div id="fertChartHoverDetail" style="margin-top:6px;padding:7px 10px;border-radius:6px;background:' + conf.bg + ';border:1px solid ' + conf.border + ';font-size:11px;color:#37474F;line-height:1.5;">' + formatFertHoverDetailHtml_(months[_fertHoverIdx], targetSeries, fxByYm) + '</div>');
+    parts.push('<div style="font-size:10px;color:#90A4AE;margin-top:4px;">※グラフの縦線「春(11月)」「秋(6月)」は全農の肥期改定時期です。タップ/マウス移動で月別詳細を確認できます。</div>');
+    parts.push('</div>');
+
+    return { months: months, fxByYm: fxByYm, html: parts.join('') };
+  }
+
+  function formatFertHoverDetailHtml_(ym, targetSeries, fxByYm) {
+    if (!ym) return '';
+    const ymLabel = ym.replace('-', '年') + '月';
+    const fx = fxByYm[ym];
+    const fxTag = (_fertSubTab === 'intl' && fx != null)
+      ? (' <span style="color:#546E7A;font-weight:700;">（為替 ' + Number(fx).toFixed(1) + '円/$）</span>')
+      : '';
+    const itemsHtml = targetSeries.map(function (s) {
+      const pt = (s.points || []).filter(function (p) { return p.ym === ym; })[0];
+      const val = fertPointDisplayVal_(pt);
+      const mom = pt && pt.momPct != null ? (' 前月比' + fmtPctBadge_(pt.momPct)) : '';
+      const yoy = pt && pt.yoyPct != null ? (' / 前年比' + fmtPctBadge_(pt.yoyPct)) : '';
+      return '<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:' + esc_(s.color) + ';"></span><strong>' + esc_(s.shortName || s.itemName) + ':</strong> ' + esc_(fmtFertValue_(val)) + '<span style="font-size:10px;color:#607D8B;">' + esc_(mom + yoy) + '</span></span>';
+    }).join('');
+    return '<div><strong>📅 ' + esc_(ymLabel) + '</strong>' + fxTag + '</div><div style="margin-top:2px;">' + itemsHtml + '</div>';
+  }
+
+  function bindFertilizerControls_(wrap, months, targetSeries, fxByYm, conf) {
+    wrap.querySelectorAll('.fert-subtab-btn').forEach(function (btn) {
+      btn.onclick = function () {
+        _fertSubTab = btn.getAttribute('data-subtab') === 'intl' ? 'intl' : 'domestic';
+        _fertSelectedCode = 'all';
+        _fertHoverIdx = -1;
+        renderFertilizerPanel_();
+      };
+    });
+    wrap.querySelectorAll('.fert-metric-btn').forEach(function (btn) {
+      btn.onclick = function () {
+        _fertDomesticMetric = btn.getAttribute('data-metric') === 'retail' ? 'retail' : 'index';
+        _fertHoverIdx = -1;
+        renderFertilizerPanel_();
+      };
+    });
+    wrap.querySelectorAll('.fert-curr-btn').forEach(function (btn) {
+      btn.onclick = function () {
+        _fertIntlCurrency = btn.getAttribute('data-curr') === 'usd' ? 'usd' : 'jpy';
+        _fertHoverIdx = -1;
+        renderFertilizerPanel_();
+      };
+    });
+    wrap.querySelectorAll('.fert-period-btn').forEach(function (btn) {
+      btn.onclick = function () {
+        _fertPeriodMonths = Number(btn.getAttribute('data-months')) || 0;
+        _fertHoverIdx = -1;
+        renderFertilizerPanel_();
+      };
+    });
+    wrap.querySelectorAll('.fert-chip-btn').forEach(function (btn) {
+      btn.onclick = function () {
+        _fertSelectedCode = btn.getAttribute('data-code') || 'all';
+        renderFertilizerPanel_();
+      };
+    });
+    wrap.querySelectorAll('.fert-row-focus-btn').forEach(function (btn) {
+      btn.onclick = function () {
+        _fertSelectedCode = btn.getAttribute('data-code') || 'all';
+        renderFertilizerPanel_();
+        const card = document.getElementById('fertChartCard');
+        if (card && typeof card.scrollIntoView === 'function') {
+          card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      };
+    });
+
+    const cross = wrap.querySelector('#fertChartCrosshair');
+    const detail = wrap.querySelector('#fertChartHoverDetail');
+    function selectMonthIdx(idx, cx) {
+      if (idx < 0 || idx >= months.length) return;
+      _fertHoverIdx = idx;
+      if (cross && cx) {
+        cross.setAttribute('x1', cx);
+        cross.setAttribute('x2', cx);
+      }
+      if (detail) {
+        detail.innerHTML = formatFertHoverDetailHtml_(months[idx], targetSeries, fxByYm);
+      }
+    }
+    wrap.querySelectorAll('.fert-chart-hit').forEach(function (hit) {
+      const idx = Number(hit.getAttribute('data-idx'));
+      const cx = hit.getAttribute('data-cx');
+      hit.addEventListener('mouseenter', function () { selectMonthIdx(idx, cx); });
+      hit.addEventListener('click', function () { selectMonthIdx(idx, cx); });
+    });
+  }
+
   function renderLoadedStatus_(key, data) {
     if (data && data.warning) {
       setStatus_(data.warning, false, false);
+      return;
+    }
+    if (key === 'fertilizer') {
+      const ol = (data && data.outlook) || {};
+      const jpCnt = ((data && data.jpIndexSeries) || []).length;
+      const intlCnt = ((data && data.intlRawSeries) || []).length;
+      setStatus_('国内' + jpCnt + '系列・国際原料' + intlCnt + '品目を表示中（' + (ol.nextSeasonLabel || '次期') + '：' + (ol.pressureBadge || '—') + '）', false, false);
       return;
     }
     const selected = _selectedItems[key] || new Set();
@@ -1577,7 +2164,16 @@
     if (!conf) return;
     ensurePanelDom_();
     if (_loading[key]) return;
-    if (!refresh && _cache[key] && _fetchedAt[key] && (Date.now() - _fetchedAt[key] < AUTO_CACHE_TTL_MS)) {
+    if (key === 'fertilizer') {
+      if (!refresh && _cache[key] && _fetchedAt[key] && (Date.now() - _fetchedAt[key] < FERT_CACHE_TTL_MS)) {
+        applyActiveChrome_();
+        if (key === _active) {
+          renderActiveView_();
+          renderLoadedStatus_(key, _cache[key]);
+        }
+        return;
+      }
+    } else if (!refresh && _cache[key] && _fetchedAt[key] && (Date.now() - _fetchedAt[key] < AUTO_CACHE_TTL_MS)) {
       const cachedDate = fmtDateLabel_(_cache[key].date);
       if (cachedDate && cachedDate !== '—' && cachedDate >= todayYmd_() && _cache[key].source !== 'sheet-fallback') {
         applyActiveChrome_();
@@ -1602,7 +2198,7 @@
       _fetchedAt[key] = Date.now();
       if (refresh) {
         _autoRefreshed[key] = true;
-        clearHistoryCacheForRegion_(key);
+        if (key !== 'fertilizer') clearHistoryCacheForRegion_(key);
       }
       _loading[key] = false;
       _loadingRefresh[key] = false;
@@ -1611,12 +2207,14 @@
         renderActiveView_();
         renderLoadedStatus_(key, data);
       }
-      const dataDate = fmtDateLabel_(data && data.date);
-      const isStaleDate = !dataDate || dataDate === '—' || dataDate < todayYmd_();
-      const isFallback = !!(data && data.source === 'sheet-fallback');
-      if (!refresh && !_autoRefreshed[key] && (isStaleDate || isFallback)) {
-        _autoRefreshed[key] = true;
-        setTimeout(function () { loadMarket_(key, true); }, 50);
+      if (key !== 'fertilizer') {
+        const dataDate = fmtDateLabel_(data && data.date);
+        const isStaleDate = !dataDate || dataDate === '—' || dataDate < todayYmd_();
+        const isFallback = !!(data && data.source === 'sheet-fallback');
+        if (!refresh && !_autoRefreshed[key] && (isStaleDate || isFallback)) {
+          _autoRefreshed[key] = true;
+          setTimeout(function () { loadMarket_(key, true); }, 50);
+        }
       }
     } catch (err) {
       console.warn(key + ' market load failed', err);
@@ -1624,10 +2222,12 @@
       _loadingRefresh[key] = false;
       applyActiveChrome_();
       if (key === _active) {
-        renderItemChips_();
+        if (key !== 'fertilizer') renderItemChips_();
         let msg = String((err && err.message) || err || '取得に失敗しました');
         msg = msg.replace(/^Error:\s*/i, '').replace(/^Exception:\s*/i, '');
-        if (/大阪/.test(msg) || key === 'osaka') {
+        if (key === 'fertilizer') {
+          msg = '肥料価格動向の取得に失敗しました。「更新」で再試行してください。（' + msg + '）';
+        } else if (/大阪/.test(msg) || key === 'osaka') {
           if (/障害|503|取得できません|Failed to fetch|タイムアウト|Aborted|timeout/i.test(msg)) {
             msg = '大阪市公式日報サイトに接続できません（障害またはメンテナンスの可能性）。保存データが無い場合は東京タブをご利用ください。';
           }
@@ -1639,19 +2239,26 @@
           renderActiveView_();
         } else {
           renderMarketMeta_();
-          const tbody = document.getElementById('marketActiveTbody');
-          if (tbody) {
-            const help = key === 'osaka'
-              ? '大阪市公式サイト障害の可能性があります。東京・大田タブをお試しください。'
-              : '取得に失敗しました。「更新」で再試行するか、しばらくしてから開いてください。';
-            tbody.innerHTML = '<tr><td colspan="6" style="padding:16px;text-align:center;color:#c62828;">' + help + '</td></tr>';
-          }
-          const chartPanel = document.getElementById('marketChartPanel');
-          if (chartPanel && _viewMode === 'chart') {
-            const help = key === 'osaka'
-              ? '大阪市公式サイト障害の可能性があります。東京・大田タブをお試しください。'
-              : '取得に失敗しました。「更新」で再試行するか、しばらくしてから開いてください。';
-            chartPanel.innerHTML = '<div style="padding:20px;text-align:center;color:#c62828;font-size:12px;">' + help + '</div>';
+          if (key === 'fertilizer') {
+            const fertPanel = document.getElementById('marketFertilizerPanel');
+            if (fertPanel) {
+              fertPanel.innerHTML = '<div style="background:#fff;border:1px solid #ef9a9a;border-radius:8px;padding:20px;text-align:center;color:#c62828;font-size:12px;">' + esc_(msg) + '</div>';
+            }
+          } else {
+            const tbody = document.getElementById('marketActiveTbody');
+            if (tbody) {
+              const help = key === 'osaka'
+                ? '大阪市公式サイト障害の可能性があります。東京・大田タブをお試しください。'
+                : '取得に失敗しました。「更新」で再試行するか、しばらくしてから開いてください。';
+              tbody.innerHTML = '<tr><td colspan="6" style="padding:16px;text-align:center;color:#c62828;">' + help + '</td></tr>';
+            }
+            const chartPanel = document.getElementById('marketChartPanel');
+            if (chartPanel && _viewMode === 'chart') {
+              const help = key === 'osaka'
+                ? '大阪市公式サイト障害の可能性があります。東京・大田タブをお試しください。'
+                : '取得に失敗しました。「更新」で再試行するか、しばらくしてから開いてください。';
+              chartPanel.innerHTML = '<div style="padding:20px;text-align:center;color:#c62828;font-size:12px;">' + help + '</div>';
+            }
           }
         }
       }
@@ -1676,17 +2283,22 @@
   }
 
   const MarketInfo = {
-    open() {
+    open(initialMarket) {
       const modal = document.getElementById('cropMarketModal');
       if (!modal) return;
+      if (initialMarket && MARKETS[initialMarket]) {
+        _active = initialMarket;
+      }
       bindChrome();
       ensurePanelDom_();
+      applyActiveChrome_();
       modal.style.display = 'flex';
       // 既定は東京。大阪公式サイト障害時に先読みでタイムアウトしないよう、開いたタブだけ読む
       if (_loading[_active]) {
         renderActiveLoadingView_();
       } else {
-        if (_fetchedAt[_active] && (Date.now() - _fetchedAt[_active] > AUTO_CACHE_TTL_MS)) {
+        const ttl = _active === 'fertilizer' ? FERT_CACHE_TTL_MS : AUTO_CACHE_TTL_MS;
+        if (_fetchedAt[_active] && (Date.now() - _fetchedAt[_active] > ttl)) {
           _autoRefreshed[_active] = false;
         }
         loadMarket_(_active, false);
