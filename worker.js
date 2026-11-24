@@ -14153,16 +14153,169 @@ window.saveWorkMemberLocationAssign_ = (uid, scope, memberId, memberName, target
       console.warn('updateUserLocations failed', err);
     });
   }
+  window.refreshWorkMemberPicker_(uid, scope, loc);
+};
+
+window.canEditWorkMembers_ = () => (typeof window.isWorkerAdmin === 'function' && window.isWorkerAdmin());
+
+window.workMemberActorName_ = () => String(
+  (typeof localStorage !== 'undefined' && (localStorage.getItem('passionMapUserName') || localStorage.getItem('pMapAdminName')))
+  || (typeof currentUser !== 'undefined' ? currentUser : '')
+  || '管理者'
+).trim();
+
+window.refreshWorkMemberPicker_ = (uid, scope, loc) => {
   if (uid === 'record' || scope === 'record') {
-    window._workRecordMemberLoc = loc;
+    if (loc != null) window._workRecordMemberLoc = String(loc);
     if (typeof window.renderWorkRecordMemberSection_ === 'function') window.renderWorkRecordMemberSection_();
-  } else if (uid === 'modal' && typeof window.renderConcurrentWorkModal_ === 'function') {
-    if (window._concurrentWorkModalDraft) window._concurrentWorkModalDraft._memberLoc = loc;
+    return;
+  }
+  if (uid === 'modal' && typeof window.renderConcurrentWorkModal_ === 'function') {
+    if (window._concurrentWorkModalDraft && loc != null) window._concurrentWorkModalDraft._memberLoc = String(loc);
     window.renderConcurrentWorkModal_();
-  } else {
-    const host = window.findBulkMemberHost_(uid, scope);
-    if (host) host._memberLoc = loc;
-    if (typeof window.rerenderBulkConcurrentCard_ === 'function') window.rerenderBulkConcurrentCard_(uid);
+    return;
+  }
+  const host = (typeof window.findBulkMemberHost_ === 'function') ? window.findBulkMemberHost_(uid, scope) : null;
+  if (host && loc != null) host._memberLoc = String(loc);
+  if (typeof window.rerenderBulkConcurrentCard_ === 'function') window.rerenderBulkConcurrentCard_(uid);
+};
+
+window.upsertWorkMemberInMemory_ = (member) => {
+  if (!member) return;
+  if (!Array.isArray(window.pdlUserLocations)) window.pdlUserLocations = [];
+  const id = String(member.userId || member.id || '').trim();
+  const name = String(member.userName || member.name || '').trim();
+  const loc = member.location != null ? String(member.location).trim() : '';
+  const hit = window.pdlUserLocations.find((u) => {
+    if (!u) return false;
+    const uid = String(u.userId || '').trim();
+    return id && uid === id;
+  });
+  if (hit) {
+    if (name) hit.userName = name;
+    if (member.location != null) hit.location = loc;
+  } else if (name) {
+    window.pdlUserLocations.push({ userId: id || name, userName: name, location: loc, dept: String(member.dept || '').trim() });
+  }
+  if (typeof window.syncLivePdlIntoInitCache_ === 'function') {
+    try { window.syncLivePdlIntoInitCache_(); } catch (e) { }
+  }
+};
+
+window.removeWorkMemberInMemory_ = (id) => {
+  const target = String(id || '').trim();
+  if (!target || !Array.isArray(window.pdlUserLocations)) return;
+  window.pdlUserLocations = window.pdlUserLocations.filter(u => String(u && u.userId || '').trim() !== target);
+  if (typeof window.syncLivePdlIntoInitCache_ === 'function') {
+    try { window.syncLivePdlIntoInitCache_(); } catch (e) { }
+  }
+};
+
+window.closeWorkMemberEditor_ = () => {
+  const el = document.getElementById('work_member_editor_modal');
+  if (el) el.remove();
+  window._workMemberEditorCtx = null;
+};
+
+window.openWorkMemberEditor_ = (mode, uid, scope, memberId) => {
+  if (!window.canEditWorkMembers_()) return;
+  window.closeWorkMemberEditor_();
+  const people = window.listWorkMemberPeople_();
+  const existing = people.find(m => String(m.id) === String(memberId || ''));
+  const host = (uid === 'record' || scope === 'record')
+    ? { _memberLoc: window._workRecordMemberLoc }
+    : ((typeof window.findBulkMemberHost_ === 'function') ? window.findBulkMemberHost_(uid, scope) : null);
+  const locNow = String((host && host._memberLoc) || (existing && existing.location) || '').split(/[・,、\/｜|]+/)[0].trim();
+  const locs = window.listWorkMemberLocations_().filter(Boolean);
+  window._workMemberEditorCtx = { mode: mode === 'edit' ? 'edit' : 'add', uid: uid, scope: scope, memberId: String(memberId || ''), loc: locNow };
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const modal = document.createElement('div');
+  modal.id = 'work_member_editor_modal';
+  modal.style.cssText = 'position:fixed; inset:0; z-index:30000; background:rgba(0,0,0,0.45); display:flex; align-items:center; justify-content:center; padding:16px; box-sizing:border-box;';
+  modal.onclick = (ev) => { if (ev.target === modal) window.closeWorkMemberEditor_(); };
+  modal.innerHTML = `<div style="background:#fff; width:min(420px, 100%); border-radius:14px; padding:16px; box-sizing:border-box;" onclick="event.stopPropagation()">
+    <div style="font-size:16px; font-weight:bold; color:#0D47A1; margin-bottom:12px;">${mode === 'edit' ? 'メンバーを編集' : 'メンバーを追加'}</div>
+    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">名前</label>
+    <input id="work_member_editor_name" type="text" value="${esc(existing ? existing.name : '')}" placeholder="名前" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid #ccc; border-radius:8px; font-size:15px; margin-bottom:10px;">
+    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">所属拠点</label>
+    <select id="work_member_editor_loc" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid #ccc; border-radius:8px; font-size:15px; margin-bottom:14px;">
+      <option value="">（拠点なし）</option>
+      ${locs.map(l => `<option value="${esc(l)}" ${l === locNow ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+    </select>
+    <div style="display:flex; gap:8px;">
+      <button type="button" onclick="closeWorkMemberEditor_()" style="flex:1; padding:12px; border:none; border-radius:8px; background:#eee; font-weight:bold; cursor:pointer;">キャンセル</button>
+      <button type="button" onclick="submitWorkMemberEditor_()" style="flex:1; padding:12px; border:none; border-radius:8px; background:#1565C0; color:#fff; font-weight:bold; cursor:pointer;">${mode === 'edit' ? '保存' : '追加'}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+  const nameEl = document.getElementById('work_member_editor_name');
+  if (nameEl) nameEl.focus();
+};
+
+window.submitWorkMemberEditor_ = async () => {
+  const ctx = window._workMemberEditorCtx;
+  if (!ctx || !window.canEditWorkMembers_()) return;
+  const name = String(document.getElementById('work_member_editor_name')?.value || '').trim();
+  const loc = String(document.getElementById('work_member_editor_loc')?.value || '').trim();
+  if (!name) {
+    if (typeof customAlert === 'function') customAlert('名前を入力してください。');
+    return;
+  }
+  const actor = window.workMemberActorName_();
+  try {
+    if (ctx.mode === 'edit') {
+      const res = await callGAS('updateMemberForMaster', {
+        originalUserId: ctx.memberId,
+        userName: name,
+        location: loc,
+        actorName: actor
+      });
+      if (!res || res.success === false) throw new Error((res && res.message) || '更新に失敗しました');
+      const saved = res.member || { userId: ctx.memberId, userName: name, location: loc };
+      window.upsertWorkMemberInMemory_(saved);
+    } else {
+      const res = await callGAS('createMemberForMaster', {
+        userName: name,
+        location: loc,
+        role: '作業員',
+        actorName: actor
+      });
+      if (!res || res.success === false) throw new Error((res && res.message) || '追加に失敗しました');
+      window.upsertWorkMemberInMemory_(res.member || { userName: name, location: loc });
+    }
+    window.closeWorkMemberEditor_();
+    window.refreshWorkMemberPicker_(ctx.uid, ctx.scope, loc);
+    if (typeof window.showRecordSyncToast === 'function') {
+      window.showRecordSyncToast(ctx.mode === 'edit' ? `✅ ${name} を更新しました` : `✅ ${name} を追加しました`, 'ok');
+    }
+  } catch (e) {
+    if (typeof customAlert === 'function') customAlert(e.message || String(e));
+  }
+};
+
+window.deleteWorkMemberFromPicker_ = async (uid, scope, memberId, memberName) => {
+  if (!window.canEditWorkMembers_()) return;
+  const id = String(memberId || '').trim();
+  const name = String(memberName || id).trim();
+  if (!id) return;
+  const msg = `「${name}」をメンバーから削除しますか？\nログインできなくなります。履歴は残ります。`;
+  const ok = (typeof customConfirm === 'function') ? await customConfirm(msg) : window.confirm(msg);
+  if (!ok) return;
+  try {
+    const res = await callGAS('deleteMemberForMaster', {
+      userId: id,
+      hardDelete: false,
+      isActive: false,
+      actorName: window.workMemberActorName_(),
+      currentAdminUserId: (typeof localStorage !== 'undefined' && (localStorage.getItem('passionMapUserId') || localStorage.getItem('pMapAdminId'))) || ''
+    });
+    if (!res || res.success === false) throw new Error((res && res.message) || '削除に失敗しました');
+    window.removeWorkMemberInMemory_(id);
+    window.closeWorkMemberEditor_();
+    window.refreshWorkMemberPicker_(uid, scope);
+    if (typeof window.showRecordSyncToast === 'function') window.showRecordSyncToast(`✅ ${name} を削除しました`, 'ok');
+  } catch (e) {
+    if (typeof customAlert === 'function') customAlert(e.message || String(e));
   }
 };
 
@@ -14216,13 +14369,21 @@ window.buildWorkMemberPickerHtml_ = (opts) => {
   const unassignedPeople = (hasLocSelected && loc)
     ? people.filter(m => !window.normalizeMemberLocParts_(m.location).length)
     : [];
+  const canAdmin = typeof window.canEditWorkMembers_ === 'function' && window.canEditWorkMembers_();
+  const adminBtns = (m) => canAdmin
+    ? `<div style="display:flex; gap:4px;">
+        <button type="button" onclick="openWorkMemberEditor_('edit','${uid}','${scope}','${escJs(m.id)}')" style="flex:1; padding:3px 4px; font-size:10px; color:#E65100; background:#FFF3E0; border:1px solid #FFCC80; border-radius:6px; cursor:pointer; font-weight:bold;">編集</button>
+        <button type="button" onclick="deleteWorkMemberFromPicker_('${uid}','${scope}','${escJs(m.id)}','${escJs(m.name)}')" style="flex:1; padding:3px 4px; font-size:10px; color:#C62828; background:#FFEBEE; border:1px solid #EF9A9A; border-radius:6px; cursor:pointer; font-weight:bold;">削除</button>
+      </div>`
+    : '';
+  const nameCard = (m, on) => `<div style="display:flex; flex-direction:column; gap:4px;">
+    ${chip(on, on ? '#1565C0' : '#BBDEFB', on ? '#E3F2FD' : '#fff', '#0D47A1', `${toggleFn}('${uid}','${scope}','${escJs(m.id)}','${escJs(m.name)}','${escJs(loc)}',${!on})`, `${on ? '✅ ' : ''}${esc(m.name)}`)}
+    ${adminBtns(m)}
+  </div>`;
   const nameHtml = !hasLocSelected
     ? `<div style="font-size:12px; color:#546E7A;">所属拠点を選ぶと、その拠点の名前が出ます。</div>`
     : (names.length
-      ? `<div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px;">${names.map(m => {
-        const on = selectedIds.has(String(m.id));
-        return chip(on, on ? '#1565C0' : '#BBDEFB', on ? '#E3F2FD' : '#fff', '#0D47A1', `${toggleFn}('${uid}','${scope}','${escJs(m.id)}','${escJs(m.name)}','${escJs(loc)}',${!on})`, `${on ? '✅ ' : ''}${esc(m.name)}`);
-      }).join('')}</div>`
+      ? `<div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px;">${names.map(m => nameCard(m, selectedIds.has(String(m.id)))).join('')}</div>`
       : (unassignedPeople.length
         ? `<div style="font-size:11px; color:#546E7A; background:#FFF8E1; border:1px solid #FFE082; border-radius:8px; padding:8px; margin-bottom:8px; line-height:1.45;">
             「${esc(loc)}」に所属設定されたメンバーはまだいません。<br>下の拠点未設定メンバーを選ぶか、「＋${esc(loc)}に設定」で所属拠点を登録できます。
@@ -14230,20 +14391,24 @@ window.buildWorkMemberPickerHtml_ = (opts) => {
           <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px;">${unassignedPeople.map(m => {
             const on = selectedIds.has(String(m.id));
             return `<div style="display:flex; flex-direction:column; gap:4px;">
-              ${chip(on, on ? '#1565C0' : '#BBDEFB', on ? '#E3F2FD' : '#fff', '#0D47A1', `${toggleFn}('${uid}','${scope}','${escJs(m.id)}','${escJs(m.name)}','${escJs(loc)}',${!on})`, `${on ? '✅ ' : ''}${esc(m.name)}`)}
+              ${nameCard(m, on)}
               <button type="button" onclick="saveWorkMemberLocationAssign_('${uid}','${scope}','${escJs(m.id)}','${escJs(m.name)}','${escJs(loc)}')" style="padding:3px 6px; font-size:10px; color:#1565C0; background:#E3F2FD; border:1px solid #90CAF9; border-radius:6px; cursor:pointer; font-weight:bold;">＋「${esc(loc)}」に所属設定</button>
             </div>`;
           }).join('')}</div>`
         : `<div style="font-size:12px; color:#888;">この拠点のメンバーはいません。</div>`));
+  const addBtn = canAdmin
+    ? `<button type="button" onclick="openWorkMemberEditor_('add','${uid}','${scope}','')" style="width:100%; box-sizing:border-box; margin-top:8px; padding:8px 10px; border-radius:8px; border:1px dashed #1565C0; background:#fff; color:#1565C0; font-size:12px; font-weight:bold; cursor:pointer;">＋ メンバーを追加</button>`
+    : '';
   return `<div style="margin:8px 0; padding:12px; border:2px solid #90CAF9; border-radius:12px; background:#F5FAFF; box-sizing:border-box;">
     <div style="font-size:13px; font-weight:bold; color:#0D47A1; margin-bottom:4px;">👥 メンバー</div>
-    <div style="font-size:11px; color:#546E7A; line-height:1.4; margin-bottom:8px;">所属拠点を選んでから、名前を選んでください。複数選べます。</div>
+    <div style="font-size:11px; color:#546E7A; line-height:1.4; margin-bottom:8px;">所属拠点を選んでから、名前を選んでください。複数選べます。${canAdmin ? '管理者は追加・編集・削除もできます。' : ''}</div>
     ${selectedHtml}
     ${alsoSaveHtml}
     <div style="font-size:11px; font-weight:bold; color:#1565C0; margin-bottom:4px;">① 所属拠点</div>
     ${locHtml}
     <div style="font-size:11px; font-weight:bold; color:#1565C0; margin:8px 0 4px;">② 名前</div>
     ${nameHtml}
+    ${addBtn}
   </div>`;
 };
 
