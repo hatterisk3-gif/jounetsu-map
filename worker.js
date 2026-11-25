@@ -28160,8 +28160,9 @@ window.ensureMachineItemEditorModal = () => {
                   <div style="font-size:11px; color:#888; margin-top:4px;">例：ステップワゴン / キャリー / 軽トラ</div>
                 </div>
                 <div>
-                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">④ ナンバープレート番号</label>
+                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">④ ナンバープレート番号（任意）</label>
                   <input type="text" id="mie_vehicle_number" class="form-input" placeholder="例: 熊谷500あ1234" style="width:100%; box-sizing:border-box; margin-bottom:0;">
+                  <div style="font-size:11px; color:#888; margin-top:4px;">わからない場合は空欄のまま登録できます。呼称名か管理番号を入れてください。</div>
                 </div>
                 <div style="display:flex; gap:8px;">
                   <div style="flex:1;">
@@ -28578,8 +28579,14 @@ window.getMachineItemEditorDisplayLabel_ = (fields) => {
     if (label) return label;
   }
   if (fields.kind === 'vehicle') {
-    const parts = [fields.type, fields.plateNumber].map(x => String(x || '').trim()).filter(Boolean);
-    return parts.join(' ') || String(fields.plateNumber || '').trim();
+    const alias = String(fields.aliasName || '').trim();
+    const type = String(fields.type || fields.vehicleType || '').trim();
+    if (alias) {
+      if (type && alias.indexOf(type) !== 0) return type + ' ' + alias;
+      return alias;
+    }
+    const parts = [type, fields.plateNumber].map(x => String(x || '').trim()).filter(Boolean);
+    return parts.join(' ') || String(fields.plateNumber || fields.vehicleNumber || '').trim();
   }
   const numRaw = String(fields.machineNumber || '').trim();
   const numLabel = numRaw
@@ -28594,7 +28601,11 @@ window.getMachineItemEditorDisplayLabel_ = (fields) => {
 window.isMachineItemEditorFieldsValid_ = (fields) => {
   if (!fields) return false;
   if (fields.kind === 'vehicle') {
-    return !!String(fields.plateNumber || fields.vehicleNumber || '').trim();
+    const plate = String(fields.plateNumber || '').trim();
+    const alias = String(fields.aliasName || '').trim();
+    const managedNo = String(fields.vehicleNumber || '').trim();
+    const managedIsPlate = managedNo && managedNo === plate;
+    return !!(plate || alias || (managedNo && !managedIsPlate));
   }
   return !!(
     String(fields.type || '').trim()
@@ -28924,19 +28935,29 @@ window.queueMachineItemFromEditor = () => {
   if (!window.isMachineItemEditorFieldsValid_(fields)) {
     if (typeof customAlert === 'function') {
       customAlert(kind === 'vehicle'
-        ? 'ナンバープレート番号（④）を入力してからリストに追加してください'
+        ? 'ナンバーがわからない場合は、呼称名か管理番号を入力してからリストに追加してください'
         : '③機械名、④番号、⑤型式のいずれかを入力してからリストに追加してください');
     }
     return;
   }
   fields.displayLabel = window.getMachineItemEditorDisplayLabel_(fields);
+  const vehicleDupKey = (f) => {
+    const plate = String((f && f.plateNumber) || '').trim();
+    if (plate) return 'plate\t' + plate;
+    return [
+      'named',
+      String((f && f.aliasName) || '').trim(),
+      String((f && (f.vehicleType || f.type)) || '').trim(),
+      String((f && f.vehicleNumber) || '').trim()
+    ].join('\t');
+  };
   const dupKey = kind === 'vehicle'
-    ? String(fields.plateNumber || '')
+    ? vehicleDupKey(fields)
     : [fields.type, fields.machineNumber, fields.model].join('\t');
   if (!Array.isArray(st.pending)) st.pending = [];
   const dup = st.pending.some(p => {
     if (p.kind !== kind) return false;
-    if (kind === 'vehicle') return String(p.plateNumber || '') === dupKey;
+    if (kind === 'vehicle') return vehicleDupKey(p) === dupKey;
     return [p.type, p.machineNumber, p.model].join('\t') === dupKey;
   });
   if (dup) {
@@ -29503,7 +29524,7 @@ window.persistOneMachineOrVehicle_ = async (entry) => {
       }));
     } else if (photoBase64) {
       payload.photoBase64 = photoBase64;
-      payload.photoFilename = plateNumber.replace(/\s+/g, '_') + '.jpg';
+      payload.photoFilename = (plateNumber || aliasName || 'vehicle').replace(/\s+/g, '_') + '.jpg';
     }
     if (entry.clearPhoto && !photoBase64 && (!Array.isArray(entry.photoItems) || !entry.photoItems.length)) payload.clearPhoto = true;
     const res = await safeCallGAS('vehicle_saveVehicle', payload);
@@ -29693,7 +29714,7 @@ window.saveMachineItemEditorModal = async () => {
       if (!window.isMachineItemEditorFieldsValid_(currentFields)) {
         if (typeof customAlert === 'function') {
           customAlert(kind === 'vehicle'
-            ? 'ナンバープレート番号（④）を入力してください'
+            ? 'ナンバーがわからない場合は、呼称名か管理番号を入力してください'
             : '③機械名、④番号、⑤型式のいずれかを入力してください');
         }
         return;
@@ -29733,7 +29754,7 @@ window.saveMachineItemEditorModal = async () => {
     if (!pending.length) {
       if (typeof customAlert === 'function') {
         customAlert(kind === 'vehicle'
-          ? 'ナンバープレート番号（④）を入力するか、リストに追加してから登録してください'
+          ? 'ナンバーがわからない場合は、呼称名か管理番号を入力するか、リストに追加してから登録してください'
           : '③機械名、④番号、⑤型式のいずれかを入力するか、リストに追加してから登録してください');
       }
       return;
