@@ -1665,6 +1665,8 @@
         location: row.location_name || '',
         signFunction: meta.signFunction || (Array.isArray(row.sign_functions) && row.sign_functions[0]) || '一般看板',
         parentSignId: meta.parentSignId || '',
+        placeKind: meta.placeKind || '',
+        placeMemo: meta.placeMemo || '',
         photos: photos,
         uneSimData: uneSimData
       };
@@ -2042,10 +2044,12 @@
             location: r.location_name || '',
             signFunction: meta.signFunction || '一般看板',
             parentSignId: meta.parentSignId || '',
+            placeKind: meta.placeKind || '',
+            placeMemo: meta.placeMemo || '',
             registeredAt: meta.registeredAt || r.created_at || '',
             isMarker: true
           };
-          sItem.fp = [sItem.name, sItem.color, sItem.location, sItem.signFunction, JSON.stringify(sItem.coords), sItem.parentSignId].join('\u0001');
+          sItem.fp = [sItem.name, sItem.color, sItem.location, sItem.signFunction, JSON.stringify(sItem.coords), sItem.parentSignId, sItem.placeKind, sItem.placeMemo].join('\u0001');
           signs.push(sItem);
         } else {
           var fItem = {
@@ -2137,6 +2141,8 @@
         meta: isMarker ? {
           signFunction: String(params.signFunction || '機能なし'),
           parentSignId: String(params.parentSignId || '').trim(),
+          placeKind: String(params.placeKind || ''),
+          placeMemo: String(params.placeMemo || ''),
           registeredAt: nowParts.fullSlash,
           uneSimDataRaw: uneRaw || undefined
         } : {
@@ -2231,6 +2237,8 @@
           var pid = String(params.parentSignId || '').trim();
           meta.parentSignId = pid === String(params.id) ? '' : pid;
         }
+        if (params.placeKind !== undefined) meta.placeKind = String(params.placeKind || '');
+        if (params.placeMemo !== undefined) meta.placeMemo = String(params.placeMemo || '');
       } else {
         if (params.condition !== undefined) patch.field_condition = String(params.condition || '');
         if (params.area !== undefined) patch.area_sqm = Number(params.area) || 0;
@@ -9804,6 +9812,211 @@
       };
     });
 
+    registerAction('getMarketForecastContext', async function (params) {
+      params = params || {};
+      var region = String(params.region || '').trim().toLowerCase() === 'osaka' ? 'osaka' : 'tokyo';
+      var market = region === 'osaka' ? (String(params.ichiba || 1) === '2' ? '東部' : '本場') : '大田';
+      var todayStr = jstYmd_(new Date());
+      var since45 = shiftYmdUtc4_(todayStr, -45);
+      var since400 = shiftYmdUtc4_(todayStr, -400);
+
+      var majorItemNames = [
+        'キャベツ', 'はくさい', '白菜', 'だいこん', '大根', 'ブロッコリー', 'レタス',
+        'ほうれん草', 'ほうれんそう', 'こまつな', '小松菜', 'にんじん', '人参',
+        'ねぎ', '長ねぎ', 'たまねぎ', '玉ねぎ', 'じゃがいも', 'ばれいしょ',
+        'トマト', 'きゅうり', 'なす', 'ピーマン', 'かぼちゃ', 'スイートコーン', 'とうもろこし', 'えだまめ'
+      ];
+      var inClause = majorItemNames.map(function (s) {
+        return encodeURIComponent('"' + s + '"');
+      }).join(',');
+
+      var selectCols = 'price_date,market_name,item_name,quantity_kg,origin,unit_qty,unit,price_high,price_mid,price_low,trend';
+      var qsRecent = 'rest/v1/market_prices?select=' + selectCols +
+        '&market_region=eq.' + encodeURIComponent(region) +
+        '&market_name=eq.' + encodeURIComponent(market) +
+        '&price_date=gte.' + encodeURIComponent(since45) +
+        '&order=price_date.desc,id.asc&limit=4000';
+      var qsHist = 'rest/v1/market_prices?select=' + selectCols +
+        '&market_region=eq.' + encodeURIComponent(region) +
+        '&market_name=eq.' + encodeURIComponent(market) +
+        '&price_date=gte.' + encodeURIComponent(since400) +
+        '&price_date=lt.' + encodeURIComponent(since45) +
+        '&item_name=in.(' + inClause + ')' +
+        '&order=price_date.desc,id.asc&limit=4000';
+
+      var orgPromise = (async function () {
+        try {
+          var orgId = await resolveCurrentOrgId_();
+          var encOrg = encodeURIComponent(orgId);
+          var orgRes = await Promise.all([
+            listCostPlansBrief_(orgId),
+            readCostList_(orgId),
+            restSelectAll_('cultivation_presets', 'org_id=eq.' + encOrg + '&order=created_at.asc'),
+            readCroptypeList_(orgId)
+          ]);
+          return { costPlans: orgRes[0] || [], costMaster: orgRes[1] || [], presets: orgRes[2] || [], croptypes: orgRes[3] || [] };
+        } catch (e) {
+          return { costPlans: [], costMaster: [], presets: [], croptypes: [] };
+        }
+      })();
+
+      var fetched = await Promise.all([
+        restFetch(qsRecent).catch(function () { return []; }),
+        restFetch(qsHist).catch(function () { return []; }),
+        orgPromise
+      ]);
+
+      var recentRows = Array.isArray(fetched[0]) ? fetched[0] : [];
+      var histRows = Array.isArray(fetched[1]) ? fetched[1] : [];
+      var allRows = recentRows.concat(histRows);
+      var orgData = fetched[2] || { costPlans: [], costMaster: [], presets: [], croptypes: [] };
+
+      function toPerKg4_(price, unitQty) {
+        if (price == null || price === '' || !isFinite(Number(price))) return null;
+        var p = Number(price);
+        var u = (unitQty != null && isFinite(Number(unitQty)) && Number(unitQty) > 0) ? Number(unitQty) : 1;
+        return Math.round((p / u) * 10) / 10;
+      }
+
+      function extractPref4_(origin) {
+        var s = String(origin || '').trim();
+        if (!s) return '';
+        var first = s.split(/[・、,/／\s]+/)[0] || '';
+        return first.replace(/[都道府県]$/, '').trim();
+      }
+
+      var byItem = {};
+      var latestDate = '';
+      allRows.forEach(function (r) {
+        var name = String((r && r.item_name) || '').trim();
+        var dt = String((r && r.price_date) || '').slice(0, 10);
+        if (!name || !dt) return;
+        if (!latestDate || dt > latestDate) latestDate = dt;
+        if (!byItem[name]) byItem[name] = [];
+        byItem[name].push({
+          date: dt,
+          qtyKg: r.quantity_kg == null ? null : Number(r.quantity_kg),
+          origin: String(r.origin || ''),
+          unitSize: r.unit_qty == null ? null : Number(r.unit_qty),
+          unit: String(r.unit || 'kg'),
+          rawHigh: r.price_high == null ? null : Number(r.price_high),
+          rawMid: r.price_mid == null ? null : Number(r.price_mid),
+          rawLow: r.price_low == null ? null : Number(r.price_low),
+          highPerKg: toPerKg4_(r.price_high, r.unit_qty),
+          midPerKg: toPerKg4_(r.price_mid, r.unit_qty),
+          lowPerKg: toPerKg4_(r.price_low, r.unit_qty),
+          trend: String(r.trend || '')
+        });
+      });
+
+      var refBase = latestDate || todayStr;
+      var cut14 = shiftYmdUtc4_(refBase, -13);
+      var cut28 = shiftYmdUtc4_(refBase, -27);
+      var itemStats = {};
+
+      Object.keys(byItem).forEach(function (name) {
+        var list = byItem[name];
+        // 日付降順 → 同日先頭優先後に重複日付を整理
+        list.sort(function (a, b) { return a.date > b.date ? -1 : (a.date < b.date ? 1 : 0); });
+        var seenDate = {};
+        var dedupDesc = [];
+        list.forEach(function (row) {
+          if (seenDate[row.date]) return;
+          seenDate[row.date] = true;
+          dedupDesc.push(row);
+        });
+        if (!dedupDesc.length) return;
+
+        var latest = dedupDesc[0];
+        var r14Sum = 0, r14N = 0, p14Sum = 0, p14N = 0;
+        var originFreq = {};
+        var monthlyBuckets = {};
+
+        dedupDesc.forEach(function (pt) {
+          var mid = pt.midPerKg != null ? pt.midPerKg : (pt.highPerKg != null && pt.lowPerKg != null ? (pt.highPerKg + pt.lowPerKg) / 2 : null);
+          if (mid != null) {
+            if (pt.date >= cut14) { r14Sum += mid; r14N++; }
+            else if (pt.date >= cut28) { p14Sum += mid; p14N++; }
+          }
+          var pref = extractPref4_(pt.origin);
+          if (pref && pt.date >= cut28) {
+            originFreq[pref] = (originFreq[pref] || 0) + 1;
+          }
+          var m = parseInt(pt.date.slice(5, 7), 10);
+          if (m >= 1 && m <= 12) {
+            if (!monthlyBuckets[m]) monthlyBuckets[m] = { midS: 0, midN: 0, highS: 0, highN: 0, lowS: 0, lowN: 0, qtyS: 0, qtyN: 0 };
+            var mb = monthlyBuckets[m];
+            if (mid != null) { mb.midS += mid; mb.midN++; }
+            if (pt.highPerKg != null) { mb.highS += pt.highPerKg; mb.highN++; }
+            if (pt.lowPerKg != null) { mb.lowS += pt.lowPerKg; mb.lowN++; }
+            if (pt.qtyKg != null && isFinite(pt.qtyKg)) { mb.qtyS += pt.qtyKg; mb.qtyN++; }
+          }
+        });
+
+        var recent14AvgPerKg = r14N > 0 ? Math.round((r14Sum / r14N) * 10) / 10 : null;
+        var prev14AvgPerKg = p14N > 0 ? Math.round((p14Sum / p14N) * 10) / 10 : null;
+        var momentumPct = (recent14AvgPerKg != null && prev14AvgPerKg != null && prev14AvgPerKg > 0)
+          ? Math.round(((recent14AvgPerKg - prev14AvgPerKg) / prev14AvgPerKg) * 1000) / 10
+          : 0;
+
+        var topOrigins = Object.keys(originFreq).sort(function (a, b) {
+          return originFreq[b] - originFreq[a];
+        }).slice(0, 3);
+
+        var monthlyActuals = {};
+        Object.keys(monthlyBuckets).forEach(function (mk) {
+          var mb = monthlyBuckets[mk];
+          monthlyActuals[mk] = {
+            midPerKgAvg: mb.midN > 0 ? Math.round((mb.midS / mb.midN) * 10) / 10 : null,
+            highPerKgAvg: mb.highN > 0 ? Math.round((mb.highS / mb.highN) * 10) / 10 : null,
+            lowPerKgAvg: mb.lowN > 0 ? Math.round((mb.lowS / mb.lowN) * 10) / 10 : null,
+            qtyKgAvg: mb.qtyN > 0 ? Math.round(mb.qtyS / mb.qtyN) : null,
+            count: mb.midN
+          };
+        });
+
+        var recentSeries = dedupDesc.slice(0, 30).reverse();
+
+        itemStats[name] = {
+          latest: latest,
+          recent14AvgPerKg: recent14AvgPerKg,
+          prev14AvgPerKg: prev14AvgPerKg,
+          momentumPct: momentumPct,
+          topOrigins: topOrigins,
+          monthlyActuals: monthlyActuals,
+          recentSeries: recentSeries
+        };
+      });
+
+      var masterById = {};
+      (orgData.costMaster || []).forEach(function (m) { masterById[m.id] = m; });
+      var orgCost10aByCrop = {};
+      (orgData.costPlans || []).forEach(function (cp) {
+        if (!cp || !cp.cropName || !Array.isArray(cp.entries) || !cp.entries.length) return;
+        var total = 0;
+        cp.entries.forEach(function (e) {
+          var m = e.costItemId ? masterById[e.costItemId] : null;
+          var unitPrice = m ? Number(m.unitPrice || 0) : Number(e.unitPrice || 0);
+          var base = e.base || (m && m.base) || 'fixed';
+          var qtyPerBase = Number(e.qtyPerBase != null ? e.qtyPerBase : ((m && m.defaultQty !== '' && m.defaultQty != null) ? m.defaultQty : 1)) || 0;
+          var scale = base === 'area_a' ? 10 : (base === 'tray' ? 20 : (base === 'plant' ? 3500 : (base === 'yield_pack' ? 800 : 1)));
+          total += qtyPerBase * scale * unitPrice;
+        });
+        if (total > 0) orgCost10aByCrop[cp.cropName] = Math.round(total);
+      });
+
+      return {
+        success: true,
+        region: region,
+        market: market,
+        today: todayStr,
+        latestDate: latestDate,
+        itemStats: itemStats,
+        orgCost10aByCrop: orgCost10aByCrop,
+        croptypes: orgData.croptypes || []
+      };
+    });
+
     // ---- 5. Harvest / Shipping Lots & Inventory Logs ----
     registerAction('saveGlobalHarvest', async function (params) {
       params = params || {};
@@ -10183,7 +10396,7 @@
       'getCropWorkPlan', 'saveCropWorkPlan', 'listCropWorkPlans', 'deleteCropWorkPlan', 'previewCropWorkSchedule',
       'getSowingProgress', 'getSowingNurseryBundle', 'getCurrentSowingPlanOptions', 'getSowingNurseryFormOptions',
       'manageCultivationListOption', 'saveSowingRecord',
-      'lookupCultivationByTag', 'getCropWorkProgressSummary', 'getHarvestingFieldsSummary', 'getWeatherPlantingPriorities', 'getAgriGrowthCareBundle',
+      'lookupCultivationByTag', 'getCropWorkProgressSummary', 'getHarvestingFieldsSummary', 'getWeatherPlantingPriorities', 'getAgriGrowthCareBundle', 'getMarketForecastContext',
       'saveCultivationPlans', 'getCultivationPlans', 'previewCultivationPlanTags', 'executeCultivationPlans',
       'getSavedCultivationPlanList', 'deleteSavedCultivationPlans',
       'getFarmBoardData', 'completeFarmBoardTasks',

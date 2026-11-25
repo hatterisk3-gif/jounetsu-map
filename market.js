@@ -39,17 +39,29 @@
       importAction: 'importFertilizerMarketTrends',
       defaultMarket: '全国・国際',
       sourceNote: '出典: 農林水産省「農業物価統計調査」(令和2年=100)・World Bank Pink Sheet・FRED/ECB為替・JA全農発表'
+    },
+    recommend: {
+      key: 'recommend',
+      title: '市場から逆算：次に売れる野菜・種まき収益予測',
+      color: '#00695C',
+      border: '#80CBC4',
+      bg: '#E0F2F1',
+      defaultMarket: '大田・本場',
+      sourceNote: '出典: 中央卸売市場日報実績 × 季節変動指数 × Open-Meteo GDD生育予測・主産地気象モデル'
     }
   };
 
   let _active = 'tokyo';
-  const _cache = { tokyo: null, osaka: null, fertilizer: null };
-  const _loading = { tokyo: false, osaka: false, fertilizer: false };
-  const _loadingRefresh = { tokyo: false, osaka: false, fertilizer: false };
-  const _fetchedAt = { tokyo: 0, osaka: 0, fertilizer: 0 };
-  const _autoRefreshed = { tokyo: false, osaka: false, fertilizer: false };
+  const _cache = { tokyo: null, osaka: null, fertilizer: null, recommend: null };
+  const _loading = { tokyo: false, osaka: false, fertilizer: false, recommend: false };
+  const _loadingRefresh = { tokyo: false, osaka: false, fertilizer: false, recommend: false };
+  const _fetchedAt = { tokyo: 0, osaka: 0, fertilizer: 0, recommend: 0 };
+  const _autoRefreshed = { tokyo: false, osaka: false, fertilizer: false, recommend: false };
   const AUTO_CACHE_TTL_MS = 15 * 60 * 1000;
   const FERT_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+  const _forecastCtxCache = { tokyo: null, osaka: null };
+  const _forecastCtxLoading = { tokyo: false, osaka: false };
+  const _recState = { region: 'tokyo', sowingDate: '', cover: '露地', areaA: 10, includeOut: false };
   /** 肥料タブ状態 */
   let _fertSubTab = 'domestic'; // 'domestic' | 'intl'
   let _fertDomesticMetric = 'index'; // 'index' | 'retail'
@@ -196,13 +208,15 @@
     root = document.createElement('div');
     root.id = 'marketDataRoot';
     root.innerHTML = [
-      '<div style="display:flex;gap:6px;margin:0 0 10px 0;">',
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px 0;">',
       '  <button type="button" id="marketTabTokyo" data-market="tokyo"',
-      '    style="flex:1;border:none;border-radius:6px;padding:8px 8px;font-size:13px;font-weight:bold;cursor:pointer;">東京・大田</button>',
+      '    style="flex:1;min-width:95px;border:none;border-radius:6px;padding:8px 6px;font-size:12.5px;font-weight:bold;cursor:pointer;">東京・大田</button>',
       '  <button type="button" id="marketTabOsaka" data-market="osaka"',
-      '    style="flex:1;border:none;border-radius:6px;padding:8px 8px;font-size:13px;font-weight:bold;cursor:pointer;">大阪・本場</button>',
+      '    style="flex:1;min-width:95px;border:none;border-radius:6px;padding:8px 6px;font-size:12.5px;font-weight:bold;cursor:pointer;">大阪・本場</button>',
       '  <button type="button" id="marketTabFertilizer" data-market="fertilizer"',
-      '    style="flex:1;border:none;border-radius:6px;padding:8px 8px;font-size:13px;font-weight:bold;cursor:pointer;">🌿 肥料価格</button>',
+      '    style="flex:1;min-width:95px;border:none;border-radius:6px;padding:8px 6px;font-size:12.5px;font-weight:bold;cursor:pointer;">🌿 肥料価格</button>',
+      '  <button type="button" id="marketTabRecommend" data-market="recommend"',
+      '    style="flex:1;min-width:110px;border:none;border-radius:6px;padding:8px 6px;font-size:12.5px;font-weight:bold;cursor:pointer;">🌾 売れる野菜逆算</button>',
       '</div>',
       '<div id="marketActivePanel"',
       '  style="margin:0 0 12px 0;padding:12px;border-radius:8px;border:1px solid #ddd;">',
@@ -233,11 +247,13 @@
       '        <button type="button" id="marketViewBtnChart" data-view="chart"',
       '          style="border:none;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;">📊 グラフ</button>',
       '      </div>',
-      '      <div id="marketChartSubSwitch" style="display:none;gap:4px;background:rgba(255,255,255,0.85);padding:3px;border-radius:8px;border:1px solid #cfd8dc;">',
+      '      <div id="marketChartSubSwitch" style="display:none;gap:4px;flex-wrap:wrap;background:rgba(255,255,255,0.85);padding:3px;border-radius:8px;border:1px solid #cfd8dc;">',
       '        <button type="button" id="marketChartTabCompare" data-chart-tab="compare"',
-      '          style="border:none;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;">📊 品目別比較（当日）</button>',
+      '          style="border:none;border-radius:6px;padding:5px 9px;font-size:11.5px;font-weight:700;cursor:pointer;">📊 品目別比較</button>',
       '        <button type="button" id="marketChartTabHistory" data-chart-tab="history"',
-      '          style="border:none;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;">📈 日別推移（履歴）</button>',
+      '          style="border:none;border-radius:6px;padding:5px 9px;font-size:11.5px;font-weight:700;cursor:pointer;">📈 日別推移</button>',
+      '        <button type="button" id="marketChartTabForecast" data-chart-tab="forecast"',
+      '          style="border:none;border-radius:6px;padding:5px 9px;font-size:11.5px;font-weight:700;cursor:pointer;">🔮 価格・市況予測</button>',
       '      </div>',
       '    </div>',
       '    <div id="marketTableWrap" style="max-height:min(48vh,400px);overflow:auto;border:1px solid #e0e0e0;border-radius:6px;background:#fff;">',
@@ -258,6 +274,7 @@
       '    <div id="marketChartPanel" style="display:none;border:1px solid #e0e0e0;border-radius:8px;background:#fff;padding:10px;"></div>',
       '  </div>',
       '  <div id="marketFertilizerPanel" style="display:none;"></div>',
+      '  <div id="marketRecommendPanel" style="display:none;"></div>',
       '  <div id="marketActiveNote" style="font-size:10px;color:#90A4AE;margin-top:6px;line-height:1.4;"></div>',
       '</div>'
     ].join('');
@@ -288,7 +305,7 @@
       refreshBtn.dataset.bound = '1';
       refreshBtn.onclick = function () { loadMarket_(_active, true); };
     }
-    ['marketTabTokyo', 'marketTabOsaka', 'marketTabFertilizer'].forEach(function (id) {
+    ['marketTabTokyo', 'marketTabOsaka', 'marketTabFertilizer', 'marketTabRecommend'].forEach(function (id) {
       const btn = document.getElementById(id);
       if (btn && !btn.dataset.bound) {
         btn.dataset.bound = '1';
@@ -302,7 +319,7 @@
         btn.onclick = function () { setViewMode_(btn.getAttribute('data-view')); };
       }
     });
-    ['marketChartTabCompare', 'marketChartTabHistory'].forEach(function (id) {
+    ['marketChartTabCompare', 'marketChartTabHistory', 'marketChartTabForecast'].forEach(function (id) {
       const btn = document.getElementById(id);
       if (btn && !btn.dataset.bound) {
         btn.dataset.bound = '1';
@@ -365,6 +382,9 @@
       return _loadingRefresh[key]
         ? '公的統計（農水省・World Bank・為替・JA全農）から最新データを同期中...'
         : '肥料価格・国際原料動向を読み込み中... しばらくお待ちください';
+    }
+    if (key === 'recommend') {
+      return '市況実績・原価・主産地気象データから逆算モデルを計算中...';
     }
     return _loadingRefresh[key]
       ? '最新の日報CSVを取り込み中...（数秒〜十数秒かかります）'
@@ -436,7 +456,7 @@
   }
 
   function setChartTab_(tab) {
-    _chartTab = tab === 'history' ? 'history' : 'compare';
+    _chartTab = (tab === 'history' || tab === 'forecast') ? tab : 'compare';
     applyActiveChrome_();
     renderActiveView_();
   }
@@ -448,6 +468,17 @@
     _historySelectedIdx = -1;
     _viewMode = 'chart';
     _chartTab = 'history';
+    applyActiveChrome_();
+    renderActiveView_();
+  }
+
+  function openItemForecast_(itemName) {
+    const name = String(itemName || '').trim();
+    if (!name) return;
+    _historyItem[_active] = name;
+    _historySelectedIdx = -1;
+    _viewMode = 'chart';
+    _chartTab = 'forecast';
     applyActiveChrome_();
     renderActiveView_();
   }
@@ -494,6 +525,7 @@
     const tabTokyo = document.getElementById('marketTabTokyo');
     const tabOsaka = document.getElementById('marketTabOsaka');
     const tabFert = document.getElementById('marketTabFertilizer');
+    const tabRec = document.getElementById('marketTabRecommend');
     if (tabTokyo) {
       const on = _active === 'tokyo';
       tabTokyo.style.background = on ? MARKETS.tokyo.color : '#fff';
@@ -515,11 +547,20 @@
       tabFert.style.border = on ? 'none' : '1px solid #A5D6A7';
       tabFert.textContent = '🌿 肥料価格' + (_loading.fertilizer ? '（読込中…）' : '');
     }
+    if (tabRec) {
+      const on = _active === 'recommend';
+      tabRec.style.background = on ? MARKETS.recommend.color : '#fff';
+      tabRec.style.color = on ? '#fff' : '#00695C';
+      tabRec.style.border = on ? 'none' : '1px solid #80CBC4';
+      tabRec.textContent = '🌾 売れる野菜逆算' + (_loading.recommend ? '（計算中…）' : '');
+    }
 
     const vegSec = document.getElementById('marketVegSection');
     const fertPanel = document.getElementById('marketFertilizerPanel');
-    if (vegSec) vegSec.style.display = _active === 'fertilizer' ? 'none' : 'block';
+    const recPanel = document.getElementById('marketRecommendPanel');
+    if (vegSec) vegSec.style.display = (_active === 'fertilizer' || _active === 'recommend') ? 'none' : 'block';
     if (fertPanel) fertPanel.style.display = _active === 'fertilizer' ? 'block' : 'none';
+    if (recPanel) recPanel.style.display = _active === 'recommend' ? 'block' : 'none';
 
     const viewSwitch = document.getElementById('marketViewSwitch');
     const btnTable = document.getElementById('marketViewBtnTable');
@@ -527,6 +568,7 @@
     const subSwitch = document.getElementById('marketChartSubSwitch');
     const btnCompare = document.getElementById('marketChartTabCompare');
     const btnHistory = document.getElementById('marketChartTabHistory');
+    const btnForecast = document.getElementById('marketChartTabForecast');
     if (viewSwitch) viewSwitch.style.borderColor = conf.border;
     if (subSwitch) {
       subSwitch.style.borderColor = conf.border;
@@ -552,11 +594,16 @@
       btnHistory.style.background = on ? conf.color : 'transparent';
       btnHistory.style.color = on ? '#fff' : '#546E7A';
     }
+    if (btnForecast) {
+      const on = _chartTab === 'forecast';
+      btnForecast.style.background = on ? conf.color : 'transparent';
+      btnForecast.style.color = on ? '#fff' : '#546E7A';
+    }
   }
 
   function renderActiveLoadingView_() {
     applyActiveChrome_();
-    if (_active !== 'fertilizer') renderItemChips_();
+    if (_active !== 'fertilizer' && _active !== 'recommend') renderItemChips_();
     renderActiveView_();
     setStatus_(loadingStatusMessage_(_active), false, true);
   }
@@ -640,6 +687,26 @@
     }
 
     if (!meta || !conf) return;
+    if (_active === 'recommend') {
+      const reg = _recState.region === 'osaka' ? 'osaka' : 'tokyo';
+      const ctx = _forecastCtxCache[reg];
+      if (!ctx || !ctx.itemStats) {
+        meta.textContent = isLoading ? '⏳ 市場実績・原価データを取得しています...' : '対象市場データを準備中';
+        meta.style.color = isLoading ? conf.color : '#607D8B';
+        meta.style.fontWeight = isLoading ? '700' : '400';
+        return;
+      }
+      const statCnt = Object.keys(ctx.itemStats || {}).length;
+      const costCnt = Object.keys(ctx.orgCost10aByCrop || {}).length;
+      const mLabel = reg === 'osaka' ? '大阪・本場' : '東京・大田';
+      meta.style.color = '#607D8B';
+      meta.style.fontWeight = '400';
+      meta.textContent = mLabel + ' / 最新実績 ' + (ctx.latestDate || '平年モデル')
+        + ' / 市場統計' + statCnt + '品目'
+        + (costCnt ? ' / 自社原価' + costCnt + '品目連携' : ' / 標準原価モデル')
+        + (isLoading ? '（🔄 更新中...）' : '');
+      return;
+    }
     if (_active === 'fertilizer') {
       if (!data || !Array.isArray(data.jpIndexSeries)) {
         meta.textContent = isLoading ? '⏳ 肥料・国際原料データを取得しています...' : '未読込';
@@ -692,6 +759,10 @@
     renderMarketMeta_();
     if (_active === 'fertilizer') {
       renderFertilizerPanel_();
+      return;
+    }
+    if (_active === 'recommend') {
+      renderRecommendPanel_();
       return;
     }
     renderItemChips_();
@@ -764,9 +835,10 @@
         ? ('<td style="padding:8px 6px;text-align:center;font-weight:bold;color:' + tr.color + ';white-space:nowrap;">' + esc_(tr.text) + '</td>')
         : ('<td style="padding:8px 6px;text-align:center;color:#90A4AE;">—</td>');
       const histBtn = '<button type="button" class="market-row-chart-btn" data-item="' + esc_(it.name) + '" title="' + esc_(it.name) + 'の日別推移グラフを見る" style="border:1px solid ' + conf.border + ';background:' + conf.bg + ';color:' + conf.color + ';border-radius:4px;padding:1px 5px;font-size:11px;line-height:1.3;cursor:pointer;margin-left:5px;vertical-align:middle;">📈</button>';
+      const forecastBtn = '<button type="button" class="market-row-forecast-btn" data-item="' + esc_(it.name) + '" title="' + esc_(it.name) + 'の6ヶ月価格・市況予測を見る" style="border:1px solid #B2DFDB;background:#E0F2F1;color:#00695C;border-radius:4px;padding:1px 5px;font-size:11px;line-height:1.3;cursor:pointer;margin-left:3px;vertical-align:middle;">🔮</button>';
       return [
         '<tr style="border-bottom:1px solid #f0f0f0;' + rowOpacity + '">',
-        '  <td style="padding:8px 6px;font-weight:600;color:#37474F;">' + esc_(it.name) + histBtn + origin + '</td>',
+        '  <td style="padding:8px 6px;font-weight:600;color:#37474F;">' + esc_(it.name) + histBtn + forecastBtn + origin + '</td>',
         '  <td style="padding:8px 6px;text-align:right;white-space:nowrap;">' + esc_(fmtNum_(it.qtyKg)) + '<div style="font-size:10px;color:#90A4AE;">kg</div></td>',
         '  <td style="padding:8px 6px;text-align:right;white-space:nowrap;">' + esc_(fmtYen_(it.high)) + unitHint + '</td>',
         '  <td style="padding:8px 6px;text-align:right;white-space:nowrap;">' + esc_(fmtYen_(it.mid)) + '</td>',
@@ -780,6 +852,12 @@
       btn.onclick = function (e) {
         e.stopPropagation();
         openItemHistory_(btn.getAttribute('data-item'));
+      };
+    });
+    tbody.querySelectorAll('.market-row-forecast-btn').forEach(function (btn) {
+      btn.onclick = function (e) {
+        e.stopPropagation();
+        openItemForecast_(btn.getAttribute('data-item'));
       };
     });
   }
@@ -841,7 +919,9 @@
       return;
     }
 
-    if (_chartTab === 'history') {
+    if (_chartTab === 'forecast') {
+      renderForecastChart_(wrap);
+    } else if (_chartTab === 'history') {
       renderHistoryChart_(wrap);
     } else {
       renderCompareChart_(wrap);
@@ -2138,9 +2218,531 @@
     });
   }
 
+  // ==========================================
+  // Phase 3〜4: 6ヶ月価格予測・種まき逆算レコメンド
+  // ==========================================
+  const _originFetchTried = new Set();
+
+  function addDaysLocalYmd_(ymd, deltaDays) {
+    const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const dt = m
+      ? new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + (Number(deltaDays) || 0)))
+      : new Date(Date.now() + (Number(deltaDays) || 0) * 86400000);
+    const y = dt.getUTCFullYear();
+    const mo = String(dt.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(dt.getUTCDate()).padStart(2, '0');
+    return y + '-' + mo + '-' + d;
+  }
+
+  function nextSpringMarchYmd_(todayStr) {
+    const m = String(todayStr || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const yr = m ? Number(m[1]) : new Date().getFullYear();
+    const mo = m ? Number(m[2]) : (new Date().getMonth() + 1);
+    const targetYear = mo >= 3 ? yr + 1 : yr;
+    return targetYear + '-03-01';
+  }
+
+  function buildFallbackForecastCtx_(region) {
+    const reg = region === 'osaka' ? 'osaka' : 'tokyo';
+    const d = _cache[reg];
+    const items = (d && Array.isArray(d.items)) ? d.items : [];
+    const dateLabel = d ? fmtDateLabel_(d.date) : '—';
+    const latestDate = dateLabel && dateLabel !== '—' ? dateLabel : '';
+    const map = {};
+    items.forEach(function (it) {
+      if (!it || !it.name) return;
+      const unitSize = (it.unitSize != null && isFinite(Number(it.unitSize)) && Number(it.unitSize) > 0)
+        ? Number(it.unitSize)
+        : 1;
+      const mid = (it.mid != null && isFinite(Number(it.mid))) ? Number(it.mid) : null;
+      const midPerKg = (mid != null && mid > 0)
+        ? (unitSize > 0 ? Math.round((mid / unitSize) * 10) / 10 : mid)
+        : null;
+      map[it.name] = {
+        name: it.name,
+        latest: {
+          date: latestDate,
+          mid: mid,
+          midPerKg: midPerKg,
+          unitSize: unitSize,
+          unit: it.unit || 'kg',
+          origin: it.origin || ''
+        },
+        recent14AvgPerKg: midPerKg,
+        prev14AvgPerKg: null,
+        momentumPct: 0,
+        monthlyActuals: {},
+        topOrigins: it.origin ? [{ origin: it.origin, count: 1 }] : [],
+        recentSeries: []
+      };
+    });
+    return {
+      region: reg,
+      market: reg === 'osaka' ? '大阪・本場' : '東京・大田',
+      today: todayYmd_(),
+      latestDate: latestDate,
+      itemStats: map,
+      orgCost10aByCrop: {},
+      croptypes: []
+    };
+  }
+
+  async function ensureForecastContextLoaded_(region, force) {
+    const reg = region === 'osaka' ? 'osaka' : 'tokyo';
+    const amf = window.AgriMarketForecast;
+    if (!amf || typeof amf.loadContext !== 'function') {
+      return _forecastCtxCache[reg] || buildFallbackForecastCtx_(reg);
+    }
+    if (!force && _forecastCtxCache[reg]) {
+      return _forecastCtxCache[reg];
+    }
+    if (_forecastCtxLoading[reg]) {
+      return _forecastCtxCache[reg] || buildFallbackForecastCtx_(reg);
+    }
+    _forecastCtxLoading[reg] = true;
+    try {
+      const ctx = await amf.loadContext(reg, !!force);
+      if (ctx) _forecastCtxCache[reg] = ctx;
+    } catch (e) {
+      console.warn('forecast loadContext failed', e);
+    } finally {
+      _forecastCtxLoading[reg] = false;
+    }
+    if (_active === 'recommend') {
+      renderMarketMeta_();
+      renderRecommendPanel_();
+    } else if (_active === reg && _viewMode === 'chart' && _chartTab === 'forecast') {
+      renderMarketMeta_();
+      const chartWrap = document.getElementById('marketChartPanel');
+      if (chartWrap) renderForecastChart_(chartWrap);
+    }
+    return _forecastCtxCache[reg] || buildFallbackForecastCtx_(reg);
+  }
+
+  function renderForecastChart_(wrap) {
+    if (!wrap) return;
+    const conf = MARKETS[_active];
+    const data = _cache[_active];
+    const amf = window.AgriMarketForecast;
+    if (!amf || typeof amf.forecastCropMarketSeries !== 'function') {
+      wrap.innerHTML = '<div style="padding:20px;text-align:center;color:#90A4AE;font-size:12px;">価格・市況予測モジュールを読み込み中です。</div>';
+      return;
+    }
+
+    const reg = _active === 'osaka' ? 'osaka' : 'tokyo';
+    if (!_forecastCtxCache[reg] && !_forecastCtxLoading[reg]) {
+      ensureForecastContextLoaded_(reg, false);
+    }
+    const ctx = _forecastCtxCache[reg] || buildFallbackForecastCtx_(reg);
+
+    const dataNames = uniqueItemNames_(data && data.items);
+    const modelNames = Object.keys(amf.MODELS || {});
+    const optionSet = new Set();
+    dataNames.forEach(function (n) { if (n) optionSet.add(n); });
+    modelNames.forEach(function (n) { if (n) optionSet.add(n); });
+    const optionNames = Array.from(optionSet);
+
+    let targetItem = resolveHistoryTargetItem_(data) || '';
+    if (!targetItem && optionNames.length) targetItem = optionNames[0];
+    if (!targetItem) targetItem = 'キャベツ';
+    if (optionSet.size && !optionSet.has(targetItem)) {
+      optionNames.unshift(targetItem);
+    }
+
+    const hit = typeof amf.findMarketItemStat === 'function'
+      ? amf.findMarketItemStat(targetItem, ctx.itemStats)
+      : null;
+    const cropKey = typeof amf.resolveCropKey === 'function'
+      ? amf.resolveCropKey(targetItem)
+      : targetItem;
+    const model = (amf.MODELS && amf.MODELS[cropKey]) || null;
+    const origins = typeof amf.resolveOriginsForCrop === 'function'
+      ? amf.resolveOriginsForCrop(model || { mainOrigins: {} }, hit ? hit.stat : null, todayYmd_())
+      : [];
+    const impactsMap = typeof amf.getCachedOriginImpactsMap === 'function'
+      ? amf.getCachedOriginImpactsMap()
+      : {};
+    const primaryOrigin = origins[0] || '';
+    if (primaryOrigin && !impactsMap[primaryOrigin] && !_originFetchTried.has(primaryOrigin) && typeof amf.fetchOriginWeatherImpact === 'function') {
+      _originFetchTried.add(primaryOrigin);
+      amf.fetchOriginWeatherImpact(primaryOrigin).then(function () {
+        if (_active === reg && _viewMode === 'chart' && _chartTab === 'forecast') {
+          renderForecastChart_(wrap);
+        }
+      }).catch(function () {});
+    }
+
+    const fc = amf.forecastCropMarketSeries({
+      cropName: targetItem,
+      startDate: todayYmd_(),
+      horizonTenDays: 18,
+      marketCtx: ctx,
+      originImpact: primaryOrigin ? impactsMap[primaryOrigin] : null
+    });
+
+    const scale = _perKgMode ? 1 : (fc.unitSize || 1);
+    const unitSuffix = _perKgMode ? '円/kg' : ('円/' + fmtNum_(fc.unitSize || 1) + 'kg');
+    const fmtFcVal = function (perKgVal) {
+      if (perKgVal == null || !isFinite(Number(perKgVal))) return '—';
+      const v = Math.round(Number(perKgVal) * scale);
+      return v.toLocaleString('ja-JP') + unitSuffix;
+    };
+
+    const actualDisp = fc.latestActualPerKg != null
+      ? fmtFcVal(fc.latestActualPerKg)
+      : fmtFcVal(fc.effectiveBasePerKg);
+    const actualSub = fc.latestActualPerKg != null
+      ? ((fc.latestDate || '直近') + '実績 / 勢い ' + (fc.momentumPct >= 0 ? '+' : '') + fc.momentumPct + '%')
+      : '季節基準モデル値';
+    const m1Disp = fmtFcVal(fc.month1PredPerKg);
+    const m3Disp = fmtFcVal(fc.month3PredPerKg);
+    const peakDisp = fc.peakPoint ? fmtFcVal(fc.peakPoint.predMidPerKg) : '—';
+    const peakSub = fc.peakPoint
+      ? (fc.peakPoint.label + (fc.nextOffSeasonLabel ? ' / 端境:' + fc.nextOffSeasonLabel : ''))
+      : '—';
+
+    const selectOpts = optionNames.map(function (n) {
+      const sel = n === targetItem ? ' selected' : '';
+      return '<option value="' + esc_(n) + '"' + sel + '>' + esc_(n) + '</option>';
+    }).join('');
+
+    const svgHtml = typeof amf.renderForecastSvg === 'function'
+      ? amf.renderForecastSvg(fc, { perKg: _perKgMode, accentColor: conf ? conf.color : '#00695C' })
+      : '';
+
+    const driverHtml = (fc.drivers || []).map(function (d) {
+      return '<li style="margin:2px 0;">' + esc_(d) + '</li>';
+    }).join('');
+
+    wrap.innerHTML = [
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px;">',
+      '  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">',
+      '    <label for="marketForecastItemSelect" style="font-size:12px;font-weight:700;color:#37474F;">品目:</label>',
+      '    <select id="marketForecastItemSelect" style="padding:5px 8px;border:1px solid ' + (conf ? conf.border : '#cfd8dc') + ';border-radius:6px;font-size:12.5px;font-weight:700;background:#fff;color:#263238;">' + selectOpts + '</select>',
+      '    <label style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:#455A64;cursor:pointer;">',
+      '      <input type="checkbox" id="marketFcPerKg"' + (_perKgMode ? ' checked' : '') + ' /> 1kgあたり換算',
+      '    </label>',
+      '  </div>',
+      '  <button type="button" id="marketFcGoRecommend" style="border:1px solid #80CBC4;background:#E0F2F1;color:#00695C;border-radius:6px;padding:5px 10px;font-size:11.5px;font-weight:800;cursor:pointer;">🌾 売れる野菜逆算へ</button>',
+      '</div>',
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:10px;">',
+      '  <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;">',
+      '    <div style="font-size:10.5px;color:#64748B;font-weight:700;">直近実勢（基準）</div>',
+      '    <div style="font-size:14.5px;font-weight:800;color:#1E293B;margin-top:2px;">' + esc_(actualDisp) + '</div>',
+      '    <div style="font-size:10px;color:#64748B;margin-top:2px;">' + esc_(actualSub) + '</div>',
+      '  </div>',
+      '  <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:8px 10px;">',
+      '    <div style="font-size:10.5px;color:#0369A1;font-weight:700;">1ヶ月後予測</div>',
+      '    <div style="font-size:14.5px;font-weight:800;color:#0C4A6E;margin-top:2px;">' + esc_(m1Disp) + '</div>',
+      '    <div style="font-size:10px;color:#0284C7;margin-top:2px;">旬別需給 × 勢い</div>',
+      '  </div>',
+      '  <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 10px;">',
+      '    <div style="font-size:10.5px;color:#15803D;font-weight:700;">3ヶ月後予測</div>',
+      '    <div style="font-size:14.5px;font-weight:800;color:#14532D;margin-top:2px;">' + esc_(m3Disp) + '</div>',
+      '    <div style="font-size:10px;color:#16A34A;margin-top:2px;">季節指数・現地統計</div>',
+      '  </div>',
+      '  <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 10px;">',
+      '    <div style="font-size:10.5px;color:#C2410C;font-weight:700;">高値ピーク・端境期</div>',
+      '    <div style="font-size:14.5px;font-weight:800;color:#7C2D12;margin-top:2px;">' + esc_(peakDisp) + '</div>',
+      '    <div style="font-size:10px;color:#EA580C;margin-top:2px;">' + esc_(peakSub) + '</div>',
+      '  </div>',
+      '</div>',
+      '<div style="overflow-x:auto;border:1px solid #eceff1;border-radius:8px;padding:6px;background:#fff;margin-bottom:8px;">' + svgHtml + '</div>',
+      '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:11px;color:#475569;line-height:1.5;">',
+      '  <div style="font-weight:800;color:#334155;margin-bottom:3px;">🔮 予測根拠・主産地気象モデル' + (_forecastCtxLoading[reg] ? '（詳細統計読込中…）' : '') + '</div>',
+      '  <ul style="margin:0;padding-left:18px;">' + driverHtml + '</ul>',
+      '</div>'
+    ].join('');
+
+    const selEl = wrap.querySelector('#marketForecastItemSelect');
+    if (selEl) {
+      selEl.onchange = function () {
+        _historyItem[_active] = selEl.value;
+        _historySelectedIdx = -1;
+        renderForecastChart_(wrap);
+      };
+    }
+    const perKgEl = wrap.querySelector('#marketFcPerKg');
+    if (perKgEl) {
+      perKgEl.onchange = function () {
+        _perKgMode = !!perKgEl.checked;
+        renderForecastChart_(wrap);
+      };
+    }
+    const recBtn = wrap.querySelector('#marketFcGoRecommend');
+    if (recBtn) {
+      recBtn.onclick = function () {
+        _recState.region = reg;
+        setActiveMarket_('recommend');
+      };
+    }
+  }
+
+  function renderRecommendPanel_() {
+    const wrap = document.getElementById('marketRecommendPanel');
+    if (!wrap) return;
+    const amf = window.AgriMarketForecast;
+    if (!amf || typeof amf.rankSowingCropsByMarket !== 'function') {
+      wrap.innerHTML = '<div style="background:#fff;border:1px solid #cfd8dc;border-radius:8px;padding:20px;text-align:center;color:#78909C;font-size:12px;">売れる野菜逆算モデルを読み込み中です。</div>';
+      return;
+    }
+
+    const today = todayYmd_();
+    if (!_recState.sowingDate) _recState.sowingDate = today;
+    const reg = _recState.region === 'osaka' ? 'osaka' : 'tokyo';
+    if (!_forecastCtxCache[reg] && !_forecastCtxLoading[reg]) {
+      ensureForecastContextLoaded_(reg, false);
+    }
+    const ctx = _forecastCtxCache[reg] || buildFallbackForecastCtx_(reg);
+    const impactsMap = typeof amf.getCachedOriginImpactsMap === 'function'
+      ? amf.getCachedOriginImpactsMap()
+      : {};
+
+    const ranked = amf.rankSowingCropsByMarket({
+      sowingDate: _recState.sowingDate,
+      fieldCondition: _recState.cover,
+      areaA: _recState.areaA,
+      marketCtx: ctx,
+      originImpactsMap: impactsMap,
+      croptypes: ctx.croptypes || [],
+      includeOutOfSeason: _recState.includeOut
+    });
+
+    const items = (ranked && ranked.items) || [];
+    items.slice(0, 3).forEach(function (it) {
+      const pref = it && it.forecast && it.forecast.originsUsed && it.forecast.originsUsed[0];
+      if (pref && !impactsMap[pref] && !_originFetchTried.has(pref) && typeof amf.fetchOriginWeatherImpact === 'function') {
+        _originFetchTried.add(pref);
+        amf.fetchOriginWeatherImpact(pref).then(function () {
+          if (_active === 'recommend') renderRecommendPanel_();
+        }).catch(function () {});
+      }
+    });
+
+    const presetDates = [
+      { label: '今日', ymd: today },
+      { label: '7日後', ymd: addDaysLocalYmd_(today, 7) },
+      { label: '14日後', ymd: addDaysLocalYmd_(today, 14) },
+      { label: '1ヶ月後', ymd: addDaysLocalYmd_(today, 30) },
+      { label: '春まき(3/1)', ymd: nextSpringMarchYmd_(today) }
+    ];
+    const covers = ['露地', 'トンネル', '雨よけ', 'ハウス'];
+
+    const medals = ['🥇 1位', '🥈 2位', '🥉 3位'];
+    const suitBadge = function (it) {
+      if (it.suitability === 'optimal') {
+        return '<span style="background:#E8F5E9;color:#2E7D32;border:1px solid #A5D6A7;border-radius:999px;padding:1px 7px;font-size:10px;font-weight:800;">' + esc_(it.suitabilityLabel) + '</span>';
+      }
+      if (it.suitability === 'marginal') {
+        return '<span style="background:#FFF8E1;color:#EF6C00;border:1px solid #FFE082;border-radius:999px;padding:1px 7px;font-size:10px;font-weight:800;">' + esc_(it.suitabilityLabel) + '</span>';
+      }
+      return '<span style="background:#ECEFF1;color:#607D8B;border:1px solid #CFD8DC;border-radius:999px;padding:1px 7px;font-size:10px;font-weight:800;">' + esc_(it.suitabilityLabel) + '</span>';
+    };
+
+    const topCardsHtml = items.slice(0, 3).map(function (it, idx) {
+      const offBadge = it.isOffSeason
+        ? '<span style="background:#FFEBEE;color:#C62828;border:1px solid #FFCDD2;border-radius:999px;padding:1px 7px;font-size:10px;font-weight:800;">🔥 端境期狙い</span>'
+        : '';
+      const profitColor = it.expectedGrossProfitYen >= 0 ? '#00695C' : '#C62828';
+      const costTag = it.hasOrgCost ? '自社原価' : '標準原価';
+      return [
+        '<div style="background:#fff;border:1.5px solid ' + (idx === 0 ? '#00897B' : '#B2DFDB') + ';border-radius:10px;padding:10px 11px;display:flex;flex-direction:column;justify-content:space-between;gap:6px;">',
+        '  <div>',
+        '    <div style="display:flex;align-items:center;justify-content:space-between;gap:4px;flex-wrap:wrap;margin-bottom:4px;">',
+        '      <span style="font-size:12px;font-weight:900;color:#004D40;">' + medals[idx] + ' ' + esc_(it.cropKey) + '</span>',
+        '      <span style="font-size:10.5px;color:#546E7A;font-weight:700;">' + esc_(it.harvestLabel) + '</span>',
+        '    </div>',
+        '    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px;">' + suitBadge(it) + offBadge + '</div>',
+        '    <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin-bottom:3px;">',
+        '      <span style="color:#607D8B;">予想単価:</span>',
+        '      <span style="font-weight:800;color:#1E293B;">' + fmtNum_(it.expectedPricePerKg) + '円/kg <span style="font-size:10.5px;color:' + (it.vsBasePct >= 105 ? '#C62828' : '#546E7A') + ';">(平年比' + it.vsBasePct + '%)</span></span>',
+        '    </div>',
+        '    <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;margin-bottom:4px;">',
+        '      <span style="color:#607D8B;">予想粗利:</span>',
+        '      <span style="font-weight:900;font-size:14px;color:' + profitColor + ';">' + esc_(fmtYen_(it.expectedGrossProfitYen)) + '</span>',
+        '    </div>',
+        '    <div style="font-size:10.5px;color:#64748B;">売上 ' + esc_(fmtYen_(it.expectedRevenueYen)) + ' − ' + costTag + ' ' + esc_(fmtYen_(it.estimatedCostYen)) + '（' + fmtNum_(it.expectedYieldKg) + 'kg）</div>',
+        '    <div style="font-size:10.5px;color:#455A64;margin-top:4px;line-height:1.4;">' + esc_(it.reasonText || '') + '</div>',
+        '  </div>',
+        '  <div style="display:flex;gap:6px;margin-top:4px;">',
+        '    <button type="button" class="market-rec-jump-fc" data-crop="' + esc_(it.cropKey) + '" style="flex:1;border:1px solid #80CBC4;background:#E0F2F1;color:#00695C;border-radius:6px;padding:5px 6px;font-size:11px;font-weight:800;cursor:pointer;">🔮 価格予測</button>',
+        '    <button type="button" class="market-rec-jump-sim" data-crop="' + esc_(it.cropKey) + '" style="flex:1;border:1px solid #A5D6A7;background:#E8F5E9;color:#2E7D32;border-radius:6px;padding:5px 6px;font-size:11px;font-weight:800;cursor:pointer;">🌱 生育・施肥試算</button>',
+        '  </div>',
+        '</div>'
+      ].join('');
+    }).join('');
+
+    const tableRowsHtml = items.length ? items.map(function (it, idx) {
+      const pColor = it.expectedGrossProfitYen >= 0 ? '#00695C' : '#C62828';
+      return [
+        '<tr style="border-bottom:1px solid #f0f0f0;">',
+        '  <td style="padding:7px 5px;text-align:center;font-weight:800;color:#37474F;">' + (idx + 1) + '</td>',
+        '  <td style="padding:7px 5px;font-weight:700;color:#263238;">' + esc_(it.cropKey) + (it.isOffSeason ? ' <span style="font-size:10px;color:#C62828;">🔥端境</span>' : '') + '</td>',
+        '  <td style="padding:7px 5px;white-space:nowrap;">' + suitBadge(it) + '</td>',
+        '  <td style="padding:7px 5px;font-size:11px;color:#455A64;white-space:nowrap;">' + esc_(it.harvestLabel) + '</td>',
+        '  <td style="padding:7px 5px;text-align:right;white-space:nowrap;font-weight:700;">' + fmtNum_(it.expectedPricePerKg) + '円<div style="font-size:10px;color:#78909C;">平年比' + it.vsBasePct + '%</div></td>',
+        '  <td style="padding:7px 5px;text-align:right;white-space:nowrap;">' + esc_(fmtYen_(it.expectedRevenueYen)) + '</td>',
+        '  <td style="padding:7px 5px;text-align:right;white-space:nowrap;color:#607D8B;">' + esc_(fmtYen_(it.estimatedCostYen)) + '<div style="font-size:9.5px;">' + (it.hasOrgCost ? '自社' : '標準') + '</div></td>',
+        '  <td style="padding:7px 5px;text-align:right;white-space:nowrap;font-weight:800;color:' + pColor + ';">' + esc_(fmtYen_(it.expectedGrossProfitYen)) + '</td>',
+        '  <td style="padding:7px 5px;text-align:center;white-space:nowrap;">',
+        '    <button type="button" class="market-rec-jump-fc" data-crop="' + esc_(it.cropKey) + '" title="6ヶ月価格予測" style="border:1px solid #80CBC4;background:#E0F2F1;color:#00695C;border-radius:4px;padding:2px 5px;font-size:11px;cursor:pointer;">🔮</button>',
+        '    <button type="button" class="market-rec-jump-sim" data-crop="' + esc_(it.cropKey) + '" title="生育・施肥試算" style="border:1px solid #A5D6A7;background:#E8F5E9;color:#2E7D32;border-radius:4px;padding:2px 5px;font-size:11px;cursor:pointer;margin-left:2px;">🌱</button>',
+        '  </td>',
+        '</tr>'
+      ].join('');
+    }).join('') : '<tr><td colspan="9" style="padding:18px;text-align:center;color:#90A4AE;">条件に合う播種適期品目がありません。「適期外も表示」をONにするか栽培条件（ハウス等）を変更してください。</td></tr>';
+
+    wrap.innerHTML = [
+      '<div style="background:#fff;border:1px solid #B2DFDB;border-radius:10px;padding:10px 12px;margin-bottom:10px;">',
+      '  <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:8px;">',
+      '    <div style="display:flex;align-items:center;gap:4px;">',
+      '      <span style="font-size:11.5px;font-weight:800;color:#37474F;">対象市場:</span>',
+      ['tokyo', 'osaka'].map(function (rKey) {
+        const on = reg === rKey;
+        const label = rKey === 'osaka' ? '大阪・本場' : '東京・大田';
+        return '<button type="button" class="market-rec-reg-btn" data-reg="' + rKey + '" style="border:1px solid ' + (on ? '#00695C' : '#cfd8dc') + ';background:' + (on ? '#00695C' : '#fff') + ';color:' + (on ? '#fff' : '#455A64') + ';border-radius:6px;padding:4px 9px;font-size:11.5px;font-weight:700;cursor:pointer;">' + label + '</button>';
+      }).join(''),
+      '    </div>',
+      '    <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">',
+      '      <span style="font-size:11.5px;font-weight:800;color:#37474F;">播種予定:</span>',
+      '      <input type="date" id="marketRecDate" value="' + esc_(_recState.sowingDate) + '" style="border:1px solid #B2DFDB;border-radius:6px;padding:3px 7px;font-size:12px;" />',
+      presetDates.map(function (p) {
+        const on = _recState.sowingDate === p.ymd;
+        return '<button type="button" class="market-rec-preset-btn" data-ymd="' + p.ymd + '" style="border:1px solid ' + (on ? '#00695C' : '#cfd8dc') + ';background:' + (on ? '#E0F2F1' : '#fff') + ';color:' + (on ? '#00695C' : '#546E7A') + ';border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700;cursor:pointer;">' + p.label + '</button>';
+      }).join(''),
+      '    </div>',
+      '  </div>',
+      '  <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">',
+      '    <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">',
+      '      <span style="font-size:11.5px;font-weight:800;color:#37474F;">栽培条件:</span>',
+      covers.map(function (c) {
+        const on = _recState.cover === c;
+        return '<button type="button" class="market-rec-cover-btn" data-cover="' + c + '" style="border:1px solid ' + (on ? '#00695C' : '#cfd8dc') + ';background:' + (on ? '#00695C' : '#fff') + ';color:' + (on ? '#fff' : '#455A64') + ';border-radius:6px;padding:4px 9px;font-size:11.5px;font-weight:700;cursor:pointer;">' + c + '</button>';
+      }).join(''),
+      '    </div>',
+      '    <div style="display:flex;align-items:center;gap:5px;">',
+      '      <span style="font-size:11.5px;font-weight:800;color:#37474F;">作付面積:</span>',
+      '      <input type="number" id="marketRecArea" min="0.5" max="1000" step="0.5" value="' + esc_(_recState.areaA) + '" style="width:64px;border:1px solid #B2DFDB;border-radius:6px;padding:3px 6px;font-size:12px;text-align:right;" />',
+      '      <span style="font-size:11.5px;color:#546E7A;">a（' + (_recState.areaA / 10).toFixed(1) + '反）</span>',
+      '    </div>',
+      '    <label style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:#455A64;cursor:pointer;">',
+      '      <input type="checkbox" id="marketRecOut"' + (_recState.includeOut ? ' checked' : '') + ' /> 適期外も表示',
+      '    </label>',
+      '  </div>',
+      '</div>',
+      topCardsHtml ? ('<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:10px;">' + topCardsHtml + '</div>') : '',
+      '<div style="max-height:min(40vh,340px);overflow:auto;border:1px solid #e0e0e0;border-radius:8px;background:#fff;">',
+      '  <table style="width:100%;border-collapse:collapse;font-size:11.5px;">',
+      '    <thead style="position:sticky;top:0;background:#eceff1;z-index:1;">',
+      '      <tr>',
+      '        <th style="padding:7px 5px;border-bottom:1px solid #cfd8dc;">順位</th>',
+      '        <th style="text-align:left;padding:7px 5px;border-bottom:1px solid #cfd8dc;">品目</th>',
+      '        <th style="text-align:left;padding:7px 5px;border-bottom:1px solid #cfd8dc;">適期</th>',
+      '        <th style="text-align:left;padding:7px 5px;border-bottom:1px solid #cfd8dc;">予想収穫期</th>',
+      '        <th style="text-align:right;padding:7px 5px;border-bottom:1px solid #cfd8dc;">予想単価</th>',
+      '        <th style="text-align:right;padding:7px 5px;border-bottom:1px solid #cfd8dc;">予想売上</th>',
+      '        <th style="text-align:right;padding:7px 5px;border-bottom:1px solid #cfd8dc;">想定原価</th>',
+      '        <th style="text-align:right;padding:7px 5px;border-bottom:1px solid #cfd8dc;">予想粗利</th>',
+      '        <th style="text-align:center;padding:7px 5px;border-bottom:1px solid #cfd8dc;">連携</th>',
+      '      </tr>',
+      '    </thead>',
+      '    <tbody>' + tableRowsHtml + '</tbody>',
+      '  </table>',
+      '</div>'
+    ].join('');
+
+    wrap.querySelectorAll('.market-rec-reg-btn').forEach(function (btn) {
+      btn.onclick = function () {
+        const nextReg = btn.getAttribute('data-reg') === 'osaka' ? 'osaka' : 'tokyo';
+        if (_recState.region === nextReg) return;
+        _recState.region = nextReg;
+        _fetchedAt.recommend = 0;
+        loadMarket_('recommend', false);
+      };
+    });
+    const dateEl = wrap.querySelector('#marketRecDate');
+    if (dateEl) {
+      dateEl.onchange = function () {
+        if (dateEl.value) {
+          _recState.sowingDate = dateEl.value;
+          renderRecommendPanel_();
+          renderLoadedStatus_('recommend', _cache.recommend);
+        }
+      };
+    }
+    wrap.querySelectorAll('.market-rec-preset-btn').forEach(function (btn) {
+      btn.onclick = function () {
+        _recState.sowingDate = btn.getAttribute('data-ymd') || today;
+        renderRecommendPanel_();
+        renderLoadedStatus_('recommend', _cache.recommend);
+      };
+    });
+    wrap.querySelectorAll('.market-rec-cover-btn').forEach(function (btn) {
+      btn.onclick = function () {
+        _recState.cover = btn.getAttribute('data-cover') || '露地';
+        renderRecommendPanel_();
+        renderLoadedStatus_('recommend', _cache.recommend);
+      };
+    });
+    const areaEl = wrap.querySelector('#marketRecArea');
+    if (areaEl) {
+      areaEl.onchange = function () {
+        const v = Number(areaEl.value);
+        if (isFinite(v) && v > 0) {
+          _recState.areaA = Math.max(0.5, Math.min(1000, v));
+          renderRecommendPanel_();
+          renderLoadedStatus_('recommend', _cache.recommend);
+        }
+      };
+    }
+    const outEl = wrap.querySelector('#marketRecOut');
+    if (outEl) {
+      outEl.onchange = function () {
+        _recState.includeOut = !!outEl.checked;
+        renderRecommendPanel_();
+      };
+    }
+    wrap.querySelectorAll('.market-rec-jump-fc').forEach(function (btn) {
+      btn.onclick = function () {
+        const crop = btn.getAttribute('data-crop') || 'キャベツ';
+        _active = reg;
+        _historyItem[reg] = crop;
+        _historySelectedIdx = -1;
+        _viewMode = 'chart';
+        _chartTab = 'forecast';
+        applyActiveChrome_();
+        if (_cache[reg] && Array.isArray(_cache[reg].items)) {
+          renderActiveView_();
+          renderLoadedStatus_(reg, _cache[reg]);
+        } else {
+          loadMarket_(reg, false);
+        }
+      };
+    });
+    wrap.querySelectorAll('.market-rec-jump-sim').forEach(function (btn) {
+      btn.onclick = function () {
+        const crop = btn.getAttribute('data-crop') || 'キャベツ';
+        MarketInfo.close();
+        if (typeof window.openAgriGrowthCareModal === 'function') {
+          window.openAgriGrowthCareModal({
+            mode: 'sim',
+            cropName: crop,
+            sowingDate: _recState.sowingDate,
+            fieldCondition: _recState.cover,
+            areaA: _recState.areaA
+          });
+        }
+      };
+    });
+  }
+
   function renderLoadedStatus_(key, data) {
     if (data && data.warning) {
       setStatus_(data.warning, false, false);
+      return;
+    }
+    if (key === 'recommend') {
+      setStatus_('播種予定 ' + (_recState.sowingDate || todayYmd_()) + '（' + _recState.cover + '・' + _recState.areaA + 'a）の逆算収益ランキングを表示中', false, false);
       return;
     }
     if (key === 'fertilizer') {
@@ -2164,6 +2766,37 @@
     if (!conf) return;
     ensurePanelDom_();
     if (_loading[key]) return;
+    if (key === 'recommend') {
+      if (!refresh && _forecastCtxCache[_recState.region] && _fetchedAt.recommend && (Date.now() - _fetchedAt.recommend < AUTO_CACHE_TTL_MS)) {
+        applyActiveChrome_();
+        if (_active === 'recommend') {
+          renderActiveView_();
+          renderLoadedStatus_('recommend', _cache.recommend);
+        }
+        return;
+      }
+      _loading.recommend = true;
+      _loadingRefresh.recommend = !!refresh;
+      applyActiveChrome_();
+      if (_active === 'recommend') {
+        renderActiveView_();
+        setStatus_(loadingStatusMessage_('recommend'), false, true);
+      }
+      try {
+        const ctx = await ensureForecastContextLoaded_(_recState.region, !!refresh);
+        _cache.recommend = ctx || null;
+        _fetchedAt.recommend = Date.now();
+      } finally {
+        _loading.recommend = false;
+        _loadingRefresh.recommend = false;
+        applyActiveChrome_();
+        if (_active === 'recommend') {
+          renderActiveView_();
+          renderLoadedStatus_('recommend', _cache.recommend);
+        }
+      }
+      return;
+    }
     if (key === 'fertilizer') {
       if (!refresh && _cache[key] && _fetchedAt[key] && (Date.now() - _fetchedAt[key] < FERT_CACHE_TTL_MS)) {
         applyActiveChrome_();

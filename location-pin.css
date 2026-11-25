@@ -32,6 +32,25 @@
   100% { transform: scale(1.7); opacity: 0; }
 }
 
+.place-pin-label {
+  background: #ffffff !important;
+  padding: 3px 8px !important;
+  border-radius: 8px !important;
+  font-weight: bold !important;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+.place-pin-label.place-pin-ship {
+  color: #0D47A1 !important;
+  border: 2px solid #1565C0 !important;
+}
+
+.place-pin-label.place-pin-use {
+  color: #00695C !important;
+  border: 2px solid #00897B !important;
+}
+
 .location-pin-label {
   background: #FFEB3B !important;
   color: #3E2723 !important;

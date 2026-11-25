@@ -194,12 +194,12 @@
   function renderAgriWeatherPanelHtml() {
     const st = global.weatherSunshineState;
     if (!st || !st.data || !st.data.daily) {
-      return '<div style="color:#888;text-align:center;padding:8px;font-size:12px;">農業指標を計算する天気データがありません</div>';
+      return '<!--AGRI_DASHBOARD_START--><div style="color:#888;text-align:center;padding:8px;font-size:12px;">農業指標を計算する天気データがありません</div><!--AGRI_DASHBOARD_END-->';
     }
     const insights = computeAgriWeatherInsights(st.data.daily, st.todayStr);
     st.agriInsights = insights;
     if (!insights) {
-      return '<div style="color:#888;text-align:center;padding:8px;font-size:12px;">農業指標を計算できませんでした</div>';
+      return '<!--AGRI_DASHBOARD_START--><div style="color:#888;text-align:center;padding:8px;font-size:12px;">農業指標を計算できませんでした</div><!--AGRI_DASHBOARD_END-->';
     }
 
     const m = insights.moisture;
@@ -225,7 +225,7 @@
     const priorityBox = renderWeatherPrioritySectionHtml_(insights);
     hydrateAgriWeatherAsyncPanels_();
 
-    return `
+    return `<!--AGRI_DASHBOARD_START-->
       <div style="background:linear-gradient(180deg,#e8f5e9 0%,#e3f2fd 100%);border:1px solid #90caf9;border-radius:10px;padding:12px;margin-bottom:12px;font-size:12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
           <span style="font-weight:bold;color:#1565c0;font-size:13px;">🌱 農業天気ダッシュボード</span>
@@ -291,7 +291,7 @@
           </div>
           <div style="font-size:10px;color:#888;margin-top:4px;">◎向き　△条件つき　×控えめ<br>防除目安: 風&lt;4◎　〜10△（飛散注意）　10以上×</div>
         </div>
-      </div>
+      </div><!--AGRI_DASHBOARD_END-->
     `;
   }
 
@@ -1752,7 +1752,100 @@
         ${edit}
       </div>`;
     }).join('');
-    return `<div data-weather-place-tabs="1" style="display:flex; gap:6px; margin-bottom:10px;">${tabs}</div>`;
+    return `<div data-weather-place-tabs="1" style="display:flex; gap:6px; margin-bottom:10px;">${tabs}</div><!--WEATHER_PLACE_TABS_END-->`;
+  }
+
+  let activeWeatherMainTab_ = 'weather';
+
+  function renderWeatherMainTabsHtml_(activeTab, insights) {
+    const isAgri = activeTab === 'agri';
+    const alertCount = (insights && Array.isArray(insights.alerts) ? insights.alerts.length : 0)
+      + (insights && insights.rainWithin2Days ? 1 : 0);
+    const badgeHtml = alertCount > 0
+      ? `<span style="background:#ef5350;color:#fff;font-size:10px;font-weight:bold;padding:1px 5px;border-radius:999px;margin-left:4px;vertical-align:middle;">⚠${alertCount}</span>`
+      : '';
+    const weatherStyle = !isAgri
+      ? 'flex:1;min-width:0;padding:8px 6px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:bold;text-align:center;border:2px solid #1976d2;background:#ffffff;color:#1565c0;box-shadow:0 1px 3px rgba(25,118,210,0.18);'
+      : 'flex:1;min-width:0;padding:8px 6px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:bold;text-align:center;border:1px solid transparent;background:transparent;color:#546e7a;';
+    const agriStyle = isAgri
+      ? 'flex:1;min-width:0;padding:8px 6px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:bold;text-align:center;border:2px solid #2e7d32;background:#ffffff;color:#1b5e20;box-shadow:0 1px 3px rgba(46,125,50,0.18);'
+      : 'flex:1;min-width:0;padding:8px 6px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:bold;text-align:center;border:1px solid transparent;background:transparent;color:#546e7a;';
+
+    return `<div data-weather-main-tabs="1" role="tablist" style="display:flex;gap:6px;margin-bottom:10px;padding:3px;background:#f1f5f9;border-radius:10px;border:1px solid #cbd5e1;">
+      <button type="button" data-weather-main-tab="weather" role="tab" aria-selected="${!isAgri ? 'true' : 'false'}" onclick="window.switchWeatherMainTab && window.switchWeatherMainTab('weather')" style="${weatherStyle}">🌦️ 週間天気予報</button>
+      <button type="button" data-weather-main-tab="agri" role="tab" aria-selected="${isAgri ? 'true' : 'false'}" onclick="window.switchWeatherMainTab && window.switchWeatherMainTab('agri')" style="${agriStyle}">🌱 農業ダッシュボード${badgeHtml}</button>
+    </div>`;
+  }
+
+  function wrapWeatherHtmlWithMainTabs_(html) {
+    if (typeof html !== 'string' || !html) return html;
+    if (html.indexOf('data-weather-main-tabs') >= 0) return html;
+    const placeMarker = '<!--WEATHER_PLACE_TABS_END-->';
+    const agriStartMarker = '<!--AGRI_DASHBOARD_START-->';
+    const agriEndMarker = '<!--AGRI_DASHBOARD_END-->';
+    const aStart = html.indexOf(agriStartMarker);
+    const aEnd = html.indexOf(agriEndMarker);
+    if (aStart < 0 || aEnd < 0 || aEnd <= aStart) return html;
+
+    const agriHtml = html.slice(aStart + agriStartMarker.length, aEnd);
+    const withoutAgri = html.slice(0, aStart) + html.slice(aEnd + agriEndMarker.length);
+    const pIdx = withoutAgri.indexOf(placeMarker);
+    if (pIdx < 0) return html;
+
+    const headPart = withoutAgri.slice(0, pIdx + placeMarker.length);
+    const tailPart = withoutAgri.slice(pIdx + placeMarker.length);
+    const closingMatch = tailPart.match(/<\/div>\s*$/);
+    if (!closingMatch) return html;
+
+    const weatherBody = tailPart.slice(0, closingMatch.index);
+    const outerClose = closingMatch[0];
+    const st = global.weatherSunshineState || {};
+    const insights = st.agriInsights || null;
+    const isAgri = activeWeatherMainTab_ === 'agri';
+
+    return headPart
+      + renderWeatherMainTabsHtml_(activeWeatherMainTab_, insights)
+      + `<div data-weather-main-panel="weather" style="display:${isAgri ? 'none' : 'block'};">${weatherBody}</div>`
+      + `<div data-weather-main-panel="agri" style="display:${isAgri ? 'block' : 'none'};">${agriHtml}</div>`
+      + outerClose;
+  }
+
+  function syncWeatherMainTabDom_(root) {
+    const scope = root && typeof root.querySelectorAll === 'function' ? root : (typeof document !== 'undefined' ? document : null);
+    if (!scope) return;
+    const isAgri = activeWeatherMainTab_ === 'agri';
+    scope.querySelectorAll('[data-weather-main-tabs]').forEach(function (wrap) {
+      wrap.querySelectorAll('[data-weather-main-tab]').forEach(function (btn) {
+        const key = btn.getAttribute('data-weather-main-tab');
+        const on = (key === 'agri') === isAgri;
+        btn.setAttribute('aria-selected', on ? 'true' : 'false');
+        if (on) {
+          const isAgriBtn = key === 'agri';
+          btn.style.border = isAgriBtn ? '2px solid #2e7d32' : '2px solid #1976d2';
+          btn.style.background = '#ffffff';
+          btn.style.color = isAgriBtn ? '#1b5e20' : '#1565c0';
+          btn.style.boxShadow = isAgriBtn ? '0 1px 3px rgba(46,125,50,0.18)' : '0 1px 3px rgba(25,118,210,0.18)';
+        } else {
+          btn.style.border = '1px solid transparent';
+          btn.style.background = 'transparent';
+          btn.style.color = '#546e7a';
+          btn.style.boxShadow = 'none';
+        }
+      });
+    });
+    scope.querySelectorAll('[data-weather-main-panel]').forEach(function (panel) {
+      const key = panel.getAttribute('data-weather-main-panel');
+      panel.style.display = ((key === 'agri') === isAgri) ? 'block' : 'none';
+    });
+  }
+
+  function switchWeatherMainTab(tabName) {
+    activeWeatherMainTab_ = tabName === 'agri' ? 'agri' : 'weather';
+    const content = typeof document !== 'undefined' ? document.getElementById('weatherContent') : null;
+    syncWeatherMainTabDom_(content || (typeof document !== 'undefined' ? document : null));
+    if (activeWeatherMainTab_ === 'agri') {
+      hydrateAgriWeatherAsyncPanels_();
+    }
   }
 
   let activeNearTermDayOffset_ = 0;
@@ -1918,7 +2011,7 @@
   }
 
   function weatherHtmlHasPlaceTabs_(html) {
-    return typeof html === 'string' && html.indexOf('data-weather-place-tabs') >= 0 && html.indexOf('data-weather-day-tabs') >= 0;
+    return typeof html === 'string' && html.indexOf('data-weather-place-tabs') >= 0 && html.indexOf('data-weather-day-tabs') >= 0 && html.indexOf('data-weather-main-tabs') >= 0;
   }
 
   function paintOpenWeatherModal_(html) {
@@ -1928,6 +2021,7 @@
     if (modal.style.display === 'none' || !modal.style.display) return;
     content.innerHTML = html;
     syncNearTermWeatherDayDom_(content);
+    syncWeatherMainTabDom_(content);
     hydrateAgriWeatherAsyncPanels_();
   }
 
@@ -1956,6 +2050,7 @@
   }
 
   function finishWeatherFetch(ctx, html) {
+    html = wrapWeatherHtmlWithMainTabs_(html);
     if (!ctx || ctx.skip) {
       global.cachedWeatherHtml = html;
       return;
@@ -2017,6 +2112,7 @@
       if (modalOpen) {
         content.innerHTML = bundle.html;
         syncNearTermWeatherDayDom_(content);
+        syncWeatherMainTabDom_(content);
         hydrateAgriWeatherAsyncPanels_();
       }
       return;
@@ -2107,7 +2203,8 @@
         <div id="weatherPlaceSearchList"></div>
         <div style="font-size:12px; font-weight:bold; color:#455a64; margin:8px 0 6px;">登録済みの視野地点</div>
         <div id="weatherPlaceViewpointList"></div>
-        <button type="button" onclick="window.useMapCenterForWeatherPlace && window.useMapCenterForWeatherPlace()" style="width:100%; margin-top:4px; background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:8px; padding:10px; font-weight:bold; cursor:pointer;">📍 今の地図の中心を使う</button>
+        <button type="button" onclick="window.pickWeatherPlaceFromMap && window.pickWeatherPlaceFromMap()" style="width:100%; margin-top:4px; background:#1565c0; color:#fff; border:none; border-radius:8px; padding:10px; font-weight:bold; cursor:pointer;">🗺️ 地図から選ぶ</button>
+        <button type="button" onclick="window.useMapCenterForWeatherPlace && window.useMapCenterForWeatherPlace()" style="width:100%; margin-top:8px; background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; border-radius:8px; padding:10px; font-weight:bold; cursor:pointer;">📍 今の地図の中心を使う</button>
         <button type="button" onclick="window.clearWeatherPlaceSlot && window.clearWeatherPlaceSlot()" style="width:100%; margin-top:8px; background:#fff; color:#c62828; border:1px solid #ffcdd2; border-radius:8px; padding:8px; font-weight:bold; cursor:pointer;">この地域を解除</button>
         <div style="font-size:10px; color:#90a4ae; margin-top:8px; line-height:1.4;">選んだ場所はこの端末に保存されます。</div>
       </div>
@@ -2308,12 +2405,13 @@
     const lngN = typeof pick.lng === 'number' ? pick.lng : NaN;
     const hasPoint = isFinite(latN) && isFinite(lngN);
     const nameLine = hasPoint
-      ? '<div style="font-size:14px; font-weight:bold; margin-bottom:2px;">📍 ' + escHtml_(pick.name || '地点を確認中...') + '</div>'
-        + '<div style="font-size:11px; color:#90caf9; margin-bottom:10px;">' + latN.toFixed(5) + ', ' + lngN.toFixed(5) + '</div>'
+      ? '<div style="font-size:16px; font-weight:bold; margin-bottom:4px;">ここにしますか？</div>'
+        + '<div style="font-size:13px; margin-bottom:2px;">📍 ' + escHtml_(pick.name || '地点を確認中...') + '</div>'
+        + '<div style="font-size:11px; color:#90caf9; margin-bottom:10px;">' + latN.toFixed(5) + ', ' + lngN.toFixed(5) + '　別の地点をタップするとピンを動かせます</div>'
       : '<div style="font-size:14px; font-weight:bold; margin-bottom:4px;">' + title + 'の場所を地図でタップ</div>'
-        + '<div style="font-size:12px; color:#b0bec5; margin-bottom:10px; line-height:1.4;">圃場や道路など、天気を見たい地点をタップしてください。もう一度タップすると地点を動かせます。</div>';
+        + '<div style="font-size:12px; color:#b0bec5; margin-bottom:10px; line-height:1.4;">天気を見たい地点をタップするとピンが立ちます。確認してから設定できます。</div>';
     const confirmBtn = hasPoint
-      ? `<button type="button" onclick="window.confirmWeatherPlaceMapPick && window.confirmWeatherPlaceMapPick()" style="flex:1; background:#1976d2; color:#fff; border:none; border-radius:8px; padding:10px 12px; font-weight:bold; cursor:pointer;">この場所にする</button>`
+      ? `<button type="button" onclick="window.confirmWeatherPlaceMapPick && window.confirmWeatherPlaceMapPick()" style="flex:1; background:#1976d2; color:#fff; border:none; border-radius:8px; padding:10px 12px; font-weight:bold; cursor:pointer;">設定する</button>`
       : '';
     bar.innerHTML = nameLine + `<div style="display:flex; gap:8px;">
       ${confirmBtn}
@@ -2391,7 +2489,8 @@
     setWeatherMapPickPoint_(pos.lat, pos.lng);
   }
 
-  function startWeatherPlaceMapPick(slot) {
+  function startWeatherPlaceMapPick(slot, opts) {
+    opts = opts || {};
     slot = slot === 'r2' ? 'r2' : 'r1';
     weatherPlacePickerSlot_ = slot;
     if (!weatherMapReady_()) {
@@ -2400,15 +2499,37 @@
     }
     endWeatherPlaceMapPick_();
     closeWeatherPlacePicker();
-    weatherMapPick_ = { slot: slot, lat: null, lng: null, name: '', seq: 0, marker: null, domHandler: onWeatherMapDomClick_ };
+    weatherMapPick_ = {
+      slot: slot,
+      lat: null,
+      lng: null,
+      name: '',
+      seq: 0,
+      marker: null,
+      domHandler: onWeatherMapDomClick_,
+      fromPicker: !!opts.fromPicker
+    };
     hideWeatherModalForMapPick_();
     renderWeatherPickBar_();
     try { global.map.getDiv().addEventListener('click', onWeatherMapDomClick_, true); } catch (e) { }
   }
 
+  function pickWeatherPlaceFromMap() {
+    const slot = weatherPlacePickerSlot_ === 'r2' ? 'r2' : 'r1';
+    if (!weatherMapReady_()) {
+      if (typeof global.customAlert === 'function') global.customAlert('地図が表示されている画面で選んでください');
+      return;
+    }
+    startWeatherPlaceMapPick(slot, { fromPicker: true });
+  }
+
   function cancelWeatherPlaceMapPick() {
+    const pick = weatherMapPick_;
+    const slot = pick && pick.slot;
+    const fromPicker = !!(pick && pick.fromPicker);
     endWeatherPlaceMapPick_();
     showWeatherModalAfterMapPick_();
+    if (fromPicker && slot) openWeatherPlacePicker(slot);
   }
 
   function confirmWeatherPlaceMapPick() {
@@ -2425,7 +2546,10 @@
     commitWeatherPlaceSlot_(slot, place);
   }
 
-  function presentWeatherModal() {
+  function presentWeatherModal(opts) {
+    if (opts && (opts.tab === 'agri' || opts.tab === 'weather')) {
+      activeWeatherMainTab_ = opts.tab;
+    }
     const content = document.getElementById('weatherContent');
     const modal = document.getElementById('weatherModal');
     if (!content || !modal) return;
@@ -2438,12 +2562,14 @@
       applyWeatherBundle_(bundle);
       content.innerHTML = bundle.html;
       syncNearTermWeatherDayDom_(content);
+      syncWeatherMainTabDom_(content);
       hydrateAgriWeatherAsyncPanels_();
       return;
     }
     if (active === 'here' && weatherHtmlHasPlaceTabs_(global.cachedWeatherHtml)) {
       content.innerHTML = global.cachedWeatherHtml;
       syncNearTermWeatherDayDom_(content);
+      syncWeatherMainTabDom_(content);
       hydrateAgriWeatherAsyncPanels_();
       return;
     }
@@ -3522,6 +3648,784 @@
   }
 
   // ========================================================================
+  // 📈 Phase 3-4: 市場・価格予測（6ヶ月）＆ 種まきからの売れる野菜逆算エンジン
+  // ========================================================================
+  const AGRI_MARKET_MODELS_ = {
+    'キャベツ': {
+      basePricePerKg: 135, stdUnitKg: 10, stdYieldKg10a: 4200, stdCost10aYen: 115000,
+      monthlyPriceIdx: [1.10, 1.12, 1.15, 1.05, 0.85, 0.80, 0.90, 1.08, 1.16, 1.12, 0.90, 0.92],
+      monthlySupplyIdx: [0.92, 0.88, 0.86, 0.96, 1.15, 1.18, 1.04, 0.88, 0.82, 0.88, 1.12, 1.10],
+      sowingMonths: { open: [2, 3, 4, 7, 8, 9, 10, 11], tunnel: [1, 2, 3, 4, 7, 8, 9, 10, 11, 12], house: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
+      seasonalOrigins: { winter: ['愛知', '千葉'], spring: ['千葉', '神奈川'], summer: ['群馬', '長野'], autumn: ['茨城', '千葉'] }
+    },
+    'はくさい': {
+      basePricePerKg: 110, stdUnitKg: 15, stdYieldKg10a: 5000, stdCost10aYen: 110000,
+      monthlyPriceIdx: [0.92, 0.98, 1.08, 1.18, 1.15, 1.02, 1.05, 1.16, 1.22, 1.04, 0.78, 0.78],
+      monthlySupplyIdx: [1.12, 1.02, 0.90, 0.80, 0.82, 0.92, 0.88, 0.78, 0.76, 0.96, 1.26, 1.28],
+      sowingMonths: { open: [3, 4, 8, 9], tunnel: [2, 3, 4, 8, 9, 10], house: [1, 2, 3, 4, 8, 9, 10, 11] },
+      seasonalOrigins: { winter: ['茨城', '愛知'], spring: ['茨城', '長野'], summer: ['長野', '群馬'], autumn: ['茨城', '長野'] }
+    },
+    'だいこん': {
+      basePricePerKg: 125, stdUnitKg: 10, stdYieldKg10a: 4800, stdCost10aYen: 95000,
+      monthlyPriceIdx: [0.95, 0.95, 1.00, 1.02, 0.98, 0.95, 1.08, 1.24, 1.26, 1.05, 0.82, 0.85],
+      monthlySupplyIdx: [1.06, 1.05, 0.98, 0.95, 1.00, 1.04, 0.88, 0.74, 0.74, 0.95, 1.20, 1.18],
+      sowingMonths: { open: [3, 4, 5, 8, 9, 10], tunnel: [1, 2, 3, 4, 5, 8, 9, 10, 11], house: [1, 2, 3, 4, 5, 8, 9, 10, 11, 12] },
+      seasonalOrigins: { winter: ['神奈川', '千葉'], spring: ['千葉', '徳島'], summer: ['北海道', '青森'], autumn: ['千葉', '茨城'] }
+    },
+    'ブロッコリー': {
+      basePricePerKg: 340, stdUnitKg: 4, stdYieldKg10a: 1300, stdCost10aYen: 125000,
+      monthlyPriceIdx: [1.14, 1.18, 1.10, 0.92, 0.84, 0.92, 1.12, 1.22, 1.18, 1.00, 0.82, 0.88],
+      monthlySupplyIdx: [0.85, 0.82, 0.90, 1.08, 1.18, 1.05, 0.84, 0.76, 0.80, 1.00, 1.18, 1.12],
+      sowingMonths: { open: [2, 3, 7, 8, 9], tunnel: [1, 2, 3, 7, 8, 9, 10], house: [1, 2, 3, 7, 8, 9, 10, 11] },
+      seasonalOrigins: { winter: ['愛知', '香川'], spring: ['埼玉', '香川'], summer: ['北海道', '長野'], autumn: ['埼玉', '愛知'] }
+    },
+    'レタス': {
+      basePricePerKg: 210, stdUnitKg: 10, stdYieldKg10a: 2600, stdCost10aYen: 115000,
+      monthlyPriceIdx: [1.18, 1.20, 1.12, 0.88, 0.76, 0.82, 0.95, 1.15, 1.22, 1.10, 0.86, 0.96],
+      monthlySupplyIdx: [0.82, 0.80, 0.88, 1.12, 1.24, 1.16, 1.02, 0.84, 0.78, 0.90, 1.14, 1.04],
+      sowingMonths: { open: [2, 3, 4, 8, 9, 10], tunnel: [1, 2, 3, 4, 8, 9, 10, 11], house: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
+      seasonalOrigins: { winter: ['静岡', '兵庫'], spring: ['茨城', '兵庫'], summer: ['長野', '群馬'], autumn: ['茨城', '長野'] }
+    },
+    'ほうれん草': {
+      basePricePerKg: 480, stdUnitKg: 2, stdYieldKg10a: 1350, stdCost10aYen: 105000,
+      monthlyPriceIdx: [0.95, 0.92, 0.88, 0.85, 0.92, 1.05, 1.24, 1.38, 1.32, 1.05, 0.78, 0.88],
+      monthlySupplyIdx: [1.06, 1.08, 1.12, 1.15, 1.06, 0.92, 0.76, 0.66, 0.72, 0.95, 1.22, 1.12],
+      sowingMonths: { open: [3, 4, 5, 9, 10, 11], tunnel: [1, 2, 3, 4, 5, 9, 10, 11, 12], house: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
+      seasonalOrigins: { winter: ['埼玉', '千葉'], spring: ['群馬', '埼玉'], summer: ['群馬', '長野'], autumn: ['埼玉', '茨城'] }
+    },
+    'こまつな': {
+      basePricePerKg: 360, stdUnitKg: 2, stdYieldKg10a: 1800, stdCost10aYen: 90000,
+      monthlyPriceIdx: [1.06, 1.04, 0.92, 0.82, 0.86, 0.98, 1.14, 1.28, 1.22, 0.96, 0.80, 0.94],
+      monthlySupplyIdx: [0.94, 0.95, 1.06, 1.16, 1.12, 1.00, 0.86, 0.74, 0.80, 1.04, 1.18, 1.05],
+      sowingMonths: { open: [3, 4, 5, 6, 7, 8, 9, 10, 11], tunnel: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], house: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
+      seasonalOrigins: { winter: ['埼玉', '茨城'], spring: ['埼玉', '福岡'], summer: ['茨城', '埼玉'], autumn: ['埼玉', '千葉'] }
+    },
+    'にんじん': {
+      basePricePerKg: 165, stdUnitKg: 10, stdYieldKg10a: 3200, stdCost10aYen: 105000,
+      monthlyPriceIdx: [0.95, 0.96, 1.04, 1.14, 1.20, 1.12, 0.96, 0.98, 1.05, 0.98, 0.88, 0.88],
+      monthlySupplyIdx: [1.04, 1.02, 0.94, 0.84, 0.78, 0.88, 1.02, 1.00, 0.94, 1.02, 1.12, 1.12],
+      sowingMonths: { open: [2, 3, 4, 7, 8], tunnel: [1, 2, 3, 4, 7, 8, 9], house: [1, 2, 3, 4, 7, 8, 9] },
+      seasonalOrigins: { winter: ['千葉', '愛知'], spring: ['徳島', '千葉'], summer: ['青森', '北海道'], autumn: ['北海道', '千葉'] }
+    },
+    'ねぎ': {
+      basePricePerKg: 390, stdUnitKg: 5, stdYieldKg10a: 2800, stdCost10aYen: 145000,
+      monthlyPriceIdx: [0.96, 1.00, 1.10, 1.18, 1.16, 1.02, 0.98, 1.06, 1.10, 1.00, 0.85, 0.88],
+      monthlySupplyIdx: [1.04, 0.98, 0.88, 0.82, 0.84, 0.96, 1.00, 0.92, 0.88, 1.00, 1.16, 1.14],
+      sowingMonths: { open: [2, 3, 4, 5, 9, 10], tunnel: [1, 2, 3, 4, 5, 9, 10, 11], house: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
+      seasonalOrigins: { winter: ['埼玉', '千葉'], spring: ['千葉', '茨城'], summer: ['茨城', '青森'], autumn: ['茨城', '埼玉'] }
+    },
+    'たまねぎ': {
+      basePricePerKg: 155, stdUnitKg: 20, stdYieldKg10a: 4500, stdCost10aYen: 125000,
+      monthlyPriceIdx: [1.06, 1.12, 1.18, 1.12, 0.90, 0.82, 0.86, 0.94, 1.00, 1.00, 0.98, 1.02],
+      monthlySupplyIdx: [0.92, 0.86, 0.80, 0.88, 1.12, 1.22, 1.15, 1.04, 0.98, 0.98, 1.00, 0.96],
+      sowingMonths: { open: [3, 8, 9, 10], tunnel: [2, 3, 8, 9, 10], house: [2, 3, 8, 9, 10] },
+      seasonalOrigins: { winter: ['北海道', '佐賀'], spring: ['佐賀', '兵庫'], summer: ['兵庫', '北海道'], autumn: ['北海道', '佐賀'] }
+    },
+    'じゃがいも': {
+      basePricePerKg: 175, stdUnitKg: 10, stdYieldKg10a: 2700, stdCost10aYen: 115000,
+      monthlyPriceIdx: [1.06, 1.12, 1.16, 1.14, 1.02, 0.86, 0.84, 0.92, 0.98, 0.98, 0.96, 1.00],
+      monthlySupplyIdx: [0.94, 0.88, 0.82, 0.84, 0.98, 1.14, 1.18, 1.06, 1.00, 1.02, 1.04, 0.98],
+      sowingMonths: { open: [2, 3, 4, 8, 9], tunnel: [1, 2, 3, 8, 9], house: [1, 2, 3, 8, 9] },
+      seasonalOrigins: { winter: ['北海道', '鹿児島'], spring: ['鹿児島', '静岡'], summer: ['茨城', '北海道'], autumn: ['北海道', '茨城'] }
+    },
+    'トマト': {
+      basePricePerKg: 360, stdUnitKg: 4, stdYieldKg10a: 5500, stdCost10aYen: 260000,
+      monthlyPriceIdx: [1.12, 1.18, 1.16, 1.10, 0.96, 0.86, 0.82, 0.86, 1.04, 1.12, 1.04, 1.04],
+      monthlySupplyIdx: [0.88, 0.84, 0.86, 0.92, 1.06, 1.16, 1.20, 1.14, 0.94, 0.88, 0.94, 0.94],
+      sowingMonths: { open: [3, 4, 5], tunnel: [2, 3, 4, 5], house: [1, 2, 3, 4, 5, 7, 8, 9] },
+      seasonalOrigins: { winter: ['熊本', '愛知'], spring: ['熊本', '栃木'], summer: ['北海道', '青森'], autumn: ['茨城', '熊本'] }
+    },
+    'きゅうり': {
+      basePricePerKg: 330, stdUnitKg: 5, stdYieldKg10a: 5200, stdCost10aYen: 240000,
+      monthlyPriceIdx: [1.24, 1.28, 1.18, 1.02, 0.86, 0.78, 0.74, 0.80, 0.96, 1.08, 1.12, 1.18],
+      monthlySupplyIdx: [0.76, 0.74, 0.82, 0.98, 1.14, 1.24, 1.28, 1.20, 1.02, 0.90, 0.86, 0.82],
+      sowingMonths: { open: [4, 5, 6, 7], tunnel: [3, 4, 5, 6, 7], house: [1, 2, 3, 4, 5, 6, 7, 8, 9] },
+      seasonalOrigins: { winter: ['宮崎', '高知'], spring: ['宮崎', '群馬'], summer: ['福島', '群馬'], autumn: ['宮崎', '埼玉'] }
+    },
+    'なす': {
+      basePricePerKg: 350, stdUnitKg: 5, stdYieldKg10a: 4800, stdCost10aYen: 230000,
+      monthlyPriceIdx: [1.20, 1.24, 1.18, 1.06, 0.92, 0.82, 0.76, 0.78, 0.90, 1.04, 1.14, 1.18],
+      monthlySupplyIdx: [0.80, 0.78, 0.84, 0.94, 1.08, 1.18, 1.26, 1.24, 1.10, 0.96, 0.86, 0.82],
+      sowingMonths: { open: [3, 4, 5], tunnel: [2, 3, 4, 5], house: [1, 2, 3, 4, 5, 8, 9] },
+      seasonalOrigins: { winter: ['高知', '福岡'], spring: ['高知', '熊本'], summer: ['群馬', '茨城'], autumn: ['高知', '栃木'] }
+    },
+    'ピーマン': {
+      basePricePerKg: 440, stdUnitKg: 4, stdYieldKg10a: 4200, stdCost10aYen: 220000,
+      monthlyPriceIdx: [1.22, 1.25, 1.18, 1.08, 0.94, 0.84, 0.76, 0.76, 0.88, 1.02, 1.12, 1.18],
+      monthlySupplyIdx: [0.78, 0.76, 0.82, 0.92, 1.06, 1.16, 1.26, 1.26, 1.12, 0.98, 0.88, 0.82],
+      sowingMonths: { open: [3, 4, 5], tunnel: [2, 3, 4, 5], house: [1, 2, 3, 4, 5, 8, 9] },
+      seasonalOrigins: { winter: ['宮崎', '高知'], spring: ['宮崎', '茨城'], summer: ['茨城', '岩手'], autumn: ['茨城', '宮崎'] }
+    },
+    'かぼちゃ': {
+      basePricePerKg: 195, stdUnitKg: 10, stdYieldKg10a: 2200, stdCost10aYen: 85000,
+      monthlyPriceIdx: [1.06, 1.12, 1.18, 1.22, 1.16, 0.96, 0.84, 0.82, 0.88, 0.94, 0.96, 1.02],
+      monthlySupplyIdx: [0.92, 0.86, 0.80, 0.76, 0.82, 1.04, 1.18, 1.22, 1.14, 1.06, 1.04, 0.98],
+      sowingMonths: { open: [3, 4, 5], tunnel: [2, 3, 4, 5], house: [1, 2, 3, 4, 5] },
+      seasonalOrigins: { winter: ['北海道', '鹿児島'], spring: ['鹿児島', '茨城'], summer: ['茨城', '北海道'], autumn: ['北海道', '茨城'] }
+    },
+    'スイートコーン': {
+      basePricePerKg: 340, stdUnitKg: 5, stdYieldKg10a: 1400, stdCost10aYen: 95000,
+      monthlyPriceIdx: [1.10, 1.10, 1.15, 1.20, 1.24, 1.08, 0.85, 0.84, 0.96, 1.02, 1.05, 1.05],
+      monthlySupplyIdx: [0.85, 0.85, 0.82, 0.78, 0.74, 0.94, 1.22, 1.24, 1.04, 0.96, 0.92, 0.90],
+      sowingMonths: { open: [3, 4, 5, 6], tunnel: [2, 3, 4, 5], house: [1, 2, 3, 4] },
+      seasonalOrigins: { winter: ['宮崎', '熊本'], spring: ['熊本', '千葉'], summer: ['千葉', '北海道'], autumn: ['北海道', '群馬'] }
+    },
+    'えだまめ': {
+      basePricePerKg: 620, stdUnitKg: 2, stdYieldKg10a: 950, stdCost10aYen: 85000,
+      monthlyPriceIdx: [1.05, 1.05, 1.10, 1.18, 1.22, 1.12, 0.92, 0.84, 0.90, 0.98, 1.02, 1.04],
+      monthlySupplyIdx: [0.88, 0.88, 0.84, 0.78, 0.74, 0.88, 1.10, 1.22, 1.12, 1.00, 0.94, 0.90],
+      sowingMonths: { open: [4, 5, 6, 7], tunnel: [3, 4, 5, 6], house: [2, 3, 4, 5] },
+      seasonalOrigins: { winter: ['静岡', '埼玉'], spring: ['静岡', '千葉'], summer: ['千葉', '群馬'], autumn: ['群馬', '北海道'] }
+    }
+  };
+
+  const MAJOR_ORIGIN_COORDS_ = {
+    '北海道': { lat: 43.06, lng: 141.35 },
+    '青森': { lat: 40.82, lng: 140.74 },
+    '岩手': { lat: 39.70, lng: 141.15 },
+    '福島': { lat: 37.75, lng: 140.47 },
+    '茨城': { lat: 36.34, lng: 140.45 },
+    '栃木': { lat: 36.57, lng: 139.88 },
+    '群馬': { lat: 36.39, lng: 139.06 },
+    '埼玉': { lat: 35.86, lng: 139.65 },
+    '千葉': { lat: 35.61, lng: 140.12 },
+    '神奈川': { lat: 35.45, lng: 139.64 },
+    '長野': { lat: 36.65, lng: 138.18 },
+    '静岡': { lat: 34.98, lng: 138.38 },
+    '愛知': { lat: 35.18, lng: 136.91 },
+    '兵庫': { lat: 34.69, lng: 135.18 },
+    '徳島': { lat: 34.07, lng: 134.55 },
+    '香川': { lat: 34.34, lng: 134.04 },
+    '高知': { lat: 33.56, lng: 133.53 },
+    '福岡': { lat: 33.61, lng: 130.42 },
+    '佐賀': { lat: 33.25, lng: 130.30 },
+    '熊本': { lat: 32.79, lng: 130.74 },
+    '宮崎': { lat: 31.91, lng: 131.42 },
+    '鹿児島': { lat: 31.56, lng: 130.56 }
+  };
+
+  const _originWeatherCache = {};
+  const _originWeatherPending = {};
+  const ORIGIN_WEATHER_TTL_MS = 30 * 60 * 1000;
+
+  function normalizePrefName_(raw) {
+    return String(raw || '').replace(/[都道府県]$/, '').trim();
+  }
+
+  function findMarketItemStat_(cropName, itemStats) {
+    if (!itemStats || typeof itemStats !== 'object') return null;
+    const raw = String(cropName || '').trim();
+    if (!raw) return null;
+    if (itemStats[raw]) return { matchedName: raw, stat: itemStats[raw] };
+    const key = normalizeAgriCropKey_(raw);
+    if (key && itemStats[key]) return { matchedName: key, stat: itemStats[key] };
+
+    const aliases = [raw, key];
+    Object.keys(AGRI_CROP_ALIASES_).forEach(function (ak) {
+      if (AGRI_CROP_ALIASES_[ak] === key || ak === raw) aliases.push(ak);
+    });
+    for (let i = 0; i < aliases.length; i++) {
+      if (aliases[i] && itemStats[aliases[i]]) {
+        return { matchedName: aliases[i], stat: itemStats[aliases[i]] };
+      }
+    }
+    const keys = Object.keys(itemStats);
+    for (let i = 0; i < keys.length; i++) {
+      if (normalizeAgriCropKey_(keys[i]) === key && key) {
+        return { matchedName: keys[i], stat: itemStats[keys[i]] };
+      }
+    }
+    if (raw.length >= 2) {
+      for (let i = 0; i < keys.length; i++) {
+        if (keys[i].indexOf(raw) >= 0 || raw.indexOf(keys[i]) >= 0) {
+          return { matchedName: keys[i], stat: itemStats[keys[i]] };
+        }
+      }
+    }
+    return null;
+  }
+
+  function resolveMarketModel_(cropName, itemStat) {
+    const raw = String(cropName || '').trim();
+    const key = normalizeAgriCropKey_(raw);
+    if (AGRI_MARKET_MODELS_[key]) {
+      return Object.assign({ cropKey: key, displayName: raw || key, isCustomFallback: false }, AGRI_MARKET_MODELS_[key]);
+    }
+    const latestMid = itemStat && itemStat.latest && itemStat.latest.midPerKg > 0 ? itemStat.latest.midPerKg : 300;
+    const unitSize = itemStat && itemStat.latest && itemStat.latest.unitSize > 0 ? itemStat.latest.unitSize : 10;
+    return {
+      cropKey: raw || '野菜',
+      displayName: raw || '野菜',
+      isCustomFallback: true,
+      basePricePerKg: latestMid,
+      stdUnitKg: unitSize,
+      stdYieldKg10a: 2000,
+      stdCost10aYen: 110000,
+      monthlyPriceIdx: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+      monthlySupplyIdx: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+      sowingMonths: { open: [3, 4, 5, 8, 9], tunnel: [2, 3, 4, 5, 8, 9, 10], house: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
+      seasonalOrigins: { winter: ['愛知', '千葉'], spring: ['千葉', '茨城'], summer: ['長野', '群馬'], autumn: ['茨城', '千葉'] }
+    };
+  }
+
+  function seasonKeyForMonth_(monthNum) {
+    if (monthNum === 12 || monthNum <= 2) return 'winter';
+    if (monthNum <= 5) return 'spring';
+    if (monthNum <= 8) return 'summer';
+    return 'autumn';
+  }
+
+  function resolveOriginsForCrop_(model, itemStat, refDate) {
+    if (itemStat && Array.isArray(itemStat.topOrigins) && itemStat.topOrigins.length) {
+      const valid = itemStat.topOrigins.map(normalizePrefName_).filter(function (p) { return !!MAJOR_ORIGIN_COORDS_[p]; });
+      if (valid.length) return valid;
+    }
+    const m = parseInt(String(refDate || getJstTodayYmd_()).slice(5, 7), 10) || 4;
+    const sk = seasonKeyForMonth_(m);
+    const list = (model && model.seasonalOrigins && model.seasonalOrigins[sk]) || ['千葉', '茨城'];
+    return list.map(normalizePrefName_).filter(function (p) { return !!MAJOR_ORIGIN_COORDS_[p]; });
+  }
+
+  async function fetchOriginWeatherImpact_(prefName) {
+    const pref = normalizePrefName_(prefName);
+    const coord = MAJOR_ORIGIN_COORDS_[pref];
+    if (!coord) return { pref: pref, impactPct: 0, summary: '座標未定義（補正なし）' };
+
+    const cached = _originWeatherCache[pref];
+    if (cached && (Date.now() - cached.at) < ORIGIN_WEATHER_TTL_MS) {
+      return cached.data;
+    }
+    if (_originWeatherPending[pref]) {
+      return _originWeatherPending[pref];
+    }
+
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, 5000) : null;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${coord.lat}&longitude=${coord.lng}&past_days=14&forecast_days=16&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration&timezone=Asia%2FTokyo`;
+
+    _originWeatherPending[pref] = fetch(url, ctrl ? { signal: ctrl.signal } : undefined)
+      .then(function (res) {
+        if (!res.ok) throw new Error('origin weather fetch failed');
+        return res.json();
+      })
+      .then(function (json) {
+        const d = (json && json.daily) || {};
+        const times = d.time || [];
+        const tmax = d.temperature_2m_max || [];
+        const tmin = d.temperature_2m_min || [];
+        const rain = d.precipitation_sum || [];
+        const sun = d.sunshine_duration || [];
+        let rain14 = 0, rainNext7 = 0, sun7h = 0, minT = 99, maxT = -99;
+        for (let i = 0; i < times.length; i++) {
+          if (i < 14) {
+            rain14 += num(rain[i]);
+            if (i >= 7) sun7h += num(sun[i]) / 3600;
+          } else if (i < 21) {
+            rainNext7 += num(rain[i]);
+          }
+          if (tmin[i] != null && Number(tmin[i]) < minT) minT = Number(tmin[i]);
+          if (tmax[i] != null && Number(tmax[i]) > maxT) maxT = Number(tmax[i]);
+        }
+
+        let impactPct = 0;
+        const notes = [];
+        if (minT <= 0) {
+          impactPct += 8;
+          notes.push(`低温・霜リスク(${Math.round(minT)}℃)`);
+        }
+        if (rain14 >= 120 || rainNext7 >= 90) {
+          impactPct += 7;
+          notes.push(`多雨・日照不足(${Math.round(rain14)}mm)`);
+        }
+        if (maxT >= 33 && rain14 < 15) {
+          impactPct += 9;
+          notes.push(`高温乾燥(${Math.round(maxT)}℃)`);
+        }
+        if (impactPct === 0 && rain14 >= 15 && rain14 <= 75 && sun7h >= 30 && minT > 2 && maxT < 31) {
+          impactPct = -2;
+          notes.push('天候安定・出荷順調');
+        }
+        impactPct = clamp(impactPct, -3, 12);
+        const signTxt = impactPct > 0 ? `+${impactPct}%` : `${impactPct}%`;
+        const summary = notes.length
+          ? `主産地(${pref}) ${notes.join('・')} → 単価影響 ${signTxt}`
+          : `主産地(${pref}) 平年並みの気象（0%）`;
+        const data = { pref: pref, impactPct: impactPct, summary: summary, rain14: Math.round(rain14), minT: minT, maxT: maxT };
+        _originWeatherCache[pref] = { at: Date.now(), data: data };
+        return data;
+      })
+      .catch(function () {
+        return { pref: pref, impactPct: 0, summary: `主産地(${pref}) 気象取得スキップ` };
+      })
+      .finally(function () {
+        if (timer) clearTimeout(timer);
+        delete _originWeatherPending[pref];
+      });
+    return _originWeatherPending[pref];
+  }
+
+  function interpMonthlyIdx_(arr, ymd) {
+    const parts = String(ymd || '').split('-').map(Number);
+    const m = (parts[1] >= 1 && parts[1] <= 12) ? parts[1] : 1;
+    const d = (parts[2] >= 1 && parts[2] <= 31) ? parts[2] : 15;
+    const cur = arr[m - 1] != null ? arr[m - 1] : 1.0;
+    if (d <= 15) {
+      const prevM = m === 1 ? 12 : m - 1;
+      const prev = arr[prevM - 1] != null ? arr[prevM - 1] : cur;
+      const w = (15 - d) / 30;
+      return cur * (1 - w) + prev * w;
+    }
+    const nextM = m === 12 ? 1 : m + 1;
+    const next = arr[nextM - 1] != null ? arr[nextM - 1] : cur;
+    const w = (d - 15) / 30;
+    return cur * (1 - w) + next * w;
+  }
+
+  function formatTenDayLabel_(ymd) {
+    const parts = String(ymd || '').split('-').map(Number);
+    if (parts.length < 3) return ymd || '';
+    const m = parts[1];
+    const d = parts[2];
+    const dek = d <= 10 ? '上' : (d <= 20 ? '中' : '下');
+    return `${m}月${dek}`;
+  }
+
+  /**
+   * Phase 3: 向こう6ヶ月（18旬）の市場・価格予測（純粋関数）
+   */
+  function forecastCropMarketSeries_(opts) {
+    opts = opts || {};
+    const cropName = String(opts.cropName || 'キャベツ').trim();
+    const startDate = String(opts.startDate || getJstTodayYmd_()).slice(0, 10);
+    const horizon = Math.max(6, Math.min(24, Number(opts.horizonTenDays) || 18));
+    const marketCtx = opts.marketCtx || {};
+    const hit = findMarketItemStat_(cropName, marketCtx.itemStats);
+    const itemStat = hit ? hit.stat : null;
+    const model = resolveMarketModel_(cropName, itemStat);
+
+    // 第1層：実勢ベース単価の算出（実績がある場合は季節指数で正規化して70%ブレンド）
+    const startSeasonalIdx = interpMonthlyIdx_(model.monthlyPriceIdx, startDate);
+    let actualAnchorPerKg = null;
+    if (itemStat && itemStat.latest && itemStat.latest.midPerKg > 0) {
+      actualAnchorPerKg = itemStat.latest.midPerKg;
+    } else if (itemStat && itemStat.recent14AvgPerKg > 0) {
+      actualAnchorPerKg = itemStat.recent14AvgPerKg;
+    }
+    const normalizedActualBase = actualAnchorPerKg != null
+      ? (actualAnchorPerKg / Math.max(0.5, startSeasonalIdx))
+      : null;
+    const effectiveBasePerKg = normalizedActualBase != null
+      ? (normalizedActualBase * 0.70 + model.basePricePerKg * 0.30)
+      : model.basePricePerKg;
+
+    const momentumPct = clamp(Number((itemStat && itemStat.momentumPct) || 0), -25, 25);
+    const originImpact = opts.originImpact || null;
+    const originPct = clamp(Number((originImpact && originImpact.impactPct) || 0), -5, 15);
+    const originsUsed = resolveOriginsForCrop_(model, itemStat, startDate);
+
+    const points = [];
+    let offSeasonCount = 0;
+    let peakPoint = null;
+    let nextOffSeasonLabel = '';
+
+    for (let step = 1; step <= horizon; step++) {
+      const ymd = addDaysYmd_(startDate, step * 10);
+      const monthNum = parseInt(ymd.slice(5, 7), 10) || 1;
+      let seasonalIdx = interpMonthlyIdx_(model.monthlyPriceIdx, ymd);
+      const supplyIdx = interpMonthlyIdx_(model.monthlySupplyIdx, ymd);
+
+      // 該当月の蓄積実績があれば30%ブレンドして現地市場特性を反映
+      const mActual = itemStat && itemStat.monthlyActuals && itemStat.monthlyActuals[String(monthNum)];
+      if (mActual && mActual.midPerKgAvg > 0 && effectiveBasePerKg > 0) {
+        const mRatio = clamp(mActual.midPerKgAvg / effectiveBasePerKg, 0.55, 1.85);
+        seasonalIdx = seasonalIdx * 0.7 + mRatio * 0.3;
+      }
+
+      const momFactor = 1 + (momentumPct / 100) * Math.exp(-step / 4.5);
+      const weatherFactor = 1 + (originPct / 100) * Math.exp(-step / 6.0);
+      const predMid = Math.round(effectiveBasePerKg * seasonalIdx * momFactor * weatherFactor);
+
+      const uncertaintySpread = 0.16 + Math.min(0.12, step * 0.008);
+      const predHigh = Math.round(predMid * (1 + uncertaintySpread));
+      const predLow = Math.max(10, Math.round(predMid * (1 - uncertaintySpread * 0.85)));
+      const isOffSeason = supplyIdx <= 0.86 || seasonalIdx >= 1.14;
+      const label = formatTenDayLabel_(ymd);
+
+      if (isOffSeason) {
+        offSeasonCount++;
+        if (!nextOffSeasonLabel) nextOffSeasonLabel = label;
+      }
+
+      const pt = {
+        step: step,
+        date: ymd,
+        label: label,
+        month: monthNum,
+        seasonalIdx: Math.round(seasonalIdx * 100) / 100,
+        supplyIdx: Math.round(supplyIdx * 100) / 100,
+        predMidPerKg: predMid,
+        predHighPerKg: predHigh,
+        predLowPerKg: predLow,
+        isOffSeason: isOffSeason
+      };
+      points.push(pt);
+      if (!peakPoint || pt.predMidPerKg > peakPoint.predMidPerKg) {
+        peakPoint = pt;
+      }
+    }
+
+    const drivers = [];
+    if (actualAnchorPerKg != null) {
+      drivers.push(`直近実勢 ${Math.round(actualAnchorPerKg)}円/kg（${hit.matchedName}・基準季節指数比 ${momentumPct >= 0 ? '+' : ''}${momentumPct}%/2週）`);
+    } else {
+      drivers.push(`季節基準モデル ${Math.round(model.basePricePerKg)}円/kg ベース`);
+    }
+    if (originImpact && originImpact.summary) {
+      drivers.push(originImpact.summary);
+    } else if (originsUsed.length) {
+      drivers.push(`主産地想定: ${originsUsed.join('・')}`);
+    }
+    if (peakPoint) {
+      drivers.push(`高値ピーク予想: ${peakPoint.label}（約${peakPoint.predMidPerKg}円/kg）`);
+    }
+
+    const p1m = points[2] || points[points.length - 1];
+    const p3m = points[8] || points[points.length - 1];
+    const unitSize = (itemStat && itemStat.latest && itemStat.latest.unitSize > 0)
+      ? itemStat.latest.unitSize
+      : model.stdUnitKg;
+
+    return {
+      cropName: cropName,
+      cropKey: model.cropKey,
+      matchedMarketItem: hit ? hit.matchedName : '',
+      hasActualData: !!itemStat,
+      unitSize: unitSize,
+      unitLabel: (itemStat && itemStat.latest && itemStat.latest.unit) || 'kg',
+      latestActualPerKg: actualAnchorPerKg != null ? Math.round(actualAnchorPerKg) : null,
+      latestDate: (itemStat && itemStat.latest && itemStat.latest.date) || '',
+      effectiveBasePerKg: Math.round(effectiveBasePerKg),
+      momentumPct: momentumPct,
+      originsUsed: originsUsed,
+      originImpact: originImpact,
+      recentSeries: (itemStat && Array.isArray(itemStat.recentSeries)) ? itemStat.recentSeries : [],
+      points: points,
+      month1PredPerKg: p1m ? p1m.predMidPerKg : Math.round(effectiveBasePerKg),
+      month3PredPerKg: p3m ? p3m.predMidPerKg : Math.round(effectiveBasePerKg),
+      peakPoint: peakPoint,
+      nextOffSeasonLabel: nextOffSeasonLabel || (peakPoint ? peakPoint.label : ''),
+      offSeasonCount: offSeasonCount,
+      drivers: drivers
+    };
+  }
+
+  function evaluateSowingSuitability_(model, sowingDate, fieldCondition, croptypes) {
+    const coverKind = normalizeCoverKind_(fieldCondition);
+    const keyCover = coverKind === 'house' ? 'house' : ((coverKind === 'tunnel' || coverKind === 'rain_shelter') ? 'tunnel' : 'open');
+    const m = parseInt(String(sowingDate || getJstTodayYmd_()).slice(5, 7), 10) || 1;
+    const months = (model.sowingMonths && model.sowingMonths[keyCover]) || [3, 4, 5, 8, 9];
+    const prevM = m === 1 ? 12 : m - 1;
+    const nextM = m === 12 ? 1 : m + 1;
+
+    // 農場作型DBに一致があれば播種期チェックも加味
+    const ctHit = (Array.isArray(croptypes) ? croptypes : []).find(function (ct) {
+      return ct && normalizeAgriCropKey_(ct.crop) === model.cropKey && Array.isArray(ct.sowing) && ct.sowing.length;
+    });
+    let ctMatch = false;
+    if (ctHit) {
+      ctMatch = ctHit.sowing.some(function (cell) {
+        const flat = typeof cell === 'number' ? cell : ((Number(cell && cell.monthIndex) || 0) * 6);
+        const cm = (Math.floor(flat / 6) % 12) + 1;
+        return cm === m;
+      });
+    }
+
+    if (months.indexOf(m) >= 0 || ctMatch) {
+      return { status: 'optimal', label: '◎ 播種適期', months: months };
+    }
+    if (months.indexOf(prevM) >= 0 || months.indexOf(nextM) >= 0) {
+      return { status: 'marginal', label: '△ 端境・条件付', months: months };
+    }
+    return { status: 'out', label: '× 適期外', months: months };
+  }
+
+  /**
+   * Phase 4: 種まき予定日から「次に売れる野菜」を逆算ランキング（純粋関数）
+   */
+  function rankSowingCropsByMarket_(opts) {
+    opts = opts || {};
+    const weatherCtx = opts.weatherCtx || buildAgriWeatherContext_();
+    const marketCtx = opts.marketCtx || {};
+    const sowingDate = String(opts.sowingDate || weatherCtx.todayStr || getJstTodayYmd_()).slice(0, 10);
+    const fieldCondition = String(opts.fieldCondition || '露地').trim() || '露地';
+    const areaA = (isFinite(Number(opts.areaA)) && Number(opts.areaA) > 0) ? Number(opts.areaA) : 10;
+    const includeOutOfSeason = !!opts.includeOutOfSeason;
+    const originImpactsMap = opts.originImpactsMap || {};
+    const croptypes = opts.croptypes || marketCtx.croptypes || [];
+    const orgCost10aByCrop = marketCtx.orgCost10aByCrop || {};
+
+    const cropKeys = Object.keys(AGRI_MARKET_MODELS_);
+    const results = [];
+
+    cropKeys.forEach(function (cropKey) {
+      const mModel = AGRI_MARKET_MODELS_[cropKey];
+      const suit = evaluateSowingSuitability_(
+        Object.assign({ cropKey: cropKey }, mModel),
+        sowingDate,
+        fieldCondition,
+        croptypes
+      );
+      if (!includeOutOfSeason && suit.status === 'out') return;
+
+      const growth = predictCropGrowthByWeather_({
+        cropName: cropKey,
+        sowingDate: sowingDate,
+        fieldCondition: fieldCondition,
+        croptypes: croptypes
+      }, weatherCtx);
+
+      const hit = findMarketItemStat_(cropKey, marketCtx.itemStats);
+      const origins = resolveOriginsForCrop_(mModel, hit ? hit.stat : null, growth.harvestStartDate);
+      const firstOriginImpact = origins.length ? (originImpactsMap[origins[0]] || null) : null;
+
+      // 収穫終了が先でもカバーできるように27旬(約9ヶ月)まで予測生成
+      const fc = forecastCropMarketSeries_({
+        cropName: cropKey,
+        startDate: weatherCtx.todayStr || sowingDate,
+        horizonTenDays: 27,
+        marketCtx: marketCtx,
+        originImpact: firstOriginImpact
+      });
+
+      const harvStart = growth.harvestStartDate;
+      const harvEnd = growth.harvestEndDate;
+      const inHarvPoints = fc.points.filter(function (p) {
+        return p.date >= addDaysYmd_(harvStart, -10) && p.date <= addDaysYmd_(harvEnd, 10);
+      });
+      const samplePts = inHarvPoints.length ? inHarvPoints : [fc.points[Math.min(fc.points.length - 1, 5)]];
+
+      const avgPredMid = Math.round(samplePts.reduce(function (s, p) { return s + p.predMidPerKg; }, 0) / samplePts.length);
+      const avgPredHigh = Math.round(samplePts.reduce(function (s, p) { return s + p.predHighPerKg; }, 0) / samplePts.length);
+      const avgPredLow = Math.round(samplePts.reduce(function (s, p) { return s + p.predLowPerKg; }, 0) / samplePts.length);
+      const avgSupplyIdx = samplePts.reduce(function (s, p) { return s + p.supplyIdx; }, 0) / samplePts.length;
+      const isOffSeason = samplePts.some(function (p) { return p.isOffSeason; });
+      const vsBasePct = fc.effectiveBasePerKg > 0
+        ? Math.round((avgPredMid / fc.effectiveBasePerKg) * 100)
+        : 100;
+
+      const yieldKg = Math.round(mModel.stdYieldKg10a * (areaA / 10));
+      const revenueYen = Math.round(yieldKg * avgPredMid);
+      const cost10a = (orgCost10aByCrop[cropKey] > 0) ? orgCost10aByCrop[cropKey] : mModel.stdCost10aYen;
+      const costYen = Math.round(cost10a * (areaA / 10));
+      const grossProfitYen = revenueYen - costYen;
+      const profitPer10a = areaA > 0 ? Math.round(grossProfitYen * (10 / areaA)) : grossProfitYen;
+
+      // 総合スコア（期待粗利・端境期/高値比率・播種適期）
+      const profitNorm = clamp((profitPer10a - 50000) / 450000, 0, 1) * 48;
+      const priceBoost = clamp((vsBasePct - 85) / 40, 0, 1) * 32;
+      const scarcityBoost = isOffSeason ? 12 : (avgSupplyIdx < 0.95 ? 6 : 0);
+      const suitPenalty = suit.status === 'optimal' ? 8 : (suit.status === 'marginal' ? 0 : -40);
+      const score = clamp(Math.round(profitNorm + priceBoost + scarcityBoost + suitPenalty), 0, 100);
+
+      const harvMonthLabel = `${parseInt(harvStart.slice(5, 7), 10)}/${parseInt(harvStart.slice(8, 10), 10)}〜${parseInt(harvEnd.slice(5, 7), 10)}/${parseInt(harvEnd.slice(8, 10), 10)}`;
+      const reasonParts = [];
+      if (isOffSeason) reasonParts.push(`${parseInt(harvStart.slice(5, 7), 10)}月出荷は市場の端境・品薄期（年間比 ${vsBasePct}%）`);
+      else if (vsBasePct >= 105) reasonParts.push(`収穫期に相場強め（年間基準比 ${vsBasePct}%）`);
+      else reasonParts.push(`安定出荷・回転向き（年間基準比 ${vsBasePct}%）`);
+      if (firstOriginImpact && firstOriginImpact.impactPct > 0) reasonParts.push(firstOriginImpact.summary);
+      if (suit.status === 'marginal') reasonParts.push(`※播種やや端境（適期 ${suit.months.join('/')}月）`);
+      if (suit.status === 'out') reasonParts.push(`※適期外（推奨播種 ${suit.months.join('/')}月）`);
+
+      results.push({
+        cropKey: cropKey,
+        suitability: suit.status,
+        suitabilityLabel: suit.label,
+        sowingMonths: suit.months,
+        harvestStartDate: harvStart,
+        harvestEndDate: harvEnd,
+        harvestLabel: harvMonthLabel,
+        expectedPricePerKg: avgPredMid,
+        expectedHighPerKg: avgPredHigh,
+        expectedLowPerKg: avgPredLow,
+        unitSize: fc.unitSize,
+        expectedPricePerUnit: Math.round(avgPredMid * fc.unitSize),
+        vsBasePct: vsBasePct,
+        isOffSeason: isOffSeason,
+        expectedYieldKg: yieldKg,
+        expectedRevenueYen: revenueYen,
+        estimatedCostYen: costYen,
+        hasOrgCost: orgCost10aByCrop[cropKey] > 0,
+        expectedGrossProfitYen: grossProfitYen,
+        profitPer10a: profitPer10a,
+        score: score,
+        reasonText: reasonParts.join(' ／ '),
+        forecast: fc,
+        growth: growth
+      });
+    });
+
+    const suitRank = { optimal: 0, marginal: 1, out: 2 };
+    results.sort(function (a, b) {
+      if (suitRank[a.suitability] !== suitRank[b.suitability]) {
+        return suitRank[a.suitability] - suitRank[b.suitability];
+      }
+      return (b.score - a.score) || (b.profitPer10a - a.profitPer10a);
+    });
+
+    return {
+      sowingDate: sowingDate,
+      fieldCondition: fieldCondition,
+      areaA: areaA,
+      items: results
+    };
+  }
+
+  /**
+   * Phase 3: 実績＋向こう6ヶ月予測 SVG グラフ描画
+   */
+  function renderMarketForecastSvg_(forecast, opts) {
+    opts = opts || {};
+    if (!forecast || !Array.isArray(forecast.points) || !forecast.points.length) {
+      return '<div style="padding:16px;text-align:center;color:#90A4AE;font-size:12px;">予測データがありません</div>';
+    }
+    const perKg = opts.perKg !== false;
+    const accent = opts.accentColor || '#00695C';
+    const unitMult = perKg ? 1 : (Number(forecast.unitSize) || 1);
+    const scaleVal = function (v) {
+      if (v == null || !isFinite(Number(v))) return null;
+      return Math.round(Number(v) * unitMult);
+    };
+
+    const actualTail = (forecast.recentSeries || []).slice(-10).map(function (r) {
+      return {
+        kind: 'actual',
+        label: r.date ? r.date.slice(5).replace('-', '/') : '',
+        mid: scaleVal(r.midPerKg != null ? r.midPerKg : r.rawMid),
+        high: scaleVal(r.highPerKg != null ? r.highPerKg : r.rawHigh),
+        low: scaleVal(r.lowPerKg != null ? r.lowPerKg : r.rawLow),
+        isOffSeason: false
+      };
+    }).filter(function (x) { return x.mid != null; });
+
+    const predList = forecast.points.map(function (p) {
+      return {
+        kind: 'pred',
+        label: p.label,
+        mid: scaleVal(p.predMidPerKg),
+        high: scaleVal(p.predHighPerKg),
+        low: scaleVal(p.predLowPerKg),
+        isOffSeason: !!p.isOffSeason
+      };
+    });
+
+    const allPts = actualTail.concat(predList);
+    const n = allPts.length;
+    if (!n) return '';
+
+    const W = 640, H = 250, padL = 52, padR = 16, topY = 22, botY = 212;
+    const plotW = W - padL - padR, plotH = botY - topY;
+    const allNums = [];
+    allPts.forEach(function (p) {
+      if (p.mid != null) allNums.push(p.mid);
+      if (p.high != null) allNums.push(p.high);
+      if (p.low != null) allNums.push(p.low);
+    });
+    let minV = Math.min.apply(null, allNums);
+    let maxV = Math.max.apply(null, allNums);
+    if (minV === maxV) { minV = Math.max(0, minV * 0.8); maxV = maxV * 1.2 || 500; }
+    const span = maxV - minV;
+    const roughStep = span / 4;
+    const pow = Math.pow(10, Math.floor(Math.log10(Math.max(1, roughStep))));
+    const frac = roughStep / pow;
+    const step = (frac <= 1 ? 1 : (frac <= 2 ? 2 : (frac <= 5 ? 5 : 10))) * pow;
+    const yMin = Math.max(0, Math.floor((minV - span * 0.08) / step) * step);
+    const yMax = Math.max(yMin + step, Math.ceil((maxV + span * 0.08) / step) * step);
+
+    const xAt = function (i) { return n <= 1 ? padL + plotW / 2 : padL + (i / (n - 1)) * plotW; };
+    const yAt = function (v) { return botY - ((v - yMin) / (yMax - yMin || 1)) * plotH; };
+
+    const svg = [`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;user-select:none;">`];
+
+    // 端境期ハイライト帯
+    const slotW = n > 1 ? plotW / (n - 1) : plotW;
+    allPts.forEach(function (p, i) {
+      if (p.kind === 'pred' && p.isOffSeason) {
+        const rx = Math.max(padL, xAt(i) - slotW / 2);
+        const rw = Math.min(padL + plotW - rx, slotW);
+        svg.push(`<rect x="${rx.toFixed(1)}" y="${topY}" width="${Math.max(2, rw).toFixed(1)}" height="${plotH}" fill="#ff9800" opacity="0.11" />`);
+      }
+    });
+
+    // Y軸グリッド
+    let guard = 0;
+    for (let v = yMin; v <= yMax + step * 0.01; v += step) {
+      if (++guard > 16) break;
+      const yy = yAt(v).toFixed(1);
+      svg.push(`<line x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="#eceff1" stroke-width="1" />`);
+      svg.push(`<text x="${padL - 6}" y="${(Number(yy) + 3.5).toFixed(1)}" text-anchor="end" font-size="10" fill="#78909C">${Math.round(v).toLocaleString('ja-JP')}</text>`);
+    }
+    svg.push(`<text x="${padL}" y="13" font-size="10" font-weight="bold" fill="#546E7A">単位: ${perKg ? '円/kg' : ('円/' + forecast.unitSize + forecast.unitLabel)}（橙帯=端境期・高値期待）</text>`);
+
+    // 予測レンジ帯ポリゴン
+    const predStartIdx = actualTail.length;
+    if (predList.length >= 2) {
+      const topPts = [];
+      const botPts = [];
+      predList.forEach(function (p, pi) {
+        const idx = predStartIdx + pi;
+        if (p.high != null && p.low != null) {
+          topPts.push(`${xAt(idx).toFixed(1)},${yAt(p.high).toFixed(1)}`);
+          botPts.push(`${xAt(idx).toFixed(1)},${yAt(p.low).toFixed(1)}`);
+        }
+      });
+      if (topPts.length >= 2) {
+        svg.push(`<polygon points="${topPts.concat(botPts.reverse()).join(' ')}" fill="${accent}" opacity="0.14" />`);
+      }
+    }
+
+    // 実績と予測の境界線
+    if (actualTail.length > 0 && predList.length > 0) {
+      const bx = ((xAt(predStartIdx - 1) + xAt(predStartIdx)) / 2).toFixed(1);
+      svg.push(`<line x1="${bx}" y1="${topY}" x2="${bx}" y2="${botY}" stroke="#90A4AE" stroke-width="1.2" stroke-dasharray="4 3" />`);
+      svg.push(`<text x="${Number(bx) + 4}" y="${topY + 11}" font-size="9.5" font-weight="bold" fill="#546E7A">予測 →</text>`);
+    }
+
+    // 実績線
+    if (actualTail.length >= 2) {
+      const actPoly = actualTail.map(function (p, i) { return `${xAt(i).toFixed(1)},${yAt(p.mid).toFixed(1)}`; }).join(' ');
+      svg.push(`<polyline fill="none" stroke="#37474F" stroke-width="2.2" points="${actPoly}" />`);
+    }
+
+    // 接続＋予測高・中・安線
+    const bridgeStart = actualTail.length > 0 ? [Object.assign({}, actualTail[actualTail.length - 1], { _idx: actualTail.length - 1 })] : [];
+    const predWithIdx = bridgeStart.concat(predList.map(function (p, i) { return Object.assign({}, p, { _idx: predStartIdx + i }); }));
+    const hiPoly = predWithIdx.filter(function (p) { return p.high != null; }).map(function (p) { return `${xAt(p._idx).toFixed(1)},${yAt(p.high).toFixed(1)}`; }).join(' ');
+    const loPoly = predWithIdx.filter(function (p) { return p.low != null; }).map(function (p) { return `${xAt(p._idx).toFixed(1)},${yAt(p.low).toFixed(1)}`; }).join(' ');
+    const midPoly = predWithIdx.filter(function (p) { return p.mid != null; }).map(function (p) { return `${xAt(p._idx).toFixed(1)},${yAt(p.mid).toFixed(1)}`; }).join(' ');
+    if (hiPoly) svg.push(`<polyline fill="none" stroke="#d32f2f" stroke-width="1.4" stroke-dasharray="4 3" points="${hiPoly}" />`);
+    if (loPoly) svg.push(`<polyline fill="none" stroke="#0288d1" stroke-width="1.4" stroke-dasharray="4 3" points="${loPoly}" />`);
+    if (midPoly) svg.push(`<polyline fill="none" stroke="${accent}" stroke-width="2.6" points="${midPoly}" />`);
+
+    // ピークマーカーとX軸ラベル
+    const labelStep = Math.max(1, Math.ceil(n / 8));
+    allPts.forEach(function (p, i) {
+      if (i % labelStep === 0 || i === n - 1) {
+        const anchor = i === 0 ? 'start' : (i === n - 1 ? 'end' : 'middle');
+        svg.push(`<text x="${xAt(i).toFixed(1)}" y="232" text-anchor="${anchor}" font-size="9.5" fill="#607D8B">${escHtml_(p.label)}</text>`);
+      }
+    });
+    predList.forEach(function (p, pi) {
+      if (p.isOffSeason && pi % 2 === 0) {
+        const idx = predStartIdx + pi;
+        svg.push(`<circle cx="${xAt(idx).toFixed(1)}" cy="${yAt(p.mid).toFixed(1)}" r="3.5" fill="#ef6c00" stroke="#fff" stroke-width="1.2" />`);
+      }
+    });
+
+    svg.push('</svg>');
+    return svg.join('');
+  }
+
+  // ========================================================================
   // UI 状態管理・データ読込・モーダル描画
   // ========================================================================
   const _agriGrowthCareState = {
@@ -3535,6 +4439,14 @@
     simAreaA: 10,
     simSoilType: '壌質',
     simCover: '露地',
+    marketRegion: 'tokyo',
+    marketSowingDate: '',
+    marketCover: '露地',
+    marketAreaA: 10,
+    marketIncludeOut: false,
+    marketSelectedCrop: '',
+    marketCtxByRegion: {},
+    marketCtxPending: {},
     bundle: null,
     bundlePromise: null,
     bundleError: '',
@@ -3542,6 +4454,79 @@
     catalogCache: {},
     catalogPending: {},
     showAllPesticides: false
+  };
+
+  async function loadMarketContext_(region, force) {
+    const reg = String(region || 'tokyo').toLowerCase() === 'osaka' ? 'osaka' : 'tokyo';
+    const cached = _agriGrowthCareState.marketCtxByRegion[reg];
+    if (!force && cached && (Date.now() - cached.at) < 10 * 60 * 1000) {
+      return cached.data;
+    }
+    if (!force && _agriGrowthCareState.marketCtxPending[reg]) {
+      return _agriGrowthCareState.marketCtxPending[reg];
+    }
+    if (typeof global.callGAS !== 'function') return null;
+
+    _agriGrowthCareState.marketCtxPending[reg] = global.callGAS('getMarketForecastContext', { region: reg })
+      .then(function (res) {
+        if (res && res.success) {
+          _agriGrowthCareState.marketCtxByRegion[reg] = { at: Date.now(), data: res };
+          return res;
+        }
+        return null;
+      })
+      .catch(function () {
+        return null;
+      })
+      .finally(function () {
+        delete _agriGrowthCareState.marketCtxPending[reg];
+        rerenderAgriGrowthCarePanels_();
+      });
+    return _agriGrowthCareState.marketCtxPending[reg];
+  }
+
+  function ensureMarketCtxForAgriPanel_(region) {
+    const reg = String(region || 'tokyo').toLowerCase() === 'osaka' ? 'osaka' : 'tokyo';
+    const cached = _agriGrowthCareState.marketCtxByRegion[reg];
+    if (!cached || (Date.now() - cached.at) >= 10 * 60 * 1000) {
+      loadMarketContext_(reg, false);
+    }
+    return cached ? cached.data : null;
+  }
+
+  function prefetchOriginImpactsForRanking_(rankingItems) {
+    const prefs = [];
+    (rankingItems || []).slice(0, 6).forEach(function (it) {
+      (it.forecast && it.forecast.originsUsed || []).slice(0, 1).forEach(function (p) {
+        if (p && prefs.indexOf(p) < 0 && !_originWeatherCache[p] && !_originWeatherPending[p]) {
+          prefs.push(p);
+        }
+      });
+    });
+    if (!prefs.length) return;
+    Promise.all(prefs.slice(0, 4).map(fetchOriginWeatherImpact_)).then(function () {
+      rerenderAgriGrowthCarePanels_();
+    }).catch(function () {});
+  }
+
+  global.AgriMarketForecast = {
+    MODELS: AGRI_MARKET_MODELS_,
+    ORIGIN_COORDS: MAJOR_ORIGIN_COORDS_,
+    resolveCropKey: normalizeAgriCropKey_,
+    findMarketItemStat: findMarketItemStat_,
+    resolveOriginsForCrop: resolveOriginsForCrop_,
+    fetchOriginWeatherImpact: fetchOriginWeatherImpact_,
+    getCachedOriginImpactsMap: function () {
+      const out = {};
+      Object.keys(_originWeatherCache).forEach(function (k) {
+        if (_originWeatherCache[k] && _originWeatherCache[k].data) out[k] = _originWeatherCache[k].data;
+      });
+      return out;
+    },
+    loadContext: loadMarketContext_,
+    forecastCropMarketSeries: forecastCropMarketSeries_,
+    rankSowingCropsByMarket: rankSowingCropsByMarket_,
+    renderForecastSvg: renderMarketForecastSvg_
   };
 
   function ensureCatalogPesticidesForCrop_(cropName) {
@@ -3635,11 +4620,167 @@
     };
   }
 
+  function renderAgriMarketTabHtml_(weatherCtx, bundle, tabBarHtml) {
+    const region = _agriGrowthCareState.marketRegion === 'osaka' ? 'osaka' : 'tokyo';
+    const marketCtx = ensureMarketCtxForAgriPanel_(region) || {
+      region: region,
+      market: region === 'osaka' ? '本場' : '大田',
+      itemStats: {},
+      orgCost10aByCrop: {},
+      croptypes: (bundle && bundle.croptypes) || []
+    };
+    const todayStr = weatherCtx.todayStr || getJstTodayYmd_();
+    if (!_agriGrowthCareState.marketSowingDate) {
+      _agriGrowthCareState.marketSowingDate = todayStr;
+    }
+    const sowingDate = _agriGrowthCareState.marketSowingDate;
+    const cover = _agriGrowthCareState.marketCover || '露地';
+    const areaA = _agriGrowthCareState.marketAreaA > 0 ? _agriGrowthCareState.marketAreaA : 10;
+    const includeOut = !!_agriGrowthCareState.marketIncludeOut;
+    const originImpactsMap = global.AgriMarketForecast ? global.AgriMarketForecast.getCachedOriginImpactsMap() : {};
+
+    const ranking = rankSowingCropsByMarket_({
+      sowingDate: sowingDate,
+      fieldCondition: cover,
+      areaA: areaA,
+      marketCtx: marketCtx,
+      weatherCtx: weatherCtx,
+      originImpactsMap: originImpactsMap,
+      croptypes: (bundle && bundle.croptypes) || marketCtx.croptypes || [],
+      includeOutOfSeason: includeOut
+    });
+
+    prefetchOriginImpactsForRanking_(ranking.items);
+
+    const coverOpts = ['露地', 'トンネル', '雨よけ', 'ハウス'].map(function (c) {
+      return `<option value="${c}" ${c === cover ? 'selected' : ''}>${c}</option>`;
+    }).join('');
+    const marketOpts = [
+      { v: 'tokyo', l: '東京・大田' },
+      { v: 'osaka', l: '大阪・本場' }
+    ].map(function (m) {
+      return `<option value="${m.v}" ${m.v === region ? 'selected' : ''}>${m.l}</option>`;
+    }).join('');
+
+    const controlsHtml = `
+      <div style="background:#e0f2f1;border:1px solid #80cbc4;border-radius:8px;padding:8px;margin-bottom:8px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;">
+          <div>
+            <label style="display:block;font-size:10px;color:#004d40;font-weight:bold;">対象市場</label>
+            <select onchange="agcUpdateMarketInput('marketRegion', this.value)" style="width:100%;padding:5px;border:1px solid #80cbc4;border-radius:6px;font-size:12px;background:#fff;">${marketOpts}</select>
+          </div>
+          <div>
+            <label style="display:block;font-size:10px;color:#004d40;font-weight:bold;">播種予定日</label>
+            <input type="date" value="${escHtml_(sowingDate)}" onchange="agcUpdateMarketInput('marketSowingDate', this.value)" style="width:100%;padding:4px 6px;border:1px solid #80cbc4;border-radius:6px;font-size:12px;box-sizing:border-box;">
+          </div>
+        </div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">
+          <button type="button" onclick="agcUpdateMarketInput('marketSowingDate', '${todayStr}')" style="font-size:10px;padding:3px 7px;border:1px solid #b2dfdb;border-radius:999px;background:#fff;cursor:pointer;">今日</button>
+          <button type="button" onclick="agcUpdateMarketInput('marketSowingDate', '${addDaysYmd_(todayStr, 7)}')" style="font-size:10px;padding:3px 7px;border:1px solid #b2dfdb;border-radius:999px;background:#fff;cursor:pointer;">7日後</button>
+          <button type="button" onclick="agcUpdateMarketInput('marketSowingDate', '${addDaysYmd_(todayStr, 14)}')" style="font-size:10px;padding:3px 7px;border:1px solid #b2dfdb;border-radius:999px;background:#fff;cursor:pointer;">14日後</button>
+          <button type="button" onclick="agcUpdateMarketInput('marketSowingDate', '${addDaysYmd_(todayStr, 30)}')" style="font-size:10px;padding:3px 7px;border:1px solid #b2dfdb;border-radius:999px;background:#fff;cursor:pointer;">1ヶ月後</button>
+          <label style="font-size:10.5px;margin-left:auto;display:inline-flex;align-items:center;gap:3px;cursor:pointer;color:#004d40;"><input type="checkbox" ${includeOut ? 'checked' : ''} onchange="agcUpdateMarketInput('marketIncludeOut', this.checked)">適期外も表示</label>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+          <div>
+            <label style="display:block;font-size:10px;color:#004d40;font-weight:bold;">被覆条件</label>
+            <select onchange="agcUpdateMarketInput('marketCover', this.value)" style="width:100%;padding:5px;border:1px solid #80cbc4;border-radius:6px;font-size:12px;background:#fff;">${coverOpts}</select>
+          </div>
+          <div>
+            <label style="display:block;font-size:10px;color:#004d40;font-weight:bold;">試算面積 (a)</label>
+            <input type="number" step="1" min="1" value="${areaA}" onchange="agcUpdateMarketInput('marketAreaA', this.value)" style="width:100%;padding:5px;border:1px solid #80cbc4;border-radius:6px;font-size:12px;box-sizing:border-box;">
+          </div>
+        </div>
+      </div>`;
+
+    const isFetchingCtx = !!_agriGrowthCareState.marketCtxPending[region];
+    const ctxStatus = marketCtx.latestDate
+      ? `市場実績 ${escHtml_(marketCtx.latestDate)} 反映中`
+      : (isFetchingCtx ? '市場データを取得中（基準モデルで先行試算中）...' : '季節基準モデルで試算中');
+
+    const items = ranking.items || [];
+    const selectedCrop = (_agriGrowthCareState.marketSelectedCrop && items.some(function (x) { return x.cropKey === _agriGrowthCareState.marketSelectedCrop; }))
+      ? _agriGrowthCareState.marketSelectedCrop
+      : (items[0] ? items[0].cropKey : 'キャベツ');
+    const focusItem = items.find(function (x) { return x.cropKey === selectedCrop; }) || items[0] || null;
+
+    const medals = ['🥇', '🥈', '🥉'];
+    const cardsHtml = items.slice(0, 6).map(function (it, idx) {
+      const medal = medals[idx] || `${idx + 1}位`;
+      const isFocus = focusItem && it.cropKey === focusItem.cropKey;
+      const offBadge = it.isOffSeason ? '<span style="background:#fff3e0;color:#e65100;border:1px solid #ffcc80;font-size:10px;font-weight:bold;padding:1px 6px;border-radius:999px;">🔥 端境期狙い</span>' : '';
+      const suitBadge = it.suitability === 'optimal'
+        ? '<span style="background:#e8f5e9;color:#1b5e20;font-size:10px;font-weight:bold;padding:1px 6px;border-radius:999px;">◎適期</span>'
+        : (it.suitability === 'marginal'
+          ? '<span style="background:#fff8e1;color:#f57f17;font-size:10px;font-weight:bold;padding:1px 6px;border-radius:999px;">△条件付</span>'
+          : '<span style="background:#eceff1;color:#607d8b;font-size:10px;font-weight:bold;padding:1px 6px;border-radius:999px;">×適期外</span>');
+      return `
+        <div onclick="agcSelectRecommendCrop('${escHtml_(it.cropKey)}')" style="cursor:pointer;background:#fff;border:${isFocus ? '2px solid #00695c' : '1px solid #cfd8dc'};border-radius:8px;padding:8px 10px;margin-bottom:6px;box-shadow:${isFocus ? '0 2px 6px rgba(0,105,92,0.16)' : 'none'};">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span style="font-weight:bold;font-size:13px;color:#263238;">${medal} ${escHtml_(it.cropKey)} ${suitBadge} ${offBadge}</span>
+            <span style="font-weight:bold;font-size:12px;color:#00695c;">粗利目安 ${it.expectedGrossProfitYen.toLocaleString('ja-JP')}円</span>
+          </div>
+          <div style="font-size:11px;color:#37474f;margin-top:4px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+            <span>🗓️ 収穫予想: <b>${escHtml_(it.harvestLabel)}</b></span>
+            <span>💴 予測単価: <b>${it.expectedPricePerKg}円/kg</b>（基準比 ${it.vsBasePct}%）</span>
+          </div>
+          <div style="font-size:10.5px;color:#546e7a;margin-top:3px;line-height:1.4;">${escHtml_(it.reasonText)}</div>
+          <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:5px;">
+            <button type="button" onclick="event.stopPropagation(); agcUseRecommendedCrop('${escHtml_(it.cropKey)}', '${escHtml_(sowingDate)}', '${escHtml_(cover)}', ${areaA})" style="font-size:10.5px;font-weight:bold;padding:4px 9px;border-radius:6px;border:1px solid #2e7d32;background:#e8f5e9;color:#1b5e20;cursor:pointer;">🧪 施肥・防除を試算 ➔</button>
+          </div>
+        </div>`;
+    }).join('');
+
+    const chartHtml = focusItem ? `
+      <div style="background:#fff;border:1px solid #b2dfdb;border-radius:8px;padding:8px;margin-top:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:4px;">
+          <span style="font-weight:bold;font-size:12px;color:#00695c;">🔮 ${escHtml_(focusItem.cropKey)} の6ヶ月予測価格グラフ（${region === 'osaka' ? '大阪・本場' : '東京・大田'}）</span>
+          <span style="font-size:10.5px;color:#546e7a;">1ヶ月後 約${focusItem.forecast.month1PredPerKg}円/kg ／ 3ヶ月後 約${focusItem.forecast.month3PredPerKg}円/kg</span>
+        </div>
+        ${renderMarketForecastSvg_(focusItem.forecast, { perKg: true, accentColor: '#00695c' })}
+        <div style="font-size:10.5px;color:#455a64;margin-top:4px;line-height:1.4;">${focusItem.forecast.drivers.map(escHtml_).join(' ／ ')}</div>
+      </div>` : '';
+
+    return `
+      <div data-agc-root="1">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:8px;">
+          <span style="font-weight:bold;color:#1b5e20;font-size:13px;">🌱 生育予測・天候連動 施肥／防除</span>
+          <button type="button" onclick="agcRefreshBundle()" style="font-size:10px;padding:3px 8px;border:1px solid #a5d6a7;border-radius:999px;background:#fff;color:#2e7d32;cursor:pointer;">🔄 最新読込</button>
+        </div>
+        ${tabBarHtml}
+        ${controlsHtml}
+        <div style="font-size:10.5px;color:#00695c;margin-bottom:6px;">📡 ${ctxStatus}（${areaA}a・${escHtml_(cover)}・${items.length}品目評価）</div>
+        ${cardsHtml || '<div style="padding:12px;text-align:center;color:#78909c;font-size:12px;">指定条件で播種適期の主要品目がありません。「適期外も表示」にチェックを入れると全品目を確認できます。</div>'}
+        ${chartHtml}
+      </div>`;
+  }
+
   function renderAgriGrowthCareHtml_() {
     const weatherCtx = buildAgriWeatherContext_();
     const bundle = _agriGrowthCareState.bundle;
     const lots = (bundle && Array.isArray(bundle.lots)) ? bundle.lots : [];
     const fields = (bundle && Array.isArray(bundle.fields)) ? bundle.fields : [];
+
+    const mode = _agriGrowthCareState.mode;
+    const isLots = mode === 'lots';
+    const isSim = mode === 'sim';
+    const isMarket = mode === 'market';
+    const tabBtnStyle = function (on, accent) {
+      const ac = accent || '#2e7d32';
+      const bg = accent === '#00695c' ? '#e0f2f1' : '#e8f5e9';
+      return `flex:1;min-width:0;padding:7px 4px;border-radius:8px;font-size:11px;font-weight:bold;cursor:pointer;border:${on ? ('2px solid ' + ac) : '1px solid #cfd8dc'};background:${on ? bg : '#f7f9fb'};color:${on ? ac : '#455a64'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;`;
+    };
+    const tabBarHtml = `
+      <div style="display:flex;gap:5px;margin-bottom:8px;">
+        <button type="button" onclick="agcSetMode('lots')" style="${tabBtnStyle(isLots)}">📋 ロット (${lots.length})</button>
+        <button type="button" onclick="agcSetMode('sim')" style="${tabBtnStyle(isSim)}">🧪 種まき試算</button>
+        <button type="button" onclick="agcSetMode('market')" style="${tabBtnStyle(isMarket, '#00695c')}">📈 売れる野菜</button>
+      </div>`;
+
+    if (isMarket) {
+      return renderAgriMarketTabHtml_(weatherCtx, bundle, tabBarHtml);
+    }
+
     const active = resolveActiveAgriParams_();
     const cropKey = normalizeAgriCropKey_(active.cropName);
 
@@ -3654,10 +4795,26 @@
       catalogPesticides: _agriGrowthCareState.catalogCache[active.cropName] || []
     });
 
-    const isLots = _agriGrowthCareState.mode === 'lots';
-    const tabBtnStyle = function (on) {
-      return `flex:1;padding:7px 8px;border-radius:8px;font-size:12px;font-weight:bold;cursor:pointer;border:${on ? '2px solid #2e7d32' : '1px solid #cfd8dc'};background:${on ? '#e8f5e9' : '#f7f9fb'};color:${on ? '#1b5e20' : '#455a64'};`;
-    };
+    const marketCtx = ensureMarketCtxForAgriPanel_(_agriGrowthCareState.marketRegion);
+    const harvFc = forecastCropMarketSeries_({
+      cropName: active.cropName,
+      startDate: weatherCtx.todayStr || active.sowingDate,
+      horizonTenDays: 27,
+      marketCtx: marketCtx || {}
+    });
+    const inHarvPts = harvFc.points.filter(function (p) {
+      return p.date >= addDaysYmd_(growth.harvestStartDate, -10) && p.date <= addDaysYmd_(growth.harvestEndDate, 10);
+    });
+    const harvSample = inHarvPts.length ? inHarvPts : [harvFc.points[Math.min(harvFc.points.length - 1, 5)]];
+    const harvPredPerKg = Math.round(harvSample.reduce(function (s, p) { return s + p.predMidPerKg; }, 0) / harvSample.length);
+    const harvIsOff = harvSample.some(function (p) { return p.isOffSeason; });
+    const harvModel = resolveMarketModel_(active.cropName, null);
+    const harvEstRev = Math.round(harvModel.stdYieldKg10a * (active.areaA / 10) * harvPredPerKg);
+    const harvVsPct = harvFc.effectiveBasePerKg > 0 ? Math.round((harvPredPerKg / harvFc.effectiveBasePerKg) * 100) : 100;
+    const marketHintHtml = `<div style="margin-top:5px;padding:5px 8px;border-radius:6px;background:#e0f2f1;border:1px solid #80cbc4;font-size:11px;color:#004d40;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px;">
+      <span>💴 収穫期の予測単価：<b>約${harvPredPerKg}円/kg</b>（基準比 ${harvVsPct}%${harvIsOff ? ' · 🔥端境期' : ''}）／ 想定売上 約<b>${harvEstRev.toLocaleString('ja-JP')}円</b></span>
+      <button type="button" onclick="agcSetMode('market')" style="border:1px solid #00695c;background:#fff;color:#00695c;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:bold;cursor:pointer;">他品目と比較 ➔</button>
+    </div>`;
 
     // ロット選択 / 試算フォーム
     let selectorHtml = '';
@@ -3784,6 +4941,7 @@
         </div>
         <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px;">${timelineHtml}</div>
         <div style="font-size:10px;color:#607d8b;">微気象補正: ${escHtml_(growth.coverLabel)} ／ 計算内訳: ${srcNote}</div>
+        ${marketHintHtml}
       </div>`;
 
     // --- 2. 肥料の量・タイミングカード ---
@@ -3887,10 +5045,7 @@
           <span style="font-weight:bold;color:#1b5e20;font-size:13px;">🌱 生育予測・天候連動 施肥／防除</span>
           <button type="button" onclick="agcRefreshBundle()" style="font-size:10px;padding:3px 8px;border:1px solid #a5d6a7;border-radius:999px;background:#fff;color:#2e7d32;cursor:pointer;">🔄 最新読込</button>
         </div>
-        <div style="display:flex;gap:6px;margin-bottom:8px;">
-          <button type="button" onclick="agcSetMode('lots')" style="${tabBtnStyle(isLots)}">📋 栽培・播種ロット (${lots.length})</button>
-          <button type="button" onclick="agcSetMode('sim')" style="${tabBtnStyle(!isLots)}">🧪 種まきから試算</button>
-        </div>
+        ${tabBarHtml}
         ${selectorHtml}
         ${growthCardHtml}
         ${fertCardHtml}
@@ -3975,6 +5130,19 @@
     }
     if (opts.sowingDate) {
       _agriGrowthCareState.simSowingDate = String(opts.sowingDate).slice(0, 10);
+      _agriGrowthCareState.marketSowingDate = String(opts.sowingDate).slice(0, 10);
+    }
+    if (opts.fieldCondition) {
+      _agriGrowthCareState.simCover = coverMicroclimateOffset_(normalizeCoverKind_(opts.fieldCondition)).label;
+      _agriGrowthCareState.marketCover = _agriGrowthCareState.simCover;
+    }
+    if (isFinite(Number(opts.areaA)) && Number(opts.areaA) > 0) {
+      _agriGrowthCareState.simAreaA = Number(opts.areaA);
+      _agriGrowthCareState.marketAreaA = Number(opts.areaA);
+    }
+    if (opts.mode === 'sim' || opts.mode === 'lots' || opts.mode === 'market') {
+      _agriGrowthCareState.mode = opts.mode;
+      _agriGrowthCareState.modeUserPicked = true;
     }
 
     let modal = document.getElementById('agriGrowthCareModal');
@@ -4004,7 +5172,33 @@
   }
 
   global.agcSetMode = function (mode) {
-    _agriGrowthCareState.mode = mode === 'sim' ? 'sim' : 'lots';
+    _agriGrowthCareState.mode = (mode === 'sim' || mode === 'market') ? mode : 'lots';
+    _agriGrowthCareState.modeUserPicked = true;
+    rerenderAgriGrowthCarePanels_();
+  };
+  global.agcUpdateMarketInput = function (key, val) {
+    if (key === 'marketAreaA') {
+      const n = parseFloat(val);
+      _agriGrowthCareState.marketAreaA = (isFinite(n) && n > 0) ? n : 10;
+    } else if (key === 'marketIncludeOut') {
+      _agriGrowthCareState.marketIncludeOut = !!val;
+    } else if (key === 'marketRegion') {
+      _agriGrowthCareState.marketRegion = val === 'osaka' ? 'osaka' : 'tokyo';
+    } else {
+      _agriGrowthCareState[key] = String(val || '');
+    }
+    rerenderAgriGrowthCarePanels_();
+  };
+  global.agcSelectRecommendCrop = function (cropKey) {
+    _agriGrowthCareState.marketSelectedCrop = String(cropKey || '');
+    rerenderAgriGrowthCarePanels_();
+  };
+  global.agcUseRecommendedCrop = function (cropName, sowingDate, cover, areaA) {
+    _agriGrowthCareState.simCrop = String(cropName || 'キャベツ');
+    if (sowingDate) _agriGrowthCareState.simSowingDate = String(sowingDate).slice(0, 10);
+    if (cover) _agriGrowthCareState.simCover = String(cover);
+    if (isFinite(Number(areaA)) && Number(areaA) > 0) _agriGrowthCareState.simAreaA = Number(areaA);
+    _agriGrowthCareState.mode = 'sim';
     _agriGrowthCareState.modeUserPicked = true;
     rerenderAgriGrowthCarePanels_();
   };
@@ -4051,9 +5245,12 @@
   global.finishWeatherFetch = finishWeatherFetch;
   global.renderNearTermWeatherSectionHtml = renderNearTermWeatherSectionHtml;
   global.switchNearTermWeatherDay = switchNearTermWeatherDay;
+  global.switchWeatherMainTab = switchWeatherMainTab;
+  global.wrapWeatherHtmlWithMainTabs = wrapWeatherHtmlWithMainTabs_;
   global.switchWeatherPlace = switchWeatherPlace;
   global.openWeatherPlacePicker = openWeatherPlacePicker;
   global.startWeatherPlaceMapPick = startWeatherPlaceMapPick;
+  global.pickWeatherPlaceFromMap = pickWeatherPlaceFromMap;
   global.cancelWeatherPlaceMapPick = cancelWeatherPlaceMapPick;
   global.confirmWeatherPlaceMapPick = confirmWeatherPlaceMapPick;
   global.closeWeatherPlacePicker = closeWeatherPlacePicker;

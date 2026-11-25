@@ -1238,6 +1238,10 @@ function syncUpdatePolygon_(p, extra) {
         if (payload.location == null) payload.location = p.location || '';
         if (payload.condition == null) payload.condition = p.linkedSigns || '';
         if (payload.parentSignId == null) payload.parentSignId = p.parentSignId || '';
+        if (isAdminPlacePin_(p) || p.placeKind || p.placeMemo) {
+            if (payload.placeKind == null) payload.placeKind = p.placeKind || '';
+            if (payload.placeMemo == null) payload.placeMemo = p.placeMemo || '';
+        }
     } else {
         if (payload.location == null) payload.location = p.location;
         if (payload.condition == null) payload.condition = p.condition;
@@ -9343,6 +9347,29 @@ function openAttr(id) {
                <button onclick="execAttr('${id}')" style="width:100%; padding:10px; border-radius:4px; border:none; background:#F9A825; color:#3E2723; font-weight:bold; cursor:pointer;">保存</button>
              </div>
            `);
+    } else if (p.isMarker && isAdminPlacePin_(p)) {
+        const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+        const meta = adminPlacePinMeta_(p);
+        const shipOn = meta.kind === 'ship';
+        const locOptions = `<option value="">未設定</option>` + (pdlLocations || []).map(l =>
+            `<option value="${esc(l)}" ${String(l) === String(p.location || '') ? 'selected' : ''}>${esc(l)}</option>`
+        ).join('');
+        infoWindow.setContent(`
+             <div style="text-align:left; width:280px; box-sizing:border-box; padding:10px; font-family:sans-serif; color:#333;">
+               <div style="font-size:14px; margin-bottom:8px; color:#1565C0; font-weight:bold; text-align:center;">📍 地点の変更</div>
+               <div style="font-size:11px; color:#666; line-height:1.4; margin:0 0 8px;">看板や拠点とは別の目印です。出荷先の店舗や、作業で使う場所の名前を直せます。</div>
+               <label style="font-size:12px; font-weight:bold; color:#555;">地点名 *</label>
+               <input type="text" id="ppName" value="${esc(p.name)}" class="form-input" style="width:100%; margin-bottom:8px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">
+               <div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">種類</div>
+               <label style="display:block; font-size:13px; margin-bottom:4px;"><input type="radio" name="ppKind" value="ship" ${shipOn ? 'checked' : ''}> 🏪 出荷先店舗</label>
+               <label style="display:block; font-size:13px; margin-bottom:8px;"><input type="radio" name="ppKind" value="use" ${shipOn ? '' : 'checked'}> 📌 利用する場所</label>
+               <label style="font-size:12px; font-weight:bold; color:#555;">メモ</label>
+               <textarea id="ppMemo" class="form-input" rows="2" style="width:100%; margin-bottom:8px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; resize:vertical;">${esc(p.placeMemo || '')}</textarea>
+               <label style="font-size:12px; font-weight:bold; color:#555;">関連する拠点</label>
+               <select id="ppBase" class="form-input" style="width:100%; margin-bottom:10px; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">${locOptions}</select>
+               <button onclick="execAttr('${id}')" style="width:100%; padding:10px; border-radius:4px; border:none; background:#1565C0; color:white; font-weight:bold; cursor:pointer;">保存</button>
+             </div>
+           `);
     } else if (p.isMarker) {
         const defaultLoc = String(p.location || localStorage.getItem('passionMapUserLocation') || '').trim();
         const locOptions = `<option value="">未設定</option>` + (pdlLocations || []).map(l =>
@@ -9425,6 +9452,31 @@ function execAttr(id) {
         p.marker = createLocationPinMarker(n, pos, p._adminIdRef || id);
         infoWindow.close();
         showAdminSyncToast('✅ 拠点名を反映しました（同期中…）', 'ok');
+        syncUpdatePolygon_(p).then(ok => { if (ok) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok'); });
+        return;
+    }
+    if (p.isMarker && isAdminPlacePin_(p)) {
+        const n = String((document.getElementById('ppName') || {}).value || '').trim();
+        if (!n) { customAlert('地点名を入力してください'); return; }
+        const kindEl = document.querySelector('input[name="ppKind"]:checked');
+        const kind = kindEl ? kindEl.value : (p.placeKind || 'use');
+        const meta = (typeof window.placePinKindMeta_ === 'function') ? window.placePinKindMeta_(kind) : adminPlacePinMeta_({ placeKind: kind });
+        const memo = String((document.getElementById('ppMemo') || {}).value || '').trim();
+        const loc = String((document.getElementById('ppBase') || {}).value || '').trim();
+        const pos = p.marker.getPosition();
+        p.name = n;
+        p.placeKind = meta.kind;
+        p.placeMemo = memo;
+        p.location = loc;
+        p.color = meta.emoji;
+        p.signFunction = window.PLACE_PIN_SIGN_FUNCTION || '地点';
+        p.labelConfig = (typeof window.placePinLabelConfig_ === 'function')
+            ? window.placePinLabelConfig_(n, map.getZoom(), meta)
+            : { text: n, color: meta.ink || '#00695C', fontSize: '12px', fontWeight: 'bold', className: 'place-pin-label' };
+        p.marker.setMap(null);
+        p.marker = createPlacePinMarker(n, pos, p._adminIdRef || id, meta.kind, meta.emoji);
+        infoWindow.close();
+        showAdminSyncToast('✅ 地点を反映しました（同期中…）', 'ok');
         syncUpdatePolygon_(p).then(ok => { if (ok) showAdminSyncToast('☁️ サーバーへ保存完了', 'ok'); });
         return;
     }
@@ -9565,6 +9617,10 @@ window.startAdminSignGroupMapSelect = (targetId) => {
         if (typeof customAlert === 'function') customAlert('位置ピンは大・小看板の対象外です');
         return;
     }
+    if (typeof isAdminPlacePin_ === 'function' && isAdminPlacePin_(p)) {
+        if (typeof customAlert === 'function') customAlert('地点は看板とは別の目印です。大・小看板には束ねられません。');
+        return;
+    }
 
     window.adminSignGroupTargetId = tid;
     window.isAdminSignGroupMapSelecting = true;
@@ -9624,7 +9680,8 @@ window.updateAdminSignGroupMapVisuals = () => {
 
         if (p.isMarker && p.marker) {
             const isLoc = typeof isAdminLocationPin_ === 'function' && isAdminLocationPin_(p);
-            if (isLoc) {
+            const isPlace = typeof isAdminPlacePin_ === 'function' && isAdminPlacePin_(p);
+            if (isLoc || isPlace) {
                 p.marker.setOpacity(0.3);
                 p.marker.setVisible(true);
             } else if (sid === parentId) {
@@ -9668,6 +9725,10 @@ window.handleAdminSignGroupMarkerClick_ = async (id) => {
 
     if (typeof isAdminLocationPin_ === 'function' && isAdminLocationPin_(p)) {
         if (typeof customAlert === 'function') customAlert('位置ピンは大・小看板の対象外です。');
+        return;
+    }
+    if (typeof isAdminPlacePin_ === 'function' && isAdminPlacePin_(p)) {
+        if (typeof customAlert === 'function') customAlert('地点は看板とは別の目印なので、大・小看板には選べません。');
         return;
     }
 
@@ -9850,7 +9911,7 @@ function openCol(id) {
 
 function applyCol(id, v) {
     const p = loadedPolygons[id];
-    if (p && p.isMarker && isAdminLocationPin_(p)) return;
+    if (p && p.isMarker && (isAdminLocationPin_(p) || isAdminPlacePin_(p))) return;
     p.color = v;
     if (p.isMarker) {
         if (p.marker) p.marker.setMap(null);
@@ -9894,7 +9955,7 @@ async function actionDelete(id) {
     const p = loadedPolygons[id];
     if (!p) return;
 
-    const label = isAdminLocationPin_(p) ? '拠点' : (p.isMarker ? '看板' : '圃場');
+    const label = isAdminLocationPin_(p) ? '拠点' : (isAdminPlacePin_(p) ? '地点' : (p.isMarker ? '看板' : '圃場'));
     const name = String(p.name || '').trim() || label;
     if (await customConfirm(`「${name}」を削除しますか？\n(復元できません)`)) {
         await doDeletePolygons([id]);
@@ -9955,6 +10016,28 @@ function isAdminLocationPin_(p) {
     return String(p.signFunction || '').trim() === '拠点';
 }
 
+function isAdminPlacePin_(p) {
+    if (!p) return false;
+    if (typeof window.isPlacePinSign_ === 'function') return window.isPlacePinSign_(p.signFunction);
+    return String(p.signFunction || '').trim() === '地点';
+}
+
+function adminPlacePinMeta_(p) {
+    const kind = p && (p.placeKind || p.color || '');
+    if (typeof window.placePinKindMeta_ === 'function') return window.placePinKindMeta_(kind);
+    return { kind: 'use', label: '利用場所', emoji: '📌', fill: '#00897B', ink: '#00695C' };
+}
+
+function refreshAdminPlacePin_(p) {
+    if (!p || !p.marker || !isAdminPlacePin_(p)) return;
+    const z = map ? map.getZoom() : 15;
+    if (typeof window.refreshPlacePinMarker_ === 'function') {
+        window.refreshPlacePinMarker_(p.marker, p.name, z, p.signFunction, p.color, p.placeKind);
+    } else {
+        try { p.marker.setVisible(true); } catch (e) { }
+    }
+}
+
 function findLocationPinIdByName_(name) {
     const n = String(name || '').trim();
     if (!n) return '';
@@ -9988,6 +10071,7 @@ function bindAdminMarkerClick_(marker, getId) {
             return;
         }
         if (window.isAdminMapSelecting) {
+            if (isAdminPlacePin_(loadedPolygons[id])) return;
             if (window.tempLinkedSigns.includes(id)) { window.tempLinkedSigns = window.tempLinkedSigns.filter(x => x !== id); } else { window.tempLinkedSigns.push(id); }
             updateAdminMapVisuals(); return;
         }
@@ -9996,7 +10080,7 @@ function bindAdminMarkerClick_(marker, getId) {
         // 🪧 大看板・小看板の展開 & 2段階タップ制御
         const sid = String(id);
         const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[sid] : null;
-        if (window.SignGroup && p && p.isMarker && !isAdminLocationPin_(p)) {
+        if (window.SignGroup && p && p.isMarker && !isAdminLocationPin_(p) && !isAdminPlacePin_(p)) {
             const isParent = window.SignGroup.isParentSign(p);
             const isChild = window.SignGroup.isChildSign(p);
             const expId = window.SignGroup.getExpandedParentId();
@@ -10061,6 +10145,21 @@ function createLocationPinMarker(name, pos, idOrRef) {
     return marker;
 }
 
+function createPlacePinMarker(name, pos, idOrRef, placeKind, color) {
+    const getId = () => (idOrRef && typeof idOrRef === 'object' && 'id' in idOrRef) ? idOrRef.id : idOrRef;
+    const zoom = map ? map.getZoom() : 15;
+    const meta = (typeof window.placePinKindMeta_ === 'function') ? window.placePinKindMeta_(placeKind || color) : { kind: 'use', label: '利用場所' };
+    const label = (typeof window.placePinLabelConfig_ === 'function')
+        ? window.placePinLabelConfig_(name, zoom, meta)
+        : { text: name, color: '#00695C', fontSize: '12px', fontWeight: 'bold', className: 'place-pin-label place-pin-use' };
+    const icon = (typeof window.placePinMarkerIcon_ === 'function')
+        ? window.placePinMarkerIcon_(zoom, '地点', color, placeKind || meta.kind)
+        : { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 7, fillColor: '#00897B', fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2 };
+    const marker = new google.maps.Marker({ position: pos, map: map, visible: true, zIndex: 1100, label: label, icon: icon });
+    bindAdminMarkerClick_(marker, getId);
+    return marker;
+}
+
 function createPolygonObject(p) {
     if (!p || !p.coords) return;
     if (typeof p.coords === 'string') {
@@ -10081,12 +10180,18 @@ function createPolygonObject(p) {
         let lat = typeof p.coords[0].lat === 'function' ? p.coords[0].lat() : parseFloat(p.coords[0].lat);
         let lng = typeof p.coords[0].lng === 'function' ? p.coords[0].lng() : parseFloat(p.coords[0].lng);
         const locPin = isAdminLocationPin_(p);
+        const placePin = !locPin && isAdminPlacePin_(p);
         const m = locPin
             ? createLocationPinMarker(p.name, new google.maps.LatLng(lat, lng), idRef)
-            : createSignboardMarker(p.name, new google.maps.LatLng(lat, lng), p.color, idRef);
+            : (placePin
+                ? createPlacePinMarker(p.name, new google.maps.LatLng(lat, lng), idRef, p.placeKind, p.color)
+                : createSignboardMarker(p.name, new google.maps.LatLng(lat, lng), p.color, idRef));
+        const placeMeta = placePin ? adminPlacePinMeta_(p) : null;
         const labelConfig = locPin
             ? ((typeof window.locationPinLabelConfig_ === 'function') ? window.locationPinLabelConfig_(p.name, map.getZoom()) : { text: p.name, color: '#3E2723', fontSize: '13px', fontWeight: 'bold', className: 'location-pin-label' })
-            : { text: p.name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' };
+            : (placePin
+                ? ((typeof window.placePinLabelConfig_ === 'function') ? window.placePinLabelConfig_(p.name, map.getZoom(), placeMeta) : { text: p.name, color: '#00695C', fontSize: '12px', fontWeight: 'bold', className: 'place-pin-label' })
+                : { text: p.name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' });
         loadedPolygons[p.id] = { ...p, marker: m, labelConfig: labelConfig, signFunction: p.signFunction, linkedSigns: p.linkedSigns || "", parentSignId: p.parentSignId || "", _adminIdRef: idRef };
     } else {
         const isU = (p.status === '未使用（返却）' || p.status === '未使用'), dC = getAdminColor(p.status);
@@ -10137,6 +10242,8 @@ function createPolygonObject(p) {
                     status: p.status || '稼働中',
                     signFunction: p.signFunction || '',
                     parentSignId: p.parentSignId || '',
+                    placeKind: p.placeKind || '',
+                    placeMemo: p.placeMemo || '',
                     isMarker: !!p.isMarker
                 }
             }, '*');
@@ -10532,8 +10639,9 @@ function initMap() {
         if (window.ignoreNextMapClick) return;
         if (!customDrawingMode) return;
 
-        if (customDrawingMode === 'marker' || customDrawingMode === 'location') {
+        if (customDrawingMode === 'marker' || customDrawingMode === 'location' || customDrawingMode === 'place') {
             const placingLocation = customDrawingMode === 'location';
+            const placingPlace = customDrawingMode === 'place';
             if (currentMarker) currentMarker.setMap(null);
             if (placingLocation) {
                 const zoom = map.getZoom();
@@ -10547,6 +10655,18 @@ function initMap() {
                 if (typeof window.attachLocationPinGlow_ === 'function') window.attachLocationPinGlow_(currentMarker);
                 if (typeof window.syncLocationPinGlowScale_ === 'function') window.syncLocationPinGlowScale_(map);
                 openLocationPinForm_(currentMarker);
+            } else if (placingPlace) {
+                const zoom = map.getZoom();
+                currentMarker = new google.maps.Marker({
+                    position: e.latLng,
+                    map: map,
+                    visible: true,
+                    zIndex: 1100,
+                    icon: (typeof window.placePinMarkerIcon_ === 'function')
+                        ? window.placePinMarkerIcon_(zoom, '地点', '🏪', 'ship')
+                        : { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 7, fillColor: '#1565C0', fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2 }
+                });
+                openPlacePinForm_(currentMarker);
             } else {
                 currentMarker = new google.maps.Marker({ position: e.latLng, map: map });
                 openMarkerForm(currentMarker);
@@ -10601,6 +10721,8 @@ function initMap() {
                 if (isAdminLocationPin_(p)) {
                     if (typeof window.refreshLocationPinMarker_ === 'function') window.refreshLocationPinMarker_(p.marker, p.name, z);
                     else p.marker.setVisible(true);
+                } else if (isAdminPlacePin_(p)) {
+                    refreshAdminPlacePin_(p);
                 } else {
                     const isChild = hasSignGroup && window.SignGroup.isChildSign(p);
                     const isParent = hasSignGroup && window.SignGroup.isParentSign(p);
@@ -11374,7 +11496,7 @@ function setupSearch() {
         matches.forEach(m => {
             const d = document.createElement('div');
             d.className = 'suggestion-item';
-            d.innerHTML = (isAdminLocationPin_(m) ? '🏢' : (m.isMarker ? '🪧' : '🌿')) + ' ' + m.name;
+            d.innerHTML = (isAdminLocationPin_(m) ? '🏢' : (isAdminPlacePin_(m) ? adminPlacePinMeta_(m).emoji : (m.isMarker ? '🪧' : '🌿'))) + ' ' + m.name;
             d.onclick = () => { input.value = m.name; sug.style.display = 'none'; focusAndOpen(m.id); };
             sug.appendChild(d);
         });
@@ -11613,6 +11735,22 @@ window.startLocationPinMode_ = () => {
     if (typeof window.syncAdminRegPlusBtnState_ === 'function') window.syncAdminRegPlusBtnState_('location');
 };
 
+window.startPlacePinMode_ = () => {
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    const drawArea = document.getElementById('drawArea');
+    if (drawArea) drawArea.style.display = 'none';
+    customDrawingMode = 'place';
+    clearCustomDrawing();
+    setFudeVisibility(false);
+    map.setOptions({ draggable: true, draggableCursor: pinCursor });
+    if (typeof updateMarkerLabels === 'function') updateMarkerLabels();
+    const legendDiv = document.getElementById('adminLegendUI');
+    if (legendDiv) legendDiv.style.display = 'none';
+    customAlert("【地点登録モード】\n出荷先の店舗や、作業で使う場所の目印にしたい地点を1回タップしてください。\n看板や拠点とは別に登録されます。");
+    if (typeof window.closeAdminRegPlusMenu_ === 'function') window.closeAdminRegPlusMenu_();
+    if (typeof window.syncAdminRegPlusBtnState_ === 'function') window.syncAdminRegPlusBtnState_('place');
+};
+
 window.closeAdminRegPlusMenu_ = () => {
     const menu = document.getElementById('adminRegPlusMenu');
     if (menu) menu.style.display = 'none';
@@ -11650,6 +11788,8 @@ window.pickAdminRegPlus_ = (kind) => {
         if (btn) btn.click();
     } else if (kind === 'location') {
         if (typeof window.startLocationPinMode_ === 'function') window.startLocationPinMode_();
+    } else if (kind === 'place') {
+        if (typeof window.startPlacePinMode_ === 'function') window.startPlacePinMode_();
     } else if (kind === 'member') {
         window._equipmentManageActive = false;
         currentActiveMasterType = 'member';
@@ -11681,6 +11821,9 @@ window.syncAdminRegPlusBtnState_ = (mode) => {
     } else if (mode === 'location') {
         plus.classList.add('is-reg-active');
         plus.title = '拠点登録中';
+    } else if (mode === 'place') {
+        plus.classList.add('is-reg-active');
+        plus.title = '地点登録中';
     } else {
         plus.title = '登録';
     }
@@ -13311,6 +13454,8 @@ window.updateMarkerLabels = () => {
             if (isAdminLocationPin_(p)) {
                 if (typeof window.refreshLocationPinMarker_ === 'function') window.refreshLocationPinMarker_(p.marker, p.name, z);
                 else { p.marker.setVisible(true); if (p.labelConfig) p.marker.setLabel(p.labelConfig); }
+            } else if (isAdminPlacePin_(p)) {
+                refreshAdminPlacePin_(p);
             } else if (customDrawingMode === 'polygon') {
                 // ★圃場モードのときはラベルを非表示にしてスッキリさせる！
                 p.marker.setLabel(null);
@@ -14413,6 +14558,120 @@ window.saveLocationPin_ = async () => {
     }
 };
 
+window.previewPlacePinKind_ = (kind) => {
+    if (!currentMarker || typeof window.placePinMarkerIcon_ !== 'function' || !map) return;
+    try {
+        currentMarker.setIcon(window.placePinMarkerIcon_(map.getZoom(), '地点', '', kind));
+    } catch (e) { }
+};
+
+window.openPlacePinForm_ = (markerObj) => {
+    const lat = markerObj && markerObj.getPosition ? markerObj.getPosition().lat() : null;
+    const lng = markerObj && markerObj.getPosition ? markerObj.getPosition().lng() : null;
+    const posLabel = (lat != null && lng != null) ? `${Number(lat).toFixed(6)}, ${Number(lng).toFixed(6)}` : '';
+    const modal = document.getElementById('modal');
+    const modalBody = document.getElementById('modalBody');
+    if (!modal || !modalBody) {
+        customAlert('登録画面を開けませんでした。ページを再読み込みしてください。');
+        return;
+    }
+    const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    const baseOptions = `<option value="">未設定</option>` + (pdlLocations || []).map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join('');
+    try { if (infoWindow) infoWindow.close(); } catch (e) { }
+    modalBody.innerHTML = `
+      <div style="width:min(92vw,380px);max-width:100%;box-sizing:border-box;padding:4px;text-align:left;color:#000;max-height:78vh;overflow-y:auto;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <h3 style="margin:0; color:#1565C0; font-size:18px;">📍 地点登録</h3>
+          <span onclick="cancelMarkerForm_()" style="cursor:pointer; font-size:24px; color:#888; line-height:1;">×</span>
+        </div>
+        ${posLabel ? `<div style="font-size:11px; color:#888; margin-bottom:8px; text-align:center;">📍 ${posLabel}</div>` : ''}
+        <div style="font-size:12px; color:#0D47A1; background:#E3F2FD; border:1px solid #90CAF9; border-radius:8px; padding:8px 10px; margin-bottom:10px; line-height:1.45;">看板や拠点とは別の目印です。出荷先の店舗や、作業で使う場所を地図に残せます。拠点の選択肢には追加されません。</div>
+        <label style="font-size:12px; font-weight:bold; color:#555;">地点名 *</label>
+        <input type="text" id="placePinName" class="form-input" placeholder="例: ○○農協、直売所、集荷場" style="margin-bottom:8px;">
+        <div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">種類</div>
+        <label style="display:block; font-size:14px; margin-bottom:4px;"><input type="radio" name="placePinKind" value="ship" checked onchange="previewPlacePinKind_('ship')"> 🏪 出荷先店舗</label>
+        <label style="display:block; font-size:14px; margin-bottom:8px;"><input type="radio" name="placePinKind" value="use" onchange="previewPlacePinKind_('use')"> 📌 利用する場所</label>
+        <label style="font-size:12px; font-weight:bold; color:#555;">メモ</label>
+        <textarea id="placePinMemo" class="form-input" rows="2" placeholder="例: 朝8時集荷、裏口から搬入" style="margin-bottom:8px; resize:vertical;"></textarea>
+        <label style="font-size:12px; font-weight:bold; color:#555;">関連する拠点（任意）</label>
+        <select id="placePinBase" class="form-input" style="margin-bottom:4px;">${baseOptions}</select>
+        <div style="font-size:11px; color:#777; margin-bottom:8px;">どの拠点から使う場所かだけ残します。地点名そのものは拠点にはなりません。</div>
+        <div style="display:flex; gap:8px; margin-top:14px;">
+          <button type="button" id="btnSavePlacePin" onclick="savePlacePin_()" style="background:#1565C0;color:#fff;flex:2;padding:12px;border-radius:6px;border:none;font-weight:bold;cursor:pointer;">地点を登録</button>
+          <button type="button" onclick="cancelMarkerForm_()" style="background:#ccc;color:#333;flex:1;padding:12px;border-radius:6px;border:none;font-weight:bold;cursor:pointer;">キャンセル</button>
+        </div>
+      </div>`;
+    modal.style.display = 'flex';
+    setTimeout(() => {
+        const nameEl = document.getElementById('placePinName');
+        if (nameEl) nameEl.focus();
+    }, 10);
+};
+
+window.savePlacePin_ = async () => {
+    const nameEl = document.getElementById('placePinName');
+    const name = nameEl ? String(nameEl.value || '').trim() : '';
+    if (!name) { customAlert('地点名を入力してください'); return; }
+    if (!currentMarker) { customAlert('位置が設定されていません。地図をタップしてから登録してください。'); return; }
+    const kindEl = document.querySelector('input[name="placePinKind"]:checked');
+    const kind = kindEl ? kindEl.value : 'ship';
+    const meta = (typeof window.placePinKindMeta_ === 'function') ? window.placePinKindMeta_(kind) : { kind: kind === 'ship' ? 'ship' : 'use', emoji: kind === 'ship' ? '🏪' : '📌', label: kind === 'ship' ? '出荷先' : '利用場所' };
+    const memo = String((document.getElementById('placePinMemo') || {}).value || '').trim();
+    const base = String((document.getElementById('placePinBase') || {}).value || '').trim();
+    const pos = currentMarker.getPosition();
+    const coords = [{ lat: pos.lat(), lng: pos.lng() }];
+    const tempId = newAdminTempId_('tmp');
+    const btn = document.getElementById('btnSavePlacePin');
+    if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
+    const signFunction = window.PLACE_PIN_SIGN_FUNCTION || '地点';
+
+    try { if (infoWindow) infoWindow.close(); } catch (e) { }
+    const modal = document.getElementById('modal');
+    if (modal) modal.style.display = 'none';
+    if (currentMarker) { currentMarker.setMap(null); currentMarker = null; }
+
+    createPolygonObject({
+        id: tempId,
+        name: name,
+        coords: coords,
+        color: meta.emoji,
+        location: base,
+        signFunction: signFunction,
+        placeKind: meta.kind,
+        placeMemo: memo,
+        isMarker: true
+    });
+    const viewBtn = document.getElementById('btnViewMode');
+    if (viewBtn) viewBtn.click();
+    persistAdminInitCache_();
+    showAdminSyncToast('✅ 地点を置きました（同期中…）', 'ok');
+
+    try {
+        const payload = {
+            name: name,
+            coords: JSON.stringify(coords),
+            color: meta.emoji,
+            location: base,
+            signFunction: signFunction,
+            placeKind: meta.kind,
+            placeMemo: memo,
+            userName: currentUser
+        };
+        const id = await syncAdminCall_('savePolygon', payload, {
+            key: 'savePolygon:' + tempId,
+            op: 'savePolygon',
+            tempId: tempId,
+            payload: payload
+        });
+        if (id) remapLoadedPolygonId_(tempId, id);
+        persistAdminInitCache_();
+        showAdminSyncToast('☁️ 地点を保存しました', 'ok');
+    } catch (e) {
+        console.warn('place pin savePolygon failed', e);
+        showAdminSyncToast('⚠️ 地点の保存に失敗しました（未同期として保持・自動再送します）: ' + (e.message || e), 'error');
+    }
+};
+
 window.saveM = async () => {
     const isParent = !!(window._signRegState && window._signRegState.signKind === 'parent');
     const nameEl = document.getElementById('mName');
@@ -14815,10 +15074,17 @@ window.shareFieldUrl = function (id, fieldName) {
 window.openM = (id) => {
     const p = loadedPolygons[id], isU = (p.status === '未使用（返却）' || p.status === '未使用');
     const locPin = isAdminLocationPin_(p);
+    const placePin = !locPin && isAdminPlacePin_(p);
+    const placeMeta = placePin ? adminPlacePinMeta_(p) : null;
+    const placeMemoHtml = placePin && String(p.placeMemo || '').trim()
+        ? `<div style="font-size:11px; color:#555; margin-top:4px; line-height:1.4; white-space:pre-wrap;">${String(p.placeMemo).replace(/&/g, '&amp;').replace(/</g, '&lt;')}</div>`
+        : '';
     const titleHtml = p.isMarker
         ? (locPin
             ? `<div style="font-size:22px; line-height:1; margin-bottom:4px;">🏢</div><b>${p.name}</b><div style="font-size:11px; color:#F57F17; font-weight:bold; margin-top:2px;">拠点</div>`
-            : `<div style="font-size:28px; line-height:1; margin-bottom:5px;">${((String(p.name || '').indexOf('排水口') >= 0 || String(p.name || '').indexOf('水落口') >= 0) && (!p.color || p.color === '🕳️')) ? '🚩' : p.color}</div><b>${p.name}</b>`)
+            : (placePin
+                ? `<div style="font-size:22px; line-height:1; margin-bottom:4px;">${placeMeta.emoji}</div><b>${p.name}</b><div style="font-size:11px; color:${placeMeta.ink}; font-weight:bold; margin-top:2px;">地点・${placeMeta.label}</div>${placeMemoHtml}`
+                : `<div style="font-size:28px; line-height:1; margin-bottom:5px;">${((String(p.name || '').indexOf('排水口') >= 0 || String(p.name || '').indexOf('水落口') >= 0) && (!p.color || p.color === '🕳️')) ? '🚩' : p.color}</div><b>${p.name}</b>`))
         : `<b>${p.name}</b>`;
 
     let ridgeStr = ''; if (!p.isMarker && p.ridgeDir && p.ridgeWidth) { const ridges = calcRidges(p.coords, p.ridgeDir, p.ridgeWidth); ridgeStr = `<br><span style="color:#2196F3; font-weight:bold;">📏 約${ridges}畝 (${p.ridgeDir} / ${p.ridgeWidth}cm)</span>`; }
@@ -14849,7 +15115,7 @@ window.openM = (id) => {
     const safeName = String(p.name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
 
     let signGroupInfo = '';
-    if (p.isMarker && !locPin && window.SignGroup) {
+    if (p.isMarker && !locPin && !placePin && window.SignGroup) {
         if (window.SignGroup.isParentSign(p)) {
             const children = window.SignGroup.getChildren(p.id, loadedPolygons);
             signGroupInfo = `<div style="background:#EDE7F6; color:#4A148C; border:1px solid #D1C4E9; border-radius:6px; padding:6px; margin-bottom:8px; font-size:11px; text-align:left;">
@@ -14881,6 +15147,9 @@ window.openM = (id) => {
         h += `<div style="display:flex;gap:4px;width:100%;"><button onclick="openCadRegistry('${id}')" style="flex:1;background:#FF9800;color:white;padding:8px 0;font-size:11px;border-radius:4px;border:none;white-space:nowrap;cursor:pointer;">🚜 農地CADを開く</button><button onclick="actionDelete('${id}')" style="flex:1;background:#ffebee;color:red;padding:8px 0;font-size:11px;border-radius:4px;border:1px solid #f44336;white-space:nowrap;cursor:pointer;">削除</button></div></div>`;
     } else if (locPin) {
         h += `<div style="display:flex;gap:4px;margin-bottom:4px;width:100%;"><button onclick="openAttr('${id}')" style="flex:1;background:#FFF8E1;padding:8px 0;font-size:11px;border-radius:4px;color:#E65100;border:1px solid #FFB74D;white-space:nowrap;cursor:pointer;font-weight:bold;">拠点名を変更</button></div>`;
+        h += `<div style="display:flex;gap:4px;width:100%;"><button onclick="actionEditShape('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">位置を移動</button><button onclick="actionDelete('${id}')" style="flex:1;background:#ffebee;color:red;padding:8px 0;font-size:11px;border-radius:4px;border:1px solid #f44336;white-space:nowrap;cursor:pointer;">削除</button></div></div>`;
+    } else if (placePin) {
+        h += `<div style="display:flex;gap:4px;margin-bottom:4px;width:100%;"><button onclick="openAttr('${id}')" style="flex:1;background:#E3F2FD;padding:8px 0;font-size:11px;border-radius:4px;color:#1565C0;border:1px solid #90CAF9;white-space:nowrap;cursor:pointer;font-weight:bold;">地点を変更</button></div>`;
         h += `<div style="display:flex;gap:4px;width:100%;"><button onclick="actionEditShape('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">位置を移動</button><button onclick="actionDelete('${id}')" style="flex:1;background:#ffebee;color:red;padding:8px 0;font-size:11px;border-radius:4px;border:1px solid #f44336;white-space:nowrap;cursor:pointer;">削除</button></div></div>`;
     } else {
         h += `<div style="display:flex;gap:4px;margin-bottom:4px;width:100%;"><button onclick="openAttr('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">情報変更</button><button onclick="openCol('${id}')" style="flex:1;background:#f0f0f0;padding:8px 0;font-size:11px;border-radius:4px;color:#333;border:1px solid #ccc;white-space:nowrap;cursor:pointer;">アイコン変更</button></div>`;
@@ -15067,6 +15336,9 @@ window.updateAdminMapVisuals = () => {
                 p.marker.setOpacity(1.0);
                 if (typeof window.refreshLocationPinMarker_ === 'function') window.refreshLocationPinMarker_(p.marker, p.name, map.getZoom());
                 else { p.marker.setVisible(true); if (p.labelConfig) p.marker.setLabel(p.labelConfig); }
+            } else if (isAdminPlacePin_(p)) {
+                p.marker.setOpacity(1.0);
+                refreshAdminPlacePin_(p);
             } else {
                 const checkId = String(id).trim().toLowerCase();
                 if (window.tempLinkedSigns.includes(id)) {

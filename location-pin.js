@@ -127,13 +127,85 @@
     try { marker.setIcon(locationPinMarkerIcon_(zoom)); } catch (e) {}
   }
 
+  var PLACE_PIN_SIGN_FUNCTION = '地点';
+
+  function isPlacePinSign_(signFunction) {
+    return String(signFunction || '').trim() === PLACE_PIN_SIGN_FUNCTION;
+  }
+
+  function placePinKindMeta_(kindOrColor) {
+    var raw = String(kindOrColor || '').trim();
+    var ship = raw === 'ship' || raw === '出荷先' || raw === '出荷先店舗' || raw.indexOf('出荷') >= 0 || raw.indexOf('🏪') >= 0;
+    if (ship) {
+      return { kind: 'ship', label: '出荷先', emoji: '🏪', fill: '#1565C0', ink: '#0D47A1' };
+    }
+    return { kind: 'use', label: '利用場所', emoji: '📌', fill: '#00897B', ink: '#00695C' };
+  }
+
+  function resolvePlacePinMeta_(signFunction, color, placeKind) {
+    if (placeKind) return placePinKindMeta_(placeKind);
+    if (color) return placePinKindMeta_(color);
+    return placePinKindMeta_('use');
+  }
+
+  function placeIconPxForZoom_(zoom) {
+    var z = zoomNum_(zoom);
+    if (z >= 16) return 40;
+    if (z >= 13) return 34;
+    return 28;
+  }
+
+  function placePinLabelConfig_(name, zoom, metaOrKind) {
+    var meta = (metaOrKind && metaOrKind.kind) ? metaOrKind : placePinKindMeta_(metaOrKind);
+    var z = zoomNum_(zoom);
+    var font = z >= 16 ? '12px' : (z >= 12 ? '14px' : '16px');
+    return {
+      text: String(name || meta.label),
+      color: meta.ink,
+      fontSize: font,
+      fontWeight: 'bold',
+      className: 'place-pin-label ' + (meta.kind === 'ship' ? 'place-pin-ship' : 'place-pin-use')
+    };
+  }
+
+  function placePinMarkerIcon_(zoom, signFunction, color, placeKind) {
+    var meta = resolvePlacePinMeta_(signFunction, color, placeKind);
+    var px = placeIconPxForZoom_(zoom);
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">' +
+      '<path d="M32 4c-12.2 0-22 9.6-22 21.4C10 42 32 60 32 60s22-18 22-34.6C54 13.6 44.2 4 32 4z" fill="' + meta.fill + '" stroke="#ffffff" stroke-width="3"/>' +
+      '<circle cx="32" cy="25" r="8" fill="#ffffff"/>' +
+      '</svg>';
+    var tip = px * (60 / 64);
+    return {
+      url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+      scaledSize: new google.maps.Size(px, px),
+      anchor: new google.maps.Point(px / 2, tip),
+      labelOrigin: new google.maps.Point(px / 2, px + 6)
+    };
+  }
+
+  function refreshPlacePinMarker_(marker, name, zoom, signFunction, color, placeKind) {
+    if (!marker) return;
+    var meta = resolvePlacePinMeta_(signFunction, color, placeKind);
+    try { marker.setVisible(true); } catch (e) {}
+    try { marker.setZIndex(1100); } catch (e) {}
+    try { marker.setLabel(placePinLabelConfig_(name, zoom, meta)); } catch (e) {}
+    try { marker.setIcon(placePinMarkerIcon_(zoom, signFunction, color, placeKind)); } catch (e) {}
+  }
+
   global.LOCATION_PIN_SIGN_FUNCTION = SIGN_FUNCTION;
+  global.PLACE_PIN_SIGN_FUNCTION = PLACE_PIN_SIGN_FUNCTION;
   global.isLocationPinSign_ = isLocationPinSign_;
+  global.isPlacePinSign_ = isPlacePinSign_;
+  global.placePinKindMeta_ = placePinKindMeta_;
   global.locationPinLabelConfig_ = locationPinLabelConfig_;
   global.locationPinMarkerIcon_ = locationPinMarkerIcon_;
+  global.placePinLabelConfig_ = placePinLabelConfig_;
+  global.placePinMarkerIcon_ = placePinMarkerIcon_;
   global.attachLocationPinGlow_ = attachLocationPinGlow_;
   global.syncLocationPinGlowScale_ = syncLocationPinGlowScale_;
   global.refreshLocationPinMarker_ = refreshLocationPinMarker_;
+  global.refreshPlacePinMarker_ = refreshPlacePinMarker_;
 
   // ==========================================
   // 🪧 SignGroup: 大看板・小看板グループ機能
@@ -151,6 +223,7 @@
     isSignMarker: function (p) {
       if (!p || !p.isMarker) return false;
       if (typeof global.isLocationPinSign_ === 'function' && global.isLocationPinSign_(p.signFunction)) return false;
+      if (typeof global.isPlacePinSign_ === 'function' && global.isPlacePinSign_(p.signFunction)) return false;
       return true;
     },
 
@@ -181,6 +254,8 @@
 
     isParentSign: function (p, optPolys) {
       if (!p || !p.id) return false;
+      if (typeof global.isPlacePinSign_ === 'function' && global.isPlacePinSign_(p.signFunction)) return false;
+      if (typeof global.isLocationPinSign_ === 'function' && global.isLocationPinSign_(p.signFunction)) return false;
       if (p.isParentSign === true || p.isParent === true) return true;
       if (String(p.signFunction || '').trim() === '大看板') return true;
       var polys = SignGroup.getPolys(optPolys);
@@ -197,6 +272,7 @@
         if (!p || !p.isMarker) continue;
         if (eid && String(p.id) === eid) continue;
         if (typeof global.isLocationPinSign_ === 'function' && global.isLocationPinSign_(p.signFunction)) continue;
+        if (typeof global.isPlacePinSign_ === 'function' && global.isPlacePinSign_(p.signFunction)) continue;
         if (SignGroup.isChildSign(p, polys)) continue;
         list.push({ id: String(p.id), name: String(p.name || '看板 ' + p.id) });
       }
@@ -213,6 +289,7 @@
         if (!p || !p.isMarker) continue;
         if (pid && String(p.id) === pid) continue;
         if (typeof global.isLocationPinSign_ === 'function' && global.isLocationPinSign_(p.signFunction)) continue;
+        if (typeof global.isPlacePinSign_ === 'function' && global.isPlacePinSign_(p.signFunction)) continue;
         var existingParent = SignGroup.getParentId(p, polys);
         if (existingParent && existingParent !== pid) continue;
         if (SignGroup.isParentSign(p, polys)) continue;

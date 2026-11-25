@@ -765,9 +765,14 @@ button {
   position: fixed;
   z-index: 9999;
   top: 0;
+  right: 0;
+  bottom: 0;
   left: 0;
   width: 100vw;
   height: 100vh;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
   background: rgba(0, 0, 0, 0.6);
   justify-content: center;
   align-items: center;
@@ -781,7 +786,9 @@ button {
   width: 90%;
   max-width: 400px;
   max-height: 85vh;
+  max-height: 85dvh;
   overflow-y: auto;
+  box-sizing: border-box;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   -webkit-overflow-scrolling: touch;
 }
@@ -801,6 +808,7 @@ button {
   background: rgba(0, 0, 0, 0.34);
   cursor: default;
   padding: 0 0 max(8px, env(safe-area-inset-bottom, 0px));
+  padding: max(12px, env(safe-area-inset-top, 0px)) 0 max(8px, env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
 }
 
@@ -808,9 +816,21 @@ button {
   width: 100%;
   max-width: 440px;
   max-height: 88vh;
+  max-height: 88dvh;
   margin: 0;
   border-radius: 14px 14px 0 0;
+  box-sizing: border-box;
   box-shadow: 0 -6px 28px rgba(0, 0, 0, 0.22);
+}
+
+#modal.bulk-work-memo-open.pm-sheet-flex-open #modalBody {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: hidden;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 #modal.bulk-work-memo-map-picking {
@@ -916,28 +936,51 @@ body.bulk-work-memo-map-picking #workerMapSelectPlusWrap {
   position: fixed;
   inset: 0;
   z-index: 25000;
+  height: 100dvh;
+  max-height: 100dvh;
   background: rgba(0, 0, 0, 0.45);
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 18px;
+  padding: max(12px, env(safe-area-inset-top, 0px)) 16px max(12px, env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 #workerMapSelectPlusMenu .admin-reg-plus-sheet {
   width: min(420px, 100%);
+  max-height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   background: #fff;
   border-radius: 16px;
-  padding: 16px 16px 12px;
+  padding: 14px 14px 12px;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.28);
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 #workerMapSelectPlusMenu .admin-reg-plus-title {
+  flex: 0 0 auto;
   color: #333;
   font-size: 16px;
   font-weight: bold;
   text-align: center;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
+}
+
+#workerMapSelectPlusMenu .admin-reg-plus-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+#workerMapSelectPlusMenu .admin-reg-plus-list button:last-child {
+  margin-bottom: 0;
 }
 
 #workerMapSelectPlusMenu button {
@@ -948,22 +991,23 @@ body.bulk-work-memo-map-picking #workerMapSelectPlusWrap {
   color: #333;
   border: 1px solid #e0e0e0;
   border-radius: 12px;
-  padding: 16px 16px;
+  padding: 12px 16px;
   font-size: 16px;
   font-weight: bold;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   cursor: pointer;
-  min-height: 54px;
+  min-height: 48px;
   box-sizing: border-box;
 }
 
 #workerMapSelectPlusMenu button.admin-reg-plus-cancel {
+  flex: 0 0 auto;
   text-align: center;
   background: #eee;
   color: #555;
   border-color: #ddd;
   margin-bottom: 0;
-  margin-top: 4px;
+  margin-top: 8px;
 }
 
 #workerMapSelectPlusMenu button:hover {

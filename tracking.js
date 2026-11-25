@@ -4125,6 +4125,7 @@
     modal = document.createElement('div');
     modal.id = 'passionMapReleaseNotesModal';
     modal.style.cssText = 'display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.55);z-index:5200;justify-content:center;align-items:center;padding:16px;box-sizing:border-box;';
+    modal.style.cssText = 'display:none;position:fixed;top:0;right:0;bottom:0;left:0;width:100%;height:100%;height:100dvh;background:rgba(0,0,0,0.55);z-index:45000;justify-content:center;align-items:center;padding:max(12px, env(safe-area-inset-top, 0px)) 12px max(12px, env(safe-area-inset-bottom, 0px));box-sizing:border-box;overflow:hidden;';
     modal.addEventListener('click', function (ev) {
       if (ev.target === modal) window.closeReleaseNotesModal_();
     });
@@ -4191,6 +4192,17 @@
 
         '<div style="margin-bottom:12px;">' + rows + '</div>' +
         '<button type="button" onclick="closeReleaseNotesModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>' +
+      '<div style="background:#fff; width:100%; max-width:460px; max-height:100%; border-radius:14px; box-shadow:0 8px 28px rgba(0,0,0,0.3); box-sizing:border-box; display:flex; flex-direction:column; overflow:hidden;" onclick="event.stopPropagation()">' +
+        '<div style="flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 16px; border-bottom:1px solid #e0e0e0; background:#fff;">' +
+          '<div style="font-size:17px; font-weight:bold; color:#00695C;">📣 更新情報</div>' +
+          '<button type="button" onclick="closeReleaseNotesModal_()" aria-label="閉じる" title="閉じる" style="flex-shrink:0; width:36px; height:36px; border:none; border-radius:50%; background:#f0f0f0; color:#555; font-size:24px; line-height:1; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 1px 4px rgba(0,0,0,0.12);">×</button>' +
+        '</div>' +
+        '<div id="passionMapReleaseNotesScroll" style="flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding:14px 16px 16px; box-sizing:border-box;">' +
+          rows +
+        '</div>' +
+        '<div style="flex-shrink:0; padding:10px 16px max(12px, env(safe-area-inset-bottom, 0px)); border-top:1px solid #e0e0e0; background:#fff;">' +
+          '<button type="button" onclick="closeReleaseNotesModal_()" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:12px; font-size:14px; font-weight:bold; cursor:pointer;">閉じる</button>' +
+        '</div>' +
       '</div>';
 
     const appModal = document.getElementById('modal');
@@ -4208,11 +4220,17 @@
     const shell = ensureReleaseNotesModalShell_();
     shell.innerHTML = bodyHtml;
     shell.style.display = 'flex';
+    const scrollEl = document.getElementById('passionMapReleaseNotesScroll');
+    if (scrollEl) scrollEl.scrollTop = 0;
   };
 
   window.closeReleaseNotesModal_ = function () {
     const shell = document.getElementById('passionMapReleaseNotesModal');
     if (shell) shell.style.display = 'none';
+    if (shell && shell.style.display !== 'none') {
+      shell.style.display = 'none';
+      return;
+    }
     try {
       if (typeof window.closeBulkWorkMemoModal_ === 'function') {
         const modal = document.getElementById('modal');

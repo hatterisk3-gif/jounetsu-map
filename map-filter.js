@@ -8,6 +8,7 @@
     fields: true,
     signs: true,
     bases: true,
+    places: true,
     googlePoi: true
   };
 
@@ -31,6 +32,7 @@
         fields: parsed.fields !== false,
         signs: parsed.signs !== false,
         bases: parsed.bases !== false,
+        places: parsed.places !== false,
         googlePoi: parsed.googlePoi !== false
       };
     } catch (e) {
@@ -54,6 +56,8 @@
         return 'bases';
       }
       if (String(p.signFunction || '').trim() === '拠点') return 'bases';
+      if (typeof global.isPlacePinSign_ === 'function' && global.isPlacePinSign_(p.signFunction)) return 'places';
+      if (String(p.signFunction || '').trim() === '地点') return 'places';
       return 'signs';
     }
     return 'fields';
@@ -212,7 +216,7 @@
   }
 
   function anyFilterOff_() {
-    return !state.fields || !state.signs || !state.bases || !state.googlePoi;
+    return !state.fields || !state.signs || !state.bases || !state.places || !state.googlePoi;
   }
 
   function updateFilteredBadge_() {
@@ -223,7 +227,7 @@
 
   function syncUiFromState_() {
     if (!panelEl) return;
-    ['fields', 'signs', 'bases', 'googlePoi'].forEach(function (key) {
+    ['fields', 'signs', 'bases', 'places', 'googlePoi'].forEach(function (key) {
       var input = panelEl.querySelector('input[data-layer="' + key + '"]');
       if (input) input.checked = !!state[key];
     });
@@ -243,6 +247,7 @@
     state.fields = !!on;
     state.signs = !!on;
     state.bases = !!on;
+    state.places = !!on;
     state.googlePoi = !!on;
     lastPoiApplied = null;
     saveState_();
@@ -317,6 +322,7 @@
       rowHtml_('fields', '🌿', '圃場') +
       rowHtml_('signs', '🪧', '看板') +
       rowHtml_('bases', '📍', '拠点') +
+      rowHtml_('places', '📌', '地点') +
       rowHtml_('googlePoi', '🏪', 'Googleマップの店舗') +
       '<div class="map-layer-filter-actions">' +
       '<button type="button" data-action="all-on">すべてON</button>' +

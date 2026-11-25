@@ -1395,6 +1395,8 @@ window.computeSignMapDeltaFp_ = (f) => {
     String(f.location || ''),
     String(f.signFunction || ''),
     String(f.parentSignId || ''),
+    String(f.placeKind || ''),
+    String(f.placeMemo || ''),
     coordsKey
   ].join('\u0001');
 };
@@ -1479,6 +1481,8 @@ window.patchInitCacheMapDelta_ = (delta) => {
         location: it.location || '',
         signFunction: it.signFunction || '一般看板',
         parentSignId: it.parentSignId != null ? String(it.parentSignId || '').trim() : (prev.parentSignId || ''),
+        placeKind: it.placeKind != null ? it.placeKind : (prev.placeKind || ''),
+        placeMemo: it.placeMemo != null ? it.placeMemo : (prev.placeMemo || ''),
         photos: Array.isArray(prev.photos) ? prev.photos : []
       });
     };
@@ -1593,6 +1597,8 @@ window.applyMapDeltaSigns_ = (delta) => {
       }
       if (loadedPolygons[id]) {
         loadedPolygons[id].parentSignId = String(f.parentSignId || '').trim();
+        loadedPolygons[id].placeKind = f.placeKind || '';
+        loadedPolygons[id].placeMemo = f.placeMemo || '';
         loadedPolygons[id]._mapDeltaFp = fp;
       }
       if (wasThere) updated += 1;
@@ -2034,6 +2040,8 @@ function renderInitData(data) {
         createPolygonObject(f.id, f.name, f.coords, f.color, f.photos, f.author, f.location, f.condition, f.area, f.status, f.signFunction, linkedSigns);
         if (loadedPolygons[f.id] && loadedPolygons[f.id].isMarker) {
           loadedPolygons[f.id].parentSignId = String(f.parentSignId || '').trim();
+          loadedPolygons[f.id].placeKind = f.placeKind || '';
+          loadedPolygons[f.id].placeMemo = f.placeMemo || '';
         }
         if (loadedPolygons[f.id] && !loadedPolygons[f.id].isMarker) {
           loadedPolygons[f.id].uneSimData = f.uneSimData || '';
@@ -2333,9 +2341,13 @@ function createPolygonObject(id, name, coords, color, photos, author, loc, cond,
     if (!window._workerFieldOverlays) window._workerFieldOverlays = [];
     window._workerFieldOverlays.push(marker);
     const isLocPin = typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(signFunc);
+    const isPlacePin = typeof window.isPlacePinSign_ === 'function' && window.isPlacePinSign_(signFunc);
+    const placeMeta = isPlacePin && typeof window.placePinKindMeta_ === 'function' ? window.placePinKindMeta_(color) : null;
     const labelConfig = isLocPin && typeof window.locationPinLabelConfig_ === 'function'
       ? window.locationPinLabelConfig_(name, map.getZoom())
-      : { text: name, color: '#333', fontSize: '13px', fontWeight: 'bold', className: 'signboard-label' };
+      : (isPlacePin && typeof window.placePinLabelConfig_ === 'function'
+        ? window.placePinLabelConfig_(name, map.getZoom(), placeMeta)
+        : { text: name, color: '#333', fontSize: '13px', fontWeight: 'bold', className: 'signboard-label' });
     loadedPolygons[id] = { id, marker, name, color, photos: photos || [], author, isMarker: true, location: loc || '', labelConfig: labelConfig, signFunction: signFunc || '一般看板', linkedSigns: linkedSigns || "", parentSignId: (existing && existing.parentSignId) || '' };
   } else {
     const isUnused = (status === '未使用（返却）' || status === '未使用');
@@ -3767,6 +3779,9 @@ function updateMarkersVisibility() {
       if (typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction)) {
         if (typeof window.refreshLocationPinMarker_ === 'function') window.refreshLocationPinMarker_(p.marker, p.name, zoom);
         else p.marker.setVisible(true);
+      } else if (typeof window.isPlacePinSign_ === 'function' && window.isPlacePinSign_(p.signFunction)) {
+        if (typeof window.refreshPlacePinMarker_ === 'function') window.refreshPlacePinMarker_(p.marker, p.name, zoom, p.signFunction, p.color, p.placeKind);
+        else p.marker.setVisible(true);
       } else {
         const isChild = hasSignGroup && window.SignGroup.isChildSign(p);
         const isParent = hasSignGroup && window.SignGroup.isParentSign(p);
@@ -3813,15 +3828,21 @@ window.updateMarkersVisibility = updateMarkersVisibility;
 
 function createSignboardMarker(name, pos, icon, id, signFunc) {
   const isLocPin = typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(signFunc);
+  const isPlacePin = typeof window.isPlacePinSign_ === 'function' && window.isPlacePinSign_(signFunc);
   if ((String(name || '').indexOf('排水口') >= 0 || String(name || '').indexOf('水落口') >= 0) && (!icon || icon === '🕳️')) icon = '🚩';
   const zoom = map.getZoom();
+  const placeMeta = isPlacePin && typeof window.placePinKindMeta_ === 'function' ? window.placePinKindMeta_(icon) : null;
   const config = isLocPin && typeof window.locationPinLabelConfig_ === 'function'
     ? window.locationPinLabelConfig_(name, zoom)
-    : { text: name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' };
+    : (isPlacePin && typeof window.placePinLabelConfig_ === 'function'
+      ? window.placePinLabelConfig_(name, zoom, placeMeta)
+      : { text: name, color: '#333', fontSize: '12px', fontWeight: 'bold', className: 'signboard-label' });
   const iconOpt = isLocPin && typeof window.locationPinMarkerIcon_ === 'function'
     ? window.locationPinMarkerIcon_(zoom)
-    : { url: `data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="13" y="20" text-anchor="middle" font-size="20">${icon}</text></svg>`, scaledSize: new google.maps.Size(26, 26), anchor: new google.maps.Point(13, 13), labelOrigin: new google.maps.Point(13, 30) };
-  const marker = new google.maps.Marker({ position: pos, map: map, visible: isLocPin ? true : zoom >= 15, zIndex: isLocPin ? 1200 : undefined, label: (isLocPin || zoom >= 17) ? config : null, icon: iconOpt });
+    : (isPlacePin && typeof window.placePinMarkerIcon_ === 'function'
+      ? window.placePinMarkerIcon_(zoom, signFunc, icon, placeMeta && placeMeta.kind)
+      : { url: `data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><text x="13" y="20" text-anchor="middle" font-size="20">${icon}</text></svg>`, scaledSize: new google.maps.Size(26, 26), anchor: new google.maps.Point(13, 13), labelOrigin: new google.maps.Point(13, 30) });
+  const marker = new google.maps.Marker({ position: pos, map: map, visible: (isLocPin || isPlacePin) ? true : zoom >= 15, zIndex: isLocPin ? 1200 : (isPlacePin ? 1100 : undefined), label: (isLocPin || isPlacePin || zoom >= 17) ? config : null, icon: iconOpt });
   if (isLocPin && typeof window.attachLocationPinGlow_ === 'function') window.attachLocationPinGlow_(marker);
   if (isLocPin && typeof window.syncLocationPinGlowScale_ === 'function') window.syncLocationPinGlowScale_(map);
   google.maps.event.addListener(marker, 'click', (e) => {
@@ -3859,7 +3880,7 @@ function createSignboardMarker(name, pos, icon, id, signFunc) {
     // 🪧 大看板・小看板の展開 & タップ制御
     const sid = String(id);
     const p = (typeof loadedPolygons !== 'undefined') ? loadedPolygons[sid] : null;
-    if (window.SignGroup && p && p.isMarker && !(typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction))) {
+    if (window.SignGroup && p && p.isMarker && !(typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction)) && !(typeof window.isPlacePinSign_ === 'function' && window.isPlacePinSign_(p.signFunction))) {
       const isParent = window.SignGroup.isParentSign(p);
       const isChild = window.SignGroup.isChildSign(p);
       const expandedId = window.SignGroup.getExpandedParentId();
@@ -8342,6 +8363,14 @@ window.applySignMarkerSelectStyle_ = (p, on) => {
   if (!p || !p.marker) return;
   const name = String(p.name || (p.labelConfig && p.labelConfig.text) || '').replace(/^看板\s+/, '');
   const isLocPin = typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction);
+  const isPlacePin = typeof window.isPlacePinSign_ === 'function' && window.isPlacePinSign_(p.signFunction);
+  if (isPlacePin) {
+    const z = (typeof map !== 'undefined' && map && typeof map.getZoom === 'function') ? map.getZoom() : 16;
+    if (typeof window.refreshPlacePinMarker_ === 'function') window.refreshPlacePinMarker_(p.marker, name, z, p.signFunction, p.color, p.placeKind);
+    p.marker.setOpacity(1);
+    p.marker.setZIndex(on ? 9999 : 1100);
+    return;
+  }
   const hasSignGroup = !!(window.SignGroup && typeof window.SignGroup.isParentSign === 'function') && !isLocPin;
   const isParent = hasSignGroup && window.SignGroup.isParentSign(p);
   const isChild = hasSignGroup && window.SignGroup.isChildSign(p);
@@ -9545,7 +9574,7 @@ window.toggleBulkWorkMemoMapField_ = (id) => {
   } catch (e) { }
   selectedPolyIds = (selectedPolyIds || []).map(String);
 
-  if (p.isMarker && window.SignGroup && !(typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction))) {
+  if (p.isMarker && window.SignGroup && !(typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction)) && !(typeof window.isPlacePinSign_ === 'function' && window.isPlacePinSign_(p.signFunction))) {
     const isParent = window.SignGroup.isParentSign(p);
     const expId = window.SignGroup.getExpandedParentId();
     if (isParent && expId !== sid) {
@@ -9580,7 +9609,7 @@ window.handleWorkMapFieldTap = (id) => {
     selectedPolyIds = (selectedPolyIds || []).map(String);
 
     // 🪧 大看板・小看板の選択制御
-    if (window.SignGroup && !(typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction))) {
+    if (window.SignGroup && !(typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction)) && !(typeof window.isPlacePinSign_ === 'function' && window.isPlacePinSign_(p.signFunction))) {
       const isParent = window.SignGroup.isParentSign(p);
       const isChild = window.SignGroup.isChildSign(p);
       const expId = window.SignGroup.getExpandedParentId();
@@ -42045,7 +42074,7 @@ window.setBulkWorkMemoModalClass_ = (mode) => {
   const uidPicking = !!String(window._bulkWorkMemoMapSelectUid || '').trim()
     || !!String(window._bulkWorkMemoDeliverySelectUid || '').trim();
   const effective = (mode === 'map-picking' || (mode === 'open' && uidPicking)) ? 'map-picking' : mode;
-  modalEl.classList.remove('bulk-work-memo-open', 'bulk-work-memo-map-picking');
+  modalEl.classList.remove('bulk-work-memo-open', 'bulk-work-memo-map-picking', 'pm-sheet-flex-open');
   document.body.classList.remove('bulk-work-memo-map-picking');
   if (effective === 'open') modalEl.classList.add('bulk-work-memo-open');
   if (effective === 'map-picking') {
@@ -42146,11 +42175,14 @@ window.ensureWorkerMapSelectPlusElements_ = () => {
     menu.innerHTML = `
       <div class="admin-reg-plus-sheet" onclick="event.stopPropagation()">
         <div class="admin-reg-plus-title">登録メニュー</div>
-        <button type="button" onclick="window.openAdminRegFromWorkerMapSelect_('draw')">✏️ 圃場を登録</button>
-        <button type="button" onclick="window.openAdminRegFromWorkerMapSelect_('marker_child')">🏷️ 小看板を登録</button>
-        <button type="button" onclick="window.openAdminRegFromWorkerMapSelect_('marker_parent')">🪧 大看板を登録</button>
-        <button type="button" onclick="window.openAdminRegFromWorkerMapSelect_('location')">🏢 拠点を登録</button>
-        <button type="button" onclick="window.openAdminRegFromWorkerMapSelect_('viewpoint')">🔭 視野地点を登録</button>
+        <div class="admin-reg-plus-list">
+          <button type="button" onclick="window.openAdminRegFromWorkerMapSelect_('draw')">✏️ 圃場を登録</button>
+          <button type="button" onclick="window.openAdminRegFromWorkerMapSelect_('marker_child')">🏷️ 小看板を登録</button>
+          <button type="button" onclick="window.openAdminRegFromWorkerMapSelect_('marker_parent')">🪧 大看板を登録</button>
+          <button type="button" onclick="window.openAdminRegFromWorkerMapSelect_('location')">🏢 拠点を登録</button>
+          <button type="button" onclick="window.openAdminRegFromWorkerMapSelect_('place')">📍 地点を登録</button>
+          <button type="button" onclick="window.openAdminRegFromWorkerMapSelect_('viewpoint')">🔭 視野地点を登録</button>
+        </div>
         <button type="button" class="admin-reg-plus-cancel" onclick="window.closeWorkerMapSelectPlusMenu_()">閉じる</button>
       </div>
     `;
@@ -42292,6 +42324,7 @@ window.openAdminRegFromWorkerMapSelect_ = (kind) => {
     marker_parent: '🪧 大看板を登録（Admin）',
     marker: '📍 看板を登録（Admin）',
     location: '🏢 拠点を登録（Admin）',
+    place: '📍 地点を登録（Admin）',
     viewpoint: '🔭 視野地点を登録（Admin）'
   };
   if (titleEl) titleEl.textContent = titleMap[mode] || '✏️ 圃場・看板を登録（Admin）';
@@ -42395,8 +42428,11 @@ if (!window._workerMapSelectAdminMsgBound_) {
             []
           );
           if (loadedPolygons[it.id]) {
-            if (it.isMarker) loadedPolygons[it.id].parentSignId = String(it.parentSignId || '').trim();
-            else loadedPolygons[it.id].soilType = it.soilType || '';
+            if (it.isMarker) {
+              loadedPolygons[it.id].parentSignId = String(it.parentSignId || '').trim();
+              loadedPolygons[it.id].placeKind = it.placeKind || '';
+              loadedPolygons[it.id].placeMemo = it.placeMemo || '';
+            } else loadedPolygons[it.id].soilType = it.soilType || '';
           }
           if (window.SignGroup) {
             try { window.SignGroup.refreshMarkers(); } catch (eSg) { }
@@ -56281,19 +56317,29 @@ window.openWorkerActivityNoticeModal_ = (opts) => {
 
   const headerHtml = (typeof window.buildBulkWorkMemoModalHeaderHtml_ === 'function')
     ? window.buildBulkWorkMemoModalHeaderHtml_('🔔 お知らせ', '生育記録・写真追加・作業記録・機械の場所をカテゴリ別に確認できます。', { forceClose: true })
-    : `<div style="font-size:17px; font-weight:bold; color:#5E35B1; margin-bottom:12px;">🔔 お知らせ</div>`;
+    : `<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:10px;">
+        <div style="font-size:17px; font-weight:bold; color:#5E35B1;">🔔 お知らせ</div>
+        <button type="button" onclick="closeBulkWorkMemoModal_({force:true})" aria-label="閉じる" title="閉じる" style="flex-shrink:0; width:36px; height:36px; border:none; border-radius:50%; background:#f0f0f0; color:#555; font-size:24px; line-height:1; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.12);">×</button>
+      </div>`;
   window.fillAppModalHtml_(`
-    <div style="background:#fff; width:100%; max-width:440px; max-height:90vh; overflow-y:auto; border-radius:12px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.28); box-sizing:border-box; margin:auto;" onclick="event.stopPropagation()">
-      ${headerHtml}
-      ${tabsHtml}
-      <div style="margin-bottom:12px;">${listHtml}</div>
-      <button type="button" onclick="openBulkWorkMemoHistoryModal_()" style="width:100%; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-bottom:8px;">📜 一括入力履歴を開く</button>
-      <button type="button" onclick="closeBulkWorkMemoModal_({force:true})" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
+    <div style="flex:1 1 auto; min-height:0; max-height:100%; background:#fff; width:100%; max-width:440px; border-radius:14px 14px 0 0; box-shadow:0 -6px 28px rgba(0,0,0,0.22); box-sizing:border-box; margin:0 auto; display:flex; flex-direction:column; overflow:hidden;" onclick="event.stopPropagation()">
+      <div style="flex-shrink:0; padding:14px 16px 8px; border-bottom:1px solid #eee; background:#fff;">
+        ${headerHtml}
+      </div>
+      <div style="flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding:12px 16px 14px; box-sizing:border-box;">
+        ${tabsHtml}
+        <div>${listHtml}</div>
+      </div>
+      <div style="flex-shrink:0; padding:10px 16px max(12px, env(safe-area-inset-bottom, 0px)); border-top:1px solid #eee; background:#fff;">
+        <button type="button" onclick="openBulkWorkMemoHistoryModal_()" style="width:100%; background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer; margin-bottom:8px;">📜 一括入力履歴を開く</button>
+        <button type="button" onclick="closeBulkWorkMemoModal_({force:true})" style="width:100%; background:#eee; color:#333; border:none; border-radius:8px; padding:11px; font-weight:bold; cursor:pointer;">閉じる</button>
+      </div>
     </div>`);
   modalEl.style.display = 'flex';
   window._bulkWorkMemoActive = true;
   if (typeof window.setBulkWorkMemoModalClass_ === 'function') window.setBulkWorkMemoModalClass_('open');
-  try { modalEl.onclick = null; } catch (e) { }
+  modalEl.classList.add('pm-sheet-flex-open');
+  try { modalEl.onclick = (ev) => { if (ev.target === modalEl) closeBulkWorkMemoModal_({ force: true }); }; } catch (e) { }
 };
 
 window.openBulkWorkMemoHistoryModal_ = () => {

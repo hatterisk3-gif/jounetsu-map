@@ -2116,6 +2116,31 @@ function updateMapVisuals() {
       }
       p.labelConfig = lblConf;
       if (typeof window.syncLocationPinGlowScale_ === 'function') window.syncLocationPinGlowScale_(map);
+    } else if (p.isMarker && typeof window.isPlacePinSign_ === 'function' && window.isPlacePinSign_(p.signFunction)) {
+      const zNow = map.getZoom();
+      const meta = (typeof window.placePinKindMeta_ === 'function') ? window.placePinKindMeta_(p.placeKind || p.color) : null;
+      const lblConf = (typeof window.placePinLabelConfig_ === 'function')
+        ? window.placePinLabelConfig_(p.name, zNow, meta)
+        : { text: p.name, color: '#00695C', fontSize: '12px', fontWeight: 'bold', className: 'place-pin-label' };
+      const icon = (typeof window.placePinMarkerIcon_ === 'function') ? window.placePinMarkerIcon_(zNow, p.signFunction, p.color, p.placeKind) : null;
+      if (!p.marker) {
+        p.marker = new google.maps.Marker({
+          position: new google.maps.LatLng(p.coords[0].lat, p.coords[0].lng),
+          map: map,
+          visible: true,
+          zIndex: 1100,
+          label: lblConf,
+          icon: icon || undefined
+        });
+        google.maps.event.addListener(p.marker, 'click', (e) => showPopup(p, e.latLng));
+      } else if (typeof window.refreshPlacePinMarker_ === 'function') {
+        window.refreshPlacePinMarker_(p.marker, p.name, zNow, p.signFunction, p.color, p.placeKind);
+      } else {
+        p.marker.setVisible(true);
+        p.marker.setLabel(lblConf);
+        if (icon) p.marker.setIcon(icon);
+      }
+      p.labelConfig = lblConf;
     } else if (p.isMarker) {
       const strokeCol = hasProblem ? '#FFEB3B' : 'white';
       const strokeWid = hasProblem ? '4' : '2';
@@ -2253,6 +2278,11 @@ function showPopup(p, latLng) {
   let funcHtml = '';
   if (p.isMarker && typeof window.isLocationPinSign_ === 'function' && window.isLocationPinSign_(p.signFunction)) {
     funcHtml = `<div style="font-size:11px; color:#F57F17; margin-bottom:5px; font-weight:bold;">拠点</div>`;
+  } else if (p.isMarker && typeof window.isPlacePinSign_ === 'function' && window.isPlacePinSign_(p.signFunction)) {
+    const meta = (typeof window.placePinKindMeta_ === 'function') ? window.placePinKindMeta_(p.placeKind || p.color) : { label: '地点', emoji: '📍' };
+    const memo = String(p.placeMemo || '').trim();
+    funcHtml = `<div style="font-size:11px; color:#1565C0; margin-bottom:5px; font-weight:bold;">地点・${meta.label}</div>` +
+      (memo ? `<div style="font-size:11px; color:#555; margin-bottom:5px; white-space:pre-wrap;">${memo.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</div>` : '');
   } else if (p.isMarker) {
     funcHtml = `<div style="font-size:11px; color:#555; margin-bottom:5px;">機能: <b>${p.signFunction || '一般看板'}</b></div>`;
   }
