@@ -30193,6 +30193,121 @@ window.buildFuelKindOptionsHtml_ = (kind, selectedId) => {
   return html;
 };
 
+/** 給油対象を機械カテゴリ（ポンプ・トラクタ等）ごとに、写真付きで選ぶ */
+window.buildFuelCategoryPickerHtml_ = (opts) => {
+  opts = opts || {};
+  const kind = opts.kind === 'vehicle' ? 'vehicle' : 'machine';
+  const selectedId = String(opts.selectedId || '');
+  const uid = String(opts.uid || '');
+  const toggleFn = String(opts.toggleFn || '');
+  const pickFn = String(opts.pickFn || '');
+  const scopeJs = String(opts.scopeJs || '');
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const escJs = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const displayName = (item) => {
+    if (window.MachineTaxonomy && MachineTaxonomy.getDisplayName) {
+      const label = MachineTaxonomy.getDisplayName(item);
+      if (label) return label;
+    }
+    return String(item.plateNumber || item.vehicleNumber || item.name || item.id || '').trim();
+  };
+  const raw = kind === 'vehicle'
+    ? (window.pdlMobileVehicles || [])
+    : ((typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) ? pdlMachines : []);
+  const items = raw.filter(Boolean).map((item) => {
+    if (kind === 'vehicle') {
+      const oid = (typeof window.getMobileVehicleOptionId_ === 'function')
+        ? window.getMobileVehicleOptionId_(item)
+        : ('veh:' + String(item.id || ''));
+      const plate = item.plateNumber || item.vehicleNumber || item.machineNumber || '';
+      const enriched = Object.assign({}, item, {
+        id: oid,
+        isVehicle: true,
+        _kind: 'vehicle',
+        plateNumber: plate,
+        vehicleNumber: item.vehicleNumber || plate,
+        name: plate || item.aliasName || item.name || ''
+      });
+      const name = displayName(enriched) || plate || item.aliasName || oid;
+      return Object.assign({}, enriched, { name: name, _displayName: name });
+    }
+    const name = displayName(item) || String(item.name || item.id || '');
+    return Object.assign({}, item, { id: String(item.id || ''), name: name, _displayName: name });
+  });
+  if (!items.length) {
+    return `<div style="font-size:12px; color:#888; padding:8px 2px;">${kind === 'vehicle' ? '登録済みの車両がありません。' : '登録済みの農機がありません。'}</div>`;
+  }
+  const chip = (m) => {
+    const id = String(m.id || '');
+    const on = !!id && id === selectedId;
+    const photo = (typeof window.getMachinePhotoUrl === 'function') ? window.getMachinePhotoUrl(m) : '';
+    const icon = kind === 'vehicle' ? '🛻' : '🚜';
+    const thumb = photo
+      ? `<img src="${esc(photo)}" alt="" style="width:36px; height:36px; object-fit:cover; border-radius:8px; border:1px solid #ffcc80; flex-shrink:0;" onerror="this.style.display='none'">`
+      : `<span style="width:36px; height:36px; border-radius:8px; background:#FFF3E0; color:#E65100; display:inline-flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; border:1px solid #FFE0B2;">${icon}</span>`;
+    const fuel = kind === 'machine' ? String(m.fuel || m.fuelType || '').trim() : '';
+    const fuelLine = fuel ? `<span style="display:block; font-size:10px; color:#888; font-weight:normal;">${esc(fuel)}</span>` : '';
+    const safeId = escJs(id);
+    const safeName = escJs(m._displayName || m.name || '');
+    const click = pickFn ? `${pickFn}('${escJs(uid)}','${safeId}','${safeName}'${scopeJs})` : '';
+    return `<button type="button" onclick="${click}" style="display:inline-block; margin:0; padding:0; border-radius:14px; cursor:pointer; border:1px solid ${on ? '#FF9800' : '#FFE0B2'}; background:${on ? '#FFF3E0' : '#fff'}; color:#E65100; text-align:left;">
+      <span style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px 4px 4px; pointer-events:none;">${thumb}<span style="display:flex; flex-direction:column; min-width:0;"><span style="font-size:12px; font-weight:${on ? 'bold' : 'normal'}; color:#E65100;">${on ? '✅ ' : ''}${esc(m._displayName || m.name || '')}</span>${fuelLine}</span></span>
+    </button>`;
+  };
+  let opened = (opts.openMap && typeof opts.openMap === 'object') ? Object.assign({}, opts.openMap) : {};
+  const anyOpen = Object.keys(opened).some((k) => opened[k] === true);
+  if (!anyOpen && selectedId && typeof window.bulkMachineListCategory_ === 'function') {
+    const hit = items.find((m) => String(m.id) === selectedId);
+    if (hit) opened[window.bulkMachineListCategory_(hit)] = true;
+  }
+  const list = (typeof window.buildBulkMachineCategoryAccordionHtml_ === 'function')
+    ? window.buildBulkMachineCategoryAccordionHtml_(uid, items, selectedId ? [selectedId] : [], opened, chip, toggleFn)
+    : items.map(chip).join('');
+  return `<div style="font-size:10px; color:#999; margin:2px 0 6px; line-height:1.35;">カテゴリをタップすると、写真付きで選べます</div>
+    <div style="display:flex; flex-direction:column; gap:6px; max-height:280px; overflow-y:auto;">${list}</div>`;
+};
+
+window.toggleBulkFuelCat_ = (uid, encodedCat, scope) => {
+  const host = (typeof window.resolveBulkFuelStateHost_ === 'function')
+    ? window.resolveBulkFuelStateHost_(uid, scope)
+    : null;
+  if (!host) return;
+  let cat = '';
+  try { cat = decodeURIComponent(String(encodedCat || '')); } catch (e) { cat = String(encodedCat || ''); }
+  cat = String(cat || '').trim();
+  if (!cat) return;
+  if (!host._fuelCatOpen || typeof host._fuelCatOpen !== 'object') host._fuelCatOpen = {};
+  host._fuelCatOpen[cat] = host._fuelCatOpen[cat] !== true;
+  const scrollEl = document.getElementById('bulk_work_memo_review_scroll')
+    || document.getElementById('bulk_work_memo_manual_add_scroll');
+  const prevScroll = scrollEl ? scrollEl.scrollTop : null;
+  if (typeof window.refreshBulkFuelUi_ === 'function') window.refreshBulkFuelUi_(uid, scope);
+  if (scrollEl && prevScroll != null) {
+    scrollEl.scrollTop = prevScroll;
+    try { requestAnimationFrame(() => { if (scrollEl) scrollEl.scrollTop = prevScroll; }); } catch (e) { }
+  }
+};
+window.toggleBulkFuelCatMain_ = (uid, encodedCat) => window.toggleBulkFuelCat_(uid, encodedCat, '');
+window.toggleBulkFuelCatCw_ = (uid, encodedCat) => window.toggleBulkFuelCat_(uid, encodedCat, 'cw');
+
+window.toggleWorkFuelCat_ = (_uid, encodedCat) => {
+  let cat = '';
+  try { cat = decodeURIComponent(String(encodedCat || '')); } catch (e) { cat = String(encodedCat || ''); }
+  cat = String(cat || '').trim();
+  if (!cat) return;
+  if (!window._workFuelCatOpen || typeof window._workFuelCatOpen !== 'object') window._workFuelCatOpen = {};
+  window._workFuelCatOpen[cat] = window._workFuelCatOpen[cat] !== true;
+  if (typeof window.refreshFuelRecordSection === 'function') window.refreshFuelRecordSection();
+};
+window.pickWorkFuelMachine_ = (_uid, id) => {
+  window._workFuelKind = 'machine';
+  if (typeof window.refreshFuelRecordSection === 'function') window.refreshFuelRecordSection({ targetId: String(id || '') });
+};
+window.pickWorkFuelVehicle_ = (_uid, id) => {
+  window._workFuelKind = 'vehicle';
+  if (typeof window.refreshFuelRecordSection === 'function') window.refreshFuelRecordSection({ targetId: String(id || '') });
+};
+
 /** 給油確認チェックの定義（車両・機械ごとに表示可否を設定） */
 window.FUEL_CHECK_DEFS_ = [
   { key: 'cap', label: 'キャップ', fullLabel: '給油キャップ確認' },
@@ -30587,15 +30702,33 @@ window.refreshFuelRecordSection = async (preset) => {
           </div>
           <div id="wf_panel_vehicle" style="display:${vehOn ? 'block' : 'none'};">
             <label class="form-label">給油した車両</label>
-            <select id="wf_vehicle" class="form-input" onchange="syncWorkFuelSplitTarget_('vehicle')">${vehOpts}</select>
-            <div style="display:flex; justify-content:flex-end; margin:-4px 0 10px;">
+            ${(typeof window.buildFuelCategoryPickerHtml_ === 'function')
+              ? window.buildFuelCategoryPickerHtml_({
+                kind: 'vehicle',
+                selectedId: vehOn ? keepTarget : '',
+                uid: 'wf',
+                openMap: window._workFuelCatOpen,
+                toggleFn: 'toggleWorkFuelCat_',
+                pickFn: 'pickWorkFuelVehicle_'
+              })
+              : `<select id="wf_vehicle" class="form-input" onchange="syncWorkFuelSplitTarget_('vehicle')">${vehOpts}</select>`}
+            <div style="display:flex; justify-content:flex-end; margin:6px 0 10px;">
               <button type="button" onclick="addFuelTargetVehicleFromWorkRecord()" style="background:#00897B; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 車両を登録</button>
             </div>
           </div>
           <div id="wf_panel_machine" style="display:${vehOn ? 'none' : 'block'};">
             <label class="form-label">給油した農機</label>
-            <select id="wf_machine" class="form-input" onchange="syncWorkFuelSplitTarget_('machine')">${macOpts}</select>
-            <div style="display:flex; justify-content:flex-end; margin:-4px 0 10px;">
+            ${(typeof window.buildFuelCategoryPickerHtml_ === 'function')
+              ? window.buildFuelCategoryPickerHtml_({
+                kind: 'machine',
+                selectedId: vehOn ? '' : keepTarget,
+                uid: 'wf',
+                openMap: window._workFuelCatOpen,
+                toggleFn: 'toggleWorkFuelCat_',
+                pickFn: 'pickWorkFuelMachine_'
+              })
+              : `<select id="wf_machine" class="form-input" onchange="syncWorkFuelSplitTarget_('machine')">${macOpts}</select>`}
+            <div style="display:flex; justify-content:flex-end; margin:6px 0 10px;">
               <button type="button" onclick="addFuelTargetMachineFromWorkRecord()" style="background:#1565C0; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:bold; cursor:pointer;">＋ 農機を登録</button>
             </div>
           </div>
@@ -30652,7 +30785,9 @@ window.collectWorkFuelRecordData = () => {
   const vehSel = document.getElementById('wf_vehicle');
   const macSel = document.getElementById('wf_machine');
   const activeSel = targetId.indexOf('veh:') === 0 ? vehSel : macSel;
-  const nameFromSel = activeSel && activeSel.selectedIndex >= 0 ? activeSel.options[activeSel.selectedIndex].text : '';
+  const nameFromSel = (activeSel && activeSel.options && activeSel.selectedIndex >= 0)
+    ? activeSel.options[activeSel.selectedIndex].text
+    : '';
   return {
     targetId: targetId,
     machineId: targetId.indexOf('veh:') === 0 ? targetId.slice(4) : targetId,
@@ -44805,6 +44940,17 @@ window.buildBulkWorkMemoFuelHtml_ = (d, uid, opts) => {
     : '<option value="">選択してください</option>';
   const meterLabel = vehOn ? '🚗 走行距離 (km)' : '⏱️ アワメーター (h)';
   const tab = (kind, label, on, color) => `<button type="button" onclick="setBulkWorkMemoFuelKind_('${esc(uid)}','${kind}'${scopeJs})" style="flex:1; padding:10px 8px; border-radius:8px; border:2px solid ${color}; background:${on ? color : '#fff'}; color:${on ? '#fff' : color}; font-weight:bold; font-size:14px; cursor:pointer;">${label}</button>`;
+  const fuelPicker = (typeof window.buildFuelCategoryPickerHtml_ === 'function')
+    ? window.buildFuelCategoryPickerHtml_({
+      kind: vehOn ? 'vehicle' : 'machine',
+      selectedId: targetId,
+      uid: uid,
+      openMap: d._fuelCatOpen,
+      toggleFn: scope === 'cw' ? 'toggleBulkFuelCatCw_' : 'toggleBulkFuelCatMain_',
+      pickFn: 'pickBulkWorkMemoFuelTarget_',
+      scopeJs: scopeJs
+    })
+    : '';
   const boxMargin = scope === 'cw' ? '0' : '8px 0';
   return `<div id="${esc(domId)}" style="margin:${boxMargin}; padding:12px; background:#FCE4EC; border:1px solid #F48FB1; border-radius:10px;">
     <div style="font-size:12px; font-weight:bold; color:#C2185B; margin-bottom:8px;">⛽ 給油記録</div>
@@ -44815,14 +44961,14 @@ window.buildBulkWorkMemoFuelHtml_ = (d, uid, opts) => {
     </div>
     ${vehOn ? `
       <label style="font-size:10px; color:#00695C; font-weight:bold;">給油した車両</label>
-      <select onchange="pickBulkWorkMemoFuelTarget_('${esc(uid)}', this.value, this.options[this.selectedIndex] ? this.options[this.selectedIndex].text : ''${scopeJs})" style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #80CBC4; border-radius:8px; margin:4px 0 6px; font-size:13px;">${vehOpts}</select>
-      <div style="display:flex; justify-content:flex-end; margin:0 0 10px;">
+      ${fuelPicker}
+      <div style="display:flex; justify-content:flex-end; margin:6px 0 10px;">
         <button type="button" onclick="addBulkWorkMemoFuelTarget_('${esc(uid)}','vehicle'${scopeJs})" style="background:#00897B; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 車両を登録</button>
       </div>
     ` : `
       <label style="font-size:10px; color:#1565C0; font-weight:bold;">給油した農機</label>
-      <select onchange="pickBulkWorkMemoFuelTarget_('${esc(uid)}', this.value, this.options[this.selectedIndex] ? this.options[this.selectedIndex].text : ''${scopeJs})" style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #90CAF9; border-radius:8px; margin:4px 0 6px; font-size:13px;">${macOpts}</select>
-      <div style="display:flex; justify-content:flex-end; margin:0 0 10px;">
+      ${fuelPicker}
+      <div style="display:flex; justify-content:flex-end; margin:6px 0 10px;">
         <button type="button" onclick="addBulkWorkMemoFuelTarget_('${esc(uid)}','machine'${scopeJs})" style="background:#1565C0; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 農機を登録</button>
       </div>
     `}
