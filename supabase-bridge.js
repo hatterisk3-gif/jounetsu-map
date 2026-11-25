@@ -1950,6 +1950,7 @@
       model: String((r && r.model) || '').trim(),
       fuelChecks: meta.rawFuelChecks != null ? String(meta.rawFuelChecks) : (Array.isArray(r && r.fuel_checks) ? r.fuel_checks.join(',') : ''),
       location: String((r && r.location_name) || '').trim(),
+      aliasName: String((meta && meta.aliasName) || '').trim(),
       signName: signName,
       signId: signId,
       currentLocName: String((r && r.current_loc_name) || signName || '').trim(),
@@ -11594,7 +11595,12 @@
         sign_id: signIdVal,
         current_loc_name: p.currentLocName != null ? String(p.currentLocName).trim() : (existing.currentLocName || signNameVal),
         current_loc_id: p.currentLocId != null ? String(p.currentLocId).trim() : (existing.currentLocId || signIdVal),
-        meta: Object.assign({}, (hitRow && hitRow.meta) || {}, { photo: photo1, photo2: photo2, rawFuelChecks: rawFuelChk })
+        meta: Object.assign({}, (hitRow && hitRow.meta) || {}, {
+          photo: photo1,
+          photo2: photo2,
+          rawFuelChecks: rawFuelChk,
+          aliasName: p.aliasName != null ? String(p.aliasName).trim() : String(existing.aliasName || '')
+        })
       };
       if (hitRow) {
         await restFetch('rest/v1/vehicles?id=eq.' + encodeURIComponent(hitRow.id), {

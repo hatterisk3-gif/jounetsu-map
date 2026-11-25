@@ -219,7 +219,12 @@
     var number = getItemNumber(item);
     var legacy = sanitizeLegacyName_(item.name);
     if (kind === 'vehicle') {
+      var alias = String(item.aliasName || item.nickname || '').trim();
       var plate = getVehiclePlate(item);
+      if (alias) {
+        if (type && alias.indexOf(type) !== 0) return type + ' ' + alias;
+        return alias;
+      }
       if (type && plate && plate !== type) return type + ' ' + plate;
       return plate || type || legacy || '';
     }

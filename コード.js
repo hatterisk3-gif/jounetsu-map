@@ -22782,13 +22782,13 @@ function machine_saveFuel(p) {
 // 移動車両（軽トラ）管理
 // ==========================================
 function ensureVehicleMasterSheet() {
-  const headers = ['id', 'plateNumber', 'photo', 'mileage', 'driveType', 'registrationDate', 'status', 'lat', 'lng', 'mainCategory', 'vehicleType', 'vehicleNumber', 'model', 'fuelChecks', 'location', 'signName', 'signId', 'currentLocName', 'currentLocId', 'photo2'];
+  const headers = ['id', 'plateNumber', 'photo', 'mileage', 'driveType', 'registrationDate', 'status', 'lat', 'lng', 'mainCategory', 'vehicleType', 'vehicleNumber', 'model', 'fuelChecks', 'location', 'signName', 'signId', 'currentLocName', 'currentLocId', 'photo2', 'aliasName'];
   const sheet = getOrCreateSheet('VehicleMaster', headers);
   const lastCol = Math.max(sheet.getLastColumn(), headers.length);
   const existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   if (String(existing[0] || '') !== 'id' || String(existing[7] || '') !== 'lat' || String(existing[8] || '') !== 'lng') {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  } else if (lastCol < headers.length || String(existing[14] || '') !== 'location' || String(existing[19] || '') !== 'photo2') {
+  } else if (lastCol < headers.length || String(existing[14] || '') !== 'location' || String(existing[19] || '') !== 'photo2' || String(existing[20] || '') !== 'aliasName') {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   }
   return sheet;
@@ -22827,7 +22827,8 @@ function parseVehicleRow_(row) {
     signId: signId,
     currentLocName: String(row[17] || signName || '').trim(),
     currentLocId: String(row[18] || signId || '').trim(),
-    photo2: String(row[19] || '').trim()
+    photo2: String(row[19] || '').trim(),
+    aliasName: String(row[20] || '').trim()
   };
 }
 
@@ -22857,6 +22858,7 @@ function vehicle_saveVehicle(p) {
   let existingCurLocName = '';
   let existingCurLocId = '';
   let existingPhoto2 = '';
+  let existingAlias = '';
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === p.id) {
       rowIdx = i + 1;
@@ -22871,6 +22873,7 @@ function vehicle_saveVehicle(p) {
       existingCurLocName = (data[i][17] != null) ? String(data[i][17]) : '';
       existingCurLocId = (data[i][18] != null) ? String(data[i][18]) : '';
       existingPhoto2 = (data[i][19] != null) ? String(data[i][19]) : '';
+      existingAlias = (data[i][20] != null) ? String(data[i][20]) : '';
       break;
     }
   }
@@ -22936,7 +22939,8 @@ function vehicle_saveVehicle(p) {
     signIdVal,
     (p.currentLocName != null) ? String(p.currentLocName).trim() : (existingCurLocName || signNameVal),
     (p.currentLocId != null) ? String(p.currentLocId).trim() : (existingCurLocId || signIdVal),
-    photo2Str
+    photo2Str,
+    (p.aliasName != null) ? String(p.aliasName).trim() : existingAlias
   ];
 
   if (rowIdx !== -1) {

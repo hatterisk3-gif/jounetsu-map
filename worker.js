@@ -21401,7 +21401,13 @@ window.createConcurrentWorkEntry_ = (draft) => ({
   minutes: (draft && draft.minutes != null && !isNaN(Number(draft.minutes)))
     ? Math.max(0, Math.round(Number(draft.minutes)))
     : null,
-  minutesMode: (String(draft && draft.minutesMode || '').trim() === 'equal') ? 'equal' : 'fixed'
+  minutesMode: (String(draft && draft.minutesMode || '').trim() === 'equal') ? 'equal' : 'fixed',
+  fuelTargetId: (draft && window.bulkWorkMemoHostIsFuel_(draft)) ? String(draft.fuelTargetId || '').trim() : '',
+  fuelTargetName: (draft && window.bulkWorkMemoHostIsFuel_(draft)) ? String(draft.fuelTargetName || '').trim() : '',
+  fuelAmount: (draft && window.bulkWorkMemoHostIsFuel_(draft) && draft.fuelAmount != null) ? draft.fuelAmount : '',
+  fuelMeter: (draft && window.bulkWorkMemoHostIsFuel_(draft) && draft.fuelMeter != null) ? draft.fuelMeter : '',
+  fuelDate: (draft && window.bulkWorkMemoHostIsFuel_(draft)) ? String(draft.fuelDate || '').trim() : '',
+  _fuelKind: (draft && window.bulkWorkMemoHostIsFuel_(draft)) ? String(draft._fuelKind || '').trim() : ''
 });
 
 window.formatConcurrentWorkSummary_ = (entry) => {
@@ -21431,6 +21437,9 @@ window.formatConcurrentWorkSummary_ = (entry) => {
       : '';
     return ` ／ 📋 ${rwCrops}・${rwWork || '未選択'}${rwDetails}`;
   })();
+  const fuelTxt = String(entry.fuelTargetName || entry.fuelTargetId || '').trim()
+    ? ` ／ ⛽ ${String(entry.fuelTargetName || entry.fuelTargetId).trim()}`
+    : '';
   const mins = (entry.minutes != null && !isNaN(Number(entry.minutes)) && Number(entry.minutes) > 0)
     ? `（${Math.round(Number(entry.minutes))}分）`
     : '';
@@ -21440,7 +21449,7 @@ window.formatConcurrentWorkSummary_ = (entry) => {
   if (isMeta) {
     const target = prepTarget || String(entry.workName || '').trim() || '（対象未選択）';
     const tCat = prepTargetCat ? `／対象カテゴリ:${prepTargetCat}` : '';
-    return `[${cat}] ${crops} / 対象:${target}${tCat}${details}${machines}${members}${regWorkTxt}${mins}`;
+    return `[${cat}] ${crops} / 対象:${target}${tCat}${details}${machines}${members}${regWorkTxt}${fuelTxt}${mins}`;
   }
   const catLabel = cat ? `[${cat}] ` : '';
   const wName = String(entry.workName || '').trim()
@@ -21448,7 +21457,7 @@ window.formatConcurrentWorkSummary_ = (entry) => {
     || String(entry.rawHint || '').trim()
     || '（未選択）';
   const memoTag = entry._fromMemo && !entry.workName ? '📝' : '';
-  return `${memoTag}${catLabel}${crops} / ${wName}${details}${machines}${members}${regWorkTxt}${mins}`;
+  return `${memoTag}${catLabel}${crops} / ${wName}${details}${machines}${members}${regWorkTxt}${fuelTxt}${mins}`;
 };
 
 /** ログインユーザーの所属拠点（名簿）。複数は「・」「,」「、」区切り */
@@ -21509,6 +21518,60 @@ window.bulkMachineMatchesLocFilter_ = (machine, filterKey) => {
   const parts = String((machine && machine.location) || '').split(/[・,、\/｜|]+/).map(s => s.trim()).filter(Boolean);
   if (key === '__none__') return parts.length === 0;
   return parts.indexOf(key) >= 0;
+};
+
+/** 一覧をまとめる機械名（ポンプ・トラクタ・定植機など） */
+window.bulkMachineListCategory_ = (m) => {
+  const name = String((m && (m._displayName || m.name)) || '').trim();
+  const type = String((m && (m._typeName || m.type || m.vehicleType)) || '').trim();
+  if (type && (!name || name === type || name.indexOf(type) === 0)) return type;
+  const token = name.split(/[\s　]+/).filter(Boolean)[0] || '';
+  return token || type || 'その他';
+};
+
+/** 使用機械の一覧をカテゴリ単位の開閉リストにする */
+window.buildBulkMachineCategoryAccordionHtml_ = (uid, machines, selectedKeys, openMap, renderLabel, toggleFn) => {
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const list = Array.isArray(machines) ? machines : [];
+  const selected = Array.isArray(selectedKeys) ? selectedKeys.map(x => String(x || '')) : [];
+  const opened = (openMap && typeof openMap === 'object') ? openMap : {};
+  const toggle = String(toggleFn || 'toggleBulkWorkMemoMachineCat_');
+  const isSelected = (m) => [m && m.id, m && m.name, m && m._displayName, m && m.plateNumber].some(k => {
+    const s = String(k || '').trim();
+    return !!(s && selected.indexOf(s) >= 0);
+  });
+  const groups = new Map();
+  list.forEach((m) => {
+    const cat = window.bulkMachineListCategory_(m);
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat).push(m);
+  });
+  const cats = Array.from(groups.keys()).sort((a, b) => {
+    if (a === 'その他') return 1;
+    if (b === 'その他') return -1;
+    return String(a).localeCompare(String(b), 'ja');
+  });
+  return cats.map((cat) => {
+    const items = groups.get(cat) || [];
+    const selectedInCat = items.filter(isSelected).length;
+    const isOpen = opened[cat] === true;
+    const encoded = encodeURIComponent(cat);
+    const mark = isOpen ? '▼' : '▶';
+    const selBadge = selectedInCat
+      ? `<span style="font-size:10px; font-weight:bold; color:#fff; background:#FF9800; border-radius:10px; padding:1px 6px;">選択 ${selectedInCat}</span>`
+      : '';
+    const body = isOpen
+      ? `<div style="display:flex; flex-wrap:wrap; gap:6px; padding:8px; border-top:1px dashed #FFE0B2; background:#FFFDF8;">${items.map(m => renderLabel(m, 'all')).join('')}</div>`
+      : '';
+    const headBg = (isOpen || selectedInCat) ? '#FFF3E0' : '#fff';
+    return `<div class="bulk-machine-cat" data-cat="${esc(cat)}" style="border:1px solid #FFCC80; border-radius:10px; background:#fff; overflow:hidden;">
+      <button type="button" onclick="${toggle}('${esc(uid)}','${encoded}')" aria-expanded="${isOpen ? 'true' : 'false'}" style="width:100%; box-sizing:border-box; display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:42px; padding:8px 10px; border:none; background:${headBg}; color:#E65100; cursor:pointer; text-align:left;">
+        <span style="font-size:13px; font-weight:bold; flex:1; min-width:0;">${mark} ${esc(cat)}</span>
+        <span style="display:inline-flex; align-items:center; gap:6px; flex-shrink:0;">${selBadge}<span style="font-size:11px; color:#8D6E63; font-weight:bold;">${items.length}台</span></span>
+      </button>
+      ${body}
+    </div>`;
+  }).join('');
 };
 
 /** アカウント所属拠点で農機・車両を絞り込み */
@@ -21711,7 +21774,7 @@ window.buildConcurrentEquipmentPickerHtml_ = (draft, opts) => {
     }
     return String(m._displayName || m.name || m.plateNumber || m.id || '');
   };
-  const chips = filtered.map(m => {
+  const chipHtml = (m) => {
     const id = String(m.id || m.name || '');
     const name = displayNameOf(m);
     const on = selectedSet.has(id) || selectedSet.has(name) || selectedSet.has(String(m.plateNumber || ''));
@@ -21727,7 +21790,19 @@ window.buildConcurrentEquipmentPickerHtml_ = (draft, opts) => {
     const icon = m._kind === 'vehicle' ? '🛻' : '🚜';
     const photoUrl = findEquipPhoto_(m);
     return `<button type="button" onclick="${click}" style="display:inline-flex; align-items:center; gap:6px; padding:6px 10px 6px 6px; border-radius:14px; font-size:12px; font-weight:${on ? 'bold' : 'normal'}; cursor:pointer; border:1px solid ${on ? '#FF9800' : '#FFE0B2'}; background:${on ? '#FFF3E0' : '#fff'}; color:#E65100; text-align:left;">${thumbHtml_(photoUrl, icon)}<span style="display:flex; flex-direction:column; gap:1px; min-width:0;"><span>${on ? '✅ ' : ''}${esc(name)}</span>${meta ? `<span style="font-size:10px;color:#888;font-weight:normal;">📍 ${esc(meta)}</span>` : ''}</span></button>`;
-  }).join('');
+  };
+  const chips = filtered.map(chipHtml).join('');
+  const catCounts = new Set(filtered.map(m => window.bulkMachineListCategory_(m)));
+  const groupByCat = !typeName && !number && catCounts.size > 1 && typeof window.buildBulkMachineCategoryAccordionHtml_ === 'function';
+  const selectedKeys = [];
+  selected.forEach((m) => {
+    if (m && m.id) selectedKeys.push(String(m.id));
+    if (m && m.name) selectedKeys.push(String(m.name));
+  });
+  const catToggle = mode === 'bulk' ? 'toggleBulkConcurrentEquipCat_' : 'toggleConcurrentModalEquipCat_';
+  const catHtml = groupByCat
+    ? window.buildBulkMachineCategoryAccordionHtml_(uid, filtered, selectedKeys, draft && draft._equipCatOpen, chipHtml, catToggle)
+    : '';
   const emptyMsg = !filtered.length
     ? `<div style="font-size:11px; color:#888; line-height:1.4;">${esc(
       userLocsForCount.length
@@ -21767,7 +21842,10 @@ window.buildConcurrentEquipmentPickerHtml_ = (draft, opts) => {
           ${addBtnHtml}
           ${cascadeHtml}
           ${selectedChips}
-          ${emptyMsg || `<div style="display:flex; flex-wrap:wrap; gap:6px; max-height:220px; overflow-y:auto;">${chips}</div>`}
+          ${emptyMsg || (groupByCat
+            ? `<div style="font-size:10px; color:#999; margin:0 0 6px; line-height:1.35;">カテゴリをタップすると、その中の機械を選べます</div>
+               <div style="display:flex; flex-direction:column; gap:6px; max-height:280px; overflow-y:auto;">${catHtml}</div>`
+            : `<div style="display:flex; flex-wrap:wrap; gap:6px; max-height:220px; overflow-y:auto;">${chips}</div>`)}
         </div>`;
 };
 
@@ -21956,6 +22034,30 @@ window.toggleConcurrentModalEquip_ = (id, name, checked) => {
     );
   }
   window.renderConcurrentWorkModal_();
+};
+
+window.toggleEquipCatOpen_ = (draft, encodedCat) => {
+  if (!draft) return;
+  let cat = '';
+  try { cat = decodeURIComponent(String(encodedCat || '')); } catch (e) { cat = String(encodedCat || ''); }
+  cat = String(cat || '').trim();
+  if (!cat) return;
+  if (!draft._equipCatOpen || typeof draft._equipCatOpen !== 'object') draft._equipCatOpen = {};
+  draft._equipCatOpen[cat] = draft._equipCatOpen[cat] !== true;
+};
+
+window.toggleBulkConcurrentEquipCat_ = (uid, encodedCat) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  const draft = window.ensureBulkConcurrentDraft_(row);
+  window.toggleEquipCatOpen_(draft, encodedCat);
+  window.rerenderBulkConcurrentCard_(uid);
+};
+
+window.toggleConcurrentModalEquipCat_ = (_uid, encodedCat) => {
+  const draft = window.getConcurrentWorkModalDraft_();
+  window.toggleEquipCatOpen_(draft, encodedCat);
+  if (typeof window.renderConcurrentWorkModal_ === 'function') window.renderConcurrentWorkModal_();
 };
 
 window.setBulkConcurrentEquipKind_ = (uid, kind) => {
@@ -23014,8 +23116,9 @@ window.focusBulkConcurrentExtra_ = (uid, kind) => {
   const k = String(kind || '').trim();
   let anchor = '';
   if (k === 'fuel') {
-    row._fuelPickOpen = true;
-    anchor = 'bulk_fuel_' + uid;
+    const draft = window.ensureBulkConcurrentDraft_(row);
+    if (draft) draft._fuelPickOpen = true;
+    anchor = 'bulk_fuel_cw_' + uid;
   } else if (k === 'ridge') {
     anchor = 'bulk_ridge_' + uid;
   } else if (k === 'field') {
@@ -23063,7 +23166,15 @@ window.editBulkConcurrentWork_ = (uid, cwId) => {
     usedMachines: Array.isArray(entry.usedMachines) ? entry.usedMachines.map(m => Object.assign({}, m)) : [],
     workMembers: Array.isArray(entry.workMembers) ? entry.workMembers.map(m => Object.assign({}, m)) : [],
     minutes: entry.minutes != null ? entry.minutes : null,
-    minutesMode: entry.minutesMode || 'fixed'
+    minutesMode: entry.minutesMode || 'fixed',
+    fuelTargetId: String(entry.fuelTargetId || '').trim(),
+    fuelTargetName: String(entry.fuelTargetName || '').trim(),
+    fuelAmount: entry.fuelAmount != null ? entry.fuelAmount : '',
+    fuelMeter: entry.fuelMeter != null ? entry.fuelMeter : '',
+    fuelDate: String(entry.fuelDate || '').trim(),
+    _fuelKind: String(entry._fuelKind || '').trim(),
+    _fuelPickOpen: true,
+    _fuelGuessed: !!String(entry.fuelTargetId || '').trim()
   };
   row._concurrentPanelOpen = true;
   if (typeof window.ensureMobileVehiclesLoaded_ === 'function') {
@@ -23160,7 +23271,17 @@ window.pickBulkConcurrentDraftWork_ = (uid, name) => {
   const prevWork = String(draft.workName || '').trim();
   draft.workName = workName;
   draft.detailedWorks = [];
-  if (prevWork !== workName) draft.usedMachines = [];
+  if (prevWork !== workName) {
+    draft.usedMachines = [];
+    draft.fuelTargetId = '';
+    draft.fuelTargetName = '';
+    draft.fuelAmount = '';
+    draft.fuelMeter = '';
+    draft.fuelDate = '';
+    draft._fuelKind = '';
+    draft._fuelPickOpen = true;
+    draft._fuelGuessed = false;
+  }
   if (isMeta) {
     draft.registeredWork = null;
     draft.category = filterCat;
@@ -23368,6 +23489,11 @@ window.confirmBulkConcurrentDraft_ = (uid) => {
       draft.prepTargetCategory = window.getBulkWorkMemoWorkCategory_(draft.prepTargetWork) || '';
     }
     draft.detailedWorks = [];
+  }
+  if (typeof window.bulkWorkMemoHostIsFuel_ === 'function' && window.bulkWorkMemoHostIsFuel_(draft)
+    && !String(draft.fuelTargetId || '').trim()) {
+    if (typeof customAlert === 'function') customAlert('給油した車両か農機を選んでください。');
+    return;
   }
   draft.cropNames = crops;
   const entry = window.createConcurrentWorkEntry_(draft);
@@ -23782,9 +23908,11 @@ window.buildBulkConcurrentWorksHtml_ = (d, uid) => {
     const cwFlags = (typeof window.calcSingleWorkUiFlags_ === 'function')
       ? window.calcSingleWorkUiFlags_(cwTargetWork, cat, entry)
       : (typeof window.getWorkExtraUiFlags_ === 'function' ? (window.getWorkExtraUiFlags_(cwTargetWork) || {}) : {});
+    const fuelChosen = String(entry.fuelTargetName || '').trim();
     const featureBadges = [];
     if (cwFlags.showField !== false && cwFlags.showField) featureBadges.push('<span style="font-size:10px; color:#2E7D32; background:#E8F5E9; border:1px solid #C8E6C9; padding:1px 5px; border-radius:4px;">🗺️ 圃場選択</span>');
-    if (cwFlags.showFuel) featureBadges.push('<span style="font-size:10px; color:#C2185B; background:#FCE4EC; border:1px solid #F8BBD0; padding:1px 5px; border-radius:4px;">⛽ 給油マスタ</span>');
+    if (fuelChosen) featureBadges.push(`<span style="font-size:10px; color:#C2185B; background:#FCE4EC; border:1px solid #F8BBD0; padding:1px 5px; border-radius:4px;">⛽ ${esc(fuelChosen)}</span>`);
+    else if (cwFlags.showFuel) featureBadges.push('<span style="font-size:10px; color:#C2185B; background:#FCE4EC; border:1px solid #F8BBD0; padding:1px 5px; border-radius:4px;">⛽ 給油マスタ</span>');
     if (cwFlags.showMaintenance) featureBadges.push('<span style="font-size:10px; color:#E65100; background:#FFF3E0; border:1px solid #FFE0B2; padding:1px 5px; border-radius:4px;">🔧 整備UI</span>');
     if (cwFlags.showRidgePolygon) featureBadges.push('<span style="font-size:10px; color:#00695C; background:#E0F7FA; border:1px solid #80DEEA; padding:1px 5px; border-radius:4px;">🛤️ 畝ポリゴン</span>');
     const featureBadgesHtml = featureBadges.join('');
@@ -23965,15 +24093,14 @@ window.buildBulkConcurrentWorksHtml_ = (d, uid) => {
       selected: draft.workMembers
     })
     : '';
-  const concurrentExtraBlocks = [];
-  if (curFlags && curFlags.showFuel) {
-    concurrentExtraBlocks.push(`
-            <div>
-              <div style="font-size:12px; font-weight:bold; color:#C2185B; margin-bottom:4px;">⛽ 給油を記録</div>
-              <div style="font-size:11px; color:#880E4F; line-height:1.45; margin-bottom:6px;">「${esc(curWork)}」は給油した車両・機械を記録します。</div>
-              <button type="button" onclick="focusBulkConcurrentExtra_('${esc(uid)}','fuel')" style="width:100%; box-sizing:border-box; background:#C2185B; color:#fff; border:none; border-radius:8px; padding:10px 12px; font-size:13px; font-weight:bold; cursor:pointer;">給油の入力を開く</button>
-            </div>`);
+  let concurrentFuelHtml = '';
+  if (curFlags && curFlags.showFuel && typeof window.buildBulkWorkMemoFuelHtml_ === 'function') {
+    if (typeof window.ensureConcurrentFuelDefaults_ === 'function') {
+      window.ensureConcurrentFuelDefaults_(draft, d, uid);
+    }
+    concurrentFuelHtml = `<div style="margin-bottom:8px;">${window.buildBulkWorkMemoFuelHtml_(draft, uid, { scope: 'cw' })}</div>`;
   }
+  const concurrentExtraBlocks = [];
   if (curFlags && curFlags.showRidgePolygon) {
     concurrentExtraBlocks.push(`
             <div>
@@ -24000,6 +24127,7 @@ window.buildBulkConcurrentWorksHtml_ = (d, uid) => {
             ${concurrentMaintHtml}
             ${concurrentFieldHtml}
             ${concurrentMemberHtml}
+            ${concurrentFuelHtml}
             ${curWorkNotice}
             ${minsStep}
             <div style="display:flex; gap:8px;">
@@ -28004,6 +28132,15 @@ window.ensureMachineItemEditorModal = () => {
               </div>
               <div id="mie_vehicle_extra" style="display:none; flex-direction:column; gap:8px; margin-bottom:12px;">
                 <div>
+                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">拠点名</label>
+                  <select id="mie_vehicle_location" class="form-input" style="width:100%; box-sizing:border-box; margin-bottom:0;"></select>
+                </div>
+                <div>
+                  <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">呼称名</label>
+                  <input type="text" id="mie_vehicle_alias" class="form-input" placeholder="例: 黄色2T / 軽トラ1号" style="width:100%; box-sizing:border-box; margin-bottom:0;">
+                  <div style="font-size:11px; color:#888; margin-top:4px;">一覧ではこの名前を優先して出します。空なら車種とナンバーです。</div>
+                </div>
+                <div>
                   <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">② 用途別分類（メインカテゴリ）</label>
                   <select id="mie_vehicle_main" class="form-input" style="width:100%; box-sizing:border-box;">
                     <option value="自動車">自動車</option>
@@ -28375,14 +28512,16 @@ window.refreshMachineItemEditorSignOptions_ = (keepSignId) => {
 
 window.refreshMachineItemEditorSelectOptions_ = () => {
   const locSel = document.getElementById('mie_location');
-  if (locSel) {
-    const keep = String(locSel.value || '');
+  const vehLocSel = document.getElementById('mie_vehicle_location');
+  [locSel, vehLocSel].forEach((sel) => {
+    if (!sel) return;
+    const keep = String(sel.value || '');
     const locs = (typeof pdlLocations !== 'undefined' && Array.isArray(pdlLocations)) ? pdlLocations : [];
-    locSel.innerHTML = '<option value="">拠点を選択...</option>' + locs.map(l =>
+    sel.innerHTML = '<option value="">拠点を選択...</option>' + locs.map(l =>
       `<option value="${String(l).replace(/"/g, '&quot;')}">${String(l).replace(/</g, '&lt;')}</option>`
     ).join('');
-    if (keep && Array.from(locSel.options).some(o => o.value === keep)) locSel.value = keep;
-  }
+    if (keep && Array.from(sel.options).some(o => o.value === keep)) sel.value = keep;
+  });
   window.refreshMachineItemEditorSignOptions_();
   const typeSel = document.getElementById('mie_type');
   if (typeSel) {
@@ -28499,12 +28638,14 @@ window.updateMachineItemEditorAutoNumber_ = () => {
 };
 
 window.clearMachineItemEditorInputFields_ = () => {
-  ['mie_number', 'mie_model', 'mie_model2', 'mie_purchase_date', 'mie_vehicle_number', 'mie_vehicle_sub_number', 'mie_vehicle_model', 'mie_vehicle_mileage', 'mie_vehicle_date'].forEach(id => {
+  ['mie_number', 'mie_model', 'mie_model2', 'mie_purchase_date', 'mie_vehicle_number', 'mie_vehicle_sub_number', 'mie_vehicle_model', 'mie_vehicle_mileage', 'mie_vehicle_date', 'mie_vehicle_alias'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
   const locSel = document.getElementById('mie_location');
   if (locSel) locSel.selectedIndex = 0;
+  const vehLocSel = document.getElementById('mie_vehicle_location');
+  if (vehLocSel) vehLocSel.selectedIndex = 0;
   if (typeof window.refreshMachineItemEditorSignOptions_ === 'function') {
     window.refreshMachineItemEditorSignOptions_('');
   }
@@ -28574,6 +28715,8 @@ window.applyMachineItemEditorQueueItem_ = (p, includeNumberAndPhoto) => {
   if (typeof window.renderMachineItemEditorPreview === 'function') window.renderMachineItemEditorPreview();
   if (kind === 'vehicle') {
     if (document.getElementById('mie_vehicle_main')) document.getElementById('mie_vehicle_main').value = p.mainCategory || p.group || '自動車';
+    if (document.getElementById('mie_vehicle_location')) document.getElementById('mie_vehicle_location').value = p.location || '';
+    if (document.getElementById('mie_vehicle_alias')) document.getElementById('mie_vehicle_alias').value = p.aliasName || '';
     if (document.getElementById('mie_vehicle_type')) document.getElementById('mie_vehicle_type').value = p.vehicleType || p.type || '';
     if (document.getElementById('mie_vehicle_number')) {
       document.getElementById('mie_vehicle_number').value = includeNumberAndPhoto ? (p.plateNumber || '') : '';
@@ -28693,6 +28836,8 @@ window.readMachineItemEditorFormFields_ = (kind) => {
     : '';
   if (kind === 'vehicle') {
     const mainCategory = (document.getElementById('mie_vehicle_main') || {}).value || '自動車';
+    const location = (document.getElementById('mie_vehicle_location') || {}).value || '';
+    const aliasName = ((document.getElementById('mie_vehicle_alias') || {}).value || '').trim();
     const vehicleType = (document.getElementById('mie_vehicle_type') || {}).value || '';
     const plateNumber = ((document.getElementById('mie_vehicle_number') || {}).value || '').trim();
     const vehicleNumber = ((document.getElementById('mie_vehicle_sub_number') || {}).value || '').trim();
@@ -28702,7 +28847,9 @@ window.readMachineItemEditorFormFields_ = (kind) => {
     const status = (document.getElementById('mie_status') || {}).value || '使用可能';
     return {
       kind: 'vehicle',
-      name: plateNumber,
+      name: aliasName || plateNumber,
+      aliasName: aliasName,
+      location: location,
       plateNumber: plateNumber,
       type: vehicleType,
       vehicleType: vehicleType,
@@ -29136,6 +29283,8 @@ window.openMachineItemEditorModal = (opts) => {
       hitchSel.value = hv;
     }
     if (document.getElementById('mie_vehicle_main')) document.getElementById('mie_vehicle_main').value = normGroup || '自動車';
+    if (document.getElementById('mie_vehicle_location')) document.getElementById('mie_vehicle_location').value = item.location || '';
+    if (document.getElementById('mie_vehicle_alias')) document.getElementById('mie_vehicle_alias').value = item.aliasName || '';
     if (document.getElementById('mie_vehicle_type')) document.getElementById('mie_vehicle_type').value = item.vehicleType || item.type || '';
     if (document.getElementById('mie_vehicle_number')) {
       document.getElementById('mie_vehicle_number').value = item.plateNumber || item.vehicleNumber || item.machineNumber || '';
@@ -29321,6 +29470,8 @@ window.persistOneMachineOrVehicle_ = async (entry) => {
     const registrationDate = entry.registrationDate || '';
     const driveType = entry.driveType || (mainCategory === '作業機' ? '作業車両' : '移動車両');
     const status = entry.status || '使用可能';
+    const location = entry.location != null ? String(entry.location).trim() : '';
+    const aliasName = entry.aliasName != null ? String(entry.aliasName).trim() : '';
     const payload = {
       id: rawId,
       plateNumber: plateNumber,
@@ -29335,6 +29486,8 @@ window.persistOneMachineOrVehicle_ = async (entry) => {
       registrationDate: registrationDate,
       driveType: driveType,
       status: status,
+      location: location,
+      aliasName: aliasName,
       fuelChecks: entry.fuelChecks != null ? entry.fuelChecks : ''
     };
     if (Array.isArray(entry.photoItems)) {
@@ -29358,6 +29511,7 @@ window.persistOneMachineOrVehicle_ = async (entry) => {
       mainCategory: mainCategory, group: mainCategory, vehicleType: vehicleType, type: vehicleType,
       vehicleNumber: vehicleNumber, machineNumber: vehicleNumber, model: model,
       mileage: mileage, registrationDate: registrationDate,
+      location: location, aliasName: aliasName, name: aliasName || plateNumber,
       fuelChecks: payload.fuelChecks || ''
     };
     const idx = window.pdlMobileVehicles.findIndex(v => String(v.id) === String(rawId));
@@ -29367,7 +29521,7 @@ window.persistOneMachineOrVehicle_ = async (entry) => {
     if (typeof window.saveLocalFuelChecks_ === 'function') {
       window.saveLocalFuelChecks_(optionId, payload.fuelChecks || '');
     }
-    return { kind: 'vehicle', rec: rec, id: rawId, optionId: optionId, name: plateNumber };
+    return { kind: 'vehicle', rec: rec, id: rawId, optionId: optionId, name: aliasName || plateNumber };
   }
 
   const name = String(entry.name || '').trim();
@@ -32161,7 +32315,12 @@ window.renderRecordForm = () => {
             })).filter(m => m.id || m.name)
             : [],
           minutes: (cw.minutes != null && !isNaN(Number(cw.minutes))) ? Math.round(Number(cw.minutes)) : null,
-          minutesMode: (String(cw.minutesMode || '').trim() === 'equal') ? 'equal' : 'fixed'
+          minutesMode: (String(cw.minutesMode || '').trim() === 'equal') ? 'equal' : 'fixed',
+          fuelTargetId: String(cw.fuelTargetId || '').trim(),
+          fuelTargetName: String(cw.fuelTargetName || '').trim(),
+          fuelAmount: cw.fuelAmount != null ? cw.fuelAmount : '',
+          fuelMeter: cw.fuelMeter != null ? cw.fuelMeter : '',
+          fuelDate: String(cw.fuelDate || '').trim()
         }));
         setTimeout(() => {
           if (typeof window.renderConcurrentWorksSection_ === 'function') {
@@ -35381,7 +35540,12 @@ async function submitRecord() {
               })).filter(m => m.id || m.name)
               : [],
             minutes: (cw.minutes != null && !isNaN(Number(cw.minutes))) ? Math.round(Number(cw.minutes)) : null,
-            minutesMode: (String(cw.minutesMode || '').trim() === 'equal') ? 'equal' : 'fixed'
+            minutesMode: (String(cw.minutesMode || '').trim() === 'equal') ? 'equal' : 'fixed',
+            fuelTargetId: String(cw.fuelTargetId || '').trim(),
+            fuelTargetName: String(cw.fuelTargetName || '').trim(),
+            fuelAmount: cw.fuelAmount != null ? cw.fuelAmount : '',
+            fuelMeter: cw.fuelMeter != null ? cw.fuelMeter : '',
+            fuelDate: String(cw.fuelDate || '').trim()
           }))
           : []
       };
@@ -44316,6 +44480,24 @@ window.getBulkWorkMemoMachineList_ = (draft) => {
   return allItems;
 };
 
+/** この作業自体が給油か（同時に行った作業は見ない） */
+window.bulkWorkMemoHostIsFuel_ = (draft) => {
+  if (!draft) return false;
+  const wName = String(draft.workName || draft.prepTargetWork || draft.guessedName || '').trim();
+  const cat = String(draft.category || draft.listFilterCategory || draft.prepTargetCategory || '').trim();
+  if (wName && typeof window.calcSingleWorkUiFlags_ === 'function') {
+    const f = window.calcSingleWorkUiFlags_(wName, cat, draft);
+    if (f && f.showFuel) return true;
+    if (f && f.showWorkRegistration && draft.registeredWork && typeof window.getRegisteredWorkUiFlags_ === 'function') {
+      const rf = window.getRegisteredWorkUiFlags_(draft);
+      if (rf && rf.showFuel) return true;
+    }
+  }
+  if (wName && typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(wName)) return true;
+  const details = Array.isArray(draft.detailedWorks) ? draft.detailedWorks : [];
+  return details.some(n => typeof window.isFuelWorkName === 'function' && window.isFuelWorkName(n));
+};
+
 /** 一括入力：給油記録UIを出すか（給油マスタ設定、または詳細作業に給油があるとき。同時に行った作業も対象） */
 window.bulkWorkMemoIsFuel_ = (draft) => {
   if (!draft) return false;
@@ -44467,24 +44649,74 @@ window.getBulkWorkMemoFuelTargetLabel_ = (targetId) => {
   return id.replace(/^veh:/, '');
 };
 
-window.addBulkWorkMemoFuelTarget_ = (uid, kind) => {
+window.resolveBulkFuelStateHost_ = (uid, scope) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return null;
+  if (scope === 'cw') return window.ensureBulkConcurrentDraft_(row);
+  return row;
+};
+
+window.refreshBulkFuelUi_ = (uid, scope) => {
+  if (scope === 'cw') {
+    if (typeof window.rerenderBulkConcurrentCard_ === 'function') window.rerenderBulkConcurrentCard_(uid);
+    return;
+  }
+  if (typeof window.refreshBulkWorkMemoExtras_ === 'function') window.refreshBulkWorkMemoExtras_(uid);
+};
+
+/** 同時作業の給油欄。未選択ならメモから車両・農機を一度だけ推定する */
+window.ensureConcurrentFuelDefaults_ = (draft, parent, uid) => {
+  if (!draft || typeof window.bulkWorkMemoHostIsFuel_ !== 'function' || !window.bulkWorkMemoHostIsFuel_(draft)) return;
+  if (!draft.fuelDate) {
+    draft.fuelDate = String((parent && parent.fuelDate) || window._bulkWorkMemoDate || '').trim()
+      || ((typeof window.getBulkWorkMemoTodayYmd_ === 'function') ? window.getBulkWorkMemoTodayYmd_() : '');
+  }
+  if (draft._fuelPickOpen == null) draft._fuelPickOpen = true;
+  if (!draft._fuelGuessed) {
+    draft._fuelGuessed = true;
+    if (!String(draft.fuelTargetId || '').trim() && parent && typeof window.guessBulkWorkMemoFuelTarget_ === 'function') {
+      const guessed = window.guessBulkWorkMemoFuelTarget_(parent);
+      if (guessed && guessed.id) {
+        draft.fuelTargetId = guessed.id;
+        draft.fuelTargetName = guessed.name || '';
+        draft._fuelKind = String(guessed.id).indexOf('veh:') === 0 ? 'vehicle' : 'machine';
+      }
+    }
+  }
+  if (uid && typeof window.ensureMobileVehiclesLoaded_ === 'function' && !window._mobileVehiclesLoaded && !draft._fuelVehiclesLoading) {
+    draft._fuelVehiclesLoading = true;
+    window.ensureMobileVehiclesLoaded_().then(() => {
+      draft._fuelVehiclesLoading = false;
+      window.rerenderBulkConcurrentCard_(uid);
+    }).catch(() => {
+      draft._fuelVehiclesLoading = false;
+    });
+  }
+};
+
+window.addBulkWorkMemoFuelTarget_ = (uid, kind, scope) => {
   const id = String(uid || '').trim();
   if (!id) return;
   const k = (kind === 'vehicle') ? 'vehicle' : 'machine';
+  const fuelScope = scope === 'cw' ? 'cw' : '';
   if (typeof window.openMachineItemEditorModal !== 'function') {
     if (typeof customAlert === 'function') customAlert('登録画面を開けませんでした。');
     return;
   }
   window._bulkWorkMemoFuelEditUid = id;
+  window._bulkWorkMemoFuelEditScope = fuelScope;
   const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === id);
-  const wName = row ? String(row.workName || '').trim() : '';
+  const host = fuelScope === 'cw' ? (row && row._concurrentDraft) : row;
+  const wName = host ? String(host.workName || '').trim() : '';
   window.openMachineItemEditorModal({
     mode: 'add',
     kind: k,
     workCategory: wName || '給油',
     afterSave: (rec, optionId) => {
       const editUid = String(window._bulkWorkMemoFuelEditUid || id).trim();
+      const editScope = window._bulkWorkMemoFuelEditScope || '';
       window._bulkWorkMemoFuelEditUid = '';
+      window._bulkWorkMemoFuelEditScope = '';
       let targetId = String(optionId || '').trim();
       if (!targetId && rec) {
         if (k === 'vehicle' && typeof window.getMobileVehicleOptionId_ === 'function') {
@@ -44501,31 +44733,36 @@ window.addBulkWorkMemoFuelTarget_ = (uid, kind) => {
         if (!label) label = String(rec.plateNumber || rec.name || '').trim();
       }
       if (typeof window.pickBulkWorkMemoFuelTarget_ === 'function') {
-        window.pickBulkWorkMemoFuelTarget_(editUid, targetId, label);
-      } else if (typeof window.refreshBulkWorkMemoExtras_ === 'function') {
-        window.refreshBulkWorkMemoExtras_(editUid);
+        window.pickBulkWorkMemoFuelTarget_(editUid, targetId, label, editScope);
+      } else if (typeof window.refreshBulkFuelUi_ === 'function') {
+        window.refreshBulkFuelUi_(editUid, editScope);
       }
     }
   });
 };
 
-window.buildBulkWorkMemoFuelHtml_ = (d, uid) => {
+window.buildBulkWorkMemoFuelHtml_ = (d, uid, opts) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  opts = opts || {};
+  const scope = opts.scope === 'cw' ? 'cw' : '';
+  const scopeJs = scope === 'cw' ? ",'cw'" : '';
+  const domId = scope === 'cw' ? `bulk_fuel_cw_${uid}` : `bulk_fuel_${uid}`;
   const targetId = String(d.fuelTargetId || '').trim();
   const targetName = String(d.fuelTargetName || '').trim() || window.getBulkWorkMemoFuelTargetLabel_(targetId);
-  const amount = String(d.fuelAmount != null ? d.fuelAmount : '').trim();
   const meter = String(d.fuelMeter != null ? d.fuelMeter : '').trim();
   const dateVal = String(d.fuelDate || window._bulkWorkMemoDate || '').trim()
     || ((typeof window.getBulkWorkMemoTodayYmd_ === 'function') ? window.getBulkWorkMemoTodayYmd_() : '');
   const collapsed = targetId && d._fuelPickOpen !== true;
+  const toggleFn = scope === 'cw' ? 'toggleBulkConcurrentFuelPick_' : 'toggleBulkWorkMemoFuelPick_';
+  const collapseFn = scope === 'cw' ? 'collapseBulkConcurrentFuelPick_' : 'collapseBulkWorkMemoFuelPick_';
   if (collapsed) {
-    return `<div id="bulk_fuel_${esc(uid)}">` + window.buildBulkWorkMemoCollapsedPickHtml_({
+    return `<div id="${esc(domId)}">` + window.buildBulkWorkMemoCollapsedPickHtml_({
       icon: '⛽',
       label: targetId.indexOf('veh:') === 0 ? '給油車両' : '給油農機',
       value: targetName || targetId,
       sub: meter ? `メーター ${meter}` : '',
       uid: uid,
-      toggleFn: 'toggleBulkWorkMemoFuelPick_',
+      toggleFn: toggleFn,
       borderColor: '#F48FB1',
       bgColor: '#FCE4EC',
       textColor: '#C2185B'
@@ -44542,8 +44779,9 @@ window.buildBulkWorkMemoFuelHtml_ = (d, uid) => {
     ? window.buildFuelKindOptionsHtml_('machine', vehOn ? '' : targetId)
     : '<option value="">選択してください</option>';
   const meterLabel = vehOn ? '🚗 走行距離 (km)' : '⏱️ アワメーター (h)';
-  const tab = (kind, label, on, color) => `<button type="button" onclick="setBulkWorkMemoFuelKind_('${esc(uid)}','${kind}')" style="flex:1; padding:10px 8px; border-radius:8px; border:2px solid ${color}; background:${on ? color : '#fff'}; color:${on ? '#fff' : color}; font-weight:bold; font-size:14px; cursor:pointer;">${label}</button>`;
-  return `<div id="bulk_fuel_${esc(uid)}" style="margin:8px 0; padding:12px; background:#FCE4EC; border:1px solid #F48FB1; border-radius:10px;">
+  const tab = (kind, label, on, color) => `<button type="button" onclick="setBulkWorkMemoFuelKind_('${esc(uid)}','${kind}'${scopeJs})" style="flex:1; padding:10px 8px; border-radius:8px; border:2px solid ${color}; background:${on ? color : '#fff'}; color:${on ? '#fff' : color}; font-weight:bold; font-size:14px; cursor:pointer;">${label}</button>`;
+  const boxMargin = scope === 'cw' ? '0' : '8px 0';
+  return `<div id="${esc(domId)}" style="margin:${boxMargin}; padding:12px; background:#FCE4EC; border:1px solid #F48FB1; border-radius:10px;">
     <div style="font-size:12px; font-weight:bold; color:#C2185B; margin-bottom:8px;">⛽ 給油記録</div>
     <div style="font-size:11px; color:#880E4F; margin-bottom:8px; line-height:1.4;">先に車両か農機を選び、その中から給油したものを選んでください。</div>
     <div style="display:flex; gap:8px; margin-bottom:10px;">
@@ -44552,88 +44790,92 @@ window.buildBulkWorkMemoFuelHtml_ = (d, uid) => {
     </div>
     ${vehOn ? `
       <label style="font-size:10px; color:#00695C; font-weight:bold;">給油した車両</label>
-      <select onchange="pickBulkWorkMemoFuelTarget_('${esc(uid)}', this.value, this.options[this.selectedIndex] ? this.options[this.selectedIndex].text : '')" style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #80CBC4; border-radius:8px; margin:4px 0 6px; font-size:13px;">${vehOpts}</select>
+      <select onchange="pickBulkWorkMemoFuelTarget_('${esc(uid)}', this.value, this.options[this.selectedIndex] ? this.options[this.selectedIndex].text : ''${scopeJs})" style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #80CBC4; border-radius:8px; margin:4px 0 6px; font-size:13px;">${vehOpts}</select>
       <div style="display:flex; justify-content:flex-end; margin:0 0 10px;">
-        <button type="button" onclick="addBulkWorkMemoFuelTarget_('${esc(uid)}','vehicle')" style="background:#00897B; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 車両を登録</button>
+        <button type="button" onclick="addBulkWorkMemoFuelTarget_('${esc(uid)}','vehicle'${scopeJs})" style="background:#00897B; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 車両を登録</button>
       </div>
     ` : `
       <label style="font-size:10px; color:#1565C0; font-weight:bold;">給油した農機</label>
-      <select onchange="pickBulkWorkMemoFuelTarget_('${esc(uid)}', this.value, this.options[this.selectedIndex] ? this.options[this.selectedIndex].text : '')" style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #90CAF9; border-radius:8px; margin:4px 0 6px; font-size:13px;">${macOpts}</select>
+      <select onchange="pickBulkWorkMemoFuelTarget_('${esc(uid)}', this.value, this.options[this.selectedIndex] ? this.options[this.selectedIndex].text : ''${scopeJs})" style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #90CAF9; border-radius:8px; margin:4px 0 6px; font-size:13px;">${macOpts}</select>
       <div style="display:flex; justify-content:flex-end; margin:0 0 10px;">
-        <button type="button" onclick="addBulkWorkMemoFuelTarget_('${esc(uid)}','machine')" style="background:#1565C0; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 農機を登録</button>
+        <button type="button" onclick="addBulkWorkMemoFuelTarget_('${esc(uid)}','machine'${scopeJs})" style="background:#1565C0; color:#fff; border:none; border-radius:6px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer;">＋ 農機を登録</button>
       </div>
     `}
     <label style="font-size:10px; color:#C2185B; font-weight:bold;">📅 給油日</label>
-    <input type="date" value="${esc(dateVal)}" onchange="updateBulkWorkMemoFuelField_('${esc(uid)}','fuelDate', this.value)" style="width:100%; box-sizing:border-box; padding:7px; border:1px solid #F48FB1; border-radius:6px; margin:4px 0 8px;">
+    <input type="date" value="${esc(dateVal)}" onchange="updateBulkWorkMemoFuelField_('${esc(uid)}','fuelDate', this.value${scopeJs})" style="width:100%; box-sizing:border-box; padding:7px; border:1px solid #F48FB1; border-radius:6px; margin:4px 0 8px;">
     <label style="font-size:10px; color:#C2185B; font-weight:bold;">${meterLabel}</label>
-    <input type="number" inputmode="decimal" value="${esc(meter)}" placeholder="${vehOn ? '例: 12345' : '例: 150.5'}" onchange="updateBulkWorkMemoFuelField_('${esc(uid)}','fuelMeter', this.value)" style="width:100%; box-sizing:border-box; padding:7px; border:1px solid #F48FB1; border-radius:6px; margin:4px 0 10px;">
-    ${targetId ? `<div style="text-align:right;"><button type="button" onclick="collapseBulkWorkMemoFuelPick_('${esc(uid)}')" style="background:#fff; color:#C2185B; border:1px solid #F48FB1; border-radius:8px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer;">完了</button></div>` : ''}
+    <input type="number" inputmode="decimal" value="${esc(meter)}" placeholder="${vehOn ? '例: 12345' : '例: 150.5'}" onchange="updateBulkWorkMemoFuelField_('${esc(uid)}','fuelMeter', this.value${scopeJs})" style="width:100%; box-sizing:border-box; padding:7px; border:1px solid #F48FB1; border-radius:6px; margin:4px 0 10px;">
+    ${targetId ? `<div style="text-align:right;"><button type="button" onclick="${collapseFn}('${esc(uid)}')" style="background:#fff; color:#C2185B; border:1px solid #F48FB1; border-radius:8px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer;">完了</button></div>` : ''}
   </div>`;
 };
 
-window.toggleBulkWorkMemoFuelPick_ = (uid) => {
-  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
-  if (!row) return;
-  row._fuelPickOpen = true;
+window.toggleBulkWorkMemoFuelPick_ = (uid, scope) => {
+  const host = window.resolveBulkFuelStateHost_(uid, scope);
+  if (!host) return;
+  host._fuelPickOpen = true;
+  const refresh = () => window.refreshBulkFuelUi_(uid, scope);
   if (typeof window.ensureMobileVehiclesLoaded_ === 'function' && !window._mobileVehiclesLoaded) {
-    window.ensureMobileVehiclesLoaded_().then(() => window.refreshBulkWorkMemoExtras_(uid)).catch(() => {
-      window.refreshBulkWorkMemoExtras_(uid);
-    });
+    window.ensureMobileVehiclesLoaded_().then(refresh).catch(refresh);
     return;
   }
-  window.refreshBulkWorkMemoExtras_(uid);
+  refresh();
 };
 
-window.collapseBulkWorkMemoFuelPick_ = (uid) => {
-  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
-  if (!row) return;
-  row._fuelPickOpen = false;
-  window.refreshBulkWorkMemoExtras_(uid);
+window.toggleBulkConcurrentFuelPick_ = (uid) => window.toggleBulkWorkMemoFuelPick_(uid, 'cw');
+
+window.collapseBulkWorkMemoFuelPick_ = (uid, scope) => {
+  const host = window.resolveBulkFuelStateHost_(uid, scope);
+  if (!host) return;
+  host._fuelPickOpen = false;
+  window.refreshBulkFuelUi_(uid, scope);
 };
 
-window.setBulkWorkMemoFuelKind_ = (uid, kind) => {
-  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
-  if (!row) return;
+window.collapseBulkConcurrentFuelPick_ = (uid) => window.collapseBulkWorkMemoFuelPick_(uid, 'cw');
+
+window.setBulkWorkMemoFuelKind_ = (uid, kind, scope) => {
+  const host = window.resolveBulkFuelStateHost_(uid, scope);
+  if (!host) return;
   const next = kind === 'machine' ? 'machine' : 'vehicle';
-  row._fuelKind = next;
-  const id = String(row.fuelTargetId || '');
+  host._fuelKind = next;
+  const id = String(host.fuelTargetId || '');
   const isVeh = id.indexOf('veh:') === 0;
   if (id && ((next === 'vehicle' && !isVeh) || (next === 'machine' && isVeh))) {
-    row.fuelTargetId = '';
-    row.fuelTargetName = '';
+    host.fuelTargetId = '';
+    host.fuelTargetName = '';
   }
-  row._fuelPickOpen = true;
-  window.refreshBulkWorkMemoExtras_(uid);
+  host._fuelPickOpen = true;
+  window.refreshBulkFuelUi_(uid, scope);
 };
 
-window.pickBulkWorkMemoFuelTarget_ = (uid, targetId, labelText) => {
-  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
-  if (!row) return;
+window.pickBulkWorkMemoFuelTarget_ = (uid, targetId, labelText, scope) => {
+  const host = window.resolveBulkFuelStateHost_(uid, scope);
+  if (!host) return;
   const id = String(targetId || '').trim();
-  row.fuelTargetId = id;
-  row._fuelKind = id.indexOf('veh:') === 0 ? 'vehicle' : (id ? 'machine' : (row._fuelKind || 'vehicle'));
+  host.fuelTargetId = id;
+  host._fuelKind = id.indexOf('veh:') === 0 ? 'vehicle' : (id ? 'machine' : (host._fuelKind || 'vehicle'));
   let name = String(labelText || '').trim().replace(/（[^）]*）\s*$/, '').trim();
   if (!name) name = window.getBulkWorkMemoFuelTargetLabel_(id);
-  row.fuelTargetName = name;
-  row._fuelPickOpen = true;
-  window.refreshBulkWorkMemoExtras_(uid);
+  host.fuelTargetName = name;
+  host._fuelPickOpen = true;
+  host._fuelGuessed = true;
+  window.refreshBulkFuelUi_(uid, scope);
 };
 
-window.updateBulkWorkMemoFuelField_ = (uid, key, value) => {
-  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
-  if (!row) return;
+window.updateBulkWorkMemoFuelField_ = (uid, key, value, scope) => {
+  const host = window.resolveBulkFuelStateHost_(uid, scope);
+  if (!host) return;
   const k = String(key || '').trim();
   if (!k) return;
   if (k === 'fuelCap' || k === 'fuelOil' || k === 'fuelNet' || k === 'fuelWater') {
-    row[k] = !!value;
+    host[k] = !!value;
   } else {
-    row[k] = value;
+    host[k] = value;
   }
-  row._fuelPickOpen = true;
+  host._fuelPickOpen = true;
 };
 
 window.collectBulkWorkMemoFuelRecord_ = (d) => {
-  if (!d || !window.bulkWorkMemoIsFuel_(d)) return null;
+  if (!d || typeof window.bulkWorkMemoHostIsFuel_ !== 'function' || !window.bulkWorkMemoHostIsFuel_(d)) return null;
   const targetId = String(d.fuelTargetId || '').trim();
   if (!targetId) return null;
   const target = (typeof window.findMaintenanceTargetById_ === 'function')
@@ -44662,10 +44904,19 @@ window.collectBulkWorkMemoFuelRecord_ = (d) => {
   };
 };
 
+window.collectBulkWorkMemoFuelRecords_ = (d) => {
+  const out = [];
+  const push = (host) => {
+    const rec = window.collectBulkWorkMemoFuelRecord_(host);
+    if (rec) out.push(rec);
+  };
+  push(d);
+  (Array.isArray(d && d.concurrentWorks) ? d.concurrentWorks : []).forEach(push);
+  return out;
+};
+
 window.buildBulkWorkMemoFuelSideEffects_ = (d, userName) => {
-  const fuelRec = window.collectBulkWorkMemoFuelRecord_(d);
-  if (!fuelRec) return [];
-  return [{
+  return window.collectBulkWorkMemoFuelRecords_(d).map((fuelRec) => ({
     action: 'saveRefuelRecord',
     params: {
       machineId: fuelRec.machineId || fuelRec.targetId,
@@ -44682,7 +44933,7 @@ window.buildBulkWorkMemoFuelSideEffects_ = (d, userName) => {
       rotaryClaw: false,
       userName: userName || ''
     }
-  }];
+  }));
 };
 
 /** 一括入力：整備・修理・点検文脈か（通常フォームの isMaintenanceRelatedWork 相当。同時に行った作業も対象） */
@@ -49608,8 +49859,16 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
             const listLabel = (workSugMachines.length || sugMachines.length)
               ? `一覧から選ぶ（ほか${restMachines.length}台）`
               : `農機マスタ（${restMachines.length}台）`;
+            const catHtml = window.buildBulkMachineCategoryAccordionHtml_(
+              uid,
+              restMachines,
+              selectedMachines,
+              d._machineCatOpen,
+              machineLabel
+            );
             html += `<div style="font-size:10px; color:#888; font-weight:bold; margin-bottom:4px;">${listLabel}</div>
-              <div style="display:flex; flex-wrap:wrap; gap:6px;">${restMachines.map(m => machineLabel(m, 'all')).join('')}</div>`;
+              <div style="font-size:10px; color:#999; margin:-2px 0 6px; line-height:1.35;">カテゴリをタップすると、その中の機械を選べます</div>
+              <div style="display:flex; flex-direction:column; gap:6px;">${catHtml}</div>`;
           }
         }
         html += `</div>`;
@@ -49680,7 +49939,7 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
     if (flags.showPesticide) {
       html += window.buildBulkWorkMemoPesticidesHtml_(d, uid);
     }
-    if (typeof window.bulkWorkMemoIsFuel_ === 'function' && window.bulkWorkMemoIsFuel_(d)) {
+    if (typeof window.bulkWorkMemoHostIsFuel_ === 'function' && window.bulkWorkMemoHostIsFuel_(d)) {
       html += window.buildBulkWorkMemoFuelHtml_(d, uid);
     }
     if (typeof window.buildBulkWorkMemoRidgePolygonHtml_ === 'function') {
@@ -51436,8 +51695,8 @@ window.pickBulkWorkMemoWorkName_ = (uid, name) => {
     row.deliveryOrigin = null;
     row.deliveryDestination = null;
   }
-  // 給油：車両選択UIを開き、メモから対象を推定
-  if (typeof window.bulkWorkMemoIsFuel_ === 'function' && window.bulkWorkMemoIsFuel_(row)) {
+  // 給油：この作業自体が給油のときだけ、車両選択UIを開く
+  if (typeof window.bulkWorkMemoHostIsFuel_ === 'function' && window.bulkWorkMemoHostIsFuel_(row)) {
     if (!row.fuelDate) {
       row.fuelDate = String(window._bulkWorkMemoDate || '').trim()
         || ((typeof window.getBulkWorkMemoTodayYmd_ === 'function') ? window.getBulkWorkMemoTodayYmd_() : '');
@@ -51759,6 +52018,25 @@ window.setBulkWorkMemoMachineLoc_ = (uid, encodedLoc) => {
   let loc = '';
   try { loc = decodeURIComponent(String(encodedLoc || '')); } catch (e) { loc = String(encodedLoc || ''); }
   row._machineLocFilter = loc;
+  const scrollEl = document.getElementById('bulk_work_memo_review_scroll')
+    || document.getElementById('bulk_work_memo_manual_add_scroll');
+  const prevScroll = scrollEl ? scrollEl.scrollTop : null;
+  if (typeof window.refreshBulkWorkMemoExtras_ === 'function') window.refreshBulkWorkMemoExtras_(uid);
+  if (scrollEl && prevScroll != null) {
+    scrollEl.scrollTop = prevScroll;
+    try { requestAnimationFrame(() => { if (scrollEl) scrollEl.scrollTop = prevScroll; }); } catch (e) { }
+  }
+};
+
+window.toggleBulkWorkMemoMachineCat_ = (uid, encodedCat) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  let cat = '';
+  try { cat = decodeURIComponent(String(encodedCat || '')); } catch (e) { cat = String(encodedCat || ''); }
+  cat = String(cat || '').trim();
+  if (!cat) return;
+  if (!row._machineCatOpen || typeof row._machineCatOpen !== 'object') row._machineCatOpen = {};
+  row._machineCatOpen[cat] = row._machineCatOpen[cat] !== true;
   const scrollEl = document.getElementById('bulk_work_memo_review_scroll')
     || document.getElementById('bulk_work_memo_manual_add_scroll');
   const prevScroll = scrollEl ? scrollEl.scrollTop : null;
@@ -52762,10 +53040,27 @@ window.validateBulkWorkMemoDraftsForSave_ = () => {
         return fail('prep', `${i + 1}件目：何の作業の${role}か（対象作業）を選んでください。`);
       }
     }
-    if (typeof window.bulkWorkMemoIsFuel_ === 'function' && window.bulkWorkMemoIsFuel_(d)) {
+    if (typeof window.bulkWorkMemoHostIsFuel_ === 'function' && window.bulkWorkMemoHostIsFuel_(d)) {
       if (!String(d.fuelTargetId || '').trim()) {
         return fail('fuel', `${i + 1}件目：給油では車両か農機を選んでください。`);
       }
+    }
+    if (Array.isArray(d.concurrentWorks)) {
+      const missingCw = d.concurrentWorks.find(cw => cw
+        && typeof window.bulkWorkMemoHostIsFuel_ === 'function'
+        && window.bulkWorkMemoHostIsFuel_(cw)
+        && !String(cw.fuelTargetId || '').trim());
+      if (missingCw) {
+        const cwName = String(missingCw.workName || '給油').trim();
+        return fail('fuel', `${i + 1}件目の同時作業「${cwName}」：給油した車両か農機を、同時作業の枠内で選んでください。`);
+      }
+    }
+    if (d._concurrentPanelOpen && d._concurrentDraft
+      && String(d._concurrentDraft.workName || '').trim()
+      && typeof window.bulkWorkMemoHostIsFuel_ === 'function'
+      && window.bulkWorkMemoHostIsFuel_(d._concurrentDraft)
+      && !String(d._concurrentDraft.fuelTargetId || '').trim()) {
+      return fail('fuel', `${i + 1}件目：同時に行った作業の給油で、車両か農機を選んでから「追加」してください。`);
     }
     if (!d.startTime && !d.endTime) {
       return fail('time', `${i + 1}件目の開始または終了時間を入力してください。`);
@@ -53066,7 +53361,7 @@ window.buildBulkWorkMemoConfirmRowHtml_ = (d, index) => {
   const members = (!isRest && Array.isArray(d.workMembers) && d.workMembers.length)
     ? `<div style="font-size:11px; color:#0D47A1; margin-top:4px;">👥 ${d.workMembers.map(m => m.name || m.id).filter(Boolean).map(s => esc(s)).join('、')}${d.alsoSaveForMembers ? ' <span style="color:#2E7D32;">（各自の記録にも同時登録）</span>' : ''}</div>`
     : '';
-  const fuelNote = (!isRest && typeof window.bulkWorkMemoIsFuel_ === 'function' && window.bulkWorkMemoIsFuel_(d))
+  const fuelNote = (!isRest && typeof window.bulkWorkMemoHostIsFuel_ === 'function' && window.bulkWorkMemoHostIsFuel_(d))
     ? `<div style="font-size:11px; color:#C2185B; margin-top:4px;">⛽ ${esc(d.fuelTargetName || d.fuelTargetId || '車両未選択')}${d.fuelAmount ? ` ／ ${esc(d.fuelAmount)}L` : ''}</div>`
     : '';
   const regWorkHtml = (!isRest && d.registeredWork && typeof window.formatRegisteredWorkBadgeHtml_ === 'function')
@@ -54390,7 +54685,12 @@ window.executeBulkWorkMemoRegistration_ = async () => {
               })).filter(m => m.id || m.name)
               : [],
             minutes: (cw.minutes != null && !isNaN(Number(cw.minutes))) ? Math.round(Number(cw.minutes)) : null,
-            minutesMode: (String(cw.minutesMode || '').trim() === 'equal') ? 'equal' : 'fixed'
+            minutesMode: (String(cw.minutesMode || '').trim() === 'equal') ? 'equal' : 'fixed',
+            fuelTargetId: String(cw.fuelTargetId || '').trim(),
+            fuelTargetName: String(cw.fuelTargetName || '').trim(),
+            fuelAmount: cw.fuelAmount != null ? cw.fuelAmount : '',
+            fuelMeter: cw.fuelMeter != null ? cw.fuelMeter : '',
+            fuelDate: String(cw.fuelDate || '').trim()
           }))
           : [],
         mainWorkMinutes: (d.mainWorkMinutes != null && !isNaN(Number(d.mainWorkMinutes)) && Number(d.mainWorkMinutes) > 0)
@@ -54509,16 +54809,17 @@ window.executeBulkWorkMemoRegistration_ = async () => {
         const maintHistoryFx = (typeof window.buildMachineMaintenanceHistorySideEffectsFromWorkData_ === 'function')
           ? window.buildMachineMaintenanceHistorySideEffectsFromWorkData_(data)
           : [];
+        const fuelRecs = (typeof window.collectBulkWorkMemoFuelRecords_ === 'function')
+          ? window.collectBulkWorkMemoFuelRecords_(d)
+          : [];
         const fuelSideEffects = (typeof window.buildBulkWorkMemoFuelSideEffects_ === 'function')
           ? window.buildBulkWorkMemoFuelSideEffects_(d, userSnap)
           : [];
         const assetMoveFx = (typeof window.buildBulkWorkMemoAssetMoveSideEffects_ === 'function')
           ? window.buildBulkWorkMemoAssetMoveSideEffects_(d)
           : [];
-        const fuelRec = (typeof window.collectBulkWorkMemoFuelRecord_ === 'function')
-          ? window.collectBulkWorkMemoFuelRecord_(d)
-          : null;
-        if (fuelRec) data.refuelRecord = fuelRec;
+        if (fuelRecs.length === 1) data.refuelRecord = fuelRecs[0];
+        else if (fuelRecs.length > 1) data.refuelRecord = fuelRecs;
         window.enqueueRecordSync_({
           localId: localId,
           isEdit: false,
