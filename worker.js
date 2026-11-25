@@ -21565,12 +21565,10 @@ window.buildBulkMachineCategoryAccordionHtml_ = (uid, machines, selectedKeys, op
       : '';
     const headBg = (isOpen || selectedInCat) ? '#FFF3E0' : '#fff';
     return `<div class="bulk-machine-cat" data-cat="${esc(cat)}" style="border:1px solid #FFCC80; border-radius:10px; background:#fff; overflow:hidden;">
-      <button type="button" onclick="${toggle}('${esc(uid)}','${encoded}')" aria-expanded="${isOpen ? 'true' : 'false'}" style="width:100%; box-sizing:border-box; margin:0; padding:0; border:none; background:${headBg}; color:#E65100; cursor:pointer; text-align:left;">
-        <span style="display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; box-sizing:border-box; min-height:42px; padding:8px 10px; pointer-events:none;">
-          <span style="font-size:13px; font-weight:bold; flex:1; min-width:0; color:#E65100;">${mark} ${esc(cat)}</span>
-          <span style="display:inline-flex; align-items:center; gap:6px; flex-shrink:0;">${selBadge}<span style="font-size:11px; color:#8D6E63; font-weight:bold;">${items.length}台</span></span>
-        </span>
-      </button>
+      <div role="button" tabindex="0" onclick="${toggle}('${esc(uid)}','${encoded}')" aria-expanded="${isOpen ? 'true' : 'false'}" style="display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; box-sizing:border-box; min-height:42px; padding:8px 10px; background:${headBg}; color:#E65100; cursor:pointer; text-align:left;">
+        <span style="font-size:13px; font-weight:bold; flex:1; min-width:0; color:#E65100; line-height:1.3;">${mark} ${esc(cat)}</span>
+        <span style="flex-shrink:0; font-size:11px; color:#8D6E63; font-weight:bold; white-space:nowrap;">${selBadge} ${items.length}台</span>
+      </div>
       ${body}
     </div>`;
   }).join('');
@@ -21791,9 +21789,7 @@ window.buildConcurrentEquipmentPickerHtml_ = (draft, opts) => {
     const meta = baseLoc || '';
     const icon = m._kind === 'vehicle' ? '🛻' : '🚜';
     const photoUrl = findEquipPhoto_(m);
-    return `<button type="button" onclick="${click}" style="display:inline-block; margin:0; padding:0; border-radius:14px; cursor:pointer; border:1px solid ${on ? '#FF9800' : '#FFE0B2'}; background:${on ? '#FFF3E0' : '#fff'}; color:#E65100; text-align:left;">
-      <span style="display:inline-flex; align-items:center; gap:6px; padding:6px 10px 6px 6px; pointer-events:none;">${thumbHtml_(photoUrl, icon)}<span style="display:flex; flex-direction:column; gap:1px; min-width:0;"><span style="font-size:12px; font-weight:${on ? 'bold' : 'normal'}; color:#E65100;">${on ? '✅ ' : ''}${esc(name)}</span>${meta ? `<span style="font-size:10px;color:#888;font-weight:normal;">📍 ${esc(meta)}</span>` : ''}</span></span>
-    </button>`;
+    return `<div role="button" tabindex="0" onclick="${click}" style="display:inline-flex; align-items:center; gap:6px; margin:0; padding:6px 10px 6px 6px; border-radius:14px; cursor:pointer; border:1px solid ${on ? '#FF9800' : '#FFE0B2'}; background:${on ? '#FFF3E0' : '#fff'}; color:#E65100; text-align:left;">${thumbHtml_(photoUrl, icon)}<span style="display:flex; flex-direction:column; gap:1px; min-width:0;"><span style="font-size:12px; font-weight:${on ? 'bold' : 'normal'}; color:#E65100; line-height:1.3;">${on ? '✅ ' : ''}${esc(name)}</span>${meta ? `<span style="font-size:10px;color:#888;font-weight:normal;">📍 ${esc(meta)}</span>` : ''}</span></div>`;
   };
   const chips = filtered.map(chipHtml).join('');
   const catCounts = new Set(filtered.map(m => window.bulkMachineListCategory_(m)));
@@ -30250,9 +30246,7 @@ window.buildFuelCategoryPickerHtml_ = (opts) => {
     const safeId = escJs(id);
     const safeName = escJs(m._displayName || m.name || '');
     const click = pickFn ? `${pickFn}('${escJs(uid)}','${safeId}','${safeName}'${scopeJs})` : '';
-    return `<button type="button" onclick="${click}" style="display:inline-block; margin:0; padding:0; border-radius:14px; cursor:pointer; border:1px solid ${on ? '#FF9800' : '#FFE0B2'}; background:${on ? '#FFF3E0' : '#fff'}; color:#E65100; text-align:left;">
-      <span style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px 4px 4px; pointer-events:none;">${thumb}<span style="display:flex; flex-direction:column; min-width:0;"><span style="font-size:12px; font-weight:${on ? 'bold' : 'normal'}; color:#E65100;">${on ? '✅ ' : ''}${esc(m._displayName || m.name || '')}</span>${fuelLine}</span></span>
-    </button>`;
+    return `<div role="button" tabindex="0" onclick="${click}" style="display:inline-flex; align-items:center; gap:6px; margin:0; padding:4px 10px 4px 4px; border-radius:14px; cursor:pointer; border:1px solid ${on ? '#FF9800' : '#FFE0B2'}; background:${on ? '#FFF3E0' : '#fff'}; color:#E65100; text-align:left;">${thumb}<span style="display:flex; flex-direction:column; min-width:0;"><span style="font-size:12px; font-weight:${on ? 'bold' : 'normal'}; color:#E65100; line-height:1.3;">${on ? '✅ ' : ''}${esc(m._displayName || m.name || '')}</span>${fuelLine}</span></div>`;
   };
   let opened = (opts.openMap && typeof opts.openMap === 'object') ? Object.assign({}, opts.openMap) : {};
   const anyOpen = Object.keys(opened).some((k) => opened[k] === true);
