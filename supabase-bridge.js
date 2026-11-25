@@ -2777,6 +2777,10 @@
         body: JSON.stringify(allRowsToInsert)
       });
 
+      if (normalizedType === 'work' && fields.length) {
+        await cultHistoryOnWorkRecorded_(orgId, fields, recordData, workDateYmd, origId, author);
+      }
+
       if (!fields.length) {
         return [{ id: origId, type: normalizedType, date: today, time: time, author: author, urls: urls, data: recordData }];
       }
@@ -3391,6 +3395,41 @@
   registerPhase2Handlers();
 
   // ========================================================================
+  // 栽培計画由来の作業予定（work_schedules.payload.placeId が 'cp:' で始まる行）
+  //   調達: cp:procure:<品種グループ>::<計画ID,…>|<計画ID,…>
+  //   播種: cp:<計画ID>|<圃場ID,…>   定植: cp:plant:<計画ID>|…   品目作業: cp:work:<計画ID>::<作業ID>|…
+  // ========================================================================
+  function parseCpPlaceKind_(placeId) {
+    var raw = String(placeId || '');
+    var pipe = raw.indexOf('|');
+    var marker = raw.split('|')[0];
+    var fieldIds = pipe >= 0 ? raw.slice(pipe + 1).split(',').map(function (s) { return s.trim(); }).filter(Boolean) : [];
+    if (marker.indexOf('cp:procure:') === 0) {
+      var pids = fieldIds.length ? fieldIds : (marker.lastIndexOf('::') >= 0 ? marker.slice(marker.lastIndexOf('::') + 2).split(',').filter(Boolean) : []);
+      return { kind: 'procure', planIds: pids, entryId: '', marker: marker, fieldIds: [] };
+    }
+    if (marker.indexOf('cp:plant:') === 0) {
+      var pid = marker.slice('cp:plant:'.length);
+      return { kind: 'plant', planIds: pid ? [pid] : [], entryId: '', marker: marker, fieldIds: fieldIds };
+    }
+    if (marker.indexOf('cp:work:') === 0) {
+      var parts = marker.slice('cp:work:'.length).split('::');
+      return { kind: 'work', planIds: parts[0] ? [String(parts[0]).trim()] : [], entryId: String(parts[1] || '').trim(), marker: marker, fieldIds: fieldIds };
+    }
+    if (marker.indexOf('cp:') === 0) {
+      var id = marker.slice(3);
+      if (!id || id.indexOf('plant:') === 0 || id.indexOf('work:') === 0 || id.indexOf('procure:') === 0) {
+        return { kind: '', planIds: [], entryId: '', marker: marker, fieldIds: [] };
+      }
+      return { kind: 'sow', planIds: [id], entryId: '', marker: marker, fieldIds: fieldIds };
+    }
+    return { kind: '', planIds: [], entryId: '', marker: marker, fieldIds: [] };
+  }
+
+  // Phase 4 で設定する。Phase 3 の作業予定完了から、次の工程（調達→播種→定植→品目作業）を作る。
+  var cpAdvanceScheduleChain_ = null;
+
+  // ========================================================================
   // Phase 3: 予定・勤怠・休暇・日次/個人予定・トラッキング・設定 Supabase ハンドラ群
   // ========================================================================
   function registerPhase3Handlers() {
@@ -3888,13 +3927,15 @@
         var dYmd = normYmdStr_(r.due_date);
         var cYmd = normYmdStr_(r.completed_date);
         var scheduleKey = p.scheduleKey || buildScheduleKey_(r.work_name, r.field_name, r.crop_name, sYmd, dYmd);
+        var chRecordId = String(p.chRecordId || '');
+        var cpPlace = parseCpPlaceKind_(p.placeId);
         var item = {
           id: r.id,
           legacyId: r.legacy_id || r.id,
           workName: r.work_name || '',
           dept: r.department || workDeptMap[r.work_name] || '未設定',
           cropName: r.crop_name || '',
-          variety: '',
+          variety: String(p.chVariety || ''),
           fieldName: r.field_name || '',
           schedDate: fmtMmDd_(sYmd),
           schedDateYmd: sYmd,
@@ -3904,10 +3945,15 @@
           person: p.person || (Array.isArray(r.assigned_users) ? r.assigned_users.join(', ') : ''),
           isOverdue: !!(dYmd && !r.is_completed && dYmd < todayYmd),
           isCultivation: String(p.placeId || '').indexOf('cp:') === 0,
-          fieldIds: [],
+          cpKind: cpPlace.kind,
+          isCultivationHistory: !!chRecordId,
+          chRecordId: chRecordId,
+          chKey: String(p.chKey || ''),
+          chCategory: String(p.chCategory || ''),
+          fieldIds: p.chFieldId ? [String(p.chFieldId)] : cpPlace.fieldIds,
           trays: p.hours || '',
           tag: p.person || '',
-          periodLabel: '',
+          periodLabel: String(p.chBasis || ''),
           scheduleKey: scheduleKey,
           sheetRow: p.sheetRow || r.id,
           placeId: p.placeId || '',
@@ -4120,6 +4166,9 @@
         headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
         body: JSON.stringify({ is_completed: true, completed_date: today })
       });
+      if (cpAdvanceScheduleChain_) {
+        try { await cpAdvanceScheduleChain_(orgId, row); } catch (eChain) {}
+      }
       writeAuditLog_(orgId, params.userName || 'ユーザー', '作業予定完了', row.field_name || row.work_name, row.work_name);
       return { success: true, workName: row.work_name, fieldName: row.field_name, sheetRow: params.sheetRow || row.id, completedAt: today };
     });
@@ -4182,6 +4231,7 @@
       if (!row) throw new Error('削除対象の作業予定が見つかりませんでした');
       if (row.is_completed) throw new Error('この作業は既に完了済みです');
       await restFetch('rest/v1/work_schedules?id=eq.' + encodeURIComponent(row.id), { method: 'DELETE' });
+      await cultHistoryOnScheduleDeleted_(orgId, row, params.userName);
       writeAuditLog_(orgId, params.userName || 'ユーザー', '作業予定削除', row.field_name || row.work_name, row.work_name);
       return { success: true, workName: row.work_name, fieldName: row.field_name, sheetRow: params.sheetRow || row.id };
     });
@@ -7761,31 +7811,33 @@
       return '';
     }
 
-    function parseCpPlaceKind4_(placeId) {
-      var raw = String(placeId || '');
-      var marker = raw.split('|')[0];
-      if (marker.indexOf('cp:procure:') === 0) {
-        var pipe = raw.indexOf('|');
-        var idPart = pipe >= 0 ? raw.slice(pipe + 1) : '';
-        var pids = idPart ? idPart.split(',').filter(Boolean) : (marker.lastIndexOf('::') >= 0 ? marker.slice(marker.lastIndexOf('::') + 2).split(',').filter(Boolean) : []);
-        return { kind: 'procure', planIds: pids, entryId: '', marker: marker };
-      }
-      if (marker.indexOf('cp:plant:') === 0) {
-        var pid = marker.slice('cp:plant:'.length);
-        return { kind: 'plant', planIds: pid ? [pid] : [], entryId: '', marker: marker };
-      }
-      if (marker.indexOf('cp:work:') === 0) {
-        var parts = marker.slice('cp:work:'.length).split('::');
-        return { kind: 'work', planIds: parts[0] ? [String(parts[0]).trim()] : [], entryId: String(parts[1] || '').trim(), marker: marker };
-      }
-      if (marker.indexOf('cp:') === 0) {
-        var id = marker.slice(3);
-        if (!id || id.indexOf('plant:') === 0 || id.indexOf('work:') === 0 || id.indexOf('procure:') === 0) {
-          return { kind: '', planIds: [], entryId: '', marker: marker };
+    function cpSchedInfo_(r) {
+      var p = (r && r.payload && typeof r.payload === 'object') ? r.payload : {};
+      var info = parseCpPlaceKind_(p.placeId);
+      info.placeId = String(p.placeId || '');
+      info.hours = String(p.hours || '');
+      info.person = String(p.person || '').trim();
+      info.notes = String(p.notes || '');
+      info.done = !!(r && (r.is_completed || r.completed_date));
+      info.completedYmd = normYmd4_(r && r.completed_date);
+      return info;
+    }
+
+    function cpScheduleRow_(orgId, o) {
+      var fieldName = String(o.fieldName || '');
+      var crop = String(o.crop || '');
+      var sYmd = o.planned || null;
+      var dYmd = o.due || null;
+      return {
+        org_id: orgId, schedule_kind: 'work', legacy_id: 'ws_' + genUuid_(),
+        field_name: fieldName, department: '', crop_name: crop, work_name: o.work,
+        planned_date: sYmd, due_date: dYmd, is_completed: false, assigned_users: [],
+        photos: Array.isArray(o.photos) ? o.photos : [],
+        payload: {
+          scheduleKey: [o.work, fieldName, crop, sYmd || '', dYmd || ''].map(function (s) { return String(s).trim(); }).join('||'),
+          hours: String(o.hours || ''), person: String(o.person || ''), notes: String(o.notes || ''), placeId: o.placeId
         }
-        return { kind: 'sow', planIds: [id], entryId: '', marker: marker };
-      }
-      return { kind: '', planIds: [], entryId: '', marker: marker };
+      };
     }
 
     function computeCpState_(schedRows) {
@@ -7796,8 +7848,8 @@
         return state[k];
       }
       (schedRows || []).forEach(function (r) {
-        var parsed = parseCpPlaceKind4_(r.place_id || r.placeId || '');
-        var done = !!(r.completed_date);
+        var parsed = cpSchedInfo_(r);
+        var done = parsed.done;
         if (parsed.kind === 'procure') parsed.planIds.forEach(function (id) { if (done) ensure(id).procureDone = true; });
         else if (parsed.kind === 'sow') parsed.planIds.forEach(function (id) { if (done) ensure(id).sowDone = true; });
         else if (parsed.kind === 'plant') parsed.planIds.forEach(function (id) { if (done) ensure(id).plantDone = true; });
@@ -8251,15 +8303,14 @@
 
       var existingSched = await restSelectAll_('work_schedules', 'org_id=eq.' + encodeURIComponent(orgId) + '&schedule_kind=eq.work');
       var preserved = {};
-      for (var si = 0; si < existingSched.length; si++) {
-        var sr = existingSched[si];
-        if (!sr.place_id || String(sr.place_id).indexOf('cp:procure:') !== 0 || sr.completed_date) continue;
-        var parsedS = parseCpPlaceKind4_(sr.place_id);
-        if (parsedS.planIds.some(function (id) { return targetIdSet[id]; })) {
-          if (!preserved[parsedS.marker]) preserved[parsedS.marker] = { completed: sr.completed_date || null, photo: sr.photo_url || '' };
-          await restFetch('rest/v1/work_schedules?id=eq.' + encodeURIComponent(sr.id), { method: 'DELETE' });
-        }
-      }
+      var staleIds = [];
+      existingSched.forEach(function (sr) {
+        var srCp = cpSchedInfo_(sr);
+        if (srCp.kind !== 'procure' || srCp.done) return;
+        if (!srCp.planIds.some(function (id) { return targetIdSet[id]; })) return;
+        if (!preserved[srCp.marker]) preserved[srCp.marker] = { photos: sr.photos, notes: srCp.notes };
+        staleIds.push(sr.id);
+      });
 
       var procureRows = [];
       Object.keys(groups).forEach(function (gk) {
@@ -8272,19 +8323,20 @@
         var qtyLabel = g.specCount > 0 ? (packs + '袋（' + (g.maker ? g.maker + ' ' : '') + g.specLabel + '）') : (Number(g.seeds).toLocaleString('ja-JP') + '粒（規格未登録）');
         var deadline = jstYmd_(g.sowingStart);
         var sd = new Date(g.sowingStart.getTime()); sd.setDate(sd.getDate() - 7);
-        var keep = preserved[marker] || { completed: null, photo: '' };
-        procureRows.push({
-          org_id: orgId, schedule_kind: 'work', work_name: '調達', crop_name: g.crop || '',
-          field_name: g.variety, scheduled_date: jstYmd_(sd), deadline_date: deadline,
-          hours_label: qtyLabel, assignee: g.tags.join(' '), completed_date: keep.completed,
-          photo_url: keep.photo, place_id: placeId
-        });
+        var keep = preserved[marker] || {};
+        procureRows.push(cpScheduleRow_(orgId, {
+          work: '調達', crop: g.crop, fieldName: g.variety, planned: jstYmd_(sd), due: deadline,
+          hours: qtyLabel, person: g.tags.join(' '), placeId: placeId, photos: keep.photos, notes: keep.notes
+        }));
       });
       if (procureRows.length) {
         await restFetch('rest/v1/work_schedules', {
           method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
           body: JSON.stringify(procureRows)
         });
+      }
+      for (var si = 0; si < staleIds.length; si++) {
+        await restFetch('rest/v1/work_schedules?id=eq.' + encodeURIComponent(staleIds[si]), { method: 'DELETE' });
       }
 
       for (var ti = 0; ti < targets.length; ti++) {
@@ -8342,19 +8394,19 @@
       fetched[1].forEach(function (r) {
         var kind = farmBoardTaskKind_(r.work_name);
         if (!kind) return;
-        var hoursStr = String(r.hours_label || '');
+        var cp = cpSchedInfo_(r);
+        var hoursStr = cp.hours;
         var mTrays = hoursStr.match(/(\d+)\s*枚/);
         var mBags = hoursStr.match(/(\d+)\s*袋/);
         var mGrains = hoursStr.match(/([\d,]+)\s*粒/);
         var recKey = String(r.field_name || '').split(',')[0].trim() + '_' + r.work_name + '_' + (r.crop_name || '');
-        var completed = !!r.completed_date;
-        var completedDate = r.completed_date || '';
+        var completed = cp.done;
+        var completedDate = cp.completedYmd;
         if (!completed && completedWorks[recKey]) {
           completed = true;
           completedDate = completedWorks[recKey];
         }
-        var planIds = parseCpPlaceKind4_(r.place_id).planIds;
-        var tagSheet = String(r.assignee || '').trim();
+        var planIds = cp.planIds;
         var year = '', planNames = [], tags = [];
         planIds.forEach(function (pid) {
           var hit = planById[pid];
@@ -8363,15 +8415,15 @@
           if (hit.planName && planNames.indexOf(hit.planName) < 0) planNames.push(hit.planName);
           if (hit.tag && tags.indexOf(hit.tag) < 0) tags.push(hit.tag);
         });
-        if (tagSheet && tags.indexOf(tagSheet) < 0) tags.push(tagSheet);
+        cp.person.split(/\s+/).forEach(function (t) { if (t && tags.indexOf(t) < 0) tags.push(t); });
         tasks.push({
           kind: kind, workName: r.work_name, fieldName: r.field_name || '', crop: r.crop_name || '',
           variety: '', year: year, hours: hoursStr,
           trays: mTrays ? Number(mTrays[1]) : 0, bags: mBags ? Number(mBags[1]) : 0,
           grains: mGrains ? Number(mGrains[1].replace(/,/g, '')) : 0,
           completed: completed, completedDate: completedDate,
-          date: r.scheduled_date || '', deadline: r.deadline_date || '',
-          tag: tags.join(' '), tags: tags, planIds: planIds, planNames: planNames, placeId: r.place_id || ''
+          date: normYmd4_(r.planned_date), deadline: normYmd4_(r.due_date),
+          tag: tags.join(' '), tags: tags, planIds: planIds, planNames: planNames, placeId: cp.placeId
         });
       });
       return { plans: plans, fields: fields, tasks: tasks, prodCategories: prodCategories };
@@ -8381,6 +8433,131 @@
       if (registeredHandlers_[action]) return await registeredHandlers_[action](params);
       return await global.callGAS(action, params, 1, { forceGAS: true });
     }
+
+    function cpPlanPlace_(pl, marker, resolveField) {
+      var ids = pl.fieldIds || [];
+      return {
+        fieldName: ids.length ? ids.map(resolveField).join(', ') : '(圃場未選択)',
+        placeId: marker + (ids.length ? '|' + ids.join(',') : '')
+      };
+    }
+
+    function cpPlantingWindow_(pl) {
+      var byStart = function (a, b) { return a.start - b.start; };
+      var plCells = (pl.tasks && pl.tasks.planting) || [];
+      var sowCells = (pl.tasks && pl.tasks.sowing) || [];
+      if (plCells.length) {
+        var pp = plCells.map(function (c) { return cpCellToDateParts_(pl.year, c); }).sort(byStart);
+        return { start: pp[0].start, end: pp[pp.length - 1].end };
+      }
+      var start = new Date();
+      var end;
+      if (sowCells.length) {
+        var sp = sowCells.map(function (c) { return cpCellToDateParts_(pl.year, c); }).sort(byStart);
+        start = sp[sp.length - 1].end;
+        end = new Date(start.getTime());
+        end.setDate(end.getDate() + 14);
+      } else {
+        end = new Date();
+        end.setDate(end.getDate() + 7);
+      }
+      return { start: start, end: end };
+    }
+
+    async function advanceCpScheduleChain_(orgId, kind) {
+      var fetched = await Promise.all([
+        buildFieldDisplayResolver_(orgId),
+        loadCultivationPlansLookup_(orgId, ''),
+        restSelectAll_('work_schedules', 'org_id=eq.' + encodeURIComponent(orgId) + '&schedule_kind=eq.work')
+      ]);
+      var resolveField = fetched[0];
+      var lookup = fetched[1].map;
+      var list = fetched[2].map(function (sr) { return { work: String(sr.work_name || '').trim(), cp: cpSchedInfo_(sr) }; });
+      var newRows = [];
+      if (kind === 'procure') {
+        var hasSow = {};
+        list.forEach(function (x) { if (x.cp.kind === 'sow') x.cp.planIds.forEach(function (id) { hasSow[id] = true; }); });
+        list.forEach(function (x) {
+          if (x.work !== '調達' || x.cp.kind !== 'procure' || !x.cp.done) return;
+          x.cp.planIds.forEach(function (pid) {
+            var pl = lookup[pid];
+            var cells = (pl && pl.tasks && pl.tasks.sowing) || [];
+            if (hasSow[pid] || !pl || !pl.year || !cells.length) return;
+            hasSow[pid] = true;
+            var sp = cells.map(function (c) { return cpCellToDateParts_(pl.year, c); }).sort(function (a, b) { return a.start - b.start; });
+            newRows.push(cpScheduleRow_(orgId, Object.assign(cpPlanPlace_(pl, 'cp:' + pl.id, resolveField), {
+              work: '播種', crop: pl.crop, planned: jstYmd_(sp[0].start), due: jstYmd_(sp[sp.length - 1].end),
+              hours: (pl.trays || 0) + (Number(pl.holes) === 1 ? '粒' : '枚'), person: pl.tag
+            })));
+          });
+        });
+      } else if (kind === 'sow') {
+        var hasPlant = {};
+        list.forEach(function (x) { if (x.cp.kind === 'plant') x.cp.planIds.forEach(function (id) { hasPlant[id] = true; }); });
+        list.forEach(function (x) {
+          if (x.work !== '播種' || x.cp.kind !== 'sow' || !x.cp.done) return;
+          x.cp.planIds.forEach(function (pid) {
+            var pl = lookup[pid];
+            if (hasPlant[pid] || !pl || !pl.year) return;
+            hasPlant[pid] = true;
+            var win = cpPlantingWindow_(pl);
+            newRows.push(cpScheduleRow_(orgId, Object.assign(cpPlanPlace_(pl, 'cp:plant:' + pl.id, resolveField), {
+              work: '定植', crop: pl.crop, planned: jstYmd_(win.start), due: jstYmd_(win.end),
+              hours: pl.trays ? (pl.trays + (Number(pl.holes) === 1 ? '株' : '枚')) : '', person: pl.tag
+            })));
+          });
+        });
+      } else if (kind === 'plant') {
+        var hasWork = {};
+        list.forEach(function (x) { if (x.cp.kind === 'work' && x.cp.marker) hasWork[x.cp.marker] = true; });
+        var entriesByCrop = {};
+        for (var i = 0; i < list.length; i++) {
+          var row = list[i];
+          if (row.work !== '定植' || row.cp.kind !== 'plant' || !row.cp.done) continue;
+          var basePlant = row.cp.completedYmd ? new Date(row.cp.completedYmd.replace(/-/g, '/') + ' 00:00:00') : new Date();
+          if (isNaN(basePlant.getTime())) basePlant = new Date();
+          for (var j = 0; j < row.cp.planIds.length; j++) {
+            var plan = lookup[row.cp.planIds[j]];
+            if (!plan || !plan.crop) continue;
+            if (!entriesByCrop[plan.crop]) entriesByCrop[plan.crop] = (await getWorkPlanOne_(orgId, plan.crop)).entries || [];
+            entriesByCrop[plan.crop].forEach(function (we) {
+              var mk = 'cp:work:' + plan.id + '::' + we.id;
+              if (hasWork[mk]) return;
+              hasWork[mk] = true;
+              var win = resolveCropWorkWinLocal_(we, basePlant);
+              newRows.push(cpScheduleRow_(orgId, Object.assign(cpPlanPlace_(plan, mk, resolveField), {
+                work: we.workName, crop: plan.crop, planned: jstYmd_(win.start), due: jstYmd_(win.end),
+                hours: win.label, person: plan.tag
+              })));
+            });
+          }
+        }
+      }
+      if (newRows.length) {
+        await restFetch('rest/v1/work_schedules', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify(newRows)
+        });
+      }
+      return newRows.length;
+    }
+
+    // 続けて完了したときに同じ計画の播種・定植を二重に作らないよう、1件ずつ順番に処理する
+    var cpChainQueue_ = Promise.resolve();
+    function queueCpScheduleChain_(orgId, kind) {
+      var run = cpChainQueue_.then(function () { return advanceCpScheduleChain_(orgId, kind); });
+      cpChainQueue_ = run.catch(function () {});
+      return run;
+    }
+
+    cpAdvanceScheduleChain_ = function (orgId, row) {
+      var cp = cpSchedInfo_(row);
+      var work = String((row && row.work_name) || '').trim();
+      var kind = (cp.kind === 'procure' || work === '調達') ? 'procure'
+        : (cp.kind === 'sow' || work === '播種') ? 'sow'
+          : (cp.kind === 'plant' || work === '定植') ? 'plant' : '';
+      return kind ? queueCpScheduleChain_(orgId, kind) : Promise.resolve(0);
+    };
 
     registerAction('completeFarmBoardTasks', async function (params) {
       params = params || {};
@@ -8394,123 +8571,26 @@
       var schedRows = await restSelectAll_('work_schedules', 'org_id=eq.' + encodeURIComponent(orgId) + '&schedule_kind=eq.work');
       var today = jstYmd_(new Date());
       var updated = 0;
-      var updatedPlaceIds = {};
       for (var i = 0; i < schedRows.length; i++) {
         var r = schedRows[i];
         if (farmBoardTaskKind_(r.work_name) !== kind) continue;
-        var ids = parseCpPlaceKind4_(r.place_id).planIds;
-        var hit = Object.keys(idSet).length && ids.some(function (id) { return !!idSet[id]; });
+        var cp = cpSchedInfo_(r);
+        var hit = Object.keys(idSet).length && cp.planIds.some(function (id) { return !!idSet[id]; });
         if (!hit && fieldName && String(r.field_name || '').split(',').some(function (n) { return String(n).trim() === fieldName; })) hit = true;
-        if (!hit && tag && (String(r.assignee || '').trim() === tag || String(r.assignee || '').trim().split(/\s+/).indexOf(tag) >= 0)) hit = true;
+        if (!hit && tag && (cp.person === tag || cp.person.split(/\s+/).indexOf(tag) >= 0)) hit = true;
         if (!hit) continue;
-        var already = !!r.completed_date;
-        if (wantComplete === already) continue;
+        if (wantComplete ? r.is_completed : !cp.done) continue;
         await restFetch('rest/v1/work_schedules?id=eq.' + encodeURIComponent(r.id), {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-          body: JSON.stringify({ completed_date: wantComplete ? today : null })
+          body: JSON.stringify(wantComplete
+            ? { is_completed: true, completed_date: cp.completedYmd || today }
+            : { is_completed: false, completed_date: null })
         });
         updated++;
-        if (wantComplete && r.place_id) updatedPlaceIds[r.place_id] = true;
       }
       if (wantComplete && updated > 0 && (kind === 'procure' || kind === 'sow' || kind === 'plant')) {
-        var resolveField = await buildFieldDisplayResolver_(orgId);
-        var lookup = (await loadCultivationPlansLookup_(orgId, '')).map;
-        var latestSched = await restSelectAll_('work_schedules', 'org_id=eq.' + encodeURIComponent(orgId) + '&schedule_kind=eq.work');
-        var newRows = [];
-        if (kind === 'procure') {
-          var existSow = {};
-          latestSched.forEach(function (sr) {
-            var p = parseCpPlaceKind4_(sr.place_id);
-            if (p.kind === 'sow') p.planIds.forEach(function (id) { existSow[id] = true; });
-          });
-          latestSched.forEach(function (sr) {
-            if (sr.work_name !== '調達' || !sr.completed_date) return;
-            parseCpPlaceKind4_(sr.place_id).planIds.forEach(function (pid) {
-              if (existSow[pid] || !lookup[pid]) return;
-              var pl = lookup[pid];
-              var sowCells = (pl.tasks && pl.tasks.sowing) || [];
-              if (!sowCells.length) return;
-              existSow[pid] = true;
-              var sp = sowCells.map(function (c) { return cpCellToDateParts_(pl.year, c); }).sort(function (a, b) { return a.start - b.start; });
-              var fNames = (pl.fieldIds && pl.fieldIds.length) ? pl.fieldIds.map(resolveField).join(', ') : '(圃場未選択)';
-              newRows.push({
-                org_id: orgId, schedule_kind: 'work', work_name: '播種', crop_name: pl.crop || '',
-                field_name: fNames, scheduled_date: jstYmd_(sp[0].start), deadline_date: jstYmd_(sp[sp.length - 1].end),
-                hours_label: (pl.trays || 0) + (Number(pl.holes) === 1 ? '粒' : '枚'),
-                assignee: pl.tag || '', place_id: 'cp:' + pl.id + (pl.fieldIds && pl.fieldIds.length ? '|' + pl.fieldIds.join(',') : '')
-              });
-            });
-          });
-        } else if (kind === 'sow') {
-          var existPlant = {};
-          latestSched.forEach(function (sr) {
-            var p = parseCpPlaceKind4_(sr.place_id);
-            if (p.kind === 'plant') p.planIds.forEach(function (id) { existPlant[id] = true; });
-          });
-          latestSched.forEach(function (sr) {
-            if (sr.work_name !== '播種' || !sr.completed_date) return;
-            parseCpPlaceKind4_(sr.place_id).planIds.forEach(function (pid) {
-              if (existPlant[pid] || !lookup[pid]) return;
-              var pl = lookup[pid];
-              existPlant[pid] = true;
-              var plCells = (pl.tasks && pl.tasks.planting) || [];
-              var sD, eD;
-              if (plCells.length) {
-                var pp = plCells.map(function (c) { return cpCellToDateParts_(pl.year, c); }).sort(function (a, b) { return a.start - b.start; });
-                sD = pp[0].start; eD = pp[pp.length - 1].end;
-              } else {
-                sD = new Date(); eD = new Date(); eD.setDate(eD.getDate() + 7);
-              }
-              var fNames = (pl.fieldIds && pl.fieldIds.length) ? pl.fieldIds.map(resolveField).join(', ') : '(圃場未選択)';
-              newRows.push({
-                org_id: orgId, schedule_kind: 'work', work_name: '定植', crop_name: pl.crop || '',
-                field_name: fNames, scheduled_date: jstYmd_(sD), deadline_date: jstYmd_(eD),
-                hours_label: pl.trays ? ((pl.trays) + (Number(pl.holes) === 1 ? '株' : '枚')) : '',
-                assignee: pl.tag || '', place_id: 'cp:plant:' + pl.id + (pl.fieldIds && pl.fieldIds.length ? '|' + pl.fieldIds.join(',') : '')
-              });
-            });
-          });
-        } else if (kind === 'plant') {
-          var existWork = {};
-          latestSched.forEach(function (sr) {
-            var p = parseCpPlaceKind4_(sr.place_id);
-            if (p.kind === 'work' && p.marker) existWork[p.marker] = true;
-          });
-          var workCache = {};
-          for (var si2 = 0; si2 < latestSched.length; si2++) {
-            var sr2 = latestSched[si2];
-            if (sr2.work_name !== '定植' || !sr2.completed_date) continue;
-            var pids2 = parseCpPlaceKind4_(sr2.place_id).planIds;
-            for (var pi2 = 0; pi2 < pids2.length; pi2++) {
-              var pl2 = lookup[pids2[pi2]];
-              if (!pl2 || !pl2.crop) continue;
-              if (!workCache[pl2.crop]) workCache[pl2.crop] = (await getWorkPlanOne_(orgId, pl2.crop)).entries || [];
-              var wEntries = workCache[pl2.crop];
-              var basePlant = new Date(String(sr2.completed_date).replace(/-/g, '/') + ' 00:00:00');
-              if (isNaN(basePlant.getTime())) basePlant = new Date();
-              var fNames2 = (pl2.fieldIds && pl2.fieldIds.length) ? pl2.fieldIds.map(resolveField).join(', ') : '(圃場未選択)';
-              wEntries.forEach(function (we) {
-                var mk = 'cp:work:' + pl2.id + '::' + we.id;
-                if (existWork[mk]) return;
-                existWork[mk] = true;
-                var win = resolveCropWorkWinLocal_(we, basePlant);
-                newRows.push({
-                  org_id: orgId, schedule_kind: 'work', work_name: we.workName, crop_name: pl2.crop,
-                  field_name: fNames2, scheduled_date: jstYmd_(win.start), deadline_date: jstYmd_(win.end),
-                  hours_label: win.label, assignee: pl2.tag || '',
-                  place_id: mk + (pl2.fieldIds && pl2.fieldIds.length ? '|' + pl2.fieldIds.join(',') : '')
-                });
-              });
-            }
-          }
-        }
-        if (newRows.length) {
-          await restFetch('rest/v1/work_schedules', {
-            method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-            body: JSON.stringify(newRows)
-          });
-        }
+        await queueCpScheduleChain_(orgId, kind);
       }
       return { success: true, updated: updated };
     });
@@ -9052,10 +9132,10 @@
       var schedRows = fetched[2];
       var scheduleDoneByPlan = {};
       schedRows.forEach(function (r) {
-        if (!r.completed_date) return;
-        var p = parseCpPlaceKind4_(r.place_id);
+        var p = cpSchedInfo_(r);
+        if (!p.done) return;
         if (p.kind !== 'sow' && r.work_name !== '播種') return;
-        var m = String(r.hours_label || '').match(/(\d+)/);
+        var m = p.hours.match(/(\d+)/);
         p.planIds.forEach(function (pid) {
           var pl = fetched[0].map[pid];
           var trays = m ? Number(m[1]) : (Number(pl && pl.trays) || 0);
@@ -9641,9 +9721,9 @@
       var sowDoneDateByPlan = {};
       var plantDoneDateByPlan = {};
       schedRows.forEach(function (sr) {
-        var comp = normYmd4_(sr.completed_date);
+        var parsed = cpSchedInfo_(sr);
+        var comp = parsed.completedYmd;
         if (!comp) return;
-        var parsed = parseCpPlaceKind4_(sr.place_id || '');
         if (parsed.kind === 'sow') {
           parsed.planIds.forEach(function (pid) { if (!sowDoneDateByPlan[pid]) sowDoneDateByPlan[pid] = comp; });
         } else if (parsed.kind === 'plant') {
@@ -14312,6 +14392,634 @@
   }
 
   registerPhase5Handlers();
+
+  // ========================================================================
+  // 栽培歴・栽培設定
+  //   栽培歴: org_masters (master_type = cult_record) … 作物・圃場・定植日・条件・進捗
+  //   栽培設定: org_masters (master_type = cult_setting) … 作物ごとの作業と日数の算出ルール
+  //   環境条件: org_settings (setting_key = cultivation_env_model) … 露地／ハウスの補正値
+  //   作業予定: work_schedules の legacy_id = 'ch:<栽培歴ID>:<作業キー>'（payload.chRecordId / chKey）
+  // ========================================================================
+  var CULT_RECORD_TYPE_ = 'cult_record';
+  var CULT_SETTING_TYPE_ = 'cult_setting';
+  var CULT_ENV_KEY_ = 'cultivation_env_model';
+  var CULT_SCHED_PREFIX_ = 'ch:';
+
+  function cultYmd_(val) {
+    var s = String(val == null ? '' : val).trim().replace(/\//g, '-');
+    var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (!m) return '';
+    return m[1] + '-' + ('0' + Number(m[2])).slice(-2) + '-' + ('0' + Number(m[3])).slice(-2);
+  }
+
+  function cultAddDaysYmd_(ymd, n) {
+    var m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return '';
+    var d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + (Number(n) || 0)));
+    return d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + d.getUTCDate()).slice(-2);
+  }
+
+  // cultivation-setting.js の baseWorkName と同じ規則（記録の作業名と予定の照合用）
+  function cultBaseWorkName_(s) {
+    var t = String(s == null ? '' : s);
+    try { t = t.normalize('NFKC'); } catch (e) {}
+    t = t.replace(/\s+/g, '');
+    var stripped = t.replace(/[(\[【][^)\]】]*[)\]】]/g, '').replace(/(第?\d+回目?|\d+)$/, '');
+    return (stripped || t).toLowerCase();
+  }
+
+  function cultBaseCropName_(s) {
+    var t = String(s == null ? '' : s);
+    try { t = t.normalize('NFKC'); } catch (e) {}
+    return t.replace(/\s+/g, '').replace(/[(\[【][^)\]】]*[)\]】]/g, '').toLowerCase();
+  }
+
+  function cultCropCompatible_(a, b) {
+    if (!a || !b) return true;
+    return a === b || a.indexOf(b) >= 0 || b.indexOf(a) >= 0;
+  }
+
+  function cultInList_(values) {
+    return '(' + values.map(function (v) {
+      return encodeURIComponent('"' + String(v).replace(/["\\]/g, '') + '"');
+    }).join(',') + ')';
+  }
+
+  async function cultLoadRecordRow_(orgId, recordId) {
+    var rows = await restFetch(
+      'rest/v1/org_masters?org_id=eq.' + encodeURIComponent(orgId) +
+      '&master_type=eq.' + CULT_RECORD_TYPE_ +
+      '&legacy_id=eq.' + encodeURIComponent(recordId) + '&limit=1'
+    );
+    return (Array.isArray(rows) && rows.length) ? rows[0] : null;
+  }
+
+  async function cultDeleteActiveScheduleRows_(orgId, recordId) {
+    await restFetch(
+      'rest/v1/work_schedules?org_id=eq.' + encodeURIComponent(orgId) +
+      '&schedule_kind=eq.work&is_completed=eq.false' +
+      '&legacy_id=like.' + encodeURIComponent(CULT_SCHED_PREFIX_ + recordId + ':*'),
+      { method: 'DELETE' }
+    );
+  }
+
+  /** 作業記録の保存時: 同じ圃場・作業名の栽培歴予定（未完了）を完了にする。失敗しても記録保存は止めない */
+  async function cultHistoryOnWorkRecorded_(orgId, fields, recordData, workDateYmd, origRecordId, author) {
+    try {
+      var workName = String((recordData && recordData.workName) || '').trim();
+      if (!workName || !Array.isArray(fields) || !fields.length) return 0;
+      var prog = String((recordData && recordData.progressStatus) || '').trim();
+      if (prog && prog !== '完了') return 0;
+      var base = cultBaseWorkName_(workName);
+      var cropBase = cultBaseCropName_(recordData && recordData.crop);
+      var workYmd = cultYmd_(workDateYmd);
+      var fieldIds = fields.map(function (f) { return f && f.id; }).filter(Boolean);
+      if (!base || !workYmd || !fieldIds.length) return 0;
+      var rows = await restSelectAll_(
+        'work_schedules',
+        'org_id=eq.' + encodeURIComponent(orgId) +
+        '&schedule_kind=eq.work&is_completed=eq.false' +
+        '&legacy_id=like.' + encodeURIComponent(CULT_SCHED_PREFIX_ + '*') +
+        '&field_id=in.' + cultInList_(fieldIds) +
+        '&select=id,legacy_id,work_name,crop_name,planned_date,payload'
+      );
+      var bestByRecord = {};
+      rows.forEach(function (r) {
+        var p = r.payload || {};
+        var names = (Array.isArray(p.chMatch) && p.chMatch.length) ? p.chMatch : [cultBaseWorkName_(r.work_name)];
+        if (names.indexOf(base) < 0) return;
+        if (!cultCropCompatible_(cropBase, cultBaseCropName_(r.crop_name))) return;
+        if (p.chWindowStart && workYmd < String(p.chWindowStart)) return;
+        if (p.chWindowEnd && workYmd > String(p.chWindowEnd)) return;
+        var grp = String(p.chRecordId || r.legacy_id || r.id);
+        var cur = bestByRecord[grp];
+        if (!cur || String(r.planned_date || '') < String(cur.planned_date || '')) bestByRecord[grp] = r;
+      });
+      var done = 0;
+      var groups = Object.keys(bestByRecord);
+      for (var i = 0; i < groups.length; i++) {
+        var row = bestByRecord[groups[i]];
+        var np = Object.assign({}, row.payload || {}, {
+          completedByRecordId: String(origRecordId || ''),
+          completedBy: String(author || '')
+        });
+        await restFetch('rest/v1/work_schedules?id=eq.' + encodeURIComponent(row.id), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({ is_completed: true, completed_date: workYmd, payload: np })
+        });
+        done++;
+      }
+      if (done && global.PassionMapCultivationHistory && typeof global.PassionMapCultivationHistory.requestSync === 'function') {
+        try { global.PassionMapCultivationHistory.requestSync({ reason: 'record' }); } catch (eSync) {}
+      }
+      return done;
+    } catch (e) {
+      console.warn('[栽培歴] 作業記録からの予定完了に失敗しました', e);
+      return 0;
+    }
+  }
+
+  /** 作業一覧から栽培歴の予定が削除されたら、その作業を「スキップ」として栽培歴に残す（再同期で復活させない） */
+  async function cultHistoryOnScheduleDeleted_(orgId, row, userName) {
+    try {
+      var p = (row && row.payload) || {};
+      var recordId = String(p.chRecordId || '');
+      var key = String(p.chKey || '');
+      if (!recordId || !key) return;
+      var rec = await cultLoadRecordRow_(orgId, recordId);
+      if (!rec) return;
+      var data = Object.assign({}, rec.data || {});
+      var progress = Object.assign({}, data.progress || {});
+      progress[key] = Object.assign({}, progress[key] || {}, {
+        status: 'skipped',
+        via: 'schedule-delete',
+        by: String(userName || ''),
+        at: new Date().toISOString()
+      });
+      data.progress = progress;
+      await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(rec.id), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ data: data })
+      });
+    } catch (e) {
+      console.warn('[栽培歴] 予定削除の反映に失敗しました', e);
+    }
+  }
+
+  function registerCultivationHandlers_() {
+    registerAction('getCultivationBundle', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var today = formatJstNowParts_().dateDash;
+      var schedSince = cultAddDaysYmd_(today, -400);
+      var fetched = await Promise.all([
+        restSelectAll_(
+          'org_masters',
+          'org_id=eq.' + encodeURIComponent(orgId) +
+          '&master_type=in.(' + CULT_SETTING_TYPE_ + ',' + CULT_RECORD_TYPE_ + ',crop,work,department)' +
+          '&is_active=eq.true&order=sort_order.asc,created_at.asc'
+        ),
+        restFetch(
+          'rest/v1/org_settings?org_id=eq.' + encodeURIComponent(orgId) +
+          '&setting_key=eq.' + encodeURIComponent(CULT_ENV_KEY_) + '&limit=1'
+        ),
+        params.withSchedules === false ? Promise.resolve([]) : restSelectAll_(
+          'work_schedules',
+          'org_id=eq.' + encodeURIComponent(orgId) +
+          '&schedule_kind=eq.work' +
+          '&legacy_id=like.' + encodeURIComponent(CULT_SCHED_PREFIX_ + '*') +
+          '&or=(is_completed.eq.false,completed_date.gte.' + schedSince + ')' +
+          '&select=id,legacy_id,is_completed,completed_date,planned_date,due_date,work_name,payload' +
+          '&order=created_at.asc'
+        )
+      ]);
+      var masterRows = fetched[0] || [];
+      var envRows = fetched[1];
+      var schedRows = fetched[2] || [];
+
+      var settings = [];
+      var records = [];
+      var crops = [];
+      var works = [];
+      var departments = [];
+      var seenCrop = {};
+      var seenWork = {};
+      masterRows.forEach(function (m) {
+        var d = (m.data && typeof m.data === 'object') ? m.data : {};
+        if (m.master_type === CULT_SETTING_TYPE_) {
+          settings.push({ cropName: String(d.cropName || m.name || ''), data: d, updatedAt: m.updated_at || '', updatedBy: m.updated_by || '' });
+        } else if (m.master_type === CULT_RECORD_TYPE_) {
+          records.push({ id: String(m.legacy_id || d.id || m.id), data: d, updatedAt: m.updated_at || '' });
+        } else if (m.master_type === 'crop' && m.name && !seenCrop[m.name]) {
+          seenCrop[m.name] = true;
+          crops.push(m.name);
+        } else if (m.master_type === 'work' && m.name && m.name.indexOf('work_extra_') !== 0 && !seenWork[m.name]) {
+          seenWork[m.name] = true;
+          works.push({ name: m.name, category: String(d.category || ''), dept: String(d.department || d.dept || '') });
+        } else if (m.master_type === 'department' && m.name) {
+          departments.push(m.name);
+        }
+      });
+
+      return {
+        today: today,
+        settings: settings,
+        env: (Array.isArray(envRows) && envRows.length) ? (envRows[0].value || null) : null,
+        records: records,
+        schedRows: schedRows.map(function (r) {
+          var p = r.payload || {};
+          return {
+            id: r.id,
+            recordId: String(p.chRecordId || ''),
+            key: String(p.chKey || ''),
+            isCompleted: !!r.is_completed,
+            completedDate: cultYmd_(r.completed_date),
+            plannedDate: cultYmd_(r.planned_date),
+            dueDate: cultYmd_(r.due_date),
+            workName: r.work_name || '',
+            completedByRecordId: String(p.completedByRecordId || '')
+          };
+        }).filter(function (r) { return r.recordId && r.key; }),
+        crops: crops,
+        works: works,
+        departments: departments
+      };
+    });
+
+    registerAction('getCultivationWorkRecords', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var fieldIds = (Array.isArray(params.fieldIds) ? params.fieldIds : [])
+        .map(function (s) { return String(s || '').trim(); })
+        .filter(Boolean);
+      var since = cultYmd_(params.since) || cultAddDaysYmd_(formatJstNowParts_().dateDash, -400);
+      var out = [];
+      for (var i = 0; i < fieldIds.length; i += 40) {
+        var chunk = fieldIds.slice(i, i + 40);
+        var rows = await restSelectAll_(
+          'field_records',
+          'org_id=eq.' + encodeURIComponent(orgId) +
+          '&record_type=eq.work' +
+          '&field_legacy_id=in.' + cultInList_(chunk) +
+          '&work_date=gte.' + since +
+          '&select=id,legacy_id,field_legacy_id,field_name,work_date,work_name,crop_name,progress,author_name' +
+          '&order=work_date.asc,id.asc'
+        );
+        rows.forEach(function (r) {
+          out.push({
+            id: r.id,
+            origId: String(r.legacy_id || r.id).split('::')[0],
+            fieldId: String(r.field_legacy_id || ''),
+            fieldName: r.field_name || '',
+            date: cultYmd_(r.work_date),
+            workName: r.work_name || '',
+            cropName: r.crop_name || '',
+            progress: r.progress || '',
+            author: r.author_name || ''
+          });
+        });
+      }
+      return { records: out };
+    });
+
+    registerAction('saveCultivationRecord', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var userName = String(params.userName || '').trim();
+      var rec = (params.record && typeof params.record === 'object') ? params.record : {};
+      var progressPatch = (params.progressPatch && typeof params.progressPatch === 'object') ? params.progressPatch : null;
+      var nowIso = new Date().toISOString();
+      var id = String(rec.id || '').trim();
+      var row = id ? await cultLoadRecordRow_(orgId, id) : null;
+      var patch = Object.assign({}, rec);
+      delete patch.progress;
+      var data;
+      if (row) {
+        data = Object.assign({}, row.data || {}, patch);
+        data.progress = Object.assign({}, (row.data && row.data.progress) || {});
+      } else {
+        if (!id) id = 'cr-' + genUuid_();
+        data = Object.assign({ status: 'active', manualWorks: [], createdAt: nowIso, createdBy: userName }, patch);
+        data.progress = Object.assign({}, rec.progress || {});
+      }
+      if (progressPatch) {
+        Object.keys(progressPatch).forEach(function (k) {
+          var v = progressPatch[k];
+          if (v == null) {
+            delete data.progress[k];
+          } else {
+            data.progress[k] = Object.assign({}, v, { by: v.by || userName, at: v.at || nowIso });
+          }
+        });
+      }
+      data.id = id;
+      data.cropName = String(data.cropName || '').trim();
+      data.plantDate = cultYmd_(data.plantDate);
+      if (!data.cropName) throw new Error('作物を指定してください');
+      if (!data.plantDate) throw new Error('定植日を指定してください');
+      data.updatedAt = nowIso;
+      data.updatedBy = userName;
+      var name = [data.cropName, data.fieldName, data.plantDate].filter(Boolean).join(' ');
+
+      if (row) {
+        await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(row.id), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({ name: name, data: data, updated_by: userName })
+        });
+      } else {
+        await restFetch('rest/v1/org_masters', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            org_id: orgId,
+            master_type: CULT_RECORD_TYPE_,
+            legacy_id: id,
+            name: name,
+            data: data,
+            is_active: true,
+            updated_by: userName
+          })
+        });
+      }
+      if (data.status === 'finished') {
+        await cultDeleteActiveScheduleRows_(orgId, id);
+      }
+      return { success: true, record: { id: id, data: data, updatedAt: nowIso } };
+    });
+
+    registerAction('deleteCultivationRecord', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var id = String(params.id || '').trim();
+      if (!id) throw new Error('削除する栽培歴が指定されていません');
+      var row = await cultLoadRecordRow_(orgId, id);
+      if (row) {
+        await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(row.id), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({ is_active: false, updated_by: String(params.userName || '') })
+        });
+      }
+      await cultDeleteActiveScheduleRows_(orgId, id);
+      return { success: true };
+    });
+
+    registerAction('saveCultivationSetting', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var setting = (params.setting && typeof params.setting === 'object') ? params.setting : {};
+      var cropName = String(params.cropName || setting.cropName || '').trim();
+      if (!cropName) throw new Error('作物名がありません');
+      var userName = String(params.userName || '').trim();
+      var data = Object.assign({}, setting, { cropName: cropName, updatedAt: new Date().toISOString(), updatedBy: userName });
+      var legacyId = 'cs:' + cropName;
+      var rows = await restFetch(
+        'rest/v1/org_masters?org_id=eq.' + encodeURIComponent(orgId) +
+        '&master_type=eq.' + CULT_SETTING_TYPE_ +
+        '&legacy_id=eq.' + encodeURIComponent(legacyId) + '&limit=1'
+      );
+      if (Array.isArray(rows) && rows.length) {
+        await restFetch('rest/v1/org_masters?id=eq.' + encodeURIComponent(rows[0].id), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({ name: cropName, data: data, is_active: true, updated_by: userName })
+        });
+      } else {
+        await restFetch('rest/v1/org_masters', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            org_id: orgId,
+            master_type: CULT_SETTING_TYPE_,
+            legacy_id: legacyId,
+            name: cropName,
+            data: data,
+            is_active: true,
+            updated_by: userName
+          })
+        });
+      }
+      return { success: true, setting: { cropName: cropName, data: data } };
+    });
+
+    registerAction('deleteCultivationSetting', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var cropName = String(params.cropName || '').trim();
+      if (!cropName) throw new Error('作物名がありません');
+      await restFetch(
+        'rest/v1/org_masters?org_id=eq.' + encodeURIComponent(orgId) +
+        '&master_type=eq.' + CULT_SETTING_TYPE_ +
+        '&legacy_id=eq.' + encodeURIComponent('cs:' + cropName),
+        { method: 'DELETE' }
+      );
+      return { success: true };
+    });
+
+    registerAction('saveCultivationEnvModel', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var env = (params.env && typeof params.env === 'object') ? params.env : null;
+      if (!env) throw new Error('環境条件の設定がありません');
+      await restFetch('rest/v1/org_settings?on_conflict=org_id,setting_key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify({
+          org_id: orgId,
+          setting_key: CULT_ENV_KEY_,
+          value: env,
+          updated_by: String(params.userName || '')
+        })
+      });
+      return { success: true, env: env };
+    });
+
+    /**
+     * 栽培歴ごとに「作業予定に出すべき作業」(desired) を受け取り、work_schedules を揃える。
+     * 既存行は日付を更新、無ければ追加、記録済み (doneKeys) は完了、それ以外の未完了行は削除。
+     */
+    registerAction('syncCultivationSchedules', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var list = Array.isArray(params.records) ? params.records : [];
+      var stats = { inserted: 0, updated: 0, completed: 0, reopened: 0, deleted: 0 };
+      if (!list.length) return Object.assign({ success: true }, stats);
+
+      var today = formatJstNowParts_().dateDash;
+      var fetched = await Promise.all([
+        restSelectAll_('fields', 'org_id=eq.' + encodeURIComponent(orgId) + '&select=id,legacy_id,name'),
+        restSelectAll_(
+          'work_schedules',
+          'org_id=eq.' + encodeURIComponent(orgId) +
+          '&schedule_kind=eq.work' +
+          '&legacy_id=like.' + encodeURIComponent(CULT_SCHED_PREFIX_ + '*') +
+          '&or=(is_completed.eq.false,completed_date.gte.' + cultAddDaysYmd_(today, -400) + ')' +
+          '&select=id,legacy_id,is_completed,completed_date,planned_date,due_date,work_name,field_id,field_name,crop_name,department,payload' +
+          '&order=created_at.asc'
+        )
+      ]);
+      var fieldByAnyId = {};
+      (fetched[0] || []).forEach(function (f) {
+        fieldByAnyId[String(f.id)] = f;
+        if (f.legacy_id) fieldByAnyId[String(f.legacy_id)] = f;
+      });
+      var rowsByRecord = {};
+      (fetched[1] || []).forEach(function (r) {
+        var rid = String((r.payload || {}).chRecordId || '');
+        if (rid) (rowsByRecord[rid] = rowsByRecord[rid] || []).push(r);
+      });
+
+      var jsonHeaders = { 'Content-Type': 'application/json', Prefer: 'return=minimal' };
+      var patchRow = async function (id, body) {
+        await restFetch('rest/v1/work_schedules?id=eq.' + encodeURIComponent(id), {
+          method: 'PATCH', headers: jsonHeaders, body: JSON.stringify(body)
+        });
+      };
+      var deleteRow = async function (id) {
+        await restFetch('rest/v1/work_schedules?id=eq.' + encodeURIComponent(id), { method: 'DELETE' });
+      };
+      var inserts = [];
+
+      for (var li = 0; li < list.length; li++) {
+        var rec = list[li] || {};
+        var rid = String(rec.recordId || '').trim();
+        if (!rid) continue;
+        var activeByKey = {};
+        var completedByKey = {};
+        var duplicateIds = [];
+        (rowsByRecord[rid] || []).forEach(function (r) {
+          var k = String((r.payload || {}).chKey || '');
+          if (!k) return;
+          if (r.is_completed) {
+            if (!completedByKey[k]) completedByKey[k] = r;
+          } else if (activeByKey[k]) {
+            duplicateIds.push(r.id);
+          } else {
+            activeByKey[k] = r;
+          }
+        });
+        var fld = fieldByAnyId[String(rec.fieldId || '')] || null;
+        var fieldName = String(rec.fieldName || (fld && fld.name) || '').trim();
+        var cropName = String(rec.cropName || '').trim();
+        var dept = String(rec.dept || '').trim();
+        var handled = {};
+
+        var desired = Array.isArray(rec.desired) ? rec.desired : [];
+        for (var di = 0; di < desired.length; di++) {
+          var d = desired[di] || {};
+          var key = String(d.key || '').trim();
+          var sYmd = cultYmd_(d.plannedDate);
+          if (!key || !sYmd) continue;
+          var dYmd = cultYmd_(d.dueDate) || sYmd;
+          if (dYmd < sYmd) dYmd = sYmd;
+          var workName = String(d.workName || '').trim() || '作業';
+          var match = Array.isArray(d.match) ? d.match.map(String) : [cultBaseWorkName_(workName)];
+          var extra = {
+            source: 'cultivation_history',
+            chRecordId: rid,
+            chKey: key,
+            chCategory: String(d.category || ''),
+            chBasis: String(d.basis || ''),
+            chMatch: match,
+            chWindowStart: cultYmd_(d.windowStart),
+            chWindowEnd: cultYmd_(d.windowEnd),
+            chFieldId: String(rec.fieldId || ''),
+            chVariety: String(rec.variety || '')
+          };
+          handled[key] = true;
+          var act = activeByKey[key];
+          if (act) {
+            var ap = act.payload || {};
+            var changed = cultYmd_(act.planned_date) !== sYmd ||
+              cultYmd_(act.due_date) !== dYmd ||
+              String(act.work_name || '') !== workName ||
+              String(act.field_name || '') !== fieldName ||
+              String(act.crop_name || '') !== cropName ||
+              String(act.department || '') !== dept ||
+              String(act.field_id || '') !== String(fld ? fld.id : '') ||
+              JSON.stringify({ c: ap.chCategory, b: ap.chBasis, m: ap.chMatch, w: ap.chWindowStart, we: String(ap.chWindowEnd || ''), f: ap.chFieldId, v: ap.chVariety }) !==
+              JSON.stringify({ c: extra.chCategory, b: extra.chBasis, m: extra.chMatch, w: extra.chWindowStart, we: extra.chWindowEnd, f: extra.chFieldId, v: extra.chVariety });
+            if (changed) {
+              await patchRow(act.id, {
+                planned_date: sYmd,
+                due_date: dYmd,
+                work_name: workName,
+                field_name: fieldName,
+                field_id: fld ? fld.id : null,
+                crop_name: cropName,
+                department: dept,
+                payload: Object.assign({}, ap, extra)
+              });
+              stats.updated++;
+            }
+            continue;
+          }
+          var comp = completedByKey[key];
+          if (comp) {
+            if (d.reopen) {
+              await patchRow(comp.id, {
+                is_completed: false,
+                completed_date: null,
+                planned_date: sYmd,
+                due_date: dYmd,
+                work_name: workName,
+                payload: Object.assign({}, comp.payload || {}, extra, { completedByRecordId: '', completedBy: '' })
+              });
+              stats.reopened++;
+            }
+            continue;
+          }
+          var legacyId = CULT_SCHED_PREFIX_ + rid + ':' + key;
+          inserts.push({
+            org_id: orgId,
+            schedule_kind: 'work',
+            legacy_id: legacyId,
+            field_id: fld ? fld.id : null,
+            field_name: fieldName,
+            department: dept,
+            crop_name: cropName,
+            work_name: workName,
+            planned_date: sYmd,
+            due_date: dYmd,
+            is_completed: false,
+            assigned_users: [],
+            payload: Object.assign({
+              scheduleKey: [workName, fieldName, cropName, sYmd, dYmd, legacyId].join('||'),
+              placeId: legacyId,
+              hours: '',
+              person: '',
+              notes: ''
+            }, extra)
+          });
+        }
+
+        var doneKeys = Array.isArray(rec.doneKeys) ? rec.doneKeys : [];
+        for (var ki = 0; ki < doneKeys.length; ki++) {
+          var dk = doneKeys[ki] || {};
+          var dKey = String(dk.key || '');
+          var dAct = activeByKey[dKey];
+          if (!dAct || handled[dKey]) continue;
+          await patchRow(dAct.id, { is_completed: true, completed_date: cultYmd_(dk.date) || today });
+          handled[dKey] = true;
+          stats.completed++;
+        }
+
+        var activeKeys = Object.keys(activeByKey);
+        for (var ai = 0; ai < activeKeys.length; ai++) {
+          if (handled[activeKeys[ai]]) continue;
+          await deleteRow(activeByKey[activeKeys[ai]].id);
+          stats.deleted++;
+        }
+        for (var xi = 0; xi < duplicateIds.length; xi++) {
+          await deleteRow(duplicateIds[xi]);
+          stats.deleted++;
+        }
+      }
+
+      if (inserts.length) {
+        try {
+          await restFetch('rest/v1/work_schedules', { method: 'POST', headers: jsonHeaders, body: JSON.stringify(inserts) });
+          stats.inserted += inserts.length;
+        } catch (eBatch) {
+          // 別端末の同期と重なった場合（一意制約違反）は 1 件ずつ入れ直す
+          for (var ii = 0; ii < inserts.length; ii++) {
+            try {
+              await restFetch('rest/v1/work_schedules', { method: 'POST', headers: jsonHeaders, body: JSON.stringify(inserts[ii]) });
+              stats.inserted++;
+            } catch (eOne) {
+              if (!/duplicate|unique|23505|409/i.test(String((eOne && eOne.message) || eOne))) throw eOne;
+            }
+          }
+        }
+      }
+      return Object.assign({ success: true }, stats);
+    });
+  }
+
+  registerCultivationHandlers_();
 
   if (config_.enableAllActions) {
     Object.keys(registeredHandlers_).forEach(function (k) {

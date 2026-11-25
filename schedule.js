@@ -2260,7 +2260,9 @@ function showPopup(p, latLng) {
     let cl = String(t.workName).includes('⚠️') ? 'color:#d32f2f; font-weight:bold; background:#ffebee;' : (t.isOverdue ? 'color:#d32f2f; font-weight:bold;' : 'color:#333;');
     const tagPart = (t.tag || t.person) ? ` / <span style="color:#e91e63;font-weight:bold;">${t.tag || t.person}</span>` : '';
     const traysPart = (t.trays || t.hours) ? ` · ${t.trays || t.hours}` : '';
-    const kindBadge = t.cpKind === 'work'
+    const kindBadge = t.isCultivationHistory
+      ? '<span style="background:#f1f8e9;color:#2e7d32;border:1px solid #c5e1a5;padding:0 5px;border-radius:4px;font-size:10px;margin-right:4px;">📒栽培歴</span>'
+      : t.cpKind === 'work'
       ? '<span style="background:#c8e6c9;color:#1b5e20;padding:1px 5px;border-radius:4px;font-size:10px;margin-right:4px;">品目作業</span>'
       : (t.cpKind === 'plant' ? '<span style="background:#dcedc8;color:#33691e;padding:1px 5px;border-radius:4px;font-size:10px;margin-right:4px;">定植</span>'
         : (t.cpKind === 'sow' ? '<span style="background:#fff9c4;color:#f57f17;padding:1px 5px;border-radius:4px;font-size:10px;margin-right:4px;">播種</span>'
@@ -3619,11 +3621,13 @@ function renderCropWorkProgressTables_(res) {
 }
 
 window.setScheduleListFilter_ = function (mode) {
-  scheduleListFilter = mode === 'fieldWork' ? 'fieldWork' : 'all';
+  scheduleListFilter = (mode === 'fieldWork' || mode === 'cultHistory') ? mode : 'all';
   const allBtn = document.getElementById('schedFilterAll');
   const fwBtn = document.getElementById('schedFilterFieldWork');
+  const chBtn = document.getElementById('schedFilterCultHistory');
   if (allBtn) allBtn.classList.toggle('active', scheduleListFilter === 'all');
   if (fwBtn) fwBtn.classList.toggle('active', scheduleListFilter === 'fieldWork');
+  if (chBtn) chBtn.classList.toggle('active', scheduleListFilter === 'cultHistory');
   if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
 };
 
@@ -3651,6 +3655,8 @@ function getScheduleBaseListForColumnFilter_() {
   });
   if (scheduleListFilter === 'fieldWork') {
     list = list.filter(function (t) { return t.cpKind === 'work'; });
+  } else if (scheduleListFilter === 'cultHistory') {
+    list = list.filter(function (t) { return !!t.isCultivationHistory; });
   }
   return list;
 }
@@ -3913,6 +3919,8 @@ function renderScheduleTasksTable_() {
   if (scheduleListFilter === 'fieldWork') {
     // 定植後に品目別作業設定から畑へ載った作業のみ
     filteredSchedules = filteredSchedules.filter(t => t.cpKind === 'work');
+  } else if (scheduleListFilter === 'cultHistory') {
+    filteredSchedules = filteredSchedules.filter(t => !!t.isCultivationHistory);
   }
   if (scheduleDeptFilter) {
     filteredSchedules = filteredSchedules.filter(function (t) {
@@ -3935,6 +3943,8 @@ function renderScheduleTasksTable_() {
       emptyMsg = parts.join(' × ') + 'の作業はありません<br><span style="font-size:11px;color:#888;">ヘッダの絞り込みを解除できます</span>';
     } else if (scheduleListFilter === 'fieldWork') {
       emptyMsg = '定植完了後の畑の品目作業はありません<br><span style="font-size:11px;color:#888;">品目別作業設定があり、定植が完了するとここに出ます</span>';
+    } else if (scheduleListFilter === 'cultHistory') {
+      emptyMsg = '栽培歴から出ている作業はありません<br><span style="font-size:11px;color:#888;">「📒 栽培歴」で作物・定植日・条件を登録すると、次の作業がここに出ます</span>';
     }
     tbody.innerHTML = '<tr class="sched-empty-row"><td colspan="10" style="text-align:center;">' + emptyMsg + '</td></tr>';
     updateSchedBulkSelectionUi_();
@@ -3953,7 +3963,7 @@ function renderScheduleTasksTable_() {
       if (isMid) rowClassList.push('is-mid');
       else if (isWarn) rowClassList.push('is-warn');
       else if (t.isOverdue) rowClassList.push('overdue-row');
-      const isCp = t.isCultivation || String(t.workName || '').indexOf('播種') === 0 || String(t.workName || '').trim() === '調達';
+      const isCp = t.isCultivation || t.isCultivationHistory || String(t.workName || '').indexOf('播種') === 0 || String(t.workName || '').trim() === '調達';
       const cropCell = isCp
         ? `${t.cropName || '-'}${t.variety ? '<br><span class="sched-subtext" style="color:#1565c0;">品種: ' + t.variety + '</span>' : ''}${t.tag ? '<br><span class="sched-subtext" style="color:#e91e63;font-weight:bold;">TAG: ' + t.tag + '</span>' : (t.person ? '<br><span class="sched-subtext" style="color:#e91e63;font-weight:bold;">' + t.person + '</span>' : '')}`
         : (t.cropName || '-');
@@ -3977,6 +3987,12 @@ function renderScheduleTasksTable_() {
           (t.startTime ? (' <span style="color:#666;">' + t.startTime + '〜' + (t.endTime || '') + '</span>') : '') + '</div>')
         : '';
       const dayPlansHtml = formatDayPlansBadgeHtml(t);
+      const chCatLabel = { prep: '圃場準備', care: '栽培管理', harvest: '収穫' }[t.chCategory] || '';
+      const chBadgeHtml = t.isCultivationHistory
+        ? '<div style="margin-top:4px;"><span class="sched-chip" role="button" title="栽培歴を開く" style="background:#f1f8e9;color:#2e7d32;border:1px solid #c5e1a5;cursor:pointer;"' +
+          ' onclick="event.stopPropagation(); window.openCultivationHistoryModal && openCultivationHistoryModal({ recordId: \'' + escAttr_(String(t.chRecordId || '').replace(/[\\']/g, '')) + '\' })">📒 栽培歴' +
+          (chCatLabel ? '・' + chCatLabel : '') + '</span></div>'
+        : '';
       const safeWork = String(t.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       const safeField = String(t.fieldName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       const safeCrop = String(t.cropName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -3994,7 +4010,7 @@ function renderScheduleTasksTable_() {
       return `<tr class="${rowClassList.join(' ')}" data-sched-idx="${idx}">
                       <td class="sched-check-col" data-label="選択">${checkCell}</td>
                       <td class="sched-col-status" data-label="ステータス"><div class="sched-cell-val">${statusHtml}</div></td>
-                      <td class="sched-col-work" data-label="作業名"><div class="sched-cell-val">${workLabel}${taskUsersHtml}${midAuthorHtml}${dayPlansHtml}</div></td>
+                      <td class="sched-col-work" data-label="作業名"><div class="sched-cell-val">${workLabel}${chBadgeHtml}${taskUsersHtml}${midAuthorHtml}${dayPlansHtml}</div></td>
                       <td class="sched-col-dept" data-label="部署"><div class="sched-cell-val">${buildInlineDeptSelectHtml_(t)}</div></td>
                       <td class="sched-col-crop" data-label="作物・品種・TAG"><div class="sched-cell-val">${cropCell}</div></td>
                       <td class="sched-col-field" data-label="圃場/看板名"><div class="sched-cell-val">${escHtml_(t.fieldName || '-')}</div></td>

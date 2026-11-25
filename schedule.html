@@ -19,6 +19,7 @@
   <link rel="stylesheet" href="cad.css?v=1788600000507">
   <link rel="stylesheet" href="location-pin.css?v=1788600000503">
   <link rel="stylesheet" href="map-filter.css?v=1788600000415">
+  <link rel="stylesheet" href="cultivation-history.css?v=1788600000517">
   <script type="importmap">
     {
       "imports": {
@@ -141,6 +142,8 @@
       <div class="modal-header schedule-modal-header">
         <span class="schedule-modal-title">📋 <span id="tableDeptName">すべて</span>の作業一覧</span>
         <div class="schedule-modal-actions">
+          <button type="button" onclick="window.openCultivationHistoryModal && openCultivationHistoryModal()"
+            title="栽培歴（定植の登録と次の作業）" class="schedule-header-btn schedule-header-btn-ghost">📒 栽培歴</button>
           <button type="button" onclick="openWorkDeptSettingsModal()" title="作業ごとの担当部署を設定"
             class="schedule-header-btn schedule-header-btn-ghost">🏢 部署</button>
           <button type="button" id="scheduleHeaderAddBtn" onclick="onScheduleHeaderAddClick_()"
@@ -183,6 +186,8 @@
               onclick="setScheduleListFilter_('all')">すべて</button>
             <button type="button" id="schedFilterFieldWork" class="sched-list-filter"
               onclick="setScheduleListFilter_('fieldWork')">🌱 畑の品目作業</button>
+            <button type="button" id="schedFilterCultHistory" class="sched-list-filter"
+              onclick="setScheduleListFilter_('cultHistory')">📒 栽培歴</button>
             <span class="sched-bulk-sep"></span>
             <label class="sched-sort-label">
               並び替え
@@ -1185,6 +1190,12 @@
   <div id="mobileCultivationMenu" class="mobile-action-sheet" style="display:none;" onclick="this.style.display='none'">
     <div class="action-sheet-content" onclick="event.stopPropagation()">
       <button
+        onclick="document.getElementById('mobileCultivationMenu').style.display='none'; window.openCultivationHistoryModal && openCultivationHistoryModal()">📒
+        栽培歴（定植の登録・次の作業）</button>
+      <button
+        onclick="document.getElementById('mobileCultivationMenu').style.display='none'; window.openCultivationSettingModal && openCultivationSettingModal()">⚙️
+        栽培設定（作業と日数の算出ルール）</button>
+      <button
         onclick="openCultivationPlanModal(); document.getElementById('mobileCultivationMenu').style.display='none'">📝
         栽培計画を立てる</button>
       <button
@@ -1282,7 +1293,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000515';
+    const cacheBust = '1788600000517';
     // 豚糞共有：台数＋短いGoogleマップURL＋座標（v1.49）
     // ※ https://maps.google.com/?q=緯度,経度
     // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）
@@ -1419,6 +1430,8 @@
       .then(() => appendScript('cultivation.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('cultivation.js')))
       .then(() => appendScript('cost_calc.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('cost_calc.js')))
       .then(() => appendScript('crop_work.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('crop_work.js')))
+      .then(() => appendScript('cultivation-setting.js?v=' + cacheBust).catch(function () { }))
+      .then(() => appendScript('cultivation-history.js?v=' + cacheBust).catch(function () { }))
       .then(() => finishScheduleBootstrapIfReady())
       .catch(err => {
         console.error('予定確認アプリの読み込み失敗', err);
