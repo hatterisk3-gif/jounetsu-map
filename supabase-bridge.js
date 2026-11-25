@@ -2636,6 +2636,28 @@
       return true;
     });
 
+    registerAction('updatePolygonDrawingHistory', async function (params) {
+      var recId = String((params && params.row) || '').trim();
+      if (!recId || recId === '0') throw new Error('上書きする図面が指定されていません');
+      var rows = await restFetch('rest/v1/field_records?id=eq.' + encodeURIComponent(recId) + '&limit=1');
+      if (!Array.isArray(rows) || !rows.length) throw new Error('上書きする図面が見つかりません');
+      var r = rows[0];
+      var payload = Object.assign({}, r.payload || {});
+      var drawingName = String((params && (params.drawingName || params.name)) || '').trim();
+      var data = String((params && params.data) || '');
+      if (!data) throw new Error('図面データが空です');
+      payload.data = data;
+      payload.drawingName = drawingName;
+      if (params && params.fp) payload.fp = String(params.fp);
+      if (Array.isArray(params && params.drawingCrops)) payload.drawingCrops = params.drawingCrops;
+      await restFetch('rest/v1/field_records?id=eq.' + encodeURIComponent(recId), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ work_name: drawingName, payload: payload })
+      });
+      return true;
+    });
+
     registerAction('deletePolygonDrawingHistory', async function (params) {
       var recId = String((params && params.row) || '').trim();
       if (!recId) throw new Error('削除する図面が指定されていません');
@@ -3360,7 +3382,7 @@
       'savePolygon', 'savePolygonBatch', 'updatePolygon', 'deletePolygon', 'deletePolygonBatch',
       'getViewpoints', 'saveViewpoint', 'deleteViewpoint',
       'getToukiDetails', 'saveTouki', 'saveFieldMemo', 'getFieldMemoHistory',
-      'getPolygonDrawingHistory', 'getPolygonDrawingHistoryItem', 'renamePolygonDrawingHistory', 'deletePolygonDrawingHistory',
+      'getPolygonDrawingHistory', 'getPolygonDrawingHistoryItem', 'renamePolygonDrawingHistory', 'updatePolygonDrawingHistory', 'deletePolygonDrawingHistory',
       'saveRecord', 'saveRecordBatch', 'updateRecordItem', 'updateWorkRecordById', 'deleteRecordItem', 'deleteWorkRecordById'
     ];
   }

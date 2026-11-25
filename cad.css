@@ -6,30 +6,52 @@
   left: 0;
   right: 0;
   bottom: 0;
+  width: 100%;
+  max-width: 100%;
   background: #fff;
   z-index: 1000001;
   display: none;
   flex-direction: column;
   touch-action: none;
   overscroll-behavior: none;
+  overflow: hidden;
 }
 
 #cadHeader {
-  position: absolute;
-  top: 0;
-  left: 0;
+  position: relative;
+  flex-shrink: 0;
+  top: auto;
+  left: auto;
   width: 100%;
   box-sizing: border-box;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.85);
   backdrop-filter: blur(5px);
   -webkit-backdrop-filter: blur(5px);
   color: #fff;
-  padding: 10px 15px;
+  padding: max(10px, env(safe-area-inset-top, 0px)) 12px 10px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   border-bottom: 3px solid rgba(255, 152, 0, 0.8);
   z-index: 100;
+}
+
+#cadHeader > div:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+#cadHeader > div:last-child {
+  flex-shrink: 0;
+}
+
+#cadTargetName {
+  display: block;
+  margin-left: 0 !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #cadMapWrapper {
@@ -67,6 +89,7 @@
   bottom: 0;
   left: 0;
   width: 100%;
+  max-width: 100%;
   box-sizing: border-box;
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(5px);
@@ -75,6 +98,45 @@
   box-shadow: 0 -4px 15px rgba(0, 0, 0, 0.5);
   z-index: 10;
   touch-action: pan-y;
+  overflow-x: hidden;
+}
+
+/* 地図上の＋／－。ヘッダーと重ならないよう地図の上端に置く */
+#cadMapWrapper > div[style*="top: 70px"] {
+  top: 12px !important;
+  right: max(10px, env(safe-area-inset-right, 0px)) !important;
+}
+
+/* 畝番号タブの2列は、中身の最小幅で右が画面外に出ていた */
+#cadMode4 input[type="number"] {
+  min-width: 0;
+  width: 0;
+  flex: 1 1 auto;
+}
+
+#cadMode4 > div[style*="display:flex"] > div,
+#cadMode4 > div[style*="display:flex"] > label {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  #cadOverlay .cad-panel {
+    max-height: min(70dvh, calc(100dvh - 72px)) !important;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  #cadMode4 > div[style*="gap:8px"] {
+    flex-direction: column;
+  }
+
+  #cadMode4 > div[style*="gap:8px"] > div {
+    width: 100%;
+    flex: none;
+    box-sizing: border-box;
+  }
 }
 
 #cadOverlay input[type="text"],
