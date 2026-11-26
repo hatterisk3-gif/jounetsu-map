@@ -19,6 +19,7 @@
   <link rel="stylesheet" href="location-pin.css?v=1788600000503">
   <link rel="stylesheet" href="map-filter.css?v=1788600000415">
   <link rel="stylesheet" href="cad.css?v=1788600000507">
+  <link rel="stylesheet" href="inventory.css?v=1788600000521">
 </head>
 
 <body>
@@ -824,6 +825,9 @@
       <button type="button" id="btnAdminAllLogs" onclick="openAdminAllLogsModal_()" title="操作・在庫・機械のログ"
         style="background:#ECEFF1; color:#37474F; border:1px solid #90A4AE; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px; cursor:pointer;">📋
         ログ</button>
+      <button type="button" id="btnInventory" onclick="window.openInventoryManager && openInventoryManager()" title="在庫管理（農薬・肥料・資材）"
+        style="background:#E8F5E9; color:#1B5E20; border:1px solid #43A047; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px; cursor:pointer; white-space:nowrap;">📦
+        在庫管理<span class="invm-chip-badge" data-inventory-badge style="display:none;">0</span></button>
       <button type="button" id="btnReleaseNotes" onclick="openReleaseNotesModal_()" title="更新情報"
         style="position:relative; background:#E0F2F1; color:#00695C; border:1px solid #26A69A; font-weight:bold; font-size:11px; padding:8px 12px; border-radius:5px; cursor:pointer;">🆕
         更新情報<span data-release-notes-badge
@@ -997,14 +1001,15 @@
 
   <script src="api-client.js?v=1794881000001" defer></script>
   <script src="supabase-config.js?v=1788600000382" defer></script>
-  <script src="supabase-bridge.js?v=1788600000517" defer></script>
+  <script src="supabase-bridge.js?v=1788600000521" defer></script>
   <script src="location-pin.js?v=1788600000503" defer></script>
   <script src="map-filter.js?v=1788600000503" defer></script>
-  <script src="admin.js?v=1788600000503" defer></script>
+  <script src="admin.js?v=1788600000521" defer></script>
+  <script src="inventory.js?v=1788600000521" defer></script>
   <script src="admin_cost.js?v=1785489000008" defer></script>
   <script src="admin_crop_work.js?v=1787570400000" defer></script>
   <script src="admin_member.js?v=1788600000406" defer></script>
-  <script src="release-notes.js?v=1788600000517" defer></script>
+  <script src="release-notes.js?v=1788600000521" defer></script>
   <script src="tracking.js?v=1788600000503" defer></script>
   <script src="cad.js?v=1788600000507" defer></script>
   <script type="importmap">

@@ -28,6 +28,7 @@
   <link rel="stylesheet" href="worker.css?v=1788600000503">
   <link rel="stylesheet" href="location-pin.css?v=1788600000503">
   <link rel="stylesheet" href="map-filter.css?v=1788600000503">
+  <link rel="stylesheet" href="inventory.css?v=1788600000521">
   <style>
     @keyframes workerBootSpin {
       to {
@@ -778,6 +779,11 @@
         style="color:#E65100; background:#FFF8E1; border:2px solid #FFB300;">
         <span class="worker-top-chip-emoji">📅</span><span class="worker-top-chip-label">予定</span>
       </button>
+      <button type="button" id="btnInventory" class="map-action-btn" onclick="window.openInventoryManager && openInventoryManager()"
+        title="在庫管理（農薬・肥料・資材）" style="color:#1B5E20; background:#E8F5E9; border:2px solid #43A047;">
+        <span class="worker-top-chip-emoji">📦</span><span class="worker-top-chip-label">在庫管理</span><span
+          class="invm-chip-badge" data-inventory-badge style="display:none;">0</span>
+      </button>
     </div>
   </div>
 
@@ -887,12 +893,13 @@
   <script src="weather-agri.js?v=1788600000503"></script>
   <script src="api-client.js?v=1794881000001"></script>
   <script src="supabase-config.js?v=1788600000382"></script>
-  <script src="supabase-bridge.js?v=1788600000517"></script>
+  <script src="supabase-bridge.js?v=1788600000521"></script>
   <script src="location-pin.js?v=1788600000503"></script>
   <script src="map-filter.js?v=1788600000503"></script>
-  <script src="worker.js?v=1788600000515"></script>
+  <script src="worker.js?v=1788600000521"></script>
+  <script src="inventory.js?v=1788600000521"></script>
   <script src="maint-history.js?v=1794695000000"></script>
-  <script src="release-notes.js?v=1788600000517"></script>
+  <script src="release-notes.js?v=1788600000521"></script>
   <script src="tracking.js?v=1788600000503"></script>
   <script>
     if ('serviceWorker' in navigator) {

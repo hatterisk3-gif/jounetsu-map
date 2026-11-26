@@ -819,13 +819,9 @@
 
   <!-- 下部ナビゲーション（PC / モバイル共通） -->
   <div class="mobile-bottom-bar">
-    <button type="button" onclick="openScheduleTable()">
+    <button type="button" onclick="document.getElementById('mobileWorkListMenu').style.display='flex'">
       <div style="font-size:20px;">📋</div>
       <div style="font-weight:bold;">作業一覧</div>
-    </button>
-    <button type="button" onclick="openWorkRecordAnalysisModal()">
-      <div style="font-size:20px;">📊</div>
-      <div style="font-weight:bold;">作業分析</div>
     </button>
     <button type="button" onclick="openSowingProgressModal()">
       <div style="font-size:20px;">🌱</div>
@@ -835,13 +831,23 @@
       <div style="font-size:20px;">📈</div>
       <div style="font-weight:bold;">市況情報</div>
     </button>
+    <button type="button"
+      onclick="window.openCultivationHistoryModal && openCultivationHistoryModal()">
+      <div style="font-size:20px;">📒</div>
+      <div style="font-weight:bold;">栽培歴</div>
+    </button>
+    <button type="button"
+      onclick="window.openCultivationSettingModal && openCultivationSettingModal()">
+      <div style="font-size:20px;">⚙️</div>
+      <div style="font-weight:bold;">栽培設定</div>
+    </button>
+    <button type="button" onclick="openCropCostCalcModal()">
+      <div style="font-size:20px;">💰</div>
+      <div style="font-weight:bold;">原価計算</div>
+    </button>
     <button type="button" onclick="document.getElementById('mobileCultivationMenu').style.display='flex'">
       <div style="font-size:20px;">📅</div>
       <div style="font-weight:bold;">栽培計画</div>
-    </button>
-    <button type="button" onclick="openMobileTrackingMenu()">
-      <div style="font-size:20px;">🏃‍♂️</div>
-      <div style="font-weight:bold;">軌跡表示</div>
     </button>
     <button type="button" id="btnMachineMaintHistory" onclick="openWorkerMachineMaintHistoryModal_()"
       title="機械履歴（整備・点検）">
@@ -1186,15 +1192,26 @@
     </div>
   </div>
 
+  <!-- アクションシート: 作業一覧 -->
+  <div id="mobileWorkListMenu" class="mobile-action-sheet" style="display:none;" onclick="this.style.display='none'">
+    <div class="action-sheet-content" onclick="event.stopPropagation()">
+      <button
+        onclick="document.getElementById('mobileWorkListMenu').style.display='none'; openScheduleTable()">📋
+        作業一覧</button>
+      <button
+        onclick="document.getElementById('mobileWorkListMenu').style.display='none'; openWorkRecordAnalysisModal()">📊
+        作業分析</button>
+      <button
+        onclick="document.getElementById('mobileWorkListMenu').style.display='none'; openMobileTrackingMenu()">🏃‍♂️
+        軌跡表示</button>
+      <button class="cancel-btn"
+        onclick="document.getElementById('mobileWorkListMenu').style.display='none'">キャンセル</button>
+    </div>
+  </div>
+
   <!-- アクションシート: 栽培計画 -->
   <div id="mobileCultivationMenu" class="mobile-action-sheet" style="display:none;" onclick="this.style.display='none'">
     <div class="action-sheet-content" onclick="event.stopPropagation()">
-      <button
-        onclick="document.getElementById('mobileCultivationMenu').style.display='none'; window.openCultivationHistoryModal && openCultivationHistoryModal()">📒
-        栽培歴（定植の登録・次の作業）</button>
-      <button
-        onclick="document.getElementById('mobileCultivationMenu').style.display='none'; window.openCultivationSettingModal && openCultivationSettingModal()">⚙️
-        栽培設定（作業と日数の算出ルール）</button>
       <button
         onclick="openCultivationPlanModal(); document.getElementById('mobileCultivationMenu').style.display='none'">📝
         栽培計画を立てる</button>
@@ -1216,9 +1233,6 @@
       <button
         onclick="showRegisteredCroptypeListModal({ mode: 'search' }); document.getElementById('mobileCultivationMenu').style.display='none'">🔍
         品種検索</button>
-      <button
-        onclick="openCropCostCalcModal(); document.getElementById('mobileCultivationMenu').style.display='none'">💰
-        原価計算</button>
       <button class="cancel-btn"
         onclick="document.getElementById('mobileCultivationMenu').style.display='none'">キャンセル</button>
     </div>
@@ -1293,7 +1307,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000517';
+    const cacheBust = '1788600000521';
     // 豚糞共有：台数＋短いGoogleマップURL＋座標（v1.49）
     // ※ https://maps.google.com/?q=緯度,経度
     // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）

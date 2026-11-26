@@ -350,6 +350,243 @@ ${userQuestion ? `【ユーザーからの気になる点・質問】\n${userQue
   return sanitizePhotoAnalysisResult(parsed, model);
 }
 
+// ---- 在庫管理: バーコードから商品を調べる（Google 検索グラウンディング） ----
+const PRODUCT_IMAGE_TTL_MS = 30 * 60 * 1000;
+const MAX_PRODUCT_IMAGE_BYTES = 6 * 1024 * 1024;
+const PRODUCT_IMAGE_TIMEOUT_MS = 10000;
+
+async function callGeminiRaw(apiKey: string, model: string, payload: Record<string, unknown>) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+    },
+    body: JSON.stringify(payload),
+  });
+  const bodyText = await res.text();
+  if (!res.ok) {
+    const err = new Error(`Gemini API Error: ${res.status} - ${bodyText.slice(0, 500)}`) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
+  return JSON.parse(bodyText);
+}
+
+function parseLooseJsonObject(raw: string): Record<string, unknown> | null {
+  const cleaned = stripJsonFence(raw);
+  const tryParse = (s: string) => {
+    try {
+      const v = JSON.parse(s);
+      return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  };
+  const direct = tryParse(cleaned);
+  if (direct) return direct;
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  return start >= 0 && end > start ? tryParse(cleaned.slice(start, end + 1)) : null;
+}
+
+// 候補画像は検索結果として返した URL だけを取得できるよう署名する（任意 URL の取得を防ぐ）
+async function signProductImage(url: string, exp: number): Promise<string> {
+  const secret = getEnvOrThrow("SUPABASE_SERVICE_ROLE_KEY");
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(`product-image:${secret}`),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${url}|${exp}`));
+  return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function timingSafeEqualStr(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+function isBlockedImageHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (!h || h === "localhost" || /\.(localhost|local|internal|lan)$/.test(h)) return true;
+  if (h.includes(":") || /^\d+$/.test(h)) return true;
+  if (/^(0|10|127)\./.test(h) || /^169\.254\./.test(h) || /^192\.168\./.test(h)) return true;
+  const m172 = h.match(/^172\.(\d+)\./);
+  if (m172 && Number(m172[1]) >= 16 && Number(m172[1]) <= 31) return true;
+  const m100 = h.match(/^100\.(\d+)\./);
+  if (m100 && Number(m100[1]) >= 64 && Number(m100[1]) <= 127) return true;
+  return false;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
+async function fetchImageSafely(rawUrl: string): Promise<{ bytes: Uint8Array; mimeType: string }> {
+  let current = rawUrl;
+  for (let hop = 0; hop < 4; hop++) {
+    const u = new URL(current);
+    if (u.protocol !== "https:" && u.protocol !== "http:") throw new Error("対応していない画像URLです");
+    if (isBlockedImageHost(u.hostname)) throw new Error("この画像URLは取得できません");
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), PRODUCT_IMAGE_TIMEOUT_MS);
+    try {
+      const res = await fetch(u.toString(), {
+        redirect: "manual",
+        signal: ctrl.signal,
+        headers: { Accept: "image/*", "User-Agent": "Mozilla/5.0 (compatible; PassionMap/1.0)" },
+      });
+      if (res.status >= 300 && res.status < 400) {
+        const loc = res.headers.get("location");
+        await res.body?.cancel();
+        if (!loc) throw new Error("画像のリダイレクト先が不明です");
+        current = new URL(loc, u).toString();
+        continue;
+      }
+      if (!res.ok) throw new Error(`画像を取得できませんでした (HTTP ${res.status})`);
+      const mimeType = (res.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+      if (!/^image\/(jpeg|jpg|png|webp|gif)$/.test(mimeType)) {
+        await res.body?.cancel();
+        throw new Error("画像ではないファイルでした");
+      }
+      if (Number(res.headers.get("content-length") || 0) > MAX_PRODUCT_IMAGE_BYTES) {
+        await res.body?.cancel();
+        throw new Error("画像が大きすぎます");
+      }
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      if (bytes.byteLength > MAX_PRODUCT_IMAGE_BYTES) throw new Error("画像が大きすぎます");
+      return { bytes, mimeType: mimeType === "image/jpg" ? "image/jpeg" : mimeType };
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") throw new Error("画像の取得がタイムアウトしました");
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw new Error("画像のリダイレクトが多すぎます");
+}
+
+async function handleLookupProductByBarcode(
+  apiKey: string,
+  model: string,
+  params: Record<string, unknown>,
+) {
+  const barcode = String(params.barcode || "").replace(/[^0-9A-Za-z-]/g, "").slice(0, 64);
+  if (!barcode) throw new Error("バーコードが空です");
+  const hint = String(params.hint || "").replace(/[\r\n]+/g, " ").slice(0, 100);
+  const categories = (Array.isArray(params.categories) ? params.categories : [])
+    .map((c) => String(c || "").replace(/[\r\n]+/g, " ").trim().slice(0, 30))
+    .filter(Boolean)
+    .slice(0, 20);
+
+  const prompt = `
+あなたは日本の農業資材（農薬・肥料・培土・園芸資材・包装資材など）に詳しいアシスタントです。
+Google 検索を使って、次のバーコード（JAN / EAN / UPC など）の商品を調べてください。
+
+バーコード: ${barcode}
+${hint ? `利用者からの補足: ${hint}\n` : ""}
+回答は次の形式の JSON オブジェクトだけを出力してください（説明文・コードブロックは不要）。
+{
+  "found": true または false,
+  "name": "商品名（例: ダコニール1000。メーカー名は含めない）",
+  "maker": "メーカー名（不明なら空文字）",
+  "size": "1個あたりの容量の数値（例: 500。不明なら空文字）",
+  "volUnit": "容量の単位（例: ml, L, g, kg。不明なら空文字）",
+  "category": "${categories.length ? `次の候補から最も近いもの: ${categories.join(" / ")}（どれにも当たらなければ空文字）` : "農薬・肥料・資材など商品の種類"}",
+  "note": "農薬登録番号・有効成分・成分保証値など確認できた補足（80文字以内。なければ空文字）",
+  "confidence": 0〜1 の数値（検索結果でバーコードと商品の対応を確認できた場合だけ 0.7 以上）
+}
+バーコードと商品の対応が確認できない場合は found を false にし、推測で商品名を作らないでください。
+`;
+
+  const basePayload = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
+  };
+  let imageSearch = true;
+  let json: Record<string, any>;
+  try {
+    json = await callGeminiRaw(apiKey, model, {
+      ...basePayload,
+      tools: [{ google_search: { searchTypes: { webSearch: {}, imageSearch: {} } } }],
+    });
+  } catch (err) {
+    // 画像検索に対応していないモデルではウェブ検索だけでやり直す
+    if (Number((err as { status?: number }).status) !== 400) throw err;
+    imageSearch = false;
+    json = await callGeminiRaw(apiKey, model, { ...basePayload, tools: [{ google_search: {} }] });
+  }
+
+  const cand = json?.candidates?.[0] || {};
+  const parts: Array<{ text?: string; thought?: boolean }> = Array.isArray(cand?.content?.parts) ? cand.content.parts : [];
+  const text = parts.filter((p) => p?.text && !p.thought).map((p) => String(p.text)).join("\n");
+  const parsed = parseLooseJsonObject(text) || {};
+
+  const gm = cand.groundingMetadata || {};
+  const chunks: Array<Record<string, any>> = Array.isArray(gm.groundingChunks) ? gm.groundingChunks : [];
+  const sources: Array<{ uri: string; title: string }> = [];
+  const images: Array<{ url: string; sourceUri: string; title: string; domain: string; exp: number; sig: string }> = [];
+  const exp = Date.now() + PRODUCT_IMAGE_TTL_MS;
+  for (const c of chunks) {
+    if (c?.web?.uri && sources.length < 5) {
+      sources.push({ uri: String(c.web.uri), title: String(c.web.title || "").slice(0, 120) });
+    }
+    const im = c?.image;
+    const imageUri = String(im?.imageUri || "");
+    if (/^https?:\/\//i.test(imageUri) && images.length < 6 && !images.some((x) => x.url === imageUri)) {
+      images.push({
+        url: imageUri,
+        sourceUri: String(im?.sourceUri || ""),
+        title: String(im?.title || "").slice(0, 120),
+        domain: String(im?.domain || "").slice(0, 80),
+        exp,
+        sig: await signProductImage(imageUri, exp),
+      });
+    }
+  }
+
+  const name = String(parsed.name || "").replace(/[\r\n]+/g, " ").trim().slice(0, 120);
+  const found = parsed.found !== false && !!name;
+  const category = String(parsed.category || "").trim();
+  return {
+    barcode,
+    found,
+    name: found ? name : "",
+    maker: found ? String(parsed.maker || "").trim().slice(0, 60) : "",
+    size: found ? String(parsed.size ?? "").trim().slice(0, 20) : "",
+    volUnit: found ? String(parsed.volUnit || "").trim().slice(0, 20) : "",
+    category: found && (!categories.length || categories.includes(category)) ? category : "",
+    note: found ? String(parsed.note || "").replace(/[\r\n]+/g, " ").trim().slice(0, 120) : "",
+    confidence: Math.max(0, Math.min(1, Number(parsed.confidence) || 0)),
+    sources,
+    images,
+    searchQueries: (Array.isArray(gm.webSearchQueries) ? gm.webSearchQueries : []).map(String).slice(0, 3),
+    imageSearch,
+    model,
+  };
+}
+
+async function handleFetchProductImage(params: Record<string, unknown>) {
+  const url = String(params.url || "");
+  const exp = Number(params.exp || 0);
+  const sig = String(params.sig || "");
+  if (!url || !exp || !sig) throw new Error("候補画像の指定が不正です");
+  if (Date.now() > exp) throw new Error("候補画像の有効期限が切れました。もう一度検索してください。");
+  if (!timingSafeEqualStr(await signProductImage(url, exp), sig)) throw new Error("候補画像の署名が一致しません");
+  const { bytes, mimeType } = await fetchImageSafely(url);
+  return { dataUrl: `data:${mimeType};base64,${bytesToBase64(bytes)}`, mimeType, size: bytes.byteLength };
+}
+
 Deno.serve(async (req: Request) => {
   const preflight = handleCorsPreflight(req);
   if (preflight) return preflight;
@@ -399,6 +636,12 @@ Deno.serve(async (req: Request) => {
         break;
       case "analyzeFieldPhotosWithGemini":
         data = await handleAnalyzeFieldPhotosWithGemini(apiKey, model, params);
+        break;
+      case "lookupProductByBarcode":
+        data = await handleLookupProductByBarcode(apiKey, model, params);
+        break;
+      case "fetchProductImage":
+        data = await handleFetchProductImage(params);
         break;
       default:
         return jsonResponse(

@@ -2396,6 +2396,7 @@ function renderInitData(data, opts) {
         pdlWorkMaster = data.pdl.workMaster || [];
         pdlTools = data.pdl.tools || [];
         pdlMaterials = data.pdl.materials || [];
+        if (window.InventoryUI) window.InventoryUI.onInitData(pdlMaterials);
         pdlPesticides = keepIfLight_(data.pdl.pesticides, pdlPesticides);
         pdlFertilizers = keepIfLight_(data.pdl.fertilizers, pdlFertilizers);
         pdlCropChemPlans = keepIfLight_(data.pdl.cropChemPlans, pdlCropChemPlans);

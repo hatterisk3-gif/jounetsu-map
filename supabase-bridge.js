@@ -1976,24 +1976,7 @@
   }
 
   function mapMaterialRowToObj_(r) {
-    var meta = (r && r.meta && typeof r.meta === 'object') ? r.meta : {};
-    var stockVal = 0;
-    if (meta.stock != null && meta.stock !== '') {
-      stockVal = Number(meta.stock) || 0;
-    } else if (r && r.stock_status !== '' && r.stock_status != null && !isNaN(Number(r.stock_status))) {
-      stockVal = Number(r.stock_status);
-    }
-    return {
-      id: String((r && (r.legacy_id || r.id)) || '').trim(),
-      name: String((r && r.name) || '').trim(),
-      workCategory: String((r && r.work_category) || '').trim(),
-      size: String((r && r.capacity_size) || ''),
-      volUnit: String((r && r.capacity_unit) || ''),
-      stockUnit: String((r && r.inventory_unit) || ''),
-      signName: String((r && r.sign_name) || ''),
-      signId: String((r && r.sign_id) || ''),
-      stock: stockVal
-    };
+    return invRowToItem_(r);
   }
 
   function mapInspectionMasterRow_(m) {
@@ -10296,22 +10279,9 @@
     });
 
     async function recalcInventoryStock_(orgId, materialId) {
-      var logs = await restSelectAll_('inventory_logs', 'org_id=eq.' + encodeURIComponent(orgId) + '&item_legacy_id=eq.' + encodeURIComponent(materialId));
-      var stock = 0;
-      logs.forEach(function (l) {
-        var amt = parseInt(l.qty_delta, 10) || 0;
-        if (l.operation === '入庫' || l.operation === '初期入庫') stock += amt;
-        else if (l.operation === '出庫') stock -= amt;
-      });
-      var mats = await restFetch('rest/v1/materials?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(materialId) + '&limit=1');
-      if (Array.isArray(mats) && mats.length) {
-        var nextMeta = Object.assign({}, mats[0].meta || {}, { stock: stock });
-        await restFetch('rest/v1/materials?id=eq.' + encodeURIComponent(mats[0].id), {
-          method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-          body: JSON.stringify({ stock_status: String(stock), meta: nextMeta })
-        });
-      }
-      return stock;
+      var rc = await invRecalcStock_(orgId, materialId);
+      if (rc.row) invEmitChanged_({ item: invRowToItem_(rc.row), source: 'legacy' });
+      return rc.stock;
     }
 
     registerAction('updateInventory', async function (params) {
@@ -10328,9 +10298,15 @@
           payload: { changedAtStr: jstDateTimeSlash_() }
         })
       });
-      var stock = await recalcInventoryStock_(orgId, String(params.materialId || ''));
+      var rc = await invRecalcStock_(orgId, String(params.materialId || ''));
       await writeLogP4_(orgId, params.userName, '在庫' + actionType, (params.materialName || '') + ' (' + Math.abs(diff) + ')', '対象: ' + (params.signName || ''));
-      return stock;
+      if (rc.row) {
+        // 旧画面の操作は待たせない（自動発注の結果は passionmap:inventory-changed で通知）
+        invAfterStockChange_(orgId, invRowToItem_(rc.row), {
+          userName: params.userName, allowAutoOrder: diff < 0, source: 'legacy'
+        }).catch(function () {});
+      }
+      return rc.stock;
     });
 
     registerAction('getInventoryHistory', async function (params) {
@@ -10343,7 +10319,7 @@
       );
       return rows.map(function (r) {
         var p = (r.payload && typeof r.payload === 'object') ? r.payload : {};
-        return { rowIndex: r.id, date: p.changedAtStr || r.changed_at || '', user: r.recorder_name || '', amount: r.qty_delta, action: r.operation || '' };
+        return { rowIndex: r.id, date: p.changedAtStr || r.changed_at || '', user: r.recorder_name || '', amount: r.qty_delta, action: r.operation || '', status: p.status || '' };
       });
     });
 
@@ -15020,6 +14996,782 @@
   }
 
   registerCultivationHandlers_();
+
+  // ========================================================================
+  // 在庫管理（📦 在庫ボタン: inventory.js）
+  //   資材: materials.meta に barcode / category / minStock / orderQty / orderIntervalDays /
+  //         supplierName / supplierEmail / note と、再計算キャッシュ stock / lastOrderAt / lastRestockAt
+  //   履歴: inventory_logs（入庫=補充・出庫=使う・棚卸=数える（qty_delta は数えた個数）・発注=発注メール）
+  //   設定: org_settings.inventory_settings（カテゴリ・仕入れ先・発注メールの差出人と本文）
+  //   メール送信は Edge Function order-mailer。最低在庫割れ・入荷待ち・発注間隔はサーバー側でも再判定する。
+  // ========================================================================
+  var INV_SETTINGS_KEY_ = 'inventory_settings';
+  var INV_DEFAULT_CATEGORIES_ = ['農薬', '肥料', '資材'];
+  var INV_DEFAULT_ORDER_MESSAGE_ = 'いつもお世話になっております。\n下記の資材の発注をお願いいたします。';
+  var INV_OP_BY_KEY_ = { add: '入庫', use: '出庫', count: '棚卸' };
+  var INV_OP_LABEL_ = { '入庫': '補充', '初期入庫': '初期在庫', '出庫': '使う', '棚卸': '数える', '発注': '発注' };
+  var INV_DAY_MS_ = 86400000;
+
+  function invNum_(v) {
+    if (v === '' || v == null) return null;
+    var s = String(v).replace(/[０-９．]/g, function (c) {
+      return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+    }).replace(/[,，\s]/g, '');
+    if (!s) return null;
+    var n = Number(s);
+    return isFinite(n) ? n : null;
+  }
+
+  function invRound_(n) {
+    return Math.round((Number(n) || 0) * 1000) / 1000;
+  }
+
+  function invIsEmail_(s) {
+    return /^[^\s@<>(),;:"]+@[^\s@<>(),;:"]+\.[^\s@<>(),;:"]+$/.test(String(s || '').trim());
+  }
+
+  function invNormalizeBarcode_(s) {
+    return String(s || '').replace(/[０-９Ａ-Ｚａ-ｚ]/g, function (c) {
+      return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+    }).replace(/\s+/g, '').slice(0, 64);
+  }
+
+  function invJstStamp_() {
+    return formatJstNowParts_().fullSlash + ':00';
+  }
+
+  // PostgREST の timestamptz（マイクロ秒付き）も Safari で解釈できるようにする
+  function invParseTs_(s) {
+    var str = String(s || '').trim();
+    if (!str) return 0;
+    var t = Date.parse(str);
+    if (!isNaN(t)) return t;
+    t = Date.parse(str.replace(' ', 'T').replace(/(\.\d{3})\d+/, '$1'));
+    return isNaN(t) ? 0 : t;
+  }
+
+  function invEmitChanged_(detail) {
+    try {
+      if (typeof global.dispatchEvent === 'function' && typeof global.CustomEvent === 'function') {
+        global.dispatchEvent(new global.CustomEvent('passionmap:inventory-changed', { detail: detail || {} }));
+      }
+    } catch (e) {}
+  }
+
+  function invPhotoUrls_(r) {
+    var meta = (r && r.meta && typeof r.meta === 'object') ? r.meta : {};
+    var out = [];
+    var push = function (u) {
+      var s = String((u && typeof u === 'object') ? (u.url || u.publicUrl || '') : (u || '')).trim();
+      if (/^https?:\/\//i.test(s) && out.indexOf(s) < 0) out.push(s);
+    };
+    (Array.isArray(r && r.photos) ? r.photos : []).forEach(push);
+    push(meta.photo1);
+    push(meta.photo2);
+    return out.slice(0, 3);
+  }
+
+  function invRowToItem_(r) {
+    var meta = (r && r.meta && typeof r.meta === 'object') ? r.meta : {};
+    var stockVal = 0;
+    if (meta.stock != null && meta.stock !== '') {
+      stockVal = Number(meta.stock) || 0;
+    } else if (r && r.stock_status !== '' && r.stock_status != null && !isNaN(Number(r.stock_status))) {
+      stockVal = Number(r.stock_status);
+    }
+    var photos = invPhotoUrls_(r);
+    return {
+      id: String((r && (r.legacy_id || r.id)) || '').trim(),
+      name: String((r && r.name) || '').trim(),
+      workCategory: String((r && r.work_category) || '').trim(),
+      size: String((r && r.capacity_size) || ''),
+      volUnit: String((r && r.capacity_unit) || ''),
+      stockUnit: String((r && r.inventory_unit) || ''),
+      signName: String((r && r.sign_name) || ''),
+      signId: String((r && r.sign_id) || ''),
+      stock: stockVal,
+      barcode: String(meta.barcode || ''),
+      category: String(meta.category || ''),
+      minStock: invNum_(meta.minStock),
+      orderQty: invNum_(meta.orderQty),
+      orderIntervalDays: invNum_(meta.orderIntervalDays),
+      supplierName: String(meta.supplierName || ''),
+      supplierEmail: String(meta.supplierEmail || ''),
+      note: String(meta.note || ''),
+      photos: photos,
+      photo: photos[0] || '',
+      lastOrderAt: String(meta.lastOrderAt || ''),
+      lastOrderQty: invNum_(meta.lastOrderQty),
+      lastRestockAt: String(meta.lastRestockAt || ''),
+      updatedAt: String((r && r.updated_at) || '')
+    };
+  }
+
+  function invIsLowItem_(item) {
+    var min = Number(item && item.minStock);
+    return isFinite(min) && min > 0 && (Number(item.stock) || 0) < min;
+  }
+
+  // 発注後に補充（または最低在庫以上への棚卸）が記録されるまでは「入荷待ち」。
+  // 発注間隔は入荷後の再発注までの最短日数。
+  function invOrderTiming_(item, nowMs) {
+    var lastOrderMs = invParseTs_(item && item.lastOrderAt);
+    var lastRestockMs = invParseTs_(item && item.lastRestockAt);
+    var days = Number(item && item.orderIntervalDays) || 0;
+    var nextMs = (lastOrderMs && days > 0) ? lastOrderMs + days * INV_DAY_MS_ : 0;
+    return {
+      pending: lastOrderMs > 0 && lastOrderMs > lastRestockMs,
+      waitInterval: !!(nextMs && nowMs < nextMs),
+      nextAllowedAt: nextMs ? new Date(nextMs).toISOString() : ''
+    };
+  }
+
+  function invSenderReady_(settings) {
+    var o = (settings && settings.order) || {};
+    return !!(String(o.senderName || '').trim() && invIsEmail_(o.senderEmail));
+  }
+
+  function invAutoOrderGate_(item, settings, nowMs) {
+    var o = (settings && settings.order) || {};
+    if (!invIsLowItem_(item)) return { ok: false, reason: 'not_low' };
+    if (!o.autoSend) return { ok: false, reason: 'auto_off', message: '自動発注はオフです' };
+    if (!invIsEmail_(item.supplierEmail)) return { ok: false, reason: 'no_supplier', message: '仕入れ先のメールアドレスが未登録です' };
+    if (!(Number(item.orderQty) > 0)) return { ok: false, reason: 'no_qty', message: '発注個数が未設定です' };
+    if (!invSenderReady_(settings)) return { ok: false, reason: 'no_sender', message: '発注メールの差出人（名前・メールアドレス）が未設定です' };
+    var t = invOrderTiming_(item, nowMs);
+    if (t.pending) return { ok: false, reason: 'pending', message: '発注済み（入荷待ち）のため自動発注しません' };
+    if (t.waitInterval) return { ok: false, reason: 'interval', message: '発注間隔（' + item.orderIntervalDays + '日）内のため自動発注しません' };
+    return { ok: true };
+  }
+
+  function invNormalizeSettings_(raw) {
+    var src = (raw && typeof raw === 'object') ? raw : {};
+    var order = (src.order && typeof src.order === 'object') ? src.order : {};
+    var categories = [];
+    (Array.isArray(src.categories) ? src.categories : INV_DEFAULT_CATEGORIES_).forEach(function (c) {
+      var s = String(c == null ? '' : c).trim().slice(0, 30);
+      if (s && categories.indexOf(s) < 0) categories.push(s);
+    });
+    var suppliers = [];
+    var seen = {};
+    (Array.isArray(src.suppliers) ? src.suppliers : []).forEach(function (s) {
+      if (!s || typeof s !== 'object') return;
+      var name = String(s.name || '').trim().slice(0, 60);
+      var email = String(s.email || '').trim().slice(0, 120);
+      var key = (name || email).toLowerCase();
+      if (!key || seen[key]) return;
+      seen[key] = true;
+      suppliers.push({ name: name, email: email });
+    });
+    return {
+      categories: categories,
+      suppliers: suppliers,
+      order: {
+        autoSend: order.autoSend !== false,
+        ccSelf: order.ccSelf !== false,
+        senderName: String(order.senderName || '').trim().slice(0, 60),
+        senderEmail: String(order.senderEmail || '').trim().slice(0, 120),
+        companyName: String(order.companyName || '').trim().slice(0, 80),
+        message: (order.message == null ? INV_DEFAULT_ORDER_MESSAGE_ : String(order.message)).slice(0, 2000)
+      },
+      updatedAt: String(src.updatedAt || ''),
+      updatedBy: String(src.updatedBy || '')
+    };
+  }
+
+  async function invGetSettings_(orgId) {
+    var rows = await restFetch('rest/v1/org_settings?org_id=eq.' + encodeURIComponent(orgId) +
+      '&setting_key=eq.' + encodeURIComponent(INV_SETTINGS_KEY_) + '&select=value&limit=1');
+    return invNormalizeSettings_(Array.isArray(rows) && rows.length ? rows[0].value : null);
+  }
+
+  async function invPutSettings_(orgId, settings, userName) {
+    var value = invNormalizeSettings_(settings);
+    value.updatedAt = invJstStamp_();
+    value.updatedBy = String(userName || '');
+    await restFetch('rest/v1/org_settings?on_conflict=org_id,setting_key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ org_id: orgId, setting_key: INV_SETTINGS_KEY_, value: value, updated_by: String(userName || '') })
+    });
+    return value;
+  }
+
+  async function invLoadMaterialRow_(orgId, id) {
+    var key = String(id || '').trim();
+    if (!key) return null;
+    var rows = await restFetch('rest/v1/materials?org_id=eq.' + encodeURIComponent(orgId) + '&legacy_id=eq.' + encodeURIComponent(key) + '&limit=1');
+    if (Array.isArray(rows) && rows.length) return rows[0];
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)) {
+      rows = await restFetch('rest/v1/materials?org_id=eq.' + encodeURIComponent(orgId) + '&id=eq.' + encodeURIComponent(key) + '&limit=1');
+      if (Array.isArray(rows) && rows.length) return rows[0];
+    }
+    return null;
+  }
+
+  function invLoadLogs_(orgId, itemKey) {
+    return restSelectAll_('inventory_logs', 'org_id=eq.' + encodeURIComponent(orgId) +
+      '&item_legacy_id=eq.' + encodeURIComponent(String(itemKey || '')) + '&order=changed_at.asc,created_at.asc,id.asc');
+  }
+
+  // order-mailer の computeFromLogs と同じ規則を保つこと
+  function invComputeFromLogs_(logs, minStock, withRows) {
+    var sorted = (Array.isArray(logs) ? logs : []).slice().sort(function (a, b) {
+      var ta = invParseTs_(a.changed_at);
+      var tb = invParseTs_(b.changed_at);
+      if (ta !== tb) return ta - tb;
+      return String(a.created_at || '').localeCompare(String(b.created_at || ''));
+    });
+    var min = Number(minStock) || 0;
+    var stock = 0;
+    var lastOrderAt = '';
+    var lastOrderQty = null;
+    var lastRestockAt = '';
+    var rows = [];
+    sorted.forEach(function (l) {
+      var amt = Number(l.qty_delta) || 0;
+      var op = String(l.operation || '');
+      var at = String(l.changed_at || l.created_at || '');
+      var p = (l.payload && typeof l.payload === 'object') ? l.payload : {};
+      var before = stock;
+      if (op === '入庫' || op === '初期入庫') {
+        stock += amt;
+        if (amt > 0) lastRestockAt = at;
+      } else if (op === '出庫') {
+        stock -= amt;
+      } else if (op === '棚卸') {
+        if (amt > stock && (min <= 0 || amt >= min)) lastRestockAt = at;
+        stock = amt;
+      } else if (op === '発注') {
+        if (!p.status || p.status === 'sent') {
+          lastOrderAt = at;
+          lastOrderQty = amt;
+        }
+      }
+      stock = invRound_(stock);
+      if (withRows) rows.push({ log: l, before: invRound_(before), after: stock });
+    });
+    return { stock: stock, lastOrderAt: lastOrderAt, lastOrderQty: lastOrderQty, lastRestockAt: lastRestockAt, rows: rows };
+  }
+
+  async function invRecalcStock_(orgId, materialId) {
+    var row = await invLoadMaterialRow_(orgId, materialId);
+    var key = row ? String(row.legacy_id || row.id) : String(materialId || '').trim();
+    var logs = await invLoadLogs_(orgId, key);
+    var calc = invComputeFromLogs_(logs, row ? invRowToItem_(row).minStock : null);
+    if (row) {
+      var nextMeta = Object.assign({}, row.meta || {}, {
+        stock: calc.stock,
+        lastOrderAt: calc.lastOrderAt,
+        lastOrderQty: calc.lastOrderQty,
+        lastRestockAt: calc.lastRestockAt
+      });
+      await restFetch('rest/v1/materials?id=eq.' + encodeURIComponent(row.id), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ stock_status: String(calc.stock), meta: nextMeta })
+      });
+      row.meta = nextMeta;
+      row.stock_status = String(calc.stock);
+    }
+    return { stock: calc.stock, row: row, calc: calc };
+  }
+
+  async function invInsertLog_(orgId, row, op, qty, userName, payloadExtra) {
+    // changed_at は DB の now()（端末の時計ずれで発注・補充の前後関係が狂わないように）
+    await restFetch('rest/v1/inventory_logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        org_id: orgId,
+        recorder_name: String(userName || ''),
+        item_legacy_id: String(row.legacy_id || row.id),
+        item_name: String(row.name || ''),
+        qty_delta: invRound_(qty),
+        operation: op,
+        sign_id: String(row.sign_id || ''),
+        sign_name: String(row.sign_name || ''),
+        payload: Object.assign({ changedAtStr: invJstStamp_(), label: INV_OP_LABEL_[op] || op }, payloadExtra || {})
+      })
+    });
+  }
+
+  async function invWriteAudit_(orgId, actor, action, target, detail) {
+    try {
+      await restFetch('rest/v1/audit_logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          org_id: orgId,
+          actor_name: String(actor || 'システム'),
+          action: String(action || ''),
+          target: String(target || ''),
+          detail: String(detail || '')
+        })
+      });
+    } catch (e) {}
+  }
+
+  async function invUploadPhoto_(p, legacyId) {
+    if (!p) return '';
+    var s = String((typeof p === 'object') ? (p.url || p.dataUrl || '') : p).trim();
+    if (/^https?:\/\//i.test(s)) return s;
+    if (s.indexOf('data:image/') !== 0) return '';
+    var up = await uploadToR2(s, {
+      category: 'material_photos',
+      linkedTable: 'materials',
+      linkedRecordId: legacyId,
+      maxSide: 1280
+    });
+    return (up && up.publicUrl) || '';
+  }
+
+  async function invIsAdminSession_(orgId, userName) {
+    var isAdminRole = function (m) {
+      var r = String((m && m.role) || '').toLowerCase();
+      return r === 'admin' || r === 'owner';
+    };
+    try {
+      var parts = String(getAccessToken() || '').split('.');
+      if (parts.length === 3 && typeof global.atob === 'function') {
+        var b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        while (b64.length % 4) b64 += '=';
+        var uid = String((JSON.parse(global.atob(b64)) || {}).sub || '');
+        if (uid) {
+          var mine = await restFetch('rest/v1/org_members?org_id=eq.' + encodeURIComponent(orgId) +
+            '&auth_user_id=eq.' + encodeURIComponent(uid) + '&is_active=eq.true&select=role&limit=1');
+          if (Array.isArray(mine) && mine.length) return isAdminRole(mine[0]);
+        }
+      }
+    } catch (e) {}
+    var uname = String(userName || '').trim();
+    if (!uname) return false;
+    var uk = uname.replace(/\s+/g, '');
+    var members = await restSelectAll_('org_members', 'org_id=eq.' + encodeURIComponent(orgId) + '&is_active=eq.true&select=display_name,login_id,role');
+    return members.some(function (m) {
+      var dn = String(m.display_name || '').trim();
+      var lid = String(m.login_id || '').trim();
+      if (dn !== uname && lid !== uname && dn.replace(/\s+/g, '') !== uk) return false;
+      return isAdminRole(m);
+    });
+  }
+
+  async function invPatchMetaWhere_(orgId, metaKey, metaValue, patchFn, exceptRowId) {
+    var rows = await restSelectAll_('materials', 'org_id=eq.' + encodeURIComponent(orgId) +
+      '&meta->>' + metaKey + '=eq.' + encodeURIComponent(metaValue) + '&select=id,meta');
+    var n = 0;
+    for (var i = 0; i < rows.length; i++) {
+      if (exceptRowId && rows[i].id === exceptRowId) continue;
+      var meta = (rows[i].meta && typeof rows[i].meta === 'object') ? rows[i].meta : {};
+      var next = patchFn(Object.assign({}, meta));
+      if (!next) continue;
+      await restFetch('rest/v1/materials?id=eq.' + encodeURIComponent(rows[i].id), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ meta: next })
+      });
+      n++;
+    }
+    return n;
+  }
+
+  function invPropagateSupplierEmail_(orgId, supplierName, email, exceptRowId) {
+    if (!String(supplierName || '').trim()) return Promise.resolve(0);
+    return invPatchMetaWhere_(orgId, 'supplierName', String(supplierName).trim(), function (meta) {
+      if (String(meta.supplierEmail || '') === email) return null;
+      meta.supplierEmail = email;
+      return meta;
+    }, exceptRowId);
+  }
+
+  // 補充・使う・数えるの記録。履歴がまだ無い資材は、現在の個数を「数える」の起点として残してから記録する。
+  async function invApplyMove_(orgId, row, op, qty, userName, extra) {
+    extra = extra || {};
+    var key = String(row.legacy_id || row.id);
+    var cached = invRowToItem_(row);
+    var logs = await invLoadLogs_(orgId, key);
+    var before = logs.length ? invComputeFromLogs_(logs, cached.minStock).stock : invRound_(cached.stock);
+    if (!logs.length && before !== 0 && op !== '棚卸') {
+      await invInsertLog_(orgId, row, '棚卸', before, userName, { note: '在庫管理の開始時点の個数', baseline: true });
+    }
+    await invInsertLog_(orgId, row, op, qty, userName, {
+      before: before,
+      note: String(extra.note || '').trim().slice(0, 200)
+    });
+    var rc = await invRecalcStock_(orgId, key);
+    return { before: before, item: invRowToItem_(rc.row || row) };
+  }
+
+  async function invAfterStockChange_(orgId, item, opts) {
+    opts = opts || {};
+    var out = { item: item, alert: null, order: null };
+    if (invIsLowItem_(item)) {
+      out.alert = { stock: item.stock, minStock: item.minStock };
+      if (opts.allowAutoOrder) {
+        var settings = opts.settings || await invGetSettings_(orgId);
+        var gate = invAutoOrderGate_(item, settings, Date.now());
+        if (gate.ok) {
+          try {
+            var sent = await callEdgeFunction_('order-mailer', {
+              action: 'sendOrder',
+              params: { orgId: orgId, materialId: item.id, trigger: 'auto', userName: String(opts.userName || '') }
+            });
+            out.order = Object.assign({ attempted: true }, sent || {});
+            if (sent && sent.sent) {
+              var rc = await invRecalcStock_(orgId, item.id);
+              if (rc.row) out.item = invRowToItem_(rc.row);
+            }
+          } catch (e) {
+            out.order = { attempted: true, sent: false, reason: 'error', message: String((e && e.message) || e) };
+          }
+        } else {
+          out.order = { attempted: false, sent: false, reason: gate.reason, message: gate.message || '' };
+        }
+      }
+    }
+    invEmitChanged_({ item: out.item, alert: out.alert, order: out.order, source: opts.source || '' });
+    return out;
+  }
+
+  function registerInventoryHandlers_() {
+    registerAction('inventory_getAll', async function () {
+      var orgId = await resolveCurrentOrgId_();
+      var fetched = await Promise.all([
+        restSelectAll_('materials', 'org_id=eq.' + encodeURIComponent(orgId) + '&order=created_at.asc,id.asc'),
+        invGetSettings_(orgId)
+      ]);
+      return {
+        items: fetched[0].map(invRowToItem_).filter(function (it) { return it.id && it.name; }),
+        settings: fetched[1]
+      };
+    });
+
+    registerAction('inventory_saveItem', async function (params) {
+      params = params || {};
+      var src = (params.item && typeof params.item === 'object') ? params.item : {};
+      var userName = String(params.userName || '').trim();
+      var name = String(src.name || '').trim().slice(0, 120);
+      if (!name) throw new Error('資材名を入力してください');
+      var supplierName = String(src.supplierName || '').trim().slice(0, 60);
+      var supplierEmail = String(src.supplierEmail || '').trim().slice(0, 120);
+      if (supplierEmail && !invIsEmail_(supplierEmail)) throw new Error('仕入れ先のメールアドレスの形式が正しくありません');
+      var minStock = invNum_(src.minStock);
+      var orderQty = invNum_(src.orderQty);
+      var intervalDays = invNum_(src.orderIntervalDays);
+      var stockIn = invNum_(src.stock);
+      [minStock, orderQty, intervalDays, stockIn].forEach(function (n) {
+        if (n != null && n < 0) throw new Error('個数・日数にマイナスは入力できません');
+      });
+
+      var orgId = await resolveCurrentOrgId_();
+      var existing = src.id ? await invLoadMaterialRow_(orgId, String(src.id)) : null;
+      if (src.id && !existing) throw new Error('対象の資材が見つかりません（削除された可能性があります）');
+      var legacyId = existing ? String(existing.legacy_id || existing.id) : ('MAT-' + genUuid_().slice(0, 8));
+
+      var photoUrls = existing ? invPhotoUrls_(existing) : [];
+      if (Array.isArray(params.photos)) {
+        photoUrls = [];
+        var photoIn = params.photos.slice(0, 3);
+        for (var i = 0; i < photoIn.length; i++) {
+          var url = await invUploadPhoto_(photoIn[i], legacyId);
+          if (url && photoUrls.indexOf(url) < 0) photoUrls.push(url);
+        }
+      }
+
+      var baseMeta = (existing && existing.meta && typeof existing.meta === 'object') ? existing.meta : { stock: 0 };
+      var meta = Object.assign({}, baseMeta, {
+        barcode: invNormalizeBarcode_(src.barcode),
+        category: String(src.category || '').trim().slice(0, 30),
+        minStock: minStock,
+        orderQty: orderQty,
+        orderIntervalDays: intervalDays,
+        supplierName: supplierName,
+        supplierEmail: supplierEmail,
+        note: String(src.note || '').slice(0, 500),
+        photo1: photoUrls[0] || '',
+        photo2: photoUrls[1] || ''
+      });
+      var body = {
+        name: name,
+        capacity_size: String(src.size == null ? '' : src.size).trim().slice(0, 30),
+        capacity_unit: String(src.volUnit || '').trim().slice(0, 20),
+        inventory_unit: String(src.stockUnit || '').trim().slice(0, 20),
+        photos: photoUrls,
+        meta: meta
+      };
+      if (!existing || src.signName !== undefined) {
+        body.sign_name = String(src.signName || '').trim();
+        body.sign_id = String(src.signId || '').trim();
+      }
+      var jsonHeaders = { 'Content-Type': 'application/json', Prefer: 'return=minimal' };
+      if (existing) {
+        await restFetch('rest/v1/materials?id=eq.' + encodeURIComponent(existing.id), {
+          method: 'PATCH', headers: jsonHeaders, body: JSON.stringify(body)
+        });
+      } else {
+        await restFetch('rest/v1/materials', {
+          method: 'POST', headers: jsonHeaders,
+          body: JSON.stringify(Object.assign({
+            org_id: orgId, legacy_id: legacyId, work_category: '', stock_status: '0', registered_by: userName
+          }, body))
+        });
+      }
+      var row = await invLoadMaterialRow_(orgId, legacyId);
+      if (!row) throw new Error('資材の保存に失敗しました');
+      var item = invRowToItem_(row);
+      var stockReduced = false;
+      if (!existing && stockIn != null && stockIn > 0) {
+        await invInsertLog_(orgId, row, '初期入庫', stockIn, userName, {});
+        var rcNew = await invRecalcStock_(orgId, legacyId);
+        if (rcNew.row) item = invRowToItem_(rcNew.row);
+      } else if (existing && stockIn != null && invRound_(stockIn) !== invRound_(item.stock)) {
+        var moved = await invApplyMove_(orgId, row, '棚卸', stockIn, userName, { note: '編集画面で個数を修正' });
+        stockReduced = moved.item.stock < moved.before;
+        item = moved.item;
+      }
+
+      var settings = await invGetSettings_(orgId);
+      var settingsChanged = false;
+      var propagate = false;
+      if (meta.category && settings.categories.indexOf(meta.category) < 0) {
+        settings.categories.push(meta.category);
+        settingsChanged = true;
+      }
+      var supKey = (supplierName || supplierEmail).toLowerCase();
+      if (supKey) {
+        var sup = settings.suppliers.filter(function (s) { return (s.name || s.email).toLowerCase() === supKey; })[0];
+        if (!sup) {
+          settings.suppliers.push({ name: supplierName, email: supplierEmail });
+          settingsChanged = true;
+        } else if (supplierEmail && sup.email !== supplierEmail) {
+          sup.email = supplierEmail;
+          settingsChanged = true;
+          propagate = !!supplierName;
+        }
+      }
+      if (settingsChanged) settings = await invPutSettings_(orgId, settings, userName);
+      if (propagate) await invPropagateSupplierEmail_(orgId, supplierName, supplierEmail, row.id);
+
+      await invWriteAudit_(orgId, userName, existing ? '在庫資材編集' : '在庫資材登録', name,
+        [meta.category, meta.barcode ? ('バーコード ' + meta.barcode) : ''].filter(Boolean).join(' / '));
+      var after = await invAfterStockChange_(orgId, item, {
+        userName: userName, allowAutoOrder: stockReduced, settings: settings, source: 'saveItem'
+      });
+      return { item: after.item, settings: settings, alert: after.alert, order: after.order, created: !existing };
+    });
+
+    registerAction('inventory_move', async function (params) {
+      params = params || {};
+      var op = INV_OP_BY_KEY_[String(params.op || '')] || String(params.op || '');
+      if (['入庫', '出庫', '棚卸'].indexOf(op) < 0) throw new Error('補充・使う・数えるのいずれかを選んでください');
+      var qty = invNum_(params.qty);
+      if (qty == null || qty < 0 || (op !== '棚卸' && qty === 0)) throw new Error('個数を正しく入力してください');
+      var userName = String(params.userName || '').trim();
+      var orgId = await resolveCurrentOrgId_();
+      var row = await invLoadMaterialRow_(orgId, String(params.id || ''));
+      if (!row) throw new Error('対象の資材が見つかりません');
+      var moved = await invApplyMove_(orgId, row, op, qty, userName, { note: params.note });
+      await invWriteAudit_(orgId, userName, '在庫' + INV_OP_LABEL_[op], row.name + ' (' + invRound_(qty) + ')',
+        moved.before + ' → ' + moved.item.stock + (row.sign_name ? (' / 場所: ' + row.sign_name) : ''));
+      // 補充直後（分納など）は自動発注しない
+      var after = await invAfterStockChange_(orgId, moved.item, {
+        userName: userName, allowAutoOrder: op !== '入庫', source: 'inventory_move'
+      });
+      return {
+        item: after.item, op: INV_OP_LABEL_[op], before: moved.before, after: moved.item.stock,
+        alert: after.alert, order: after.order
+      };
+    });
+
+    registerAction('inventory_getHistory', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var row = await invLoadMaterialRow_(orgId, String(params.id || ''));
+      var key = row ? String(row.legacy_id || row.id) : String(params.id || '').trim();
+      if (!key) return { logs: [] };
+      var logs = await invLoadLogs_(orgId, key);
+      var calc = invComputeFromLogs_(logs, row ? invRowToItem_(row).minStock : null, true);
+      var out = calc.rows.map(function (x) {
+        var l = x.log;
+        var p = (l.payload && typeof l.payload === 'object') ? l.payload : {};
+        return {
+          id: String(l.id || ''),
+          at: String(l.changed_at || ''),
+          atStr: String(p.changedAtStr || ''),
+          user: String(l.recorder_name || ''),
+          op: String(l.operation || ''),
+          label: INV_OP_LABEL_[l.operation] || String(l.operation || ''),
+          qty: Number(l.qty_delta) || 0,
+          before: x.before,
+          after: x.after,
+          note: String(p.note || ''),
+          status: String(p.status || ''),
+          trigger: String(p.trigger || ''),
+          to: String(p.to || ''),
+          error: String(p.error || '')
+        };
+      }).reverse();
+      var limit = Number(params.limit) || 0;
+      return { logs: limit > 0 ? out.slice(0, limit) : out };
+    });
+
+    registerAction('inventory_deleteLog', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var row = await invLoadMaterialRow_(orgId, String(params.id || ''));
+      if (!row) throw new Error('対象の資材が見つかりません');
+      var key = String(row.legacy_id || row.id);
+      var logId = String(params.logId || '').trim();
+      if (!logId) throw new Error('削除する履歴が指定されていません');
+      await restFetch('rest/v1/inventory_logs?org_id=eq.' + encodeURIComponent(orgId) + '&item_legacy_id=eq.' +
+        encodeURIComponent(key) + '&id=eq.' + encodeURIComponent(logId), { method: 'DELETE' });
+      var rc = await invRecalcStock_(orgId, key);
+      var item = invRowToItem_(rc.row || row);
+      await invWriteAudit_(orgId, params.userName, '在庫履歴削除', row.name, '在庫 ' + item.stock);
+      invEmitChanged_({ item: item, source: 'deleteLog' });
+      return { item: item };
+    });
+
+    registerAction('inventory_deleteItem', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      if (!(await invIsAdminSession_(orgId, params.userName))) throw new Error('資材の削除は管理者のみできます');
+      var row = await invLoadMaterialRow_(orgId, String(params.id || ''));
+      if (!row) return { success: true, id: String(params.id || '') };
+      await restFetch('rest/v1/materials?id=eq.' + encodeURIComponent(row.id), { method: 'DELETE' });
+      await invWriteAudit_(orgId, params.userName, '在庫資材削除', row.name, row.sign_name ? ('場所: ' + row.sign_name) : '');
+      invEmitChanged_({ removedId: String(row.legacy_id || row.id), source: 'deleteItem' });
+      return { success: true, id: String(row.legacy_id || row.id) };
+    });
+
+    registerAction('inventory_saveSettings', async function (params) {
+      params = params || {};
+      var userName = String(params.userName || '').trim();
+      var patch = (params.settings && typeof params.settings === 'object') ? params.settings : {};
+      var orgId = await resolveCurrentOrgId_();
+      var current = await invGetSettings_(orgId);
+      var orderPatch = (patch.order && typeof patch.order === 'object') ? patch.order : null;
+      if (orderPatch && !(await invIsAdminSession_(orgId, userName))) {
+        throw new Error('発注メールの設定は管理者のみ変更できます');
+      }
+      var next = invNormalizeSettings_({
+        categories: Array.isArray(patch.categories) ? patch.categories : current.categories,
+        suppliers: Array.isArray(patch.suppliers) ? patch.suppliers : current.suppliers,
+        order: orderPatch ? Object.assign({}, current.order, orderPatch) : current.order
+      });
+      if (next.order.senderEmail && !invIsEmail_(next.order.senderEmail)) {
+        throw new Error('あなたのメールアドレスの形式が正しくありません');
+      }
+      next.suppliers.forEach(function (s) {
+        if (s.email && !invIsEmail_(s.email)) throw new Error('仕入れ先「' + (s.name || s.email) + '」のメールアドレスの形式が正しくありません');
+      });
+
+      var renamed = 0;
+      var rename = (params.renameCategory && typeof params.renameCategory === 'object') ? params.renameCategory : null;
+      var from = rename ? String(rename.from || '').trim() : '';
+      var to = rename ? String(rename.to || '').trim().slice(0, 30) : '';
+      if (from && to && from !== to) {
+        next.categories = next.categories.map(function (c) { return c === from ? to : c; });
+        if (next.categories.indexOf(to) < 0) next.categories.push(to);
+        renamed = await invPatchMetaWhere_(orgId, 'category', from, function (meta) {
+          meta.category = to;
+          return meta;
+        });
+      }
+
+      var saved = await invPutSettings_(orgId, next, userName);
+      var propagated = 0;
+      for (var i = 0; i < saved.suppliers.length; i++) {
+        var s = saved.suppliers[i];
+        if (!s.name || !s.email) continue;
+        var old = current.suppliers.filter(function (o) { return o.name === s.name; })[0];
+        if (old && old.email !== s.email) propagated += await invPropagateSupplierEmail_(orgId, s.name, s.email, '');
+      }
+      await invWriteAudit_(orgId, userName, '在庫設定変更', orderPatch ? '発注メール設定' : 'カテゴリ・仕入れ先',
+        (renamed ? ('カテゴリ名変更 ' + from + '→' + to + ' ' + renamed + '件') : '') + (propagated ? (' 仕入れ先メール反映 ' + propagated + '件') : ''));
+      if (renamed || propagated) invEmitChanged_({ source: 'saveSettings', reload: true });
+      return { settings: saved, renamed: renamed, propagated: propagated };
+    });
+
+    registerAction('inventory_sendOrder', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var row = await invLoadMaterialRow_(orgId, String(params.id || ''));
+      if (!row) throw new Error('対象の資材が見つかりません');
+      var key = String(row.legacy_id || row.id);
+      var res = await callEdgeFunction_('order-mailer', {
+        action: 'sendOrder',
+        params: {
+          orgId: orgId, materialId: key, trigger: 'manual', userName: String(params.userName || ''),
+          qty: invNum_(params.qty), note: String(params.note || '').slice(0, 500)
+        }
+      });
+      var rc = await invRecalcStock_(orgId, key);
+      var item = invRowToItem_(rc.row || row);
+      invEmitChanged_({ item: item, order: res, source: 'sendOrder' });
+      return { item: item, order: res };
+    });
+
+    registerAction('inventory_markOrdered', async function (params) {
+      params = params || {};
+      var qty = invNum_(params.qty);
+      if (!(qty > 0)) throw new Error('発注個数を入力してください');
+      var userName = String(params.userName || '').trim();
+      var orgId = await resolveCurrentOrgId_();
+      var row = await invLoadMaterialRow_(orgId, String(params.id || ''));
+      if (!row) throw new Error('対象の資材が見つかりません');
+      var key = String(row.legacy_id || row.id);
+      await invInsertLog_(orgId, row, '発注', qty, userName, {
+        status: 'sent', trigger: 'manual', channel: 'other', note: String(params.note || 'メール以外で発注').slice(0, 200)
+      });
+      var rc = await invRecalcStock_(orgId, key);
+      var item = invRowToItem_(rc.row || row);
+      await invWriteAudit_(orgId, userName, '資材発注記録', row.name + ' (' + invRound_(qty) + ')', 'メール以外で発注');
+      invEmitChanged_({ item: item, source: 'markOrdered' });
+      return { item: item };
+    });
+
+    registerAction('inventory_mailStatus', async function () {
+      try {
+        var orgId = await resolveCurrentOrgId_();
+        var st = await callEdgeFunction_('order-mailer', { action: 'status', params: { orgId: orgId } });
+        return Object.assign({ deployed: true }, st || {});
+      } catch (e) {
+        return { deployed: false, configured: false, message: String((e && e.message) || e) };
+      }
+    });
+
+    registerAction('inventory_testMail', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      return await callEdgeFunction_('order-mailer', {
+        action: 'sendTest',
+        params: { orgId: orgId, userName: String(params.userName || '') }
+      });
+    });
+
+    registerAction('inventory_lookupBarcode', async function (params) {
+      params = params || {};
+      var code = invNormalizeBarcode_(params.barcode);
+      if (!code) throw new Error('バーコードが空です');
+      return await callEdgeFunction_('gemini-proxy', {
+        action: 'lookupProductByBarcode',
+        params: {
+          barcode: code,
+          hint: String(params.hint || '').slice(0, 100),
+          categories: (Array.isArray(params.categories) ? params.categories : []).slice(0, 20)
+        }
+      });
+    });
+
+    registerAction('inventory_fetchImage', async function (params) {
+      params = params || {};
+      return await callEdgeFunction_('gemini-proxy', {
+        action: 'fetchProductImage',
+        params: { url: String(params.url || ''), exp: Number(params.exp) || 0, sig: String(params.sig || '') }
+      });
+    });
+  }
+
+  registerInventoryHandlers_();
 
   if (config_.enableAllActions) {
     Object.keys(registeredHandlers_).forEach(function (k) {

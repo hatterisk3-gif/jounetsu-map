@@ -1959,6 +1959,7 @@ function renderInitData(data) {
   pdlTools = data.pdl.tools || [];
   window.pdlTools = pdlTools;
   pdlMaterials = data.pdl.materials || [];
+  if (window.InventoryUI) window.InventoryUI.onInitData(pdlMaterials);
   pdlMachines = data.pdl.machines || [];
   window.pdlMachines = pdlMachines;
   pdlPesticides = data.pdl.pesticides || [];
@@ -4124,7 +4125,9 @@ window.openInventoryUI = (signId, options) => {
   document.getElementById('rightPanelTitle').innerText = `📦 ${p.name} - 在庫管理`;
   const signMats = pdlMaterials.filter(m => m.signId === signId || m.signName === p.name);
 
-  let html = '';
+  let html = window.openInventoryManager
+    ? `<button type="button" onclick="openInventoryManager({ query: (loadedPolygons['${signId}'] || {}).name || '' })" style="width:100%; margin-bottom:12px; padding:10px; background:#E8F5E9; color:#1B5E20; border:1px solid #43A047; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer;">📦 在庫管理を開く（バーコード・仕入れ先・自動発注・数える）</button>`
+    : '';
   if (signMats.length === 0) {
     html = `<div style="text-align:center; color:#666; padding:15px; font-size:13px; background:#fff; border-radius:8px; border:1px solid #ddd; margin-bottom:15px;">この場所に登録されている資材はありません。<br>下の「新規資材登録」ボタンから追加してください。</div>`;
   } else {
@@ -4142,6 +4145,7 @@ window.openInventoryUI = (signId, options) => {
       const sizeStr = m.size ? ` ${m.size}${m.volUnit || ''}` : '';
       const unitStr = m.stockUnit ? m.stockUnit : (m.unit || '');
       const accordionId = `inv_history_${m.id}`;
+      const isLowStock = Number(m.minStock) > 0 && (Number(stock) || 0) < Number(m.minStock);
 
       html += `
                   <div class="inv-item-card" data-name="${m.name}" style="background:white; border:1px solid #ddd; border-radius:8px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.05); overflow:hidden;">
@@ -4150,10 +4154,11 @@ window.openInventoryUI = (signId, options) => {
                           <div>
                               <div style="font-weight:bold; font-size:16px; color:#333; margin-bottom:4px;">${m.name}</div>
                               <div style="font-size:12px; color:#666;">${sizeStr}</div>
+                              ${isLowStock ? `<div style="font-size:11px; font-weight:bold; color:#c62828; margin-top:4px;">⚠️ 最低在庫 ${m.minStock}${unitStr} を下回っています</div>` : ''}
                           </div>
                           <div style="text-align:right;">
                               <div style="font-size:11px; color:#666; margin-bottom:2px;">現在の在庫</div>
-                              <div style="font-size:24px; font-weight:bold; color:#1a73e8; line-height:1;">${stock} <span style="font-size:13px; color:#666; font-weight:normal;">${unitStr}</span></div>
+                              <div style="font-size:24px; font-weight:bold; color:${isLowStock ? '#c62828' : '#1a73e8'}; line-height:1;">${stock} <span style="font-size:13px; color:#666; font-weight:normal;">${unitStr}</span></div>
                           </div>
                       </div>
 
@@ -4212,6 +4217,18 @@ window.openInventoryUI = (signId, options) => {
   }
 };
 
+// 棚卸（数えた結果の個数）と発注は入出庫の増減ではないため、旧画面では編集させない
+window.invLegacyHistoryView_ = (h) => {
+  const action = (h && h.action) || '';
+  if (action === '棚卸') return { color: '#1565C0', sign: '＝', label: '棚卸（数える）', editable: false };
+  if (action === '発注') {
+    const st = h.status === 'failed' ? '（送信失敗）' : (h.status === 'sending' ? '（送信処理中）' : '');
+    return { color: '#6A1B9A', sign: '📧', label: `発注${st}`, editable: false };
+  }
+  const isAdd = action === '入庫' || action === '初期入庫';
+  return { color: isAdd ? '#4CAF50' : '#FF9800', sign: isAdd ? '＋' : '－', label: action, editable: true };
+};
+
 window.showInventoryHistory = async (matId, matName, unitStr, currentStock, signId) => {
   const modalBody = document.getElementById('modalBody');
   const historyLoad = window.AppLoading
@@ -4235,21 +4252,19 @@ window.showInventoryHistory = async (matId, matName, unitStr, currentStock, sign
     } else {
       html += `<div style="max-height:60vh; overflow-y:auto; padding-right:5px;">`;
       history.forEach(h => {
-        const isAdd = (h.action === "入庫" || h.action === "初期入庫");
-        const color = isAdd ? '#4CAF50' : '#FF9800';
-        const sign = isAdd ? '＋' : '－';
+        const view = invLegacyHistoryView_(h);
         html += `
                     <div style="border-bottom:1px solid #eee; padding:12px 0; display:flex; justify-content:space-between; align-items:center;">
                       <div>
                         <div style="font-size:11px; color:#888;">${h.date} / 👤 ${h.user}</div>
-                        <div style="font-size:13px; font-weight:bold; margin-top:4px; color:#555;">${h.action}</div>
+                        <div style="font-size:13px; font-weight:bold; margin-top:4px; color:#555;">${view.label}</div>
                         <div style="margin-top:6px; display:flex; gap:8px;">
-                          <button onclick="editInvHistory('${matId}', ${h.rowIndex}, '${h.action}', ${h.amount}, '${signId}')" style="background:#f0f0f0; border:1px solid #ccc; border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer;">✏️編集</button>
-                          <button onclick="deleteInvHistory('${matId}', ${h.rowIndex}, '${signId}')" style="background:#ffebee; color:#f44336; border:1px solid #ffcdd2; border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer;">🗑️削除</button>
+                          ${view.editable ? `<button onclick="editInvHistory('${matId}', '${h.rowIndex}', '${h.action}', ${h.amount}, '${signId}')" style="background:#f0f0f0; border:1px solid #ccc; border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer;">✏️編集</button>` : ''}
+                          <button onclick="deleteInvHistory('${matId}', '${h.rowIndex}', '${signId}')" style="background:#ffebee; color:#f44336; border:1px solid #ffcdd2; border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer;">🗑️削除</button>
                         </div>
                       </div>
-                      <div style="font-size:22px; font-weight:bold; color:${color};">
-                        ${sign}${h.amount} <span style="font-size:13px; color:#666;">${unitStr}</span>
+                      <div style="font-size:22px; font-weight:bold; color:${view.color};">
+                        ${view.sign}${h.amount} <span style="font-size:13px; color:#666;">${unitStr}</span>
                       </div>
                     </div>
                   `;
@@ -21532,6 +21547,7 @@ window.bulkMachineListCategory_ = (m) => {
 /** 使用機械の一覧をカテゴリ単位の開閉リストにする */
 window.buildBulkMachineCategoryAccordionHtml_ = (uid, machines, selectedKeys, openMap, renderLabel, toggleFn) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const escJs = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const list = Array.isArray(machines) ? machines : [];
   const selected = Array.isArray(selectedKeys) ? selectedKeys.map(x => String(x || '')) : [];
   const opened = (openMap && typeof openMap === 'object') ? openMap : {};
@@ -21542,7 +21558,8 @@ window.buildBulkMachineCategoryAccordionHtml_ = (uid, machines, selectedKeys, op
   });
   const groups = new Map();
   list.forEach((m) => {
-    const cat = window.bulkMachineListCategory_(m);
+    const rawCat = window.bulkMachineListCategory_(m);
+    const cat = String(rawCat || '').trim() || 'その他';
     if (!groups.has(cat)) groups.set(cat, []);
     groups.get(cat).push(m);
   });
@@ -21557,18 +21574,20 @@ window.buildBulkMachineCategoryAccordionHtml_ = (uid, machines, selectedKeys, op
     const isOpen = opened[cat] === true;
     const encoded = encodeURIComponent(cat);
     const mark = isOpen ? '▼' : '▶';
-    const selBadge = selectedInCat
-      ? `<span style="font-size:10px; font-weight:bold; color:#fff; background:#FF9800; border-radius:10px; padding:1px 6px;">選択 ${selectedInCat}</span>`
-      : '';
+    const countText = selectedInCat
+      ? `選択${selectedInCat} · ${items.length}台`
+      : `${items.length}台`;
     const body = isOpen
-      ? `<div style="display:flex; flex-wrap:wrap; gap:6px; padding:8px; border-top:1px dashed #FFE0B2; background:#FFFDF8;">${items.map(m => renderLabel(m, 'all')).join('')}</div>`
+      ? `<div style="display:block; padding:8px; border-top:1px dashed #FFE0B2; background:#FFFDF8;">${items.map(m => {
+        const row = renderLabel(m, 'all');
+        return row ? `<div style="margin:0 0 6px;">${row}</div>` : '';
+      }).join('')}</div>`
       : '';
     const headBg = (isOpen || selectedInCat) ? '#FFF3E0' : '#fff';
-    return `<div class="bulk-machine-cat" data-cat="${esc(cat)}" style="border:1px solid #FFCC80; border-radius:10px; background:#fff; overflow:hidden;">
-      <div role="button" tabindex="0" onclick="${toggle}('${esc(uid)}','${encoded}')" aria-expanded="${isOpen ? 'true' : 'false'}" style="display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; box-sizing:border-box; min-height:42px; padding:8px 10px; background:${headBg}; color:#E65100; cursor:pointer; text-align:left;">
-        <span style="font-size:13px; font-weight:bold; flex:1; min-width:0; color:#E65100; line-height:1.3;">${mark} ${esc(cat)}</span>
-        <span style="flex-shrink:0; font-size:11px; color:#8D6E63; font-weight:bold; white-space:nowrap;">${selBadge} ${items.length}台</span>
-      </div>
+    const click = `${toggle}('${escJs(uid)}','${encoded}')`;
+    // スマホWebViewでは flex 行の文字が消えることがあるため、単一テキストの button にする
+    return `<div class="bulk-machine-cat" data-cat="${esc(cat)}" style="border:1px solid #FFCC80; border-radius:10px; background:#fff; overflow:hidden; margin:0 0 6px;">
+      <button type="button" onclick="${esc(click)}" aria-expanded="${isOpen ? 'true' : 'false'}" style="display:block; width:100%; box-sizing:border-box; margin:0; padding:12px 12px; border:none; border-radius:0; background:${headBg}; color:#E65100; cursor:pointer; text-align:left; font-size:14px; font-weight:bold; line-height:1.45; -webkit-appearance:none; appearance:none;">${mark} ${esc(cat)}　${esc(countText)}</button>
       ${body}
     </div>`;
   }).join('');
@@ -21747,9 +21766,12 @@ window.buildConcurrentEquipmentPickerHtml_ = (draft, opts) => {
   };
   const thumbHtml_ = (url, fallbackIcon) => {
     if (url) {
-      return `<img src="${esc(url)}" alt="" style="width:36px; height:36px; object-fit:cover; border-radius:6px; border:1px solid #ffcc80; flex-shrink:0;" onerror="this.style.display='none';">`;
+      return `<span style="position:relative; width:40px; height:40px; flex-shrink:0; display:inline-block;">`
+        + `<img src="${esc(url)}" alt="" style="width:40px; height:40px; object-fit:cover; border-radius:8px; border:1px solid #ffcc80; display:block;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';">`
+        + `<span style="display:none; width:40px; height:40px; border-radius:8px; background:#FFF3E0; color:#E65100; align-items:center; justify-content:center; font-size:18px; border:1px solid #FFE0B2;">${fallbackIcon}</span>`
+        + `</span>`;
     }
-    return `<div style="width:36px; height:36px; border-radius:6px; background:#FFF3E0; color:#E65100; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; border:1px solid #FFE0B2;">${fallbackIcon}</div>`;
+    return `<div style="width:40px; height:40px; border-radius:8px; background:#FFF3E0; color:#E65100; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; border:1px solid #FFE0B2;">${fallbackIcon}</div>`;
   };
   const selectedChips = selected.length
     ? `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">${selected.map(m => {
@@ -21776,12 +21798,12 @@ window.buildConcurrentEquipmentPickerHtml_ = (draft, opts) => {
   };
   const chipHtml = (m) => {
     const id = String(m.id || m.name || '');
-    const name = displayNameOf(m);
+    const name = String(displayNameOf(m) || id || '（名称未設定）').trim() || '（名称未設定）';
     const on = selectedSet.has(id) || selectedSet.has(name) || selectedSet.has(String(m.plateNumber || ''));
     const safeId = escJs(id);
     const safeName = escJs(name);
     const click = mode === 'bulk'
-      ? `toggleBulkConcurrentEquip_('${esc(uid)}','${safeId}','${safeName}',${!on})`
+      ? `toggleBulkConcurrentEquip_('${escJs(uid)}','${safeId}','${safeName}',${!on})`
       : `toggleConcurrentModalEquip_('${safeId}','${safeName}',${!on})`;
     const baseLoc = (typeof window.getEquipmentBaseLocation_ === 'function')
       ? window.getEquipmentBaseLocation_(m)
@@ -21789,7 +21811,14 @@ window.buildConcurrentEquipmentPickerHtml_ = (draft, opts) => {
     const meta = baseLoc || '';
     const icon = m._kind === 'vehicle' ? '🛻' : '🚜';
     const photoUrl = findEquipPhoto_(m);
-    return `<div role="button" tabindex="0" onclick="${click}" style="display:inline-flex; align-items:center; gap:6px; margin:0; padding:6px 10px 6px 6px; border-radius:14px; cursor:pointer; border:1px solid ${on ? '#FF9800' : '#FFE0B2'}; background:${on ? '#FFF3E0' : '#fff'}; color:#E65100; text-align:left;">${thumbHtml_(photoUrl, icon)}<span style="display:flex; flex-direction:column; gap:1px; min-width:0;"><span style="font-size:12px; font-weight:${on ? 'bold' : 'normal'}; color:#E65100; line-height:1.3;">${on ? '✅ ' : ''}${esc(name)}</span>${meta ? `<span style="font-size:10px;color:#888;font-weight:normal;">📍 ${esc(meta)}</span>` : ''}</span></div>`;
+    // スマホでは inline-flex の中身が消えることがあるため、全幅の行表示にする
+    return `<div role="button" tabindex="0" onclick="${esc(click)}" style="display:flex; align-items:center; gap:10px; width:100%; box-sizing:border-box; margin:0; padding:8px 10px; border-radius:10px; cursor:pointer; border:1px solid ${on ? '#FF9800' : '#FFE0B2'}; background:${on ? '#FFF3E0' : '#fff'}; color:#E65100; text-align:left;">`
+      + `${thumbHtml_(photoUrl, icon)}`
+      + `<span style="flex:1; min-width:0;">`
+      + `<span style="display:block; font-size:13px; font-weight:bold; color:#E65100; line-height:1.35; word-break:break-word;">${on ? '✅ ' : ''}${esc(name)}</span>`
+      + `${meta ? `<span style="display:block; font-size:10px;color:#8D6E63;font-weight:normal;margin-top:2px;">📍 ${esc(meta)}</span>` : ''}`
+      + `</span>`
+      + `</div>`;
   };
   const chips = filtered.map(chipHtml).join('');
   const catCounts = new Set(filtered.map(m => window.bulkMachineListCategory_(m)));
@@ -21844,8 +21873,8 @@ window.buildConcurrentEquipmentPickerHtml_ = (draft, opts) => {
           ${selectedChips}
           ${emptyMsg || (groupByCat
             ? `<div style="font-size:10px; color:#999; margin:0 0 6px; line-height:1.35;">カテゴリをタップすると、その中の機械を選べます</div>
-               <div style="display:flex; flex-direction:column; gap:6px; max-height:280px; overflow-y:auto;">${catHtml}</div>`
-            : `<div style="display:flex; flex-wrap:wrap; gap:6px; max-height:220px; overflow-y:auto;">${chips}</div>`)}
+               <div style="display:block; max-height:280px; overflow-y:auto;">${catHtml}</div>`
+            : `<div style="display:flex; flex-direction:column; gap:6px; max-height:220px; overflow-y:auto;">${chips}</div>`)}
         </div>`;
 };
 
@@ -29842,6 +29871,13 @@ window.deleteMachineItemEditorModal = async () => {
       window.setMachineItemEditorLoading_(false);
     }
     window.closeMachineItemEditorModal();
+    if (window._fuelPickerEditCtx && typeof window.refreshFuelPickerAfterMasterChange_ === 'function') {
+      const ctx = window._fuelPickerEditCtx;
+      window._fuelPickerEditCtx = null;
+      window.refreshFuelPickerAfterMasterChange_(ctx.uid, ctx.scope, {
+        deletedId: String(ctx.targetId || optionId || '')
+      });
+    }
     if (typeof window.refreshBulkWorkMemoAfterMaintTargetChange_ === 'function'
       && (window._bulkWorkMemoMaintEditUid
         || document.getElementById('bulk_work_memo_review_scroll')
@@ -30201,11 +30237,18 @@ window.buildFuelCategoryPickerHtml_ = (opts) => {
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const escJs = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const displayName = (item) => {
-    if (window.MachineTaxonomy && MachineTaxonomy.getDisplayName) {
-      const label = MachineTaxonomy.getDisplayName(item);
+    if (typeof window.buildEquipmentDisplayLabel_ === 'function') {
+      const label = String(window.buildEquipmentDisplayLabel_(item) || '').trim();
       if (label) return label;
     }
-    return String(item.plateNumber || item.vehicleNumber || item.name || item.id || '').trim();
+    if (window.MachineTaxonomy && MachineTaxonomy.getDisplayName) {
+      const label = String(MachineTaxonomy.getDisplayName(item) || '').trim();
+      if (label) return label;
+    }
+    return String(
+      item.plateNumber || item.vehicleNumber || item.aliasName
+      || item._displayName || item.name || item.type || item.id || ''
+    ).trim();
   };
   const raw = kind === 'vehicle'
     ? (window.pdlMobileVehicles || [])
@@ -30224,29 +30267,49 @@ window.buildFuelCategoryPickerHtml_ = (opts) => {
         vehicleNumber: item.vehicleNumber || plate,
         name: plate || item.aliasName || item.name || ''
       });
-      const name = displayName(enriched) || plate || item.aliasName || oid;
+      const name = displayName(enriched) || plate || item.aliasName || oid || '（名称未設定）';
       return Object.assign({}, enriched, { name: name, _displayName: name });
     }
-    const name = displayName(item) || String(item.name || item.id || '');
-    return Object.assign({}, item, { id: String(item.id || ''), name: name, _displayName: name });
+    const name = displayName(item) || String(item.name || item.type || item.id || '（名称未設定）');
+    return Object.assign({}, item, { id: String(item.id || name), name: name, _displayName: name });
   });
   if (!items.length) {
     return `<div style="font-size:12px; color:#888; padding:8px 2px;">${kind === 'vehicle' ? '登録済みの車両がありません。' : '登録済みの農機がありません。'}</div>`;
   }
+  const canManage = typeof window.isWorkerAdmin !== 'function' || window.isWorkerAdmin();
   const chip = (m) => {
     const id = String(m.id || '');
+    const label = String(m._displayName || m.name || m.type || id || '（名称未設定）').trim() || '（名称未設定）';
     const on = !!id && id === selectedId;
     const photo = (typeof window.getMachinePhotoUrl === 'function') ? window.getMachinePhotoUrl(m) : '';
     const icon = kind === 'vehicle' ? '🛻' : '🚜';
+    const fallbackThumb = `<span style="width:40px; height:40px; border-radius:8px; background:#FFF3E0; color:#E65100; display:inline-flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; border:1px solid #FFE0B2;">${icon}</span>`;
     const thumb = photo
-      ? `<img src="${esc(photo)}" alt="" style="width:36px; height:36px; object-fit:cover; border-radius:8px; border:1px solid #ffcc80; flex-shrink:0;" onerror="this.style.display='none'">`
-      : `<span style="width:36px; height:36px; border-radius:8px; background:#FFF3E0; color:#E65100; display:inline-flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; border:1px solid #FFE0B2;">${icon}</span>`;
+      ? `<span style="position:relative; width:40px; height:40px; flex-shrink:0; display:inline-block;">`
+        + `<img src="${esc(photo)}" alt="" style="width:40px; height:40px; object-fit:cover; border-radius:8px; border:1px solid #ffcc80; display:block;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-flex';">`
+        + `<span style="display:none; width:40px; height:40px; border-radius:8px; background:#FFF3E0; color:#E65100; align-items:center; justify-content:center; font-size:18px; border:1px solid #FFE0B2;">${icon}</span>`
+        + `</span>`
+      : fallbackThumb;
     const fuel = kind === 'machine' ? String(m.fuel || m.fuelType || '').trim() : '';
-    const fuelLine = fuel ? `<span style="display:block; font-size:10px; color:#888; font-weight:normal;">${esc(fuel)}</span>` : '';
+    const fuelLine = fuel ? `<span style="display:block; font-size:10px; color:#8D6E63; font-weight:normal; margin-top:2px;">${esc(fuel)}</span>` : '';
     const safeId = escJs(id);
-    const safeName = escJs(m._displayName || m.name || '');
+    const safeName = escJs(label);
     const click = pickFn ? `${pickFn}('${escJs(uid)}','${safeId}','${safeName}'${scopeJs})` : '';
-    return `<div role="button" tabindex="0" onclick="${click}" style="display:inline-flex; align-items:center; gap:6px; margin:0; padding:4px 10px 4px 4px; border-radius:14px; cursor:pointer; border:1px solid ${on ? '#FF9800' : '#FFE0B2'}; background:${on ? '#FFF3E0' : '#fff'}; color:#E65100; text-align:left;">${thumb}<span style="display:flex; flex-direction:column; min-width:0;"><span style="font-size:12px; font-weight:${on ? 'bold' : 'normal'}; color:#E65100; line-height:1.3;">${on ? '✅ ' : ''}${esc(m._displayName || m.name || '')}</span>${fuelLine}</span></div>`;
+    const manageBtns = canManage
+      ? `<span style="display:flex; flex-direction:column; gap:4px; flex-shrink:0;">`
+        + `<button type="button" title="編集" onclick="event.preventDefault(); event.stopPropagation(); editFuelPickerTarget_('${escJs(uid)}','${safeId}','${kind}'${scopeJs})" style="background:#fff; color:#1565C0; border:1px solid #90CAF9; border-radius:6px; width:30px; height:28px; padding:0; font-size:13px; font-weight:bold; cursor:pointer; line-height:1;">✏️</button>`
+        + `<button type="button" title="削除" onclick="event.preventDefault(); event.stopPropagation(); deleteFuelPickerTarget_('${escJs(uid)}','${safeId}','${kind}'${scopeJs})" style="background:#fff; color:#C62828; border:1px solid #EF9A9A; border-radius:6px; width:30px; height:28px; padding:0; font-size:13px; font-weight:bold; cursor:pointer; line-height:1;">🗑️</button>`
+        + `</span>`
+      : '';
+    // スマホでは inline-flex の中身が消えることがあるため、全幅の行表示にする
+    return `<div role="button" tabindex="0" onclick="${esc(click)}" style="display:flex; align-items:center; gap:10px; width:100%; box-sizing:border-box; margin:0; padding:8px 10px; border-radius:10px; cursor:pointer; border:1px solid ${on ? '#FF9800' : '#FFE0B2'}; background:${on ? '#FFF3E0' : '#fff'}; color:#E65100; text-align:left;">`
+      + `${thumb}`
+      + `<span style="flex:1; min-width:0;">`
+      + `<span style="display:block; font-size:13px; font-weight:bold; color:#E65100; line-height:1.35; word-break:break-word;">${on ? '✅ ' : ''}${esc(label)}</span>`
+      + `${fuelLine}`
+      + `</span>`
+      + `${manageBtns}`
+      + `</div>`;
   };
   let opened = (opts.openMap && typeof opts.openMap === 'object') ? Object.assign({}, opts.openMap) : {};
   const anyOpen = Object.keys(opened).some((k) => opened[k] === true);
@@ -30259,6 +30322,188 @@ window.buildFuelCategoryPickerHtml_ = (opts) => {
     : items.map(chip).join('');
   return `<div style="font-size:10px; color:#999; margin:2px 0 6px; line-height:1.35;">カテゴリをタップすると、写真付きで選べます</div>
     <div style="display:flex; flex-direction:column; gap:6px; max-height:280px; overflow-y:auto;">${list}</div>`;
+};
+
+/** 給油ピッカー編集・削除後に一覧を再描画する */
+window.refreshFuelPickerAfterMasterChange_ = (uid, scope, opts) => {
+  opts = opts || {};
+  const deletedId = String(opts.deletedId || '').trim();
+  const nextId = String(opts.targetId || '').trim();
+  const nextName = String(opts.targetName || '').trim();
+  const id = String(uid || '').trim();
+  const fuelScope = scope === 'cw' ? 'cw' : '';
+  if (id === 'wf') {
+    const draft = (typeof window.snapshotWorkFuelFormDraft_ === 'function')
+      ? window.snapshotWorkFuelFormDraft_()
+      : {};
+    if (deletedId && String(draft.targetId || '') === deletedId) draft.targetId = '';
+    else if (nextId) draft.targetId = nextId;
+    if (typeof window.refreshFuelRecordSection === 'function') {
+      window.refreshFuelRecordSection(draft);
+    }
+    return;
+  }
+  const host = (typeof window.resolveBulkFuelStateHost_ === 'function')
+    ? window.resolveBulkFuelStateHost_(id, fuelScope)
+    : null;
+  if (host) {
+    if (deletedId && String(host.fuelTargetId || '') === deletedId) {
+      host.fuelTargetId = '';
+      host.fuelTargetName = '';
+    } else if (nextId) {
+      host.fuelTargetId = nextId;
+      if (nextName) host.fuelTargetName = nextName;
+      host._fuelKind = nextId.indexOf('veh:') === 0 ? 'vehicle' : 'machine';
+    }
+    host._fuelPickOpen = true;
+  }
+  if (typeof window.refreshBulkFuelUi_ === 'function') {
+    window.refreshBulkFuelUi_(id, fuelScope);
+  }
+};
+
+window.resolveFuelPickerTargetItem_ = (targetId, kind) => {
+  const k = kind === 'vehicle' ? 'vehicle' : 'machine';
+  const id = String(targetId || '').trim();
+  if (!id) return null;
+  const lookupId = k === 'vehicle'
+    ? (id.indexOf('veh:') === 0 ? id : ('veh:' + id))
+    : id.replace(/^veh:/, '');
+  if (typeof window.findMaintenanceTargetById_ === 'function') {
+    const hit = window.findMaintenanceTargetById_(lookupId);
+    if (hit) return hit;
+  }
+  if (k === 'vehicle') {
+    const raw = lookupId.replace(/^veh:/, '');
+    const v = (Array.isArray(window.pdlMobileVehicles) ? window.pdlMobileVehicles : [])
+      .find(x => x && String(x.id) === String(raw));
+    return v ? Object.assign({}, v, { id: 'veh:' + raw, isVehicle: true }) : null;
+  }
+  const m = (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines))
+    ? pdlMachines.find(x => x && String(x.id) === String(lookupId))
+    : null;
+  return m ? Object.assign({}, m, { isVehicle: false }) : null;
+};
+
+/** 給油ピッカーから車両・農機を編集 */
+window.editFuelPickerTarget_ = (uid, targetId, kind, scope) => {
+  const k = kind === 'vehicle' ? 'vehicle' : 'machine';
+  const fuelScope = scope === 'cw' ? 'cw' : '';
+  const item = window.resolveFuelPickerTargetItem_(targetId, k);
+  if (!item) {
+    if (typeof customAlert === 'function') {
+      customAlert(k === 'vehicle' ? '車両が見つかりません' : '農機が見つかりません');
+    }
+    return;
+  }
+  if (typeof window.openMachineItemEditorModal !== 'function') {
+    if (typeof customAlert === 'function') customAlert('編集画面を開けませんでした。');
+    return;
+  }
+  const optionId = k === 'vehicle'
+    ? (String(item.id || '').indexOf('veh:') === 0
+      ? String(item.id)
+      : ('veh:' + String(item.id || '').replace(/^veh:/, '')))
+    : String(item.id || targetId || '');
+  window._fuelPickerEditCtx = {
+    uid: String(uid || ''),
+    scope: fuelScope,
+    kind: k,
+    targetId: optionId
+  };
+  window.openMachineItemEditorModal({
+    mode: 'edit',
+    kind: k,
+    item: item,
+    afterSave: (rec, savedOptionId) => {
+      const ctx = window._fuelPickerEditCtx || {};
+      window._fuelPickerEditCtx = null;
+      let nextId = String(savedOptionId || '').trim();
+      if (!nextId && rec) {
+        if (k === 'vehicle' && typeof window.getMobileVehicleOptionId_ === 'function') {
+          nextId = String(window.getMobileVehicleOptionId_(rec) || '');
+        } else {
+          nextId = String(rec.id || optionId || '');
+        }
+      }
+      if (!nextId) nextId = optionId;
+      let label = '';
+      if (typeof window.buildEquipmentDisplayLabel_ === 'function' && rec) {
+        label = String(window.buildEquipmentDisplayLabel_(Object.assign({}, rec, {
+          isVehicle: k === 'vehicle'
+        })) || '').trim();
+      }
+      if (!label && window.MachineTaxonomy && MachineTaxonomy.getDisplayName && rec) {
+        label = String(MachineTaxonomy.getDisplayName(Object.assign({}, rec, {
+          isVehicle: k === 'vehicle'
+        })) || '').trim();
+      }
+      if (!label && rec) {
+        label = String(rec.plateNumber || rec.aliasName || rec.name || '').trim();
+      }
+      window.refreshFuelPickerAfterMasterChange_(ctx.uid || uid, ctx.scope || fuelScope, {
+        targetId: nextId,
+        targetName: label
+      });
+    }
+  });
+};
+
+/** 給油ピッカーから車両・農機を削除 */
+window.deleteFuelPickerTarget_ = async (uid, targetId, kind, scope) => {
+  if (typeof window.isWorkerAdmin === 'function' && !window.isWorkerAdmin()) {
+    if (typeof customAlert === 'function') customAlert('削除は管理者権限のみ実行できます。');
+    return;
+  }
+  const k = kind === 'vehicle' ? 'vehicle' : 'machine';
+  const fuelScope = scope === 'cw' ? 'cw' : '';
+  const item = window.resolveFuelPickerTargetItem_(targetId, k);
+  if (!item) {
+    if (typeof customAlert === 'function') {
+      customAlert(k === 'vehicle' ? '車両が見つかりません' : '農機が見つかりません');
+    }
+    return;
+  }
+  const kindLabel = k === 'vehicle' ? '車両' : '農機';
+  const label = (typeof window.buildEquipmentDisplayLabel_ === 'function'
+    ? window.buildEquipmentDisplayLabel_(item)
+    : '') || item.plateNumber || item.aliasName || item.name || targetId || '名称未設定';
+  const optionId = k === 'vehicle'
+    ? (String(item.id || '').indexOf('veh:') === 0
+      ? String(item.id)
+      : ('veh:' + String(item.id || '').replace(/^veh:/, '')))
+    : String(item.id || targetId || '');
+  const rawId = String(optionId).replace(/^veh:/, '');
+  if (typeof customConfirm === 'function') {
+    if (!(await customConfirm(`${kindLabel}「${label}」をマスタから削除しますか？\n※この操作は取り消せません。`))) return;
+  }
+  try {
+    const userName = (typeof currentUser !== 'undefined' ? currentUser : '')
+      || localStorage.getItem('passionMapUserName') || '管理者';
+    if (k === 'vehicle') {
+      await callGAS('vehicle_deleteVehicle', { id: rawId });
+      if (Array.isArray(window.pdlMobileVehicles)) {
+        window.pdlMobileVehicles = window.pdlMobileVehicles.filter(v => String(v.id) !== String(rawId));
+      }
+    } else {
+      await callGAS('deleteMachineFromMaster', { machineId: rawId, userName: userName });
+      if (typeof pdlMachines !== 'undefined' && Array.isArray(pdlMachines)) {
+        pdlMachines = pdlMachines.filter(m => String(m.id) !== String(rawId));
+        window.pdlMachines = pdlMachines;
+      }
+    }
+    try {
+      if (typeof window.syncLivePdlIntoInitCache_ === 'function') window.syncLivePdlIntoInitCache_();
+      else try { localStorage.removeItem('passionMapInitData'); } catch (eInitCache) { }
+      try { localStorage.removeItem('pMapAdminInitData'); } catch (eAdminCache) { }
+    } catch (e) { }
+    window.refreshFuelPickerAfterMasterChange_(uid, fuelScope, { deletedId: optionId });
+    if (typeof window.showRecordSyncToast === 'function') {
+      window.showRecordSyncToast(`🗑️ ${kindLabel}「${label}」をマスタから削除しました`, 'ok');
+    }
+  } catch (e) {
+    if (typeof customAlert === 'function') customAlert(e.message || '削除に失敗しました');
+  }
 };
 
 window.toggleBulkFuelCat_ = (uid, encodedCat, scope) => {
@@ -39352,22 +39597,20 @@ window.toggleInventoryAccordion = async (matId, matName, unitStr, signId) => {
       } else {
         let hHtml = '';
         history.forEach(h => {
-          const isAdd = (h.action === "入庫" || h.action === "初期入庫");
-          const constColor = isAdd ? '#4CAF50' : '#FF9800';
-          const constSign = isAdd ? '+' : '-';
+          const view = invLegacyHistoryView_(h);
 
           hHtml += `
                           <div style="border-bottom:1px solid #eee; padding:10px 0;">
                               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                                   <div>
                                       <div style="font-size:11px; color:#888;">${h.date} / 👤 ${h.user}</div>
-                                      <div style="font-size:13px; font-weight:bold; margin-top:2px; color:#555;">${h.action}</div>
+                                      <div style="font-size:13px; font-weight:bold; margin-top:2px; color:#555;">${view.label}</div>
                                   </div>
-                                  <div style="font-size:18px; font-weight:bold; color:${constColor};">${constSign}${h.amount} <span style="font-size:11px; color:#666;">${unitStr}</span></div>
+                                  <div style="font-size:18px; font-weight:bold; color:${view.color};">${view.sign}${h.amount} <span style="font-size:11px; color:#666;">${unitStr}</span></div>
                               </div>
                               
                               <div style="display:flex; justify-content:flex-end; gap:8px;">
-                                  <button onclick="editInvHistory('${matId}', '${h.rowIndex}', '${h.action}', '${h.amount}', '${signId}')" style="background:#f0f0f0; border:1px solid #ccc; border-radius:4px; padding:6px 12px; font-size:11px; cursor:pointer; color:#333;">✏️ 履歴の編集</button>
+                                  ${view.editable ? `<button onclick="editInvHistory('${matId}', '${h.rowIndex}', '${h.action}', '${h.amount}', '${signId}')" style="background:#f0f0f0; border:1px solid #ccc; border-radius:4px; padding:6px 12px; font-size:11px; cursor:pointer; color:#333;">✏️ 履歴の編集</button>` : ''}
                                   <button onclick="deleteInvHistory('${matId}', '${h.rowIndex}', '${signId}')" style="background:#ffebee; color:#f44336; border:1px solid #ffcdd2; border-radius:4px; padding:6px 12px; font-size:11px; cursor:pointer;">🗑️ 削除</button>
                               </div>
                           </div>`;
@@ -49997,15 +50240,16 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
           const machineLabel = (m, style) => {
             const on = selectedMachines.indexOf(String(m.id)) >= 0 || selectedMachines.indexOf(String(m.name)) >= 0;
             const safeId = String(m.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const safeName = String(m.name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const safeName = String(m.name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const label = String(m.name || m.type || m.id || '（名称未設定）').trim() || '（名称未設定）';
             const border = on ? '#FF9800' : (style === 'sug' ? '#FFB74D' : '#FFE0B2');
             const bg = on ? '#FFF3E0' : (style === 'sug' ? '#FFF8E1' : '#fff');
             const hub = String(m.location || '').trim();
             const park = String(m.currentLocName || m.signName || '').trim();
             const meta = [hub ? esc(hub) : '', park ? `📍 ${esc(park)}` : ''].filter(Boolean).join(' · ');
-            const locLine = meta ? `<span style="display:block; font-size:10px; color:#888; font-weight:normal;">${meta}</span>` : '';
-            return `<label style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px 4px 4px; border-radius:14px; font-size:12px; cursor:pointer; border:1px solid ${border}; background:${bg}; color:#E65100; text-align:left;">
-              <input type="checkbox" ${on ? 'checked' : ''} onchange="toggleBulkWorkMemoMachine_('${esc(uid)}','${safeId}','${safeName}', this.checked)" style="margin:0 0 0 4px;"> ${machinePhotoHtml_(m)}<span><span>${esc(m.name)}</span>${locLine}</span>
+            const locLine = meta ? `<span style="display:block; font-size:10px; color:#8D6E63; font-weight:normal; margin-top:2px;">${meta}</span>` : '';
+            return `<label style="display:flex; align-items:center; gap:10px; width:100%; box-sizing:border-box; padding:8px 10px; border-radius:10px; font-size:13px; cursor:pointer; border:1px solid ${border}; background:${bg}; color:#E65100; text-align:left;">
+              <input type="checkbox" ${on ? 'checked' : ''} onchange="toggleBulkWorkMemoMachine_('${esc(uid)}','${safeId}','${safeName}', this.checked)" style="margin:0; flex-shrink:0;"> ${machinePhotoHtml_(m)}<span style="flex:1; min-width:0;"><span style="display:block; font-weight:bold; color:#E65100; line-height:1.35; word-break:break-word;">${esc(label)}</span>${locLine}</span>
             </label>`;
           };
           if (!visibleMachines.length) {
